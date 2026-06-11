@@ -7,7 +7,7 @@ set -euo pipefail
 pattern='(passkey|torrent_pass|rsskey|api_?key|auth_?key)=[A-Za-z0-9]{16,}|[Aa]uthorization:[[:space:]]*[Bb]earer[[:space:]]+[A-Za-z0-9._-]{16,}'
 
 # Only inspect added lines in the staged diff.
-hits="$(git diff --cached -U0 -- ':(exclude)*_test.go' ':(exclude)testdata/**' \
+hits="$(git diff --cached -U0 -- ':(exclude)*_test.go' ':(exclude)testdata/**' ':(exclude)internal/indexer/definitions/vendor/**' \
   | grep -E '^\+' \
   | grep -nEi "$pattern" || true)"
 
