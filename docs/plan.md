@@ -12,9 +12,9 @@ Legend: `[ ]` todo · `[x]` done · each leaf should land in its own focused com
 ## Phase 0 — Foundations (scaffold; mostly done)
 
 - [x] Repo skeleton, package layout, `AGENTS.md`/`CLAUDE.md`, `.golangci.yml`, Makefile, CI, hooks
-- [ ] `make tools` runs clean on a fresh checkout
-- [ ] `make vendor-defs` populates `internal/indexer/definitions/vendor/` (pin `JACKETT_REF` to a SHA)
-- [ ] `make build` and `make test` green with the vendored snapshot embedded
+- [x] `make tools` runs clean on a fresh checkout
+- [x] `make vendor-defs` populates `internal/indexer/definitions/vendor/` (pin `JACKETT_REF` to a SHA)
+- [x] `make build` and `make test` green with the vendored snapshot embedded
 - [x] Author the management-API `openapi.yaml` stub under `internal/web/swagger` + drift test
       (`make test-openapi`)
 - [ ] Wire `cobra`/`viper` entrypoint and a typed config struct (no `map[string]any`)
