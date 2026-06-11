@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strings"
 	"text/template"
+
+	"github.com/autobrr/seekbrr/internal/indexer/cardigann/regexadapter"
 )
 
 // The corpus does NOT fit a vanilla text/template parser. Jackett's
@@ -95,24 +97,32 @@ func expandFuncs(text string, ctx *Context) (string, error) {
 	return expandJoin(out, ctx), nil
 }
 
-// expandReReplace implements {{ re_replace .Var "pattern" "repl" }}: compile the
-// pattern (RE2/stdlib — regexp2 routing is item 7, regexadapter), then
-// Replace(resolve(.Var), repl). Mirrors Jackett's new Regex(pat).Replace(input,
-// repl) with arg order variable, pattern, replacement.
+// expandReReplace implements {{ re_replace .Var "pattern" "repl" }}: route the
+// pattern through regexadapter (RE2 by default; regexp2 on .NET-only constructs
+// or RE2 compile-failure), then Replace(resolve(.Var), repl). Mirrors Jackett's
+// new Regex(pat).Replace(input, repl) with arg order variable, pattern,
+// replacement. The template path carries no def language here; per-def language
+// routing is applied at the engine call site (item 10), so RouteOptions is zero.
 func expandReReplace(text string, ctx *Context) (string, error) {
 	var firstErr error
+	noteErr := func(err error) {
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
 	out := replaceAllSubmatch(reReplaceRe, text, func(groups []string) string {
 		varPath, pattern, repl := groups[1], groups[2], groups[3]
-		re, err := regexp.Compile(pattern)
+		re, err := regexadapter.Compile(pattern, regexadapter.RouteOptions{})
 		if err != nil {
-			if firstErr == nil {
-				firstErr = fmt.Errorf("re_replace: compiling pattern %q: %w", pattern, err)
-			}
-			// firstErr aborts the whole Eval below, so this return value is
-			// discarded; "" makes the abort-only intent unambiguous.
+			noteErr(fmt.Errorf("re_replace: %w", err))
 			return ""
 		}
-		return re.ReplaceAllString(resolveStringVar(varPath, ctx), repl)
+		out, err := re.ReplaceAllString(resolveStringVar(varPath, ctx), repl)
+		if err != nil {
+			noteErr(fmt.Errorf("re_replace: %w", err))
+			return ""
+		}
+		return out
 	})
 	if firstErr != nil {
 		return "", firstErr

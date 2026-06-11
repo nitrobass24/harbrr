@@ -2,44 +2,58 @@ package filter
 
 import (
 	"fmt"
-	"regexp"
 	"unicode"
+
+	"github.com/autobrr/seekbrr/internal/indexer/cardigann/regexadapter"
 )
 
-// NOTE: regex filters use RE2 (stdlib regexp) directly for now. Phase 1 item 7
-// (regexadapter) will route BOTH these filters and the template's regex through
-// a shared .NET-aware adapter (regexp2 on opt-in / non-Latin / RE2-incompatible
-// patterns). Do not add regexp2 routing here — that is item 7's seam.
+// Regex filters route through regexadapter: RE2 by default (ReDoS-safe), regexp2
+// on .NET-only constructs, RE2 compile-failure, or — via the Registry's Language
+// field — a non-Latin def script. These are methods on Registry so the per-def
+// language routing seam (set by the engine in item 10) is honored at call time.
 
 // filterReReplace implements re_replace[pattern,repl]: regex replace-all with
-// $1-style backreferences. Jackett template-applies the replacement first; that
-// is item 7's concern, so we treat it as a literal Go replacement template.
-func filterReReplace(value string, args []string) (string, error) {
+// .NET replacement-token semantics. Routing uses the registry Language so a
+// non-Latin def reaches regexp2.
+func (r *Registry) filterReReplace(value string, args []string) (string, error) {
 	if len(args) < 2 {
 		return "", fmt.Errorf("re_replace needs 2 args, got %d: %w", len(args), errMissingArg)
 	}
-	re, err := regexp.Compile(args[0])
+	re, err := regexadapter.Compile(args[0], r.routeOptions())
 	if err != nil {
-		return "", fmt.Errorf("re_replace: compiling pattern: %w", err)
+		return "", fmt.Errorf("re_replace: %w", err)
 	}
-	return re.ReplaceAllString(value, args[1]), nil
+	out, err := re.ReplaceAllString(value, args[1])
+	if err != nil {
+		return "", fmt.Errorf("re_replace: %w", err)
+	}
+	return out, nil
 }
 
 // filterRegexp implements regexp[pattern]: match the pattern and return capture
 // group 1's value. Jackett returns Match.Groups[1].Value, which is "" when the
-// pattern does not match or has no group 1 — so a no-match yields "".
-func filterRegexp(value string, args []string) (string, error) {
-	pattern := firstArg(args)
-	re, err := regexp.Compile(pattern)
+// pattern does not match or has no group 1 — so a no-match yields "". Routing
+// uses the registry Language.
+func (r *Registry) filterRegexp(value string, args []string) (string, error) {
+	re, err := regexadapter.Compile(firstArg(args), r.routeOptions())
 	if err != nil {
-		return "", fmt.Errorf("regexp: compiling pattern: %w", err)
+		return "", fmt.Errorf("regexp: %w", err)
 	}
-	m := re.FindStringSubmatch(value)
+	m, err := re.FindStringSubmatch(value)
+	if err != nil {
+		return "", fmt.Errorf("regexp: %w", err)
+	}
 	if len(m) < 2 {
 		// No match, or a match with no capture group 1: Jackett returns "".
 		return "", nil
 	}
 	return m[1], nil
+}
+
+// routeOptions builds the regexadapter routing inputs from the registry's
+// per-def Language (set by the engine; "" = Latin default).
+func (r *Registry) routeOptions() regexadapter.RouteOptions {
+	return regexadapter.RouteOptions{Language: r.Language}
 }
 
 // isNonSpacingMark reports whether r is a Unicode non-spacing mark (category

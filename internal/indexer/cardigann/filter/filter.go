@@ -33,6 +33,11 @@ type Registry struct {
 	// Defaults to a function returning ErrDateUnwired until item 6.
 	ParseRelTime func(value string) (string, error)
 
+	// Language is the Cardigann def `language:` code, used to route the regex
+	// filters (re_replace/regexp) to regexp2 for non-Latin scripts. The empty
+	// default is Latin (RE2). The engine sets this per-def in item 10.
+	Language string
+
 	ops map[string]filterFunc
 }
 
@@ -58,8 +63,8 @@ func NewRegistry() *Registry {
 func (r *Registry) buildOps() map[string]filterFunc {
 	ops := map[string]filterFunc{
 		"querystring":   filterQueryString,
-		"regexp":        filterRegexp,
-		"re_replace":    filterReReplace,
+		"regexp":        r.filterRegexp,
+		"re_replace":    r.filterReReplace,
 		"split":         filterSplit,
 		"replace":       filterReplace,
 		"trim":          filterTrim,
