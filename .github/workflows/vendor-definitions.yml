@@ -16,13 +16,13 @@ jobs:
   vendor:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Refresh Jackett definitions
         env:
           JACKETT_REF: master
         run: ./scripts/vendor-definitions.sh
       - name: Open PR on change
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v8
         with:
           commit-message: "chore(defs): refresh vendored Jackett definitions"
           title: "chore(defs): refresh vendored Jackett definitions"
