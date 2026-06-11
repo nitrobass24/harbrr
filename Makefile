@@ -39,6 +39,11 @@ test:
 test-short:
 	go test -count=1 $(PKG)
 
+## test-openapi: validate the embedded management-API OpenAPI spec
+.PHONY: test-openapi
+test-openapi:
+	go test -race -count=1 ./internal/web/swagger/...
+
 ## vet: go vet
 .PHONY: vet
 vet:

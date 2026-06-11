@@ -15,7 +15,7 @@ Legend: `[ ]` todo · `[x]` done · each leaf should land in its own focused com
 - [ ] `make tools` runs clean on a fresh checkout
 - [ ] `make vendor-defs` populates `internal/indexer/definitions/vendor/` (pin `JACKETT_REF` to a SHA)
 - [ ] `make build` and `make test` green with the vendored snapshot embedded
-- [ ] Author the management-API `openapi.yaml` stub under `internal/web/swagger` + drift test
+- [x] Author the management-API `openapi.yaml` stub under `internal/web/swagger` + drift test
       (`make test-openapi`)
 - [ ] Wire `cobra`/`viper` entrypoint and a typed config struct (no `map[string]any`)
 
