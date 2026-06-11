@@ -1,0 +1,38 @@
+---
+id: categories_object
+name: Categories Object
+description: "Mapper fixture: caps.categories object form (id -> name, no descs)."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://example.invalid/
+
+caps:
+  categories:
+    "10": Movies/HD
+    "20": TV/HD
+    "30": Audio/MP3
+  modes:
+    search: [q]
+    music-search: [q, artist, album]
+
+search:
+  path: /browse.php
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: tr
+  fields:
+    title:
+      selector: a.title
+    category:
+      selector: a.cat
+      attribute: href
+    size:
+      selector: td.size
+    seeders:
+      selector: td.seeders
+    download:
+      selector: a.dl
+      attribute: href

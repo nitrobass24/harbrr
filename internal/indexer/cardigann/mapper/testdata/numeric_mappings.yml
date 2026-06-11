@@ -1,0 +1,40 @@
+---
+id: numeric_mappings
+name: Numeric Mappings
+description: "Mapper fixture: numeric category ids with descs (custom cats)."
+language: en-US
+type: private
+encoding: UTF-8
+links:
+  - https://example.invalid/
+
+caps:
+  categorymappings:
+    - {id: 1, cat: Movies/HD, desc: "HD Movies"}
+    - {id: 2, cat: TV/Anime, desc: "Anime"}
+    - {id: 3, cat: Movies/HD, desc: "More HD Movies", default: true}
+  modes:
+    search: [q]
+    tv-search: [q, season, ep, imdbid]
+    movie-search: [q, imdbid]
+  allowrawsearch: true
+
+search:
+  path: /browse.php
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: tr
+  fields:
+    title:
+      selector: a.title
+    category:
+      selector: a.cat
+      attribute: href
+    size:
+      selector: td.size
+    seeders:
+      selector: td.seeders
+    download:
+      selector: a.dl
+      attribute: href
