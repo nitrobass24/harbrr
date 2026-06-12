@@ -22,7 +22,23 @@ The goal isn't simply to proxy searches.
 
 The goal is to become the intelligent layer between automation applications and trackers.
 
-text Private Trackers & Indexers              │              ▼            Harbrr              │  ┌───────────┼───────────┐  ▼           ▼           ▼ autobrr     qui     cross-seed              │              ▼       Sonarr • Radarr       Lidarr • Readarr       Mylar  • Whisparr 
+## Architecture
+
+```text
+Private Trackers & Indexers
+            │
+            ▼
+          Harbrr
+            │
+    ┌───────┼───────┐
+    ▼       ▼       ▼
+ autobrr   qui   cross-seed
+            │
+            ▼
+   Sonarr • Radarr
+   Lidarr • Readarr
+   Mylar  • Whisparr
+```
 
 ---
 
