@@ -153,6 +153,11 @@ func TestRedactionSelfAudit(t *testing.T) {
 		}}
 		e := newExec(t, rt, cfg)
 		err := e.Login(def)
+		// Assert the failure path is actually exercised: assertNoSecret is a no-op
+		// on a nil error, so without this the redaction check could pass vacuously.
+		if !errors.Is(err, ErrLoginFailed) {
+			t.Fatalf("Login() error = %v, want ErrLoginFailed", err)
+		}
 		assertNoSecret(t, "error message selector", err)
 	})
 }

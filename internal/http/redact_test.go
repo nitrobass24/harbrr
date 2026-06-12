@@ -62,6 +62,14 @@ func TestRedactURL(t *testing.T) {
 			wantNoLeak: []string{secret},
 		},
 		{
+			// Parse-failing URL (control char in path) carrying credentials but NO
+			// '?': the fallback must not echo the userinfo password or path verbatim.
+			name:       "unparseable input with credentials and no query does not leak",
+			raw:        "https://user:" + secret + "@t.example/secret\x7fpath",
+			wantNoLeak: []string{secret},
+			wantHas:    []string{"REDACTED"},
+		},
+		{
 			name:       "userinfo password redacted, username preserved",
 			raw:        "https://alice:" + secret + "@t.example/login",
 			wantNoLeak: []string{secret},

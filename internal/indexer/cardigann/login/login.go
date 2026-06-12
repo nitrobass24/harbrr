@@ -186,7 +186,14 @@ func (e *Executor) do(method, rawURL string, bodyReader io.Reader, headers map[s
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	e.storeJar(req.URL, resp)
+	// Scope captured cookies to the URL that actually produced the response (the
+	// post-redirect URL), falling back to the original request URL when the seam
+	// did not populate resp.Request.
+	effURL := req.URL
+	if resp.Request != nil && resp.Request.URL != nil {
+		effURL = resp.Request.URL
+	}
+	e.storeJar(effURL, resp)
 
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxLoginBodyBytes))
 	if err != nil {
@@ -264,7 +271,13 @@ func parseCookieHeader(raw string) []*stdhttp.Cookie {
 		if part == "" {
 			continue
 		}
-		name, value, _ := strings.Cut(part, "=")
+		name, value, found := strings.Cut(part, "=")
+		if !found {
+			// A bare token with no '=' is a Set-Cookie attribute flag (Secure,
+			// HttpOnly) accidentally pasted into a request Cookie header, not a
+			// name=value pair; skip it rather than send a bogus "Secure=" cookie.
+			continue
+		}
 		name = strings.TrimSpace(name)
 		if name == "" {
 			continue

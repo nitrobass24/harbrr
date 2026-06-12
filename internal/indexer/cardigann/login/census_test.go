@@ -50,6 +50,13 @@ func TestLoginPlanCensus(t *testing.T) {
 	if len(defs) == 0 {
 		t.Fatal("no definitions loaded")
 	}
+	// The vendored snapshot must load in full: a per-definition load failure
+	// silently shrinks the corpus this census covers, masking regressions. The
+	// snapshot loads cleanly today, so any skip is a real failure to surface.
+	if len(skipped) > 0 {
+		t.Fatalf("LoadAll skipped %d definition(s) (corpus must load cleanly):\n%s",
+			len(skipped), formatSkips(skipped))
+	}
 
 	c := &censusCounts{
 		perMethod:   map[string]int{},
@@ -230,6 +237,19 @@ func formatCounts(m map[string]int) string {
 			name = "(empty)"
 		}
 		fmt.Fprintf(&b, "%s=%d", name, m[k])
+	}
+	return b.String()
+}
+
+// formatSkips renders LoadAll's skip entries (id + secret-free reason) one per
+// line for a census failure message.
+func formatSkips(skips []loader.SkipEntry) string {
+	sorted := make([]loader.SkipEntry, len(skips))
+	copy(sorted, skips)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].ID < sorted[j].ID })
+	var b strings.Builder
+	for _, s := range sorted {
+		fmt.Fprintf(&b, "  %s -> %s\n", s.ID, s.Reason)
 	}
 	return b.String()
 }

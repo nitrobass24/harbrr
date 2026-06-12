@@ -91,14 +91,34 @@ func redactUserinfo(u *url.URL) {
 	}
 }
 
-// redactURLFallback handles input url.Parse rejects. Rather than risk emitting a
-// raw secret, it strips the entire query string (everything after the first
-// '?') and appends a marker, keeping only the structural prefix.
+// redactURLFallback handles input url.Parse rejects. Since the structure can't
+// be parsed, a secret may hide anywhere — query, path, or userinfo — so raw is
+// never returned verbatim. It keeps only the scheme://host prefix (dropping any
+// userinfo, which can embed a password) and redacts everything from the path
+// onward. When even a host can't be isolated, the whole string is redacted.
 func redactURLFallback(raw string) string {
-	if i := strings.IndexByte(raw, '?'); i >= 0 {
-		return raw[:i] + "?" + redactedValue
+	scheme, rest := "", raw
+	if i := strings.Index(raw, "://"); i >= 0 {
+		scheme, rest = raw[:i+len("://")], raw[i+len("://"):]
 	}
-	return raw
+	// The authority ends at the first path/query/fragment delimiter.
+	authority, hasRemainder := rest, false
+	if j := strings.IndexAny(rest, "/?#"); j >= 0 {
+		authority, hasRemainder = rest[:j], true
+	}
+	// Drop any userinfo (user:password@): only the host is non-secret.
+	if at := strings.LastIndexByte(authority, '@'); at >= 0 {
+		authority = authority[at+1:]
+	}
+	switch {
+	case scheme == "" && !hasRemainder:
+		// No recognizable URL structure to preserve safely.
+		return redactedValue
+	case hasRemainder:
+		return scheme + authority + "/" + redactedValue
+	default:
+		return scheme + authority
+	}
 }
 
 // isSecretParam reports whether a query-parameter name should have its value

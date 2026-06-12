@@ -137,6 +137,13 @@ func (e *Executor) checkErrors(l *loader.Login, rawURL string, body []byte, stat
 	if status == stdhttp.StatusUnauthorized {
 		return fmt.Errorf("%w: 401 Unauthorized from %s", ErrLoginFailed, apphttp.RedactURL(rawURL))
 	}
+	// An anti-bot interstitial (Cloudflare, etc.) means the real response never
+	// loaded, so the error selectors would all miss and we would wrongly report
+	// success. The form flow already screens its landing page; screen the
+	// post/get/oneurl response here too. Fails loud via ErrSolverRequired.
+	if err := detectAntiBot(body); err != nil {
+		return err
+	}
 	if len(l.Error) == 0 {
 		return nil
 	}
