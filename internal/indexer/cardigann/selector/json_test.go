@@ -22,13 +22,24 @@ func firstJSONRow(t *testing.T, fixture, rowsSel string) Row {
 	return rows[0]
 }
 
+// mustParseJSON parses a fixture and fails fast on a parse error, so the subtests
+// assert on Rows behavior without a parse failure silently masquerading as one.
+func mustParseJSON(t *testing.T, fixture string) *Document {
+	t.Helper()
+	doc, err := New().ParseJSON(readFixture(t, fixture))
+	if err != nil {
+		t.Fatalf("ParseJSON %q: %v", fixture, err)
+	}
+	return doc
+}
+
 // TestRowsJSON checks array resolution for both a nested path and the "$" root.
 func TestRowsJSON(t *testing.T) {
 	t.Parallel()
 
 	t.Run("nested data path", func(t *testing.T) {
 		t.Parallel()
-		doc, _ := New().ParseJSON(readFixture(t, "rows.json"))
+		doc := mustParseJSON(t, "rows.json")
 		rows, err := doc.Rows(loader.RowsBlock{Selector: "data"})
 		if err != nil {
 			t.Fatal(err)
@@ -40,7 +51,7 @@ func TestRowsJSON(t *testing.T) {
 
 	t.Run("root array dollar", func(t *testing.T) {
 		t.Parallel()
-		doc, _ := New().ParseJSON(readFixture(t, "rootarray.json"))
+		doc := mustParseJSON(t, "rootarray.json")
 		rows, err := doc.Rows(loader.RowsBlock{Selector: "$"})
 		if err != nil {
 			t.Fatal(err)
@@ -56,7 +67,7 @@ func TestRowsJSON(t *testing.T) {
 
 	t.Run("missing array with flag yields no rows", func(t *testing.T) {
 		t.Parallel()
-		doc, _ := New().ParseJSON(readFixture(t, "rows.json"))
+		doc := mustParseJSON(t, "rows.json")
 		rows, err := doc.Rows(loader.RowsBlock{
 			Selector:                        "nope",
 			MissingAttributeEqualsNoResults: boolPtr(true),
@@ -71,7 +82,7 @@ func TestRowsJSON(t *testing.T) {
 
 	t.Run("missing array without flag errors", func(t *testing.T) {
 		t.Parallel()
-		doc, _ := New().ParseJSON(readFixture(t, "rows.json"))
+		doc := mustParseJSON(t, "rows.json")
 		if _, err := doc.Rows(loader.RowsBlock{Selector: "nope"}); err == nil {
 			t.Fatal("expected error for missing rows array")
 		}

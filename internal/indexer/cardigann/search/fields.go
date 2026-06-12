@@ -66,10 +66,11 @@ func parseField(fe loader.FieldEntry, row selector.Row, query Query, deps Deps, 
 
 	value, found, err := deps.Selector.Field(row, fe.Block)
 	if err != nil {
-		if optional {
-			state.result[name] = ""
-			return nil
-		}
+		// A genuine fault (bad selector/template/case eval) — NOT "value absent",
+		// which Field reports as found=false with a nil error and which the
+		// optional/default logic below handles. Propagate even for optional
+		// fields so a malformed def surfaces loudly; ParseResults then drops the
+		// row (HTML) or aborts (JSON), mirroring Jackett's row-level try/catch.
 		return fmt.Errorf("field %q: %w", name, err)
 	}
 
