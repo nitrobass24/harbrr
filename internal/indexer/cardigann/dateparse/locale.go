@@ -213,8 +213,10 @@ type wordRun struct {
 	isWord bool
 }
 
-// splitWords partitions s into alternating letter / non-letter runs, preserving
-// every byte so the value can be reassembled losslessly.
+// splitWords partitions s into alternating word / non-word runs, preserving every
+// byte so the value can be reassembled losslessly. A hyphen counts as a word rune
+// so hyphenated locale names (e.g. Portuguese "segunda-feira") stay a single run
+// and match their lookupTable key instead of splitting into "segunda"/"feira".
 func splitWords(s string) []wordRun {
 	var runs []wordRun
 	var cur strings.Builder
@@ -226,7 +228,7 @@ func splitWords(s string) []wordRun {
 		}
 	}
 	for _, r := range s {
-		isW := unicode.IsLetter(r)
+		isW := isWordRune(r)
 		if cur.Len() > 0 && isW != curWord {
 			flush()
 		}
@@ -235,6 +237,13 @@ func splitWords(s string) []wordRun {
 	}
 	flush()
 	return runs
+}
+
+// isWordRune reports whether r is part of a locale name word. Letters qualify, as
+// do hyphen runes (ASCII '-' and the Unicode hyphen/non-breaking hyphen) so
+// hyphenated weekday/month names tokenize as one word.
+func isWordRune(r rune) bool {
+	return unicode.IsLetter(r) || r == '-' || r == '‐' || r == '‑'
 }
 
 // lookupTable builds the localized(lowercased)->English name map for this locale.

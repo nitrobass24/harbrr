@@ -42,7 +42,6 @@ func TestTranslateLayoutTokens(t *testing.T) {
 		{"second-pad", "ss", "05"},
 		{"second-bare", "s", "5"},
 		{"ampm-double", "tt", "PM"},
-		{"ampm-single", "t", "PM"},
 		{"tz-zzz", "zzz", "-07:00"},
 		{"tz-zz", "zz", "-07"},
 		{"tz-K", "K", "Z07:00"},
@@ -98,6 +97,21 @@ func TestTranslateLayoutUnknownToken(t *testing.T) {
 	// cultures and Go has no equivalent — must error, not silently pass through.
 	if _, err := dateparse.TranslateLayout("yyyy-Q"); err == nil {
 		t.Fatal("expected error for unknown token 'Q', got nil")
+	}
+}
+
+func TestTranslateLayoutSingleTUnsupported(t *testing.T) {
+	t.Parallel()
+	// .NET single `t` is the first letter of the AM/PM designator ("A"/"P"), which
+	// Go's reference time cannot express (Go's "PM" matches only the full
+	// designator). Mapping it to "PM" silently mistranslated, so a bare `t` must
+	// error loudly; `tt` stays supported. No corpus format uses a bare `t`.
+	if _, err := dateparse.TranslateLayout("h t"); err == nil {
+		t.Fatal("expected error for single-letter meridiem 't', got nil")
+	}
+	// `tt` must remain supported alongside the bare-`t` rejection.
+	if _, err := dateparse.TranslateLayout("h tt"); err != nil {
+		t.Fatalf("TranslateLayout(%q) error: %v", "h tt", err)
 	}
 }
 
@@ -167,6 +181,10 @@ func TestParseDateLocalizedNames(t *testing.T) {
 		{"es-ES", "d MMMM yyyy", "2 diciembre 2023", "2023-12-02T00:00:00Z"},
 		{"it-IT", "d MMMM yyyy", "2 marzo 2023", "2023-03-02T00:00:00Z"},
 		{"el-GR", "d MMMM yyyy", "2 Μαρτίου 2023", "2023-03-02T00:00:00Z"},
+		// Portuguese full weekday names are hyphenated ("segunda-feira"); the value
+		// must tokenize as one word to match the localized name. 2 Jan 2023 is a
+		// Monday, so the weekday is consistent with the date Go validates.
+		{"pt-BR", "dddd, d MMMM yyyy", "segunda-feira, 2 janeiro 2023", "2023-01-02T00:00:00Z"},
 	}
 	for _, c := range cases {
 		t.Run(c.lang+"/"+c.value, func(t *testing.T) {
@@ -270,6 +288,12 @@ func TestParseRelTimeFailure(t *testing.T) {
 	if _, err := p.ParseRelTime("gibberish"); err == nil {
 		t.Fatal("expected error for unparseable relative value, got nil")
 	}
+	// PARITY: Jackett matches named days with a `\b` word boundary, so "nottoday"
+	// must NOT be misread as "today" (a plain substring match would). It has no
+	// other parseable form, so it surfaces as an error.
+	if _, err := p.ParseRelTime("nottoday 08:00"); err == nil {
+		t.Fatal("expected error for substring-only named day, got nil")
+	}
 }
 
 // representativeValue produces a value string by formatting a fixed sample
@@ -368,12 +392,22 @@ func TestCorpusCensus(t *testing.T) {
 var knownUnsupported = map[string]struct{}{}
 
 // collectDateFormats walks every loaded definition and tallies the format arg of
-// each dateparse/timeparse field filter.
+// each dateparse/timeparse filter across all filter-bearing paths: search fields,
+// keywords/preprocessing filters, and download selector filters. Covering every
+// path keeps the census honest — a format hiding outside Search.Fields would
+// otherwise go untranslated and untested.
 func collectDateFormats(defs []*loader.Definition) map[string]int {
 	counts := map[string]int{}
 	for _, def := range defs {
 		for _, field := range def.Search.Fields {
 			tallyFilters(counts, field.Filters)
+		}
+		tallyFilters(counts, def.Search.KeywordsFilters)
+		tallyFilters(counts, def.Search.PreprocessingFilters)
+		if def.Download != nil {
+			for _, sel := range def.Download.Selectors {
+				tallyFilters(counts, sel.Filters)
+			}
 		}
 	}
 	return counts

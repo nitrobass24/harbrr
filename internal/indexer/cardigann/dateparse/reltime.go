@@ -61,6 +61,9 @@ func (p *Parser) ParseRelTime(value string) (string, error) {
 
 // parseAbsolute handles "now", unix epochs, and ISO/RFC absolute layouts.
 func parseAbsolute(v, lower string, now time.Time) (time.Time, bool) {
+	// PARITY: Jackett DateTimeUtil.FromUnknown matches "now" with a plain
+	// str.ToLower().Contains("now") — substring, NOT whole-word — so values like
+	// "unknown" also resolve to now. We deliberately mirror that substring test.
 	if strings.Contains(lower, "now") {
 		return now, true
 	}
@@ -93,27 +96,29 @@ func parseUnix(v string) (time.Time, bool) {
 	return time.Unix(n, 0).UTC(), true
 }
 
+// namedDayRegexp matches a leading-word-boundary today/yesterday/tomorrow,
+// mirroring Jackett's _Today/_Yesterday/_TomorrowRegexp (a `\b` prefix). It avoids
+// the substring false-positives a plain Contains would hit (e.g. "nottoday").
+// Trailing characters are not boundary-checked, matching Jackett's permissive
+// trailing group, so both "today 08:00" and "today08:00" resolve. Casing is
+// folded by the caller (lower).
+var namedDayRegexp = regexp.MustCompile(`\b(yesterday|tomorrow|today)`)
+
+// namedDayOffsets maps each matched word to its day delta from the clock date.
+var namedDayOffsets = map[string]int{"yesterday": -1, "tomorrow": 1, "today": 0}
+
 // parseNamedDay handles "today"/"yesterday"/"tomorrow" with an optional trailing
 // "HH:mm[:ss]" time component, anchored to the reference clock's date.
 func parseNamedDay(lower string, now time.Time) (time.Time, bool) {
-	offsets := []struct {
-		word string
-		days int
-	}{
-		{"yesterday", -1},
-		{"tomorrow", 1},
-		{"today", 0},
+	loc := namedDayRegexp.FindStringSubmatchIndex(lower)
+	if loc == nil {
+		return time.Time{}, false
 	}
-	for _, o := range offsets {
-		if !strings.Contains(lower, o.word) {
-			continue
-		}
-		rest := strings.TrimSpace(strings.Replace(lower, o.word, "", 1))
-		dur := parseClockTime(rest)
-		day := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-		return day.AddDate(0, 0, o.days).Add(dur), true
-	}
-	return time.Time{}, false
+	word := lower[loc[2]:loc[3]]
+	rest := lower[loc[3]:] // everything after the matched day word
+	dur := parseClockTime(rest)
+	day := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	return day.AddDate(0, 0, namedDayOffsets[word]).Add(dur), true
 }
 
 // parseClockTime extracts a leading/embedded HH:mm[:ss] from rest as a duration

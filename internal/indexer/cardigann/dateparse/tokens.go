@@ -32,7 +32,7 @@ type netToken struct {
 //	hh   h          -> 12h zero-padded / non-padded
 //	mm   m          -> minute padded / non-padded
 //	ss   s          -> second padded / non-padded
-//	tt   t          -> AM/PM designator (Go only supports PM/pm; t maps to PM too)
+//	tt              -> AM/PM designator (Go's "PM" matches the full designator)
 //	zzz  zz         -> signed UTC offset +05:30 / +05
 //	K               -> round-trip kind: Z or signed offset
 //	fffffff..f      -> fractional seconds (trailing-zero-significant)
@@ -43,6 +43,11 @@ type netToken struct {
 // never a real "+02" value. Rather than emit a silently-broken mapping, single
 // `z` is intentionally absent here, so TranslateLayout errors loudly on it. The
 // corpus uses only `zzz` (all 460 offset occurrences), so this is latent today.
+//
+// Single `t` (the first letter of the AM/PM designator, "A"/"P") is likewise
+// absent: Go's "PM" element matches only the full designator, so mapping `t`->"PM"
+// silently mistranslated. Bare `t` therefore errors loudly while `tt` stays
+// supported; the corpus uses only `tt`, so this too is latent today.
 var netTokens = []netToken{
 	{"yyyy", "2006"},
 	{"yyy", "2006"},
@@ -65,7 +70,6 @@ var netTokens = []netToken{
 	{"ss", "05"},
 	{"s", "5"},
 	{"tt", "PM"},
-	{"t", "PM"},
 	{"fffffff", ".0000000"},
 	{"ffffff", ".000000"},
 	{"fffff", ".00000"},
