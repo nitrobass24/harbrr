@@ -28,6 +28,15 @@ func (e *Engine) ParseHTML(body []byte) (*Document, error) {
 	return &Document{kind: kindHTML, html: &htmlNode{sel: doc.Selection}}, nil
 }
 
+// Root returns the whole document as a single Row, scoping a selector query to
+// the entire document rather than to a per-result row. The login/session stage
+// uses it to reproduce Jackett's checkForError / TestLogin, which evaluate their
+// selectors against ResultDocument.QuerySelector (the whole page), not a row.
+// HTML only; JSON documents have no document-root analogue here.
+func (d *Document) Root() Row {
+	return Row{kind: d.kind, html: d.html, json: d.json}
+}
+
 // query reproduces Jackett's field-selector resolution:
 //
 //	selection = Dom.Matches(sel) ? Dom : QuerySelector(Dom, sel)
