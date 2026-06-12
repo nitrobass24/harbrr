@@ -1,0 +1,37 @@
+name: security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# Cancel superseded PR runs; never cancel main-branch history.
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  secrets:
+    name: secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # gitleaks scans full commit history
+      # gitleaks is the source-of-truth scanner; .gitleaks.toml extends the
+      # default ruleset and allowlists the synthetic test-fixture paths. The
+      # action is free for personal/public repos; if this repo moves under an
+      # organization, add a GITLEAKS_LICENSE secret (see gitleaks-action docs).
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+      # Targeted backstop for the tracker-credential shapes harbrr handles, the
+      # same check as pre-commit but enforced where --no-verify cannot skip it.
+      - name: tracker-secret backstop
+        run: scripts/check-no-secrets.sh --all

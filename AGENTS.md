@@ -28,7 +28,8 @@ parity gate (the "Definition of done" in `docs/ideas.md`).
   (A PreToolUse hook blocks edits here; refreshing the snapshot via `make vendor-defs` is fine.)
 - **NEVER log, print, or commit secrets** — passkeys, cookies, API keys, download tokens. Definitions
   routinely put passkeys in URLs; redact secret query params and `Authorization`/`Cookie` headers in
-  all logs and traces. (gitleaks + a local check run in pre-commit and CI.)
+  all logs and traces. (gitleaks + `scripts/check-no-secrets.sh` run in pre-commit and in CI via
+  `.github/workflows/security.yml`.)
 - **NEVER add AI advertising/attribution/co-author lines** to commits or PRs.
 
 ## Repo map
@@ -102,10 +103,10 @@ shape, read `docs/architecture.md`.
   Management API requires auth; CSRF on cookie-auth surfaces. Redact secrets everywhere (see
   non-negotiables).
 - **Synthetic test-fixture secrets** (values that exist only to prove redaction) live exclusively in
-  `*_test.go` and `testdata/**`. These paths are excluded from secret scanning in three places that
-  **must stay in sync**: `scripts/check-no-secrets.sh`, `.gitguardian.yaml` (ggshield), and the
-  GitGuardian **dashboard** filepath exclusions (the GitHub App PR check — the repo `.gitguardian.yaml`
-  does *not* govern it). This never relaxes the "never commit real secrets" rule above.
+  `*_test.go`, `testdata/**`, and the vendored Jackett snapshot. These paths are excluded from secret
+  scanning in exactly two places that **must stay in sync**: `scripts/check-no-secrets.sh` and
+  `.gitleaks.toml`. Both run in pre-commit and in CI (`.github/workflows/security.yml`). This never
+  relaxes the "never commit real secrets" rule above.
 
 ## Commits / PRs
 
