@@ -240,13 +240,13 @@ func TestRootArrayBracketIndex(t *testing.T) {
 	}
 	// Each element is itself a row; resolve a bracket-indexed path against the
 	// resolver directly to mirror SelectToken("$[2].name").
-	got, ok := resolvePath([]any{
+	got, ok, err := resolvePath([]any{
 		map[string]any{"name": "one"},
 		map[string]any{"name": "two"},
 		map[string]any{"name": "three"},
 	}, "$[2].name")
-	if !ok || got != "three" {
-		t.Fatalf("$[2].name = %v ok=%v, want three", got, ok)
+	if err != nil || !ok || got != "three" {
+		t.Fatalf("$[2].name = %v ok=%v err=%v, want three", got, ok, err)
 	}
 	if len(rows) != 3 {
 		t.Fatalf("rows = %d, want 3", len(rows))

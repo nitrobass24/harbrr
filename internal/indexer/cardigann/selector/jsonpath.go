@@ -2,6 +2,7 @@ package selector
 
 import (
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 )
@@ -17,7 +18,10 @@ func resolveRowsArray(root any, selector string) ([]any, bool, error) {
 
 	target := root
 	if path != "" {
-		v, ok := resolvePath(root, path)
+		v, ok, err := resolvePath(root, path)
+		if err != nil {
+			return nil, false, err
+		}
 		if !ok {
 			return nil, false, nil
 		}
@@ -49,23 +53,26 @@ func rowsPath(selector string) string {
 // ("tags.0") or as Newtonsoft bracket syntax ("files[0]", "$[0].id"). A leading
 // "$" or "." is the caller's responsibility to strip. ok is false on any missing
 // key, out-of-range index, or type mismatch.
-func resolvePath(root any, path string) (any, bool) {
+func resolvePath(root any, path string) (any, bool, error) {
 	p := strings.TrimPrefix(strings.TrimSpace(path), "$")
 	p = trimDotPrefix(p)
-	tokens := tokenizePath(p)
+	tokens, err := tokenizePath(p)
+	if err != nil {
+		return nil, false, err
+	}
 	if len(tokens) == 0 {
-		return root, true
+		return root, true, nil
 	}
 
 	cur := root
 	for _, tok := range tokens {
 		next, ok := descend(cur, tok)
 		if !ok {
-			return nil, false
+			return nil, false, nil
 		}
 		cur = next
 	}
-	return cur, true
+	return cur, true, nil
 }
 
 // pathToken is one resolved step of a JSON path: a map key or an array index.
@@ -80,49 +87,57 @@ type pathToken struct {
 // "[0]"). The corpus uses single-int bracket subscripts; quoted/string bracket
 // keys do not appear in the snapshot, so a bracketed segment is treated as an
 // index when it parses as an int and otherwise as an object key.
-func tokenizePath(p string) []pathToken {
+func tokenizePath(p string) ([]pathToken, error) {
 	var tokens []pathToken
 	for _, seg := range strings.Split(p, ".") {
 		if seg == "" {
 			continue
 		}
-		tokens = appendSegmentTokens(tokens, seg)
+		var err error
+		tokens, err = appendSegmentTokens(tokens, seg)
+		if err != nil {
+			return nil, err
+		}
 	}
-	return tokens
+	return tokens, nil
 }
 
 // appendSegmentTokens expands one dot-delimited segment, peeling any trailing
 // "[N]" bracket subscripts (e.g. "files[0]" -> key "files" then index 0).
-func appendSegmentTokens(tokens []pathToken, seg string) []pathToken {
-	name, brackets := splitBrackets(seg)
+func appendSegmentTokens(tokens []pathToken, seg string) ([]pathToken, error) {
+	name, brackets, err := splitBrackets(seg)
+	if err != nil {
+		return nil, err
+	}
 	if name != "" {
 		tokens = append(tokens, classifySegment(name))
 	}
 	for _, b := range brackets {
 		tokens = append(tokens, classifySegment(b))
 	}
-	return tokens
+	return tokens, nil
 }
 
 // splitBrackets separates a segment's leading name from its trailing bracket
 // subscripts: "files[0]" -> ("files", ["0"]); "[0]" -> ("", ["0"]); "name" ->
-// ("name", nil).
-func splitBrackets(seg string) (name string, subscripts []string) {
+// ("name", nil). An unmatched '[' is malformed path syntax and returns an error
+// rather than silently truncating to a wrong node.
+func splitBrackets(seg string) (name string, subscripts []string, err error) {
 	open := strings.IndexByte(seg, '[')
 	if open < 0 {
-		return seg, nil
+		return seg, nil, nil
 	}
 	name = seg[:open]
 	rest := seg[open:]
 	for len(rest) > 0 && rest[0] == '[' {
 		end := strings.IndexByte(rest, ']')
 		if end < 0 {
-			break
+			return "", nil, fmt.Errorf("malformed JSON path segment %q: unmatched '['", seg)
 		}
 		subscripts = append(subscripts, rest[1:end])
 		rest = rest[end+1:]
 	}
-	return name, subscripts
+	return name, subscripts, nil
 }
 
 // classifySegment turns a name/subscript string into an index token when it is an

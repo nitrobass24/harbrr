@@ -3,7 +3,9 @@ package selector
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 
 	"github.com/autobrr/seekbrr/internal/indexer/cardigann/loader"
 )
@@ -27,11 +29,23 @@ func (e *Engine) ParseJSON(body []byte) (*Document, error) {
 	if err := dec.Decode(&v); err != nil {
 		return nil, fmt.Errorf("parsing JSON document: %w", err)
 	}
+	// Reject trailing data after the first value, matching Json.NET (Jackett),
+	// which errors on "additional text encountered after finished reading JSON".
+	var extra any
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err != nil {
+			return nil, fmt.Errorf("parsing JSON document: trailing data: %w", err)
+		}
+		return nil, errors.New("parsing JSON document: unexpected trailing data after top-level value")
+	}
 	return &Document{kind: kindJSON, json: &jsonNode{value: v}}, nil
 }
 
 func (n *jsonNode) query(sel string) (node, bool, error) {
-	v, ok := resolvePath(n.value, trimDotPrefix(sel))
+	v, ok, err := resolvePath(n.value, trimDotPrefix(sel))
+	if err != nil {
+		return nil, false, err
+	}
 	if !ok {
 		return nil, false, nil
 	}

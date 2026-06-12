@@ -1,11 +1,21 @@
 package selector
 
 import (
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/autobrr/seekbrr/internal/indexer/cardigann/loader"
+)
+
+// Pseudo-class token matchers: a colon-prefixed pseudo-class, not a bare
+// substring that could appear inside an attribute value (e.g. [data-x="scope"]).
+// :contains always carries an argument list; :scope is a standalone token, so it
+// must be followed by a non-identifier char or end-of-string (not ":scoped").
+var (
+	containsPseudoRE = regexp.MustCompile(`:contains\(`)
+	scopePseudoRE    = regexp.MustCompile(`:scope($|[^\w-])`)
 )
 
 // knownIncompatible is the documented baseline of EXACT literal selectors the
@@ -74,9 +84,28 @@ func TestCorpusCensus(t *testing.T) {
 		res.htmlDefs, res.jsonDefs, res.cssCompiled, res.jsonPaths, len(skipped))
 	t.Logf("knownIncompatible (AngleSharp-only) selectors hit: %d distinct", len(res.knownHit))
 
+	// A knownIncompatible literal that no corpus selector exercised is a stale
+	// ledger entry (upstream def changed/removed); surface it so the baseline
+	// stays honest rather than accumulating dead exceptions.
+	if stale := staleBaseline(res.knownHit); len(stale) > 0 {
+		t.Errorf("stale knownIncompatible entries (no corpus selector hit them):\n%s", formatFailures(stale))
+	}
+
 	if len(res.newFailures) > 0 {
 		t.Fatalf("NEW uncompilable selectors (not in knownIncompatible baseline):\n%s", formatFailures(res.newFailures))
 	}
+}
+
+// staleBaseline returns the knownIncompatible entries (selector -> reason) that
+// no corpus selector exercised this run, rendered like newFailures.
+func staleBaseline(hit map[string]bool) map[string]string {
+	stale := map[string]string{}
+	for sel, reason := range knownIncompatible {
+		if !hit[sel] {
+			stale[sel] = "stale baseline entry: " + reason
+		}
+	}
+	return stale
 }
 
 // censusDef classifies a def and exercises every selector/path it uses.
@@ -119,7 +148,11 @@ func censusJSONDef(def *loader.Definition, res *censusResult) {
 		if rowsPath(p) == "" {
 			continue // bare "$"/root, no tokens expected
 		}
-		if len(tokenizePath(trimDotPrefix(strings.TrimPrefix(p, "$")))) == 0 {
+		toks, err := tokenizePath(trimDotPrefix(strings.TrimPrefix(p, "$")))
+		switch {
+		case err != nil:
+			res.newFailures[p] = def.ID + ": " + err.Error()
+		case len(toks) == 0:
 			res.newFailures[p] = def.ID + ": JSON path produced no resolvable tokens"
 		}
 	}
@@ -162,14 +195,14 @@ func classifyIncompatible(sel string) string {
 	if r, ok := knownIncompatible[sel]; ok {
 		return r
 	}
-	if strings.Contains(sel, ":contains(") {
+	if containsPseudoRE.MatchString(sel) {
 		// :contains is a jQuery/Sizzle/AngleSharp text-pseudo extension that the
 		// W3C-conformant cascadia grammar does not implement. The engine routes
 		// these through a :contains shim (handled in the engine assembly, item
 		// 10); they are knownIncompatible at the raw-cascadia layer.
 		return "cascadia lacks the non-standard :contains() text pseudo-class"
 	}
-	if strings.Contains(sel, ":scope") {
+	if scopePseudoRE.MatchString(sel) {
 		// :scope anchors a selector to the query context element. AngleSharp
 		// supports it (as does Jackett, alongside its manual :root handling);
 		// cascadia does not implement the :scope pseudo-class. The engine scopes
