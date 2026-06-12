@@ -13,7 +13,6 @@ import (
 	"github.com/autobrr/seekbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/seekbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/seekbrr/internal/indexer/cardigann/search"
-	"github.com/autobrr/seekbrr/internal/indexer/cardigann/selector"
 )
 
 // Query and Release re-export the search/normalizer types so engine callers
@@ -133,9 +132,10 @@ func resolveOptions(def *loader.Definition, opts []Option) options {
 
 // buildDeps wires the extraction-half stages: the dateparse parser (def language
 // + injected clock) feeds the filter registry's date seams; the registry's
-// language is the def language so regex filters route correctly; the selector's
-// EvalTemplate is rebound per row by the search executor, so it starts as a fresh
-// engine; the normalizer carries the base URL, def type, and category map.
+// language is the def language so regex filters route correctly; the normalizer
+// carries the base URL, def type, and category map. The selector is NOT wired
+// here — ParseResults installs a fresh one per call so concurrent searches on a
+// reused Engine never share its mutable EvalTemplate.
 func buildDeps(def *loader.Definition, caps *mapper.Capabilities, o options) search.Deps {
 	parser := dateparse.New(
 		dateparse.WithLanguage(def.Language),
@@ -154,7 +154,6 @@ func buildDeps(def *loader.Definition, caps *mapper.Capabilities, o options) sea
 	)
 
 	return search.Deps{
-		Selector:   selector.New(),
 		Filters:    registry,
 		Normalizer: norm,
 		Config:     o.config,

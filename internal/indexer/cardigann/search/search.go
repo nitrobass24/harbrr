@@ -32,14 +32,16 @@ type Doer interface {
 }
 
 // Deps are the wired pipeline stages the search executor reuses. The engine
-// (cardigann.NewEngine) builds and injects these so every per-def seam — the
-// template context, the selector's EvalTemplate binding, the filter registry's
-// date/language seams, the normalizer's base-URL/type/category map — is bound
-// once and shared across rows. The executor never constructs a stage itself.
+// (cardigann.NewEngine) builds and injects the per-def seams — the template
+// context, the filter registry's date/language seams, the normalizer's
+// base-URL/type/category map — once. The selector is the exception: ParseResults
+// installs a fresh one per call, so the reused Engine holds no mutable selector
+// state and concurrent searches cannot race on it.
 type Deps struct {
-	// Selector parses the body and extracts row/field values. Its EvalTemplate is
-	// rebound per row by the field loop so selector templates see the growing
-	// Result map.
+	// Selector parses the body and extracts row/field values. ParseResults installs
+	// a fresh instance per call (the field loop rebinds its EvalTemplate per row to
+	// see the growing Result map), so it carries no state across parses. The engine
+	// leaves it nil; do not rely on an injected value.
 	Selector *selector.Engine
 	// Filters applies each field's filter chain (Apply) with the date/language
 	// seams already wired.
@@ -63,6 +65,12 @@ type Deps struct {
 // normalizer. No HTTP happens here; it is the deterministic core the engine and
 // the parity harness replay saved bytes through.
 func ParseResults(def *loader.Definition, body []byte, query Query, deps Deps) ([]*normalizer.Release, error) {
+	// Install a fresh selector for this parse. Deps is taken by value, so this is
+	// local to the call: the field loop rebinds EvalTemplate per row on THIS
+	// instance, never on shared engine state, so concurrent searches on one reused
+	// Engine cannot race on the selector.
+	deps.Selector = selector.New()
+
 	respType := responseType(def)
 	doc, err := parseDocument(deps.Selector, body, respType)
 	if err != nil {
