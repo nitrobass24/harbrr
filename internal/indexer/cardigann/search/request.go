@@ -257,8 +257,10 @@ func renderHeaders(in map[string][]string, ctx *template.Context) (map[string][]
 }
 
 // doRequest issues one builtRequest through the Doer, attaching the session
-// cookies and rendered headers, and reads the (capped) response body. Every error
-// site redacts the URL.
+// cookies and rendered headers, and reads the (capped) response body. A non-2xx
+// status fails fast: the tracker errored (403/429/500…) so the body is not
+// results, and silently parsing it would yield a misleading empty page. Every
+// error site redacts the URL.
 func doRequest(doer Doer, br builtRequest, session *login.Session) ([]byte, error) {
 	var bodyReader io.Reader
 	if br.body != "" {
@@ -280,6 +282,10 @@ func doRequest(doer Doer, br builtRequest, session *login.Session) ([]byte, erro
 		return nil, fmt.Errorf("%s %s: %w", br.method, apphttp.RedactURL(br.url), err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("%s %s: tracker returned HTTP %d", br.method, apphttp.RedactURL(br.url), resp.StatusCode)
+	}
 
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxSearchBodyBytes))
 	if err != nil {
