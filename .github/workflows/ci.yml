@@ -8,23 +8,57 @@ on:
 permissions:
   contents: read
 
+# Cancel superseded runs on a PR branch; never cancel main-branch history.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     name: build & test
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.26"
+          go-version-file: go.mod
           cache: true
-      - name: vet
-        run: go vet ./...
+      # The engine is pure Go with no OS-specific files or build tags, and ships
+      # as a Linux binary/container, so a single Linux leg with the race detector
+      # is authoritative. vet is covered by golangci-lint (govet) in lint.yml.
       - name: test (race)
         run: go test -race -count=1 ./...
       - name: build
+        run: go build ./...
+
+  # Compile-only portability check for the native-binary release targets
+  # (seekbrr ships as Docker + native binaries, like qui). This is cross-
+  # compilation on Linux — no native runners — so it stays cheap and runs in
+  # parallel with the test job. Full packaging is a later GoReleaser job
+  # (docs/plan.md: "Docker image + config file").
+  cross-build:
+    name: cross-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+          - { goos: windows, goarch: amd64 }
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: build ${{ matrix.target.goos }}/${{ matrix.target.goarch }}
+        env:
+          GOOS: ${{ matrix.target.goos }}
+          GOARCH: ${{ matrix.target.goarch }}
+          CGO_ENABLED: "0"
         run: go build ./...
