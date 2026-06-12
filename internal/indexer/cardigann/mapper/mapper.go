@@ -165,7 +165,7 @@ func (b builder) mapCategoryMappings() error {
 			return fmt.Errorf("mapper: definition %q: categorymapping id %q references unknown category name %q", b.def.ID, cm.ID.String(), cm.Cat)
 		}
 		b.addMapping(cm.ID.String(), cm.Desc, cat)
-		if cm.Desc != "" {
+		if !isBlank(cm.Desc) {
 			custom := Category{ID: customCategoryID(cm.ID.String()), Name: cm.Desc}
 			b.addCustom(cm.ID.String(), cm.Desc, custom)
 		}
