@@ -1,0 +1,17 @@
+# GitGuardian config — synthetic secrets in test fixtures only.
+#
+# NOTE: this file is read by ggshield (CLI / pre-commit / GitHub Action) ONLY. seekbrr runs no
+# ggshield today, so the GitGuardian *GitHub App* PR check is governed by the dashboard filepath
+# exclusions instead (Workspace Settings -> Secrets Detection -> Excluded filepaths). Keep the two
+# in sync. See issue #13 and AGENTS.md.
+#
+# Real secrets are never committed (AGENTS.md non-negotiable). These globs cover *synthetic* test
+# fixtures only — values that exist precisely to prove the engine redacts them — and mirror the
+# exclusions in scripts/check-no-secrets.sh.
+version: 2
+
+secret:
+  ignored_paths:
+    - '**/*_test.go'
+    - '**/testdata/**'
+    - 'internal/indexer/definitions/vendor/**'

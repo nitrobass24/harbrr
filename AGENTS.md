@@ -101,6 +101,11 @@ shape, read `docs/architecture.md`.
   allowed but must emit a **loud startup warning** — never silent. Data dir/db `0700`/`0600`.
   Management API requires auth; CSRF on cookie-auth surfaces. Redact secrets everywhere (see
   non-negotiables).
+- **Synthetic test-fixture secrets** (values that exist only to prove redaction) live exclusively in
+  `*_test.go` and `testdata/**`. These paths are excluded from secret scanning in three places that
+  **must stay in sync**: `scripts/check-no-secrets.sh`, `.gitguardian.yaml` (ggshield), and the
+  GitGuardian **dashboard** filepath exclusions (the GitHub App PR check — the repo `.gitguardian.yaml`
+  does *not* govern it). This never relaxes the "never commit real secrets" rule above.
 
 ## Commits / PRs
 
