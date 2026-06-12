@@ -1,0 +1,32 @@
+---
+id: unknown_property
+name: Unknown Property
+description: "Contains a top-level property forbidden by additionalProperties:false."
+language: en-US
+type: private
+encoding: UTF-8
+links:
+  - https://example.invalid/
+bogusUnknownKey: "should be rejected"
+
+caps:
+  categories:
+    XXX: XXX
+  modes:
+    search: [q]
+
+search:
+  path: /browse.php
+  rows:
+    selector: tr
+  fields:
+    title:
+      selector: a
+    category:
+      selector: a.cat
+    download:
+      selector: a.dl
+    size:
+      selector: td.size
+    seeders:
+      selector: td.seeders
