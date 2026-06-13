@@ -20,9 +20,13 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/selector"
 )
 
-// responseTypeJSON is the Response.Type that selects the JSON parser; everything
-// else (including the empty default) parses as HTML, matching Jackett.
-const responseTypeJSON = "json"
+// responseTypeJSON and responseTypeXML are the Response.Type values that select
+// the JSON and XML parsers; everything else (including the empty default) parses
+// as HTML, matching Jackett's CardigannIndexer response-mode switch.
+const (
+	responseTypeJSON = "json"
+	responseTypeXML  = "xml"
+)
 
 // Doer is the narrow HTTP seam the executor drives, identical to login.Doer so a
 // single client/replay transport serves both stages. No live network call ever
@@ -104,20 +108,29 @@ func ParseResults(def *loader.Definition, body []byte, query Query, deps Deps) (
 	return releases, nil
 }
 
-// parseDocument parses body with the response-type-appropriate backend.
+// parseDocument parses body with the response-type-appropriate backend: JSON,
+// XML (a real XML parse, not HTML5), or HTML by default.
 func parseDocument(eng *selector.Engine, body []byte, respType string) (*selector.Document, error) {
-	if respType == responseTypeJSON {
+	switch respType {
+	case responseTypeJSON:
 		doc, err := eng.ParseJSON(body)
 		if err != nil {
 			return nil, fmt.Errorf("parsing JSON response: %w", err)
 		}
 		return doc, nil
+	case responseTypeXML:
+		doc, err := eng.ParseXML(body)
+		if err != nil {
+			return nil, fmt.Errorf("parsing XML response: %w", err)
+		}
+		return doc, nil
+	default:
+		doc, err := eng.ParseHTML(body)
+		if err != nil {
+			return nil, fmt.Errorf("parsing HTML response: %w", err)
+		}
+		return doc, nil
 	}
-	doc, err := eng.ParseHTML(body)
-	if err != nil {
-		return nil, fmt.Errorf("parsing HTML response: %w", err)
-	}
-	return doc, nil
 }
 
 // responseType returns the effective response type for the search, reading the
