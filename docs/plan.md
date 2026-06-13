@@ -41,7 +41,9 @@ decoupled.
 
 ## Phase 2 — Offline parity — *the gate*
 
-- [ ] Port Jackett's GPL-2.0 Cardigann engine tests (`CardigannIndexerHtmlTests`/`JsonTests`)
+- [x] Port Jackett's GPL-2.0 Cardigann engine tests (`CardigannIndexerHtmlTests`/`JsonTests`) — fixtures
+      byte-for-byte under `parity/testdata/jackett/` (+ NOTICE); `jackett_oracle_test.go` asserts
+      Jackett's exact request URLs and first-release values (25 / 78 releases)
 - [x] Build the differential harness (offline oracle: goldens ported from Jackett's own test
       assertions or hand-derived from documented Jackett semantics, never captured from a live
       Jackett — see `parity/testdata/README.md`; each case records `golden_source` provenance)

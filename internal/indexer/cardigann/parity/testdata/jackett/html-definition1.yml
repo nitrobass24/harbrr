@@ -1,0 +1,77 @@
+---
+id: testdefinition1
+name: testdefinition1
+description: "testdefinition1 is a Public BitTorrent DHT search engine."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://www.testdefinition1.cc/
+
+caps:
+  categories:
+    Other: Other
+
+  modes:
+    search: [q]
+    tv-search: [q, season, ep]
+    movie-search: [q]
+    music-search: [q]
+    book-search: [q]
+
+settings:
+  - name: sort
+    type: select
+    label: Sort requested from site
+    default: created
+    options:
+      created: created
+      length: size
+      seeders: seeders
+  - name: info_flaresolverr
+    type: info_flaresolverr
+  - name: info_category_8000
+    type: info_category_8000
+
+search:
+  # https://www.testdefinition1.cc/search?query=ubuntu&sort=created
+  paths:
+    - path: search
+  inputs:
+    query: "{{ if .Keywords }}{{ .Keywords }}{{ else }} {{ end }}"
+    sort: "{{ .Config.sort }}"
+
+  rows:
+    selector: div.media
+
+  fields:
+    category:
+      text: Other
+    title:
+      selector: div.media
+      attribute: data-name
+    details:
+      selector: div.media h5 a
+      attribute: href
+    download:
+      selector: div.media-right a[href*="/torrent/"]
+      attribute: href
+    magnet:
+      selector: a[href^="magnet:?xt="]
+      attribute: href
+    date:
+      selector: div.media
+      attribute: data-added
+    size:
+      selector: div.media
+      attribute: data-size
+    seeders:
+      selector: div.media
+      attribute: data-seeders
+    leechers:
+      selector: div.media
+      attribute: data-leechers
+    downloadvolumefactor:
+      text: 1
+    uploadvolumefactor:
+      text: 2

@@ -1,0 +1,34 @@
+Ported Jackett Cardigann test fixtures
+======================================
+
+The files in this directory are copied byte-for-byte from the Jackett project's
+test resources and used here, unmodified, as the offline parity oracle for
+harbrr's Cardigann engine:
+
+  html-definition1.yml   <- src/Jackett.Test/Resources/html-definition1.yml
+  html-response1.html    <- src/Jackett.Test/Resources/html-response1.html
+  json-definition1.yml   <- src/Jackett.Test/Resources/json-definition1.yml
+  json-response1.json    <- src/Jackett.Test/Resources/json-response1.json
+
+Source:  https://github.com/Jackett/Jackett
+Commit:  b4140c7f8c1f4e1818d5792a6518e7f91861466d
+         (the SHA harbrr's vendored definition snapshot is pinned to)
+License: GPL-2.0. Jackett is GPL-2.0; harbrr is GPL-2.0-or-later (see /LICENSE),
+         so this reuse is license-compatible.
+
+Copyright (C) the Jackett contributors.
+
+These fixtures, together with the expected values asserted in
+jackett_oracle_test.go — ported from Jackett's CardigannIndexerHtmlTests and
+CardigannIndexerJsonTests at the same commit — are the authoritative comparison
+oracle: harbrr must reproduce Jackett's normalized output on the same saved
+bytes. Do not edit them; refresh from upstream if ever needed.
+
+Divergences from Jackett's own assertions, documented in the ported test:
+  - Gain is not a harbrr field (Jackett derives it from size x volume factors),
+    so its assertions are omitted.
+  - harbrr emits publishDate as canonical RFC3339; Jackett's ReleaseInfo renders
+    RFC1123Z. The ported test asserts the same instant (the year), not a string.
+  - harbrr logs in eagerly before the first search; for the JSON def (a login
+    block with no login.test) that means one login GET that Jackett would not
+    issue. The JSON case declares it as a leading replay step.
