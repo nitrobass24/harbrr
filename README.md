@@ -263,6 +263,15 @@ Be kinder to your trackers.
 
 ---
 
+## License
+
+harbrr is free software: you can redistribute it and/or modify it under the terms
+of the GNU General Public License as published by the Free Software Foundation,
+**either version 2 of the License, or (at your option) any later version**
+(GPL-2.0-or-later). The full GPL v2 text is in [LICENSE](LICENSE).
+
+---
+
 ## Keywords
 
 autobrr, qui, cross-seed, Torznab, Cardigann, Prowlarr alternative, Jackett alternative, private trackers, torrent trackers, RSS caching, search deduplication, tracker intelligence, tracker middleware, indexer manager, indexer proxy, release automation, media automation, Sonarr, Radarr, Lidarr, Readarr, Mylar, Whisparr, Go, Golang, Docker

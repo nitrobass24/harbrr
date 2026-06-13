@@ -14,8 +14,13 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Test and build run as separate, parallel jobs so a build failure and a test
+  # failure are reported independently and neither waits on the other. The engine
+  # is pure Go with no OS-specific files or build tags and ships as a Linux
+  # binary/container, so a single Linux leg with the race detector is
+  # authoritative; vet is covered by golangci-lint (govet) in lint.yml.
   test:
-    name: build & test
+    name: test
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -24,11 +29,19 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      # The engine is pure Go with no OS-specific files or build tags, and ships
-      # as a Linux binary/container, so a single Linux leg with the race detector
-      # is authoritative. vet is covered by golangci-lint (govet) in lint.yml.
       - name: test (race)
         run: go test -race -count=1 ./...
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
       - name: build
         run: go build ./...
 
