@@ -69,9 +69,39 @@ decoupled.
 - [x] **caps/category correctness is a gate** (Sonarr/Radarr failures usually trace here)
 - [ ] Sonarr/Radarr can search a handful of real trackers through harbrr end-to-end
 
-## Phase 4 — Live smoke (closes the MVP)
+## Phase 4 — Daemon foundation (persistence · secrets · auth · server)
+
+Turns the proven engine into a configurable headless daemon Sonarr/Radarr/autobrr can point at — the
+critical path everything product-facing depends on, and where the `docs/ideas.md` §9 security model is
+built. (harbrr cannot serve a single live request until this lands: today `cmd/harbrr serve` loads
+config and exits, and the Torznab handler has no production caller.)
+
+- [ ] **SQLite store + migrations** behind `internal/database/dbinterface` (clean interface; Postgres
+      stays deferred — Phase 8). Data dir `0700`; db + all SQLite side files (`-wal`/`-journal`) `0600`
+- [ ] **Secrets store** (`internal/secrets`) — the three-class model from §9: tracker creds
+      AES-256-GCM (per-record nonce, AAD = indexer-id + setting, stored `key_id`); web-UI password
+      argon2id; API keys SHA-256. Auto-generate a keyfile on first run (encryption always on); fail
+      loud on a wrong/changed key
+- [ ] **Indexer instance registry** — add / configure / enable / disable / delete a configured indexer
+      (definition id + settings + encrypted credentials) and resolve an id → engine. This is the
+      production `Provider` the Torznab handler already expects, and the core of a Prowlarr-style manager
+- [ ] **Management API + auth** — grow the hand-authored `openapi.yaml` past `/healthz` (indexer CRUD,
+      settings, API-key management); first-run setup; server-side sessions + `X-API-Key`; CSRF on
+      cookie-auth surfaces; the qui auth-disabled / trusted-proxy mode
+- [ ] **Wire the server** — mount the Torznab handler (`internal/web/torznab`) **and** the management
+      API in `cmd/harbrr serve`; config file + base-path support
+- [ ] **Docker image + config file**
+
+## Phase 5 — Live smoke (closes the MVP)
+
+5 real trackers driven through the running daemon by an actual Sonarr/Radarr — the live half of the
+Phase 3 "search real trackers end-to-end" goal.
 
 - [ ] 5 real trackers, live login/session, gentle rate
+- [ ] **Robustness proof** (carried from Phase 3, which is verified offline only): a real
+      Sonarr/Radarr parses the served caps and completes search → **grab** end-to-end against the live
+      trackers (not just a 200 feed), and an offline serializer fuzz/property test asserts arbitrary
+      `[]*Release` (scraped-data shapes) always produce well-formed, namespace-bindable XML and never panic
 - [ ] **Lazy login**: log in only when a search response looks logged-out (Jackett's behavior), then
       retry once — replacing the eager once-per-Engine login established in Phase 2 (which logs in on
       the first search regardless; see `parity/testdata/README.md` "Eager login")
@@ -85,18 +115,23 @@ decoupled.
       (request/response category parity for live *arr search; see `internal/torznab/testdata/README.md`)
 - [ ] **Serve resolved/proxied download links**: wire the engine's `ResolveDownload` into the served feed
       (optionally via a `/dl` proxy endpoint) so a grabbed release downloads through harbrr's session rather
-      than the raw tracker link; depends on the Phase 6 resolver completion. See `internal/torznab/testdata/README.md`
-- [ ] Docker image + config file
+      than the raw tracker link; depends on the Phase 7 resolver completion. See `internal/torznab/testdata/README.md`
+- [ ] **Indexer "Test" action**: validate a configured indexer's credentials/connectivity before saving,
+      surfaced via the management API (the engine's `login.test` probe wired to a persisted instance)
 
-> **MVP = Phases 1–4 (+ Docker/config).** This is the point the central risk is retired. Do not start
-> Phase 5+ before the parity gate is green.
+> **MVP = Phases 1–5.** Phase 4 makes harbrr runnable + configurable; Phase 5 proves it live. This is the
+> point the central risk is retired. Do not start Phase 6+ before the parity gate is green.
 
-## Phase 5 — Operational safety
+## Phase 6 — Operational safety
 
 - [ ] Timeouts, backoff, per-indexer rate limits (anti-blacklist)
-- [ ] Health/status; secret redaction audited end-to-end
+- [ ] **Indexer health & status**: define health events (auth failure, rate-limited, parse error,
+      anti-bot) and surface per-indexer status via the API; broken indexers already degrade cleanly (Phase 2)
+- [ ] **Per-indexer proxies** (HTTP / SOCKS4 / SOCKS5), configured per instance
+- [ ] **Secret hardening**: key rotation (re-encrypt via the stored `key_id`); secret redaction audited
+      end-to-end across logs, errors, traces, and the stats event log
 
-## Phase 6 — Scale coverage
+## Phase 7 — Scale coverage
 
 - [ ] Broaden response-mode and definition coverage; expand selector/date edge-case fixtures
 - [ ] **Complete the download resolver**: `.DownloadUri` template namespace, `before.inputs`/
@@ -105,12 +140,22 @@ decoupled.
 - [ ] **XML backend edge parity**: CDATA / mixed-namespace / AngleSharp-vs-cascadia edge cases beyond the
       common RSS/Newznab shapes Phase 2 covers
 - [ ] Native **Avistaz** family (post-parity; the one family the corpus doesn't cover)
+- [ ] **Backup / restore** (config + database): scheduled + manual, using the redacted/encrypted export
+      from §9
 
-## Phase 7 — Product polish
+## Phase 8 — Product polish
 
-- [ ] *arr application sync (qui-as-app), Jackett/Prowlarr migration import
+- [ ] **\*arr application sync** (qui-as-app): push indexer config into Sonarr/Radarr/Lidarr/… via their
+      API — the sync contract + add/update/remove lifecycle + per-app enable/disable (its own sub-plan; a
+      Prowlarr headline feature)
+- [ ] **Jackett/Prowlarr migration import**: import indexer instances + credentials + category overrides
+      from a Jackett/Prowlarr config
 - [ ] Native **harbrr → autobrr push** (closes the RSS-polling gap; family-only win)
-- [ ] cross-seed search backend; stats; notifications; web UI
+- [ ] cross-seed search backend
+- [ ] **Stats / search history** (query/grab/auth event log + query API); **notifications**
+      (Discord/webhook, pluggable provider)
+- [ ] **Web UI** — the management dashboard (indexer grid, add/edit forms, manual search, stats);
+      depends on the Phase 4 management API
 - [ ] Postgres behind the existing `dbinterface` (only now)
 
 ---

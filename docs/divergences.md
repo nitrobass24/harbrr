@@ -49,11 +49,11 @@ them (see each README for the live disposition, which is the single source):
   caps category tree extends that determinism choice. (engine: "Category
   ordering"; torznab: "Custom-category top-level ordering".)
 - **Download links** — two halves of the download path: the engine's
-  `ResolveDownload` resolves a tracker link (built but scope-limited, **Phase 6**
+  `ResolveDownload` resolves a tracker link (built but scope-limited, **Phase 7**
   completes it), and the output layer does not yet wire it into the served feed or
-  proxy it (**Phase 4**), so the link is served as extracted. (engine: "Download
-  resolver scope" `[Tracked: Phase 6]`; torznab: "Download links served direct"
-  `[Tracked: Phase 4]`.)
+  proxy it (**Phase 5**), so the link is served as extracted. (engine: "Download
+  resolver scope" `[Tracked: Phase 7]`; torznab: "Download links served direct"
+  `[Tracked: Phase 5]`.)
 
 ## Open gaps
 

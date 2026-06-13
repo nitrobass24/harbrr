@@ -124,7 +124,7 @@ and the shared disposition rule.
   served feed or expose a proxy `/dl` endpoint, so a release needing a
   session-bound resolve/redirect is served as-is. (The resolver's own *completion*
   is the engine's concern — see "Download resolver scope" in the engine README,
-  `[Tracked: Phase 6]`.) **`[Tracked: Phase 4 — serve resolved/proxied download links]`**
+  `[Tracked: Phase 7]`.) **`[Tracked: Phase 5 — serve resolved/proxied download links]`**
 
 ### HTTP handler (`internal/web/torznab`)
 
@@ -161,4 +161,4 @@ and the shared disposition rule.
   empty feed when every requested `cat` maps to no tracker category, or substitute
   a definition's `default: true` categories when the mapped tracker-category list
   is empty. A category-constrained search therefore returns the engine's full row
-  set. **`[Tracked: Phase 4]`**
+  set. **`[Tracked: Phase 5]`**

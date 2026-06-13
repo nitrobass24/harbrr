@@ -51,7 +51,7 @@ harbrr's `EnsureLoggedIn` runs before every search; for a def with a login block
 but no `login.test` block it performs the full login sequence (Jackett instead
 logs in lazily, only when a search response looks like a login page). So a
 search case for such a def must declare the login request(s) as leading steps.
-This is an offline-gate divergence; lazy login is a Phase 4 item.
+This is an offline-gate divergence; lazy login is a Phase 5 item.
 
 ## Date canonicalization
 
@@ -103,7 +103,7 @@ Entries:
 - **Eager login** — harbrr logs in before the first search (once per Engine);
   Jackett logs in lazily on a logged-out response. See "Eager login" above. A
   login-bearing search case declares the login request(s) as leading steps.
-  **`[Tracked: Phase 4 — lazy login]`**
+  **`[Tracked: Phase 5 — lazy login]`**
 - **Date canonical form** — RFC3339 vs Jackett's RFC1123Z; see "Date
   canonicalization". Same instant, different string — a canonical-schema choice,
   not a parse difference. **`[Deliberate]`**
@@ -112,7 +112,7 @@ Entries:
   the sub-delimiters `* ( ) ' !` that .NET's `WebUtility.UrlEncode` leaves
   literal. Spaces match (`%20` in the path, `+` in the query). So a keyword
   containing those punctuation characters yields a different — but equivalent —
-  request URL. **`[Tracked: Phase 4 — .NET-compatible encoder]`**
+  request URL. **`[Tracked: Phase 5 — .NET-compatible encoder]`**
 - **`.Today.Month` / `.Today.Day`** — harbrr exposes these template fields;
   Jackett seeds only `.Today.Year`. A def referencing them gets a real value in
   harbrr and `""` in Jackett. No vendored def uses them, and the extra fields are
@@ -139,12 +139,12 @@ Entries:
   template namespace, `before.inputs`/`before.pathselector`, Go-template
   evaluation of the download selector string, `download.infohash`,
   `download.method: post`, `download.headers`, and `testlinktorrent`.
-  **`[Tracked: Phase 6 — complete the download resolver]`**
+  **`[Tracked: Phase 7 — complete the download resolver]`**
 - **XML backend** — harbrr parses `response.type: xml` into an element tree and
   queries it with cascadia; Jackett uses AngleSharp's `XmlParser`. The common
   RSS/Newznab shapes (`<item>`, `<title>`, `<link>`, `torznab:attr`) match;
   exotic XML (CDATA edge cases, mixed namespaces) is best-effort.
-  **`[Tracked: Phase 6 — XML backend edge parity]`**
+  **`[Tracked: Phase 7 — XML backend edge parity]`**
 
 ## Regenerating goldens
 

@@ -266,26 +266,86 @@ Two distinct contracts, often conflated:
 
 ## 9. Security model
 
-harbrr stores tracker **passkeys, session cookies, API/auth keys, and download tokens** — among the
-most sensitive data a self-hosted app can hold, and the place a careless indexer manager leaks first.
-The posture:
+harbrr stores tracker **passkeys, cookies, API/auth keys, and download tokens**, plus its own
+**web-UI login and management API keys** — among the most sensitive data a self-hosted app holds, and
+the place a careless indexer manager leaks first. The model **follows qui** (the autobrr-family
+sibling harbrr is patterned on for API/DB/security): three credential *classes*, handled three
+different ways. Conflating them — especially storing a login password the same way as a tracker
+passkey — is the classic mistake, so the split is structural, not incidental.
 
-- **Secrets at rest.** Encrypted in the datastore with a key supplied via environment variable or
-  keyfile. If no key is configured, the MVP falls back to plaintext **with a loud startup warning** —
-  the degraded mode is explicit, never silent.
-- **File permissions.** Data directory and database created `0700`/`0600`.
-- **API authentication.** The management API requires an API key / session and is not open by default.
-- **CSRF protection** on any cookie-authenticated UI/API surface.
-- **Log & trace redaction (critical).** Cardigann definitions routinely put passkeys in URLs, so
-  debug/HTTP traces **redact** secret query params, `Authorization`/`Cookie` headers, and known key
-  fields. Credentials never appear in logs, error messages, or Torznab responses.
+### Credential classes (the core rule)
+
+| Class | Examples | Mechanism | Recoverable? |
+|---|---|---|---|
+| **Login password** | the web-UI/admin password | **argon2id** (m=64 MiB, t=3, p=2, 16-byte salt, 32-byte key), PHC-string encoded, constant-time verify | **No** — one-way hash |
+| **Bearer tokens** | management API keys, the *arr-facing Torznab `apikey`, session tokens | random 32 bytes, stored as a **SHA-256 hash**, shown to the user **once** | **No** — one-way hash |
+| **Tracker credentials** | passkeys, login user/pass, cookies, tracker API keys, download tokens | **AES-256-GCM** at rest (harbrr must *replay* them to log into the tracker) | **Yes** — decrypted at request time |
+
+Rule of thumb: **anything harbrr must replay is encrypted; anything it only needs to verify is
+hashed.** The web-UI password and API keys are never stored in recoverable form, so a database leak
+(or even a key compromise) never yields them.
+
+### At-rest encryption (tracker credentials)
+
+- **AES-256-GCM** (`crypto/aes` + `crypto/cipher`), 32-byte key, a **fresh random nonce per record**
+  from `crypto/rand`, stored prepended to the ciphertext (`nonce‖ciphertext‖tag`, base64) in
+  `*_encrypted` columns — qui's construction.
+- **AAD bound to the row identity** (`indexer_id` + setting name) so a ciphertext cannot be copied or
+  replayed across rows/fields. *(qui passes no AAD; harbrr adds it — a near-free hardening.)*
+- A **`key_id` is stored with every record from day one**, so key rotation is possible later even
+  though rotation itself is post-MVP. Nearly free now, impossible to retrofit cleanly.
+
+### Key management
+
+- The 32-byte key comes from a configured source — `secrets.encryption_key` (inline/env) or
+  `secrets.key_file` (path), already modeled in `internal/config` — **kept separate from the session
+  secret**. *(qui derives its AES key from the session secret and flags that as improvable; harbrr
+  keeps the two distinct.)*
+- **First run with no key configured AUTO-GENERATES a keyfile** (32 random bytes, `0600`, under the
+  `0700` data dir) and uses it, logging where it was written and that it must be backed up *separately*
+  from the database. So **encryption is always on.** True plaintext is reachable only behind an
+  explicit `secrets.allow_plaintext` opt-in that **fails closed** if unset — never the silent default.
+  *(This tightens the earlier "plaintext-with-a-loud-warning" stance: a warning does not protect a
+  `.db` that gets copied to a backup or pasted into a bug report.)*
+- A wrong or changed key **fails loud**: a canary record is decrypt-verified at startup and harbrr
+  refuses to touch secrets rather than silently dropping or re-encrypting garbage. Losing the key
+  means tracker creds must be re-entered (acceptable — they are re-enterable), which is exactly why
+  the login password is *hashed*, not encrypted: a lost key must never lock the admin out of their
+  own UI.
+
+### Web-UI / management-API authentication (the qui pattern)
+
+- A **first-run setup** flow creates the single admin (argon2id password, minimum length enforced).
+- **Server-side sessions** (cookie: `HttpOnly`, `Secure` behind TLS, `SameSite`), plus an
+  **`X-API-Key`** header for programmatic clients and a query-param `apikey` on the *arr-facing
+  Torznab feed URL. **CSRF** on cookie-authenticated mutating endpoints; the Torznab XML surface is
+  apikey-authenticated and therefore CSRF-exempt.
+- An **auth-disabled + trusted-proxy / IP-allowlist** mode for users behind an authenticating reverse
+  proxy, and optional **OIDC** later (both qui features).
+
+### The rest of the posture
+
+- **File permissions.** Data dir `0700`; the database **and all SQLite side files** (`-wal`,
+  `-journal`) `0600`.
+- **Log & trace redaction (already built).** `internal/http` redacts secret query params,
+  `Authorization`/`Cookie` headers and URL userinfo at every log/error/trace site. The settings layer
+  carries each field's secret-vs-plaintext type so a diagnostic dump can never print a raw credential.
+  Credentials never appear in logs, error messages, or Torznab responses — note the served
+  download/magnet links **do** legitimately carry passkeys (intended output), and those are never
+  *logged*.
 - **Reverse-proxy assumptions.** Base-path/subfolder support; proxy headers trusted only when
   configured.
-- **Safe export/import.** Config export redacts secrets by default; including them is an explicit,
-  separately-encrypted opt-in.
+- **Safe export/import.** Config/DB export redacts secrets by default behind a `<redacted>` sentinel
+  (qui-style: re-submitting the sentinel keeps the stored value); including secrets is an explicit,
+  separately-passphrase-encrypted opt-in.
+- **Never-store / never-log deny-list.** Login password → only the argon2id hash; API keys and
+  session tokens → only a hash; decrypted tracker creds → never written except as ciphertext, never
+  in the stats/event log, never in a Torznab response or *arr-facing error, never in a config export
+  unless the explicit encrypted opt-in.
 
-MVP scope note: encryption-at-rest, redaction, file permissions, and API auth are in from the start;
-fuller secret-management (rotation, external KMS) is a later concern.
+MVP scope note: the three-class model, encryption-always-on, redaction, file permissions, and
+management-API auth land together in **Phase 4 (Daemon foundation)**; key rotation and external KMS
+are deferred to later phases.
 
 ## 10. Definition lifecycle
 
@@ -413,13 +473,18 @@ The project lives or dies on engine parity, so the order retires the riskiest un
    **authenticated**) responses; differential-test against Jackett. Gated by the §12 matrix.
 3. **Minimal Torznab output.** Caps/category correctness + search, so Sonarr/Radarr consume real
    results from a handful of trackers.
-4. **Live smoke tests.** 5 real trackers end-to-end, including live login/session.
-5. **Operational safety.** Timeouts, backoff, per-indexer rate limits (anti-blacklist).
-6. **Scale coverage.** JSON/XML response modes, broader coverage, edge-case selectors/dates.
-7. **Product polish.** Application sync to *arr, Jackett/Prowlarr migration, UI, stats, notifications.
+4. **Daemon foundation.** Persistence (SQLite + migrations), the §9 secrets store, the
+   indexer-instance registry, the management API + auth/session, server wiring, and the Docker
+   image/config — harbrr becomes a configurable headless daemon Sonarr/Radarr/autobrr can point at.
+5. **Live smoke tests.** 5 real trackers end-to-end, including live login/session.
+6. **Operational safety.** Timeouts, backoff, per-indexer rate limits (anti-blacklist); health/status.
+7. **Scale coverage.** JSON/XML response modes, broader coverage, edge-case selectors/dates;
+   backup/restore.
+8. **Product polish.** Application sync to *arr, Jackett/Prowlarr migration, web UI, stats,
+   notifications, Postgres.
 
-Steps 1–4 (plus the Docker image and config file) are the MVP and the point the central risk is
-retired; everything past is productization of a proven foundation.
+Steps 1–5 are the MVP and the point the central risk is retired; everything past is productization of
+a proven foundation.
 
 ### Public-release positioning
 
