@@ -68,14 +68,15 @@ and the shared disposition rule.
 - **Duplicate-custom-id `<category>` collapse** — when two category mappings
   resolve to the same custom id (numeric reuse or a SHA1-uint16 hash collision),
   Jackett's tree carries both `<category>` nodes; harbrr's mapper de-dups
-  advertised categories by id (last name wins), so harbrr emits one. ~22 of the
-  ~558 vendored defs differ. *arr keys categories by id, so a duplicate id with a
-  second name is cosmetic. **`[Accepted]`**
+  advertised categories by id (last name wins), so harbrr emits one. A subset of
+  the 558 vendored defs do this. *arr keys categories by id, so a duplicate id
+  with a second name is cosmetic. **`[Accepted]`**
 - **Custom-category top-level ordering** — Jackett sorts the top-level tree with
   C# `OrderBy` over the `"zzz"+Name` key, which is **CurrentCulture** (linguistic)
   string comparison; harbrr uses Go byte-**ordinal** `<`. The standard-parent half
   is unaffected (4-digit ids sort identically). For custom categories whose names
-  differ by case/punctuation the document order can differ (~309 defs). Only the
+  differ by case/punctuation the document order can differ (a substantial
+  minority of the defs that declare custom categories). Only the
   ORDER of top-level `<category>` nodes changes; ids, names, membership and subcats
   are identical, and *arr keys on id, not order. **`[Accepted]`**
 - **Same-name custom tie-break** — two customs with identical names tie on the
@@ -117,10 +118,13 @@ and the shared disposition rule.
 - **`U+FFFD` handling** — `sanitizeXMLText` strips the Jackett control/BOM/
   noncharacter set and lone surrogates / invalid UTF-8 bytes, but preserves a
   genuine 3-byte `U+FFFD` (which Jackett's regex also preserves). **`[Accepted]`**
-- **Download links served direct** — harbrr serves the resolved tracker download/
-  magnet link (which legitimately carries a passkey — intended output, never
-  logged); it does not yet rewrite links to a proxy `/dl` endpoint or run the
-  download resolver. **`[Tracked: Phase 4]`**
+- **Download links served direct** — harbrr serves the tracker download/magnet
+  link as extracted (the passkey it may carry is intended output, never logged).
+  The output layer does not yet wire the engine's `ResolveDownload` into the
+  served feed or expose a proxy `/dl` endpoint, so a release needing a
+  session-bound resolve/redirect is served as-is. (The resolver's own *completion*
+  is the engine's concern — see "Download resolver scope" in the engine README,
+  `[Tracked: Phase 6]`.) **`[Tracked: Phase 4 — serve resolved/proxied download links]`**
 
 ### HTTP handler (`internal/web/torznab`)
 

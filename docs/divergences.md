@@ -48,9 +48,12 @@ them (see each README for the live disposition, which is the single source):
 - **Category ordering** — the engine sorts a release's categories ascending; the
   caps category tree extends that determinism choice. (engine: "Category
   ordering"; torznab: "Custom-category top-level ordering".)
-- **Download links** — the engine's `ResolveDownload` and the output layer's
-  (not-yet-built) proxy-link rewriting are the two halves of the download path.
-  (engine: "Download resolver scope"; torznab: "Download links served direct".)
+- **Download links** — two halves of the download path: the engine's
+  `ResolveDownload` resolves a tracker link (built but scope-limited, **Phase 6**
+  completes it), and the output layer does not yet wire it into the served feed or
+  proxy it (**Phase 4**), so the link is served as extracted. (engine: "Download
+  resolver scope" `[Tracked: Phase 6]`; torznab: "Download links served direct"
+  `[Tracked: Phase 4]`.)
 
 ## Open gaps
 

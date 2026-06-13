@@ -79,6 +79,13 @@ decoupled.
       `*()'!` match `WebUtility.UrlEncode` (Phase 2 leaves these escaped; see `parity/testdata/README.md`
       "Known divergences")
 - [ ] Fetch/auth matrix rows as available: Cloudflare/FlareSolverr (pluggable solver) · 2FA/manual-cookie
+- [ ] **Result-category filtering + default categories**: drop result rows whose categories miss the query
+      cats (Jackett `FilterResults`), return an empty feed when every requested `cat` maps to no tracker
+      category, and substitute a def's `default: true` categories when the mapped tracker-cat list is empty
+      (request/response category parity for live *arr search; see `internal/torznab/testdata/README.md`)
+- [ ] **Serve resolved/proxied download links**: wire the engine's `ResolveDownload` into the served feed
+      (optionally via a `/dl` proxy endpoint) so a grabbed release downloads through harbrr's session rather
+      than the raw tracker link; depends on the Phase 6 resolver completion. See `internal/torznab/testdata/README.md`
 - [ ] Docker image + config file
 
 > **MVP = Phases 1–4 (+ Docker/config).** This is the point the central risk is retired. Do not start
