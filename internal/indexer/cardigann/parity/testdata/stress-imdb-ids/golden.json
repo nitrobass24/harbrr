@@ -1,0 +1,32 @@
+[
+  {
+    "title": "With IDs",
+    "link": "https://imdb.test/dl/1.torrent",
+    "size": 2147483648,
+    "categories": [
+      2000
+    ],
+    "seeders": 7,
+    "leechers": 1,
+    "peers": 8,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1,
+    "imdbid": "tt9999999",
+    "tmdbid": 12345,
+    "tvdbid": 67890
+  },
+  {
+    "title": "Bare IMDb Number",
+    "link": "https://imdb.test/dl/2.torrent",
+    "size": 1073741824,
+    "categories": [
+      2000
+    ],
+    "seeders": 3,
+    "leechers": 0,
+    "peers": 3,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1,
+    "imdbid": "tt1234567"
+  }
+]

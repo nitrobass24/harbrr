@@ -1,0 +1,14 @@
+name: stress-date-relative
+archetype: stress-date-relative
+golden_source: hand-derived
+mode: parse
+description: >
+  Stress: the implicit FromUnknown date path (no dateparse filter) over four
+  formats against the default clock 2024-06-12: "2 days ago" -> 2024-06-10,
+  "yesterday" -> 2024-06-11, an ISO instant passes through, and an all-digit
+  value is a unix epoch (1700000000 -> 2023-11-14T22:13:20Z). Distinct from
+  date-heavy, which exercises the .NET dateparse filter.
+definition: definition.yml
+response: response.html
+query:
+  keywords: ""

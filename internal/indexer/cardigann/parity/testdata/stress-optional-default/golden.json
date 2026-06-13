@@ -1,0 +1,30 @@
+[
+  {
+    "title": "Has Poster",
+    "link": "https://opt.test/dl/1.torrent",
+    "size": 2147483648,
+    "categories": [
+      2000
+    ],
+    "seeders": 5,
+    "leechers": 1,
+    "peers": 6,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1,
+    "poster": "https://opt.test/p/1.png"
+  },
+  {
+    "title": "No Poster",
+    "link": "https://opt.test/dl/2.torrent",
+    "size": 1073741824,
+    "categories": [
+      2000
+    ],
+    "seeders": 3,
+    "leechers": 0,
+    "peers": 3,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1,
+    "poster": "https://opt.test/default-poster.png"
+  }
+]

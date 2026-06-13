@@ -1,0 +1,35 @@
+---
+id: catdesc
+name: catdesc
+description: "Category resolved via categorydesc (MapTrackerCatDescToNewznab)."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://catdesc.test/
+caps:
+  categorymappings:
+    - {id: 1, cat: Movies, desc: "Movies HD"}
+    - {id: 2, cat: TV, desc: "TV Shows"}
+  modes:
+    search: [q]
+search:
+  path: /b
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: tr.row
+  fields:
+    title:
+      selector: a.title
+    download:
+      selector: a.dl
+      attribute: href
+    size:
+      selector: td.size
+    seeders:
+      selector: td.seeders
+    leechers:
+      selector: td.leechers
+    categorydesc:
+      selector: td.cat

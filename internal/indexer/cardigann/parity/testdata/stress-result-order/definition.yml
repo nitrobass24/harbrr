@@ -1,0 +1,37 @@
+---
+id: resultorder
+name: resultorder
+description: "Cross-field .Result reference: a later field reads an earlier one."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://order2.test/
+caps:
+  categorymappings:
+    - {id: 1, cat: Movies}
+    - {id: 2, cat: TV}
+  modes:
+    search: [q]
+search:
+  path: /b
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: tr.row
+  fields:
+    _rawcat:
+      selector: td.cat
+    title:
+      selector: a.title
+    download:
+      selector: a.dl
+      attribute: href
+    size:
+      selector: td.size
+    seeders:
+      selector: td.seeders
+    leechers:
+      selector: td.leechers
+    category:
+      text: "{{ if eq .Result._rawcat \"film\" }}1{{ else }}2{{ end }}"

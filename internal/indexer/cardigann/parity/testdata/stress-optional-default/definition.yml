@@ -1,0 +1,39 @@
+---
+id: optdefault
+name: optdefault
+description: "Optional field falling back to a default template when absent."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://opt.test/
+caps:
+  categorymappings:
+    - {id: 1, cat: Movies}
+  modes:
+    search: [q]
+search:
+  path: /b
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: tr.row
+  fields:
+    title:
+      selector: a.title
+    download:
+      selector: a.dl
+      attribute: href
+    size:
+      selector: td.size
+    seeders:
+      selector: td.seeders
+    leechers:
+      selector: td.leechers
+    category:
+      text: "1"
+    poster:
+      selector: img.poster
+      attribute: src
+      optional: true
+      default: "https://opt.test/default-poster.png"

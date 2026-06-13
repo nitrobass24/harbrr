@@ -1,0 +1,13 @@
+name: stress-imdb-ids
+archetype: stress-imdb-ids
+golden_source: hand-derived
+mode: parse
+description: >
+  Stress: media id normalisation. imdbid is emitted tt-prefixed and 7-digit
+  zero-padded from either a "tt9999999" string or a bare "1234567" number
+  (-> tt1234567); tmdbid/tvdbid are integers, and a zero id is omitted. Pins the
+  id-coercion path.
+definition: definition.yml
+response: response.html
+query:
+  keywords: ""

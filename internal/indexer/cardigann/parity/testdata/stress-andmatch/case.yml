@@ -1,0 +1,12 @@
+name: stress-andmatch
+archetype: stress-andmatch
+golden_source: hand-derived
+mode: parse
+description: >
+  Stress: the andmatch row filter. With keywords "ubuntu", only rows whose title
+  contains the keyword survive (case-insensitive token match), so the two Ubuntu
+  rows are kept and the Debian row is dropped. Pins the row-filter stage.
+definition: definition.yml
+response: response.html
+query:
+  keywords: ubuntu

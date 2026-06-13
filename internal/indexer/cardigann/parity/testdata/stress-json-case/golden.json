@@ -1,0 +1,28 @@
+[
+  {
+    "title": "Freeleech Item",
+    "link": "https://jsoncase.test/dl/1.torrent",
+    "size": 2147483648,
+    "categories": [
+      2000
+    ],
+    "seeders": 10,
+    "leechers": 1,
+    "peers": 11,
+    "downloadVolumeFactor": 0,
+    "uploadVolumeFactor": 1
+  },
+  {
+    "title": "Normal Item",
+    "link": "https://jsoncase.test/dl/2.torrent",
+    "size": 1073741824,
+    "categories": [
+      2000
+    ],
+    "seeders": 4,
+    "leechers": 0,
+    "peers": 4,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  }
+]

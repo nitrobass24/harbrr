@@ -1,0 +1,13 @@
+name: stress-result-order
+archetype: stress-result-order
+golden_source: hand-derived
+mode: parse
+description: >
+  Stress: field processing follows DEFINITION order so a later field's template
+  can read an earlier field via .Result. The category template reads
+  .Result._rawcat (extracted by an earlier field): "film" -> id 1 -> Movies(2000);
+  otherwise id 2 -> TV(5000).
+definition: definition.yml
+response: response.html
+query:
+  keywords: ""

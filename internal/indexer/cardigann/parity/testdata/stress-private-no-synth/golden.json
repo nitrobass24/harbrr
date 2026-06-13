@@ -1,0 +1,16 @@
+[
+  {
+    "title": "Private Release",
+    "link": "https://priv.test/dl/1.torrent",
+    "infohash": "0011223344556677889900112233445566778899",
+    "size": 4294967296,
+    "categories": [
+      2000
+    ],
+    "seeders": 8,
+    "leechers": 2,
+    "peers": 10,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  }
+]

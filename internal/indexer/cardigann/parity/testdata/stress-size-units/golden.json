@@ -1,0 +1,54 @@
+[
+  {
+    "title": "KB Release",
+    "link": "https://size.test/dl/1.torrent",
+    "size": 524288,
+    "categories": [
+      2000
+    ],
+    "seeders": 1,
+    "leechers": 0,
+    "peers": 1,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  },
+  {
+    "title": "MB Release",
+    "link": "https://size.test/dl/2.torrent",
+    "size": 734003200,
+    "categories": [
+      2000
+    ],
+    "seeders": 1,
+    "leechers": 0,
+    "peers": 1,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  },
+  {
+    "title": "GB Release",
+    "link": "https://size.test/dl/3.torrent",
+    "size": 1610612736,
+    "categories": [
+      2000
+    ],
+    "seeders": 1,
+    "leechers": 0,
+    "peers": 1,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  },
+  {
+    "title": "TB Release",
+    "link": "https://size.test/dl/4.torrent",
+    "size": 2199023255552,
+    "categories": [
+      2000
+    ],
+    "seeders": 1,
+    "leechers": 0,
+    "peers": 1,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  }
+]
