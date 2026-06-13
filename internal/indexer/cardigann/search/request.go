@@ -56,9 +56,13 @@ func searchPaths(def *loader.Definition) []loader.SearchPathBlock {
 
 // buildOneRequest renders one search path into a builtRequest.
 func buildOneRequest(def *loader.Definition, path loader.SearchPathBlock, query Query, deps Deps) (builtRequest, error) {
-	ctx := requestContext(query, deps)
-
-	rendered, err := template.Eval(path.Path, ctx)
+	// The path is rendered with URL-encoded variable values: Jackett renders
+	// SearchPath.Path with WebUtility.UrlEncode (then +->%20), so a keyword or
+	// passkey inlined into the path (e.g. `?filename={{ .Keywords }}`, as teamos
+	// and other defs do) becomes a valid, parity-matching URL rather than carrying
+	// a literal space. Inputs and headers use the un-encoded context (inputs are
+	// encoded later by encodeOrdered; headers are not URL values).
+	rendered, err := template.Eval(path.Path, requestPathContext(query, deps))
 	if err != nil {
 		return builtRequest{}, fmt.Errorf("rendering search path: %w", err)
 	}
@@ -72,7 +76,7 @@ func buildOneRequest(def *loader.Definition, path loader.SearchPathBlock, query 
 		return builtRequest{}, err
 	}
 
-	headers, err := renderHeaders(def.Search.Headers, ctx)
+	headers, err := renderHeaders(def.Search.Headers, requestContext(query, deps))
 	if err != nil {
 		return builtRequest{}, err
 	}
@@ -86,6 +90,46 @@ func buildOneRequest(def *loader.Definition, path loader.SearchPathBlock, query 
 func requestContext(query Query, deps Deps) *template.Context {
 	config := withSitelink(deps.Config, deps.BaseURL)
 	return newContext(config, query.queryMap(), nil, query.keywords(), query.Categories, deps.Clock)
+}
+
+// requestPathContext is requestContext with every scalar variable value
+// URL-encoded for path-template substitution (space -> %20), reproducing
+// Jackett's `applyGoTemplateText(SearchPath.Path, ..., WebUtility.UrlEncode)`.
+// No vendored def substitutes .Config.sitelink (a URL) into a path, so encoding
+// all values is safe. Residual divergence: url.QueryEscape escapes a few
+// sub-delims (*()'!) that .NET leaves literal — documented in
+// parity/testdata/README.md.
+func requestPathContext(query Query, deps Deps) *template.Context {
+	config := encodeStringValues(withSitelink(deps.Config, deps.BaseURL))
+	return newContext(config, encodeStringValues(query.queryMap()), nil,
+		pathEscape(query.keywords()), encodeStringSlice(query.Categories), deps.Clock)
+}
+
+// pathEscape URL-encodes a value for inlining into a path/query, with spaces as
+// %20 (Jackett's WebUtility.UrlEncode followed by +->%20), not '+'.
+func pathEscape(s string) string {
+	return strings.ReplaceAll(url.QueryEscape(s), "+", "%20")
+}
+
+// encodeStringValues returns a copy of m with each value path-escaped.
+func encodeStringValues(m map[string]string) map[string]string {
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		out[k] = pathEscape(v)
+	}
+	return out
+}
+
+// encodeStringSlice returns a copy of s with each element path-escaped.
+func encodeStringSlice(s []string) []string {
+	if s == nil {
+		return nil
+	}
+	out := make([]string, len(s))
+	for i, v := range s {
+		out[i] = pathEscape(v)
+	}
+	return out
 }
 
 // withSitelink returns a copy of config with .Config.sitelink defaulted to the

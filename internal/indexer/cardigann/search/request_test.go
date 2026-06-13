@@ -190,6 +190,34 @@ func TestBuildRequests_EmbeddedQueryPreserved(t *testing.T) {
 	}
 }
 
+// TestBuildRequests_PathValueEncoding proves a keyword inlined into the search
+// PATH is URL-encoded (space -> %20), matching Jackett's
+// WebUtility.UrlEncode-rendered path. Without it, a multi-word keyword would
+// leave a literal space in the path, producing a malformed URL — defs like
+// teamos build `?filename={{ .Keywords }}` directly in the path.
+func TestBuildRequests_PathValueEncoding(t *testing.T) {
+	t.Parallel()
+
+	def := &loader.Definition{
+		Links: []string{"https://path.invalid/"},
+		Search: loader.Search{
+			Paths: []loader.SearchPathBlock{{Path: "/torrents/?filename={{ .Keywords }}&page=1"}},
+		},
+	}
+
+	reqs, err := buildRequests(def, Query{Keywords: "big buck bunny"}, testDeps("https://path.invalid/", nil))
+	if err != nil {
+		t.Fatalf("buildRequests: %v", err)
+	}
+	u, err := url.Parse(reqs[0].url)
+	if err != nil {
+		t.Fatalf("parsing built URL: %v", err)
+	}
+	if want := "filename=big%20buck%20bunny&page=1"; u.RawQuery != want {
+		t.Errorf("query = %q, want %q (path value space-encoded)", u.RawQuery, want)
+	}
+}
+
 // errDoer is a Doer that always fails the round-trip, so doRequest takes its
 // transport-error path with a passkey-bearing URL.
 type errDoer struct{}
