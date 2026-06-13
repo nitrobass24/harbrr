@@ -4,9 +4,11 @@
 
 Harbrr is a modern tracker and indexer management platform built for autobrr, qui, cross-seed, and private tracker power users.
 
-It provides a centralized layer between your trackers and automation applications, allowing you to manage trackers once, reduce unnecessary tracker load, aggregate RSS feeds, optimize searches, and expose a unified Torznab interface to the entire *arr ecosystem.
+Manage your trackers once. Connect everything. Search less. Cache more.
 
-While Harbrr is built with the autobrr ecosystem in mind, it remains fully compatible with Sonarr, Radarr, Lidarr, Readarr, Mylar, Whisparr, and any Torznab-capable application.
+Harbrr provides a centralized intelligence layer between your trackers and automation applications, reducing duplicate requests, aggregating RSS feeds, optimizing search traffic, and exposing a unified Torznab interface to your entire automation stack.
+
+While Harbrr is built with the autobrr ecosystem in mind, it remains fully compatible with Sonarr, Radarr, Lidarr, Readarr, Mylar, Whisparr, and any Torznab-compatible application.
 
 ---
 
@@ -22,23 +24,11 @@ The goal isn't simply to proxy searches.
 
 The goal is to become the intelligent layer between automation applications and trackers.
 
+---
+
 ## Architecture
 
-```text
-Private Trackers & Indexers
-            │
-            ▼
-          Harbrr
-            │
-    ┌───────┼───────┐
-    ▼       ▼       ▼
- autobrr   qui   cross-seed
-            │
-            ▼
-   Sonarr • Radarr
-   Lidarr • Readarr
-   Mylar  • Whisparr
-```
+mermaid flowchart TD     A[Private Trackers & Indexers] --> B[Harbrr]      B --> C[autobrr]     B --> D[qui]     B --> E[cross-seed]     B --> F[*arr Apps]      F --> G[Sonarr]     F --> H[Radarr]     F --> I[Lidarr]     F --> J[Readarr]     F --> K[Mylar]     F --> L[Whisparr] 
 
 ---
 
@@ -60,12 +50,21 @@ Private trackers are a shared resource.
 
 Today, multiple applications often poll the same tracker for nearly identical information.
 
-Harbrr introduces centralized RSS aggregation and caching so that tracker data can be fetched once and reused across your entire ecosystem.
+Without Harbrr:
+
+mermaid flowchart LR     A[Sonarr] --> E[Tracker]     B[Radarr] --> E     C[autobrr] --> E     D[cross-seed] --> E 
+
+With Harbrr:
+
+mermaid flowchart LR     A[Sonarr] --> H[Harbrr]     B[Radarr] --> H     C[autobrr] --> H     D[cross-seed] --> H     H --> E[Tracker] 
+
+One request. Multiple consumers.
 
 Benefits include:
 
 - Reduced tracker load
 - Fewer duplicate requests
+- Lower API utilization
 - Faster downstream processing
 - Better private tracker citizenship
 - Improved scalability for larger automation stacks
@@ -81,9 +80,10 @@ Instead of repeatedly sending identical searches to the same tracker, Harbrr is 
 This reduces:
 
 - Duplicate tracker queries
-- API consumption
 - Search latency
-- Unnecessary tracker traffic
+- Tracker load
+- API consumption
+- Unnecessary traffic
 
 ---
 
@@ -91,11 +91,12 @@ This reduces:
 
 Harbrr is designed to complement autobrr workflows rather than simply coexist with them.
 
-Planned integrations and workflow optimizations include:
+Planned optimizations include:
 
 - Shared tracker intelligence
 - Smarter RSS processing
 - Release reuse across applications
+- Reduced tracker load
 - Improved automation efficiency
 - Tracker-friendly polling strategies
 
@@ -118,8 +119,9 @@ Harbrr is being designed with cross-seed workflows in mind, including:
 - Smarter release matching
 - Search reuse and aggregation
 - Reduced duplicate tracker activity
-- Optional freeleech-aware matching logic
-- Optional freeleech bypass logic for cross-seed scenarios
+- Freeleech-aware matching
+- Optional freeleech bypass logic
+- Better reuse of existing tracker results
 
 ---
 
@@ -137,15 +139,15 @@ This allows users to benefit from a mature tracker ecosystem without requiring a
 
 Harbrr works with:
 
+- autobrr
+- qui
+- cross-seed
 - Sonarr
 - Radarr
 - Lidarr
 - Readarr
 - Mylar
 - Whisparr
-- autobrr
-- qui
-- cross-seed
 - Any Torznab-compatible application
 
 Existing workflows continue to work while benefiting from Harbrr's centralized intelligence and optimization layer.
@@ -163,7 +165,7 @@ Benefits include:
 - Low memory footprint
 - Single binary distribution
 - Docker-first deployments
-- Excellent cross-platform support
+- Cross-platform support
 
 ---
 
