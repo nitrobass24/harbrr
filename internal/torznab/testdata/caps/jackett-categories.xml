@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<caps>
+  <server title="harbrr"></server>
+  <limits default="100" max="100"></limits>
+  <searching>
+    <search available="yes" supportedParams="q"></search>
+    <tv-search available="no" supportedParams="q"></tv-search>
+    <movie-search available="no" supportedParams="q"></movie-search>
+    <music-search available="no" supportedParams="q"></music-search>
+    <audio-search available="no" supportedParams="q"></audio-search>
+    <book-search available="no" supportedParams="q"></book-search>
+  </searching>
+  <categories>
+    <category id="1000" name="Console">
+      <subcat id="1030" name="Console/Wii"></subcat>
+      <subcat id="1040" name="Console/XBox"></subcat>
+    </category>
+    <category id="2000" name="Movies">
+      <subcat id="2030" name="Movies/SD"></subcat>
+    </category>
+    <category id="7000" name="Books">
+      <subcat id="7030" name="Books/Comics"></subcat>
+    </category>
+    <category id="137107" name="Console/Wii_c"></category>
+    <category id="100044" name="Console/Xbox_c"></category>
+    <category id="100045" name="Console/Xbox_c2"></category>
+  </categories>
+</caps>

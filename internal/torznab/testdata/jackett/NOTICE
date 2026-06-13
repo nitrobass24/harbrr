@@ -1,0 +1,39 @@
+Ported Jackett Torznab caps test oracle
+=======================================
+
+harbrr's Torznab caps oracle is ported from the Jackett project's test material,
+used here as the offline parity oracle for the capabilities document (t=caps):
+
+  - The category-tree + custom-id expectations and the search-mode
+    supportedParams expectations are ported from
+    src/Jackett.Test/Common/Indexers/CardigannIndexerTests.cs
+    (TestCardigannTorznabCategories), reproduced in ../../caps_test.go as the
+    in-memory definitions jackettCategoriesDef / jackettModesDef and their
+    asserted tree / supported-param values (the jackett-port goldens
+    caps/jackett-categories.xml and caps/jackett-modes.xml).
+  - The caps XML grammar (element/attribute names + order, the audio-search
+    mirror of music-search, the AllowTVSearchIMDB imdbid gate, the
+    GetTorznabCategoryTree sort) is reproduced from
+    src/Jackett.Common/Models/TorznabCapabilities.cs and
+    TorznabCapabilitiesCategories.cs.
+
+Source:  https://github.com/Jackett/Jackett
+Commit:  b4140c7f8c1f4e1818d5792a6518e7f91861466d
+         (the SHA harbrr's vendored definition snapshot is pinned to)
+License: GPL-2.0. Jackett is GPL-2.0; harbrr is GPL-2.0-or-later (see /LICENSE),
+         so this reuse is license-compatible.
+
+Copyright (C) the Jackett contributors.
+
+These ported expectations are the authoritative comparison oracle for the caps
+document: harbrr must reproduce Jackett's advertised categories, custom-category
+ids (e.g. 137107 = BitConverter.ToUInt16(SHA1("con_wii")) + 100000), and
+re-derived supportedParams strings (e.g. tv-search dropping imdbid when
+AllowTVSearchIMDB is false) on the same definitions.
+
+Divergences from Jackett's serialized form, documented in ../README.md:
+  - harbrr emits its own <server title="harbrr"> and uses encoding/xml, which
+    renders attribute-only elements as <e></e> rather than Jackett's <e/>;
+    both are well-formed and parse identically for Sonarr/Radarr.
+  - duplicate-custom-id <category> entries collapse (the mapper de-dups
+    advertised categories by id); same-name custom categories tie-break by id.

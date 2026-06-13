@@ -29,6 +29,15 @@ type Capabilities struct {
 	// AllowRawSearch mirrors caps.allowrawsearch (Jackett SupportsRawSearch).
 	AllowRawSearch bool
 
+	// AllowTVSearchIMDB mirrors caps.allowtvsearchimdb. Jackett's
+	// TorznabCapabilities.TvSearchImdbAvailable defaults false (disabled for all
+	// indexers per #8107) and is overridden ONLY by this per-definition flag
+	// (CardigannIndexer sets TorznabCaps.TvSearchImdbAvailable =
+	// Definition.Caps.Allowtvsearchimdb). So tv-search advertises the imdbid param
+	// iff this flag is set, independent of whether "imdbid" appears in the
+	// caps.modes tv-search list. The Phase 3 Torznab caps serializer needs it.
+	AllowTVSearchIMDB bool
+
 	// Categories is the de-duplicated, ascending-id-ordered list of categories
 	// this indexer advertises: every standard category referenced by the
 	// definition (plus each referenced category's family root) and every
@@ -135,10 +144,11 @@ func (b builder) build() (*Capabilities, error) {
 		return nil, err
 	}
 	return &Capabilities{
-		Modes:          modesToMap(b.def.Caps.Modes),
-		AllowRawSearch: boolValue(b.def.Caps.AllowRawSearch),
-		Categories:     b.sortedAdvertised(),
-		CategoryMap:    b.catMap,
+		Modes:             modesToMap(b.def.Caps.Modes),
+		AllowRawSearch:    boolValue(b.def.Caps.AllowRawSearch),
+		AllowTVSearchIMDB: boolValue(b.def.Caps.AllowTVSearchIMDB),
+		Categories:        b.sortedAdvertised(),
+		CategoryMap:       b.catMap,
 	}, nil
 }
 

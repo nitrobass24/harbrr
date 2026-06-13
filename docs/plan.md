@@ -66,7 +66,7 @@ decoupled.
 ## Phase 3 — Minimal Torznab output
 
 - [ ] `internal/torznab`: capabilities document + `t=caps|search|tvsearch|movie|music|book`
-- [ ] **caps/category correctness is a gate** (Sonarr/Radarr failures usually trace here)
+- [x] **caps/category correctness is a gate** (Sonarr/Radarr failures usually trace here)
 - [ ] Sonarr/Radarr can search a handful of real trackers through harbrr end-to-end
 
 ## Phase 4 — Live smoke (closes the MVP)
