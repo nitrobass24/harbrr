@@ -119,6 +119,13 @@ type CaseStep struct {
 	Response string `yaml:"response"`
 	// Status is the served HTTP status (defaults to 200).
 	Status int `yaml:"status"`
+	// SetCookie are Set-Cookie header values the response carries, so a login
+	// response can establish a session cookie the cookie jar then sends on later
+	// steps (the cookie/form login archetypes).
+	SetCookie []string `yaml:"set_cookie"`
+	// ExpectCookie, when set, asserts the request's Cookie header contains this
+	// substring — proving the session cookie propagated from an earlier step.
+	ExpectCookie string `yaml:"expect_cookie"`
 	// Note documents the step's role (e.g. "login probe"); harness-ignored.
 	Note string `yaml:"note"`
 }

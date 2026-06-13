@@ -49,7 +49,7 @@ decoupled.
       Jackett — see `parity/testdata/README.md`; each case records `golden_source` provenance)
 - [x] Wire `internal/indexer/cardigann/parity` to the real engine (replace the stub `Process`)
 - [ ] Pass the **compatibility matrix** offline rows (each archetype has a fixture):
-  - [ ] HTML / form login
+  - [x] HTML / form login
   - [ ] HTML / cookie login
   - [ ] JSON-API
   - [ ] XML / Newznab

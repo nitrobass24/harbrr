@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
@@ -61,6 +62,10 @@ func (r *replay) RoundTrip(req *stdhttp.Request) (*stdhttp.Response, error) {
 			req.Method, apphttp.RedactURL(req.URL.String()), step.Method, apphttp.RedactURL(step.URL))
 	}
 
+	if step.ExpectCookie != "" && !strings.Contains(req.Header.Get("Cookie"), step.ExpectCookie) {
+		return nil, r.fail("step %d: request Cookie header missing %q (session cookie did not propagate)", r.idx-1, step.ExpectCookie)
+	}
+
 	resp, err := r.serve(req, step)
 	if err != nil {
 		return nil, r.fail("step %d: %v", r.idx-1, err)
@@ -82,10 +87,14 @@ func (r *replay) serve(req *stdhttp.Request, step CaseStep) (*stdhttp.Response, 
 	if status == 0 {
 		status = stdhttp.StatusOK
 	}
+	header := stdhttp.Header{}
+	for _, c := range step.SetCookie {
+		header.Add("Set-Cookie", c)
+	}
 	return &stdhttp.Response{
 		StatusCode: status,
 		Status:     strconv.Itoa(status),
-		Header:     stdhttp.Header{},
+		Header:     header,
 		Body:       io.NopCloser(bytes.NewReader(body)),
 		Request:    req,
 	}, nil
