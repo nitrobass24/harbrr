@@ -55,7 +55,7 @@ decoupled.
   - [ ] XML / Newznab
   - [ ] non-Latin-script (regexp2 path)
   - [x] freeleech (download/uploadvolumefactor)
-  - [ ] multi-category
+  - [x] multi-category
   - [ ] date-heavy (multiple .NET formats + relative)
   - [ ] magnet-only (magnet/infohash synthesis)
   - [ ] download-link pre-request

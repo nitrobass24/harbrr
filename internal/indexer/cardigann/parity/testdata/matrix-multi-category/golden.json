@@ -1,0 +1,43 @@
+[
+  {
+    "title": "HD Movie",
+    "link": "https://cat.test/dl/1.torrent",
+    "size": 5368709120,
+    "categories": [
+      2000,
+      100001
+    ],
+    "seeders": 12,
+    "leechers": 3,
+    "peers": 15,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  },
+  {
+    "title": "TV Episode",
+    "link": "https://cat.test/dl/2.torrent",
+    "size": 838860800,
+    "categories": [
+      5000
+    ],
+    "seeders": 7,
+    "leechers": 1,
+    "peers": 8,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  },
+  {
+    "title": "SD Movie",
+    "link": "https://cat.test/dl/3.torrent",
+    "size": 1503238528,
+    "categories": [
+      2000,
+      100003
+    ],
+    "seeders": 4,
+    "leechers": 0,
+    "peers": 4,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  }
+]
