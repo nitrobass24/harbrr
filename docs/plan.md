@@ -42,7 +42,9 @@ decoupled.
 ## Phase 2 — Offline parity — *the gate*
 
 - [ ] Port Jackett's GPL-2.0 Cardigann engine tests (`CardigannIndexerHtmlTests`/`JsonTests`)
-- [ ] Build the differential harness (run Jackett + harbrr on the same saved bytes; capture goldens)
+- [x] Build the differential harness (offline oracle: goldens ported from Jackett's own test
+      assertions or hand-derived from documented Jackett semantics, never captured from a live
+      Jackett — see `parity/testdata/README.md`; each case records `golden_source` provenance)
 - [x] Wire `internal/indexer/cardigann/parity` to the real engine (replace the stub `Process`)
 - [ ] Pass the **compatibility matrix** offline rows (each archetype has a fixture):
   - [ ] HTML / form login

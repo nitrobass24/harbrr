@@ -1,0 +1,18 @@
+name: smoke-search
+archetype: smoke
+golden_source: hand-derived
+mode: search
+description: >
+  Harness smoke case for SEARCH mode: a no-login def whose single search path
+  renders `search?q=ubuntu` from the q input. The replay transport asserts the
+  engine issued exactly that GET (request-construction parity) and serves the
+  saved body. Hand-derived golden: size 3 GB = 3221225472 (1024-based),
+  peers = 42 + 3 = 45, category "1" -> Movies (2000).
+definition: definition.yml
+query:
+  keywords: ubuntu
+steps:
+  - method: GET
+    url: https://smoke.test/search?q=ubuntu
+    response: response.html
+    note: search request

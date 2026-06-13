@@ -19,6 +19,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	stdhttp "net/http"
+	"net/http/cookiejar"
 	"os"
 	"path/filepath"
 	"time"
@@ -33,9 +35,12 @@ import (
 const (
 	// ModeParse extracts releases from a single saved response body with no HTTP
 	// (Engine.ParseResponseQuery). Use for pure selection/normalization parity.
-	// The differential-harness commit adds a search mode that also pins request
-	// construction.
+	// The search mode also pins request construction.
 	ModeParse = "parse"
+	// ModeSearch drives the full online path (login + request building + parse)
+	// against a replay Doer that asserts the engine issued exactly the requests
+	// the case declares, so the case pins request construction too.
+	ModeSearch = "search"
 )
 
 // Provenance records where a golden's expected values came from. A bare fixture
@@ -94,9 +99,28 @@ type Case struct {
 
 	// Response is the saved body file for parse mode.
 	Response string `yaml:"response"`
+	// Steps is the ordered HTTP exchange for search mode: each step's request is
+	// asserted (method + full URL) and its saved body served.
+	Steps []CaseStep `yaml:"steps"`
 
 	// Golden is the expected-output file (defaults to golden.json).
 	Golden string `yaml:"golden"`
+}
+
+// CaseStep is one expected request/response exchange in search mode. The replay
+// transport asserts the engine issued exactly this method + URL (including any
+// login probe/request the def implies), then serves Response with Status.
+type CaseStep struct {
+	// Method is the expected HTTP method (GET/POST), compared case-insensitively.
+	Method string `yaml:"method"`
+	// URL is the exact expected request URL (request-construction parity).
+	URL string `yaml:"url"`
+	// Response is the saved body file served for this step.
+	Response string `yaml:"response"`
+	// Status is the served HTTP status (defaults to 200).
+	Status int `yaml:"status"`
+	// Note documents the step's role (e.g. "login probe"); harness-ignored.
+	Note string `yaml:"note"`
 }
 
 // CaseQuery is the subset of the engine Query a case can set, with explicit yaml
@@ -176,6 +200,10 @@ func (c *Case) validate() error {
 		if c.Response == "" {
 			return fmt.Errorf("case %q: parse mode requires response", c.Name)
 		}
+	case ModeSearch:
+		if len(c.Steps) == 0 {
+			return fmt.Errorf("case %q: search mode requires steps", c.Name)
+		}
 	default:
 		return fmt.Errorf("case %q: unknown mode %q", c.Name, c.Mode)
 	}
@@ -229,9 +257,40 @@ func (c *Case) Run(dir string) ([]byte, error) {
 	switch c.mode() {
 	case ModeParse:
 		return c.runParse(dir, def, opts)
+	case ModeSearch:
+		return c.runSearch(dir, def, opts)
 	default:
 		return nil, fmt.Errorf("case %q: unknown mode %q", c.Name, c.Mode)
 	}
+}
+
+// runSearch drives the full online path against the replay transport, wrapped in
+// a real *http.Client with a cookie jar so the production login->search cookie
+// flow is exercised. The replay asserts the engine issued exactly the case's
+// declared requests; done() surfaces any mismatch or unconsumed step as a loud
+// error rather than a silent pass.
+func (c *Case) runSearch(dir string, def *loader.Definition, opts []cardigann.Option) ([]byte, error) {
+	rep := newReplay(dir, c.Steps)
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return nil, fmt.Errorf("building cookie jar: %w", err)
+	}
+	client := &stdhttp.Client{Transport: rep, Jar: jar}
+
+	eng, err := cardigann.NewEngine(def, append(opts, cardigann.WithDoer(client))...)
+	if err != nil {
+		return nil, fmt.Errorf("building engine: %w", err)
+	}
+	releases, searchErr := eng.Search(c.Query.toEngine())
+	// A replay fault is the precise cause; the engine wraps transport errors, so
+	// consult the replay first and prefer its (redacted) reason.
+	if replayErr := rep.done(); replayErr != nil {
+		return nil, replayErr
+	}
+	if searchErr != nil {
+		return nil, fmt.Errorf("search mode: %w", searchErr)
+	}
+	return canonical(eng, releases)
 }
 
 // runParse extracts releases from a single saved body (no HTTP).
