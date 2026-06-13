@@ -10,8 +10,12 @@ set -euo pipefail
 pattern='(passkey|torrent_pass|rsskey|api_?key|auth_?key)=[A-Za-z0-9]{16,}|[Aa]uthorization:[[:space:]]*[Bb]earer[[:space:]]+[A-Za-z0-9._-]{16,}'
 
 # Synthetic fixture secrets (exist only to prove redaction) live here; keep in
-# sync with .gitleaks.toml.
-excludes=(':(exclude)*_test.go' ':(exclude)testdata/**' ':(exclude)internal/indexer/definitions/vendor/**')
+# sync with .gitleaks.toml (which excludes `(^|/)testdata/` — testdata at ANY
+# depth). A bare `testdata/**` git pathspec is anchored to the repo root and would
+# miss nested fixtures (e.g. internal/torznab/testdata/), so exclude both the root
+# `testdata/**` and any nested `*/testdata/**`. `*_test.go` already matches at any
+# depth because a git pathspec `*` spans `/`.
+excludes=(':(exclude)*_test.go' ':(exclude)testdata/**' ':(exclude)*/testdata/**' ':(exclude)internal/indexer/definitions/vendor/**')
 
 if [ "${1:-}" = "--all" ]; then
   hits="$(git grep -nEi "$pattern" -- "${excludes[@]}" || true)"
