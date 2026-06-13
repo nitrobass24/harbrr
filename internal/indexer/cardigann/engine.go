@@ -229,6 +229,28 @@ func (e *Engine) ensureSession() error {
 	return nil
 }
 
+// ResolveDownload turns a release's download link into the real torrent URL when
+// the definition declares a download block (selectors + optional before
+// pre-request). A def with no download block returns the link unchanged. It
+// ensures the session first (the download page is usually behind login) and
+// drives the same Doer as Search.
+func (e *Engine) ResolveDownload(link string) (string, error) {
+	if e.def.Download == nil {
+		return link, nil
+	}
+	if e.doer == nil {
+		return "", fmt.Errorf("cardigann: ResolveDownload for %q requires WithDoer", e.def.ID)
+	}
+	if err := e.ensureSession(); err != nil {
+		return "", fmt.Errorf("cardigann: login for %q: %w", e.def.ID, err)
+	}
+	resolved, err := search.ResolveDownload(e.def, link, e.login.Session(), e.doer, e.deps)
+	if err != nil {
+		return "", fmt.Errorf("cardigann: resolving download for %q: %w", e.def.ID, err)
+	}
+	return resolved, nil
+}
+
 // ParseResponse is the offline extraction half: parse a saved response body into
 // normalized releases without any HTTP, for the parity harness and regression
 // snapshots. responseType selects the JSON parser when "json"; anything else

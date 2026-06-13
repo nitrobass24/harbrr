@@ -48,7 +48,7 @@ decoupled.
       assertions or hand-derived from documented Jackett semantics, never captured from a live
       Jackett — see `parity/testdata/README.md`; each case records `golden_source` provenance)
 - [x] Wire `internal/indexer/cardigann/parity` to the real engine (replace the stub `Process`)
-- [ ] Pass the **compatibility matrix** offline rows (each archetype has a fixture):
+- [x] Pass the **compatibility matrix** offline rows (each archetype has a fixture):
   - [x] HTML / form login
   - [x] HTML / cookie login
   - [x] JSON-API
@@ -58,7 +58,7 @@ decoupled.
   - [x] multi-category
   - [x] date-heavy (multiple .NET formats + relative)
   - [x] magnet-only (magnet/infohash synthesis)
-  - [ ] download-link pre-request
+  - [x] download-link pre-request
 - [ ] **Success criteria met:** 100% defs load w/o panic · zero silent schema failures (triaged to a
       visible skip-list) · ported Jackett tests pass · matches Jackett on ≥25 saved fixtures · secrets
       redacted in logs · broken indexers degrade cleanly

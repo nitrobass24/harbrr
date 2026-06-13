@@ -1,0 +1,15 @@
+[
+  {
+    "title": "Two-Step Download Release",
+    "link": "https://dl.test/get/1.torrent",
+    "size": 2147483648,
+    "categories": [
+      2000
+    ],
+    "seeders": 17,
+    "leechers": 3,
+    "peers": 20,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  }
+]

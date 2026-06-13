@@ -102,6 +102,11 @@ type Case struct {
 	// Steps is the ordered HTTP exchange for search mode: each step's request is
 	// asserted (method + full URL) and its saved body served.
 	Steps []CaseStep `yaml:"steps"`
+	// ResolveDownload, when true, calls Engine.ResolveDownload on each release's
+	// link after the search (consuming the trailing steps for the before/details
+	// requests) and rewrites the link to the resolved torrent URL — so the golden
+	// shows the real download URL the download block produces.
+	ResolveDownload bool `yaml:"resolve_download"`
 
 	// Golden is the expected-output file (defaults to golden.json).
 	Golden string `yaml:"golden"`
@@ -289,15 +294,41 @@ func (c *Case) runSearch(dir string, def *loader.Definition, opts []cardigann.Op
 		return nil, fmt.Errorf("building engine: %w", err)
 	}
 	releases, searchErr := eng.Search(c.Query.toEngine())
-	// A replay fault is the precise cause; the engine wraps transport errors, so
-	// consult the replay first and prefer its (redacted) reason.
+	if searchErr != nil {
+		// A replay fault is the precise cause; prefer its (redacted) reason.
+		if replayErr := rep.done(); replayErr != nil {
+			return nil, replayErr
+		}
+		return nil, fmt.Errorf("search mode: %w", searchErr)
+	}
+
+	if c.ResolveDownload {
+		if err := resolveReleaseDownloads(eng, releases); err != nil {
+			if replayErr := rep.done(); replayErr != nil {
+				return nil, replayErr
+			}
+			return nil, err
+		}
+	}
+
+	// Assert every declared step was consumed (search + any download requests).
 	if replayErr := rep.done(); replayErr != nil {
 		return nil, replayErr
 	}
-	if searchErr != nil {
-		return nil, fmt.Errorf("search mode: %w", searchErr)
-	}
 	return canonical(eng, releases)
+}
+
+// resolveReleaseDownloads rewrites each release's link to the torrent URL the
+// download block resolves it to, so the golden reflects the real download URL.
+func resolveReleaseDownloads(eng *cardigann.Engine, releases []*cardigann.Release) error {
+	for _, r := range releases {
+		resolved, err := eng.ResolveDownload(r.Link)
+		if err != nil {
+			return fmt.Errorf("resolve download: %w", err)
+		}
+		r.Link = resolved
+	}
+	return nil
 }
 
 // runParse extracts releases from a single saved body (no HTTP).
