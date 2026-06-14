@@ -75,3 +75,30 @@ jobs:
           GOARCH: ${{ matrix.target.goarch }}
           CGO_ENABLED: "0"
         run: go build ./...
+
+  # Build the container image so a broken Dockerfile fails CI — the Docker path is
+  # how *arr apps reach harbrr, so it must not silently rot. Build (single-platform,
+  # loaded into the daemon) + a `version` smoke-run that proves the image actually
+  # runs; no registry push. Publishing/release packaging stays the later GoReleaser
+  # job referenced above.
+  docker:
+    name: docker
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v3
+      - name: build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: harbrr:ci
+          build-args: |
+            VERSION=ci
+            COMMIT=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: validate image runs
+        run: docker run --rm --entrypoint harbrr harbrr:ci version
