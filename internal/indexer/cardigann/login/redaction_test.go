@@ -68,7 +68,7 @@ func TestLoginFailureErrorRedacted(t *testing.T) {
 		"password": "s3cr3t-pass",
 	})
 
-	err := e.Login(def)
+	err := e.Login(t.Context(), def)
 	if !errors.Is(err, ErrLoginFailed) {
 		t.Fatalf("err = %v, want ErrLoginFailed", err)
 	}
@@ -110,7 +110,7 @@ func TestRedactionSelfAudit(t *testing.T) {
 			Inputs: map[string]loader.Scalar{"apikey": scalar("{{ .Config.apikey }}")},
 		}}
 		e := newExec(t, rt, cfg)
-		err := e.Login(def)
+		err := e.Login(t.Context(), def)
 		if !errors.Is(err, ErrLoginFailed) {
 			t.Fatalf("err = %v, want ErrLoginFailed (401)", err)
 		}
@@ -128,7 +128,7 @@ func TestRedactionSelfAudit(t *testing.T) {
 			Path:   "api?apikey={{ .Config.apikey }}&passkey=" + pkFixture,
 		}}
 		e := New(WithClient(&errDoer{}), WithBaseURL(baseURL), WithConfig(cfg))
-		err := e.Login(def)
+		err := e.Login(t.Context(), def)
 		if err == nil {
 			t.Fatal("want transport error")
 		}
@@ -155,7 +155,7 @@ func TestRedactionSelfAudit(t *testing.T) {
 			}},
 		}}
 		e := newExec(t, rt, cfg)
-		err := e.Login(def)
+		err := e.Login(t.Context(), def)
 		assertNoSecret(t, "error message selector", err)
 	})
 }

@@ -79,7 +79,7 @@ func TestSearch_LazyRelogin(t *testing.T) {
 		t.Fatalf("NewEngine: %v", err)
 	}
 
-	releases, err := eng.Search(Query{Keywords: "lazy"})
+	releases, err := eng.Search(t.Context(), Query{Keywords: "lazy"})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestSearch_LazyReloginBounded(t *testing.T) {
 		t.Fatalf("NewEngine: %v", err)
 	}
 
-	if _, err := eng.Search(Query{Keywords: "lazy"}); err == nil {
+	if _, err := eng.Search(t.Context(), Query{Keywords: "lazy"}); err == nil {
 		t.Fatal("Search: want error when session stays logged-out, got nil")
 	}
 	if got := doer.count("/browse"); got != 2 {

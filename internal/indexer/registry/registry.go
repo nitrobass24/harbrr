@@ -105,8 +105,8 @@ func New(db *database.DB, ldr *loader.Loader, keyring secretsKeyring, opts ...Op
 // Indexer resolves a slug to its Indexer, implementing torznab.Provider. A
 // missing, disabled, or unbuildable instance returns ok=false so the handler
 // degrades cleanly (returns the standard "indexer not supported" error).
-func (r *Registry) Indexer(slug string) (torznab.Indexer, bool) {
-	a, err := r.resolve(context.Background(), slug)
+func (r *Registry) Indexer(ctx context.Context, slug string) (torznab.Indexer, bool) {
+	a, err := r.resolve(ctx, slug)
 	if err != nil {
 		r.logResolveError(slug, err)
 		return nil, false

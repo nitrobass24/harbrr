@@ -317,12 +317,12 @@ func renderHeaders(in map[string][]string, ctx *template.Context) (map[string][]
 // status fails fast: the tracker errored (403/429/500…) so the body is not
 // results, and silently parsing it would yield a misleading empty page. Every
 // error site redacts the URL.
-func doRequest(doer Doer, br builtRequest, session *login.Session) ([]byte, error) {
+func doRequest(ctx context.Context, doer Doer, br builtRequest, session *login.Session) ([]byte, error) {
 	var bodyReader io.Reader
 	if br.body != "" {
 		bodyReader = strings.NewReader(br.body)
 	}
-	req, err := stdhttp.NewRequestWithContext(context.Background(), br.method, br.url, bodyReader)
+	req, err := stdhttp.NewRequestWithContext(ctx, br.method, br.url, bodyReader)
 	if err != nil {
 		return nil, fmt.Errorf("building %s request to %s: %w", br.method, apphttp.RedactURL(br.url), err)
 	}

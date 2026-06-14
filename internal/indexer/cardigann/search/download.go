@@ -1,6 +1,7 @@
 package search
 
 import (
+	"context"
 	"fmt"
 	stdhttp "net/http"
 	"strings"
@@ -25,7 +26,7 @@ import (
 // Out of scope, and documented as such: before.inputs/pathselector,
 // download.infohash, download.method=post, download.headers, the .DownloadUri
 // template namespace, and testlinktorrent.
-func ResolveDownload(def *loader.Definition, link string, session *login.Session, doer Doer, deps Deps) (string, error) {
+func ResolveDownload(ctx context.Context, def *loader.Definition, link string, session *login.Session, doer Doer, deps Deps) (string, error) {
 	dl := def.Download
 	if dl == nil || len(dl.Selectors) == 0 {
 		return link, nil
@@ -33,7 +34,7 @@ func ResolveDownload(def *loader.Definition, link string, session *login.Session
 
 	var beforeBody []byte
 	if dl.Before != nil {
-		body, err := fetchBefore(dl.Before, session, doer, deps)
+		body, err := fetchBefore(ctx, dl.Before, session, doer, deps)
 		if err != nil {
 			return "", err
 		}
@@ -41,7 +42,7 @@ func ResolveDownload(def *loader.Definition, link string, session *login.Session
 	}
 
 	for i := range dl.Selectors {
-		resolved, ok, err := tryDownloadSelector(dl, dl.Selectors[i], link, beforeBody, session, doer, deps)
+		resolved, ok, err := tryDownloadSelector(ctx, dl, dl.Selectors[i], link, beforeBody, session, doer, deps)
 		if err != nil {
 			return "", err
 		}
@@ -55,10 +56,10 @@ func ResolveDownload(def *loader.Definition, link string, session *login.Session
 // tryDownloadSelector fetches the page the selector reads (the before response
 // when it opts in, otherwise the link page), matches the selector, and resolves
 // the href against the link. ok is false when the selector matched nothing.
-func tryDownloadSelector(dl *loader.DownloadBlock, sel loader.SelectorField, link string, beforeBody []byte, session *login.Session, doer Doer, deps Deps) (string, bool, error) {
+func tryDownloadSelector(ctx context.Context, dl *loader.DownloadBlock, sel loader.SelectorField, link string, beforeBody []byte, session *login.Session, doer Doer, deps Deps) (string, bool, error) {
 	body := beforeBody
 	if !boolVal(sel.UseBeforeResponse) || dl.Before == nil || beforeBody == nil {
-		b, err := doRequest(doer, builtRequest{method: stdhttp.MethodGet, url: link}, session)
+		b, err := doRequest(ctx, doer, builtRequest{method: stdhttp.MethodGet, url: link}, session)
 		if err != nil {
 			return "", false, err
 		}
@@ -81,9 +82,9 @@ func tryDownloadSelector(dl *loader.DownloadBlock, sel loader.SelectorField, lin
 
 // fetchBefore issues the download "before" pre-request: render its path, resolve
 // against the base URL, and GET (or POST) it carrying the session cookies.
-func fetchBefore(before *loader.BeforeBlock, session *login.Session, doer Doer, deps Deps) ([]byte, error) {
-	ctx := requestContext(Query{}, deps)
-	rendered, err := template.Eval(before.Path, ctx)
+func fetchBefore(ctx context.Context, before *loader.BeforeBlock, session *login.Session, doer Doer, deps Deps) ([]byte, error) {
+	tmplCtx := requestContext(Query{}, deps)
+	rendered, err := template.Eval(before.Path, tmplCtx)
 	if err != nil {
 		return nil, fmt.Errorf("rendering download.before path: %w", err)
 	}
@@ -95,7 +96,7 @@ func fetchBefore(before *loader.BeforeBlock, session *login.Session, doer Doer, 
 	if strings.EqualFold(before.Method, stdhttp.MethodPost) {
 		method = stdhttp.MethodPost
 	}
-	return doRequest(doer, builtRequest{method: method, url: absURL}, session)
+	return doRequest(ctx, doer, builtRequest{method: method, url: absURL}, session)
 }
 
 // matchDownloadHref runs one download selector over a fetched page: query the
