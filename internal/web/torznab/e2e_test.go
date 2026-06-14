@@ -1,6 +1,7 @@
 package torznab
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -30,13 +31,15 @@ type engineIndexer struct {
 func (e *engineIndexer) Info() IndexerInfo                  { return e.info }
 func (e *engineIndexer) Capabilities() *mapper.Capabilities { return e.engine.Capabilities() }
 
-func (e *engineIndexer) Search(q search.Query) ([]*normalizer.Release, error) {
+func (e *engineIndexer) Search(_ context.Context, q search.Query) ([]*normalizer.Release, error) {
 	return e.engine.ParseResponseQuery(e.body, "", q)
 }
 
 func (e *engineIndexer) NeedsResolver() bool { return e.engine.NeedsResolver() }
 
-func (e *engineIndexer) ResolveDownload(l string) (string, error) { return e.engine.ResolveDownload(l) }
+func (e *engineIndexer) ResolveDownload(ctx context.Context, l string) (string, error) {
+	return e.engine.ResolveDownload(ctx, l)
+}
 
 func readTestdata(t *testing.T, name string) []byte {
 	t.Helper()

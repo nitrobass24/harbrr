@@ -265,7 +265,7 @@ func TestExecute_OnlineReplay(t *testing.T) {
 		t.Fatalf("NewEngine: %v", err)
 	}
 
-	releases, err := eng.Search(Query{Keywords: "bunny"})
+	releases, err := eng.Search(t.Context(), Query{Keywords: "bunny"})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -298,7 +298,7 @@ func TestSearch_LoginMemoized(t *testing.T) {
 	}
 
 	for i := 0; i < 2; i++ {
-		if _, err := eng.Search(Query{Keywords: "memo"}); err != nil {
+		if _, err := eng.Search(t.Context(), Query{Keywords: "memo"}); err != nil {
 			t.Fatalf("Search %d: %v", i, err)
 		}
 	}

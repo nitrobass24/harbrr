@@ -17,6 +17,7 @@ package parity
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	stdhttp "net/http"
@@ -293,7 +294,7 @@ func (c *Case) runSearch(dir string, def *loader.Definition, opts []cardigann.Op
 	if err != nil {
 		return nil, fmt.Errorf("building engine: %w", err)
 	}
-	releases, searchErr := eng.Search(c.Query.toEngine())
+	releases, searchErr := eng.Search(context.Background(), c.Query.toEngine())
 	if searchErr != nil {
 		// A replay fault is the precise cause; prefer its (redacted) reason.
 		if replayErr := rep.done(); replayErr != nil {
@@ -322,7 +323,7 @@ func (c *Case) runSearch(dir string, def *loader.Definition, opts []cardigann.Op
 // download block resolves it to, so the golden reflects the real download URL.
 func resolveReleaseDownloads(eng *cardigann.Engine, releases []*cardigann.Release) error {
 	for _, r := range releases {
-		resolved, err := eng.ResolveDownload(r.Link)
+		resolved, err := eng.ResolveDownload(context.Background(), r.Link)
 		if err != nil {
 			return fmt.Errorf("resolve download: %w", err)
 		}

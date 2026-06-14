@@ -73,7 +73,7 @@ func TestLoginForm(t *testing.T) {
 		"password": "s3cr3t-pass",
 	})
 
-	if err := e.Login(def); err != nil {
+	if err := e.Login(t.Context(), def); err != nil {
 		t.Fatalf("Login: %v", err)
 	}
 
@@ -124,7 +124,7 @@ func TestLoginFormSeedsStaticCookies(t *testing.T) {
 	}}
 	e := newExec(t, rt, map[string]string{"username": "alice"})
 
-	if err := e.Login(def); err != nil {
+	if err := e.Login(t.Context(), def); err != nil {
 		t.Fatalf("Login: %v", err)
 	}
 
@@ -162,7 +162,7 @@ func TestLoginPost(t *testing.T) {
 	}}
 	e := newExec(t, rt, map[string]string{"username": "bob", "password": "pw-bob"})
 
-	if err := e.Login(def); err != nil {
+	if err := e.Login(t.Context(), def); err != nil {
 		t.Fatalf("Login: %v", err)
 	}
 	post := rt.capture(0)
@@ -195,7 +195,7 @@ func TestLoginGet(t *testing.T) {
 	}}
 	e := newExec(t, rt, map[string]string{"apikey": "API-KEY-123"})
 
-	if err := e.Login(def); err != nil {
+	if err := e.Login(t.Context(), def); err != nil {
 		t.Fatalf("Login: %v", err)
 	}
 	get := rt.capture(0)
@@ -223,7 +223,7 @@ func TestLoginCookieManual(t *testing.T) {
 	}}
 	e := newExec(t, rt, map[string]string{"cookie": "uid=42; pass=COOKIE-SECRET-VAL"})
 
-	if err := e.Login(def); err != nil {
+	if err := e.Login(t.Context(), def); err != nil {
 		t.Fatalf("Login: %v", err)
 	}
 	// Login made no HTTP request.
@@ -236,7 +236,7 @@ func TestLoginCookieManual(t *testing.T) {
 	}
 
 	// CheckTest now hits index.php and finds the logout link.
-	ok, err := e.CheckTest(def)
+	ok, err := e.CheckTest(t.Context(), def)
 	if err != nil {
 		t.Fatalf("CheckTest: %v", err)
 	}
@@ -267,14 +267,14 @@ func TestCheckTestBeforeAndAfter(t *testing.T) {
 	}}
 	e := newExec(t, rt, nil)
 
-	before, err := e.CheckTest(def)
+	before, err := e.CheckTest(t.Context(), def)
 	if err != nil {
 		t.Fatalf("CheckTest before: %v", err)
 	}
 	if before {
 		t.Error("CheckTest before login = true, want false")
 	}
-	after, err := e.CheckTest(def)
+	after, err := e.CheckTest(t.Context(), def)
 	if err != nil {
 		t.Fatalf("CheckTest after: %v", err)
 	}
@@ -301,7 +301,7 @@ func TestEnsureLoggedIn(t *testing.T) {
 	}}
 	e := newExec(t, rt, map[string]string{"username": "carol"})
 
-	if err := e.EnsureLoggedIn(def); err != nil {
+	if err := e.EnsureLoggedIn(t.Context(), def); err != nil {
 		t.Fatalf("EnsureLoggedIn: %v", err)
 	}
 	if rt.requestCount() != 2 {
@@ -323,7 +323,7 @@ func TestEnsureLoggedInSkipsWhenSessionValid(t *testing.T) {
 	}}
 	e := newExec(t, rt, nil)
 
-	if err := e.EnsureLoggedIn(def); err != nil {
+	if err := e.EnsureLoggedIn(t.Context(), def); err != nil {
 		t.Fatalf("EnsureLoggedIn: %v", err)
 	}
 	if rt.requestCount() != 1 {
@@ -336,7 +336,7 @@ func TestUnknownMethod(t *testing.T) {
 	rt := newReplay(t)
 	def := &loader.Definition{Login: &loader.Login{Method: "telepathy"}}
 	e := newExec(t, rt, nil)
-	err := e.Login(def)
+	err := e.Login(t.Context(), def)
 	if !errors.Is(err, ErrUnknownMethod) {
 		t.Fatalf("err = %v, want ErrUnknownMethod", err)
 	}
@@ -351,7 +351,7 @@ func TestCaptchaDetected(t *testing.T) {
 		Captcha: &loader.CaptchaBlock{Type: "image", Selector: "img#captcha", Input: "captcha"},
 	}}
 	e := newExec(t, rt, nil)
-	err := e.Login(def)
+	err := e.Login(t.Context(), def)
 	if !errors.Is(err, ErrCaptchaRequired) {
 		t.Fatalf("err = %v, want ErrCaptchaRequired", err)
 	}
@@ -372,7 +372,7 @@ func TestCloudflareDetected(t *testing.T) {
 		Inputs: map[string]loader.Scalar{"username": scalar("x")},
 	}}
 	e := newExec(t, rt, nil)
-	err := e.Login(def)
+	err := e.Login(t.Context(), def)
 	if !errors.Is(err, ErrSolverRequired) {
 		t.Fatalf("err = %v, want ErrSolverRequired", err)
 	}
@@ -382,10 +382,10 @@ func TestNoLoginBlock(t *testing.T) {
 	t.Parallel()
 	rt := newReplay(t)
 	e := newExec(t, rt, nil)
-	if err := e.Login(&loader.Definition{}); err != nil {
+	if err := e.Login(t.Context(), &loader.Definition{}); err != nil {
 		t.Fatalf("Login with no block: %v", err)
 	}
-	ok, err := e.CheckTest(&loader.Definition{})
+	ok, err := e.CheckTest(t.Context(), &loader.Definition{})
 	if err != nil || !ok {
 		t.Fatalf("CheckTest with no login = (%v, %v), want (true, nil)", ok, err)
 	}
@@ -405,7 +405,7 @@ func TestSessionExposesJar(t *testing.T) {
 	}}
 	e := newExec(t, rt, map[string]string{"cookie": "uid=42"})
 
-	if err := e.Login(def); err != nil {
+	if err := e.Login(t.Context(), def); err != nil {
 		t.Fatalf("Login: %v", err)
 	}
 	sess := e.Session()

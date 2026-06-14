@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann"
@@ -29,8 +30,8 @@ func (a *indexerAdapter) Capabilities() *mapper.Capabilities { return a.engine.C
 
 // Search runs the engine's online search. The error is wrapped with the indexer
 // id (not a secret); the caller redacts it before logging.
-func (a *indexerAdapter) Search(query search.Query) ([]*normalizer.Release, error) {
-	releases, err := a.engine.Search(query)
+func (a *indexerAdapter) Search(ctx context.Context, query search.Query) ([]*normalizer.Release, error) {
+	releases, err := a.engine.Search(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, err)
 	}
@@ -42,8 +43,8 @@ func (a *indexerAdapter) NeedsResolver() bool { return a.engine.NeedsResolver() 
 
 // ResolveDownload resolves a release link to the real torrent URL. The error is
 // wrapped with the indexer id (not a secret); the caller redacts it.
-func (a *indexerAdapter) ResolveDownload(link string) (string, error) {
-	resolved, err := a.engine.ResolveDownload(link)
+func (a *indexerAdapter) ResolveDownload(ctx context.Context, link string) (string, error) {
+	resolved, err := a.engine.ResolveDownload(ctx, link)
 	if err != nil {
 		return "", fmt.Errorf("registry: resolve download %q: %w", a.info.ID, err)
 	}

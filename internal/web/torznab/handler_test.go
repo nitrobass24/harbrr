@@ -1,6 +1,7 @@
 package torznab
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -32,14 +33,14 @@ type fakeIndexer struct {
 func (f *fakeIndexer) Info() IndexerInfo                  { return f.info }
 func (f *fakeIndexer) Capabilities() *mapper.Capabilities { return f.caps }
 
-func (f *fakeIndexer) Search(q search.Query) ([]*normalizer.Release, error) {
+func (f *fakeIndexer) Search(_ context.Context, q search.Query) ([]*normalizer.Release, error) {
 	f.gotQuery = q
 	return f.releases, f.searchErr
 }
 
 func (f *fakeIndexer) NeedsResolver() bool { return f.needsResolver }
 
-func (f *fakeIndexer) ResolveDownload(link string) (string, error) {
+func (f *fakeIndexer) ResolveDownload(_ context.Context, link string) (string, error) {
 	if f.resolveErr != nil {
 		return "", f.resolveErr
 	}
@@ -51,7 +52,10 @@ func (f *fakeIndexer) ResolveDownload(link string) (string, error) {
 
 type fakeProvider map[string]Indexer
 
-func (p fakeProvider) Indexer(id string) (Indexer, bool) { i, ok := p[id]; return i, ok }
+func (p fakeProvider) Indexer(_ context.Context, id string) (Indexer, bool) {
+	i, ok := p[id]
+	return i, ok
+}
 
 // testCaps builds capabilities for a demo indexer: categorymappings 1->Movies
 // (+custom 100001 "HD Movies"), 2->TV; modes search, tv-search [q,season,tvdbid]
