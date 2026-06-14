@@ -171,6 +171,9 @@ func (r *Registry) build(ctx context.Context, slug string) (*indexerAdapter, err
 		cardigann.WithDoer(doer),
 		cardigann.WithConfig(cfg),
 		cardigann.WithClock(r.clock),
+		// Wire an anti-bot solver from the instance settings ("solver_type" + the
+		// encrypted "cookie"); a no-op when unset. FlareSolverr is Phase 6.
+		cardigann.SolverOption(cfg),
 	}
 	if inst.BaseURL != "" {
 		opts = append(opts, cardigann.WithBaseURL(inst.BaseURL))

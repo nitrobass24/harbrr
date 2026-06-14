@@ -38,7 +38,14 @@ search:
     leechers:
       selector: leechers
     date:
+      # The JSON value "2022-06-01T10:30:00Z" is auto-converted by Newtonsoft.Json
+      # (DateParseHandling.DateTime) to a DateTime and read back as the .NET
+      # InvariantCulture string "06/01/2022 10:30:00"; harbrr reproduces this in the
+      # JSON selector. So real JSON defs (e.g. UNIT3D) append a zone and dateparse
+      # the MM/dd/yyyy form, not the raw ISO string.
       selector: added
       filters:
+        - name: append
+          args: " +00:00"
         - name: dateparse
-          args: "yyyy-MM-ddTHH:mm:ssZ"
+          args: "MM/dd/yyyy HH:mm:ss zzz"

@@ -155,11 +155,18 @@ func Execute(def *loader.Definition, query Query, session *login.Session, doer D
 		return nil, err
 	}
 
+	respType := responseType(def)
 	var out []*normalizer.Release
 	for i := range reqs {
 		body, err := doRequest(doer, reqs[i], session)
 		if err != nil {
 			return nil, err
+		}
+		// Lazy login: a logged-out response (login.test selector absent) aborts the
+		// parse so the engine can re-login and retry once. Checked before parsing,
+		// matching Jackett's CheckIfLoginIsNeeded -> DoLogin order.
+		if looksLoggedOut(def, body, respType, query, deps) {
+			return nil, ErrSearchLoggedOut
 		}
 		rels, err := ParseResults(def, body, query, deps)
 		if err != nil {

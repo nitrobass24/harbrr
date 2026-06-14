@@ -120,11 +120,15 @@ and the shared disposition rule.
   genuine 3-byte `U+FFFD` (which Jackett's regex also preserves). **`[Accepted]`**
 - **Download links served direct** — harbrr serves the tracker download/magnet
   link as extracted (the passkey it may carry is intended output, never logged).
-  The output layer does not yet wire the engine's `ResolveDownload` into the
-  served feed or expose a proxy `/dl` endpoint, so a release needing a
-  session-bound resolve/redirect is served as-is. (The resolver's own *completion*
-  is the engine's concern — see "Download resolver scope" in the engine README,
-  `[Tracked: Phase 7]`.) **`[Tracked: Phase 5 — serve resolved/proxied download links]`**
+  Phase 5 wires the engine's `ResolveDownload` into the served feed: the
+  `torznab.Indexer` contract gains `NeedsResolver()` + `ResolveDownload()`, and
+  `resolveDownloadLinks` rewrites each served page's link when the def declares a
+  download block. The **direct-link trackers** Phase 5 targets report
+  `NeedsResolver()==false`, so their link (the tracker's direct torrent URL with
+  passkey) is served unchanged and a grab works — proven by the live smoke. A
+  grab-time **`/dl` proxy** (resolve through harbrr's session at fetch time,
+  avoiding per-search resolution) and the resolver's own *completion* are
+  `[Tracked: Phase 7]`. **`[Partial: Phase 5 — ResolveDownload wired; /dl proxy Phase 7]`**
 
 ### HTTP handler (`internal/web/torznab`)
 
@@ -156,9 +160,15 @@ and the shared disposition rule.
   whereas Jackett returns an empty set for `offset > 0` on a non-paginating
   Cardigann indexer. De-duplication runs before the limit slice (Jackett limits
   then de-dups), so counts can differ on a duplicate-heavy page. **`[Deliberate]`**
-- **Result-category filtering / default categories** — harbrr does not yet drop
-  releases whose categories miss the query categories (`FilterResults`), return an
-  empty feed when every requested `cat` maps to no tracker category, or substitute
-  a definition's `default: true` categories when the mapped tracker-category list
-  is empty. A category-constrained search therefore returns the engine's full row
-  set. **`[Tracked: Phase 5]`**
+- **Result-category filtering / default categories** — RESOLVED in Phase 5
+  (`internal/web/torznab/filter.go` + `query.go`). The handler now reproduces
+  Jackett's two-part behaviour: request-side, `buildQuery` resolves the requested
+  newznab cats to tracker cats and falls back to the def's `default: true`
+  categories when that resolves to nothing (`CardigannIndexer`:
+  `if mappedCategories.Count == 0 -> DefaultCategories`); response-side,
+  `filterResults` reproduces `BaseIndexer.FilterResults` — when the request
+  supplied categories, a release is kept only if it has no categories or its
+  categories intersect the expanded requested set. Note Jackett does NOT return a
+  forced empty feed when a `cat` maps to nothing; it searches (defaults or all)
+  and the response filter drops non-matches, so an empty feed emerges naturally.
+  **`[Resolved: Phase 5]`**

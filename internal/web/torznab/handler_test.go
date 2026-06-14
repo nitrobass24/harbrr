@@ -19,11 +19,14 @@ const testAPIKey = "harbrr-test-key" //nolint:gosec // G101: synthetic test API 
 // fakeIndexer is a Provider-backed Indexer for the handler tests: it serves
 // canned capabilities + releases and records the search query it received.
 type fakeIndexer struct {
-	info      IndexerInfo
-	caps      *mapper.Capabilities
-	releases  []*normalizer.Release
-	searchErr error
-	gotQuery  search.Query
+	info          IndexerInfo
+	caps          *mapper.Capabilities
+	releases      []*normalizer.Release
+	searchErr     error
+	gotQuery      search.Query
+	needsResolver bool
+	resolvePrefix string // when set, ResolveDownload returns resolvePrefix+link
+	resolveErr    error
 }
 
 func (f *fakeIndexer) Info() IndexerInfo                  { return f.info }
@@ -32,6 +35,18 @@ func (f *fakeIndexer) Capabilities() *mapper.Capabilities { return f.caps }
 func (f *fakeIndexer) Search(q search.Query) ([]*normalizer.Release, error) {
 	f.gotQuery = q
 	return f.releases, f.searchErr
+}
+
+func (f *fakeIndexer) NeedsResolver() bool { return f.needsResolver }
+
+func (f *fakeIndexer) ResolveDownload(link string) (string, error) {
+	if f.resolveErr != nil {
+		return "", f.resolveErr
+	}
+	if f.resolvePrefix != "" {
+		return f.resolvePrefix + link, nil
+	}
+	return link, nil
 }
 
 type fakeProvider map[string]Indexer
@@ -217,7 +232,12 @@ func TestHandlerMalformedParams(t *testing.T) {
 // every requested cat maps to no tracker category, the query categories are empty
 // and the engine's full result set is returned (Jackett returns empty; this is a
 // [Tracked: Phase 4] divergence).
-func TestHandlerUnmappedCatPassesThrough(t *testing.T) {
+// TestHandlerUnmappedCatFiltersResults: a requested cat that maps to no tracker
+// category drives the search with no tracker categories (the demo def declares no
+// default:true cats), and the response-side category filter (Jackett
+// FilterResults) drops releases whose categories don't intersect the requested
+// cat. The demo release is category 2000, so cat=9999 yields an empty feed.
+func TestHandlerUnmappedCatFiltersResults(t *testing.T) {
 	t.Parallel()
 	idx := demoIndexer(t)
 	rec := do(t, newTestHandler(t, idx), "t=search&cat=9999")
@@ -227,8 +247,46 @@ func TestHandlerUnmappedCatPassesThrough(t *testing.T) {
 	if len(idx.gotQuery.Categories) != 0 {
 		t.Errorf("unmapped cat should yield empty tracker categories, got %v", idx.gotQuery.Categories)
 	}
-	if !strings.Contains(rec.Body.String(), "<item>") {
-		t.Errorf("unmapped cat should still return the engine's releases:\n%s", rec.Body.String())
+	if strings.Contains(rec.Body.String(), "<item>") {
+		t.Errorf("unmapped cat should filter out the category-2000 release:\n%s", rec.Body.String())
+	}
+}
+
+// TestHandlerResolvesDownloadLinks: when the indexer needs a resolver, each
+// served release's link is rewritten via ResolveDownload before serialization.
+func TestHandlerResolvesDownloadLinks(t *testing.T) {
+	t.Parallel()
+	idx := demoIndexer(t)
+	idx.needsResolver = true
+	idx.resolvePrefix = "https://harbrr.proxy/dl?u="
+	rec := do(t, newTestHandler(t, idx), "t=search&q=movie")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "https://harbrr.proxy/dl?u=") {
+		t.Errorf("resolver-needing indexer should rewrite served links:\n%s", rec.Body.String())
+	}
+}
+
+// TestHandlerDirectLinkNotResolved: a direct-link tracker (NeedsResolver=false,
+// the Phase 5 case) serves its link unchanged — ResolveDownload is never called.
+func TestHandlerDirectLinkNotResolved(t *testing.T) {
+	t.Parallel()
+	idx := demoIndexer(t) // needsResolver defaults false
+	idx.resolvePrefix = "https://should-not-apply/"
+	rec := do(t, newTestHandler(t, idx), "t=search&q=movie")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	// The happy path must have executed: the demo release is served with its
+	// ORIGINAL link untouched...
+	if !strings.Contains(body, "https://demo.test/dl/1.torrent") {
+		t.Fatalf("expected the original direct link to be served:\n%s", body)
+	}
+	// ...and the resolver prefix must not have been applied.
+	if strings.Contains(body, "should-not-apply") {
+		t.Errorf("direct-link tracker must not resolve links:\n%s", body)
 	}
 }
 

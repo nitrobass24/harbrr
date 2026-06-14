@@ -2,6 +2,7 @@ package registry_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	stdhttp "net/http"
 	"os"
@@ -359,4 +360,23 @@ func settingEnc(t *testing.T, db *database.DB, instanceID int64, name string) st
 		t.Fatalf("query setting %q: %v", name, err)
 	}
 	return deref(enc)
+}
+
+// TestRegistryTestAction exercises the management Test action through the
+// registry: a configured no-login def authenticates trivially (CheckTest with no
+// login block returns logged-in), and an unknown slug surfaces ErrNotFound. The
+// engine is built fresh and uncached, so this never touches a cached session.
+func TestRegistryTestAction(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	reg, _ := newRegistry(t, &replayDoer{body: bodyHTML})
+	if _, err := reg.Add(ctx, registry.AddParams{Slug: "tt", DefinitionID: "testtracker"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := reg.Test(ctx, "tt"); err != nil {
+		t.Errorf("Test(tt) = %v, want nil (no-login def authenticates trivially)", err)
+	}
+	if err := reg.Test(ctx, "missing"); !errors.Is(err, database.ErrNotFound) {
+		t.Errorf("Test(missing) = %v, want database.ErrNotFound", err)
+	}
 }

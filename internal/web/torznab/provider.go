@@ -25,6 +25,15 @@ type Indexer interface {
 	Info() IndexerInfo
 	Capabilities() *mapper.Capabilities
 	Search(query search.Query) ([]*normalizer.Release, error)
+	// NeedsResolver reports whether the definition declares a download block, so a
+	// served link must be resolved before a grab. Direct-link trackers report
+	// false and their link is served as-is.
+	NeedsResolver() bool
+	// ResolveDownload turns a release's download link into the real torrent URL
+	// (Phase-2 baseline: before.path + selectors). A def with no download block
+	// returns the link unchanged. The full resolver and a grab-time /dl proxy are
+	// Phase 7.
+	ResolveDownload(link string) (string, error)
 }
 
 // Provider resolves the indexer id from the request path to its Indexer.

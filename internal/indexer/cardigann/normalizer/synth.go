@@ -3,6 +3,8 @@ package normalizer
 import (
 	"net/url"
 	"strings"
+
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/encode"
 )
 
 // publicTrackers is the tracker list Jackett's MagnetUtil appends when
@@ -75,11 +77,12 @@ func queryArg(raw, name string) string {
 	return values.Get(name)
 }
 
-// urlEncode matches Jackett's WebUtilityHelpers.UrlEncode (UTF-8), which is
-// .NET WebUtility.UrlEncode: space -> '+', and the same unreserved set as Go's
-// url.QueryEscape. The two agree for the title/tracker strings that appear here.
+// urlEncode matches Jackett's MagnetUtil encoding of the magnet dn=/tr= values:
+// WebUtilityHelpers.UrlEncode (= .NET WebUtility.UrlEncode, space -> '+'). A
+// title containing ! * ( ) ~ encodes differently from Go's url.QueryEscape, so
+// this routes through the encode package for exact parity.
 func urlEncode(s string) string {
-	return url.QueryEscape(s)
+	return encode.WebUtilityEncode(s)
 }
 
 // resolveURL reproduces Jackett's resolvePath: new Uri(base, path). An absolute

@@ -129,6 +129,46 @@ func TestBuildCategoriesObject(t *testing.T) {
 	}
 }
 
+// TestBuildDefaultCategories verifies that caps.categorymappings entries with
+// default:true are collected into DefaultCategories (tracker ids, in mapping
+// order, no dedup), mirroring Jackett's `if (Categorymapping.Default)
+// DefaultCategories.Add(id)`. Absent and explicit-false flags are excluded.
+func TestBuildDefaultCategories(t *testing.T) {
+	t.Parallel()
+	yes, no := true, false
+	caps, err := Build(&loader.Definition{
+		ID: "d", Links: []string{"https://d.test/"},
+		Caps: loader.Caps{CategoryMappings: []loader.CategoryMapping{
+			{ID: loader.Scalar{Value: "1", Set: true}, Cat: "Movies", Default: &yes},
+			{ID: loader.Scalar{Value: "2", Set: true}, Cat: "TV"},
+			{ID: loader.Scalar{Value: "3", Set: true}, Cat: "Audio", Default: &no},
+			{ID: loader.Scalar{Value: "4", Set: true}, Cat: "Books", Default: &yes},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if got := caps.DefaultCategories; !reflect.DeepEqual(got, []string{"1", "4"}) {
+		t.Errorf("DefaultCategories = %v, want [1 4]", got)
+	}
+}
+
+// TestBuildCategoriesObjectHasNoDefaults confirms the object form (caps.categories)
+// carries no default flag, so DefaultCategories is empty there.
+func TestBuildCategoriesObjectHasNoDefaults(t *testing.T) {
+	t.Parallel()
+	caps, err := Build(&loader.Definition{
+		ID: "o", Links: []string{"https://o.test/"},
+		Caps: loader.Caps{Categories: map[string]string{"1": "Movies"}},
+	})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if len(caps.DefaultCategories) != 0 {
+		t.Errorf("object-form caps.categories should have no defaults, got %v", caps.DefaultCategories)
+	}
+}
+
 // TestBuildUnknownCategoryIsLoudError exercises the mapper's own guard. The
 // validated loader rejects unknown enum names upstream, but the mapper must
 // still fail loudly (drop-ins / future schema drift), so the definition is built

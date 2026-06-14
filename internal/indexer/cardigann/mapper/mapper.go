@@ -49,6 +49,15 @@ type Capabilities struct {
 
 	// CategoryMap provides Jackett's runtime tracker<->newznab lookups.
 	CategoryMap *CategoryMap
+
+	// DefaultCategories is the ordered list of tracker category ids (strings)
+	// whose caps.categorymappings entry declares `default: true`. Jackett's
+	// CardigannIndexer collects these into DefaultCategories and, when a query's
+	// mapped tracker categories are empty, searches them instead
+	// (CardigannIndexer.PerformQuery: `if mappedCategories.Count == 0 ->
+	// DefaultCategories`). Only the categorymappings list form carries a default
+	// flag; the caps.categories object form has none, so this is nil there.
+	DefaultCategories []string
 }
 
 // Mode name constants mirror the caps.modes keys.
@@ -126,7 +135,7 @@ func Build(def *loader.Definition) (*Capabilities, error) {
 	if def == nil {
 		return nil, errors.New("mapper: nil definition")
 	}
-	b := builder{def: def, catMap: &CategoryMap{}, advertised: map[int]Category{}}
+	b := builder{def: def, catMap: &CategoryMap{}, advertised: map[int]Category{}, defaultCats: &[]string{}}
 	return b.build()
 }
 
@@ -134,6 +143,9 @@ type builder struct {
 	def        *loader.Definition
 	catMap     *CategoryMap
 	advertised map[int]Category
+	// defaultCats is a pointer so appends survive the value-receiver methods
+	// (matching how catMap/advertised share state across them).
+	defaultCats *[]string
 }
 
 func (b builder) build() (*Capabilities, error) {
@@ -149,6 +161,7 @@ func (b builder) build() (*Capabilities, error) {
 		AllowTVSearchIMDB: boolValue(b.def.Caps.AllowTVSearchIMDB),
 		Categories:        b.sortedAdvertised(),
 		CategoryMap:       b.catMap,
+		DefaultCategories: *b.defaultCats,
 	}, nil
 }
 
@@ -178,6 +191,11 @@ func (b builder) mapCategoryMappings() error {
 		if cm.Desc != "" {
 			custom := Category{ID: customCategoryID(cm.ID.String()), Name: cm.Desc}
 			b.addCustom(cm.ID.String(), cm.Desc, custom)
+		}
+		// Jackett: `if (Categorymapping.Default) DefaultCategories.Add(id)` — after
+		// AddCategoryMapping, in categorymapping order, no dedup.
+		if boolValue(cm.Default) {
+			*b.defaultCats = append(*b.defaultCats, cm.ID.String())
 		}
 	}
 	return nil
