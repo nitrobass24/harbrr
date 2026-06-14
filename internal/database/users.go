@@ -28,7 +28,7 @@ func (Users) Count(ctx context.Context, q dbinterface.Execer) (int, error) {
 func (Users) Create(ctx context.Context, q dbinterface.Execer, u domain.User) (int64, error) {
 	res, err := q.ExecContext(
 		ctx,
-		`INSERT INTO users (username, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?)`,
+		q.Rebind(`INSERT INTO users (username, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?)`),
 		u.Username, u.PasswordHash,
 		u.CreatedAt.UTC().Format(timeLayout), u.UpdatedAt.UTC().Format(timeLayout),
 	)
@@ -49,7 +49,7 @@ func (Users) GetByUsername(ctx context.Context, q dbinterface.Execer, username s
 		createdAt, updatedAt string
 	)
 	err := q.QueryRowContext(ctx,
-		`SELECT id, username, password_hash, created_at, updated_at FROM users WHERE username = ?`, username).
+		q.Rebind(`SELECT id, username, password_hash, created_at, updated_at FROM users WHERE username = ?`), username).
 		Scan(&u.ID, &u.Username, &u.PasswordHash, &createdAt, &updatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.User{}, fmt.Errorf("user %q: %w", username, ErrNotFound)
@@ -65,7 +65,7 @@ func (Users) GetByUsername(ctx context.Context, q dbinterface.Execer, username s
 // UpdatePassword sets a user's password hash by id.
 func (Users) UpdatePassword(ctx context.Context, q dbinterface.Execer, id int64, hash string, updatedAt time.Time) error {
 	_, err := q.ExecContext(ctx,
-		`UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?`,
+		q.Rebind(`UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?`),
 		hash, updatedAt.UTC().Format(timeLayout), id)
 	if err != nil {
 		return fmt.Errorf("database: update password: %w", err)
