@@ -39,10 +39,10 @@ test:
 test-short:
 	go test -count=1 $(PKG)
 
-## test-openapi: validate the embedded management-API OpenAPI spec
+## test-openapi: validate the embedded management-API OpenAPI spec + handler drift
 .PHONY: test-openapi
 test-openapi:
-	go test -race -count=1 ./internal/web/swagger/...
+	go test -race -count=1 ./internal/web/swagger/... ./internal/web/api/...
 
 ## vet: go vet
 .PHONY: vet
@@ -81,6 +81,15 @@ precommit: fmt lint test
 ## ci: the checks CI enforces
 .PHONY: ci
 ci: vet lint test build
+
+## docker: build the container image
+.PHONY: docker
+docker:
+	docker build \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg COMMIT=$(COMMIT) \
+		--build-arg DATE=$(DATE) \
+		-t $(BINARY):dev .
 
 ## vendor-defs: refresh the embedded Jackett definition snapshot
 .PHONY: vendor-defs

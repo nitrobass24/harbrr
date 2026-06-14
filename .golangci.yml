@@ -83,3 +83,11 @@ linters:
           - gocyclo
           - forcetypeassert
           - wrapcheck
+      # Synthetic credentials live only in *_test.go (AGENTS.md "Security"), which
+      # trips gosec's hardcoded-credentials check (G101). The same paths are
+      # allowlisted for gitleaks/check-no-secrets; G101 stays fully active on
+      # production code. Scoped to G101 so other gosec checks still run in tests.
+      - path: _test\.go
+        text: "G101"
+        linters:
+          - gosec

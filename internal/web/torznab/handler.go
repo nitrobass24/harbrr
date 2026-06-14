@@ -17,10 +17,12 @@ import (
 // handler serves the Torznab endpoint for a set of indexers resolved via a
 // Provider.
 type handler struct {
-	provider Provider
-	apiKey   string
-	clock    func() time.Time
-	log      zerolog.Logger
+	provider        Provider
+	apiKey          string
+	apiKeyValidator func(string) bool
+	basePath        string
+	clock           func() time.Time
+	log             zerolog.Logger
 }
 
 // Option configures the handler at construction.
@@ -30,6 +32,19 @@ type Option func(*handler)
 // param). When empty, the handler fails closed: every request is rejected with
 // error 100, never silently unauthenticated.
 func WithAPIKey(key string) Option { return func(h *handler) { h.apiKey = key } }
+
+// WithAPIKeyValidator sets a validator for the apikey/passkey query param,
+// replacing the fixed-key comparison. The production server wires this to the auth
+// service so any minted API key (stored only as a hash) authorizes the feed,
+// without holding a plaintext key in memory (docs/ideas.md §9). When set, it takes
+// precedence over WithAPIKey.
+func WithAPIKeyValidator(fn func(string) bool) Option {
+	return func(h *handler) { h.apiKeyValidator = fn }
+}
+
+// WithBasePath sets the external base path (e.g. "/harbrr") so the served feed's
+// self URL reflects the externally-visible URL after the server strips the prefix.
+func WithBasePath(prefix string) Option { return func(h *handler) { h.basePath = prefix } }
 
 // WithClock injects the reference clock used for the results pubDate fallback.
 // Defaults to time.Now.
@@ -85,15 +100,19 @@ func (h *handler) serve(w http.ResponseWriter, r *http.Request) {
 	h.writeResults(w, r, idx, q)
 }
 
-// authorized validates the apikey (or its passkey alias). It fails closed when
-// no key is configured.
+// authorized validates the apikey (or its passkey alias). A validator (the
+// production hash-lookup) takes precedence; otherwise a fixed key is compared. It
+// fails closed when neither a validator nor a key is configured.
 func (h *handler) authorized(q url.Values) bool {
-	if h.apiKey == "" {
-		return false
-	}
 	key := q.Get("apikey")
 	if key == "" {
 		key = q.Get("passkey")
+	}
+	if h.apiKeyValidator != nil {
+		return key != "" && h.apiKeyValidator(key)
+	}
+	if h.apiKey == "" {
+		return false
 	}
 	return key == h.apiKey
 }
@@ -122,7 +141,7 @@ func (h *handler) writeResults(w http.ResponseWriter, r *http.Request, idx Index
 		return
 	}
 	releases = parsePaging(q).apply(dedupeByGUID(releases))
-	body, err := tzn.MarshalResults(feedInfo(r, idx), releases, h.clock())
+	body, err := tzn.MarshalResults(h.feedInfo(r, idx), releases, h.clock())
 	if err != nil {
 		h.writeInternalError(w, "results", idx.Info().ID, err)
 		return
@@ -200,7 +219,7 @@ func dedupeByGUID(releases []*normalizer.Release) []*normalizer.Release {
 
 // feedInfo assembles the feed metadata from the indexer identity + the request's
 // self URL.
-func feedInfo(r *http.Request, idx Indexer) tzn.FeedInfo {
+func (h *handler) feedInfo(r *http.Request, idx Indexer) tzn.FeedInfo {
 	info := idx.Info()
 	return tzn.FeedInfo{
 		IndexerID:   info.ID,
@@ -208,19 +227,22 @@ func feedInfo(r *http.Request, idx Indexer) tzn.FeedInfo {
 		Description: info.Description,
 		SiteLink:    info.SiteLink,
 		Type:        info.Type,
-		SelfURL:     selfURL(r),
+		SelfURL:     h.selfURL(r),
 	}
 }
 
 // selfURL builds the atom:link self href from the request scheme/host/path,
-// dropping the query string entirely so harbrr never reflects the caller's
-// apikey, then routes it through RedactURL as defense in depth.
-func selfURL(r *http.Request) string {
+// dropping the query string entirely so harbrr never reflects the caller's apikey,
+// then routes it through RedactURL as defense in depth. It re-adds the configured
+// base path (the server strips it before routing) so the served URL is the
+// externally-visible one, and honors X-Forwarded-Proto so a TLS-terminating proxy
+// yields https.
+func (h *handler) selfURL(r *http.Request) string {
 	scheme := "http"
-	if r.TLS != nil {
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
 		scheme = "https"
 	}
-	return apphttp.RedactURL(scheme + "://" + r.Host + r.URL.Path)
+	return apphttp.RedactURL(scheme + "://" + r.Host + h.basePath + r.URL.Path)
 }
 
 // writeInternalError logs the failure and returns a generic 900 document — the

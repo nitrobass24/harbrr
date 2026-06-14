@@ -236,11 +236,16 @@ func validateID(id string) error {
 }
 
 // readDropin reads <dropinDir>/<id>.yml. ok is false (with nil error) when the
-// file does not exist. The id is validated by Load (validateID) before this is
-// reached, so the join cannot escape dropinDir.
+// file does not exist. Callers validate id (validateID rejects separators and
+// ".."), and as defense in depth this also verifies the resolved path stays
+// inside dropinDir, so a definition id sourced from the management API can never
+// turn into a path traversal even if a future caller forgets to validate.
 func (l *Loader) readDropin(id string) (data []byte, ok bool, err error) {
 	path := filepath.Join(l.dropinDir, id+".yml")
-	data, err = os.ReadFile(path) //nolint:gosec // id is validated by validateID (no separators / ..) before this join
+	if !withinDir(l.dropinDir, path) {
+		return nil, false, nil
+	}
+	data, err = os.ReadFile(path) //nolint:gosec // path is confined to dropinDir by withinDir above.
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, false, nil
@@ -248,6 +253,16 @@ func (l *Loader) readDropin(id string) (data []byte, ok bool, err error) {
 		return nil, false, fmt.Errorf("reading drop-in definition %q: %w", id, err)
 	}
 	return data, true, nil
+}
+
+// withinDir reports whether path resolves to a location inside dir (not dir
+// itself escaping via "..").
+func withinDir(dir, path string) bool {
+	rel, err := filepath.Rel(dir, path)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // definitionID extracts a definition id from a filename, returning ok=false for

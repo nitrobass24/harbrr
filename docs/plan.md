@@ -73,31 +73,42 @@ decoupled.
 
 Turns the proven engine into a configurable headless daemon Sonarr/Radarr/autobrr can point at — the
 critical path everything product-facing depends on, and where the `docs/ideas.md` §9 security model is
-built. (harbrr cannot serve a single live request until this lands: today `cmd/harbrr serve` loads
-config and exits, and the Torznab handler has no production caller.)
+built. (Before this phase, `cmd/harbrr serve` loaded config and exited and the Torznab handler had no
+production caller; this phase makes harbrr a runnable, configurable daemon — the registry is now the
+production `Provider` the handler resolves through.)
 
-- [ ] **SQLite store + migrations** behind `internal/database/dbinterface` (clean interface; Postgres
+- [x] **SQLite store + migrations** behind `internal/database/dbinterface` (clean interface; Postgres
       stays deferred — Phase 8). Data dir `0700`; db + all SQLite side files (`-wal`/`-journal`) `0600`
-- [ ] **Secrets store** (`internal/secrets`) — the three-class model from §9: tracker creds
+- [x] **Secrets store** (`internal/secrets`) — the three-class model from §9: tracker creds
       AES-256-GCM (per-record nonce, AAD = indexer-id + setting, stored `key_id`); web-UI password
       argon2id; API keys SHA-256. Auto-generate a keyfile on first run (encryption always on); fail
       loud on a wrong/changed key
-- [ ] **Indexer instance registry** — add / configure / enable / disable / delete a configured indexer
+- [x] **Indexer instance registry** — add / configure / enable / disable / delete a configured indexer
       (definition id + settings + encrypted credentials) and resolve an id → engine. This is the
       production `Provider` the Torznab handler already expects, and the core of a Prowlarr-style manager
-- [ ] **Management API + auth** — grow the hand-authored `openapi.yaml` past `/healthz` (indexer CRUD,
+- [x] **Management API + auth** — grow the hand-authored `openapi.yaml` past `/healthz` (indexer CRUD,
       settings, API-key management); first-run setup; server-side sessions + `X-API-Key`; CSRF on
       cookie-auth surfaces; the qui auth-disabled / trusted-proxy mode
-- [ ] **Wire the server** — mount the Torznab handler (`internal/web/torznab`) **and** the management
+- [x] **Wire the server** — mount the Torznab handler (`internal/web/torznab`) **and** the management
       API in `cmd/harbrr serve`; config file + base-path support
-- [ ] **Docker image + config file**
+- [x] **Docker image + config file**
 
 ## Phase 5 — Live smoke (closes the MVP)
 
 5 real trackers driven through the running daemon by an actual Sonarr/Radarr — the live half of the
 Phase 3 "search real trackers end-to-end" goal.
 
-- [ ] 5 real trackers, live login/session, gentle rate
+> **Execution protocol (decided).** During the Phase 5 planning step the user hands over the **tracker
+> credentials** directly (passkey/cookie/login) — they can't be lifted from Prowlarr's API, which masks
+> them (see Phase 8) — and the **API keys for the *arr (Sonarr/Radarr) + Prowlarr**. The agent then
+> **selects the 5 trackers** for the smoke test, restricted to **non-Cloudflare** sites (the test
+> environment runs no FlareSolverr/proxy). The test bed is a single local Docker LAN that already
+> includes qBittorrent + qui (for the grab half); Prowlarr doubles as a live differential oracle
+> (same query → Prowlarr feed vs harbrr feed → diff). Treat creds per AGENTS.md (never logged/committed;
+> entered into harbrr's encrypted store, redacted everywhere).
+
+- [ ] 5 real **non-Cloudflare** trackers (agent-selected; no FlareSolverr in the test env), live
+      login/session, gentle rate
 - [ ] **Robustness proof** (carried from Phase 3, which is verified offline only): a real
       Sonarr/Radarr parses the served caps and completes search → **grab** end-to-end against the live
       trackers (not just a 200 feed), and an offline serializer fuzz/property test asserts arbitrary
@@ -127,9 +138,11 @@ Phase 3 "search real trackers end-to-end" goal.
 - [ ] Timeouts, backoff, per-indexer rate limits (anti-blacklist)
 - [ ] **Indexer health & status**: define health events (auth failure, rate-limited, parse error,
       anti-bot) and surface per-indexer status via the API; broken indexers already degrade cleanly (Phase 2)
-- [ ] **Per-indexer proxies** (HTTP / SOCKS4 / SOCKS5), configured per instance
-- [ ] **Secret hardening**: key rotation (re-encrypt via the stored `key_id`); secret redaction audited
-      end-to-end across logs, errors, traces, and the stats event log
+- [ ] **Per-indexer proxies** (HTTP / SOCKS4 / SOCKS5), configured per instance (the
+      `registry.WithDoerFactory` seam for a per-instance HTTP client is already in place from Phase 4)
+- [ ] **Secret hardening**: key rotation (re-encrypt via the stored `key_id` — already persisted per
+      record since Phase 4); secret redaction audited end-to-end across logs, errors, traces, and the
+      stats event log
 
 ## Phase 7 — Scale coverage
 
@@ -148,14 +161,23 @@ Phase 3 "search real trackers end-to-end" goal.
 - [ ] **\*arr application sync** (qui-as-app): push indexer config into Sonarr/Radarr/Lidarr/… via their
       API — the sync contract + add/update/remove lifecycle + per-app enable/disable (its own sub-plan; a
       Prowlarr headline feature)
-- [ ] **Jackett/Prowlarr migration import**: import indexer instances + credentials + category overrides
-      from a Jackett/Prowlarr config
+- [ ] **Jackett/Prowlarr migration import**: import indexer instances + credentials + category overrides.
+      Read credentials from the **Prowlarr SQLite database** (`prowlarr.db`, the `Indexers.Settings`
+      JSON column), which stores them in plaintext — NOT the REST API, whose `SchemaBuilder` masks
+      `ApiKey`/`Password` fields with `********` (verified against Prowlarr source; see
+      `docs/divergences.md` / the secrets testdata README). Jackett's config encrypts creds per-install
+      (RSA/DPAPI), so a Jackett import falls back to guided re-entry for the protected fields.
 - [ ] Native **harbrr → autobrr push** (closes the RSS-polling gap; family-only win)
 - [ ] cross-seed search backend
-- [ ] **Stats / search history** (query/grab/auth event log + query API); **notifications**
+- [ ] **Stats / search history** (query/grab/auth event log + query API; the auth event log populates
+      `api_keys.last_used_at`, left unwritten in Phase 4 to keep validation a pure read); **notifications**
       (Discord/webhook, pluggable provider)
 - [ ] **Web UI** — the management dashboard (indexer grid, add/edit forms, manual search, stats);
-      depends on the Phase 4 management API
+      depends on the Phase 4 management API. Includes rendering the embedded OpenAPI spec as Swagger UI
+      (Phase 4 serves the raw spec at `/api/openapi.yaml`).
+- [ ] **OIDC authentication** — fully implement the OIDC login flow stubbed in Phase 4 (the
+      `/api/auth/oidc/*` endpoints return 501 today; only a config seam exists). A qui/autobrr family
+      feature; pairs with the Web UI auth surface.
 - [ ] Postgres behind the existing `dbinterface` (only now)
 
 ---
@@ -165,3 +187,7 @@ Phase 3 "search real trackers end-to-end" goal.
 - Never hand-edit `internal/indexer/definitions/vendor/` — absorb differences in the engine.
 - Never log/commit secrets. Always `-race -count=1`. Keep functions small (the linters enforce it).
 - One plan item per commit; conventional-commit messages; no AI attribution lines.
+- **Capture highlights as you go.** When a phase lands a user-facing or competitive
+  improvement over Prowlarr/Jackett/qui, add it to `docs/highlights.md` (honestly
+  labeled `[shipped]`/`[partial]`/`[planned]`, with a real citation) so the "why
+  harbrr" list is ready when the site/docs are published.

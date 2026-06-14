@@ -11,4 +11,10 @@ lint-report.json
 .env
 .env.*
 
+# stray `go build ./cmd/harbrr` binary + a datadir created by running it directly
+# (use `make build` -> /bin instead)
+/harbrr
+/cmd/harbrr/harbrr
+/cmd/harbrr/data/
+
 .DS_Store

@@ -1,16 +1,23 @@
 openapi: 3.1.0
 info:
   title: harbrr management API
-  version: 0.0.0
+  version: 0.1.0
   description: >
-    harbrr's own management API (configuration of indexers, secrets, and
-    download clients). This is distinct from the *arr-facing Torznab/Newznab
-    XML contract served by internal/torznab; the two evolve independently
-    (see docs/architecture.md). Hand-authored, embedded via //go:embed, and
-    guarded by a drift test (make test-openapi).
+    harbrr's own management API (first-run setup, authentication, API-key
+    management, and indexer configuration). This is distinct from the *arr-facing
+    Torznab/Newznab XML contract served by internal/torznab; the two evolve
+    independently (see docs/architecture.md). Hand-authored, embedded via
+    //go:embed, and guarded by a drift test that asserts the spec matches the
+    mounted routes (make test-openapi).
+
+    Authentication: cookie session (after login) or the X-API-Key header for
+    programmatic clients. CSRF defence follows the autobrr family — SameSite=Lax
+    session cookies plus header-authenticated programmatic access — so there is no
+    separate CSRF token (see docs/divergences.md).
   license:
     name: GPL-2.0-or-later
     url: https://www.gnu.org/licenses/gpl-2.0.html
+
 paths:
   /healthz:
     get:
@@ -26,5 +33,376 @@ paths:
                 properties:
                   status:
                     type: string
-                required:
-                  - status
+                required: [status]
+
+  /api/auth/setup:
+    get:
+      summary: First-run setup status
+      operationId: getSetupStatus
+      responses:
+        "200":
+          description: whether the admin account exists
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  setupComplete:
+                    type: boolean
+                required: [setupComplete]
+    post:
+      summary: Create the single admin (first run only)
+      operationId: postSetup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Credentials" }
+      responses:
+        "201":
+          description: admin created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  username: { type: string }
+                required: [username]
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/auth/login:
+    post:
+      summary: Log in and establish a session
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Credentials" }
+      responses:
+        "204": { description: logged in (session cookie set) }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/auth/logout:
+    post:
+      summary: Destroy the current session
+      operationId: logout
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "204": { description: logged out }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/auth/me:
+    get:
+      summary: Current authenticated identity
+      operationId: me
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the authenticated identity
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  username: { type: string }
+                  authMethod: { type: string }
+                required: [username, authMethod]
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/auth/oidc/login:
+    get:
+      summary: OIDC login (not implemented — deferred to a later phase)
+      operationId: oidcLogin
+      responses:
+        "501": { description: OIDC is not implemented yet }
+
+  /api/auth/oidc/callback:
+    get:
+      summary: OIDC callback (not implemented — deferred to a later phase)
+      operationId: oidcCallback
+      responses:
+        "501": { description: OIDC is not implemented yet }
+
+  /api/definitions:
+    get:
+      summary: List available tracker definitions
+      operationId: listDefinitions
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the available definitions
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DefinitionSummary" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/apikeys:
+    get:
+      summary: List API keys (metadata only)
+      operationId: listApiKeys
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the API keys
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ApiKey" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Mint a new API key (plaintext shown once)
+      operationId: mintApiKey
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+              required: [name]
+      responses:
+        "201":
+          description: the minted key (plaintext returned once)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MintedApiKey" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/apikeys/{id}:
+    delete:
+      summary: Revoke an API key
+      operationId: deleteApiKey
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: revoked }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/indexers:
+    get:
+      summary: List configured indexers
+      operationId: listIndexers
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the configured indexers
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Instance" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Add a configured indexer
+      operationId: addIndexer
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AddIndexer" }
+      responses:
+        "201":
+          description: the created indexer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Instance" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/indexers/{slug}:
+    get:
+      summary: Get a configured indexer (settings redacted)
+      operationId: getIndexer
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: the indexer with its settings
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InstanceDetail" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      summary: Update an indexer (settings merged; <redacted> keeps the stored value)
+      operationId: updateIndexer
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateIndexer" }
+      responses:
+        "204": { description: updated }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      summary: Delete a configured indexer
+      operationId: deleteIndexer
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: deleted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/indexers/{slug}/enable:
+    post:
+      summary: Enable an indexer
+      operationId: enableIndexer
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: enabled }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/indexers/{slug}/disable:
+    post:
+      summary: Disable an indexer
+      operationId: disableIndexer
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: disabled }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+components:
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: harbrr_session
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: >
+        A bearer credential — send over HTTPS only; it must never traverse a
+        cleartext link. Terminate TLS at harbrr or a trusted reverse proxy.
+  responses:
+    BadRequest:
+      description: invalid request
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: authentication required or failed
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: conflicting state
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: resource not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+      required: [error]
+    Credentials:
+      type: object
+      properties:
+        username: { type: string }
+        password: { type: string }
+      required: [username, password]
+    DefinitionSummary:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        type: { type: string }
+        language: { type: string }
+      required: [id, name]
+    ApiKey:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time }
+      required: [id, name, createdAt]
+    MintedApiKey:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        key: { type: string, description: "the plaintext key, shown once" }
+        createdAt: { type: string, format: date-time }
+      required: [id, name, key, createdAt]
+    Setting:
+      type: object
+      properties:
+        name: { type: string }
+        value: { type: string, description: secret values are the <redacted> sentinel }
+        secret: { type: boolean }
+      required: [name, value, secret]
+    Instance:
+      type: object
+      properties:
+        slug: { type: string }
+        definitionId: { type: string }
+        name: { type: string }
+        baseUrl: { type: string }
+        enabled: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [slug, definitionId, name, enabled, createdAt, updatedAt]
+    InstanceDetail:
+      allOf:
+        - { $ref: "#/components/schemas/Instance" }
+        - type: object
+          properties:
+            settings:
+              type: array
+              items: { $ref: "#/components/schemas/Setting" }
+          required: [settings]
+    AddIndexer:
+      type: object
+      properties:
+        slug: { type: string, description: defaults to definitionId when omitted }
+        definitionId: { type: string }
+        name: { type: string }
+        baseUrl: { type: string }
+        settings:
+          type: object
+          additionalProperties: { type: string }
+      required: [definitionId]
+    UpdateIndexer:
+      type: object
+      properties:
+        name: { type: string }
+        baseUrl: { type: string }
+        settings:
+          type: object
+          additionalProperties: { type: string }

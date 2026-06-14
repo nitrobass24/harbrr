@@ -495,6 +495,9 @@ the project credible with maintainers. A sane adoption path: CLI conformance too
 3–5 trackers → Docker image → config UI/API → autobrr feed integration → Prowlarr/Jackett import →
 app sync.
 
+The concrete, defensible advantages to lead with when that copy is written — kept current as each
+phase lands and honestly labeled shipped vs planned — live in [`docs/highlights.md`](highlights.md).
+
 ## 14. Licensing
 
 harbrr is **GPL-2.0-or-later**, matching autobrr and qui, which is compatible with **Jackett's

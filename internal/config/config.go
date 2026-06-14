@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 )
 
 // redactedMask is the placeholder substituted for secret values when a Config
@@ -23,13 +24,39 @@ type Config struct {
 	DataDir  string         `mapstructure:"data_dir"`
 	Database DatabaseConfig `mapstructure:"database"`
 	Secrets  SecretsConfig  `mapstructure:"secrets"`
+	Auth     AuthConfig     `mapstructure:"auth"`
 }
 
-// ServerConfig describes the management-API listener (not yet served).
+// ServerConfig describes the HTTP listener and reverse-proxy posture.
 type ServerConfig struct {
 	Host string `mapstructure:"host"`
 	Port int    `mapstructure:"port"`
+	// BaseURL serves harbrr under a subpath (e.g. "/harbrr"); empty serves at root.
+	BaseURL string `mapstructure:"base_url"`
+	// SecureCookie marks the session cookie Secure. Set it when harbrr is reached
+	// over HTTPS (typically a TLS-terminating reverse proxy).
+	SecureCookie bool `mapstructure:"secure_cookie"`
 }
+
+// AuthConfig is the management-API authentication posture.
+type AuthConfig struct {
+	// Mode is "required" (default) or "disabled". Disabled serves a synthetic admin
+	// to allowlisted IPs (behind an authenticating reverse proxy) and REQUIRES a
+	// non-empty IPAllowlist.
+	Mode string `mapstructure:"mode"`
+	// TrustedProxies are peers whose X-Forwarded-For is honored for the allowlist.
+	TrustedProxies []string `mapstructure:"trusted_proxies"`
+	// IPAllowlist is the set of IPs/CIDRs permitted in disabled mode.
+	IPAllowlist []string `mapstructure:"ip_allowlist"`
+}
+
+// AuthDisabled reports whether auth is disabled (trusted-proxy mode).
+func (c AuthConfig) AuthDisabled() bool { return c.Mode == authModeDisabled }
+
+const (
+	authModeRequired = "required"
+	authModeDisabled = "disabled"
+)
 
 // LogConfig drives the zerolog logger built in internal/logger.
 type LogConfig struct {
@@ -44,11 +71,13 @@ type DatabaseConfig struct {
 }
 
 // SecretsConfig selects the at-rest encryption key source. At most one of
-// EncryptionKey (inline/env) or KeyFile (path) may be set; if neither is set,
-// harbrr falls back to plaintext with a loud startup warning.
+// EncryptionKey (inline/env) or KeyFile (path) may be set. If neither is set,
+// harbrr auto-generates a keyfile (encryption is always on) unless AllowPlaintext
+// is set, which opts into UNENCRYPTED storage and fails closed otherwise.
 type SecretsConfig struct {
-	EncryptionKey string `mapstructure:"encryption_key"`
-	KeyFile       string `mapstructure:"key_file"`
+	EncryptionKey  string `mapstructure:"encryption_key"`
+	KeyFile        string `mapstructure:"key_file"`
+	AllowPlaintext bool   `mapstructure:"allow_plaintext"`
 }
 
 // validLogLevels and validLogFormats are the accepted enum values for LogConfig.
@@ -72,6 +101,7 @@ func Defaults() Config {
 		DataDir:  "./data",
 		Database: DatabaseConfig{Path: ""}, // derived under DataDir when empty
 		Secrets:  SecretsConfig{},
+		Auth:     AuthConfig{Mode: authModeRequired},
 	}
 }
 
@@ -107,6 +137,39 @@ func (c Config) Validate() error {
 	}
 	if c.Secrets.EncryptionKey != "" && c.Secrets.KeyFile != "" {
 		return errors.New("config: set only one of secrets.encryption_key or secrets.key_file")
+	}
+	if err := c.validateAuth(); err != nil {
+		return err
+	}
+	return c.validateBaseURL()
+}
+
+// validateAuth checks the auth mode and the fail-closed allowlist requirement.
+func (c Config) validateAuth() error {
+	switch c.Auth.Mode {
+	case "", authModeRequired, authModeDisabled:
+	default:
+		return fmt.Errorf("config: invalid auth.mode %q (want %q or %q)", c.Auth.Mode, authModeRequired, authModeDisabled)
+	}
+	if c.Auth.AuthDisabled() && len(c.Auth.IPAllowlist) == 0 {
+		return errors.New("config: auth.mode=disabled requires a non-empty auth.ip_allowlist (refusing to serve an open instance)")
+	}
+	return nil
+}
+
+// validateBaseURL requires a leading slash and forbids a trailing one, so it can
+// be stripped from request paths cleanly. "/" by itself is rejected (it is a
+// trailing slash, and equivalent to the empty default); "/harbrr" is valid.
+func (c Config) validateBaseURL() error {
+	b := c.Server.BaseURL
+	if b == "" {
+		return nil
+	}
+	if !strings.HasPrefix(b, "/") {
+		return fmt.Errorf("config: server.base_url %q must start with '/'", b)
+	}
+	if strings.HasSuffix(b, "/") {
+		return fmt.Errorf("config: server.base_url %q must not end with '/'", b)
 	}
 	return nil
 }

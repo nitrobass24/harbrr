@@ -20,7 +20,7 @@ complete decision log rather than a half-tracked backlog:
 ## Where each layer's divergences live
 
 A divergence is documented in the README colocated with the test fixtures that
-pin it, so the record sits beside the test that would catch a regression. The two
+pin it, so the record sits beside the test that would catch a regression. The
 layers' entries are **disjoint** — each divergence belongs to exactly one layer —
 so there is nothing to keep in sync between them.
 
@@ -28,8 +28,9 @@ so there is nothing to keep in sync between them.
 |-------|----------------|--------|
 | **Engine** (Phases 1–2) | how a saved tracker response becomes a normalized release: extraction, login/session, request building, date/regex/selector parsing, the XML backend | [`internal/indexer/cardigann/parity/testdata/README.md`](../internal/indexer/cardigann/parity/testdata/README.md) |
 | **Torznab output** (Phase 3) | how a normalized release becomes the served feed: the *arr-facing capabilities + results + error XML and the HTTP handler | [`internal/torznab/testdata/README.md`](../internal/torznab/testdata/README.md) |
+| **Daemon foundation** (Phase 4) | how the daemon stores + serves: the §9 secrets model, persistence, auth/session/CSRF, and where these differ from autobrr/qui | [`internal/secrets/testdata/README.md`](../internal/secrets/testdata/README.md) |
 
-The two READMEs cross-link each other for navigation; this file is linked from
+The per-layer READMEs cross-link for navigation; this file is linked from
 `docs/architecture.md` (invariant #2).
 
 ## Cross-layer relationships

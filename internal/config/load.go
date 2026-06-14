@@ -14,6 +14,7 @@ import (
 var flagToKey = map[string]string{
 	"host":       "server.host",
 	"port":       "server.port",
+	"base-url":   "server.base_url",
 	"log-level":  "log.level",
 	"log-format": "log.format",
 	"data-dir":   "data_dir",
@@ -56,6 +57,13 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("log.format", d.Log.Format)
 	v.SetDefault("data_dir", d.DataDir)
 	v.SetDefault("database.path", d.Database.Path)
+	v.SetDefault("server.base_url", d.Server.BaseURL)
+	v.SetDefault("auth.mode", d.Auth.Mode)
+	// Registering these keys lets AutomaticEnv resolve them through Unmarshal
+	// (viper only binds env for known keys). The list-valued auth.ip_allowlist /
+	// auth.trusted_proxies are set via the config file.
+	v.SetDefault("server.secure_cookie", d.Server.SecureCookie)
+	v.SetDefault("secrets.allow_plaintext", d.Secrets.AllowPlaintext)
 }
 
 func bindFlags(v *viper.Viper, flags *pflag.FlagSet) error {

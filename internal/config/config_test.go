@@ -150,6 +150,37 @@ func TestLoadFile(t *testing.T) {
 	}
 }
 
+func TestLoadFilePhase4Fields(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "harbrr.yaml")
+	body := "server:\n" +
+		"  base_url: /harbrr\n" +
+		"  secure_cookie: true\n" +
+		"secrets:\n" +
+		"  allow_plaintext: true\n" +
+		"auth:\n" +
+		"  mode: disabled\n" +
+		"  ip_allowlist: [\"10.0.0.0/8\", \"127.0.0.1\"]\n" +
+		"  trusted_proxies: [\"172.16.0.0/12\"]\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := config.Load(path, nil)
+	if err != nil {
+		t.Fatalf("Load() = %v", err)
+	}
+	if cfg.Server.BaseURL != "/harbrr" || !cfg.Server.SecureCookie {
+		t.Errorf("server = %+v, want base_url=/harbrr secure_cookie=true", cfg.Server)
+	}
+	if !cfg.Secrets.AllowPlaintext {
+		t.Error("secrets.allow_plaintext not loaded")
+	}
+	if !cfg.Auth.AuthDisabled() || len(cfg.Auth.IPAllowlist) != 2 || len(cfg.Auth.TrustedProxies) != 1 {
+		t.Errorf("auth = %+v, want disabled + 2 allowlist + 1 proxy", cfg.Auth)
+	}
+}
+
 func TestLoadFlagBeatsEnv(t *testing.T) {
 	t.Setenv("HARBRR_SERVER_PORT", "9999")
 
@@ -164,6 +195,21 @@ func TestLoadFlagBeatsEnv(t *testing.T) {
 	}
 	if cfg.Server.Port != 1234 {
 		t.Errorf("flag should beat env: port = %d, want 1234", cfg.Server.Port)
+	}
+}
+
+// TestExampleConfigIsValid keeps the shipped sample config loadable + valid, so it
+// never drifts from the config struct.
+func TestExampleConfigIsValid(t *testing.T) {
+	cfg, err := config.Load(filepath.Join("..", "..", "config.example.yaml"), nil)
+	if err != nil {
+		t.Fatalf("config.example.yaml failed to load/validate: %v", err)
+	}
+	if cfg.Server.Port != 7474 {
+		t.Errorf("example server.port = %d, want 7474", cfg.Server.Port)
+	}
+	if cfg.Auth.Mode != "required" {
+		t.Errorf("example auth.mode = %q, want required", cfg.Auth.Mode)
 	}
 }
 
