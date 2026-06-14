@@ -80,7 +80,7 @@ func TestFetchLandingPastAntiBot_ManualCookie(t *testing.T) {
 		WithSolver(ManualCookieSolver{Cookie: "cf_clearance=token123"}),
 	)
 
-	body, err := e.fetchLandingPastAntiBot("https://t.invalid/login.php", nil)
+	body, err := e.fetchLandingPastAntiBot(t.Context(), "https://t.invalid/login.php", nil)
 	if err != nil {
 		t.Fatalf("fetchLandingPastAntiBot: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestFetchLandingPastAntiBot_NoopFailsLoud(t *testing.T) {
 	doer := &seqDoer{bodies: []string{"Just a moment..."}}
 	e := New(WithClient(doer), WithBaseURL("https://t.invalid/")) // default NoopSolver
 
-	_, err := e.fetchLandingPastAntiBot("https://t.invalid/login.php", nil)
+	_, err := e.fetchLandingPastAntiBot(t.Context(), "https://t.invalid/login.php", nil)
 	if !errors.Is(err, ErrSolverRequired) {
 		t.Errorf("err = %v, want ErrSolverRequired (no solver configured)", err)
 	}
@@ -122,7 +122,7 @@ func TestFetchLandingPastAntiBot_CleanPage(t *testing.T) {
 	doer := &seqDoer{bodies: []string{"<html><body>login form</body></html>"}}
 	e := New(WithClient(doer), WithBaseURL("https://t.invalid/"))
 
-	body, err := e.fetchLandingPastAntiBot("https://t.invalid/login.php", nil)
+	body, err := e.fetchLandingPastAntiBot(t.Context(), "https://t.invalid/login.php", nil)
 	if err != nil {
 		t.Fatalf("fetchLandingPastAntiBot: %v", err)
 	}

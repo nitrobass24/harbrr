@@ -73,15 +73,15 @@ func (e *Executor) solver() Solver {
 // retries the GET. With the default NoopSolver it preserves the original
 // fail-loud ErrSolverRequired behaviour. A page that is still challenged after a
 // solve also fails loud — never a loop.
-func (e *Executor) fetchLandingPastAntiBot(rawURL string, headers map[string][]string) ([]byte, error) {
-	body, _, err := e.get(rawURL, headers)
+func (e *Executor) fetchLandingPastAntiBot(ctx context.Context, rawURL string, headers map[string][]string) ([]byte, error) {
+	body, _, err := e.get(ctx, rawURL, headers)
 	if err != nil {
 		return nil, err
 	}
 	if detectAntiBot(body) == nil {
 		return body, nil
 	}
-	res, serr := e.solver().Solve(context.Background(), rawURL)
+	res, serr := e.solver().Solve(ctx, rawURL)
 	if serr != nil {
 		// No usable solver: preserve the existing anti-bot signal (names the
 		// detector only, never page bytes).
@@ -90,7 +90,7 @@ func (e *Executor) fetchLandingPastAntiBot(rawURL string, headers map[string][]s
 	e.seedSolverCookies(rawURL, res)
 	// Anti-bot clearance is often UA-coupled (the cf_clearance cookie is bound to
 	// the User-Agent the solver used), so the retry must send the solver's UA.
-	body, _, err = e.get(rawURL, withUserAgent(headers, res.UserAgent))
+	body, _, err = e.get(ctx, rawURL, withUserAgent(headers, res.UserAgent))
 	if err != nil {
 		return nil, err
 	}

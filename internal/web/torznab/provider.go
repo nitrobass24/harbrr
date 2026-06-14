@@ -1,6 +1,8 @@
 package torznab
 
 import (
+	"context"
+
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -24,7 +26,7 @@ type IndexerInfo struct {
 type Indexer interface {
 	Info() IndexerInfo
 	Capabilities() *mapper.Capabilities
-	Search(query search.Query) ([]*normalizer.Release, error)
+	Search(ctx context.Context, query search.Query) ([]*normalizer.Release, error)
 	// NeedsResolver reports whether the definition declares a download block, so a
 	// served link must be resolved before a grab. Direct-link trackers report
 	// false and their link is served as-is.
@@ -33,10 +35,10 @@ type Indexer interface {
 	// (Phase-2 baseline: before.path + selectors). A def with no download block
 	// returns the link unchanged. The full resolver and a grab-time /dl proxy are
 	// Phase 7.
-	ResolveDownload(link string) (string, error)
+	ResolveDownload(ctx context.Context, link string) (string, error)
 }
 
 // Provider resolves the indexer id from the request path to its Indexer.
 type Provider interface {
-	Indexer(id string) (Indexer, bool)
+	Indexer(ctx context.Context, id string) (Indexer, bool)
 }

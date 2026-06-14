@@ -1,6 +1,7 @@
 package torznab
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"strings"
@@ -88,7 +89,7 @@ func (h *handler) serve(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusOK, codeInvalidAPIKey, "Invalid API Key")
 		return
 	}
-	idx, ok := h.provider.Indexer(r.PathValue("indexerId"))
+	idx, ok := h.provider.Indexer(r.Context(), r.PathValue("indexerId"))
 	if !ok {
 		writeError(w, http.StatusOK, codeBadParameter, "Indexer is not supported")
 		return
@@ -136,7 +137,7 @@ func (h *handler) writeCaps(w http.ResponseWriter, idx Indexer) {
 // (best-effort). The full resolver and a grab-time /dl proxy that resolves
 // through harbrr's session are Phase 7; running here resolves only the served
 // page (post-paging), bounding the work.
-func resolveDownloadLinks(idx Indexer, releases []*normalizer.Release) {
+func resolveDownloadLinks(ctx context.Context, idx Indexer, releases []*normalizer.Release) {
 	if !idx.NeedsResolver() {
 		return
 	}
@@ -144,7 +145,7 @@ func resolveDownloadLinks(idx Indexer, releases []*normalizer.Release) {
 		if rel == nil || rel.Link == "" {
 			continue
 		}
-		if resolved, err := idx.ResolveDownload(rel.Link); err == nil && resolved != "" {
+		if resolved, err := idx.ResolveDownload(ctx, rel.Link); err == nil && resolved != "" {
 			rel.Link = resolved
 		}
 	}
@@ -159,7 +160,7 @@ func (h *handler) writeResults(w http.ResponseWriter, r *http.Request, idx Index
 		return
 	}
 	query, requestedCats := buildQuery(q, caps)
-	releases, err := idx.Search(query)
+	releases, err := idx.Search(r.Context(), query)
 	if err != nil {
 		h.writeInternalError(w, "search", idx.Info().ID, err)
 		return
@@ -168,7 +169,7 @@ func (h *handler) writeResults(w http.ResponseWriter, r *http.Request, idx Index
 	// + limit). Category filtering runs after dedupe and before paging.
 	releases = filterResults(dedupeByGUID(releases), requestedCats, caps)
 	releases = parsePaging(q).apply(releases)
-	resolveDownloadLinks(idx, releases)
+	resolveDownloadLinks(r.Context(), idx, releases)
 	body, err := tzn.MarshalResults(h.feedInfo(r, idx), releases, h.clock())
 	if err != nil {
 		h.writeInternalError(w, "results", idx.Info().ID, err)

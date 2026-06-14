@@ -9,6 +9,7 @@
 package search
 
 import (
+	"context"
 	"fmt"
 	stdhttp "net/http"
 	"time"
@@ -149,7 +150,7 @@ func responseType(def *loader.Definition) string {
 // drive each through the Doer (carrying the session cookies), and parse the first
 // successful response into releases. The session may be nil (no login). It returns
 // the normalized releases or a loud, secret-free error.
-func Execute(def *loader.Definition, query Query, session *login.Session, doer Doer, deps Deps) ([]*normalizer.Release, error) {
+func Execute(ctx context.Context, def *loader.Definition, query Query, session *login.Session, doer Doer, deps Deps) ([]*normalizer.Release, error) {
 	reqs, err := buildRequests(def, query, deps)
 	if err != nil {
 		return nil, err
@@ -158,7 +159,7 @@ func Execute(def *loader.Definition, query Query, session *login.Session, doer D
 	respType := responseType(def)
 	var out []*normalizer.Release
 	for i := range reqs {
-		body, err := doRequest(doer, reqs[i], session)
+		body, err := doRequest(ctx, doer, reqs[i], session)
 		if err != nil {
 			return nil, err
 		}

@@ -31,7 +31,7 @@ func TestSearch_RedactsPasskey(t *testing.T) {
 		t.Fatalf("NewEngine: %v", err)
 	}
 
-	_, err = eng.Search(Query{Keywords: "linux"})
+	_, err = eng.Search(t.Context(), Query{Keywords: "linux"})
 	if err == nil {
 		t.Fatal("Search returned nil error, want transport failure")
 	}

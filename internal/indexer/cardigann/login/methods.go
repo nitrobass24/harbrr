@@ -1,6 +1,7 @@
 package login
 
 import (
+	"context"
 	"fmt"
 	stdhttp "net/http"
 	"net/url"
@@ -16,7 +17,7 @@ import (
 // loginPost assembles Login.Inputs (template-rendered) and POSTs them as a form
 // body to SubmitPath (falling back to Path), then runs the error selectors.
 // Mirrors Jackett's Login.Method == "post" branch.
-func (e *Executor) loginPost(def *loader.Definition) error {
+func (e *Executor) loginPost(ctx context.Context, def *loader.Definition) error {
 	// Jackett seeds Login.Cookies before the POST in the post path too
 	// (CardigannIndexer DoLogin post branch); get/oneurl do NOT seed them.
 	if err := e.seedStaticCookies(def.Login.Cookies); err != nil {
@@ -30,13 +31,13 @@ func (e *Executor) loginPost(def *loader.Definition) error {
 	if target == "" {
 		target = def.Login.Path
 	}
-	return e.postForm(def, target, pairs)
+	return e.postForm(ctx, def, target, pairs)
 }
 
 // loginGet assembles Login.Inputs as a query string and GETs Path, then runs the
 // error selectors. Mirrors Jackett's Login.Method == "get" branch (path + "?" +
 // queryCollection).
-func (e *Executor) loginGet(def *loader.Definition) error {
+func (e *Executor) loginGet(ctx context.Context, def *loader.Definition) error {
 	pairs, err := e.renderInputs(def.Login.Inputs)
 	if err != nil {
 		return err
@@ -49,7 +50,7 @@ func (e *Executor) loginGet(def *loader.Definition) error {
 	if err != nil {
 		return err
 	}
-	body, status, err := e.get(full, def.Login.Headers)
+	body, status, err := e.get(ctx, full, def.Login.Headers)
 	if err != nil {
 		return err
 	}
@@ -78,7 +79,7 @@ func (e *Executor) loginCookie(def *loader.Definition) error {
 // loginOneURL issues a single GET to Path + the "oneurl" input (no corpus def
 // uses this method today; kept minimal and documented). Mirrors Jackett's
 // resolvePath(Login.Path + OneUrl).
-func (e *Executor) loginOneURL(def *loader.Definition) error {
+func (e *Executor) loginOneURL(ctx context.Context, def *loader.Definition) error {
 	one := ""
 	if v, ok := def.Login.Inputs["oneurl"]; ok {
 		rendered, err := template.Eval(v.String(), e.templateContext())
@@ -91,7 +92,7 @@ func (e *Executor) loginOneURL(def *loader.Definition) error {
 	if err != nil {
 		return err
 	}
-	body, status, err := e.get(rawURL+one, def.Login.Headers)
+	body, status, err := e.get(ctx, rawURL+one, def.Login.Headers)
 	if err != nil {
 		return err
 	}
@@ -110,13 +111,13 @@ func (e *Executor) loginOneURL(def *loader.Definition) error {
 // is applied to SEARCH requests (encode package); login bodies are left as-is.
 // [Deliberate: Phase 5 — login form-encoding divergence; revisit if an
 // order/encoding-sensitive login surfaces.]
-func (e *Executor) postForm(def *loader.Definition, target string, pairs url.Values) error {
+func (e *Executor) postForm(ctx context.Context, def *loader.Definition, target string, pairs url.Values) error {
 	rawURL, err := e.resolvePath(target)
 	if err != nil {
 		return err
 	}
 	headers := mergeFormHeaders(def.Login.Headers)
-	body, status, err := e.do(stdhttp.MethodPost, rawURL, strings.NewReader(pairs.Encode()), headers)
+	body, status, err := e.do(ctx, stdhttp.MethodPost, rawURL, strings.NewReader(pairs.Encode()), headers)
 	if err != nil {
 		return err
 	}
