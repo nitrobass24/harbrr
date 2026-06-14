@@ -16,7 +16,7 @@ import (
 
 // loginForm reproduces Jackett's Login.Method == "form" flow:
 //  1. GET the landing page (Login.Path).
-//  2. Detect anti-bot interstitials (fail loud; Phase 4 solves).
+//  2. Detect anti-bot interstitials (fail loud; Phase 6 solves).
 //  3. Extract SelectorInputs (CSRF/hidden tokens) and GetSelectorInps from the
 //     landing document.
 //  4. Assemble the POST body: definition Inputs (template-rendered) overlaid with
