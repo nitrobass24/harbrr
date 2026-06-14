@@ -116,9 +116,10 @@ Phase 3 "search real trackers end-to-end" goal.
 - [ ] **Lazy login**: log in only when a search response looks logged-out (Jackett's behavior), then
       retry once — replacing the eager once-per-Engine login established in Phase 2 (which logs in on
       the first search regardless; see `parity/testdata/README.md` "Eager login")
-- [ ] **.NET-compatible URL encoder**: replace `url.QueryEscape` in the query/path value encoders so
-      `*()'!` match `WebUtility.UrlEncode` (Phase 2 leaves these escaped; see `parity/testdata/README.md`
-      "Known divergences")
+- [x] **.NET-compatible URL encoder**: replace `url.QueryEscape` in the query/path value encoders so
+      they match `WebUtility.UrlEncode` (Phase 2 leaves these escaped; see `parity/testdata/README.md`
+      "Known divergences"). Done via `internal/indexer/cardigann/encode`; verified divergence is `!*()`
+      + `~` (not `'`). Login form bodies deferred as a deliberate divergence.
 - [ ] Fetch/auth matrix rows as available: Cloudflare/FlareSolverr (pluggable solver) · 2FA/manual-cookie
 - [ ] **Result-category filtering + default categories**: drop result rows whose categories miss the query
       cats (Jackett `FilterResults`), return an empty feed when every requested `cat` maps to no tracker

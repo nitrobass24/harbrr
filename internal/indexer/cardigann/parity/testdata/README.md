@@ -107,12 +107,22 @@ Entries:
 - **Date canonical form** — RFC3339 vs Jackett's RFC1123Z; see "Date
   canonicalization". Same instant, different string — a canonical-schema choice,
   not a parse difference. **`[Deliberate]`**
-- **URL encoding of `*()'!`** — both the GET-query encoder (`encodeOrdered`) and
-  the search-path value encoder use Go's `url.QueryEscape`, which percent-escapes
-  the sub-delimiters `* ( ) ' !` that .NET's `WebUtility.UrlEncode` leaves
-  literal. Spaces match (`%20` in the path, `+` in the query). So a keyword
-  containing those punctuation characters yields a different — but equivalent —
-  request URL. **`[Tracked: Phase 5 — .NET-compatible encoder]`**
+- **URL encoding (`.NET WebUtility.UrlEncode`)** — RESOLVED in Phase 5. Both the
+  GET-query encoder (`encodeOrdered`) and the search-path value encoder now route
+  through `internal/indexer/cardigann/encode`, which reproduces .NET
+  `WebUtility.UrlEncode` (the encoder Jackett uses for both halves of a request:
+  `StringUtil.GetQueryString` → `WebUtilityHelpers.UrlEncode` for the query, and
+  `applyGoTemplateText(..., WebUtility.UrlEncode)` + `Replace("+","%20")` for the
+  path). Verified against the dotnet/runtime `WebUtility` source: the literal set
+  is `A-Za-z0-9-_.!*()`, so the divergence from Go's `url.QueryEscape` is exactly
+  five characters — `! * ( )` (Go escapes them; .NET leaves them literal) and `~`
+  (Go leaves it literal; .NET escapes it to `%7E`). The apostrophe `'` is `%27` in
+  BOTH engines and was NOT a divergence (the earlier note here wrongly listed it
+  and omitted `~`). Spaces match (`%20` in the path, `+` in the query). The magnet
+  synthesizer (`normalizer/synth.go`) uses the same encoder, matching
+  `MagnetUtil.InfoHashToPublicMagnet`. **`[Resolved: Phase 5]`** Login form-POST
+  bodies remain on stdlib `url.Values.Encode` — a deliberate divergence, see
+  `login/methods.go` (`postForm`) and `login/encoding_divergence_test.go`.
 - **`.Today.Month` / `.Today.Day`** — harbrr exposes these template fields;
   Jackett seeds only `.Today.Year`. A def referencing them gets a real value in
   harbrr and `""` in Jackett. No vendored def uses them, and the extra fields are
