@@ -34,9 +34,11 @@ site/docs land later.
   auto-conversion (`DateParseHandling.DateTime`), which every UNIT3D-API def relies
   on, and Jackett's "login never fails on HTTP status" rule.
   *(`internal/indexer/cardigann/selector/jsonpath.go`, `.../login/methods.go`)* `[shipped]`
-- **Search → grab end-to-end.** A release served by harbrr downloaded and seeds in
-  qBittorrent; the served download link resolves to a real `.torrent`.
-  *(`internal/smoke/README.md`)* `[shipped]`
+- **Search → grab end-to-end, Sonarr-orchestrated.** A real Sonarr added harbrr
+  (in Docker) as a Torznab indexer, passed its connectivity test, searched it, and
+  grabbed a release — downloading in the live qBittorrent client with
+  `indexer = harbrr` in Sonarr's history. The served download link resolves to a
+  real `.torrent`. *(`internal/smoke/README.md`)* `[shipped]`
 
 ## Packaging & architecture
 
