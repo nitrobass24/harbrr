@@ -17,12 +17,14 @@ import (
 const defaultLimit = tzn.LimitsMax
 
 // buildQuery maps the Torznab/Newznab request params to the engine's search
-// query. The `cat` newznab ids are resolved to tracker category ids through the
-// indexer's capabilities (the request-side mirror of the response-side category
-// mapping). The book `title` param maps to BookTitle; `rid` is the TVRage id.
-// `publisher` has no engine query field and is intentionally ignored (recorded
-// as a known divergence).
-func buildQuery(q url.Values, caps *mapper.Capabilities) search.Query {
+// query and returns the raw requested newznab category ids (for response-side
+// filtering). The `cat` newznab ids are resolved to tracker category ids through
+// the indexer's capabilities; when they map to nothing (or no `cat` was given)
+// the def's default:true categories are used, mirroring Jackett's
+// `if mappedCategories.Count == 0 -> DefaultCategories`. The book `title` param
+// maps to BookTitle; `rid` is the TVRage id. `publisher` has no engine query
+// field and is intentionally ignored (recorded as a known divergence).
+func buildQuery(q url.Values, caps *mapper.Capabilities) (search.Query, []int) {
 	query := search.Query{
 		Keywords:  q.Get("q"),
 		IMDBID:    q.Get("imdbid"),
@@ -42,10 +44,13 @@ func buildQuery(q url.Values, caps *mapper.Capabilities) search.Query {
 		Author:    q.Get("author"),
 		BookTitle: q.Get("title"),
 	}
-	if ids := parseCatList(q.Get("cat")); len(ids) > 0 {
-		query.Categories = caps.MapTorznabCapsToTrackers(ids)
+	requested := parseCatList(q.Get("cat"))
+	trackerCats := caps.MapTorznabCapsToTrackers(requested)
+	if len(trackerCats) == 0 {
+		trackerCats = caps.DefaultCategories
 	}
-	return query
+	query.Categories = trackerCats
+	return query, requested
 }
 
 // parseCatList parses a comma-separated newznab category list ("2000,5000"),

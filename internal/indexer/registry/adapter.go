@@ -36,3 +36,16 @@ func (a *indexerAdapter) Search(query search.Query) ([]*normalizer.Release, erro
 	}
 	return releases, nil
 }
+
+// NeedsResolver reports whether the definition declares a download block.
+func (a *indexerAdapter) NeedsResolver() bool { return a.engine.NeedsResolver() }
+
+// ResolveDownload resolves a release link to the real torrent URL. The error is
+// wrapped with the indexer id (not a secret); the caller redacts it.
+func (a *indexerAdapter) ResolveDownload(link string) (string, error) {
+	resolved, err := a.engine.ResolveDownload(link)
+	if err != nil {
+		return "", fmt.Errorf("registry: resolve download %q: %w", a.info.ID, err)
+	}
+	return resolved, nil
+}

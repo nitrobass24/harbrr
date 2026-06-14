@@ -36,11 +36,10 @@ func (e *Executor) loginForm(def *loader.Definition) error {
 	if err != nil {
 		return err
 	}
-	body, _, err := e.get(landingURL, def.Login.Headers)
+	// Fetch the landing page, routing an anti-bot interstitial through the
+	// configured solver (NoopSolver by default => fail loud, unchanged behaviour).
+	body, err := e.fetchLandingPastAntiBot(landingURL, def.Login.Headers)
 	if err != nil {
-		return err
-	}
-	if err := detectAntiBot(body); err != nil {
 		return err
 	}
 
@@ -228,6 +227,9 @@ func (e *Executor) resolveFormTarget(l *loader.Login, form *goquery.Selection, l
 // error selectors. Distinct from postForm (methods.go), which resolves a
 // definition path; the form flow has already resolved its target via the form
 // action.
+//
+// Form body uses url.Values.Encode — see postForm (methods.go) for the deliberate
+// Phase 5 login form-encoding divergence note.
 func (e *Executor) postFormAbsolute(l *loader.Login, target string, pairs url.Values) error {
 	headers := mergeFormHeaders(l.Headers)
 	body, status, err := e.do("POST", target, strings.NewReader(pairs.Encode()), headers)

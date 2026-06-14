@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // resolveRowsArray resolves rows.selector to a JSON array and applies its
@@ -182,7 +183,7 @@ func canonicalString(v any) string {
 	case nil:
 		return ""
 	case string:
-		return t
+		return newtonsoftJSONString(t)
 	case bool:
 		if t {
 			return "True"
@@ -197,6 +198,31 @@ func canonicalString(v any) string {
 	default:
 		return ""
 	}
+}
+
+// newtonsoftJSONString reproduces Newtonsoft.Json's default
+// DateParseHandling.DateTime: while parsing JSON, a string VALUE that is an
+// ISO-8601 date-time is converted to a .NET DateTime, so when Jackett later reads
+// it as a string it gets the InvariantCulture general format ("MM/dd/yyyy
+// HH:mm:ss") — fractional seconds and the zone designator dropped. Definitions
+// rely on this (e.g. UNIT3D's created_at: append " +00:00" then
+// dateparse "MM/dd/yyyy HH:mm:ss zzz"), so harbrr must reproduce it for JSON-feed
+// parity. Go's encoding/json keeps the raw string, hence this shim.
+//
+// Detection matches Newtonsoft's ISO parser, which requires the "T" date/time
+// separator: "2021-10-18T00:34:50.000000Z" converts, but a space-separated
+// "2021-10-18 00:34:50" (e.g. DigitalCore's `added`) does NOT — it stays raw and
+// its own dateparse layout handles it. Non-date strings pass through unchanged.
+func newtonsoftJSONString(s string) string {
+	if len(s) < 19 || s[4] != '-' || s[7] != '-' || s[10] != 'T' {
+		return s
+	}
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02T15:04:05"} {
+		if ts, err := time.Parse(layout, s); err == nil {
+			return ts.Format("01/02/2006 15:04:05")
+		}
+	}
+	return s
 }
 
 // joinArray renders a JSON array as Jackett does for a leaf array selection:

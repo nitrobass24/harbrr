@@ -74,9 +74,29 @@ fmt:
 tidy:
 	go mod tidy
 
-## precommit: fmt + lint + test (run before final on any code change)
+## check-smoke-tag: compile-check the build-tagged live smoke harness (under
+## -tags smoke) WITHOUT running it, so harness rot is caught in precommit while the
+## live test stays excluded from the normal build/CI (it never runs here).
+.PHONY: check-smoke-tag
+check-smoke-tag:
+	@go vet -tags smoke ./internal/smoke/...
+	@echo "smoke harness compiles under -tags smoke (excluded from normal test/CI)"
+
+## smoke-test: LIVE Phase 5 smoke + Prowlarr differential. MANUAL ONLY — reaches
+## real trackers and MUST NOT run in CI. Needs a running harbrr daemon and the
+## SMOKE_* env credentials (see docs/phase5-setup.md).
+.PHONY: smoke-test
+smoke-test:
+	@if [ -z "$(SMOKE_HARBRR_URL)" ]; then \
+		echo "ERROR: SMOKE_HARBRR_URL is unset — the live smoke needs env credentials"; \
+		echo "(see docs/phase5-setup.md). It reaches real trackers; never run it in CI."; \
+		exit 1; \
+	fi
+	go test -tags smoke -count=1 -v -timeout 10m ./internal/smoke/...
+
+## precommit: fmt + lint + test + smoke-harness compile-check (before final on any code change)
 .PHONY: precommit
-precommit: fmt lint test
+precommit: fmt lint test check-smoke-tag
 
 ## ci: the checks CI enforces
 .PHONY: ci

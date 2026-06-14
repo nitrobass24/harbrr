@@ -17,6 +17,14 @@ func (c *Capabilities) MapTorznabCapsToTrackers(newznabCats []int) []string {
 	return c.CategoryMap.trackersForNewznab(c.expandQueryCategories(newznabCats))
 }
 
+// ExpandQueryCategories is the exported form of expandQueryCategories, used by
+// the response-side category filter. Jackett's BaseIndexer.FilterResults expands
+// the query categories with the same ExpandTorznabQueryCategories logic before
+// intersecting them with each release's categories.
+func (c *Capabilities) ExpandQueryCategories(newznabCats []int) []int {
+	return c.expandQueryCategories(newznabCats)
+}
+
 // expandQueryCategories reproduces ExpandTorznabQueryCategories: each queried id
 // is kept, and a queried id that is an advertised PARENT family additionally
 // pulls in that family's advertised child categories (the same subcats the caps

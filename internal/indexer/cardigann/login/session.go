@@ -54,6 +54,9 @@ type Executor struct {
 	Config map[string]string
 	// Selector extracts CSRF inputs, error messages, and test-page selectors.
 	Selector *selector.Engine
+	// Solver is the optional anti-bot solver consulted when a login landing page
+	// is an interstitial (Cloudflare etc.). Nil defaults to NoopSolver (fail loud).
+	Solver Solver
 }
 
 // Option configures an Executor in New.
@@ -71,6 +74,10 @@ func WithBaseURL(u string) Option { return func(e *Executor) { e.BaseURL = u } }
 
 // WithConfig sets the template-variable config map.
 func WithConfig(c map[string]string) Option { return func(e *Executor) { e.Config = c } }
+
+// WithSolver sets the anti-bot solver consulted on a login interstitial. Unset
+// leaves the default NoopSolver (fail loud).
+func WithSolver(s Solver) Option { return func(e *Executor) { e.Solver = s } }
 
 // New constructs an Executor. It installs a publicsuffix-backed cookie jar and a
 // selector engine bound to the template context unless overridden, so the only

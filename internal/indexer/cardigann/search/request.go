@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/encode"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/template"
@@ -96,9 +97,7 @@ func requestContext(query Query, deps Deps) *template.Context {
 // URL-encoded for path-template substitution (space -> %20), reproducing
 // Jackett's `applyGoTemplateText(SearchPath.Path, ..., WebUtility.UrlEncode)`.
 // No vendored def substitutes .Config.sitelink (a URL) into a path, so encoding
-// all values is safe. Residual divergence: url.QueryEscape escapes a few
-// sub-delims (*()'!) that .NET leaves literal — documented in
-// parity/testdata/README.md.
+// all values is safe.
 func requestPathContext(query Query, deps Deps) *template.Context {
 	config := encodeStringValues(withSitelink(deps.Config, deps.BaseURL))
 	return newContext(config, encodeStringValues(query.queryMap()), nil,
@@ -106,9 +105,10 @@ func requestPathContext(query Query, deps Deps) *template.Context {
 }
 
 // pathEscape URL-encodes a value for inlining into a path/query, with spaces as
-// %20 (Jackett's WebUtility.UrlEncode followed by +->%20), not '+'.
+// %20, matching Jackett's WebUtility.UrlEncode followed by +->%20 (see the
+// encode package for the exact .NET-compatible character set).
 func pathEscape(s string) string {
-	return strings.ReplaceAll(url.QueryEscape(s), "+", "%20")
+	return encode.PathEscape(s)
 }
 
 // encodeStringValues returns a copy of m with each value path-escaped.
@@ -239,18 +239,19 @@ func assembleRequest(path loader.SearchPathBlock, absURL string, pairs []kv, hea
 }
 
 // encodeOrdered renders pairs as an ordered x-www-form-urlencoded string
-// (k=v&k=v) in the GIVEN order, matching Jackett's ordered queryCollection.
-// url.Values.Encode would sort keys and corrupt request parity, so we encode by
-// hand (still percent-encoding keys and values, space -> '+').
+// (k=v&k=v) in the GIVEN order, matching Jackett's ordered queryCollection
+// (StringUtil.GetQueryString). url.Values.Encode would sort keys and corrupt
+// request parity, so we encode by hand with the .NET-compatible WebUtility
+// encoder (space -> '+'; see the encode package).
 func encodeOrdered(pairs []kv) string {
 	var b strings.Builder
 	for _, p := range pairs {
 		if b.Len() > 0 {
 			b.WriteByte('&')
 		}
-		b.WriteString(url.QueryEscape(p.key))
+		b.WriteString(encode.WebUtilityEncode(p.key))
 		b.WriteByte('=')
-		b.WriteString(url.QueryEscape(p.value))
+		b.WriteString(encode.WebUtilityEncode(p.value))
 	}
 	return b.String()
 }

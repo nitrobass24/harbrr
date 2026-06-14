@@ -127,6 +127,29 @@ func (h *handler) writeCaps(w http.ResponseWriter, idx Indexer) {
 	writeXML(w, http.StatusOK, body)
 }
 
+// resolveDownloadLinks rewrites each served release's download Link to the real
+// torrent URL via the engine's ResolveDownload, but ONLY when the definition
+// declares a download block (NeedsResolver). For the direct-link trackers Phase 5
+// targets this is skipped entirely, so the served link (the tracker's direct
+// torrent URL) reaches the *arr unchanged. A per-release resolution failure keeps
+// the original link rather than dropping the release or failing the feed
+// (best-effort). The full resolver and a grab-time /dl proxy that resolves
+// through harbrr's session are Phase 7; running here resolves only the served
+// page (post-paging), bounding the work.
+func resolveDownloadLinks(idx Indexer, releases []*normalizer.Release) {
+	if !idx.NeedsResolver() {
+		return
+	}
+	for _, rel := range releases {
+		if rel == nil || rel.Link == "" {
+			continue
+		}
+		if resolved, err := idx.ResolveDownload(rel.Link); err == nil && resolved != "" {
+			rel.Link = resolved
+		}
+	}
+}
+
 // writeResults validates the search mode + id params, runs the search, then
 // de-duplicates, paginates, and serializes the results feed. No-results yields a
 // valid empty feed (HTTP 200), never an error.
@@ -135,12 +158,17 @@ func (h *handler) writeResults(w http.ResponseWriter, r *http.Request, idx Index
 	if !h.resolveMode(w, q, caps) {
 		return
 	}
-	releases, err := idx.Search(buildQuery(q, caps))
+	query, requestedCats := buildQuery(q, caps)
+	releases, err := idx.Search(query)
 	if err != nil {
 		h.writeInternalError(w, "search", idx.Info().ID, err)
 		return
 	}
-	releases = parsePaging(q).apply(dedupeByGUID(releases))
+	// Jackett pipeline order: FixResults (dedupe) -> FilterResults (category drop
+	// + limit). Category filtering runs after dedupe and before paging.
+	releases = filterResults(dedupeByGUID(releases), requestedCats, caps)
+	releases = parsePaging(q).apply(releases)
+	resolveDownloadLinks(idx, releases)
 	body, err := tzn.MarshalResults(h.feedInfo(r, idx), releases, h.clock())
 	if err != nil {
 		h.writeInternalError(w, "results", idx.Info().ID, err)

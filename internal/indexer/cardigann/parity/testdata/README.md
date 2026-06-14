@@ -100,19 +100,35 @@ decision record, not a half-tracked backlog:
 
 Entries:
 
-- **Eager login** — harbrr logs in before the first search (once per Engine);
-  Jackett logs in lazily on a logged-out response. See "Eager login" above. A
-  login-bearing search case declares the login request(s) as leading steps.
-  **`[Tracked: Phase 5 — lazy login]`**
+- **Eager first login + lazy relogin** — harbrr logs in before the FIRST search
+  (once per Engine), where Jackett logs in at configure time. This first-login
+  divergence is unchanged: a login-bearing search case still declares the login
+  request(s) as leading steps. Phase 5 adds the lazy half: a search response that
+  looks logged-out (the `login.test` selector absent from an HTML body, which also
+  covers a followed redirect to the login page) triggers exactly one re-login and
+  one retry, matching Jackett's `CheckIfLoginIsNeeded -> DoLogin -> re-request`.
+  Detection uses `login.test` (NOT `login.error`); JSON/XML responses only relogin
+  on the (followed) redirect case. **`[Resolved: Phase 5 — lazy relogin; eager
+  first login retained by design]`**
 - **Date canonical form** — RFC3339 vs Jackett's RFC1123Z; see "Date
   canonicalization". Same instant, different string — a canonical-schema choice,
   not a parse difference. **`[Deliberate]`**
-- **URL encoding of `*()'!`** — both the GET-query encoder (`encodeOrdered`) and
-  the search-path value encoder use Go's `url.QueryEscape`, which percent-escapes
-  the sub-delimiters `* ( ) ' !` that .NET's `WebUtility.UrlEncode` leaves
-  literal. Spaces match (`%20` in the path, `+` in the query). So a keyword
-  containing those punctuation characters yields a different — but equivalent —
-  request URL. **`[Tracked: Phase 5 — .NET-compatible encoder]`**
+- **URL encoding (`.NET WebUtility.UrlEncode`)** — RESOLVED in Phase 5. Both the
+  GET-query encoder (`encodeOrdered`) and the search-path value encoder now route
+  through `internal/indexer/cardigann/encode`, which reproduces .NET
+  `WebUtility.UrlEncode` (the encoder Jackett uses for both halves of a request:
+  `StringUtil.GetQueryString` → `WebUtilityHelpers.UrlEncode` for the query, and
+  `applyGoTemplateText(..., WebUtility.UrlEncode)` + `Replace("+","%20")` for the
+  path). Verified against the dotnet/runtime `WebUtility` source: the literal set
+  is `A-Za-z0-9-_.!*()`, so the divergence from Go's `url.QueryEscape` is exactly
+  five characters — `! * ( )` (Go escapes them; .NET leaves them literal) and `~`
+  (Go leaves it literal; .NET escapes it to `%7E`). The apostrophe `'` is `%27` in
+  BOTH engines and was NOT a divergence (the earlier note here wrongly listed it
+  and omitted `~`). Spaces match (`%20` in the path, `+` in the query). The magnet
+  synthesizer (`normalizer/synth.go`) uses the same encoder, matching
+  `MagnetUtil.InfoHashToPublicMagnet`. **`[Resolved: Phase 5]`** Login form-POST
+  bodies remain on stdlib `url.Values.Encode` — a deliberate divergence, see
+  `login/methods.go` (`postForm`) and `login/encoding_divergence_test.go`.
 - **`.Today.Month` / `.Today.Day`** — harbrr exposes these template fields;
   Jackett seeds only `.Today.Year`. A def referencing them gets a real value in
   harbrr and `""` in Jackett. No vendored def uses them, and the extra fields are
@@ -145,6 +161,20 @@ Entries:
   RSS/Newznab shapes (`<item>`, `<title>`, `<link>`, `torznab:attr`) match;
   exotic XML (CDATA edge cases, mixed namespaces) is best-effort.
   **`[Tracked: Phase 7 — XML backend edge parity]`**
+- **JSON date auto-conversion (Newtonsoft)** — RESOLVED in Phase 5. Jackett parses
+  JSON with Newtonsoft's default `DateParseHandling.DateTime`, so an ISO-8601
+  string VALUE becomes a `DateTime` rendered back as the .NET InvariantCulture
+  string `MM/dd/yyyy HH:mm:ss`; Go's `encoding/json` keeps the raw ISO string. The
+  JSON selector now reproduces this for ISO strings with a `T` separator
+  (`selector/jsonpath.go`), which is what every UNIT3D-API def's `created_at`
+  (`append " +00:00"` → `dateparse "MM/dd/yyyy HH:mm:ss zzz"`) relies on. Surfaced
+  by the Phase 5 live smoke. **`[Resolved: Phase 5]`**
+- **Login status vs error selectors** — Jackett never fails a login on HTTP
+  status; it relies on the def's error selectors. harbrr matches this for
+  `get`/`cookie` logins (a `401` probe is not a failure — e.g. DigitalCore's apikey
+  is an `X-API-KEY` header carried by the SEARCH request, not the login probe), but
+  retains a stricter `401`→fail for credential-submitting `form`/`post` logins as a
+  useful, result-neutral early bad-credentials signal. **`[Resolved: Phase 5]`**
 
 ## Regenerating goldens
 

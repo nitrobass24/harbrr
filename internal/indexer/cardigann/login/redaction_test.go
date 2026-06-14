@@ -93,16 +93,19 @@ func TestRedactionSelfAudit(t *testing.T) {
 		"cookie":   "uid=1; pass=COOKIE-SECRET-VAL",
 	}
 
-	t.Run("401 unauthorized", func(t *testing.T) {
+	t.Run("401 unauthorized on credential login", func(t *testing.T) {
 		t.Parallel()
+		// A 401 fails a credential-submitting (post) login; the redacted error must
+		// not leak the passkey embedded in the path. (A get/cookie login does NOT
+		// fail on 401 — see checkErrors — so this case uses post.)
 		rt := newReplay(t, step{
-			wantMethod: stdhttp.MethodGet,
+			wantMethod: stdhttp.MethodPost,
 			wantPath:   "/api/Release/Search",
 			status:     stdhttp.StatusUnauthorized,
 			bodyFile:   "api_unauthorized.html",
 		})
 		def := &loader.Definition{Login: &loader.Login{
-			Method: "get",
+			Method: "post",
 			Path:   "api/Release/Search?passkey=" + pkFixture,
 			Inputs: map[string]loader.Scalar{"apikey": scalar("{{ .Config.apikey }}")},
 		}}

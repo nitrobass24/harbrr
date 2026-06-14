@@ -60,6 +60,7 @@ type options struct {
 	config  map[string]string
 	clock   func() time.Time
 	baseURL string
+	solver  login.Solver
 }
 
 // Option configures the Engine at construction.
@@ -86,6 +87,27 @@ func WithClock(fn func() time.Time) Option {
 // paths and release URLs. Defaults to the definition's first link.
 func WithBaseURL(u string) Option {
 	return func(o *options) { o.baseURL = u }
+}
+
+// WithSolver injects an anti-bot solver (login interstitials). Unset leaves the
+// login executor's default NoopSolver (fail loud on a challenge).
+func WithSolver(s login.Solver) Option {
+	return func(o *options) { o.solver = s }
+}
+
+// SolverOption returns the engine option wiring an anti-bot solver from an
+// instance's resolved .Config (the "solver_type" setting):
+//   - "manual_cookie" replays the encrypted "cookie" setting (ManualCookieSolver);
+//   - anything else (including unset) leaves the default NoopSolver.
+//
+// FlareSolverr is the Phase 6 addition. Keeping the mapping here lets the registry
+// wire a solver from config without importing the login package directly.
+func SolverOption(cfg map[string]string) Option {
+	if cfg["solver_type"] == "manual_cookie" {
+		s := login.ManualCookieSolver{Cookie: cfg["cookie"]}
+		return func(o *options) { o.solver = s }
+	}
+	return func(*options) {}
 }
 
 // NewEngine builds an Engine for def, wiring all nine stage seams. It fails loud
@@ -176,6 +198,7 @@ func buildLogin(o options) *login.Executor {
 		login.WithClient(o.doer),
 		login.WithBaseURL(o.baseURL),
 		login.WithConfig(o.config),
+		login.WithSolver(o.solver),
 	)
 }
 
@@ -203,19 +226,30 @@ func (e *Engine) Search(query Query) ([]*Release, error) {
 		return nil, fmt.Errorf("cardigann: login for %q: %w", e.def.ID, err)
 	}
 	releases, err := search.Execute(e.def, query, e.login.Session(), e.doer, e.deps)
+	if errors.Is(err, search.ErrSearchLoggedOut) {
+		// Lazy login: the session expired since the eager first login. Re-login
+		// once and retry the search a single time (Jackett's
+		// CheckIfLoginIsNeeded -> DoLogin -> re-request). The retry is bounded to
+		// one attempt: a second logged-out result is returned as the error below,
+		// never looped.
+		if rerr := e.relogin(); rerr != nil {
+			return nil, fmt.Errorf("cardigann: re-login for %q after session expiry: %w", e.def.ID, rerr)
+		}
+		releases, err = search.Execute(e.def, query, e.login.Session(), e.doer, e.deps)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("cardigann: search for %q: %w", e.def.ID, err)
 	}
 	return releases, nil
 }
 
-// ensureSession logs in at most once per Engine. Jackett logs in at configure
-// time and reuses the session across searches; harbrr defers login to the first
-// search and memoizes it, so a reused Engine does not re-run the login sequence
-// on every query (which, for the many private defs without a login.test block,
-// would mean a full login POST per search — a live login-rate hazard). Detecting
-// an expired session in a search response and re-logging-in is the Phase 4
-// lazy-login item; until then the session is established once.
+// ensureSession logs in at most once per Engine for the FIRST search. Jackett
+// logs in at configure time and reuses the session across searches; harbrr defers
+// login to the first search and memoizes it, so a reused Engine does not re-run
+// the login sequence on every query (which, for the many private defs without a
+// login.test block, would mean a full login POST per search — a live login-rate
+// hazard). A session that later expires is handled lazily by relogin (below),
+// triggered when a search response looks logged-out.
 func (e *Engine) ensureSession() error {
 	e.loginMu.Lock()
 	defer e.loginMu.Unlock()
@@ -229,11 +263,51 @@ func (e *Engine) ensureSession() error {
 	return nil
 }
 
+// relogin forces a fresh login after a search response looked logged-out, then
+// refreshes the memoized flag. The mutex serializes concurrent relogins on a
+// reused Engine and prevents racing loggedIn; harbrr is single-user, so the brief
+// serialization is fine. Login (not EnsureLoggedIn) is used because the search
+// response already told us the session is gone — re-probing via login.test would
+// only add a redundant request. The retry in Search is bounded to one attempt,
+// so a def whose login.test selector is legitimately absent from a search page
+// (e.g. an AJAX fragment) causes one wasted relogin and a surfaced error, never a
+// loop.
+func (e *Engine) relogin() error {
+	e.loginMu.Lock()
+	defer e.loginMu.Unlock()
+	e.loggedIn = false
+	if err := e.login.Login(e.def); err != nil {
+		return err //nolint:wrapcheck // Search wraps with the def id + "re-login for".
+	}
+	e.loggedIn = true
+	return nil
+}
+
+// Test validates the configured credentials by running the definition's login
+// probe (CheckTest, then Login if needed), returning the real outcome: nil on
+// success, or ErrLoginFailed / ErrSolverRequired / ErrCaptchaRequired / a
+// transport error. Unlike Search's memoized ensureSession it always exercises
+// login and caches nothing, so the management "Test" action gets a fresh,
+// truthful result. Requires WithDoer.
+func (e *Engine) Test() error {
+	if e.doer == nil {
+		return fmt.Errorf("cardigann: Test for %q requires WithDoer", e.def.ID)
+	}
+	return e.login.EnsureLoggedIn(e.def) //nolint:wrapcheck // the API layer sanitizes/maps this error.
+}
+
 // ResolveDownload turns a release's download link into the real torrent URL when
 // the definition declares a download block (selectors + optional before
 // pre-request). A def with no download block returns the link unchanged. It
 // ensures the session first (the download page is usually behind login) and
 // drives the same Doer as Search.
+// NeedsResolver reports whether the definition declares a download block, so a
+// served release link must be resolved (via ResolveDownload) before a grab. A
+// direct-link tracker (no download block) reports false.
+func (e *Engine) NeedsResolver() bool {
+	return e.def.Download != nil
+}
+
 func (e *Engine) ResolveDownload(link string) (string, error) {
 	if e.def.Download == nil {
 		return link, nil

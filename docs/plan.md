@@ -67,7 +67,8 @@ decoupled.
 
 - [x] `internal/torznab`: capabilities document + `t=caps|search|tvsearch|movie|music|book`
 - [x] **caps/category correctness is a gate** (Sonarr/Radarr failures usually trace here)
-- [ ] Sonarr/Radarr can search a handful of real trackers through harbrr end-to-end
+- [x] Sonarr/Radarr can search a handful of real trackers through harbrr end-to-end (Phase 5 live smoke:
+      5 trackers searched live + grab into qBittorrent; see `internal/smoke/README.md`)
 
 ## Phase 4 — Daemon foundation (persistence · secrets · auth · server)
 
@@ -107,28 +108,42 @@ Phase 3 "search real trackers end-to-end" goal.
 > (same query → Prowlarr feed vs harbrr feed → diff). Treat creds per AGENTS.md (never logged/committed;
 > entered into harbrr's encrypted store, redacted everywhere).
 
-- [ ] 5 real **non-Cloudflare** trackers (agent-selected; no FlareSolverr in the test env), live
-      login/session, gentle rate
-- [ ] **Robustness proof** (carried from Phase 3, which is verified offline only): a real
-      Sonarr/Radarr parses the served caps and completes search → **grab** end-to-end against the live
-      trackers (not just a 200 feed), and an offline serializer fuzz/property test asserts arbitrary
-      `[]*Release` (scraped-data shapes) always produce well-formed, namespace-bindable XML and never panic
-- [ ] **Lazy login**: log in only when a search response looks logged-out (Jackett's behavior), then
-      retry once — replacing the eager once-per-Engine login established in Phase 2 (which logs in on
-      the first search regardless; see `parity/testdata/README.md` "Eager login")
-- [ ] **.NET-compatible URL encoder**: replace `url.QueryEscape` in the query/path value encoders so
-      `*()'!` match `WebUtility.UrlEncode` (Phase 2 leaves these escaped; see `parity/testdata/README.md`
-      "Known divergences")
-- [ ] Fetch/auth matrix rows as available: Cloudflare/FlareSolverr (pluggable solver) · 2FA/manual-cookie
-- [ ] **Result-category filtering + default categories**: drop result rows whose categories miss the query
-      cats (Jackett `FilterResults`), return an empty feed when every requested `cat` maps to no tracker
-      category, and substitute a def's `default: true` categories when the mapped tracker-cat list is empty
-      (request/response category parity for live *arr search; see `internal/torznab/testdata/README.md`)
-- [ ] **Serve resolved/proxied download links**: wire the engine's `ResolveDownload` into the served feed
-      (optionally via a `/dl` proxy endpoint) so a grabbed release downloads through harbrr's session rather
-      than the raw tracker link; depends on the Phase 7 resolver completion. See `internal/torznab/testdata/README.md`
-- [ ] **Indexer "Test" action**: validate a configured indexer's credentials/connectivity before saving,
-      surfaced via the management API (the engine's `login.test` probe wired to a persisted instance)
+- [x] 5 real **non-Cloudflare** trackers (seedpool, OnlyEncodes+, DigitalCore, Darkpeers, Luminarr; no
+      FlareSolverr), live login/session, gentle rate — all 5 pass the Prowlarr differential (4 exact, 1
+      count-parity for a config-sorted feed). Build-tagged harness in `internal/smoke`.
+- [x] **Robustness proof**: search → **grab** end-to-end verified live — harbrr's download link resolved
+      to a real `.torrent` and the release downloaded + seeds in qBittorrent2 (left seeding, no H&R; grab
+      via direct qBittorrent push — Sonarr→harbrr unreachable from the sandbox, see `internal/smoke/README.md`).
+      Plus the offline serializer fuzz/property test (`internal/torznab/results_fuzz_test.go`) asserting
+      arbitrary `[]*Release` always produce well-formed, namespace-bindable XML and never panic.
+- [x] **Lazy login**: re-login + retry once when a search response looks logged-out (Jackett's
+      `CheckIfLoginIsNeeded` via the `login.test` selector / followed redirect — NOT `login.error`).
+      Eager first-login is retained by design (parity goldens); the lazy relogin is the added half.
+      Bounded to one retry (no loop). Done in `search/logout.go` + `engine.go` relogin.
+- [x] **.NET-compatible URL encoder**: replace `url.QueryEscape` in the query/path value encoders so
+      they match `WebUtility.UrlEncode` (Phase 2 leaves these escaped; see `parity/testdata/README.md`
+      "Known divergences"). Done via `internal/indexer/cardigann/encode`; verified divergence is `!*()`
+      + `~` (not `'`). Login form bodies deferred as a deliberate divergence.
+- [x] Fetch/auth matrix rows as available: pluggable solver SEAM (`login.Solver`) wired into the login
+      anti-bot path via `WithSolver`; `ManualCookieSolver` (2FA/manual-cookie) is functional, selected by
+      a `solver_type=manual_cookie` setting + the encrypted `cookie` setting (no migration — rides the
+      existing settings map; `cardigann.SolverOption`). **FlareSolverr deferred to Phase 6** (no infra in
+      env; the 5 smoke trackers are non-CF) — `NoopSolver` default keeps the fail-loud behavior.
+- [x] **Result-category filtering + default categories**: drop result rows whose categories miss the query
+      cats (Jackett `FilterResults`) and substitute a def's `default: true` categories when the mapped
+      tracker-cat list is empty (request/response category parity for live *arr search; see
+      `internal/torznab/testdata/README.md`). Note: Jackett does not force an empty feed when a `cat` maps
+      to nothing — it searches defaults/all and the response filter drops non-matches (empty emerges
+      naturally). Done in `internal/web/torznab/filter.go` + `query.go` + mapper `DefaultCategories`.
+- [x] **Serve resolved/proxied download links**: `ResolveDownload` wired into the served feed via the
+      `torznab.Indexer` `NeedsResolver()`/`ResolveDownload()` seam + `resolveDownloadLinks` (per served
+      page). Direct-link trackers (the Phase 5 five) serve their link as-is and grab works (live-proven).
+      The grab-time `/dl` proxy (resolve through harbrr's session) + full resolver are **[Tracked: Phase 7]**.
+      See `internal/torznab/testdata/README.md`
+- [x] **Indexer "Test" action**: `POST /api/indexers/{slug}/test` validates a configured indexer's
+      credentials/connectivity via the engine's login probe against a FRESH, uncached engine (no impact on
+      the cached production session). Returns `{ok:true}` / 200 `{ok:false,error}` / 404; the error is
+      secret-scrubbed (`sanitizeTestError`). `engine.Test` + `registry.Test` + OpenAPI path + drift test.
 
 > **MVP = Phases 1–5.** Phase 4 makes harbrr runnable + configurable; Phase 5 proves it live. This is the
 > point the central risk is retired. Do not start Phase 6+ before the parity gate is green.

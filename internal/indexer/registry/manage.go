@@ -261,6 +261,22 @@ func classifySecret(name string, fields map[string]loader.SettingsField) bool {
 	return loader.SettingsField{Type: "text", Name: name}.IsSecret()
 }
 
+// Test builds a fresh, UNCACHED engine for slug and validates its configured
+// credentials via the login probe. The ephemeral engine and its cookie jar are
+// discarded, so any cached production engine and its live session are untouched.
+// Returns nil when the credentials authenticate; otherwise the engine's login
+// error (which the API layer sanitizes before returning to the client).
+func (r *Registry) Test(ctx context.Context, slug string) error {
+	a, err := r.build(ctx, slug)
+	if err != nil {
+		return err
+	}
+	if err := a.engine.Test(); err != nil {
+		return fmt.Errorf("registry: test %q: %w", slug, err)
+	}
+	return nil
+}
+
 // settingFields indexes a definition's settings by name.
 func settingFields(def *loader.Definition) map[string]loader.SettingsField {
 	m := make(map[string]loader.SettingsField, len(def.Settings))

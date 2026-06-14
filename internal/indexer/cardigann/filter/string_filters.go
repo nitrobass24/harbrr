@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"golang.org/x/text/unicode/norm"
+
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/encode"
 )
 
 // errMissingArg signals a filter invoked without a required argument. Callers
@@ -76,11 +78,11 @@ func filterURLDecode(value string, _ []string) (string, error) {
 	return out, nil
 }
 
-// filterURLEncode implements urlencode. Jackett's WebUtilityHelpers.UrlEncode
-// percent-encodes; url.QueryEscape encodes a space as '+', matching the .NET
-// query-string encoder used by definitions.
+// filterURLEncode implements the urlencode filter. Jackett applies
+// WebUtilityHelpers.UrlEncode (= .NET WebUtility.UrlEncode, space -> '+'); see
+// the encode package for the exact .NET-compatible character set.
 func filterURLEncode(value string, _ []string) (string, error) {
-	return url.QueryEscape(value), nil
+	return encode.WebUtilityEncode(value), nil
 }
 
 // filterHTMLDecode implements htmldecode (WebUtility.HtmlDecode).
