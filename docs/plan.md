@@ -135,8 +135,10 @@ Phase 3 "search real trackers end-to-end" goal.
 - [ ] **Serve resolved/proxied download links**: wire the engine's `ResolveDownload` into the served feed
       (optionally via a `/dl` proxy endpoint) so a grabbed release downloads through harbrr's session rather
       than the raw tracker link; depends on the Phase 7 resolver completion. See `internal/torznab/testdata/README.md`
-- [ ] **Indexer "Test" action**: validate a configured indexer's credentials/connectivity before saving,
-      surfaced via the management API (the engine's `login.test` probe wired to a persisted instance)
+- [x] **Indexer "Test" action**: `POST /api/indexers/{slug}/test` validates a configured indexer's
+      credentials/connectivity via the engine's login probe against a FRESH, uncached engine (no impact on
+      the cached production session). Returns `{ok:true}` / 200 `{ok:false,error}` / 404; the error is
+      secret-scrubbed (`sanitizeTestError`). `engine.Test` + `registry.Test` + OpenAPI path + drift test.
 
 > **MVP = Phases 1–5.** Phase 4 makes harbrr runnable + configurable; Phase 5 proves it live. This is the
 > point the central risk is retired. Do not start Phase 6+ before the parity gate is green.

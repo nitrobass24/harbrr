@@ -111,6 +111,7 @@ func (rt *router) routes() http.Handler {
 			r.Delete("/api/indexers/{slug}", rt.deleteIndexer)
 			r.Post("/api/indexers/{slug}/enable", rt.enableIndexer)
 			r.Post("/api/indexers/{slug}/disable", rt.disableIndexer)
+			r.Post("/api/indexers/{slug}/test", rt.testIndexer)
 		})
 	})
 	return r

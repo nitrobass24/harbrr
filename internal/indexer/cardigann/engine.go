@@ -283,6 +283,19 @@ func (e *Engine) relogin() error {
 	return nil
 }
 
+// Test validates the configured credentials by running the definition's login
+// probe (CheckTest, then Login if needed), returning the real outcome: nil on
+// success, or ErrLoginFailed / ErrSolverRequired / ErrCaptchaRequired / a
+// transport error. Unlike Search's memoized ensureSession it always exercises
+// login and caches nothing, so the management "Test" action gets a fresh,
+// truthful result. Requires WithDoer.
+func (e *Engine) Test() error {
+	if e.doer == nil {
+		return fmt.Errorf("cardigann: Test for %q requires WithDoer", e.def.ID)
+	}
+	return e.login.EnsureLoggedIn(e.def) //nolint:wrapcheck // the API layer sanitizes/maps this error.
+}
+
 // ResolveDownload turns a release's download link into the real torrent URL when
 // the definition declares a download block (selectors + optional before
 // pre-request). A def with no download block returns the link unchanged. It

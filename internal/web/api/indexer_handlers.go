@@ -1,13 +1,16 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"sort"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
@@ -174,6 +177,47 @@ func (rt *router) setEnabled(w http.ResponseWriter, r *http.Request, enabled boo
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// testResult is the JSON body of the indexer Test action.
+type testResult struct {
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
+}
+
+// testIndexer validates a configured indexer's credentials/connectivity via the
+// engine's login probe (against a fresh, uncached engine). A passing test returns
+// {"ok":true}; a credential/connectivity failure returns 200
+// {"ok":false,"error":<sanitized>}; an unknown slug is a 404. The error is
+// RedactURL'd and secret-token-scrubbed so a passkey/cookie never reaches the
+// client.
+func (rt *router) testIndexer(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+	switch err := rt.registry.Test(r.Context(), slug); {
+	case err == nil:
+		writeJSON(w, http.StatusOK, testResult{OK: true})
+	case errors.Is(err, database.ErrNotFound):
+		rt.writeServiceError(w, "test indexer", err)
+	default:
+		writeJSON(w, http.StatusOK, testResult{OK: false, Error: sanitizeTestError(err)})
+	}
+}
+
+// secretTokenRe matches a credential-shaped key and its value (in plain text or a
+// URL query) so the value can be scrubbed from a test-failure message. The value
+// run stops at whitespace and the URL/quote delimiters & " ' so surrounding error
+// context (e.g. "dial tcp") and other query params survive. Defense in depth: the
+// engine's login errors are credential-free by construction and transport-error
+// URLs are already redacted in the login layer, but a credential must never reach
+// the client through this surface.
+var secretTokenRe = regexp.MustCompile(`(?i)(cookie|passkey|api_?key|auth_?key|rss_?key|torrent_pass|passid|passphrase|password|secret|token|downloadtoken|2fa|otp)([=:]\s*)[^\s&"']+`)
+
+// sanitizeTestError renders a test/login error safe to return to the client:
+// every credential-shaped key=value / key: value pair has its value replaced with
+// <redacted>. It is applied to plain error text only (not URL-encoded), so it
+// never mangles human-readable messages.
+func sanitizeTestError(err error) string {
+	return secretTokenRe.ReplaceAllString(err.Error(), "${1}${2}<redacted>")
 }
 
 // toInstanceResponse maps a domain instance to its API view.

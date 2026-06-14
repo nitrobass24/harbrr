@@ -289,6 +289,31 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /api/indexers/{slug}/test:
+    post:
+      summary: Test an indexer's credentials and connectivity
+      description: >
+        Validates the configured credentials against a fresh, uncached engine
+        (the login probe). A passing test returns ok=true; a credential or
+        connectivity failure returns ok=false with a sanitized, secret-free error.
+      operationId: testIndexer
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: test result
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { type: boolean }
+                  error: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
 components:
   securitySchemes:
     session:
