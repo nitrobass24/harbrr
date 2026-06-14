@@ -132,9 +132,11 @@ Phase 3 "search real trackers end-to-end" goal.
       `internal/torznab/testdata/README.md`). Note: Jackett does not force an empty feed when a `cat` maps
       to nothing — it searches defaults/all and the response filter drops non-matches (empty emerges
       naturally). Done in `internal/web/torznab/filter.go` + `query.go` + mapper `DefaultCategories`.
-- [ ] **Serve resolved/proxied download links**: wire the engine's `ResolveDownload` into the served feed
-      (optionally via a `/dl` proxy endpoint) so a grabbed release downloads through harbrr's session rather
-      than the raw tracker link; depends on the Phase 7 resolver completion. See `internal/torznab/testdata/README.md`
+- [x] **Serve resolved/proxied download links**: `ResolveDownload` wired into the served feed via the
+      `torznab.Indexer` `NeedsResolver()`/`ResolveDownload()` seam + `resolveDownloadLinks` (per served
+      page). Direct-link trackers (the Phase 5 five) serve their link as-is and grab works (live-proven).
+      The grab-time `/dl` proxy (resolve through harbrr's session) + full resolver are **[Tracked: Phase 7]**.
+      See `internal/torznab/testdata/README.md`
 - [x] **Indexer "Test" action**: `POST /api/indexers/{slug}/test` validates a configured indexer's
       credentials/connectivity via the engine's login probe against a FRESH, uncached engine (no impact on
       the cached production session). Returns `{ok:true}` / 200 `{ok:false,error}` / 404; the error is

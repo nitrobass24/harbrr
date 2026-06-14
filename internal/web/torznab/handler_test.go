@@ -19,11 +19,14 @@ const testAPIKey = "harbrr-test-key" //nolint:gosec // G101: synthetic test API 
 // fakeIndexer is a Provider-backed Indexer for the handler tests: it serves
 // canned capabilities + releases and records the search query it received.
 type fakeIndexer struct {
-	info      IndexerInfo
-	caps      *mapper.Capabilities
-	releases  []*normalizer.Release
-	searchErr error
-	gotQuery  search.Query
+	info          IndexerInfo
+	caps          *mapper.Capabilities
+	releases      []*normalizer.Release
+	searchErr     error
+	gotQuery      search.Query
+	needsResolver bool
+	resolvePrefix string // when set, ResolveDownload returns resolvePrefix+link
+	resolveErr    error
 }
 
 func (f *fakeIndexer) Info() IndexerInfo                  { return f.info }
@@ -32,6 +35,18 @@ func (f *fakeIndexer) Capabilities() *mapper.Capabilities { return f.caps }
 func (f *fakeIndexer) Search(q search.Query) ([]*normalizer.Release, error) {
 	f.gotQuery = q
 	return f.releases, f.searchErr
+}
+
+func (f *fakeIndexer) NeedsResolver() bool { return f.needsResolver }
+
+func (f *fakeIndexer) ResolveDownload(link string) (string, error) {
+	if f.resolveErr != nil {
+		return "", f.resolveErr
+	}
+	if f.resolvePrefix != "" {
+		return f.resolvePrefix + link, nil
+	}
+	return link, nil
 }
 
 type fakeProvider map[string]Indexer
@@ -234,6 +249,34 @@ func TestHandlerUnmappedCatFiltersResults(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), "<item>") {
 		t.Errorf("unmapped cat should filter out the category-2000 release:\n%s", rec.Body.String())
+	}
+}
+
+// TestHandlerResolvesDownloadLinks: when the indexer needs a resolver, each
+// served release's link is rewritten via ResolveDownload before serialization.
+func TestHandlerResolvesDownloadLinks(t *testing.T) {
+	t.Parallel()
+	idx := demoIndexer(t)
+	idx.needsResolver = true
+	idx.resolvePrefix = "https://harbrr.proxy/dl?u="
+	rec := do(t, newTestHandler(t, idx), "t=search&q=movie")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "https://harbrr.proxy/dl?u=") {
+		t.Errorf("resolver-needing indexer should rewrite served links:\n%s", rec.Body.String())
+	}
+}
+
+// TestHandlerDirectLinkNotResolved: a direct-link tracker (NeedsResolver=false,
+// the Phase 5 case) serves its link unchanged — ResolveDownload is never called.
+func TestHandlerDirectLinkNotResolved(t *testing.T) {
+	t.Parallel()
+	idx := demoIndexer(t) // needsResolver defaults false
+	idx.resolvePrefix = "https://should-not-apply/"
+	rec := do(t, newTestHandler(t, idx), "t=search&q=movie")
+	if strings.Contains(rec.Body.String(), "should-not-apply") {
+		t.Errorf("direct-link tracker must not resolve links:\n%s", rec.Body.String())
 	}
 }
 

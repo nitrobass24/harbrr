@@ -301,6 +301,13 @@ func (e *Engine) Test() error {
 // pre-request). A def with no download block returns the link unchanged. It
 // ensures the session first (the download page is usually behind login) and
 // drives the same Doer as Search.
+// NeedsResolver reports whether the definition declares a download block, so a
+// served release link must be resolved (via ResolveDownload) before a grab. A
+// direct-link tracker (no download block) reports false.
+func (e *Engine) NeedsResolver() bool {
+	return e.def.Download != nil
+}
+
 func (e *Engine) ResolveDownload(link string) (string, error) {
 	if e.def.Download == nil {
 		return link, nil

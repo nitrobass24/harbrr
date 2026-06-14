@@ -34,6 +34,10 @@ func (e *engineIndexer) Search(q search.Query) ([]*normalizer.Release, error) {
 	return e.engine.ParseResponseQuery(e.body, "", q)
 }
 
+func (e *engineIndexer) NeedsResolver() bool { return e.engine.NeedsResolver() }
+
+func (e *engineIndexer) ResolveDownload(l string) (string, error) { return e.engine.ResolveDownload(l) }
+
 func readTestdata(t *testing.T, name string) []byte {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join("testdata", name)) //nolint:gosec // fixed test path.
