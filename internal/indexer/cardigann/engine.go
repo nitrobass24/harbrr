@@ -1,6 +1,7 @@
 package cardigann
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	stdhttp "net/http"
@@ -218,24 +219,24 @@ func (e *Engine) Capabilities() *mapper.Capabilities { return e.caps }
 // when the test page fails), then execute the search request(s) and parse the
 // response into normalized releases. The Doer must have been supplied via
 // WithDoer.
-func (e *Engine) Search(query Query) ([]*Release, error) {
+func (e *Engine) Search(ctx context.Context, query Query) ([]*Release, error) {
 	if e.doer == nil {
 		return nil, fmt.Errorf("cardigann: Search for %q requires WithDoer (use ParseResponse for offline extraction)", e.def.ID)
 	}
-	if err := e.ensureSession(); err != nil {
+	if err := e.ensureSession(ctx); err != nil {
 		return nil, fmt.Errorf("cardigann: login for %q: %w", e.def.ID, err)
 	}
-	releases, err := search.Execute(e.def, query, e.login.Session(), e.doer, e.deps)
+	releases, err := search.Execute(ctx, e.def, query, e.login.Session(), e.doer, e.deps)
 	if errors.Is(err, search.ErrSearchLoggedOut) {
 		// Lazy login: the session expired since the eager first login. Re-login
 		// once and retry the search a single time (Jackett's
 		// CheckIfLoginIsNeeded -> DoLogin -> re-request). The retry is bounded to
 		// one attempt: a second logged-out result is returned as the error below,
 		// never looped.
-		if rerr := e.relogin(); rerr != nil {
+		if rerr := e.relogin(ctx); rerr != nil {
 			return nil, fmt.Errorf("cardigann: re-login for %q after session expiry: %w", e.def.ID, rerr)
 		}
-		releases, err = search.Execute(e.def, query, e.login.Session(), e.doer, e.deps)
+		releases, err = search.Execute(ctx, e.def, query, e.login.Session(), e.doer, e.deps)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("cardigann: search for %q: %w", e.def.ID, err)
@@ -250,13 +251,13 @@ func (e *Engine) Search(query Query) ([]*Release, error) {
 // login.test block, would mean a full login POST per search — a live login-rate
 // hazard). A session that later expires is handled lazily by relogin (below),
 // triggered when a search response looks logged-out.
-func (e *Engine) ensureSession() error {
+func (e *Engine) ensureSession(ctx context.Context) error {
 	e.loginMu.Lock()
 	defer e.loginMu.Unlock()
 	if e.loggedIn {
 		return nil
 	}
-	if err := e.login.EnsureLoggedIn(e.def); err != nil {
+	if err := e.login.EnsureLoggedIn(ctx, e.def); err != nil {
 		return err //nolint:wrapcheck // Search wraps with the def id + "login for".
 	}
 	e.loggedIn = true
@@ -272,11 +273,11 @@ func (e *Engine) ensureSession() error {
 // so a def whose login.test selector is legitimately absent from a search page
 // (e.g. an AJAX fragment) causes one wasted relogin and a surfaced error, never a
 // loop.
-func (e *Engine) relogin() error {
+func (e *Engine) relogin(ctx context.Context) error {
 	e.loginMu.Lock()
 	defer e.loginMu.Unlock()
 	e.loggedIn = false
-	if err := e.login.Login(e.def); err != nil {
+	if err := e.login.Login(ctx, e.def); err != nil {
 		return err //nolint:wrapcheck // Search wraps with the def id + "re-login for".
 	}
 	e.loggedIn = true
@@ -289,11 +290,11 @@ func (e *Engine) relogin() error {
 // transport error. Unlike Search's memoized ensureSession it always exercises
 // login and caches nothing, so the management "Test" action gets a fresh,
 // truthful result. Requires WithDoer.
-func (e *Engine) Test() error {
+func (e *Engine) Test(ctx context.Context) error {
 	if e.doer == nil {
 		return fmt.Errorf("cardigann: Test for %q requires WithDoer", e.def.ID)
 	}
-	return e.login.EnsureLoggedIn(e.def) //nolint:wrapcheck // the API layer sanitizes/maps this error.
+	return e.login.EnsureLoggedIn(ctx, e.def) //nolint:wrapcheck // the API layer sanitizes/maps this error.
 }
 
 // ResolveDownload turns a release's download link into the real torrent URL when
@@ -308,17 +309,17 @@ func (e *Engine) NeedsResolver() bool {
 	return e.def.Download != nil
 }
 
-func (e *Engine) ResolveDownload(link string) (string, error) {
+func (e *Engine) ResolveDownload(ctx context.Context, link string) (string, error) {
 	if e.def.Download == nil {
 		return link, nil
 	}
 	if e.doer == nil {
 		return "", fmt.Errorf("cardigann: ResolveDownload for %q requires WithDoer", e.def.ID)
 	}
-	if err := e.ensureSession(); err != nil {
+	if err := e.ensureSession(ctx); err != nil {
 		return "", fmt.Errorf("cardigann: login for %q: %w", e.def.ID, err)
 	}
-	resolved, err := search.ResolveDownload(e.def, link, e.login.Session(), e.doer, e.deps)
+	resolved, err := search.ResolveDownload(ctx, e.def, link, e.login.Session(), e.doer, e.deps)
 	if err != nil {
 		return "", fmt.Errorf("cardigann: resolving download for %q: %w", e.def.ID, err)
 	}

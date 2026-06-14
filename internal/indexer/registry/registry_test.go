@@ -280,7 +280,7 @@ func TestResolveAndSearch(t *testing.T) {
 		t.Fatalf("Add: %v", err)
 	}
 
-	idx, ok := reg.Indexer("tt")
+	idx, ok := reg.Indexer(ctx, "tt")
 	if !ok {
 		t.Fatal("Indexer(tt) not resolved")
 	}
@@ -291,7 +291,7 @@ func TestResolveAndSearch(t *testing.T) {
 		t.Errorf("info = %+v, want id=tt type=private", info)
 	}
 
-	releases, err := idx.Search(search.Query{Keywords: "bunny"})
+	releases, err := idx.Search(ctx, search.Query{Keywords: "bunny"})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -318,11 +318,11 @@ func TestIndexerDisabledNotResolved(t *testing.T) {
 	if err := reg.SetEnabled(ctx, "tt", false); err != nil {
 		t.Fatalf("SetEnabled: %v", err)
 	}
-	if _, ok := reg.Indexer("tt"); ok {
+	if _, ok := reg.Indexer(ctx, "tt"); ok {
 		t.Error("disabled indexer resolved, want not found")
 	}
 	// Missing slug also not resolved.
-	if _, ok := reg.Indexer("nope"); ok {
+	if _, ok := reg.Indexer(ctx, "nope"); ok {
 		t.Error("unknown indexer resolved")
 	}
 }

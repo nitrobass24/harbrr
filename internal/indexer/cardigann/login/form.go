@@ -1,6 +1,7 @@
 package login
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"sort"
@@ -25,7 +26,7 @@ import (
 //  6. Run the error selectors.
 //
 // The cookie jar persists Set-Cookie from the landing GET into the POST.
-func (e *Executor) loginForm(def *loader.Definition) error {
+func (e *Executor) loginForm(ctx context.Context, def *loader.Definition) error {
 	// Jackett seeds Login.Cookies (e.g. ["JAVA=OK"] to avoid a jscheck redirect)
 	// into the cookie header BEFORE the landing GET, so they are sent on both the
 	// landing request and the submit POST (CardigannIndexer DoLogin form path).
@@ -38,7 +39,7 @@ func (e *Executor) loginForm(def *loader.Definition) error {
 	}
 	// Fetch the landing page, routing an anti-bot interstitial through the
 	// configured solver (NoopSolver by default => fail loud, unchanged behaviour).
-	body, err := e.fetchLandingPastAntiBot(landingURL, def.Login.Headers)
+	body, err := e.fetchLandingPastAntiBot(ctx, landingURL, def.Login.Headers)
 	if err != nil {
 		return err
 	}
@@ -68,7 +69,7 @@ func (e *Executor) loginForm(def *loader.Definition) error {
 			return err
 		}
 	}
-	return e.postFormAbsolute(def.Login, target, pairs)
+	return e.postFormAbsolute(ctx, def.Login, target, pairs)
 }
 
 // assembleFormPairs builds the POST body in Jackett's exact precedence order:
@@ -230,9 +231,9 @@ func (e *Executor) resolveFormTarget(l *loader.Login, form *goquery.Selection, l
 //
 // Form body uses url.Values.Encode — see postForm (methods.go) for the deliberate
 // Phase 5 login form-encoding divergence note.
-func (e *Executor) postFormAbsolute(l *loader.Login, target string, pairs url.Values) error {
+func (e *Executor) postFormAbsolute(ctx context.Context, l *loader.Login, target string, pairs url.Values) error {
 	headers := mergeFormHeaders(l.Headers)
-	body, status, err := e.do("POST", target, strings.NewReader(pairs.Encode()), headers)
+	body, status, err := e.do(ctx, "POST", target, strings.NewReader(pairs.Encode()), headers)
 	if err != nil {
 		return err
 	}

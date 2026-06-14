@@ -21,7 +21,7 @@ func TestGetLoginIgnores401(t *testing.T) {
 	})
 	def := &loader.Definition{Login: &loader.Login{Method: "get", Path: "api/v1/torrents"}}
 	e := newExec(t, rt, map[string]string{})
-	if err := e.Login(def); err != nil {
+	if err := e.Login(t.Context(), def); err != nil {
 		t.Fatalf("get-login must ignore a 401 probe status, got %v", err)
 	}
 }

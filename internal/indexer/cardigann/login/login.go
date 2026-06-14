@@ -42,7 +42,7 @@ const maxLoginBodyBytes = 8 << 20 // 8 MiB
 // Login authenticates the definition by dispatching on Login.Method. A
 // definition with no Login block is a no-op success (matching Jackett's
 // DoLogin early return). Unknown methods fail loud via ErrUnknownMethod.
-func (e *Executor) Login(def *loader.Definition) error {
+func (e *Executor) Login(ctx context.Context, def *loader.Definition) error {
 	if def.Login == nil {
 		return nil
 	}
@@ -54,15 +54,16 @@ func (e *Executor) Login(def *loader.Definition) error {
 	// (CardigannIndexer: `if (Definition.Login is { Method: null }) Method = "form"`).
 	switch loginMethod(def.Login) {
 	case "form":
-		return e.loginForm(def)
+		return e.loginForm(ctx, def)
 	case "post":
-		return e.loginPost(def)
+		return e.loginPost(ctx, def)
 	case "get":
-		return e.loginGet(def)
+		return e.loginGet(ctx, def)
 	case "cookie":
+		// cookie login seeds the jar only — no request, so no ctx.
 		return e.loginCookie(def)
 	case "oneurl":
-		return e.loginOneURL(def)
+		return e.loginOneURL(ctx, def)
 	default:
 		return fmt.Errorf("%w: %q", ErrUnknownMethod, def.Login.Method)
 	}
@@ -91,7 +92,7 @@ func (e *Executor) checkCaptcha(l *loader.Login) error {
 // matches at least one element (Jackett's TestLogin / CheckIfLoginIsNeeded
 // signal). A definition with no Test block cannot be probed, so CheckTest
 // reports false (login is needed) without error — the caller then runs Login.
-func (e *Executor) CheckTest(def *loader.Definition) (bool, error) {
+func (e *Executor) CheckTest(ctx context.Context, def *loader.Definition) (bool, error) {
 	if def.Login == nil {
 		return true, nil
 	}
@@ -103,7 +104,7 @@ func (e *Executor) CheckTest(def *loader.Definition) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	body, _, err := e.get(testURL, def.Login.Headers)
+	body, _, err := e.get(ctx, testURL, def.Login.Headers)
 	if err != nil {
 		return false, err
 	}
@@ -119,15 +120,15 @@ func (e *Executor) CheckTest(def *loader.Definition) (bool, error) {
 
 // EnsureLoggedIn probes the session with CheckTest and only logs in when the
 // test fails. This is the re-login entry point item 10 calls before each search.
-func (e *Executor) EnsureLoggedIn(def *loader.Definition) error {
-	ok, err := e.CheckTest(def)
+func (e *Executor) EnsureLoggedIn(ctx context.Context, def *loader.Definition) error {
+	ok, err := e.CheckTest(ctx, def)
 	if err != nil {
 		return err
 	}
 	if ok {
 		return nil
 	}
-	return e.Login(def)
+	return e.Login(ctx, def)
 }
 
 // resolvePath resolves a (possibly relative) definition path against BaseURL,
@@ -155,8 +156,8 @@ func (e *Executor) resolvePath(raw string) (string, error) {
 // get issues a GET, returning the (capped) body and final status. The cookie jar
 // is applied/updated by the production Doer; tests assert on the recorded
 // request. All error sites redact the URL.
-func (e *Executor) get(rawURL string, headers map[string][]string) (body []byte, status int, err error) {
-	return e.do(stdhttp.MethodGet, rawURL, nil, headers)
+func (e *Executor) get(ctx context.Context, rawURL string, headers map[string][]string) (body []byte, status int, err error) {
+	return e.do(ctx, stdhttp.MethodGet, rawURL, nil, headers)
 }
 
 // do performs one request through the seam and reads the body. It applies jar
@@ -164,8 +165,8 @@ func (e *Executor) get(rawURL string, headers map[string][]string) (body []byte,
 // does not own a jar (the replay transport in tests), so cookie capture is
 // exercised offline. Production *http.Client owns its own jar and this
 // best-effort store is harmless (idempotent) there.
-func (e *Executor) do(method, rawURL string, bodyReader io.Reader, headers map[string][]string) ([]byte, int, error) {
-	req, err := stdhttp.NewRequestWithContext(context.Background(), method, rawURL, bodyReader)
+func (e *Executor) do(ctx context.Context, method, rawURL string, bodyReader io.Reader, headers map[string][]string) ([]byte, int, error) {
+	req, err := stdhttp.NewRequestWithContext(ctx, method, rawURL, bodyReader)
 	if err != nil {
 		return nil, 0, fmt.Errorf("building %s request to %s: %w", method, apphttp.RedactURL(rawURL), err)
 	}

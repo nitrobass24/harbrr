@@ -240,7 +240,7 @@ func TestDoRequest_RedactsPasskeyInError(t *testing.T) {
 		url:    "https://leak.invalid/browse?passkey=" + passkey,
 	}
 
-	_, err := doRequest(errDoer{}, br, nil)
+	_, err := doRequest(t.Context(), errDoer{}, br, nil)
 	if err == nil {
 		t.Fatal("doRequest returned nil error, want transport failure")
 	}

@@ -271,7 +271,7 @@ func (r *Registry) Test(ctx context.Context, slug string) error {
 	if err != nil {
 		return err
 	}
-	if err := a.engine.Test(); err != nil {
+	if err := a.engine.Test(ctx); err != nil {
 		return fmt.Errorf("registry: test %q: %w", slug, err)
 	}
 	return nil
