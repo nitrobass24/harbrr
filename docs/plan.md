@@ -67,7 +67,8 @@ decoupled.
 
 - [x] `internal/torznab`: capabilities document + `t=caps|search|tvsearch|movie|music|book`
 - [x] **caps/category correctness is a gate** (Sonarr/Radarr failures usually trace here)
-- [ ] Sonarr/Radarr can search a handful of real trackers through harbrr end-to-end
+- [x] Sonarr/Radarr can search a handful of real trackers through harbrr end-to-end (Phase 5 live smoke:
+      5 trackers searched live + grab into qBittorrent; see `internal/smoke/README.md`)
 
 ## Phase 4 — Daemon foundation (persistence · secrets · auth · server)
 
@@ -107,12 +108,14 @@ Phase 3 "search real trackers end-to-end" goal.
 > (same query → Prowlarr feed vs harbrr feed → diff). Treat creds per AGENTS.md (never logged/committed;
 > entered into harbrr's encrypted store, redacted everywhere).
 
-- [ ] 5 real **non-Cloudflare** trackers (agent-selected; no FlareSolverr in the test env), live
-      login/session, gentle rate
-- [ ] **Robustness proof** (carried from Phase 3, which is verified offline only): a real
-      Sonarr/Radarr parses the served caps and completes search → **grab** end-to-end against the live
-      trackers (not just a 200 feed), and an offline serializer fuzz/property test asserts arbitrary
-      `[]*Release` (scraped-data shapes) always produce well-formed, namespace-bindable XML and never panic
+- [x] 5 real **non-Cloudflare** trackers (seedpool, OnlyEncodes+, DigitalCore, Darkpeers, Luminarr; no
+      FlareSolverr), live login/session, gentle rate — all 5 pass the Prowlarr differential (4 exact, 1
+      count-parity for a config-sorted feed). Build-tagged harness in `internal/smoke`.
+- [x] **Robustness proof**: search → **grab** end-to-end verified live — harbrr's download link resolved
+      to a real `.torrent` and the release downloaded + seeds in qBittorrent2 (left seeding, no H&R; grab
+      via direct qBittorrent push — Sonarr→harbrr unreachable from the sandbox, see `internal/smoke/README.md`).
+      Plus the offline serializer fuzz/property test (`internal/torznab/results_fuzz_test.go`) asserting
+      arbitrary `[]*Release` always produce well-formed, namespace-bindable XML and never panic.
 - [x] **Lazy login**: re-login + retry once when a search response looks logged-out (Jackett's
       `CheckIfLoginIsNeeded` via the `login.test` selector / followed redirect — NOT `login.error`).
       Eager first-login is retained by design (parity goldens); the lazy relogin is the added half.

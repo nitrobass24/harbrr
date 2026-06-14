@@ -161,6 +161,20 @@ Entries:
   RSS/Newznab shapes (`<item>`, `<title>`, `<link>`, `torznab:attr`) match;
   exotic XML (CDATA edge cases, mixed namespaces) is best-effort.
   **`[Tracked: Phase 7 — XML backend edge parity]`**
+- **JSON date auto-conversion (Newtonsoft)** — RESOLVED in Phase 5. Jackett parses
+  JSON with Newtonsoft's default `DateParseHandling.DateTime`, so an ISO-8601
+  string VALUE becomes a `DateTime` rendered back as the .NET InvariantCulture
+  string `MM/dd/yyyy HH:mm:ss`; Go's `encoding/json` keeps the raw ISO string. The
+  JSON selector now reproduces this for ISO strings with a `T` separator
+  (`selector/jsonpath.go`), which is what every UNIT3D-API def's `created_at`
+  (`append " +00:00"` → `dateparse "MM/dd/yyyy HH:mm:ss zzz"`) relies on. Surfaced
+  by the Phase 5 live smoke. **`[Resolved: Phase 5]`**
+- **Login status vs error selectors** — Jackett never fails a login on HTTP
+  status; it relies on the def's error selectors. harbrr matches this for
+  `get`/`cookie` logins (a `401` probe is not a failure — e.g. DigitalCore's apikey
+  is an `X-API-KEY` header carried by the SEARCH request, not the login probe), but
+  retains a stricter `401`→fail for credential-submitting `form`/`post` logins as a
+  useful, result-neutral early bad-credentials signal. **`[Resolved: Phase 5]`**
 
 ## Regenerating goldens
 

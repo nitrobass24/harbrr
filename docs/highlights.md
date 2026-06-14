@@ -22,6 +22,22 @@ site/docs land later.
 
 ---
 
+## Cardigann parity, proven live
+
+- **Byte-for-byte parity with Prowlarr on real trackers.** The Phase 5 live smoke
+  searched 5 real private trackers through the running daemon and diffed each
+  against the user's Prowlarr for the same query: 4/5 matched **exactly** (count +
+  title set identical), the 5th matched on count (a config-sorted, capped feed).
+  *(`internal/smoke/README.md`, `internal/smoke/smoke_test.go`)* `[shipped]`
+- **Caught real engine parity gaps offline tests can't.** The live smoke surfaced
+  and fixed two Jackett behaviors Go doesn't get for free: Newtonsoft's JSON date
+  auto-conversion (`DateParseHandling.DateTime`), which every UNIT3D-API def relies
+  on, and Jackett's "login never fails on HTTP status" rule.
+  *(`internal/indexer/cardigann/selector/jsonpath.go`, `.../login/methods.go`)* `[shipped]`
+- **Search → grab end-to-end.** A release served by harbrr downloaded and seeds in
+  qBittorrent; the served download link resolves to a real `.torrent`.
+  *(`internal/smoke/README.md`)* `[shipped]`
+
 ## Packaging & architecture
 
 - **Single static Go binary, zero cgo.** Pure-Go throughout, including the SQLite

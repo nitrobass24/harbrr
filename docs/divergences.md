@@ -29,6 +29,7 @@ so there is nothing to keep in sync between them.
 | **Engine** (Phases 1–2) | how a saved tracker response becomes a normalized release: extraction, login/session, request building, date/regex/selector parsing, the XML backend | [`internal/indexer/cardigann/parity/testdata/README.md`](../internal/indexer/cardigann/parity/testdata/README.md) |
 | **Torznab output** (Phase 3) | how a normalized release becomes the served feed: the *arr-facing capabilities + results + error XML and the HTTP handler | [`internal/torznab/testdata/README.md`](../internal/torznab/testdata/README.md) |
 | **Daemon foundation** (Phase 4) | how the daemon stores + serves: the §9 secrets model, persistence, auth/session/CSRF, and where these differ from autobrr/qui | [`internal/secrets/testdata/README.md`](../internal/secrets/testdata/README.md) |
+| **Live smoke** (Phase 5) | what the live 5-tracker smoke + Prowlarr differential verified, and the auth/fetch patterns it could NOT exercise live (FlareSolverr, form login, .NET-quirk sites, cookie sites, Sonarr→harbrr) with re-test dispositions | [`internal/smoke/README.md`](../internal/smoke/README.md) |
 
 The per-layer READMEs cross-link for navigation; this file is linked from
 `docs/architecture.md` (invariant #2).
