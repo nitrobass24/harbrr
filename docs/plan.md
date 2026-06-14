@@ -193,7 +193,19 @@ Phase 3 "search real trackers end-to-end" goal.
 - [ ] **OIDC authentication** — fully implement the OIDC login flow stubbed in Phase 4 (the
       `/api/auth/oidc/*` endpoints return 501 today; only a config seam exists). A qui/autobrr family
       feature; pairs with the Web UI auth surface.
-- [ ] Postgres behind the existing `dbinterface` (only now)
+
+---
+
+## Beyond the alpha — not scheduled (demand-gated)
+
+- **Postgres** — **out of the alpha roadmap.** harbrr is single-user self-hosted, where SQLite is the
+  right default, not a stopgap; Postgres only earns its keep for shared / multi-instance deployments.
+  Build it **when a real multi-instance user needs it**, not on a schedule — there is no committed phase.
+  - **Standing invariant (so it plugs in later without a rewrite):** `internal/database/dbinterface`
+    stays **dialect-portable** — all repository SQL routes through the interface and its `Rebind`
+    (`?`→`$N`) seam, no SQLite-specific SQL or driver types leak to callers, and schema changes ship as
+    SQLite migrations a Postgres backend can mirror. Keeping this seam clean is required work **now**;
+    implementing Postgres is **not**. (AGENTS.md: "keep the interface clean so it can be added later.")
 
 ---
 
