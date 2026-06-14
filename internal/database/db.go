@@ -171,17 +171,39 @@ func (db *DB) QueryRowContext(ctx context.Context, query string, args ...any) *s
 	return db.sql.QueryRowContext(ctx, query, args...)
 }
 
-// BeginTx starts a transaction. *sql.Tx already satisfies dbinterface.TxQuerier,
-// so it is returned directly with no wrapper. The caller MUST route every query
-// through the returned TxQuerier (not the *DB) until commit/rollback — see the DB
-// caller contract; a *DB query while the transaction is open would deadlock on the
-// single connection.
+// Rebind adapts a query's `?` placeholders to the active dialect (a no-op for
+// SQLite). Repositories route placeholder-bearing SQL through it so a second
+// backend stays a one-function change — see dbinterface.Rebind.
+func (db *DB) Rebind(query string) string { return dbinterface.Rebind(db.dialect, query) }
+
+// txQuerier scopes the Execer seam to a transaction. It embeds *sql.Tx — so
+// ExecContext/QueryContext/QueryRowContext/Commit/Rollback are promoted unchanged,
+// preserving the bare-*sql.Tx behavior from before this wrapper (driver errors are
+// returned without *DB's "database: …" prefix; repositories add their own context
+// on both paths) — and adds Rebind by carrying the dialect, so transaction-scoped
+// SQL reaches the same placeholder adapter as *DB.
+type txQuerier struct {
+	*sql.Tx
+	dialect dbinterface.Dialect
+}
+
+// Rebind adapts a query's `?` placeholders to the dialect carried by the tx.
+func (t txQuerier) Rebind(query string) string { return dbinterface.Rebind(t.dialect, query) }
+
+// Compile-time proof the tx wrapper still satisfies the transaction seam.
+var _ dbinterface.TxQuerier = txQuerier{}
+
+// BeginTx starts a transaction, returning it wrapped so Rebind is available on the
+// tx handle (the wrapper embeds *sql.Tx, so every other method is unchanged). The
+// caller MUST route every query through the returned TxQuerier (not the *DB) until
+// commit/rollback — see the DB caller contract; a *DB query while the transaction
+// is open would deadlock on the single connection.
 func (db *DB) BeginTx(ctx context.Context, opts *sql.TxOptions) (dbinterface.TxQuerier, error) {
 	tx, err := db.sql.BeginTx(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("database: begin tx: %w", err)
 	}
-	return tx, nil
+	return txQuerier{Tx: tx, dialect: db.dialect}, nil
 }
 
 // Dialect reports the active backend (always SQLite for now).
