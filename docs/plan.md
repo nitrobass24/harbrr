@@ -76,7 +76,7 @@ critical path everything product-facing depends on, and where the `docs/ideas.md
 built. (harbrr cannot serve a single live request until this lands: today `cmd/harbrr serve` loads
 config and exits, and the Torznab handler has no production caller.)
 
-- [ ] **SQLite store + migrations** behind `internal/database/dbinterface` (clean interface; Postgres
+- [x] **SQLite store + migrations** behind `internal/database/dbinterface` (clean interface; Postgres
       stays deferred — Phase 8). Data dir `0700`; db + all SQLite side files (`-wal`/`-journal`) `0600`
 - [ ] **Secrets store** (`internal/secrets`) — the three-class model from §9: tracker creds
       AES-256-GCM (per-record nonce, AAD = indexer-id + setting, stored `key_id`); web-UI password
