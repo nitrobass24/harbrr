@@ -2,6 +2,7 @@ package loader
 
 import (
 	"fmt"
+	"strings"
 
 	yaml "go.yaml.in/yaml/v3"
 )
@@ -70,6 +71,51 @@ type SettingsField struct {
 	Default  *Scalar           `yaml:"default,omitempty"`
 	Options  map[string]string `yaml:"options,omitempty"`
 	Defaults []string          `yaml:"defaults,omitempty"`
+}
+
+// secretNameTokens are substrings that mark a text-typed setting as a credential
+// to encrypt at rest and redact (docs/ideas.md §9). The set is derived from an
+// audit of the vendored corpus (see secret_classifier_test.go) and kept tight to
+// avoid redacting benign fields: trackers spell credentials many ways
+// (cookie/apikey/passkey/2facode/staffpass/…), but a checkbox like "usetoken" is
+// excluded by the type rules below, not by trimming this list.
+var secretNameTokens = []string{
+	"cookie", "passkey", "apikey", "api_key", "authkey", "auth_key",
+	"rsskey", "rss_key", "torrent_pass", "passid", "pass", "passphrase",
+	"secret", "2fa", "otp", "token", "downloadtoken", "pin",
+}
+
+// IsSecret reports whether this setting holds a credential that must be encrypted
+// at rest and redacted in API responses. It is type-aware, which is what makes
+// the classification correct against the real corpus:
+//
+//   - info* types are display-only help text with no stored value → never secret;
+//   - password is always a secret;
+//   - checkbox / select / multi-select are toggles/enums → never secret (this is
+//     what excludes name-colliding toggles like "usetoken"/"use_fl_tokens");
+//   - otherwise (text) it is secret when its name matches a credential token,
+//     catching the many text-typed secrets (cookie, apikey, 2facode, …).
+func (s SettingsField) IsSecret() bool {
+	switch {
+	case strings.HasPrefix(s.Type, "info"):
+		return false
+	case s.Type == "password":
+		return true
+	case s.Type == "checkbox", s.Type == "select", s.Type == "multi-select":
+		return false
+	}
+	return nameLooksSecret(s.Name)
+}
+
+// nameLooksSecret reports whether a setting name contains a credential token.
+func nameLooksSecret(name string) bool {
+	lower := strings.ToLower(name)
+	for _, tok := range secretNameTokens {
+		if strings.Contains(lower, tok) {
+			return true
+		}
+	}
+	return false
 }
 
 // Login mirrors Login.

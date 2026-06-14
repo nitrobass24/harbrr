@@ -78,7 +78,7 @@ config and exits, and the Torznab handler has no production caller.)
 
 - [x] **SQLite store + migrations** behind `internal/database/dbinterface` (clean interface; Postgres
       stays deferred — Phase 8). Data dir `0700`; db + all SQLite side files (`-wal`/`-journal`) `0600`
-- [ ] **Secrets store** (`internal/secrets`) — the three-class model from §9: tracker creds
+- [x] **Secrets store** (`internal/secrets`) — the three-class model from §9: tracker creds
       AES-256-GCM (per-record nonce, AAD = indexer-id + setting, stored `key_id`); web-UI password
       argon2id; API keys SHA-256. Auto-generate a keyfile on first run (encryption always on); fail
       loud on a wrong/changed key
