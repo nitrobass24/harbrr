@@ -11,6 +11,9 @@ lint-report.json
 .env
 .env.*
 
+# Phase 5 live-smoke evidence (counts/titles only, secret-scrubbed — never committed)
+/internal/smoke/testdata/
+
 # stray `go build ./cmd/harbrr` binary + a datadir created by running it directly
 # (use `make build` -> /bin instead)
 /harbrr
