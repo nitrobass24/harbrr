@@ -13,6 +13,10 @@ Every divergence entry carries exactly one disposition, so the record is a
 complete decision log rather than a half-tracked backlog:
 
 - **`[Tracked: Phase N]`** — a real gap with a `docs/plan.md` follow-up item.
+- **`[Partial: Phase N]`** — partly implemented in Phase N; the remainder is a
+  `[Tracked]` gap for a later phase (the entry cites both).
+- **`[Resolved: Phase N]`** — a once-tracked gap closed in Phase N, kept in the
+  log so the decision history stays auditable (no longer a gap).
 - **`[Deliberate]`** — an intentional design choice; not a gap.
 - **`[Accepted]`** — a difference harbrr chooses to keep (harbrr-additive or
   clean-degradation); no work planned. Revisit only if a vendored def needs it.
@@ -29,7 +33,7 @@ so there is nothing to keep in sync between them.
 | **Engine** (Phases 1–2) | how a saved tracker response becomes a normalized release: extraction, login/session, request building, date/regex/selector parsing, the XML backend | [`internal/indexer/cardigann/parity/testdata/README.md`](../internal/indexer/cardigann/parity/testdata/README.md) |
 | **Torznab output** (Phase 3) | how a normalized release becomes the served feed: the *arr-facing capabilities + results + error XML and the HTTP handler | [`internal/torznab/testdata/README.md`](../internal/torznab/testdata/README.md) |
 | **Daemon foundation** (Phase 4) | how the daemon stores + serves: the §9 secrets model, persistence, auth/session/CSRF, and where these differ from autobrr/qui | [`internal/secrets/testdata/README.md`](../internal/secrets/testdata/README.md) |
-| **Live smoke** (Phase 5) | what the live 5-tracker smoke + Prowlarr differential verified, and the auth/fetch patterns it could NOT exercise live (FlareSolverr, form login, .NET-quirk sites, cookie sites, Sonarr→harbrr) with re-test dispositions | [`internal/smoke/README.md`](../internal/smoke/README.md) |
+| **Live smoke** (Phase 5) | what the live 5-tracker smoke + Prowlarr differential + Sonarr-orchestrated grab verified, and the auth/fetch patterns it could NOT exercise live (FlareSolverr, form login, .NET-quirk sites, cookie sites) with re-test dispositions | [`internal/smoke/README.md`](../internal/smoke/README.md) |
 
 The per-layer READMEs cross-link for navigation; this file is linked from
 `docs/architecture.md` (invariant #2).
@@ -51,21 +55,23 @@ them (see each README for the live disposition, which is the single source):
   caps category tree extends that determinism choice. (engine: "Category
   ordering"; torznab: "Custom-category top-level ordering".)
 - **Download links** — two halves of the download path: the engine's
-  `ResolveDownload` resolves a tracker link (built but scope-limited, **Phase 7**
-  completes it), and the output layer does not yet wire it into the served feed or
-  proxy it (**Phase 5**), so the link is served as extracted. (engine: "Download
-  resolver scope" `[Tracked: Phase 7]`; torznab: "Download links served direct"
-  `[Tracked: Phase 5]`.)
+  `ResolveDownload` resolves a tracker link (baseline built, **Phase 7** completes
+  it), and the output layer now wires it into the served feed (**Phase 5**, inline
+  passthrough for direct links); the `/dl` proxy + full resolver remain **Phase 7**.
+  (engine: "Download resolver scope" `[Tracked: Phase 7]`; torznab: "Download links
+  served direct" `[Partial: Phase 5 — ResolveDownload wired; /dl proxy Phase 7]`.)
 
 ## Open gaps
 
-The actionable divergences are exactly the `[Tracked: Phase N]` entries in the
-two READMEs. To list them:
+The actionable divergences are exactly the `[Tracked: Phase N]` entries across the
+per-layer READMEs (the remainder of a `[Partial]` entry is one too). To list them:
 
 ```sh
 grep -rn '\[Tracked' \
   internal/indexer/cardigann/parity/testdata/README.md \
-  internal/torznab/testdata/README.md
+  internal/torznab/testdata/README.md \
+  internal/secrets/testdata/README.md \
+  internal/smoke/README.md
 ```
 
 When a tracked gap ships, update its entry in its own README — it is recorded in
