@@ -88,7 +88,9 @@ func (e *Executor) fetchLandingPastAntiBot(rawURL string, headers map[string][]s
 		return nil, fmt.Errorf("%w: detected an anti-bot challenge page", ErrSolverRequired)
 	}
 	e.seedSolverCookies(rawURL, res)
-	body, _, err = e.get(rawURL, headers)
+	// Anti-bot clearance is often UA-coupled (the cf_clearance cookie is bound to
+	// the User-Agent the solver used), so the retry must send the solver's UA.
+	body, _, err = e.get(rawURL, withUserAgent(headers, res.UserAgent))
 	if err != nil {
 		return nil, err
 	}
@@ -96,6 +98,20 @@ func (e *Executor) fetchLandingPastAntiBot(rawURL string, headers map[string][]s
 		return nil, err
 	}
 	return body, nil
+}
+
+// withUserAgent returns headers with User-Agent set to ua, without mutating the
+// caller's map. An empty ua returns headers unchanged.
+func withUserAgent(headers map[string][]string, ua string) map[string][]string {
+	if ua == "" {
+		return headers
+	}
+	out := make(map[string][]string, len(headers)+1)
+	for k, v := range headers {
+		out[k] = v
+	}
+	out["User-Agent"] = []string{ua}
+	return out
 }
 
 // seedSolverCookies installs a solver's cookies into the jar, scoped to the

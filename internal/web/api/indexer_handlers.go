@@ -212,12 +212,19 @@ func (rt *router) testIndexer(w http.ResponseWriter, r *http.Request) {
 // the client through this surface.
 var secretTokenRe = regexp.MustCompile(`(?i)(cookie|passkey|api_?key|auth_?key|rss_?key|torrent_pass|passid|passphrase|password|secret|token|downloadtoken|2fa|otp)([=:]\s*)[^\s&"']+`)
 
+// authHeaderRe scrubs an Authorization header value (with or without a
+// scheme like Bearer/Basic), since the scheme + token can span a space that
+// secretTokenRe's value run would not cover. Per the AGENTS.md redaction rule
+// (Authorization/Cookie headers are never emitted).
+var authHeaderRe = regexp.MustCompile(`(?i)(authorization)(\s*[=:]\s*)(?:bearer|basic|digest|negotiate)?\s*\S+`)
+
 // sanitizeTestError renders a test/login error safe to return to the client:
-// every credential-shaped key=value / key: value pair has its value replaced with
-// <redacted>. It is applied to plain error text only (not URL-encoded), so it
-// never mangles human-readable messages.
+// every credential-shaped key=value / key: value pair (and any Authorization
+// header) has its value replaced with <redacted>. It is applied to plain error
+// text only (not URL-encoded), so it never mangles human-readable messages.
 func sanitizeTestError(err error) string {
-	return secretTokenRe.ReplaceAllString(err.Error(), "${1}${2}<redacted>")
+	msg := authHeaderRe.ReplaceAllString(err.Error(), "${1}${2}<redacted>")
+	return secretTokenRe.ReplaceAllString(msg, "${1}${2}<redacted>")
 }
 
 // toInstanceResponse maps a domain instance to its API view.

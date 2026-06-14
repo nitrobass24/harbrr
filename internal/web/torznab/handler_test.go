@@ -275,8 +275,18 @@ func TestHandlerDirectLinkNotResolved(t *testing.T) {
 	idx := demoIndexer(t) // needsResolver defaults false
 	idx.resolvePrefix = "https://should-not-apply/"
 	rec := do(t, newTestHandler(t, idx), "t=search&q=movie")
-	if strings.Contains(rec.Body.String(), "should-not-apply") {
-		t.Errorf("direct-link tracker must not resolve links:\n%s", rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	// The happy path must have executed: the demo release is served with its
+	// ORIGINAL link untouched...
+	if !strings.Contains(body, "https://demo.test/dl/1.torrent") {
+		t.Fatalf("expected the original direct link to be served:\n%s", body)
+	}
+	// ...and the resolver prefix must not have been applied.
+	if strings.Contains(body, "should-not-apply") {
+		t.Errorf("direct-link tracker must not resolve links:\n%s", body)
 	}
 }
 

@@ -36,6 +36,18 @@ func TestSanitizeTestError(t *testing.T) {
 			[]string{"dial tcp"},
 		},
 		{
+			"authorization bearer header",
+			errors.New("upstream rejected request with Authorization: Bearer SECRETJWT.payload.sig"),
+			[]string{"SECRETJWT", "payload.sig"},
+			[]string{"<redacted>"},
+		},
+		{
+			"authorization basic header",
+			errors.New("Authorization=Basic dXNlcjpwYXNz failed"),
+			[]string{"dXNlcjpwYXNz"},
+			[]string{"failed"},
+		},
+		{
 			"safe definition-authored message is unchanged",
 			errors.New("invalid username or password"),
 			nil,
