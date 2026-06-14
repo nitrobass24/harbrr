@@ -11,9 +11,10 @@ ultracode — Implement **Phase 8 (Web UI / management dashboard)** from `docs/p
 PR. **Begin in PLAN MODE — do STEP 0 before anything else.**
 
 This PR ships the **Web UI box** of Phase 8 and the items tightly coupled to it (Swagger UI render,
-OIDC login as the UI auth surface, stats/search-history display, `api_keys.last_used_at` write). The
-other Phase 8 boxes (\*arr app-sync, Prowlarr import, autobrr push, cross-seed, notifications, Postgres)
-are **out of scope** — see the deferral list in the WORK LIST. The web UI does **not** unlock the
+stats/search-history display, `api_keys.last_used_at` write). OIDC login is **deferred by default** (the
+UI hides the 501 `/api/auth/oidc/*` stubs) unless the approved plan promotes it to a work-list item —
+see the WORK LIST. The other Phase 8 boxes (\*arr app-sync, Prowlarr import, autobrr push, cross-seed,
+notifications, Postgres) are **out of scope** — see the deferral list in the WORK LIST. The web UI does **not** unlock the
 "Prowlarr replacement" framing (`docs/ideas.md` §13: that waits until app-sync + migration + UI + broad
 coverage all ship — the UI is one of four legs). Do not imply otherwise in any copy, README, or PR body.
 
