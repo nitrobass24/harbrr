@@ -25,7 +25,7 @@ func NewSessionStore(db dbinterface.Execer) *SessionStore { return &SessionStore
 func (s *SessionStore) FindCtx(ctx context.Context, token string) ([]byte, bool, error) {
 	var data []byte
 	err := s.db.QueryRowContext(ctx,
-		`SELECT data FROM sessions WHERE token = ? AND expiry > ?`, token, nowUnix()).Scan(&data)
+		s.db.Rebind(`SELECT data FROM sessions WHERE token = ? AND expiry > ?`), token, nowUnix()).Scan(&data)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, false, nil
 	}
@@ -38,8 +38,8 @@ func (s *SessionStore) FindCtx(ctx context.Context, token string) ([]byte, bool,
 // CommitCtx inserts or updates a session token's data and expiry.
 func (s *SessionStore) CommitCtx(ctx context.Context, token string, b []byte, expiry time.Time) error {
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO sessions (token, data, expiry) VALUES (?, ?, ?)
-		 ON CONFLICT(token) DO UPDATE SET data = excluded.data, expiry = excluded.expiry`,
+		s.db.Rebind(`INSERT INTO sessions (token, data, expiry) VALUES (?, ?, ?)
+		 ON CONFLICT(token) DO UPDATE SET data = excluded.data, expiry = excluded.expiry`),
 		token, b, unixSeconds(expiry))
 	if err != nil {
 		return fmt.Errorf("database: commit session: %w", err)
@@ -49,7 +49,7 @@ func (s *SessionStore) CommitCtx(ctx context.Context, token string, b []byte, ex
 
 // DeleteCtx removes a session token (a no-op if absent).
 func (s *SessionStore) DeleteCtx(ctx context.Context, token string) error {
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE token = ?`, token); err != nil {
+	if _, err := s.db.ExecContext(ctx, s.db.Rebind(`DELETE FROM sessions WHERE token = ?`), token); err != nil {
 		return fmt.Errorf("database: delete session: %w", err)
 	}
 	return nil
@@ -73,7 +73,7 @@ func (s *SessionStore) Delete(token string) error {
 // DeleteExpired removes expired sessions; the server schedules it periodically so
 // dead rows do not accumulate (Find already filters them out).
 func (s *SessionStore) DeleteExpired(ctx context.Context) error {
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE expiry <= ?`, nowUnix()); err != nil {
+	if _, err := s.db.ExecContext(ctx, s.db.Rebind(`DELETE FROM sessions WHERE expiry <= ?`), nowUnix()); err != nil {
 		return fmt.Errorf("database: delete expired sessions: %w", err)
 	}
 	return nil

@@ -17,7 +17,7 @@ type APIKeys struct{}
 // Create inserts an API key (hash only) and returns its id.
 func (APIKeys) Create(ctx context.Context, q dbinterface.Execer, k domain.APIKey) (int64, error) {
 	res, err := q.ExecContext(ctx,
-		`INSERT INTO api_keys (name, key_hash, created_at) VALUES (?, ?, ?)`,
+		q.Rebind(`INSERT INTO api_keys (name, key_hash, created_at) VALUES (?, ?, ?)`),
 		k.Name, k.KeyHash, k.CreatedAt.UTC().Format(timeLayout))
 	if err != nil {
 		return 0, fmt.Errorf("database: insert api key: %w", err)
@@ -33,7 +33,7 @@ func (APIKeys) Create(ctx context.Context, q dbinterface.Execer, k domain.APIKey
 // validate a presented key (the caller hashes the plaintext first).
 func (APIKeys) GetByHash(ctx context.Context, q dbinterface.Execer, hash string) (domain.APIKey, error) {
 	k, err := scanAPIKey(q.QueryRowContext(ctx,
-		`SELECT id, name, key_hash, created_at, last_used_at FROM api_keys WHERE key_hash = ?`, hash))
+		q.Rebind(`SELECT id, name, key_hash, created_at, last_used_at FROM api_keys WHERE key_hash = ?`), hash))
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.APIKey{}, fmt.Errorf("api key: %w", ErrNotFound)
 	}
@@ -68,7 +68,7 @@ func (APIKeys) List(ctx context.Context, q dbinterface.Execer) ([]domain.APIKey,
 
 // Delete removes an API key by id, returning ErrNotFound when no row matches.
 func (APIKeys) Delete(ctx context.Context, q dbinterface.Execer, id int64) error {
-	res, err := q.ExecContext(ctx, `DELETE FROM api_keys WHERE id = ?`, id)
+	res, err := q.ExecContext(ctx, q.Rebind(`DELETE FROM api_keys WHERE id = ?`), id)
 	if err != nil {
 		return fmt.Errorf("database: delete api key: %w", err)
 	}

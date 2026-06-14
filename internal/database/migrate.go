@@ -142,7 +142,7 @@ func applyOne(ctx context.Context, tx dbinterface.TxQuerier, name string, now fu
 		return fmt.Errorf("database: apply migration %q: %w", name, err)
 	}
 	const ins = "INSERT INTO schema_migrations (filename, applied_at) VALUES (?, ?)"
-	if _, err := tx.ExecContext(ctx, ins, name, now().UTC().Format(time.RFC3339)); err != nil {
+	if _, err := tx.ExecContext(ctx, tx.Rebind(ins), name, now().UTC().Format(time.RFC3339)); err != nil {
 		return fmt.Errorf("database: record migration %q: %w", name, err)
 	}
 	return nil

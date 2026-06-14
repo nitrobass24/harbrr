@@ -27,8 +27,8 @@ const timeLayout = time.RFC3339
 func (Instances) Insert(ctx context.Context, q dbinterface.Execer, inst domain.IndexerInstance) (int64, error) {
 	res, err := q.ExecContext(
 		ctx,
-		`INSERT INTO indexer_instances (slug, definition_id, name, base_url, enabled, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		q.Rebind(`INSERT INTO indexer_instances (slug, definition_id, name, base_url, enabled, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`),
 		inst.Slug, inst.DefinitionID, inst.Name, inst.BaseURL, boolToInt(inst.Enabled),
 		inst.CreatedAt.UTC().Format(timeLayout), inst.UpdatedAt.UTC().Format(timeLayout),
 	)
@@ -49,8 +49,8 @@ func (Instances) InsertSetting(ctx context.Context, q dbinterface.Execer, instan
 	}
 	_, err := q.ExecContext(
 		ctx,
-		`INSERT INTO indexer_settings (instance_id, name, value, value_encrypted, key_id, is_secret)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
+		q.Rebind(`INSERT INTO indexer_settings (instance_id, name, value, value_encrypted, key_id, is_secret)
+		 VALUES (?, ?, ?, ?, ?, ?)`),
 		instanceID, s.Name,
 		nullIfEmpty(s.Value), nullIfEmpty(s.ValueEncrypted), nullIfEmpty(s.KeyID), boolToInt(s.IsSecret),
 	)
@@ -63,8 +63,8 @@ func (Instances) InsertSetting(ctx context.Context, q dbinterface.Execer, instan
 // GetBySlug returns the instance with the given slug, or ErrNotFound.
 func (Instances) GetBySlug(ctx context.Context, q dbinterface.Execer, slug string) (domain.IndexerInstance, error) {
 	row := q.QueryRowContext(ctx,
-		`SELECT id, slug, definition_id, name, base_url, enabled, created_at, updated_at
-		 FROM indexer_instances WHERE slug = ?`, slug)
+		q.Rebind(`SELECT id, slug, definition_id, name, base_url, enabled, created_at, updated_at
+		 FROM indexer_instances WHERE slug = ?`), slug)
 	inst, err := scanInstance(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.IndexerInstance{}, fmt.Errorf("instance %q: %w", slug, ErrNotFound)
@@ -78,8 +78,8 @@ func (Instances) GetBySlug(ctx context.Context, q dbinterface.Execer, slug strin
 // Settings returns all settings for an instance, ordered by name for determinism.
 func (Instances) Settings(ctx context.Context, q dbinterface.Execer, instanceID int64) ([]domain.IndexerSetting, error) {
 	rows, err := q.QueryContext(ctx,
-		`SELECT name, value, value_encrypted, key_id, is_secret
-		 FROM indexer_settings WHERE instance_id = ? ORDER BY name`, instanceID)
+		q.Rebind(`SELECT name, value, value_encrypted, key_id, is_secret
+		 FROM indexer_settings WHERE instance_id = ? ORDER BY name`), instanceID)
 	if err != nil {
 		return nil, fmt.Errorf("database: query settings: %w", err)
 	}
@@ -132,7 +132,7 @@ func (Instances) List(ctx context.Context, q dbinterface.Execer) ([]domain.Index
 // UpdateMeta updates an instance's name, base URL, and updated_at by id.
 func (Instances) UpdateMeta(ctx context.Context, q dbinterface.Execer, id int64, name, baseURL string, updatedAt time.Time) error {
 	_, err := q.ExecContext(ctx,
-		`UPDATE indexer_instances SET name = ?, base_url = ?, updated_at = ? WHERE id = ?`,
+		q.Rebind(`UPDATE indexer_instances SET name = ?, base_url = ?, updated_at = ? WHERE id = ?`),
 		name, baseURL, updatedAt.UTC().Format(timeLayout), id)
 	if err != nil {
 		return fmt.Errorf("database: update instance meta: %w", err)
@@ -143,7 +143,7 @@ func (Instances) UpdateMeta(ctx context.Context, q dbinterface.Execer, id int64,
 // DeleteSettings removes all settings for an instance (used by the replace-on-
 // update path).
 func (Instances) DeleteSettings(ctx context.Context, q dbinterface.Execer, instanceID int64) error {
-	if _, err := q.ExecContext(ctx, `DELETE FROM indexer_settings WHERE instance_id = ?`, instanceID); err != nil {
+	if _, err := q.ExecContext(ctx, q.Rebind(`DELETE FROM indexer_settings WHERE instance_id = ?`), instanceID); err != nil {
 		return fmt.Errorf("database: delete settings: %w", err)
 	}
 	return nil
@@ -153,7 +153,7 @@ func (Instances) DeleteSettings(ctx context.Context, q dbinterface.Execer, insta
 // when no row matches.
 func (Instances) SetEnabled(ctx context.Context, q dbinterface.Execer, slug string, enabled bool, updatedAt time.Time) error {
 	res, err := q.ExecContext(ctx,
-		`UPDATE indexer_instances SET enabled = ?, updated_at = ? WHERE slug = ?`,
+		q.Rebind(`UPDATE indexer_instances SET enabled = ?, updated_at = ? WHERE slug = ?`),
 		boolToInt(enabled), updatedAt.UTC().Format(timeLayout), slug)
 	if err != nil {
 		return fmt.Errorf("database: set enabled: %w", err)
@@ -164,7 +164,7 @@ func (Instances) SetEnabled(ctx context.Context, q dbinterface.Execer, slug stri
 // Delete removes an instance (its settings cascade) by slug, returning
 // ErrNotFound when no row matches.
 func (Instances) Delete(ctx context.Context, q dbinterface.Execer, slug string) error {
-	res, err := q.ExecContext(ctx, `DELETE FROM indexer_instances WHERE slug = ?`, slug)
+	res, err := q.ExecContext(ctx, q.Rebind(`DELETE FROM indexer_instances WHERE slug = ?`), slug)
 	if err != nil {
 		return fmt.Errorf("database: delete instance: %w", err)
 	}
