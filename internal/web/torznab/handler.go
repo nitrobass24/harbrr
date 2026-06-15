@@ -1,7 +1,9 @@
 package torznab
 
 import (
-	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -12,6 +14,7 @@ import (
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
+	"github.com/autobrr/harbrr/internal/secrets"
 	tzn "github.com/autobrr/harbrr/internal/torznab"
 )
 
@@ -24,6 +27,7 @@ type handler struct {
 	basePath        string
 	clock           func() time.Time
 	log             zerolog.Logger
+	dlToken         *secrets.Keyring
 }
 
 // Option configures the handler at construction.
@@ -61,6 +65,13 @@ func WithClock(fn func() time.Time) Option {
 // secrets redacted; the served body is always generic).
 func WithLogger(l zerolog.Logger) Option { return func(h *handler) { h.log = l } }
 
+// WithDLToken enables the grab-time /dl proxy: the served feed routes a
+// resolver-needing indexer's download links through harbrr's /dl endpoint with an
+// opaque token (sealed with the keyring), so the passkey-bearing link is resolved
+// and fetched server-side and never appears in the feed. Without it, no /dl URLs are
+// emitted (resolver-needing links would be served unresolved).
+func WithDLToken(kr *secrets.Keyring) Option { return func(h *handler) { h.dlToken = kr } }
+
 // NewHandler builds the *arr-facing Torznab HTTP handler. It serves:
 //
 //	GET /api/v2.0/indexers/{indexerId}/results/torznab
@@ -76,7 +87,66 @@ func NewHandler(provider Provider, opts ...Option) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v2.0/indexers/{indexerId}/results/torznab", h.serve)
 	mux.HandleFunc("GET /api/v2.0/indexers/{indexerId}/results/torznab/api", h.serve)
+	mux.HandleFunc("GET /api/v2.0/indexers/{indexerId}/dl", h.serveDL)
 	return mux
+}
+
+// serveDL is the grab-time download proxy. It authenticates the apikey (gating
+// access), decodes the opaque token into the pre-resolution link (bound to this
+// indexer), resolves and fetches the torrent server-side through harbrr's session,
+// and streams it back — so a passkey-bearing link is never exposed in the feed. A
+// resolved magnet (public, no secret) is served as a 302. Every failure is generic;
+// the link/passkey never reaches a log, error body, or redirect.
+func (h *handler) serveDL(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	if !h.authorized(q) {
+		writeError(w, http.StatusOK, codeInvalidAPIKey, "Invalid API Key")
+		return
+	}
+	idx, ok := h.provider.Indexer(r.Context(), r.PathValue("indexerId"))
+	if !ok {
+		writeError(w, http.StatusOK, codeBadParameter, "Indexer is not supported")
+		return
+	}
+	if h.dlToken == nil {
+		writeError(w, http.StatusOK, codeBadParameter, "download proxy is not enabled")
+		return
+	}
+	link, err := decodeDLToken(h.dlToken, idx.Info().ID, q.Get("token"))
+	if err != nil {
+		// The error never carries the link; an invalid/forged token is a bad request.
+		writeError(w, http.StatusBadRequest, codeBadParameter, "invalid download token")
+		return
+	}
+	// The decoded link is trusted because the token is AEAD-authenticated under the
+	// keyring (so only harbrr could mint it) and the endpoint is apikey-gated. In
+	// plaintext mode (no key, opt-in behind a loud startup warning) the token is not
+	// authenticated, so an apikey-holder could forge one for an arbitrary host — a
+	// known, gated SSRF. We do not host-filter the link here: a self-hosted operator
+	// may run a private/LAN tracker, and the attacker is already an apikey-holder on
+	// single-user software, so a filter would break legitimate setups for little gain.
+	result, err := idx.Grab(r.Context(), link)
+	if err != nil {
+		h.writeInternalError(w, "grab", idx.Info().ID, err)
+		return
+	}
+	if result.Redirect != "" {
+		// Only a magnet (public, no secret) is ever redirected. Guard so a resolved
+		// http(s) link can never become an open redirect or leak a passkey in Location.
+		if !strings.HasPrefix(result.Redirect, "magnet:") {
+			h.writeInternalError(w, "grab", idx.Info().ID, errors.New("grab returned a non-magnet redirect"))
+			return
+		}
+		http.Redirect(w, r, result.Redirect, http.StatusFound) //nolint:gosec // G710: validated magnet: URI above, not a web open-redirect
+		return
+	}
+	ct := result.ContentType
+	if ct == "" {
+		ct = "application/x-bittorrent"
+	}
+	w.Header().Set("Content-Type", ct)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(result.Body) //nolint:gosec // G705: torrent file served as application/x-bittorrent, fixed non-HTML content type
 }
 
 // serve is the request entry point: authenticate, resolve the indexer, then
@@ -128,32 +198,77 @@ func (h *handler) writeCaps(w http.ResponseWriter, idx Indexer) {
 	writeXML(w, http.StatusOK, body)
 }
 
-// resolveDownloadLinks rewrites each served release's download Link to the real
-// torrent URL via the engine's ResolveDownload, but ONLY when the definition
-// declares a download block (NeedsResolver). For the direct-link trackers Phase 5
-// targets this is skipped entirely, so the served link (the tracker's direct
-// torrent URL) reaches the *arr unchanged. A per-release resolution failure keeps
-// the original link rather than dropping the release or failing the feed
-// (best-effort). The full resolver and a grab-time /dl proxy that resolves
-// through harbrr's session are Phase 7; running here resolves only the served
-// page (post-paging), bounding the work.
-func resolveDownloadLinks(ctx context.Context, idx Indexer, releases []*normalizer.Release) {
-	if !idx.NeedsResolver() {
-		return
+// dlRewriter builds the per-release acquisition rewriter for a resolver-needing
+// indexer: it replaces the served <link>/<enclosure> with a /dl proxy URL carrying
+// an opaque token for the original (passkey-bearing) link, and derives a stable,
+// passkey-free guid so *arr's dedup stays consistent across polls even though the
+// token rotates. It returns nil when the proxy is not enabled or the indexer needs
+// no resolution (direct links/magnets are served as-is). A magnet release keeps its
+// magnet (public, no secret), and a token-mint failure falls back to the direct
+// link rather than dropping the release.
+func (h *handler) dlRewriter(r *http.Request, idx Indexer) tzn.AcquisitionRewriter {
+	if h.dlToken == nil || !idx.NeedsResolver() {
+		return nil
 	}
-	for _, rel := range releases {
-		if rel == nil || rel.Link == "" {
-			continue
+	indexerID := idx.Info().ID
+	base := h.dlBaseURL(r, indexerID)
+	apiKey := apiKeyParam(r.URL.Query())
+	return func(original string) (link, guid string, ok bool) {
+		if original == "" || strings.HasPrefix(original, "magnet:") {
+			return "", "", false
 		}
-		if resolved, err := idx.ResolveDownload(ctx, rel.Link); err == nil && resolved != "" {
-			rel.Link = resolved
+		token, err := encodeDLToken(h.dlToken, indexerID, original)
+		if err != nil {
+			return "", "", false
 		}
+		return dlURLWithToken(base, apiKey, token), stableGUID(indexerID, original), true
 	}
+}
+
+// dlBaseURL is the externally-visible /dl endpoint for an indexer (scheme/host from
+// the request, the configured base path re-added), without query — the apikey and
+// token are appended per release. It mirrors selfURL's scheme/host derivation.
+func (h *handler) dlBaseURL(r *http.Request, indexerID string) string {
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host + h.basePath + "/api/v2.0/indexers/" + url.PathEscape(indexerID) + "/dl"
+}
+
+// dlURLWithToken appends the caller's apikey (so *arr can authenticate the grab) and
+// the opaque token to the /dl base URL.
+func dlURLWithToken(base, apiKey, token string) string {
+	q := url.Values{}
+	if apiKey != "" {
+		q.Set("apikey", apiKey)
+	}
+	q.Set("token", token)
+	return base + "?" + q.Encode()
+}
+
+// apiKeyParam returns the request's apikey (or its passkey alias) so the served /dl
+// links reflect the caller's own key.
+func apiKeyParam(q url.Values) string {
+	if k := q.Get("apikey"); k != "" {
+		return k
+	}
+	return q.Get("passkey")
+}
+
+// stableGUID derives a deterministic, passkey-free guid from the indexer id and the
+// original link, so a proxied release keeps a stable identity across polls (the /dl
+// token rotates per request and the original link may embed a passkey).
+func stableGUID(indexerID, original string) string {
+	sum := sha256.Sum256([]byte(indexerID + "\x00" + original))
+	return "harbrr-" + hex.EncodeToString(sum[:])
 }
 
 // writeResults validates the search mode + id params, runs the search, then
 // de-duplicates, paginates, and serializes the results feed. No-results yields a
-// valid empty feed (HTTP 200), never an error.
+// valid empty feed (HTTP 200), never an error. Resolver-needing indexers have their
+// links routed through the /dl proxy at serialization (no per-release resolution
+// happens here — the grab resolves server-side).
 func (h *handler) writeResults(w http.ResponseWriter, r *http.Request, idx Indexer, q url.Values) {
 	caps := idx.Capabilities()
 	if !h.resolveMode(w, q, caps) {
@@ -169,8 +284,7 @@ func (h *handler) writeResults(w http.ResponseWriter, r *http.Request, idx Index
 	// + limit). Category filtering runs after dedupe and before paging.
 	releases = filterResults(dedupeByGUID(releases), requestedCats, caps)
 	releases = parsePaging(q).apply(releases)
-	resolveDownloadLinks(r.Context(), idx, releases)
-	body, err := tzn.MarshalResults(h.feedInfo(r, idx), releases, h.clock())
+	body, err := tzn.MarshalResultsRewritten(h.feedInfo(r, idx), releases, h.clock(), h.dlRewriter(r, idx))
 	if err != nil {
 		h.writeInternalError(w, "results", idx.Info().ID, err)
 		return

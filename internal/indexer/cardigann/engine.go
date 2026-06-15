@@ -346,6 +346,25 @@ func (e *Engine) ResolveDownload(ctx context.Context, link string, validate bool
 	return resolved, nil
 }
 
+// Grab performs the full grab-time download for a release link: resolve it (with
+// testlinktorrent validation) and fetch the torrent through the session honouring
+// download.method/headers. A magnet is returned as a redirect target. This is what
+// the /dl proxy drives so a passkey-bearing link is resolved and fetched
+// server-side, never exposed in the served feed.
+func (e *Engine) Grab(ctx context.Context, link string) (*search.GrabResult, error) {
+	if e.doer == nil {
+		return nil, fmt.Errorf("cardigann: Grab for %q requires WithDoer", e.def.ID)
+	}
+	if err := e.ensureSession(ctx); err != nil {
+		return nil, fmt.Errorf("cardigann: login for %q: %w", e.def.ID, err)
+	}
+	result, err := search.Grab(ctx, e.def, link, e.login.Session(), e.doer, e.deps)
+	if err != nil {
+		return nil, fmt.Errorf("cardigann: grabbing download for %q: %w", e.def.ID, err)
+	}
+	return result, nil
+}
+
 // ParseResponse is the offline extraction half: parse a saved response body into
 // normalized releases without any HTTP, for the parity harness and regression
 // snapshots. responseType selects the JSON parser when "json"; anything else

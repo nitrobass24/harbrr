@@ -5,14 +5,19 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rs/zerolog"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/secrets"
 )
 
 const testAPIKey = "harbrr-test-key" //nolint:gosec // G101: synthetic test API key, not a real credential
@@ -26,8 +31,9 @@ type fakeIndexer struct {
 	searchErr     error
 	gotQuery      search.Query
 	needsResolver bool
-	resolvePrefix string // when set, ResolveDownload returns resolvePrefix+link
-	resolveErr    error
+	grabResult    *search.GrabResult // when set, Grab returns it
+	grabErr       error
+	gotGrabLink   string
 }
 
 func (f *fakeIndexer) Info() IndexerInfo                  { return f.info }
@@ -40,14 +46,15 @@ func (f *fakeIndexer) Search(_ context.Context, q search.Query) ([]*normalizer.R
 
 func (f *fakeIndexer) NeedsResolver() bool { return f.needsResolver }
 
-func (f *fakeIndexer) ResolveDownload(_ context.Context, link string) (string, error) {
-	if f.resolveErr != nil {
-		return "", f.resolveErr
+func (f *fakeIndexer) Grab(_ context.Context, link string) (*search.GrabResult, error) {
+	f.gotGrabLink = link
+	if f.grabErr != nil {
+		return nil, f.grabErr
 	}
-	if f.resolvePrefix != "" {
-		return f.resolvePrefix + link, nil
+	if f.grabResult != nil {
+		return f.grabResult, nil
 	}
-	return link, nil
+	return &search.GrabResult{Body: []byte("d0:e"), ContentType: "application/x-bittorrent"}, nil
 }
 
 type fakeProvider map[string]Indexer
@@ -256,42 +263,183 @@ func TestHandlerUnmappedCatFiltersResults(t *testing.T) {
 	}
 }
 
-// TestHandlerResolvesDownloadLinks: when the indexer needs a resolver, each
-// served release's link is rewritten via ResolveDownload before serialization.
-func TestHandlerResolvesDownloadLinks(t *testing.T) {
-	t.Parallel()
-	idx := demoIndexer(t)
-	idx.needsResolver = true
-	idx.resolvePrefix = "https://harbrr.proxy/dl?u="
-	rec := do(t, newTestHandler(t, idx), "t=search&q=movie")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
+// dlTestPasskey is a synthetic passkey-shaped value (built by concatenation so
+// secret scanners do not flag it) used to prove it never reaches the served feed.
+var dlTestPasskey = strings.Repeat("9f8e", 8)
+
+func newProxyHandler(t *testing.T, idx *fakeIndexer) (http.Handler, *secrets.Keyring) {
+	t.Helper()
+	kr, err := secrets.OpenKeyring(secrets.KeyringOptions{EncryptionKey: dlTestKey}, zerolog.Nop())
+	if err != nil {
+		t.Fatalf("keyring: %v", err)
 	}
-	if !strings.Contains(rec.Body.String(), "https://harbrr.proxy/dl?u=") {
-		t.Errorf("resolver-needing indexer should rewrite served links:\n%s", rec.Body.String())
-	}
+	h := NewHandler(
+		fakeProvider{"demo": idx},
+		WithAPIKey(testAPIKey),
+		WithClock(func() time.Time { return time.Date(2026, time.June, 13, 12, 0, 0, 0, time.UTC) }),
+		WithDLToken(kr),
+	)
+	return h, kr
 }
 
-// TestHandlerDirectLinkNotResolved: a direct-link tracker (NeedsResolver=false,
-// the Phase 5 case) serves its link unchanged — ResolveDownload is never called.
-func TestHandlerDirectLinkNotResolved(t *testing.T) {
+func resolverDemoIndexer(t *testing.T) *fakeIndexer {
+	idx := demoIndexer(t)
+	idx.needsResolver = true
+	idx.releases = []*normalizer.Release{
+		demoRelease("Movie A", "https://demo.test/download.php?id=1&passkey="+dlTestPasskey, []int{2000}),
+	}
+	return idx
+}
+
+var guidRe = regexp.MustCompile(`<guid[^>]*>(harbrr-[0-9a-f]+)</guid>`)
+
+// doDL issues a GET to an indexer's /dl proxy endpoint (apikey appended).
+func doDL(t *testing.T, h http.Handler, indexerID, rawQuery string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
+		"/api/v2.0/indexers/"+indexerID+"/dl?"+rawQuery+"&apikey="+testAPIKey, nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
+// TestHandlerProxiesResolverLinks: a resolver-needing indexer's links are routed
+// through the /dl proxy, and the passkey-bearing original link never reaches the feed.
+func TestHandlerProxiesResolverLinks(t *testing.T) {
 	t.Parallel()
-	idx := demoIndexer(t) // needsResolver defaults false
-	idx.resolvePrefix = "https://should-not-apply/"
-	rec := do(t, newTestHandler(t, idx), "t=search&q=movie")
+	h, _ := newProxyHandler(t, resolverDemoIndexer(t))
+	rec := do(t, h, "t=search&q=movie")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 	body := rec.Body.String()
-	// The happy path must have executed: the demo release is served with its
-	// ORIGINAL link untouched...
+	if strings.Contains(body, dlTestPasskey) {
+		t.Errorf("passkey leaked into the served feed:\n%s", body)
+	}
+	if !strings.Contains(body, "/api/v2.0/indexers/demo/dl?") || !strings.Contains(body, "token=") {
+		t.Errorf("resolver-needing links should route through /dl with a token:\n%s", body)
+	}
+	if !guidRe.MatchString(body) {
+		t.Errorf("expected a stable harbrr- proxy guid:\n%s", body)
+	}
+}
+
+// TestHandlerProxyGUIDStable: the proxy guid is stable across polls even though the
+// /dl token (a fresh AEAD nonce) rotates, so *arr dedup stays consistent.
+func TestHandlerProxyGUIDStable(t *testing.T) {
+	t.Parallel()
+	h, _ := newProxyHandler(t, resolverDemoIndexer(t))
+	first := do(t, h, "t=search&q=movie").Body.String()
+	second := do(t, h, "t=search&q=movie").Body.String()
+	g1, g2 := guidRe.FindStringSubmatch(first), guidRe.FindStringSubmatch(second)
+	if g1 == nil || g2 == nil {
+		t.Fatalf("missing proxy guid in one feed")
+	}
+	if g1[1] != g2[1] {
+		t.Errorf("proxy guid not stable: %q vs %q", g1[1], g2[1])
+	}
+	if tokenOf(first) == "" || tokenOf(first) == tokenOf(second) {
+		t.Errorf("expected the /dl token to rotate between polls")
+	}
+}
+
+// TestHandlerDirectLinkNotProxied: a direct-link tracker (NeedsResolver=false) serves
+// its link unchanged even when the proxy is enabled.
+func TestHandlerDirectLinkNotProxied(t *testing.T) {
+	t.Parallel()
+	h, _ := newProxyHandler(t, demoIndexer(t)) // needsResolver defaults false
+	rec := do(t, h, "t=search&q=movie")
+	body := rec.Body.String()
 	if !strings.Contains(body, "https://demo.test/dl/1.torrent") {
 		t.Fatalf("expected the original direct link to be served:\n%s", body)
 	}
-	// ...and the resolver prefix must not have been applied.
-	if strings.Contains(body, "should-not-apply") {
-		t.Errorf("direct-link tracker must not resolve links:\n%s", body)
+	if strings.Contains(body, "/dl?") && strings.Contains(body, "token=") {
+		t.Errorf("direct-link tracker must not use the proxy:\n%s", body)
 	}
+}
+
+// TestServeDL_StreamsTorrent: a valid /dl request resolves+fetches server-side and
+// streams the torrent body; the decoded (passkey-bearing) link reaches Grab.
+func TestServeDL_StreamsTorrent(t *testing.T) {
+	t.Parallel()
+	idx := resolverDemoIndexer(t)
+	idx.grabResult = &search.GrabResult{Body: []byte("d4:name4:dataee"), ContentType: "application/x-bittorrent"}
+	h, kr := newProxyHandler(t, idx)
+	link := "https://demo.test/download.php?id=1&passkey=" + dlTestPasskey
+	token, err := encodeDLToken(kr, "demo", link)
+	if err != nil {
+		t.Fatalf("encodeDLToken: %v", err)
+	}
+	rec := doDL(t, h, "demo", "token="+url.QueryEscape(token))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/x-bittorrent" {
+		t.Errorf("Content-Type = %q", ct)
+	}
+	if rec.Body.String() != "d4:name4:dataee" {
+		t.Errorf("body = %q", rec.Body.String())
+	}
+	if idx.gotGrabLink != link {
+		t.Errorf("Grab got %q, want the decoded link %q", idx.gotGrabLink, link)
+	}
+}
+
+// TestServeDL_RedirectsMagnet: a resolved magnet is served as a 302 (public, no secret).
+func TestServeDL_RedirectsMagnet(t *testing.T) {
+	t.Parallel()
+	idx := resolverDemoIndexer(t)
+	idx.grabResult = &search.GrabResult{Redirect: "magnet:?xt=urn:btih:abcdef"}
+	h, kr := newProxyHandler(t, idx)
+	token, _ := encodeDLToken(kr, "demo", "https://demo.test/info/1")
+	rec := doDL(t, h, "demo", "token="+url.QueryEscape(token))
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); loc != "magnet:?xt=urn:btih:abcdef" {
+		t.Errorf("Location = %q", loc)
+	}
+}
+
+// TestServeDL_InvalidToken: a forged/garbage token is a 400 and never reaches Grab.
+func TestServeDL_InvalidToken(t *testing.T) {
+	t.Parallel()
+	idx := resolverDemoIndexer(t)
+	h, _ := newProxyHandler(t, idx)
+	rec := doDL(t, h, "demo", "token=not-a-real-token")
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+	if idx.gotGrabLink != "" {
+		t.Errorf("Grab must not run for an invalid token, got %q", idx.gotGrabLink)
+	}
+}
+
+// TestServeDL_RequiresAPIKey: /dl without the apikey is rejected before any grab.
+func TestServeDL_RequiresAPIKey(t *testing.T) {
+	t.Parallel()
+	idx := resolverDemoIndexer(t)
+	h, kr := newProxyHandler(t, idx)
+	token, _ := encodeDLToken(kr, "demo", "https://demo.test/download.php?id=1")
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
+		"/api/v2.0/indexers/demo/dl?token="+url.QueryEscape(token), nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if !strings.Contains(rec.Body.String(), "Invalid API Key") {
+		t.Errorf("expected an invalid-api-key error, got: %s", rec.Body.String())
+	}
+	if idx.gotGrabLink != "" {
+		t.Errorf("Grab must not run without an apikey")
+	}
+}
+
+// tokenOf extracts the first /dl token query value from a served feed body.
+func tokenOf(feed string) string {
+	m := regexp.MustCompile(`token=([0-9A-Za-z_-]+)`).FindStringSubmatch(feed)
+	if m == nil {
+		return ""
+	}
+	return m[1]
 }
 
 // do issues a GET to the torznab endpoint with the given raw query (apikey is
