@@ -187,7 +187,7 @@ safety); it stays offline-gated against the parity oracle.
       `headers`, `testlinktorrent` (Phase 2 ships selectors + `before.path`; see `parity/testdata/README.md`).
       Includes the grab-time **`/dl` proxy** (resolve a link through harbrr's session at grab time) — the
       output-layer half of the same feature.
-- [ ] **XML backend edge parity**: CDATA / mixed-namespace / AngleSharp-vs-cascadia edge cases beyond the
+- [x] **XML backend edge parity**: CDATA / mixed-namespace / AngleSharp-vs-cascadia edge cases beyond the
       common RSS/Newznab shapes Phase 2 covers
 - [ ] Broaden response-mode and definition coverage; expand selector/date edge-case fixtures
 

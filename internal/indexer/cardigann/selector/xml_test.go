@@ -116,3 +116,126 @@ func TestParseXMLInvalid(t *testing.T) {
 		t.Fatal("ParseXML of malformed XML = nil error, want a loud error")
 	}
 }
+
+// TestParseXMLCDATA proves CDATA sections round-trip as literal text (the '&' and
+// '<...>' inside are content, not entities/markup), and that text abutting a CDATA
+// section concatenates — including for a :contains selector spanning the boundary,
+// matching how AngleSharp exposes the element's text content.
+func TestParseXMLCDATA(t *testing.T) {
+	t.Parallel()
+	const feed = `<rss><channel><item>
+  <title><![CDATA[Title & <Raw> Markup]]></title>
+  <desc>Pre <![CDATA[Mid]]> Post</desc>
+</item></channel></rss>`
+	doc, err := New().ParseXML([]byte(feed))
+	if err != nil {
+		t.Fatalf("ParseXML: %v", err)
+	}
+	rows, err := doc.Rows(loader.RowsBlock{Selector: "item"})
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("rows = %d err = %v, want 1", len(rows), err)
+	}
+
+	title, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "title"})
+	if err != nil || !found {
+		t.Fatalf("title: found=%v err=%v", found, err)
+	}
+	if title != "Title & <Raw> Markup" {
+		t.Errorf("CDATA title = %q, want literal %q", title, "Title & <Raw> Markup")
+	}
+
+	desc, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "desc"})
+	if err != nil || !found {
+		t.Fatalf("desc: found=%v err=%v", found, err)
+	}
+	if desc != "Pre Mid Post" {
+		t.Errorf("text spanning CDATA = %q, want %q", desc, "Pre Mid Post")
+	}
+
+	// :contains across the text/CDATA boundary uses the concatenated text content.
+	hit, err := doc.Rows(loader.RowsBlock{Selector: `desc:contains("Pre Mid Post")`})
+	if err != nil {
+		t.Fatalf(":contains query: %v", err)
+	}
+	if len(hit) != 1 {
+		t.Errorf(":contains across CDATA boundary matched %d, want 1", len(hit))
+	}
+}
+
+// TestParseXMLComments proves XML comments are dropped (not exposed as text), so an
+// element's text content and a :contains selector see only the real character data,
+// matching AngleSharp's selectable output (where a comment is a non-text node).
+func TestParseXMLComments(t *testing.T) {
+	t.Parallel()
+	const feed = `<rss><channel><item><title>Real<!-- hidden -->Text</title></item></channel></rss>`
+	doc, err := New().ParseXML([]byte(feed))
+	if err != nil {
+		t.Fatalf("ParseXML: %v", err)
+	}
+	rows, err := doc.Rows(loader.RowsBlock{Selector: "item"})
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("rows = %d err = %v, want 1", len(rows), err)
+	}
+	title, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "title"})
+	if err != nil || !found {
+		t.Fatalf("title: found=%v err=%v", found, err)
+	}
+	if title != "RealText" {
+		t.Errorf("title = %q, want %q (comment dropped, text concatenated)", title, "RealText")
+	}
+	hidden, err := doc.Rows(loader.RowsBlock{Selector: `title:contains("hidden")`})
+	if err != nil {
+		t.Fatalf(":contains query: %v", err)
+	}
+	if len(hidden) != 0 {
+		t.Errorf("comment text was selectable via :contains (%d hits), want 0", len(hidden))
+	}
+}
+
+// TestParseXMLDefaultNamespace proves an element in a default namespace (xmlns=...)
+// is selectable by its bare local name, the way Jackett's selectors reference an
+// Atom feed's elements.
+func TestParseXMLDefaultNamespace(t *testing.T) {
+	t.Parallel()
+	const feed = `<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry><title>Atom Title</title></entry>
+</feed>`
+	doc, err := New().ParseXML([]byte(feed))
+	if err != nil {
+		t.Fatalf("ParseXML: %v", err)
+	}
+	rows, err := doc.Rows(loader.RowsBlock{Selector: "feed > entry"})
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("rows = %d err = %v, want 1", len(rows), err)
+	}
+	title, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "title"})
+	if err != nil || !found {
+		t.Fatalf("title: found=%v err=%v", found, err)
+	}
+	if title != "Atom Title" {
+		t.Errorf("default-namespace title = %q, want %q", title, "Atom Title")
+	}
+}
+
+// TestParseXMLUndeclaredPrefix proves an undeclared namespace prefix degrades
+// cleanly: harbrr parses leniently (encoding/xml Strict=false) and keeps the literal
+// qualified name, so a `foo\:bar` selector still matches — the same qualified-name
+// selection harbrr (and Jackett's defs) use for all namespaced elements. Jackett's
+// default `new XmlParser()` is also lenient here (it does not reject an undeclared
+// prefix), so this is a robustness property, not a parity divergence. No corpus def
+// selects such an element by a bare local name, so only the qualified form is pinned.
+func TestParseXMLUndeclaredPrefix(t *testing.T) {
+	t.Parallel()
+	const feed = `<rss><channel><item><foo:bar>x</foo:bar></item></channel></rss>`
+	doc, err := New().ParseXML([]byte(feed))
+	if err != nil {
+		t.Fatalf("ParseXML of an undeclared prefix should degrade, not error: %v", err)
+	}
+	val, found, err := New().Field(doc.Root(), loader.SelectorBlock{Selector: `foo\:bar`})
+	if err != nil || !found {
+		t.Fatalf("foo:bar: found=%v err=%v", found, err)
+	}
+	if val != "x" {
+		t.Errorf("foo:bar = %q, want x", val)
+	}
+}
