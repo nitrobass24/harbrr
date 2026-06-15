@@ -410,8 +410,10 @@ autobrr, qui, and cross-seed.
    autobrr's IRC defs and harbrr's Cardigann defs, removing the by-hand "External identifier"
    mapping autobrr users do today.
 3. **harbrr ↔ qBittorrent / qui.** Grabs push via `go-qbittorrent`; qui manages the torrents.
-4. **harbrr as the cross-seed search backend.** cross-seed needs a Torznab indexer source — harbrr
-   provides it natively.
+4. **harbrr as the cross-seed search backend.** cross-seed needs a Torznab indexer *source* — harbrr
+   provides it natively. qui already consumes Torznab as a *client* (`pkg/gojackett`, a generic
+   Torznab/Jackett client) for its cross-seed search, so harbrr's served feed (the Cardigann engine + a
+   future native Avistaz driver) drops straight in as that source — no new glue.
 
 ### Shared tracker registry (longer-term)
 
@@ -422,6 +424,20 @@ by that `id`**, in one community repo (e.g. `autobrr/trackers`). harbrr does not
 Jackett now, design the loader so the search facet could later live in the registry, seed the `id`
 layer over time. (Precedent: autobrr's defs descend from autodl-irssi `.tracker` files; Cardigann is
 already shared across Jackett, Prowlarr, and Sonarr v3.)
+
+### Shared Torznab protocol module (longer-term)
+
+harbrr and qui implement the **same** Torznab/Newznab schema from opposite ends: harbrr *serves* it
+(`internal/torznab` — caps, the Newznab category tree, result/error XML), qui *consumes* it
+(`pkg/gojackett` — a generic Torznab/Jackett client used for cross-seed search). The category
+constants, result/caps shapes, and attribute names are duplicated, once per direction. A small shared
+`go-torznab` module (typed models + constants, server- and client-agnostic) could factor that out
+across the family, the same way `go-qbittorrent` is shared. harbrr does **not** block on it — its
+serializer is built and parity-tested — but the seam is worth keeping in view: the moment a third
+producer/consumer appears (or qui and harbrr need to agree on a category-tree change) is when extracting
+it pays off. Note this is a *protocol* dedup only; it does **not** help the native **Avistaz** driver,
+whose real gap is the tracker's login→Bearer (`api/v1/jackett`) auth — which no brr library has, only
+Prowlarr/Jackett (in C#).
 
 ## 12. Definition of done — success criteria & compatibility matrix
 
