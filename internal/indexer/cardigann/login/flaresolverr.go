@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	stdhttp "net/http"
@@ -87,7 +88,9 @@ func (s *FlareSolverrSolver) Solve(ctx context.Context, targetURL string) (Solve
 	}
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodPost, s.baseURL+"/v1", bytes.NewReader(reqBody))
 	if err != nil {
-		return SolveResult{}, fmt.Errorf("flaresolverr: build request: %w", err)
+		// The stdlib error embeds the full URL (flaresolverr_url may carry auth), so
+		// don't interpolate it — the cause is always a malformed base URL.
+		return SolveResult{}, errors.New("flaresolverr: invalid flaresolverr_url")
 	}
 	req.Header.Set("Content-Type", "application/json")
 

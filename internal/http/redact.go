@@ -147,17 +147,24 @@ var secretTokenRe = regexp.MustCompile(`(?i)(cookie|passkey|api_?key|auth_?key|r
 // would not cover.
 var authHeaderRe = regexp.MustCompile(`(?i)(authorization)(\s*[=:]\s*)(?:bearer|basic|digest|negotiate)?\s*\S+`)
 
+// cookieHeaderRe scrubs an ENTIRE Cookie/Set-Cookie value (multiple ";"-separated
+// pairs, to end of line). The whole header value is sensitive, so secretTokenRe's
+// single-token run is not enough — it would stop at the first whitespace and leak
+// later pairs (e.g. "Cookie: a=1; cf_clearance=SECRET").
+var cookieHeaderRe = regexp.MustCompile(`(?i)((?:set-)?cookie)(\s*[=:]\s*)[^\r\n]+`)
+
 // RedactError renders an error message safe to surface (to an API client or a
-// persisted health-event detail): every credential-shaped key=value / key: value
-// pair, and any Authorization header, has its value replaced with <redacted>. It
-// is the shared scrubbing chokepoint — the engine's errors are credential-free by
-// construction and URLs are RedactURL'd at their sites, but a credential must
-// never reach these surfaces. A nil error returns "".
+// persisted health-event detail): the full Cookie/Set-Cookie/Authorization header
+// value, and every other credential-shaped key=value / key: value pair, are
+// replaced with <redacted>. It is the shared scrubbing chokepoint — the engine's
+// errors are credential-free by construction and URLs are RedactURL'd at their
+// sites, but a credential must never reach these surfaces. A nil error returns "".
 func RedactError(err error) string {
 	if err == nil {
 		return ""
 	}
 	msg := authHeaderRe.ReplaceAllString(err.Error(), "${1}${2}<redacted>")
+	msg = cookieHeaderRe.ReplaceAllString(msg, "${1}${2}<redacted>")
 	return secretTokenRe.ReplaceAllString(msg, "${1}${2}<redacted>")
 }
 
@@ -168,7 +175,10 @@ func RedactError(err error) string {
 func RedactProxyURL(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil {
-		return RedactURL(raw)
+		// A malformed proxy URL can still carry userinfo before the parse error;
+		// RedactURL's textual fallback would keep that prefix, so return a fixed
+		// marker rather than risk leaking proxy credentials.
+		return redactedValue
 	}
 	if u.User != nil {
 		u.User = url.User(redactedValue)

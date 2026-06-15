@@ -92,7 +92,7 @@ func buildTransport(cfg map[string]string) (*http.Transport, error) {
 	case "socks4", "socks4a":
 		return nil, fmt.Errorf("registry: proxy_type %q is not supported (use socks5 or http)", proxyType)
 	default:
-		return nil, fmt.Errorf("registry: unknown proxy_type %q (want http, https, socks5)", proxyType)
+		return nil, fmt.Errorf("registry: unknown proxy_type %q (want http, https, socks5, socks5h)", proxyType)
 	}
 	return transport, nil
 }

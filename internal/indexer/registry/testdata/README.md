@@ -61,4 +61,4 @@ These behaviours are pinned by tests in `internal/indexer/registry`
   `socks4`/`socks4a` fail loud (use `socks5` or `http`). Demand-gated — HTTP+SOCKS5
   cover the dominant real-world proxies. `[Tracked: Phase 6 — SOCKS4]`.
 - **Proxy live end-to-end not verified.** No proxy in the test env; the proxy doer
-  construction is fully offline-tested. `[Tracked: deferred — proxy live retest]`.
+  construction is fully offline-tested. `[Tracked: Phase 9 — live validation]`.

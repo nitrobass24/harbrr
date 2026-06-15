@@ -81,6 +81,15 @@ func TestRedactProxyURL(t *testing.T) {
 			nil,
 			[]string{"proxy.test:1080"},
 		},
+		{
+			// url.Parse rejects this (control byte in host); the textual fallback would
+			// keep the userinfo prefix, so a malformed proxy URL must collapse to the
+			// fixed marker rather than leak proxyuser:proxypass.
+			"malformed proxy url collapses to marker (no userinfo leak)",
+			"socks5://proxyuser:proxypass@proxy\x7f.test:1080",
+			[]string{"proxyuser", "proxypass"},
+			[]string{"REDACTED"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

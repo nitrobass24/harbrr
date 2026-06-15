@@ -25,6 +25,14 @@ func TestRedactError(t *testing.T) {
 			[]string{"<redacted>"},
 		},
 		{
+			// secretTokenRe alone stops at the first whitespace and would leak the
+			// later pair; cookieHeaderRe must scrub the WHOLE multi-pair header value.
+			"cookie header with multiple pairs scrubs all pairs",
+			errors.New("request sent Cookie: session=AAA; cf_clearance=BBB; uid=CCC"),
+			[]string{"AAA", "BBB", "CCC"},
+			[]string{"<redacted>"},
+		},
+		{
 			"apikey", errors.New("apikey=SECRETKEY was rejected"),
 			[]string{"SECRETKEY"},
 			[]string{"rejected"},
