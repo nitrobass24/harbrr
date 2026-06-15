@@ -79,6 +79,13 @@ func WithLogger(l zerolog.Logger) Option { return func(r *Registry) { r.log = l 
 type ClientParams struct {
 	Instance domain.IndexerInstance
 	Cfg      map[string]string
+	// Timeout is the per-instance request timeout (resolved in build() from a
+	// per-instance "timeout" setting, else the registry default); newDoer clamps
+	// <=0 to defaultHTTPTimeout.
+	Timeout time.Duration
+	// RateInterval is the per-host minimum spacing (resolved from the def's
+	// requestDelay, else defaultRateInterval).
+	RateInterval time.Duration
 }
 
 // WithDoerFactory overrides how the HTTP client for a built engine is created
@@ -106,7 +113,7 @@ func New(db *database.DB, ldr *loader.Loader, keyring secretsKeyring, opts ...Op
 		o(r)
 	}
 	if r.doerFactory == nil {
-		r.doerFactory = func(ClientParams) (search.Doer, error) { return newDoer(r.timeout) }
+		r.doerFactory = newDoer
 	}
 	return r
 }
@@ -172,7 +179,12 @@ func (r *Registry) build(ctx context.Context, slug string) (*indexerAdapter, err
 		return nil, err
 	}
 
-	doer, err := r.doerFactory(ClientParams{Instance: inst, Cfg: cfg})
+	doer, err := r.doerFactory(ClientParams{
+		Instance:     inst,
+		Cfg:          cfg,
+		Timeout:      resolveTimeout(cfg, r.timeout),
+		RateInterval: rateInterval(def),
+	})
 	if err != nil {
 		return nil, err
 	}
