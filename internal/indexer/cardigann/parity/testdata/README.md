@@ -149,13 +149,27 @@ Entries:
   degrades cleanly in both cases (only `yts.yml` pairs the two, with the flag on),
   consistent with the project's clean-degradation stance.
   **`[Accepted: clean degradation, no action]`**
-- **Download resolver scope** — `ResolveDownload` covers `before.path/method` +
-  selector `selector/attribute/filters/usebeforeresponse`. Out of scope (a def
-  using these silently misbehaves rather than erroring): the `.DownloadUri`
-  template namespace, `before.inputs`/`before.pathselector`, Go-template
-  evaluation of the download selector string, `download.infohash`,
-  `download.method: post`, `download.headers`, and `testlinktorrent`.
-  **`[Tracked: Phase 7 — complete the download resolver]`**
+- **Download resolver scope** — RESOLVED in Phase 7. `ResolveDownload` now
+  reproduces Jackett's full `CardigannIndexer.Download`: the `.DownloadUri` template
+  namespace (populated from the link, .NET `System.Uri` semantics — see the URI
+  divergence note below), `before.inputs`/`before.pathselector` (inputs as an
+  ordered GET query / POST body honouring `queryseparator`; pathselector GETs the
+  link and replaces `before.path`), Go-template evaluation of the download selector
+  string, `download.infohash`→magnet (shared `magnet` package, byte-for-byte
+  MagnetUtil), `download.method: post` + `download.headers` on the grab fetch, and
+  `testlinktorrent` (default TRUE; non-magnet links fetched and accepted only if the
+  first byte is `d`). Fixtures: `matrix-download-link`, `matrix-download-before-post`,
+  and the `search/download_test.go` recording-doer suite (which pins the POST body
+  the replay harness cannot). **`[Resolved: Phase 7]`**
+- **.DownloadUri vs .NET System.Uri canonicalization** — `NewDownloadURI` maps
+  Go's `*url.URL` onto the .NET `System.Uri` members real defs read
+  (`.Query.<k>`, `.AbsolutePath`, `.AbsoluteUri`, `.PathAndQuery`) byte-for-byte for
+  the URL shapes the corpus produces (`path?id=NNN`, `/info/NNN`). It deliberately
+  does NOT reproduce .NET's URI *canonicalization* that no corpus def exercises:
+  stripping a default `:80`/`:443`, lowercasing the host, compacting dot-segments,
+  or unescaping percent-encoded unreserved octets in the path. A def needing those
+  routes through the existing encode/regex layers.
+  **`[Accepted: exact for the corpus; exotic canonicalization unhit]`**
 - **XML backend** — harbrr parses `response.type: xml` into an element tree and
   queries it with cascadia; Jackett uses AngleSharp's `XmlParser`. The common
   RSS/Newznab shapes (`<item>`, `<title>`, `<link>`, `torznab:attr`) match;

@@ -55,12 +55,14 @@ them (see each README for the live disposition, which is the single source):
 - **Category ordering** — the engine sorts a release's categories ascending; the
   caps category tree extends that determinism choice. (engine: "Category
   ordering"; torznab: "Custom-category top-level ordering".)
-- **Download links** — two halves of the download path: the engine's
-  `ResolveDownload` resolves a tracker link (baseline built, **Phase 7** completes
-  it), and the output layer now wires it into the served feed (**Phase 5**, inline
-  passthrough for direct links); the `/dl` proxy + full resolver remain **Phase 7**.
-  (engine: "Download resolver scope" `[Tracked: Phase 7]`; torznab: "Download links
-  served direct" `[Partial: Phase 5 — ResolveDownload wired; /dl proxy Phase 7]`.)
+- **Download links** — two halves of the download path, both completed in
+  **Phase 7**: the engine's `ResolveDownload`/`Grab` reproduce Jackett's full
+  download algorithm (before/infohash/selectors/testlinktorrent + the final fetch),
+  and the output layer routes a resolver-needing indexer's links through the
+  grab-time **`/dl` proxy** so the passkey never reaches the feed (direct-link
+  trackers are still served inline). (engine: "Download resolver scope"
+  `[Resolved: Phase 7]`; torznab: "Resolver-needing links routed through the /dl
+  proxy" `[Resolved: Phase 7]`.)
 
 ## Open gaps
 
