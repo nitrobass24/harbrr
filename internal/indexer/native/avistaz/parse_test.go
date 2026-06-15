@@ -83,13 +83,30 @@ func TestParseReleasesErrors(t *testing.T) {
 		{"no data array (empty object)", `{}`},
 		{"json null", `null`},
 		{"explicit null data", `{"data":null}`},
-		{"unknown type", `{"data":[{"type":"GAME","created_at_iso":"2024-01-01T00:00:00Z"}]}`},
-		{"unparseable date", `{"data":[{"type":"MOVIE","video_quality":"1080p","created_at_iso":"not-a-date"}]}`},
+		{"unknown type", `{"data":[{"type":"GAME","download":"https://az.test/dl/1","created_at_iso":"2024-01-01T00:00:00Z"}]}`},
+		{"unparseable date", `{"data":[{"type":"MOVIE","video_quality":"1080p","download":"https://az.test/dl/1","created_at_iso":"not-a-date"}]}`},
 	}
 	for _, tc := range cases {
 		if _, err := d.parseReleases([]byte(tc.body)); !errors.Is(err, search.ErrParseError) {
 			t.Errorf("%s: err = %v, want search.ErrParseError", tc.name, err)
 		}
+	}
+}
+
+// TestParseReleasesSkipsNoDownload proves a row with no download URL is dropped (it is
+// un-grabbable), while the row with a download link is kept.
+func TestParseReleasesSkipsNoDownload(t *testing.T) {
+	t.Parallel()
+	body := `{"data":[
+	  {"type":"MOVIE","video_quality":"1080p","created_at_iso":"2024-01-01T00:00:00Z","download":"","file_name":"no link"},
+	  {"type":"MOVIE","video_quality":"1080p","created_at_iso":"2024-01-02T00:00:00Z","download":"https://az.test/dl/1","url":"https://az.test/t/1","file_name":"has link"}
+	]}`
+	got, err := builderDriver("avistaz", nil).parseReleases([]byte(body))
+	if err != nil {
+		t.Fatalf("parseReleases: %v", err)
+	}
+	if len(got) != 1 || got[0].Title != "has link" {
+		t.Fatalf("got %d releases, want 1 (only the row with a download link)", len(got))
 	}
 }
 

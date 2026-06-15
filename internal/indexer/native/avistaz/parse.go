@@ -67,6 +67,11 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	data := *resp.Data
 	releases := make([]*normalizer.Release, 0, len(data))
 	for i := range data {
+		// A row with no download URL is un-grabbable (harbrr requires an acquisition
+		// link); skip it rather than serve a feed item *arr cannot download.
+		if strings.TrimSpace(data[i].Download) == "" {
+			continue
+		}
 		rel, err := d.toRelease(&data[i])
 		if err != nil {
 			return nil, err
