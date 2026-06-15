@@ -67,17 +67,17 @@ The behaviours below are pinned by tests in `internal/secrets`, `internal/auth`,
 ## Tracked gaps (carry a `docs/plan.md` item)
 
 - **OIDC is stubbed.** `/api/auth/oidc/*` returns 501; only a config seam exists.
-  `[Tracked: Phase 8]` (with the web UI / app auth).
+  `[Tracked: Phase 10]` (with the web UI / app auth).
 - **Interactive Swagger UI is deferred.** The embedded spec is served at
   `/api/openapi.yaml`; the rendered Swagger UI lands with the web UI.
-  `[Tracked: Phase 8]`
+  `[Tracked: Phase 10]`
 - **`api_keys.last_used_at` is never written.** Validation is a pure read (no
   write on the request path); the auth event log populates it later.
-  `[Tracked: Phase 8]` (stats / search history).
+  `[Tracked: Phase 10]` (stats / search history).
 - **Safe export/import not built.** §9 describes a config/DB export that redacts
   secrets behind the `<redacted>` sentinel by default with a separately-encrypted
   include-secrets opt-in. The `<redacted>` sentinel exists for the edit/update flow;
-  the export/import path itself is deferred. `[Tracked: Phase 7]` (backup/restore).
+  the export/import path itself is deferred. `[Tracked: Phase 10]` (backup/restore).
 
 ## Phase 6 — secret hardening
 
@@ -108,4 +108,4 @@ The behaviours below are pinned by tests in `internal/secrets`, `internal/auth`,
   traces, and the stats event log" as redaction targets, but harbrr has **no
   tracing and no stats/event-log subsystem** — those targets do not exist, so the
   audit cannot wire redaction into them. Building them is out of scope.
-  `[Accepted]` (revisit when the Phase-8 stats data layer lands — `[Tracked: Phase 8]`).
+  `[Accepted]` (revisit when the Phase-10 stats data layer lands — `[Tracked: Phase 10]`).

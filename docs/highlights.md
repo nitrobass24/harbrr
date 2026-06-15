@@ -177,7 +177,7 @@ site/docs land later.
   embedded and served, and a test walks the live routes against it so the spec can
   never drift from the handlers. *(`internal/web/swagger`, `internal/web/api`;
   `make test-openapi`)* `[shipped]` — *interactive Swagger UI render: `[planned]`
-  (Phase 8, with the web UI).*
+  (Phase 10, with the web UI).*
 - **A divergence ledger, not a backlog.** Every difference from Jackett or the spec
   is recorded once, next to the test that pins it, with an explicit disposition
   (`[Tracked: Phase N]` / `[Deliberate]` / `[Accepted]`) — a complete, auditable
@@ -196,7 +196,7 @@ site/docs land later.
 
 - **Native push to autobrr.** A path so newly-scraped releases reach autobrr's
   filters immediately instead of waiting on RSS polling — a family-only upgrade
-  Prowlarr can't match. *(`docs/ideas.md` §11, `docs/plan.md` Phase 8)* `[planned]`
+  Prowlarr can't match. *(`docs/ideas.md` §11, `docs/plan.md` Phase 10)* `[planned]`
 - **Cross-seed search backend.** harbrr as cross-seed's native multi-tracker Torznab
   source. *(`docs/ideas.md` §11.4)* `[planned]`
 - **Shared tracker identity + qBittorrent.** One tracker id + one credential set
@@ -205,4 +205,4 @@ site/docs land later.
   stack instead of reimplementing it. *(`docs/ideas.md` §11)* `[planned]`/`[partial]`
 - **OIDC login + *arr application sync + Jackett/Prowlarr import + web UI.** On the
   roadmap; the management API + OpenAPI spec shipped in Phase 4 are the foundation.
-  *(`docs/plan.md` Phase 8)* `[planned]`
+  *(`docs/plan.md` Phase 10)* `[planned]`
