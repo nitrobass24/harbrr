@@ -110,7 +110,7 @@ site/docs land later.
 
 ## Operational safety (anti-blacklist + observability)
 
-- **Never gets a tracker IP/account blacklisted.** Every outbound request is paced
+- **Greatly reduces tracker IP/account blacklisting risk.** Every outbound request is paced
   by a process-wide **per-host rate limiter** (`x/time/rate`, burst 1, no eviction —
   bounded host keyspace), with a per-request timeout and bounded **429/503 backoff
   that honors `Retry-After`** (never loops). Pacing + backoff compose with the

@@ -41,11 +41,16 @@ func TestRotationAllSecretsAndUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Settings: %v", err)
 	}
+	found := false
 	for _, s := range all {
 		if s.Name == secretRows[0].Name {
+			found = true
 			if s.ValueEncrypted != "blobA2" || s.KeyID != "k2" {
 				t.Errorf("after update: value_encrypted=%q key_id=%q, want blobA2/k2", s.ValueEncrypted, s.KeyID)
 			}
 		}
+	}
+	if !found {
+		t.Fatalf("updated setting %q not found", secretRows[0].Name)
 	}
 }

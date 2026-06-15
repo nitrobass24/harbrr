@@ -1,9 +1,11 @@
 package login
 
 import (
+	"bufio"
 	"bytes"
 	"compress/flate"
 	"compress/gzip"
+	"compress/zlib"
 	"context"
 	"errors"
 	"fmt"
@@ -215,10 +217,32 @@ func decompressBody(resp *stdhttp.Response) (io.Reader, error) {
 		}
 		return zr, nil
 	case "deflate":
-		return flate.NewReader(resp.Body), nil
+		// HTTP "deflate" per RFC 9110 is zlib-wrapped (RFC 1950), but many servers
+		// send raw DEFLATE (RFC 1951). Sniff the 2-byte zlib header and pick the
+		// matching reader so both interoperate.
+		br := bufio.NewReader(resp.Body)
+		if looksZlibWrapped(br) {
+			zr, err := zlib.NewReader(br)
+			if err != nil {
+				return nil, fmt.Errorf("zlib reader: %w", err)
+			}
+			return zr, nil
+		}
+		return flate.NewReader(br), nil
 	default:
 		return resp.Body, nil
 	}
+}
+
+// looksZlibWrapped reports whether the next two bytes are a valid zlib header
+// (RFC 1950): the low nibble of CMF is 8 (deflate) and the 16-bit CMF·FLG value is
+// a multiple of 31. Peek does not consume, so the chosen reader sees the full stream.
+func looksZlibWrapped(r *bufio.Reader) bool {
+	b, err := r.Peek(2)
+	if err != nil {
+		return false
+	}
+	return b[0]&0x0f == 8 && (uint16(b[0])<<8|uint16(b[1]))%31 == 0
 }
 
 // applyJar attaches the jar's cookies for the request URL onto the outgoing

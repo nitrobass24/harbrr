@@ -55,7 +55,11 @@ func TestHealthRecordAndRecent(t *testing.T) {
 	if !got[0].OccurredAt.Equal(base.Add(2 * time.Minute)) {
 		t.Errorf("occurred_at round-trip = %v, want %v", got[0].OccurredAt, base.Add(2*time.Minute))
 	}
-	if lim, _ := h.Recent(ctx, db, id, 1); len(lim) != 1 {
+	lim, err := h.Recent(ctx, db, id, 1)
+	if err != nil {
+		t.Fatalf("recent limit=1: %v", err)
+	}
+	if len(lim) != 1 {
 		t.Fatalf("limit=1 returned %d events", len(lim))
 	}
 }

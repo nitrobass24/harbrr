@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/flate"
 	"compress/gzip"
+	"compress/zlib"
 	"context"
 	"encoding/json"
 	"io"
@@ -188,5 +189,27 @@ func TestDo_DecompressesDeflate(t *testing.T) {
 	}
 	if !strings.Contains(string(body), "deflate-ok") {
 		t.Errorf("body not decompressed: %q", body)
+	}
+}
+
+// TestDo_DecompressesZlibDeflate proves do() handles the RFC-9110-compliant
+// zlib-wrapped form of Content-Encoding: deflate (not just raw DEFLATE).
+func TestDo_DecompressesZlibDeflate(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	zw := zlib.NewWriter(&buf)
+	if _, err := zw.Write([]byte("<html>zlib-deflate-ok</html>")); err != nil {
+		t.Fatalf("zlib write: %v", err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zlib close: %v", err)
+	}
+	e := New(WithClient(&encodingDoer{encoding: "deflate", body: buf.Bytes()}), WithBaseURL("https://t.invalid/"))
+	body, _, err := e.get(context.Background(), "https://t.invalid/x", nil)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if !strings.Contains(string(body), "zlib-deflate-ok") {
+		t.Errorf("zlib-wrapped deflate not decompressed: %q", body)
 	}
 }

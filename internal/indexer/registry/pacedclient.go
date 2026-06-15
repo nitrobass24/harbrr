@@ -35,18 +35,22 @@ const retryBackoff = 500 * time.Millisecond
 var hostLimiters sync.Map // map[string]*rate.Limiter
 
 // limiterFor returns the shared limiter for host, creating it (interval spacing,
-// burst 1) on first use. LoadOrStore makes concurrent first-creation safe.
+// burst 1) on first use. LoadOrStore makes concurrent first-creation safe. When a
+// limiter already exists for the host, the STRICTEST (slowest) interval wins: a
+// later instance on the same host that wants slower pacing tightens the shared
+// limiter; we never speed an existing one up (the host is the anti-blacklist unit).
 func limiterFor(host string, interval time.Duration) *rate.Limiter {
 	if interval <= 0 {
 		interval = defaultRateInterval
 	}
-	if v, ok := hostLimiters.Load(host); ok {
-		if lim, ok := v.(*rate.Limiter); ok {
-			return lim
-		}
-	}
-	v, _ := hostLimiters.LoadOrStore(host, rate.NewLimiter(rate.Every(interval), 1))
+	want := rate.Every(interval)
+	v, loaded := hostLimiters.LoadOrStore(host, rate.NewLimiter(want, 1))
 	lim, _ := v.(*rate.Limiter)
+	if loaded && want < lim.Limit() {
+		// rate.Limit is events/sec, so a smaller value is a slower (stricter) rate.
+		// SetLimit is concurrency-safe (no race with a concurrent Wait).
+		lim.SetLimit(want)
+	}
 	return lim
 }
 
@@ -112,14 +116,21 @@ func (d *pacedDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
 		opts = append(opts, retry.WithTimer(d.timer))
 	}
 
+	attempt := 0
 	rerr := retry.Do(func() error {
+		retrying := attempt > 0
+		attempt++
 		// Re-acquire a token every attempt (never retry token-free, or we defeat the
 		// rate limit). A cancelled ctx aborts the Wait promptly.
 		if err := lim.Wait(req.Context()); err != nil {
 			return fmt.Errorf("rate limiter wait: %w", err)
 		}
-		if err := resetBody(req); err != nil {
-			return err
+		// Restore the (consumed) body only when actually retrying; a non-replayable
+		// body fails loud there rather than silently re-sending an empty one.
+		if retrying {
+			if err := resetBody(req); err != nil {
+				return err
+			}
 		}
 		resp, err := d.base.Do(req)
 		if err != nil {
@@ -163,8 +174,13 @@ func (d *pacedDoer) delay(_ uint, err error, _ *retry.Config) time.Duration {
 // the stdlib for the *strings.Reader bodies login/search build). A bodyless GET
 // is a no-op.
 func resetBody(req *stdhttp.Request) error {
-	if req.Body == nil || req.GetBody == nil {
-		return nil
+	if req.Body == nil {
+		return nil // bodyless (e.g. GET) — nothing to restore
+	}
+	if req.GetBody == nil {
+		// The stdlib sets GetBody for the *strings.Reader bodies login/search build,
+		// so this is defensive: a body without GetBody cannot be replayed for a retry.
+		return errors.New("registry: request body is not replayable for a retry (no GetBody)")
 	}
 	body, err := req.GetBody()
 	if err != nil {

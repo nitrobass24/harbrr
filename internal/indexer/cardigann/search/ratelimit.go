@@ -55,6 +55,14 @@ func ParseRetryAfter(value string, now func() time.Time) time.Duration {
 		return 0
 	}
 	if secs, err := strconv.Atoi(value); err == nil {
+		// Clamp before the multiply: a huge delta-seconds would overflow
+		// time.Duration (int64 ns) and wrap to a bogus/negative value.
+		if secs <= 0 {
+			return 0
+		}
+		if secs >= int(maxRetryAfter/time.Second) {
+			return maxRetryAfter
+		}
 		return clampRetryAfter(time.Duration(secs) * time.Second)
 	}
 	if t, err := stdhttp.ParseTime(value); err == nil {

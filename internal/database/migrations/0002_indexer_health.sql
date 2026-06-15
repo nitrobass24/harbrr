@@ -8,7 +8,7 @@
 CREATE TABLE indexer_health_events (
 	id          INTEGER PRIMARY KEY,
 	instance_id INTEGER NOT NULL REFERENCES indexer_instances(id) ON DELETE CASCADE,
-	kind        TEXT NOT NULL,
+	kind        TEXT NOT NULL CHECK (kind IN ('auth_failure', 'rate_limited', 'parse_error', 'anti_bot')),
 	detail      TEXT,
 	occurred_at TEXT NOT NULL
 );
