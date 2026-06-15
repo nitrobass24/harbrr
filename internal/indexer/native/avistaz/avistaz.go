@@ -92,12 +92,6 @@ func (d *driver) Capabilities() *mapper.Capabilities { return d.caps }
 // and the driver's Grab fetches the torrent server-side.
 func (d *driver) NeedsResolver() bool { return true }
 
-// Grab fetches the resolved torrent with the Bearer header. Implemented in the grab
-// commit.
-func (d *driver) Grab(_ context.Context, _ string) (*search.GrabResult, error) {
-	return nil, errors.New("avistaz: grab not implemented")
-}
-
 // Test verifies the configured credentials authenticate (the management
 // "test indexer" action). It forces a fresh token fetch.
 func (d *driver) Test(ctx context.Context) error {
