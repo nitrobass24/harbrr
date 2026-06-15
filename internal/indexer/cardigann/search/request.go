@@ -245,10 +245,20 @@ func assembleRequest(path loader.SearchPathBlock, absURL string, pairs []kv, hea
 // request parity, so we encode by hand with the .NET-compatible WebUtility
 // encoder (space -> '+'; see the encode package).
 func encodeOrdered(pairs []kv) string {
+	return encodeOrderedSep(pairs, "&")
+}
+
+// encodeOrderedSep is encodeOrdered with a caller-supplied pair separator, used by
+// the download.before GET request whose queryseparator the definition may override
+// (Jackett's requestBlock.Queryseparator, default "&"). An empty sep defaults to "&".
+func encodeOrderedSep(pairs []kv, sep string) string {
+	if sep == "" {
+		sep = "&"
+	}
 	var b strings.Builder
 	for _, p := range pairs {
 		if b.Len() > 0 {
-			b.WriteByte('&')
+			b.WriteString(sep)
 		}
 		b.WriteString(encode.WebUtilityEncode(p.key))
 		b.WriteByte('=')
@@ -262,18 +272,29 @@ func encodeOrdered(pairs []kv) string {
 // and appends inputs to it in definition order (CardigannIndexer.PerformQuery);
 // re-encoding via url.Values would re-sort both and break request parity.
 func appendQuery(rawURL string, pairs []kv) (string, error) {
+	return appendQuerySep(rawURL, pairs, "&")
+}
+
+// appendQuerySep is appendQuery with a caller-supplied pair separator (the
+// download.before queryseparator). The separator joins the appended pairs and, when
+// the path already carries a query, also joins the existing query to the new pairs,
+// matching Jackett's GetQueryString(separator) appended to the path.
+func appendQuerySep(rawURL string, pairs []kv, sep string) (string, error) {
+	if sep == "" {
+		sep = "&"
+	}
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return "", fmt.Errorf("parsing search URL %q: %w", apphttp.RedactURL(rawURL), err)
+		return "", fmt.Errorf("parsing request URL %q: %w", apphttp.RedactURL(rawURL), err)
 	}
-	appended := encodeOrdered(pairs)
+	appended := encodeOrderedSep(pairs, sep)
 	switch {
 	case appended == "":
 		// No inputs to add: leave the path's query untouched (verbatim).
 	case u.RawQuery == "":
 		u.RawQuery = appended
 	default:
-		u.RawQuery = u.RawQuery + "&" + appended
+		u.RawQuery = u.RawQuery + sep + appended
 	}
 	return u.String(), nil
 }

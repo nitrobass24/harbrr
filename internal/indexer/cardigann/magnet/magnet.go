@@ -1,4 +1,10 @@
-package normalizer
+// Package magnet reproduces Jackett's MagnetUtil: synthesising a public magnet
+// from an info hash (and the reverse) byte-for-byte, so a harbrr-synthesised
+// magnet matches Jackett's regardless of which stage builds it. It is a leaf
+// package shared by the normalizer (post-search FixResults synthesis) and the
+// download resolver (download.infohash → magnet), keeping a single source of
+// truth for the construction.
+package magnet
 
 import (
 	"net/url"
@@ -24,10 +30,10 @@ var publicTrackers = []string{
 	"udp://tracker.corpscorp.online:80/announce",
 }
 
-// infoHashToMagnet reproduces MagnetUtil.InfoHashToPublicMagnet: build
+// FromInfoHash reproduces MagnetUtil.InfoHashToPublicMagnet: build
 // magnet:?xt=urn:btih:<hash>&dn=<url-encoded title>&tr=...&tr=... . Jackett
 // returns null (no magnet) when either the hash or the title is blank.
-func infoHashToMagnet(infoHash, title string) string {
+func FromInfoHash(infoHash, title string) string {
 	if strings.TrimSpace(infoHash) == "" || strings.TrimSpace(title) == "" {
 		return ""
 	}
@@ -43,11 +49,11 @@ func infoHashToMagnet(infoHash, title string) string {
 	return b.String()
 }
 
-// magnetToInfoHash reproduces MagnetUtil.MagnetToInfoHash: read the xt query
+// ToInfoHash reproduces MagnetUtil.MagnetToInfoHash: read the xt query
 // argument and return the segment after the final ':' (stripping the
 // "urn:btih:" prefix). Case is preserved, matching Jackett. A magnet without a
 // usable xt yields "".
-func magnetToInfoHash(magnet string) string {
+func ToInfoHash(magnet string) string {
 	xt := queryArg(magnet, "xt")
 	if xt == "" {
 		return ""
@@ -62,14 +68,11 @@ func magnetToInfoHash(magnet string) string {
 // mirroring ParseUtil.GetArgumentFromQueryString (split on the first '?', drop
 // any '#' fragment, then parse). Returns "" when absent or unparseable.
 func queryArg(raw, name string) string {
-	i := strings.IndexByte(raw, '?')
-	if i < 0 {
+	_, qs, ok := strings.Cut(raw, "?")
+	if !ok {
 		return ""
 	}
-	qs := raw[i+1:]
-	if h := strings.IndexByte(qs, '#'); h >= 0 {
-		qs = qs[:h]
-	}
+	qs, _, _ = strings.Cut(qs, "#") // drop any fragment
 	values, err := url.ParseQuery(qs)
 	if err != nil {
 		return ""
@@ -83,29 +86,4 @@ func queryArg(raw, name string) string {
 // this routes through the encode package for exact parity.
 func urlEncode(s string) string {
 	return encode.WebUtilityEncode(s)
-}
-
-// resolveURL reproduces Jackett's resolvePath: new Uri(base, path). An absolute
-// path returns unchanged; a relative path resolves against baseURL. When baseURL
-// is empty or unparseable the original value is returned (no base to resolve
-// against), which keeps already-absolute links intact.
-func resolveURL(baseURL, ref string) string {
-	if ref == "" {
-		return ref
-	}
-	refURL, err := url.Parse(ref)
-	if err != nil {
-		return ref
-	}
-	if refURL.IsAbs() {
-		return refURL.String()
-	}
-	if baseURL == "" {
-		return ref
-	}
-	base, err := url.Parse(baseURL)
-	if err != nil || !base.IsAbs() {
-		return ref
-	}
-	return base.ResolveReference(refURL).String()
 }

@@ -411,7 +411,7 @@ func collectDownload(add func(string), d *loader.DownloadBlock) {
 	}
 	if d.Before != nil {
 		add(d.Before.Path)
-		addInputs(add, d.Before.Inputs)
+		addInputBlock(add, d.Before.Inputs)
 	}
 }
 

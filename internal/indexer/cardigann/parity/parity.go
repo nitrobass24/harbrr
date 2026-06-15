@@ -321,9 +321,11 @@ func (c *Case) runSearch(dir string, def *loader.Definition, opts []cardigann.Op
 
 // resolveReleaseDownloads rewrites each release's link to the torrent URL the
 // download block resolves it to, so the golden reflects the real download URL.
+// validate=true simulates a real grab (Jackett resolves at grab time), exercising
+// the testlinktorrent gate.
 func resolveReleaseDownloads(eng *cardigann.Engine, releases []*cardigann.Release) error {
 	for _, r := range releases {
-		resolved, err := eng.ResolveDownload(context.Background(), r.Link)
+		resolved, err := eng.ResolveDownload(context.Background(), r.Link, true)
 		if err != nil {
 			return fmt.Errorf("resolve download: %w", err)
 		}

@@ -108,6 +108,12 @@ site/docs land later.
   exist for FlareSolverr request/response bodies (cookies/cf_clearance/userAgent/page
   HTML) and for whole-userinfo proxy-URL scrubbing — built and tested but not yet
   wired, since no path logs those today. *(`internal/http/redact.go`)* `[shipped]`
+- **The passkey never reaches the feed.** For a resolver-needing tracker, the served
+  Torznab feed carries an opaque, AEAD-sealed `/dl` proxy URL — not the
+  passkey-bearing download link — and a stable, passkey-free guid. harbrr resolves
+  and fetches the `.torrent` server-side at grab time, so a leaked feed never exposes
+  a tracker credential (Jackett/Prowlarr put the passkey straight in the feed).
+  *(`internal/web/torznab/dltoken.go`, `internal/web/torznab/handler.go`)* `[shipped]`
 
 ## Operational safety (anti-blacklist + observability)
 
@@ -154,6 +160,12 @@ site/docs land later.
 - **Standing compatibility suites.** Selector (`cascadia` vs AngleSharp) and
   .NET-date-format behavior are pinned by ongoing fixture suites treated as standing
   regression gates, not one-time checks. *(`selector/`, `dateparse/`)* `[shipped]`
+- **Complete download resolver.** harbrr reproduces Jackett's full
+  `CardigannIndexer.Download`: the `.DownloadUri` namespace, `before.inputs`/
+  `pathselector`, download-selector templates, `infohash`→magnet (byte-for-byte
+  MagnetUtil), `method: post`/`headers`, and `testlinktorrent` — so resolver-needing
+  trackers (not just direct-link ones) grab correctly, resolved once at grab time.
+  *(`internal/indexer/cardigann/search/download.go`, `.../grab.go`)* `[shipped]`
 - **Caps/category correctness is a gate.** Sonarr/Radarr failures usually trace to
   capabilities/category behavior, not the result envelope — so the caps document +
   category tree + tracker→newznab mapping are explicitly oracle-tested. *(Phase 3 —
