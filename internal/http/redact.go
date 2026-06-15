@@ -3,6 +3,7 @@ package http
 import (
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 )
 
@@ -132,4 +133,29 @@ func RedactHeader(h http.Header) http.Header {
 		out[name] = cp
 	}
 	return out
+}
+
+// secretTokenRe matches a credential-shaped key and its value (plain text or in a
+// URL query) so the value can be scrubbed from an error message. The value run
+// stops at whitespace and the URL/quote delimiters & " ' so surrounding context
+// (e.g. "dial tcp") and other query params survive.
+var secretTokenRe = regexp.MustCompile(`(?i)(cookie|passkey|api_?key|auth_?key|rss_?key|torrent_pass|passid|passphrase|password|secret|token|downloadtoken|2fa|otp)([=:]\s*)[^\s&"']+`)
+
+// authHeaderRe scrubs an Authorization header value (with or without a scheme like
+// Bearer/Basic), since the scheme + token can span a space the value run above
+// would not cover.
+var authHeaderRe = regexp.MustCompile(`(?i)(authorization)(\s*[=:]\s*)(?:bearer|basic|digest|negotiate)?\s*\S+`)
+
+// RedactError renders an error message safe to surface (to an API client or a
+// persisted health-event detail): every credential-shaped key=value / key: value
+// pair, and any Authorization header, has its value replaced with <redacted>. It
+// is the shared scrubbing chokepoint — the engine's errors are credential-free by
+// construction and URLs are RedactURL'd at their sites, but a credential must
+// never reach these surfaces. A nil error returns "".
+func RedactError(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := authHeaderRe.ReplaceAllString(err.Error(), "${1}${2}<redacted>")
+	return secretTokenRe.ReplaceAllString(msg, "${1}${2}<redacted>")
 }

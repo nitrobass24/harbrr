@@ -10,6 +10,7 @@ package search
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	stdhttp "net/http"
 	"time"
@@ -28,6 +29,13 @@ const (
 	responseTypeJSON = "json"
 	responseTypeXML  = "xml"
 )
+
+// ErrParseError marks a failure to parse a tracker response (malformed markup, a
+// bad selector, or a required-field miss). The registry classifies it into a
+// parse_error health event. The engine degrades to empty on missing optional
+// fields, so this fires only on a genuine parse/selector failure, never on a
+// merely sparse page.
+var ErrParseError = errors.New("search: response parse error")
 
 // Doer is the narrow HTTP seam the executor drives, identical to login.Doer so a
 // single client/replay transport serves both stages. No live network call ever
@@ -171,7 +179,9 @@ func Execute(ctx context.Context, def *loader.Definition, query Query, session *
 		}
 		rels, err := ParseResults(def, body, query, deps)
 		if err != nil {
-			return nil, err
+			// Mark the parse boundary so the registry classifies it as parse_error
+			// (multiple %w keeps both the sentinel and the underlying cause).
+			return nil, fmt.Errorf("%w: %w", ErrParseError, err)
 		}
 		out = append(out, rels...)
 	}

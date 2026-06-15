@@ -43,6 +43,26 @@ type APIKey struct {
 	LastUsedAt *time.Time
 }
 
+// Health-event kinds — the four Phase-6 categories an indexer failure classifies
+// into. Stored verbatim in indexer_health_events.kind.
+const (
+	HealthAuthFailure = "auth_failure"
+	HealthRateLimited = "rate_limited"
+	HealthParseError  = "parse_error"
+	HealthAntiBot     = "anti_bot"
+)
+
+// IndexerHealthEvent is one recorded health signal for an instance: a classified
+// failure with a credential-scrubbed detail and when it occurred. The table is
+// append-only; an instance's API-surfaced status is derived from recent events.
+type IndexerHealthEvent struct {
+	ID         int64
+	InstanceID int64
+	Kind       string
+	Detail     string
+	OccurredAt time.Time
+}
+
 // IndexerSetting is one configured setting of an instance. A secret setting
 // (IsSecret) stores its value in ValueEncrypted (base64 nonce‖ciphertext‖tag)
 // with the KeyID that encrypted it and an empty Value; a plaintext setting stores

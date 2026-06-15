@@ -32,6 +32,7 @@ var errDisabled = errors.New("registry: instance disabled")
 type Registry struct {
 	db        *database.DB
 	instances database.Instances
+	health    database.Health
 	loader    *loader.Loader
 	keyring   secretsKeyring
 	clock     func() time.Time
@@ -203,7 +204,15 @@ func (r *Registry) build(ctx context.Context, slug string) (*indexerAdapter, err
 	if err != nil {
 		return nil, fmt.Errorf("registry: build engine for %q: %w", slug, err)
 	}
-	return &indexerAdapter{info: indexerInfo(inst, def), engine: eng}, nil
+	return &indexerAdapter{
+		info:       indexerInfo(inst, def),
+		engine:     eng,
+		instanceID: inst.ID,
+		db:         r.db,
+		health:     r.health,
+		clock:      r.clock,
+		log:        r.log,
+	}, nil
 }
 
 // decryptConfig turns stored settings into the engine's .Config map, decrypting
