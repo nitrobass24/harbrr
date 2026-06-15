@@ -1,4 +1,4 @@
-package api
+package http
 
 import (
 	"errors"
@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestSanitizeTestError(t *testing.T) {
+func TestRedactError(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name           string
@@ -22,6 +22,14 @@ func TestSanitizeTestError(t *testing.T) {
 		{
 			"cookie key: value", errors.New("seed cookie: cf_clearance=TOKENXYZ"),
 			[]string{"TOKENXYZ"},
+			[]string{"<redacted>"},
+		},
+		{
+			// secretTokenRe alone stops at the first whitespace and would leak the
+			// later pair; cookieHeaderRe must scrub the WHOLE multi-pair header value.
+			"cookie header with multiple pairs scrubs all pairs",
+			errors.New("request sent Cookie: session=AAA; cf_clearance=BBB; uid=CCC"),
+			[]string{"AAA", "BBB", "CCC"},
 			[]string{"<redacted>"},
 		},
 		{
@@ -57,17 +65,24 @@ func TestSanitizeTestError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := sanitizeTestError(tt.in)
+			got := RedactError(tt.in)
 			for _, s := range tt.mustNotContain {
 				if strings.Contains(got, s) {
-					t.Errorf("sanitized %q must NOT contain %q", got, s)
+					t.Errorf("redacted %q must NOT contain %q", got, s)
 				}
 			}
 			for _, s := range tt.mustContain {
 				if !strings.Contains(got, s) {
-					t.Errorf("sanitized %q must contain %q", got, s)
+					t.Errorf("redacted %q must contain %q", got, s)
 				}
 			}
 		})
+	}
+}
+
+func TestRedactError_Nil(t *testing.T) {
+	t.Parallel()
+	if got := RedactError(nil); got != "" {
+		t.Errorf("RedactError(nil) = %q, want empty", got)
 	}
 }

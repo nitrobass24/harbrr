@@ -67,14 +67,45 @@ The behaviours below are pinned by tests in `internal/secrets`, `internal/auth`,
 ## Tracked gaps (carry a `docs/plan.md` item)
 
 - **OIDC is stubbed.** `/api/auth/oidc/*` returns 501; only a config seam exists.
-  `[Tracked: Phase 8]` (with the web UI / app auth).
+  `[Tracked: Phase 10]` (with the web UI / app auth).
 - **Interactive Swagger UI is deferred.** The embedded spec is served at
   `/api/openapi.yaml`; the rendered Swagger UI lands with the web UI.
-  `[Tracked: Phase 8]`
+  `[Tracked: Phase 10]`
 - **`api_keys.last_used_at` is never written.** Validation is a pure read (no
   write on the request path); the auth event log populates it later.
-  `[Tracked: Phase 8]` (stats / search history).
+  `[Tracked: Phase 10]` (stats / search history).
 - **Safe export/import not built.** §9 describes a config/DB export that redacts
   secrets behind the `<redacted>` sentinel by default with a separately-encrypted
   include-secrets opt-in. The `<redacted>` sentinel exists for the edit/update flow;
-  the export/import path itself is deferred. `[Tracked: Phase 7]` (backup/restore).
+  the export/import path itself is deferred. `[Tracked: Phase 10]` (backup/restore).
+
+## Phase 6 — secret hardening
+
+- **Key rotation lands.** The per-record `key_id` built in Phase 4 enabled it: a
+  new offline `harbrr rotate-key` subcommand (run with the daemon stopped) holds
+  the old + new keys explicitly — the single-key `Keyring` crypto core is
+  **untouched** (no dual-key Keyring). It dry-runs (decrypts every `indexer_settings`
+  secret under the old key, fail-loud BEFORE any write), then re-encrypts every row
+  (re-sealed under the SAME AAD `<instanceID>\x00<setting>`) + the `app_meta` canary
+  + `secrets_key_id` in ONE transaction. Wrong old key, plaintext mode, and
+  empty-secret rows are handled (the last stay empty, only rekeyed). No decrypted
+  credential or key byte reaches a log/error/the output. `[Resolved: Phase 6]`
+  (`cmd/harbrr/rotate_key.go`, `internal/database/rotation.go`, `TestRotateKeys_*`).
+- **Redaction audit.** Extended beyond `RedactURL`/`RedactHeader`. The wired,
+  load-bearing change is the shared `internal/http.RedactError` chokepoint:
+  per-handler test-error sanitizing was consolidated into it, and it is now used by
+  both the API test endpoint (`internal/web/api/indexer_handlers.go`) and the
+  `indexer_health_events.detail` writer (`internal/indexer/registry/adapter.go`). Two
+  further helpers were added as **defensive, not-yet-wired** chokepoints — no
+  production caller today, because the paths they guard avoid leaks structurally:
+  `RedactJSONBody` would scrub FlareSolverr `/v1` request/response bodies
+  (cookies/postData/userAgent/cf_clearance/response/headers, at any depth — JSON
+  `RedactURL` can't reach), but the solver logs no bodies and never interpolates them
+  into errors; `RedactProxyURL` would scrub the WHOLE proxy userinfo (user AND pass),
+  but `buildTransport` never logs or errors a `proxy_url`. `[Resolved: Phase 6]`
+  (`internal/http/redact.go`, `redacterror_test.go`, `redactbody_test.go`).
+- **Tracing / stats-event-log redaction is vacuous.** §9 names "logs, errors,
+  traces, and the stats event log" as redaction targets, but harbrr has **no
+  tracing and no stats/event-log subsystem** — those targets do not exist, so the
+  audit cannot wire redaction into them. Building them is out of scope.
+  `[Accepted]` (revisit when the Phase-10 stats data layer lands — `[Tracked: Phase 10]`).

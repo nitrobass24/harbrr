@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
 	"sort"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/domain"
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 )
@@ -199,32 +199,46 @@ func (rt *router) testIndexer(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, database.ErrNotFound):
 		rt.writeServiceError(w, "test indexer", err)
 	default:
-		writeJSON(w, http.StatusOK, testResult{OK: false, Error: sanitizeTestError(err)})
+		writeJSON(w, http.StatusOK, testResult{OK: false, Error: apphttp.RedactError(err)})
 	}
 }
 
-// secretTokenRe matches a credential-shaped key and its value (in plain text or a
-// URL query) so the value can be scrubbed from a test-failure message. The value
-// run stops at whitespace and the URL/quote delimiters & " ' so surrounding error
-// context (e.g. "dial tcp") and other query params survive. Defense in depth: the
-// engine's login errors are credential-free by construction and transport-error
-// URLs are already redacted in the login layer, but a credential must never reach
-// the client through this surface.
-var secretTokenRe = regexp.MustCompile(`(?i)(cookie|passkey|api_?key|auth_?key|rss_?key|torrent_pass|passid|passphrase|password|secret|token|downloadtoken|2fa|otp)([=:]\s*)[^\s&"']+`)
+// statusEvent is one health event in the status response (detail already scrubbed
+// at write time).
+type statusEvent struct {
+	Kind       string    `json:"kind"`
+	Detail     string    `json:"detail,omitempty"`
+	OccurredAt time.Time `json:"occurred_at"`
+}
 
-// authHeaderRe scrubs an Authorization header value (with or without a
-// scheme like Bearer/Basic), since the scheme + token can span a space that
-// secretTokenRe's value run would not cover. Per the AGENTS.md redaction rule
-// (Authorization/Cookie headers are never emitted).
-var authHeaderRe = regexp.MustCompile(`(?i)(authorization)(\s*[=:]\s*)(?:bearer|basic|digest|negotiate)?\s*\S+`)
+// statusResponse is the JSON body of GET /api/indexers/{slug}/status: the derived
+// overall status plus the recent health events behind it.
+type statusResponse struct {
+	Slug   string        `json:"slug"`
+	Status string        `json:"status"`
+	Events []statusEvent `json:"events"`
+}
 
-// sanitizeTestError renders a test/login error safe to return to the client:
-// every credential-shaped key=value / key: value pair (and any Authorization
-// header) has its value replaced with <redacted>. It is applied to plain error
-// text only (not URL-encoded), so it never mangles human-readable messages.
-func sanitizeTestError(err error) string {
-	msg := authHeaderRe.ReplaceAllString(err.Error(), "${1}${2}<redacted>")
-	return secretTokenRe.ReplaceAllString(msg, "${1}${2}<redacted>")
+// indexerStatus returns a configured indexer's derived health (healthy/unhealthy)
+// and its recent health events. An unknown slug is a 404. Details were scrubbed
+// before storage, so no credential is surfaced here.
+func (rt *router) indexerStatus(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+	st, err := rt.registry.Status(r.Context(), slug)
+	if err != nil {
+		rt.writeServiceError(w, "indexer status", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toStatusResponse(st))
+}
+
+// toStatusResponse maps the registry's health status to its API view.
+func toStatusResponse(st registry.HealthStatus) statusResponse {
+	events := make([]statusEvent, 0, len(st.Events))
+	for _, e := range st.Events {
+		events = append(events, statusEvent{Kind: e.Kind, Detail: e.Detail, OccurredAt: e.OccurredAt})
+	}
+	return statusResponse{Slug: st.Slug, Status: st.Status, Events: events}
 }
 
 // toInstanceResponse maps a domain instance to its API view.

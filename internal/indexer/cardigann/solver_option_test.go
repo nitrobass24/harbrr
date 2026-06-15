@@ -8,8 +8,8 @@ import (
 
 // TestSolverOption verifies the config -> solver mapping the registry relies on:
 // "manual_cookie" wires a ManualCookieSolver carrying the encrypted cookie;
-// anything else (unset, or the Phase-6-deferred "flaresolverr") leaves the solver
-// unset so the login executor falls back to its NoopSolver.
+// "flaresolverr" wires a FlareSolverrSolver from flaresolverr_url; anything else
+// (unset/empty) leaves the solver unset so the login executor uses its NoopSolver.
 func TestSolverOption(t *testing.T) {
 	t.Parallel()
 
@@ -23,10 +23,16 @@ func TestSolverOption(t *testing.T) {
 		t.Errorf("cookie = %q, want cf_clearance=1", mc.Cookie)
 	}
 
+	var fs options
+	SolverOption(map[string]string{"solver_type": "flaresolverr", "flaresolverr_url": "http://fs:8191"})(&fs)
+	if _, ok := fs.solver.(*login.FlareSolverrSolver); !ok {
+		t.Fatalf("solver = %T, want *login.FlareSolverrSolver", fs.solver)
+	}
+
 	for _, cfg := range []map[string]string{
 		{},
 		{"solver_type": ""},
-		{"solver_type": "flaresolverr"}, // deferred to Phase 6
+		{"solver_type": "unknown"},
 	} {
 		var got options
 		SolverOption(cfg)(&got)

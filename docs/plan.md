@@ -79,7 +79,8 @@ production caller; this phase makes harbrr a runnable, configurable daemon — t
 production `Provider` the handler resolves through.)
 
 - [x] **SQLite store + migrations** behind `internal/database/dbinterface` (clean interface; Postgres
-      stays deferred — Phase 8). Data dir `0700`; db + all SQLite side files (`-wal`/`-journal`) `0600`
+      stays deferred — demand-gated, see "Beyond the alpha"). Data dir `0700`; db + all SQLite side files
+      (`-wal`/`-journal`) `0600`
 - [x] **Secrets store** (`internal/secrets`) — the three-class model from §9: tracker creds
       AES-256-GCM (per-record nonce, AAD = indexer-id + setting, stored `key_id`); web-UI password
       argon2id; API keys SHA-256. Auto-generate a keyfile on first run (encryption always on); fail
@@ -101,7 +102,7 @@ Phase 3 "search real trackers end-to-end" goal.
 
 > **Execution protocol (decided).** During the Phase 5 planning step the user hands over the **tracker
 > credentials** directly (passkey/cookie/login) — they can't be lifted from Prowlarr's API, which masks
-> them (see Phase 8) — and the **API keys for the *arr (Sonarr/Radarr) + Prowlarr**. The agent then
+> them (see Phase 10) — and the **API keys for the *arr (Sonarr/Radarr) + Prowlarr**. The agent then
 > **selects the 5 trackers** for the smoke test, restricted to **non-Cloudflare** sites (the test
 > environment runs no FlareSolverr/proxy). The test bed is a single local Docker LAN that already
 > includes qBittorrent + qui (for the grab half); Prowlarr doubles as a live differential oracle
@@ -150,28 +151,81 @@ Phase 3 "search real trackers end-to-end" goal.
 
 ## Phase 6 — Operational safety
 
-- [ ] Timeouts, backoff, per-indexer rate limits (anti-blacklist)
-- [ ] **Indexer health & status**: define health events (auth failure, rate-limited, parse error,
+- [x] Timeouts, backoff, per-host rate limits (anti-blacklist) — paced per **target
+      domain**, in-process; rate from the def's `requestDelay` or a 1s default (a
+      user-configurable per-indexer override + global default is deferred → Phase 10)
+- [x] **Indexer health & status**: define health events (auth failure, rate-limited, parse error,
       anti-bot) and surface per-indexer status via the API; broken indexers already degrade cleanly (Phase 2)
-- [ ] **Per-indexer proxies** (HTTP / SOCKS4 / SOCKS5), configured per instance (the
-      `registry.WithDoerFactory` seam for a per-instance HTTP client is already in place from Phase 4)
-- [ ] **Secret hardening**: key rotation (re-encrypt via the stored `key_id` — already persisted per
-      record since Phase 4); secret redaction audited end-to-end across logs, errors, traces, and the
-      stats event log
+- [x] **Per-indexer proxies** (HTTP / SOCKS5; SOCKS4 unsupported `[Accepted]`, demand-gated — `x/net/proxy`
+      has no socks4 dialer), configured per instance via the widened `doerFactory`/`ClientParams`/`newDoer`
+- [x] **Secret hardening**: key rotation (`harbrr rotate-key` — dry-run + atomic re-encrypt via the
+      stored `key_id`); secret redaction audited end-to-end (logs/errors + a JSON-body scrubber for
+      FlareSolverr bodies + whole-userinfo proxy-URL scrub; traces/stats event-log don't exist — vacuous)
 
-## Phase 7 — Scale coverage
+> **Shipped this phase without a `docs/plan.md` box** (enabling infra + ledger items):
+> the request-scoped `context.Context` threading (PR #1); the `ClientParams`
+> doer-factory seam; and the **FlareSolverr anti-bot solver** — a real, typed-`/v1`,
+> discard-and-replay implementation (NOT a stub; the `/v1` *test server* is the stub),
+> which **closes** the Phase-5 `[Tracked: FlareSolverr]` deferral. All ship on their
+> committed offline gates. Their LIVE confirmation — a real Cloudflare clear, proxy
+> routing, and the deferred Phase-5 auth-pattern retests — is the **Phase 9**
+> validation gate below.
+>
+> The traces/stats **event-log** the redaction audit calls "vacuous" is not a gap
+> here — it is the Phase-8 *Stats / search history* item; redaction must be wired in
+> when that subsystem is built.
 
-- [ ] Broaden response-mode and definition coverage; expand selector/date edge-case fixtures
+## Phase 7 — Complete the engine
+
+The last parity-engine work: finish the download path and close the remaining selector/XML
+edge gaps so harbrr matches Jackett on **every** tracker shape, not just direct-link ones.
+This is the deliberate, scoped **un-freeze** of the engine (Phase 6 froze it for operational
+safety); it stays offline-gated against the parity oracle.
+
 - [ ] **Complete the download resolver**: `.DownloadUri` template namespace, `before.inputs`/
       `before.pathselector`, download-selector template eval, `download.infohash`/`method: post`/
-      `headers`, `testlinktorrent` (Phase 2 ships selectors + `before.path`; see `parity/testdata/README.md`)
+      `headers`, `testlinktorrent` (Phase 2 ships selectors + `before.path`; see `parity/testdata/README.md`).
+      Includes the grab-time **`/dl` proxy** (resolve a link through harbrr's session at grab time) — the
+      output-layer half of the same feature.
 - [ ] **XML backend edge parity**: CDATA / mixed-namespace / AngleSharp-vs-cascadia edge cases beyond the
       common RSS/Newznab shapes Phase 2 covers
-- [ ] Native **Avistaz** family (post-parity; the one family the corpus doesn't cover)
-- [ ] **Backup / restore** (config + database): scheduled + manual, using the redacted/encrypted export
-      from §9
+- [ ] Broaden response-mode and definition coverage; expand selector/date edge-case fixtures
 
-## Phase 8 — Product polish
+## Phase 8 — Native Avistaz family
+
+- [ ] Native **Avistaz** family (AvistaZ / CinemaZ / PrivateHD / …) — the one *popular* family the Jackett
+      corpus can't express (its login→Bearer `api/v1/jackett` auth exceeds the declarative Cardigann
+      format, so there are **0 defs**). A native driver under `internal/indexer/native/` (a `doc.go` stub
+      today), plugged into the indexer registry alongside the Cardigann engine. Prowlarr supports Avistaz
+      natively, so it is **Prowlarr-differential-able** and validated in the Phase 9 live gate.
+      Post-Cardigann-parity, but **scheduled, not demand-gated** — these trackers are widely used.
+
+## Phase 9 — Live validation & acceptance (alpha gate)
+
+The end-of-alpha live pass: exercise **every auth/fetch pattern against real trackers** (Cardigann +
+the native Avistaz family) and parity-check harbrr against a **live Prowlarr** — the single home for
+every `[Tracked: deferred]` live retest the offline gates can't cover (Phase-5 deferred several auth
+patterns; Phase-6 the live half of timeouts/proxy/FlareSolverr; Phase-7 the resolver-needing grabs;
+Phase-8 the native Avistaz family). Operator-resourced; run via the build-tagged `internal/smoke`
+harness (`//go:build smoke`, `SMOKE_*` env-var creds, gentle rate, **never CI**); each row records
+secret-free pass/fail evidence in `internal/smoke/README.md`. A bug it surfaces is `[Tracked]` against
+the owning layer — the engine stays frozen during validation; fixes are scoped, not ad-hoc.
+
+- [ ] **Every auth/fetch pattern live**, each against an operator-supplied tracker: user/pass
+      **form login**; **cookie / 2FA** (manual-cookie solver); **.NET-quirk** (`*()'!` / unicode /
+      `regexp2`); **Cloudflare via FlareSolverr** (the Phase-6 solver clears a real CF tracker end
+      to end); **per-indexer proxy** (HTTP + SOCKS5 route a real search).
+- [ ] **Broad live Prowlarr differential** — many trackers (not just the Phase-5 five), **Cardigann +
+      Avistaz**: same query → Prowlarr feed vs harbrr feed → diff, confirming request/response + category
+      parity at scale against the live oracle.
+- [ ] **Grab end-to-end per pattern** — search → resolved `.torrent` → seeding in qBittorrent (left
+      seeding, no hit-and-run), for ≥1 tracker per auth pattern, **including a resolver-needing tracker
+      via the Phase-7 `/dl` path**.
+- [ ] **Acceptance** — every pattern green, or its gap recorded `[Tracked]` with a disposition.
+      This is the live half of "match Jackett/Prowlarr on real trackers"; the offline parity gate
+      (Phase 2) proves it deterministically.
+
+## Phase 10 — Product polish
 
 - [ ] **\*arr application sync** (qui-as-app): push indexer config into Sonarr/Radarr/Lidarr/… via their
       API — the sync contract + add/update/remove lifecycle + per-app enable/disable (its own sub-plan; a
@@ -187,9 +241,17 @@ Phase 3 "search real trackers end-to-end" goal.
 - [ ] **Stats / search history** (query/grab/auth event log + query API; the auth event log populates
       `api_keys.last_used_at`, left unwritten in Phase 4 to keep validation a pure read); **notifications**
       (Discord/webhook, pluggable provider)
+- [ ] **Backup / restore** (config + database): scheduled + manual, using the redacted/encrypted export
+      from §9 (secrets redacted by default behind a `<redacted>` sentinel; including secrets is a
+      separately-passphrase-encrypted opt-in)
 - [ ] **Web UI** — the management dashboard (indexer grid, add/edit forms, manual search, stats);
       depends on the Phase 4 management API. Includes rendering the embedded OpenAPI spec as Swagger UI
       (Phase 4 serves the raw spec at `/api/openapi.yaml`).
+- [ ] **User-configurable request rate** — a **global default** rate plus a
+      **per-indexer override** setting. Phase 6 paces per target domain from the def's
+      `requestDelay` (or a 1s default) and is not user-tunable; the
+      `ClientParams.RateInterval` seam already carries the value, so this is a settings
+      surface + plumb-through. Pairs with the management UI / settings.
 - [ ] **OIDC authentication** — fully implement the OIDC login flow stubbed in Phase 4 (the
       `/api/auth/oidc/*` endpoints return 501 today; only a config seam exists). A qui/autobrr family
       feature; pairs with the Web UI auth surface.

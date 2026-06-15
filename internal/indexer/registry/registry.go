@@ -32,15 +32,16 @@ var errDisabled = errors.New("registry: instance disabled")
 type Registry struct {
 	db        *database.DB
 	instances database.Instances
+	health    database.Health
 	loader    *loader.Loader
 	keyring   secretsKeyring
 	clock     func() time.Time
 	timeout   time.Duration
 	log       zerolog.Logger
-	// doerFactory builds the HTTP client an engine drives. It defaults to a
-	// cookie-jar client; tests inject an offline replay Doer, and Phase 6 can
-	// inject a per-indexer proxy client.
-	doerFactory func() (search.Doer, error)
+	// doerFactory builds the HTTP client an engine drives, given the per-instance
+	// ClientParams so the client can vary per indexer (proxy, rate, timeout). It
+	// defaults to a cookie-jar client; tests inject an offline replay Doer.
+	doerFactory func(ClientParams) (search.Doer, error)
 
 	mu    sync.Mutex
 	cache map[string]*indexerAdapter
@@ -72,9 +73,25 @@ func WithTimeout(d time.Duration) Option { return func(r *Registry) { r.timeout 
 // WithLogger sets the logger used for resolve failures (errors are redacted).
 func WithLogger(l zerolog.Logger) Option { return func(r *Registry) { r.log = l } }
 
+// ClientParams carries the per-instance inputs the doer factory needs to vary the
+// HTTP client per indexer. The Phase-4 seam was nullary (every engine shared one
+// client shape); this struct is the widening, so adding fields later (proxy, rate)
+// never re-breaks the WithDoerFactory Option.
+type ClientParams struct {
+	Instance domain.IndexerInstance
+	Cfg      map[string]string
+	// Timeout is the per-instance request timeout (resolved in build() from a
+	// per-instance "timeout" setting, else the registry default); newDoer clamps
+	// <=0 to defaultHTTPTimeout.
+	Timeout time.Duration
+	// RateInterval is the per-host minimum spacing (resolved from the def's
+	// requestDelay, else defaultRateInterval).
+	RateInterval time.Duration
+}
+
 // WithDoerFactory overrides how the HTTP client for a built engine is created
-// (tests inject an offline replay Doer; a later phase can inject a proxy client).
-func WithDoerFactory(fn func() (search.Doer, error)) Option {
+// (tests inject an offline replay Doer; a later phase injects a proxy/paced client).
+func WithDoerFactory(fn func(ClientParams) (search.Doer, error)) Option {
 	return func(r *Registry) {
 		if fn != nil {
 			r.doerFactory = fn
@@ -97,7 +114,7 @@ func New(db *database.DB, ldr *loader.Loader, keyring secretsKeyring, opts ...Op
 		o(r)
 	}
 	if r.doerFactory == nil {
-		r.doerFactory = func() (search.Doer, error) { return newDoer(r.timeout) }
+		r.doerFactory = newDoer
 	}
 	return r
 }
@@ -163,7 +180,12 @@ func (r *Registry) build(ctx context.Context, slug string) (*indexerAdapter, err
 		return nil, err
 	}
 
-	doer, err := r.doerFactory()
+	doer, err := r.doerFactory(ClientParams{
+		Instance:     inst,
+		Cfg:          cfg,
+		Timeout:      resolveTimeout(cfg, r.timeout),
+		RateInterval: rateInterval(def),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +204,15 @@ func (r *Registry) build(ctx context.Context, slug string) (*indexerAdapter, err
 	if err != nil {
 		return nil, fmt.Errorf("registry: build engine for %q: %w", slug, err)
 	}
-	return &indexerAdapter{info: indexerInfo(inst, def), engine: eng}, nil
+	return &indexerAdapter{
+		info:       indexerInfo(inst, def),
+		engine:     eng,
+		instanceID: inst.ID,
+		db:         r.db,
+		health:     r.health,
+		clock:      r.clock,
+		log:        r.log,
+	}, nil
 }
 
 // decryptConfig turns stored settings into the engine's .Config map, decrypting

@@ -314,6 +314,42 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /api/indexers/{slug}/status:
+    get:
+      summary: Get an indexer's health status
+      description: >
+        Returns the indexer's derived health (healthy/unhealthy) and its recent
+        health events (auth_failure, rate_limited, parse_error, anti_bot). Event
+        details are credential-scrubbed before storage, so no secret is surfaced.
+      operationId: indexerStatus
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: indexer health status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [slug, status, events]
+                properties:
+                  slug: { type: string }
+                  status: { type: string, enum: [healthy, unhealthy] }
+                  events:
+                    type: array
+                    items:
+                      type: object
+                      required: [kind, occurred_at]
+                      properties:
+                        kind:
+                          type: string
+                          enum: [auth_failure, rate_limited, parse_error, anti_bot]
+                        detail: { type: string }
+                        occurred_at: { type: string, format: date-time }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
 components:
   securitySchemes:
     session:

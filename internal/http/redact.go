@@ -1,8 +1,10 @@
 package http
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 )
 
@@ -132,4 +134,110 @@ func RedactHeader(h http.Header) http.Header {
 		out[name] = cp
 	}
 	return out
+}
+
+// secretTokenRe matches a credential-shaped key and its value (plain text or in a
+// URL query) so the value can be scrubbed from an error message. The value run
+// stops at whitespace and the URL/quote delimiters & " ' so surrounding context
+// (e.g. "dial tcp") and other query params survive.
+var secretTokenRe = regexp.MustCompile(`(?i)(cookie|passkey|api_?key|auth_?key|rss_?key|torrent_pass|passid|passphrase|password|secret|token|downloadtoken|2fa|otp)([=:]\s*)[^\s&"']+`)
+
+// authHeaderRe scrubs an Authorization header value (with or without a scheme like
+// Bearer/Basic), since the scheme + token can span a space the value run above
+// would not cover.
+var authHeaderRe = regexp.MustCompile(`(?i)(authorization)(\s*[=:]\s*)(?:bearer|basic|digest|negotiate)?\s*\S+`)
+
+// cookieHeaderRe scrubs an ENTIRE Cookie/Set-Cookie value (multiple ";"-separated
+// pairs, to end of line). The whole header value is sensitive, so secretTokenRe's
+// single-token run is not enough — it would stop at the first whitespace and leak
+// later pairs (e.g. "Cookie: a=1; cf_clearance=SECRET").
+var cookieHeaderRe = regexp.MustCompile(`(?i)((?:set-)?cookie)(\s*[=:]\s*)[^\r\n]+`)
+
+// RedactError renders an error message safe to surface (to an API client or a
+// persisted health-event detail): the full Cookie/Set-Cookie/Authorization header
+// value, and every other credential-shaped key=value / key: value pair, are
+// replaced with <redacted>. It is the shared scrubbing chokepoint — the engine's
+// errors are credential-free by construction and URLs are RedactURL'd at their
+// sites, but a credential must never reach these surfaces. A nil error returns "".
+func RedactError(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := authHeaderRe.ReplaceAllString(err.Error(), "${1}${2}<redacted>")
+	msg = cookieHeaderRe.ReplaceAllString(msg, "${1}${2}<redacted>")
+	return secretTokenRe.ReplaceAllString(msg, "${1}${2}<redacted>")
+}
+
+// RedactProxyURL is RedactURL for a proxy URL: it scrubs the WHOLE userinfo
+// (username AND password — a proxy username can itself be an account id), not just
+// the password as RedactURL does, plus any secret query parameters. An unparseable
+// URL falls back to RedactURL's own unparseable handling.
+func RedactProxyURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		// A malformed proxy URL can still carry userinfo before the parse error;
+		// RedactURL's textual fallback would keep that prefix, so return a fixed
+		// marker rather than risk leaking proxy credentials.
+		return redactedValue
+	}
+	if u.User != nil {
+		u.User = url.User(redactedValue)
+	}
+	return RedactURL(u.String())
+}
+
+// jsonSecretKeys are JSON object keys whose values are credentials/PII and are
+// redacted wholesale by RedactJSONBody (case-insensitive). Covers the FlareSolverr
+// /v1 request/response shape (cookies, postData, userAgent) plus the cf_clearance
+// a solution carries and the standard auth headers.
+var jsonSecretKeys = map[string]struct{}{
+	"cookie": {}, "cookies": {}, "set-cookie": {},
+	"postdata": {}, "useragent": {}, "user-agent": {}, "cf_clearance": {},
+	"authorization": {}, "proxy-authorization": {},
+	"token": {}, "apikey": {}, "api_key": {}, "passkey": {}, "password": {}, "secret": {},
+	// FlareSolverr solution fields: the raw page HTML (may embed session tokens) and
+	// the response header map (Set-Cookie etc.) are redacted wholesale, and the
+	// request "proxy" field may embed user:pass.
+	"response": {}, "headers": {}, "proxy": {},
+}
+
+// RedactJSONBody returns body with the values of any credential-shaped keys (at any
+// nesting depth) replaced by a placeholder, so a FlareSolverr /v1 request/response
+// body can be logged safely (RedactURL/RedactHeader cannot reach JSON). A body that
+// is not valid JSON is replaced wholesale rather than risk leaking it raw.
+func RedactJSONBody(body []byte) []byte {
+	var v any
+	if err := json.Unmarshal(body, &v); err != nil {
+		return []byte(`"` + redactedValue + `"`)
+	}
+	out, err := json.Marshal(scrubJSON(v))
+	if err != nil {
+		return []byte(`"` + redactedValue + `"`)
+	}
+	return out
+}
+
+// scrubJSON recursively replaces the value of any secret-named key with the
+// placeholder, recursing into nested objects/arrays otherwise.
+func scrubJSON(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, val := range t {
+			if _, secret := jsonSecretKeys[strings.ToLower(k)]; secret {
+				out[k] = redactedValue
+				continue
+			}
+			out[k] = scrubJSON(val)
+		}
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, val := range t {
+			out[i] = scrubJSON(val)
+		}
+		return out
+	default:
+		return v
+	}
 }

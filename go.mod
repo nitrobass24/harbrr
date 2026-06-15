@@ -6,6 +6,7 @@ require (
 	github.com/PuerkitoBio/goquery v1.12.0
 	github.com/alexedwards/scs/v2 v2.9.0
 	github.com/andybalholm/cascadia v1.3.3
+	github.com/avast/retry-go/v4 v4.7.0
 	github.com/dlclark/regexp2 v1.11.0
 	github.com/getkin/kin-openapi v0.140.0
 	github.com/go-chi/chi/v5 v5.3.0
@@ -18,6 +19,7 @@ require (
 	golang.org/x/crypto v0.53.0
 	golang.org/x/net v0.55.0
 	golang.org/x/text v0.38.0
+	golang.org/x/time v0.15.0
 	modernc.org/sqlite v1.52.0
 )
 

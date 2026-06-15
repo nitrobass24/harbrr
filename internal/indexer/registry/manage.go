@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"time"
 
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
@@ -251,10 +252,21 @@ func (r *Registry) toStored(id int64, name, val string, fields map[string]loader
 	return domain.IndexerSetting{Name: name, ValueEncrypted: blob, KeyID: r.keyring.KeyID(), IsSecret: true}, nil
 }
 
-// classifySecret decides whether a setting is secret, using the definition's
-// field when known and falling back to a text-typed name match otherwise (so an
-// undeclared credential-shaped setting is still encrypted).
+// reservedSecretSettings are daemon-level settings (not declared in vendored
+// definitions) whose values are credential-bearing and must always be encrypted
+// at rest — e.g. a proxy URL may embed user:pass.
+var reservedSecretSettings = map[string]struct{}{
+	"proxy_url":        {},
+	"flaresolverr_url": {},
+}
+
+// classifySecret decides whether a setting is secret: a reserved daemon secret key
+// always is; otherwise the definition's field decides, falling back to a text-typed
+// name match (so an undeclared credential-shaped setting is still encrypted).
 func classifySecret(name string, fields map[string]loader.SettingsField) bool {
+	if _, ok := reservedSecretSettings[name]; ok {
+		return true
+	}
 	if f, ok := fields[name]; ok {
 		return f.IsSecret()
 	}
@@ -272,9 +284,48 @@ func (r *Registry) Test(ctx context.Context, slug string) error {
 		return err
 	}
 	if err := a.engine.Test(ctx); err != nil {
+		a.recordHealth(ctx, err)
 		return fmt.Errorf("registry: test %q: %w", slug, err)
 	}
 	return nil
+}
+
+// healthEventLimit caps how many recent events the status endpoint returns.
+const healthEventLimit = 20
+
+// healthRecencyWindow is how recently a failure must have occurred for the derived
+// status to read "unhealthy"; older failures are treated as past (status healthy).
+const healthRecencyWindow = 1 * time.Hour
+
+// HealthStatus is one indexer's derived health plus the recent events behind it
+// (details already credential-scrubbed at write time).
+type HealthStatus struct {
+	Slug   string
+	Status string
+	Events []domain.IndexerHealthEvent
+}
+
+// Status returns the indexer's derived health and recent events. An unknown slug
+// is database.ErrNotFound (the handler maps it to 404).
+func (r *Registry) Status(ctx context.Context, slug string) (HealthStatus, error) {
+	inst, err := r.instances.GetBySlug(ctx, r.db, slug)
+	if err != nil {
+		return HealthStatus{}, fmt.Errorf("registry: status %q: %w", slug, err)
+	}
+	events, err := r.health.Recent(ctx, r.db, inst.ID, healthEventLimit)
+	if err != nil {
+		return HealthStatus{}, fmt.Errorf("registry: status events %q: %w", slug, err)
+	}
+	return HealthStatus{Slug: slug, Status: r.deriveStatus(events), Events: events}, nil
+}
+
+// deriveStatus reads "unhealthy" when the most recent event is within the recency
+// window, else "healthy" (no recent failure). Events are newest-first.
+func (r *Registry) deriveStatus(events []domain.IndexerHealthEvent) string {
+	if len(events) > 0 && r.clock().Sub(events[0].OccurredAt) <= healthRecencyWindow {
+		return "unhealthy"
+	}
+	return "healthy"
 }
 
 // settingFields indexes a definition's settings by name.

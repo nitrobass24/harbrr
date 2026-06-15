@@ -97,6 +97,41 @@ site/docs land later.
   cookies are `HttpOnly` + `SameSite=Lax` (+ `Secure` behind TLS) with token renewal
   on login; API keys are header-authenticated. *(`internal/auth`, `internal/web/api`)*
   `[shipped]`
+- **Offline key rotation.** `harbrr rotate-key` (daemon stopped) re-encrypts every
+  stored tracker secret + the canary from an old key to a new key in one atomic
+  transaction, validating (dry-run decrypt of every row) before any write — a wrong
+  old key fails loud with the store untouched. The single-key crypto core is
+  unchanged; a database leak is recoverable without re-entering credentials.
+  *(`cmd/harbrr/rotate_key.go`)* `[shipped]`
+- **Redaction beyond URLs/headers.** A shared error chokepoint scrubs both API test
+  errors and persisted health-event detail (the wired path). Defensive helpers also
+  exist for FlareSolverr request/response bodies (cookies/cf_clearance/userAgent/page
+  HTML) and for whole-userinfo proxy-URL scrubbing — built and tested but not yet
+  wired, since no path logs those today. *(`internal/http/redact.go`)* `[shipped]`
+
+## Operational safety (anti-blacklist + observability)
+
+- **Greatly reduces tracker IP/account blacklisting risk.** Every outbound request is paced
+  by a process-wide **per-host rate limiter** (`x/time/rate`, burst 1, no eviction —
+  bounded host keyspace), with a per-request timeout and bounded **429/503 backoff
+  that honors `Retry-After`** (never loops). Pacing + backoff compose with the
+  request context: a cancelled request aborts a token wait or a backoff sleep with
+  no reservation leak. *(`internal/indexer/registry/pacedclient.go`)* `[shipped]`
+- **Per-indexer health & status.** Failures classify into `auth_failure`,
+  `rate_limited`, `parse_error`, `anti_bot` and append to a per-indexer event log;
+  `GET /api/indexers/{slug}/status` surfaces a derived health + recent events with
+  credential-scrubbed detail — so an operator sees *why* an indexer is unhealthy,
+  not just that a search returned nothing. *(`internal/database/health.go`,
+  `internal/web/api`)* `[shipped]`
+- **Per-indexer proxies.** Route any indexer through an HTTP or SOCKS5 proxy
+  (per-instance, the URL encrypted at rest), so a geo-blocked or IP-flagged tracker
+  works without proxying the whole daemon. *(`internal/indexer/registry/client.go`)*
+  `[shipped]` (SOCKS4 not supported — demand-gated)
+- **FlareSolverr Cloudflare solver.** Clears an anti-bot interstitial via a
+  FlareSolverr instance (typed `/v1`, discard-and-replay with a UA-coupled,
+  non-gzip browser header set), completing the pluggable solver seam alongside the
+  manual-cookie fallback. *(`internal/indexer/cardigann/login/flaresolverr.go`)*
+  `[shipped]` (offline-gated; live CF clear `[planned]`)
 
 ## Engine correctness & compatibility
 
@@ -142,7 +177,7 @@ site/docs land later.
   embedded and served, and a test walks the live routes against it so the spec can
   never drift from the handlers. *(`internal/web/swagger`, `internal/web/api`;
   `make test-openapi`)* `[shipped]` — *interactive Swagger UI render: `[planned]`
-  (Phase 8, with the web UI).*
+  (Phase 10, with the web UI).*
 - **A divergence ledger, not a backlog.** Every difference from Jackett or the spec
   is recorded once, next to the test that pins it, with an explicit disposition
   (`[Tracked: Phase N]` / `[Deliberate]` / `[Accepted]`) — a complete, auditable
@@ -161,7 +196,7 @@ site/docs land later.
 
 - **Native push to autobrr.** A path so newly-scraped releases reach autobrr's
   filters immediately instead of waiting on RSS polling — a family-only upgrade
-  Prowlarr can't match. *(`docs/ideas.md` §11, `docs/plan.md` Phase 8)* `[planned]`
+  Prowlarr can't match. *(`docs/ideas.md` §11, `docs/plan.md` Phase 10)* `[planned]`
 - **Cross-seed search backend.** harbrr as cross-seed's native multi-tracker Torznab
   source. *(`docs/ideas.md` §11.4)* `[planned]`
 - **Shared tracker identity + qBittorrent.** One tracker id + one credential set
@@ -170,4 +205,4 @@ site/docs land later.
   stack instead of reimplementing it. *(`docs/ideas.md` §11)* `[planned]`/`[partial]`
 - **OIDC login + *arr application sync + Jackett/Prowlarr import + web UI.** On the
   roadmap; the management API + OpenAPI spec shipped in Phase 4 are the foundation.
-  *(`docs/plan.md` Phase 8)* `[planned]`
+  *(`docs/plan.md` Phase 10)* `[planned]`

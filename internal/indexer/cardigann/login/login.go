@@ -1,7 +1,11 @@
 package login
 
 import (
+	"bufio"
 	"bytes"
+	"compress/flate"
+	"compress/gzip"
+	"compress/zlib"
 	"context"
 	"errors"
 	"fmt"
@@ -189,11 +193,56 @@ func (e *Executor) do(ctx context.Context, method, rawURL string, bodyReader io.
 
 	e.storeJar(req.URL, resp)
 
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxLoginBodyBytes))
+	reader, err := decompressBody(resp)
+	if err != nil {
+		return nil, resp.StatusCode, fmt.Errorf("decompressing response from %s: %w", apphttp.RedactURL(rawURL), err)
+	}
+	data, err := io.ReadAll(io.LimitReader(reader, maxLoginBodyBytes))
 	if err != nil {
 		return nil, resp.StatusCode, fmt.Errorf("reading response from %s: %w", apphttp.RedactURL(rawURL), err)
 	}
 	return data, resp.StatusCode, nil
+}
+
+// decompressBody wraps the response body when it carries a Content-Encoding that
+// harbrr requested explicitly (the solver replay sends "Accept-Encoding: gzip, deflate",
+// which suppresses net/http's transparent gzip handling). A normal request lets
+// net/http auto-decompress and strip the header, so this is a pass-through there.
+func decompressBody(resp *stdhttp.Response) (io.Reader, error) {
+	switch strings.ToLower(resp.Header.Get("Content-Encoding")) {
+	case "gzip":
+		zr, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("gzip reader: %w", err)
+		}
+		return zr, nil
+	case "deflate":
+		// HTTP "deflate" per RFC 9110 is zlib-wrapped (RFC 1950), but many servers
+		// send raw DEFLATE (RFC 1951). Sniff the 2-byte zlib header and pick the
+		// matching reader so both interoperate.
+		br := bufio.NewReader(resp.Body)
+		if looksZlibWrapped(br) {
+			zr, err := zlib.NewReader(br)
+			if err != nil {
+				return nil, fmt.Errorf("zlib reader: %w", err)
+			}
+			return zr, nil
+		}
+		return flate.NewReader(br), nil
+	default:
+		return resp.Body, nil
+	}
+}
+
+// looksZlibWrapped reports whether the next two bytes are a valid zlib header
+// (RFC 1950): the low nibble of CMF is 8 (deflate) and the 16-bit CMF·FLG value is
+// a multiple of 31. Peek does not consume, so the chosen reader sees the full stream.
+func looksZlibWrapped(r *bufio.Reader) bool {
+	b, err := r.Peek(2)
+	if err != nil {
+		return false
+	}
+	return b[0]&0x0f == 8 && (uint16(b[0])<<8|uint16(b[1]))%31 == 0
 }
 
 // applyJar attaches the jar's cookies for the request URL onto the outgoing

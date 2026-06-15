@@ -12,8 +12,8 @@ import (
 // by an interstitial (e.g. a Cloudflare challenge), it returns the cookies — and
 // optionally a User-Agent — that let a subsequent request through. This is the
 // fetch/auth-matrix extension point: NoopSolver solves nothing (the default),
-// ManualCookieSolver replays a user-supplied cookie, and a FlareSolverr client is
-// the Phase 6 implementation. [Tracked: Phase 6 — FlareSolverr solver]
+// ManualCookieSolver replays a user-supplied cookie, and FlareSolverrSolver clears
+// a Cloudflare-style challenge via a FlareSolverr instance (the Phase 6 solver).
 type Solver interface {
 	Solve(ctx context.Context, targetURL string) (SolveResult, error)
 }
@@ -88,9 +88,10 @@ func (e *Executor) fetchLandingPastAntiBot(ctx context.Context, rawURL string, h
 		return nil, fmt.Errorf("%w: detected an anti-bot challenge page", ErrSolverRequired)
 	}
 	e.seedSolverCookies(rawURL, res)
-	// Anti-bot clearance is often UA-coupled (the cf_clearance cookie is bound to
-	// the User-Agent the solver used), so the retry must send the solver's UA.
-	body, _, err = e.get(ctx, rawURL, withUserAgent(headers, res.UserAgent))
+	// Anti-bot clearance is UA-coupled (cf_clearance is bound to the solver's
+	// User-Agent) AND a gzip-only header set is a known 403 trigger, so the replay
+	// carries the solver's UA plus a browser-realistic Accept/Accept-Encoding set.
+	body, _, err = e.get(ctx, rawURL, withSolverReplayHeaders(headers, res.UserAgent))
 	if err != nil {
 		return nil, err
 	}
@@ -100,18 +101,32 @@ func (e *Executor) fetchLandingPastAntiBot(ctx context.Context, rawURL string, h
 	return body, nil
 }
 
-// withUserAgent returns headers with User-Agent set to ua, without mutating the
-// caller's map. An empty ua returns headers unchanged.
-func withUserAgent(headers map[string][]string, ua string) map[string][]string {
-	if ua == "" {
-		return headers
-	}
-	out := make(map[string][]string, len(headers)+1)
+// withSolverReplayHeaders returns headers augmented for the post-solve replay,
+// without mutating the caller's map: the solver's User-Agent (cf_clearance is
+// UA-bound) plus a browser-realistic Accept / Accept-Language / Accept-Encoding
+// set. A gzip-only Accept-Encoding is a known anti-bot 403 trigger, so a
+// browser-like "gzip, deflate" is sent and the response is decompressed in do().
+// Existing values are preserved (a definition's own headers win).
+func withSolverReplayHeaders(headers map[string][]string, ua string) map[string][]string {
+	out := make(map[string][]string, len(headers)+4)
 	for k, v := range headers {
 		out[k] = v
 	}
-	out["User-Agent"] = []string{ua}
+	if ua != "" {
+		out["User-Agent"] = []string{ua}
+	}
+	setHeaderIfAbsent(out, "Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+	setHeaderIfAbsent(out, "Accept-Language", "en-US,en;q=0.9")
+	setHeaderIfAbsent(out, "Accept-Encoding", "gzip, deflate")
 	return out
+}
+
+// setHeaderIfAbsent sets key to val only when absent, so a definition's own header
+// is never overridden by the replay defaults.
+func setHeaderIfAbsent(h map[string][]string, key, val string) {
+	if _, ok := h[key]; !ok {
+		h[key] = []string{val}
+	}
 }
 
 // seedSolverCookies installs a solver's cookies into the jar, scoped to the

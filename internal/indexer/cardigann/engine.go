@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	stdhttp "net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -104,11 +106,25 @@ func WithSolver(s login.Solver) Option {
 // FlareSolverr is the Phase 6 addition. Keeping the mapping here lets the registry
 // wire a solver from config without importing the login package directly.
 func SolverOption(cfg map[string]string) Option {
-	if cfg["solver_type"] == "manual_cookie" {
+	switch cfg["solver_type"] {
+	case "manual_cookie":
 		s := login.ManualCookieSolver{Cookie: cfg["cookie"]}
 		return func(o *options) { o.solver = s }
+	case "flaresolverr":
+		s := login.NewFlareSolverrSolver(cfg["flaresolverr_url"], flareMaxTimeout(cfg["flaresolverr_max_timeout"]))
+		return func(o *options) { o.solver = s }
+	default:
+		return func(*options) {}
 	}
-	return func(*options) {}
+}
+
+// flareMaxTimeout parses the optional per-instance FlareSolverr maxTimeout (in
+// seconds); an empty/invalid value lets the solver use its default.
+func flareMaxTimeout(s string) time.Duration {
+	if secs, err := strconv.Atoi(strings.TrimSpace(s)); err == nil && secs > 0 {
+		return time.Duration(secs) * time.Second
+	}
+	return 0
 }
 
 // NewEngine builds an Engine for def, wiring all nine stage seams. It fails loud
