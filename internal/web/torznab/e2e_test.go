@@ -38,7 +38,8 @@ func (e *engineIndexer) Search(_ context.Context, q search.Query) ([]*normalizer
 func (e *engineIndexer) NeedsResolver() bool { return e.engine.NeedsResolver() }
 
 func (e *engineIndexer) ResolveDownload(ctx context.Context, l string) (string, error) {
-	return e.engine.ResolveDownload(ctx, l)
+	// Feed-time pre-resolution seam: no grab-time testlinktorrent validation.
+	return e.engine.ResolveDownload(ctx, l, false)
 }
 
 func readTestdata(t *testing.T, name string) []byte {

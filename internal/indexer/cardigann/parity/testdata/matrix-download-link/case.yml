@@ -8,9 +8,11 @@ description: >
   field is a DETAILS page (/details/1), not the torrent. The download block then
   resolves it: a "before" pre-request (GET /prepare), then the a.torrent-dl
   selector over the fetched details page yields /get/1.torrent, resolved against
-  the details URL. With resolve_download set, the harness rewrites the release
-  link to that resolved torrent URL, so the golden's link is
-  https://dl.test/get/1.torrent. Size 2 GB = 2147483648; peers = 17 + 3.
+  the details URL. Because the definition does not disable testlinktorrent (default
+  true in Jackett), the resolved non-magnet link is then fetched and accepted
+  because its body is a bencoded torrent (first byte 'd'). With resolve_download
+  set, the harness rewrites the release link to that resolved torrent URL, so the
+  golden's link is https://dl.test/get/1.torrent. Size 2 GB = 2147483648; peers = 17 + 3.
 definition: definition.yml
 query:
   keywords: release
@@ -27,3 +29,7 @@ steps:
     url: https://dl.test/details/1
     response: details.html
     note: fetch the details page; a.torrent-dl yields the real torrent URL
+  - method: GET
+    url: https://dl.test/get/1.torrent
+    response: torrent.bin
+    note: testlinktorrent validation — bencoded body (first byte 'd') accepts the link

@@ -60,9 +60,12 @@ func (a *indexerAdapter) Search(ctx context.Context, query search.Query) ([]*nor
 func (a *indexerAdapter) NeedsResolver() bool { return a.engine.NeedsResolver() }
 
 // ResolveDownload resolves a release link to the real torrent URL. The error is
-// wrapped with the indexer id (not a secret); the caller redacts it.
+// wrapped with the indexer id (not a secret); the caller redacts it. validate=false:
+// this is the feed-time pre-resolution seam, so it must not run testlinktorrent (a
+// torrent fetch per served release would hammer the tracker); grab-time validation
+// is the /dl proxy's job.
 func (a *indexerAdapter) ResolveDownload(ctx context.Context, link string) (string, error) {
-	resolved, err := a.engine.ResolveDownload(ctx, link)
+	resolved, err := a.engine.ResolveDownload(ctx, link, false)
 	if err != nil {
 		return "", fmt.Errorf("registry: resolve download %q: %w", a.info.ID, err)
 	}
