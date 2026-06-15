@@ -159,6 +159,19 @@ Phase 3 "search real trackers end-to-end" goal.
       stored `key_id`); secret redaction audited end-to-end (logs/errors + a JSON-body scrubber for
       FlareSolverr bodies + whole-userinfo proxy-URL scrub; traces/stats event-log don't exist — vacuous)
 
+> **Shipped this phase without a `docs/plan.md` box** (enabling infra + ledger items):
+> the request-scoped `context.Context` threading (PR #1); the `ClientParams`
+> doer-factory seam; and the **FlareSolverr anti-bot solver** — a real, typed-`/v1`,
+> discard-and-replay implementation (NOT a stub; the `/v1` *test server* is the stub),
+> which **closes** the Phase-5 `[Tracked: FlareSolverr]` deferral. All ship on their
+> committed offline gates. Their LIVE confirmation — a real Cloudflare clear, proxy
+> routing, and the deferred Phase-5 auth-pattern retests — is the **Phase 9**
+> validation gate below.
+>
+> The traces/stats **event-log** the redaction audit calls "vacuous" is not a gap
+> here — it is the Phase-8 *Stats / search history* item; redaction must be wired in
+> when that subsystem is built.
+
 ## Phase 7 — Scale coverage
 
 - [ ] Broaden response-mode and definition coverage; expand selector/date edge-case fixtures
@@ -193,6 +206,30 @@ Phase 3 "search real trackers end-to-end" goal.
 - [ ] **OIDC authentication** — fully implement the OIDC login flow stubbed in Phase 4 (the
       `/api/auth/oidc/*` endpoints return 501 today; only a config seam exists). A qui/autobrr family
       feature; pairs with the Web UI auth surface.
+
+## Phase 9 — Live validation & acceptance (alpha gate)
+
+The end-of-alpha live pass: exercise **every auth/fetch pattern against real trackers** and
+parity-check harbrr against a **live Prowlarr** — the single home for every `[Tracked: deferred]`
+live retest the offline gates can't cover (Phase-6 deferred the live half of timeouts/proxy/
+FlareSolverr; Phase-5 deferred several auth patterns). Operator-resourced; run via the
+build-tagged `internal/smoke` harness (`//go:build smoke`, `SMOKE_*` env-var creds, gentle rate,
+**never CI**); each row records secret-free pass/fail evidence in `internal/smoke/README.md`. A
+bug it surfaces is `[Tracked]` against the owning layer — the parity engine stays frozen; fixes
+are scoped, not ad-hoc.
+
+- [ ] **Every auth/fetch pattern live**, each against an operator-supplied tracker: user/pass
+      **form login**; **cookie / 2FA** (manual-cookie solver); **.NET-quirk** (`*()'!` / unicode /
+      `regexp2`); **Cloudflare via FlareSolverr** (the Phase-6 solver clears a real CF tracker end
+      to end); **per-indexer proxy** (HTTP + SOCKS5 route a real search).
+- [ ] **Broad live Prowlarr differential** — many trackers (not just the Phase-5 five): same query
+      → Prowlarr feed vs harbrr feed → diff, confirming request/response + category parity at scale
+      against the live oracle.
+- [ ] **Grab end-to-end per pattern** — search → resolved `.torrent` → seeding in qBittorrent (left
+      seeding, no hit-and-run), for ≥1 tracker per auth pattern.
+- [ ] **Acceptance** — every pattern green, or its gap recorded `[Tracked]` with a disposition.
+      This is the live half of "match Jackett/Prowlarr on real trackers"; the offline parity gate
+      (Phase 2) proves it deterministically.
 
 ---
 
