@@ -256,7 +256,8 @@ func (r *Registry) toStored(id int64, name, val string, fields map[string]loader
 // definitions) whose values are credential-bearing and must always be encrypted
 // at rest — e.g. a proxy URL may embed user:pass.
 var reservedSecretSettings = map[string]struct{}{
-	"proxy_url": {},
+	"proxy_url":        {},
+	"flaresolverr_url": {},
 }
 
 // classifySecret decides whether a setting is secret: a reserved daemon secret key

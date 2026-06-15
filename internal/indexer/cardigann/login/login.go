@@ -2,6 +2,8 @@ package login
 
 import (
 	"bytes"
+	"compress/flate"
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
@@ -189,11 +191,34 @@ func (e *Executor) do(ctx context.Context, method, rawURL string, bodyReader io.
 
 	e.storeJar(req.URL, resp)
 
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxLoginBodyBytes))
+	reader, err := decompressBody(resp)
+	if err != nil {
+		return nil, resp.StatusCode, fmt.Errorf("decompressing response from %s: %w", apphttp.RedactURL(rawURL), err)
+	}
+	data, err := io.ReadAll(io.LimitReader(reader, maxLoginBodyBytes))
 	if err != nil {
 		return nil, resp.StatusCode, fmt.Errorf("reading response from %s: %w", apphttp.RedactURL(rawURL), err)
 	}
 	return data, resp.StatusCode, nil
+}
+
+// decompressBody wraps the response body when it carries a Content-Encoding that
+// harbrr requested explicitly (the solver replay sends "Accept-Encoding: gzip, deflate",
+// which suppresses net/http's transparent gzip handling). A normal request lets
+// net/http auto-decompress and strip the header, so this is a pass-through there.
+func decompressBody(resp *stdhttp.Response) (io.Reader, error) {
+	switch strings.ToLower(resp.Header.Get("Content-Encoding")) {
+	case "gzip":
+		zr, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("gzip reader: %w", err)
+		}
+		return zr, nil
+	case "deflate":
+		return flate.NewReader(resp.Body), nil
+	default:
+		return resp.Body, nil
+	}
 }
 
 // applyJar attaches the jar's cookies for the request URL onto the outgoing
