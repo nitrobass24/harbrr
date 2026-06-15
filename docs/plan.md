@@ -150,7 +150,7 @@ Phase 3 "search real trackers end-to-end" goal.
 
 ## Phase 6 — Operational safety
 
-- [ ] Timeouts, backoff, per-indexer rate limits (anti-blacklist)
+- [x] Timeouts, backoff, per-indexer rate limits (anti-blacklist)
 - [ ] **Indexer health & status**: define health events (auth failure, rate-limited, parse error,
       anti-bot) and surface per-indexer status via the API; broken indexers already degrade cleanly (Phase 2)
 - [ ] **Per-indexer proxies** (HTTP / SOCKS4 / SOCKS5), configured per instance (the

@@ -7,6 +7,7 @@ import (
 	stdhttp "net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/encode"
@@ -340,6 +341,13 @@ func doRequest(ctx context.Context, doer Doer, br builtRequest, session *login.S
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		// 429/503 are pacing signals the registry classifies as rate_limited (and the
+		// paced client backs off on); carry a typed, status-bearing error. The URL is
+		// redacted here; RateLimitedError itself holds none, so it can't leak a passkey.
+		if IsRateLimitStatus(resp.StatusCode) {
+			return nil, fmt.Errorf("%s %s: %w", br.method, apphttp.RedactURL(br.url),
+				&RateLimitedError{StatusCode: resp.StatusCode, RetryAfter: ParseRetryAfter(resp.Header.Get("Retry-After"), time.Now)})
+		}
 		return nil, fmt.Errorf("%s %s: tracker returned HTTP %d", br.method, apphttp.RedactURL(br.url), resp.StatusCode)
 	}
 
