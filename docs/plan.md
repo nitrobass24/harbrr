@@ -150,7 +150,9 @@ Phase 3 "search real trackers end-to-end" goal.
 
 ## Phase 6 — Operational safety
 
-- [x] Timeouts, backoff, per-indexer rate limits (anti-blacklist)
+- [x] Timeouts, backoff, per-host rate limits (anti-blacklist) — paced per **target
+      domain**, in-process; rate from the def's `requestDelay` or a 1s default (a
+      user-configurable per-indexer override + global default is deferred → Phase 8)
 - [x] **Indexer health & status**: define health events (auth failure, rate-limited, parse error,
       anti-bot) and surface per-indexer status via the API; broken indexers already degrade cleanly (Phase 2)
 - [x] **Per-indexer proxies** (HTTP / SOCKS5; SOCKS4 deferred `[Tracked]` — `x/net/proxy` has no
@@ -203,6 +205,11 @@ Phase 3 "search real trackers end-to-end" goal.
 - [ ] **Web UI** — the management dashboard (indexer grid, add/edit forms, manual search, stats);
       depends on the Phase 4 management API. Includes rendering the embedded OpenAPI spec as Swagger UI
       (Phase 4 serves the raw spec at `/api/openapi.yaml`).
+- [ ] **User-configurable request rate** — a **global default** rate plus a
+      **per-indexer override** setting. Phase 6 paces per target domain from the def's
+      `requestDelay` (or a 1s default) and is not user-tunable; the
+      `ClientParams.RateInterval` seam already carries the value, so this is a settings
+      surface + plumb-through. Pairs with the management UI / settings.
 - [ ] **OIDC authentication** — fully implement the OIDC login flow stubbed in Phase 4 (the
       `/api/auth/oidc/*` endpoints return 501 today; only a config seam exists). A qui/autobrr family
       feature; pairs with the Web UI auth surface.

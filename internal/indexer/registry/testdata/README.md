@@ -20,16 +20,31 @@ These behaviours are pinned by tests in `internal/indexer/registry`
   client both ride one seam. A struct (not positional args) keeps future fields
   from re-breaking the `WithDoerFactory` Option. `[Deliberate]` (`registry.go`,
   `client.go`).
-- **Rate limiter keyed per HOST, process-wide, no eviction.** A
-  `sync.Map[host]*rate.Limiter` (`x/time/rate`, `rate.Every(interval)`, burst 1)
-  mirrors qui's `sharedLimiters`. Per-host (not per-instance) so two instances on
-  one tracker host share one budget — the anti-blacklist unit is the host/IP. The
-  key space is bounded by configured hosts, so the map cannot grow unboundedly and
-  there is no evict-vs-`Wait` race; eviction is deliberately omitted.
-  `[Deliberate]` (`pacedclient.go`).
-- **Rate value from the def's `requestDelay`, else a 1s default.** Jackett's
-  `requestDelay` (seconds) sets the per-host interval when present; otherwise a
-  conservative 1s default. `[Deliberate]`.
+- **Rate limiter keyed per target HOST, in-process, no eviction.** A package-level
+  `sync.Map[host]*rate.Limiter` (`x/time/rate`, `rate.Every(interval)`, burst 1,
+  keyed by `req.URL.Hostname()`) mirrors qui's `sharedLimiters`. Vocabulary, to be
+  precise: "host" is the **target tracker domain**, and the limiter is a single
+  in-memory global inside the **one** harbrr daemon — it paces by destination, NOT
+  by OS host, and it does **not** coordinate across separate harbrr
+  processes/containers. The anti-blacklist unit is the tracker's view of us: one
+  source IP hitting one domain. "Per host, not per configured indexer" matters only
+  when the **same target domain is configured more than once** in the daemon — the
+  common pattern of adding one tracker twice (different categories or freeleech
+  modes), or a second account — so those configs share one budget and harbrr can't
+  burst the domain at 2× the intended rate. In the ordinary one-config-per-domain
+  case the per-host limiter is effectively per-config. When two configs on a domain
+  declare different intervals the strictest (slowest) interval wins (`SetLimit`). The
+  key space is bounded by configured domains, so the map cannot grow unboundedly and
+  there is no evict-vs-`Wait` race; eviction is deliberately omitted. `[Deliberate]`
+  (`pacedclient.go`).
+- **Rate value from the def's `requestDelay`, else a 1s default — not yet
+  user-tunable.** Jackett's `requestDelay` (seconds) sets the per-domain interval
+  when the def declares it; otherwise a conservative 1s default. There is no
+  per-indexer rate override or global default *setting* today, so a user cannot tune
+  pacing for a domain they know to be strict or lax. Exposing a per-indexer override
+  + a global default (the `ClientParams.RateInterval` seam is already plumbed for it)
+  is deferred to the product-settings surface. `[Deliberate]`; user-configurable rate
+  `[Tracked: Phase 8]`.
 - **Backoff retries ONLY 429/503, bounded, honoring `Retry-After`.** `avast/retry-go`
   with `Attempts(3)`; `Retry-After` (delta-seconds or HTTP-date) is honored and
   clamped to `[0, 5m]`; other non-2xx are not retried. The per-request `ctx`
