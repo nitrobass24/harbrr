@@ -126,10 +126,33 @@ func (d *driver) toRelease(row *avistazRelease) (*normalizer.Release, error) {
 }
 
 // parseCategories derives the release's newznab category. The base mapping uses
-// type+video_quality (AvistazParserBase); the ExoticaZ variant (response-category
-// dict) is added with that site.
+// type+video_quality (AvistazParserBase); ExoticaZ instead maps the keys of the
+// response `category` dict through its own caps (ExoticaZParser.ParseCategories).
 func (d *driver) parseCategories(row *avistazRelease) ([]int, error) {
+	if d.profile.exoticaParse {
+		return d.exoticaCategories(row), nil
+	}
 	return baseCategories(row)
+}
+
+// exoticaCategories reproduces ExoticaZParser.ParseCategories: each key of the response
+// `category` dict (a tracker category id) is mapped to newznab ids through the site's
+// caps. The result is de-duplicated and sorted so the served categories are
+// deterministic (Go map iteration is randomized).
+func (d *driver) exoticaCategories(row *avistazRelease) []int {
+	seen := map[int]struct{}{}
+	var cats []int
+	for key := range row.Category {
+		for _, id := range d.caps.CategoryMap.MapTrackerCatToNewznab(key) {
+			if _, dup := seen[id]; dup {
+				continue
+			}
+			seen[id] = struct{}{}
+			cats = append(cats, id)
+		}
+	}
+	sort.Ints(cats)
+	return cats
 }
 
 // baseCategories reproduces AvistazParserBase.ParseCategories: MOVIE/TV-SHOW map to

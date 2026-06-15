@@ -35,6 +35,7 @@ so there is nothing to keep in sync between them.
 | **Daemon foundation** (Phase 4) | how the daemon stores + serves: the §9 secrets model, persistence, auth/session/CSRF, and where these differ from autobrr/qui | [`internal/secrets/testdata/README.md`](../internal/secrets/testdata/README.md) |
 | **Live smoke** (Phase 5) | what the live 5-tracker smoke + Prowlarr differential + Sonarr-orchestrated grab verified, and the auth/fetch patterns it could NOT exercise live (FlareSolverr, form login, .NET-quirk sites, cookie sites) with re-test dispositions | [`internal/smoke/README.md`](../internal/smoke/README.md) |
 | **Operational safety** (Phase 6) | the anti-blacklist + observability layer: per-request timeouts, retry backoff, per-host rate limits, per-indexer proxies, and indexer health/status (the `ClientParams` seam, the rate/parse error taxonomy, SOCKS4 deferral) | [`internal/indexer/registry/testdata/README.md`](../internal/indexer/registry/testdata/README.md) |
+| **Native indexers** (Phase 8) | the AvistaZ-family native driver (AvistaZ / CinemaZ / PrivateHD / ExoticaZ): where its login→Bearer auth, request building, parse, and grab knowingly differ from Prowlarr's `AvistazRequestGenerator`/`AvistazParserBase` (genre + `video_quality[]` omission, single-page fetch, `503`→rate-limit, the path-key redaction caveat) | [`internal/indexer/native/avistaz/testdata/README.md`](../internal/indexer/native/avistaz/testdata/README.md) |
 
 The per-layer READMEs cross-link for navigation; this file is linked from
 `docs/architecture.md` (invariant #2).

@@ -193,12 +193,16 @@ safety); it stays offline-gated against the parity oracle.
 
 ## Phase 8 — Native Avistaz family
 
-- [ ] Native **Avistaz** family (AvistaZ / CinemaZ / PrivateHD / …) — the one *popular* family the Jackett
-      corpus can't express (its login→Bearer `api/v1/jackett` auth exceeds the declarative Cardigann
-      format, so there are **0 defs**). A native driver under `internal/indexer/native/` (a `doc.go` stub
-      today), plugged into the indexer registry alongside the Cardigann engine. Prowlarr supports Avistaz
-      natively, so it is **Prowlarr-differential-able** and validated in the Phase 9 live gate.
-      Post-Cardigann-parity, but **scheduled, not demand-gated** — these trackers are widely used.
+- [x] Native **Avistaz** family (AvistaZ / CinemaZ / PrivateHD / ExoticaZ) — the one *popular* family the
+      Jackett corpus can't express (its login→Bearer `api/v1/jackett` auth exceeds the declarative
+      Cardigann format, so there are **0 defs**). A native driver under `internal/indexer/native/avistaz/`,
+      plugged into the indexer registry alongside the Cardigann engine via a native catalog + `defResolver`
+      (the `indexerAdapter` generalized to a `native.Driver`); it reuses every engine seam (paced client,
+      secrets, normalized release, caps mapper, the `/dl` grab proxy, redaction). **Offline-gated**: a stub
+      auth/API server + synthetic fixtures whose goldens are derived from Prowlarr's documented contract
+      (`develop` @ `d6e8466`), never a live capture. Prowlarr supports Avistaz natively, so the live
+      Prowlarr differential + a real search/grab are the **Phase 9** gate (recorded
+      `[Tracked: Phase 9]`). Divergences in `internal/indexer/native/avistaz/testdata/README.md`.
 
 ## Phase 9 — Live validation & acceptance (alpha gate)
 
