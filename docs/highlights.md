@@ -97,6 +97,40 @@ site/docs land later.
   cookies are `HttpOnly` + `SameSite=Lax` (+ `Secure` behind TLS) with token renewal
   on login; API keys are header-authenticated. *(`internal/auth`, `internal/web/api`)*
   `[shipped]`
+- **Offline key rotation.** `harbrr rotate-key` (daemon stopped) re-encrypts every
+  stored tracker secret + the canary from an old key to a new key in one atomic
+  transaction, validating (dry-run decrypt of every row) before any write — a wrong
+  old key fails loud with the store untouched. The single-key crypto core is
+  unchanged; a database leak is recoverable without re-entering credentials.
+  *(`cmd/harbrr/rotate_key.go`)* `[shipped]`
+- **Redaction beyond URLs/headers.** A JSON-body scrubber redacts FlareSolverr
+  request/response bodies (cookies/cf_clearance/userAgent/page HTML), proxy URLs are
+  whole-userinfo-scrubbed, and a shared error chokepoint scrubs both API test
+  errors and persisted health-event detail. *(`internal/http/redact.go`)* `[shipped]`
+
+## Operational safety (anti-blacklist + observability)
+
+- **Never gets a tracker IP/account blacklisted.** Every outbound request is paced
+  by a process-wide **per-host rate limiter** (`x/time/rate`, burst 1, no eviction —
+  bounded host keyspace), with a per-request timeout and bounded **429/503 backoff
+  that honors `Retry-After`** (never loops). Pacing + backoff compose with the
+  request context: a cancelled request aborts a token wait or a backoff sleep with
+  no reservation leak. *(`internal/indexer/registry/pacedclient.go`)* `[shipped]`
+- **Per-indexer health & status.** Failures classify into `auth_failure`,
+  `rate_limited`, `parse_error`, `anti_bot` and append to a per-indexer event log;
+  `GET /api/indexers/{slug}/status` surfaces a derived health + recent events with
+  credential-scrubbed detail — so an operator sees *why* an indexer is unhealthy,
+  not just that a search returned nothing. *(`internal/database/health.go`,
+  `internal/web/api`)* `[shipped]`
+- **Per-indexer proxies.** Route any indexer through an HTTP or SOCKS5 proxy
+  (per-instance, the URL encrypted at rest), so a geo-blocked or IP-flagged tracker
+  works without proxying the whole daemon. *(`internal/indexer/registry/client.go`)*
+  `[shipped]` (SOCKS4 `[planned]`)
+- **FlareSolverr Cloudflare solver.** Clears an anti-bot interstitial via a
+  FlareSolverr instance (typed `/v1`, discard-and-replay with a UA-coupled,
+  non-gzip browser header set), completing the pluggable solver seam alongside the
+  manual-cookie fallback. *(`internal/indexer/cardigann/login/flaresolverr.go`)*
+  `[shipped]` (offline-gated; live CF clear `[planned]`)
 
 ## Engine correctness & compatibility
 

@@ -78,3 +78,29 @@ The behaviours below are pinned by tests in `internal/secrets`, `internal/auth`,
   secrets behind the `<redacted>` sentinel by default with a separately-encrypted
   include-secrets opt-in. The `<redacted>` sentinel exists for the edit/update flow;
   the export/import path itself is deferred. `[Tracked: Phase 7]` (backup/restore).
+
+## Phase 6 — secret hardening
+
+- **Key rotation lands.** The per-record `key_id` built in Phase 4 enabled it: a
+  new offline `harbrr rotate-key` subcommand (run with the daemon stopped) holds
+  the old + new keys explicitly — the single-key `Keyring` crypto core is
+  **untouched** (no dual-key Keyring). It dry-runs (decrypts every `indexer_settings`
+  secret under the old key, fail-loud BEFORE any write), then re-encrypts every row
+  (re-sealed under the SAME AAD `<instanceID>\x00<setting>`) + the `app_meta` canary
+  + `secrets_key_id` in ONE transaction. Wrong old key, plaintext mode, and
+  empty-secret rows are handled (the last stay empty, only rekeyed). No decrypted
+  credential or key byte reaches a log/error/the output. `[Resolved: Phase 6]`
+  (`cmd/harbrr/rotate_key.go`, `internal/database/rotation.go`, `TestRotateKeys_*`).
+- **Redaction audit.** Extended beyond `RedactURL`/`RedactHeader`: a new
+  `internal/http.RedactJSONBody` scrubs FlareSolverr `/v1` request/response bodies
+  (cookies/postData/userAgent/cf_clearance/response/headers, at any depth — JSON
+  that `RedactURL` can't reach); `RedactProxyURL` scrubs the WHOLE proxy userinfo
+  (user AND pass); and `sanitizeTestError` was lifted to the shared
+  `internal/http.RedactError` chokepoint (reused for `indexer_health_events.detail`).
+  `[Resolved: Phase 6]` (`internal/http/redact.go`, `redacterror_test.go`,
+  `redactbody_test.go`).
+- **Tracing / stats-event-log redaction is vacuous.** §9 names "logs, errors,
+  traces, and the stats event log" as redaction targets, but harbrr has **no
+  tracing and no stats/event-log subsystem** — those targets do not exist, so the
+  audit cannot wire redaction into them. Building them is out of scope.
+  `[Accepted]` (revisit when the Phase-8 stats data layer lands — `[Tracked: Phase 8]`).

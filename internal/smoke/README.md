@@ -86,9 +86,10 @@ account for them rather than rediscover them:
 
 | Pattern | Why unverified live | Re-test disposition |
 |---|---|---|
-| **FlareSolverr / Cloudflare** | seam built (`login.Solver`), impl deferred; no CF tracker in the 5, no FlareSolverr in the env | `[Tracked: Phase 6]` — implement the FlareSolverr solver + live-test a CF tracker |
-| **user/pass form login** | lazy-login + form/post flows validated offline (replay Doer) only; all 5 trackers are apikey | live-test a clean form-login tracker; confirm logout→relogin live |
-| **.NET-quirk sites** | the `WebUtility` URL encoder + `regexp2` (.NET regex) routing are validated by offline KAT/differential, not a live `*()'!`/unicode/regexp2 site | add a corpus/live case with those inputs |
-| **cookie / manual-cookie sites** | cookie-auth + `ManualCookieSolver` exercised offline only | live-test a cookie/2FA tracker via `solver_type=manual_cookie` |
+| **FlareSolverr / Cloudflare** | seam built (`login.Solver`), no CF tracker in the 5, no FlareSolverr in the env | `[Resolved: Phase 6]` — solver **implemented + offline-tested** (stub `/v1`, typed model, replay header contract); live CF clear `[Tracked: deferred]` (no FlareSolverr/CF tracker on the day) |
+| **user/pass form login** | lazy-login + form/post flows validated offline (replay Doer) only; all 5 trackers are apikey | `[Tracked: Phase 6 — item 7, operator-driven]` — tracker available per intake; run the build-tagged harness via the daemon + Prowlarr differential (confirm logout→relogin live) |
+| **.NET-quirk sites** | the `WebUtility` URL encoder + `regexp2` (.NET regex) routing are validated by offline KAT/differential, not a live `*()'!`/unicode/regexp2 site | `[Tracked: Phase 6 — item 7, operator-driven]` — tracker available per intake; live-search inputs exercising those constructs |
+| **cookie / manual-cookie sites** | cookie-auth + `ManualCookieSolver` exercised offline only | `[Tracked: Phase 6 — item 7, operator-driven]` — tracker available per intake; live-test via `solver_type=manual_cookie` |
+| **per-indexer proxy (HTTP/SOCKS5)** | no proxy in the test env; doer construction is offline-tested | `[Tracked: deferred]` — route a real search via `proxy_type`+`proxy_url` when a proxy is available (SOCKS4 unsupported — `x/net/proxy` has no socks4 dialer) |
 | **Sonarr → harbrr (inbound)** | ~~the sandbox daemon was not LAN-reachable; grab used a direct qBittorrent push~~ | ✅ **resolved 2026-06-14** — harbrr deployed via Docker; Sonarr added/tested/searched/grabbed it through to qBittorrent2 (see Grab §A) |
 | **download resolver / `/dl` proxy** | the 5 trackers are direct-link; resolver-needing defs aren't covered | `[Tracked: Phase 7]` |
