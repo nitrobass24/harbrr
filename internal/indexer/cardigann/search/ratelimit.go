@@ -54,16 +54,8 @@ func ParseRetryAfter(value string, now func() time.Time) time.Duration {
 	if value == "" {
 		return 0
 	}
-	if secs, err := strconv.Atoi(value); err == nil {
-		// Clamp before the multiply: a huge delta-seconds would overflow
-		// time.Duration (int64 ns) and wrap to a bogus/negative value.
-		if secs <= 0 {
-			return 0
-		}
-		if secs >= int(maxRetryAfter/time.Second) {
-			return maxRetryAfter
-		}
-		return clampRetryAfter(time.Duration(secs) * time.Second)
+	if d, ok := parseDeltaSeconds(value); ok {
+		return d
 	}
 	if t, err := stdhttp.ParseTime(value); err == nil {
 		if now == nil {
@@ -72,6 +64,36 @@ func ParseRetryAfter(value string, now func() time.Time) time.Duration {
 		return clampRetryAfter(t.Sub(now()))
 	}
 	return 0
+}
+
+// parseDeltaSeconds parses the delta-seconds form of Retry-After, clamped to
+// [0, maxRetryAfter]. The bool reports whether value WAS the numeric form, so a
+// numeric value never falls through to the caller's HTTP-date branch. A value made
+// entirely of digits but too large for int (strconv.ErrRange) is clamped to the cap
+// rather than treated as 0 — a 0 would mean "retry immediately" against a tracker
+// that explicitly asked for a long backoff (fail safe toward MORE backoff).
+func parseDeltaSeconds(value string) (time.Duration, bool) {
+	secs, err := strconv.Atoi(value)
+	if err != nil {
+		if errors.Is(err, strconv.ErrRange) {
+			// Valid digits, out of int range: a huge positive magnitude → the cap;
+			// a huge negative is meaningless for a delay → 0. Either way it was numeric.
+			if strings.HasPrefix(value, "-") {
+				return 0, true
+			}
+			return maxRetryAfter, true
+		}
+		return 0, false // not a number — let the caller try the HTTP-date form
+	}
+	if secs <= 0 {
+		return 0, true
+	}
+	// Clamp before the multiply: a large-but-in-int secs would overflow
+	// time.Duration (int64 ns) and wrap to a bogus/negative value.
+	if secs >= int(maxRetryAfter/time.Second) {
+		return maxRetryAfter, true
+	}
+	return clampRetryAfter(time.Duration(secs) * time.Second), true
 }
 
 func clampRetryAfter(d time.Duration) time.Duration {
