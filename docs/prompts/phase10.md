@@ -1,19 +1,19 @@
-# Phase 8 implementation prompt — Web UI (management dashboard)
+# Phase 10 implementation prompt — Web UI (management dashboard)
 
-Paste the block below into an `ultracode` session to implement the **Web UI** workstream of Phase 8. It
+Paste the block below into an `ultracode` session to implement the **Web UI** workstream of Phase 10. It
 begins in **plan mode**: the agent must plan the *entire* work stream and get the plan approved before
 writing any code. This is the FIRST non-Go (TypeScript) code to enter the repo, so the strict-CI gate
 is itself a planned, committed deliverable — not an afterthought.
 
 ---
 
-ultracode — Implement **Phase 8 (Web UI / management dashboard)** from `docs/plan.md` as ONE reviewable
+ultracode — Implement **Phase 10 (Web UI / management dashboard)** from `docs/plan.md` as ONE reviewable
 PR. **Begin in PLAN MODE — do STEP 0 before anything else.**
 
-This PR ships the **Web UI box** of Phase 8 and the items tightly coupled to it (Swagger UI render,
+This PR ships the **Web UI box** of Phase 10 and the items tightly coupled to it (Swagger UI render,
 stats/search-history display, `api_keys.last_used_at` write). OIDC login is **deferred by default** (the
 UI hides the 501 `/api/auth/oidc/*` stubs) unless the approved plan promotes it to a work-list item —
-see the WORK LIST. The other Phase 8 boxes (\*arr app-sync, Prowlarr import, autobrr push, cross-seed,
+see the WORK LIST. The other Phase 10 boxes (\*arr app-sync, Prowlarr import, autobrr push, cross-seed,
 notifications, Postgres) are **out of scope** — see the deferral list in the WORK LIST. The web UI does **not** unlock the
 "Prowlarr replacement" framing (`docs/ideas.md` §13: that waits until app-sync + migration + UI + broad
 coverage all ship — the UI is one of four legs). Do not imply otherwise in any copy, README, or PR body.
@@ -64,8 +64,8 @@ The plan must cover:
 - **Test strategy per item → oracle** — component/unit tests (Vitest + RTL), at least one
   integration test driving the **real management API** offline, accessibility checks, the Swagger-UI
   render assertion, and the embed/drift gate. CI stays **offline and deterministic**.
-- **Commit/box sequencing** — Commit 1 is the strict-CI foundation (no Phase 8 box; it is enabling
-  infrastructure — say so). Then which `docs/plan.md` Phase 8 box each subsequent commit ticks (the
+- **Commit/box sequencing** — Commit 1 is the strict-CI foundation (no Phase 10 box; it is enabling
+  infrastructure — say so). Then which `docs/plan.md` Phase 10 box each subsequent commit ticks (the
   **Web UI** box; and, if included, **Swagger UI** as the same box's sub-clause, **OIDC**, and the
   display half of **Stats/search history**). Tick a box only when its tests are green.
 - **Risks + mitigations** — the **150-file CodeRabbit cap** (lockfile + many components + assets push a
@@ -76,7 +76,7 @@ After I approve via ExitPlanMode, leave plan mode and execute the PER-ITEM LOOP 
 
 ## READ FIRST
 
-`AGENTS.md`; `docs/plan.md` (Phase 8 — the eight boxes); `docs/ideas.md` **§9 (Security model)** +
+`AGENTS.md`; `docs/plan.md` (Phase 10 — the eight boxes); `docs/ideas.md` **§9 (Security model)** +
 **§13 (positioning — no "Prowlarr replacement" claim yet)**; `docs/architecture.md` — **invariant #3**
 (the Torznab \*arr-facing contract and the management OpenAPI surface stay SEPARATE — the SPA talks ONLY
 to the management API, never the Torznab tree) and **invariant #5** (SQLite only). `docs/divergences.md`
@@ -276,7 +276,7 @@ this commit. Concretely:
   the depth. CI stays fully **offline and deterministic** — no live \*arr, no browser-against-internet
   smoke (defer any such smoke with a `[Tracked: …]` disposition).
 
-## WORK LIST — each unchecked Phase 8 (web-UI) box is one item, in dependency order
+## WORK LIST — each unchecked Phase 10 (web-UI) box is one item, in dependency order
 
 1. **Strict-CI foundation** (Commit 1; enabling infrastructure, **no plan.md box** — say so in the
    commit): the qui-aligned `web/` scaffold that builds empty, plus the blocking strict gate wired into
@@ -303,23 +303,23 @@ this commit. Concretely:
    backend data layer and is a **prerequisite/sibling PR** — if it is not yet merged, scope this item to
    (a) the **debounced `api_keys.last_used_at` touch-writer** (the small backend half that lets the UI
    show key activity) + (b) the UI activity/stats views over whatever read API exists, and record the
-   data-layer gap as `[Tracked: Phase 8 — stats data layer]`. *(plan.md "Stats / search history" box —
+   data-layer gap as `[Tracked: Phase 10 — stats data layer]`. *(plan.md "Stats / search history" box —
    display half only.)*
 
-**Explicitly OUT of scope — separate follow-on Phase 8 PRs (one line each, do NOT build here):**
-- \*arr application sync (sync contract + lifecycle; its own sub-plan) — `[Tracked: Phase 8 — *arr app-sync]`
-- Jackett/Prowlarr migration import (reads `prowlarr.db` `Indexers.Settings` JSON) — `[Tracked: Phase 8 — Prowlarr import]`
-- Native harbrr → autobrr push — `[Tracked: Phase 8 — autobrr push]`
-- Cross-seed search backend — `[Tracked: Phase 8 — cross-seed]`
+**Explicitly OUT of scope — separate follow-on Phase 10 PRs (one line each, do NOT build here):**
+- \*arr application sync (sync contract + lifecycle; its own sub-plan) — `[Tracked: Phase 10 — *arr app-sync]`
+- Jackett/Prowlarr migration import (reads `prowlarr.db` `Indexers.Settings` JSON) — `[Tracked: Phase 10 — Prowlarr import]`
+- Native harbrr → autobrr push — `[Tracked: Phase 10 — autobrr push]`
+- Cross-seed search backend — `[Tracked: Phase 10 — cross-seed]`
 - Stats/search-history **data layer** (event-log schema + writers + query API) and **notifications**
-  (Discord/webhook) — `[Tracked: Phase 8 — stats data layer / notifications]`
-- Postgres — **NOT a Phase 8 item; out of the alpha roadmap entirely.** Demand-gated — build only when
+  (Discord/webhook) — `[Tracked: Phase 10 — stats data layer / notifications]`
+- Postgres — **NOT a Phase 10 item; out of the alpha roadmap entirely.** Demand-gated — build only when
   a real multi-instance user needs it. Do NOT touch it here beyond keeping `dbinterface` dialect-portable
   (the `Rebind` seam). See `docs/plan.md` → "Beyond the alpha — not scheduled (demand-gated)".
 - **OIDC full implementation** (net-new config struct + provider client + session integration — the
   `/api/auth/oidc/*` endpoints are 501 and there is **no config seam** today; correct the
   `secrets/testdata/README.md` "only a config seam exists" claim when that PR lands) —
-  `[Tracked: Phase 8 — OIDC]`. Until then the UI **hides OIDC** (treats both endpoints as unavailable).
+  `[Tracked: Phase 10 — OIDC]`. Until then the UI **hides OIDC** (treats both endpoints as unavailable).
   *(If the approved plan elects to include OIDC here, promote it to a numbered work-list item and tick
   the OIDC box; default is deferred.)*
 
@@ -362,8 +362,8 @@ commit (Commit 1 ticks no box — it is enabling infrastructure).
 - f) END-TO-END PHASE REVIEW + completeness critic ("which view / secret path / contract boundary /
   drift / a11y claim is unverified?"); close gaps. Record any divergence (the strict-CI gate vs qui's
   exact config; any extra TS strictness; the deferred OIDC + stats-data-layer gaps; the drift model
-  chosen) with an explicit disposition in a Phase 8 / `web` testdata or `web/README.md` note and add it
-  to `docs/divergences.md`. Add the Phase 8 web-UI improvements to `docs/highlights.md` (honestly
+  chosen) with an explicit disposition in a Phase 10 / `web` testdata or `web/README.md` note and add it
+  to `docs/divergences.md`. Add the Phase 10 web-UI improvements to `docs/highlights.md` (honestly
   labelled `[shipped]`/`[partial]`/`[planned]` — and do NOT claim "Prowlarr replacement").
 - g) KEEP THE PR ≤150 FILES (CodeRabbit auto-skips above 150; a UI PR is at high risk — `node_modules`
   must be gitignored, but the lockfile + many components + the committed `web/dist` bundle count, so
@@ -390,5 +390,5 @@ API-key mgmt + feed-URL builder, Swagger UI, stats display); frontend + integrat
 coverage; how the SPA is embedded/served and that the two contracts stayed separate; the drift model +
 bundle/file-count vs the 150 cap; explicit confirmation that no decrypted credential reaches the
 browser, DOM, network, sourcemap, logs, or a commit; known divergences + dispositions (incl. every
-deferred Phase 8 box — OIDC, stats data layer, app-sync, import, push, cross-seed, notifications,
+deferred Phase 10 box — OIDC, stats data layer, app-sync, import, push, cross-seed, notifications,
 Postgres); and open questions.
