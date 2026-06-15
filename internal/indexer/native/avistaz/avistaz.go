@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
@@ -21,8 +22,8 @@ import (
 )
 
 // driver is one configured AvistaZ-family instance. It is built once per instance
-// and cached by the registry; the bearer token (added in the auth commit) is held
-// per driver and refreshed reactively on a 401/412.
+// and cached by the registry; the bearer token is held per driver and refreshed
+// reactively on a 401/412.
 type driver struct {
 	def     *loader.Definition
 	caps    *mapper.Capabilities
@@ -31,6 +32,9 @@ type driver struct {
 	baseURL string // normalised with a single trailing slash
 	clock   func() time.Time
 	profile profile
+
+	mu    sync.Mutex
+	token string // cached bearer; refreshed reactively
 }
 
 var _ native.Driver = (*driver)(nil)
@@ -100,7 +104,9 @@ func (d *driver) Grab(_ context.Context, _ string) (*search.GrabResult, error) {
 	return nil, errors.New("avistaz: grab not implemented")
 }
 
-// Test authenticates the configured credentials. Implemented in the auth commit.
-func (d *driver) Test(_ context.Context) error {
-	return errors.New("avistaz: test not implemented")
+// Test verifies the configured credentials authenticate (the management
+// "test indexer" action). It forces a fresh token fetch.
+func (d *driver) Test(ctx context.Context) error {
+	_, err := d.refreshToken(ctx)
+	return err
 }
