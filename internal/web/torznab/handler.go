@@ -219,7 +219,10 @@ func (h *handler) dlRewriter(r *http.Request, idx Indexer) tzn.AcquisitionRewrit
 		}
 		token, err := encodeDLToken(h.dlToken, indexerID, original)
 		if err != nil {
-			return "", "", false
+			// Fail closed: never fall back to the original (passkey-bearing) link.
+			// Emit a /dl URL with an empty token — the proxy rejects it at grab time —
+			// so the release is visible but un-grabbable rather than leaking the passkey.
+			return dlURLWithToken(base, apiKey, ""), stableGUID(indexerID, original), true
 		}
 		return dlURLWithToken(base, apiKey, token), stableGUID(indexerID, original), true
 	}
