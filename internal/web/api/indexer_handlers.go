@@ -27,7 +27,9 @@ type definitionSummary struct {
 
 // listDefinitions returns the available tracker definitions (loaded once, cached).
 func (rt *router) listDefinitions(w http.ResponseWriter, _ *http.Request) {
-	rt.defsOnce.Do(func() { rt.defs, rt.defsErr = loadDefinitionSummaries(rt.loader) })
+	rt.defsOnce.Do(func() {
+		rt.defs, rt.defsErr = loadDefinitionSummaries(rt.loader, rt.registry.NativeDefinitions())
+	})
 	if rt.defsErr != nil {
 		rt.writeServiceError(w, "list definitions", rt.defsErr)
 		return
@@ -35,20 +37,28 @@ func (rt *router) listDefinitions(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, rt.defs)
 }
 
-// loadDefinitionSummaries loads and summarizes all definitions, sorted by id.
-func loadDefinitionSummaries(l *loader.Loader) ([]definitionSummary, error) {
+// loadDefinitionSummaries summarizes all addable definitions — the vendored
+// Cardigann corpus plus the native families (AvistaZ, …) — sorted by id.
+func loadDefinitionSummaries(l *loader.Loader, nativeDefs []*loader.Definition) ([]definitionSummary, error) {
 	defs, _, err := l.LoadAll()
 	if err != nil {
 		return nil, fmt.Errorf("api: load definitions: %w", err)
 	}
-	out := make([]definitionSummary, 0, len(defs))
+	out := make([]definitionSummary, 0, len(defs)+len(nativeDefs))
 	for _, d := range defs {
-		out = append(out, definitionSummary{
-			ID: d.ID, Name: d.Name, Description: d.Description, Type: d.Type, Language: d.Language,
-		})
+		out = append(out, summaryOf(d))
+	}
+	for _, d := range nativeDefs {
+		out = append(out, summaryOf(d))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
+}
+
+func summaryOf(d *loader.Definition) definitionSummary {
+	return definitionSummary{
+		ID: d.ID, Name: d.Name, Description: d.Description, Type: d.Type, Language: d.Language,
+	}
 }
 
 // instanceResponse is the API view of a configured indexer (no secrets).
