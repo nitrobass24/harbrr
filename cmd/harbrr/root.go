@@ -29,6 +29,6 @@ func newRootCmd() *cobra.Command {
 	pf.String("data-dir", d.DataDir, "data directory")
 	pf.String("db-path", d.Database.Path, "SQLite database path (default: <data-dir>/harbrr.db)")
 
-	root.AddCommand(newServeCmd(), newVersionCmd())
+	root.AddCommand(newServeCmd(), newVersionCmd(), newRotateKeyCmd())
 	return root
 }

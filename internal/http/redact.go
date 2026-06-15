@@ -1,6 +1,7 @@
 package http
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -158,4 +159,75 @@ func RedactError(err error) string {
 	}
 	msg := authHeaderRe.ReplaceAllString(err.Error(), "${1}${2}<redacted>")
 	return secretTokenRe.ReplaceAllString(msg, "${1}${2}<redacted>")
+}
+
+// RedactProxyURL is RedactURL for a proxy URL: it scrubs the WHOLE userinfo
+// (username AND password — a proxy username can itself be an account id), not just
+// the password as RedactURL does, plus any secret query parameters. An unparseable
+// URL falls back to RedactURL's own unparseable handling.
+func RedactProxyURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return RedactURL(raw)
+	}
+	if u.User != nil {
+		u.User = url.User(redactedValue)
+	}
+	return RedactURL(u.String())
+}
+
+// jsonSecretKeys are JSON object keys whose values are credentials/PII and are
+// redacted wholesale by RedactJSONBody (case-insensitive). Covers the FlareSolverr
+// /v1 request/response shape (cookies, postData, userAgent) plus the cf_clearance
+// a solution carries and the standard auth headers.
+var jsonSecretKeys = map[string]struct{}{
+	"cookie": {}, "cookies": {}, "set-cookie": {},
+	"postdata": {}, "useragent": {}, "user-agent": {}, "cf_clearance": {},
+	"authorization": {}, "proxy-authorization": {},
+	"token": {}, "apikey": {}, "api_key": {}, "passkey": {}, "password": {}, "secret": {},
+	// FlareSolverr solution fields: the raw page HTML (may embed session tokens) and
+	// the response header map (Set-Cookie etc.) are redacted wholesale, and the
+	// request "proxy" field may embed user:pass.
+	"response": {}, "headers": {}, "proxy": {},
+}
+
+// RedactJSONBody returns body with the values of any credential-shaped keys (at any
+// nesting depth) replaced by a placeholder, so a FlareSolverr /v1 request/response
+// body can be logged safely (RedactURL/RedactHeader cannot reach JSON). A body that
+// is not valid JSON is replaced wholesale rather than risk leaking it raw.
+func RedactJSONBody(body []byte) []byte {
+	var v any
+	if err := json.Unmarshal(body, &v); err != nil {
+		return []byte(`"` + redactedValue + `"`)
+	}
+	out, err := json.Marshal(scrubJSON(v))
+	if err != nil {
+		return []byte(`"` + redactedValue + `"`)
+	}
+	return out
+}
+
+// scrubJSON recursively replaces the value of any secret-named key with the
+// placeholder, recursing into nested objects/arrays otherwise.
+func scrubJSON(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, val := range t {
+			if _, secret := jsonSecretKeys[strings.ToLower(k)]; secret {
+				out[k] = redactedValue
+				continue
+			}
+			out[k] = scrubJSON(val)
+		}
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, val := range t {
+			out[i] = scrubJSON(val)
+		}
+		return out
+	default:
+		return v
+	}
 }
