@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/magnet"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 )
 
@@ -323,10 +324,10 @@ func (n *Normalizer) applyURLs(r *Release, f map[string]string) {
 // for private sites)"); the magnet->info-hash direction is unconditional.
 func synthesize(r *Release, indexerType string) {
 	if r.Magnet == "" && r.InfoHash != "" && indexerType != indexerTypePrivate {
-		r.Magnet = infoHashToMagnet(r.InfoHash, r.Title)
+		r.Magnet = magnet.FromInfoHash(r.InfoHash, r.Title)
 	}
 	if r.Magnet != "" && strings.TrimSpace(r.InfoHash) == "" {
-		r.InfoHash = magnetToInfoHash(r.Magnet)
+		r.InfoHash = magnet.ToInfoHash(r.Magnet)
 	}
 }
 
