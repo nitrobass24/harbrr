@@ -118,17 +118,24 @@ and the shared disposition rule.
 - **`U+FFFD` handling** — `sanitizeXMLText` strips the Jackett control/BOM/
   noncharacter set and lone surrogates / invalid UTF-8 bytes, but preserves a
   genuine 3-byte `U+FFFD` (which Jackett's regex also preserves). **`[Accepted]`**
-- **Download links served direct** — harbrr serves the tracker download/magnet
-  link as extracted (the passkey it may carry is intended output, never logged).
-  Phase 5 wires the engine's `ResolveDownload` into the served feed: the
-  `torznab.Indexer` contract gains `NeedsResolver()` + `ResolveDownload()`, and
-  `resolveDownloadLinks` rewrites each served page's link when the def declares a
-  download block. The **direct-link trackers** Phase 5 targets report
-  `NeedsResolver()==false`, so their link (the tracker's direct torrent URL with
-  passkey) is served unchanged and a grab works — proven by the live smoke. A
-  grab-time **`/dl` proxy** (resolve through harbrr's session at fetch time,
-  avoiding per-search resolution) and the resolver's own *completion* are
-  `[Tracked: Phase 7]`. **`[Partial: Phase 5 — ResolveDownload wired; /dl proxy Phase 7]`**
+- **Download links served direct (direct-link trackers)** — harbrr serves a
+  direct-link tracker's download/magnet link as extracted (the passkey it may carry
+  is intended output, never logged). These report `NeedsResolver()==false`, so their
+  link is served unchanged and a grab works — proven by the live smoke. **`[Accepted]`**
+- **Resolver-needing links routed through the /dl proxy** — RESOLVED in Phase 7. A
+  `NeedsResolver()` indexer no longer resolves links inline at feed time (which
+  fetched a tracker page per served release). The feed instead emits an opaque
+  `/dl?apikey=…&token=…` URL (the pre-resolution link sealed with the keyring, bound
+  to the indexer via AAD) and a stable, passkey-free sha256 `<guid>`; all resolution
+  + fetching happens once, at grab time, when *arr GETs `/dl`. The `torznab.Indexer`
+  contract swaps `ResolveDownload` for `Grab` (resolve + fetch the torrent through
+  the session, honouring `download.method`/`headers`; a magnet 302s). The passkey
+  never appears in the feed, a log, an error, or a redirect Location. In plaintext
+  mode the token degrades to base64url(link) under the loud startup warning; the
+  forgeable-token SSRF is a known, gated limitation (apikey-required, encrypted by
+  default, single-user self-hosted — no host filter so a LAN tracker still works).
+  Tests: `handler_test.go` (`TestServeDL_*`, `TestHandlerProxiesResolverLinks`,
+  `TestHandlerProxyGUIDStable`), `dltoken_test.go`. **`[Resolved: Phase 7]`**
 
 ### HTTP handler (`internal/web/torznab`)
 
