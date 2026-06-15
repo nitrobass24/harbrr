@@ -182,7 +182,7 @@ edge gaps so harbrr matches Jackett on **every** tracker shape, not just direct-
 This is the deliberate, scoped **un-freeze** of the engine (Phase 6 froze it for operational
 safety); it stays offline-gated against the parity oracle.
 
-- [ ] **Complete the download resolver**: `.DownloadUri` template namespace, `before.inputs`/
+- [x] **Complete the download resolver**: `.DownloadUri` template namespace, `before.inputs`/
       `before.pathselector`, download-selector template eval, `download.infohash`/`method: post`/
       `headers`, `testlinktorrent` (Phase 2 ships selectors + `before.path`; see `parity/testdata/README.md`).
       Includes the grab-time **`/dl` proxy** (resolve a link through harbrr's session at grab time) — the

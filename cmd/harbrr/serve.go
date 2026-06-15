@@ -106,6 +106,7 @@ func serve(ctx context.Context, cfg *config.Config, log zerolog.Logger) error {
 		torznab.WithAPIKeyValidator(apiKeyValidator(authSvc)),
 		torznab.WithBasePath(cfg.Server.BaseURL),
 		torznab.WithLogger(log),
+		torznab.WithDLToken(keyring),
 	)
 
 	srv := server.New(server.Deps{Management: mgmt, Torznab: tz, Spec: swagger.Spec(), Logger: log},
