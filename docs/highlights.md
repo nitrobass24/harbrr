@@ -166,6 +166,11 @@ site/docs land later.
   MagnetUtil), `method: post`/`headers`, and `testlinktorrent` — so resolver-needing
   trackers (not just direct-link ones) grab correctly, resolved once at grab time.
   *(`internal/indexer/cardigann/search/download.go`, `.../grab.go`)* `[shipped]`
+- **XML backend edge parity.** CDATA (literal content + boundary concatenation),
+  comments, default/nested/redeclared/undeclared namespaces, and the `:has`/`:contains`
+  selector shims all match AngleSharp's selectable output across HTML/JSON/XML,
+  pinned by fixtures — not just the common RSS/Newznab shapes.
+  *(`selector/xml_test.go`, `parity/testdata/matrix-xml-cdata`)* `[shipped]`
 - **Caps/category correctness is a gate.** Sonarr/Radarr failures usually trace to
   capabilities/category behavior, not the result envelope — so the caps document +
   category tree + tracker→newznab mapping are explicitly oracle-tested. *(Phase 3 —

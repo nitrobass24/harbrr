@@ -1,0 +1,27 @@
+{
+  "results": [
+    {
+      "name": "JSON Has Movie 1080p",
+      "size": 4000000000,
+      "seeders": 22,
+      "leechers": 8,
+      "cat": "movies",
+      "dl": "https://jsonhas.test/dl/1.torrent"
+    },
+    {
+      "name": "Placeholder With No Download",
+      "size": 0,
+      "seeders": 0,
+      "leechers": 0,
+      "cat": "movies"
+    },
+    {
+      "name": "JSON Has Show 720p",
+      "size": 1500000000,
+      "seeders": 5,
+      "leechers": 2,
+      "cat": "tv",
+      "dl": "https://jsonhas.test/dl/2.torrent"
+    }
+  ]
+}

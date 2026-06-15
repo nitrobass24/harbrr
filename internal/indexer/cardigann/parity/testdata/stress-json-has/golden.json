@@ -1,0 +1,28 @@
+[
+  {
+    "title": "JSON Has Movie 1080p",
+    "link": "https://jsonhas.test/dl/1.torrent",
+    "size": 4000000000,
+    "categories": [
+      2000
+    ],
+    "seeders": 22,
+    "leechers": 8,
+    "peers": 30,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  },
+  {
+    "title": "JSON Has Show 720p",
+    "link": "https://jsonhas.test/dl/2.torrent",
+    "size": 1500000000,
+    "categories": [
+      5000
+    ],
+    "seeders": 5,
+    "leechers": 2,
+    "peers": 7,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  }
+]

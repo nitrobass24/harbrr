@@ -1,0 +1,28 @@
+[
+  {
+    "title": "Freeleech Movie 1080p",
+    "link": "https://shim.test/get/1.torrent",
+    "size": 1073741824,
+    "categories": [
+      2000
+    ],
+    "seeders": 10,
+    "leechers": 2,
+    "peers": 12,
+    "downloadVolumeFactor": 0,
+    "uploadVolumeFactor": 1
+  },
+  {
+    "title": "Normal Show 720p",
+    "link": "https://shim.test/get/2.torrent",
+    "size": 734003200,
+    "categories": [
+      2000
+    ],
+    "seeders": 5,
+    "leechers": 1,
+    "peers": 6,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  }
+]

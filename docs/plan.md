@@ -189,7 +189,7 @@ safety); it stays offline-gated against the parity oracle.
       output-layer half of the same feature.
 - [x] **XML backend edge parity**: CDATA / mixed-namespace / AngleSharp-vs-cascadia edge cases beyond the
       common RSS/Newznab shapes Phase 2 covers
-- [ ] Broaden response-mode and definition coverage; expand selector/date edge-case fixtures
+- [x] Broaden response-mode and definition coverage; expand selector/date edge-case fixtures
 
 ## Phase 8 — Native Avistaz family
 
