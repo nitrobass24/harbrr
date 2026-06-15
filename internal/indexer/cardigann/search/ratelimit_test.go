@@ -27,6 +27,13 @@ func TestParseRetryAfter(t *testing.T) {
 		{"http-date future", "Thu, 01 Jan 2026 12:00:30 GMT", 30 * time.Second},
 		{"http-date past", "Thu, 01 Jan 2026 11:59:30 GMT", 0},
 		{"over cap", "100000", maxRetryAfter},
+		// In-int but the *time.Second multiply would overflow int64 ns → cap, not wrap.
+		{"in-int multiply-overflow", "9999999999", maxRetryAfter},
+		// All digits but too large for int (strconv.ErrRange): must clamp to the cap,
+		// NOT fall through to 0 ("retry immediately").
+		{"oversized numeric clamps to cap", "999999999999999999999999999", maxRetryAfter},
+		// Oversized NEGATIVE numeric is meaningless for a delay → 0 (not the cap).
+		{"oversized negative numeric is zero", "-999999999999999999999999999", 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
