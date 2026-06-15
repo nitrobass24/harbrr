@@ -26,7 +26,7 @@ var errDownloadTooLarge = errors.New("avistaz: download exceeds the size cap")
 // empty. No error carries the download URL (its key may sit in the path, which the
 // query-scoped URL redactor would not catch), and the bytes go to /dl, never a log.
 func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, error) {
-	resp, err := d.get(ctx, link)
+	resp, err := d.get(ctx, link, "")
 	if err != nil {
 		return nil, sanitizeGrabError(err)
 	}
@@ -38,7 +38,7 @@ func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, err
 			StatusCode: resp.StatusCode,
 			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.clock),
 		}
-	case resp.StatusCode == stdhttp.StatusUnauthorized:
+	case resp.StatusCode == stdhttp.StatusUnauthorized || resp.StatusCode == stdhttp.StatusPreconditionFailed:
 		return nil, fmt.Errorf("avistaz: download unauthorized: %w", login.ErrLoginFailed)
 	case resp.StatusCode < 200 || resp.StatusCode >= 300:
 		return nil, fmt.Errorf("avistaz: download returned HTTP %d", resp.StatusCode)

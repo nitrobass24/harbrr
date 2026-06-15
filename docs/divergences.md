@@ -76,6 +76,7 @@ grep -rn '\[Tracked' \
   internal/torznab/testdata/README.md \
   internal/secrets/testdata/README.md \
   internal/indexer/registry/testdata/README.md \
+  internal/indexer/native/avistaz/testdata/README.md \
   internal/smoke/README.md
 ```
 

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
 
@@ -172,6 +173,12 @@ func TestSearchStatusDispatch(t *testing.T) {
 	if !errors.As(err, &rl) {
 		t.Errorf("429: err=%v, want *search.RateLimitedError", err)
 	}
+
+	// A 412 surviving get's reactive re-auth is an auth failure.
+	_, err = mk(stdhttp.StatusPreconditionFailed, `{}`).Search(context.Background(), search.Query{Keywords: "x"})
+	if !errors.Is(err, login.ErrLoginFailed) {
+		t.Errorf("412: err=%v, want login.ErrLoginFailed", err)
+	}
 }
 
 // TestSearchIssuesBearerRequest proves Search drives the built URL with the Bearer
@@ -206,6 +213,9 @@ func TestSearchIssuesBearerRequest(t *testing.T) {
 	}
 	if got.method != stdhttp.MethodGet || got.auth != "Bearer tok-9" {
 		t.Errorf("torrents request = %s auth=%q, want GET Bearer tok-9", got.method, got.auth)
+	}
+	if got.accept != "application/json" {
+		t.Errorf("search Accept = %q, want application/json", got.accept)
 	}
 	u, _ := url.Parse(got.url)
 	if u.Query().Get("type") != "1" || u.Query().Get("search") != "dune" {

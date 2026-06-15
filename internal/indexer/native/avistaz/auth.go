@@ -134,12 +134,12 @@ func (d *driver) refreshToken(ctx context.Context) (string, error) {
 // (Prowlarr's CheckIfLoginNeeded) and retrying. The caller owns the returned body
 // and interprets the status (404/429/2xx). The URL may carry no secret (the bearer
 // is a header), but errors still redact it.
-func (d *driver) get(ctx context.Context, rawurl string) (*stdhttp.Response, error) {
+func (d *driver) get(ctx context.Context, rawurl, accept string) (*stdhttp.Response, error) {
 	token, err := d.ensureToken(ctx)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := d.sendBearer(ctx, rawurl, token)
+	resp, err := d.sendBearer(ctx, rawurl, token, accept)
 	if err != nil {
 		return nil, err
 	}
@@ -149,19 +149,23 @@ func (d *driver) get(ctx context.Context, rawurl string) (*stdhttp.Response, err
 		if err != nil {
 			return nil, err
 		}
-		return d.sendBearer(ctx, rawurl, token)
+		return d.sendBearer(ctx, rawurl, token, accept)
 	}
 	return resp, nil
 }
 
-// sendBearer sends one GET with the Authorization: Bearer header.
-func (d *driver) sendBearer(ctx context.Context, rawurl, token string) (*stdhttp.Response, error) {
+// sendBearer sends one GET with the Authorization: Bearer header. accept sets the
+// Accept header when non-empty: the search expects JSON, but a torrent download must
+// not force JSON (a strict server could 406 or return JSON instead of the .torrent).
+func (d *driver) sendBearer(ctx context.Context, rawurl, token, accept string) (*stdhttp.Response, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
 		return nil, fmt.Errorf("avistaz: build request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/json")
+	if accept != "" {
+		req.Header.Set("Accept", accept)
+	}
 	resp, err := d.doer.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("avistaz: request to %s: %w", apphttp.RedactURL(rawurl), err)

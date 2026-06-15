@@ -67,6 +67,9 @@ func TestGrab(t *testing.T) {
 	if dl.method != stdhttp.MethodGet || dl.auth != "Bearer tok-grab" {
 		t.Errorf("download request = %s auth=%q, want GET Bearer tok-grab", dl.method, dl.auth)
 	}
+	if dl.accept != "" {
+		t.Errorf("download Accept = %q, want empty (do not force JSON on a .torrent)", dl.accept)
+	}
 	assertNoSecret(t, string(res.Body))
 	assertNoSecret(t, dl.url)
 }
@@ -95,6 +98,11 @@ func TestGrabStatusErrors(t *testing.T) {
 	_, err = mk(stdhttp.StatusUnauthorized).Grab(context.Background(), "https://az.test/dl/1")
 	if !errors.Is(err, login.ErrLoginFailed) {
 		t.Errorf("401: err = %v, want login.ErrLoginFailed", err)
+	}
+
+	_, err = mk(stdhttp.StatusPreconditionFailed).Grab(context.Background(), "https://az.test/dl/1")
+	if !errors.Is(err, login.ErrLoginFailed) {
+		t.Errorf("412: err = %v, want login.ErrLoginFailed", err)
 	}
 
 	_, err = mk(stdhttp.StatusInternalServerError).Grab(context.Background(), "https://az.test/dl/1")

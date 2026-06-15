@@ -40,7 +40,7 @@ const (
 // suppression of NotFound); a 429 is a rate-limit error; any other non-2xx is an
 // error. The response body is parsed in the parser commit.
 func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
-	resp, err := d.get(ctx, d.buildSearchURL(q))
+	resp, err := d.get(ctx, d.buildSearchURL(q), "application/json")
 	if err != nil {
 		return nil, err
 	}
@@ -54,8 +54,8 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 			StatusCode: resp.StatusCode,
 			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.clock),
 		}
-	case resp.StatusCode == stdhttp.StatusUnauthorized:
-		// A 401 that survives get's reactive re-auth is a genuine auth failure.
+	case resp.StatusCode == stdhttp.StatusUnauthorized || resp.StatusCode == stdhttp.StatusPreconditionFailed:
+		// A 401/412 that survives get's reactive re-auth is a genuine auth failure.
 		return nil, fmt.Errorf("avistaz: search unauthorized: %w", login.ErrLoginFailed)
 	case resp.StatusCode < 200 || resp.StatusCode >= 300:
 		return nil, fmt.Errorf("avistaz: search returned HTTP %d", resp.StatusCode)

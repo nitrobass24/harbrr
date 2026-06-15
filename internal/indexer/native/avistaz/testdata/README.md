@@ -37,7 +37,7 @@ the **Phase 9** gate.
   results). Acceptable for the offline gate; confirm at scale in the Phase 9 differential.
 - **`limit` always `PageSize`, single-page fetch** — `[Accepted]`. harbrr always sends
   `limit=50` and fetches one page; it does not send `page`. This matches Prowlarr, which
-  declares `SupportsPagination => false` for the family (so *arr never sends an offset,
+  declares `SupportsPagination => false` for the family (so \*arr never sends an offset,
   and Prowlarr's `page` branch is dead for these sites). harbrr's Torznab handler applies
   the requested `limit`/`offset` window response-side.
 - **Search-type inference** — `[Accepted]`. harbrr's `search.Query` drops the Torznab
@@ -65,7 +65,7 @@ the **Phase 9** gate.
   downstream consumes them.
 - **Row with no `download` URL skipped** — `[Deliberate]`. Such a row is un-grabbable;
   harbrr's normalizer requires an acquisition link, so the driver drops it rather than
-  serve a feed item *arr cannot download. Prowlarr would include it with an empty
+  serve a feed item \*arr cannot download. Prowlarr would include it with an empty
   `DownloadUrl`.
 - **Bad-row handling** — `[Accepted]`. A malformed body, a `2xx` with no `data` array
   (a `{}`/`null`/maintenance stub — `{"data":[]}` is a legitimate empty result), an

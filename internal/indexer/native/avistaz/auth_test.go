@@ -16,7 +16,7 @@ import (
 // recordedReq captures one issued request for assertions a black-box transport
 // cannot make (the auth POST body, the Bearer header).
 type recordedReq struct {
-	method, url, body, auth, contentType string
+	method, url, body, auth, contentType, accept string
 }
 
 // scriptDoer records every request and serves a scripted response.
@@ -32,7 +32,7 @@ func (s *scriptDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
 		b, _ := io.ReadAll(req.Body)
 		body = string(b)
 	}
-	s.reqs = append(s.reqs, recordedReq{req.Method, req.URL.String(), body, req.Header.Get("Authorization"), req.Header.Get("Content-Type")})
+	s.reqs = append(s.reqs, recordedReq{req.Method, req.URL.String(), body, req.Header.Get("Authorization"), req.Header.Get("Content-Type"), req.Header.Get("Accept")})
 	return s.handler(req, body), nil
 }
 
@@ -164,7 +164,7 @@ func TestReactiveRefresh(t *testing.T) {
 		return resp(stdhttp.StatusOK, `{"data":[]}`)
 	}}
 	d := newDriver(doer)
-	r, err := d.get(context.Background(), d.baseURL+"api/v1/jackett/torrents?in=1")
+	r, err := d.get(context.Background(), d.baseURL+"api/v1/jackett/torrents?in=1", "application/json")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
