@@ -37,8 +37,8 @@ func (e *engineIndexer) Search(_ context.Context, q search.Query) ([]*normalizer
 
 func (e *engineIndexer) NeedsResolver() bool { return e.engine.NeedsResolver() }
 
-func (e *engineIndexer) ResolveDownload(ctx context.Context, l string) (string, error) {
-	return e.engine.ResolveDownload(ctx, l)
+func (e *engineIndexer) Grab(ctx context.Context, l string) (*search.GrabResult, error) {
+	return e.engine.Grab(ctx, l)
 }
 
 func readTestdata(t *testing.T, name string) []byte {

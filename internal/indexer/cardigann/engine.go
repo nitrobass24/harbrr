@@ -313,11 +313,6 @@ func (e *Engine) Test(ctx context.Context) error {
 	return e.login.EnsureLoggedIn(ctx, e.def) //nolint:wrapcheck // the API layer sanitizes/maps this error.
 }
 
-// ResolveDownload turns a release's download link into the real torrent URL when
-// the definition declares a download block (selectors + optional before
-// pre-request). A def with no download block returns the link unchanged. It
-// ensures the session first (the download page is usually behind login) and
-// drives the same Doer as Search.
 // NeedsResolver reports whether the definition declares a download block, so a
 // served release link must be resolved (via ResolveDownload) before a grab. A
 // direct-link tracker (no download block) reports false.
@@ -325,7 +320,16 @@ func (e *Engine) NeedsResolver() bool {
 	return e.def.Download != nil
 }
 
-func (e *Engine) ResolveDownload(ctx context.Context, link string) (string, error) {
+// ResolveDownload turns a release's download link into the real torrent URL when
+// the definition declares a download block (the full Jackett download algorithm:
+// before pre-request, infohash->magnet, selectors). A def with no download block
+// returns the link unchanged. It ensures the session first (the download page is
+// usually behind login) and drives the same Doer as Search.
+//
+// validate runs the grab-time testlinktorrent check: pass true only when resolving
+// for an actual grab (the /dl proxy) or simulating one (the parity harness). Feed-
+// time pre-resolution passes false so it never fetches a torrent per served release.
+func (e *Engine) ResolveDownload(ctx context.Context, link string, validate bool) (string, error) {
 	if e.def.Download == nil {
 		return link, nil
 	}
@@ -335,11 +339,30 @@ func (e *Engine) ResolveDownload(ctx context.Context, link string) (string, erro
 	if err := e.ensureSession(ctx); err != nil {
 		return "", fmt.Errorf("cardigann: login for %q: %w", e.def.ID, err)
 	}
-	resolved, err := search.ResolveDownload(ctx, e.def, link, e.login.Session(), e.doer, e.deps)
+	resolved, err := search.ResolveDownload(ctx, e.def, link, e.login.Session(), e.doer, e.deps, validate)
 	if err != nil {
 		return "", fmt.Errorf("cardigann: resolving download for %q: %w", e.def.ID, err)
 	}
 	return resolved, nil
+}
+
+// Grab performs the full grab-time download for a release link: resolve it (with
+// testlinktorrent validation) and fetch the torrent through the session honouring
+// download.method/headers. A magnet is returned as a redirect target. This is what
+// the /dl proxy drives so a passkey-bearing link is resolved and fetched
+// server-side, never exposed in the served feed.
+func (e *Engine) Grab(ctx context.Context, link string) (*search.GrabResult, error) {
+	if e.doer == nil {
+		return nil, fmt.Errorf("cardigann: Grab for %q requires WithDoer", e.def.ID)
+	}
+	if err := e.ensureSession(ctx); err != nil {
+		return nil, fmt.Errorf("cardigann: login for %q: %w", e.def.ID, err)
+	}
+	result, err := search.Grab(ctx, e.def, link, e.login.Session(), e.doer, e.deps)
+	if err != nil {
+		return nil, fmt.Errorf("cardigann: grabbing download for %q: %w", e.def.ID, err)
+	}
+	return result, nil
 }
 
 // ParseResponse is the offline extraction half: parse a saved response body into

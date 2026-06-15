@@ -31,11 +31,12 @@ type Indexer interface {
 	// served link must be resolved before a grab. Direct-link trackers report
 	// false and their link is served as-is.
 	NeedsResolver() bool
-	// ResolveDownload turns a release's download link into the real torrent URL
-	// (Phase-2 baseline: before.path + selectors). A def with no download block
-	// returns the link unchanged. The full resolver and a grab-time /dl proxy are
-	// Phase 7.
-	ResolveDownload(ctx context.Context, link string) (string, error)
+	// Grab performs the grab-time download: resolve the release link (the full
+	// Cardigann download algorithm, with testlinktorrent validation) and fetch the
+	// torrent through the session, honouring download.method/headers. A magnet is
+	// returned as a redirect. The /dl proxy drives this so a passkey-bearing link is
+	// resolved and fetched server-side, never exposed in the served feed.
+	Grab(ctx context.Context, link string) (*search.GrabResult, error)
 }
 
 // Provider resolves the indexer id from the request path to its Indexer.

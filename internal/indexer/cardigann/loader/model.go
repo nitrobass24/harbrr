@@ -366,13 +366,15 @@ type DownloadBlock struct {
 	Headers   map[string][]string `yaml:"headers,omitempty"`
 }
 
-// BeforeBlock mirrors BeforeBlock.
+// BeforeBlock mirrors BeforeBlock. Inputs is the order-preserving InputsBlock (not
+// a plain map): the before request renders them into a GET query / POST body in
+// DEFINITION ORDER, so the bytes reproduce Jackett's ordered queryCollection.
 type BeforeBlock struct {
-	Path           string            `yaml:"path,omitempty"`
-	PathSelector   *SelectorField    `yaml:"pathselector,omitempty"`
-	Method         string            `yaml:"method,omitempty"`
-	Inputs         map[string]Scalar `yaml:"inputs,omitempty"`
-	QuerySeparator string            `yaml:"queryseparator,omitempty"`
+	Path           string         `yaml:"path,omitempty"`
+	PathSelector   *SelectorField `yaml:"pathselector,omitempty"`
+	Method         string         `yaml:"method,omitempty"`
+	Inputs         InputsBlock    `yaml:"inputs,omitempty"`
+	QuerySeparator string         `yaml:"queryseparator,omitempty"`
 }
 
 // InfoHashBlock mirrors InfoHashBlock.

@@ -59,14 +59,16 @@ func (a *indexerAdapter) Search(ctx context.Context, query search.Query) ([]*nor
 // NeedsResolver reports whether the definition declares a download block.
 func (a *indexerAdapter) NeedsResolver() bool { return a.engine.NeedsResolver() }
 
-// ResolveDownload resolves a release link to the real torrent URL. The error is
-// wrapped with the indexer id (not a secret); the caller redacts it.
-func (a *indexerAdapter) ResolveDownload(ctx context.Context, link string) (string, error) {
-	resolved, err := a.engine.ResolveDownload(ctx, link)
+// Grab performs the grab-time download for a release link (resolve + fetch the
+// torrent through the session). The error is wrapped with the indexer id (not a
+// secret); the caller redacts it. This is the /dl proxy's seam; feed serialization
+// only tokenizes the link, so no resolution runs per served release.
+func (a *indexerAdapter) Grab(ctx context.Context, link string) (*search.GrabResult, error) {
+	result, err := a.engine.Grab(ctx, link)
 	if err != nil {
-		return "", fmt.Errorf("registry: resolve download %q: %w", a.info.ID, err)
+		return nil, fmt.Errorf("registry: grab %q: %w", a.info.ID, err)
 	}
-	return resolved, nil
+	return result, nil
 }
 
 // recordHealth classifies err and, when it is one of the four health kinds,

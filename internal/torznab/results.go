@@ -95,6 +95,14 @@ type torznabAttr struct {
 	Value   string   `xml:"value,attr"`
 }
 
+// AcquisitionRewriter optionally replaces a release's served <link>/<enclosure>
+// URL and its <guid>. It receives the default acquisition link (the resolved link,
+// else the magnet) and returns the replacement link, a replacement guid, and
+// ok=true to apply them; ok=false keeps the defaults. The Torznab handler uses it to
+// route a resolver-needing indexer's links through the /dl proxy so a passkey-bearing
+// link never reaches the feed, while keeping a stable, passkey-free guid.
+type AcquisitionRewriter func(acquisitionLink string) (link, guid string, ok bool)
+
 // MarshalResults renders the Torznab results feed (t=search and the typed search
 // modes) for an indexer's releases. now supplies the pubDate fallback for a
 // release without a date (Jackett uses DateTime.Now). An empty release slice
@@ -102,12 +110,18 @@ type torznabAttr struct {
 // serializer is pure: it renders exactly the releases given, in order; guid
 // de-duplication (Jackett's behavior) is the caller's responsibility via GUIDFor.
 func MarshalResults(feed FeedInfo, releases []*normalizer.Release, now time.Time) ([]byte, error) {
+	return MarshalResultsRewritten(feed, releases, now, nil)
+}
+
+// MarshalResultsRewritten is MarshalResults with an optional per-release acquisition
+// rewriter (the /dl proxy). A nil rewriter serves links and guids unchanged.
+func MarshalResultsRewritten(feed FeedInfo, releases []*normalizer.Release, now time.Time, rewrite AcquisitionRewriter) ([]byte, error) {
 	items := make([]rssItem, 0, len(releases))
 	for _, r := range releases {
 		if r == nil { // boundary guard: the *arr feed must never panic on a stray nil
 			continue
 		}
-		items = append(items, buildItem(feed, r, now))
+		items = append(items, buildItem(feed, r, now, rewrite))
 	}
 	doc := rssFeed{
 		Version:      "2.0",
@@ -151,12 +165,20 @@ func acquisitionLink(r *normalizer.Release) string {
 	return r.Magnet
 }
 
-// buildItem assembles one <item> from a normalized release.
-func buildItem(feed FeedInfo, r *normalizer.Release, now time.Time) rssItem {
+// buildItem assembles one <item> from a normalized release. When rewrite is
+// non-nil and applies, the served <link>/<enclosure> and <guid> are replaced (the
+// /dl proxy), otherwise the resolved link/magnet and GUIDFor are served directly.
+func buildItem(feed FeedInfo, r *normalizer.Release, now time.Time, rewrite AcquisitionRewriter) rssItem {
 	link := acquisitionLink(r)
+	guid := GUIDFor(r)
+	if rewrite != nil {
+		if newLink, newGUID, ok := rewrite(link); ok {
+			link, guid = newLink, newGUID
+		}
+	}
 	item := rssItem{
 		Title:       sanitizeXMLText(r.Title),
-		GUID:        GUIDFor(r),
+		GUID:        guid,
 		Indexer:     jackettIndexer{ID: feed.IndexerID, Name: sanitizeXMLText(feed.Name)},
 		Type:        feed.Type,
 		Comments:    r.Details,
