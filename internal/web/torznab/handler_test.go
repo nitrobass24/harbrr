@@ -391,7 +391,10 @@ func TestServeDL_RedirectsMagnet(t *testing.T) {
 	idx := resolverDemoIndexer(t)
 	idx.grabResult = &search.GrabResult{Redirect: "magnet:?xt=urn:btih:abcdef"}
 	h, kr := newProxyHandler(t, idx)
-	token, _ := encodeDLToken(kr, "demo", "https://demo.test/info/1")
+	token, err := encodeDLToken(kr, "demo", "https://demo.test/info/1")
+	if err != nil {
+		t.Fatalf("encodeDLToken: %v", err)
+	}
 	rec := doDL(t, h, "demo", "token="+url.QueryEscape(token))
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want 302", rec.Code)
@@ -420,7 +423,10 @@ func TestServeDL_RequiresAPIKey(t *testing.T) {
 	t.Parallel()
 	idx := resolverDemoIndexer(t)
 	h, kr := newProxyHandler(t, idx)
-	token, _ := encodeDLToken(kr, "demo", "https://demo.test/download.php?id=1")
+	token, err := encodeDLToken(kr, "demo", "https://demo.test/download.php?id=1")
+	if err != nil {
+		t.Fatalf("encodeDLToken: %v", err)
+	}
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
 		"/api/v2.0/indexers/demo/dl?token="+url.QueryEscape(token), nil)
 	rec := httptest.NewRecorder()
