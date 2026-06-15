@@ -153,8 +153,8 @@ Phase 3 "search real trackers end-to-end" goal.
 - [x] Timeouts, backoff, per-indexer rate limits (anti-blacklist)
 - [x] **Indexer health & status**: define health events (auth failure, rate-limited, parse error,
       anti-bot) and surface per-indexer status via the API; broken indexers already degrade cleanly (Phase 2)
-- [ ] **Per-indexer proxies** (HTTP / SOCKS4 / SOCKS5), configured per instance (the
-      `registry.WithDoerFactory` seam for a per-instance HTTP client is already in place from Phase 4)
+- [x] **Per-indexer proxies** (HTTP / SOCKS5; SOCKS4 deferred `[Tracked]` — `x/net/proxy` has no
+      socks4 dialer), configured per instance via the widened `doerFactory`/`ClientParams`/`newDoer`
 - [ ] **Secret hardening**: key rotation (re-encrypt via the stored `key_id` — already persisted per
       record since Phase 4); secret redaction audited end-to-end across logs, errors, traces, and the
       stats event log

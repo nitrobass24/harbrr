@@ -252,10 +252,20 @@ func (r *Registry) toStored(id int64, name, val string, fields map[string]loader
 	return domain.IndexerSetting{Name: name, ValueEncrypted: blob, KeyID: r.keyring.KeyID(), IsSecret: true}, nil
 }
 
-// classifySecret decides whether a setting is secret, using the definition's
-// field when known and falling back to a text-typed name match otherwise (so an
-// undeclared credential-shaped setting is still encrypted).
+// reservedSecretSettings are daemon-level settings (not declared in vendored
+// definitions) whose values are credential-bearing and must always be encrypted
+// at rest — e.g. a proxy URL may embed user:pass.
+var reservedSecretSettings = map[string]struct{}{
+	"proxy_url": {},
+}
+
+// classifySecret decides whether a setting is secret: a reserved daemon secret key
+// always is; otherwise the definition's field decides, falling back to a text-typed
+// name match (so an undeclared credential-shaped setting is still encrypted).
 func classifySecret(name string, fields map[string]loader.SettingsField) bool {
+	if _, ok := reservedSecretSettings[name]; ok {
+		return true
+	}
 	if f, ok := fields[name]; ok {
 		return f.IsSecret()
 	}

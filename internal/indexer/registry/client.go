@@ -1,10 +1,15 @@
 package registry
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
+	"strings"
 	"time"
+
+	"golang.org/x/net/proxy"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -33,8 +38,63 @@ func newDoer(p ClientParams) (search.Doer, error) {
 	if timeout <= 0 {
 		timeout = defaultHTTPTimeout
 	}
-	base := &http.Client{Jar: jar, Timeout: timeout}
+	transport, err := buildTransport(p.Cfg)
+	if err != nil {
+		return nil, err
+	}
+	base := &http.Client{Jar: jar, Timeout: timeout, Transport: transport}
 	return newPacedDoer(base, p.RateInterval), nil
+}
+
+// buildTransport returns the per-instance HTTP transport: a clone of the default
+// transport routed through the configured proxy (proxy_type + proxy_url), or nil
+// (the stdlib default transport) when no proxy is set. HTTP/HTTPS proxies use
+// Transport.Proxy; SOCKS5 uses an x/net/proxy ContextDialer via DialContext
+// (net/http's env-proxy ignores SOCKS, so the dialer is explicit). A bad config
+// fails loud. Error messages never include proxy_url (it may embed credentials).
+// SOCKS4 is not yet supported (x/net/proxy has no socks4 dialer) — it fails loud.
+func buildTransport(cfg map[string]string) (*http.Transport, error) {
+	proxyType := strings.ToLower(strings.TrimSpace(cfg["proxy_type"]))
+	rawURL := strings.TrimSpace(cfg["proxy_url"])
+	if proxyType == "" && rawURL == "" {
+		return nil, nil //nolint:nilnil // nil transport => the stdlib default (no proxy)
+	}
+	if rawURL == "" {
+		return nil, fmt.Errorf("registry: proxy_type %q set but proxy_url is empty", proxyType)
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, errors.New("registry: proxy_url is not a valid URL")
+	}
+
+	def, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return nil, errors.New("registry: default transport is not *http.Transport")
+	}
+	transport := def.Clone()
+
+	switch proxyType {
+	case "http", "https":
+		transport.Proxy = http.ProxyURL(u)
+	case "socks5", "socks5h":
+		dialer, derr := proxy.FromURL(u, proxy.Direct)
+		if derr != nil {
+			return nil, errors.New("registry: invalid socks5 proxy_url")
+		}
+		cd, ok := dialer.(proxy.ContextDialer)
+		if !ok {
+			return nil, errors.New("registry: socks5 proxy dialer has no DialContext")
+		}
+		transport.DialContext = cd.DialContext
+		// The cloned default transport carries Proxy=ProxyFromEnvironment; clear it
+		// so a stray HTTP(S)_PROXY env var can't layer an HTTP proxy over SOCKS5.
+		transport.Proxy = nil
+	case "socks4", "socks4a":
+		return nil, fmt.Errorf("registry: proxy_type %q is not supported (use socks5 or http)", proxyType)
+	default:
+		return nil, fmt.Errorf("registry: unknown proxy_type %q (want http, https, socks5)", proxyType)
+	}
+	return transport, nil
 }
 
 // resolveTimeout picks the per-instance request timeout: a "timeout" setting
