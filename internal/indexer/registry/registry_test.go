@@ -129,7 +129,7 @@ func newRegistry(t *testing.T, doer search.Doer) (*registry.Registry, *database.
 
 	opts := []registry.Option{registry.WithClock(fixedClock)}
 	if doer != nil {
-		opts = append(opts, registry.WithDoerFactory(func() (search.Doer, error) { return doer, nil }))
+		opts = append(opts, registry.WithDoerFactory(func(registry.ClientParams) (search.Doer, error) { return doer, nil }))
 	}
 	return registry.New(db, loader.New(dropin), keyring, opts...), db
 }
