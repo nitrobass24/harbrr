@@ -155,9 +155,9 @@ Phase 3 "search real trackers end-to-end" goal.
       anti-bot) and surface per-indexer status via the API; broken indexers already degrade cleanly (Phase 2)
 - [x] **Per-indexer proxies** (HTTP / SOCKS5; SOCKS4 deferred `[Tracked]` — `x/net/proxy` has no
       socks4 dialer), configured per instance via the widened `doerFactory`/`ClientParams`/`newDoer`
-- [ ] **Secret hardening**: key rotation (re-encrypt via the stored `key_id` — already persisted per
-      record since Phase 4); secret redaction audited end-to-end across logs, errors, traces, and the
-      stats event log
+- [x] **Secret hardening**: key rotation (`harbrr rotate-key` — dry-run + atomic re-encrypt via the
+      stored `key_id`); secret redaction audited end-to-end (logs/errors + a JSON-body scrubber for
+      FlareSolverr bodies + whole-userinfo proxy-URL scrub; traces/stats event-log don't exist — vacuous)
 
 ## Phase 7 — Scale coverage
 
