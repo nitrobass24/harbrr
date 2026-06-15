@@ -1,0 +1,17 @@
+name: matrix-xml-cdata
+archetype: xml-newznab
+golden_source: hand-derived
+mode: parse
+response_type: xml
+description: >
+  Compatibility matrix: an XML feed whose <title> and <description> use CDATA
+  sections (as many real RSS feeds do). The CDATA content is literal — the '&' and
+  '<BluRay>' inside are character data, NOT entities or markup — so the extracted
+  title is "Movie & Friends 2024 1080p BluRay" and the description keeps its angle
+  brackets and ampersand verbatim (the serializer JSON-escapes them to & /
+  < on the wire). The item's XML comment must NOT leak into any field. Rows
+  are `rss > channel > item`; size 1 GB = 1073741824; peers = 12 + 3.
+definition: definition.yml
+response: response.xml
+query:
+  keywords: ""

@@ -170,11 +170,39 @@ Entries:
   or unescaping percent-encoded unreserved octets in the path. A def needing those
   routes through the existing encode/regex layers.
   **`[Accepted: exact for the corpus; exotic canonicalization unhit]`**
-- **XML backend** — harbrr parses `response.type: xml` into an element tree and
-  queries it with cascadia; Jackett uses AngleSharp's `XmlParser`. The common
-  RSS/Newznab shapes (`<item>`, `<title>`, `<link>`, `torznab:attr`) match;
-  exotic XML (CDATA edge cases, mixed namespaces) is best-effort.
-  **`[Tracked: Phase 7 — XML backend edge parity]`**
+- **XML backend** — RESOLVED in Phase 7. harbrr parses `response.type: xml` into an
+  element tree and queries it with cascadia; Jackett uses AngleSharp's `XmlParser`.
+  The common RSS/Newznab shapes (`<item>`, `<title>`, `<link>`, `torznab:attr`) and
+  the edge cases now match AngleSharp's **selectable output**, pinned by fixtures
+  (`selector/xml_test.go` + parity `matrix-xml-cdata`):
+  - **CDATA** content is literal (`&`/`<…>` are character data, not markup) and text
+    abutting a CDATA section concatenates, including for a `:contains` selector
+    spanning the boundary — AngleSharp's `CDATASection : Text` coalesces the same way.
+  - **comments** are dropped before the tree; AngleSharp keeps a comment as a node but
+    a comment is non-text, so `.TextContent`/`:contains` exclude it in both — the
+    selectable output is identical (an implementation difference, not a divergence).
+  - a **default namespace** (`xmlns=…`) element is selectable by its bare local name.
+  - **nested/redeclared prefixes** resolve per scope without leaking into siblings.
+  - an **undeclared prefix** parses leniently (Strict=false) and stays selectable by
+    its qualified name; Jackett's default `new XmlParser()` is also lenient, so this is
+    a robustness property, not a divergence.
+
+  harbrr selects namespaced elements by their **qualified** name (`prefix\:local`),
+  the form every vendored def uses; selecting a namespaced element by a bare local
+  name is neither used by the corpus nor pinned here. **`[Resolved: Phase 7]`**
+- **`:has` / `:contains` selector shims** — the `:has` and `:contains` pseudo-classes
+  (used by Cardigann to filter rows and map case keys) resolve correctly end to end in
+  both HTML (cascadia) and JSON (`selector/jsonpseudo.go`) response modes, pinned by
+  `parity/testdata/stress-selector-shims` (HTML) and `stress-json-has` (JSON) plus the
+  `selector` unit tests. One narrow divergence remains: **`:contains` is
+  case-INSENSITIVE in cascadia but case-SENSITIVE in AngleSharp** (Jackett). A def
+  whose `:contains("…")` literal matches the page text in the SAME case behaves
+  identically on both — which is how real defs are authored, since they target
+  Jackett's case-sensitive engine — so the fixtures (case-matched literals) agree with
+  Jackett. The divergence only surfaces if a def's literal differs from the page text
+  ONLY in case, where harbrr would match and Jackett would not. Fixing it means
+  replacing cascadia's built-in `:contains`; no vendored def is known to trip it.
+  **`[Tracked: case-sensitive :contains — narrow, no corpus def affected]`**
 - **JSON date auto-conversion (Newtonsoft)** — RESOLVED in Phase 5. Jackett parses
   JSON with Newtonsoft's default `DateParseHandling.DateTime`, so an ISO-8601
   string VALUE becomes a `DateTime` rendered back as the .NET InvariantCulture
