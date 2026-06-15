@@ -16,7 +16,6 @@ import (
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
@@ -92,11 +91,6 @@ func (d *driver) Capabilities() *mapper.Capabilities { return d.caps }
 // Bearer header *arr cannot send, so the served feed routes through the /dl proxy
 // and the driver's Grab fetches the torrent server-side.
 func (d *driver) NeedsResolver() bool { return true }
-
-// Search runs the AvistaZ JSON search. Implemented in the search/parse commits.
-func (d *driver) Search(_ context.Context, _ search.Query) ([]*normalizer.Release, error) {
-	return nil, errors.New("avistaz: search not implemented")
-}
 
 // Grab fetches the resolved torrent with the Bearer header. Implemented in the grab
 // commit.
