@@ -2,8 +2,8 @@ package avistaz
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"io"
 	stdhttp "net/http"
 	"net/url"
 	"strconv"
@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
@@ -53,10 +54,18 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 			StatusCode: resp.StatusCode,
 			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.clock),
 		}
+	case resp.StatusCode == stdhttp.StatusUnauthorized:
+		// A 401 that survives get's reactive re-auth is a genuine auth failure.
+		return nil, fmt.Errorf("avistaz: search unauthorized: %w", login.ErrLoginFailed)
 	case resp.StatusCode < 200 || resp.StatusCode >= 300:
 		return nil, fmt.Errorf("avistaz: search returned HTTP %d", resp.StatusCode)
 	}
-	return nil, errors.New("avistaz: response parsing not implemented")
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("avistaz: read search response: %w", err)
+	}
+	return d.parseReleases(body)
 }
 
 // buildSearchURL renders the api/v1/jackett/torrents request for a query, matching

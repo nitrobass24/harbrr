@@ -191,8 +191,8 @@ func TestSearchIssuesBearerRequest(t *testing.T) {
 		profile: profileFor("avistaz"),
 		clock:   fixedClock,
 	}
-	if _, err := d.Search(context.Background(), search.Query{Categories: []string{"1"}, Keywords: "dune"}); err == nil {
-		t.Fatal("expected the not-implemented parse error until the parser commit")
+	if _, err := d.Search(context.Background(), search.Query{Categories: []string{"1"}, Keywords: "dune"}); err != nil {
+		t.Fatalf("Search: %v", err)
 	}
 
 	var got *recordedReq
