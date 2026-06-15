@@ -1,0 +1,16 @@
+name: stress-json-has
+archetype: stress-json-has
+golden_source: hand-derived
+mode: parse
+response_type: json
+description: >
+  Stress: the JSON :has row-selector shim (a different code path from the HTML
+  cascadia shim — selector/jsonpseudo.go). The row selector `results:has(dl)` keeps
+  only the JSON objects that carry a `dl` field, dropping the placeholder row that
+  has no download. Two releases survive; sizes are byte counts as given (4000000000,
+  1500000000); peers = seeders + leechers; cat mapped via the categories map
+  (movies -> Movies 2000, tv -> TV 5000).
+definition: definition.yml
+response: response.json
+query:
+  keywords: ""

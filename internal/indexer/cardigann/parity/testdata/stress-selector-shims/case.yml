@@ -1,0 +1,18 @@
+name: stress-selector-shims
+archetype: stress-selector-shims
+golden_source: hand-derived
+mode: parse
+description: >
+  Stress: the :has and :contains selector shims, end to end. cascadia's W3C grammar
+  has :has but not the jQuery/AngleSharp :contains text pseudo-class, so the engine
+  shims :contains (and Jackett supports both) — this pins them through the full
+  pipeline, not just the selector unit tests. The row selector `tr:has(a.dl)` keeps
+  only the two rows that carry a download link, dropping the <th> header row and the
+  advertisement row. downloadvolumefactor maps by a :contains case key:
+  `td:contains("Freeleech")` -> dvf 0 for row 0 (its tag cell contains "Freeleech"),
+  the "*" catch-all -> dvf 1 for row 1. Sizes 1024-based (1 GB = 1073741824,
+  700 MB = 734003200); peers = seeders + leechers.
+definition: definition.yml
+response: response.html
+query:
+  keywords: ""

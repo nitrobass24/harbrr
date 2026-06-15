@@ -190,6 +190,19 @@ Entries:
   harbrr selects namespaced elements by their **qualified** name (`prefix\:local`),
   the form every vendored def uses; selecting a namespaced element by a bare local
   name is neither used by the corpus nor pinned here. **`[Resolved: Phase 7]`**
+- **`:has` / `:contains` selector shims** — the `:has` and `:contains` pseudo-classes
+  (used by Cardigann to filter rows and map case keys) resolve correctly end to end in
+  both HTML (cascadia) and JSON (`selector/jsonpseudo.go`) response modes, pinned by
+  `parity/testdata/stress-selector-shims` (HTML) and `stress-json-has` (JSON) plus the
+  `selector` unit tests. One narrow divergence remains: **`:contains` is
+  case-INSENSITIVE in cascadia but case-SENSITIVE in AngleSharp** (Jackett). A def
+  whose `:contains("…")` literal matches the page text in the SAME case behaves
+  identically on both — which is how real defs are authored, since they target
+  Jackett's case-sensitive engine — so the fixtures (case-matched literals) agree with
+  Jackett. The divergence only surfaces if a def's literal differs from the page text
+  ONLY in case, where harbrr would match and Jackett would not. Fixing it means
+  replacing cascadia's built-in `:contains`; no vendored def is known to trip it.
+  **`[Tracked: case-sensitive :contains — narrow, no corpus def affected]`**
 - **JSON date auto-conversion (Newtonsoft)** — RESOLVED in Phase 5. Jackett parses
   JSON with Newtonsoft's default `DateParseHandling.DateTime`, so an ISO-8601
   string VALUE becomes a `DateTime` rendered back as the .NET InvariantCulture
