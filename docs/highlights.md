@@ -103,10 +103,11 @@ site/docs land later.
   old key fails loud with the store untouched. The single-key crypto core is
   unchanged; a database leak is recoverable without re-entering credentials.
   *(`cmd/harbrr/rotate_key.go`)* `[shipped]`
-- **Redaction beyond URLs/headers.** A JSON-body scrubber redacts FlareSolverr
-  request/response bodies (cookies/cf_clearance/userAgent/page HTML), proxy URLs are
-  whole-userinfo-scrubbed, and a shared error chokepoint scrubs both API test
-  errors and persisted health-event detail. *(`internal/http/redact.go`)* `[shipped]`
+- **Redaction beyond URLs/headers.** A shared error chokepoint scrubs both API test
+  errors and persisted health-event detail (the wired path). Defensive helpers also
+  exist for FlareSolverr request/response bodies (cookies/cf_clearance/userAgent/page
+  HTML) and for whole-userinfo proxy-URL scrubbing — built and tested but not yet
+  wired, since no path logs those today. *(`internal/http/redact.go`)* `[shipped]`
 
 ## Operational safety (anti-blacklist + observability)
 
@@ -125,7 +126,7 @@ site/docs land later.
 - **Per-indexer proxies.** Route any indexer through an HTTP or SOCKS5 proxy
   (per-instance, the URL encrypted at rest), so a geo-blocked or IP-flagged tracker
   works without proxying the whole daemon. *(`internal/indexer/registry/client.go`)*
-  `[shipped]` (SOCKS4 `[planned]`)
+  `[shipped]` (SOCKS4 not supported — demand-gated)
 - **FlareSolverr Cloudflare solver.** Clears an anti-bot interstitial via a
   FlareSolverr instance (typed `/v1`, discard-and-replay with a UA-coupled,
   non-gzip browser header set), completing the pluggable solver seam alongside the

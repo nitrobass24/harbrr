@@ -91,14 +91,19 @@ The behaviours below are pinned by tests in `internal/secrets`, `internal/auth`,
   empty-secret rows are handled (the last stay empty, only rekeyed). No decrypted
   credential or key byte reaches a log/error/the output. `[Resolved: Phase 6]`
   (`cmd/harbrr/rotate_key.go`, `internal/database/rotation.go`, `TestRotateKeys_*`).
-- **Redaction audit.** Extended beyond `RedactURL`/`RedactHeader`: a new
-  `internal/http.RedactJSONBody` scrubs FlareSolverr `/v1` request/response bodies
+- **Redaction audit.** Extended beyond `RedactURL`/`RedactHeader`. The wired,
+  load-bearing change is the shared `internal/http.RedactError` chokepoint:
+  per-handler test-error sanitizing was consolidated into it, and it is now used by
+  both the API test endpoint (`internal/web/api/indexer_handlers.go`) and the
+  `indexer_health_events.detail` writer (`internal/indexer/registry/adapter.go`). Two
+  further helpers were added as **defensive, not-yet-wired** chokepoints — no
+  production caller today, because the paths they guard avoid leaks structurally:
+  `RedactJSONBody` would scrub FlareSolverr `/v1` request/response bodies
   (cookies/postData/userAgent/cf_clearance/response/headers, at any depth — JSON
-  that `RedactURL` can't reach); `RedactProxyURL` scrubs the WHOLE proxy userinfo
-  (user AND pass); and `sanitizeTestError` was lifted to the shared
-  `internal/http.RedactError` chokepoint (reused for `indexer_health_events.detail`).
-  `[Resolved: Phase 6]` (`internal/http/redact.go`, `redacterror_test.go`,
-  `redactbody_test.go`).
+  `RedactURL` can't reach), but the solver logs no bodies and never interpolates them
+  into errors; `RedactProxyURL` would scrub the WHOLE proxy userinfo (user AND pass),
+  but `buildTransport` never logs or errors a `proxy_url`. `[Resolved: Phase 6]`
+  (`internal/http/redact.go`, `redacterror_test.go`, `redactbody_test.go`).
 - **Tracing / stats-event-log redaction is vacuous.** §9 names "logs, errors,
   traces, and the stats event log" as redaction targets, but harbrr has **no
   tracing and no stats/event-log subsystem** — those targets do not exist, so the

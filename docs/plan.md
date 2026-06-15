@@ -155,8 +155,8 @@ Phase 3 "search real trackers end-to-end" goal.
       user-configurable per-indexer override + global default is deferred → Phase 8)
 - [x] **Indexer health & status**: define health events (auth failure, rate-limited, parse error,
       anti-bot) and surface per-indexer status via the API; broken indexers already degrade cleanly (Phase 2)
-- [x] **Per-indexer proxies** (HTTP / SOCKS5; SOCKS4 deferred `[Tracked]` — `x/net/proxy` has no
-      socks4 dialer), configured per instance via the widened `doerFactory`/`ClientParams`/`newDoer`
+- [x] **Per-indexer proxies** (HTTP / SOCKS5; SOCKS4 unsupported `[Accepted]`, demand-gated — `x/net/proxy`
+      has no socks4 dialer), configured per instance via the widened `doerFactory`/`ClientParams`/`newDoer`
 - [x] **Secret hardening**: key rotation (`harbrr rotate-key` — dry-run + atomic re-encrypt via the
       stored `key_id`); secret redaction audited end-to-end (logs/errors + a JSON-body scrubber for
       FlareSolverr bodies + whole-userinfo proxy-URL scrub; traces/stats event-log don't exist — vacuous)
