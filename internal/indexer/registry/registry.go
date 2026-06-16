@@ -1,7 +1,8 @@
 // Package registry is harbrr's production indexer-instance registry: it persists
 // configured indexers (definition id + settings + encrypted credentials), resolves
-// a slug to a ready Cardigann engine, and implements the torznab.Provider the
-// Torznab handler expects. It is the core of the Prowlarr-style manager.
+// a slug to a ready indexer (a Cardigann engine or a native family driver), and
+// implements the torznab.Provider the Torznab handler expects. It is the core of the
+// Prowlarr-style manager.
 package registry
 
 import (
@@ -20,6 +21,8 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
+	"github.com/autobrr/harbrr/internal/indexer/native/avistaz"
 	"github.com/autobrr/harbrr/internal/web/torznab"
 )
 
@@ -42,6 +45,11 @@ type Registry struct {
 	// ClientParams so the client can vary per indexer (proxy, rate, timeout). It
 	// defaults to a cookie-jar client; tests inject an offline replay Doer.
 	doerFactory func(ClientParams) (search.Doer, error)
+
+	// native maps a native family's definition id to its (Go-built def + factory).
+	// An instance whose DefinitionID is here builds the native driver instead of a
+	// Cardigann engine; everything else (caching, health, /dl, serializer) is shared.
+	native map[string]native.Family
 
 	mu    sync.Mutex
 	cache map[string]*indexerAdapter
@@ -108,6 +116,7 @@ func New(db *database.DB, ldr *loader.Loader, keyring secretsKeyring, opts ...Op
 		clock:   time.Now,
 		timeout: defaultHTTPTimeout,
 		log:     zerolog.Nop(),
+		native:  nativeFamilies(),
 		cache:   map[string]*indexerAdapter{},
 	}
 	for _, o := range opts {
@@ -157,8 +166,9 @@ func (r *Registry) resolve(ctx context.Context, slug string) (*indexerAdapter, e
 	return a, nil
 }
 
-// build loads the instance + definition, decrypts its settings into the engine
-// config, and constructs the engine + adapter.
+// build loads the instance + definition, decrypts its settings, and constructs the
+// engine-shaped core (Cardigann engine OR native family driver) wrapped in the
+// shared adapter.
 func (r *Registry) build(ctx context.Context, slug string) (*indexerAdapter, error) {
 	inst, err := r.instances.GetBySlug(ctx, r.db, slug)
 	if err != nil {
@@ -167,9 +177,9 @@ func (r *Registry) build(ctx context.Context, slug string) (*indexerAdapter, err
 	if !inst.Enabled {
 		return nil, errDisabled
 	}
-	def, err := r.loader.Load(inst.DefinitionID)
+	def, factory, err := r.definition(inst.DefinitionID)
 	if err != nil {
-		return nil, fmt.Errorf("registry: load definition %q: %w", inst.DefinitionID, err)
+		return nil, err
 	}
 	settings, err := r.instances.Settings(ctx, r.db, inst.ID)
 	if err != nil {
@@ -184,17 +194,48 @@ func (r *Registry) build(ctx context.Context, slug string) (*indexerAdapter, err
 		Instance:     inst,
 		Cfg:          cfg,
 		Timeout:      resolveTimeout(cfg, r.timeout),
-		RateInterval: rateInterval(def),
+		RateInterval: rateInterval(def), // a native def carries RequestDelay, so it is paced too
 	})
 	if err != nil {
 		return nil, err
+	}
+	inner, err := r.buildInner(inst, def, factory, cfg, doer)
+	if err != nil {
+		return nil, err
+	}
+	return &indexerAdapter{
+		info:       indexerInfo(inst, def),
+		inner:      inner,
+		instanceID: inst.ID,
+		db:         r.db,
+		health:     r.health,
+		clock:      r.clock,
+		log:        r.log,
+	}, nil
+}
+
+// buildInner constructs the engine-shaped core: a native family driver when a
+// factory is present, otherwise the Cardigann engine. Both satisfy native.Driver.
+func (r *Registry) buildInner(inst domain.IndexerInstance, def *loader.Definition, factory native.Factory, cfg map[string]string, doer search.Doer) (native.Driver, error) {
+	if factory != nil {
+		d, err := factory(native.Params{
+			Def:     def,
+			Cfg:     cfg,
+			Doer:    doer,
+			BaseURL: baseURLOf(inst, def),
+			Clock:   r.clock,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("registry: build native driver %q: %w", def.ID, err)
+		}
+		return d, nil
 	}
 	opts := []cardigann.Option{
 		cardigann.WithDoer(doer),
 		cardigann.WithConfig(cfg),
 		cardigann.WithClock(r.clock),
 		// Wire an anti-bot solver from the instance settings ("solver_type" + the
-		// encrypted "cookie"); a no-op when unset. FlareSolverr is Phase 6.
+		// encrypted "cookie"); a no-op when unset.
 		cardigann.SolverOption(cfg),
 	}
 	if inst.BaseURL != "" {
@@ -202,17 +243,55 @@ func (r *Registry) build(ctx context.Context, slug string) (*indexerAdapter, err
 	}
 	eng, err := cardigann.NewEngine(def, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("registry: build engine for %q: %w", slug, err)
+		return nil, fmt.Errorf("registry: build engine %q: %w", def.ID, err)
 	}
-	return &indexerAdapter{
-		info:       indexerInfo(inst, def),
-		engine:     eng,
-		instanceID: inst.ID,
-		db:         r.db,
-		health:     r.health,
-		clock:      r.clock,
-		log:        r.log,
-	}, nil
+	return eng, nil
+}
+
+// definition resolves a definition id to its definition and, for a native family,
+// its driver factory (nil for the Cardigann path). Native families are checked
+// first, then the loader.
+func (r *Registry) definition(id string) (*loader.Definition, native.Factory, error) {
+	if fam, ok := r.native[id]; ok {
+		return fam.Definition, fam.Factory, nil
+	}
+	def, err := r.loader.Load(id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("registry: load definition %q: %w", id, err)
+	}
+	return def, nil, nil
+}
+
+// NativeDefinitions returns the Go-built definitions of the native families so the
+// management API can list them as addable alongside the Cardigann corpus.
+func (r *Registry) NativeDefinitions() []*loader.Definition {
+	out := make([]*loader.Definition, 0, len(r.native))
+	for _, f := range r.native {
+		out = append(out, f.Definition)
+	}
+	return out
+}
+
+// nativeFamilies builds the native-family catalog keyed by definition id.
+func nativeFamilies() map[string]native.Family {
+	fams := avistaz.Families()
+	m := make(map[string]native.Family, len(fams))
+	for _, f := range fams {
+		m[f.Definition.ID] = f
+	}
+	return m
+}
+
+// baseURLOf is an instance's effective base URL: its override, else the
+// definition's first link.
+func baseURLOf(inst domain.IndexerInstance, def *loader.Definition) string {
+	if inst.BaseURL != "" {
+		return inst.BaseURL
+	}
+	if len(def.Links) > 0 {
+		return def.Links[0]
+	}
+	return ""
 }
 
 // decryptConfig turns stored settings into the engine's .Config map, decrypting

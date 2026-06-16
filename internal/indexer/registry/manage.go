@@ -62,7 +62,7 @@ func (r *Registry) Add(ctx context.Context, p AddParams) (domain.IndexerInstance
 	if !slugPattern.MatchString(slug) {
 		return domain.IndexerInstance{}, fmt.Errorf("%w: slug %q must be 1-64 chars of [a-z0-9._-] starting alphanumeric", ErrInvalid, slug)
 	}
-	def, err := r.loader.Load(p.DefinitionID)
+	def, _, err := r.definition(p.DefinitionID)
 	if err != nil {
 		return domain.IndexerInstance{}, fmt.Errorf("%w: unknown definition %q", ErrInvalid, p.DefinitionID)
 	}
@@ -138,9 +138,9 @@ func (r *Registry) Update(ctx context.Context, slug string, p UpdateParams) erro
 	if err != nil {
 		return fmt.Errorf("registry: update %q settings: %w", slug, err)
 	}
-	def, err := r.loader.Load(inst.DefinitionID)
+	def, _, err := r.definition(inst.DefinitionID)
 	if err != nil {
-		return fmt.Errorf("registry: load definition %q: %w", inst.DefinitionID, err)
+		return err
 	}
 	merged, err := r.mergeSettings(inst.ID, settingFields(def), existing, p.Settings)
 	if err != nil {
@@ -283,7 +283,7 @@ func (r *Registry) Test(ctx context.Context, slug string) error {
 	if err != nil {
 		return err
 	}
-	if err := a.engine.Test(ctx); err != nil {
+	if err := a.inner.Test(ctx); err != nil {
 		a.recordHealth(ctx, err)
 		return fmt.Errorf("registry: test %q: %w", slug, err)
 	}
