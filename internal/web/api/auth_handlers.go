@@ -69,9 +69,14 @@ func (rt *router) changePassword(w http.ResponseWriter, r *http.Request) {
 		rt.writeServiceError(w, "change password", err)
 		return
 	}
-	if err := rt.sessions.RenewToken(r.Context()); err != nil {
-		rt.writeServiceError(w, "change password session", err)
-		return
+	// The password is now persisted. Renew the session token (session-fixation guard)
+	// best-effort for a session caller only — never report the change as failed after
+	// it has succeeded, which would invite a retry with the now-wrong old password (and
+	// an API-key caller has no session to rotate).
+	if authMethodFrom(r.Context()) == authSession {
+		if err := rt.sessions.RenewToken(r.Context()); err != nil {
+			rt.log.Warn().Str("op", "change password session").Err(err).Msg("api: session renew after password change failed")
+		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
