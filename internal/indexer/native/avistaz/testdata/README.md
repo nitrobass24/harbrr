@@ -35,11 +35,16 @@ the **Phase 9** gate.
   every indexer. Correct results; a broader fetch that, only under the 50-result page
   cap, could under-return a resolution-filtered query (a popular title with >50 mixed
   results). Acceptable for the offline gate; confirm at scale in the Phase 9 differential.
-- **`limit` always `PageSize`, single-page fetch** — `[Accepted]`. harbrr always sends
-  `limit=50` and fetches one page; it does not send `page`. This matches Prowlarr, which
-  declares `SupportsPagination => false` for the family (so \*arr never sends an offset,
-  and Prowlarr's `page` branch is dead for these sites). harbrr's Torznab handler applies
-  the requested `limit`/`offset` window response-side.
+- **`limit` always `PageSize`, single-page fetch + `<limits max>` over-advertisement** —
+  `[Accepted]`. harbrr always sends `limit=50` and one page (no `page` param), then applies
+  the requested `limit`/`offset` window response-side — its engine-wide paging mechanism, the
+  same for every indexer (there is no per-indexer pagination). The *effect* lines up with
+  Prowlarr, which declares `SupportsPagination => false` for the family, but the *mechanism*
+  differs (response-side slicing vs a declared no-pagination flag), so this is not literal
+  parity. Two consequences: an `offset` beyond the first 50 yields an empty page (only 50 are
+  fetched), and harbrr advertises the engine-wide `<limits max="100">` (Jackett's fixed default)
+  where Prowlarr advertises `max="50"` for this family — a benign over-advertisement (the driver
+  returns at most 50). Per-indexer limits would require an engine change harbrr does not make.
 - **Search-type inference** — `[Accepted]`. harbrr's `search.Query` drops the Torznab
   `t=` function, so the movie/tv/basic kind is inferred from the resolved categories plus
   the id/episode fields. This reproduces Prowlarr's per-criteria request bytes in every
@@ -82,8 +87,14 @@ the **Phase 9** gate.
 - **Live search/grab + the Prowlarr differential** — `[Tracked: Phase 9]`. The entire
   offline gate is synthetic; request/response/category parity against a live AvistaZ +
   live Prowlarr, and a real `.torrent` grab through `/dl`, are the Phase 9 acceptance gate.
-- **`created_at_iso` shape** — `[Tracked: Phase 9]`. The exact ISO-8601 form is assumed
-  (harbrr parses the common layouts and normalizes to UTC). Confirm the real format live.
+- **`created_at_iso` shape** — `[Tracked: Phase 9]`. `parsePublishDate` tries four layouts
+  (`RFC3339Nano`, `RFC3339`, and the space/`T` forms *without* a zone) and normalizes to UTC,
+  but **not** a space-separated datetime *with* a timezone offset (e.g.
+  `2024-01-15 10:30:00+05:30`), which Prowlarr's `DateTime.Parse` accepts. If the live API uses
+  that shape the bad-date path fails the **whole** search (see "bad-row handling"). Operator
+  decision (2026-06-16): do **not** widen pre-emptively; confirm the real format in the Phase 9
+  live differential and, if it is the space+offset form, add the `2006-01-02 15:04:05Z07:00`
+  layout (a one-line fix). The risk is a hard search failure, not a silent wrong value.
 - **Download-URL path-key redaction** — `[Tracked: Phase 9]`. harbrr's URL redactor is
   query-scoped, so the driver keeps the download URL out of every error it raises (a key,
   if any, may sit in the path). The `/dl` proxy already keeps the raw download URL out of
