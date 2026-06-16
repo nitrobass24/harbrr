@@ -157,7 +157,7 @@ func buildStack(t *testing.T, basePath string) (*stack, *stdhttp.Client) {
 		torznab.WithBasePath(basePath),
 	)
 
-	srv := server.New(server.Deps{Management: mgmt, Torznab: tz, Spec: swagger.Spec(), Logger: zerolog.Nop()},
+	srv := server.New(server.Deps{Management: mgmt, Torznab: tz, Spec: swagger.Spec(), DocsUI: swagger.UI(), Logger: zerolog.Nop()},
 		server.Config{BasePath: basePath})
 
 	ts := httptest.NewServer(srv.Handler())
@@ -187,9 +187,12 @@ func TestServerEndToEndBasePath(t *testing.T) {
 func runEndToEnd(t *testing.T, basePath string) {
 	s, c := buildStack(t, basePath)
 
-	// healthz + spec are public.
+	// healthz + spec + docs UI are public.
 	mustGet(t, c, s.url+"/healthz", stdhttp.StatusOK)
 	mustGet(t, c, s.url+"/api/openapi.yaml", stdhttp.StatusOK)
+	if docs := mustGet(t, c, s.url+"/api/docs", stdhttp.StatusOK); !strings.Contains(docs, "swagger-ui") {
+		t.Errorf("/api/docs did not serve the Swagger UI page")
+	}
 
 	// First-run setup + login.
 	mustJSON(t, c, stdhttp.MethodPost, s.url+"/api/auth/setup",

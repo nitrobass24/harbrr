@@ -28,7 +28,7 @@ The goal is to become the intelligent layer between automation applications and 
 
 ## Architecture
 
-mermaid flowchart TD     A[Private Trackers & Indexers] --> B[Harbrr]      B --> C[autobrr]     B --> D[qui]     B --> E[cross-seed]     B --> F[*arr Apps]      F --> G[Sonarr]     F --> H[Radarr]     F --> I[Lidarr]     F --> J[Readarr]     F --> K[Mylar]     F --> L[Whisparr] 
+mermaid flowchart TD     A[Private Trackers & Indexers] --> B[Harbrr]      B --> C[autobrr]     B --> D[qui]     B --> E[cross-seed]     B --> F[*arr Apps]      F --> G[Sonarr]     F --> H[Radarr]     F --> I[Lidarr]     F --> J[Readarr]     F --> K[Mylar]     F --> L[Whisparr]
 
 ---
 
@@ -52,11 +52,11 @@ Today, multiple applications often poll the same tracker for nearly identical in
 
 Without Harbrr:
 
-mermaid flowchart LR     A[Sonarr] --> E[Tracker]     B[Radarr] --> E     C[autobrr] --> E     D[cross-seed] --> E 
+mermaid flowchart LR     A[Sonarr] --> E[Tracker]     B[Radarr] --> E     C[autobrr] --> E     D[cross-seed] --> E
 
 With Harbrr:
 
-mermaid flowchart LR     A[Sonarr] --> H[Harbrr]     B[Radarr] --> H     C[autobrr] --> H     D[cross-seed] --> H     H --> E[Tracker] 
+mermaid flowchart LR     A[Sonarr] --> H[Harbrr]     B[Radarr] --> H     C[autobrr] --> H     D[cross-seed] --> H     H --> E[Tracker]
 
 One request. Multiple consumers.
 
@@ -166,6 +166,7 @@ Benefits include:
 - Single binary distribution
 - Docker-first deployments
 - Cross-platform support
+- Built-in interactive API docs (Swagger UI at `/api/docs`)
 
 ---
 
