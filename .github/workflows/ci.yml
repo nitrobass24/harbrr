@@ -93,7 +93,12 @@ jobs:
       contents: read
       packages: write
     steps:
+      # The job pushes to a registry (packages: write) and runs no git operations
+      # after checkout, so don't persist the token in the git config (reduces the
+      # blast radius of the elevated token).
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
 
