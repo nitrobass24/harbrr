@@ -109,7 +109,7 @@ func serve(ctx context.Context, cfg *config.Config, log zerolog.Logger) error {
 		torznab.WithDLToken(keyring),
 	)
 
-	srv := server.New(server.Deps{Management: mgmt, Torznab: tz, Spec: swagger.Spec(), Logger: log},
+	srv := server.New(server.Deps{Management: mgmt, Torznab: tz, Spec: swagger.Spec(), DocsUI: swagger.UI(), Logger: log},
 		server.Config{Addr: listenAddr(cfg), BasePath: cfg.Server.BaseURL})
 
 	startSessionCleanup(ctx, store, log)
