@@ -225,7 +225,7 @@ gap analysis + per-endpoint contracts: `docs/issues/phase8b.md` + `docs/prompts/
       limits); spec + test
 - [x] **`GET /api/definitions/{id}`** — a definition's settings-field schema (with `secret` flags) + caps,
       so a client can render an add-indexer form; id-validation / traversal guard; spec + test
-- [ ] **`POST /api/auth/change-password`** — verify the current password (reuse the login verifier) →
+- [x] **`POST /api/auth/change-password`** — verify the current password (reuse the login verifier) →
       `UpdatePassword` → session renewal; `400` weak new password, `401` wrong current password; spec + test
 - [ ] **Spec hardening** — document the config settings (`proxy_*` / `timeout` / `solver_*` / reserved
       secrets) with enums; add a machine-readable `code` to the error schema. **OIDC untouched — deferred to

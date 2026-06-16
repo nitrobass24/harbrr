@@ -53,6 +53,29 @@ func (rt *router) login(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// changePassword verifies the current admin password and sets a new one (auth
+// required). The session token is renewed afterwards (session-fixation guard),
+// mirroring login. 400 on a weak new password, 401 on a wrong current password;
+// neither value is logged.
+func (rt *router) changePassword(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		CurrentPassword string `json:"currentPassword"`
+		NewPassword     string `json:"newPassword"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.auth.ChangePassword(r.Context(), req.CurrentPassword, req.NewPassword); err != nil {
+		rt.writeServiceError(w, "change password", err)
+		return
+	}
+	if err := rt.sessions.RenewToken(r.Context()); err != nil {
+		rt.writeServiceError(w, "change password session", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // logout destroys the session.
 func (rt *router) logout(w http.ResponseWriter, r *http.Request) {
 	if err := rt.sessions.Destroy(r.Context()); err != nil {
