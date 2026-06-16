@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>harbrr — API reference</title>
     <link rel="icon" href="data:," />
+    <!--
+      swagger-ui assets are pinned to swagger-ui-dist@5.32.6 and protected with SRI.
+      swagger-ui ships no official SRI manifest, so each sha384 below is computed from
+      the CDN file. On a version bump, update the @version in all three URLs and
+      recompute each hash with:
+        curl -fsSL https://cdn.jsdelivr.net/npm/swagger-ui-dist@<version>/<file> \
+          | openssl dgst -sha384 -binary | openssl base64 -A
+    -->
     <link
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.6/swagger-ui.css"
