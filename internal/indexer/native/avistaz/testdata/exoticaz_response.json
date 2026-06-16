@@ -1,0 +1,49 @@
+{
+  "data": [
+    {
+      "url": "https://exoticaz.to/torrent/1-clip",
+      "download": "https://exoticaz.to/rss/download/1/FIXTUREKEY-X1.torrent",
+      "file_name": "Clip One 1080p",
+      "info_hash": "1111111111111111111111111111111111111111",
+      "leech": 1,
+      "completed": 4,
+      "seed": 20,
+      "file_size": 1073741824,
+      "file_count": 1,
+      "download_multiply": 1,
+      "upload_multiply": 1,
+      "created_at_iso": "2024-04-03T00:00:00+00:00",
+      "category": { "1": "Video Clip" }
+    },
+    {
+      "url": "https://exoticaz.to/torrent/2-pack",
+      "download": "https://exoticaz.to/rss/download/2/FIXTUREKEY-X2.torrent",
+      "file_name": "Pack Two",
+      "info_hash": "2222222222222222222222222222222222222222",
+      "leech": 0,
+      "completed": 1,
+      "seed": 5,
+      "file_size": 2147483648,
+      "file_count": 50,
+      "download_multiply": 0,
+      "upload_multiply": 1,
+      "created_at_iso": "2024-04-02T00:00:00+00:00",
+      "category": { "2": "Video Pack", "5": "DVD" }
+    },
+    {
+      "url": "https://exoticaz.to/torrent/3-bluray",
+      "download": "https://exoticaz.to/rss/download/3/FIXTUREKEY-X3.torrent",
+      "file_name": "BluRay Three",
+      "info_hash": "3333333333333333333333333333333333333333",
+      "leech": 2,
+      "completed": 9,
+      "seed": 30,
+      "file_size": 536870912,
+      "file_count": 1,
+      "download_multiply": 1,
+      "upload_multiply": 1,
+      "created_at_iso": "2024-04-01T00:00:00+00:00",
+      "category": { "6": "BluRay" }
+    }
+  ]
+}

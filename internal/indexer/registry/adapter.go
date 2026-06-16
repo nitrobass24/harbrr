@@ -12,22 +12,23 @@ import (
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
 	"github.com/autobrr/harbrr/internal/domain"
 	apphttp "github.com/autobrr/harbrr/internal/http"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 	"github.com/autobrr/harbrr/internal/web/torznab"
 )
 
-// indexerAdapter presents a built Cardigann engine as a torznab.Indexer, so the
-// Torznab handler depends only on the interface, never the engine. It is the unit
-// the registry caches per slug. It also records per-indexer health events: a
-// classified Search failure appends one event (append-only) so the management
-// status endpoint can surface why an indexer is unhealthy.
+// indexerAdapter presents a built indexer (the Cardigann engine OR a native family
+// driver) as a torznab.Indexer, so the Torznab handler depends only on the
+// interface, never the concrete engine. It is the unit the registry caches per
+// slug. It also records per-indexer health events: a classified Search failure
+// appends one event (append-only) so the management status endpoint can surface why
+// an indexer is unhealthy.
 type indexerAdapter struct {
 	info       torznab.IndexerInfo
-	engine     *cardigann.Engine
+	inner      native.Driver
 	instanceID int64
 	db         dbinterface.Execer
 	health     database.Health
@@ -41,14 +42,14 @@ var _ torznab.Indexer = (*indexerAdapter)(nil)
 // Info returns the indexer identity (carries no secrets).
 func (a *indexerAdapter) Info() torznab.IndexerInfo { return a.info }
 
-// Capabilities returns the engine's capabilities document.
-func (a *indexerAdapter) Capabilities() *mapper.Capabilities { return a.engine.Capabilities() }
+// Capabilities returns the built indexer's capabilities document.
+func (a *indexerAdapter) Capabilities() *mapper.Capabilities { return a.inner.Capabilities() }
 
 // Search runs the engine's online search. A classified failure (auth/anti-bot/
 // rate-limited/parse) is recorded as a health event before the error is wrapped
 // with the indexer id (not a secret) and returned; the caller redacts it.
 func (a *indexerAdapter) Search(ctx context.Context, query search.Query) ([]*normalizer.Release, error) {
-	releases, err := a.engine.Search(ctx, query)
+	releases, err := a.inner.Search(ctx, query)
 	if err != nil {
 		a.recordHealth(ctx, err)
 		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, err)
@@ -57,14 +58,14 @@ func (a *indexerAdapter) Search(ctx context.Context, query search.Query) ([]*nor
 }
 
 // NeedsResolver reports whether the definition declares a download block.
-func (a *indexerAdapter) NeedsResolver() bool { return a.engine.NeedsResolver() }
+func (a *indexerAdapter) NeedsResolver() bool { return a.inner.NeedsResolver() }
 
 // Grab performs the grab-time download for a release link (resolve + fetch the
 // torrent through the session). The error is wrapped with the indexer id (not a
 // secret); the caller redacts it. This is the /dl proxy's seam; feed serialization
 // only tokenizes the link, so no resolution runs per served release.
 func (a *indexerAdapter) Grab(ctx context.Context, link string) (*search.GrabResult, error) {
-	result, err := a.engine.Grab(ctx, link)
+	result, err := a.inner.Grab(ctx, link)
 	if err != nil {
 		return nil, fmt.Errorf("registry: grab %q: %w", a.info.ID, err)
 	}

@@ -182,6 +182,14 @@ site/docs land later.
 - **One engine covers whole families for free.** UNIT3D (~80 defs) and Gazelle (~6)
   come from the vendored Cardigann corpus, so harbrr doesn't need (and skips)
   per-family native drivers Prowlarr maintains. *(`docs/ideas.md` §6)* `[shipped]`
+- **The one family the corpus can't express, covered natively.** AvistaZ / CinemaZ /
+  PrivateHD / ExoticaZ use a login→Bearer `api/v1/jackett` auth that exceeds the
+  declarative Cardigann format (0 vendored defs), so harbrr ships a native driver that
+  plugs into the *same* registry, paced client, normalized release, caps mapper, `/dl`
+  grab proxy, and redaction as the engine — reproducing Prowlarr's contract while reusing
+  every seam instead of forking a parallel stack. Offline-gated against Prowlarr-derived
+  goldens; the live differential is the Phase 9 gate.
+  *(`internal/indexer/native/avistaz`)* `[shipped]`
 
 ## Developer experience & governance
 
