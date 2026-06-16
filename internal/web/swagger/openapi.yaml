@@ -350,6 +350,41 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /api/indexers/{slug}/search:
+    get:
+      summary: Search a configured indexer (JSON)
+      description: >
+        Runs a search against the indexer and returns the same releases the
+        Torznab feed serves for the same query (the shared pipeline — parity).
+        For a resolver-needing indexer each download link is sealed behind the
+        /dl proxy, so a passkey never appears in the response.
+      operationId: searchIndexer
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+        - { name: q, in: query, required: false, schema: { type: string }, description: free-text query }
+        - { name: cat, in: query, required: false, schema: { type: string }, description: comma-separated newznab category ids }
+        - { name: imdbid, in: query, required: false, schema: { type: string } }
+        - { name: tmdbid, in: query, required: false, schema: { type: string } }
+        - { name: tvdbid, in: query, required: false, schema: { type: string } }
+        - { name: season, in: query, required: false, schema: { type: string } }
+        - { name: ep, in: query, required: false, schema: { type: string } }
+        - { name: limit, in: query, required: false, schema: { type: integer }, description: "page size, clamped to [1,100]" }
+        - { name: offset, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200":
+          description: the search results
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SearchResults" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500":
+          description: the search failed (a sanitized, secret-free error)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
 components:
   securitySchemes:
     session:
@@ -467,3 +502,36 @@ components:
         settings:
           type: object
           additionalProperties: { type: string }
+    SearchResults:
+      type: object
+      properties:
+        results:
+          type: array
+          items: { $ref: "#/components/schemas/Release" }
+      required: [results]
+    Release:
+      type: object
+      description: >
+        A normalized release — the same shape the Torznab feed serializes. For a
+        resolver-needing indexer, `link` is the opaque /dl proxy URL (the passkey is
+        sealed inside, never exposed here). Zero values for size/seeders/leechers/
+        peers and the volume factors are meaningful and always present.
+      properties:
+        title: { type: string }
+        link: { type: string }
+        magnet: { type: string }
+        infohash: { type: string }
+        size: { type: integer, format: int64 }
+        categories: { type: array, items: { type: integer } }
+        seeders: { type: integer, format: int64 }
+        leechers: { type: integer, format: int64 }
+        peers: { type: integer, format: int64 }
+        grabs: { type: integer, format: int64 }
+        files: { type: integer, format: int64 }
+        publishDate: { type: string, format: date-time }
+        downloadVolumeFactor: { type: number }
+        uploadVolumeFactor: { type: number }
+        imdbid: { type: string }
+        tmdbid: { type: integer, format: int64 }
+        tvdbid: { type: integer, format: int64 }
+      required: [title]

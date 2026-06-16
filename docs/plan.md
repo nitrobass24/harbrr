@@ -218,7 +218,7 @@ gap analysis + per-endpoint contracts: `docs/issues/phase8b.md` + `docs/prompts/
 - [ ] **Shared query mapping + router wiring** — extract/reuse `buildQuery` (+ `parsePaging`) so the JSON
       search and the Torznab feed map params identically; wire the keyring/`/dl` tokenizer + base path into
       the management router (enabling — ticks no box on its own)
-- [ ] **`GET /api/indexers/{slug}/search`** — Torznab param set → `idx.Search` → JSON `normalizer.Release`;
+- [x] **`GET /api/indexers/{slug}/search`** — Torznab param set → `idx.Search` → JSON `normalizer.Release`;
       resolver links `/dl`-tokenized (the passkey never reaches the JSON); spec + **parity test** (JSON ≡
       Torznab `t=search` for the same query) + **redaction test**
 - [ ] **`GET /api/indexers/{slug}/capabilities`** — `Capabilities()` → JSON (modes / params / categories /
