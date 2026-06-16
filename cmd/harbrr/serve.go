@@ -93,7 +93,8 @@ func serve(ctx context.Context, cfg *config.Config, log zerolog.Logger) error {
 	reg := registry.New(db, loader.New(dropinDir(cfg)), keyring, registry.WithLogger(log))
 
 	mgmt, err := api.NewRouter(api.Deps{
-		Auth: authSvc, Registry: reg, Loader: loader.New(dropinDir(cfg)), Sessions: sessions, Logger: log,
+		Auth: authSvc, Registry: reg, Loader: loader.New(dropinDir(cfg)), Sessions: sessions,
+		DLToken: keyring, BasePath: cfg.Server.BaseURL, Logger: log,
 	}, api.Config{
 		AuthDisabled: cfg.Auth.AuthDisabled(), IPAllowlist: cfg.Auth.IPAllowlist, TrustedProxies: cfg.Auth.TrustedProxies,
 	})

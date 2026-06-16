@@ -210,33 +210,16 @@ func (h *handler) dlRewriter(r *http.Request, idx Indexer) tzn.AcquisitionRewrit
 	if h.dlToken == nil || !idx.NeedsResolver() {
 		return nil
 	}
-	indexerID := idx.Info().ID
-	base := h.dlBaseURL(r, indexerID)
-	apiKey := apiKeyParam(r.URL.Query())
-	return func(original string) (link, guid string, ok bool) {
-		if original == "" || strings.HasPrefix(original, "magnet:") {
-			return "", "", false
-		}
-		token, err := encodeDLToken(h.dlToken, indexerID, original)
-		if err != nil {
-			// Fail closed: never fall back to the original (passkey-bearing) link.
-			// Emit a /dl URL with an empty token — the proxy rejects it at grab time —
-			// so the release is visible but un-grabbable rather than leaking the passkey.
-			return dlURLWithToken(base, apiKey, ""), stableGUID(indexerID, original), true
-		}
-		return dlURLWithToken(base, apiKey, token), stableGUID(indexerID, original), true
-	}
+	// The exported NewDLRewriter is the single implementation, shared with the
+	// management API's JSON search so both seal resolver links identically.
+	return NewDLRewriter(h.dlToken, idx, h.dlBaseURL(r, idx.Info().ID), apiKeyParam(r.URL.Query()))
 }
 
 // dlBaseURL is the externally-visible /dl endpoint for an indexer (scheme/host from
 // the request, the configured base path re-added), without query — the apikey and
 // token are appended per release. It mirrors selfURL's scheme/host derivation.
 func (h *handler) dlBaseURL(r *http.Request, indexerID string) string {
-	scheme := "http"
-	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
-		scheme = "https"
-	}
-	return scheme + "://" + r.Host + h.basePath + "/api/v2.0/indexers/" + url.PathEscape(indexerID) + "/dl"
+	return DLBaseURL(r, h.basePath, indexerID)
 }
 
 // dlURLWithToken appends the caller's apikey (so *arr can authenticate the grab) and
@@ -277,16 +260,13 @@ func (h *handler) writeResults(w http.ResponseWriter, r *http.Request, idx Index
 	if !h.resolveMode(w, q, caps) {
 		return
 	}
-	query, requestedCats := buildQuery(q, caps)
-	releases, err := idx.Search(r.Context(), query)
+	// searchReleases is the shared read pipeline (map -> search -> dedupe -> filter
+	// -> page); the management API's JSON search runs the same code for parity.
+	releases, err := searchReleases(r.Context(), idx, caps, q)
 	if err != nil {
 		h.writeInternalError(w, "search", idx.Info().ID, err)
 		return
 	}
-	// Jackett pipeline order: FixResults (dedupe) -> FilterResults (category drop
-	// + limit). Category filtering runs after dedupe and before paging.
-	releases = filterResults(dedupeByGUID(releases), requestedCats, caps)
-	releases = parsePaging(q).apply(releases)
 	body, err := tzn.MarshalResultsRewritten(h.feedInfo(r, idx), releases, h.clock(), h.dlRewriter(r, idx))
 	if err != nil {
 		h.writeInternalError(w, "results", idx.Info().ID, err)

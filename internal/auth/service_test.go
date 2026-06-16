@@ -101,3 +101,38 @@ func TestAPIKeyLifecycle(t *testing.T) {
 		t.Errorf("RevokeAPIKey missing err = %v, want ErrNotFound", err)
 	}
 }
+
+func TestChangePassword(t *testing.T) {
+	t.Parallel()
+	s := newService(t)
+	ctx := context.Background()
+
+	// No admin yet -> a wrong-credentials result (nothing to verify against).
+	if err := s.ChangePassword(ctx, "whatever", "longenoughpw"); !errors.Is(err, auth.ErrInvalidCredentials) {
+		t.Errorf("ChangePassword before setup err = %v, want ErrInvalidCredentials", err)
+	}
+
+	if _, err := s.Setup(ctx, "admin", "correct-horse"); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+
+	// Wrong current password -> ErrInvalidCredentials.
+	if err := s.ChangePassword(ctx, "wrong", "brand-new-passphrase"); !errors.Is(err, auth.ErrInvalidCredentials) {
+		t.Errorf("ChangePassword wrong current err = %v, want ErrInvalidCredentials", err)
+	}
+	// Weak new password -> ErrWeakPassword (checked only after the current verifies).
+	if err := s.ChangePassword(ctx, "correct-horse", "short"); !errors.Is(err, auth.ErrWeakPassword) {
+		t.Errorf("ChangePassword weak new err = %v, want ErrWeakPassword", err)
+	}
+
+	// Valid change rotates the password: the old one stops working, the new one logs in.
+	if err := s.ChangePassword(ctx, "correct-horse", "brand-new-passphrase"); err != nil {
+		t.Fatalf("ChangePassword: %v", err)
+	}
+	if _, err := s.Login(ctx, "admin", "correct-horse"); !errors.Is(err, auth.ErrInvalidCredentials) {
+		t.Errorf("old password still logs in err = %v, want ErrInvalidCredentials", err)
+	}
+	if _, err := s.Login(ctx, "admin", "brand-new-passphrase"); err != nil {
+		t.Errorf("new password login: %v", err)
+	}
+}

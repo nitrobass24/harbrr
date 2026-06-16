@@ -14,6 +14,7 @@ import (
 	"github.com/autobrr/harbrr/internal/auth"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
+	"github.com/autobrr/harbrr/internal/secrets"
 )
 
 // Deps are the collaborators the management API drives.
@@ -22,6 +23,14 @@ type Deps struct {
 	Registry *registry.Registry
 	Loader   *loader.Loader
 	Sessions *scs.SessionManager
+	// DLToken seals a resolver-needing indexer's download link behind the /dl proxy
+	// for the JSON search response, exactly as the Torznab feed does, so a passkey
+	// never reaches the client. Nil disables the proxy (then resolver links are
+	// withheld from the JSON response rather than served in the clear).
+	DLToken *secrets.Keyring
+	// BasePath is the externally-visible base path, used to build absolute /dl URLs
+	// (the server strips it before routing, so it must be re-added).
+	BasePath string
 	Logger   zerolog.Logger
 }
 
@@ -42,6 +51,8 @@ type router struct {
 	registry *registry.Registry
 	loader   *loader.Loader
 	sessions *scs.SessionManager
+	dlToken  *secrets.Keyring
+	basePath string
 	cfg      Config
 	log      zerolog.Logger
 
@@ -70,7 +81,8 @@ func NewRouter(deps Deps, cfg Config) (http.Handler, error) {
 
 	rt := &router{
 		auth: deps.Auth, registry: deps.Registry, loader: deps.Loader,
-		sessions: deps.Sessions, cfg: cfg, log: deps.Logger,
+		sessions: deps.Sessions, dlToken: deps.DLToken, basePath: deps.BasePath,
+		cfg: cfg, log: deps.Logger,
 		allowlist: allow, trustedProxies: proxies,
 	}
 	return rt.routes(), nil
@@ -98,7 +110,9 @@ func (rt *router) routes() http.Handler {
 
 			r.Get("/api/auth/me", rt.me)
 			r.Post("/api/auth/logout", rt.logout)
+			r.Post("/api/auth/change-password", rt.changePassword)
 			r.Get("/api/definitions", rt.listDefinitions)
+			r.Get("/api/definitions/{id}", rt.getDefinition)
 
 			r.Get("/api/apikeys", rt.listAPIKeys)
 			r.Post("/api/apikeys", rt.mintAPIKey)
@@ -113,6 +127,8 @@ func (rt *router) routes() http.Handler {
 			r.Post("/api/indexers/{slug}/disable", rt.disableIndexer)
 			r.Post("/api/indexers/{slug}/test", rt.testIndexer)
 			r.Get("/api/indexers/{slug}/status", rt.indexerStatus)
+			r.Get("/api/indexers/{slug}/search", rt.searchIndexer)
+			r.Get("/api/indexers/{slug}/capabilities", rt.indexerCapabilities)
 		})
 	})
 	return r

@@ -112,6 +112,25 @@ paths:
                 required: [username, authMethod]
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /api/auth/change-password:
+    post:
+      summary: Change the admin password
+      description: >
+        Verifies the current admin password and replaces it (the password is never
+        recoverable). The session token is renewed. Operates on the single admin
+        account.
+      operationId: changePassword
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChangePassword" }
+      responses:
+        "204": { description: password changed }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /api/auth/oidc/login:
     get:
       summary: OIDC login (not implemented — deferred to a later phase)
@@ -140,6 +159,27 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/DefinitionSummary" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/definitions/{id}:
+    get:
+      summary: Get a definition's settings schema and capabilities
+      description: >
+        Returns a single definition's ordered settings fields (with a secret flag
+        per field, for rendering an add-indexer form) and its capabilities. This is
+        the definition schema, not a configured instance — it carries no stored
+        secret. Resolves both vendored and native definitions.
+      operationId: getDefinition
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: the definition schema
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DefinitionDetail" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /api/apikeys:
     get:
@@ -350,6 +390,61 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /api/indexers/{slug}/search:
+    get:
+      summary: Search a configured indexer (JSON)
+      description: >
+        Runs a search against the indexer and returns the same releases the
+        Torznab feed serves for the same query (the shared pipeline — parity).
+        For a resolver-needing indexer each download link is sealed behind the
+        /dl proxy, so a passkey never appears in the response.
+      operationId: searchIndexer
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+        - { name: q, in: query, required: false, schema: { type: string }, description: free-text query }
+        - { name: cat, in: query, required: false, schema: { type: string }, description: comma-separated newznab category ids }
+        - { name: imdbid, in: query, required: false, schema: { type: string } }
+        - { name: tmdbid, in: query, required: false, schema: { type: string } }
+        - { name: tvdbid, in: query, required: false, schema: { type: string } }
+        - { name: season, in: query, required: false, schema: { type: string } }
+        - { name: ep, in: query, required: false, schema: { type: string } }
+        - { name: limit, in: query, required: false, schema: { type: integer }, description: "page size, clamped to [1,100]" }
+        - { name: offset, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200":
+          description: the search results
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SearchResults" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500":
+          description: the search failed (a sanitized, secret-free error)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/indexers/{slug}/capabilities:
+    get:
+      summary: Get a configured indexer's search capabilities
+      description: >
+        Returns the indexer's search modes (with their supported params), the
+        advertised category tree, and the page-size limits. The internal
+        tracker<->newznab category lookup is not part of the response.
+      operationId: indexerCapabilities
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: the indexer capabilities
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Capabilities" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
 components:
   securitySchemes:
     session:
@@ -388,14 +483,47 @@ components:
     Error:
       type: object
       properties:
-        error: { type: string }
-      required: [error]
+        error: { type: string, description: human-readable message }
+        code:
+          type: string
+          description: >
+            machine-readable code clients can branch on — one of: bad_request,
+            invalid, unauthorized, invalid_credentials, invalid_api_key, forbidden,
+            not_found, conflict, already_setup, not_implemented, internal.
+      required: [error, code]
+    ReservedSettings:
+      type: object
+      description: >
+        Optional reserved keys the engine understands when present in an indexer's
+        free-form settings map (alongside the definition's own settings). All are
+        optional; documented here because they are not part of any single
+        definition's schema. proxy_url and cookie are secrets (stored encrypted,
+        never echoed — they read back as the <redacted> sentinel).
+      properties:
+        proxy_type:
+          type: string
+          enum: [http, https, socks5, socks5h]
+          description: route this indexer's traffic through a proxy (socks4 is not supported)
+        proxy_url: { type: string, description: "proxy URL; may embed user:pass (secret)" }
+        timeout: { type: string, description: "per-request timeout as a Go duration, e.g. 30s" }
+        solver_type:
+          type: string
+          enum: [manual_cookie, flaresolverr]
+          description: anti-bot solver (manual_cookie replays the encrypted cookie setting)
+        flaresolverr_url: { type: string, description: "FlareSolverr base URL (when solver_type=flaresolverr)" }
+        flaresolverr_max_timeout: { type: string, description: "FlareSolverr maxTimeout in seconds (optional)" }
     Credentials:
       type: object
       properties:
         username: { type: string }
         password: { type: string }
       required: [username, password]
+    ChangePassword:
+      type: object
+      properties:
+        currentPassword: { type: string }
+        newPassword: { type: string }
+      required: [currentPassword, newPassword]
     DefinitionSummary:
       type: object
       properties:
@@ -405,6 +533,31 @@ components:
         type: { type: string }
         language: { type: string }
       required: [id, name]
+    SettingField:
+      type: object
+      description: >
+        One configurable field in a definition's settings schema. secret marks a
+        credential supplied by the operator, stored encrypted and never echoed back.
+      properties:
+        name: { type: string }
+        label: { type: string }
+        type: { type: string, description: "text | password | checkbox | select | multi-select | info*" }
+        default: { type: string }
+        options:
+          type: object
+          additionalProperties: { type: string }
+        secret: { type: boolean }
+      required: [name, type, secret]
+    DefinitionDetail:
+      allOf:
+        - { $ref: "#/components/schemas/DefinitionSummary" }
+        - type: object
+          properties:
+            settings:
+              type: array
+              items: { $ref: "#/components/schemas/SettingField" }
+            caps: { $ref: "#/components/schemas/Capabilities" }
+          required: [settings, caps]
     ApiKey:
       type: object
       properties:
@@ -458,6 +611,10 @@ components:
         settings:
           type: object
           additionalProperties: { type: string }
+          description: >
+            definition setting name -> value. May also carry the reserved engine
+            keys (see ReservedSettings): proxy_type/proxy_url, timeout,
+            solver_type/flaresolverr_url. Secret values are stored encrypted.
       required: [definitionId]
     UpdateIndexer:
       type: object
@@ -467,3 +624,68 @@ components:
         settings:
           type: object
           additionalProperties: { type: string }
+          description: >
+            merged into the stored settings (see ReservedSettings for the reserved
+            engine keys). PATCH the <redacted> sentinel to keep an existing secret;
+            send new plaintext to rotate it.
+    Capabilities:
+      type: object
+      properties:
+        modes:
+          type: object
+          additionalProperties: { type: array, items: { type: string } }
+          description: search mode -> supported query params
+        allowRawSearch: { type: boolean }
+        allowTVSearchIMDB: { type: boolean }
+        categories:
+          type: array
+          items:
+            type: object
+            required: [id, name, isCustom, isParent]
+            properties:
+              id: { type: integer }
+              name: { type: string }
+              isCustom: { type: boolean }
+              isParent: { type: boolean }
+              parent: { type: string }
+        defaultCategories: { type: array, items: { type: string } }
+        limits:
+          type: object
+          required: [default, max]
+          properties:
+            default: { type: integer }
+            max: { type: integer }
+      required: [modes, allowRawSearch, allowTVSearchIMDB, categories, limits]
+    SearchResults:
+      type: object
+      properties:
+        results:
+          type: array
+          items: { $ref: "#/components/schemas/Release" }
+      required: [results]
+    Release:
+      type: object
+      description: >
+        A normalized release — the same shape the Torznab feed serializes. For a
+        resolver-needing indexer, `link` is the opaque /dl proxy URL (the passkey is
+        sealed inside, never exposed here). Zero values for size/seeders/leechers/
+        peers and the volume factors are meaningful and always present.
+      properties:
+        title: { type: string }
+        link: { type: string }
+        magnet: { type: string }
+        infohash: { type: string }
+        size: { type: integer, format: int64 }
+        categories: { type: array, items: { type: integer } }
+        seeders: { type: integer, format: int64 }
+        leechers: { type: integer, format: int64 }
+        peers: { type: integer, format: int64 }
+        grabs: { type: integer, format: int64 }
+        files: { type: integer, format: int64 }
+        publishDate: { type: string, format: date-time }
+        downloadVolumeFactor: { type: number }
+        uploadVolumeFactor: { type: number }
+        imdbid: { type: string }
+        tmdbid: { type: integer, format: int64 }
+        tvdbid: { type: integer, format: int64 }
+      required: [title]
