@@ -14,13 +14,18 @@ today's *documented* API is a **control plane, not a complete API**:
   Torznab tree (XML). There is no JSON way to search or read an indexer's capabilities.
 - Several **discovery** needs have no JSON endpoint: a definition's **settings-field schema**
   (required to render an add-indexer form) and a configured indexer's caps/categories.
-- A chunk of indexer **config** (`proxy_*`, `timeout`, `solver_*`) is settable-but-undocumented,
-  and the spec documents **OIDC endpoints that are stubbed with no handlers** (so `/api/docs`
-  shows endpoints that don't work).
+- A chunk of indexer **config** (`proxy_*`, `timeout`, `solver_*`) is settable-but-undocumented.
 
 So an operator — or a future web UI, which is by design an API client (harbrr is headless +
 API-first) — cannot search, see capabilities, build an add-indexer form, or change the admin
 password through the API they're shown. This phase closes that gap in **one PR**.
+
+**Sequencing — this lands before Phase 9.** Completing the API is what lets the team run an **alpha
+with no web UI: just the Swagger API at `/api/docs`** to add indexers, search, read capabilities, and
+manage credentials by hand. So phase8b precedes the Phase 9 live-validation gate, and the live pass is
+exercised against the same documented API the team tests through. Note the Phase 9 Prowlarr differential
+still runs over the **Torznab feed** (the contract \*arr apps consume, and the only one Prowlarr
+exposes) — the JSON search added here is for operators and the UI, not the parity oracle.
 
 ## Verified gaps (in scope)
 
@@ -42,9 +47,8 @@ Each confirmed against the code by a verification pass; the seams + per-endpoint
    has no service method, handler, or route. The admin password cannot be rotated via the API.
 5. **Undocumented config + loose/wrong spec** — `proxy_type`/`proxy_url`, `timeout`,
    `solver_type`/`flaresolverr_url`, and the reserved-secret settings are settable via the settings
-   map but absent from the spec (settings typed as `additionalProperties: string`); error responses
-   are `{error: string}` with no machine-readable code; and the spec documents **OIDC endpoints with
-   no handlers**.
+   map but absent from the spec (settings typed as `additionalProperties: string`); and error responses
+   are `{error: string}` with no machine-readable code.
 
 ## Explicitly out of scope (with reasons)
 
@@ -59,8 +63,10 @@ Each confirmed against the code by a verification pass; the seams + per-endpoint
 - **Key-rotation API** — **out**: offline/CLI by design (`harbrr rotate-key`, daemon stopped).
 - **Logs API, session listing/revocation, multi-user, password reset, global (non-indexer) health** —
   **out**: roadmap / intentional (single-admin, one-way hash).
-- **OIDC implementation** — **out** (Phase 9/10); phase8b only resolves the spec/handler **mismatch**
-  (mark not-implemented or remove from the spec until then).
+- **OIDC — implementation AND the spec/handler mismatch** — **out**: deferred **completely to Phase 10**,
+  as planned in `docs/prompts/phase10.md`. phase8b does not touch the `/api/auth/oidc/*` routes or their
+  spec entries; they stay mounted-but-`501` and documented (so the OpenAPI drift test stays green). Phase
+  10 resolves the honesty gap (spec shows an endpoint that 501s) when it actually implements OIDC.
 
 ## Hard constraints
 
@@ -80,8 +86,8 @@ Each confirmed against the code by a verification pass; the seams + per-endpoint
 - `GET /api/indexers/{slug}/search`, `GET /api/indexers/{slug}/capabilities`,
   `GET /api/definitions/{id}`, and `POST /api/auth/change-password` are implemented, documented in
   the spec, and drift-test-green.
-- The undocumented config settings are documented (named optional settings with enums), the error
-  schema gains a machine-readable `code`, and the OIDC-stub mismatch is resolved.
+- The undocumented config settings are documented (named optional settings with enums) and the error
+  schema gains a machine-readable `code`. (OIDC is untouched — deferred to Phase 10.)
 - A redaction test proves no passkey/download-link/secret appears in a JSON search response.
 - The JSON search returns releases identical to the Torznab search for the same query (parity test).
 - `make precommit` + `make build` green; PR ≤150 files; **PAUSE before merge**.

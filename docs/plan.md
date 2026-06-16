@@ -204,6 +204,36 @@ safety); it stays offline-gated against the parity oracle.
       Prowlarr differential + a real search/grab are the **Phase 9** gate (recorded
       `[Tracked: Phase 9]`). Divergences in `internal/indexer/native/avistaz/testdata/README.md`.
 
+## Phase 8b — Complete the management API (team-alpha enabler)
+
+Product surface, post-engine-parity. Today's JSON management API is a **control plane**: search,
+capabilities, and grab live only on the Torznab XML tree, discovery is incomplete, and some config is
+settable-but-undocumented. This phase closes the control-plane / data-plane gaps so the documented API
+at `/api/docs` can **drive harbrr entirely over HTTP** — letting the team run an **alpha with no web
+UI, just the Swagger API** to add indexers, search, read capabilities, and manage credentials by hand.
+It lands **before Phase 9** so the live-validation pass is exercised against the API the team actually
+tests through. One PR off `main` (`phase8b/management-api`); offline-gated; **PAUSE before merge**. Full
+gap analysis + per-endpoint contracts: `docs/issues/phase8b.md` + `docs/prompts/phase8b.md`.
+
+- [ ] **Shared query mapping + router wiring** — extract/reuse `buildQuery` (+ `parsePaging`) so the JSON
+      search and the Torznab feed map params identically; wire the keyring/`/dl` tokenizer + base path into
+      the management router (enabling — ticks no box on its own)
+- [ ] **`GET /api/indexers/{slug}/search`** — Torznab param set → `idx.Search` → JSON `normalizer.Release`;
+      resolver links `/dl`-tokenized (the passkey never reaches the JSON); spec + **parity test** (JSON ≡
+      Torznab `t=search` for the same query) + **redaction test**
+- [ ] **`GET /api/indexers/{slug}/capabilities`** — `Capabilities()` → JSON (modes / params / categories /
+      limits); spec + test
+- [ ] **`GET /api/definitions/{id}`** — a definition's settings-field schema (with `secret` flags) + caps,
+      so a client can render an add-indexer form; id-validation / traversal guard; spec + test
+- [ ] **`POST /api/auth/change-password`** — verify the current password (reuse the login verifier) →
+      `UpdatePassword` → session renewal; `400` weak new password, `401` wrong current password; spec + test
+- [ ] **Spec hardening** — document the config settings (`proxy_*` / `timeout` / `solver_*` / reserved
+      secrets) with enums; add a machine-readable `code` to the error schema. **OIDC untouched — deferred to
+      Phase 10.**
+- [ ] **Gate**: four endpoints documented + drift-test-green; JSON search ≡ Torznab (parity proven); **no
+      passkey/secret in any JSON response/error/log** (redaction proven); `make precommit` + `make build`
+      green; PR ≤150 files
+
 ## Phase 9 — Live validation & acceptance (alpha gate)
 
 The end-of-alpha live pass: exercise **every auth/fetch pattern against real trackers** (Cardigann +
@@ -249,8 +279,8 @@ the owning layer — the engine stays frozen during validation; fixes are scoped
       from §9 (secrets redacted by default behind a `<redacted>` sentinel; including secrets is a
       separately-passphrase-encrypted opt-in)
 - [ ] **Web UI** — the management dashboard (indexer grid, add/edit forms, manual search, stats);
-      depends on the Phase 4 management API. Includes rendering the embedded OpenAPI spec as Swagger UI
-      (Phase 4 serves the raw spec at `/api/openapi.yaml`).
+      depends on the Phase 4 management API. (Interactive **Swagger UI already shipped** at `/api/docs`,
+      separate from the SPA — the web UI just links to it; raw spec at `/api/openapi.yaml`.)
 - [ ] **User-configurable request rate** — a **global default** rate plus a
       **per-indexer override** setting. Phase 6 paces per target domain from the def's
       `requestDelay` (or a 1s default) and is not user-tunable; the

@@ -71,7 +71,8 @@ approved.
   - `internal/web/swagger/openapi.yaml` — the spec. **Every new route is documented here in the same
     commit.** The drift test `internal/web/api/router_test.go` `TestOpenAPIDriftRoutesMatchSpec` asserts
     `mounted routes == documented operations` (METHOD+path) — it fails if a route is undocumented or a
-    documented op is unmounted (this is also how you'll find the OIDC-stub mismatch).
+    documented op is unmounted. (The `/api/auth/oidc/*` routes are mounted-but-`501` and documented, so
+    they already pass the drift test — leave them alone; OIDC is deferred to Phase 10.)
   - `internal/http` `RedactURL`/`RedactError` — the redaction chokepoints. `internal/database/users.go`
     `UpdatePassword` + `internal/auth` (password hashing/verification) — for change-password.
 
@@ -106,16 +107,17 @@ there is no instance secret to leak — but never echo a configured instance's s
 
 **`POST /api/auth/change-password`** — auth required; body `{currentPassword, newPassword}`; **verify the
 current password** (reuse the login verifier), then `UpdatePassword` with the new hash; never log either
-value; rotate/renew the session as the login path does. `400` on a bad/short new password; `401`/`403`
-on a wrong current password.
+value; rotate/renew the session as the login path does. `400` on a bad/short new password; `401` on a
+wrong current password (matches the login path's 401 — harbrr's error envelope uses 400/401/404/409/500,
+there is no 403).
 
 **Spec hardening** (no new routes): document the reserved/config settings (`proxy_type` enum
 `http|https|socks5|socks5h`, `proxy_url`, `timeout` duration, `solver_type` enum
 `manual_cookie|flaresolverr`, `flaresolverr_url`) as named optional settings; add a machine-readable
 `code` to the error schema (and document the redaction/merge/test semantics that today live only in
-prose); **resolve the OIDC mismatch** — the spec documents `/api/auth/oidc/login`+`/callback` but there
-are no handlers, so either mark them clearly not-implemented (and keep the drift test honest) or remove
-them from the spec until Phase 9/10.
+prose). **Do not touch OIDC** — the `/api/auth/oidc/login`+`/callback` stubs stay mounted-but-`501` and
+documented (already drift-test-green); resolving that honesty gap is deferred entirely to Phase 10, where
+OIDC is actually implemented (`docs/prompts/phase10.md`).
 
 ---
 
@@ -130,8 +132,8 @@ them from the spec until Phase 9/10.
   .Capabilities` and the shared `buildQuery`; the JSON search returns the **same releases** the Torznab
   `t=search` does for the same query (a parity test pins this). Do not duplicate or special-case the
   Torznab handler, and do not invent a parallel release type — marshal `normalizer.Release`.
-- **The drift test stays green** — document every new route in `openapi.yaml` in the **same commit**;
-  keep the spec accurate (the OIDC stub is a real inaccuracy to fix, not to preserve).
+- **The drift test stays green** — document every new route in `openapi.yaml` in the **same commit**.
+  (Leave the OIDC stubs as-is — they're already mounted + documented; OIDC is deferred to Phase 10.)
 - **Two contracts stay separate** — this phase adds JSON management endpoints; it does not change the
   Torznab XML feed's bytes or behavior.
 - **Typed DTOs** (no `map[string]any` for request/response), gofumpt-clean, split god-functions
@@ -172,8 +174,8 @@ them from the spec until Phase 9/10.
 5. **`POST /api/auth/change-password`.** Verify current password + `UpdatePassword` + session renewal;
    spec + test.
 6. **Spec hardening.** Document the config knobs (proxy/timeout/solver/reserved secrets) with enums; add
-   the error `code`; resolve the OIDC-stub mismatch; examples. *(no new routes; updates the spec the drift
-   test guards — keep it green.)*
+   the error `code`; add examples. *(no new routes; updates the spec the drift test guards — keep it green.
+   OIDC is NOT touched — deferred to Phase 10.)*
 
 ---
 
@@ -183,8 +185,8 @@ them from the spec until Phase 9/10.
   JSON body. Mitigate by `/dl`-tokenizing exactly like the feed; test it with a key-bearing stub.
 - **Parity drift** — reimplementing param mapping or paging diverges from the feed. Reuse `buildQuery` +
   `parsePaging`; assert JSON `≡` Torznab for the same query.
-- **Drift-test breakage** — a new route undocumented (or the OIDC stub) fails `TestOpenAPIDriftRoutesMatch
-  Spec`. Document every route in the same commit; fix the OIDC mismatch.
+- **Drift-test breakage** — a new route left undocumented fails `TestOpenAPIDriftRoutesMatchSpec`.
+  Document every new route in the same commit. (The OIDC stubs already pass — don't disturb them.)
 - **definition-detail secret exposure** — this endpoint is the DEFINITION schema (cleartext labels/defaults
   + a `secret` flag), NOT an instance's settings; never echo a configured instance's stored secret here.
 - **change-password bypass** — require AND verify the current password (reuse the login verifier); never
@@ -196,7 +198,7 @@ them from the spec until Phase 9/10.
 
 - The four endpoints implemented, documented, and drift-test-green; JSON search `≡` Torznab search
   (parity proven); **no passkey/secret in any JSON response/error/log** (redaction proven).
-- Spec hardened: config knobs documented with enums, error `code` added, the OIDC-stub mismatch resolved.
+- Spec hardened: config knobs documented with enums, error `code` added. (OIDC untouched — deferred to Phase 10.)
 - `make precommit` + `make build` green (`-race`); all cross-builds green; contracts stay separate;
   SQLite-only; PR ≤150 files.
 
@@ -224,6 +226,6 @@ green, STOP; do NOT merge; wait for approval.
 
 State the items shipped (commit ids); the four endpoints + their contracts as built; the parity proof
 (JSON search `≡` Torznab) and the redaction proof (no passkey/secret in a JSON response); the
-spec-hardening done (config knobs, error `code`, OIDC mismatch resolved); explicit confirmation that no
+spec-hardening done (config knobs, error `code`; OIDC left untouched, deferred to Phase 10); explicit confirmation that no
 passkey/download-key/Bearer/stored-secret appears in a JSON response, error, log, or commit; the
 out-of-scope items left deferred (with the issue's reasons); and which required checks ran.
