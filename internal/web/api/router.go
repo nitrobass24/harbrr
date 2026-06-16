@@ -110,6 +110,7 @@ func (rt *router) routes() http.Handler {
 
 			r.Get("/api/auth/me", rt.me)
 			r.Post("/api/auth/logout", rt.logout)
+			r.Post("/api/auth/change-password", rt.changePassword)
 			r.Get("/api/definitions", rt.listDefinitions)
 			r.Get("/api/definitions/{id}", rt.getDefinition)
 

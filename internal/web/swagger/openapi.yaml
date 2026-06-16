@@ -112,6 +112,25 @@ paths:
                 required: [username, authMethod]
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /api/auth/change-password:
+    post:
+      summary: Change the admin password
+      description: >
+        Verifies the current admin password and replaces it (the password is never
+        recoverable). The session token is renewed. Operates on the single admin
+        account.
+      operationId: changePassword
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChangePassword" }
+      responses:
+        "204": { description: password changed }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /api/auth/oidc/login:
     get:
       summary: OIDC login (not implemented — deferred to a later phase)
@@ -472,6 +491,12 @@ components:
         username: { type: string }
         password: { type: string }
       required: [username, password]
+    ChangePassword:
+      type: object
+      properties:
+        currentPassword: { type: string }
+        newPassword: { type: string }
+      required: [currentPassword, newPassword]
     DefinitionSummary:
       type: object
       properties:

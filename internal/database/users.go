@@ -62,6 +62,28 @@ func (Users) GetByUsername(ctx context.Context, q dbinterface.Execer, username s
 	return u, nil
 }
 
+// GetAdmin returns the single admin user (the first by id), or ErrNotFound when
+// setup has not run. harbrr is single-admin, so this is the current user — used by
+// change-password, which has no username to look up (session or API-key auth).
+func (Users) GetAdmin(ctx context.Context, q dbinterface.Execer) (domain.User, error) {
+	var (
+		u                    domain.User
+		createdAt, updatedAt string
+	)
+	err := q.QueryRowContext(ctx,
+		`SELECT id, username, password_hash, created_at, updated_at FROM users ORDER BY id LIMIT 1`).
+		Scan(&u.ID, &u.Username, &u.PasswordHash, &createdAt, &updatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.User{}, fmt.Errorf("admin user: %w", ErrNotFound)
+	}
+	if err != nil {
+		return domain.User{}, fmt.Errorf("database: get admin: %w", err)
+	}
+	u.CreatedAt = parseTime(createdAt)
+	u.UpdatedAt = parseTime(updatedAt)
+	return u, nil
+}
+
 // UpdatePassword sets a user's password hash by id.
 func (Users) UpdatePassword(ctx context.Context, q dbinterface.Execer, id int64, hash string, updatedAt time.Time) error {
 	_, err := q.ExecContext(ctx,
