@@ -483,8 +483,35 @@ components:
     Error:
       type: object
       properties:
-        error: { type: string }
-      required: [error]
+        error: { type: string, description: human-readable message }
+        code:
+          type: string
+          description: >
+            machine-readable code clients can branch on — one of: bad_request,
+            invalid, unauthorized, invalid_credentials, invalid_api_key, forbidden,
+            not_found, conflict, already_setup, not_implemented, internal.
+      required: [error, code]
+    ReservedSettings:
+      type: object
+      description: >
+        Optional reserved keys the engine understands when present in an indexer's
+        free-form settings map (alongside the definition's own settings). All are
+        optional; documented here because they are not part of any single
+        definition's schema. proxy_url and cookie are secrets (stored encrypted,
+        never echoed — they read back as the <redacted> sentinel).
+      properties:
+        proxy_type:
+          type: string
+          enum: [http, https, socks5, socks5h]
+          description: route this indexer's traffic through a proxy (socks4 is not supported)
+        proxy_url: { type: string, description: "proxy URL; may embed user:pass (secret)" }
+        timeout: { type: string, description: "per-request timeout as a Go duration, e.g. 30s" }
+        solver_type:
+          type: string
+          enum: [manual_cookie, flaresolverr]
+          description: anti-bot solver (manual_cookie replays the encrypted cookie setting)
+        flaresolverr_url: { type: string, description: "FlareSolverr base URL (when solver_type=flaresolverr)" }
+        flaresolverr_max_timeout: { type: string, description: "FlareSolverr maxTimeout in seconds (optional)" }
     Credentials:
       type: object
       properties:
@@ -584,6 +611,10 @@ components:
         settings:
           type: object
           additionalProperties: { type: string }
+          description: >
+            definition setting name -> value. May also carry the reserved engine
+            keys (see ReservedSettings): proxy_type/proxy_url, timeout,
+            solver_type/flaresolverr_url. Secret values are stored encrypted.
       required: [definitionId]
     UpdateIndexer:
       type: object
@@ -593,6 +624,10 @@ components:
         settings:
           type: object
           additionalProperties: { type: string }
+          description: >
+            merged into the stored settings (see ReservedSettings for the reserved
+            engine keys). PATCH the <redacted> sentinel to keep an existing secret;
+            send new plaintext to rotate it.
     Capabilities:
       type: object
       properties:

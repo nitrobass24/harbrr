@@ -16,9 +16,11 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 )
 
-// errorResponse is the JSON error envelope.
+// errorResponse is the JSON error envelope: a human-readable message plus a
+// machine-readable code clients can branch on.
 type errorResponse struct {
 	Error string `json:"error"`
+	Code  string `json:"code"`
 }
 
 // writeJSON writes v as JSON with the given status.
@@ -30,9 +32,36 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	}
 }
 
-// writeError writes a JSON error envelope.
+// writeError writes a JSON error envelope, deriving the machine-readable code from
+// the status. Use writeErrorCode for a more specific code.
 func writeError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, errorResponse{Error: msg})
+	writeErrorCode(w, status, codeForStatus(status), msg)
+}
+
+// writeErrorCode writes a JSON error envelope with an explicit machine-readable code.
+func writeErrorCode(w http.ResponseWriter, status int, code, msg string) {
+	writeJSON(w, status, errorResponse{Error: msg, Code: code})
+}
+
+// codeForStatus is the default machine-readable code for an HTTP status, used where
+// no more specific sentinel applies.
+func codeForStatus(status int) string {
+	switch status {
+	case http.StatusBadRequest:
+		return "bad_request"
+	case http.StatusUnauthorized:
+		return "unauthorized"
+	case http.StatusForbidden:
+		return "forbidden"
+	case http.StatusNotFound:
+		return "not_found"
+	case http.StatusConflict:
+		return "conflict"
+	case http.StatusNotImplemented:
+		return "not_implemented"
+	default:
+		return "internal"
+	}
 }
 
 // decodeJSON decodes a single JSON object from the request body into dst,
@@ -59,19 +88,19 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 func (rt *router) writeServiceError(w http.ResponseWriter, op string, err error) {
 	switch {
 	case errors.Is(err, database.ErrNotFound):
-		writeError(w, http.StatusNotFound, "not found")
+		writeErrorCode(w, http.StatusNotFound, "not_found", "not found")
 	case errors.Is(err, registry.ErrConflict):
-		writeError(w, http.StatusConflict, err.Error())
+		writeErrorCode(w, http.StatusConflict, "conflict", err.Error())
 	case errors.Is(err, registry.ErrInvalid), errors.Is(err, auth.ErrWeakPassword), errors.Is(err, auth.ErrInvalidInput):
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorCode(w, http.StatusBadRequest, "invalid", err.Error())
 	case errors.Is(err, auth.ErrAlreadySetup):
-		writeError(w, http.StatusConflict, "setup already complete")
+		writeErrorCode(w, http.StatusConflict, "already_setup", "setup already complete")
 	case errors.Is(err, auth.ErrInvalidCredentials):
-		writeError(w, http.StatusUnauthorized, "invalid credentials")
+		writeErrorCode(w, http.StatusUnauthorized, "invalid_credentials", "invalid credentials")
 	case errors.Is(err, auth.ErrInvalidAPIKey):
-		writeError(w, http.StatusUnauthorized, "invalid api key")
+		writeErrorCode(w, http.StatusUnauthorized, "invalid_api_key", "invalid api key")
 	default:
 		rt.log.Error().Str("op", op).Str("error", apphttp.RedactURL(err.Error())).Msg("api: request failed")
-		writeError(w, http.StatusInternalServerError, "internal error")
+		writeErrorCode(w, http.StatusInternalServerError, "internal", "internal error")
 	}
 }

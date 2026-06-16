@@ -215,7 +215,7 @@ It lands **before Phase 9** so the live-validation pass is exercised against the
 tests through. One PR off `main` (`phase8b/management-api`); offline-gated; **PAUSE before merge**. Full
 gap analysis + per-endpoint contracts: `docs/issues/phase8b.md` + `docs/prompts/phase8b.md`.
 
-- [ ] **Shared query mapping + router wiring** — extract/reuse `buildQuery` (+ `parsePaging`) so the JSON
+- [x] **Shared query mapping + router wiring** — extract/reuse `buildQuery` (+ `parsePaging`) so the JSON
       search and the Torznab feed map params identically; wire the keyring/`/dl` tokenizer + base path into
       the management router (enabling — ticks no box on its own)
 - [x] **`GET /api/indexers/{slug}/search`** — Torznab param set → `idx.Search` → JSON `normalizer.Release`;
@@ -227,10 +227,10 @@ gap analysis + per-endpoint contracts: `docs/issues/phase8b.md` + `docs/prompts/
       so a client can render an add-indexer form; id-validation / traversal guard; spec + test
 - [x] **`POST /api/auth/change-password`** — verify the current password (reuse the login verifier) →
       `UpdatePassword` → session renewal; `400` weak new password, `401` wrong current password; spec + test
-- [ ] **Spec hardening** — document the config settings (`proxy_*` / `timeout` / `solver_*` / reserved
+- [x] **Spec hardening** — document the config settings (`proxy_*` / `timeout` / `solver_*` / reserved
       secrets) with enums; add a machine-readable `code` to the error schema. **OIDC untouched — deferred to
       Phase 10.**
-- [ ] **Gate**: four endpoints documented + drift-test-green; JSON search ≡ Torznab (parity proven); **no
+- [x] **Gate**: four endpoints documented + drift-test-green; JSON search ≡ Torznab (parity proven); **no
       passkey/secret in any JSON response/error/log** (redaction proven); `make precommit` + `make build`
       green; PR ≤150 files
 
