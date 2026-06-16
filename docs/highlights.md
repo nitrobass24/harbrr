@@ -204,6 +204,16 @@ site/docs land later.
   UI at `/api/docs`** (public, read-only) — so the management API is browsable and
   testable without a web UI, the basis for an API-only team alpha. *(`internal/web/swagger`,
   `internal/web/api`; `make test-openapi`)* `[shipped]`
+- **A complete control + data-plane API — drive harbrr entirely over JSON.** Beyond
+  indexer CRUD, the management API exposes **JSON search** (`GET
+  /api/indexers/{slug}/search`), **capabilities** (`…/capabilities`), a definition's
+  **settings-field schema** (`GET /api/definitions/{id}`, for rendering an
+  add-indexer form), and **change-password** — so an operator (or a future web UI, an
+  API client by design) can do everything through the documented API at `/api/docs`,
+  no web UI required. The JSON search runs the **same shared pipeline** as the
+  Torznab feed (identical result set), and a resolver-needing indexer's link is
+  sealed behind the `/dl` proxy so a passkey never reaches the JSON. Errors carry a
+  machine-readable `code`. *(`internal/web/api`)* `[shipped]`
 - **A divergence ledger, not a backlog.** Every difference from Jackett or the spec
   is recorded once, next to the test that pins it, with an explicit disposition
   (`[Tracked: Phase N]` / `[Deliberate]` / `[Accepted]`) — a complete, auditable
