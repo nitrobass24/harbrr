@@ -153,8 +153,10 @@ want harbrr stricter, in which case **call it out** as a labelled decision.
 - **Auth**: HttpOnly + SameSite=Lax `harbrr_session` cookie (the browser sends it; JS cannot read it).
   **No CSRF token anywhere** — do not send one. The `{"error":...}` envelope maps 401 (login/api-key),
   409 (conflict/already-setup), 400 (invalid/weak password), 404 (not found), 500 (generic).
-- **Swagger UI is absent today** — only the **raw** spec is served at `GET /api/openapi.yaml`. The UI
-  render (static assets pointed at that URL) is the missing piece.
+- **Swagger UI already ships** at `GET /api/docs` — a standalone, public, read-only HTML page
+  (CDN-loaded swagger-ui-dist, embedded in `internal/web/swagger/index.html`) that renders the raw spec
+  at `GET /api/openapi.yaml`. It is **separate from the SPA**; Phase 10 only needs to **link to it** from
+  the dashboard nav (optionally embed an in-app copy), not build the render from scratch.
 - **`api_keys.last_used_at`** column exists but is **never written** (Phase 4 kept validation a pure
   read). A debounced touch-writer is the small backend half that feeds key-activity display.
 
@@ -295,8 +297,8 @@ this commit. Concretely:
    *(Web UI box.)*
 5. **Web UI — manual search**: drive a search through the management surface and render results
    (title/size/category/seeders/grab link), honouring redaction. *(Web UI box.)*
-6. **Swagger UI render**: serve a static Swagger-UI bundle (embedded) at a UI route pointing at
-   `/api/openapi.yaml`. Low-risk, self-contained — the raw spec is already embedded + served. *(Web UI
+6. **Swagger UI link**: the standalone Swagger UI **already ships** at `/api/docs` (PR #36). This item is
+   just a **nav link** from the dashboard to it (optionally an in-app embed); no render to build. *(Web UI
    box — Swagger sub-clause.)*
 7. **Stats / search-history DISPLAY + `api_keys.last_used_at`**: render stats/activity. **Split the
    plan.md "Stats / search history" box**: the event-log **schema + writers + query API** is the

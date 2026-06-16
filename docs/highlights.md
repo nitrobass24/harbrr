@@ -200,9 +200,10 @@ site/docs land later.
   *(`internal/domain`, `internal/indexer/registry`)* `[shipped]`
 - **Spec-first management API with a drift test.** A hand-authored OpenAPI doc is
   embedded and served, and a test walks the live routes against it so the spec can
-  never drift from the handlers. *(`internal/web/swagger`, `internal/web/api`;
-  `make test-openapi`)* `[shipped]` — *interactive Swagger UI render: `[planned]`
-  (Phase 10, with the web UI).*
+  never drift from the handlers. The spec is also rendered as **interactive Swagger
+  UI at `/api/docs`** (public, read-only) — so the management API is browsable and
+  testable without a web UI, the basis for an API-only team alpha. *(`internal/web/swagger`,
+  `internal/web/api`; `make test-openapi`)* `[shipped]`
 - **A divergence ledger, not a backlog.** Every difference from Jackett or the spec
   is recorded once, next to the test that pins it, with an explicit disposition
   (`[Tracked: Phase N]` / `[Deliberate]` / `[Accepted]`) — a complete, auditable
