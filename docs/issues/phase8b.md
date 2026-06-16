@@ -4,7 +4,7 @@
 
 harbrr serves two HTTP contracts on separate trees (architecture invariant #3): a JSON
 **management API** (`/api/*`, documented in `internal/web/swagger/openapi.yaml`, browsable
-at `/api/docs`) and the *arr-facing **Torznab XML** contract (`/api/v2.0/indexers/*`, a
+at `/api/docs`) and the \*arr-facing **Torznab XML** contract (`/api/v2.0/indexers/*`, a
 standardized external contract, not in the spec).
 
 A complete gap analysis (a 6-area audit of 106 capabilities surfaced **64 gaps**) found that
