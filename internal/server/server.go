@@ -1,7 +1,7 @@
 // Package server is harbrr's composition root: it mounts the *arr-facing Torznab
 // handler and the management API on one HTTP listener but separate route trees
-// (architecture invariant #3), serves the embedded OpenAPI spec, supports a base
-// path, and shuts down gracefully.
+// (architecture invariant #3), serves the embedded OpenAPI spec + Swagger UI,
+// supports a base path, and shuts down gracefully.
 package server
 
 import (
@@ -25,7 +25,9 @@ type Deps struct {
 	// Torznab is the *arr-facing handler (serves /api/v2.0/indexers/...).
 	Torznab http.Handler
 	// Spec is the embedded OpenAPI document, served at /api/openapi.yaml.
-	Spec   []byte
+	Spec []byte
+	// DocsUI is the embedded Swagger UI page, served at /api/docs.
+	DocsUI []byte
 	Logger zerolog.Logger
 }
 
@@ -55,6 +57,7 @@ func New(deps Deps, cfg Config) *Server {
 
 	root.Handle("/api/v2.0/indexers/*", deps.Torznab)
 	root.Get("/api/openapi.yaml", specHandler(deps.Spec))
+	root.Get("/api/docs", docsHandler(deps.DocsUI))
 	root.Handle("/*", deps.Management)
 
 	var h http.Handler = root
@@ -107,6 +110,15 @@ func specHandler(spec []byte) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/yaml")
 		_, _ = w.Write(spec)
+	}
+}
+
+// docsHandler serves the embedded Swagger UI page (the interactive API docs). It is
+// public, like the spec it renders, and read-only.
+func docsHandler(page []byte) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write(page)
 	}
 }
 
