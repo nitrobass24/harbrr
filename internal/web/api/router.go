@@ -111,6 +111,7 @@ func (rt *router) routes() http.Handler {
 			r.Get("/api/auth/me", rt.me)
 			r.Post("/api/auth/logout", rt.logout)
 			r.Get("/api/definitions", rt.listDefinitions)
+			r.Get("/api/definitions/{id}", rt.getDefinition)
 
 			r.Get("/api/apikeys", rt.listAPIKeys)
 			r.Post("/api/apikeys", rt.mintAPIKey)

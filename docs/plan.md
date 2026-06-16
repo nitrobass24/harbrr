@@ -223,7 +223,7 @@ gap analysis + per-endpoint contracts: `docs/issues/phase8b.md` + `docs/prompts/
       Torznab `t=search` for the same query) + **redaction test**
 - [x] **`GET /api/indexers/{slug}/capabilities`** — `Capabilities()` → JSON (modes / params / categories /
       limits); spec + test
-- [ ] **`GET /api/definitions/{id}`** — a definition's settings-field schema (with `secret` flags) + caps,
+- [x] **`GET /api/definitions/{id}`** — a definition's settings-field schema (with `secret` flags) + caps,
       so a client can render an add-indexer form; id-validation / traversal guard; spec + test
 - [ ] **`POST /api/auth/change-password`** — verify the current password (reuse the login verifier) →
       `UpdatePassword` → session renewal; `400` weak new password, `401` wrong current password; spec + test

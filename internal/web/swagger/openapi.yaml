@@ -141,6 +141,27 @@ paths:
                 items: { $ref: "#/components/schemas/DefinitionSummary" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /api/definitions/{id}:
+    get:
+      summary: Get a definition's settings schema and capabilities
+      description: >
+        Returns a single definition's ordered settings fields (with a secret flag
+        per field, for rendering an add-indexer form) and its capabilities. This is
+        the definition schema, not a configured instance — it carries no stored
+        secret. Resolves both vendored and native definitions.
+      operationId: getDefinition
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: the definition schema
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DefinitionDetail" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /api/apikeys:
     get:
       summary: List API keys (metadata only)
@@ -460,6 +481,31 @@ components:
         type: { type: string }
         language: { type: string }
       required: [id, name]
+    SettingField:
+      type: object
+      description: >
+        One configurable field in a definition's settings schema. secret marks a
+        credential supplied by the operator, stored encrypted and never echoed back.
+      properties:
+        name: { type: string }
+        label: { type: string }
+        type: { type: string, description: "text | password | checkbox | select | multi-select | info*" }
+        default: { type: string }
+        options:
+          type: object
+          additionalProperties: { type: string }
+        secret: { type: boolean }
+      required: [name, type, secret]
+    DefinitionDetail:
+      allOf:
+        - { $ref: "#/components/schemas/DefinitionSummary" }
+        - type: object
+          properties:
+            settings:
+              type: array
+              items: { $ref: "#/components/schemas/SettingField" }
+            caps: { $ref: "#/components/schemas/Capabilities" }
+          required: [settings, caps]
     ApiKey:
       type: object
       properties:
