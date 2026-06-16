@@ -245,6 +245,30 @@ func runEndToEnd(t *testing.T, basePath string) {
 	if !strings.Contains(results, wantSelf) {
 		t.Errorf("search self URL missing %q: %s", wantSelf, results)
 	}
+
+	// The JSON management search runs the SAME shared pipeline as the feed, so it
+	// returns the same release (parity). It is session-authenticated (cookie), with
+	// no apikey query param.
+	jsonBody := mustGet(t, c, s.url+"/api/indexers/tt/search?q=bunny", stdhttp.StatusOK)
+	var sr struct {
+		Results []struct {
+			Title string `json:"title"`
+			Link  string `json:"link"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(jsonBody), &sr); err != nil {
+		t.Fatalf("decode json search: %v (%s)", err, jsonBody)
+	}
+	if len(sr.Results) != 1 || sr.Results[0].Title != "Big Buck Bunny 1080p" {
+		t.Fatalf("json search parity: got %+v", sr.Results)
+	}
+	// testtracker is a direct-link def, so the JSON link is the resolved tracker link
+	// (the same the feed serves) — direct-link passkeys are by design, like the feed.
+	if !strings.Contains(sr.Results[0].Link, "passkey=NOTREALSECRET00") {
+		t.Errorf("json search link not the resolved direct link: %q", sr.Results[0].Link)
+	}
+	// An unknown slug is a 404.
+	mustGet(t, c, s.url+"/api/indexers/nope/search?q=x", stdhttp.StatusNotFound)
 }
 
 // assertEncryptedAtRest fails if the plaintext appears in the stored setting.
