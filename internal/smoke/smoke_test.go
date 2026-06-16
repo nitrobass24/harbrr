@@ -8,13 +8,25 @@
 // the two agree within a tolerance (live data is non-deterministic). Sequential
 // with gentle delays; backs off on rate-limit. Captures secret-free evidence.
 //
-// Required env (see docs/phase5-setup.md):
+// Required env (see docs/phase5-setup.md and docs/prompts/phase9.md):
 //
 //	SMOKE_HARBRR_URL, SMOKE_HARBRR_APIKEY
 //	SMOKE_PROWLARR_URL, SMOKE_PROWLARR_APIKEY
-//	SMOKE_TRACKERS = "slug|defId|prowlarrName,slug|defId|prowlarrName,..."
-//	SMOKE_KEY_<SLUG> = the tracker's API key (per tracker; SLUG upper, - -> _)
+//	SMOKE_TRACKERS = "slug|defId|prowlarrName[|pattern],..."   (pattern is a free
+//	   label recorded in evidence: apikey | form | cookie | netquirk | cloudflare |
+//	   proxy | avistaz)
+//	Per-tracker credentials/settings — one of:
+//	  SMOKE_SETTINGS_<SLUG> = a JSON object of harbrr settings, e.g.
+//	      {"apikey":"…"}
+//	      {"cookie":"…","solver_type":"manual_cookie"}
+//	      {"solver_type":"flaresolverr","flaresolverr_url":"http://flaresolverr:8191"}
+//	      {"proxy_type":"socks5","proxy_url":"socks5://host:1080"}
+//	      {"username":"…","password":"…","pid":"…"}   (AvistaZ family)
+//	  SMOKE_KEY_<SLUG>      = shorthand for {"apikey":"…"}   (Phase 5 back-compat)
+//	  (SLUG upper-cased; - and . -> _)
 //	SMOKE_QUERY (optional, default "test"), SMOKE_QUERY_FALLBACK (default "2024")
+//	SMOKE_GRAB=1 (optional) — also resolve the first release's link to a real
+//	   .torrent/magnet (the qBittorrent push + seeding stays a manual, no-H&R step).
 package smoke
 
 import (
@@ -56,7 +68,8 @@ type config struct {
 }
 
 type trackerCfg struct {
-	slug, defID, prowlarrName, apikey string
+	slug, defID, prowlarrName, pattern string
+	settings                           map[string]string
 }
 
 func loadConfig(t *testing.T) config {
@@ -84,18 +97,41 @@ func loadConfig(t *testing.T) config {
 	}
 	for _, spec := range strings.Split(must("SMOKE_TRACKERS"), ",") {
 		parts := strings.Split(strings.TrimSpace(spec), "|")
-		if len(parts) != 3 {
-			t.Fatalf("smoke: SMOKE_TRACKERS entry %q must be slug|defId|prowlarrName", spec)
+		if len(parts) < 3 || len(parts) > 4 {
+			t.Fatalf("smoke: SMOKE_TRACKERS entry %q must be slug|defId|prowlarrName[|pattern]", spec)
 		}
-		slug := parts[0]
-		cfg.trackers = append(cfg.trackers, trackerCfg{
-			slug:         slug,
+		tc := trackerCfg{
+			slug:         parts[0],
 			defID:        parts[1],
 			prowlarrName: parts[2],
-			apikey:       must("SMOKE_KEY_" + envSanitize(slug)),
-		})
+			settings:     loadSettings(t, parts[0]),
+		}
+		if len(parts) == 4 {
+			tc.pattern = strings.TrimSpace(parts[3])
+		}
+		cfg.trackers = append(cfg.trackers, tc)
 	}
 	return cfg
+}
+
+// loadSettings reads a tracker's harbrr settings: SMOKE_SETTINGS_<SLUG> (a JSON
+// object — any harbrr setting: apikey/cookie/username/password/pid/solver_type/
+// proxy_type/…) or SMOKE_KEY_<SLUG> (apikey shorthand, Phase 5 back-compat).
+func loadSettings(t *testing.T, slug string) map[string]string {
+	t.Helper()
+	env := envSanitize(slug)
+	if raw := strings.TrimSpace(os.Getenv("SMOKE_SETTINGS_" + env)); raw != "" {
+		var m map[string]string
+		if err := json.Unmarshal([]byte(raw), &m); err != nil {
+			t.Fatalf("smoke: SMOKE_SETTINGS_%s must be a JSON object of string settings: %v", env, err)
+		}
+		return m
+	}
+	if key := strings.TrimSpace(os.Getenv("SMOKE_KEY_" + env)); key != "" {
+		return map[string]string{"apikey": key}
+	}
+	t.Fatalf("smoke: tracker %q needs SMOKE_SETTINGS_%s (JSON) or SMOKE_KEY_%s (apikey)", slug, env, env)
+	return nil
 }
 
 func envSanitize(slug string) string {
@@ -117,6 +153,17 @@ func TestSmoke(t *testing.T) {
 			// Sequential ON PURPOSE — no t.Parallel: gentle, predictable rate.
 			setupIndexer(t, c, cfg, tr)
 
+			// Live login/connectivity probe (the management Test action). For a
+			// credentialed pattern (form/cookie/CF/proxy/avistaz) a passing test is the
+			// key live confirmation; the differential below is the result-set gate.
+			testOK, found := testIndexer(t, c, cfg, tr.slug)
+			if !found {
+				t.Fatalf("%s: indexer not found immediately after add", tr.slug)
+			}
+			if !testOK {
+				t.Logf("%s: WARNING — Test action (login probe) did not pass; search may be empty", tr.slug)
+			}
+
 			q := cfg.query
 			harbrr, skipped := harbrrSearch(t, c, cfg, tr.slug, q)
 			if skipped {
@@ -137,16 +184,21 @@ func TestSmoke(t *testing.T) {
 
 			rec := evidenceRecord{
 				Tracker:              tr.slug,
+				Pattern:              tr.pattern,
+				TestOK:               testOK,
 				Query:                q,
 				HarbrrCount:          len(harbrr),
 				ProwlarrCount:        len(prowlarr),
 				HarbrrTitles:         firstTitles(harbrr, 5),
 				ProwlarrTitles:       firstTitles(prowlarr, 5),
-				DownloadLinksPresent: false, // set in harbrrSearch via the raw feed check
+				DownloadLinksPresent: false, // set below via the raw feed check
 			}
 			pass, notes := diffPass(harbrr, prowlarr)
 			rec.Pass, rec.Notes = pass, notes
 			rec.DownloadLinksPresent = harbrrHasDownloadLinks(t, c, cfg, tr.slug, q)
+			if os.Getenv("SMOKE_GRAB") == "1" {
+				rec.Grab = grabResolve(t, c, cfg, tr.slug, q)
+			}
 
 			writeEvidence(t, rec)
 			t.Logf("%s: harbrr=%d prowlarr=%d pass=%v (%s)", tr.slug, len(harbrr), len(prowlarr), pass, notes)
@@ -169,7 +221,7 @@ func setupIndexer(t *testing.T, c *http.Client, cfg config, tr trackerCfg) {
 		"slug":         tr.slug,
 		"definitionId": tr.defID,
 		"name":         tr.slug,
-		"settings":     map[string]string{"apikey": tr.apikey},
+		"settings":     tr.settings,
 	})
 	// Delete first (idempotent) then add.
 	_ = mgmt(t, c, cfg, http.MethodDelete, "/api/indexers/"+tr.slug, nil)
@@ -182,9 +234,17 @@ func setupIndexer(t *testing.T, c *http.Client, cfg config, tr trackerCfg) {
 }
 
 // mgmt issues a management API call with the X-API-Key header and returns the
-// status code. The request/response bodies (which may carry creds) are never
-// logged.
+// status code (the body is read but discarded).
 func mgmt(t *testing.T, c *http.Client, cfg config, method, path string, body []byte) int {
+	t.Helper()
+	_, status := mgmtBody(t, c, cfg, method, path, body)
+	return status
+}
+
+// mgmtBody is mgmt, but also returns the response body (for the Test action). The
+// request body (which may carry creds) is never logged; the caller must not log a
+// response body that could echo one.
+func mgmtBody(t *testing.T, c *http.Client, cfg config, method, path string, body []byte) ([]byte, int) {
 	t.Helper()
 	var r io.Reader
 	if body != nil {
@@ -203,8 +263,78 @@ func mgmt(t *testing.T, c *http.Client, cfg config, method, path string, body []
 		t.Fatalf("mgmt %s %s: %v", method, path, err)
 	}
 	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, resp.Body)
-	return resp.StatusCode
+	data, _ := io.ReadAll(resp.Body)
+	return data, resp.StatusCode
+}
+
+// testIndexer runs the management Test action (the login/connectivity probe against
+// a fresh engine) and returns whether it passed and whether the slug exists. The
+// endpoint scrubs its error; we keep only the boolean, so evidence never carries a
+// secret.
+func testIndexer(t *testing.T, c *http.Client, cfg config, slug string) (ok, found bool) {
+	t.Helper()
+	body, status := mgmtBody(t, c, cfg, http.MethodPost, "/api/indexers/"+url.PathEscape(slug)+"/test", nil)
+	switch status {
+	case http.StatusNotFound:
+		return false, false
+	case http.StatusOK:
+		var res struct {
+			OK bool `json:"ok"`
+		}
+		_ = json.Unmarshal(body, &res)
+		return res.OK, true
+	default:
+		return false, true
+	}
+}
+
+// grabResolve fetches the first served release's download link and confirms a real
+// .torrent (bencode) or a magnet — proving the grab path resolves end to end. It does
+// NOT push to qBittorrent; the no-hit-and-run seeding step stays a manual confirmation
+// (see README). Gated by SMOKE_GRAB since it pulls a real .torrent from the tracker.
+// The returned note is a fixed label (no secret).
+func grabResolve(t *testing.T, c *http.Client, cfg config, slug, query string) string {
+	t.Helper()
+	link := firstDownloadLink(t, c, cfg, slug, query)
+	switch {
+	case link == "":
+		return "no download link"
+	case strings.HasPrefix(link, "magnet:"):
+		return "magnet"
+	}
+	body, status := get(t, c, link)
+	if status != http.StatusOK {
+		return fmt.Sprintf("download HTTP %d", status)
+	}
+	if len(body) > 0 && body[0] == 'd' { // a bencoded torrent dict starts with 'd'
+		return "torrent"
+	}
+	return "not a torrent/magnet"
+}
+
+// firstDownloadLink returns the first feed item's link/enclosure — a /dl proxy URL
+// for a resolver-needing tracker, or the direct tracker link otherwise.
+func firstDownloadLink(t *testing.T, c *http.Client, cfg config, slug, query string) string {
+	t.Helper()
+	u := fmt.Sprintf("%s/api/v2.0/indexers/%s/results/torznab/api?t=search&q=%s&apikey=%s",
+		cfg.harbrrURL, url.PathEscape(slug), url.QueryEscape(query), url.QueryEscape(cfg.harbrrKey))
+	body, status := get(t, c, u)
+	if status != http.StatusOK {
+		return ""
+	}
+	var feed torznabFeed
+	if err := xml.Unmarshal(body, &feed); err != nil {
+		return ""
+	}
+	for _, it := range feed.Channel.Items {
+		if l := strings.TrimSpace(it.Link); l != "" {
+			return l
+		}
+		if l := strings.TrimSpace(it.Enclosure.URL); l != "" {
+			return l
+		}
+	}
+	return ""
 }
 
 // harbrrSearch queries harbrr's Torznab feed. Returns (results, skipped); skipped
@@ -461,12 +591,15 @@ func firstTitles(rs []result, n int) []string {
 // is gitignored). It carries titles/counts but NEVER credentials or raw feeds.
 type evidenceRecord struct {
 	Tracker              string   `json:"tracker"`
+	Pattern              string   `json:"pattern,omitempty"`
+	TestOK               bool     `json:"testOk"`
 	Query                string   `json:"query"`
 	HarbrrCount          int      `json:"harbrrCount"`
 	ProwlarrCount        int      `json:"prowlarrCount"`
 	HarbrrTitles         []string `json:"harbrrTitles"`
 	ProwlarrTitles       []string `json:"prowlarrTitles"`
 	DownloadLinksPresent bool     `json:"downloadLinksPresent"`
+	Grab                 string   `json:"grab,omitempty"`
 	Pass                 bool     `json:"pass"`
 	Notes                string   `json:"notes"`
 }
@@ -502,6 +635,8 @@ func validateNoSecrets(t *testing.T, rec evidenceRecord) {
 		}
 	}
 	check("notes", rec.Notes)
+	check("pattern", rec.Pattern)
+	check("grab", rec.Grab)
 	for _, s := range rec.HarbrrTitles {
 		check("harbrrTitle", s)
 	}

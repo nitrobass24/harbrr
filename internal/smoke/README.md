@@ -6,6 +6,28 @@ env-var-credentialed** — it reaches real trackers and never runs in CI. See
 evidence is written to `testdata/*.json` (gitignored, secret-scrubbed); this file
 is the committed, secret-free summary.
 
+## Phase 9 — extended harness (the live alpha gate)
+
+The harness now drives **every auth/fetch pattern**, not just apikey trackers. Per
+tracker it adds the indexer, runs the **Test action** (live login probe), searches
+harbrr's Torznab feed, and diffs against Prowlarr. Env contract (full detail in
+`smoke_test.go`'s doc comment; the run protocol is `docs/prompts/phase9.md`):
+
+- `SMOKE_TRACKERS = "slug|defId|prowlarrName[|pattern],…"` — the optional 4th field is
+  a label (`apikey`/`form`/`cookie`/`netquirk`/`cloudflare`/`proxy`/`avistaz`) recorded
+  in evidence.
+- `SMOKE_SETTINGS_<SLUG>` — a JSON object of **any** harbrr settings (replaces the
+  apikey-only model), e.g. `{"cookie":"…","solver_type":"manual_cookie"}`,
+  `{"solver_type":"flaresolverr","flaresolverr_url":"http://flaresolverr:8191"}`,
+  `{"proxy_type":"socks5","proxy_url":"socks5://host:1080"}`,
+  `{"username":"…","password":"…","pid":"…"}` (AvistaZ). `SMOKE_KEY_<SLUG>` stays as an
+  apikey shorthand.
+- `SMOKE_GRAB=1` — also resolves the first release's link to a real `.torrent`/magnet
+  (the qBittorrent push + seeding stays a **manual, no-hit-and-run** step).
+
+Each evidence record gains `pattern`, `testOk`, and `grab`. Pull existing creds out of
+Prowlarr (its API masks them) with `scripts/prowlarr-extract-creds.sh prowlarr.db`.
+
 ## Run recorded 2026-06-14 (5 trackers, query "test"/"2026")
 
 A real Sonarr would parse the same caps + Torznab feed harbrr served here; each
