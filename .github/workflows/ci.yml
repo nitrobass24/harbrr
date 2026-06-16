@@ -3,6 +3,7 @@ name: ci
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
 
 permissions:
@@ -77,23 +78,33 @@ jobs:
         run: go build ./...
 
   # Build the container image so a broken Dockerfile fails CI — the Docker path is
-  # how *arr apps reach harbrr, so it must not silently rot. Build (single-platform,
-  # loaded into the daemon) + a `version` smoke-run that proves the image actually
-  # runs; no registry push. Publishing/release packaging stays the later GoReleaser
-  # job referenced above.
+  # how *arr apps reach harbrr, so it must not silently rot. Every event builds a
+  # single-arch image, loads it, and runs `version` to prove the image actually runs.
+  # On a same-repo PR and on a version tag it then builds the multi-arch image
+  # (amd64 + arm64) and pushes it to GHCR — so a PR can be pulled and tested before
+  # merge, and a tag publishes a release. A fork PR (read-only token) and a plain
+  # main push build but do not push. Native-binary release packaging (GoReleaser)
+  # stays a later job.
   docker:
     name: docker
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v6
+      - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
-      - name: build image
+
+      # Always: build a single-arch image, load it into the daemon, and smoke-run it.
+      - name: build image (amd64, for the smoke run)
         uses: docker/build-push-action@v6
         with:
           context: .
           push: false
           load: true
+          platforms: linux/amd64
           tags: harbrr:ci
           build-args: |
             VERSION=ci
@@ -102,3 +113,41 @@ jobs:
           cache-to: type=gha,mode=max
       - name: validate image runs
         run: docker run --rm --entrypoint harbrr harbrr:ci version
+
+      # Publish to GHCR on a same-repo PR (testable before merge) or a version tag
+      # (a release). The metadata step is gated, so its empty outputs skip the
+      # login/push on a fork PR or a plain main push.
+      - name: registry metadata
+        id: meta
+        if: >-
+          (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+          (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+      - name: log in to GHCR
+        if: ${{ steps.meta.outputs.tags != '' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: build and push (multi-arch)
+        if: ${{ steps.meta.outputs.tags != '' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            COMMIT=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

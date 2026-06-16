@@ -3,7 +3,12 @@
 # Multi-stage build for harbrr. The binary is pure-Go (CGO_ENABLED=0), so the
 # final image is a tiny non-root Alpine with just the static binary.
 
-FROM golang:1.26-alpine AS build
+# The build stage stays on the native runner platform (BUILDPLATFORM) and Go
+# cross-compiles to the requested target (TARGETOS/TARGETARCH, injected by buildx),
+# so a multi-arch build never pays for an emulated Go toolchain. CGO is off, so this
+# is a pure cross-compile. For a plain `docker build` the target args are empty and
+# Go builds for the host.
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
 WORKDIR /src
 
 # Cache module downloads separately from the source.
@@ -14,7 +19,9 @@ COPY . .
 ARG VERSION=docker
 ARG COMMIT=none
 ARG DATE=unknown
-RUN CGO_ENABLED=0 go build -trimpath \
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath \
     -ldflags "-s -w \
       -X github.com/autobrr/harbrr/internal/version.Version=${VERSION} \
       -X github.com/autobrr/harbrr/internal/version.Commit=${COMMIT} \
