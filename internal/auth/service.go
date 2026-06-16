@@ -121,6 +121,39 @@ func (s *Service) Login(ctx context.Context, username, password string) (domain.
 	return u, nil
 }
 
+// ChangePassword verifies the current admin password and replaces it. It operates
+// on the single admin account (harbrr is single-admin), so it serves both session
+// and API-key callers without a username. A wrong current password is
+// ErrInvalidCredentials; a new password under the minimum is ErrWeakPassword. The
+// password stays unrecoverable (argon2id) and neither value is logged.
+func (s *Service) ChangePassword(ctx context.Context, current, newPassword string) error {
+	u, err := s.users.GetAdmin(ctx, s.db)
+	if errors.Is(err, database.ErrNotFound) {
+		return ErrInvalidCredentials
+	}
+	if err != nil {
+		return fmt.Errorf("auth: load admin: %w", err)
+	}
+	ok, err := secrets.VerifyPassword(current, u.PasswordHash)
+	if err != nil {
+		return fmt.Errorf("auth: verify password: %w", err)
+	}
+	if !ok {
+		return ErrInvalidCredentials
+	}
+	if len(newPassword) < minPasswordLen {
+		return fmt.Errorf("%w: minimum %d characters", ErrWeakPassword, minPasswordLen)
+	}
+	hash, err := secrets.HashPassword(newPassword)
+	if err != nil {
+		return fmt.Errorf("auth: hash password: %w", err)
+	}
+	if err := s.users.UpdatePassword(ctx, s.db, u.ID, hash, s.clock()); err != nil {
+		return fmt.Errorf("auth: update password: %w", err)
+	}
+	return nil
+}
+
 // MintAPIKey creates a new API key and returns the plaintext (shown once) plus the
 // stored record (hash only).
 func (s *Service) MintAPIKey(ctx context.Context, name string) (string, domain.APIKey, error) {
