@@ -126,6 +126,7 @@ func (rt *router) routes() http.Handler {
 			r.Post("/api/indexers/{slug}/test", rt.testIndexer)
 			r.Get("/api/indexers/{slug}/status", rt.indexerStatus)
 			r.Get("/api/indexers/{slug}/search", rt.searchIndexer)
+			r.Get("/api/indexers/{slug}/capabilities", rt.indexerCapabilities)
 		})
 	})
 	return r

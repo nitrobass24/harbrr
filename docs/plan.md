@@ -221,7 +221,7 @@ gap analysis + per-endpoint contracts: `docs/issues/phase8b.md` + `docs/prompts/
 - [x] **`GET /api/indexers/{slug}/search`** — Torznab param set → `idx.Search` → JSON `normalizer.Release`;
       resolver links `/dl`-tokenized (the passkey never reaches the JSON); spec + **parity test** (JSON ≡
       Torznab `t=search` for the same query) + **redaction test**
-- [ ] **`GET /api/indexers/{slug}/capabilities`** — `Capabilities()` → JSON (modes / params / categories /
+- [x] **`GET /api/indexers/{slug}/capabilities`** — `Capabilities()` → JSON (modes / params / categories /
       limits); spec + test
 - [ ] **`GET /api/definitions/{id}`** — a definition's settings-field schema (with `secret` flags) + caps,
       so a client can render an add-indexer form; id-validation / traversal guard; spec + test

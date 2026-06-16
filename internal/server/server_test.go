@@ -269,6 +269,13 @@ func runEndToEnd(t *testing.T, basePath string) {
 	}
 	// An unknown slug is a 404.
 	mustGet(t, c, s.url+"/api/indexers/nope/search?q=x", stdhttp.StatusNotFound)
+
+	// JSON capabilities for the configured indexer (modes + category tree).
+	capsJSON := mustGet(t, c, s.url+"/api/indexers/tt/capabilities", stdhttp.StatusOK)
+	if !strings.Contains(capsJSON, `"modes"`) || !strings.Contains(capsJSON, "Movies") {
+		t.Errorf("capabilities missing modes/categories: %s", capsJSON)
+	}
+	mustGet(t, c, s.url+"/api/indexers/nope/capabilities", stdhttp.StatusNotFound)
 }
 
 // assertEncryptedAtRest fails if the plaintext appears in the stored setting.

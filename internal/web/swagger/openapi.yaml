@@ -385,6 +385,26 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /api/indexers/{slug}/capabilities:
+    get:
+      summary: Get a configured indexer's search capabilities
+      description: >
+        Returns the indexer's search modes (with their supported params), the
+        advertised category tree, and the page-size limits. The internal
+        tracker<->newznab category lookup is not part of the response.
+      operationId: indexerCapabilities
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: the indexer capabilities
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Capabilities" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
 components:
   securitySchemes:
     session:
@@ -502,6 +522,34 @@ components:
         settings:
           type: object
           additionalProperties: { type: string }
+    Capabilities:
+      type: object
+      properties:
+        modes:
+          type: object
+          additionalProperties: { type: array, items: { type: string } }
+          description: search mode -> supported query params
+        allowRawSearch: { type: boolean }
+        allowTVSearchIMDB: { type: boolean }
+        categories:
+          type: array
+          items:
+            type: object
+            required: [id, name, isCustom, isParent]
+            properties:
+              id: { type: integer }
+              name: { type: string }
+              isCustom: { type: boolean }
+              isParent: { type: boolean }
+              parent: { type: string }
+        defaultCategories: { type: array, items: { type: string } }
+        limits:
+          type: object
+          required: [default, max]
+          properties:
+            default: { type: integer }
+            max: { type: integer }
+      required: [modes, allowRawSearch, allowTVSearchIMDB, categories, limits]
     SearchResults:
       type: object
       properties:
