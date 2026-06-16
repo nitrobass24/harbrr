@@ -1,21 +1,54 @@
-# Sample docker-compose for harbrr. Copy to docker-compose.yml and adjust.
+# Example: run harbrr alongside your *arr stack (Prowlarr / Sonarr / Radarr /
+# qBittorrent / FlareSolverr). Copy the `harbrr` service into your existing compose,
+# or run this file as-is. The /config volume holds the SQLite database AND the
+# auto-generated encryption keyfile — BACK IT UP separately from the database
+# (losing the keyfile means re-entering every tracker credential).
 #
-# The /config volume holds the SQLite database and the auto-generated encryption
-# keyfile — back it up. harbrr runs as uid 1000; ensure the mounted directory is
-# writable by that user (e.g. `chown 1000:1000 ./data`).
+# Getting a runnable image (no stable tag is published yet — main pushes do NOT
+# publish; only same-repo PRs and `v*` tags do). Pick ONE:
+#   a) Tag a release:  git tag v0.1.0-alpha && git push origin v0.1.0-alpha
+#      -> publishes ghcr.io/nitrobass24/harbrr:0.1.0-alpha + :latest; use :latest below.
+#   b) PR image (private): ghcr.io/nitrobass24/harbrr:pr-39
+#      -> `docker login ghcr.io` first (a PAT with read:packages), or make the package public.
+#   c) Build from source: comment `image:` and uncomment `build: .` (run from the repo).
+#
+# First run (the API at /api/docs is the whole UI for now):
+#   1. docker compose -f docker-compose.example.yml up -d harbrr
+#   2. Browse http://<host>:7474/api/docs   (interactive Swagger UI)
+#   3. Create the admin:   POST /api/auth/setup  {"username":"...","password":"..."}
+#   4. Mint a Torznab key: POST /api/apikeys     {"name":"sonarr"}   (shown ONCE)
+#   5. Add an indexer:     POST /api/indexers     (credentials encrypted at rest)
+#   6. Point Sonarr/Radarr at a Generic Torznab indexer:
+#        URL:    http://harbrr:7474/api/v2.0/indexers/<slug>/results/torznab
+#        apikey: the key minted in step 4
 
 services:
   harbrr:
-    # Build locally, or replace with a published image once available.
-    build: .
-    # image: ghcr.io/nitrobass24/harbrr:latest
+    image: ghcr.io/nitrobass24/harbrr:latest
+    # build: . # alternative to `image:` — build from the local checkout
     container_name: harbrr
     restart: unless-stopped
     ports:
-      - "7474:7474"
+      - "7474:7474" # drop this if only same-network *arr need to reach it
     volumes:
-      - ./data:/config
+      - harbrr-config:/config # or `./data:/config` (then `chown 1000:1000 ./data` — harbrr runs as uid 1000)
     environment:
+      - TZ=${TZ:-Etc/UTC} # match your stack so relative/localized tracker dates parse correctly
       - HARBRR_LOG_LEVEL=info
       # Set true when terminating TLS at a reverse proxy in front of harbrr:
       # - HARBRR_SERVER_SECURE_COOKIE=true
+    # The image already runs `harbrr serve --host 0.0.0.0 --data-dir /config`, is
+    # non-root (uid 1000), exposes 7474, and ships a /healthz HEALTHCHECK.
+
+volumes:
+  harbrr-config:
+# To put harbrr on the SAME network as your existing *arr stack (so Sonarr/Radarr
+# reach it as http://harbrr:7474), attach it to that network instead of the default:
+#
+# services:
+#   harbrr:
+#     networks: [arr]
+# networks:
+#   arr:
+#     external: true
+#     name: <your-existing-arr-network-name>
