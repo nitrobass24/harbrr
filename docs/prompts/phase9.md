@@ -16,6 +16,51 @@ follow-ups, never ad-hoc edits during validation.
 
 ---
 
+## Operator quick-start (the secure credential flow)
+
+**You never paste a credential into chat.** Secrets flow one way: Prowlarr DB → your
+terminal → env vars → harbrr's encrypted store. The agent needs only non-secret
+metadata (which tracker, which pattern); the harness reads the secret *values* from
+your env and POSTs them so they land AES-256-GCM-encrypted.
+
+1. **Deploy harbrr** next to your stack (`docker-compose.example.yml`), do first-run
+   setup at `http://<host>:7474/api/docs`, and mint a Torznab API key
+   (`POST /api/apikeys`).
+2. **Extract creds from Prowlarr** — to *your terminal only* (its REST API masks them):
+   ```sh
+   cp /path/to/config/prowlarr.db /tmp/prowlarr.db   # copy if Prowlarr is running
+   scripts/prowlarr-extract-creds.sh /tmp/prowlarr.db
+   ```
+   Note each tracker's `definitionId` (= harbrr defId) and its credential field(s).
+3. **Set the env in your shell** (NOT in chat). One entry per tracker, tagged with its
+   pattern; the settings are a JSON object:
+   ```sh
+   export SMOKE_HARBRR_URL=http://127.0.0.1:7474  SMOKE_HARBRR_APIKEY=<minted key>
+   export SMOKE_PROWLARR_URL=http://prowlarr:9696 SMOKE_PROWLARR_APIKEY=<prowlarr key>
+   export SMOKE_TRACKERS="seedpool|seedpool-api|Seedpool|apikey,avistaz|avistaz|AvistaZ|avistaz"
+   export SMOKE_SETTINGS_SEEDPOOL='{"apikey":"…"}'
+   export SMOKE_SETTINGS_AVISTAZ='{"username":"…","password":"…","pid":"…"}'
+   # cookie/2FA: {"cookie":"…","solver_type":"manual_cookie"}
+   # cloudflare: {"solver_type":"flaresolverr","flaresolverr_url":"http://flaresolverr:8191"}
+   # proxy:      {"proxy_type":"socks5","proxy_url":"socks5://host:1080"}
+   export SMOKE_GRAB=1   # optional: also resolve the first release to a real .torrent
+   ```
+4. **Run the harness** — it adds each indexer (creds encrypted at rest), probes login
+   (Test action), searches, diffs vs Prowlarr, and writes **secret-free** evidence to
+   `internal/smoke/testdata/`:
+   ```sh
+   make smoke-test    # or: go test -tags smoke ./internal/smoke/ -run TestSmoke -v
+   ```
+5. **Share the secret-free summary/evidence** (counts, pass/fail, pattern, testOk,
+   grab) — the agent records the per-pattern dispositions (`[Resolved: Phase 9]` or
+   `[Tracked]`). The raw creds never leave step 3.
+
+The agent's STEP-0 intake below is for the **non-secret** mapping (tracker names,
+patterns, which resources exist) and read-only connectivity checks — not for the
+secret values, which only ever live in your env (step 3).
+
+---
+
 ## STEP 0 — PLAN MODE FIRST (mandatory)
 
 Enter plan mode immediately. Do **not** write code or send any state-mutating live
@@ -25,8 +70,10 @@ request until the plan is approved. Two things happen, in order.
 
 Phase 9 is the live phase. Before planning, prompt me (AskUserQuestion / direct
 questions) for, and securely intake, what is available — mapped to the pattern matrix
-in the WORK LIST. For **each** pattern, ask only for the tracker **name** first;
-confirm the choice; then request its credential fields:
+in the WORK LIST. For **each** pattern, get the tracker **name** and confirm the
+choice; then tell me which **credential fields** it needs so I set the matching
+`SMOKE_SETTINGS_<SLUG>` env var myself (Operator quick-start) — do NOT ask me to paste
+the secret values into chat:
 
 - **user/pass form-login** tracker
 - **cookie / 2FA (manual-cookie)** tracker
