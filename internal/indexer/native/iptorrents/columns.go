@@ -74,8 +74,10 @@ func (c cellSet) textAt(i int) string {
 // strips; coerceInt's digit-only scan drops it anyway.
 func (c cellSet) intAt(i int) int64 { return coerceInt(c.textAt(i)) }
 
-// coerceInt extracts the leading integer from s, reproducing ParseUtil.CoerceInt's
-// lenient parse: the first run of digits (optionally signed) is returned, else 0.
+// coerceInt strips every non-digit rune from s and parses the concatenated digits,
+// reproducing ParseUtil.CoerceInt's lenient parse (e.g. "1,234" -> 1234, "12 KB" ->
+// 12); 0 when no digits remain. Used only for non-negative counts (seeders, leechers,
+// files, grabs), so sign and digit-grouping are intentionally ignored.
 func coerceInt(s string) int64 {
 	s = strings.TrimSpace(s)
 	digits := strings.Map(func(r rune) rune {
