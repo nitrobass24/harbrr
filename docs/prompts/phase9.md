@@ -51,11 +51,16 @@ run.
 scripts/prowlarr-extract-creds.sh /tmp/prowlarr.db
 ```
 
+FlareSolverr and HTTP/SOCKS proxies are pulled from Prowlarr's `IndexerProxies` table
+and applied by **shared tag**: a Cloudflare tracker gets `solver_type=flaresolverr` +
+`flaresolverr_url`, a proxied one gets `proxy_type` + `proxy_url` — automatically, no
+hand-editing.
+
 **Caveats:** AvistaZ field mapping (username/password/pid by Implementation) is
-best-effort — verify with the human-readable mode the first time. The harness does not
-pass a per-indexer `baseUrl`, so a multi-domain def uses its default link. Patterns
-needing infra not stored in Prowlarr (a FlareSolverr URL, a proxy URL) aren't in the
-DB — add those to the relevant `SMOKE_SETTINGS_<SLUG>` by hand for those few trackers.
+best-effort — verify with the human-readable mode the first time. A proxy with **no
+tags** is treated as applying to all indexers (Prowlarr's convention) — confirm that
+matches your setup. SOCKS4 is unsupported (skipped). The harness does not pass a
+per-indexer `baseUrl`, so a multi-domain def uses its default link.
 
 The agent's STEP-0 intake below is for the **non-secret** mapping (which resources
 exist, which patterns to label) and read-only connectivity checks — not the secret

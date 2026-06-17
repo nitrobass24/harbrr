@@ -52,15 +52,48 @@ if [[ "$mode" == "env" ]]; then
   pk="$(sqlite3 "$db" "SELECT Value FROM Config WHERE Key='ApiKey' LIMIT 1;" 2>/dev/null || true)"
   [[ -n "$pk" ]] && printf 'export SMOKE_PROWLARR_APIKEY=%q\n' "$pk"
 
+  # Indexer proxies (FlareSolverr / HTTP / SOCKS) live in a SEPARATE table, applied to
+  # an indexer when they share a tag (a proxy with no tags applies to all). Read them so
+  # a Cloudflare/proxy tracker gets solver_type/flaresolverr_url or proxy_type/proxy_url
+  # injected automatically. A missing table -> [].
+  proxies="$(sqlite3 -json "$db" "SELECT Implementation, Settings, Tags FROM IndexerProxies;" 2>/dev/null || true)"
+  [[ -z "$proxies" ]] && proxies='[]'
+
   # One SMOKE_SETTINGS_<SLUG> per indexer + a combined SMOKE_TRACKERS, derived straight
-  # from the DB. Cardigann creds live in extraFieldData; native (AvistaZ family) creds
-  # at the top level. Only string-valued fields are kept (drops checkboxes/numbers), and
-  # structural keys are removed, leaving the credential fields harbrr accepts as-is.
-  sqlite3 -json "$db" "SELECT Name, Implementation, Settings FROM Indexers ORDER BY Name;" \
-    | jq -r '
+  # from the DB. Cardigann creds live in extraFieldData; native (AvistaZ family) creds at
+  # the top level; proxy/solver config comes from the matched IndexerProxies. Only
+  # string-valued fields are kept (drops checkboxes/numbers); structural keys are removed.
+  sqlite3 -json "$db" "SELECT Name, Implementation, Settings, Tags FROM Indexers ORDER BY Name;" \
+    | jq -r --argjson proxies "$proxies" '
         def envname: ascii_upcase | gsub("[^A-Z0-9]"; "_");
         def strfields(o): (o // {}) | with_entries(select((.value|type)=="string" and (.value|length)>0));
-        def patt(f): if f.apikey then "apikey"
+        def tagset(t): (t // "[]") | (try fromjson catch []);
+        def proxyURL($scheme; $ps):
+          $scheme + "://"
+          + (if (($ps.username // "") != "") then
+               $ps.username + (if (($ps.password // "") != "") then ":" + $ps.password else "" end) + "@"
+             else "" end)
+          + ($ps.host // "")
+          + (if ($ps.port != null) then ":" + ($ps.port | tostring) else "" end);
+        # proxy/solver settings to inject for an indexer, by tag overlap with each proxy.
+        def proxyFields($itags):
+          reduce $proxies[] as $p ({};
+            (tagset($p.Tags)) as $ptags
+            | if (($ptags | length) == 0) or (any($ptags[]; . as $x | ($itags | index($x)) != null)) then
+                ($p.Settings | fromjson) as $ps
+                | ($p.Implementation | ascii_downcase) as $impl
+                | if $impl == "flaresolverr" then
+                    . + {solver_type: "flaresolverr", flaresolverr_url: ($ps.host // $ps.url // "")}
+                  elif ($impl == "http" or $impl == "https") then
+                    . + {proxy_type: "http", proxy_url: proxyURL("http"; $ps)}
+                  elif $impl == "socks5" then
+                    . + {proxy_type: "socks5", proxy_url: proxyURL("socks5"; $ps)}
+                  else .  # socks4 is unsupported by harbrr -> skipped
+                  end
+              else . end);
+        def patt(f): if f.solver_type == "flaresolverr" then "cloudflare"
+                     elif f.proxy_type then "proxy"
+                     elif f.apikey then "apikey"
                      elif f.cookie then "cookie"
                      elif f.pid then "avistaz"
                      elif (f.username and f.password) then "form"
@@ -74,7 +107,10 @@ if [[ "$mode" == "env" ]]; then
             ) as $def
           | select($def != null)
           | ( (strfields($s.extraFieldData) + strfields($s))
-              | del(.definitionFile, .baseUrl, .torznabView, .baseSettings) ) as $fields
+              | del(.definitionFile, .baseUrl, .torznabView, .baseSettings) ) as $base
+          | (proxyFields(tagset(.Tags))
+             | with_entries(select((.value|type)=="string" and (.value|length)>0))) as $prox
+          | ($base + $prox) as $fields
           | select(($fields | length) > 0)
           | { slug: ($def | gsub("[^a-zA-Z0-9._-]"; "-")), def: $def, fields: $fields }
         ] as $idx
