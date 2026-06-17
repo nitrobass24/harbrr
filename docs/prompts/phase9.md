@@ -22,8 +22,10 @@ follow-ups, never ad-hoc edits during validation.
 reads every tracker's creds out of `prowlarr.db` and emits shell-safe `export SMOKE_*`
 lines (Cardigann field values map 1:1 to harbrr settings; AvistaZ by Implementation;
 the Prowlarr API key auto-extracted). `scripts/phase9-smoke.sh` eval's them into the
-harness's env and runs it — secrets never touch chat or disk, and the harness writes
-only secret-free evidence.
+harness's env and runs it — secrets never touch chat, and the harness writes only
+secret-free evidence. By default the creds stay in-process and are discarded; pass
+`SMOKE_ENV_FILE` to *also* save a gitignored, mode-600 bundle locally so you can re-run
+later without re-extracting (see "Save the env for repeatable re-runs" below).
 
 **One-time setup:** deploy harbrr (`docker-compose.example.yml`), do first-run setup at
 `http://<host>:7474/api/docs`, mint a Torznab API key (`POST /api/apikeys`).
@@ -43,6 +45,25 @@ SMOKE_GRAB=1 \
 
 `SMOKE_PROWLARR_APIKEY` is operator-supplied (it lives in Prowlarr's `config.xml`,
 not the DB); everything else (tracker creds, FlareSolverr/proxy config) auto-extracts.
+
+**Save the env for repeatable re-runs** (so you can re-validate after Phase 9.5 ships,
+without copying `prowlarr.db` again). Add `SMOKE_ENV_FILE` to the run above:
+
+```sh
+… SMOKE_ENV_FILE=.env.phase9 scripts/phase9-smoke.sh     # extracts, saves a bundle, runs
+```
+
+That writes a complete, sourceable bundle (operator vars + every tracker's creds) to
+`.env.phase9`, **mode 600 and gitignored** — it holds live passkeys/cookies/`mam_id`/API
+keys, so it is machine-local and must never be committed or shared. Re-run the *same*
+live tests later straight from it, no Prowlarr DB needed:
+
+```sh
+SMOKE_REUSE_ENV=1 SMOKE_ENV_FILE=.env.phase9 SMOKE_GRAB=1 scripts/phase9-smoke.sh
+```
+
+(Gitignored names: `.env.phase9` or any `*.smoke.env`. Refresh the bundle by re-running
+the extract form whenever a tracker's cred rotates — e.g. MyAnonamouse's `mam_id`.)
 
 It pulls every indexer's creds, adds each to harbrr (encrypted at rest), probes login
 (Test action), searches, diffs vs Prowlarr, and writes secret-free evidence to
