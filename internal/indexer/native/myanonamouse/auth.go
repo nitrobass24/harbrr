@@ -50,7 +50,10 @@ func (d *driver) get(ctx context.Context, rawurl, accept string) (*stdhttp.Respo
 	if err != nil {
 		return nil, fmt.Errorf("myanonamouse: build request: %w", err)
 	}
-	req.AddCookie(&stdhttp.Cookie{Name: mamIDCookie, Value: d.mamID()})
+	// Set the request Cookie header directly (not http.Cookie): the mam_id is an
+	// opaque session token, and Secure/HttpOnly/SameSite are response-only attributes
+	// that never ride a request cookie anyway.
+	req.Header.Set("Cookie", mamIDCookie+"="+d.mamID())
 	if accept != "" {
 		req.Header.Set("Accept", accept)
 	}
