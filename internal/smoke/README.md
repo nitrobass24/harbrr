@@ -144,10 +144,28 @@ injects a replay `Doer` and never builds the real `*http.Client`) — only a liv
 could hit it. Fixed in **PR #42** (`registry/client.go`) with a regression test that
 builds the real no-proxy client.
 
-**Grab quirks `[Tracked: Phase 9]`:** digitalcore — the download link returns 401
-(download-auth differs from the search apikey path); torrentleech — the `.torrent`
-fetch is CF-gated too, so a raw GET hits the interstitial (the CF download needs the
-solver/`/dl` path, not a plain fetch).
+**Grab gap found — non-URL-authenticated downloads `[Tracked: Phase 9 — needs a fix PR]`.**
+This is a real functional gap, not a quirk. harbrr serves a **bare direct download
+link** for any non-resolver tracker, assuming the URL **self-authenticates** (carries
+a passkey/rsskey in the path/query). That holds for seedpool
+(`…/torrent/download/{id}.{rsskey}`) and grabs fine. But it breaks for trackers that
+authenticate the *download* out-of-band:
+
+- **digitalcore** — link is `…/api/v1/torrents/download/2491129` with **no token**; auth
+  is the `X-API-KEY` **header**. A bare GET (by *arr or the harness) → **401**.
+- **torrentleech** — link is `…/download/241785226/….torrent` with **no token**; auth is
+  the **session cookie** (CF-cleared). A bare GET → a login/CF page, not a `.torrent`.
+
+Search works for both (count parity 1.00); only the grab fails. Jackett/Prowlarr never
+hit this — their download always goes through the indexer's authenticated HTTP client
+(cookies + headers from login). harbrr only routes a download through its `/dl` proxy
+when the def has a `download:` block (`NeedsResolver()`); a plain login-auth tracker
+falls through to the bare-link path. **Impact:** harbrr is effectively search-only (no
+grab) for **session/cookie-auth and header-auth trackers** — a meaningful slice of
+private trackers (essentially every cookie-login tracker, plus header-auth UNIT3D like
+DigitalCore), not two oddballs. **Fix direction:** route a login-requiring tracker's
+download through `/dl` (resolve server-side with harbrr's authenticated session), not
+just `download:`-block defs — scoped fix PR, like the nil-`Transport` panic above.
 
 **Coverage gap found — native (non-Cardigann) trackers `[Tracked]`.** harbrr ships
 the Cardigann corpus + the AvistaZ native driver only. Trackers Jackett/Prowlarr

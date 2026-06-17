@@ -258,8 +258,11 @@ the owning layer — the engine stays frozen during validation; fixes are scoped
       board** (1 Prowlarr-side skip; AvistaZ not in the stack).
 - [ ] **Grab end-to-end per pattern** — search → resolved `.torrent` → seeding in qBittorrent (left
       seeding, no hit-and-run), for ≥1 tracker per auth pattern, **including a resolver-needing tracker
-      via the Phase-7 `/dl` path**. — **2026-06-16: 11/13 resolved a real `.torrent` (apikey + form); a
-      CF-gated download (torrentleech) and a download-auth 401 (digitalcore) `[Tracked]`.**
+      via the Phase-7 `/dl` path**. — **2026-06-16: 11/13 resolved a real `.torrent` (URL-token trackers,
+      apikey + form). Found a real gap `[Tracked: needs a fix PR]`: harbrr serves a bare download link for
+      non-resolver trackers, so downloads that authenticate by session cookie (torrentleech, ~all
+      cookie-login trackers) or request header (digitalcore X-API-KEY) are NOT grabbable by *arr — harbrr
+      is search-only for them until their downloads route through `/dl`. See `internal/smoke/README.md`.**
 - [ ] **Acceptance** — every pattern green, or its gap recorded `[Tracked]` with a disposition.
       — **2026-06-16: every pattern is green or `[Tracked]` with a disposition. The live run also caught +
       fixed a daemon-breaking nil-`Transport` panic (PR #42) and surfaced a native-indexer coverage gap —
