@@ -101,8 +101,8 @@ func TestParseRebuiltDownloadURLCarriesPasskey(t *testing.T) {
 func TestParseReleasesFreeleechFilter(t *testing.T) {
 	t.Parallel()
 	body := `[
-	  {"id":1,"name":"free","upload_date":"2024-01-01 00:00:00","category":"Filme HD","freeleech":true},
-	  {"id":2,"name":"paid","upload_date":"2024-01-02 00:00:00","category":"Filme HD","freeleech":false}
+	  {"id":1,"name":"free","upload_date":"2024-01-01 00:00:00","category":"Filme HD","freeleech":1},
+	  {"id":2,"name":"paid","upload_date":"2024-01-02 00:00:00","category":"Filme HD","freeleech":0}
 	]`
 	on := parseDriver(map[string]string{"passkey": credPass, "freeleech_only": "True"})
 	got, err := on.parseReleases([]byte(body))
