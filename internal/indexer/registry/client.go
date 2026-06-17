@@ -42,7 +42,15 @@ func newDoer(p ClientParams) (search.Doer, error) {
 	if err != nil {
 		return nil, err
 	}
-	base := &http.Client{Jar: jar, Timeout: timeout, Transport: transport}
+	base := &http.Client{Jar: jar, Timeout: timeout}
+	// Assign Transport ONLY when a proxy transport was built. buildTransport returns a
+	// nil *http.Transport for the (common) no-proxy case; assigning that typed nil to
+	// the http.RoundTripper interface field makes Transport a non-nil interface wrapping
+	// a nil pointer, so the stdlib calls into a nil *Transport and panics
+	// (alternateRoundTripper) instead of falling back to http.DefaultTransport.
+	if transport != nil {
+		base.Transport = transport
+	}
 	return newPacedDoer(base, p.RateInterval), nil
 }
 
