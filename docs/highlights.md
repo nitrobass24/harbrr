@@ -24,11 +24,15 @@ site/docs land later.
 
 ## Cardigann parity, proven live
 
-- **Byte-for-byte parity with Prowlarr on real trackers.** The Phase 5 live smoke
-  searched 5 real private trackers through the running daemon and diffed each
-  against the user's Prowlarr for the same query: 4/5 matched **exactly** (count +
-  title set identical), the 5th matched on count (a config-sorted, capped feed).
-  *(`internal/smoke/README.md`, `internal/smoke/smoke_test.go`)* `[shipped]`
+- **Byte-for-byte parity with Prowlarr on real trackers, at scale.** The Phase 5 live
+  smoke matched 5 trackers; the **Phase 9 run (2026-06-16) widened this to 14**, fully
+  automated from Prowlarr's own DB — **13/14 passed with count parity 1.00** vs the
+  live Prowlarr (1 Prowlarr-side skip), and it confirmed the **apikey, form-login, and
+  Cloudflare/FlareSolverr** auth paths live, plus real `.torrent` grabs for URL-token
+  trackers. *(It also surfaced a `[Tracked]` grab gap — session/header-auth downloads
+  need to route through `/dl` — and a daemon-breaking panic now fixed; honest
+  accounting in the README.)* *(`internal/smoke/README.md`, `scripts/phase9-smoke.sh`)*
+  `[shipped]`
 - **Caught real engine parity gaps offline tests can't.** The live smoke surfaced
   and fixed two Jackett behaviors Go doesn't get for free: Newtonsoft's JSON date
   auto-conversion (`DateParseHandling.DateTime`), which every UNIT3D-API def relies

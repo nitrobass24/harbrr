@@ -191,6 +191,15 @@ risk**, so it is explicitly a *post-parity* milestone, not part of the engine pr
 (Newznab/Torznab/TorrentPotato/TorrentRss) you build anyway. Release-name parsing is **not** ported —
 the family's `rls` does it.
 
+**Correction (Phase 9 finding):** the "Avistaz is the only native gap" measurement above compared native
+*families* against the vendored corpus and **missed the one-off C# native indexers** Jackett/Prowlarr
+ship for individual trackers that have no Cardigann YAML def at all — e.g. **IPTorrents, MyAnonamouse,
+FileList**. harbrr cannot serve these (no def, no native driver), so they are a real coverage gap, not
+just AvistaZ. A Phase 9 live run hit 3 such trackers in one operator's stack (≈17% of their torrent
+indexers). Closing it is the same per-tracker native-driver work AvistaZ required, and it is a concrete
+reason the §13 "not a Prowlarr replacement yet" caveat holds. `[Tracked]` (see
+`internal/smoke/README.md`).
+
 ## 7. Cardigann engine plan
 
 A definition is one YAML file describing how to talk to one tracker: **header**, **caps** (categories

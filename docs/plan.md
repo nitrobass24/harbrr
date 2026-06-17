@@ -213,7 +213,7 @@ at `/api/docs` can **drive harbrr entirely over HTTP** — letting the team run 
 UI, just the Swagger API** to add indexers, search, read capabilities, and manage credentials by hand.
 It lands **before Phase 9** so the live-validation pass is exercised against the API the team actually
 tests through. One PR off `main` (`phase8b/management-api`); offline-gated; **PAUSE before merge**. Full
-gap analysis + per-endpoint contracts: `docs/issues/phase8b.md` + `docs/prompts/phase8b.md`.
+gap analysis + per-endpoint contracts: `docs/archive/issue-phase8b.md` + `docs/archive/prompts/phase8b.md`.
 
 - [x] **Shared query mapping + router wiring** — extract/reuse `buildQuery` (+ `parsePaging`) so the JSON
       search and the Torznab feed map params identically; wire the keyring/`/dl` tokenizer + base path into
@@ -249,15 +249,64 @@ the owning layer — the engine stays frozen during validation; fixes are scoped
       **form login**; **cookie / 2FA** (manual-cookie solver); **.NET-quirk** (`*()'!` / unicode /
       `regexp2`); **Cloudflare via FlareSolverr** (the Phase-6 solver clears a real CF tracker end
       to end); **per-indexer proxy** (HTTP + SOCKS5 route a real search).
-- [ ] **Broad live Prowlarr differential** — many trackers (not just the Phase-5 five), **Cardigann +
+      — **2026-06-16: apikey (11), form login (racingforme), and Cloudflare/FlareSolverr (torrentleech)
+      confirmed live; cookie/2FA, .NET-quirk, and HTTP/SOCKS proxy `[Tracked]` (no qualifying tracker in
+      the stack — see `internal/smoke/README.md`).**
+- [x] **Broad live Prowlarr differential** — many trackers (not just the Phase-5 five), **Cardigann +
       Avistaz**: same query → Prowlarr feed vs harbrr feed → diff, confirming request/response + category
-      parity at scale against the live oracle.
+      parity at scale against the live oracle. — **2026-06-16: 13/14 PASS, count parity 1.00 across the
+      board** (1 Prowlarr-side skip; AvistaZ not in the stack).
 - [ ] **Grab end-to-end per pattern** — search → resolved `.torrent` → seeding in qBittorrent (left
       seeding, no hit-and-run), for ≥1 tracker per auth pattern, **including a resolver-needing tracker
-      via the Phase-7 `/dl` path**.
+      via the Phase-7 `/dl` path**. — **2026-06-16: 11/13 resolved a real `.torrent` (URL-token trackers,
+      apikey + form). Found a real gap `[Tracked: needs a fix PR]`: harbrr serves a bare download link for
+      non-resolver trackers, so downloads that authenticate by session cookie (torrentleech, ~all
+      cookie-login trackers) or request header (digitalcore X-API-KEY) are NOT grabbable by *arr — harbrr
+      is search-only for them until their downloads route through `/dl`. See `internal/smoke/README.md`.
+      → owned by Phase 9.5 item 1.**
 - [ ] **Acceptance** — every pattern green, or its gap recorded `[Tracked]` with a disposition.
+      — **2026-06-16: every pattern is green or `[Tracked]` with a disposition. The live run also caught +
+      fixed a daemon-breaking nil-`Transport` panic (PR #42) and surfaced a native-indexer coverage gap —
+      harbrr has no def for one-off C# native trackers (IPTorrents/MyAnonamouse/FileList) `[Tracked]`
+      → owned by Phase 9.5 item 2.**
       This is the live half of "match Jackett/Prowlarr on real trackers"; the offline parity gate
       (Phase 2) proves it deterministically.
+
+## Phase 9.5 — Functionality hardening (close the alpha-blocking gaps before any product surface)
+
+Phase 9 proved search parity (count 1.00 across 13/14 live trackers) but surfaced two gaps that leave
+harbrr **search-only** or **can't-serve** for a real slice of private trackers. These are
+correctness/coverage, **not** polish, so they land **before** Phase 10 — there is no point building UI /
+app-sync / migration on top of trackers harbrr can't fully serve. The engine stays parity-frozen; this
+is additive grab-path + native-driver work. Items 1 and 2 share machinery (the authenticated-`/dl` grab
+path), so item 1 comes first. Pattern reference: [`native-indexer-pattern.md`](native-indexer-pattern.md).
+
+- [ ] **Grab via `/dl` for login-authenticated downloads** — today harbrr serves a bare download link and
+      only routes through the `/dl` proxy when a def has a `download:` block (`NeedsResolver()`). Extend
+      `/dl` to also resolve downloads that authenticate **out-of-band**: by **session cookie** (torrentleech
+      + ~every cookie-login tracker) and by **request header** (digitalcore X-API-KEY / UNIT3D). harbrr
+      fetches the `.torrent` server-side with its authenticated session and serves the bytes, so *arr never
+      sees the unauthenticated bare link. Scoped engine PR + smoke re-test. (Gap recorded in
+      `internal/smoke/README.md`; the AvistaZ `/dl` path is the template.)
+- [ ] **Native drivers for the stack's C# one-off trackers** — **IPTorrents, MyAnonamouse, FileList** have
+      no Cardigann YAML (Jackett/Prowlarr ship them as bespoke C# indexers), so harbrr can't serve them at
+      all. Build them on the AvistaZ native pattern (`native.Driver` = settings POCO + request generator +
+      parser), reusing the authenticated-`/dl` grab path above. Two reusable auth shapes cover all three —
+      a **session-cookie** driver (IPTorrents HTML scrape; MyAnonamouse JSON API, **must persist the rotated
+      `mam_id`** per response) and a **passkey/Basic-auth** driver (FileList JSON). Offline-gated like
+      AvistaZ (stub server + synthetic goldens from the documented contract), then the **live Prowlarr
+      differential is the gate** (the stack runs all three live). Redact `mam_id`/`passkey`/`Cookie`/
+      `Authorization` everywhere. Per-tracker divergences recorded beside each driver's fixtures.
+- [ ] **Coverage analysis across toolsets** (backlog → `docs/coverage.md`) — produce a **tracker × surface ×
+      tool × auth** matrix: for every tracker, which surface each tool covers — **announce** (autobrr,
+      IRC firehose) vs **search** (harbrr / Prowlarr / Jackett, on-demand Torznab) vs **RSS** — and via which
+      credential. autobrr and the search proxies cover *disjoint* surfaces of the same tracker, so the matrix
+      both (a) bounds harbrr's real native-driver backlog vs Prowlarr's full C# set (what's still missing
+      beyond these three) and (b) states honestly where harbrr is not yet a Prowlarr replacement. Drives the
+      native-driver roadmap past IPT/MAM/FileList.
+- [ ] **Live-validation ledger (opportunistic, not a gate)** — the Phase-9 `[Tracked]` retests with no
+      qualifying tracker in the stack (cookie/2FA, .NET-quirk, HTTP/SOCKS proxy) become a standing checklist
+      that ticks when a qualifying tracker appears. All three are offline-proven; none block the alpha.
 
 ## Phase 10 — Product polish
 
