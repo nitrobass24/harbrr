@@ -39,43 +39,47 @@ set -euo pipefail
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="${SMOKE_ENV_FILE:-}"
 
+mode="extract"
 if [[ "${SMOKE_REUSE_ENV:-0}" == "1" ]]; then
   # REUSE mode — source the saved bundle, skip extraction.
+  mode="reuse"
   [[ -n "$ENV_FILE" ]] || { echo "phase9-smoke: SMOKE_REUSE_ENV=1 needs SMOKE_ENV_FILE=<saved file>" >&2; exit 1; }
   [[ -f "$ENV_FILE" ]] || { echo "phase9-smoke: SMOKE_ENV_FILE '$ENV_FILE' not found" >&2; exit 1; }
   echo "phase9-smoke: reusing saved env from $ENV_FILE (no extraction)" >&2
+  # shellcheck disable=SC1090 # ENV_FILE is an operator-supplied path, not a fixed source.
   set -a; . "$ENV_FILE"; set +a
 else
   # EXTRACT mode — pull creds from prowlarr.db.
-  : "${SMOKE_HARBRR_URL:?set SMOKE_HARBRR_URL=http://host:7474}"
-  : "${SMOKE_HARBRR_APIKEY:?set SMOKE_HARBRR_APIKEY=<a harbrr API key>}"
-  : "${SMOKE_PROWLARR_URL:?set SMOKE_PROWLARR_URL=http://host:9696}"
   : "${PROWLARR_DB:?set PROWLARR_DB=/path/to/prowlarr.db}"
-
   # Pull SMOKE_PROWLARR_APIKEY + SMOKE_TRACKERS + every SMOKE_SETTINGS_<SLUG> from the DB.
   creds="$("$repo/scripts/prowlarr-extract-creds.sh" --env "$PROWLARR_DB")"
   eval "$creds"
+fi
 
-  if [[ -n "$ENV_FILE" ]]; then
-    # Save a complete, sourceable bundle (operator vars + extracted creds) for re-runs.
-    # Operator vars are written LAST so they win over any stale DB-extracted value.
-    ( umask 077
-      {
-        echo "# phase9-smoke env bundle — LIVE SECRETS. Machine-local, gitignored, never commit/share."
-        echo "# Re-run later: SMOKE_REUSE_ENV=1 SMOKE_ENV_FILE=$ENV_FILE scripts/phase9-smoke.sh"
-        printf '%s\n' "$creds"
-        echo "export SMOKE_HARBRR_URL=$(printf '%q' "$SMOKE_HARBRR_URL")"
-        echo "export SMOKE_HARBRR_APIKEY=$(printf '%q' "$SMOKE_HARBRR_APIKEY")"
-        echo "export SMOKE_PROWLARR_URL=$(printf '%q' "$SMOKE_PROWLARR_URL")"
-        echo "export SMOKE_PROWLARR_APIKEY=$(printf '%q' "${SMOKE_PROWLARR_APIKEY:-}")"
-      } > "$ENV_FILE" )
-    chmod 600 "$ENV_FILE"
-    case "$ENV_FILE" in
-      .env.phase9 | *.smoke.env | */.env.phase9 | */*.smoke.env) ;;
-      *) echo "phase9-smoke: WARNING — $ENV_FILE may not be gitignored; verify with 'git check-ignore $ENV_FILE'" >&2 ;;
-    esac
-    echo "phase9-smoke: saved env bundle -> $ENV_FILE (mode 600, gitignored)" >&2
-  fi
+# Required in BOTH modes (a reuse bundle must carry these too) — validate before use.
+: "${SMOKE_HARBRR_URL:?set SMOKE_HARBRR_URL=http://host:7474}"
+: "${SMOKE_HARBRR_APIKEY:?set SMOKE_HARBRR_APIKEY=<a harbrr API key>}"
+: "${SMOKE_PROWLARR_URL:?set SMOKE_PROWLARR_URL=http://host:9696}"
+
+# Save a complete, sourceable bundle for re-runs (extract mode only, after validation).
+# Operator vars are written LAST so they win over any stale DB-extracted value.
+if [[ "$mode" == "extract" && -n "$ENV_FILE" ]]; then
+  ( umask 077
+    {
+      echo "# phase9-smoke env bundle — LIVE SECRETS. Machine-local, gitignored, never commit/share."
+      echo "# Re-run later: SMOKE_REUSE_ENV=1 SMOKE_ENV_FILE=$ENV_FILE scripts/phase9-smoke.sh"
+      printf '%s\n' "$creds"
+      echo "export SMOKE_HARBRR_URL=$(printf '%q' "$SMOKE_HARBRR_URL")"
+      echo "export SMOKE_HARBRR_APIKEY=$(printf '%q' "$SMOKE_HARBRR_APIKEY")"
+      echo "export SMOKE_PROWLARR_URL=$(printf '%q' "$SMOKE_PROWLARR_URL")"
+      echo "export SMOKE_PROWLARR_APIKEY=$(printf '%q' "${SMOKE_PROWLARR_APIKEY:-}")"
+    } > "$ENV_FILE" )
+  chmod 600 "$ENV_FILE"
+  case "$ENV_FILE" in
+    .env.phase9 | *.smoke.env | */.env.phase9 | */*.smoke.env) ;;
+    *) echo "phase9-smoke: WARNING — $ENV_FILE may not be gitignored; verify with 'git check-ignore $ENV_FILE'" >&2 ;;
+  esac
+  echo "phase9-smoke: saved env bundle -> $ENV_FILE (mode 600, gitignored)" >&2
 fi
 
 if [[ -z "${SMOKE_TRACKERS:-}" ]]; then
