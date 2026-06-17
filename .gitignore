@@ -14,6 +14,13 @@ lint-report.json
 # Phase 5 live-smoke evidence (counts/titles only, secret-scrubbed — never committed)
 /internal/smoke/testdata/
 
+# Phase 9 live-smoke credential bundles — LIVE tracker secrets (passkeys/cookies/
+# mam_id/API keys) saved locally for repeatable re-runs. Machine-local only,
+# NEVER committed. (.env.phase9 is also covered by .env.* above; these make any
+# *.smoke.env name explicit too.)
+/.env.phase9
+*.smoke.env
+
 # stray `go build ./cmd/harbrr` binary + a datadir created by running it directly
 # (use `make build` -> /bin instead)
 /harbrr
