@@ -105,12 +105,16 @@ if [[ "$mode" == "env" ]]; then
           | (.Settings | try fromjson catch {}) as $s
           | ( $s.definitionFile
               // ( (.Implementation | ascii_downcase) as $impl
-                   | if ($impl | test("avistaz|cinemaz|privatehd|exoticaz")) then $impl else null end )
+                   | if ($impl | test("avistaz|cinemaz|privatehd|exoticaz|iptorrents|myanonamouse|filelist")) then $impl else null end )
             ) as $def
           | select($def != null)
           | ( (strfields($s.extraFieldData) + strfields($s))
               | del(.definitionFile, .baseUrl, .torznabView, .baseSettings)
-              | with_entries(select(.key | startswith("info") | not)) ) as $base
+              | with_entries(select(.key | startswith("info") | not))
+              # Native C# settings use camelCase; the harbrr native drivers use
+              # snake_case. Best-effort remap of the known fields (verify against the
+              # live DB if a native add fails): mamId->mam_id, userAgent->user_agent.
+              | with_entries(.key |= ({"mamId": "mam_id", "userAgent": "user_agent"}[.] // .)) ) as $base
           | (proxyFields(tagset(.Tags))
              | with_entries(select((.value|type)=="string" and (.value|length)>0))) as $prox
           | ($base + $prox) as $fields
