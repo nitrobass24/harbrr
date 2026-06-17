@@ -249,13 +249,21 @@ the owning layer — the engine stays frozen during validation; fixes are scoped
       **form login**; **cookie / 2FA** (manual-cookie solver); **.NET-quirk** (`*()'!` / unicode /
       `regexp2`); **Cloudflare via FlareSolverr** (the Phase-6 solver clears a real CF tracker end
       to end); **per-indexer proxy** (HTTP + SOCKS5 route a real search).
-- [ ] **Broad live Prowlarr differential** — many trackers (not just the Phase-5 five), **Cardigann +
+      — **2026-06-16: apikey (11), form login (racingforme), and Cloudflare/FlareSolverr (torrentleech)
+      confirmed live; cookie/2FA, .NET-quirk, and HTTP/SOCKS proxy `[Tracked]` (no qualifying tracker in
+      the stack — see `internal/smoke/README.md`).**
+- [x] **Broad live Prowlarr differential** — many trackers (not just the Phase-5 five), **Cardigann +
       Avistaz**: same query → Prowlarr feed vs harbrr feed → diff, confirming request/response + category
-      parity at scale against the live oracle.
+      parity at scale against the live oracle. — **2026-06-16: 13/14 PASS, count parity 1.00 across the
+      board** (1 Prowlarr-side skip; AvistaZ not in the stack).
 - [ ] **Grab end-to-end per pattern** — search → resolved `.torrent` → seeding in qBittorrent (left
       seeding, no hit-and-run), for ≥1 tracker per auth pattern, **including a resolver-needing tracker
-      via the Phase-7 `/dl` path**.
+      via the Phase-7 `/dl` path**. — **2026-06-16: 11/13 resolved a real `.torrent` (apikey + form); a
+      CF-gated download (torrentleech) and a download-auth 401 (digitalcore) `[Tracked]`.**
 - [ ] **Acceptance** — every pattern green, or its gap recorded `[Tracked]` with a disposition.
+      — **2026-06-16: every pattern is green or `[Tracked]` with a disposition. The live run also caught +
+      fixed a daemon-breaking nil-`Transport` panic (PR #42) and surfaced a native-indexer coverage gap —
+      harbrr has no def for one-off C# native trackers (IPTorrents/MyAnonamouse/FileList) `[Tracked]`.**
       This is the live half of "match Jackett/Prowlarr on real trackers"; the offline parity gate
       (Phase 2) proves it deterministically.
 

@@ -108,10 +108,64 @@ account for them rather than rediscover them:
 
 | Pattern | Why unverified live | Re-test disposition |
 |---|---|---|
-| **FlareSolverr / Cloudflare** | seam built (`login.Solver`), no CF tracker in the 5, no FlareSolverr in the env | `[Resolved: Phase 6]` — solver **implemented + offline-tested** (stub `/v1`, typed model, replay header contract); live CF clear `[Tracked: Phase 9 — live validation]` (no FlareSolverr/CF tracker on the day) |
-| **user/pass form login** | lazy-login + form/post flows validated offline (replay Doer) only; all 5 trackers are apikey | `[Tracked: Phase 9 — live validation]` — tracker available per intake; run the build-tagged harness via the daemon + Prowlarr differential (confirm logout→relogin live) |
+| **FlareSolverr / Cloudflare** | seam built (`login.Solver`), no CF tracker in the 5, no FlareSolverr in the env | `[Resolved: Phase 9]` — solver offline-tested in Phase 6; **live CF clear confirmed** (torrentleech, FlareSolverr) in the Phase 9 run below |
+| **user/pass form login** | lazy-login + form/post flows validated offline (replay Doer) only; all 5 trackers are apikey | `[Resolved: Phase 9]` — **confirmed live** (racingforme, 60=60 vs Prowlarr) in the Phase 9 run below |
 | **.NET-quirk sites** | the `WebUtility` URL encoder + `regexp2` (.NET regex) routing are validated by offline KAT/differential, not a live `*()'!`/unicode/regexp2 site | `[Tracked: Phase 9 — live validation]` — tracker available per intake; live-search inputs exercising those constructs |
 | **cookie / manual-cookie sites** | cookie-auth + `ManualCookieSolver` exercised offline only | `[Tracked: Phase 9 — live validation]` — tracker available per intake; live-test via `solver_type=manual_cookie` |
 | **per-indexer proxy (HTTP/SOCKS5)** | no proxy in the test env; doer construction is offline-tested | `[Tracked: Phase 9 — live validation]` — route a real search via `proxy_type`+`proxy_url` when a proxy is available (SOCKS4 unsupported — `x/net/proxy` has no socks4 dialer) |
 | **Sonarr → harbrr (inbound)** | ~~the sandbox daemon was not LAN-reachable; grab used a direct qBittorrent push~~ | ✅ **resolved 2026-06-14** — harbrr deployed via Docker; Sonarr added/tested/searched/grabbed it through to qBittorrent2 (see Grab §A) |
 | **download resolver / `/dl` proxy** | the 5 trackers are direct-link; resolver-needing defs aren't covered | `[Tracked: Phase 7]` |
+
+## Phase 9 live run — 2026-06-16 (14 trackers, automated)
+
+Driven fully from `prowlarr.db` via `scripts/phase9-smoke.sh` (extract → env →
+harness): each indexer added (creds encrypted), login-probed (Test action),
+searched, diffed against the live Prowlarr, and grabbed.
+
+**Broad Prowlarr differential — 13/14 PASS** (1 skip: aura4k-api, a Prowlarr-side
+HTTP 400, not harbrr). Every tracker hit **count parity 1.00** with Prowlarr; title
+Jaccard ~1.00 on all but digitalcore (the known config-sorted-window case → count
+parity).
+
+| Pattern | Live result | Disposition |
+|---|---|---|
+| **apikey** (11 trackers) | count 1.00, Jaccard ~1.00 vs Prowlarr | `[Resolved: Phase 9]` |
+| **user/pass form login** (racingforme) | 60=60, Jaccard 1.00, logout→relogin live | `[Resolved: Phase 9]` |
+| **Cloudflare via FlareSolverr** (torrentleech) | 35=35, real CF clear + search | `[Resolved: Phase 9]` |
+| **grab → `.torrent`** | 11/13 resolved a bencoded `.torrent` (incl. the form tracker) | `[Resolved: Phase 9]` (resolve half; the qBit push + seed stays the manual no-H&R step) |
+
+**Critical bug found + fixed — the headline catch.** Every live search/login of a
+non-proxied tracker panicked: `nil pointer dereference` in
+`net/http.(*Transport).alternateRoundTripper`, surfaced as an empty HTTP 500. Root
+cause: `newDoer` assigned a **typed-nil `*http.Transport`** (buildTransport returns
+nil for the no-proxy case) to `http.Client.Transport`, making the interface non-nil
+and bypassing `http.DefaultTransport`. Invisible to the entire offline suite (it
+injects a replay `Doer` and never builds the real `*http.Client`) — only a live run
+could hit it. Fixed in **PR #42** (`registry/client.go`) with a regression test that
+builds the real no-proxy client.
+
+**Grab quirks `[Tracked: Phase 9]`:** digitalcore — the download link returns 401
+(download-auth differs from the search apikey path); torrentleech — the `.torrent`
+fetch is CF-gated too, so a raw GET hits the interstitial (the CF download needs the
+solver/`/dl` path, not a plain fetch).
+
+**Coverage gap found — native (non-Cardigann) trackers `[Tracked]`.** harbrr ships
+the Cardigann corpus + the AvistaZ native driver only. Trackers Jackett/Prowlarr
+implement as **one-off C# native indexers** — in this stack **IPTorrents,
+MyAnonamouse, FileList** — have no Cardigann def, so harbrr cannot serve them at all
+(≈3 of ~18 torrent trackers here). This is broader than `docs/ideas.md §6`'s "AvistaZ
+is the only native gap" (which measured native *families* against the corpus and
+missed the one-off C# indexers). Closing it means per-tracker native drivers (the
+AvistaZ pattern); until then harbrr is not a full Prowlarr replacement for sets using
+these trackers.
+
+**Still `[Tracked: Phase 9]` — no qualifying tracker in this stack:**
+
+- **cookie / 2FA** — the cookie trackers present (IPTorrents, MyAnonamouse) are native
+  (above); none of the Cardigann-supported trackers here use cookie login. harbrr's
+  `ManualCookieSolver` is offline-proven; needs a supported cookie tracker + session
+  cookie to confirm live.
+- **.NET-quirk** (`*()'!` / unicode / `regexp2`) — all configured defs are Latin-script
+  and queries are plain, so the .NET URL encoder / regexp2 routing wasn't stressed.
+- **per-indexer proxy (HTTP/SOCKS5)** — only a FlareSolverr proxy is configured in
+  Prowlarr; no HTTP/SOCKS proxy to route a real search through.
