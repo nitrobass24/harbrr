@@ -38,6 +38,11 @@ if [[ -z "${SMOKE_TRACKERS:-}" ]]; then
   echo "phase9-smoke: no indexers extracted from $PROWLARR_DB" >&2
   exit 1
 fi
+if [[ -z "${SMOKE_PROWLARR_APIKEY:-}" ]]; then
+  echo "phase9-smoke: SMOKE_PROWLARR_APIKEY is unset and not in the DB (newer Prowlarr keeps it" >&2
+  echo "  in config.xml). Set it: Prowlarr -> Settings -> General -> API Key." >&2
+  exit 1
+fi
 
 # Print the (non-secret) tracker mapping only — never the SMOKE_SETTINGS_* values.
 echo "phase9-smoke: running against:" >&2

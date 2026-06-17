@@ -48,7 +48,9 @@ command -v jq >/dev/null || {
 }
 
 if [[ "$mode" == "env" ]]; then
-  # Prowlarr's own API key (the differential oracle) lives in the Config table.
+  # Prowlarr's own API key (the differential oracle): older builds keep it in the Config
+  # table, newer ones in config.xml (NOT the DB). Emit it if present; otherwise the
+  # operator supplies SMOKE_PROWLARR_APIKEY (Prowlarr -> Settings -> General -> API Key).
   pk="$(sqlite3 "$db" "SELECT Value FROM Config WHERE Key='ApiKey' LIMIT 1;" 2>/dev/null || true)"
   [[ -n "$pk" ]] && printf 'export SMOKE_PROWLARR_APIKEY=%q\n' "$pk"
 
@@ -107,7 +109,8 @@ if [[ "$mode" == "env" ]]; then
             ) as $def
           | select($def != null)
           | ( (strfields($s.extraFieldData) + strfields($s))
-              | del(.definitionFile, .baseUrl, .torznabView, .baseSettings) ) as $base
+              | del(.definitionFile, .baseUrl, .torznabView, .baseSettings)
+              | with_entries(select(.key | startswith("info") | not)) ) as $base
           | (proxyFields(tagset(.Tags))
              | with_entries(select((.value|type)=="string" and (.value|length)>0))) as $prox
           | ($base + $prox) as $fields

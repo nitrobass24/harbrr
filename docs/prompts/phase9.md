@@ -32,13 +32,17 @@ only secret-free evidence.
 
 ```sh
 cp /path/to/config/prowlarr.db /tmp/prowlarr.db   # copy if Prowlarr is running
-SMOKE_HARBRR_URL=http://127.0.0.1:7474 \
+SMOKE_HARBRR_URL=http://192.168.10.220:7474 \
 SMOKE_HARBRR_APIKEY=<minted key> \
-SMOKE_PROWLARR_URL=http://prowlarr:9696 \
+SMOKE_PROWLARR_URL=http://192.168.10.220:9696 \
+SMOKE_PROWLARR_APIKEY=<Prowlarr → Settings → General → API Key> \
 PROWLARR_DB=/tmp/prowlarr.db \
 SMOKE_GRAB=1 \
   scripts/phase9-smoke.sh
 ```
+
+`SMOKE_PROWLARR_APIKEY` is operator-supplied (it lives in Prowlarr's `config.xml`,
+not the DB); everything else (tracker creds, FlareSolverr/proxy config) auto-extracts.
 
 It pulls every indexer's creds, adds each to harbrr (encrypted at rest), probes login
 (Test action), searches, diffs vs Prowlarr, and writes secret-free evidence to
