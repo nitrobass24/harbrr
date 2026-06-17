@@ -42,9 +42,9 @@ if command -v jq >/dev/null; then
     | jq -r '
         .[]
         | "### \(.Name)   (implementation: \(.Implementation))",
-          "    harbrr definitionId: \((.Settings | fromjson).definitionFile // "— non-Cardigann (e.g. AvistaZ); map by hand")",
+          "    harbrr definitionId: \((try (.Settings | fromjson).definitionFile catch null) // "— non-Cardigann (e.g. AvistaZ); map by hand")",
           "    settings (plaintext credentials inline):",
-          ((.Settings | fromjson) | to_entries | map("      \(.key): \(.value | tojson)") | .[]),
+          ((try (.Settings | fromjson) catch {"_parse_error": "invalid Settings JSON"}) | to_entries | map("      \(.key): \(.value | tojson)") | .[]),
           ""'
 else
   echo "(jq not found — printing raw Settings JSON per indexer; install jq for a cleaner view)" >&2

@@ -41,6 +41,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	apphttp "github.com/autobrr/harbrr/internal/http"
 )
 
 const (
@@ -100,12 +102,13 @@ func loadConfig(t *testing.T) config {
 		if len(parts) < 3 || len(parts) > 4 {
 			t.Fatalf("smoke: SMOKE_TRACKERS entry %q must be slug|defId|prowlarrName[|pattern]", spec)
 		}
-		tc := trackerCfg{
-			slug:         parts[0],
-			defID:        parts[1],
-			prowlarrName: parts[2],
-			settings:     loadSettings(t, parts[0]),
+		slug := strings.TrimSpace(parts[0])
+		defID := strings.TrimSpace(parts[1])
+		prowlarrName := strings.TrimSpace(parts[2])
+		if slug == "" || defID == "" || prowlarrName == "" {
+			t.Fatalf("smoke: SMOKE_TRACKERS entry %q has an empty slug/defId/prowlarrName", spec)
 		}
+		tc := trackerCfg{slug: slug, defID: defID, prowlarrName: prowlarrName, settings: loadSettings(t, slug)}
 		if len(parts) == 4 {
 			tc.pattern = strings.TrimSpace(parts[3])
 		}
@@ -281,7 +284,9 @@ func testIndexer(t *testing.T, c *http.Client, cfg config, slug string) (ok, fou
 		var res struct {
 			OK bool `json:"ok"`
 		}
-		_ = json.Unmarshal(body, &res)
+		if err := json.Unmarshal(body, &res); err != nil {
+			t.Fatalf("test %s: decode /test response: %v", slug, err)
+		}
 		return res.OK, true
 	default:
 		return false, true
@@ -434,11 +439,12 @@ func get(t *testing.T, c *http.Client, u string) ([]byte, int) {
 	t.Helper()
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
 	if err != nil {
-		t.Fatalf("GET: %v", err)
+		t.Fatalf("GET %s: %v", apphttp.RedactURL(u), apphttp.RedactError(err))
 	}
 	resp, err := c.Do(req)
 	if err != nil {
-		t.Fatalf("GET failed: %v", err)
+		// Go's *url.Error embeds the raw URL (apikey query param), so scrub the error too.
+		t.Fatalf("GET %s failed: %v", apphttp.RedactURL(u), apphttp.RedactError(err))
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(resp.Body)
@@ -449,12 +455,12 @@ func getProwlarr(t *testing.T, c *http.Client, cfg config, u string) ([]byte, in
 	t.Helper()
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
 	if err != nil {
-		t.Fatalf("Prowlarr GET: %v", err)
+		t.Fatalf("Prowlarr GET %s: %v", apphttp.RedactURL(u), apphttp.RedactError(err))
 	}
 	req.Header.Set("X-Api-Key", cfg.prowlarrKey)
 	resp, err := c.Do(req)
 	if err != nil {
-		t.Fatalf("Prowlarr GET failed: %v", err)
+		t.Fatalf("Prowlarr GET %s failed: %v", apphttp.RedactURL(u), apphttp.RedactError(err))
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(resp.Body)
