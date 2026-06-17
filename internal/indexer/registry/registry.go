@@ -23,6 +23,9 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 	"github.com/autobrr/harbrr/internal/indexer/native/avistaz"
+	"github.com/autobrr/harbrr/internal/indexer/native/filelist"
+	"github.com/autobrr/harbrr/internal/indexer/native/iptorrents"
+	"github.com/autobrr/harbrr/internal/indexer/native/myanonamouse"
 	"github.com/autobrr/harbrr/internal/web/torznab"
 )
 
@@ -274,10 +277,16 @@ func (r *Registry) NativeDefinitions() []*loader.Definition {
 
 // nativeFamilies builds the native-family catalog keyed by definition id.
 func nativeFamilies() map[string]native.Family {
-	fams := avistaz.Families()
-	m := make(map[string]native.Family, len(fams))
-	for _, f := range fams {
-		m[f.Definition.ID] = f
+	m := make(map[string]native.Family)
+	for _, fams := range [][]native.Family{
+		avistaz.Families(),
+		filelist.Families(),
+		myanonamouse.Families(),
+		iptorrents.Families(),
+	} {
+		for _, f := range fams {
+			m[f.Definition.ID] = f
+		}
 	}
 	return m
 }

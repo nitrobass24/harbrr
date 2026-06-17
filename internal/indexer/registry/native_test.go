@@ -38,8 +38,18 @@ func TestNativeFamilyDispatch(t *testing.T) {
 		t.Errorf("Info().ID = %q, want az", got)
 	}
 
-	if n := len(reg.NativeDefinitions()); n != 4 {
-		t.Errorf("NativeDefinitions = %d, want 4 (avistaz/cinemaz/privatehd/exoticaz)", n)
+	// The native catalog is the AvistaZ family plus the standalone C# ports
+	// (FileList, MyAnonamouse, IPTorrents). Assert each expected id is present
+	// rather than an exact count, so adding a family does not break this test.
+	defs := reg.NativeDefinitions()
+	have := make(map[string]struct{}, len(defs))
+	for _, d := range defs {
+		have[d.ID] = struct{}{}
+	}
+	for _, id := range []string{"avistaz", "cinemaz", "privatehd", "exoticaz", "filelist", "myanonamouse", "iptorrents"} {
+		if _, ok := have[id]; !ok {
+			t.Errorf("NativeDefinitions missing %q (have %d: %v)", id, len(defs), have)
+		}
 	}
 }
 
