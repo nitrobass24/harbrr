@@ -59,7 +59,10 @@ func TestGrab_NoDownloadBlock_AppliesSessionCookie(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cookiejar.New: %v", err)
 	}
-	jar.SetCookies(u, []*stdhttp.Cookie{{Name: "tlsession", Value: "logged-in-cookie"}})
+	jar.SetCookies(u, []*stdhttp.Cookie{{
+		Name: "tlsession", Value: "logged-in-cookie",
+		Secure: true, HttpOnly: true, SameSite: stdhttp.SameSiteStrictMode,
+	}})
 	session := &login.Session{Jar: jar}
 
 	doer := &scriptedDoer{t: t, handlers: map[string]scriptResp{
