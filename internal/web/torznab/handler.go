@@ -207,7 +207,7 @@ func (h *handler) writeCaps(w http.ResponseWriter, idx Indexer) {
 // magnet (public, no secret), and a token-mint failure falls back to the direct
 // link rather than dropping the release.
 func (h *handler) dlRewriter(r *http.Request, idx Indexer) tzn.AcquisitionRewriter {
-	if h.dlToken == nil || !idx.NeedsResolver() {
+	if h.dlToken == nil || !NeedsDLProxy(idx) {
 		return nil
 	}
 	// The exported NewDLRewriter is the single implementation, shared with the

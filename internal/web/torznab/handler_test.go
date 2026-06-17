@@ -25,15 +25,16 @@ const testAPIKey = "harbrr-test-key" //nolint:gosec // G101: synthetic test API 
 // fakeIndexer is a Provider-backed Indexer for the handler tests: it serves
 // canned capabilities + releases and records the search query it received.
 type fakeIndexer struct {
-	info          IndexerInfo
-	caps          *mapper.Capabilities
-	releases      []*normalizer.Release
-	searchErr     error
-	gotQuery      search.Query
-	needsResolver bool
-	grabResult    *search.GrabResult // when set, Grab returns it
-	grabErr       error
-	gotGrabLink   string
+	info              IndexerInfo
+	caps              *mapper.Capabilities
+	releases          []*normalizer.Release
+	searchErr         error
+	gotQuery          search.Query
+	needsResolver     bool
+	downloadNeedsAuth bool
+	grabResult        *search.GrabResult // when set, Grab returns it
+	grabErr           error
+	gotGrabLink       string
 }
 
 func (f *fakeIndexer) Info() IndexerInfo                  { return f.info }
@@ -44,7 +45,8 @@ func (f *fakeIndexer) Search(_ context.Context, q search.Query) ([]*normalizer.R
 	return f.releases, f.searchErr
 }
 
-func (f *fakeIndexer) NeedsResolver() bool { return f.needsResolver }
+func (f *fakeIndexer) NeedsResolver() bool     { return f.needsResolver }
+func (f *fakeIndexer) DownloadNeedsAuth() bool { return f.downloadNeedsAuth }
 
 func (f *fakeIndexer) Grab(_ context.Context, link string) (*search.GrabResult, error) {
 	f.gotGrabLink = link

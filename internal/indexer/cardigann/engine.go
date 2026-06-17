@@ -320,6 +320,14 @@ func (e *Engine) NeedsResolver() bool {
 	return e.def.Download != nil
 }
 
+// DownloadNeedsAuth reports whether the download authenticates out-of-band rather
+// than via a passkey in the URL: a def with a login block authenticates its grab by
+// session cookie or request header, so a bare served link would fail (login page /
+// 401) for *arr. Such links are routed through /dl and fetched with the session.
+func (e *Engine) DownloadNeedsAuth() bool {
+	return e.def.Login != nil
+}
+
 // ResolveDownload turns a release's download link into the real torrent URL when
 // the definition declares a download block (the full Jackett download algorithm:
 // before pre-request, infohash->magnet, selectors). A def with no download block

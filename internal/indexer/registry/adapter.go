@@ -60,6 +60,11 @@ func (a *indexerAdapter) Search(ctx context.Context, query search.Query) ([]*nor
 // NeedsResolver reports whether the definition declares a download block.
 func (a *indexerAdapter) NeedsResolver() bool { return a.inner.NeedsResolver() }
 
+// DownloadNeedsAuth reports whether the download authenticates out-of-band (session
+// cookie / request header), so its link must be routed through /dl rather than served
+// bare.
+func (a *indexerAdapter) DownloadNeedsAuth() bool { return a.inner.DownloadNeedsAuth() }
+
 // Grab performs the grab-time download for a release link (resolve + fetch the
 // torrent through the session). The error is wrapped with the indexer id (not a
 // secret); the caller redacts it. This is the /dl proxy's seam; feed serialization

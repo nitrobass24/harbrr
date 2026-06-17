@@ -58,8 +58,17 @@ func DLBaseURL(r *http.Request, basePath, indexerID string) string {
 // apiKey is the caller's own key, echoed into the URL so a later grab authenticates.
 // A magnet (public) is kept as-is; a token-mint failure emits a /dl URL with an
 // empty token (rejected at grab time) rather than leaking the passkey.
+// NeedsDLProxy reports whether an indexer's served links must be routed through the
+// /dl proxy rather than served bare: either the def resolves the link before a grab
+// (NeedsResolver) or the download authenticates out-of-band by session/header
+// (DownloadNeedsAuth). The two routing call sites (the Torznab handler and the JSON
+// search API) share this so they seal links identically.
+func NeedsDLProxy(idx Indexer) bool {
+	return idx.NeedsResolver() || idx.DownloadNeedsAuth()
+}
+
 func NewDLRewriter(kr *secrets.Keyring, idx Indexer, dlBase, apiKey string) tzn.AcquisitionRewriter {
-	if kr == nil || !idx.NeedsResolver() {
+	if kr == nil || !NeedsDLProxy(idx) {
 		return nil
 	}
 	indexerID := idx.Info().ID

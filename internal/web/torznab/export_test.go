@@ -117,3 +117,27 @@ func TestNewDLRewriterSealsLink(t *testing.T) {
 		t.Error("expected a magnet to be served as-is (ok=false)")
 	}
 }
+
+// TestNewDLRewriterSealsLoginAuthLink proves a login-auth indexer with NO download
+// block (NeedsResolver=false, DownloadNeedsAuth=true) still gets its link sealed
+// behind /dl — the cookie/header-auth grab gap. A plain direct-link indexer (both
+// false) is left bare.
+func TestNewDLRewriterSealsLoginAuthLink(t *testing.T) {
+	t.Parallel()
+	kr := encryptedKeyring(t)
+	loginAuth := &fakeIndexer{info: IndexerInfo{ID: "demo"}, needsResolver: false, downloadNeedsAuth: true}
+	rw := NewDLRewriter(kr, loginAuth, "http://h.test/api/v2.0/indexers/demo/dl", "callerkey")
+	if rw == nil {
+		t.Fatal("expected a rewriter for a login-auth indexer")
+	}
+	const raw = "https://demo.test/download/9/Release.torrent"
+	link, _, ok := rw(raw)
+	if !ok || !strings.HasPrefix(link, "http://h.test/api/v2.0/indexers/demo/dl?") {
+		t.Fatalf("expected the login-auth link sealed behind /dl, got ok=%v link=%q", ok, link)
+	}
+
+	direct := &fakeIndexer{info: IndexerInfo{ID: "demo"}, needsResolver: false, downloadNeedsAuth: false}
+	if NewDLRewriter(kr, direct, "http://h/dl", "k") != nil {
+		t.Error("expected a nil rewriter for a plain direct-link indexer")
+	}
+}

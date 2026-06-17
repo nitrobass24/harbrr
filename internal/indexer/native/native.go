@@ -28,6 +28,10 @@ type Driver interface {
 	Capabilities() *mapper.Capabilities
 	Search(ctx context.Context, query search.Query) ([]*normalizer.Release, error)
 	NeedsResolver() bool
+	// DownloadNeedsAuth reports whether the download authenticates out-of-band (session
+	// cookie / request header) and so must be routed through /dl rather than served
+	// bare. A native driver whose NeedsResolver() is already true can return false.
+	DownloadNeedsAuth() bool
 	Grab(ctx context.Context, link string) (*search.GrabResult, error)
 	// Test verifies the instance is usable (for a native driver: that the credentials
 	// authenticate). The management "test indexer" action drives it.

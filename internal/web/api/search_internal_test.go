@@ -21,8 +21,9 @@ const keyLink = "https://demo.test/dl?passkey=SECRETPASSKEY777" //nolint:gosec /
 
 // fakeSearchIndexer is a torznab.Indexer for the link-resolution unit test.
 type fakeSearchIndexer struct {
-	id            string
-	needsResolver bool
+	id                string
+	needsResolver     bool
+	downloadNeedsAuth bool
 }
 
 func (f fakeSearchIndexer) Info() torznab.IndexerInfo          { return torznab.IndexerInfo{ID: f.id} }
@@ -31,7 +32,8 @@ func (f fakeSearchIndexer) Capabilities() *mapper.Capabilities { return nil }
 func (f fakeSearchIndexer) Search(context.Context, search.Query) ([]*normalizer.Release, error) {
 	return nil, nil
 }
-func (f fakeSearchIndexer) NeedsResolver() bool { return f.needsResolver }
+func (f fakeSearchIndexer) NeedsResolver() bool     { return f.needsResolver }
+func (f fakeSearchIndexer) DownloadNeedsAuth() bool { return f.downloadNeedsAuth }
 
 func (f fakeSearchIndexer) Grab(context.Context, string) (*search.GrabResult, error) {
 	return &search.GrabResult{}, nil // unused by the link-resolution tests
@@ -73,6 +75,22 @@ func TestResolveSearchLinksSealsResolverLink(t *testing.T) {
 	}
 	if rels[0].Link != keyLink {
 		t.Error("source release was mutated (expected a copy)")
+	}
+}
+
+// TestResolveSearchLinksSealsLoginAuthLink: a login-auth indexer with no download
+// block (DownloadNeedsAuth=true, NeedsResolver=false) is sealed behind /dl too, so
+// JSON search matches the Torznab feed for the cookie/header-auth grab gap.
+func TestResolveSearchLinksSealsLoginAuthLink(t *testing.T) {
+	t.Parallel()
+	rt := &router{dlToken: testKeyring(t)}
+	rels := []*normalizer.Release{{Title: "X", Link: keyLink}}
+	out := rt.resolveSearchLinks(searchReq(t), fakeSearchIndexer{id: "demo", downloadNeedsAuth: true}, rels)
+	if strings.Contains(out[0].Link, "SECRETPASSKEY777") {
+		t.Fatalf("passkey leaked into the JSON link: %q", out[0].Link)
+	}
+	if !strings.Contains(out[0].Link, "/api/v2.0/indexers/demo/dl?") {
+		t.Errorf("login-auth link not routed through /dl: %q", out[0].Link)
 	}
 }
 

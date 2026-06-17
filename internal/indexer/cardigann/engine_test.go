@@ -81,6 +81,36 @@ func newFixtureEngine(t *testing.T, defName string) *Engine {
 	return eng
 }
 
+// TestDownloadRoutingPredicates pins the two /dl-routing signals: NeedsResolver
+// tracks a download block; DownloadNeedsAuth tracks a login block (a login-auth
+// download can't be served bare). They are independent.
+func TestDownloadRoutingPredicates(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name          string
+		def           *loader.Definition
+		wantResolver  bool
+		wantNeedsAuth bool
+	}{
+		{"plain direct link", &loader.Definition{}, false, false},
+		{"login only (cookie/header auth)", &loader.Definition{Login: &loader.Login{}}, false, true},
+		{"download block only", &loader.Definition{Download: &loader.DownloadBlock{}}, true, false},
+		{"login + download block", &loader.Definition{Login: &loader.Login{}, Download: &loader.DownloadBlock{}}, true, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			e := &Engine{def: tc.def}
+			if got := e.NeedsResolver(); got != tc.wantResolver {
+				t.Errorf("NeedsResolver() = %v, want %v", got, tc.wantResolver)
+			}
+			if got := e.DownloadNeedsAuth(); got != tc.wantNeedsAuth {
+				t.Errorf("DownloadNeedsAuth() = %v, want %v", got, tc.wantNeedsAuth)
+			}
+		})
+	}
+}
+
 // TestParseResponse_HTMLScrape replays a saved HTML response end-to-end and
 // asserts the normalized releases. Regression snapshot (self-generated, NOT
 // Jackett-diffed): Phase 2 swaps these for differential goldens.

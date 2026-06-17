@@ -144,8 +144,8 @@ injects a replay `Doer` and never builds the real `*http.Client`) — only a liv
 could hit it. Fixed in **PR #42** (`registry/client.go`) with a regression test that
 builds the real no-proxy client.
 
-**Grab gap found — non-URL-authenticated downloads `[Tracked: Phase 9 — needs a fix PR]`.**
-This is a real functional gap, not a quirk. harbrr serves a **bare direct download
+**Grab gap found — non-URL-authenticated downloads `[Partial: Phase 9.5 — fix shipped,
+live retest pending]`.** This is a real functional gap, not a quirk. harbrr serves a **bare direct download
 link** for any non-resolver tracker, assuming the URL **self-authenticates** (carries
 a passkey/rsskey in the path/query). That holds for seedpool
 (`…/torrent/download/{id}.{rsskey}`) and grabs fine. But it breaks for trackers that
@@ -166,6 +166,18 @@ private trackers (essentially every cookie-login tracker, plus header-auth UNIT3
 DigitalCore), not two oddballs. **Fix direction:** route a login-requiring tracker's
 download through `/dl` (resolve server-side with harbrr's authenticated session), not
 just `download:`-block defs — scoped fix PR, like the nil-`Transport` panic above.
+
+**Fix (Phase 9.5 item 1) — shipped, offline-proven.** The serializer now routes a link
+through `/dl` when the def has a **login block** (`DownloadNeedsAuth()`), not only a
+`download:` block (`NeedsResolver()`); the `/dl` grab then fetches the `.torrent`
+server-side with the session cookie (torrentleech) and the search-header auth
+(digitalcore's `X-API-KEY`, applied via the `renderDownloadHeaders` search-headers
+fallback). Covered by offline tests (engine predicate, `search.Grab` with header- and
+cookie-auth + no download block, and Torznab/JSON routing+redaction). **Live retest
+pending:** deploy this build to the box and re-run
+`SMOKE_REUSE_ENV=1 SMOKE_ENV_FILE=.env.phase9 SMOKE_GRAB=1 scripts/phase9-smoke.sh`
+against torrentleech + digitalcore (expect a real bencoded `.torrent`); flip this entry
+to `[Resolved: Phase 9.5]` and tick `docs/plan.md` once green.
 
 **Coverage gap found — native (non-Cardigann) trackers `[Tracked]`.** harbrr ships
 the Cardigann corpus + the AvistaZ native driver only. Trackers Jackett/Prowlarr

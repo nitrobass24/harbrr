@@ -35,7 +35,8 @@ func (e *engineIndexer) Search(_ context.Context, q search.Query) ([]*normalizer
 	return e.engine.ParseResponseQuery(e.body, "", q)
 }
 
-func (e *engineIndexer) NeedsResolver() bool { return e.engine.NeedsResolver() }
+func (e *engineIndexer) NeedsResolver() bool     { return e.engine.NeedsResolver() }
+func (e *engineIndexer) DownloadNeedsAuth() bool { return e.engine.DownloadNeedsAuth() }
 
 func (e *engineIndexer) Grab(ctx context.Context, l string) (*search.GrabResult, error) {
 	return e.engine.Grab(ctx, l)

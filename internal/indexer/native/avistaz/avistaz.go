@@ -92,6 +92,10 @@ func (d *driver) Capabilities() *mapper.Capabilities { return d.caps }
 // and the driver's Grab fetches the torrent server-side.
 func (d *driver) NeedsResolver() bool { return true }
 
+// DownloadNeedsAuth is false: AvistaZ is already routed through /dl by NeedsResolver,
+// so the out-of-band-auth signal would be redundant.
+func (d *driver) DownloadNeedsAuth() bool { return false }
+
 // Test verifies the configured credentials authenticate (the management
 // "test indexer" action). It forces a fresh token fetch.
 func (d *driver) Test(ctx context.Context) error {

@@ -46,7 +46,7 @@ func (rt *router) searchIndexer(w http.ResponseWriter, r *http.Request) {
 // mutated.
 func (rt *router) resolveSearchLinks(r *http.Request, idx torznab.Indexer, releases []*normalizer.Release) []*normalizer.Release {
 	rw := torznab.NewDLRewriter(rt.dlToken, idx, torznab.DLBaseURL(r, rt.basePath, idx.Info().ID), r.Header.Get("X-API-Key"))
-	withhold := rw == nil && idx.NeedsResolver()
+	withhold := rw == nil && torznab.NeedsDLProxy(idx)
 	out := make([]*normalizer.Release, len(releases))
 	for i, rel := range releases {
 		cp := *rel

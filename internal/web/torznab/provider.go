@@ -31,6 +31,12 @@ type Indexer interface {
 	// served link must be resolved before a grab. Direct-link trackers report
 	// false and their link is served as-is.
 	NeedsResolver() bool
+	// DownloadNeedsAuth reports whether the download authenticates out-of-band — by
+	// session cookie or request header (i.e. the def has a login block) rather than a
+	// passkey baked into the URL. Such a link can't be served bare (a bare GET by *arr
+	// hits a login page or 401), so it is routed through /dl and fetched with harbrr's
+	// authenticated session, just like a resolver-needing link.
+	DownloadNeedsAuth() bool
 	// Grab performs the grab-time download: resolve the release link (the full
 	// Cardigann download algorithm, with testlinktorrent validation) and fetch the
 	// torrent through the session, honouring download.method/headers. A magnet is

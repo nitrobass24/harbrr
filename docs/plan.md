@@ -288,6 +288,11 @@ path), so item 1 comes first. Pattern reference: [`native-indexer-pattern.md`](n
       fetches the `.torrent` server-side with its authenticated session and serves the bytes, so *arr never
       sees the unauthenticated bare link. Scoped engine PR + smoke re-test. (Gap recorded in
       `internal/smoke/README.md`; the AvistaZ `/dl` path is the template.)
+      — **Code shipped + offline-proven:** `DownloadNeedsAuth()` (def has a login block) widens the
+      `/dl` routing predicate, and `renderDownloadHeaders` now applies `search.headers` to the
+      authenticated download fetch (nil-guarded for no-`download:`-block defs). Box stays unchecked until
+      the live grab retest against torrentleech + digitalcore is green (deploy this build, then
+      `SMOKE_REUSE_ENV=1 SMOKE_ENV_FILE=.env.phase9 SMOKE_GRAB=1 scripts/phase9-smoke.sh`).
 - [ ] **Native drivers for the stack's C# one-off trackers** — **IPTorrents, MyAnonamouse, FileList** have
       no Cardigann YAML (Jackett/Prowlarr ship them as bespoke C# indexers), so harbrr can't serve them at
       all. Build them on the AvistaZ native pattern (`native.Driver` = settings POCO + request generator +

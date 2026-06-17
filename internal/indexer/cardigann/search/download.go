@@ -107,7 +107,13 @@ func downloadContext(du *template.DownloadURI, deps Deps) *template.Context {
 // download context, mirroring Jackett's ParseCustomHeaders(Download.Headers ??
 // Search.Headers, variables) used for the resolution GETs.
 func renderDownloadHeaders(def *loader.Definition, du *template.DownloadURI, deps Deps) (map[string][]string, error) {
-	raw := def.Download.Headers
+	// A login-auth def routed through /dl has no download block, so guard the nil:
+	// fall back to search.headers (where an auth header like X-API-KEY lives), the
+	// same source the search request used.
+	var raw map[string][]string
+	if def.Download != nil {
+		raw = def.Download.Headers
+	}
 	if raw == nil {
 		raw = def.Search.Headers
 	}
