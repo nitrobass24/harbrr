@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<!--
+  Synthetic IPTorrents torrent-list page, authored from the Prowlarr selector
+  contract (IPTorrentsParser) — NOT a live capture. See testdata/README.md.
+
+  The header columns are in a DELIBERATELY non-default order so the test proves
+  the parser resolves the size/snatches/seeders/leechers columns by header text
+  (the "Sort by …" links), not by a hardcoded index:
+
+    th[0] = category-icon column (no header link)
+    th[1] = Name
+    th[2] = Sort by snatches   (grabs)
+    th[3] = Sort by size       (Prowlarr default would be 5 -> wrong)
+    th[4] = Sort by seeders
+    th[5] = Sort by leechers
+
+  Each body row carries six <td> cells in the same order. lout.php in the page
+  proves the logged-in marker the Test() check looks for.
+-->
+<html>
+<head><title>IPTorrents</title></head>
+<body>
+<a href="/lout.php">Logout</a>
+<table id="torrents">
+  <thead>
+    <tr>
+      <th></th>
+      <th>Name</th>
+      <th><a href="?o=snatches">Sort by snatches</a></th>
+      <th><a href="?o=size">Sort by size</a></th>
+      <th><a href="?o=seeders">Sort by seeders</a></th>
+      <th><a href="?o=leechers">Sort by leechers</a></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="?72"><span class="cat">Movies</span></a></td>
+      <td>
+        <a class="hv" href="/t/123456">The Matrix 1999 1080p BluRay x264-GROUP</a>
+        <a href="/download.php/123456/The.Matrix.1999.1080p.BluRay.x264-GROUP.torrent">DL</a>
+        <span class="free">FREELEECH</span>
+        <div class="sub">2.5 hours ago by uploader1</div>
+      </td>
+      <td>120</td>
+      <td>8.5 GB</td>
+      <td>47</td>
+      <td>3</td>
+    </tr>
+    <tr>
+      <td><a href="?73"><span class="cat">TV</span></a></td>
+      <td>
+        <a class="hv" href="/t/654321">Some Show S01E02 720p WEB-DL-GROUP</a>
+        <a href="/download.php/654321/Some.Show.S01E02.720p.WEB-DL-GROUP.torrent">DL</a>
+        <div class="sub">Tags: action, drama | 3 days ago by uploader2</div>
+      </td>
+      <td>5</td>
+      <td>1.2 GB</td>
+      <td>90</td>
+      <td>10</td>
+    </tr>
+  </tbody>
+</table>
+</body>
+</html>
