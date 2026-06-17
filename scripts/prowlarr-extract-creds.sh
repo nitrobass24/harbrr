@@ -82,7 +82,7 @@ if [[ "$mode" == "env" ]]; then
           reduce $proxies[] as $p ({};
             (tagset($p.Tags)) as $ptags
             | if (($ptags | length) == 0) or (any($ptags[]; . as $x | ($itags | index($x)) != null)) then
-                ($p.Settings | fromjson) as $ps
+                ($p.Settings | try fromjson catch {}) as $ps
                 | ($p.Implementation | ascii_downcase) as $impl
                 | if $impl == "flaresolverr" then
                     . + {solver_type: "flaresolverr", flaresolverr_url: ($ps.host // $ps.url // "")}
@@ -102,7 +102,7 @@ if [[ "$mode" == "env" ]]; then
                      else "generic" end;
 
         [ .[]
-          | (.Settings | fromjson) as $s
+          | (.Settings | try fromjson catch {}) as $s
           | ( $s.definitionFile
               // ( (.Implementation | ascii_downcase) as $impl
                    | if ($impl | test("avistaz|cinemaz|privatehd|exoticaz")) then $impl else null end )
