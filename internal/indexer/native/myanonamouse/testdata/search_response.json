@@ -1,0 +1,39 @@
+{
+  "error": "",
+  "data": [
+    {
+      "id": 101,
+      "title": "The Silent Patient",
+      "author_info": "{\"55\":\"Alex Michaelides\"}",
+      "category": "13",
+      "main_cat": "13",
+      "added": "2024-01-15 10:30:00",
+      "size": "256.50 MB",
+      "seeders": 47,
+      "leechers": 3,
+      "times_completed": 120,
+      "numfiles": 2,
+      "free": true,
+      "personal_freeleech": false,
+      "fl_vip": false,
+      "dl": "DLHASH-AAAA"
+    },
+    {
+      "id": 202,
+      "title": "Project Hail Mary",
+      "author_info": "{\"7\":\"Andy Weir\",\"8\":\"Ray Porter\"}",
+      "category": "47",
+      "main_cat": "13",
+      "added": "2024-03-01 08:00:00",
+      "size": "1.29 GB",
+      "seeders": 90,
+      "leechers": 10,
+      "times_completed": 8,
+      "numfiles": 1,
+      "free": false,
+      "personal_freeleech": false,
+      "fl_vip": false,
+      "dl": "DLHASH-BBBB"
+    }
+  ]
+}
