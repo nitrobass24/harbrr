@@ -51,6 +51,14 @@ func TestRedactError(t *testing.T) {
 			[]string{"<redacted>"},
 		},
 		{
+			// An escaped quote inside the value must not end the match early and leak
+			// the tail (the `tail-SECRET` after the \" would survive a naive `[^"]*`).
+			"json-quoted secret with an escaped quote",
+			errors.New(`{"apiKey":"head\"tail-SECRET","name":"x"}`),
+			[]string{"head", "tail-SECRET"},
+			[]string{"<redacted>", "name"},
+		},
+		{
 			"transport error with passkey in URL",
 			errors.New(`Get "https://t.test/rss?passkey=DEADBEEF": dial tcp: lookup failed`),
 			[]string{"DEADBEEF"},

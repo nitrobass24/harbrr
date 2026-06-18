@@ -145,8 +145,10 @@ var secretTokenRe = regexp.MustCompile(`(?i)(cookie|passkey|api_?key|auth_?key|r
 // jsonSecretRe scrubs a credential-shaped key's value in a JSON object —
 // `"apiKey":"…"` / `"password": "…"`. secretTokenRe misses these because the quote
 // before the `:` breaks its `key[=:]` anchor, so an app's JSON error body (echoed by
-// app-sync) could otherwise leak the value verbatim.
-var jsonSecretRe = regexp.MustCompile(`(?i)("(?:cookie|passkey|api_?key|auth_?key|rss_?key|torrent_pass|passid|passphrase|password|secret|token|downloadtoken|2fa|otp)"\s*:\s*)"[^"]*"`)
+// app-sync) could otherwise leak the value verbatim. The value run `(?:\\.|[^"\\])*`
+// consumes escape sequences (`\"`, `\\`) so an embedded escaped quote can't end the
+// match early and leak the tail.
+var jsonSecretRe = regexp.MustCompile(`(?i)("(?:cookie|passkey|api_?key|auth_?key|rss_?key|torrent_pass|passid|passphrase|password|secret|token|downloadtoken|2fa|otp)"\s*:\s*)"(?:\\.|[^"\\])*"`)
 
 // authHeaderRe scrubs an Authorization header value (with or without a scheme like
 // Bearer/Basic), since the scheme + token can span a space the value run above

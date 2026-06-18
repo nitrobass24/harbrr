@@ -54,7 +54,7 @@ var _ Target = (*quiDriver)(nil)
 // its API key (header X-API-Key).
 func NewQui(baseURL, apiKey string, client *http.Client) Target {
 	if client == nil {
-		client = http.DefaultClient
+		client = defaultHTTPClient()
 	}
 	return &quiDriver{baseURL: strings.TrimRight(baseURL, "/"), apiKey: apiKey, client: client}
 }

@@ -64,7 +64,7 @@ var _ Target = (*servarrDriver)(nil)
 // it); the harbrr feed key travels inside each pushed indexer body.
 func newServarr(kind, baseURL, apiKey string, client *http.Client, anime bool) *servarrDriver {
 	if client == nil {
-		client = http.DefaultClient
+		client = defaultHTTPClient()
 	}
 	return &servarrDriver{
 		kind: kind, baseURL: strings.TrimRight(baseURL, "/"),

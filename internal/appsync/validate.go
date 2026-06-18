@@ -44,15 +44,26 @@ func validateCreate(p CreateConnectionParams) error {
 	return validateIndexScope(p.IndexScope)
 }
 
-// applyUpdate mutates conn from the non-nil patch fields, validating any enums it sets.
+// applyUpdate mutates conn from the non-nil patch fields, validating any enums it sets
+// and rejecting a blank value for a required field (a present-but-empty patch must not
+// silently store invalid connection state that create-time validation would reject).
 func applyUpdate(conn *domain.AppConnection, p UpdateConnectionParams) error {
 	if p.Name != nil {
+		if err := requireNonBlank("name", *p.Name); err != nil {
+			return err
+		}
 		conn.Name = *p.Name
 	}
 	if p.BaseURL != nil {
+		if err := requireNonBlank("base url", *p.BaseURL); err != nil {
+			return err
+		}
 		conn.BaseURL = *p.BaseURL
 	}
 	if p.HarbrrURL != nil {
+		if err := requireNonBlank("harbrr url", *p.HarbrrURL); err != nil {
+			return err
+		}
 		conn.HarbrrURL = *p.HarbrrURL
 	}
 	if p.Priority != nil {
@@ -69,6 +80,14 @@ func applyUpdate(conn *domain.AppConnection, p UpdateConnectionParams) error {
 			return err
 		}
 		conn.IndexScope = *p.IndexScope
+	}
+	return nil
+}
+
+// requireNonBlank rejects an empty/whitespace value for a required field.
+func requireNonBlank(field, value string) error {
+	if strings.TrimSpace(value) == "" {
+		return fmt.Errorf("%w: %s must not be blank", ErrInvalid, field)
 	}
 	return nil
 }

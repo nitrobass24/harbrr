@@ -11,6 +11,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 )
@@ -78,13 +79,19 @@ const feedURLMarker = "/api/v2.0/indexers/"
 
 // slugFromFeedURL recovers the harbrr slug embedded in a Torznab feed URL, or "" when
 // the URL is not a harbrr feed. Drivers use it to tag which of an app's indexers are
-// harbrr-managed (so orphan removal never touches a human-added one).
+// harbrr-managed (so orphan removal never touches a human-added one). The marker is
+// matched against the URL *path* only — a query/fragment occurrence of the marker must
+// not be read as ownership (which could orphan-delete a human-added indexer).
 func slugFromFeedURL(feedURL string) string {
-	i := strings.Index(feedURL, feedURLMarker)
+	u, err := url.Parse(feedURL)
+	if err != nil {
+		return ""
+	}
+	i := strings.Index(u.Path, feedURLMarker)
 	if i < 0 {
 		return ""
 	}
-	rest := feedURL[i+len(feedURLMarker):]
+	rest := u.Path[i+len(feedURLMarker):]
 	j := strings.Index(rest, "/")
 	if j <= 0 {
 		return ""

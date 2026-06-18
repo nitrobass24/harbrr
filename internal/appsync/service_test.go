@@ -351,6 +351,42 @@ func TestServiceCreateValidation(t *testing.T) {
 	}
 }
 
+func TestServiceUpdateRejectsBlankFields(t *testing.T) {
+	t.Parallel()
+	f := newSyncFixture(t)
+	ctx := context.Background()
+	blank := " "
+	cases := map[string]UpdateConnectionParams{
+		"blank name":       {Name: &blank},
+		"blank base url":   {BaseURL: &blank},
+		"blank harbrr url": {HarbrrURL: &blank},
+		"blank api key":    {APIKey: &blank},
+	}
+	for name, p := range cases {
+		if err := f.svc.UpdateConnection(ctx, f.conn.ID, p); !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s: err = %v, want ErrInvalid", name, err)
+		}
+	}
+	// A non-blank patch still succeeds.
+	ok := "Renamed"
+	if err := f.svc.UpdateConnection(ctx, f.conn.ID, UpdateConnectionParams{Name: &ok}); err != nil {
+		t.Errorf("valid update rejected: %v", err)
+	}
+}
+
+func TestServiceSetSelectedRejectsUnknownID(t *testing.T) {
+	t.Parallel()
+	f := newSyncFixture(t)
+	ctx := context.Background()
+	if err := f.svc.SetSelectedIndexers(ctx, f.conn.ID, []int64{99999}); !errors.Is(err, ErrInvalid) {
+		t.Errorf("unknown instance id err = %v, want ErrInvalid", err)
+	}
+	// A known id is accepted.
+	if err := f.svc.SetSelectedIndexers(ctx, f.conn.ID, []int64{f.source.instances[0].ID}); err != nil {
+		t.Errorf("known id rejected: %v", err)
+	}
+}
+
 func TestServiceCreateDuplicateConflicts(t *testing.T) {
 	t.Parallel()
 	f := newSyncFixture(t)

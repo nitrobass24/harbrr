@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -12,8 +13,16 @@ import (
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
 	"github.com/autobrr/harbrr/internal/domain"
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/secrets"
 )
+
+// httpClientTimeout bounds a single app call so an unresponsive Sonarr/Radarr/qui
+// cannot hang the sync worker.
+const httpClientTimeout = 30 * time.Second
+
+// defaultHTTPClient is the fallback client the drivers use when none is injected.
+func defaultHTTPClient() *http.Client { return &http.Client{Timeout: httpClientTimeout} }
 
 // AAD discriminators distinguishing a connection's two encrypted secrets (the app's
 // own key vs the harbrr key minted for it), plus service defaults.
@@ -64,7 +73,7 @@ type Service struct {
 // injectable for deterministic tests.
 func NewService(db dbinterface.Querier, source IndexerSource, minter KeyMinter, keyring *secrets.Keyring, client *http.Client, log zerolog.Logger) *Service {
 	if client == nil {
-		client = http.DefaultClient
+		client = defaultHTTPClient()
 	}
 	return &Service{
 		db: db, source: source, minter: minter, keyring: keyring,
@@ -127,7 +136,7 @@ func (s *Service) insertConnection(ctx context.Context, p CreateConnectionParams
 	id, err := s.repo.InsertConnection(ctx, tx, conn)
 	if err != nil {
 		if database.IsUniqueViolation(err) {
-			return domain.AppConnection{}, fmt.Errorf("%w: %s at %s", ErrConflict, p.Kind, p.BaseURL)
+			return domain.AppConnection{}, fmt.Errorf("%w: %s at %s", ErrConflict, p.Kind, apphttp.RedactURL(p.BaseURL))
 		}
 		return domain.AppConnection{}, fmt.Errorf("appsync: insert connection: %w", err)
 	}
@@ -182,6 +191,9 @@ func (s *Service) UpdateConnection(ctx context.Context, id int64, p UpdateConnec
 		return err
 	}
 	if p.APIKey != nil {
+		if strings.TrimSpace(*p.APIKey) == "" {
+			return fmt.Errorf("%w: api key must not be blank", ErrInvalid)
+		}
 		enc, err := s.keyring.Encrypt(conn.ID, secretApp, *p.APIKey)
 		if err != nil {
 			return fmt.Errorf("appsync: encrypt app key: %w", err)
@@ -191,7 +203,7 @@ func (s *Service) UpdateConnection(ctx context.Context, id int64, p UpdateConnec
 	conn.UpdatedAt = s.clock()
 	if err := s.repo.UpdateConnection(ctx, s.db, conn); err != nil {
 		if database.IsUniqueViolation(err) {
-			return fmt.Errorf("%w: %s at %s", ErrConflict, conn.Kind, conn.BaseURL)
+			return fmt.Errorf("%w: %s at %s", ErrConflict, conn.Kind, apphttp.RedactURL(conn.BaseURL))
 		}
 		return fmt.Errorf("appsync: update connection: %w", err)
 	}
@@ -204,6 +216,9 @@ func (s *Service) UpdateConnection(ctx context.Context, id int64, p UpdateConnec
 func (s *Service) SetSelectedIndexers(ctx context.Context, id int64, instanceIDs []int64) error {
 	if _, err := s.repo.GetConnection(ctx, s.db, id); err != nil {
 		return fmt.Errorf("appsync: get connection: %w", err)
+	}
+	if err := s.validateInstanceIDs(ctx, instanceIDs); err != nil {
+		return err
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -231,6 +246,28 @@ func (s *Service) SetSelectedIndexers(ctx context.Context, id int64, instanceIDs
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("appsync: commit selection: %w", err)
+	}
+	return nil
+}
+
+// validateInstanceIDs rejects a selection that names an indexer that does not exist,
+// turning a client mistake into a 400 rather than a repository FK error.
+func (s *Service) validateInstanceIDs(ctx context.Context, instanceIDs []int64) error {
+	if len(instanceIDs) == 0 {
+		return nil
+	}
+	instances, err := s.source.List(ctx)
+	if err != nil {
+		return fmt.Errorf("appsync: list indexers: %w", err)
+	}
+	known := make(map[int64]bool, len(instances))
+	for _, inst := range instances {
+		known[inst.ID] = true
+	}
+	for _, instID := range instanceIDs {
+		if !known[instID] {
+			return fmt.Errorf("%w: unknown indexer instance id %d", ErrInvalid, instID)
+		}
 	}
 	return nil
 }
