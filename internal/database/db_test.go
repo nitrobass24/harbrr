@@ -75,9 +75,9 @@ func TestMigrateIsIdempotent(t *testing.T) {
 		t.Fatalf("second Migrate: %v", err)
 	}
 
-	// Each migration recorded once (0001_init.sql, 0002_indexer_health.sql), not
-	// duplicated by the second apply.
-	const wantMigrations = 2
+	// Each migration recorded once (0001_init.sql, 0002_indexer_health.sql,
+	// 0003_appsync.sql), not duplicated by the second apply.
+	const wantMigrations = 3
 	var applied int
 	if err := db.QueryRowContext(context.Background(),
 		"SELECT count(*) FROM schema_migrations").Scan(&applied); err != nil {

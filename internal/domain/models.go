@@ -74,3 +74,79 @@ type IndexerSetting struct {
 	KeyID          string
 	IsSecret       bool
 }
+
+// App-sync kinds — the *arr/qui targets harbrr can push indexer config into.
+// Stored verbatim in app_connections.kind.
+const (
+	AppKindSonarr = "sonarr"
+	AppKindRadarr = "radarr"
+	AppKindQui    = "qui"
+)
+
+// Sync levels — what reconciliation is allowed to do, set per connection (the
+// Prowlarr "Sync Level" equivalent). Full mirrors harbrr exactly (add + update +
+// remove orphans); AddUpdate never deletes (orphans are left for manual removal).
+const (
+	SyncLevelFull      = "full"
+	SyncLevelAddUpdate = "add_update"
+)
+
+// Index scopes — which harbrr indexers a connection mirrors. All = every enabled
+// instance; Selected = only the instances flagged in app_connection_indexers.
+const (
+	IndexScopeAll      = "all"
+	IndexScopeSelected = "selected"
+)
+
+// Sync statuses — the outcome recorded on a connection (and per-indexer push).
+const (
+	SyncStatusOK      = "ok"
+	SyncStatusPartial = "partial"
+	SyncStatusError   = "error"
+)
+
+// AppConnection is a configured Sonarr/Radarr/qui app harbrr syncs its indexers
+// into. Two secrets are stored encrypted (base64 nonce‖ciphertext‖tag) under KeyID,
+// bound by the connection ID as encryption AAD: APIKeyEncrypted is the *app's* API
+// key (so harbrr can call it), and HarbrrAPIKeyEncrypted is the plaintext of the
+// dedicated harbrr key minted for this connection — persisted so every re-sync can
+// re-push it into the app (api_keys stores only the hash). HarbrrAPIKeyID points at
+// that minted key for revocation on delete. HarbrrURL is the base URL *this app*
+// uses to reach harbrr's Torznab feed (it can differ per app on a Docker/LAN).
+type AppConnection struct {
+	ID                    int64
+	Name                  string
+	Kind                  string
+	BaseURL               string
+	APIKeyEncrypted       string
+	HarbrrURL             string
+	HarbrrAPIKeyID        int64
+	HarbrrAPIKeyEncrypted string
+	KeyID                 string
+	Enabled               bool
+	SyncLevel             string
+	IndexScope            string
+	Priority              int
+	LastSyncAt            *time.Time
+	LastSyncStatus        string
+	LastSyncError         string
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
+}
+
+// AppConnectionIndexer is the per-(connection, instance) sync ledger row — the
+// authoritative reconciliation state. RemoteID is the id the target app assigned
+// the pushed indexer (empty until the first successful push); PayloadHash is the
+// hash of the last-pushed intent, so an unchanged indexer skips its update.
+// Selected applies only when the connection's IndexScope is "selected".
+type AppConnectionIndexer struct {
+	ID             int64
+	ConnectionID   int64
+	InstanceID     int64
+	RemoteID       string
+	Selected       bool
+	PayloadHash    string
+	LastPushedAt   *time.Time
+	LastPushStatus string
+	LastPushError  string
+}
