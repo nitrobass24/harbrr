@@ -190,7 +190,47 @@ func (s *Service) UpdateConnection(ctx context.Context, id int64, p UpdateConnec
 	}
 	conn.UpdatedAt = s.clock()
 	if err := s.repo.UpdateConnection(ctx, s.db, conn); err != nil {
+		if database.IsUniqueViolation(err) {
+			return fmt.Errorf("%w: %s at %s", ErrConflict, conn.Kind, conn.BaseURL)
+		}
 		return fmt.Errorf("appsync: update connection: %w", err)
+	}
+	return nil
+}
+
+// SetSelectedIndexers replaces a connection's selected-indexer set (the scope
+// "selected" subset): the given instances become selected, every other currently
+// selected one is cleared. Applied in one transaction.
+func (s *Service) SetSelectedIndexers(ctx context.Context, id int64, instanceIDs []int64) error {
+	if _, err := s.repo.GetConnection(ctx, s.db, id); err != nil {
+		return fmt.Errorf("appsync: get connection: %w", err)
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("appsync: begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	want := make(map[int64]bool, len(instanceIDs))
+	for _, instID := range instanceIDs {
+		want[instID] = true
+		if err := s.repo.SetIndexerSelection(ctx, tx, id, instID, true); err != nil {
+			return fmt.Errorf("appsync: select indexer: %w", err)
+		}
+	}
+	ledger, err := s.repo.ListConnectionIndexers(ctx, tx, id)
+	if err != nil {
+		return fmt.Errorf("appsync: list ledger: %w", err)
+	}
+	for _, l := range ledger {
+		if l.Selected && !want[l.InstanceID] {
+			if err := s.repo.SetIndexerSelection(ctx, tx, id, l.InstanceID, false); err != nil {
+				return fmt.Errorf("appsync: deselect indexer: %w", err)
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("appsync: commit selection: %w", err)
 	}
 	return nil
 }

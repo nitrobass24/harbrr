@@ -143,6 +143,7 @@ func (rt *router) routes() http.Handler {
 			r.Post("/api/app-connections/{id}/test", rt.testConnection)
 			r.Post("/api/app-connections/{id}/sync", rt.syncConnection)
 			r.Get("/api/app-connections/{id}/status", rt.connectionStatus)
+			r.Put("/api/app-connections/{id}/indexers", rt.setConnectionIndexers)
 		})
 	})
 	return r

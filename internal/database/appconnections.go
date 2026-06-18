@@ -61,7 +61,7 @@ func (AppConnections) GetConnection(ctx context.Context, q dbinterface.Execer, i
 
 // ListConnections returns all connections ordered by id.
 func (AppConnections) ListConnections(ctx context.Context, q dbinterface.Execer) ([]domain.AppConnection, error) {
-	rows, err := q.QueryContext(ctx, `SELECT `+connectionColumns+` FROM app_connections ORDER BY id`)
+	rows, err := q.QueryContext(ctx, q.Rebind(`SELECT `+connectionColumns+` FROM app_connections ORDER BY id`))
 	if err != nil {
 		return nil, fmt.Errorf("database: list app connections: %w", err)
 	}
@@ -146,7 +146,10 @@ func (AppConnections) DeleteConnection(ctx context.Context, q dbinterface.Execer
 }
 
 // UpsertConnectionIndexer inserts or updates one ledger row, keyed on
-// (connection_id, instance_id) — the reconcile path calls it after each push.
+// (connection_id, instance_id) — the reconcile path calls it after each push. The
+// DO UPDATE deliberately does NOT touch `selected`: that column is user intent owned
+// by SetIndexerSelection, so a re-sync never re-selects a deselected indexer. (On a
+// fresh INSERT the provided selected value applies; it is ignored under scope "all".)
 func (AppConnections) UpsertConnectionIndexer(ctx context.Context, q dbinterface.Execer, l domain.AppConnectionIndexer) error {
 	_, err := q.ExecContext(ctx,
 		q.Rebind(`INSERT INTO app_connection_indexers
@@ -154,7 +157,7 @@ func (AppConnections) UpsertConnectionIndexer(ctx context.Context, q dbinterface
 			 last_pushed_at, last_push_status, last_push_error)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(connection_id, instance_id) DO UPDATE SET
-			  remote_id = excluded.remote_id, selected = excluded.selected,
+			  remote_id = excluded.remote_id,
 			  payload_hash = excluded.payload_hash, last_pushed_at = excluded.last_pushed_at,
 			  last_push_status = excluded.last_push_status, last_push_error = excluded.last_push_error`),
 		l.ConnectionID, l.InstanceID, nullIfEmpty(l.RemoteID), boolToInt(l.Selected),
@@ -162,6 +165,21 @@ func (AppConnections) UpsertConnectionIndexer(ctx context.Context, q dbinterface
 		nullIfEmpty(l.LastPushError))
 	if err != nil {
 		return fmt.Errorf("database: upsert connection indexer: %w", err)
+	}
+	return nil
+}
+
+// SetIndexerSelection sets a ledger row's selected flag, creating a placeholder row
+// (no remote id) when none exists yet. This is the only writer of `selected` — the
+// reconcile upsert leaves it alone — so it owns the scope="selected" set.
+func (AppConnections) SetIndexerSelection(ctx context.Context, q dbinterface.Execer, connectionID, instanceID int64, selected bool) error {
+	_, err := q.ExecContext(ctx,
+		q.Rebind(`INSERT INTO app_connection_indexers (connection_id, instance_id, selected)
+			VALUES (?, ?, ?)
+			ON CONFLICT(connection_id, instance_id) DO UPDATE SET selected = excluded.selected`),
+		connectionID, instanceID, boolToInt(selected))
+	if err != nil {
+		return fmt.Errorf("database: set indexer selection: %w", err)
 	}
 	return nil
 }

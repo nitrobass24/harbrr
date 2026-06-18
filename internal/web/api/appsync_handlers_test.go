@@ -128,6 +128,31 @@ func TestAppConnectionErrors(t *testing.T) {
 	mustStatus(t, resp, body, http.StatusBadRequest)
 }
 
+func TestAppConnectionUpdateConflictAndSelect(t *testing.T) {
+	t.Parallel()
+	base, c := serve(t, newEnv(t, api.Config{}))
+	setupAndLogin(t, base, c)
+	url := base + "/api/app-connections"
+
+	// Two distinct connections.
+	resp, body := do(t, c, http.MethodPost, url, createConnBody("A", "http://a:8989"), nil)
+	mustStatus(t, resp, body, http.StatusCreated)
+	var a struct {
+		ID int64 `json:"id"`
+	}
+	_ = json.Unmarshal(body, &a)
+	resp, body = do(t, c, http.MethodPost, url, createConnBody("B", "http://b:8989"), nil)
+	mustStatus(t, resp, body, http.StatusCreated)
+
+	// Patching A's baseUrl onto B's (same kind) is a 409, not a 500.
+	resp, body = do(t, c, http.MethodPatch, url+"/"+itoa(a.ID), map[string]any{"baseUrl": "http://b:8989"}, nil)
+	mustStatus(t, resp, body, http.StatusConflict)
+
+	// Selecting indexers returns 204 (empty set is valid).
+	resp, body = do(t, c, http.MethodPut, url+"/"+itoa(a.ID)+"/indexers", map[string]any{"instanceIds": []int64{}}, nil)
+	mustStatus(t, resp, body, http.StatusNoContent)
+}
+
 func TestAppConnectionSyncOverHTTP(t *testing.T) {
 	t.Parallel()
 	e := newEnv(t, api.Config{})

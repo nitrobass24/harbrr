@@ -244,6 +244,94 @@ func TestServiceDeleteRevokesKey(t *testing.T) {
 	}
 }
 
+func TestServiceSelectedScopeFunctional(t *testing.T) {
+	t.Parallel()
+	f := newSyncFixture(t)
+	ctx := context.Background()
+	if err := f.svc.UpdateConnection(ctx, f.conn.ID, UpdateConnectionParams{IndexScope: ptr(domain.IndexScopeSelected)}); err != nil {
+		t.Fatalf("switch to selected scope: %v", err)
+	}
+
+	// With nothing selected, a selected-scope sync pushes nothing (no deadlock-as-error).
+	rep, err := f.svc.Sync(ctx, f.conn.ID)
+	if err != nil {
+		t.Fatalf("empty selected Sync: %v", err)
+	}
+	if len(rep.Results) != 0 || f.stub.created() != 0 {
+		t.Fatalf("empty selection pushed something: results=%v created=%d", rep.Results, f.stub.created())
+	}
+
+	// Select tracker-a only; sync now pushes exactly that one.
+	instA := f.source.instances[0].ID
+	if err := f.svc.SetSelectedIndexers(ctx, f.conn.ID, []int64{instA}); err != nil {
+		t.Fatalf("SetSelectedIndexers: %v", err)
+	}
+	rep, err = f.svc.Sync(ctx, f.conn.ID)
+	if err != nil {
+		t.Fatalf("selected Sync: %v", err)
+	}
+	if !hasAction(rep.Results, "tracker-a", ActionCreated) || f.stub.created() != 1 {
+		t.Fatalf("selected sync should push only tracker-a: results=%v created=%d", rep.Results, f.stub.created())
+	}
+}
+
+func TestServiceSyncNeverClobbersSelection(t *testing.T) {
+	t.Parallel()
+	f := newSyncFixture(t)
+	ctx := context.Background()
+
+	// scope=all: first sync creates both ledger rows.
+	if _, err := f.svc.Sync(ctx, f.conn.ID); err != nil {
+		t.Fatalf("initial Sync: %v", err)
+	}
+	// Deselect tracker-a (keep tracker-b).
+	instA, instB := f.source.instances[0].ID, f.source.instances[1].ID
+	if err := f.svc.SetSelectedIndexers(ctx, f.conn.ID, []int64{instB}); err != nil {
+		t.Fatalf("SetSelectedIndexers: %v", err)
+	}
+	if selectedOf(t, f, instA) {
+		t.Fatalf("tracker-a should be deselected")
+	}
+	// A re-sync must NOT flip the deselected flag back to true.
+	if _, err := f.svc.Sync(ctx, f.conn.ID); err != nil {
+		t.Fatalf("re-Sync: %v", err)
+	}
+	if selectedOf(t, f, instA) {
+		t.Errorf("re-sync clobbered the deselected flag back to true")
+	}
+}
+
+func TestServiceSyncStaleKeyGuard(t *testing.T) {
+	t.Parallel()
+	f := newSyncFixture(t)
+	ctx := context.Background()
+	// Revoke the minted key out of band (FK SET NULL nulls the connection's link).
+	if err := (database.APIKeys{}).Delete(ctx, f.db, f.conn.HarbrrAPIKeyID); err != nil {
+		t.Fatalf("revoke key: %v", err)
+	}
+	_, err := f.svc.Sync(ctx, f.conn.ID)
+	if err == nil {
+		t.Fatal("sync with a revoked harbrr key should error, not push a stale key")
+	}
+	if f.stub.created() != 0 {
+		t.Errorf("stale-key sync pushed %d indexers, want 0", f.stub.created())
+	}
+}
+
+func selectedOf(t *testing.T, f *syncFixture, instID int64) bool {
+	t.Helper()
+	ledger, err := f.svc.ConnectionIndexers(context.Background(), f.conn.ID)
+	if err != nil {
+		t.Fatalf("ConnectionIndexers: %v", err)
+	}
+	for _, l := range ledger {
+		if l.InstanceID == instID {
+			return l.Selected
+		}
+	}
+	return false
+}
+
 func TestServiceCreateValidation(t *testing.T) {
 	t.Parallel()
 	f := newSyncFixture(t)

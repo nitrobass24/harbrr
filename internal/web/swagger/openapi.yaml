@@ -509,6 +509,7 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
     delete:
       summary: Delete an app-sync connection (revokes its minted key)
       operationId: deleteConnection
@@ -589,6 +590,28 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ConnectionStatus" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/app-connections/{id}/indexers:
+    put:
+      summary: Set the selected-indexer set (for index_scope=selected)
+      description: >
+        Replaces the connection's selected indexers: the given instance ids become
+        selected, every other currently-selected one is cleared. Only meaningful when
+        the connection's index_scope is "selected".
+      operationId: setConnectionIndexers
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SelectIndexers" }
+      responses:
+        "204": { description: selection updated }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
@@ -933,3 +956,11 @@ components:
           type: array
           items: { $ref: "#/components/schemas/SyncResult" }
       required: [status, results]
+    SelectIndexers:
+      type: object
+      properties:
+        instanceIds:
+          type: array
+          items: { type: integer, format: int64 }
+          description: the indexer instance ids to select; all others are cleared
+      required: [instanceIds]

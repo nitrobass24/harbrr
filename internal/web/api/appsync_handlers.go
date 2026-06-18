@@ -210,6 +210,27 @@ func (rt *router) syncConnection(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toSyncResponse(report))
 }
 
+// setConnectionIndexers replaces a connection's selected-indexer set (used by
+// index_scope=selected). The body is the instance ids to select; all others are
+// cleared.
+func (rt *router) setConnectionIndexers(w http.ResponseWriter, r *http.Request) {
+	id, ok := rt.connectionID(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		InstanceIDs []int64 `json:"instanceIds"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.appsync.SetSelectedIndexers(r.Context(), id, req.InstanceIDs); err != nil {
+		rt.writeServiceError(w, "set connection indexers", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // connectionStatus returns a connection plus its per-indexer ledger.
 func (rt *router) connectionStatus(w http.ResponseWriter, r *http.Request) {
 	id, ok := rt.connectionID(w, r)
