@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/autobrr/harbrr/internal/domain"
-	apphttp "github.com/autobrr/harbrr/internal/http"
 )
 
 // autobrr/qui registers Torznab endpoints as "native" indexers it searches. Its
@@ -22,7 +20,6 @@ import (
 const (
 	quiBackendNative = "native"
 	quiIndexersPath  = "/api/torznab/indexers"
-	quiErrBodyLimit  = 2048
 )
 
 // quiCategory is one entry of qui's per-indexer categories[].
@@ -154,9 +151,9 @@ func (q *quiDriver) do(ctx context.Context, method, path string, body, out any) 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, quiErrBodyLimit))
-		msg := apphttp.RedactError(errors.New(strings.TrimSpace(string(snippet))))
-		return resp.StatusCode, fmt.Errorf("appsync: qui: %s %s: status %d: %s", method, path, resp.StatusCode, msg)
+		// The body is not echoed — it can reproduce the request (which carries the
+		// harbrr feed key), so only the status code is surfaced (see servarr.statusError).
+		return resp.StatusCode, fmt.Errorf("appsync: qui: %s %s: status %d", method, path, resp.StatusCode)
 	}
 	if out != nil {
 		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {

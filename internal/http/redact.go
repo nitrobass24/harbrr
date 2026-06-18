@@ -142,6 +142,12 @@ func RedactHeader(h http.Header) http.Header {
 // (e.g. "dial tcp") and other query params survive.
 var secretTokenRe = regexp.MustCompile(`(?i)(cookie|passkey|api_?key|auth_?key|rss_?key|torrent_pass|passid|passphrase|password|secret|token|downloadtoken|2fa|otp)([=:]\s*)[^\s&"']+`)
 
+// jsonSecretRe scrubs a credential-shaped key's value in a JSON object —
+// `"apiKey":"…"` / `"password": "…"`. secretTokenRe misses these because the quote
+// before the `:` breaks its `key[=:]` anchor, so an app's JSON error body (echoed by
+// app-sync) could otherwise leak the value verbatim.
+var jsonSecretRe = regexp.MustCompile(`(?i)("(?:cookie|passkey|api_?key|auth_?key|rss_?key|torrent_pass|passid|passphrase|password|secret|token|downloadtoken|2fa|otp)"\s*:\s*)"[^"]*"`)
+
 // authHeaderRe scrubs an Authorization header value (with or without a scheme like
 // Bearer/Basic), since the scheme + token can span a space the value run above
 // would not cover.
@@ -165,6 +171,7 @@ func RedactError(err error) string {
 	}
 	msg := authHeaderRe.ReplaceAllString(err.Error(), "${1}${2}<redacted>")
 	msg = cookieHeaderRe.ReplaceAllString(msg, "${1}${2}<redacted>")
+	msg = jsonSecretRe.ReplaceAllString(msg, `${1}"<redacted>"`)
 	return secretTokenRe.ReplaceAllString(msg, "${1}${2}<redacted>")
 }
 

@@ -4,14 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
-
-	apphttp "github.com/autobrr/harbrr/internal/http"
 )
 
 // Servarr (Sonarr/Radarr) v3 Torznab-indexer contract. Both apps share the same
@@ -25,7 +22,6 @@ const (
 	servarrProtocol       = "torrent"
 	servarrIndexerPath    = "/api/v3/indexer"
 	newznabAnimeCategory  = 5070
-	errBodyLimit          = 2048
 )
 
 // servarrField is one entry of a Servarr indexer's fields array. The value is
@@ -192,12 +188,12 @@ func (s *servarrDriver) do(ctx context.Context, method, path string, body, out a
 	return resp.StatusCode, nil
 }
 
-// statusError builds a scrubbed error from a non-2xx response, including a bounded,
-// redacted snippet of the body (a Servarr validation message) for diagnosis.
+// statusError builds an error from a non-2xx response. The body is deliberately NOT
+// echoed: it is attacker/app-shaped free text that can reproduce the request — which
+// carries the harbrr feed key — so the status code alone is surfaced (the app's own
+// logs hold the detail). This keeps the credential off every error surface.
 func (s *servarrDriver) statusError(method, path string, resp *http.Response) error {
-	snippet, _ := io.ReadAll(io.LimitReader(resp.Body, errBodyLimit))
-	msg := apphttp.RedactError(errors.New(strings.TrimSpace(string(snippet))))
-	return fmt.Errorf("appsync: %s: %s %s: status %d: %s", s.kind, method, path, resp.StatusCode, msg)
+	return fmt.Errorf("appsync: %s: %s %s: status %d", s.kind, method, path, resp.StatusCode)
 }
 
 // field builds a typed field entry; the value marshals cleanly (string/int slice/bool

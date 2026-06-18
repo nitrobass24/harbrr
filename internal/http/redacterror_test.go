@@ -38,6 +38,19 @@ func TestRedactError(t *testing.T) {
 			[]string{"rejected"},
 		},
 		{
+			// A JSON body (e.g. an *arr error echoing the pushed indexer) quotes the
+			// key, so the value escapes secretTokenRe's key[=:] anchor; jsonSecretRe
+			// scrubs the quoted form.
+			"json-quoted apiKey", errors.New(`app rejected: {"apiKey":"HARBRRFEEDKEY","name":"x"}`),
+			[]string{"HARBRRFEEDKEY"},
+			[]string{"<redacted>", "name"},
+		},
+		{
+			"json-quoted password with space", errors.New(`{"password": "p@ss w0rd-secret"}`),
+			[]string{"p@ss w0rd-secret"},
+			[]string{"<redacted>"},
+		},
+		{
 			"transport error with passkey in URL",
 			errors.New(`Get "https://t.test/rss?passkey=DEADBEEF": dial tcp: lookup failed`),
 			[]string{"DEADBEEF"},
