@@ -281,7 +281,7 @@ app-sync / migration on top of trackers harbrr can't fully serve. The engine sta
 is additive grab-path + native-driver work. Items 1 and 2 share machinery (the authenticated-`/dl` grab
 path), so item 1 comes first. Pattern reference: [`native-indexer-pattern.md`](native-indexer-pattern.md).
 
-- [ ] **Grab via `/dl` for login-authenticated downloads** — today harbrr serves a bare download link and
+- [x] **Grab via `/dl` for login-authenticated downloads** — today harbrr serves a bare download link and
       only routes through the `/dl` proxy when a def has a `download:` block (`NeedsResolver()`). Extend
       `/dl` to also resolve downloads that authenticate **out-of-band**: by **session cookie** (torrentleech
       + ~every cookie-login tracker) and by **request header** (digitalcore X-API-KEY / UNIT3D). harbrr
@@ -291,8 +291,9 @@ path), so item 1 comes first. Pattern reference: [`native-indexer-pattern.md`](n
       — **Code shipped + offline-proven:** `DownloadNeedsAuth()` (def has a login block) widens the
       `/dl` routing predicate, and `renderDownloadHeaders` now applies `search.headers` to the
       authenticated download fetch (nil-guarded for no-`download:`-block defs). Box stays unchecked until
-      the live grab retest against torrentleech + digitalcore is green (deploy this build, then
-      `SMOKE_REUSE_ENV=1 SMOKE_ENV_FILE=.env.phase9 SMOKE_GRAB=1 scripts/phase9-smoke.sh`).
+      the live grab retest against torrentleech + digitalcore is green.
+      — **Live-confirmed 2026-06-18 (#44):** torrentleech (cookie) and digitalcore (X-API-KEY) both resolve a
+      real `.torrent` through `/dl`. `[Resolved: Phase 9.5]`.
 - [ ] **Native drivers for the stack's C# one-off trackers** — **IPTorrents, MyAnonamouse, FileList** have
       no Cardigann YAML (Jackett/Prowlarr ship them as bespoke C# indexers), so harbrr can't serve them at
       all. Build them on the AvistaZ native pattern (`native.Driver` = settings POCO + request generator +
@@ -302,6 +303,10 @@ path), so item 1 comes first. Pattern reference: [`native-indexer-pattern.md`](n
       AvistaZ (stub server + synthetic goldens from the documented contract), then the **live Prowlarr
       differential is the gate** (the stack runs all three live). Redact `mam_id`/`passkey`/`Cookie`/
       `Authorization` everywhere. Per-tracker divergences recorded beside each driver's fixtures.
+      — **Shipped (#45/#46), live status 2026-06-18:** IPTorrents — count parity 1.00 + grab, `[Resolved]`;
+      FileList — search live-confirmed (int-flags fix #46), Prowlarr differential pending a name match;
+      MyAnonamouse — driver + `mam_id` write-back seam (#46) correct, live search/parse `[Tracked: pending a
+      fresh dedicated MAM session]` (the stack's session is dead at source — fails in Prowlarr too).
 - [ ] **Coverage analysis across toolsets** (backlog → `docs/coverage.md`) — produce a **tracker × surface ×
       tool × auth** matrix: for every tracker, which surface each tool covers — **announce** (autobrr,
       IRC firehose) vs **search** (harbrr / Prowlarr / Jackett, on-demand Torznab) vs **RSS** — and via which
