@@ -98,6 +98,21 @@ func (AppConnections) UpdateConnection(ctx context.Context, q dbinterface.Execer
 	return affectedOrNotFoundID(res, c.ID)
 }
 
+// SetConnectionSecrets writes the encrypted secret columns by id. Connections are
+// inserted in two phases inside one transaction — the row first (to mint the id the
+// encryption AAD binds to), then its secrets — so a credential is never bound to the
+// wrong row.
+func (AppConnections) SetConnectionSecrets(ctx context.Context, q dbinterface.Execer, id int64, apiKeyEncrypted, harbrrKeyEncrypted, keyID string) error {
+	res, err := q.ExecContext(ctx,
+		q.Rebind(`UPDATE app_connections SET api_key_encrypted = ?, harbrr_api_key_encrypted = ?, key_id = ?
+			WHERE id = ?`),
+		apiKeyEncrypted, harbrrKeyEncrypted, keyID, id)
+	if err != nil {
+		return fmt.Errorf("database: set connection secrets: %w", err)
+	}
+	return affectedOrNotFoundID(res, id)
+}
+
 // SetConnectionEnabled toggles a connection's enabled flag by id.
 func (AppConnections) SetConnectionEnabled(ctx context.Context, q dbinterface.Execer, id int64, enabled bool, updatedAt time.Time) error {
 	res, err := q.ExecContext(ctx,
