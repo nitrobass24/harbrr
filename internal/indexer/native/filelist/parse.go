@@ -27,17 +27,18 @@ const (
 // is decoded case-insensitively (Go's encoding/json matches field names without case),
 // so the PascalCase tags below match the lowercase keys the API emits.
 type filelistTorrent struct {
-	ID               uint64 `json:"id"`
-	Name             string `json:"name"`
-	Size             int64  `json:"size"`
-	Leechers         int64  `json:"leechers"`
-	Seeders          int64  `json:"seeders"`
-	TimesCompleted   int64  `json:"times_completed"`
-	Files            int64  `json:"files"`
-	ImdbID           string `json:"imdb"`
-	Internal         bool   `json:"internal"`
-	FreeLeech        bool   `json:"freeleech"`
-	DoubleUp         bool   `json:"doubleup"`
+	ID             uint64 `json:"id"`
+	Name           string `json:"name"`
+	Size           int64  `json:"size"`
+	Leechers       int64  `json:"leechers"`
+	Seeders        int64  `json:"seeders"`
+	TimesCompleted int64  `json:"times_completed"`
+	Files          int64  `json:"files"`
+	ImdbID         string `json:"imdb"`
+	// FileList sends these flags as integers (0/1), not booleans.
+	Internal         int64  `json:"internal"`
+	FreeLeech        int64  `json:"freeleech"`
+	DoubleUp         int64  `json:"doubleup"`
 	UploadDate       string `json:"upload_date"`
 	Category         string `json:"category"`
 	SmallDescription string `json:"small_description"`
@@ -68,7 +69,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	freeOnly := freeleechOnly(d.cfg)
 	releases := make([]*normalizer.Release, 0, len(rows))
 	for i := range rows {
-		if freeOnly && !rows[i].FreeLeech {
+		if freeOnly && rows[i].FreeLeech == 0 {
 			continue
 		}
 		rel, err := d.toRelease(&rows[i])
@@ -164,10 +165,11 @@ func normalizeIMDBID(raw string) string {
 	return fullIMDBID(raw)
 }
 
-// volumeFactor returns whenTrue when flag is set, else whenFalse (the freeleech →
-// DownloadVolumeFactor 0/1 and doubleup → UploadVolumeFactor 2/1 rules).
-func volumeFactor(flag bool, whenTrue, whenFalse float64) float64 {
-	if flag {
+// volumeFactor returns whenTrue when the integer flag is set (FileList sends 0/1),
+// else whenFalse (the freeleech → DownloadVolumeFactor 0/1 and doubleup →
+// UploadVolumeFactor 2/1 rules).
+func volumeFactor(flag int64, whenTrue, whenFalse float64) float64 {
+	if flag != 0 {
 		return whenTrue
 	}
 	return whenFalse

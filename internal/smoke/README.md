@@ -144,8 +144,31 @@ injects a replay `Doer` and never builds the real `*http.Client`) — only a liv
 could hit it. Fixed in **PR #42** (`registry/client.go`) with a regression test that
 builds the real no-proxy client.
 
-**Grab gap found — non-URL-authenticated downloads `[Partial: Phase 9.5 — fix shipped,
-live retest pending]`.** This is a real functional gap, not a quirk. harbrr serves a **bare direct download
+## Phase 9.5 live run — 2026-06-18 (grab pass, updated build)
+
+Re-run with `SMOKE_GRAB=1` against the build carrying the grab-auth `/dl` fix (#44), the
+three native drivers (#45), the FileList int-flags fix, and the MyAnonamouse write-back
+seam (#46). Confirms the two Phase 9.5 gaps live.
+
+| Pattern / tracker | Live result | Disposition |
+|---|---|---|
+| **grab via `/dl` — session cookie** (torrentleech) | `grab: torrent` — a real bencoded `.torrent` (was a login/CF page) | `[Resolved: Phase 9.5]` |
+| **grab via `/dl` — request header** (digitalcore, X-API-KEY) | `grab: torrent` — a real `.torrent` (was a 401) | `[Resolved: Phase 9.5]` |
+| **IPTorrents** native (cookie+UA, HTML scrape) | 50=50 vs Prowlarr, Jaccard 1.00, `grab: torrent` | `[Resolved: Phase 9.5]` |
+| **FileList** native (passkey/Basic, JSON) | search OK (the int-flags fix — was HTTP 500); Prowlarr differential auto-skipped (its native indexer isn't named `filelist`) | `[Resolved: Phase 9.5]` (parse fixed; live differential pending a Prowlarr-name match) |
+| **MyAnonamouse** native (`mam_id` cookie) | driver correct — reported `mam_id expired or invalid`; the session is dead at source (fails in Prowlarr too, ASN-locked). Write-back seam ready to maintain a live one | `[Tracked: live search/parse pending a fresh dedicated MAM session]` |
+| 13 other trackers (apikey/form/CF) | count parity 1.00 | `[Resolved]` |
+
+Two non-harbrr failures this run: **seedpool** (tracker down for maintenance) and **MAM**
+(dead session). No harbrr regressions.
+
+**FileList int-flags bug — caught only live.** The API sends `freeleech`/`internal`/
+`doubleup` as integers (`0/1`); the struct typed them `bool`, so `json.Unmarshal` failed
+the whole decode → HTTP 500. The synthetic golden used `true`/`false`, so offline tests
+passed. Fixed to `int64`; golden + filter test now use `0/1` (#46).
+
+**Grab gap found — non-URL-authenticated downloads `[Resolved: Phase 9.5]`.** This is a
+real functional gap, not a quirk. harbrr serves a **bare direct download
 link** for any non-resolver tracker, assuming the URL **self-authenticates** (carries
 a passkey/rsskey in the path/query). That holds for seedpool
 (`…/torrent/download/{id}.{rsskey}`) and grabs fine. But it breaks for trackers that
@@ -173,21 +196,19 @@ through `/dl` when the def has a **login block** (`DownloadNeedsAuth()`), not on
 server-side with the session cookie (torrentleech) and the search-header auth
 (digitalcore's `X-API-KEY`, applied via the `renderDownloadHeaders` search-headers
 fallback). Covered by offline tests (engine predicate, `search.Grab` with header- and
-cookie-auth + no download block, and Torznab/JSON routing+redaction). **Live retest
-pending:** deploy this build to the box and re-run
-`SMOKE_REUSE_ENV=1 SMOKE_ENV_FILE=.env.phase9 SMOKE_GRAB=1 scripts/phase9-smoke.sh`
-against torrentleech + digitalcore (expect a real bencoded `.torrent`); flip this entry
-to `[Resolved: Phase 9.5]` and tick `docs/plan.md` once green.
+cookie-auth + no download block, and Torznab/JSON routing+redaction). **Live-confirmed
+2026-06-18:** torrentleech (cookie) and digitalcore (X-API-KEY) both resolve a real
+bencoded `.torrent` through `/dl` — see the Phase 9.5 run above. `[Resolved: Phase 9.5]`.
 
-**Coverage gap found — native (non-Cardigann) trackers `[Tracked]`.** harbrr ships
-the Cardigann corpus + the AvistaZ native driver only. Trackers Jackett/Prowlarr
-implement as **one-off C# native indexers** — in this stack **IPTorrents,
-MyAnonamouse, FileList** — have no Cardigann def, so harbrr cannot serve them at all
-(≈3 of ~18 torrent trackers here). This is broader than `docs/ideas.md §6`'s "AvistaZ
-is the only native gap" (which measured native *families* against the corpus and
-missed the one-off C# indexers). Closing it means per-tracker native drivers (the
-AvistaZ pattern); until then harbrr is not a full Prowlarr replacement for sets using
-these trackers.
+**Coverage gap found — native (non-Cardigann) trackers `[Resolved: Phase 9.5 — IPTorrents/
+FileList; MAM driver built, live pending a session]`.** harbrr shipped the Cardigann corpus
++ the AvistaZ native driver only; **IPTorrents, MyAnonamouse, FileList** (one-off C# native
+indexers in Jackett/Prowlarr, ≈3 of ~18 trackers here) had no def. Phase 9.5 added per-tracker
+native drivers on the AvistaZ pattern (#45): **IPTorrents** (count parity 1.00 + grab,
+live-confirmed 2026-06-18); **FileList** (search live-confirmed after the int-flags fix #46;
+Prowlarr differential pending a name match); **MyAnonamouse** (driver + `mam_id` write-back seam
+#46 — correct, but live search/parse pending a fresh dedicated session). This corrected
+`docs/ideas.md §6`'s "AvistaZ is the only native gap".
 
 **Still `[Tracked: Phase 9]` — no qualifying tracker in this stack:**
 

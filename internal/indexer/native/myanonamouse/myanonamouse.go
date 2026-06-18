@@ -8,6 +8,7 @@
 package myanonamouse
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -32,6 +33,11 @@ type driver struct {
 	doer    search.Doer
 	baseURL string // normalised with a single trailing slash
 	clock   func() time.Time
+
+	// persist durably writes a rotated mam_id back to the encrypted store (nil in
+	// tests / when the registry doesn't provide it). Fired best-effort on rotation so
+	// the session survives a restart instead of reverting to the stored value.
+	persist func(ctx context.Context, name, value string) error
 
 	mu           sync.Mutex
 	currentMamID string // rotating session cookie, seeded from cfg["mam_id"]
@@ -65,6 +71,7 @@ func New(p native.Params) (native.Driver, error) {
 		doer:         p.Doer,
 		baseURL:      strings.TrimRight(base, "/") + "/",
 		clock:        clock,
+		persist:      p.PersistSetting,
 		currentMamID: strings.TrimSpace(p.Cfg["mam_id"]),
 	}, nil
 }

@@ -126,6 +126,40 @@ func TestMamIDRotation(t *testing.T) {
 	}
 }
 
+// TestMamIDRotationPersists proves a rotated mam_id is written back through the persist
+// callback exactly once (so the session survives a restart), and not at all when the
+// value is unchanged. The persist is synchronous (in-line with the request), so the
+// call count is deterministic by the time Search returns — no timing or channels.
+func TestMamIDRotationPersists(t *testing.T) {
+	t.Parallel()
+	type call struct{ name, value string }
+	run := func(setCookie string) []call {
+		var calls []call
+		d := newDriver(&scriptDoer{
+			setCookie: setCookie,
+			handler:   func(_ *stdhttp.Request) *stdhttp.Response { return resp(stdhttp.StatusOK, `{"error":"","data":[]}`) },
+		})
+		// Synchronous persist runs on the request goroutine, so no lock is needed.
+		d.persist = func(_ context.Context, name, value string) error {
+			calls = append(calls, call{name, value})
+			return nil
+		}
+		if _, err := d.Search(context.Background(), search.Query{Keywords: "x"}); err != nil {
+			t.Fatalf("Search: %v", err)
+		}
+		return calls
+	}
+
+	// A rotation persists the new value exactly once.
+	if got := run("mam_id=ROTATED; Path=/; HttpOnly"); len(got) != 1 || got[0] != (call{mamIDCookie, "ROTATED"}) {
+		t.Fatalf("persist calls = %+v, want exactly one {mam_id ROTATED}", got)
+	}
+	// An unchanged mam_id (server echoes the seeded value) persists nothing.
+	if got := run("mam_id=" + mamSecret + "; Path=/"); len(got) != 0 {
+		t.Fatalf("persist calls on unchanged mam_id = %+v, want none", got)
+	}
+}
+
 // TestTestAction proves Test() succeeds on a 200 and maps a 403 to login.ErrLoginFailed
 // (mam_id expired/invalid) without leaking the secret.
 func TestTestAction(t *testing.T) {

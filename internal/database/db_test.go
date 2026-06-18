@@ -9,6 +9,7 @@ import (
 
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
+	"github.com/autobrr/harbrr/internal/domain"
 )
 
 // openMigrated opens a database at path and applies all migrations, failing the
@@ -164,6 +165,58 @@ func TestCascadeDeleteSettings(t *testing.T) {
 	}
 	if remaining != 0 {
 		t.Errorf("settings after cascade delete = %d, want 0", remaining)
+	}
+}
+
+// TestUpsertSetting proves UpsertSetting inserts a setting then updates the same
+// (instance_id, name) row in place — no duplicate — while leaving sibling settings
+// untouched. This is the seam a native driver uses to persist a rotated credential.
+func TestUpsertSetting(t *testing.T) {
+	t.Parallel()
+
+	db := openMigrated(t, filepath.Join(t.TempDir(), "harbrr.db"))
+	ctx := context.Background()
+	insts := database.Instances{}
+
+	res, err := db.ExecContext(ctx,
+		"INSERT INTO indexer_instances (slug, definition_id, name, created_at, updated_at) VALUES (?,?,?,?,?)",
+		"mam", "myanonamouse", "MAM", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatalf("insert instance: %v", err)
+	}
+	id, _ := res.LastInsertId()
+
+	// A sibling setting that must survive the upsert.
+	if err := insts.InsertSetting(ctx, db, id, domain.IndexerSetting{Name: "searchType", Value: "all"}); err != nil {
+		t.Fatalf("insert sibling: %v", err)
+	}
+	// First upsert inserts the secret; second upsert updates it in place.
+	if err := insts.UpsertSetting(ctx, db, id, domain.IndexerSetting{Name: "mam_id", ValueEncrypted: "enc-v1", KeyID: "k1", IsSecret: true}); err != nil {
+		t.Fatalf("upsert insert: %v", err)
+	}
+	if err := insts.UpsertSetting(ctx, db, id, domain.IndexerSetting{Name: "mam_id", ValueEncrypted: "enc-v2", KeyID: "k1", IsSecret: true}); err != nil {
+		t.Fatalf("upsert update: %v", err)
+	}
+
+	got, err := insts.Settings(ctx, db, id)
+	if err != nil {
+		t.Fatalf("Settings: %v", err)
+	}
+	byName := make(map[string]domain.IndexerSetting, len(got))
+	for _, s := range got {
+		byName[s.Name] = s
+	}
+	if len(got) != 2 {
+		t.Fatalf("settings = %d, want 2 (sibling + a single updated mam_id, no duplicate)", len(got))
+	}
+	if byName["mam_id"].ValueEncrypted != "enc-v2" {
+		t.Errorf("mam_id ciphertext = %q, want enc-v2 (updated in place)", byName["mam_id"].ValueEncrypted)
+	}
+	if !byName["mam_id"].IsSecret {
+		t.Error("mam_id lost its secret flag after upsert")
+	}
+	if byName["searchType"].Value != "all" {
+		t.Errorf("sibling searchType = %q, want all (preserved)", byName["searchType"].Value)
 	}
 }
 
