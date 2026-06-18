@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog"
 
+	"github.com/autobrr/harbrr/internal/appsync"
 	"github.com/autobrr/harbrr/internal/auth"
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
@@ -76,6 +77,7 @@ type env struct {
 	registry *registry.Registry
 	sessions *scs.SessionManager
 	db       *database.DB
+	source   *fakeAppSource
 }
 
 // newEnv builds the management API over an in-memory database with a fixed clock,
@@ -115,14 +117,16 @@ func newEnv(t *testing.T, cfg api.Config) *env {
 
 	authSvc := auth.NewService(db)
 	reg := registry.New(db, ldr, keyring)
+	source := &fakeAppSource{}
+	appSync := appsync.NewService(db, source, authSvc, keyring, http.DefaultClient, zerolog.Nop())
 
 	handler, err := api.NewRouter(api.Deps{
-		Auth: authSvc, Registry: reg, Loader: ldr, Sessions: sm, Logger: zerolog.Nop(),
+		Auth: authSvc, Registry: reg, Loader: ldr, AppSync: appSync, Sessions: sm, Logger: zerolog.Nop(),
 	}, cfg)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
-	return &env{handler: handler, auth: authSvc, registry: reg, sessions: sm, db: db}
+	return &env{handler: handler, auth: authSvc, registry: reg, sessions: sm, db: db, source: source}
 }
 
 // TestOpenAPIDriftRoutesMatchSpec asserts the mounted routes and the embedded

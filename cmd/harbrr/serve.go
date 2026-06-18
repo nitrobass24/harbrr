@@ -16,6 +16,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 
+	"github.com/autobrr/harbrr/internal/appsync"
 	"github.com/autobrr/harbrr/internal/auth"
 	"github.com/autobrr/harbrr/internal/config"
 	"github.com/autobrr/harbrr/internal/database"
@@ -91,9 +92,10 @@ func serve(ctx context.Context, cfg *config.Config, log zerolog.Logger) error {
 	sessions := sessionManager(store, cfg)
 	authSvc := auth.NewService(db)
 	reg := registry.New(db, loader.New(dropinDir(cfg)), keyring, registry.WithLogger(log))
+	appSync := appsync.NewService(db, registrySource{reg: reg}, authSvc, keyring, appSyncClient(), log)
 
 	mgmt, err := api.NewRouter(api.Deps{
-		Auth: authSvc, Registry: reg, Loader: loader.New(dropinDir(cfg)), Sessions: sessions,
+		Auth: authSvc, Registry: reg, Loader: loader.New(dropinDir(cfg)), AppSync: appSync, Sessions: sessions,
 		DLToken: keyring, BasePath: cfg.Server.BaseURL, Logger: log,
 	}, api.Config{
 		AuthDisabled: cfg.Auth.AuthDisabled(), IPAllowlist: cfg.Auth.IPAllowlist, TrustedProxies: cfg.Auth.TrustedProxies,
