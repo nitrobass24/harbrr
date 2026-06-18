@@ -26,8 +26,6 @@ type fakeTarget struct {
 	deletes    int
 }
 
-func (f *fakeTarget) Kind() string { return "fake" }
-
 func (f *fakeTarget) List(context.Context) ([]RemoteIndexer, error) {
 	return append([]RemoteIndexer(nil), f.remote...), nil
 }
@@ -264,7 +262,6 @@ func TestStatus(t *testing.T) {
 // listErrTarget fails only at List, to prove a failed listing is fatal.
 type listErrTarget struct{}
 
-func (listErrTarget) Kind() string                                           { return "listerr" }
 func (listErrTarget) List(context.Context) ([]RemoteIndexer, error)          { return nil, errBoom }
 func (listErrTarget) Create(context.Context, DesiredIndexer) (string, error) { return "", nil }
 func (listErrTarget) Update(context.Context, string, DesiredIndexer) error   { return nil }

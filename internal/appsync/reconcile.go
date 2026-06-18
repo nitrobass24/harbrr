@@ -44,7 +44,7 @@ type IndexerOutcome struct {
 func Reconcile(ctx context.Context, t Target, syncLevel string, desired []DesiredIndexer, prior map[string]LedgerEntry) ([]IndexerOutcome, error) {
 	remote, err := t.List(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("appsync: list %s indexers: %w", t.Kind(), err)
+		return nil, fmt.Errorf("appsync: list indexers: %w", err)
 	}
 	ownedBySlug, existingIDs := indexRemote(remote)
 

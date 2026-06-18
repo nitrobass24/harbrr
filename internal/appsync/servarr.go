@@ -72,8 +72,6 @@ func newServarr(kind, baseURL, apiKey string, client *http.Client, anime bool) *
 	}
 }
 
-func (s *servarrDriver) Kind() string { return s.kind }
-
 // buildIndexer marshals a DesiredIndexer into the Servarr resource. Pure (no I/O) so
 // the golden test freezes the exact field mapping.
 func (s *servarrDriver) buildIndexer(d DesiredIndexer) servarrIndexer {

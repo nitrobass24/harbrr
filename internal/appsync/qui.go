@@ -9,8 +9,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-
-	"github.com/autobrr/harbrr/internal/domain"
 )
 
 // autobrr/qui registers Torznab endpoints as "native" indexers it searches. Its
@@ -58,8 +56,6 @@ func NewQui(baseURL, apiKey string, client *http.Client) Target {
 	}
 	return &quiDriver{baseURL: strings.TrimRight(baseURL, "/"), apiKey: apiKey, client: client}
 }
-
-func (q *quiDriver) Kind() string { return domain.AppKindQui }
 
 // buildIndexer maps a DesiredIndexer to qui's native-indexer body. Pure (no I/O) so
 // the golden freezes the snake_case field mapping.
