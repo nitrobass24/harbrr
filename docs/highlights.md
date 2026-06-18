@@ -234,6 +234,17 @@ site/docs land later.
 
 ## Family integration (the differentiators Prowlarr structurally resists)
 
+- **One-call indexer sync into Sonarr, Radarr, and qui.** harbrr pushes its configured
+  indexers straight into the consuming apps — the Prowlarr headline feature — with a
+  full add/update/remove lifecycle: idempotent re-sync (unchanged indexers are a no-op),
+  orphan removal gated to a per-app **full** sync level (a safe **add/update-only** level
+  never deletes), per-app enable/disable, and an **all** or **selected** indexer scope.
+  Each connection gets its own **revocable** harbrr API key (minted + encrypted per
+  connection) and its own harbrr feed URL, so it works across Docker/LAN where each app
+  reaches harbrr at a different address. Driven entirely over HTTP at `/api/app-connections`
+  (no Web UI needed). *(`internal/appsync`, `docs/plan.md` Phase 10)* `[partial]` —
+  shipped + offline-proven (stub-server golden tests + end-to-end HTTP), live validation
+  against the real stack pending.
 - **Native push to autobrr.** A path so newly-scraped releases reach autobrr's
   filters immediately instead of waiting on RSS polling — a family-only upgrade
   Prowlarr can't match. *(`docs/ideas.md` §11, `docs/plan.md` Phase 10)* `[planned]`

@@ -328,11 +328,25 @@ into the apps so they don't each configure indexers by hand.
       contract + add/update/remove lifecycle + per-app enable/disable (its own sub-plan; a Prowlarr
       headline feature). Scoped to **Sonarr/Radarr/qui only** — other \*arrs (Lidarr/Readarr/Mylar/Whisparr)
       are demand-gated backlog.
+      — **Code shipped + offline-proven:** new `internal/appsync` package — a target-neutral
+      `DesiredIndexer` reconciled by a pure engine (idempotent add-or-update via `payload_hash`,
+      remote-id recovery from the feed-URL slug, orphan removal gated to `sync_level=full` and only
+      harbrr-owned rows, partial-failure isolation) behind a `Target` interface with three drivers
+      (Sonarr/Radarr share the Servarr v3 `fields[]` dialect; qui is the snake_case `native`-backend
+      dialect). Per-connection storage (`0003_appsync.sql`): a dedicated harbrr API key minted +
+      encrypted per connection, a per-app **harbrr feed URL**, `sync_level` (full | add_update) and
+      `index_scope` (all | selected, with a `PUT …/indexers` selection endpoint). Management API under
+      `/api/app-connections` (CRUD + enable/disable + test + sync + status), OpenAPI + drift green.
+      Secrets redacted everywhere (app response bodies are never echoed into errors). Box stays
+      unchecked until the **live add/test/sync round-trip against the stack's real Sonarr/Radarr/qui**
+      confirms the doc-derived request-body goldens. `[Tracked: live validation pending]`
 - [ ] **Gate — a legitimate Swagger-only Prowlarr replacement.** With Phase 10 done, harbrr fully replaces
       this stack's Prowlarr **operated entirely through the Swagger API** at `/api/docs` — no Web UI: add +
       configure + test every indexer, search, grab through `/dl`, and sync indexers into Sonarr/Radarr/qui,
       all over HTTP. **This is the alpha's definition of done.** Phase 11 (Web UI) is additive — nicer to
       use, never required.
+      — **Exercised end-to-end offline** (the sync surface round-trips over HTTP in the api tests);
+      checks once the app-sync live validation above is green.
 
 ## Phase 11 — Web UI
 
