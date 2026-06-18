@@ -332,9 +332,12 @@ func (r *Registry) decryptConfig(instanceID int64, settings []domain.IndexerSett
 func (r *Registry) persistSetting(ctx context.Context, inst domain.IndexerInstance, def *loader.Definition, name, value string) error {
 	s, err := r.toStored(inst.ID, name, value, settingFields(def))
 	if err != nil {
+		// The error carries the setting name, never the value.
+		r.log.Warn().Str("indexer", inst.Slug).Str("setting", name).Err(err).Msg("registry: persist setting: encrypt failed")
 		return err
 	}
 	if err := r.instances.UpsertSetting(ctx, r.db, inst.ID, s); err != nil {
+		r.log.Warn().Str("indexer", inst.Slug).Str("setting", name).Err(err).Msg("registry: persist setting: write failed")
 		return fmt.Errorf("registry: persist setting %q: %w", name, err)
 	}
 	return nil

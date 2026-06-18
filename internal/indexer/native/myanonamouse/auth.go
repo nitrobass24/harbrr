@@ -27,11 +27,13 @@ func (d *driver) mamID() string {
 
 // captureRotatedMamID scans a response's Set-Cookie headers for a refreshed mam_id
 // and, when it changed, updates the in-memory current value and persists it back to
-// the encrypted store (best-effort, detached) so the session survives a restart
-// instead of reverting to the stored value. MAM rotates mam_id on every response; the
-// per-host paced doer serializes MAM requests, so rotations arrive in order. The new
-// value is a secret and is never logged.
-func (d *driver) captureRotatedMamID(resp *stdhttp.Response) {
+// the encrypted store so the session survives a restart instead of reverting to the
+// stored value. The persist is synchronous: MAM rotates mam_id on every response and
+// the per-host paced doer serializes MAM requests, so an in-line write keeps the
+// stored value in rotation order — a detached goroutine could race and persist an
+// older token last. The write is best-effort (the registry logs a failure; it never
+// fails the search), and the new value is a secret never logged here.
+func (d *driver) captureRotatedMamID(ctx context.Context, resp *stdhttp.Response) {
 	for _, c := range resp.Cookies() {
 		if c.Name == mamIDCookie && c.Value != "" {
 			d.mu.Lock()
@@ -40,7 +42,7 @@ func (d *driver) captureRotatedMamID(resp *stdhttp.Response) {
 			persist := d.persist
 			d.mu.Unlock()
 			if changed && persist != nil {
-				go func(v string) { _ = persist(context.Background(), mamIDCookie, v) }(c.Value)
+				_ = persist(ctx, mamIDCookie, c.Value)
 			}
 			return
 		}
@@ -67,7 +69,7 @@ func (d *driver) get(ctx context.Context, rawurl, accept string) (*stdhttp.Respo
 	if err != nil {
 		return nil, fmt.Errorf("myanonamouse: request to %s: %w", apphttp.RedactURL(rawurl), err)
 	}
-	d.captureRotatedMamID(resp)
+	d.captureRotatedMamID(ctx, resp)
 	return resp, nil
 }
 
