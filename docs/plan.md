@@ -337,9 +337,21 @@ into the apps so they don't each configure indexers by hand.
       encrypted per connection, a per-app **harbrr feed URL**, `sync_level` (full | add_update) and
       `index_scope` (all | selected, with a `PUT …/indexers` selection endpoint). Management API under
       `/api/app-connections` (CRUD + enable/disable + test + sync + status), OpenAPI + drift green.
-      Secrets redacted everywhere (app response bodies are never echoed into errors). Box stays
-      unchecked until the **live add/test/sync round-trip against the stack's real Sonarr/Radarr/qui**
-      confirms the doc-derived request-body goldens. `[Tracked: live validation pending]`
+      Secrets redacted everywhere (app response bodies are never echoed into errors).
+      — **Live-validated 2026-06-18** against the stack's real apps (192.168.10.220). **qui**
+      (`:7476`): full round-trip — the driver's exact create body returned **201** (indexer id
+      assigned, snake_case `backend:"native"` + `categories[]` accepted) and **204** on delete; the
+      list shape matches the `quiIndexer` struct. **Sonarr** (`:8989`) / **Radarr** (`:7878`): the
+      live `GET /indexer/schema` confirms the exact field set (Sonarr has `animeCategories`, Radarr
+      does not; both use `apiPath` — the C1 fix), and a `POST /indexer` with the driver's body was
+      accepted to the connectivity-test stage, building the correct `{baseUrl}?t=caps&apikey=…`
+      request — proving the body schema + feed-URL/apiKey handshake. (The save returned the expected
+      connectivity 400 only because no harbrr feed is deployed at that host to authenticate the probe
+      key; the Sonarr error echoed `apikey=…` in a URL, confirming the never-echo-app-bodies fix.) No
+      driver changes were needed. The doc-derived goldens are confirmed.
+      — **Remaining for the box:** a fully-green Sonarr/Radarr indexer *save* needs harbrr actually
+      deployed in the stack (a valid minted feed key + reachable feed). `[Tracked: contracts
+      live-validated; full-stack save pending harbrr deployment]`
 - [ ] **Gate — a legitimate Swagger-only Prowlarr replacement.** With Phase 10 done, harbrr fully replaces
       this stack's Prowlarr **operated entirely through the Swagger API** at `/api/docs` — no Web UI: add +
       configure + test every indexer, search, grab through `/dl`, and sync indexers into Sonarr/Radarr/qui,

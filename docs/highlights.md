@@ -243,8 +243,11 @@ site/docs land later.
   connection) and its own harbrr feed URL, so it works across Docker/LAN where each app
   reaches harbrr at a different address. Driven entirely over HTTP at `/api/app-connections`
   (no Web UI needed). *(`internal/appsync`, `docs/plan.md` Phase 10)* `[partial]` —
-  shipped + offline-proven (stub-server golden tests + end-to-end HTTP), live validation
-  against the real stack pending.
+  shipped + offline-proven (stub-server golden tests + end-to-end HTTP), and the driver
+  contracts were **live-validated 2026-06-18** against a real Sonarr/Radarr/qui stack:
+  qui took the exact create body with a 201 + 204 delete; Sonarr/Radarr accepted the body
+  and built the correct Torznab feed request (live `/indexer/schema` matched the field
+  mapping). Full-stack indexer save awaits a deployed harbrr in the stack.
 - **Native push to autobrr.** A path so newly-scraped releases reach autobrr's
   filters immediately instead of waiting on RSS polling — a family-only upgrade
   Prowlarr can't match. *(`docs/ideas.md` §11, `docs/plan.md` Phase 10)* `[planned]`
