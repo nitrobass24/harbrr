@@ -1,0 +1,34 @@
+{
+  "name": "Movie Tracker",
+  "implementation": "Torznab",
+  "implementationName": "Torznab",
+  "configContract": "TorznabSettings",
+  "protocol": "torrent",
+  "enableRss": true,
+  "enableAutomaticSearch": true,
+  "enableInteractiveSearch": true,
+  "priority": 25,
+  "fields": [
+    {
+      "name": "baseUrl",
+      "value": "http://harbrr:8787/api/v2.0/indexers/movie-tracker/results/torznab"
+    },
+    {
+      "name": "apiPath",
+      "value": ""
+    },
+    {
+      "name": "apiKey",
+      "value": "harbrr-feed-key"
+    },
+    {
+      "name": "categories",
+      "value": [
+        2000,
+        2040,
+        2060
+      ]
+    }
+  ],
+  "tags": []
+}
