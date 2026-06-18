@@ -445,6 +445,153 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /api/app-connections:
+    get:
+      summary: List *arr/qui app-sync connections
+      operationId: listConnections
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the configured connections (app key redacted)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AppConnection" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Add an app-sync connection (mints a dedicated harbrr key)
+      operationId: createConnection
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateConnection" }
+      responses:
+        "201":
+          description: the created connection
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppConnection" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/app-connections/{id}:
+    get:
+      summary: Get an app-sync connection (app key redacted)
+      operationId: getConnection
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200":
+          description: the connection
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppConnection" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      summary: Update an app-sync connection (a new apiKey rotates the app credential)
+      operationId: updateConnection
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateConnection" }
+      responses:
+        "204": { description: updated }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      summary: Delete an app-sync connection (revokes its minted key)
+      operationId: deleteConnection
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: deleted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/app-connections/{id}/enable:
+    post:
+      summary: Enable an app-sync connection
+      operationId: enableConnection
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: enabled }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/app-connections/{id}/disable:
+    post:
+      summary: Disable an app-sync connection
+      operationId: disableConnection
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: disabled }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/app-connections/{id}/test:
+    post:
+      summary: Test a connection's reachability and credentials
+      operationId: testConnection
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200":
+          description: the test result (ok=false carries a scrubbed error)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TestResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/app-connections/{id}/sync:
+    post:
+      summary: Reconcile harbrr's indexers into the connection's app now
+      operationId: syncConnection
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200":
+          description: the per-indexer sync outcomes
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SyncReport" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/app-connections/{id}/status:
+    get:
+      summary: Get a connection plus its per-indexer sync ledger
+      operationId: connectionStatus
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200":
+          description: the connection with its ledger
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConnectionStatus" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
 components:
   securitySchemes:
     session:
@@ -689,3 +836,100 @@ components:
         tmdbid: { type: integer, format: int64 }
         tvdbid: { type: integer, format: int64 }
       required: [title]
+    TestResult:
+      type: object
+      description: >
+        The outcome of a test action. ok=false carries a credential-scrubbed error
+        message; the HTTP status is 200 even on a credential/connectivity failure.
+      properties:
+        ok: { type: boolean }
+        error: { type: string }
+      required: [ok]
+    AppConnection:
+      type: object
+      description: >
+        An *arr/qui app harbrr syncs its indexers into. The app's API key (apiKey) is
+        never echoed — it reads back as the <redacted> sentinel.
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        kind: { type: string, enum: [sonarr, radarr, qui] }
+        baseUrl: { type: string, description: the app's own API base URL }
+        harbrrUrl: { type: string, description: the base URL this app uses to reach harbrr's feed }
+        apiKey: { type: string, description: "the app's API key, redacted (<redacted>)" }
+        enabled: { type: boolean }
+        syncLevel:
+          type: string
+          enum: [full, add_update]
+          description: "full = add+update+remove orphans; add_update = add+update, never delete"
+        indexScope:
+          type: string
+          enum: [all, selected]
+          description: which harbrr indexers this connection mirrors
+        priority: { type: integer }
+        lastSyncAt: { type: string, format: date-time }
+        lastSyncStatus: { type: string, description: "ok | partial | error | skipped" }
+        lastSyncError: { type: string, description: scrubbed summary of the last failure }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, name, kind, baseUrl, harbrrUrl, enabled, syncLevel, indexScope, priority, createdAt, updatedAt]
+    CreateConnection:
+      type: object
+      properties:
+        name: { type: string }
+        kind: { type: string, enum: [sonarr, radarr, qui] }
+        baseUrl: { type: string }
+        apiKey: { type: string, description: the app's API key (stored encrypted) }
+        harbrrUrl: { type: string }
+        syncLevel: { type: string, enum: [full, add_update], default: full }
+        indexScope: { type: string, enum: [all, selected], default: all }
+        priority: { type: integer, default: 25 }
+      required: [name, kind, baseUrl, apiKey, harbrrUrl]
+    UpdateConnection:
+      type: object
+      description: >
+        A partial update; omitted fields are unchanged. apiKey, when present, rotates
+        the stored app credential.
+      properties:
+        name: { type: string }
+        baseUrl: { type: string }
+        apiKey: { type: string }
+        harbrrUrl: { type: string }
+        syncLevel: { type: string, enum: [full, add_update] }
+        indexScope: { type: string, enum: [all, selected] }
+        priority: { type: integer }
+    ConnectionIndexer:
+      type: object
+      description: one row of a connection's per-indexer sync ledger
+      properties:
+        instanceId: { type: integer, format: int64 }
+        remoteId: { type: string, description: the id the app assigned the pushed indexer }
+        selected: { type: boolean }
+        lastPushedAt: { type: string, format: date-time }
+        lastPushStatus: { type: string, description: "ok | error" }
+        lastPushError: { type: string, description: scrubbed error from the last push }
+      required: [instanceId, selected]
+    ConnectionStatus:
+      allOf:
+        - { $ref: "#/components/schemas/AppConnection" }
+        - type: object
+          properties:
+            indexers:
+              type: array
+              items: { $ref: "#/components/schemas/ConnectionIndexer" }
+          required: [indexers]
+    SyncResult:
+      type: object
+      properties:
+        slug: { type: string }
+        action: { type: string, description: "created | updated | noop | deleted | failed" }
+        error: { type: string, description: scrubbed error when action=failed }
+      required: [slug, action]
+    SyncReport:
+      type: object
+      properties:
+        status: { type: string, description: "ok | partial | error | skipped" }
+        results:
+          type: array
+          items: { $ref: "#/components/schemas/SyncResult" }
+      required: [status, results]

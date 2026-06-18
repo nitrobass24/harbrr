@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog"
 
+	"github.com/autobrr/harbrr/internal/appsync"
 	"github.com/autobrr/harbrr/internal/auth"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
@@ -22,6 +23,7 @@ type Deps struct {
 	Auth     *auth.Service
 	Registry *registry.Registry
 	Loader   *loader.Loader
+	AppSync  *appsync.Service
 	Sessions *scs.SessionManager
 	// DLToken seals a resolver-needing indexer's download link behind the /dl proxy
 	// for the JSON search response, exactly as the Torznab feed does, so a passkey
@@ -50,6 +52,7 @@ type router struct {
 	auth     *auth.Service
 	registry *registry.Registry
 	loader   *loader.Loader
+	appsync  *appsync.Service
 	sessions *scs.SessionManager
 	dlToken  *secrets.Keyring
 	basePath string
@@ -80,7 +83,7 @@ func NewRouter(deps Deps, cfg Config) (http.Handler, error) {
 	}
 
 	rt := &router{
-		auth: deps.Auth, registry: deps.Registry, loader: deps.Loader,
+		auth: deps.Auth, registry: deps.Registry, loader: deps.Loader, appsync: deps.AppSync,
 		sessions: deps.Sessions, dlToken: deps.DLToken, basePath: deps.BasePath,
 		cfg: cfg, log: deps.Logger,
 		allowlist: allow, trustedProxies: proxies,
@@ -129,6 +132,17 @@ func (rt *router) routes() http.Handler {
 			r.Get("/api/indexers/{slug}/status", rt.indexerStatus)
 			r.Get("/api/indexers/{slug}/search", rt.searchIndexer)
 			r.Get("/api/indexers/{slug}/capabilities", rt.indexerCapabilities)
+
+			r.Get("/api/app-connections", rt.listConnections)
+			r.Post("/api/app-connections", rt.createConnection)
+			r.Get("/api/app-connections/{id}", rt.getConnection)
+			r.Patch("/api/app-connections/{id}", rt.updateConnection)
+			r.Delete("/api/app-connections/{id}", rt.deleteConnection)
+			r.Post("/api/app-connections/{id}/enable", rt.enableConnection)
+			r.Post("/api/app-connections/{id}/disable", rt.disableConnection)
+			r.Post("/api/app-connections/{id}/test", rt.testConnection)
+			r.Post("/api/app-connections/{id}/sync", rt.syncConnection)
+			r.Get("/api/app-connections/{id}/status", rt.connectionStatus)
 		})
 	})
 	return r

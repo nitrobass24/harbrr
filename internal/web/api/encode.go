@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/autobrr/harbrr/internal/appsync"
 	"github.com/autobrr/harbrr/internal/auth"
 	"github.com/autobrr/harbrr/internal/database"
 	apphttp "github.com/autobrr/harbrr/internal/http"
@@ -89,9 +90,9 @@ func (rt *router) writeServiceError(w http.ResponseWriter, op string, err error)
 	switch {
 	case errors.Is(err, database.ErrNotFound):
 		writeErrorCode(w, http.StatusNotFound, "not_found", "not found")
-	case errors.Is(err, registry.ErrConflict):
+	case errors.Is(err, registry.ErrConflict), errors.Is(err, appsync.ErrConflict):
 		writeErrorCode(w, http.StatusConflict, "conflict", err.Error())
-	case errors.Is(err, registry.ErrInvalid), errors.Is(err, auth.ErrWeakPassword), errors.Is(err, auth.ErrInvalidInput):
+	case errors.Is(err, registry.ErrInvalid), errors.Is(err, appsync.ErrInvalid), errors.Is(err, auth.ErrWeakPassword), errors.Is(err, auth.ErrInvalidInput):
 		writeErrorCode(w, http.StatusBadRequest, "invalid", err.Error())
 	case errors.Is(err, auth.ErrAlreadySetup):
 		writeErrorCode(w, http.StatusConflict, "already_setup", "setup already complete")
