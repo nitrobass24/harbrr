@@ -328,12 +328,19 @@ into the apps so they don't each configure indexers by hand.
       contract + add/update/remove lifecycle + per-app enable/disable (its own sub-plan; a Prowlarr
       headline feature). Scoped to **Sonarr/Radarr/qui only** — other \*arrs (Lidarr/Readarr/Mylar/Whisparr)
       are demand-gated backlog.
+- [ ] **Gate — a legitimate Swagger-only Prowlarr replacement.** With Phase 10 done, harbrr fully replaces
+      this stack's Prowlarr **operated entirely through the Swagger API** at `/api/docs` — no Web UI: add +
+      configure + test every indexer, search, grab through `/dl`, and sync indexers into Sonarr/Radarr/qui,
+      all over HTTP. **This is the alpha's definition of done.** Phase 11 (Web UI) is additive — nicer to
+      use, never required.
 
 ## Phase 11 — Web UI
 
 - [ ] **Web UI** — the management dashboard (indexer grid, add/edit forms, manual search, stats);
-      depends on the Phase 4 management API. (Interactive **Swagger UI already shipped** at `/api/docs`,
-      separate from the SPA — the web UI just links to it; raw spec at `/api/openapi.yaml`.)
+      depends on the Phase 4 management API. **Stack: match qui's** — believed Vite + React + Tailwind CSS;
+      **verify against the qui repo during Phase 11 scoping** before committing. (Interactive **Swagger UI
+      already shipped** at `/api/docs`, separate from the SPA — the web UI just links to it; raw spec at
+      `/api/openapi.yaml`.)
 
 ---
 
