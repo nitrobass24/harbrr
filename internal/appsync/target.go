@@ -15,6 +15,14 @@ import (
 	"strings"
 )
 
+// Category is a Newznab category harbrr advertises for an indexer: the numeric id
+// every app keys on plus its human name (which qui stores per-indexer). It is
+// self-contained so drivers never reach into the engine's category table.
+type Category struct {
+	ID   int
+	Name string
+}
+
 // DesiredIndexer is harbrr's target-neutral intent for one indexer on one
 // connection: what every driver pushes before its app-specific marshalling. Slug is
 // the reconciliation key (it also appears in FeedURL, enabling recovery when the
@@ -25,15 +33,26 @@ type DesiredIndexer struct {
 	Name       string
 	FeedURL    string
 	APIKey     string
-	Categories []int
+	Categories []Category
 	Priority   int
 	Enabled    bool
 }
 
+// CategoryIDs returns just the numeric ids (Servarr's categories field).
+func (d DesiredIndexer) CategoryIDs() []int {
+	ids := make([]int, 0, len(d.Categories))
+	for _, c := range d.Categories {
+		ids = append(ids, c.ID)
+	}
+	return ids
+}
+
 // hash is a stable fingerprint of the pushed intent. An unchanged hash lets reconcile
 // skip the remote update; a rotated APIKey changes it (so the new key is re-pushed).
+// Names are derived from the static Newznab table, so the ids alone fingerprint
+// categories.
 func (d DesiredIndexer) hash() string {
-	cats := append([]int(nil), d.Categories...)
+	cats := d.CategoryIDs()
 	sort.Ints(cats)
 	h := sha256.New()
 	fmt.Fprintf(h, "%s\x00%s\x00%s\x00%v\x00%d\x00%t", d.Name, d.FeedURL, d.APIKey, cats, d.Priority, d.Enabled)

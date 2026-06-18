@@ -78,7 +78,7 @@ func desired(slug string, enabled bool) DesiredIndexer {
 		Slug: slug, Name: slug, Enabled: enabled, Priority: 25,
 		FeedURL:    "http://harbrr/api/v2.0/indexers/" + slug + "/results/torznab",
 		APIKey:     "k",
-		Categories: []int{5000, 2000},
+		Categories: []Category{{ID: 5000, Name: "TV"}, {ID: 2000, Name: "Movies"}},
 	}
 }
 

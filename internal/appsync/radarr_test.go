@@ -11,7 +11,7 @@ func TestRadarrBuildIndexerGolden(t *testing.T) {
 		Slug: "movie-tracker", Name: "Movie Tracker", Priority: 25, Enabled: true,
 		FeedURL:    "http://harbrr:8787/api/v2.0/indexers/movie-tracker/results/torznab",
 		APIKey:     "harbrr-feed-key",
-		Categories: []int{2000, 2040, 2060},
+		Categories: []Category{{2000, "Movies"}, {2040, "Movies/HD"}, {2060, "Movies/3D"}},
 	}
 	assertGolden(t, "radarr_create.golden.json", drv.buildIndexer(d))
 }

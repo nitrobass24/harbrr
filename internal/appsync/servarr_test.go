@@ -162,7 +162,7 @@ func TestSonarrBuildIndexerGolden(t *testing.T) {
 		Slug: "anime-tracker", Name: "Anime Tracker", Priority: 25, Enabled: true,
 		FeedURL:    "http://harbrr:8787/api/v2.0/indexers/anime-tracker/results/torznab",
 		APIKey:     "harbrr-feed-key",
-		Categories: []int{5000, 5040, 5070, 2000},
+		Categories: []Category{{5000, "TV"}, {5040, "TV/HD"}, {5070, "TV/Anime"}, {2000, "Movies"}},
 	}
 	assertGolden(t, "sonarr_create.golden.json", drv.buildIndexer(d))
 }

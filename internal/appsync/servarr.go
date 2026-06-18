@@ -81,14 +81,15 @@ func (s *servarrDriver) Kind() string { return s.kind }
 // buildIndexer marshals a DesiredIndexer into the Servarr resource. Pure (no I/O) so
 // the golden test freezes the exact field mapping.
 func (s *servarrDriver) buildIndexer(d DesiredIndexer) servarrIndexer {
+	ids := d.CategoryIDs()
 	fields := []servarrField{
 		field("baseUrl", d.FeedURL),
 		field("apiPath", ""),
 		field("apiKey", d.APIKey),
-		field("categories", intsOrEmpty(d.Categories)),
+		field("categories", intsOrEmpty(ids)),
 	}
 	if s.anime {
-		fields = append(fields, field("animeCategories", animeCats(d.Categories)))
+		fields = append(fields, field("animeCategories", animeCats(ids)))
 	}
 	return servarrIndexer{
 		Name:                    d.Name,
