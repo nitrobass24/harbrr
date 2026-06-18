@@ -48,6 +48,11 @@ type Params struct {
 	Doer    search.Doer
 	BaseURL string
 	Clock   func() time.Time
+	// PersistSetting durably writes a (possibly rotated) setting value back to the
+	// encrypted store for this instance, so a driver that refreshes a credential
+	// mid-session survives a restart. Optional — nil for drivers that don't rotate
+	// credentials; MyAnonamouse uses it to persist the rotated mam_id cookie.
+	PersistSetting func(ctx context.Context, name, value string) error
 }
 
 // Factory builds a Driver for one configured instance.

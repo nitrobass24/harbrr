@@ -26,16 +26,22 @@ func (d *driver) mamID() string {
 }
 
 // captureRotatedMamID scans a response's Set-Cookie headers for a refreshed mam_id
-// and, if present, updates the in-memory current value for subsequent in-process
-// requests. MAM rotates mam_id on every response; this is process-local only and is
-// never written back to the store (on restart the stored value is used). The new
+// and, when it changed, updates the in-memory current value and persists it back to
+// the encrypted store (best-effort, detached) so the session survives a restart
+// instead of reverting to the stored value. MAM rotates mam_id on every response; the
+// per-host paced doer serializes MAM requests, so rotations arrive in order. The new
 // value is a secret and is never logged.
 func (d *driver) captureRotatedMamID(resp *stdhttp.Response) {
 	for _, c := range resp.Cookies() {
 		if c.Name == mamIDCookie && c.Value != "" {
 			d.mu.Lock()
+			changed := c.Value != d.currentMamID
 			d.currentMamID = c.Value
+			persist := d.persist
 			d.mu.Unlock()
+			if changed && persist != nil {
+				go func(v string) { _ = persist(context.Background(), mamIDCookie, v) }(c.Value)
+			}
 			return
 		}
 	}

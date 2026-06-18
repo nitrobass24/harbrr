@@ -126,6 +126,53 @@ func TestMamIDRotation(t *testing.T) {
 	}
 }
 
+// TestMamIDRotationPersists proves a rotated mam_id is written back through the persist
+// callback exactly once (so the session survives a restart), and is NOT persisted when
+// the value is unchanged.
+func TestMamIDRotationPersists(t *testing.T) {
+	t.Parallel()
+	type call struct{ name, value string }
+	mk := func(setCookie string, calls chan call) *driver {
+		d := newDriver(&scriptDoer{
+			setCookie: setCookie,
+			handler:   func(_ *stdhttp.Request) *stdhttp.Response { return resp(stdhttp.StatusOK, `{"error":"","data":[]}`) },
+		})
+		d.persist = func(_ context.Context, name, value string) error {
+			calls <- call{name, value}
+			return nil
+		}
+		return d
+	}
+
+	// A rotation persists the new value once.
+	rotated := make(chan call, 4)
+	d := mk("mam_id=ROTATED; Path=/; HttpOnly", rotated)
+	if _, err := d.Search(context.Background(), search.Query{Keywords: "x"}); err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	select {
+	case c := <-rotated:
+		if c.name != mamIDCookie || c.value != "ROTATED" {
+			t.Fatalf("persist call = %+v, want {mam_id ROTATED}", c)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("persist was not called on a rotated mam_id")
+	}
+
+	// An unchanged mam_id (server echoes the seeded value) persists nothing.
+	same := make(chan call, 4)
+	d2 := mk("mam_id="+mamSecret+"; Path=/", same)
+	if _, err := d2.Search(context.Background(), search.Query{Keywords: "y"}); err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	select {
+	case c := <-same:
+		t.Fatalf("unexpected persist on an unchanged mam_id: %+v", c)
+	case <-time.After(200 * time.Millisecond):
+		// expected: no write-back
+	}
+}
+
 // TestTestAction proves Test() succeeds on a 200 and maps a 403 to login.ErrLoginFailed
 // (mam_id expired/invalid) without leaking the secret.
 func TestTestAction(t *testing.T) {

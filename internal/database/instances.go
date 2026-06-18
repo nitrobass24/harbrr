@@ -60,6 +60,30 @@ func (Instances) InsertSetting(ctx context.Context, q dbinterface.Execer, instan
 	return nil
 }
 
+// UpsertSetting inserts a setting or, when one already exists for (instance_id, name),
+// updates it in place — used to persist a rotated credential (e.g. MyAnonamouse's
+// mam_id) without touching the instance's other settings. It relies on the
+// UNIQUE(instance_id, name) constraint.
+func (Instances) UpsertSetting(ctx context.Context, q dbinterface.Execer, instanceID int64, s domain.IndexerSetting) error {
+	if err := validateSettingInvariant(s); err != nil {
+		return err
+	}
+	_, err := q.ExecContext(
+		ctx,
+		q.Rebind(`INSERT INTO indexer_settings (instance_id, name, value, value_encrypted, key_id, is_secret)
+		 VALUES (?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(instance_id, name) DO UPDATE SET
+		   value = excluded.value, value_encrypted = excluded.value_encrypted,
+		   key_id = excluded.key_id, is_secret = excluded.is_secret`),
+		instanceID, s.Name,
+		nullIfEmpty(s.Value), nullIfEmpty(s.ValueEncrypted), nullIfEmpty(s.KeyID), boolToInt(s.IsSecret),
+	)
+	if err != nil {
+		return fmt.Errorf("database: upsert setting %q: %w", s.Name, err)
+	}
+	return nil
+}
+
 // GetBySlug returns the instance with the given slug, or ErrNotFound.
 func (Instances) GetBySlug(ctx context.Context, q dbinterface.Execer, slug string) (domain.IndexerInstance, error) {
 	row := q.QueryRowContext(ctx,

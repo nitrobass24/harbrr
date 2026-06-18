@@ -227,6 +227,9 @@ func (r *Registry) buildInner(inst domain.IndexerInstance, def *loader.Definitio
 			Doer:    doer,
 			BaseURL: baseURLOf(inst, def),
 			Clock:   r.clock,
+			PersistSetting: func(ctx context.Context, name, value string) error {
+				return r.persistSetting(ctx, inst, def, name, value)
+			},
 		})
 		if err != nil {
 			return nil, fmt.Errorf("registry: build native driver %q: %w", def.ID, err)
@@ -319,6 +322,22 @@ func (r *Registry) decryptConfig(instanceID int64, settings []domain.IndexerSett
 		cfg[s.Name] = pt
 	}
 	return cfg, nil
+}
+
+// persistSetting durably writes a single (re-)encrypted setting back to the store for
+// inst — the seam a native driver uses to persist a rotated credential (e.g.
+// MyAnonamouse's mam_id). It deliberately does NOT invalidate the cache: the cached
+// driver's in-memory value stays the live source, and this write only refreshes the
+// restart fallback, so it cannot race a search by dropping the live session.
+func (r *Registry) persistSetting(ctx context.Context, inst domain.IndexerInstance, def *loader.Definition, name, value string) error {
+	s, err := r.toStored(inst.ID, name, value, settingFields(def))
+	if err != nil {
+		return err
+	}
+	if err := r.instances.UpsertSetting(ctx, r.db, inst.ID, s); err != nil {
+		return fmt.Errorf("registry: persist setting %q: %w", name, err)
+	}
+	return nil
 }
 
 // logResolveError logs a genuine resolve failure with the error redacted; a
