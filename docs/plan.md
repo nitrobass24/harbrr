@@ -307,16 +307,17 @@ path), so item 1 comes first. Pattern reference: [`native-indexer-pattern.md`](n
       FileList — search live-confirmed (int-flags fix #46), Prowlarr differential pending a name match;
       MyAnonamouse — driver + `mam_id` write-back seam (#46) correct, live search/parse `[Tracked: pending a
       fresh dedicated MAM session]` (the stack's session is dead at source — fails in Prowlarr too).
-- [ ] **Coverage analysis across toolsets** (backlog → `docs/coverage.md`) — produce a **tracker × surface ×
-      tool × auth** matrix: for every tracker, which surface each tool covers — **announce** (autobrr,
-      IRC firehose) vs **search** (harbrr / Prowlarr / Jackett, on-demand Torznab) vs **RSS** — and via which
-      credential. autobrr and the search proxies cover *disjoint* surfaces of the same tracker, so the matrix
-      both (a) bounds harbrr's real native-driver backlog vs Prowlarr's full C# set (what's still missing
-      beyond these three) and (b) states honestly where harbrr is not yet a Prowlarr replacement. Drives the
-      native-driver roadmap past IPT/MAM/FileList.
-- [ ] **Live-validation ledger (opportunistic, not a gate)** — the Phase-9 `[Tracked]` retests with no
-      qualifying tracker in the stack (cookie/2FA, .NET-quirk, HTTP/SOCKS proxy) become a standing checklist
-      that ticks when a qualifying tracker appears. All three are offline-proven; none block the alpha.
+- [x] **Coverage analysis across toolsets** (`docs/coverage.md`) — the **tracker × surface × tool × auth**
+      matrix. Key results: harbrr owns the **search** surface (autobrr owns announce — disjoint); a
+      *Prowlarr-native* tracker is **not** a harbrr gap when Jackett ships YAML (harbrr vendors Jackett — e.g.
+      HDSpace). For this stack harbrr covers **all 18 torrent indexers**; only DOGnzb (usenet/Newznab) is out
+      of scope. harbrr's real native backlog = C#-in-both trackers: the **Gazelle-API** family (Redacted/
+      Orpheus/PTP/BTN — one base driver, the highest-leverage next build) + cookie-scrape (TorrentDay/SpeedCD)
+      and passkey (HDBits/BeyondHD) groups, which reuse the IPTorrents/FileList shapes already built.
+- [x] **Live-validation ledger (opportunistic, not a gate)** — the standing checklist of offline-proven
+      patterns awaiting a live qualifying tracker (cookie/2FA, .NET-quirk, HTTP/SOCKS proxy, + MyAnonamouse
+      live search/parse) lives in `internal/smoke/README.md` and `docs/coverage.md` §6. Ticks opportunistically;
+      not a release gate.
 
 ## Phase 10 — Product polish
 
