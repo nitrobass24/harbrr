@@ -47,15 +47,17 @@ func (d DesiredIndexer) CategoryIDs() []int {
 	return ids
 }
 
-// hash is a stable fingerprint of the pushed intent. An unchanged hash lets reconcile
-// skip the remote update; a rotated APIKey changes it (so the new key is re-pushed).
-// Names are derived from the static Newznab table, so the ids alone fingerprint
-// categories.
+// hash is a stable fingerprint of the pushed intent; an unchanged hash lets reconcile
+// skip the remote update. It deliberately excludes APIKey: the per-connection feed key
+// is immutable (minted once at create, never rotated in place — a new key means a new
+// connection), so it can't change between syncs and keeps the secret out of this fast,
+// non-password hash. Category names come from the static Newznab table, so the ids
+// alone fingerprint categories.
 func (d DesiredIndexer) hash() string {
 	cats := d.CategoryIDs()
 	sort.Ints(cats)
 	h := sha256.New()
-	fmt.Fprintf(h, "%s\x00%s\x00%s\x00%v\x00%d\x00%t", d.Name, d.FeedURL, d.APIKey, cats, d.Priority, d.Enabled)
+	fmt.Fprintf(h, "%s\x00%s\x00%v\x00%d\x00%t", d.Name, d.FeedURL, cats, d.Priority, d.Enabled)
 	return hex.EncodeToString(h.Sum(nil))
 }
 
