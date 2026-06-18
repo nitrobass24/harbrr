@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // DesiredIndexer is harbrr's target-neutral intent for one indexer on one
@@ -48,6 +49,26 @@ type RemoteIndexer struct {
 	Name          string
 	FeedURL       string
 	ManagedBySlug string
+}
+
+// feedURLMarker is the fixed path segment that precedes a harbrr slug in every feed
+// URL: {origin}/api/v2.0/indexers/{slug}/results/torznab.
+const feedURLMarker = "/api/v2.0/indexers/"
+
+// slugFromFeedURL recovers the harbrr slug embedded in a Torznab feed URL, or "" when
+// the URL is not a harbrr feed. Drivers use it to tag which of an app's indexers are
+// harbrr-managed (so orphan removal never touches a human-added one).
+func slugFromFeedURL(feedURL string) string {
+	i := strings.Index(feedURL, feedURLMarker)
+	if i < 0 {
+		return ""
+	}
+	rest := feedURL[i+len(feedURLMarker):]
+	j := strings.Index(rest, "/")
+	if j <= 0 {
+		return ""
+	}
+	return rest[:j]
 }
 
 // Target is one app's sync driver: it marshals a DesiredIndexer into the app's REST

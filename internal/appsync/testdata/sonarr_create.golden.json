@@ -1,0 +1,41 @@
+{
+  "name": "Anime Tracker",
+  "implementation": "Torznab",
+  "implementationName": "Torznab",
+  "configContract": "TorznabSettings",
+  "protocol": "torrent",
+  "enableRss": true,
+  "enableAutomaticSearch": true,
+  "enableInteractiveSearch": true,
+  "priority": 25,
+  "fields": [
+    {
+      "name": "baseUrl",
+      "value": "http://harbrr:8787/api/v2.0/indexers/anime-tracker/results/torznab"
+    },
+    {
+      "name": "apiPath",
+      "value": ""
+    },
+    {
+      "name": "apiKey",
+      "value": "harbrr-feed-key"
+    },
+    {
+      "name": "categories",
+      "value": [
+        5000,
+        5040,
+        5070,
+        2000
+      ]
+    },
+    {
+      "name": "animeCategories",
+      "value": [
+        5070
+      ]
+    }
+  ],
+  "tags": []
+}
