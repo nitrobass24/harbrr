@@ -46,13 +46,13 @@ jobs:
       - name: build
         run: go build ./...
 
-  # Compile-only portability check for the native-binary release targets
-  # (seekbrr ships as Docker + native binaries, like qui). This is cross-
-  # compilation on Linux — no native runners — so it stays cheap and runs in
-  # parallel with the test job. Full packaging is a later GoReleaser job
-  # (docs/plan.md: "Docker image + config file").
+  # Cross-compile the release binary for every native target on the Linux runner (Go
+  # cross-compiles natively — no emulation). This is both the portability check and the
+  # source of the Linux binaries the docker job packages: the image build COPYs these
+  # instead of recompiling Go in-container (the autobrr/qui + seedsync pattern), so the
+  # binary is built exactly once. Full packaging (GoReleaser) is a later job.
   cross-build:
-    name: cross-build
+    name: cross-build (${{ matrix.target.goos }}/${{ matrix.target.goarch }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -65,7 +65,11 @@ jobs:
           - { goos: darwin, goarch: arm64 }
           - { goos: windows, goarch: amd64 }
     steps:
+      # Full history so `git describe --tags` can stamp the binary version (matches the
+      # Makefile's ldflags), the same way `make build` does locally.
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: go.mod
@@ -75,24 +79,42 @@ jobs:
           GOOS: ${{ matrix.target.goos }}
           GOARCH: ${{ matrix.target.goarch }}
           CGO_ENABLED: "0"
-        run: go build ./...
+        run: |
+          version="$(git describe --tags --always --dirty 2>/dev/null || echo 0.0.0-dev)"
+          commit="$(git rev-parse --short HEAD)"
+          date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          go build -trimpath -ldflags "-s -w \
+            -X github.com/autobrr/harbrr/internal/version.Version=${version} \
+            -X github.com/autobrr/harbrr/internal/version.Commit=${commit} \
+            -X github.com/autobrr/harbrr/internal/version.Date=${date}" \
+            -o dist/harbrr ./cmd/harbrr
+      # The docker job reuses these Linux binaries (COPYs them instead of recompiling Go
+      # in-container), so upload one per Linux arch for it to download.
+      - name: upload linux binary
+        if: ${{ matrix.target.goos == 'linux' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: bin-linux-${{ matrix.target.goarch }}
+          path: dist/harbrr
+          if-no-files-found: error
+          retention-days: 1
 
-  # Build the container image so a broken Dockerfile fails CI — the Docker path is how
+  # Package the container image so a broken Dockerfile fails CI — the Docker path is how
   # *arr apps reach harbrr, so it must not silently rot. Each architecture builds on its
   # OWN runner in parallel (wall-clock = slowest single arch, not the sum) with a
-  # per-arch GHA cache scope so the two don't evict each other's layers. amd64 loads the
-  # image and runs `version` to prove it actually runs. On a same-repo PR or a version
-  # tag each arch is pushed to GHCR by digest and docker-merge assembles the multi-arch
-  # manifest — so a PR can be pulled before merge, and a tag publishes a release. A fork
-  # PR (read-only token) and a plain main push build (to validate) but do not push. The
-  # Go binary is cross-compiled on the native builder (Dockerfile BUILDPLATFORM) and the
-  # runtime image's certs come from a native stage, so no QEMU-emulated toolchain or
-  # package install is on the critical path. Native-binary packaging (GoReleaser) is a
-  # later job.
+  # per-arch GHA cache scope so the two don't evict each other's layers. The image build
+  # does NOT recompile Go: it injects the prebuilt linux binary from cross-build via a
+  # `build` build-context (so the Dockerfile's compile stage is replaced), leaving just
+  # COPYs + the native certs stage — no QEMU-emulated toolchain or package install on the
+  # critical path (the autobrr/qui + seedsync pattern). amd64 loads the image and runs
+  # `version` to prove it works. On a same-repo PR or a version tag each arch is pushed
+  # to GHCR by digest and docker-merge assembles the multi-arch manifest; a fork PR or a
+  # plain main push builds (to validate) but does not push.
   docker:
     name: docker (${{ matrix.arch }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    needs: [cross-build]
     permissions:
       contents: read
       packages: write
@@ -115,19 +137,27 @@ jobs:
       - uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3 # v4.1.0
       - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
+      # The prebuilt linux binary from cross-build replaces the Dockerfile's `build`
+      # stage (build-contexts below), so the image build never recompiles Go. It lands at
+      # out/harbrr — the path the Dockerfile's `COPY --from=build /out/harbrr` expects.
+      - name: download prebuilt binary (${{ matrix.arch }})
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: bin-linux-${{ matrix.arch }}
+          path: /tmp/binctx/out
+
       # Always build this arch (validates the Dockerfile). amd64 loads it for the smoke
       # run; arm64 builds to cache without loading (it can't run on an amd64 host).
       - name: build image (${{ matrix.arch }})
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: .
+          build-contexts: |
+            build=/tmp/binctx
           push: false
           load: ${{ matrix.load }}
           platforms: linux/${{ matrix.arch }}
           tags: harbrr:ci-${{ matrix.arch }}
-          build-args: |
-            VERSION=ci
-            COMMIT=${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,scope=${{ matrix.arch }},mode=max
           provenance: false
@@ -156,12 +186,11 @@ jobs:
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: .
+          build-contexts: |
+            build=/tmp/binctx
           platforms: linux/${{ matrix.arch }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
-          build-args: |
-            VERSION=${{ steps.meta.outputs.version }}
-            COMMIT=${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,scope=${{ matrix.arch }},mode=max
           provenance: false

@@ -43,7 +43,9 @@ COPY --from=certs /usr/share/zoneinfo /usr/share/zoneinfo
 RUN addgroup -S harbrr && adduser -S -G harbrr -H -u 1000 harbrr \
  && mkdir -p /config && chown harbrr:harbrr /config && chmod 700 /config
 
-COPY --from=build /out/harbrr /usr/local/bin/harbrr
+# --chmod guarantees the exec bit: in CI the `build` stage is replaced by a downloaded
+# artifact (build-contexts), and GitHub artifacts don't preserve the executable mode.
+COPY --from=build --chmod=0755 /out/harbrr /usr/local/bin/harbrr
 
 USER harbrr
 VOLUME ["/config"]
