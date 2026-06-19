@@ -66,10 +66,12 @@ jobs:
           - { goos: windows, goarch: amd64 }
     steps:
       # Full history so `git describe --tags` can stamp the binary version (matches the
-      # Makefile's ldflags), the same way `make build` does locally.
+      # Makefile's ldflags), the same way `make build` does locally. The job only runs
+      # read-only git ops after checkout, so don't persist the token in .git/config.
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: go.mod
@@ -254,8 +256,11 @@ jobs:
         run: |
           # word-splitting is intentional: expand to `-t tag1 -t tag2 …` + one image
           # ref per digest file (the standard buildx imagetools manifest-merge idiom).
+          # IMAGE / DOCKER_METADATA_OUTPUT_JSON come from env, not template interpolation.
           # shellcheck disable=SC2046
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf '${{ env.IMAGE }}@sha256:%s ' *)
+            $(printf "$IMAGE@sha256:%s " *)
       - name: inspect
-        run: docker buildx imagetools inspect ${{ env.IMAGE }}:${{ steps.meta.outputs.version }}
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: docker buildx imagetools inspect "$IMAGE:$VERSION"
