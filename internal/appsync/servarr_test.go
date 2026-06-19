@@ -20,6 +20,7 @@ var update = flag.Bool("update", false, "regenerate golden files")
 // records the last request body and auth header, assigns ids on create, and serves
 // list/update/delete/test with the real status codes.
 type servarrStub struct {
+	t        *testing.T
 	mu       sync.Mutex
 	indexers map[int]servarrIndexer
 	nextID   int
@@ -28,8 +29,9 @@ type servarrStub struct {
 	testFail bool
 }
 
-func newServarrStub() *servarrStub {
-	return &servarrStub{indexers: map[int]servarrIndexer{}}
+func newServarrStub(t *testing.T) *servarrStub {
+	t.Helper()
+	return &servarrStub{t: t, indexers: map[int]servarrIndexer{}}
 }
 
 func (s *servarrStub) handler() http.Handler {
@@ -47,7 +49,9 @@ func (s *servarrStub) record(r *http.Request) servarrIndexer {
 	body, _ := readAll(r)
 	s.lastBody = body
 	var idx servarrIndexer
-	_ = json.Unmarshal(body, &idx)
+	if err := json.Unmarshal(body, &idx); err != nil {
+		s.t.Errorf("stub: decode request body: %v", err)
+	}
 	return idx
 }
 
@@ -99,7 +103,7 @@ func (s *servarrStub) test(w http.ResponseWriter, r *http.Request) {
 
 func TestServarrLifecycle(t *testing.T) {
 	t.Parallel()
-	stub := newServarrStub()
+	stub := newServarrStub(t)
 	srv := httptest.NewServer(stub.handler())
 	t.Cleanup(srv.Close)
 	ctx := context.Background()
@@ -132,7 +136,9 @@ func TestServarrLifecycle(t *testing.T) {
 		t.Fatalf("Update: %v", err)
 	}
 	var sent servarrIndexer
-	_ = json.Unmarshal(stub.lastBody, &sent)
+	if err := json.Unmarshal(stub.lastBody, &sent); err != nil {
+		t.Fatalf("decode update body: %v", err)
+	}
 	if sent.ID != 1 || sent.EnableRss {
 		t.Errorf("Update body id=%d enableRss=%v, want id=1 disabled", sent.ID, sent.EnableRss)
 	}

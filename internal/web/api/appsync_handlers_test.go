@@ -140,7 +140,9 @@ func TestAppConnectionUpdateConflictAndSelect(t *testing.T) {
 	var a struct {
 		ID int64 `json:"id"`
 	}
-	_ = json.Unmarshal(body, &a)
+	if err := json.Unmarshal(body, &a); err != nil {
+		t.Fatalf("decode created connection A: %v", err)
+	}
 	resp, body = do(t, c, http.MethodPost, url, createConnBody("B", "http://b:8989"), nil)
 	mustStatus(t, resp, body, http.StatusCreated)
 
@@ -174,7 +176,9 @@ func TestAppConnectionSyncOverHTTP(t *testing.T) {
 	var created struct {
 		ID int64 `json:"id"`
 	}
-	_ = json.Unmarshal(body, &created)
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatalf("decode created connection: %v", err)
+	}
 	id := itoa(created.ID)
 
 	// Test the connection (stub lists fine) and sync (pushes the one indexer).

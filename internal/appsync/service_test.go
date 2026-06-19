@@ -70,7 +70,7 @@ func newSyncFixture(t *testing.T) *syncFixture {
 		},
 	}
 
-	stub := newServarrStub()
+	stub := newServarrStub(t)
 	srv := httptest.NewServer(stub.handler())
 	t.Cleanup(srv.Close)
 
