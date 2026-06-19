@@ -52,7 +52,11 @@ jobs:
   # instead of recompiling Go in-container (the autobrr/qui + seedsync pattern), so the
   # binary is built exactly once. Full packaging (GoReleaser) is a later job.
   cross-build:
-    name: cross-build (${{ matrix.target.goos }}/${{ matrix.target.goarch }})
+    # Name is the job key only — the matrix appends "(goos, goarch)", which is the exact
+    # required-status-check context on main (e.g. "cross-build (linux, amd64)"). Do not
+    # add a custom name: it would change the check name and the branch's required checks
+    # would wait forever on a context that no longer reports.
+    name: cross-build
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
