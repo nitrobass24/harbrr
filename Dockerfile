@@ -28,11 +28,19 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath \
       -X github.com/autobrr/harbrr/internal/version.Date=${DATE}" \
     -o /out/harbrr ./cmd/harbrr
 
+# Resolve ca-certificates + tzdata on the NATIVE build platform so the multi-arch image
+# never runs `apk add` under QEMU emulation (the slow part of an arm64 build). Both are
+# architecture-independent data — the cert bundle Go reads at
+# /etc/ssl/certs/ca-certificates.crt and the zoneinfo database — so they copy across.
+FROM --platform=$BUILDPLATFORM alpine:3.21 AS certs
+RUN apk add --no-cache ca-certificates tzdata
+
 FROM alpine:3.21
-# ca-certificates for outbound TLS to trackers; wget (busybox) for the
-# healthcheck; tzdata for correct date parsing across locales.
-RUN apk add --no-cache ca-certificates tzdata \
- && addgroup -S harbrr && adduser -S -G harbrr -H -u 1000 harbrr \
+COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=certs /usr/share/zoneinfo /usr/share/zoneinfo
+# addgroup/adduser/mkdir are busybox builtins in the base image (no package install), so
+# this stays cheap even under emulation; wget (busybox) remains for the healthcheck.
+RUN addgroup -S harbrr && adduser -S -G harbrr -H -u 1000 harbrr \
  && mkdir -p /config && chown harbrr:harbrr /config && chmod 700 /config
 
 COPY --from=build /out/harbrr /usr/local/bin/harbrr

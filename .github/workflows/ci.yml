@@ -77,82 +77,154 @@ jobs:
           CGO_ENABLED: "0"
         run: go build ./...
 
-  # Build the container image so a broken Dockerfile fails CI — the Docker path is
-  # how *arr apps reach harbrr, so it must not silently rot. Every event builds a
-  # single-arch image, loads it, and runs `version` to prove the image actually runs.
-  # On a same-repo PR and on a version tag it then builds the multi-arch image
-  # (amd64 + arm64) and pushes it to GHCR — so a PR can be pulled and tested before
-  # merge, and a tag publishes a release. A fork PR (read-only token) and a plain
-  # main push build but do not push. Native-binary release packaging (GoReleaser)
-  # stays a later job.
+  # Build the container image so a broken Dockerfile fails CI — the Docker path is how
+  # *arr apps reach harbrr, so it must not silently rot. Each architecture builds on its
+  # OWN runner in parallel (wall-clock = slowest single arch, not the sum) with a
+  # per-arch GHA cache scope so the two don't evict each other's layers. amd64 loads the
+  # image and runs `version` to prove it actually runs. On a same-repo PR or a version
+  # tag each arch is pushed to GHCR by digest and docker-merge assembles the multi-arch
+  # manifest — so a PR can be pulled before merge, and a tag publishes a release. A fork
+  # PR (read-only token) and a plain main push build (to validate) but do not push. The
+  # Go binary is cross-compiled on the native builder (Dockerfile BUILDPLATFORM) and the
+  # runtime image's certs come from a native stage, so no QEMU-emulated toolchain or
+  # package install is on the critical path. Native-binary packaging (GoReleaser) is a
+  # later job.
   docker:
-    name: docker
+    name: docker (${{ matrix.arch }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: read
       packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: amd64, load: true }
+          - { arch: arm64, load: false }
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}
+      # Push to GHCR on a same-repo PR (testable before merge) or a version tag (release).
+      PUSH: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]') || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) }}
     steps:
-      # The job pushes to a registry (packages: write) and runs no git operations
-      # after checkout, so don't persist the token in the git config (reduces the
-      # blast radius of the elevated token).
+      # The job pushes to a registry (packages: write) and runs no git operations after
+      # checkout, so don't persist the token in the git config (smaller blast radius).
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
       - uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3 # v4.1.0
       - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
-      # Always: build a single-arch image, load it into the daemon, and smoke-run it.
-      - name: build image (amd64, for the smoke run)
+      # Always build this arch (validates the Dockerfile). amd64 loads it for the smoke
+      # run; arm64 builds to cache without loading (it can't run on an amd64 host).
+      - name: build image (${{ matrix.arch }})
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: .
           push: false
-          load: true
-          platforms: linux/amd64
-          tags: harbrr:ci
+          load: ${{ matrix.load }}
+          platforms: linux/${{ matrix.arch }}
+          tags: harbrr:ci-${{ matrix.arch }}
           build-args: |
             VERSION=ci
             COMMIT=${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,scope=${{ matrix.arch }},mode=max
+          provenance: false
       - name: validate image runs
-        run: docker run --rm --entrypoint harbrr harbrr:ci version
+        if: ${{ matrix.arch == 'amd64' }}
+        run: docker run --rm --entrypoint harbrr harbrr:ci-amd64 version
 
-      # Publish to GHCR on a same-repo PR (testable before merge) or a version tag
-      # (a release). The metadata step is gated, so its empty outputs skip the
-      # login/push on a fork PR or a plain main push.
-      - name: registry metadata
-        id: meta
-        if: >-
-          (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]') ||
-          (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
-        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha,format=short
+      # When publishing: log in, then push this arch by digest (a cache hit on the build
+      # above) and record the digest for the merge job.
       - name: log in to GHCR
-        if: ${{ steps.meta.outputs.tags != '' }}
+        if: ${{ env.PUSH == 'true' }}
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: build and push (multi-arch)
-        if: ${{ steps.meta.outputs.tags != '' }}
+      - name: registry metadata
+        id: meta
+        if: ${{ env.PUSH == 'true' }}
+        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
+        with:
+          images: ${{ env.IMAGE }}
+      - name: push by digest (${{ matrix.arch }})
+        id: push
+        if: ${{ env.PUSH == 'true' }}
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: .
-          push: true
-          platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta.outputs.tags }}
+          platforms: linux/${{ matrix.arch }}
           labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
             COMMIT=${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,scope=${{ matrix.arch }},mode=max
+          provenance: false
+      - name: export digest
+        if: ${{ env.PUSH == 'true' }}
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.push.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+      - name: upload digest
+        if: ${{ env.PUSH == 'true' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: digests-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # Assemble the multi-arch manifest from the per-arch digests. Only runs when the docker
+  # job pushed (same-repo PR or tag); it builds nothing, so it is fast.
+  docker-merge:
+    name: docker-merge
+    runs-on: ubuntu-latest
+    needs: [docker]
+    if: >-
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]') ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}
+    steps:
+      - name: download digests
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+      - name: log in to GHCR
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: registry metadata
+        id: meta
+        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+      - name: create manifest list and push
+        working-directory: /tmp/digests
+        run: |
+          # word-splitting is intentional: expand to `-t tag1 -t tag2 …` + one image
+          # ref per digest file (the standard buildx imagetools manifest-merge idiom).
+          # shellcheck disable=SC2046
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.IMAGE }}@sha256:%s ' *)
+      - name: inspect
+        run: docker buildx imagetools inspect ${{ env.IMAGE }}:${{ steps.meta.outputs.version }}
