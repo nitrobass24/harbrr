@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 )
@@ -164,7 +166,7 @@ func (s *servarrDriver) do(ctx context.Context, method, path string, body, out a
 	}
 	req, err := http.NewRequestWithContext(ctx, method, s.baseURL+path, reader)
 	if err != nil {
-		return 0, fmt.Errorf("appsync: %s: build request: %w", s.kind, err)
+		return 0, fmt.Errorf("appsync: %s: build request: %w", s.kind, scrubURLError(err))
 	}
 	req.Header.Set("X-Api-Key", s.apiKey)
 	if body != nil {
@@ -172,7 +174,7 @@ func (s *servarrDriver) do(ctx context.Context, method, path string, body, out a
 	}
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("appsync: %s: %s %s: %w", s.kind, method, path, err)
+		return 0, fmt.Errorf("appsync: %s: %s %s: %w", s.kind, method, path, scrubURLError(err))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -192,6 +194,19 @@ func (s *servarrDriver) do(ctx context.Context, method, path string, body, out a
 // logs hold the detail). This keeps the credential off every error surface.
 func (s *servarrDriver) statusError(method, path string, resp *http.Response) error {
 	return fmt.Errorf("appsync: %s: %s %s: status %d", s.kind, method, path, resp.StatusCode)
+}
+
+// scrubURLError strips the request URL from a *url.Error so a credential a user may
+// have embedded in an app's base URL (userinfo) can never reach an error surface
+// (last_sync_error, an API response) — RedactError does not scrub URL userinfo. The Op
+// and underlying cause are kept (host:port in a dial error is not a secret); any other
+// error passes through unchanged. Shared by both drivers' do().
+func scrubURLError(err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return fmt.Errorf("%s: %w", ue.Op, ue.Err)
+	}
+	return err
 }
 
 // field builds a typed field entry; the value marshals cleanly (string/int slice/bool
