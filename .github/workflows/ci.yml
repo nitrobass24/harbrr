@@ -15,53 +15,24 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Tests are sharded across runners: the race detector is memory-hungry, so packing all
-  # packages (the heavy cardigann parity suites especially) onto one 4-core box thrashes
-  # (~1.8x scaling). Each shard runs a disjoint round-robin slice of `go list ./...` on
-  # its own runner; the `test` job below aggregates them into the single required status
-  # check. vet is covered by golangci-lint (govet) in lint.yml.
-  test-shard:
-    name: test-shard
+  # Test and build run as separate, parallel jobs so a build failure and a test
+  # failure are reported independently and neither waits on the other. The engine
+  # is pure Go with no OS-specific files or build tags and ships as a Linux
+  # binary/container, so a single Linux leg with the race detector is
+  # authoritative; vet is covered by golangci-lint (govet) in lint.yml.
+  test:
+    name: test
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [0, 1, 2, 3]
-    env:
-      SHARDS: "4"
-      SHARD: ${{ matrix.shard }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: go.mod
           cache: true
-      - name: test (race, shard ${{ matrix.shard }})
-        run: |
-          pkgs="$(go list ./... | awk -v n="$SHARDS" -v s="$SHARD" 'NR % n == s')"
-          echo "shard $SHARD/$SHARDS packages:"; echo "$pkgs"
-          # word-splitting is intentional: each package is a separate `go test` arg.
-          # shellcheck disable=SC2086
-          go test -race -count=1 $pkgs
+      - name: test (race)
+        run: go test -race -count=1 ./...
 
-  # Aggregate the shards into the single required `test` status check: runs always() so
-  # the check always reports, and fails if any shard failed (or was cancelled).
-  test:
-    name: test
-    runs-on: ubuntu-latest
-    needs: [test-shard]
-    if: always()
-    timeout-minutes: 5
-    steps:
-      - name: gate on shard results
-        env:
-          RESULT: ${{ needs.test-shard.result }}
-        run: |
-          echo "test-shard result: $RESULT"
-          [ "$RESULT" = "success" ] || { echo "one or more test shards failed"; exit 1; }
-
-  # Build runs separately so a build failure is reported independently of tests.
   build:
     name: build
     runs-on: ubuntu-latest
