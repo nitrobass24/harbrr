@@ -210,11 +210,13 @@ jobs:
           retention-days: 1
 
   # Assemble the multi-arch manifest from the per-arch digests. Only runs when the docker
-  # job pushed (same-repo PR or tag); it builds nothing, so it is fast.
+  # job pushed (same-repo PR or tag); it builds nothing, so it is fast. Gated on `test`
+  # as well, so a failing test gate never publishes a pullable multi-arch tag (the
+  # per-arch digests pushed earlier stay unreferenced and are harmless until then).
   docker-merge:
     name: docker-merge
     runs-on: ubuntu-latest
-    needs: [docker]
+    needs: [docker, test]
     if: >-
       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]') ||
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
