@@ -256,7 +256,7 @@ the owning layer — the engine stays frozen during validation; fixes are scoped
       Avistaz**: same query → Prowlarr feed vs harbrr feed → diff, confirming request/response + category
       parity at scale against the live oracle. — **2026-06-16: 13/14 PASS, count parity 1.00 across the
       board** (1 Prowlarr-side skip; AvistaZ not in the stack).
-- [ ] **Grab end-to-end per pattern** — search → resolved `.torrent` → seeding in qBittorrent (left
+- [x] **Grab end-to-end per pattern** — search → resolved `.torrent` → seeding in qBittorrent (left
       seeding, no hit-and-run), for ≥1 tracker per auth pattern, **including a resolver-needing tracker
       via the Phase-7 `/dl` path**. — **2026-06-16: 11/13 resolved a real `.torrent` (URL-token trackers,
       apikey + form). Found a real gap `[Tracked: needs a fix PR]`: harbrr serves a bare download link for
@@ -264,11 +264,19 @@ the owning layer — the engine stays frozen during validation; fixes are scoped
       cookie-login trackers) or request header (digitalcore X-API-KEY) are NOT grabbable by *arr — harbrr
       is search-only for them until their downloads route through `/dl`. See `internal/smoke/README.md`.
       → owned by Phase 9.5 item 1.**
-- [ ] **Acceptance** — every pattern green, or its gap recorded `[Tracked]` with a disposition.
+      — **Closed 2026-06-18:** the cookie/header-auth grab gap is fixed (Phase 9.5 item 1, the
+      authenticated-`/dl` path) and live-confirmed in **#44** — torrentleech (session cookie) and
+      digitalcore (X-API-KEY) both resolve a real `.torrent` through `/dl`. Patterns with no qualifying
+      tracker in the stack (2FA, proxy) stay `[Tracked]` per the item above.
+- [x] **Acceptance** — every pattern green, or its gap recorded `[Tracked]` with a disposition.
       — **2026-06-16: every pattern is green or `[Tracked]` with a disposition. The live run also caught +
       fixed a daemon-breaking nil-`Transport` panic (PR #42) and surfaced a native-indexer coverage gap —
       harbrr has no def for one-off C# native trackers (IPTorrents/MyAnonamouse/FileList) `[Tracked]`
       → owned by Phase 9.5 item 2.**
+      — **Met 2026-06-18:** the acceptance criterion (every pattern green or `[Tracked]` with a
+      disposition) holds, and the native-coverage gap this surfaced is now shipped (Phase 9.5 native
+      drivers, #45/#46). Phase 9 is accepted; the remaining `[Tracked]` items are gated on externals
+      (no qualifying tracker for 2FA/proxy; the stack's MyAnonamouse session is dead at source).
       This is the live half of "match Jackett/Prowlarr on real trackers"; the offline parity gate
       (Phase 2) proves it deterministically.
 
