@@ -332,7 +332,7 @@ path), so item 1 comes first. Pattern reference: [`native-indexer-pattern.md`](n
 The one product feature that makes harbrr a drop-in Prowlarr for the core stack: push indexer config
 into the apps so they don't each configure indexers by hand.
 
-- [ ] **App sync — Sonarr, Radarr, qui** — push indexer config into these three via their API: the sync
+- [x] **App sync — Sonarr, Radarr, qui** — push indexer config into these three via their API: the sync
       contract + add/update/remove lifecycle + per-app enable/disable (its own sub-plan; a Prowlarr
       headline feature). Scoped to **Sonarr/Radarr/qui only** — other \*arrs (Lidarr/Readarr/Mylar/Whisparr)
       are demand-gated backlog.
@@ -357,10 +357,13 @@ into the apps so they don't each configure indexers by hand.
       connectivity 400 only because no harbrr feed is deployed at that host to authenticate the probe
       key; the Sonarr error echoed `apikey=…` in a URL, confirming the never-echo-app-bodies fix.) No
       driver changes were needed. The doc-derived goldens are confirmed.
-      — **Remaining for the box:** a fully-green Sonarr/Radarr indexer *save* needs harbrr actually
-      deployed in the stack (a valid minted feed key + reachable feed). `[Tracked: contracts
-      live-validated; full-stack save pending harbrr deployment]`
-- [ ] **Gate — a legitimate Swagger-only Prowlarr replacement.** With Phase 10 done, harbrr fully replaces
+      — **Gold-standard live test passed 2026-06-19** (harbrr deployed at `192.168.10.220:7575`, driven
+      entirely over the API): 10 real apikey indexers added + tested green in harbrr, then 3
+      app-connections (Sonarr/Radarr/qui) created and synced. **Radarr 10/10 created, qui 10/10 created,
+      Sonarr 8/10** — the 2 misses (`reelflix`, `retromoviesclub`) are movie-only defs (no `tv-search`)
+      that Sonarr *correctly* rejects and that landed in Radarr fine, so the full-stack save is confirmed
+      green. Indexers + connections left persisted. `[Resolved: Phase 10]`
+- [x] **Gate — a legitimate Swagger-only Prowlarr replacement.** With Phase 10 done, harbrr fully replaces
       this stack's Prowlarr **operated entirely through the Swagger API** at `/api/docs` — no Web UI: add +
       configure + test every indexer, search, grab through `/dl`, and sync indexers into Sonarr/Radarr/qui,
       all over HTTP. **This is the alpha's definition of done.** Phase 11 (Web UI) is additive — nicer to
