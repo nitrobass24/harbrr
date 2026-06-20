@@ -154,31 +154,34 @@ func (e *Executor) postForm(ctx context.Context, def *loader.Definition, target 
 	// redaction-safe body signature) so the engine can surface why HD-Space
 	// rejected the login. No secrets: status, length, <title>, marker booleans.
 	e.DebugLoginInfo = debugLoginSig(status, body)
-	// When the POST is itself blocked by an anti-bot challenge (e.g. Cloudflare's
-	// anti-credential-stuffing rule on a login endpoint), harbrr's own client cannot
-	// clear it: a GET never triggers it, so no cf_clearance is issued for the POST.
-	// Replay the submission through a POST-capable solver (FlareSolverr request.post),
-	// which performs it in a real browser and returns the authenticated cookies.
+	// When the POST is blocked by an anti-bot challenge (e.g. Cloudflare gating the
+	// login endpoint), harbrr cannot clear it during the POST itself — a solver
+	// cannot complete a JS challenge mid-submission. But a GET of the SAME login URL
+	// IS challenged and yields a host-wide cf_clearance, so solve that, then retry
+	// the POST carrying the clearance cookie + the bound User-Agent.
 	if detectAntiBot(body) != nil {
-		if ps, ok := e.solver().(PostSolver); ok {
-			return e.solveLoginPost(ctx, ps, rawURL, encoded)
-		}
+		return e.solveAndRetryLoginPost(ctx, def.Login, rawURL, encoded, headers)
 	}
 	return e.checkErrors(def.Login, rawURL, body, status)
 }
 
-// solveLoginPost performs a CHALLENGED login POST through a POST-capable solver and
-// seeds the resulting cookies (the authenticated session + cf_clearance) and the
-// bound User-Agent, so the search stage replays them. A solver failure surfaces as
-// ErrSolverRequired (an anti_bot health event); the post body/credentials are never
-// echoed.
-func (e *Executor) solveLoginPost(ctx context.Context, ps PostSolver, rawURL, postData string) error {
-	res, err := ps.SolvePost(ctx, rawURL, postData)
-	if err != nil {
+// solveAndRetryLoginPost clears an anti-bot challenge on a login POST by GET-solving
+// the (challenged) login URL — which issues a host-wide cf_clearance + bound UA that
+// do() then replays — and retrying the POST. It fails loud with ErrSolverRequired
+// when no solver is configured (or the solve declines) and when the retried POST is
+// still challenged, mirroring fetchLandingPastAntiBot. Credentials are never echoed.
+func (e *Executor) solveAndRetryLoginPost(ctx context.Context, l *loader.Login, rawURL, postData string, headers map[string][]string) error {
+	if err := e.SolveHost(ctx, rawURL); err != nil {
 		return fmt.Errorf("%w: the login POST is guarded by an anti-bot challenge", ErrSolverRequired)
 	}
-	e.applySolveResult(rawURL, res)
-	return nil
+	body, status, err := e.do(ctx, stdhttp.MethodPost, rawURL, strings.NewReader(postData), headers)
+	if err != nil {
+		return err
+	}
+	if detectAntiBot(body) != nil {
+		return fmt.Errorf("%w: the login POST is still challenged after solving", ErrSolverRequired)
+	}
+	return e.checkErrors(l, rawURL, body, status)
 }
 
 // renderInputs template-renders each Login.Inputs value into url.Values. Keys

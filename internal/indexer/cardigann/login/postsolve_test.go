@@ -6,47 +6,95 @@ import (
 	stdhttp "net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 )
 
-// TestFlareSolverrSolvePost asserts SolvePost issues a request.post with the form
-// body and returns the resulting cookies + UA.
-func TestFlareSolverrSolvePost(t *testing.T) {
+// postThenCleanDoer returns a Cloudflare challenge for the FIRST POST (the
+// pre-clearance submission) and the clean logged-in page for the retry, recording
+// the retry request's headers so the cf_clearance + UA replay can be asserted.
+type postThenCleanDoer struct {
+	mu            sync.Mutex
+	posts         int
+	retryHeaders  stdhttp.Header
+	retryHadCFCkz bool
+}
+
+func (d *postThenCleanDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
+	d.mu.Lock()
+	d.posts++
+	first := d.posts == 1
+	if !first {
+		d.retryHeaders = req.Header.Clone()
+		for _, c := range req.Cookies() {
+			if c.Name == "cf_clearance" {
+				d.retryHadCFCkz = true
+			}
+		}
+	}
+	d.mu.Unlock()
+	body := "<html><body>welcome, logged in</body></html>"
+	if first {
+		body = "<html><head><title>Just a moment...</title></head></html>"
+	}
+	return &stdhttp.Response{
+		StatusCode: stdhttp.StatusOK,
+		Header:     stdhttp.Header{},
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Request:    req,
+	}, nil
+}
+
+// solveURLSolver is a stub solver that returns a cf_clearance cookie + UA for any
+// GET-solve, simulating FlareSolverr clearing the challenged login page.
+type solveURLSolver struct{ solved int }
+
+func (s *solveURLSolver) Solve(context.Context, string) (SolveResult, error) {
+	s.solved++
+	return SolveResult{
+		UserAgent: "BrowserUA/1.0",
+		Cookies:   []*stdhttp.Cookie{{Name: "cf_clearance", Value: "CLR"}},
+	}, nil
+}
+
+// TestPostForm_ChallengedLoginGetSolvesThenRetries is the core gate: a login POST
+// blocked by an anti-bot challenge triggers a GET-solve of the login URL (yielding
+// cf_clearance + UA) and a retry POST that carries them and succeeds.
+func TestPostForm_ChallengedLoginGetSolvesThenRetries(t *testing.T) {
 	t.Parallel()
-	srv, captured := flareStub(t, flareResponse{
-		Status: "ok",
-		Solution: flareSolution{
-			UserAgent: "BrowserUA/1.0",
-			Cookies:   []flareCookie{{Name: "uid", Value: "12345"}, {Name: "pass", Value: "abc"}},
-		},
-	})
-	res, err := NewFlareSolverrSolver(srv.URL, 0).SolvePost(context.Background(), "https://t.test/index.php?page=login", "uid=u&pwd=p")
-	if err != nil {
-		t.Fatalf("SolvePost: %v", err)
+	doer := &postThenCleanDoer{}
+	solver := &solveURLSolver{}
+	e := New(WithClient(doer), WithBaseURL("https://t.invalid/"), WithSolver(solver))
+	def := &loader.Definition{Login: &loader.Login{Path: "index.php?page=login", Method: "post"}}
+
+	if err := e.postForm(context.Background(), def, "index.php?page=login",
+		url.Values{"uid": {"u"}, "pwd": {"p"}, "logout": {""}}); err != nil {
+		t.Fatalf("postForm: %v", err)
 	}
-	if captured.Cmd != "request.post" || captured.URL != "https://t.test/index.php?page=login" {
-		t.Errorf("request = %+v, want cmd=request.post url=login", captured)
+	if solver.solved != 1 {
+		t.Errorf("solver GET-solves = %d, want 1 (clear the challenged login URL)", solver.solved)
 	}
-	if captured.PostData != "uid=u&pwd=p" {
-		t.Errorf("postData = %q, want the form body", captured.PostData)
+	if doer.posts != 2 {
+		t.Errorf("POSTs = %d, want 2 (challenged + retry after clearance)", doer.posts)
 	}
-	if captured.MaxTimeout <= 0 {
-		t.Errorf("maxTimeout = %d, want >0", captured.MaxTimeout)
+	if !doer.retryHadCFCkz {
+		t.Error("retry POST did not carry the cf_clearance cookie")
 	}
-	if res.UserAgent != "BrowserUA/1.0" || len(res.Cookies) != 2 {
-		t.Errorf("result = %+v, want UA + 2 auth cookies", res)
+	if ua := doer.retryHeaders.Get("User-Agent"); ua != "BrowserUA/1.0" {
+		t.Errorf("retry POST User-Agent = %q, want the solver UA", ua)
+	}
+	if e.SolverUserAgent != "BrowserUA/1.0" {
+		t.Errorf("SolverUserAgent = %q, want the solver UA persisted for search", e.SolverUserAgent)
 	}
 }
 
-// postChallengeDoer returns a Cloudflare challenge for every request, simulating a
-// tracker whose login POST is guarded by an anti-bot rule harbrr's own client
-// cannot clear.
-type postChallengeDoer struct{ calls int }
+// challengeDoer always returns a Cloudflare challenge, so a retry is still blocked.
+type challengeDoer struct{ posts int }
 
-func (d *postChallengeDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
-	d.calls++
+func (d *challengeDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
+	d.posts++
 	return &stdhttp.Response{
 		StatusCode: stdhttp.StatusForbidden,
 		Header:     stdhttp.Header{},
@@ -55,67 +103,37 @@ func (d *postChallengeDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) 
 	}, nil
 }
 
-// TestPostForm_ChallengedLoginRoutesThroughPostSolver is the core gate for the fix:
-// when the login POST is blocked by an anti-bot challenge and a POST-capable solver
-// is configured, postForm replays the submission through the solver and seeds the
-// authenticated cookies + bound UA (so the search stage logs in).
-func TestPostForm_ChallengedLoginRoutesThroughPostSolver(t *testing.T) {
+// TestPostForm_ChallengedLoginNoSolverFailsLoud confirms that without a solver, a
+// challenged login POST fails loud (ErrSolverRequired) rather than silently
+// treating the challenge page as a successful login.
+func TestPostForm_ChallengedLoginNoSolverFailsLoud(t *testing.T) {
 	t.Parallel()
-	srv, captured := flareStub(t, flareResponse{
-		Status: "ok",
-		Solution: flareSolution{
-			UserAgent: "BrowserUA/1.0",
-			Cookies: []flareCookie{
-				{Name: "uid", Value: "12345"}, {Name: "pass", Value: "abcdef"}, {Name: "cf_clearance", Value: "CLR"},
-			},
-		},
-	})
-	doer := &postChallengeDoer{}
-	e := New(WithClient(doer), WithBaseURL("https://t.invalid/"), WithSolver(NewFlareSolverrSolver(srv.URL, 0)))
+	doer := &challengeDoer{}
+	e := New(WithClient(doer), WithBaseURL("https://t.invalid/")) // default NoopSolver
 	def := &loader.Definition{Login: &loader.Login{Path: "index.php?page=login", Method: "post"}}
 
-	err := e.postForm(context.Background(), def, "index.php?page=login",
-		url.Values{"uid": {"u"}, "pwd": {"p"}, "logout": {""}})
-	if err != nil {
-		t.Fatalf("postForm: %v", err)
+	err := e.postForm(context.Background(), def, "index.php?page=login", url.Values{"uid": {"u"}})
+	if err == nil {
+		t.Fatal("want an error when the login POST is challenged and no solver is configured")
 	}
-
-	// The solver was asked to POST the encoded login form.
-	if captured.Cmd != "request.post" {
-		t.Errorf("solver cmd = %q, want request.post", captured.Cmd)
-	}
-	if !strings.Contains(captured.PostData, "uid=u") || !strings.Contains(captured.PostData, "pwd=p") {
-		t.Errorf("solver postData = %q, want the encoded login form", captured.PostData)
-	}
-	// The authenticated session cookies + bound UA are seeded for the host.
-	u, _ := url.Parse("https://t.invalid/index.php")
-	got := map[string]string{}
-	for _, c := range e.Jar.Cookies(u) {
-		got[c.Name] = c.Value
-	}
-	if got["uid"] != "12345" || got["pass"] != "abcdef" {
-		t.Errorf("jar after solve = %v, want uid+pass auth cookies seeded", got)
-	}
-	if e.SolverUserAgent != "BrowserUA/1.0" {
-		t.Errorf("SolverUserAgent = %q, want the solver UA persisted", e.SolverUserAgent)
+	if doer.posts != 1 {
+		t.Errorf("POSTs = %d, want 1 (no retry without a solver)", doer.posts)
 	}
 }
 
-// TestPostForm_ChallengedLoginWithoutPostSolver confirms a non-POST-capable solver
-// (the default NoopSolver) does NOT route the POST — postForm falls through to the
-// error selectors unchanged, preserving existing behaviour.
-func TestPostForm_ChallengedLoginWithoutPostSolver(t *testing.T) {
+// TestPostForm_ChallengedLoginStillChallengedFailsLoud confirms that if the retry
+// POST is STILL challenged after solving, it fails loud rather than looping.
+func TestPostForm_ChallengedLoginStillChallengedFailsLoud(t *testing.T) {
 	t.Parallel()
-	doer := &postChallengeDoer{}
-	e := New(WithClient(doer), WithBaseURL("https://t.invalid/")) // default NoopSolver (not a PostSolver)
+	doer := &challengeDoer{}
+	solver := &solveURLSolver{}
+	e := New(WithClient(doer), WithBaseURL("https://t.invalid/"), WithSolver(solver))
 	def := &loader.Definition{Login: &loader.Login{Path: "index.php?page=login", Method: "post"}}
 
-	// No error selector declared, so checkErrors returns nil on the challenge body:
-	// the point is that postForm does NOT panic/route and issues exactly one request.
-	if err := e.postForm(context.Background(), def, "index.php?page=login", url.Values{"uid": {"u"}}); err != nil {
-		t.Fatalf("postForm: %v", err)
+	if err := e.postForm(context.Background(), def, "index.php?page=login", url.Values{"uid": {"u"}}); err == nil {
+		t.Fatal("want an error when the retry POST is still challenged")
 	}
-	if doer.calls != 1 {
-		t.Errorf("doer calls = %d, want 1 (no post-solve replay without a PostSolver)", doer.calls)
+	if doer.posts != 2 {
+		t.Errorf("POSTs = %d, want exactly 2 (challenged + one retry, no loop)", doer.posts)
 	}
 }

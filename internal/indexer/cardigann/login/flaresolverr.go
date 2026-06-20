@@ -25,8 +25,7 @@ const (
 type flareRequest struct {
 	Cmd        string `json:"cmd"`
 	URL        string `json:"url"`
-	PostData   string `json:"postData,omitempty"` // x-www-form-urlencoded body for request.post
-	MaxTimeout int    `json:"maxTimeout"`         // milliseconds
+	MaxTimeout int    `json:"maxTimeout"` // milliseconds
 }
 
 type flareCookie struct {
@@ -79,20 +78,10 @@ func (s *FlareSolverrSolver) Solve(ctx context.Context, targetURL string) (Solve
 	return s.solve(ctx, flareRequest{Cmd: "request.get", URL: targetURL})
 }
 
-// SolvePost performs targetURL's POST (postData is the x-www-form-urlencoded body)
-// inside FlareSolverr's browser, clearing an anti-bot challenge that specifically
-// guards the submission (e.g. Cloudflare's anti-credential-stuffing rule on a login
-// endpoint), and returns the resulting cookies + User-Agent. harbrr cannot clear a
-// POST-only challenge itself: a GET never sees it, so no cf_clearance is issued for
-// it. Implements PostSolver. cf_clearance is UA-bound, so the caller MUST replay
-// with the returned UA.
-func (s *FlareSolverrSolver) SolvePost(ctx context.Context, targetURL, postData string) (SolveResult, error) {
-	return s.solve(ctx, flareRequest{Cmd: "request.post", URL: targetURL, PostData: postData})
-}
-
-// solve sends one FlareSolverr /v1 command (request.get or request.post) and
-// returns the solution's cookies + User-Agent. fr.MaxTimeout is filled here so
-// callers only specify the command, URL, and (for POST) the body.
+// solve sends one FlareSolverr /v1 request.get and returns the solution's cookies +
+// User-Agent. fr.MaxTimeout is filled here so callers only specify the command and
+// URL. (request.post is intentionally unused: FlareSolverr cannot complete a JS
+// challenge mid-POST — see solveAndRetryLoginPost, which GET-solves then re-POSTs.)
 func (s *FlareSolverrSolver) solve(ctx context.Context, fr flareRequest) (SolveResult, error) {
 	if s.baseURL == "" {
 		return SolveResult{}, fmt.Errorf("%w: flaresolverr_url is not configured", ErrNoSolverConfigured)
