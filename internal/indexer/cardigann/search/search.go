@@ -175,7 +175,9 @@ func Execute(ctx context.Context, def *loader.Definition, query Query, session *
 		// parse so the engine can re-login and retry once. Checked before parsing,
 		// matching Jackett's CheckIfLoginIsNeeded -> DoLogin order.
 		if looksLoggedOut(def, body, respType, query, deps) {
-			return nil, ErrSearchLoggedOut
+			// TEMP diagnostic: append a redaction-safe page signature so the existing
+			// "torznab request failed" log line reveals WHAT page tripped the check.
+			return nil, fmt.Errorf("%w [%s]", ErrSearchLoggedOut, loggedOutSignature(body))
 		}
 		rels, err := ParseResults(def, body, query, deps)
 		if err != nil {
