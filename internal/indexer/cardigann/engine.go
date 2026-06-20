@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	stdhttp "net/http"
+	stdurl "net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -254,11 +255,39 @@ func (e *Engine) Search(ctx context.Context, query Query) ([]*Release, error) {
 			return nil, fmt.Errorf("cardigann: re-login for %q after session expiry: %w", e.def.ID, rerr)
 		}
 		releases, err = search.Execute(ctx, e.def, query, e.login.Session(), e.doer, e.deps)
+		if err != nil {
+			// TEMP diagnostic: list the jar cookie NAMES established by the relogin
+			// (values redacted) so we can tell "login POST set no session cookie"
+			// (auth rejected) from "session set but not applied to search".
+			err = fmt.Errorf("%w {jar-after-relogin: %s}", err, e.debugJarCookieNames())
+		}
 	}
 	if err != nil {
 		return nil, fmt.Errorf("cardigann: search for %q: %w", e.def.ID, err)
 	}
 	return releases, nil
+}
+
+// debugJarCookieNames returns the comma-separated NAMES (never values) of the
+// session jar's cookies for the base URL — a TEMP diagnostic for the HD-Space
+// login investigation. Redaction-safe: cookie names are not secrets.
+func (e *Engine) debugJarCookieNames() string {
+	sess := e.login.Session()
+	if sess == nil || sess.Jar == nil {
+		return "no-jar"
+	}
+	u, err := stdurl.Parse(e.baseURL)
+	if err != nil {
+		return "bad-base-url"
+	}
+	var names []string
+	for _, c := range sess.Jar.Cookies(u) {
+		names = append(names, c.Name)
+	}
+	if len(names) == 0 {
+		return "none"
+	}
+	return strings.Join(names, ",")
 }
 
 // clearSearchAntiBot best-effort clears an anti-bot challenge on the tracker host

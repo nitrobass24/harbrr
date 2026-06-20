@@ -249,6 +249,6 @@ func logStartup(log zerolog.Logger, cfg *config.Config) {
 		Str("base_url", cfg.Server.BaseURL).
 		Str("data_dir", cfg.DataDir).
 		Bool("auth_disabled", cfg.Auth.AuthDisabled()).
-		Str("build", "debug-hdspace-sig-2"). // TEMP build marker — confirms this binary is the debug build
+		Str("build", "debug-hdspace-sig-3"). // TEMP build marker — confirms this binary is the debug build
 		Msg("harbrr listening")
 }
