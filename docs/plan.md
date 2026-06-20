@@ -397,6 +397,10 @@ Built when a real user needs it, not on a schedule. Each is self-contained and o
   one **Gazelle-API** base driver (Redacted/Orpheus/PTP/BTN/AnimeBytes); cookie-scrape (TorrentDay/SpeedCD)
   and passkey (HDBits/BeyondHD) reuse the IPTorrents/FileList shapes. Build per tracker on demand.
 - **harbrr → autobrr push** — closes the RSS-polling gap (family-only win).
+- **Usenet / Newznab support** — harbrr is torrent-only today, so a stack's usenet indexers (e.g.
+  DOGnzb) can't migrate. Add Newznab provider support (the `caps`/`search` surface already speaks
+  Newznab-compatible XML; the gap is the usenet *fetch* + indexer kind). Surfaced by the Phase 10
+  gold-standard migration — DOGnzb was the one stack indexer harbrr couldn't serve.
 - **cross-seed search backend.**
 - **Stats / search history** (query/grab/auth event log + query API; the auth log populates
   `api_keys.last_used_at`, left unwritten in Phase 4) **+ notifications** (Discord/webhook, pluggable).
