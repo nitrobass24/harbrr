@@ -24,6 +24,18 @@ type SolveResult struct {
 	UserAgent string
 }
 
+// PostSolver is an optional Solver capability: clearing an anti-bot challenge that
+// specifically guards a POST (e.g. Cloudflare's anti-credential-stuffing rule on a
+// login submission) by performing the POST inside the solver's browser and
+// returning the resulting authenticated cookies. harbrr's own client cannot clear
+// such a challenge — a GET never triggers it, so no cf_clearance is ever issued for
+// the POST. FlareSolverrSolver implements this; NoopSolver and ManualCookieSolver
+// do not. The login stage type-asserts to it and only routes a CHALLENGED login
+// POST through it, so a normal (unprotected) login is unaffected.
+type PostSolver interface {
+	SolvePost(ctx context.Context, targetURL, postData string) (SolveResult, error)
+}
+
 // ErrNoSolverConfigured reports that no anti-bot solver is configured (or the
 // configured one had nothing to contribute), so an interstitial cannot be solved
 // automatically. The login flow surfaces this as ErrSolverRequired.

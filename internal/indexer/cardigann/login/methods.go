@@ -145,7 +145,8 @@ func (e *Executor) postForm(ctx context.Context, def *loader.Definition, target 
 		return err
 	}
 	headers := mergeFormHeaders(def.Login.Headers)
-	body, status, err := e.do(ctx, stdhttp.MethodPost, rawURL, strings.NewReader(pairs.Encode()), headers)
+	encoded := pairs.Encode()
+	body, status, err := e.do(ctx, stdhttp.MethodPost, rawURL, strings.NewReader(encoded), headers)
 	if err != nil {
 		return err
 	}
@@ -153,7 +154,31 @@ func (e *Executor) postForm(ctx context.Context, def *loader.Definition, target 
 	// redaction-safe body signature) so the engine can surface why HD-Space
 	// rejected the login. No secrets: status, length, <title>, marker booleans.
 	e.DebugLoginInfo = debugLoginSig(status, body)
+	// When the POST is itself blocked by an anti-bot challenge (e.g. Cloudflare's
+	// anti-credential-stuffing rule on a login endpoint), harbrr's own client cannot
+	// clear it: a GET never triggers it, so no cf_clearance is issued for the POST.
+	// Replay the submission through a POST-capable solver (FlareSolverr request.post),
+	// which performs it in a real browser and returns the authenticated cookies.
+	if detectAntiBot(body) != nil {
+		if ps, ok := e.solver().(PostSolver); ok {
+			return e.solveLoginPost(ctx, ps, rawURL, encoded)
+		}
+	}
 	return e.checkErrors(def.Login, rawURL, body, status)
+}
+
+// solveLoginPost performs a CHALLENGED login POST through a POST-capable solver and
+// seeds the resulting cookies (the authenticated session + cf_clearance) and the
+// bound User-Agent, so the search stage replays them. A solver failure surfaces as
+// ErrSolverRequired (an anti_bot health event); the post body/credentials are never
+// echoed.
+func (e *Executor) solveLoginPost(ctx context.Context, ps PostSolver, rawURL, postData string) error {
+	res, err := ps.SolvePost(ctx, rawURL, postData)
+	if err != nil {
+		return fmt.Errorf("%w: the login POST is guarded by an anti-bot challenge", ErrSolverRequired)
+	}
+	e.applySolveResult(rawURL, res)
+	return nil
 }
 
 // renderInputs template-renders each Login.Inputs value into url.Values. Keys

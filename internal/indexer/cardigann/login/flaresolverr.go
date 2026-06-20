@@ -25,7 +25,8 @@ const (
 type flareRequest struct {
 	Cmd        string `json:"cmd"`
 	URL        string `json:"url"`
-	MaxTimeout int    `json:"maxTimeout"` // milliseconds
+	PostData   string `json:"postData,omitempty"` // x-www-form-urlencoded body for request.post
+	MaxTimeout int    `json:"maxTimeout"`         // milliseconds
 }
 
 type flareCookie struct {
@@ -75,14 +76,29 @@ func NewFlareSolverrSolver(baseURL string, maxTimeout time.Duration) *FlareSolve
 // caller surfaces it as ErrSolverRequired -> an anti_bot health event). No secret
 // (the base URL's embedded auth, cookies) is echoed into an error.
 func (s *FlareSolverrSolver) Solve(ctx context.Context, targetURL string) (SolveResult, error) {
+	return s.solve(ctx, flareRequest{Cmd: "request.get", URL: targetURL})
+}
+
+// SolvePost performs targetURL's POST (postData is the x-www-form-urlencoded body)
+// inside FlareSolverr's browser, clearing an anti-bot challenge that specifically
+// guards the submission (e.g. Cloudflare's anti-credential-stuffing rule on a login
+// endpoint), and returns the resulting cookies + User-Agent. harbrr cannot clear a
+// POST-only challenge itself: a GET never sees it, so no cf_clearance is issued for
+// it. Implements PostSolver. cf_clearance is UA-bound, so the caller MUST replay
+// with the returned UA.
+func (s *FlareSolverrSolver) SolvePost(ctx context.Context, targetURL, postData string) (SolveResult, error) {
+	return s.solve(ctx, flareRequest{Cmd: "request.post", URL: targetURL, PostData: postData})
+}
+
+// solve sends one FlareSolverr /v1 command (request.get or request.post) and
+// returns the solution's cookies + User-Agent. fr.MaxTimeout is filled here so
+// callers only specify the command, URL, and (for POST) the body.
+func (s *FlareSolverrSolver) solve(ctx context.Context, fr flareRequest) (SolveResult, error) {
 	if s.baseURL == "" {
 		return SolveResult{}, fmt.Errorf("%w: flaresolverr_url is not configured", ErrNoSolverConfigured)
 	}
-	reqBody, err := json.Marshal(flareRequest{
-		Cmd:        "request.get",
-		URL:        targetURL,
-		MaxTimeout: int(s.maxTimeout / time.Millisecond),
-	})
+	fr.MaxTimeout = int(s.maxTimeout / time.Millisecond)
+	reqBody, err := json.Marshal(fr)
 	if err != nil {
 		return SolveResult{}, fmt.Errorf("flaresolverr: encode request: %w", err)
 	}
@@ -108,19 +124,19 @@ func (s *FlareSolverrSolver) Solve(ctx context.Context, targetURL string) (Solve
 		return SolveResult{}, fmt.Errorf("flaresolverr: returned HTTP %d", resp.StatusCode)
 	}
 
-	var fr flareResponse
-	if err := json.Unmarshal(body, &fr); err != nil {
+	var resBody flareResponse
+	if err := json.Unmarshal(body, &resBody); err != nil {
 		return SolveResult{}, fmt.Errorf("flaresolverr: decode response: %w", err)
 	}
-	if fr.Status != "ok" {
-		// fr.Message is FlareSolverr-authored; it can name the challenge but is not
-		// echoed here to avoid surfacing any URL/identifier on the error path.
-		return SolveResult{}, fmt.Errorf("flaresolverr: solve did not succeed (status %q)", fr.Status)
+	if resBody.Status != "ok" {
+		// resBody.Message is FlareSolverr-authored; it can name the challenge but is
+		// not echoed here to avoid surfacing any URL/identifier on the error path.
+		return SolveResult{}, fmt.Errorf("flaresolverr: solve did not succeed (status %q)", resBody.Status)
 	}
 
-	cookies := make([]*stdhttp.Cookie, 0, len(fr.Solution.Cookies))
-	for _, c := range fr.Solution.Cookies {
+	cookies := make([]*stdhttp.Cookie, 0, len(resBody.Solution.Cookies))
+	for _, c := range resBody.Solution.Cookies {
 		cookies = append(cookies, &stdhttp.Cookie{Name: c.Name, Value: c.Value}) //nolint:gosec // request cookie; Set-Cookie security attrs are N/A
 	}
-	return SolveResult{Cookies: cookies, UserAgent: fr.Solution.UserAgent}, nil
+	return SolveResult{Cookies: cookies, UserAgent: resBody.Solution.UserAgent}, nil
 }
