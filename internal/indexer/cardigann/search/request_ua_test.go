@@ -16,7 +16,7 @@ func TestApplySession_ReplaysSolverUA(t *testing.T) {
 	t.Parallel()
 	jar, _ := cookiejar.New(nil)
 	u, _ := url.Parse("https://t.invalid/browse")
-	jar.SetCookies(u, []*stdhttp.Cookie{{Name: "cf_clearance", Value: "CFTOKEN"}})
+	jar.SetCookies(u, []*stdhttp.Cookie{{Name: "cf_clearance", Value: "CFTOKEN"}}) //nolint:gosec // request cookie; Set-Cookie security attrs are N/A
 	session := &login.Session{Jar: jar, UserAgent: "Mozilla/5.0 (solver)"}
 
 	t.Run("sets UA and cookie when absent", func(t *testing.T) {

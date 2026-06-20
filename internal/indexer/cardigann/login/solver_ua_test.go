@@ -55,7 +55,7 @@ func TestSolveHost_SeedsCookiesAndPersistsUA(t *testing.T) {
 		WithBaseURL("https://t.invalid/"),
 		WithSolver(uaSolver{
 			ua:      "Mozilla/5.0 (solver)",
-			cookies: []*stdhttp.Cookie{{Name: "cf_clearance", Value: "CFTOKEN"}},
+			cookies: []*stdhttp.Cookie{{Name: "cf_clearance", Value: "CFTOKEN"}}, //nolint:gosec // request cookie; Set-Cookie security attrs are N/A
 		}),
 	)
 

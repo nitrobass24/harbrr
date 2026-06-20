@@ -55,7 +55,7 @@ func (s *solveURLSolver) Solve(context.Context, string) (SolveResult, error) {
 	s.solved++
 	return SolveResult{
 		UserAgent: "BrowserUA/1.0",
-		Cookies:   []*stdhttp.Cookie{{Name: "cf_clearance", Value: "CLR"}},
+		Cookies:   []*stdhttp.Cookie{{Name: "cf_clearance", Value: "CLR"}}, //nolint:gosec // request cookie; Set-Cookie security attrs are N/A
 	}, nil
 }
 
