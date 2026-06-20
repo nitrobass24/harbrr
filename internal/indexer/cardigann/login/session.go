@@ -69,6 +69,9 @@ type Executor struct {
 	// (login POST, login.test) so a UA-bound cf_clearance keeps working; Session
 	// hands it to the search stage for the same reason. Empty until a solve occurs.
 	SolverUserAgent string
+	// DebugLoginInfo is a TEMP diagnostic: the redaction-safe signature of the most
+	// recent login POST response, surfaced by the engine to explain a login failure.
+	DebugLoginInfo string
 }
 
 // Option configures an Executor in New.

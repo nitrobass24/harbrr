@@ -1,6 +1,7 @@
 package login
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	stdhttp "net/http"
@@ -13,6 +14,33 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/selector"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/template"
 )
+
+// debugLoginSig is a TEMP redaction-safe fingerprint of a login POST response —
+// status, length, <title>, and structural-marker booleans (login form present?
+// HD-Space's red-text error span present?) — so the engine can reveal WHY a login
+// was rejected without logging response bytes or credentials.
+func debugLoginSig(status int, body []byte) string {
+	lc := bytes.ToLower(body)
+	has := func(s string) bool { return bytes.Contains(lc, []byte(s)) }
+	title := ""
+	if i := bytes.Index(lc, []byte("<title")); i >= 0 {
+		if gt := bytes.IndexByte(lc[i:], '>'); gt >= 0 {
+			start := i + gt + 1
+			if end := bytes.Index(lc[start:], []byte("</title>")); end >= 0 {
+				title = strings.TrimSpace(string(body[start : start+end]))
+				if len(title) > 60 {
+					title = title[:60]
+				}
+			}
+		}
+	}
+	return fmt.Sprintf("login-post: status=%d len=%d title=%q pwdform=%t logoutphp=%t errspan=%t",
+		status, len(body), title,
+		has(`type="password"`) || has(`name="pwd"`),
+		has("logout.php"),
+		has("color:#ff0000"), // the def's error selector span style
+	)
+}
 
 // loginPost assembles Login.Inputs (template-rendered) and POSTs them as a form
 // body to SubmitPath (falling back to Path), then runs the error selectors.
@@ -121,6 +149,10 @@ func (e *Executor) postForm(ctx context.Context, def *loader.Definition, target 
 	if err != nil {
 		return err
 	}
+	// TEMP diagnostic: record what the login POST itself returned (status + a
+	// redaction-safe body signature) so the engine can surface why HD-Space
+	// rejected the login. No secrets: status, length, <title>, marker booleans.
+	e.DebugLoginInfo = debugLoginSig(status, body)
 	return e.checkErrors(def.Login, rawURL, body, status)
 }
 

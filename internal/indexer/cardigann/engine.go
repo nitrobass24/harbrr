@@ -259,7 +259,7 @@ func (e *Engine) Search(ctx context.Context, query Query) ([]*Release, error) {
 			// TEMP diagnostic: list the jar cookie NAMES established by the relogin
 			// (values redacted) so we can tell "login POST set no session cookie"
 			// (auth rejected) from "session set but not applied to search".
-			err = fmt.Errorf("%w {jar-after-relogin: %s}", err, e.debugJarCookieNames())
+			err = fmt.Errorf("%w {jar-after-relogin: %s} {%s}", err, e.debugJarCookieNames(), e.login.DebugLoginInfo)
 		}
 	}
 	if err != nil {
