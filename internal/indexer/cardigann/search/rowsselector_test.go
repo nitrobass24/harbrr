@@ -23,12 +23,14 @@ func TestRenderRowsSelector(t *testing.T) {
 	}{
 		{
 			"hdspace freeleech off collapses to plain tr",
-			hdspace, map[string]string{},
+			hdspace,
+			map[string]string{},
 			`table.lista[width="100%"] > tbody > style ~ tr, table.lista[width="100%"] > tbody > style ~ tr`,
 		},
 		{
 			"hdspace freeleech on keeps the :has guard",
-			hdspace, map[string]string{"freeleech": "true"},
+			hdspace,
+			map[string]string{"freeleech": "true"},
 			`table.lista[width="100%"] > tbody > style ~ tr:has(img[src="gold/gold.png"]), ` +
 				`table.lista[width="100%"] > tbody > style ~ tr:has(img[src="images/sf.png"])`,
 		},
