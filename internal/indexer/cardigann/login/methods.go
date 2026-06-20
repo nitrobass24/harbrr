@@ -140,7 +140,9 @@ func (e *Executor) postForm(ctx context.Context, def *loader.Definition, target 
 // still challenged, mirroring fetchLandingPastAntiBot. Credentials are never echoed.
 func (e *Executor) solveAndRetryLoginPost(ctx context.Context, l *loader.Login, rawURL, postData string, headers map[string][]string) error {
 	if err := e.SolveHost(ctx, rawURL); err != nil {
-		return fmt.Errorf("%w: the login POST is guarded by an anti-bot challenge", ErrSolverRequired)
+		// Keep the concrete cause (no solver configured vs a redacted solver outage)
+		// so an incident can be triaged; SolveHost's errors carry no secret.
+		return fmt.Errorf("%w: the login POST is guarded by an anti-bot challenge: %w", ErrSolverRequired, err)
 	}
 	body, status, err := e.do(ctx, stdhttp.MethodPost, rawURL, strings.NewReader(postData), headers)
 	if err != nil {
