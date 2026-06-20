@@ -210,6 +210,24 @@ func evalTemplate(deps Deps, query Query, result map[string]string, text string)
 	return out, nil
 }
 
+// renderRowsSelector evaluates the row selector's template fragment before it is
+// compiled as CSS/JSONPath. Jackett applies Go templates to the rows selector too —
+// e.g. HD-Space's `... tr{{ if .Config.freeleech }}:has(img[src="gold/gold.png"]){{ end }}`
+// — so the raw template would otherwise be handed to the selector compiler and fail.
+// It is evaluated against config + query with NO row Result yet (no row exists at
+// split time). Returns the block unchanged when the selector carries no template.
+func renderRowsSelector(block loader.RowsBlock, query Query, deps Deps) (loader.RowsBlock, error) {
+	if block.Selector == "" || !strings.Contains(block.Selector, "{{") {
+		return block, nil
+	}
+	rendered, err := evalTemplate(deps, query, map[string]string{}, block.Selector)
+	if err != nil {
+		return block, fmt.Errorf("rendering rows selector: %w", err)
+	}
+	block.Selector = rendered
+	return block, nil
+}
+
 // splitFieldKey splits "title|append|optional" into the base name and modifiers.
 func splitFieldKey(key string) (name string, modifiers []string) {
 	parts := strings.Split(key, "|")

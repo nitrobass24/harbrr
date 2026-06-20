@@ -90,7 +90,11 @@ func ParseResults(def *loader.Definition, body []byte, query Query, deps Deps) (
 		return nil, err
 	}
 
-	rows, err := doc.Rows(def.Search.Rows)
+	rowsBlock, err := renderRowsSelector(def.Search.Rows, query, deps)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := doc.Rows(rowsBlock)
 	if err != nil {
 		return nil, fmt.Errorf("splitting rows: %w", err)
 	}
