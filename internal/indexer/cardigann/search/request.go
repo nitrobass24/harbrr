@@ -385,9 +385,19 @@ const maxSearchBodyBytes = 32 << 20 // 32 MiB
 
 // applySession attaches the session jar's cookies for the request URL, so the
 // offline replay transport (and a jar-less production Doer) sees authenticated
-// cookies on the wire.
+// cookies on the wire. When the session carries an anti-bot solver User-Agent, it
+// is replayed too: a Cloudflare cf_clearance cookie in the jar is bound to that
+// UA, so the search must send it or the clearance is rejected and the tracker
+// returns the challenge/login page (a false logged-out). A definition's own
+// User-Agent header still wins.
 func applySession(req *stdhttp.Request, session *login.Session) {
-	if session == nil || session.Jar == nil {
+	if session == nil {
+		return
+	}
+	if session.UserAgent != "" && req.Header.Get("User-Agent") == "" {
+		req.Header.Set("User-Agent", session.UserAgent)
+	}
+	if session.Jar == nil {
 		return
 	}
 	for _, c := range session.Jar.Cookies(req.URL) {

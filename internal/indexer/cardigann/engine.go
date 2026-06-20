@@ -249,6 +249,7 @@ func (e *Engine) Search(ctx context.Context, query Query) ([]*Release, error) {
 		// CheckIfLoginIsNeeded -> DoLogin -> re-request). The retry is bounded to
 		// one attempt: a second logged-out result is returned as the error below,
 		// never looped.
+		e.clearSearchAntiBot(ctx)
 		if rerr := e.relogin(ctx); rerr != nil {
 			return nil, fmt.Errorf("cardigann: re-login for %q after session expiry: %w", e.def.ID, rerr)
 		}
@@ -258,6 +259,20 @@ func (e *Engine) Search(ctx context.Context, query Query) ([]*Release, error) {
 		return nil, fmt.Errorf("cardigann: search for %q: %w", e.def.ID, err)
 	}
 	return releases, nil
+}
+
+// clearSearchAntiBot best-effort clears an anti-bot challenge on the tracker host
+// before the logged-out-recovery re-login. A Cloudflare-plus-form-login tracker
+// can return its login page for a search because the host's cf_clearance lapsed
+// (or detectAntiBot's literal markers never matched its challenge, so the login
+// flow never solved it). Solving the base URL re-seeds a host-scoped cf_clearance
+// and the bound User-Agent, which the re-login POST and the retried search both
+// reuse. With no solver configured this is a no-op (NoopSolver declines). The
+// error is intentionally not propagated: this is opportunistic clearance, and the
+// real outcome — success, ErrSolverRequired, or another logged-out — is surfaced
+// by the re-login and retried search that follow.
+func (e *Engine) clearSearchAntiBot(ctx context.Context) {
+	_ = e.login.SolveHost(ctx, e.baseURL)
 }
 
 // ensureSession logs in at most once per Engine for the FIRST search. Jackett

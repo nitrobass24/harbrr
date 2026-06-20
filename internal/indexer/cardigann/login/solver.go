@@ -87,7 +87,7 @@ func (e *Executor) fetchLandingPastAntiBot(ctx context.Context, rawURL string, h
 		// detector only, never page bytes).
 		return nil, fmt.Errorf("%w: detected an anti-bot challenge page", ErrSolverRequired)
 	}
-	e.seedSolverCookies(rawURL, res)
+	e.applySolveResult(rawURL, res)
 	// Anti-bot clearance is UA-coupled (cf_clearance is bound to the solver's
 	// User-Agent) AND a gzip-only header set is a known 403 trigger, so the replay
 	// carries the solver's UA plus a browser-realistic Accept/Accept-Encoding set.
@@ -129,9 +129,31 @@ func setHeaderIfAbsent(h map[string][]string, key, val string) {
 	}
 }
 
-// seedSolverCookies installs a solver's cookies into the jar, scoped to the
-// target URL's host, so the retried request carries them.
-func (e *Executor) seedSolverCookies(rawURL string, res SolveResult) {
+// SolveHost clears an anti-bot interstitial for rawURL's host by asking the
+// configured solver and seeding what it returns (cookies + the bound User-Agent)
+// into the session, so a SUBSEQUENT login and search reuse a fresh host-scoped
+// cf_clearance. The engine calls it during logged-out search recovery: a
+// CF-plus-form-login tracker whose challenge markers detectAntiBot does not match
+// would otherwise never trigger a solve. cf_clearance is a host cookie, so
+// clearing any URL on the host (the base URL) suffices. With the default
+// NoopSolver (or a solver that declines) it returns ErrNoSolverConfigured and the
+// caller proceeds to a plain re-login. It never fetches; it only seeds.
+func (e *Executor) SolveHost(ctx context.Context, rawURL string) error {
+	res, err := e.solver().Solve(ctx, rawURL)
+	if err != nil {
+		return err //nolint:wrapcheck // sentinel (ErrNoSolverConfigured) the caller branches on.
+	}
+	e.applySolveResult(rawURL, res)
+	return nil
+}
+
+// applySolveResult seeds a solver's cookies into the jar (scoped to the target
+// URL's host) and persists its User-Agent for the rest of the session, so every
+// later request can replay the UA the UA-bound cf_clearance was issued for.
+func (e *Executor) applySolveResult(rawURL string, res SolveResult) {
+	if res.UserAgent != "" {
+		e.SolverUserAgent = res.UserAgent
+	}
 	if e.Jar == nil || len(res.Cookies) == 0 {
 		return
 	}

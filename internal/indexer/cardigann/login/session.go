@@ -29,13 +29,20 @@ type Session struct {
 	// Jar holds every cookie captured during login (Set-Cookie from the login
 	// round-trip, or the seeded cookie for the manual-cookie method).
 	Jar stdhttp.CookieJar
+	// UserAgent is the anti-bot solver's User-Agent, set once a solve occurred this
+	// session. A Cloudflare cf_clearance cookie is bound to the User-Agent that
+	// earned it, so the search stage must replay the SAME UA the solver used or the
+	// clearance is rejected and the page reverts to the challenge/login form. Empty
+	// when no solve happened (the common case), leaving the default UA untouched.
+	UserAgent string
 }
 
 // Session returns the cookie state established by the executor's login, for the
-// search stage to reuse the authenticated jar. It is meaningful only after a
-// successful Login/EnsureLoggedIn; before that the jar is empty.
+// search stage to reuse the authenticated jar (and the solver UA bound to any
+// cf_clearance in it). It is meaningful only after a successful
+// Login/EnsureLoggedIn; before that the jar is empty.
 func (e *Executor) Session() *Session {
-	return &Session{Jar: e.Jar}
+	return &Session{Jar: e.Jar, UserAgent: e.SolverUserAgent}
 }
 
 // Executor performs a definition's login sequence against the injected Doer and
@@ -57,6 +64,11 @@ type Executor struct {
 	// Solver is the optional anti-bot solver consulted when a login landing page
 	// is an interstitial (Cloudflare etc.). Nil defaults to NoopSolver (fail loud).
 	Solver Solver
+	// SolverUserAgent is the User-Agent the solver reported on its most recent
+	// solve this session. Once set, do() replays it on every subsequent request
+	// (login POST, login.test) so a UA-bound cf_clearance keeps working; Session
+	// hands it to the search stage for the same reason. Empty until a solve occurs.
+	SolverUserAgent string
 }
 
 // Option configures an Executor in New.
