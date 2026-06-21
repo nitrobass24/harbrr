@@ -21,8 +21,8 @@ type Doer interface {
 }
 
 // Session carries the cookie state established by a login, handed to the search
-// stage (item 9/10) so authenticated requests reuse the same jar. It is a thin
-// wrapper today; it exists so the search stage depends on a stable type rather
+// stage so authenticated requests reuse the same jar. It is a thin
+// wrapper; it exists so the search stage depends on a stable type rather
 // than reaching into Executor internals. Obtain one via Executor.Session after a
 // successful Login/EnsureLoggedIn.
 type Session struct {
@@ -57,7 +57,7 @@ type Executor struct {
 	// paths and to scope seeded cookies. Trailing-slash-insensitive.
 	BaseURL string
 	// Config supplies template variables (.Config.username, .Config.cookie, ...).
-	// Passed in as a map by item 10; this stage never touches the secrets store.
+	// Passed in as a map by the engine; this stage never touches the secrets store.
 	Config map[string]string
 	// Selector extracts CSRF inputs, error messages, and test-page selectors.
 	Selector *selector.Engine

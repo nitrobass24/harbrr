@@ -191,7 +191,7 @@ func compileErrorBlock(eng *selector.Engine, root selector.Row, blk loader.Error
 // compileSelector runs a selector block through Field on the empty doc. A
 // not-found result is fine (the doc is empty); only a compile/tokenize error is
 // a planning failure. cascadia-incompatible selectors (:contains, :scope, :has
-// edge forms) are handled by the engine assembly (item 10), so they are excluded
+// edge forms) are handled by the engine assembly, so they are excluded
 // here exactly as the selector census excludes them.
 func compileSelector(eng *selector.Engine, root selector.Row, blk loader.SelectorBlock) error {
 	if blk.Selector == "" || containsTemplate(blk.Selector) || cascadiaIncompatible(blk.Selector) {

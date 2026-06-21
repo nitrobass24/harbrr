@@ -5,7 +5,7 @@ indexers, so they never appear in the vendored `Definitions/` tree and harbrr
 cannot serve them from the corpus. They need **native drivers** (the AvistaZ
 pattern in `internal/indexer/native/`). This doc records the implementation
 pattern those drivers follow, derived from the Prowlarr/Jackett source. It feeds
-the Phase 9.5 native-driver work; per-tracker divergences live beside each
+the native-driver work; per-tracker divergences live beside each
 driver's fixtures, not here.
 
 In the user's stack the missing natives are **IPTorrents**, **MyAnonamouse**, and
@@ -31,8 +31,8 @@ flag; tracker categories map to Torznab/Newznab ids. Build the download URL
 ## Two auth shapes cover all three
 
 The axis that matters for a Go driver is **how the download authenticates**,
-because that's the same axis as the Phase-9 grab-auth gap (`/dl`). Build the
-authenticated-`/dl` grab path first (Phase 9.5 item 1); these drivers reuse it.
+because that's the same axis as the grab-auth gap (`/dl`). Build the
+authenticated-`/dl` grab path first; these drivers reuse it.
 
 ### Shape A — session cookie
 | Tracker | Credential | Sent as | Search surface | Download |
@@ -58,7 +58,7 @@ defensively.
   derived from the documented contract (never a live capture).
 - **Live gate**: the Prowlarr differential — the stack runs all three live, so
   the live Prowlarr feed is the oracle (same query → Prowlarr vs harbrr → diff),
-  exactly as Phase 9 did for the Cardigann corpus.
+  exactly as the live differential does for the Cardigann corpus.
 - **Redaction (non-negotiable)**: `mam_id`, `passkey`, `Cookie`, `Authorization`
   redacted in every log/trace.
 

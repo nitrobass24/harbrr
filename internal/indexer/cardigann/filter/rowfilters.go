@@ -7,10 +7,10 @@ import (
 
 // Row filters operate on the row SET (RowsBlock.Filters), not on a single field
 // value, so they are exposed as reusable helpers rather than chained through
-// Apply. Their APPLICATION to the parsed row set is wired by the selector
-// stage (item 5) and the end-to-end Definition walk (item 10). The registry
-// only needs to KNOW their names (see RowFilterKnown) so the corpus
-// completeness test sees zero unknown filters.
+// Apply. Their APPLICATION to the parsed row set is wired by the selector stage
+// and the end-to-end Definition walk. The registry only needs to KNOW their
+// names (see RowFilterKnown) so the corpus completeness test sees zero unknown
+// filters.
 
 // andMatchSplit mirrors Jackett's MatchQueryStringAND tokenizer: split on runs
 // of non-word characters (.NET Regex "[^\\w]+"). RE2's \w is ASCII-only, which
@@ -26,14 +26,14 @@ var andMatchStopwords = map[string]struct{}{"and": {}, "the": {}, "an": {}}
 // iff its title contains every remaining token (case-insensitively). Jackett
 // additionally skips this filter entirely for ID-based searches (imdb/tmdb/…)
 // and supports an optional character-limit arg on the keywords — that
-// search-context gating is the caller's job (items 5/10); this helper covers
-// the title-vs-keywords matching itself.
+// search-context gating is the caller's job (the selector stage and the
+// end-to-end walk); this helper covers the title-vs-keywords matching itself.
 //
-// NOTE: RowFilterBlock.Args is intentionally NOT threaded here yet. Row-filter
-// application (and any optional andmatch arg) is wired by the selector stage
-// (item 5) and the end-to-end walk (item 10); the signature will gain the arg
-// at that seam if the corpus requires it. The completeness gate checks only the
-// filter NAME, not its arg shape.
+// NOTE: RowFilterBlock.Args is intentionally NOT threaded here. Row-filter
+// application (and any optional andmatch arg) lives in the selector stage and
+// the end-to-end walk; the signature will gain the arg at that seam if the
+// corpus requires it. The completeness gate checks only the filter NAME, not
+// its arg shape.
 func AndMatch(title, keywords string) bool {
 	lowerTitle := strings.ToLower(title)
 	for _, raw := range andMatchSplit.Split(keywords, -1) {

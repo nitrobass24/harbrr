@@ -59,7 +59,7 @@ type capsMode struct {
 }
 
 // MarshalCaps renders the Torznab capabilities document (t=caps) for an
-// indexer's capabilities. Caps/category correctness is the Phase 3 gate: every
+// indexer's capabilities. Caps/category correctness is a hard gate: every
 // search mode is advertised (undeclared modes as available="no"
 // supportedParams="q"), supported params are re-derived in Jackett's canonical
 // order (with the AllowTVSearchIMDB imdbid gate), AllowRawSearch adds

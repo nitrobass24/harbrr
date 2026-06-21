@@ -154,7 +154,7 @@ func randomCats(rng *rand.Rand) []int {
 }
 
 // TestMarshalResultsRobustness asserts that MarshalResults, over arbitrary
-// release shapes (Phase 5 item 2), never panics and always emits well-formed,
+// release shapes, never panics and always emits well-formed,
 // valid-UTF-8, namespace-bound XML. A fixed seed keeps it deterministic for
 // -race -count=1.
 func TestMarshalResultsRobustness(t *testing.T) {

@@ -51,7 +51,7 @@ harbrr's `EnsureLoggedIn` runs before every search; for a def with a login block
 but no `login.test` block it performs the full login sequence (Jackett instead
 logs in lazily, only when a search response looks like a login page). So a
 search case for such a def must declare the login request(s) as leading steps.
-This is an offline-gate divergence; lazy login is a Phase 5 item.
+This is an offline-gate divergence; lazy login is handled by the engine.
 
 ## Date canonicalization
 
@@ -93,7 +93,7 @@ both and the shared disposition rule.
 Every entry carries an explicit **disposition** so the list is a complete
 decision record, not a half-tracked backlog:
 
-- **`[Tracked: Phase N]`** — a real gap with a `docs/plan.md` follow-up item.
+- **`[Tracked]`** — a real gap with a `docs/plan.md` follow-up item.
 - **`[Deliberate]`** — an intentional design choice; not a gap.
 - **`[Accepted]`** — a difference we choose to keep (harbrr-additive or
   clean-degradation); no work planned. Revisit only if a vendored def needs it.
@@ -103,17 +103,17 @@ Entries:
 - **Eager first login + lazy relogin** — harbrr logs in before the FIRST search
   (once per Engine), where Jackett logs in at configure time. This first-login
   divergence is unchanged: a login-bearing search case still declares the login
-  request(s) as leading steps. Phase 5 adds the lazy half: a search response that
+  request(s) as leading steps. The engine adds the lazy half: a search response that
   looks logged-out (the `login.test` selector absent from an HTML body, which also
   covers a followed redirect to the login page) triggers exactly one re-login and
   one retry, matching Jackett's `CheckIfLoginIsNeeded -> DoLogin -> re-request`.
   Detection uses `login.test` (NOT `login.error`); JSON/XML responses only relogin
-  on the (followed) redirect case. **`[Resolved: Phase 5 — lazy relogin; eager
-  first login retained by design]`**
+  on the (followed) redirect case. The lazy relogin is the added half; the eager
+  first login is retained by design. **`[Resolved]`**
 - **Date canonical form** — RFC3339 vs Jackett's RFC1123Z; see "Date
   canonicalization". Same instant, different string — a canonical-schema choice,
   not a parse difference. **`[Deliberate]`**
-- **URL encoding (`.NET WebUtility.UrlEncode`)** — RESOLVED in Phase 5. Both the
+- **URL encoding (`.NET WebUtility.UrlEncode`)** — Resolved. Both the
   GET-query encoder (`encodeOrdered`) and the search-path value encoder now route
   through `internal/indexer/cardigann/encode`, which reproduces .NET
   `WebUtility.UrlEncode` (the encoder Jackett uses for both halves of a request:
@@ -126,30 +126,30 @@ Entries:
   BOTH engines and was NOT a divergence (the earlier note here wrongly listed it
   and omitted `~`). Spaces match (`%20` in the path, `+` in the query). The magnet
   synthesizer (`normalizer/synth.go`) uses the same encoder, matching
-  `MagnetUtil.InfoHashToPublicMagnet`. **`[Resolved: Phase 5]`** Login form-POST
+  `MagnetUtil.InfoHashToPublicMagnet`. **`[Resolved]`** Login form-POST
   bodies remain on stdlib `url.Values.Encode` — a deliberate divergence, see
   `login/methods.go` (`postForm`) and `login/encoding_divergence_test.go`.
 - **`.Today.Month` / `.Today.Day`** — harbrr exposes these template fields;
   Jackett seeds only `.Today.Year`. A def referencing them gets a real value in
   harbrr and `""` in Jackett. No vendored def uses them, and the extra fields are
-  additive. **`[Accepted: harbrr-additive, no action]`**
+  additive. **`[Accepted]`**
 - **`leechers` field** — harbrr's canonical release includes `leechers`; Jackett's
   `ReleaseInfo` tracks only `Peers` (= seeders + leechers). A harbrr convenience
   field (useful for downstream Torznab output) with no Jackett equivalent.
-  **`[Accepted: convenience field, no action]`**
+  **`[Accepted]`**
 - **Category ordering** — harbrr sorts a release's categories ascending (a
   deliberate determinism choice for stable goldens); Jackett's `Category` is a
   list in insertion order. They agree whenever insertion order is already
   ascending (as in the JSON oracle, `[2000, 100001]`); a mapping that inserted a
   custom cat before a standard one would differ in order only.
-  **`[Accepted: determinism choice, no action]`**
+  **`[Accepted]`**
 - **`rows.attribute` missing without `MissingAttributeEqualsNoResults`** — when a
   JSON row lacks the `rows.attribute` sub-object, harbrr skips that row; Jackett
   dereferences null and aborts the whole query unless the flag is set. harbrr
   degrades cleanly in both cases (only `yts.yml` pairs the two, with the flag on),
   consistent with the project's clean-degradation stance.
-  **`[Accepted: clean degradation, no action]`**
-- **Download resolver scope** — RESOLVED in Phase 7. `ResolveDownload` now
+  **`[Accepted]`**
+- **Download resolver scope** — Resolved. `ResolveDownload` now
   reproduces Jackett's full `CardigannIndexer.Download`: the `.DownloadUri` template
   namespace (populated from the link, .NET `System.Uri` semantics — see the URI
   divergence note below), `before.inputs`/`before.pathselector` (inputs as an
@@ -160,7 +160,7 @@ Entries:
   `testlinktorrent` (default TRUE; non-magnet links fetched and accepted only if the
   first byte is `d`). Fixtures: `matrix-download-link`, `matrix-download-before-post`,
   and the `search/download_test.go` recording-doer suite (which pins the POST body
-  the replay harness cannot). **`[Resolved: Phase 7]`**
+  the replay harness cannot). **`[Resolved]`**
 - **.DownloadUri vs .NET System.Uri canonicalization** — `NewDownloadURI` maps
   Go's `*url.URL` onto the .NET `System.Uri` members real defs read
   (`.Query.<k>`, `.AbsolutePath`, `.AbsoluteUri`, `.PathAndQuery`) byte-for-byte for
@@ -168,9 +168,9 @@ Entries:
   does NOT reproduce .NET's URI *canonicalization* that no corpus def exercises:
   stripping a default `:80`/`:443`, lowercasing the host, compacting dot-segments,
   or unescaping percent-encoded unreserved octets in the path. A def needing those
-  routes through the existing encode/regex layers.
-  **`[Accepted: exact for the corpus; exotic canonicalization unhit]`**
-- **XML backend** — RESOLVED in Phase 7. harbrr parses `response.type: xml` into an
+  routes through the existing encode/regex layers. It is exact for the corpus; the
+  exotic canonicalization is unhit. **`[Accepted]`**
+- **XML backend** — Resolved. harbrr parses `response.type: xml` into an
   element tree and queries it with cascadia; Jackett uses AngleSharp's `XmlParser`.
   The common RSS/Newznab shapes (`<item>`, `<title>`, `<link>`, `torznab:attr`) and
   the edge cases now match AngleSharp's **selectable output**, pinned by fixtures
@@ -189,7 +189,7 @@ Entries:
 
   harbrr selects namespaced elements by their **qualified** name (`prefix\:local`),
   the form every vendored def uses; selecting a namespaced element by a bare local
-  name is neither used by the corpus nor pinned here. **`[Resolved: Phase 7]`**
+  name is neither used by the corpus nor pinned here. **`[Resolved]`**
 - **`:has` / `:contains` selector shims** — the `:has` and `:contains` pseudo-classes
   (used by Cardigann to filter rows and map case keys) resolve correctly end to end in
   both HTML (cascadia) and JSON (`selector/jsonpseudo.go`) response modes, pinned by
@@ -202,21 +202,22 @@ Entries:
   Jackett. The divergence only surfaces if a def's literal differs from the page text
   ONLY in case, where harbrr would match and Jackett would not. Fixing it means
   replacing cascadia's built-in `:contains`; no vendored def is known to trip it.
-  **`[Tracked: case-sensitive :contains — narrow, no corpus def affected]`**
-- **JSON date auto-conversion (Newtonsoft)** — RESOLVED in Phase 5. Jackett parses
+  The case-sensitive `:contains` gap is narrow, with no corpus def affected.
+  **`[Tracked]`**
+- **JSON date auto-conversion (Newtonsoft)** — Resolved. Jackett parses
   JSON with Newtonsoft's default `DateParseHandling.DateTime`, so an ISO-8601
   string VALUE becomes a `DateTime` rendered back as the .NET InvariantCulture
   string `MM/dd/yyyy HH:mm:ss`; Go's `encoding/json` keeps the raw ISO string. The
   JSON selector now reproduces this for ISO strings with a `T` separator
   (`selector/jsonpath.go`), which is what every UNIT3D-API def's `created_at`
   (`append " +00:00"` → `dateparse "MM/dd/yyyy HH:mm:ss zzz"`) relies on. Surfaced
-  by the Phase 5 live smoke. **`[Resolved: Phase 5]`**
+  by the live smoke. **`[Resolved]`**
 - **Login status vs error selectors** — Jackett never fails a login on HTTP
   status; it relies on the def's error selectors. harbrr matches this for
   `get`/`cookie` logins (a `401` probe is not a failure — e.g. DigitalCore's apikey
   is an `X-API-KEY` header carried by the SEARCH request, not the login probe), but
   retains a stricter `401`→fail for credential-submitting `form`/`post` logins as a
-  useful, result-neutral early bad-credentials signal. **`[Resolved: Phase 5]`**
+  useful, result-neutral early bad-credentials signal. **`[Resolved]`**
 
 ## Regenerating goldens
 

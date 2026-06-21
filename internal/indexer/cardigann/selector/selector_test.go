@@ -145,13 +145,13 @@ func TestFieldHTML(t *testing.T) {
 	}
 }
 
-// TestFieldDefersRequiredDecision pins the scope boundary with item 10: this
+// TestFieldDefersRequiredDecision pins the scope boundary with the engine: this
 // stage does NOT itself apply Selector.Optional / Default or throw on a required
 // empty match. Jackett's handleSelector takes a `required` flag and throws when a
 // required selector matches nothing, but harbrr splits that decision out — Field
 // reports found=false on every empty extraction (no error), and the engine field
-// loop (item 10) inspects Optional/Default and wraps ErrSelectorNoMatch when the
-// value is required. This test guarantees item 10 cannot silently inherit a
+// loop inspects Optional/Default and wraps ErrSelectorNoMatch when the
+// value is required. This test guarantees the engine cannot silently inherit a
 // swallowed error: an empty match is an explicit found=false, never a fabricated
 // value and never an error here.
 func TestFieldDefersRequiredDecision(t *testing.T) {

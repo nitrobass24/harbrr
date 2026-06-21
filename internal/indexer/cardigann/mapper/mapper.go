@@ -17,7 +17,7 @@ import (
 // search modes the indexer advertises (with each mode's supported query
 // params), whether raw search is allowed, the category map for tracker<->newznab
 // resolution, and the de-duplicated list of advertised categories. Serialising
-// this to Torznab/Newznab XML is a later (Phase 3) stage's job; this stays a
+// this to Torznab/Newznab XML is the serializer stage's job; this stays a
 // pure typed model.
 type Capabilities struct {
 	// Modes maps a search-mode name ("search", "tv-search", "movie-search",
@@ -35,7 +35,7 @@ type Capabilities struct {
 	// (CardigannIndexer sets TorznabCaps.TvSearchImdbAvailable =
 	// Definition.Caps.Allowtvsearchimdb). So tv-search advertises the imdbid param
 	// iff this flag is set, independent of whether "imdbid" appears in the
-	// caps.modes tv-search list. The Phase 3 Torznab caps serializer needs it.
+	// caps.modes tv-search list. The Torznab caps serializer needs it.
 	AllowTVSearchIMDB bool
 
 	// Categories is the de-duplicated, ascending-id-ordered list of categories
@@ -43,7 +43,7 @@ type Capabilities struct {
 	// definition (plus each referenced category's family root) and every
 	// synthesised custom (1:1) category (Category.IsCustom). The ascending-id sort
 	// is an intentional, parity-verified substitute for Jackett's category-tree
-	// flatten order; a later (Phase 3) serializer that needs the parent->child
+	// flatten order; the serializer that needs the parent->child
 	// nesting re-derives it from these ids (Category.Parent / Children).
 	Categories []Category
 

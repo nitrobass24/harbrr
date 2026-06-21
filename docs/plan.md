@@ -212,8 +212,8 @@ settable-but-undocumented. This phase closes the control-plane / data-plane gaps
 at `/api/docs` can **drive harbrr entirely over HTTP** — letting the team run an **alpha with no web
 UI, just the Swagger API** to add indexers, search, read capabilities, and manage credentials by hand.
 It lands **before Phase 9** so the live-validation pass is exercised against the API the team actually
-tests through. One PR off `main` (`phase8b/management-api`); offline-gated; **PAUSE before merge**. Full
-gap analysis + per-endpoint contracts: `docs/archive/issue-phase8b.md` + `docs/archive/prompts/phase8b.md`.
+tests through. One PR off `main` (`phase8b/management-api`); offline-gated; **PAUSE before merge**.
+(Shipped via #47; the live API contract is the OpenAPI spec at `/api/openapi.yaml`.)
 
 - [x] **Shared query mapping + router wiring** — extract/reuse `buildQuery` (+ `parsePaging`) so the JSON
       search and the Torznab feed map params identically; wire the keyring/`/dl` tokenizer + base path into

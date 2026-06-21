@@ -16,7 +16,7 @@ import (
 
 // loginForm reproduces Jackett's Login.Method == "form" flow:
 //  1. GET the landing page (Login.Path).
-//  2. Detect anti-bot interstitials (fail loud; Phase 6 solves).
+//  2. Detect anti-bot interstitials (fail loud; the solver clears them).
 //  3. Extract SelectorInputs (CSRF/hidden tokens) and GetSelectorInps from the
 //     landing document.
 //  4. Assemble the POST body: definition Inputs (template-rendered) overlaid with
@@ -230,7 +230,7 @@ func (e *Executor) resolveFormTarget(l *loader.Login, form *goquery.Selection, l
 // action.
 //
 // Form body uses url.Values.Encode — see postForm (methods.go) for the deliberate
-// Phase 5 login form-encoding divergence note.
+// login form-encoding divergence note.
 func (e *Executor) postFormAbsolute(ctx context.Context, l *loader.Login, target string, pairs url.Values) error {
 	headers := mergeFormHeaders(l.Headers)
 	body, status, err := e.do(ctx, "POST", target, strings.NewReader(pairs.Encode()), headers)

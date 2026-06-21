@@ -85,7 +85,7 @@ func WithTimeout(d time.Duration) Option { return func(r *Registry) { r.timeout 
 func WithLogger(l zerolog.Logger) Option { return func(r *Registry) { r.log = l } }
 
 // ClientParams carries the per-instance inputs the doer factory needs to vary the
-// HTTP client per indexer. The Phase-4 seam was nullary (every engine shared one
+// HTTP client per indexer. The original seam was nullary (every engine shared one
 // client shape); this struct is the widening, so adding fields later (proxy, rate)
 // never re-breaks the WithDoerFactory Option.
 type ClientParams struct {

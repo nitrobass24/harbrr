@@ -102,7 +102,7 @@ func expandFuncs(text string, ctx *Context) (string, error) {
 // or RE2 compile-failure), then Replace(resolve(.Var), repl). Mirrors Jackett's
 // new Regex(pat).Replace(input, repl) with arg order variable, pattern,
 // replacement. The template path carries no def language here; per-def language
-// routing is applied at the engine call site (item 10), so RouteOptions is zero.
+// routing is applied at the engine call site, so RouteOptions is zero.
 func expandReReplace(text string, ctx *Context) (string, error) {
 	var firstErr error
 	noteErr := func(err error) {

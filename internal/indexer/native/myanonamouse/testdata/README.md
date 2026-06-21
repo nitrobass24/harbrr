@@ -5,11 +5,11 @@ It pins where harbrr's MyAnonamouse (MAM) native driver **knowingly differs** fr
 Prowlarr source it reproduces (`Prowlarr/Prowlarr` `develop`:
 `MyAnonamouse.cs` — `MyAnonamouseRequestGenerator`, `MyAnonamouseParser`, and the
 `MyAnonamouseSettings` POCO). The disposition vocabulary (`[Deliberate]` /
-`[Accepted]` / `[Tracked: Phase N]`) is defined in `docs/divergences.md`.
+`[Accepted]` / `[Tracked]`) is defined in `docs/divergences.md`.
 
 The goldens here are **synthetic** — derived from Prowlarr's documented contract, never
 captured from a live MAM. The live Prowlarr differential and a real search/grab are the
-**Phase 9** gate.
+**live-validation** gate.
 
 ## Fixtures
 
@@ -31,8 +31,8 @@ captured from a live MAM. The live Prowlarr differential and a real search/grab 
   matches Jackett (which also does not persist the rotation) and is the weaker of the two
   references — Prowlarr writes the new `mam_id` back to its settings store (30-day
   expiry). harbrr has **no write-back seam** here, so persistence is deliberately not
-  attempted. `[Tracked: write-back seam if live shows sessions break]` — if the Phase 9
-  live differential shows MAM invalidates the prior `mam_id` aggressively enough that the
+  attempted. `[Tracked]` — add a write-back seam if live shows sessions break: if the live
+  differential shows MAM invalidates the prior `mam_id` aggressively enough that the
   stored value goes stale across restarts and breaks sessions, add a settings write-back
   seam so the rotated value survives a restart.
 - **`mam_id` redaction** — `[Deliberate]`. The `mam_id` is a secret (`password`-typed
@@ -109,15 +109,15 @@ captured from a live MAM. The live Prowlarr differential and a real search/grab 
   definition's `RequestDelay` so the registry's existing paced client enforces it).
   Revisit against the live differential if MAM tolerates a tighter cadence.
 
-## Deferred to Phase 9 (live validation)
+## Deferred to live validation
 
-- **Live search/grab + the Prowlarr differential** — `[Tracked: Phase 9]`. The entire
+- **Live search/grab + the Prowlarr differential** — `[Tracked]`. The entire
   offline gate is synthetic; request/response/category parity against a live MAM + live
-  Prowlarr, and a real `.torrent` grab through `/dl`, are the Phase 9 acceptance gate.
-- **mam_id session lifetime across restarts** — `[Tracked: Phase 9]`. Confirm whether the
+  Prowlarr, and a real `.torrent` grab through `/dl`, are the live acceptance gate.
+- **mam_id session lifetime across restarts** — `[Tracked]`. Confirm whether the
   in-memory-only rotation is sufficient in practice, or whether the write-back seam noted
   above is needed.
-- **`size` unit set + `added` shape** — `[Tracked: Phase 9]`. Confirm the live unit
+- **`size` unit set + `added` shape** — `[Tracked]`. Confirm the live unit
   spellings (`parseSize` handles `B`…`PB`, both `KB` and `KiB` forms) and the exact
   `added` format match the real API; widen the parser only if the live differential shows
   a shape these miss.

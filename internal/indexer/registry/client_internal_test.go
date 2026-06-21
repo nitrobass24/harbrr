@@ -14,7 +14,7 @@ import (
 // a non-nil interface wrapping a nil pointer — so the stdlib called into a nil
 // *Transport and panicked (alternateRoundTripper) on the first request instead of
 // falling back to http.DefaultTransport. Offline tests inject a replay Doer and never
-// build this client, so the panic only surfaced on a live run (Phase 9).
+// build this client, so the panic only surfaced on a live run.
 func TestNewDoerNoProxyUsesDefaultTransport(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, _ *stdhttp.Request) {

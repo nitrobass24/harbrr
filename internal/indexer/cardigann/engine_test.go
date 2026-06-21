@@ -113,7 +113,7 @@ func TestDownloadRoutingPredicates(t *testing.T) {
 
 // TestParseResponse_HTMLScrape replays a saved HTML response end-to-end and
 // asserts the normalized releases. Regression snapshot (self-generated, NOT
-// Jackett-diffed): Phase 2 swaps these for differential goldens.
+// Jackett-diffed): the differential harness swaps these for differential goldens.
 func TestParseResponse_HTMLScrape(t *testing.T) {
 	t.Parallel()
 	eng := newFixtureEngine(t, "html_scrape.yml")

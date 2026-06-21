@@ -47,8 +47,9 @@ precedence) is reproduced from `ResultPage.ToXml` / `ReleaseInfo` /
 ## Known divergences from Jackett / the spec
 
 Deliberate or accepted differences, each with an explicit disposition
-(`[Tracked: Phase N]` a real gap with a plan follow-up · `[Deliberate]` an
-intentional design choice · `[Accepted]` a kept difference, no work planned).
+(`[Tracked]` a real gap with a plan follow-up · `[Resolved]` a once-tracked gap
+now closed · `[Deliberate]` an intentional design choice · `[Accepted]` a kept
+difference, no work planned).
 None is hidden by a fixture authored to dodge it.
 
 **Scope:** this section covers the **Torznab output** layer (normalized release →
@@ -122,7 +123,7 @@ and the shared disposition rule.
   direct-link tracker's download/magnet link as extracted (the passkey it may carry
   is intended output, never logged). These report `NeedsResolver()==false`, so their
   link is served unchanged and a grab works — proven by the live smoke. **`[Accepted]`**
-- **Resolver-needing links routed through the /dl proxy** — RESOLVED in Phase 7. A
+- **Resolver-needing links routed through the /dl proxy** — Resolved. A
   `NeedsResolver()` indexer no longer resolves links inline at feed time (which
   fetched a tracker page per served release). The feed instead emits an opaque
   `/dl?apikey=…&token=…` URL (the pre-resolution link sealed with the keyring, bound
@@ -135,7 +136,7 @@ and the shared disposition rule.
   forgeable-token SSRF is a known, gated limitation (apikey-required, encrypted by
   default, single-user self-hosted — no host filter so a LAN tracker still works).
   Tests: `handler_test.go` (`TestServeDL_*`, `TestHandlerProxiesResolverLinks`,
-  `TestHandlerProxyGUIDStable`), `dltoken_test.go`. **`[Resolved: Phase 7]`**
+  `TestHandlerProxyGUIDStable`), `dltoken_test.go`. **`[Resolved]`**
 
 ### HTTP handler (`internal/web/torznab`)
 
@@ -167,7 +168,7 @@ and the shared disposition rule.
   whereas Jackett returns an empty set for `offset > 0` on a non-paginating
   Cardigann indexer. De-duplication runs before the limit slice (Jackett limits
   then de-dups), so counts can differ on a duplicate-heavy page. **`[Deliberate]`**
-- **Result-category filtering / default categories** — RESOLVED in Phase 5
+- **Result-category filtering / default categories** — Resolved
   (`internal/web/torznab/filter.go` + `query.go`). The handler now reproduces
   Jackett's two-part behaviour: request-side, `buildQuery` resolves the requested
   newznab cats to tracker cats and falls back to the def's `default: true`
@@ -178,4 +179,4 @@ and the shared disposition rule.
   categories intersect the expanded requested set. Note Jackett does NOT return a
   forced empty feed when a `cat` maps to nothing; it searches (defaults or all)
   and the response filter drops non-matches, so an empty feed emerges naturally.
-  **`[Resolved: Phase 5]`**
+  **`[Resolved]`**

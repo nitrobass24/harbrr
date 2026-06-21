@@ -70,7 +70,7 @@ type Context struct {
 	// and yields "" (resolveDownloadURIVar), but a bare {{ .DownloadUri.X }} is
 	// handed to the stdlib parser, which hard-errors on a nil-pointer member.
 	// Because download templates only ever run with a real download URI, the
-	// engine (item 10) satisfies this precondition; the asymmetry is acceptable
+	// engine satisfies this precondition; the asymmetry is acceptable
 	// only under it.
 	//
 	// The field name MUST stay "DownloadUri" (not the Go-idiomatic "DownloadURI"):

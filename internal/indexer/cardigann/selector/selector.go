@@ -9,7 +9,7 @@ import (
 )
 
 // ErrSelectorNoMatch reports that a required selector found nothing. Callers
-// (the engine, item 10) distinguish required vs optional by inspecting the
+// (the engine) distinguish required vs optional by inspecting the
 // SelectorBlock; this stage simply reports found=false and, when the caller
 // asked for a required value, wraps this sentinel. Error messages reference the
 // selector/field only — never the matched content, which may embed a passkey.
@@ -17,7 +17,7 @@ var ErrSelectorNoMatch = errors.New("selector matched no element")
 
 // EvalFunc is the injectable template-eval seam. Jackett interleaves Go-template
 // evaluation into handleSelector (for selector strings, case values, text, and
-// default). To keep this stage decoupled from the template package (item 3),
+// default). To keep this stage decoupled from the template package,
 // the Engine takes an EvalFunc; New defaults it to identity so selector tests
 // use literal values and the engine binds template.Eval later.
 type EvalFunc func(string) (string, error)
@@ -110,7 +110,7 @@ func (r Row) backend() node {
 //
 // Template evaluation is interleaved exactly where Jackett applies it: on the
 // selector string, on case values, and on text. The default is NOT applied here
-// (Jackett applies it in the field loop, item 10); a non-optional empty result
+// (Jackett applies it in the field loop); a non-optional empty result
 // is reported via found=false so the caller decides between default and error.
 func (e *Engine) Field(row Row, block loader.SelectorBlock) (value string, found bool, err error) {
 	if block.Text != nil {
@@ -153,7 +153,7 @@ func (e *Engine) Field(row Row, block loader.SelectorBlock) (value string, found
 // selector/case/attribute/text, Jackett leaves value=null and returns "" (the
 // JSON handler has no TextContent default), whereas the default branch here reads
 // the row node's canonical string. No vendored JSON def authors a selector-less
-// field, so this path is never exercised; item 10's required/optional handling
+// field, so this path is never exercised; the engine's required/optional handling
 // would mask it regardless. Documented rather than special-cased.
 func (e *Engine) extract(cur node, block loader.SelectorBlock) (string, bool, error) {
 	switch {

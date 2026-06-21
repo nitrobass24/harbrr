@@ -5,12 +5,12 @@ It pins where harbrr's AvistaZ-family native driver (AvistaZ / CinemaZ / Private
 ExoticaZ) **knowingly differs** from the Prowlarr source it reproduces
 (`Prowlarr/Prowlarr` `develop` @ `d6e8466`: `AvistazRequestGenerator`,
 `AvistazParserBase`, the per-site `{AvistaZ,CinemaZ,PrivateHD,ExoticaZ}.cs`). The
-disposition vocabulary (`[Deliberate]` / `[Accepted]` / `[Tracked: Phase N]`) is defined
+disposition vocabulary (`[Deliberate]` / `[Accepted]` / `[Tracked]`) is defined
 in `docs/divergences.md`.
 
 The goldens here are **synthetic** — derived from Prowlarr's documented contract, never
 captured from a live AvistaZ. The live Prowlarr differential and a real search/grab are
-the **Phase 9** gate.
+the **live-validation** gate.
 
 ## Fixtures
 
@@ -34,7 +34,7 @@ the **Phase 9** gate.
   category filter (`filterResults`), the same response-side mechanism harbrr uses for
   every indexer. Correct results; a broader fetch that, only under the 50-result page
   cap, could under-return a resolution-filtered query (a popular title with >50 mixed
-  results). Acceptable for the offline gate; confirm at scale in the Phase 9 differential.
+  results). Acceptable for the offline gate; confirm at scale in the live differential.
 - **`limit` always `PageSize`, single-page fetch + `<limits max>` over-advertisement** —
   `[Accepted]`. harbrr always sends `limit=50` and one page (no `page` param), then applies
   the requested `limit`/`offset` window response-side — its engine-wide paging mechanism, the
@@ -56,7 +56,7 @@ the **Phase 9** gate.
 ## Parse divergences (`AvistazParserBase`)
 
 - **`503` → rate-limit** — `[Deliberate]`. `search.IsRateLimitStatus` treats both `429`
-  and `503` as a backoff trigger across the whole engine (Phase 6 operational safety), so
+  and `503` as a backoff trigger across the whole engine (operational safety), so
   a `503` on a search or download becomes a rate-limit error. Prowlarr suppresses only
   `404` and would treat `503` as a plain error. harbrr's broader backoff is intentional.
 - **Volume-factor default 1.0** — `[Accepted]`. An absent `download_multiply` /
@@ -82,20 +82,20 @@ the **Phase 9** gate.
   exactly as Prowlarr's `ExoticaZParser`) and then **de-dups + sorts** the result for a
   deterministic feed; Prowlarr's `SelectMany` can emit duplicates.
 
-## Deferred to Phase 9 (live validation)
+## Deferred to live validation
 
-- **Live search/grab + the Prowlarr differential** — `[Tracked: Phase 9]`. The entire
+- **Live search/grab + the Prowlarr differential** — `[Tracked]`. The entire
   offline gate is synthetic; request/response/category parity against a live AvistaZ +
-  live Prowlarr, and a real `.torrent` grab through `/dl`, are the Phase 9 acceptance gate.
-- **`created_at_iso` shape** — `[Tracked: Phase 9]`. `parsePublishDate` tries four layouts
+  live Prowlarr, and a real `.torrent` grab through `/dl`, are the live acceptance gate.
+- **`created_at_iso` shape** — `[Tracked]`. `parsePublishDate` tries four layouts
   (`RFC3339Nano`, `RFC3339`, and the space/`T` forms *without* a zone) and normalizes to UTC,
   but **not** a space-separated datetime *with* a timezone offset (e.g.
   `2024-01-15 10:30:00+05:30`), which Prowlarr's `DateTime.Parse` accepts. If the live API uses
   that shape the bad-date path fails the **whole** search (see "bad-row handling"). Operator
-  decision (2026-06-16): do **not** widen pre-emptively; confirm the real format in the Phase 9
-  live differential and, if it is the space+offset form, add the `2006-01-02 15:04:05Z07:00`
+  decision (2026-06-16): do **not** widen pre-emptively; confirm the real format in the live
+  differential and, if it is the space+offset form, add the `2006-01-02 15:04:05Z07:00`
   layout (a one-line fix). The risk is a hard search failure, not a silent wrong value.
-- **Download-URL path-key redaction** — `[Tracked: Phase 9]`. harbrr's URL redactor is
+- **Download-URL path-key redaction** — `[Tracked]`. harbrr's URL redactor is
   query-scoped, so the driver keeps the download URL out of every error it raises (a key,
   if any, may sit in the path). The `/dl` proxy already keeps the raw download URL out of
   the served feed. Confirm the live download-URL shape and, if it carries a path key,
