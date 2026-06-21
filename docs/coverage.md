@@ -1,6 +1,6 @@
 # Coverage — what harbrr serves, and the native-driver backlog
 
-Phase 9.5 item 3. This maps, honestly, **where harbrr is a Prowlarr replacement and where it isn't**:
+This maps, honestly, **where harbrr is a Prowlarr replacement and where it isn't**:
 the surface harbrr covers, how its coverage is sourced, the user's actual stack, and the real
 native-driver backlog (vs Prowlarr's full set). Companion to `docs/native-indexer-pattern.md` (how a
 native driver is built) and the live-validation ledger in `internal/smoke/README.md`.
@@ -75,16 +75,16 @@ None of this is needed for the current stack — it's the demand-gated roadmap f
 these trackers. (Source: Jackett `Indexers/Definitions/*.cs` vs `Definitions/*.yml`; cross-checked against
 Prowlarr `Indexers/Definitions/`.)
 
-## 5. Migration caveat (feeds Phase 10 import)
+## 5. Migration caveat (feeds the Prowlarr migration import)
 
 The Prowlarr cred extractor (`scripts/prowlarr-extract-creds.sh`) maps a *Prowlarr-native* tracker to
 harbrr only for the four native families it knows (AvistaZ, IPTorrents, MyAnonamouse, FileList). A
 tracker that is **Prowlarr-native but harbrr-Cardigann** (like **HDSpace**) has no `definitionFile` in
 Prowlarr's settings, so the extractor can't auto-map it to harbrr's `hdspace` def. harbrr *serves* it
-fine; only the auto-migration needs a Prowlarr-impl → harbrr-def name table. This is a **Phase 10
-migration-import** task, not a coverage gap.
+fine; only the auto-migration needs a Prowlarr-impl → harbrr-def name table. This is a
+**migration-import** task, not a coverage gap.
 
-## 6. Live-validation ledger (Phase 9.5 item 4)
+## 6. Live-validation ledger
 
 Auth/fetch patterns proven offline but awaiting a live qualifying tracker are tracked as a standing
 checklist in `internal/smoke/README.md` ("auth/fetch patterns NOT exercised live"). Current open rows:

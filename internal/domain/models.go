@@ -43,7 +43,7 @@ type APIKey struct {
 	LastUsedAt *time.Time
 }
 
-// Health-event kinds — the four Phase-6 categories an indexer failure classifies
+// Health-event kinds — the four categories an indexer failure classifies
 // into. Stored verbatim in indexer_health_events.kind.
 const (
 	HealthAuthFailure = "auth_failure"
