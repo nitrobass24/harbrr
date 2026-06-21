@@ -245,7 +245,7 @@ harness (`//go:build smoke`, `SMOKE_*` env-var creds, gentle rate, **never CI**)
 secret-free pass/fail evidence in `internal/smoke/README.md`. A bug it surfaces is `[Tracked]` against
 the owning layer — the engine stays frozen during validation; fixes are scoped, not ad-hoc.
 
-- [ ] **Every auth/fetch pattern live**, each against an operator-supplied tracker: user/pass
+- [x] **Every auth/fetch pattern live**, each against an operator-supplied tracker: user/pass
       **form login**; **cookie / 2FA** (manual-cookie solver); **.NET-quirk** (`*()'!` / unicode /
       `regexp2`); **Cloudflare via FlareSolverr** (the Phase-6 solver clears a real CF tracker end
       to end); **per-indexer proxy** (HTTP + SOCKS5 route a real search).
@@ -259,6 +259,16 @@ the owning layer — the engine stays frozen during validation; fixes are scoped
       User-Agent across login + search, then retries the POST (Jackett/Prowlarr's approach); (2) the row
       selector carried a `{{ if .Config.freeleech }}…{{ end }}` guard that must be template-evaluated
       before CSS compilation. Cloudflare/form-login is now double-confirmed (torrentleech + HD-Space).**
+      — **2026-06-21: .NET-quirk confirmed live (PR #52).** Added the public **rutor** tracker (ru-RU):
+      its `\p{IsCyrillic}` filter patterns route to `regexp2` (RE2 rejects the property) and applied over
+      100 parsed results — `regexp2` routing confirmed live. The WebUtility encoder is confirmed via live
+      unicode searches AND a real `()!` bug it surfaced: harbrr left `( ) !` literal (matching .NET's
+      intermediate string), which tripped HD-Space's Cloudflare WAF and 500'd any "Title (Year)" search;
+      the live Prowlarr differential proved it a divergence (Prowlarr returns results), so harbrr now
+      percent-encodes them (the on-the-wire form) — "Spider-Man (2002)" now returns results. **Box checked:
+      every pattern present in the stack is green.** The two patterns with no qualifying tracker/proxy —
+      **cookie/manual-cookie** and **HTTP/SOCKS proxy** — are moved to the demand-gated backlog (offline-
+      proven; their live retest awaits the operator standing up a qualifying tracker/proxy).**
 - [x] **Broad live Prowlarr differential** — many trackers (not just the Phase-5 five), **Cardigann +
       Avistaz**: same query → Prowlarr feed vs harbrr feed → diff, confirming request/response + category
       parity at scale against the live oracle. — **2026-06-16: 13/14 PASS, count parity 1.00 across the
@@ -404,6 +414,16 @@ into the apps so they don't each configure indexers by hand.
 Built when a real user needs it, not on a schedule. Each is self-contained and off the alpha→beta
 (Phase 10 app-sync → Phase 11 Web UI) critical path.
 
+- **Live retest of the two no-tracker auth patterns** (moved from Phase 9's "every auth/fetch pattern
+  live", which is otherwise green). Both are **offline-proven**; they need a qualifying tracker/proxy in
+  the operator's stack to confirm live:
+  - **cookie / manual-cookie** (`ManualCookieSolver`) — none of the stack's Cardigann trackers use cookie
+    login (IPTorrents/MyAnonamouse are native cookie drivers, already resolved). Test by configuring any
+    Cardigann tracker with `solver_type=manual_cookie` + a browser-exported cookie (e.g. a temporary
+    HD-Space flip), or a real `method: cookie` tracker if one is added.
+  - **per-indexer proxy (HTTP/SOCKS5)** — no HTTP/SOCKS proxy in the stack (only FlareSolverr). Test by
+    standing up a local proxy (microsocks/tinyproxy) and routing any search via `proxy_type`+`proxy_url`;
+    the doer/transport plumbing is offline-tested. SOCKS4 unsupported (`x/net/proxy` has no socks4 dialer).
 - **More \*arr sync targets** — Lidarr / Readarr / Mylar / Whisparr. The Phase-10 sync contract is built
   for Sonarr/Radarr/qui; extending it to another app is mostly a per-app adapter.
 - **Jackett/Prowlarr migration import** — import indexer instances + credentials + category overrides.
