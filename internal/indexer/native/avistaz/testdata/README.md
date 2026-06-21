@@ -95,8 +95,14 @@ the **live-validation** gate.
   decision (2026-06-16): do **not** widen pre-emptively; confirm the real format in the live
   differential and, if it is the space+offset form, add the `2006-01-02 15:04:05Z07:00`
   layout (a one-line fix). The risk is a hard search failure, not a silent wrong value.
-- **Download-URL path-key redaction** — `[Tracked]`. harbrr's URL redactor is
-  query-scoped, so the driver keeps the download URL out of every error it raises (a key,
-  if any, may sit in the path). The `/dl` proxy already keeps the raw download URL out of
-  the served feed. Confirm the live download-URL shape and, if it carries a path key,
-  decide whether path-aware redaction is warranted.
+- **Download-URL path-key redaction** — `[Accepted]`. AvistaZ download URLs really
+  do carry a per-user rsskey **in the path** (`…/rss/download/{id}/{rsskey}.torrent`, see
+  the recorded fixture), and harbrr's `RedactURL` is query-scoped — it would *not* scrub
+  that path segment. The safeguard here is therefore driver discipline, not the redactor:
+  the download URL never enters any error (`sanitizeGrabError` replaces link-bearing
+  transport errors with a fixed string) and only ever flows through the `/dl` proxy (kept
+  out of the served feed), so the path key never reaches a log/trace/feed in the first
+  place. We have never observed the redactor handed this URL — it isn't on any logging
+  path. Path-aware redaction is deliberately not added (it would need heuristics to tell a
+  secret segment from a normal one, for a URL that never reaches a log anyway); revisit
+  only if a download URL ever starts reaching a logging site.

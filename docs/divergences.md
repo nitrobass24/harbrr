@@ -70,13 +70,12 @@ The actionable divergences are exactly the `[Tracked]` entries across the
 per-layer READMEs (the remainder of a `[Partial]` entry is one too). To list them:
 
 ```sh
+# Every divergence record is a per-layer testdata README, plus the live-smoke
+# README — globbed so a newly added layer (e.g. another native tracker) is
+# covered automatically, with no path list here to drift.
 grep -rn '\[Tracked' \
-  internal/indexer/cardigann/parity/testdata/README.md \
-  internal/torznab/testdata/README.md \
-  internal/secrets/testdata/README.md \
-  internal/indexer/registry/testdata/README.md \
-  internal/indexer/native/avistaz/testdata/README.md \
-  internal/smoke/README.md
+  internal/smoke/README.md \
+  $(find internal -path '*/testdata/README.md' | sort)
 ```
 
 When a tracked gap ships, update its entry in its own README — it is recorded in

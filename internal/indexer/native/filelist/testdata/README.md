@@ -74,17 +74,21 @@ the **live-validation** gate.
   unparseable `upload_date` is a parse error for the whole response, matching Prowlarr's
   throw-on-bad-row.
 
-## Deferred to live validation
+## Live validation
 
-- **Live search/grab + the Prowlarr differential** — `[Tracked]`. The entire
-  offline gate is synthetic; request/response/category parity against a live FileList +
-  live Prowlarr, and a real `.torrent` grab through `/dl`, are the live acceptance
-  gate.
+- **Live search** — `[Resolved]` (live run 2026-06-18, `internal/smoke/README.md`):
+  a live FileList search succeeded after the int-flags fix (#46; it was an HTTP 500
+  before).
+- **Prowlarr differential + grab** — `[Tracked]`. The differential auto-skipped
+  because the live Prowlarr's native indexer isn't named `filelist` (no name match), so
+  request/response/category parity and a real `/dl` grab against a live FileList remain
+  the open acceptance gate.
 - **`upload_date` shape** — `[Tracked]`. `parsePublishDate` assumes the exact
   `yyyy-MM-dd HH:mm:ss` form Prowlarr appends `+0300` to. If the live API ever emits a
   different shape, the bad-date path fails the whole search (see "bad-row handling");
   confirm the real format in the live differential.
-- **Download-URL passkey redaction** — `[Tracked]`. The download URL carries the
-  passkey in its query. harbrr keeps that URL out of every error it raises and routes the
-  fetch only through `/dl` (which keeps the raw URL out of the served feed). Confirm the
-  live download flow keeps the passkey out of all logs/traces.
+- **Download-URL passkey redaction** — `[Accepted]`. The download URL carries the
+  passkey in its **query**, which is exactly `RedactURL`'s scope, so any log/error that
+  did include the URL would be scrubbed. On top of that, the driver keeps the URL out of
+  every error it raises and routes the fetch only through `/dl` (which keeps the raw URL
+  out of the served feed). Covered; no further work planned.

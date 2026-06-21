@@ -22,19 +22,17 @@ captured from a live MAM. The live Prowlarr differential and a real search/grab 
 
 ## Auth: mam_id session cookie + rotation
 
-- **mam_id rotation is in-memory only, not written back to the store** — `[Accepted]`
-  (matches Jackett). MAM rotates the `mam_id` session cookie on *every* response. The
-  driver seeds `currentMamID` from `cfg["mam_id"]`, sends `Cookie: mam_id=<current>` on
-  every request, and captures any refreshed `mam_id` from the response `Set-Cookie` to
-  use on subsequent **in-process** requests (`auth.go` `captureRotatedMamID`). It is
-  **not** persisted: on process restart the driver falls back to the stored value. This
-  matches Jackett (which also does not persist the rotation) and is the weaker of the two
-  references — Prowlarr writes the new `mam_id` back to its settings store (30-day
-  expiry). harbrr has **no write-back seam** here, so persistence is deliberately not
-  attempted. `[Tracked]` — add a write-back seam if live shows sessions break: if the live
-  differential shows MAM invalidates the prior `mam_id` aggressively enough that the
-  stored value goes stale across restarts and breaks sessions, add a settings write-back
-  seam so the rotated value survives a restart.
+- **mam_id rotation is captured and written back to the store** — `[Resolved]` (#46).
+  MAM rotates the `mam_id` session cookie on *every* response. The driver seeds
+  `currentMamID` from `cfg["mam_id"]`, sends `Cookie: mam_id=<current>` on every request,
+  and captures any refreshed `mam_id` from the response `Set-Cookie` (`auth.go`
+  `captureRotatedMamID`). On a change it both updates the in-memory value **and**
+  persists it back to the encrypted store via the write-back seam (`PersistSetting`), so
+  the rotated session survives a process restart — matching Prowlarr (30-day write-back)
+  rather than Jackett (which does not persist). The write is synchronous (the per-host
+  paced doer serializes MAM requests, keeping the stored value in rotation order) and
+  best-effort (a failure is logged, never fails the search). Whether the in-memory +
+  write-back is *sufficient* across a restart in practice is the live question below.
 - **`mam_id` redaction** — `[Deliberate]`. The `mam_id` is a secret (`password`-typed
   setting, encrypted at rest, redacted by the API). It rides only in the `Cookie` header,
   never in a URL or query, and never appears in any error string (the URL redactor plus
@@ -109,15 +107,26 @@ captured from a live MAM. The live Prowlarr differential and a real search/grab 
   definition's `RequestDelay` so the registry's existing paced client enforces it).
   Revisit against the live differential if MAM tolerates a tighter cadence.
 
-## Deferred to live validation
+## Live validation
 
-- **Live search/grab + the Prowlarr differential** — `[Tracked]`. The entire
-  offline gate is synthetic; request/response/category parity against a live MAM + live
-  Prowlarr, and a real `.torrent` grab through `/dl`, are the live acceptance gate.
-- **mam_id session lifetime across restarts** — `[Tracked]`. Confirm whether the
-  in-memory-only rotation is sufficient in practice, or whether the write-back seam noted
-  above is needed.
-- **`size` unit set + `added` shape** — `[Tracked]`. Confirm the live unit
-  spellings (`parseSize` handles `B`…`PB`, both `KB` and `KiB` forms) and the exact
-  `added` format match the real API; widen the parser only if the live differential shows
-  a shape these miss.
+- **Live search + grab** — `[Resolved]` (live 2026-06-21, through a running harbrr
+  container against a fresh MAM session): the Test login probe passed, a live search
+  returned well-formed releases (titles/sizes/categories/seeders/dates parsed), and the
+  first result's `/dl` link resolved to a real bencoded `.torrent`
+  (`application/x-bittorrent`). This supersedes the 2026-06-18 attempt, which failed at
+  source (the prior `mam_id` session was dead/ASN-locked, failing in Prowlarr too).
+- **Transient search-decode error** — `[Tracked]`. The same day, a few
+  `decode search response: response parse error` health events were recorded before
+  searches parsed cleanly; capture the offending response shape (likely a zero-result or
+  rate-limited body) and add a fixture if it recurs.
+- **Prowlarr differential** — `[Tracked]`. harbrr-side live search+grab is confirmed
+  (above); a side-by-side count/title differential against a live Prowlarr MAM indexer is
+  still the remaining parity check.
+- **mam_id session lifetime across restarts** — `[Tracked]`. The write-back seam
+  (above) persists the rotated `mam_id`; confirm against a live session that the
+  persisted-then-restarted token is still accepted (the restart path itself isn't
+  separately exercised).
+- **`size` unit set + `added` shape** — `[Tracked]`. The 2026-06-21 live search
+  parsed real sizes and dates without error, so the known unit spellings (`parseSize`
+  handles `B`…`PB`, both `KB` and `KiB`) and `added` format held; widen the parser only
+  if a future live response shows a shape these miss.

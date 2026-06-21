@@ -68,9 +68,9 @@ The behaviours below are pinned by tests in `internal/secrets`, `internal/auth`,
 
 - **OIDC is stubbed.** `/api/auth/oidc/*` returns 501; only a config seam exists.
   `[Tracked]` (with the web UI / app auth).
-- **Interactive Swagger UI is deferred.** The embedded spec is served at
-  `/api/openapi.yaml`; the rendered Swagger UI lands with the web UI.
-  `[Tracked]`
+- **Interactive Swagger UI.** The embedded spec is served at `/api/openapi.yaml`
+  and the rendered Swagger UI at `/api/docs` (`internal/server/server.go` →
+  `swagger.UI()`), independent of the still-deferred web UI. `[Resolved]`
 - **`api_keys.last_used_at` is never written.** Validation is a pure read (no
   write on the request path); the auth event log populates it later.
   `[Tracked]` (stats / search history).
