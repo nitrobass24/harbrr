@@ -82,9 +82,10 @@ the **live-validation** gate.
 - **Live grab** — `[Resolved]` (live 2026-06-21, through a running harbrr container):
   a live FileList search parsed cleanly and the first result's `/dl` link resolved to a
   real bencoded `.torrent` (`application/x-bittorrent`).
-- **Prowlarr differential** — `[Tracked]`. The differential auto-skipped because the
-  live Prowlarr's native indexer isn't named `filelist` (no name match), so a side-by-side
-  count/title/category parity check against a live Prowlarr FileList is the remaining gate.
+- **Prowlarr differential** — `[Resolved]` (live 2026-06-21). Run against the live
+  Prowlarr FileList indexer — named **"FileList.io"**, the name mismatch that made the
+  smoke harness auto-skip it: q=`dune` returned **87 on both** harbrr and Prowlarr, title
+  Jaccard **1.00**.
 - **`upload_date` shape** — `[Resolved]` (live 2026-06-21). The live API emitted the
   expected `yyyy-MM-dd HH:mm:ss` form; `parsePublishDate` parsed every row without a
   bad-date failure (e.g. `2022-01-10T11:59:06Z` normalized). Widen the parser only if a

@@ -121,9 +121,12 @@ captured from a live MAM. The live Prowlarr differential and a real search/grab 
   `linux`, `the matrix`, or a zero-result query (all HTTP 200, parsed), so it was a
   one-time transient (a non-JSON body — a rate-limit/maintenance/HTML page). The driver
   recorded it as a `parse_error` event and recovered; add a fixture only if it recurs.
-- **Prowlarr differential** — `[Tracked]`. harbrr-side live search+grab is confirmed
-  (above); a side-by-side count/title differential against a live Prowlarr MAM indexer is
-  still the remaining parity check.
+- **Prowlarr differential** — `[Accepted]` (not runnable; harbrr-side independently
+  confirmed). harbrr's MAM works live (login/search/grab + 20 correct hits for
+  `ubuntu`/`linux`, 2026-06-21), but Prowlarr cannot serve as the oracle: its own MAM
+  indexer session is expired (`403 mam_id expired or invalid`, Prowlarr disabled it till
+  2026-06-22), so harbrr currently holds the only live MAM session. Not pursued — there is
+  nothing on the harbrr side left to verify.
 - **mam_id session lifetime across restarts** — `[Resolved]` (operator-confirmed
   2026-06-21). The write-back seam (above) persists the rotated `mam_id`, and the running
   deployment has survived several restarts and upgrades with the MAM session intact — the
