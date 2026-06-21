@@ -5,6 +5,17 @@
   "backend": "native",
   "enabled": true,
   "priority": 10,
+  "capabilities": [
+    "search",
+    "search-q",
+    "tv-search",
+    "tv-search-q",
+    "tv-search-season",
+    "tv-search-ep",
+    "movie-search",
+    "movie-search-q",
+    "movie-search-imdbid"
+  ],
   "categories": [
     {
       "category_id": 5000,

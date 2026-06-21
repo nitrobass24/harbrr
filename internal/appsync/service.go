@@ -41,11 +41,16 @@ var (
 	ErrConflict = errors.New("appsync: connection already exists")
 )
 
-// IndexerSource is the slice of the registry app-sync needs: the configured indexers
-// and each one's Newznab categories. Implemented by a registry adapter (serve.go).
+// IndexerSource is the slice of the registry app-sync needs: the configured indexers,
+// each one's Newznab categories, and its Torznab capability tokens. Implemented by a
+// registry adapter (serve.go).
 type IndexerSource interface {
 	List(ctx context.Context) ([]domain.IndexerInstance, error)
 	Categories(ctx context.Context, slug string) ([]Category, error)
+	// Capabilities returns the flat Torznab capability tokens (tv-search,
+	// movie-search-imdbid, ...) the indexer advertises, for targets (qui) that store
+	// caps per indexer instead of fetching them from the feed.
+	Capabilities(ctx context.Context, slug string) ([]string, error)
 }
 
 // KeyMinter is the slice of auth.Service app-sync needs: mint a dedicated harbrr API

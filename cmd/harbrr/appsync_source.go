@@ -8,6 +8,7 @@ import (
 	"github.com/autobrr/harbrr/internal/appsync"
 	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
+	"github.com/autobrr/harbrr/internal/torznab"
 )
 
 // appSyncClient is the HTTP client app-sync drivers use to reach the *arr/qui apps.
@@ -41,4 +42,16 @@ func (s registrySource) Categories(ctx context.Context, slug string) ([]appsync.
 		out = append(out, appsync.Category{ID: c.ID, Name: c.Name})
 	}
 	return out, nil
+}
+
+// Capabilities returns the indexer's flat Torznab capability tokens (tv-search,
+// movie-search-imdbid, ...) derived from its advertised search modes — what qui
+// stores per indexer. An unresolvable indexer yields none rather than failing the
+// sync.
+func (s registrySource) Capabilities(ctx context.Context, slug string) ([]string, error) {
+	idx, ok := s.reg.Indexer(ctx, slug)
+	if !ok {
+		return nil, nil
+	}
+	return torznab.CapabilityTokens(idx.Capabilities()), nil
 }

@@ -91,9 +91,14 @@ func (s *Service) buildDesired(ctx context.Context, instances []domain.IndexerIn
 		if err != nil {
 			return nil, fmt.Errorf("appsync: categories for %q: %w", inst.Slug, err)
 		}
+		caps, err := s.source.Capabilities(ctx, inst.Slug)
+		if err != nil {
+			return nil, fmt.Errorf("appsync: capabilities for %q: %w", inst.Slug, err)
+		}
 		out = append(out, DesiredIndexer{
 			Slug: inst.Slug, Name: inst.Name, FeedURL: feedURL(conn.HarbrrURL, inst.Slug),
-			APIKey: harbrrKey, Categories: cats, Priority: conn.Priority, Enabled: inst.Enabled,
+			APIKey: harbrrKey, Categories: cats, Capabilities: caps,
+			Priority: conn.Priority, Enabled: inst.Enabled,
 		})
 	}
 	return out, nil

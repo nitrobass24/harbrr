@@ -29,14 +29,15 @@ type quiCategory struct {
 // quiIndexer is qui's Torznab indexer resource (the subset harbrr sets/reads). ID is
 // assigned by qui; api_key is write-only (qui never echoes it back).
 type quiIndexer struct {
-	ID         int           `json:"id,omitempty"`
-	Name       string        `json:"name"`
-	BaseURL    string        `json:"base_url"`
-	APIKey     string        `json:"api_key,omitempty"`
-	Backend    string        `json:"backend"`
-	Enabled    bool          `json:"enabled"`
-	Priority   int           `json:"priority"`
-	Categories []quiCategory `json:"categories"`
+	ID           int           `json:"id,omitempty"`
+	Name         string        `json:"name"`
+	BaseURL      string        `json:"base_url"`
+	APIKey       string        `json:"api_key,omitempty"`
+	Backend      string        `json:"backend"`
+	Enabled      bool          `json:"enabled"`
+	Priority     int           `json:"priority"`
+	Capabilities []string      `json:"capabilities"`
+	Categories   []quiCategory `json:"categories"`
 }
 
 // quiDriver implements Target for an autobrr/qui instance.
@@ -64,10 +65,14 @@ func (q *quiDriver) buildIndexer(d DesiredIndexer) quiIndexer {
 	for _, c := range d.Categories {
 		cats = append(cats, quiCategory{CategoryID: c.ID, CategoryName: c.Name})
 	}
+	caps := d.Capabilities
+	if caps == nil {
+		caps = []string{}
+	}
 	return quiIndexer{
 		Name: d.Name, BaseURL: d.FeedURL, APIKey: d.APIKey,
 		Backend: quiBackendNative, Enabled: d.Enabled, Priority: d.Priority,
-		Categories: cats,
+		Capabilities: caps, Categories: cats,
 	}
 }
 

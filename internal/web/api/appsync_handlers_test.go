@@ -30,6 +30,10 @@ func (f *fakeAppSource) Categories(_ context.Context, slug string) ([]appsync.Ca
 	return f.cats[slug], nil
 }
 
+func (f *fakeAppSource) Capabilities(_ context.Context, _ string) ([]string, error) {
+	return nil, nil
+}
+
 func createConnBody(name, baseURL string) map[string]any {
 	return map[string]any{
 		"name": name, "kind": "sonarr", "baseUrl": baseURL,

@@ -138,9 +138,10 @@ func TestQuiBuildIndexerGolden(t *testing.T) {
 	drv := &quiDriver{baseURL: "http://qui:7476", apiKey: "k"}
 	d := DesiredIndexer{
 		Slug: "native-tracker", Name: "Native Tracker", Priority: 10, Enabled: true,
-		FeedURL:    "http://harbrr:8787/api/v2.0/indexers/native-tracker/results/torznab",
-		APIKey:     "harbrr-feed-key",
-		Categories: []Category{{5000, "TV"}, {2000, "Movies"}},
+		FeedURL:      "http://harbrr:8787/api/v2.0/indexers/native-tracker/results/torznab",
+		APIKey:       "harbrr-feed-key",
+		Categories:   []Category{{5000, "TV"}, {2000, "Movies"}},
+		Capabilities: []string{"search", "search-q", "tv-search", "tv-search-q", "tv-search-season", "tv-search-ep", "movie-search", "movie-search-q", "movie-search-imdbid"},
 	}
 	assertGolden(t, "qui_create.golden.json", drv.buildIndexer(d))
 }

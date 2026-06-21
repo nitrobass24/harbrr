@@ -35,8 +35,13 @@ type DesiredIndexer struct {
 	FeedURL    string
 	APIKey     string
 	Categories []Category
-	Priority   int
-	Enabled    bool
+	// Capabilities is the flat Torznab capability token list (e.g. "tv-search",
+	// "tv-search-imdbid", "movie-search") for targets that store caps per indexer
+	// rather than fetching them from the feed. Only qui consumes it; Servarr pulls
+	// caps from the feed itself, so its driver ignores this.
+	Capabilities []string
+	Priority     int
+	Enabled      bool
 }
 
 // CategoryIDs returns just the numeric ids (Servarr's categories field).
@@ -57,8 +62,10 @@ func (d DesiredIndexer) CategoryIDs() []int {
 func (d DesiredIndexer) hash() string {
 	cats := d.CategoryIDs()
 	sort.Ints(cats)
+	caps := append([]string(nil), d.Capabilities...)
+	sort.Strings(caps)
 	h := sha256.New()
-	fmt.Fprintf(h, "%s\x00%s\x00%v\x00%d\x00%t", d.Name, d.FeedURL, cats, d.Priority, d.Enabled)
+	fmt.Fprintf(h, "%s\x00%s\x00%v\x00%v\x00%d\x00%t", d.Name, d.FeedURL, cats, caps, d.Priority, d.Enabled)
 	return hex.EncodeToString(h.Sum(nil))
 }
 

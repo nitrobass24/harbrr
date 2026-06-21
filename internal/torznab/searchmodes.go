@@ -95,6 +95,32 @@ func declaredParamSet(params []string) map[string]struct{} {
 	return set
 }
 
+// CapabilityTokens flattens the indexer's advertised <searching> caps into the
+// flat token list autobrr/qui stores per Torznab indexer: each available mode's
+// element name plus "<mode>-<param>" for every supported param (which always
+// leads with "q"), e.g. "tv-search", "tv-search-q", "tv-search-season",
+// "tv-search-imdbid", "movie-search", "movie-search-imdbid". harbrr pushes these
+// to qui directly because qui's "native" backend cannot fetch caps from a full
+// feed URL (its go-jackett client malforms the request — see docs/external-issues.md).
+// The set matches what qui derives from the caps XML; order is the caps element
+// order (qui sorts for display).
+func CapabilityTokens(caps *mapper.Capabilities) []string {
+	if caps == nil {
+		return nil
+	}
+	out := make([]string, 0, 16)
+	for _, m := range searchModes {
+		if !m.available(caps) {
+			continue
+		}
+		out = append(out, m.xmlElem)
+		for _, p := range strings.Split(m.supportedParams(caps), ",") {
+			out = append(out, m.xmlElem+"-"+p)
+		}
+	}
+	return out
+}
+
 // modeForRequest resolves a t= request token to its search mode (excluding the
 // internal audio-search alias, which has no request token). Returns false for an
 // unknown token.

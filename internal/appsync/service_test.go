@@ -30,6 +30,7 @@ type syncFixture struct {
 type fakeSource struct {
 	instances []domain.IndexerInstance
 	cats      map[string][]Category
+	caps      map[string][]string
 }
 
 func (f *fakeSource) List(context.Context) ([]domain.IndexerInstance, error) {
@@ -38,6 +39,10 @@ func (f *fakeSource) List(context.Context) ([]domain.IndexerInstance, error) {
 
 func (f *fakeSource) Categories(_ context.Context, slug string) ([]Category, error) {
 	return f.cats[slug], nil
+}
+
+func (f *fakeSource) Capabilities(_ context.Context, slug string) ([]string, error) {
+	return f.caps[slug], nil
 }
 
 func newSyncFixture(t *testing.T) *syncFixture {
