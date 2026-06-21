@@ -8,23 +8,20 @@
 //   - Search-path template values go through applyGoTemplateText(..., WebUtility.UrlEncode)
 //     followed by .Replace("+", "%20") (space -> '%20').
 //
-// WebUtility's unreserved (left-literal) set is, per the dotnet/runtime source
-// (s_safeUrlChars):
-//
-//	A-Z a-z 0-9 - _ . ! * ( )
-//
-// Go's net/url.QueryEscape uses a different unreserved set (A-Z a-z 0-9 - _ . ~),
-// so for a query component the two differ on exactly five characters:
-//
-//	! * ( )   Go percent-escapes these; .NET leaves them literal.
-//	~         Go leaves this literal; .NET percent-escapes it (%7E).
-//
-// Note that the apostrophe (') is percent-escaped (%27) by BOTH engines — it is
-// NOT a divergence (a common misconception; harbrr's earlier parity note and the
-// Phase 5 plan both wrongly listed it and omitted '~'). The five-character set
-// above is the complete divergence, verified against the dotnet/runtime
-// WebUtility source and Jackett's WebUtilityHelpers/StringUtil. Unicode is
-// percent-escaped as UTF-8 octets identically by both engines.
+// WebUtility's unreserved (left-literal) STRING set is, per the dotnet/runtime
+// source (s_safeUrlChars): A-Z a-z 0-9 - _ . ! * ( ). That is the intermediate
+// STRING .NET produces — but it is NOT what goes on the wire. .NET's HttpClient
+// percent-encodes the sub-delimiters ! * ( ) when it serializes the request URI,
+// and a LITERAL '(' in a query trips some trackers' Cloudflare/WAF injection
+// heuristics (HD-Space 500s a "Title (Year)" search with a literal paren, while
+// Prowlarr — whose effective request is %28 — returns results). harbrr therefore
+// matches the on-the-wire form: it percent-encodes ! * ( ) (as Go's
+// url.QueryEscape already does, and as harbrr's own login path does via
+// url.Values), and percent-escapes ~ to %7E (the one char .NET escapes that Go
+// leaves literal). Net divergence from Go's url.QueryEscape: only '~'. The
+// apostrophe (') is %27 in both. Unicode is percent-escaped as UTF-8 octets
+// identically. The parity corpus carries no request URL with these characters, so
+// this is a live-correctness fix, not a parity-corpus change.
 package encode
 
 import (
@@ -32,16 +29,12 @@ import (
 	"strings"
 )
 
-// WebUtilityEncode encodes s the way .NET WebUtility.UrlEncode does: space -> '+',
-// the sub-delimiters ! * ( ) left literal, and ~ percent-escaped. It is the
-// query-component encoder (matches Jackett's GetQueryString value encoding).
+// WebUtilityEncode encodes s for a URL query component: Go's url.QueryEscape
+// (space -> '+', sub-delimiters ! * ( ) percent-escaped — the on-the-wire form)
+// plus ~ -> %7E to match .NET. See the package doc for why the sub-delimiters are
+// NOT left literal (tracker WAF compatibility).
 func WebUtilityEncode(s string) string {
 	s = url.QueryEscape(s)
-	// url.QueryEscape escaped ! * ( ) that .NET leaves literal — unescape them.
-	s = strings.ReplaceAll(s, "%21", "!")
-	s = strings.ReplaceAll(s, "%2A", "*")
-	s = strings.ReplaceAll(s, "%28", "(")
-	s = strings.ReplaceAll(s, "%29", ")")
 	// url.QueryEscape left ~ literal; .NET escapes it. Percent sequences never
 	// contain a literal '~', so this only rewrites genuine tildes from the input.
 	s = strings.ReplaceAll(s, "~", "%7E")

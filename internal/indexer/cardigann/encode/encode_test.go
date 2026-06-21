@@ -11,11 +11,12 @@ func TestWebUtilityEncode(t *testing.T) {
 		{"empty", "", ""},
 		{"plain", "ubuntu", "ubuntu"},
 		{"space to plus", "hello world", "hello+world"},
-		// The five divergence characters vs url.QueryEscape:
-		{"bang literal", "Mamma Mia!", "Mamma+Mia!"},
-		{"star literal", "a*b", "a*b"},
-		{"parens literal", "(a)", "(a)"},
-		{"all four literal", "!*()", "!*()"},
+		// Sub-delimiters ! * ( ) are percent-encoded (on-the-wire form — WAF-safe).
+		{"bang encoded", "Mamma Mia!", "Mamma+Mia%21"},
+		{"star encoded", "a*b", "a%2Ab"},
+		{"parens encoded", "(a)", "%28a%29"},
+		{"all four encoded", "!*()", "%21%2A%28%29"},
+		// ~ is the only divergence from url.QueryEscape (.NET escapes it, Go does not).
 		{"tilde escaped", "~", "%7E"},
 		{"tilde in word", "a~b", "a%7Eb"},
 		// Apostrophe is NOT a divergence: both Go and .NET emit %27.
@@ -33,7 +34,7 @@ func TestWebUtilityEncode(t *testing.T) {
 		{"unicode jp", "日本語", "%E6%97%A5%E6%9C%AC%E8%AA%9E"},
 		{"accented", "café", "caf%C3%A9"},
 		// A mixed string exercising every rule at once.
-		{"mixed", "Star*Trek (2009)! ~café's", "Star*Trek+(2009)!+%7Ecaf%C3%A9%27s"},
+		{"mixed", "Star*Trek (2009)! ~café's", "Star%2ATrek+%282009%29%21+%7Ecaf%C3%A9%27s"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -52,13 +53,13 @@ func TestPathEscape(t *testing.T) {
 	}{
 		{"empty", "", ""},
 		{"space to pct20", "hello world", "hello%20world"},
-		{"star literal", "a*b", "a*b"},
-		{"parens literal", "(a)", "(a)"},
+		{"star encoded", "a*b", "a%2Ab"},
+		{"parens encoded", "(a)", "%28a%29"},
 		{"tilde escaped", "~", "%7E"},
 		{"apostrophe escaped", "Bob's Burgers", "Bob%27s%20Burgers"},
 		{"literal plus", "a+b", "a%2Bb"},
 		{"unicode jp", "日本語", "%E6%97%A5%E6%9C%AC%E8%AA%9E"},
-		{"mixed", "Star Trek (2009)!~", "Star%20Trek%20(2009)!%7E"},
+		{"mixed", "Star Trek (2009)!~", "Star%20Trek%20%282009%29%21%7E"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
