@@ -150,7 +150,7 @@ func TestLoadFile(t *testing.T) {
 	}
 }
 
-func TestLoadFilePhase4Fields(t *testing.T) {
+func TestLoadFileServerAuthAndSecretsFields(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "harbrr.yaml")
 	body := "server:\n" +

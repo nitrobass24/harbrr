@@ -88,7 +88,7 @@ func TestHealthCascadeOnInstanceDelete(t *testing.T) {
 }
 
 // TestHealthMigrationOnExistingDB proves 0002 applies cleanly on a DB that already
-// ran prior migrations (the deployed Phase-5 case): reopening and re-migrating is a
+// ran prior migrations (the deployed-instance case): reopening and re-migrating is a
 // no-op and the health data persists.
 func TestHealthMigrationOnExistingDB(t *testing.T) {
 	t.Parallel()

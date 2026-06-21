@@ -100,11 +100,11 @@ func e2eGet(t *testing.T, h http.Handler, rawQuery string) []byte {
 	return body
 }
 
-// TestEndToEndOffline is the Phase 3 offline pipeline proof: a Sonarr/Radarr
+// TestEndToEndOffline is the offline pipeline proof: a Sonarr/Radarr
 // request sequence (t=caps then t=search) is driven through the *arr HTTP handler
 // over the real Cardigann engine + a saved tracker response, with NO network and
 // NO live tracker, producing the golden Torznab XML. The live "5 real trackers"
-// half of this plan item is Phase 4 (Live smoke); this is the offline half.
+// half is covered by the live smoke test; this is the offline half.
 func TestEndToEndOffline(t *testing.T) {
 	t.Parallel()
 	h := newE2EHandler(t)

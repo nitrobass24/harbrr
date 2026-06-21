@@ -1,6 +1,6 @@
 //go:build smoke
 
-// Phase 5 LIVE smoke + Prowlarr differential. Manual only; never in CI.
+// LIVE smoke + Prowlarr differential. Manual only; never in CI.
 //
 // Drives a running harbrr daemon like a real *arr: for each configured tracker it
 // adds an indexer (creds from env, encrypted by the daemon), searches harbrr's
@@ -22,7 +22,7 @@
 //	      {"solver_type":"flaresolverr","flaresolverr_url":"http://flaresolverr:8191"}
 //	      {"proxy_type":"socks5","proxy_url":"socks5://host:1080"}
 //	      {"username":"…","password":"…","pid":"…"}   (AvistaZ family)
-//	  SMOKE_KEY_<SLUG>      = shorthand for {"apikey":"…"}   (Phase 5 back-compat)
+//	  SMOKE_KEY_<SLUG>      = shorthand for {"apikey":"…"}   (back-compat)
 //	  (SLUG upper-cased; - and . -> _)
 //	SMOKE_QUERY (optional, default "test"), SMOKE_QUERY_FALLBACK (default "2024")
 //	SMOKE_GRAB=1 (optional) — also resolve the first release's link to a real
@@ -119,7 +119,7 @@ func loadConfig(t *testing.T) config {
 
 // loadSettings reads a tracker's harbrr settings: SMOKE_SETTINGS_<SLUG> (a JSON
 // object — any harbrr setting: apikey/cookie/username/password/pid/solver_type/
-// proxy_type/…) or SMOKE_KEY_<SLUG> (apikey shorthand, Phase 5 back-compat).
+// proxy_type/…) or SMOKE_KEY_<SLUG> (apikey shorthand, back-compat).
 func loadSettings(t *testing.T, slug string) map[string]string {
 	t.Helper()
 	env := envSanitize(slug)

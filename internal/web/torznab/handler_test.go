@@ -241,10 +241,10 @@ func TestHandlerMalformedParams(t *testing.T) {
 	}
 }
 
-// TestHandlerUnmappedCatPassesThrough pins the documented Phase-3 behavior: when
+// TestHandlerUnmappedCatPassesThrough pins the documented behavior: when
 // every requested cat maps to no tracker category, the query categories are empty
 // and the engine's full result set is returned (Jackett returns empty; this is a
-// [Tracked: Phase 4] divergence).
+// [Tracked] divergence).
 // TestHandlerUnmappedCatFiltersResults: a requested cat that maps to no tracker
 // category drives the search with no tracker categories (the demo def declares no
 // default:true cats), and the response-side category filter (Jackett

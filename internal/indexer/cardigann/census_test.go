@@ -14,7 +14,7 @@ import (
 // failure is surfaced loudly (never silently skipped) with the offending def id.
 //
 // This does NOT execute searches — it asserts assembly. Per-def-vs-Jackett
-// output is Phase 2's parity corpus, not this item.
+// output is the parity corpus's job, not this census.
 func TestEngineConstructionCensus(t *testing.T) {
 	t.Parallel()
 

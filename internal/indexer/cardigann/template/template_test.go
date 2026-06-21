@@ -277,7 +277,7 @@ func TestEvalRealShape(t *testing.T) {
 //   - knownDefBugs: upstream-malformed templates Jackett tolerates but no real
 //     parser can (see knownDefBugs).
 //   - re_replace patterns that need .NET (regexp2) semantics and fail to compile
-//     under RE2; that routing is item 7 (regexadapter), out of scope here.
+//     under RE2; that routing is the regexadapter's job, out of scope here.
 func TestCorpusParses(t *testing.T) {
 	t.Parallel()
 
@@ -319,13 +319,13 @@ func TestCorpusParses(t *testing.T) {
 	}
 	// The regexp2 bucket conflates "needs .NET semantics" with "is a real broken
 	// pattern". Pin the current snapshot's count (0) so the bucket can't grow
-	// silently: a future non-zero count is a deliberate decision for item 7, not a
+	// silently: a future non-zero count is a deliberate regexadapter decision, not a
 	// RE2 regression hiding in the deferred tally.
 	if regexp2 != 0 {
 		t.Fatalf("re_replace patterns failing RE2 compile: got %d, want 0 "+
-			"(if a def now needs regexp2/item 7, update this expectation deliberately)", regexp2)
+			"(if a def now needs regexp2 via the regexadapter, update this expectation deliberately)", regexp2)
 	}
-	t.Logf("evaluated %d template strings across %d definitions (%d deferred to regexp2/item 7)",
+	t.Logf("evaluated %d template strings across %d definitions (%d deferred to the regexp2 regexadapter)",
 		parsed, len(defs), regexp2)
 }
 
