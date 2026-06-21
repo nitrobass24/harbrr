@@ -79,7 +79,11 @@ func parseField(fe loader.FieldEntry, row selector.Row, query Query, deps Deps, 
 	// reduces a non-empty value to empty must therefore be able to trigger the
 	// default, so filters run first.
 	if found {
-		value, err = deps.Filters.Apply(value, fe.Block.Filters)
+		filters, ferr := renderFilterArgs(fe.Block.Filters, deps, query, state.result)
+		if ferr != nil {
+			return fmt.Errorf("field %q: %w", name, ferr)
+		}
+		value, err = deps.Filters.Apply(value, filters)
 		if err != nil {
 			return fmt.Errorf("field %q: %w", name, err)
 		}
@@ -226,6 +230,49 @@ func renderRowsSelector(block loader.RowsBlock, query Query, deps Deps) (loader.
 	}
 	block.Selector = rendered
 	return block, nil
+}
+
+// renderFilterArgs template-evaluates any filter argument that carries a Go-template
+// fragment before the filter runs, reproducing Jackett's applyGoTemplateText on
+// filter args (CardigannIndexer.applyFilters). Several defs guard a filter value on a
+// setting — a re_replace replacement `{{ if .Config.stripcyrillic }}{{ else }}$1{{ end }}`
+// or an append `{{ if .Config.addrussiantotitle }} RUS{{ end }}` (rutor and the
+// Russian-tracker family). An arg with no `{{` is returned untouched, so a filter's
+// regex PATTERN (which never contains `{{`) is unaffected. The def's blocks are
+// copied, never mutated.
+func renderFilterArgs(filters []loader.FilterBlock, deps Deps, query Query, result map[string]string) ([]loader.FilterBlock, error) {
+	out := make([]loader.FilterBlock, len(filters))
+	for i, f := range filters {
+		out[i] = f
+		if !argsNeedRender(f.Args) {
+			continue
+		}
+		rendered := make([]string, len(f.Args))
+		for j, a := range f.Args {
+			if !strings.Contains(a, "{{") {
+				rendered[j] = a
+				continue
+			}
+			r, err := evalTemplate(deps, query, result, a)
+			if err != nil {
+				return nil, fmt.Errorf("rendering %q filter arg: %w", f.Name, err)
+			}
+			rendered[j] = r
+		}
+		out[i].Args = rendered
+	}
+	return out, nil
+}
+
+// argsNeedRender reports whether any arg carries a template fragment, so the common
+// no-template filter chain skips the per-arg copy entirely.
+func argsNeedRender(args []string) bool {
+	for _, a := range args {
+		if strings.Contains(a, "{{") {
+			return true
+		}
+	}
+	return false
 }
 
 // splitFieldKey splits "title|append|optional" into the base name and modifiers.

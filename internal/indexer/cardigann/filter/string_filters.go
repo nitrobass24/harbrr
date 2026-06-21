@@ -18,8 +18,9 @@ import (
 var errMissingArg = errors.New("missing required argument")
 
 // filterReplace implements replace[old,new]: a replace-all of old with new.
-// (Jackett: Data.Replace(Args[0], Args[1]).) Args[1] is template-applied in
-// Jackett; that is item 7's concern, so we treat it as a literal here.
+// (Jackett: Data.Replace(Args[0], Args[1]).) Template fragments in the args (e.g. a
+// setting-guarded replacement) are evaluated upstream by the field loop's
+// renderFilterArgs before the filter runs, so the args reaching here are literal.
 func filterReplace(value string, args []string) (string, error) {
 	if len(args) < 2 {
 		return "", fmt.Errorf("replace needs 2 args, got %d: %w", len(args), errMissingArg)
