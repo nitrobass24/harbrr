@@ -124,10 +124,11 @@ captured from a live MAM. The live Prowlarr differential and a real search/grab 
 - **Prowlarr differential** — `[Tracked]`. harbrr-side live search+grab is confirmed
   (above); a side-by-side count/title differential against a live Prowlarr MAM indexer is
   still the remaining parity check.
-- **mam_id session lifetime across restarts** — `[Tracked]`. The write-back seam
-  (above) persists the rotated `mam_id`; confirm against a live session that the
-  persisted-then-restarted token is still accepted (the restart path itself isn't
-  separately exercised).
+- **mam_id session lifetime across restarts** — `[Resolved]` (operator-confirmed
+  2026-06-21). The write-back seam (above) persists the rotated `mam_id`, and the running
+  deployment has survived several restarts and upgrades with the MAM session intact — the
+  persisted-then-restarted token is accepted in practice. Today's live login + search +
+  grab on that same instance corroborate it.
 - **`size` unit set + `added` shape** — `[Resolved]` (live 2026-06-21). Live searches
   across several queries parsed real sizes and dates without error, so the known unit
   spellings (`parseSize` handles `B`…`PB`, both `KB` and `KiB`) and the `added` format
