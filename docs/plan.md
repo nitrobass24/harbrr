@@ -252,6 +252,13 @@ the owning layer — the engine stays frozen during validation; fixes are scoped
       — **2026-06-16: apikey (11), form login (racingforme), and Cloudflare/FlareSolverr (torrentleech)
       confirmed live; cookie/2FA, .NET-quirk, and HTTP/SOCKS proxy `[Tracked]` (no qualifying tracker in
       the stack — see `internal/smoke/README.md`).**
+      — **2026-06-20: HD-Space (Cloudflare + `method: post` form login) live-confirmed end-to-end (search
+      returns parsed releases). It exposed two engine gaps the first CF tracker did not, both fixed as
+      general engine behaviour (PR #52): (1) CF challenges the login **POST** specifically — harbrr now
+      GET-solves the challenged login URL for a host-wide `cf_clearance`, persists the solver's bound
+      User-Agent across login + search, then retries the POST (Jackett/Prowlarr's approach); (2) the row
+      selector carried a `{{ if .Config.freeleech }}…{{ end }}` guard that must be template-evaluated
+      before CSS compilation. Cloudflare/form-login is now double-confirmed (torrentleech + HD-Space).**
 - [x] **Broad live Prowlarr differential** — many trackers (not just the Phase-5 five), **Cardigann +
       Avistaz**: same query → Prowlarr feed vs harbrr feed → diff, confirming request/response + category
       parity at scale against the live oracle. — **2026-06-16: 13/14 PASS, count parity 1.00 across the
