@@ -13,7 +13,7 @@ import (
 // optionally a User-Agent — that let a subsequent request through. This is the
 // fetch/auth-matrix extension point: NoopSolver solves nothing (the default),
 // ManualCookieSolver replays a user-supplied cookie, and FlareSolverrSolver clears
-// a Cloudflare-style challenge via a FlareSolverr instance (the Phase 6 solver).
+// a Cloudflare-style challenge via a FlareSolverr instance.
 type Solver interface {
 	Solve(ctx context.Context, targetURL string) (SolveResult, error)
 }

@@ -1,4 +1,4 @@
-// Package smoke holds the Phase 5 LIVE smoke harness: a real Sonarr/Radarr-style
+// Package smoke holds the LIVE smoke harness: a real Sonarr/Radarr-style
 // driver that points at a running harbrr daemon, searches a handful of real
 // trackers, and diffs the results against Prowlarr as a differential oracle.
 //

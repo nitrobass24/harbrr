@@ -19,17 +19,17 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/template"
 )
 
-// Typed errors. Callers (item 10) branch on these to decide whether to surface a
+// Typed errors. Callers branch on these to decide whether to surface a
 // captcha/solver requirement to the user, retry, or fail hard. None of these
 // error values ever embed a credential, cookie, or response body — only the
 // method, a redacted URL, a selector string, or an HTTP status.
 var (
-	// ErrCaptchaRequired reports the login page presents a captcha. Solving is
-	// Phase 6; item 8 only detects it and fails loud behind this boundary.
-	ErrCaptchaRequired = errors.New("login requires captcha (solving is Phase 6)")
+	// ErrCaptchaRequired reports the login page presents a captcha, which the
+	// executor detects and fails loud behind this boundary rather than solving.
+	ErrCaptchaRequired = errors.New("login requires captcha (not supported)")
 	// ErrSolverRequired reports an anti-bot interstitial (e.g. Cloudflare) that
-	// needs a FlareSolverr-style solver. Solving is Phase 6.
-	ErrSolverRequired = errors.New("login requires an anti-bot solver (FlareSolverr; Phase 6)")
+	// needs a FlareSolverr-style solver.
+	ErrSolverRequired = errors.New("login requires an anti-bot solver (FlareSolverr)")
 	// ErrUnknownMethod reports a Login.Method this executor does not implement.
 	ErrUnknownMethod = errors.New("unknown login method")
 	// ErrLoginFailed reports that the login round-trip completed but an error
@@ -83,8 +83,8 @@ func loginMethod(l *loader.Login) string {
 }
 
 // checkCaptcha fails loud when the login declares a captcha block. Detection
-// only; solving is Phase 6. The error names the captcha type/selector, never
-// page content.
+// only; it does not solve the captcha. The error names the captcha
+// type/selector, never page content.
 func (e *Executor) checkCaptcha(l *loader.Login) error {
 	if l.Captcha == nil {
 		return nil
@@ -123,7 +123,7 @@ func (e *Executor) CheckTest(ctx context.Context, def *loader.Definition) (bool,
 }
 
 // EnsureLoggedIn probes the session with CheckTest and only logs in when the
-// test fails. This is the re-login entry point item 10 calls before each search.
+// test fails. This is the re-login entry point the engine calls before each search.
 func (e *Executor) EnsureLoggedIn(ctx context.Context, def *loader.Definition) error {
 	ok, err := e.CheckTest(ctx, def)
 	if err != nil {
@@ -290,7 +290,7 @@ func redactErr(err error) error {
 // cloudflareMarkers are byte signatures of a Cloudflare (or similar) anti-bot
 // challenge page. Their presence means the real login page never loaded, so the
 // definition's selectors would all miss; we fail loud with ErrSolverRequired
-// rather than mis-report a login failure. Solving is Phase 6.
+// rather than mis-report a login failure.
 var cloudflareMarkers = [][]byte{
 	[]byte("Just a moment..."),
 	[]byte("cf-browser-verification"),

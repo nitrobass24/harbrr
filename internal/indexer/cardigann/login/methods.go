@@ -104,13 +104,12 @@ func (e *Executor) loginOneURL(ctx context.Context, def *loader.Definition) erro
 //
 // Login form bodies use stdlib url.Values.Encode (alphabetically sorted keys,
 // url.QueryEscape values), which diverges from Jackett's WebUtility encoding on
-// the {! * ( )} characters and on field order. This is a DELIBERATE divergence
-// for Phase 5: the parity replay harness asserts request method+URL only (it
-// discards POST bodies), login inputs are typically alphanumeric, and the
-// tracker decodes either encoding to the same value. The .NET-compatible encoder
-// is applied to SEARCH requests (encode package); login bodies are left as-is.
-// [Deliberate: Phase 5 — login form-encoding divergence; revisit if an
-// order/encoding-sensitive login surfaces.]
+// the {! * ( )} characters and on field order. This is a DELIBERATE divergence:
+// the parity replay harness asserts request method+URL only (it discards POST
+// bodies), login inputs are typically alphanumeric, and the tracker decodes
+// either encoding to the same value. The .NET-compatible encoder is applied to
+// SEARCH requests (encode package); login bodies are left as-is. Revisit if an
+// order/encoding-sensitive login surfaces.
 func (e *Executor) postForm(ctx context.Context, def *loader.Definition, target string, pairs url.Values) error {
 	rawURL, err := e.resolvePath(target)
 	if err != nil {
@@ -254,7 +253,7 @@ func mergeFormHeaders(in map[string][]string) map[string][]string {
 // appendQuery appends url.Values to rawURL's query string, preserving any query
 // already present in the resolved path (the get-method corpus puts fixed params
 // directly in Login.Path). Uses url.Values.Encode (sorted) — see postForm for the
-// deliberate Phase 5 login-encoding divergence note.
+// deliberate login-encoding divergence note.
 func appendQuery(rawURL string, pairs url.Values) (string, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {

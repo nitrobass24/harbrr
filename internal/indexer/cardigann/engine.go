@@ -103,7 +103,7 @@ func WithSolver(s login.Solver) Option {
 //   - "manual_cookie" replays the encrypted "cookie" setting (ManualCookieSolver);
 //   - anything else (including unset) leaves the default NoopSolver.
 //
-// FlareSolverr is the Phase 6 addition. Keeping the mapping here lets the registry
+// Keeping the mapping here lets the registry
 // wire a solver from config without importing the login package directly.
 func SolverOption(cfg map[string]string) Option {
 	switch cfg["solver_type"] {

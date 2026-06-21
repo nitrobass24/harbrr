@@ -7,10 +7,10 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 )
 
-// ErrDateUnwired is returned by the default date dependencies. The dateparse
-// stage (docs/plan.md Phase 1 item 6) supplies the real implementations; until
-// then the registry knows the date filter names but cannot evaluate them.
-var ErrDateUnwired = errors.New("date filters require the dateparse stage (item 6)")
+// ErrDateUnwired is returned by the default date dependencies before the engine
+// injects the real implementations. Until injection, the registry knows the date
+// filter names but cannot evaluate them.
+var ErrDateUnwired = errors.New("date filters require the dateparse stage")
 
 // filterFunc transforms a field value given its (already []string-normalized)
 // filter arguments. It is the per-op unit dispatched by Apply.
@@ -20,22 +20,21 @@ type filterFunc func(value string, args []string) (string, error)
 // in the schema vocabulary to its .NET-equivalent implementation and chains
 // them left-to-right over an extracted field value.
 //
-// Date-bearing filters are deferred to injectable dependencies so this stage
-// stays decoupled from the not-yet-built dateparse stage (item 6). Regex-bearing
-// filters use RE2 (stdlib regexp) directly for now; item 7 (regexadapter) will
-// route both filter and template regex through the shared .NET-aware adapter.
+// Date-bearing filters delegate to injectable dependencies so this stage stays
+// decoupled from the dateparse stage, which supplies them. Regex-bearing filters
+// route through the shared .NET-aware regexadapter for RE2-vs-regexp2 selection.
 type Registry struct {
 	// ParseDate evaluates dateparse/timeparse: value is the extracted string,
 	// layout is the .NET date layout from the filter args. Defaults to a
-	// function returning ErrDateUnwired until item 6 wires the real parser.
+	// function returning ErrDateUnwired; the engine injects the real parser.
 	ParseDate func(value, layout string) (string, error)
 	// ParseRelTime evaluates timeago/reltime/fuzzytime relative-time formats.
-	// Defaults to a function returning ErrDateUnwired until item 6.
+	// Defaults to a function returning ErrDateUnwired; the engine injects it.
 	ParseRelTime func(value string) (string, error)
 
 	// Language is the Cardigann def `language:` code, used to route the regex
 	// filters (re_replace/regexp) to regexp2 for non-Latin scripts. The empty
-	// default is Latin (RE2). The engine sets this per-def in item 10.
+	// default is Latin (RE2). The engine sets this per definition.
 	Language string
 
 	ops map[string]filterFunc
@@ -43,7 +42,7 @@ type Registry struct {
 
 // NewRegistry constructs a Registry with every schema filter wired. Regex
 // filters use RE2 inline; date dependencies default to ErrDateUnwired so the
-// seam to item 6 is explicit and never silently passes a value through.
+// injection seam is explicit and never silently passes a value through.
 func NewRegistry() *Registry {
 	r := &Registry{
 		ParseDate: func(string, string) (string, error) {

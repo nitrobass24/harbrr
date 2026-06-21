@@ -103,7 +103,7 @@ func (n *jsonNode) text() string {
 // is ignored here, matching Jackett. The only JSON-specific row behavior at this
 // layer is MissingAttributeEqualsNoResults, which turns a missing/non-array
 // selector into "0 rows" instead of an error (field-level Multiple handling lives
-// in the engine, item 10).
+// in the engine).
 func (d *Document) jsonRows(block loader.RowsBlock) ([]Row, error) {
 	// Jackett evaluates rows.count first: a count selector that parses to < 1
 	// short-circuits the path to zero rows (a parse failure is ignored).

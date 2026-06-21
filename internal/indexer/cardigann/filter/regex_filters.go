@@ -10,7 +10,7 @@ import (
 // Regex filters route through regexadapter: RE2 by default (ReDoS-safe), regexp2
 // on .NET-only constructs, RE2 compile-failure, or — via the Registry's Language
 // field — a non-Latin def script. These are methods on Registry so the per-def
-// language routing seam (set by the engine in item 10) is honored at call time.
+// language routing seam (set by the engine per definition) is honored at call time.
 
 // filterReReplace implements re_replace[pattern,repl]: regex replace-all with
 // .NET replacement-token semantics. Routing uses the registry Language so a

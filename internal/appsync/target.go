@@ -1,5 +1,5 @@
 // Package appsync pushes harbrr's configured indexers into the *arr/qui apps that
-// consume Torznab (Sonarr, Radarr, autobrr/qui) — the Phase 10 "drop-in Prowlarr"
+// consume Torznab (Sonarr, Radarr, autobrr/qui) — the "drop-in Prowlarr"
 // feature. A target-neutral DesiredIndexer is reconciled against each app's current
 // state by a small pure engine (reconcile.go); per-app REST dialects live behind the
 // Target interface (one driver per app). Secrets are redacted in logs and never

@@ -19,7 +19,7 @@ const canonicalLayout = time.RFC3339
 var ErrUnparseable = errors.New("dateparse: value not parseable")
 
 // Parser translates and parses Cardigann date filter values. It is built once
-// per definition by the engine (item 10) from the def's `language:` field and is
+// per definition by the engine from the def's `language:` field and is
 // safe for reuse across rows. The clock is injectable so relative-time and
 // missing-year resolution are deterministic in tests.
 type Parser struct {

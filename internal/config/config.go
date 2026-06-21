@@ -16,8 +16,8 @@ import (
 const redactedMask = "***"
 
 // Config is harbrr's complete runtime configuration. It starts intentionally
-// small (Phase 0) and grows as consumers — the web server, database, and
-// secrets store — are wired in later phases.
+// small and grows as consumers — the web server, database, and
+// secrets store — are wired in.
 type Config struct {
 	Server   ServerConfig   `mapstructure:"server"`
 	Log      LogConfig      `mapstructure:"log"`
