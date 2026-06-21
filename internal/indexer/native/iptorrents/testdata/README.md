@@ -113,10 +113,12 @@ search/grab are the **live-validation** gate.
 
 ## RequestDelay
 
-`2.1s`. Prowlarr's `IPTorrents` indexer does not override the framework rate limit, so the
-default `2.1s` applies; it rides on the definition's `RequestDelay` and is enforced by the
-registry's existing paced client (no special-casing). `[Tracked]` — confirm
-against the live Prowlarr if it ever sets an explicit limit.
+`2.1s`. `[Resolved]` — confirmed against Prowlarr source (`IPTorrents.cs`, 2026-06-21):
+its IPTorrents indexer sets **no** rate-limit override, and the framework default is
+`RateLimit => TimeSpan.FromSeconds(2)` (2.0s, `HttpIndexerBase`). harbrr applies a
+marginally more conservative `2.1s`, riding on the definition's `RequestDelay` and
+enforced by the registry's existing paced client (no special-casing). Pacing does not
+affect results, so the 0.1s gap is not a parity concern.
 
 ## Live validation
 

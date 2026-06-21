@@ -79,14 +79,16 @@ the **live-validation** gate.
 - **Live search** — `[Resolved]` (live run 2026-06-18, `internal/smoke/README.md`):
   a live FileList search succeeded after the int-flags fix (#46; it was an HTTP 500
   before).
-- **Prowlarr differential + grab** — `[Tracked]`. The differential auto-skipped
-  because the live Prowlarr's native indexer isn't named `filelist` (no name match), so
-  request/response/category parity and a real `/dl` grab against a live FileList remain
-  the open acceptance gate.
-- **`upload_date` shape** — `[Tracked]`. `parsePublishDate` assumes the exact
-  `yyyy-MM-dd HH:mm:ss` form Prowlarr appends `+0300` to. If the live API ever emits a
-  different shape, the bad-date path fails the whole search (see "bad-row handling");
-  confirm the real format in the live differential.
+- **Live grab** — `[Resolved]` (live 2026-06-21, through a running harbrr container):
+  a live FileList search parsed cleanly and the first result's `/dl` link resolved to a
+  real bencoded `.torrent` (`application/x-bittorrent`).
+- **Prowlarr differential** — `[Tracked]`. The differential auto-skipped because the
+  live Prowlarr's native indexer isn't named `filelist` (no name match), so a side-by-side
+  count/title/category parity check against a live Prowlarr FileList is the remaining gate.
+- **`upload_date` shape** — `[Resolved]` (live 2026-06-21). The live API emitted the
+  expected `yyyy-MM-dd HH:mm:ss` form; `parsePublishDate` parsed every row without a
+  bad-date failure (e.g. `2022-01-10T11:59:06Z` normalized). Widen the parser only if a
+  future live response shows a shape it misses.
 - **Download-URL passkey redaction** — `[Accepted]`. The download URL carries the
   passkey in its **query**, which is exactly `RedactURL`'s scope, so any log/error that
   did include the URL would be scrubbed. On top of that, the driver keeps the URL out of

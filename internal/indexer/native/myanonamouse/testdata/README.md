@@ -115,10 +115,12 @@ captured from a live MAM. The live Prowlarr differential and a real search/grab 
   first result's `/dl` link resolved to a real bencoded `.torrent`
   (`application/x-bittorrent`). This supersedes the 2026-06-18 attempt, which failed at
   source (the prior `mam_id` session was dead/ASN-locked, failing in Prowlarr too).
-- **Transient search-decode error** — `[Tracked]`. The same day, a few
-  `decode search response: response parse error` health events were recorded before
-  searches parsed cleanly; capture the offending response shape (likely a zero-result or
-  rate-limited body) and add a fixture if it recurs.
+- **Transient search-decode error** — `[Accepted]`. A few
+  `decode search response: response parse error` health events were recorded once at
+  2026-06-21 03:35; a follow-up the same day could **not** reproduce it across `ubuntu`,
+  `linux`, `the matrix`, or a zero-result query (all HTTP 200, parsed), so it was a
+  one-time transient (a non-JSON body — a rate-limit/maintenance/HTML page). The driver
+  recorded it as a `parse_error` event and recovered; add a fixture only if it recurs.
 - **Prowlarr differential** — `[Tracked]`. harbrr-side live search+grab is confirmed
   (above); a side-by-side count/title differential against a live Prowlarr MAM indexer is
   still the remaining parity check.
@@ -126,7 +128,8 @@ captured from a live MAM. The live Prowlarr differential and a real search/grab 
   (above) persists the rotated `mam_id`; confirm against a live session that the
   persisted-then-restarted token is still accepted (the restart path itself isn't
   separately exercised).
-- **`size` unit set + `added` shape** — `[Tracked]`. The 2026-06-21 live search
-  parsed real sizes and dates without error, so the known unit spellings (`parseSize`
-  handles `B`…`PB`, both `KB` and `KiB`) and `added` format held; widen the parser only
-  if a future live response shows a shape these miss.
+- **`size` unit set + `added` shape** — `[Resolved]` (live 2026-06-21). Live searches
+  across several queries parsed real sizes and dates without error, so the known unit
+  spellings (`parseSize` handles `B`…`PB`, both `KB` and `KiB`) and the `added` format
+  held against the real API; widen the parser only if a future live response shows a shape
+  these miss.

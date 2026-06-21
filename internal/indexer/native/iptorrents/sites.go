@@ -6,9 +6,10 @@ import (
 )
 
 // requestDelaySeconds is the between-request pacing applied to IPTorrents. Prowlarr's
-// IPTorrents indexer does not override the framework default, which is 2.1s; it rides
-// on the definition's RequestDelay so the registry's existing paced client enforces it
-// (no special-casing).
+// IPTorrents indexer sets no rate-limit override, so its framework default (2.0s,
+// HttpIndexerBase) applies; harbrr uses a marginally more conservative 2.1s, riding on
+// the definition's RequestDelay so the registry's existing paced client enforces it (no
+// special-casing). Pacing does not affect results, so the 0.1s gap is not a parity diff.
 const requestDelaySeconds = 2.1
 
 // Families returns IPTorrents as a single native family. It carries a Go-built,
