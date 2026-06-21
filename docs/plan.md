@@ -322,6 +322,11 @@ path), so item 1 comes first. Pattern reference: [`native-indexer-pattern.md`](n
       FileList — search live-confirmed (int-flags fix #46), Prowlarr differential pending a name match;
       MyAnonamouse — driver + `mam_id` write-back seam (#46) correct, live search/parse `[Tracked: pending a
       fresh dedicated MAM session]` (the stack's session is dead at source — fails in Prowlarr too).
+      — **FileList [Resolved] 2026-06-20 (PR #52):** Prowlarr differential run directly against the live
+      oracle (Prowlarr indexer 19 "FileList.io") — **count parity 1.00** (dune/matrix/inception: 87/75/17 on
+      both) and **title Jaccard 1.00** (all 87 dune titles identical), category mapping matches (4050 +
+      100009). The earlier auto-skip was only the harness name match (harbrr slug `filelist` vs Prowlarr
+      `FileList.io`), not a functional gap.
       — **MyAnonamouse [Resolved] 2026-06-20 (PR #52):** with a fresh `mam_id`, live search returned parsed
       audiobook results through harbrr. Required the same class of fix as FileList's int-flags — MAM's live
       `loadSearchJSONbasic.php` returns integers where the documented contract used strings/booleans
