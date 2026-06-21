@@ -3,26 +3,48 @@ info:
   title: harbrr management API
   version: 0.1.0
   description: >
-    harbrr's own management API (first-run setup, authentication, API-key
-    management, and indexer configuration). This is distinct from the *arr-facing
-    Torznab/Newznab XML contract served by internal/torznab; the two evolve
-    independently (see docs/architecture.md). Hand-authored, embedded via
-    //go:embed, and guarded by a drift test that asserts the spec matches the
-    mounted routes (make test-openapi).
+    harbrr's HTTP surface: the management API (first-run setup, authentication,
+    API-key management, indexer and app-sync configuration) plus the entry points of
+    the *arr-facing Torznab feed. The Torznab wire contract itself — the XML body
+    shapes — is defined by Jackett/Newznab and served by internal/torznab; here we
+    document only its HTTP routes, parameters, and content types (see
+    docs/architecture.md). Hand-authored, embedded via //go:embed, and guarded by a
+    drift test that asserts the spec matches the mounted routes (make test-openapi).
 
-    Authentication: cookie session (after login) or the X-API-Key header for
-    programmatic clients. CSRF defence follows the autobrr family — SameSite=Lax
-    session cookies plus header-authenticated programmatic access — so there is no
-    separate CSRF token (see docs/divergences.md).
+    Authentication: the management API uses a cookie session (after login) or the
+    X-API-Key header; the Torznab feed authenticates with an apikey (or passkey)
+    query parameter, as *arr clients expect. CSRF defence follows the autobrr
+    family — SameSite=Lax session cookies plus header-authenticated programmatic
+    access — so there is no separate CSRF token (see docs/divergences.md).
   license:
     name: GPL-2.0-or-later
     url: https://www.gnu.org/licenses/gpl-2.0.html
+
+tags:
+  - name: Torznab Feed
+    description: >
+      The *arr-facing Torznab endpoints Sonarr/Radarr/Prowlarr point at: capabilities,
+      search, and the grab-time download proxy. Authenticated by an apikey/passkey
+      query parameter; responses are Torznab XML (or a torrent file for /dl).
+  - name: Indexers
+    description: Configure, test, search, and inspect the tracker instances harbrr serves.
+  - name: Indexer Definitions
+    description: The Cardigann definition catalog (vendored + native) available to configure.
+  - name: App Connections
+    description: Sonarr/Radarr/qui apps harbrr pushes its indexers into (app-sync).
+  - name: Authentication
+    description: First-run setup, login/logout, identity, and password change.
+  - name: API Keys
+    description: Mint and revoke the keys that authorize programmatic and feed access.
+  - name: System
+    description: Liveness and other operational endpoints.
 
 paths:
   /healthz:
     get:
       summary: Liveness probe
       operationId: getHealthz
+      tags: [System]
       responses:
         "200":
           description: service is healthy
@@ -39,6 +61,7 @@ paths:
     get:
       summary: First-run setup status
       operationId: getSetupStatus
+      tags: [Authentication]
       responses:
         "200":
           description: whether the admin account exists
@@ -53,6 +76,7 @@ paths:
     post:
       summary: Create the single admin (first run only)
       operationId: postSetup
+      tags: [Authentication]
       requestBody:
         required: true
         content:
@@ -75,6 +99,7 @@ paths:
     post:
       summary: Log in and establish a session
       operationId: login
+      tags: [Authentication]
       requestBody:
         required: true
         content:
@@ -89,6 +114,7 @@ paths:
     post:
       summary: Destroy the current session
       operationId: logout
+      tags: [Authentication]
       security: [{ session: [] }, { apiKey: [] }]
       responses:
         "204": { description: logged out }
@@ -98,6 +124,7 @@ paths:
     get:
       summary: Current authenticated identity
       operationId: me
+      tags: [Authentication]
       security: [{ session: [] }, { apiKey: [] }]
       responses:
         "200":
@@ -120,6 +147,7 @@ paths:
         recoverable). The session token is renewed. Operates on the single admin
         account.
       operationId: changePassword
+      tags: [Authentication]
       security: [{ session: [] }, { apiKey: [] }]
       requestBody:
         required: true
@@ -135,6 +163,7 @@ paths:
     get:
       summary: OIDC login (not implemented — deferred to a later phase)
       operationId: oidcLogin
+      tags: [Authentication]
       responses:
         "501": { description: OIDC is not implemented yet }
 
@@ -142,6 +171,7 @@ paths:
     get:
       summary: OIDC callback (not implemented — deferred to a later phase)
       operationId: oidcCallback
+      tags: [Authentication]
       responses:
         "501": { description: OIDC is not implemented yet }
 
@@ -149,6 +179,7 @@ paths:
     get:
       summary: List available tracker definitions
       operationId: listDefinitions
+      tags: [Indexer Definitions]
       security: [{ session: [] }, { apiKey: [] }]
       responses:
         "200":
@@ -169,6 +200,7 @@ paths:
         the definition schema, not a configured instance — it carries no stored
         secret. Resolves both vendored and native definitions.
       operationId: getDefinition
+      tags: [Indexer Definitions]
       security: [{ session: [] }, { apiKey: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
@@ -185,6 +217,7 @@ paths:
     get:
       summary: List API keys (metadata only)
       operationId: listApiKeys
+      tags: [API Keys]
       security: [{ session: [] }, { apiKey: [] }]
       responses:
         "200":
@@ -198,6 +231,7 @@ paths:
     post:
       summary: Mint a new API key (plaintext shown once)
       operationId: mintApiKey
+      tags: [API Keys]
       security: [{ session: [] }, { apiKey: [] }]
       requestBody:
         required: true
@@ -221,6 +255,7 @@ paths:
     delete:
       summary: Revoke an API key
       operationId: deleteApiKey
+      tags: [API Keys]
       security: [{ session: [] }, { apiKey: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -234,6 +269,7 @@ paths:
     get:
       summary: List configured indexers
       operationId: listIndexers
+      tags: [Indexers]
       security: [{ session: [] }, { apiKey: [] }]
       responses:
         "200":
@@ -247,6 +283,7 @@ paths:
     post:
       summary: Add a configured indexer
       operationId: addIndexer
+      tags: [Indexers]
       security: [{ session: [] }, { apiKey: [] }]
       requestBody:
         required: true
@@ -267,6 +304,7 @@ paths:
     get:
       summary: Get a configured indexer (settings redacted)
       operationId: getIndexer
+      tags: [Indexers]
       security: [{ session: [] }, { apiKey: [] }]
       parameters:
         - { name: slug, in: path, required: true, schema: { type: string } }
@@ -281,6 +319,7 @@ paths:
     patch:
       summary: Update an indexer (settings merged; <redacted> keeps the stored value)
       operationId: updateIndexer
+      tags: [Indexers]
       security: [{ session: [] }, { apiKey: [] }]
       parameters:
         - { name: slug, in: path, required: true, schema: { type: string } }
@@ -297,6 +336,7 @@ paths:
     delete:
       summary: Delete a configured indexer
       operationId: deleteIndexer
+      tags: [Indexers]
       security: [{ session: [] }, { apiKey: [] }]
       parameters:
         - { name: slug, in: path, required: true, schema: { type: string } }
@@ -309,6 +349,7 @@ paths:
     post:
       summary: Enable an indexer
       operationId: enableIndexer
+      tags: [Indexers]
       security: [{ session: [] }, { apiKey: [] }]
       parameters:
         - { name: slug, in: path, required: true, schema: { type: string } }
@@ -321,6 +362,7 @@ paths:
     post:
       summary: Disable an indexer
       operationId: disableIndexer
+      tags: [Indexers]
       security: [{ session: [] }, { apiKey: [] }]
       parameters:
         - { name: slug, in: path, required: true, schema: { type: string } }
@@ -337,6 +379,7 @@ paths:
         (the login probe). A passing test returns ok=true; a credential or
         connectivity failure returns ok=false with a sanitized, secret-free error.
       operationId: testIndexer
+      tags: [Indexers]
       security: [{ session: [] }, { apiKey: [] }]
       parameters:
         - { name: slug, in: path, required: true, schema: { type: string } }
@@ -362,6 +405,7 @@ paths:
         health events (auth_failure, rate_limited, parse_error, anti_bot). Event
         details are credential-scrubbed before storage, so no secret is surfaced.
       operationId: indexerStatus
+      tags: [Indexers]
       security: [{ session: [] }, { apiKey: [] }]
       parameters:
         - { name: slug, in: path, required: true, schema: { type: string } }
@@ -399,6 +443,7 @@ paths:
         For a resolver-needing indexer each download link is sealed behind the
         /dl proxy, so a passkey never appears in the response.
       operationId: searchIndexer
+      tags: [Indexers]
       security: [{ session: [] }, { apiKey: [] }]
       parameters:
         - { name: slug, in: path, required: true, schema: { type: string } }
@@ -433,6 +478,7 @@ paths:
         advertised category tree, and the page-size limits. The internal
         tracker<->newznab category lookup is not part of the response.
       operationId: indexerCapabilities
+      tags: [Indexers]
       security: [{ session: [] }, { apiKey: [] }]
       parameters:
         - { name: slug, in: path, required: true, schema: { type: string } }
@@ -449,6 +495,7 @@ paths:
     get:
       summary: List *arr/qui app-sync connections
       operationId: listConnections
+      tags: [App Connections]
       security: [{ session: [] }, { apiKey: [] }]
       responses:
         "200":
@@ -462,6 +509,7 @@ paths:
     post:
       summary: Add an app-sync connection (mints a dedicated harbrr key)
       operationId: createConnection
+      tags: [App Connections]
       security: [{ session: [] }, { apiKey: [] }]
       requestBody:
         required: true
@@ -482,6 +530,7 @@ paths:
     get:
       summary: Get an app-sync connection (app key redacted)
       operationId: getConnection
+      tags: [App Connections]
       security: [{ session: [] }, { apiKey: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -497,6 +546,7 @@ paths:
     patch:
       summary: Update an app-sync connection (a new apiKey rotates the app credential)
       operationId: updateConnection
+      tags: [App Connections]
       security: [{ session: [] }, { apiKey: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -514,6 +564,7 @@ paths:
     delete:
       summary: Delete an app-sync connection (revokes its minted key)
       operationId: deleteConnection
+      tags: [App Connections]
       security: [{ session: [] }, { apiKey: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -527,6 +578,7 @@ paths:
     post:
       summary: Enable an app-sync connection
       operationId: enableConnection
+      tags: [App Connections]
       security: [{ session: [] }, { apiKey: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -540,6 +592,7 @@ paths:
     post:
       summary: Disable an app-sync connection
       operationId: disableConnection
+      tags: [App Connections]
       security: [{ session: [] }, { apiKey: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -553,6 +606,7 @@ paths:
     post:
       summary: Test a connection's reachability and credentials
       operationId: testConnection
+      tags: [App Connections]
       security: [{ session: [] }, { apiKey: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -570,6 +624,7 @@ paths:
     post:
       summary: Reconcile harbrr's indexers into the connection's app now
       operationId: syncConnection
+      tags: [App Connections]
       security: [{ session: [] }, { apiKey: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -587,6 +642,7 @@ paths:
     get:
       summary: Get a connection plus its per-indexer sync ledger
       operationId: connectionStatus
+      tags: [App Connections]
       security: [{ session: [] }, { apiKey: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -608,6 +664,7 @@ paths:
         selected, every other currently-selected one is cleared. Only meaningful when
         the connection's index_scope is "selected".
       operationId: setConnectionIndexers
+      tags: [App Connections]
       security: [{ session: [] }, { apiKey: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -621,6 +678,133 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v2.0/indexers/{indexerId}/results/torznab:
+    get:
+      tags: [Torznab Feed]
+      summary: Torznab capabilities and search (the *arr feed endpoint)
+      description: >
+        The Torznab endpoint Sonarr/Radarr/Prowlarr are configured with. With t=caps
+        it returns the indexer's capabilities document; otherwise it runs the search
+        mode named by t (defaulting to a general search) and returns a Torznab RSS
+        results feed. Authenticated by the apikey (or passkey) query parameter.
+        Credential and indexer-resolution failures are returned as a Torznab <error>
+        element with HTTP 200 (Jackett behavior, so *arr surfaces the code); an
+        unknown function or an unsupported id parameter returns HTTP 400. For a
+        resolver-needing indexer each download link is rewritten to the /dl proxy so
+        a passkey never appears in the feed.
+      operationId: torznabResults
+      parameters:
+        - { name: indexerId, in: path, required: true, schema: { type: string }, description: the configured indexer slug }
+        - { name: apikey, in: query, required: false, schema: { type: string }, description: "feed credential (any minted harbrr API key); passkey is an accepted alias" }
+        - { name: passkey, in: query, required: false, schema: { type: string }, description: alias for apikey }
+        - { name: t, in: query, required: false, schema: { type: string }, description: "function: caps | search | tvsearch | movie | music | book (defaults to search)" }
+        - { name: q, in: query, required: false, schema: { type: string }, description: free-text query }
+        - { name: cat, in: query, required: false, schema: { type: string }, description: comma-separated newznab category ids }
+        - { name: imdbid, in: query, required: false, schema: { type: string } }
+        - { name: tmdbid, in: query, required: false, schema: { type: string } }
+        - { name: tvdbid, in: query, required: false, schema: { type: string } }
+        - { name: season, in: query, required: false, schema: { type: string } }
+        - { name: ep, in: query, required: false, schema: { type: string } }
+        - { name: limit, in: query, required: false, schema: { type: integer }, description: page size }
+        - { name: offset, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200":
+          description: >
+            A Torznab capabilities document or results feed (XML). Also carries the
+            Torznab <error> element for an invalid API key or unsupported indexer,
+            which by convention is served with HTTP 200.
+          content:
+            application/xml:
+              schema:
+                type: string
+                description: Torznab/Newznab XML (caps document, RSS results feed, or an <error> element)
+        "400":
+          description: a Torznab <error> element (XML) for an unknown function (t) or an unsupported id parameter
+          content:
+            application/xml:
+              schema: { type: string }
+        "500":
+          description: a generic Torznab <error> element (XML); the underlying error is never echoed
+          content:
+            application/xml:
+              schema: { type: string }
+
+  /api/v2.0/indexers/{indexerId}/results/torznab/api:
+    get:
+      tags: [Torznab Feed]
+      summary: Torznab capabilities and search (/api alias)
+      description: >
+        Identical to /api/v2.0/indexers/{indexerId}/results/torznab — the /api suffix
+        is the alternate path some clients use. Same parameters, authentication, and
+        responses.
+      operationId: torznabResultsApi
+      parameters:
+        - { name: indexerId, in: path, required: true, schema: { type: string }, description: the configured indexer slug }
+        - { name: apikey, in: query, required: false, schema: { type: string }, description: "feed credential; passkey is an accepted alias" }
+        - { name: passkey, in: query, required: false, schema: { type: string }, description: alias for apikey }
+        - { name: t, in: query, required: false, schema: { type: string }, description: "function: caps | search | tvsearch | movie | music | book (defaults to search)" }
+        - { name: q, in: query, required: false, schema: { type: string }, description: free-text query }
+        - { name: cat, in: query, required: false, schema: { type: string }, description: comma-separated newznab category ids }
+        - { name: imdbid, in: query, required: false, schema: { type: string } }
+        - { name: tmdbid, in: query, required: false, schema: { type: string } }
+        - { name: tvdbid, in: query, required: false, schema: { type: string } }
+        - { name: season, in: query, required: false, schema: { type: string } }
+        - { name: ep, in: query, required: false, schema: { type: string } }
+        - { name: limit, in: query, required: false, schema: { type: integer }, description: page size }
+        - { name: offset, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200":
+          description: a Torznab capabilities document or results feed (XML), or a Torznab <error> element
+          content:
+            application/xml:
+              schema: { type: string }
+        "400":
+          description: a Torznab <error> element (XML) for an unknown function or an unsupported id parameter
+          content:
+            application/xml:
+              schema: { type: string }
+        "500":
+          description: a generic Torznab <error> element (XML)
+          content:
+            application/xml:
+              schema: { type: string }
+
+  /api/v2.0/indexers/{indexerId}/dl:
+    get:
+      tags: [Torznab Feed]
+      summary: Grab-time download proxy (resolves and streams the torrent)
+      description: >
+        The download endpoint emitted in the feed for a resolver-needing indexer.
+        harbrr decodes the opaque, AEAD-sealed token into the original
+        (passkey-bearing) link, resolves and fetches the torrent server-side, and
+        streams it back — so the passkey never reaches the client. A resolved magnet
+        (public, no secret) is returned as a 302 redirect instead. Authenticated by
+        the apikey (or passkey) query parameter.
+      operationId: torznabDownload
+      parameters:
+        - { name: indexerId, in: path, required: true, schema: { type: string }, description: the configured indexer slug }
+        - { name: apikey, in: query, required: false, schema: { type: string }, description: "feed credential; passkey is an accepted alias" }
+        - { name: passkey, in: query, required: false, schema: { type: string }, description: alias for apikey }
+        - { name: token, in: query, required: true, schema: { type: string }, description: "the opaque, AEAD-sealed download token from the feed" }
+      responses:
+        "200":
+          description: the torrent file
+          content:
+            application/x-bittorrent:
+              schema: { type: string, format: binary }
+        "302":
+          description: redirect to a resolved magnet URI (only ever a magnet, never an http link)
+        "400":
+          description: a Torznab <error> element (XML) for an invalid or forged download token
+          content:
+            application/xml:
+              schema: { type: string }
+        "500":
+          description: a generic Torznab <error> element (XML); the link/passkey is never echoed
+          content:
+            application/xml:
+              schema: { type: string }
 
 components:
   securitySchemes:

@@ -72,22 +72,52 @@ func WithLogger(l zerolog.Logger) Option { return func(h *handler) { h.log = l }
 // emitted (resolver-needing links would be served unresolved).
 func WithDLToken(kr *secrets.Keyring) Option { return func(h *handler) { h.dlToken = kr } }
 
-// NewHandler builds the *arr-facing Torznab HTTP handler. It serves:
-//
-//	GET /api/v2.0/indexers/{indexerId}/results/torznab
-//	GET /api/v2.0/indexers/{indexerId}/results/torznab/api
-//
-// matching the URL Sonarr/Radarr are configured with for a Jackett/Prowlarr
-// Torznab indexer.
+// Route is one Torznab HTTP route: its method and path template. The path uses the
+// same {indexerId} brace syntax as the OpenAPI spec, so Routes is the single source
+// of truth the OpenAPI drift test checks the spec against (the feed mux is not
+// reachable via chi.Walk).
+type Route struct {
+	Method string
+	Path   string
+}
+
+// torznabRoutes are the *arr-facing feed routes, matching the URL Sonarr/Radarr are
+// configured with for a Jackett/Prowlarr Torznab indexer. dl selects the download
+// proxy handler; the rest dispatch to serve (caps + search).
+var torznabRoutes = []struct {
+	Route
+	dl bool
+}{
+	{Route{http.MethodGet, "/api/v2.0/indexers/{indexerId}/results/torznab"}, false},
+	{Route{http.MethodGet, "/api/v2.0/indexers/{indexerId}/results/torznab/api"}, false},
+	{Route{http.MethodGet, "/api/v2.0/indexers/{indexerId}/dl"}, true},
+}
+
+// Routes returns the method/path pairs the Torznab handler serves, so the OpenAPI
+// drift test can assert each is documented without re-listing the patterns.
+func Routes() []Route {
+	out := make([]Route, len(torznabRoutes))
+	for i, r := range torznabRoutes {
+		out[i] = r.Route
+	}
+	return out
+}
+
+// NewHandler builds the *arr-facing Torznab HTTP handler over the routes in
+// torznabRoutes (see Routes).
 func NewHandler(provider Provider, opts ...Option) http.Handler {
 	h := &handler{provider: provider, clock: time.Now, log: zerolog.Nop()}
 	for _, o := range opts {
 		o(h)
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/v2.0/indexers/{indexerId}/results/torznab", h.serve)
-	mux.HandleFunc("GET /api/v2.0/indexers/{indexerId}/results/torznab/api", h.serve)
-	mux.HandleFunc("GET /api/v2.0/indexers/{indexerId}/dl", h.serveDL)
+	for _, r := range torznabRoutes {
+		fn := h.serve
+		if r.dl {
+			fn = h.serveDL
+		}
+		mux.HandleFunc(r.Method+" "+r.Path, fn)
+	}
 	return mux
 }
 

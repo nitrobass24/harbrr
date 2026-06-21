@@ -22,6 +22,7 @@ import (
 	"github.com/autobrr/harbrr/internal/secrets"
 	"github.com/autobrr/harbrr/internal/web/api"
 	"github.com/autobrr/harbrr/internal/web/swagger"
+	"github.com/autobrr/harbrr/internal/web/torznab"
 )
 
 // testKey is a synthetic 32-byte AES key (tests only).
@@ -131,12 +132,20 @@ func newEnv(t *testing.T, cfg api.Config) *env {
 
 // TestOpenAPIDriftRoutesMatchSpec asserts the mounted routes and the embedded
 // OpenAPI spec describe exactly the same set of (method, path) operations — so the
-// spec cannot drift from the handlers.
+// spec cannot drift from the handlers. It covers both the management chi router and
+// the *arr-facing Torznab feed, which is mounted on a separate ServeMux at the
+// server level and so is not reachable via chi.Walk.
 func TestOpenAPIDriftRoutesMatchSpec(t *testing.T) {
 	t.Parallel()
 
 	e := newEnv(t, api.Config{})
 	routes := walkRoutes(t, e.handler)
+	// The Torznab feed handler mounts its routes on a separate ServeMux, so fold them
+	// in from the package's own route table (its single source of truth) — otherwise
+	// the spec's documented feed endpoints would look like undocumented drift.
+	for _, rt := range torznab.Routes() {
+		routes[rt.Method+" "+rt.Path] = struct{}{}
+	}
 	spec := specOperations(t)
 
 	for op := range routes {
