@@ -88,8 +88,7 @@ check-smoke-tag:
 .PHONY: smoke-test
 smoke-test:
 	@if [ -z "$(SMOKE_HARBRR_URL)" ]; then \
-		echo "ERROR: SMOKE_HARBRR_URL is unset — the live smoke needs env credentials"; \
-		echo "(see docs/smoke-setup.md). It reaches real trackers; never run it in CI."; \
+		echo "ERROR: SMOKE_HARBRR_URL unset — live smoke needs env credentials (see docs/smoke-setup.md); it reaches real trackers, never run in CI"; \
 		exit 1; \
 	fi
 	go test -tags smoke -count=1 -v -timeout 10m ./internal/smoke/...

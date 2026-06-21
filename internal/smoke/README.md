@@ -110,9 +110,9 @@ accounted for rather than rediscovered:
 |---|---|---|
 | **FlareSolverr / Cloudflare** | seam built (`login.Solver`), no CF tracker in the 5, no FlareSolverr in the env | `[Resolved]` — solver offline-tested; **live CF clear confirmed** (torrentleech, FlareSolverr) in the run below |
 | **user/pass form login** | lazy-login + form/post flows validated offline (replay Doer) only; all 5 trackers are apikey | `[Resolved]` — **confirmed live** (racingforme, 60=60 vs Prowlarr) in the run below |
-| **.NET-quirk sites** | the `WebUtility` URL encoder + `regexp2` (.NET regex) routing are validated by offline KAT/differential, not a live `*()'!`/unicode/regexp2 site | `[Tracked: live validation]` — tracker available per intake; live-search inputs exercising those constructs |
-| **cookie / manual-cookie sites** | cookie-auth + `ManualCookieSolver` exercised offline only | `[Tracked: live validation]` — tracker available per intake; live-test via `solver_type=manual_cookie` |
-| **per-indexer proxy (HTTP/SOCKS5)** | no proxy in the test env; doer construction is offline-tested | `[Tracked: live validation]` — route a real search via `proxy_type`+`proxy_url` when a proxy is available (SOCKS4 unsupported — `x/net/proxy` has no socks4 dialer) |
+| **.NET-quirk sites** | the `WebUtility` URL encoder + `regexp2` (.NET regex) routing are validated by offline KAT/differential, not a live `*()'!`/unicode/regexp2 site | `[Tracked]` — tracker available per intake; live-search inputs exercising those constructs |
+| **cookie / manual-cookie sites** | cookie-auth + `ManualCookieSolver` exercised offline only | `[Tracked]` — tracker available per intake; live-test via `solver_type=manual_cookie` |
+| **per-indexer proxy (HTTP/SOCKS5)** | no proxy in the test env; doer construction is offline-tested | `[Tracked]` — route a real search via `proxy_type`+`proxy_url` when a proxy is available (SOCKS4 unsupported — `x/net/proxy` has no socks4 dialer) |
 | **Sonarr → harbrr (inbound)** | ~~the sandbox daemon was not LAN-reachable; grab used a direct qBittorrent push~~ | ✅ **resolved 2026-06-14** — harbrr deployed via Docker; Sonarr added/tested/searched/grabbed it through to qBittorrent2 (see Grab §A) |
 | **download resolver / `/dl` proxy** | the 5 trackers are direct-link; resolver-needing defs aren't covered | `[Tracked]` |
 
@@ -156,7 +156,7 @@ seam (#46). Confirms the two remaining gaps live.
 | **grab via `/dl` — request header** (digitalcore, X-API-KEY) | `grab: torrent` — a real `.torrent` (was a 401) | `[Resolved]` |
 | **IPTorrents** native (cookie+UA, HTML scrape) | 50=50 vs Prowlarr, Jaccard 1.00, `grab: torrent` | `[Resolved]` |
 | **FileList** native (passkey/Basic, JSON) | search OK (the int-flags fix — was HTTP 500); Prowlarr differential auto-skipped (its native indexer isn't named `filelist`) | `[Resolved]` (parse fixed; live differential pending a Prowlarr-name match) |
-| **MyAnonamouse** native (`mam_id` cookie) | driver correct — reported `mam_id expired or invalid`; the session is dead at source (fails in Prowlarr too, ASN-locked). Write-back seam ready to maintain a live one | `[Tracked: live search/parse pending a fresh dedicated MAM session]` |
+| **MyAnonamouse** native (`mam_id` cookie) | driver correct — reported `mam_id expired or invalid`; the session is dead at source (fails in Prowlarr too, ASN-locked). Write-back seam ready to maintain a live one | `[Tracked]` — live search/parse pending a fresh MAM session |
 | 13 other trackers (apikey/form/CF) | count parity 1.00 | `[Resolved]` |
 
 Two non-harbrr failures this run: **seedpool** (tracker down for maintenance) and **MAM**
@@ -200,14 +200,14 @@ cookie-auth + no download block, and Torznab/JSON routing+redaction). **Live-con
 2026-06-18:** torrentleech (cookie) and digitalcore (X-API-KEY) both resolve a real
 bencoded `.torrent` through `/dl` — see the run above. `[Resolved]`.
 
-**Coverage gap found — native (non-Cardigann) trackers `[Resolved: IPTorrents/
-FileList; MAM driver built, live pending a session]`.** harbrr shipped the Cardigann corpus
+**Coverage gap found — native (non-Cardigann) trackers `[Resolved]`** (IPTorrents/
+FileList live-confirmed; MAM driver built, live pending a session). harbrr shipped the Cardigann corpus
 + the AvistaZ native driver only; **IPTorrents, MyAnonamouse, FileList** (one-off C# native
 indexers in Jackett/Prowlarr, ≈3 of ~18 trackers here) had no def. Per-tracker
 native drivers were added on the AvistaZ pattern (#45): **IPTorrents** (count parity 1.00 + grab,
 live-confirmed 2026-06-18); **FileList** (search live-confirmed after the int-flags fix #46;
-Prowlarr differential pending a name match); **MyAnonamouse** (driver + `mam_id` write-back seam
-#46 — correct, but live search/parse pending a fresh dedicated session). This corrected
+Prowlarr differential pending a name match); **MyAnonamouse** (driver + `mam_id`
+write-back seam #46 — correct, but live search/parse pending a fresh dedicated session). This corrected
 `docs/ideas.md §6`'s "AvistaZ is the only native gap".
 
 **Still `[Tracked]` — no qualifying tracker in this stack:**

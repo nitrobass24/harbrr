@@ -108,8 +108,8 @@ Entries:
   covers a followed redirect to the login page) triggers exactly one re-login and
   one retry, matching Jackett's `CheckIfLoginIsNeeded -> DoLogin -> re-request`.
   Detection uses `login.test` (NOT `login.error`); JSON/XML responses only relogin
-  on the (followed) redirect case. **`[Resolved: lazy relogin; eager
-  first login retained by design]`**
+  on the (followed) redirect case. The lazy relogin is the added half; the eager
+  first login is retained by design. **`[Resolved]`**
 - **Date canonical form** — RFC3339 vs Jackett's RFC1123Z; see "Date
   canonicalization". Same instant, different string — a canonical-schema choice,
   not a parse difference. **`[Deliberate]`**
@@ -132,23 +132,23 @@ Entries:
 - **`.Today.Month` / `.Today.Day`** — harbrr exposes these template fields;
   Jackett seeds only `.Today.Year`. A def referencing them gets a real value in
   harbrr and `""` in Jackett. No vendored def uses them, and the extra fields are
-  additive. **`[Accepted: harbrr-additive, no action]`**
+  additive. **`[Accepted]`**
 - **`leechers` field** — harbrr's canonical release includes `leechers`; Jackett's
   `ReleaseInfo` tracks only `Peers` (= seeders + leechers). A harbrr convenience
   field (useful for downstream Torznab output) with no Jackett equivalent.
-  **`[Accepted: convenience field, no action]`**
+  **`[Accepted]`**
 - **Category ordering** — harbrr sorts a release's categories ascending (a
   deliberate determinism choice for stable goldens); Jackett's `Category` is a
   list in insertion order. They agree whenever insertion order is already
   ascending (as in the JSON oracle, `[2000, 100001]`); a mapping that inserted a
   custom cat before a standard one would differ in order only.
-  **`[Accepted: determinism choice, no action]`**
+  **`[Accepted]`**
 - **`rows.attribute` missing without `MissingAttributeEqualsNoResults`** — when a
   JSON row lacks the `rows.attribute` sub-object, harbrr skips that row; Jackett
   dereferences null and aborts the whole query unless the flag is set. harbrr
   degrades cleanly in both cases (only `yts.yml` pairs the two, with the flag on),
   consistent with the project's clean-degradation stance.
-  **`[Accepted: clean degradation, no action]`**
+  **`[Accepted]`**
 - **Download resolver scope** — Resolved. `ResolveDownload` now
   reproduces Jackett's full `CardigannIndexer.Download`: the `.DownloadUri` template
   namespace (populated from the link, .NET `System.Uri` semantics — see the URI
@@ -168,8 +168,8 @@ Entries:
   does NOT reproduce .NET's URI *canonicalization* that no corpus def exercises:
   stripping a default `:80`/`:443`, lowercasing the host, compacting dot-segments,
   or unescaping percent-encoded unreserved octets in the path. A def needing those
-  routes through the existing encode/regex layers.
-  **`[Accepted: exact for the corpus; exotic canonicalization unhit]`**
+  routes through the existing encode/regex layers. It is exact for the corpus; the
+  exotic canonicalization is unhit. **`[Accepted]`**
 - **XML backend** — Resolved. harbrr parses `response.type: xml` into an
   element tree and queries it with cascadia; Jackett uses AngleSharp's `XmlParser`.
   The common RSS/Newznab shapes (`<item>`, `<title>`, `<link>`, `torznab:attr`) and
@@ -202,7 +202,8 @@ Entries:
   Jackett. The divergence only surfaces if a def's literal differs from the page text
   ONLY in case, where harbrr would match and Jackett would not. Fixing it means
   replacing cascadia's built-in `:contains`; no vendored def is known to trip it.
-  **`[Tracked: case-sensitive :contains — narrow, no corpus def affected]`**
+  The case-sensitive `:contains` gap is narrow, with no corpus def affected.
+  **`[Tracked]`**
 - **JSON date auto-conversion (Newtonsoft)** — Resolved. Jackett parses
   JSON with Newtonsoft's default `DateParseHandling.DateTime`, so an ISO-8601
   string VALUE becomes a `DateTime` rendered back as the .NET InvariantCulture

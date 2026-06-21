@@ -31,7 +31,7 @@ captured from a live MAM. The live Prowlarr differential and a real search/grab 
   matches Jackett (which also does not persist the rotation) and is the weaker of the two
   references — Prowlarr writes the new `mam_id` back to its settings store (30-day
   expiry). harbrr has **no write-back seam** here, so persistence is deliberately not
-  attempted. `[Tracked: write-back seam if live shows sessions break]` — if the live
+  attempted. `[Tracked]` — add a write-back seam if live shows sessions break: if the live
   differential shows MAM invalidates the prior `mam_id` aggressively enough that the
   stored value goes stale across restarts and breaks sessions, add a settings write-back
   seam so the rotated value survives a restart.

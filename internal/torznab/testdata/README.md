@@ -47,8 +47,9 @@ precedence) is reproduced from `ResultPage.ToXml` / `ReleaseInfo` /
 ## Known divergences from Jackett / the spec
 
 Deliberate or accepted differences, each with an explicit disposition
-(`[Tracked]` a real gap with a plan follow-up · `[Deliberate]` an
-intentional design choice · `[Accepted]` a kept difference, no work planned).
+(`[Tracked]` a real gap with a plan follow-up · `[Resolved]` a once-tracked gap
+now closed · `[Deliberate]` an intentional design choice · `[Accepted]` a kept
+difference, no work planned).
 None is hidden by a fixture authored to dodge it.
 
 **Scope:** this section covers the **Torznab output** layer (normalized release →

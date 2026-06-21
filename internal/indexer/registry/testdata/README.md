@@ -88,7 +88,7 @@ These behaviours are pinned by tests in `internal/indexer/registry`
   cover the dominant real-world proxies, and there is no committed phase to add
   SOCKS4. `[Accepted]`.
 - **Proxy live end-to-end not verified.** No proxy in the test env; the proxy doer
-  construction is fully offline-tested. `[Tracked — live validation]`.
+  construction is fully offline-tested. `[Tracked]` — live validation.
 
 ## FlareSolverr solver
 
