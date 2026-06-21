@@ -309,7 +309,7 @@ path), so item 1 comes first. Pattern reference: [`native-indexer-pattern.md`](n
       the live grab retest against torrentleech + digitalcore is green.
       — **Live-confirmed 2026-06-18 (#44):** torrentleech (cookie) and digitalcore (X-API-KEY) both resolve a
       real `.torrent` through `/dl`. `[Resolved: Phase 9.5]`.
-- [ ] **Native drivers for the stack's C# one-off trackers** — **IPTorrents, MyAnonamouse, FileList** have
+- [x] **Native drivers for the stack's C# one-off trackers** — **IPTorrents, MyAnonamouse, FileList** have
       no Cardigann YAML (Jackett/Prowlarr ship them as bespoke C# indexers), so harbrr can't serve them at
       all. Build them on the AvistaZ native pattern (`native.Driver` = settings POCO + request generator +
       parser), reusing the authenticated-`/dl` grab path above. Two reusable auth shapes cover all three —
@@ -322,6 +322,12 @@ path), so item 1 comes first. Pattern reference: [`native-indexer-pattern.md`](n
       FileList — search live-confirmed (int-flags fix #46), Prowlarr differential pending a name match;
       MyAnonamouse — driver + `mam_id` write-back seam (#46) correct, live search/parse `[Tracked: pending a
       fresh dedicated MAM session]` (the stack's session is dead at source — fails in Prowlarr too).
+      — **MyAnonamouse [Resolved] 2026-06-20 (PR #52):** with a fresh `mam_id`, live search returned parsed
+      audiobook results through harbrr. Required the same class of fix as FileList's int-flags — MAM's live
+      `loadSearchJSONbasic.php` returns integers where the documented contract used strings/booleans
+      (`category`/`main_cat` as numbers, `free`/`personal_freeleech`/`fl_vip` as 0/1); the strict struct
+      failed `json.Unmarshal`. Tolerant decode types added. **All three native drivers now live-confirmed**
+      (FileList's Prowlarr-name differential is the only belt-and-suspenders item left; search is Resolved).
 - [x] **Coverage analysis across toolsets** (`docs/coverage.md`) — the **tracker × surface × tool × auth**
       matrix. Key results: harbrr owns the **search** surface (autobrr owns announce — disjoint); a
       *Prowlarr-native* tracker is **not** a harbrr gap when Jackett ships YAML (harbrr vendors Jackett — e.g.
