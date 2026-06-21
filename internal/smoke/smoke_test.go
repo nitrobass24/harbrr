@@ -8,7 +8,7 @@
 // the two agree within a tolerance (live data is non-deterministic). Sequential
 // with gentle delays; backs off on rate-limit. Captures secret-free evidence.
 //
-// Required env (see docs/phase5-setup.md and docs/prompts/phase9.md):
+// Required env (see docs/smoke-setup.md):
 //
 //	SMOKE_HARBRR_URL, SMOKE_HARBRR_APIKEY
 //	SMOKE_PROWLARR_URL, SMOKE_PROWLARR_APIKEY
@@ -79,7 +79,7 @@ func loadConfig(t *testing.T) config {
 	must := func(k string) string {
 		v := strings.TrimSpace(os.Getenv(k))
 		if v == "" {
-			t.Fatalf("smoke: required env %s is empty (see docs/phase5-setup.md)", k)
+			t.Fatalf("smoke: required env %s is empty (see docs/smoke-setup.md)", k)
 		}
 		return v
 	}

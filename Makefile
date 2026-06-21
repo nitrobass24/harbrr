@@ -84,12 +84,12 @@ check-smoke-tag:
 
 ## smoke-test: LIVE Phase 5 smoke + Prowlarr differential. MANUAL ONLY — reaches
 ## real trackers and MUST NOT run in CI. Needs a running harbrr daemon and the
-## SMOKE_* env credentials (see docs/phase5-setup.md).
+## SMOKE_* env credentials (see docs/smoke-setup.md).
 .PHONY: smoke-test
 smoke-test:
 	@if [ -z "$(SMOKE_HARBRR_URL)" ]; then \
 		echo "ERROR: SMOKE_HARBRR_URL is unset — the live smoke needs env credentials"; \
-		echo "(see docs/phase5-setup.md). It reaches real trackers; never run it in CI."; \
+		echo "(see docs/smoke-setup.md). It reaches real trackers; never run it in CI."; \
 		exit 1; \
 	fi
 	go test -tags smoke -count=1 -v -timeout 10m ./internal/smoke/...

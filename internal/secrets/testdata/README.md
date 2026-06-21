@@ -1,11 +1,11 @@
-# Daemon-foundation divergences (Phase 4)
+# Secrets & daemon-foundation divergences
 
 Where harbrr's daemon foundation — the secrets store, persistence, auth, and
 server — deliberately or knowingly differs from its reference sibling
 **autobrr/qui** or from the `docs/ideas.md` §9 security model. Each entry carries
 exactly one disposition (see `docs/divergences.md` for the vocabulary):
 `[Deliberate]` (intentional design choice), `[Accepted]` (a kept difference, no
-work planned), or `[Tracked: Phase N]` (a real gap with a `docs/plan.md` item).
+work planned), or `[Tracked]` (a real gap with a `docs/plan.md` item).
 
 The behaviours below are pinned by tests in `internal/secrets`, `internal/auth`,
 `internal/database`, `internal/web/api`, and `internal/server`.
@@ -67,21 +67,21 @@ The behaviours below are pinned by tests in `internal/secrets`, `internal/auth`,
 ## Tracked gaps (carry a `docs/plan.md` item)
 
 - **OIDC is stubbed.** `/api/auth/oidc/*` returns 501; only a config seam exists.
-  `[Tracked: Phase 10]` (with the web UI / app auth).
+  `[Tracked]` (with the web UI / app auth).
 - **Interactive Swagger UI is deferred.** The embedded spec is served at
   `/api/openapi.yaml`; the rendered Swagger UI lands with the web UI.
-  `[Tracked: Phase 10]`
+  `[Tracked]`
 - **`api_keys.last_used_at` is never written.** Validation is a pure read (no
   write on the request path); the auth event log populates it later.
-  `[Tracked: Phase 10]` (stats / search history).
+  `[Tracked]` (stats / search history).
 - **Safe export/import not built.** §9 describes a config/DB export that redacts
   secrets behind the `<redacted>` sentinel by default with a separately-encrypted
   include-secrets opt-in. The `<redacted>` sentinel exists for the edit/update flow;
-  the export/import path itself is deferred. `[Tracked: Phase 10]` (backup/restore).
+  the export/import path itself is deferred. `[Tracked]` (backup/restore).
 
-## Phase 6 — secret hardening
+## Secret hardening
 
-- **Key rotation lands.** The per-record `key_id` built in Phase 4 enabled it: a
+- **Key rotation lands.** The per-record `key_id` enabled it: a
   new offline `harbrr rotate-key` subcommand (run with the daemon stopped) holds
   the old + new keys explicitly — the single-key `Keyring` crypto core is
   **untouched** (no dual-key Keyring). It dry-runs (decrypts every `indexer_settings`
@@ -89,7 +89,7 @@ The behaviours below are pinned by tests in `internal/secrets`, `internal/auth`,
   (re-sealed under the SAME AAD `<instanceID>\x00<setting>`) + the `app_meta` canary
   + `secrets_key_id` in ONE transaction. Wrong old key, plaintext mode, and
   empty-secret rows are handled (the last stay empty, only rekeyed). No decrypted
-  credential or key byte reaches a log/error/the output. `[Resolved: Phase 6]`
+  credential or key byte reaches a log/error/the output. `[Resolved]`
   (`cmd/harbrr/rotate_key.go`, `internal/database/rotation.go`, `TestRotateKeys_*`).
 - **Redaction audit.** Extended beyond `RedactURL`/`RedactHeader`. The wired,
   load-bearing change is the shared `internal/http.RedactError` chokepoint:
@@ -102,10 +102,10 @@ The behaviours below are pinned by tests in `internal/secrets`, `internal/auth`,
   (cookies/postData/userAgent/cf_clearance/response/headers, at any depth — JSON
   `RedactURL` can't reach), but the solver logs no bodies and never interpolates them
   into errors; `RedactProxyURL` would scrub the WHOLE proxy userinfo (user AND pass),
-  but `buildTransport` never logs or errors a `proxy_url`. `[Resolved: Phase 6]`
+  but `buildTransport` never logs or errors a `proxy_url`. `[Resolved]`
   (`internal/http/redact.go`, `redacterror_test.go`, `redactbody_test.go`).
 - **Tracing / stats-event-log redaction is vacuous.** §9 names "logs, errors,
   traces, and the stats event log" as redaction targets, but harbrr has **no
   tracing and no stats/event-log subsystem** — those targets do not exist, so the
   audit cannot wire redaction into them. Building them is out of scope.
-  `[Accepted]` (revisit when the Phase-10 stats data layer lands — `[Tracked: Phase 10]`).
+  `[Accepted]` (revisit when the stats data layer lands — `[Tracked]`).

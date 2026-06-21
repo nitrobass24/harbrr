@@ -5,11 +5,11 @@ driver. It pins where the driver **knowingly differs** from the Prowlarr source 
 reproduces (`Prowlarr/Prowlarr` `develop`: `IPTorrents.cs` —
 `IPTorrentsRequestGenerator`, `IPTorrentsParser`, `IPTorrentsSettings`; the relative-date
 helper `DateTimeUtil.FromTimeAgo`). The disposition vocabulary (`[Deliberate]` /
-`[Accepted]` / `[Tracked: Phase 9]`) matches the AvistaZ record next door.
+`[Accepted]` / `[Tracked]`) matches the AvistaZ record next door.
 
 The golden here is **synthetic** — authored from Prowlarr's documented selector contract,
 never captured from a live IPTorrents. The live Prowlarr differential and a real
-search/grab are the **Phase 9** gate.
+search/grab are the **live-validation** gate.
 
 ## Fixtures
 
@@ -27,7 +27,7 @@ search/grab are the **Phase 9** gate.
   matches Prowlarr]`. Prowlarr builds the category filter with
   `qc.Add(cat, string.Empty)` where `cat` is the mapped tracker id string, so the rendered
   query is `?72=&73=` (the id is the **param name**, value empty), **not** repeated
-  `cat=72&cat=73`. The driver reproduces Prowlarr exactly. (The phase brief's shorthand
+  `cat=72&cat=73`. The driver reproduces Prowlarr exactly. (The shorthand
   "repeated `cat=`" describes the intent; the C# is authoritative and the driver follows
   it.)
 - **Single `q` param (imdb + term not both emitted)** — `[Accepted]`. Prowlarr's
@@ -104,25 +104,25 @@ search/grab are the **Phase 9** gate.
   a URL. `user_agent` is a plain `text` field (not secret-classified) sent as the
   `User-Agent` header. `redaction`-focused tests assert the synthetic cookie/UA values
   never appear in any recorded request URL or any error string.
-- **Download-URL path-key redaction** — `[Tracked: Phase 9]`. As with AvistaZ, the URL
+- **Download-URL path-key redaction** — `[Tracked]`. As with AvistaZ, the URL
   redactor is query-scoped, so the driver keeps the download URL out of every error it
   raises (`sanitizeGrabError`), and the `/dl` proxy keeps the raw download URL out of the
   served feed. IPT download URLs (`/download.php/{id}/{name}.torrent`) are authenticated by
   the session cookie, not a path key, so there is no path secret to leak in practice;
-  confirm in the Phase 9 live grab.
+  confirm in the live grab.
 
 ## RequestDelay
 
 `2.1s`. Prowlarr's `IPTorrents` indexer does not override the framework rate limit, so the
 default `2.1s` applies; it rides on the definition's `RequestDelay` and is enforced by the
-registry's existing paced client (no special-casing). `[Tracked: Phase 9]` — confirm
+registry's existing paced client (no special-casing). `[Tracked]` — confirm
 against the live Prowlarr if it ever sets an explicit limit.
 
-## Deferred to Phase 9 (live validation)
+## Deferred to live validation
 
-- **Live search/grab + the Prowlarr differential** — `[Tracked: Phase 9]`. The entire
+- **Live search/grab + the Prowlarr differential** — `[Tracked]`. The entire
   offline gate is synthetic; request/response/category parity against a live IPTorrents +
-  live Prowlarr, and a real `.torrent` grab through `/dl`, are the Phase 9 acceptance gate.
-- **Live column layout** — `[Tracked: Phase 9]`. The header-text column names
+  live Prowlarr, and a real `.torrent` grab through `/dl`, are the live acceptance gate.
+- **Live column layout** — `[Tracked]`. The header-text column names
   (`Sort by size`, etc.) are taken from the Prowlarr source; confirm the exact live header
   strings (and the 10-vs-6 cell offset) in the differential.

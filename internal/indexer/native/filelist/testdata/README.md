@@ -4,12 +4,12 @@ This is the **Native indexers** layer record indexed by [`docs/divergences.md`](
 It pins where harbrr's FileList native driver **knowingly differs** from the Prowlarr
 source it reproduces (`Prowlarr/Prowlarr` `develop`: `FileListRequestGenerator`,
 `FileListParser`, `FileListTorrent`, `FileListSettings`, `FileList.cs`). The disposition
-vocabulary (`[Deliberate]` / `[Accepted]` / `[Tracked: Phase N]`) is defined in
+vocabulary (`[Deliberate]` / `[Accepted]` / `[Tracked]`) is defined in
 `docs/divergences.md`.
 
 The goldens here are **synthetic** — derived from Prowlarr's documented contract, never
 captured from a live FileList. The live Prowlarr differential and a real search/grab are
-the **Phase 9** gate.
+the **live-validation** gate.
 
 ## Fixtures
 
@@ -74,17 +74,17 @@ the **Phase 9** gate.
   unparseable `upload_date` is a parse error for the whole response, matching Prowlarr's
   throw-on-bad-row.
 
-## Deferred to Phase 9 (live validation)
+## Deferred to live validation
 
-- **Live search/grab + the Prowlarr differential** — `[Tracked: Phase 9]`. The entire
+- **Live search/grab + the Prowlarr differential** — `[Tracked]`. The entire
   offline gate is synthetic; request/response/category parity against a live FileList +
-  live Prowlarr, and a real `.torrent` grab through `/dl`, are the Phase 9 acceptance
+  live Prowlarr, and a real `.torrent` grab through `/dl`, are the live acceptance
   gate.
-- **`upload_date` shape** — `[Tracked: Phase 9]`. `parsePublishDate` assumes the exact
+- **`upload_date` shape** — `[Tracked]`. `parsePublishDate` assumes the exact
   `yyyy-MM-dd HH:mm:ss` form Prowlarr appends `+0300` to. If the live API ever emits a
   different shape, the bad-date path fails the whole search (see "bad-row handling");
-  confirm the real format in the Phase 9 live differential.
-- **Download-URL passkey redaction** — `[Tracked: Phase 9]`. The download URL carries the
+  confirm the real format in the live differential.
+- **Download-URL passkey redaction** — `[Tracked]`. The download URL carries the
   passkey in its query. harbrr keeps that URL out of every error it raises and routes the
   fetch only through `/dl` (which keeps the raw URL out of the served feed). Confirm the
   live download flow keeps the passkey out of all logs/traces.

@@ -1,17 +1,17 @@
-# Phase 5 live smoke — evidence + coverage ledger
+# Live smoke — evidence + coverage ledger
 
 The harness in this package is **manual, build-tagged (`//go:build smoke`), and
 env-var-credentialed** — it reaches real trackers and never runs in CI. See
-[`docs/phase5-setup.md`](../../docs/phase5-setup.md) to run it. Raw per-tracker
+[`docs/smoke-setup.md`](../../docs/smoke-setup.md) to run it. Raw per-tracker
 evidence is written to `testdata/*.json` (gitignored, secret-scrubbed); this file
 is the committed, secret-free summary.
 
-## Phase 9 — extended harness (the live alpha gate)
+## Extended harness (the live alpha gate)
 
 The harness now drives **every auth/fetch pattern**, not just apikey trackers. Per
 tracker it adds the indexer, runs the **Test action** (live login probe), searches
 harbrr's Torznab feed, and diffs against Prowlarr. Env contract (full detail in
-`smoke_test.go`'s doc comment; the run protocol is `docs/prompts/phase9.md`):
+`smoke_test.go`'s doc comment and `docs/smoke-setup.md`):
 
 - `SMOKE_TRACKERS = "slug|defId|prowlarrName[|pattern],…"` — the optional 4th field is
   a label (`apikey`/`form`/`cookie`/`netquirk`/`cloudflare`/`proxy`/`avistaz`) recorded
@@ -71,14 +71,14 @@ a Torznab indexer, tested it, searched it, and grabbed a release — the complet
 - Sonarr indexer **connectivity test passed** (HTTP 201) once configured with
   seedpool's actual advertised TV categories (`5000`+subcats); the default
   `5030/5040` correctly returns an empty feed — harbrr's result-category filter and
-  Sonarr's own "no results in configured categories" check agree (see item 6)
+  Sonarr's own "no results in configured categories" check agree
 - release: `The.Night.Agent.S03.1080p.NF.WEB-DL.DDP5.1.AV1-DBMS` (4.18 GB, seedpool,
   8 seeders) — a season pack of a monitored series
 - Sonarr **history**: grabbed, `indexer = "harbrr seedpool (smoke)"`
 - Sonarr **queue**: `status=downloading` on `client=qBittorrent2` (the live seedbox
   download client), season pack mapped across all 10 S03 episodes
 - the feed's `guid`/download link was the **raw seedpool direct link** harbrr served
-  via the inline `ResolveDownload` passthrough (item 7); Sonarr fetched the
+  via the inline `ResolveDownload` passthrough; Sonarr fetched the
   `.torrent` from it directly
 - **left downloading/seeding — not removed** (no hit-and-run)
 
@@ -103,20 +103,20 @@ ran in a sandbox not reachable from the Sonarr container:
 ## Coverage ledger — auth/fetch patterns NOT exercised live (re-test later)
 
 The five smoke trackers are all `apikey`/`method: get`, so several patterns are
-validated only by offline deterministic tests. Recorded here so later phases
-account for them rather than rediscover them:
+validated only by offline deterministic tests. Recorded here so they are
+accounted for rather than rediscovered:
 
 | Pattern | Why unverified live | Re-test disposition |
 |---|---|---|
-| **FlareSolverr / Cloudflare** | seam built (`login.Solver`), no CF tracker in the 5, no FlareSolverr in the env | `[Resolved: Phase 9]` — solver offline-tested in Phase 6; **live CF clear confirmed** (torrentleech, FlareSolverr) in the Phase 9 run below |
-| **user/pass form login** | lazy-login + form/post flows validated offline (replay Doer) only; all 5 trackers are apikey | `[Resolved: Phase 9]` — **confirmed live** (racingforme, 60=60 vs Prowlarr) in the Phase 9 run below |
-| **.NET-quirk sites** | the `WebUtility` URL encoder + `regexp2` (.NET regex) routing are validated by offline KAT/differential, not a live `*()'!`/unicode/regexp2 site | `[Tracked: Phase 9 — live validation]` — tracker available per intake; live-search inputs exercising those constructs |
-| **cookie / manual-cookie sites** | cookie-auth + `ManualCookieSolver` exercised offline only | `[Tracked: Phase 9 — live validation]` — tracker available per intake; live-test via `solver_type=manual_cookie` |
-| **per-indexer proxy (HTTP/SOCKS5)** | no proxy in the test env; doer construction is offline-tested | `[Tracked: Phase 9 — live validation]` — route a real search via `proxy_type`+`proxy_url` when a proxy is available (SOCKS4 unsupported — `x/net/proxy` has no socks4 dialer) |
+| **FlareSolverr / Cloudflare** | seam built (`login.Solver`), no CF tracker in the 5, no FlareSolverr in the env | `[Resolved]` — solver offline-tested; **live CF clear confirmed** (torrentleech, FlareSolverr) in the run below |
+| **user/pass form login** | lazy-login + form/post flows validated offline (replay Doer) only; all 5 trackers are apikey | `[Resolved]` — **confirmed live** (racingforme, 60=60 vs Prowlarr) in the run below |
+| **.NET-quirk sites** | the `WebUtility` URL encoder + `regexp2` (.NET regex) routing are validated by offline KAT/differential, not a live `*()'!`/unicode/regexp2 site | `[Tracked: live validation]` — tracker available per intake; live-search inputs exercising those constructs |
+| **cookie / manual-cookie sites** | cookie-auth + `ManualCookieSolver` exercised offline only | `[Tracked: live validation]` — tracker available per intake; live-test via `solver_type=manual_cookie` |
+| **per-indexer proxy (HTTP/SOCKS5)** | no proxy in the test env; doer construction is offline-tested | `[Tracked: live validation]` — route a real search via `proxy_type`+`proxy_url` when a proxy is available (SOCKS4 unsupported — `x/net/proxy` has no socks4 dialer) |
 | **Sonarr → harbrr (inbound)** | ~~the sandbox daemon was not LAN-reachable; grab used a direct qBittorrent push~~ | ✅ **resolved 2026-06-14** — harbrr deployed via Docker; Sonarr added/tested/searched/grabbed it through to qBittorrent2 (see Grab §A) |
-| **download resolver / `/dl` proxy** | the 5 trackers are direct-link; resolver-needing defs aren't covered | `[Tracked: Phase 7]` |
+| **download resolver / `/dl` proxy** | the 5 trackers are direct-link; resolver-needing defs aren't covered | `[Tracked]` |
 
-## Phase 9 live run — 2026-06-16 (14 trackers, automated)
+## Live run — 2026-06-16 (14 trackers, automated)
 
 Driven fully from `prowlarr.db` via `scripts/phase9-smoke.sh` (extract → env →
 harness): each indexer added (creds encrypted), login-probed (Test action),
@@ -129,10 +129,10 @@ parity).
 
 | Pattern | Live result | Disposition |
 |---|---|---|
-| **apikey** (11 trackers) | count 1.00, Jaccard ~1.00 vs Prowlarr | `[Resolved: Phase 9]` |
-| **user/pass form login** (racingforme) | 60=60, Jaccard 1.00, logout→relogin live | `[Resolved: Phase 9]` |
-| **Cloudflare via FlareSolverr** (torrentleech) | 35=35, real CF clear + search | `[Resolved: Phase 9]` |
-| **grab → `.torrent`** | 11/13 resolved a bencoded `.torrent` (incl. the form tracker) | `[Resolved: Phase 9]` (resolve half; the qBit push + seed stays the manual no-H&R step) |
+| **apikey** (11 trackers) | count 1.00, Jaccard ~1.00 vs Prowlarr | `[Resolved]` |
+| **user/pass form login** (racingforme) | 60=60, Jaccard 1.00, logout→relogin live | `[Resolved]` |
+| **Cloudflare via FlareSolverr** (torrentleech) | 35=35, real CF clear + search | `[Resolved]` |
+| **grab → `.torrent`** | 11/13 resolved a bencoded `.torrent` (incl. the form tracker) | `[Resolved]` (resolve half; the qBit push + seed stays the manual no-H&R step) |
 
 **Critical bug found + fixed — the headline catch.** Every live search/login of a
 non-proxied tracker panicked: `nil pointer dereference` in
@@ -144,18 +144,18 @@ injects a replay `Doer` and never builds the real `*http.Client`) — only a liv
 could hit it. Fixed in **PR #42** (`registry/client.go`) with a regression test that
 builds the real no-proxy client.
 
-## Phase 9.5 live run — 2026-06-18 (grab pass, updated build)
+## Live run — 2026-06-18 (grab pass, updated build)
 
 Re-run with `SMOKE_GRAB=1` against the build carrying the grab-auth `/dl` fix (#44), the
 three native drivers (#45), the FileList int-flags fix, and the MyAnonamouse write-back
-seam (#46). Confirms the two Phase 9.5 gaps live.
+seam (#46). Confirms the two remaining gaps live.
 
 | Pattern / tracker | Live result | Disposition |
 |---|---|---|
-| **grab via `/dl` — session cookie** (torrentleech) | `grab: torrent` — a real bencoded `.torrent` (was a login/CF page) | `[Resolved: Phase 9.5]` |
-| **grab via `/dl` — request header** (digitalcore, X-API-KEY) | `grab: torrent` — a real `.torrent` (was a 401) | `[Resolved: Phase 9.5]` |
-| **IPTorrents** native (cookie+UA, HTML scrape) | 50=50 vs Prowlarr, Jaccard 1.00, `grab: torrent` | `[Resolved: Phase 9.5]` |
-| **FileList** native (passkey/Basic, JSON) | search OK (the int-flags fix — was HTTP 500); Prowlarr differential auto-skipped (its native indexer isn't named `filelist`) | `[Resolved: Phase 9.5]` (parse fixed; live differential pending a Prowlarr-name match) |
+| **grab via `/dl` — session cookie** (torrentleech) | `grab: torrent` — a real bencoded `.torrent` (was a login/CF page) | `[Resolved]` |
+| **grab via `/dl` — request header** (digitalcore, X-API-KEY) | `grab: torrent` — a real `.torrent` (was a 401) | `[Resolved]` |
+| **IPTorrents** native (cookie+UA, HTML scrape) | 50=50 vs Prowlarr, Jaccard 1.00, `grab: torrent` | `[Resolved]` |
+| **FileList** native (passkey/Basic, JSON) | search OK (the int-flags fix — was HTTP 500); Prowlarr differential auto-skipped (its native indexer isn't named `filelist`) | `[Resolved]` (parse fixed; live differential pending a Prowlarr-name match) |
 | **MyAnonamouse** native (`mam_id` cookie) | driver correct — reported `mam_id expired or invalid`; the session is dead at source (fails in Prowlarr too, ASN-locked). Write-back seam ready to maintain a live one | `[Tracked: live search/parse pending a fresh dedicated MAM session]` |
 | 13 other trackers (apikey/form/CF) | count parity 1.00 | `[Resolved]` |
 
@@ -167,7 +167,7 @@ Two non-harbrr failures this run: **seedpool** (tracker down for maintenance) an
 the whole decode → HTTP 500. The synthetic golden used `true`/`false`, so offline tests
 passed. Fixed to `int64`; golden + filter test now use `0/1` (#46).
 
-**Grab gap found — non-URL-authenticated downloads `[Resolved: Phase 9.5]`.** This is a
+**Grab gap found — non-URL-authenticated downloads `[Resolved]`.** This is a
 real functional gap, not a quirk. harbrr serves a **bare direct download
 link** for any non-resolver tracker, assuming the URL **self-authenticates** (carries
 a passkey/rsskey in the path/query). That holds for seedpool
@@ -190,7 +190,7 @@ DigitalCore), not two oddballs. **Fix direction:** route a login-requiring track
 download through `/dl` (resolve server-side with harbrr's authenticated session), not
 just `download:`-block defs — scoped fix PR, like the nil-`Transport` panic above.
 
-**Fix (Phase 9.5 item 1) — shipped, offline-proven.** The serializer now routes a link
+**Fix — shipped, offline-proven.** The serializer now routes a link
 through `/dl` when the def has a **login block** (`DownloadNeedsAuth()`), not only a
 `download:` block (`NeedsResolver()`); the `/dl` grab then fetches the `.torrent`
 server-side with the session cookie (torrentleech) and the search-header auth
@@ -198,19 +198,19 @@ server-side with the session cookie (torrentleech) and the search-header auth
 fallback). Covered by offline tests (engine predicate, `search.Grab` with header- and
 cookie-auth + no download block, and Torznab/JSON routing+redaction). **Live-confirmed
 2026-06-18:** torrentleech (cookie) and digitalcore (X-API-KEY) both resolve a real
-bencoded `.torrent` through `/dl` — see the Phase 9.5 run above. `[Resolved: Phase 9.5]`.
+bencoded `.torrent` through `/dl` — see the run above. `[Resolved]`.
 
-**Coverage gap found — native (non-Cardigann) trackers `[Resolved: Phase 9.5 — IPTorrents/
+**Coverage gap found — native (non-Cardigann) trackers `[Resolved: IPTorrents/
 FileList; MAM driver built, live pending a session]`.** harbrr shipped the Cardigann corpus
 + the AvistaZ native driver only; **IPTorrents, MyAnonamouse, FileList** (one-off C# native
-indexers in Jackett/Prowlarr, ≈3 of ~18 trackers here) had no def. Phase 9.5 added per-tracker
-native drivers on the AvistaZ pattern (#45): **IPTorrents** (count parity 1.00 + grab,
+indexers in Jackett/Prowlarr, ≈3 of ~18 trackers here) had no def. Per-tracker
+native drivers were added on the AvistaZ pattern (#45): **IPTorrents** (count parity 1.00 + grab,
 live-confirmed 2026-06-18); **FileList** (search live-confirmed after the int-flags fix #46;
 Prowlarr differential pending a name match); **MyAnonamouse** (driver + `mam_id` write-back seam
 #46 — correct, but live search/parse pending a fresh dedicated session). This corrected
 `docs/ideas.md §6`'s "AvistaZ is the only native gap".
 
-**Still `[Tracked: Phase 9]` — no qualifying tracker in this stack:**
+**Still `[Tracked]` — no qualifying tracker in this stack:**
 
 - **cookie / 2FA** — the cookie trackers present (IPTorrents, MyAnonamouse) are native
   (above); none of the Cardigann-supported trackers here use cookie login. harbrr's

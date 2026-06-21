@@ -12,11 +12,11 @@ parallel ledger to drift.
 Every divergence entry carries exactly one disposition, so the record is a
 complete decision log rather than a half-tracked backlog:
 
-- **`[Tracked: Phase N]`** — a real gap with a `docs/plan.md` follow-up item.
-- **`[Partial: Phase N]`** — partly implemented in Phase N; the remainder is a
-  `[Tracked]` gap for a later phase (the entry cites both).
-- **`[Resolved: Phase N]`** — a once-tracked gap closed in Phase N, kept in the
-  log so the decision history stays auditable (no longer a gap).
+- **`[Tracked]`** — a real gap with a `docs/plan.md` follow-up item.
+- **`[Partial]`** — partly implemented; the remainder is a `[Tracked]` gap (the
+  entry cites both).
+- **`[Resolved]`** — a once-tracked gap now closed, kept in the log so the
+  decision history stays auditable (no longer a gap).
 - **`[Deliberate]`** — an intentional design choice; not a gap.
 - **`[Accepted]`** — a difference harbrr chooses to keep (harbrr-additive or
   clean-degradation); no work planned. Revisit only if a vendored def needs it.
@@ -30,12 +30,12 @@ so there is nothing to keep in sync between them.
 
 | Layer | What it covers | Record |
 |-------|----------------|--------|
-| **Engine** (Phases 1–2) | how a saved tracker response becomes a normalized release: extraction, login/session, request building, date/regex/selector parsing, the XML backend | [`internal/indexer/cardigann/parity/testdata/README.md`](../internal/indexer/cardigann/parity/testdata/README.md) |
-| **Torznab output** (Phase 3) | how a normalized release becomes the served feed: the *arr-facing capabilities + results + error XML and the HTTP handler | [`internal/torznab/testdata/README.md`](../internal/torznab/testdata/README.md) |
-| **Daemon foundation** (Phase 4) | how the daemon stores + serves: the §9 secrets model, persistence, auth/session/CSRF, and where these differ from autobrr/qui | [`internal/secrets/testdata/README.md`](../internal/secrets/testdata/README.md) |
-| **Live smoke** (Phase 5) | what the live 5-tracker smoke + Prowlarr differential + Sonarr-orchestrated grab verified, and the auth/fetch patterns it could NOT exercise live (FlareSolverr, form login, .NET-quirk sites, cookie sites) with re-test dispositions | [`internal/smoke/README.md`](../internal/smoke/README.md) |
-| **Operational safety** (Phase 6) | the anti-blacklist + observability layer: per-request timeouts, retry backoff, per-host rate limits, per-indexer proxies, and indexer health/status (the `ClientParams` seam, the rate/parse error taxonomy, SOCKS4 deferral) | [`internal/indexer/registry/testdata/README.md`](../internal/indexer/registry/testdata/README.md) |
-| **Native indexers** (Phase 8 + 9.5) | the per-tracker native drivers for trackers Prowlarr/Jackett ship as bespoke C# (no Cardigann YAML): AvistaZ-family (Phase 8) and the Phase-9.5 standalone ports — FileList (passkey/Basic JSON), MyAnonamouse (`mam_id` cookie + in-memory rotation), IPTorrents (cookie+UA HTML scrape) — and where each knowingly differs from its Prowlarr indexer | [`avistaz`](../internal/indexer/native/avistaz/testdata/README.md) · [`filelist`](../internal/indexer/native/filelist/testdata/README.md) · [`myanonamouse`](../internal/indexer/native/myanonamouse/testdata/README.md) · [`iptorrents`](../internal/indexer/native/iptorrents/testdata/README.md) |
+| **Engine** | how a saved tracker response becomes a normalized release: extraction, login/session, request building, date/regex/selector parsing, the XML backend | [`internal/indexer/cardigann/parity/testdata/README.md`](../internal/indexer/cardigann/parity/testdata/README.md) |
+| **Torznab output** | how a normalized release becomes the served feed: the *arr-facing capabilities + results + error XML and the HTTP handler | [`internal/torznab/testdata/README.md`](../internal/torznab/testdata/README.md) |
+| **Daemon foundation** | how the daemon stores + serves: the §9 secrets model, persistence, auth/session/CSRF, and where these differ from autobrr/qui | [`internal/secrets/testdata/README.md`](../internal/secrets/testdata/README.md) |
+| **Live smoke** | what the live 5-tracker smoke + Prowlarr differential + Sonarr-orchestrated grab verified, and the auth/fetch patterns it could NOT exercise live (FlareSolverr, form login, .NET-quirk sites, cookie sites) with re-test dispositions | [`internal/smoke/README.md`](../internal/smoke/README.md) |
+| **Operational safety** | the anti-blacklist + observability layer: per-request timeouts, retry backoff, per-host rate limits, per-indexer proxies, and indexer health/status (the `ClientParams` seam, the rate/parse error taxonomy, SOCKS4 deferral) | [`internal/indexer/registry/testdata/README.md`](../internal/indexer/registry/testdata/README.md) |
+| **Native indexers** | the per-tracker native drivers for trackers Prowlarr/Jackett ship as bespoke C# (no Cardigann YAML): AvistaZ-family and the standalone ports — FileList (passkey/Basic JSON), MyAnonamouse (`mam_id` cookie + in-memory rotation), IPTorrents (cookie+UA HTML scrape) — and where each knowingly differs from its Prowlarr indexer | [`avistaz`](../internal/indexer/native/avistaz/testdata/README.md) · [`filelist`](../internal/indexer/native/filelist/testdata/README.md) · [`myanonamouse`](../internal/indexer/native/myanonamouse/testdata/README.md) · [`iptorrents`](../internal/indexer/native/iptorrents/testdata/README.md) |
 
 The per-layer READMEs cross-link for navigation; this file is linked from
 `docs/architecture.md` (invariant #2).
@@ -56,18 +56,17 @@ them (see each README for the live disposition, which is the single source):
 - **Category ordering** — the engine sorts a release's categories ascending; the
   caps category tree extends that determinism choice. (engine: "Category
   ordering"; torznab: "Custom-category top-level ordering".)
-- **Download links** — two halves of the download path, both completed in
-  **Phase 7**: the engine's `ResolveDownload`/`Grab` reproduce Jackett's full
-  download algorithm (before/infohash/selectors/testlinktorrent + the final fetch),
-  and the output layer routes a resolver-needing indexer's links through the
-  grab-time **`/dl` proxy** so the passkey never reaches the feed (direct-link
-  trackers are still served inline). (engine: "Download resolver scope"
-  `[Resolved: Phase 7]`; torznab: "Resolver-needing links routed through the /dl
-  proxy" `[Resolved: Phase 7]`.)
+- **Download links** — two halves of the download path: the engine's
+  `ResolveDownload`/`Grab` reproduce Jackett's full download algorithm
+  (before/infohash/selectors/testlinktorrent + the final fetch), and the output
+  layer routes a resolver-needing indexer's links through the grab-time
+  **`/dl` proxy** so the passkey never reaches the feed (direct-link trackers are
+  still served inline). (engine: "Download resolver scope" `[Resolved]`; torznab:
+  "Resolver-needing links routed through the /dl proxy" `[Resolved]`.)
 
 ## Open gaps
 
-The actionable divergences are exactly the `[Tracked: Phase N]` entries across the
+The actionable divergences are exactly the `[Tracked]` entries across the
 per-layer READMEs (the remainder of a `[Partial]` entry is one too). To list them:
 
 ```sh

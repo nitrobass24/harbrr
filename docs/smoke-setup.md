@@ -1,4 +1,4 @@
-# Phase 5 — live-smoke setup
+# Live smoke-test setup
 
 The live smoke (`make smoke-test`) drives a **running harbrr daemon** like a real
 *arr: it adds each tracker to harbrr (credentials encrypted by the daemon),

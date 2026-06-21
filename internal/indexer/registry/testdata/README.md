@@ -1,10 +1,10 @@
-# Operational-safety divergences (Phase 6)
+# Registry & operational-safety divergences
 
-Where harbrr's Phase-6 operational hardening — per-request timeouts, retry
+Where harbrr's operational hardening — per-request timeouts, retry
 backoff, per-host rate limits, per-indexer proxies, indexer health/status, and the
 FlareSolverr anti-bot solver — deliberately differs from Jackett/Prowlarr or makes
 a harbrr-additive design choice. Each entry carries one disposition (see `docs/divergences.md`):
-`[Deliberate]`, `[Accepted]`, `[Resolved: Phase N]`, or `[Tracked: Phase N]`.
+`[Deliberate]`, `[Accepted]`, `[Resolved]`, or `[Tracked]`.
 
 These behaviours are pinned by tests in `internal/indexer/registry`
 (`pacedclient_test.go`, `proxy_test.go`, `health_internal_test.go`,
@@ -13,9 +13,9 @@ These behaviours are pinned by tests in `internal/indexer/registry`
 
 ## Design choices (`[Deliberate]` unless noted)
 
-- **`doerFactory` widened to a `ClientParams` struct.** The Phase-4 seam was a
+- **`doerFactory` widened to a `ClientParams` struct.** The earlier seam was a
   nullary `func() (search.Doer, error)` that could not vary the HTTP client per
-  instance. Phase 6 widens it to `func(ClientParams) (search.Doer, error)` with
+  instance. It widens to `func(ClientParams) (search.Doer, error)` with
   `{Instance, Cfg, Timeout, RateInterval}`, so the paced client and the proxy
   client both ride one seam. A struct (not positional args) keeps future fields
   from re-breaking the `WithDoerFactory` Option. `[Deliberate]` (`registry.go`,
@@ -44,7 +44,7 @@ These behaviours are pinned by tests in `internal/indexer/registry`
   pacing for a domain they know to be strict or lax. Exposing a per-indexer override
   + a global default (the `ClientParams.RateInterval` seam is already plumbed for it)
   is deferred to the product-settings surface. `[Deliberate]`; user-configurable rate
-  `[Tracked: Phase 10]`.
+  `[Tracked]`.
 - **Per-instance request timeout from a `timeout` setting, else a 60s default.** A
   per-indexer `timeout` setting (a Go duration, e.g. `30s`) bounds the whole request
   via `ClientParams.Timeout`; an unset/invalid value falls back to 60s. Jackett uses
@@ -70,9 +70,7 @@ These behaviours are pinned by tests in `internal/indexer/registry`
 - **Health is an append-only event log; status is derived.** `indexer_health_events`
   records only the four failure kinds; `GET /api/indexers/{slug}/status` derives
   `healthy`/`unhealthy` from a 1h recency window. A fleet-wide `/api/indexers/status`
-  is out of scope. `[Deliberate]`; fleet status `[Tracked: Phase 10]`.
-- **Stale "Phase 4" solver labels corrected to "Phase 6"** in the login package
-  (PR #1). `[Resolved: Phase 6]`.
+  is out of scope. `[Deliberate]`; fleet status `[Tracked]`.
 
 ## Proxies
 
@@ -84,13 +82,13 @@ These behaviours are pinned by tests in `internal/indexer/registry`
   credential-free string (no path logs the proxy URL; pinned by `proxy_test.go`).
   `internal/http.RedactProxyURL` (whole-userinfo scrub — username AND password) is a
   defensive chokepoint ready if a path ever surfaces a proxy URL, but it has **no
-  production caller today**. `[Resolved: Phase 6]`.
+  production caller today**. `[Resolved]`.
 - **SOCKS4/SOCKS4a not supported.** `x/net/proxy` ships no socks4 dialer, so
   `socks4`/`socks4a` fail loud (use `socks5` or `http`). Demand-gated — HTTP+SOCKS5
   cover the dominant real-world proxies, and there is no committed phase to add
   SOCKS4. `[Accepted]`.
 - **Proxy live end-to-end not verified.** No proxy in the test env; the proxy doer
-  construction is fully offline-tested. `[Tracked: Phase 9 — live validation]`.
+  construction is fully offline-tested. `[Tracked — live validation]`.
 
 ## FlareSolverr solver
 
