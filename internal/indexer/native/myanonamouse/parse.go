@@ -30,21 +30,59 @@ type mamResponse struct {
 // id→name, parsed defensively in authorNames. Size is a human-readable string (e.g.
 // "1.29 GB"). Category is the tracker category id (a string).
 type mamRelease struct {
-	ID                int64  `json:"id"`
-	Title             string `json:"title"`
-	AuthorInfo        string `json:"author_info"`
-	Category          string `json:"category"`
-	MainCat           string `json:"main_cat"`
-	Added             string `json:"added"`
-	Size              string `json:"size"`
-	Seeders           *int64 `json:"seeders"`
-	Leechers          *int64 `json:"leechers"`
-	TimesCompleted    *int64 `json:"times_completed"`
-	NumFiles          *int64 `json:"numfiles"`
-	Free              bool   `json:"free"`
-	PersonalFreeleech bool   `json:"personal_freeleech"`
-	FlVIP             bool   `json:"fl_vip"`
-	DL                string `json:"dl"`
+	ID                int64         `json:"id"`
+	Title             string        `json:"title"`
+	AuthorInfo        string        `json:"author_info"`
+	Category          mamFlexString `json:"category"`
+	MainCat           mamFlexString `json:"main_cat"`
+	Added             string        `json:"added"`
+	Size              string        `json:"size"`
+	Seeders           *int64        `json:"seeders"`
+	Leechers          *int64        `json:"leechers"`
+	TimesCompleted    *int64        `json:"times_completed"`
+	NumFiles          *int64        `json:"numfiles"`
+	Free              mamFlexBool   `json:"free"`
+	PersonalFreeleech mamFlexBool   `json:"personal_freeleech"`
+	FlVIP             mamFlexBool   `json:"fl_vip"`
+	DL                string        `json:"dl"`
+}
+
+// mamFlexString unmarshals a JSON string OR number into a string. MAM's category
+// ids (category, main_cat) arrive as JSON numbers from the live API but as strings
+// in the documented contract / earlier goldens — accept both so a strict struct
+// decode doesn't reject the live body (cf. the FileList int-flags live fix #46).
+type mamFlexString string
+
+func (s *mamFlexString) UnmarshalJSON(b []byte) error {
+	if len(b) == 0 || string(b) == "null" {
+		*s = ""
+		return nil
+	}
+	if b[0] == '"' {
+		var str string
+		if err := json.Unmarshal(b, &str); err != nil {
+			return fmt.Errorf("myanonamouse: decode string id: %w", err)
+		}
+		*s = mamFlexString(str)
+		return nil
+	}
+	*s = mamFlexString(b) // a JSON number: keep its literal text as the id
+	return nil
+}
+
+// mamFlexBool unmarshals a JSON bool OR number (0/1) into a bool. MAM's freeleech
+// flags (free, personal_freeleech, fl_vip) arrive as integers from the live API but
+// as booleans in the documented contract — accept both.
+type mamFlexBool bool
+
+func (f *mamFlexBool) UnmarshalJSON(b []byte) error {
+	switch string(b) {
+	case "true", "1", `"1"`, `"true"`:
+		*f = true
+	default:
+		*f = false
+	}
+	return nil
 }
 
 // errNothingReturned is the MAM "no results" Error sentinel prefix; Prowlarr ignores
@@ -139,9 +177,9 @@ func (d *driver) detailsURL(row *mamRelease) string {
 // fallback when the row has no specific category. The result is de-duplicated and
 // sorted for a deterministic feed.
 func (d *driver) categories(row *mamRelease) []int {
-	id := strings.TrimSpace(row.Category)
+	id := strings.TrimSpace(string(row.Category))
 	if id == "" {
-		id = strings.TrimSpace(row.MainCat)
+		id = strings.TrimSpace(string(row.MainCat))
 	}
 	mapped := d.caps.CategoryMap.MapTrackerCatToNewznab(id)
 	seen := make(map[int]struct{}, len(mapped))
@@ -160,7 +198,7 @@ func (d *driver) categories(row *mamRelease) []int {
 // downloadVolumeFactor is 0 for a freeleech row (free / personal_freeleech / fl_vip),
 // else 1 (full cost), matching Prowlarr's isFreeLeech.
 func downloadVolumeFactor(row *mamRelease) float64 {
-	if row.Free || row.PersonalFreeleech || row.FlVIP {
+	if bool(row.Free) || bool(row.PersonalFreeleech) || bool(row.FlVIP) {
 		return 0
 	}
 	return 1

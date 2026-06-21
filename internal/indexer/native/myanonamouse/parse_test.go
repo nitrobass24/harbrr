@@ -183,3 +183,34 @@ func TestDownloadVolumeFactor(t *testing.T) {
 		}
 	}
 }
+
+// TestParseReleasesLiveIntegerShape locks the fix for MAM's live API returning
+// integers where the documented contract used string ids and boolean flags
+// (category/main_cat as numbers, free/personal_freeleech/fl_vip as 0/1) — the
+// strict struct previously failed json.Unmarshal ("decode search response").
+func TestParseReleasesLiveIntegerShape(t *testing.T) {
+	t.Parallel()
+	const body = `{"data":[{` +
+		`"id":202,"title":"Live Book","author_info":"{\"1\":\"Author X\"}",` +
+		`"category":47,"main_cat":13,"added":"2024-03-01 08:00:00","size":"1.29 GiB",` +
+		`"seeders":5,"leechers":1,"numfiles":3,"free":1,"personal_freeleech":0,"fl_vip":0,"dl":"HASH"}]}`
+	got, err := goldenDriver(t).parseReleases([]byte(body))
+	if err != nil {
+		t.Fatalf("parseReleases (integer shape): %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("releases = %d, want 1", len(got))
+	}
+	r := got[0]
+	// category 47 maps the same as the golden (number vs string id is transparent).
+	if want := []int{3030, 100047}; !reflect.DeepEqual(r.Categories, want) {
+		t.Errorf("Categories = %v, want %v", r.Categories, want)
+	}
+	// free:1 (integer) must yield a freeleech download factor of 0.
+	if r.DownloadVolumeFactor != 0 {
+		t.Errorf("DownloadVolumeFactor = %v, want 0 (free:1)", r.DownloadVolumeFactor)
+	}
+	if r.Title != "Live Book by Author X" {
+		t.Errorf("Title = %q", r.Title)
+	}
+}
