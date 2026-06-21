@@ -789,10 +789,17 @@ paths:
         - { name: token, in: query, required: true, schema: { type: string }, description: "the opaque, AEAD-sealed download token from the feed" }
       responses:
         "200":
-          description: the torrent file
+          description: >
+            The torrent file (application/x-bittorrent) on success. Also carries a
+            Torznab <error> element (XML) — served with HTTP 200, Jackett-style — for
+            an invalid API key, an unsupported indexer, or a disabled download proxy.
           content:
             application/x-bittorrent:
               schema: { type: string, format: binary }
+            application/xml:
+              schema:
+                type: string
+                description: a Torznab <error> element when the request is rejected before the grab
         "302":
           description: redirect to a resolved magnet URI (only ever a magnet, never an http link)
         "400":
