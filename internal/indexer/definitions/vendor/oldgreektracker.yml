@@ -151,7 +151,7 @@ search:
     page: torrents
     search: "{{ .Keywords }}"
     category: "{{ range .Categories }}{{.}};{{end}}"
-    # 0 filename, 1 file&descr, 2 descr, 3 uploaders, 18 genre, 4 imdb, 5 gold, 6 silver, 7 bronze
+    # 0 filename, 1 file&descr, 2 descr, 3 uploaders, 18 genre, 4 imdb, 5 gold, 6 silver, 7 bronze, 8-17 upload multiplier 1x to 10x
     options: "{{ if .Config.freeleech }}5{{ else }}0{{ end }}"
     # 0 all, 1 active only, 2 dead only
     active: 0
@@ -163,7 +163,7 @@ search:
       args: ["\\.", " "]
 
   rows:
-    selector: table.lista > tbody > tr:has(img[src="images/fls_locked.png"])
+    selector: table.lista[width="100%"] > tbody > tr:has(a[href^="download.php?id="]):has(img[src="images/fls_locked.png"])
 
   fields:
     category:
@@ -189,7 +189,7 @@ search:
         - name: replace
           args: ["torrentimg/nocover.jpg", ""]
     size:
-      selector: td:nth-child(11)
+      selector: td:nth-child(12)
     date:
       # auto adjusted by site account profile
       selector: td:nth-child(7)
