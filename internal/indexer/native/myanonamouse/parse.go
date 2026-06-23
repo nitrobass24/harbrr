@@ -265,14 +265,16 @@ var sizeUnits = map[string]float64{
 }
 
 // parseSize converts a human-readable size string (e.g. "1.29 GB") to bytes. The
-// number and unit may be space-separated or not; the unit is case-insensitive. A
-// missing or unrecognized unit, or a non-numeric amount, is a parse error.
+// number and unit may be space-separated or not; the unit is case-insensitive. MAM
+// formats the amount en-US style, so sizes ≥ 1000 carry a comma thousands separator
+// (e.g. "1,001.6 MiB") which is stripped before parsing. A missing or unrecognized
+// unit, or a non-numeric amount, is a parse error.
 func parseSize(s string) (int64, error) {
 	fields := strings.Fields(s)
 	if len(fields) < 2 {
 		return 0, fmt.Errorf("myanonamouse: unparseable size %q: %w", s, search.ErrParseError)
 	}
-	amount, err := strconv.ParseFloat(fields[0], 64)
+	amount, err := strconv.ParseFloat(strings.ReplaceAll(fields[0], ",", ""), 64)
 	if err != nil {
 		return 0, fmt.Errorf("myanonamouse: unparseable size amount %q: %w", s, search.ErrParseError)
 	}

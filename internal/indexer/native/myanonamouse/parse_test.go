@@ -118,6 +118,7 @@ func TestParseSize(t *testing.T) {
 	}{
 		{"256.50 MB", 268959744},
 		{"1.29 GB", 1385126953},
+		{"1,001.6 MiB", 1050253722}, // comma thousands separator (sizes ≥ 1000)
 		{"1 B", 1},
 		{"1 KiB", 1024},
 		{"2 TB", 2199023255552},
