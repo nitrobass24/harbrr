@@ -82,6 +82,17 @@ func TestRedactError(t *testing.T) {
 			nil,
 			[]string{"invalid username or password"},
 		},
+		{
+			// Regression: a multi-clause search error carrying a URL must survive
+			// readable. RedactURL (the prior, wrong call at the log sites) parsed the
+			// whole message as one URL and re-encoded the query via url.Values, which
+			// sorted/merged the params and percent-encoded the prose into garbage.
+			// RedactError leaves a credential-free URL and its query order intact.
+			"search error with a URL is not mangled",
+			errors.New(`registry: search "seedpool": GET https://seedpool.org/api/torrents/filter?categories[]=2&perPage=100&sortField=created_at: net/http: TLS handshake timeout`),
+			[]string{"%3A", "%2F", "%5B"}, // no percent-mangling of the prose/URL
+			[]string{"categories[]=2&perPage=100&sortField=created_at", "TLS handshake timeout"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

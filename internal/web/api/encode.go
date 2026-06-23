@@ -101,7 +101,7 @@ func (rt *router) writeServiceError(w http.ResponseWriter, op string, err error)
 	case errors.Is(err, auth.ErrInvalidAPIKey):
 		writeErrorCode(w, http.StatusUnauthorized, "invalid_api_key", "invalid api key")
 	default:
-		rt.log.Error().Str("op", op).Str("error", apphttp.RedactURL(err.Error())).Msg("api: request failed")
+		rt.log.Error().Str("op", op).Str("error", apphttp.RedactError(err)).Msg("api: request failed")
 		writeErrorCode(w, http.StatusInternalServerError, "internal", "internal error")
 	}
 }

@@ -351,7 +351,7 @@ func (r *Registry) logResolveError(slug string, err error) {
 	}
 	r.log.Error().
 		Str("indexer", slug).
-		Str("error", apphttp.RedactURL(err.Error())).
+		Str("error", apphttp.RedactError(err)).
 		Msg("registry: resolve failed")
 }
 
