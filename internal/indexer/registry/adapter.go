@@ -92,7 +92,7 @@ func (a *indexerAdapter) recordHealth(ctx context.Context, err error) {
 		OccurredAt: a.clock(),
 	}
 	if rerr := a.health.Record(ctx, a.db, ev); rerr != nil {
-		a.log.Warn().Str("indexer", a.info.ID).Str("error", apphttp.RedactURL(rerr.Error())).
+		a.log.Warn().Str("indexer", a.info.ID).Str("error", apphttp.RedactError(rerr)).
 			Msg("registry: record health event failed")
 	}
 }

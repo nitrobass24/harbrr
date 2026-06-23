@@ -405,12 +405,15 @@ func (h *handler) selfURL(r *http.Request) string {
 // raw error is never echoed to the client (the served body is a fixed string).
 // The engine redacts resolved URLs at the HTTP stage (search/request.go), so its
 // error text carries no resolved passkeys; the logged string is additionally run
-// through RedactURL as defense in depth.
+// through RedactError as defense in depth. (RedactURL must not be used here: it
+// parses its argument as a single URL and re-encodes the query via url.Values,
+// which mangles a multi-clause error message — sorting/merging the URL's params
+// and percent-encoding the prose — into unreadable garbage.)
 func (h *handler) writeInternalError(w http.ResponseWriter, stage, indexerID string, err error) {
 	h.log.Error().
 		Str("stage", stage).
 		Str("indexer", indexerID).
-		Str("error", apphttp.RedactURL(err.Error())).
+		Str("error", apphttp.RedactError(err)).
 		Msg("torznab request failed")
 	writeError(w, http.StatusInternalServerError, codeUnknownError, "internal error processing the request")
 }
