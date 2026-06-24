@@ -63,7 +63,7 @@ by auth shape, mapped to the shapes harbrr **already** has, so each is "reuse" v
 | **Passkey / Basic / API-key (JSON)** | ✅ FileList (done) | ⭐HDBits, ⭐BeyondHD, MTeam, NorBits, SceneHD |
 | **Session cookie (JSON, rotating)** | ✅ MyAnonamouse (done) | — |
 | **Gazelle API** (cookie→`ajax.php`→passkey DL) | ❌ **new shape** | ⭐Redacted, ⭐Orpheus, DICMusic, Libble, GreatPosterWall, BrokenStones, … |
-| **Bespoke API token** | partial | ⭐PassThePopcorn, ⭐BroadcastTheNet, ⭐GazelleGames, ⭐AnimeBytes, Nebulance |
+| **Bespoke API token** | ✅ BroadcastTheNet (done, #62) | ⭐PassThePopcorn, ⭐GazelleGames, ⭐AnimeBytes, Nebulance |
 | **Locale/parsing C#** (low priority) | n/a | RuTracker, LostFilm, Toloka, SubsPlease, AudioBookBay, … (mostly public/niche) |
 
 **Highest-leverage next investment: one Gazelle-API base driver** — it unlocks Redacted, Orpheus, and the
@@ -73,7 +73,7 @@ HDBits/BeyondHD reuse the FileList passkey shape.
 
 None of this is needed for the current stack — it's the demand-gated roadmap for when a user adds one of
 these trackers. (Source: Jackett `Indexers/Definitions/*.cs` vs `Definitions/*.yml`; cross-checked against
-Prowlarr `Indexers/Definitions/`.)
+Prowlarr `Indexers/Definitions/`.) **Build sequencing + per-driver effort:** see [`native-roadmap.md`](native-roadmap.md).
 
 ## 5. Migration caveat (feeds the Prowlarr migration import)
 

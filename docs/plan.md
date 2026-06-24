@@ -474,9 +474,11 @@ now (*detail TBD*); fill in as we have it.
 
 ### Tier 4 — Reach / more trackers (incremental, per-demand)
 
-- **Native-driver backlog** — the C#-in-both-engines trackers (`docs/coverage.md` §4): highest-leverage is
-  one **Gazelle-API** base driver (Redacted/Orpheus/PTP/BTN/AnimeBytes); cookie-scrape (TorrentDay/SpeedCD)
-  and passkey (HDBits/BeyondHD) reuse the IPTorrents/FileList shapes. Build per tracker on demand.
+- **Native-driver backlog** — the C#-in-both-engines trackers (`docs/coverage.md` §4 ·
+  sequencing in `docs/native-roadmap.md`): highest-leverage is one **Gazelle-API** base driver
+  (Redacted/Orpheus/AnimeBytes); cookie-scrape (TorrentDay/SpeedCD) and passkey (HDBits/BeyondHD) reuse the
+  IPTorrents/FileList shapes. Build per tracker on demand. **BroadcastTheNet shipped (#62, 2026-06-24)** —
+  the first tier-4 bespoke-API one-off; PassThePopcorn/GazelleGames remain on demand.
 - **Usenet / Newznab support** — harbrr is torrent-only today, so a stack's usenet indexers (e.g.
   DOGnzb) can't migrate. Add Newznab provider support (the `caps`/`search` surface already speaks
   Newznab-compatible XML; the gap is the usenet *fetch* + indexer kind). Surfaced by the Phase 10
@@ -512,14 +514,15 @@ now (*detail TBD*); fill in as we have it.
 
 ---
 
-## Search-results caching (unscheduled backlog — ordering TBD)
+## Search-results caching — **shipped (#60, 2026-06-24)**
 
 The one headline harbrr can offer that Prowlarr/Jackett do not: **a search-results cache, because
 harbrr is the Torznab *server*, so a cache hit spares the *tracker's* infrastructure, not just
 harbrr's.** This is the most-requested differentiator and directly serves harbrr's stated reason to
-exist. It is **product surface** (post-parity, like Phase 8b+) and **unscheduled** — slot it relative
-to Phase 11 / app-sync when demand is clear. The design below is investigated and **fully decided** (TTL
-values + encryption + v1 scope settled 2026-06-23; see "Decisions locked" at the end).
+exist. **Shipped ahead of Phase 11** (built off the locked design below); the only deferred piece is the
+Web-UI hit-ratio surface (Phase 11). User docs: `website/docs/features/search-results-cache.md`. The
+design below is the as-built record (TTL values + encryption + v1 scope settled 2026-06-23; see
+"Decisions locked" at the end).
 
 **Motivating evidence (from prod logs + PT-user patterns, 2026-06-23).** There are **two distinct load
 problems**, with different solutions:
@@ -609,22 +612,23 @@ problems**, with different solutions:
 >   (qui's `Stats` is the template) in the management API and the Web UI — "X% of searches served from
 >   cache" is the metric that proves the value over Prowlarr.
 
-Build order (each leaf its own commit + green tests; resequence freely when scheduled):
+Build order (all shipped in #60; each landed in its own commit with green tests):
 
-- [ ] **Store + migration** — `0004_search_cache.sql` + a `SearchCacheStore` behind `dbinterface`
-      (port + simplify qui's `TorznabSearchCacheStore`: `Fetch`/`Store`/`CleanupExpired`/`Flush`/
-      `InvalidateByInstance`/`Stats`); table-driven tests.
-- [ ] **Cache-aside + singleflight** — wrap `idx.Search` in the registry adapter; versioned canonical
-      key (the multi-instance collapse falls out of this for free); only-cache-success (incl. empty);
-      `golang.org/x/sync/singleflight` coalescing on miss.
-- [ ] **TTL tiers + adaptive richness + per-indexer override + `nocache`** — RSS/empty-query **5 min** vs
-      keyword/ID **30 min** globals; thin/empty result set → **2 min** adaptive override (count threshold);
-      per-instance `cache_ttl` override of both tiers; `nocache=1` bypass param.
-- [ ] **Stale-while-revalidate** — refresh-ahead threshold on hit; one detached-context background refresh
+- [x] **Store + migration** — `0004_search_cache.sql` + a `SearchCacheStore` behind `dbinterface`
+      (`Fetch`/`Store`/`CleanupExpired`/`Flush`/`InvalidateByInstance`/`Stats`/`Touch`/`BumpHits`).
+- [x] **Cache-aside + singleflight** — wrap `idx.Search` via a `cachedIndexer` decorator in the registry;
+      versioned canonical key (the multi-instance collapse falls out for free); only-cache-success (incl.
+      empty); `golang.org/x/sync/singleflight` coalescing on miss; a `Fetch` error degrades open.
+- [x] **TTL tiers + adaptive richness + per-indexer override + `nocache`** — RSS/empty-query **5 min** vs
+      keyword/ID **30 min** globals; thin/empty result set → **2 min** adaptive clamp (shortens only);
+      per-instance `cache_ttl` override; `nocache=1` bypass (context-threaded, both surfaces).
+- [x] **Stale-while-revalidate** — refresh-ahead threshold on hit; one detached-context background refresh
       per key (singleflight-guarded, success-only write-back); serve cached value immediately.
-- [ ] **Lifecycle** — periodic `CleanupExpired`; invalidation on instance mutation/disable/delete.
-- [ ] **Observability + control** — `Stats` + flush in the management API (OpenAPI + drift test);
-      cache config + hit-ratio in the Web UI (Phase 11).
+- [x] **Lifecycle** — periodic `CleanupExpired` + coalesced hit-touch flush on the cleanup ticker;
+      invalidation on instance mutation/disable/delete.
+- [x] **Observability + control** — `GET /api/cache/stats` (entries/hitRatio/size/timestamps) + `POST
+      /api/cache/flush` in the management API (OpenAPI + drift-test green). Web-UI hit-ratio surface is
+      Phase 11.
 
 **Decisions locked (2026-06-23 use-case discussion):**
 - **TTL values:** RSS/empty-query **5 min** · keyword/ID **30 min** · thin/empty result **2 min** (adaptive).

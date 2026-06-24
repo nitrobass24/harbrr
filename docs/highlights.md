@@ -22,6 +22,28 @@ site/docs land later.
 
 ---
 
+## Search-results cache (the headline Prowlarr/Jackett can't match)
+
+- **A cache hit spares the *tracker*, not just harbrr.** Because harbrr is the Torznab
+  *server*, a cached result means the request **never leaves for the tracker** — unlike
+  a cache in Prowlarr/Jackett, which still hits the tracker. One entry per
+  `(indexer, query)` is shared by every client, so a 1080p and a 4K *arr instance
+  (which issue byte-identical queries — resolution is filtered client-side) **collapse to
+  one tracker request**, and concurrent identical misses coalesce via `singleflight`.
+  *(`internal/indexer/registry/searchcache.go`, #60)* `[shipped]`
+- **Tuned for the real load, not a flat TTL.** RSS/empty-query polls cache **5 min**,
+  keyword/ID searches **30 min**, and a thin/empty result set clamps to **2 min** so
+  staggered resolution drops (720p→1080p→4K) are caught fast — a clamp that only ever
+  shortens. **Stale-while-revalidate** serves a near-expiry hit instantly and refreshes
+  once in the background, so the tracker sees ≤1 request per TTL regardless of client
+  count. Per-indexer `cache_ttl` override + a `nocache=1` bypass.
+  *(`internal/indexer/registry/searchcache_ttl.go`, `website/docs/features/search-results-cache.md`)*
+  `[shipped]`
+- **Observability is the proof.** `GET /api/cache/stats` surfaces entries / **hit-ratio** /
+  size — "X% of searches never touched a tracker" is the metric that demonstrates the
+  win over Prowlarr; `POST /api/cache/flush` for control. *(`internal/web/api/cache_handlers.go`)*
+  `[shipped]`
+
 ## Cardigann parity, proven live
 
 - **Byte-for-byte parity with Prowlarr on real trackers, at scale.** The Phase 5 live
@@ -194,6 +216,14 @@ site/docs land later.
   every seam instead of forking a parallel stack. Offline-gated against Prowlarr-derived
   goldens; the live differential is the Phase 9 gate.
   *(`internal/indexer/native/avistaz`)* `[shipped]`
+- **Bespoke-C# trackers, served on demand.** Trackers shipped as bespoke C# in *both*
+  Jackett and Prowlarr (no Cardigann YAML to vendor) get native Go drivers on the same
+  framework: **IPTorrents, MyAnonamouse, FileList** (Phase 9.5) and **BroadcastTheNet**
+  (#62) — BTN's JSON-RPC `getTorrents` API with the key as `params[0]` of the request
+  body, the whole body kept out of logs. Each is just a settings struct + request
+  generator + parser over the shared registry/secrets/`/dl` seams. The build sequence for
+  the rest (Gazelle base = Redacted/Orpheus, HDBits/BeyondHD, …) is mapped in
+  `docs/native-roadmap.md`. *(`internal/indexer/native/broadcastthenet`)* `[shipped]`
 
 ## Developer experience & governance
 
