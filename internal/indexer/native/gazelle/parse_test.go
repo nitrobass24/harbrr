@@ -124,6 +124,19 @@ func TestParseBrowseSortsByPublishDateDesc(t *testing.T) {
 	}
 }
 
+// TestComposeTitleSkipsWhitespaceFields proves a whitespace-only ReleaseType or
+// RemasterTitle emits no empty "[ ]" bracket, matching Prowlarr's IsNotNullOrWhiteSpace.
+func TestComposeTitleSkipsWhitespaceFields(t *testing.T) {
+	t.Parallel()
+	g := &group{Artist: "Artist", GroupName: "Album", GroupYear: "2024", ReleaseType: "   "}
+	tr := &torrent{Format: "FLAC", Encoding: "Lossless", Media: "CD", RemasterTitle: "  "}
+	got := composeTitle(g, tr)
+	want := "Artist - Album (2024) [FLAC Lossless / CD]"
+	if got != want {
+		t.Errorf("composeTitle = %q, want %q", got, want)
+	}
+}
+
 // TestParseBrowseNonMusic proves a NON-MUSIC group (torrents == null) is one release
 // (Title=GroupName) built from group-level fields, the Audiobooks->Audio/Audiobook
 // category, the unix groupTime publish date, the "now" fuzzy fallback against the fixed

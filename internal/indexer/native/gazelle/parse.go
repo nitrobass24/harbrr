@@ -253,10 +253,12 @@ func (d *driver) nonMusicRelease(g *group) *normalizer.Release {
 func composeTitle(g *group, t *torrent) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s - %s (%s)", g.Artist, g.GroupName, g.GroupYear)
-	if g.ReleaseType != "" && g.ReleaseType != "Unknown" {
-		fmt.Fprintf(&b, " [%s]", g.ReleaseType)
+	// Match Prowlarr's IsNotNullOrWhiteSpace checks: a whitespace-only ReleaseType or
+	// RemasterTitle must not emit an empty "[ ]" bracket.
+	if rt := strings.TrimSpace(g.ReleaseType); rt != "" && rt != "Unknown" {
+		fmt.Fprintf(&b, " [%s]", rt)
 	}
-	if t.RemasterTitle != "" {
+	if strings.TrimSpace(t.RemasterTitle) != "" {
 		fmt.Fprintf(&b, " [%s]", strings.TrimSpace(t.RemasterTitle+" "+t.RemasterYear))
 	}
 	b.WriteString(" [" + strings.Join(titleFlags(t), " / ") + "]")
