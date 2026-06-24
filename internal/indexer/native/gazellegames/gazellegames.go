@@ -80,12 +80,10 @@ func (d *driver) NeedsResolver() bool { return true }
 // so the out-of-band-auth signal would be redundant (it mirrors FileList).
 func (d *driver) DownloadNeedsAuth() bool { return false }
 
-// Grab is implemented in a later leaf.
-func (d *driver) Grab(_ context.Context, _ string) (*search.GrabResult, error) {
-	return nil, errors.New("gazellegames: Grab not implemented")
-}
-
-// Test is implemented in a later leaf.
-func (d *driver) Test(_ context.Context) error {
-	return errors.New("gazellegames: Test not implemented")
+// Test verifies the configured API key authenticates (the management "test indexer"
+// action). It issues a cheap latest-torrents search; a 401/403 surfaces from the search
+// as login.ErrLoginFailed so the registry records an auth_failure health event.
+func (d *driver) Test(ctx context.Context) error {
+	_, err := d.Search(ctx, search.Query{})
+	return err
 }
