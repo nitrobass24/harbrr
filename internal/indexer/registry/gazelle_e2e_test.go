@@ -104,14 +104,15 @@ func TestGazelleEndToEnd(t *testing.T) {
 				t.Fatalf("Search: %v", err)
 			}
 			// Three torrents in the music golden flatten to three releases,
-			// deterministically ordered by torrent id.
+			// ordered by PublishDate descending (mirroring Prowlarr): the 2021
+			// remaster sorts ahead of the two 2012 torrents.
 			if len(releases) != 3 {
 				t.Fatalf("releases = %d, want 3", len(releases))
 			}
 			wantTitles := []string{
-				"Logistics - Fear Not (2012) [Album] [FLAC Lossless / CD / Log (100%) / Cue]",
-				"Logistics - Fear Not (2012) [Album] [MP3 320 / WEB]",
 				"Logistics - Fear Not (2012) [Album] [Remaster 2021] [FLAC 24bit Lossless / Vinyl]",
+				"Logistics - Fear Not (2012) [Album] [MP3 320 / WEB]",
+				"Logistics - Fear Not (2012) [Album] [FLAC Lossless / CD / Log (100%) / Cue]",
 			}
 			for i, want := range wantTitles {
 				if releases[i].Title != want {

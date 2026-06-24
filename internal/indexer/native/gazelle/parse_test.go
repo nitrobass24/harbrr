@@ -39,7 +39,8 @@ func parseDriver(t *testing.T, id string, cfg map[string]string) *driver {
 // Format/Encoding/Media/Log/Cue flags), the header-less download link, the music fields
 // (Artist/Album=GroupName/Year/Genre=joined tags), peers/grabs/size, the torrent
 // datetime publish date (UTC), the Audio category from "Music", and DownloadVolumeFactor.
-// Releases are sorted by torrent id ascending.
+// Releases are sorted by PublishDate descending (mirroring Prowlarr), so the 2021 remaster
+// (id 29991964) sorts before the two 2012 torrents.
 func TestParseBrowseMusicGolden(t *testing.T) {
 	t.Parallel()
 	body := readFixture(t, "testdata/browse_music.json")
@@ -51,17 +52,17 @@ func TestParseBrowseMusicGolden(t *testing.T) {
 
 	want := []*normalizer.Release{
 		{
-			Title:      "Logistics - Fear Not (2012) [Album] [FLAC Lossless / CD / Log (100%) / Cue]",
-			Link:       "https://redacted.sh/ajax.php?action=download&id=29991962",
+			Title:      "Logistics - Fear Not (2012) [Album] [Remaster 2021] [FLAC 24bit Lossless / Vinyl]",
+			Link:       "https://redacted.sh/ajax.php?action=download&id=29991964",
 			Artist:     "Logistics",
 			Album:      "Fear Not",
 			Year:       2012,
 			Genre:      "drum.and.bass, electronic",
 			Categories: []int{3000},
-			Size:       527749302,
-			Grabs:      55,
-			Seeders:    20, Leechers: 0, Peers: 20,
-			PublishDate:          "2012-04-14T15:57:00Z",
+			Size:       943718400,
+			Grabs:      3,
+			Seeders:    4, Leechers: 0, Peers: 4,
+			PublishDate:          "2021-06-01T08:30:00Z",
 			DownloadVolumeFactor: 1, UploadVolumeFactor: 1,
 		},
 		{
@@ -79,21 +80,48 @@ func TestParseBrowseMusicGolden(t *testing.T) {
 			DownloadVolumeFactor: 1, UploadVolumeFactor: 1,
 		},
 		{
-			Title:      "Logistics - Fear Not (2012) [Album] [Remaster 2021] [FLAC 24bit Lossless / Vinyl]",
-			Link:       "https://redacted.sh/ajax.php?action=download&id=29991964",
+			Title:      "Logistics - Fear Not (2012) [Album] [FLAC Lossless / CD / Log (100%) / Cue]",
+			Link:       "https://redacted.sh/ajax.php?action=download&id=29991962",
 			Artist:     "Logistics",
 			Album:      "Fear Not",
 			Year:       2012,
 			Genre:      "drum.and.bass, electronic",
 			Categories: []int{3000},
-			Size:       943718400,
-			Grabs:      3,
-			Seeders:    4, Leechers: 0, Peers: 4,
-			PublishDate:          "2021-06-01T08:30:00Z",
+			Size:       527749302,
+			Grabs:      55,
+			Seeders:    20, Leechers: 0, Peers: 20,
+			PublishDate:          "2012-04-14T15:57:00Z",
 			DownloadVolumeFactor: 1, UploadVolumeFactor: 1,
 		},
 	}
 	assertReleases(t, got, want)
+}
+
+// TestParseBrowseSortsByPublishDateDesc is a focused regression for the ordering finding:
+// the flattened feed must be PublishDate-descending (newest first) regardless of torrent
+// id, matching Prowlarr's terminal OrderByDescending(PublishDate). The music fixture has
+// ids ascending with time, so an id-ascending sort would invert this ordering.
+func TestParseBrowseSortsByPublishDateDesc(t *testing.T) {
+	t.Parallel()
+	body := readFixture(t, "testdata/browse_music.json")
+	d := parseDriver(t, "redacted", map[string]string{"apikey": credAPIKey})
+	got, err := d.parseBrowse(body)
+	if err != nil {
+		t.Fatalf("parseBrowse: %v", err)
+	}
+	wantOrder := []string{
+		"2021-06-01T08:30:00Z",
+		"2012-04-15T10:00:00Z",
+		"2012-04-14T15:57:00Z",
+	}
+	if len(got) != len(wantOrder) {
+		t.Fatalf("got %d releases, want %d", len(got), len(wantOrder))
+	}
+	for i, want := range wantOrder {
+		if got[i].PublishDate != want {
+			t.Errorf("release[%d].PublishDate = %q, want %q", i, got[i].PublishDate, want)
+		}
+	}
 }
 
 // TestParseBrowseNonMusic proves a NON-MUSIC group (torrents == null) is one release
@@ -108,18 +136,9 @@ func TestParseBrowseNonMusic(t *testing.T) {
 		t.Fatalf("parseBrowse: %v", err)
 	}
 
+	// Releases are sorted by PublishDate descending, so the 2024 "Fresh Upload" sorts
+	// before the 2019 audiobook.
 	want := []*normalizer.Release{
-		{
-			Title:      "Some Audiobook Title",
-			Link:       "https://orpheus.network/ajax.php?action=download&id=30000001",
-			Year:       2019,
-			Categories: []int{3030},
-			Size:       734003200,
-			Grabs:      8,
-			Seeders:    15, Leechers: 2, Peers: 17,
-			PublishDate:          "2019-05-02T09:30:30Z",
-			DownloadVolumeFactor: 1, UploadVolumeFactor: 1,
-		},
 		{
 			Title:      "Fresh Upload",
 			Link:       "https://orpheus.network/ajax.php?action=download&id=30000002",
@@ -129,6 +148,17 @@ func TestParseBrowseNonMusic(t *testing.T) {
 			Grabs:      0,
 			Seeders:    1, Leechers: 0, Peers: 1,
 			PublishDate:          "2024-03-01T12:00:00Z",
+			DownloadVolumeFactor: 1, UploadVolumeFactor: 1,
+		},
+		{
+			Title:      "Some Audiobook Title",
+			Link:       "https://orpheus.network/ajax.php?action=download&id=30000001",
+			Year:       2019,
+			Categories: []int{3030},
+			Size:       734003200,
+			Grabs:      8,
+			Seeders:    15, Leechers: 2, Peers: 17,
+			PublishDate:          "2019-05-02T09:30:30Z",
 			DownloadVolumeFactor: 1, UploadVolumeFactor: 1,
 		},
 	}

@@ -136,7 +136,7 @@ func (n flexInt) int64() int64 { return int64(n) }
 // is classified as a login failure when the error text looks like an auth rejection,
 // otherwise a parse error (apikey scrubbed from any surfaced message). On success it
 // flattens each group (music: one release per torrent; non-music: the group itself) and
-// sorts deterministically by torrent id.
+// sorts by PublishDate descending (mirroring Prowlarr's OrderByDescending(PublishDate)).
 func (d *driver) parseBrowse(body []byte) ([]*normalizer.Release, error) {
 	var resp browseResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
@@ -149,12 +149,12 @@ func (d *driver) parseBrowse(body []byte) ([]*normalizer.Release, error) {
 		return nil, nil
 	}
 
-	var rels []*sortableRelease
+	var rels []*normalizer.Release
 	for i := range resp.Response.Results {
 		rels = append(rels, d.flattenGroup(&resp.Response.Results[i])...)
 	}
 	sortReleases(rels)
-	return releasesOnly(rels), nil
+	return rels, nil
 }
 
 // classifyStatusError maps a non-success status to a login or parse failure. Gazelle
@@ -184,31 +184,24 @@ func looksLikeAuthFailure(msg string) bool {
 // flattenGroup turns one browse group into releases: a MUSIC group (Torrents != nil)
 // emits one release per torrent (group × torrent); a NON-MUSIC group (Torrents == nil)
 // is itself one release built from the group-level fields.
-func (d *driver) flattenGroup(g *group) []*sortableRelease {
+func (d *driver) flattenGroup(g *group) []*normalizer.Release {
 	if g.Torrents == nil {
-		return []*sortableRelease{d.nonMusicRelease(g)}
+		return []*normalizer.Release{d.nonMusicRelease(g)}
 	}
-	rels := make([]*sortableRelease, 0, len(g.Torrents))
+	rels := make([]*normalizer.Release, 0, len(g.Torrents))
 	for i := range g.Torrents {
 		rels = append(rels, d.musicRelease(g, &g.Torrents[i]))
 	}
 	return rels
 }
 
-// sortableRelease pairs a release with its torrent id so the deterministic sort does not
-// re-parse the id during comparison.
-type sortableRelease struct {
-	*normalizer.Release
-	sortID int64
-}
-
 // musicRelease maps a group×torrent pair to a release. Title is the full Gazelle
 // composition; Artist/Album(=GroupName)/Year/Genre(=Tags) populate the music fields;
 // PublishDate comes from the torrent's datetime; the category comes from the torrent (or
 // group) Category, defaulting to Audio.
-func (d *driver) musicRelease(g *group, t *torrent) *sortableRelease {
+func (d *driver) musicRelease(g *group, t *torrent) *normalizer.Release {
 	free := d.musicFreeleech(t)
-	rel := &normalizer.Release{
+	return &normalizer.Release{
 		Title:                composeTitle(g, t),
 		Link:                 d.downloadLink(t.TorrentID.int64(), d.wantToken(t.CanUseToken, free)),
 		Artist:               g.Artist,
@@ -225,15 +218,14 @@ func (d *driver) musicRelease(g *group, t *torrent) *sortableRelease {
 		DownloadVolumeFactor: volumeFactor(free),
 		UploadVolumeFactor:   d.uploadVolumeFactor(t.IsNeutralLeech, t.IsFreeload),
 	}
-	return &sortableRelease{Release: rel, sortID: t.TorrentID.int64()}
 }
 
 // nonMusicRelease maps a NON-MUSIC group to a single release: Title=GroupName, the
 // group-level numerics, PublishDate from GroupTime (unix-or-fuzzy), category defaulting
 // to Audio.
-func (d *driver) nonMusicRelease(g *group) *sortableRelease {
+func (d *driver) nonMusicRelease(g *group) *normalizer.Release {
 	free := d.groupFreeleech(g)
-	rel := &normalizer.Release{
+	return &normalizer.Release{
 		Title:                html.UnescapeString(g.GroupName),
 		Link:                 d.downloadLink(g.TorrentID.int64(), d.wantToken(g.CanUseToken, free)),
 		Year:                 parseYear(g.GroupYear),
@@ -247,7 +239,6 @@ func (d *driver) nonMusicRelease(g *group) *sortableRelease {
 		DownloadVolumeFactor: volumeFactor(free),
 		UploadVolumeFactor:   d.uploadVolumeFactor(g.IsNeutralLeech, g.IsFreeload),
 	}
-	return &sortableRelease{Release: rel, sortID: g.TorrentID.int64()}
 }
 
 // composeTitle builds the Gazelle music title EXACTLY per Prowlarr's RED/OPS GetTitle:
@@ -411,20 +402,13 @@ func (d *driver) scrubAPIKey(s string) string {
 	return s
 }
 
-// sortReleases orders releases by torrent id ascending for a deterministic feed (the
-// group iteration order is already stable, but flattening interleaves torrents). The
-// stable sort preserves group order for any tie.
-func sortReleases(rels []*sortableRelease) {
+// sortReleases orders releases by PublishDate descending to mirror Prowlarr's terminal
+// OrderByDescending(o => o.PublishDate) in both the RED and OPS parsers. PublishDate is a
+// UTC RFC3339 string, which sorts lexically in chronological order, so a plain string
+// comparison is correct. The stable sort preserves group/torrent input order for any tie
+// (equal timestamps), keeping the feed deterministic.
+func sortReleases(rels []*normalizer.Release) {
 	sort.SliceStable(rels, func(i, j int) bool {
-		return rels[i].sortID < rels[j].sortID
+		return rels[i].PublishDate > rels[j].PublishDate
 	})
-}
-
-// releasesOnly unwraps the sort wrappers back to plain releases.
-func releasesOnly(in []*sortableRelease) []*normalizer.Release {
-	out := make([]*normalizer.Release, len(in))
-	for i := range in {
-		out[i] = in[i].Release
-	}
-	return out
 }
