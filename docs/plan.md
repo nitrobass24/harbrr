@@ -511,10 +511,12 @@ are byte-identical repeated requests: the single highest-leverage thing to cache
 > - **Invalidation:** TTL primary; FK cascade on instance delete; explicit purge on instance
 >   settings-change/disable (hook the existing registry adapter-cache invalidation in
 >   `internal/indexer/registry/registry.go`); periodic `CleanupExpired`; a manual flush endpoint.
-> - **Secrets at rest:** cached `Release.Link`/`Magnet` embed tracker passkeys, so `results_json`
->   contains secrets — same trust level as the session cookies / encrypted settings already in the
->   `0600` DB, acceptable for single-user self-hosted, but the blob must never hit a log. Optionally
->   route it through `internal/secrets` like other secret columns (**open decision** below).
+> - **Secrets at rest (decided):** cached `Release.Link`/`Magnet` embed tracker passkeys, so
+>   `results_json` contains secrets — same trust level as the session cookies / encrypted settings
+>   already in the `0600` DB, acceptable for single-user self-hosted. **Decision: rely on the `0600`
+>   DB + never-log posture** (matches how session cookies are stored today); the blob must never hit a
+>   log. Not routed through `internal/secrets` — the per-row AES cost on every cache read/write isn't
+>   worth it at this trust level.
 > - **Observability is the selling point:** surface `hit_count` / hit-ratio / entries / approx-size
 >   (qui's `Stats` is the template) in the management API and the Web UI — "X% of searches served from
 >   cache" is the metric that proves the value over Prowlarr.
@@ -534,8 +536,9 @@ Suggested build order (each leaf its own commit + green tests; resequence freely
       cache config + hit-ratio in the Web UI (Phase 11).
 
 **Open decisions (operator's call before build):** (1) **default TTL(s)** — what short-vs-long values
-balance *arr freshness against tracker load; (2) whether to **encrypt `results_json`** via
-`internal/secrets` or rely on the `0600` DB + never-log posture (matches how cookies are stored today).
+balance *arr freshness against tracker load (**still open** — pending a use-case discussion).
+(2) ~~whether to **encrypt `results_json`**~~ — **decided: rely on the `0600` DB + never-log posture**
+(matches how session cookies are stored today); not routed through `internal/secrets`.
 
 ---
 
