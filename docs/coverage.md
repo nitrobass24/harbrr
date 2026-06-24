@@ -73,7 +73,7 @@ HDBits/BeyondHD reuse the FileList passkey shape.
 
 None of this is needed for the current stack — it's the demand-gated roadmap for when a user adds one of
 these trackers. (Source: Jackett `Indexers/Definitions/*.cs` vs `Definitions/*.yml`; cross-checked against
-Prowlarr `Indexers/Definitions/`.)
+Prowlarr `Indexers/Definitions/`.) **Build sequencing + per-driver effort:** see [`native-roadmap.md`](native-roadmap.md).
 
 ## 5. Migration caveat (feeds the Prowlarr migration import)
 
