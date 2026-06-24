@@ -11,7 +11,6 @@
 package gazelle
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -97,13 +96,3 @@ func (d *driver) NeedsResolver() bool { return false }
 // Authorization header, so the served feed routes through the /dl proxy and the
 // driver's Grab fetches the torrent server-side with the header attached.
 func (d *driver) DownloadNeedsAuth() bool { return true }
-
-// Grab is implemented in a later leaf.
-func (d *driver) Grab(_ context.Context, _ string) (*search.GrabResult, error) {
-	return nil, errors.New("gazelle: grab not implemented")
-}
-
-// Test is implemented in a later leaf.
-func (d *driver) Test(_ context.Context) error {
-	return errors.New("gazelle: test not implemented")
-}
