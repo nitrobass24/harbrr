@@ -33,12 +33,13 @@ const (
 )
 
 // Search issues the authenticated torrents.php?action=advanced request for the query and
-// returns the parsed releases. A 401 (bad creds) or 403 (query-limit) is an auth failure
-// wrapped with login.ErrLoginFailed (so the registry records an auth_failure health
-// event); a rate-limit status (429/503) is a RateLimitedError carrying any Retry-After;
-// any other non-2xx is an error. A 200 body must be JSON (Prowlarr rejects a non-JSON
-// response) and is handed to parseReleases. The ApiUser/ApiKey ride in headers, never the
-// URL, and are never logged.
+// returns the parsed releases. A 401 (bad creds) is an auth failure wrapped with
+// login.ErrLoginFailed (so the registry records an auth_failure health event); a 403
+// (PTP's query-limit) or a 429/503 is a RateLimitedError carrying any Retry-After — the
+// parity target (Prowlarr's PassThePopcornParser) raises RequestLimitReachedException on
+// 403, a transient pacing signal, not bad creds; any other non-2xx is an error. A 200 body
+// must be JSON (Prowlarr rejects a non-JSON response) and is handed to parseReleases. The
+// ApiUser/ApiKey ride in headers, never the URL, and are never logged.
 func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
 	resp, err := d.get(ctx, d.buildSearchURL(q))
 	if err != nil {
@@ -47,9 +48,9 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 	defer func() { _ = resp.Body.Close() }()
 
 	switch {
-	case resp.StatusCode == stdhttp.StatusUnauthorized || resp.StatusCode == stdhttp.StatusForbidden:
+	case resp.StatusCode == stdhttp.StatusUnauthorized:
 		return nil, fmt.Errorf("passthepopcorn: search unauthorized: %w", login.ErrLoginFailed)
-	case search.IsRateLimitStatus(resp.StatusCode):
+	case resp.StatusCode == stdhttp.StatusForbidden || search.IsRateLimitStatus(resp.StatusCode):
 		return nil, &search.RateLimitedError{
 			StatusCode: resp.StatusCode,
 			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.clock),

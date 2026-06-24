@@ -23,10 +23,11 @@ var errDownloadTooLarge = errors.New("passthepopcorn: download exceeds the size 
 // ride in headers, attached by get — so the served feed exposes the link and routes the
 // fetch through the /dl proxy, which is the server-side fetch this Grab drives
 // (DownloadNeedsAuth is true, NeedsResolver is false; the Gazelle model). The download is a
-// direct torrent (never a magnet), so Redirect is empty. A 401/403 maps to
-// login.ErrLoginFailed, a rate-limit status to a RateLimitedError, and any other non-2xx to
-// an error; transport and read errors pass through sanitizeGrabError so no URL or credential
-// surfaces. The bytes go to /dl, never a log.
+// direct torrent (never a magnet), so Redirect is empty. A 401 maps to login.ErrLoginFailed;
+// a 403 (PTP's query-limit) or a 429/503 maps to a RateLimitedError (the parity target
+// raises RequestLimitReachedException on 403 — a transient pacing signal, not bad creds);
+// any other non-2xx is an error; transport and read errors pass through sanitizeGrabError so
+// no URL or credential surfaces. The bytes go to /dl, never a log.
 func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, error) {
 	resp, err := d.get(ctx, link)
 	if err != nil {
@@ -35,9 +36,9 @@ func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, err
 	defer func() { _ = resp.Body.Close() }()
 
 	switch {
-	case resp.StatusCode == stdhttp.StatusUnauthorized || resp.StatusCode == stdhttp.StatusForbidden:
+	case resp.StatusCode == stdhttp.StatusUnauthorized:
 		return nil, fmt.Errorf("passthepopcorn: download unauthorized: %w", login.ErrLoginFailed)
-	case search.IsRateLimitStatus(resp.StatusCode):
+	case resp.StatusCode == stdhttp.StatusForbidden || search.IsRateLimitStatus(resp.StatusCode):
 		return nil, &search.RateLimitedError{
 			StatusCode: resp.StatusCode,
 			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.clock),
@@ -56,10 +57,11 @@ func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, err
 	}, nil
 }
 
-// Test exercises the credentials with an empty browse query: a 401/403 surfaces as
-// login.ErrLoginFailed (the registry records an auth_failure health event), while a
-// parseable response confirms the credentials work. Reuses Search so the test path is the
-// real request path, including the status mapping and header auth.
+// Test exercises the credentials with an empty browse query: a 401 surfaces as
+// login.ErrLoginFailed (the registry records an auth_failure health event), a 403/429/503
+// surfaces as a RateLimitedError, while a parseable response confirms the credentials work.
+// Reuses Search so the test path is the real request path, including the status mapping and
+// header auth.
 func (d *driver) Test(ctx context.Context) error {
 	_, err := d.Search(ctx, search.Query{})
 	return err

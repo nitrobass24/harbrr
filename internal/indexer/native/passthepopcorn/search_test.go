@@ -152,28 +152,28 @@ func TestSearchPopulated(t *testing.T) {
 	}
 }
 
-// TestSearchAuthFailure proves a 401 and a 403 both map to login.ErrLoginFailed (PTP
-// signals bad creds as 401 and query-limit as 403; both are auth failures the registry
-// records), and the error never leaks a credential.
+// TestSearchAuthFailure proves a 401 (and only a 401) maps to login.ErrLoginFailed — PTP
+// signals bad creds as 401, while 403 is its query-limit (a rate-limit, asserted in
+// TestSearchRateLimited). The error never leaks a credential.
 func TestSearchAuthFailure(t *testing.T) {
 	t.Parallel()
-	for _, status := range []int{stdhttp.StatusUnauthorized, stdhttp.StatusForbidden} {
-		doer := &scriptDoer{resp: jsonResp(status, `{}`)}
-		_, err := searchDriver(t, doer).Search(context.Background(), search.Query{Keywords: "x"})
-		if !errors.Is(err, login.ErrLoginFailed) {
-			t.Errorf("status %d: err = %v, want login.ErrLoginFailed", status, err)
-		}
-		if err != nil && (strings.Contains(err.Error(), credAPIUser) || strings.Contains(err.Error(), credAPIKey)) {
-			t.Errorf("status %d: error leaked a credential: %v", status, err)
-		}
+	doer := &scriptDoer{resp: jsonResp(stdhttp.StatusUnauthorized, `{}`)}
+	_, err := searchDriver(t, doer).Search(context.Background(), search.Query{Keywords: "x"})
+	if !errors.Is(err, login.ErrLoginFailed) {
+		t.Errorf("err = %v, want login.ErrLoginFailed", err)
+	}
+	if err != nil && (strings.Contains(err.Error(), credAPIUser) || strings.Contains(err.Error(), credAPIKey)) {
+		t.Errorf("error leaked a credential: %v", err)
 	}
 }
 
-// TestSearchRateLimited proves a 429/503 maps to a RateLimitedError carrying the status
-// and any Retry-After (PTP's 4s/150-per-hour pacing surfaces as these statuses).
+// TestSearchRateLimited proves a 403 (PTP's query-limit) and a 429/503 each map to a
+// RateLimitedError carrying the status and any Retry-After. The parity target (Prowlarr's
+// PassThePopcornParser) raises RequestLimitReachedException on 403, so it is a pacing
+// signal, not an auth failure — matching PTP's 4s/150-per-hour budget.
 func TestSearchRateLimited(t *testing.T) {
 	t.Parallel()
-	for _, status := range []int{stdhttp.StatusTooManyRequests, stdhttp.StatusServiceUnavailable} {
+	for _, status := range []int{stdhttp.StatusForbidden, stdhttp.StatusTooManyRequests, stdhttp.StatusServiceUnavailable} {
 		resp := jsonResp(status, `{}`)
 		resp.Header.Set("Retry-After", "30")
 		doer := &scriptDoer{resp: resp}

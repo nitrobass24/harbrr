@@ -94,26 +94,28 @@ func TestGrabContextErrorPassesThrough(t *testing.T) {
 	}
 }
 
-// TestGrabStatusDispatch proves a 401/403 download response maps to login.ErrLoginFailed
-// (and never leaks a credential), and that a rate-limit status surfaces a RateLimitedError.
+// TestGrabStatusDispatch proves a 401 download response maps to login.ErrLoginFailed (and
+// never leaks a credential), and that a 403 (PTP's query-limit) and a 429/503 each surface a
+// RateLimitedError — matching the parity target, which treats 403 as a rate-limit, not an
+// auth failure.
 func TestGrabStatusDispatch(t *testing.T) {
 	t.Parallel()
-	for _, status := range []int{stdhttp.StatusUnauthorized, stdhttp.StatusForbidden} {
-		d := searchDriver(t, &scriptDoer{resp: rawResp(status, "text/html", "nope")})
-		_, err := d.Grab(context.Background(), "https://passthepopcorn.me/torrents.php?action=download&id=1")
-		if !errors.Is(err, login.ErrLoginFailed) {
-			t.Errorf("HTTP %d: err = %v, want login.ErrLoginFailed", status, err)
-		}
-		if err != nil && (strings.Contains(err.Error(), credAPIUser) || strings.Contains(err.Error(), credAPIKey)) {
-			t.Errorf("HTTP %d: error leaked a credential: %v", status, err)
-		}
+	d := searchDriver(t, &scriptDoer{resp: rawResp(stdhttp.StatusUnauthorized, "text/html", "nope")})
+	_, err := d.Grab(context.Background(), "https://passthepopcorn.me/torrents.php?action=download&id=1")
+	if !errors.Is(err, login.ErrLoginFailed) {
+		t.Errorf("HTTP 401: err = %v, want login.ErrLoginFailed", err)
+	}
+	if err != nil && (strings.Contains(err.Error(), credAPIUser) || strings.Contains(err.Error(), credAPIKey)) {
+		t.Errorf("HTTP 401: error leaked a credential: %v", err)
 	}
 
-	d := searchDriver(t, &scriptDoer{resp: rawResp(stdhttp.StatusTooManyRequests, "text/html", "slow down")})
-	_, err := d.Grab(context.Background(), "https://passthepopcorn.me/torrents.php?action=download&id=1")
-	var rl *search.RateLimitedError
-	if !errors.As(err, &rl) {
-		t.Errorf("HTTP 429: err = %v, want *search.RateLimitedError", err)
+	for _, status := range []int{stdhttp.StatusForbidden, stdhttp.StatusTooManyRequests, stdhttp.StatusServiceUnavailable} {
+		d := searchDriver(t, &scriptDoer{resp: rawResp(status, "text/html", "slow down")})
+		_, err := d.Grab(context.Background(), "https://passthepopcorn.me/torrents.php?action=download&id=1")
+		var rl *search.RateLimitedError
+		if !errors.As(err, &rl) {
+			t.Errorf("HTTP %d: err = %v, want *search.RateLimitedError", status, err)
+		}
 	}
 }
 
