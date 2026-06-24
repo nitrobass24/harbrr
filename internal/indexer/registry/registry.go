@@ -26,6 +26,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/native/broadcastthenet"
 	"github.com/autobrr/harbrr/internal/indexer/native/filelist"
 	"github.com/autobrr/harbrr/internal/indexer/native/gazelle"
+	"github.com/autobrr/harbrr/internal/indexer/native/gazellegames"
 	"github.com/autobrr/harbrr/internal/indexer/native/iptorrents"
 	"github.com/autobrr/harbrr/internal/indexer/native/myanonamouse"
 	"github.com/autobrr/harbrr/internal/indexer/native/passthepopcorn"
@@ -321,6 +322,7 @@ func nativeFamilies() map[string]native.Family {
 		myanonamouse.Families(),
 		iptorrents.Families(),
 		gazelle.Families(),
+		gazellegames.Families(),
 		passthepopcorn.Families(),
 	} {
 		for _, f := range fams {
