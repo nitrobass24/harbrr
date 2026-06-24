@@ -64,3 +64,20 @@ func (d *driver) post(ctx context.Context, body []byte) (*stdhttp.Response, erro
 	}
 	return resp, nil
 }
+
+// get issues a plain GET for a download URL. A BTN download URL already carries its own
+// authkey/torrent_pass in the query (no API key header is needed for the download), so
+// no auth header is set. The URL is secret-bearing, so a transport error routes it
+// through apphttp.RedactURL and the URL never reaches a log. The caller owns the
+// returned body and interprets the status.
+func (d *driver) get(ctx context.Context, rawurl string) (*stdhttp.Response, error) {
+	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
+	if err != nil {
+		return nil, fmt.Errorf("broadcastthenet: build request: %w", err)
+	}
+	resp, err := d.doer.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("broadcastthenet: request to %s: %w", apphttp.RedactURL(rawurl), err)
+	}
+	return resp, nil
+}

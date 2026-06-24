@@ -79,12 +79,6 @@ func (d *driver) NeedsResolver() bool { return true }
 // redundant (it mirrors FileList/AvistaZ).
 func (d *driver) DownloadNeedsAuth() bool { return false }
 
-// Grab is implemented in a later leaf; the stub keeps the package compiling and
-// satisfying native.Driver.
-func (d *driver) Grab(_ context.Context, _ string) (*search.GrabResult, error) {
-	return nil, errors.New("broadcastthenet: grab not implemented")
-}
-
 // Test verifies the configured API key authenticates (the management "test indexer"
 // action) by issuing an empty browse query: a good key returns 200 with a result
 // envelope, a bad key surfaces as login.ErrLoginFailed (HTTP 401/403 or the -32001

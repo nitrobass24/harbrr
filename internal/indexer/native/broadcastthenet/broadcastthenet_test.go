@@ -109,14 +109,3 @@ func TestSiteCaps(t *testing.T) {
 		}
 	}
 }
-
-// TestGrabStubCompiles proves the Grab stub still satisfies native.Driver and reports
-// not-implemented (filled in a later leaf) rather than panicking. Search/Test are now
-// implemented and exercised in search_test.go.
-func TestGrabStubCompiles(t *testing.T) {
-	t.Parallel()
-	d := buildDriver(t)
-	if _, err := d.Grab(t.Context(), "x"); err == nil {
-		t.Error("Grab stub should return an error")
-	}
-}
