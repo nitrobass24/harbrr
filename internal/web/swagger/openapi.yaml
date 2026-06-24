@@ -38,6 +38,11 @@ tags:
     description: Mint and revoke the keys that authorize programmatic and feed access.
   - name: System
     description: Liveness and other operational endpoints.
+  - name: Cache
+    description: >
+      The search-results cache backing the Torznab feed and JSON search. Inspect
+      hit-ratio and size, or flush every entry. When caching is disabled the
+      endpoints report a disabled state rather than 404.
 
 paths:
   /healthz:
@@ -813,6 +818,44 @@ paths:
             application/xml:
               schema: { type: string }
 
+  /api/cache/stats:
+    get:
+      summary: Search-results cache statistics
+      description: >
+        Returns the cache's durable figures (entry count, total hits, approximate
+        size, and the oldest/newest/last-used timestamps) plus the process-lifetime
+        hit ratio. hitRatio is NON-PERSISTENT: it derives from in-memory hit/miss
+        counters that reset on restart. When caching is disabled the response is
+        {"enabled": false} with no figures.
+      operationId: cacheStats
+      tags: [Cache]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the cache statistics (or a disabled marker)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CacheStats" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/cache/flush:
+    post:
+      summary: Flush the search-results cache
+      description: >
+        Deletes every cache entry and returns the count purged. The process-lifetime
+        hit/miss counters are not reset. When caching is disabled the response is
+        {"flushed": 0}.
+      operationId: cacheFlush
+      tags: [Cache]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the number of entries flushed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CacheFlushResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
 components:
   securitySchemes:
     session:
@@ -1162,3 +1205,40 @@ components:
           items: { type: integer, format: int64 }
           description: the indexer instance ids to select; all others are cleared
       required: [instanceIds]
+    CacheStats:
+      type: object
+      description: >
+        Search-results cache statistics. When enabled is false, caching is off and
+        the remaining figures are absent/zero.
+      properties:
+        enabled: { type: boolean, description: whether caching is configured }
+        entries: { type: integer, format: int64, description: number of cached search results }
+        totalHits: { type: integer, format: int64, description: durable sum of per-entry hit counts }
+        hitRatio:
+          type: number
+          format: double
+          description: >
+            hits / (hits + misses) over the current process lifetime. NON-PERSISTENT:
+            the underlying hit/miss counters are in-memory and reset on restart.
+        approxSizeBytes: { type: integer, format: int64, description: approximate total size of cached payloads }
+        oldestCachedAt:
+          type: integer
+          format: int64
+          nullable: true
+          description: Unix seconds of the oldest entry's cached_at, or null when empty
+        newestCachedAt:
+          type: integer
+          format: int64
+          nullable: true
+          description: Unix seconds of the newest entry's cached_at, or null when empty
+        lastUsedAt:
+          type: integer
+          format: int64
+          nullable: true
+          description: Unix seconds of the most-recently-used entry, or null when empty
+      required: [enabled]
+    CacheFlushResult:
+      type: object
+      properties:
+        flushed: { type: integer, format: int64, description: number of entries purged (0 when caching is disabled) }
+      required: [flushed]

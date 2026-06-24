@@ -30,10 +30,13 @@ type indexerAdapter struct {
 	info       torznab.IndexerInfo
 	inner      native.Driver
 	instanceID int64
-	db         dbinterface.Execer
-	health     database.Health
-	clock      func() time.Time
-	log        zerolog.Logger
+	// cfg is the decrypted per-instance settings map. The search-cache decorator
+	// reads its "cache_ttl" override; it carries secrets, so it is never logged.
+	cfg    map[string]string
+	db     dbinterface.Execer
+	health database.Health
+	clock  func() time.Time
+	log    zerolog.Logger
 }
 
 // Compile-time proof the adapter satisfies the handler's contract.

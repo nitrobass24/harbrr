@@ -33,7 +33,11 @@ type Deps struct {
 	// BasePath is the externally-visible base path, used to build absolute /dl URLs
 	// (the server strips it before routing, so it must be re-added).
 	BasePath string
-	Logger   zerolog.Logger
+	// Cache is the search-results cache backing the /api/cache stats/flush routes.
+	// Nil means caching is disabled; those routes then report a disabled state
+	// rather than 404 (wired in a later leaf).
+	Cache  *registry.SearchCache
+	Logger zerolog.Logger
 }
 
 // Config is the API's auth posture (mapped from the app config by the server).
@@ -56,6 +60,7 @@ type router struct {
 	sessions *scs.SessionManager
 	dlToken  *secrets.Keyring
 	basePath string
+	cache    *registry.SearchCache
 	cfg      Config
 	log      zerolog.Logger
 
@@ -85,7 +90,7 @@ func NewRouter(deps Deps, cfg Config) (http.Handler, error) {
 	rt := &router{
 		auth: deps.Auth, registry: deps.Registry, loader: deps.Loader, appsync: deps.AppSync,
 		sessions: deps.Sessions, dlToken: deps.DLToken, basePath: deps.BasePath,
-		cfg: cfg, log: deps.Logger,
+		cache: deps.Cache, cfg: cfg, log: deps.Logger,
 		allowlist: allow, trustedProxies: proxies,
 	}
 	return rt.routes(), nil
@@ -144,6 +149,9 @@ func (rt *router) routes() http.Handler {
 			r.Post("/api/app-connections/{id}/sync", rt.syncConnection)
 			r.Get("/api/app-connections/{id}/status", rt.connectionStatus)
 			r.Put("/api/app-connections/{id}/indexers", rt.setConnectionIndexers)
+
+			r.Get("/api/cache/stats", rt.cacheStats)
+			r.Post("/api/cache/flush", rt.cacheFlush)
 		})
 	})
 	return r

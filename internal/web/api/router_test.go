@@ -84,6 +84,14 @@ type env struct {
 // newEnv builds the management API over an in-memory database with a fixed clock,
 // the vendored loader, and a session manager. cfg sets the auth posture.
 func newEnv(t *testing.T, cfg api.Config) *env {
+	return newEnvWithCache(t, cfg, nil)
+}
+
+// newEnvWithCache is newEnv with an optional search-results cache wired into Deps.
+// buildCache (when non-nil) is handed the env's database so the cache is backed by
+// the same store the handlers read; a nil builder means caching is off (the
+// /api/cache routes then report a disabled state).
+func newEnvWithCache(t *testing.T, cfg api.Config, buildCache func(db *database.DB) *registry.SearchCache) *env {
 	t.Helper()
 
 	db, err := database.Open(":memory:")
@@ -121,8 +129,14 @@ func newEnv(t *testing.T, cfg api.Config) *env {
 	source := &fakeAppSource{}
 	appSync := appsync.NewService(db, source, authSvc, keyring, http.DefaultClient, zerolog.Nop())
 
+	var cache *registry.SearchCache
+	if buildCache != nil {
+		cache = buildCache(db)
+	}
+
 	handler, err := api.NewRouter(api.Deps{
-		Auth: authSvc, Registry: reg, Loader: ldr, AppSync: appSync, Sessions: sm, Logger: zerolog.Nop(),
+		Auth: authSvc, Registry: reg, Loader: ldr, AppSync: appSync, Sessions: sm,
+		Cache: cache, Logger: zerolog.Nop(),
 	}, cfg)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)

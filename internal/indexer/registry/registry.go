@@ -54,8 +54,15 @@ type Registry struct {
 	// Cardigann engine; everything else (caching, health, /dl, serializer) is shared.
 	native map[string]native.Family
 
-	mu    sync.Mutex
-	cache map[string]*indexerAdapter
+	// searchCache, when non-nil, wraps each resolved indexer in a cache-aside
+	// decorator (the served path only — Test stays uncached). Nil means caching is
+	// OFF and resolve returns the bare adapter unchanged.
+	searchCache *SearchCache
+
+	mu sync.Mutex
+	// cache holds the per-slug served indexer. It is the wrapped (cached) indexer
+	// when searchCache != nil, else the bare adapter — both as torznab.Indexer.
+	cache map[string]torznab.Indexer
 }
 
 // secretsKeyring is the subset of *secrets.Keyring the registry uses, declared as
@@ -83,6 +90,13 @@ func WithTimeout(d time.Duration) Option { return func(r *Registry) { r.timeout 
 
 // WithLogger sets the logger used for resolve failures (errors are redacted).
 func WithLogger(l zerolog.Logger) Option { return func(r *Registry) { r.log = l } }
+
+// WithSearchCache enables the search-results cache: resolved indexers are wrapped
+// in a cache-aside decorator. Nil (the default, when this Option is not passed)
+// leaves caching off with zero behavior change.
+func WithSearchCache(sc *SearchCache) Option {
+	return func(r *Registry) { r.searchCache = sc }
+}
 
 // ClientParams carries the per-instance inputs the doer factory needs to vary the
 // HTTP client per indexer. The original seam was nullary (every engine shared one
@@ -120,7 +134,7 @@ func New(db *database.DB, ldr *loader.Loader, keyring secretsKeyring, opts ...Op
 		timeout: defaultHTTPTimeout,
 		log:     zerolog.Nop(),
 		native:  nativeFamilies(),
-		cache:   map[string]*indexerAdapter{},
+		cache:   map[string]torznab.Indexer{},
 	}
 	for _, o := range opts {
 		o(r)
@@ -135,27 +149,27 @@ func New(db *database.DB, ldr *loader.Loader, keyring secretsKeyring, opts ...Op
 // missing, disabled, or unbuildable instance returns ok=false so the handler
 // degrades cleanly (returns the standard "indexer not supported" error).
 func (r *Registry) Indexer(ctx context.Context, slug string) (torznab.Indexer, bool) {
-	a, err := r.resolve(ctx, slug)
+	idx, err := r.resolve(ctx, slug)
 	if err != nil {
 		r.logResolveError(slug, err)
 		return nil, false
 	}
-	return a, true
+	return idx, true
 }
 
 // resolve returns the cached adapter for a slug or builds and caches it. Build
 // happens outside the lock (it does DB I/O + crypto); a double-check after build
 // means that if two goroutines race to build the same uncached slug, the first to
 // cache wins and the other reuses it rather than installing a duplicate engine.
-func (r *Registry) resolve(ctx context.Context, slug string) (*indexerAdapter, error) {
+func (r *Registry) resolve(ctx context.Context, slug string) (torznab.Indexer, error) {
 	r.mu.Lock()
-	if a, ok := r.cache[slug]; ok {
+	if idx, ok := r.cache[slug]; ok {
 		r.mu.Unlock()
-		return a, nil
+		return idx, nil
 	}
 	r.mu.Unlock()
 
-	a, err := r.build(ctx, slug)
+	idx, err := r.build(ctx, slug)
 	if err != nil {
 		return nil, err
 	}
@@ -165,14 +179,29 @@ func (r *Registry) resolve(ctx context.Context, slug string) (*indexerAdapter, e
 	if cached, ok := r.cache[slug]; ok {
 		return cached, nil // another goroutine built it first; reuse its engine
 	}
-	r.cache[slug] = a
-	return a, nil
+	r.cache[slug] = idx
+	return idx, nil
 }
 
-// build loads the instance + definition, decrypts its settings, and constructs the
-// engine-shaped core (Cardigann engine OR native family driver) wrapped in the
-// shared adapter.
-func (r *Registry) build(ctx context.Context, slug string) (*indexerAdapter, error) {
+// build resolves the served indexer for a slug: the bare adapter wrapped in the
+// search-cache decorator when caching is enabled, else the bare adapter. resolve
+// caches and serves this; Test deliberately uses buildAdapter (uncached, unwrapped).
+func (r *Registry) build(ctx context.Context, slug string) (torznab.Indexer, error) {
+	a, err := r.buildAdapter(ctx, slug)
+	if err != nil {
+		return nil, err
+	}
+	if r.searchCache == nil {
+		return a, nil
+	}
+	return r.searchCache.wrap(a, a.instanceID, a.cfg), nil
+}
+
+// buildAdapter loads the instance + definition, decrypts its settings, and
+// constructs the engine-shaped core (Cardigann engine OR native family driver)
+// wrapped in the shared adapter. It returns the BARE adapter, never the cache
+// decorator — Test uses it so a credential probe never consults or warms the cache.
+func (r *Registry) buildAdapter(ctx context.Context, slug string) (*indexerAdapter, error) {
 	inst, err := r.instances.GetBySlug(ctx, r.db, slug)
 	if err != nil {
 		return nil, fmt.Errorf("registry: load instance %q: %w", slug, err)
@@ -210,6 +239,7 @@ func (r *Registry) build(ctx context.Context, slug string) (*indexerAdapter, err
 		info:       indexerInfo(inst, def),
 		inner:      inner,
 		instanceID: inst.ID,
+		cfg:        cfg,
 		db:         r.db,
 		health:     r.health,
 		clock:      r.clock,
@@ -360,6 +390,22 @@ func (r *Registry) invalidate(slug string) {
 	r.mu.Lock()
 	delete(r.cache, slug)
 	r.mu.Unlock()
+}
+
+// invalidateSearchCache purges the search-results cache entries for one instance
+// after a config mutation. It is nil-guarded (a no-op when caching is off) and
+// best-effort: a failed purge is logged (key/id only, never a payload) and never
+// fails the mutation.
+func (r *Registry) invalidateSearchCache(ctx context.Context, instanceID int64) {
+	if r.searchCache == nil {
+		return
+	}
+	if _, err := r.searchCache.InvalidateByInstance(ctx, instanceID); err != nil {
+		r.log.Warn().
+			Int64("instance_id", instanceID).
+			Str("error", apphttp.RedactError(err)).
+			Msg("registry: search cache invalidate failed")
+	}
 }
 
 // inTx runs fn inside a transaction, committing on success and rolling back on

@@ -91,12 +91,18 @@ func serve(ctx context.Context, cfg *config.Config, log zerolog.Logger) error {
 	store := database.NewSessionStore(db)
 	sessions := sessionManager(store, cfg)
 	authSvc := auth.NewService(db)
-	reg := registry.New(db, loader.New(dropinDir(cfg)), keyring, registry.WithLogger(log))
+
+	searchCache := buildSearchCache(db, cfg, log)
+	regOpts := []registry.Option{registry.WithLogger(log)}
+	if searchCache != nil {
+		regOpts = append(regOpts, registry.WithSearchCache(searchCache))
+	}
+	reg := registry.New(db, loader.New(dropinDir(cfg)), keyring, regOpts...)
 	appSync := appsync.NewService(db, registrySource{reg: reg}, authSvc, keyring, appSyncClient(), log)
 
 	mgmt, err := api.NewRouter(api.Deps{
 		Auth: authSvc, Registry: reg, Loader: loader.New(dropinDir(cfg)), AppSync: appSync, Sessions: sessions,
-		DLToken: keyring, BasePath: cfg.Server.BaseURL, Logger: log,
+		DLToken: keyring, BasePath: cfg.Server.BaseURL, Cache: searchCache, Logger: log,
 	}, api.Config{
 		AuthDisabled: cfg.Auth.AuthDisabled(), IPAllowlist: cfg.Auth.IPAllowlist, TrustedProxies: cfg.Auth.TrustedProxies,
 	})
@@ -116,6 +122,9 @@ func serve(ctx context.Context, cfg *config.Config, log zerolog.Logger) error {
 		server.Config{Addr: listenAddr(cfg), BasePath: cfg.Server.BaseURL})
 
 	startSessionCleanup(ctx, store, log)
+	if searchCache != nil {
+		startSearchCacheCleanup(ctx, searchCache, cfg.Cache.CleanupDuration(), log)
+	}
 	logStartup(log, cfg)
 	if err := srv.Run(ctx); err != nil {
 		return fmt.Errorf("serve: %w", err)
@@ -236,6 +245,47 @@ func startSessionCleanup(ctx context.Context, store *database.SessionStore, log 
 			case <-t.C:
 				if err := store.DeleteExpired(ctx); err != nil && !errors.Is(err, context.Canceled) {
 					log.Warn().Err(err).Msg("session cleanup failed")
+				}
+			}
+		}
+	}()
+}
+
+// buildSearchCache constructs the registry-wide search-results cache from config,
+// or returns nil when caching is disabled (then the registry runs uncached).
+func buildSearchCache(db *database.DB, cfg *config.Config, log zerolog.Logger) *registry.SearchCache {
+	if !cfg.Cache.Enabled {
+		return nil
+	}
+	return registry.NewSearchCacheWithParams(db, registry.SearchCacheParams{
+		RSSTTL:          cfg.Cache.RSSDuration(),
+		KeywordTTL:      cfg.Cache.KeywordDuration(),
+		ThinTTL:         cfg.Cache.ThinDuration(),
+		ThinThreshold:   cfg.Cache.ThinThreshold,
+		RefreshAheadPct: cfg.Cache.RefreshAheadPct,
+	}, time.Now, log)
+}
+
+// startSearchCacheCleanup reaps expired cache entries on the configured interval
+// until ctx is cancelled, mirroring startSessionCleanup. A failed purge is logged
+// (redacted) and never fails anything.
+func startSearchCacheCleanup(ctx context.Context, sc *registry.SearchCache, interval time.Duration, log zerolog.Logger) {
+	go func() {
+		t := time.NewTicker(interval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				// Final flush of buffered hit bumps on shutdown, with a fresh bounded
+				// context since ctx is already canceled.
+				fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+				sc.FlushTouches(fctx)
+				cancel()
+				return
+			case <-t.C:
+				sc.FlushTouches(ctx)
+				if _, err := sc.CleanupExpired(ctx); err != nil && !errors.Is(err, context.Canceled) {
+					log.Warn().Err(err).Msg("search cache cleanup failed")
 				}
 			}
 		}

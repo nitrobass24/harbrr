@@ -36,3 +36,14 @@ auth:
   # synthetic admin to allowlisted client IPs. It REQUIRES a non-empty ip_allowlist.
   ip_allowlist: []       # e.g. ["10.0.0.0/8", "192.168.1.5"]
   trusted_proxies: []    # peers whose X-Forwarded-For is trusted, e.g. ["172.16.0.0/12"]
+
+cache:
+  # Search-results cache. One cached entry serves every client; results are cached
+  # before the /dl link rewrite, so passkeys are still sealed per-request on a hit.
+  enabled: true          # set false to disable caching entirely (zero behavior change)
+  rss_ttl: 5m            # TTL for an empty/RSS poll
+  keyword_ttl: 30m       # TTL for a real keyword/id search
+  thin_ttl: 2m           # shorter TTL when a search returns few results
+  thin_threshold: 5      # result count at/below which thin_ttl applies (only shortens)
+  refresh_ahead_pct: 80  # serve cached + refresh once past this % of the TTL
+  cleanup_interval: 1h    # how often expired entries are reaped

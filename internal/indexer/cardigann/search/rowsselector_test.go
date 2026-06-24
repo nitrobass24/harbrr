@@ -64,7 +64,8 @@ func TestRenderRowsSelector_CompilesAndSplits(t *testing.T) {
 		`<tr><td>row one</td></tr><tr><td>row two</td></tr></tbody></table>`
 	blk, err := renderRowsSelector(
 		loader.RowsBlock{Selector: `table.lista[width="100%"] > tbody > style ~ tr{{ if .Config.freeleech }}:has(img){{ end }}`},
-		Query{}, Deps{Config: map[string]string{}, BaseURL: "https://t.invalid/"})
+		Query{}, Deps{Config: map[string]string{}, BaseURL: "https://t.invalid/"},
+	)
 	if err != nil {
 		t.Fatalf("renderRowsSelector: %v", err)
 	}

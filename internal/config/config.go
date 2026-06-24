@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // redactedMask is the placeholder substituted for secret values when a Config
@@ -25,6 +26,26 @@ type Config struct {
 	Database DatabaseConfig `mapstructure:"database"`
 	Secrets  SecretsConfig  `mapstructure:"secrets"`
 	Auth     AuthConfig     `mapstructure:"auth"`
+	Cache    CacheConfig    `mapstructure:"cache"`
+}
+
+// CacheConfig tunes the search-results cache. Durations are Go duration strings
+// (e.g. "5m", "1h") so they round-trip through viper/env/flags as plain strings,
+// mirroring how per-instance "timeout"/"cache_ttl" settings are modeled. When
+// Enabled is false, the cache is wired off entirely (zero behavior change).
+type CacheConfig struct {
+	Enabled bool `mapstructure:"enabled"`
+	// RSSTTL is the TTL for an empty/RSS poll; KeywordTTL for a real search.
+	RSSTTL     string `mapstructure:"rss_ttl"`
+	KeywordTTL string `mapstructure:"keyword_ttl"`
+	// ThinTTL is the short clamp for a search returning <= ThinThreshold results.
+	ThinTTL       string `mapstructure:"thin_ttl"`
+	ThinThreshold int    `mapstructure:"thin_threshold"`
+	// RefreshAheadPct is the percentage of a TTL after which a live hit fires one
+	// background refresh (stale-while-revalidate).
+	RefreshAheadPct int `mapstructure:"refresh_ahead_pct"`
+	// CleanupInterval is how often expired entries are reaped.
+	CleanupInterval string `mapstructure:"cleanup_interval"`
 }
 
 // ServerConfig describes the HTTP listener and reverse-proxy posture.
@@ -102,7 +123,56 @@ func Defaults() Config {
 		Database: DatabaseConfig{Path: ""}, // derived under DataDir when empty
 		Secrets:  SecretsConfig{},
 		Auth:     AuthConfig{Mode: authModeRequired},
+		Cache: CacheConfig{
+			Enabled:         true,
+			RSSTTL:          "5m",
+			KeywordTTL:      "30m",
+			ThinTTL:         "2m",
+			ThinThreshold:   5,
+			RefreshAheadPct: 80,
+			CleanupInterval: "1h",
+		},
 	}
+}
+
+// cacheDurationDefaults backs each CacheConfig duration field when its string is
+// empty or unparseable, so a partial override never zeroes a TTL.
+var cacheDurationDefaults = struct {
+	rss, keyword, thin, cleanup time.Duration
+}{
+	rss:     5 * time.Minute,
+	keyword: 30 * time.Minute,
+	thin:    2 * time.Minute,
+	cleanup: time.Hour,
+}
+
+// parseDurationOr parses a Go duration string, falling back to def when empty,
+// invalid, or non-positive.
+func parseDurationOr(s string, def time.Duration) time.Duration {
+	if d, err := time.ParseDuration(s); err == nil && d > 0 {
+		return d
+	}
+	return def
+}
+
+// RSSDuration is the resolved RSS-poll TTL.
+func (c CacheConfig) RSSDuration() time.Duration {
+	return parseDurationOr(c.RSSTTL, cacheDurationDefaults.rss)
+}
+
+// KeywordDuration is the resolved keyword-search TTL.
+func (c CacheConfig) KeywordDuration() time.Duration {
+	return parseDurationOr(c.KeywordTTL, cacheDurationDefaults.keyword)
+}
+
+// ThinDuration is the resolved thin-result clamp TTL.
+func (c CacheConfig) ThinDuration() time.Duration {
+	return parseDurationOr(c.ThinTTL, cacheDurationDefaults.thin)
+}
+
+// CleanupDuration is the resolved expired-entry reap interval.
+func (c CacheConfig) CleanupDuration() time.Duration {
+	return parseDurationOr(c.CleanupInterval, cacheDurationDefaults.cleanup)
 }
 
 // DatabasePath returns the configured SQLite path, defaulting to

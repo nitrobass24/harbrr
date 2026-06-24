@@ -166,15 +166,23 @@ func (r *Registry) Update(ctx context.Context, slug string, p UpdateParams) erro
 		return err
 	}
 	r.invalidate(slug)
+	r.invalidateSearchCache(ctx, inst.ID)
 	return nil
 }
 
-// SetEnabled enables/disables an instance and invalidates its cached engine.
+// SetEnabled enables/disables an instance and invalidates its cached engine. It
+// loads the instance first to obtain its id for the search-cache purge (a config
+// change must never serve stale results).
 func (r *Registry) SetEnabled(ctx context.Context, slug string, enabled bool) error {
+	inst, err := r.instances.GetBySlug(ctx, r.db, slug)
+	if err != nil {
+		return fmt.Errorf("registry: set enabled %q: %w", slug, err)
+	}
 	if err := r.instances.SetEnabled(ctx, r.db, slug, enabled, r.clock()); err != nil {
 		return fmt.Errorf("registry: set enabled %q: %w", slug, err)
 	}
 	r.invalidate(slug)
+	r.invalidateSearchCache(ctx, inst.ID)
 	return nil
 }
 
@@ -279,7 +287,7 @@ func classifySecret(name string, fields map[string]loader.SettingsField) bool {
 // Returns nil when the credentials authenticate; otherwise the engine's login
 // error (which the API layer sanitizes before returning to the client).
 func (r *Registry) Test(ctx context.Context, slug string) error {
-	a, err := r.build(ctx, slug)
+	a, err := r.buildAdapter(ctx, slug)
 	if err != nil {
 		return err
 	}

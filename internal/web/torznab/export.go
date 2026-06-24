@@ -30,6 +30,9 @@ func SearchReleases(ctx context.Context, idx Indexer, q url.Values) ([]*normaliz
 // already resolved (for mode validation) so they are not recomputed.
 func searchReleases(ctx context.Context, idx Indexer, caps *mapper.Capabilities, q url.Values) ([]*normalizer.Release, error) {
 	query, requestedCats := buildQuery(q, caps)
+	if wantsNoCache(q) {
+		ctx = WithCacheBypass(ctx)
+	}
 	releases, err := idx.Search(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("torznab: search: %w", err)

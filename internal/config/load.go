@@ -64,6 +64,13 @@ func setDefaults(v *viper.Viper) {
 	// auth.trusted_proxies are set via the config file.
 	v.SetDefault("server.secure_cookie", d.Server.SecureCookie)
 	v.SetDefault("secrets.allow_plaintext", d.Secrets.AllowPlaintext)
+	v.SetDefault("cache.enabled", d.Cache.Enabled)
+	v.SetDefault("cache.rss_ttl", d.Cache.RSSTTL)
+	v.SetDefault("cache.keyword_ttl", d.Cache.KeywordTTL)
+	v.SetDefault("cache.thin_ttl", d.Cache.ThinTTL)
+	v.SetDefault("cache.thin_threshold", d.Cache.ThinThreshold)
+	v.SetDefault("cache.refresh_ahead_pct", d.Cache.RefreshAheadPct)
+	v.SetDefault("cache.cleanup_interval", d.Cache.CleanupInterval)
 }
 
 func bindFlags(v *viper.Viper, flags *pflag.FlagSet) error {
