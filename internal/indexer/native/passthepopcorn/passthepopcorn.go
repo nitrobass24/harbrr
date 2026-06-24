@@ -11,7 +11,6 @@
 package passthepopcorn
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -77,16 +76,5 @@ func (d *driver) NeedsResolver() bool { return false }
 
 // DownloadNeedsAuth is true: the download authenticates out-of-band via the ApiUser/
 // ApiKey headers, so the served feed routes through the /dl proxy and the driver's Grab
-// fetches the torrent server-side with the headers attached.
+// (grab.go) fetches the torrent server-side with the headers attached.
 func (d *driver) DownloadNeedsAuth() bool { return true }
-
-// Grab is implemented in a later leaf.
-func (d *driver) Grab(_ context.Context, _ string) (*search.GrabResult, error) {
-	return nil, errors.New("passthepopcorn: Grab not implemented")
-}
-
-// Test verifies the configured credentials authenticate (the management "test indexer"
-// action). It is implemented in a later leaf alongside Search.
-func (d *driver) Test(_ context.Context) error {
-	return errors.New("passthepopcorn: Test not implemented")
-}
