@@ -63,7 +63,7 @@ by auth shape, mapped to the shapes harbrr **already** has, so each is "reuse" v
 | **Passkey / Basic / API-key (JSON)** | ✅ FileList (done) | ⭐HDBits, ⭐BeyondHD, MTeam, NorBits, SceneHD |
 | **Session cookie (JSON, rotating)** | ✅ MyAnonamouse (done) | — |
 | **Gazelle API** (cookie→`ajax.php`→passkey DL) | ❌ **new shape** | ⭐Redacted, ⭐Orpheus, DICMusic, Libble, GreatPosterWall, BrokenStones, … |
-| **Bespoke API token** | partial | ⭐PassThePopcorn, ⭐BroadcastTheNet, ⭐GazelleGames, ⭐AnimeBytes, Nebulance |
+| **Bespoke API token** | ✅ BroadcastTheNet (done, #62) | ⭐PassThePopcorn, ⭐GazelleGames, ⭐AnimeBytes, Nebulance |
 | **Locale/parsing C#** (low priority) | n/a | RuTracker, LostFilm, Toloka, SubsPlease, AudioBookBay, … (mostly public/niche) |
 
 **Highest-leverage next investment: one Gazelle-API base driver** — it unlocks Redacted, Orpheus, and the

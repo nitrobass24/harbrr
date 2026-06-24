@@ -29,7 +29,7 @@ every site it covers.
 | **Passkey/JSON** | passkey + JSON API | ✅ FileList | HDBits, BeyondHD (+ MTeam, NorBits, SceneHD) | ⭐⭐ HDBits + BeyondHD | Low–med; cheaper after the first |
 | **Cookie-scrape base** | session cookie + HTML scrape | ✅ IPTorrents | TorrentDay, SpeedCD (+ AlphaRatio, FunFile, BitHDTV…) | ⭐⭐ TorrentDay + SpeedCD | Med base; each extra ≈ selectors |
 | **PassThePopcorn** | bespoke movie API | framework only | PTP only | ⭐ | Med (discrete) |
-| **BroadcastTheNet** | own JSON-RPC `getTorrents` | framework only | BTN only | ⭐ | Med (discrete, ~1.5–1.8k LOC) |
+| **BroadcastTheNet** ✅ done (#62) | own JSON-RPC `getTorrents` | framework only | BTN only | ⭐ | shipped 2026-06-24 |
 | **GazelleGames** | bespoke games API | framework only | GG only | ⭐ | Med (discrete) |
 | **AnimeBytes** | own API | framework only | AB only | ⭐ | Med (discrete) |
 
@@ -43,9 +43,10 @@ discrete one-offs (one tracker each, framework reused but no shared request/pars
 2. **HDBits + BeyondHD** — two ⭐ trackers reusing the FileList passkey shape; cheap.
 3. **Cookie-scrape base** (TorrentDay / SpeedCD) — reuses the IPTorrents shape; two ⭐ trackers,
    each additional site mostly selectors.
-4. **Bespoke one-offs, on demand** — PassThePopcorn, **BroadcastTheNet**, GazelleGames,
-   AnimeBytes — each a standalone driver, built when a user actually needs it.
+4. **Bespoke one-offs, on demand** — ~~BroadcastTheNet~~ (✅ shipped #62), PassThePopcorn,
+   GazelleGames, AnimeBytes — each a standalone driver, built when a user actually needs it.
 
 This is **demand-gated** — none of it is required for any current stack; it's the order to
-build in when a user adds one of these trackers. A request for a *specific* tracker (e.g. BTN,
-a tier-4 one-off) is built directly even though it carries no family bonus.
+build in when a user adds one of these trackers. A request for a *specific* tracker is built
+directly even though it carries no family bonus — as **BroadcastTheNet** was (#62, the first
+tier-4 one-off shipped on demand).
