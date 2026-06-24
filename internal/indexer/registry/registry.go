@@ -28,6 +28,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/native/gazelle"
 	"github.com/autobrr/harbrr/internal/indexer/native/iptorrents"
 	"github.com/autobrr/harbrr/internal/indexer/native/myanonamouse"
+	"github.com/autobrr/harbrr/internal/indexer/native/passthepopcorn"
 	"github.com/autobrr/harbrr/internal/web/torznab"
 )
 
@@ -320,6 +321,7 @@ func nativeFamilies() map[string]native.Family {
 		myanonamouse.Families(),
 		iptorrents.Families(),
 		gazelle.Families(),
+		passthepopcorn.Families(),
 	} {
 		for _, f := range fams {
 			m[f.Definition.ID] = f
