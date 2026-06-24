@@ -518,13 +518,32 @@ The one headline harbrr can offer that Prowlarr/Jackett do not: **a search-resul
 harbrr is the Torznab *server*, so a cache hit spares the *tracker's* infrastructure, not just
 harbrr's.** This is the most-requested differentiator and directly serves harbrr's stated reason to
 exist. It is **product surface** (post-parity, like Phase 8b+) and **unscheduled** — slot it relative
-to Phase 11 / app-sync when demand is clear. The design below is investigated and decided in shape; the
-two open decisions are flagged at the end.
+to Phase 11 / app-sync when demand is clear. The design below is investigated and **fully decided** (TTL
+values + encryption + v1 scope settled 2026-06-23; see "Decisions locked" at the end).
 
-**Motivating evidence (from prod logs, 2026-06-23):** the dominant tracker traffic is **empty-query RSS
-polling** — Sonarr/Radarr/Prowlarr re-issuing the *identical* `categories[]=…&perPage=100&sortField=
-created_at` fetch to UNIT3D trackers every ~6 min (the luminarr/lst/onlyencodes timeout loop). Those
-are byte-identical repeated requests: the single highest-leverage thing to cache.
+**Motivating evidence (from prod logs + PT-user patterns, 2026-06-23).** There are **two distinct load
+problems**, with different solutions:
+
+1. **Redundant duplicate polling (the bulk of the waste).** The dominant tracker traffic is **empty-query
+   RSS polling** — Sonarr/Radarr/Prowlarr re-issuing the *identical* `categories[]=…&perPage=100&
+   sortField=created_at` fetch to UNIT3D trackers every ~6 min (the luminarr/lst/onlyencodes timeout
+   loop). It is multiplied by **multi-instance setups**: many PT users run a 1080p *and* a 4k *arr
+   instance, and both poll/search the **same** tracker for the same title — and because resolution lives
+   in the *arr's quality profile and is filtered **client-side**, those requests are **byte-identical**
+   (the Torznab query carries no resolution). This whole class is killed by the cache *existing*: identical
+   `(instance, query)` → one entry serves every instance, and singleflight collapses concurrent misses —
+   **TTL-independent**, zero tuning. This is the headline win.
+2. **Staggered-resolution releases (the freshness tension).** On TV especially, 720p drops first, then
+   1080p, then 4k minutes later. A user (or a 4k-only instance) relying on RSS must see each drop promptly,
+   so a long cache on a *thin* result set would hide the later resolutions until expiry. The antidote is
+   **adaptive TTL on result richness** (thin/empty sets get a short TTL so they re-check fast and catch the
+   next resolution; rich sets get the long TTL), plus **stale-while-revalidate** so the tracker still sees
+   ≤1 fetch per TTL regardless of client count.
+
+**Heterogeneous user base (drives the knobs).** harbrr is for *all* PT users, not one workflow: some are
+**announce/autobrr-primary** (RSS is a tolerant backstop → aggressive TTL fine), others are **RSS-primary**
+(no racing; RSS is how releases get grabbed → TTL must stay tight). The natural unit of that split is the
+**tracker**, so the **per-indexer TTL override is v1, not phase-2.**
 
 > **Design (decided direction).** Mirror qui's proven precedent — it already caches Torznab search
 > results in SQLite (`qui/internal/models/torznab_search_cache.go`, key built in
@@ -551,15 +570,32 @@ are byte-identical repeated requests: the single highest-leverage thing to cache
 >   cost. Table shape: `cache_key PK · instance_id FK ON DELETE CASCADE · results_json BLOB ·
 >   total_results · cached_at · last_used_at · expires_at · hit_count`, indexed on `instance_id` and
 >   `expires_at`.
+> - **Cache collapse = the multi-instance fix (TTL-independent):** because the 1080p and 4k instances
+>   issue byte-identical queries, they hash to the **same** key and **share one entry** (each filters
+>   client-side by its own quality profile). No tuning required — the cache existing is the fix.
 > - **Singleflight (the win qui lacks):** wrap the cache-miss path in `golang.org/x/sync/singleflight`
->   keyed on the cache key, so N concurrent identical misses (Sonarr + Radarr + Prowlarr polling the
->   same indexer in the same second) collapse to **one** tracker request.
+>   keyed on the cache key, so N concurrent identical misses (Sonarr + Radarr + Prowlarr, or 1080p + 4k
+>   instances, polling the same indexer in the same second) collapse to **one** tracker request. This is
+>   what tames the thundering herd when a new resolution drops and every instance searches at once.
+> - **Stale-while-revalidate (v1 — the real RSS load fix):** on a hit where the entry is past a
+>   *refresh-ahead* threshold (e.g. ≥80% of TTL elapsed), serve the cached value **immediately** and kick
+>   off **one** background refresh (guarded by the same singleflight key, success-only write-back). The
+>   client never waits, the cache stays warm, and the tracker sees **≤1 request per TTL per indexer
+>   regardless of client count** — decoupling client latency from tracker load. Background fetch uses a
+>   detached context (not the request's) so it survives the client disconnecting.
 > - **Only cache success:** cache successful responses including legitimately-empty result sets
 >   (negative caching of "0 results" is good). **Never** cache errors (the 5xx/timeout/TLS failures from
 >   the prod logs). A short-TTL error/circuit-breaker entry is a possible phase-2 add.
-> - **TTL tiers:** global default + per-indexer override (copy the `resolveTimeout` per-instance-setting
->   pattern, `internal/indexer/registry/client.go:110`). A **short** TTL for empty-query/RSS fetches
->   (≈ the poll interval — the biggest load win) and a longer TTL for keyword searches.
+> - **TTL tiers + adaptive richness (decided values):** global defaults + per-indexer override (copy the
+>   `resolveTimeout` per-instance-setting pattern, `internal/indexer/registry/client.go:110`), **both v1**.
+>   - **RSS / empty-query: 5 min** — the multi-instance collapse + singleflight already kill the herd here,
+>     so keep it short for RSS-primary users; per-indexer bump for announce-covered trackers.
+>   - **Keyword / ID: 30 min** — specific-title result sets are near-static, so a long TTL is efficient…
+>   - **…adaptive override — thin/empty result set: 2 min** — …*except* mid-stagger. A result set at/below a
+>     small count threshold caches for the short TTL so it re-checks fast and catches the next resolution
+>     (720p→1080p→4k); rich sets keep the full TTL. This is the staggered-release antidote qui lacks.
+> - **`nocache=1` bypass (v1):** a `nocache=1` query param skips the lookup and forces a live fetch +
+>   write-back — the power-user "I know it just dropped" override for manual searches.
 > - **Invalidation:** TTL primary; FK cascade on instance delete; explicit purge on instance
 >   settings-change/disable (hook the existing registry adapter-cache invalidation in
 >   `internal/indexer/registry/registry.go`); periodic `CleanupExpired`; a manual flush endpoint.
@@ -573,24 +609,34 @@ are byte-identical repeated requests: the single highest-leverage thing to cache
 >   (qui's `Stats` is the template) in the management API and the Web UI — "X% of searches served from
 >   cache" is the metric that proves the value over Prowlarr.
 
-Suggested build order (each leaf its own commit + green tests; resequence freely when scheduled):
+Build order (each leaf its own commit + green tests; resequence freely when scheduled):
 
 - [ ] **Store + migration** — `0004_search_cache.sql` + a `SearchCacheStore` behind `dbinterface`
       (port + simplify qui's `TorznabSearchCacheStore`: `Fetch`/`Store`/`CleanupExpired`/`Flush`/
       `InvalidateByInstance`/`Stats`); table-driven tests.
 - [ ] **Cache-aside + singleflight** — wrap `idx.Search` in the registry adapter; versioned canonical
-      key; only-cache-success (incl. empty); global TTL config; `golang.org/x/sync/singleflight`
-      coalescing on miss.
-- [ ] **TTL tiers + per-indexer override** — short RSS/empty-query TTL vs longer keyword TTL; per-instance
-      `cache_ttl` setting + global default.
+      key (the multi-instance collapse falls out of this for free); only-cache-success (incl. empty);
+      `golang.org/x/sync/singleflight` coalescing on miss.
+- [ ] **TTL tiers + adaptive richness + per-indexer override + `nocache`** — RSS/empty-query **5 min** vs
+      keyword/ID **30 min** globals; thin/empty result set → **2 min** adaptive override (count threshold);
+      per-instance `cache_ttl` override of both tiers; `nocache=1` bypass param.
+- [ ] **Stale-while-revalidate** — refresh-ahead threshold on hit; one detached-context background refresh
+      per key (singleflight-guarded, success-only write-back); serve cached value immediately.
 - [ ] **Lifecycle** — periodic `CleanupExpired`; invalidation on instance mutation/disable/delete.
 - [ ] **Observability + control** — `Stats` + flush in the management API (OpenAPI + drift test);
       cache config + hit-ratio in the Web UI (Phase 11).
 
-**Open decisions (operator's call before build):** (1) **default TTL(s)** — what short-vs-long values
-balance *arr freshness against tracker load (**still open** — pending a use-case discussion).
-(2) ~~whether to **encrypt `results_json`**~~ — **decided: rely on the `0600` DB + never-log posture**
-(matches how session cookies are stored today); not routed through `internal/secrets`.
+**Decisions locked (2026-06-23 use-case discussion):**
+- **TTL values:** RSS/empty-query **5 min** · keyword/ID **30 min** · thin/empty result **2 min** (adaptive).
+  All overridable per-indexer and globally.
+- **v1 scope** (not phase-2): adaptive thin-result TTL, stale-while-revalidate, per-indexer override, and
+  the `nocache=1` bypass — driven by the two-load-problem analysis above (multi-instance collapse +
+  staggered releases) and the heterogeneous RSS-primary vs announce-primary user base.
+- **Encryption of `results_json`:** **rely on the `0600` DB + never-log posture** (matches how session
+  cookies are stored today); not routed through `internal/secrets` — the per-row AES cost isn't worth it
+  at this trust level for single-user self-hosted.
+- **Still phase-2 (deferred):** in-memory L1 over SQLite (only if profiling shows deserialization cost);
+  short-TTL error/circuit-breaker caching.
 
 ---
 
