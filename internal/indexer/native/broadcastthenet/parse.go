@@ -143,18 +143,19 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 }
 
 // decodeTorrents resolves the result's torrents field into the id→torrent map. A
-// zero-result page is short-circuited (no torrents). PHP serializes an empty associative
-// array as `[]`, so the field is only unmarshalled when it begins with '{' (a JSON
-// object); any other shape (the `[]` array form, null, absent) is treated as zero
-// torrents rather than a decode failure.
+// zero-result page is short-circuited: PHP serializes an empty associative array as `[]`,
+// so for results==0 any non-object shape (`[]`, null, absent) is accepted as zero
+// torrents rather than a decode failure. For a POSITIVE result count, though, the field
+// must be a JSON object — a non-object there is a malformed response, not an empty page,
+// so it is reported as a parse error instead of silently dropping the results.
 func decodeTorrents(result *btnResult) (map[string]btnTorrent, error) {
-	empty := map[string]btnTorrent{}
 	if result.Results.int64() == 0 {
-		return empty, nil
+		return map[string]btnTorrent{}, nil
 	}
 	raw := bytes.TrimSpace(result.Torrents)
 	if len(raw) == 0 || raw[0] != '{' {
-		return empty, nil
+		return nil, fmt.Errorf("broadcastthenet: torrents not an object for %d results: %w",
+			result.Results.int64(), search.ErrParseError)
 	}
 	var torrents map[string]btnTorrent
 	if err := json.Unmarshal(raw, &torrents); err != nil {

@@ -128,6 +128,17 @@ func TestParseReleasesEmptyArray(t *testing.T) {
 	}
 }
 
+// TestParseReleasesMalformedTorrents proves the empty-array tolerance is scoped to a
+// zero-result page: a POSITIVE result count with a non-object torrents field (here the
+// `[]` form) is a malformed response, not a silently-empty page, so it is a parse error.
+func TestParseReleasesMalformedTorrents(t *testing.T) {
+	t.Parallel()
+	body := []byte(`{"result":{"results":"5","torrents":[]},"error":null,"id":1}`)
+	if _, err := parseDriver(t, nil).parseReleases(body); !errors.Is(err, search.ErrParseError) {
+		t.Fatalf("err = %v, want search.ErrParseError", err)
+	}
+}
+
 // TestParseReleasesStableSortOnTies proves the sort is TOTAL: two torrents with
 // non-numeric ids (both parse to 0) are ordered deterministically by their raw map-key
 // string, so the feed is stable across runs despite Go's randomized map iteration.

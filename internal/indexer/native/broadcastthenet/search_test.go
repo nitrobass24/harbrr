@@ -182,13 +182,21 @@ func TestSearchIssuesRPCPost(t *testing.T) {
 	if strings.Contains(apphttp.RedactURL(r.url), credAPIKey) {
 		t.Errorf("RedactURL leaks the API key")
 	}
-	// Confirm params[] order is [apikey, parametersObj, results, offset].
-	var req rpcRequest
+	// Confirm the on-wire params is the positional array [apikey, parametersObj,
+	// results, offset] with the apikey first (decode raw so the check is independent
+	// of the Go type that produced it).
+	var req struct {
+		Params []json.RawMessage `json:"params"`
+	}
 	if err := json.Unmarshal([]byte(r.body), &req); err != nil {
 		t.Fatalf("decode recorded body: %v", err)
 	}
-	if len(req.Params) != 4 || req.Params[0] != credAPIKey {
-		t.Errorf("params[] = %v, want [apikey, parametersObj, results, offset]", req.Params)
+	if len(req.Params) != 4 {
+		t.Fatalf("params[] len = %d, want 4 [apikey, parametersObj, results, offset]", len(req.Params))
+	}
+	var gotKey string
+	if err := json.Unmarshal(req.Params[0], &gotKey); err != nil || gotKey != credAPIKey {
+		t.Errorf("params[0] = %s, want the apikey", req.Params[0])
 	}
 }
 

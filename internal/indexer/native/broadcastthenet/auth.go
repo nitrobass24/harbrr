@@ -18,15 +18,36 @@ const maxBodyBytes = 8 << 20 // 8 MiB
 // jsonMethod is the only JSON-RPC method the driver calls.
 const jsonMethod = "getTorrents"
 
-// rpcRequest is the JSON-RPC 2.0 envelope BTN expects. Params is positional: BTN's
-// getTorrents takes [apiKey, parameters, results, offset]. The API key is params[0],
-// so the ENTIRE body is secret-bearing and must never be logged. ID is a fixed 1 (BTN
-// ignores its value; Prowlarr sends a random string, which is functionally equivalent).
+// rpcRequest is the JSON-RPC 2.0 envelope BTN expects. ID is a fixed 1 (BTN ignores
+// its value; Prowlarr sends a random string, which is functionally equivalent).
 type rpcRequest struct {
-	JSONRPC string `json:"jsonrpc"`
-	Method  string `json:"method"`
-	Params  []any  `json:"params"`
-	ID      int    `json:"id"`
+	JSONRPC string    `json:"jsonrpc"`
+	Method  string    `json:"method"`
+	Params  rpcParams `json:"params"`
+	ID      int       `json:"id"`
+}
+
+// rpcParams is BTN getTorrents' positional argument tuple [apiKey, parameters, results,
+// offset]. It is a typed struct (not a bare []any) so the order and types are explicit;
+// MarshalJSON emits the positional array BTN expects, so the wire format is unchanged.
+// APIKey is params[0], so the ENTIRE marshalled body is secret-bearing and never logged.
+type rpcParams struct {
+	APIKey     string
+	Parameters btnParameters
+	Results    int
+	Offset     int
+}
+
+// MarshalJSON renders the params as BTN's positional [apiKey, parameters, results,
+// offset] array, keeping the wire format identical to the raw tuple it replaces. Any
+// marshal error is wrapped (it surfaces via buildRPCBody's json.Marshal, which scrubs
+// the API key before the error is returned); a type-based marshal error carries no value.
+func (p rpcParams) MarshalJSON() ([]byte, error) {
+	b, err := json.Marshal([]any{p.APIKey, p.Parameters, p.Results, p.Offset})
+	if err != nil {
+		return nil, fmt.Errorf("broadcastthenet: marshal rpc params: %w", err)
+	}
+	return b, nil
 }
 
 // buildRPCBody marshals the getTorrents JSON-RPC body for a query. The API key is read
@@ -37,7 +58,7 @@ func (d *driver) buildRPCBody(params btnParameters, results, offset int) ([]byte
 	body, err := json.Marshal(rpcRequest{
 		JSONRPC: "2.0",
 		Method:  jsonMethod,
-		Params:  []any{d.cfg["apikey"], params, results, offset},
+		Params:  rpcParams{APIKey: d.cfg["apikey"], Parameters: params, Results: results, Offset: offset},
 		ID:      1,
 	})
 	if err != nil {

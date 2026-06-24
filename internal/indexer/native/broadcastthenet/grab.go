@@ -46,7 +46,7 @@ func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, err
 
 	body, err := readCapped(resp.Body, maxTorrentBytes)
 	if err != nil {
-		return nil, err
+		return nil, sanitizeGrabError(err)
 	}
 	return &search.GrabResult{
 		Body:        body,
@@ -57,9 +57,15 @@ func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, err
 // sanitizeGrabError strips a possibly credential-bearing transport error: the download
 // URL carries the authkey/torrent_pass in its query, so any non-sentinel error from the
 // fetch is replaced with a fixed, link-free message rather than risk surfacing the URL.
-// Auth and rate-limit sentinels are kept for health classification.
+// Sentinels that carry no URL and that callers need to classify are passed through
+// unchanged: auth and rate-limit (for health), context cancellation/deadline (so normal
+// cancellation is not misreported as a failure), and the size-cap error.
 func sanitizeGrabError(err error) error {
-	if errors.Is(err, login.ErrLoginFailed) {
+	switch {
+	case errors.Is(err, login.ErrLoginFailed),
+		errors.Is(err, context.Canceled),
+		errors.Is(err, context.DeadlineExceeded),
+		errors.Is(err, errDownloadTooLarge):
 		return err
 	}
 	var rl *search.RateLimitedError

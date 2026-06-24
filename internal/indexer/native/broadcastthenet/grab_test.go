@@ -96,6 +96,20 @@ func TestGrabTransportErrorNeverLeaksURL(t *testing.T) {
 	}
 }
 
+// TestGrabContextErrorPassesThrough proves a cancellation/deadline from the fetch is
+// preserved (not flattened into the generic "download request failed"), so callers and
+// health classification can tell a cancelled request from a real failure.
+func TestGrabContextErrorPassesThrough(t *testing.T) {
+	t.Parallel()
+	for _, want := range []error{context.Canceled, context.DeadlineExceeded} {
+		d := grabDriver(t, &errorDoer{err: want})
+		_, err := d.Grab(context.Background(), grabURL)
+		if !errors.Is(err, want) {
+			t.Errorf("Grab err = %v, want errors.Is %v", err, want)
+		}
+	}
+}
+
 // TestGrabStatusDispatch proves a 401/403 download response maps to login.ErrLoginFailed
 // (so the registry records an auth_failure health event).
 func TestGrabStatusDispatch(t *testing.T) {
