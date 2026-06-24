@@ -409,37 +409,48 @@ into the apps so they don't each configure indexers by hand.
 
 ---
 
-## Beyond the alpha — not scheduled (demand-gated)
+## Beyond the alpha — backlog (ordered by impact, most impactful → demand-gated)
 
-Built when a real user needs it, not on a schedule. Each is self-contained and off the alpha→beta
-(Phase 10 app-sync → Phase 11 Web UI) critical path.
+Ranked top-to-bottom by product impact. **Tier 1 is harbrr's core thesis** — the "intelligent
+layer" the README pitches ("Search less. Cache more. Be kinder to your trackers.") — and is the
+natural next build phase after the Web UI, *not* a demand-gated afterthought. The tail is genuinely
+demand-gated: built when a real user needs it. Everything here is self-contained and off the
+alpha→beta (Phase 10 app-sync → Phase 11 Web UI) critical path. New items carry lighter detail for
+now (*detail TBD*); fill in as we have it.
 
-- **Live retest of the two no-tracker auth patterns** (moved from Phase 9's "every auth/fetch pattern
-  live", which is otherwise green). Both are **offline-proven**; they need a qualifying tracker/proxy in
-  the operator's stack to confirm live:
-  - **cookie / manual-cookie** (`ManualCookieSolver`) — none of the stack's Cardigann trackers use cookie
-    login (IPTorrents/MyAnonamouse are native cookie drivers, already resolved). Test by configuring any
-    Cardigann tracker with `solver_type=manual_cookie` + a browser-exported cookie (e.g. a temporary
-    HD-Space flip), or a real `method: cookie` tracker if one is added.
-  - **per-indexer proxy (HTTP/SOCKS5)** — no HTTP/SOCKS proxy in the stack (only FlareSolverr). Test by
-    standing up a local proxy (microsocks/tinyproxy) and routing any search via `proxy_type`+`proxy_url`;
-    the doer/transport plumbing is offline-tested. SOCKS4 unsupported (`x/net/proxy` has no socks4 dialer).
-- **More \*arr sync targets** — Lidarr / Readarr / Mylar / Whisparr. The Phase-10 sync contract is built
-  for Sonarr/Radarr/qui; extending it to another app is mostly a per-app adapter.
+### Tier 1 — Tracker intelligence (the core differentiator)
+
+- **Shared RSS feed caching** — fetch a tracker's RSS/feed once and serve every consumer
+  (Sonarr/Radarr/autobrr/cross-seed) from the cached copy, instead of each app polling the tracker
+  independently. The README's headline value: lower tracker load, fewer duplicate requests, better
+  private-tracker citizenship. *Detail TBD (cache key/granularity, TTL, invalidation, per-consumer
+  views).*
+- **Search result caching + deduplication** — reuse a recent cached result instead of re-querying the
+  same tracker for the same (indexer, query, categories); collapses the identical searches multiple
+  apps fire for one release. (qui already ships a `torznab_search_cache`; this is harbrr's own.)
+  *Detail TBD (TTL policy, normalization of equivalent queries, cache-bypass rules).*
+- **Tracker-load optimization — fabric-wide tracker-friendly pacing** — global, per-tracker throttling
+  across *all* consumers (not just per-indexer pacing), so the aggregate rate harbrr presents to a
+  tracker stays polite no matter how many apps sit behind it. Makes the caching above actually "kind to
+  trackers." *Detail TBD (relation to the existing per-indexer paced client / `ClientParams`).*
+
+### Tier 2 — Adoption + autobrr-family completion
+
 - **Jackett/Prowlarr migration import** — import indexer instances + credentials + category overrides.
   Read creds from the **Prowlarr SQLite database** (`prowlarr.db`, the plaintext `Indexers.Settings` JSON
   column) — NOT the REST API, whose `SchemaBuilder` masks `ApiKey`/`Password` with `********`. Needs a
   **Prowlarr-impl → harbrr-def name table** for Prowlarr-native trackers harbrr serves as Cardigann (e.g.
   HDSpace — see `docs/coverage.md` §5). Jackett's RSA/DPAPI-encrypted config falls back to guided re-entry.
-- **Native-driver backlog** — the C#-in-both-engines trackers (`docs/coverage.md` §4): highest-leverage is
-  one **Gazelle-API** base driver (Redacted/Orpheus/PTP/BTN/AnimeBytes); cookie-scrape (TorrentDay/SpeedCD)
-  and passkey (HDBits/BeyondHD) reuse the IPTorrents/FileList shapes. Build per tracker on demand.
 - **harbrr → autobrr push** — closes the RSS-polling gap (family-only win).
-- **Usenet / Newznab support** — harbrr is torrent-only today, so a stack's usenet indexers (e.g.
-  DOGnzb) can't migrate. Add Newznab provider support (the `caps`/`search` surface already speaks
-  Newznab-compatible XML; the gap is the usenet *fetch* + indexer kind). Surfaced by the Phase 10
-  gold-standard migration — DOGnzb was the one stack indexer harbrr couldn't serve.
-- **cross-seed search backend.**
+- **Cross-seed backend + freeleech-aware matching** — a cross-seed search backend, plus freeleech-aware
+  release matching and optional freeleech-bypass logic (README "Cross-Seed Aware"): smarter release
+  matching, search reuse/aggregation, reduced duplicate tracker activity. *Detail TBD beyond the README's
+  framing.*
+- **More \*arr sync targets** — Lidarr / Readarr / Mylar / Whisparr. The Phase-10 sync contract is built
+  for Sonarr/Radarr/qui; extending it to another app is mostly a per-app adapter.
+
+### Tier 3 — Product / UX (pair with the Web UI)
+
 - **Stats / search history** (query/grab/auth event log + query API; the auth log populates
   `api_keys.last_used_at`, left unwritten in Phase 4) **+ notifications** (Discord/webhook, pluggable).
 - **Fleet-wide indexer status** — a `GET /api/indexers/status` aggregate over all indexers (the
@@ -453,6 +464,36 @@ Built when a real user needs it, not on a schedule. Each is self-contained and o
 - **User-configurable request rate** — a global default + per-indexer override. Phase 6 paces per target
   domain from the def's `requestDelay`; the `ClientParams.RateInterval` seam already carries the value, so
   this is a settings surface + plumb-through. Pairs with the Web UI settings.
+
+### Tier 4 — Reach / more trackers (incremental, per-demand)
+
+- **Native-driver backlog** — the C#-in-both-engines trackers (`docs/coverage.md` §4): highest-leverage is
+  one **Gazelle-API** base driver (Redacted/Orpheus/PTP/BTN/AnimeBytes); cookie-scrape (TorrentDay/SpeedCD)
+  and passkey (HDBits/BeyondHD) reuse the IPTorrents/FileList shapes. Build per tracker on demand.
+- **Usenet / Newznab support** — harbrr is torrent-only today, so a stack's usenet indexers (e.g.
+  DOGnzb) can't migrate. Add Newznab provider support (the `caps`/`search` surface already speaks
+  Newznab-compatible XML; the gap is the usenet *fetch* + indexer kind). Surfaced by the Phase 10
+  gold-standard migration — DOGnzb was the one stack indexer harbrr couldn't serve.
+
+### Tier 5 — Live validation (offline-proven; needs infra in the operator's stack)
+
+- **Live retest of the two no-tracker auth patterns** (moved from Phase 9's "every auth/fetch pattern
+  live", which is otherwise green). Both are **offline-proven**; they need a qualifying tracker/proxy in
+  the operator's stack to confirm live:
+  - **cookie / manual-cookie** (`ManualCookieSolver`) — none of the stack's Cardigann trackers use cookie
+    login (IPTorrents/MyAnonamouse are native cookie drivers, already resolved). Test by configuring any
+    Cardigann tracker with `solver_type=manual_cookie` + a browser-exported cookie (e.g. a temporary
+    HD-Space flip), or a real `method: cookie` tracker if one is added.
+  - **per-indexer proxy (HTTP/SOCKS5)** — no HTTP/SOCKS proxy in the stack (only FlareSolverr). Test by
+    standing up a local proxy (microsocks/tinyproxy) and routing any search via `proxy_type`+`proxy_url`;
+    the doer/transport plumbing is offline-tested. SOCKS4 unsupported (`x/net/proxy` has no socks4 dialer).
+
+### Tier 6 — Future / explicitly demand-gated
+
+- **Release intelligence / metadata correlation** — smarter cross-app release matching and metadata
+  correlation (README Phase 3/4). *Detail TBD.*
+- **Distributed architecture** — multi-node / horizontally-scaled deployments (README Phase 4), beyond
+  the single-binary model. *Detail TBD.*
 - **Postgres** — **out of the alpha roadmap.** harbrr is single-user self-hosted, where SQLite is the
   right default, not a stopgap; Postgres only earns its keep for shared / multi-instance deployments.
   Build it **when a real multi-instance user needs it**, not on a schedule — there is no committed phase.
