@@ -110,6 +110,48 @@ func TestParseReleasesEmpty(t *testing.T) {
 	}
 }
 
+// TestParseReleasesEmptyArray proves a results=0 body whose torrents field is a JSON
+// ARRAY (`[]`, how PHP serializes an empty associative array) yields zero releases and no
+// error — a straight map decode would otherwise fail and surface ErrParseError.
+func TestParseReleasesEmptyArray(t *testing.T) {
+	t.Parallel()
+	body, err := os.ReadFile("testdata/empty_array.json")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	got, err := parseDriver(t, nil).parseReleases(body)
+	if err != nil {
+		t.Fatalf("parseReleases: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("got %d releases, want 0", len(got))
+	}
+}
+
+// TestParseReleasesStableSortOnTies proves the sort is TOTAL: two torrents with
+// non-numeric ids (both parse to 0) are ordered deterministically by their raw map-key
+// string, so the feed is stable across runs despite Go's randomized map iteration.
+func TestParseReleasesStableSortOnTies(t *testing.T) {
+	t.Parallel()
+	body := []byte(`{"result":{"results":"2","torrents":{` +
+		`"zzz":{"TorrentID":"zzz","ReleaseName":"Zee"},` +
+		`"aaa":{"TorrentID":"aaa","ReleaseName":"Aye"}}}}`)
+	d := parseDriver(t, nil)
+	for i := 0; i < 50; i++ {
+		got, err := d.parseReleases(body)
+		if err != nil {
+			t.Fatalf("parseReleases: %v", err)
+		}
+		if len(got) != 2 {
+			t.Fatalf("got %d releases, want 2", len(got))
+		}
+		// Both ids parse to 0, so the map-key tie-breaker decides: "aaa" < "zzz".
+		if got[0].Title != "Aye" || got[1].Title != "Zee" {
+			t.Fatalf("order = [%q,%q], want [Aye,Zee] (stable map-key tie-break)", got[0].Title, got[1].Title)
+		}
+	}
+}
+
 // TestParseBadKeyMapsToLoginFailed proves the -32001 ("Invalid API Key") error envelope
 // (and a null result) is surfaced as login.ErrLoginFailed.
 func TestParseBadKeyMapsToLoginFailed(t *testing.T) {

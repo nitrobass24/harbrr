@@ -25,6 +25,9 @@ the `DownloadURL`s) exist only to prove redaction and live only in `testdata/**`
   `Peers=Seeders+Leechers`, `Grabs=Snatched`, the unix `Time`→UTC publish date, and
   `TVDBID`/`RageID` (`parse_test.go`).
 - `empty.json` — a `{"result":{"results":"0","torrents":{}}}` body → zero releases.
+- `empty_array.json` — a zero-result body whose `torrents` field is a JSON **array**
+  (`[]`) rather than an object, the shape PHP emits for an empty associative array → zero
+  releases, no error (a straight map decode would otherwise fail).
 - `bad_key.json` — a `{"result":null,"error":{"code":-32001,"message":"Invalid API Key"}}`
   body → mapped to `login.ErrLoginFailed`.
 
@@ -65,6 +68,29 @@ the `DownloadURL`s) exist only to prove redaction and live only in `testdata/**`
   to `login.ErrLoginFailed`; any other JSON-RPC error or a `null` result is a parse error
   (with the apikey scrubbed from the message). A malformed body is a parse error. The
   HTTP-status auth/rate-limit handling lives in `search.go` (a later leaf).
+
+## Request divergences (`BroadcastheNetRequestGenerator`)
+
+- **Season-only query fetches the SEASON pack arm** — `[Deliberate]`. Prowlarr fans a
+  season-only query out across two requests: an Episode arm (`Category "Episode"` /
+  `Name "S{NN}E%"`) and a Season arm (`Category "Season"` / `Name "Season N%"`). BTN files
+  season packs under the **Season** arm — the Episode `S01E%` query never matches them.
+  In harbrr's single-page model (one request, like FileList) the season-only query emits
+  the **Season** arm (`Category "Season"`, `Name "Season N%"`) so season packs are found;
+  the standard episode arm (`Category "Episode"`, `Name "S{NN}E{EE}%"`) is unchanged for
+  season+episode queries.
+- **`Call Limit Exceeded` HTTP 200 body → rate limit** — `[Accepted]`. BTN signals its API
+  rate limit as an HTTP 200 body containing `Call Limit Exceeded` (not a 429). `search.go`
+  detects that marker (case-insensitive) before parsing and returns a
+  `*search.RateLimitedError`, matching Prowlarr's `RequestLimitReachedException` (thrown
+  before JSON parse). The marker is only checked on the JSON-RPC search response, not the
+  binary `/dl` torrent fetch (a `.torrent` body is opaque bytes and BTN does not emit the
+  marker there).
+- **Absolute-episode query is a no-op** — `[Deliberate]`. A bare non-negative-integer
+  keyword paired with a TVDB/TVRage id and no season/episode/daily is an absolute-episode
+  lookup BTN cannot serve (it indexes by season/episode `Name`, not absolute number).
+  Prowlarr returns an empty request chain for this shape; harbrr returns zero releases
+  **without issuing the POST**.
 
 ## Live validation
 

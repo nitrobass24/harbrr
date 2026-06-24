@@ -1,6 +1,7 @@
 package broadcastthenet
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -35,11 +36,14 @@ type btnResponse struct {
 }
 
 // btnResult is the success payload. Results is the total match count (BTN sends it as a
-// JSON string, so flexString decodes it). Torrents is the id→torrent map; it is a
-// pointer-free map so an absent/empty object yields zero releases.
+// JSON string, so flexString decodes it). Torrents is kept as RawMessage because PHP
+// serializes an empty associative array as a JSON ARRAY (`[]`) rather than an object
+// (`{}`): decoding it straight into a map would fail the struct decode on a zero-result
+// page, so the array wire form is tolerated and only an object (`{…}`) is unmarshalled
+// into the id→torrent map (cf. Prowlarr, which short-circuits on a zero count).
 type btnResult struct {
-	Results  flexString            `json:"results"`
-	Torrents map[string]btnTorrent `json:"torrents"`
+	Results  flexString      `json:"results"`
+	Torrents json.RawMessage `json:"torrents"`
 }
 
 // btnError is the JSON-RPC error object.
@@ -125,22 +129,60 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 		return nil, fmt.Errorf("broadcastthenet: null result: %w", search.ErrParseError)
 	}
 
-	releases := make([]*sortableRelease, 0, len(resp.Result.Torrents))
-	for id := range resp.Result.Torrents {
-		t := resp.Result.Torrents[id]
-		releases = append(releases, d.toRelease(&t))
+	torrents, err := decodeTorrents(resp.Result)
+	if err != nil {
+		return nil, err
 	}
-	sort.SliceStable(releases, func(i, j int) bool {
-		return releases[i].torrentIDSortKey < releases[j].torrentIDSortKey
-	})
+	releases := make([]*sortableRelease, 0, len(torrents))
+	for id := range torrents {
+		t := torrents[id]
+		releases = append(releases, d.toRelease(id, &t))
+	}
+	sortReleases(releases)
 	return releasesOnly(releases), nil
 }
 
-// sortableRelease pairs a release with its numeric TorrentID so the deterministic sort
-// does not re-parse the id during comparison.
+// decodeTorrents resolves the result's torrents field into the id→torrent map. A
+// zero-result page is short-circuited (no torrents). PHP serializes an empty associative
+// array as `[]`, so the field is only unmarshalled when it begins with '{' (a JSON
+// object); any other shape (the `[]` array form, null, absent) is treated as zero
+// torrents rather than a decode failure.
+func decodeTorrents(result *btnResult) (map[string]btnTorrent, error) {
+	empty := map[string]btnTorrent{}
+	if result.Results.int64() == 0 {
+		return empty, nil
+	}
+	raw := bytes.TrimSpace(result.Torrents)
+	if len(raw) == 0 || raw[0] != '{' {
+		return empty, nil
+	}
+	var torrents map[string]btnTorrent
+	if err := json.Unmarshal(raw, &torrents); err != nil {
+		return nil, fmt.Errorf("broadcastthenet: decode torrents: %w", search.ErrParseError)
+	}
+	return torrents, nil
+}
+
+// sortReleases orders releases by numeric TorrentID ascending, breaking ties on the raw
+// map-key string (always unique, so the order is TOTAL and deterministic even when the
+// numeric key is 0 for an unparseable id — the map otherwise iterates in random order).
+func sortReleases(releases []*sortableRelease) {
+	sort.Slice(releases, func(i, j int) bool {
+		if releases[i].torrentIDSortKey != releases[j].torrentIDSortKey {
+			return releases[i].torrentIDSortKey < releases[j].torrentIDSortKey
+		}
+		return releases[i].mapKey < releases[j].mapKey
+	})
+}
+
+// sortableRelease pairs a release with its numeric TorrentID and the raw map-key string
+// so the deterministic sort does not re-parse the id during comparison and has a unique
+// tie-breaker (the map key) when two ids parse to the same int64 (e.g. both unparseable
+// → 0).
 type sortableRelease struct {
 	*normalizer.Release
 	torrentIDSortKey int64
+	mapKey           string
 }
 
 // toRelease maps one torrent row to a normalized release. Title=ReleaseName,
@@ -148,7 +190,7 @@ type sortableRelease struct {
 // embedded authkey/torrent_pass never reaches the feed), Peers=Seeders+Leechers,
 // Grabs=Snatched, the category derived from Resolution, and PublishDate from the unix
 // Time seconds rendered as UTC RFC3339.
-func (d *driver) toRelease(t *btnTorrent) *sortableRelease {
+func (d *driver) toRelease(mapKey string, t *btnTorrent) *sortableRelease {
 	seeders := t.Seeders.int64()
 	leechers := t.Leechers.int64()
 	rel := &normalizer.Release{
@@ -167,7 +209,7 @@ func (d *driver) toRelease(t *btnTorrent) *sortableRelease {
 		DownloadVolumeFactor: 1,
 		UploadVolumeFactor:   1,
 	}
-	return &sortableRelease{Release: rel, torrentIDSortKey: t.TorrentID.int64()}
+	return &sortableRelease{Release: rel, torrentIDSortKey: t.TorrentID.int64(), mapKey: mapKey}
 }
 
 // categories maps a torrent's Resolution string to its newznab category through the

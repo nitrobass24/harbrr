@@ -43,6 +43,9 @@ type btnParameters struct {
 // handled by parseReleases. The API key rides inside the POST body (params[0]), never
 // the URL, and the body is never logged.
 func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
+	if isAbsoluteEpisodeQuery(q) {
+		return []*normalizer.Release{}, nil
+	}
 	body, err := d.buildRPCBody(d.buildParameters(q), pageResults, pageOffset)
 	if err != nil {
 		return nil, err
@@ -69,7 +72,52 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 	if err != nil {
 		return nil, fmt.Errorf("broadcastthenet: read search response: %w", err)
 	}
+	// BTN signals a rate limit as an HTTP 200 body containing "Call Limit Exceeded"
+	// (not a 429), so it must be detected before parseReleases would turn it into a
+	// parse error — matching Prowlarr's BroadcastheNetParser, which throws
+	// RequestLimitReachedException on that body before JSON parsing.
+	if isCallLimitBody(respBody) {
+		return nil, &search.RateLimitedError{
+			StatusCode: resp.StatusCode,
+			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.clock),
+		}
+	}
 	return d.parseReleases(respBody)
+}
+
+// callLimitMarker is the substring BTN returns (in an HTTP 200 body) when the API call
+// rate limit is hit; Prowlarr matches it case-insensitively before JSON parsing.
+const callLimitMarker = "call limit exceeded"
+
+// isCallLimitBody reports whether the response body carries BTN's rate-limit marker
+// (case-insensitive).
+func isCallLimitBody(body []byte) bool {
+	return strings.Contains(strings.ToLower(string(body)), callLimitMarker)
+}
+
+// isAbsoluteEpisodeQuery reports whether the query is an absolute-episode lookup that BTN
+// cannot serve: a bare non-negative-integer keyword paired with a TVDB or TVRage id and
+// no season/episode/daily. Prowlarr's BroadcastheNetRequestGenerator returns an empty
+// request chain for this shape (BTN indexes by season/episode Name, not absolute number),
+// so harbrr returns zero releases WITHOUT issuing the POST.
+func isAbsoluteEpisodeQuery(q search.Query) bool {
+	kw := strings.TrimSpace(q.Keywords)
+	if kw == "" || !isNonNegativeInteger(kw) {
+		return false
+	}
+	if positiveID(q.TVDBID) == "" && positiveID(q.RageID) == "" {
+		return false
+	}
+	if _, daily := dailyDate(q.Season, q.Ep); daily {
+		return false
+	}
+	return positiveInt(q.Season) == 0 && positiveInt(q.Ep) == 0
+}
+
+// isNonNegativeInteger reports whether s is a base-10 non-negative integer.
+func isNonNegativeInteger(s string) bool {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	return err == nil && n >= 0
 }
 
 // buildParameters maps a query to the getTorrents parameters object, reproducing
@@ -100,11 +148,13 @@ func setTvdbOrTvrage(params *btnParameters, q search.Query) {
 }
 
 // setSeasonEpisode sets Category/Name for the season/episode shape Prowlarr emits: a
-// daily query (season is a four-digit year, episode is "MM/dd") -> Name "yyyy.MM.dd%";
-// a standard episode (season and episode both >0) -> Name "S{NN}E{EE}%"; a season-only
-// query (season>0, no episode) -> Name "S{NN}E%". All carry Category "Episode" except
-// the season-only arm, which Prowlarr also requests under "Season"/Name "Season N%" —
-// harbrr fetches the single Episode-prefixed page (one request, like FileList).
+// daily query (season is a four-digit year, episode is "MM/dd") -> Category "Episode",
+// Name "yyyy.MM.dd%"; a standard episode (season and episode both >0) -> Category
+// "Episode", Name "S{NN}E{EE}%"; a season-only query (season>0, no episode) -> Category
+// "Season", Name "Season {N}%". BTN files season packs under Category "Season" / Name
+// "Season N%" (an "S01E%" Episode query never matches them), so in harbrr's single-page
+// model the season-only query emits the SEASON arm — Prowlarr fans both arms out across
+// requests, harbrr fetches the single Season-prefixed page (one request, like FileList).
 func setSeasonEpisode(params *btnParameters, q search.Query) {
 	if daily, ok := dailyDate(q.Season, q.Ep); ok {
 		params.Category = "Episode"
@@ -115,12 +165,13 @@ func setSeasonEpisode(params *btnParameters, q search.Query) {
 	if season == 0 {
 		return
 	}
-	params.Category = "Episode"
 	if episode := positiveInt(q.Ep); episode > 0 {
+		params.Category = "Episode"
 		params.Name = fmt.Sprintf("S%02dE%02d%%", season, episode)
 		return
 	}
-	params.Name = fmt.Sprintf("S%02dE%%", season)
+	params.Category = "Season"
+	params.Name = fmt.Sprintf("Season %d%%", season)
 }
 
 // dailyDate parses a "{season} {episode}" pair into "yyyy.MM.dd" when season is a

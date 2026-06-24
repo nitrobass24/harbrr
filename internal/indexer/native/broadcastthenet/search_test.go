@@ -85,7 +85,8 @@ func TestBuildParameters(t *testing.T) {
 		{name: "tvdb wins over rage", query: search.Query{TVDBID: "81189", RageID: "55555"}, want: btnParameters{Tvdb: "81189"}},
 		{name: "standard episode S01E02", query: search.Query{Season: "1", Ep: "2"}, want: btnParameters{Category: "Episode", Name: "S01E02%"}},
 		{name: "double-digit S10E20", query: search.Query{Season: "10", Ep: "20"}, want: btnParameters{Category: "Episode", Name: "S10E20%"}},
-		{name: "season only -> S01E%", query: search.Query{Season: "1"}, want: btnParameters{Category: "Episode", Name: "S01E%"}},
+		{name: "season only -> Season pack", query: search.Query{Season: "1"}, want: btnParameters{Category: "Season", Name: "Season 1%"}},
+		{name: "season only double-digit", query: search.Query{Season: "10"}, want: btnParameters{Category: "Season", Name: "Season 10%"}},
 		{name: "daily", query: search.Query{Season: "2024", Ep: "01/15"}, want: btnParameters{Category: "Episode", Name: "2024.01.15%"}},
 		{
 			name:  "keyword + season/episode coexist",
@@ -246,6 +247,54 @@ func TestTestAction(t *testing.T) {
 	}})
 	if err := bad.Test(context.Background()); !errors.Is(err, login.ErrLoginFailed) {
 		t.Errorf("Test on bad creds = %v, want login.ErrLoginFailed", err)
+	}
+}
+
+// TestSearchCallLimitExceeded proves an HTTP 200 body containing "Call Limit Exceeded"
+// (BTN's rate-limit signal, which is not a 429) maps to *search.RateLimitedError before
+// it can become a parse error — mirroring Prowlarr's RequestLimitReachedException.
+func TestSearchCallLimitExceeded(t *testing.T) {
+	t.Parallel()
+	for _, body := range []string{"Call Limit Exceeded", "call limit exceeded", `{"error":"Call Limit Exceeded"}`} {
+		d := liveDriver(t, &scriptDoer{handler: func(_ *stdhttp.Request, _ string) *stdhttp.Response {
+			return mkResp(stdhttp.StatusOK, body)
+		}})
+		_, err := d.Search(context.Background(), search.Query{Keywords: "x"})
+		var rl *search.RateLimitedError
+		if !errors.As(err, &rl) {
+			t.Errorf("body %q: err = %v, want *search.RateLimitedError", body, err)
+		}
+	}
+}
+
+// TestSearchAbsoluteEpisodeNoOp proves a bare-integer keyword paired with a TVDB/TVRage
+// id and no season/episode is an absolute-episode lookup BTN cannot serve: Search returns
+// zero releases WITHOUT issuing any HTTP request (Prowlarr returns an empty request
+// chain). A keyword that is NOT a bare integer still issues the POST.
+func TestSearchAbsoluteEpisodeNoOp(t *testing.T) {
+	t.Parallel()
+	doer := &scriptDoer{handler: func(_ *stdhttp.Request, _ string) *stdhttp.Response {
+		return mkResp(stdhttp.StatusOK, `{"result":{"results":"0","torrents":{}}}`)
+	}}
+	d := liveDriver(t, doer)
+
+	got, err := d.Search(context.Background(), search.Query{Keywords: "123", TVDBID: "81189"})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("releases = %d, want 0", len(got))
+	}
+	if len(doer.reqs) != 0 {
+		t.Fatalf("requests = %d, want 0 (no POST for an absolute-episode query)", len(doer.reqs))
+	}
+
+	// A non-integer keyword with the same id is a normal text search and DOES issue a POST.
+	if _, err := d.Search(context.Background(), search.Query{Keywords: "the wire", TVDBID: "81189"}); err != nil {
+		t.Fatalf("Search (text): %v", err)
+	}
+	if len(doer.reqs) != 1 {
+		t.Fatalf("requests = %d, want 1 (a text search issues the POST)", len(doer.reqs))
 	}
 }
 
