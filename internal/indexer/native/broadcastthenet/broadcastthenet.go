@@ -19,7 +19,6 @@ import (
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
@@ -80,12 +79,6 @@ func (d *driver) NeedsResolver() bool { return true }
 // redundant (it mirrors FileList/AvistaZ).
 func (d *driver) DownloadNeedsAuth() bool { return false }
 
-// Search is implemented in a later leaf; the stub keeps the package compiling and
-// satisfying native.Driver.
-func (d *driver) Search(_ context.Context, _ search.Query) ([]*normalizer.Release, error) {
-	return nil, errors.New("broadcastthenet: search not implemented")
-}
-
 // Grab is implemented in a later leaf; the stub keeps the package compiling and
 // satisfying native.Driver.
 func (d *driver) Grab(_ context.Context, _ string) (*search.GrabResult, error) {
@@ -93,7 +86,10 @@ func (d *driver) Grab(_ context.Context, _ string) (*search.GrabResult, error) {
 }
 
 // Test verifies the configured API key authenticates (the management "test indexer"
-// action). It is implemented in a later leaf once Search lands.
-func (d *driver) Test(_ context.Context) error {
-	return errors.New("broadcastthenet: test not implemented")
+// action) by issuing an empty browse query: a good key returns 200 with a result
+// envelope, a bad key surfaces as login.ErrLoginFailed (HTTP 401/403 or the -32001
+// JSON-RPC error).
+func (d *driver) Test(ctx context.Context) error {
+	_, err := d.Search(ctx, search.Query{})
+	return err
 }

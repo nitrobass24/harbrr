@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
@@ -111,18 +110,13 @@ func TestSiteCaps(t *testing.T) {
 	}
 }
 
-// TestStubsCompile proves the Search/Grab/Test stubs satisfy native.Driver and report
-// not-implemented (filled in later leaves) rather than panicking.
-func TestStubsCompile(t *testing.T) {
+// TestGrabStubCompiles proves the Grab stub still satisfies native.Driver and reports
+// not-implemented (filled in a later leaf) rather than panicking. Search/Test are now
+// implemented and exercised in search_test.go.
+func TestGrabStubCompiles(t *testing.T) {
 	t.Parallel()
 	d := buildDriver(t)
-	if _, err := d.Search(t.Context(), search.Query{}); err == nil {
-		t.Error("Search stub should return an error")
-	}
 	if _, err := d.Grab(t.Context(), "x"); err == nil {
 		t.Error("Grab stub should return an error")
-	}
-	if err := d.Test(t.Context()); err == nil {
-		t.Error("Test stub should return an error")
 	}
 }
