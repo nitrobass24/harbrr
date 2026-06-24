@@ -30,6 +30,7 @@ type fakeIndexer struct {
 	releases          []*normalizer.Release
 	searchErr         error
 	gotQuery          search.Query
+	gotCtx            context.Context //nolint:containedctx // captured for cache-bypass assertions in tests
 	needsResolver     bool
 	downloadNeedsAuth bool
 	grabResult        *search.GrabResult // when set, Grab returns it
@@ -40,7 +41,8 @@ type fakeIndexer struct {
 func (f *fakeIndexer) Info() IndexerInfo                  { return f.info }
 func (f *fakeIndexer) Capabilities() *mapper.Capabilities { return f.caps }
 
-func (f *fakeIndexer) Search(_ context.Context, q search.Query) ([]*normalizer.Release, error) {
+func (f *fakeIndexer) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
+	f.gotCtx = ctx
 	f.gotQuery = q
 	return f.releases, f.searchErr
 }
