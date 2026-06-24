@@ -1,0 +1,99 @@
+// Package broadcastthenet is the native driver for BroadcastTheNet
+// (api.broadcasthe.net). It has no Cardigann definition because its JSON-RPC 2.0
+// getTorrents endpoint — an API key carried as the first positional param inside the
+// request body, a torrents map keyed by id with every field wire-encoded as a string,
+// and a download URL that embeds the authkey/torrent_pass — exceeds the declarative
+// format, so the search/parse/grab logic lives here in Go. The driver reproduces
+// Prowlarr's documented contract (BroadcastheNetRequestGenerator /
+// BroadcastheNetParser / BroadcastheNetSettings) and reuses every harbrr seam (paced
+// HTTP client, secret store, normalized release, caps mapper, the /dl grab proxy,
+// redaction).
+package broadcastthenet
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
+)
+
+// driver is one configured BroadcastTheNet instance. It is built once per instance and
+// cached by the registry. There is no login round-trip: every request carries the API
+// key as the first positional param inside the JSON-RPC body, so the driver holds no
+// session state.
+type driver struct {
+	def     *loader.Definition
+	caps    *mapper.Capabilities
+	cfg     map[string]string
+	doer    search.Doer
+	baseURL string // normalised with a single trailing slash
+	clock   func() time.Time
+}
+
+var _ native.Driver = (*driver)(nil)
+
+// New is the native.Factory for BroadcastTheNet. It builds the capabilities from the
+// definition and normalises the base URL.
+func New(p native.Params) (native.Driver, error) {
+	if p.Def == nil {
+		return nil, errors.New("broadcastthenet: nil definition")
+	}
+	caps, err := mapper.Build(p.Def)
+	if err != nil {
+		return nil, fmt.Errorf("broadcastthenet: build capabilities for %q: %w", p.Def.ID, err)
+	}
+	base := p.BaseURL
+	if base == "" && len(p.Def.Links) > 0 {
+		base = p.Def.Links[0]
+	}
+	clock := p.Clock
+	if clock == nil {
+		clock = time.Now
+	}
+	return &driver{
+		def:     p.Def,
+		caps:    caps,
+		cfg:     p.Cfg,
+		doer:    p.Doer,
+		baseURL: strings.TrimRight(base, "/") + "/",
+		clock:   clock,
+	}, nil
+}
+
+// Capabilities returns the BroadcastTheNet capabilities document.
+func (d *driver) Capabilities() *mapper.Capabilities { return d.caps }
+
+// NeedsResolver is always true: a BroadcastTheNet download URL embeds the authkey and
+// torrent_pass in its query, which *arr must not see, so the served feed routes through
+// the /dl proxy and the driver's Grab fetches the torrent server-side.
+func (d *driver) NeedsResolver() bool { return true }
+
+// DownloadNeedsAuth is false: the download URL already carries its own credentials and
+// is routed through /dl by NeedsResolver, so the out-of-band-auth signal would be
+// redundant (it mirrors FileList/AvistaZ).
+func (d *driver) DownloadNeedsAuth() bool { return false }
+
+// Search is implemented in a later leaf; the stub keeps the package compiling and
+// satisfying native.Driver.
+func (d *driver) Search(_ context.Context, _ search.Query) ([]*normalizer.Release, error) {
+	return nil, errors.New("broadcastthenet: search not implemented")
+}
+
+// Grab is implemented in a later leaf; the stub keeps the package compiling and
+// satisfying native.Driver.
+func (d *driver) Grab(_ context.Context, _ string) (*search.GrabResult, error) {
+	return nil, errors.New("broadcastthenet: grab not implemented")
+}
+
+// Test verifies the configured API key authenticates (the management "test indexer"
+// action). It is implemented in a later leaf once Search lands.
+func (d *driver) Test(_ context.Context) error {
+	return errors.New("broadcastthenet: test not implemented")
+}

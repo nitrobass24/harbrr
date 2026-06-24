@@ -23,6 +23,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 	"github.com/autobrr/harbrr/internal/indexer/native/avistaz"
+	"github.com/autobrr/harbrr/internal/indexer/native/broadcastthenet"
 	"github.com/autobrr/harbrr/internal/indexer/native/filelist"
 	"github.com/autobrr/harbrr/internal/indexer/native/iptorrents"
 	"github.com/autobrr/harbrr/internal/indexer/native/myanonamouse"
@@ -283,6 +284,7 @@ func nativeFamilies() map[string]native.Family {
 	m := make(map[string]native.Family)
 	for _, fams := range [][]native.Family{
 		avistaz.Families(),
+		broadcastthenet.Families(),
 		filelist.Families(),
 		myanonamouse.Families(),
 		iptorrents.Families(),
