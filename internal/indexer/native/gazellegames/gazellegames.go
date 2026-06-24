@@ -19,7 +19,6 @@ import (
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
@@ -80,11 +79,6 @@ func (d *driver) NeedsResolver() bool { return true }
 // DownloadNeedsAuth is false: GazelleGames is already routed through /dl by NeedsResolver,
 // so the out-of-band-auth signal would be redundant (it mirrors FileList).
 func (d *driver) DownloadNeedsAuth() bool { return false }
-
-// Search is implemented in a later leaf.
-func (d *driver) Search(_ context.Context, _ search.Query) ([]*normalizer.Release, error) {
-	return nil, errors.New("gazellegames: Search not implemented")
-}
 
 // Grab is implemented in a later leaf.
 func (d *driver) Grab(_ context.Context, _ string) (*search.GrabResult, error) {
