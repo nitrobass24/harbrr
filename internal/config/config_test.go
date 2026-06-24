@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/pflag"
 
@@ -216,5 +217,114 @@ func TestExampleConfigIsValid(t *testing.T) {
 func TestLoadExplicitMissingFileErrors(t *testing.T) {
 	if _, err := config.Load(filepath.Join(t.TempDir(), "absent.yaml"), nil); err == nil {
 		t.Fatal("Load() with missing explicit config file = nil, want error")
+	}
+}
+
+func TestCacheDefaults(t *testing.T) {
+	cfg, err := config.Load("", nil)
+	if err != nil {
+		t.Fatalf("Load() = %v", err)
+	}
+	c := cfg.Cache
+	if !c.Enabled {
+		t.Error("cache.enabled default = false, want true")
+	}
+	checks := []struct {
+		name string
+		got  time.Duration
+		want time.Duration
+	}{
+		{"rss_ttl", c.RSSDuration(), 5 * time.Minute},
+		{"keyword_ttl", c.KeywordDuration(), 30 * time.Minute},
+		{"thin_ttl", c.ThinDuration(), 2 * time.Minute},
+		{"cleanup_interval", c.CleanupDuration(), time.Hour},
+	}
+	for _, ch := range checks {
+		if ch.got != ch.want {
+			t.Errorf("cache.%s default = %v, want %v", ch.name, ch.got, ch.want)
+		}
+	}
+	if c.ThinThreshold != 5 {
+		t.Errorf("cache.thin_threshold default = %d, want 5", c.ThinThreshold)
+	}
+	if c.RefreshAheadPct != 80 {
+		t.Errorf("cache.refresh_ahead_pct default = %d, want 80", c.RefreshAheadPct)
+	}
+}
+
+func TestCacheFileOverride(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "harbrr.yaml")
+	body := "cache:\n" +
+		"  enabled: false\n" +
+		"  rss_ttl: 10m\n" +
+		"  keyword_ttl: 1h\n" +
+		"  thin_ttl: 30s\n" +
+		"  thin_threshold: 3\n" +
+		"  refresh_ahead_pct: 50\n" +
+		"  cleanup_interval: 15m\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := config.Load(path, nil)
+	if err != nil {
+		t.Fatalf("Load() = %v", err)
+	}
+	c := cfg.Cache
+	if c.Enabled {
+		t.Error("cache.enabled override = true, want false")
+	}
+	if c.RSSDuration() != 10*time.Minute {
+		t.Errorf("cache.rss_ttl override = %v, want 10m", c.RSSDuration())
+	}
+	if c.KeywordDuration() != time.Hour {
+		t.Errorf("cache.keyword_ttl override = %v, want 1h", c.KeywordDuration())
+	}
+	if c.ThinDuration() != 30*time.Second {
+		t.Errorf("cache.thin_ttl override = %v, want 30s", c.ThinDuration())
+	}
+	if c.CleanupDuration() != 15*time.Minute {
+		t.Errorf("cache.cleanup_interval override = %v, want 15m", c.CleanupDuration())
+	}
+	if c.ThinThreshold != 3 {
+		t.Errorf("cache.thin_threshold override = %d, want 3", c.ThinThreshold)
+	}
+	if c.RefreshAheadPct != 50 {
+		t.Errorf("cache.refresh_ahead_pct override = %d, want 50", c.RefreshAheadPct)
+	}
+}
+
+func TestCacheEnvOverride(t *testing.T) {
+	t.Setenv("HARBRR_CACHE_ENABLED", "false")
+	t.Setenv("HARBRR_CACHE_KEYWORD_TTL", "45m")
+
+	cfg, err := config.Load("", nil)
+	if err != nil {
+		t.Fatalf("Load() = %v", err)
+	}
+	if cfg.Cache.Enabled {
+		t.Error("env cache.enabled = true, want false")
+	}
+	if cfg.Cache.KeywordDuration() != 45*time.Minute {
+		t.Errorf("env cache.keyword_ttl = %v, want 45m", cfg.Cache.KeywordDuration())
+	}
+}
+
+// TestCacheDurationFallback proves a blank/invalid duration string resolves to the
+// tier default rather than zero, so a partial override never disables a TTL.
+func TestCacheDurationFallback(t *testing.T) {
+	c := config.CacheConfig{RSSTTL: "", KeywordTTL: "bogus", ThinTTL: "-5m", CleanupInterval: "0s"}
+	if c.RSSDuration() != 5*time.Minute {
+		t.Errorf("blank rss_ttl = %v, want 5m default", c.RSSDuration())
+	}
+	if c.KeywordDuration() != 30*time.Minute {
+		t.Errorf("invalid keyword_ttl = %v, want 30m default", c.KeywordDuration())
+	}
+	if c.ThinDuration() != 2*time.Minute {
+		t.Errorf("non-positive thin_ttl = %v, want 2m default", c.ThinDuration())
+	}
+	if c.CleanupDuration() != time.Hour {
+		t.Errorf("zero cleanup_interval = %v, want 1h default", c.CleanupDuration())
 	}
 }

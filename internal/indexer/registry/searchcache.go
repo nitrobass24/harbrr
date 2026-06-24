@@ -63,6 +63,30 @@ func NewSearchCache(db dbinterface.Execer, ttl ttlConfig, refreshAheadPct int, c
 	}
 }
 
+// SearchCacheParams carries the resolved TTL tiers and refresh-ahead threshold a
+// caller (cmd/harbrr) reads from config to build a SearchCache without reaching
+// into the unexported ttlConfig.
+type SearchCacheParams struct {
+	RSSTTL          time.Duration
+	KeywordTTL      time.Duration
+	ThinTTL         time.Duration
+	ThinThreshold   int
+	RefreshAheadPct int
+}
+
+// NewSearchCacheWithParams builds a SearchCache from config-resolved tiers. It is
+// the exported entry point for cmd/harbrr; NewSearchCache stays internal so the
+// ttlConfig tier struct does not leak across the package boundary.
+func NewSearchCacheWithParams(db dbinterface.Execer, p SearchCacheParams, clock func() time.Time, log zerolog.Logger) *SearchCache {
+	ttl := ttlConfig{
+		rss:           p.RSSTTL,
+		keyword:       p.KeywordTTL,
+		thin:          p.ThinTTL,
+		thinThreshold: p.ThinThreshold,
+	}
+	return NewSearchCache(db, ttl, p.RefreshAheadPct, clock, log)
+}
+
 // wrap decorates an indexer with this cache. instanceID keys the entries; cfg
 // carries the per-instance "cache_ttl" override resolveTTL reads.
 func (c *SearchCache) wrap(inner torznab.Indexer, instanceID int64, cfg map[string]string) torznab.Indexer {
