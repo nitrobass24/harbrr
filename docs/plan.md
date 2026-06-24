@@ -460,6 +460,85 @@ Built when a real user needs it, not on a schedule. Each is self-contained and o
 
 ---
 
+## Search-results caching (unscheduled backlog — ordering TBD)
+
+The one headline harbrr can offer that Prowlarr/Jackett do not: **a search-results cache, because
+harbrr is the Torznab *server*, so a cache hit spares the *tracker's* infrastructure, not just
+harbrr's.** This is the most-requested differentiator and directly serves harbrr's stated reason to
+exist. It is **product surface** (post-parity, like Phase 8b+) and **unscheduled** — slot it relative
+to Phase 11 / app-sync when demand is clear. The design below is investigated and decided in shape; the
+two open decisions are flagged at the end.
+
+**Motivating evidence (from prod logs, 2026-06-23):** the dominant tracker traffic is **empty-query RSS
+polling** — Sonarr/Radarr/Prowlarr re-issuing the *identical* `categories[]=…&perPage=100&sortField=
+created_at` fetch to UNIT3D trackers every ~6 min (the luminarr/lst/onlyencodes timeout loop). Those
+are byte-identical repeated requests: the single highest-leverage thing to cache.
+
+> **Design (decided direction).** Mirror qui's proven precedent — it already caches Torznab search
+> results in SQLite (`qui/internal/models/torznab_search_cache.go`, key built in
+> `qui/internal/services/jackett/service.go:1203` `buildSearchCacheSignature`) — but **drop qui's
+> multi-indexer coverage/superset machinery** (`selectCacheEntryForCoverage`, `indexer_matcher`): qui
+> fans one search across many indexers, whereas **harbrr serves exactly one indexer per Torznab request**
+> (`registry.Indexer(slug)` → one adapter), so the key is a single `(instance, query)` pair.
+>
+> - **Seam:** cache-aside around `idx.Search(ctx, query)` in the registry adapter
+>   (`internal/indexer/registry/adapter.go`) — downstream of login/engine, **upstream** of
+>   dedupe/category-filter/pagination/`/dl`-rewriting (`internal/web/torznab`). The cached value is
+>   `[]*normalizer.Release` **before** `/dl` rewriting, so it's independent of the caller's
+>   base-URL/apikey and one entry serves every client.
+> - **Key:** SHA-256 over a **schema-versioned**, canonicalized payload — `version | instance_id |
+>   search_mode(t=) | keywords(trim+casefold) | categories(sorted,deduped) | imdbid/tmdbid/tvdbid/
+>   tvmazeid/traktid/doubanid/rid | season/ep/year | artist/album/label/track/author/booktitle`.
+>   Categories **are** in the key (they change the outbound tracker request). `limit`/`offset` are
+>   **not** (applied post-cache, so different pagination reuses one entry). Bump the version constant to
+>   invalidate the whole format at once.
+> - **Storage:** **SQLite as source of truth** (port + simplify qui's table) so a harbrr restart does
+>   **not** trigger a thundering re-poll of every tracker. Reuse `dbinterface` + a forward-only migration
+>   (`0004_search_cache.sql`). An in-memory L1 (autobrr `ttlcache`, already vendored by qui, or
+>   `hashicorp/golang-lru/v2`) is **optional/phase-2**, added only if profiling shows deserialization
+>   cost. Table shape: `cache_key PK · instance_id FK ON DELETE CASCADE · results_json BLOB ·
+>   total_results · cached_at · last_used_at · expires_at · hit_count`, indexed on `instance_id` and
+>   `expires_at`.
+> - **Singleflight (the win qui lacks):** wrap the cache-miss path in `golang.org/x/sync/singleflight`
+>   keyed on the cache key, so N concurrent identical misses (Sonarr + Radarr + Prowlarr polling the
+>   same indexer in the same second) collapse to **one** tracker request.
+> - **Only cache success:** cache successful responses including legitimately-empty result sets
+>   (negative caching of "0 results" is good). **Never** cache errors (the 5xx/timeout/TLS failures from
+>   the prod logs). A short-TTL error/circuit-breaker entry is a possible phase-2 add.
+> - **TTL tiers:** global default + per-indexer override (copy the `resolveTimeout` per-instance-setting
+>   pattern, `internal/indexer/registry/client.go:110`). A **short** TTL for empty-query/RSS fetches
+>   (≈ the poll interval — the biggest load win) and a longer TTL for keyword searches.
+> - **Invalidation:** TTL primary; FK cascade on instance delete; explicit purge on instance
+>   settings-change/disable (hook the existing registry adapter-cache invalidation in
+>   `internal/indexer/registry/registry.go`); periodic `CleanupExpired`; a manual flush endpoint.
+> - **Secrets at rest:** cached `Release.Link`/`Magnet` embed tracker passkeys, so `results_json`
+>   contains secrets — same trust level as the session cookies / encrypted settings already in the
+>   `0600` DB, acceptable for single-user self-hosted, but the blob must never hit a log. Optionally
+>   route it through `internal/secrets` like other secret columns (**open decision** below).
+> - **Observability is the selling point:** surface `hit_count` / hit-ratio / entries / approx-size
+>   (qui's `Stats` is the template) in the management API and the Web UI — "X% of searches served from
+>   cache" is the metric that proves the value over Prowlarr.
+
+Suggested build order (each leaf its own commit + green tests; resequence freely when scheduled):
+
+- [ ] **Store + migration** — `0004_search_cache.sql` + a `SearchCacheStore` behind `dbinterface`
+      (port + simplify qui's `TorznabSearchCacheStore`: `Fetch`/`Store`/`CleanupExpired`/`Flush`/
+      `InvalidateByInstance`/`Stats`); table-driven tests.
+- [ ] **Cache-aside + singleflight** — wrap `idx.Search` in the registry adapter; versioned canonical
+      key; only-cache-success (incl. empty); global TTL config; `golang.org/x/sync/singleflight`
+      coalescing on miss.
+- [ ] **TTL tiers + per-indexer override** — short RSS/empty-query TTL vs longer keyword TTL; per-instance
+      `cache_ttl` setting + global default.
+- [ ] **Lifecycle** — periodic `CleanupExpired`; invalidation on instance mutation/disable/delete.
+- [ ] **Observability + control** — `Stats` + flush in the management API (OpenAPI + drift test);
+      cache config + hit-ratio in the Web UI (Phase 11).
+
+**Open decisions (operator's call before build):** (1) **default TTL(s)** — what short-vs-long values
+balance *arr freshness against tracker load; (2) whether to **encrypt `results_json`** via
+`internal/secrets` or rely on the `0600` DB + never-log posture (matches how cookies are stored today).
+
+---
+
 ## Standing rules while building (see AGENTS.md)
 
 - Never hand-edit `internal/indexer/definitions/vendor/` — absorb differences in the engine.
