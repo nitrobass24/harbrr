@@ -61,20 +61,22 @@ func credentialSettings() []loader.SettingsField {
 
 // gazelleCaps is the Gazelle (RED/OPS) capability document, identical for both sites
 // per Prowlarr's RED.cs / Orpheus.cs SetCapabilities. The category map keys the
-// tracker's numeric category id to its newznab category: 1->Audio, 2->PC,
-// 3->Books/EBook, 4->Audio/Audiobook, 5->Other, 6->Other, 7->Books/Comics. The search
-// modes mirror RED/OPS MusicSearchParams (q/artist/album/year — no label) plus basic
-// q and book q.
+// tracker's numeric category id to its newznab category AND the tracker's category
+// DESCRIPTION (so a browse result's textual Category — "Music", "Audiobooks", … —
+// maps via MapTrackerCatDescToNewznab): 1->Audio("Music"), 2->PC("Applications"),
+// 3->Books/EBook("E-Books"), 4->Audio/Audiobook("Audiobooks"), 5->Other("E-Learning
+// Videos"), 6->Other("Comedy"), 7->Books/Comics("Comics"). The search modes mirror
+// RED/OPS MusicSearchParams (q/artist/album/year — no label) plus basic q and book q.
 func gazelleCaps() loader.Caps {
 	return loader.Caps{
 		CategoryMappings: []loader.CategoryMapping{
-			cat("1", "Audio"),
-			cat("2", "PC"),
-			cat("3", "Books/EBook"),
-			cat("4", "Audio/Audiobook"),
-			cat("5", "Other"),
-			cat("6", "Other"),
-			cat("7", "Books/Comics"),
+			cat("1", "Audio", "Music"),
+			cat("2", "PC", "Applications"),
+			cat("3", "Books/EBook", "E-Books"),
+			cat("4", "Audio/Audiobook", "Audiobooks"),
+			cat("5", "Other", "E-Learning Videos"),
+			cat("6", "Other", "Comedy"),
+			cat("7", "Books/Comics", "Comics"),
 		},
 		Modes: loader.Modes{
 			Search:      []string{"q"},
@@ -84,6 +86,6 @@ func gazelleCaps() loader.Caps {
 	}
 }
 
-func cat(id, name string) loader.CategoryMapping {
-	return loader.CategoryMapping{ID: loader.Scalar{Value: id, Set: true}, Cat: name}
+func cat(id, name, desc string) loader.CategoryMapping {
+	return loader.CategoryMapping{ID: loader.Scalar{Value: id, Set: true}, Cat: name, Desc: desc}
 }

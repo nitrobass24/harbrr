@@ -1,0 +1,87 @@
+{
+  "status": "success",
+  "response": {
+    "results": [
+      {
+        "groupId": "1001",
+        "groupName": "Fear Not",
+        "artist": "Logistics",
+        "groupYear": "2012",
+        "releaseType": "Album",
+        "tags": ["drum.and.bass", "electronic"],
+        "cover": "https://example.test/cover.jpg",
+        "torrents": [
+          {
+            "torrentId": 29991962,
+            "format": "FLAC",
+            "encoding": "Lossless",
+            "media": "CD",
+            "remastered": false,
+            "remasterYear": "0",
+            "remasterTitle": "",
+            "hasLog": true,
+            "logScore": 100,
+            "hasCue": true,
+            "scene": false,
+            "fileCount": 19,
+            "time": "2012-04-14 15:57:00",
+            "size": "527749302",
+            "snatches": 55,
+            "seeders": "20",
+            "leechers": "0",
+            "category": "Music",
+            "isFreeleech": false,
+            "isNeutralLeech": false,
+            "isFreeload": false,
+            "isPersonalFreeLeech": false,
+            "canUseToken": true
+          },
+          {
+            "torrentId": 29991963,
+            "format": "MP3",
+            "encoding": "320",
+            "media": "WEB",
+            "remastered": false,
+            "remasterYear": "0",
+            "remasterTitle": "",
+            "hasLog": false,
+            "logScore": 0,
+            "hasCue": false,
+            "scene": true,
+            "fileCount": 15,
+            "time": "2012-04-15 10:00:00",
+            "size": "104857600",
+            "snatches": 12,
+            "seeders": "7",
+            "leechers": "1",
+            "category": "Music",
+            "canUseToken": true
+          },
+          {
+            "torrentId": 29991964,
+            "format": "FLAC",
+            "encoding": "24bit Lossless",
+            "media": "Vinyl",
+            "remastered": true,
+            "remasterYear": "2021",
+            "remasterTitle": "Remaster",
+            "hasLog": false,
+            "logScore": 0,
+            "hasCue": false,
+            "scene": false,
+            "fileCount": 14,
+            "time": "2021-06-01 08:30:00",
+            "size": "943718400",
+            "snatches": 3,
+            "seeders": "4",
+            "leechers": "0",
+            "category": "Music",
+            "canUseToken": true
+          }
+        ]
+      }
+    ],
+    "currentPage": "1",
+    "pages": "1"
+  }
+}
