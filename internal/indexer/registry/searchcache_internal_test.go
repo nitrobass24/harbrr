@@ -25,6 +25,12 @@ type fakeInner struct {
 	releases []*normalizer.Release
 	err      error
 	gate     chan struct{} // when non-nil, Search blocks until it is closed
+
+	// firstSeen, when non-nil, is closed once as the first Search call enters (before
+	// it blocks on the gate). It lets a test wait deterministically for the gated
+	// flight to be in progress instead of sleeping a fixed duration.
+	firstSeen chan struct{}
+	firstOnce sync.Once
 }
 
 func (f *fakeInner) Info() torznab.IndexerInfo          { return torznab.IndexerInfo{ID: "fake"} }
@@ -40,7 +46,11 @@ func (f *fakeInner) Search(_ context.Context, _ search.Query) ([]*normalizer.Rel
 	atomic.AddInt64(&f.calls, 1)
 	f.mu.Lock()
 	gate := f.gate
+	firstSeen := f.firstSeen
 	f.mu.Unlock()
+	if firstSeen != nil {
+		f.firstOnce.Do(func() { close(firstSeen) })
+	}
 	if gate != nil {
 		<-gate
 	}
@@ -141,7 +151,7 @@ func TestConcurrentMissesSingleflight(t *testing.T) {
 	t.Parallel()
 	sc, instID, _ := testCache(t, keywordTTL, 0)
 	gate := make(chan struct{})
-	inner := &fakeInner{releases: relSet("X"), gate: gate}
+	inner := &fakeInner{releases: relSet("X"), gate: gate, firstSeen: make(chan struct{})}
 	idx := sc.wrap(inner, instID, nil)
 	q := search.Query{Keywords: "x"}
 
@@ -155,8 +165,11 @@ func TestConcurrentMissesSingleflight(t *testing.T) {
 			_, errs[i] = idx.Search(context.Background(), q)
 		}(i)
 	}
-	// Give the goroutines time to coalesce on the singleflight key, then release.
-	time.Sleep(50 * time.Millisecond)
+	// Wait deterministically until the first call has actually entered Search (the
+	// flight is now in progress and holding the gate); the other callers coalesce onto
+	// it. A latecomer that arrives after the gate opens still resolves to one inner
+	// call via the in-flight double-check, so callCount stays 1 either way.
+	<-inner.firstSeen
 	close(gate)
 	wg.Wait()
 

@@ -3,6 +3,7 @@ package registry
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -44,6 +45,22 @@ type SearchCache struct {
 	// metric the stats endpoint exposes; they reset on restart.
 	hits   atomic.Int64
 	misses atomic.Int64
+
+	// touchMu guards touchPending, the in-memory coalescing buffer for per-entry
+	// hit_count/last_used_at bumps. A cache hit records here (cheap, in-process)
+	// instead of issuing a SQLite write per hit; the buffer is drained by
+	// FlushTouches (on the cleanup tick, on Stats, and at shutdown), so N hits on
+	// one key collapse to a single UPDATE. hit_count/last_used_at are observability
+	// only (TTL drives expiry), so losing an unflushed interval on a hard crash is
+	// acceptable.
+	touchMu      sync.Mutex
+	touchPending map[string]pendingTouch
+}
+
+// pendingTouch is one key's buffered hit delta and most-recent use time.
+type pendingTouch struct {
+	hits     int64
+	lastUsed time.Time
 }
 
 // NewSearchCache builds the cache layer. db is the shared store handle, ttl the
@@ -55,11 +72,12 @@ func NewSearchCache(db dbinterface.Execer, ttl ttlConfig, refreshAheadPct int, c
 		clock = time.Now
 	}
 	return &SearchCache{
-		db:        db,
-		ttl:       ttl,
-		refreshAt: refreshAheadPct,
-		clock:     clock,
-		log:       log,
+		db:           db,
+		ttl:          ttl,
+		refreshAt:    refreshAheadPct,
+		clock:        clock,
+		log:          log,
+		touchPending: make(map[string]pendingTouch),
 	}
 }
 
@@ -146,7 +164,7 @@ func (c *SearchCache) serveHit(ctx context.Context, instanceID int64, cfg map[st
 		return c.serveMiss(ctx, instanceID, cfg, inner, q, key)
 	}
 	c.hits.Add(1)
-	c.touchAsync(key)
+	c.recordTouch(key)
 	if c.shouldRefreshAhead(entry) {
 		c.triggerSWR(ctx, instanceID, cfg, inner, q, key)
 	}
@@ -228,17 +246,37 @@ func (c *SearchCache) storeBestEffort(ctx context.Context, instanceID int64, cfg
 	}
 }
 
-// touchAsync records a served hit without blocking the response. A Touch failure is
-// logged (key only) and otherwise ignored — the counter is best-effort.
-func (c *SearchCache) touchAsync(key string) {
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), swrRefreshTimeout)
-		defer cancel()
-		if err := c.store.Touch(ctx, c.db, key, c.clock()); err != nil {
+// recordTouch buffers a served hit in memory (cheap, non-blocking) instead of
+// writing to SQLite per hit. The buffer coalesces repeated hits on the same key
+// into one UPDATE at flush time — important because the cache's whole job is
+// absorbing high-frequency identical polls, so a write per absorbed hit is wasteful.
+func (c *SearchCache) recordTouch(key string) {
+	now := c.clock()
+	c.touchMu.Lock()
+	e := c.touchPending[key]
+	e.hits++
+	e.lastUsed = now
+	c.touchPending[key] = e
+	c.touchMu.Unlock()
+}
+
+// FlushTouches drains the buffered hit bumps to the store, one coalesced UPDATE per
+// key (hit_count += buffered hits, last_used_at = most recent). It is called on the
+// cleanup tick, before Stats (so the API reflects current counts), and at shutdown.
+// Best-effort: a failure is logged (key only) and the buffered counts for that key
+// are lost — acceptable, since hit_count/last_used_at are observability, not state.
+func (c *SearchCache) FlushTouches(ctx context.Context) {
+	c.touchMu.Lock()
+	pending := c.touchPending
+	c.touchPending = make(map[string]pendingTouch, len(pending))
+	c.touchMu.Unlock()
+
+	for key, e := range pending {
+		if err := c.store.BumpHits(ctx, c.db, key, e.hits, e.lastUsed); err != nil {
 			c.log.Warn().Str("cache_key", key).Str("error", apphttp.RedactError(err)).
-				Msg("registry: search cache touch failed")
+				Msg("registry: search cache touch flush failed")
 		}
-	}()
+	}
 }
 
 // shouldRefreshAhead reports whether a hit is old enough to trigger a background

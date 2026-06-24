@@ -6,7 +6,7 @@ top-level `docs/` folder; this folder is the *product* documentation.)
 
 ## Structure
 
-```
+```text
 website/
 ├── mkdocs.yml              # optional site config (MkDocs + Material) — see "Previewing"
 └── docs/

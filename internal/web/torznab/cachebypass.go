@@ -22,7 +22,11 @@ func CacheBypass(ctx context.Context) bool {
 	return v
 }
 
-// wantsNoCache reports whether the request asked to bypass the cache via nocache=1.
+// wantsNoCache reports whether the request asked to bypass the cache. The trigger
+// is exactly nocache=1 — by design, other truthy spellings (nocache=true, nocache=on)
+// and a bare/empty nocache are NOT honored and are served from cache as normal.
+// Bypassing forces a live tracker fetch, so the strict single form keeps a stray
+// query param from accidentally hammering the tracker.
 func wantsNoCache(q url.Values) bool {
 	return q.Get("nocache") == "1"
 }

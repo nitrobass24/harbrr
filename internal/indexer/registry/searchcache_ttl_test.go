@@ -35,6 +35,9 @@ func TestResolveTTL(t *testing.T) {
 		{name: "keyword query => keyword", q: kwQ, count: 100, want: 30 * time.Minute},
 		{name: "id query => keyword", q: idQ, count: 100, want: 30 * time.Minute},
 		{name: "categories alone still empty", q: search.Query{Categories: []string{"1", "2"}}, count: 100, want: 5 * time.Minute},
+		// A whitespace-only keyword canonicalizes to empty in the cache key, so it
+		// must pick the rss tier too (consistency with the key path).
+		{name: "whitespace-only keyword => rss", q: search.Query{Keywords: "   "}, count: 100, want: 5 * time.Minute},
 
 		{name: "override beats default", setting: map[string]string{"cache_ttl": "10m"}, q: kwQ, count: 100, want: 10 * time.Minute},
 		{name: "override on empty query", setting: map[string]string{"cache_ttl": "1h"}, q: emptyQ, count: 100, want: time.Hour},
@@ -78,6 +81,7 @@ func TestIsEmptyQuery(t *testing.T) {
 	}{
 		{name: "zero", q: search.Query{}, want: true},
 		{name: "categories only", q: search.Query{Categories: []string{"5000"}}, want: true},
+		{name: "whitespace-only keywords", q: search.Query{Keywords: "   "}, want: true},
 		{name: "keywords", q: search.Query{Keywords: "x"}, want: false},
 		{name: "imdbid", q: search.Query{IMDBID: "tt1"}, want: false},
 		{name: "tmdbid", q: search.Query{TMDBID: "1"}, want: false},

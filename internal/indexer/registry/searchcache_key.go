@@ -121,6 +121,12 @@ func canonicalCategories(cats []string) []string {
 		nj, errj := strconv.Atoi(out[j])
 		switch {
 		case erri == nil && errj == nil:
+			// Tie-break on the original string when two ids are numerically equal
+			// (e.g. "1" and "01") — sort.Slice is not stable, so without this the
+			// canonical order, and thus the cache key, would vary between runs.
+			if ni == nj {
+				return out[i] < out[j]
+			}
 			return ni < nj
 		case erri == nil:
 			// numeric sorts before non-numeric (custom) ids.

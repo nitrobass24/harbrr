@@ -70,6 +70,26 @@ func TestBuildSearchCacheKeyCustomCategoryOrder(t *testing.T) {
 	}
 }
 
+// TestBuildSearchCacheKeyEqualNumericCategories pins the tie-break for distinct
+// strings that parse to the same number ("1" and "01"): without a string tie-break,
+// sort.Slice (unstable) could order them either way, so the canonical form — and the
+// key — would vary between runs. Both input orderings must hash identically, and the
+// key must be stable across repeated builds.
+func TestBuildSearchCacheKeyEqualNumericCategories(t *testing.T) {
+	t.Parallel()
+
+	forward := buildSearchCacheKey(1, search.Query{Categories: []string{"1", "01"}})
+	reverse := buildSearchCacheKey(1, search.Query{Categories: []string{"01", "1"}})
+	if forward != reverse {
+		t.Fatalf("equal-numeric category order changed key: %q != %q", forward, reverse)
+	}
+	for i := 0; i < 20; i++ {
+		if got := buildSearchCacheKey(1, search.Query{Categories: []string{"1", "01"}}); got != forward {
+			t.Fatalf("key unstable across runs: %q != %q", got, forward)
+		}
+	}
+}
+
 func TestBuildSearchCacheKeyKeywordsCanonicalization(t *testing.T) {
 	t.Parallel()
 

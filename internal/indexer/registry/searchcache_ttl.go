@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"strings"
 	"time"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -48,8 +49,11 @@ func (c ttlConfig) resolveTTL(cfg map[string]string, q search.Query, count int) 
 // search.Query.isIDSearch (which omits season/ep/year and the music/book fields).
 func isEmptyQuery(q search.Query) bool {
 	// Every request-driving scalar field; Categories is deliberately excluded.
+	// Keywords is trimmed first so a whitespace-only term classifies as empty,
+	// matching the cache-key canonicalization (which trims+casefolds Keywords) —
+	// otherwise "   " would key like an RSS poll but pick the keyword TTL tier.
 	terms := []string{
-		q.Keywords,
+		strings.TrimSpace(q.Keywords),
 		q.IMDBID, q.TMDBID, q.TVDBID, q.TVMazeID, q.TraktID, q.DoubanID, q.RageID,
 		q.Season, q.Ep, q.Year,
 		q.Artist, q.Album, q.Label, q.Track, q.Author, q.BookTitle,

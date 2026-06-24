@@ -276,8 +276,14 @@ func startSearchCacheCleanup(ctx context.Context, sc *registry.SearchCache, inte
 		for {
 			select {
 			case <-ctx.Done():
+				// Final flush of buffered hit bumps on shutdown, with a fresh bounded
+				// context since ctx is already canceled.
+				fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+				sc.FlushTouches(fctx)
+				cancel()
 				return
 			case <-t.C:
+				sc.FlushTouches(ctx)
 				if _, err := sc.CleanupExpired(ctx); err != nil && !errors.Is(err, context.Canceled) {
 					log.Warn().Err(err).Msg("search cache cleanup failed")
 				}

@@ -65,9 +65,14 @@ func seedCacheEntry(t *testing.T, db *database.DB, instanceID int64, now time.Ti
 // instance id (looked up from the db by slug).
 func addTestIndexer(t *testing.T, e *env, base string, c *http.Client, slug string) int64 {
 	t.Helper()
-	add := map[string]any{
-		"slug": slug, "definitionId": "testtracker",
-		"settings": map[string]string{"apikey": "k"},
+	add := struct {
+		Slug         string            `json:"slug"`
+		DefinitionID string            `json:"definitionId"`
+		Settings     map[string]string `json:"settings"`
+	}{
+		Slug:         slug,
+		DefinitionID: "testtracker",
+		Settings:     map[string]string{"apikey": "k"},
 	}
 	resp, body := do(t, c, http.MethodPost, base+"/api/indexers", add, nil)
 	mustStatus(t, resp, body, http.StatusCreated)
@@ -143,7 +148,9 @@ func TestCacheFlushHappyPath(t *testing.T) {
 	// A second flush purges nothing.
 	resp, body = do(t, c, http.MethodPost, base+"/api/cache/flush", nil, nil)
 	mustStatus(t, resp, body, http.StatusOK)
-	_ = json.Unmarshal(body, &flush)
+	if err := json.Unmarshal(body, &flush); err != nil {
+		t.Fatalf("decode second flush: %v", err)
+	}
 	if flush.Flushed != 0 {
 		t.Errorf("second flush.flushed = %d, want 0", flush.Flushed)
 	}

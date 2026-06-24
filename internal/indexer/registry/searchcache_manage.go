@@ -26,6 +26,9 @@ type SearchCacheStats struct {
 // Stats returns the cache statistics: durable store figures plus the in-memory
 // hit-ratio. The store error wraps nothing secret (it has no payload to leak).
 func (c *SearchCache) Stats(ctx context.Context) (SearchCacheStats, error) {
+	// Drain buffered hit bumps first so the reported hit_count/last_used reflect
+	// hits served since the last flush rather than lagging by a cleanup interval.
+	c.FlushTouches(ctx)
 	s, err := c.store.Stats(ctx, c.db)
 	if err != nil {
 		return SearchCacheStats{}, err //nolint:wrapcheck // store already wraps with context; no key/payload to add.

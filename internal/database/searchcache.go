@@ -107,6 +107,23 @@ func (SearchCacheStore) Touch(ctx context.Context, q dbinterface.Execer, cacheKe
 	return nil
 }
 
+// BumpHits applies a coalesced hit bump: it adds delta to hit_count and sets
+// last_used_at in one UPDATE. The cache buffers per-hit touches in memory and
+// flushes them here so N hits on a key collapse to a single write (vs Touch, which
+// adds exactly one). A delta <= 0 is a no-op.
+func (SearchCacheStore) BumpHits(ctx context.Context, q dbinterface.Execer, cacheKey string, delta int64, lastUsed time.Time) error {
+	if delta <= 0 {
+		return nil
+	}
+	_, err := q.ExecContext(ctx,
+		q.Rebind(`UPDATE search_cache SET last_used_at = ?, hit_count = hit_count + ? WHERE cache_key = ?`),
+		lastUsed.UTC().Format(timeLayout), delta, cacheKey)
+	if err != nil {
+		return fmt.Errorf("database: bump hits search cache %q: %w", cacheKey, err)
+	}
+	return nil
+}
+
 // CleanupExpired deletes every entry whose expires_at is at or before now,
 // returning the number purged. The background ticker calls it periodically.
 func (SearchCacheStore) CleanupExpired(ctx context.Context, q dbinterface.Execer, now time.Time) (int64, error) {
