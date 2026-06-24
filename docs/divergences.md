@@ -7,6 +7,12 @@ that exercise it**. This file is the *index* of where those records live and the
 single rule they all follow; it is **not** a second copy of them, so there is no
 parallel ledger to drift.
 
+**Scope:** this ledger is only for *behavioral* differences from Jackett on the same
+input. **Unbuilt product features** (OIDC, backup/restore, stats/event-log,
+user-configurable rate, fleet-status, …) are not divergences — they live in
+`docs/plan.md` → "Beyond the alpha" (the demand-gated backlog), never as `[Tracked]`
+entries here.
+
 ## Disposition vocabulary
 
 Every divergence entry carries exactly one disposition, so the record is a

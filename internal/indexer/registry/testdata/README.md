@@ -41,10 +41,10 @@ These behaviours are pinned by tests in `internal/indexer/registry`
   user-tunable.** Jackett's `requestDelay` (seconds) sets the per-domain interval
   when the def declares it; otherwise a conservative 1s default. There is no
   per-indexer rate override or global default *setting* today, so a user cannot tune
-  pacing for a domain they know to be strict or lax. Exposing a per-indexer override
-  + a global default (the `ClientParams.RateInterval` seam is already plumbed for it)
-  is deferred to the product-settings surface. `[Deliberate]`; user-configurable rate
-  `[Tracked]`.
+  pacing for a domain they know to be strict or lax. `[Deliberate]`. Exposing a
+  per-indexer override + a global default (the `ClientParams.RateInterval` seam is
+  already plumbed for it) is a product feature, not a divergence — see `docs/plan.md` →
+  "Beyond the alpha": user-configurable request rate.
 - **Per-instance request timeout from a `timeout` setting, else a 60s default.** A
   per-indexer `timeout` setting (a Go duration, e.g. `30s`) bounds the whole request
   via `ClientParams.Timeout`; an unset/invalid value falls back to 60s. Jackett uses
@@ -69,8 +69,9 @@ These behaviours are pinned by tests in `internal/indexer/registry`
   `[Deliberate]`.
 - **Health is an append-only event log; status is derived.** `indexer_health_events`
   records only the four failure kinds; `GET /api/indexers/{slug}/status` derives
-  `healthy`/`unhealthy` from a 1h recency window. A fleet-wide `/api/indexers/status`
-  is out of scope. `[Deliberate]`; fleet status `[Tracked]`.
+  `healthy`/`unhealthy` from a 1h recency window. `[Deliberate]`. A fleet-wide
+  `/api/indexers/status` roll-up is a product feature, not a divergence — see
+  `docs/plan.md` → "Beyond the alpha": fleet-wide indexer status.
 
 ## Proxies
 

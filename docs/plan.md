@@ -442,6 +442,10 @@ Built when a real user needs it, not on a schedule. Each is self-contained and o
 - **cross-seed search backend.**
 - **Stats / search history** (query/grab/auth event log + query API; the auth log populates
   `api_keys.last_used_at`, left unwritten in Phase 4) **+ notifications** (Discord/webhook, pluggable).
+- **Fleet-wide indexer status** — a `GET /api/indexers/status` aggregate over all indexers (the
+  per-indexer `GET /api/indexers/{slug}/status` exists; this is the roll-up). The health event log +
+  derived per-instance status already exist (Phase 6); this is the fan-out endpoint. Pairs with the
+  Web UI dashboard.
 - **Backup / restore** (config + database): scheduled + manual, using the §9 redacted/encrypted export
   (secrets behind a `<redacted>` sentinel; including secrets is a separately-passphrase-encrypted opt-in).
 - **OIDC authentication** — implement the flow stubbed in Phase 4 (`/api/auth/oidc/*` return 501 today;

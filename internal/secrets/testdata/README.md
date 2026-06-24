@@ -64,20 +64,19 @@ The behaviours below are pinned by tests in `internal/secrets`, `internal/auth`,
   bearer-token class and lets a user mint one key for both surfaces.
   (`cmd/harbrr/serve.go` apiKeyValidator → `auth.ValidateAPIKey`.) `[Deliberate]`
 
-## Tracked gaps (carry a `docs/plan.md` item)
+## Deferred product features → backlog, not this ledger
 
-- **OIDC is stubbed.** `/api/auth/oidc/*` returns 501; only a config seam exists.
-  `[Tracked]` (with the web UI / app auth).
+These are **unbuilt product features**, not behavioral divergences from Jackett, so they
+live in `docs/plan.md` → "Beyond the alpha", not here: **OIDC auth** (`/api/auth/oidc/*`
+returns 501 today; config seam only), **`api_keys.last_used_at` write** (validation is a
+pure read; the auth event log populates it later), and **safe config/DB export-import**
+(the `<redacted>` sentinel exists for the edit flow; the export/import path is deferred).
+
+The one item that *shipped* and is kept here as a resolved record:
+
 - **Interactive Swagger UI.** The embedded spec is served at `/api/openapi.yaml`
   and the rendered Swagger UI at `/api/docs` (`internal/server/server.go` →
   `swagger.UI()`), independent of the still-deferred web UI. `[Resolved]`
-- **`api_keys.last_used_at` is never written.** Validation is a pure read (no
-  write on the request path); the auth event log populates it later.
-  `[Tracked]` (stats / search history).
-- **Safe export/import not built.** §9 describes a config/DB export that redacts
-  secrets behind the `<redacted>` sentinel by default with a separately-encrypted
-  include-secrets opt-in. The `<redacted>` sentinel exists for the edit/update flow;
-  the export/import path itself is deferred. `[Tracked]` (backup/restore).
 
 ## Secret hardening
 
@@ -108,4 +107,5 @@ The behaviours below are pinned by tests in `internal/secrets`, `internal/auth`,
   traces, and the stats event log" as redaction targets, but harbrr has **no
   tracing and no stats/event-log subsystem** — those targets do not exist, so the
   audit cannot wire redaction into them. Building them is out of scope.
-  `[Accepted]` (revisit when the stats data layer lands — `[Tracked]`).
+  `[Accepted]` (revisit when the stats/event-log feature lands — `docs/plan.md` →
+  "Beyond the alpha").
