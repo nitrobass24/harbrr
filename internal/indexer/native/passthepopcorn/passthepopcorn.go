@@ -19,7 +19,6 @@ import (
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
@@ -80,11 +79,6 @@ func (d *driver) NeedsResolver() bool { return false }
 // ApiKey headers, so the served feed routes through the /dl proxy and the driver's Grab
 // fetches the torrent server-side with the headers attached.
 func (d *driver) DownloadNeedsAuth() bool { return true }
-
-// Search is implemented in a later leaf.
-func (d *driver) Search(_ context.Context, _ search.Query) ([]*normalizer.Release, error) {
-	return nil, errors.New("passthepopcorn: Search not implemented")
-}
 
 // Grab is implemented in a later leaf.
 func (d *driver) Grab(_ context.Context, _ string) (*search.GrabResult, error) {
