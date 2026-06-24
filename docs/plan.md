@@ -434,11 +434,12 @@ now (*detail TBD*); fill in as we have it.
   tracker stays polite no matter how many apps sit behind it. Makes the caching above actually "kind to
   trackers." *Detail TBD (relation to the existing per-indexer paced client / `ClientParams`).*
 - **Upbrr credential sync** — Upbrr ships its **own** definitions but needs tracker **credentials** to
-  operate; harbrr, as the single source of truth for tracker auth, syncs those credentials into Upbrr so
-  a tracker configured once in harbrr provisions Upbrr automatically. Unlike the Phase-10 \*arr/qui sync
-  (which pushes harbrr's indexer *feed*), this pushes *credentials* mapped onto Upbrr's own definitions.
-  *Detail TBD (which credential fields, harbrr-indexer ↔ Upbrr-definition matching, sync direction/contract,
-  redaction/rotation handling).*
+  operate; harbrr, as the single source of truth for tracker auth, **pushes** those credentials into Upbrr
+  (harbrr → Upbrr, the same outbound app-sync model as the Phase-10 \*arr/qui push) so a tracker configured
+  once in harbrr provisions Upbrr automatically. Unlike the \*arr/qui sync (which pushes harbrr's indexer
+  *feed*), this pushes *credentials* mapped onto Upbrr's own definitions. *Detail TBD (which credential
+  fields, harbrr-indexer ↔ Upbrr-definition matching, the push contract/endpoint, redaction/rotation
+  handling).*
 
 ### Tier 2 — Adoption + autobrr-family completion
 
