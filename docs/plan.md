@@ -413,12 +413,32 @@ harbrr the single source of truth for the whole stack.
 The one consciously-accepted alpha gap is **automated migration import** (deferred to the backlog):
 alpha ships with manual indexer setup — existing Prowlarr/Jackett users re-enter rather than import.
 
-- [ ] **Usenet / Newznab support** — harbrr is torrent-only today, so a stack's usenet indexers (e.g.
-      DOGnzb) can't migrate; this closes the **last capability Prowlarr has that harbrr lacks**. The
-      `caps`/`search` surface already speaks Newznab-compatible XML; the gap is the usenet *fetch* +
-      indexer kind. **Long pole of the phase — the one net-new subsystem; scope it on its own first.**
-      Surfaced by the Phase-10 gold-standard migration (DOGnzb was the one stack indexer harbrr couldn't
-      serve). *Detail TBD (fetch path, indexer kind, caps surface, grab model).*
+- [x] **Usenet / Newznab support** — harbrr was torrent-only; this closes the **last capability Prowlarr
+      had that harbrr lacked** (Jackett is torrent-only, so Prowlarr is the sole parity target). **Shipped:**
+      generic Newznab driver + ~18 presets on the `native.Family` seam (`internal/indexer/native/newznab/`;
+      parity with Prowlarr, no YAML), protocol derived from the driver + denormalized into the
+      `indexer_instances.protocol` column, `.nzb` proxied server-side via `/dl` (apikey sealed). User docs:
+      `website/docs/features/usenet-newznab.md`; design divergences:
+      `internal/indexer/native/newznab/testdata/README.md`. Build leaves:
+   - [x] **Protocol primitive + DB column** — `Protocol` on the definition/`Family` (default `torrent`) +
+         `0005` migration on `indexer_instances` + `domain.IndexerInstance`, populated on add; threaded
+         through caps/`IndexerInfo` → `FeedInfo`. No behavior change.
+   - [x] **Protocol-aware serializer** — gates `enclosureType` (`x-nzb`) + `appendTorrentAttrs` on protocol.
+   - [x] **Protocol-aware normalizer** — *no change needed*: native drivers build `Release` structs
+         directly and never hit the `seeders` validator (the `/dl` content-type is set driver-side).
+   - [x] **Newznab client core** — `internal/indexer/native/newznab/`: settings + request gen + XML parser
+         + server-side grab, offline stub-server goldens (`NeedsResolver=false`, `DownloadNeedsAuth=true`).
+   - [x] **Caps fetch + category mapping** — live `?t=caps` → mapped newznab cats, cached (7-day TTL,
+         `PersistSetting`), primed in `Test()`.
+   - [x] **Grab path** — fetches `.nzb` via `/dl`, `application/x-nzb`, apikey-redaction tested (folded
+         into the driver core leaf).
+   - [x] **Family registration + presets** — `newznab.Families()` (generic + ~18 presets); registry e2e.
+   - [x] **App-sync protocol** — `DesiredIndexer.Protocol`; registers usenet as the remote **Newznab** impl;
+         `List()` orphan-trap fixed; qui skips usenet.
+   - [x] **End-to-end** — offline HTTP e2e (stub server): configure → search → usenet feed → `/dl` grab.
+   - [x] **User-facing docs + divergence** — `website/docs/features/usenet-newznab.md` (MkDocs nav) +
+         `[Deliberate]` proxy divergence in `internal/indexer/native/newznab/testdata/README.md` +
+         `coverage.md`. Live validation deferred (needs a real usenet apikey; opportunistic, not a gate).
 - [ ] **Shared RSS-feed caching** — fetch a tracker's RSS/feed once and serve every consumer
       (Sonarr/Radarr/autobrr/cross-seed) from the cached copy instead of each app polling the tracker
       independently. The README's headline value: lower tracker load, fewer duplicate requests, better

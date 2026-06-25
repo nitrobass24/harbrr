@@ -36,7 +36,7 @@ but `hdspace.yml` in Jackett, so harbrr serves it via the corpus, no driver need
 
 ## 3. The stack (this deployment's Prowlarr indexers)
 
-19 configured indexers — **18 torrent (all covered) + 1 usenet (out of scope)**:
+19 configured indexers — **18 torrent (all covered) + 1 usenet (now covered via the Newznab driver)**:
 
 | Indexer | Prowlarr impl | harbrr coverage | Live status |
 |---|---|---|---|
@@ -45,11 +45,14 @@ but `hdspace.yml` in Jackett, so harbrr serves it via the corpus, no driver need
 | **FileList** | native C# | ✅ native driver | search ✅ (int-flags fix #46) |
 | **IPTorrents** | native C# | ✅ native driver | ✅ count 1.00 + grab |
 | **MyAnonamouse** | native C# | ✅ native driver + `mam_id` write-back | driver ✅; live pending a fresh session |
-| **DOGnzb** | Newznab | ❌ **usenet** — different protocol | out of scope (harbrr is torrent/Torznab) |
+| **DOGnzb** | Newznab | ✅ **generic Newznab driver** (Phase 11) | offline-built; live pending a usenet apikey |
 
-**Verdict for this stack: harbrr covers every torrent indexer (18/18).** The only miss is DOGnzb, which
-is **usenet/Newznab** — a protocol harbrr doesn't target (it's a torrent search provider). That's the
-"dognzb doesn't work" from intake explained: not a bug, a different surface entirely.
+**Verdict for this stack: harbrr now covers all 19/19.** The 18 torrent indexers were always covered;
+DOGnzb (**usenet/Newznab**) is served as of Phase 11 by the generic Newznab driver
+(`internal/indexer/native/newznab/`) — harbrr is no longer torrent-only. Jackett still can't serve it
+(Jackett is torrent-only), so this is parity with **Prowlarr**, the sole usenet parity target. Live
+validation is deferred until a real usenet apikey is in the stack (opportunistic, not a gate — same
+posture as the offline-built native torrent drivers in §4).
 
 ## 4. harbrr's native-driver backlog (C# in both Jackett & Prowlarr)
 
