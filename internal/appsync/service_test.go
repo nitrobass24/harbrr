@@ -92,6 +92,42 @@ func newSyncFixture(t *testing.T) *syncFixture {
 	return &syncFixture{svc: svc, db: db, auth: authSvc, source: source, stub: stub, conn: conn}
 }
 
+func TestBuildDesiredQuiSkipsUsenet(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	src := &fakeSource{
+		instances: []domain.IndexerInstance{
+			{ID: 1, Slug: "torrent-tracker", Name: "Torrent", Enabled: true, Protocol: "torrent"},
+			{ID: 2, Slug: "usenet-tracker", Name: "Usenet", Enabled: true, Protocol: "usenet"},
+		},
+	}
+	svc := &Service{source: src}
+
+	// qui is torrent-only: the usenet instance must be filtered out of the desired set.
+	qui := domain.AppConnection{Kind: domain.AppKindQui, IndexScope: domain.IndexScopeAll, HarbrrURL: "http://harbrr"}
+	got, err := svc.buildDesired(ctx, src.instances, qui, "k", nil)
+	if err != nil {
+		t.Fatalf("buildDesired qui: %v", err)
+	}
+	if len(got) != 1 || got[0].Slug != "torrent-tracker" {
+		t.Fatalf("qui desired = %+v, want only torrent-tracker", got)
+	}
+
+	// Sonarr keeps both and carries each instance's protocol through to DesiredIndexer.
+	sonarr := domain.AppConnection{Kind: domain.AppKindSonarr, IndexScope: domain.IndexScopeAll, HarbrrURL: "http://harbrr"}
+	got, err = svc.buildDesired(ctx, src.instances, sonarr, "k", nil)
+	if err != nil {
+		t.Fatalf("buildDesired sonarr: %v", err)
+	}
+	byProto := map[string]string{}
+	for _, d := range got {
+		byProto[d.Slug] = d.Protocol
+	}
+	if byProto["torrent-tracker"] != "torrent" || byProto["usenet-tracker"] != "usenet" {
+		t.Fatalf("sonarr desired protocols = %+v, want torrent/usenet preserved", byProto)
+	}
+}
+
 func seedInstance(t *testing.T, db *database.DB, slug, name string, enabled bool) int64 {
 	t.Helper()
 	now := time.Now().UTC()
