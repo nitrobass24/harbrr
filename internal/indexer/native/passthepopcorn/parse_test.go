@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
@@ -170,6 +171,28 @@ func TestParseReleasesEmptyVariants(t *testing.T) {
 		if len(got) != 0 {
 			t.Errorf("parseReleases(%s) = %d releases, want 0", body, len(got))
 		}
+	}
+}
+
+// TestParseReleasesSkipsZeroID proves a torrent whose decoded Id is 0 (empty/malformed)
+// is skipped: emitting it would produce a broken download link (action=download&id=0).
+// The sibling row with a valid Id is still returned.
+func TestParseReleasesSkipsZeroID(t *testing.T) {
+	t.Parallel()
+	body := `{"TotalResults":"2","Movies":[{"GroupId":"1","CategoryId":"1","Title":"M",` +
+		`"Torrents":[{"Id":0,"ReleaseName":"Bad"},{"Id":"99","ReleaseName":"Good"}]}]}`
+	got, err := parseDriver(t, nil).parseReleases([]byte(body))
+	if err != nil {
+		t.Fatalf("parseReleases: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d releases, want 1 (the id==0 row skipped)", len(got))
+	}
+	if got[0].Title != "Good" {
+		t.Errorf("Title = %q, want the valid-id row %q", got[0].Title, "Good")
+	}
+	if strings.Contains(got[0].Link, "id=0") {
+		t.Errorf("Link carries a broken id=0: %q", got[0].Link)
 	}
 }
 

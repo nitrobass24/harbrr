@@ -63,6 +63,38 @@ func TestGrabReturnsTorrentBytes(t *testing.T) {
 	}
 }
 
+// TestGrabSendsNoJSONAccept proves the grab path does NOT force Accept: application/json
+// (a strict server could 406 or serve a JSON error instead of the .torrent); the search
+// path still requests JSON. The grab Accept header must be empty.
+func TestGrabSendsNoJSONAccept(t *testing.T) {
+	t.Parallel()
+	doer := &scriptDoer{resp: torrentResp(torrentBytes)}
+	d := searchDriver(t, doer)
+
+	if _, err := d.Grab(context.Background(), d.downloadLink(12345)); err != nil {
+		t.Fatalf("Grab: %v", err)
+	}
+	if len(doer.reqs) != 1 {
+		t.Fatalf("requests = %d, want exactly one", len(doer.reqs))
+	}
+	if doer.reqs[0].accept != "" {
+		t.Errorf("grab Accept = %q, want empty (must not force JSON)", doer.reqs[0].accept)
+	}
+}
+
+// TestGrabRejectsNonTorrentBody proves a 2xx whose body is not bencode (e.g. a JSON error
+// page) is rejected rather than handed downstream as a corrupt torrent.
+func TestGrabRejectsNonTorrentBody(t *testing.T) {
+	t.Parallel()
+	doer := &scriptDoer{resp: rawResp(stdhttp.StatusOK, "application/json", `{"Result":"Error"}`)}
+	d := searchDriver(t, doer)
+
+	_, err := d.Grab(context.Background(), d.downloadLink(12345))
+	if !errors.Is(err, errNotTorrent) {
+		t.Errorf("Grab on a JSON body = %v, want errNotTorrent", err)
+	}
+}
+
 // TestGrabTransportErrorNeverLeaksURLOrSecret proves a transport error is sanitized to a
 // fixed message carrying neither the download URL, the host, nor either credential.
 func TestGrabTransportErrorNeverLeaksURLOrSecret(t *testing.T) {

@@ -18,6 +18,12 @@ const maxTorrentBytes = 64 << 20
 
 var errDownloadTooLarge = errors.New("passthepopcorn: download exceeds the size cap")
 
+// errNotTorrent flags a 2xx response whose body is not bencode (a .torrent always begins
+// with 'd', a bencoded dictionary). PTP can answer a download with HTTP 200 yet serve a
+// JSON error page (e.g. a query-limit notice), so a non-bencode success is rejected
+// rather than handed downstream as a corrupt torrent.
+var errNotTorrent = errors.New("passthepopcorn: download response is not a torrent")
+
 // Grab fetches the PTP download URL (torrents.php?action=download&id=<id>) server-side and
 // returns the .torrent bytes. The link carries no secret — the ApiUser/ApiKey credentials
 // ride in headers, attached by get — so the served feed exposes the link and routes the
@@ -29,7 +35,7 @@ var errDownloadTooLarge = errors.New("passthepopcorn: download exceeds the size 
 // any other non-2xx is an error; transport and read errors pass through sanitizeGrabError so
 // no URL or credential surfaces. The bytes go to /dl, never a log.
 func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, error) {
-	resp, err := d.get(ctx, link)
+	resp, err := d.get(ctx, link, "")
 	if err != nil {
 		return nil, sanitizeGrabError(err)
 	}
@@ -50,6 +56,12 @@ func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, err
 	body, err := readTorrent(resp.Body, maxTorrentBytes)
 	if err != nil {
 		return nil, sanitizeGrabError(err)
+	}
+	// A .torrent is a bencoded dictionary, which always begins with 'd'. PTP can return
+	// a 2xx whose body is a JSON error page instead of a torrent; reject that here so a
+	// non-torrent never reaches qBittorrent.
+	if len(body) == 0 || body[0] != 'd' {
+		return nil, errNotTorrent
 	}
 	return &search.GrabResult{
 		Body:        body,

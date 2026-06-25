@@ -41,7 +41,7 @@ const (
 // must be JSON (Prowlarr rejects a non-JSON response) and is handed to parseReleases. The
 // ApiUser/ApiKey ride in headers, never the URL, and are never logged.
 func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
-	resp, err := d.get(ctx, d.buildSearchURL(q))
+	resp, err := d.get(ctx, d.buildSearchURL(q), "application/json")
 	if err != nil {
 		return nil, err
 	}

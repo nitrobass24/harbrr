@@ -179,6 +179,11 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 func (d *driver) flattenMovie(m *ptpMovie) []*normalizer.Release {
 	rels := make([]*normalizer.Release, 0, len(m.Torrents))
 	for i := range m.Torrents {
+		// A torrent whose Id decoded to 0 (empty/malformed) would yield a broken
+		// download link (action=download&id=0); skip the row rather than emit it.
+		if m.Torrents[i].ID.int64() == 0 {
+			continue
+		}
 		rels = append(rels, d.toRelease(m, &m.Torrents[i]))
 	}
 	return rels

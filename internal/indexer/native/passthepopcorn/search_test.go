@@ -245,3 +245,20 @@ func TestScrubSecrets(t *testing.T) {
 		t.Errorf("scrubSecrets left a credential: %q", got)
 	}
 }
+
+// TestScrubSecretsOverlapping proves the longer credential is redacted first: when one
+// secret is a substring of the other (here ApiUser "USER123" is contained in ApiKey
+// "USER123KEY"), redacting the shorter first would mangle the longer and leak the "KEY"
+// fragment. Sorting by length descending keeps both fully redacted.
+func TestScrubSecretsOverlapping(t *testing.T) {
+	t.Parallel()
+	const (
+		shortSecret = "USER123"
+		longSecret  = "USER123KEY"
+	)
+	d := &driver{cfg: map[string]string{"apiuser": shortSecret, "apikey": longSecret}}
+	got := d.scrubSecrets("leak " + longSecret + " and " + shortSecret)
+	if strings.Contains(got, shortSecret) {
+		t.Errorf("scrubSecrets left a credential fragment: %q", got)
+	}
+}
