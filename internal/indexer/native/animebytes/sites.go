@@ -63,7 +63,9 @@ func credentialSettings() []loader.SettingsField {
 // split music per-format on the request side; the Lossless/MP3/Other refinement is a
 // parse-side concern). gamec[game] / gamec[visual_novel] are each mapped to both Console
 // and PC/Games, exactly as Prowlarr registers them, so a request for either Newznab cat
-// resolves to the same AB key. The search modes mirror Prowlarr's basic q for every type.
+// resolves to the same AB key. The search modes mirror Prowlarr's basic q, EXCEPT
+// MusicSearch, which is deliberately omitted (see the Modes block: a native keyword-only
+// music query cannot be distinguished from anime and would mis-route).
 func animebytesCaps() loader.Caps {
 	return loader.Caps{
 		CategoryMappings: []loader.CategoryMapping{
@@ -92,11 +94,16 @@ func animebytesCaps() loader.Caps {
 			catDesc("printedtype[light_novel]", "Light Novel", "Books"),
 			catDesc("printedtype[artbook]", "Artbook", "Books"),
 		},
+		// MusicSearch is intentionally NOT advertised: the native Driver.Search
+		// receives only a search.Query with no t= mode, so a keyword-only music
+		// request is indistinguishable from anime and searchTypeFor routes it to
+		// type=anime — missing the music corpus. Advertising a music-search cap that
+		// silently mis-routes would be dishonest. Artist/Album-bearing queries still
+		// route to type=music internally; we just do not claim the keyword mode.
 		Modes: loader.Modes{
 			Search:      []string{"q"},
 			TVSearch:    []string{"q", "season", "ep"},
 			MovieSearch: []string{"q"},
-			MusicSearch: []string{"q"},
 			BookSearch:  []string{"q"},
 		},
 	}

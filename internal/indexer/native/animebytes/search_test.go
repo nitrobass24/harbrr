@@ -261,6 +261,49 @@ func TestSearchAuthErrorEnvelope(t *testing.T) {
 	}
 }
 
+// TestGetNilDoerReturnsError proves get() returns a normal error (not a panic) when the
+// driver was constructed without a request doer (as the builder tests do).
+func TestGetNilDoerReturnsError(t *testing.T) {
+	t.Parallel()
+	d := builderDriver(nil) // doer is nil
+	_, err := d.Search(context.Background(), search.Query{Keywords: "x"})
+	if err == nil {
+		t.Fatal("Search with nil doer: want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "nil request doer") {
+		t.Errorf("err = %v, want it to mention nil request doer", err)
+	}
+}
+
+// TestSearchTransportErrorRedactsPasskey proves a transport-layer error (whose underlying
+// *url.Error stringifies the full request URL) never leaks the passkey into the returned
+// error.
+func TestSearchTransportErrorRedactsPasskey(t *testing.T) {
+	t.Parallel()
+	d := liveDriver(nil)
+	// A *url.Error stringifies the full request URL (passkey included), the exact shape
+	// http.Client.Do returns; the wrapped error must not surface it.
+	leakURL := d.buildSearchURL(search.Query{Keywords: "dune"})
+	d.doer = &errDoer{err: &url.Error{Op: "Get", URL: leakURL, Err: errors.New("connection refused")}}
+	_, err := d.Search(context.Background(), search.Query{Keywords: "dune"})
+	if err == nil {
+		t.Fatal("Search with failing transport: want error, got nil")
+	}
+	if strings.Contains(err.Error(), credPass) {
+		t.Errorf("transport error leaks the passkey: %v", err)
+	}
+}
+
+// TestCapsOmitMusicSearch proves the caps deliberately do NOT advertise MusicSearch: a
+// native keyword-only music query cannot be distinguished from anime and would mis-route
+// to type=anime (see testdata/README.md).
+func TestCapsOmitMusicSearch(t *testing.T) {
+	t.Parallel()
+	if ms := animebytesCaps().Modes.MusicSearch; len(ms) != 0 {
+		t.Errorf("MusicSearch = %v, want it unadvertised (keyword music mis-routes)", ms)
+	}
+}
+
 // TestCleanSearchTerm pins Prowlarr's CleanSearchTerm behavior: trailing episode/number
 // tokens and a trailing "The Movie" are stripped.
 func TestCleanSearchTerm(t *testing.T) {

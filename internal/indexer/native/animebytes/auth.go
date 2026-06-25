@@ -2,6 +2,7 @@ package animebytes
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	stdhttp "net/http"
@@ -21,17 +22,32 @@ const maxBodyBytes = 8 << 20 // 8 MiB
 // query, empty for a .torrent download so JSON is not forced on binary bytes. The caller
 // owns the returned body and interprets the status.
 func (d *driver) get(ctx context.Context, rawurl, accept string) (*stdhttp.Response, error) {
+	if d.doer == nil {
+		return nil, errors.New("animebytes: nil request doer")
+	}
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
-		// rawurl carries the passkey, so redact it before it enters the error.
-		return nil, fmt.Errorf("animebytes: build request to %s: %w", apphttp.RedactURL(rawurl), err)
+		// rawurl AND the inner *url.Error both carry the passkey (url.Error.Error
+		// prints the full URL), so neither may be wrapped with %w. Surface only the
+		// redacted URL plus a generic cause.
+		return nil, fmt.Errorf("animebytes: build request to %s: invalid url", apphttp.RedactURL(rawurl))
 	}
 	if accept != "" {
 		req.Header.Set("Accept", accept)
 	}
 	resp, err := d.doer.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("animebytes: request to %s: %w", apphttp.RedactURL(rawurl), err)
+		// The *url.Error from Do stringifies the full request URL (passkey included),
+		// so it must not be wrapped with %w. Context cancellation/deadline carry no URL
+		// and callers (Grab health, Search) need to classify them, so pass those
+		// sentinels through unwrapped; otherwise surface only the redacted URL.
+		switch {
+		case errors.Is(err, context.Canceled):
+			return nil, context.Canceled
+		case errors.Is(err, context.DeadlineExceeded):
+			return nil, context.DeadlineExceeded
+		}
+		return nil, fmt.Errorf("animebytes: request to %s: transport error", apphttp.RedactURL(rawurl))
 	}
 	return resp, nil
 }
