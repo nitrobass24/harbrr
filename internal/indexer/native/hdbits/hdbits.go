@@ -18,7 +18,6 @@ import (
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
@@ -89,12 +88,6 @@ func (d *driver) DownloadNeedsAuth() bool { return false }
 func (d *driver) Test(ctx context.Context) error {
 	_, err := d.Search(ctx, search.Query{})
 	return err
-}
-
-// Search runs an HDBits JSON POST query. The skeleton leaf stubs it; a later leaf wires
-// the typed TorrentQuery body, tolerant decode, status handling, and parse.
-func (d *driver) Search(_ context.Context, _ search.Query) ([]*normalizer.Release, error) {
-	return nil, errNotImplemented
 }
 
 // Grab fetches a torrent file server-side over the passkey-bearing download URL. The
