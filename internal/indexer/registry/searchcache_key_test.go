@@ -168,6 +168,7 @@ func TestBuildSearchCacheKeyEachFieldChangesKey(t *testing.T) {
 		{"track", func(q *search.Query) { q.Track = "v" }},
 		{"author", func(q *search.Query) { q.Author = "v" }},
 		{"booktitle", func(q *search.Query) { q.BookTitle = "v" }},
+		{"mode", func(q *search.Query) { q.Mode = "music-search" }},
 		{"categories", func(q *search.Query) { q.Categories = []string{"1"} }},
 	}
 	seen := map[string]string{base: "base"}

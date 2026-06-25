@@ -13,8 +13,8 @@ import (
 
 // searchCacheSchemaVersion is the cache-key schema version. Bumping it changes
 // every key (it is part of the canonical payload), so a payload-shape change
-// invalidates all old entries without a data migration.
-const searchCacheSchemaVersion = 1
+// invalidates all old entries without a data migration. v2 added the Mode field.
+const searchCacheSchemaVersion = 2
 
 // searchCacheKeyPayload is the canonical, schema-versioned shape hashed into a
 // cache key. It carries the instance id plus every search.Query field that drives
@@ -48,6 +48,11 @@ type searchCacheKeyPayload struct {
 	Track     string `json:"track,omitempty"`
 	Author    string `json:"author,omitempty"`
 	BookTitle string `json:"book_title,omitempty"`
+
+	// Mode is the Torznab search mode (search.Query.Mode). It is in the key because a
+	// native driver (AnimeBytes) maps it to a different search namespace, so the same
+	// keywords under a different mode are a different outbound request.
+	Mode string `json:"mode,omitempty"`
 }
 
 // buildSearchCacheKey is the single key helper used by both the cache-miss path
@@ -89,6 +94,7 @@ func keyWithSchemaVersion(version int, instanceID int64, q search.Query) string 
 		Track:         q.Track,
 		Author:        q.Author,
 		BookTitle:     q.BookTitle,
+		Mode:          q.Mode,
 	}
 	// json.Marshal of a fixed struct is deterministic (field order is the struct
 	// order) and cannot error for these scalar/[]string fields.

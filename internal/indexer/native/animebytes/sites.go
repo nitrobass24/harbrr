@@ -63,9 +63,9 @@ func credentialSettings() []loader.SettingsField {
 // split music per-format on the request side; the Lossless/MP3/Other refinement is a
 // parse-side concern). gamec[game] / gamec[visual_novel] are each mapped to both Console
 // and PC/Games, exactly as Prowlarr registers them, so a request for either Newznab cat
-// resolves to the same AB key. The search modes mirror Prowlarr's basic q, EXCEPT
-// MusicSearch, which is deliberately omitted (see the Modes block: a native keyword-only
-// music query cannot be distinguished from anime and would mis-route).
+// resolves to the same AB key. The search modes mirror Prowlarr's (basic q, plus
+// MusicSearch q/artist/album/year — a music query is routed to AnimeBytes' music corpus
+// via search.Query.Mode; see the Modes block).
 func animebytesCaps() loader.Caps {
 	return loader.Caps{
 		CategoryMappings: []loader.CategoryMapping{
@@ -94,16 +94,14 @@ func animebytesCaps() loader.Caps {
 			catDesc("printedtype[light_novel]", "Light Novel", "Books"),
 			catDesc("printedtype[artbook]", "Artbook", "Books"),
 		},
-		// MusicSearch is intentionally NOT advertised: the native Driver.Search
-		// receives only a search.Query with no t= mode, so a keyword-only music
-		// request is indistinguishable from anime and searchTypeFor routes it to
-		// type=anime — missing the music corpus. Advertising a music-search cap that
-		// silently mis-routes would be dishonest. Artist/Album-bearing queries still
-		// route to type=music internally; we just do not claim the keyword mode.
+		// MusicSearch is advertised: search.Query.Mode now carries the Torznab t= mode
+		// (set by the feed/JSON handler), so searchTypeFor routes a music-search query —
+		// including a keyword-only one with no artist/album — to AnimeBytes' music corpus.
 		Modes: loader.Modes{
 			Search:      []string{"q"},
 			TVSearch:    []string{"q", "season", "ep"},
 			MovieSearch: []string{"q"},
+			MusicSearch: []string{"q", "artist", "album", "year"},
 			BookSearch:  []string{"q"},
 		},
 	}

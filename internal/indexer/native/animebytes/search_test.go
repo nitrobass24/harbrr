@@ -14,6 +14,7 @@ import (
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
@@ -294,13 +295,31 @@ func TestSearchTransportErrorRedactsPasskey(t *testing.T) {
 	}
 }
 
-// TestCapsOmitMusicSearch proves the caps deliberately do NOT advertise MusicSearch: a
-// native keyword-only music query cannot be distinguished from anime and would mis-route
-// to type=anime (see testdata/README.md).
-func TestCapsOmitMusicSearch(t *testing.T) {
+// TestMusicSearchRouting proves MusicSearch is advertised and that the Torznab mode
+// signal (search.Query.Mode == music-search) routes a query to AnimeBytes' music corpus
+// even with no artist/album — the keyword-only music case the mode field unblocks.
+func TestMusicSearchRouting(t *testing.T) {
 	t.Parallel()
-	if ms := animebytesCaps().Modes.MusicSearch; len(ms) != 0 {
-		t.Errorf("MusicSearch = %v, want it unadvertised (keyword music mis-routes)", ms)
+	if ms := animebytesCaps().Modes.MusicSearch; len(ms) == 0 {
+		t.Fatal("MusicSearch caps are not advertised")
+	}
+	cases := []struct {
+		name string
+		q    search.Query
+		want string
+	}{
+		{"music mode, keyword only", search.Query{Mode: mapper.ModeMusicSearch, Keywords: "foo"}, searchTypeMusic},
+		{"music params, no mode", search.Query{Artist: "Some Artist"}, searchTypeMusic},
+		{"search mode keyword", search.Query{Mode: mapper.ModeSearch, Keywords: "foo"}, searchTypeAnime},
+		{"tv mode", search.Query{Mode: mapper.ModeTVSearch, Keywords: "foo"}, searchTypeAnime},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := searchTypeFor(tc.q); got != tc.want {
+				t.Errorf("searchTypeFor = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

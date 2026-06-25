@@ -43,6 +43,7 @@ func buildQuery(q url.Values, caps *mapper.Capabilities) (search.Query, []int) {
 		Track:     q.Get("track"),
 		Author:    q.Get("author"),
 		BookTitle: q.Get("title"),
+		Mode:      searchModeKey(q.Get("t")),
 	}
 	requested := parseCatList(q.Get("cat"))
 	trackerCats := caps.MapTorznabCapsToTrackers(requested)
@@ -51,6 +52,20 @@ func buildQuery(q url.Values, caps *mapper.Capabilities) (search.Query, []int) {
 	}
 	query.Categories = trackerCats
 	return query, requested
+}
+
+// searchModeKey resolves a Torznab t= request param to its caps mode key (e.g.
+// "music" -> "music-search"). An empty or unrecognized t= (incl. the mode-less JSON
+// search endpoint) is the general "search" mode, so the same query hits one cache key
+// regardless of whether it arrived via t=search or the JSON API.
+func searchModeKey(t string) string {
+	if t == "" {
+		return mapper.ModeSearch
+	}
+	if key, ok := tzn.ModeForRequest(t); ok {
+		return key
+	}
+	return mapper.ModeSearch
 }
 
 // parseCatList parses a comma-separated newznab category list ("2000,5000"),
