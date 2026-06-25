@@ -36,17 +36,19 @@ every site it covers.
 The top three are families/pattern-reuses (high coverage per build); the bottom four are
 discrete one-offs (one tracker each, framework reused but no shared request/parse logic).
 
+> **Built so far:** ⭐ BroadcastTheNet (#62, live-confirmed) · and in **#63** ⭐ Redacted, ⭐ Orpheus,
+> ⭐ PassThePopcorn, ⭐ GazelleGames, ⭐ AnimeBytes, ⭐ HDBits, ⭐ BeyondHD, ⭐ TorrentDay — all
+> **offline-gated, LIVE-UNTESTED** (no operator creds; see `coverage.md` §4 + `internal/smoke/README.md`).
+
 ## Recommended sequence (leverage × popularity)
 
-1. **Gazelle base driver** — best ratio: one build unlocks RED + OPS + the Gazelle music
-   family (the same multiplier as the AvistaZ driver). The highest-leverage next investment.
-2. **HDBits + BeyondHD** — two ⭐ trackers reusing the FileList passkey shape; cheap.
-3. **Cookie-scrape base** (TorrentDay / SpeedCD) — reuses the IPTorrents shape; two ⭐ trackers,
-   each additional site mostly selectors.
-4. **Bespoke one-offs, on demand** — ~~BroadcastTheNet~~ (✅ shipped #62), PassThePopcorn,
-   GazelleGames, AnimeBytes — each a standalone driver, built when a user actually needs it.
+1. ~~**Gazelle base driver** (RED + OPS)~~ — ✅ built #63. (The username/password Gazelle sites —
+   DICMusic/GPW/BrokenStones — remain; they need a login-flow addition to the driver.)
+2. ~~**HDBits + BeyondHD**~~ — ✅ built #63 (passkey/JSON shape).
+3. **Cookie-scrape base** — ~~TorrentDay~~ ✅ built #63; **SpeedCD + AlphaRatio/FunFile/BitHDTV/… remain**
+   (reuse the IPTorrents/TorrentDay shape; SpeedCD is HTML-scrape, deferred until page samples or creds).
+4. **Bespoke one-offs** — ~~BroadcastTheNet (#62)~~, ~~PassThePopcorn~~, ~~GazelleGames~~, ~~AnimeBytes~~
+   all ✅ built; **Nebulance** remains.
 
-This is **demand-gated** — none of it is required for any current stack; it's the order to
-build in when a user adds one of these trackers. A request for a *specific* tracker is built
-directly even though it carries no family bonus — as **BroadcastTheNet** was (#62, the first
-tier-4 one-off shipped on demand).
+**Remaining backlog (demand-gated):** SpeedCD + the cookie-scrape tail, MTeam/NorBits/SceneHD (passkey),
+the username/password Gazelle sites, and Nebulance — build when a user needs them.

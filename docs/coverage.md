@@ -56,20 +56,28 @@ is **usenet/Newznab** — a protocol harbrr doesn't target (it's a torrent searc
 Beyond this stack, the trackers harbrr can't yet serve are the ones bespoke-C# in both engines — grouped
 by auth shape, mapped to the shapes harbrr **already** has, so each is "reuse" vs "new work":
 
-| Auth shape | harbrr has it? | Backlog trackers (⭐ = popular) |
+| Auth shape | harbrr has it? | Remaining backlog (⭐ = popular) |
 |---|---|---|
-| **Bearer** (login→token) | ✅ AvistaZ family (done) | — |
-| **Session cookie / form scrape** | ✅ IPTorrents (done) | ⭐TorrentDay, ⭐SpeedCD, AlphaRatio, FunFile, BitHDTV, TorrentBytes, XSpeeds, PreToMe, RevolutionTT, … |
-| **Passkey / Basic / API-key (JSON)** | ✅ FileList (done) | ⭐HDBits, ⭐BeyondHD, MTeam, NorBits, SceneHD |
-| **Session cookie (JSON, rotating)** | ✅ MyAnonamouse (done) | — |
-| **Gazelle API** (cookie→`ajax.php`→passkey DL) | ❌ **new shape** | ⭐Redacted, ⭐Orpheus, DICMusic, Libble, GreatPosterWall, BrokenStones, … |
-| **Bespoke API token** | ✅ BroadcastTheNet (done, #62) | ⭐PassThePopcorn, ⭐GazelleGames, ⭐AnimeBytes, Nebulance |
+| **Bearer** (login→token) | ✅ AvistaZ family | — |
+| **Session cookie / form scrape** | ✅ IPTorrents · ✅ TorrentDay (#63, untested) | ⭐SpeedCD, AlphaRatio, FunFile, BitHDTV, TorrentBytes, XSpeeds, PreToMe, RevolutionTT, … |
+| **Passkey / Basic / API-key (JSON)** | ✅ FileList · ✅ HDBits, BeyondHD (#63, untested) | MTeam, NorBits, SceneHD |
+| **Session cookie (JSON, rotating)** | ✅ MyAnonamouse | — |
+| **Gazelle API** (cookie/key→`ajax.php`) | ✅ Redacted, Orpheus (#63) | DICMusic, Libble, GreatPosterWall, BrokenStones (username/password login — different auth) |
+| **Bespoke API token** | ✅ BroadcastTheNet (#62) · ✅ PassThePopcorn, GazelleGames, AnimeBytes (#63, untested) | Nebulance |
 | **Locale/parsing C#** (low priority) | n/a | RuTracker, LostFilm, Toloka, SubsPlease, AudioBookBay, … (mostly public/niche) |
 
-**Highest-leverage next investment: one Gazelle-API base driver** — it unlocks Redacted, Orpheus, and the
-whole Gazelle music/movie family in one shot (the same way the AvistaZ driver covers four sites). After
-that, the cookie-scrape group (TorrentDay/SpeedCD/AlphaRatio) reuses the IPTorrents shape, and
-HDBits/BeyondHD reuse the FileList passkey shape.
+> **#63 batch — built but LIVE-UNTESTED.** Redacted, Orpheus, PassThePopcorn, GazelleGames, AnimeBytes,
+> HDBits, BeyondHD, and TorrentDay are implemented and **offline-gated** (synthetic goldens from the
+> documented autobrr/Prowlarr contracts) but **not yet live-validated** — the operator has no credentials
+> for them. They degrade cleanly (parse/auth errors → health events); live validation (Prowlarr
+> differential + a `/dl` grab) is a per-tracker follow-up when creds exist, tracked in
+> `internal/smoke/README.md`.
+
+**Remaining high-leverage work:** the cookie-scrape group (SpeedCD + AlphaRatio/FunFile/… reuse the
+IPTorrents/TorrentDay shape) and the passkey group (MTeam/NorBits/SceneHD reuse FileList). The
+username/password Gazelle sites (DICMusic/GPW/BrokenStones) need a login-flow addition to the Gazelle
+driver. **SpeedCD is HTML-scrape — deferred** until page samples or creds exist (guessing selectors
+untested is net-negative).
 
 None of this is needed for the current stack — it's the demand-gated roadmap for when a user adds one of
 these trackers. (Source: Jackett `Indexers/Definitions/*.cs` vs `Definitions/*.yml`; cross-checked against

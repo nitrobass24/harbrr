@@ -216,14 +216,18 @@ site/docs land later.
   every seam instead of forking a parallel stack. Offline-gated against Prowlarr-derived
   goldens; the live differential is the Phase 9 gate.
   *(`internal/indexer/native/avistaz`)* `[shipped]`
-- **Bespoke-C# trackers, served on demand.** Trackers shipped as bespoke C# in *both*
+- **Bespoke-C# trackers, served natively.** Trackers shipped as bespoke C# in *both*
   Jackett and Prowlarr (no Cardigann YAML to vendor) get native Go drivers on the same
-  framework: **IPTorrents, MyAnonamouse, FileList** (Phase 9.5) and **BroadcastTheNet**
-  (#62) — BTN's JSON-RPC `getTorrents` API with the key as `params[0]` of the request
-  body, the whole body kept out of logs. Each is just a settings struct + request
-  generator + parser over the shared registry/secrets/`/dl` seams. The build sequence for
-  the rest (Gazelle base = Redacted/Orpheus, HDBits/BeyondHD, …) is mapped in
-  `docs/native-roadmap.md`. *(`internal/indexer/native/broadcastthenet`)* `[shipped]`
+  framework — each just a settings struct + request generator + parser over the shared
+  registry/secrets/caps/`/dl` seams. Shipped: **IPTorrents, MyAnonamouse, FileList**
+  (Phase 9.5) and **BroadcastTheNet** (#62), all live-confirmed; plus a #63 batch —
+  **Redacted, Orpheus, PassThePopcorn, GazelleGames, AnimeBytes, HDBits, BeyondHD,
+  TorrentDay** — across every auth shape (header key, passkey, POST-body, session cookie),
+  with each tracker's credential kept out of logs and out of the served feed (passkey-
+  bearing or cookie-authed downloads sealed behind `/dl`). The build map is in
+  `docs/native-roadmap.md`. *(`internal/indexer/native/`)* `[shipped]` *(the #63 batch is
+  offline-gated but **live-untested** — no operator creds; honestly tracked in
+  `docs/coverage.md` §4)*
 
 ## Developer experience & governance
 

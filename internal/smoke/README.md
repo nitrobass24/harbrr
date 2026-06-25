@@ -116,6 +116,25 @@ accounted for rather than rediscovered:
 | **Sonarr → harbrr (inbound)** | ~~the sandbox daemon was not LAN-reachable; grab used a direct qBittorrent push~~ | ✅ **resolved 2026-06-14** — harbrr deployed via Docker; Sonarr added/tested/searched/grabbed it through to qBittorrent2 (see Grab §A) |
 | **download resolver / `/dl` proxy** | the 5 trackers are direct-link; resolver-needing defs aren't covered | `[Tracked]` |
 
+### Native drivers built but LIVE-UNTESTED (no operator creds)
+
+These native drivers are implemented and **offline-gated** (synthetic goldens from the documented
+autobrr/Prowlarr contracts) but have **never been run against the live tracker** — the operator holds no
+credentials for them. Per-tracker live validation (configure a key/cookie → `/test` → Prowlarr
+differential + a `/dl` grab, via the container) is the standing re-test. All degrade cleanly
+(parse/auth errors → health events).
+
+| Driver | Auth / download | Live disposition |
+|---|---|---|
+| **BroadcastTheNet** (#62) | apikey in JSON-RPC body / `/dl` | ✅ live-confirmed 2026-06-24 |
+| **Redacted, Orpheus** (#63) | `Authorization` header / `/dl` (header auth) | `[Tracked]` — `SMOKE_KEY_RED`/`SMOKE_KEY_OPS` |
+| **PassThePopcorn** (#63) | ApiUser+ApiKey headers / `/dl` (header auth) | `[Tracked]` |
+| **GazelleGames** (#63) | X-API-Key header; passkey fetched via `quick_user` / `/dl` (passkey URL) | `[Tracked]` |
+| **AnimeBytes** (#63) | username+passkey in query / `/dl` (passkey URL) | `[Tracked]` |
+| **HDBits** (#63) | username+passkey in JSON POST body / `/dl` (passkey URL) | `[Tracked]` |
+| **BeyondHD** (#63) | api_key in URL path + rsskey in body / `/dl` (rsskey URL) | `[Tracked]` |
+| **TorrentDay** (#63) | session cookie header / `/dl` (cookie auth) | `[Tracked]` |
+
 ## Live run — 2026-06-16 (14 trackers, automated)
 
 Driven fully from `prowlarr.db` via `scripts/phase9-smoke.sh` (extract → env →
