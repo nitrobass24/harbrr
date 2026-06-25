@@ -53,47 +53,44 @@ func credentialSettings() []loader.SettingsField {
 	}
 }
 
-// animebytesCaps is the AnimeBytes capability document, ported from Prowlarr's
-// AnimeBytes.SetCapabilities / AnimeBytesParser category logic. The map is keyed by the
-// tracker category DESCRIPTION (the response GroupName / CategoryName string the parser
-// maps via MapTrackerCatDescToNewznab): the anime "TV Series"/"OVA"/"ONA" groups ->
-// TV/Anime; "Movie"/"Live Action Movie" -> Movies; manga/novel/artbook groups ->
-// Books; games -> Console; visual novels -> PC/Games; music groups -> Audio (with the
-// Property-driven Lossless/MP3/Other refinement happening parse-side). The search modes
-// mirror Prowlarr's basic q for every type (the AB scrape API takes searchstr).
+// animebytesCaps is the AnimeBytes capability document, ported byte-for-byte from
+// Prowlarr's AnimeBytes.SetCapabilities (AnimeBytes.cs:124-141). The CategoryMapping ID is
+// the LITERAL scrape.php filter param key AnimeBytes recognises ("anime[tv_series]",
+// "audio", "gamec[game]", "printedtype[manga]", …) — NOT a synthetic id. That id is what
+// MapTorznabCapsToTrackers resolves a requested Newznab category to, and what the request
+// builder then emits as "<key>=1"; using anything else makes the server-side category
+// filter a silent no-op. All music groups map to the single "audio" key (Prowlarr does not
+// split music per-format on the request side; the Lossless/MP3/Other refinement is a
+// parse-side concern). gamec[game] / gamec[visual_novel] are each mapped to both Console
+// and PC/Games, exactly as Prowlarr registers them, so a request for either Newznab cat
+// resolves to the same AB key. The search modes mirror Prowlarr's basic q for every type.
 func animebytesCaps() loader.Caps {
 	return loader.Caps{
 		CategoryMappings: []loader.CategoryMapping{
 			// Anime video groups -> TV/Anime.
-			catDesc("anime_tv_series", "TV Series", "TV/Anime"),
-			catDesc("anime_ova", "OVA", "TV/Anime"),
-			catDesc("anime_ona", "ONA", "TV/Anime"),
+			catDesc("anime[tv_series]", "TV Series", "TV/Anime"),
+			catDesc("anime[tv_special]", "TV Special", "TV/Anime"),
+			catDesc("anime[ova]", "OVA", "TV/Anime"),
+			catDesc("anime[ona]", "ONA", "TV/Anime"),
+			catDesc("anime[dvd_special]", "DVD Special", "TV/Anime"),
+			catDesc("anime[bd_special]", "BD Special", "TV/Anime"),
 			// Movie groups -> Movies.
-			catDesc("anime_movie", "Movie", "Movies"),
-			catDesc("anime_live_action_movie", "Live Action Movie", "Movies"),
-			// Printed media -> Books.
-			catDesc("printed_manga", "Manga", "Books"),
-			catDesc("printed_oneshot", "Oneshot", "Books"),
-			catDesc("printed_anthology", "Anthology", "Books"),
-			catDesc("printed_manhwa", "Manhwa", "Books"),
-			catDesc("printed_manhua", "Manhua", "Books"),
-			catDesc("printed_light_novel", "Light Novel", "Books"),
-			catDesc("printed_novel", "Novel", "Books"),
-			catDesc("printed_artbook", "Artbook", "Books"),
-			// Games -> Console; visual novels -> PC/Games.
-			catDesc("game", "Game", "Console"),
-			catDesc("game_visual_novel", "Visual Novel", "PC/Games"),
-			// Music groups -> Audio (Property-driven Lossless/MP3/Other refinement is
-			// applied parse-side; the catch-all maps to Audio).
-			catDesc("music_album", "Album", "Audio"),
-			catDesc("music_single", "Single", "Audio"),
-			catDesc("music_soundtrack", "Soundtrack", "Audio"),
-			catDesc("music_ep", "EP", "Audio"),
-			catDesc("music_live_album", "Live Album", "Audio"),
-			catDesc("music_compilation", "Compilation", "Audio"),
-			catDesc("music_remix", "Remix", "Audio"),
-			catDesc("music_pv", "PV", "Audio"),
-			catDesc("music_live", "Live", "Audio"),
+			catDesc("anime[movie]", "Movie", "Movies"),
+			// Music groups -> Audio (single key for ALL music; the Lossless/MP3/Other
+			// refinement is applied parse-side).
+			catDesc("audio", "Music", "Audio"),
+			// Games -> Console AND PC/Games (Prowlarr registers each game key twice).
+			catDesc("gamec[game]", "Game", "Console"),
+			catDesc("gamec[game]", "Game", "PC/Games"),
+			catDesc("gamec[visual_novel]", "Game Visual Novel", "Console"),
+			catDesc("gamec[visual_novel]", "Game Visual Novel", "PC/Games"),
+			// Printed media -> Books/Comics.
+			catDesc("printedtype[manga]", "Manga", "Books"),
+			catDesc("printedtype[oneshot]", "Oneshot", "Books"),
+			catDesc("printedtype[anthology]", "Anthology", "Books"),
+			catDesc("printedtype[manhwa]", "Manhwa", "Books"),
+			catDesc("printedtype[light_novel]", "Light Novel", "Books"),
+			catDesc("printedtype[artbook]", "Artbook", "Books"),
 		},
 		Modes: loader.Modes{
 			Search:      []string{"q"},
@@ -105,11 +102,10 @@ func animebytesCaps() loader.Caps {
 	}
 }
 
-// catDesc builds a categorymapping with a synthetic tracker id, the newznab category
-// name, and the AnimeBytes category DESCRIPTION (the GroupName/CategoryName the response
-// carries and the parser maps through MapTrackerCatDescToNewznab). The id is synthetic
-// because the AB scrape API has no numeric category id; it exists only to satisfy the
-// mapper's id-keyed structure.
+// catDesc builds a categorymapping. id is the LITERAL scrape.php filter param key
+// AnimeBytes recognises (e.g. "anime[tv_series]"); it is what MapTorznabCapsToTrackers
+// resolves a Newznab category to and what the request builder emits as "<id>=1". name is
+// the newznab category; desc is the human-readable label (the AB category description).
 func catDesc(id, desc, name string) loader.CategoryMapping {
 	return loader.CategoryMapping{ID: loader.Scalar{Value: id, Set: true}, Cat: name, Desc: desc}
 }

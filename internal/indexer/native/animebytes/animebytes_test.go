@@ -2,6 +2,7 @@ package animebytes
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
@@ -76,10 +77,11 @@ func TestSettingsSecrets(t *testing.T) {
 	}
 }
 
-// TestSiteCaps pins the search modes and the parse-side category mappings the parser
-// relies on: the basic q mode is always present, and the AB GroupName descriptions map
-// to the expected newznab categories (TV Series -> TV/Anime 5070, Movie -> Movies 2000,
-// Album -> Audio 3000, Manga -> Books 7000).
+// TestSiteCaps pins the search modes and the caps category-description map (mirroring
+// Prowlarr's SetCapabilities labels): the basic q mode is always present, and the AB
+// category descriptions map to the expected newznab categories (TV Series -> TV/Anime
+// 5070, Movie -> Movies 2000, Music -> Audio 3000, Manga -> Books 7000, Game -> both
+// Console 1000 and PC/Games 4000).
 func TestSiteCaps(t *testing.T) {
 	t.Parallel()
 	caps := buildDriver(t).Capabilities()
@@ -95,13 +97,54 @@ func TestSiteCaps(t *testing.T) {
 		{"TV Series", 5070}, // TV/Anime
 		{"OVA", 5070},
 		{"Movie", 2000}, // Movies
-		{"Album", 3000}, // Audio
+		{"Music", 3000}, // Audio (single key for all music)
 		{"Manga", 7000}, // Books
 		{"Game", 1000},  // Console
+		{"Game", 4050},  // PC/Games (game key registered for both)
 	}
 	for _, tc := range cases {
 		if got := caps.CategoryMap.MapTrackerCatDescToNewznab(tc.desc); !slices.Contains(got, tc.want) {
 			t.Errorf("%q -> %v, want it to include %d", tc.desc, got, tc.want)
 		}
+	}
+}
+
+// TestCapsToTrackersResolution is the request-side caps contract the category-filter bug
+// slipped through: a requested Newznab category must resolve through MapTorznabCapsToTrackers
+// to the LITERAL AnimeBytes scrape.php filter keys (e.g. 5070 -> anime[tv_series]/…), not a
+// synthetic id, so the request builder emits a flag AnimeBytes actually honours.
+func TestCapsToTrackersResolution(t *testing.T) {
+	t.Parallel()
+	caps := buildDriver(t).Capabilities()
+
+	cases := []struct {
+		name     string
+		newznab  int
+		wantKeys []string
+	}{
+		{"TV/Anime -> anime[*]", 5070, []string{"anime[tv_series]", "anime[tv_special]", "anime[ova]", "anime[ona]", "anime[dvd_special]", "anime[bd_special]"}},
+		{"Movies -> anime[movie]", 2000, []string{"anime[movie]"}},
+		{"Audio -> audio", 3000, []string{"audio"}},
+		{"Console -> gamec[*]", 1000, []string{"gamec[game]", "gamec[visual_novel]"}},
+		{"PC/Games -> gamec[*]", 4050, []string{"gamec[game]", "gamec[visual_novel]"}},
+		{"Books -> printedtype[*]", 7000, []string{"printedtype[manga]", "printedtype[oneshot]", "printedtype[anthology]", "printedtype[manhwa]", "printedtype[light_novel]", "printedtype[artbook]"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := caps.MapTorznabCapsToTrackers([]int{tc.newznab})
+			for _, key := range tc.wantKeys {
+				if !slices.Contains(got, key) {
+					t.Errorf("Newznab %d -> %v, want it to include %q", tc.newznab, got, key)
+				}
+			}
+			// Guard against the original defect: the resolved keys must be the bracketed AB
+			// form, never the old synthetic underscore ids (e.g. "anime_tv_series").
+			for _, k := range got {
+				if !strings.Contains(k, "[") && k != "audio" {
+					t.Errorf("Newznab %d resolved to non-bracket key %q (want bracketed AB key or audio)", tc.newznab, k)
+				}
+			}
+		})
 	}
 }

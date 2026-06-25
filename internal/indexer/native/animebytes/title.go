@@ -95,54 +95,74 @@ func hasReleaseGroupPrefix(p string) bool {
 	return false
 }
 
-// releaseInfo builds the Sonarr-compatible season/episode descriptor that sits between
-// the title and the infoString, reproducing Prowlarr's releaseInfo logic: it defaults to
-// "S01" for Anime groups (when Sonarr compatibility is on, the harbrr default), then
-// refines from the torrent's EditionTitle ("Season N" -> SNN, "Episode N" -> the episode
-// forms). A non-Anime group with no edition yields "".
+// releaseInfo builds the descriptor that sits between the title and the infoString,
+// reproducing Prowlarr's AnimeBytesParser releaseInfo logic (AnimeBytes.cs:440-487):
+//
+//	releaseInfo seeds to "S01" for an Anime group (Sonarr compatibility, on by default),
+//	else "". When the torrent carries an EditionTitle it OVERRIDES the seed with the raw
+//	HTML-decoded edition text; the season is then parsed from a "Season N" token (kept null
+//	otherwise) and the episode from an "Episode N" token. Finally:
+//	  - episode>0 && season is null  -> "- NN" (episode-only, keeps season null)
+//	  - season>0                     -> "SNN" (+ "ENN - NN" when episode>0)
+//	  - otherwise                    -> the seed/edition text is kept verbatim
+//
+// So a non-"Season N" edition ("Director's Cut") is preserved as-is rather than being
+// flattened to "S01", and an "Episode N"-only edition yields "- NN", matching Prowlarr.
 func releaseInfo(g *group, t *torrent) string {
-	if !sonarrCompatibility(g) {
-		return ""
+	info := ""
+	if isAnimeCategory(g) {
+		info = "S01"
 	}
-	season, episode := seasonEpisode(t)
+	// An edition title overrides the seed with its raw HTML-decoded text; season/episode
+	// are then parsed from it (season stays null unless a "Season N" token matches).
+	if edition := editionTitle(t); edition != "" {
+		info = edition
+	}
+	season, hasSeason, episode := seasonEpisode(t)
 	switch {
-	case episode > 0 && season == 0:
-		return fmt.Sprintf("- %02d", episode)
-	case season > 0 && episode > 0:
-		return fmt.Sprintf("S%02dE%02d - %02d", season, episode, episode)
+	case episode > 0 && !hasSeason:
+		info = fmt.Sprintf("- %02d", episode)
 	case season > 0:
-		return fmt.Sprintf("S%02d", season)
-	default:
-		return ""
+		info = fmt.Sprintf("S%02d", season)
+		if episode > 0 {
+			info += fmt.Sprintf("E%02d - %02d", episode, episode)
+		}
 	}
+	return strings.TrimSpace(info)
 }
 
-// sonarrCompatibility reports whether the Sonarr-compat season tagging applies to a group
-// — true only for Anime groups (Prowlarr gates it on categoryName == "Anime", with the
-// EnableSonarrCompatibility setting defaulting on, which the minimal driver keeps on).
-func sonarrCompatibility(g *group) bool {
+// isAnimeCategory reports whether a group is an Anime group — the gate Prowlarr uses to
+// seed releaseInfo to "S01" (categoryName == "Anime", with EnableSonarrCompatibility on,
+// which the minimal driver keeps on).
+func isAnimeCategory(g *group) bool {
 	return g.CategoryName == "Anime"
 }
 
-// seasonEpisode extracts the season and episode from a torrent's EditionTitle. With no
-// edition the season defaults to 1 (Prowlarr's "S01" default for Anime); a "Season N"
-// edition overrides the season and an "Episode N" edition sets the episode.
-func seasonEpisode(t *torrent) (season, episode int) {
-	season = 1
+// editionTitle returns the torrent's HTML-decoded EditionTitle, or "" when absent.
+func editionTitle(t *torrent) string {
 	if t.EditionData == nil {
-		return season, 0
+		return ""
 	}
-	title := html.UnescapeString(t.EditionData.EditionTitle)
+	return html.UnescapeString(t.EditionData.EditionTitle)
+}
+
+// seasonEpisode parses the season and episode from a torrent's EditionTitle, mirroring
+// Prowlarr's simpleSeasonRegex / episodeRegex. The season is NULLABLE: hasSeason is false
+// unless a "Season N" token is present (Prowlarr keeps `int? season` null otherwise, which
+// drives the episode-only "- NN" branch). episode is 0 when no "Episode N" token matches.
+func seasonEpisode(t *torrent) (season int, hasSeason bool, episode int) {
+	title := editionTitle(t)
 	if title == "" {
-		return season, 0
+		return 0, false, 0
 	}
 	if m := simpleSeasonRe.FindStringSubmatch(title); m != nil {
-		season = atoiDefault(m[1], season)
+		season = atoiDefault(m[1], 0)
+		hasSeason = true
 	}
 	if m := episodeRe.FindStringSubmatch(title); m != nil {
 		episode = atoiDefault(m[1], 0)
 	}
-	return season, episode
+	return season, hasSeason, episode
 }
 
 // useYearInTitle reports whether the group year should be appended to a non-movie title:
