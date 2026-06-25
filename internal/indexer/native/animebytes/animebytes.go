@@ -20,7 +20,6 @@ import (
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
@@ -86,12 +85,6 @@ func (d *driver) DownloadNeedsAuth() bool { return false }
 func (d *driver) Test(ctx context.Context) error {
 	_, err := d.Search(ctx, search.Query{})
 	return err
-}
-
-// Search is implemented in a later leaf; the skeleton returns a not-implemented error
-// so the driver satisfies the interface and the registry wiring/tests can run.
-func (d *driver) Search(_ context.Context, _ search.Query) ([]*normalizer.Release, error) {
-	return nil, errors.New("animebytes: search not implemented")
 }
 
 // Grab is implemented in a later leaf; the skeleton returns a not-implemented error.
