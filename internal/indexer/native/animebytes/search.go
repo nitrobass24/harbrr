@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
@@ -120,11 +121,14 @@ func (d *driver) addCategoryParams(params url.Values, q search.Query) {
 	}
 }
 
-// searchTypeFor picks the AnimeBytes top-level type. A query carrying music params
-// (artist/album) is a music search; everything else is an anime search (Prowlarr maps
-// movie/tv/book/basic all to "anime").
+// searchTypeFor picks the AnimeBytes top-level type. A music-search query — signalled
+// either by the Torznab mode (t=music, so q.Mode == music-search) or by music params
+// (artist/album) — routes to the music corpus; everything else is an anime search
+// (Prowlarr maps movie/tv/book/basic all to "anime"). The mode signal is what lets a
+// keyword-only music query (no artist/album) reach the music namespace.
 func searchTypeFor(q search.Query) string {
-	if strings.TrimSpace(q.Artist) != "" || strings.TrimSpace(q.Album) != "" {
+	if q.Mode == mapper.ModeMusicSearch ||
+		strings.TrimSpace(q.Artist) != "" || strings.TrimSpace(q.Album) != "" {
 		return searchTypeMusic
 	}
 	return searchTypeAnime

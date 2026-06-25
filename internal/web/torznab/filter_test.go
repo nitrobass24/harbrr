@@ -134,3 +134,37 @@ func TestBuildQueryDefaultCategories(t *testing.T) {
 		})
 	}
 }
+
+// TestBuildQueryMode proves the Torznab t= param is resolved into search.Query.Mode
+// (the caps key), and that an absent or unknown t= defaults to "search" — so the feed
+// and the mode-less JSON endpoint produce the same mode for the same query.
+func TestBuildQueryMode(t *testing.T) {
+	t.Parallel()
+	caps, err := mapper.Build(&loader.Definition{
+		ID: "def", Links: []string{"https://def.test/"},
+		Caps: loader.Caps{Modes: loader.Modes{Search: []string{"q"}, MusicSearch: []string{"q"}, TVSearch: []string{"q"}}},
+	})
+	if err != nil {
+		t.Fatalf("mapper.Build: %v", err)
+	}
+	cases := map[string]string{
+		"":         mapper.ModeSearch,
+		"search":   mapper.ModeSearch,
+		"music":    mapper.ModeMusicSearch,
+		"tvsearch": mapper.ModeTVSearch,
+		"bogus":    mapper.ModeSearch,
+	}
+	for tParam, want := range cases {
+		t.Run("t="+tParam, func(t *testing.T) {
+			t.Parallel()
+			q := url.Values{}
+			if tParam != "" {
+				q.Set("t", tParam)
+			}
+			query, _ := buildQuery(q, caps)
+			if query.Mode != want {
+				t.Errorf("Mode = %q, want %q", query.Mode, want)
+			}
+		})
+	}
+}

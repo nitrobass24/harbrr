@@ -42,6 +42,16 @@ type Query struct {
 	Track     string
 	Author    string
 	BookTitle string
+
+	// Mode is the Torznab search mode (the caps key — "search", "tv-search",
+	// "movie-search", "music-search", "book-search") the caller resolved from the
+	// request's t= param. It is request context, not a tracker request param: the
+	// Cardigann engine never templates it (queryMap maps only the named fields above).
+	// A native driver may read it to pick a search namespace it can't infer from the
+	// fields alone (AnimeBytes routes music-search to its music corpus). It IS part of
+	// the search-cache key, since for such a driver the mode changes the outbound
+	// request. Empty means a general/unspecified search (treated as "search").
+	Mode string
 }
 
 // isIDSearch reports whether any ID-style param is set. Jackett skips the
