@@ -457,7 +457,10 @@ func indexerInfo(inst domain.IndexerInstance, def *loader.Definition) torznab.In
 		Description: def.Description,
 		SiteLink:    site,
 		Type:        def.Type,
-		Protocol:    def.EffectiveProtocol(),
+		// Protocol is read from the persisted instance (the denormalized column),
+		// not re-derived from the def, so the served identity matches what app-sync
+		// reads and stays stable if a def is ever updated under an existing instance.
+		Protocol: inst.Protocol,
 	}
 }
 
