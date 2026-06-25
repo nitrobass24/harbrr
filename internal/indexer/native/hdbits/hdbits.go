@@ -22,10 +22,6 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
-// errNotImplemented marks the search/grab surface that later leaves fill in. The
-// skeleton leaf wires sites/caps/settings and the driver lifecycle only.
-var errNotImplemented = errors.New("hdbits: not implemented")
-
 // driver is one configured HDBits instance. It is built once per instance and cached by
 // the registry. There is no login round-trip: every request carries the username and
 // passkey as top-level fields inside the JSON POST body, so the driver holds no session
@@ -88,10 +84,4 @@ func (d *driver) DownloadNeedsAuth() bool { return false }
 func (d *driver) Test(ctx context.Context) error {
 	_, err := d.Search(ctx, search.Query{})
 	return err
-}
-
-// Grab fetches a torrent file server-side over the passkey-bearing download URL. The
-// skeleton leaf stubs it; a later leaf wires the fetch + RedactURL redaction.
-func (d *driver) Grab(_ context.Context, _ string) (*search.GrabResult, error) {
-	return nil, errNotImplemented
 }
