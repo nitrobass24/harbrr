@@ -394,69 +394,91 @@ into the apps so they don't each configure indexers by hand.
 - [x] **Gate — a legitimate Swagger-only Prowlarr replacement.** With Phase 10 done, harbrr fully replaces
       this stack's Prowlarr **operated entirely through the Swagger API** at `/api/docs` — no Web UI: add +
       configure + test every indexer, search, grab through `/dl`, and sync indexers into Sonarr/Radarr/qui,
-      all over HTTP. **This is the alpha's definition of done.** Phase 11 (Web UI) is additive — nicer to
-      use, never required.
+      all over HTTP. **This is the alpha's definition of done.** Phase 12 (Web UI) is additive — nicer to
+      use, never required. (Phase 11 — alpha feature-complete — adds the differentiators that make the
+      alpha *superior* to Prowlarr/Jackett, not just a replacement.)
       — **Exercised end-to-end offline** (the sync surface round-trips over HTTP in the api tests);
       checks once the app-sync live validation above is green.
 
-## Phase 11 — Web UI
+## Phase 11 — Alpha feature-complete (the "superior to Prowlarr/Jackett" bar)
+
+harbrr is already at **parity** with Prowlarr/Jackett — Cardigann engine, native drivers across **every
+auth shape** (Phase 8/9.5 + #62/#63), \*arr/qui app-sync (Phase 10), and a shipped search-results cache
+(#60). This phase is what makes the alpha **immediately superior the day it lands**, not merely
+equivalent. It is a **hard gate on the Web UI (Phase 12): no UI work begins until every box here is
+green.** The bar is a *feature-superset* of Prowlarr (now including usenet) **plus** the "kind to
+trackers" differentiators Prowlarr/Jackett don't have, **plus** the autobrr-family sync reach that makes
+harbrr the single source of truth for the whole stack.
+
+The one consciously-accepted alpha gap is **automated migration import** (deferred to the backlog):
+alpha ships with manual indexer setup — existing Prowlarr/Jackett users re-enter rather than import.
+
+- [ ] **Usenet / Newznab support** — harbrr is torrent-only today, so a stack's usenet indexers (e.g.
+      DOGnzb) can't migrate; this closes the **last capability Prowlarr has that harbrr lacks**. The
+      `caps`/`search` surface already speaks Newznab-compatible XML; the gap is the usenet *fetch* +
+      indexer kind. **Long pole of the phase — the one net-new subsystem; scope it on its own first.**
+      Surfaced by the Phase-10 gold-standard migration (DOGnzb was the one stack indexer harbrr couldn't
+      serve). *Detail TBD (fetch path, indexer kind, caps surface, grab model).*
+- [ ] **Shared RSS-feed caching** — fetch a tracker's RSS/feed once and serve every consumer
+      (Sonarr/Radarr/autobrr/cross-seed) from the cached copy instead of each app polling the tracker
+      independently. The README's headline value: lower tracker load, fewer duplicate requests, better
+      private-tracker citizenship. Builds on the shipped search-cache seams (#60). *Detail TBD (cache
+      key/granularity, TTL, invalidation, per-consumer views).*
+- [ ] **Fabric-wide tracker-friendly pacing** — global, per-tracker throttling across *all* consumers
+      (not just per-indexer pacing), so the aggregate rate harbrr presents to a tracker stays polite no
+      matter how many apps sit behind it. Makes the caching above actually "kind to trackers." *Detail TBD
+      (relation to the existing per-indexer paced client / `ClientParams`).*
+- [ ] **Cross-seed backend + freeleech-aware matching** — a cross-seed search backend, plus
+      freeleech-aware release matching and optional freeleech-bypass logic (README "Cross-Seed Aware"):
+      smarter release matching, search reuse/aggregation, reduced duplicate tracker activity. **Absorbs
+      issue #10** (bypass FL tag on x-seed searches). *Detail TBD beyond the README's framing.*
+- [ ] **Better pagination support** — **issue #3**: table-stakes Torznab correctness for deep result
+      sets (offset/limit handling end-to-end). *Detail TBD.*
+- [ ] **More \*arr sync targets** — Lidarr / Readarr / Mylar / Whisparr. The Phase-10 sync contract
+      (target-neutral `DesiredIndexer` reconciled behind the `Target` interface) is built for
+      Sonarr/Radarr/qui; extending it to another app is mostly a per-app adapter.
+- [ ] **Upbrr credential sync** — Upbrr ships its **own** definitions but needs tracker **credentials** to
+      operate; harbrr, as the single source of truth for tracker auth, **pushes** those credentials into
+      Upbrr (harbrr → Upbrr, the same outbound app-sync model as the Phase-10 \*arr/qui push) so a tracker
+      configured once in harbrr provisions Upbrr automatically. Unlike the \*arr/qui sync (which pushes
+      harbrr's indexer *feed*), this pushes *credentials* mapped onto Upbrr's own definitions. *Detail TBD
+      (which credential fields, harbrr-indexer ↔ Upbrr-definition matching, the push contract/endpoint,
+      redaction/rotation handling).*
+
+## Phase 12 — Web UI
 
 - [ ] **Web UI** — the management dashboard (indexer grid, add/edit forms, manual search, stats);
-      depends on the Phase 4 management API. **Stack: match qui's** — believed Vite + React + Tailwind CSS;
-      **verify against the qui repo during Phase 11 scoping** before committing. (Interactive **Swagger UI
-      already shipped** at `/api/docs`, separate from the SPA — the web UI just links to it; raw spec at
-      `/api/openapi.yaml`.)
+      depends on the Phase 4 management API. **Gated behind Phase 11 — does not start until the alpha is
+      feature-complete.** **Stack: match qui's** — believed Vite + React + Tailwind CSS; **verify against
+      the qui repo during scoping** before committing. (Interactive **Swagger UI already shipped** at
+      `/api/docs`, separate from the SPA — the web UI just links to it; raw spec at `/api/openapi.yaml`.)
 
 ---
 
-## Beyond the alpha — backlog (ordered by impact, most impactful → demand-gated)
+## Beyond the alpha — backlog (demand-gated)
 
-Ranked top-to-bottom by product impact. **Tier 1 is harbrr's core thesis** — the "intelligent
-layer" the README pitches ("Search less. Cache more. Be kinder to your trackers.") — and is the
-natural next build phase after the Web UI, *not* a demand-gated afterthought. The tail is genuinely
-demand-gated: built when a real user needs it. Everything here is self-contained and off the
-alpha→beta (Phase 10 app-sync → Phase 11 Web UI) critical path. New items carry lighter detail for
-now (*detail TBD*); fill in as we have it.
+Everything here is **off the alpha critical path** — built when a real user needs it. The alpha's
+core-thesis differentiators (RSS-feed caching, fabric-wide pacing, cross-seed) were pulled **into**
+Phase 11; what remains below is adoption smoothing, Web-UI-paired product polish, and the demand-gated
+tail. New items carry lighter detail (*detail TBD*); fill in as we have it.
 
-### Tier 1 — Tracker intelligence (the core differentiator)
-
-- **Shared RSS feed caching** — fetch a tracker's RSS/feed once and serve every consumer
-  (Sonarr/Radarr/autobrr/cross-seed) from the cached copy, instead of each app polling the tracker
-  independently. The README's headline value: lower tracker load, fewer duplicate requests, better
-  private-tracker citizenship. *Detail TBD (cache key/granularity, TTL, invalidation, per-consumer
-  views).*
-- **Search result caching + deduplication** — reuse a recent cached result instead of re-querying the
-  same tracker for the same (indexer, query, categories); collapses the identical searches multiple
-  apps fire for one release. (qui already ships a `torznab_search_cache`; this is harbrr's own.)
-  *Detail TBD (TTL policy, normalization of equivalent queries, cache-bypass rules).*
-- **Tracker-load optimization — fabric-wide tracker-friendly pacing** — global, per-tracker throttling
-  across *all* consumers (not just per-indexer pacing), so the aggregate rate harbrr presents to a
-  tracker stays polite no matter how many apps sit behind it. Makes the caching above actually "kind to
-  trackers." *Detail TBD (relation to the existing per-indexer paced client / `ClientParams`).*
-- **Upbrr credential sync** — Upbrr ships its **own** definitions but needs tracker **credentials** to
-  operate; harbrr, as the single source of truth for tracker auth, **pushes** those credentials into Upbrr
-  (harbrr → Upbrr, the same outbound app-sync model as the Phase-10 \*arr/qui push) so a tracker configured
-  once in harbrr provisions Upbrr automatically. Unlike the \*arr/qui sync (which pushes harbrr's indexer
-  *feed*), this pushes *credentials* mapped onto Upbrr's own definitions. *Detail TBD (which credential
-  fields, harbrr-indexer ↔ Upbrr-definition matching, the push contract/endpoint, redaction/rotation
-  handling).*
-
-### Tier 2 — Adoption + autobrr-family completion
+### Tier 1 — Adoption
 
 - **Jackett/Prowlarr migration import** — import indexer instances + credentials + category overrides.
   Read creds from the **Prowlarr SQLite database** (`prowlarr.db`, the plaintext `Indexers.Settings` JSON
   column) — NOT the REST API, whose `SchemaBuilder` masks `ApiKey`/`Password` with `********`. Needs a
   **Prowlarr-impl → harbrr-def name table** for Prowlarr-native trackers harbrr serves as Cardigann (e.g.
   HDSpace — see `docs/coverage.md` §5). Jackett's RSA/DPAPI-encrypted config falls back to guided re-entry.
-- **harbrr → autobrr push** — closes the RSS-polling gap (family-only win).
-- **Cross-seed backend + freeleech-aware matching** — a cross-seed search backend, plus freeleech-aware
-  release matching and optional freeleech-bypass logic (README "Cross-Seed Aware"): smarter release
-  matching, search reuse/aggregation, reduced duplicate tracker activity. *Detail TBD beyond the README's
-  framing.*
-- **More \*arr sync targets** — Lidarr / Readarr / Mylar / Whisparr. The Phase-10 sync contract is built
-  for Sonarr/Radarr/qui; extending it to another app is mostly a per-app adapter.
+  **Consciously deferred from the alpha** (Phase 11 ships manual re-entry); this lowers the switching cost
+  afterward and is the highest-leverage post-alpha adoption win.
+- **harbrr → autobrr push** — a *native release push* (data-plane), distinct from config sync: scraped
+  releases reach autobrr's filters immediately instead of waiting on RSS polling. Note autobrr **already
+  consumes harbrr as a Generic Torznab feed today** (zero-code drop-in, same as Prowlarr), so this only
+  earns its keep for sub-poll latency on non-IRC trackers — a marginal, family-only win. **Blocked on a
+  design conversation with the autobrr team** before any implementation: scope the push contract/endpoint,
+  whether it's wanted, and how it relates to announce. Lowest-priority Tier-1 item until that lands.
 
-### Tier 3 — Product / UX (pair with the Web UI)
+### Tier 2 — Product / UX (pair with the Web UI)
 
 - **Stats / search history** (query/grab/auth event log + query API; the auth log populates
   `api_keys.last_used_at`, left unwritten in Phase 4) **+ notifications** (Discord/webhook, pluggable).
@@ -472,19 +494,24 @@ now (*detail TBD*); fill in as we have it.
   domain from the def's `requestDelay`; the `ClientParams.RateInterval` seam already carries the value, so
   this is a settings surface + plumb-through. Pairs with the Web UI settings.
 
-### Tier 4 — Reach / more trackers (incremental, per-demand)
+### Tier 3 — Reach / more trackers (demand-gated)
 
-- **Native-driver backlog** — the C#-in-both-engines trackers (`docs/coverage.md` §4 ·
-  sequencing in `docs/native-roadmap.md`): highest-leverage is one **Gazelle-API** base driver
-  (Redacted/Orpheus/AnimeBytes); cookie-scrape (TorrentDay/SpeedCD) and passkey (HDBits/BeyondHD) reuse the
-  IPTorrents/FileList shapes. Build per tracker on demand. **BroadcastTheNet shipped (#62, 2026-06-24)** —
-  the first tier-4 bespoke-API one-off; PassThePopcorn/GazelleGames remain on demand.
-- **Usenet / Newznab support** — harbrr is torrent-only today, so a stack's usenet indexers (e.g.
-  DOGnzb) can't migrate. Add Newznab provider support (the `caps`/`search` surface already speaks
-  Newznab-compatible XML; the gap is the usenet *fetch* + indexer kind). Surfaced by the Phase 10
-  gold-standard migration — DOGnzb was the one stack indexer harbrr couldn't serve.
+The native framework is **leverage-complete** — it covers **every auth shape**, so what remains is a
+per-tracker tail, not a missing capability. (Usenet/Newznab, the one *capability* gap, moved up to
+Phase 11.)
 
-### Tier 5 — Live validation (offline-proven; needs infra in the operator's stack)
+- **Native-driver long tail** — 12 drivers shipped (`docs/native-roadmap.md`): AvistaZ family,
+  IPTorrents, MyAnonamouse, FileList, BroadcastTheNet (#62), and the #63 set — Gazelle base (Redacted +
+  Orpheus), PassThePopcorn, GazelleGames, AnimeBytes, HDBits, BeyondHD, TorrentDay. Remaining is the
+  demand-gated tail: SpeedCD + the cookie-scrape tail (AlphaRatio/FunFile/BitHDTV…), MTeam/NorBits/SceneHD
+  (passkey, reuses FileList/HDBits), the username/password Gazelle sites (DICMusic/GPW/BrokenStones, need a
+  login-flow addition), and Nebulance. Build per tracker on demand.
+- **Live-validate the #63 drivers** — all 8 are **offline-gated but live-untested** (no operator creds);
+  BroadcastTheNet (#62) is the one live-confirmed bespoke driver. Per-tracker Prowlarr differential + a
+  `/dl` grab via the container, when creds exist. Tracked in `docs/coverage.md` §4 and
+  `internal/smoke/README.md`.
+
+### Tier 4 — Live validation (offline-proven; needs infra in the operator's stack)
 
 - **Live retest of the two no-tracker auth patterns** (moved from Phase 9's "every auth/fetch pattern
   live", which is otherwise green). Both are **offline-proven**; they need a qualifying tracker/proxy in
@@ -497,7 +524,7 @@ now (*detail TBD*); fill in as we have it.
     standing up a local proxy (microsocks/tinyproxy) and routing any search via `proxy_type`+`proxy_url`;
     the doer/transport plumbing is offline-tested. SOCKS4 unsupported (`x/net/proxy` has no socks4 dialer).
 
-### Tier 6 — Future / explicitly demand-gated
+### Tier 5 — Future / explicitly demand-gated
 
 - **Release intelligence / metadata correlation** — smarter cross-app release matching and metadata
   correlation (README Phase 3/4). *Detail TBD.*
@@ -519,8 +546,8 @@ now (*detail TBD*); fill in as we have it.
 The one headline harbrr can offer that Prowlarr/Jackett do not: **a search-results cache, because
 harbrr is the Torznab *server*, so a cache hit spares the *tracker's* infrastructure, not just
 harbrr's.** This is the most-requested differentiator and directly serves harbrr's stated reason to
-exist. **Shipped ahead of Phase 11** (built off the locked design below); the only deferred piece is the
-Web-UI hit-ratio surface (Phase 11). User docs: `website/docs/features/search-results-cache.md`. The
+exist. **Shipped ahead of Phase 12** (built off the locked design below); the only deferred piece is the
+Web-UI hit-ratio surface (Phase 12). User docs: `website/docs/features/search-results-cache.md`. The
 design below is the as-built record (TTL values + encryption + v1 scope settled 2026-06-23; see
 "Decisions locked" at the end).
 
@@ -628,7 +655,7 @@ Build order (all shipped in #60; each landed in its own commit with green tests)
       invalidation on instance mutation/disable/delete.
 - [x] **Observability + control** — `GET /api/cache/stats` (entries/hitRatio/size/timestamps) + `POST
       /api/cache/flush` in the management API (OpenAPI + drift-test green). Web-UI hit-ratio surface is
-      Phase 11.
+      Phase 12.
 
 **Decisions locked (2026-06-23 use-case discussion):**
 - **TTL values:** RSS/empty-query **5 min** · keyword/ID **30 min** · thin/empty result **2 min** (adaptive).
