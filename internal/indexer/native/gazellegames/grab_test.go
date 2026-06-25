@@ -141,16 +141,34 @@ func TestReadCapped(t *testing.T) {
 	}
 }
 
-// TestTestProbesAuth proves Test issues the latest-torrents search and surfaces a 401/403
-// as login.ErrLoginFailed (so the registry records an auth_failure health event), without
-// leaking the apikey.
+// routeDoer answers the quick_user passkey fetch and the search from one mock: a
+// request=quick_user URL returns quickUser, everything else returns search.
+type routeDoer struct {
+	quickUser *stdhttp.Response
+	search    *stdhttp.Response
+}
+
+func (r *routeDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
+	if strings.Contains(req.URL.RawQuery, "request=quick_user") {
+		return r.quickUser, nil
+	}
+	return r.search, nil
+}
+
+// TestTestProbesAuth proves Test fetches the passkey (request=quick_user) and runs the
+// latest-torrents search, and surfaces a 401/403 (from either step) as login.ErrLoginFailed
+// (so the registry records an auth_failure health event), without leaking the apikey.
 func TestTestProbesAuth(t *testing.T) {
 	t.Parallel()
-	ok := searchDriver(t, &scriptDoer{resp: mkResp(stdhttp.StatusOK, `{"status":"success","response":[]}`)})
+	ok := searchDriver(t, &routeDoer{
+		quickUser: mkResp(stdhttp.StatusOK, `{"status":"success","response":{"passkey":"`+credPasskey+`"}}`),
+		search:    mkResp(stdhttp.StatusOK, `{"status":"success","response":[]}`),
+	})
 	if err := ok.Test(context.Background()); err != nil {
 		t.Fatalf("Test (success): %v", err)
 	}
 
+	// A 401/403 on the passkey fetch is an auth failure that never reaches the search.
 	for _, code := range []int{stdhttp.StatusUnauthorized, stdhttp.StatusForbidden} {
 		d := searchDriver(t, &scriptDoer{resp: mkResp(code, "")})
 		err := d.Test(context.Background())

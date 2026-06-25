@@ -111,4 +111,21 @@ func TestSiteCaps(t *testing.T) {
 			t.Errorf("cat %q -> %v, want it to include %d", c.id, got, c.want)
 		}
 	}
+
+	// The platform-NAME desc map (the parser's primary category source) is registered:
+	// an artist name like "PlayStation 4"/"Windows"/"Switch" resolves via the desc path.
+	descCases := []struct {
+		name string
+		want int
+	}{
+		{"PlayStation 4", 1180},
+		{"Windows", 4050},
+		{"Switch", 1090},
+		{"Nintendo DS", 1010},
+	}
+	for _, c := range descCases {
+		if got := caps.CategoryMap.MapTrackerCatDescToNewznab(c.name); !slices.Contains(got, c.want) {
+			t.Errorf("platform %q -> %v, want it to include %d", c.name, got, c.want)
+		}
+	}
 }

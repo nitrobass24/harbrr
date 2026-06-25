@@ -41,6 +41,12 @@ const (
 // parseSearch, which distinguishes a non-"success" status (a login or parse error) from a
 // real page. The API key rides in the X-API-Key header, never the URL, and is never logged.
 func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
+	// Ensure the download passkey is fetched before parsing builds each release's download
+	// URL (torrent_pass); without it the served Link would carry an empty passkey that GGn
+	// rejects. A configured/already-fetched passkey is reused without a round-trip.
+	if err := d.ensurePasskey(ctx); err != nil {
+		return nil, err
+	}
 	resp, err := d.get(ctx, d.buildSearchURL(q))
 	if err != nil {
 		return nil, err
@@ -79,7 +85,10 @@ func (d *driver) buildSearchURL(q search.Query) string {
 	params.Set("empty_groups", paramEmptyGroups)
 	params.Set("order_by", paramOrderBy)
 	params.Set("order_way", paramOrderWay)
-	if term := strings.TrimSpace(q.Keywords); term != "" {
+	// Prowlarr replaces '.' with ' ' before sending (GazelleGames.GetBasicSearchParameters:
+	// searchTerm.Replace(".", " ")): *arr emits dotted scene-style queries and GGn tokenizes
+	// the term on spaces, so a dotted query must be de-dotted to match the same releases.
+	if term := strings.ReplaceAll(strings.TrimSpace(q.Keywords), ".", " "); term != "" {
 		params.Set("searchstr", term)
 	}
 	return d.baseURL + searchPath + "?" + params.Encode()

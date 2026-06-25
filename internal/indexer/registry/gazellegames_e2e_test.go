@@ -18,6 +18,11 @@ import (
 // whole point of the driver, so the apikey leaking into a URL would be a redaction bug.
 const ggnAPIKey = "GGN-E2E-SYNTHETIC-APIKEY"
 
+// ggnPasskey is the synthetic download passkey the mocked request=quick_user returns. It
+// must end up in every served download URL's torrent_pass; an empty torrent_pass would mean
+// the passkey fetch never ran and grabs would silently fail at the tracker.
+const ggnPasskey = "GGN-E2E-SYNTHETIC-PASSKEY"
+
 // ggnDoer fronts the GazelleGames native driver as the registry wires it: a GET to
 // api.php?request=search returns the saved search golden, and a GET to the rebuilt
 // torrents.php?action=download URL returns torrent bytes. Every request is recorded (URL
@@ -43,11 +48,16 @@ func (d *ggnDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
 	})
 	d.mu.Unlock()
 
-	// A download GET carries action=download; everything else is the JSON search.
-	if strings.Contains(req.URL.RawQuery, "action=download") {
+	// A quick_user GET fetches the download passkey; a download GET carries action=download;
+	// everything else is the JSON search.
+	switch {
+	case strings.Contains(req.URL.RawQuery, "request=quick_user"):
+		return ggnResp(stdhttp.StatusOK, `{"status":"success","response":{"passkey":"`+ggnPasskey+`"}}`, "application/json"), nil
+	case strings.Contains(req.URL.RawQuery, "action=download"):
 		return ggnResp(stdhttp.StatusOK, "d4:name4:dataee", "application/x-bittorrent"), nil
+	default:
+		return ggnResp(stdhttp.StatusOK, d.searchBody, "application/json"), nil
 	}
-	return ggnResp(stdhttp.StatusOK, d.searchBody, "application/json"), nil
 }
 
 func (d *ggnDoer) records() []ggnRecordedReq {
@@ -126,6 +136,12 @@ func TestGazelleGamesEndToEnd(t *testing.T) {
 		if releases[i].Title != want {
 			t.Errorf("releases[%d].Title = %q, want %q", i, releases[i].Title, want)
 		}
+	}
+
+	// The served download URL must carry the passkey fetched via request=quick_user; an
+	// empty torrent_pass would mean the fetch never ran and the grab would 401 at GGn.
+	if !strings.Contains(releases[0].Link, "torrent_pass="+ggnPasskey) {
+		t.Errorf("download Link missing the fetched passkey: %q", releases[0].Link)
 	}
 
 	// Grab the first release through the resolved indexer; the driver GETs the rebuilt

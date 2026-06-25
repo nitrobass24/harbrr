@@ -1,0 +1,29 @@
+{
+  "status": "success",
+  "response": {
+    "2001": {
+      "Year": 2017,
+      "Artists": [
+        { "Id": "601", "Name": "PlayStation 4" }
+      ],
+      "Torrents": {
+        "90001": {
+          "CategoryId": "1",
+          "Format": "ISO",
+          "Encoding": "Clone",
+          "ReleaseTitle": "Console Game",
+          "Time": "2017-03-04 05:06:07",
+          "TorrentType": "Torrent",
+          "FileCount": "1",
+          "Size": "1073741824",
+          "Snatched": "3",
+          "Seeders": "9",
+          "Leechers": "1",
+          "FreeTorrent": "Normal",
+          "LowSeedFL": false,
+          "GameDOXType": ""
+        }
+      }
+    }
+  }
+}

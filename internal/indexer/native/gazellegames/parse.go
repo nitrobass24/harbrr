@@ -214,6 +214,13 @@ func looksLikeAuthFailure(status, msg string) bool {
 // flattenGroup turns one group into releases: an empty group (Torrents is [] / not an
 // object) emits none; a filled group emits one release per TorrentType=="TORRENT" torrent,
 // keyed by torrentId.
+//
+// Categories are computed ONCE per group from the artist names (Prowlarr's group-scoped
+// `categories` variable). When that is empty, the fallback is derived from the FIRST emitted
+// torrent's CategoryId and then STICKS for the whole group — Prowlarr never re-derives it
+// per torrent (categories.Length is no longer 0 after the first fallback). Reproducing that
+// sticky behaviour requires iterating the group's torrents in key order, not Go map order,
+// so the torrents are visited by ascending torrentId.
 func (d *driver) flattenGroup(groupID int64, g *gazelleGamesGroup) []*normalizer.Release {
 	if !isJSONObject(g.Torrents) {
 		return nil
@@ -225,23 +232,38 @@ func (d *driver) flattenGroup(groupID int64, g *gazelleGamesGroup) []*normalizer
 
 	cats := d.groupCategories(g)
 	rels := make([]*normalizer.Release, 0, len(torrents))
-	for torrentID, t := range torrents {
+	for _, torrentID := range sortedTorrentIDs(torrents) {
+		t := torrents[torrentID]
 		if !strings.EqualFold(t.TorrentType, torrentTypeWanted) {
 			continue
+		}
+		if len(cats) == 0 {
+			// First emitted torrent in a group with no artist-derived categories seeds the
+			// group fallback from its own CategoryId; it then sticks for every later torrent.
+			cats = canonical(d.caps.CategoryMap.MapTrackerCatToNewznab(t.CategoryID.string()))
 		}
 		rels = append(rels, d.toRelease(groupID, torrentID, g, &t, cats))
 	}
 	return rels
 }
 
+// sortedTorrentIDs returns the group's torrent ids in ascending order so the per-group
+// category fallback is seeded by a stable, JSON-key-ordered "first" torrent rather than by
+// Go's randomised map iteration.
+func sortedTorrentIDs(torrents map[int64]gazelleGamesTorrent) []int64 {
+	ids := make([]int64, 0, len(torrents))
+	for id := range torrents {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	return ids
+}
+
 // toRelease maps one group×torrent pair to a release. Link is the rebuilt torrents.php
 // download URL (served only through /dl, so the passkey it carries never reaches the
-// feed); Details is the torrents.php info page. Categories prefer the artist-derived set,
-// falling back to the torrent's CategoryId (Prowlarr's two-stage mapping).
+// feed); Details is the torrents.php info page. cats is the group-resolved category set
+// (artist-derived, or the group-sticky CategoryId fallback) passed in by flattenGroup.
 func (d *driver) toRelease(groupID, torrentID int64, g *gazelleGamesGroup, t *gazelleGamesTorrent, cats []int) *normalizer.Release {
-	if len(cats) == 0 {
-		cats = canonical(d.caps.CategoryMap.MapTrackerCatToNewznab(t.CategoryID.string()))
-	}
 	free := freeleech(t)
 	return &normalizer.Release{
 		Title:                composeTitle(g, t),
@@ -380,7 +402,7 @@ func (d *driver) downloadURL(torrentID int64) string {
 	params.Set("action", "download")
 	params.Set("id", strconv.FormatInt(torrentID, 10))
 	params.Set("authkey", downloadAuthKeyDummy)
-	params.Set("torrent_pass", strings.TrimSpace(d.cfg["passkey"]))
+	params.Set("torrent_pass", strings.TrimSpace(d.cfgValue("passkey")))
 	return d.baseURL + downloadPath + "?" + params.Encode()
 }
 
@@ -421,7 +443,7 @@ func canonical(ids []int) []int {
 
 // scrubAPIKey removes the configured apikey from s so a server echo cannot leak it.
 func (d *driver) scrubAPIKey(s string) string {
-	if key := strings.TrimSpace(d.cfg["apikey"]); key != "" {
+	if key := strings.TrimSpace(d.cfgValue("apikey")); key != "" {
 		s = strings.ReplaceAll(s, key, "[redacted]")
 	}
 	return s

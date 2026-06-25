@@ -65,10 +65,15 @@ func TestParseSearchGolden(t *testing.T) {
 
 	want := []*normalizer.Release{
 		{
-			Title:                "Cool Game (2018) [Director's Cut 2020] [Rip FitGirl / Some Studio / DLC / Trumpable] [Update]",
-			Link:                 "https://gazellegames.net/torrents.php?action=download&authkey=prowlarr&id=70002&torrent_pass=SYNTHETICPASSKEY",
-			Details:              "https://gazellegames.net/torrents.php?id=1001&torrentid=70002",
-			Categories:           []int{4010},
+			Title:   "Cool Game (2018) [Director's Cut 2020] [Rip FitGirl / Some Studio / DLC / Trumpable] [Update]",
+			Link:    "https://gazellegames.net/torrents.php?action=download&authkey=prowlarr&id=70002&torrent_pass=SYNTHETICPASSKEY",
+			Details: "https://gazellegames.net/torrents.php?id=1001&torrentid=70002",
+			// Group-sticky fallback: group 1001's artist ("Some Studio") maps to no category,
+			// so the fallback is seeded ONCE from the first torrent in key order (70001,
+			// CategoryId "1" -> 4050) and reused for every torrent in the group — matching
+			// Prowlarr's group-scoped `categories` variable (70002's own CategoryId "2" -> 4010
+			// is NOT recomputed).
+			Categories:           []int{4050},
 			Size:                 2147483648,
 			Files:                1,
 			Grabs:                0,
@@ -120,6 +125,53 @@ func TestParseSearchGolden(t *testing.T) {
 	for i := range want {
 		if !reflect.DeepEqual(got[i], want[i]) {
 			t.Errorf("release[%d]:\n got = %#v\nwant = %#v", i, got[i], want[i])
+		}
+	}
+}
+
+// TestParsePlatformArtistCategory locks the parser's PRIMARY category path: a group whose
+// artist NAME is a platform ("PlayStation 4") derives its category from that name
+// (Console/PS4 = 1180) via MapTrackerCatDescToNewznab, NOT from the torrent's CategoryId
+// fallback ("1" -> PC/Games 4050). This is the path the ~90 platform-name caps feed.
+func TestParsePlatformArtistCategory(t *testing.T) {
+	t.Parallel()
+	d := parseDriver(t, map[string]string{"apikey": credAPIKey, "passkey": credPasskey})
+	got, err := d.parseSearch(readFixture(t, "testdata/platform.json"))
+	if err != nil {
+		t.Fatalf("parseSearch: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d releases, want 1", len(got))
+	}
+	if !reflect.DeepEqual(got[0].Categories, []int{1180}) {
+		t.Errorf("Categories = %v, want [1180] (Console/PS4 from the artist NAME, not the CategoryId fallback)", got[0].Categories)
+	}
+}
+
+// TestParseGroupStickyCategoryFallback proves the per-group category fallback is computed
+// ONCE and sticks for the whole group (Prowlarr's group-scoped `categories`): a group with
+// a non-mapping artist and two torrents whose CategoryIds map differently ("1"->4050,
+// "2"->4010) emits BOTH torrents with the FIRST torrent's category (4050, seeded in
+// torrentId key order), never each torrent's own CategoryId.
+func TestParseGroupStickyCategoryFallback(t *testing.T) {
+	t.Parallel()
+	const body = `{"status":"success","response":{"3001":{"Year":0,` +
+		`"Artists":[{"Id":"1","Name":"No Map Studio"}],` +
+		`"Torrents":{` +
+		`"95001":{"CategoryId":"1","ReleaseTitle":"First","Time":"2020-01-01 00:00:00","TorrentType":"Torrent","Size":"1","Seeders":"1","Leechers":"0"},` +
+		`"95002":{"CategoryId":"2","ReleaseTitle":"Second","Time":"2019-01-01 00:00:00","TorrentType":"Torrent","Size":"1","Seeders":"1","Leechers":"0"}` +
+		`}}}}`
+	d := parseDriver(t, map[string]string{"apikey": credAPIKey, "passkey": credPasskey})
+	got, err := d.parseSearch([]byte(body))
+	if err != nil {
+		t.Fatalf("parseSearch: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d releases, want 2", len(got))
+	}
+	for i, r := range got {
+		if !reflect.DeepEqual(r.Categories, []int{4050}) {
+			t.Errorf("release[%d] (%q) Categories = %v, want [4050] (group-sticky from first torrent)", i, r.Title, r.Categories)
 		}
 	}
 }

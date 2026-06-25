@@ -61,6 +61,23 @@ func searchDriver(t *testing.T, doer search.Doer) *driver {
 	return d.(*driver)
 }
 
+// apikeyOnlyDriver wires a driver with ONLY the apikey configured (no passkey), the state
+// the registry passes before the passkey is fetched — so the passkey-fetch path runs.
+func apikeyOnlyDriver(t *testing.T, doer search.Doer) *driver {
+	t.Helper()
+	def := Families()[0].Definition
+	d, err := New(native.Params{
+		Def:   def,
+		Cfg:   map[string]string{"apikey": credAPIKey},
+		Doer:  doer,
+		Clock: func() time.Time { return fixedClock },
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return d.(*driver)
+}
+
 // TestBuildSearchURL is the parity gate for the api.php search request URL: it asserts the
 // exact URL harbrr emits per query shape against the Phase-1 confirmed contract (the static
 // request/search_type/empty_groups/order_by/order_way params always set; searchstr carries
@@ -88,6 +105,13 @@ func TestBuildSearchURL(t *testing.T) {
 			name:  "keyword trimmed",
 			query: search.Query{Keywords: "  cool game  "},
 			want:  "empty_groups=filled&order_by=time&order_way=desc&request=search&search_type=torrents&searchstr=cool+game",
+		},
+		{
+			// Prowlarr replaces '.' with ' ' (GazelleGames.GetBasicSearchParameters): a dotted
+			// scene-style query must be de-dotted so GGn (which tokenizes on spaces) matches.
+			name:  "dotted keyword -> spaces",
+			query: search.Query{Keywords: "Super.Mario.Odyssey"},
+			want:  "empty_groups=filled&order_by=time&order_way=desc&request=search&search_type=torrents&searchstr=Super+Mario+Odyssey",
 		},
 		{
 			name:  "blank keyword omits searchstr",
