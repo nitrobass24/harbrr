@@ -176,7 +176,7 @@ func (d *driver) toRelease(row *bhdTorrent) *normalizer.Release {
 		UploadVolumeFactor:   1,
 		MinimumRatio:         1,
 		MinimumSeedTime:      minimumSeedTime,
-		IMDBID:               row.ImdbID,
+		IMDBID:               canonicalIMDB(row.ImdbID),
 		TMDBID:               tmdbID(row.TmdbID),
 	}
 	return rel
@@ -236,6 +236,24 @@ var createdLayouts = []string{
 	time.RFC3339Nano,
 	time.RFC3339,
 	"2006-01-02T15:04:05",
+}
+
+// canonicalIMDB normalizes BeyondHD's imdb_id to the canonical "tt"+7-digit form harbrr
+// stores (mirroring search.imdbID and hdbits.fullIMDBID; Prowlarr runs it through
+// ParseUtil.GetImdbId). The wire value is unreliable — a bare numeric ("0133093"), an
+// under-padded id, or even a junk URL can arrive — so a leading "tt" is stripped and the
+// remainder must parse as a positive int; anything else (non-numeric, zero, a URL) yields
+// "" rather than reaching the feed verbatim.
+func canonicalIMDB(raw string) string {
+	s := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(raw)), "tt")
+	if s == "" {
+		return ""
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("tt%07d", n)
 }
 
 // tmdbID parses BeyondHD's tmdb_id (the string form "movie/<id>") into the bare numeric id

@@ -281,3 +281,42 @@ func TestPublishDate(t *testing.T) {
 		}
 	}
 }
+
+// TestCanonicalIMDB proves imdb_id is normalized to the canonical "tt"+7-digit form before
+// it reaches the feed (the torznab serializer does not normalize): a bare numeric is
+// tt-prefixed and zero-padded, an under-padded id is re-padded, an already-canonical value
+// is preserved, and junk (a URL, non-numeric, zero, blank) yields "" rather than a
+// malformed imdb that would serialize verbatim.
+func TestCanonicalIMDB(t *testing.T) {
+	t.Parallel()
+	cases := []struct{ in, want string }{
+		{"0133093", "tt0133093"},                  // bare numeric -> tt-prefixed
+		{"133093", "tt0133093"},                   // under-padded bare numeric
+		{"tt133093", "tt0133093"},                 // under-padded tt id re-padded
+		{"tt1234567", "tt1234567"},                // already canonical, preserved
+		{"1234567", "tt1234567"},                  // bare 7-digit
+		{"https://imdb.com/title/tt0133093/", ""}, // junk URL dropped
+		{"not-an-id", ""},                         // non-numeric dropped
+		{"0", ""},                                 // zero dropped (absent)
+		{"tt0", ""},                               // tt-zero dropped
+		{"", ""},                                  // blank dropped
+		{"  tt0133093  ", "tt0133093"},            // surrounding whitespace
+	}
+	for _, c := range cases {
+		if got := canonicalIMDB(c.in); got != c.want {
+			t.Errorf("canonicalIMDB(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestToReleaseNormalizesIMDB proves the row->Release mapping routes imdb_id through
+// canonicalIMDB so a raw wire value (here a bare, unpadded numeric) is stored in canonical
+// form rather than verbatim.
+func TestToReleaseNormalizesIMDB(t *testing.T) {
+	t.Parallel()
+	d := parseDriver(t, creds())
+	rel := d.toRelease(&bhdTorrent{ImdbID: "0133093"})
+	if rel.IMDBID != "tt0133093" {
+		t.Errorf("toRelease IMDBID = %q, want %q", rel.IMDBID, "tt0133093")
+	}
+}
