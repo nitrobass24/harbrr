@@ -16,6 +16,7 @@ type IndexerInfo struct {
 	Description string
 	SiteLink    string
 	Type        string // "public" / "private" / "semi-private"
+	Protocol    string // "torrent" / "usenet"
 }
 
 // Indexer is one searchable tracker the handler serves: its identity, its

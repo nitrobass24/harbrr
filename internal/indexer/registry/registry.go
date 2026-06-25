@@ -455,6 +455,7 @@ func indexerInfo(inst domain.IndexerInstance, def *loader.Definition) torznab.In
 		Description: def.Description,
 		SiteLink:    site,
 		Type:        def.Type,
+		Protocol:    def.EffectiveProtocol(),
 	}
 }
 
