@@ -82,10 +82,12 @@ func TestBuildRequest(t *testing.T) {
 		{"keyword already clean", search.Query{Keywords: "the wire"}, `{` + cred + `,"search":"the wire","limit":100}`},
 		{"imdbid", search.Query{IMDBID: "tt0133093", Keywords: "the matrix"}, `{` + cred + `,"search":"the matrix","imdb":{"id":133093},"limit":100}`},
 		{"imdbid bare numeric", search.Query{IMDBID: "133093"}, `{` + cred + `,"imdb":{"id":133093},"limit":100}`},
-		{"tvdb season+episode verbatim", search.Query{TVDBID: "81189", Keywords: "some.show", Season: "1", Ep: "2"}, `{` + cred + `,"search":"some.show","tvdb":{"id":81189,"season":1,"episode":"2"},"limit":100}`},
+		{"tvdb id+season+episode (no extra search)", search.Query{TVDBID: "81189", Keywords: "some.show", Season: "1", Ep: "2"}, `{` + cred + `,"tvdb":{"id":81189,"season":1,"episode":"2"},"limit":100}`},
 		{"tvdb season only", search.Query{TVDBID: "81189", Season: "3"}, `{` + cred + `,"tvdb":{"id":81189,"season":3},"limit":100}`},
 		{"tvdb daily date", search.Query{TVDBID: "81189", Season: "2024", Ep: "01/15"}, `{` + cred + `,"search":"2024-01-15","tvdb":{"id":81189},"limit":100}`},
-		{"season/episode without id is verbatim", search.Query{Keywords: "some.show", Season: "1", Ep: "2"}, `{` + cred + `,"search":"some.show","limit":100}`},
+		{"season+episode without id appends SxxExx", search.Query{Keywords: "some.show", Season: "1", Ep: "2"}, `{` + cred + `,"search":"some.show S01E02","limit":100}`},
+		{"season only without id appends Sxx", search.Query{Keywords: "some.show", Season: "1"}, `{` + cred + `,"search":"some.show S01","limit":100}`},
+		{"daily without id appends date", search.Query{Keywords: "some.show", Season: "2024", Ep: "01/15"}, `{` + cred + `,"search":"some.show 2024.01.15","limit":100}`},
 		{"categories", search.Query{Keywords: "x", Categories: []string{"1", "2", "1"}}, `{` + cred + `,"search":"x","category":[1,2],"limit":100}`},
 	}
 	for _, tc := range cases {
@@ -184,9 +186,9 @@ func TestSearchPopulatedResponse(t *testing.T) {
 	}
 }
 
-// TestSearchStatusDispatch proves Search maps the HTTP status the contract requires:
-// 401/403 is an auth/rate failure (login.ErrLoginFailed), a 429/503 is a RateLimitedError,
-// and any other non-2xx is a plain error.
+// TestSearchStatusDispatch proves Search maps the HTTP status the contract requires: 401 is
+// an auth failure (login.ErrLoginFailed); 403 is HDBits' query/rate-limit so it (alongside
+// 429/503) is a RateLimitedError, not an auth failure; any other non-2xx is a plain error.
 func TestSearchStatusDispatch(t *testing.T) {
 	t.Parallel()
 	mk := func(status int) *driver {
@@ -195,18 +197,21 @@ func TestSearchStatusDispatch(t *testing.T) {
 		}})
 	}
 
-	for _, status := range []int{stdhttp.StatusUnauthorized, stdhttp.StatusForbidden} {
-		_, err := mk(status).Search(context.Background(), search.Query{Keywords: "x"})
-		if !errors.Is(err, login.ErrLoginFailed) {
-			t.Errorf("HTTP %d: err = %v, want login.ErrLoginFailed", status, err)
-		}
+	_, err := mk(stdhttp.StatusUnauthorized).Search(context.Background(), search.Query{Keywords: "x"})
+	if !errors.Is(err, login.ErrLoginFailed) {
+		t.Errorf("HTTP 401: err = %v, want login.ErrLoginFailed", err)
 	}
 
-	for _, status := range []int{stdhttp.StatusTooManyRequests, stdhttp.StatusServiceUnavailable} {
+	// 403 must classify as a rate-limit (Prowlarr's RequestLimitReached), never an auth
+	// failure, so working creds are not misreported when the per-query budget is exhausted.
+	for _, status := range []int{stdhttp.StatusForbidden, stdhttp.StatusTooManyRequests, stdhttp.StatusServiceUnavailable} {
 		_, err := mk(status).Search(context.Background(), search.Query{Keywords: "x"})
 		var rl *search.RateLimitedError
 		if !errors.As(err, &rl) {
 			t.Errorf("HTTP %d: err = %v, want *search.RateLimitedError", status, err)
+		}
+		if errors.Is(err, login.ErrLoginFailed) {
+			t.Errorf("HTTP %d: err = %v, must NOT be login.ErrLoginFailed", status, err)
 		}
 	}
 

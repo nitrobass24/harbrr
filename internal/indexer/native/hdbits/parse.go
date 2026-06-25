@@ -263,19 +263,34 @@ func isFreeleech(s string) bool {
 	return strings.EqualFold(strings.TrimSpace(s), "yes")
 }
 
-// publishDate parses the ISO-8601 `added` field to UTC RFC3339 (Prowlarr's
-// result.Added.ToUniversalTime()). An unparseable/empty value yields "" rather than failing
-// the whole page (a single bad date must not drop the result set).
+// addedLayouts are the `added` wire formats tried in order. HDBits' captured feed sends an
+// offset WITHOUT a colon (e.g. "2015-04-04T20:30:46+0000"), which time.RFC3339 rejects, so
+// the no-colon offset form ("...-0700") must be tried too. The bare and space forms are
+// assumed UTC (mirrors avistaz/parsePublishDate); Prowlarr deserializes via the lenient
+// Newtonsoft DateTime, so harbrr must accept the same variants.
+var addedLayouts = []string{
+	time.RFC3339Nano,
+	time.RFC3339,
+	"2006-01-02T15:04:05-0700",
+	"2006-01-02T15:04:05",
+	"2006-01-02 15:04:05",
+}
+
+// publishDate parses the `added` field to UTC RFC3339 (Prowlarr's
+// result.Added.ToUniversalTime()). It tries each known layout in turn (HDBits actually sends
+// a no-colon offset, which RFC3339 alone rejects). An unparseable/empty value yields ""
+// rather than failing the whole page (a single bad date must not drop the result set).
 func publishDate(added string) string {
 	added = strings.TrimSpace(added)
 	if added == "" {
 		return ""
 	}
-	t, err := time.Parse(time.RFC3339, added)
-	if err != nil {
-		return ""
+	for _, layout := range addedLayouts {
+		if t, err := time.Parse(layout, added); err == nil {
+			return t.UTC().Format(time.RFC3339)
+		}
 	}
-	return t.UTC().Format(time.RFC3339)
+	return ""
 }
 
 // downloadURL rebuilds the Prowlarr download URL: {base}download.php?id={id}&passkey=

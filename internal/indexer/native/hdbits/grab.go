@@ -7,7 +7,6 @@ import (
 	"io"
 	stdhttp "net/http"
 
-	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
@@ -17,7 +16,13 @@ import (
 // silently truncating a corrupt torrent.
 const maxTorrentBytes = 64 << 20
 
-var errDownloadTooLarge = errors.New("hdbits: download exceeds the size cap")
+var (
+	errDownloadTooLarge = errors.New("hdbits: download exceeds the size cap")
+	// errDownloadRequestFailed is the fixed, link-free transport failure: the download URL
+	// embeds the passkey, so the underlying *url.Error (which echoes the URL) is never
+	// surfaced. get() returns this directly so the secret cannot leak through %w.
+	errDownloadRequestFailed = errors.New("hdbits: download request failed")
+)
 
 // Grab fetches the rebuilt download.php URL server-side and returns the .torrent bytes.
 // The download URL embeds the passkey in its query (download.php?id=…&passkey=…), which
@@ -35,9 +40,11 @@ func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, err
 	defer func() { _ = resp.Body.Close() }()
 
 	switch {
-	case resp.StatusCode == stdhttp.StatusUnauthorized || resp.StatusCode == stdhttp.StatusForbidden:
+	case resp.StatusCode == stdhttp.StatusUnauthorized:
 		return nil, fmt.Errorf("hdbits: download unauthorized: %w", login.ErrLoginFailed)
-	case search.IsRateLimitStatus(resp.StatusCode):
+	case resp.StatusCode == stdhttp.StatusForbidden || search.IsRateLimitStatus(resp.StatusCode):
+		// 403 is HDBits' query/rate-limit (Prowlarr's RequestLimitReached), not an auth
+		// failure, so it backs off like 429/503 (mirrors Search).
 		return nil, &search.RateLimitedError{
 			StatusCode: resp.StatusCode,
 			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.clock),
@@ -58,16 +65,29 @@ func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, err
 
 // get issues a plain GET for an HDBits download URL. The URL already carries its own
 // passkey in the query (download.php?id=…&passkey=…), so no auth header is needed. The
-// URL is secret-bearing, so a transport error routes it through apphttp.RedactURL and the
-// URL never reaches a log. The caller owns the returned body and interprets the status.
+// transport error from Do is a *url.Error whose Error() embeds the FULL unredacted URL, so
+// it is NOT interpolated here: get() returns a fixed, link-free error so the passkey cannot
+// re-leak through %w regardless of who calls get() (the contract does not depend on the
+// caller scrubbing). The caller owns the returned body and interprets the status.
 func (d *driver) get(ctx context.Context, rawurl string) (*stdhttp.Response, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
-		return nil, fmt.Errorf("hdbits: build request: %w", err)
+		return nil, errDownloadRequestFailed
 	}
 	resp, err := d.doer.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("hdbits: request to %s: %w", apphttp.RedactURL(rawurl), err)
+		// The transport error carries the passkey-bearing URL (via *url.Error, whose
+		// Error() embeds the full URL), so it is never interpolated. A context
+		// cancellation/deadline must stay detectable by the caller, so those sentinels are
+		// preserved (errors.Is sees through *url.Error); every other transport error is
+		// flattened to a fixed, link-free message.
+		if errors.Is(err, context.Canceled) {
+			return nil, context.Canceled
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, context.DeadlineExceeded
+		}
+		return nil, errDownloadRequestFailed
 	}
 	return resp, nil
 }
@@ -90,7 +110,7 @@ func sanitizeGrabError(err error) error {
 	if errors.As(err, &rl) {
 		return err
 	}
-	return errors.New("hdbits: download request failed")
+	return errDownloadRequestFailed
 }
 
 // readCapped reads up to limit bytes, returning errDownloadTooLarge when the source

@@ -58,14 +58,13 @@ type tvdbQuery struct {
 	Episode string `json:"episode,omitempty"`
 }
 
-// Search posts an api/torrents query for the search and returns the parsed releases. A
-// 401/403 is an auth/rate failure: Prowlarr surfaces HTTP 403 as the query/rate-limit
-// being reached, and 401 as bad credentials — both wrap login.ErrLoginFailed so the
-// registry records an auth_failure health event (an unauthenticated browse cannot
-// distinguish them, and the in-body status 4/5 is the authoritative credential signal).
-// A 429/503 is a RateLimitedError; any other non-2xx is an error. The status==0 envelope
-// and the status 4/5 -> ErrLoginFailed mapping are handled by parseReleases. Username and
-// passkey ride inside the POST body, never the URL, and the body is never logged.
+// Search posts an api/torrents query for the search and returns the parsed releases. A 401
+// is bad credentials (login.ErrLoginFailed -> auth_failure health). HDBits' 403 means the
+// query/rate budget is reached (Prowlarr's RequestLimitReached), so it is a RateLimitedError
+// alongside 429/503 -> the registry backs off instead of misreporting working creds as an
+// auth failure. Any other non-2xx is an error. The status==0 envelope and the status 4/5 ->
+// ErrLoginFailed mapping are handled by parseReleases. Username and passkey ride inside the
+// POST body, never the URL, and the body is never logged.
 func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
 	body, err := d.buildRequest(q)
 	if err != nil {
@@ -78,9 +77,12 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 	defer func() { _ = resp.Body.Close() }()
 
 	switch {
-	case resp.StatusCode == stdhttp.StatusUnauthorized || resp.StatusCode == stdhttp.StatusForbidden:
+	case resp.StatusCode == stdhttp.StatusUnauthorized:
 		return nil, fmt.Errorf("hdbits: search unauthorized: %w", login.ErrLoginFailed)
-	case search.IsRateLimitStatus(resp.StatusCode):
+	case resp.StatusCode == stdhttp.StatusForbidden || search.IsRateLimitStatus(resp.StatusCode):
+		// HDBits returns 403 when the per-query/rate budget is exhausted (Prowlarr maps it
+		// to RequestLimitReached, not an auth failure), so it backs off like 429/503 rather
+		// than recording an auth_failure for working credentials.
 		return nil, &search.RateLimitedError{
 			StatusCode: resp.StatusCode,
 			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.clock),
@@ -136,10 +138,11 @@ func setSearchCriteria(tq *torrentQuery, q search.Query) {
 	if keywords == "" {
 		return // bare browse
 	}
-	// A season/episode signal (without an id) is a TV search and uses the term verbatim;
-	// a plain keyword is a movie search and is sanitized.
+	// A season/episode signal (without an id) is a TV search: Prowlarr's
+	// SanitizedTvSearchString appends the formatted episode string ("S01E02"/"S01"/daily) to
+	// the keyword, so the API constrains to the specific episode rather than the whole series.
 	if positiveInt(q.Season) > 0 || strings.TrimSpace(q.Ep) != "" {
-		tq.Search = keywords
+		tq.Search = strings.TrimSpace(keywords + " " + episodeSearchString(q.Season, q.Ep))
 		return
 	}
 	tq.Search = sanitizeMovieTerm(keywords)
@@ -147,10 +150,11 @@ func setSearchCriteria(tq *torrentQuery, q search.Query) {
 
 // setTvdbCriteria fills the tvdb object for a tvdb-id query. A daily episode (season is a
 // four-digit year, episode is "MM/dd") drops tvdb.season/episode and sets a "yyyy-MM-dd"
-// Search date string (Prowlarr); otherwise tvdb.season/episode carry the standard
-// episode. The keyword (if any) rides verbatim as the Search term except in the daily
-// case (which owns Search).
-func setTvdbCriteria(tq *torrentQuery, q search.Query, tvdb int, keywords string) {
+// Search date string (Prowlarr); otherwise tvdb.season/episode carry the standard episode
+// and Search is left unset. Prowlarr only assigns query.Search in the no-id branch, so a
+// tvdb-id query (non-daily) relies purely on tvdb.id+season+episode — adding the free-text
+// term here would over-filter and diverge from Prowlarr's result set.
+func setTvdbCriteria(tq *torrentQuery, q search.Query, tvdb int, _ string) {
 	if daily, ok := dailyDate(q.Season, q.Ep); ok {
 		tq.Tvdb = &tvdbQuery{ID: tvdb}
 		tq.Search = daily
@@ -164,7 +168,6 @@ func setTvdbCriteria(tq *torrentQuery, q search.Query, tvdb int, keywords string
 		tvdbq.Episode = ep
 	}
 	tq.Tvdb = tvdbq
-	tq.Search = keywords
 }
 
 // categoryParam maps the resolved tracker categories to the int array HDBits' category
@@ -221,6 +224,24 @@ func positiveInt(raw string) int {
 		return 0
 	}
 	return n
+}
+
+// episodeSearchString formats the season/episode component Prowlarr appends to a no-id TV
+// search term (TvSearchCriteria.EpisodeSearchString): a daily episode becomes "yyyy.MM.dd";
+// a season+episode becomes "S%02dE%02d"; a season alone becomes "S%02d"; anything else is
+// empty. The episode int comes from q.Ep (a non-numeric episode yields just the season).
+func episodeSearchString(season, ep string) string {
+	if daily, ok := dailyDate(season, ep); ok {
+		return strings.ReplaceAll(daily, "-", ".")
+	}
+	s := positiveInt(season)
+	if s <= 0 {
+		return ""
+	}
+	if e := positiveInt(ep); strings.TrimSpace(ep) != "" && e > 0 {
+		return fmt.Sprintf("S%02dE%02d", s, e)
+	}
+	return fmt.Sprintf("S%02d", s)
 }
 
 // dailyDate parses a "{season} {episode}" pair into "yyyy-MM-dd" when season is a

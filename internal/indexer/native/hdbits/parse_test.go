@@ -263,6 +263,29 @@ func TestParseFreeleechOnlyFilter(t *testing.T) {
 	}
 }
 
+// TestPublishDateLayouts proves the `added` parser accepts the real HDBits wire format (a
+// no-colon offset like "+0000", which time.RFC3339 alone rejects) as well as the colon
+// offset, the bare datetime, and the space form — all normalized to UTC RFC3339 — and that
+// an unparseable value yields "" rather than failing the page.
+func TestPublishDateLayouts(t *testing.T) {
+	t.Parallel()
+	cases := []struct{ in, want string }{
+		{"2015-04-04T20:30:46+0000", "2015-04-04T20:30:46Z"}, // HDBits' actual no-colon offset
+		{"2015-04-04T20:30:46+02:00", "2015-04-04T18:30:46Z"},
+		{"2015-04-04T20:30:46-0500", "2015-04-05T01:30:46Z"},
+		{"2023-11-14T22:13:20Z", "2023-11-14T22:13:20Z"},
+		{"2023-11-14T22:13:20", "2023-11-14T22:13:20Z"}, // bare -> UTC
+		{"2023-11-14 22:13:20", "2023-11-14T22:13:20Z"}, // space -> UTC
+		{"", ""},
+		{"not a date", ""},
+	}
+	for _, c := range cases {
+		if got := publishDate(c.in); got != c.want {
+			t.Errorf("publishDate(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 // TestUseFilenamesToggle proves use_filenames defaults to ON (filename title) and that an
 // explicit falsy setting falls back to the name field.
 func TestUseFilenamesToggle(t *testing.T) {

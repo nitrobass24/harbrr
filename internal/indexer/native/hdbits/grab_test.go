@@ -78,6 +78,26 @@ func TestGrabTransportErrorNeverLeaksURL(t *testing.T) {
 	}
 }
 
+// TestGetSourceNeverLeaksURL proves get() itself (not just the Grab wrapper) returns a fixed
+// error whose %w cannot re-expose the passkey-bearing URL: a future direct caller of get()
+// must be safe even without sanitizeGrabError. The transport error echoes the full URL incl.
+// the passkey.
+func TestGetSourceNeverLeaksURL(t *testing.T) {
+	t.Parallel()
+	d := liveDriver(t, &scriptDoer{})
+	d.doer = &errorDoer{err: errors.New("dial tcp: " + grabURL)}
+
+	_, err := d.get(context.Background(), grabURL)
+	if err == nil {
+		t.Fatal("get should error on a transport failure")
+	}
+	for _, leak := range []string{grabURL, credPass, "hdbits.test"} {
+		if strings.Contains(err.Error(), leak) {
+			t.Errorf("get error leaks %q: %q", leak, err)
+		}
+	}
+}
+
 // TestGrabContextErrorPassesThrough proves a cancellation/deadline from the fetch is
 // preserved (not flattened into the generic "download request failed"), so callers and
 // health classification can tell a cancelled request from a real failure.
@@ -93,20 +113,18 @@ func TestGrabContextErrorPassesThrough(t *testing.T) {
 	}
 }
 
-// TestGrabStatusDispatch proves the download status handling: 401/403 maps to
-// login.ErrLoginFailed (so the registry records an auth_failure health event), 429/503
-// maps to a RateLimitedError, and any other non-2xx is a plain error.
+// TestGrabStatusDispatch proves the download status handling: 401 maps to
+// login.ErrLoginFailed (auth_failure health), 403 (HDBits' query/rate-limit) and 429/503 map
+// to a RateLimitedError (never an auth failure), and any other non-2xx is a plain error.
 func TestGrabStatusDispatch(t *testing.T) {
 	t.Parallel()
-	for _, status := range []int{stdhttp.StatusUnauthorized, stdhttp.StatusForbidden} {
-		d := liveDriver(t, &scriptDoer{handler: func(_ *stdhttp.Request, _ string) *stdhttp.Response {
-			return mkResp(status, "nope")
-		}})
-		if _, err := d.Grab(context.Background(), grabURL); !errors.Is(err, login.ErrLoginFailed) {
-			t.Errorf("HTTP %d: err = %v, want login.ErrLoginFailed", status, err)
-		}
+	d401 := liveDriver(t, &scriptDoer{handler: func(_ *stdhttp.Request, _ string) *stdhttp.Response {
+		return mkResp(stdhttp.StatusUnauthorized, "nope")
+	}})
+	if _, err := d401.Grab(context.Background(), grabURL); !errors.Is(err, login.ErrLoginFailed) {
+		t.Errorf("HTTP 401: err = %v, want login.ErrLoginFailed", err)
 	}
-	for _, status := range []int{stdhttp.StatusTooManyRequests, stdhttp.StatusServiceUnavailable} {
+	for _, status := range []int{stdhttp.StatusForbidden, stdhttp.StatusTooManyRequests, stdhttp.StatusServiceUnavailable} {
 		d := liveDriver(t, &scriptDoer{handler: func(_ *stdhttp.Request, _ string) *stdhttp.Response {
 			return mkResp(status, "slow down")
 		}})
@@ -114,6 +132,9 @@ func TestGrabStatusDispatch(t *testing.T) {
 		var rl *search.RateLimitedError
 		if !errors.As(err, &rl) {
 			t.Errorf("HTTP %d: err = %v, want *search.RateLimitedError", status, err)
+		}
+		if errors.Is(err, login.ErrLoginFailed) {
+			t.Errorf("HTTP %d: err = %v, must NOT be login.ErrLoginFailed", status, err)
 		}
 	}
 	d := liveDriver(t, &scriptDoer{handler: func(_ *stdhttp.Request, _ string) *stdhttp.Response {
