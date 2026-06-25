@@ -54,11 +54,17 @@ func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, err
 
 // sanitizeGrabError strips a possibly link-bearing transport error: a download URL carries
 // the torrent id in its path, which the query-scoped URL redactor cannot reach, so any
-// non-sentinel error from the fetch is replaced with a fixed message. Auth and rate-limit
-// sentinels are kept for health classification. The scrubbedError from get already strips
-// the cookie, but a fixed message is the belt-and-suspenders that also drops the URL.
+// non-sentinel error from the fetch is replaced with a fixed message. The scrubbedError
+// from get already strips the cookie, but a fixed message is the belt-and-suspenders that
+// also drops the URL. Sentinels that carry no URL and that callers need to classify are
+// passed through unchanged: auth and rate-limit (for health), context cancellation/deadline
+// (so normal cancellation is not misreported as a failure), and the size-cap error.
 func sanitizeGrabError(err error) error {
-	if errors.Is(err, login.ErrLoginFailed) {
+	switch {
+	case errors.Is(err, login.ErrLoginFailed),
+		errors.Is(err, context.Canceled),
+		errors.Is(err, context.DeadlineExceeded),
+		errors.Is(err, errDownloadTooLarge):
 		return err
 	}
 	var rl *search.RateLimitedError

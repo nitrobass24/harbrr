@@ -133,6 +133,21 @@ func TestGrabTransportErrorPreservesSentinels(t *testing.T) {
 	}
 }
 
+// TestGrabContextErrorPassesThrough proves a cancellation/deadline from the fetch is
+// preserved (not flattened into the generic "download request failed"), so callers and
+// health classification can tell a cancelled request from a real failure.
+func TestGrabContextErrorPassesThrough(t *testing.T) {
+	t.Parallel()
+	for _, want := range []error{context.Canceled, context.DeadlineExceeded} {
+		d := testDriver(t, nil, nil)
+		d.doer = &errDoer{err: want}
+		_, err := d.Grab(context.Background(), downloadLink)
+		if !errors.Is(err, want) {
+			t.Errorf("Grab err = %v, want errors.Is %v", err, want)
+		}
+	}
+}
+
 // TestTestSurfacesAuthFailure proves Test issues an empty browse and surfaces a stale
 // cookie (a redirect to /login.php) as login.ErrLoginFailed, with the cookie scrubbed.
 func TestTestSurfacesAuthFailure(t *testing.T) {
