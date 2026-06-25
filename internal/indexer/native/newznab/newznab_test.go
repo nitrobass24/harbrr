@@ -46,6 +46,75 @@ func TestFamily(t *testing.T) {
 	}
 }
 
+// TestFamilies proves Families() returns the generic Newznab driver plus every preset, that
+// each is a distinct, usenet-protocol family whose Factory builds a working driver, and that
+// every preset carries a default base-URL link the generic family deliberately omits.
+func TestFamilies(t *testing.T) {
+	t.Parallel()
+	fams := Families()
+
+	// Generic + the full preset table.
+	if want := len(presets) + 1; len(fams) != want {
+		t.Fatalf("Families() = %d families, want %d (generic + %d presets)", len(fams), want, len(presets))
+	}
+
+	seen := map[string]bool{}
+	var generic int
+	for _, f := range fams {
+		if f.Definition == nil || f.Factory == nil {
+			t.Fatalf("family %q has nil definition/factory", famID(f))
+		}
+		id := f.Definition.ID
+		if seen[id] {
+			t.Errorf("duplicate family id %q", id)
+		}
+		seen[id] = true
+
+		if f.Definition.EffectiveProtocol() != loader.ProtocolUsenet {
+			t.Errorf("family %q protocol = %q, want usenet", id, f.Definition.EffectiveProtocol())
+		}
+		if _, err := mapper.Build(f.Definition); err != nil {
+			t.Errorf("mapper.Build(%q): %v", id, err)
+		}
+		d, err := f.Factory(native.Params{Def: f.Definition})
+		if err != nil {
+			t.Errorf("factory(%q): %v", id, err)
+			continue
+		}
+		if d.Capabilities() == nil {
+			t.Errorf("family %q Capabilities() = nil", id)
+		}
+		if id == "newznab" {
+			generic++
+			if len(f.Definition.Links) != 0 {
+				t.Errorf("generic family should carry no default base URL, got %v", f.Definition.Links)
+			}
+			continue
+		}
+		// Every preset carries exactly one default base URL.
+		if len(f.Definition.Links) != 1 || f.Definition.Links[0] == "" {
+			t.Errorf("preset %q must carry one default base URL, got %v", id, f.Definition.Links)
+		}
+	}
+	if generic != 1 {
+		t.Errorf("Families() must contain exactly one generic 'newznab' family, found %d", generic)
+	}
+
+	// Every preset in the table is surfaced as a family.
+	for _, p := range presets {
+		if !seen[p.id] {
+			t.Errorf("preset %q (%s) missing from Families()", p.id, p.name)
+		}
+	}
+}
+
+func famID(f native.Family) string {
+	if f.Definition == nil {
+		return "<nil def>"
+	}
+	return f.Definition.ID
+}
+
 // TestSettingsApikeyIsSecret proves the apikey field is classified as a secret (encrypted at
 // rest, redacted by the API) and that apiPath defaults to /api.
 func TestSettingsApikeyIsSecret(t *testing.T) {

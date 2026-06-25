@@ -79,14 +79,21 @@ func placeholderCaps() loader.Caps {
 		})
 	}
 	return loader.Caps{
-		CategoryMappings: mappings,
-		Modes: loader.Modes{
-			Search:      []string{"q"},
-			TVSearch:    []string{"q", "season", "ep", "imdbid", "tvdbid", "tvmazeid", "rid", "traktid"},
-			MovieSearch: []string{"q", "imdbid", "tmdbid", "traktid"},
-			MusicSearch: []string{"q", "artist", "album"},
-			BookSearch:  []string{"q", "author", "title"},
-		},
+		CategoryMappings:  mappings,
+		Modes:             commonModes(),
 		AllowTVSearchIMDB: &allowIMDB,
+	}
+}
+
+// commonModes is the full set of advertised search modes, with the common Newznab params
+// per mode. The generic family and every preset advertise this same set; the remote
+// server's own caps (fetched at Leaf 5) gate which params it actually honors.
+func commonModes() loader.Modes {
+	return loader.Modes{
+		Search:      []string{"q"},
+		TVSearch:    []string{"q", "season", "ep", "imdbid", "tvdbid", "tvmazeid", "rid", "traktid"},
+		MovieSearch: []string{"q", "imdbid", "tmdbid", "traktid"},
+		MusicSearch: []string{"q", "artist", "album"},
+		BookSearch:  []string{"q", "author", "title"},
 	}
 }
