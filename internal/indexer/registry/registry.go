@@ -24,6 +24,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/native"
 	"github.com/autobrr/harbrr/internal/indexer/native/animebytes"
 	"github.com/autobrr/harbrr/internal/indexer/native/avistaz"
+	"github.com/autobrr/harbrr/internal/indexer/native/beyondhd"
 	"github.com/autobrr/harbrr/internal/indexer/native/broadcastthenet"
 	"github.com/autobrr/harbrr/internal/indexer/native/filelist"
 	"github.com/autobrr/harbrr/internal/indexer/native/gazelle"
@@ -320,6 +321,7 @@ func nativeFamilies() map[string]native.Family {
 	for _, fams := range [][]native.Family{
 		animebytes.Families(),
 		avistaz.Families(),
+		beyondhd.Families(),
 		broadcastthenet.Families(),
 		filelist.Families(),
 		myanonamouse.Families(),
