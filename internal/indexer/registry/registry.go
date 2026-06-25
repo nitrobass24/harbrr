@@ -22,6 +22,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
+	"github.com/autobrr/harbrr/internal/indexer/native/animebytes"
 	"github.com/autobrr/harbrr/internal/indexer/native/avistaz"
 	"github.com/autobrr/harbrr/internal/indexer/native/broadcastthenet"
 	"github.com/autobrr/harbrr/internal/indexer/native/filelist"
@@ -316,6 +317,7 @@ func (r *Registry) NativeDefinitions() []*loader.Definition {
 func nativeFamilies() map[string]native.Family {
 	m := make(map[string]native.Family)
 	for _, fams := range [][]native.Family{
+		animebytes.Families(),
 		avistaz.Families(),
 		broadcastthenet.Families(),
 		filelist.Families(),
