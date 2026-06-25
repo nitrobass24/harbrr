@@ -76,8 +76,9 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	}
 
 	// Each migration recorded once (0001_init.sql, 0002_indexer_health.sql,
-	// 0003_appsync.sql, 0004_search_cache.sql), not duplicated by the second apply.
-	const wantMigrations = 4
+	// 0003_appsync.sql, 0004_search_cache.sql, 0005_indexer_protocol.sql), not
+	// duplicated by the second apply.
+	const wantMigrations = 5
 	var applied int
 	if err := db.QueryRowContext(context.Background(),
 		"SELECT count(*) FROM schema_migrations").Scan(&applied); err != nil {
@@ -308,5 +309,39 @@ func TestQuerierInterface(t *testing.T) {
 	}
 	if err := tx.Rollback(); err != nil {
 		t.Fatalf("Rollback: %v", err)
+	}
+}
+
+// TestProtocolColumnDefaultsToTorrent proves migration 0005 added the protocol
+// column and that an insert omitting it (as the older code paths and the
+// test-only inserts do) backfills 'torrent' via the NOT NULL DEFAULT.
+func TestProtocolColumnDefaultsToTorrent(t *testing.T) {
+	t.Parallel()
+
+	db := openMigrated(t, filepath.Join(t.TempDir(), "harbrr.db"))
+	ctx := context.Background()
+
+	if _, err := db.ExecContext(ctx,
+		"INSERT INTO indexer_instances (slug, definition_id, name, created_at, updated_at) VALUES (?,?,?,?,?)",
+		"tl", "torrentleech", "TL", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"); err != nil {
+		t.Fatalf("insert instance without protocol: %v", err)
+	}
+
+	var protocol string
+	if err := db.QueryRowContext(ctx,
+		"SELECT protocol FROM indexer_instances WHERE slug=?", "tl").Scan(&protocol); err != nil {
+		t.Fatalf("read protocol: %v", err)
+	}
+	if protocol != "torrent" {
+		t.Errorf("protocol = %q, want torrent", protocol)
+	}
+
+	// scanInstance must surface the column through the typed repository too.
+	inst, err := database.Instances{}.GetBySlug(ctx, db, "tl")
+	if err != nil {
+		t.Fatalf("GetBySlug: %v", err)
+	}
+	if inst.Protocol != "torrent" {
+		t.Errorf("GetBySlug protocol = %q, want torrent", inst.Protocol)
 	}
 }

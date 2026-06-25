@@ -31,6 +31,26 @@ type Definition struct {
 	Login           *Login          `yaml:"login,omitempty"`
 	Search          Search          `yaml:"search"`
 	Download        *DownloadBlock  `yaml:"download,omitempty"`
+	// Protocol is the acquisition protocol: "torrent" (default) or "usenet".
+	// Vendored Cardigann defs and every native family except Newznab leave this
+	// empty → torrent. The Newznab family sets it "usenet". Not a YAML field on
+	// vendored defs (they are torrent-only); set in Go-built native definitions.
+	Protocol string `yaml:"protocol,omitempty"`
+}
+
+// Acquisition protocols. Callers must read EffectiveProtocol, never the raw
+// Definition.Protocol field, so the empty-default rule lives in one place.
+const (
+	ProtocolTorrent = "torrent"
+	ProtocolUsenet  = "usenet"
+)
+
+// EffectiveProtocol returns the acquisition protocol, defaulting empty → torrent.
+func (d *Definition) EffectiveProtocol() string {
+	if d.Protocol == ProtocolUsenet {
+		return ProtocolUsenet
+	}
+	return ProtocolTorrent
 }
 
 // Caps mirrors the Caps definition. Exactly one of Categories or

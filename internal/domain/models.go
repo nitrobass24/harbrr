@@ -19,8 +19,12 @@ type IndexerInstance struct {
 	Name         string
 	BaseURL      string
 	Enabled      bool
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// Protocol is the acquisition protocol ("torrent" or "usenet"), derived from
+	// the definition at Add time and immutable per instance. NOT NULL in the DB,
+	// defaulting to "torrent".
+	Protocol  string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // User is harbrr's admin account. First-run setup creates exactly one. The
