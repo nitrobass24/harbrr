@@ -24,7 +24,13 @@ const searchLimit = 100
 
 // nonWordRun matches Prowlarr's Regex.Replace(term, "[\W]+", " "): one or more
 // non-word characters collapse to a single space when sanitizing a MOVIE search term.
-var nonWordRun = regexp.MustCompile(`[\W]+`)
+//
+// .NET's \w (and thus [\W]) is Unicode-aware by default — it keeps Unicode letters,
+// digits, marks, and connector punctuation as word chars — whereas Go's RE2 \W is
+// ASCII-only ([^0-9A-Za-z_]), so it would strip the accented/CJK letters in a non-ASCII
+// movie title that Prowlarr preserves. The class below reproduces .NET's word definition
+// (\w == [\p{L}\p{Mn}\p{Nd}\p{Pc}]) so non-ASCII titles sanitize identically.
+var nonWordRun = regexp.MustCompile(`[^\p{L}\p{Mn}\p{Nd}\p{Pc}]+`)
 
 // torrentQuery is the JSON POST body HDBits' api/torrents expects (Prowlarr's
 // TorrentQuery). Username and passkey are top-level fields (both Required Always in

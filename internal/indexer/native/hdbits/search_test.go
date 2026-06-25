@@ -291,6 +291,12 @@ func TestSanitizeMovieTerm(t *testing.T) {
 		{"the wire", "the wire"},
 		{"  Trimmed--Me  ", "Trimmed Me"},
 		{"a+b/c", "a b c"},
+		// .NET's [\W]+ is Unicode-aware: accented/CJK letters are word chars and must be
+		// preserved (Go's ASCII-only \W would have stripped them). Only the true
+		// separators (space/period) collapse to a single space.
+		{"Amélie", "Amélie"},
+		{"Coup.de.tête", "Coup de tête"},
+		{"千と千尋", "千と千尋"},
 	}
 	for _, c := range cases {
 		if got := sanitizeMovieTerm(c.in); got != c.want {

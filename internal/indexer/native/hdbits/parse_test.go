@@ -286,6 +286,25 @@ func TestPublishDateLayouts(t *testing.T) {
 	}
 }
 
+// TestTitleNameFallbackTrimmed proves the name fallback (XXX/full-disc/use_filenames-off
+// path) is whitespace-trimmed for parity with the trimmed filename path, so a name with
+// surrounding whitespace does not yield a padded title.
+func TestTitleNameFallbackTrimmed(t *testing.T) {
+	t.Parallel()
+	// cat 7 (XXX) forces the name path even with use_filenames on.
+	body := `{"status":0,"data":[{"id":"1","name":"  Padded XXX Name  ","filename":"ignored.torrent","added":"2024-01-01T00:00:00+00:00","type_category":7}]}`
+	got, err := parseDriver(t, creds()).parseReleases([]byte(body))
+	if err != nil {
+		t.Fatalf("parseReleases: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("parsed %d releases, want 1", len(got))
+	}
+	if got[0].Title != "Padded XXX Name" {
+		t.Errorf("Title = %q, want the trimmed name", got[0].Title)
+	}
+}
+
 // TestUseFilenamesToggle proves use_filenames defaults to ON (filename title) and that an
 // explicit falsy setting falls back to the name field.
 func TestUseFilenamesToggle(t *testing.T) {

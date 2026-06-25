@@ -203,7 +203,7 @@ func title(row *hdbitsTorrent, useFilenames bool) string {
 	if cat != xxxCategory && medium != fullDiscMedium && useFilenames && fn != "" {
 		return stripTorrentExt(fn)
 	}
-	return row.Name
+	return strings.TrimSpace(row.Name)
 }
 
 // stripTorrentExt removes a trailing ".torrent" (case-insensitive), matching Prowlarr's
