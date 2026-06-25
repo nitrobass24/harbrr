@@ -65,19 +65,26 @@ func TestFamilies(t *testing.T) {
 }
 
 // TestSettingsSecrets proves apikey is classified as a secret (encrypted/redacted)
-// because its name carries the "apikey" token, and that it is the only user-entered
-// setting (the download passkey is fetched server-side, not user-entered).
+// because its name carries the "apikey" token, and that the user-entered settings are
+// apikey + the freeleech_only toggle (the download passkey is fetched server-side, not
+// user-entered).
 func TestSettingsSecrets(t *testing.T) {
 	t.Parallel()
 	def := Families()[0].Definition
-	if len(def.Settings) != 1 {
-		t.Fatalf("settings = %d, want 1", len(def.Settings))
+	if len(def.Settings) != 2 {
+		t.Fatalf("settings = %d, want 2", len(def.Settings))
 	}
 	if def.Settings[0].Name != "apikey" {
 		t.Fatalf("setting[0] = %q, want %q", def.Settings[0].Name, "apikey")
 	}
 	if !def.Settings[0].IsSecret() {
 		t.Error("apikey should be a secret")
+	}
+	if def.Settings[1].Name != "freeleech_only" {
+		t.Fatalf("setting[1] = %q, want %q", def.Settings[1].Name, "freeleech_only")
+	}
+	if def.Settings[1].IsSecret() {
+		t.Error("freeleech_only should not be a secret")
 	}
 }
 

@@ -160,7 +160,9 @@ func (r *routeDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
 // (so the registry records an auth_failure health event), without leaking the apikey.
 func TestTestProbesAuth(t *testing.T) {
 	t.Parallel()
-	ok := searchDriver(t, &routeDoer{
+	// apikeyOnlyDriver (no pre-seeded passkey) so the quick_user probe actually runs —
+	// a pre-seeded passkey would short-circuit ensurePasskey and skip the routed fetch.
+	ok := apikeyOnlyDriver(t, &routeDoer{
 		quickUser: mkResp(stdhttp.StatusOK, `{"status":"success","response":{"passkey":"`+credPasskey+`"}}`),
 		search:    mkResp(stdhttp.StatusOK, `{"status":"success","response":[]}`),
 	})

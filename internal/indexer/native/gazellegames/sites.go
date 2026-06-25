@@ -46,9 +46,12 @@ func siteDef(id, name, link string) *loader.Definition {
 // (encrypted at rest, redacted by the API) — matching Prowlarr's PrivacyLevel.ApiKey.
 // The download passkey is NOT a user setting: GGn exposes it via request=quick_user, so
 // a later leaf fetches it with the apikey and persists it via PersistSetting.
+// freeleech_only is a toggle that adds freetorrent=1 to the search request (Prowlarr's
+// GazelleGamesSettings.SearchFreeleech).
 func credentialSettings() []loader.SettingsField {
 	return []loader.SettingsField{
 		{Name: "apikey", Label: "API Key", Type: "text"},
+		{Name: "freeleech_only", Label: "Only freeleech", Type: "checkbox"},
 	}
 }
 

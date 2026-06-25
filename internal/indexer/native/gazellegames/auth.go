@@ -121,8 +121,10 @@ func (d *driver) storePasskey(ctx context.Context, body []byte) error {
 		return fmt.Errorf("gazellegames: passkey fetch failed (status %q): %w", resp.Status.string(), login.ErrLoginFailed)
 	}
 
+	// Persist FIRST, then populate the in-memory cfg only on success. If persist fails,
+	// d.cfg["passkey"] stays empty so ensurePasskey will retry on the next search rather
+	// than serving a passkey the store never recorded (live/stored must not diverge).
 	d.mu.Lock()
-	d.cfg["passkey"] = passkey
 	persist := d.persist
 	d.mu.Unlock()
 
@@ -131,6 +133,10 @@ func (d *driver) storePasskey(ctx context.Context, body []byte) error {
 			return fmt.Errorf("gazellegames: persist passkey: %w", err)
 		}
 	}
+
+	d.mu.Lock()
+	d.cfg["passkey"] = passkey
+	d.mu.Unlock()
 	return nil
 }
 

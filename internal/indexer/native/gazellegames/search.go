@@ -32,6 +32,11 @@ const (
 	paramEmptyGroups = "filled"
 	paramOrderBy     = "time"
 	paramOrderWay    = "desc"
+
+	// paramArtistCheck carries one requested category per value (the platform name); GGn's
+	// search filters the artist/platform set on it. paramFreeTorrent=1 restricts to freeleech.
+	paramArtistCheck = "artistcheck[]"
+	paramFreeTorrent = "freetorrent"
 )
 
 // Search issues the authenticated api.php search request for the query and returns the
@@ -74,10 +79,11 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 
 // buildSearchURL composes the api.php?request=search request URL. The static
 // request/search_type/empty_groups/order_by/order_way params are always set; the free-text
-// term rides in searchstr when present. The category filter (artistcheck[]=<platform name>)
-// and freetorrent=1 (FreeleechOnly) ride on the deferred platform-name category map and a
-// FreeleechOnly setting, neither of which is wired yet, so they are intentionally omitted
-// here. The URL carries no secret (auth is the X-API-Key header), so it is safe to log.
+// term rides in searchstr when present. The requested categories ride as artistcheck[]
+// (one per resolved tracker category — for GGn the platform NAME, e.g. "Windows"), and the
+// freeleech_only setting adds freetorrent=1, mirroring Prowlarr's
+// GazelleGamesRequestGenerator. The URL carries no secret (auth is the X-API-Key header),
+// so it is safe to log.
 func (d *driver) buildSearchURL(q search.Query) string {
 	params := url.Values{}
 	params.Set("request", paramRequest)
@@ -91,5 +97,43 @@ func (d *driver) buildSearchURL(q search.Query) string {
 	if term := strings.ReplaceAll(strings.TrimSpace(q.Keywords), ".", " "); term != "" {
 		params.Set("searchstr", term)
 	}
+	d.addCategoryParams(params, q)
+	if d.freeleechOnly() {
+		params.Set(paramFreeTorrent, "1")
+	}
 	return d.baseURL + searchPath + "?" + params.Encode()
+}
+
+// addCategoryParams appends each resolved tracker category as an artistcheck[] value
+// (Prowlarr's GazelleGamesRequestGenerator: queryCats.ForEach(c => parameters.Add("artistcheck[]", c))).
+// q.Categories is already the resolved tracker-category list (the registry's buildQuery ran
+// MapTorznabCapsToTrackers), which for GGn is the platform NAME the artist-name search filter
+// expects. Values are de-duplicated and added in order; url.Values keeps the bracketed key
+// repeated (artistcheck[]=Windows&artistcheck[]=Linux).
+func (d *driver) addCategoryParams(params url.Values, q search.Query) {
+	seen := make(map[string]struct{}, len(q.Categories))
+	for _, c := range q.Categories {
+		c = strings.TrimSpace(c)
+		if c == "" {
+			continue
+		}
+		if _, dup := seen[c]; dup {
+			continue
+		}
+		seen[c] = struct{}{}
+		params.Add(paramArtistCheck, c)
+	}
+}
+
+// freeleechOnly reports whether the freeleech_only checkbox is enabled. harbrr stores a
+// checked checkbox as Jackett's "True" sentinel; common truthy spellings are accepted so
+// whatever the management API persists is interpreted consistently. cfg is read under the
+// mutex (cfgValue) since fetchPasskey mutates the shared map.
+func (d *driver) freeleechOnly() bool {
+	switch strings.ToLower(strings.TrimSpace(d.cfgValue("freeleech_only"))) {
+	case "true", "1", "on", "yes":
+		return true
+	default:
+		return false
+	}
 }

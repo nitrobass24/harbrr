@@ -169,7 +169,11 @@ func (d *driver) parseSearch(body []byte) ([]*normalizer.Release, error) {
 
 	var rels []*normalizer.Release
 	for groupID, g := range groups {
-		rels = append(rels, d.flattenGroup(groupID, &g)...)
+		groupRels, err := d.flattenGroup(groupID, &g)
+		if err != nil {
+			return nil, err
+		}
+		rels = append(rels, groupRels...)
 	}
 	sortReleases(rels)
 	return rels, nil
@@ -213,7 +217,9 @@ func looksLikeAuthFailure(status, msg string) bool {
 
 // flattenGroup turns one group into releases: an empty group (Torrents is [] / not an
 // object) emits none; a filled group emits one release per TorrentType=="TORRENT" torrent,
-// keyed by torrentId.
+// keyed by torrentId. A Torrents payload that IS a JSON object but does not decode into the
+// torrentId-keyed torrent map is a malformed body for a non-empty group (search.ErrParseError),
+// not an empty group — dropping it silently would hide a real decode failure.
 //
 // Categories are computed ONCE per group from the artist names (Prowlarr's group-scoped
 // `categories` variable). When that is empty, the fallback is derived from the FIRST emitted
@@ -221,13 +227,13 @@ func looksLikeAuthFailure(status, msg string) bool {
 // per torrent (categories.Length is no longer 0 after the first fallback). Reproducing that
 // sticky behaviour requires iterating the group's torrents in key order, not Go map order,
 // so the torrents are visited by ascending torrentId.
-func (d *driver) flattenGroup(groupID int64, g *gazelleGamesGroup) []*normalizer.Release {
+func (d *driver) flattenGroup(groupID int64, g *gazelleGamesGroup) ([]*normalizer.Release, error) {
 	if !isJSONObject(g.Torrents) {
-		return nil
+		return nil, nil
 	}
 	torrents := map[int64]gazelleGamesTorrent{}
 	if err := json.Unmarshal(g.Torrents, &torrents); err != nil {
-		return nil
+		return nil, fmt.Errorf("gazellegames: decode torrents for group %d: %w", groupID, search.ErrParseError)
 	}
 
 	cats := d.groupCategories(g)
@@ -244,7 +250,7 @@ func (d *driver) flattenGroup(groupID int64, g *gazelleGamesGroup) []*normalizer
 		}
 		rels = append(rels, d.toRelease(groupID, torrentID, g, &t, cats))
 	}
-	return rels
+	return rels, nil
 }
 
 // sortedTorrentIDs returns the group's torrent ids in ascending order so the per-group

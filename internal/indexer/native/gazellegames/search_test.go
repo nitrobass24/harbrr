@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	stdhttp "net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -132,6 +133,64 @@ func TestBuildSearchURL(t *testing.T) {
 				t.Errorf("search URL leaks the apikey: %q", got)
 			}
 		})
+	}
+}
+
+// TestBuildSearchURLCategories proves each requested tracker category (a GGn platform name)
+// is threaded as a repeated artistcheck[] value, de-duplicated and order-preserving, matching
+// Prowlarr's GazelleGamesRequestGenerator. q.Categories is already the resolved tracker-category
+// list (the registry's buildQuery ran MapTorznabCapsToTrackers).
+func TestBuildSearchURLCategories(t *testing.T) {
+	t.Parallel()
+	d := searchDriver(t, &scriptDoer{})
+	got := d.buildSearchURL(search.Query{Keywords: "game", Categories: []string{"Windows", "Linux", "Windows", "  "}})
+	u, err := url.Parse(got)
+	if err != nil {
+		t.Fatalf("parse URL: %v", err)
+	}
+	checks := u.Query()["artistcheck[]"]
+	want := []string{"Windows", "Linux"}
+	if len(checks) != len(want) {
+		t.Fatalf("artistcheck[] = %v, want %v", checks, want)
+	}
+	for i, w := range want {
+		if checks[i] != w {
+			t.Fatalf("artistcheck[] = %v, want %v", checks, want)
+		}
+	}
+	// No category requested -> no artistcheck[] param at all.
+	none := d.buildSearchURL(search.Query{Keywords: "game"})
+	if strings.Contains(none, "artistcheck") {
+		t.Fatalf("no-category query should omit artistcheck[]: %q", none)
+	}
+}
+
+// TestBuildSearchURLFreeleech proves the freeleech_only setting adds freetorrent=1 and that
+// it is omitted when the setting is off.
+func TestBuildSearchURLFreeleech(t *testing.T) {
+	t.Parallel()
+	def := Families()[0].Definition
+	d, err := New(native.Params{
+		Def:   def,
+		Cfg:   map[string]string{"apikey": credAPIKey, "passkey": credPasskey, "freeleech_only": "true"},
+		Doer:  &scriptDoer{},
+		Clock: func() time.Time { return fixedClock },
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	got := d.(*driver).buildSearchURL(search.Query{Keywords: "game"})
+	u, parseErr := url.Parse(got)
+	if parseErr != nil {
+		t.Fatalf("parse URL: %v", parseErr)
+	}
+	if u.Query().Get("freetorrent") != "1" {
+		t.Fatalf("freetorrent = %q, want 1: %q", u.Query().Get("freetorrent"), got)
+	}
+	// Setting off -> no freetorrent param.
+	off := searchDriver(t, &scriptDoer{}) // no freeleech_only
+	if strings.Contains(off.buildSearchURL(search.Query{Keywords: "game"}), "freetorrent") {
+		t.Fatalf("freeleech off should omit freetorrent")
 	}
 }
 

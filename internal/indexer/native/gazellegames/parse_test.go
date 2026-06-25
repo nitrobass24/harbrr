@@ -225,6 +225,20 @@ func TestParseSearchMalformed(t *testing.T) {
 	}
 }
 
+// TestParseGroupMalformedTorrents proves a Torrents payload that IS a JSON object but does
+// not decode into the torrentId-keyed torrent map is a parse error (search.ErrParseError),
+// not a silently dropped empty group. Here the torrent value is a string, not an object, so
+// the map decode fails.
+func TestParseGroupMalformedTorrents(t *testing.T) {
+	t.Parallel()
+	d := parseDriver(t, map[string]string{"apikey": credAPIKey, "passkey": credPasskey})
+	body := `{"status":"success","response":{"100":{"Artists":[],"Torrents":{"500":"not-an-object"}}}}`
+	_, err := d.parseSearch([]byte(body))
+	if !errors.Is(err, search.ErrParseError) {
+		t.Fatalf("err = %v, want %v", err, search.ErrParseError)
+	}
+}
+
 // TestScrubAPIKey proves the configured apikey is redacted out of any surfaced message so
 // a server echo cannot leak it.
 func TestScrubAPIKey(t *testing.T) {
