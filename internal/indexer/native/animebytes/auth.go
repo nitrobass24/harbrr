@@ -13,19 +13,22 @@ import (
 // AnimeBytes page is small JSON — but bounds a hostile or runaway body.
 const maxBodyBytes = 8 << 20 // 8 MiB
 
-// get issues an authenticated GET against a scrape.php URL. AnimeBytes carries both the
-// username and the passkey (torrent_pass) in the query, so the URL itself is
+// get issues an authenticated GET against an AnimeBytes URL. AnimeBytes carries both the
+// username and the passkey (torrent_pass) in the request, so the URL itself is
 // secret-bearing: it is NEVER logged, and a transport error redacts it through
 // apphttp.RedactURL (which strips the torrent_pass value) before the URL reaches the
-// wrapped error. The Accept header forces JSON. The caller owns the returned body and
-// interprets the status.
-func (d *driver) get(ctx context.Context, rawurl string) (*stdhttp.Response, error) {
+// wrapped error. accept sets the Accept header — "application/json" for a scrape.php
+// query, empty for a .torrent download so JSON is not forced on binary bytes. The caller
+// owns the returned body and interprets the status.
+func (d *driver) get(ctx context.Context, rawurl, accept string) (*stdhttp.Response, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
 		// rawurl carries the passkey, so redact it before it enters the error.
 		return nil, fmt.Errorf("animebytes: build request to %s: %w", apphttp.RedactURL(rawurl), err)
 	}
-	req.Header.Set("Accept", "application/json")
+	if accept != "" {
+		req.Header.Set("Accept", accept)
+	}
 	resp, err := d.doer.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("animebytes: request to %s: %w", apphttp.RedactURL(rawurl), err)

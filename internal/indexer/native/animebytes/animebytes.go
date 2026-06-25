@@ -86,8 +86,3 @@ func (d *driver) Test(ctx context.Context) error {
 	_, err := d.Search(ctx, search.Query{})
 	return err
 }
-
-// Grab is implemented in a later leaf; the skeleton returns a not-implemented error.
-func (d *driver) Grab(_ context.Context, _ string) (*search.GrabResult, error) {
-	return nil, errors.New("animebytes: grab not implemented")
-}
