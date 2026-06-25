@@ -92,18 +92,19 @@ func (d *driver) buildRequest(q search.Query) ([]byte, error) {
 
 // setSearchCriteria fills the search/imdb_id/tmdb_id fields, reproducing Prowlarr's
 // BeyondHDRequestGenerator: a full tt-prefixed imdb id sets imdb_id (and wins over tmdb);
-// otherwise a tmdb id sets tmdb_id as the "movie/<id>" string; a TV season/episode signal
-// appends the formatted episode component to the keyword; a plain keyword is a verbatim
-// search term. imdb_id and tmdb_id are mutually exclusive.
+// otherwise a tmdb id sets tmdb_id as the "movie/<id>" string. Regardless of the id branch,
+// the search term carries the keyword PLUS any TV season/episode qualifier (so an imdb/tmdb
+// TV search keeps its SxxExx and does not broaden to the whole series); a plain keyword is a
+// verbatim search term. imdb_id and tmdb_id are mutually exclusive.
 func setSearchCriteria(req *bhdRequest, q search.Query) {
 	if imdb := imdbID(q.IMDBID); imdb != "" {
 		req.ImdbID = imdb
-		req.Search = strings.TrimSpace(q.Keywords)
+		req.Search = tvSearchTerm(q)
 		return
 	}
 	if tmdb := tmdbParam(q.TMDBID); tmdb != "" {
 		req.TmdbID = tmdb
-		req.Search = strings.TrimSpace(q.Keywords)
+		req.Search = tvSearchTerm(q)
 		return
 	}
 	req.Search = tvSearchTerm(q)
