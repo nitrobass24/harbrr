@@ -28,22 +28,29 @@ import (
 
 // driver is one configured Newznab instance. It is built once per instance and cached by
 // the registry. There is no login round-trip: every request carries the apikey as a query
-// param, so the driver holds no session state.
+// param, so the driver holds no session state. caps is the placeholder fallback built from
+// the definition (the full standard table); capsCache holds the live ?t=caps document, which
+// supersedes the placeholder once fetched.
 type driver struct {
-	def     *loader.Definition
-	caps    *mapper.Capabilities
-	apikey  string
-	apiPath string // normalised, no trailing slash (e.g. "/api")
-	doer    search.Doer
-	baseURL string // normalised with NO trailing slash
-	clock   func() time.Time
+	def       *loader.Definition
+	caps      *mapper.Capabilities // placeholder fallback (full standard table)
+	capsCache capsCache            // live ?t=caps document, lazily fetched + TTL-cached
+	apikey    string
+	apiPath   string // normalised, no trailing slash (e.g. "/api")
+	doer      search.Doer
+	baseURL   string // normalised with NO trailing slash
+	clock     func() time.Time
+	// persist durably writes the fetched caps XML + fetched-at back to the encrypted
+	// store (nil when not wired), so the caps cache survives a restart.
+	persist func(ctx context.Context, name, value string) error
 }
 
 var _ native.Driver = (*driver)(nil)
 
 // New is the native.Factory for the generic Newznab driver. It builds the placeholder
-// capabilities from the definition (Leaf 5 will refresh these from a live ?t=caps fetch),
-// resolves the apikey/apiPath settings, and normalises the base URL.
+// capabilities from the definition (the fallback when no live caps are cached), resolves the
+// apikey/apiPath settings, normalises the base URL, and rehydrates the caps cache from any
+// persisted ?t=caps document so a restart serves caps without a cold-start network fetch.
 func New(p native.Params) (native.Driver, error) {
 	if p.Def == nil {
 		return nil, errors.New("newznab: nil definition")
@@ -60,7 +67,7 @@ func New(p native.Params) (native.Driver, error) {
 	if clock == nil {
 		clock = time.Now
 	}
-	return &driver{
+	d := &driver{
 		def:     p.Def,
 		caps:    caps,
 		apikey:  strings.TrimSpace(p.Cfg["apikey"]),
@@ -68,7 +75,10 @@ func New(p native.Params) (native.Driver, error) {
 		doer:    p.Doer,
 		baseURL: strings.TrimRight(base, "/"),
 		clock:   clock,
-	}, nil
+		persist: p.PersistSetting,
+	}
+	d.capsCache.rehydrate(p.Cfg)
+	return d, nil
 }
 
 // normalizeAPIPath resolves the apiPath setting: a blank value defaults to "/api"
@@ -86,11 +96,18 @@ func normalizeAPIPath(raw string) string {
 	return p
 }
 
-// Capabilities returns the placeholder Newznab capabilities (standard category table + all
-// modes). Leaf 5 replaces this with a live ?t=caps fetch mapped onto the standard table;
-// this is the clear seam — only this method and New (which calls mapper.Build) need to
-// change to swap the Go-literal caps for a fetched-and-cached document.
-func (d *driver) Capabilities() *mapper.Capabilities { return d.caps }
+// Capabilities returns the live Newznab capabilities, lazily fetching and caching the remote
+// ?t=caps document on first need (and refreshing past the 7-day TTL). The native.Driver
+// contract is context-free and non-nil, so a cold-cache fetch failure (the indexer is down,
+// no caps ever cached) falls back to the placeholder standard table rather than returning nil
+// — the indexer stays addable and searchable, and the next call retries the fetch.
+func (d *driver) Capabilities() *mapper.Capabilities {
+	built, err := d.capabilities(context.Background())
+	if err != nil {
+		return d.caps
+	}
+	return built
+}
 
 // NeedsResolver is false: a Newznab .nzb URL is a direct, apikey-bearing HTTP link (no
 // magnet, no extra resolve step). The download is proxied server-side by Grab (driven by
@@ -103,13 +120,13 @@ func (d *driver) NeedsResolver() bool { return false }
 // proxy-not-redirect divergence from Prowlarr.
 func (d *driver) DownloadNeedsAuth() bool { return true }
 
-// Test verifies the instance is usable (the management "test indexer" action). It issues a
-// lightweight empty search: a 401/403 or a Newznab auth error envelope (code 100-199, or
-// a missing-apikey error) surfaces as login.ErrLoginFailed; a clean response (even zero
-// items) proves the apikey/baseUrl authenticate. Leaf 5 will additionally prime the caps
-// cache here.
+// Test verifies the instance is usable (the management "test indexer" action) and eagerly
+// primes the caps cache. The caps fetch both validates the apikey/baseUrl (a 401/403 or a
+// Newznab auth error envelope surfaces as login.ErrLoginFailed) and discovers the remote
+// category tree + search modes, so a successful add starts with live caps cached (and
+// persisted, when wired) rather than the placeholder.
 func (d *driver) Test(ctx context.Context) error {
-	_, err := d.Search(ctx, search.Query{})
+	_, err := d.fetchCaps(ctx)
 	return err
 }
 

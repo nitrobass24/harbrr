@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
@@ -80,7 +81,7 @@ type nzbAttr struct {
 // HTTP 200, so the body must be inspected even on success) and maps each <item> with an
 // application/x-nzb enclosure to a *normalizer.Release. Items without an nzb enclosure are
 // skipped (Prowlarr's ProcessItem returns null). A malformed body is an ErrParseError.
-func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
+func (d *driver) parseReleases(body []byte, catMap *mapper.CategoryMap) ([]*normalizer.Release, error) {
 	var feed rss
 	if err := xml.Unmarshal(body, &feed); err != nil {
 		return nil, fmt.Errorf("newznab: decode search response: %w", search.ErrParseError)
@@ -90,7 +91,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	}
 	releases := make([]*normalizer.Release, 0, len(feed.Channel.Items))
 	for i := range feed.Channel.Items {
-		if rel := d.toRelease(&feed.Channel.Items[i]); rel != nil {
+		if rel := toRelease(&feed.Channel.Items[i], catMap); rel != nil {
 			releases = append(releases, rel)
 		}
 	}
@@ -163,7 +164,7 @@ func mentionsAPIKey(desc string) bool {
 // omits them for a usenet feed. The enclosure url is stored as Release.Link so the /dl grab
 // proxy can hand it to Grab — it is the apikey-bearing secret link and never reaches the
 // feed bare.
-func (d *driver) toRelease(it *item) *normalizer.Release {
+func toRelease(it *item, catMap *mapper.CategoryMap) *normalizer.Release {
 	nzbURL := it.nzbURL()
 	if nzbURL == "" {
 		return nil
@@ -179,7 +180,7 @@ func (d *driver) toRelease(it *item) *normalizer.Release {
 		Details:     trimComments(it.Comments),
 		Link:        nzbURL,
 		Size:        it.size(),
-		Categories:  d.categories(it),
+		Categories:  it.categories(catMap),
 		Grabs:       it.attrInt("grabs"),
 		Files:       it.attrInt("files"),
 		PublishDate: it.publishDate(),
@@ -232,7 +233,7 @@ func (it *item) size() int64 {
 // it fall back to the plain <category> elements (Prowlarr's GetCategory). Each tracker id is
 // mapped through CategoryMap and the custom 1:1 synth ids (>= CustomCategoryOffset) are
 // dropped so each release carries standard newznab ids.
-func (d *driver) categories(it *item) []int {
+func (it *item) categories(catMap *mapper.CategoryMap) []int {
 	ids := it.attrAll("category")
 	if len(ids) == 0 {
 		ids = it.Categories
@@ -240,7 +241,7 @@ func (d *driver) categories(it *item) []int {
 	out := make([]int, 0, len(ids))
 	seen := make(map[int]struct{}, len(ids))
 	for _, raw := range ids {
-		for _, c := range d.caps.CategoryMap.MapTrackerCatToNewznab(strings.TrimSpace(raw)) {
+		for _, c := range catMap.MapTrackerCatToNewznab(strings.TrimSpace(raw)) {
 			if c >= customCatCutoff {
 				continue
 			}

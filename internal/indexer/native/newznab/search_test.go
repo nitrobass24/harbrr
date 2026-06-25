@@ -110,14 +110,16 @@ func TestSearchTransportErrorRedactsApikey(t *testing.T) {
 	assertNoApikey(t, "search transport error", searchErr.Error())
 }
 
-// TestTestMethod proves Test() issues an empty search and reports a clean 200 (even an empty
-// feed) as success, and a 401 as a login failure.
+// TestTestMethod proves Test() primes the caps cache: a clean 200 serving a valid <caps>
+// document is success (and the caps are now cached), while a 401 is a login failure.
 func TestTestMethod(t *testing.T) {
 	t.Parallel()
-	empty := `<?xml version="1.0"?><rss><channel></channel></rss>`
-	d, _ := stubServerDriver(t, stdhttp.StatusOK, empty, nil)
+	d, _ := stubServerDriver(t, stdhttp.StatusOK, minimalCaps, nil)
 	if err := d.Test(context.Background()); err != nil {
 		t.Fatalf("Test (clean) = %v, want nil", err)
+	}
+	if _, ok := d.capsCache.get(fixedClock()); !ok {
+		t.Error("Test did not prime the caps cache")
 	}
 
 	bad, _ := stubServerDriver(t, stdhttp.StatusUnauthorized, "no", nil)
@@ -125,3 +127,8 @@ func TestTestMethod(t *testing.T) {
 		t.Fatalf("Test (bad creds) = %v, want login.ErrLoginFailed", err)
 	}
 }
+
+// minimalCaps is a tiny valid caps document for the Test() priming check.
+const minimalCaps = `<?xml version="1.0"?><caps>` +
+	`<searching><search available="yes" supportedParams="q"/></searching>` +
+	`<categories><category id="2000" name="Movies"/></categories></caps>`

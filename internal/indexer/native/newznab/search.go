@@ -8,6 +8,7 @@ import (
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
@@ -24,6 +25,12 @@ const maxBodyBytes = 16 << 20 // 16 MiB
 // error routes the URL through apphttp.RedactURL (which redacts the apikey query param) and
 // the URL is never logged bare.
 func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
+	// Warm the caps cache so result-side category mapping uses the remote category tree.
+	// A caps-fetch failure is non-fatal: capabilities() falls back to any prior cache, and
+	// categories() ultimately falls back to the placeholder standard table — search must
+	// still run when caps are momentarily unavailable.
+	catMap := d.activeCategoryMap(ctx)
+
 	rawurl := d.buildSearchURL(q)
 	resp, err := d.get(ctx, rawurl)
 	if err != nil {
@@ -47,7 +54,17 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 	if err != nil {
 		return nil, fmt.Errorf("newznab: read search response: %w", search.ErrParseError)
 	}
-	return d.parseReleases(body)
+	return d.parseReleases(body, catMap)
+}
+
+// activeCategoryMap returns the category map of the live caps (lazily fetched), falling back
+// to the placeholder caps map when the remote caps are unavailable. It never returns nil so
+// the parser can always resolve result categories.
+func (d *driver) activeCategoryMap(ctx context.Context) *mapper.CategoryMap {
+	if caps, err := d.capabilities(ctx); err == nil && caps != nil {
+		return caps.CategoryMap
+	}
+	return d.caps.CategoryMap
 }
 
 // get issues the Newznab API GET. The URL embeds the apikey, so a transport error routes the

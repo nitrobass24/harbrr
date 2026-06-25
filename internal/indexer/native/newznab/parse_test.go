@@ -38,7 +38,7 @@ func readGolden(t *testing.T, name string) []byte {
 func TestParseReleases(t *testing.T) {
 	t.Parallel()
 	d := parseDriver(t)
-	releases, err := d.parseReleases(readGolden(t, "search.xml"))
+	releases, err := d.parseReleases(readGolden(t, "search.xml"), d.caps.CategoryMap)
 	if err != nil {
 		t.Fatalf("parseReleases: %v", err)
 	}
@@ -119,7 +119,7 @@ func assertUsenetZeroFields(t *testing.T, r *releaseT) {
 func TestParseErrorEnvelopeAuth(t *testing.T) {
 	t.Parallel()
 	d := parseDriver(t)
-	_, err := d.parseReleases(readGolden(t, "error_auth.xml"))
+	_, err := d.parseReleases(readGolden(t, "error_auth.xml"), d.caps.CategoryMap)
 	if !errors.Is(err, login.ErrLoginFailed) {
 		t.Fatalf("err = %v, want login.ErrLoginFailed", err)
 	}
@@ -130,7 +130,7 @@ func TestParseErrorEnvelopeAuth(t *testing.T) {
 func TestParseErrorEnvelopeAPIKey(t *testing.T) {
 	t.Parallel()
 	d := parseDriver(t)
-	_, err := d.parseReleases(readGolden(t, "error_apikey.xml"))
+	_, err := d.parseReleases(readGolden(t, "error_apikey.xml"), d.caps.CategoryMap)
 	if !errors.Is(err, login.ErrLoginFailed) {
 		t.Fatalf("err = %v, want login.ErrLoginFailed (apikey error promoted to auth)", err)
 	}
@@ -142,7 +142,7 @@ func TestParseErrorRateLimit(t *testing.T) {
 	t.Parallel()
 	d := parseDriver(t)
 	body := []byte(`<?xml version="1.0"?><error code="500" description="Request limit reached" />`)
-	_, err := d.parseReleases(body)
+	_, err := d.parseReleases(body, d.caps.CategoryMap)
 	if !errors.Is(err, search.ErrRateLimited) {
 		t.Fatalf("err = %v, want a rate-limit error", err)
 	}
@@ -152,7 +152,7 @@ func TestParseErrorRateLimit(t *testing.T) {
 func TestParseMalformedBody(t *testing.T) {
 	t.Parallel()
 	d := parseDriver(t)
-	_, err := d.parseReleases([]byte("<<<not xml"))
+	_, err := d.parseReleases([]byte("<<<not xml"), d.caps.CategoryMap)
 	if !errors.Is(err, search.ErrParseError) {
 		t.Fatalf("err = %v, want ErrParseError", err)
 	}
