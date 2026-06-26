@@ -311,3 +311,53 @@ func TestSearchCacheStats(t *testing.T) {
 		t.Errorf("Newest=%v, want %v", s.Newest, newer.CachedAt)
 	}
 }
+
+func TestSearchCacheStatsByInstance(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db := openMigrated(t, ":memory:")
+	store := database.SearchCacheStore{}
+	instA := insertInstance(t, db, "tracker-a")
+	instB := insertInstance(t, db, "tracker-b")
+	now := time.Now().UTC().Truncate(time.Second)
+
+	// Empty cache yields no rows.
+	rows, err := store.StatsByInstance(ctx, db)
+	if err != nil {
+		t.Fatalf("StatsByInstance empty: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("empty StatsByInstance returned %d rows, want 0", len(rows))
+	}
+
+	// instA: two entries, three served hits; instB: one entry, no hits.
+	a1 := sampleEntry("a1", instA, now, time.Hour)
+	a2 := sampleEntry("a2", instA, now, time.Hour)
+	b1 := sampleEntry("b1", instB, now, time.Hour)
+	for _, e := range []database.SearchCacheEntry{a1, a2, b1} {
+		if err := store.Store(ctx, db, e); err != nil {
+			t.Fatalf("Store %s: %v", e.CacheKey, err)
+		}
+	}
+	if err := store.BumpHits(ctx, db, "a1", 3, now); err != nil {
+		t.Fatalf("BumpHits: %v", err)
+	}
+
+	rows, err = store.StatsByInstance(ctx, db)
+	if err != nil {
+		t.Fatalf("StatsByInstance: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("StatsByInstance returned %d rows, want 2", len(rows))
+	}
+	// Ordered by instance_id, so instA first.
+	if rows[0].InstanceID != instA || rows[0].Entries != 2 || rows[0].HitsSaved != 3 {
+		t.Errorf("instA stats = %+v, want entries=2 hitsSaved=3", rows[0])
+	}
+	if rows[0].ApproxSizeBytes != int64(len(a1.ResultsJSON)+len(a2.ResultsJSON)) {
+		t.Errorf("instA size = %d, want %d", rows[0].ApproxSizeBytes, len(a1.ResultsJSON)+len(a2.ResultsJSON))
+	}
+	if rows[1].InstanceID != instB || rows[1].Entries != 1 || rows[1].HitsSaved != 0 {
+		t.Errorf("instB stats = %+v, want entries=1 hitsSaved=0", rows[1])
+	}
+}

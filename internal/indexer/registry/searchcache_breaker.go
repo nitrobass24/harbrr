@@ -60,6 +60,19 @@ func (b *negativeBreaker) trip(instanceID int64, until time.Time, err error) {
 	b.entries[instanceID] = breakerEntry{until: until, err: err}
 }
 
+// openUntil returns instanceID's open-until time (zero when closed) for the stats
+// surface. It is read-only — it never evicts — so a concurrent stats read does not
+// race the lazy drop in replay.
+func (b *negativeBreaker) openUntil(instanceID int64, now time.Time) time.Time {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	e, ok := b.entries[instanceID]
+	if !ok || !now.Before(e.until) {
+		return time.Time{}
+	}
+	return e.until
+}
+
 // classifyBreakerError decides whether a live search failure should trip the breaker
 // and until when. With the breaker armed (negativeTTL > 0) any live error trips it:
 // at the cache layer a non-nil Search error means the tracker did not return usable
