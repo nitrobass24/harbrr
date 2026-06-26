@@ -465,6 +465,35 @@ alpha ships with manual indexer setup — existing Prowlarr/Jackett users re-ent
       (which credential fields, harbrr-indexer ↔ Upbrr-definition matching, the push contract/endpoint,
       redaction/rotation handling).*
 
+### Pre-alpha hardening (operability + polish — from the 2026-06-25 review)
+
+- [ ] **Runtime-tunable config — DB-backed settings store** *(alpha gate)* — the **7 global cache knobs**
+      (`enabled`, `rss_ttl`, `keyword_ttl`, `thin_ttl`, `thin_threshold`, `refresh_ahead_pct`,
+      `cleanup_interval` in `internal/config/config.go`) are **YAML/env-only, frozen at boot** — the cache
+      API only `stats`/`flush`es, it can't *tune*. Build a small **DB-backed app-settings table + GET/PUT
+      API** and have `SearchCache` read it per-request instead of the frozen `ttlConfig`; the `enabled`
+      toggle additionally needs the registry to add/remove the cache decorator at runtime. Designed to
+      extend to later runtime knobs (rate limits, notifications). **Deliberately stays in the config file**
+      (deploy-time / security): data dir, DB path, listen address, base URL, **secrets/encryption key (must
+      stay out of the DB it protects)**, auth mode + IP allowlist/trusted proxies. The per-indexer
+      `cache_ttl`/`timeout` overrides are **already DB-backed** — no work.
+- [ ] **User-facing docs** *(alpha-gate membership: decide later)* — the website is 2 feature pages + a
+      stub index; for a "Swagger-only, API-operated" alpha the operator path is undocumented. Needed pages:
+      **Getting Started / Install** (Docker, first-run admin, mint API key, point Sonarr/Radarr at the feed
+      URL) · **Configuration reference** (from `config.example.yaml`) · **Adding an indexer** (the API flow:
+      `GET /api/definitions/{id}` → configure → `POST …/test`) · **App Sync setup**
+      (`/api/app-connections`) · **API / Swagger pointer** (`/api/docs` + `/api/openapi.yaml`). Plus fix the
+      root **`README.md`** (3 broken mermaid blocks missing ` ```mermaid ` fences; stale "Early
+      Development" status; its own Phase 1–4 roadmap that diverges from this plan → point at `plan.md`).
+      Minor internal-doc refresh: `docs/ideas.md` §4/§13 "superseded by plan.md" note; `highlights.md`
+      app-sync `[partial]`→shipped. **Open decision:** full operator set vs a minimal subset (Getting
+      Started + API pointer + README) as the gate.
+- [ ] **Code cleanup (non-blocking)** — the scaffolding + dead-code review found **no alpha blockers**:
+      codebase is clean (no `panic`/`TODO`/`FIXME` in non-test code, no parsed-but-dead config; OIDC `501`,
+      two AnimeBytes parity nuances, and the captcha boundary are intentional deferrals). `deadcode -test`
+      found only **3 unused option setters** (`auth.WithClock`, cardigann `WithSolver`, `registry.WithTimeout`)
+      — plausibly forward-API for deferred features; confirm intent, then keep or remove. Optional tidy.
+
 ## Phase 12 — Web UI
 
 - [ ] **Web UI** — the management dashboard (indexer grid, add/edit forms, manual search, stats);
