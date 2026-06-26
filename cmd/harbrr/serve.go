@@ -92,11 +92,8 @@ func serve(ctx context.Context, cfg *config.Config, log zerolog.Logger) error {
 	sessions := sessionManager(store, cfg)
 	authSvc := auth.NewService(db)
 
-	searchCache := buildSearchCache(db, cfg, log)
-	regOpts := []registry.Option{registry.WithLogger(log)}
-	if searchCache != nil {
-		regOpts = append(regOpts, registry.WithSearchCache(searchCache))
-	}
+	searchCache := buildSearchCache(ctx, db, cfg, log)
+	regOpts := []registry.Option{registry.WithLogger(log), registry.WithSearchCache(searchCache)}
 	reg := registry.New(db, loader.New(dropinDir(cfg)), keyring, regOpts...)
 	appSync := appsync.NewService(db, registrySource{reg: reg}, authSvc, keyring, appSyncClient(), log)
 
@@ -122,9 +119,7 @@ func serve(ctx context.Context, cfg *config.Config, log zerolog.Logger) error {
 		server.Config{Addr: listenAddr(cfg), BasePath: cfg.Server.BaseURL})
 
 	startSessionCleanup(ctx, store, log)
-	if searchCache != nil {
-		startSearchCacheCleanup(ctx, searchCache, cfg.Cache.CleanupDuration(), log)
-	}
+	startSearchCacheCleanup(ctx, searchCache, cfg.Cache.CleanupDuration(), log)
 	logStartup(log, cfg)
 	if err := srv.Run(ctx); err != nil {
 		return fmt.Errorf("serve: %w", err)
@@ -251,19 +246,24 @@ func startSessionCleanup(ctx context.Context, store *database.SessionStore, log 
 	}()
 }
 
-// buildSearchCache constructs the registry-wide search-results cache from config,
-// or returns nil when caching is disabled (then the registry runs uncached).
-func buildSearchCache(db *database.DB, cfg *config.Config, log zerolog.Logger) *registry.SearchCache {
-	if !cfg.Cache.Enabled {
-		return nil
-	}
-	return registry.NewSearchCacheWithParams(db, registry.SearchCacheParams{
+// buildSearchCache constructs the registry-wide search-results cache. It is ALWAYS
+// installed (so cache.enabled is a runtime toggle the decorator self-gates on, not
+// a boot-time wiring decision); the tuning is seeded from the config file, then any
+// persisted app_settings overrides are overlaid. An overrides-load failure is
+// logged and non-fatal (the config-file seed stands).
+func buildSearchCache(ctx context.Context, db *database.DB, cfg *config.Config, log zerolog.Logger) *registry.SearchCache {
+	sc := registry.NewSearchCacheWithParams(db, registry.SearchCacheParams{
+		Enabled:         cfg.Cache.Enabled,
 		RSSTTL:          cfg.Cache.RSSDuration(),
 		KeywordTTL:      cfg.Cache.KeywordDuration(),
 		ThinTTL:         cfg.Cache.ThinDuration(),
 		ThinThreshold:   cfg.Cache.ThinThreshold,
 		RefreshAheadPct: cfg.Cache.RefreshAheadPct,
 	}, time.Now, log)
+	if err := sc.LoadOverrides(ctx); err != nil {
+		log.Warn().Err(err).Msg("loading cache config overrides failed; using config-file defaults")
+	}
+	return sc
 }
 
 // startSearchCacheCleanup reaps expired cache entries on the configured interval

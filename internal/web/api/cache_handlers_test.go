@@ -34,6 +34,7 @@ type cacheFlushBody struct {
 // newCacheParams returns sane TTL tiers for a test cache.
 func newCacheParams() registry.SearchCacheParams {
 	return registry.SearchCacheParams{
+		Enabled:         true,
 		RSSTTL:          5 * time.Minute,
 		KeywordTTL:      30 * time.Minute,
 		ThinTTL:         2 * time.Minute,
@@ -81,6 +82,66 @@ func addTestIndexer(t *testing.T, e *env, base string, c *http.Client, slug stri
 		t.Fatalf("get instance by slug: %v", err)
 	}
 	return inst.ID
+}
+
+type cacheConfigBody struct {
+	Enabled         bool   `json:"enabled"`
+	RSSTTL          string `json:"rssTtl"`
+	KeywordTTL      string `json:"keywordTtl"`
+	ThinTTL         string `json:"thinTtl"`
+	ThinThreshold   int    `json:"thinThreshold"`
+	RefreshAheadPct int    `json:"refreshAheadPct"`
+}
+
+func TestCacheConfigGetPut(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 23, 12, 0, 0, 0, time.UTC)
+	e := newEnvWithCache(t, api.Config{}, cacheBuilder(now))
+	base, c := serve(t, e)
+	setupAndLogin(t, base, c)
+
+	// GET reflects the seeded params (enabled, rss 5m, keyword 30m).
+	resp, body := do(t, c, http.MethodGet, base+"/api/cache/config", nil, nil)
+	mustStatus(t, resp, body, http.StatusOK)
+	var cfg cacheConfigBody
+	if err := json.Unmarshal(body, &cfg); err != nil {
+		t.Fatalf("decode config: %v", err)
+	}
+	if !cfg.Enabled || cfg.RSSTTL != "5m0s" || cfg.KeywordTTL != "30m0s" {
+		t.Fatalf("seed config = %+v", cfg)
+	}
+
+	// PUT a partial update: disable + change keywordTtl; rssTtl must be untouched.
+	resp, body = do(t, c, http.MethodPut, base+"/api/cache/config",
+		map[string]any{"enabled": false, "keywordTtl": "45m"}, nil)
+	mustStatus(t, resp, body, http.StatusOK)
+	if err := json.Unmarshal(body, &cfg); err != nil {
+		t.Fatalf("decode put response: %v", err)
+	}
+	if cfg.Enabled {
+		t.Error("enabled = true after PUT {enabled:false}")
+	}
+	if cfg.KeywordTTL != "45m0s" {
+		t.Errorf("keywordTtl = %q, want 45m0s", cfg.KeywordTTL)
+	}
+	if cfg.RSSTTL != "5m0s" {
+		t.Errorf("rssTtl = %q, want unchanged 5m0s", cfg.RSSTTL)
+	}
+
+	// A subsequent GET reflects the applied update.
+	resp, body = do(t, c, http.MethodGet, base+"/api/cache/config", nil, nil)
+	mustStatus(t, resp, body, http.StatusOK)
+	_ = json.Unmarshal(body, &cfg)
+	if cfg.Enabled || cfg.KeywordTTL != "45m0s" {
+		t.Errorf("update not reflected on GET: %+v", cfg)
+	}
+
+	// Out-of-range and malformed values are 400.
+	resp, body = do(t, c, http.MethodPut, base+"/api/cache/config", map[string]any{"refreshAheadPct": 150}, nil)
+	mustStatus(t, resp, body, http.StatusBadRequest)
+	resp, body = do(t, c, http.MethodPut, base+"/api/cache/config", map[string]any{"rssTtl": "nope"}, nil)
+	mustStatus(t, resp, body, http.StatusBadRequest)
 }
 
 // cacheBuilder builds a SearchCache bound to a given db with the fixed clock.
