@@ -1282,7 +1282,44 @@ components:
           format: int64
           nullable: true
           description: Unix seconds of the most-recently-used entry, or null when empty
+        trackerHitsSaved:
+          type: integer
+          format: int64
+          description: >
+            Cumulative tracker requests served from cache (durable sum of per-entry hit
+            counts) — the headline kind-to-trackers metric. Equal to totalHits.
+        breakerSuppressed:
+          type: integer
+          format: int64
+          description: >
+            Process-lifetime count of misses short-circuited by the negative-result
+            circuit breaker (extra tracker requests spared a failing tracker).
+            NON-PERSISTENT: resets on restart.
+        byIndexer:
+          type: array
+          description: Per-indexer cache breakdown, ordered by instance id.
+          items: { $ref: "#/components/schemas/CacheIndexerStats" }
       required: [enabled]
+    CacheIndexerStats:
+      type: object
+      description: One indexer's cache observability figures.
+      properties:
+        instanceId: { type: integer, format: int64 }
+        slug: { type: string, description: the indexer's configured slug (empty if unresolved) }
+        name: { type: string, description: the indexer's display name (empty if unresolved) }
+        entries: { type: integer, format: int64, description: durable number of cached entries for this indexer }
+        hitsSaved: { type: integer, format: int64, description: durable tracker requests this indexer served from cache }
+        hits: { type: integer, format: int64, description: in-memory cache hits this process lifetime }
+        misses: { type: integer, format: int64, description: in-memory cache misses this process lifetime }
+        hitRatio: { type: number, format: double, description: hits / (hits + misses) this process lifetime }
+        approxSizeBytes: { type: integer, format: int64, description: approximate cached payload size for this indexer }
+        breakerSuppressed: { type: integer, format: int64, description: misses short-circuited by the breaker for this indexer }
+        breakerOpenUntil:
+          type: integer
+          format: int64
+          nullable: true
+          description: Unix seconds the breaker reopens this indexer to live traffic, or null when closed
+      required: [instanceId, entries, hitsSaved, hits, misses, hitRatio, approxSizeBytes, breakerSuppressed]
     CacheFlushResult:
       type: object
       properties:
@@ -1299,7 +1336,8 @@ components:
         thinTtl: { type: string, description: short TTL clamp for a thin (few-result) response (Go duration) }
         thinThreshold: { type: integer, description: result count at or below which the thin clamp applies }
         refreshAheadPct: { type: integer, description: 'percent of a TTL after which a live hit fires one background refresh (0 disables)' }
-      required: [enabled, rssTtl, keywordTtl, thinTtl, thinThreshold, refreshAheadPct]
+        negativeTtl: { type: string, description: 'negative-result circuit-breaker window (Go duration, e.g. "1m0s"); "0s" disables the breaker' }
+      required: [enabled, rssTtl, keywordTtl, thinTtl, thinThreshold, refreshAheadPct, negativeTtl]
 
     CacheConfigUpdate:
       type: object
@@ -1313,3 +1351,4 @@ components:
         thinTtl: { type: string }
         thinThreshold: { type: integer }
         refreshAheadPct: { type: integer }
+        negativeTtl: { type: string }

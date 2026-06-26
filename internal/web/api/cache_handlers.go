@@ -1,11 +1,13 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 )
 
@@ -21,6 +23,31 @@ type cacheStatsResponse struct {
 	OldestCachedAt  *int64  `json:"oldestCachedAt"`
 	NewestCachedAt  *int64  `json:"newestCachedAt"`
 	LastUsedAt      *int64  `json:"lastUsedAt"`
+	// TrackerHitsSaved is the cumulative count of tracker requests served from cache
+	// (the durable SUM of per-entry hit counts) — the headline kind-to-trackers metric.
+	TrackerHitsSaved int64 `json:"trackerHitsSaved"`
+	// BreakerSuppressed is the process-lifetime count of misses short-circuited by the
+	// negative-result breaker (extra tracker requests spared a failing tracker).
+	BreakerSuppressed int64 `json:"breakerSuppressed"`
+	// ByIndexer is the per-indexer breakdown (ordered by instance id).
+	ByIndexer []cacheIndexerStats `json:"byIndexer"`
+}
+
+// cacheIndexerStats is one indexer's cache observability row in the stats response.
+type cacheIndexerStats struct {
+	InstanceID        int64   `json:"instanceId"`
+	Slug              string  `json:"slug"`
+	Name              string  `json:"name"`
+	Entries           int64   `json:"entries"`
+	HitsSaved         int64   `json:"hitsSaved"`
+	Hits              int64   `json:"hits"`
+	Misses            int64   `json:"misses"`
+	HitRatio          float64 `json:"hitRatio"`
+	ApproxSizeBytes   int64   `json:"approxSizeBytes"`
+	BreakerSuppressed int64   `json:"breakerSuppressed"`
+	// BreakerOpenUntil is the Unix-seconds instant the breaker reopens this indexer to
+	// live traffic, or null when the breaker is currently closed for it.
+	BreakerOpenUntil *int64 `json:"breakerOpenUntil"`
 }
 
 // cacheFlushResponse reports how many entries a flush purged.
@@ -32,7 +59,9 @@ type cacheFlushResponse struct {
 // (no cache wired) it answers 200 with {"enabled":false} rather than 404.
 func (rt *router) cacheStats(w http.ResponseWriter, r *http.Request) {
 	if rt.cache == nil {
-		writeJSON(w, http.StatusOK, cacheStatsResponse{Enabled: false})
+		// Keep byIndexer a JSON array (never null) so the response always matches the
+		// CacheStats schema, even with caching off.
+		writeJSON(w, http.StatusOK, cacheStatsResponse{Enabled: false, ByIndexer: []cacheIndexerStats{}})
 		return
 	}
 	stats, err := rt.cache.Stats(r.Context())
@@ -40,16 +69,68 @@ func (rt *router) cacheStats(w http.ResponseWriter, r *http.Request) {
 		rt.writeServiceError(w, "cache.stats", err)
 		return
 	}
+	byIndexer, err := rt.cacheStatsByIndexer(r.Context())
+	if err != nil {
+		rt.writeServiceError(w, "cache.stats", err)
+		return
+	}
 	writeJSON(w, http.StatusOK, cacheStatsResponse{
-		Enabled:         rt.cache.Enabled(),
-		Entries:         stats.Entries,
-		TotalHits:       stats.TotalHits,
-		HitRatio:        stats.HitRatio,
-		ApproxSizeBytes: stats.ApproxSizeBytes,
-		OldestCachedAt:  stats.OldestUnixSec,
-		NewestCachedAt:  stats.NewestUnixSec,
-		LastUsedAt:      stats.LastUsedUnixSec,
+		Enabled:           rt.cache.Enabled(),
+		Entries:           stats.Entries,
+		TotalHits:         stats.TotalHits,
+		HitRatio:          stats.HitRatio,
+		ApproxSizeBytes:   stats.ApproxSizeBytes,
+		OldestCachedAt:    stats.OldestUnixSec,
+		NewestCachedAt:    stats.NewestUnixSec,
+		LastUsedAt:        stats.LastUsedUnixSec,
+		TrackerHitsSaved:  stats.TotalHits,
+		BreakerSuppressed: stats.BreakerSuppressed,
+		ByIndexer:         byIndexer,
 	})
+}
+
+// cacheStatsByIndexer builds the per-indexer stats rows, labeling each with its
+// configured slug/name. A name-lookup failure is non-fatal (names are cosmetic): the
+// rows are still returned, just unlabeled.
+func (rt *router) cacheStatsByIndexer(ctx context.Context) ([]cacheIndexerStats, error) {
+	rows, err := rt.cache.StatsByInstance(ctx)
+	if err != nil {
+		return nil, err //nolint:wrapcheck // surfaced to writeServiceError (the redaction sink); nothing secret to add.
+	}
+	names, slugs := rt.instanceLabels(ctx)
+	out := make([]cacheIndexerStats, 0, len(rows))
+	for _, s := range rows {
+		out = append(out, cacheIndexerStats{
+			InstanceID:        s.InstanceID,
+			Slug:              slugs[s.InstanceID],
+			Name:              names[s.InstanceID],
+			Entries:           s.Entries,
+			HitsSaved:         s.HitsSaved,
+			Hits:              s.Hits,
+			Misses:            s.Misses,
+			HitRatio:          s.HitRatio,
+			ApproxSizeBytes:   s.ApproxSizeBytes,
+			BreakerSuppressed: s.BreakerSuppressed,
+			BreakerOpenUntil:  s.BreakerOpenUntil,
+		})
+	}
+	return out, nil
+}
+
+// instanceLabels maps instance id -> name and id -> slug from the registry. A list
+// failure leaves both maps empty (labels are cosmetic and must not fail stats).
+func (rt *router) instanceLabels(ctx context.Context) (names, slugs map[int64]string) {
+	names, slugs = map[int64]string{}, map[int64]string{}
+	list, err := rt.registry.List(ctx)
+	if err != nil {
+		rt.log.Warn().Str("error", apphttp.RedactError(err)).Msg("cache stats: indexer label lookup failed")
+		return names, slugs
+	}
+	for _, inst := range list {
+		names[inst.ID] = inst.Name
+		slugs[inst.ID] = inst.Slug
+	}
+	return names, slugs
 }
 
 // cacheFlush purges every cache entry and reports the count. With caching
@@ -76,6 +157,8 @@ type cacheConfigResponse struct {
 	ThinTTL         string `json:"thinTtl"`
 	ThinThreshold   int    `json:"thinThreshold"`
 	RefreshAheadPct int    `json:"refreshAheadPct"`
+	// NegativeTTL is the negative-result circuit-breaker window ("0s" disables it).
+	NegativeTTL string `json:"negativeTtl"`
 }
 
 // cacheConfigUpdate is the PUT body. Every field is optional (a nil field leaves
@@ -87,6 +170,7 @@ type cacheConfigUpdate struct {
 	ThinTTL         *string `json:"thinTtl"`
 	ThinThreshold   *int    `json:"thinThreshold"`
 	RefreshAheadPct *int    `json:"refreshAheadPct"`
+	NegativeTTL     *string `json:"negativeTtl"`
 }
 
 func toCacheConfigResponse(v registry.CacheConfigView) cacheConfigResponse {
@@ -97,6 +181,7 @@ func toCacheConfigResponse(v registry.CacheConfigView) cacheConfigResponse {
 		ThinTTL:         v.ThinTTL.String(),
 		ThinThreshold:   v.ThinThreshold,
 		RefreshAheadPct: v.RefreshAheadPct,
+		NegativeTTL:     v.NegativeTTL.String(),
 	}
 }
 
@@ -130,7 +215,8 @@ func (rt *router) cacheConfigPut(w http.ResponseWriter, r *http.Request) {
 	}
 	if !parseDurPatch(w, req.RSSTTL, &patch.RSSTTL, "rssTtl") ||
 		!parseDurPatch(w, req.KeywordTTL, &patch.KeywordTTL, "keywordTtl") ||
-		!parseDurPatch(w, req.ThinTTL, &patch.ThinTTL, "thinTtl") {
+		!parseDurPatch(w, req.ThinTTL, &patch.ThinTTL, "thinTtl") ||
+		!parseNonNegDurPatch(w, req.NegativeTTL, &patch.NegativeTTL, "negativeTtl") {
 		return
 	}
 	v, err := rt.cache.UpdateConfig(r.Context(), patch)
@@ -156,6 +242,24 @@ func parseDurPatch(w http.ResponseWriter, in *string, dst **time.Duration, name 
 	if err != nil || d <= 0 {
 		writeError(w, http.StatusBadRequest,
 			fmt.Sprintf("invalid duration for %s: %q (want a positive duration like \"10m\")", name, *in))
+		return false
+	}
+	*dst = &d
+	return true
+}
+
+// parseNonNegDurPatch parses an optional NON-negative duration (unlike parseDurPatch,
+// it admits "0s") into a *time.Duration patch field, writing a 400 and returning false
+// on a malformed or negative value. The negative-result breaker uses it so "0s" can
+// disable the breaker at runtime. A nil input leaves the patch field nil (unchanged).
+func parseNonNegDurPatch(w http.ResponseWriter, in *string, dst **time.Duration, name string) bool {
+	if in == nil {
+		return true
+	}
+	d, err := time.ParseDuration(*in)
+	if err != nil || d < 0 {
+		writeError(w, http.StatusBadRequest,
+			fmt.Sprintf("invalid duration for %s: %q (want a non-negative duration like \"1m\", or \"0s\" to disable)", name, *in))
 		return false
 	}
 	*dst = &d
