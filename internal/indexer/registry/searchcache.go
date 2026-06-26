@@ -50,9 +50,21 @@ type SearchCache struct {
 	log   zerolog.Logger
 
 	// hits/misses are process-lifetime (non-persistent) counters for the hit-ratio
-	// metric the stats endpoint exposes; they reset on restart.
-	hits   atomic.Int64
-	misses atomic.Int64
+	// metric the stats endpoint exposes; they reset on restart. breakerSuppressed
+	// counts MISSes short-circuited by an open negative breaker (tracker requests the
+	// breaker spared) — a separate category, not folded into hits or misses.
+	hits              atomic.Int64
+	misses            atomic.Int64
+	breakerSuppressed atomic.Int64
+
+	// breaker is the per-instance negative-result circuit breaker (see searchcache_
+	// breaker.go). Always present; inert unless the negative window (ttl.negative) is
+	// positive.
+	breaker *negativeBreaker
+
+	// instCounters holds per-instance hit/miss/suppressed counters keyed by
+	// instanceID (process-lifetime, non-persistent) for the per-indexer stats surface.
+	instCounters sync.Map // map[int64]*instanceCounters
 
 	// touchMu guards touchPending, the in-memory coalescing buffer for per-entry
 	// hit_count/last_used_at bumps. A cache hit records here (cheap, in-process)
@@ -71,6 +83,31 @@ type pendingTouch struct {
 	lastUsed time.Time
 }
 
+// instanceCounters holds one instance's process-lifetime hit/miss/suppressed counts.
+type instanceCounters struct {
+	hits       atomic.Int64
+	misses     atomic.Int64
+	suppressed atomic.Int64
+}
+
+// counters returns (creating on first use) the counter set for instanceID.
+func (c *SearchCache) counters(instanceID int64) *instanceCounters {
+	v, _ := c.instCounters.LoadOrStore(instanceID, &instanceCounters{})
+	ic, _ := v.(*instanceCounters)
+	return ic
+}
+
+// instanceSnapshot reads instanceID's current hit/miss/suppressed counts (zeroes for
+// an instance with no recorded traffic).
+func (c *SearchCache) instanceSnapshot(instanceID int64) (hits, misses, suppressed int64) {
+	v, ok := c.instCounters.Load(instanceID)
+	if !ok {
+		return 0, 0, 0
+	}
+	ic, _ := v.(*instanceCounters)
+	return ic.hits.Load(), ic.misses.Load(), ic.suppressed.Load()
+}
+
 // NewSearchCache builds the cache layer. db is the shared store handle, t the
 // initial (config-seeded) tuning, clock the reference clock, and log a logger that
 // only ever sees cache keys and redacted errors. The tuning is held atomically so
@@ -84,6 +121,7 @@ func NewSearchCache(db dbinterface.Querier, t cacheTuning, clock func() time.Tim
 		clock:        clock,
 		log:          log,
 		touchPending: make(map[string]pendingTouch),
+		breaker:      newNegativeBreaker(),
 	}
 	c.tuning.Store(&t)
 	return c
@@ -99,6 +137,7 @@ type SearchCacheParams struct {
 	ThinTTL         time.Duration
 	ThinThreshold   int
 	RefreshAheadPct int
+	NegativeTTL     time.Duration
 }
 
 // NewSearchCacheWithParams builds a SearchCache from config-resolved tiers. It is
@@ -107,7 +146,7 @@ type SearchCacheParams struct {
 func NewSearchCacheWithParams(db dbinterface.Querier, p SearchCacheParams, clock func() time.Time, log zerolog.Logger) *SearchCache {
 	t := cacheTuning{
 		enabled:   p.Enabled,
-		ttl:       ttlConfig{rss: p.RSSTTL, keyword: p.KeywordTTL, thin: p.ThinTTL, thinThreshold: p.ThinThreshold},
+		ttl:       ttlConfig{rss: p.RSSTTL, keyword: p.KeywordTTL, thin: p.ThinTTL, thinThreshold: p.ThinThreshold, negative: p.NegativeTTL},
 		refreshAt: p.RefreshAheadPct,
 	}
 	return NewSearchCache(db, t, clock, log)
@@ -162,7 +201,47 @@ func (c *SearchCache) search(ctx context.Context, instanceID int64, cfg map[stri
 	if found {
 		return c.serveHit(ctx, instanceID, cfg, inner, q, key, entry)
 	}
-	return c.serveMiss(ctx, instanceID, cfg, inner, q, key)
+	return c.missPath(ctx, instanceID, cfg, inner, q, key)
+}
+
+// missPath drives a cache miss with the negative-result circuit breaker around it.
+// If the breaker is open for the instance, it short-circuits to the recorded error
+// without touching the tracker (counting one suppression). Otherwise it runs the live
+// miss and, on a tracker failure, trips the breaker so the next consumer's miss is
+// spared. It is the single funnel for every miss (the read-path miss and serveHit's
+// corrupt-payload fallback) so both honor the breaker.
+func (c *SearchCache) missPath(ctx context.Context, instanceID int64, cfg map[string]string, inner torznab.Indexer, q search.Query, key string) ([]*normalizer.Release, error) {
+	// Consult the breaker only while it is armed (negative window > 0); reading the
+	// live config means a runtime disable (negative_ttl -> 0) stops suppression at
+	// once, without waiting for already-open windows to lapse. tripBreaker self-gates
+	// the same way, so disabling also halts new trips.
+	if c.tuning.Load().ttl.negative > 0 {
+		if rerr := c.breaker.replay(instanceID, c.clock()); rerr != nil {
+			c.breakerSuppressed.Add(1)
+			c.counters(instanceID).suppressed.Add(1)
+			return nil, rerr
+		}
+	}
+	releases, err := c.serveMiss(ctx, instanceID, cfg, inner, q, key)
+	if err != nil {
+		c.tripBreaker(ctx, instanceID, err)
+		return nil, err
+	}
+	return releases, nil
+}
+
+// tripBreaker opens the breaker for instanceID when err is a tracker failure worth
+// suppressing. A caller-cancelled context is excluded — that is the consumer aborting,
+// not the tracker failing — so a cancellation never poisons the breaker.
+func (c *SearchCache) tripBreaker(ctx context.Context, instanceID int64, err error) {
+	if ctx.Err() != nil {
+		return
+	}
+	until, ok := classifyBreakerError(err, c.tuning.Load().ttl.negative, c.clock())
+	if !ok {
+		return
+	}
+	c.breaker.trip(instanceID, until, err)
 }
 
 // serveHit returns the decoded cached slice immediately, bumps the hit counters,
@@ -174,9 +253,10 @@ func (c *SearchCache) serveHit(ctx context.Context, instanceID int64, cfg map[st
 		// A corrupt payload is treated as a miss: never fail the search over it.
 		c.log.Warn().Str("cache_key", key).Str("error", apphttp.RedactError(err)).
 			Msg("registry: search cache decode failed; serving live")
-		return c.serveMiss(ctx, instanceID, cfg, inner, q, key)
+		return c.missPath(ctx, instanceID, cfg, inner, q, key)
 	}
 	c.hits.Add(1)
+	c.counters(instanceID).hits.Add(1)
 	c.recordTouch(key)
 	if c.shouldRefreshAhead(entry) {
 		c.triggerSWR(ctx, instanceID, cfg, inner, q, key)
@@ -190,6 +270,7 @@ func (c *SearchCache) serveHit(ctx context.Context, instanceID int64, cfg map[st
 // stored entry instead of re-searching.
 func (c *SearchCache) serveMiss(ctx context.Context, instanceID int64, cfg map[string]string, inner torznab.Indexer, q search.Query, key string) ([]*normalizer.Release, error) {
 	c.misses.Add(1)
+	c.counters(instanceID).misses.Add(1)
 	// The flight returns ([]*normalizer.Release, error); the inner error is already
 	// wrapped by liveAndStore/the adapter, so it is returned unwrapped here.
 	v, err, _ := c.sf.Do(key, func() (any, error) {

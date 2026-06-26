@@ -71,6 +71,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("cache.thin_threshold", d.Cache.ThinThreshold)
 	v.SetDefault("cache.refresh_ahead_pct", d.Cache.RefreshAheadPct)
 	v.SetDefault("cache.cleanup_interval", d.Cache.CleanupInterval)
+	v.SetDefault("cache.negative_ttl", d.Cache.NegativeTTL)
 }
 
 func bindFlags(v *viper.Viper, flags *pflag.FlagSet) error {
