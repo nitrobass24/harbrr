@@ -57,6 +57,70 @@ func searchReq(t *testing.T) *http.Request {
 		"http://h.test/api/indexers/demo/search", nil)
 }
 
+// TestNewSearchResponse pins the qui-shaped JSON envelope and the HasMore boundaries:
+// true while the match set extends past this page, false on the last page, an
+// offset==total empty page, and an empty result set. Results passes through unchanged
+// (the same page the shared pipeline produced — the feed/JSON parity guarantee).
+func TestNewSearchResponse(t *testing.T) {
+	t.Parallel()
+	rel := func(n string) *normalizer.Release { return &normalizer.Release{Title: n} }
+	tests := []struct {
+		name        string
+		res         torznab.SearchResult
+		wantTotal   int
+		wantHasMore bool
+		wantLimit   int
+		wantOffset  int
+	}{
+		{
+			name:      "mid set has more",
+			res:       torznab.SearchResult{Releases: []*normalizer.Release{rel("a"), rel("b")}, Total: 10, Offset: 0, Limit: 2},
+			wantTotal: 10, wantHasMore: true, wantLimit: 2, wantOffset: 0,
+		},
+		{
+			name:      "last full page no more",
+			res:       torznab.SearchResult{Releases: []*normalizer.Release{rel("i"), rel("j")}, Total: 10, Offset: 8, Limit: 2},
+			wantTotal: 10, wantHasMore: false, wantLimit: 2, wantOffset: 8,
+		},
+		{
+			name:      "partial last page no more",
+			res:       torznab.SearchResult{Releases: []*normalizer.Release{rel("x")}, Total: 5, Offset: 4, Limit: 10},
+			wantTotal: 5, wantHasMore: false, wantLimit: 10, wantOffset: 4,
+		},
+		{
+			name:      "offset at total empty no more",
+			res:       torznab.SearchResult{Releases: nil, Total: 10, Offset: 10, Limit: 2},
+			wantTotal: 10, wantHasMore: false, wantLimit: 2, wantOffset: 10,
+		},
+		{
+			name:      "empty result set",
+			res:       torznab.SearchResult{Releases: nil, Total: 0, Offset: 0, Limit: 100},
+			wantTotal: 0, wantHasMore: false, wantLimit: 100, wantOffset: 0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := newSearchResponse(tt.res, tt.res.Releases)
+			if got.Total != tt.wantTotal {
+				t.Errorf("Total = %d, want %d", got.Total, tt.wantTotal)
+			}
+			if got.HasMore != tt.wantHasMore {
+				t.Errorf("HasMore = %v, want %v", got.HasMore, tt.wantHasMore)
+			}
+			if got.Limit != tt.wantLimit {
+				t.Errorf("Limit = %d, want %d", got.Limit, tt.wantLimit)
+			}
+			if got.Offset != tt.wantOffset {
+				t.Errorf("Offset = %d, want %d", got.Offset, tt.wantOffset)
+			}
+			if len(got.Results) != len(tt.res.Releases) {
+				t.Errorf("Results length = %d, want %d (page passes through unchanged)", len(got.Results), len(tt.res.Releases))
+			}
+		})
+	}
+}
+
 // TestResolveSearchLinksSealsResolverLink proves a resolver-needing indexer's
 // passkey-bearing link is replaced with a /dl proxy URL — the passkey is absent and
 // the source release is not mutated (the #1 redaction risk for JSON search).

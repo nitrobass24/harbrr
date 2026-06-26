@@ -9,9 +9,32 @@ import (
 	"github.com/autobrr/harbrr/internal/web/torznab"
 )
 
-// searchResponse is the JSON body of GET /api/indexers/{slug}/search.
+// searchResponse is the JSON body of GET /api/indexers/{slug}/search. It mirrors qui's
+// paged-list envelope: the results for this page plus the paging metadata, so a client
+// can page without re-deriving counts. Total is the full match count before the page
+// slice; HasMore reports whether results beyond this page exist; Limit/Offset are the
+// resolved window. The fields are additive — a pre-reshape consumer reading only
+// `results` is unaffected.
 type searchResponse struct {
 	Results []*normalizer.Release `json:"results"`
+	Total   int                   `json:"total"`
+	HasMore bool                  `json:"hasMore"`
+	Limit   int                   `json:"limit"`
+	Offset  int                   `json:"offset"`
+}
+
+// newSearchResponse builds the qui-shaped envelope from the shared pipeline's result
+// and the page's resolved (link-sealed) releases. HasMore is computed from the pipeline
+// page length and Total (the pre-slice match count), so it is correct at every boundary
+// — including an offset at or past Total (empty page, no more) and a partial last page.
+func newSearchResponse(res torznab.SearchResult, results []*normalizer.Release) searchResponse {
+	return searchResponse{
+		Results: results,
+		Total:   res.Total,
+		HasMore: res.Offset+len(res.Releases) < res.Total,
+		Limit:   res.Limit,
+		Offset:  res.Offset,
+	}
 }
 
 // searchIndexer runs a JSON search against a configured indexer and returns the
@@ -34,7 +57,7 @@ func (rt *router) searchIndexer(w http.ResponseWriter, r *http.Request) {
 		rt.writeServiceError(w, "search indexer", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, searchResponse{Results: rt.resolveSearchLinks(r, idx, res.Releases)})
+	writeJSON(w, http.StatusOK, newSearchResponse(res, rt.resolveSearchLinks(r, idx, res.Releases)))
 }
 
 // resolveSearchLinks returns copies of the releases with download links made safe to
