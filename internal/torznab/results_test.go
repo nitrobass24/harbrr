@@ -219,6 +219,37 @@ func TestResultsEmptyFeedHasChannel(t *testing.T) {
 	if strings.Contains(s, "<item>") {
 		t.Error("empty feed should contain no <item>")
 	}
+	// Empty result still reports an honest, spec-correct paging element.
+	if !strings.Contains(s, `<newznab:response offset="0" total="0">`) {
+		t.Errorf("empty feed missing <newznab:response offset=0 total=0>:\n%s", s)
+	}
+}
+
+// TestResultsNewznabResponse pins the spec-correct <newznab:response offset total>
+// paging element harbrr emits (a superiority divergence — Jackett's ResultPage omits
+// it). offset is this page's resolved offset; total is the full match count BEFORE the
+// page slice, so it can exceed the number of items rendered. The newznab namespace must
+// be declared on the feed for the prefixed element to be well-formed.
+func TestResultsNewznabResponse(t *testing.T) {
+	t.Parallel()
+	// A 2-item page at offset 50 of a 137-result match set.
+	got, err := MarshalResultsRewritten(demoFeed(),
+		[]*normalizer.Release{fullRelease(), mediaRelease()},
+		Page{Offset: 50, Total: 137}, fixedNow(), nil)
+	if err != nil {
+		t.Fatalf("MarshalResultsRewritten: %v", err)
+	}
+	s := string(got)
+	if !strings.Contains(s, `xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/"`) {
+		t.Errorf("newznab namespace not declared:\n%s", s)
+	}
+	if !strings.Contains(s, `<newznab:response offset="50" total="137">`) {
+		t.Errorf("missing <newznab:response offset=50 total=137>:\n%s", s)
+	}
+	// total reflects the full match set, not the 2 items on this page.
+	if strings.Count(s, "<item>") != 2 {
+		t.Errorf("item count = %d, want 2 (the page), with total=137 in the response element", strings.Count(s, "<item>"))
+	}
 }
 
 // TestSanitizeXMLText pins the precise strip set: control chars, BOM and the

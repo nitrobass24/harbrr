@@ -319,7 +319,8 @@ func (h *handler) writeResults(w http.ResponseWriter, r *http.Request, idx Index
 			return
 		}
 	}
-	body, err := tzn.MarshalResultsRewritten(h.feedInfo(r, idx), res.Releases, h.clock(), h.dlRewriter(r, idx))
+	page := tzn.Page{Offset: res.Offset, Total: res.Total}
+	body, err := tzn.MarshalResultsRewritten(h.feedInfo(r, idx), res.Releases, page, h.clock(), h.dlRewriter(r, idx))
 	if err != nil {
 		h.writeInternalError(w, "results", idx.Info().ID, err)
 		return
