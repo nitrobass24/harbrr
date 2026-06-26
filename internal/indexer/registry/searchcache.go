@@ -2,6 +2,8 @@ package registry
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"sync"
 	"sync/atomic"
@@ -257,6 +259,7 @@ func (c *SearchCache) serveHit(ctx context.Context, instanceID int64, cfg map[st
 	}
 	c.hits.Add(1)
 	c.counters(instanceID).hits.Add(1)
+	c.recordCacheInfo(ctx, payloadETag(entry.ResultsJSON), entry.ExpiresAt)
 	c.recordTouch(key)
 	if c.shouldRefreshAhead(entry) {
 		c.triggerSWR(ctx, instanceID, cfg, inner, q, key)
@@ -276,6 +279,7 @@ func (c *SearchCache) serveMiss(ctx context.Context, instanceID int64, cfg map[s
 	v, err, _ := c.sf.Do(key, func() (any, error) {
 		if entry, found, ferr := c.store.Fetch(ctx, c.db, key, c.clock()); ferr == nil && found {
 			if releases, derr := decodeReleases(entry.ResultsJSON, key); derr == nil {
+				c.recordCacheInfo(ctx, payloadETag(entry.ResultsJSON), entry.ExpiresAt)
 				return releases, nil
 			}
 		}
@@ -302,7 +306,8 @@ func (c *SearchCache) liveAndStore(ctx context.Context, instanceID int64, cfg ma
 	if err != nil {
 		return nil, err
 	}
-	c.storeBestEffort(ctx, instanceID, cfg, q, key, releases)
+	etag, expiresAt := c.storeBestEffort(ctx, instanceID, cfg, q, key, releases)
+	c.recordCacheInfo(ctx, etag, expiresAt)
 	return releases, nil
 }
 
@@ -315,13 +320,17 @@ func (c *SearchCache) fetchLive(ctx context.Context, inner torznab.Indexer, q se
 // storeBestEffort encodes and upserts the result. It resolves the TTL from the raw
 // engine count (the slice is pre-dedupe/pre-filter, so this count can exceed what
 // the user ultimately sees — the thin clamp is measured on raw results, by design).
-// A non-positive TTL or any store error is logged (key only) and swallowed.
-func (c *SearchCache) storeBestEffort(ctx context.Context, instanceID int64, cfg map[string]string, q search.Query, key string, releases []*normalizer.Release) {
+// A non-positive TTL or any store error is logged (key only) and swallowed. It returns
+// the content ETag and expiry so the synchronous caller can surface the conditional-GET
+// validators; an encode failure returns an empty etag (no validator emitted). The
+// validators are returned even if the Store write fails — the response content is still
+// valid, and an unstored entry simply misses on the next request.
+func (c *SearchCache) storeBestEffort(ctx context.Context, instanceID int64, cfg map[string]string, q search.Query, key string, releases []*normalizer.Release) (string, time.Time) {
 	payload, err := json.Marshal(releases)
 	if err != nil {
 		c.log.Warn().Str("cache_key", key).Str("error", apphttp.RedactError(err)).
 			Msg("registry: search cache encode failed; not caching")
-		return
+		return "", time.Time{}
 	}
 	now := c.clock()
 	ttl := c.tuning.Load().ttl.resolveTTL(cfg, q, len(releases))
@@ -338,6 +347,25 @@ func (c *SearchCache) storeBestEffort(ctx context.Context, instanceID int64, cfg
 		c.log.Warn().Str("cache_key", key).Str("error", apphttp.RedactError(err)).
 			Msg("registry: search cache store failed")
 	}
+	return payloadETag(payload), entry.ExpiresAt
+}
+
+// payloadETag is a strong HTTP validator over the cached payload: a quoted hex SHA-256
+// of the serialized release slice. It changes iff the result set changes, so a client
+// holding it can be answered with 304 while the cached answer is unchanged.
+func payloadETag(payload []byte) string {
+	sum := sha256.Sum256(payload)
+	return `"` + hex.EncodeToString(sum[:]) + `"`
+}
+
+// recordCacheInfo surfaces the served entry's HTTP validators to the feed handler via
+// the request's CacheInfo sink (a no-op when there is none — the JSON API and the
+// detached SWR refresh carry none). An empty etag records nothing.
+func (c *SearchCache) recordCacheInfo(ctx context.Context, etag string, expiresAt time.Time) {
+	if etag == "" {
+		return
+	}
+	torznab.RecordCacheInfo(ctx, torznab.CacheInfo{ETag: etag, ExpiresAt: expiresAt})
 }
 
 // recordTouch buffers a served hit in memory (cheap, non-blocking) instead of

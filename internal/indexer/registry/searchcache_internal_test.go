@@ -334,6 +334,38 @@ func TestStatsHitMissRatio(t *testing.T) {
 	}
 }
 
+// TestCacheInfoRecordedOnMissAndHit proves the cache fills the request's CacheInfo
+// sink with a stable content ETag + expiry on both the storing miss and the serving
+// hit, so the feed handler can emit conditional-GET validators.
+func TestCacheInfoRecordedOnMissAndHit(t *testing.T) {
+	t.Parallel()
+	sc, instID, _ := testCache(t, keywordTTL, 0)
+	inner := &fakeInner{releases: relSet("Alpha", "Beta")}
+	idx := sc.wrap(inner, instID, nil)
+	q := search.Query{Keywords: "alpha"}
+
+	// Miss: the store-back records the validators for this request.
+	missCtx, missInfo := torznab.WithCacheInfoSink(context.Background())
+	if _, err := idx.Search(missCtx, q); err != nil {
+		t.Fatalf("miss: %v", err)
+	}
+	if missInfo.ETag == "" || missInfo.ExpiresAt.IsZero() {
+		t.Fatalf("miss did not record cache info: %+v", missInfo)
+	}
+
+	// Hit: a fresh sink is filled with the SAME etag (content-derived, stable).
+	hitCtx, hitInfo := torznab.WithCacheInfoSink(context.Background())
+	if _, err := idx.Search(hitCtx, q); err != nil {
+		t.Fatalf("hit: %v", err)
+	}
+	if hitInfo.ETag != missInfo.ETag {
+		t.Errorf("hit etag %q != miss etag %q (content hash must be stable)", hitInfo.ETag, missInfo.ETag)
+	}
+	if inner.callCount() != 1 {
+		t.Fatalf("inner called %d times, want 1 (second served from cache)", inner.callCount())
+	}
+}
+
 // advance moves the test clock forward by d.
 func advance(clk *atomic.Pointer[time.Time], d time.Duration) {
 	cur := *clk.Load()

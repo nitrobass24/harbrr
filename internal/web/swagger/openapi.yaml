@@ -713,17 +713,36 @@ paths:
         - { name: ep, in: query, required: false, schema: { type: string } }
         - { name: limit, in: query, required: false, schema: { type: integer }, description: page size }
         - { name: offset, in: query, required: false, schema: { type: integer } }
+        - { name: nocache, in: query, required: false, schema: { type: string, enum: ["1"] }, description: "set to 1 to bypass the search cache and force a live tracker fetch" }
+        - { name: If-None-Match, in: header, required: false, schema: { type: string }, description: "a previously-returned ETag; a match yields 304 Not Modified when the cached results are unchanged" }
+        - { name: Cache-Control, in: header, required: false, schema: { type: string }, description: "no-cache / no-store forces a live tracker fetch (the header sibling of nocache=1) and suppresses the 304 short-circuit" }
       responses:
         "200":
           description: >
             A Torznab capabilities document or results feed (XML). Also carries the
             Torznab <error> element for an invalid API key or unsupported indexer,
             which by convention is served with HTTP 200.
+          headers:
+            ETag:
+              schema: { type: string }
+              description: strong validator over the cached result set (present only for a cache-backed results feed)
+            Cache-Control:
+              schema: { type: string }
+              description: "private, max-age=<remaining cache TTL seconds> for a cache-backed results feed"
           content:
             application/xml:
               schema:
                 type: string
                 description: Torznab/Newznab XML (caps document, RSS results feed, or an <error> element)
+        "304":
+          description: >
+            Not Modified — the request's If-None-Match matched the current cached
+            results, so the body is omitted. Carries the ETag and Cache-Control headers.
+          headers:
+            ETag:
+              schema: { type: string }
+            Cache-Control:
+              schema: { type: string }
         "400":
           description: a Torznab <error> element (XML) for an unknown function (t) or an unsupported id parameter
           content:

@@ -152,6 +152,37 @@ live from the tracker and refreshes the stored answer. This is the "I *know* som
 dropped, check right now" override for a manual search. Everyday app traffic doesn't send
 it, so it never interferes with normal caching.
 
+A client that speaks HTTP caching can do the same with a **`Cache-Control: no-cache`** (or
+`Pragma: no-cache`) request header — the header equivalent of `nocache=1`. Both force a live
+fetch and skip the conditional-GET shortcut below.
+
+### Conditional requests: `ETag` / `If-None-Match`
+
+harbrr speaks standard HTTP cache validation on the feed — something Prowlarr and Jackett
+don't. A cache-backed results feed comes back with two headers:
+
+```http
+ETag: "9f8c…"                       # a fingerprint of the result set
+Cache-Control: private, max-age=240 # still fresh for 240s
+```
+
+A client that keeps the `ETag` can send it back on the next poll as `If-None-Match`. If the
+results haven't changed, harbrr answers **`304 Not Modified`** with **no body at all** — even
+cheaper than serving the cached copy, and the tracker is never touched:
+
+```http
+GET /api/v2.0/indexers/<id>/results/torznab?... HTTP/1.1
+If-None-Match: "9f8c…"
+
+HTTP/1.1 304 Not Modified
+ETag: "9f8c…"
+```
+
+The `ETag` is a fingerprint of the **results**, so it only changes when the results actually
+change — a refresh that returns the same releases keeps the same `ETag`. This is opt-in on the
+client side: tools like autobrr can adopt it to poll harbrr almost for free, while clients that
+don't send `If-None-Match` simply get the normal cached feed.
+
 ---
 
 ## Seeing the cache work

@@ -467,6 +467,13 @@ alpha ships with manual indexer setup — existing Prowlarr/Jackett users re-ent
       tracker requests served from cache — the headline value metric), `breakerSuppressed`, and a
       `byIndexer[]` per-indexer breakdown (hit ratio, hits saved, breaker open-state). Store
       `StatsByInstance` (`internal/database/searchcache.go`) + engine merge (`searchcache_manage.go`).
+- [x] **HTTP cache validators on the feed (conditional GET)** *(new — ze0s's "ETags/cache tags" ask)* —
+      a cache-backed Torznab/Newznab feed emits a strong `ETag` (content hash of the cached result set)
+      + `Cache-Control: private, max-age=<remaining TTL>`; an `If-None-Match` match is answered `304 Not
+      Modified` (no body, no tracker hit), and a request `Cache-Control`/`Pragma: no-cache` forces a live
+      fetch (the header sibling of `nocache=1`). Standards-only — clients (autobrr) can adopt it with no
+      harbrr-side coupling. Prowlarr/Jackett emit no validators. `internal/web/torznab/cacheinfo.go`,
+      `handler.go`; the registry cache surfaces the validators via a `CacheInfo` context sink.
 - [ ] **Cross-seed backend + freeleech-aware matching** — a cross-seed search backend, plus
       freeleech-aware release matching and optional freeleech-bypass logic (README "Cross-Seed Aware"):
       smarter release matching, search reuse/aggregation, reduced duplicate tracker activity. **Absorbs
