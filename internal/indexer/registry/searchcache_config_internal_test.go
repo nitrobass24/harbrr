@@ -2,9 +2,11 @@ package registry
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
 
@@ -12,7 +14,16 @@ func seedTTL() ttlConfig {
 	return ttlConfig{rss: 5 * time.Minute, keyword: 30 * time.Minute, thin: 2 * time.Minute, thinThreshold: 5}
 }
 
-// TestSearchCacheConfigRoundTrip proves SetConfig both swaps the live tuning and
+// fullPatch builds a patch that sets every field — a full replace, for tests that
+// overwrite the whole config.
+func fullPatch(v CacheConfigView) CacheConfigPatch {
+	return CacheConfigPatch{
+		Enabled: &v.Enabled, RSSTTL: &v.RSSTTL, KeywordTTL: &v.KeywordTTL,
+		ThinTTL: &v.ThinTTL, ThinThreshold: &v.ThinThreshold, RefreshAheadPct: &v.RefreshAheadPct,
+	}
+}
+
+// TestSearchCacheConfigRoundTrip proves UpdateConfig swaps the live tuning and
 // persists it (a LoadOverrides after resetting the in-memory copy restores it).
 func TestSearchCacheConfigRoundTrip(t *testing.T) {
 	t.Parallel()
@@ -28,11 +39,11 @@ func TestSearchCacheConfigRoundTrip(t *testing.T) {
 		Enabled: false, RSSTTL: 10 * time.Minute, KeywordTTL: time.Hour,
 		ThinTTL: time.Minute, ThinThreshold: 3, RefreshAheadPct: 50,
 	}
-	if err := sc.SetConfig(ctx, want); err != nil {
-		t.Fatalf("SetConfig: %v", err)
+	if _, err := sc.UpdateConfig(ctx, fullPatch(want)); err != nil {
+		t.Fatalf("UpdateConfig: %v", err)
 	}
 	if sc.Config() != want {
-		t.Errorf("after SetConfig Config = %+v, want %+v", sc.Config(), want)
+		t.Errorf("after UpdateConfig Config = %+v, want %+v", sc.Config(), want)
 	}
 
 	// Reset the in-memory tuning to the seed, then LoadOverrides must restore the
@@ -48,8 +59,8 @@ func TestSearchCacheConfigRoundTrip(t *testing.T) {
 	}
 }
 
-// TestSearchCacheConfigValidation proves invalid configs are rejected and leave the
-// live tuning untouched.
+// TestSearchCacheConfigValidation proves invalid configs are rejected (wrapping
+// ErrInvalidCacheConfig) and leave the live tuning untouched.
 func TestSearchCacheConfigValidation(t *testing.T) {
 	t.Parallel()
 
@@ -60,12 +71,45 @@ func TestSearchCacheConfigValidation(t *testing.T) {
 		{RSSTTL: time.Minute, KeywordTTL: time.Minute, ThinTTL: time.Minute, RefreshAheadPct: 150},
 		{RSSTTL: time.Minute, KeywordTTL: time.Minute, ThinTTL: time.Minute, ThinThreshold: -1},
 	} {
-		if err := sc.SetConfig(context.Background(), bad); err == nil {
-			t.Errorf("SetConfig(%+v) = nil, want validation error", bad)
+		if _, err := sc.UpdateConfig(context.Background(), fullPatch(bad)); err == nil || !errors.Is(err, ErrInvalidCacheConfig) {
+			t.Errorf("UpdateConfig(%+v) err = %v, want ErrInvalidCacheConfig", bad, err)
 		}
 	}
 	if sc.Config() != before {
-		t.Errorf("Config changed after a rejected SetConfig: %+v != %+v", sc.Config(), before)
+		t.Errorf("Config changed after a rejected update: %+v != %+v", sc.Config(), before)
+	}
+}
+
+// TestUpdateConfigPersistsOnlyPatched proves a partial patch stores ONLY the supplied
+// keys in app_settings, so omitted knobs keep falling back to the config-file seed
+// (rather than being frozen as explicit DB overrides).
+func TestUpdateConfigPersistsOnlyPatched(t *testing.T) {
+	t.Parallel()
+
+	sc, _, _ := testCache(t, seedTTL(), 80)
+	ctx := context.Background()
+
+	enabled := false
+	if _, err := sc.UpdateConfig(ctx, CacheConfigPatch{Enabled: &enabled}); err != nil {
+		t.Fatalf("UpdateConfig: %v", err)
+	}
+
+	all, err := database.AppSettings{}.GetAll(ctx, sc.db)
+	if err != nil {
+		t.Fatalf("GetAll: %v", err)
+	}
+	if _, ok := all[keyCacheEnabled]; !ok {
+		t.Error("cache.enabled should be persisted")
+	}
+	if _, ok := all[keyCacheRSSTTL]; ok {
+		t.Error("cache.rss_ttl should NOT be persisted (only the patched key)")
+	}
+	if len(all) != 1 {
+		t.Errorf("persisted %d keys, want only the 1 patched (enabled): %v", len(all), all)
+	}
+	// In-memory config still reflects the seed for the untouched TTLs.
+	if got := sc.Config(); got.Enabled || got.RSSTTL != 5*time.Minute {
+		t.Errorf("Config = %+v, want enabled=false + seed rss 5m", got)
 	}
 }
 
@@ -79,11 +123,8 @@ func TestSearchCacheEnabledGate(t *testing.T) {
 	idx := sc.wrap(inner, instID, nil)
 	ctx := context.Background()
 
-	base := CacheConfigView{RSSTTL: 5 * time.Minute, KeywordTTL: 30 * time.Minute, ThinTTL: 2 * time.Minute, ThinThreshold: 5}
-
-	disabled := base
-	disabled.Enabled = false
-	if err := sc.SetConfig(ctx, disabled); err != nil {
+	disabled := false
+	if _, err := sc.UpdateConfig(ctx, CacheConfigPatch{Enabled: &disabled}); err != nil {
 		t.Fatal(err)
 	}
 	for range 2 {
@@ -95,9 +136,8 @@ func TestSearchCacheEnabledGate(t *testing.T) {
 		t.Errorf("disabled: inner calls = %d, want 2 (no caching)", got)
 	}
 
-	enabled := base
-	enabled.Enabled = true
-	if err := sc.SetConfig(ctx, enabled); err != nil {
+	enabled := true
+	if _, err := sc.UpdateConfig(ctx, CacheConfigPatch{Enabled: &enabled}); err != nil {
 		t.Fatal(err)
 	}
 	for range 2 {

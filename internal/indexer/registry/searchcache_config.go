@@ -30,6 +30,18 @@ type CacheConfigView struct {
 	RefreshAheadPct int
 }
 
+// CacheConfigPatch is a partial cache-config update: a nil field is left unchanged,
+// and ONLY the supplied fields are persisted — so an omitted knob keeps falling back
+// to the config-file seed / default (the DB stores only explicit overrides).
+type CacheConfigPatch struct {
+	Enabled         *bool
+	RSSTTL          *time.Duration
+	KeywordTTL      *time.Duration
+	ThinTTL         *time.Duration
+	ThinThreshold   *int
+	RefreshAheadPct *int
+}
+
 // app_settings keys for the cache config — a DB row overrides the config-file seed.
 const (
 	keyCacheEnabled       = "cache.enabled"
@@ -40,10 +52,14 @@ const (
 	keyCacheRefreshAhead  = "cache.refresh_ahead_pct"
 )
 
+// ErrInvalidCacheConfig wraps every cache-config validation failure so the API layer
+// can map it to a 400 (vs a 500 for a persistence error).
+var ErrInvalidCacheConfig = errors.New("invalid cache config")
+
 var (
-	errCacheTTLPositive = errors.New("cache TTLs (rss_ttl/keyword_ttl/thin_ttl) must be positive durations")
-	errThinThreshold    = errors.New("thin_threshold must be >= 0")
-	errRefreshPct       = errors.New("refresh_ahead_pct must be between 0 and 100")
+	errCacheTTLPositive = fmt.Errorf("%w: rss_ttl/keyword_ttl/thin_ttl must be positive durations", ErrInvalidCacheConfig)
+	errThinThreshold    = fmt.Errorf("%w: thin_threshold must be >= 0", ErrInvalidCacheConfig)
+	errRefreshPct       = fmt.Errorf("%w: refresh_ahead_pct must be between 0 and 100", ErrInvalidCacheConfig)
 )
 
 func (t cacheTuning) view() CacheConfigView {
@@ -86,28 +102,67 @@ func (c *SearchCache) Enabled() bool { return c.tuning.Load().enabled }
 // Config returns the live cache tuning (GET /api/cache/config).
 func (c *SearchCache) Config() CacheConfigView { return c.tuning.Load().view() }
 
-// SetConfig validates v, persists it to app_settings, and atomically swaps the live
-// tuning, so the change both survives a restart and takes effect immediately.
-func (c *SearchCache) SetConfig(ctx context.Context, v CacheConfigView) error {
+// UpdateConfig applies a partial patch: it merges the supplied fields onto the live
+// config, validates the result (returning a wrapped ErrInvalidCacheConfig on a bad
+// value), persists ONLY the supplied fields to app_settings — so an omitted knob
+// keeps falling back to its config-file/default value — and atomically swaps the new
+// tuning in. The whole read-merge-validate-persist-swap is serialized by cfgMu so
+// concurrent updates cannot lose each other's fields. Returns the resulting config.
+func (c *SearchCache) UpdateConfig(ctx context.Context, p CacheConfigPatch) (CacheConfigView, error) {
+	c.cfgMu.Lock()
+	defer c.cfgMu.Unlock()
+
+	v := c.tuning.Load().view()
+	kv := map[string]string{}
+	if p.Enabled != nil {
+		v.Enabled = *p.Enabled
+		kv[keyCacheEnabled] = strconv.FormatBool(*p.Enabled)
+	}
+	if p.RSSTTL != nil {
+		v.RSSTTL = *p.RSSTTL
+		kv[keyCacheRSSTTL] = p.RSSTTL.String()
+	}
+	if p.KeywordTTL != nil {
+		v.KeywordTTL = *p.KeywordTTL
+		kv[keyCacheKeywordTTL] = p.KeywordTTL.String()
+	}
+	if p.ThinTTL != nil {
+		v.ThinTTL = *p.ThinTTL
+		kv[keyCacheThinTTL] = p.ThinTTL.String()
+	}
+	if p.ThinThreshold != nil {
+		v.ThinThreshold = *p.ThinThreshold
+		kv[keyCacheThinThreshold] = strconv.Itoa(*p.ThinThreshold)
+	}
+	if p.RefreshAheadPct != nil {
+		v.RefreshAheadPct = *p.RefreshAheadPct
+		kv[keyCacheRefreshAhead] = strconv.Itoa(*p.RefreshAheadPct)
+	}
+
 	if err := v.Validate(); err != nil {
-		return err
+		return CacheConfigView{}, err
+	}
+	if err := c.persistConfig(ctx, kv); err != nil {
+		return CacheConfigView{}, err
+	}
+	t := v.tuning()
+	c.tuning.Store(&t)
+	return v, nil
+}
+
+// persistConfig writes ONLY the given app_settings keys, in one transaction so a
+// mid-write failure leaves the stored config untouched. An empty map is a no-op.
+func (c *SearchCache) persistConfig(ctx context.Context, kv map[string]string) error {
+	if len(kv) == 0 {
+		return nil
 	}
 	now := c.clock()
-	// All six keys persist in one transaction, so a mid-write failure leaves the
-	// stored config untouched (no partial overlay for the next LoadOverrides to read).
 	tx, err := c.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("registry: begin cache config tx: %w", err)
 	}
 	store := database.AppSettings{}
-	for k, val := range map[string]string{
-		keyCacheEnabled:       strconv.FormatBool(v.Enabled),
-		keyCacheRSSTTL:        v.RSSTTL.String(),
-		keyCacheKeywordTTL:    v.KeywordTTL.String(),
-		keyCacheThinTTL:       v.ThinTTL.String(),
-		keyCacheThinThreshold: strconv.Itoa(v.ThinThreshold),
-		keyCacheRefreshAhead:  strconv.Itoa(v.RefreshAheadPct),
-	} {
+	for k, val := range kv {
 		if err := store.Set(ctx, tx, k, val, now); err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("registry: persist cache config: %w", err)
@@ -116,8 +171,6 @@ func (c *SearchCache) SetConfig(ctx context.Context, v CacheConfigView) error {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("registry: commit cache config: %w", err)
 	}
-	t := v.tuning()
-	c.tuning.Store(&t)
 	return nil
 }
 
@@ -130,7 +183,9 @@ func (c *SearchCache) LoadOverrides(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("registry: load cache overrides: %w", err)
 	}
-	v := c.Config() // start from the current (config-seeded) view
+	c.cfgMu.Lock()
+	defer c.cfgMu.Unlock()
+	v := c.tuning.Load().view() // start from the current (config-seeded) view
 	if s, ok := all[keyCacheEnabled]; ok {
 		if b, err := strconv.ParseBool(s); err == nil {
 			v.Enabled = b

@@ -39,11 +39,15 @@ type SearchCache struct {
 	db dbinterface.Querier
 	sf singleflight.Group
 	// tuning is the live, atomically-swappable config (TTL tiers, thin threshold,
-	// refresh-ahead, enabled). Read per request so the global knobs are runtime-
-	// tunable via SetConfig; seeded from the config file, overlaid by LoadOverrides.
+	// refresh-ahead, enabled). Read per request (lock-free) so the global knobs are
+	// runtime-tunable; seeded from the config file, overlaid by LoadOverrides.
 	tuning atomic.Pointer[cacheTuning]
-	clock  func() time.Time
-	log    zerolog.Logger
+	// cfgMu serializes the read-merge-validate-persist-swap of UpdateConfig (and the
+	// boot LoadOverrides) so concurrent updates can't lose each other's fields; the
+	// per-request read path stays lock-free on tuning.
+	cfgMu sync.Mutex
+	clock func() time.Time
+	log   zerolog.Logger
 
 	// hits/misses are process-lifetime (non-persistent) counters for the hit-ratio
 	// metric the stats endpoint exposes; they reset on restart.

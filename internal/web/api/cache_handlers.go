@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -109,9 +110,10 @@ func (rt *router) cacheConfigGet(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, toCacheConfigResponse(rt.cache.Config()))
 }
 
-// cacheConfigPut applies a partial update to the cache configuration: it overlays
-// the provided fields onto the current config, validates, persists, and swaps it in
-// atomically. A bad duration or invalid value answers 400; the config is unchanged.
+// cacheConfigPut applies a partial update to the cache configuration. Only the
+// supplied fields are persisted (omitted knobs keep their config-file/default value),
+// and the merge+validate+persist+swap happens atomically inside the cache. A bad
+// duration or out-of-range value answers 400; the config is left unchanged.
 func (rt *router) cacheConfigPut(w http.ResponseWriter, r *http.Request) {
 	if rt.cache == nil {
 		writeError(w, http.StatusServiceUnavailable, "search cache is not available")
@@ -121,37 +123,32 @@ func (rt *router) cacheConfigPut(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	cur := rt.cache.Config()
-	if req.Enabled != nil {
-		cur.Enabled = *req.Enabled
+	patch := registry.CacheConfigPatch{
+		Enabled:         req.Enabled,
+		ThinThreshold:   req.ThinThreshold,
+		RefreshAheadPct: req.RefreshAheadPct,
 	}
-	if !applyDurField(w, req.RSSTTL, &cur.RSSTTL, "rssTtl") ||
-		!applyDurField(w, req.KeywordTTL, &cur.KeywordTTL, "keywordTtl") ||
-		!applyDurField(w, req.ThinTTL, &cur.ThinTTL, "thinTtl") {
+	if !parseDurPatch(w, req.RSSTTL, &patch.RSSTTL, "rssTtl") ||
+		!parseDurPatch(w, req.KeywordTTL, &patch.KeywordTTL, "keywordTtl") ||
+		!parseDurPatch(w, req.ThinTTL, &patch.ThinTTL, "thinTtl") {
 		return
 	}
-	if req.ThinThreshold != nil {
-		cur.ThinThreshold = *req.ThinThreshold
-	}
-	if req.RefreshAheadPct != nil {
-		cur.RefreshAheadPct = *req.RefreshAheadPct
-	}
-	if err := cur.Validate(); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if err := rt.cache.SetConfig(r.Context(), cur); err != nil {
+	v, err := rt.cache.UpdateConfig(r.Context(), patch)
+	if err != nil {
+		if errors.Is(err, registry.ErrInvalidCacheConfig) {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		rt.writeServiceError(w, "cache.config", err)
 		return
 	}
-	// Echo exactly what this request applied (not a re-read, which a concurrent
-	// update could have changed).
-	writeJSON(w, http.StatusOK, toCacheConfigResponse(cur))
+	writeJSON(w, http.StatusOK, toCacheConfigResponse(v))
 }
 
-// applyDurField parses an optional duration string onto dst, writing a 400 and
-// returning false on a malformed value. A nil input leaves dst unchanged.
-func applyDurField(w http.ResponseWriter, in *string, dst *time.Duration, name string) bool {
+// parseDurPatch parses an optional positive duration string into a *time.Duration
+// patch field, writing a 400 and returning false on a malformed/non-positive value.
+// A nil input leaves the patch field nil (that knob is left unchanged).
+func parseDurPatch(w http.ResponseWriter, in *string, dst **time.Duration, name string) bool {
 	if in == nil {
 		return true
 	}
@@ -161,6 +158,6 @@ func applyDurField(w http.ResponseWriter, in *string, dst *time.Duration, name s
 			fmt.Sprintf("invalid duration for %s: %q (want a positive duration like \"10m\")", name, *in))
 		return false
 	}
-	*dst = d
+	*dst = &d
 	return true
 }
