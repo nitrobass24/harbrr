@@ -15,9 +15,14 @@ import (
 // durable figures come from the store; hitRatio (and its underlying hits/misses)
 // is a process-lifetime, non-persistent counter that resets on restart.
 type cacheStatsResponse struct {
-	Enabled         bool    `json:"enabled"`
-	Entries         int64   `json:"entries"`
-	TotalHits       int64   `json:"totalHits"`
+	Enabled   bool  `json:"enabled"`
+	Entries   int64 `json:"entries"`
+	TotalHits int64 `json:"totalHits"`
+	// Hits/Misses are the process-lifetime, non-persistent global counters (the sum
+	// across all indexers, the aggregate of the per-indexer byIndexer rows). hitRatio
+	// is hits / (hits + misses) over the same window. All three reset on restart.
+	Hits            int64   `json:"hits"`
+	Misses          int64   `json:"misses"`
 	HitRatio        float64 `json:"hitRatio"`
 	ApproxSizeBytes int64   `json:"approxSizeBytes"`
 	OldestCachedAt  *int64  `json:"oldestCachedAt"`
@@ -78,6 +83,8 @@ func (rt *router) cacheStats(w http.ResponseWriter, r *http.Request) {
 		Enabled:           rt.cache.Enabled(),
 		Entries:           stats.Entries,
 		TotalHits:         stats.TotalHits,
+		Hits:              stats.Hits,
+		Misses:            stats.Misses,
 		HitRatio:          stats.HitRatio,
 		ApproxSizeBytes:   stats.ApproxSizeBytes,
 		OldestCachedAt:    stats.OldestUnixSec,

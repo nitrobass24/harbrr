@@ -19,6 +19,8 @@ type cacheStatsBody struct {
 	Enabled           bool                 `json:"enabled"`
 	Entries           int64                `json:"entries"`
 	TotalHits         int64                `json:"totalHits"`
+	Hits              int64                `json:"hits"`
+	Misses            int64                `json:"misses"`
 	HitRatio          float64              `json:"hitRatio"`
 	ApproxSizeBytes   int64                `json:"approxSizeBytes"`
 	OldestCachedAt    *int64               `json:"oldestCachedAt"`
@@ -255,6 +257,19 @@ func TestCacheStatsHappyPath(t *testing.T) {
 	// trackerHitsSaved mirrors the durable totalHits (no hits served yet -> 0).
 	if stats.TrackerHitsSaved != stats.TotalHits {
 		t.Errorf("trackerHitsSaved = %d, want == totalHits %d", stats.TrackerHitsSaved, stats.TotalHits)
+	}
+	// The global hits/misses are the aggregate of the per-indexer rows (the global view
+	// the per-tracker breakdown was missing): summing byIndexer must reproduce them.
+	var sumHits, sumMisses int64
+	for _, row := range stats.ByIndexer {
+		sumHits += row.Hits
+		sumMisses += row.Misses
+	}
+	if stats.Hits != sumHits {
+		t.Errorf("global hits = %d, want == sum(byIndexer.hits) %d", stats.Hits, sumHits)
+	}
+	if stats.Misses != sumMisses {
+		t.Errorf("global misses = %d, want == sum(byIndexer.misses) %d", stats.Misses, sumMisses)
 	}
 }
 

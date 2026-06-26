@@ -1298,6 +1298,18 @@ components:
         enabled: { type: boolean, description: whether caching is configured }
         entries: { type: integer, format: int64, description: number of cached search results }
         totalHits: { type: integer, format: int64, description: durable sum of per-entry hit counts }
+        hits:
+          type: integer
+          format: int64
+          description: >
+            Global cache hits over the current process lifetime (the aggregate of the
+            per-indexer byIndexer rows). NON-PERSISTENT: resets on restart.
+        misses:
+          type: integer
+          format: int64
+          description: >
+            Global cache misses over the current process lifetime (the aggregate of the
+            per-indexer byIndexer rows). NON-PERSISTENT: resets on restart.
         hitRatio:
           type: number
           format: double
