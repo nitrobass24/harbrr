@@ -478,8 +478,14 @@ alpha ships with manual indexer setup — existing Prowlarr/Jackett users re-ent
       freeleech-aware release matching and optional freeleech-bypass logic (README "Cross-Seed Aware"):
       smarter release matching, search reuse/aggregation, reduced duplicate tracker activity. **Absorbs
       issue #10** (bypass FL tag on x-seed searches). *Detail TBD beyond the README's framing.*
-- [ ] **Better pagination support** — **issue #3**: table-stakes Torznab correctness for deep result
-      sets (offset/limit handling end-to-end). *Detail TBD.*
+- [x] **Better pagination support** — **issue #3**: a spec-correct, *superior-to-Jackett/Prowlarr*
+      feed — honest `<newznab:response offset total>` (Jackett omits it), correct offset/limit
+      windowing, and a paging-aware conditional-GET ETag (folds the page window so a revalidation
+      of one page can't be answered 304 with another's body) — plus a qui-shaped JSON API envelope
+      (`{results, total, hasMore, limit, offset}`). Page size stays default=max=100. Deep
+      server-side multi-page *upstream* fetching is deferred (post-alpha): `total` reflects the
+      single engine fetch that backs every page of a query. Lenient offset/limit clamping is a
+      recorded deliberate divergence (no strict spec-201 error).
 - [ ] **More \*arr sync targets** — Lidarr / Readarr / Mylar / Whisparr. The Phase-10 sync contract
       (target-neutral `DesiredIndexer` reconciled behind the `Target` interface) is built for
       Sonarr/Radarr/qui; extending it to another app is mostly a per-app adapter.
