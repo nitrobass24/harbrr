@@ -2,6 +2,8 @@ package torznab
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"strconv"
 	"strings"
@@ -89,6 +91,19 @@ func ifNoneMatchMatches(header, etag string) bool {
 		}
 	}
 	return false
+}
+
+// pagedETag folds this page's window into the cache layer's payload ETag so two feed
+// requests that share a cached result set but render different pages get distinct
+// validators. The payload ETag (searchcache.payloadETag) hashes the full pre-page
+// result set and the cache key excludes limit/offset — one engine fetch serves every
+// page — so without this fold a client revalidating page N with page M's ETag would be
+// answered 304 and reuse the wrong page. It hashes the page-independent payload ETag,
+// NOT the rendered body: the /dl-rewritten body varies by host/apikey, so hashing it
+// would leak request identity into the validator and never match across clients.
+func pagedETag(payloadETag string, offset, limit int) string {
+	sum := sha256.Sum256([]byte(payloadETag + "|" + strconv.Itoa(offset) + "|" + strconv.Itoa(limit)))
+	return `"` + hex.EncodeToString(sum[:]) + `"`
 }
 
 // setCacheValidators writes the ETag and Cache-Control headers for a cached response.

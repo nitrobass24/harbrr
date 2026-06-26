@@ -4,8 +4,11 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 )
 
 // feedClock is the fixed reference time for the conditional-GET handler tests.
@@ -117,15 +120,18 @@ func cachingIndexer(t *testing.T, etag string) *fakeIndexer {
 }
 
 // TestFeedEmitsValidators proves a cache-backed feed response carries ETag +
-// Cache-Control with the entry's remaining TTL as max-age.
+// Cache-Control with the entry's remaining TTL as max-age. The emitted ETag is the
+// served validator: the cache layer's payload ETag folded with this page's window
+// (offset=0, limit=defaultLimit for a window-less request).
 func TestFeedEmitsValidators(t *testing.T) {
 	t.Parallel()
 	rec := feedDo(t, cachingIndexer(t, `"abc"`), "t=search&q=x", nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	if got := rec.Header().Get("ETag"); got != `"abc"` {
-		t.Errorf("ETag = %q, want %q", got, `"abc"`)
+	want := pagedETag(`"abc"`, 0, defaultLimit)
+	if got := rec.Header().Get("ETag"); got != want {
+		t.Errorf("ETag = %q, want %q", got, want)
 	}
 	if got := rec.Header().Get("Cache-Control"); got != "private, max-age=300" {
 		t.Errorf("Cache-Control = %q, want private, max-age=300", got)
@@ -140,16 +146,17 @@ func TestFeedEmitsValidators(t *testing.T) {
 func TestFeedConditionalGet304(t *testing.T) {
 	t.Parallel()
 
+	served := pagedETag(`"abc"`, 0, defaultLimit)
 	rec := feedDo(t, cachingIndexer(t, `"abc"`), "t=search&q=x",
-		http.Header{"If-None-Match": {`"abc"`}})
+		http.Header{"If-None-Match": {served}})
 	if rec.Code != http.StatusNotModified {
 		t.Fatalf("status = %d, want 304", rec.Code)
 	}
 	if rec.Body.Len() != 0 {
 		t.Errorf("304 body = %q, want empty", rec.Body.String())
 	}
-	if rec.Header().Get("ETag") != `"abc"` {
-		t.Error("304 should still carry the ETag")
+	if rec.Header().Get("ETag") != served {
+		t.Error("304 should still carry the served ETag")
 	}
 	if got := rec.Header().Get("Cache-Control"); got != "private, max-age=300" {
 		t.Errorf("304 Cache-Control = %q, want private, max-age=300", got)
@@ -159,6 +166,51 @@ func TestFeedConditionalGet304(t *testing.T) {
 		http.Header{"If-None-Match": {`"stale"`}})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("non-matching If-None-Match status = %d, want 200", rec.Code)
+	}
+}
+
+// TestFeedConditionalGetPagingAware proves the served ETag folds in the page window,
+// so a client revalidating one page with a different page's ETag is NOT answered 304
+// with the wrong page's body. The cached payload ETag is page-independent (one engine
+// fetch serves every page), so without the fold the two pages would share a validator.
+func TestFeedConditionalGetPagingAware(t *testing.T) {
+	t.Parallel()
+	newIdx := func() *fakeIndexer {
+		idx := cachingIndexer(t, `"abc"`)
+		idx.releases = []*normalizer.Release{
+			demoRelease("P0", "https://rich.test/dl/0.torrent", []int{2000}),
+			demoRelease("P1", "https://rich.test/dl/1.torrent", []int{2000}),
+		}
+		return idx
+	}
+	// Page 1 (offset=0, limit=1): capture its served ETag and confirm it holds P0.
+	page1 := feedDo(t, newIdx(), "t=search&q=x&offset=0&limit=1", nil)
+	etag1 := page1.Header().Get("ETag")
+	if etag1 == "" {
+		t.Fatal("page 1 emitted no ETag")
+	}
+	if !strings.Contains(page1.Body.String(), "<title>P0</title>") {
+		t.Fatalf("page 1 should contain P0:\n%s", page1.Body.String())
+	}
+	// Revalidate page 2 (offset=1, limit=1) with page 1's ETag → must NOT be 304; it
+	// must serve page 2's body, and carry a distinct ETag.
+	page2 := feedDo(t, newIdx(), "t=search&q=x&offset=1&limit=1",
+		http.Header{"If-None-Match": {etag1}})
+	if page2.Code != http.StatusOK {
+		t.Fatalf("page 2 with page-1 ETag status = %d, want 200 (paging-aware ETag must not 304)", page2.Code)
+	}
+	if !strings.Contains(page2.Body.String(), "<title>P1</title>") {
+		t.Fatalf("page 2 should contain P1:\n%s", page2.Body.String())
+	}
+	etag2 := page2.Header().Get("ETag")
+	if etag2 == etag1 {
+		t.Errorf("page 2 ETag == page 1 ETag (%s); distinct pages must get distinct validators", etag2)
+	}
+	// Caching still works: revalidating page 2 with page 2's own ETag yields 304.
+	again := feedDo(t, newIdx(), "t=search&q=x&offset=1&limit=1",
+		http.Header{"If-None-Match": {etag2}})
+	if again.Code != http.StatusNotModified {
+		t.Fatalf("page 2 with its own ETag status = %d, want 304 (caching must still work)", again.Code)
 	}
 }
 
