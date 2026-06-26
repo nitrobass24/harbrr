@@ -159,6 +159,8 @@ type cacheConfigResponse struct {
 	RefreshAheadPct int    `json:"refreshAheadPct"`
 	// NegativeTTL is the negative-result circuit-breaker window ("0s" disables it).
 	NegativeTTL string `json:"negativeTtl"`
+	// CleanupInterval is how often expired entries are reaped (Go duration string).
+	CleanupInterval string `json:"cleanupInterval"`
 }
 
 // cacheConfigUpdate is the PUT body. Every field is optional (a nil field leaves
@@ -171,6 +173,7 @@ type cacheConfigUpdate struct {
 	ThinThreshold   *int    `json:"thinThreshold"`
 	RefreshAheadPct *int    `json:"refreshAheadPct"`
 	NegativeTTL     *string `json:"negativeTtl"`
+	CleanupInterval *string `json:"cleanupInterval"`
 }
 
 func toCacheConfigResponse(v registry.CacheConfigView) cacheConfigResponse {
@@ -182,6 +185,7 @@ func toCacheConfigResponse(v registry.CacheConfigView) cacheConfigResponse {
 		ThinThreshold:   v.ThinThreshold,
 		RefreshAheadPct: v.RefreshAheadPct,
 		NegativeTTL:     v.NegativeTTL.String(),
+		CleanupInterval: v.CleanupInterval.String(),
 	}
 }
 
@@ -216,6 +220,7 @@ func (rt *router) cacheConfigPut(w http.ResponseWriter, r *http.Request) {
 	if !parseDurPatch(w, req.RSSTTL, &patch.RSSTTL, "rssTtl") ||
 		!parseDurPatch(w, req.KeywordTTL, &patch.KeywordTTL, "keywordTtl") ||
 		!parseDurPatch(w, req.ThinTTL, &patch.ThinTTL, "thinTtl") ||
+		!parseDurPatch(w, req.CleanupInterval, &patch.CleanupInterval, "cleanupInterval") ||
 		!parseNonNegDurPatch(w, req.NegativeTTL, &patch.NegativeTTL, "negativeTtl") {
 		return
 	}

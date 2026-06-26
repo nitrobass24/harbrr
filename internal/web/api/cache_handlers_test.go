@@ -58,6 +58,7 @@ func newCacheParams() registry.SearchCacheParams {
 		ThinTTL:         2 * time.Minute,
 		ThinThreshold:   5,
 		RefreshAheadPct: 80,
+		CleanupInterval: time.Hour,
 	}
 }
 

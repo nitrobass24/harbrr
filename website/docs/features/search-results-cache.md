@@ -80,6 +80,12 @@ and a **per-request bypass**.
 These live under `cache:` in your `harbrr.yaml`. The values below are the defaults — you
 only need to add the keys you want to change.
 
+!!! tip "All of these are tunable at runtime — no restart"
+    Every knob below is also editable live via `PUT /api/cache/config` and takes effect
+    immediately (a `cleanup_interval` change applies on the next cleanup cycle). The config
+    file is just the seed; a value set through the API overrides it and persists across
+    restarts. `GET /api/cache/config` shows the live configuration.
+
 ```yaml
 cache:
   enabled: true          # master switch; set false to turn caching off entirely
@@ -102,7 +108,7 @@ What each one is for:
 | `thin_ttl` | A shorter memory for searches that came back nearly empty — the staggered-release catcher. | Lower it (e.g. `1m`) if you want even faster pickup of late-arriving qualities. |
 | `thin_threshold` | What counts as "nearly empty". | Raise it if your trackers return small result sets normally. |
 | `refresh_ahead_pct` | How early the background refresh kicks in. `80` = refresh during the last 20% of an entry's life. | Rarely changed. |
-| `cleanup_interval` | Housekeeping for expired rows. | Rarely changed. |
+| `cleanup_interval` | Housekeeping cadence for reaping expired rows (the ticker re-reads it live). | Rarely changed. |
 | `negative_ttl` | How long a tracker that just **failed** is left alone — the [circuit breaker](circuit-breaker.md). | Raise to be gentler on flaky trackers; `0s` disables. |
 
 #### The two TTL tiers, explained

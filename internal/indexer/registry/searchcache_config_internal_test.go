@@ -20,6 +20,7 @@ func fullPatch(v CacheConfigView) CacheConfigPatch {
 	return CacheConfigPatch{
 		Enabled: &v.Enabled, RSSTTL: &v.RSSTTL, KeywordTTL: &v.KeywordTTL,
 		ThinTTL: &v.ThinTTL, ThinThreshold: &v.ThinThreshold, RefreshAheadPct: &v.RefreshAheadPct,
+		NegativeTTL: &v.NegativeTTL, CleanupInterval: &v.CleanupInterval,
 	}
 }
 
@@ -38,6 +39,7 @@ func TestSearchCacheConfigRoundTrip(t *testing.T) {
 	want := CacheConfigView{
 		Enabled: false, RSSTTL: 10 * time.Minute, KeywordTTL: time.Hour,
 		ThinTTL: time.Minute, ThinThreshold: 3, RefreshAheadPct: 50,
+		NegativeTTL: 30 * time.Second, CleanupInterval: 2 * time.Hour,
 	}
 	if _, err := sc.UpdateConfig(ctx, fullPatch(want)); err != nil {
 		t.Fatalf("UpdateConfig: %v", err)
@@ -49,13 +51,31 @@ func TestSearchCacheConfigRoundTrip(t *testing.T) {
 	// Reset the in-memory tuning to the seed, then LoadOverrides must restore the
 	// persisted value from app_settings.
 	seed := seedTTL()
-	reset := cacheTuning{enabled: true, ttl: seed, refreshAt: 80}
+	reset := cacheTuning{enabled: true, ttl: seed, refreshAt: 80, cleanup: time.Hour}
 	sc.tuning.Store(&reset)
 	if err := sc.LoadOverrides(ctx); err != nil {
 		t.Fatalf("LoadOverrides: %v", err)
 	}
 	if sc.Config() != want {
 		t.Errorf("after LoadOverrides Config = %+v, want persisted %+v", sc.Config(), want)
+	}
+}
+
+// TestCleanupIntervalRuntimeTunable proves cleanup_interval is live-tunable: an
+// UpdateConfig swaps both the API view and the CleanupInterval() the ticker reads.
+func TestCleanupIntervalRuntimeTunable(t *testing.T) {
+	t.Parallel()
+	sc, _, _ := testCache(t, seedTTL(), 80)
+	if got := sc.CleanupInterval(); got != time.Hour {
+		t.Fatalf("seed CleanupInterval = %v, want 1h", got)
+	}
+	next := 15 * time.Minute
+	v, err := sc.UpdateConfig(context.Background(), CacheConfigPatch{CleanupInterval: &next})
+	if err != nil {
+		t.Fatalf("UpdateConfig: %v", err)
+	}
+	if v.CleanupInterval != next || sc.CleanupInterval() != next {
+		t.Fatalf("after update: view=%v accessor=%v, want %v", v.CleanupInterval, sc.CleanupInterval(), next)
 	}
 }
 
@@ -67,9 +87,10 @@ func TestSearchCacheConfigValidation(t *testing.T) {
 	sc, _, _ := testCache(t, seedTTL(), 80)
 	before := sc.Config()
 	for _, bad := range []CacheConfigView{
-		{RSSTTL: 0, KeywordTTL: time.Minute, ThinTTL: time.Minute},
-		{RSSTTL: time.Minute, KeywordTTL: time.Minute, ThinTTL: time.Minute, RefreshAheadPct: 150},
-		{RSSTTL: time.Minute, KeywordTTL: time.Minute, ThinTTL: time.Minute, ThinThreshold: -1},
+		{RSSTTL: 0, KeywordTTL: time.Minute, ThinTTL: time.Minute, CleanupInterval: time.Hour},
+		{RSSTTL: time.Minute, KeywordTTL: time.Minute, ThinTTL: time.Minute, RefreshAheadPct: 150, CleanupInterval: time.Hour},
+		{RSSTTL: time.Minute, KeywordTTL: time.Minute, ThinTTL: time.Minute, ThinThreshold: -1, CleanupInterval: time.Hour},
+		{RSSTTL: time.Minute, KeywordTTL: time.Minute, ThinTTL: time.Minute, CleanupInterval: 0},
 	} {
 		if _, err := sc.UpdateConfig(context.Background(), fullPatch(bad)); err == nil || !errors.Is(err, ErrInvalidCacheConfig) {
 			t.Errorf("UpdateConfig(%+v) err = %v, want ErrInvalidCacheConfig", bad, err)

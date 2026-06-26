@@ -1356,7 +1356,8 @@ components:
         thinThreshold: { type: integer, description: result count at or below which the thin clamp applies }
         refreshAheadPct: { type: integer, description: 'percent of a TTL after which a live hit fires one background refresh (0 disables)' }
         negativeTtl: { type: string, description: 'negative-result circuit-breaker window (Go duration, e.g. "1m0s"); "0s" disables the breaker' }
-      required: [enabled, rssTtl, keywordTtl, thinTtl, thinThreshold, refreshAheadPct, negativeTtl]
+        cleanupInterval: { type: string, description: 'how often expired entries are reaped (Go duration, e.g. "1h0m0s"); the cleanup ticker re-reads it live' }
+      required: [enabled, rssTtl, keywordTtl, thinTtl, thinThreshold, refreshAheadPct, negativeTtl, cleanupInterval]
 
     CacheConfigUpdate:
       type: object
@@ -1371,3 +1372,4 @@ components:
         thinThreshold: { type: integer }
         refreshAheadPct: { type: integer }
         negativeTtl: { type: string }
+        cleanupInterval: { type: string }
