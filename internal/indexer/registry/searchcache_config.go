@@ -61,6 +61,11 @@ const (
 	keyCacheCleanup       = "cache.cleanup_interval"
 )
 
+// MinCleanupInterval is the smallest accepted cleanup_interval. It floors the reap
+// cadence so a tiny value cannot turn the cleanup loop into a tight SQLite DELETE spin;
+// it is enforced both at config validation and at the runtime read (cleanupTickInterval).
+const MinCleanupInterval = time.Second
+
 // ErrInvalidCacheConfig wraps every cache-config validation failure so the API layer
 // can map it to a 400 (vs a 500 for a persistence error).
 var ErrInvalidCacheConfig = errors.New("invalid cache config")
@@ -70,7 +75,7 @@ var (
 	errThinThreshold    = fmt.Errorf("%w: thin_threshold must be >= 0", ErrInvalidCacheConfig)
 	errRefreshPct       = fmt.Errorf("%w: refresh_ahead_pct must be between 0 and 100", ErrInvalidCacheConfig)
 	errNegativeTTL      = fmt.Errorf("%w: negative_ttl must be >= 0 (0 disables the breaker)", ErrInvalidCacheConfig)
-	errCleanupInterval  = fmt.Errorf("%w: cleanup_interval must be a positive duration", ErrInvalidCacheConfig)
+	errCleanupInterval  = fmt.Errorf("%w: cleanup_interval must be at least %s", ErrInvalidCacheConfig, MinCleanupInterval)
 )
 
 func (t cacheTuning) view() CacheConfigView {
@@ -107,7 +112,7 @@ func (v CacheConfigView) Validate() error {
 		return errRefreshPct
 	case v.NegativeTTL < 0:
 		return errNegativeTTL
-	case v.CleanupInterval <= 0:
+	case v.CleanupInterval < MinCleanupInterval:
 		return errCleanupInterval
 	}
 	return nil

@@ -91,6 +91,9 @@ func TestSearchCacheConfigValidation(t *testing.T) {
 		{RSSTTL: time.Minute, KeywordTTL: time.Minute, ThinTTL: time.Minute, RefreshAheadPct: 150, CleanupInterval: time.Hour},
 		{RSSTTL: time.Minute, KeywordTTL: time.Minute, ThinTTL: time.Minute, ThinThreshold: -1, CleanupInterval: time.Hour},
 		{RSSTTL: time.Minute, KeywordTTL: time.Minute, ThinTTL: time.Minute, CleanupInterval: 0},
+		// Below the floor (MinCleanupInterval) is rejected too, not just non-positive —
+		// a sub-second reap cadence would spin the cleanup loop.
+		{RSSTTL: time.Minute, KeywordTTL: time.Minute, ThinTTL: time.Minute, CleanupInterval: time.Millisecond},
 	} {
 		if _, err := sc.UpdateConfig(context.Background(), fullPatch(bad)); err == nil || !errors.Is(err, ErrInvalidCacheConfig) {
 			t.Errorf("UpdateConfig(%+v) err = %v, want ErrInvalidCacheConfig", bad, err)

@@ -298,14 +298,21 @@ func startSearchCacheCleanup(ctx context.Context, sc *registry.SearchCache, log 
 	}()
 }
 
-// cleanupTickInterval reads the cache's live cleanup interval, defaulting a
-// non-positive value to 1h so the ticker can never busy-loop (validation already
-// rejects a non-positive cleanup_interval; this is belt-and-suspenders).
+// cleanupTickInterval reads the cache's live cleanup interval and keeps the reap loop
+// from spinning: a non-positive value (unset) defaults to 1h, and a positive value
+// below registry.MinCleanupInterval is floored to it. Config validation already
+// enforces the same floor for API-set values; this also guards a config-file seed,
+// which bypasses validation.
 func cleanupTickInterval(sc *registry.SearchCache) time.Duration {
-	if d := sc.CleanupInterval(); d > 0 {
+	d := sc.CleanupInterval()
+	switch {
+	case d <= 0:
+		return time.Hour
+	case d < registry.MinCleanupInterval:
+		return registry.MinCleanupInterval
+	default:
 		return d
 	}
-	return time.Hour
 }
 
 // logStartup logs the resolved listen/serving parameters.

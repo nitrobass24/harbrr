@@ -119,6 +119,23 @@ func TestNewSearchResponse(t *testing.T) {
 			}
 		})
 	}
+
+	// Results must be the SECOND argument (the link-resolved page), not res.Releases —
+	// the sealed-link copies are what reach the client, while the paging metadata still
+	// derives from res. Use a distinct resolved slice so the two cannot be confused.
+	t.Run("results come from the resolved arg", func(t *testing.T) {
+		t.Parallel()
+		res := torznab.SearchResult{Releases: []*normalizer.Release{rel("raw")}, Total: 1, Offset: 0, Limit: 10}
+		resolved := []*normalizer.Release{rel("resolved-a"), rel("resolved-b")}
+		got := newSearchResponse(res, resolved)
+		if len(got.Results) != 2 || got.Results[0].Title != "resolved-a" || got.Results[1].Title != "resolved-b" {
+			t.Errorf("Results = %+v, want the resolved slice [resolved-a resolved-b]", got.Results)
+		}
+		// Paging metadata is unaffected by the resolved slice — it comes from res.
+		if got.Total != 1 || got.Offset != 0 || got.Limit != 10 || got.HasMore {
+			t.Errorf("paging metadata should derive from res, got %+v", got)
+		}
+	})
 }
 
 // TestResolveSearchLinksSealsResolverLink proves a resolver-needing indexer's
