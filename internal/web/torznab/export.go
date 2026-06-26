@@ -13,6 +13,18 @@ import (
 	tzn "github.com/autobrr/harbrr/internal/torznab"
 )
 
+// SearchResult is the processed output of the shared read pipeline: the releases for
+// the requested page plus the paging metadata the feed and the JSON API report. Total
+// is the full match count after dedupe+filter but BEFORE the page slice, so a consumer
+// can see how many results exist beyond the current window; Offset/Limit are the
+// resolved page bounds (after clamping). It is what both surfaces page over identically.
+type SearchResult struct {
+	Releases []*normalizer.Release
+	Total    int
+	Offset   int
+	Limit    int
+}
+
 // SearchReleases runs the shared read pipeline behind the Torznab feed's general
 // search (t=search) and returns the processed releases: it maps the request params
 // to the engine query, searches, de-duplicates by guid, drops categories the query
@@ -22,24 +34,33 @@ import (
 // format (JSON vs XML) and that the caller resolves resolver-needing links itself
 // via NewDLRewriter. It does NOT validate the t= mode (the JSON endpoint is general
 // search); a caller needing mode gating does it before calling.
-func SearchReleases(ctx context.Context, idx Indexer, q url.Values) ([]*normalizer.Release, error) {
+func SearchReleases(ctx context.Context, idx Indexer, q url.Values) (SearchResult, error) {
 	return searchReleases(ctx, idx, idx.Capabilities(), q)
 }
 
 // searchReleases is the shared pipeline worker. writeResults passes the caps it
 // already resolved (for mode validation) so they are not recomputed.
-func searchReleases(ctx context.Context, idx Indexer, caps *mapper.Capabilities, q url.Values) ([]*normalizer.Release, error) {
+func searchReleases(ctx context.Context, idx Indexer, caps *mapper.Capabilities, q url.Values) (SearchResult, error) {
 	query, requestedCats := buildQuery(q, caps)
 	if wantsNoCache(q) {
 		ctx = WithCacheBypass(ctx)
 	}
 	releases, err := idx.Search(ctx, query)
 	if err != nil {
-		return nil, fmt.Errorf("torznab: search: %w", err)
+		return SearchResult{}, fmt.Errorf("torznab: search: %w", err)
 	}
 	// Jackett pipeline order: FixResults (dedupe) -> FilterResults (category drop) -> page.
 	releases = filterResults(dedupeByGUID(releases), requestedCats, caps)
-	return parsePaging(q).apply(releases), nil
+	// Total is measured here — post-dedupe/post-filter, PRE-slice — so the feed's
+	// <newznab:response total> and the JSON API's hasMore reflect the full match count.
+	total := len(releases)
+	pg := parsePaging(q)
+	return SearchResult{
+		Releases: pg.apply(releases),
+		Total:    total,
+		Offset:   pg.offset,
+		Limit:    pg.limit,
+	}, nil
 }
 
 // DLBaseURL builds the externally-visible /dl endpoint base for an indexer from the

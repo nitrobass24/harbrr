@@ -29,8 +29,11 @@ func TestSearchReleasesPipeline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SearchReleases: %v", err)
 	}
-	if len(got) != 2 {
-		t.Fatalf("expected 2 releases after dedupe, got %d", len(got))
+	if len(got.Releases) != 2 {
+		t.Fatalf("expected 2 releases after dedupe, got %d", len(got.Releases))
+	}
+	if got.Total != 2 {
+		t.Errorf("Total = %d, want 2 (post-dedupe, pre-slice)", got.Total)
 	}
 	if idx.gotQuery.Keywords != "x" {
 		t.Errorf("query mapping did not reach the engine: keywords=%q", idx.gotQuery.Keywords)

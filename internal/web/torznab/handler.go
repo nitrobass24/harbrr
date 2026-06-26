@@ -301,7 +301,7 @@ func (h *handler) writeResults(w http.ResponseWriter, r *http.Request, idx Index
 	}
 	// searchReleases is the shared read pipeline (map -> search -> dedupe -> filter
 	// -> page); the management API's JSON search runs the same code for parity.
-	releases, err := searchReleases(ctx, idx, caps, q)
+	res, err := searchReleases(ctx, idx, caps, q)
 	if err != nil {
 		h.writeInternalError(w, "search", idx.Info().ID, err)
 		return
@@ -315,7 +315,7 @@ func (h *handler) writeResults(w http.ResponseWriter, r *http.Request, idx Index
 			return
 		}
 	}
-	body, err := tzn.MarshalResultsRewritten(h.feedInfo(r, idx), releases, h.clock(), h.dlRewriter(r, idx))
+	body, err := tzn.MarshalResultsRewritten(h.feedInfo(r, idx), res.Releases, h.clock(), h.dlRewriter(r, idx))
 	if err != nil {
 		h.writeInternalError(w, "results", idx.Info().ID, err)
 		return

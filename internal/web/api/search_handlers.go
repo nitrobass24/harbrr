@@ -29,12 +29,12 @@ func (rt *router) searchIndexer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	releases, err := torznab.SearchReleases(r.Context(), idx, r.URL.Query())
+	res, err := torznab.SearchReleases(r.Context(), idx, r.URL.Query())
 	if err != nil {
 		rt.writeServiceError(w, "search indexer", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, searchResponse{Results: rt.resolveSearchLinks(r, idx, releases)})
+	writeJSON(w, http.StatusOK, searchResponse{Results: rt.resolveSearchLinks(r, idx, res.Releases)})
 }
 
 // resolveSearchLinks returns copies of the releases with download links made safe to
