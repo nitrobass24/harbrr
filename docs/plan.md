@@ -439,15 +439,34 @@ alpha ships with manual indexer setup — existing Prowlarr/Jackett users re-ent
    - [x] **User-facing docs + divergence** — `website/docs/features/usenet-newznab.md` (MkDocs nav) +
          `[Deliberate]` proxy divergence in `internal/indexer/native/newznab/testdata/README.md` +
          `coverage.md`. Live validation deferred (needs a real usenet apikey; opportunistic, not a gate).
-- [ ] **Shared RSS-feed caching** — fetch a tracker's RSS/feed once and serve every consumer
-      (Sonarr/Radarr/autobrr/cross-seed) from the cached copy instead of each app polling the tracker
-      independently. The README's headline value: lower tracker load, fewer duplicate requests, better
-      private-tracker citizenship. Builds on the shipped search-cache seams (#60). *Detail TBD (cache
-      key/granularity, TTL, invalidation, per-consumer views).*
-- [ ] **Fabric-wide tracker-friendly pacing** — global, per-tracker throttling across *all* consumers
-      (not just per-indexer pacing), so the aggregate rate harbrr presents to a tracker stays polite no
-      matter how many apps sit behind it. Makes the caching above actually "kind to trackers." *Detail TBD
-      (relation to the existing per-indexer paced client / `ClientParams`).*
+- [x] **Shared RSS-feed caching** — **shipped in substance by #60** and verified 2026-06-26. The search
+      cache keys on `(instanceID, canonical query)` with **no consumer identity**
+      (`internal/indexer/registry/searchcache_key.go`), wraps **both** the Torznab feed and the JSON search,
+      caches empty/RSS polls under the `rss` TTL tier (`searchcache_ttl.go`), and uses **SWR +
+      singleflight** so a tracker sees **≤1 fetch per TTL across all consumers**
+      (`searchcache.go`). So every consumer (Sonarr/Radarr/autobrr/cross-seed) is served from one cached
+      copy instead of each polling the tracker. The literal residual — **cross-category-set superset
+      dedup** (consumers polling disjoint `cat=` subsets make separate entries) — is **deferred**: categories
+      flow into the real tracker request via `{{ .Categories }}` and the thin-clamp measures raw result
+      count, so a superset-fetch-then-slice would change the outbound request shape and break thin-clamp /
+      parity semantics for a narrow real-world win.
+- [x] **Fabric-wide tracker-friendly pacing** — **shipped** and verified 2026-06-26. A **process-wide
+      per-host `rate.Limiter`** (`hostLimiters`, **strictest-wins**) fronts **every** Cardigann + native
+      driver request, the caps probe, and `/dl` (`internal/indexer/registry/pacedclient.go`, `client.go`),
+      so the aggregate rate harbrr presents to a tracker stays polite no matter how many apps sit behind it.
+      The per-host limiter is global (keyed by host, not instance), with bounded 429/503 backoff honoring
+      `Retry-After`. **User-configurable** per-host rate is **deferred** (Tier-2): `ClientParams.RateInterval`
+      is captured at adapter-build time and limiters are created per-host strictest-wins, so a *live* global
+      floor is a real plumb-through, not a settings-only change.
+- [x] **Negative-result circuit breaker** *(new, kind-to-trackers)* — after a live search to a tracker
+      fails, further cache misses for that instance short-circuit to the recorded error for a short window
+      instead of re-driving the tracker (anti-thundering-herd; rate-limit responses honor `Retry-After`). A
+      still-fresh positive cache entry is never affected. Runtime-tunable `negative_ttl` knob (default 1m;
+      `0s` disables) via the #70 app-settings path. `internal/indexer/registry/searchcache_breaker.go`.
+- [x] **Cache/pacing observability** *(new)* — `GET /api/cache/stats` exposes `trackerHitsSaved` (durable
+      tracker requests served from cache — the headline value metric), `breakerSuppressed`, and a
+      `byIndexer[]` per-indexer breakdown (hit ratio, hits saved, breaker open-state). Store
+      `StatsByInstance` (`internal/database/searchcache.go`) + engine merge (`searchcache_manage.go`).
 - [ ] **Cross-seed backend + freeleech-aware matching** — a cross-seed search backend, plus
       freeleech-aware release matching and optional freeleech-bypass logic (README "Cross-Seed Aware"):
       smarter release matching, search reuse/aggregation, reduced duplicate tracker activity. **Absorbs
