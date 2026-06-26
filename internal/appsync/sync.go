@@ -87,6 +87,11 @@ func (s *Service) buildDesired(ctx context.Context, instances []domain.IndexerIn
 		if conn.IndexScope == domain.IndexScopeSelected && !selected[inst.ID] {
 			continue
 		}
+		// qui is a torrent-only Torznab consumer (POST /api/torznab/indexers); it has no
+		// usenet/Newznab notion, so a usenet indexer is never pushed to it.
+		if conn.Kind == domain.AppKindQui && inst.Protocol == servarrUsenetProtocol {
+			continue
+		}
 		cats, err := s.source.Categories(ctx, inst.Slug)
 		if err != nil {
 			return nil, fmt.Errorf("appsync: categories for %q: %w", inst.Slug, err)
@@ -98,7 +103,7 @@ func (s *Service) buildDesired(ctx context.Context, instances []domain.IndexerIn
 		out = append(out, DesiredIndexer{
 			Slug: inst.Slug, Name: inst.Name, FeedURL: feedURL(conn.HarbrrURL, inst.Slug),
 			APIKey: harbrrKey, Categories: cats, Capabilities: caps,
-			Priority: conn.Priority, Enabled: inst.Enabled,
+			Priority: conn.Priority, Enabled: inst.Enabled, Protocol: inst.Protocol,
 		})
 	}
 	return out, nil

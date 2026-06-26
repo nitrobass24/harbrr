@@ -17,9 +17,16 @@ const (
 	atomNamespace    = "http://www.w3.org/2005/Atom"
 	torznabNamespace = "http://torznab.com/schemas/2015/feed"
 	enclosureType    = "application/x-bittorrent"
+	enclosureTypeNZB = "application/x-nzb"
 	feedLanguage     = "en-US"  // ChannelInfo default
 	feedCategory     = "search" // ChannelInfo default
 )
+
+// ProtocolUsenet is the FeedInfo.Protocol value that selects usenet rendering
+// (NZB enclosure + suppressed torrent attrs). It mirrors the loader's
+// ProtocolUsenet constant; the empty/default and any other value render the
+// torrent feed unchanged.
+const ProtocolUsenet = "usenet"
 
 // FeedInfo carries the indexer identity and feed metadata the results document
 // needs. It is sourced from the loaded definition (Name/Description/SiteLink/
@@ -31,7 +38,11 @@ type FeedInfo struct {
 	Description string
 	SiteLink    string
 	Type        string
-	SelfURL     string
+	// Protocol is the acquisition protocol: "usenet" emits an
+	// application/x-nzb enclosure and suppresses the torrent stat/factor
+	// attrs; anything else (the default) renders the torrent feed unchanged.
+	Protocol string
+	SelfURL  string
 }
 
 type rssFeed struct {
@@ -189,22 +200,37 @@ func buildItem(feed FeedInfo, r *normalizer.Release, now time.Time, rewrite Acqu
 		Description: sanitizeXMLText(r.Description),
 		Link:        link,
 		Categories:  r.Categories,
-		Enclosure:   enclosure{URL: link, Length: r.Size, Type: enclosureType},
+		Enclosure:   enclosure{URL: link, Length: r.Size, Type: enclosureTypeFor(feed)},
 	}
-	item.Attrs = buildAttrs(r)
+	item.Attrs = buildAttrs(feed, r)
 	return item
 }
 
+// enclosureTypeFor returns the <enclosure type> for the feed's protocol: a
+// usenet feed advertises application/x-nzb; any other (the default) advertises
+// the torrent application/x-bittorrent.
+func enclosureTypeFor(feed FeedInfo) string {
+	if feed.Protocol == ProtocolUsenet {
+		return enclosureTypeNZB
+	}
+	return enclosureType
+}
+
 // buildAttrs builds the torznab:attr block in Jackett's exact order: category
-// attrs, then external ids, then media fields, then torrent stats/factors.
-func buildAttrs(r *normalizer.Release) []torznabAttr {
+// attrs, then external ids, then media fields, then (torrent only) torrent
+// stats/factors. A usenet feed suppresses the torrent block: seeders/peers and
+// the volume factors are meaningless there and *arr reads their presence as a
+// torrent signal. Category/external-id/media attrs are protocol-agnostic.
+func buildAttrs(feed FeedInfo, r *normalizer.Release) []torznabAttr {
 	attrs := make([]torznabAttr, 0, 16)
 	for _, c := range r.Categories {
 		attrs = appendAttr(attrs, "category", strconv.Itoa(c))
 	}
 	attrs = appendExternalIDAttrs(attrs, r)
 	attrs = appendMediaAttrs(attrs, r)
-	attrs = appendTorrentAttrs(attrs, r)
+	if feed.Protocol != ProtocolUsenet {
+		attrs = appendTorrentAttrs(attrs, r)
+	}
 	return attrs
 }
 

@@ -22,6 +22,9 @@ const (
 	servarrImplementation = "Torznab"
 	servarrConfigContract = "TorznabSettings"
 	servarrProtocol       = "torrent"
+	servarrNewznabImpl    = "Newznab"
+	servarrNewznabConfig  = "NewznabSettings"
+	servarrUsenetProtocol = "usenet"
 	servarrIndexerPath    = "/api/v3/indexer"
 	newznabAnimeCategory  = 5070
 )
@@ -87,12 +90,19 @@ func (s *servarrDriver) buildIndexer(d DesiredIndexer) servarrIndexer {
 	if s.anime {
 		fields = append(fields, field("animeCategories", animeCats(ids)))
 	}
+	// Usenet indexers register as Newznab; everything else (including an empty Protocol)
+	// stays Torznab. The fields[] set above is legal for both — NewznabSettings carries
+	// the same baseUrl/apiPath/apiKey/categories (+ Sonarr animeCategories) names.
+	impl, cfg, proto := servarrImplementation, servarrConfigContract, servarrProtocol
+	if d.Protocol == servarrUsenetProtocol {
+		impl, cfg, proto = servarrNewznabImpl, servarrNewznabConfig, servarrUsenetProtocol
+	}
 	return servarrIndexer{
 		Name:                    d.Name,
-		Implementation:          servarrImplementation,
-		ImplementationName:      servarrImplementation,
-		ConfigContract:          servarrConfigContract,
-		Protocol:                servarrProtocol,
+		Implementation:          impl,
+		ImplementationName:      impl,
+		ConfigContract:          cfg,
+		Protocol:                proto,
 		EnableRss:               d.Enabled,
 		EnableAutomaticSearch:   d.Enabled,
 		EnableInteractiveSearch: d.Enabled,
@@ -111,7 +121,11 @@ func (s *servarrDriver) List(ctx context.Context) ([]RemoteIndexer, error) {
 	}
 	out := make([]RemoteIndexer, 0, len(raw))
 	for _, r := range raw {
-		if !strings.EqualFold(r.Implementation, servarrImplementation) {
+		// Both implementations are harbrr-managed: Torznab (torrent) and Newznab
+		// (usenet). Missing either here would make harbrr-managed usenet rows invisible
+		// to reconcile and silently orphan them.
+		if !strings.EqualFold(r.Implementation, servarrImplementation) &&
+			!strings.EqualFold(r.Implementation, servarrNewznabImpl) {
 			continue
 		}
 		feedURL := fieldString(r.Fields, "baseUrl")

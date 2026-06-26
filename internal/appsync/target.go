@@ -42,6 +42,11 @@ type DesiredIndexer struct {
 	Capabilities []string
 	Priority     int
 	Enabled      bool
+	// Protocol is the remote download protocol the app should register this indexer
+	// under: "torrent" (Torznab, the default for an empty value) or "usenet" (Newznab).
+	// It selects the Servarr Implementation/ConfigContract/protocol; qui has no usenet
+	// notion and skips usenet indexers entirely (see buildDesired).
+	Protocol string
 }
 
 // CategoryIDs returns just the numeric ids (Servarr's categories field).
@@ -66,6 +71,12 @@ func (d DesiredIndexer) hash() string {
 	sort.Strings(caps)
 	h := sha256.New()
 	fmt.Fprintf(h, "%s\x00%s\x00%v\x00%v\x00%d\x00%t", d.Name, d.FeedURL, cats, caps, d.Priority, d.Enabled)
+	// Protocol joins the fingerprint only when it diverges from the torrent default,
+	// so a pre-usenet torrent indexer keeps its original PayloadHash (no spurious
+	// re-sync on upgrade); a usenet indexer fingerprints distinctly.
+	if d.Protocol != "" && d.Protocol != "torrent" {
+		fmt.Fprintf(h, "\x00%s", d.Protocol)
+	}
 	return hex.EncodeToString(h.Sum(nil))
 }
 

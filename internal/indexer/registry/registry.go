@@ -32,6 +32,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/native/hdbits"
 	"github.com/autobrr/harbrr/internal/indexer/native/iptorrents"
 	"github.com/autobrr/harbrr/internal/indexer/native/myanonamouse"
+	"github.com/autobrr/harbrr/internal/indexer/native/newznab"
 	"github.com/autobrr/harbrr/internal/indexer/native/passthepopcorn"
 	"github.com/autobrr/harbrr/internal/indexer/native/torrentday"
 	"github.com/autobrr/harbrr/internal/web/torznab"
@@ -330,6 +331,7 @@ func nativeFamilies() map[string]native.Family {
 		gazelle.Families(),
 		gazellegames.Families(),
 		hdbits.Families(),
+		newznab.Families(),
 		passthepopcorn.Families(),
 		torrentday.Families(),
 	} {
@@ -455,6 +457,10 @@ func indexerInfo(inst domain.IndexerInstance, def *loader.Definition) torznab.In
 		Description: def.Description,
 		SiteLink:    site,
 		Type:        def.Type,
+		// Protocol is read from the persisted instance (the denormalized column),
+		// not re-derived from the def, so the served identity matches what app-sync
+		// reads and stays stable if a def is ever updated under an existing instance.
+		Protocol: inst.Protocol,
 	}
 }
 

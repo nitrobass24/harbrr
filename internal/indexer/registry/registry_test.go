@@ -327,6 +327,33 @@ func TestIndexerDisabledNotResolved(t *testing.T) {
 	}
 }
 
+// TestAddPersistsProtocolFromDefinition proves Add derives the instance protocol
+// from the definition's EffectiveProtocol. The testtracker def is torrent-only
+// (no protocol field), so it must persist "torrent" both on the returned
+// instance and after a round-trip through GetBySlug.
+func TestAddPersistsProtocolFromDefinition(t *testing.T) {
+	t.Parallel()
+
+	reg, db := newRegistry(t, nil)
+	ctx := context.Background()
+
+	inst, err := reg.Add(ctx, registry.AddParams{Slug: "tt", DefinitionID: "testtracker"})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if inst.Protocol != "torrent" {
+		t.Errorf("returned instance protocol = %q, want torrent", inst.Protocol)
+	}
+
+	got, err := database.Instances{}.GetBySlug(ctx, db, "tt")
+	if err != nil {
+		t.Fatalf("GetBySlug: %v", err)
+	}
+	if got.Protocol != "torrent" {
+		t.Errorf("persisted protocol = %q, want torrent", got.Protocol)
+	}
+}
+
 func TestAddRejectsUnknownDefAndDuplicate(t *testing.T) {
 	t.Parallel()
 

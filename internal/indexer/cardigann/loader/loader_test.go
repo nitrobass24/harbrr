@@ -357,3 +357,27 @@ func TestLoadAllVendoredCorpus(t *testing.T) {
 		t.Fatalf("LoadAll skipped %d vendored definitions; expected empty skip-list", len(skipped))
 	}
 }
+
+func TestEffectiveProtocol(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{"empty defaults to torrent", "", ProtocolTorrent},
+		{"explicit torrent", ProtocolTorrent, ProtocolTorrent},
+		{"usenet", ProtocolUsenet, ProtocolUsenet},
+		{"unknown value falls back to torrent", "garbage", ProtocolTorrent},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			d := &Definition{Protocol: tt.raw}
+			if got := d.EffectiveProtocol(); got != tt.want {
+				t.Errorf("EffectiveProtocol(%q) = %q, want %q", tt.raw, got, tt.want)
+			}
+		})
+	}
+}

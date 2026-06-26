@@ -27,9 +27,9 @@ const timeLayout = time.RFC3339
 func (Instances) Insert(ctx context.Context, q dbinterface.Execer, inst domain.IndexerInstance) (int64, error) {
 	res, err := q.ExecContext(
 		ctx,
-		q.Rebind(`INSERT INTO indexer_instances (slug, definition_id, name, base_url, enabled, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`),
-		inst.Slug, inst.DefinitionID, inst.Name, inst.BaseURL, boolToInt(inst.Enabled),
+		q.Rebind(`INSERT INTO indexer_instances (slug, definition_id, name, base_url, enabled, protocol, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
+		inst.Slug, inst.DefinitionID, inst.Name, inst.BaseURL, boolToInt(inst.Enabled), inst.Protocol,
 		inst.CreatedAt.UTC().Format(timeLayout), inst.UpdatedAt.UTC().Format(timeLayout),
 	)
 	if err != nil {
@@ -87,7 +87,7 @@ func (Instances) UpsertSetting(ctx context.Context, q dbinterface.Execer, instan
 // GetBySlug returns the instance with the given slug, or ErrNotFound.
 func (Instances) GetBySlug(ctx context.Context, q dbinterface.Execer, slug string) (domain.IndexerInstance, error) {
 	row := q.QueryRowContext(ctx,
-		q.Rebind(`SELECT id, slug, definition_id, name, base_url, enabled, created_at, updated_at
+		q.Rebind(`SELECT id, slug, definition_id, name, base_url, enabled, protocol, created_at, updated_at
 		 FROM indexer_instances WHERE slug = ?`), slug)
 	inst, err := scanInstance(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -132,7 +132,7 @@ func (Instances) Settings(ctx context.Context, q dbinterface.Execer, instanceID 
 // List returns all instances ordered by slug.
 func (Instances) List(ctx context.Context, q dbinterface.Execer) ([]domain.IndexerInstance, error) {
 	rows, err := q.QueryContext(ctx,
-		`SELECT id, slug, definition_id, name, base_url, enabled, created_at, updated_at
+		`SELECT id, slug, definition_id, name, base_url, enabled, protocol, created_at, updated_at
 		 FROM indexer_instances ORDER BY slug`)
 	if err != nil {
 		return nil, fmt.Errorf("database: list instances: %w", err)
@@ -203,7 +203,7 @@ func scanInstance(s interface{ Scan(...any) error }) (domain.IndexerInstance, er
 		enabled              int
 		createdAt, updatedAt string
 	)
-	if err := s.Scan(&inst.ID, &inst.Slug, &inst.DefinitionID, &inst.Name, &baseURL, &enabled, &createdAt, &updatedAt); err != nil {
+	if err := s.Scan(&inst.ID, &inst.Slug, &inst.DefinitionID, &inst.Name, &baseURL, &enabled, &inst.Protocol, &createdAt, &updatedAt); err != nil {
 		return domain.IndexerInstance{}, err //nolint:wrapcheck // sql.ErrNoRows is matched by the caller; other errors wrap there.
 	}
 	inst.BaseURL = baseURL.String

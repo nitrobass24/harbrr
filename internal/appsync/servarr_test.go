@@ -173,6 +173,65 @@ func TestSonarrBuildIndexerGolden(t *testing.T) {
 	assertGolden(t, "sonarr_create.golden.json", drv.buildIndexer(d))
 }
 
+func TestSonarrBuildIndexerUsenetGolden(t *testing.T) {
+	t.Parallel()
+	drv := newServarr("sonarr", "http://sonarr:8989", "app-key", nil, true)
+	d := DesiredIndexer{
+		Slug: "anime-tracker", Name: "Anime Tracker", Priority: 25, Enabled: true,
+		FeedURL:    "http://harbrr:8787/api/v2.0/indexers/anime-tracker/results/torznab",
+		APIKey:     "harbrr-feed-key",
+		Categories: []Category{{5000, "TV"}, {5040, "TV/HD"}, {5070, "TV/Anime"}, {2000, "Movies"}},
+		Protocol:   "usenet",
+	}
+	got := drv.buildIndexer(d)
+	// Only the four header fields flip for usenet; fields[] stays identical to torrent.
+	if got.Implementation != "Newznab" || got.ImplementationName != "Newznab" ||
+		got.ConfigContract != "NewznabSettings" || got.Protocol != "usenet" {
+		t.Errorf("usenet header wrong: impl=%q implName=%q cfg=%q proto=%q",
+			got.Implementation, got.ImplementationName, got.ConfigContract, got.Protocol)
+	}
+	assertGolden(t, "sonarr_create_usenet.golden.json", got)
+}
+
+func TestServarrBuildIndexerTorrentUnchanged(t *testing.T) {
+	t.Parallel()
+	drv := newServarr("radarr", "http://radarr:7878", "app-key", nil, false)
+	// Empty Protocol and explicit "torrent" both yield the unchanged Torznab body.
+	for _, proto := range []string{"", "torrent"} {
+		got := drv.buildIndexer(DesiredIndexer{Slug: "s", Name: "s", Protocol: proto})
+		if got.Implementation != "Torznab" || got.ImplementationName != "Torznab" ||
+			got.ConfigContract != "TorznabSettings" || got.Protocol != "torrent" {
+			t.Errorf("protocol %q: torrent body changed: %+v", proto, got)
+		}
+	}
+}
+
+func TestServarrListRecognizesNewznab(t *testing.T) {
+	t.Parallel()
+	stub := newServarrStub(t)
+	srv := httptest.NewServer(stub.handler())
+	t.Cleanup(srv.Close)
+	ctx := context.Background()
+
+	drv := NewSonarr(srv.URL, "app-key", srv.Client())
+	// Push a usenet (Newznab) indexer, then confirm List tags it harbrr-managed — a
+	// missing Newznab case here would orphan it on the next full sync.
+	if _, err := drv.Create(ctx, DesiredIndexer{
+		Slug: "usenet-tracker", Name: "Usenet Tracker", Protocol: "usenet",
+		FeedURL: "http://harbrr:8787/api/v2.0/indexers/usenet-tracker/results/torznab",
+		APIKey:  "k",
+	}); err != nil {
+		t.Fatalf("Create usenet: %v", err)
+	}
+	remote, err := drv.List(ctx)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(remote) != 1 || remote[0].ManagedBySlug != "usenet-tracker" {
+		t.Fatalf("List = %+v, want one managed Newznab row slug=usenet-tracker", remote)
+	}
+}
+
 // --- shared test helpers ---
 
 func assertGolden(t *testing.T, name string, v any) {

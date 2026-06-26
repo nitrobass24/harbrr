@@ -364,6 +364,86 @@ func TestResultsPrivateIndexer(t *testing.T) {
 	}
 }
 
+// TestResultsUsenetProtocol pins the two serializer gates for a usenet feed:
+// (A) the <enclosure> advertises application/x-nzb instead of the torrent
+// application/x-bittorrent, and (B) the torrent-only torznab:attrs
+// (seeders/peers/downloadvolumefactor/uploadvolumefactor) are suppressed, while
+// the protocol-agnostic category/external-id/media attrs remain. The same
+// release rendered as a torrent feed keeps the torrent enclosure and attrs,
+// proving torrent behavior is unchanged.
+func TestResultsUsenetProtocol(t *testing.T) {
+	t.Parallel()
+	// A release carrying torrent-shaped stats; for usenet these must be dropped.
+	rel := func() *normalizer.Release {
+		return &normalizer.Release{
+			Title:                "Usenet.Release.2024.1080p",
+			Link:                 "https://demo.test/getnzb/42.nzb",
+			Size:                 1073741824,
+			Categories:           []int{2040},
+			Seeders:              7,
+			Peers:                9,
+			Grabs:                3,
+			IMDBID:               "tt0903747",
+			Year:                 2024,
+			DownloadVolumeFactor: 1,
+			UploadVolumeFactor:   1,
+		}
+	}
+
+	suppressed := []string{
+		`name="seeders"`,
+		`name="peers"`,
+		`name="downloadvolumefactor"`,
+		`name="uploadvolumefactor"`,
+	}
+	kept := []string{
+		`name="category" value="2040"`,
+		`name="imdbid" value="tt0903747"`,
+		`name="year" value="2024"`,
+	}
+
+	tests := []struct {
+		name        string
+		protocol    string
+		wantEncType string
+		wantStats   bool // whether the torrent stat/factor attrs are present
+	}{
+		{name: "usenet", protocol: "usenet", wantEncType: "application/x-nzb", wantStats: false},
+		{name: "torrent default", protocol: "", wantEncType: "application/x-bittorrent", wantStats: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			feed := demoFeed()
+			feed.Protocol = tt.protocol
+			got, err := MarshalResults(feed, []*normalizer.Release{rel()}, fixedNow())
+			if err != nil {
+				t.Fatalf("MarshalResults: %v", err)
+			}
+			s := string(got)
+			assertWellFormed(t, got)
+
+			wantEnc := `type="` + tt.wantEncType + `"`
+			if !strings.Contains(s, wantEnc) {
+				t.Errorf("%s: enclosure missing %q in:\n%s", tt.name, wantEnc, s)
+			}
+
+			for _, want := range kept {
+				if !strings.Contains(s, want) {
+					t.Errorf("%s: missing protocol-agnostic attr %q in:\n%s", tt.name, want, s)
+				}
+			}
+
+			for _, attr := range suppressed {
+				present := strings.Contains(s, attr)
+				if present != tt.wantStats {
+					t.Errorf("%s: attr %q present=%v, want %v in:\n%s", tt.name, attr, present, tt.wantStats, s)
+				}
+			}
+		})
+	}
+}
+
 // assertWellFormed confirms the bytes parse as XML (no malformed output).
 func assertWellFormed(t *testing.T, b []byte) {
 	t.Helper()

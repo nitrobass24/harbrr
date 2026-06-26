@@ -413,12 +413,32 @@ harbrr the single source of truth for the whole stack.
 The one consciously-accepted alpha gap is **automated migration import** (deferred to the backlog):
 alpha ships with manual indexer setup — existing Prowlarr/Jackett users re-enter rather than import.
 
-- [ ] **Usenet / Newznab support** — harbrr is torrent-only today, so a stack's usenet indexers (e.g.
-      DOGnzb) can't migrate; this closes the **last capability Prowlarr has that harbrr lacks**. The
-      `caps`/`search` surface already speaks Newznab-compatible XML; the gap is the usenet *fetch* +
-      indexer kind. **Long pole of the phase — the one net-new subsystem; scope it on its own first.**
-      Surfaced by the Phase-10 gold-standard migration (DOGnzb was the one stack indexer harbrr couldn't
-      serve). *Detail TBD (fetch path, indexer kind, caps surface, grab model).*
+- [x] **Usenet / Newznab support** — harbrr was torrent-only; this closes the **last capability Prowlarr
+      had that harbrr lacked** (Jackett is torrent-only, so Prowlarr is the sole parity target). **Shipped:**
+      generic Newznab driver + ~18 presets on the `native.Family` seam (`internal/indexer/native/newznab/`;
+      parity with Prowlarr, no YAML), protocol derived from the driver + denormalized into the
+      `indexer_instances.protocol` column, `.nzb` proxied server-side via `/dl` (apikey sealed). User docs:
+      `website/docs/features/usenet-newznab.md`; design divergences:
+      `internal/indexer/native/newznab/testdata/README.md`. Build leaves:
+   - [x] **Protocol primitive + DB column** — `Protocol` on the definition/`Family` (default `torrent`) +
+         `0005` migration on `indexer_instances` + `domain.IndexerInstance`, populated on add; threaded
+         through caps/`IndexerInfo` → `FeedInfo`. No behavior change.
+   - [x] **Protocol-aware serializer** — gates `enclosureType` (`x-nzb`) + `appendTorrentAttrs` on protocol.
+   - [x] **Protocol-aware normalizer** — *no change needed*: native drivers build `Release` structs
+         directly and never hit the `seeders` validator (the `/dl` content-type is set driver-side).
+   - [x] **Newznab client core** — `internal/indexer/native/newznab/`: settings + request gen + XML parser
+         + server-side grab, offline stub-server goldens (`NeedsResolver=false`, `DownloadNeedsAuth=true`).
+   - [x] **Caps fetch + category mapping** — live `?t=caps` → mapped newznab cats, cached (7-day TTL,
+         `PersistSetting`), primed in `Test()`.
+   - [x] **Grab path** — fetches `.nzb` via `/dl`, `application/x-nzb`, apikey-redaction tested (folded
+         into the driver core leaf).
+   - [x] **Family registration + presets** — `newznab.Families()` (generic + ~18 presets); registry e2e.
+   - [x] **App-sync protocol** — `DesiredIndexer.Protocol`; registers usenet as the remote **Newznab** impl;
+         `List()` orphan-trap fixed; qui skips usenet.
+   - [x] **End-to-end** — offline HTTP e2e (stub server): configure → search → usenet feed → `/dl` grab.
+   - [x] **User-facing docs + divergence** — `website/docs/features/usenet-newznab.md` (MkDocs nav) +
+         `[Deliberate]` proxy divergence in `internal/indexer/native/newznab/testdata/README.md` +
+         `coverage.md`. Live validation deferred (needs a real usenet apikey; opportunistic, not a gate).
 - [ ] **Shared RSS-feed caching** — fetch a tracker's RSS/feed once and serve every consumer
       (Sonarr/Radarr/autobrr/cross-seed) from the cached copy instead of each app polling the tracker
       independently. The README's headline value: lower tracker load, fewer duplicate requests, better
@@ -444,6 +464,35 @@ alpha ships with manual indexer setup — existing Prowlarr/Jackett users re-ent
       harbrr's indexer *feed*), this pushes *credentials* mapped onto Upbrr's own definitions. *Detail TBD
       (which credential fields, harbrr-indexer ↔ Upbrr-definition matching, the push contract/endpoint,
       redaction/rotation handling).*
+
+### Pre-alpha hardening (operability + polish — from the 2026-06-25 review)
+
+- [ ] **Runtime-tunable config — DB-backed settings store** *(alpha gate)* — the **7 global cache knobs**
+      (`enabled`, `rss_ttl`, `keyword_ttl`, `thin_ttl`, `thin_threshold`, `refresh_ahead_pct`,
+      `cleanup_interval` in `internal/config/config.go`) are **YAML/env-only, frozen at boot** — the cache
+      API only `stats`/`flush`es, it can't *tune*. Build a small **DB-backed app-settings table + GET/PUT
+      API** and have `SearchCache` read it per-request instead of the frozen `ttlConfig`; the `enabled`
+      toggle additionally needs the registry to add/remove the cache decorator at runtime. Designed to
+      extend to later runtime knobs (rate limits, notifications). **Deliberately stays in the config file**
+      (deploy-time / security): data dir, DB path, listen address, base URL, **secrets/encryption key (must
+      stay out of the DB it protects)**, auth mode + IP allowlist/trusted proxies. The per-indexer
+      `cache_ttl`/`timeout` overrides are **already DB-backed** — no work.
+- [ ] **User-facing docs** *(alpha-gate membership: decide later)* — the website is 2 feature pages + a
+      stub index; for a "Swagger-only, API-operated" alpha the operator path is undocumented. Needed pages:
+      **Getting Started / Install** (Docker, first-run admin, mint API key, point Sonarr/Radarr at the feed
+      URL) · **Configuration reference** (from `config.example.yaml`) · **Adding an indexer** (the API flow:
+      `GET /api/definitions/{id}` → configure → `POST …/test`) · **App Sync setup**
+      (`/api/app-connections`) · **API / Swagger pointer** (`/api/docs` + `/api/openapi.yaml`). Plus fix the
+      root **`README.md`** (3 broken mermaid blocks missing ` ```mermaid ` fences; stale "Early
+      Development" status; its own Phase 1–4 roadmap that diverges from this plan → point at `plan.md`).
+      Minor internal-doc refresh: `docs/ideas.md` §4/§13 "superseded by plan.md" note; `highlights.md`
+      app-sync `[partial]`→shipped. **Open decision:** full operator set vs a minimal subset (Getting
+      Started + API pointer + README) as the gate.
+- [ ] **Code cleanup (non-blocking)** — the scaffolding + dead-code review found **no alpha blockers**:
+      codebase is clean (no `panic`/`TODO`/`FIXME` in non-test code, no parsed-but-dead config; OIDC `501`,
+      two AnimeBytes parity nuances, and the captcha boundary are intentional deferrals). `deadcode -test`
+      found only **3 unused option setters** (`auth.WithClock`, cardigann `WithSolver`, `registry.WithTimeout`)
+      — plausibly forward-API for deferred features; confirm intent, then keep or remove. Optional tidy.
 
 ## Phase 12 — Web UI
 

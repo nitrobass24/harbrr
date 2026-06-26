@@ -383,6 +383,7 @@ func (h *handler) feedInfo(r *http.Request, idx Indexer) tzn.FeedInfo {
 		Description: info.Description,
 		SiteLink:    info.SiteLink,
 		Type:        info.Type,
+		Protocol:    info.Protocol,
 		SelfURL:     h.selfURL(r),
 	}
 }

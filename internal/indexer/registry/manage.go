@@ -73,7 +73,8 @@ func (r *Registry) Add(ctx context.Context, p AddParams) (domain.IndexerInstance
 	now := r.clock()
 	inst := domain.IndexerInstance{
 		Slug: slug, DefinitionID: p.DefinitionID, Name: orDefault(p.Name, def.Name),
-		BaseURL: p.BaseURL, Enabled: true, CreatedAt: now, UpdatedAt: now,
+		BaseURL: p.BaseURL, Enabled: true, Protocol: def.EffectiveProtocol(),
+		CreatedAt: now, UpdatedAt: now,
 	}
 
 	err = r.inTx(ctx, func(tx dbinterface.TxQuerier) error {
