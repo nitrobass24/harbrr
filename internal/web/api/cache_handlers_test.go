@@ -271,6 +271,19 @@ func TestCacheStatsHappyPath(t *testing.T) {
 	if stats.Misses != sumMisses {
 		t.Errorf("global misses = %d, want == sum(byIndexer.misses) %d", stats.Misses, sumMisses)
 	}
+	// The decoded values are all zero here (no search served), so guard the wiring
+	// itself: assert the handler actually serializes the top-level keys. Without this,
+	// dropping hits/misses from the response would silently decode to 0 and pass above.
+	// Check the top-level object specifically — "hits" also appears inside byIndexer.
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(body, &top); err != nil {
+		t.Fatalf("decode stats object: %v", err)
+	}
+	for _, key := range []string{"hits", "misses"} {
+		if _, ok := top[key]; !ok {
+			t.Errorf("stats JSON missing top-level %q key: %s", key, body)
+		}
+	}
 }
 
 // TestCacheConfigNegativeTTL covers the breaker knob: it round-trips on GET, accepts
