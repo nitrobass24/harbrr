@@ -33,13 +33,21 @@ const swrRefreshTimeout = 30 * time.Second
 // redacted error. The SWR goroutine is the most dangerous spot; it follows the same
 // rule.
 type SearchCache struct {
-	store     database.SearchCacheStore
-	db        dbinterface.Execer
-	sf        singleflight.Group
-	ttl       ttlConfig
-	refreshAt int // refresh-ahead percentage of TTL (e.g. 80)
-	clock     func() time.Time
-	log       zerolog.Logger
+	store database.SearchCacheStore
+	// db is a Querier (not just an Execer) so SetConfig can wrap its multi-row
+	// persist in a transaction; every read/write path still uses it as an Execer.
+	db dbinterface.Querier
+	sf singleflight.Group
+	// tuning is the live, atomically-swappable config (TTL tiers, thin threshold,
+	// refresh-ahead, enabled). Read per request (lock-free) so the global knobs are
+	// runtime-tunable; seeded from the config file, overlaid by LoadOverrides.
+	tuning atomic.Pointer[cacheTuning]
+	// cfgMu serializes the read-merge-validate-persist-swap of UpdateConfig (and the
+	// boot LoadOverrides) so concurrent updates can't lose each other's fields; the
+	// per-request read path stays lock-free on tuning.
+	cfgMu sync.Mutex
+	clock func() time.Time
+	log   zerolog.Logger
 
 	// hits/misses are process-lifetime (non-persistent) counters for the hit-ratio
 	// metric the stats endpoint exposes; they reset on restart.
@@ -63,28 +71,29 @@ type pendingTouch struct {
 	lastUsed time.Time
 }
 
-// NewSearchCache builds the cache layer. db is the shared store handle, ttl the
-// resolved tiers, refreshAheadPct the percentage of a TTL after which a live hit
-// triggers a background refresh, clock the reference clock, and log a logger that
-// only ever sees cache keys and redacted errors.
-func NewSearchCache(db dbinterface.Execer, ttl ttlConfig, refreshAheadPct int, clock func() time.Time, log zerolog.Logger) *SearchCache {
+// NewSearchCache builds the cache layer. db is the shared store handle, t the
+// initial (config-seeded) tuning, clock the reference clock, and log a logger that
+// only ever sees cache keys and redacted errors. The tuning is held atomically so
+// SetConfig can swap it at runtime.
+func NewSearchCache(db dbinterface.Querier, t cacheTuning, clock func() time.Time, log zerolog.Logger) *SearchCache {
 	if clock == nil {
 		clock = time.Now
 	}
-	return &SearchCache{
+	c := &SearchCache{
 		db:           db,
-		ttl:          ttl,
-		refreshAt:    refreshAheadPct,
 		clock:        clock,
 		log:          log,
 		touchPending: make(map[string]pendingTouch),
 	}
+	c.tuning.Store(&t)
+	return c
 }
 
 // SearchCacheParams carries the resolved TTL tiers and refresh-ahead threshold a
 // caller (cmd/harbrr) reads from config to build a SearchCache without reaching
 // into the unexported ttlConfig.
 type SearchCacheParams struct {
+	Enabled         bool
 	RSSTTL          time.Duration
 	KeywordTTL      time.Duration
 	ThinTTL         time.Duration
@@ -95,14 +104,13 @@ type SearchCacheParams struct {
 // NewSearchCacheWithParams builds a SearchCache from config-resolved tiers. It is
 // the exported entry point for cmd/harbrr; NewSearchCache stays internal so the
 // ttlConfig tier struct does not leak across the package boundary.
-func NewSearchCacheWithParams(db dbinterface.Execer, p SearchCacheParams, clock func() time.Time, log zerolog.Logger) *SearchCache {
-	ttl := ttlConfig{
-		rss:           p.RSSTTL,
-		keyword:       p.KeywordTTL,
-		thin:          p.ThinTTL,
-		thinThreshold: p.ThinThreshold,
+func NewSearchCacheWithParams(db dbinterface.Querier, p SearchCacheParams, clock func() time.Time, log zerolog.Logger) *SearchCache {
+	t := cacheTuning{
+		enabled:   p.Enabled,
+		ttl:       ttlConfig{rss: p.RSSTTL, keyword: p.KeywordTTL, thin: p.ThinTTL, thinThreshold: p.ThinThreshold},
+		refreshAt: p.RefreshAheadPct,
 	}
-	return NewSearchCache(db, ttl, p.RefreshAheadPct, clock, log)
+	return NewSearchCache(db, t, clock, log)
 }
 
 // wrap decorates an indexer with this cache. instanceID keys the entries; cfg
@@ -122,8 +130,13 @@ type cachedIndexer struct {
 	cfg        map[string]string
 }
 
-// Search overrides only the search seam, routing through the cache.
+// Search overrides only the search seam, routing through the cache — unless caching
+// is currently disabled (the runtime toggle), in which case it passes straight
+// through to the live search with no read or write-back.
 func (c *cachedIndexer) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
+	if !c.cache.tuning.Load().enabled {
+		return c.cache.fetchLive(ctx, c.Indexer, q)
+	}
 	return c.cache.search(ctx, c.instanceID, c.cfg, c.Indexer, q)
 }
 
@@ -230,7 +243,7 @@ func (c *SearchCache) storeBestEffort(ctx context.Context, instanceID int64, cfg
 		return
 	}
 	now := c.clock()
-	ttl := c.ttl.resolveTTL(cfg, q, len(releases))
+	ttl := c.tuning.Load().ttl.resolveTTL(cfg, q, len(releases))
 	entry := database.SearchCacheEntry{
 		CacheKey:     key,
 		InstanceID:   instanceID,
@@ -284,7 +297,8 @@ func (c *SearchCache) FlushTouches(ctx context.Context) {
 // reaches refreshAt percent. It uses cached_at/expires_at (the entry's real
 // lifetime), never now+ttl. A non-positive percentage disables refresh-ahead.
 func (c *SearchCache) shouldRefreshAhead(entry database.SearchCacheEntry) bool {
-	if c.refreshAt <= 0 {
+	refreshAt := c.tuning.Load().refreshAt
+	if refreshAt <= 0 {
 		return false
 	}
 	lifetime := entry.ExpiresAt.Sub(entry.CachedAt)
@@ -292,7 +306,7 @@ func (c *SearchCache) shouldRefreshAhead(entry database.SearchCacheEntry) bool {
 		return false
 	}
 	elapsed := c.clock().Sub(entry.CachedAt)
-	return elapsed*100 >= lifetime*time.Duration(c.refreshAt)
+	return elapsed*100 >= lifetime*time.Duration(refreshAt)
 }
 
 // triggerSWR fires one background refresh for key, guarded by singleflight on a

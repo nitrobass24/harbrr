@@ -45,7 +45,7 @@ func TestMigrateCreatesSchema(t *testing.T) {
 
 			wantTables := []string{
 				"users", "api_keys", "indexer_instances",
-				"indexer_settings", "app_meta", "sessions", "search_cache", "schema_migrations",
+				"indexer_settings", "app_meta", "sessions", "search_cache", "app_settings", "schema_migrations",
 			}
 			for _, tbl := range wantTables {
 				var n int
@@ -76,9 +76,9 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	}
 
 	// Each migration recorded once (0001_init.sql, 0002_indexer_health.sql,
-	// 0003_appsync.sql, 0004_search_cache.sql, 0005_indexer_protocol.sql), not
-	// duplicated by the second apply.
-	const wantMigrations = 5
+	// 0003_appsync.sql, 0004_search_cache.sql, 0005_indexer_protocol.sql,
+	// 0006_app_settings.sql), not duplicated by the second apply.
+	const wantMigrations = 6
 	var applied int
 	if err := db.QueryRowContext(context.Background(),
 		"SELECT count(*) FROM schema_migrations").Scan(&applied); err != nil {

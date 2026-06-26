@@ -152,6 +152,8 @@ func (rt *router) routes() http.Handler {
 
 			r.Get("/api/cache/stats", rt.cacheStats)
 			r.Post("/api/cache/flush", rt.cacheFlush)
+			r.Get("/api/cache/config", rt.cacheConfigGet)
+			r.Put("/api/cache/config", rt.cacheConfigPut)
 		})
 	})
 	return r

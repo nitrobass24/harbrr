@@ -856,6 +856,52 @@ paths:
               schema: { $ref: "#/components/schemas/CacheFlushResult" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /api/cache/config:
+    get:
+      summary: Get the search-results cache configuration
+      description: >
+        Returns the live, runtime-tunable cache config (enabled flag, TTL tiers, thin
+        threshold, refresh-ahead percentage). Durations are Go duration strings. With
+        no cache wired the response is a disabled, zero-valued config.
+      operationId: cacheConfigGet
+      tags: [Cache]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the live cache configuration
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CacheConfig" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      summary: Update the search-results cache configuration
+      description: >
+        Partially updates the cache config: provided fields are overlaid onto the
+        current config, validated, persisted (so they survive a restart), and applied
+        immediately without a restart. Omitted fields are left unchanged. Invalid
+        durations or out-of-range values answer 400 and leave the config untouched.
+      operationId: cacheConfigPut
+      tags: [Cache]
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CacheConfigUpdate" }
+      responses:
+        "200":
+          description: the updated cache configuration
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CacheConfig" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503":
+          description: the search cache is not available (no cache wired)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
 components:
   securitySchemes:
     session:
@@ -1242,3 +1288,28 @@ components:
       properties:
         flushed: { type: integer, format: int64, description: number of entries purged (0 when caching is disabled) }
       required: [flushed]
+
+    CacheConfig:
+      type: object
+      description: The live, runtime-tunable search-results cache configuration.
+      properties:
+        enabled: { type: boolean, description: whether caching is currently on (a runtime toggle) }
+        rssTtl: { type: string, description: 'TTL for an empty/RSS poll (Go duration, e.g. "5m0s")' }
+        keywordTtl: { type: string, description: TTL for a keyword search (Go duration) }
+        thinTtl: { type: string, description: short TTL clamp for a thin (few-result) response (Go duration) }
+        thinThreshold: { type: integer, description: result count at or below which the thin clamp applies }
+        refreshAheadPct: { type: integer, description: 'percent of a TTL after which a live hit fires one background refresh (0 disables)' }
+      required: [enabled, rssTtl, keywordTtl, thinTtl, thinThreshold, refreshAheadPct]
+
+    CacheConfigUpdate:
+      type: object
+      description: >
+        A partial cache-config update; every field is optional and an omitted field
+        leaves that knob unchanged. Durations are Go duration strings.
+      properties:
+        enabled: { type: boolean }
+        rssTtl: { type: string }
+        keywordTtl: { type: string }
+        thinTtl: { type: string }
+        thinThreshold: { type: integer }
+        refreshAheadPct: { type: integer }

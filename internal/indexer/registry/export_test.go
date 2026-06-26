@@ -12,9 +12,13 @@ import (
 // NewSearchCacheForTest builds a SearchCache with default keyword/rss/thin tiers and
 // refresh-ahead disabled, for the external (registry_test) regression suite. It
 // exists only in test builds.
-func NewSearchCacheForTest(db dbinterface.Execer, clock func() time.Time) *SearchCache {
-	ttl := ttlConfig{rss: 5 * time.Minute, keyword: 30 * time.Minute, thin: 2 * time.Minute, thinThreshold: 5}
-	return NewSearchCache(db, ttl, 0, clock, zerolog.Nop())
+func NewSearchCacheForTest(db dbinterface.Querier, clock func() time.Time) *SearchCache {
+	t := cacheTuning{
+		enabled:   true,
+		ttl:       ttlConfig{rss: 5 * time.Minute, keyword: 30 * time.Minute, thin: 2 * time.Minute, thinThreshold: 5},
+		refreshAt: 0,
+	}
+	return NewSearchCache(db, t, clock, zerolog.Nop())
 }
 
 // WrapForTest exposes the unexported cache decorator to the external test package so
