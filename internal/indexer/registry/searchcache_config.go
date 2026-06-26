@@ -93,6 +93,12 @@ func (c *SearchCache) SetConfig(ctx context.Context, v CacheConfigView) error {
 		return err
 	}
 	now := c.clock()
+	// All six keys persist in one transaction, so a mid-write failure leaves the
+	// stored config untouched (no partial overlay for the next LoadOverrides to read).
+	tx, err := c.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("registry: begin cache config tx: %w", err)
+	}
 	store := database.AppSettings{}
 	for k, val := range map[string]string{
 		keyCacheEnabled:       strconv.FormatBool(v.Enabled),
@@ -102,9 +108,13 @@ func (c *SearchCache) SetConfig(ctx context.Context, v CacheConfigView) error {
 		keyCacheThinThreshold: strconv.Itoa(v.ThinThreshold),
 		keyCacheRefreshAhead:  strconv.Itoa(v.RefreshAheadPct),
 	} {
-		if err := store.Set(ctx, c.db, k, val, now); err != nil {
+		if err := store.Set(ctx, tx, k, val, now); err != nil {
+			_ = tx.Rollback()
 			return fmt.Errorf("registry: persist cache config: %w", err)
 		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("registry: commit cache config: %w", err)
 	}
 	t := v.tuning()
 	c.tuning.Store(&t)

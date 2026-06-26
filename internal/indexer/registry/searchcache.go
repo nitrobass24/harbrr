@@ -34,8 +34,10 @@ const swrRefreshTimeout = 30 * time.Second
 // rule.
 type SearchCache struct {
 	store database.SearchCacheStore
-	db    dbinterface.Execer
-	sf    singleflight.Group
+	// db is a Querier (not just an Execer) so SetConfig can wrap its multi-row
+	// persist in a transaction; every read/write path still uses it as an Execer.
+	db dbinterface.Querier
+	sf singleflight.Group
 	// tuning is the live, atomically-swappable config (TTL tiers, thin threshold,
 	// refresh-ahead, enabled). Read per request so the global knobs are runtime-
 	// tunable via SetConfig; seeded from the config file, overlaid by LoadOverrides.
@@ -69,7 +71,7 @@ type pendingTouch struct {
 // initial (config-seeded) tuning, clock the reference clock, and log a logger that
 // only ever sees cache keys and redacted errors. The tuning is held atomically so
 // SetConfig can swap it at runtime.
-func NewSearchCache(db dbinterface.Execer, t cacheTuning, clock func() time.Time, log zerolog.Logger) *SearchCache {
+func NewSearchCache(db dbinterface.Querier, t cacheTuning, clock func() time.Time, log zerolog.Logger) *SearchCache {
 	if clock == nil {
 		clock = time.Now
 	}
@@ -98,7 +100,7 @@ type SearchCacheParams struct {
 // NewSearchCacheWithParams builds a SearchCache from config-resolved tiers. It is
 // the exported entry point for cmd/harbrr; NewSearchCache stays internal so the
 // ttlConfig tier struct does not leak across the package boundary.
-func NewSearchCacheWithParams(db dbinterface.Execer, p SearchCacheParams, clock func() time.Time, log zerolog.Logger) *SearchCache {
+func NewSearchCacheWithParams(db dbinterface.Querier, p SearchCacheParams, clock func() time.Time, log zerolog.Logger) *SearchCache {
 	t := cacheTuning{
 		enabled:   p.Enabled,
 		ttl:       ttlConfig{rss: p.RSSTTL, keyword: p.KeywordTTL, thin: p.ThinTTL, thinThreshold: p.ThinThreshold},

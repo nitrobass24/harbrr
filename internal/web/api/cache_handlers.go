@@ -103,7 +103,7 @@ func toCacheConfigResponse(v registry.CacheConfigView) cacheConfigResponse {
 // answers 200 with a disabled, zero-valued config rather than 404.
 func (rt *router) cacheConfigGet(w http.ResponseWriter, _ *http.Request) {
 	if rt.cache == nil {
-		writeJSON(w, http.StatusOK, cacheConfigResponse{})
+		writeJSON(w, http.StatusOK, toCacheConfigResponse(registry.CacheConfigView{}))
 		return
 	}
 	writeJSON(w, http.StatusOK, toCacheConfigResponse(rt.cache.Config()))
@@ -144,7 +144,9 @@ func (rt *router) cacheConfigPut(w http.ResponseWriter, r *http.Request) {
 		rt.writeServiceError(w, "cache.config", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toCacheConfigResponse(rt.cache.Config()))
+	// Echo exactly what this request applied (not a re-read, which a concurrent
+	// update could have changed).
+	writeJSON(w, http.StatusOK, toCacheConfigResponse(cur))
 }
 
 // applyDurField parses an optional duration string onto dst, writing a 400 and
@@ -154,8 +156,9 @@ func applyDurField(w http.ResponseWriter, in *string, dst *time.Duration, name s
 		return true
 	}
 	d, err := time.ParseDuration(*in)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid duration for %s: %q", name, *in))
+	if err != nil || d <= 0 {
+		writeError(w, http.StatusBadRequest,
+			fmt.Sprintf("invalid duration for %s: %q (want a positive duration like \"10m\")", name, *in))
 		return false
 	}
 	*dst = d

@@ -137,11 +137,47 @@ func TestCacheConfigGetPut(t *testing.T) {
 		t.Errorf("update not reflected on GET: %+v", cfg)
 	}
 
-	// Out-of-range and malformed values are 400.
+	// Out-of-range, malformed, and non-positive values are 400.
 	resp, body = do(t, c, http.MethodPut, base+"/api/cache/config", map[string]any{"refreshAheadPct": 150}, nil)
 	mustStatus(t, resp, body, http.StatusBadRequest)
 	resp, body = do(t, c, http.MethodPut, base+"/api/cache/config", map[string]any{"rssTtl": "nope"}, nil)
 	mustStatus(t, resp, body, http.StatusBadRequest)
+	resp, body = do(t, c, http.MethodPut, base+"/api/cache/config", map[string]any{"rssTtl": "0s"}, nil)
+	mustStatus(t, resp, body, http.StatusBadRequest)
+
+	// A rejected PUT must leave the config exactly as the last good update left it.
+	resp, body = do(t, c, http.MethodGet, base+"/api/cache/config", nil, nil)
+	mustStatus(t, resp, body, http.StatusOK)
+	_ = json.Unmarshal(body, &cfg)
+	if cfg.Enabled || cfg.KeywordTTL != "45m0s" || cfg.RSSTTL != "5m0s" {
+		t.Errorf("config changed after a rejected PUT: %+v", cfg)
+	}
+}
+
+// TestCacheConfigDisabled covers the no-cache-wired paths: GET returns a disabled,
+// parseable zero config; PUT is 503.
+func TestCacheConfigDisabled(t *testing.T) {
+	t.Parallel()
+
+	e := newEnv(t, api.Config{}) // no cache wired
+	base, c := serve(t, e)
+	setupAndLogin(t, base, c)
+
+	resp, body := do(t, c, http.MethodGet, base+"/api/cache/config", nil, nil)
+	mustStatus(t, resp, body, http.StatusOK)
+	var cfg cacheConfigBody
+	if err := json.Unmarshal(body, &cfg); err != nil {
+		t.Fatalf("decode config: %v", err)
+	}
+	if cfg.Enabled {
+		t.Error("enabled = true, want false with no cache")
+	}
+	if cfg.RSSTTL != "0s" {
+		t.Errorf("rssTtl = %q, want a parseable %q", cfg.RSSTTL, "0s")
+	}
+
+	resp, body = do(t, c, http.MethodPut, base+"/api/cache/config", map[string]any{"enabled": true}, nil)
+	mustStatus(t, resp, body, http.StatusServiceUnavailable)
 }
 
 // cacheBuilder builds a SearchCache bound to a given db with the fixed clock.
