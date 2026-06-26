@@ -46,6 +46,11 @@ type CacheConfig struct {
 	RefreshAheadPct int `mapstructure:"refresh_ahead_pct"`
 	// CleanupInterval is how often expired entries are reaped.
 	CleanupInterval string `mapstructure:"cleanup_interval"`
+	// NegativeTTL is the negative-result circuit-breaker window: after a live search
+	// to a tracker fails, further misses for that tracker short-circuit to the recorded
+	// error for this long instead of re-driving it (kind-to-trackers anti-thundering-
+	// herd). "0s" disables the breaker.
+	NegativeTTL string `mapstructure:"negative_ttl"`
 }
 
 // ServerConfig describes the HTTP listener and reverse-proxy posture.
@@ -131,6 +136,7 @@ func Defaults() Config {
 			ThinThreshold:   5,
 			RefreshAheadPct: 80,
 			CleanupInterval: "1h",
+			NegativeTTL:     "1m",
 		},
 	}
 }
@@ -138,12 +144,13 @@ func Defaults() Config {
 // cacheDurationDefaults backs each CacheConfig duration field when its string is
 // empty or unparseable, so a partial override never zeroes a TTL.
 var cacheDurationDefaults = struct {
-	rss, keyword, thin, cleanup time.Duration
+	rss, keyword, thin, cleanup, negative time.Duration
 }{
-	rss:     5 * time.Minute,
-	keyword: 30 * time.Minute,
-	thin:    2 * time.Minute,
-	cleanup: time.Hour,
+	rss:      5 * time.Minute,
+	keyword:  30 * time.Minute,
+	thin:     2 * time.Minute,
+	cleanup:  time.Hour,
+	negative: time.Minute,
 }
 
 // parseDurationOr parses a Go duration string, falling back to def when empty,
@@ -173,6 +180,19 @@ func (c CacheConfig) ThinDuration() time.Duration {
 // CleanupDuration is the resolved expired-entry reap interval.
 func (c CacheConfig) CleanupDuration() time.Duration {
 	return parseDurationOr(c.CleanupInterval, cacheDurationDefaults.cleanup)
+}
+
+// NegativeDuration is the resolved negative-result circuit-breaker window. Unlike the
+// other TTLs it admits an explicit "0s" (breaker disabled); only an empty or malformed
+// value falls back to the default. A negative duration is treated as disabled (0).
+func (c CacheConfig) NegativeDuration() time.Duration {
+	if d, err := time.ParseDuration(c.NegativeTTL); err == nil {
+		if d < 0 {
+			return 0
+		}
+		return d
+	}
+	return cacheDurationDefaults.negative
 }
 
 // DatabasePath returns the configured SQLite path, defaulting to

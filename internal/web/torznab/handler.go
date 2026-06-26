@@ -290,12 +290,30 @@ func (h *handler) writeResults(w http.ResponseWriter, r *http.Request, idx Index
 	if !h.resolveMode(w, q, caps) {
 		return
 	}
+	// A CacheInfo sink lets the cache decorator surface the served entry's validators
+	// (ETag + expiry) for the conditional-GET response below. A `no-cache` request
+	// header forces a live fetch — the header sibling of the `nocache=1` query param —
+	// and, like it, suppresses the 304 short-circuit so the client gets a fresh body.
+	ctx, ci := WithCacheInfoSink(r.Context())
+	headerFresh := requestNoCache(r)
+	if headerFresh {
+		ctx = WithCacheBypass(ctx)
+	}
 	// searchReleases is the shared read pipeline (map -> search -> dedupe -> filter
 	// -> page); the management API's JSON search runs the same code for parity.
-	releases, err := searchReleases(r.Context(), idx, caps, q)
+	releases, err := searchReleases(ctx, idx, caps, q)
 	if err != nil {
 		h.writeInternalError(w, "search", idx.Info().ID, err)
 		return
+	}
+	// When the response came through the cache, emit validators and honor a matching
+	// If-None-Match with 304 — unless the client forced a fresh fetch (header or query).
+	if ci.ETag != "" {
+		setCacheValidators(w, ci, h.clock())
+		if !headerFresh && !wantsNoCache(q) && ifNoneMatchMatches(r.Header.Get("If-None-Match"), ci.ETag) {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
 	}
 	body, err := tzn.MarshalResultsRewritten(h.feedInfo(r, idx), releases, h.clock(), h.dlRewriter(r, idx))
 	if err != nil {

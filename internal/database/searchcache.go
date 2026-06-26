@@ -174,6 +174,41 @@ func (SearchCacheStore) Stats(ctx context.Context, q dbinterface.Execer) (Search
 	return s, nil
 }
 
+// SearchCacheInstanceStat is one instance's durable cache figures for the per-indexer
+// observability surface. HitsSaved is the instance's cumulative served-from-cache
+// count (each hit is one tracker request the cache avoided).
+type SearchCacheInstanceStat struct {
+	InstanceID      int64
+	Entries         int64
+	HitsSaved       int64
+	ApproxSizeBytes int64
+}
+
+// StatsByInstance returns the durable per-instance cache figures — one row per
+// instance that currently has cached entries, ordered by instance_id. Instances with
+// no live entries are absent (the caller folds in their in-memory counters).
+func (SearchCacheStore) StatsByInstance(ctx context.Context, q dbinterface.Execer) ([]SearchCacheInstanceStat, error) {
+	rows, err := q.QueryContext(ctx,
+		`SELECT instance_id, COUNT(*), COALESCE(SUM(hit_count), 0), COALESCE(SUM(LENGTH(results_json)), 0)
+			FROM search_cache GROUP BY instance_id ORDER BY instance_id`)
+	if err != nil {
+		return nil, fmt.Errorf("database: search cache stats by instance: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []SearchCacheInstanceStat
+	for rows.Next() {
+		var s SearchCacheInstanceStat
+		if err := rows.Scan(&s.InstanceID, &s.Entries, &s.HitsSaved, &s.ApproxSizeBytes); err != nil {
+			return nil, fmt.Errorf("database: scan search cache instance stats: %w", err)
+		}
+		out = append(out, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("database: search cache instance stats rows: %w", err)
+	}
+	return out, nil
+}
+
 // scanSearchCacheEntry reads one search_cache row from a *sql.Row or *sql.Rows.
 func scanSearchCacheEntry(s interface{ Scan(...any) error }) (SearchCacheEntry, error) {
 	var (

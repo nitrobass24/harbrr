@@ -334,6 +334,83 @@ func TestStatsHitMissRatio(t *testing.T) {
 	}
 }
 
+// TestCacheInfoRecordedOnMissAndHit proves the cache fills the request's CacheInfo
+// sink with a stable content ETag + expiry on both the storing miss and the serving
+// hit, so the feed handler can emit conditional-GET validators.
+func TestCacheInfoRecordedOnMissAndHit(t *testing.T) {
+	t.Parallel()
+	sc, instID, _ := testCache(t, keywordTTL, 0)
+	inner := &fakeInner{releases: relSet("Alpha", "Beta")}
+	idx := sc.wrap(inner, instID, nil)
+	q := search.Query{Keywords: "alpha"}
+
+	// Miss: the store-back records the validators for this request.
+	missCtx, missInfo := torznab.WithCacheInfoSink(context.Background())
+	if _, err := idx.Search(missCtx, q); err != nil {
+		t.Fatalf("miss: %v", err)
+	}
+	if missInfo.ETag == "" || missInfo.ExpiresAt.IsZero() {
+		t.Fatalf("miss did not record cache info: %+v", missInfo)
+	}
+
+	// Hit: a fresh sink is filled with the SAME etag (content-derived, stable).
+	hitCtx, hitInfo := torznab.WithCacheInfoSink(context.Background())
+	if _, err := idx.Search(hitCtx, q); err != nil {
+		t.Fatalf("hit: %v", err)
+	}
+	if hitInfo.ETag != missInfo.ETag {
+		t.Errorf("hit etag %q != miss etag %q (content hash must be stable)", hitInfo.ETag, missInfo.ETag)
+	}
+	// The hit path must also record the entry's expiry (for the Cache-Control max-age),
+	// and with the fixed test clock it matches the miss's stored expiry exactly.
+	if hitInfo.ExpiresAt.IsZero() {
+		t.Error("hit did not record an expiry")
+	}
+	if !hitInfo.ExpiresAt.Equal(missInfo.ExpiresAt) {
+		t.Errorf("hit expiry %v != miss expiry %v", hitInfo.ExpiresAt, missInfo.ExpiresAt)
+	}
+	if inner.callCount() != 1 {
+		t.Fatalf("inner called %d times, want 1 (second served from cache)", inner.callCount())
+	}
+}
+
+// TestCacheInfoRecordedForCoalescedMisses proves every caller coalesced onto one
+// singleflight miss gets the validators in its OWN sink (not just the flight leader),
+// so a concurrent first-miss does not silently drop the ETag for the followers.
+func TestCacheInfoRecordedForCoalescedMisses(t *testing.T) {
+	t.Parallel()
+	sc, instID, _ := testCache(t, keywordTTL, 0)
+	gate := make(chan struct{})
+	inner := &fakeInner{releases: relSet("X"), gate: gate, firstSeen: make(chan struct{})}
+	idx := sc.wrap(inner, instID, nil)
+	q := search.Query{Keywords: "x"}
+
+	const n = 8
+	infos := make([]*torznab.CacheInfo, n)
+	var wg sync.WaitGroup
+	wg.Add(n)
+	for i := range n {
+		ctx, ci := torznab.WithCacheInfoSink(context.Background())
+		infos[i] = ci
+		go func() {
+			defer wg.Done()
+			_, _ = idx.Search(ctx, q)
+		}()
+	}
+	<-inner.firstSeen // the flight is in progress; the rest coalesce onto it
+	close(gate)
+	wg.Wait()
+
+	if inner.callCount() != 1 {
+		t.Fatalf("inner called %d times, want 1 (coalesced)", inner.callCount())
+	}
+	for i, ci := range infos {
+		if ci.ETag == "" || ci.ExpiresAt.IsZero() {
+			t.Errorf("caller %d sink not filled: %+v", i, ci)
+		}
+	}
+}
+
 // advance moves the test clock forward by d.
 func advance(clk *atomic.Pointer[time.Time], d time.Duration) {
 	cur := *clk.Load()

@@ -17,6 +17,12 @@ type ttlConfig struct {
 	keyword       time.Duration
 	thin          time.Duration
 	thinThreshold int
+	// negative is the negative-result circuit-breaker window: after a live search to
+	// an instance fails, a MISS for that instance short-circuits to the recorded error
+	// for this long instead of re-driving the tracker. Zero disables the breaker (the
+	// legacy behavior — every consumer re-hits a failing tracker). It is a breaker
+	// window, not a cache-entry TTL, so resolveTTL never reads it.
+	negative time.Duration
 }
 
 // resolveTTL picks the cache TTL for one search, mirroring registry/client.go

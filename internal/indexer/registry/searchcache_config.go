@@ -28,6 +28,8 @@ type CacheConfigView struct {
 	ThinTTL         time.Duration
 	ThinThreshold   int
 	RefreshAheadPct int
+	// NegativeTTL is the negative-result circuit-breaker window; 0 disables the breaker.
+	NegativeTTL time.Duration
 }
 
 // CacheConfigPatch is a partial cache-config update: a nil field is left unchanged,
@@ -40,6 +42,7 @@ type CacheConfigPatch struct {
 	ThinTTL         *time.Duration
 	ThinThreshold   *int
 	RefreshAheadPct *int
+	NegativeTTL     *time.Duration
 }
 
 // app_settings keys for the cache config — a DB row overrides the config-file seed.
@@ -50,6 +53,7 @@ const (
 	keyCacheThinTTL       = "cache.thin_ttl"
 	keyCacheThinThreshold = "cache.thin_threshold"
 	keyCacheRefreshAhead  = "cache.refresh_ahead_pct"
+	keyCacheNegativeTTL   = "cache.negative_ttl"
 )
 
 // ErrInvalidCacheConfig wraps every cache-config validation failure so the API layer
@@ -60,6 +64,7 @@ var (
 	errCacheTTLPositive = fmt.Errorf("%w: rss_ttl/keyword_ttl/thin_ttl must be positive durations", ErrInvalidCacheConfig)
 	errThinThreshold    = fmt.Errorf("%w: thin_threshold must be >= 0", ErrInvalidCacheConfig)
 	errRefreshPct       = fmt.Errorf("%w: refresh_ahead_pct must be between 0 and 100", ErrInvalidCacheConfig)
+	errNegativeTTL      = fmt.Errorf("%w: negative_ttl must be >= 0 (0 disables the breaker)", ErrInvalidCacheConfig)
 )
 
 func (t cacheTuning) view() CacheConfigView {
@@ -70,13 +75,14 @@ func (t cacheTuning) view() CacheConfigView {
 		ThinTTL:         t.ttl.thin,
 		ThinThreshold:   t.ttl.thinThreshold,
 		RefreshAheadPct: t.refreshAt,
+		NegativeTTL:     t.ttl.negative,
 	}
 }
 
 func (v CacheConfigView) tuning() cacheTuning {
 	return cacheTuning{
 		enabled:   v.Enabled,
-		ttl:       ttlConfig{rss: v.RSSTTL, keyword: v.KeywordTTL, thin: v.ThinTTL, thinThreshold: v.ThinThreshold},
+		ttl:       ttlConfig{rss: v.RSSTTL, keyword: v.KeywordTTL, thin: v.ThinTTL, thinThreshold: v.ThinThreshold, negative: v.NegativeTTL},
 		refreshAt: v.RefreshAheadPct,
 	}
 }
@@ -91,6 +97,8 @@ func (v CacheConfigView) Validate() error {
 		return errThinThreshold
 	case v.RefreshAheadPct < 0 || v.RefreshAheadPct > 100:
 		return errRefreshPct
+	case v.NegativeTTL < 0:
+		return errNegativeTTL
 	}
 	return nil
 }
@@ -137,6 +145,10 @@ func (c *SearchCache) UpdateConfig(ctx context.Context, p CacheConfigPatch) (Cac
 	if p.RefreshAheadPct != nil {
 		v.RefreshAheadPct = *p.RefreshAheadPct
 		kv[keyCacheRefreshAhead] = strconv.Itoa(*p.RefreshAheadPct)
+	}
+	if p.NegativeTTL != nil {
+		v.NegativeTTL = *p.NegativeTTL
+		kv[keyCacheNegativeTTL] = p.NegativeTTL.String()
 	}
 
 	if err := v.Validate(); err != nil {
@@ -196,6 +208,7 @@ func (c *SearchCache) LoadOverrides(ctx context.Context) error {
 	applyDur(all, keyCacheThinTTL, &v.ThinTTL)
 	applyInt(all, keyCacheThinThreshold, &v.ThinThreshold)
 	applyInt(all, keyCacheRefreshAhead, &v.RefreshAheadPct)
+	applyDurNonNeg(all, keyCacheNegativeTTL, &v.NegativeTTL)
 	if v.Validate() == nil { // keep the seed if an overlaid view is invalid
 		t := v.tuning()
 		c.tuning.Store(&t)
@@ -206,6 +219,17 @@ func (c *SearchCache) LoadOverrides(ctx context.Context) error {
 func applyDur(all map[string]string, key string, dst *time.Duration) {
 	if s, ok := all[key]; ok {
 		if d, err := time.ParseDuration(s); err == nil && d > 0 {
+			*dst = d
+		}
+	}
+}
+
+// applyDurNonNeg overlays a stored duration that may be zero (unlike applyDur, which
+// requires a positive value). The breaker window uses it so a persisted "0s" reloads
+// as "breaker disabled" rather than being ignored and falling back to the seed.
+func applyDurNonNeg(all map[string]string, key string, dst *time.Duration) {
+	if s, ok := all[key]; ok {
+		if d, err := time.ParseDuration(s); err == nil && d >= 0 {
 			*dst = d
 		}
 	}

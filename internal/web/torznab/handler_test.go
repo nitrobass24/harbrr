@@ -36,6 +36,7 @@ type fakeIndexer struct {
 	grabResult        *search.GrabResult // when set, Grab returns it
 	grabErr           error
 	gotGrabLink       string
+	recordInfo        *CacheInfo // when set, Search records it into the ctx sink (simulates a cache hit/store)
 }
 
 func (f *fakeIndexer) Info() IndexerInfo                  { return f.info }
@@ -44,6 +45,9 @@ func (f *fakeIndexer) Capabilities() *mapper.Capabilities { return f.caps }
 func (f *fakeIndexer) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
 	f.gotCtx = ctx
 	f.gotQuery = q
+	if f.recordInfo != nil {
+		RecordCacheInfo(ctx, *f.recordInfo)
+	}
 	return f.releases, f.searchErr
 }
 

@@ -259,6 +259,7 @@ func buildSearchCache(ctx context.Context, db *database.DB, cfg *config.Config, 
 		ThinTTL:         cfg.Cache.ThinDuration(),
 		ThinThreshold:   cfg.Cache.ThinThreshold,
 		RefreshAheadPct: cfg.Cache.RefreshAheadPct,
+		NegativeTTL:     cfg.Cache.NegativeDuration(),
 	}, time.Now, log)
 	if err := sc.LoadOverrides(ctx); err != nil {
 		log.Warn().Err(err).Msg("loading cache config overrides failed; using config-file defaults")

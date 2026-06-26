@@ -89,6 +89,7 @@ cache:
   thin_threshold: 5      # "a few" = this many results or fewer
   refresh_ahead_pct: 80  # refresh-in-background once this % of the TTL has elapsed
   cleanup_interval: 1h   # how often expired entries are tidied up
+  negative_ttl: 1m       # how long a FAILED tracker is left alone (the circuit breaker); "0s" disables
 ```
 
 What each one is for:
@@ -102,6 +103,7 @@ What each one is for:
 | `thin_threshold` | What counts as "nearly empty". | Raise it if your trackers return small result sets normally. |
 | `refresh_ahead_pct` | How early the background refresh kicks in. `80` = refresh during the last 20% of an entry's life. | Rarely changed. |
 | `cleanup_interval` | Housekeeping for expired rows. | Rarely changed. |
+| `negative_ttl` | How long a tracker that just **failed** is left alone — the [circuit breaker](circuit-breaker.md). | Raise to be gentler on flaky trackers; `0s` disables. |
 
 #### The two TTL tiers, explained
 
@@ -150,6 +152,37 @@ live from the tracker and refreshes the stored answer. This is the "I *know* som
 dropped, check right now" override for a manual search. Everyday app traffic doesn't send
 it, so it never interferes with normal caching.
 
+A client that speaks HTTP caching can do the same with a **`Cache-Control: no-cache`** (or
+`Pragma: no-cache`) request header — the header equivalent of `nocache=1`. Both force a live
+fetch and skip the conditional-GET shortcut below.
+
+### Conditional requests: `ETag` / `If-None-Match`
+
+harbrr speaks standard HTTP cache validation on the feed — something Prowlarr and Jackett
+don't. A cache-backed results feed comes back with two headers:
+
+```http
+ETag: "9f8c…"                       # a fingerprint of the result set
+Cache-Control: private, max-age=240 # still fresh for 240s
+```
+
+A client that keeps the `ETag` can send it back on the next poll as `If-None-Match`. If the
+results haven't changed, harbrr answers **`304 Not Modified`** with **no body at all** — even
+cheaper than serving the cached copy, and the tracker is never touched:
+
+```http
+GET /api/v2.0/indexers/<id>/results/torznab?... HTTP/1.1
+If-None-Match: "9f8c…"
+
+HTTP/1.1 304 Not Modified
+ETag: "9f8c…"
+```
+
+The `ETag` is a fingerprint of the **results**, so it only changes when the results actually
+change — a refresh that returns the same releases keeps the same `ETag`. This is opt-in on the
+client side: tools like autobrr can adopt it to poll harbrr almost for free, while clients that
+don't send `If-None-Match` simply get the normal cached feed.
+
 ---
 
 ## Seeing the cache work
@@ -163,11 +196,28 @@ harbrr exposes the cache through its management API.
   "enabled": true,
   "entries": 1423,
   "totalHits": 50211,
+  "trackerHitsSaved": 50211,
+  "breakerSuppressed": 37,
   "hitRatio": 0.86,
   "approxSizeBytes": 9123840,
   "oldestCachedAt": 1750680000,
   "newestCachedAt": 1750683600,
-  "lastUsedAt": 1750683715
+  "lastUsedAt": 1750683715,
+  "byIndexer": [
+    {
+      "instanceId": 4,
+      "slug": "redacted-tracker",
+      "name": "My Tracker",
+      "entries": 612,
+      "hitsSaved": 21984,
+      "hits": 1840,
+      "misses": 210,
+      "hitRatio": 0.9,
+      "approxSizeBytes": 4011200,
+      "breakerSuppressed": 12,
+      "breakerOpenUntil": null
+    }
+  ]
 }
 ```
 
@@ -176,9 +226,12 @@ harbrr exposes the cache through its management API.
 | `enabled` | Whether caching is on. If `false`, the rest is omitted. |
 | `entries` | How many distinct cached answers are currently stored. |
 | `totalHits` | How many searches have been served from cache. **This is your tracker-load saved.** |
+| `trackerHitsSaved` | The same number, named for the value story: tracker requests harbrr answered from cache instead of going out. Survives restarts. |
+| `breakerSuppressed` | How many searches were short-circuited by the [failing-tracker circuit breaker](circuit-breaker.md) — extra requests a struggling tracker was spared. |
 | `hitRatio` | Fraction of searches served from cache since harbrr last started. The headline number — "86% of searches never touched a tracker." |
 | `approxSizeBytes` | Roughly how much space the cache occupies. |
 | `oldestCachedAt` / `newestCachedAt` / `lastUsedAt` | Unix timestamps (seconds) for the oldest/newest stored entry and the most recent hit. |
+| `byIndexer` | The same figures broken down **per indexer**, plus `breakerOpenUntil` (the Unix time the breaker reopens that tracker, or `null` when it's healthy). |
 
 !!! info "`hitRatio` resets on restart"
     The ratio (and the hits/misses behind it) is counted in memory for the life of the

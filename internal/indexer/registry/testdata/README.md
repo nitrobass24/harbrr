@@ -8,8 +8,10 @@ a harbrr-additive design choice. Each entry carries one disposition (see `docs/d
 
 These behaviours are pinned by tests in `internal/indexer/registry`
 (`pacedclient_test.go`, `proxy_test.go`, `health_internal_test.go`,
-`health_integration_test.go`), `internal/indexer/cardigann/search`
-(`ratelimit_test.go`), and `internal/database` (`health_test.go`).
+`health_integration_test.go`, `searchcache_breaker_test.go`,
+`searchcache_stats_internal_test.go`), `internal/indexer/cardigann/search`
+(`ratelimit_test.go`), and `internal/database` (`health_test.go`,
+`searchcache_test.go`).
 
 ## Design choices (`[Deliberate]` unless noted)
 
@@ -72,6 +74,30 @@ These behaviours are pinned by tests in `internal/indexer/registry`
   `healthy`/`unhealthy` from a 1h recency window. `[Deliberate]`. A fleet-wide
   `/api/indexers/status` roll-up is a product feature, not a divergence — see
   `docs/plan.md` → "Beyond the alpha": fleet-wide indexer status.
+- **Negative-result circuit breaker on the search cache.** After a live search to a
+  configured instance fails, harbrr opens a per-instance breaker for a short window
+  (`negative_ttl`, default 1m; a rate-limit response extends it to its `Retry-After`).
+  While open, a cache **MISS** for that instance short-circuits to the recorded typed
+  error instead of re-driving the tracker — so a down/rate-limited tracker is spared
+  being re-hit by every consumer (anti-thundering-herd). Jackett/Prowlarr have no such
+  breaker. Scope choices: (1) **only a MISS consults the breaker** — a still-fresh
+  positive cache entry is always served, so an open breaker never blanks out cached
+  results; (2) it trips on **any** live search error **except a caller-cancelled
+  context** (`ctx.Err()`), because at the cache layer a non-nil `Search` error means the
+  tracker returned nothing usable and re-driving it for every other consumer only pesters
+  it — the short, self-healing window (the first request after it lapses probes live) and
+  the `CacheBypass` operator override bound the cost; (3) keyed by **instanceID** (the
+  cache layer's unit), not host; (4) the stored error is the **same typed,
+  redaction-safe** error the live path returns and is **never logged**. `negative_ttl` is
+  runtime-tunable (DB-backed app-settings; `0s` disables, taking effect immediately).
+  `[Deliberate]` (`searchcache_breaker.go`, `searchcache.go`; pinned by
+  `searchcache_breaker_test.go`).
+- **Per-indexer cache observability.** `GET /api/cache/stats` exposes `trackerHitsSaved`
+  (durable tracker requests served from cache), `breakerSuppressed`, and a `byIndexer[]`
+  breakdown (hit ratio, hits saved, breaker open-state) — harbrr-additive metrics with no
+  Jackett analogue. The surface reads only counts/timestamps and the indexer slug/name,
+  never the cached payload. `[Accepted]` (`searchcache_manage.go`,
+  `database/searchcache.go`; pinned by `searchcache_stats_internal_test.go`).
 
 ## Proxies
 

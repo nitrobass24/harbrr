@@ -16,14 +16,32 @@ import (
 
 // cacheStatsBody is the decoded /api/cache/stats response.
 type cacheStatsBody struct {
-	Enabled         bool    `json:"enabled"`
-	Entries         int64   `json:"entries"`
-	TotalHits       int64   `json:"totalHits"`
-	HitRatio        float64 `json:"hitRatio"`
-	ApproxSizeBytes int64   `json:"approxSizeBytes"`
-	OldestCachedAt  *int64  `json:"oldestCachedAt"`
-	NewestCachedAt  *int64  `json:"newestCachedAt"`
-	LastUsedAt      *int64  `json:"lastUsedAt"`
+	Enabled           bool                 `json:"enabled"`
+	Entries           int64                `json:"entries"`
+	TotalHits         int64                `json:"totalHits"`
+	HitRatio          float64              `json:"hitRatio"`
+	ApproxSizeBytes   int64                `json:"approxSizeBytes"`
+	OldestCachedAt    *int64               `json:"oldestCachedAt"`
+	NewestCachedAt    *int64               `json:"newestCachedAt"`
+	LastUsedAt        *int64               `json:"lastUsedAt"`
+	TrackerHitsSaved  int64                `json:"trackerHitsSaved"`
+	BreakerSuppressed int64                `json:"breakerSuppressed"`
+	ByIndexer         []cacheIndexerStatsB `json:"byIndexer"`
+}
+
+// cacheIndexerStatsB is the decoded per-indexer stats row.
+type cacheIndexerStatsB struct {
+	InstanceID        int64   `json:"instanceId"`
+	Slug              string  `json:"slug"`
+	Name              string  `json:"name"`
+	Entries           int64   `json:"entries"`
+	HitsSaved         int64   `json:"hitsSaved"`
+	Hits              int64   `json:"hits"`
+	Misses            int64   `json:"misses"`
+	HitRatio          float64 `json:"hitRatio"`
+	ApproxSizeBytes   int64   `json:"approxSizeBytes"`
+	BreakerSuppressed int64   `json:"breakerSuppressed"`
+	BreakerOpenUntil  *int64  `json:"breakerOpenUntil"`
 }
 
 // cacheFlushBody is the decoded /api/cache/flush response.
@@ -91,6 +109,7 @@ type cacheConfigBody struct {
 	ThinTTL         string `json:"thinTtl"`
 	ThinThreshold   int    `json:"thinThreshold"`
 	RefreshAheadPct int    `json:"refreshAheadPct"`
+	NegativeTTL     string `json:"negativeTtl"`
 }
 
 func TestCacheConfigGetPut(t *testing.T) {
@@ -218,6 +237,60 @@ func TestCacheStatsHappyPath(t *testing.T) {
 	if stats.OldestCachedAt == nil || stats.NewestCachedAt == nil || stats.LastUsedAt == nil {
 		t.Errorf("stats timestamps should be non-nil with one entry: %+v", stats)
 	}
+	// The per-indexer breakdown labels the seeded instance with its slug/name.
+	if len(stats.ByIndexer) != 1 {
+		t.Fatalf("byIndexer = %d rows, want 1", len(stats.ByIndexer))
+	}
+	idx := stats.ByIndexer[0]
+	if idx.InstanceID != instanceID || idx.Slug != "tt" {
+		t.Errorf("byIndexer[0] = %+v, want instance %d slug tt", idx, instanceID)
+	}
+	if idx.Entries != 1 || idx.Name == "" {
+		t.Errorf("byIndexer[0] = %+v, want entries=1 and a non-empty name", idx)
+	}
+	if idx.BreakerOpenUntil != nil {
+		t.Errorf("byIndexer[0].breakerOpenUntil = %v, want null", idx.BreakerOpenUntil)
+	}
+	// trackerHitsSaved mirrors the durable totalHits (no hits served yet -> 0).
+	if stats.TrackerHitsSaved != stats.TotalHits {
+		t.Errorf("trackerHitsSaved = %d, want == totalHits %d", stats.TrackerHitsSaved, stats.TotalHits)
+	}
+}
+
+// TestCacheConfigNegativeTTL covers the breaker knob: it round-trips on GET, accepts
+// "0s" to disable (which parseNonNegDurPatch admits where the TTL knobs reject it),
+// and rejects a negative duration.
+func TestCacheConfigNegativeTTL(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 23, 12, 0, 0, 0, time.UTC)
+	e := newEnvWithCache(t, api.Config{}, cacheBuilder(now))
+	base, c := serve(t, e)
+	setupAndLogin(t, base, c)
+
+	// Seed default is 1m (newCacheParams leaves NegativeTTL zero, so the cache seeds 0
+	// — assert whatever the seed is, then drive it explicitly).
+	resp, body := do(t, c, http.MethodPut, base+"/api/cache/config", map[string]any{"negativeTtl": "90s"}, nil)
+	mustStatus(t, resp, body, http.StatusOK)
+	var cfg cacheConfigBody
+	if err := json.Unmarshal(body, &cfg); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if cfg.NegativeTTL != "1m30s" {
+		t.Errorf("negativeTtl = %q, want 1m30s", cfg.NegativeTTL)
+	}
+
+	// "0s" disables the breaker — admitted here unlike the positive-only TTL knobs.
+	resp, body = do(t, c, http.MethodPut, base+"/api/cache/config", map[string]any{"negativeTtl": "0s"}, nil)
+	mustStatus(t, resp, body, http.StatusOK)
+	_ = json.Unmarshal(body, &cfg)
+	if cfg.NegativeTTL != "0s" {
+		t.Errorf("negativeTtl = %q, want 0s (disabled)", cfg.NegativeTTL)
+	}
+
+	// A negative duration is rejected.
+	resp, body = do(t, c, http.MethodPut, base+"/api/cache/config", map[string]any{"negativeTtl": "-5s"}, nil)
+	mustStatus(t, resp, body, http.StatusBadRequest)
 }
 
 func TestCacheFlushHappyPath(t *testing.T) {
@@ -268,6 +341,10 @@ func TestCacheStatsDisabled(t *testing.T) {
 	}
 	if stats.Enabled {
 		t.Error("stats.enabled = true, want false with caching off")
+	}
+	// byIndexer is always a JSON array, never null — even with caching disabled.
+	if stats.ByIndexer == nil {
+		t.Error("byIndexer = null with caching off, want []")
 	}
 }
 
