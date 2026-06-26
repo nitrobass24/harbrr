@@ -151,6 +151,9 @@ func TestFeedConditionalGet304(t *testing.T) {
 	if rec.Header().Get("ETag") != `"abc"` {
 		t.Error("304 should still carry the ETag")
 	}
+	if got := rec.Header().Get("Cache-Control"); got != "private, max-age=300" {
+		t.Errorf("304 Cache-Control = %q, want private, max-age=300", got)
+	}
 
 	rec = feedDo(t, cachingIndexer(t, `"abc"`), "t=search&q=x",
 		http.Header{"If-None-Match": {`"stale"`}})
@@ -186,5 +189,8 @@ func TestFeedNoValidatorsWhenUncached(t *testing.T) {
 	}
 	if got := rec.Header().Get("ETag"); got != "" {
 		t.Errorf("ETag = %q, want empty (uncached)", got)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "" {
+		t.Errorf("Cache-Control = %q, want empty (uncached)", got)
 	}
 }

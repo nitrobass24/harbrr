@@ -190,7 +190,7 @@ func (c *SearchCache) search(ctx context.Context, instanceID int64, cfg map[stri
 	key := buildSearchCacheKey(instanceID, q)
 
 	if torznab.CacheBypass(ctx) {
-		return c.liveAndStore(ctx, instanceID, cfg, inner, q, key)
+		return c.liveAndStoreRecording(ctx, instanceID, cfg, inner, q, key)
 	}
 
 	entry, found, err := c.store.Fetch(ctx, c.db, key, c.clock())
@@ -259,7 +259,7 @@ func (c *SearchCache) serveHit(ctx context.Context, instanceID int64, cfg map[st
 	}
 	c.hits.Add(1)
 	c.counters(instanceID).hits.Add(1)
-	c.recordCacheInfo(ctx, payloadETag(entry.ResultsJSON), entry.ExpiresAt)
+	c.recordCacheInfo(ctx, torznab.CacheInfo{ETag: payloadETag(entry.ResultsJSON), ExpiresAt: entry.ExpiresAt})
 	c.recordTouch(key)
 	if c.shouldRefreshAhead(entry) {
 		c.triggerSWR(ctx, instanceID, cfg, inner, q, key)
@@ -279,35 +279,55 @@ func (c *SearchCache) serveMiss(ctx context.Context, instanceID int64, cfg map[s
 	v, err, _ := c.sf.Do(key, func() (any, error) {
 		if entry, found, ferr := c.store.Fetch(ctx, c.db, key, c.clock()); ferr == nil && found {
 			if releases, derr := decodeReleases(entry.ResultsJSON, key); derr == nil {
-				c.recordCacheInfo(ctx, payloadETag(entry.ResultsJSON), entry.ExpiresAt)
-				return releases, nil
+				info := torznab.CacheInfo{ETag: payloadETag(entry.ResultsJSON), ExpiresAt: entry.ExpiresAt}
+				return missResult{releases: releases, info: info}, nil
 			}
 		}
-		return c.liveAndStore(ctx, instanceID, cfg, inner, q, key)
+		releases, info, lerr := c.liveAndStore(ctx, instanceID, cfg, inner, q, key)
+		if lerr != nil {
+			return nil, lerr
+		}
+		return missResult{releases: releases, info: info}, nil
 	})
 	if err != nil {
 		return nil, err //nolint:wrapcheck // already wrapped by liveAndStore/adapter; no key/payload to add.
 	}
-	releases, ok := v.([]*normalizer.Release)
+	res, ok := v.(missResult)
 	if !ok {
 		// Defensive: a value of an unexpected type can only mean this miss coalesced
 		// onto a flight that returned something else. Never serve an empty success on
 		// a type mismatch — run our own live search instead.
-		return c.liveAndStore(ctx, instanceID, cfg, inner, q, key)
+		return c.liveAndStoreRecording(ctx, instanceID, cfg, inner, q, key)
 	}
-	return releases, nil
+	// Record per CALLER, outside the flight, so every coalesced miss fills its own sink.
+	c.recordCacheInfo(ctx, res.info)
+	return res.releases, nil
 }
 
 // liveAndStore runs the live search and, on success, writes the result back
-// best-effort (a store failure never fails the search). An inner error is returned
-// and never cached.
-func (c *SearchCache) liveAndStore(ctx context.Context, instanceID int64, cfg map[string]string, inner torznab.Indexer, q search.Query, key string) ([]*normalizer.Release, error) {
+// best-effort (a store failure never fails the search), returning the releases and the
+// freshly stored entry's HTTP validators. An inner error is returned and never cached.
+// It does NOT record into the request sink — the caller does (per-caller, so a
+// singleflight follower also gets the validators).
+func (c *SearchCache) liveAndStore(ctx context.Context, instanceID int64, cfg map[string]string, inner torznab.Indexer, q search.Query, key string) ([]*normalizer.Release, torznab.CacheInfo, error) {
 	releases, err := c.fetchLive(ctx, inner, q)
 	if err != nil {
-		return nil, err
+		return nil, torznab.CacheInfo{}, err
 	}
 	etag, expiresAt := c.storeBestEffort(ctx, instanceID, cfg, q, key, releases)
-	c.recordCacheInfo(ctx, etag, expiresAt)
+	return releases, torznab.CacheInfo{ETag: etag, ExpiresAt: expiresAt}, nil
+}
+
+// liveAndStoreRecording is liveAndStore for the synchronous, non-flight callers (the
+// nocache bypass path and the defensive miss fallback): it records the validators into
+// this caller's own sink. The singleflight miss path instead records outside the flight
+// so every coalesced caller is covered.
+func (c *SearchCache) liveAndStoreRecording(ctx context.Context, instanceID int64, cfg map[string]string, inner torznab.Indexer, q search.Query, key string) ([]*normalizer.Release, error) {
+	releases, info, err := c.liveAndStore(ctx, instanceID, cfg, inner, q, key)
+	if err != nil {
+		return nil, err //nolint:wrapcheck // already wrapped by the adapter; no key/payload to add.
+	}
+	c.recordCacheInfo(ctx, info)
 	return releases, nil
 }
 
@@ -360,12 +380,22 @@ func payloadETag(payload []byte) string {
 
 // recordCacheInfo surfaces the served entry's HTTP validators to the feed handler via
 // the request's CacheInfo sink (a no-op when there is none — the JSON API and the
-// detached SWR refresh carry none). An empty etag records nothing.
-func (c *SearchCache) recordCacheInfo(ctx context.Context, etag string, expiresAt time.Time) {
-	if etag == "" {
+// detached SWR refresh carry none). An empty etag records nothing. It is called per
+// CALLER, outside the singleflight, so coalesced misses each fill their own sink.
+func (c *SearchCache) recordCacheInfo(ctx context.Context, info torznab.CacheInfo) {
+	if info.ETag == "" {
 		return
 	}
-	torznab.RecordCacheInfo(ctx, torznab.CacheInfo{ETag: etag, ExpiresAt: expiresAt})
+	torznab.RecordCacheInfo(ctx, info)
+}
+
+// missResult is the singleflight return for a cache miss: the released slice plus the
+// validators to surface. The flight leader computes both; every coalesced caller then
+// records the validators into its own request sink after the flight returns (recording
+// inside the flight would fill only the leader's sink).
+type missResult struct {
+	releases []*normalizer.Release
+	info     torznab.CacheInfo
 }
 
 // recordTouch buffers a served hit in memory (cheap, non-blocking) instead of
