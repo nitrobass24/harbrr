@@ -2,6 +2,7 @@ package newznab
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
@@ -155,11 +156,12 @@ func getByIDStr(raw string) (mapper.Category, bool) {
 	return mapper.GetByID(mustAtoiNonneg(id))
 }
 
-// mustAtoiNonneg parses a non-empty digit string (already validated by digits) to an int.
+// mustAtoiNonneg parses a non-empty digit string (already validated by digits) to an
+// int, returning 0 on the impossible error/overflow rather than silently wrapping.
 func mustAtoiNonneg(s string) int {
-	n := 0
-	for _, r := range s {
-		n = n*10 + int(r-'0')
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 0 {
+		return 0
 	}
 	return n
 }

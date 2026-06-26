@@ -2,6 +2,7 @@ package newznab
 
 import (
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -214,13 +215,27 @@ func newznabifySeason(raw string) string {
 // A real server ignores order; harbrr controls it only for deterministic, redaction-safe
 // output.
 func encodeQuery(params url.Values) string {
-	// Stable cosmetic order: t, extended, then the rest in a fixed sequence, apikey last.
+	// Stable cosmetic order: t, extended, then the rest in a fixed sequence. Any param
+	// not in this list is appended in sorted order so a future key is never silently
+	// dropped; apikey is always emitted last (redaction-stable).
 	order := []string{
 		"t", "extended", "q", "cat",
 		"imdbid", "tmdbid", "tvdbid", "tvmazeid", "rid", "traktid",
 		"season", "ep", "artist", "album", "author", "title",
-		"limit", "apikey",
+		"limit",
 	}
+	known := map[string]bool{"apikey": true}
+	for _, k := range order {
+		known[k] = true
+	}
+	var extra []string
+	for k := range params {
+		if !known[k] {
+			extra = append(extra, k)
+		}
+	}
+	sort.Strings(extra)
+
 	var b strings.Builder
 	first := true
 	write := func(key string) {
@@ -237,5 +252,9 @@ func encodeQuery(params url.Values) string {
 	for _, key := range order {
 		write(key)
 	}
+	for _, key := range extra {
+		write(key)
+	}
+	write("apikey")
 	return b.String()
 }

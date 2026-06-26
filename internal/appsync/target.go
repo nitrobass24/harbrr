@@ -70,7 +70,13 @@ func (d DesiredIndexer) hash() string {
 	caps := append([]string(nil), d.Capabilities...)
 	sort.Strings(caps)
 	h := sha256.New()
-	fmt.Fprintf(h, "%s\x00%s\x00%v\x00%v\x00%d\x00%t\x00%s", d.Name, d.FeedURL, cats, caps, d.Priority, d.Enabled, d.Protocol)
+	fmt.Fprintf(h, "%s\x00%s\x00%v\x00%v\x00%d\x00%t", d.Name, d.FeedURL, cats, caps, d.Priority, d.Enabled)
+	// Protocol joins the fingerprint only when it diverges from the torrent default,
+	// so a pre-usenet torrent indexer keeps its original PayloadHash (no spurious
+	// re-sync on upgrade); a usenet indexer fingerprints distinctly.
+	if d.Protocol != "" && d.Protocol != "torrent" {
+		fmt.Fprintf(h, "\x00%s", d.Protocol)
+	}
 	return hex.EncodeToString(h.Sum(nil))
 }
 

@@ -7,6 +7,27 @@ import (
 	"testing"
 )
 
+// TestHashProtocolBackwardCompat guards that the torrent default does not change a
+// DesiredIndexer's fingerprint (so pre-usenet PayloadHashes stay valid and torrent
+// indexers don't spuriously re-sync), while usenet fingerprints distinctly.
+func TestHashProtocolBackwardCompat(t *testing.T) {
+	t.Parallel()
+	base := DesiredIndexer{Name: "tt", FeedURL: "http://h/api/v2.0/indexers/tt/results/torznab", Enabled: true}
+
+	empty := base
+	torrent := base
+	torrent.Protocol = "torrent"
+	usenet := base
+	usenet.Protocol = "usenet"
+
+	if empty.hash() != torrent.hash() {
+		t.Error(`Protocol "" and "torrent" must hash identically (backward compat)`)
+	}
+	if usenet.hash() == torrent.hash() {
+		t.Error("usenet must hash differently from torrent")
+	}
+}
+
 func TestSlugFromFeedURL(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
