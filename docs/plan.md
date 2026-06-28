@@ -483,9 +483,12 @@ alpha ships with manual indexer setup — existing Prowlarr/Jackett users re-ent
       windowing, and a paging-aware conditional-GET ETag (folds the page window so a revalidation
       of one page can't be answered 304 with another's body) — plus a qui-shaped JSON API envelope
       (`{results, total, hasMore, limit, offset}`). Page size stays default=max=100. Deep
-      server-side multi-page *upstream* fetching is deferred (post-alpha): `total` reflects the
-      single engine fetch that backs every page of a query. Lenient offset/limit clamping is a
-      recorded deliberate divergence (no strict spec-201 error).
+      server-side multi-page *upstream* fetching is deferred (post-alpha → **issue #75**): `total`
+      reflects the single engine fetch that backs every page of a query. Lenient offset/limit
+      clamping is a recorded deliberate divergence (no strict spec-201 error). The disjoint-pages +
+      stable-`total` property Prowlarr violates (#1428) is now a **standing test** (feed + JSON +
+      shared pipeline: `TestFeedCrossPageNoDuplicate`, `TestSearchJSONEnvelopeCrossPage`,
+      `TestSearchReleasesCrossPageDisjoint` / `TestSearchReleasesTotalIsHonest`).
 - [ ] **More \*arr sync targets** — Lidarr / Readarr / Mylar / Whisparr. The Phase-10 sync contract
       (target-neutral `DesiredIndexer` reconciled behind the `Target` interface) is built for
       Sonarr/Radarr/qui; extending it to another app is mostly a per-app adapter.

@@ -16,6 +16,9 @@ const serverTitle = "harbrr"
 // fixed defaults (TorznabCapabilities ctor: LimitsDefault = LimitsMax = 100).
 // LimitsMax also bounds the served result page — the request handler clamps to
 // it, so the advertised <limits max> and the enforced page size cannot drift.
+// Keeping default == max is deliberate: Sonarr/Radarr page at the advertised
+// *default*, so a `default < max` (e.g. 25) makes them crawl in small pages
+// (Sonarr #5373). default = max = 100 lets them fetch a full page at once.
 const (
 	LimitsDefault = 100
 	LimitsMax     = 100
