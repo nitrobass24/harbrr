@@ -2,8 +2,11 @@ package torznab
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -227,6 +230,115 @@ func TestFeedNoCacheHeaderForcesFresh(t *testing.T) {
 	}
 	if !CacheBypass(idx.gotCtx) {
 		t.Error("a no-cache request header must set cache bypass on the search ctx")
+	}
+}
+
+// feedGUIDRe / feedTotalRe extract the rendered <guid>s and the <newznab:response
+// total> from a served feed body. The rich test indexer is direct (no /dl rewrite), so
+// each <guid> is the release's raw link — unique per release in the paging fixtures.
+var (
+	feedGUIDRe  = regexp.MustCompile(`<guid[^>]*>([^<]+)</guid>`)
+	feedTotalRe = regexp.MustCompile(`<newznab:response[^>]*\btotal="(\d+)"`)
+)
+
+func feedGUIDs(body string) []string {
+	m := feedGUIDRe.FindAllStringSubmatch(body, -1)
+	out := make([]string, 0, len(m))
+	for _, g := range m {
+		out = append(out, g[1])
+	}
+	return out
+}
+
+func feedTotal(t *testing.T, body string) int {
+	t.Helper()
+	m := feedTotalRe.FindStringSubmatch(body)
+	if m == nil {
+		t.Fatalf("no <newznab:response total> in feed body:\n%s", body)
+	}
+	n, err := strconv.Atoi(m[1])
+	if err != nil {
+		t.Fatalf("non-numeric total %q: %v", m[1], err)
+	}
+	return n
+}
+
+// pagingIndexer is a rich (direct-link) indexer holding n synthetic releases with
+// unique links, for the cross-page paging tests.
+func pagingIndexer(t *testing.T, n int) *fakeIndexer {
+	t.Helper()
+	idx := cachingIndexer(t, `"abc"`) // a non-empty payload ETag so validators are emitted
+	rels := make([]*normalizer.Release, n)
+	for i := range rels {
+		rels[i] = demoRelease(
+			fmt.Sprintf("R%03d", i),
+			fmt.Sprintf("https://rich.test/dl/%d.torrent", i),
+			[]int{2000},
+		)
+	}
+	idx.releases = rels
+	return idx
+}
+
+// TestFeedCrossPageNoDuplicate is the executable form of "harbrr never re-serves
+// page 0" — the bug Prowlarr ships (#1428: a request for the next 100 results re-returns
+// the first 100). With a >100-result fetch, page 0 (offset=0,limit=100) and page 1
+// (offset=100,limit=100) must render DISJOINT guids, both must report the same honest
+// <newznab:response total>, and the two pages' served ETags must differ (the pagedETag
+// fold) while a same-window revalidation still 304s.
+func TestFeedCrossPageNoDuplicate(t *testing.T) {
+	t.Parallel()
+	const total = 150
+
+	page0 := feedDo(t, pagingIndexer(t, total), "t=search&q=x&offset=0&limit=100", nil)
+	page1 := feedDo(t, pagingIndexer(t, total), "t=search&q=x&offset=100&limit=100", nil)
+	if page0.Code != http.StatusOK || page1.Code != http.StatusOK {
+		t.Fatalf("page statuses = %d / %d, want 200 / 200", page0.Code, page1.Code)
+	}
+
+	g0 := feedGUIDs(page0.Body.String())
+	g1 := feedGUIDs(page1.Body.String())
+	if len(g0) != 100 {
+		t.Fatalf("page 0 rendered %d items, want 100", len(g0))
+	}
+	if len(g1) != 50 {
+		t.Fatalf("page 1 rendered %d items, want 50 (150 - 100)", len(g1))
+	}
+	// The property Prowlarr violates: no result appears on both pages.
+	seen := make(map[string]bool, len(g0))
+	for _, g := range g0 {
+		seen[g] = true
+	}
+	for _, g := range g1 {
+		if seen[g] {
+			t.Errorf("guid %q served on BOTH page 0 and page 1 (Prowlarr #1428 re-serve)", g)
+		}
+	}
+	// Honest, identical total on every page (the full match count, not the page length).
+	if got0, got1 := feedTotal(t, page0.Body.String()), feedTotal(t, page1.Body.String()); got0 != total || got1 != total {
+		t.Errorf("<newznab:response total> = %d (page 0) / %d (page 1), want %d on both", got0, got1, total)
+	}
+
+	// Distinct windows -> distinct served validators...
+	e0, e1 := page0.Header().Get("ETag"), page1.Header().Get("ETag")
+	if e0 == "" || e1 == "" {
+		t.Fatal("both pages must emit an ETag")
+	}
+	if e0 == e1 {
+		t.Errorf("page 0 and page 1 share an ETag (%s); the page window must fold into the validator", e0)
+	}
+	// The fold covers the LIMIT dimension too: same offset, different limit -> distinct
+	// validator (so a client revalidating offset=0&limit=50 is never 304'd against a
+	// cached offset=0&limit=100 body).
+	half := feedDo(t, pagingIndexer(t, total), "t=search&q=x&offset=0&limit=50", nil)
+	if eh := half.Header().Get("ETag"); eh == e0 {
+		t.Errorf("offset=0&limit=50 shares the offset=0&limit=100 ETag (%s); limit must fold into the validator", eh)
+	}
+	// ...while a same-window revalidation still 304s (caching is intact).
+	reval := feedDo(t, pagingIndexer(t, total), "t=search&q=x&offset=100&limit=100",
+		http.Header{"If-None-Match": {e1}})
+	if reval.Code != http.StatusNotModified {
+		t.Errorf("page 1 revalidated with its own ETag = %d, want 304", reval.Code)
 	}
 }
 

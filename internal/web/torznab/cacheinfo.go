@@ -95,7 +95,7 @@ func ifNoneMatchMatches(header, etag string) bool {
 
 // pagedETag folds this page's window into the cache layer's payload ETag so two feed
 // requests that share a cached result set but render different pages get distinct
-// validators. The payload ETag (searchcache.payloadETag) hashes the full pre-page
+// validators. The payload ETag (registry.payloadETag) hashes the full pre-page
 // result set and the cache key excludes limit/offset — one engine fetch serves every
 // page — so without this fold a client revalidating page N with page M's ETag would be
 // answered 304 and reuse the wrong page. It hashes the page-independent payload ETag,

@@ -2,9 +2,11 @@ package torznab
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -47,6 +49,97 @@ func TestSearchReleasesPropagatesError(t *testing.T) {
 	idx := &fakeIndexer{info: IndexerInfo{ID: "demo"}, caps: testCaps(t), searchErr: context.DeadlineExceeded}
 	if _, err := SearchReleases(context.Background(), idx, url.Values{}); err == nil {
 		t.Fatal("expected the search error to propagate")
+	}
+}
+
+// TestSearchReleasesCrossPageDisjoint proves the shared pipeline both surfaces page
+// over (the Torznab feed and the JSON API both call SearchReleases) splits a >100-result
+// fetch into DISJOINT windows — page 0 and page 1 share no release — with a stable,
+// honest Total on every page. This is the parity root for the per-surface tests and the
+// executable form of the property Prowlarr violates (#1428: it re-serves page 0 when
+// asked for the next 100). Each release has a unique link, so its link is its guid.
+func TestSearchReleasesCrossPageDisjoint(t *testing.T) {
+	t.Parallel()
+	const total = 150
+	idx := &fakeIndexer{info: IndexerInfo{ID: "demo"}, caps: testCaps(t)}
+	idx.releases = make([]*normalizer.Release, total)
+	for i := range idx.releases {
+		idx.releases[i] = demoRelease(
+			fmt.Sprintf("R%03d", i),
+			fmt.Sprintf("https://demo.test/dl/%d", i),
+			[]int{2000},
+		)
+	}
+
+	page := func(offset int) SearchResult {
+		t.Helper()
+		q := url.Values{"q": {"x"}, "limit": {"100"}, "offset": {strconv.Itoa(offset)}}
+		res, err := SearchReleases(context.Background(), idx, q)
+		if err != nil {
+			t.Fatalf("SearchReleases(offset=%d): %v", offset, err)
+		}
+		return res
+	}
+
+	p0, p1 := page(0), page(100)
+	if len(p0.Releases) != 100 || len(p1.Releases) != 50 {
+		t.Fatalf("page lengths = %d / %d, want 100 / 50", len(p0.Releases), len(p1.Releases))
+	}
+	if p0.Total != total || p1.Total != total {
+		t.Errorf("Total = %d / %d, want %d on both (full match count, not page length)", p0.Total, p1.Total, total)
+	}
+	seen := make(map[string]bool, len(p0.Releases))
+	for _, r := range p0.Releases {
+		seen[r.Link] = true
+	}
+	for _, r := range p1.Releases {
+		if seen[r.Link] {
+			t.Errorf("release %q served on BOTH pages (Prowlarr #1428 re-serve)", r.Link)
+		}
+	}
+}
+
+// TestSearchReleasesTotalIsHonest pins that Total is the REAL match count of harbrr's
+// single fetch — measured after dedupe-by-guid and category filtering, before the page
+// slice — never the raw upstream count nor a speculative estimate. A future change that
+// inflated Total would reintroduce the wasted client requests this design avoids
+// (Sonarr/Radarr stop paging on a short page, so an honest Total must reflect what
+// harbrr actually has).
+func TestSearchReleasesTotalIsHonest(t *testing.T) {
+	t.Parallel()
+	idx := &fakeIndexer{
+		info: IndexerInfo{ID: "demo"}, caps: testCaps(t),
+		releases: []*normalizer.Release{
+			demoRelease("A", "https://demo.test/a", []int{2000}),
+			demoRelease("A-dup", "https://demo.test/a", []int{2000}), // same link -> same guid -> deduped
+			demoRelease("B", "https://demo.test/b", []int{2000}),
+			demoRelease("C-tv", "https://demo.test/c", []int{5000}), // TV -> dropped by the cat=2000 filter
+		},
+	}
+	// Raw Search returns 4; after dedupe (-1) and the category filter (-1) the honest
+	// match count is 2.
+	res, err := SearchReleases(context.Background(), idx, url.Values{"q": {"x"}, "cat": {"2000"}})
+	if err != nil {
+		t.Fatalf("SearchReleases: %v", err)
+	}
+	if res.Total != 2 {
+		t.Errorf("Total = %d, want 2 (post-dedupe, post-filter; the raw fetch was 4)", res.Total)
+	}
+	if len(res.Releases) != 2 {
+		t.Errorf("Releases = %d, want 2", len(res.Releases))
+	}
+
+	// An offset at/past Total yields an empty page but reports the SAME honest Total:
+	// the client sees results exist (just none in this window), never a re-serve.
+	past, err := SearchReleases(context.Background(), idx, url.Values{"q": {"x"}, "cat": {"2000"}, "offset": {"5"}})
+	if err != nil {
+		t.Fatalf("SearchReleases(offset past end): %v", err)
+	}
+	if len(past.Releases) != 0 {
+		t.Errorf("offset past end: Releases = %d, want 0", len(past.Releases))
+	}
+	if past.Total != 2 {
+		t.Errorf("offset past end: Total = %d, want 2 (unchanged)", past.Total)
 	}
 }
 
