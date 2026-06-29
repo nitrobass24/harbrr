@@ -202,13 +202,15 @@ func TestSearchIssuesBearerRequest(t *testing.T) {
 		t.Fatalf("Search: %v", err)
 	}
 
-	var got *recordedReq
+	var got recordedReq
+	found := false
 	for i := range doer.reqs {
 		if strings.Contains(doer.reqs[i].url, "torrents") {
-			got = &doer.reqs[i]
+			got = doer.reqs[i]
+			found = true
 		}
 	}
-	if got == nil {
+	if !found {
 		t.Fatal("no torrents request recorded")
 	}
 	if got.method != stdhttp.MethodGet || got.auth != "Bearer tok-9" {

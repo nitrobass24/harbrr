@@ -55,13 +55,15 @@ func TestGrab(t *testing.T) {
 		t.Errorf("Redirect = %q, want empty (direct torrent)", res.Redirect)
 	}
 
-	var dl *recordedReq
+	var dl recordedReq
+	found := false
 	for i := range doer.reqs {
 		if strings.Contains(doer.reqs[i].url, "download") {
-			dl = &doer.reqs[i]
+			dl = doer.reqs[i]
+			found = true
 		}
 	}
-	if dl == nil {
+	if !found {
 		t.Fatal("no download request recorded")
 	}
 	if dl.method != stdhttp.MethodGet || dl.auth != "Bearer tok-grab" {
