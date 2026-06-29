@@ -26,7 +26,7 @@ import (
 	"github.com/autobrr/harbrr/internal/server"
 	"github.com/autobrr/harbrr/internal/web/api"
 	"github.com/autobrr/harbrr/internal/web/swagger"
-	"github.com/autobrr/harbrr/internal/web/torznab"
+	"github.com/autobrr/harbrr/internal/web/torznabhttp"
 )
 
 const testKey = "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
@@ -148,13 +148,13 @@ func buildStack(t *testing.T, basePath string) (*stack, *stdhttp.Client) {
 	if err != nil {
 		t.Fatalf("api router: %v", err)
 	}
-	tz := torznab.NewHandler(
+	tz := torznabhttp.NewHandler(
 		reg,
-		torznab.WithAPIKeyValidator(func(k string) bool {
+		torznabhttp.WithAPIKeyValidator(func(k string) bool {
 			_, err := authSvc.ValidateAPIKey(context.Background(), k)
 			return err == nil
 		}),
-		torznab.WithBasePath(basePath),
+		torznabhttp.WithBasePath(basePath),
 	)
 
 	srv := server.New(server.Deps{Management: mgmt, Torznab: tz, Spec: swagger.Spec(), DocsUI: swagger.UI(), Logger: zerolog.Nop()},

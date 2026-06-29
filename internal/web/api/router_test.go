@@ -22,7 +22,7 @@ import (
 	"github.com/autobrr/harbrr/internal/secrets"
 	"github.com/autobrr/harbrr/internal/web/api"
 	"github.com/autobrr/harbrr/internal/web/swagger"
-	"github.com/autobrr/harbrr/internal/web/torznab"
+	"github.com/autobrr/harbrr/internal/web/torznabhttp"
 )
 
 // testKey is a synthetic 32-byte AES key (tests only).
@@ -157,7 +157,7 @@ func TestOpenAPIDriftRoutesMatchSpec(t *testing.T) {
 	// The Torznab feed handler mounts its routes on a separate ServeMux, so fold them
 	// in from the package's own route table (its single source of truth) — otherwise
 	// the spec's documented feed endpoints would look like undocumented drift.
-	for _, rt := range torznab.Routes() {
+	for _, rt := range torznabhttp.Routes() {
 		routes[rt.Method+" "+rt.Path] = struct{}{}
 	}
 	spec := specOperations(t)

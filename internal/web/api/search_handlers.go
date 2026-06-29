@@ -6,7 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
-	"github.com/autobrr/harbrr/internal/web/torznab"
+	"github.com/autobrr/harbrr/internal/web/torznabhttp"
 )
 
 // searchResponse is the JSON body of GET /api/indexers/{slug}/search. It mirrors qui's
@@ -27,7 +27,7 @@ type searchResponse struct {
 // and the page's resolved (link-sealed) releases. HasMore is computed from the pipeline
 // page length and Total (the pre-slice match count), so it is correct at every boundary
 // — including an offset at or past Total (empty page, no more) and a partial last page.
-func newSearchResponse(res torznab.SearchResult, results []*normalizer.Release) searchResponse {
+func newSearchResponse(res torznabhttp.SearchResult, results []*normalizer.Release) searchResponse {
 	return searchResponse{
 		Results: results,
 		Total:   res.Total,
@@ -39,7 +39,7 @@ func newSearchResponse(res torznab.SearchResult, results []*normalizer.Release) 
 
 // searchIndexer runs a JSON search against a configured indexer and returns the
 // same releases the Torznab feed serves for the same query — it calls the shared
-// read pipeline (torznab.SearchReleases), so the result set is identical to the
+// read pipeline (torznabhttp.SearchReleases), so the result set is identical to the
 // feed's (parity). For a resolver-needing indexer each download link is sealed
 // behind the /dl proxy, so a passkey never reaches the response, exactly as the
 // feed does. Query params are the Torznab set (q, cat, the external ids, season/ep,
@@ -52,7 +52,7 @@ func (rt *router) searchIndexer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	res, err := torznab.SearchReleases(r.Context(), idx, r.URL.Query())
+	res, err := torznabhttp.SearchReleases(r.Context(), idx, r.URL.Query())
 	if err != nil {
 		rt.writeServiceError(w, "search indexer", err)
 		return
@@ -67,9 +67,9 @@ func (rt *router) searchIndexer(w http.ResponseWriter, r *http.Request) {
 // than served in the clear. Production always wires the keyring, so the withhold case
 // is a defensive guard. It copies each release so the engine's results are not
 // mutated.
-func (rt *router) resolveSearchLinks(r *http.Request, idx torznab.Indexer, releases []*normalizer.Release) []*normalizer.Release {
-	rw := torznab.NewDLRewriter(rt.dlToken, idx, torznab.DLBaseURL(r, rt.basePath, idx.Info().ID), r.Header.Get("X-API-Key"))
-	withhold := rw == nil && torznab.NeedsDLProxy(idx)
+func (rt *router) resolveSearchLinks(r *http.Request, idx torznabhttp.Indexer, releases []*normalizer.Release) []*normalizer.Release {
+	rw := torznabhttp.NewDLRewriter(rt.dlToken, idx, torznabhttp.DLBaseURL(r, rt.basePath, idx.Info().ID), r.Header.Get("X-API-Key"))
+	withhold := rw == nil && torznabhttp.NeedsDLProxy(idx)
 	out := make([]*normalizer.Release, len(releases))
 	for i, rel := range releases {
 		cp := *rel

@@ -17,7 +17,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 	"github.com/autobrr/harbrr/internal/secrets"
-	"github.com/autobrr/harbrr/internal/web/torznab"
+	"github.com/autobrr/harbrr/internal/web/torznabhttp"
 )
 
 // dlRegPasskey is a synthetic passkey-shaped value (built by concatenation so the
@@ -27,7 +27,7 @@ var dlRegPasskey = strings.Repeat("7c6d", 8)
 
 const dlRegAPIKey = "harbrr-reg-key" //nolint:gosec // G101: synthetic test API key.
 
-// resolverFakeIndexer is a minimal torznab.Indexer whose download needs resolving,
+// resolverFakeIndexer is a minimal torznabhttp.Indexer whose download needs resolving,
 // so its passkey-bearing link must be sealed behind the /dl proxy. It counts Search
 // calls so the test can prove the second poll is a cache hit (inner not re-called).
 type resolverFakeIndexer struct {
@@ -36,8 +36,8 @@ type resolverFakeIndexer struct {
 	calls    int
 }
 
-func (f *resolverFakeIndexer) Info() torznab.IndexerInfo {
-	return torznab.IndexerInfo{ID: "demo", Name: "Demo", Type: "private"}
+func (f *resolverFakeIndexer) Info() torznabhttp.IndexerInfo {
+	return torznabhttp.IndexerInfo{ID: "demo", Name: "Demo", Type: "private"}
 }
 func (f *resolverFakeIndexer) Capabilities() *mapper.Capabilities { return f.caps }
 func (f *resolverFakeIndexer) NeedsResolver() bool                { return true }
@@ -102,11 +102,11 @@ func TestCachedResolverLinkSealedOnHit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("keyring: %v", err)
 	}
-	h := torznab.NewHandler(
+	h := torznabhttp.NewHandler(
 		regProvider{"demo": cached},
-		torznab.WithAPIKey(dlRegAPIKey),
-		torznab.WithClock(func() time.Time { return now }),
-		torznab.WithDLToken(kr),
+		torznabhttp.WithAPIKey(dlRegAPIKey),
+		torznabhttp.WithClock(func() time.Time { return now }),
+		torznabhttp.WithDLToken(kr),
 	)
 
 	// First poll: cache MISS (inner called once), links sealed via /dl.
@@ -148,9 +148,9 @@ func demoRegRelease() *normalizer.Release {
 	}
 }
 
-type regProvider map[string]torznab.Indexer
+type regProvider map[string]torznabhttp.Indexer
 
-func (p regProvider) Indexer(_ context.Context, id string) (torznab.Indexer, bool) {
+func (p regProvider) Indexer(_ context.Context, id string) (torznabhttp.Indexer, bool) {
 	i, ok := p[id]
 	return i, ok
 }

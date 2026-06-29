@@ -6,7 +6,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
-	"github.com/autobrr/harbrr/internal/web/torznab"
+	"github.com/autobrr/harbrr/internal/web/torznabhttp"
 )
 
 // NewSearchCacheForTest builds a SearchCache with default keyword/rss/thin tiers and
@@ -23,6 +23,6 @@ func NewSearchCacheForTest(db dbinterface.Querier, clock func() time.Time) *Sear
 
 // WrapForTest exposes the unexported cache decorator to the external test package so
 // it can serve a cached indexer through the real Torznab handler.
-func WrapForTest(sc *SearchCache, inner torznab.Indexer, instanceID int64) torznab.Indexer {
+func WrapForTest(sc *SearchCache, inner torznabhttp.Indexer, instanceID int64) torznabhttp.Indexer {
 	return sc.wrap(inner, instanceID, nil)
 }

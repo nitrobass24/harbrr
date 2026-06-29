@@ -1,7 +1,7 @@
 // Package registry is harbrr's production indexer-instance registry: it persists
 // configured indexers (definition id + settings + encrypted credentials), resolves
 // a slug to a ready indexer (a Cardigann engine or a native family driver), and
-// implements the torznab.Provider the Torznab handler expects. It is the core of the
+// implements the torznabhttp.Provider the Torznab handler expects. It is the core of the
 // Prowlarr-style manager.
 package registry
 
@@ -35,7 +35,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/native/newznab"
 	"github.com/autobrr/harbrr/internal/indexer/native/passthepopcorn"
 	"github.com/autobrr/harbrr/internal/indexer/native/torrentday"
-	"github.com/autobrr/harbrr/internal/web/torznab"
+	"github.com/autobrr/harbrr/internal/web/torznabhttp"
 )
 
 // errDisabled marks a resolve that found a disabled instance — an expected
@@ -70,8 +70,8 @@ type Registry struct {
 
 	mu sync.Mutex
 	// cache holds the per-slug served indexer. It is the wrapped (cached) indexer
-	// when searchCache != nil, else the bare adapter — both as torznab.Indexer.
-	cache map[string]torznab.Indexer
+	// when searchCache != nil, else the bare adapter — both as torznabhttp.Indexer.
+	cache map[string]torznabhttp.Indexer
 }
 
 // secretsKeyring is the subset of *secrets.Keyring the registry uses, declared as
@@ -143,7 +143,7 @@ func New(db *database.DB, ldr *loader.Loader, keyring secretsKeyring, opts ...Op
 		timeout: defaultHTTPTimeout,
 		log:     zerolog.Nop(),
 		native:  nativeFamilies(),
-		cache:   map[string]torznab.Indexer{},
+		cache:   map[string]torznabhttp.Indexer{},
 	}
 	for _, o := range opts {
 		o(r)
@@ -154,10 +154,10 @@ func New(db *database.DB, ldr *loader.Loader, keyring secretsKeyring, opts ...Op
 	return r
 }
 
-// Indexer resolves a slug to its Indexer, implementing torznab.Provider. A
+// Indexer resolves a slug to its Indexer, implementing torznabhttp.Provider. A
 // missing, disabled, or unbuildable instance returns ok=false so the handler
 // degrades cleanly (returns the standard "indexer not supported" error).
-func (r *Registry) Indexer(ctx context.Context, slug string) (torznab.Indexer, bool) {
+func (r *Registry) Indexer(ctx context.Context, slug string) (torznabhttp.Indexer, bool) {
 	idx, err := r.resolve(ctx, slug)
 	if err != nil {
 		r.logResolveError(slug, err)
@@ -170,7 +170,7 @@ func (r *Registry) Indexer(ctx context.Context, slug string) (torznab.Indexer, b
 // happens outside the lock (it does DB I/O + crypto); a double-check after build
 // means that if two goroutines race to build the same uncached slug, the first to
 // cache wins and the other reuses it rather than installing a duplicate engine.
-func (r *Registry) resolve(ctx context.Context, slug string) (torznab.Indexer, error) {
+func (r *Registry) resolve(ctx context.Context, slug string) (torznabhttp.Indexer, error) {
 	r.mu.Lock()
 	if idx, ok := r.cache[slug]; ok {
 		r.mu.Unlock()
@@ -195,7 +195,7 @@ func (r *Registry) resolve(ctx context.Context, slug string) (torznab.Indexer, e
 // build resolves the served indexer for a slug: the bare adapter wrapped in the
 // search-cache decorator when caching is enabled, else the bare adapter. resolve
 // caches and serves this; Test deliberately uses buildAdapter (uncached, unwrapped).
-func (r *Registry) build(ctx context.Context, slug string) (torznab.Indexer, error) {
+func (r *Registry) build(ctx context.Context, slug string) (torznabhttp.Indexer, error) {
 	a, err := r.buildAdapter(ctx, slug)
 	if err != nil {
 		return nil, err
@@ -446,12 +446,12 @@ func (r *Registry) inTx(ctx context.Context, fn func(tx dbinterface.TxQuerier) e
 
 // indexerInfo assembles the public indexer identity from the instance + def (no
 // secrets).
-func indexerInfo(inst domain.IndexerInstance, def *loader.Definition) torznab.IndexerInfo {
+func indexerInfo(inst domain.IndexerInstance, def *loader.Definition) torznabhttp.IndexerInfo {
 	site := inst.BaseURL
 	if site == "" && len(def.Links) > 0 {
 		site = def.Links[0]
 	}
-	return torznab.IndexerInfo{
+	return torznabhttp.IndexerInfo{
 		ID:          inst.Slug,
 		Name:        orDefault(inst.Name, def.Name),
 		Description: def.Description,

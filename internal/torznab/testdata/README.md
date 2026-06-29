@@ -148,7 +148,7 @@ and the shared disposition rule.
   Tests: `handler_test.go` (`TestServeDL_*`, `TestHandlerProxiesResolverLinks`,
   `TestHandlerProxyGUIDStable`), `dltoken_test.go`. **`[Resolved]`**
 
-### HTTP handler (`internal/web/torznab`)
+### HTTP handler (`internal/web/torznabhttp`)
 
 - **Error-code + HTTP-status policy** — harbrr returns the published
   Newznab/Torznab codes: 100 (HTTP 200) bad apikey, 201 (HTTP 200) unknown
@@ -179,7 +179,7 @@ and the shared disposition rule.
   Cardigann indexer. De-duplication runs before the limit slice (Jackett limits
   then de-dups), so counts can differ on a duplicate-heavy page. **`[Deliberate]`**
 - **Result-category filtering / default categories** — Resolved
-  (`internal/web/torznab/filter.go` + `query.go`). The handler now reproduces
+  (`internal/web/torznabhttp/filter.go` + `query.go`). The handler now reproduces
   Jackett's two-part behaviour: request-side, `buildQuery` resolves the requested
   newznab cats to tracker cats and falls back to the def's `default: true`
   categories when that resolves to nothing (`CardigannIndexer`:
