@@ -25,8 +25,13 @@ const (
 	servarrNewznabImpl    = "Newznab"
 	servarrNewznabConfig  = "NewznabSettings"
 	servarrUsenetProtocol = "usenet"
-	servarrIndexerPath    = "/api/v3/indexer"
-	newznabAnimeCategory  = 5070
+	// Servarr forks serve the indexer REST API under different API versions: Sonarr,
+	// Radarr, and Whisparr are v3; Lidarr and Readarr are v1. The version affects only
+	// the request URL path (the marshalled body is identical), so it is carried as a
+	// per-driver field rather than baked into buildIndexer.
+	servarrIndexerPathV3 = "/api/v3/indexer"
+	servarrIndexerPathV1 = "/api/v1/indexer"
+	newznabAnimeCategory = 5070
 )
 
 // servarrField is one entry of a Servarr indexer's fields array. The value is
@@ -54,26 +59,29 @@ type servarrIndexer struct {
 	Tags                    []int          `json:"tags"`
 }
 
-// servarrDriver implements Target for a Sonarr or Radarr instance.
+// servarrDriver implements Target for a Servarr-shaped app (Sonarr/Radarr/Lidarr/
+// Readarr/Whisparr). indexerPath carries the app's indexer REST path (v1 or v3).
 type servarrDriver struct {
-	kind    string
-	baseURL string
-	apiKey  string
-	client  *http.Client
-	anime   bool
+	kind        string
+	baseURL     string
+	apiKey      string
+	client      *http.Client
+	anime       bool
+	indexerPath string
 }
 
 var _ Target = (*servarrDriver)(nil)
 
 // newServarr builds a Servarr driver. apiKey is the *app's* key (to authenticate to
-// it); the harbrr feed key travels inside each pushed indexer body.
-func newServarr(kind, baseURL, apiKey string, client *http.Client, anime bool) *servarrDriver {
+// it); the harbrr feed key travels inside each pushed indexer body. indexerPath is the
+// app's indexer REST path (servarrIndexerPathV3 or servarrIndexerPathV1).
+func newServarr(kind, baseURL, apiKey string, client *http.Client, anime bool, indexerPath string) *servarrDriver {
 	if client == nil {
 		client = defaultHTTPClient()
 	}
 	return &servarrDriver{
 		kind: kind, baseURL: strings.TrimRight(baseURL, "/"),
-		apiKey: apiKey, client: client, anime: anime,
+		apiKey: apiKey, client: client, anime: anime, indexerPath: indexerPath,
 	}
 }
 
@@ -116,7 +124,7 @@ func (s *servarrDriver) buildIndexer(d DesiredIndexer) servarrIndexer {
 // row's feed URL so reconciliation can recognize its own.
 func (s *servarrDriver) List(ctx context.Context) ([]RemoteIndexer, error) {
 	var raw []servarrIndexer
-	if _, err := s.do(ctx, http.MethodGet, servarrIndexerPath, nil, &raw); err != nil {
+	if _, err := s.do(ctx, http.MethodGet, s.indexerPath, nil, &raw); err != nil {
 		return nil, err
 	}
 	out := make([]RemoteIndexer, 0, len(raw))
@@ -139,7 +147,7 @@ func (s *servarrDriver) List(ctx context.Context) ([]RemoteIndexer, error) {
 
 func (s *servarrDriver) Create(ctx context.Context, d DesiredIndexer) (string, error) {
 	var resp servarrIndexer
-	if _, err := s.do(ctx, http.MethodPost, servarrIndexerPath, s.buildIndexer(d), &resp); err != nil {
+	if _, err := s.do(ctx, http.MethodPost, s.indexerPath, s.buildIndexer(d), &resp); err != nil {
 		return "", err
 	}
 	return strconv.Itoa(resp.ID), nil
@@ -152,17 +160,17 @@ func (s *servarrDriver) Update(ctx context.Context, remoteID string, d DesiredIn
 	}
 	body := s.buildIndexer(d)
 	body.ID = id
-	_, err = s.do(ctx, http.MethodPut, servarrIndexerPath+"/"+remoteID, body, nil)
+	_, err = s.do(ctx, http.MethodPut, s.indexerPath+"/"+remoteID, body, nil)
 	return err
 }
 
 func (s *servarrDriver) Delete(ctx context.Context, remoteID string) error {
-	_, err := s.do(ctx, http.MethodDelete, servarrIndexerPath+"/"+remoteID, nil, nil)
+	_, err := s.do(ctx, http.MethodDelete, s.indexerPath+"/"+remoteID, nil, nil)
 	return err
 }
 
 func (s *servarrDriver) Test(ctx context.Context, d DesiredIndexer) error {
-	_, err := s.do(ctx, http.MethodPost, servarrIndexerPath+"/test", s.buildIndexer(d), nil)
+	_, err := s.do(ctx, http.MethodPost, s.indexerPath+"/test", s.buildIndexer(d), nil)
 	return err
 }
 

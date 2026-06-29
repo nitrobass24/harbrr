@@ -362,8 +362,9 @@ into the apps so they don't each configure indexers by hand.
 
 - [x] **App sync — Sonarr, Radarr, qui** — push indexer config into these three via their API: the sync
       contract + add/update/remove lifecycle + per-app enable/disable (its own sub-plan; a Prowlarr
-      headline feature). Scoped to **Sonarr/Radarr/qui only** — other \*arrs (Lidarr/Readarr/Mylar/Whisparr)
-      are demand-gated backlog.
+      headline feature). Scoped to **Sonarr/Radarr/Lidarr/Readarr/Whisparr/qui** — the Servarr-shaped
+      forks reuse the v3 driver (Lidarr/Readarr on `/api/v1`, the rest on `/api/v3`). Mylar remains
+      demand-gated backlog.
       — **Code shipped + offline-proven:** new `internal/appsync` package — a target-neutral
       `DesiredIndexer` reconciled by a pure engine (idempotent add-or-update via `payload_hash`,
       remote-id recovery from the feed-URL slug, orphan removal gated to `sync_level=full` and only
@@ -489,9 +490,10 @@ alpha ships with manual indexer setup — existing Prowlarr/Jackett users re-ent
       stable-`total` property Prowlarr violates (#1428) is now a **standing test** (feed + JSON +
       shared pipeline: `TestFeedCrossPageNoDuplicate`, `TestSearchJSONEnvelopeCrossPage`,
       `TestSearchReleasesCrossPageDisjoint` / `TestSearchReleasesTotalIsHonest`).
-- [ ] **More \*arr sync targets** — Lidarr / Readarr / Mylar / Whisparr. The Phase-10 sync contract
-      (target-neutral `DesiredIndexer` reconciled behind the `Target` interface) is built for
-      Sonarr/Radarr/qui; extending it to another app is mostly a per-app adapter.
+- [x] **More \*arr sync targets** — Lidarr / Readarr / Whisparr shipped (Mylar still backlog). The
+      Phase-10 sync contract (target-neutral `DesiredIndexer` reconciled behind the `Target` interface)
+      reuses the Servarr v3 driver with the indexer API version parameterized (v1 for Lidarr/Readarr,
+      v3 for Whisparr); each adds a thin constructor + golden coverage.
 - [ ] **Upbrr credential sync** — Upbrr ships its **own** definitions but needs tracker **credentials** to
       operate; harbrr, as the single source of truth for tracker auth, **pushes** those credentials into
       Upbrr (harbrr → Upbrr, the same outbound app-sync model as the Phase-10 \*arr/qui push) so a tracker

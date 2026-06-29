@@ -76,7 +76,7 @@ func newSyncFixture(t *testing.T) *syncFixture {
 	}
 
 	stub := newServarrStub(t)
-	srv := httptest.NewServer(stub.handler())
+	srv := httptest.NewServer(stub.handler("/api/v3/indexer"))
 	t.Cleanup(srv.Close)
 
 	authSvc := auth.NewService(db)

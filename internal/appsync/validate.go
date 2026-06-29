@@ -94,10 +94,11 @@ func requireNonBlank(field, value string) error {
 
 func validateKind(kind string) error {
 	switch kind {
-	case domain.AppKindSonarr, domain.AppKindRadarr, domain.AppKindQui:
+	case domain.AppKindSonarr, domain.AppKindRadarr, domain.AppKindLidarr,
+		domain.AppKindReadarr, domain.AppKindWhisparr, domain.AppKindQui:
 		return nil
 	default:
-		return fmt.Errorf("%w: kind must be sonarr, radarr, or qui (got %q)", ErrInvalid, kind)
+		return fmt.Errorf("%w: kind must be sonarr, radarr, lidarr, readarr, whisparr, or qui (got %q)", ErrInvalid, kind)
 	}
 }
 

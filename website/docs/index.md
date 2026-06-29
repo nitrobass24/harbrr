@@ -15,7 +15,7 @@ For the alpha, harbrr is operated entirely over its HTTP API; the interactive
   an indexer, and point Sonarr/Radarr at the feed.
 - **[Adding an indexer](guides/add-indexer.md)** — discover a definition, configure it, and
   test it.
-- **[App Sync](guides/app-sync.md)** — push indexer config straight into Sonarr/Radarr/qui.
+- **[App Sync](guides/app-sync.md)** — push indexer config straight into Sonarr/Radarr/Lidarr/Readarr/Whisparr/qui.
 - **[Configuration](configuration.md)** — every config key and environment variable.
 - **[The API & Swagger UI](api.md)** — the complete HTTP reference.
 

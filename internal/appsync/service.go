@@ -367,6 +367,12 @@ func newDriver(kind, baseURL, apiKey string, client *http.Client) (Target, error
 		return NewSonarr(baseURL, apiKey, client), nil
 	case domain.AppKindRadarr:
 		return NewRadarr(baseURL, apiKey, client), nil
+	case domain.AppKindLidarr:
+		return NewLidarr(baseURL, apiKey, client), nil
+	case domain.AppKindReadarr:
+		return NewReadarr(baseURL, apiKey, client), nil
+	case domain.AppKindWhisparr:
+		return NewWhisparr(baseURL, apiKey, client), nil
 	case domain.AppKindQui:
 		return NewQui(baseURL, apiKey, client), nil
 	default:

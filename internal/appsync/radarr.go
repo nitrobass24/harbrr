@@ -10,5 +10,5 @@ import (
 // (e.g. http://radarr:7878); apiKey is its API key. Radarr shares Sonarr's Servarr v3
 // Torznab contract but has no anime categories.
 func NewRadarr(baseURL, apiKey string, client *http.Client) Target {
-	return newServarr(domain.AppKindRadarr, baseURL, apiKey, client, false)
+	return newServarr(domain.AppKindRadarr, baseURL, apiKey, client, false, servarrIndexerPathV3)
 }
