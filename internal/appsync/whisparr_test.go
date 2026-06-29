@@ -6,7 +6,7 @@ import (
 
 func TestWhisparrBuildIndexerGolden(t *testing.T) {
 	t.Parallel()
-	drv := newServarr("whisparr", "http://whisparr:6969", "app-key", nil, false, servarrIndexerPathV3)
+	drv := asServarr(t, NewWhisparr("http://whisparr:6969", "app-key", nil))
 	d := DesiredIndexer{
 		Slug: "xxx-tracker", Name: "XXX Tracker", Priority: 25, Enabled: true,
 		FeedURL:    "http://harbrr:8787/api/v2.0/indexers/xxx-tracker/results/torznab",
@@ -18,7 +18,7 @@ func TestWhisparrBuildIndexerGolden(t *testing.T) {
 
 func TestWhisparrBuildIndexerUsenetGolden(t *testing.T) {
 	t.Parallel()
-	drv := newServarr("whisparr", "http://whisparr:6969", "app-key", nil, false, servarrIndexerPathV3)
+	drv := asServarr(t, NewWhisparr("http://whisparr:6969", "app-key", nil))
 	d := DesiredIndexer{
 		Slug: "xxx-tracker", Name: "XXX Tracker", Priority: 25, Enabled: true,
 		FeedURL:    "http://harbrr:8787/api/v2.0/indexers/xxx-tracker/results/torznab",
@@ -38,7 +38,7 @@ func TestWhisparrBuildIndexerUsenetGolden(t *testing.T) {
 // TestWhisparrHasNoAnimeField locks anime=false: Whisparr must never emit animeCategories.
 func TestWhisparrHasNoAnimeField(t *testing.T) {
 	t.Parallel()
-	drv := newServarr("whisparr", "http://whisparr:6969", "k", nil, false, servarrIndexerPathV3)
+	drv := asServarr(t, NewWhisparr("http://whisparr:6969", "k", nil))
 	for _, f := range drv.buildIndexer(desired("a", true)).Fields {
 		if f.Name == "animeCategories" {
 			t.Fatalf("whisparr must not push animeCategories")

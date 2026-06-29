@@ -156,14 +156,18 @@ func TestServarrLifecycle(t *testing.T) {
 	if err := drv.Delete(ctx, "1"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if remote, _ := drv.List(ctx); len(remote) != 0 {
+	remote, err = drv.List(ctx)
+	if err != nil {
+		t.Fatalf("List after Delete: %v", err)
+	}
+	if len(remote) != 0 {
 		t.Errorf("indexer survived Delete: %+v", remote)
 	}
 }
 
 func TestSonarrBuildIndexerGolden(t *testing.T) {
 	t.Parallel()
-	drv := newServarr("sonarr", "http://sonarr:8989", "app-key", nil, true, servarrIndexerPathV3)
+	drv := asServarr(t, NewSonarr("http://sonarr:8989", "app-key", nil))
 	d := DesiredIndexer{
 		Slug: "anime-tracker", Name: "Anime Tracker", Priority: 25, Enabled: true,
 		FeedURL:    "http://harbrr:8787/api/v2.0/indexers/anime-tracker/results/torznab",
@@ -175,7 +179,7 @@ func TestSonarrBuildIndexerGolden(t *testing.T) {
 
 func TestSonarrBuildIndexerUsenetGolden(t *testing.T) {
 	t.Parallel()
-	drv := newServarr("sonarr", "http://sonarr:8989", "app-key", nil, true, servarrIndexerPathV3)
+	drv := asServarr(t, NewSonarr("http://sonarr:8989", "app-key", nil))
 	d := DesiredIndexer{
 		Slug: "anime-tracker", Name: "Anime Tracker", Priority: 25, Enabled: true,
 		FeedURL:    "http://harbrr:8787/api/v2.0/indexers/anime-tracker/results/torznab",
@@ -195,7 +199,7 @@ func TestSonarrBuildIndexerUsenetGolden(t *testing.T) {
 
 func TestServarrBuildIndexerTorrentUnchanged(t *testing.T) {
 	t.Parallel()
-	drv := newServarr("radarr", "http://radarr:7878", "app-key", nil, false, servarrIndexerPathV3)
+	drv := asServarr(t, NewRadarr("http://radarr:7878", "app-key", nil))
 	// Empty Protocol and explicit "torrent" both yield the unchanged Torznab body.
 	for _, proto := range []string{"", "torrent"} {
 		got := drv.buildIndexer(DesiredIndexer{Slug: "s", Name: "s", Protocol: proto})
@@ -233,6 +237,18 @@ func TestServarrListRecognizesNewznab(t *testing.T) {
 }
 
 // --- shared test helpers ---
+
+// asServarr unwraps a Target built by an exported NewX constructor back to the
+// concrete *servarrDriver, so buildIndexer (and the app's anime/indexerPath wiring)
+// is exercised through the real constructor rather than re-specified by the test.
+func asServarr(t *testing.T, tgt Target) *servarrDriver {
+	t.Helper()
+	drv, ok := tgt.(*servarrDriver)
+	if !ok {
+		t.Fatalf("want *servarrDriver, got %T", tgt)
+	}
+	return drv
+}
 
 func assertGolden(t *testing.T, name string, v any) {
 	t.Helper()

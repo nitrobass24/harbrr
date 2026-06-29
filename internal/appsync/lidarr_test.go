@@ -9,7 +9,7 @@ import (
 
 func TestLidarrBuildIndexerGolden(t *testing.T) {
 	t.Parallel()
-	drv := newServarr("lidarr", "http://lidarr:8686", "app-key", nil, false, servarrIndexerPathV1)
+	drv := asServarr(t, NewLidarr("http://lidarr:8686", "app-key", nil))
 	d := DesiredIndexer{
 		Slug: "music-tracker", Name: "Music Tracker", Priority: 25, Enabled: true,
 		FeedURL:    "http://harbrr:8787/api/v2.0/indexers/music-tracker/results/torznab",
@@ -21,7 +21,7 @@ func TestLidarrBuildIndexerGolden(t *testing.T) {
 
 func TestLidarrBuildIndexerUsenetGolden(t *testing.T) {
 	t.Parallel()
-	drv := newServarr("lidarr", "http://lidarr:8686", "app-key", nil, false, servarrIndexerPathV1)
+	drv := asServarr(t, NewLidarr("http://lidarr:8686", "app-key", nil))
 	d := DesiredIndexer{
 		Slug: "music-tracker", Name: "Music Tracker", Priority: 25, Enabled: true,
 		FeedURL:    "http://harbrr:8787/api/v2.0/indexers/music-tracker/results/torznab",
@@ -41,7 +41,7 @@ func TestLidarrBuildIndexerUsenetGolden(t *testing.T) {
 // TestLidarrHasNoAnimeField locks anime=false: Lidarr must never emit animeCategories.
 func TestLidarrHasNoAnimeField(t *testing.T) {
 	t.Parallel()
-	drv := newServarr("lidarr", "http://lidarr:8686", "k", nil, false, servarrIndexerPathV1)
+	drv := asServarr(t, NewLidarr("http://lidarr:8686", "k", nil))
 	for _, f := range drv.buildIndexer(desired("a", true)).Fields {
 		if f.Name == "animeCategories" {
 			t.Fatalf("lidarr must not push animeCategories")
@@ -97,7 +97,11 @@ func TestLidarrLifecycleV1(t *testing.T) {
 	if err := drv.Delete(ctx, "1"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if remote, _ := drv.List(ctx); len(remote) != 0 {
+	remote, err = drv.List(ctx)
+	if err != nil {
+		t.Fatalf("List after Delete: %v", err)
+	}
+	if len(remote) != 0 {
 		t.Errorf("indexer survived Delete: %+v", remote)
 	}
 }

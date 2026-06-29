@@ -6,7 +6,7 @@ import (
 
 func TestReadarrBuildIndexerGolden(t *testing.T) {
 	t.Parallel()
-	drv := newServarr("readarr", "http://readarr:8787", "app-key", nil, false, servarrIndexerPathV1)
+	drv := asServarr(t, NewReadarr("http://readarr:8787", "app-key", nil))
 	d := DesiredIndexer{
 		Slug: "book-tracker", Name: "Book Tracker", Priority: 25, Enabled: true,
 		FeedURL:    "http://harbrr:8787/api/v2.0/indexers/book-tracker/results/torznab",
@@ -18,7 +18,7 @@ func TestReadarrBuildIndexerGolden(t *testing.T) {
 
 func TestReadarrBuildIndexerUsenetGolden(t *testing.T) {
 	t.Parallel()
-	drv := newServarr("readarr", "http://readarr:8787", "app-key", nil, false, servarrIndexerPathV1)
+	drv := asServarr(t, NewReadarr("http://readarr:8787", "app-key", nil))
 	d := DesiredIndexer{
 		Slug: "book-tracker", Name: "Book Tracker", Priority: 25, Enabled: true,
 		FeedURL:    "http://harbrr:8787/api/v2.0/indexers/book-tracker/results/torznab",
@@ -38,7 +38,7 @@ func TestReadarrBuildIndexerUsenetGolden(t *testing.T) {
 // TestReadarrHasNoAnimeField locks anime=false: Readarr must never emit animeCategories.
 func TestReadarrHasNoAnimeField(t *testing.T) {
 	t.Parallel()
-	drv := newServarr("readarr", "http://readarr:8787", "k", nil, false, servarrIndexerPathV1)
+	drv := asServarr(t, NewReadarr("http://readarr:8787", "k", nil))
 	for _, f := range drv.buildIndexer(desired("a", true)).Fields {
 		if f.Name == "animeCategories" {
 			t.Fatalf("readarr must not push animeCategories")
