@@ -119,7 +119,7 @@ func serve(ctx context.Context, cfg *config.Config, log zerolog.Logger) error {
 		server.Config{Addr: listenAddr(cfg), BasePath: cfg.Server.BaseURL})
 
 	startSessionCleanup(ctx, store, log)
-	startSearchCacheCleanup(ctx, searchCache, cfg.Cache.CleanupDuration(), log)
+	startSearchCacheCleanup(ctx, searchCache, log)
 	logStartup(log, cfg)
 	if err := srv.Run(ctx); err != nil {
 		return fmt.Errorf("serve: %w", err)
@@ -260,6 +260,7 @@ func buildSearchCache(ctx context.Context, db *database.DB, cfg *config.Config, 
 		ThinThreshold:   cfg.Cache.ThinThreshold,
 		RefreshAheadPct: cfg.Cache.RefreshAheadPct,
 		NegativeTTL:     cfg.Cache.NegativeDuration(),
+		CleanupInterval: cfg.Cache.CleanupDuration(),
 	}, time.Now, log)
 	if err := sc.LoadOverrides(ctx); err != nil {
 		log.Warn().Err(err).Msg("loading cache config overrides failed; using config-file defaults")
@@ -267,12 +268,15 @@ func buildSearchCache(ctx context.Context, db *database.DB, cfg *config.Config, 
 	return sc
 }
 
-// startSearchCacheCleanup reaps expired cache entries on the configured interval
-// until ctx is cancelled, mirroring startSessionCleanup. A failed purge is logged
-// (redacted) and never fails anything.
-func startSearchCacheCleanup(ctx context.Context, sc *registry.SearchCache, interval time.Duration, log zerolog.Logger) {
+// startSearchCacheCleanup reaps expired cache entries until ctx is cancelled,
+// mirroring startSessionCleanup. The interval is re-read from the cache's live config
+// each cycle (via sc.CleanupInterval), so a runtime cleanup_interval change applies
+// without a restart — eventually, on the next cycle (a change made mid-cycle waits out
+// the current timer rather than interrupting it). A failed purge is logged (redacted)
+// and never fails anything.
+func startSearchCacheCleanup(ctx context.Context, sc *registry.SearchCache, log zerolog.Logger) {
 	go func() {
-		t := time.NewTicker(interval)
+		t := time.NewTimer(cleanupTickInterval(sc))
 		defer t.Stop()
 		for {
 			select {
@@ -288,9 +292,27 @@ func startSearchCacheCleanup(ctx context.Context, sc *registry.SearchCache, inte
 				if _, err := sc.CleanupExpired(ctx); err != nil && !errors.Is(err, context.Canceled) {
 					log.Warn().Err(err).Msg("search cache cleanup failed")
 				}
+				t.Reset(cleanupTickInterval(sc)) // pick up any runtime interval change
 			}
 		}
 	}()
+}
+
+// cleanupTickInterval reads the cache's live cleanup interval and keeps the reap loop
+// from spinning: a non-positive value (unset) defaults to 1h, and a positive value
+// below registry.MinCleanupInterval is floored to it. Config validation already
+// enforces the same floor for API-set values; this also guards a config-file seed,
+// which bypasses validation.
+func cleanupTickInterval(sc *registry.SearchCache) time.Duration {
+	d := sc.CleanupInterval()
+	switch {
+	case d <= 0:
+		return time.Hour
+	case d < registry.MinCleanupInterval:
+		return registry.MinCleanupInterval
+	default:
+		return d
+	}
 }
 
 // logStartup logs the resolved listen/serving parameters.

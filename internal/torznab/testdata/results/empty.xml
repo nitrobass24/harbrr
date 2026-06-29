@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:torznab="http://torznab.com/schemas/2015/feed">
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:torznab="http://torznab.com/schemas/2015/feed" xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/">
   <channel>
     <atom:link href="https://harbrr.local/api/v2.0/indexers/demo/results/torznab" rel="self" type="application/rss+xml"></atom:link>
     <title>Demo Tracker</title>
@@ -7,5 +7,6 @@
     <link>https://demo.test/</link>
     <language>en-US</language>
     <category>search</category>
+    <newznab:response offset="0" total="0"></newznab:response>
   </channel>
 </rss>

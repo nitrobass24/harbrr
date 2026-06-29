@@ -16,6 +16,7 @@ import (
 const (
 	atomNamespace    = "http://www.w3.org/2005/Atom"
 	torznabNamespace = "http://torznab.com/schemas/2015/feed"
+	newznabNamespace = "http://www.newznab.com/DTD/2010/feeds/attributes/"
 	enclosureType    = "application/x-bittorrent"
 	enclosureTypeNZB = "application/x-nzb"
 	feedLanguage     = "en-US"  // ChannelInfo default
@@ -50,17 +51,38 @@ type rssFeed struct {
 	Version      string     `xml:"version,attr"`
 	XMLNSAtom    string     `xml:"xmlns:atom,attr"`
 	XMLNSTorznab string     `xml:"xmlns:torznab,attr"`
+	XMLNSNewznab string     `xml:"xmlns:newznab,attr"`
 	Channel      rssChannel `xml:"channel"`
 }
 
 type rssChannel struct {
-	AtomLink    atomLink  `xml:"atom:link"`
-	Title       string    `xml:"title"`
-	Description string    `xml:"description"`
-	Link        string    `xml:"link"`
-	Language    string    `xml:"language"`
-	Category    string    `xml:"category"`
-	Items       []rssItem `xml:"item"`
+	AtomLink    atomLink        `xml:"atom:link"`
+	Title       string          `xml:"title"`
+	Description string          `xml:"description"`
+	Link        string          `xml:"link"`
+	Language    string          `xml:"language"`
+	Category    string          `xml:"category"`
+	Response    newznabResponse `xml:"newznab:response"`
+	Items       []rssItem       `xml:"item"`
+}
+
+// newznabResponse is the spec's <newznab:response offset total> paging element. harbrr
+// emits it on every results feed (Jackett's ResultPage omits it, leaving clients blind
+// to the true match count); offset is the resolved page offset and total is the full
+// match count after dedupe/filter but before the page slice. A *arr/autobrr client may
+// ignore it, but a spec-correct consumer can use it to page without re-fetching page 0.
+type newznabResponse struct {
+	XMLName xml.Name `xml:"newznab:response"`
+	Offset  int      `xml:"offset,attr"`
+	Total   int      `xml:"total,attr"`
+}
+
+// Page is the resolved paging window the results feed reports in <newznab:response>:
+// Offset is this page's starting offset and Total is the full match count before the
+// page slice (so total can exceed the number of items rendered).
+type Page struct {
+	Offset int
+	Total  int
 }
 
 type atomLink struct {
@@ -120,13 +142,31 @@ type AcquisitionRewriter func(acquisitionLink string) (link, guid string, ok boo
 // renders a valid feed with a full <channel> header and zero <item>s. The
 // serializer is pure: it renders exactly the releases given, in order; guid
 // de-duplication (Jackett's behavior) is the caller's responsibility via GUIDFor.
+// It reports the natural page (offset 0, total = number of renderable releases); a
+// caller that has paged a larger match set passes the real window via
+// MarshalResultsRewritten.
 func MarshalResults(feed FeedInfo, releases []*normalizer.Release, now time.Time) ([]byte, error) {
-	return MarshalResultsRewritten(feed, releases, now, nil)
+	return MarshalResultsRewritten(feed, releases, Page{Offset: 0, Total: countRenderable(releases)}, now, nil)
 }
 
-// MarshalResultsRewritten is MarshalResults with an optional per-release acquisition
-// rewriter (the /dl proxy). A nil rewriter serves links and guids unchanged.
-func MarshalResultsRewritten(feed FeedInfo, releases []*normalizer.Release, now time.Time, rewrite AcquisitionRewriter) ([]byte, error) {
+// countRenderable counts the non-nil releases — exactly the items
+// MarshalResultsRewritten will emit (it skips a stray nil) — so the default
+// <newznab:response total> matches the rendered item count.
+func countRenderable(releases []*normalizer.Release) int {
+	n := 0
+	for _, r := range releases {
+		if r != nil {
+			n++
+		}
+	}
+	return n
+}
+
+// MarshalResultsRewritten is MarshalResults with the resolved paging window (emitted as
+// <newznab:response offset total>) and an optional per-release acquisition rewriter (the
+// /dl proxy). A nil rewriter serves links and guids unchanged. page.Total is the full
+// match count before the page slice, so it can exceed len(releases).
+func MarshalResultsRewritten(feed FeedInfo, releases []*normalizer.Release, page Page, now time.Time, rewrite AcquisitionRewriter) ([]byte, error) {
 	items := make([]rssItem, 0, len(releases))
 	for _, r := range releases {
 		if r == nil { // boundary guard: the *arr feed must never panic on a stray nil
@@ -138,6 +178,7 @@ func MarshalResultsRewritten(feed FeedInfo, releases []*normalizer.Release, now 
 		Version:      "2.0",
 		XMLNSAtom:    atomNamespace,
 		XMLNSTorznab: torznabNamespace,
+		XMLNSNewznab: newznabNamespace,
 		Channel: rssChannel{
 			AtomLink:    atomLink{Href: feed.SelfURL, Rel: "self", Type: "application/rss+xml"},
 			Title:       sanitizeXMLText(feed.Name),
@@ -145,6 +186,7 @@ func MarshalResultsRewritten(feed FeedInfo, releases []*normalizer.Release, now 
 			Link:        feed.SiteLink,
 			Language:    feedLanguage,
 			Category:    feedCategory,
+			Response:    newznabResponse{Offset: page.Offset, Total: page.Total},
 			Items:       items,
 		},
 	}

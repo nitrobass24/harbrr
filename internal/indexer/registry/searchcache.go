@@ -140,6 +140,7 @@ type SearchCacheParams struct {
 	ThinThreshold   int
 	RefreshAheadPct int
 	NegativeTTL     time.Duration
+	CleanupInterval time.Duration
 }
 
 // NewSearchCacheWithParams builds a SearchCache from config-resolved tiers. It is
@@ -150,6 +151,7 @@ func NewSearchCacheWithParams(db dbinterface.Querier, p SearchCacheParams, clock
 		enabled:   p.Enabled,
 		ttl:       ttlConfig{rss: p.RSSTTL, keyword: p.KeywordTTL, thin: p.ThinTTL, thinThreshold: p.ThinThreshold, negative: p.NegativeTTL},
 		refreshAt: p.RefreshAheadPct,
+		cleanup:   p.CleanupInterval,
 	}
 	return NewSearchCache(db, t, clock, log)
 }

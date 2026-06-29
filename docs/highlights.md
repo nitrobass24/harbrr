@@ -201,6 +201,19 @@ site/docs land later.
   capabilities/category behavior, not the result envelope — so the caps document +
   category tree + tracker→newznab mapping are explicitly oracle-tested. *(Phase 3 —
   `internal/torznab`)* `[shipped]`
+- **Pagination that doesn't re-serve page 0.** harbrr pages a query's single tracker
+  fetch into **disjoint** windows — page 1 (`offset=100`) never repeats page 0 — and
+  emits an honest `<newznab:response offset total>` (Jackett's `ResultPage` omits it,
+  leaving clients blind to the match count). Prowlarr forwards no offset to the tracker,
+  so the next-100 request re-returns the first 100 (a duplicate page —
+  [Prowlarr #1428](https://github.com/Prowlarr/Prowlarr/issues/1428) /
+  [#1256](https://github.com/Prowlarr/Prowlarr/issues/1256)); harbrr's disjoint-pages +
+  stable-total property is a standing test, not an accident. The conditional-GET `ETag`
+  folds in the page window, so revalidating one page is never answered `304` with
+  another's body. Advertising `<limits default="100" max="100"/>` (= max) also avoids the
+  Sonarr `default<max` small-page crawl ([Sonarr #5373](https://github.com/Sonarr/Sonarr/issues/5373)).
+  *(`internal/torznab/results.go`, `internal/web/torznab/{handler,cacheinfo}.go`,
+  `internal/torznab/caps.go`)* `[shipped]`
 - **Definitions consumed byte-for-byte + drop-in overrides.** Vendored defs are
   never edited (all differences absorbed in the engine); a user drop-in directory
   takes precedence, so a hotfix or custom tracker needs no recompile or fork.

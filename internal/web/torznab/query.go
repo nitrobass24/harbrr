@@ -91,10 +91,12 @@ type paging struct {
 }
 
 // parsePaging reads limit/offset, clamping limit to [1, defaultLimit] and a
-// negative offset to 0. A limit at or above the max stays at the max.
+// negative offset to 0. A limit at or above the max stays at the max — the bound is
+// `<=` so a client can request exactly the advertised max (today defaultLimit == the
+// advertised max, so == works either way; `<=` keeps it correct if they ever diverge).
 func parsePaging(q url.Values) paging {
 	limit := defaultLimit
-	if v, err := strconv.Atoi(q.Get("limit")); err == nil && v > 0 && v < defaultLimit {
+	if v, err := strconv.Atoi(q.Get("limit")); err == nil && v > 0 && v <= defaultLimit {
 		limit = v
 	}
 	offset := 0

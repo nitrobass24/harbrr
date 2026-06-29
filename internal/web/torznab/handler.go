@@ -301,21 +301,26 @@ func (h *handler) writeResults(w http.ResponseWriter, r *http.Request, idx Index
 	}
 	// searchReleases is the shared read pipeline (map -> search -> dedupe -> filter
 	// -> page); the management API's JSON search runs the same code for parity.
-	releases, err := searchReleases(ctx, idx, caps, q)
+	res, err := searchReleases(ctx, idx, caps, q)
 	if err != nil {
 		h.writeInternalError(w, "search", idx.Info().ID, err)
 		return
 	}
 	// When the response came through the cache, emit validators and honor a matching
 	// If-None-Match with 304 — unless the client forced a fresh fetch (header or query).
+	// The served validator folds in this page's window (pagedETag): the cached payload
+	// ETag is page-independent (one engine fetch serves every page), so without the fold
+	// a revalidation of one page could be answered 304 with another page's body.
 	if ci.ETag != "" {
-		setCacheValidators(w, ci, h.clock())
-		if !headerFresh && !wantsNoCache(q) && ifNoneMatchMatches(r.Header.Get("If-None-Match"), ci.ETag) {
+		served := &CacheInfo{ETag: pagedETag(ci.ETag, res.Offset, res.Limit), ExpiresAt: ci.ExpiresAt}
+		setCacheValidators(w, served, h.clock())
+		if !headerFresh && !wantsNoCache(q) && ifNoneMatchMatches(r.Header.Get("If-None-Match"), served.ETag) {
 			w.WriteHeader(http.StatusNotModified)
 			return
 		}
 	}
-	body, err := tzn.MarshalResultsRewritten(h.feedInfo(r, idx), releases, h.clock(), h.dlRewriter(r, idx))
+	page := tzn.Page{Offset: res.Offset, Total: res.Total}
+	body, err := tzn.MarshalResultsRewritten(h.feedInfo(r, idx), res.Releases, page, h.clock(), h.dlRewriter(r, idx))
 	if err != nil {
 		h.writeInternalError(w, "results", idx.Info().ID, err)
 		return

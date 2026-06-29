@@ -16,7 +16,8 @@ import (
 type cacheTuning struct {
 	enabled   bool
 	ttl       ttlConfig
-	refreshAt int // refresh-ahead percentage of TTL (e.g. 80)
+	refreshAt int           // refresh-ahead percentage of TTL (e.g. 80)
+	cleanup   time.Duration // how often the background ticker reaps expired entries
 }
 
 // CacheConfigView is the API-facing snapshot of the live cache tuning (durations
@@ -30,6 +31,8 @@ type CacheConfigView struct {
 	RefreshAheadPct int
 	// NegativeTTL is the negative-result circuit-breaker window; 0 disables the breaker.
 	NegativeTTL time.Duration
+	// CleanupInterval is how often the background ticker reaps expired entries.
+	CleanupInterval time.Duration
 }
 
 // CacheConfigPatch is a partial cache-config update: a nil field is left unchanged,
@@ -43,6 +46,7 @@ type CacheConfigPatch struct {
 	ThinThreshold   *int
 	RefreshAheadPct *int
 	NegativeTTL     *time.Duration
+	CleanupInterval *time.Duration
 }
 
 // app_settings keys for the cache config — a DB row overrides the config-file seed.
@@ -54,7 +58,13 @@ const (
 	keyCacheThinThreshold = "cache.thin_threshold"
 	keyCacheRefreshAhead  = "cache.refresh_ahead_pct"
 	keyCacheNegativeTTL   = "cache.negative_ttl"
+	keyCacheCleanup       = "cache.cleanup_interval"
 )
+
+// MinCleanupInterval is the smallest accepted cleanup_interval. It floors the reap
+// cadence so a tiny value cannot turn the cleanup loop into a tight SQLite DELETE spin;
+// it is enforced both at config validation and at the runtime read (cleanupTickInterval).
+const MinCleanupInterval = time.Second
 
 // ErrInvalidCacheConfig wraps every cache-config validation failure so the API layer
 // can map it to a 400 (vs a 500 for a persistence error).
@@ -65,6 +75,7 @@ var (
 	errThinThreshold    = fmt.Errorf("%w: thin_threshold must be >= 0", ErrInvalidCacheConfig)
 	errRefreshPct       = fmt.Errorf("%w: refresh_ahead_pct must be between 0 and 100", ErrInvalidCacheConfig)
 	errNegativeTTL      = fmt.Errorf("%w: negative_ttl must be >= 0 (0 disables the breaker)", ErrInvalidCacheConfig)
+	errCleanupInterval  = fmt.Errorf("%w: cleanup_interval must be at least %s", ErrInvalidCacheConfig, MinCleanupInterval)
 )
 
 func (t cacheTuning) view() CacheConfigView {
@@ -76,6 +87,7 @@ func (t cacheTuning) view() CacheConfigView {
 		ThinThreshold:   t.ttl.thinThreshold,
 		RefreshAheadPct: t.refreshAt,
 		NegativeTTL:     t.ttl.negative,
+		CleanupInterval: t.cleanup,
 	}
 }
 
@@ -84,6 +96,7 @@ func (v CacheConfigView) tuning() cacheTuning {
 		enabled:   v.Enabled,
 		ttl:       ttlConfig{rss: v.RSSTTL, keyword: v.KeywordTTL, thin: v.ThinTTL, thinThreshold: v.ThinThreshold, negative: v.NegativeTTL},
 		refreshAt: v.RefreshAheadPct,
+		cleanup:   v.CleanupInterval,
 	}
 }
 
@@ -99,6 +112,8 @@ func (v CacheConfigView) Validate() error {
 		return errRefreshPct
 	case v.NegativeTTL < 0:
 		return errNegativeTTL
+	case v.CleanupInterval < MinCleanupInterval:
+		return errCleanupInterval
 	}
 	return nil
 }
@@ -109,6 +124,10 @@ func (c *SearchCache) Enabled() bool { return c.tuning.Load().enabled }
 
 // Config returns the live cache tuning (GET /api/cache/config).
 func (c *SearchCache) Config() CacheConfigView { return c.tuning.Load().view() }
+
+// CleanupInterval returns the live expired-entry reap interval. The cleanup ticker
+// re-reads it each cycle so a runtime change takes effect without a restart.
+func (c *SearchCache) CleanupInterval() time.Duration { return c.tuning.Load().cleanup }
 
 // UpdateConfig applies a partial patch: it merges the supplied fields onto the live
 // config, validates the result (returning a wrapped ErrInvalidCacheConfig on a bad
@@ -149,6 +168,10 @@ func (c *SearchCache) UpdateConfig(ctx context.Context, p CacheConfigPatch) (Cac
 	if p.NegativeTTL != nil {
 		v.NegativeTTL = *p.NegativeTTL
 		kv[keyCacheNegativeTTL] = p.NegativeTTL.String()
+	}
+	if p.CleanupInterval != nil {
+		v.CleanupInterval = *p.CleanupInterval
+		kv[keyCacheCleanup] = p.CleanupInterval.String()
 	}
 
 	if err := v.Validate(); err != nil {
@@ -209,6 +232,7 @@ func (c *SearchCache) LoadOverrides(ctx context.Context) error {
 	applyInt(all, keyCacheThinThreshold, &v.ThinThreshold)
 	applyInt(all, keyCacheRefreshAhead, &v.RefreshAheadPct)
 	applyDurNonNeg(all, keyCacheNegativeTTL, &v.NegativeTTL)
+	applyDur(all, keyCacheCleanup, &v.CleanupInterval)
 	if v.Validate() == nil { // keep the seed if an overlaid view is invalid
 		t := v.tuning()
 		c.tuning.Store(&t)

@@ -478,8 +478,17 @@ alpha ships with manual indexer setup — existing Prowlarr/Jackett users re-ent
       freeleech-aware release matching and optional freeleech-bypass logic (README "Cross-Seed Aware"):
       smarter release matching, search reuse/aggregation, reduced duplicate tracker activity. **Absorbs
       issue #10** (bypass FL tag on x-seed searches). *Detail TBD beyond the README's framing.*
-- [ ] **Better pagination support** — **issue #3**: table-stakes Torznab correctness for deep result
-      sets (offset/limit handling end-to-end). *Detail TBD.*
+- [x] **Better pagination support** — **issue #3**: a spec-correct, *superior-to-Jackett/Prowlarr*
+      feed — honest `<newznab:response offset total>` (Jackett omits it), correct offset/limit
+      windowing, and a paging-aware conditional-GET ETag (folds the page window so a revalidation
+      of one page can't be answered 304 with another's body) — plus a qui-shaped JSON API envelope
+      (`{results, total, hasMore, limit, offset}`). Page size stays default=max=100. Deep
+      server-side multi-page *upstream* fetching is deferred (post-alpha → **issue #75**): `total`
+      reflects the single engine fetch that backs every page of a query. Lenient offset/limit
+      clamping is a recorded deliberate divergence (no strict spec-201 error). The disjoint-pages +
+      stable-`total` property Prowlarr violates (#1428) is now a **standing test** (feed + JSON +
+      shared pipeline: `TestFeedCrossPageNoDuplicate`, `TestSearchJSONEnvelopeCrossPage`,
+      `TestSearchReleasesCrossPageDisjoint` / `TestSearchReleasesTotalIsHonest`).
 - [ ] **More \*arr sync targets** — Lidarr / Readarr / Mylar / Whisparr. The Phase-10 sync contract
       (target-neutral `DesiredIndexer` reconciled behind the `Target` interface) is built for
       Sonarr/Radarr/qui; extending it to another app is mostly a per-app adapter.
@@ -493,16 +502,18 @@ alpha ships with manual indexer setup — existing Prowlarr/Jackett users re-ent
 
 ### Pre-alpha hardening (operability + polish — from the 2026-06-25 review)
 
-- [ ] **Runtime-tunable config — DB-backed settings store** *(alpha gate)* — the **7 global cache knobs**
-      (`enabled`, `rss_ttl`, `keyword_ttl`, `thin_ttl`, `thin_threshold`, `refresh_ahead_pct`,
-      `cleanup_interval` in `internal/config/config.go`) are **YAML/env-only, frozen at boot** — the cache
-      API only `stats`/`flush`es, it can't *tune*. Build a small **DB-backed app-settings table + GET/PUT
-      API** and have `SearchCache` read it per-request instead of the frozen `ttlConfig`; the `enabled`
-      toggle additionally needs the registry to add/remove the cache decorator at runtime. Designed to
-      extend to later runtime knobs (rate limits, notifications). **Deliberately stays in the config file**
-      (deploy-time / security): data dir, DB path, listen address, base URL, **secrets/encryption key (must
-      stay out of the DB it protects)**, auth mode + IP allowlist/trusted proxies. The per-indexer
-      `cache_ttl`/`timeout` overrides are **already DB-backed** — no work.
+- [x] **Runtime-tunable config — DB-backed settings store** *(alpha gate)* — **shipped** (#70 + #71 + the
+      `cleanup_interval` follow-up). A DB-backed `app_settings` table (migration 0006) + `GET/PUT
+      /api/cache/config` let the operator tune every cache knob at runtime **without a restart**:
+      `SearchCache` reads an atomically-swapped `cacheTuning` per request, and the `enabled` toggle works
+      live because the cache decorator is **always installed and self-gates** (`cmd/harbrr` `buildSearchCache`)
+      — no add/remove-decorator dance needed. **All cache knobs are now runtime-tunable**: `enabled`,
+      `rss_ttl`, `keyword_ttl`, `thin_ttl`, `thin_threshold`, `refresh_ahead_pct`, `negative_ttl`, and
+      `cleanup_interval` (the cleanup ticker re-reads its interval each cycle, so a change applies on the
+      next cycle). The per-indexer `cache_ttl`/`timeout` overrides were already DB-backed. **Deliberately
+      stays in the config file** (deploy-time / security): data dir, DB path, listen address, base URL,
+      **secrets/encryption key (must stay out of the DB it protects)**, auth mode + IP allowlist/trusted
+      proxies.
 - [ ] **User-facing docs** *(alpha-gate membership: decide later)* — the website is 2 feature pages + a
       stub index; for a "Swagger-only, API-operated" alpha the operator path is undocumented. Needed pages:
       **Getting Started / Install** (Docker, first-run admin, mint API key, point Sonarr/Radarr at the feed

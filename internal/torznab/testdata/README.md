@@ -112,10 +112,20 @@ and the shared disposition rule.
 - **`language`/`subs` torznab:attrs never emitted** — harbrr's release has no
   language/subs fields, so these attrs are always absent (Jackett omits them when
   null too). **`[Accepted]`**
-- **`<newznab:response>` paging element omitted** — harbrr does not declare the
-  newznab namespace or emit a `<newznab:response offset="" total="">` element on
-  the feed; Jackett's `ResultPage` omits it too, and Sonarr/Radarr treat it as
-  optional, so the feed is accepted without it. **`[Deliberate]`**
+- **`<newznab:response>` paging element emitted** — Resolved (superiority). harbrr now
+  declares the newznab namespace and emits `<newznab:response offset="" total="">` on
+  every results feed (offset = this page's resolved offset; total = the full match count
+  after dedupe/filter, before the page slice). Jackett's `ResultPage` *omits* it, leaving
+  clients blind to the true match count; harbrr emits it spec-correctly so a paging
+  consumer can page without re-fetching page 0, while `*arr`/autobrr clients that ignore
+  it are unaffected. `total` is the single engine-fetch count until post-alpha deep
+  paging. **`[Resolved]`**
+- **Lenient `offset`/`limit` clamping** — a malformed or out-of-range `offset`/`limit`
+  (negative, zero, non-numeric, or above the max) is clamped to a valid window rather
+  than rejected with a Torznab error 201; an `offset` past the end yields an empty page,
+  not an error. The autobrr-family clients (`*arr` page client-side, autobrr RSS-polls
+  one page) never send malformed paging, so strict validation would add surface for no
+  consumer benefit. **`[Deliberate]`**
 - **`U+FFFD` handling** — `sanitizeXMLText` strips the Jackett control/BOM/
   noncharacter set and lone surrogates / invalid UTF-8 bytes, but preserves a
   genuine 3-byte `U+FFFD` (which Jackett's regex also preserves). **`[Accepted]`**
