@@ -143,6 +143,81 @@ func TestSearchReleasesTotalIsHonest(t *testing.T) {
 	}
 }
 
+// pagingFakeIndexer is a fakeIndexer that also satisfies OffsetPager (the Newznab shape):
+// it reports that it forwards offset/limit upstream, so the pipeline treats the returned
+// slice as the already-paged window and must NOT re-offset it locally.
+type pagingFakeIndexer struct {
+	*fakeIndexer
+}
+
+func (p *pagingFakeIndexer) SupportsOffsetPaging() bool { return true }
+
+func makePagingFake(t *testing.T, n int) *pagingFakeIndexer {
+	t.Helper()
+	f := &fakeIndexer{info: IndexerInfo{ID: "demo"}, caps: testCaps(t)}
+	f.releases = make([]*normalizer.Release, n)
+	for i := range f.releases {
+		f.releases[i] = demoRelease(
+			fmt.Sprintf("R%03d", i),
+			fmt.Sprintf("https://demo.test/dl/%d", i),
+			[]int{2000},
+		)
+	}
+	return &pagingFakeIndexer{fakeIndexer: f}
+}
+
+// TestSearchReleasesPagingFullPageHasMoreFloor pins the paging branch's total-honesty for a
+// FULL upstream page: the driver already skipped `offset` upstream, so the returned slice is
+// served as-is (no local re-offset), and Total is the has-more floor offset+served+1 — the
+// "+1" telling *arr a next page probably exists (Newznab reports no grand total). The served
+// page must start at the driver's first returned item (NOT re-offset).
+func TestSearchReleasesPagingFullPageHasMoreFloor(t *testing.T) {
+	t.Parallel()
+	idx := makePagingFake(t, 100) // a full page (== limit)
+
+	res, err := SearchReleases(context.Background(), idx,
+		url.Values{"q": {"x"}, "offset": {"100"}, "limit": {"100"}})
+	if err != nil {
+		t.Fatalf("SearchReleases: %v", err)
+	}
+	if len(res.Releases) != 100 {
+		t.Fatalf("served = %d, want 100 (the returned page, NOT re-offset)", len(res.Releases))
+	}
+	if res.Releases[0].Title != "R000" {
+		t.Errorf("first served = %q, want R000 (the driver's first item, no local offset re-apply)", res.Releases[0].Title)
+	}
+	if res.Total != 201 {
+		t.Errorf("Total = %d, want 201 (offset 100 + served 100 + has-more floor 1)", res.Total)
+	}
+	if res.Offset != 100 {
+		t.Errorf("Offset = %d, want 100", res.Offset)
+	}
+	// The driver must have been asked to page upstream (offset/limit forwarded into the query).
+	if idx.gotQuery.Offset != 100 || idx.gotQuery.Limit != 100 {
+		t.Errorf("query offset/limit = %d/%d, want 100/100 forwarded upstream", idx.gotQuery.Offset, idx.gotQuery.Limit)
+	}
+}
+
+// TestSearchReleasesPagingShortPageExactTotal pins the paging branch for a SHORT/last page
+// (fewer than limit returned): Total is the EXACT offset+served, no has-more floor, so *arr
+// stops paging.
+func TestSearchReleasesPagingShortPageExactTotal(t *testing.T) {
+	t.Parallel()
+	idx := makePagingFake(t, 30) // short page (< limit)
+
+	res, err := SearchReleases(context.Background(), idx,
+		url.Values{"q": {"x"}, "offset": {"100"}, "limit": {"100"}})
+	if err != nil {
+		t.Fatalf("SearchReleases: %v", err)
+	}
+	if len(res.Releases) != 30 {
+		t.Fatalf("served = %d, want 30", len(res.Releases))
+	}
+	if res.Total != 130 {
+		t.Errorf("Total = %d, want 130 (offset 100 + served 30, no floor on a short page)", res.Total)
+	}
+}
+
 // TestDLBaseURL builds the externally-visible /dl base, honoring X-Forwarded-Proto
 // and the configured base path, and escaping the indexer id.
 func TestDLBaseURL(t *testing.T) {

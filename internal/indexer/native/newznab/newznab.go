@@ -120,6 +120,12 @@ func (d *driver) NeedsResolver() bool { return false }
 // proxy-not-redirect divergence from Prowlarr.
 func (d *driver) DownloadNeedsAuth() bool { return true }
 
+// SupportsOffsetPaging is true: the Newznab API takes offset/limit, so the driver forwards
+// the requested page window upstream (buildSearchURL) for deep-set paging rather than
+// fetching only the first 100 and letting the handler slice. It satisfies native.OffsetPager,
+// which the registry adapter and search-cache layer type-assert for.
+func (d *driver) SupportsOffsetPaging() bool { return true }
+
 // Test verifies the instance is usable (the management "test indexer" action) and eagerly
 // primes the caps cache. The caps fetch both validates the apikey/baseUrl (a 401/403 or a
 // Newznab auth error envelope surfaces as login.ErrLoginFailed) and discovers the remote

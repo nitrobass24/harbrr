@@ -52,6 +52,15 @@ type Query struct {
 	// the search-cache key, since for such a driver the mode changes the outbound
 	// request. Empty means a general/unspecified search (treated as "search").
 	Mode string
+
+	// Offset and Limit are REQUEST CONTEXT — the served page window — never templated.
+	// The Cardigann engine ignores them entirely (queryMap does not map them, like Mode),
+	// so every Cardigann request URL stays byte-identical: a paging-capable native driver
+	// (newznab) forwards them upstream for deep-set paging, while non-paging drivers leave
+	// them for the handler to slice the returned page. A zero Offset/Limit means "first
+	// page, default size".
+	Offset int
+	Limit  int
 }
 
 // isIDSearch reports whether any ID-style param is set. Jackett skips the
@@ -106,6 +115,8 @@ func (q Query) queryMap() map[string]string {
 	set("Track", q.Track)
 	set("Author", q.Author)
 	set("Title", q.BookTitle)
+	// Offset/Limit are intentionally NOT mapped (like Mode): they are request context,
+	// not tracker request params, so the Cardigann request URL stays byte-identical.
 	q.setQueryFlags(m)
 	return m
 }
