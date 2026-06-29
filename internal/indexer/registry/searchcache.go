@@ -17,7 +17,7 @@ import (
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
-	"github.com/autobrr/harbrr/internal/web/torznab"
+	"github.com/autobrr/harbrr/internal/web/torznabhttp"
 )
 
 // swrRefreshTimeout bounds a stale-while-revalidate background refresh so a slow
@@ -158,16 +158,16 @@ func NewSearchCacheWithParams(db dbinterface.Querier, p SearchCacheParams, clock
 
 // wrap decorates an indexer with this cache. instanceID keys the entries; cfg
 // carries the per-instance "cache_ttl" override resolveTTL reads.
-func (c *SearchCache) wrap(inner torznab.Indexer, instanceID int64, cfg map[string]string) torznab.Indexer {
+func (c *SearchCache) wrap(inner torznabhttp.Indexer, instanceID int64, cfg map[string]string) torznabhttp.Indexer {
 	return &cachedIndexer{Indexer: inner, cache: c, instanceID: instanceID, cfg: cfg}
 }
 
-// cachedIndexer is a torznab.Indexer decorator that adds cache-aside behavior to
+// cachedIndexer is a torznabhttp.Indexer decorator that adds cache-aside behavior to
 // Search only. Embedding the interface forwards Info/Capabilities/NeedsResolver/
 // DownloadNeedsAuth/Grab to the real adapter unchanged, so /dl rewriting and grabs
 // keep working on cache hits (the cached value is the pre-/dl slice).
 type cachedIndexer struct {
-	torznab.Indexer
+	torznabhttp.Indexer
 	cache      *SearchCache
 	instanceID int64
 	cfg        map[string]string
@@ -188,10 +188,10 @@ func (c *cachedIndexer) Search(ctx context.Context, q search.Query) ([]*normaliz
 // immediately (Touch + optional refresh-ahead async); a miss runs the live search
 // under singleflight and stores the result best-effort. A Fetch error degrades open
 // (falls through to a live search) and never fails the user's search.
-func (c *SearchCache) search(ctx context.Context, instanceID int64, cfg map[string]string, inner torznab.Indexer, q search.Query) ([]*normalizer.Release, error) {
+func (c *SearchCache) search(ctx context.Context, instanceID int64, cfg map[string]string, inner torznabhttp.Indexer, q search.Query) ([]*normalizer.Release, error) {
 	key := buildSearchCacheKey(instanceID, q)
 
-	if torznab.CacheBypass(ctx) {
+	if torznabhttp.CacheBypass(ctx) {
 		return c.liveAndStoreRecording(ctx, instanceID, cfg, inner, q, key)
 	}
 
@@ -214,7 +214,7 @@ func (c *SearchCache) search(ctx context.Context, instanceID int64, cfg map[stri
 // miss and, on a tracker failure, trips the breaker so the next consumer's miss is
 // spared. It is the single funnel for every miss (the read-path miss and serveHit's
 // corrupt-payload fallback) so both honor the breaker.
-func (c *SearchCache) missPath(ctx context.Context, instanceID int64, cfg map[string]string, inner torznab.Indexer, q search.Query, key string) ([]*normalizer.Release, error) {
+func (c *SearchCache) missPath(ctx context.Context, instanceID int64, cfg map[string]string, inner torznabhttp.Indexer, q search.Query, key string) ([]*normalizer.Release, error) {
 	// Consult the breaker only while it is armed (negative window > 0); reading the
 	// live config means a runtime disable (negative_ttl -> 0) stops suppression at
 	// once, without waiting for already-open windows to lapse. tripBreaker self-gates
@@ -251,7 +251,7 @@ func (c *SearchCache) tripBreaker(ctx context.Context, instanceID int64, err err
 // serveHit returns the decoded cached slice immediately, bumps the hit counters,
 // records a Touch (async, best-effort), and fires a single refresh-ahead when the
 // entry is past its refresh threshold.
-func (c *SearchCache) serveHit(ctx context.Context, instanceID int64, cfg map[string]string, inner torznab.Indexer, q search.Query, key string, entry database.SearchCacheEntry) ([]*normalizer.Release, error) {
+func (c *SearchCache) serveHit(ctx context.Context, instanceID int64, cfg map[string]string, inner torznabhttp.Indexer, q search.Query, key string, entry database.SearchCacheEntry) ([]*normalizer.Release, error) {
 	releases, err := decodeReleases(entry.ResultsJSON, key)
 	if err != nil {
 		// A corrupt payload is treated as a miss: never fail the search over it.
@@ -261,7 +261,7 @@ func (c *SearchCache) serveHit(ctx context.Context, instanceID int64, cfg map[st
 	}
 	c.hits.Add(1)
 	c.counters(instanceID).hits.Add(1)
-	c.recordCacheInfo(ctx, torznab.CacheInfo{ETag: payloadETag(entry.ResultsJSON), ExpiresAt: entry.ExpiresAt})
+	c.recordCacheInfo(ctx, torznabhttp.CacheInfo{ETag: payloadETag(entry.ResultsJSON), ExpiresAt: entry.ExpiresAt})
 	c.recordTouch(key)
 	if c.shouldRefreshAhead(entry) {
 		c.triggerSWR(ctx, instanceID, cfg, inner, q, key)
@@ -273,7 +273,7 @@ func (c *SearchCache) serveHit(ctx context.Context, instanceID int64, cfg map[st
 // drive the tracker once), stores the result best-effort, and returns it. The
 // double-check inside the flight lets a request that lost the race read a freshly
 // stored entry instead of re-searching.
-func (c *SearchCache) serveMiss(ctx context.Context, instanceID int64, cfg map[string]string, inner torznab.Indexer, q search.Query, key string) ([]*normalizer.Release, error) {
+func (c *SearchCache) serveMiss(ctx context.Context, instanceID int64, cfg map[string]string, inner torznabhttp.Indexer, q search.Query, key string) ([]*normalizer.Release, error) {
 	c.misses.Add(1)
 	c.counters(instanceID).misses.Add(1)
 	// The flight returns ([]*normalizer.Release, error); the inner error is already
@@ -281,7 +281,7 @@ func (c *SearchCache) serveMiss(ctx context.Context, instanceID int64, cfg map[s
 	v, err, _ := c.sf.Do(key, func() (any, error) {
 		if entry, found, ferr := c.store.Fetch(ctx, c.db, key, c.clock()); ferr == nil && found {
 			if releases, derr := decodeReleases(entry.ResultsJSON, key); derr == nil {
-				info := torznab.CacheInfo{ETag: payloadETag(entry.ResultsJSON), ExpiresAt: entry.ExpiresAt}
+				info := torznabhttp.CacheInfo{ETag: payloadETag(entry.ResultsJSON), ExpiresAt: entry.ExpiresAt}
 				return missResult{releases: releases, info: info}, nil
 			}
 		}
@@ -311,20 +311,20 @@ func (c *SearchCache) serveMiss(ctx context.Context, instanceID int64, cfg map[s
 // freshly stored entry's HTTP validators. An inner error is returned and never cached.
 // It does NOT record into the request sink — the caller does (per-caller, so a
 // singleflight follower also gets the validators).
-func (c *SearchCache) liveAndStore(ctx context.Context, instanceID int64, cfg map[string]string, inner torznab.Indexer, q search.Query, key string) ([]*normalizer.Release, torznab.CacheInfo, error) {
+func (c *SearchCache) liveAndStore(ctx context.Context, instanceID int64, cfg map[string]string, inner torznabhttp.Indexer, q search.Query, key string) ([]*normalizer.Release, torznabhttp.CacheInfo, error) {
 	releases, err := c.fetchLive(ctx, inner, q)
 	if err != nil {
-		return nil, torznab.CacheInfo{}, err
+		return nil, torznabhttp.CacheInfo{}, err
 	}
 	etag, expiresAt := c.storeBestEffort(ctx, instanceID, cfg, q, key, releases)
-	return releases, torznab.CacheInfo{ETag: etag, ExpiresAt: expiresAt}, nil
+	return releases, torznabhttp.CacheInfo{ETag: etag, ExpiresAt: expiresAt}, nil
 }
 
 // liveAndStoreRecording is liveAndStore for the synchronous, non-flight callers (the
 // nocache bypass path and the defensive miss fallback): it records the validators into
 // this caller's own sink. The singleflight miss path instead records outside the flight
 // so every coalesced caller is covered.
-func (c *SearchCache) liveAndStoreRecording(ctx context.Context, instanceID int64, cfg map[string]string, inner torznab.Indexer, q search.Query, key string) ([]*normalizer.Release, error) {
+func (c *SearchCache) liveAndStoreRecording(ctx context.Context, instanceID int64, cfg map[string]string, inner torznabhttp.Indexer, q search.Query, key string) ([]*normalizer.Release, error) {
 	releases, info, err := c.liveAndStore(ctx, instanceID, cfg, inner, q, key)
 	if err != nil {
 		return nil, err //nolint:wrapcheck // already wrapped by the adapter; no key/payload to add.
@@ -335,7 +335,7 @@ func (c *SearchCache) liveAndStoreRecording(ctx context.Context, instanceID int6
 
 // fetchLive calls the wrapped indexer's live Search. The error is already wrapped
 // with the indexer id by the adapter; the caller redacts it.
-func (c *SearchCache) fetchLive(ctx context.Context, inner torznab.Indexer, q search.Query) ([]*normalizer.Release, error) {
+func (c *SearchCache) fetchLive(ctx context.Context, inner torznabhttp.Indexer, q search.Query) ([]*normalizer.Release, error) {
 	return inner.Search(ctx, q) //nolint:wrapcheck // the adapter already wraps with the indexer id; re-wrapping would double-wrap.
 }
 
@@ -384,11 +384,11 @@ func payloadETag(payload []byte) string {
 // the request's CacheInfo sink (a no-op when there is none — the JSON API and the
 // detached SWR refresh carry none). An empty etag records nothing. It is called per
 // CALLER, outside the singleflight, so coalesced misses each fill their own sink.
-func (c *SearchCache) recordCacheInfo(ctx context.Context, info torznab.CacheInfo) {
+func (c *SearchCache) recordCacheInfo(ctx context.Context, info torznabhttp.CacheInfo) {
 	if info.ETag == "" {
 		return
 	}
-	torznab.RecordCacheInfo(ctx, info)
+	torznabhttp.RecordCacheInfo(ctx, info)
 }
 
 // missResult is the singleflight return for a cache miss: the released slice plus the
@@ -397,7 +397,7 @@ func (c *SearchCache) recordCacheInfo(ctx context.Context, info torznab.CacheInf
 // inside the flight would fill only the leader's sink).
 type missResult struct {
 	releases []*normalizer.Release
-	info     torznab.CacheInfo
+	info     torznabhttp.CacheInfo
 }
 
 // recordTouch buffers a served hit in memory (cheap, non-blocking) instead of
@@ -456,7 +456,7 @@ func (c *SearchCache) shouldRefreshAhead(entry database.SearchCacheEntry) bool {
 // the same key (the two return incompatible value types). The goroutine detaches
 // from the request (WithoutCancel) but is bounded by a timeout. The write-back is
 // success-only: an error leaves the existing entry intact (never poisons the cache).
-func (c *SearchCache) triggerSWR(ctx context.Context, instanceID int64, cfg map[string]string, inner torznab.Indexer, q search.Query, key string) {
+func (c *SearchCache) triggerSWR(ctx context.Context, instanceID int64, cfg map[string]string, inner torznabhttp.Indexer, q search.Query, key string) {
 	bg := context.WithoutCancel(ctx)
 	go func() {
 		rctx, cancel := context.WithTimeout(bg, swrRefreshTimeout)

@@ -17,17 +17,17 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
-	"github.com/autobrr/harbrr/internal/web/torznab"
+	"github.com/autobrr/harbrr/internal/web/torznabhttp"
 )
 
 // indexerAdapter presents a built indexer (the Cardigann engine OR a native family
-// driver) as a torznab.Indexer, so the Torznab handler depends only on the
+// driver) as a torznabhttp.Indexer, so the Torznab handler depends only on the
 // interface, never the concrete engine. It is the unit the registry caches per
 // slug. It also records per-indexer health events: a classified Search failure
 // appends one event (append-only) so the management status endpoint can surface why
 // an indexer is unhealthy.
 type indexerAdapter struct {
-	info       torznab.IndexerInfo
+	info       torznabhttp.IndexerInfo
 	inner      native.Driver
 	instanceID int64
 	// cfg is the decrypted per-instance settings map. The search-cache decorator
@@ -40,10 +40,10 @@ type indexerAdapter struct {
 }
 
 // Compile-time proof the adapter satisfies the handler's contract.
-var _ torznab.Indexer = (*indexerAdapter)(nil)
+var _ torznabhttp.Indexer = (*indexerAdapter)(nil)
 
 // Info returns the indexer identity (carries no secrets).
-func (a *indexerAdapter) Info() torznab.IndexerInfo { return a.info }
+func (a *indexerAdapter) Info() torznabhttp.IndexerInfo { return a.info }
 
 // Capabilities returns the built indexer's capabilities document.
 func (a *indexerAdapter) Capabilities() *mapper.Capabilities { return a.inner.Capabilities() }

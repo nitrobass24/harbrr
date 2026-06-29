@@ -28,7 +28,7 @@ import (
 	"github.com/autobrr/harbrr/internal/server"
 	"github.com/autobrr/harbrr/internal/web/api"
 	"github.com/autobrr/harbrr/internal/web/swagger"
-	"github.com/autobrr/harbrr/internal/web/torznab"
+	"github.com/autobrr/harbrr/internal/web/torznabhttp"
 )
 
 // canaryKeyID / canaryBlob are the app_meta keys for the startup secrets canary.
@@ -107,12 +107,12 @@ func serve(ctx context.Context, cfg *config.Config, log zerolog.Logger) error {
 		return fmt.Errorf("management api: %w", err)
 	}
 
-	tz := torznab.NewHandler(
+	tz := torznabhttp.NewHandler(
 		reg,
-		torznab.WithAPIKeyValidator(apiKeyValidator(authSvc)),
-		torznab.WithBasePath(cfg.Server.BaseURL),
-		torznab.WithLogger(log),
-		torznab.WithDLToken(keyring),
+		torznabhttp.WithAPIKeyValidator(apiKeyValidator(authSvc)),
+		torznabhttp.WithBasePath(cfg.Server.BaseURL),
+		torznabhttp.WithLogger(log),
+		torznabhttp.WithDLToken(keyring),
 	)
 
 	srv := server.New(server.Deps{Management: mgmt, Torznab: tz, Spec: swagger.Spec(), DocsUI: swagger.UI(), Logger: log},

@@ -18,7 +18,7 @@ the bytes (`Grab` returns `application/x-nzb`; `NeedsResolver()=false`,
 in the served feed or the handed-out link. An `.nzb` is a small pointer file, so the
 extra fetch is negligible, and this honors harbrr's non-negotiable secret-redaction
 rule (the same posture as the torrent `/dl` passkey sealing). Exercised by
-`internal/web/torznab/usenet_e2e_test.go` and `grab_test.go`. Not a gap — an
+`internal/web/torznabhttp/usenet_e2e_test.go` and `grab_test.go`. Not a gap — an
 intentional improvement over Prowlarr.
 
 ## `[Deliberate]` — clean category resolution (no Prowlarr fuzzy heuristics)

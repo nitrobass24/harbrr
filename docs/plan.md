@@ -91,7 +91,7 @@ production `Provider` the handler resolves through.)
 - [x] **Management API + auth** — grow the hand-authored `openapi.yaml` past `/healthz` (indexer CRUD,
       settings, API-key management); first-run setup; server-side sessions + `X-API-Key`; CSRF on
       cookie-auth surfaces; the qui auth-disabled / trusted-proxy mode
-- [x] **Wire the server** — mount the Torznab handler (`internal/web/torznab`) **and** the management
+- [x] **Wire the server** — mount the Torznab handler (`internal/web/torznabhttp`) **and** the management
       API in `cmd/harbrr serve`; config file + base-path support
 - [x] **Docker image + config file**
 
@@ -135,7 +135,7 @@ Phase 3 "search real trackers end-to-end" goal.
       tracker-cat list is empty (request/response category parity for live *arr search; see
       `internal/torznab/testdata/README.md`). Note: Jackett does not force an empty feed when a `cat` maps
       to nothing — it searches defaults/all and the response filter drops non-matches (empty emerges
-      naturally). Done in `internal/web/torznab/filter.go` + `query.go` + mapper `DefaultCategories`.
+      naturally). Done in `internal/web/torznabhttp/filter.go` + `query.go` + mapper `DefaultCategories`.
 - [x] **Serve resolved/proxied download links**: `ResolveDownload` wired into the served feed via the
       `torznab.Indexer` `NeedsResolver()`/`ResolveDownload()` seam + `resolveDownloadLinks` (per served
       page). Direct-link trackers (the Phase 5 five) serve their link as-is and grab works (live-proven).
@@ -473,7 +473,7 @@ alpha ships with manual indexer setup — existing Prowlarr/Jackett users re-ent
       + `Cache-Control: private, max-age=<remaining TTL>`; an `If-None-Match` match is answered `304 Not
       Modified` (no body, no tracker hit), and a request `Cache-Control`/`Pragma: no-cache` forces a live
       fetch (the header sibling of `nocache=1`). Standards-only — clients (autobrr) can adopt it with no
-      harbrr-side coupling. Prowlarr/Jackett emit no validators. `internal/web/torznab/cacheinfo.go`,
+      harbrr-side coupling. Prowlarr/Jackett emit no validators. `internal/web/torznabhttp/cacheinfo.go`,
       `handler.go`; the registry cache surfaces the validators via a `CacheInfo` context sink.
 - [ ] **Cross-seed backend + freeleech-aware matching** — a cross-seed search backend, plus
       freeleech-aware release matching and optional freeleech-bypass logic (README "Cross-Seed Aware"):
@@ -672,7 +672,7 @@ problems**, with different solutions:
 >
 > - **Seam:** cache-aside around `idx.Search(ctx, query)` in the registry adapter
 >   (`internal/indexer/registry/adapter.go`) — downstream of login/engine, **upstream** of
->   dedupe/category-filter/pagination/`/dl`-rewriting (`internal/web/torznab`). The cached value is
+>   dedupe/category-filter/pagination/`/dl`-rewriting (`internal/web/torznabhttp`). The cached value is
 >   `[]*normalizer.Release` **before** `/dl` rewriting, so it's independent of the caller's
 >   base-URL/apikey and one entry serves every client.
 > - **Key:** SHA-256 over a **schema-versioned**, canonicalized payload — `version | instance_id |

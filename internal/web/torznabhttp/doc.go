@@ -1,4 +1,4 @@
-// Package torznab serves harbrr's *arr-facing Torznab/Newznab HTTP endpoint:
+// Package torznabhttp serves harbrr's *arr-facing Torznab/Newznab HTTP endpoint:
 // it parses Sonarr/Radarr requests (t=caps|search|tvsearch|movie|music|book),
 // resolves the target indexer through a Provider, drives the Cardigann engine,
 // and serializes capabilities / results / errors with internal/torznab.
@@ -10,4 +10,4 @@
 // normalizer, search) via the Provider interface, and internal/http for
 // redaction — never the concrete engine, so it stays testable with a fake
 // Provider.
-package torznab
+package torznabhttp

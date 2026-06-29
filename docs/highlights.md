@@ -139,7 +139,7 @@ site/docs land later.
   passkey-bearing download link — and a stable, passkey-free guid. harbrr resolves
   and fetches the `.torrent` server-side at grab time, so a leaked feed never exposes
   a tracker credential (Jackett/Prowlarr put the passkey straight in the feed).
-  *(`internal/web/torznab/dltoken.go`, `internal/web/torznab/handler.go`)* `[shipped]`
+  *(`internal/web/torznabhttp/dltoken.go`, `internal/web/torznabhttp/handler.go`)* `[shipped]`
 
 ## Operational safety (anti-blacklist + observability)
 
@@ -212,7 +212,7 @@ site/docs land later.
   folds in the page window, so revalidating one page is never answered `304` with
   another's body. Advertising `<limits default="100" max="100"/>` (= max) also avoids the
   Sonarr `default<max` small-page crawl ([Sonarr #5373](https://github.com/Sonarr/Sonarr/issues/5373)).
-  *(`internal/torznab/results.go`, `internal/web/torznab/{handler,cacheinfo}.go`,
+  *(`internal/torznab/results.go`, `internal/web/torznabhttp/{handler,cacheinfo}.go`,
   `internal/torznab/caps.go`)* `[shipped]`
 - **Definitions consumed byte-for-byte + drop-in overrides.** Vendored defs are
   never edited (all differences absorbed in the engine); a user drop-in directory

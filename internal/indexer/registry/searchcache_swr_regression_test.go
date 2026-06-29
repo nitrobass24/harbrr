@@ -11,10 +11,10 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
-	"github.com/autobrr/harbrr/internal/web/torznab"
+	"github.com/autobrr/harbrr/internal/web/torznabhttp"
 )
 
-// gatedInner is a torznab.Indexer test double that blocks only its FIRST Search call
+// gatedInner is a torznabhttp.Indexer test double that blocks only its FIRST Search call
 // on a gate (the SWR refresh), and serves a second, distinct result set immediately
 // to every later call (the racing miss). It exists to drive the exact production
 // window where a cache miss coalesces against an in-flight SWR refresh on the same
@@ -28,7 +28,7 @@ type gatedInner struct {
 	once      sync.Once
 }
 
-func (g *gatedInner) Info() torznab.IndexerInfo          { return torznab.IndexerInfo{ID: "gated"} }
+func (g *gatedInner) Info() torznabhttp.IndexerInfo      { return torznabhttp.IndexerInfo{ID: "gated"} }
 func (g *gatedInner) Capabilities() *mapper.Capabilities { return &mapper.Capabilities{} }
 func (g *gatedInner) NeedsResolver() bool                { return false }
 func (g *gatedInner) DownloadNeedsAuth() bool            { return false }
