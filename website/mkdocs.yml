@@ -20,6 +20,12 @@ theme:
 
 nav:
   - Home: index.md
+  - Getting started: getting-started.md
+  - Guides:
+      - Adding an indexer: guides/add-indexer.md
+      - App Sync (Sonarr/Radarr/qui): guides/app-sync.md
+  - Configuration: configuration.md
+  - API & Swagger UI: api.md
   - Features:
       - Search-results cache: features/search-results-cache.md
       - Failing-tracker circuit breaker: features/circuit-breaker.md

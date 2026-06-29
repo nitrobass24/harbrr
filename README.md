@@ -28,7 +28,20 @@ The goal is to become the intelligent layer between automation applications and 
 
 ## Architecture
 
-mermaid flowchart TD     A[Private Trackers & Indexers] --> B[Harbrr]      B --> C[autobrr]     B --> D[qui]     B --> E[cross-seed]     B --> F[*arr Apps]      F --> G[Sonarr]     F --> H[Radarr]     F --> I[Lidarr]     F --> J[Readarr]     F --> K[Mylar]     F --> L[Whisparr]
+```mermaid
+flowchart TD
+    A[Private Trackers & Indexers] --> B[Harbrr]
+    B --> C[autobrr]
+    B --> D[qui]
+    B --> E[cross-seed]
+    B --> F[*arr Apps]
+    F --> G[Sonarr]
+    F --> H[Radarr]
+    F --> I[Lidarr]
+    F --> J[Readarr]
+    F --> K[Mylar]
+    F --> L[Whisparr]
+```
 
 ---
 
@@ -52,11 +65,24 @@ Today, multiple applications often poll the same tracker for nearly identical in
 
 Without Harbrr:
 
-mermaid flowchart LR     A[Sonarr] --> E[Tracker]     B[Radarr] --> E     C[autobrr] --> E     D[cross-seed] --> E
+```mermaid
+flowchart LR
+    A[Sonarr] --> E[Tracker]
+    B[Radarr] --> E
+    C[autobrr] --> E
+    D[cross-seed] --> E
+```
 
 With Harbrr:
 
-mermaid flowchart LR     A[Sonarr] --> H[Harbrr]     B[Radarr] --> H     C[autobrr] --> H     D[cross-seed] --> H     H --> E[Tracker]
+```mermaid
+flowchart LR
+    A[Sonarr] --> H[Harbrr]
+    B[Radarr] --> H
+    C[autobrr] --> H
+    D[cross-seed] --> H
+    H --> E[Tracker]
+```
 
 One request. Multiple consumers.
 
@@ -186,48 +212,35 @@ The result is a cleaner architecture, lower tracker load, and a better experienc
 
 ## Roadmap
 
-### Phase 1 - Foundation
+The executable, up-to-date roadmap lives in **[`docs/plan.md`](docs/plan.md)** — built
+top-to-bottom by risk retirement (engine parity first, product surface after). In short:
 
-- Cardigann compatibility
-- Tracker authentication
-- Search execution engine
-- Torznab support
-- SQLite backend
-- Docker support
-- Prowlarr migration tooling
+- **Engine & parity** — Cardigann-compatible engine, proven offline against Jackett's own
+  tests and live against Prowlarr.
+- **Daemon** — SQLite store, encrypted secrets, management API + auth, Docker image.
+- **Coverage** — native drivers for the trackers Cardigann can't express (Avistaz family,
+  Gazelle/IPTorrents/FileList/MyAnonamouse), plus usenet/Newznab.
+- **Product** — \*arr/qui app-sync, the search-results cache and tracker-friendly pacing, and
+  (next) the web UI.
 
-### Phase 2 - Tracker Intelligence
-
-- Shared RSS caching
-- Search deduplication
-- Tracker request optimization
-- Advanced caching strategies
-- Improved autobrr workflows
-
-### Phase 3 - Ecosystem Integration
-
-- Deep autobrr integration
-- qui integration enhancements
-- Cross-seed optimization
-- Native tracker implementations
-- Advanced release intelligence
-
-### Phase 4 - Future
-
-- Distributed architectures
-- Enhanced metadata correlation
-- Additional automation integrations
-- Expanded ecosystem tooling
+See `docs/plan.md` for the current phase, what's shipped, and what's deferred.
 
 ---
 
 ## Current Status
 
-⚠️ Early Development
+🚧 **Alpha — operated via the API.**
 
-Harbrr is currently under active development.
+The hard part is done: the Cardigann engine is at parity with Jackett/Prowlarr (proven
+offline and live), native drivers cover the trackers Cardigann can't express, usenet/Newznab
+is supported, and harbrr syncs indexers into Sonarr/Radarr/qui. harbrr already works as a
+**Swagger-only Prowlarr replacement** — add and configure indexers, search, grab, and sync
+into your apps entirely over the HTTP API at `/api/docs`. A web UI is the next phase; until
+then the API is the interface.
 
-The immediate focus is achieving robust Cardigann compatibility and Torznab interoperability while laying the groundwork for tracker intelligence, RSS aggregation, request deduplication, and deeper autobrr ecosystem integration.
+**Getting started:** see the [documentation](website/docs/getting-started.md) (install,
+first-run, mint a key, point Sonarr/Radarr at the feed). Roadmap and status detail live in
+[`docs/plan.md`](docs/plan.md).
 
 ---
 
