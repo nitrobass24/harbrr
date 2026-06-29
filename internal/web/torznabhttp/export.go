@@ -79,8 +79,8 @@ func localPageResult(releases []*normalizer.Release, pg paging) SearchResult {
 
 // pagedResult is the paging path (the driver already skipped `offset` upstream, so the
 // returned slice IS the requested page — it must NOT be re-offset locally). The slice is
-// only clamped to the limit; Total is reported as a running floor: offset + served + 1
-// when the upstream page came back full (>= limit, so more likely exist), else the exact
+// only clamped to the limit; Total is reported as a running floor: offset + limit + 1 when
+// the upstream page came back full (>= limit, so more likely exist), else the exact
 // offset + served for a short/last page. This drives *arr's "fetch next page" without the
 // driver knowing the grand total (Newznab gives none).
 func pagedResult(releases []*normalizer.Release, pg paging, rawCount int) SearchResult {
@@ -90,7 +90,11 @@ func pagedResult(releases []*normalizer.Release, pg paging, rawCount int) Search
 	}
 	total := pg.offset + len(served)
 	if rawCount >= pg.limit {
-		total++
+		// Full upstream page: advertise at least one more page. Base the floor on the
+		// REQUESTED width, not len(served) — dedupe/category filtering can shrink served
+		// below limit, and offset+served+1 could then fall at/under offset+limit, which
+		// makes *arr conclude "no next page" and stop before the genuine deep page.
+		total = pg.offset + pg.limit + 1
 	}
 	return SearchResult{
 		Releases: served,

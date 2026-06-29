@@ -168,9 +168,10 @@ func makePagingFake(t *testing.T, n int) *pagingFakeIndexer {
 
 // TestSearchReleasesPagingFullPageHasMoreFloor pins the paging branch's total-honesty for a
 // FULL upstream page: the driver already skipped `offset` upstream, so the returned slice is
-// served as-is (no local re-offset), and Total is the has-more floor offset+served+1 — the
-// "+1" telling *arr a next page probably exists (Newznab reports no grand total). The served
-// page must start at the driver's first returned item (NOT re-offset).
+// served as-is (no local re-offset), and Total is the has-more floor offset+limit+1 — the
+// "+1" past the requested window telling *arr a next page probably exists (Newznab reports
+// no grand total). The served page must start at the driver's first returned item (NOT
+// re-offset).
 func TestSearchReleasesPagingFullPageHasMoreFloor(t *testing.T) {
 	t.Parallel()
 	idx := makePagingFake(t, 100) // a full page (== limit)
@@ -187,7 +188,7 @@ func TestSearchReleasesPagingFullPageHasMoreFloor(t *testing.T) {
 		t.Errorf("first served = %q, want R000 (the driver's first item, no local offset re-apply)", res.Releases[0].Title)
 	}
 	if res.Total != 201 {
-		t.Errorf("Total = %d, want 201 (offset 100 + served 100 + has-more floor 1)", res.Total)
+		t.Errorf("Total = %d, want 201 (offset 100 + limit 100 + has-more floor 1)", res.Total)
 	}
 	if res.Offset != 100 {
 		t.Errorf("Offset = %d, want 100", res.Offset)
@@ -195,6 +196,27 @@ func TestSearchReleasesPagingFullPageHasMoreFloor(t *testing.T) {
 	// The driver must have been asked to page upstream (offset/limit forwarded into the query).
 	if idx.gotQuery.Offset != 100 || idx.gotQuery.Limit != 100 {
 		t.Errorf("query offset/limit = %d/%d, want 100/100 forwarded upstream", idx.gotQuery.Offset, idx.gotQuery.Limit)
+	}
+}
+
+// TestPagedResultFullPageFloorUsesLimit is the regression for the has-more floor when
+// dedupe/category filtering shrinks a FULL upstream page below the limit. The floor must be
+// offset+limit+1 (the REQUESTED width), never offset+len(served)+1: with served < limit the
+// latter can fall at/under offset+limit, so *arr would compute "no next page" and stop before
+// the genuine deep page — silently defeating deep-set paging.
+func TestPagedResultFullPageFloorUsesLimit(t *testing.T) {
+	t.Parallel()
+	// Full raw upstream page (rawCount == limit == 100), but filtering left only 80 served.
+	served := make([]*normalizer.Release, 80)
+	for i := range served {
+		served[i] = demoRelease(fmt.Sprintf("R%03d", i), fmt.Sprintf("https://demo.test/dl/%d", i), []int{2000})
+	}
+	res := pagedResult(served, paging{offset: 100, limit: 100}, 100)
+	if res.Total != 201 {
+		t.Errorf("Total = %d, want 201 (offset 100 + limit 100 + 1; the floor must use limit, not served=80 -> 181)", res.Total)
+	}
+	if len(res.Releases) != 80 {
+		t.Errorf("served = %d, want 80 (the page is not re-padded)", len(res.Releases))
 	}
 }
 
