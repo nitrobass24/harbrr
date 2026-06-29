@@ -193,13 +193,17 @@ func MarshalResultsRewritten(feed FeedInfo, releases []*normalizer.Release, page
 	return marshalDocument("rss", doc)
 }
 
-// GUIDFor derives a release's RSS guid using Jackett's FixResults precedence:
-// the download Link, else the Magnet, else the Details page. harbrr's normalizer
-// requires at least one acquisition link, so a guid is always available. Exposed
-// so the request handler can de-duplicate releases by guid (Jackett's
-// post-FixResults GroupBy) using the same derivation the serializer emits.
+// GUIDFor derives a release's RSS guid. It prefers the indexer's canonical upstream
+// id (Release.GUID) when present — the invariant, churn-immune identity — then falls
+// back to Jackett's FixResults precedence: the download Link, else the Magnet, else
+// the Details page. harbrr's normalizer requires at least one acquisition link, so a
+// guid is always available. Exposed so the request handler can de-duplicate releases
+// by guid (Jackett's post-FixResults GroupBy) using the same derivation the serializer
+// emits.
 func GUIDFor(r *normalizer.Release) string {
 	switch {
+	case r.GUID != "":
+		return r.GUID
 	case r.Link != "":
 		return r.Link
 	case r.Magnet != "":
@@ -226,7 +230,14 @@ func buildItem(feed FeedInfo, r *normalizer.Release, now time.Time, rewrite Acqu
 	guid := GUIDFor(r)
 	if rewrite != nil {
 		if newLink, newGUID, ok := rewrite(link); ok {
-			link, guid = newLink, newGUID
+			// The rewriter always seals the credential-bearing link behind the /dl
+			// proxy. Its synthesized passkey-free guid is only needed when the release
+			// carries no upstream id; when it does, GUIDFor already chose that stable
+			// id and we keep it (churn-immunity for volatile download URLs).
+			link = newLink
+			if r.GUID == "" {
+				guid = newGUID
+			}
 		}
 	}
 	item := rssItem{

@@ -143,8 +143,9 @@ func TestMarshalResultsGolden(t *testing.T) {
 	}
 }
 
-// TestResultsGuidPrecedence pins Jackett's FixResults guid precedence:
-// Link, else Magnet, else Details.
+// TestResultsGuidPrecedence pins the guid precedence: the upstream Release.GUID
+// (when present) wins, then Jackett's FixResults order — Link, else Magnet, else
+// Details.
 func TestResultsGuidPrecedence(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -152,6 +153,7 @@ func TestResultsGuidPrecedence(t *testing.T) {
 		r    *normalizer.Release
 		want string
 	}{
+		{"upstream guid wins", &normalizer.Release{GUID: "G", Link: "L", Magnet: "M", Details: "D"}, "G"},
 		{"link wins", &normalizer.Release{Link: "L", Magnet: "M", Details: "D"}, "L"},
 		{"magnet when no link", &normalizer.Release{Magnet: "M", Details: "D"}, "M"},
 		{"details last", &normalizer.Release{Details: "D"}, "D"},
@@ -249,6 +251,38 @@ func TestResultsNewznabResponse(t *testing.T) {
 	// total reflects the full match set, not the 2 items on this page.
 	if strings.Count(s, "<item>") != 2 {
 		t.Errorf("item count = %d, want 2 (the page), with total=137 in the response element", strings.Count(s, "<item>"))
+	}
+}
+
+// TestRewrittenGuidPrefersUpstream pins the /dl-proxy guid precedence in buildItem: the
+// rewriter ALWAYS seals the credential-bearing link, but its synthesized passkey-free
+// guid is used only when the release carries no upstream id. A release WITH an upstream
+// GUID keeps that stable id as <guid> (churn-immunity); one WITHOUT falls back to the
+// rewriter's synthesized guid. The original (passkey-bearing) link never reaches the feed
+// either way.
+func TestRewrittenGuidPrefersUpstream(t *testing.T) {
+	t.Parallel()
+	// A rewriter that seals every link behind /dl and offers a synthesized guid.
+	rewrite := func(string) (link, guid string, ok bool) {
+		return "https://harbrr.test/dl/sealed", "harbrr-synth", true
+	}
+	withGUID := &normalizer.Release{Title: "A", Link: "https://idx.test/get?id=1&apikey=SECRET", GUID: "upstream-id-1", Size: 1}
+	noGUID := &normalizer.Release{Title: "B", Link: "https://idx.test/get?id=2&apikey=SECRET", Size: 1}
+
+	got, err := MarshalResultsRewritten(demoFeed(),
+		[]*normalizer.Release{withGUID, noGUID}, Page{Offset: 0, Total: 2}, fixedNow(), rewrite)
+	if err != nil {
+		t.Fatalf("MarshalResultsRewritten: %v", err)
+	}
+	s := string(got)
+	if !strings.Contains(s, "<guid>upstream-id-1</guid>") {
+		t.Errorf("upstream guid not preferred as <guid>:\n%s", s)
+	}
+	if !strings.Contains(s, "<guid>harbrr-synth</guid>") {
+		t.Errorf("release without upstream guid should fall back to the synthesized guid:\n%s", s)
+	}
+	if strings.Contains(s, "apikey=SECRET") {
+		t.Errorf("passkey-bearing link leaked into the feed:\n%s", s)
 	}
 }
 

@@ -28,6 +28,14 @@ type Release struct {
 	Magnet      string `json:"magnet,omitempty"`
 	InfoHash    string `json:"infohash,omitempty"`
 
+	// GUID is the indexer's canonical upstream release id (e.g. a Newznab <guid>),
+	// when one is supplied. It is the invariant dedup identity — preferred over the
+	// acquisition link by GUIDFor so *arr grab-history stays stable even when a
+	// server issues volatile/time-limited download URLs. Empty for indexers that
+	// expose no stable id; the link/magnet then serves as the guid (Jackett's
+	// behavior). Must be passkey-free.
+	GUID string `json:"guid,omitempty"`
+
 	Size       int64 `json:"size"`
 	Categories []int `json:"categories,omitempty"`
 
