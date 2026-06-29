@@ -40,24 +40,18 @@ func TestGetDefinitionDetail(t *testing.T) {
 		t.Errorf("id = %q, want testtracker", dd.ID)
 	}
 	// The apikey field is a text-typed credential -> secret.
-	var apikey *struct {
-		Name   string
-		Type   string
-		Secret bool
-	}
+	apikeySecret := false
+	found := false
 	for _, s := range dd.Settings {
 		if s.Name == "apikey" {
-			apikey = &struct {
-				Name   string
-				Type   string
-				Secret bool
-			}{s.Name, s.Type, s.Secret}
+			apikeySecret = s.Secret
+			found = true
 		}
 	}
-	if apikey == nil {
+	if !found {
 		t.Fatalf("apikey setting missing: %+v", dd.Settings)
 	}
-	if !apikey.Secret {
+	if !apikeySecret {
 		t.Errorf("apikey should be marked secret")
 	}
 	if _, ok := dd.Caps.Modes["search"]; !ok {

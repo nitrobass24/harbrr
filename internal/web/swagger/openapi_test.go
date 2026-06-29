@@ -58,6 +58,7 @@ func TestSpecContract(t *testing.T) {
 
 	if doc.Info == nil {
 		t.Fatal("spec is missing the info block")
+		return
 	}
 	if doc.Info.Title == "" {
 		t.Error("info.title is empty")
@@ -69,6 +70,7 @@ func TestSpecContract(t *testing.T) {
 	healthz := doc.Paths.Find("/healthz")
 	if healthz == nil {
 		t.Fatal("spec does not document the /healthz path")
+		return
 	}
 	if healthz.Get == nil {
 		t.Error("/healthz does not document a GET operation")

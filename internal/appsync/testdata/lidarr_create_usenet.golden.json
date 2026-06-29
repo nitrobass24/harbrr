@@ -1,0 +1,34 @@
+{
+  "name": "Music Tracker",
+  "implementation": "Newznab",
+  "implementationName": "Newznab",
+  "configContract": "NewznabSettings",
+  "protocol": "usenet",
+  "enableRss": true,
+  "enableAutomaticSearch": true,
+  "enableInteractiveSearch": true,
+  "priority": 25,
+  "fields": [
+    {
+      "name": "baseUrl",
+      "value": "http://harbrr:8787/api/v2.0/indexers/music-tracker/results/torznab"
+    },
+    {
+      "name": "apiPath",
+      "value": ""
+    },
+    {
+      "name": "apiKey",
+      "value": "harbrr-feed-key"
+    },
+    {
+      "name": "categories",
+      "value": [
+        3000,
+        3010,
+        3040
+      ]
+    }
+  ],
+  "tags": []
+}

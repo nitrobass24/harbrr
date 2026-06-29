@@ -82,9 +82,12 @@ type IndexerSetting struct {
 // App-sync kinds — the *arr/qui targets harbrr can push indexer config into.
 // Stored verbatim in app_connections.kind.
 const (
-	AppKindSonarr = "sonarr"
-	AppKindRadarr = "radarr"
-	AppKindQui    = "qui"
+	AppKindSonarr   = "sonarr"
+	AppKindRadarr   = "radarr"
+	AppKindLidarr   = "lidarr"
+	AppKindReadarr  = "readarr"
+	AppKindWhisparr = "whisparr"
+	AppKindQui      = "qui"
 )
 
 // Sync levels — what reconciliation is allowed to do, set per connection (the

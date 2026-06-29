@@ -23,7 +23,7 @@ nav:
   - Getting started: getting-started.md
   - Guides:
       - Adding an indexer: guides/add-indexer.md
-      - App Sync (Sonarr/Radarr/qui): guides/app-sync.md
+      - App Sync (*arr / qui): guides/app-sync.md
   - Configuration: configuration.md
   - API & Swagger UI: api.md
   - Features:

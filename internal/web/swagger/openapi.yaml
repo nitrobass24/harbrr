@@ -31,7 +31,7 @@ tags:
   - name: Indexer Definitions
     description: The Cardigann definition catalog (vendored + native) available to configure.
   - name: App Connections
-    description: Sonarr/Radarr/qui apps harbrr pushes its indexers into (app-sync).
+    description: Sonarr/Radarr/Lidarr/Readarr/Whisparr/qui apps harbrr pushes its indexers into (app-sync).
   - name: Authentication
     description: First-run setup, login/logout, identity, and password change.
   - name: API Keys
@@ -1201,7 +1201,7 @@ components:
       properties:
         id: { type: integer, format: int64 }
         name: { type: string }
-        kind: { type: string, enum: [sonarr, radarr, qui] }
+        kind: { type: string, enum: [sonarr, radarr, lidarr, readarr, whisparr, qui] }
         baseUrl: { type: string, description: the app's own API base URL }
         harbrrUrl: { type: string, description: the base URL this app uses to reach harbrr's feed }
         apiKey: { type: string, description: "the app's API key, redacted (<redacted>)" }
@@ -1225,7 +1225,7 @@ components:
       type: object
       properties:
         name: { type: string }
-        kind: { type: string, enum: [sonarr, radarr, qui] }
+        kind: { type: string, enum: [sonarr, radarr, lidarr, readarr, whisparr, qui] }
         baseUrl: { type: string }
         apiKey: { type: string, description: the app's API key (stored encrypted) }
         harbrrUrl: { type: string }

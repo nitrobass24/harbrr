@@ -132,6 +132,6 @@ fewer requests.
 
 - **[Adding an indexer](guides/add-indexer.md)** — the full discover → configure → test flow.
 - **[App Sync](guides/app-sync.md)** — let harbrr push indexer config straight into
-  Sonarr/Radarr/qui so you don't add it by hand in each.
+  Sonarr/Radarr/Lidarr/Readarr/Whisparr/qui so you don't add it by hand in each.
 - **[Configuration](configuration.md)** — every config key and environment variable.
 - **[The API & Swagger UI](api.md)** — the complete HTTP reference.

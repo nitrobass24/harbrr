@@ -34,13 +34,13 @@ func newServarrStub(t *testing.T) *servarrStub {
 	return &servarrStub{t: t, indexers: map[int]servarrIndexer{}}
 }
 
-func (s *servarrStub) handler() http.Handler {
+func (s *servarrStub) handler(base string) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/v3/indexer", s.list)
-	mux.HandleFunc("POST /api/v3/indexer", s.create)
-	mux.HandleFunc("POST /api/v3/indexer/test", s.test)
-	mux.HandleFunc("PUT /api/v3/indexer/{id}", s.put)
-	mux.HandleFunc("DELETE /api/v3/indexer/{id}", s.delete)
+	mux.HandleFunc("GET "+base, s.list)
+	mux.HandleFunc("POST "+base, s.create)
+	mux.HandleFunc("POST "+base+"/test", s.test)
+	mux.HandleFunc("PUT "+base+"/{id}", s.put)
+	mux.HandleFunc("DELETE "+base+"/{id}", s.delete)
 	return mux
 }
 
@@ -104,7 +104,7 @@ func (s *servarrStub) test(w http.ResponseWriter, r *http.Request) {
 func TestServarrLifecycle(t *testing.T) {
 	t.Parallel()
 	stub := newServarrStub(t)
-	srv := httptest.NewServer(stub.handler())
+	srv := httptest.NewServer(stub.handler("/api/v3/indexer"))
 	t.Cleanup(srv.Close)
 	ctx := context.Background()
 
@@ -156,14 +156,18 @@ func TestServarrLifecycle(t *testing.T) {
 	if err := drv.Delete(ctx, "1"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if remote, _ := drv.List(ctx); len(remote) != 0 {
+	remote, err = drv.List(ctx)
+	if err != nil {
+		t.Fatalf("List after Delete: %v", err)
+	}
+	if len(remote) != 0 {
 		t.Errorf("indexer survived Delete: %+v", remote)
 	}
 }
 
 func TestSonarrBuildIndexerGolden(t *testing.T) {
 	t.Parallel()
-	drv := newServarr("sonarr", "http://sonarr:8989", "app-key", nil, true)
+	drv := asServarr(t, NewSonarr("http://sonarr:8989", "app-key", nil))
 	d := DesiredIndexer{
 		Slug: "anime-tracker", Name: "Anime Tracker", Priority: 25, Enabled: true,
 		FeedURL:    "http://harbrr:8787/api/v2.0/indexers/anime-tracker/results/torznab",
@@ -175,7 +179,7 @@ func TestSonarrBuildIndexerGolden(t *testing.T) {
 
 func TestSonarrBuildIndexerUsenetGolden(t *testing.T) {
 	t.Parallel()
-	drv := newServarr("sonarr", "http://sonarr:8989", "app-key", nil, true)
+	drv := asServarr(t, NewSonarr("http://sonarr:8989", "app-key", nil))
 	d := DesiredIndexer{
 		Slug: "anime-tracker", Name: "Anime Tracker", Priority: 25, Enabled: true,
 		FeedURL:    "http://harbrr:8787/api/v2.0/indexers/anime-tracker/results/torznab",
@@ -195,7 +199,7 @@ func TestSonarrBuildIndexerUsenetGolden(t *testing.T) {
 
 func TestServarrBuildIndexerTorrentUnchanged(t *testing.T) {
 	t.Parallel()
-	drv := newServarr("radarr", "http://radarr:7878", "app-key", nil, false)
+	drv := asServarr(t, NewRadarr("http://radarr:7878", "app-key", nil))
 	// Empty Protocol and explicit "torrent" both yield the unchanged Torznab body.
 	for _, proto := range []string{"", "torrent"} {
 		got := drv.buildIndexer(DesiredIndexer{Slug: "s", Name: "s", Protocol: proto})
@@ -209,7 +213,7 @@ func TestServarrBuildIndexerTorrentUnchanged(t *testing.T) {
 func TestServarrListRecognizesNewznab(t *testing.T) {
 	t.Parallel()
 	stub := newServarrStub(t)
-	srv := httptest.NewServer(stub.handler())
+	srv := httptest.NewServer(stub.handler("/api/v3/indexer"))
 	t.Cleanup(srv.Close)
 	ctx := context.Background()
 
@@ -233,6 +237,18 @@ func TestServarrListRecognizesNewznab(t *testing.T) {
 }
 
 // --- shared test helpers ---
+
+// asServarr unwraps a Target built by an exported NewX constructor back to the
+// concrete *servarrDriver, so buildIndexer (and the app's anime/indexerPath wiring)
+// is exercised through the real constructor rather than re-specified by the test.
+func asServarr(t *testing.T, tgt Target) *servarrDriver {
+	t.Helper()
+	drv, ok := tgt.(*servarrDriver)
+	if !ok {
+		t.Fatalf("want *servarrDriver, got %T", tgt)
+	}
+	return drv
+}
 
 func assertGolden(t *testing.T, name string, v any) {
 	t.Helper()
