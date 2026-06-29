@@ -1,11 +1,15 @@
 ---
-id: rotorrent-api
-name: RoTorrent (API)
-description: "RoTorrent (ROT) is a ROMANIAN Private Torrent Tracker for MOVIES / TV / GENERAL"
+id: seedcore-api
+replaces:
+  - rotorrent-api
+name: SeedCore (API)
+description: "SeedCore (ROT) is a ROMANIAN Private Torrent Tracker for MOVIES / TV / GENERAL"
 language: ro-RO
 type: private
 encoding: UTF-8
 links:
+  - https://seedcore.net/
+legacylinks:
   - https://rotorrent.info/
 
 caps:
@@ -31,7 +35,7 @@ settings:
   - name: info_key
     type: info
     label: About your API key
-    default: "Find or Generate a new API Token by accessing your <a href=\"https://rotorrent.info/\" target=\"_blank\">RoTorrent</a> account <i>My Settings</i> page and clicking on the <b>API Key</b> tab."
+    default: "Find or Generate a new API Token by accessing your <a href=\"https://seedcore.net/\" target=\"_blank\">SeedCore</a> account <i>My Settings</i> page and clicking on the <b>API Key</b> tab."
   - name: freeleech
     type: checkbox
     label: Search freeleech only
