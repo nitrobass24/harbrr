@@ -10,23 +10,25 @@ import (
 	"testing"
 )
 
-// stageOrder is the frozen topological layering of the Cardigann pipeline.
-// Earlier stages must NEVER import later (or same-position) stages, so the
-// production import graph stays the acyclic, orthogonal DAG it is today:
+// stageLayers is the frozen topological layering of the Cardigann pipeline, one
+// inner slice per layer. A stage may import only stages in STRICTLY EARLIER
+// layers; stages within the same layer must stay orthogonal (no imports between
+// them). Together that keeps the production import graph the acyclic, layered
+// DAG it is today:
 //
 //	encode, loader  ->  magnet, mapper, selector, regexadapter, dateparse, parity
 //	                ->  template, filter, normalizer  ->  login  ->  search
 //
-// Maintenance: adding a new stage = insert one string at the correct position
-// here; nothing else changes. The parent package internal/indexer/cardigann
-// (engine.go) is the composition root above the stages, not a stage itself, so
-// it is deliberately absent from this slice.
-var stageOrder = []string{
-	"encode", "loader", // layer 0
-	"magnet", "mapper", "selector", "regexadapter", "dateparse", "parity", // layer 1
-	"template", "filter", "normalizer", // layer 2
-	"login",  // layer 3
-	"search", // layer 4
+// Maintenance: adding a new stage = insert one string into the correct layer
+// (or append a new layer); nothing else changes. The parent package
+// internal/indexer/cardigann (engine.go) is the composition root above the
+// stages, not a stage itself, so it is deliberately absent here.
+var stageLayers = [][]string{
+	{"encode", "loader"},
+	{"magnet", "mapper", "selector", "regexadapter", "dateparse", "parity"},
+	{"template", "filter", "normalizer"},
+	{"login"},
+	{"search"},
 }
 
 const stagePrefix = "github.com/autobrr/harbrr/internal/indexer/cardigann/"
@@ -35,26 +37,30 @@ const stagePrefix = "github.com/autobrr/harbrr/internal/indexer/cardigann/"
 // For each stage it parses the import lists of its non-test .go files (go/parser
 // with ImportsOnly, so comments and strings that merely look like imports are
 // ignored), keeps only imports under the cardigann engine, and asserts the
-// importer's rank is strictly greater than each imported stage's rank. A
-// strictly-greater check forbids both back-edges (cycles) and same-layer edges,
-// mirroring the stdlib-AST architecture guard in
+// imported stage's layer is strictly earlier than the importer's. Comparing
+// layers (not flat positions) forbids back-edges (cycles) AND same-layer edges
+// in both directions, mirroring the stdlib-AST architecture guard in
 // internal/database/rebind_guard_test.go.
 func TestPipelineIsAcyclicDAG(t *testing.T) {
 	t.Parallel()
-	rank := make(map[string]int, len(stageOrder))
-	for i, s := range stageOrder {
-		rank[s] = i
+	layer := map[string]int{}
+	for i, group := range stageLayers {
+		for _, s := range group {
+			layer[s] = i
+		}
 	}
-	for _, stage := range stageOrder {
-		for _, dep := range stageImports(t, stage) {
-			depRank, ok := rank[dep]
-			if !ok {
-				continue // non-stage import (stdlib, third-party, engine root)
-			}
-			if depRank >= rank[stage] {
-				t.Errorf("back-edge/cycle: stage %q (rank %d) imports %q (rank %d); "+
-					"the pipeline is a linear DAG — earlier (and same-layer) stages may not import later ones",
-					stage, rank[stage], dep, depRank)
+	for stageLayer, group := range stageLayers {
+		for _, stage := range group {
+			for _, dep := range stageImports(t, stage) {
+				depLayer, ok := layer[dep]
+				if !ok {
+					continue // non-stage import (stdlib, third-party, engine root)
+				}
+				if depLayer >= stageLayer {
+					t.Errorf("back-edge/cycle: stage %q (layer %d) imports %q (layer %d); "+
+						"a stage may import only strictly-earlier layers, and same-layer stages must stay orthogonal",
+						stage, stageLayer, dep, depLayer)
+				}
 			}
 		}
 	}
