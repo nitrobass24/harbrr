@@ -155,6 +155,35 @@ func TestKeyringMissingKeyFileIsFatal(t *testing.T) {
 	}
 }
 
+// TestKeyringUnreadableKeyFileIsFatal covers the keyfile READ-error path: a
+// configured key_file that exists but cannot be read (permission denied) is fatal,
+// never a silent fallback to plaintext. Skipped under root, which bypasses file mode.
+func TestKeyringUnreadableKeyFileIsFatal(t *testing.T) {
+	t.Parallel()
+
+	if os.Geteuid() == 0 {
+		t.Skip("running as root bypasses file permissions")
+	}
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "locked.key")
+	raw, err := hex.DecodeString(hexKey)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if err := os.WriteFile(keyPath, raw, 0o600); err != nil {
+		t.Fatalf("write keyfile: %v", err)
+	}
+	if err := os.Chmod(keyPath, 0o000); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	// Restore read perms so t.TempDir cleanup can remove the file.
+	t.Cleanup(func() { _ = os.Chmod(keyPath, 0o600) })
+
+	if _, err := secrets.OpenKeyring(secrets.KeyringOptions{KeyFile: keyPath}, zerolog.Nop()); err == nil {
+		t.Fatal("an unreadable key_file must fail, not fall back to plaintext")
+	}
+}
+
 func TestKeyringReadsRawKeyfile(t *testing.T) {
 	t.Parallel()
 

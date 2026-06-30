@@ -184,6 +184,46 @@ func TestServerEndToEndBasePath(t *testing.T) {
 	runEndToEnd(t, "/harbrr")
 }
 
+// TestServerBasePathStripsExactPrefix covers the edge of base-path stripping: a
+// request to the base path itself ("/harbrr", no trailing slash) strips to an EMPTY
+// path and still reaches the management tree — the e2e tests only exercise
+// "/harbrr/..." subpaths, never the bare prefix.
+func TestServerBasePathStripsExactPrefix(t *testing.T) {
+	t.Parallel()
+
+	var (
+		sawManagement bool
+		gotPath       string
+	)
+	mgmt := stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+		sawManagement = true
+		gotPath = r.URL.Path
+		w.WriteHeader(stdhttp.StatusOK)
+	})
+	torznab := stdhttp.HandlerFunc(func(_ stdhttp.ResponseWriter, _ *stdhttp.Request) {
+		t.Error("Torznab tree must not handle the bare base path")
+	})
+	srv := server.New(server.Deps{
+		Management: mgmt,
+		Torznab:    torznab,
+		Logger:     zerolog.Nop(),
+	}, server.Config{BasePath: "/harbrr"})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), stdhttp.MethodGet, "/harbrr", nil)
+	srv.Handler().ServeHTTP(rec, req)
+
+	if !sawManagement {
+		t.Fatalf("management handler not reached for the bare base path (status %d)", rec.Code)
+	}
+	if gotPath != "" {
+		t.Errorf("management saw path %q, want \"\" after stripping the exact base path", gotPath)
+	}
+	if rec.Code != stdhttp.StatusOK {
+		t.Errorf("status = %d, want 200", rec.Code)
+	}
+}
+
 func runEndToEnd(t *testing.T, basePath string) {
 	s, c := buildStack(t, basePath)
 

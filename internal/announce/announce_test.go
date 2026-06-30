@@ -4,11 +4,37 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
+
+// TestScrubURLError proves a *url.Error's URL (which can carry an apikey/passkey in
+// the query, or userinfo credentials) never survives into the scrubbed error, while
+// the operation and underlying cause remain; a non-URL error passes through unchanged.
+func TestScrubURLError(t *testing.T) {
+	t.Parallel()
+	urlErr := &url.Error{
+		Op:  "Post",
+		URL: "http://harbrr:8787/api/v2.0/indexers/tt/dl?apikey=feedsecret&passkey=NOTREALSECRET",
+		Err: errors.New("dial tcp: connection refused"),
+	}
+	got := scrubURLError(urlErr).Error()
+	if strings.Contains(got, "feedsecret") || strings.Contains(got, "NOTREALSECRET") || strings.Contains(got, "harbrr:8787") {
+		t.Errorf("scrubURLError leaked URL/credentials: %q", got)
+	}
+	if !strings.Contains(got, "connection refused") {
+		t.Errorf("scrubURLError dropped the underlying cause: %q", got)
+	}
+
+	plain := errors.New("boom")
+	if got := scrubURLError(plain); !errors.Is(got, plain) {
+		t.Errorf("scrubURLError altered a non-URL error: %v", got)
+	}
+}
 
 const testAPIKey = "qui_secretkey" //nolint:gosec // synthetic test credential
 

@@ -108,6 +108,39 @@ func TestOpenAADMismatchFails(t *testing.T) {
 	}
 }
 
+// TestSealNonceUnique proves seal draws a fresh random nonce each call: sealing the
+// same plaintext+AAD many times must never repeat the prepended nonce. A reused
+// nonce under a fixed GCM key is catastrophic (it leaks the keystream XOR), so this
+// is a standing guard, not a one-off check.
+func TestSealNonceUnique(t *testing.T) {
+	t.Parallel()
+
+	const (
+		nonceLen = 12 // AES-GCM standard nonce size.
+		iters    = 2048
+	)
+	ad := aad(1, "passkey")
+	seen := make(map[string]struct{}, iters)
+	for i := 0; i < iters; i++ {
+		blob, err := seal(testKey, ad, []byte("same-plaintext-every-time"))
+		if err != nil {
+			t.Fatalf("seal[%d]: %v", i, err)
+		}
+		raw, err := base64.StdEncoding.DecodeString(blob)
+		if err != nil {
+			t.Fatalf("decode[%d]: %v", i, err)
+		}
+		if len(raw) < nonceLen {
+			t.Fatalf("blob[%d] shorter than the nonce", i)
+		}
+		nonce := string(raw[:nonceLen])
+		if _, dup := seen[nonce]; dup {
+			t.Fatalf("nonce repeated after %d seals", i)
+		}
+		seen[nonce] = struct{}{}
+	}
+}
+
 func TestOpenErrorHasNoPlaintext(t *testing.T) {
 	t.Parallel()
 
