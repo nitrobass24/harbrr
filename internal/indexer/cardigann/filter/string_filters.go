@@ -91,7 +91,12 @@ func filterHTMLDecode(value string, _ []string) (string, error) {
 	return html.UnescapeString(value), nil
 }
 
-// filterHTMLEncode implements htmlencode (WebUtility.HtmlEncode).
+// filterHTMLEncode implements htmlencode. It uses Go's html.EscapeString, which
+// matches .NET WebUtility.HtmlEncode for the common ASCII specials (& < > " ')
+// but does NOT encode non-ASCII / high characters into numeric entities the way
+// WebUtility.HtmlEncode does — a known divergence, latent because the corpus only
+// htmlencodes ASCII. Closing it (a WebUtility-faithful encoder) is owned by the
+// deferred engine effort.
 func filterHTMLEncode(value string, _ []string) (string, error) {
 	return html.EscapeString(value), nil
 }

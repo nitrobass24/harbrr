@@ -22,7 +22,8 @@ type netToken struct {
 // token family so the greedy scanner never matches a shorter prefix early.
 //
 // Token semantics verified against .NET CultureInfo custom format specifiers and
-// Go's reference time Mon Jan 2 15:04:05 MST 2006 (-07:00):
+// Go's reference time Mon Jan 2 15:04:05 MST 2006 (-07:00) — except the fractional
+// `f`/`F` family, whose mapping is a known gap (see the second NOTE below):
 //
 //	yyyy MMMM dddd  -> 4+ char year / full month / full weekday name
 //	yy   MMM  ddd   -> 2-digit year / abbreviated month / weekday name
@@ -43,6 +44,14 @@ type netToken struct {
 // never a real "+02" value. Rather than emit a silently-broken mapping, single
 // `z` is intentionally absent here, so TranslateLayout errors loudly on it. The
 // corpus uses only `zzz` (all 460 offset occurrences), so this is latent today.
+//
+// NOTE: the fractional `f`/`F` mappings below are NOT verified against .NET and
+// have a known gap on the canonical ".fff"/".FFF" form: the Go fractional layouts
+// embed their own leading separator (".000"/".999"), so a literal "." in the .NET
+// layout immediately before the token produces a doubled separator ("..000"). The
+// corpus does not exercise sub-second precision today, so this is latent; the real
+// fix (emit the fractional run without a duplicated separator) is owned by the
+// deferred engine effort, not this hygiene pass.
 var netTokens = []netToken{
 	{"yyyy", "2006"},
 	{"yyy", "2006"},

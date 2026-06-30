@@ -57,8 +57,10 @@ type FlareSolverrSolver struct {
 }
 
 // NewFlareSolverrSolver builds a solver against baseURL with the given per-solve
-// maxTimeout (clamped to (0, 180s]). The HTTP client timeout is strictly greater
-// than maxTimeout so the client never aborts a solve that is still within budget.
+// maxTimeout. An out-of-range maxTimeout (<=0, or >180s) does NOT clamp to the
+// bound — it resets to the 60s default (defaultFlareMaxTimeout). The HTTP client
+// timeout is strictly greater than maxTimeout so the client never aborts a solve
+// that is still within budget.
 func NewFlareSolverrSolver(baseURL string, maxTimeout time.Duration) *FlareSolverrSolver {
 	if maxTimeout <= 0 || maxTimeout > flareMaxTimeoutCap {
 		maxTimeout = defaultFlareMaxTimeout
