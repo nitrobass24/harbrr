@@ -842,9 +842,9 @@ paths:
       summary: Search-results cache statistics
       description: >
         Returns the cache's durable figures (entry count, total hits, approximate
-        size, and the oldest/newest/last-used timestamps) plus the process-lifetime
-        hit ratio. hitRatio is NON-PERSISTENT: it derives from in-memory hit/miss
-        counters that reset on restart. When caching is disabled the response is
+        size, and the oldest/newest/last-used timestamps) plus the cumulative hit
+        ratio. hitRatio derives from hit/miss counters that are persisted across
+        restarts. When caching is disabled the response is
         {"enabled": false} with no figures.
       operationId: cacheStats
       tags: [Cache]
@@ -861,7 +861,7 @@ paths:
     post:
       summary: Flush the search-results cache
       description: >
-        Deletes every cache entry and returns the count purged. The process-lifetime
+        Deletes every cache entry and returns the count purged. The cumulative
         hit/miss counters are not reset. When caching is disabled the response is
         {"flushed": 0}.
       operationId: cacheFlush
@@ -1302,20 +1302,20 @@ components:
           type: integer
           format: int64
           description: >
-            Global cache hits over the current process lifetime (the aggregate of the
-            per-indexer byIndexer rows). NON-PERSISTENT: resets on restart.
+            Global cumulative cache hits (the aggregate of the per-indexer byIndexer
+            rows). Persisted across restarts.
         misses:
           type: integer
           format: int64
           description: >
-            Global cache misses over the current process lifetime (the aggregate of the
-            per-indexer byIndexer rows). NON-PERSISTENT: resets on restart.
+            Global cumulative cache misses (the aggregate of the per-indexer byIndexer
+            rows). Persisted across restarts.
         hitRatio:
           type: number
           format: double
           description: >
-            hits / (hits + misses) over the current process lifetime. NON-PERSISTENT:
-            the underlying hit/miss counters are in-memory and reset on restart.
+            hits / (hits + misses), cumulative. The underlying hit/miss counters are
+            persisted across restarts.
         approxSizeBytes: { type: integer, format: int64, description: approximate total size of cached payloads }
         oldestCachedAt:
           type: integer
@@ -1342,9 +1342,9 @@ components:
           type: integer
           format: int64
           description: >
-            Process-lifetime count of misses short-circuited by the negative-result
-            circuit breaker (extra tracker requests spared a failing tracker).
-            NON-PERSISTENT: resets on restart.
+            Cumulative count of misses short-circuited by the negative-result circuit
+            breaker (extra tracker requests spared a failing tracker). Persisted across
+            restarts.
         byIndexer:
           type: array
           description: Per-indexer cache breakdown, ordered by instance id.
@@ -1359,9 +1359,9 @@ components:
         name: { type: string, description: the indexer's display name (empty if unresolved) }
         entries: { type: integer, format: int64, description: durable number of cached entries for this indexer }
         hitsSaved: { type: integer, format: int64, description: durable tracker requests this indexer served from cache }
-        hits: { type: integer, format: int64, description: in-memory cache hits this process lifetime }
-        misses: { type: integer, format: int64, description: in-memory cache misses this process lifetime }
-        hitRatio: { type: number, format: double, description: hits / (hits + misses) this process lifetime }
+        hits: { type: integer, format: int64, description: cumulative cache hits for this indexer (persisted across restarts) }
+        misses: { type: integer, format: int64, description: cumulative cache misses for this indexer (persisted across restarts) }
+        hitRatio: { type: number, format: double, description: cumulative hits / (hits + misses) for this indexer }
         approxSizeBytes: { type: integer, format: int64, description: approximate cached payload size for this indexer }
         breakerSuppressed: { type: integer, format: int64, description: misses short-circuited by the breaker for this indexer }
         breakerOpenUntil:

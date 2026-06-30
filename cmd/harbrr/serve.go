@@ -265,6 +265,9 @@ func buildSearchCache(ctx context.Context, db *database.DB, cfg *config.Config, 
 	if err := sc.LoadOverrides(ctx); err != nil {
 		log.Warn().Err(err).Msg("loading cache config overrides failed; using config-file defaults")
 	}
+	if err := sc.RehydrateCounters(ctx); err != nil {
+		log.Warn().Err(err).Msg("loading cache stat counters failed; counters start at zero this session")
+	}
 	return sc
 }
 
@@ -281,14 +284,16 @@ func startSearchCacheCleanup(ctx context.Context, sc *registry.SearchCache, log 
 		for {
 			select {
 			case <-ctx.Done():
-				// Final flush of buffered hit bumps on shutdown, with a fresh bounded
-				// context since ctx is already canceled.
+				// Final flush of buffered hit bumps and stat counters on shutdown, with a
+				// fresh bounded context since ctx is already canceled.
 				fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 				sc.FlushTouches(fctx)
+				sc.FlushCounters(fctx)
 				cancel()
 				return
 			case <-t.C:
 				sc.FlushTouches(ctx)
+				sc.FlushCounters(ctx)
 				if _, err := sc.CleanupExpired(ctx); err != nil && !errors.Is(err, context.Canceled) {
 					log.Warn().Err(err).Msg("search cache cleanup failed")
 				}

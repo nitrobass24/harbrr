@@ -426,6 +426,16 @@ func (r *Registry) invalidateSearchCache(ctx context.Context, instanceID int64) 
 	}
 }
 
+// forgetCacheCounters drops a deleted instance's in-memory cache counters so the
+// global totals stay equal to the sum of the surviving rows and FlushCounters stops
+// re-Upserting a cascade-deleted row. No-op when caching is off.
+func (r *Registry) forgetCacheCounters(instanceID int64) {
+	if r.searchCache == nil {
+		return
+	}
+	r.searchCache.ForgetInstance(instanceID)
+}
+
 // inTx runs fn inside a transaction, committing on success and rolling back on
 // error. The repo methods fn calls take an Execer, which the TxQuerier satisfies,
 // so an instance and its settings are written atomically.

@@ -12,15 +12,15 @@ import (
 )
 
 // cacheStatsResponse is the management view of the search-results cache. The
-// durable figures come from the store; hitRatio (and its underlying hits/misses)
-// is a process-lifetime, non-persistent counter that resets on restart.
+// durable figures come from the store; hitRatio (and its underlying hits/misses) is
+// a cumulative counter persisted across restarts (see registry/searchcache_counters.go).
 type cacheStatsResponse struct {
 	Enabled   bool  `json:"enabled"`
 	Entries   int64 `json:"entries"`
 	TotalHits int64 `json:"totalHits"`
-	// Hits/Misses are the process-lifetime, non-persistent global counters (the sum
-	// across all indexers, the aggregate of the per-indexer byIndexer rows). hitRatio
-	// is hits / (hits + misses) over the same window. All three reset on restart.
+	// Hits/Misses are the global counters (the sum across all indexers, the aggregate
+	// of the per-indexer byIndexer rows). hitRatio is hits / (hits + misses) over the
+	// same window. All three are cumulative and survive a restart.
 	Hits            int64   `json:"hits"`
 	Misses          int64   `json:"misses"`
 	HitRatio        float64 `json:"hitRatio"`
@@ -31,7 +31,7 @@ type cacheStatsResponse struct {
 	// TrackerHitsSaved is the cumulative count of tracker requests served from cache
 	// (the durable SUM of per-entry hit counts) — the headline kind-to-trackers metric.
 	TrackerHitsSaved int64 `json:"trackerHitsSaved"`
-	// BreakerSuppressed is the process-lifetime count of misses short-circuited by the
+	// BreakerSuppressed is the cumulative count of misses short-circuited by the
 	// negative-result breaker (extra tracker requests spared a failing tracker).
 	BreakerSuppressed int64 `json:"breakerSuppressed"`
 	// ByIndexer is the per-indexer breakdown (ordered by instance id).

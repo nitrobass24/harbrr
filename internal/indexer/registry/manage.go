@@ -187,12 +187,19 @@ func (r *Registry) SetEnabled(ctx context.Context, slug string, enabled bool) er
 	return nil
 }
 
-// Delete removes an instance (settings cascade) and invalidates its cached engine.
+// Delete removes an instance (settings cascade) and invalidates its cached engine. It
+// loads the instance first to obtain its id, so the in-memory cache counters can be
+// pruned to match the cache_counters row the FK cascade removes.
 func (r *Registry) Delete(ctx context.Context, slug string) error {
+	inst, err := r.instances.GetBySlug(ctx, r.db, slug)
+	if err != nil {
+		return fmt.Errorf("registry: delete %q: %w", slug, err)
+	}
 	if err := r.instances.Delete(ctx, r.db, slug); err != nil {
 		return fmt.Errorf("registry: delete %q: %w", slug, err)
 	}
 	r.invalidate(slug)
+	r.forgetCacheCounters(inst.ID)
 	return nil
 }
 

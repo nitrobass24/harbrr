@@ -27,7 +27,8 @@ const swrRefreshTimeout = 30 * time.Second
 // SearchCache is the registry-wide cache-aside layer for indexer searches. It
 // holds the SQLite store, a singleflight group (so concurrent identical misses
 // drive the tracker exactly once), the resolved TTL tiers, the refresh-ahead
-// threshold, a clock, and a logger, plus process-lifetime hit/miss counters.
+// threshold, a clock, and a logger, plus cumulative hit/miss counters (persisted
+// across restarts via counterStore).
 //
 // SECRETS-AT-REST: the store's results_json holds the FULL pre-/dl-rewrite release
 // slice, whose Link/Magnet embed passkeys for some trackers. This layer NEVER logs
@@ -36,6 +37,10 @@ const swrRefreshTimeout = 30 * time.Second
 // rule.
 type SearchCache struct {
 	store database.SearchCacheStore
+	// counterStore persists the per-instance hit/miss/suppressed counters so the
+	// stats survive a restart (rehydrated at boot, flushed on the cleanup tick and
+	// at shutdown). Stateless zero value, like store.
+	counterStore database.CacheCountersStore
 	// db is a Querier (not just an Execer) so SetConfig can wrap its multi-row
 	// persist in a transaction; every read/write path still uses it as an Execer.
 	db dbinterface.Querier
@@ -51,21 +56,31 @@ type SearchCache struct {
 	clock func() time.Time
 	log   zerolog.Logger
 
-	// hits/misses are process-lifetime (non-persistent) counters for the hit-ratio
-	// metric the stats endpoint exposes; they reset on restart. breakerSuppressed
-	// counts MISSes short-circuited by an open negative breaker (tracker requests the
-	// breaker spared) — a separate category, not folded into hits or misses.
+	// hits/misses are the global counters for the hit-ratio metric the stats endpoint
+	// exposes. breakerSuppressed counts MISSes short-circuited by an open negative
+	// breaker (tracker requests the breaker spared) — a separate category, not folded
+	// into hits or misses. All three are the sum of the per-instance instCounters and
+	// survive a restart: rehydrated from counterStore at boot, flushed back on the
+	// cleanup tick and at shutdown (see searchcache_counters.go). A hard crash between
+	// flushes loses the increments since the last cleanup tick — at most one
+	// cleanup_interval — which is acceptable for observability-only counters.
 	hits              atomic.Int64
 	misses            atomic.Int64
 	breakerSuppressed atomic.Int64
+
+	// countersRehydrated gates FlushCounters: it is set once RehydrateCounters has
+	// loaded the persisted counts at boot, so a failed/early flush can never overwrite
+	// the stored totals with zeroes.
+	countersRehydrated atomic.Bool
 
 	// breaker is the per-instance negative-result circuit breaker (see searchcache_
 	// breaker.go). Always present; inert unless the negative window (ttl.negative) is
 	// positive.
 	breaker *negativeBreaker
 
-	// instCounters holds per-instance hit/miss/suppressed counters keyed by
-	// instanceID (process-lifetime, non-persistent) for the per-indexer stats surface.
+	// instCounters holds per-instance hit/miss/suppressed counters keyed by instanceID
+	// for the per-indexer stats surface. Persisted via counterStore (see the hits/misses
+	// note above), so they survive a restart.
 	instCounters sync.Map // map[int64]*instanceCounters
 
 	// touchMu guards touchPending, the in-memory coalescing buffer for per-entry
@@ -85,7 +100,8 @@ type pendingTouch struct {
 	lastUsed time.Time
 }
 
-// instanceCounters holds one instance's process-lifetime hit/miss/suppressed counts.
+// instanceCounters holds one instance's hit/miss/suppressed counts (persisted across
+// restarts via counterStore).
 type instanceCounters struct {
 	hits       atomic.Int64
 	misses     atomic.Int64

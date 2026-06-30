@@ -475,6 +475,13 @@ alpha ships with manual indexer setup — existing Prowlarr/Jackett users re-ent
       tracker requests served from cache — the headline value metric), `breakerSuppressed`, and a
       `byIndexer[]` per-indexer breakdown (hit ratio, hits saved, breaker open-state). Store
       `StatsByInstance` (`internal/database/searchcache.go`) + engine merge (`searchcache_manage.go`).
+- [x] **Persist cache stat counters across restart** *(new)* — the global + per-instance
+      hit/miss/breakerSuppressed counters were in-memory only and reset to zero on every container
+      relaunch. A `cache_counters` table (`0007`, per-instance, `ON DELETE CASCADE`) + a stateless
+      `CacheCountersStore` (`internal/database/cachecounters.go`); the registry rehydrates the atomics at
+      boot and flushes absolute values on the existing cleanup-tick/shutdown machinery
+      (`searchcache_counters.go`), gated by a `countersRehydrated` flag so a failed boot load can't clobber
+      stored totals. Globals = sum of per-instance rows (the increment pairing is invariant).
 - [x] **HTTP cache validators on the feed (conditional GET)** *(new — ze0s's "ETags/cache tags" ask)* —
       a cache-backed Torznab/Newznab feed emits a strong `ETag` (content hash of the cached result set)
       + `Cache-Control: private, max-age=<remaining TTL>`; an `If-None-Match` match is answered `304 Not

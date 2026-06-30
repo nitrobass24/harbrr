@@ -8,8 +8,8 @@ import (
 )
 
 // SearchCacheStats is the management view of the cache: the durable row-derived
-// figures plus the process-lifetime hit-ratio counters. Hits/Misses/HitRatio are
-// non-persistent (they reset on restart); the rest are read from the store.
+// figures plus the hit-ratio counters. Hits/Misses/HitRatio/BreakerSuppressed survive
+// a restart (persisted via counterStore); the rest are read from the store.
 type SearchCacheStats struct {
 	Entries         int64
 	TotalHits       int64
@@ -18,18 +18,18 @@ type SearchCacheStats struct {
 	NewestUnixSec   *int64
 	LastUsedUnixSec *int64
 
-	// Process-lifetime (non-persistent) counters.
+	// Cumulative counters, persisted across restarts (see searchcache_counters.go).
 	Hits     int64
 	Misses   int64
 	HitRatio float64
 	// BreakerSuppressed counts MISSes short-circuited by an open negative breaker —
-	// tracker requests the breaker spared (process-lifetime, non-persistent).
+	// tracker requests the breaker spared.
 	BreakerSuppressed int64
 }
 
 // InstanceCacheStats is one instance's merged cache observability: the durable
-// row-derived figures (HitsSaved/Entries/ApproxSizeBytes) plus the process-lifetime
-// in-memory counters and the live breaker state. HitsSaved is the headline
+// row-derived figures (HitsSaved/Entries/ApproxSizeBytes) plus the in-memory counters
+// (persisted across restarts) and the live breaker state. HitsSaved is the headline
 // "tracker requests this indexer served from cache" figure.
 type InstanceCacheStats struct {
 	InstanceID        int64
@@ -72,9 +72,10 @@ func (c *SearchCache) Stats(ctx context.Context) (SearchCacheStats, error) {
 }
 
 // StatsByInstance returns one merged stats row per instance that has either durable
-// cache entries or process-lifetime in-memory traffic (the union of both sources),
+// cache entries or recorded in-memory traffic counters (the union of both sources),
 // ordered by instance id. It folds the durable per-instance figures, the in-memory
-// hit/miss/suppressed counters, and the live breaker open-state into one view for the
+// hit/miss/suppressed counters (persisted across restarts), and the live breaker
+// open-state into one view for the
 // per-indexer observability surface. Like Stats it flushes buffered touches first so
 // HitsSaved reflects hits served since the last flush.
 func (c *SearchCache) StatsByInstance(ctx context.Context) ([]InstanceCacheStats, error) {
@@ -126,7 +127,7 @@ func sortedInstanceStats(merged map[int64]*InstanceCacheStats) []InstanceCacheSt
 }
 
 // Flush deletes every cache entry and returns the count purged. It does not reset
-// the in-memory hit/miss counters (they are process-lifetime by design).
+// the hit/miss counters (they are cumulative and monotonic, with no reset path).
 func (c *SearchCache) Flush(ctx context.Context) (int64, error) {
 	n, err := c.store.Flush(ctx, c.db)
 	if err != nil {

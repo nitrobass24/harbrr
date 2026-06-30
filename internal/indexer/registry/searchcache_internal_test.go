@@ -304,7 +304,7 @@ func TestInnerErrorNotCached(t *testing.T) {
 	}
 }
 
-// TestStatsHitMissRatio proves the process-lifetime counters track hits and misses.
+// TestStatsHitMissRatio proves the cumulative (restart-persistent) counters track hits and misses.
 func TestStatsHitMissRatio(t *testing.T) {
 	t.Parallel()
 	sc, instID, _ := testCache(t, keywordTTL, 0)
