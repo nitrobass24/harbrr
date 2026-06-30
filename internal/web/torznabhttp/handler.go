@@ -317,15 +317,20 @@ func (h *handler) writeResults(w http.ResponseWriter, r *http.Request, idx Index
 	}
 	// When the response came through the cache, emit validators and honor a matching
 	// If-None-Match with 304 — unless the client forced a fresh fetch (header or query).
-	// The served validator folds in this page's window (pagedETag): the cached payload
-	// ETag is page-independent (one engine fetch serves every page), so without the fold
-	// a revalidation of one page could be answered 304 with another page's body.
+	// The served validator hashes the POST-filter page the freeleech view actually serves
+	// (not the cache's pre-filter payload) and folds in both the freeleech-bypass variant
+	// and this page's window (servedPayloadETag + pagedETag): the honor feed and the /full
+	// bypass feed share one cached entry, and the payload ETag is page-independent, so
+	// without these folds a revalidation of one feed/page could be answered 304 with
+	// another variant's or page's body.
 	if ci.ETag != "" {
-		served := &CacheInfo{ETag: pagedETag(ci.ETag, res.Offset, res.Limit), ExpiresAt: ci.ExpiresAt}
-		setCacheValidators(w, served, h.clock())
-		if !headerFresh && !wantsNoCache(q) && ifNoneMatchMatches(r.Header.Get("If-None-Match"), served.ETag) {
-			w.WriteHeader(http.StatusNotModified)
-			return
+		if view, ok := servedPayloadETag(res.Releases, freeleechBypass(ctx)); ok {
+			served := &CacheInfo{ETag: pagedETag(view, res.Offset, res.Limit), ExpiresAt: ci.ExpiresAt}
+			setCacheValidators(w, served, h.clock())
+			if !headerFresh && !wantsNoCache(q) && ifNoneMatchMatches(r.Header.Get("If-None-Match"), served.ETag) {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
 		}
 	}
 	page := tzn.Page{Offset: res.Offset, Total: res.Total}
