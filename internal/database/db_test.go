@@ -78,8 +78,10 @@ func TestMigrateIsIdempotent(t *testing.T) {
 
 	// Each migration recorded once (0001_init.sql, 0002_indexer_health.sql,
 	// 0003_appsync.sql, 0004_search_cache.sql, 0005_indexer_protocol.sql,
-	// 0006_app_settings.sql, 0007_cache_counters.sql), not duplicated by the second apply.
-	const wantMigrations = 7
+	// 0006_app_settings.sql, 0007_cache_counters.sql,
+	// 0008_app_connections_freeleech.sql, 0009_announce_connections.sql),
+	// not duplicated by the second apply.
+	const wantMigrations = 9
 	var applied int
 	if err := db.QueryRowContext(context.Background(),
 		"SELECT count(*) FROM schema_migrations").Scan(&applied); err != nil {

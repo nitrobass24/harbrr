@@ -21,7 +21,7 @@ type AppConnections struct{}
 // connectionColumns is the full select list, in scan order.
 const connectionColumns = `id, name, kind, base_url, api_key_encrypted, harbrr_url,
 	harbrr_api_key_id, harbrr_api_key_encrypted, key_id, enabled, sync_level,
-	index_scope, priority, last_sync_at, last_sync_status, last_sync_error,
+	index_scope, freeleech_mode, priority, last_sync_at, last_sync_status, last_sync_error,
 	created_at, updated_at`
 
 // InsertConnection writes a connection row and returns its new id.
@@ -30,11 +30,11 @@ func (AppConnections) InsertConnection(ctx context.Context, q dbinterface.Execer
 		q.Rebind(`INSERT INTO app_connections
 			(name, kind, base_url, api_key_encrypted, harbrr_url, harbrr_api_key_id,
 			 harbrr_api_key_encrypted, key_id, enabled, sync_level, index_scope,
-			 priority, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+			 freeleech_mode, priority, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		c.Name, c.Kind, c.BaseURL, c.APIKeyEncrypted, c.HarbrrURL, nullIfZero(c.HarbrrAPIKeyID),
 		c.HarbrrAPIKeyEncrypted, c.KeyID, boolToInt(c.Enabled), c.SyncLevel, c.IndexScope,
-		c.Priority, c.CreatedAt.UTC().Format(timeLayout), c.UpdatedAt.UTC().Format(timeLayout))
+		c.FreeleechMode, c.Priority, c.CreatedAt.UTC().Format(timeLayout), c.UpdatedAt.UTC().Format(timeLayout))
 	if err != nil {
 		return 0, fmt.Errorf("database: insert app connection: %w", err)
 	}
@@ -88,10 +88,10 @@ func (AppConnections) UpdateConnection(ctx context.Context, q dbinterface.Execer
 	res, err := q.ExecContext(ctx,
 		q.Rebind(`UPDATE app_connections SET
 			name = ?, base_url = ?, api_key_encrypted = ?, harbrr_url = ?, key_id = ?,
-			sync_level = ?, index_scope = ?, priority = ?, updated_at = ?
+			sync_level = ?, index_scope = ?, freeleech_mode = ?, priority = ?, updated_at = ?
 			WHERE id = ?`),
 		c.Name, c.BaseURL, c.APIKeyEncrypted, c.HarbrrURL, c.KeyID,
-		c.SyncLevel, c.IndexScope, c.Priority, c.UpdatedAt.UTC().Format(timeLayout), c.ID)
+		c.SyncLevel, c.IndexScope, c.FreeleechMode, c.Priority, c.UpdatedAt.UTC().Format(timeLayout), c.ID)
 	if err != nil {
 		return fmt.Errorf("database: update app connection: %w", err)
 	}
@@ -231,7 +231,7 @@ func scanConnection(s interface{ Scan(...any) error }) (domain.AppConnection, er
 	)
 	if err := s.Scan(&c.ID, &c.Name, &c.Kind, &c.BaseURL, &c.APIKeyEncrypted, &c.HarbrrURL,
 		&harbrrKeyID, &c.HarbrrAPIKeyEncrypted, &c.KeyID, &enabled, &c.SyncLevel,
-		&c.IndexScope, &c.Priority, &lastSyncAt, &lastSyncStatus, &lastSyncEr,
+		&c.IndexScope, &c.FreeleechMode, &c.Priority, &lastSyncAt, &lastSyncStatus, &lastSyncEr,
 		&createdAt, &updatedAt); err != nil {
 		return domain.AppConnection{}, err //nolint:wrapcheck // sql.ErrNoRows matched by caller; others wrapped there.
 	}

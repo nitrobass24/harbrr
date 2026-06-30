@@ -140,3 +140,30 @@ Prowlarr) is parity, not a divergence; these are the harbrr-additive choices aro
   because many servers send raw. Output is unchanged (same decoded body).
   `[Deliberate]` (`login/solver.go` `withSolverReplayHeaders`, `login/login.go`
   `decompressBody`/`looksZlibWrapped`).
+
+## Cross-seed freeleech (serve-time filter + announce source)
+
+The freeleech-bypass feature renders the engine with `freeleech` cleared (so the cache
+holds the FULL catalog) and applies "freeleech only" as a SERVE-TIME view over
+`downloadVolumeFactor == 0`. The audit of all 348 vendored defs with a `freeleech`
+setting found this parity-exact except for the two cases below.
+
+- **`scenetime-api.yml` honor feed is empty under the full-fetch model.** It is the lone
+  vendored def whose freeleech signal is expressed only by gating the
+  `downloadvolumefactor` *search input* on `.Config.freeleech` (not a per-row marker), so
+  a full fetch (freeleech cleared) returns every item with the default factor and the
+  serve-time `dvf==0` filter keeps nothing. Every other freeleech def stamps
+  `downloadvolumefactor` per-row from its own free marker, independent of the setting, so
+  the filter reconstructs the exact freeleech subset. `[Deliberate]` — the caching win
+  (one tracker fetch shared by the honor + bypass feeds + the announce source) is worth
+  one obscure tracker's honor feed; use the bypass `/full` feed for SceneTime cross-seed.
+  (`internal/indexer/registry/freeleech.go`.)
+- **Honor-feed pagination dilution above one page.** harbrr does a single engine fetch
+  (default page = max = 100) and filters it to freeleech at serve time, so a search whose
+  full result set exceeds one page shows fewer freeleech items on the honor feed than a
+  Jackett freeleech-only fetch would (which would fill a whole page with freeleech). Most
+  searches return well under 100, so it is invisible in practice; the bypass feed is
+  unaffected. The only deep-paging driver (newznab/usenet) has no freeleech setting, so
+  the related has-more-floor interaction is unreachable. `[Deliberate]`
+  (`internal/indexer/registry/freeleech.go`; the single-engine-fetch model is the shared
+  "Better pagination support" design, `docs/plan.md`).

@@ -61,6 +61,14 @@ type Query struct {
 	// page, default size".
 	Offset int
 	Limit  int
+
+	// FreeleechBypass requests the full catalog from harbrr's serve-time freeleech view
+	// (the freeleech-bypass feed variant, for qui/cross-seed). It is REQUEST CONTEXT for
+	// the registry's freeleechIndexer decorator only: the Cardigann engine never templates
+	// it (the engine always fetches the full catalog regardless), and it is deliberately
+	// NOT part of the search-cache key — honor and bypass share one cached full-set entry,
+	// and the decorator narrows it post-cache. See docs/plan.md Phase-11.
+	FreeleechBypass bool
 }
 
 // isIDSearch reports whether any ID-style param is set. Jackett skips the

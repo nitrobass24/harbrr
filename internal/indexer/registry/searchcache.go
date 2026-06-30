@@ -78,6 +78,13 @@ type SearchCache struct {
 	// positive.
 	breaker *negativeBreaker
 
+	// announceSink, when set, receives newly-observed releases on an RSS/empty-query
+	// cache write-back (the cross-seed announce source — see searchcache_announce.go).
+	// nil means no announce targets are configured (a no-op tap). announced is the
+	// dedup window guarding re-announce across cache expiry; always present.
+	announceSink AnnounceSink
+	announced    *announceWindow
+
 	// instCounters holds per-instance hit/miss/suppressed counters keyed by instanceID
 	// for the per-indexer stats surface. Persisted via counterStore (see the hits/misses
 	// note above), so they survive a restart.
@@ -140,10 +147,16 @@ func NewSearchCache(db dbinterface.Querier, t cacheTuning, clock func() time.Tim
 		log:          log,
 		touchPending: make(map[string]pendingTouch),
 		breaker:      newNegativeBreaker(),
+		announced:    newAnnounceWindow(),
 	}
 	c.tuning.Store(&t)
 	return c
 }
+
+// SetAnnounceSink installs the cross-seed announce source tap. It is a setter (not a
+// constructor arg) because the announce service is built after the cache in cmd/harbrr;
+// a nil sink leaves the tap a no-op. Called once at wiring time, before serving.
+func (c *SearchCache) SetAnnounceSink(sink AnnounceSink) { c.announceSink = sink }
 
 // SearchCacheParams carries the resolved TTL tiers and refresh-ahead threshold a
 // caller (cmd/harbrr) reads from config to build a SearchCache without reaching
@@ -388,6 +401,10 @@ func (c *SearchCache) fetchLive(ctx context.Context, inner torznabhttp.Indexer, 
 // validators are returned even if the Store write fails — the response content is still
 // valid, and an unstored entry simply misses on the next request.
 func (c *SearchCache) storeBestEffort(ctx context.Context, instanceID int64, cfg map[string]string, q search.Query, key string, releases []*normalizer.Release) (string, time.Time) {
+	// Derive the "what's new" announce stream from this write-back BEFORE the store, so
+	// the prior cached entry (the one we overwrite) is still readable for the GUID diff.
+	c.tapAnnounce(ctx, instanceID, q, key, releases)
+
 	payload, err := json.Marshal(releases)
 	if err != nil {
 		c.log.Warn().Str("cache_key", key).Str("error", apphttp.RedactError(err)).

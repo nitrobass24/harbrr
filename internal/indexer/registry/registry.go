@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"sync"
 	"time"
 
@@ -200,10 +201,14 @@ func (r *Registry) build(ctx context.Context, slug string) (torznabhttp.Indexer,
 	if err != nil {
 		return nil, err
 	}
-	if r.searchCache == nil {
-		return a, nil
+	var inner torznabhttp.Indexer = a
+	if r.searchCache != nil {
+		inner = r.searchCache.wrap(a, a.instanceID, a.cfg)
 	}
-	return r.searchCache.wrap(a, a.instanceID, a.cfg), nil
+	// The freeleech view is the OUTERMOST layer (outside the cache): the engine fetched
+	// and the cache stored the full catalog, and this decorator narrows it to FL-only at
+	// serve time for the honor feed — so the bypass feed reuses the same cached entry.
+	return &freeleechIndexer{Indexer: inner, freeleechOnly: a.freeleechOnly}, nil
 }
 
 // buildAdapter loads the instance + definition, decrypts its settings, and
@@ -231,6 +236,18 @@ func (r *Registry) buildAdapter(ctx context.Context, slug string) (*indexerAdapt
 		return nil, err
 	}
 
+	// freeleech is consumed as a SERVE-TIME view, not a fetch-time filter: the engine is
+	// built with the key cleared so every fetch returns the full catalog (cached once and
+	// shared by the honor + bypass feeds). The stored value drives the freeleechIndexer
+	// decorator. Go-template truthiness is "non-empty" (a checked box resolves to "True",
+	// config.go), so an empty/absent value is off.
+	freeleechOnly := cfg["freeleech"] != ""
+	engineCfg := cfg
+	if freeleechOnly {
+		engineCfg = maps.Clone(cfg)
+		delete(engineCfg, "freeleech")
+	}
+
 	doer, err := r.doerFactory(ClientParams{
 		Instance:     inst,
 		Cfg:          cfg,
@@ -240,19 +257,20 @@ func (r *Registry) buildAdapter(ctx context.Context, slug string) (*indexerAdapt
 	if err != nil {
 		return nil, err
 	}
-	inner, err := r.buildInner(inst, def, factory, cfg, doer)
+	inner, err := r.buildInner(inst, def, factory, engineCfg, doer)
 	if err != nil {
 		return nil, err
 	}
 	return &indexerAdapter{
-		info:       indexerInfo(inst, def),
-		inner:      inner,
-		instanceID: inst.ID,
-		cfg:        cfg,
-		db:         r.db,
-		health:     r.health,
-		clock:      r.clock,
-		log:        r.log,
+		info:          indexerInfo(inst, def),
+		inner:         inner,
+		instanceID:    inst.ID,
+		cfg:           cfg,
+		freeleechOnly: freeleechOnly,
+		db:            r.db,
+		health:        r.health,
+		clock:         r.clock,
+		log:           r.log,
 	}, nil
 }
 

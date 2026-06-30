@@ -99,6 +99,22 @@ func (Instances) GetBySlug(ctx context.Context, q dbinterface.Execer, slug strin
 	return inst, nil
 }
 
+// GetByID returns the instance with the given id, or ErrNotFound. Used by the announce
+// source to resolve a cache write-back's instance id back to its slug.
+func (Instances) GetByID(ctx context.Context, q dbinterface.Execer, id int64) (domain.IndexerInstance, error) {
+	row := q.QueryRowContext(ctx,
+		q.Rebind(`SELECT id, slug, definition_id, name, base_url, enabled, protocol, created_at, updated_at
+		 FROM indexer_instances WHERE id = ?`), id)
+	inst, err := scanInstance(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.IndexerInstance{}, fmt.Errorf("instance %d: %w", id, ErrNotFound)
+	}
+	if err != nil {
+		return domain.IndexerInstance{}, err
+	}
+	return inst, nil
+}
+
 // Settings returns all settings for an instance, ordered by name for determinism.
 func (Instances) Settings(ctx context.Context, q dbinterface.Execer, instanceID int64) ([]domain.IndexerSetting, error) {
 	rows, err := q.QueryContext(ctx,

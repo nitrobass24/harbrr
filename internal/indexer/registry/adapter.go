@@ -32,11 +32,15 @@ type indexerAdapter struct {
 	instanceID int64
 	// cfg is the decrypted per-instance settings map. The search-cache decorator
 	// reads its "cache_ttl" override; it carries secrets, so it is never logged.
-	cfg    map[string]string
-	db     dbinterface.Execer
-	health database.Health
-	clock  func() time.Time
-	log    zerolog.Logger
+	cfg map[string]string
+	// freeleechOnly is the instance's stored `freeleech` setting. The engine is built
+	// with that key cleared (so it always fetches the full catalog); the value is
+	// carried here only to drive the serve-time freeleechIndexer decorator.
+	freeleechOnly bool
+	db            dbinterface.Execer
+	health        database.Health
+	clock         func() time.Time
+	log           zerolog.Logger
 }
 
 // Compile-time proof the adapter satisfies the handler's contract.

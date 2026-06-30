@@ -36,6 +36,9 @@ func TestSlugFromFeedURL(t *testing.T) {
 		want string
 	}{
 		{"normal feed", "http://harbrr:8787/api/v2.0/indexers/show-tracker/results/torznab", "show-tracker"},
+		// the freeleech-bypass variant's trailing /full must not break slug recovery, so
+		// orphan-detection still matches harbrr-managed rows pushed in bypass mode.
+		{"bypass /full variant", "http://harbrr:8787/api/v2.0/indexers/show-tracker/results/torznab/full", "show-tracker"},
 		{"with base path", "http://h/harbrr/api/v2.0/indexers/abc/results/torznab", "abc"},
 		{"not a harbrr feed", "http://other/api/v3/indexer", ""},
 		{"empty", "", ""},

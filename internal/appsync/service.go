@@ -90,14 +90,15 @@ func NewService(db dbinterface.Querier, source IndexerSource, minter KeyMinter, 
 // API key (so harbrr can call it); HarbrrURL is the base URL this app uses to reach
 // harbrr's feed. SyncLevel/IndexScope/Priority default when empty.
 type CreateConnectionParams struct {
-	Name       string
-	Kind       string
-	BaseURL    string
-	APIKey     string
-	HarbrrURL  string
-	SyncLevel  string
-	IndexScope string
-	Priority   int
+	Name          string
+	Kind          string
+	BaseURL       string
+	APIKey        string
+	HarbrrURL     string
+	SyncLevel     string
+	IndexScope    string
+	FreeleechMode string
+	Priority      int
 }
 
 // CreateConnection mints a dedicated harbrr key for the connection, then persists the
@@ -136,7 +137,8 @@ func (s *Service) insertConnection(ctx context.Context, p CreateConnectionParams
 	conn := domain.AppConnection{
 		Name: p.Name, Kind: p.Kind, BaseURL: p.BaseURL, HarbrrURL: p.HarbrrURL,
 		HarbrrAPIKeyID: harbrrKeyID, Enabled: true, SyncLevel: p.SyncLevel,
-		IndexScope: p.IndexScope, Priority: p.Priority, CreatedAt: now, UpdatedAt: now,
+		IndexScope: p.IndexScope, FreeleechMode: p.FreeleechMode, Priority: p.Priority,
+		CreatedAt: now, UpdatedAt: now,
 	}
 	id, err := s.repo.InsertConnection(ctx, tx, conn)
 	if err != nil {
@@ -177,13 +179,14 @@ func (s *Service) encryptSecrets(connID int64, appKey, harbrrKey string) (appEnc
 // UpdateConnectionParams patches a connection; nil fields are left unchanged. APIKey,
 // when set, rotates the app's key (re-encrypted in place).
 type UpdateConnectionParams struct {
-	Name       *string
-	BaseURL    *string
-	HarbrrURL  *string
-	APIKey     *string
-	SyncLevel  *string
-	IndexScope *string
-	Priority   *int
+	Name          *string
+	BaseURL       *string
+	HarbrrURL     *string
+	APIKey        *string
+	SyncLevel     *string
+	IndexScope    *string
+	FreeleechMode *string
+	Priority      *int
 }
 
 // UpdateConnection applies a patch, re-encrypting the app key when rotated.

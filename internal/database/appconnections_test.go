@@ -26,6 +26,7 @@ func sampleConnection(harbrrKeyID int64, now time.Time) domain.AppConnection {
 		Enabled:               true,
 		SyncLevel:             domain.SyncLevelFull,
 		IndexScope:            domain.IndexScopeAll,
+		FreeleechMode:         domain.FreeleechModeHonor,
 		Priority:              25,
 		CreatedAt:             now,
 		UpdatedAt:             now,
@@ -41,6 +42,52 @@ func mintKey(t *testing.T, db *database.DB, name string) int64 {
 		t.Fatalf("mint key: %v", err)
 	}
 	return id
+}
+
+// TestAppConnectionAllKindsRoundTrip inserts and reads back a connection for EVERY
+// supported app kind. This is the coverage gap that let #85 ship: the kind support in
+// Go (validateKind/newDriver) was widened to lidarr/readarr/whisparr but the DB CHECK
+// was not, so those three failed at INSERT. With the CHECK dropped (0008) every kind
+// round-trips, and the freeleech_mode column persists.
+func TestAppConnectionAllKindsRoundTrip(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db := openMigrated(t, ":memory:")
+	repo := database.AppConnections{}
+	now := time.Now().UTC().Truncate(time.Second)
+
+	kinds := []string{
+		domain.AppKindSonarr, domain.AppKindRadarr, domain.AppKindLidarr,
+		domain.AppKindReadarr, domain.AppKindWhisparr, domain.AppKindQui,
+	}
+	for _, kind := range kinds {
+		t.Run(kind, func(t *testing.T) {
+			conn := sampleConnection(mintKey(t, db, "key-"+kind), now)
+			conn.Kind = kind
+			conn.Name = kind
+			conn.BaseURL = "http://" + kind + ":9999"
+			mode := domain.FreeleechModeHonor
+			if kind == domain.AppKindQui {
+				mode = domain.FreeleechModeBypass
+			}
+			conn.FreeleechMode = mode
+
+			id, err := repo.InsertConnection(ctx, db, conn)
+			if err != nil {
+				t.Fatalf("InsertConnection(%s): %v", kind, err)
+			}
+			got, err := repo.GetConnection(ctx, db, id)
+			if err != nil {
+				t.Fatalf("GetConnection(%s): %v", kind, err)
+			}
+			if got.Kind != kind {
+				t.Errorf("kind = %q, want %q", got.Kind, kind)
+			}
+			if got.FreeleechMode != mode {
+				t.Errorf("freeleech_mode = %q, want %q", got.FreeleechMode, mode)
+			}
+		})
+	}
 }
 
 func TestAppConnectionInsertGetList(t *testing.T) {

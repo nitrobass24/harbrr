@@ -67,6 +67,28 @@ func (SearchCacheStore) Fetch(ctx context.Context, q dbinterface.Execer, cacheKe
 	return e, true, nil
 }
 
+// FetchAny returns the entry for cacheKey REGARDLESS of expiry, or found=false when
+// absent. It exists for the announce-source diff: a write-back overwrites an entry that
+// is, by definition, expired on the request miss path, so the diff against the prior
+// release set must read it even though Fetch (which filters expires_at) would hide it.
+// The expired payload also survives a restart, so the diff still suppresses already-seen
+// releases after a restart.
+func (SearchCacheStore) FetchAny(ctx context.Context, q dbinterface.Execer, cacheKey string) (SearchCacheEntry, bool, error) {
+	row := q.QueryRowContext(ctx,
+		q.Rebind(`SELECT cache_key, instance_id, results_json, total_results,
+			cached_at, last_used_at, expires_at, hit_count
+			FROM search_cache WHERE cache_key = ?`),
+		cacheKey)
+	e, err := scanSearchCacheEntry(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return SearchCacheEntry{}, false, nil
+	}
+	if err != nil {
+		return SearchCacheEntry{}, false, fmt.Errorf("database: fetch search cache %q: %w", cacheKey, err)
+	}
+	return e, true, nil
+}
+
 // Store upserts an entry keyed on cache_key. The DO UPDATE writes everything
 // EXCEPT hit_count, so a SWR refresh-write-back preserves the served-hit counter
 // (Touch is its only writer). expires_at must be strictly after cached_at — a

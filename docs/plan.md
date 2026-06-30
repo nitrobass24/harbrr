@@ -489,10 +489,56 @@ alpha ships with manual indexer setup — existing Prowlarr/Jackett users re-ent
       fetch (the header sibling of `nocache=1`). Standards-only — clients (autobrr) can adopt it with no
       harbrr-side coupling. Prowlarr/Jackett emit no validators. `internal/web/torznabhttp/cacheinfo.go`,
       `handler.go`; the registry cache surfaces the validators via a `CacheInfo` context sink.
-- [ ] **Cross-seed backend + freeleech-aware matching** — a cross-seed search backend, plus
-      freeleech-aware release matching and optional freeleech-bypass logic (README "Cross-Seed Aware"):
-      smarter release matching, search reuse/aggregation, reduced duplicate tracker activity. **Absorbs
-      issue #10** (bypass FL tag on x-seed searches). *Detail TBD beyond the README's framing.*
+- [x] **Cross-seed backend + freeleech-aware matching** — make harbrr the smartest *source* and *messenger*
+      for cross-seed (qui cross-seed + cross-seed v6), and let one tracker serve both ratio-building and
+      cross-seed off a single config. harbrr never matches — the x-seed tools do that. **Absorbs issue #10.**
+      The "search reuse / aggregation / reduced duplicate tracker activity" framing from the README is already
+      delivered by the shipped shared search cache + fabric-wide pacing + negative breaker; what remains is the
+      freeleech control and the push integrations below. Build order: FL toggle/bypass first, then announce
+      push/source. Leaves:
+   - [x] **Per-indexer freeleech toggle (Prowlarr-style)** — a user-configurable `freeleech` setting on the
+         indexer instance. When ON, the default Torznab/Newznab feed serves freeleech-only (cheap-ratio releases
+         for arrs). harbrr clears `freeleech` from the engine config at build (so the cache holds the FULL
+         catalog) and applies the filter at SERVE time on `downloadVolumeFactor==0` — so the toggle costs no extra
+         tracker fetch and the full set is still available to the bypass feed. (`registry.go` buildAdapter +
+         `freeleech.go` decorator.)
+   - [x] **Freeleech-bypass feed variant** — a second feed surface (`/results/torznab/full` + `/full/api`) for the
+         *same* indexer that returns the full catalog (cross-seed must see everything). **No vendored-def edits.**
+         Decided in plan mode: **dedicated variant URL** (a `bypass` request flag on `search.Query`, set by the
+         route, NOT in the cache key) + a **serve-time filter** outside the cache — so honor + bypass share ONE
+         cached full-set entry (no redundant tracker fetch). (`handler.go` routes, `freeleechbypass.go`,
+         `freeleech.go` decorator, OpenAPI.)
+   - [x] **Per-app freeleech routing** *(absorbs #85)* — a `freeleech_mode` ('honor'|'bypass') column on `app_connections`,
+         **defaulted by app kind** (Sonarr/Radarr/Lidarr/Readarr/Whisparr → honor; qui → bypass) and
+         operator-overridable. app-sync pushes the matching feed variant per connection (hook: `feedURL` in
+         `sync.go`, already branched on `conn.Kind`). One tracker configured once → the right variant reaches
+         each app automatically; no Prowlarr-style tracker duplication, no doubled config-time tracker hits.
+         (Note: qui uses a single shared Torznab indexer pool for *both* cross-seed and manual search, so qui
+         gets the bypass variant for both — there is no per-feature switch on qui's side.)
+         The migration (`0008`) also **drops the drifted `kind` CHECK** so lidarr/readarr/whisparr connections
+         can be created (#85), with a standing all-6-kinds round-trip test; `validateKind` is the single source
+         of truth.
+   - [x] **cross-seed v6 config snippet** — `GET /api/indexers/{slug}/crossseed-snippet` emits a copy-paste
+         `torznab:` `config.js` entry (the bypass `/full` URL + an apikey placeholder). cross-seed v6 has no
+         indexer API (file config + restart), so this is its config-push equivalent. (`crossseed_handlers.go`.)
+   - [x] **Announce push (qui + cross-seed v6)** — an `AnnounceTarget` interface mirroring app-sync's
+         `Target`, one driver per kind: **qui** two-step (`POST /api/cross-seed/webhook/check`
+         `{torrentName,size,indexer}` → on `recommendation:"download"`, fetch the `.torrent` via `/dl`, base64,
+         `POST /api/cross-seed/apply` `{torrentData,indexer,tags}`); **cross-seed v6** one-step
+         (`POST /api/announce` `{name,guid,link,tracker}`, header `x-api-key`, `link` = harbrr `/dl?apikey=…`
+         URL since cross-seed fetches it itself). Per-connection storage + minted key, secrets redacted. Pushes
+         *releases*, not config. The `.torrent` is fetched only on a confirmed match → strictly less tracker
+         load than the consumer polling + grabbing (grabs left seeding, no hit-and-run).
+   - [x] **Announce source (new-release tap)** — derive the "what's new" stream by tapping the search-cache
+         write-back (`storeBestEffort`), diffing fresh GUIDs (`tzn.GUIDFor`) against the prior cached set
+         (`SearchCacheStore.FetchAny` before the upsert — reads the expired-but-present row, so the diff works
+         on a miss and survives restart) for RSS/empty-query fills only (`isEmptyQuery`), with an
+         instance-namespaced, hard-bounded announced-GUID dedup window. Default policy: **announce only what a consumer is already polling** (zero added tracker
+         load); a proactive per-indexer RSS watcher for un-polled trackers is a deferred opt-in (more load).
+   - [x] **Docs + divergence** — user docs (`website/docs/features/cross-seed-freeleech.md` + MkDocs nav) for the
+         FL toggle/bypass, the per-app routing defaults, the qui + cross-seed v6 push setup, and the cross-seed v6
+         snippet; deliberate divergences recorded in the registry + app-sync testdata READMEs (scenetime-api
+         honor-empty, honor-feed pagination dilution, freeleech_mode routing, dropped kind CHECK).
 - [x] **Better pagination support** — **issue #3**: a spec-correct, *superior-to-Jackett/Prowlarr*
       feed — honest `<newznab:response offset total>` (Jackett omits it), correct offset/limit
       windowing, and a paging-aware conditional-GET ETag (folds the page window so a revalidation
