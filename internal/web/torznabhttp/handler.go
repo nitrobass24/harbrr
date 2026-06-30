@@ -87,10 +87,16 @@ type Route struct {
 var torznabRoutes = []struct {
 	Route
 	dl bool
+	// bypass marks the freeleech-bypass feed variant: the same caps/search handler,
+	// but the request is tagged so the serve-time freeleech view returns the full
+	// catalog (for qui/cross-seed). dl and bypass are mutually exclusive.
+	bypass bool
 }{
-	{Route{http.MethodGet, "/api/v2.0/indexers/{indexerId}/results/torznab"}, false},
-	{Route{http.MethodGet, "/api/v2.0/indexers/{indexerId}/results/torznab/api"}, false},
-	{Route{http.MethodGet, "/api/v2.0/indexers/{indexerId}/dl"}, true},
+	{Route{http.MethodGet, "/api/v2.0/indexers/{indexerId}/results/torznab"}, false, false},
+	{Route{http.MethodGet, "/api/v2.0/indexers/{indexerId}/results/torznab/api"}, false, false},
+	{Route{http.MethodGet, "/api/v2.0/indexers/{indexerId}/results/torznab/full"}, false, true},
+	{Route{http.MethodGet, "/api/v2.0/indexers/{indexerId}/results/torznab/full/api"}, false, true},
+	{Route{http.MethodGet, "/api/v2.0/indexers/{indexerId}/dl"}, true, false},
 }
 
 // Routes returns the method/path pairs the Torznab handler serves, so the OpenAPI
@@ -113,8 +119,11 @@ func NewHandler(provider Provider, opts ...Option) http.Handler {
 	mux := http.NewServeMux()
 	for _, r := range torznabRoutes {
 		fn := h.serve
-		if r.dl {
+		switch {
+		case r.dl:
 			fn = h.serveDL
+		case r.bypass:
+			fn = withFreeleechBypass(h.serve)
 		}
 		mux.HandleFunc(r.Method+" "+r.Path, fn)
 	}

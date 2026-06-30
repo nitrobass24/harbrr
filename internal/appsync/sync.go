@@ -101,7 +101,7 @@ func (s *Service) buildDesired(ctx context.Context, instances []domain.IndexerIn
 			return nil, fmt.Errorf("appsync: capabilities for %q: %w", inst.Slug, err)
 		}
 		out = append(out, DesiredIndexer{
-			Slug: inst.Slug, Name: inst.Name, FeedURL: feedURL(conn.HarbrrURL, inst.Slug),
+			Slug: inst.Slug, Name: inst.Name, FeedURL: feedURL(conn.HarbrrURL, inst.Slug, conn.FreeleechMode),
 			APIKey: harbrrKey, Categories: cats, Capabilities: caps,
 			Priority: conn.Priority, Enabled: inst.Enabled, Protocol: inst.Protocol,
 		})
@@ -164,9 +164,17 @@ func (s *Service) recordResult(ctx context.Context, connID int64, status, detail
 	}
 }
 
-// feedURL assembles the absolute per-slug Torznab feed URL the app will poll.
-func feedURL(base, slug string) string {
-	return strings.TrimRight(base, "/") + feedURLMarker + url.PathEscape(slug) + "/results/torznab"
+// feedURL assembles the absolute per-slug Torznab feed URL the app will poll. A bypass
+// connection gets the /full variant (the full catalog, freeleech view skipped); honor
+// (the default for *arrs) gets the standard feed that respects the indexer's freeleech
+// setting. The slug is recovered from the URL path by slugFromFeedURL regardless of the
+// trailing /full, so orphan-detection still matches harbrr-managed rows.
+func feedURL(base, slug, freeleechMode string) string {
+	u := strings.TrimRight(base, "/") + feedURLMarker + url.PathEscape(slug) + "/results/torznab"
+	if freeleechMode == domain.FreeleechModeBypass {
+		u += "/full"
+	}
+	return u
 }
 
 // pushStatus maps a reconcile action to a stored per-indexer status.

@@ -42,6 +42,9 @@ func SearchReleases(ctx context.Context, idx Indexer, q url.Values) (SearchResul
 // already resolved (for mode validation) so they are not recomputed.
 func searchReleases(ctx context.Context, idx Indexer, caps *mapper.Capabilities, q url.Values) (SearchResult, error) {
 	query, requestedCats := buildQuery(q, caps)
+	// The bypass feed variant (set on ctx by the route) asks the registry's freeleech
+	// view for the full catalog; carry it onto the engine query the decorator reads.
+	query.FreeleechBypass = freeleechBypass(ctx)
 	if wantsNoCache(q) {
 		ctx = WithCacheBypass(ctx)
 	}
@@ -108,11 +111,43 @@ func pagedResult(releases []*normalizer.Release, pg paging, rawCount int) Search
 // request scheme/host and the configured base path — the same URL the Torznab feed
 // emits. The apikey and token are appended per release by NewDLRewriter.
 func DLBaseURL(r *http.Request, basePath, indexerID string) string {
+	return externalIndexerBase(r, basePath, indexerID) + "/dl"
+}
+
+// FeedURL builds the externally-visible Torznab results-feed URL for an indexer (no
+// apikey appended). bypass selects the freeleech-bypass /full variant — the URL harbrr
+// hands cross-seed consumers that must see the full catalog. It reuses the same
+// scheme/host/base-path derivation as DLBaseURL so the two stay consistent.
+func FeedURL(r *http.Request, basePath, indexerID string, bypass bool) string {
+	u := externalIndexerBase(r, basePath, indexerID) + "/results/torznab"
+	if bypass {
+		u += "/full"
+	}
+	return u
+}
+
+// SealedDLURL builds an absolute, fetchable /dl proxy URL for an original (passkey-bearing)
+// download link: it seals the link into an opaque token bound to indexerID under kr, then
+// appends the apikey. The URL resolves and fetches the torrent server-side, so the passkey
+// never leaves harbrr. dlBase is the absolute /dl endpoint (origin + base path +
+// /api/v2.0/indexers/<id>/dl). Used by the cross-seed announce source to hand a cross-seed
+// tool a link it can fetch without seeing the passkey. The error never carries the link.
+func SealedDLURL(kr *secrets.Keyring, indexerID, dlBase, apiKey, originalLink string) (string, error) {
+	token, err := encodeDLToken(kr, indexerID, originalLink)
+	if err != nil {
+		return "", err
+	}
+	return dlURLWithToken(dlBase, apiKey, token), nil
+}
+
+// externalIndexerBase is the shared scheme://host<basePath>/api/v2.0/indexers/<id>
+// prefix the feed and /dl URLs hang off.
+func externalIndexerBase(r *http.Request, basePath, indexerID string) string {
 	scheme := "http"
 	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
 		scheme = "https"
 	}
-	return scheme + "://" + r.Host + basePath + "/api/v2.0/indexers/" + url.PathEscape(indexerID) + "/dl"
+	return scheme + "://" + r.Host + basePath + "/api/v2.0/indexers/" + url.PathEscape(indexerID)
 }
 
 // NewDLRewriter builds the acquisition rewriter that seals a resolver-needing

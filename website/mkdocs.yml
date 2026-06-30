@@ -30,6 +30,7 @@ nav:
       - Search-results cache: features/search-results-cache.md
       - Failing-tracker circuit breaker: features/circuit-breaker.md
       - Usenet (Newznab) indexers: features/usenet-newznab.md
+      - Cross-seed & freeleech: features/cross-seed-freeleech.md
 
 markdown_extensions:
   - admonition

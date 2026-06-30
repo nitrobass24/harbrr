@@ -496,6 +496,30 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /api/indexers/{slug}/crossseed-snippet:
+    get:
+      summary: Get a cross-seed v6 config.js snippet for an indexer
+      description: >
+        Returns a copy-paste torznab entry for cross-seed v6's config.js. cross-seed v6
+        has no indexer API (file config + restart), so harbrr emits the snippet instead
+        of pushing it. The URL is the freeleech-bypass /full variant (cross-seed must see
+        the full catalog). The apikey is a placeholder the operator replaces with one of
+        their minted harbrr API keys — harbrr stores keys only as hashes and cannot echo
+        a usable one.
+      operationId: indexerCrossSeedSnippet
+      tags: [Indexers]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: the cross-seed v6 config snippet
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CrossSeedSnippet" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /api/app-connections:
     get:
       summary: List *arr/qui app-sync connections
@@ -684,6 +708,99 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /api/announce-connections:
+    get:
+      summary: List cross-seed announce targets
+      description: >
+        The configured cross-seed tools (qui cross-seed, cross-seed v6) harbrr pushes
+        newly-seen releases to. The tool's API key is redacted.
+      operationId: listAnnounceConnections
+      tags: [Announce]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the announce connections
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/AnnounceConnection" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Add a cross-seed announce target
+      description: >
+        Mints a dedicated harbrr key for the connection (whose value signs the /dl link
+        the tool fetches) and stores both secrets encrypted.
+      operationId: createAnnounceConnection
+      tags: [Announce]
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateAnnounceConnection" }
+      responses:
+        "201":
+          description: the created connection
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AnnounceConnection" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/announce-connections/{id}:
+    get:
+      summary: Get one announce target
+      operationId: getAnnounceConnection
+      tags: [Announce]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200":
+          description: the announce connection
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AnnounceConnection" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      summary: Delete an announce target (revokes its minted key)
+      operationId: deleteAnnounceConnection
+      tags: [Announce]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: deleted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/announce-connections/{id}/enable:
+    post:
+      summary: Enable an announce target
+      operationId: enableAnnounceConnection
+      tags: [Announce]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: enabled }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/announce-connections/{id}/disable:
+    post:
+      summary: Disable an announce target
+      operationId: disableAnnounceConnection
+      tags: [Announce]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: disabled }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /api/v2.0/indexers/{indexerId}/results/torznab:
     get:
       tags: [Torznab Feed]
@@ -763,6 +880,89 @@ paths:
         is the alternate path some clients use. Same parameters, authentication, and
         responses.
       operationId: torznabResultsApi
+      parameters:
+        - { name: indexerId, in: path, required: true, schema: { type: string }, description: the configured indexer slug }
+        - { name: apikey, in: query, required: false, schema: { type: string }, description: "feed credential; passkey is an accepted alias" }
+        - { name: passkey, in: query, required: false, schema: { type: string }, description: alias for apikey }
+        - { name: t, in: query, required: false, schema: { type: string }, description: "function: caps | search | tvsearch | movie | music | book (defaults to search)" }
+        - { name: q, in: query, required: false, schema: { type: string }, description: free-text query }
+        - { name: cat, in: query, required: false, schema: { type: string }, description: comma-separated newznab category ids }
+        - { name: imdbid, in: query, required: false, schema: { type: string } }
+        - { name: tmdbid, in: query, required: false, schema: { type: string } }
+        - { name: tvdbid, in: query, required: false, schema: { type: string } }
+        - { name: season, in: query, required: false, schema: { type: string } }
+        - { name: ep, in: query, required: false, schema: { type: string } }
+        - { name: limit, in: query, required: false, schema: { type: integer }, description: page size }
+        - { name: offset, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200":
+          description: a Torznab capabilities document or results feed (XML), or a Torznab <error> element
+          content:
+            application/xml:
+              schema: { type: string }
+        "400":
+          description: a Torznab <error> element (XML) for an unknown function or an unsupported id parameter
+          content:
+            application/xml:
+              schema: { type: string }
+        "500":
+          description: a generic Torznab <error> element (XML)
+          content:
+            application/xml:
+              schema: { type: string }
+
+  /api/v2.0/indexers/{indexerId}/results/torznab/full:
+    get:
+      tags: [Torznab Feed]
+      summary: Torznab search — freeleech-bypass variant (full catalog)
+      description: >
+        The freeleech-bypass feed variant for the same indexer: identical to
+        /api/v2.0/indexers/{indexerId}/results/torznab, except the per-indexer
+        "freeleech only" view is bypassed so the full catalog is returned. harbrr
+        pushes this URL to cross-seed consumers (qui, cross-seed v6), which must see
+        every release; the *arr feed (the path without /full) honors the freeleech
+        setting. Both variants are served from a single cached fetch, so polling the
+        bypass variant after the *arr feed adds no tracker request.
+      operationId: torznabResultsFull
+      parameters:
+        - { name: indexerId, in: path, required: true, schema: { type: string }, description: the configured indexer slug }
+        - { name: apikey, in: query, required: false, schema: { type: string }, description: "feed credential; passkey is an accepted alias" }
+        - { name: passkey, in: query, required: false, schema: { type: string }, description: alias for apikey }
+        - { name: t, in: query, required: false, schema: { type: string }, description: "function: caps | search | tvsearch | movie | music | book (defaults to search)" }
+        - { name: q, in: query, required: false, schema: { type: string }, description: free-text query }
+        - { name: cat, in: query, required: false, schema: { type: string }, description: comma-separated newznab category ids }
+        - { name: imdbid, in: query, required: false, schema: { type: string } }
+        - { name: tmdbid, in: query, required: false, schema: { type: string } }
+        - { name: tvdbid, in: query, required: false, schema: { type: string } }
+        - { name: season, in: query, required: false, schema: { type: string } }
+        - { name: ep, in: query, required: false, schema: { type: string } }
+        - { name: limit, in: query, required: false, schema: { type: integer }, description: page size }
+        - { name: offset, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200":
+          description: a Torznab capabilities document or results feed (XML), or a Torznab <error> element
+          content:
+            application/xml:
+              schema: { type: string }
+        "400":
+          description: a Torznab <error> element (XML) for an unknown function or an unsupported id parameter
+          content:
+            application/xml:
+              schema: { type: string }
+        "500":
+          description: a generic Torznab <error> element (XML)
+          content:
+            application/xml:
+              schema: { type: string }
+
+  /api/v2.0/indexers/{indexerId}/results/torznab/full/api:
+    get:
+      tags: [Torznab Feed]
+      summary: Torznab search — freeleech-bypass variant (/api alias)
+      description: >
+        Identical to /api/v2.0/indexers/{indexerId}/results/torznab/full — the /api
+        suffix is the alternate path some clients use.
+      operationId: torznabResultsFullApi
       parameters:
         - { name: indexerId, in: path, required: true, schema: { type: string }, description: the configured indexer slug }
         - { name: apikey, in: query, required: false, schema: { type: string }, description: "feed credential; passkey is an accepted alias" }
@@ -1214,13 +1414,20 @@ components:
           type: string
           enum: [all, selected]
           description: which harbrr indexers this connection mirrors
+        freeleechMode:
+          type: string
+          enum: [honor, bypass]
+          description: >
+            which feed variant is pushed: honor = the standard feed (the indexer's
+            freeleech setting is respected); bypass = the /full variant (full catalog,
+            for cross-seed). Defaults by kind (qui = bypass; *arrs = honor).
         priority: { type: integer }
         lastSyncAt: { type: string, format: date-time }
         lastSyncStatus: { type: string, description: "ok | partial | error | skipped" }
         lastSyncError: { type: string, description: scrubbed summary of the last failure }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
-      required: [id, name, kind, baseUrl, harbrrUrl, enabled, syncLevel, indexScope, priority, createdAt, updatedAt]
+      required: [id, name, kind, baseUrl, harbrrUrl, enabled, syncLevel, indexScope, freeleechMode, priority, createdAt, updatedAt]
     CreateConnection:
       type: object
       properties:
@@ -1231,6 +1438,7 @@ components:
         harbrrUrl: { type: string }
         syncLevel: { type: string, enum: [full, add_update], default: full }
         indexScope: { type: string, enum: [all, selected], default: all }
+        freeleechMode: { type: string, enum: [honor, bypass], description: "defaults by kind (qui = bypass; *arrs = honor)" }
         priority: { type: integer, default: 25 }
       required: [name, kind, baseUrl, apiKey, harbrrUrl]
     UpdateConnection:
@@ -1245,7 +1453,41 @@ components:
         harbrrUrl: { type: string }
         syncLevel: { type: string, enum: [full, add_update] }
         indexScope: { type: string, enum: [all, selected] }
+        freeleechMode: { type: string, enum: [honor, bypass] }
         priority: { type: integer }
+    AnnounceConnection:
+      type: object
+      description: >
+        A cross-seed tool harbrr pushes newly-seen releases to. The tool's API key
+        (apiKey) is never echoed — it reads back as the <redacted> sentinel.
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        kind: { type: string, enum: [qui, crossseed-v6] }
+        baseUrl: { type: string, description: the tool's own API base URL }
+        harbrrUrl: { type: string, description: "the base URL the tool uses to reach harbrr's /dl link (cross-seed v6)" }
+        apiKey: { type: string, description: "the tool's API key, redacted (<redacted>)" }
+        enabled: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, name, kind, baseUrl, enabled, createdAt, updatedAt]
+    CreateAnnounceConnection:
+      type: object
+      properties:
+        name: { type: string }
+        kind: { type: string, enum: [qui, crossseed-v6] }
+        baseUrl: { type: string }
+        apiKey: { type: string, description: the tool's API key (stored encrypted) }
+        harbrrUrl: { type: string, description: "required for cross-seed v6 (it fetches the /dl link)" }
+      required: [name, kind, baseUrl, apiKey]
+    CrossSeedSnippet:
+      type: object
+      description: a copy-paste cross-seed v6 config.js torznab entry for one indexer
+      properties:
+        indexer: { type: string, description: the indexer slug }
+        feedUrl: { type: string, description: the freeleech-bypass /full Torznab feed URL (no apikey) }
+        configJs: { type: string, description: "the torznab array entry for config.js, with an apikey placeholder" }
+      required: [indexer, feedUrl, configJs]
     ConnectionIndexer:
       type: object
       description: one row of a connection's per-indexer sync ledger

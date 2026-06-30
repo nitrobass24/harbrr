@@ -47,3 +47,17 @@ All three reuse the shared `servarrDriver`; they are thin constructors over the 
   new behavior is gated on it. (User-facing note: `website/docs/guides/app-sync.md`.)
 - **Mylar is not a target** — `[Tracked]`. Comics (Mylar) is a separate spike, demand-gated in
   `docs/plan.md` Phase 11; it is **not** a Servarr v3 fork and does not reuse this driver.
+
+## Per-app freeleech routing + the kind CHECK (#85)
+
+- **`freeleech_mode` is defaulted by app kind, not asked of the user.** A new connection
+  defaults `bypass` for qui (its single Torznab pool feeds cross-seed) and `honor` for
+  every \*arr; app-sync appends `/results/torznab/full` to the pushed feed URL for a
+  `bypass` connection. Operator-overridable per connection. `[Deliberate]`
+  (`internal/appsync/sync.go` `feedURL`, `validate.go` `withDefaults`).
+- **The `app_connections.kind` CHECK was dropped (#85 fix).** The 0003 CHECK allowed only
+  `('sonarr','radarr','qui')` and was never widened when lidarr/readarr/whisparr shipped,
+  so those three failed at INSERT even though `validateKind` accepts them. Migration 0008
+  rebuilds the table without the kind CHECK — `internal/appsync/validate.go` `validateKind`
+  is the single source of truth, so a future kind needs no migration. `[Resolved]`
+  (migration `0008_app_connections_freeleech.sql`; standing test: `TestAppConnectionAllKindsRoundTrip`).

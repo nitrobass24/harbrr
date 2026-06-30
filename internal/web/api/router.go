@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog"
 
+	"github.com/autobrr/harbrr/internal/announce"
 	"github.com/autobrr/harbrr/internal/appsync"
 	"github.com/autobrr/harbrr/internal/auth"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
@@ -24,6 +25,7 @@ type Deps struct {
 	Registry *registry.Registry
 	Loader   *loader.Loader
 	AppSync  *appsync.Service
+	Announce *announce.Service
 	Sessions *scs.SessionManager
 	// DLToken seals a resolver-needing indexer's download link behind the /dl proxy
 	// for the JSON search response, exactly as the Torznab feed does, so a passkey
@@ -57,6 +59,7 @@ type router struct {
 	registry *registry.Registry
 	loader   *loader.Loader
 	appsync  *appsync.Service
+	announce *announce.Service
 	sessions *scs.SessionManager
 	dlToken  *secrets.Keyring
 	basePath string
@@ -89,7 +92,7 @@ func NewRouter(deps Deps, cfg Config) (http.Handler, error) {
 
 	rt := &router{
 		auth: deps.Auth, registry: deps.Registry, loader: deps.Loader, appsync: deps.AppSync,
-		sessions: deps.Sessions, dlToken: deps.DLToken, basePath: deps.BasePath,
+		announce: deps.Announce, sessions: deps.Sessions, dlToken: deps.DLToken, basePath: deps.BasePath,
 		cache: deps.Cache, cfg: cfg, log: deps.Logger,
 		allowlist: allow, trustedProxies: proxies,
 	}
@@ -137,6 +140,7 @@ func (rt *router) routes() http.Handler {
 			r.Get("/api/indexers/{slug}/status", rt.indexerStatus)
 			r.Get("/api/indexers/{slug}/search", rt.searchIndexer)
 			r.Get("/api/indexers/{slug}/capabilities", rt.indexerCapabilities)
+			r.Get("/api/indexers/{slug}/crossseed-snippet", rt.crossSeedSnippet)
 
 			r.Get("/api/app-connections", rt.listConnections)
 			r.Post("/api/app-connections", rt.createConnection)
@@ -149,6 +153,13 @@ func (rt *router) routes() http.Handler {
 			r.Post("/api/app-connections/{id}/sync", rt.syncConnection)
 			r.Get("/api/app-connections/{id}/status", rt.connectionStatus)
 			r.Put("/api/app-connections/{id}/indexers", rt.setConnectionIndexers)
+
+			r.Get("/api/announce-connections", rt.listAnnounceConnections)
+			r.Post("/api/announce-connections", rt.createAnnounceConnection)
+			r.Get("/api/announce-connections/{id}", rt.getAnnounceConnection)
+			r.Delete("/api/announce-connections/{id}", rt.deleteAnnounceConnection)
+			r.Post("/api/announce-connections/{id}/enable", rt.enableAnnounceConnection)
+			r.Post("/api/announce-connections/{id}/disable", rt.disableAnnounceConnection)
 
 			r.Get("/api/cache/stats", rt.cacheStats)
 			r.Post("/api/cache/flush", rt.cacheFlush)

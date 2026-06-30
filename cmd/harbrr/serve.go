@@ -16,6 +16,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 
+	"github.com/autobrr/harbrr/internal/announce"
 	"github.com/autobrr/harbrr/internal/appsync"
 	"github.com/autobrr/harbrr/internal/auth"
 	"github.com/autobrr/harbrr/internal/config"
@@ -96,9 +97,15 @@ func serve(ctx context.Context, cfg *config.Config, log zerolog.Logger) error {
 	regOpts := []registry.Option{registry.WithLogger(log), registry.WithSearchCache(searchCache)}
 	reg := registry.New(db, loader.New(dropinDir(cfg)), keyring, regOpts...)
 	appSync := appsync.NewService(db, registrySource{reg: reg}, authSvc, keyring, appSyncClient(), log)
+	announceSvc := announce.NewService(db, authSvc, keyring,
+		announce.DefaultTargetFactory(appSyncClient(), nil, nil), log)
+	// Wire the cross-seed announce source: new releases on an RSS cache fill are pushed to
+	// enabled announce targets (best-effort, async — see newAnnounceSink).
+	searchCache.SetAnnounceSink(newAnnounceSink(announceSvc, db, keyring, cfg.Server.BaseURL, log))
 
 	mgmt, err := api.NewRouter(api.Deps{
-		Auth: authSvc, Registry: reg, Loader: loader.New(dropinDir(cfg)), AppSync: appSync, Sessions: sessions,
+		Auth: authSvc, Registry: reg, Loader: loader.New(dropinDir(cfg)), AppSync: appSync,
+		Announce: announceSvc, Sessions: sessions,
 		DLToken: keyring, BasePath: cfg.Server.BaseURL, Cache: searchCache, Logger: log,
 	}, api.Config{
 		AuthDisabled: cfg.Auth.AuthDisabled(), IPAllowlist: cfg.Auth.IPAllowlist, TrustedProxies: cfg.Auth.TrustedProxies,

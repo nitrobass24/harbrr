@@ -105,6 +105,15 @@ const (
 	IndexScopeSelected = "selected"
 )
 
+// Freeleech modes — which feed variant a connection is pushed, set per connection and
+// defaulted by app kind (qui → bypass; *arrs → honor). Honor pushes the standard feed
+// URL (the indexer's freeleech setting is respected); Bypass pushes the /full variant
+// URL (the full catalog, for cross-seed consumers that must see every release).
+const (
+	FreeleechModeHonor  = "honor"
+	FreeleechModeBypass = "bypass"
+)
+
 // Sync statuses — the outcome recorded on a connection (and per-indexer push).
 const (
 	SyncStatusOK      = "ok"
@@ -133,10 +142,39 @@ type AppConnection struct {
 	Enabled               bool
 	SyncLevel             string
 	IndexScope            string
+	FreeleechMode         string
 	Priority              int
 	LastSyncAt            *time.Time
 	LastSyncStatus        string
 	LastSyncError         string
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
+}
+
+// Announce kinds — the cross-seed tools harbrr pushes new releases to. Stored verbatim in
+// announce_connections.kind; validated in Go (no DB CHECK), so a new tool needs no
+// migration (the #85 lesson).
+const (
+	AnnounceKindQui         = "qui"
+	AnnounceKindCrossSeedV6 = "crossseed-v6"
+)
+
+// AnnounceConnection is a configured cross-seed tool harbrr pushes newly-seen releases to.
+// Like AppConnection it stores two encrypted secrets under KeyID (AAD = the connection id):
+// APIKeyEncrypted is the tool's own API key (so harbrr can call it), and
+// HarbrrAPIKeyEncrypted is the plaintext of the dedicated minted harbrr key whose value
+// signs the /dl link the tool fetches back. HarbrrAPIKeyID points at that key for revocation.
+type AnnounceConnection struct {
+	ID                    int64
+	Name                  string
+	Kind                  string
+	BaseURL               string
+	APIKeyEncrypted       string
+	HarbrrURL             string
+	HarbrrAPIKeyID        int64
+	HarbrrAPIKeyEncrypted string
+	KeyID                 string
+	Enabled               bool
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
 }

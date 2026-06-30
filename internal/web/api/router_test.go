@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog"
 
+	"github.com/autobrr/harbrr/internal/announce"
 	"github.com/autobrr/harbrr/internal/appsync"
 	"github.com/autobrr/harbrr/internal/auth"
 	"github.com/autobrr/harbrr/internal/database"
@@ -128,6 +129,8 @@ func newEnvWithCache(t *testing.T, cfg api.Config, buildCache func(db *database.
 	reg := registry.New(db, ldr, keyring)
 	source := &fakeAppSource{}
 	appSync := appsync.NewService(db, source, authSvc, keyring, http.DefaultClient, zerolog.Nop())
+	announceSvc := announce.NewService(db, authSvc, keyring,
+		announce.DefaultTargetFactory(http.DefaultClient, nil, nil), zerolog.Nop())
 
 	var cache *registry.SearchCache
 	if buildCache != nil {
@@ -135,7 +138,7 @@ func newEnvWithCache(t *testing.T, cfg api.Config, buildCache func(db *database.
 	}
 
 	handler, err := api.NewRouter(api.Deps{
-		Auth: authSvc, Registry: reg, Loader: ldr, AppSync: appSync, Sessions: sm,
+		Auth: authSvc, Registry: reg, Loader: ldr, AppSync: appSync, Announce: announceSvc, Sessions: sm,
 		Cache: cache, Logger: zerolog.Nop(),
 	}, cfg)
 	if err != nil {

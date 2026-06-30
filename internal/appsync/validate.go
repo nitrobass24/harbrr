@@ -18,7 +18,20 @@ func (p CreateConnectionParams) withDefaults() CreateConnectionParams {
 	if p.Priority == 0 {
 		p.Priority = defaultPriority
 	}
+	if p.FreeleechMode == "" {
+		p.FreeleechMode = defaultFreeleechMode(p.Kind)
+	}
 	return p
+}
+
+// defaultFreeleechMode picks a connection's freeleech routing by app kind: qui (which
+// drives cross-seed off a single shared Torznab pool) gets the full catalog by default;
+// every *arr honors the indexer's freeleech setting. The operator can override either.
+func defaultFreeleechMode(kind string) string {
+	if kind == domain.AppKindQui {
+		return domain.FreeleechModeBypass
+	}
+	return domain.FreeleechModeHonor
 }
 
 // validateCreate checks the required fields and enumerated values of a create request.
@@ -41,7 +54,10 @@ func validateCreate(p CreateConnectionParams) error {
 	if err := validateSyncLevel(p.SyncLevel); err != nil {
 		return err
 	}
-	return validateIndexScope(p.IndexScope)
+	if err := validateIndexScope(p.IndexScope); err != nil {
+		return err
+	}
+	return validateFreeleechMode(p.FreeleechMode)
 }
 
 // applyUpdate mutates conn from the non-nil patch fields, validating any enums it sets
@@ -81,6 +97,12 @@ func applyUpdate(conn *domain.AppConnection, p UpdateConnectionParams) error {
 		}
 		conn.IndexScope = *p.IndexScope
 	}
+	if p.FreeleechMode != nil {
+		if err := validateFreeleechMode(*p.FreeleechMode); err != nil {
+			return err
+		}
+		conn.FreeleechMode = *p.FreeleechMode
+	}
 	return nil
 }
 
@@ -117,5 +139,14 @@ func validateIndexScope(scope string) error {
 		return nil
 	default:
 		return fmt.Errorf("%w: index_scope must be all or selected (got %q)", ErrInvalid, scope)
+	}
+}
+
+func validateFreeleechMode(mode string) error {
+	switch mode {
+	case domain.FreeleechModeHonor, domain.FreeleechModeBypass:
+		return nil
+	default:
+		return fmt.Errorf("%w: freeleech_mode must be honor or bypass (got %q)", ErrInvalid, mode)
 	}
 }
