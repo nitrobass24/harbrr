@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
@@ -179,6 +180,14 @@ func toRelease(it *item, catMap *mapper.CategoryMap) *normalizer.Release {
 		Comments:    strings.TrimSpace(it.Comments),
 		Details:     trimComments(it.Comments),
 		Link:        nzbURL,
+		// Carry the upstream <guid> as the stable dedup identity (churn-immune to
+		// volatile download URLs). It is normally a passkey-free release id / details
+		// permalink, but the <guid> is server-controlled free text and this value is
+		// served verbatim in the feed, so redact any secret query params as defense in
+		// depth — a misbehaving server that uses an apikey-bearing download URL as its
+		// guid must not leak it. RedactURL leaves bare ids and clean permalinks intact,
+		// so dedup stays stable and churn-immune.
+		GUID:        apphttp.RedactURL(strings.TrimSpace(it.GUID)),
 		Size:        it.size(),
 		Categories:  it.categories(catMap),
 		Grabs:       it.attrInt("grabs"),

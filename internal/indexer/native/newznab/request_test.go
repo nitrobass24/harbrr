@@ -150,6 +150,52 @@ func TestBuildSearchURLModes(t *testing.T) {
 	}
 }
 
+// TestBuildSearchURLPaging proves the deep-set paging contract: a non-zero offset is
+// forwarded upstream (emitted immediately BEFORE limit so the param order is stable for
+// redaction), the limit is taken from the query (falling back to 100), and a first-page
+// (offset=0) request stays byte-identical to the pre-paging golden (no `offset=` present).
+func TestBuildSearchURLPaging(t *testing.T) {
+	t.Parallel()
+	d := urlDriver(t)
+
+	// Deep page: offset=100, limit=100 must appear as ...&offset=100&limit=100&apikey=...
+	deep := d.buildSearchURL(search.Query{Keywords: "x", Offset: 100, Limit: 100})
+	got := parseQuery(t, deep)
+	if got.Get("offset") != "100" {
+		t.Errorf("offset = %q, want 100", got.Get("offset"))
+	}
+	if got.Get("limit") != "100" {
+		t.Errorf("limit = %q, want 100", got.Get("limit"))
+	}
+	// offset must precede limit, and apikey stays last (redaction-stable order).
+	oi := strings.Index(deep, "offset=100")
+	li := strings.Index(deep, "limit=100")
+	ai := strings.Index(deep, "apikey=")
+	if oi < 0 || oi >= li || li >= ai {
+		t.Errorf("param order wrong: want offset<limit<apikey, got offset@%d limit@%d apikey@%d in %q", oi, li, ai, redact(deep))
+	}
+
+	// A custom limit is forwarded verbatim.
+	if l := parseQuery(t, d.buildSearchURL(search.Query{Limit: 50})).Get("limit"); l != "50" {
+		t.Errorf("limit = %q, want 50 (query limit forwarded)", l)
+	}
+
+	// offset=0 (and an unset limit) must be byte-identical to the pre-paging form: no
+	// `offset=` at all, limit defaulting to 100.
+	firstPage := d.buildSearchURL(search.Query{Keywords: "x", Offset: 0})
+	fp := parseQuery(t, firstPage)
+	if fp.Has("offset") {
+		t.Errorf("offset present on first page: %q, want absent", fp.Get("offset"))
+	}
+	if fp.Get("limit") != "100" {
+		t.Errorf("limit = %q, want 100 (default)", fp.Get("limit"))
+	}
+	// The whole URL must equal the zero-paging build (proves wire-form byte-identity).
+	if base := d.buildSearchURL(search.Query{Keywords: "x"}); firstPage != base {
+		t.Errorf("offset=0 changed the wire form:\n got  %q\n want %q", redact(firstPage), redact(base))
+	}
+}
+
 // TestBuildSearchURLBaseAndPath proves the URL skeleton: {base}{apiPath}?... with both the
 // base URL and apiPath right-trimmed of "/" and the apiPath default applied.
 func TestBuildSearchURLBaseAndPath(t *testing.T) {

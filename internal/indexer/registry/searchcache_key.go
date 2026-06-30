@@ -20,8 +20,11 @@ const searchCacheSchemaVersion = 2
 // cache key. It carries the instance id plus every search.Query field that drives
 // the tracker request. omitempty makes an empty field hash identically to a
 // missing one (empty == missing), so a zero Query and an explicitly-blank Query
-// share a key. limit/offset are deliberately absent (they only page the cached
-// slice downstream). Keying off these raw fields — never the engine's rendered
+// share a key. Offset/Limit are set ONLY for a paging-capable instance (one whose
+// driver forwards them upstream, so each page is a distinct outbound request and must
+// be cached separately); for a non-paging instance both stay zero and omitempty drops
+// them, leaving the key byte-identical to the pre-paging v2 form (one fetch still serves
+// every locally-sliced page). Keying off these raw fields — never the engine's rendered
 // queryMap/keywords — counts each input exactly once (no Year double-count, no
 // derived sentinels).
 type searchCacheKeyPayload struct {
@@ -53,11 +56,23 @@ type searchCacheKeyPayload struct {
 	// native driver (AnimeBytes) maps it to a different search namespace, so the same
 	// keywords under a different mode are a different outbound request.
 	Mode string `json:"mode,omitempty"`
+
+	// Offset and Limit page the cache key, but ONLY for a paging-capable instance: such a
+	// driver forwards them upstream, so each page is a distinct outbound request and must
+	// not share a cache entry. For a non-paging instance both are left zero (omitempty
+	// drops them), preserving the v2 key byte-for-byte so no entry is invalidated.
+	Offset int `json:"offset,omitempty"`
+	Limit  int `json:"limit,omitempty"`
 }
 
 // buildSearchCacheKey is the single key helper used by both the cache-miss path
 // and the singleflight/SWR path. It returns hex(sha256(json(canonical payload)))
 // over the instance id and the request-driving search.Query fields.
+//
+// paged folds the query's offset/limit into the key ONLY for a paging-capable instance
+// (its driver forwards them upstream, so each page is a distinct outbound request); for a
+// non-paging instance paged is false and the offset/limit are dropped, keeping the key
+// byte-identical to the pre-paging v2 form.
 //
 // Keywords are canonicalized with TrimSpace+ToLower: "Foo" and "foo" coalesce to
 // one entry (a deliberate, documented divergence — the engine itself does not
@@ -65,14 +80,14 @@ type searchCacheKeyPayload struct {
 // canonicalized to a frozen, deduped, numerically-sorted order so a different
 // cat= order or a duplicate cat cannot fork the cache; nil and empty []string
 // canonicalize identically.
-func buildSearchCacheKey(instanceID int64, q search.Query) string {
-	return keyWithSchemaVersion(searchCacheSchemaVersion, instanceID, q)
+func buildSearchCacheKey(instanceID int64, q search.Query, paged bool) string {
+	return keyWithSchemaVersion(searchCacheSchemaVersion, instanceID, q, paged)
 }
 
 // keyWithSchemaVersion is the version-parameterized core of buildSearchCacheKey.
 // Production always calls it with searchCacheSchemaVersion; tests use it to prove
 // a version bump changes every key.
-func keyWithSchemaVersion(version int, instanceID int64, q search.Query) string {
+func keyWithSchemaVersion(version int, instanceID int64, q search.Query, paged bool) string {
 	payload := searchCacheKeyPayload{
 		SchemaVersion: version,
 		InstanceID:    instanceID,
@@ -95,6 +110,10 @@ func keyWithSchemaVersion(version int, instanceID int64, q search.Query) string 
 		Author:        q.Author,
 		BookTitle:     q.BookTitle,
 		Mode:          q.Mode,
+	}
+	if paged {
+		payload.Offset = q.Offset
+		payload.Limit = q.Limit
 	}
 	// json.Marshal of a fixed struct is deterministic (field order is the struct
 	// order) and cannot error for these scalar/[]string fields.

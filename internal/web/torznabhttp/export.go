@@ -45,22 +45,63 @@ func searchReleases(ctx context.Context, idx Indexer, caps *mapper.Capabilities,
 	if wantsNoCache(q) {
 		ctx = WithCacheBypass(ctx)
 	}
+	pg := parsePaging(q)
+	// Carry the page window into the engine query. A paging-capable driver (Newznab)
+	// forwards it upstream for deep-set paging; every other driver ignores it (Offset/
+	// Limit are request context, never templated), so the request URL stays byte-identical.
+	query.Offset, query.Limit = pg.offset, pg.limit
 	releases, err := idx.Search(ctx, query)
 	if err != nil {
 		return SearchResult{}, fmt.Errorf("torznab: search: %w", err)
 	}
+	// rawCount is the engine's pre-dedupe page size: a full upstream page (>= limit) means
+	// "there is probably more", the +1 has-more floor the paging branch applies below.
+	rawCount := len(releases)
 	// Jackett pipeline order: FixResults (dedupe) -> FilterResults (category drop) -> page.
 	releases = filterResults(dedupeByGUID(releases), requestedCats, caps)
-	// Total is measured here — post-dedupe/post-filter, PRE-slice — so the feed's
-	// <newznab:response total> and the JSON API's hasMore reflect the full match count.
-	total := len(releases)
-	pg := parsePaging(q)
+	if pager, ok := idx.(OffsetPager); ok && pager.SupportsOffsetPaging() {
+		return pagedResult(releases, pg, rawCount), nil
+	}
+	return localPageResult(releases, pg), nil
+}
+
+// localPageResult is the non-paging path (every Cardigann def, every non-Newznab native
+// driver): the driver returned the FULL result set, so Total is the real match count
+// pre-slice and the page is sliced locally to [offset, offset+limit).
+func localPageResult(releases []*normalizer.Release, pg paging) SearchResult {
 	return SearchResult{
 		Releases: pg.apply(releases),
+		Total:    len(releases),
+		Offset:   pg.offset,
+		Limit:    pg.limit,
+	}
+}
+
+// pagedResult is the paging path (the driver already skipped `offset` upstream, so the
+// returned slice IS the requested page — it must NOT be re-offset locally). The slice is
+// only clamped to the limit; Total is reported as a running floor: offset + limit + 1 when
+// the upstream page came back full (>= limit, so more likely exist), else the exact
+// offset + served for a short/last page. This drives *arr's "fetch next page" without the
+// driver knowing the grand total (Newznab gives none).
+func pagedResult(releases []*normalizer.Release, pg paging, rawCount int) SearchResult {
+	served := releases
+	if len(served) > pg.limit {
+		served = served[:pg.limit]
+	}
+	total := pg.offset + len(served)
+	if rawCount >= pg.limit {
+		// Full upstream page: advertise at least one more page. Base the floor on the
+		// REQUESTED width, not len(served) — dedupe/category filtering can shrink served
+		// below limit, and offset+served+1 could then fall at/under offset+limit, which
+		// makes *arr conclude "no next page" and stop before the genuine deep page.
+		total = pg.offset + pg.limit + 1
+	}
+	return SearchResult{
+		Releases: served,
 		Total:    total,
 		Offset:   pg.offset,
 		Limit:    pg.limit,
-	}, nil
+	}
 }
 
 // DLBaseURL builds the externally-visible /dl endpoint base for an indexer from the

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
@@ -54,6 +55,11 @@ func TestParseReleases(t *testing.T) {
 	if movie.Link == "" || movie.Link != "https://news.example.test/getnzb/abc123.nzb&i=1&r=APIKEYPLACEHOLDER" {
 		t.Errorf("Link = %q, want the enclosure nzb url", movie.Link)
 	}
+	// The upstream <guid> is carried as the stable dedup identity (here a passkey-free
+	// details permalink); the apikey rides only the enclosure url in Link above.
+	if movie.GUID != "https://news.example.test/details/abc123" {
+		t.Errorf("GUID = %q, want the upstream <guid> permalink", movie.GUID)
+	}
 	// newznab:attr size (2147483648) is preferred over enclosure length (1500000000).
 	if movie.Size != 2147483648 {
 		t.Errorf("Size = %d, want 2147483648 (newznab:attr size over enclosure length)", movie.Size)
@@ -83,6 +89,9 @@ func TestParseReleases(t *testing.T) {
 	assertUsenetZeroFields(t, movie)
 
 	show := releases[1]
+	if show.GUID != "def456" {
+		t.Errorf("show GUID = %q, want the upstream bare-id <guid> def456", show.GUID)
+	}
 	// No newznab:attr size; falls back to the enclosure length.
 	if show.Size != 734003200 {
 		t.Errorf("show Size = %d, want enclosure length fallback 734003200", show.Size)
@@ -111,6 +120,33 @@ func assertUsenetZeroFields(t *testing.T, r *releaseT) {
 	}
 	if r.DownloadVolumeFactor != 0 || r.UploadVolumeFactor != 0 {
 		t.Errorf("volume factors = %v/%v, want 0/0 (usenet)", r.DownloadVolumeFactor, r.UploadVolumeFactor)
+	}
+}
+
+// TestParseRedactsSecretInGUID proves the defense-in-depth redaction of the upstream
+// <guid>: a misbehaving server that puts an apikey-bearing download URL in <guid> must not
+// leak it into the served feed (the guid is emitted verbatim). The secret is stripped while
+// the stable path survives, so dedup stays churn-immune.
+func TestParseRedactsSecretInGUID(t *testing.T) {
+	t.Parallel()
+	d := parseDriver(t)
+	body := []byte(`<?xml version="1.0"?><rss><channel><item>` +
+		`<title>Example.Release</title>` +
+		`<guid isPermaLink="true">https://news.example.test/getnzb/abc.nzb?apikey=SUPERSECRET</guid>` +
+		`<enclosure url="https://news.example.test/getnzb/abc.nzb?apikey=SUPERSECRET" length="1000" type="application/x-nzb"/>` +
+		`</item></channel></rss>`)
+	rels, err := d.parseReleases(body, d.caps.CategoryMap)
+	if err != nil {
+		t.Fatalf("parseReleases: %v", err)
+	}
+	if len(rels) != 1 {
+		t.Fatalf("releases = %d, want 1", len(rels))
+	}
+	if strings.Contains(rels[0].GUID, "SUPERSECRET") {
+		t.Errorf("apikey leaked into Release.GUID: %q", rels[0].GUID)
+	}
+	if !strings.Contains(rels[0].GUID, "getnzb/abc.nzb") {
+		t.Errorf("GUID should retain the stable path after redaction: %q", rels[0].GUID)
 	}
 }
 

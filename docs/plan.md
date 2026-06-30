@@ -400,6 +400,13 @@ into the apps so they don't each configure indexers by hand.
       alpha *superior* to Prowlarr/Jackett, not just a replacement.)
       — **Exercised end-to-end offline** (the sync surface round-trips over HTTP in the api tests);
       checks once the app-sync live validation above is green.
+      — **`[Tracked]` live deep-set paging differential (#75)** — forwarding `offset`/`limit` to a
+      paginating upstream (native Newznab first) returns the tracker's genuine page-2+ results, beating
+      Prowlarr (#1428) on paginating trackers. **Proven offline** (parity untouched + a cache-wrapped
+      deep-page replay test asserting page-2 content; honest `<newznab:response total>` floor). The
+      **live** Prowlarr differential vs a real paginating tracker is owed from the smoke stack
+      (`192.168.10.220`), unreachable from the build env. (Superiority item; pairs with the Phase 11
+      "Better pagination support" entry — verify here as part of the live replacement gate.)
 
 ## Phase 11 — Alpha feature-complete (the "superior to Prowlarr/Jackett" bar)
 

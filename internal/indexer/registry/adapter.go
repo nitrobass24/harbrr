@@ -68,6 +68,18 @@ func (a *indexerAdapter) NeedsResolver() bool { return a.inner.NeedsResolver() }
 // bare.
 func (a *indexerAdapter) DownloadNeedsAuth() bool { return a.inner.DownloadNeedsAuth() }
 
+// SupportsOffsetPaging delegates to the wrapped driver's optional OffsetPager capability,
+// reporting false for any driver that doesn't implement it (every Cardigann def and the
+// non-Newznab native drivers). When true, the handler forwards offset/limit upstream and
+// does not re-slice the returned page. The adapter promotes the signal so the cache layer
+// (which keys per-page for paging drivers) and the handler read the SAME capability.
+func (a *indexerAdapter) SupportsOffsetPaging() bool {
+	if p, ok := a.inner.(native.OffsetPager); ok {
+		return p.SupportsOffsetPaging()
+	}
+	return false
+}
+
 // Grab performs the grab-time download for a release link (resolve + fetch the
 // torrent through the session). The error is wrapped with the indexer id (not a
 // secret); the caller redacts it. This is the /dl proxy's seam; feed serialization

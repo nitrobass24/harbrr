@@ -55,6 +55,16 @@ type Params struct {
 	PersistSetting func(ctx context.Context, name, value string) error
 }
 
+// OffsetPager is the optional capability a native driver implements when it can forward
+// offset/limit upstream for deep-set paging (currently only the generic Newznab driver).
+// It is deliberately NOT a method on Driver: most drivers can't page upstream, and adding
+// it to the core interface would force every driver, the engine wrapper, and the fakes to
+// implement a method they'd answer false for. The registry adapter and the search-cache
+// layer type-assert for it, so a driver that doesn't implement it is treated as non-paging.
+type OffsetPager interface {
+	SupportsOffsetPaging() bool
+}
+
 // Factory builds a Driver for one configured instance.
 type Factory func(Params) (Driver, error)
 

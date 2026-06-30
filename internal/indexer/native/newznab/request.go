@@ -9,10 +9,10 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
 
-// defaultLimit is the page size harbrr requests (Prowlarr NewznabRequestGenerator
-// PageSize=100). harbrr's search.Query carries no pagination fields, so a single page of
-// 100 is fetched; response-side pagination is downstream's concern, mirroring the other
-// native drivers.
+// defaultLimit is the page size harbrr requests when the query carries no explicit limit
+// (Prowlarr NewznabRequestGenerator PageSize=100). The Newznab API takes offset/limit, so
+// the driver forwards the requested page window upstream (SupportsOffsetPaging) for
+// deep-set paging rather than fetching only the first 100 and slicing downstream.
 const defaultLimit = 100
 
 // Newznab t= function values per the v1.3 spec (NewznabRequestGenerator). Note the
@@ -46,11 +46,27 @@ func (d *driver) buildSearchURL(q search.Query) string {
 	if cat := joinCategories(q.Categories); cat != "" {
 		params.Set("cat", cat)
 	}
-	params.Set("limit", strconv.Itoa(defaultLimit))
+	// Forward the requested page window upstream. offset is emitted ONLY when > 0, so a
+	// first-page (offset=0) request stays byte-identical to the pre-paging wire form; limit
+	// falls back to the 100-result default when the query carries none.
+	if q.Offset > 0 {
+		params.Set("offset", strconv.Itoa(q.Offset))
+	}
+	params.Set("limit", strconv.Itoa(resolveLimit(q.Limit)))
 	if d.apikey != "" {
 		params.Set("apikey", d.apikey)
 	}
 	return d.baseURL + d.apiPath + "?" + encodeQuery(params)
+}
+
+// resolveLimit picks the upstream page size: the query's explicit limit when positive,
+// else the 100-result default. A non-positive limit (a zero Query, or a caller that left
+// it unset) falls back so a bare RSS search keeps fetching a full page.
+func resolveLimit(limit int) int {
+	if limit > 0 {
+		return limit
+	}
+	return defaultLimit
 }
 
 // fillModeParams sets the mode-specific id/criteria params on params and returns the
@@ -222,7 +238,7 @@ func encodeQuery(params url.Values) string {
 		"t", "extended", "q", "cat",
 		"imdbid", "tmdbid", "tvdbid", "tvmazeid", "rid", "traktid",
 		"season", "ep", "artist", "album", "author", "title",
-		"limit",
+		"offset", "limit",
 	}
 	known := map[string]bool{"apikey": true}
 	for _, k := range order {

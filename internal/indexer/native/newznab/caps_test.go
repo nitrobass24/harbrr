@@ -156,6 +156,7 @@ func TestCapsFallbackToPlaceholderOnFetchError(t *testing.T) {
 	caps := d.Capabilities()
 	if caps == nil {
 		t.Fatal("Capabilities() = nil on fetch error, want the placeholder fallback")
+		return // unreachable after Fatal; makes the non-nil guarantee explicit for staticcheck
 	}
 	// The placeholder advertises every standard parent (e.g. Books) the live caps did not.
 	if len(caps.CategoryMap.MapTrackerCatToNewznab("7000")) == 0 {

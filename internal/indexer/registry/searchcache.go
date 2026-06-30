@@ -173,6 +173,27 @@ type cachedIndexer struct {
 	cfg        map[string]string
 }
 
+// SupportsOffsetPaging explicitly delegates to the wrapped indexer's OffsetPager
+// capability. This MUST be hand-written: cachedIndexer embeds the torznabhttp.Indexer
+// INTERFACE, which does not promote a method that isn't on that interface, so without
+// this the *cachedIndexer the registry returns would NOT satisfy torznabhttp.OffsetPager
+// and the handler would take the non-paging (local-slice) branch — double-offsetting a
+// driver that already paged upstream. Delegating here makes the cache layer and the
+// handler read the SAME signal off the same wrapped adapter.
+func (c *cachedIndexer) SupportsOffsetPaging() bool {
+	return supportsOffsetPaging(c.Indexer)
+}
+
+// supportsOffsetPaging reports whether inner forwards offset/limit upstream. It is the
+// single type-assert both the cache-key path (which keys per-page only for paging
+// drivers) and the cachedIndexer delegation use, so the two can never disagree.
+func supportsOffsetPaging(inner torznabhttp.Indexer) bool {
+	if p, ok := inner.(torznabhttp.OffsetPager); ok {
+		return p.SupportsOffsetPaging()
+	}
+	return false
+}
+
 // Search overrides only the search seam, routing through the cache — unless caching
 // is currently disabled (the runtime toggle), in which case it passes straight
 // through to the live search with no read or write-back.
@@ -189,7 +210,10 @@ func (c *cachedIndexer) Search(ctx context.Context, q search.Query) ([]*normaliz
 // under singleflight and stores the result best-effort. A Fetch error degrades open
 // (falls through to a live search) and never fails the user's search.
 func (c *SearchCache) search(ctx context.Context, instanceID int64, cfg map[string]string, inner torznabhttp.Indexer, q search.Query) ([]*normalizer.Release, error) {
-	key := buildSearchCacheKey(instanceID, q)
+	// A paging-capable driver forwards offset/limit upstream, so each page is a distinct
+	// outbound request and gets its own cache entry; a non-paging driver keys page-free
+	// (one fetch serves every locally-sliced page), preserving the pre-paging key.
+	key := buildSearchCacheKey(instanceID, q, supportsOffsetPaging(inner))
 
 	if torznabhttp.CacheBypass(ctx) {
 		return c.liveAndStoreRecording(ctx, instanceID, cfg, inner, q, key)
