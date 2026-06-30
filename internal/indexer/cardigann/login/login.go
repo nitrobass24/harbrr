@@ -190,8 +190,8 @@ func (e *Executor) do(ctx context.Context, method, rawURL string, bodyReader io.
 	// User-Agent, so once a solve set one this session, replay it here (the login
 	// POST, login.test, and the post-solve retry all flow through do()). A
 	// definition's own User-Agent header still wins.
-	if e.SolverUserAgent != "" && req.Header.Get("User-Agent") == "" {
-		req.Header.Set("User-Agent", e.SolverUserAgent)
+	if ua := e.solverUA(); ua != "" && req.Header.Get("User-Agent") == "" {
+		req.Header.Set("User-Agent", ua)
 	}
 	e.applyJar(req)
 

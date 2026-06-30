@@ -152,7 +152,7 @@ func (e *Executor) SolveHost(ctx context.Context, rawURL string) error {
 // later request can replay the UA the UA-bound cf_clearance was issued for.
 func (e *Executor) applySolveResult(rawURL string, res SolveResult) {
 	if res.UserAgent != "" {
-		e.SolverUserAgent = res.UserAgent
+		e.setSolverUA(res.UserAgent)
 	}
 	if e.Jar == nil || len(res.Cookies) == 0 {
 		return
