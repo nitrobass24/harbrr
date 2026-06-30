@@ -170,8 +170,8 @@ func TestFlushCountersSelfHeals(t *testing.T) {
 
 // TestFlushCountersSkippedWhenRehydrateFails proves the clobber guard survives the
 // self-heal: when the on-demand rehydrate can't read the store, FlushCounters writes
-// nothing, so a transient DB failure can't overwrite stored totals with this session's
-// partial counts.
+// nothing — so a transient DB failure can't overwrite EXISTING stored totals with this
+// session's partial in-memory counts.
 func TestFlushCountersSkippedWhenRehydrateFails(t *testing.T) {
 	t.Parallel()
 
@@ -180,20 +180,27 @@ func TestFlushCountersSkippedWhenRehydrateFails(t *testing.T) {
 	db := openCacheDB(t, path)
 	id := insertInstanceSlug(t, db, "one")
 
-	sc := newCacheOn(db) // not rehydrated
-	seedCounters(sc, id, 9, 9, 9)
+	// A prior session's durable totals that must NOT be clobbered by a failed flush.
+	if err := (database.CacheCountersStore{}).Upsert(ctx, db,
+		database.CacheCounter{InstanceID: id, Hits: 100, Misses: 50, Suppressed: 10, UpdatedAt: time.Now()}); err != nil {
+		t.Fatalf("seed stored row: %v", err)
+	}
+
+	sc := newCacheOn(db)               // not rehydrated; in-memory atomics start at zero
+	seedCounters(sc, id, 9, 9, 9)      // this session's partial counts (differ from stored)
 	if err := db.Close(); err != nil { // make the store unreadable
 		t.Fatalf("close: %v", err)
 	}
-	sc.FlushCounters(ctx) // rehydrate fails -> must skip without panicking
+	sc.FlushCounters(ctx) // rehydrate fails -> must skip without clobbering the stored row
 
-	db2 := openCacheDB(t, path) // reopen and confirm nothing was written
+	db2 := openCacheDB(t, path) // reopen and confirm the original totals are intact
 	rows, err := database.CacheCountersStore{}.AllCounters(ctx, db2)
 	if err != nil {
 		t.Fatalf("AllCounters: %v", err)
 	}
-	if len(rows) != 0 {
-		t.Errorf("rows = %d, want 0 (flush must be skipped when rehydrate fails)", len(rows))
+	if len(rows) != 1 || rows[0].InstanceID != id ||
+		rows[0].Hits != 100 || rows[0].Misses != 50 || rows[0].Suppressed != 10 {
+		t.Errorf("rows = %+v, want the original 100/50/10 intact (flush must skip on failed rehydrate)", rows)
 	}
 }
 
