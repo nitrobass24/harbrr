@@ -68,7 +68,7 @@ func (rt *router) searchIndexer(w http.ResponseWriter, r *http.Request) {
 // is a defensive guard. It copies each release so the engine's results are not
 // mutated.
 func (rt *router) resolveSearchLinks(r *http.Request, idx torznabhttp.Indexer, releases []*normalizer.Release) []*normalizer.Release {
-	rw := torznabhttp.NewDLRewriter(rt.dlToken, idx, torznabhttp.DLBaseURL(r, rt.basePath, idx.Info().ID), r.Header.Get("X-API-Key"))
+	rw := torznabhttp.NewDLRewriter(rt.dlToken, idx, torznabhttp.DLBaseURL(r, rt.basePath, idx.Info().ID), dlAPIKey(r))
 	withhold := rw == nil && torznabhttp.NeedsDLProxy(idx)
 	out := make([]*normalizer.Release, len(releases))
 	for i, rel := range releases {
@@ -88,4 +88,19 @@ func (rt *router) resolveSearchLinks(r *http.Request, idx torznabhttp.Indexer, r
 		out[i] = &cp
 	}
 	return out
+}
+
+// dlAPIKey resolves the API key to echo into a sealed /dl link so a later grab
+// authenticates. The Torznab feed takes the caller's key from the apikey query
+// param (apiKeyParam); the JSON search API additionally accepts the X-API-Key
+// header. Header wins, then the apikey query param. A SESSION-only caller (cookie,
+// no key presented) yields "" — but resolveSearchLinks then has no key to seal
+// with, so it would emit an unusable apikey= empty link; callers that need a
+// fetchable link must present a key. The key is the caller's own and is echoed by
+// design (NewDLRewriter), so this surfaces no NEW secret.
+func dlAPIKey(r *http.Request) string {
+	if k := r.Header.Get("X-API-Key"); k != "" {
+		return k
+	}
+	return r.URL.Query().Get("apikey")
 }

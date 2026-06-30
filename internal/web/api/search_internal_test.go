@@ -228,24 +228,57 @@ func TestSearchJSONEnvelopeCrossPage(t *testing.T) {
 }
 
 // TestResolveSearchLinksSealsResolverLink proves a resolver-needing indexer's
-// passkey-bearing link is replaced with a /dl proxy URL — the passkey is absent and
-// the source release is not mutated (the #1 redaction risk for JSON search).
+// passkey-bearing link is replaced with a /dl proxy URL — the passkey is absent, the
+// source release is not mutated (the #1 redaction risk for JSON search), and the
+// sealed link carries a NON-EMPTY apikey (so a later grab authenticates) without
+// leaking the tracker passkey. The apikey is resolved from the X-API-Key header or
+// the apikey query param; a session caller that presented neither would previously
+// get an unusable apikey= empty link.
 func TestResolveSearchLinksSealsResolverLink(t *testing.T) {
 	t.Parallel()
 	rt := &router{dlToken: testKeyring(t)}
-	rels := []*normalizer.Release{{Title: "X", Link: keyLink}}
-	out := rt.resolveSearchLinks(searchReq(t), fakeSearchIndexer{id: "demo", needsResolver: true}, rels)
-	if len(out) != 1 {
-		t.Fatalf("got %d releases", len(out))
-	}
-	if strings.Contains(out[0].Link, "SECRETPASSKEY777") {
-		t.Fatalf("passkey leaked into the JSON link: %q", out[0].Link)
-	}
-	if !strings.Contains(out[0].Link, "/api/v2.0/indexers/demo/dl?") {
-		t.Errorf("link not routed through /dl: %q", out[0].Link)
-	}
-	if rels[0].Link != keyLink {
-		t.Error("source release was mutated (expected a copy)")
+	idx := fakeSearchIndexer{id: "demo", needsResolver: true}
+
+	// Header- and query-sourced keys both seal a usable link.
+	for _, src := range []struct {
+		name string
+		req  func(t *testing.T) *http.Request
+	}{
+		{"x-api-key header", func(t *testing.T) *http.Request {
+			t.Helper()
+			r := searchReq(t)
+			r.Header.Set("X-API-Key", "FEEDKEY123")
+			return r
+		}},
+		{"apikey query param", func(t *testing.T) *http.Request {
+			t.Helper()
+			return httptest.NewRequestWithContext(context.Background(), http.MethodGet,
+				"http://h.test/api/indexers/demo/search?apikey=FEEDKEY123", nil)
+		}},
+	} {
+		t.Run(src.name, func(t *testing.T) {
+			t.Parallel()
+			rels := []*normalizer.Release{{Title: "X", Link: keyLink}}
+			out := rt.resolveSearchLinks(src.req(t), idx, rels)
+			if len(out) != 1 {
+				t.Fatalf("got %d releases", len(out))
+			}
+			if strings.Contains(out[0].Link, "SECRETPASSKEY777") {
+				t.Fatalf("passkey leaked into the JSON link: %q", out[0].Link)
+			}
+			if !strings.Contains(out[0].Link, "/api/v2.0/indexers/demo/dl?") {
+				t.Errorf("link not routed through /dl: %q", out[0].Link)
+			}
+			if strings.Contains(out[0].Link, "apikey=&") || strings.HasSuffix(out[0].Link, "apikey=") {
+				t.Errorf("sealed link carries an empty apikey: %q", out[0].Link)
+			}
+			if !strings.Contains(out[0].Link, "apikey=FEEDKEY123") {
+				t.Errorf("sealed link missing the resolved apikey: %q", out[0].Link)
+			}
+			if rels[0].Link != keyLink {
+				t.Error("source release was mutated (expected a copy)")
+			}
+		})
 	}
 }
 

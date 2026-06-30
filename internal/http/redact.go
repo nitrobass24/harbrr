@@ -13,38 +13,34 @@ import (
 // the original (length, prefix, etc.).
 const redactedValue = "REDACTED"
 
-// secretQueryParams is the set of query-parameter names whose values are
-// treated as secrets and redacted by RedactURL. Cardigann definitions routinely
-// embed passkeys, API keys, and download tokens directly in URLs, so this list
-// is intentionally broad. Matching is case-insensitive and also catches names
-// that merely CONTAIN one of these tokens (e.g. "torrent_pass", "rss_key"),
-// because trackers spell these many different ways.
-var secretQueryParams = []string{
-	"passkey",
-	"apikey",
-	"api_key",
-	"authkey",
-	"auth_key",
-	"torrent_pass",
-	"rsskey",
-	"rss_key",
-	"secret",
-	"token",
-	"cookie",
-	"passid",
-	"pid",
-	"auth",
-	"key",
-}
+// secretNameAlternation is the SINGLE shared vocabulary of credential-shaped
+// key/parameter/header names. Every name-based redaction surface (URL query
+// params via RedactURL, HTTP headers via RedactHeader, JSON object keys via
+// RedactJSONBody, and the credential key=value / "key":value scrubs in
+// RedactError) derives its matcher from this one alternation, so the three
+// formerly-drifted lists can no longer diverge. It is intentionally broad —
+// Cardigann definitions and trackers spell these many ways — and matches the
+// `_`/`-`/none separator variants (api_key, api-key, x-api-key) in one go.
+// Longer/more-specific tokens precede their shorter prefixes so the key-capturing
+// regexes group the whole word (e.g. "password" before "pass", "downloadtoken"
+// before "token", "api[_-]?key" before bare "key").
+const secretNameAlternation = `passphrase|passkey|passid|password|x[_-]?api[_-]?key|api[_-]?key|auth[_-]?key|rss[_-]?key|torrent[_-]?pass|downloadtoken|cf[_-]?clearance|secret|token|cookie|2fa|otp|auth|key|pass|pid`
 
-// secretHeaders is the set of header names whose values are redacted by
-// RedactHeader. Canonicalized to http.Header's canonical form for lookup.
-var secretHeaders = map[string]struct{}{
-	"Authorization":       {},
-	"Cookie":              {},
-	"Set-Cookie":          {},
-	"X-Api-Key":           {},
-	"Proxy-Authorization": {},
+// secretNameRe matches (case-insensitively, anywhere in the name) any credential
+// name token. Used as the boolean "is this name a secret?" test for query
+// parameters, headers, and JSON keys so all three share one vocabulary.
+var secretNameRe = regexp.MustCompile(`(?i)(?:` + secretNameAlternation + `)`)
+
+// flaresolverrSecretKeys are JSON keys that are NOT credential-named but still carry
+// secrets/PII in the FlareSolverr /v1 request/response shape, so RedactJSONBody scrubs
+// them on top of the shared credential vocabulary. (cookie/cookies/set-cookie and
+// cf_clearance are already caught by secretNameRe.)
+var flaresolverrSecretKeys = map[string]struct{}{
+	"postdata": {}, "useragent": {}, "user-agent": {},
+	// FlareSolverr solution fields: the raw page HTML (may embed session tokens) and
+	// the response header map (Set-Cookie etc.) are redacted wholesale, and the
+	// request "proxy" field may embed user:pass.
+	"response": {}, "headers": {}, "proxy": {},
 }
 
 // RedactURL returns raw with the values of any secret query parameters replaced
@@ -63,6 +59,12 @@ func RedactURL(raw string) string {
 		return redactURLFallback(raw)
 	}
 	redactUserinfo(u)
+	if p := redactPathSecrets(u.Path); p != u.Path {
+		// A passkey/apikey/rsskey can ride in a PATH segment (animebytes, beyondhd),
+		// which the query-only scrub below cannot reach. Setting Path and clearing
+		// RawPath makes String() re-encode the redacted (canonical) path.
+		u.Path, u.RawPath = p, ""
+	}
 	if u.RawQuery == "" {
 		return u.String()
 	}
@@ -95,25 +97,34 @@ func redactUserinfo(u *url.URL) {
 
 // redactURLFallback handles input url.Parse rejects. Rather than risk emitting a
 // raw secret, it strips the entire query string (everything after the first
-// '?') and appends a marker, keeping only the structural prefix.
+// '?') and appends a marker, and also scrubs any secret-shaped PATH token from
+// the kept structural prefix.
 func redactURLFallback(raw string) string {
 	if i := strings.IndexByte(raw, '?'); i >= 0 {
-		return raw[:i] + "?" + redactedValue
+		return redactPathSecrets(raw[:i]) + "?" + redactedValue
 	}
-	return raw
+	return redactPathSecrets(raw)
 }
 
 // isSecretParam reports whether a query-parameter name should have its value
-// redacted. Matching is case-insensitive and substring-based so the many tracker
-// spellings (torrent_pass, rsskey, api_key, ...) are all caught.
+// redacted, using the shared credential-name vocabulary (case-insensitive,
+// substring) so the many tracker spellings (torrent_pass, rsskey, api_key, ...)
+// are all caught.
 func isSecretParam(name string) bool {
-	lower := strings.ToLower(name)
-	for _, s := range secretQueryParams {
-		if strings.Contains(lower, s) {
-			return true
-		}
-	}
-	return false
+	return secretNameRe.MatchString(name)
+}
+
+// pathSecretRe matches a credential-shaped token embedded in a URL path: a long
+// run of hex (passkeys/apikeys/infohashes are typically 32–40 hex chars) or a long
+// alphanumeric token. Short, structural path segments (api, v2.0, indexers, a slug)
+// never reach the threshold, so legitimate paths are untouched.
+var pathSecretRe = regexp.MustCompile(`(?i)[0-9a-f]{32,}|[a-z0-9]{40,}`)
+
+// redactPathSecrets replaces every secret-shaped token in a URL path with the
+// placeholder. RedactURL is otherwise query-only, so a passkey/apikey carried in a
+// path segment (animebytes, beyondhd) would survive without this.
+func redactPathSecrets(path string) string {
+	return pathSecretRe.ReplaceAllString(path, redactedValue)
 }
 
 // RedactHeader returns a copy of h with the values of sensitive headers
@@ -125,7 +136,10 @@ func RedactHeader(h http.Header) http.Header {
 	}
 	out := make(http.Header, len(h))
 	for name, vals := range h {
-		if _, secret := secretHeaders[http.CanonicalHeaderKey(name)]; secret {
+		// One shared vocabulary: catches Authorization, Cookie/Set-Cookie,
+		// Proxy-Authorization, and every api-key spelling (X-Api-Key, Api-Key,
+		// x-api-key) without a per-name allowlist that could drift.
+		if secretNameRe.MatchString(name) {
 			out[name] = []string{redactedValue}
 			continue
 		}
@@ -137,18 +151,19 @@ func RedactHeader(h http.Header) http.Header {
 }
 
 // secretTokenRe matches a credential-shaped key and its value (plain text or in a
-// URL query) so the value can be scrubbed from an error message. The value run
-// stops at whitespace and the URL/quote delimiters & " ' so surrounding context
-// (e.g. "dial tcp") and other query params survive.
-var secretTokenRe = regexp.MustCompile(`(?i)(cookie|passkey|api_?key|auth_?key|rss_?key|torrent_pass|passid|passphrase|password|secret|token|downloadtoken|2fa|otp)([=:]\s*)[^\s&"']+`)
+// URL query) so the value can be scrubbed from an error message. The key alternation
+// is the shared secretNameAlternation, so it can never drift from the URL/header/JSON
+// surfaces. The value run stops at whitespace and the URL/quote delimiters & " ' so
+// surrounding context (e.g. "dial tcp") and other query params survive.
+var secretTokenRe = regexp.MustCompile(`(?i)(` + secretNameAlternation + `)([=:]\s*)[^\s&"']+`)
 
 // jsonSecretRe scrubs a credential-shaped key's value in a JSON object —
 // `"apiKey":"…"` / `"password": "…"`. secretTokenRe misses these because the quote
 // before the `:` breaks its `key[=:]` anchor, so an app's JSON error body (echoed by
-// app-sync) could otherwise leak the value verbatim. The value run `(?:\\.|[^"\\])*`
-// consumes escape sequences (`\"`, `\\`) so an embedded escaped quote can't end the
-// match early and leak the tail.
-var jsonSecretRe = regexp.MustCompile(`(?i)("(?:cookie|passkey|api_?key|auth_?key|rss_?key|torrent_pass|passid|passphrase|password|secret|token|downloadtoken|2fa|otp)"\s*:\s*)"(?:\\.|[^"\\])*"`)
+// app-sync) could otherwise leak the value verbatim. It shares secretNameAlternation
+// with every other surface. The value run `(?:\\.|[^"\\])*` consumes escape sequences
+// (`\"`, `\\`) so an embedded escaped quote can't end the match early and leak the tail.
+var jsonSecretRe = regexp.MustCompile(`(?i)("(?:` + secretNameAlternation + `)"\s*:\s*)"(?:\\.|[^"\\])*"`)
 
 // authHeaderRe scrubs an Authorization header value (with or without a scheme like
 // Bearer/Basic), since the scheme + token can span a space the value run above
@@ -195,19 +210,15 @@ func RedactProxyURL(raw string) string {
 	return RedactURL(u.String())
 }
 
-// jsonSecretKeys are JSON object keys whose values are credentials/PII and are
-// redacted wholesale by RedactJSONBody (case-insensitive). Covers the FlareSolverr
-// /v1 request/response shape (cookies, postData, userAgent) plus the cf_clearance
-// a solution carries and the standard auth headers.
-var jsonSecretKeys = map[string]struct{}{
-	"cookie": {}, "cookies": {}, "set-cookie": {},
-	"postdata": {}, "useragent": {}, "user-agent": {}, "cf_clearance": {},
-	"authorization": {}, "proxy-authorization": {},
-	"token": {}, "apikey": {}, "api_key": {}, "passkey": {}, "password": {}, "secret": {},
-	// FlareSolverr solution fields: the raw page HTML (may embed session tokens) and
-	// the response header map (Set-Cookie etc.) are redacted wholesale, and the
-	// request "proxy" field may embed user:pass.
-	"response": {}, "headers": {}, "proxy": {},
+// isSecretJSONKey reports whether a JSON object key's value must be redacted: any
+// credential-shaped name (the shared secretNameRe vocabulary — cookie, apikey,
+// rsskey, authkey, torrent_pass, ...) or a FlareSolverr structural key that carries
+// secrets/PII without a credential-shaped name (postData, userAgent, response, ...).
+func isSecretJSONKey(k string) bool {
+	if _, ok := flaresolverrSecretKeys[strings.ToLower(k)]; ok {
+		return true
+	}
+	return secretNameRe.MatchString(k)
 }
 
 // RedactJSONBody returns body with the values of any credential-shaped keys (at any
@@ -233,7 +244,7 @@ func scrubJSON(v any) any {
 	case map[string]any:
 		out := make(map[string]any, len(t))
 		for k, val := range t {
-			if _, secret := jsonSecretKeys[strings.ToLower(k)]; secret {
+			if isSecretJSONKey(k) {
 				out[k] = redactedValue
 				continue
 			}

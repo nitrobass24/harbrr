@@ -2,6 +2,7 @@ package appsync
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/autobrr/harbrr/internal/domain"
@@ -42,14 +43,18 @@ func validateCreate(p CreateConnectionParams) error {
 	if err := validateKind(p.Kind); err != nil {
 		return err
 	}
-	if strings.TrimSpace(p.BaseURL) == "" {
-		return fmt.Errorf("%w: base url is required", ErrInvalid)
+	// Both URLs must be absolute http(s): harbrr calls BaseURL, and HarbrrURL is
+	// embedded in each pushed indexer so the app can reach harbrr's feed — a
+	// malformed/relative value would silently produce an unreachable connection
+	// (parity with internal/announce's validateAbsURL).
+	if err := validateAbsURL("base url", p.BaseURL); err != nil {
+		return err
 	}
 	if strings.TrimSpace(p.APIKey) == "" {
 		return fmt.Errorf("%w: api key is required", ErrInvalid)
 	}
-	if strings.TrimSpace(p.HarbrrURL) == "" {
-		return fmt.Errorf("%w: harbrr url is required", ErrInvalid)
+	if err := validateAbsURL("harbrr url", p.HarbrrURL); err != nil {
+		return err
 	}
 	if err := validateSyncLevel(p.SyncLevel); err != nil {
 		return err
@@ -71,13 +76,13 @@ func applyUpdate(conn *domain.AppConnection, p UpdateConnectionParams) error {
 		conn.Name = *p.Name
 	}
 	if p.BaseURL != nil {
-		if err := requireNonBlank("base url", *p.BaseURL); err != nil {
+		if err := validateAbsURL("base url", *p.BaseURL); err != nil {
 			return err
 		}
 		conn.BaseURL = *p.BaseURL
 	}
 	if p.HarbrrURL != nil {
-		if err := requireNonBlank("harbrr url", *p.HarbrrURL); err != nil {
+		if err := validateAbsURL("harbrr url", *p.HarbrrURL); err != nil {
 			return err
 		}
 		conn.HarbrrURL = *p.HarbrrURL
@@ -110,6 +115,17 @@ func applyUpdate(conn *domain.AppConnection, p UpdateConnectionParams) error {
 func requireNonBlank(field, value string) error {
 	if strings.TrimSpace(value) == "" {
 		return fmt.Errorf("%w: %s must not be blank", ErrInvalid, field)
+	}
+	return nil
+}
+
+// validateAbsURL requires an absolute http(s) URL with a host, so a malformed/relative
+// URL is rejected at the boundary rather than producing an unreachable connection
+// (mirrors internal/announce.validateAbsURL).
+func validateAbsURL(field, raw string) error {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return fmt.Errorf("%w: %s must be an absolute http(s) URL", ErrInvalid, field)
 	}
 	return nil
 }

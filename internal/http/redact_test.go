@@ -40,6 +40,38 @@ func TestRedactURL(t *testing.T) {
 			wantNoLeak: []string{secret},
 		},
 		{
+			name:       "bare password param redacted",
+			raw:        "https://t.example/login?user=alice&password=" + secret,
+			wantNoLeak: []string{secret},
+			wantHas:    []string{"user=alice", "REDACTED"},
+		},
+		{
+			name:       "bare pass param redacted",
+			raw:        "https://t.example/login?pass=" + secret + "&ok=1",
+			wantNoLeak: []string{secret},
+			wantHas:    []string{"ok=1", "REDACTED"},
+		},
+		{
+			name:       "api-key and x-api-key params redacted",
+			raw:        "https://t.example/api?api-key=" + secret + "&x-api-key=" + secret,
+			wantNoLeak: []string{secret},
+			wantHas:    []string{"REDACTED"},
+		},
+		{
+			// A passkey carried in a PATH segment (animebytes/beyondhd style) must be
+			// scrubbed too — RedactURL was previously query-only.
+			name:       "path-segment passkey redacted",
+			raw:        "https://t.example/rss/deadbeefdeadbeefdeadbeefdeadbeef0badc0de/announce",
+			wantNoLeak: []string{"deadbeefdeadbeefdeadbeefdeadbeef0badc0de"},
+			wantHas:    []string{"t.example", "REDACTED", "announce"},
+		},
+		{
+			// An unparseable URL with a path passkey (no query) must not leak the path token.
+			name:       "unparseable url path secret redacted",
+			raw:        "://bad\x7f/rss/deadbeefdeadbeefdeadbeefdeadbeef0badc0de/x",
+			wantNoLeak: []string{"deadbeefdeadbeefdeadbeefdeadbeef0badc0de"},
+		},
+		{
 			name:       "authkey and token redacted",
 			raw:        "https://t.example/x?authkey=" + secret + "&token=" + secret + "&q=ok",
 			wantNoLeak: []string{secret},
@@ -102,16 +134,19 @@ func TestRedactHeader(t *testing.T) {
 	t.Parallel()
 
 	in := http.Header{
-		"Authorization": {"Bearer sk-secret-token"},
-		"Cookie":        {"session=abc123; uid=42"},
-		"Set-Cookie":    {"session=xyz; HttpOnly"},
-		"Content-Type":  {"text/html"},
-		"User-Agent":    {"harbrr/1.0"},
+		"Authorization":       {"Bearer sk-secret-token"},
+		"Cookie":              {"session=abc123; uid=42"},
+		"Set-Cookie":          {"session=xyz; HttpOnly"},
+		"X-Api-Key":           {"xapikeysecret"},
+		"Api-Key":             {"apikeysecret"},
+		"Proxy-Authorization": {"Basic proxysecret"},
+		"Content-Type":        {"text/html"},
+		"User-Agent":          {"harbrr/1.0"},
 	}
 	out := RedactHeader(in)
 
-	// Sensitive headers redacted.
-	for _, name := range []string{"Authorization", "Cookie", "Set-Cookie"} {
+	// Sensitive headers redacted — including the hyphenated api-key spellings.
+	for _, name := range []string{"Authorization", "Cookie", "Set-Cookie", "X-Api-Key", "Api-Key", "Proxy-Authorization"} {
 		if got := out.Get(name); got != "REDACTED" {
 			t.Errorf("header %s = %q, want REDACTED", name, got)
 		}
@@ -135,7 +170,7 @@ func TestRedactHeader(t *testing.T) {
 	// No secret content survives anywhere in the redacted header.
 	for _, vals := range out {
 		for _, v := range vals {
-			for _, leak := range []string{"sk-secret-token", "abc123", "xyz"} {
+			for _, leak := range []string{"sk-secret-token", "abc123", "xyz", "xapikeysecret", "apikeysecret", "proxysecret"} {
 				if strings.Contains(v, leak) {
 					t.Fatalf("redacted header leaked %q in %q", leak, v)
 				}

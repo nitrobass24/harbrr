@@ -285,6 +285,81 @@ func TestServiceDeleteRevokesKey(t *testing.T) {
 	}
 }
 
+// failRevokeMinter mints real keys (so create reaches the persist step) but always
+// fails RevokeAPIKey, exercising the fail-closed revoke paths.
+type failRevokeMinter struct{ inner *auth.Service }
+
+func (m failRevokeMinter) MintAPIKey(ctx context.Context, name string) (string, domain.APIKey, error) {
+	return m.inner.MintAPIKey(ctx, name)
+}
+
+func (m failRevokeMinter) RevokeAPIKey(context.Context, int64) error {
+	return errors.New("revoke boom")
+}
+
+// TestServiceCreateRevokeFailureFailsClosed: when persistence fails AND the orphan
+// key cannot be revoked, the error surfaces the revoke failure (not a swallowed log)
+// so the operator knows a live credential is dangling.
+func TestServiceCreateRevokeFailureFailsClosed(t *testing.T) {
+	t.Parallel()
+	f := newSyncFixture(t)
+	ctx := context.Background()
+	f.svc.minter = failRevokeMinter{inner: f.auth}
+
+	// A duplicate connection makes insertConnection fail (unique violation), so the
+	// just-minted key is orphaned and the failing revoke must be surfaced.
+	dup := CreateConnectionParams{
+		Name: "dup", Kind: f.conn.Kind, BaseURL: f.conn.BaseURL, APIKey: "k", HarbrrURL: "http://harbrr:8787",
+	}
+	_, err := f.svc.CreateConnection(ctx, dup)
+	if err == nil {
+		t.Fatal("expected an error from a duplicate create with a failing revoke")
+	}
+	if !errors.Is(err, ErrConflict) {
+		t.Errorf("error should still wrap ErrConflict, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "could not be revoked") {
+		t.Errorf("error should surface the revoke failure, got %v", err)
+	}
+}
+
+// TestServiceDeleteRevokeFailureFailsClosed: a delete whose key revoke fails returns
+// an error rather than swallowing it (the row is gone but the key still authorizes).
+func TestServiceDeleteRevokeFailureFailsClosed(t *testing.T) {
+	t.Parallel()
+	f := newSyncFixture(t)
+	ctx := context.Background()
+	f.svc.minter = failRevokeMinter{inner: f.auth}
+
+	err := f.svc.DeleteConnection(ctx, f.conn.ID)
+	if err == nil || !strings.Contains(err.Error(), "could not be revoked") {
+		t.Fatalf("delete with failing revoke = %v, want a surfaced revoke failure", err)
+	}
+}
+
+// TestServiceCreateRejectsNonAbsoluteURL: BaseURL and HarbrrURL must be absolute
+// http(s) URLs (parity with announce), so a relative/malformed value is a 400.
+func TestServiceCreateRejectsNonAbsoluteURL(t *testing.T) {
+	t.Parallel()
+	f := newSyncFixture(t)
+	ctx := context.Background()
+	bad := []CreateConnectionParams{
+		{Name: "n", Kind: domain.AppKindSonarr, BaseURL: "not-a-url", APIKey: "k", HarbrrURL: "http://harbrr:8787"},
+		{Name: "n", Kind: domain.AppKindSonarr, BaseURL: "/relative", APIKey: "k", HarbrrURL: "http://harbrr:8787"},
+		{Name: "n", Kind: domain.AppKindSonarr, BaseURL: "ftp://h", APIKey: "k", HarbrrURL: "http://harbrr:8787"},
+		{Name: "n", Kind: domain.AppKindSonarr, BaseURL: "http://app:7878", APIKey: "k", HarbrrURL: "harbrr"},
+	}
+	for i, p := range bad {
+		if _, err := f.svc.CreateConnection(ctx, p); !errors.Is(err, ErrInvalid) {
+			t.Errorf("case %d: err = %v, want ErrInvalid", i, err)
+		}
+	}
+	// A relative URL on update is rejected too.
+	if err := f.svc.UpdateConnection(ctx, f.conn.ID, UpdateConnectionParams{BaseURL: ptr("nope")}); !errors.Is(err, ErrInvalid) {
+		t.Errorf("update with relative base url = %v, want ErrInvalid", err)
+	}
+}
+
 func TestServiceSelectedScopeFunctional(t *testing.T) {
 	t.Parallel()
 	f := newSyncFixture(t)

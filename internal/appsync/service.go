@@ -116,8 +116,12 @@ func (s *Service) CreateConnection(ctx context.Context, p CreateConnectionParams
 	}
 	conn, err := s.insertConnection(ctx, p, key.ID, plaintext)
 	if err != nil {
+		// Fail closed (parity with internal/announce): an orphan key that cannot be
+		// revoked remains a valid feed credential, so surface the revoke failure
+		// alongside the create failure rather than swallowing it in a log line.
 		if revErr := s.minter.RevokeAPIKey(ctx, key.ID); revErr != nil {
-			s.log.Warn().Err(revErr).Int64("key_id", key.ID).Msg("appsync: failed to revoke orphan key after create failure")
+			return domain.AppConnection{}, fmt.Errorf("%w (and its orphan key %d could not be revoked — revoke it manually: %w)",
+				err, key.ID, revErr)
 		}
 		return domain.AppConnection{}, err
 	}
@@ -290,8 +294,12 @@ func (s *Service) DeleteConnection(ctx context.Context, id int64) error {
 		return fmt.Errorf("appsync: delete connection: %w", err)
 	}
 	if conn.HarbrrAPIKeyID != 0 {
+		// Fail closed (parity with internal/announce): the row is gone, but a
+		// still-valid minted key would keep authorizing the feed, so surface a revoke
+		// failure instead of swallowing it.
 		if err := s.minter.RevokeAPIKey(ctx, conn.HarbrrAPIKeyID); err != nil {
-			s.log.Warn().Err(err).Int64("key_id", conn.HarbrrAPIKeyID).Msg("appsync: failed to revoke key after connection delete")
+			return fmt.Errorf("appsync: connection deleted but its harbrr key (%d) could not be revoked — revoke it manually: %w",
+				conn.HarbrrAPIKeyID, err)
 		}
 	}
 	return nil

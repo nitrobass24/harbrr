@@ -38,6 +38,12 @@ func TestRedactError(t *testing.T) {
 			[]string{"rejected"},
 		},
 		{
+			// Bare password=/pass= key=value pairs are part of the unified vocabulary.
+			"bare password key=value", errors.New("connect failed: password=hunter2secret"),
+			[]string{"hunter2secret"},
+			[]string{"password", "<redacted>"},
+		},
+		{
 			// A JSON body (e.g. an *arr error echoing the pushed indexer) quotes the
 			// key, so the value escapes secretTokenRe's key[=:] anchor; jsonSecretRe
 			// scrubs the quoted form.
