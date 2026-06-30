@@ -489,10 +489,48 @@ alpha ships with manual indexer setup — existing Prowlarr/Jackett users re-ent
       fetch (the header sibling of `nocache=1`). Standards-only — clients (autobrr) can adopt it with no
       harbrr-side coupling. Prowlarr/Jackett emit no validators. `internal/web/torznabhttp/cacheinfo.go`,
       `handler.go`; the registry cache surfaces the validators via a `CacheInfo` context sink.
-- [ ] **Cross-seed backend + freeleech-aware matching** — a cross-seed search backend, plus
-      freeleech-aware release matching and optional freeleech-bypass logic (README "Cross-Seed Aware"):
-      smarter release matching, search reuse/aggregation, reduced duplicate tracker activity. **Absorbs
-      issue #10** (bypass FL tag on x-seed searches). *Detail TBD beyond the README's framing.*
+- [ ] **Cross-seed backend + freeleech-aware matching** — make harbrr the smartest *source* and *messenger*
+      for cross-seed (qui cross-seed + cross-seed v6), and let one tracker serve both ratio-building and
+      cross-seed off a single config. harbrr never matches — the x-seed tools do that. **Absorbs issue #10.**
+      The "search reuse / aggregation / reduced duplicate tracker activity" framing from the README is already
+      delivered by the shipped shared search cache + fabric-wide pacing + negative breaker; what remains is the
+      freeleech control and the push integrations below. Build order: FL toggle/bypass first, then announce
+      push/source. Leaves:
+   - [ ] **Per-indexer freeleech toggle (Prowlarr-style)** — a user-configurable `freeleech` setting on the
+         indexer instance. When ON, the default Torznab/Newznab feed honors the def's `{{ if .Config.freeleech }}`
+         filter (cheap-ratio releases for arrs). Surfaced in the management API + stored on the instance.
+   - [ ] **Freeleech-bypass feed variant** — a second feed surface for the *same* indexer that renders with
+         `freeleech` cleared, returning the full catalog (cross-seed must see everything). Pure engine-side
+         override — **no vendored-def edits**. Requires a new per-request config-override seam (none exists
+         today; `.Config` is fixed per engine instance via `cardigann.WithConfig`). **Exposure mechanism
+         (dedicated variant URL vs per-consumer key scoping vs request flag) is decided in implementation plan
+         mode** with code-grounded options — seams: the feed route table (`internal/web/torznabhttp/handler.go`)
+         and the app-sync `feedURL` builder (`internal/appsync/sync.go`).
+   - [ ] **Per-app freeleech routing** — a `freeleech_mode` ('honor'|'bypass') column on `app_connections`,
+         **defaulted by app kind** (Sonarr/Radarr/Lidarr/Readarr/Whisparr → honor; qui → bypass) and
+         operator-overridable. app-sync pushes the matching feed variant per connection (hook: `feedURL` in
+         `sync.go`, already branched on `conn.Kind`). One tracker configured once → the right variant reaches
+         each app automatically; no Prowlarr-style tracker duplication, no doubled config-time tracker hits.
+         (Note: qui uses a single shared Torznab indexer pool for *both* cross-seed and manual search, so qui
+         gets the bypass variant for both — there is no per-feature switch on qui's side.)
+   - [ ] **cross-seed v6 config snippet** — emit a copy-paste `torznab:` URL (the bypass variant) for the
+         user's `config.js`. cross-seed v6 has no indexer API (file config + restart), so this is the
+         config-push equivalent for it.
+   - [ ] **Announce push (qui + cross-seed v6)** — an `AnnounceTarget` interface mirroring app-sync's
+         `Target`, one driver per kind: **qui** two-step (`POST /api/cross-seed/webhook/check`
+         `{torrentName,size,indexer}` → on `recommendation:"download"`, fetch the `.torrent` via `/dl`, base64,
+         `POST /api/cross-seed/apply` `{torrentData,indexer,tags}`); **cross-seed v6** one-step
+         (`POST /api/announce` `{name,guid,link,tracker}`, header `x-api-key`, `link` = harbrr `/dl?apikey=…`
+         URL since cross-seed fetches it itself). Per-connection storage + minted key, secrets redacted. Pushes
+         *releases*, not config. The `.torrent` is fetched only on a confirmed match → strictly less tracker
+         load than the consumer polling + grabbing (grabs left seeding, no hit-and-run).
+   - [ ] **Announce source (new-release tap)** — derive the "what's new" stream by tapping the search-cache
+         write-back (`storeBestEffort`), diffing fresh GUIDs (`tzn.GUIDFor`) against the prior cached set
+         (`Fetch` before the upsert) for RSS/empty-query fills only (`isEmptyQuery`), with an announced-GUID
+         dedup window. Default policy: **announce only what a consumer is already polling** (zero added tracker
+         load); a proactive per-indexer RSS watcher for un-polled trackers is a deferred opt-in (more load).
+   - [ ] **Docs + divergence** — user docs for the FL toggle/bypass, the per-app routing defaults, the qui +
+         cross-seed v6 push setup, and the cross-seed v6 snippet; record any deliberate divergence.
 - [x] **Better pagination support** — **issue #3**: a spec-correct, *superior-to-Jackett/Prowlarr*
       feed — honest `<newznab:response offset total>` (Jackett omits it), correct offset/limit
       windowing, and a paging-aware conditional-GET ETag (folds the page window so a revalidation
