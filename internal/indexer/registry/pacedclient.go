@@ -42,6 +42,10 @@ const maxPacingBudget = 60 * time.Second
 // unboundedly and needs no eviction (eviction would also race a concurrent Wait).
 var hostLimiters sync.Map // map[string]*rate.Limiter
 
+// limiterTightenMu serializes the read-compare-set in limiterFor so the strictest
+// (slowest) interval always wins a race between concurrent creators on one host.
+var limiterTightenMu sync.Mutex
+
 // limiterFor returns the shared limiter for host, creating it (interval spacing,
 // burst 1) on first use. LoadOrStore makes concurrent first-creation safe. When a
 // limiter already exists for the host, the STRICTEST (slowest) interval wins: a
@@ -56,8 +60,16 @@ func limiterFor(host string, interval time.Duration) *rate.Limiter {
 	lim, _ := v.(*rate.Limiter)
 	if loaded && want < lim.Limit() {
 		// rate.Limit is events/sec, so a smaller value is a slower (stricter) rate.
-		// SetLimit is concurrency-safe (no race with a concurrent Wait).
-		lim.SetLimit(want)
+		// Serialize the read-compare-set: two racing creators could each read the
+		// same pre-tighten Limit and the LOOSER SetLimit land last, losing the
+		// strictest value. Re-check under the lock so only the strictest survives.
+		// SetLimit is itself safe vs a concurrent Wait, so this guards only the
+		// compare-and-set — never the hot pacing path.
+		limiterTightenMu.Lock()
+		if want < lim.Limit() {
+			lim.SetLimit(want)
+		}
+		limiterTightenMu.Unlock()
 	}
 	return lim
 }

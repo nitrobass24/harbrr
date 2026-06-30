@@ -48,11 +48,21 @@ func (c *SearchCache) RehydrateCounters(ctx context.Context) error {
 // make FlushCounters re-attempt a doomed Upsert against its cascade-deleted row every
 // cleanup tick. The durable cache_counters row is already gone via ON DELETE CASCADE.
 func (c *SearchCache) ForgetInstance(instanceID int64) {
-	hits, misses, suppressed := c.instanceSnapshot(instanceID)
-	c.hits.Add(-hits)
-	c.misses.Add(-misses)
-	c.breakerSuppressed.Add(-suppressed)
-	c.instCounters.Delete(instanceID)
+	v, ok := c.instCounters.LoadAndDelete(instanceID)
+	if !ok {
+		return
+	}
+	ic, _ := v.(*instanceCounters)
+	// Remove the entry FIRST (LoadAndDelete), then Swap each counter to zero and
+	// subtract exactly what we captured. This closes the snapshot-then-Delete window
+	// where a concurrent increment landed between reading the snapshot and the Delete
+	// and was left in the global with no surviving row to back it. A reader that
+	// already holds this pointer and increments past the Swap is a vanishingly narrow
+	// residual (the deleted instance is no longer routed — manage.go invalidates the
+	// engine before this), acceptable for single-user.
+	c.hits.Add(-ic.hits.Swap(0))
+	c.misses.Add(-ic.misses.Swap(0))
+	c.breakerSuppressed.Add(-ic.suppressed.Swap(0))
 }
 
 // FlushCounters writes the live per-instance counters to the store so they survive a
