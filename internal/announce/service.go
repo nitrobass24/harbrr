@@ -77,6 +77,11 @@ type CreateConnectionParams struct {
 // CreateConnection mints a dedicated harbrr key, then persists the connection with both
 // secrets encrypted. A failed persist revokes the orphan key.
 func (s *Service) CreateConnection(ctx context.Context, p CreateConnectionParams) (domain.AnnounceConnection, error) {
+	// Trim before validating AND persisting, so a whitespace-padded URL can't bypass the
+	// (kind, base_url) uniqueness contract or leave a trailing space in a posted/dl URL.
+	p.Name = strings.TrimSpace(p.Name)
+	p.BaseURL = strings.TrimSpace(p.BaseURL)
+	p.HarbrrURL = strings.TrimSpace(p.HarbrrURL)
 	if err := validateCreate(p); err != nil {
 		return domain.AnnounceConnection{}, err
 	}

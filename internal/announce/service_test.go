@@ -117,6 +117,25 @@ func TestServiceCreateValidation(t *testing.T) {
 	}
 }
 
+// TestServiceCreateTrimsURLs proves whitespace-padded URLs are normalized before storage,
+// so they can't bypass the (kind, base_url) uniqueness contract or leave a padded /dl URL.
+func TestServiceCreateTrimsURLs(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, _ := newService(t, func(domain.AnnounceConnection, string) (announce.Target, error) { return &fakeTarget{}, nil })
+
+	conn, err := svc.CreateConnection(ctx, announce.CreateConnectionParams{
+		Name: "qui", Kind: domain.AnnounceKindQui,
+		BaseURL: "  http://qui:7476  ", APIKey: "k", HarbrrURL: " http://h:8787 ",
+	})
+	if err != nil {
+		t.Fatalf("CreateConnection: %v", err)
+	}
+	if conn.BaseURL != "http://qui:7476" || conn.HarbrrURL != "http://h:8787" {
+		t.Errorf("URLs not trimmed: baseURL=%q harbrrURL=%q", conn.BaseURL, conn.HarbrrURL)
+	}
+}
+
 // TestServiceHarbrrKeyRejectsRevoked proves HarbrrKey refuses a connection whose minted key
 // was revoked out of band (FK SET NULL → id 0), so a dead /dl signing key is never used.
 func TestServiceHarbrrKeyRejectsRevoked(t *testing.T) {
