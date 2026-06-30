@@ -140,9 +140,32 @@ func serve(ctx context.Context, cfg *config.Config, log zerolog.Logger) error {
 
 	startSessionCleanup(bgCtx, &bg, store, log)
 	startSearchCacheCleanup(bgCtx, &bg, searchCache, log)
+
+	// Confirm the port is actually bindable before logging "listening": srv.Run binds
+	// asynchronously, so a fatal listen error (e.g. address in use) would otherwise
+	// surface only after we'd already told the operator the server was up.
+	if err := preflightBind(ctx, listenAddr(cfg)); err != nil {
+		return fmt.Errorf("serve: %w", err)
+	}
 	logStartup(log, cfg)
 	if err := srv.Run(ctx); err != nil {
 		return fmt.Errorf("serve: %w", err)
+	}
+	return nil
+}
+
+// preflightBind verifies the resolved address can be bound, then releases it so
+// srv.Run can re-bind the same addr. This narrow window is acceptable for
+// single-user self-hosted use; the point is to fail loud on an in-use port instead
+// of falsely logging that the server is listening.
+func preflightBind(ctx context.Context, addr string) error {
+	var lc net.ListenConfig
+	ln, err := lc.Listen(ctx, "tcp", addr)
+	if err != nil {
+		return fmt.Errorf("listen %s: %w", addr, err)
+	}
+	if err := ln.Close(); err != nil {
+		return fmt.Errorf("release preflight listener %s: %w", addr, err)
 	}
 	return nil
 }

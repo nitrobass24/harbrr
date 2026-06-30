@@ -12,7 +12,9 @@ import (
 var ErrNotFound = errors.New("database: not found")
 
 // sqliteConstraintUnique is SQLITE_CONSTRAINT_UNIQUE (a stable SQLite result
-// code), returned when a UNIQUE/PRIMARY KEY constraint is violated.
+// code), returned when a UNIQUE constraint is violated. A PRIMARY KEY conflict
+// reports a different code (SQLITE_CONSTRAINT_PRIMARYKEY, 1555), so this does not
+// cover it.
 const sqliteConstraintUnique = 2067
 
 // IsUniqueViolation reports whether err is a SQLite UNIQUE-constraint violation,
