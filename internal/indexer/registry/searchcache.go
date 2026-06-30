@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -290,8 +291,14 @@ func (c *SearchCache) missPath(ctx context.Context, instanceID int64, cfg map[st
 // tripBreaker opens the breaker for instanceID when err is a tracker failure worth
 // suppressing. A caller-cancelled context is excluded — that is the consumer aborting,
 // not the tracker failing — so a cancellation never poisons the breaker.
+//
+// Two cancel shapes are filtered: ctx.Err() catches THIS caller aborting its own
+// request; errors.Is(err, context.Canceled) catches a singleflight FOLLOWER that
+// inherited the LEADER's cancelled-context error while its OWN ctx is still live.
+// Without the second check, one disconnected client (the flight leader) would trip
+// the breaker instance-wide, suppressing every other consumer for the full window.
 func (c *SearchCache) tripBreaker(ctx context.Context, instanceID int64, err error) {
-	if ctx.Err() != nil {
+	if ctx.Err() != nil || errors.Is(err, context.Canceled) {
 		return
 	}
 	until, ok := classifyBreakerError(err, c.tuning.Load().ttl.negative, c.clock())

@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -29,6 +30,13 @@ const maxRetryAttempts = 3
 // no usable Retry-After.
 const retryBackoff = 500 * time.Millisecond
 
+// maxPacingBudget caps the CUMULATIVE wall-clock a single Do may spend across all
+// per-host rate waits and 429/503 backoff sleeps, even when the inbound context
+// carries no deadline. Without it a hostile tracker could pin a goroutine for an
+// attacker-chosen Retry-After (× attempts). A shorter inbound deadline still wins —
+// context.WithTimeout takes the minimum of the two — so this only adds a ceiling.
+const maxPacingBudget = 60 * time.Second
+
 // hostLimiters holds one rate.Limiter per tracker host, process-wide. The key
 // space is bounded by the set of configured tracker hosts, so the map cannot grow
 // unboundedly and needs no eviction (eviction would also race a concurrent Wait).
@@ -56,14 +64,21 @@ func limiterFor(host string, interval time.Duration) *rate.Limiter {
 
 // pacedDoer wraps a base Doer with per-host rate limiting and bounded 429/503
 // backoff. Pacing + backoff both honor the request's context (threaded in PR #1):
-// the per-host token Wait and each backoff sleep abort promptly on cancellation,
-// and the per-request deadline bounds the SUM of waits + sleeps + attempts.
+// the per-host token Wait and each backoff sleep abort promptly on cancellation.
+// Do derives a budget-bounded context (min of any inbound deadline and budget) and
+// uses it for the rate Wait and the retry's inter-attempt sleeps, so the SUM of
+// waits + sleeps is bounded even for a deadline-less request — a hostile Retry-After
+// can never pin the goroutine. The budget bounds ONLY the waits/sleeps, not the live
+// HTTP call, whose response body must outlive Do (so base.Do keeps the inbound ctx).
 type pacedDoer struct {
 	base     search.Doer
 	interval time.Duration
 	attempts uint
 	backoff  time.Duration
-	now      func() time.Time
+	// budget caps the cumulative pacing waits + 429/503 backoff sleeps for one Do;
+	// defaults to maxPacingBudget, shrinkable in tests.
+	budget time.Duration
+	now    func() time.Time
 	// limiter is the per-host limiter lookup, injectable in tests (defaults to the
 	// process-wide map).
 	limiter func(host string) *rate.Limiter
@@ -79,6 +94,7 @@ func newPacedDoer(base search.Doer, interval time.Duration) *pacedDoer {
 		interval: interval,
 		attempts: maxRetryAttempts,
 		backoff:  retryBackoff,
+		budget:   maxPacingBudget,
 		now:      time.Now,
 	}
 	d.limiter = func(host string) *rate.Limiter { return limiterFor(host, d.interval) }
@@ -102,12 +118,20 @@ func isRateLimitSignal(err error) bool {
 // Do paces by host, issues the request, and retries 429/503 (bounded, honoring
 // Retry-After) before surfacing a typed search.RateLimitedError.
 func (d *pacedDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
+	// Bound the CUMULATIVE rate waits + 429/503 backoff sleeps. context.WithTimeout
+	// takes the minimum of any inbound deadline and the budget, so a caller deadline
+	// still wins while a deadline-less request can't be pinned by a hostile Retry-After.
+	// This bounds ONLY the waits/sleeps — base.Do keeps the inbound request context so
+	// a successful response body still outlives Do (cancelling waitCtx on return is safe).
+	waitCtx, cancel := context.WithTimeout(req.Context(), d.budget)
+	defer cancel()
+
 	lim := d.limiter(req.URL.Hostname())
 	var out *stdhttp.Response
 
 	opts := []retry.Option{
 		retry.Attempts(d.attempts),
-		retry.Context(req.Context()),
+		retry.Context(waitCtx),
 		retry.RetryIf(isRateLimitSignal),
 		retry.DelayType(d.delay),
 		retry.LastErrorOnly(true),
@@ -121,8 +145,8 @@ func (d *pacedDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
 		retrying := attempt > 0
 		attempt++
 		// Re-acquire a token every attempt (never retry token-free, or we defeat the
-		// rate limit). A cancelled ctx aborts the Wait promptly.
-		if err := lim.Wait(req.Context()); err != nil {
+		// rate limit). A cancelled/expired waitCtx aborts the Wait promptly.
+		if err := lim.Wait(waitCtx); err != nil {
 			return fmt.Errorf("rate limiter wait: %w", err)
 		}
 		// Restore the (consumed) body only when actually retrying; a non-replayable
@@ -146,8 +170,10 @@ func (d *pacedDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
 	}, opts...)
 
 	if rerr != nil {
-		// A cancelled/expired ctx wins, with its identity preserved for callers.
-		if cerr := req.Context().Err(); cerr != nil {
+		// A cancelled/expired ctx wins, with its identity preserved for callers. waitCtx
+		// reflects both an inbound cancel (context.Canceled) and a budget/deadline expiry
+		// (context.DeadlineExceeded), so the bounded sum surfaces a typed abort either way.
+		if cerr := waitCtx.Err(); cerr != nil {
 			return nil, fmt.Errorf("registry: request aborted: %w", cerr)
 		}
 		var s *rateLimitSignalError

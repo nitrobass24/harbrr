@@ -229,6 +229,58 @@ func TestPacedDoer_CancelDuringBackoff(t *testing.T) {
 	}
 }
 
+// TestPacedDoer_BudgetBoundsCumulativeWait proves the cumulative waits + backoff
+// sleeps are bounded even when the inbound context carries NO deadline. A hostile
+// tracker returns 503 with a huge Retry-After and the backoff timer never fires on
+// its own, so only the budget can stop Do — it must surface a DeadlineExceeded abort
+// after one attempt rather than pinning the goroutine for the attacker's hour.
+func TestPacedDoer_BudgetBoundsCumulativeWait(t *testing.T) {
+	t.Parallel()
+	base := &scriptDoer{steps: []scriptStep{{status: 503, retryAfter: "3600"}}}
+	d := newPacedDoer(base, time.Second)
+	d.limiter = unlimited
+	d.timer = blockingTimer{} // backoff never fires; only the budget can end the sleep
+	d.budget = 40 * time.Millisecond
+
+	start := time.Now()
+	_, err := d.Do(getReq(context.Background(), t))
+	elapsed := time.Since(start)
+
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want context.DeadlineExceeded (budget bound)", err)
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("Do took %v, want ~budget (cumulative time not bounded)", elapsed)
+	}
+	if base.calls != 1 {
+		t.Fatalf("base called %d times, want 1 (budget fired during the first backoff)", base.calls)
+	}
+}
+
+// TestPacedDoer_InboundDeadlineWinsOverBudget proves a shorter inbound deadline still
+// bounds the cumulative sleeps (the budget is only a ceiling): with a never-firing
+// backoff, the request's own deadline ends Do.
+func TestPacedDoer_InboundDeadlineWinsOverBudget(t *testing.T) {
+	t.Parallel()
+	base := &scriptDoer{steps: []scriptStep{{status: 503, retryAfter: "3600"}}}
+	d := newPacedDoer(base, time.Second)
+	d.limiter = unlimited
+	d.timer = blockingTimer{}
+	d.budget = time.Hour // far larger than the inbound deadline below
+
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err := d.Do(getReq(ctx, t))
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want context.DeadlineExceeded (inbound deadline)", err)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("Do took %v, want ~inbound deadline", elapsed)
+	}
+}
+
 type cancelOn429 struct {
 	cancel context.CancelFunc
 	calls  int
