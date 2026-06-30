@@ -8,14 +8,17 @@ import (
 	apphttp "github.com/autobrr/harbrr/internal/http"
 )
 
-// RehydrateCounters loads the persisted per-instance hit/miss/suppressed counters
-// into the in-memory atomics at boot and seeds the global atomics with their sum, so
-// the cache stats surface continues across a restart instead of resetting to zero.
-// Called once after the cache is built (mirrors LoadOverrides), before any traffic.
+// RehydrateCounters folds the persisted per-instance hit/miss/suppressed counters onto
+// the in-memory atomics and the global totals, so the cache stats surface continues
+// across a restart instead of resetting to zero. Called once after the cache is built
+// (mirrors LoadOverrides); on success it sets countersRehydrated.
 //
-// On success it sets countersRehydrated, which gates FlushCounters: until a load has
-// succeeded, a flush stays a no-op so an empty/failed read can never overwrite the
-// stored totals with zeroes. A load failure is returned (non-fatal at the call site).
+// The add is intentional (not a Store): at boot the atomics are zero, so adding the
+// stored totals restores them exactly; on a self-heal retry after a failed boot load
+// (see FlushCounters) the atomics already hold this session's own increments, so adding
+// the restored totals yields the true sum rather than discarding the session's counts.
+// The countersRehydrated gate guarantees it takes effect at most once, so it never
+// double-counts. A load failure is returned (non-fatal at the call site).
 func (c *SearchCache) RehydrateCounters(ctx context.Context) error {
 	rows, err := c.counterStore.AllCounters(ctx, c.db)
 	if err != nil {
@@ -24,16 +27,16 @@ func (c *SearchCache) RehydrateCounters(ctx context.Context) error {
 	var sumHits, sumMisses, sumSuppressed int64
 	for _, r := range rows {
 		ic := c.counters(r.InstanceID)
-		ic.hits.Store(r.Hits)
-		ic.misses.Store(r.Misses)
-		ic.suppressed.Store(r.Suppressed)
+		ic.hits.Add(r.Hits)
+		ic.misses.Add(r.Misses)
+		ic.suppressed.Add(r.Suppressed)
 		sumHits += r.Hits
 		sumMisses += r.Misses
 		sumSuppressed += r.Suppressed
 	}
-	c.hits.Store(sumHits)
-	c.misses.Store(sumMisses)
-	c.breakerSuppressed.Store(sumSuppressed)
+	c.hits.Add(sumHits)
+	c.misses.Add(sumMisses)
+	c.breakerSuppressed.Add(sumSuppressed)
 	c.countersRehydrated.Store(true)
 	return nil
 }
@@ -61,11 +64,21 @@ func (c *SearchCache) ForgetInstance(instanceID int64) {
 // error) and the next instance still flushes. A just-deleted instance's row has
 // already cascaded away, so re-inserting it raises an FK error that is logged and
 // skipped rather than aborting every other instance's flush (which a single
-// transaction would). It is a no-op until RehydrateCounters has succeeded.
+// transaction would).
+//
+// If a boot RehydrateCounters never succeeded (e.g. a transient DB error), this retries
+// it here so a recovered DB resumes persistence instead of staying a no-op for the whole
+// session. Until a load succeeds it must NOT flush: the atomics don't yet include the
+// stored totals, so an absolute write would clobber them with this session's partial
+// counts. RehydrateCounters is additive and gated, so the retry folds the session's own
+// increments onto the restored totals exactly once.
 func (c *SearchCache) FlushCounters(ctx context.Context) {
 	if !c.countersRehydrated.Load() {
-		c.log.Warn().Msg("registry: skipping cache counter flush; counters not yet rehydrated")
-		return
+		if err := c.RehydrateCounters(ctx); err != nil {
+			c.log.Warn().Str("error", apphttp.RedactError(err)).
+				Msg("registry: cache counter rehydrate retry failed; skipping flush")
+			return
+		}
 	}
 	now := c.clock()
 	c.instCounters.Range(func(k, v any) bool {

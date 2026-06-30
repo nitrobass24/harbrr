@@ -145,25 +145,55 @@ func TestFlushCountersIdempotent(t *testing.T) {
 	}
 }
 
-// TestFlushCountersNoopUntilRehydrated proves the clobber guard: a cache that has not
-// rehydrated does not write counters, so a failed boot load can't zero the stored data.
-func TestFlushCountersNoopUntilRehydrated(t *testing.T) {
+// TestFlushCountersSelfHeals proves a cache whose boot rehydrate was missed still
+// persists on flush while the DB is reachable: FlushCounters rehydrates on demand
+// (arming the gate) and then writes the counters.
+func TestFlushCountersSelfHeals(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
 	db := openCacheDB(t, filepath.Join(t.TempDir(), "harbrr.db"))
 	id := insertInstanceSlug(t, db, "one")
 
-	sc := newCacheOn(db) // deliberately NOT rehydrated
-	seedCounters(sc, id, 9, 9, 9)
-	sc.FlushCounters(ctx)
+	sc := newCacheOn(db) // deliberately NOT rehydrated at boot
+	seedCounters(sc, id, 4, 5, 0)
+	sc.FlushCounters(ctx) // must self-heal (rehydrate empty DB) then flush
 
 	rows, err := database.CacheCountersStore{}.AllCounters(ctx, db)
 	if err != nil {
 		t.Fatalf("AllCounters: %v", err)
 	}
+	if len(rows) != 1 || rows[0].InstanceID != id || rows[0].Hits != 4 || rows[0].Misses != 5 {
+		t.Errorf("rows = %+v, want a single 4/5/0 row for instance %d", rows, id)
+	}
+}
+
+// TestFlushCountersSkippedWhenRehydrateFails proves the clobber guard survives the
+// self-heal: when the on-demand rehydrate can't read the store, FlushCounters writes
+// nothing, so a transient DB failure can't overwrite stored totals with this session's
+// partial counts.
+func TestFlushCountersSkippedWhenRehydrateFails(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "harbrr.db")
+	db := openCacheDB(t, path)
+	id := insertInstanceSlug(t, db, "one")
+
+	sc := newCacheOn(db) // not rehydrated
+	seedCounters(sc, id, 9, 9, 9)
+	if err := db.Close(); err != nil { // make the store unreadable
+		t.Fatalf("close: %v", err)
+	}
+	sc.FlushCounters(ctx) // rehydrate fails -> must skip without panicking
+
+	db2 := openCacheDB(t, path) // reopen and confirm nothing was written
+	rows, err := database.CacheCountersStore{}.AllCounters(ctx, db2)
+	if err != nil {
+		t.Fatalf("AllCounters: %v", err)
+	}
 	if len(rows) != 0 {
-		t.Errorf("rows = %d, want 0 (flush must be a no-op before rehydrate)", len(rows))
+		t.Errorf("rows = %d, want 0 (flush must be skipped when rehydrate fails)", len(rows))
 	}
 }
 
