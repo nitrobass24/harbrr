@@ -531,8 +531,9 @@ alpha ships with manual indexer setup — existing Prowlarr/Jackett users re-ent
          load than the consumer polling + grabbing (grabs left seeding, no hit-and-run).
    - [x] **Announce source (new-release tap)** — derive the "what's new" stream by tapping the search-cache
          write-back (`storeBestEffort`), diffing fresh GUIDs (`tzn.GUIDFor`) against the prior cached set
-         (`Fetch` before the upsert) for RSS/empty-query fills only (`isEmptyQuery`), with an announced-GUID
-         dedup window. Default policy: **announce only what a consumer is already polling** (zero added tracker
+         (`SearchCacheStore.FetchAny` before the upsert — reads the expired-but-present row, so the diff works
+         on a miss and survives restart) for RSS/empty-query fills only (`isEmptyQuery`), with an
+         instance-namespaced, hard-bounded announced-GUID dedup window. Default policy: **announce only what a consumer is already polling** (zero added tracker
          load); a proactive per-indexer RSS watcher for un-polled trackers is a deferred opt-in (more load).
    - [x] **Docs + divergence** — user docs (`website/docs/features/cross-seed-freeleech.md` + MkDocs nav) for the
          FL toggle/bypass, the per-app routing defaults, the qui + cross-seed v6 push setup, and the cross-seed v6

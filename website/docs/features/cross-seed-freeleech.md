@@ -26,7 +26,7 @@ the full catalog is still available to the bypass feed below — from the same s
 
 Every indexer also exposes a second feed surface:
 
-```
+```text
 …/api/v2.0/indexers/<slug>/results/torznab        ← honors the freeleech setting (*arrs)
 …/api/v2.0/indexers/<slug>/results/torznab/full   ← full catalog (cross-seed)
 ```
@@ -57,7 +57,7 @@ connection (the `freeleechMode` field on an app connection).
 cross-seed v6 has no indexer API (it reads a `config.js` file and restarts), so harbrr
 emits a copy-paste snippet instead of pushing. For each indexer:
 
-```
+```text
 GET /api/indexers/<slug>/crossseed-snippet
 ```
 

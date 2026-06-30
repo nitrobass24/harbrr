@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -85,8 +86,11 @@ func (s *Service) CreateConnection(ctx context.Context, p CreateConnectionParams
 	}
 	conn, err := s.insertConnection(ctx, p, key.ID, plaintext)
 	if err != nil {
+		// Fail closed: if the orphan key can't be revoked it remains a valid feed
+		// credential, so surface that alongside the create failure rather than hiding it.
 		if revErr := s.minter.RevokeAPIKey(ctx, key.ID); revErr != nil {
-			s.log.Warn().Err(revErr).Int64("key_id", key.ID).Msg("announce: failed to revoke orphan key after create failure")
+			return domain.AnnounceConnection{}, fmt.Errorf("%w (and its orphan key %d could not be revoked — revoke it manually: %w)",
+				err, key.ID, revErr)
 		}
 		return domain.AnnounceConnection{}, err
 	}
@@ -182,8 +186,11 @@ func (s *Service) DeleteConnection(ctx context.Context, id int64) error {
 		return fmt.Errorf("announce: delete connection: %w", err)
 	}
 	if conn.HarbrrAPIKeyID != 0 {
+		// Fail closed: the row is gone, but a still-valid minted key would keep signing /dl
+		// links and authorizing the feed, so surface a revoke failure instead of swallowing it.
 		if err := s.minter.RevokeAPIKey(ctx, conn.HarbrrAPIKeyID); err != nil {
-			s.log.Warn().Err(err).Int64("key_id", conn.HarbrrAPIKeyID).Msg("announce: failed to revoke key after delete")
+			return fmt.Errorf("announce: connection deleted but its harbrr key (%d) could not be revoked — revoke it manually: %w",
+				conn.HarbrrAPIKeyID, err)
 		}
 	}
 	return nil
@@ -242,7 +249,13 @@ func (s *Service) pushOne(ctx context.Context, conn domain.AnnounceConnection, r
 
 // HarbrrKey decrypts the minted harbrr key for a connection (the value that signs the /dl
 // link the tool fetches). Used by the source wiring to build a connection's Release links.
+// A connection whose key was revoked out of band (FK SET NULL → HarbrrAPIKeyID 0) is
+// refused: pushing a /dl link signed with a dead key would just hand the tool a credential
+// harbrr no longer recognizes (mirrors appsync's revoked-key guard).
 func (s *Service) HarbrrKey(conn domain.AnnounceConnection) (string, error) {
+	if conn.HarbrrAPIKeyID == 0 {
+		return "", fmt.Errorf("%w: harbrr key revoked; recreate the connection to re-mint it", ErrInvalid)
+	}
 	key, err := s.keyring.Decrypt(conn.ID, secretHarbrr, conn.HarbrrAPIKeyEncrypted)
 	if err != nil {
 		return "", fmt.Errorf("announce: decrypt harbrr key: %w", err)
@@ -263,11 +276,24 @@ func validateCreate(p CreateConnectionParams) error {
 	if strings.TrimSpace(p.APIKey) == "" {
 		return fmt.Errorf("%w: api key is required", ErrInvalid)
 	}
+	if err := validateAbsURL("base url", p.BaseURL); err != nil {
+		return err
+	}
 	// Both kinds need an absolute harbrr URL to form a fetchable /dl link: cross-seed v6
 	// fetches it itself, and qui fetches it server-side (HTTPTorrentFetcher). Without it the
 	// /dl URL would be host-less and every non-magnet release would silently fail to push.
 	if strings.TrimSpace(p.HarbrrURL) == "" {
 		return fmt.Errorf("%w: harbrr url is required (the tool fetches harbrr's /dl link)", ErrInvalid)
+	}
+	return validateAbsURL("harbrr url", p.HarbrrURL)
+}
+
+// validateAbsURL requires an absolute http(s) URL with a host, so a malformed/relative URL
+// can't be persisted and later yield a host-less /dl link or a failing tool call.
+func validateAbsURL(field, raw string) error {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return fmt.Errorf("%w: %s must be an absolute http(s) URL", ErrInvalid, field)
 	}
 	return nil
 }

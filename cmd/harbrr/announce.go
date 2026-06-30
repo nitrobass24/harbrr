@@ -22,6 +22,12 @@ import (
 // announcePushTimeout bounds one detached announce-push fan-out.
 const announcePushTimeout = 60 * time.Second
 
+// maxConcurrentAnnouncePushes bounds in-flight detached pushes so a burst of RSS fills (or
+// a slow/down announce target holding goroutines for the full timeout) cannot pile up
+// without limit and starve request handling. Excess fills are dropped with a log rather
+// than queued — the next RSS poll re-derives the same "what's new" set.
+const maxConcurrentAnnouncePushes = 8
+
 // srcRelease is the minimal snapshot the announce sink lifts out of a cache write-back, so
 // the async push never holds (or races on) the cached release slice.
 type srcRelease struct {
@@ -36,13 +42,22 @@ type srcRelease struct {
 // the caller's goroutine.
 func newAnnounceSink(svc *announce.Service, db dbinterface.Execer, keyring *secrets.Keyring, basePath string, log zerolog.Logger) registry.AnnounceSink {
 	instances := database.Instances{}
+	sem := make(chan struct{}, maxConcurrentAnnouncePushes)
 	return func(_ context.Context, instanceID int64, fresh []*normalizer.Release) {
 		snap := make([]srcRelease, 0, len(fresh))
 		for _, r := range fresh {
 			snap = append(snap, srcRelease{name: r.Title, guid: tzn.GUIDFor(r), link: r.Link, magnet: r.Magnet, size: r.Size})
 		}
+		select {
+		case sem <- struct{}{}:
+		default:
+			log.Warn().Int64("instance_id", instanceID).Int("releases", len(snap)).
+				Msg("announce: push backpressure — too many in-flight pushes; dropping (next RSS poll re-derives)")
+			return
+		}
 		//nolint:gosec // G118: intentionally detached — the announce push must outlive the triggering search request.
 		go func() {
+			defer func() { <-sem }()
 			ctx, cancel := context.WithTimeout(context.Background(), announcePushTimeout)
 			defer cancel()
 			inst, err := instances.GetByID(ctx, db, instanceID)
@@ -74,6 +89,10 @@ func announceReleasesFor(conn domain.AnnounceConnection, svc *announce.Service, 
 		if dl == "" && s.link != "" {
 			sealed, serr := torznabhttp.SealedDLURL(keyring, slug, dlBase, harbrrKey, s.link)
 			if serr != nil {
+				// The error never carries the link; log non-secret context so a dropped
+				// release is debuggable rather than vanishing silently.
+				log.Warn().Int64("connection_id", conn.ID).Str("indexer", slug).Str("guid", s.guid).
+					Msg("announce: seal /dl link failed; skipping release")
 				continue
 			}
 			dl = sealed

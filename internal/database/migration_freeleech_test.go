@@ -37,6 +37,10 @@ func TestMigration0008PreservesLedgerAndFixesKindCheck(t *testing.T) {
 	exec(ctx, t, db, `INSERT INTO app_connections
 		(id, name, kind, base_url, api_key_encrypted, harbrr_url, harbrr_api_key_encrypted, key_id, created_at, updated_at)
 		VALUES (1, 'Sonarr', 'sonarr', 'http://s:8989', 'enc-app', 'http://h:8787', 'enc-harbrr', 'k1', ?, ?)`, ts, ts)
+	// A pre-existing qui connection must backfill to 'bypass', not 'honor' (it drives cross-seed).
+	exec(ctx, t, db, `INSERT INTO app_connections
+		(id, name, kind, base_url, api_key_encrypted, harbrr_url, harbrr_api_key_encrypted, key_id, created_at, updated_at)
+		VALUES (2, 'qui', 'qui', 'http://q:7476', 'enc-app', 'http://h:8787', 'enc-harbrr', 'k1', ?, ?)`, ts, ts)
 	exec(ctx, t, db, `INSERT INTO app_connection_indexers (id, connection_id, instance_id, remote_id)
 		VALUES (1, 1, 1, 'remote-7')`)
 
@@ -55,13 +59,18 @@ func TestMigration0008PreservesLedgerAndFixesKindCheck(t *testing.T) {
 		t.Errorf("ledger row = (conn %d, inst %d, remote %q), want (1, 1, remote-7)", connID, instID, remoteID)
 	}
 
-	// (b) existing connection backfilled to honor.
-	var mode string
-	if err := db.QueryRowContext(ctx, `SELECT freeleech_mode FROM app_connections WHERE id = 1`).Scan(&mode); err != nil {
-		t.Fatalf("read freeleech_mode: %v", err)
-	}
-	if mode != "honor" {
-		t.Errorf("freeleech_mode = %q, want honor", mode)
+	// (b) existing rows backfilled by kind: the *arr gets honor, the qui row gets bypass.
+	for _, tc := range []struct {
+		id   int
+		want string
+	}{{1, "honor"}, {2, "bypass"}} {
+		var mode string
+		if err := db.QueryRowContext(ctx, `SELECT freeleech_mode FROM app_connections WHERE id = ?`, tc.id).Scan(&mode); err != nil {
+			t.Fatalf("read freeleech_mode id=%d: %v", tc.id, err)
+		}
+		if mode != tc.want {
+			t.Errorf("freeleech_mode id=%d = %q, want %q", tc.id, mode, tc.want)
+		}
 	}
 
 	// (c) #85: a lidarr connection (rejected by 0003's kind CHECK) now inserts.

@@ -107,6 +107,25 @@ func TestServiceCreateValidation(t *testing.T) {
 	if !errors.Is(err, announce.ErrInvalid) {
 		t.Errorf("bad kind err = %v, want ErrInvalid", err)
 	}
+
+	// a non-absolute / non-http base URL is rejected (would yield a host-less /dl link).
+	_, err = svc.CreateConnection(ctx, announce.CreateConnectionParams{
+		Name: "q", Kind: domain.AnnounceKindQui, BaseURL: "qui:7476", APIKey: "k", HarbrrURL: "http://h:8787",
+	})
+	if !errors.Is(err, announce.ErrInvalid) {
+		t.Errorf("relative base url err = %v, want ErrInvalid", err)
+	}
+}
+
+// TestServiceHarbrrKeyRejectsRevoked proves HarbrrKey refuses a connection whose minted key
+// was revoked out of band (FK SET NULL → id 0), so a dead /dl signing key is never used.
+func TestServiceHarbrrKeyRejectsRevoked(t *testing.T) {
+	t.Parallel()
+	svc, _ := newService(t, func(domain.AnnounceConnection, string) (announce.Target, error) { return &fakeTarget{}, nil })
+	_, err := svc.HarbrrKey(domain.AnnounceConnection{ID: 1, HarbrrAPIKeyID: 0})
+	if !errors.Is(err, announce.ErrInvalid) {
+		t.Errorf("HarbrrKey(revoked) err = %v, want ErrInvalid", err)
+	}
 }
 
 func TestServicePushFansOutToEnabledOnly(t *testing.T) {

@@ -3,6 +3,7 @@ package registry
 import (
 	"context"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -96,6 +97,37 @@ func TestAnnounceTap_DiffsAcrossExpiry(t *testing.T) {
 	}
 	if !slices.Equal(got[1], []string{"C"}) {
 		t.Errorf("post-expiry announce = %v, want [C] (A,B suppressed by the expired prior entry)", got[1])
+	}
+}
+
+// TestAnnounceWindow_NamespacedByInstance proves the same GUID on two indexers is tracked
+// independently (no cross-indexer suppression).
+func TestAnnounceWindow_NamespacedByInstance(t *testing.T) {
+	t.Parallel()
+	w := newAnnounceWindow()
+	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	if w.seenAndMark(1, "g", now) {
+		t.Fatal("first mark on instance 1 reported seen")
+	}
+	if w.seenAndMark(2, "g", now) {
+		t.Error("same GUID on instance 2 was suppressed by instance 1")
+	}
+	if !w.seenAndMark(1, "g", now) {
+		t.Error("repeat of instance 1's GUID was not suppressed")
+	}
+}
+
+// TestAnnounceWindow_HardCap proves the window never exceeds the size cap even when more
+// than announceDedupMax distinct entries arrive within one window (oldest are evicted).
+func TestAnnounceWindow_HardCap(t *testing.T) {
+	t.Parallel()
+	w := newAnnounceWindow()
+	base := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	for i := range announceDedupMax + 500 {
+		w.seenAndMark(1, strconv.Itoa(i), base.Add(time.Duration(i)*time.Millisecond))
+	}
+	if got := len(w.seenAt); got > announceDedupMax {
+		t.Errorf("window size = %d, want <= %d (hard cap not enforced)", got, announceDedupMax)
 	}
 }
 

@@ -55,9 +55,14 @@ func HTTPTorrentFetcher(client *http.Client) TorrentFetcher {
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			return nil, fmt.Errorf("fetch /dl: status %d", resp.StatusCode)
 		}
-		data, err := io.ReadAll(io.LimitReader(resp.Body, maxTorrentBytes))
+		// Read one byte past the cap so an oversized body is rejected rather than silently
+		// truncated (a partial torrent base64-posted to qui would be garbage).
+		data, err := io.ReadAll(io.LimitReader(resp.Body, maxTorrentBytes+1))
 		if err != nil {
 			return nil, fmt.Errorf("read /dl body: %w", err)
+		}
+		if len(data) > maxTorrentBytes {
+			return nil, fmt.Errorf("read /dl body: exceeds %d bytes", maxTorrentBytes)
 		}
 		return data, nil
 	}

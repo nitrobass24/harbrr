@@ -51,7 +51,10 @@ INSERT INTO app_connections_new (
 )
 SELECT
 	id, name, kind, base_url, api_key_encrypted, harbrr_url, harbrr_api_key_id,
-	harbrr_api_key_encrypted, key_id, enabled, sync_level, index_scope, 'honor',
+	harbrr_api_key_encrypted, key_id, enabled, sync_level, index_scope,
+	-- backfill by kind, matching the create-time default (qui drives cross-seed off its
+	-- single Torznab pool, so it gets the full catalog; every *arr honors freeleech).
+	CASE WHEN kind = 'qui' THEN 'bypass' ELSE 'honor' END,
 	priority, last_sync_at, last_sync_status, last_sync_error, created_at, updated_at
 FROM app_connections;
 

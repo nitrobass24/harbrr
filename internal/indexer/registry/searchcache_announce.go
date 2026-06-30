@@ -2,6 +2,8 @@ package registry
 
 import (
 	"context"
+	"slices"
+	"strconv"
 	"sync"
 	"time"
 
@@ -44,8 +46,9 @@ func (c *SearchCache) tapAnnounce(ctx context.Context, instanceID int64, q searc
 			continue
 		}
 		// seenAndMark is one atomic check-and-record, so two concurrent taps for the same
-		// GUID (a request miss racing the SWR refresh on the same key) announce it once.
-		if c.announced.seenAndMark(guid, now) {
+		// GUID (a request miss racing the SWR refresh on the same key) announce it once. The
+		// key is namespaced by instanceID so the same GUID on two indexers never collides.
+		if c.announced.seenAndMark(instanceID, guid, now) {
 			continue
 		}
 		out = append(out, r)
@@ -88,25 +91,49 @@ func newAnnounceWindow() *announceWindow {
 	return &announceWindow{seenAt: map[string]time.Time{}}
 }
 
-// seenAndMark atomically reports whether guid was announced within the dedup window and,
-// when it was not, records it as announced now. The check and the record are one critical
-// section so concurrent taps for the same GUID (a request miss racing the SWR refresh)
-// can never both treat it as new. It prunes window-expired entries when the map grows past
-// the size cap (the cap bounds steady-state memory; a burst of >announceDedupMax distinct
-// GUIDs within one window is held until those entries age out).
-func (w *announceWindow) seenAndMark(guid string, now time.Time) bool {
+// seenAndMark atomically reports whether (instanceID, guid) was announced within the dedup
+// window and, when it was not, records it as announced now. The check and the record are
+// one critical section, so concurrent taps for the same release (a request miss racing the
+// SWR refresh) can never both treat it as new. The key is namespaced by instanceID so the
+// same GUID on two indexers is tracked independently.
+func (w *announceWindow) seenAndMark(instanceID int64, guid string, now time.Time) bool {
+	key := strconv.FormatInt(instanceID, 10) + "\x00" + guid
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if at, ok := w.seenAt[guid]; ok && now.Sub(at) < announceDedupWindow {
+	if at, ok := w.seenAt[key]; ok && now.Sub(at) < announceDedupWindow {
 		return true
 	}
-	w.seenAt[guid] = now
-	if len(w.seenAt) > announceDedupMax {
-		for g, at := range w.seenAt {
-			if now.Sub(at) >= announceDedupWindow {
-				delete(w.seenAt, g)
-			}
+	w.seenAt[key] = now
+	w.pruneLocked(now)
+	return false
+}
+
+// pruneLocked enforces a HARD bound on the window: it first drops entries older than the
+// dedup window, then — if still over the size cap — evicts the oldest remaining entries so
+// the map can never grow without limit, even under a burst of >announceDedupMax distinct
+// releases inside one window. Caller holds w.mu.
+func (w *announceWindow) pruneLocked(now time.Time) {
+	if len(w.seenAt) <= announceDedupMax {
+		return
+	}
+	for k, at := range w.seenAt {
+		if now.Sub(at) >= announceDedupWindow {
+			delete(w.seenAt, k)
 		}
 	}
-	return false
+	if len(w.seenAt) <= announceDedupMax {
+		return
+	}
+	type kv struct {
+		key string
+		at  time.Time
+	}
+	entries := make([]kv, 0, len(w.seenAt))
+	for k, at := range w.seenAt {
+		entries = append(entries, kv{k, at})
+	}
+	slices.SortFunc(entries, func(a, b kv) int { return a.at.Compare(b.at) })
+	for _, e := range entries[:len(w.seenAt)-announceDedupMax] {
+		delete(w.seenAt, e.key)
+	}
 }
