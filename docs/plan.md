@@ -582,17 +582,16 @@ the autobrr/Upbrr team first, the same way *harbrr → autobrr push* is; see the
       stays in the config file** (deploy-time / security): data dir, DB path, listen address, base URL,
       **secrets/encryption key (must stay out of the DB it protects)**, auth mode + IP allowlist/trusted
       proxies.
-- [ ] **User-facing docs** *(alpha-gate membership: decide later)* — the website is 2 feature pages + a
-      stub index; for a "Swagger-only, API-operated" alpha the operator path is undocumented. Needed pages:
-      **Getting Started / Install** (Docker, first-run admin, mint API key, point Sonarr/Radarr at the feed
-      URL) · **Configuration reference** (from `config.example.yaml`) · **Adding an indexer** (the API flow:
-      `GET /api/definitions/{id}` → configure → `POST …/test`) · **App Sync setup**
-      (`/api/app-connections`) · **API / Swagger pointer** (`/api/docs` + `/api/openapi.yaml`). Plus fix the
-      root **`README.md`** (3 broken mermaid blocks missing ` ```mermaid ` fences; stale "Early
-      Development" status; its own Phase 1–4 roadmap that diverges from this plan → point at `plan.md`).
-      Minor internal-doc refresh: `docs/ideas.md` §4/§13 "superseded by plan.md" note; `highlights.md`
-      app-sync `[partial]`→shipped. **Open decision:** full operator set vs a minimal subset (Getting
-      Started + API pointer + README) as the gate.
+- [x] **User-facing docs** — the **full operator set** shipped (#76 + the 2026-06-30 doc-gap pass):
+      MkDocs site with **Getting Started / Install**, **Configuration reference**, **Adding an indexer**,
+      **App Sync setup**, **API / Swagger pointer**, plus feature pages for the search cache, circuit
+      breaker, usenet/Newznab, cross-seed & freeleech, and **pagination**. The root **`README.md`** is
+      fixed (` ```mermaid ` fences, "Alpha — operated via the API" status, roadmap points at `plan.md`),
+      and the internal-doc refresh is done (`docs/ideas.md` §4/§13 "superseded by plan.md" notes;
+      `highlights.md` app-sync `[partial]`→`[shipped]`). The 2026-06-30 audit (docs vs shipped features
+      vs the OpenAPI surface) found the set accurate; the only gaps it surfaced — prose pagination, a
+      stale API table, no pacing note — are closed. **Decision: the full operator set is the gate, and
+      it is met.**
 - [ ] **Code cleanup (non-blocking)** — the scaffolding + dead-code review found **no alpha blockers**:
       codebase is clean (no `panic`/`TODO`/`FIXME` in non-test code, no parsed-but-dead config; OIDC `501`,
       two AnimeBytes parity nuances, and the captcha boundary are intentional deferrals). `deadcode -test`

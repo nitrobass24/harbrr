@@ -77,6 +77,9 @@ and open to the integrations Prowlarr resists.
 
 ## 4. MVP and non-goals
 
+> **Superseded by [`plan.md`](plan.md).** This section captures the original framing; the live,
+> executable scope (MVP = Phases 1–5, plus the post-MVP phases) is tracked in `plan.md`.
+
 The MVP is deliberately boring: a test harness and an engine that can impersonate Jackett on saved
 inputs, then just enough product to be usable. Concretely:
 
@@ -488,6 +491,9 @@ rows; the fetch/auth rows gate *live readiness*, not the offline proof.
 - **2FA / manual-cookie** tracker
 
 ## 13. Roadmap (ordered by risk retirement) & release positioning
+
+> **Superseded by [`plan.md`](plan.md).** The phase-by-phase checklist and current status live in
+> `plan.md`; this section is the original rationale, kept for the audit trail.
 
 The project lives or dies on engine parity, so the order retires the riskiest unknowns first. Auth is
 **inside** the engine proof (it is a pipeline module, §7), not a later phase:
