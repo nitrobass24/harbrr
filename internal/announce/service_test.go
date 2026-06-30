@@ -131,8 +131,26 @@ func TestServiceCreateTrimsURLs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateConnection: %v", err)
 	}
-	if conn.BaseURL != "http://qui:7476" || conn.HarbrrURL != "http://h:8787" {
-		t.Errorf("URLs not trimmed: baseURL=%q harbrrURL=%q", conn.BaseURL, conn.HarbrrURL)
+
+	// Re-read through the service so the assertion proves AT-REST normalization, not just
+	// the returned struct.
+	got, err := svc.GetConnection(ctx, conn.ID)
+	if err != nil {
+		t.Fatalf("GetConnection: %v", err)
+	}
+	if got.BaseURL != "http://qui:7476" || got.HarbrrURL != "http://h:8787" {
+		t.Errorf("stored URLs not trimmed: baseURL=%q harbrrURL=%q", got.BaseURL, got.HarbrrURL)
+	}
+
+	// A second create with the UNPADDED same base URL must conflict — proof the padded one
+	// was stored under its trimmed, canonical value (else the (kind, base_url) uniqueness
+	// contract would not catch it).
+	_, err = svc.CreateConnection(ctx, announce.CreateConnectionParams{
+		Name: "qui2", Kind: domain.AnnounceKindQui,
+		BaseURL: "http://qui:7476", APIKey: "k", HarbrrURL: "http://h:8787",
+	})
+	if !errors.Is(err, announce.ErrConflict) {
+		t.Errorf("duplicate (unpadded) base url err = %v, want ErrConflict", err)
 	}
 }
 

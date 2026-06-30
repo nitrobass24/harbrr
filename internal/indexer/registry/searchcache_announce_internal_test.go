@@ -123,11 +123,23 @@ func TestAnnounceWindow_HardCap(t *testing.T) {
 	t.Parallel()
 	w := newAnnounceWindow()
 	base := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
-	for i := range announceDedupMax + 500 {
+	const overflow = 500
+	for i := range announceDedupMax + overflow {
 		w.seenAndMark(1, strconv.Itoa(i), base.Add(time.Duration(i)*time.Millisecond))
 	}
 	if got := len(w.seenAt); got > announceDedupMax {
 		t.Errorf("window size = %d, want <= %d (hard cap not enforced)", got, announceDedupMax)
+	}
+
+	// Eviction is oldest-first: the earliest GUID was evicted, so re-adding it reads as NEW
+	// (not suppressed)...
+	check := base.Add(time.Duration(announceDedupMax+overflow) * time.Millisecond)
+	if w.seenAndMark(1, "0", check) {
+		t.Error("oldest GUID still suppressed; pruneLocked did not evict oldest-first")
+	}
+	// ...while the most-recent GUID is still within the retained window (suppressed).
+	if !w.seenAndMark(1, strconv.Itoa(announceDedupMax+overflow-1), check) {
+		t.Error("most-recent GUID was evicted; expected it retained over older entries")
 	}
 }
 
