@@ -35,10 +35,14 @@ The spec is organized by tag:
 | **Authentication**    | first-run setup, login/logout, change password, current identity     |
 | **API Keys**          | mint / list / revoke Torznab keys                                    |
 | **Indexer Definitions** | list definitions, read a definition's settings schema + capabilities |
-| **Indexers**          | add / configure / enable / disable / delete, **test**, status, JSON search, capabilities |
-| **App Connections**   | the Sonarr/Radarr/qui [App Sync](guides/app-sync.md) lifecycle        |
+| **Indexers**          | add / configure / enable / disable / delete, **test**, status, JSON search, capabilities, cross-seed snippet |
+| **App Connections**   | the Sonarr/Radarr/Lidarr/Readarr/Whisparr/qui [App Sync](guides/app-sync.md) lifecycle |
+| **Announce Connections** | push new releases to qui / cross-seed v6 — see [Cross-seed & freeleech](features/cross-seed-freeleech.md) |
 | **Cache**             | stats, flush, and runtime config (`GET`/`PUT /api/cache/config`)     |
 | **System**            | `/healthz` liveness probe                                            |
+
+The JSON search endpoint returns a paged envelope (`results` / `total` / `hasMore` /
+`limit` / `offset`) — see [Pagination](features/pagination.md).
 
 The **Torznab/Newznab feed** itself lives at
 `/api/v2.0/indexers/{slug}/results/torznab` (with `/dl` for proxied downloads) — that's the

@@ -108,6 +108,23 @@ These are the boot defaults; all are runtime-tunable via `PUT /api/cache/config`
 
 ---
 
+## Tracker-friendly pacing (automatic)
+
+harbrr fronts **every** outbound request — Cardigann and native drivers, the capabilities
+probe, and `/dl` downloads — with a process-wide, **per-host** rate limiter, so the aggregate
+rate harbrr presents to a tracker stays polite no matter how many apps (or app *instances*)
+sit behind it. The rate is taken from each definition's own `requestDelay` (or a 1-second
+default), `429`/`503` responses are honored with bounded backoff, and the strictest limit for
+a host wins. This needs no configuration and pairs with the
+[search-results cache](features/search-results-cache.md) and
+[circuit breaker](features/circuit-breaker.md) as the third "kind to trackers" layer.
+
+A user-configurable global/per-indexer rate override is deferred (the per-host limiter is the
+v1 mechanism); per-indexer `timeout` and proxy settings are set when you
+[add an indexer](guides/add-indexer.md).
+
+---
+
 ## What stays in the config file (by design)
 
 Deploy-time and security-sensitive settings are deliberately **not** runtime-tunable: the
