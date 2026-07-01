@@ -193,15 +193,20 @@ func TestParseStatusSentinels(t *testing.T) {
 	t.Parallel()
 	d := parseDriver(t, creds())
 	cases := []struct {
-		name    string
-		file    string
-		body    string
-		wantErr error
+		name string
+		file string
+		body string
+		// wantErr is the sentinel the error must wrap. wantToken, when set, is an actionable
+		// substring the decode-error detail must surface (redacted diagnostic from
+		// apphttp.DecodeErrorDetail) — proving the discarded decode error is now threaded through.
+		wantErr   error
+		wantToken string
 	}{
 		{name: "auth failed (5)", file: "testdata/auth_failed.json", wantErr: login.ErrLoginFailed},
 		{name: "auth data missing (4)", body: `{"status":4,"message":"missing","data":null}`, wantErr: login.ErrLoginFailed},
 		{name: "generic error (7)", file: "testdata/error.json", wantErr: search.ErrParseError},
-		{name: "malformed json", body: `{not json`, wantErr: search.ErrParseError},
+		{name: "malformed json", body: `{not json`, wantErr: search.ErrParseError, wantToken: "invalid"},
+		{name: "non-json html body", body: `<html>not json</html>`, wantErr: search.ErrParseError, wantToken: "bytes"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -214,8 +219,20 @@ func TestParseStatusSentinels(t *testing.T) {
 				}
 				body = b
 			}
-			if _, err := d.parseReleases(body); !errors.Is(err, tc.wantErr) {
+			_, err := d.parseReleases(body)
+			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("err = %v, want %v", err, tc.wantErr)
+			}
+			if tc.wantToken != "" {
+				if err == nil {
+					t.Fatalf("want an error carrying an actionable %q token", tc.wantToken)
+				}
+				if !strings.Contains(err.Error(), tc.wantToken) {
+					t.Errorf("error %q missing actionable token %q", err, tc.wantToken)
+				}
+				if err.Error() == search.ErrParseError.Error() {
+					t.Errorf("error is the bare sentinel, want an enriched diagnostic: %v", err)
+				}
 			}
 		})
 	}

@@ -192,4 +192,8 @@ func TestParseMalformedBody(t *testing.T) {
 	if !errors.Is(err, search.ErrParseError) {
 		t.Fatalf("err = %v, want ErrParseError", err)
 	}
+	// The decode error is now enriched with an actionable, payload-free diagnostic.
+	if !strings.Contains(err.Error(), "invalid") {
+		t.Fatalf("err = %q, want an actionable decode detail containing %q", err.Error(), "invalid")
+	}
 }

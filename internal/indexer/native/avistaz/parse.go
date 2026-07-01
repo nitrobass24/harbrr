@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -59,7 +60,7 @@ type avistazIDInfo struct {
 func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	var resp avistazResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("avistaz: decode search response: %w", search.ErrParseError)
+		return nil, fmt.Errorf("avistaz: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
 	}
 	if resp.Data == nil {
 		return nil, fmt.Errorf("avistaz: search response carried no data array: %w", search.ErrParseError)

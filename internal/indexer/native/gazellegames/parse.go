@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/dateparse"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
@@ -153,7 +154,7 @@ func (s flexString) string() string { return string(s) }
 func (d *driver) parseSearch(body []byte) ([]*normalizer.Release, error) {
 	var resp gazelleGamesResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("gazellegames: decode search response: %w", search.ErrParseError)
+		return nil, fmt.Errorf("gazellegames: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
 	}
 	if resp.Status.string() != statusSuccess {
 		return nil, d.classifyStatusError(resp.Status.string(), resp.Error)
@@ -164,7 +165,7 @@ func (d *driver) parseSearch(body []byte) ([]*normalizer.Release, error) {
 	}
 	groups := map[int64]gazelleGamesGroup{}
 	if err := json.Unmarshal(resp.Response, &groups); err != nil {
-		return nil, fmt.Errorf("gazellegames: decode group map: %w", search.ErrParseError)
+		return nil, fmt.Errorf("gazellegames: decode group map: %s: %w", apphttp.DecodeErrorDetail(err, resp.Response), search.ErrParseError)
 	}
 
 	var rels []*normalizer.Release
@@ -233,7 +234,7 @@ func (d *driver) flattenGroup(groupID int64, g *gazelleGamesGroup) ([]*normalize
 	}
 	torrents := map[int64]gazelleGamesTorrent{}
 	if err := json.Unmarshal(g.Torrents, &torrents); err != nil {
-		return nil, fmt.Errorf("gazellegames: decode torrents for group %d: %w", groupID, search.ErrParseError)
+		return nil, fmt.Errorf("gazellegames: decode torrents for group %d: %s: %w", groupID, apphttp.DecodeErrorDetail(err, g.Torrents), search.ErrParseError)
 	}
 
 	cats := d.groupCategories(g)

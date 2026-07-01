@@ -135,12 +135,42 @@ func TestParseNonAuthErrorEnvelope(t *testing.T) {
 	}
 }
 
-// TestParseMalformed proves a malformed body is a parse error.
+// TestParseMalformed proves a malformed body is a parse error and that the error
+// message now carries an actionable, redacted decode detail (an "offset"/"invalid"
+// token for truncated JSON, a "bytes" size hint for a non-JSON HTML body) while the
+// ErrParseError wrapping is preserved.
 func TestParseMalformed(t *testing.T) {
 	t.Parallel()
 	d := parseTestDriver(t, nil)
-	if _, err := d.parseReleases([]byte(`{`)); !errors.Is(err, search.ErrParseError) {
-		t.Errorf("err = %v, want search.ErrParseError", err)
+	tests := []struct {
+		name       string
+		body       string
+		wantTokens []string
+	}{
+		{name: "truncated json", body: `{`, wantTokens: []string{"offset", "invalid"}},
+		{name: "html body", body: `<html>not json</html>`, wantTokens: []string{"bytes"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := d.parseReleases([]byte(tt.body))
+			if !errors.Is(err, search.ErrParseError) {
+				t.Fatalf("err = %v, want search.ErrParseError", err)
+			}
+			if err.Error() == search.ErrParseError.Error() {
+				t.Errorf("err = %q, want more than the bare sentinel", err)
+			}
+			var found bool
+			for _, tok := range tt.wantTokens {
+				if strings.Contains(err.Error(), tok) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("err = %q, want an actionable token from %v", err, tt.wantTokens)
+			}
+		})
 	}
 }
 

@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
 	"golang.org/x/time/rate"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -118,7 +120,7 @@ func TestRateSpacingViaReserve(t *testing.T) {
 func TestPacedDoer_SuccessNoRetry(t *testing.T) {
 	t.Parallel()
 	base := &scriptDoer{steps: []scriptStep{{status: 200}}}
-	d := newPacedDoer(base, time.Second)
+	d := newPacedDoer(base, time.Second, zerolog.Nop())
 	d.limiter = unlimited
 	timer := &immediateTimer{}
 	d.timer = timer
@@ -132,10 +134,48 @@ func TestPacedDoer_SuccessNoRetry(t *testing.T) {
 	}
 }
 
+// TestPacedDoer_DebugLogsHostOnly asserts the debug trace records the request method,
+// status, and only the scheme://host — never the path or query — so a secret hidden in
+// EITHER a query param OR a PATH segment (as native drivers do) can never leak into the
+// log. This is the fix for the F2 review finding that RedactURL's path heuristic misses
+// a native path-embedded api_key/rsskey/passkey.
+func TestPacedDoer_DebugLogsHostOnly(t *testing.T) {
+	t.Parallel()
+	const queryKey = "querysecretdeadbeefdeadbeef0000"
+	const pathKey = "PATHSECRET-not-hex-so-heuristic-misses-it"
+	var buf bytes.Buffer
+	log := zerolog.New(&buf).Level(zerolog.DebugLevel)
+
+	base := &scriptDoer{steps: []scriptStep{{status: 200}}}
+	d := newPacedDoer(base, time.Second, log)
+	d.limiter = unlimited
+
+	req, err := stdhttp.NewRequestWithContext(context.Background(), stdhttp.MethodGet,
+		"https://t.invalid/torrent/download/auto.5."+pathKey+"?passkey="+queryKey, nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	if _, err := d.Do(req); err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+
+	out := buf.String()
+	for _, leak := range []string{queryKey, pathKey, "download", "passkey", "auto.5"} {
+		if strings.Contains(out, leak) {
+			t.Errorf("debug log leaked %q: %s", leak, out)
+		}
+	}
+	for _, want := range []string{`"method":"GET"`, `"status":200`, `"url":"https://t.invalid"`, "outbound request"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("debug log missing %q in: %s", want, out)
+		}
+	}
+}
+
 func TestPacedDoer_RetriesThenSucceeds(t *testing.T) {
 	t.Parallel()
 	base := &scriptDoer{steps: []scriptStep{{status: 429, retryAfter: "1"}, {status: 200}}}
-	d := newPacedDoer(base, time.Second)
+	d := newPacedDoer(base, time.Second, zerolog.Nop())
 	d.limiter = unlimited
 	timer := &immediateTimer{}
 	d.timer = timer
@@ -155,7 +195,7 @@ func TestPacedDoer_RetriesThenSucceeds(t *testing.T) {
 func TestPacedDoer_ExhaustsToRateLimited(t *testing.T) {
 	t.Parallel()
 	base := &scriptDoer{steps: []scriptStep{{status: 503}}} // always 503
-	d := newPacedDoer(base, time.Second)
+	d := newPacedDoer(base, time.Second, zerolog.Nop())
 	d.limiter = unlimited
 	d.timer = &immediateTimer{}
 
@@ -175,7 +215,7 @@ func TestPacedDoer_ExhaustsToRateLimited(t *testing.T) {
 func TestPacedDoer_OtherStatusPassThrough(t *testing.T) {
 	t.Parallel()
 	base := &scriptDoer{steps: []scriptStep{{status: 500}}}
-	d := newPacedDoer(base, time.Second)
+	d := newPacedDoer(base, time.Second, zerolog.Nop())
 	d.limiter = unlimited
 	d.timer = &immediateTimer{}
 
@@ -191,7 +231,7 @@ func TestPacedDoer_OtherStatusPassThrough(t *testing.T) {
 func TestPacedDoer_CancelDuringWait(t *testing.T) {
 	t.Parallel()
 	base := &scriptDoer{steps: []scriptStep{{status: 200}}}
-	d := newPacedDoer(base, time.Second)
+	d := newPacedDoer(base, time.Second, zerolog.Nop())
 	// A limiter whose only token is already spent: the next Wait blocks until the
 	// (1h) interval — so a cancelled ctx must abort it before the request issues.
 	drained := rate.NewLimiter(rate.Every(time.Hour), 1)
@@ -216,7 +256,7 @@ func TestPacedDoer_CancelDuringBackoff(t *testing.T) {
 	// Cancel the moment the first 429 is returned, so the abort happens during the
 	// (never-firing) backoff sleep, not at a Wait.
 	base := &cancelOn429{cancel: cancel}
-	d := newPacedDoer(base, time.Second)
+	d := newPacedDoer(base, time.Second, zerolog.Nop())
 	d.limiter = unlimited
 	d.timer = blockingTimer{}
 
@@ -238,7 +278,7 @@ func TestPacedDoer_CancelDuringBackoff(t *testing.T) {
 func TestPacedDoer_BudgetBoundsCumulativeWait(t *testing.T) {
 	t.Parallel()
 	base := &scriptDoer{steps: []scriptStep{{status: 503, retryAfter: "3600"}}}
-	d := newPacedDoer(base, time.Second)
+	d := newPacedDoer(base, time.Second, zerolog.Nop())
 	d.limiter = unlimited
 	d.timer = blockingTimer{} // backoff never fires; only the budget can end the sleep
 	d.budget = 40 * time.Millisecond
@@ -284,7 +324,7 @@ func TestPacedDoer_SurfacesSlowTransportError(t *testing.T) {
 	t.Parallel()
 	errBoom := errors.New("connection reset by peer")
 	base := &slowErrDoer{sleep: 40 * time.Millisecond, err: errBoom}
-	d := newPacedDoer(base, time.Second)
+	d := newPacedDoer(base, time.Second, zerolog.Nop())
 	d.limiter = unlimited
 	d.budget = 10 * time.Millisecond // expires while base.Do is still running
 
@@ -329,7 +369,7 @@ func (d *slowThenOKDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
 func TestPacedDoer_SlowResponseDoesNotConsumeBudget(t *testing.T) {
 	t.Parallel()
 	base := &slowThenOKDoer{sleep: 30 * time.Millisecond}
-	d := newPacedDoer(base, time.Second)
+	d := newPacedDoer(base, time.Second, zerolog.Nop())
 	d.limiter = unlimited
 	d.timer = &immediateTimer{}
 	d.budget = 15 * time.Millisecond // shorter than the slow response, but caps only waits/sleeps
@@ -349,7 +389,7 @@ func TestPacedDoer_SlowResponseDoesNotConsumeBudget(t *testing.T) {
 func TestPacedDoer_InboundDeadlineWinsOverBudget(t *testing.T) {
 	t.Parallel()
 	base := &scriptDoer{steps: []scriptStep{{status: 503, retryAfter: "3600"}}}
-	d := newPacedDoer(base, time.Second)
+	d := newPacedDoer(base, time.Second, zerolog.Nop())
 	d.limiter = unlimited
 	d.timer = blockingTimer{}
 	d.budget = time.Hour // far larger than the inbound deadline below
@@ -390,7 +430,7 @@ func (d *cancelOn429) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
 func TestPacedDoer_ResetsBodyOnRetry(t *testing.T) {
 	t.Parallel()
 	base := &scriptDoer{steps: []scriptStep{{status: 429}, {status: 200}}}
-	d := newPacedDoer(base, time.Second)
+	d := newPacedDoer(base, time.Second, zerolog.Nop())
 	d.limiter = unlimited
 	d.timer = &immediateTimer{}
 

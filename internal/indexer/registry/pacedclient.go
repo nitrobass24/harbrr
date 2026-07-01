@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rs/zerolog"
 	"golang.org/x/time/rate"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
@@ -95,10 +96,13 @@ type pacedDoer struct {
 	// timer is the backoff sleep seam, injectable in tests for deterministic backoff;
 	// nil uses the real time.After.
 	timer backoffTimer
+	// log traces each outbound request (method/redacted-URL/status/duration) at debug.
+	// A Nop logger (the registry default) makes Debug()/Trace() zero-cost no-ops.
+	log zerolog.Logger
 }
 
 // newPacedDoer wraps base so every request is per-host paced and 429/503-backed-off.
-func newPacedDoer(base search.Doer, interval time.Duration) *pacedDoer {
+func newPacedDoer(base search.Doer, interval time.Duration, log zerolog.Logger) *pacedDoer {
 	d := &pacedDoer{
 		base:     base,
 		interval: interval,
@@ -106,6 +110,7 @@ func newPacedDoer(base search.Doer, interval time.Duration) *pacedDoer {
 		backoff:  retryBackoff,
 		budget:   maxPacingBudget,
 		now:      time.Now,
+		log:      log,
 	}
 	d.limiter = func(host string) *rate.Limiter { return limiterFor(host, d.interval) }
 	return d
@@ -189,10 +194,34 @@ func (d *pacedDoer) issue(ctx context.Context, req *stdhttp.Request, lim *rate.L
 	if err != nil {
 		return attemptResult{err: d.classifyWaitErr(ctx, err, lastRL)}
 	}
+	start := d.now()
 	resp, derr := d.base.Do(req) // inbound ctx + own client timeout; NOT budget-bounded
+	dur := d.now().Sub(start)
+	// Log only scheme://host, never the path/query: a native driver can hide its download
+	// secret in a PATH segment (beyond-hd's api_key/rsskey, animebytes' passkey) that
+	// RedactURL's length heuristic misses, so logging the full RedactURL'd URL here would
+	// leak it. SchemeHost drops the path/query entirely — safe for every driver.
+	hostURL := apphttp.SchemeHost(req.URL.String())
 	if derr != nil {
+		// Trace the failing host + a host-only redacted cause (SafeTransportDetail drops the
+		// secret-bearing path/query) so "turn on trace" reveals what failed without leaking.
+		d.log.Trace().
+			Str("method", req.Method).
+			Str("url", hostURL).
+			Dur("duration", dur).
+			Str("error", transportErrText(derr)).
+			Msg("registry: outbound request failed")
 		return attemptResult{err: fmt.Errorf("registry: %w", redactDoErr(derr))}
 	}
+	ev := d.log.Debug().
+		Str("method", req.Method).
+		Str("url", hostURL).
+		Int("status", resp.StatusCode).
+		Dur("duration", dur)
+	if ra := resp.Header.Get("Retry-After"); ra != "" {
+		ev = ev.Str("retry_after", ra)
+	}
+	ev.Msg("registry: outbound request")
 	if !search.IsRateLimitStatus(resp.StatusCode) {
 		return attemptResult{resp: resp}
 	}
@@ -283,6 +312,17 @@ func resetBody(req *stdhttp.Request) error {
 	}
 	req.Body = body
 	return nil
+}
+
+// transportErrText renders a host-only, secret-safe cause for the trace log. A transport
+// failure is a *url.Error, which SafeTransportDetail reduces to "<op> <scheme>://<host>:
+// <cause>" (dropping the secret-bearing path/query); a non-*url.Error yields the empty
+// string, for which a fixed label stands in so the field is never a raw error.
+func transportErrText(err error) string {
+	if detail := apphttp.SafeTransportDetail(err); detail != "" {
+		return detail
+	}
+	return "transport error"
 }
 
 // redactDoErr scrubs a transport error of any embedded URL secret. The stdlib

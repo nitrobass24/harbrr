@@ -345,6 +345,22 @@ hashed.** The web-UI password and API keys are never stored in recoverable form,
   Credentials never appear in logs, error messages, or Torznab responses — note the served
   download/magnet links **do** legitimately carry passkeys (intended output), and those are never
   *logged*.
+- **Actionable, level-gated diagnostics.** Set `log.level` (`log-level` / `HARBRR_LOG_LEVEL` /
+  `--log-level`: `trace`|`debug`|`info`|`warn`|`error`) to control how much a failure reveals — always
+  secret-safe:
+  - **Always-on (any level).** A decode failure now carries a redacted, actionable cause instead of a
+    bare `response parse error` — the JSON/XML field, expected-vs-got type, and byte offset (e.g.
+    `field "torrents": expected object, got array at offset 42`), or `body was not JSON; N bytes` when a
+    tracker returns an HTML wall. These are type/position metadata only — never response payload bytes —
+    so they are safe to surface remotely and make an operator-reported failure diagnosable from the log
+    alone.
+  - **`debug`.** Every outbound tracker request logs one line at the paced-client chokepoint: method,
+    the request **scheme://host** (path and query dropped), HTTP status, duration, and any `Retry-After`.
+    This is the "turn on debug to see what's happening" view. Only the host is logged — never the path or
+    query — because a native driver can carry a secret in a URL path segment (an api_key/rsskey/passkey)
+    that a query-only redactor would miss; dropping the path/query is safe for every indexer.
+  - **`trace`.** Adds a host-only redacted transport-error cause on a failed request. No raw response
+    bytes and no request path/query are ever emitted at any level.
 - **Reverse-proxy assumptions.** Base-path/subfolder support; proxy headers trusted only when
   configured.
 - **Safe export/import.** Config/DB export redacts secrets by default behind a `<redacted>` sentinel

@@ -180,18 +180,39 @@ func TestParseBadKeyMapsToLoginFailed(t *testing.T) {
 }
 
 // TestParseReleasesErrors proves a malformed body, a non-auth JSON-RPC error, and a null
-// result are each a parse error.
+// result are each a parse error. For decode failures it also asserts the wrapped message
+// now carries an actionable, redacted decode detail (offset/invalid for truncated JSON, a
+// byte-count shape hint for a non-JSON body) while still wrapping search.ErrParseError and
+// never echoing the payload/apikey.
 func TestParseReleasesErrors(t *testing.T) {
 	t.Parallel()
 	d := parseDriver(t, map[string]string{"apikey": credAPIKey})
-	cases := []struct{ name, body string }{
-		{"malformed json", `{`},
-		{"non-auth error", `{"result":null,"error":{"code":-32000,"message":"boom"}}`},
-		{"null result no error", `{"result":null}`},
+	cases := []struct {
+		name, body string
+		// wantToken, when non-empty, must appear in err.Error() (the actionable detail).
+		wantToken string
+	}{
+		{name: "malformed json", body: `{`, wantToken: "offset"},
+		{name: "non-json html body", body: `<html>not json</html>`, wantToken: "bytes"},
+		{name: "non-auth error", body: `{"result":null,"error":{"code":-32000,"message":"boom"}}`},
+		{name: "null result no error", body: `{"result":null}`},
 	}
 	for _, tc := range cases {
-		if _, err := d.parseReleases([]byte(tc.body)); !errors.Is(err, search.ErrParseError) {
+		_, err := d.parseReleases([]byte(tc.body))
+		if !errors.Is(err, search.ErrParseError) {
 			t.Errorf("%s: err = %v, want search.ErrParseError", tc.name, err)
+			continue
+		}
+		if tc.wantToken == "" {
+			continue
+		}
+		msg := err.Error()
+		if !strings.Contains(msg, tc.wantToken) {
+			t.Errorf("%s: err = %q, want it to contain %q", tc.name, msg, tc.wantToken)
+		}
+		// The detail must never echo the raw body bytes.
+		if strings.Contains(msg, "not json") {
+			t.Errorf("%s: err leaks the payload body: %q", tc.name, msg)
 		}
 	}
 }

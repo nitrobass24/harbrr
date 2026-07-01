@@ -174,15 +174,20 @@ func TestParseStatusSentinels(t *testing.T) {
 	t.Parallel()
 	d := parseDriver(t, creds())
 	cases := []struct {
-		name    string
-		file    string
-		body    string
-		wantErr error
+		name string
+		file string
+		body string
+		// wantToken, when set, must appear in err.Error(): the actionable decode
+		// diagnostic DecodeErrorDetail now embeds (offset/invalid for malformed JSON,
+		// "bytes" for a non-JSON body) while errors.Is(err, wantErr) still holds.
+		wantToken string
+		wantErr   error
 	}{
 		{name: "invalid api key (json)", file: "testdata/auth_failed.json", wantErr: login.ErrLoginFailed},
 		{name: "invalid api key (bare body)", body: `Invalid API Key`, wantErr: login.ErrLoginFailed},
 		{name: "generic error envelope", file: "testdata/error.json", wantErr: search.ErrParseError},
-		{name: "malformed json", body: `{not json`, wantErr: search.ErrParseError},
+		{name: "malformed json", body: `{not json`, wantToken: "offset", wantErr: search.ErrParseError},
+		{name: "non-json body", body: `<html>not json</html>`, wantToken: "bytes", wantErr: search.ErrParseError},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -195,8 +200,12 @@ func TestParseStatusSentinels(t *testing.T) {
 				}
 				body = b
 			}
-			if _, err := d.parseReleases(body); !errors.Is(err, tc.wantErr) {
+			_, err := d.parseReleases(body)
+			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("err = %v, want %v", err, tc.wantErr)
+			}
+			if tc.wantToken != "" && !strings.Contains(err.Error(), tc.wantToken) {
+				t.Errorf("err = %q, want it to contain actionable token %q", err, tc.wantToken)
 			}
 		})
 	}

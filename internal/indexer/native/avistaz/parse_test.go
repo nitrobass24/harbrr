@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
@@ -78,17 +79,29 @@ func TestParseReleasesErrors(t *testing.T) {
 	d := builderDriver("avistaz", nil)
 	cases := []struct {
 		name, body string
+		// wantToken, when non-empty, is an actionable substring the enriched decode
+		// error must carry (a truncated JSON body reports "offset"/"invalid"; a
+		// non-JSON HTML body reports "bytes"). Empty for non-decode-path errors
+		// (nil-data / category / date), whose messages don't route through
+		// DecodeErrorDetail.
+		wantToken string
 	}{
-		{"malformed json", `{"data": [`},
-		{"no data array (empty object)", `{}`},
-		{"json null", `null`},
-		{"explicit null data", `{"data":null}`},
-		{"unknown type", `{"data":[{"type":"GAME","download":"https://az.test/dl/1","created_at_iso":"2024-01-01T00:00:00Z"}]}`},
-		{"unparseable date", `{"data":[{"type":"MOVIE","video_quality":"1080p","download":"https://az.test/dl/1","created_at_iso":"not-a-date"}]}`},
+		{"malformed json", `{"data": [`, "offset"},
+		{"non-json html body", `<html>not json</html>`, "bytes"},
+		{"no data array (empty object)", `{}`, ""},
+		{"json null", `null`, ""},
+		{"explicit null data", `{"data":null}`, ""},
+		{"unknown type", `{"data":[{"type":"GAME","download":"https://az.test/dl/1","created_at_iso":"2024-01-01T00:00:00Z"}]}`, ""},
+		{"unparseable date", `{"data":[{"type":"MOVIE","video_quality":"1080p","download":"https://az.test/dl/1","created_at_iso":"not-a-date"}]}`, ""},
 	}
 	for _, tc := range cases {
-		if _, err := d.parseReleases([]byte(tc.body)); !errors.Is(err, search.ErrParseError) {
+		_, err := d.parseReleases([]byte(tc.body))
+		if !errors.Is(err, search.ErrParseError) {
 			t.Errorf("%s: err = %v, want search.ErrParseError", tc.name, err)
+			continue
+		}
+		if tc.wantToken != "" && !strings.Contains(err.Error(), tc.wantToken) {
+			t.Errorf("%s: err = %q, want it to contain actionable token %q", tc.name, err.Error(), tc.wantToken)
 		}
 	}
 }

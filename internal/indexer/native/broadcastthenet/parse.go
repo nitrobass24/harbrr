@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -116,7 +117,7 @@ func (s flexString) int64() int64 {
 func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	var resp btnResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("broadcastthenet: decode search response: %w", search.ErrParseError)
+		return nil, fmt.Errorf("broadcastthenet: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
 	}
 	if resp.Error != nil {
 		if resp.Error.Code == invalidAPIKeyCode {
@@ -159,7 +160,7 @@ func decodeTorrents(result *btnResult) (map[string]btnTorrent, error) {
 	}
 	var torrents map[string]btnTorrent
 	if err := json.Unmarshal(raw, &torrents); err != nil {
-		return nil, fmt.Errorf("broadcastthenet: decode torrents: %w", search.ErrParseError)
+		return nil, fmt.Errorf("broadcastthenet: decode torrents: %s: %w", apphttp.DecodeErrorDetail(err, raw), search.ErrParseError)
 	}
 	return torrents, nil
 }

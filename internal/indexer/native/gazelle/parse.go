@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/dateparse"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
@@ -140,7 +141,7 @@ func (n flexInt) int64() int64 { return int64(n) }
 func (d *driver) parseBrowse(body []byte) ([]*normalizer.Release, error) {
 	var resp browseResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("gazelle: decode browse response: %w", search.ErrParseError)
+		return nil, fmt.Errorf("gazelle: decode browse response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
 	}
 	if resp.Status != statusSuccess {
 		return nil, d.classifyStatusError(resp.Status, resp.Error)
