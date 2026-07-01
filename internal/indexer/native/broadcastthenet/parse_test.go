@@ -32,7 +32,7 @@ func parseDriver(t *testing.T, cfg map[string]string) *driver {
 // TestParseReleasesGolden parses the synthetic getTorrents response and asserts the full
 // btnTorrent->Release mapping: title=ReleaseName, link=DownloadURL, infohash, the
 // Resolution-keyed category (1080p->5040, 2160p->5045, SD->5030), peers=seeders+leechers,
-// grabs=snatched, size, tvdbid/rageid, and the unix Time->UTC publish date. It also pins
+// grabs=snatched, size, tvdbid/rageid/imdbid, and the unix Time->UTC publish date. It also pins
 // the deterministic sort by TorrentID (the fixture is keyed in non-sorted order
 // 1555073,1555200,1555000 -> expected 1555000,1555073,1555200). The goldens are derived
 // from Prowlarr's parse contract + autobrr's pkg/btn shape, not a live capture.
@@ -69,6 +69,7 @@ func TestParseReleasesGolden(t *testing.T) {
 			Seeders: 5, Leechers: 41, Peers: 46,
 			PublishDate:          "2022-01-02T20:04:46Z",
 			TVDBID:               332747,
+			IMDBID:               "tt7252812",
 			DownloadVolumeFactor: 1, UploadVolumeFactor: 1,
 		},
 		{
@@ -80,6 +81,7 @@ func TestParseReleasesGolden(t *testing.T) {
 			Seeders: 20, Leechers: 3, Peers: 23,
 			PublishDate:          "2021-01-01T00:00:00Z",
 			TVDBID:               200002,
+			IMDBID:               "tt1234567",
 			DownloadVolumeFactor: 1, UploadVolumeFactor: 1,
 		},
 	}
