@@ -22,8 +22,10 @@ type netToken struct {
 // token family so the greedy scanner never matches a shorter prefix early.
 //
 // Token semantics verified against .NET CultureInfo custom format specifiers and
-// Go's reference time Mon Jan 2 15:04:05 MST 2006 (-07:00) — except the fractional
-// `f`/`F` family, whose mapping is a known gap (see the second NOTE below):
+// Go's reference time Mon Jan 2 15:04:05 MST 2006 (-07:00). The fractional `f`/`F`
+// family needs the separator-collapsing handled in TranslateLayout (see the second
+// NOTE below); the table entries carry a leading '.' that is dropped there when a
+// literal separator already precedes the token:
 //
 //	yyyy MMMM dddd  -> 4+ char year / full month / full weekday name
 //	yy   MMM  ddd   -> 2-digit year / abbreviated month / weekday name
@@ -45,13 +47,12 @@ type netToken struct {
 // `z` is intentionally absent here, so TranslateLayout errors loudly on it. The
 // corpus uses only `zzz` (all 460 offset occurrences), so this is latent today.
 //
-// NOTE: the fractional `f`/`F` mappings below are NOT verified against .NET and
-// have a known gap on the canonical ".fff"/".FFF" form: the Go fractional layouts
-// embed their own leading separator (".000"/".999"), so a literal "." in the .NET
-// layout immediately before the token produces a doubled separator ("..000"). The
-// corpus does not exercise sub-second precision today, so this is latent; the real
-// fix (emit the fractional run without a duplicated separator) is owned by the
-// deferred engine effort, not this hygiene pass.
+// NOTE: the fractional `f`/`F` mappings below embed a leading separator (".000"/
+// ".999") because Go cannot render fractional seconds without one. .NET's tokens do
+// NOT — the separator in ".fff" is a literal the def wrote. TranslateLayout collapses
+// the two: when a fractional token follows a literal '.'/',' it emits only the digits
+// (so ".fff" -> ".000", not "..000"); a bare fractional with no separator errors
+// loudly (no Go equivalent). The corpus does not exercise sub-second precision today.
 var netTokens = []netToken{
 	{"yyyy", "2006"},
 	{"yyy", "2006"},
@@ -127,6 +128,21 @@ func TranslateLayout(netLayout string) (string, error) {
 		tok, ok := matchToken(netLayout[i:])
 		if !ok {
 			return "", fmt.Errorf("translate layout %q: unrecognized format token at %q", netLayout, netLayout[i:])
+		}
+		// Go's fractional-second layouts (".000"/".999") embed their own leading
+		// separator, but .NET's "f"/"F" tokens do not — the separator in ".fff" is a
+		// literal the def already wrote (and which we already emitted verbatim, since
+		// '.'/',' are not format letters). So when a fractional token follows a literal
+		// '.'/',', append only the digits to avoid a doubled separator ("05..000"). A
+		// bare fractional with no separator has no Go equivalent (Go cannot render
+		// fractional seconds without one), so it errors loudly rather than inventing a dot.
+		if tok.net[0] == 'f' || tok.net[0] == 'F' {
+			if i == 0 || (netLayout[i-1] != '.' && netLayout[i-1] != ',') {
+				return "", fmt.Errorf("translate layout %q: fractional token %q needs a '.' or ',' separator before it (.NET %q has no Go equivalent otherwise)", netLayout, tok.net, tok.net)
+			}
+			b.WriteString(tok.goRef[1:])
+			i += len(tok.net)
+			continue
 		}
 		b.WriteString(tok.goRef)
 		i += len(tok.net)
