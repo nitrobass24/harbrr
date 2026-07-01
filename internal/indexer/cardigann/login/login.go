@@ -167,8 +167,11 @@ func (e *Executor) get(ctx context.Context, rawURL string, headers map[string][]
 // do performs one request through the seam and reads the body. It applies jar
 // cookies on the way out and stores Set-Cookie on the way back when the Doer
 // does not own a jar (the replay transport in tests), so cookie capture is
-// exercised offline. Production *http.Client owns its own jar and this
-// best-effort store is harmless (idempotent) there.
+// exercised offline. In production the *http.Client owns its own jar, so this
+// store re-records cookies the Doer already persisted — redundant, not a
+// correctness guarantee (both jars then hold the session cookie; the request only
+// carries this Executor's jar via applyJar, so there is no double-cookie on the
+// wire).
 func (e *Executor) do(ctx context.Context, method, rawURL string, bodyReader io.Reader, headers map[string][]string) ([]byte, int, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, method, rawURL, bodyReader)
 	if err != nil {
@@ -187,8 +190,8 @@ func (e *Executor) do(ctx context.Context, method, rawURL string, bodyReader io.
 	// User-Agent, so once a solve set one this session, replay it here (the login
 	// POST, login.test, and the post-solve retry all flow through do()). A
 	// definition's own User-Agent header still wins.
-	if e.SolverUserAgent != "" && req.Header.Get("User-Agent") == "" {
-		req.Header.Set("User-Agent", e.SolverUserAgent)
+	if ua := e.solverUA(); ua != "" && req.Header.Get("User-Agent") == "" {
+		req.Header.Set("User-Agent", ua)
 	}
 	e.applyJar(req)
 

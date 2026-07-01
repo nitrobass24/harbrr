@@ -124,15 +124,20 @@ func cachingIndexer(t *testing.T, etag string) *fakeIndexer {
 
 // TestFeedEmitsValidators proves a cache-backed feed response carries ETag +
 // Cache-Control with the entry's remaining TTL as max-age. The emitted ETag is the
-// served validator: the cache layer's payload ETag folded with this page's window
-// (offset=0, limit=defaultLimit for a window-less request).
+// served validator: the POST-filter served page hashed (servedPayloadETag, honor variant)
+// folded with this page's window (offset=0, limit=defaultLimit for a window-less request).
 func TestFeedEmitsValidators(t *testing.T) {
 	t.Parallel()
-	rec := feedDo(t, cachingIndexer(t, `"abc"`), "t=search&q=x", nil)
+	idx := cachingIndexer(t, `"abc"`)
+	rec := feedDo(t, idx, "t=search&q=x", nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	want := pagedETag(`"abc"`, 0, defaultLimit)
+	view, ok := servedPayloadETag(idx.releases, false)
+	if !ok {
+		t.Fatal("servedPayloadETag failed to hash the served page")
+	}
+	want := pagedETag(view, 0, defaultLimit)
 	if got := rec.Header().Get("ETag"); got != want {
 		t.Errorf("ETag = %q, want %q", got, want)
 	}
@@ -149,7 +154,12 @@ func TestFeedEmitsValidators(t *testing.T) {
 func TestFeedConditionalGet304(t *testing.T) {
 	t.Parallel()
 
-	served := pagedETag(`"abc"`, 0, defaultLimit)
+	// Capture the served validator from a normal request, then revalidate with it.
+	first := feedDo(t, cachingIndexer(t, `"abc"`), "t=search&q=x", nil)
+	served := first.Header().Get("ETag")
+	if served == "" {
+		t.Fatal("first response emitted no ETag to revalidate against")
+	}
 	rec := feedDo(t, cachingIndexer(t, `"abc"`), "t=search&q=x",
 		http.Header{"If-None-Match": {served}})
 	if rec.Code != http.StatusNotModified {

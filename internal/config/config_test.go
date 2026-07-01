@@ -39,9 +39,6 @@ func TestDefaults(t *testing.T) {
 	if got, want := d.DatabasePath(), filepath.Join("./data", "harbrr.db"); got != want {
 		t.Errorf("DatabasePath() = %q, want %q", got, want)
 	}
-	if d.HasSecretKey() {
-		t.Error("HasSecretKey() = true for empty secrets, want false")
-	}
 	if err := d.Validate(); err != nil {
 		t.Errorf("Defaults().Validate() = %v, want nil", err)
 	}

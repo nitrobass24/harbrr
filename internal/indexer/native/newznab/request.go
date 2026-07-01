@@ -163,10 +163,10 @@ func normalizeMode(mode string) string {
 	}
 }
 
-// newsnabifyTitle reproduces Prowlarr's NewsnabifyTitle: replace "+" with "%20" in the
-// raw term before normal URL-encoding. The literal "%20" survives url.Values encoding
-// because "%" is itself percent-encoded to "%2520"; to match Prowlarr's wire form we instead
-// substitute a literal space, which encodes to "%20" — the same observable result.
+// newsnabifyTitle reproduces Prowlarr's NewsnabifyTitle: strip "+" from the raw term
+// (so a literal "+" is not carried through as if it were an encoded space) by replacing
+// it with a literal space. encodeQuery then escapes that space via url.QueryEscape, which
+// emits "+" on the wire — the x-www-form-urlencoded space form, not "%20".
 func newsnabifyTitle(raw string) string {
 	return strings.ReplaceAll(strings.TrimSpace(raw), "+", " ")
 }

@@ -27,5 +27,9 @@ For the alpha, harbrr is operated entirely over its HTTP API; the interactive
   a tracker that's erroring instead of hammering it.
 - **[Usenet (Newznab) indexers](features/usenet-newznab.md)** — usenet support alongside
   torrents.
+- **[Cross-seed & freeleech](features/cross-seed-freeleech.md)** — one tracker serves both
+  your \*arrs and cross-seed, with a per-indexer freeleech toggle and announce push.
+- **[Pagination](features/pagination.md)** — honest counts and stable, non-duplicating pages
+  (the bug Prowlarr/Jackett have, that harbrr doesn't).
 
 For the internal design notes and build plan, see the `docs/` folder in the repository.

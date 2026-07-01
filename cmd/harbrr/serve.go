@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -125,11 +126,46 @@ func serve(ctx context.Context, cfg *config.Config, log zerolog.Logger) error {
 	srv := server.New(server.Deps{Management: mgmt, Torznab: tz, Spec: swagger.Spec(), DocsUI: swagger.UI(), Logger: log},
 		server.Config{Addr: listenAddr(cfg), BasePath: cfg.Server.BaseURL})
 
-	startSessionCleanup(ctx, store, log)
-	startSearchCacheCleanup(ctx, searchCache, log)
+	// The session + search-cache reapers write to the DB on shutdown (the cache flushes
+	// its buffered touches and stat counters). Bind them to a context we can cancel and
+	// JOIN before the deferred db.Close() runs — otherwise that final flush races (or is
+	// lost to) the closing DB on every shutdown. bgCancel also unblocks the reapers if
+	// srv.Run returns on a listen error (ctx not yet cancelled), so bg.Wait can't hang.
+	bgCtx, bgCancel := context.WithCancel(ctx)
+	var bg sync.WaitGroup
+	defer func() {
+		bgCancel()
+		bg.Wait()
+	}()
+
+	startSessionCleanup(bgCtx, &bg, store, log)
+	startSearchCacheCleanup(bgCtx, &bg, searchCache, log)
+
+	// Confirm the port is actually bindable before logging "listening": srv.Run binds
+	// asynchronously, so a fatal listen error (e.g. address in use) would otherwise
+	// surface only after we'd already told the operator the server was up.
+	if err := preflightBind(ctx, listenAddr(cfg)); err != nil {
+		return fmt.Errorf("serve: %w", err)
+	}
 	logStartup(log, cfg)
 	if err := srv.Run(ctx); err != nil {
 		return fmt.Errorf("serve: %w", err)
+	}
+	return nil
+}
+
+// preflightBind verifies the resolved address can be bound, then releases it so
+// srv.Run can re-bind the same addr. This narrow window is acceptable for
+// single-user self-hosted use; the point is to fail loud on an in-use port instead
+// of falsely logging that the server is listening.
+func preflightBind(ctx context.Context, addr string) error {
+	var lc net.ListenConfig
+	ln, err := lc.Listen(ctx, "tcp", addr)
+	if err != nil {
+		return fmt.Errorf("listen %s: %w", addr, err)
+	}
+	if err := ln.Close(); err != nil {
+		return fmt.Errorf("release preflight listener %s: %w", addr, err)
 	}
 	return nil
 }
@@ -235,9 +271,12 @@ func listenAddr(cfg *config.Config) string {
 	return net.JoinHostPort(cfg.Server.Host, strconv.Itoa(cfg.Server.Port))
 }
 
-// startSessionCleanup reaps expired sessions hourly until ctx is cancelled.
-func startSessionCleanup(ctx context.Context, store *database.SessionStore, log zerolog.Logger) {
+// startSessionCleanup reaps expired sessions hourly until ctx is cancelled. It joins
+// wg so serve() can wait for an in-flight reap to finish before closing the DB.
+func startSessionCleanup(ctx context.Context, wg *sync.WaitGroup, store *database.SessionStore, log zerolog.Logger) {
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		t := time.NewTicker(time.Hour)
 		defer t.Stop()
 		for {
@@ -283,9 +322,12 @@ func buildSearchCache(ctx context.Context, db *database.DB, cfg *config.Config, 
 // each cycle (via sc.CleanupInterval), so a runtime cleanup_interval change applies
 // without a restart — eventually, on the next cycle (a change made mid-cycle waits out
 // the current timer rather than interrupting it). A failed purge is logged (redacted)
-// and never fails anything.
-func startSearchCacheCleanup(ctx context.Context, sc *registry.SearchCache, log zerolog.Logger) {
+// and never fails anything. It joins wg so serve() waits for the shutdown flush (the
+// FlushTouches/FlushCounters on ctx.Done()) to commit before the DB is closed.
+func startSearchCacheCleanup(ctx context.Context, wg *sync.WaitGroup, sc *registry.SearchCache, log zerolog.Logger) {
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		t := time.NewTimer(cleanupTickInterval(sc))
 		defer t.Stop()
 		for {

@@ -24,8 +24,8 @@ import (
 // driver is one configured MyAnonamouse instance. It is built once per instance and
 // cached by the registry. The `mam_id` session cookie is held per driver and
 // refreshed in-memory from each response's Set-Cookie (MAM rotates it on every
-// request); the rotation is process-local and is NOT written back to the store —
-// on restart it falls back to the stored value (see the testdata README).
+// request); the rotated value is also written back to the encrypted store (see the
+// persist field) so the session survives a restart instead of reverting to the seed.
 type driver struct {
 	def     *loader.Definition
 	caps    *mapper.Capabilities

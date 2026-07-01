@@ -289,8 +289,8 @@ site/docs land later.
   Each connection gets its own **revocable** harbrr API key (minted + encrypted per
   connection) and its own harbrr feed URL, so it works across Docker/LAN where each app
   reaches harbrr at a different address. Driven entirely over HTTP at `/api/app-connections`
-  (no Web UI needed). *(`internal/appsync`, `docs/plan.md` Phase 10)* `[partial]` —
-  shipped + offline-proven (stub-server golden tests + end-to-end HTTP), and the driver
+  (no Web UI needed). *(`internal/appsync`, `docs/plan.md` Phase 10)* `[shipped]` —
+  offline-proven (stub-server golden tests + end-to-end HTTP), and the driver
   contracts were **live-validated 2026-06-18** against a real Sonarr/Radarr/qui stack:
   qui took the exact create body with a 201 + 204 delete; Sonarr/Radarr accepted the body
   and built the correct Torznab feed request (live `/indexer/schema` matched the field

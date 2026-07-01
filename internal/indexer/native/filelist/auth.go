@@ -3,6 +3,7 @@ package filelist
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	stdhttp "net/http"
 	"strings"
@@ -44,7 +45,19 @@ func (d *driver) get(ctx context.Context, rawurl, accept string) (*stdhttp.Respo
 	}
 	resp, err := d.doer.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("filelist: request to %s: %w", apphttp.RedactURL(rawurl), err)
+		// On a download the URL carries the passkey in its query, so the *url.Error from
+		// Do — which re-stringifies the FULL URL — must NOT be wrapped with %w. Context
+		// cancellation/deadline carry no URL and are passed through unwrapped so callers
+		// can classify them; otherwise surface only the RedactURL'd URL plus the
+		// configured-passkey scrub (mirrors animebytes; the download path further
+		// collapses this via sanitizeGrabError).
+		switch {
+		case errors.Is(err, context.Canceled):
+			return nil, context.Canceled
+		case errors.Is(err, context.DeadlineExceeded):
+			return nil, context.DeadlineExceeded
+		}
+		return nil, fmt.Errorf("filelist: request to %s: transport error", scrubPasskey(apphttp.RedactURL(rawurl), d.cfg))
 	}
 	return resp, nil
 }

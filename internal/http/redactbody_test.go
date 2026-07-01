@@ -32,6 +32,14 @@ func TestRedactJSONBody(t *testing.T) {
 			mustContain:    []string{"ok", "https://t/"},
 		},
 		{
+			// The unified vocabulary now scrubs these credential keys in a JSON body too
+			// (rsskey/authkey/torrent_pass previously drifted out of the JSON set).
+			name:           "credential-shaped keys redacted",
+			body:           `{"rsskey":"RSSLEAK","authkey":"AUTHLEAK","torrent_pass":"TPLEAK","name":"keep"}`,
+			mustNotContain: []string{"RSSLEAK", "AUTHLEAK", "TPLEAK"},
+			mustContain:    []string{"keep"},
+		},
+		{
 			name:           "invalid json is replaced wholesale",
 			body:           `not json at all passkey=LEAK`,
 			mustNotContain: []string{"LEAK", "passkey"},

@@ -39,6 +39,13 @@ func TestApplyStringFilters(t *testing.T) {
 		{name: "urlencode space", in: "a b", filters: []loader.FilterBlock{fb("urlencode")}, want: "a+b"},
 		{name: "htmldecode", in: "a&amp;b&lt;c", filters: []loader.FilterBlock{fb("htmldecode")}, want: "a&b<c"},
 		{name: "htmlencode", in: "a&b<c", filters: []loader.FilterBlock{fb("htmlencode")}, want: "a&amp;b&lt;c"},
+		// WebUtility.HtmlEncode fidelity (vs Go html.EscapeString): " -> &quot; (not &#34;),
+		// ' -> &#39;, > -> &gt;; Latin-1 (é U+00E9) -> &#233;; BMP >= U+0100 (中) and the
+		// U+007F–U+009F band pass through; astral (😀 U+1F600) -> &#128512;.
+		{name: "htmlencode quotes", in: `"x'>`, filters: []loader.FilterBlock{fb("htmlencode")}, want: "&quot;x&#39;&gt;"},
+		{name: "htmlencode latin1", in: "café", filters: []loader.FilterBlock{fb("htmlencode")}, want: "caf&#233;"},
+		{name: "htmlencode bmp passthrough", in: "中", filters: []loader.FilterBlock{fb("htmlencode")}, want: "中"},
+		{name: "htmlencode astral", in: "😀", filters: []loader.FilterBlock{fb("htmlencode")}, want: "&#128512;"},
 		{name: "hexdump passthrough", in: "keep", filters: []loader.FilterBlock{fb("hexdump")}, want: "keep"},
 		{name: "strdump passthrough", in: "keep", filters: []loader.FilterBlock{fb("strdump", "tag")}, want: "keep"},
 		{

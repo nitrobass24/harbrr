@@ -85,23 +85,36 @@ func (rt *router) ipAllowed(r *http.Request) bool {
 	return false
 }
 
-// clientIP returns the request's client IP. It honors the leftmost
-// X-Forwarded-For entry only when the direct TCP peer is a configured trusted
-// proxy, so a spoofed header from a non-proxy cannot bypass the allowlist.
+// clientIP returns the request's client IP. X-Forwarded-For is consulted only
+// when the direct TCP peer is a configured trusted proxy; the real client is then
+// the RIGHTMOST entry that is not itself a trusted proxy. Each proxy in the chain
+// APPENDS the address it received from, so the genuine hops sit at the right while
+// a client-spoofed value sits at the left, never reached. Taking the leftmost
+// entry (the old behavior) let any client forge an allowlisted IP and bypass the
+// auth.mode=disabled allowlist.
 func (rt *router) clientIP(r *http.Request) net.IP {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		host = r.RemoteAddr
 	}
 	peer := net.ParseIP(host)
-	if peer != nil && rt.isTrustedProxy(peer) {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			first := strings.TrimSpace(strings.Split(xff, ",")[0])
-			if fip := net.ParseIP(first); fip != nil {
-				return fip
-			}
-		}
+	if peer == nil || !rt.isTrustedProxy(peer) {
+		return peer
 	}
+	xff := r.Header.Get("X-Forwarded-For")
+	if xff == "" {
+		return peer
+	}
+	parts := strings.Split(xff, ",")
+	for i := len(parts) - 1; i >= 0; i-- {
+		hop := net.ParseIP(strings.TrimSpace(parts[i]))
+		if hop == nil || rt.isTrustedProxy(hop) {
+			continue
+		}
+		return hop
+	}
+	// Every forwarded hop was a trusted proxy (or unparseable); fall back to the
+	// direct peer rather than trusting a client-controlled value.
 	return peer
 }
 

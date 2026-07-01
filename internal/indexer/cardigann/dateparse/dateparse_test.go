@@ -77,6 +77,11 @@ func TestTranslateLayoutGreedyAndQuirks(t *testing.T) {
 		{"yy/MM/dd", "06/01/02"},
 		{"H:mm", "15:04"},
 		{"d MMM yy HH:mm:ss zzz", "2 Jan 06 15:04:05 -07:00"},
+		// Fractional seconds: the literal '.'/',' separator collapses into Go's
+		// fractional layout (no doubled separator like "05..000").
+		{"HH:mm:ss.fff", "15:04:05.000"},
+		{"ss.FFF", "05.999"},
+		{"ss,ff", "05,00"},
 	}
 	for _, c := range cases {
 		t.Run(c.net, func(t *testing.T) {
@@ -98,6 +103,16 @@ func TestTranslateLayoutUnknownToken(t *testing.T) {
 	// cultures and Go has no equivalent — must error, not silently pass through.
 	if _, err := dateparse.TranslateLayout("yyyy-Q"); err == nil {
 		t.Fatal("expected error for unknown token 'Q', got nil")
+	}
+}
+
+func TestTranslateLayoutBareFractionalUnsupported(t *testing.T) {
+	t.Parallel()
+	// A fractional token with no preceding '.'/',' separator has no Go equivalent
+	// (Go cannot render fractional seconds without a separator) — must error loudly
+	// rather than invent a spurious dot.
+	if _, err := dateparse.TranslateLayout("ssfff"); err == nil {
+		t.Fatal("expected error for bare fractional token 'fff' without a separator, got nil")
 	}
 }
 

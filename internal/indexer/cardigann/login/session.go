@@ -3,6 +3,7 @@ package login
 import (
 	stdhttp "net/http"
 	"net/http/cookiejar"
+	"sync"
 
 	"golang.org/x/net/publicsuffix"
 
@@ -42,7 +43,25 @@ type Session struct {
 // cf_clearance in it). It is meaningful only after a successful
 // Login/EnsureLoggedIn; before that the jar is empty.
 func (e *Executor) Session() *Session {
-	return &Session{Jar: e.Jar, UserAgent: e.SolverUserAgent}
+	return &Session{Jar: e.Jar, UserAgent: e.solverUA()}
+}
+
+// solverUA returns the persisted solver User-Agent under the read lock. The
+// search/grab path calls Session (and thus this) without holding the engine's
+// loginMu, so it can race a relogin's setSolverUA without this guard.
+func (e *Executor) solverUA() string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.SolverUserAgent
+}
+
+// setSolverUA persists the solver User-Agent under the write lock. Called from
+// applySolveResult during a login (loginMu held), concurrent with search-path
+// readers that do not hold loginMu.
+func (e *Executor) setSolverUA(ua string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.SolverUserAgent = ua
 }
 
 // Executor performs a definition's login sequence against the injected Doer and
@@ -68,7 +87,15 @@ type Executor struct {
 	// solve this session. Once set, do() replays it on every subsequent request
 	// (login POST, login.test) so a UA-bound cf_clearance keeps working; Session
 	// hands it to the search stage for the same reason. Empty until a solve occurs.
+	//
+	// Guarded by mu: the write (applySolveResult, during a loginMu-held login) races
+	// the read on the search/grab path (Session), which does NOT hold loginMu. Access
+	// it through setSolverUA/solverUA off the hot path, never the field directly.
 	SolverUserAgent string
+	// mu guards SolverUserAgent. A dedicated RWMutex keeps the fix local to the
+	// executor instead of relying on the engine's loginMu (the search read path does
+	// not hold it).
+	mu sync.RWMutex
 }
 
 // Option configures an Executor in New.

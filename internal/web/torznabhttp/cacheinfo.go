@@ -4,10 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 )
 
 // CacheInfo is the per-request cache metadata the search-cache decorator records so
@@ -104,6 +107,27 @@ func ifNoneMatchMatches(header, etag string) bool {
 func pagedETag(payloadETag string, offset, limit int) string {
 	sum := sha256.Sum256([]byte(payloadETag + "|" + strconv.Itoa(offset) + "|" + strconv.Itoa(limit)))
 	return `"` + hex.EncodeToString(sum[:]) + `"`
+}
+
+// servedPayloadETag hashes the POST-filter releases the handler is about to serialize
+// and folds in the freeleech-bypass variant, yielding the content component the served
+// validator (pagedETag) hangs the page window off. It exists because the freeleech
+// honor feed and the /full bypass feed share ONE cached entry but apply different
+// serve-time filters: the cache layer's payload ETag hashes the PRE-filter set and is
+// identical for both feeds, so reusing it would let a conditional GET on one feed be
+// answered 304 with the other variant's body. Hashing the served (post-filter) set fixes
+// the honor feed's validator to track its actual body, and folding the bypass flag keeps
+// the two variants distinct even when a freeleech-only page happens to equal the full
+// page. It hashes the releases BEFORE the /dl rewrite, so the validator stays identical
+// across clients (the rewrite injects per-request host/apikey). A marshal failure returns
+// ("", false) and the handler then emits no validator rather than a wrong one.
+func servedPayloadETag(releases []*normalizer.Release, bypass bool) (string, bool) {
+	payload, err := json.Marshal(releases)
+	if err != nil {
+		return "", false
+	}
+	sum := sha256.Sum256(payload)
+	return strconv.FormatBool(bypass) + "|" + hex.EncodeToString(sum[:]), true
 }
 
 // setCacheValidators writes the ETag and Cache-Control headers for a cached response.

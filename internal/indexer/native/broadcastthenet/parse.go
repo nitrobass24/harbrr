@@ -189,8 +189,9 @@ type sortableRelease struct {
 // toRelease maps one torrent row to a normalized release. Title=ReleaseName,
 // Link=DownloadURL (served only through /dl because NeedsResolver=true, so the
 // embedded authkey/torrent_pass never reaches the feed), Peers=Seeders+Leechers,
-// Grabs=Snatched, the category derived from Resolution, and PublishDate from the unix
-// Time seconds rendered as UTC RFC3339.
+// Grabs=Snatched, the category derived from Resolution, PublishDate from the unix
+// Time seconds rendered as UTC RFC3339, and IMDBID from ImdbID (canonicalised to
+// the "tt"+7-digit feed form; Prowlarr emits it and the PTP sibling already does).
 func (d *driver) toRelease(mapKey string, t *btnTorrent) *sortableRelease {
 	seeders := t.Seeders.int64()
 	leechers := t.Leechers.int64()
@@ -207,10 +208,22 @@ func (d *driver) toRelease(mapKey string, t *btnTorrent) *sortableRelease {
 		PublishDate:          time.Unix(t.Time.int64(), 0).UTC().Format(time.RFC3339),
 		TVDBID:               t.TvdbID.int64(),
 		RageID:               t.TvrageID.int64(),
+		IMDBID:               formatIMDB(string(t.ImdbID)),
 		DownloadVolumeFactor: 1,
 		UploadVolumeFactor:   1,
 	}
 	return &sortableRelease{Release: rel, torrentIDSortKey: t.TorrentID.int64(), mapKey: mapKey}
+}
+
+// formatIMDB renders BTN's digits-only ImdbID ("7252812") as the canonical
+// "tt"+7-digit feed form (matching the normalizer and the PTP sibling's local
+// formatIMDB). A blank, non-numeric, or zero id yields "" (the field is omitted).
+func formatIMDB(imdbID string) string {
+	n, err := strconv.ParseInt(strings.TrimSpace(imdbID), 10, 64)
+	if err != nil || n == 0 {
+		return ""
+	}
+	return fmt.Sprintf("tt%07d", n)
 }
 
 // categories maps a torrent's Resolution string to its newznab category through the

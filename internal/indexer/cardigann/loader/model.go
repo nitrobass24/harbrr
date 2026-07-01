@@ -13,13 +13,16 @@ import (
 // against the schema happens before decoding into this struct, so the
 // struct itself stays a faithful, lossless representation.
 type Definition struct {
-	ID              string          `yaml:"id"`
-	Replaces        []string        `yaml:"replaces,omitempty"`
-	Name            string          `yaml:"name"`
-	Description     string          `yaml:"description"`
-	Language        string          `yaml:"language"`
-	Type            string          `yaml:"type"`
-	Encoding        string          `yaml:"encoding"`
+	ID          string   `yaml:"id"`
+	Replaces    []string `yaml:"replaces,omitempty"`
+	Name        string   `yaml:"name"`
+	Description string   `yaml:"description"`
+	Language    string   `yaml:"language"`
+	Type        string   `yaml:"type"`
+	Encoding    string   `yaml:"encoding"`
+	// FollowRedirect is parsed (≈18 vendored defs set it) but NOT yet honored — harbrr
+	// uses the production client's default redirect policy regardless. Per-def redirect
+	// control is a tracked parity gap owned by the deferred engine effort.
 	FollowRedirect  *bool           `yaml:"followredirect,omitempty"`
 	TestLinkTorrent *bool           `yaml:"testlinktorrent,omitempty"`
 	RequestDelay    *float64        `yaml:"requestDelay,omitempty"`
@@ -205,8 +208,10 @@ type Search struct {
 
 // SearchPathBlock mirrors SearchPathBlock.
 type SearchPathBlock struct {
-	Path           string         `yaml:"path"`
-	Method         string         `yaml:"method,omitempty"`
+	Path   string `yaml:"path"`
+	Method string `yaml:"method,omitempty"`
+	// FollowRedirect is parsed but NOT yet honored (see the Definition.FollowRedirect
+	// note) — a tracked parity gap owned by the deferred engine effort.
 	FollowRedirect *bool          `yaml:"followredirect,omitempty"`
 	Categories     []Scalar       `yaml:"categories,omitempty"`
 	Inputs         InputsBlock    `yaml:"inputs,omitempty"`

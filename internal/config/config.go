@@ -204,12 +204,6 @@ func (c Config) DatabasePath() string {
 	return filepath.Join(c.DataDir, "harbrr.db")
 }
 
-// HasSecretKey reports whether an at-rest encryption key source is configured.
-// When false, serve emits a loud plaintext warning.
-func (c Config) HasSecretKey() bool {
-	return c.Secrets.EncryptionKey != "" || c.Secrets.KeyFile != ""
-}
-
 // Validate checks the configuration for self-consistency, returning a wrapped
 // error describing the first problem found.
 func (c Config) Validate() error {

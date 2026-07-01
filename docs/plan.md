@@ -5,7 +5,8 @@ tests are green (`make precommit` clean). Ordered by **risk retirement**, not pr
 the engine must prove it can match Jackett on saved inputs before any product surface is built. Full
 rationale in `ideas.md`; rules in `../AGENTS.md`.
 
-Legend: `[ ]` todo · `[x]` done · each leaf should land in its own focused commit.
+Legend: `[ ]` todo · `[x]` done · `[~]` deferred/moved out of scope (see the note) · each leaf should land
+in its own focused commit.
 
 ---
 
@@ -418,8 +419,11 @@ green.** The bar is a *feature-superset* of Prowlarr (now including usenet) **pl
 trackers" differentiators Prowlarr/Jackett don't have, **plus** the autobrr-family sync reach that makes
 harbrr the single source of truth for the whole stack.
 
-The one consciously-accepted alpha gap is **automated migration import** (deferred to the backlog):
-alpha ships with manual indexer setup — existing Prowlarr/Jackett users re-enter rather than import.
+Two consciously-accepted alpha gaps are deferred to the backlog: **automated migration import** (alpha
+ships with manual indexer setup — existing Prowlarr/Jackett users re-enter rather than import) and
+**Upbrr credential sync** (Upbrr exposes no machine/API-key integration today — only a session-guarded
+internal UI API on a primarily-desktop app — so the push is gated on coordinating a stable contract with
+the autobrr/Upbrr team first, the same way *harbrr → autobrr push* is; see the Tier-1 backlog entry).
 
 - [x] **Usenet / Newznab support** — harbrr was torrent-only; this closes the **last capability Prowlarr
       had that harbrr lacked** (Jackett is torrent-only, so Prowlarr is the sole parity target). **Shipped:**
@@ -554,13 +558,15 @@ alpha ships with manual indexer setup — existing Prowlarr/Jackett users re-ent
       Phase-10 sync contract (target-neutral `DesiredIndexer` reconciled behind the `Target` interface)
       reuses the Servarr v3 driver with the indexer API version parameterized (v1 for Lidarr/Readarr,
       v3 for Whisparr); each adds a thin constructor + golden coverage.
-- [ ] **Upbrr credential sync** — Upbrr ships its **own** definitions but needs tracker **credentials** to
-      operate; harbrr, as the single source of truth for tracker auth, **pushes** those credentials into
-      Upbrr (harbrr → Upbrr, the same outbound app-sync model as the Phase-10 \*arr/qui push) so a tracker
-      configured once in harbrr provisions Upbrr automatically. Unlike the \*arr/qui sync (which pushes
-      harbrr's indexer *feed*), this pushes *credentials* mapped onto Upbrr's own definitions. *Detail TBD
-      (which credential fields, harbrr-indexer ↔ Upbrr-definition matching, the push contract/endpoint,
-      redaction/rotation handling).*
+- [~] **Upbrr credential sync** — **moved to the Tier-1 backlog** (consciously-accepted alpha gap; decided
+      2026-06-30, so it no longer gates Phase 11 / the Web UI). harbrr, as the single source of truth for
+      tracker auth, would **push** credentials into Upbrr (the same outbound model as the Phase-10 \*arr/qui
+      push) so a tracker configured once in harbrr provisions Upbrr automatically. **Blocker:** Upbrr exposes
+      no machine integration — every `/api/app/*` endpoint is session-guarded (password → `ua_web_session`
+      cookie + CSRF, no `X-Api-Key`) and is an internal UI RPC of a primarily-desktop (Wails) app, not a
+      documented contract. Gated on a design conversation with the autobrr/Upbrr team for a stable
+      credential-push API, exactly like *harbrr → autobrr push*. Full scope + design sketch in the Tier-1
+      backlog entry.
 
 ### Pre-alpha hardening (operability + polish — from the 2026-06-25 review)
 
@@ -576,17 +582,16 @@ alpha ships with manual indexer setup — existing Prowlarr/Jackett users re-ent
       stays in the config file** (deploy-time / security): data dir, DB path, listen address, base URL,
       **secrets/encryption key (must stay out of the DB it protects)**, auth mode + IP allowlist/trusted
       proxies.
-- [ ] **User-facing docs** *(alpha-gate membership: decide later)* — the website is 2 feature pages + a
-      stub index; for a "Swagger-only, API-operated" alpha the operator path is undocumented. Needed pages:
-      **Getting Started / Install** (Docker, first-run admin, mint API key, point Sonarr/Radarr at the feed
-      URL) · **Configuration reference** (from `config.example.yaml`) · **Adding an indexer** (the API flow:
-      `GET /api/definitions/{id}` → configure → `POST …/test`) · **App Sync setup**
-      (`/api/app-connections`) · **API / Swagger pointer** (`/api/docs` + `/api/openapi.yaml`). Plus fix the
-      root **`README.md`** (3 broken mermaid blocks missing ` ```mermaid ` fences; stale "Early
-      Development" status; its own Phase 1–4 roadmap that diverges from this plan → point at `plan.md`).
-      Minor internal-doc refresh: `docs/ideas.md` §4/§13 "superseded by plan.md" note; `highlights.md`
-      app-sync `[partial]`→shipped. **Open decision:** full operator set vs a minimal subset (Getting
-      Started + API pointer + README) as the gate.
+- [x] **User-facing docs** — the **full operator set** shipped (#76 + the 2026-06-30 doc-gap pass):
+      MkDocs site with **Getting Started / Install**, **Configuration reference**, **Adding an indexer**,
+      **App Sync setup**, **API / Swagger pointer**, plus feature pages for the search cache, circuit
+      breaker, usenet/Newznab, cross-seed & freeleech, and **pagination**. The root **`README.md`** is
+      fixed (` ```mermaid ` fences, "Alpha — operated via the API" status, roadmap points at `plan.md`),
+      and the internal-doc refresh is done (`docs/ideas.md` §4/§13 "superseded by plan.md" notes;
+      `highlights.md` app-sync `[partial]`→`[shipped]`). The 2026-06-30 audit (docs vs shipped features
+      vs the OpenAPI surface) found the set accurate; the only gaps it surfaced — prose pagination, a
+      stale API table, no pacing note — are closed. **Decision: the full operator set is the gate, and
+      it is met.**
 - [ ] **Code cleanup (non-blocking)** — the scaffolding + dead-code review found **no alpha blockers**:
       codebase is clean (no `panic`/`TODO`/`FIXME` in non-test code, no parsed-but-dead config; OIDC `501`,
       two AnimeBytes parity nuances, and the captcha boundary are intentional deferrals). `deadcode -test`
@@ -625,6 +630,34 @@ tail. New items carry lighter detail (*detail TBD*); fill in as we have it.
   earns its keep for sub-poll latency on non-IRC trackers — a marginal, family-only win. **Blocked on a
   design conversation with the autobrr team** before any implementation: scope the push contract/endpoint,
   whether it's wanted, and how it relates to announce. Lowest-priority Tier-1 item until that lands.
+- **Upbrr credential sync** — *(moved here from Phase 11, 2026-06-30 — a consciously-accepted alpha gap.)*
+  Upbrr (`autobrr/upbrr`) is an **upload-preparation** tool with its **own** ~30 bespoke tracker drivers; it
+  doesn't consume a Torznab feed, it logs in to *upload*. harbrr, as the single source of truth for tracker
+  auth, would **push credentials** onto Upbrr's own defs so a tracker configured once in harbrr provisions
+  Upbrr — distinct from the \*arr/qui push (which pushes harbrr's *feed*). The \*arr/qui machinery does
+  **not** carry over (no feed URL, no embedded-slug ownership, no minted harbrr feed key, no caps/protocol).
+  - **Blocker (why it's gated, not just deferred):** Upbrr exposes **no machine integration**. Every
+    `/api/app/*` endpoint is session-guarded — Upbrr web auth is password → `ua_web_session` cookie + CSRF
+    (`/api/auth/bootstrap` + `/api/auth/login`), **no `X-Api-Key`/bearer** — and these are internal UI RPCs
+    of a primarily-desktop (Wails) app, not a documented contract. Building against them means reverse-
+    engineering an internal API that can break on any Upbrr release and requires the operator to run Upbrr
+    in web-server mode with a known password. **Gated on a design conversation with the autobrr/Upbrr team**
+    for a stable credential-push API (same posture as *harbrr → autobrr push* above).
+  - **Target shape (when unblocked):** Upbrr per-tracker creds live in `config.TrackerConfig`
+    (`TrackersConfig.Trackers map[string]TrackerConfig`, keyed by Upbrr's tracker code): credential fields
+    `APIKey`, `ApiUser`+`ApiKey` (PTP-style), `Username`+`Password`, `Passkey`, `AnnounceURL`/`MyAnnounceURL`,
+    `BhdRSSKey`, `PronfoAPIKey`, `OTPURI` (2FA seed) — alongside upload-behavior fields (`ModQ`/`Draft`/`Anon`/
+    `UploaderName`/`ImageHost`/…) harbrr must **never** touch. Config creds push via `GetConfig`→merge→
+    `SaveConfig`; cookie/session creds use `ImportTrackerAuthCookieContent` + `LoginTrackerAuth`(+2FA).
+    Discovery via `ListKnownTrackers` / `ListTrackerAuthCapabilities`.
+  - **Decided scope (v1 intent):** push **everything** harbrr can supply — apikey/passkey/user+pass/announce/
+    upload-relevant fields — for trackers both tools support, harbrr-slug ↔ Upbrr-code matched by site host
+    (manual override), **merge-safe** (never clobber Upbrr's upload settings, never delete an Upbrr tracker).
+  - **harbrr-side reuse:** `validateKind` single-source + `newDriver` extension (`internal/appsync/`), the
+    encrypted per-connection secret store (but storing Upbrr's web username+password, not a minted harbrr
+    key), payload_hash idempotency, redaction chokepoints, and the CRUD+test+sync HTTP surface. Driver auth =
+    bootstrap/login → cache `ua_web_session` + CSRF per request. Structurally closer to `internal/announce/`
+    (fire-and-forget, no feed-URL ownership) than to feed-based app-sync.
 
 ### Tier 2 — Product / UX (pair with the Web UI)
 

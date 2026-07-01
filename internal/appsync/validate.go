@@ -2,6 +2,7 @@ package appsync
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/autobrr/harbrr/internal/domain"
@@ -35,22 +36,32 @@ func defaultFreeleechMode(kind string) string {
 }
 
 // validateCreate checks the required fields and enumerated values of a create request.
-func validateCreate(p CreateConnectionParams) error {
+// It normalizes p.BaseURL/p.HarbrrURL to their trimmed form in place (via the pointer)
+// so the caller persists the normalized URLs.
+func validateCreate(p *CreateConnectionParams) error {
 	if strings.TrimSpace(p.Name) == "" {
 		return fmt.Errorf("%w: name is required", ErrInvalid)
 	}
 	if err := validateKind(p.Kind); err != nil {
 		return err
 	}
-	if strings.TrimSpace(p.BaseURL) == "" {
-		return fmt.Errorf("%w: base url is required", ErrInvalid)
+	// Both URLs must be absolute http(s): harbrr calls BaseURL, and HarbrrURL is
+	// embedded in each pushed indexer so the app can reach harbrr's feed — a
+	// malformed/relative value would silently produce an unreachable connection
+	// (parity with internal/announce's validateAbsURL).
+	base, err := validateAbsURL("base url", p.BaseURL)
+	if err != nil {
+		return err
 	}
+	p.BaseURL = base
 	if strings.TrimSpace(p.APIKey) == "" {
 		return fmt.Errorf("%w: api key is required", ErrInvalid)
 	}
-	if strings.TrimSpace(p.HarbrrURL) == "" {
-		return fmt.Errorf("%w: harbrr url is required", ErrInvalid)
+	harbrr, err := validateAbsURL("harbrr url", p.HarbrrURL)
+	if err != nil {
+		return err
 	}
+	p.HarbrrURL = harbrr
 	if err := validateSyncLevel(p.SyncLevel); err != nil {
 		return err
 	}
@@ -71,16 +82,18 @@ func applyUpdate(conn *domain.AppConnection, p UpdateConnectionParams) error {
 		conn.Name = *p.Name
 	}
 	if p.BaseURL != nil {
-		if err := requireNonBlank("base url", *p.BaseURL); err != nil {
+		base, err := validateAbsURL("base url", *p.BaseURL)
+		if err != nil {
 			return err
 		}
-		conn.BaseURL = *p.BaseURL
+		conn.BaseURL = base
 	}
 	if p.HarbrrURL != nil {
-		if err := requireNonBlank("harbrr url", *p.HarbrrURL); err != nil {
+		harbrr, err := validateAbsURL("harbrr url", *p.HarbrrURL)
+		if err != nil {
 			return err
 		}
-		conn.HarbrrURL = *p.HarbrrURL
+		conn.HarbrrURL = harbrr
 	}
 	if p.Priority != nil {
 		conn.Priority = *p.Priority
@@ -112,6 +125,19 @@ func requireNonBlank(field, value string) error {
 		return fmt.Errorf("%w: %s must not be blank", ErrInvalid, field)
 	}
 	return nil
+}
+
+// validateAbsURL requires an absolute http(s) URL with a host, so a malformed/relative
+// URL is rejected at the boundary rather than producing an unreachable connection
+// (mirrors internal/announce.validateAbsURL). It returns the TRIMMED value so callers
+// persist the normalized URL rather than whitespace-padded input.
+func validateAbsURL(field, raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	u, err := url.Parse(trimmed)
+	if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return "", fmt.Errorf("%w: %s must be an absolute http(s) URL", ErrInvalid, field)
+	}
+	return trimmed, nil
 }
 
 func validateKind(kind string) error {

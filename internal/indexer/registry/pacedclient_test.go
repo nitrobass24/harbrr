@@ -229,6 +229,144 @@ func TestPacedDoer_CancelDuringBackoff(t *testing.T) {
 	}
 }
 
+// TestPacedDoer_BudgetBoundsCumulativeWait proves the cumulative waits + backoff
+// sleeps are bounded even when the inbound context carries NO deadline. A hostile
+// tracker returns 503 with a huge Retry-After and the backoff timer never fires on
+// its own, so only the budget can stop Do. It must end quickly (not pin the goroutine
+// for the attacker's hour) and surface the typed RATE-LIMITED error — the budget
+// capping a hostile backoff is not a caller abort.
+func TestPacedDoer_BudgetBoundsCumulativeWait(t *testing.T) {
+	t.Parallel()
+	base := &scriptDoer{steps: []scriptStep{{status: 503, retryAfter: "3600"}}}
+	d := newPacedDoer(base, time.Second)
+	d.limiter = unlimited
+	d.timer = blockingTimer{} // backoff never fires; only the budget can end the sleep
+	d.budget = 40 * time.Millisecond
+
+	start := time.Now()
+	_, err := d.Do(getReq(context.Background(), t))
+	elapsed := time.Since(start)
+
+	var rl *search.RateLimitedError
+	if !errors.As(err, &rl) {
+		t.Fatalf("err = %v, want a RateLimitedError (budget capped the hostile backoff, not a caller abort)", err)
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, must NOT be a 'request aborted' deadline — the caller never cancelled", err)
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("Do took %v, want ~budget (cumulative time not bounded)", elapsed)
+	}
+	if base.calls != 1 {
+		t.Fatalf("base called %d times, want 1 (budget fired during the first backoff)", base.calls)
+	}
+}
+
+// slowErrDoer sleeps then returns a fixed transport error, simulating a base.Do that
+// outlasts the budget and then fails.
+type slowErrDoer struct {
+	sleep time.Duration
+	err   error
+	calls int
+}
+
+func (d *slowErrDoer) Do(*stdhttp.Request) (*stdhttp.Response, error) {
+	d.calls++
+	time.Sleep(d.sleep)
+	return nil, d.err
+}
+
+// TestPacedDoer_SurfacesSlowTransportError proves a substantive base.Do error is
+// surfaced AS-IS even when the (uncancelled) call ran long enough to exhaust the
+// budget — it must NOT be masked as a "request aborted" deadline, so the real cause
+// stays diagnosable. Regression for the error-reclassification bug.
+func TestPacedDoer_SurfacesSlowTransportError(t *testing.T) {
+	t.Parallel()
+	errBoom := errors.New("connection reset by peer")
+	base := &slowErrDoer{sleep: 40 * time.Millisecond, err: errBoom}
+	d := newPacedDoer(base, time.Second)
+	d.limiter = unlimited
+	d.budget = 10 * time.Millisecond // expires while base.Do is still running
+
+	_, err := d.Do(getReq(context.Background(), t))
+	if !errors.Is(err, errBoom) {
+		t.Fatalf("err = %v, want it to wrap the real transport error %v", err, errBoom)
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, must NOT be masked as a budget/deadline abort", err)
+	}
+	if base.calls != 1 {
+		t.Fatalf("base called %d times, want 1", base.calls)
+	}
+}
+
+// slowThenOKDoer sleeps on its first call and returns 429, then returns 200. It
+// proves the pacing budget is NOT consumed by a slow live response.
+type slowThenOKDoer struct {
+	sleep time.Duration
+	calls int
+}
+
+func (d *slowThenOKDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
+	d.calls++
+	status := 200
+	if d.calls == 1 {
+		time.Sleep(d.sleep)
+		status = 429
+	}
+	return &stdhttp.Response{
+		StatusCode: status,
+		Header:     stdhttp.Header{},
+		Body:       io.NopCloser(strings.NewReader("body")),
+		Request:    req,
+	}, nil
+}
+
+// TestPacedDoer_SlowResponseDoesNotConsumeBudget proves a slow live 429 does not eat
+// the pacing budget: base.Do runs on the request context, not the budget, so the
+// budget stays available for the backoff and the retry still fires. Under the old
+// single-waitCtx design this would abort after one call.
+func TestPacedDoer_SlowResponseDoesNotConsumeBudget(t *testing.T) {
+	t.Parallel()
+	base := &slowThenOKDoer{sleep: 30 * time.Millisecond}
+	d := newPacedDoer(base, time.Second)
+	d.limiter = unlimited
+	d.timer = &immediateTimer{}
+	d.budget = 15 * time.Millisecond // shorter than the slow response, but caps only waits/sleeps
+
+	resp, err := d.Do(getReq(context.Background(), t))
+	if err != nil {
+		t.Fatalf("Do: %v (a slow live 429 must not consume the pacing budget)", err)
+	}
+	if resp.StatusCode != 200 || base.calls != 2 {
+		t.Fatalf("status=%d calls=%d, want 200 after a retry (budget intact despite the slow first response)", resp.StatusCode, base.calls)
+	}
+}
+
+// TestPacedDoer_InboundDeadlineWinsOverBudget proves a shorter inbound deadline still
+// bounds the cumulative sleeps (the budget is only a ceiling): with a never-firing
+// backoff, the request's own deadline ends Do.
+func TestPacedDoer_InboundDeadlineWinsOverBudget(t *testing.T) {
+	t.Parallel()
+	base := &scriptDoer{steps: []scriptStep{{status: 503, retryAfter: "3600"}}}
+	d := newPacedDoer(base, time.Second)
+	d.limiter = unlimited
+	d.timer = blockingTimer{}
+	d.budget = time.Hour // far larger than the inbound deadline below
+
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err := d.Do(getReq(ctx, t))
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want context.DeadlineExceeded (inbound deadline)", err)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("Do took %v, want ~inbound deadline", elapsed)
+	}
+}
+
 type cancelOn429 struct {
 	cancel context.CancelFunc
 	calls  int

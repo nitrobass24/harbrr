@@ -3,6 +3,7 @@ package registry
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -223,6 +224,55 @@ func TestTripBreakerSkipsCallerCancel(t *testing.T) {
 	sc.tripBreaker(ctx, instID, errors.New("aborted"))
 	if err := sc.breaker.replay(instID, sc.clock()); err != nil {
 		t.Fatalf("breaker tripped on caller-cancel: %v", err)
+	}
+}
+
+// TestTripBreakerSkipsFollowerInheritedCancel proves the singleflight FOLLOWER path:
+// a caller whose OWN context is still live (Background) but whose error is the LEADER's
+// request-aborted error WRAPPING context.Canceled must NOT trip the breaker. Otherwise
+// one disconnected client opens the breaker instance-wide for ~one window. The existing
+// same-ctx test only covers a caller cancelling its own context, which gives false
+// confidence about this path.
+func TestTripBreakerSkipsFollowerInheritedCancel(t *testing.T) {
+	t.Parallel()
+	sc, instID, _ := testCache(t, breakerTTL, 0)
+	// The follower's own ctx is alive; only the inherited error carries the cancel.
+	inherited := fmt.Errorf("registry: request aborted: %w", context.Canceled)
+	sc.tripBreaker(context.Background(), instID, inherited)
+	if err := sc.breaker.replay(instID, sc.clock()); err != nil {
+		t.Fatalf("breaker tripped on follower-inherited caller-cancel: %v", err)
+	}
+}
+
+// TestBreakerNotTrippedByInheritedCancelOnSearch drives the follower scenario through
+// the real search path: a live (Background) context plus an inner error wrapping
+// context.Canceled (as a singleflight follower would receive from a cancelled leader)
+// leaves the breaker closed, so the very next consumer still probes the tracker live
+// instead of being suppressed.
+func TestBreakerNotTrippedByInheritedCancelOnSearch(t *testing.T) {
+	t.Parallel()
+	sc, instID, _ := testCache(t, breakerTTL, 0)
+	inner := &fakeInner{err: fmt.Errorf("registry: request aborted: %w", context.Canceled)}
+	idx := sc.wrap(inner, instID, nil)
+	q := search.Query{Keywords: "x"}
+
+	if _, err := idx.Search(context.Background(), q); !errors.Is(err, context.Canceled) {
+		t.Fatalf("first search err = %v, want the inherited cancel", err)
+	}
+	// The breaker must be closed: the recover-and-serve below proves a live probe.
+	inner.mu.Lock()
+	inner.err = nil
+	inner.releases = relSet("OK")
+	inner.mu.Unlock()
+	got, err := idx.Search(context.Background(), q)
+	if err != nil {
+		t.Fatalf("second search (breaker must be closed): %v", err)
+	}
+	if len(got) != 1 || got[0].Title != "OK" {
+		t.Fatalf("second search = %+v, want live OK (not suppressed)", got)
+	}
+	if c := inner.callCount(); c != 2 {
+		t.Fatalf("inner called %d times, want 2 (cancel did not trip the breaker)", c)
 	}
 }
 

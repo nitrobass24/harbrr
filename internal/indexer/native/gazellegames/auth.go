@@ -3,6 +3,7 @@ package gazellegames
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	stdhttp "net/http"
@@ -34,7 +35,18 @@ func (d *driver) get(ctx context.Context, rawurl string) (*stdhttp.Response, err
 	req.Header.Set("Accept", "application/json")
 	resp, err := d.doer.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("gazellegames: request to %s: %w", apphttp.RedactURL(rawurl), err)
+		// The download URL (torrents.php) carries the passkey in its torrent_pass query,
+		// so the *url.Error from Do — which re-stringifies the FULL URL — must NOT be
+		// wrapped with %w. Context cancellation/deadline carry no URL and callers
+		// (Grab/sanitizeGrabError) classify them, so pass those sentinels through
+		// unwrapped; otherwise surface only the RedactURL'd URL (mirrors animebytes).
+		switch {
+		case errors.Is(err, context.Canceled):
+			return nil, context.Canceled
+		case errors.Is(err, context.DeadlineExceeded):
+			return nil, context.DeadlineExceeded
+		}
+		return nil, fmt.Errorf("gazellegames: request to %s: transport error", apphttp.RedactURL(rawurl))
 	}
 	return resp, nil
 }

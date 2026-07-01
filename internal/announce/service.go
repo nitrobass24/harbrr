@@ -297,7 +297,7 @@ func validateCreate(p CreateConnectionParams) error {
 // can't be persisted and later yield a host-less /dl link or a failing tool call.
 func validateAbsURL(field, raw string) error {
 	u, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+	if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") {
 		return fmt.Errorf("%w: %s must be an absolute http(s) URL", ErrInvalid, field)
 	}
 	return nil
