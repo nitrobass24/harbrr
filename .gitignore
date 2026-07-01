@@ -20,6 +20,10 @@ lint-report.json
 # *.smoke.env name explicit too.)
 /.env.phase9
 *.smoke.env
+# Live API-key bundle for driving the stack over HTTP (harbrr + *arr/qui + Prowlarr).
+# LIVE secrets — machine-local only, NEVER committed.
+smoke.env
+/smoke.env
 
 # stray `go build ./cmd/harbrr` binary + a datadir created by running it directly
 # (use `make build` -> /bin instead)
@@ -28,3 +32,7 @@ lint-report.json
 /cmd/harbrr/data/
 
 .DS_Store
+
+# Local live-test findings (uncommitted; may reference tracker names — no secrets)
+LIVE_TEST_FINDINGS.md
+/LIVE_TEST_FINDINGS.md
