@@ -17,6 +17,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 	"github.com/autobrr/harbrr/internal/secrets"
+	"github.com/autobrr/harbrr/internal/version"
 )
 
 // Deps are the collaborators the management API drives.
@@ -170,9 +171,21 @@ func (rt *router) routes() http.Handler {
 	return r
 }
 
-// healthz is the liveness probe.
+// healthResponse is the liveness-probe body: a fixed status plus the build identity,
+// so an operator can read the running version/commit without shell access.
+type healthResponse struct {
+	Status  string `json:"status"`
+	Version string `json:"version"`
+	Commit  string `json:"commit"`
+}
+
+// healthz is the liveness probe. It also surfaces the build version/commit.
 func (rt *router) healthz(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, healthResponse{
+		Status:  "ok",
+		Version: version.Version,
+		Commit:  version.Commit,
+	})
 }
 
 // oidcStub answers the deferred OIDC endpoints with 501 (see the end-of-phase
