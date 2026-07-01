@@ -254,7 +254,11 @@ func (d *driver) nonMusicRelease(g *group) *normalizer.Release {
 // "Cue" if HasCue]. The whole title is HTML-unescaped.
 func composeTitle(g *group, t *torrent) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s - %s (%d)", g.Artist, g.GroupName, g.GroupYear.int64())
+	if y := g.GroupYear.int64(); y > 0 {
+		fmt.Fprintf(&b, "%s - %s (%d)", g.Artist, g.GroupName, y)
+	} else {
+		fmt.Fprintf(&b, "%s - %s", g.Artist, g.GroupName)
+	}
 	// Match Prowlarr's IsNotNullOrWhiteSpace checks: a whitespace-only ReleaseType or
 	// RemasterTitle must not emit an empty "[ ]" bracket.
 	if rt := strings.TrimSpace(g.ReleaseType); rt != "" && rt != "Unknown" {
