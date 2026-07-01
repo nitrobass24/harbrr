@@ -19,7 +19,7 @@ func demoFeed() FeedInfo {
 		Description: "Synthetic tracker for the Torznab results goldens.",
 		SiteLink:    "https://demo.test/",
 		Type:        "public",
-		SelfURL:     "https://harbrr.local/api/v2.0/indexers/demo/results/torznab",
+		SelfURL:     "https://harbrr.local/api/indexers/demo/results/torznab",
 	}
 }
 

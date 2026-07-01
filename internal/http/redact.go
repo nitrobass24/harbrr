@@ -122,7 +122,7 @@ func isSecretParam(name string) bool {
 
 // pathSecretRe matches a credential-shaped token embedded in a URL path: a long
 // run of hex (passkeys/apikeys/infohashes are typically 32–40 hex chars) or a long
-// alphanumeric token. Short, structural path segments (api, v2.0, indexers, a slug)
+// alphanumeric token. Short, structural path segments (api, indexers, results, a slug)
 // never reach the threshold, so legitimate paths are untouched.
 var pathSecretRe = regexp.MustCompile(`(?i)[0-9a-f]{32,}|[a-z0-9]{40,}`)
 

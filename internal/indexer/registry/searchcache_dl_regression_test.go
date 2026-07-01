@@ -129,7 +129,7 @@ func assertSealed(t *testing.T, body, label string) {
 	if strings.Contains(body, dlRegPasskey) {
 		t.Fatalf("[%s] passkey leaked into the served feed:\n%s", label, body)
 	}
-	if !strings.Contains(body, "/api/v2.0/indexers/demo/dl?") || !strings.Contains(body, "token=") {
+	if !strings.Contains(body, "/api/indexers/demo/dl?") || !strings.Contains(body, "token=") {
 		t.Fatalf("[%s] resolver-needing link not routed through /dl:\n%s", label, body)
 	}
 }
@@ -158,7 +158,7 @@ func (p regProvider) Indexer(_ context.Context, id string) (torznabhttp.Indexer,
 func regDo(t *testing.T, h http.Handler) string {
 	t.Helper()
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
-		"/api/v2.0/indexers/demo/results/torznab?t=search&q=movie&apikey="+dlRegAPIKey, nil)
+		"/api/indexers/demo/results/torznab?t=search&q=movie&apikey="+dlRegAPIKey, nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {

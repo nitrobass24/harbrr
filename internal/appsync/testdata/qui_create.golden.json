@@ -1,6 +1,6 @@
 {
   "name": "Native Tracker",
-  "base_url": "http://harbrr:8787/api/v2.0/indexers/native-tracker/results/torznab",
+  "base_url": "http://harbrr:8787/api/indexers/native-tracker/results/torznab",
   "api_key": "harbrr-feed-key",
   "backend": "native",
   "enabled": true,

@@ -95,7 +95,7 @@ Once an indexer is configured you can:
 - **Search over JSON** — `GET /api/indexers/{slug}/search?q=...` (the same results the feed
   serves, as JSON, with download links sealed behind the `/dl` proxy).
 - **Serve the Torznab feed** — point an app at
-  `http://<host>:7474/api/v2.0/indexers/<slug>/results/torznab?apikey=<key>`
+  `http://<host>:7474/api/indexers/<slug>/results/torznab?apikey=<key>`
   (see [Getting started](../getting-started.md#5-point-sonarrradarr-at-the-feed)).
 
 To push this indexer into Sonarr/Radarr/qui automatically instead of configuring it in each

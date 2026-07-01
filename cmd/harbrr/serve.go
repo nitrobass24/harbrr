@@ -28,6 +28,7 @@ import (
 	"github.com/autobrr/harbrr/internal/logger"
 	"github.com/autobrr/harbrr/internal/secrets"
 	"github.com/autobrr/harbrr/internal/server"
+	"github.com/autobrr/harbrr/internal/version"
 	"github.com/autobrr/harbrr/internal/web/api"
 	"github.com/autobrr/harbrr/internal/web/swagger"
 	"github.com/autobrr/harbrr/internal/web/torznabhttp"
@@ -147,7 +148,7 @@ func serve(ctx context.Context, cfg *config.Config, log zerolog.Logger) error {
 	if err := preflightBind(ctx, listenAddr(cfg)); err != nil {
 		return fmt.Errorf("serve: %w", err)
 	}
-	logStartup(log, cfg)
+	logStartup(log, cfg, keyring)
 	if err := srv.Run(ctx); err != nil {
 		return fmt.Errorf("serve: %w", err)
 	}
@@ -369,12 +370,28 @@ func cleanupTickInterval(sc *registry.SearchCache) time.Duration {
 	}
 }
 
-// logStartup logs the resolved listen/serving parameters.
-func logStartup(log zerolog.Logger, cfg *config.Config) {
+// logStartup logs a one-line snapshot of the build and the resolved serving/config
+// parameters, so an operator (or a shared bug report) can confirm the version, commit,
+// and how the instance is running at a glance. The secrets mode is a status word
+// ("encrypted"/"plaintext"), never key material.
+func logStartup(log zerolog.Logger, cfg *config.Config, keyring *secrets.Keyring) {
 	log.Info().
+		Str("version", version.Version).
+		Str("commit", version.Commit).
 		Str("addr", listenAddr(cfg)).
 		Str("base_url", cfg.Server.BaseURL).
 		Str("data_dir", cfg.DataDir).
+		Str("log_level", cfg.Log.Level).
+		Str("log_format", cfg.Log.Format).
+		Str("secrets", secretsMode(keyring)).
 		Bool("auth_disabled", cfg.Auth.AuthDisabled()).
 		Msg("harbrr listening")
+}
+
+// secretsMode reports the at-rest storage mode as a status word for the startup log.
+func secretsMode(keyring *secrets.Keyring) string {
+	if keyring.Plaintext() {
+		return "plaintext"
+	}
+	return "encrypted"
 }

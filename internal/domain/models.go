@@ -10,7 +10,7 @@ import "time"
 // IndexerInstance is a configured tracker: a definition id plus user-chosen
 // identity and base URL. The integer ID is internal and stable (it backs the
 // encryption AAD of its secret settings); Slug is the stable user-facing
-// identifier used as the Torznab {indexerId} path segment and the management
+// identifier used as the Torznab {slug} path segment and the management
 // resource id.
 type IndexerInstance struct {
 	ID           int64

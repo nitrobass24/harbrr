@@ -12,7 +12,7 @@ import (
 // indexers don't spuriously re-sync), while usenet fingerprints distinctly.
 func TestHashProtocolBackwardCompat(t *testing.T) {
 	t.Parallel()
-	base := DesiredIndexer{Name: "tt", FeedURL: "http://h/api/v2.0/indexers/tt/results/torznab", Enabled: true}
+	base := DesiredIndexer{Name: "tt", FeedURL: "http://h/api/indexers/tt/results/torznab", Enabled: true}
 
 	empty := base
 	torrent := base
@@ -35,17 +35,21 @@ func TestSlugFromFeedURL(t *testing.T) {
 		url  string
 		want string
 	}{
-		{"normal feed", "http://harbrr:8787/api/v2.0/indexers/show-tracker/results/torznab", "show-tracker"},
+		{"normal feed", "http://harbrr:8787/api/indexers/show-tracker/results/torznab", "show-tracker"},
 		// the freeleech-bypass variant's trailing /full must not break slug recovery, so
 		// orphan-detection still matches harbrr-managed rows pushed in bypass mode.
-		{"bypass /full variant", "http://harbrr:8787/api/v2.0/indexers/show-tracker/results/torznab/full", "show-tracker"},
-		{"with base path", "http://h/harbrr/api/v2.0/indexers/abc/results/torznab", "abc"},
+		{"bypass /full variant", "http://harbrr:8787/api/indexers/show-tracker/results/torznab/full", "show-tracker"},
+		{"with base path", "http://h/harbrr/api/indexers/abc/results/torznab", "abc"},
 		{"not a harbrr feed", "http://other/api/v3/indexer", ""},
 		{"empty", "", ""},
 		// The marker only in the query string must NOT be read as ownership — otherwise
 		// a human-added indexer could be falsely tagged harbrr-managed and orphan-deleted.
-		{"marker only in query", "http://app/torznab?ref=/api/v2.0/indexers/evil/results", ""},
-		{"trailing slash, no slug", "http://harbrr/api/v2.0/indexers/", ""},
+		{"marker only in query", "http://app/torznab?ref=/api/indexers/evil/results", ""},
+		{"trailing slash, no slug", "http://harbrr/api/indexers/", ""},
+		// A management URL shares the /api/indexers/{slug} prefix but is NOT a feed — the
+		// required /results/torznab suffix keeps it from being read as harbrr-managed.
+		{"management search URL", "http://harbrr/api/indexers/show-tracker/search", ""},
+		{"management get URL", "http://harbrr/api/indexers/show-tracker", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -266,7 +266,7 @@ func TestResolveSearchLinksSealsResolverLink(t *testing.T) {
 			if strings.Contains(out[0].Link, "SECRETPASSKEY777") {
 				t.Fatalf("passkey leaked into the JSON link: %q", out[0].Link)
 			}
-			if !strings.Contains(out[0].Link, "/api/v2.0/indexers/demo/dl?") {
+			if !strings.Contains(out[0].Link, "/api/indexers/demo/dl?") {
 				t.Errorf("link not routed through /dl: %q", out[0].Link)
 			}
 			if strings.Contains(out[0].Link, "apikey=&") || strings.HasSuffix(out[0].Link, "apikey=") {
@@ -293,7 +293,7 @@ func TestResolveSearchLinksSealsLoginAuthLink(t *testing.T) {
 	if strings.Contains(out[0].Link, "SECRETPASSKEY777") {
 		t.Fatalf("passkey leaked into the JSON link: %q", out[0].Link)
 	}
-	if !strings.Contains(out[0].Link, "/api/v2.0/indexers/demo/dl?") {
+	if !strings.Contains(out[0].Link, "/api/indexers/demo/dl?") {
 		t.Errorf("login-auth link not routed through /dl: %q", out[0].Link)
 	}
 }

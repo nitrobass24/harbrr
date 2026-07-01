@@ -18,10 +18,10 @@ func TestFeedURL(t *testing.T) {
 		fwdProto string
 		want     string
 	}{
-		{"honor", "", false, "", "http://h.test/api/v2.0/indexers/tt/results/torznab"},
-		{"bypass appends /full", "", true, "", "http://h.test/api/v2.0/indexers/tt/results/torznab/full"},
-		{"base path", "/harbrr", false, "", "http://h.test/harbrr/api/v2.0/indexers/tt/results/torznab"},
-		{"forwarded https", "", true, "https", "https://h.test/api/v2.0/indexers/tt/results/torznab/full"},
+		{"honor", "", false, "", "http://h.test/api/indexers/tt/results/torznab"},
+		{"bypass appends /full", "", true, "", "http://h.test/api/indexers/tt/results/torznab/full"},
+		{"base path", "/harbrr", false, "", "http://h.test/harbrr/api/indexers/tt/results/torznab"},
+		{"forwarded https", "", true, "https", "https://h.test/api/indexers/tt/results/torznab/full"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -61,10 +61,10 @@ func TestFreeleechBypassRouteSetsQueryFlag(t *testing.T) {
 		path       string
 		wantBypass bool
 	}{
-		{"honor feed", "/api/v2.0/indexers/demo/results/torznab", false},
-		{"honor /api alias", "/api/v2.0/indexers/demo/results/torznab/api", false},
-		{"bypass feed", "/api/v2.0/indexers/demo/results/torznab/full", true},
-		{"bypass /api alias", "/api/v2.0/indexers/demo/results/torznab/full/api", true},
+		{"honor feed", "/api/indexers/demo/results/torznab", false},
+		{"honor /api alias", "/api/indexers/demo/results/torznab/api", false},
+		{"bypass feed", "/api/indexers/demo/results/torznab/full", true},
+		{"bypass /api alias", "/api/indexers/demo/results/torznab/full/api", true},
 	}
 
 	for _, tt := range tests {
@@ -101,8 +101,8 @@ func TestFreeleechBypassETagDistinct(t *testing.T) {
 			WithClock(func() time.Time { return feedClock }))
 	}
 
-	honor := doPath(t, mk(cachingDemo()), "/api/v2.0/indexers/demo/results/torznab", "t=search&q=x")
-	full := doPath(t, mk(cachingDemo()), "/api/v2.0/indexers/demo/results/torznab/full", "t=search&q=x")
+	honor := doPath(t, mk(cachingDemo()), "/api/indexers/demo/results/torznab", "t=search&q=x")
+	full := doPath(t, mk(cachingDemo()), "/api/indexers/demo/results/torznab/full", "t=search&q=x")
 	if honor.Code != http.StatusOK || full.Code != http.StatusOK {
 		t.Fatalf("statuses = %d / %d, want 200 / 200", honor.Code, full.Code)
 	}
@@ -117,7 +117,7 @@ func TestFreeleechBypassETagDistinct(t *testing.T) {
 	// Cross-variant revalidation: the honor ETag against /full must NOT be answered 304 —
 	// the /full body (full catalog) is a different variant from what the honor ETag covers.
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
-		"/api/v2.0/indexers/demo/results/torznab/full?t=search&q=x&apikey="+testAPIKey, nil)
+		"/api/indexers/demo/results/torznab/full?t=search&q=x&apikey="+testAPIKey, nil)
 	req.Header.Set("If-None-Match", eHonor)
 	rec := httptest.NewRecorder()
 	mk(cachingDemo()).ServeHTTP(rec, req)
@@ -127,7 +127,7 @@ func TestFreeleechBypassETagDistinct(t *testing.T) {
 
 	// Same-variant revalidation still works: /full with its own ETag is 304.
 	req2 := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
-		"/api/v2.0/indexers/demo/results/torznab/full?t=search&q=x&apikey="+testAPIKey, nil)
+		"/api/indexers/demo/results/torznab/full?t=search&q=x&apikey="+testAPIKey, nil)
 	req2.Header.Set("If-None-Match", eFull)
 	rec2 := httptest.NewRecorder()
 	mk(cachingDemo()).ServeHTTP(rec2, req2)

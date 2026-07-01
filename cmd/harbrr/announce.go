@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"net/url"
 	"strings"
 	"time"
 
@@ -82,7 +81,7 @@ func announceReleasesFor(conn domain.AnnounceConnection, svc *announce.Service, 
 		log.Warn().Int64("connection_id", conn.ID).Msg("announce: decrypt harbrr key failed")
 		return nil
 	}
-	dlBase := strings.TrimRight(conn.HarbrrURL, "/") + basePath + "/api/v2.0/indexers/" + url.PathEscape(slug) + "/dl"
+	dlBase := torznabhttp.DLBaseURLForOrigin(strings.TrimRight(conn.HarbrrURL, "/"), basePath, slug)
 	out := make([]announce.Release, 0, len(snap))
 	for _, s := range snap {
 		dl := s.magnet

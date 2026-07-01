@@ -52,7 +52,7 @@ paths:
       tags: [System]
       responses:
         "200":
-          description: service is healthy
+          description: service is healthy; also carries the running build version and commit
           content:
             application/json:
               schema:
@@ -60,7 +60,13 @@ paths:
                 properties:
                   status:
                     type: string
-                required: [status]
+                  version:
+                    type: string
+                    description: the running harbrr build version
+                  commit:
+                    type: string
+                    description: the git commit the build was cut from
+                required: [status, version, commit]
 
   /api/auth/setup:
     get:
@@ -801,7 +807,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
-  /api/v2.0/indexers/{indexerId}/results/torznab:
+  /api/indexers/{slug}/results/torznab:
     get:
       tags: [Torznab Feed]
       summary: Torznab capabilities and search (the *arr feed endpoint)
@@ -817,7 +823,7 @@ paths:
         a passkey never appears in the feed.
       operationId: torznabResults
       parameters:
-        - { name: indexerId, in: path, required: true, schema: { type: string }, description: the configured indexer slug }
+        - { name: slug, in: path, required: true, schema: { type: string }, description: the configured indexer slug }
         - { name: apikey, in: query, required: false, schema: { type: string }, description: "feed credential (any minted harbrr API key); passkey is an accepted alias" }
         - { name: passkey, in: query, required: false, schema: { type: string }, description: alias for apikey }
         - { name: t, in: query, required: false, schema: { type: string }, description: "function: caps | search | tvsearch | movie | music | book (defaults to search)" }
@@ -871,17 +877,17 @@ paths:
             application/xml:
               schema: { type: string }
 
-  /api/v2.0/indexers/{indexerId}/results/torznab/api:
+  /api/indexers/{slug}/results/torznab/api:
     get:
       tags: [Torznab Feed]
       summary: Torznab capabilities and search (/api alias)
       description: >
-        Identical to /api/v2.0/indexers/{indexerId}/results/torznab — the /api suffix
+        Identical to /api/indexers/{slug}/results/torznab — the /api suffix
         is the alternate path some clients use. Same parameters, authentication, and
         responses.
       operationId: torznabResultsApi
       parameters:
-        - { name: indexerId, in: path, required: true, schema: { type: string }, description: the configured indexer slug }
+        - { name: slug, in: path, required: true, schema: { type: string }, description: the configured indexer slug }
         - { name: apikey, in: query, required: false, schema: { type: string }, description: "feed credential; passkey is an accepted alias" }
         - { name: passkey, in: query, required: false, schema: { type: string }, description: alias for apikey }
         - { name: t, in: query, required: false, schema: { type: string }, description: "function: caps | search | tvsearch | movie | music | book (defaults to search)" }
@@ -894,11 +900,30 @@ paths:
         - { name: ep, in: query, required: false, schema: { type: string } }
         - { name: limit, in: query, required: false, schema: { type: integer }, description: page size }
         - { name: offset, in: query, required: false, schema: { type: integer } }
+        - { name: nocache, in: query, required: false, schema: { type: string, enum: ["1"] }, description: "set to 1 to bypass the search cache and force a live tracker fetch" }
+        - { name: If-None-Match, in: header, required: false, schema: { type: string }, description: "a previously-returned ETag; a match yields 304 Not Modified when the cached results are unchanged" }
+        - { name: Cache-Control, in: header, required: false, schema: { type: string }, description: "no-cache / no-store forces a live tracker fetch (the header sibling of nocache=1) and suppresses the 304 short-circuit" }
       responses:
         "200":
           description: a Torznab capabilities document or results feed (XML), or a Torznab <error> element
+          headers:
+            ETag:
+              schema: { type: string }
+              description: strong validator over the cached result set (present only for a cache-backed results feed)
+            Cache-Control:
+              schema: { type: string }
+              description: "private, max-age=<remaining cache TTL seconds> for a cache-backed results feed"
           content:
             application/xml:
+              schema: { type: string }
+        "304":
+          description: >
+            Not Modified — the request's If-None-Match matched the current cached
+            results, so the body is omitted (shares the base feed's cache behavior).
+          headers:
+            ETag:
+              schema: { type: string }
+            Cache-Control:
               schema: { type: string }
         "400":
           description: a Torznab <error> element (XML) for an unknown function or an unsupported id parameter
@@ -911,13 +936,13 @@ paths:
             application/xml:
               schema: { type: string }
 
-  /api/v2.0/indexers/{indexerId}/results/torznab/full:
+  /api/indexers/{slug}/results/torznab/full:
     get:
       tags: [Torznab Feed]
       summary: Torznab search — freeleech-bypass variant (full catalog)
       description: >
         The freeleech-bypass feed variant for the same indexer: identical to
-        /api/v2.0/indexers/{indexerId}/results/torznab, except the per-indexer
+        /api/indexers/{slug}/results/torznab, except the per-indexer
         "freeleech only" view is bypassed so the full catalog is returned. harbrr
         pushes this URL to cross-seed consumers (qui, cross-seed v6), which must see
         every release; the *arr feed (the path without /full) honors the freeleech
@@ -925,7 +950,7 @@ paths:
         bypass variant after the *arr feed adds no tracker request.
       operationId: torznabResultsFull
       parameters:
-        - { name: indexerId, in: path, required: true, schema: { type: string }, description: the configured indexer slug }
+        - { name: slug, in: path, required: true, schema: { type: string }, description: the configured indexer slug }
         - { name: apikey, in: query, required: false, schema: { type: string }, description: "feed credential; passkey is an accepted alias" }
         - { name: passkey, in: query, required: false, schema: { type: string }, description: alias for apikey }
         - { name: t, in: query, required: false, schema: { type: string }, description: "function: caps | search | tvsearch | movie | music | book (defaults to search)" }
@@ -938,11 +963,30 @@ paths:
         - { name: ep, in: query, required: false, schema: { type: string } }
         - { name: limit, in: query, required: false, schema: { type: integer }, description: page size }
         - { name: offset, in: query, required: false, schema: { type: integer } }
+        - { name: nocache, in: query, required: false, schema: { type: string, enum: ["1"] }, description: "set to 1 to bypass the search cache and force a live tracker fetch" }
+        - { name: If-None-Match, in: header, required: false, schema: { type: string }, description: "a previously-returned ETag; a match yields 304 Not Modified when the cached results are unchanged" }
+        - { name: Cache-Control, in: header, required: false, schema: { type: string }, description: "no-cache / no-store forces a live tracker fetch (the header sibling of nocache=1) and suppresses the 304 short-circuit" }
       responses:
         "200":
           description: a Torznab capabilities document or results feed (XML), or a Torznab <error> element
+          headers:
+            ETag:
+              schema: { type: string }
+              description: strong validator over the cached result set (present only for a cache-backed results feed)
+            Cache-Control:
+              schema: { type: string }
+              description: "private, max-age=<remaining cache TTL seconds> for a cache-backed results feed"
           content:
             application/xml:
+              schema: { type: string }
+        "304":
+          description: >
+            Not Modified — the request's If-None-Match matched the current cached
+            results, so the body is omitted (shares the base feed's cache behavior).
+          headers:
+            ETag:
+              schema: { type: string }
+            Cache-Control:
               schema: { type: string }
         "400":
           description: a Torznab <error> element (XML) for an unknown function or an unsupported id parameter
@@ -955,16 +999,16 @@ paths:
             application/xml:
               schema: { type: string }
 
-  /api/v2.0/indexers/{indexerId}/results/torznab/full/api:
+  /api/indexers/{slug}/results/torznab/full/api:
     get:
       tags: [Torznab Feed]
       summary: Torznab search — freeleech-bypass variant (/api alias)
       description: >
-        Identical to /api/v2.0/indexers/{indexerId}/results/torznab/full — the /api
+        Identical to /api/indexers/{slug}/results/torznab/full — the /api
         suffix is the alternate path some clients use.
       operationId: torznabResultsFullApi
       parameters:
-        - { name: indexerId, in: path, required: true, schema: { type: string }, description: the configured indexer slug }
+        - { name: slug, in: path, required: true, schema: { type: string }, description: the configured indexer slug }
         - { name: apikey, in: query, required: false, schema: { type: string }, description: "feed credential; passkey is an accepted alias" }
         - { name: passkey, in: query, required: false, schema: { type: string }, description: alias for apikey }
         - { name: t, in: query, required: false, schema: { type: string }, description: "function: caps | search | tvsearch | movie | music | book (defaults to search)" }
@@ -977,11 +1021,30 @@ paths:
         - { name: ep, in: query, required: false, schema: { type: string } }
         - { name: limit, in: query, required: false, schema: { type: integer }, description: page size }
         - { name: offset, in: query, required: false, schema: { type: integer } }
+        - { name: nocache, in: query, required: false, schema: { type: string, enum: ["1"] }, description: "set to 1 to bypass the search cache and force a live tracker fetch" }
+        - { name: If-None-Match, in: header, required: false, schema: { type: string }, description: "a previously-returned ETag; a match yields 304 Not Modified when the cached results are unchanged" }
+        - { name: Cache-Control, in: header, required: false, schema: { type: string }, description: "no-cache / no-store forces a live tracker fetch (the header sibling of nocache=1) and suppresses the 304 short-circuit" }
       responses:
         "200":
           description: a Torznab capabilities document or results feed (XML), or a Torznab <error> element
+          headers:
+            ETag:
+              schema: { type: string }
+              description: strong validator over the cached result set (present only for a cache-backed results feed)
+            Cache-Control:
+              schema: { type: string }
+              description: "private, max-age=<remaining cache TTL seconds> for a cache-backed results feed"
           content:
             application/xml:
+              schema: { type: string }
+        "304":
+          description: >
+            Not Modified — the request's If-None-Match matched the current cached
+            results, so the body is omitted (shares the base feed's cache behavior).
+          headers:
+            ETag:
+              schema: { type: string }
+            Cache-Control:
               schema: { type: string }
         "400":
           description: a Torznab <error> element (XML) for an unknown function or an unsupported id parameter
@@ -994,7 +1057,7 @@ paths:
             application/xml:
               schema: { type: string }
 
-  /api/v2.0/indexers/{indexerId}/dl:
+  /api/indexers/{slug}/dl:
     get:
       tags: [Torznab Feed]
       summary: Grab-time download proxy (resolves and streams the torrent)
@@ -1007,7 +1070,7 @@ paths:
         the apikey (or passkey) query parameter.
       operationId: torznabDownload
       parameters:
-        - { name: indexerId, in: path, required: true, schema: { type: string }, description: the configured indexer slug }
+        - { name: slug, in: path, required: true, schema: { type: string }, description: the configured indexer slug }
         - { name: apikey, in: query, required: false, schema: { type: string }, description: "feed credential; passkey is an accepted alias" }
         - { name: passkey, in: query, required: false, schema: { type: string }, description: alias for apikey }
         - { name: token, in: query, required: true, schema: { type: string }, description: "the opaque, AEAD-sealed download token from the feed" }

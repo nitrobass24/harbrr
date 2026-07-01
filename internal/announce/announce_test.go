@@ -19,7 +19,7 @@ func TestScrubURLError(t *testing.T) {
 	t.Parallel()
 	urlErr := &url.Error{
 		Op:  "Post",
-		URL: "http://harbrr:8787/api/v2.0/indexers/tt/dl?apikey=feedsecret&passkey=NOTREALSECRET",
+		URL: "http://harbrr:8787/api/indexers/tt/dl?apikey=feedsecret&passkey=NOTREALSECRET",
 		Err: errors.New("dial tcp: connection refused"),
 	}
 	got := scrubURLError(urlErr).Error()
@@ -41,7 +41,7 @@ const testAPIKey = "qui_secretkey" //nolint:gosec // synthetic test credential
 func sampleRelease() Release {
 	return Release{
 		Name: "Some.Movie.1080p", Size: 1234567, Indexer: "tt", GUID: "harbrr-abc",
-		Tracker: "tt", DownloadURL: "http://harbrr:8787/api/v2.0/indexers/tt/dl?apikey=feedsecret&token=tok",
+		Tracker: "tt", DownloadURL: "http://harbrr:8787/api/indexers/tt/dl?apikey=feedsecret&token=tok",
 	}
 }
 

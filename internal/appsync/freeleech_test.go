@@ -14,9 +14,9 @@ func TestFeedURL(t *testing.T) {
 		mode string
 		want string
 	}{
-		{"honor uses the standard feed", domain.FreeleechModeHonor, "http://harbrr:8787/api/v2.0/indexers/tt/results/torznab"},
-		{"bypass appends /full", domain.FreeleechModeBypass, "http://harbrr:8787/api/v2.0/indexers/tt/results/torznab/full"},
-		{"empty mode defaults to the standard feed", "", "http://harbrr:8787/api/v2.0/indexers/tt/results/torznab"},
+		{"honor uses the standard feed", domain.FreeleechModeHonor, "http://harbrr:8787/api/indexers/tt/results/torznab"},
+		{"bypass appends /full", domain.FreeleechModeBypass, "http://harbrr:8787/api/indexers/tt/results/torznab/full"},
+		{"empty mode defaults to the standard feed", "", "http://harbrr:8787/api/indexers/tt/results/torznab"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -74,7 +74,7 @@ func (f *fakeTarget) Test(context.Context, DesiredIndexer) error { return nil }
 func desired(slug string, enabled bool) DesiredIndexer {
 	return DesiredIndexer{
 		Slug: slug, Name: slug, Enabled: enabled, Priority: 25,
-		FeedURL:    "http://harbrr/api/v2.0/indexers/" + slug + "/results/torznab",
+		FeedURL:    "http://harbrr/api/indexers/" + slug + "/results/torznab",
 		APIKey:     "k",
 		Categories: []Category{{ID: 5000, Name: "TV"}, {ID: 2000, Name: "Movies"}},
 	}
@@ -155,7 +155,7 @@ func TestReconcileRecoversBySlugWhenLedgerMissing(t *testing.T) {
 	// Remote already has a harbrr-owned row, but harbrr's ledger is empty (lost
 	// state / first sync after a restore). It must recover and update, not duplicate.
 	f := &fakeTarget{remote: []RemoteIndexer{
-		{RemoteID: "42", Name: "old", ManagedBySlug: "a", FeedURL: "http://harbrr/api/v2.0/indexers/a/results/torznab"},
+		{RemoteID: "42", Name: "old", ManagedBySlug: "a", FeedURL: "http://harbrr/api/indexers/a/results/torznab"},
 	}, nextID: 42}
 	out, _ := Reconcile(context.Background(), f, domain.SyncLevelFull, []DesiredIndexer{desired("a", true)}, nil)
 	if actionOf(out, "a") != ActionUpdated || f.creates != 0 {
@@ -182,7 +182,7 @@ func TestReconcilePrunesOrphansOnlyInFull(t *testing.T) {
 	t.Parallel()
 	seed := func() *fakeTarget {
 		return &fakeTarget{remote: []RemoteIndexer{
-			{RemoteID: "1", ManagedBySlug: "gone", FeedURL: "http://harbrr/api/v2.0/indexers/gone/results/torznab"},
+			{RemoteID: "1", ManagedBySlug: "gone", FeedURL: "http://harbrr/api/indexers/gone/results/torznab"},
 		}, nextID: 1}
 	}
 

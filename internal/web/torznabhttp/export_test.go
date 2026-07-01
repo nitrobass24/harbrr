@@ -246,11 +246,11 @@ func TestDLBaseURL(t *testing.T) {
 	t.Parallel()
 	r := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "http://h.test/api/indexers/demo/search", nil)
 	r.Host = "h.test"
-	if got, want := DLBaseURL(r, "/harbrr", "demo"), "http://h.test/harbrr/api/v2.0/indexers/demo/dl"; got != want {
+	if got, want := DLBaseURL(r, "/harbrr", "demo"), "http://h.test/harbrr/api/indexers/demo/dl"; got != want {
 		t.Errorf("DLBaseURL = %q, want %q", got, want)
 	}
 	r.Header.Set("X-Forwarded-Proto", "https")
-	if got := DLBaseURL(r, "", "de mo"); got != "https://h.test/api/v2.0/indexers/de%20mo/dl" {
+	if got := DLBaseURL(r, "", "de mo"); got != "https://h.test/api/indexers/de%20mo/dl" {
 		t.Errorf("DLBaseURL (https/escaped) = %q", got)
 	}
 }
@@ -277,7 +277,7 @@ func TestNewDLRewriterSealsLink(t *testing.T) {
 	t.Parallel()
 	kr := encryptedKeyring(t)
 	idx := &fakeIndexer{info: IndexerInfo{ID: "demo"}, needsResolver: true}
-	rw := NewDLRewriter(kr, idx, "http://h.test/api/v2.0/indexers/demo/dl", "callerkey")
+	rw := NewDLRewriter(kr, idx, "http://h.test/api/indexers/demo/dl", "callerkey")
 	if rw == nil {
 		t.Fatal("expected a rewriter")
 	}
@@ -289,7 +289,7 @@ func TestNewDLRewriterSealsLink(t *testing.T) {
 	if strings.Contains(link, "SECRETPASSKEY123") {
 		t.Fatalf("passkey leaked into the /dl link: %q", link)
 	}
-	if !strings.HasPrefix(link, "http://h.test/api/v2.0/indexers/demo/dl?") {
+	if !strings.HasPrefix(link, "http://h.test/api/indexers/demo/dl?") {
 		t.Errorf("unexpected /dl base: %q", link)
 	}
 	if !strings.HasPrefix(guid, "harbrr-") {
@@ -319,13 +319,13 @@ func TestNewDLRewriterSealsLoginAuthLink(t *testing.T) {
 	t.Parallel()
 	kr := encryptedKeyring(t)
 	loginAuth := &fakeIndexer{info: IndexerInfo{ID: "demo"}, needsResolver: false, downloadNeedsAuth: true}
-	rw := NewDLRewriter(kr, loginAuth, "http://h.test/api/v2.0/indexers/demo/dl", "callerkey")
+	rw := NewDLRewriter(kr, loginAuth, "http://h.test/api/indexers/demo/dl", "callerkey")
 	if rw == nil {
 		t.Fatal("expected a rewriter for a login-auth indexer")
 	}
 	const raw = "https://demo.test/download/9/Release.torrent"
 	link, _, ok := rw(raw)
-	if !ok || !strings.HasPrefix(link, "http://h.test/api/v2.0/indexers/demo/dl?") {
+	if !ok || !strings.HasPrefix(link, "http://h.test/api/indexers/demo/dl?") {
 		t.Fatalf("expected the login-auth link sealed behind /dl, got ok=%v link=%q", ok, link)
 	}
 
