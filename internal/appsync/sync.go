@@ -96,6 +96,12 @@ func (s *Service) buildDesired(ctx context.Context, instances []domain.IndexerIn
 		if err != nil {
 			return nil, fmt.Errorf("appsync: categories for %q: %w", inst.Slug, err)
 		}
+		// Servarr apps only accept indexers that serve their content type (Prowlarr
+		// parity); qui is content-neutral and keeps everything. Custom/out-of-range
+		// categories never qualify an indexer for a Servarr app.
+		if !indexerServesApp(conn.Kind, cats) {
+			continue
+		}
 		caps, err := s.source.Capabilities(ctx, inst.Slug)
 		if err != nil {
 			return nil, fmt.Errorf("appsync: capabilities for %q: %w", inst.Slug, err)
@@ -175,6 +181,53 @@ func feedURL(base, slug, freeleechMode string) string {
 		u += "/full"
 	}
 	return u
+}
+
+// appCategoryRange returns the inclusive Newznab category range a Servarr app kind
+// consumes. ok is false for kinds with no content-type notion (qui, and — defensively —
+// any kind that isn't a known Servarr; connections are validated in validate.go, so an
+// unknown kind is unreachable and treated as "no filter, push everything").
+func appCategoryRange(kind string) (lo, hi int, ok bool) {
+	switch kind {
+	case domain.AppKindRadarr: // Movies
+		return 2000, 2999, true
+	case domain.AppKindLidarr: // Music
+		return 3000, 3999, true
+	case domain.AppKindSonarr: // TV
+		return 5000, 5999, true
+	case domain.AppKindWhisparr: // Adult
+		return 6000, 6999, true
+	case domain.AppKindReadarr: // Books
+		return 7000, 7999, true
+	default: // qui (and unknown) — general Torznab pool, no content-type filter
+		return 0, 0, false
+	}
+}
+
+// indexerServesApp reports whether an indexer belongs on a connection of this kind: a
+// Servarr kind requires >=1 category in its Newznab range; qui (no range) always serves.
+// Custom categories (>=100000) fall in no Servarr range, so they never qualify an
+// indexer for a Servarr app on their own.
+// audiobookCategory (Audio/Audiobook) is the one Newznab category that crosses the
+// simple round-thousand ranges: Prowlarr syncs it to BOTH Lidarr (via its 3000s range)
+// AND Readarr, even though 3030 sits outside Readarr's 7000s Books range. Readarr
+// accepts it as an extra so an audiobook-only tracker still reaches Readarr (parity).
+const audiobookCategory = 3030
+
+func indexerServesApp(kind string, cats []Category) bool {
+	lo, hi, ok := appCategoryRange(kind)
+	if !ok {
+		return true
+	}
+	for _, c := range cats {
+		if c.ID >= lo && c.ID <= hi {
+			return true
+		}
+		if kind == domain.AppKindReadarr && c.ID == audiobookCategory {
+			return true
+		}
+	}
+	return false
 }
 
 // pushStatus maps a reconcile action to a stored per-indexer status.

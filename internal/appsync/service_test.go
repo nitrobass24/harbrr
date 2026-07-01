@@ -69,9 +69,11 @@ func newSyncFixture(t *testing.T) *syncFixture {
 			{ID: idA, Slug: "tracker-a", Name: "Tracker A", Enabled: true},
 			{ID: idB, Slug: "tracker-b", Name: "Tracker B", Enabled: false},
 		},
+		// Both carry a TV category so the Sonarr fixture connection accepts them (the
+		// content-category filter would otherwise exclude a movie-only indexer).
 		cats: map[string][]Category{
 			"tracker-a": {{ID: 5000, Name: "TV"}},
-			"tracker-b": {{ID: 2000, Name: "Movies"}},
+			"tracker-b": {{ID: 5030, Name: "TV/HD"}},
 		},
 	}
 
@@ -100,6 +102,11 @@ func TestBuildDesiredQuiSkipsUsenet(t *testing.T) {
 			{ID: 1, Slug: "torrent-tracker", Name: "Torrent", Enabled: true, Protocol: "torrent"},
 			{ID: 2, Slug: "usenet-tracker", Name: "Usenet", Enabled: true, Protocol: "usenet"},
 		},
+		// TV categories so the Sonarr connection's content-category filter accepts both.
+		cats: map[string][]Category{
+			"torrent-tracker": {{ID: 5000, Name: "TV"}},
+			"usenet-tracker":  {{ID: 5000, Name: "TV"}},
+		},
 	}
 	svc := &Service{source: src}
 
@@ -126,6 +133,161 @@ func TestBuildDesiredQuiSkipsUsenet(t *testing.T) {
 	if byProto["torrent-tracker"] != "torrent" || byProto["usenet-tracker"] != "usenet" {
 		t.Fatalf("sonarr desired protocols = %+v, want torrent/usenet preserved", byProto)
 	}
+}
+
+func TestAppCategoryRange(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		kind   string
+		lo, hi int
+		ok     bool
+	}{
+		{domain.AppKindRadarr, 2000, 2999, true},
+		{domain.AppKindLidarr, 3000, 3999, true},
+		{domain.AppKindSonarr, 5000, 5999, true},
+		{domain.AppKindWhisparr, 6000, 6999, true},
+		{domain.AppKindReadarr, 7000, 7999, true},
+		{domain.AppKindQui, 0, 0, false},
+		{"nope", 0, 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.kind, func(t *testing.T) {
+			t.Parallel()
+			lo, hi, ok := appCategoryRange(tt.kind)
+			if lo != tt.lo || hi != tt.hi || ok != tt.ok {
+				t.Errorf("appCategoryRange(%q) = (%d, %d, %t), want (%d, %d, %t)", tt.kind, lo, hi, ok, tt.lo, tt.hi, tt.ok)
+			}
+		})
+	}
+}
+
+func TestIndexerServesApp(t *testing.T) {
+	t.Parallel()
+	cats := func(ids ...int) []Category {
+		out := make([]Category, 0, len(ids))
+		for _, id := range ids {
+			out = append(out, Category{ID: id})
+		}
+		return out
+	}
+	tests := []struct {
+		name string
+		kind string
+		cats []Category
+		want bool
+	}{
+		{"mam sonarr", domain.AppKindSonarr, cats(3000, 3030, 7000, 7040, 100013), false},
+		{"mam radarr", domain.AppKindRadarr, cats(3000, 3030, 7000, 7040, 100013), false},
+		{"mam lidarr", domain.AppKindLidarr, cats(3000, 3030, 7000, 7040, 100013), true},
+		{"mam readarr", domain.AppKindReadarr, cats(3000, 3030, 7000, 7040, 100013), true},
+		{"mam whisparr", domain.AppKindWhisparr, cats(3000, 3030, 7000, 7040, 100013), false},
+		{"mam qui", domain.AppKindQui, cats(3000, 3030, 7000, 7040, 100013), true},
+
+		{"movie-only radarr", domain.AppKindRadarr, cats(2000, 2040), true},
+		{"movie-only sonarr", domain.AppKindSonarr, cats(2000, 2040), false},
+		{"movie-only qui", domain.AppKindQui, cats(2000, 2040), true},
+
+		{"tv+movie radarr", domain.AppKindRadarr, cats(2000, 5000), true},
+		{"tv+movie sonarr", domain.AppKindSonarr, cats(2000, 5000), true},
+		{"tv+movie lidarr", domain.AppKindLidarr, cats(2000, 5000), false},
+		{"tv+movie qui", domain.AppKindQui, cats(2000, 5000), true},
+
+		// Audiobook-only (3030, outside the 7000s Books range): Prowlarr syncs it to
+		// both Lidarr and Readarr, so both must accept it; Sonarr/Radarr must not.
+		{"audiobook-only readarr", domain.AppKindReadarr, cats(3030), true},
+		{"audiobook-only lidarr", domain.AppKindLidarr, cats(3030), true},
+		{"audiobook-only sonarr", domain.AppKindSonarr, cats(3030), false},
+		{"audiobook-only radarr", domain.AppKindRadarr, cats(3030), false},
+
+		{"custom-only radarr", domain.AppKindRadarr, cats(100013), false},
+		{"custom-only sonarr", domain.AppKindSonarr, cats(100013), false},
+		{"custom-only lidarr", domain.AppKindLidarr, cats(100013), false},
+		{"custom-only readarr", domain.AppKindReadarr, cats(100013), false},
+		{"custom-only whisparr", domain.AppKindWhisparr, cats(100013), false},
+		{"custom-only qui", domain.AppKindQui, cats(100013), true},
+
+		{"empty radarr", domain.AppKindRadarr, cats(), false},
+		{"empty sonarr", domain.AppKindSonarr, cats(), false},
+		{"empty lidarr", domain.AppKindLidarr, cats(), false},
+		{"empty qui", domain.AppKindQui, cats(), true},
+
+		{"boundary 2999 radarr", domain.AppKindRadarr, cats(2999), true},
+		{"boundary 3000 radarr", domain.AppKindRadarr, cats(3000), false},
+		{"boundary 3000 lidarr", domain.AppKindLidarr, cats(3000), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := indexerServesApp(tt.kind, tt.cats); got != tt.want {
+				t.Errorf("indexerServesApp(%q, %v) = %t, want %t", tt.kind, tt.cats, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestBuildDesiredContentCategoryFilter checks the per-app content-category gate in
+// buildDesired: a Servarr connection only receives indexers with a category in its
+// Newznab range, while qui (content-neutral) receives all of them.
+func TestBuildDesiredContentCategoryFilter(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	src := &fakeSource{
+		instances: []domain.IndexerInstance{
+			{ID: 1, Slug: "mam", Name: "MAM", Enabled: true, Protocol: "torrent"},
+			{ID: 2, Slug: "movie", Name: "Movie", Enabled: true, Protocol: "torrent"},
+			{ID: 3, Slug: "tv", Name: "TV", Enabled: true, Protocol: "torrent"},
+		},
+		cats: map[string][]Category{
+			"mam":   {{ID: 3000, Name: "Audio"}, {ID: 7000, Name: "Books"}},
+			"movie": {{ID: 2000, Name: "Movies"}},
+			"tv":    {{ID: 5000, Name: "TV"}},
+		},
+	}
+	svc := &Service{source: src}
+
+	tests := []struct {
+		kind string
+		want []string
+	}{
+		{domain.AppKindRadarr, []string{"movie"}},
+		{domain.AppKindSonarr, []string{"tv"}},
+		{domain.AppKindLidarr, []string{"mam"}},
+		{domain.AppKindReadarr, []string{"mam"}},
+		{domain.AppKindQui, []string{"mam", "movie", "tv"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.kind, func(t *testing.T) {
+			t.Parallel()
+			conn := domain.AppConnection{Kind: tt.kind, IndexScope: domain.IndexScopeAll, HarbrrURL: "http://harbrr"}
+			got, err := svc.buildDesired(ctx, src.instances, conn, "k", nil)
+			if err != nil {
+				t.Fatalf("buildDesired %s: %v", tt.kind, err)
+			}
+			slugs := make([]string, 0, len(got))
+			for _, d := range got {
+				slugs = append(slugs, d.Slug)
+			}
+			if !equalStringSet(slugs, tt.want) {
+				t.Errorf("%s desired = %v, want %v", tt.kind, slugs, tt.want)
+			}
+		})
+	}
+}
+
+func equalStringSet(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	seen := make(map[string]bool, len(got))
+	for _, s := range got {
+		seen[s] = true
+	}
+	for _, w := range want {
+		if !seen[w] {
+			return false
+		}
+	}
+	return true
 }
 
 func seedInstance(t *testing.T, db *database.DB, slug, name string, enabled bool) int64 {
