@@ -286,8 +286,9 @@ func TestMatchProwlarrIndexer(t *testing.T) {
 		{"display-name match with case/dash", "HDspace", "hdspace", 2, true},
 		{"slug matches definitionName", "IPTorrents", "iptorrents", 3, true},
 		{"slug matches the -api variant", "seedpool", "seedpool", 4, true},
-		{"prowlarr-side typo stays unmatched", "BroadcastTheNet", "btn", 0, false},
-		{"suffix divergence stays unmatched", "FileList", "filelist", 0, false},
+		{"upstream alias bridges Prowlarr's typo'd name", "BroadcastTheNet", "btn", 5, true},
+		{"upstream alias bridges the .io suffix", "FileList", "filelist", 6, true},
+		{"unknown tracker stays unmatched", "SomeTracker", "sometracker", 0, false},
 		{"empty keys never match", "", "", 0, false},
 	}
 	for _, tt := range tests {
