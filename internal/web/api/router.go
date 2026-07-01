@@ -41,6 +41,9 @@ type Deps struct {
 	// rather than 404 (wired in a later leaf).
 	Cache  *registry.SearchCache
 	Logger zerolog.Logger
+	// LogLevel backs the runtime log-level endpoints (get/set + persistence). Nil
+	// leaves those routes reporting an unavailable state rather than panicking.
+	LogLevel *LogLevelStore
 }
 
 // Config is the API's auth posture (mapped from the app config by the server).
@@ -67,6 +70,7 @@ type router struct {
 	cache    *registry.SearchCache
 	cfg      Config
 	log      zerolog.Logger
+	logLevel *LogLevelStore
 
 	allowlist      []*net.IPNet
 	trustedProxies []*net.IPNet
@@ -94,7 +98,7 @@ func NewRouter(deps Deps, cfg Config) (http.Handler, error) {
 	rt := &router{
 		auth: deps.Auth, registry: deps.Registry, loader: deps.Loader, appsync: deps.AppSync,
 		announce: deps.Announce, sessions: deps.Sessions, dlToken: deps.DLToken, basePath: deps.BasePath,
-		cache: deps.Cache, cfg: cfg, log: deps.Logger,
+		cache: deps.Cache, cfg: cfg, log: deps.Logger, logLevel: deps.LogLevel,
 		allowlist: allow, trustedProxies: proxies,
 	}
 	return rt.routes(), nil
@@ -166,6 +170,9 @@ func (rt *router) routes() http.Handler {
 			r.Post("/api/cache/flush", rt.cacheFlush)
 			r.Get("/api/cache/config", rt.cacheConfigGet)
 			r.Put("/api/cache/config", rt.cacheConfigPut)
+
+			r.Get("/api/config/log-level", rt.getLogLevel)
+			r.Put("/api/config/log-level", rt.putLogLevel)
 		})
 	})
 	return r

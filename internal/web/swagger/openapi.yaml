@@ -1184,6 +1184,55 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /api/config/log-level:
+    get:
+      summary: Get the runtime log level
+      description: >
+        Returns the effective process-wide log level — the live value (a persisted
+        override if set, else the config-file/env/flag seed) that every subsystem honors.
+      operationId: getLogLevel
+      tags: [System]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the effective log level
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LogLevel" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503":
+          description: log level control is unavailable
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    put:
+      summary: Set the runtime log level
+      description: >
+        Changes the log level for the whole process immediately (no restart) and
+        persists it, so a stored value overrides the config-file/env/flag seed on the
+        next start. An unknown level answers 400 and changes nothing.
+      operationId: putLogLevel
+      tags: [System]
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LogLevel" }
+      responses:
+        "200":
+          description: the applied log level
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LogLevel" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503":
+          description: log level control is unavailable
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
 components:
   securitySchemes:
     session:
@@ -1680,6 +1729,16 @@ components:
       properties:
         flushed: { type: integer, format: int64, description: number of entries purged (0 when caching is disabled) }
       required: [flushed]
+
+    LogLevel:
+      type: object
+      description: The process-wide log level (get returns the effective value; put sets it).
+      properties:
+        level:
+          type: string
+          enum: [trace, debug, info, warn, error]
+          description: the log level applied across every subsystem
+      required: [level]
 
     CacheConfig:
       type: object

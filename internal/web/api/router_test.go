@@ -139,7 +139,7 @@ func newEnvWithCache(t *testing.T, cfg api.Config, buildCache func(db *database.
 
 	handler, err := api.NewRouter(api.Deps{
 		Auth: authSvc, Registry: reg, Loader: ldr, AppSync: appSync, Announce: announceSvc, Sessions: sm,
-		Cache: cache, Logger: zerolog.Nop(),
+		Cache: cache, Logger: zerolog.Nop(), LogLevel: api.NewLogLevelStore(db, nil),
 	}, cfg)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)

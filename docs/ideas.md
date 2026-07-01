@@ -347,7 +347,10 @@ hashed.** The web-UI password and API keys are never stored in recoverable form,
   *logged*.
 - **Actionable, level-gated diagnostics.** Set `log.level` (`log-level` / `HARBRR_LOG_LEVEL` /
   `--log-level`: `trace`|`debug`|`info`|`warn`|`error`) to control how much a failure reveals — always
-  secret-safe:
+  secret-safe. The level is also **changeable at runtime** via the management API
+  (`GET`/`PUT /api/config/log-level`): the change takes effect immediately across every subsystem (no
+  restart) and is persisted, so a stored override beats the config-file/env/flag seed on the next start.
+  The startup log echoes the effective level and mode so a shared bug report shows how the instance ran:
   - **Always-on (any level).** A decode failure now carries a redacted, actionable cause instead of a
     bare `response parse error` — the JSON/XML field, expected-vs-got type, and byte offset (e.g.
     `field "torrents": expected object, got array at offset 42`), or `body was not JSON; N bytes` when a

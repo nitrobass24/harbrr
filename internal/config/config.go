@@ -112,6 +112,14 @@ var (
 	validLogFormats = map[string]struct{}{"console": {}, "json": {}}
 )
 
+// ValidLogLevel reports whether level is one of the accepted log.level enum values.
+// It is the single source of truth shared by config validation and the runtime
+// log-level API, so the two can never accept different sets.
+func ValidLogLevel(level string) bool {
+	_, ok := validLogLevels[level]
+	return ok
+}
+
 // Defaults returns the baseline configuration before any file, environment, or
 // flag overrides are applied.
 func Defaults() Config {

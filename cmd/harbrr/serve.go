@@ -59,8 +59,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	log, err := logger.New(cfg.Log, cmd.OutOrStdout())
-	if err != nil {
+	log := logger.New(cfg.Log, cmd.OutOrStdout())
+	// Seed the process-global level from config; a persisted DB override (if any) is
+	// applied later, once the database is open (see serve).
+	if err := logger.SetLevel(cfg.Log.Level); err != nil {
 		return fmt.Errorf("init logger: %w", err)
 	}
 
@@ -105,10 +107,21 @@ func serve(ctx context.Context, cfg *config.Config, log zerolog.Logger) error {
 	// enabled announce targets (best-effort, async — see newAnnounceSink).
 	searchCache.SetAnnounceSink(newAnnounceSink(announceSvc, db, keyring, cfg.Server.BaseURL, log))
 
+	// A persisted DB override (set via the management API) beats the config-file/env/flag
+	// seed; apply it now that the DB is open. A read error or stale value is non-fatal —
+	// the seed stays in effect.
+	logLevel := api.NewLogLevelStore(db, time.Now)
+	if applied, err := logLevel.ApplyPersisted(ctx); err != nil {
+		log.Warn().Err(err).Msg("serve: applying persisted log level failed; using configured level")
+	} else if applied {
+		log.Info().Str("level", logger.Level()).Msg("serve: applied persisted log-level override")
+	}
+
 	mgmt, err := api.NewRouter(api.Deps{
 		Auth: authSvc, Registry: reg, Loader: loader.New(dropinDir(cfg)), AppSync: appSync,
 		Announce: announceSvc, Sessions: sessions,
 		DLToken: keyring, BasePath: cfg.Server.BaseURL, Cache: searchCache, Logger: log,
+		LogLevel: logLevel,
 	}, api.Config{
 		AuthDisabled: cfg.Auth.AuthDisabled(), IPAllowlist: cfg.Auth.IPAllowlist, TrustedProxies: cfg.Auth.TrustedProxies,
 	})
@@ -381,7 +394,7 @@ func logStartup(log zerolog.Logger, cfg *config.Config, keyring *secrets.Keyring
 		Str("addr", listenAddr(cfg)).
 		Str("base_url", cfg.Server.BaseURL).
 		Str("data_dir", cfg.DataDir).
-		Str("log_level", cfg.Log.Level).
+		Str("log_level", logger.Level()).
 		Str("log_format", cfg.Log.Format).
 		Str("secrets", secretsMode(keyring)).
 		Bool("auth_disabled", cfg.Auth.AuthDisabled()).

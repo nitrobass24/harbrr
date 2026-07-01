@@ -5,61 +5,54 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rs/zerolog"
+
 	"github.com/autobrr/harbrr/internal/config"
 	"github.com/autobrr/harbrr/internal/logger"
 )
 
-func TestNew(t *testing.T) {
-	t.Parallel()
+// These tests mutate the process-global zerolog level (the runtime knob), so they are
+// intentionally NOT parallel and each restores a permissive level for the next.
 
-	tests := []struct {
-		name    string
-		cfg     config.LogConfig
-		wantErr bool
-	}{
-		{"json info", config.LogConfig{Level: "info", Format: "json"}, false},
-		{"console debug", config.LogConfig{Level: "debug", Format: "console"}, false},
-		{"bad level", config.LogConfig{Level: "loud", Format: "json"}, true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			var buf bytes.Buffer
-			lg, err := logger.New(tt.cfg, &buf)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("New() = nil error, want error")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("New() = %v", err)
-			}
-			lg.Info().Msg("hello")
-			if !strings.Contains(buf.String(), "hello") {
-				t.Errorf("log output %q missing message", buf.String())
-			}
-		})
+func TestNewFormatsAndEmits(t *testing.T) {
+	zerolog.SetGlobalLevel(zerolog.TraceLevel)
+	for _, format := range []string{"json", "console"} {
+		var buf bytes.Buffer
+		lg := logger.New(config.LogConfig{Format: format}, &buf)
+		lg.Info().Msg("hello")
+		if !strings.Contains(buf.String(), "hello") {
+			t.Errorf("%s: output %q missing message", format, buf.String())
+		}
 	}
 }
 
-func TestNewLevelFilters(t *testing.T) {
-	t.Parallel()
+func TestSetLevelGatesGlobally(t *testing.T) {
+	defer zerolog.SetGlobalLevel(zerolog.TraceLevel)
 
 	var buf bytes.Buffer
-	lg, err := logger.New(config.LogConfig{Level: "warn", Format: "json"}, &buf)
-	if err != nil {
-		t.Fatalf("New() = %v", err)
+	lg := logger.New(config.LogConfig{Format: "json"}, &buf)
+
+	if err := logger.SetLevel("warn"); err != nil {
+		t.Fatalf("SetLevel: %v", err)
+	}
+	if got := logger.Level(); got != "warn" {
+		t.Errorf("Level() = %q, want warn", got)
 	}
 	lg.Info().Msg("filtered")
 	lg.Warn().Msg("kept")
 
 	out := buf.String()
 	if strings.Contains(out, "filtered") {
-		t.Errorf("info message should be filtered at warn level: %q", out)
+		t.Errorf("info must be filtered at warn level: %q", out)
 	}
 	if !strings.Contains(out, "kept") {
-		t.Errorf("warn message should pass: %q", out)
+		t.Errorf("warn must pass at warn level: %q", out)
+	}
+}
+
+func TestSetLevelRejectsUnknown(t *testing.T) {
+	defer zerolog.SetGlobalLevel(zerolog.TraceLevel)
+	if err := logger.SetLevel("loud"); err == nil {
+		t.Fatal("SetLevel(loud) = nil, want an error")
 	}
 }
