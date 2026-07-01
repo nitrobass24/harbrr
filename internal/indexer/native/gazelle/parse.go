@@ -39,22 +39,23 @@ type browseResponse struct {
 
 // browseResponseBody holds the result groups. Pagination fields are JSON strings.
 type browseResponseBody struct {
-	Results []group `json:"results"`
+	CurrentPage flexInt `json:"currentPage"`
+	Pages       flexInt `json:"pages"`
+	Results     []group `json:"results"`
 }
 
 // group is one browse result. A MUSIC group carries nested Torrents (one release per
 // torrent); a NON-MUSIC group has Torrents == nil and IS one release using the
 // group-level TorrentID/Size/Seeders/Leechers/Category/Snatches/GroupTime fields.
 type group struct {
-	GroupID     string    `json:"groupId"`
+	GroupID     flexInt   `json:"groupId"`
 	GroupName   string    `json:"groupName"`
 	Artist      string    `json:"artist"`
-	GroupYear   string    `json:"groupYear"`
+	GroupYear   flexInt   `json:"groupYear"`
 	ReleaseType string    `json:"releaseType"`
 	Tags        []string  `json:"tags"`
 	Torrents    []torrent `json:"torrents"`
 
-	// Group-level fields used only for the NON-MUSIC (torrents == nil) path.
 	TorrentID flexInt `json:"torrentId"`
 	Size      flexInt `json:"size"`
 	Seeders   flexInt `json:"seeders"`
@@ -63,10 +64,10 @@ type group struct {
 	Category  *string `json:"category"`
 	GroupTime string  `json:"groupTime"`
 
-	IsFreeLeech         bool `json:"isFreeLeech"`
+	IsFreeLeech         bool `json:"isFreeleech"`
 	IsNeutralLeech      bool `json:"isNeutralLeech"`
 	IsFreeload          bool `json:"isFreeload"`
-	IsPersonalFreeLeech bool `json:"isPersonalFreeLeech"`
+	IsPersonalFreeLeech bool `json:"isPersonalFreeleech"`
 	CanUseToken         bool `json:"canUseToken"`
 }
 
@@ -78,7 +79,7 @@ type torrent struct {
 	Encoding      string  `json:"encoding"`
 	Media         string  `json:"media"`
 	RemasterTitle string  `json:"remasterTitle"`
-	RemasterYear  string  `json:"remasterYear"`
+	RemasterYear  flexInt `json:"remasterYear"`
 	HasLog        bool    `json:"hasLog"`
 	LogScore      int     `json:"logScore"`
 	HasCue        bool    `json:"hasCue"`
@@ -90,10 +91,10 @@ type torrent struct {
 	Time          string  `json:"time"`
 	Category      *string `json:"category"`
 
-	IsFreeLeech         bool `json:"isFreeLeech"`
+	IsFreeLeech         bool `json:"isFreeleech"`
 	IsNeutralLeech      bool `json:"isNeutralLeech"`
 	IsFreeload          bool `json:"isFreeload"`
-	IsPersonalFreeLeech bool `json:"isPersonalFreeLeech"`
+	IsPersonalFreeLeech bool `json:"isPersonalFreeleech"`
 	CanUseToken         bool `json:"canUseToken"`
 }
 
@@ -206,7 +207,7 @@ func (d *driver) musicRelease(g *group, t *torrent) *normalizer.Release {
 		Link:                 d.downloadLink(t.TorrentID.int64(), d.wantToken(t.CanUseToken, free)),
 		Artist:               g.Artist,
 		Album:                g.GroupName,
-		Year:                 parseYear(g.GroupYear),
+		Year:                 g.GroupYear.int64(),
 		Genre:                strings.Join(g.Tags, ", "),
 		Categories:           d.categories(t.Category),
 		Size:                 t.Size.int64(),
@@ -228,7 +229,7 @@ func (d *driver) nonMusicRelease(g *group) *normalizer.Release {
 	return &normalizer.Release{
 		Title:                html.UnescapeString(g.GroupName),
 		Link:                 d.downloadLink(g.TorrentID.int64(), d.wantToken(g.CanUseToken, free)),
-		Year:                 parseYear(g.GroupYear),
+		Year:                 g.GroupYear.int64(),
 		Categories:           d.categories(g.Category),
 		Size:                 g.Size.int64(),
 		Grabs:                g.Snatches.int64(),
@@ -252,14 +253,18 @@ func (d *driver) nonMusicRelease(g *group) *normalizer.Release {
 // "Cue" if HasCue]. The whole title is HTML-unescaped.
 func composeTitle(g *group, t *torrent) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s - %s (%s)", g.Artist, g.GroupName, g.GroupYear)
+	fmt.Fprintf(&b, "%s - %s (%d)", g.Artist, g.GroupName, g.GroupYear.int64())
 	// Match Prowlarr's IsNotNullOrWhiteSpace checks: a whitespace-only ReleaseType or
 	// RemasterTitle must not emit an empty "[ ]" bracket.
 	if rt := strings.TrimSpace(g.ReleaseType); rt != "" && rt != "Unknown" {
 		fmt.Fprintf(&b, " [%s]", rt)
 	}
 	if strings.TrimSpace(t.RemasterTitle) != "" {
-		fmt.Fprintf(&b, " [%s]", strings.TrimSpace(t.RemasterTitle+" "+t.RemasterYear))
+		remaster := strings.TrimSpace(t.RemasterTitle)
+		if y := t.RemasterYear.int64(); y > 0 {
+			remaster = strings.TrimSpace(fmt.Sprintf("%s %d", remaster, y))
+		}
+		fmt.Fprintf(&b, " [%s]", remaster)
 	}
 	b.WriteString(" [" + strings.Join(titleFlags(t), " / ") + "]")
 	return html.UnescapeString(b.String())
@@ -385,15 +390,6 @@ func (d *driver) publishDate(value string) string {
 		return ""
 	}
 	return out
-}
-
-// parseYear parses a group year string to int64; a blank or unparseable value yields 0.
-func parseYear(s string) int64 {
-	n, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
-	if err != nil {
-		return 0
-	}
-	return n
 }
 
 // scrubAPIKey removes the configured apikey from s so a server echo cannot leak it.
