@@ -138,10 +138,21 @@ func HarbrrSearch(ctx context.Context, c *http.Client, base, key, slug, query st
 	return res, status, err
 }
 
-// ProwlarrIndexerID resolves a Prowlarr indexer id by its definitionName. found is
-// false when the oracle has no such indexer (the caller then skips the differential —
-// a missing oracle is not a harbrr failure).
-func ProwlarrIndexerID(ctx context.Context, c *http.Client, base, key, defName string) (int, bool, error) {
+// prowlarrIndexer is one entry of Prowlarr's /api/v1/indexer list. harbrr and Prowlarr
+// name indexers in different namespaces — harbrr's Name is a display name and its slug is
+// the def id, while Prowlarr exposes both a user-set Name and the underlying DefinitionName
+// (often an "-api" variant) — so matching needs all three fields.
+type prowlarrIndexer struct {
+	ID             int    `json:"id"`
+	Name           string `json:"name"`
+	DefinitionName string `json:"definitionName"`
+}
+
+// ProwlarrIndexerID resolves a Prowlarr indexer id for a harbrr indexer, matching on its
+// display name and slug (see matchProwlarrIndexer). found is false when the oracle has no
+// such indexer (the caller then skips the differential — a missing oracle is not a harbrr
+// failure).
+func ProwlarrIndexerID(ctx context.Context, c *http.Client, base, key, hName, hSlug string) (int, bool, error) {
 	body, status, err := httpGet(ctx, c, base+"/api/v1/indexer", map[string]string{"X-Api-Key": key})
 	if err != nil {
 		return 0, false, err
@@ -149,19 +160,43 @@ func ProwlarrIndexerID(ctx context.Context, c *http.Client, base, key, defName s
 	if status != http.StatusOK {
 		return 0, false, nil
 	}
-	var idx []struct {
-		ID             int    `json:"id"`
-		DefinitionName string `json:"definitionName"`
-	}
+	var idx []prowlarrIndexer
 	if err := json.Unmarshal(body, &idx); err != nil {
 		return 0, false, fmt.Errorf("parse Prowlarr indexer list: %w", err)
 	}
-	for _, i := range idx {
-		if strings.EqualFold(i.DefinitionName, defName) {
-			return i.ID, true, nil
+	id, ok := matchProwlarrIndexer(hName, hSlug, idx)
+	return id, ok, nil
+}
+
+// matchProwlarrIndexer pairs a harbrr indexer (display name + slug) with a Prowlarr indexer
+// using only exact, normalized equality — never fuzzy/prefix matching: a wrong pair would
+// make DiffPass compare two different trackers and emit a false FAILURE, which is worse than
+// reporting not-comparable. Genuinely divergent names (e.g. harbrr "BroadcastTheNet" vs
+// Prowlarr's typo'd def "BroadcasTheNet") correctly stay unmatched.
+func matchProwlarrIndexer(hName, hSlug string, list []prowlarrIndexer) (int, bool) {
+	name, slug := normKey(hName), normKey(hSlug)
+	for _, i := range list {
+		pName, pDef := normKey(i.Name), normKey(i.DefinitionName)
+		switch {
+		case name != "" && name == pName, // harbrr display name == Prowlarr display name
+			slug != "" && slug == pDef,                            // harbrr slug == Prowlarr def id
+			slug != "" && slug == strings.TrimSuffix(pDef, "api"): // Prowlarr "-api" variant
+			return i.ID, true
 		}
 	}
-	return 0, false, nil
+	return 0, false
+}
+
+// normKey lowercases and strips everything but [a-z0-9] so cosmetic differences
+// ("DigitalCore (API)" vs "digitalcore", "HD-Space" vs "HDspace") compare equal.
+func normKey(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // ProwlarrSearch queries Prowlarr's search API for one indexer id. It returns the

@@ -26,12 +26,12 @@ func parityCheck(ctx context.Context, c *http.Client, cfg Config, ix harbrrIndex
 	if skip != "" {
 		return skipFinding(f, skip)
 	}
-	id, comparable, skip := prowlarrLookup(ctx, c, cfg, ix.Name)
+	id, comparable, skip := prowlarrLookup(ctx, c, cfg, ix.Name, ix.Slug)
 	if skip != "" {
 		return skipFinding(f, skip)
 	}
 	if !comparable {
-		f.Status, f.Detail = StatusNA, fmt.Sprintf("no Prowlarr indexer named %q (not comparable)", ix.Name)
+		f.Status, f.Detail = StatusNA, fmt.Sprintf("no Prowlarr indexer matching %q (%s) (not comparable)", ix.Name, ix.Slug)
 		return f
 	}
 	time.Sleep(betweenCallsDelay)
@@ -77,11 +77,11 @@ func harbrrParity(ctx context.Context, c *http.Client, cfg Config, slug string) 
 	return res, query, ""
 }
 
-// prowlarrLookup resolves the Prowlarr indexer id for a definitionName. A transport
-// error is a skip; a clean "not found" yields comparable=false (the caller marks it
-// not-comparable).
-func prowlarrLookup(ctx context.Context, c *http.Client, cfg Config, name string) (id int, comparable bool, skip string) {
-	id, ok, err := ProwlarrIndexerID(ctx, c, cfg.ProwlarrURL, cfg.ProwlarrKey, name)
+// prowlarrLookup resolves the Prowlarr indexer id for a harbrr indexer by its display
+// name and slug. A transport error is a skip; a clean "not found" yields comparable=false
+// (the caller marks it not-comparable).
+func prowlarrLookup(ctx context.Context, c *http.Client, cfg Config, name, slug string) (id int, comparable bool, skip string) {
+	id, ok, err := ProwlarrIndexerID(ctx, c, cfg.ProwlarrURL, cfg.ProwlarrKey, name, slug)
 	if err != nil {
 		return 0, false, "Prowlarr oracle unavailable: " + apphttp.RedactError(err)
 	}

@@ -367,7 +367,9 @@ func harbrrSearch(t *testing.T, c *http.Client, cfg config, slug, query string) 
 // then queries Prowlarr's search API.
 func prowlarrSearch(t *testing.T, c *http.Client, cfg config, prowlarrName, query string) ([]Result, bool) {
 	t.Helper()
-	id, ok, err := ProwlarrIndexerID(context.Background(), c, cfg.ProwlarrURL, cfg.ProwlarrKey, prowlarrName)
+	// This harness configures the exact Prowlarr definitionName per tracker, so match on it
+	// (slug arg); the display-name arg is left empty.
+	id, ok, err := ProwlarrIndexerID(context.Background(), c, cfg.ProwlarrURL, cfg.ProwlarrKey, "", prowlarrName)
 	if err != nil {
 		// A Prowlarr transport error is oracle-side, not a harbrr failure — skip.
 		t.Skipf("%s: Prowlarr oracle unavailable (%v); skipping differential", prowlarrName, err)
