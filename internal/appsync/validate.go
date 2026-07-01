@@ -124,7 +124,7 @@ func requireNonBlank(field, value string) error {
 // (mirrors internal/announce.validateAbsURL).
 func validateAbsURL(field, raw string) error {
 	u, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+	if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") {
 		return fmt.Errorf("%w: %s must be an absolute http(s) URL", ErrInvalid, field)
 	}
 	return nil

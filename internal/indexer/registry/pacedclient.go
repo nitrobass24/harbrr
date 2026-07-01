@@ -182,19 +182,26 @@ func (d *pacedDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
 	}, opts...)
 
 	if rerr != nil {
-		// A cancelled/expired ctx wins, with its identity preserved for callers. waitCtx
-		// reflects both an inbound cancel (context.Canceled) and a budget/deadline expiry
-		// (context.DeadlineExceeded), so the bounded sum surfaces a typed abort either way.
-		if cerr := waitCtx.Err(); cerr != nil {
-			return nil, fmt.Errorf("registry: request aborted: %w", cerr)
-		}
 		var s *rateLimitSignalError
-		if errors.As(rerr, &s) {
-			// Bounded retry exhausted on 429/503 — surface the typed error the
-			// registry classifies as rate_limited.
+		switch {
+		case errors.As(rerr, &s):
+			// Bounded retry exhausted on 429/503. If the budget/inbound ctx also expired
+			// (e.g. it fired mid-backoff), that abort wins with its identity preserved;
+			// otherwise surface the typed error the registry classifies as rate_limited.
+			if cerr := waitCtx.Err(); cerr != nil {
+				return nil, fmt.Errorf("registry: request aborted: %w", cerr)
+			}
 			return nil, &search.RateLimitedError{StatusCode: s.status, RetryAfter: s.after}
+		case errors.Is(rerr, context.Canceled), errors.Is(rerr, context.DeadlineExceeded):
+			// A wait/sleep abort — an inbound cancel or a budget expiry during lim.Wait
+			// or a backoff sleep — with the ctx identity preserved for callers.
+			return nil, fmt.Errorf("registry: request aborted: %w", rerr)
+		default:
+			// A substantive base.Do transport error: surface it AS-IS, never masked as a
+			// budget abort just because the budget elapsed while the (uncancelled) base.Do
+			// call ran — so the real cause stays diagnosable.
+			return nil, fmt.Errorf("registry: %w", rerr)
 		}
-		return nil, fmt.Errorf("registry: %w", rerr) // transport error (not retried)
 	}
 	return out, nil
 }

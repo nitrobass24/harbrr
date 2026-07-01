@@ -257,6 +257,44 @@ func TestPacedDoer_BudgetBoundsCumulativeWait(t *testing.T) {
 	}
 }
 
+// slowErrDoer sleeps then returns a fixed transport error, simulating a base.Do that
+// outlasts the budget and then fails.
+type slowErrDoer struct {
+	sleep time.Duration
+	err   error
+	calls int
+}
+
+func (d *slowErrDoer) Do(*stdhttp.Request) (*stdhttp.Response, error) {
+	d.calls++
+	time.Sleep(d.sleep)
+	return nil, d.err
+}
+
+// TestPacedDoer_SurfacesSlowTransportError proves a substantive base.Do error is
+// surfaced AS-IS even when the (uncancelled) call ran long enough to exhaust the
+// budget — it must NOT be masked as a "request aborted" deadline, so the real cause
+// stays diagnosable. Regression for the error-reclassification bug.
+func TestPacedDoer_SurfacesSlowTransportError(t *testing.T) {
+	t.Parallel()
+	errBoom := errors.New("connection reset by peer")
+	base := &slowErrDoer{sleep: 40 * time.Millisecond, err: errBoom}
+	d := newPacedDoer(base, time.Second)
+	d.limiter = unlimited
+	d.budget = 10 * time.Millisecond // expires while base.Do is still running
+
+	_, err := d.Do(getReq(context.Background(), t))
+	if !errors.Is(err, errBoom) {
+		t.Fatalf("err = %v, want it to wrap the real transport error %v", err, errBoom)
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, must NOT be masked as a budget/deadline abort", err)
+	}
+	if base.calls != 1 {
+		t.Fatalf("base called %d times, want 1", base.calls)
+	}
+}
+
 // TestPacedDoer_InboundDeadlineWinsOverBudget proves a shorter inbound deadline still
 // bounds the cumulative sleeps (the budget is only a ceiling): with a never-firing
 // backoff, the request's own deadline ends Do.

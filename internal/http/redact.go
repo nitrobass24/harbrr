@@ -95,11 +95,17 @@ func redactUserinfo(u *url.URL) {
 	}
 }
 
+// rawUserinfoRe matches a userinfo password in a raw URL string (`//user:PASS@`).
+// The username char class excludes ':' so group 1 stops at the FIRST colon,
+// redacting the whole password even when it contains colons.
+var rawUserinfoRe = regexp.MustCompile(`(//[^/?#@:]*:)[^/?#@]*(@)`)
+
 // redactURLFallback handles input url.Parse rejects. Rather than risk emitting a
-// raw secret, it strips the entire query string (everything after the first
-// '?') and appends a marker, and also scrubs any secret-shaped PATH token from
-// the kept structural prefix.
+// raw secret, it scrubs any userinfo password (redactUserinfo only runs on a parsed
+// URL), strips the entire query string (everything after the first '?') and appends
+// a marker, and scrubs any secret-shaped PATH token from the kept structural prefix.
 func redactURLFallback(raw string) string {
+	raw = rawUserinfoRe.ReplaceAllString(raw, `${1}`+redactedValue+`${2}`)
 	if i := strings.IndexByte(raw, '?'); i >= 0 {
 		return redactPathSecrets(raw[:i]) + "?" + redactedValue
 	}

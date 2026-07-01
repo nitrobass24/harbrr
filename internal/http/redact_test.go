@@ -72,6 +72,14 @@ func TestRedactURL(t *testing.T) {
 			wantNoLeak: []string{"deadbeefdeadbeefdeadbeefdeadbeef0badc0de"},
 		},
 		{
+			// A userinfo password in a URL url.Parse REJECTS must be scrubbed by the
+			// fallback (redactUserinfo only runs on a successfully parsed URL).
+			name:       "unparseable url userinfo password redacted",
+			raw:        "https://alice:" + secret + "@bad\x7fhost/rss",
+			wantNoLeak: []string{secret},
+			wantHas:    []string{"alice", "REDACTED"},
+		},
+		{
 			name:       "authkey and token redacted",
 			raw:        "https://t.example/x?authkey=" + secret + "&token=" + secret + "&q=ok",
 			wantNoLeak: []string{secret},

@@ -27,7 +27,8 @@ func TestAPIKeyListAndDelete(t *testing.T) {
 		Key string `json:"key"`
 	}
 	if err := json.Unmarshal(body, &minted); err != nil || minted.Key == "" || minted.ID == 0 {
-		t.Fatalf("mint response missing id/key: %s", body)
+		// Never print body — it carries the minted plaintext key.
+		t.Fatalf("mint response missing id/key (unmarshal err=%v)", err)
 	}
 
 	// List returns the key metadata.
@@ -38,18 +39,19 @@ func TestAPIKeyListAndDelete(t *testing.T) {
 		Name string `json:"name"`
 	}
 	if err := json.Unmarshal(body, &list); err != nil {
-		t.Fatalf("decode list: %v (body: %s)", err, body)
+		t.Fatalf("decode list failed: %v", err)
 	}
 	if len(list) != 1 || list[0].ID != minted.ID || list[0].Name != "sonarr" {
-		t.Fatalf("list = %s, want exactly the minted key", body)
+		t.Fatalf("list did not contain exactly the minted key (got %d entries)", len(list))
 	}
 
 	// No-leak contract: the list view must never carry the key hash or the plaintext.
+	// Never print body in these failures — it is exactly the secret that leaked.
 	if strings.Contains(strings.ToLower(string(body)), "hash") {
-		t.Errorf("list view leaked a hash field: %s", body)
+		t.Error("list view leaked a hash field")
 	}
 	if strings.Contains(string(body), minted.Key) {
-		t.Errorf("list view leaked the plaintext key: %s", body)
+		t.Error("list view leaked the plaintext key")
 	}
 
 	// Delete the key, then the list is empty.
