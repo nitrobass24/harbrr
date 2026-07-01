@@ -196,11 +196,35 @@ func TestParseReleasesSkipsZeroID(t *testing.T) {
 	}
 }
 
-// TestParseReleasesMalformed proves a non-JSON body is a parse error.
+// TestParseReleasesMalformed proves a non-JSON body is a parse error whose message
+// now carries an actionable, redacted decode diagnostic while still wrapping the
+// ErrParseError sentinel (so callers keep matching on it).
 func TestParseReleasesMalformed(t *testing.T) {
 	t.Parallel()
-	if _, err := parseDriver(t, nil).parseReleases([]byte(`{`)); !errors.Is(err, search.ErrParseError) {
-		t.Fatalf("err = %v, want search.ErrParseError", err)
+	cases := []struct {
+		name  string
+		body  []byte
+		token string // an actionable substring the enriched message must contain
+	}{
+		// A truncated/malformed JSON object surfaces the decoder's offset/"invalid" hint.
+		{"truncated json", []byte(`{`), "invalid"},
+		// A non-JSON (HTML) body reports its size/shape without echoing bytes.
+		{"html body", []byte("<html>not json</html>"), "bytes"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := parseDriver(t, nil).parseReleases(tc.body)
+			if !errors.Is(err, search.ErrParseError) {
+				t.Fatalf("err = %v, want search.ErrParseError", err)
+			}
+			if !strings.Contains(err.Error(), tc.token) {
+				t.Errorf("err = %q, want an actionable message containing %q", err.Error(), tc.token)
+			}
+			if err.Error() == search.ErrParseError.Error() {
+				t.Errorf("err = %q, want more than the bare sentinel", err.Error())
+			}
+		})
 	}
 }
 

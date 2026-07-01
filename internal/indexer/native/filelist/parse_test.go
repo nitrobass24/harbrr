@@ -137,14 +137,27 @@ func TestParseReleasesEmpty(t *testing.T) {
 func TestParseReleasesErrors(t *testing.T) {
 	t.Parallel()
 	d := parseDriver(map[string]string{"passkey": credPass})
-	cases := []struct{ name, body string }{
-		{"malformed json", `[{`},
-		{"error envelope", `{"error":"Invalid passkey"}`},
-		{"unparseable date", `[{"id":1,"name":"x","upload_date":"not-a-date","category":"Filme HD"}]`},
+	cases := []struct {
+		name, body string
+		// wantToken, when set, is an actionable diagnostic token DecodeErrorDetail
+		// must surface in the wrapped error (proving the decode error is passed
+		// through, not swallowed into a bare sentinel). Empty = no token check
+		// (decode-detail does not apply to that branch).
+		wantToken string
+	}{
+		{"malformed json", `[{`, "offset"},
+		{"non-json html body", `<html>not json</html>`, "bytes"},
+		{"error envelope", `{"error":"Invalid passkey"}`, ""},
+		{"unparseable date", `[{"id":1,"name":"x","upload_date":"not-a-date","category":"Filme HD"}]`, ""},
 	}
 	for _, tc := range cases {
-		if _, err := d.parseReleases([]byte(tc.body)); !errors.Is(err, search.ErrParseError) {
+		_, err := d.parseReleases([]byte(tc.body))
+		if !errors.Is(err, search.ErrParseError) {
 			t.Errorf("%s: err = %v, want search.ErrParseError", tc.name, err)
+			continue
+		}
+		if tc.wantToken != "" && !strings.Contains(err.Error(), tc.wantToken) {
+			t.Errorf("%s: err = %q, want it to contain actionable token %q", tc.name, err.Error(), tc.wantToken)
 		}
 	}
 }

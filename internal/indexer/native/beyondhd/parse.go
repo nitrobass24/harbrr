@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -137,7 +138,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	}
 	var resp bhdResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("beyondhd: decode search response: %w", search.ErrParseError)
+		return nil, fmt.Errorf("beyondhd: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
 	}
 	if resp.StatusCode == statusFailure {
 		return nil, d.statusError(resp.StatusMessage)

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -215,13 +216,35 @@ func TestParseSearchErrors(t *testing.T) {
 	}
 }
 
-// TestParseSearchMalformed proves a non-JSON body is a parse error.
+// TestParseSearchMalformed proves a non-JSON body is a parse error whose message now
+// carries an actionable, redacted decode detail (the byte-count shape hint) while still
+// wrapping search.ErrParseError.
 func TestParseSearchMalformed(t *testing.T) {
 	t.Parallel()
 	d := parseDriver(t, map[string]string{"apikey": credAPIKey})
-	_, err := d.parseSearch([]byte("not json"))
-	if !errors.Is(err, search.ErrParseError) {
-		t.Fatalf("err = %v, want %v", err, search.ErrParseError)
+
+	cases := []struct {
+		name string
+		body []byte
+	}{
+		{"plaintext", []byte("not json")},
+		{"html", []byte("<html>not json</html>")},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := d.parseSearch(c.body)
+			if !errors.Is(err, search.ErrParseError) {
+				t.Fatalf("err = %v, want %v", err, search.ErrParseError)
+			}
+			// A non-JSON body renders the byte-count shape hint from DecodeErrorDetail.
+			if !strings.Contains(err.Error(), "bytes") {
+				t.Fatalf("err = %q, want an actionable detail containing %q", err, "bytes")
+			}
+			if err.Error() == search.ErrParseError.Error() {
+				t.Fatalf("err = %q, want more than the bare sentinel", err)
+			}
+		})
 	}
 }
 
@@ -236,6 +259,11 @@ func TestParseGroupMalformedTorrents(t *testing.T) {
 	_, err := d.parseSearch([]byte(body))
 	if !errors.Is(err, search.ErrParseError) {
 		t.Fatalf("err = %v, want %v", err, search.ErrParseError)
+	}
+	// The torrent value is a string, not an object: a JSON type/offset detail, not the
+	// byte-count fallback. Assert the actionable token survives while the sentinel wraps.
+	if got := err.Error(); !strings.Contains(got, "offset") && !strings.Contains(got, "invalid") {
+		t.Fatalf("err = %q, want an actionable detail containing %q or %q", got, "offset", "invalid")
 	}
 }
 

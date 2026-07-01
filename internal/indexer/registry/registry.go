@@ -122,6 +122,10 @@ type ClientParams struct {
 	// RateInterval is the per-host minimum spacing (resolved from the def's
 	// requestDelay, else defaultRateInterval).
 	RateInterval time.Duration
+	// Logger is the registry logger threaded into the paced doer so outbound requests
+	// trace (method/redacted-URL/status/duration) at debug. A zero value is fine: the
+	// registry defaults r.log to zerolog.Nop(), on which Debug()/Trace() are no-ops.
+	Logger zerolog.Logger
 }
 
 // WithDoerFactory overrides how the HTTP client for a built engine is created
@@ -253,6 +257,7 @@ func (r *Registry) buildAdapter(ctx context.Context, slug string) (*indexerAdapt
 		Cfg:          cfg,
 		Timeout:      resolveTimeout(cfg, r.timeout),
 		RateInterval: rateInterval(def), // a native def carries RequestDelay, so it is paced too
+		Logger:       r.log,
 	})
 	if err != nil {
 		return nil, err

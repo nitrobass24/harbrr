@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
 
@@ -75,7 +76,7 @@ func parseCaps(body []byte) (*capsRoot, error) {
 	}
 	var root capsRoot
 	if err := xml.Unmarshal(body, &root); err != nil {
-		return nil, fmt.Errorf("newznab: decode caps response: %w", search.ErrParseError)
+		return nil, fmt.Errorf("newznab: decode caps response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
 	}
 	if root.XMLName.Local != "caps" {
 		return nil, fmt.Errorf("newznab: caps response root is <%s>, want <caps>: %w", root.XMLName.Local, search.ErrParseError)

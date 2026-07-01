@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
@@ -137,8 +138,15 @@ func TestParseReleasesNotArray(t *testing.T) {
 // truncated mid-decode is a parse error.
 func TestParseReleasesMalformedArray(t *testing.T) {
 	t.Parallel()
-	if _, err := parseDriver(t, nil).parseReleases([]byte(`[{"t":1,`)); !errorsIsParse(err) {
+	_, err := parseDriver(t, nil).parseReleases([]byte(`[{"t":1,`))
+	if !errorsIsParse(err) {
 		t.Fatalf("err = %v, want search.ErrParseError", err)
+	}
+	// The discarded decode error is now surfaced as an actionable, redacted
+	// diagnostic: a truncated JSON array reports an offset ("invalid JSON at
+	// offset N"). The sentinel wrap (errorsIsParse above) must still hold.
+	if msg := err.Error(); !strings.Contains(msg, "offset") && !strings.Contains(msg, "invalid") {
+		t.Errorf("err = %q, want an actionable token (\"offset\" or \"invalid\")", msg)
 	}
 }
 

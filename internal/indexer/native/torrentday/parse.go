@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
@@ -58,7 +59,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	}
 	var rows []torrentDayRow
 	if err := json.Unmarshal(body, &rows); err != nil {
-		return nil, fmt.Errorf("torrentday: decode search response: %w", search.ErrParseError)
+		return nil, fmt.Errorf("torrentday: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
 	}
 
 	freeOnly := freeleechOnly(d.cfg)

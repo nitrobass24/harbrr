@@ -267,12 +267,18 @@ func TestParseBrowseFailure(t *testing.T) {
 	}
 }
 
-// TestParseBrowseMalformed proves a non-JSON body is a parse error.
+// TestParseBrowseMalformed proves a non-JSON body is a parse error whose message now
+// carries an actionable decode diagnostic (bytes count for a non-JSON body) while still
+// wrapping search.ErrParseError.
 func TestParseBrowseMalformed(t *testing.T) {
 	t.Parallel()
 	d := parseDriver(t, "redacted", nil)
-	if _, err := d.parseBrowse([]byte("<html>not json</html>")); !errors.Is(err, search.ErrParseError) {
+	_, err := d.parseBrowse([]byte("<html>not json</html>"))
+	if !errors.Is(err, search.ErrParseError) {
 		t.Errorf("err = %v, want search.ErrParseError", err)
+	}
+	if !strings.Contains(err.Error(), "bytes") {
+		t.Errorf("err = %q, want actionable token %q for non-JSON body", err, "bytes")
 	}
 }
 

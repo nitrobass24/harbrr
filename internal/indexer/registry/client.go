@@ -51,7 +51,7 @@ func newDoer(p ClientParams) (search.Doer, error) {
 	if transport != nil {
 		base.Transport = transport
 	}
-	return newPacedDoer(base, p.RateInterval), nil
+	return newPacedDoer(base, p.RateInterval, p.Logger), nil
 }
 
 // buildTransport returns the per-instance HTTP transport: a clone of the default

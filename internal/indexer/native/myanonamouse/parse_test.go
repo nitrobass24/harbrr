@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
@@ -95,17 +96,27 @@ func TestParseReleasesErrors(t *testing.T) {
 	d := goldenDriver(t)
 	cases := []struct {
 		name, body string
+		// wantToken, when non-empty, is an actionable diagnostic substring the enriched
+		// decode-error message must carry (F1) — proving DecodeErrorDetail is threaded
+		// through while errors.Is(…, ErrParseError) still holds.
+		wantToken string
 	}{
-		{"malformed json", `{"data": [`},
-		{"no data array (empty object)", `{}`},
-		{"explicit null data", `{"error":"","data":null}`},
-		{"server error string", `{"error":"Something broke","data":[]}`},
-		{"bad size", `{"error":"","data":[{"id":1,"title":"x","size":"NOTASIZE","added":"2024-01-01 00:00:00","dl":"h"}]}`},
-		{"bad date", `{"error":"","data":[{"id":1,"title":"x","size":"1 MB","added":"not-a-date","dl":"h"}]}`},
+		{name: "malformed json", body: `{"data": [`, wantToken: "invalid"},
+		{name: "non-json html body", body: `<html>not json</html>`, wantToken: "bytes"},
+		{name: "no data array (empty object)", body: `{}`},
+		{name: "explicit null data", body: `{"error":"","data":null}`},
+		{name: "server error string", body: `{"error":"Something broke","data":[]}`},
+		{name: "bad size", body: `{"error":"","data":[{"id":1,"title":"x","size":"NOTASIZE","added":"2024-01-01 00:00:00","dl":"h"}]}`},
+		{name: "bad date", body: `{"error":"","data":[{"id":1,"title":"x","size":"1 MB","added":"not-a-date","dl":"h"}]}`},
 	}
 	for _, tc := range cases {
-		if _, err := d.parseReleases([]byte(tc.body)); !errors.Is(err, search.ErrParseError) {
+		_, err := d.parseReleases([]byte(tc.body))
+		if !errors.Is(err, search.ErrParseError) {
 			t.Errorf("%s: err = %v, want search.ErrParseError", tc.name, err)
+			continue
+		}
+		if tc.wantToken != "" && !strings.Contains(err.Error(), tc.wantToken) {
+			t.Errorf("%s: err = %q, want actionable token %q", tc.name, err, tc.wantToken)
 		}
 	}
 }

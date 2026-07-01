@@ -85,7 +85,7 @@ type nzbAttr struct {
 func (d *driver) parseReleases(body []byte, catMap *mapper.CategoryMap) ([]*normalizer.Release, error) {
 	var feed rss
 	if err := xml.Unmarshal(body, &feed); err != nil {
-		return nil, fmt.Errorf("newznab: decode search response: %w", search.ErrParseError)
+		return nil, fmt.Errorf("newznab: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
 	}
 	if apiErr := feed.firstError(); apiErr != nil {
 		return nil, apiErr.toError()
