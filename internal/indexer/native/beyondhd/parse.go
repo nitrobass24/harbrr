@@ -52,6 +52,24 @@ type bhdResponse struct {
 // bhdTorrent is one release row. Per Prowlarr's models the numerics are real JSON numbers
 // and the ids are strings, but flexInt is used on the numerics defensively (mirroring
 // hdbits/broadcastthenet) so a string-encoded numeric never fails the page decode.
+
+type flexBool bool
+
+func (b *flexBool) UnmarshalJSON(data []byte) error {
+	s := strings.TrimSpace(string(data))
+
+	switch s {
+	case "true", "1":
+		*b = true
+		return nil
+	case "false", "0", "null":
+		*b = false
+		return nil
+	}
+
+	return fmt.Errorf("beyondhd: decode boolean field: %s", s)
+}
+
 type bhdTorrent struct {
 	Name           string  `json:"name"`
 	InfoHash       string  `json:"info_hash"`
@@ -66,13 +84,13 @@ type bhdTorrent struct {
 	DownloadURL    string  `json:"download_url"`
 	ImdbID         string  `json:"imdb_id"`
 	TmdbID         string  `json:"tmdb_id"`
-	Freeleech      bool    `json:"freeleech"`
-	Promo25        bool    `json:"promo25"`
-	Promo50        bool    `json:"promo50"`
-	Promo75        bool    `json:"promo75"`
-	Limited        bool    `json:"limited"`
-	Exclusive      bool    `json:"exclusive"`
-	Internal       bool    `json:"internal"`
+	Freeleech      flexBool    `json:"freeleech"`
+	Promo25        flexBool    `json:"promo25"`
+	Promo50        flexBool    `json:"promo50"`
+	Promo75        flexBool    `json:"promo75"`
+	Limited        flexBool    `json:"limited"`
+	Exclusive      flexBool    `json:"exclusive"`
+	Internal       flexBool    `json:"internal"`
 }
 
 // flexInt unmarshals a JSON number OR a JSON string into an int64. BeyondHD wire-encodes
@@ -114,11 +132,15 @@ func (n flexInt) int64() int64 { return int64(n) }
 // (it could echo the api_key/rsskey). Rows are mapped to releases and sorted by descending
 // publish date (Prowlarr orders by PublishDate desc) for a deterministic feed.
 func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
+
 	if containsInvalidKey(body) {
 		return nil, fmt.Errorf("beyondhd: %w", login.ErrLoginFailed)
 	}
 	var resp bhdResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
+
+	fmt.Printf("DEBUG beyondhd unmarshal err: %v\n", err)
+
 		return nil, fmt.Errorf("beyondhd: decode search response: %w", search.ErrParseError)
 	}
 	if resp.StatusCode == statusFailure {
@@ -198,15 +220,16 @@ func (d *driver) categories(category string) []int {
 // downloadVolumeFactor reproduces Prowlarr's GetDownloadVolumeFactor: a freeleech or
 // limited release is free (0); otherwise the largest active promo discount applies
 // (75%->0.25, 50%->0.5, 25%->0.75); everything else is full price (1).
+
 func downloadVolumeFactor(row *bhdTorrent) float64 {
 	switch {
-	case row.Freeleech || row.Limited:
+	case bool(row.Freeleech) || bool(row.Limited):
 		return 0
-	case row.Promo75:
+	case bool(row.Promo75):
 		return promo75Factor
-	case row.Promo50:
+	case bool(row.Promo50):
 		return promo50Factor
-	case row.Promo25:
+	case bool(row.Promo25):
 		return promo25Factor
 	default:
 		return 1
