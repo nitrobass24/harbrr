@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -26,12 +27,15 @@ const secretURL = "url"
 // sink: a recorded indexer health failure fans out to every enabled target whose
 // on_health_failure flag is set, asynchronously and best-effort.
 type Service struct {
-	db      dbinterface.Querier
-	repo    database.Notifications
-	keyring *secrets.Keyring
-	client  *http.Client
-	clock   func() time.Time
-	log     zerolog.Logger
+	// dispatchWG tracks in-flight detached dispatch goroutines so Drain can join them
+	// before the DB is torn down at shutdown (dispatch reads the DB).
+	dispatchWG sync.WaitGroup
+	db         dbinterface.Querier
+	repo       database.Notifications
+	keyring    *secrets.Keyring
+	client     *http.Client
+	clock      func() time.Time
+	log        zerolog.Logger
 }
 
 // NewService wires the notify service. client is shared by all senders (nil installs a
@@ -209,10 +213,31 @@ func (s *Service) OnHealthEvent(ctx context.Context, indexer, kind, detail strin
 	}
 	// Detach from the caller's request context (which is cancelled the moment the search
 	// returns) so the send outlives it, but keep the process-wide cancellation absent —
-	// the sender's own HTTP timeout bounds it.
-	go s.dispatch(context.WithoutCancel(ctx), ev, func(n domain.Notification) bool {
-		return n.OnHealthFailure
-	})
+	// the sender's own HTTP timeout bounds it. Tracked on dispatchWG so shutdown (Drain)
+	// joins the goroutine before db.Close, since dispatch reads the DB.
+	s.dispatchWG.Add(1)
+	go func() {
+		defer s.dispatchWG.Done()
+		s.dispatch(context.WithoutCancel(ctx), ev, func(n domain.Notification) bool {
+			return n.OnHealthFailure
+		})
+	}()
+}
+
+// Drain waits for in-flight dispatch goroutines to finish before returning, bounded by
+// ctx (a hanging webhook must not stall shutdown indefinitely). Call it during shutdown
+// after the server stops accepting requests and before the database is closed.
+func (s *Service) Drain(ctx context.Context) {
+	done := make(chan struct{})
+	go func() {
+		s.dispatchWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		s.log.Warn().Msg("notify: drain deadline reached; abandoning in-flight sends")
+	}
 }
 
 // dispatch fans an event out to every enabled target the match predicate selects,

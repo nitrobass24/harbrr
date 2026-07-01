@@ -157,6 +157,7 @@ func serve(ctx context.Context, cfg *config.Config, log zerolog.Logger) error {
 	defer func() {
 		bgCancel()
 		bg.Wait()
+		drainNotify(ctx, notifySvc) // join in-flight dispatches before the deferred db.Close
 	}()
 
 	startSessionCleanup(bgCtx, &bg, store, log)
@@ -291,6 +292,14 @@ func dropinDir(cfg *config.Config) string {
 // listenAddr is the host:port the server binds.
 func listenAddr(cfg *config.Config) string {
 	return net.JoinHostPort(cfg.Server.Host, strconv.Itoa(cfg.Server.Port))
+}
+
+// drainNotify joins in-flight notification dispatch goroutines (which read the DB)
+// before the deferred db.Close runs, bounded so a hanging webhook can't stall shutdown.
+func drainNotify(ctx context.Context, svc *notify.Service) {
+	drainCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	svc.Drain(drainCtx)
 }
 
 // startSessionCleanup reaps expired sessions hourly until ctx is cancelled. It joins
