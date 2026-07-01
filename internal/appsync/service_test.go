@@ -153,9 +153,9 @@ func TestAppCategoryRange(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.kind, func(t *testing.T) {
 			t.Parallel()
-			lo, hi, ok := appCategoryRange(tt.kind)
+			lo, hi, ok := AppCategoryRange(tt.kind)
 			if lo != tt.lo || hi != tt.hi || ok != tt.ok {
-				t.Errorf("appCategoryRange(%q) = (%d, %d, %t), want (%d, %d, %t)", tt.kind, lo, hi, ok, tt.lo, tt.hi, tt.ok)
+				t.Errorf("AppCategoryRange(%q) = (%d, %d, %t), want (%d, %d, %t)", tt.kind, lo, hi, ok, tt.lo, tt.hi, tt.ok)
 			}
 		})
 	}
@@ -218,8 +218,8 @@ func TestIndexerServesApp(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := indexerServesApp(tt.kind, tt.cats); got != tt.want {
-				t.Errorf("indexerServesApp(%q, %v) = %t, want %t", tt.kind, tt.cats, got, tt.want)
+			if got := IndexerServesApp(tt.kind, tt.cats); got != tt.want {
+				t.Errorf("IndexerServesApp(%q, %v) = %t, want %t", tt.kind, tt.cats, got, tt.want)
 			}
 		})
 	}
