@@ -46,6 +46,10 @@ func TestSlugFromFeedURL(t *testing.T) {
 		// a human-added indexer could be falsely tagged harbrr-managed and orphan-deleted.
 		{"marker only in query", "http://app/torznab?ref=/api/indexers/evil/results", ""},
 		{"trailing slash, no slug", "http://harbrr/api/indexers/", ""},
+		// A management URL shares the /api/indexers/{slug} prefix but is NOT a feed — the
+		// required /results/torznab suffix keeps it from being read as harbrr-managed.
+		{"management search URL", "http://harbrr/api/indexers/show-tracker/search", ""},
+		{"management get URL", "http://harbrr/api/indexers/show-tracker", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

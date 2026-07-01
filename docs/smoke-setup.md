@@ -70,8 +70,8 @@ applies category filtering, so its count can be legitimately lower than Prowlarr
 The MVP gate also requires a real **search → grab end-to-end**. This is performed
 manually through Sonarr (not by the smoke harness):
 
-1. Add harbrr to Sonarr as a Torznab indexer (URL `…/api/indexers/{slug}/`,
-   the harbrr API key as the apikey).
+1. Add harbrr to Sonarr as a Torznab indexer (URL
+   `…/api/indexers/{slug}/results/torznab`, the harbrr API key as the apikey).
 2. Trigger a search and grab one **healthy / well-seeded** release.
 3. **Leave the torrent seeding in qBittorrent — never auto-remove or delete it.**
    Private trackers penalize grab-then-remove (hit-and-run); leaving it seeding is

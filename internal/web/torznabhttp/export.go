@@ -114,6 +114,14 @@ func DLBaseURL(r *http.Request, basePath, indexerID string) string {
 	return externalIndexerBase(r, basePath, indexerID) + "/dl"
 }
 
+// DLBaseURLForOrigin builds the same /dl endpoint base as DLBaseURL but from an explicit
+// origin (scheme://host), for callers that have no *http.Request — the announce
+// background service derives the origin from the stored connection URL. It shares the
+// /api/indexers/<slug>/dl construction with DLBaseURL so the two never drift.
+func DLBaseURLForOrigin(origin, basePath, slug string) string {
+	return indexerBaseURL(origin, basePath, slug) + "/dl"
+}
+
 // FeedURL builds the externally-visible Torznab results-feed URL for an indexer (no
 // apikey appended). bypass selects the freeleech-bypass /full variant — the URL harbrr
 // hands cross-seed consumers that must see the full catalog. It reuses the same
@@ -141,13 +149,20 @@ func SealedDLURL(kr *secrets.Keyring, indexerID, dlBase, apiKey, originalLink st
 }
 
 // externalIndexerBase is the shared scheme://host<basePath>/api/indexers/<id>
-// prefix the feed and /dl URLs hang off.
+// prefix the feed and /dl URLs hang off, deriving the origin from the request.
 func externalIndexerBase(r *http.Request, basePath, indexerID string) string {
 	scheme := "http"
 	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
 		scheme = "https"
 	}
-	return scheme + "://" + r.Host + basePath + "/api/indexers/" + url.PathEscape(indexerID)
+	return indexerBaseURL(scheme+"://"+r.Host, basePath, indexerID)
+}
+
+// indexerBaseURL is the single builder for the {origin}{basePath}/api/indexers/{slug}
+// prefix, so every feed/dl URL (request-derived or origin-explicit) shares one source of
+// truth for the path shape.
+func indexerBaseURL(origin, basePath, slug string) string {
+	return origin + basePath + "/api/indexers/" + url.PathEscape(slug)
 }
 
 // NewDLRewriter builds the acquisition rewriter that seals a resolver-needing

@@ -177,7 +177,7 @@ results haven't changed, harbrr answers **`304 Not Modified`** with **no body at
 cheaper than serving the cached copy, and the tracker is never touched:
 
 ```http
-GET /api/indexers/<id>/results/torznab?... HTTP/1.1
+GET /api/indexers/<slug>/results/torznab?... HTTP/1.1
 If-None-Match: "9f8c…"
 
 HTTP/1.1 304 Not Modified

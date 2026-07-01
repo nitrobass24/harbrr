@@ -92,8 +92,15 @@ type RemoteIndexer struct {
 }
 
 // feedURLMarker is the fixed path segment that precedes a harbrr slug in every feed
-// URL: {origin}/api/indexers/{slug}/results/torznab.
+// URL: {origin}/api/indexers/{slug}/results/torznab. It is shared with the management
+// API (/api/indexers/{slug}/...), so slugFromFeedURL additionally requires the feed
+// suffix below to avoid reading a management URL as a feed.
 const feedURLMarker = "/api/indexers/"
+
+// feedURLSuffix is the path segment that follows the slug in a feed URL (the four
+// results/torznab variants all start with it). Requiring it is what distinguishes a
+// feed URL from a management URL that shares the /api/indexers/{slug} prefix.
+const feedURLSuffix = "/results/torznab"
 
 // slugFromFeedURL recovers the harbrr slug embedded in a Torznab feed URL, or "" when
 // the URL is not a harbrr feed. Drivers use it to tag which of an app's indexers are
@@ -112,6 +119,11 @@ func slugFromFeedURL(feedURL string) string {
 	rest := u.Path[i+len(feedURLMarker):]
 	j := strings.Index(rest, "/")
 	if j <= 0 {
+		return ""
+	}
+	// Require the feed suffix so a management URL sharing the /api/indexers/{slug}
+	// prefix (e.g. .../search) is not misread as a harbrr-managed feed.
+	if !strings.HasPrefix(rest[j:], feedURLSuffix) {
 		return ""
 	}
 	return rest[:j]

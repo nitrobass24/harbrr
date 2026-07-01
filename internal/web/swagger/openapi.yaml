@@ -52,7 +52,7 @@ paths:
       tags: [System]
       responses:
         "200":
-          description: service is healthy
+          description: service is healthy; also carries the running build version and commit
           content:
             application/json:
               schema:
@@ -60,7 +60,13 @@ paths:
                 properties:
                   status:
                     type: string
-                required: [status]
+                  version:
+                    type: string
+                    description: the running harbrr build version
+                  commit:
+                    type: string
+                    description: the git commit the build was cut from
+                required: [status, version, commit]
 
   /api/auth/setup:
     get:
@@ -894,11 +900,30 @@ paths:
         - { name: ep, in: query, required: false, schema: { type: string } }
         - { name: limit, in: query, required: false, schema: { type: integer }, description: page size }
         - { name: offset, in: query, required: false, schema: { type: integer } }
+        - { name: nocache, in: query, required: false, schema: { type: string, enum: ["1"] }, description: "set to 1 to bypass the search cache and force a live tracker fetch" }
+        - { name: If-None-Match, in: header, required: false, schema: { type: string }, description: "a previously-returned ETag; a match yields 304 Not Modified when the cached results are unchanged" }
+        - { name: Cache-Control, in: header, required: false, schema: { type: string }, description: "no-cache / no-store forces a live tracker fetch (the header sibling of nocache=1) and suppresses the 304 short-circuit" }
       responses:
         "200":
           description: a Torznab capabilities document or results feed (XML), or a Torznab <error> element
+          headers:
+            ETag:
+              schema: { type: string }
+              description: strong validator over the cached result set (present only for a cache-backed results feed)
+            Cache-Control:
+              schema: { type: string }
+              description: "private, max-age=<remaining cache TTL seconds> for a cache-backed results feed"
           content:
             application/xml:
+              schema: { type: string }
+        "304":
+          description: >
+            Not Modified — the request's If-None-Match matched the current cached
+            results, so the body is omitted (shares the base feed's cache behavior).
+          headers:
+            ETag:
+              schema: { type: string }
+            Cache-Control:
               schema: { type: string }
         "400":
           description: a Torznab <error> element (XML) for an unknown function or an unsupported id parameter
@@ -938,11 +963,30 @@ paths:
         - { name: ep, in: query, required: false, schema: { type: string } }
         - { name: limit, in: query, required: false, schema: { type: integer }, description: page size }
         - { name: offset, in: query, required: false, schema: { type: integer } }
+        - { name: nocache, in: query, required: false, schema: { type: string, enum: ["1"] }, description: "set to 1 to bypass the search cache and force a live tracker fetch" }
+        - { name: If-None-Match, in: header, required: false, schema: { type: string }, description: "a previously-returned ETag; a match yields 304 Not Modified when the cached results are unchanged" }
+        - { name: Cache-Control, in: header, required: false, schema: { type: string }, description: "no-cache / no-store forces a live tracker fetch (the header sibling of nocache=1) and suppresses the 304 short-circuit" }
       responses:
         "200":
           description: a Torznab capabilities document or results feed (XML), or a Torznab <error> element
+          headers:
+            ETag:
+              schema: { type: string }
+              description: strong validator over the cached result set (present only for a cache-backed results feed)
+            Cache-Control:
+              schema: { type: string }
+              description: "private, max-age=<remaining cache TTL seconds> for a cache-backed results feed"
           content:
             application/xml:
+              schema: { type: string }
+        "304":
+          description: >
+            Not Modified — the request's If-None-Match matched the current cached
+            results, so the body is omitted (shares the base feed's cache behavior).
+          headers:
+            ETag:
+              schema: { type: string }
+            Cache-Control:
               schema: { type: string }
         "400":
           description: a Torznab <error> element (XML) for an unknown function or an unsupported id parameter
@@ -977,11 +1021,30 @@ paths:
         - { name: ep, in: query, required: false, schema: { type: string } }
         - { name: limit, in: query, required: false, schema: { type: integer }, description: page size }
         - { name: offset, in: query, required: false, schema: { type: integer } }
+        - { name: nocache, in: query, required: false, schema: { type: string, enum: ["1"] }, description: "set to 1 to bypass the search cache and force a live tracker fetch" }
+        - { name: If-None-Match, in: header, required: false, schema: { type: string }, description: "a previously-returned ETag; a match yields 304 Not Modified when the cached results are unchanged" }
+        - { name: Cache-Control, in: header, required: false, schema: { type: string }, description: "no-cache / no-store forces a live tracker fetch (the header sibling of nocache=1) and suppresses the 304 short-circuit" }
       responses:
         "200":
           description: a Torznab capabilities document or results feed (XML), or a Torznab <error> element
+          headers:
+            ETag:
+              schema: { type: string }
+              description: strong validator over the cached result set (present only for a cache-backed results feed)
+            Cache-Control:
+              schema: { type: string }
+              description: "private, max-age=<remaining cache TTL seconds> for a cache-backed results feed"
           content:
             application/xml:
+              schema: { type: string }
+        "304":
+          description: >
+            Not Modified — the request's If-None-Match matched the current cached
+            results, so the body is omitted (shares the base feed's cache behavior).
+          headers:
+            ETag:
+              schema: { type: string }
+            Cache-Control:
               schema: { type: string }
         "400":
           description: a Torznab <error> element (XML) for an unknown function or an unsupported id parameter
