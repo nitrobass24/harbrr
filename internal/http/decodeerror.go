@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // DecodeErrorDetail renders a REDACTED, actionable one-line diagnostic from a
@@ -34,7 +35,7 @@ func DecodeErrorDetail(err error, body []byte) string {
 	var typeErr *json.UnmarshalTypeError
 	if errors.As(err, &typeErr) {
 		return fmt.Sprintf("field %q: expected %s, got %s at offset %d",
-			typeErr.Field, typeErr.Type, typeErr.Value, typeErr.Offset)
+			typeErr.Field, typeErr.Type, jsonKind(typeErr.Value), typeErr.Offset)
 	}
 
 	var jsonSyntax *json.SyntaxError
@@ -62,6 +63,18 @@ func DecodeErrorDetail(err error, body []byte) string {
 	}
 
 	return nonStructuredDetail(body)
+}
+
+// jsonKind reduces a json.UnmarshalTypeError.Value to its leading JSON-kind token.
+// The stdlib formats a numeric mismatch as "number <literal>" (e.g. "number -5"),
+// where the literal is response PAYLOAD; keeping only the first token ("number")
+// preserves the actionable kind while never echoing a data value. Non-numeric kinds
+// ("array", "object", "bool", "string") are single tokens and pass through unchanged.
+func jsonKind(value string) string {
+	if i := strings.IndexByte(value, ' '); i >= 0 {
+		return value[:i]
+	}
+	return value
 }
 
 // nonStructuredDetail describes a body the decoder could not parse as the expected

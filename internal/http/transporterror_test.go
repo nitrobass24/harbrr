@@ -13,7 +13,7 @@ func TestSafeTransportDetail(t *testing.T) {
 	tests := []struct {
 		name       string
 		err        error
-		wantIs     string
+		wantEmpty  bool
 		wantHas    []string
 		wantNoLeak []string
 	}{
@@ -46,15 +46,13 @@ func TestSafeTransportDetail(t *testing.T) {
 		{
 			name:       "non-url error yields empty (caller keeps the fixed message)",
 			err:        errors.New("read tcp: /path/PATHKEY-SECRET failed"),
-			wantIs:     "",
-			wantHas:    []string{},
+			wantEmpty:  true,
 			wantNoLeak: []string{"PATHKEY-SECRET"},
 		},
 		{
-			name:    "nil error yields empty",
-			err:     nil,
-			wantIs:  "",
-			wantHas: []string{},
+			name:      "nil error yields empty",
+			err:       nil,
+			wantEmpty: true,
 		},
 	}
 
@@ -62,11 +60,8 @@ func TestSafeTransportDetail(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			got := SafeTransportDetail(tt.err)
-			if tt.wantIs != "" && got != tt.wantIs {
-				t.Fatalf("SafeTransportDetail = %q, want %q", got, tt.wantIs)
-			}
-			if tt.err == nil && got != "" {
-				t.Fatalf("SafeTransportDetail(nil) = %q, want empty", got)
+			if tt.wantEmpty && got != "" {
+				t.Fatalf("SafeTransportDetail = %q, want empty", got)
 			}
 			for _, want := range tt.wantHas {
 				if !strings.Contains(got, want) {

@@ -325,14 +325,17 @@ func transportErrText(err error) string {
 	return "transport error"
 }
 
-// redactDoErr scrubs a transport error of any embedded URL secret. The stdlib
-// *url.Error stringifies the full request URL (query and all) into its message, so
-// rebuild a redacted form rather than risk leaking a passkey through a wrapped
-// "Get \"...?passkey=...\"" error.
+// redactDoErr scrubs a transport error of any embedded URL secret before it is returned
+// (an upstream log.Error().Err(err) must not be able to leak it). The stdlib *url.Error
+// stringifies the full request URL (path AND query) into its message, so rebuild a
+// host-only form: only scheme://host is kept. RedactURL alone is not enough here — it
+// misses a secret hidden in a URL PATH segment (a native driver's api_key/rsskey/passkey)
+// that its length heuristic does not match — so, like the trace log, the path/query are
+// dropped entirely. The inner cause (uerr.Err) carries no URL and is preserved via %w.
 func redactDoErr(err error) error {
 	var uerr *url.Error
 	if errors.As(err, &uerr) {
-		return fmt.Errorf("%s %s: %w", uerr.Op, apphttp.RedactURL(uerr.URL), uerr.Err)
+		return fmt.Errorf("%s %s: %w", uerr.Op, apphttp.SchemeHost(uerr.URL), uerr.Err)
 	}
 	return fmt.Errorf("request failed: %w", err)
 }

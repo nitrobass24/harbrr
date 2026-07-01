@@ -23,6 +23,13 @@ func TestDecodeErrorDetail(t *testing.T) {
 	var syntaxTarget browse
 	jsonSyntaxErr := json.Unmarshal([]byte(`{"torrents":`), &syntaxTarget)
 
+	// A number where a string is expected: the stdlib sets Value to "number <literal>",
+	// so the detail must keep "number" but never echo the literal 8675309 (payload).
+	var numTarget struct {
+		Name string `json:"name"`
+	}
+	numLiteralErr := json.Unmarshal([]byte(`{"name":8675309}`), &numTarget)
+
 	type xmlDoc struct {
 		XMLName xml.Name `xml:"caps"`
 	}
@@ -47,6 +54,13 @@ func TestDecodeErrorDetail(t *testing.T) {
 			err:     jsonSyntaxErr,
 			body:    []byte(`{"torrents":`),
 			wantHas: []string{"invalid JSON", "offset"},
+		},
+		{
+			name:       "numeric literal is stripped from type mismatch",
+			err:        numLiteralErr,
+			body:       []byte(`{"name":8675309}`),
+			wantHas:    []string{"name", "number", "offset"},
+			wantNoLeak: []string{"8675309"},
 		},
 		{
 			name:    "xml syntax error reports line",

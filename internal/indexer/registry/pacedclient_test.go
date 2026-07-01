@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	stdhttp "net/http"
+	stdurl "net/url"
 	"strings"
 	"testing"
 	"time"
@@ -168,6 +169,30 @@ func TestPacedDoer_DebugLogsHostOnly(t *testing.T) {
 	for _, want := range []string{`"method":"GET"`, `"status":200`, `"url":"https://t.invalid"`, "outbound request"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("debug log missing %q in: %s", want, out)
+		}
+	}
+}
+
+// TestRedactDoErrHostOnly proves the returned transport error is reduced to scheme://host,
+// so an upstream log.Error().Err(err) cannot leak a PATH-embedded secret (which RedactURL's
+// heuristic would miss) or a query secret.
+func TestRedactDoErrHostOnly(t *testing.T) {
+	t.Parallel()
+	const pathKey = "PATHSECRET-not-hex-so-heuristic-misses-it"
+	uerr := &stdurl.Error{
+		Op:  "Get",
+		URL: "https://t.invalid/torrent/download/auto.7." + pathKey + "?passkey=querysecret000",
+		Err: errors.New("connection refused"),
+	}
+	got := redactDoErr(uerr).Error()
+	for _, leak := range []string{pathKey, "querysecret000", "passkey", "download", "auto.7"} {
+		if strings.Contains(got, leak) {
+			t.Errorf("redactDoErr leaked %q: %q", leak, got)
+		}
+	}
+	for _, want := range []string{"Get", "https://t.invalid", "connection refused"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("redactDoErr missing %q: %q", want, got)
 		}
 	}
 }
