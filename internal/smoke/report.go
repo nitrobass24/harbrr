@@ -79,15 +79,11 @@ func (r Report) Summary() string {
 }
 
 // Markdown renders the failures-first report. Every dynamic string is already redacted
-// at its source; as defense in depth the assembled document is gated against the same
-// credential token list ValidateNoSecrets uses and any leaked token=value is scrubbed
-// before the text is returned, so a secret can never reach the report file.
+// at its source; as defense in depth the assembled document is unconditionally run through
+// scrubSecretValues before it is returned, so any leaked token=value is stripped and a
+// secret can never reach the report file.
 func (r Report) Markdown() string {
-	text := r.render()
-	if err := ValidateNoSecrets(EvidenceRecord{Tracker: "report", Notes: text}); err != nil {
-		text = scrubSecretValues(text)
-	}
-	return text
+	return scrubSecretValues(r.render())
 }
 
 // render assembles the markdown body (pre-scrub).

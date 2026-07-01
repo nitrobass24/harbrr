@@ -66,7 +66,7 @@ harbrr smoke --reconfigure
 You can also set the values as environment variables instead of the file (the real environment
 takes precedence over `smoke.env`):
 
-```
+```text
 SMOKE_HARBRR_URL, SMOKE_HARBRR_APIKEY
 SMOKE_PROWLARR_URL, SMOKE_PROWLARR_APIKEY
 SMOKE_SONARR_URL, SMOKE_SONARR_APIKEY      # optional

@@ -134,17 +134,25 @@ func missingRequired(getenv func(string) string) bool {
 	return false
 }
 
+// clearURLSentinel, typed at an optional app's URL prompt during --reconfigure, clears a
+// previously-saved value (a blank line keeps the shown default instead).
+const clearURLSentinel = "-"
+
 // runReconfigure prompts for every app's URL then key, one at a time in order, and
 // writes the result to envFile at 0600. URLs echo; keys are read without echo. A blank
 // optional-app URL marks that app not-configured (its key is not prompted).
 func runReconfigure(cmd *cobra.Command, envFile string, existing map[string]string) error {
 	out := cmd.OutOrStdout()
 	fmt.Fprintln(out, "Configuring harbrr smoke. URLs are echoed; API keys are read without echo.")
-	fmt.Fprintln(out, "Leave an optional app's URL blank to mark it not-configured.")
+	fmt.Fprintf(out, "Leave an optional app's URL blank to keep it (or skip if unset); enter %q to clear a saved one.\n", clearURLSentinel)
 	in := bufio.NewReader(cmd.InOrStdin())
 	values := map[string]string{}
 	for _, p := range smokePrompts {
 		u := promptLine(out, in, p.name+" URL", existing[p.urlKey])
+		if !p.required && u == clearURLSentinel {
+			fmt.Fprintf(out, "  %s cleared (not configured)\n", p.name)
+			continue
+		}
 		if u == "" {
 			if p.required {
 				return fmt.Errorf("smoke: %s URL is required", p.name)
@@ -185,10 +193,16 @@ func promptLine(out io.Writer, in *bufio.Reader, label, def string) string {
 }
 
 // promptSecret reads one line from the terminal without echoing it (so an API key is
-// never displayed). It reads directly from the real stdin fd via x/term.
+// never displayed). Hiding the echo requires a real TTY fd, so it reads os.Stdin directly
+// via x/term; when stdin is not a terminal (piped input, `docker exec` without -t) it
+// returns a clear, actionable error instead of a raw ioctl failure.
 func promptSecret(out io.Writer, label string) (string, error) {
+	fd := int(os.Stdin.Fd())
+	if !term.IsTerminal(fd) {
+		return "", fmt.Errorf("smoke: reading %s needs an interactive terminal; pre-populate the env file or run with `docker exec -it`", label)
+	}
 	fmt.Fprintf(out, "%s (hidden): ", label)
-	b, err := term.ReadPassword(int(os.Stdin.Fd()))
+	b, err := term.ReadPassword(fd)
 	fmt.Fprintln(out)
 	if err != nil {
 		return "", fmt.Errorf("smoke: read %s: %w", label, err)

@@ -104,11 +104,23 @@ func prowlarrResults(ctx context.Context, c *http.Client, cfg Config, id int, qu
 // --- app-sync ---------------------------------------------------------------
 
 // appTarget is one configured app under test: its kind (for the category filter), a
-// short label, and the appsync driver used to list its indexers.
+// short label, the appsync driver used to list its indexers, and that indexer list cached
+// once per run (remotes / listErr) so the per-indexer app-sync checks don't re-fetch it.
 type appTarget struct {
-	kind   string
-	label  string
-	target appsync.Target
+	kind    string
+	label   string
+	target  appsync.Target
+	remotes []appsync.RemoteIndexer
+	listErr error
+}
+
+// loadRemotes fetches each app's remote indexer list once, caching it on the appTarget so
+// appSyncCheck reads the cache instead of calling List(ctx) per harbrr indexer (which would
+// be indexers×apps redundant round-trips to the *arr/qui APIs).
+func loadRemotes(ctx context.Context, apps []appTarget) {
+	for i := range apps {
+		apps[i].remotes, apps[i].listErr = apps[i].target.List(ctx)
+	}
 }
 
 // configuredApps builds a driver for each app whose URL+key is set (an empty URL means
@@ -117,13 +129,13 @@ func configuredApps(cfg Config) []appTarget {
 	client := &http.Client{Timeout: httpTimeout}
 	var apps []appTarget
 	if cfg.SonarrURL != "" && cfg.SonarrKey != "" {
-		apps = append(apps, appTarget{domain.AppKindSonarr, "sonarr", appsync.NewSonarr(cfg.SonarrURL, cfg.SonarrKey, client)})
+		apps = append(apps, appTarget{kind: domain.AppKindSonarr, label: "sonarr", target: appsync.NewSonarr(cfg.SonarrURL, cfg.SonarrKey, client)})
 	}
 	if cfg.RadarrURL != "" && cfg.RadarrKey != "" {
-		apps = append(apps, appTarget{domain.AppKindRadarr, "radarr", appsync.NewRadarr(cfg.RadarrURL, cfg.RadarrKey, client)})
+		apps = append(apps, appTarget{kind: domain.AppKindRadarr, label: "radarr", target: appsync.NewRadarr(cfg.RadarrURL, cfg.RadarrKey, client)})
 	}
 	if cfg.QuiURL != "" && cfg.QuiKey != "" {
-		apps = append(apps, appTarget{domain.AppKindQui, "qui", appsync.NewQui(cfg.QuiURL, cfg.QuiKey, client)})
+		apps = append(apps, appTarget{kind: domain.AppKindQui, label: "qui", target: appsync.NewQui(cfg.QuiURL, cfg.QuiKey, client)})
 	}
 	return apps
 }
@@ -151,10 +163,10 @@ func appSyncChecks(ctx context.Context, c *http.Client, cfg Config, apps []appTa
 // additionally yields a separate freeleech-bypass (/full) finding.
 func appSyncCheck(ctx context.Context, c *http.Client, cfg Config, app appTarget, ix harbrrIndexer, cats []appsync.Category) []Finding {
 	check := app.label + " " + CheckAppSync
-	remotes, err := app.target.List(ctx)
-	if err != nil {
-		return []Finding{skipFinding(Finding{Indexer: ix.Slug, Check: check}, apphttp.RedactError(err))}
+	if app.listErr != nil {
+		return []Finding{skipFinding(Finding{Indexer: ix.Slug, Check: check}, apphttp.RedactError(app.listErr))}
 	}
+	remotes := app.remotes
 	serves := appsync.IndexerServesApp(app.kind, cats)
 	matched, present := findManaged(remotes, ix.Slug)
 	switch {

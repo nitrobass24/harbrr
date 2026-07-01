@@ -30,6 +30,7 @@ func RunSuite(ctx context.Context, cfg Config) (Report, error) {
 		return Report{}, err
 	}
 	apps := configuredApps(cfg)
+	loadRemotes(ctx, apps)
 	rep := Report{Query: cfg.Query}
 	firstEnabled := ""
 	for _, ix := range indexers {
