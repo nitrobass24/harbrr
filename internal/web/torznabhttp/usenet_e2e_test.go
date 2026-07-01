@@ -200,7 +200,7 @@ func newUsenetE2EHandler(t *testing.T, stub *usenetStub) http.Handler {
 // upstream Newznab apikey — proving the two key spaces are separate.
 func usenetGet(t *testing.T, h http.Handler, path, rawQuery string) *httptest.ResponseRecorder {
 	t.Helper()
-	url := "http://harbrr.test/api/v2.0/indexers/usenetdemo/" + path + "?" + rawQuery + "&apikey=" + testAPIKey
+	url := "http://harbrr.test/api/indexers/usenetdemo/" + path + "?" + rawQuery + "&apikey=" + testAPIKey
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -273,7 +273,7 @@ func assertUsenetFeed(t *testing.T, feed string) string {
 	if strings.Contains(feed, usenetUpstreamAPIKey) {
 		t.Errorf("upstream apikey LEAKED into the served feed:\n%s", feed)
 	}
-	if !strings.Contains(feed, "/api/v2.0/indexers/usenetdemo/dl?") || !strings.Contains(feed, "token=") {
+	if !strings.Contains(feed, "/api/indexers/usenetdemo/dl?") || !strings.Contains(feed, "token=") {
 		t.Errorf("apikey-bearing nzb links should route through the /dl proxy with a token:\n%s", feed)
 	}
 

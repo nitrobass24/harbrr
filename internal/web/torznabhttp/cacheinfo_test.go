@@ -102,7 +102,7 @@ func feedDo(t *testing.T, idx *fakeIndexer, rawQuery string, hdr http.Header) *h
 	h := NewHandler(fakeProvider{"rich": idx}, WithAPIKey(testAPIKey),
 		WithClock(func() time.Time { return feedClock }))
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
-		"/api/v2.0/indexers/rich/results/torznab?"+rawQuery+"&apikey="+testAPIKey, nil)
+		"/api/indexers/rich/results/torznab?"+rawQuery+"&apikey="+testAPIKey, nil)
 	for k, vs := range hdr {
 		for _, v := range vs {
 			req.Header.Add(k, v)

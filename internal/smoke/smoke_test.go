@@ -321,7 +321,7 @@ func grabResolve(t *testing.T, c *http.Client, cfg config, slug, query string) s
 // for a resolver-needing tracker, or the direct tracker link otherwise.
 func firstDownloadLink(t *testing.T, c *http.Client, cfg config, slug, query string) string {
 	t.Helper()
-	u := fmt.Sprintf("%s/api/v2.0/indexers/%s/results/torznab/api?t=search&q=%s&apikey=%s",
+	u := fmt.Sprintf("%s/api/indexers/%s/results/torznab/api?t=search&q=%s&apikey=%s",
 		cfg.harbrrURL, url.PathEscape(slug), url.QueryEscape(query), url.QueryEscape(cfg.harbrrKey))
 	body, status := get(t, c, u)
 	if status != http.StatusOK {
@@ -346,7 +346,7 @@ func firstDownloadLink(t *testing.T, c *http.Client, cfg config, slug, query str
 // is true on a rate-limit/anti-bot signal (the test t.Skips rather than hammering).
 func harbrrSearch(t *testing.T, c *http.Client, cfg config, slug, query string) ([]result, bool) {
 	t.Helper()
-	u := fmt.Sprintf("%s/api/v2.0/indexers/%s/results/torznab/api?t=search&q=%s&apikey=%s",
+	u := fmt.Sprintf("%s/api/indexers/%s/results/torznab/api?t=search&q=%s&apikey=%s",
 		cfg.harbrrURL, url.PathEscape(slug), url.QueryEscape(query), url.QueryEscape(cfg.harbrrKey))
 	body, status := get(t, c, u)
 	if status == http.StatusTooManyRequests || status == http.StatusServiceUnavailable {
@@ -363,7 +363,7 @@ func harbrrSearch(t *testing.T, c *http.Client, cfg config, slug, query string) 
 // <link>/<enclosure> for at least one item (confirms a grabbable release).
 func harbrrHasDownloadLinks(t *testing.T, c *http.Client, cfg config, slug, query string) bool {
 	t.Helper()
-	u := fmt.Sprintf("%s/api/v2.0/indexers/%s/results/torznab/api?t=search&q=%s&apikey=%s",
+	u := fmt.Sprintf("%s/api/indexers/%s/results/torznab/api?t=search&q=%s&apikey=%s",
 		cfg.harbrrURL, url.PathEscape(slug), url.QueryEscape(query), url.QueryEscape(cfg.harbrrKey))
 	body, status := get(t, c, u)
 	if status != http.StatusOK {

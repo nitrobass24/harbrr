@@ -167,7 +167,7 @@ func richDo(t *testing.T, idx *fakeIndexer, rawQuery string) *httptest.ResponseR
 	h := NewHandler(fakeProvider{"rich": idx}, WithAPIKey(testAPIKey),
 		WithClock(func() time.Time { return time.Date(2026, time.June, 13, 12, 0, 0, 0, time.UTC) }))
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
-		"/api/v2.0/indexers/rich/results/torznab?"+rawQuery+"&apikey="+testAPIKey, nil)
+		"/api/indexers/rich/results/torznab?"+rawQuery+"&apikey="+testAPIKey, nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	return rec
@@ -305,7 +305,7 @@ var guidRe = regexp.MustCompile(`<guid[^>]*>(harbrr-[0-9a-f]+)</guid>`)
 func doDL(t *testing.T, h http.Handler, indexerID, rawQuery string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
-		"/api/v2.0/indexers/"+indexerID+"/dl?"+rawQuery+"&apikey="+testAPIKey, nil)
+		"/api/indexers/"+indexerID+"/dl?"+rawQuery+"&apikey="+testAPIKey, nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	return rec
@@ -324,7 +324,7 @@ func TestHandlerProxiesResolverLinks(t *testing.T) {
 	if strings.Contains(body, dlTestPasskey) {
 		t.Errorf("passkey leaked into the served feed:\n%s", body)
 	}
-	if !strings.Contains(body, "/api/v2.0/indexers/demo/dl?") || !strings.Contains(body, "token=") {
+	if !strings.Contains(body, "/api/indexers/demo/dl?") || !strings.Contains(body, "token=") {
 		t.Errorf("resolver-needing links should route through /dl with a token:\n%s", body)
 	}
 	if !guidRe.MatchString(body) {
@@ -436,7 +436,7 @@ func TestServeDL_RequiresAPIKey(t *testing.T) {
 		t.Fatalf("encodeDLToken: %v", err)
 	}
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
-		"/api/v2.0/indexers/demo/dl?token="+url.QueryEscape(token), nil)
+		"/api/indexers/demo/dl?token="+url.QueryEscape(token), nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if !strings.Contains(rec.Body.String(), "Invalid API Key") {
@@ -463,7 +463,7 @@ func do(t *testing.T, h http.Handler, rawQuery string) *httptest.ResponseRecorde
 	if !strings.Contains(rawQuery, "apikey=") && !strings.Contains(rawQuery, "noauth") {
 		rawQuery += "&apikey=" + testAPIKey
 	}
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v2.0/indexers/demo/results/torznab?"+rawQuery, nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/indexers/demo/results/torznab?"+rawQuery, nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	return rec
@@ -532,7 +532,7 @@ func TestHandlerAuth(t *testing.T) {
 func TestHandlerUnknownIndexer(t *testing.T) {
 	t.Parallel()
 	h := newTestHandler(t, demoIndexer(t))
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v2.0/indexers/ghost/results/torznab?t=caps&apikey="+testAPIKey, nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/indexers/ghost/results/torznab?t=caps&apikey="+testAPIKey, nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -687,7 +687,7 @@ func TestHandlerSelfURLHasNoAPIKey(t *testing.T) {
 	if strings.Contains(body, testAPIKey) {
 		t.Errorf("atom:link self URL leaked the apikey:\n%s", body)
 	}
-	if !strings.Contains(body, `<atom:link href="http://example.com/api/v2.0/indexers/demo/results/torznab"`) {
+	if !strings.Contains(body, `<atom:link href="http://example.com/api/indexers/demo/results/torznab"`) {
 		t.Errorf("self URL not built from the request path without query:\n%s", body)
 	}
 }

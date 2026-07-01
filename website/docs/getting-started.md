@@ -118,7 +118,7 @@ before you rely on it.
 
 In Sonarr/Radarr, add a **Generic Torznab** indexer with:
 
-- **URL** — `http://harbrr:7474/api/v2.0/indexers/<slug>/results/torznab`
+- **URL** — `http://harbrr:7474/api/indexers/<slug>/results/torznab`
   (use the container/host name your app can reach; `<slug>` is the indexer you added)
 - **API Key** — the key you minted in step 3
 

@@ -84,7 +84,7 @@ func newE2EHandler(t *testing.T) http.Handler {
 // is deterministic) and returns the response body, asserting HTTP 200.
 func e2eGet(t *testing.T, h http.Handler, rawQuery string) []byte {
 	t.Helper()
-	url := "http://harbrr.test/api/v2.0/indexers/e2edemo/results/torznab?" + rawQuery + "&apikey=" + testAPIKey
+	url := "http://harbrr.test/api/indexers/e2edemo/results/torznab?" + rawQuery + "&apikey=" + testAPIKey
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)

@@ -45,7 +45,7 @@ The JSON search endpoint returns a paged envelope (`results` / `total` / `hasMor
 `limit` / `offset`) — see [Pagination](features/pagination.md).
 
 The **Torznab/Newznab feed** itself lives at
-`/api/v2.0/indexers/{slug}/results/torznab` (with `/dl` for proxied downloads) — that's the
+`/api/indexers/{slug}/results/torznab` (with `/dl` for proxied downloads) — that's the
 URL your apps consume, separate from the JSON management API above.
 
 !!! note "OIDC is stubbed"

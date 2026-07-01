@@ -130,7 +130,7 @@ func FeedURL(r *http.Request, basePath, indexerID string, bypass bool) string {
 // download link: it seals the link into an opaque token bound to indexerID under kr, then
 // appends the apikey. The URL resolves and fetches the torrent server-side, so the passkey
 // never leaves harbrr. dlBase is the absolute /dl endpoint (origin + base path +
-// /api/v2.0/indexers/<id>/dl). Used by the cross-seed announce source to hand a cross-seed
+// /api/indexers/<id>/dl). Used by the cross-seed announce source to hand a cross-seed
 // tool a link it can fetch without seeing the passkey. The error never carries the link.
 func SealedDLURL(kr *secrets.Keyring, indexerID, dlBase, apiKey, originalLink string) (string, error) {
 	token, err := encodeDLToken(kr, indexerID, originalLink)
@@ -140,14 +140,14 @@ func SealedDLURL(kr *secrets.Keyring, indexerID, dlBase, apiKey, originalLink st
 	return dlURLWithToken(dlBase, apiKey, token), nil
 }
 
-// externalIndexerBase is the shared scheme://host<basePath>/api/v2.0/indexers/<id>
+// externalIndexerBase is the shared scheme://host<basePath>/api/indexers/<id>
 // prefix the feed and /dl URLs hang off.
 func externalIndexerBase(r *http.Request, basePath, indexerID string) string {
 	scheme := "http"
 	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
 		scheme = "https"
 	}
-	return scheme + "://" + r.Host + basePath + "/api/v2.0/indexers/" + url.PathEscape(indexerID)
+	return scheme + "://" + r.Host + basePath + "/api/indexers/" + url.PathEscape(indexerID)
 }
 
 // NewDLRewriter builds the acquisition rewriter that seals a resolver-needing

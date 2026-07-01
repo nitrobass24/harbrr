@@ -9,7 +9,7 @@ func TestRadarrBuildIndexerGolden(t *testing.T) {
 	drv := asServarr(t, NewRadarr("http://radarr:7878", "app-key", nil))
 	d := DesiredIndexer{
 		Slug: "movie-tracker", Name: "Movie Tracker", Priority: 25, Enabled: true,
-		FeedURL:    "http://harbrr:8787/api/v2.0/indexers/movie-tracker/results/torznab",
+		FeedURL:    "http://harbrr:8787/api/indexers/movie-tracker/results/torznab",
 		APIKey:     "harbrr-feed-key",
 		Categories: []Category{{2000, "Movies"}, {2040, "Movies/HD"}, {2060, "Movies/3D"}},
 	}

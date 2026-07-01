@@ -170,7 +170,7 @@ func TestSonarrBuildIndexerGolden(t *testing.T) {
 	drv := asServarr(t, NewSonarr("http://sonarr:8989", "app-key", nil))
 	d := DesiredIndexer{
 		Slug: "anime-tracker", Name: "Anime Tracker", Priority: 25, Enabled: true,
-		FeedURL:    "http://harbrr:8787/api/v2.0/indexers/anime-tracker/results/torznab",
+		FeedURL:    "http://harbrr:8787/api/indexers/anime-tracker/results/torznab",
 		APIKey:     "harbrr-feed-key",
 		Categories: []Category{{5000, "TV"}, {5040, "TV/HD"}, {5070, "TV/Anime"}, {2000, "Movies"}},
 	}
@@ -182,7 +182,7 @@ func TestSonarrBuildIndexerUsenetGolden(t *testing.T) {
 	drv := asServarr(t, NewSonarr("http://sonarr:8989", "app-key", nil))
 	d := DesiredIndexer{
 		Slug: "anime-tracker", Name: "Anime Tracker", Priority: 25, Enabled: true,
-		FeedURL:    "http://harbrr:8787/api/v2.0/indexers/anime-tracker/results/torznab",
+		FeedURL:    "http://harbrr:8787/api/indexers/anime-tracker/results/torznab",
 		APIKey:     "harbrr-feed-key",
 		Categories: []Category{{5000, "TV"}, {5040, "TV/HD"}, {5070, "TV/Anime"}, {2000, "Movies"}},
 		Protocol:   "usenet",
@@ -222,7 +222,7 @@ func TestServarrListRecognizesNewznab(t *testing.T) {
 	// missing Newznab case here would orphan it on the next full sync.
 	if _, err := drv.Create(ctx, DesiredIndexer{
 		Slug: "usenet-tracker", Name: "Usenet Tracker", Protocol: "usenet",
-		FeedURL: "http://harbrr:8787/api/v2.0/indexers/usenet-tracker/results/torznab",
+		FeedURL: "http://harbrr:8787/api/indexers/usenet-tracker/results/torznab",
 		APIKey:  "k",
 	}); err != nil {
 		t.Fatalf("Create usenet: %v", err)

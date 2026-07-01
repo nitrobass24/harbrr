@@ -11,7 +11,7 @@
   "fields": [
     {
       "name": "baseUrl",
-      "value": "http://harbrr:8787/api/v2.0/indexers/music-tracker/results/torznab"
+      "value": "http://harbrr:8787/api/indexers/music-tracker/results/torznab"
     },
     {
       "name": "apiPath",

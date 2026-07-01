@@ -92,8 +92,8 @@ type RemoteIndexer struct {
 }
 
 // feedURLMarker is the fixed path segment that precedes a harbrr slug in every feed
-// URL: {origin}/api/v2.0/indexers/{slug}/results/torznab.
-const feedURLMarker = "/api/v2.0/indexers/"
+// URL: {origin}/api/indexers/{slug}/results/torznab.
+const feedURLMarker = "/api/indexers/"
 
 // slugFromFeedURL recovers the harbrr slug embedded in a Torznab feed URL, or "" when
 // the URL is not a harbrr feed. Drivers use it to tag which of an app's indexers are

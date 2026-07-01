@@ -88,7 +88,7 @@ func TestWriteResultsSetsCacheBypass(t *testing.T) {
 			idx := demoIndexer(t)
 			h := newTestHandler(t, idx)
 			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
-				"/api/v2.0/indexers/demo/results/torznab?"+tt.rawQuery+"&apikey="+testAPIKey, nil)
+				"/api/indexers/demo/results/torznab?"+tt.rawQuery+"&apikey="+testAPIKey, nil)
 			rec := httptest.NewRecorder()
 			h.ServeHTTP(rec, req)
 			if rec.Code != http.StatusOK {

@@ -73,7 +73,7 @@ func WithLogger(l zerolog.Logger) Option { return func(h *handler) { h.log = l }
 func WithDLToken(kr *secrets.Keyring) Option { return func(h *handler) { h.dlToken = kr } }
 
 // Route is one Torznab HTTP route: its method and path template. The path uses the
-// same {indexerId} brace syntax as the OpenAPI spec, so Routes is the single source
+// same {slug} brace syntax as the OpenAPI spec, so Routes is the single source
 // of truth the OpenAPI drift test checks the spec against (the feed mux is not
 // reachable via chi.Walk).
 type Route struct {
@@ -92,11 +92,11 @@ var torznabRoutes = []struct {
 	// catalog (for qui/cross-seed). dl and bypass are mutually exclusive.
 	bypass bool
 }{
-	{Route{http.MethodGet, "/api/v2.0/indexers/{indexerId}/results/torznab"}, false, false},
-	{Route{http.MethodGet, "/api/v2.0/indexers/{indexerId}/results/torznab/api"}, false, false},
-	{Route{http.MethodGet, "/api/v2.0/indexers/{indexerId}/results/torznab/full"}, false, true},
-	{Route{http.MethodGet, "/api/v2.0/indexers/{indexerId}/results/torznab/full/api"}, false, true},
-	{Route{http.MethodGet, "/api/v2.0/indexers/{indexerId}/dl"}, true, false},
+	{Route{http.MethodGet, "/api/indexers/{slug}/results/torznab"}, false, false},
+	{Route{http.MethodGet, "/api/indexers/{slug}/results/torznab/api"}, false, false},
+	{Route{http.MethodGet, "/api/indexers/{slug}/results/torznab/full"}, false, true},
+	{Route{http.MethodGet, "/api/indexers/{slug}/results/torznab/full/api"}, false, true},
+	{Route{http.MethodGet, "/api/indexers/{slug}/dl"}, true, false},
 }
 
 // Routes returns the method/path pairs the Torznab handler serves, so the OpenAPI
@@ -142,7 +142,7 @@ func (h *handler) serveDL(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusOK, codeInvalidAPIKey, "Invalid API Key")
 		return
 	}
-	idx, ok := h.provider.Indexer(r.Context(), r.PathValue("indexerId"))
+	idx, ok := h.provider.Indexer(r.Context(), r.PathValue("slug"))
 	if !ok {
 		writeError(w, http.StatusOK, codeBadParameter, "Indexer is not supported")
 		return
@@ -198,7 +198,7 @@ func (h *handler) serve(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusOK, codeInvalidAPIKey, "Invalid API Key")
 		return
 	}
-	idx, ok := h.provider.Indexer(r.Context(), r.PathValue("indexerId"))
+	idx, ok := h.provider.Indexer(r.Context(), r.PathValue("slug"))
 	if !ok {
 		writeError(w, http.StatusOK, codeBadParameter, "Indexer is not supported")
 		return

@@ -27,8 +27,8 @@ the full catalog is still available to the bypass feed below — from the same s
 Every indexer also exposes a second feed surface:
 
 ```text
-…/api/v2.0/indexers/<slug>/results/torznab        ← honors the freeleech setting (*arrs)
-…/api/v2.0/indexers/<slug>/results/torznab/full   ← full catalog (cross-seed)
+…/api/indexers/<slug>/results/torznab        ← honors the freeleech setting (*arrs)
+…/api/indexers/<slug>/results/torznab/full   ← full catalog (cross-seed)
 ```
 
 The `/full` variant ignores the freeleech filter and returns everything — cross-seed must

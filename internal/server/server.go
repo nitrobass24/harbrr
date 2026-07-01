@@ -22,7 +22,7 @@ import (
 type Deps struct {
 	// Management is the OpenAPI management router (serves /healthz + /api/...).
 	Management http.Handler
-	// Torznab is the *arr-facing handler (serves /api/v2.0/indexers/...).
+	// Torznab is the *arr-facing handler (serves /api/indexers/...).
 	Torznab http.Handler
 	// Spec is the embedded OpenAPI document, served at /api/openapi.yaml.
 	Spec []byte
@@ -46,16 +46,20 @@ type Server struct {
 	shutdown time.Duration
 }
 
-// New assembles the root router and HTTP server. The Torznab tree
-// (/api/v2.0/indexers/*) is mounted ahead of the management catch-all so the two
-// contracts stay on separate trees; the management router (which owns /healthz and
-// /api/*) handles everything else. When BasePath is set, it is stripped before
+// New assembles the root router and HTTP server. The *arr-facing Torznab feed
+// (/api/indexers/{slug}/results/* and .../dl) is mounted on the specific feed
+// suffixes ahead of the management catch-all, so the two contracts share the
+// /api/indexers/{slug} base yet stay on separate trees: the management router (which
+// owns /healthz and every other /api/*, including the JSON /api/indexers/{slug}
+// sub-resources) handles everything else. The feed suffixes (results/*, dl) never
+// collide with a management sub-resource. When BasePath is set, it is stripped before
 // routing so internal patterns stay absolute.
 func New(deps Deps, cfg Config) *Server {
 	root := chi.NewRouter()
 	root.Use(chimw.RequestID, chimw.Recoverer, requestLogger(deps.Logger))
 
-	root.Handle("/api/v2.0/indexers/*", deps.Torznab)
+	root.Handle("/api/indexers/{slug}/results/*", deps.Torznab)
+	root.Handle("/api/indexers/{slug}/dl", deps.Torznab)
 	root.Get("/api/openapi.yaml", specHandler(deps.Spec))
 	root.Get("/api/docs", docsHandler(deps.DocsUI))
 	root.Handle("/*", deps.Management)

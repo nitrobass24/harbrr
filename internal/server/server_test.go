@@ -260,7 +260,7 @@ func runEndToEnd(t *testing.T, basePath string) {
 	assertEncryptedAtRest(t, s.db, "TRACKER-SECRET-XYZ")
 
 	// Torznab caps via the DB-resolved registry (apikey-authenticated).
-	feed := s.url + "/api/v2.0/indexers/tt/results/torznab"
+	feed := s.url + "/api/indexers/tt/results/torznab"
 	caps := mustGet(t, c, feed+"?t=caps&apikey="+minted.Key, stdhttp.StatusOK)
 	if !strings.Contains(caps, "<caps") {
 		t.Errorf("caps response not a caps document: %s", caps)
@@ -278,7 +278,7 @@ func runEndToEnd(t *testing.T, basePath string) {
 		t.Errorf("search did not return the release: %s", results)
 	}
 	// The feed self URL reflects the external base path.
-	wantSelf := "/api/v2.0/indexers/tt/results/torznab"
+	wantSelf := "/api/indexers/tt/results/torznab"
 	if basePath != "" {
 		wantSelf = basePath + wantSelf
 	}

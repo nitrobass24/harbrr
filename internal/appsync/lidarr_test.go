@@ -12,7 +12,7 @@ func TestLidarrBuildIndexerGolden(t *testing.T) {
 	drv := asServarr(t, NewLidarr("http://lidarr:8686", "app-key", nil))
 	d := DesiredIndexer{
 		Slug: "music-tracker", Name: "Music Tracker", Priority: 25, Enabled: true,
-		FeedURL:    "http://harbrr:8787/api/v2.0/indexers/music-tracker/results/torznab",
+		FeedURL:    "http://harbrr:8787/api/indexers/music-tracker/results/torznab",
 		APIKey:     "harbrr-feed-key",
 		Categories: []Category{{3000, "Audio"}, {3010, "Audio/MP3"}, {3040, "Audio/Lossless"}},
 	}
@@ -24,7 +24,7 @@ func TestLidarrBuildIndexerUsenetGolden(t *testing.T) {
 	drv := asServarr(t, NewLidarr("http://lidarr:8686", "app-key", nil))
 	d := DesiredIndexer{
 		Slug: "music-tracker", Name: "Music Tracker", Priority: 25, Enabled: true,
-		FeedURL:    "http://harbrr:8787/api/v2.0/indexers/music-tracker/results/torznab",
+		FeedURL:    "http://harbrr:8787/api/indexers/music-tracker/results/torznab",
 		APIKey:     "harbrr-feed-key",
 		Categories: []Category{{3000, "Audio"}, {3010, "Audio/MP3"}, {3040, "Audio/Lossless"}},
 		Protocol:   "usenet",

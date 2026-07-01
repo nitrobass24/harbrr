@@ -34,7 +34,7 @@ func TestCrossSeedSnippet(t *testing.T) {
 	if got.Indexer != "tt" {
 		t.Errorf("indexer = %q, want tt", got.Indexer)
 	}
-	if !strings.HasSuffix(got.FeedURL, "/api/v2.0/indexers/tt/results/torznab/full") {
+	if !strings.HasSuffix(got.FeedURL, "/api/indexers/tt/results/torznab/full") {
 		t.Errorf("feedUrl = %q, want the /full bypass variant", got.FeedURL)
 	}
 	if strings.Contains(got.FeedURL, "apikey") {
