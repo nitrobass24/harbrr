@@ -106,7 +106,7 @@ type CreateConnectionParams struct {
 // revoked so a failed create leaves nothing behind.
 func (s *Service) CreateConnection(ctx context.Context, p CreateConnectionParams) (domain.AppConnection, error) {
 	p = p.withDefaults()
-	if err := validateCreate(p); err != nil {
+	if err := validateCreate(&p); err != nil {
 		return domain.AppConnection{}, err
 	}
 

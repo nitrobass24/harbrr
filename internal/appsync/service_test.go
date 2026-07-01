@@ -348,6 +348,7 @@ func TestServiceCreateRejectsNonAbsoluteURL(t *testing.T) {
 		{Name: "n", Kind: domain.AppKindSonarr, BaseURL: "/relative", APIKey: "k", HarbrrURL: "http://harbrr:8787"},
 		{Name: "n", Kind: domain.AppKindSonarr, BaseURL: "ftp://h", APIKey: "k", HarbrrURL: "http://harbrr:8787"},
 		{Name: "n", Kind: domain.AppKindSonarr, BaseURL: "http://app:7878", APIKey: "k", HarbrrURL: "harbrr"},
+		{Name: "n", Kind: domain.AppKindSonarr, BaseURL: "http://:80", APIKey: "k", HarbrrURL: "http://harbrr:8787"}, // empty host, port only
 	}
 	for i, p := range bad {
 		if _, err := f.svc.CreateConnection(ctx, p); !errors.Is(err, ErrInvalid) {
@@ -357,6 +358,28 @@ func TestServiceCreateRejectsNonAbsoluteURL(t *testing.T) {
 	// A relative URL on update is rejected too.
 	if err := f.svc.UpdateConnection(ctx, f.conn.ID, UpdateConnectionParams{BaseURL: ptr("nope")}); !errors.Is(err, ErrInvalid) {
 		t.Errorf("update with relative base url = %v, want ErrInvalid", err)
+	}
+}
+
+func TestServiceCreatePersistsTrimmedURL(t *testing.T) {
+	t.Parallel()
+	f := newSyncFixture(t)
+	ctx := context.Background()
+	// Whitespace-padded URLs pass validation (which trims to parse) and must be stored
+	// in their trimmed form, not left padded. Radarr avoids the fixture's Sonarr row on
+	// the UNIQUE(kind, base_url) constraint.
+	conn, err := f.svc.CreateConnection(ctx, CreateConnectionParams{
+		Name: "Radarr", Kind: domain.AppKindRadarr,
+		BaseURL: "  http://radarr:7878  ", APIKey: "k", HarbrrURL: "\thttp://harbrr:8787\n",
+	})
+	if err != nil {
+		t.Fatalf("CreateConnection: %v", err)
+	}
+	if conn.BaseURL != "http://radarr:7878" {
+		t.Errorf("BaseURL = %q, want the trimmed value", conn.BaseURL)
+	}
+	if conn.HarbrrURL != "http://harbrr:8787" {
+		t.Errorf("HarbrrURL = %q, want the trimmed value", conn.HarbrrURL)
 	}
 }
 

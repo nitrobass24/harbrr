@@ -232,8 +232,9 @@ func TestPacedDoer_CancelDuringBackoff(t *testing.T) {
 // TestPacedDoer_BudgetBoundsCumulativeWait proves the cumulative waits + backoff
 // sleeps are bounded even when the inbound context carries NO deadline. A hostile
 // tracker returns 503 with a huge Retry-After and the backoff timer never fires on
-// its own, so only the budget can stop Do — it must surface a DeadlineExceeded abort
-// after one attempt rather than pinning the goroutine for the attacker's hour.
+// its own, so only the budget can stop Do. It must end quickly (not pin the goroutine
+// for the attacker's hour) and surface the typed RATE-LIMITED error — the budget
+// capping a hostile backoff is not a caller abort.
 func TestPacedDoer_BudgetBoundsCumulativeWait(t *testing.T) {
 	t.Parallel()
 	base := &scriptDoer{steps: []scriptStep{{status: 503, retryAfter: "3600"}}}
@@ -246,8 +247,12 @@ func TestPacedDoer_BudgetBoundsCumulativeWait(t *testing.T) {
 	_, err := d.Do(getReq(context.Background(), t))
 	elapsed := time.Since(start)
 
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("err = %v, want context.DeadlineExceeded (budget bound)", err)
+	var rl *search.RateLimitedError
+	if !errors.As(err, &rl) {
+		t.Fatalf("err = %v, want a RateLimitedError (budget capped the hostile backoff, not a caller abort)", err)
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, must NOT be a 'request aborted' deadline — the caller never cancelled", err)
 	}
 	if elapsed > 2*time.Second {
 		t.Fatalf("Do took %v, want ~budget (cumulative time not bounded)", elapsed)

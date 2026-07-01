@@ -130,16 +130,23 @@ func isRateLimitSignal(err error) bool {
 // Do paces by host, issues the request, and retries 429/503 (bounded, honoring
 // Retry-After) before surfacing a typed search.RateLimitedError.
 func (d *pacedDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
-	// Bound the CUMULATIVE rate waits + 429/503 backoff sleeps. context.WithTimeout
-	// takes the minimum of any inbound deadline and the budget, so a caller deadline
-	// still wins while a deadline-less request can't be pinned by a hostile Retry-After.
-	// This bounds ONLY the waits/sleeps — base.Do keeps the inbound request context so
-	// a successful response body still outlives Do (cancelling waitCtx on return is safe).
+	// A wall-clock ceiling for the rate-limiter waits + 429/503 backoff sleeps: its real
+	// job is capping a hostile Retry-After so a deadline-less request can't be pinned.
+	// context.WithTimeout takes the minimum of any inbound deadline and the budget, so a
+	// caller deadline still wins. base.Do keeps the INBOUND request context (not waitCtx),
+	// so a successful response body outlives Do and — since the client carries its own
+	// timeout — a slow attempt can't hang even though its wall-clock counts toward the
+	// budget. (A per-wait tracker that excludes base.Do time would be stricter, but a
+	// 429/503 response is fast so it consumes negligible budget in practice.)
 	waitCtx, cancel := context.WithTimeout(req.Context(), d.budget)
 	defer cancel()
 
 	lim := d.limiter(req.URL.Hostname())
 	var out *stdhttp.Response
+	// lastRL remembers the most recent 429/503 so a budget that caps the backoff can
+	// still surface the rate-limited error: retry-go returns the CONTEXT error (not the
+	// signal) when a delay is aborted, so the signal would otherwise be lost.
+	var lastRL *rateLimitSignalError
 
 	opts := []retry.Option{
 		retry.Attempts(d.attempts),
@@ -175,31 +182,38 @@ func (d *pacedDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
 		if search.IsRateLimitStatus(resp.StatusCode) {
 			after := search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.now)
 			drainClose(resp.Body)
-			return &rateLimitSignalError{status: resp.StatusCode, after: after}
+			lastRL = &rateLimitSignalError{status: resp.StatusCode, after: after}
+			return lastRL
 		}
 		out = resp
 		return nil
 	}, opts...)
 
 	if rerr != nil {
+		// "request aborted" is ONLY a genuine caller cancellation/deadline. Inspect the
+		// ORIGINAL request context, because the derived waitCtx's DeadlineExceeded
+		// conflates the caller's deadline with the INTERNAL pacing budget — and the
+		// budget expiring is not a caller abort.
+		if cerr := req.Context().Err(); cerr != nil {
+			return nil, fmt.Errorf("registry: request aborted: %w", cerr)
+		}
 		var s *rateLimitSignalError
 		switch {
 		case errors.As(rerr, &s):
-			// Bounded retry exhausted on 429/503. If the budget/inbound ctx also expired
-			// (e.g. it fired mid-backoff), that abort wins with its identity preserved;
-			// otherwise surface the typed error the registry classifies as rate_limited.
-			if cerr := waitCtx.Err(); cerr != nil {
-				return nil, fmt.Errorf("registry: request aborted: %w", cerr)
-			}
+			// Bounded retry exhausted on 429/503 — surface the typed rate-limited error.
 			return nil, &search.RateLimitedError{StatusCode: s.status, RetryAfter: s.after}
+		case lastRL != nil:
+			// The pacing budget capped a pending 429/503 backoff (retry-go returned the
+			// ctx error, not the signal) — surface the rate-limited error the tracker
+			// asked for, not a caller abort or a bare pacing timeout.
+			return nil, &search.RateLimitedError{StatusCode: lastRL.status, RetryAfter: lastRL.after}
 		case errors.Is(rerr, context.Canceled), errors.Is(rerr, context.DeadlineExceeded):
-			// A wait/sleep abort — an inbound cancel or a budget expiry during lim.Wait
-			// or a backoff sleep — with the ctx identity preserved for callers.
-			return nil, fmt.Errorf("registry: request aborted: %w", rerr)
+			// The pacing budget expired during a rate-limiter wait with no pending 429/503
+			// signal: a pacing timeout (the budget, not the caller), surfaced as such.
+			return nil, fmt.Errorf("registry: pacing budget exhausted: %w", rerr)
 		default:
-			// A substantive base.Do transport error: surface it AS-IS, never masked as a
-			// budget abort just because the budget elapsed while the (uncancelled) base.Do
-			// call ran — so the real cause stays diagnosable.
+			// A substantive base.Do transport error: surfaced AS-IS, never masked as a
+			// budget abort, so the real cause stays diagnosable.
 			return nil, fmt.Errorf("registry: %w", rerr)
 		}
 	}
