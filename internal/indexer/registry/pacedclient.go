@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	retry "github.com/avast/retry-go/v4"
 	"golang.org/x/time/rate"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
@@ -75,13 +74,12 @@ func limiterFor(host string, interval time.Duration) *rate.Limiter {
 }
 
 // pacedDoer wraps a base Doer with per-host rate limiting and bounded 429/503
-// backoff. Pacing + backoff both honor the request's context (threaded in PR #1):
-// the per-host token Wait and each backoff sleep abort promptly on cancellation.
-// Do derives a budget-bounded context (min of any inbound deadline and budget) and
-// uses it for the rate Wait and the retry's inter-attempt sleeps, so the SUM of
-// waits + sleeps is bounded even for a deadline-less request — a hostile Retry-After
-// can never pin the goroutine. The budget bounds ONLY the waits/sleeps, not the live
-// HTTP call, whose response body must outlive Do (so base.Do keeps the inbound ctx).
+// backoff. The pacing budget bounds ONLY the cumulative rate-limiter waits + backoff
+// sleeps (debited per wait/sleep), so a hostile Retry-After can never pin a goroutine.
+// The live base.Do runs on the INBOUND request context (with the client's own
+// timeout), NOT the budget — so a slow 429/503 response never consumes the budget
+// before pacing starts. Every wait/sleep also honors the caller context, so a caller
+// cancel aborts promptly (and only a caller cancel is a "request aborted").
 type pacedDoer struct {
 	base     search.Doer
 	interval time.Duration
@@ -94,9 +92,9 @@ type pacedDoer struct {
 	// limiter is the per-host limiter lookup, injectable in tests (defaults to the
 	// process-wide map).
 	limiter func(host string) *rate.Limiter
-	// timer is retry-go's sleep seam, injectable in tests for deterministic backoff;
-	// nil uses retry-go's real-time default.
-	timer retry.Timer
+	// timer is the backoff sleep seam, injectable in tests for deterministic backoff;
+	// nil uses the real time.After.
+	timer backoffTimer
 }
 
 // newPacedDoer wraps base so every request is per-host paced and 429/503-backed-off.
@@ -113,120 +111,158 @@ func newPacedDoer(base search.Doer, interval time.Duration) *pacedDoer {
 	return d
 }
 
-// rateLimitSignalError is the internal retry trigger carrying the parsed
-// Retry-After so the delay function can honor it. It never escapes Do.
-type rateLimitSignalError struct {
+// backoffTimer is the injectable sleep seam for deterministic backoff in tests;
+// nil uses the real time.After.
+type backoffTimer interface {
+	After(time.Duration) <-chan time.Time
+}
+
+// rateLimitInfo remembers a 429/503 status + parsed Retry-After so Do can surface a
+// typed RateLimitedError once the bounded retry (or a budget-capped backoff) ends.
+type rateLimitInfo struct {
 	status int
 	after  time.Duration
 }
 
-func (e *rateLimitSignalError) Error() string { return "rate limited" }
-
-func isRateLimitSignal(err error) bool {
-	var e *rateLimitSignalError
-	return errors.As(err, &e)
-}
-
 // Do paces by host, issues the request, and retries 429/503 (bounded, honoring
-// Retry-After) before surfacing a typed search.RateLimitedError.
+// Retry-After) before surfacing a typed search.RateLimitedError. The pacing budget
+// bounds ONLY the cumulative rate-limiter waits + backoff sleeps (debited per
+// wait/sleep); the live base.Do runs on the inbound request context (with the client's
+// own timeout), so a slow 429/503 response never consumes the budget before pacing
+// starts. "request aborted" is reserved for a genuine caller cancel/deadline.
 func (d *pacedDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
-	// A wall-clock ceiling for the rate-limiter waits + 429/503 backoff sleeps: its real
-	// job is capping a hostile Retry-After so a deadline-less request can't be pinned.
-	// context.WithTimeout takes the minimum of any inbound deadline and the budget, so a
-	// caller deadline still wins. base.Do keeps the INBOUND request context (not waitCtx),
-	// so a successful response body outlives Do and — since the client carries its own
-	// timeout — a slow attempt can't hang even though its wall-clock counts toward the
-	// budget. (A per-wait tracker that excludes base.Do time would be stricter, but a
-	// 429/503 response is fast so it consumes negligible budget in practice.)
-	waitCtx, cancel := context.WithTimeout(req.Context(), d.budget)
-	defer cancel()
-
+	ctx := req.Context() // caller ctx: bounds base.Do + is the ONLY source of "request aborted"
 	lim := d.limiter(req.URL.Hostname())
-	var out *stdhttp.Response
-	// lastRL remembers the most recent 429/503 so a budget that caps the backoff can
-	// still surface the rate-limited error: retry-go returns the CONTEXT error (not the
-	// signal) when a delay is aborted, so the signal would otherwise be lost.
-	var lastRL *rateLimitSignalError
+	remaining := d.budget // caps ONLY cumulative lim.Wait + backoff sleeps, never base.Do
 
-	opts := []retry.Option{
-		retry.Attempts(d.attempts),
-		retry.Context(waitCtx),
-		retry.RetryIf(isRateLimitSignal),
-		retry.DelayType(d.delay),
-		retry.LastErrorOnly(true),
-	}
-	if d.timer != nil {
-		opts = append(opts, retry.WithTimer(d.timer))
-	}
-
-	attempt := 0
-	rerr := retry.Do(func() error {
-		retrying := attempt > 0
-		attempt++
-		// Re-acquire a token every attempt (never retry token-free, or we defeat the
-		// rate limit). A cancelled/expired waitCtx aborts the Wait promptly.
-		if err := lim.Wait(waitCtx); err != nil {
-			return fmt.Errorf("rate limiter wait: %w", err)
+	var lastRL *rateLimitInfo
+	for attempt := uint(0); attempt < d.attempts; attempt++ {
+		r := d.issue(ctx, req, lim, attempt, &remaining, lastRL)
+		if r.err != nil {
+			return nil, r.err
 		}
-		// Restore the (consumed) body only when actually retrying; a non-replayable
-		// body fails loud there rather than silently re-sending an empty one.
-		if retrying {
-			if err := resetBody(req); err != nil {
-				return err
+		if r.resp != nil {
+			return r.resp, nil
+		}
+		lastRL = r.rl // a 429/503 was seen
+		if attempt+1 >= d.attempts {
+			break // attempts exhausted
+		}
+		if err := d.backoffSleep(ctx, r.rl, &remaining); err != nil {
+			if ctx.Err() != nil {
+				return nil, fmt.Errorf("registry: request aborted: %w", ctx.Err())
 			}
-		}
-		resp, err := d.base.Do(req)
-		if err != nil {
-			return redactDoErr(err)
-		}
-		if search.IsRateLimitStatus(resp.StatusCode) {
-			after := search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.now)
-			drainClose(resp.Body)
-			lastRL = &rateLimitSignalError{status: resp.StatusCode, after: after}
-			return lastRL
-		}
-		out = resp
-		return nil
-	}, opts...)
-
-	if rerr != nil {
-		// "request aborted" is ONLY a genuine caller cancellation/deadline. Inspect the
-		// ORIGINAL request context, because the derived waitCtx's DeadlineExceeded
-		// conflates the caller's deadline with the INTERNAL pacing budget — and the
-		// budget expiring is not a caller abort.
-		if cerr := req.Context().Err(); cerr != nil {
-			return nil, fmt.Errorf("registry: request aborted: %w", cerr)
-		}
-		var s *rateLimitSignalError
-		switch {
-		case errors.As(rerr, &s):
-			// Bounded retry exhausted on 429/503 — surface the typed rate-limited error.
-			return nil, &search.RateLimitedError{StatusCode: s.status, RetryAfter: s.after}
-		case lastRL != nil:
-			// The pacing budget capped a pending 429/503 backoff (retry-go returned the
-			// ctx error, not the signal) — surface the rate-limited error the tracker
-			// asked for, not a caller abort or a bare pacing timeout.
-			return nil, &search.RateLimitedError{StatusCode: lastRL.status, RetryAfter: lastRL.after}
-		case errors.Is(rerr, context.Canceled), errors.Is(rerr, context.DeadlineExceeded):
-			// The pacing budget expired during a rate-limiter wait with no pending 429/503
-			// signal: a pacing timeout (the budget, not the caller), surfaced as such.
-			return nil, fmt.Errorf("registry: pacing budget exhausted: %w", rerr)
-		default:
-			// A substantive base.Do transport error: surfaced AS-IS, never masked as a
-			// budget abort, so the real cause stays diagnosable.
-			return nil, fmt.Errorf("registry: %w", rerr)
+			break // budget capped the backoff — surface the rate-limited error below
 		}
 	}
-	return out, nil
+
+	if lastRL == nil {
+		return nil, errors.New("registry: paced doer made no attempts") // only with attempts == 0
+	}
+	return nil, &search.RateLimitedError{StatusCode: lastRL.status, RetryAfter: lastRL.after}
 }
 
-// delay honors a server Retry-After when present, else a fixed base backoff.
-func (d *pacedDoer) delay(_ uint, err error, _ *retry.Config) time.Duration {
-	var s *rateLimitSignalError
-	if errors.As(err, &s) && s.after > 0 {
-		return s.after
+// attemptResult is the outcome of one issue(): exactly one field is set — resp (a
+// terminal success/passthrough), rl (a 429/503 to maybe retry), or err (a terminal
+// error, already fully wrapped for the caller to return as-is).
+type attemptResult struct {
+	resp *stdhttp.Response
+	rl   *rateLimitInfo
+	err  error
+}
+
+// issue restores the body (on a retry), waits for a rate-limiter token from the
+// remaining budget, sends the request on the caller context, and classifies the
+// outcome. It debits *remaining by the time spent waiting.
+func (d *pacedDoer) issue(ctx context.Context, req *stdhttp.Request, lim *rate.Limiter, attempt uint, remaining *time.Duration, lastRL *rateLimitInfo) attemptResult {
+	// Restore the (consumed) body only when actually retrying; a non-replayable body
+	// fails loud rather than silently re-sending an empty one.
+	if attempt > 0 {
+		if err := resetBody(req); err != nil {
+			return attemptResult{err: err}
+		}
 	}
-	return d.backoff
+	// Re-acquire a token every attempt (never retry token-free, or we defeat the rate
+	// limit), drawn from the remaining pacing budget.
+	spent, err := d.pacedWait(ctx, lim, *remaining)
+	*remaining -= spent
+	if err != nil {
+		return attemptResult{err: d.classifyWaitErr(ctx, err, lastRL)}
+	}
+	resp, derr := d.base.Do(req) // inbound ctx + own client timeout; NOT budget-bounded
+	if derr != nil {
+		return attemptResult{err: fmt.Errorf("registry: %w", redactDoErr(derr))}
+	}
+	if !search.IsRateLimitStatus(resp.StatusCode) {
+		return attemptResult{resp: resp}
+	}
+	after := search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.now)
+	drainClose(resp.Body)
+	return attemptResult{rl: &rateLimitInfo{status: resp.StatusCode, after: after}}
+}
+
+// classifyWaitErr turns a pacing-wait failure into the surfaced error: a genuine caller
+// cancel/deadline is a "request aborted"; a budget expiry with a pending 429/503
+// surfaces the rate-limited error; a bare budget expiry is a pacing timeout.
+func (d *pacedDoer) classifyWaitErr(ctx context.Context, err error, lastRL *rateLimitInfo) error {
+	if ctx.Err() != nil {
+		return fmt.Errorf("registry: request aborted: %w", ctx.Err())
+	}
+	if lastRL != nil {
+		return &search.RateLimitedError{StatusCode: lastRL.status, RetryAfter: lastRL.after}
+	}
+	return fmt.Errorf("registry: pacing budget exhausted: %w", err)
+}
+
+// backoffSleep waits out the retry backoff (Retry-After when present, else the base
+// delay), drawn from the remaining pacing budget; it debits *remaining by the time
+// slept and returns an error on a caller cancel or a budget cap.
+func (d *pacedDoer) backoffSleep(ctx context.Context, rl *rateLimitInfo, remaining *time.Duration) error {
+	delay := d.backoff
+	if rl.after > 0 {
+		delay = rl.after
+	}
+	slept, err := d.pacedSleep(ctx, delay, *remaining)
+	*remaining -= slept
+	return err
+}
+
+// pacedWait blocks for a rate-limiter token, bounded by BOTH the caller ctx and the
+// remaining pacing budget. It returns how long it waited (to debit the budget) and any
+// error; the caller reads ctx.Err() to tell a budget expiry from a caller cancel.
+func (d *pacedDoer) pacedWait(ctx context.Context, lim *rate.Limiter, remaining time.Duration) (time.Duration, error) {
+	if remaining <= 0 {
+		return 0, context.DeadlineExceeded
+	}
+	wctx, cancel := context.WithTimeout(ctx, remaining)
+	defer cancel()
+	start := d.now()
+	err := lim.Wait(wctx)
+	return d.now().Sub(start), err
+}
+
+// pacedSleep waits out a backoff delay via the injectable timer (real time.After when
+// nil), bounded by BOTH the caller ctx and the remaining pacing budget. It returns how
+// long it slept (to debit the budget) and any error (a budget cap or a caller cancel).
+func (d *pacedDoer) pacedSleep(ctx context.Context, delay, remaining time.Duration) (time.Duration, error) {
+	if remaining <= 0 {
+		return 0, context.DeadlineExceeded
+	}
+	after := time.After
+	if d.timer != nil {
+		after = d.timer.After
+	}
+	budget := time.NewTimer(remaining)
+	defer budget.Stop()
+	start := d.now()
+	select {
+	case <-after(delay):
+		return d.now().Sub(start), nil
+	case <-budget.C:
+		return remaining, context.DeadlineExceeded
+	case <-ctx.Done():
+		return d.now().Sub(start), ctx.Err()
+	}
 }
 
 // resetBody restores a consumed request body before a retry (GetBody is set by

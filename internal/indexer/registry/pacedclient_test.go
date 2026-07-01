@@ -300,6 +300,49 @@ func TestPacedDoer_SurfacesSlowTransportError(t *testing.T) {
 	}
 }
 
+// slowThenOKDoer sleeps on its first call and returns 429, then returns 200. It
+// proves the pacing budget is NOT consumed by a slow live response.
+type slowThenOKDoer struct {
+	sleep time.Duration
+	calls int
+}
+
+func (d *slowThenOKDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
+	d.calls++
+	status := 200
+	if d.calls == 1 {
+		time.Sleep(d.sleep)
+		status = 429
+	}
+	return &stdhttp.Response{
+		StatusCode: status,
+		Header:     stdhttp.Header{},
+		Body:       io.NopCloser(strings.NewReader("body")),
+		Request:    req,
+	}, nil
+}
+
+// TestPacedDoer_SlowResponseDoesNotConsumeBudget proves a slow live 429 does not eat
+// the pacing budget: base.Do runs on the request context, not the budget, so the
+// budget stays available for the backoff and the retry still fires. Under the old
+// single-waitCtx design this would abort after one call.
+func TestPacedDoer_SlowResponseDoesNotConsumeBudget(t *testing.T) {
+	t.Parallel()
+	base := &slowThenOKDoer{sleep: 30 * time.Millisecond}
+	d := newPacedDoer(base, time.Second)
+	d.limiter = unlimited
+	d.timer = &immediateTimer{}
+	d.budget = 15 * time.Millisecond // shorter than the slow response, but caps only waits/sleeps
+
+	resp, err := d.Do(getReq(context.Background(), t))
+	if err != nil {
+		t.Fatalf("Do: %v (a slow live 429 must not consume the pacing budget)", err)
+	}
+	if resp.StatusCode != 200 || base.calls != 2 {
+		t.Fatalf("status=%d calls=%d, want 200 after a retry (budget intact despite the slow first response)", resp.StatusCode, base.calls)
+	}
+}
+
 // TestPacedDoer_InboundDeadlineWinsOverBudget proves a shorter inbound deadline still
 // bounds the cumulative sleeps (the budget is only a ceiling): with a never-firing
 // backoff, the request's own deadline ends Do.
