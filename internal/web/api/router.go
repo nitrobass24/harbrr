@@ -149,6 +149,7 @@ func (rt *router) routes() http.Handler {
 
 			r.Get("/api/app-connections", rt.listConnections)
 			r.Post("/api/app-connections", rt.createConnection)
+			r.Post("/api/app-connections/sync", rt.syncAllConnections)
 			r.Get("/api/app-connections/{id}", rt.getConnection)
 			r.Patch("/api/app-connections/{id}", rt.updateConnection)
 			r.Delete("/api/app-connections/{id}", rt.deleteConnection)

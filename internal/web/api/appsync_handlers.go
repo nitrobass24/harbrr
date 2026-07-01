@@ -64,6 +64,15 @@ type syncResponse struct {
 	Results []syncResultResponse `json:"results"`
 }
 
+// syncAllResultResponse is one connection's outcome in a bulk-sync run. report reuses
+// the single-sync shape; error is set (and report empty) when that connection failed.
+type syncAllResultResponse struct {
+	ConnectionID int64        `json:"connectionId"`
+	Name         string       `json:"name"`
+	Report       syncResponse `json:"report"`
+	Error        string       `json:"error,omitempty"`
+}
+
 // listConnections returns all app-sync connections.
 func (rt *router) listConnections(w http.ResponseWriter, r *http.Request) {
 	list, err := rt.appsync.ListConnections(r.Context())
@@ -213,6 +222,24 @@ func (rt *router) syncConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, toSyncResponse(report))
+}
+
+// syncAllConnections reconciles every connection in one call and returns a
+// per-connection result array (one entry per connection, in list order).
+func (rt *router) syncAllConnections(w http.ResponseWriter, r *http.Request) {
+	results, err := rt.appsync.SyncAll(r.Context())
+	if err != nil {
+		rt.writeServiceError(w, "sync connections", err)
+		return
+	}
+	out := make([]syncAllResultResponse, 0, len(results))
+	for _, res := range results {
+		out = append(out, syncAllResultResponse{
+			ConnectionID: res.ConnectionID, Name: res.Name,
+			Report: toSyncResponse(res.Report), Error: res.Error,
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // setConnectionIndexers replaces a connection's selected-indexer set (used by

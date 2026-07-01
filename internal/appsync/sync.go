@@ -26,6 +26,16 @@ type SyncReport struct {
 	Results []SyncResult
 }
 
+// ConnectionSyncResult is one connection's outcome in a SyncAll run: the connection
+// identity plus either its SyncReport or a scrubbed error string if that connection
+// failed (a single failure never aborts the others).
+type ConnectionSyncResult struct {
+	ConnectionID int64
+	Name         string
+	Report       SyncReport
+	Error        string
+}
+
 // Sync reconciles harbrr's indexers into one connection's app. A disabled connection
 // is skipped (no remote calls). The per-indexer ledger and the connection's last-sync
 // status are persisted; a fatal error (cannot list the app) is recorded and returned.
@@ -76,6 +86,29 @@ func (s *Service) Sync(ctx context.Context, id int64) (SyncReport, error) {
 	status := Status(outcomes)
 	s.recordResult(ctx, conn.ID, status, summaryError(outcomes))
 	return SyncReport{Status: status, Results: toResults(outcomes)}, nil
+}
+
+// SyncAll reconciles every configured connection in one pass. A single connection's
+// failure is captured (scrubbed) and never aborts the rest; disabled connections
+// self-skip inside Sync (StatusSkipped, no remote calls) — matching Prowlarr, a paused
+// app is never pushed to. Only a failure to enumerate the connections aborts. Sync
+// returns the raw error, so SyncAll scrubs it before it crosses the API boundary.
+func (s *Service) SyncAll(ctx context.Context) ([]ConnectionSyncResult, error) {
+	conns, err := s.ListConnections(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ConnectionSyncResult, 0, len(conns))
+	for _, conn := range conns {
+		res := ConnectionSyncResult{ConnectionID: conn.ID, Name: conn.Name}
+		if report, err := s.Sync(ctx, conn.ID); err != nil {
+			res.Error = apphttp.RedactError(err)
+		} else {
+			res.Report = report
+		}
+		out = append(out, res)
+	}
+	return out, nil
 }
 
 // buildDesired projects every in-scope indexer into a DesiredIndexer: the per-app feed

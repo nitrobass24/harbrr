@@ -198,6 +198,56 @@ func TestAppConnectionSyncOverHTTP(t *testing.T) {
 	}
 }
 
+func TestAppConnectionSyncAllOverHTTP(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, api.Config{})
+	base, c := serve(t, e)
+
+	// Auth is required before login is established.
+	resp, body := do(t, c, http.MethodPost, base+"/api/app-connections/sync", nil, nil)
+	mustStatus(t, resp, body, http.StatusUnauthorized)
+
+	setupAndLogin(t, base, c)
+
+	stub := httptest.NewServer(sonarrStubHandler())
+	t.Cleanup(stub.Close)
+
+	instID := seedInst(t, e.db, "tracker-a")
+	e.source.instances = []domain.IndexerInstance{{ID: instID, Slug: "tracker-a", Name: "Tracker A", Enabled: true}}
+	e.source.cats = map[string][]appsync.Category{"tracker-a": {{ID: 5000, Name: "TV"}}}
+
+	url := base + "/api/app-connections"
+	resp, body = do(t, c, http.MethodPost, url, createConnBody("Sonarr", stub.URL), nil)
+	mustStatus(t, resp, body, http.StatusCreated)
+	var created struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatalf("decode created connection: %v", err)
+	}
+
+	resp, body = do(t, c, http.MethodPost, url+"/sync", nil, nil)
+	mustStatus(t, resp, body, http.StatusOK)
+	var results []struct {
+		ConnectionID int64 `json:"connectionId"`
+		Report       struct {
+			Status string `json:"status"`
+		} `json:"report"`
+	}
+	if err := json.Unmarshal(body, &results); err != nil {
+		t.Fatalf("decode sync-all: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("sync-all returned %d results, want 1", len(results))
+	}
+	if results[0].ConnectionID != created.ID || results[0].Report.Status != "ok" {
+		t.Errorf("sync-all[0] = %+v, want connectionId=%d status=ok", results[0], created.ID)
+	}
+	if !strings.Contains(string(body), `"action":"created"`) {
+		t.Errorf("sync-all body = %s, want a created result", body)
+	}
+}
+
 // sonarrStubHandler is a minimal Sonarr v3 indexer API for the HTTP sync test.
 func sonarrStubHandler() http.Handler {
 	mux := http.NewServeMux()

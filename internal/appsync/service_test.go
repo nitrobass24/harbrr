@@ -619,6 +619,66 @@ func TestServiceSyncStaleKeyGuard(t *testing.T) {
 	}
 }
 
+func TestServiceSyncAllPartialFailureContinues(t *testing.T) {
+	t.Parallel()
+	f := newSyncFixture(t)
+	ctx := context.Background()
+
+	// A second connection whose minted key is revoked out of band (FK SET NULL): Sync
+	// errors on the stale-key guard before any remote call, so its BaseURL host is never
+	// reached (a dead host is fine — CreateConnection validates the URL, never probes it).
+	bad, err := f.svc.CreateConnection(ctx, CreateConnectionParams{
+		Name: "Sonarr2", Kind: domain.AppKindSonarr, BaseURL: "http://other:8989",
+		APIKey: "app-key", HarbrrURL: "http://harbrr:8787",
+	})
+	if err != nil {
+		t.Fatalf("CreateConnection bad: %v", err)
+	}
+	if err := (database.APIKeys{}).Delete(ctx, f.db, bad.HarbrrAPIKeyID); err != nil {
+		t.Fatalf("revoke bad key: %v", err)
+	}
+
+	// A third, disabled connection — proves the all-not-enabled-only decision: it comes
+	// back skipped (no remote call) rather than being silently omitted.
+	off, err := f.svc.CreateConnection(ctx, CreateConnectionParams{
+		Name: "Sonarr3", Kind: domain.AppKindSonarr, BaseURL: "http://paused:8989",
+		APIKey: "app-key", HarbrrURL: "http://harbrr:8787",
+	})
+	if err != nil {
+		t.Fatalf("CreateConnection off: %v", err)
+	}
+	if err := f.svc.SetEnabled(ctx, off.ID, false); err != nil {
+		t.Fatalf("SetEnabled off: %v", err)
+	}
+
+	results, err := f.svc.SyncAll(ctx)
+	if err != nil {
+		t.Fatalf("SyncAll: %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("SyncAll returned %d results, want 3", len(results))
+	}
+	byID := make(map[int64]ConnectionSyncResult, len(results))
+	for _, r := range results {
+		byID[r.ConnectionID] = r
+	}
+
+	good := byID[f.conn.ID]
+	if good.Error != "" || good.Report.Status != domain.SyncStatusOK || len(good.Report.Results) != 2 {
+		t.Errorf("good conn = %+v, want ok status, 2 results, no error", good)
+	}
+	if got := byID[bad.ID]; got.Error == "" || got.Report.Status != "" {
+		t.Errorf("bad conn = %+v, want scrubbed error and empty report", got)
+	}
+	if got := byID[off.ID]; got.Error != "" || got.Report.Status != StatusSkipped {
+		t.Errorf("disabled conn = %+v, want skipped status, no error", got)
+	}
+	// The healthy connection reached the stub despite the sibling failure.
+	if f.stub.created() != 2 {
+		t.Errorf("stub has %d indexers, want 2 (healthy conn synced despite sibling failure)", f.stub.created())
+	}
+}
+
 func selectedOf(t *testing.T, f *syncFixture, instID int64) bool {
 	t.Helper()
 	ledger, err := f.svc.ConnectionIndexers(context.Background(), f.conn.ID)

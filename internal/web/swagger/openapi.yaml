@@ -561,6 +561,22 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "409": { $ref: "#/components/responses/Conflict" }
 
+  /api/app-connections/sync:
+    post:
+      summary: Reconcile every app-sync connection now
+      operationId: syncAllConnections
+      tags: [App Connections]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: per-connection sync outcomes (one entry per connection)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ConnectionSyncResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /api/app-connections/{id}:
     get:
       summary: Get an app-sync connection (app key redacted)
@@ -1637,6 +1653,14 @@ components:
           type: array
           items: { $ref: "#/components/schemas/SyncResult" }
       required: [status, results]
+    ConnectionSyncResult:
+      type: object
+      properties:
+        connectionId: { type: integer, format: int64 }
+        name: { type: string }
+        report: { $ref: "#/components/schemas/SyncReport" }
+        error: { type: string, description: scrubbed error when this connection failed to sync }
+      required: [connectionId, name, report]
     SelectIndexers:
       type: object
       properties:
