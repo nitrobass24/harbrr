@@ -1208,9 +1208,11 @@ paths:
     put:
       summary: Set the runtime log level
       description: >
-        Changes the log level for the whole process immediately (no restart) and
-        persists it, so a stored value overrides the config-file/env/flag seed on the
-        next start. An unknown level answers 400 and changes nothing.
+        Persists the new level, then applies it to the whole running process (no
+        restart) — so a write failure leaves the running level untouched rather than
+        desynchronizing runtime and stored state. A stored value overrides the
+        config-file/env/flag seed on the next start. An unknown level answers 400 and
+        changes nothing.
       operationId: putLogLevel
       tags: [System]
       security: [{ session: [] }, { apiKey: [] }]

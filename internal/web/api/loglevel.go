@@ -50,11 +50,14 @@ func (s *LogLevelStore) Set(ctx context.Context, level string) error {
 	if !config.ValidLogLevel(level) {
 		return fmt.Errorf("%w: %q", errInvalidLogLevel, level)
 	}
-	if err := logger.SetLevel(level); err != nil {
-		return fmt.Errorf("api: apply log level: %w", err)
-	}
+	// Persist BEFORE applying: if the write fails the running level is left untouched,
+	// so runtime and persisted state never disagree. The apply cannot realistically fail
+	// here (the level is already validated), so a persisted-but-not-applied gap is inert.
 	if err := (database.AppSettings{}).Set(ctx, s.db, logLevelKey, level, s.now()); err != nil {
 		return fmt.Errorf("api: persist log level: %w", err)
+	}
+	if err := logger.SetLevel(level); err != nil {
+		return fmt.Errorf("api: apply log level: %w", err)
 	}
 	return nil
 }

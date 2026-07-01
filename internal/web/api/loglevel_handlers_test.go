@@ -21,7 +21,7 @@ func TestLogLevelEndpoint(t *testing.T) {
 	setupAndLogin(t, base, c)
 
 	// PUT a valid level -> 200, echoes the applied level.
-	resp, body := do(t, c, http.MethodPut, base+"/api/config/log-level", map[string]any{"level": "debug"}, nil)
+	resp, body := do(t, c, http.MethodPut, base+"/api/config/log-level", logLevelReq{Level: "debug"}, nil)
 	mustStatus(t, resp, body, http.StatusOK)
 	var got struct {
 		Level string `json:"level"`
@@ -44,8 +44,13 @@ func TestLogLevelEndpoint(t *testing.T) {
 	}
 
 	// An unknown level is a 400 and changes nothing.
-	resp, body = do(t, c, http.MethodPut, base+"/api/config/log-level", map[string]any{"level": "loud"}, nil)
+	resp, body = do(t, c, http.MethodPut, base+"/api/config/log-level", logLevelReq{Level: "loud"}, nil)
 	mustStatus(t, resp, body, http.StatusBadRequest)
+}
+
+// logLevelReq is the typed request body for the log-level endpoint (compile-time shape).
+type logLevelReq struct {
+	Level string `json:"level"`
 }
 
 // TestLogLevelEndpointRequiresAuth proves the routes sit behind the authenticated group.

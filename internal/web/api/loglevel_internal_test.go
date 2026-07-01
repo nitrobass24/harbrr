@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
 
@@ -65,6 +66,42 @@ func TestLogLevelStoreApplyNoOverride(t *testing.T) {
 		t.Errorf("level = %q, want unchanged warn (no override to apply)", got)
 	}
 }
+
+// TestLogLevelStoreSetPersistFailureKeepsLevel proves the persist-before-apply order:
+// when the app_settings write fails, Set returns the error and the running level is left
+// untouched (never desynchronized from the persisted state).
+func TestLogLevelStoreSetPersistFailureKeepsLevel(t *testing.T) {
+	defer zerolog.SetGlobalLevel(zerolog.TraceLevel)
+	zerolog.SetGlobalLevel(zerolog.InfoLevel)
+
+	wantErr := errors.New("write failed")
+	s := NewLogLevelStore(failingExecer{err: wantErr}, nil)
+
+	if err := s.Set(context.Background(), "debug"); !errors.Is(err, wantErr) {
+		t.Fatalf("Set = %v, want it to wrap the persist error", err)
+	}
+	if got := logger.Level(); got != "info" {
+		t.Errorf("level = %q after a failed persist, want unchanged info", got)
+	}
+}
+
+// errExecerReadUnused marks a read call the write-only failing stub never expects.
+var errExecerReadUnused = errors.New("failingExecer: read path not used")
+
+// failingExecer is a dbinterface.Execer whose write path always errors, to exercise the
+// persist-failure branch of LogLevelStore.Set without a real database. The read methods
+// are never reached on that path.
+type failingExecer struct{ err error }
+
+func (f failingExecer) ExecContext(context.Context, string, ...any) (sql.Result, error) {
+	return nil, f.err
+}
+
+func (failingExecer) QueryContext(context.Context, string, ...any) (*sql.Rows, error) {
+	return nil, errExecerReadUnused
+}
+func (failingExecer) QueryRowContext(context.Context, string, ...any) *sql.Row { return nil }
+func (failingExecer) Rebind(q string) string                                   { return q }
 
 func openLogLevelDB(t *testing.T) *database.DB {
 	t.Helper()
