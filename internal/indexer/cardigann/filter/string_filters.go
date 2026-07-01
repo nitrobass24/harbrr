@@ -91,14 +91,43 @@ func filterHTMLDecode(value string, _ []string) (string, error) {
 	return html.UnescapeString(value), nil
 }
 
-// filterHTMLEncode implements htmlencode. It uses Go's html.EscapeString, which
-// matches .NET WebUtility.HtmlEncode for the common ASCII specials (& < > " ')
-// but does NOT encode non-ASCII / high characters into numeric entities the way
-// WebUtility.HtmlEncode does — a known divergence, latent because the corpus only
-// htmlencodes ASCII. Closing it (a WebUtility-faithful encoder) is owned by the
-// deferred engine effort.
+// filterHTMLEncode implements htmlencode via a .NET WebUtility.HtmlEncode-faithful
+// encoder (the encoder Jackett's htmlencode filter uses). Go's html.EscapeString
+// diverges — it emits &#34; for '"' where .NET emits &quot;, and it never encodes
+// non-ASCII — so it is not used here.
 func filterHTMLEncode(value string, _ []string) (string, error) {
-	return html.EscapeString(value), nil
+	return webUtilityHTMLEncode(value), nil
+}
+
+// webUtilityHTMLEncode mirrors .NET System.Net.WebUtility.HtmlEncode: the five HTML
+// specials become entities (&lt; &gt; &amp; &quot; &#39;), the Latin-1 supplement
+// (U+00A0–U+00FF) and astral code points (>= U+10000) become DECIMAL numeric
+// character references, and everything else — including U+007F–U+009F and
+// U+0100–U+FFFF — passes through unescaped.
+func webUtilityHTMLEncode(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch {
+		case r == '<':
+			b.WriteString("&lt;")
+		case r == '>':
+			b.WriteString("&gt;")
+		case r == '&':
+			b.WriteString("&amp;")
+		case r == '"':
+			b.WriteString("&quot;")
+		case r == '\'':
+			b.WriteString("&#39;")
+		case (r >= 0xA0 && r <= 0xFF) || r >= 0x10000:
+			b.WriteString("&#")
+			b.WriteString(strconv.Itoa(int(r)))
+			b.WriteByte(';')
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // filterPassthrough implements hexdump/strdump: Jackett only debug-logs and
