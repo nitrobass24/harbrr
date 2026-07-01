@@ -71,26 +71,26 @@ func (b *flexBool) UnmarshalJSON(data []byte) error {
 }
 
 type bhdTorrent struct {
-	Name           string  `json:"name"`
-	InfoHash       string  `json:"info_hash"`
-	Category       string  `json:"category"`
-	Type           string  `json:"type"`
-	Size           flexInt `json:"size"`
-	TimesCompleted flexInt `json:"times_completed"`
-	Seeders        flexInt `json:"seeders"`
-	Leechers       flexInt `json:"leechers"`
-	CreatedAt      string  `json:"created_at"`
-	URL            string  `json:"url"`
-	DownloadURL    string  `json:"download_url"`
-	ImdbID         string  `json:"imdb_id"`
-	TmdbID         string  `json:"tmdb_id"`
-	Freeleech      flexBool    `json:"freeleech"`
-	Promo25        flexBool    `json:"promo25"`
-	Promo50        flexBool    `json:"promo50"`
-	Promo75        flexBool    `json:"promo75"`
-	Limited        flexBool    `json:"limited"`
-	Exclusive      flexBool    `json:"exclusive"`
-	Internal       flexBool    `json:"internal"`
+	Name           string   `json:"name"`
+	InfoHash       string   `json:"info_hash"`
+	Category       string   `json:"category"`
+	Type           string   `json:"type"`
+	Size           flexInt  `json:"size"`
+	TimesCompleted flexInt  `json:"times_completed"`
+	Seeders        flexInt  `json:"seeders"`
+	Leechers       flexInt  `json:"leechers"`
+	CreatedAt      string   `json:"created_at"`
+	URL            string   `json:"url"`
+	DownloadURL    string   `json:"download_url"`
+	ImdbID         string   `json:"imdb_id"`
+	TmdbID         string   `json:"tmdb_id"`
+	Freeleech      flexBool `json:"freeleech"`
+	Promo25        flexBool `json:"promo25"`
+	Promo50        flexBool `json:"promo50"`
+	Promo75        flexBool `json:"promo75"`
+	Limited        flexBool `json:"limited"`
+	Exclusive      flexBool `json:"exclusive"`
+	Internal       flexBool `json:"internal"`
 }
 
 // flexInt unmarshals a JSON number OR a JSON string into an int64. BeyondHD wire-encodes
@@ -138,9 +138,6 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	}
 	var resp bhdResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
-
-	fmt.Printf("DEBUG beyondhd unmarshal err: %v\n", err)
-
 		return nil, fmt.Errorf("beyondhd: decode search response: %w", search.ErrParseError)
 	}
 	if resp.StatusCode == statusFailure {
