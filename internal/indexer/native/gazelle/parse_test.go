@@ -128,7 +128,7 @@ func TestParseBrowseSortsByPublishDateDesc(t *testing.T) {
 // RemasterTitle emits no empty "[ ]" bracket, matching Prowlarr's IsNotNullOrWhiteSpace.
 func TestComposeTitleSkipsWhitespaceFields(t *testing.T) {
 	t.Parallel()
-	g := &group{Artist: "Artist", GroupName: "Album", GroupYear: "2024", ReleaseType: "   "}
+	g := &group{Artist: "Artist", GroupName: "Album", GroupYear: flexInt(2024), ReleaseType: "   "}
 	tr := &torrent{Format: "FLAC", Encoding: "Lossless", Media: "CD", RemasterTitle: "  "}
 	got := composeTitle(g, tr)
 	want := "Artist - Album (2024) [FLAC Lossless / CD]"
