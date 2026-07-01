@@ -39,8 +39,11 @@ type indexerAdapter struct {
 	freeleechOnly bool
 	db            dbinterface.Execer
 	health        database.Health
-	clock         func() time.Time
-	log           zerolog.Logger
+	// stats records the durable per-indexer query/grab/latency counters. Increments are
+	// in-memory atomics (no hot-path DB write); the registry flushes them periodically.
+	stats *IndexerStats
+	clock func() time.Time
+	log   zerolog.Logger
 }
 
 // Compile-time proof the adapter satisfies the handler's contract.
@@ -56,7 +59,12 @@ func (a *indexerAdapter) Capabilities() *mapper.Capabilities { return a.inner.Ca
 // rate-limited/parse) is recorded as a health event before the error is wrapped
 // with the indexer id (not a secret) and returned; the caller redacts it.
 func (a *indexerAdapter) Search(ctx context.Context, query search.Query) ([]*normalizer.Release, error) {
+	// Count every search that reaches the tracker (this adapter is bypassed on a cache
+	// hit) and sample its latency around the inner call — a failed search is still a
+	// query attempt with a real latency sample.
+	start := a.clock()
 	releases, err := a.inner.Search(ctx, query)
+	a.stats.RecordQuery(a.instanceID, a.clock().Sub(start))
 	if err != nil {
 		a.recordHealth(ctx, err)
 		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, err)
@@ -93,6 +101,8 @@ func (a *indexerAdapter) Grab(ctx context.Context, link string) (*search.GrabRes
 	if err != nil {
 		return nil, fmt.Errorf("registry: grab %q: %w", a.info.ID, err)
 	}
+	// Count success only — a failed grab produced no download.
+	a.stats.RecordGrab(a.instanceID)
 	return result, nil
 }
 

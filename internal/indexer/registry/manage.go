@@ -200,6 +200,7 @@ func (r *Registry) Delete(ctx context.Context, slug string) error {
 	}
 	r.invalidate(slug)
 	r.forgetCacheCounters(inst.ID)
+	r.stats.ForgetInstance(inst.ID)
 	return nil
 }
 
@@ -342,6 +343,102 @@ func (r *Registry) deriveStatus(events []domain.IndexerHealthEvent) string {
 		return "unhealthy"
 	}
 	return "healthy"
+}
+
+// IndexerFailureCounts is one indexer's failure tally by health kind, folded in from
+// the append-only health events.
+type IndexerFailureCounts struct {
+	AuthFailure int64
+	RateLimited int64
+	ParseError  int64
+	AntiBot     int64
+}
+
+// IndexerStat is one indexer's Prowlarr-style stats: the durable query/grab/latency
+// counters plus the failure aggregation and the last-query/last-failure times.
+// AvgResponseMs is derived (response-time total / queries), so it is 0 when the indexer
+// has never been queried. LastQueryAt/LastFailureAt are zero when never observed.
+type IndexerStat struct {
+	Slug          string
+	Queries       int64
+	Grabs         int64
+	AvgResponseMs int64
+	Failures      IndexerFailureCounts
+	LastQueryAt   time.Time
+	LastFailureAt time.Time
+}
+
+// Stats returns one indexer's per-indexer stats: its durable counters plus the failure
+// aggregation from the health events. An unknown slug is database.ErrNotFound (the
+// handler maps it to 404). Note the query count reflects searches that actually reached
+// the tracker — a cache hit bypasses the instrumented adapter — so avgResponseMs
+// measures real upstream latency.
+func (r *Registry) Stats(ctx context.Context, slug string) (IndexerStat, error) {
+	inst, err := r.instances.GetBySlug(ctx, r.db, slug)
+	if err != nil {
+		return IndexerStat{}, fmt.Errorf("registry: stats %q: %w", slug, err)
+	}
+	counts, err := r.health.Counts(ctx, r.db, inst.ID)
+	if err != nil {
+		return IndexerStat{}, fmt.Errorf("registry: stats failures %q: %w", slug, err)
+	}
+	queries, grabs, respTotal, lastQuery, _ := r.stats.snapshot(inst.ID)
+	return buildIndexerStat(slug, queries, grabs, respTotal, lastQuery, counts), nil
+}
+
+// AllStats returns per-indexer stats for every configured instance. It reads the
+// failure aggregation for all instances in one query (no N+1) and folds each instance's
+// durable counters on top.
+func (r *Registry) AllStats(ctx context.Context) ([]IndexerStat, error) {
+	list, err := r.instances.List(ctx, r.db)
+	if err != nil {
+		return nil, fmt.Errorf("registry: all stats: %w", err)
+	}
+	countsByInstance, err := r.health.AllCounts(ctx, r.db)
+	if err != nil {
+		return nil, fmt.Errorf("registry: all stats failures: %w", err)
+	}
+	out := make([]IndexerStat, 0, len(list))
+	for _, inst := range list {
+		queries, grabs, respTotal, lastQuery, _ := r.stats.snapshot(inst.ID)
+		out = append(out, buildIndexerStat(inst.Slug, queries, grabs, respTotal, lastQuery, countsByInstance[inst.ID]))
+	}
+	return out, nil
+}
+
+// buildIndexerStat assembles the public stat from the durable counters and the health
+// aggregation, deriving the average response time (guarded against divide-by-zero).
+func buildIndexerStat(slug string, queries, grabs, respTotal int64, lastQuery time.Time, counts database.HealthCounts) IndexerStat {
+	var avg int64
+	if queries > 0 {
+		avg = respTotal / queries
+	}
+	return IndexerStat{
+		Slug:          slug,
+		Queries:       queries,
+		Grabs:         grabs,
+		AvgResponseMs: avg,
+		Failures: IndexerFailureCounts{
+			AuthFailure: counts.AuthFailure,
+			RateLimited: counts.RateLimited,
+			ParseError:  counts.ParseError,
+			AntiBot:     counts.AntiBot,
+		},
+		LastQueryAt:   lastQuery,
+		LastFailureAt: counts.LastFailureAt,
+	}
+}
+
+// RehydrateStats folds the persisted per-indexer counters onto the in-memory atomics at
+// boot (a thin delegator to the stats layer for cmd/harbrr wiring).
+func (r *Registry) RehydrateStats(ctx context.Context) error {
+	return r.stats.RehydrateCounters(ctx)
+}
+
+// FlushStats writes the live per-indexer counters back to the store (a thin delegator
+// for the periodic + shutdown flush in cmd/harbrr).
+func (r *Registry) FlushStats(ctx context.Context) {
+	r.stats.FlushCounters(ctx)
 }
 
 // settingFields indexes a definition's settings by name.

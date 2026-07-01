@@ -311,6 +311,26 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "409": { $ref: "#/components/responses/Conflict" }
 
+  /api/indexers/stats:
+    get:
+      summary: Get per-indexer stats for all indexers
+      description: >
+        Returns Prowlarr-style stats for every configured indexer: query/grab counts,
+        average response time, failure tallies by kind, and last-query/last-failure
+        timestamps.
+      operationId: allIndexerStats
+      tags: [Indexers]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: per-indexer stats for all indexers
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/IndexerStats" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /api/indexers/{slug}:
     get:
       summary: Get a configured indexer (settings redacted)
@@ -442,6 +462,27 @@ paths:
                           enum: [auth_failure, rate_limited, parse_error, anti_bot]
                         detail: { type: string }
                         occurred_at: { type: string, format: date-time }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/indexers/{slug}/stats:
+    get:
+      summary: Get an indexer's stats
+      description: >
+        Returns the indexer's Prowlarr-style stats: query/grab counts, average response
+        time, failure tallies by kind (auth_failure, rate_limited, parse_error,
+        anti_bot), and last-query/last-failure timestamps.
+      operationId: indexerStats
+      tags: [Indexers]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: indexer stats
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IndexerStats" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
@@ -1398,6 +1439,30 @@ components:
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
       required: [slug, definitionId, name, enabled, createdAt, updatedAt]
+    IndexerStats:
+      type: object
+      description: >
+        Per-indexer Prowlarr-style stats: durable query/grab/latency counters plus the
+        failure tally folded in from the health events. queries counts searches that
+        reached the tracker (a cache hit bypasses the counted path), so avgResponseMs
+        reflects real upstream latency. lastQueryAt/lastFailureAt are absent when never
+        observed.
+      properties:
+        slug: { type: string }
+        queries: { type: integer, format: int64 }
+        grabs: { type: integer, format: int64 }
+        avgResponseMs: { type: integer, format: int64 }
+        failures:
+          type: object
+          properties:
+            authFailure: { type: integer, format: int64 }
+            rateLimited: { type: integer, format: int64 }
+            parseError: { type: integer, format: int64 }
+            antiBot: { type: integer, format: int64 }
+          required: [authFailure, rateLimited, parseError, antiBot]
+        lastQueryAt: { type: string, format: date-time }
+        lastFailureAt: { type: string, format: date-time }
+      required: [slug, queries, grabs, avgResponseMs, failures]
     InstanceDetail:
       allOf:
         - { $ref: "#/components/schemas/Instance" }

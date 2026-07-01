@@ -136,6 +136,10 @@ func (rt *router) routes() http.Handler {
 
 			r.Get("/api/indexers", rt.listIndexers)
 			r.Post("/api/indexers", rt.addIndexer)
+			// The static "stats" segment is registered so chi prioritizes it over the
+			// {slug} param at the same level: GET /api/indexers/stats resolves to
+			// allIndexerStats, not getIndexer.
+			r.Get("/api/indexers/stats", rt.allIndexerStats)
 			r.Get("/api/indexers/{slug}", rt.getIndexer)
 			r.Patch("/api/indexers/{slug}", rt.updateIndexer)
 			r.Delete("/api/indexers/{slug}", rt.deleteIndexer)
@@ -143,6 +147,7 @@ func (rt *router) routes() http.Handler {
 			r.Post("/api/indexers/{slug}/disable", rt.disableIndexer)
 			r.Post("/api/indexers/{slug}/test", rt.testIndexer)
 			r.Get("/api/indexers/{slug}/status", rt.indexerStatus)
+			r.Get("/api/indexers/{slug}/stats", rt.indexerStats)
 			r.Get("/api/indexers/{slug}/search", rt.searchIndexer)
 			r.Get("/api/indexers/{slug}/capabilities", rt.indexerCapabilities)
 			r.Get("/api/indexers/{slug}/crossseed-snippet", rt.crossSeedSnippet)

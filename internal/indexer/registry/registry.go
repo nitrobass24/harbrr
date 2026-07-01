@@ -69,6 +69,12 @@ type Registry struct {
 	// OFF and resolve returns the bare adapter unchanged.
 	searchCache *SearchCache
 
+	// stats holds the durable per-indexer query/grab/latency counters. Always present
+	// (built in New), instrumented by the per-instance indexerAdapter, rehydrated at
+	// boot and flushed periodically + at shutdown. Failure counts are folded in at read
+	// time from the health events, not tracked here.
+	stats *IndexerStats
+
 	mu sync.Mutex
 	// cache holds the per-slug served indexer. It is the wrapped (cached) indexer
 	// when searchCache != nil, else the bare adapter — both as torznabhttp.Indexer.
@@ -155,6 +161,11 @@ func New(db *database.DB, ldr *loader.Loader, keyring secretsKeyring, opts ...Op
 	}
 	if r.doerFactory == nil {
 		r.doerFactory = newDoer
+	}
+	// Built after the options loop so it captures the final r.log/r.clock, exactly like
+	// the doerFactory default above.
+	if r.stats == nil {
+		r.stats = newIndexerStats(db, r.clock, r.log)
 	}
 	return r
 }
@@ -274,6 +285,7 @@ func (r *Registry) buildAdapter(ctx context.Context, slug string) (*indexerAdapt
 		freeleechOnly: freeleechOnly,
 		db:            r.db,
 		health:        r.health,
+		stats:         r.stats,
 		clock:         r.clock,
 		log:           r.log,
 	}, nil

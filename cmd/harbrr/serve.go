@@ -100,6 +100,9 @@ func serve(ctx context.Context, cfg *config.Config, log zerolog.Logger) error {
 	searchCache := buildSearchCache(ctx, db, cfg, log)
 	regOpts := []registry.Option{registry.WithLogger(log), registry.WithSearchCache(searchCache)}
 	reg := registry.New(db, loader.New(dropinDir(cfg)), keyring, regOpts...)
+	if err := reg.RehydrateStats(ctx); err != nil {
+		log.Warn().Err(err).Msg("loading indexer stat counters failed; counters start at zero this session")
+	}
 	appSync := appsync.NewService(db, registrySource{reg: reg}, authSvc, keyring, appSyncClient(), log)
 	announceSvc := announce.NewService(db, authSvc, keyring,
 		announce.DefaultTargetFactory(appSyncClient(), nil, nil), log)
@@ -154,6 +157,7 @@ func serve(ctx context.Context, cfg *config.Config, log zerolog.Logger) error {
 
 	startSessionCleanup(bgCtx, &bg, store, log)
 	startSearchCacheCleanup(bgCtx, &bg, searchCache, log)
+	startIndexerStatsFlush(bgCtx, &bg, reg)
 
 	// Confirm the port is actually bindable before logging "listening": srv.Run binds
 	// asynchronously, so a fatal listen error (e.g. address in use) would otherwise
@@ -361,6 +365,36 @@ func startSearchCacheCleanup(ctx context.Context, wg *sync.WaitGroup, sc *regist
 					log.Warn().Err(err).Msg("search cache cleanup failed")
 				}
 				t.Reset(cleanupTickInterval(sc)) // pick up any runtime interval change
+			}
+		}
+	}()
+}
+
+// indexerStatsFlushInterval is how often the per-indexer stat counters are flushed to
+// the DB. A fixed 60s tick is fine: the counters are observability-only, so losing the
+// increments since the last tick on a hard crash is acceptable (same tolerance the
+// cache counters accept).
+const indexerStatsFlushInterval = 60 * time.Second
+
+// startIndexerStatsFlush periodically flushes the registry's durable per-indexer stat
+// counters until ctx is cancelled, mirroring startSearchCacheCleanup. On ctx.Done() it
+// runs a final flush with a fresh bounded context so the shutdown counters commit before
+// the deferred db.Close() (bg.Wait() joins this goroutine first).
+func startIndexerStatsFlush(ctx context.Context, wg *sync.WaitGroup, reg *registry.Registry) {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		t := time.NewTicker(indexerStatsFlushInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+				reg.FlushStats(fctx)
+				cancel()
+				return
+			case <-t.C:
+				reg.FlushStats(ctx)
 			}
 		}
 	}()

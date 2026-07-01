@@ -64,6 +64,89 @@ func TestHealthRecordAndRecent(t *testing.T) {
 	}
 }
 
+// TestHealthCounts proves Counts aggregates one instance's events by kind and reports
+// the newest failure time across all kinds; an instance with no events is the zero
+// struct.
+func TestHealthCounts(t *testing.T) {
+	t.Parallel()
+	db := openMigrated(t, filepath.Join(t.TempDir(), "health.db"))
+	ctx := context.Background()
+	id := seedInstance(t, db, "tt")
+	empty := seedInstance(t, db, "empty")
+	h := database.Health{}
+
+	base := time.Date(2026, time.June, 14, 12, 0, 0, 0, time.UTC)
+	newest := base.Add(5 * time.Minute)
+	events := []domain.IndexerHealthEvent{
+		{InstanceID: id, Kind: domain.HealthAuthFailure, OccurredAt: base},
+		{InstanceID: id, Kind: domain.HealthAuthFailure, OccurredAt: base.Add(time.Minute)},
+		{InstanceID: id, Kind: domain.HealthRateLimited, OccurredAt: base.Add(2 * time.Minute)},
+		{InstanceID: id, Kind: domain.HealthAntiBot, OccurredAt: newest},
+	}
+	for _, e := range events {
+		if err := h.Record(ctx, db, e); err != nil {
+			t.Fatalf("record %s: %v", e.Kind, err)
+		}
+	}
+
+	got, err := h.Counts(ctx, db, id)
+	if err != nil {
+		t.Fatalf("Counts: %v", err)
+	}
+	if got.AuthFailure != 2 || got.RateLimited != 1 || got.ParseError != 0 || got.AntiBot != 1 {
+		t.Errorf("counts = %+v, want auth 2 / rate 1 / parse 0 / antibot 1", got)
+	}
+	if !got.LastFailureAt.Equal(newest) {
+		t.Errorf("lastFailureAt = %v, want %v (newest across kinds)", got.LastFailureAt, newest)
+	}
+
+	// An instance with no events yields the zero struct.
+	emptyCounts, err := h.Counts(ctx, db, empty)
+	if err != nil {
+		t.Fatalf("Counts(empty): %v", err)
+	}
+	if (emptyCounts != database.HealthCounts{}) {
+		t.Errorf("empty counts = %+v, want zero struct", emptyCounts)
+	}
+}
+
+// TestHealthAllCounts proves AllCounts aggregates every instance in one pass, keyed by
+// instance id, and omits instances with no events.
+func TestHealthAllCounts(t *testing.T) {
+	t.Parallel()
+	db := openMigrated(t, filepath.Join(t.TempDir(), "health.db"))
+	ctx := context.Background()
+	id1 := seedInstance(t, db, "one")
+	id2 := seedInstance(t, db, "two")
+	seedInstance(t, db, "none") // no events -> absent from the map
+	h := database.Health{}
+
+	base := time.Date(2026, time.June, 14, 12, 0, 0, 0, time.UTC)
+	for _, e := range []domain.IndexerHealthEvent{
+		{InstanceID: id1, Kind: domain.HealthAuthFailure, OccurredAt: base},
+		{InstanceID: id1, Kind: domain.HealthParseError, OccurredAt: base.Add(time.Minute)},
+		{InstanceID: id2, Kind: domain.HealthRateLimited, OccurredAt: base.Add(2 * time.Minute)},
+	} {
+		if err := h.Record(ctx, db, e); err != nil {
+			t.Fatalf("record: %v", err)
+		}
+	}
+
+	got, err := h.AllCounts(ctx, db)
+	if err != nil {
+		t.Fatalf("AllCounts: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("AllCounts len = %d, want 2 (the empty instance omitted)", len(got))
+	}
+	if c := got[id1]; c.AuthFailure != 1 || c.ParseError != 1 {
+		t.Errorf("id1 counts = %+v, want auth 1 / parse 1", c)
+	}
+	if c := got[id2]; c.RateLimited != 1 {
+		t.Errorf("id2 counts = %+v, want rate 1", c)
+	}
+}
+
 // TestHealthCascadeOnInstanceDelete proves the FK ON DELETE CASCADE actually fires
 // (foreign_keys is ON): deleting the parent instance removes its health rows.
 func TestHealthCascadeOnInstanceDelete(t *testing.T) {
