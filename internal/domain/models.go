@@ -159,6 +159,32 @@ const (
 	AnnounceKindCrossSeedV6 = "crossseed-v6"
 )
 
+// Notification types — the pluggable senders a notification target dispatches
+// through. Stored verbatim in notifications.type; validated in Go (no DB CHECK), so
+// a new sender needs no migration (the #85 lesson).
+const (
+	NotifyTypeWebhook = "webhook"
+	NotifyTypeDiscord = "discord"
+)
+
+// Notification is a configured notification target harbrr fires operational events
+// at (indexer health failures today). The destination — a generic webhook URL or a
+// Discord webhook URL, either of which may embed a secret token — is stored
+// encrypted (base64 nonce‖ciphertext‖tag) under KeyID, bound by the notification id
+// as encryption AAD, exactly like a connection's secret. OnHealthFailure gates the
+// health-event trigger per target.
+type Notification struct {
+	ID              int64
+	Name            string
+	Type            string
+	URLEncrypted    string
+	KeyID           string
+	Enabled         bool
+	OnHealthFailure bool
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
 // AnnounceConnection is a configured cross-seed tool harbrr pushes newly-seen releases to.
 // Like AppConnection it stores two encrypted secrets under KeyID (AAD = the connection id):
 // APIKeyEncrypted is the tool's own API key (so harbrr can call it), and

@@ -16,6 +16,7 @@ import (
 	"github.com/autobrr/harbrr/internal/auth"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
+	"github.com/autobrr/harbrr/internal/notify"
 	"github.com/autobrr/harbrr/internal/secrets"
 	"github.com/autobrr/harbrr/internal/version"
 )
@@ -27,6 +28,7 @@ type Deps struct {
 	Loader   *loader.Loader
 	AppSync  *appsync.Service
 	Announce *announce.Service
+	Notify   *notify.Service
 	Sessions *scs.SessionManager
 	// DLToken seals a resolver-needing indexer's download link behind the /dl proxy
 	// for the JSON search response, exactly as the Torznab feed does, so a passkey
@@ -64,6 +66,7 @@ type router struct {
 	loader   *loader.Loader
 	appsync  *appsync.Service
 	announce *announce.Service
+	notify   *notify.Service
 	sessions *scs.SessionManager
 	dlToken  *secrets.Keyring
 	basePath string
@@ -97,7 +100,7 @@ func NewRouter(deps Deps, cfg Config) (http.Handler, error) {
 
 	rt := &router{
 		auth: deps.Auth, registry: deps.Registry, loader: deps.Loader, appsync: deps.AppSync,
-		announce: deps.Announce, sessions: deps.Sessions, dlToken: deps.DLToken, basePath: deps.BasePath,
+		announce: deps.Announce, notify: deps.Notify, sessions: deps.Sessions, dlToken: deps.DLToken, basePath: deps.BasePath,
 		cache: deps.Cache, cfg: cfg, log: deps.Logger, logLevel: deps.LogLevel,
 		allowlist: allow, trustedProxies: proxies,
 	}
@@ -171,6 +174,15 @@ func (rt *router) routes() http.Handler {
 			r.Delete("/api/announce-connections/{id}", rt.deleteAnnounceConnection)
 			r.Post("/api/announce-connections/{id}/enable", rt.enableAnnounceConnection)
 			r.Post("/api/announce-connections/{id}/disable", rt.disableAnnounceConnection)
+
+			r.Get("/api/notifications", rt.listNotifications)
+			r.Post("/api/notifications", rt.createNotification)
+			r.Get("/api/notifications/{id}", rt.getNotification)
+			r.Patch("/api/notifications/{id}", rt.updateNotification)
+			r.Delete("/api/notifications/{id}", rt.deleteNotification)
+			r.Post("/api/notifications/{id}/enable", rt.enableNotification)
+			r.Post("/api/notifications/{id}/disable", rt.disableNotification)
+			r.Post("/api/notifications/{id}/test", rt.testNotification)
 
 			r.Get("/api/cache/stats", rt.cacheStats)
 			r.Post("/api/cache/flush", rt.cacheFlush)

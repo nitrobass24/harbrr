@@ -39,6 +39,10 @@ type indexerAdapter struct {
 	freeleechOnly bool
 	db            dbinterface.Execer
 	health        database.Health
+	// healthSink, when non-nil, is notified best-effort after a health event is
+	// recorded so a subsystem (notify) can fan it out to configured targets. It must
+	// not block or fail back into Search.
+	healthSink HealthSink
 	// stats records the durable per-indexer query/grab/latency counters. Increments are
 	// in-memory atomics (no hot-path DB write); the registry flushes them periodically.
 	stats *IndexerStats
@@ -123,6 +127,12 @@ func (a *indexerAdapter) recordHealth(ctx context.Context, err error) {
 	if rerr := a.health.Record(ctx, a.db, ev); rerr != nil {
 		a.log.Warn().Str("indexer", a.info.ID).Str("error", apphttp.RedactError(rerr)).
 			Msg("registry: record health event failed")
+	}
+	// Notify the sink after recording, best-effort: it owns its own async dispatch and
+	// must never block or error back into the search path. The detail is already
+	// scrubbed (RedactError above).
+	if a.healthSink != nil {
+		a.healthSink.OnHealthEvent(ctx, a.info.ID, ev.Kind, ev.Detail)
 	}
 }
 

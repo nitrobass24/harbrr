@@ -20,6 +20,7 @@ import (
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
+	"github.com/autobrr/harbrr/internal/notify"
 	"github.com/autobrr/harbrr/internal/secrets"
 	"github.com/autobrr/harbrr/internal/web/api"
 	"github.com/autobrr/harbrr/internal/web/swagger"
@@ -131,6 +132,7 @@ func newEnvWithCache(t *testing.T, cfg api.Config, buildCache func(db *database.
 	appSync := appsync.NewService(db, source, authSvc, keyring, http.DefaultClient, zerolog.Nop())
 	announceSvc := announce.NewService(db, authSvc, keyring,
 		announce.DefaultTargetFactory(http.DefaultClient, nil, nil), zerolog.Nop())
+	notifySvc := notify.NewService(db, keyring, http.DefaultClient, zerolog.Nop())
 
 	var cache *registry.SearchCache
 	if buildCache != nil {
@@ -138,7 +140,8 @@ func newEnvWithCache(t *testing.T, cfg api.Config, buildCache func(db *database.
 	}
 
 	handler, err := api.NewRouter(api.Deps{
-		Auth: authSvc, Registry: reg, Loader: ldr, AppSync: appSync, Announce: announceSvc, Sessions: sm,
+		Auth: authSvc, Registry: reg, Loader: ldr, AppSync: appSync, Announce: announceSvc,
+		Notify: notifySvc, Sessions: sm,
 		Cache: cache, Logger: zerolog.Nop(), LogLevel: api.NewLogLevelStore(db, nil),
 	}, cfg)
 	if err != nil {

@@ -26,6 +26,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/definitions"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 	"github.com/autobrr/harbrr/internal/logger"
+	"github.com/autobrr/harbrr/internal/notify"
 	"github.com/autobrr/harbrr/internal/secrets"
 	"github.com/autobrr/harbrr/internal/server"
 	"github.com/autobrr/harbrr/internal/version"
@@ -98,8 +99,11 @@ func serve(ctx context.Context, cfg *config.Config, log zerolog.Logger) error {
 	authSvc := auth.NewService(db)
 
 	searchCache := buildSearchCache(ctx, db, cfg, log)
-	regOpts := []registry.Option{registry.WithLogger(log), registry.WithSearchCache(searchCache)}
-	reg := registry.New(db, loader.New(dropinDir(cfg)), keyring, regOpts...)
+	// notifySvc is the registry's health sink: a recorded indexer failure fans out
+	// (async, best-effort) to configured targets. Built here so it is an option at New.
+	notifySvc := notify.NewService(db, keyring, appSyncClient(), log)
+	reg := registry.New(db, loader.New(dropinDir(cfg)), keyring,
+		registry.WithLogger(log), registry.WithSearchCache(searchCache), registry.WithHealthSink(notifySvc))
 	if err := reg.RehydrateStats(ctx); err != nil {
 		log.Warn().Err(err).Msg("loading indexer stat counters failed; counters start at zero this session")
 	}
@@ -122,7 +126,7 @@ func serve(ctx context.Context, cfg *config.Config, log zerolog.Logger) error {
 
 	mgmt, err := api.NewRouter(api.Deps{
 		Auth: authSvc, Registry: reg, Loader: loader.New(dropinDir(cfg)), AppSync: appSync,
-		Announce: announceSvc, Sessions: sessions,
+		Announce: announceSvc, Notify: notifySvc, Sessions: sessions,
 		DLToken: keyring, BasePath: cfg.Server.BaseURL, Cache: searchCache, Logger: log,
 		LogLevel: logLevel,
 	}, api.Config{

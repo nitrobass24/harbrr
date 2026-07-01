@@ -69,6 +69,11 @@ type Registry struct {
 	// OFF and resolve returns the bare adapter unchanged.
 	searchCache *SearchCache
 
+	// healthSink, when non-nil, is notified best-effort after a health event is
+	// recorded (e.g. the notify service fans it out to configured targets). Nil (the
+	// default) means no notification — recording is unchanged.
+	healthSink HealthSink
+
 	// stats holds the durable per-indexer query/grab/latency counters. Always present
 	// (built in New), instrumented by the per-instance indexerAdapter, rehydrated at
 	// boot and flushed periodically + at shutdown. Failure counts are folded in at read
@@ -112,6 +117,21 @@ func WithLogger(l zerolog.Logger) Option { return func(r *Registry) { r.log = l 
 // leaves caching off with zero behavior change.
 func WithSearchCache(sc *SearchCache) Option {
 	return func(r *Registry) { r.searchCache = sc }
+}
+
+// HealthSink receives a best-effort call after a classified health event is recorded,
+// with the indexer slug, event kind, and credential-scrubbed detail. Implementations
+// (the notify service) must not block or error back into the search path — they own
+// their own async dispatch. Declared here (structurally satisfied) so the registry
+// never imports the notification package.
+type HealthSink interface {
+	OnHealthEvent(ctx context.Context, indexer, kind, detail string)
+}
+
+// WithHealthSink registers the sink notified after each recorded health event. Nil (the
+// default) leaves health recording unchanged with no notification.
+func WithHealthSink(sink HealthSink) Option {
+	return func(r *Registry) { r.healthSink = sink }
 }
 
 // ClientParams carries the per-instance inputs the doer factory needs to vary the
@@ -285,6 +305,7 @@ func (r *Registry) buildAdapter(ctx context.Context, slug string) (*indexerAdapt
 		freeleechOnly: freeleechOnly,
 		db:            r.db,
 		health:        r.health,
+		healthSink:    r.healthSink,
 		stats:         r.stats,
 		clock:         r.clock,
 		log:           r.log,

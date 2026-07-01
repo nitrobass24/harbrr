@@ -43,6 +43,11 @@ tags:
       The search-results cache backing the Torznab feed and JSON search. Inspect
       hit-ratio and size, or flush every entry. When caching is disabled the
       endpoints report a disabled state rather than 404.
+  - name: Notifications
+    description: >
+      Notification targets harbrr fires operational events at (an indexer health
+      failure today) via a generic webhook or a Discord webhook. The destination URL
+      is redacted.
 
 paths:
   /healthz:
@@ -864,6 +869,134 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /api/notifications:
+    get:
+      summary: List notification targets
+      description: >
+        The configured notification targets (generic webhook, Discord webhook) harbrr
+        fires operational events at. The destination URL is redacted.
+      operationId: listNotifications
+      tags: [Notifications]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the notification targets
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Notification" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Add a notification target
+      description: Stores the destination URL encrypted at rest; it reads back redacted.
+      operationId: createNotification
+      tags: [Notifications]
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateNotification" }
+      responses:
+        "201":
+          description: the created target
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Notification" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/notifications/{id}:
+    get:
+      summary: Get one notification target
+      operationId: getNotification
+      tags: [Notifications]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200":
+          description: the notification target
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Notification" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      summary: Update a notification target (a new url rotates the destination)
+      operationId: updateNotification
+      tags: [Notifications]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateNotification" }
+      responses:
+        "204": { description: updated }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      summary: Delete a notification target
+      operationId: deleteNotification
+      tags: [Notifications]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: deleted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/notifications/{id}/enable:
+    post:
+      summary: Enable a notification target
+      operationId: enableNotification
+      tags: [Notifications]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: enabled }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/notifications/{id}/disable:
+    post:
+      summary: Disable a notification target
+      operationId: disableNotification
+      tags: [Notifications]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: disabled }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/notifications/{id}/test:
+    post:
+      summary: Send a synthetic event to a notification target
+      description: >
+        Delivers a test event to the target's destination so an operator can confirm it
+        works. A pass is {"ok":true}; a delivery failure is 200 with ok=false and a
+        scrubbed error; an unknown id is 404.
+      operationId: testNotification
+      tags: [Notifications]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200":
+          description: the test outcome
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TestResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /api/indexers/{slug}/results/torznab:
     get:
       tags: [Torznab Feed]
@@ -1675,6 +1808,36 @@ components:
         apiKey: { type: string, description: the tool's API key (stored encrypted) }
         harbrrUrl: { type: string, description: "the base URL the tool uses to reach harbrr's /dl link (both kinds fetch it)" }
       required: [name, kind, baseUrl, apiKey, harbrrUrl]
+    Notification:
+      type: object
+      description: >
+        A notification target harbrr fires operational events at. The destination URL
+        (url) is never echoed — it reads back as the <redacted> sentinel.
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        type: { type: string, enum: [webhook, discord] }
+        url: { type: string, description: "the destination URL, redacted (<redacted>)" }
+        enabled: { type: boolean }
+        onHealthFailure: { type: boolean, description: fire on a classified indexer health failure }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, name, type, url, enabled, onHealthFailure, createdAt, updatedAt]
+    CreateNotification:
+      type: object
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [webhook, discord] }
+        url: { type: string, description: the destination URL (stored encrypted) }
+        onHealthFailure: { type: boolean, description: "fire on an indexer health failure (default true)" }
+      required: [name, type, url]
+    UpdateNotification:
+      type: object
+      description: a partial update; omitted fields are left unchanged
+      properties:
+        name: { type: string }
+        url: { type: string, description: rotates the destination (stored encrypted) }
+        onHealthFailure: { type: boolean }
     CrossSeedSnippet:
       type: object
       description: a copy-paste cross-seed v6 config.js torznab entry for one indexer
