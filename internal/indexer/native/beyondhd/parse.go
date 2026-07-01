@@ -132,7 +132,6 @@ func (n flexInt) int64() int64 { return int64(n) }
 // (it could echo the api_key/rsskey). Rows are mapped to releases and sorted by descending
 // publish date (Prowlarr orders by PublishDate desc) for a deterministic feed.
 func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
-
 	if containsInvalidKey(body) {
 		return nil, fmt.Errorf("beyondhd: %w", login.ErrLoginFailed)
 	}
@@ -217,7 +216,6 @@ func (d *driver) categories(category string) []int {
 // downloadVolumeFactor reproduces Prowlarr's GetDownloadVolumeFactor: a freeleech or
 // limited release is free (0); otherwise the largest active promo discount applies
 // (75%->0.25, 50%->0.5, 25%->0.75); everything else is full price (1).
-
 func downloadVolumeFactor(row *bhdTorrent) float64 {
 	switch {
 	case bool(row.Freeleech) || bool(row.Limited):
