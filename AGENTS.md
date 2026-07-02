@@ -25,7 +25,8 @@ parity gate (the "Definition of done" in `docs/ideas.md`).
 - **NEVER hand-edit vendored tracker definitions** under `internal/indexer/definitions/vendor/`. They
   are consumed byte-for-byte from Jackett. ALL behavioral differences are absorbed in the engine,
   never in the def files. Fixes go upstream to Jackett or into `internal/indexer/definitions/dropin/`.
-  (A PreToolUse hook blocks edits here; refreshing the snapshot via `make vendor-defs` is fine.)
+  (A CI job (`vendor-guard`) and a pre-commit hook — both `scripts/check-vendor-untouched.sh` —
+  block edits here regardless of editor/tool; refreshing the snapshot via `make vendor-defs` is fine.)
 - **NEVER log, print, or commit secrets** — passkeys, cookies, API keys, download tokens. Definitions
   routinely put passkeys in URLs; redact secret query params and `Authorization`/`Cookie` headers in
   all logs and traces. (gitleaks + `scripts/check-no-secrets.sh` run in pre-commit and in CI via

@@ -24,6 +24,7 @@ nav:
   - Guides:
       - Adding an indexer: guides/add-indexer.md
       - App Sync (*arr / qui): guides/app-sync.md
+      - Golden smoke test: guides/smoke-test.md
   - Configuration: configuration.md
   - API & Swagger UI: api.md
   - Features:

@@ -34,3 +34,9 @@ repos:
         entry: scripts/check-no-secrets.sh
         language: system
         pass_filenames: false
+
+      - id: no-vendored-def-edits
+        name: no-vendored-def-edits
+        entry: scripts/check-vendor-untouched.sh
+        language: system
+        pass_filenames: false

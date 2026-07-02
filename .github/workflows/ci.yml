@@ -15,6 +15,23 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Tool-agnostic guard: block hand-edits to the vendored Jackett snapshot
+  # (internal/indexer/definitions/vendor/**), which is consumed byte-for-byte. This is
+  # the authoritative, non-bypassable enforcement of AGENTS.md's #1 rule — a contributor
+  # using any editor/agent is caught here, unlike the local pre-commit / editor hooks.
+  # The scheduled refresh branch (chore/vendor-definitions) is exempt inside the script.
+  vendor-guard:
+    name: vendor-guard
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: Guard vendored definitions
+        run: scripts/check-vendor-untouched.sh --ci
+
   # Test and build run as separate, parallel jobs so a build failure and a test
   # failure are reported independently and neither waits on the other. The engine
   # is pure Go with no OS-specific files or build tags and ships as a Linux
