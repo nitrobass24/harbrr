@@ -3,7 +3,7 @@
 -- Forward-only. Timestamps are TEXT RFC3339 (UTC). All placeholders in repository
 -- SQL are `?` (SQLite-native). Secrets are NEVER stored in recoverable form except
 -- tracker credentials, which live AES-256-GCM-encrypted in *_encrypted columns
--- (see internal/secrets, docs/ideas.md §9).
+-- (see internal/secrets, docs/security.md).
 
 -- The single admin (first-run setup enforces one). The password is an argon2id
 -- PHC hash — one-way, never recoverable, so a key compromise never yields it.

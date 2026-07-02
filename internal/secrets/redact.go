@@ -1,5 +1,5 @@
-// Package secrets implements harbrr's three-class credential model (docs/ideas.md
-// §9): tracker credentials encrypted at rest with AES-256-GCM (Keyring), the
+// Package secrets implements harbrr's three-class credential model
+// (docs/security.md): tracker credentials encrypted at rest with AES-256-GCM (Keyring), the
 // web-UI password hashed with argon2id (HashPassword/VerifyPassword), and API
 // keys / session tokens hashed with SHA-256 (GenerateAPIKey/HashToken/VerifyToken).
 // It also carries the <redacted> sentinel used so a stored secret is never echoed

@@ -14,7 +14,7 @@ const tokenBytes = 32
 
 // GenerateAPIKey returns a new high-entropy API key as a URL-safe base64 string.
 // The caller shows it to the user exactly once and stores only HashToken(it):
-// the plaintext is never persisted (docs/ideas.md §9, bearer-token class).
+// the plaintext is never persisted (docs/security.md, bearer-token class).
 func GenerateAPIKey() (string, error) {
 	b := make([]byte, tokenBytes)
 	if _, err := rand.Read(b); err != nil {

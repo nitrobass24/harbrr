@@ -228,7 +228,8 @@ native drivers were added on the AvistaZ pattern (#45): **IPTorrents** (count pa
 live-confirmed 2026-06-18); **FileList** (search live-confirmed after the int-flags fix #46;
 Prowlarr differential pending a name match); **MyAnonamouse** (driver + `mam_id`
 write-back seam #46 — correct, but live search/parse pending a fresh dedicated session). This corrected
-`docs/ideas.md §6`'s "AvistaZ is the only native gap".
+the earlier "AvistaZ is the only native gap" measurement (now superseded — see
+`docs/native-indexer-pattern.md` and the `native-driver` issues).
 
 **Still `[Tracked]` — no qualifying tracker in this stack:**
 

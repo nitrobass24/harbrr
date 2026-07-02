@@ -30,6 +30,6 @@ For the alpha, harbrr is operated entirely over its HTTP API; the interactive
 - **[Cross-seed & freeleech](features/cross-seed-freeleech.md)** — one tracker serves both
   your \*arrs and cross-seed, with a per-indexer freeleech toggle and announce push.
 - **[Pagination](features/pagination.md)** — honest counts and stable, non-duplicating pages
-  (the bug Prowlarr/Jackett have, that harbrr doesn't).
+  when something walks the feed page by page.
 
 For the internal design notes and build plan, see the `docs/` folder in the repository.

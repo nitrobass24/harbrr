@@ -17,7 +17,7 @@ const keyLen = 32
 // (instance, setting) row, so a stored blob cannot be copied or replayed across
 // rows or fields. The form is the bytes of "<instanceID>\x00<setting>" — a NUL
 // separator that cannot appear in a decimal id or a YAML setting name. This is
-// harbrr's hardening over qui, which passes no AAD (docs/ideas.md §9).
+// harbrr's hardening over qui, which passes no AAD (docs/security.md).
 func aad(instanceID int64, setting string) []byte {
 	return fmt.Appendf(nil, "%d\x00%s", instanceID, setting)
 }

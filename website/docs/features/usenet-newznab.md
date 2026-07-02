@@ -46,14 +46,11 @@ client, not your torrent client).
 
 ## Your API key stays inside harbrr
 
-This is the one place harbrr deliberately does **more** than Prowlarr.
+harbrr takes an extra step here to keep your indexer API key out of the rest of your stack.
 
-A Newznab download link has your API key baked into the URL. Prowlarr, when an app
-grabs a release, **redirects** the app's downloader to that real URL — so your API key
-travels on to SABnzbd/NZBGet.
-
-harbrr doesn't. When a grab comes in, harbrr fetches the `.nzb` **itself**,
-server-side, and hands your app just the file. Your API key is used inside harbrr and
+A Newznab download link has your API key baked into the URL. When a grab comes in, harbrr
+fetches the `.nzb` **itself**, server-side, and hands your app just the file — so the key
+isn't handed on to SABnzbd/NZBGet. Your API key is used inside harbrr and
 **never appears** in the feed your apps see, nor in the link they're handed. An `.nzb`
 is a tiny pointer file, so fetching it this way costs nothing noticeable — and your
 key stays where it belongs.

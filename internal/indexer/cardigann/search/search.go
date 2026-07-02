@@ -5,7 +5,7 @@
 // runs it through the injected Doer, and parses the response body into normalized
 // releases (fields.go), reproducing Jackett CardigannIndexer.PerformQuery /
 // ParseFields / ParseRowFilters on saved bytes. It stays decoupled from the other
-// stages by taking them as injected Deps. See AGENTS.md and docs/ideas.md.
+// stages by taking them as injected Deps. See AGENTS.md and docs/architecture.md.
 package search
 
 import (

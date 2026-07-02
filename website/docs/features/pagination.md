@@ -1,9 +1,9 @@
 # Pagination
 
-harbrr returns search results a page at a time, and it does so **more correctly than
-Prowlarr or Jackett**. If you've ever paged through a Torznab feed and seen the same release
-show up on two different pages — or a `total` that changed underneath you mid-walk — that's
-the class of bug harbrr is built not to have.
+harbrr returns search results a page at a time, and it does so carefully. If you've ever
+paged through a Torznab feed and seen the same release show up on two different pages — or a
+`total` that changed underneath you mid-walk — those are exactly the failure modes harbrr is
+built to avoid.
 
 Most operators never touch pagination directly; your apps handle it. But it matters whenever
 something walks the feed page by page (a manual search UI, a script, cross-seed), so here's
@@ -14,8 +14,8 @@ what harbrr guarantees.
 ## What you get
 
 - **Honest counts.** The Torznab/Newznab feed emits `<newznab:response offset="…"
-  total="…">` on every search. Jackett omits these; harbrr fills them in, so a client always
-  knows where it is and how many matches exist.
+  total="…">` on every search, so a client always knows where it is and how many matches
+  exist.
 - **A real JSON envelope.** The JSON search endpoint
   (`GET /api/indexers/{slug}/search`) wraps results in a qui-shaped envelope instead of a bare
   array:
@@ -34,9 +34,8 @@ what harbrr guarantees.
   it can be larger than `results.length`. `hasMore` is simply `offset + len(results) < total`.
 
 - **Stable, disjoint pages.** Walking a query page by page yields each release **exactly
-  once**, and `total` stays put across the walk. This is the property Prowlarr violates
-  ([Prowlarr #1428](https://github.com/Prowlarr/Prowlarr/issues/1428)), and harbrr pins it
-  with standing tests (`TestFeedCrossPageNoDuplicate`, `TestSearchReleasesCrossPageDisjoint`,
+  once**, and `total` stays put across the walk. harbrr pins this with standing tests
+  (`TestFeedCrossPageNoDuplicate`, `TestSearchReleasesCrossPageDisjoint`,
   `TestSearchReleasesTotalIsHonest`).
 
 ## Page window

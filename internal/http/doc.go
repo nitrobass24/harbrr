@@ -7,5 +7,5 @@
 // reach a log line. They live here (rather than in a single engine stage)
 // because the login, search, and download stages all reuse them.
 //
-// See AGENTS.md and docs/ideas.md.
+// See AGENTS.md and docs/architecture.md.
 package http

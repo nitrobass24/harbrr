@@ -3,7 +3,7 @@
 The executable checklist. Work **top to bottom, one item at a time**, and check a box only when its
 tests are green (`make precommit` clean). Ordered by **risk retirement**, not product completeness —
 the engine must prove it can match Jackett on saved inputs before any product surface is built. Full
-rationale in `ideas.md`; rules in `../AGENTS.md`.
+rationale in `architecture.md`; rules in `../AGENTS.md`.
 
 Legend: `[ ]` todo · `[x]` done · `[~]` deferred/moved out of scope (see the note) · each leaf should land
 in its own focused commit.
@@ -74,7 +74,7 @@ decoupled.
 ## Phase 4 — Daemon foundation (persistence · secrets · auth · server)
 
 Turns the proven engine into a configurable headless daemon Sonarr/Radarr/autobrr can point at — the
-critical path everything product-facing depends on, and where the `docs/ideas.md` §9 security model is
+critical path everything product-facing depends on, and where the `docs/security.md` security model is
 built. (Before this phase, `cmd/harbrr serve` loaded config and exited and the Torznab handler had no
 production caller; this phase makes harbrr a runnable, configurable daemon — the registry is now the
 production `Provider` the handler resolves through.)
@@ -344,7 +344,8 @@ path), so item 1 comes first. Pattern reference: [`native-indexer-pattern.md`](n
       (`category`/`main_cat` as numbers, `free`/`personal_freeleech`/`fl_vip` as 0/1); the strict struct
       failed `json.Unmarshal`. Tolerant decode types added. **All three native drivers now live-confirmed**
       (FileList's Prowlarr-name differential is the only belt-and-suspenders item left; search is Resolved).
-- [x] **Coverage analysis across toolsets** (`docs/coverage.md`) — the **tracker × surface × tool × auth**
+- [x] **Coverage analysis across toolsets** (now: `website/docs/coverage.md` + the `native-driver`
+      issues) — the **tracker × surface × tool × auth**
       matrix. Key results: harbrr owns the **search** surface (autobrr owns announce — disjoint); a
       *Prowlarr-native* tracker is **not** a harbrr gap when Jackett ships YAML (harbrr vendors Jackett — e.g.
       HDSpace). For this stack harbrr covers **all 18 torrent indexers**; only DOGnzb (usenet/Newznab) is out
@@ -353,7 +354,7 @@ path), so item 1 comes first. Pattern reference: [`native-indexer-pattern.md`](n
       and passkey (HDBits/BeyondHD) groups, which reuse the IPTorrents/FileList shapes already built.
 - [x] **Live-validation ledger (opportunistic, not a gate)** — the standing checklist of offline-proven
       patterns awaiting a live qualifying tracker (cookie/2FA, .NET-quirk, HTTP/SOCKS proxy, + MyAnonamouse
-      live search/parse) lives in `internal/smoke/README.md` and `docs/coverage.md` §6. Ticks opportunistically;
+      live search/parse) lives in `internal/smoke/README.md`. Ticks opportunistically;
       not a release gate.
 
 ## Phase 10 — \*arr application sync (Sonarr / Radarr / qui)
@@ -449,8 +450,8 @@ the autobrr/Upbrr team first, the same way *harbrr → autobrr push* is; see the
          `List()` orphan-trap fixed; qui skips usenet.
    - [x] **End-to-end** — offline HTTP e2e (stub server): configure → search → usenet feed → `/dl` grab.
    - [x] **User-facing docs + divergence** — `website/docs/features/usenet-newznab.md` (MkDocs nav) +
-         `[Deliberate]` proxy divergence in `internal/indexer/native/newznab/testdata/README.md` +
-         `coverage.md`. Live validation deferred (needs a real usenet apikey; opportunistic, not a gate).
+         `[Deliberate]` proxy divergence in `internal/indexer/native/newznab/testdata/README.md`.
+         Live validation deferred (needs a real usenet apikey; opportunistic, not a gate).
 - [x] **Shared RSS-feed caching** — **shipped in substance by #60** and verified 2026-06-26. The search
       cache keys on `(instanceID, canonical query)` with **no consumer identity**
       (`internal/indexer/registry/searchcache_key.go`), wraps **both** the Torznab feed and the JSON search,
@@ -587,8 +588,9 @@ the autobrr/Upbrr team first, the same way *harbrr → autobrr push* is; see the
       **App Sync setup**, **API / Swagger pointer**, plus feature pages for the search cache, circuit
       breaker, usenet/Newznab, cross-seed & freeleech, and **pagination**. The root **`README.md`** is
       fixed (` ```mermaid ` fences, "Alpha — operated via the API" status, roadmap points at `plan.md`),
-      and the internal-doc refresh is done (`docs/ideas.md` §4/§13 "superseded by plan.md" notes;
-      `highlights.md` app-sync `[partial]`→`[shipped]`). The 2026-06-30 audit (docs vs shipped features
+      and the internal-doc refresh is done (`docs/ideas.md` has since been retired, its design merged
+      into `docs/architecture.md`; `docs/highlights.md` has since been retired, its user-facing content
+      folded into `README.md` and the docs site). The 2026-06-30 audit (docs vs shipped features
       vs the OpenAPI surface) found the set accurate; the only gaps it surfaced — prose pagination, a
       stale API table, no pacing note — are closed. **Decision: the full operator set is the gate, and
       it is met.**
@@ -621,7 +623,7 @@ tail. New items carry lighter detail (*detail TBD*); fill in as we have it.
   Read creds from the **Prowlarr SQLite database** (`prowlarr.db`, the plaintext `Indexers.Settings` JSON
   column) — NOT the REST API, whose `SchemaBuilder` masks `ApiKey`/`Password` with `********`. Needs a
   **Prowlarr-impl → harbrr-def name table** for Prowlarr-native trackers harbrr serves as Cardigann (e.g.
-  HDSpace — see `docs/coverage.md` §5). Jackett's RSA/DPAPI-encrypted config falls back to guided re-entry.
+  HDSpace — tracked in autobrr/harbrr#42). Jackett's RSA/DPAPI-encrypted config falls back to guided re-entry.
   **Consciously deferred from the alpha** (Phase 11 ships manual re-entry); this lowers the switching cost
   afterward and is the highest-leverage post-alpha adoption win.
 - **harbrr → autobrr push** — a *native release push* (data-plane), distinct from config sync: scraped
@@ -681,7 +683,8 @@ The native framework is **leverage-complete** — it covers **every auth shape**
 per-tracker tail, not a missing capability. (Usenet/Newznab, the one *capability* gap, moved up to
 Phase 11.)
 
-- **Native-driver long tail** — 12 drivers shipped (`docs/native-roadmap.md`): AvistaZ family,
+- **Native-driver long tail** — 12 drivers shipped (see the `native-driver` label +
+  `docs/native-indexer-pattern.md`): AvistaZ family,
   IPTorrents, MyAnonamouse, FileList, BroadcastTheNet (#62), and the #63 set — Gazelle base (Redacted +
   Orpheus), PassThePopcorn, GazelleGames, AnimeBytes, HDBits, BeyondHD, TorrentDay. Remaining is the
   demand-gated tail: SpeedCD + the cookie-scrape tail (AlphaRatio/FunFile/BitHDTV…), MTeam/NorBits/SceneHD
@@ -689,7 +692,7 @@ Phase 11.)
   login-flow addition), and Nebulance. Build per tracker on demand.
 - **Live-validate the #63 drivers** — all 8 are **offline-gated but live-untested** (no operator creds);
   BroadcastTheNet (#62) is the one live-confirmed bespoke driver. Per-tracker Prowlarr differential + a
-  `/dl` grab via the container, when creds exist. Tracked in `docs/coverage.md` §4 and
+  `/dl` grab via the container, when creds exist. Tracked under the `native-driver` label and
   `internal/smoke/README.md`.
 
 ### Tier 4 — Live validation (offline-proven; needs infra in the operator's stack)
@@ -857,7 +860,6 @@ Build order (all shipped in #60; each landed in its own commit with green tests)
 - Never hand-edit `internal/indexer/definitions/vendor/` — absorb differences in the engine.
 - Never log/commit secrets. Always `-race -count=1`. Keep functions small (the linters enforce it).
 - One plan item per commit; conventional-commit messages; no AI attribution lines.
-- **Capture highlights as you go.** When a phase lands a user-facing or competitive
-  improvement over Prowlarr/Jackett/qui, add it to `docs/highlights.md` (honestly
-  labeled `[shipped]`/`[partial]`/`[planned]`, with a real citation) so the "why
-  harbrr" list is ready when the site/docs are published.
+- **Document user-facing wins as you go.** When a phase lands a user-facing improvement,
+  add it to `README.md` and/or the docs site (`website/docs/`) — stated as harbrr's own
+  capability, positively and factually (respectful of Prowlarr/Jackett/qui, not disparaging).

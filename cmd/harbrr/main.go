@@ -1,6 +1,6 @@
 // Command harbrr is a Cardigann-compatible Torznab/Newznab search provider for
-// the autobrr family. See docs/ideas.md for the design and docs/plan.md for the
-// build order.
+// the autobrr family. See docs/architecture.md for the design and docs/plan.md
+// for the build order.
 package main
 
 import (

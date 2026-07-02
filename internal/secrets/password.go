@@ -12,7 +12,7 @@ import (
 )
 
 // argon2Params are the argon2id cost parameters. They match qui's defaults
-// (docs/ideas.md §9): 64 MiB memory, 3 iterations, 2 lanes, a 16-byte salt, and a
+// (docs/security.md): 64 MiB memory, 3 iterations, 2 lanes, a 16-byte salt, and a
 // 32-byte derived key.
 type argon2Params struct {
 	memory  uint32

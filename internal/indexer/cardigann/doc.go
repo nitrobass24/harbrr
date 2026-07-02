@@ -22,5 +22,5 @@
 // Definitions are consumed byte-for-byte; ALL behavioral differences live in
 // these stages, never in the def files. The correctness target is behavioral
 // parity with Jackett's engine on the same input, pinned by the parity suite in
-// the parity subpackage. See docs/ideas.md and AGENTS.md.
+// the parity subpackage. See docs/architecture.md and AGENTS.md.
 package cardigann

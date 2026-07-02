@@ -7,8 +7,8 @@ package definitions
 import "embed"
 
 // Vendored is the embedded Jackett definition snapshot. Do not edit files under
-// vendor/ — they are vendored byte-for-byte. See docs/ideas.md "Definition
-// lifecycle". The `all:` prefix ensures dotfiles (e.g. .jackett-ref) are
+// vendor/ — they are vendored byte-for-byte. See docs/architecture.md (invariant
+// 1) and AGENTS.md. The `all:` prefix ensures dotfiles (e.g. .jackett-ref) are
 // included so provenance ships with the binary.
 //
 //go:embed all:vendor

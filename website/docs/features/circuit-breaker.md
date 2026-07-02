@@ -113,6 +113,7 @@ The breaker is riding out its window from the last failure. Either wait it out (
 `negative_ttl`, default 1 minute), hit the indexer's **Test** action, or send one search
 with `nocache=1` to probe immediately.
 
-**Is this something Prowlarr or Jackett do?**
-No. Because harbrr is the search *server* for your whole fleet, it can hold one tracker-wide
-backoff that protects every app behind it — something a per-app indexer manager can't.
+**Is the backoff fleet-wide, or per app?**
+Fleet-wide. Because harbrr is the search *server* for your whole fleet, it holds one
+tracker-wide backoff that protects every app behind it, where a per-app tool only sees (and
+backs off) its own traffic.

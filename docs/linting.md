@@ -38,4 +38,7 @@ should be rare, and the comment must say why splitting would hurt readability.
 ## Tests
 
 Test files relax `funlen`/`gocognit`/`gocyclo`/`forcetypeassert`/`wrapcheck` (table-driven tests and
-helper assertions are legitimately long). Everything else still applies.
+helper assertions are legitimately long), and `gosec` **G101** (hardcoded-credentials) is disabled in
+`*_test.go` only — synthetic fixture secrets live there (see AGENTS.md "Security"; the same paths are
+allowlisted for gitleaks/check-no-secrets), and G101 stays fully active on production code. Everything
+else still applies.
