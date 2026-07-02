@@ -82,7 +82,7 @@ production `Provider` the handler resolves through.)
 - [x] **SQLite store + migrations** behind `internal/database/dbinterface` (clean interface; Postgres
       stays deferred — demand-gated, see "Beyond the alpha"). Data dir `0700`; db + all SQLite side files
       (`-wal`/`-journal`) `0600`
-- [x] **Secrets store** (`internal/secrets`) — the three-class model from §9: tracker creds
+- [x] **Secrets store** (`internal/secrets`) — the three-class model (`docs/security.md`): tracker creds
       AES-256-GCM (per-record nonce, AAD = indexer-id + setting, stored `key_id`); web-UI password
       argon2id; API keys SHA-256. Auto-generate a keyfile on first run (encryption always on); fail
       loud on a wrong/changed key
@@ -90,8 +90,9 @@ production `Provider` the handler resolves through.)
       (definition id + settings + encrypted credentials) and resolve an id → engine. This is the
       production `Provider` the Torznab handler already expects, and the core of a Prowlarr-style manager
 - [x] **Management API + auth** — grow the hand-authored `openapi.yaml` past `/healthz` (indexer CRUD,
-      settings, API-key management); first-run setup; server-side sessions + `X-API-Key`; CSRF on
-      cookie-auth surfaces; the qui auth-disabled / trusted-proxy mode
+      settings, API-key management); first-run setup; server-side sessions + `X-API-Key`; the
+      `SameSite=Lax` cookie CSRF posture (token-based CSRF deferred — autobrr/harbrr#15); the qui
+      auth-disabled / trusted-proxy mode
 - [x] **Wire the server** — mount the Torznab handler (`internal/web/torznabhttp`) **and** the management
       API in `cmd/harbrr serve`; config file + base-path support
 - [x] **Docker image + config file**
@@ -669,7 +670,7 @@ tail. New items carry lighter detail (*detail TBD*); fill in as we have it.
   per-indexer `GET /api/indexers/{slug}/status` exists; this is the roll-up). The health event log +
   derived per-instance status already exist (Phase 6); this is the fan-out endpoint. Pairs with the
   Web UI dashboard.
-- **Backup / restore** (config + database): scheduled + manual, using the §9 redacted/encrypted export
+- **Backup / restore** (config + database): scheduled + manual, using the redacted/encrypted export (`docs/security.md`)
   (secrets behind a `<redacted>` sentinel; including secrets is a separately-passphrase-encrypted opt-in).
 - **OIDC authentication** — implement the flow stubbed in Phase 4 (`/api/auth/oidc/*` return 501 today;
   only a config seam exists). Pairs with the Web UI auth surface.

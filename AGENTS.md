@@ -44,7 +44,7 @@ parity gate (the "Definition of done" in `docs/plan.md`, Phase 2).
   `dropin/` (user overrides, take precedence).
 - Native indexers: `internal/indexer/native/` (Avistaz family etc. — **post-parity**).
 - Other: `internal/search`, `internal/http` (auth/session, solver interface, redaction),
-  `internal/download` (stub — send-to-download-client is planned, see nitrobass24/harbrr#104),
+  `internal/download` (stub — send-to-download-client is planned, see autobrr/harbrr#8),
   `internal/secrets`, `internal/database` + `dbinterface`.
 - Docs: `docs/architecture.md` (design), `docs/plan.md` (checklist), `docs/security.md`,
   `docs/linting.md`.
