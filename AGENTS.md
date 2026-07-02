@@ -2,14 +2,14 @@
 
 Repo rules for AI agents (Claude Code, etc.) and contributors working on **harbrr** — a Go,
 single-binary, Cardigann-compatible Torznab/Newznab search provider for the autobrr family. Read this
-fully before editing. The full design is in `@docs/ideas.md`; the build checklist in `@docs/plan.md`.
+fully before editing. The full design is in `@docs/architecture.md`; the build checklist in `@docs/plan.md`.
 
 ## Prime directive
 
 harbrr's entire value is **behavioral parity with Jackett's Cardigann engine on the same input**.
 The build order retires that risk first: **test harness first, engine second, product third**
 (`docs/plan.md`). Do not build product surface (UI, app-sync, migration) before the engine passes its
-parity gate (the "Definition of done" in `docs/ideas.md`).
+parity gate (the "Definition of done" in `docs/plan.md`, Phase 2).
 
 ## Collaboration
 
@@ -44,8 +44,9 @@ parity gate (the "Definition of done" in `docs/ideas.md`).
   `dropin/` (user overrides, take precedence).
 - Native indexers: `internal/indexer/native/` (Avistaz family etc. — **post-parity**).
 - Other: `internal/search`, `internal/http` (auth/session, solver interface, redaction),
-  `internal/download` (go-qbittorrent), `internal/secrets`, `internal/database` + `dbinterface`.
-- Docs: `docs/ideas.md` (full plan), `docs/plan.md` (checklist), `docs/architecture.md`,
+  `internal/download` (stub — send-to-download-client is planned, see autobrr/harbrr#8),
+  `internal/secrets`, `internal/database` + `dbinterface`.
+- Docs: `docs/architecture.md` (design), `docs/plan.md` (checklist), `docs/security.md`,
   `docs/linting.md`.
 
 Before changing cross-module data flow, service boundaries, API routing, or the engine pipeline

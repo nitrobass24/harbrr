@@ -21,6 +21,7 @@ theme:
 nav:
   - Home: index.md
   - Getting started: getting-started.md
+  - Tracker coverage: coverage.md
   - Guides:
       - Adding an indexer: guides/add-indexer.md
       - App Sync (*arr / qui): guides/app-sync.md

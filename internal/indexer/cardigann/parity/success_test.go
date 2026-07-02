@@ -2,7 +2,7 @@ package parity
 
 import "testing"
 
-// matrixArchetypes is the offline compatibility matrix (docs/ideas.md §12): the
+// matrixArchetypes is the offline compatibility matrix (docs/plan.md, Phase 2): the
 // gate requires at least one passing fixture per row.
 var matrixArchetypes = []string{
 	"html-form-login",

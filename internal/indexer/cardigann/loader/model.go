@@ -97,7 +97,7 @@ type SettingsField struct {
 }
 
 // secretNameTokens are substrings that mark a text-typed setting as a credential
-// to encrypt at rest and redact (docs/ideas.md §9). The set is derived from an
+// to encrypt at rest and redact (docs/security.md). The set is derived from an
 // audit of the vendored corpus (see secret_classifier_test.go) and kept tight to
 // avoid redacting benign fields: trackers spell credentials many ways
 // (cookie/apikey/passkey/2facode/staffpass/…), but a checkbox like "usetoken" is

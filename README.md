@@ -196,6 +196,20 @@ Benefits include:
 
 ---
 
+### Security
+
+Harbrr treats tracker credentials as sensitive by default.
+
+- Tracker credentials (passkeys, cookies, API keys) are **encrypted at rest** (AES-256-GCM);
+  encryption is always on, with a key auto-generated on first run.
+- The admin password and API keys are **hashed**, never stored in a recoverable form.
+- Secrets are **redacted** from logs, errors, and traces, and a tracker passkey never appears
+  in the served Torznab feed — download links are resolved server-side.
+
+See [Configuration](website/docs/configuration.md) for key management and keyfile backup.
+
+---
+
 ## Philosophy
 
 Private trackers should be treated as a shared resource.

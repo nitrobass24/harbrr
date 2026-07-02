@@ -8,9 +8,10 @@ pattern those drivers follow, derived from the Prowlarr/Jackett source. It feeds
 the native-driver work; per-tracker divergences live beside each
 driver's fixtures, not here.
 
-In the user's stack the missing natives are **IPTorrents**, **MyAnonamouse**, and
-**FileList**. A full inventory of what else is native-only is the coverage-matrix
-backlog item in [`plan.md`](plan.md).
+**IPTorrents**, **MyAnonamouse**, and **FileList** — the natives missing from the user's
+stack when this pattern was first written — are now **shipped**, and are the worked examples
+below. The remaining native-only trackers are tracked as demand-gated issues under the
+[`native-driver`](https://github.com/autobrr/harbrr/labels/native-driver) label.
 
 ## The shared shape (Prowlarr — follow this, not Jackett's monolith)
 
@@ -61,6 +62,25 @@ defensively.
   exactly as the live differential does for the Cardigann corpus.
 - **Redaction (non-negotiable)**: `mam_id`, `passkey`, `Cookie`, `Authorization`
   redacted in every log/trace.
+
+## Leverage & effort (how the backlog is sized)
+
+A native driver covers **one API *shape*, not one site.** Trackers running the same software
+behind different hostnames share a single driver (AvistaZ is one driver serving
+AvistaZ/CinemaZ/PrivateHD/ExoticaZ; the Gazelle base serves Redacted + Orpheus). So the backlog
+splits into **families** (one build, many trackers) and **one-offs** (one build, one tracker) —
+and each new driver reuses the shared seams (`native.Driver` + registry, paced client, encrypted
+secrets, normalized release, category mapper, the authenticated `/dl` path), so it's only three
+pieces: a settings struct, a request generator, and a response parser.
+
+**Effort** (measured on the first four shipped drivers): each is ~1.5–2.1k source LOC + ~0.8–1.1k
+test LOC — offline-gated (stub API server + synthetic goldens from the documented Prowlarr/autobrr
+contract, never a live capture), then live-validated against a Prowlarr differential + a real
+grab. A family base lands at the top of that range but amortizes over every site it covers.
+
+Build order is **demand-gated**: the remaining native-only trackers are per-tracker issues under
+the [`native-driver`](https://github.com/autobrr/harbrr/labels/native-driver) label, prioritized
+by votes.
 
 ## Why autobrr isn't in this picture
 

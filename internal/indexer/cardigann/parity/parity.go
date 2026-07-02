@@ -1,6 +1,6 @@
 // Package parity holds the differential/golden harness that pins harbrr's
 // Cardigann engine output to Jackett's on the same saved bytes. It is the gate
-// the engine must pass — see docs/ideas.md "Definition of done" and AGENTS.md.
+// the engine must pass — see docs/plan.md (Phase 2, the offline parity gate) and AGENTS.md.
 //
 // A case is a directory under testdata/ holding a case.yml spec plus the files
 // it references: a definition (or a vendored-def id), one or more saved

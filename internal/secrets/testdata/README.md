@@ -2,7 +2,7 @@
 
 Where harbrr's daemon foundation — the secrets store, persistence, auth, and
 server — deliberately or knowingly differs from its reference sibling
-**autobrr/qui** or from the `docs/ideas.md` §9 security model. Each entry carries
+**autobrr/qui** or from the `docs/security.md` security model. Each entry carries
 exactly one disposition (see `docs/divergences.md` for the vocabulary):
 `[Deliberate]` (intentional design choice), `[Accepted]` (a kept difference, no
 work planned), or `[Tracked]` (a real gap with a `docs/plan.md` item).

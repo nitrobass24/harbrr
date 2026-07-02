@@ -17,7 +17,7 @@ var update = flag.Bool("update", false, "update parity golden files")
 
 // TestParity runs every case directory under testdata/ through the real engine
 // and diffs the canonical JSON against the recorded golden. It is the gate the
-// engine must pass (docs/ideas.md "Definition of done").
+// engine must pass (docs/plan.md, Phase 2 — the offline parity gate).
 //
 // The suite skips cleanly when there are no cases, so the baseline build stays
 // green; add the first testdata/<name>/case.yml to switch it on.

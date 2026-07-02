@@ -41,7 +41,7 @@ func WithAPIKey(key string) Option { return func(h *handler) { h.apiKey = key } 
 // WithAPIKeyValidator sets a validator for the apikey/passkey query param,
 // replacing the fixed-key comparison. The production server wires this to the auth
 // service so any minted API key (stored only as a hash) authorizes the feed,
-// without holding a plaintext key in memory (docs/ideas.md §9). When set, it takes
+// without holding a plaintext key in memory (docs/security.md). When set, it takes
 // precedence over WithAPIKey.
 func WithAPIKeyValidator(fn func(string) bool) Option {
 	return func(h *handler) { h.apiKeyValidator = fn }

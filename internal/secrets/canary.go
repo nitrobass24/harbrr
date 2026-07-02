@@ -15,7 +15,7 @@ const (
 
 // EncryptCanary returns the canary blob to persist alongside KeyID() on first run.
 // On later runs VerifyCanary checks the stored pair, failing loud if the active
-// key differs from the one that wrote the data (docs/ideas.md §9 startup canary).
+// key differs from the one that wrote the data (docs/security.md startup canary).
 func (k *Keyring) EncryptCanary() (string, error) {
 	return k.Encrypt(canaryInstanceID, canarySetting, canaryPlaintext)
 }

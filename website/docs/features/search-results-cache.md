@@ -4,11 +4,11 @@ harbrr remembers the answers to recent searches. When Sonarr, Radarr, or Prowlar
 your tracker the **same question** it asked a moment ago, harbrr replies from memory
 instead of bothering the tracker again.
 
-This is something Prowlarr and Jackett can't do for you, and the reason is simple:
-**harbrr is the search *server***. A cache hit in Prowlarr only saves Prowlarr a little
-work — the request still goes out to the tracker. A cache hit in harbrr means the
-request **never reaches the tracker at all**. You're sparing the tracker's
-infrastructure, not just your own.
+The reason this helps the tracker, and not just you, is simple: **harbrr is the search
+*server***. A cache hit in harbrr means the request **never reaches the tracker at all** —
+so you're sparing the tracker's infrastructure, not just your own. (A cache that lives inside
+a client-side app still forwards the request on to the tracker; harbrr sits where it can stop
+it.)
 
 The cache is **on by default** with conservative settings, so most people never need to
 touch it. The rest of this page explains what it does and how to tune it if you want to.
@@ -164,8 +164,8 @@ fetch and skip the conditional-GET shortcut below.
 
 ### Conditional requests: `ETag` / `If-None-Match`
 
-harbrr speaks standard HTTP cache validation on the feed — something Prowlarr and Jackett
-don't. A cache-backed results feed comes back with two headers:
+harbrr speaks standard HTTP cache validation on the feed. A cache-backed results feed comes
+back with two headers:
 
 ```http
 ETag: "9f8c…"                       # a fingerprint of the result set

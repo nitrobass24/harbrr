@@ -16,7 +16,7 @@ import (
 // covered here, so regressions surface immediately.
 //
 // This is the standing AngleSharp-vs-cascadia incompatibility ledger referenced
-// in docs/ideas.md §7 — never silently skip; record and justify.
+// in docs/architecture.md (invariant 2) — never silently skip; record and justify.
 var knownIncompatible = map[string]string{
 	// Upstream def typo: ".nth-child(n)" should be ":nth-child(n)". AngleSharp's
 	// tolerant parser still yields a result; cascadia's strict grammar rejects
