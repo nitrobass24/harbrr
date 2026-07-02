@@ -177,6 +177,35 @@ func TestParseGroupStickyCategoryFallback(t *testing.T) {
 	}
 }
 
+// TestParseSearchFlexNumericFields proves the number-or-string tolerance that motivated the
+// fix: GGn returns a group Year as a string, an artist Id as a bare number, and a torrent
+// RemasterYear as a bare number — none of which a strict string/int64 decode accepts. All
+// three must decode (a single field-type mismatch fails the whole-page json.Unmarshal), and
+// the string Year + numeric RemasterYear must still render in the composed title.
+func TestParseSearchFlexNumericFields(t *testing.T) {
+	t.Parallel()
+	const body = `{"status":"success","response":{"4001":{"Year":"2018",` +
+		`"Artists":[{"Id":501,"Name":"Some Studio"}],` +
+		`"Torrents":{"96001":{"CategoryId":"1","ReleaseTitle":"Game","RemasterTitle":"Deluxe",` +
+		`"RemasterYear":2020,"Time":"2020-01-01 00:00:00","TorrentType":"Torrent",` +
+		`"Size":"1","Seeders":"1","Leechers":"0"}}}}}`
+	d := parseDriver(t, map[string]string{"apikey": credAPIKey, "passkey": credPasskey})
+	got, err := d.parseSearch([]byte(body))
+	if err != nil {
+		t.Fatalf("parseSearch: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d releases, want 1", len(got))
+	}
+	title := got[0].Title
+	if !strings.Contains(title, "(2018)") {
+		t.Errorf("title %q missing string-typed group Year (2018)", title)
+	}
+	if !strings.Contains(title, "2020") {
+		t.Errorf("title %q missing numeric torrent RemasterYear 2020", title)
+	}
+}
+
 // TestParseSearchEmpty proves a success body whose response is not a group object ([])
 // yields zero releases and no error (Prowlarr's "Response is not JObject" guard).
 func TestParseSearchEmpty(t *testing.T) {

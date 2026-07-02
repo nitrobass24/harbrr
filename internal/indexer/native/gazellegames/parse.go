@@ -91,7 +91,7 @@ type gazelleGamesTorrent struct {
 	Encoding      string     `json:"Encoding"`
 	Language      string     `json:"Language"`
 	Region        string     `json:"Region"`
-	RemasterYear  string     `json:"RemasterYear"`
+	RemasterYear  flexString `json:"RemasterYear"`
 	RemasterTitle string     `json:"RemasterTitle"`
 	ReleaseTitle  string     `json:"ReleaseTitle"`
 	Miscellaneous string     `json:"Miscellaneous"`
@@ -324,7 +324,7 @@ func composeTitle(g *gazelleGamesGroup, t *gazelleGamesTorrent) string {
 		title += fmt.Sprintf(" (%d)", g.Year.int64())
 	}
 	if strings.TrimSpace(t.RemasterTitle) != "" {
-		title += fmt.Sprintf(" [%s]", strings.TrimSpace(html.UnescapeString(t.RemasterTitle)+" "+t.RemasterYear))
+		title += fmt.Sprintf(" [%s]", strings.TrimSpace(html.UnescapeString(t.RemasterTitle)+" "+t.RemasterYear.string()))
 	}
 	if flags := titleFlags(g, t); len(flags) > 0 {
 		title += " [" + strings.Join(flags, " / ") + "]"
