@@ -71,14 +71,14 @@ type gazelleGamesResponse struct {
 type gazelleGamesGroup struct {
 	Artists  []gazelleGamesArtist `json:"Artists"`
 	Torrents json.RawMessage      `json:"Torrents"`
-	Year     int64                `json:"Year"`
+	Year     flexString           `json:"Year"`
 }
 
 // gazelleGamesArtist is one artist/platform entry. Its Name is mapped through the
 // description-keyed category map (a platform name like "Windows" or a real category).
 type gazelleGamesArtist struct {
-	ID   string `json:"Id"`
-	Name string `json:"Name"`
+	ID   flexString `json:"Id"`
+	Name string     `json:"Name"`
 }
 
 // gazelleGamesTorrent is one torrent inside a group (the value of the torrentId-keyed
@@ -320,8 +320,8 @@ func (d *driver) groupCategories(g *gazelleGamesGroup) []int {
 // Miscellaneous, "Trumpable" if Dupable==1], keeping only the non-blank entries.
 func composeTitle(g *gazelleGamesGroup, t *gazelleGamesTorrent) string {
 	title := html.UnescapeString(t.ReleaseTitle)
-	if g.Year > 0 && strings.TrimSpace(title) != "" && !yearRegex.MatchString(title) {
-		title += fmt.Sprintf(" (%d)", g.Year)
+	if g.Year.int64() > 0 && strings.TrimSpace(title) != "" && !yearRegex.MatchString(title) {
+		title += fmt.Sprintf(" (%d)", g.Year.int64())
 	}
 	if strings.TrimSpace(t.RemasterTitle) != "" {
 		title += fmt.Sprintf(" [%s]", strings.TrimSpace(html.UnescapeString(t.RemasterTitle)+" "+t.RemasterYear))
