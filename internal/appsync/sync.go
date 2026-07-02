@@ -132,7 +132,7 @@ func (s *Service) buildDesired(ctx context.Context, instances []domain.IndexerIn
 		// Servarr apps only accept indexers that serve their content type (Prowlarr
 		// parity); qui is content-neutral and keeps everything. Custom/out-of-range
 		// categories never qualify an indexer for a Servarr app.
-		if !indexerServesApp(conn.Kind, cats) {
+		if !IndexerServesApp(conn.Kind, cats) {
 			continue
 		}
 		caps, err := s.source.Capabilities(ctx, inst.Slug)
@@ -140,7 +140,7 @@ func (s *Service) buildDesired(ctx context.Context, instances []domain.IndexerIn
 			return nil, fmt.Errorf("appsync: capabilities for %q: %w", inst.Slug, err)
 		}
 		out = append(out, DesiredIndexer{
-			Slug: inst.Slug, Name: inst.Name, FeedURL: feedURL(conn.HarbrrURL, inst.Slug, conn.FreeleechMode),
+			Slug: inst.Slug, Name: inst.Name, FeedURL: FeedURL(conn.HarbrrURL, inst.Slug, conn.FreeleechMode),
 			APIKey: harbrrKey, Categories: cats, Capabilities: caps,
 			Priority: conn.Priority, Enabled: inst.Enabled, Protocol: inst.Protocol,
 		})
@@ -203,12 +203,13 @@ func (s *Service) recordResult(ctx context.Context, connID int64, status, detail
 	}
 }
 
-// feedURL assembles the absolute per-slug Torznab feed URL the app will poll. A bypass
+// FeedURL assembles the absolute per-slug Torznab feed URL the app will poll. A bypass
 // connection gets the /full variant (the full catalog, freeleech view skipped); honor
 // (the default for *arrs) gets the standard feed that respects the indexer's freeleech
 // setting. The slug is recovered from the URL path by slugFromFeedURL regardless of the
-// trailing /full, so orphan-detection still matches harbrr-managed rows.
-func feedURL(base, slug, freeleechMode string) string {
+// trailing /full, so orphan-detection still matches harbrr-managed rows. Exported so the
+// smoke harness asserts the live feed URL matches the expected shape (single source of truth).
+func FeedURL(base, slug, freeleechMode string) string {
 	u := strings.TrimRight(base, "/") + feedURLMarker + url.PathEscape(slug) + "/results/torznab"
 	if freeleechMode == domain.FreeleechModeBypass {
 		u += "/full"
@@ -216,11 +217,11 @@ func feedURL(base, slug, freeleechMode string) string {
 	return u
 }
 
-// appCategoryRange returns the inclusive Newznab category range a Servarr app kind
+// AppCategoryRange returns the inclusive Newznab category range a Servarr app kind
 // consumes. ok is false for kinds with no content-type notion (qui, and — defensively —
 // any kind that isn't a known Servarr; connections are validated in validate.go, so an
 // unknown kind is unreachable and treated as "no filter, push everything").
-func appCategoryRange(kind string) (lo, hi int, ok bool) {
+func AppCategoryRange(kind string) (lo, hi int, ok bool) {
 	switch kind {
 	case domain.AppKindRadarr: // Movies
 		return 2000, 2999, true
@@ -237,7 +238,7 @@ func appCategoryRange(kind string) (lo, hi int, ok bool) {
 	}
 }
 
-// indexerServesApp reports whether an indexer belongs on a connection of this kind: a
+// IndexerServesApp reports whether an indexer belongs on a connection of this kind: a
 // Servarr kind requires >=1 category in its Newznab range; qui (no range) always serves.
 // Custom categories (>=100000) fall in no Servarr range, so they never qualify an
 // indexer for a Servarr app on their own.
@@ -247,8 +248,8 @@ func appCategoryRange(kind string) (lo, hi int, ok bool) {
 // accepts it as an extra so an audiobook-only tracker still reaches Readarr (parity).
 const audiobookCategory = 3030
 
-func indexerServesApp(kind string, cats []Category) bool {
-	lo, hi, ok := appCategoryRange(kind)
+func IndexerServesApp(kind string, cats []Category) bool {
+	lo, hi, ok := AppCategoryRange(kind)
 	if !ok {
 		return true
 	}

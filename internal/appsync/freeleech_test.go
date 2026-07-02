@@ -21,7 +21,7 @@ func TestFeedURL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := feedURL(base, "tt", tt.mode); got != tt.want {
+			if got := FeedURL(base, "tt", tt.mode); got != tt.want {
 				t.Errorf("feedURL = %q, want %q", got, tt.want)
 			}
 		})

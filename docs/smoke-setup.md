@@ -1,5 +1,11 @@
 # Live smoke-test setup
 
+> **Operators:** for the built-in, no-toolchain golden smoke test — `harbrr smoke` (interactive
+> first-run, runs natively or `docker exec … harbrr smoke`, writes a shareable secret-scrubbed
+> `smoke-report.md`) — see the user guide: `website/docs/guides/smoke-test.md`. The rest of this
+> doc is the **developer** differential harness (`make smoke-test`), which adds trackers with live
+> per-tracker credentials and shares the same parity engine (`internal/smoke`).
+
 The live smoke (`make smoke-test`) drives a **running harbrr daemon** like a real
 *arr: it adds each tracker to harbrr (credentials encrypted by the daemon),
 searches harbrr's Torznab feed, searches **Prowlarr** for the same tracker+query,
