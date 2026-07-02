@@ -1,6 +1,7 @@
 package beyondhd
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"reflect"
@@ -248,6 +249,61 @@ func TestDownloadVolumeFactor(t *testing.T) {
 		if got := downloadVolumeFactor(&c.row); got != c.want {
 			t.Errorf("%s: downloadVolumeFactor = %v, want %v", c.name, got, c.want)
 		}
+	}
+}
+
+// TestFlexBoolUnmarshal proves flexBool tolerates every wire encoding BeyondHD (or an older
+// server) might use — bare bool, 1/0, and their quoted forms — and, critically, that an
+// UNEXPECTED token degrades to false rather than failing the whole-page decode (an
+// UnmarshalJSON error would abort the entire search response, the bug this replaces).
+func TestFlexBoolUnmarshal(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{`true`, true},
+		{`false`, false},
+		{`1`, true},
+		{`0`, false},
+		{`"true"`, true},
+		{`"false"`, false},
+		{`"1"`, true},
+		{`"0"`, false},
+		{`null`, false},
+		{`2`, false},     // unexpected number: degrade, do not fail the page
+		{`"yes"`, false}, // unexpected string: degrade, do not fail the page
+	}
+	for _, c := range cases {
+		var b flexBool
+		if err := json.Unmarshal([]byte(c.in), &b); err != nil {
+			t.Errorf("Unmarshal(%s): unexpected error %v", c.in, err)
+			continue
+		}
+		if bool(b) != c.want {
+			t.Errorf("Unmarshal(%s) = %v, want %v", c.in, bool(b), c.want)
+		}
+	}
+}
+
+// TestParseReleasesNumericBooleans proves a full page whose boolean fields arrive as numbers
+// (freeleech=1) still decodes and applies the freeleech volume factor — the whole-page
+// decode failure the strict boolean decode used to cause.
+func TestParseReleasesNumericBooleans(t *testing.T) {
+	t.Parallel()
+	const body = `{"status_code":1,"results":[{"name":"Row","info_hash":"abc",` +
+		`"category":"Movies","type":"BD Remux","size":1,"seeders":1,"leechers":0,` +
+		`"created_at":"2024-01-01 00:00:00","url":"https://beyond-hd.me/torrents/1",` +
+		`"download_url":"https://beyond-hd.me/dl/1","freeleech":1,"limited":0}]}`
+	got, err := parseDriver(t, creds()).parseReleases([]byte(body))
+	if err != nil {
+		t.Fatalf("parseReleases: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d releases, want 1", len(got))
+	}
+	if got[0].DownloadVolumeFactor != 0 {
+		t.Errorf("DownloadVolumeFactor = %v, want 0 (freeleech=1 must be honored)", got[0].DownloadVolumeFactor)
 	}
 }
 

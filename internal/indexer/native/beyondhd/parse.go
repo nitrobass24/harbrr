@@ -51,26 +51,8 @@ type bhdResponse struct {
 }
 
 // bhdTorrent is one release row. Per Prowlarr's models the numerics are real JSON numbers
-// and the ids are strings, but flexInt is used on the numerics defensively (mirroring
-// hdbits/broadcastthenet) so a string-encoded numeric never fails the page decode.
-
-type flexBool bool
-
-func (b *flexBool) UnmarshalJSON(data []byte) error {
-	s := strings.TrimSpace(string(data))
-
-	switch s {
-	case "true", "1":
-		*b = true
-		return nil
-	case "false", "0", "null":
-		*b = false
-		return nil
-	}
-
-	return fmt.Errorf("beyondhd: decode boolean field: %s", s)
-}
-
+// and the ids are strings, but flexInt/flexBool are used defensively (mirroring
+// hdbits/broadcastthenet) so a string-encoded value never fails the page decode.
 type bhdTorrent struct {
 	Name           string   `json:"name"`
 	InfoHash       string   `json:"info_hash"`
@@ -122,6 +104,27 @@ func (n *flexInt) UnmarshalJSON(b []byte) error {
 		return fmt.Errorf("beyondhd: decode numeric field: %w", err)
 	}
 	*n = flexInt(v)
+	return nil
+}
+
+// flexBool unmarshals a JSON boolean, a number (1/0), or a string ("true"/"false"/"1"/"0")
+// into a bool. BeyondHD wire-encodes these as real JSON booleans, but a hostile/older server
+// could send 1/0 or a quoted form; anything unrecognized degrades to false rather than
+// failing the whole-page decode (mirroring flexInt's degrade-to-0, cf. hdbits).
+type flexBool bool
+
+func (b *flexBool) UnmarshalJSON(data []byte) error {
+	s := strings.TrimSpace(string(data))
+	// Unwrap a quoted form ("true"/"1"/…) to its inner token.
+	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
+		s = s[1 : len(s)-1]
+	}
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "true", "1":
+		*b = true
+	default:
+		*b = false
+	}
 	return nil
 }
 
