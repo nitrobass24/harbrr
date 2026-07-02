@@ -1,0 +1,47 @@
+---
+id: cookielogin
+name: cookielogin
+description: "Synthetic private HTML tracker using manual-cookie login."
+language: en-US
+type: private
+encoding: UTF-8
+links:
+  - https://cookie.test/
+
+caps:
+  categorymappings:
+    - {id: 1, cat: Movies}
+  modes:
+    search: [q]
+
+settings:
+  - name: cookie
+    type: text
+    label: Cookie
+
+login:
+  method: cookie
+  inputs:
+    cookie: "{{ .Config.cookie }}"
+
+search:
+  paths:
+    - path: /browse.php
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: tr.torrent
+  fields:
+    title:
+      selector: a.name
+    download:
+      selector: a.dl
+      attribute: href
+    size:
+      selector: td.size
+    seeders:
+      selector: td.seeders
+    leechers:
+      selector: td.leechers
+    category:
+      text: "1"

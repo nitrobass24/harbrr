@@ -1,0 +1,34 @@
+[
+  {
+    "id": 12345,
+    "name": "The Matrix 1999 1080p BluRay x264",
+    "imdb": "tt0133093",
+    "freeleech": 1,
+    "doubleup": 0,
+    "internal": 1,
+    "upload_date": "2024-01-15 10:30:00",
+    "category": "Filme HD",
+    "seeders": 47,
+    "leechers": 3,
+    "size": 8589934592,
+    "times_completed": 120,
+    "files": 1,
+    "small_description": "Action, Sci-Fi"
+  },
+  {
+    "id": 67890,
+    "name": "Some Show S01E02 1080p WEB-DL",
+    "imdb": "",
+    "freeleech": 0,
+    "doubleup": 1,
+    "internal": 0,
+    "upload_date": "2024-02-20 08:00:00",
+    "category": "Seriale HD",
+    "seeders": 90,
+    "leechers": 10,
+    "size": 2147483648,
+    "times_completed": 5,
+    "files": 3,
+    "small_description": "Drama"
+  }
+]

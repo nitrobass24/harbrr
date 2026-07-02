@@ -1,0 +1,14 @@
+name: matrix-multi-category
+archetype: multi-category
+golden_source: hand-derived
+mode: parse
+description: >
+  Compatibility matrix: category mapping with custom categories. categorymappings
+  id 1 -> Movies(2000) + custom 100001 ("HD Movies" desc), id 2 -> TV(5000)
+  (no desc, no custom), id 3 -> Movies(2000) + custom 100003 ("SD Movies"). So
+  row 0 cat=1 -> [2000, 100001], row 1 cat=2 -> [5000], row 2 cat=3 ->
+  [2000, 100003] (each sorted ascending). Custom id = trackerCatInt + 100000.
+definition: definition.yml
+response: response.html
+query:
+  keywords: ""

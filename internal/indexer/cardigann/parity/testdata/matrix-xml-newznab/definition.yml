@@ -1,0 +1,41 @@
+---
+id: xmlnewznab
+name: xmlnewznab
+description: "Synthetic XML/Newznab feed parsed via the real XML backend."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://xml.test/
+
+caps:
+  categorymappings:
+    - {id: 1, cat: Movies}
+  modes:
+    search: [q]
+
+search:
+  paths:
+    - path: /api
+      response:
+        type: xml
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: rss > channel > item
+  fields:
+    title:
+      selector: title
+    download:
+      selector: link
+    size:
+      selector: torznab\:attr[name="size"]
+      attribute: value
+    seeders:
+      selector: torznab\:attr[name="seeders"]
+      attribute: value
+    leechers:
+      selector: torznab\:attr[name="leechers"]
+      attribute: value
+    category:
+      text: "1"

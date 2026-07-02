@@ -1,0 +1,8 @@
+{
+  "meta": { "total": 2 },
+  "data": [
+    { "id": 11, "attributes": { "name": "Row A", "size": 100 } },
+    { "id": 22, "attributes": { "name": "Row B", "size": 200 } },
+    { "id": 33, "comment": "this row has no attributes sub-object" }
+  ]
+}

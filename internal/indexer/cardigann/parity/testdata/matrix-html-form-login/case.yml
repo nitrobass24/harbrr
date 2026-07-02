@@ -1,0 +1,32 @@
+name: matrix-html-form-login
+archetype: html-form-login
+golden_source: hand-derived
+mode: search
+description: >
+  Compatibility matrix: HTML tracker, FORM login. The engine GETs the login page,
+  extracts the hidden csrf_token from form#login, POSTs username+password+csrf to
+  the submit path, stores the Set-Cookie session, then issues the search carrying
+  that cookie (expect_cookie asserts it propagated). Hand-derived golden: size
+  4.5 GB = 4831838208 (1024-based), peers = 21 + 4 = 25, category "1" -> Movies
+  (2000), download link resolved against the base URL.
+definition: definition.yml
+config:
+  username: alice
+  password: hunter2synthetic
+query:
+  keywords: movie
+steps:
+  - method: GET
+    url: https://form.test/login.php
+    response: login.html
+    note: GET login page (extract CSRF + form action)
+  - method: POST
+    url: https://form.test/takelogin.php
+    response: loggedin.html
+    set_cookie: ["session=sess-synthetic-001; Path=/"]
+    note: POST credentials + CSRF; server sets the session cookie
+  - method: GET
+    url: https://form.test/browse.php?q=movie
+    response: search.html
+    expect_cookie: "session=sess-synthetic-001"
+    note: search request carries the session cookie

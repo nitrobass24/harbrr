@@ -1,0 +1,28 @@
+[
+  {
+    "title": "Movie One 1080p",
+    "link": "https://smoke.test/dl/1.torrent",
+    "size": 1610612736,
+    "categories": [
+      2000
+    ],
+    "seeders": 10,
+    "leechers": 2,
+    "peers": 12,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  },
+  {
+    "title": "Show Two S01E01 720p",
+    "link": "https://smoke.test/dl/2.torrent",
+    "size": 734003200,
+    "categories": [
+      5000
+    ],
+    "seeders": 5,
+    "leechers": 1,
+    "peers": 6,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  }
+]

@@ -1,0 +1,30 @@
+[
+  {
+    "title": "Public Domain Film 1080p",
+    "magnet": "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567\u0026dn=Public+Domain+Film+1080p\u0026tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce\u0026tr=udp%3A%2F%2Fopen.demonii.com%3A1337%2Fannounce\u0026tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce\u0026tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce\u0026tr=udp%3A%2F%2Fvito-tracker.space%3A6969%2Fannounce\u0026tr=udp%3A%2F%2Fvito-tracker.duckdns.org%3A6969%2Fannounce\u0026tr=udp%3A%2F%2Ftracker.theoks.net%3A6969%2Fannounce\u0026tr=udp%3A%2F%2Ftracker.srv00.com%3A6969%2Fannounce\u0026tr=udp%3A%2F%2Ftracker.qu.ax%3A6969%2Fannounce\u0026tr=udp%3A%2F%2Ftracker.corpscorp.online%3A80%2Fannounce",
+    "infohash": "0123456789abcdef0123456789abcdef01234567",
+    "size": 2147483648,
+    "categories": [
+      2000
+    ],
+    "seeders": 15,
+    "leechers": 5,
+    "peers": 20,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  },
+  {
+    "title": "Creative Commons Album",
+    "magnet": "magnet:?xt=urn:btih:fedcba9876543210fedcba9876543210fedcba98\u0026dn=Creative+Commons+Album\u0026tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce\u0026tr=udp%3A%2F%2Fopen.demonii.com%3A1337%2Fannounce\u0026tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce\u0026tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce\u0026tr=udp%3A%2F%2Fvito-tracker.space%3A6969%2Fannounce\u0026tr=udp%3A%2F%2Fvito-tracker.duckdns.org%3A6969%2Fannounce\u0026tr=udp%3A%2F%2Ftracker.theoks.net%3A6969%2Fannounce\u0026tr=udp%3A%2F%2Ftracker.srv00.com%3A6969%2Fannounce\u0026tr=udp%3A%2F%2Ftracker.qu.ax%3A6969%2Fannounce\u0026tr=udp%3A%2F%2Ftracker.corpscorp.online%3A80%2Fannounce",
+    "infohash": "fedcba9876543210fedcba9876543210fedcba98",
+    "size": 125829120,
+    "categories": [
+      2000
+    ],
+    "seeders": 3,
+    "leechers": 1,
+    "peers": 4,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  }
+]

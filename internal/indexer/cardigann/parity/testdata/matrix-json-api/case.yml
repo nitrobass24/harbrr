@@ -1,0 +1,16 @@
+name: matrix-json-api
+archetype: json-api
+golden_source: hand-derived
+mode: parse
+response_type: json
+description: >
+  Compatibility matrix: a flat JSON-API tracker (rows under "results", direct
+  field paths), distinct from the UNIT3D oracle. Sizes are unit-less JSON numbers
+  run through GetBytes (float32-exact here: 4000000000, 1500000000); cat
+  "movies"/"tv" map to Movies(2000)/TV(5000) via caps.categories (object form, no
+  custom cats); dates are ISO, canonicalised by the implicit FromUnknown; peers =
+  seeders + leechers; absolute dl URLs pass through unchanged.
+definition: definition.yml
+response: response.json
+query:
+  keywords: ""

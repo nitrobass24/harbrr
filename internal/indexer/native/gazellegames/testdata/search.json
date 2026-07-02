@@ -1,0 +1,102 @@
+{
+  "status": "success",
+  "response": {
+    "1001": {
+      "Year": 2018,
+      "Artists": [
+        { "Id": "501", "Name": "Some Studio" }
+      ],
+      "Torrents": {
+        "70001": {
+          "CategoryId": "1",
+          "Format": "ISO",
+          "Encoding": "Clone",
+          "Language": "English",
+          "Region": "Region Free",
+          "RemasterYear": "",
+          "RemasterTitle": "",
+          "ReleaseTitle": "Cool Game",
+          "Miscellaneous": "",
+          "Scene": "1",
+          "Dupable": "0",
+          "Time": "2018-05-04 10:11:12",
+          "TorrentType": "Torrent",
+          "FileCount": "12",
+          "Size": "1073741824",
+          "Snatched": "42",
+          "Seeders": "10",
+          "Leechers": "3",
+          "FreeTorrent": "FreeLeech",
+          "LowSeedFL": false,
+          "GameDOXType": ""
+        },
+        "70002": {
+          "CategoryId": "2",
+          "Format": "Rip",
+          "Encoding": "FitGirl",
+          "Language": "",
+          "Region": "",
+          "RemasterYear": "2020",
+          "RemasterTitle": "Director's Cut",
+          "ReleaseTitle": "Cool Game",
+          "Miscellaneous": "DLC",
+          "Scene": "0",
+          "Dupable": "1",
+          "Time": "2020-01-02 00:00:00",
+          "TorrentType": "Torrent",
+          "FileCount": "1",
+          "Size": "2147483648",
+          "Snatched": null,
+          "Seeders": "5",
+          "Leechers": "1",
+          "FreeTorrent": "Neutral",
+          "LowSeedFL": false,
+          "GameDOXType": "Update"
+        },
+        "70003": {
+          "CategoryId": "2",
+          "Format": "ISO",
+          "Encoding": "Clone",
+          "ReleaseTitle": "Ignore Me",
+          "Time": "2099-01-01 00:00:00",
+          "TorrentType": "Request",
+          "Size": "1",
+          "Seeders": "0",
+          "Leechers": "0",
+          "FreeTorrent": "Normal"
+        }
+      }
+    },
+    "1002": {
+      "Year": 0,
+      "Artists": [
+        { "Id": "777", "Name": "App Vendor" }
+      ],
+      "Torrents": []
+    },
+    "1003": {
+      "Year": 2016,
+      "Artists": [
+        { "Id": "888", "Name": "Book House" }
+      ],
+      "Torrents": {
+        "80001": {
+          "CategoryId": "3",
+          "Format": "EPUB",
+          "Encoding": "Retail",
+          "ReleaseTitle": "A Manual 2016",
+          "Time": "2016-06-06 06:06:06",
+          "TorrentType": "Torrent",
+          "FileCount": "1",
+          "Size": "1048576",
+          "Snatched": "7",
+          "Seeders": "2",
+          "Leechers": "0",
+          "FreeTorrent": "Normal",
+          "LowSeedFL": true,
+          "GameDOXType": ""
+        }
+      }
+    }
+  }
+}

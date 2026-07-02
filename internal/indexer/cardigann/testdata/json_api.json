@@ -1,0 +1,22 @@
+{
+  "results": [
+    {
+      "name": "Tears of Steel 4K",
+      "url": "https://json.invalid/dl/201.torrent",
+      "kind": "movie",
+      "bytes": 6442450944,
+      "seeders": 120,
+      "leechers": 14,
+      "added": "2022-06-01T10:30:00Z"
+    },
+    {
+      "name": "Cosmos Laundromat S01",
+      "url": "https://json.invalid/dl/202.torrent",
+      "kind": "show",
+      "bytes": 1073741824,
+      "seeders": 33,
+      "leechers": 2,
+      "added": "2022-06-02T08:00:00Z"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+name: matrix-date-heavy
+archetype: date-heavy
+golden_source: hand-derived
+mode: parse
+description: >
+  Compatibility matrix: date-heavy / a .NET date format via the dateparse filter.
+  The date field's dateparse filter translates the .NET layout "dd MMM yyyy HH:mm"
+  to Go and parses each row, then the implicit FromUnknown step re-parses
+  idempotently. Row 0 "15 May 2023 14:30" -> 2023-05-15T14:30:00Z; row 1 "03 Jan
+  2024 09:05" -> 2024-01-03T09:05:00Z (canonical RFC3339; Jackett renders the same
+  instant as RFC1123Z). Relative/named-day/unix dates via the implicit
+  (filter-less) FromUnknown path are covered by stress-date-relative. Sizes
+  1024-based; peers = seeders + leechers.
+definition: definition.yml
+response: response.html
+query:
+  keywords: ""

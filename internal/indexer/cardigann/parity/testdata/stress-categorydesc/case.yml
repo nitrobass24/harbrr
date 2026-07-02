@@ -1,0 +1,13 @@
+name: stress-categorydesc
+archetype: stress-categorydesc
+golden_source: hand-derived
+mode: parse
+description: >
+  Stress: category resolved from a DESCRIPTION string via
+  MapTrackerCatDescToNewznab. "Movies HD" -> id 1 -> Movies(2000) + custom 100001;
+  "TV Shows" -> id 2 -> TV(5000) + custom 100002. Distinct from multi-category,
+  which maps by tracker category id.
+definition: definition.yml
+response: response.html
+query:
+  keywords: ""

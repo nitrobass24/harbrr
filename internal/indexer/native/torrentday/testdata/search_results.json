@@ -1,0 +1,26 @@
+[
+  {
+    "t": 2743197,
+    "name": "Some Movie 2024 2160p UHD BluRay x265-GROUP",
+    "ctime": 1718841600,
+    "size": 48318382080,
+    "files": 3,
+    "completed": 128,
+    "seeders": 42,
+    "leechers": 5,
+    "c": 96,
+    "imdb-id": "tt1234567",
+    "download-multiplier": 0
+  },
+  {
+    "t": "2743210",
+    "name": "Some Show S03E04 1080p WEB-DL DDP5.1 H264-CREW",
+    "ctime": "1718900000",
+    "size": "2147483648",
+    "files": "1",
+    "completed": "7",
+    "seeders": "10",
+    "leechers": "2",
+    "c": "7"
+  }
+]

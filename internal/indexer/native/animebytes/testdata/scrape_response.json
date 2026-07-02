@@ -1,0 +1,58 @@
+{
+  "Matches": 2,
+  "Groups": [
+    {
+      "ID": 12345,
+      "CategoryName": "Anime",
+      "GroupName": "TV Series",
+      "FullName": "Great BluRay SoftSubbed Anime",
+      "SeriesName": "Great BluRay SoftSubbed Anime",
+      "Year": "2020",
+      "Image": "https://animebytes.tv/img/x.jpg",
+      "SynonymnsV2": {"Japanese": "アニメ", "Romaji": "Anime Romaji"},
+      "Description": "desc",
+      "Tags": ["comedy", "drama"],
+      "Torrents": [
+        {
+          "ID": 67890,
+          "EditionData": {"EditionTitle": "Season 1"},
+          "RawDownMultiplier": 0,
+          "RawUpMultiplier": 1,
+          "Link": "https://animebytes.tv/torrent/67890/download/PASSKEY32CHARSYNTHETICxxxxxxxxxx",
+          "Property": "Blu-ray | MKV | h264 10-bit | 1080p | FLAC 2.0 | Dual Audio | Softsubs (SubGroup) | Freeleech",
+          "Snatched": 42,
+          "Seeders": 10,
+          "Leechers": 2,
+          "Size": 12345678901,
+          "FileCount": 13,
+          "FileList": [{"filename": "ep01.mkv", "size": 900000000}],
+          "UploadTime": "2020-05-01 12:00:00"
+        }
+      ]
+    },
+    {
+      "ID": 222,
+      "CategoryName": "Album",
+      "GroupName": "",
+      "FullName": "Some OST",
+      "SeriesName": "",
+      "Year": 2019,
+      "Torrents": [
+        {
+          "ID": 333,
+          "RawDownMultiplier": 1,
+          "RawUpMultiplier": 1,
+          "Link": "https://animebytes.tv/torrent/333/download/PASSKEY32CHARSYNTHETICxxxxxxxxxx",
+          "Property": "MP3 | 320 | CD",
+          "Snatched": 5,
+          "Seeders": 3,
+          "Leechers": 0,
+          "Size": "104857600",
+          "FileCount": 12,
+          "FileList": [{"filename": "01.mp3", "size": 8000000}],
+          "UploadTime": "2019-08-15 09:30:00"
+        }
+      ]
+    }
+  ]
+}

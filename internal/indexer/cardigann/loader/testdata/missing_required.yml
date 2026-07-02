@@ -1,0 +1,25 @@
+---
+id: missing_required
+name: Missing Required
+description: "Missing the required top-level caps field."
+language: en-US
+type: private
+encoding: UTF-8
+links:
+  - https://example.invalid/
+
+search:
+  path: /browse.php
+  rows:
+    selector: tr
+  fields:
+    title:
+      selector: a
+    category:
+      selector: a.cat
+    download:
+      selector: a.dl
+    size:
+      selector: td.size
+    seeders:
+      selector: td.seeders

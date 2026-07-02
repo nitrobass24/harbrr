@@ -1,0 +1,16 @@
+name: stress-date-relative
+archetype: stress-date-relative
+golden_source: hand-derived
+mode: parse
+description: >
+  Stress: the implicit FromUnknown date path (no dateparse filter) over six
+  formats against the default clock 2024-06-12: "2 days ago" -> 2024-06-10,
+  "yesterday" -> 2024-06-11, an ISO instant passes through, an all-digit value is
+  a unix epoch (1700000000 -> 2023-11-14T22:13:20Z), and two human absolute forms
+  Jackett reaches via DateTime.Parse ("Jan 15, 2023" -> 2023-01-15, "15 Aug 2023"
+  -> 2023-08-15). Distinct from date-heavy, which exercises the .NET dateparse
+  filter.
+definition: definition.yml
+response: response.html
+query:
+  keywords: ""

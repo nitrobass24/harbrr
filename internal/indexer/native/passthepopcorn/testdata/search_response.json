@@ -1,0 +1,83 @@
+{
+  "TotalResults": "3",
+  "Movies": [
+    {
+      "GroupId": "84813",
+      "CategoryId": "1",
+      "Title": "The Matrix",
+      "Year": "1999",
+      "Cover": "https://passthepopcorn.me/cover/matrix.jpg",
+      "Tags": ["action", "sci.fi"],
+      "ImdbId": "0133093",
+      "Torrents": [
+        {
+          "Id": 1100,
+          "Quality": "High Definition",
+          "Source": "Blu-ray",
+          "Container": "MKV",
+          "Codec": "x264",
+          "Resolution": "1080p",
+          "Scene": false,
+          "Size": "12884901888",
+          "UploadTime": "2018-05-01 12:30:00",
+          "RemasterTitle": "Remux",
+          "Snatched": "321",
+          "Seeders": "50",
+          "Leechers": "3",
+          "ReleaseName": "The Matrix 1999 1080p BluRay x264-GROUP",
+          "Checked": true,
+          "GoldenPopcorn": true,
+          "FreeleechType": null
+        },
+        {
+          "Id": "1101",
+          "Quality": "Standard Definition",
+          "Source": "DVD",
+          "Container": "AVI",
+          "Codec": "XviD",
+          "Resolution": "480p",
+          "Scene": true,
+          "Size": "734003200",
+          "UploadTime": "2015-02-10 08:00:00",
+          "Snatched": "999",
+          "Seeders": "7",
+          "Leechers": "1",
+          "ReleaseName": "The Matrix 1999 DVDRip XviD-GROUP",
+          "Checked": false,
+          "GoldenPopcorn": false,
+          "FreeleechType": "Half Leech"
+        }
+      ]
+    },
+    {
+      "GroupId": "55021",
+      "CategoryId": "6",
+      "Title": "Some Collection",
+      "Year": "2005",
+      "Cover": "not-a-url",
+      "Tags": [],
+      "ImdbId": "",
+      "Torrents": [
+        {
+          "Id": 2200,
+          "Quality": "Ultra High Definition",
+          "Source": "Blu-ray",
+          "Container": "MKV",
+          "Codec": "x265",
+          "Resolution": "2160p",
+          "Scene": false,
+          "Size": "32212254720",
+          "UploadTime": "2021-11-20 23:59:59",
+          "Snatched": "12",
+          "Seeders": "100",
+          "Leechers": "20",
+          "ReleaseName": "Some Collection 2005 2160p UHD BluRay x265-GROUP",
+          "Checked": true,
+          "GoldenPopcorn": false,
+          "FreeleechType": "Freeleech"
+        }
+      ]
+    }
+  ],
+  "Page": "1"
+}

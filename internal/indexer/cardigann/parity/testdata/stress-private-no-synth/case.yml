@@ -1,0 +1,13 @@
+name: stress-private-no-synth
+archetype: stress-private-no-synth
+golden_source: hand-derived
+mode: parse
+description: >
+  Stress: a private indexer with an info hash and a download link. Jackett does
+  NOT synthesise a magnet from an info hash for private sites, so the release has
+  the info hash and the download link but no magnet. Complements magnet-only
+  (public) by pinning the private gate on synthesis.
+definition: definition.yml
+response: response.html
+query:
+  keywords: ""

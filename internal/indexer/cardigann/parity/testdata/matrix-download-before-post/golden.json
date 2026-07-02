@@ -1,0 +1,15 @@
+[
+  {
+    "title": "POST Pre-request Release",
+    "link": "https://dl.test/download.php?id=42",
+    "size": 2147483648,
+    "categories": [
+      2000
+    ],
+    "seeders": 11,
+    "leechers": 2,
+    "peers": 13,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  }
+]

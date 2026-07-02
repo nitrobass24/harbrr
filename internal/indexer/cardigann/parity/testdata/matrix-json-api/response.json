@@ -1,0 +1,22 @@
+{
+  "results": [
+    {
+      "name": "JSON Movie 1080p",
+      "size": 4000000000,
+      "seeders": 22,
+      "leechers": 8,
+      "cat": "movies",
+      "dl": "https://json2.test/dl/1.torrent",
+      "added": "2023-08-01T12:00:00Z"
+    },
+    {
+      "name": "JSON Show S02E03",
+      "size": 1500000000,
+      "seeders": 5,
+      "leechers": 2,
+      "cat": "tv",
+      "dl": "https://json2.test/dl/2.torrent",
+      "added": "2024-02-15T08:30:00Z"
+    }
+  ]
+}

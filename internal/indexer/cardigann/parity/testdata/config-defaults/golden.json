@@ -1,0 +1,15 @@
+[
+  {
+    "title": "Config Default Release",
+    "link": "https://cfg.test/dl/1.torrent",
+    "size": 2147483648,
+    "categories": [
+      2000
+    ],
+    "seeders": 8,
+    "leechers": 2,
+    "peers": 10,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  }
+]

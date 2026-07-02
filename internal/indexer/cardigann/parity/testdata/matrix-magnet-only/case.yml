@@ -1,0 +1,15 @@
+name: matrix-magnet-only
+archetype: magnet-only
+golden_source: hand-derived
+mode: parse
+description: >
+  Compatibility matrix: magnet-only / info-hash synthesis. Rows carry only an
+  info hash; the indexer is public, so FixResults synthesises a magnet
+  (magnet:?xt=urn:btih:<hash>&dn=<title>&tr=...) from the info hash while the
+  info hash is preserved. Hand-derived golden: each magnet begins
+  magnet:?xt=urn:btih:<hash>&dn=<url-encoded title>; sizes 1024-based
+  (2 GB = 2147483648, 120 MB = 125829120); peers = seeders + leechers.
+definition: definition.yml
+response: response.html
+query:
+  keywords: ""

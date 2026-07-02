@@ -1,0 +1,37 @@
+---
+id: smoke
+name: smoke
+description: "Synthetic HTML tracker for the parity harness smoke case."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://smoke.test/
+
+caps:
+  categories:
+    "1": Movies
+    "2": TV
+
+  modes:
+    search: [q]
+
+search:
+  paths:
+    - path: search
+  rows:
+    selector: tr.row
+  fields:
+    title:
+      selector: a.title
+    download:
+      selector: a.dl
+      attribute: href
+    size:
+      selector: td.size
+    seeders:
+      selector: td.seeders
+    leechers:
+      selector: td.leechers
+    category:
+      selector: td.cat

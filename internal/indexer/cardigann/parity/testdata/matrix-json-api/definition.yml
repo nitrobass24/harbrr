@@ -1,0 +1,41 @@
+---
+id: jsonapi2
+name: jsonapi2
+description: "Synthetic flat JSON-API tracker (distinct from the UNIT3D oracle)."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://json2.test/
+
+caps:
+  categories:
+    movies: Movies
+    tv: TV
+  modes:
+    search: [q]
+
+search:
+  paths:
+    - path: /api/search
+      response:
+        type: json
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: results
+  fields:
+    title:
+      selector: name
+    download:
+      selector: dl
+    size:
+      selector: size
+    seeders:
+      selector: seeders
+    leechers:
+      selector: leechers
+    category:
+      selector: cat
+    date:
+      selector: added

@@ -1,0 +1,38 @@
+---
+id: implicit_date
+name: Implicit Date Fixture
+description: "A date field with NO filter: Jackett still runs FromUnknown on it."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://implicit.invalid/
+
+caps:
+  categorymappings:
+    - {id: 1, cat: Movies}
+  modes:
+    search: [q]
+
+search:
+  path: /list
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: li.item
+  fields:
+    title:
+      selector: span.title
+    category:
+      text: "1"
+    download:
+      selector: a.dl
+      attribute: href
+    size:
+      selector: span.size
+    seeders:
+      selector: span.seeders
+    leechers:
+      selector: span.leechers
+    date:
+      selector: span.date

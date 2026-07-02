@@ -1,0 +1,47 @@
+---
+id: e2edemo
+name: E2E Demo Tracker
+description: "Synthetic tracker for the Phase 3 offline end-to-end Torznab proof."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://e2e.test/
+
+caps:
+  categorymappings:
+    - {id: 1, cat: Movies/HD, desc: "HD Movies"}
+    - {id: 2, cat: TV/HD}
+  modes:
+    search: [q]
+    tv-search: [q, season, ep]
+    movie-search: [q, imdbid]
+
+search:
+  path: /browse
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: tr.r
+  fields:
+    title:
+      selector: a.t
+    details:
+      selector: a.t
+      attribute: href
+    download:
+      selector: a.dl
+      attribute: href
+    size:
+      selector: td.s
+    seeders:
+      selector: td.se
+    leechers:
+      selector: td.le
+    date:
+      selector: td.d
+      filters:
+        - name: dateparse
+          args: "yyyy-MM-dd HH:mm:ss"
+    category:
+      selector: td.c

@@ -1,0 +1,307 @@
+package gazellegames
+
+import (
+	"errors"
+	"os"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
+)
+
+// credAPIKey is a synthetic test secret (the configured API key). It exists only to prove
+// the scrubber/redaction paths and lives only in this test file.
+const credAPIKey = "SYNTHETICAPIKEY"
+
+// credPasskey is a synthetic download passkey. It exists only to pin the rebuilt
+// download URL and lives only in this test file.
+const credPasskey = "SYNTHETICPASSKEY"
+
+// fixedClock is the reference time used so any fuzzy publish date is stable.
+var fixedClock = time.Date(2024, 3, 1, 12, 0, 0, 0, time.UTC)
+
+// parseDriver builds a full driver (caps + cfg + clock). parse needs the caps (the
+// description-keyed category map), the cfg (apikey for the scrubber, passkey for the
+// rebuilt download URL), and a fixed clock.
+func parseDriver(t *testing.T, cfg map[string]string) *driver {
+	t.Helper()
+	def := Families()[0].Definition
+	d, err := New(native.Params{Def: def, Cfg: cfg, Clock: func() time.Time { return fixedClock }})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return d.(*driver)
+}
+
+func readFixture(t *testing.T, path string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read fixture %q: %v", path, err)
+	}
+	return b
+}
+
+// TestParseSearchGolden flattens a multi-group search body and pins the full mapping:
+// the exact Prowlarr title composition (Year append gated by an existing year, the
+// Remaster bracket, the format/encoding/artist/language/region/misc/Trumpable flags, the
+// GameDox bracket), the rebuilt torrents.php download/info URLs, size/peers/grabs/files,
+// the UTC publish date, the CategoryId fallback categories, the freeleech/neutral/low-seed
+// volume factors, and the fixed minimum seed time. Non-TORRENT rows and empty groups emit
+// nothing, and releases are sorted by PublishDate descending.
+func TestParseSearchGolden(t *testing.T) {
+	t.Parallel()
+	body := readFixture(t, "testdata/search.json")
+	d := parseDriver(t, map[string]string{"apikey": credAPIKey, "passkey": credPasskey})
+
+	got, err := d.parseSearch(body)
+	if err != nil {
+		t.Fatalf("parseSearch: %v", err)
+	}
+
+	want := []*normalizer.Release{
+		{
+			Title:   "Cool Game (2018) [Director's Cut 2020] [Rip FitGirl / Some Studio / DLC / Trumpable] [Update]",
+			Link:    "https://gazellegames.net/torrents.php?action=download&authkey=prowlarr&id=70002&torrent_pass=SYNTHETICPASSKEY",
+			Details: "https://gazellegames.net/torrents.php?id=1001&torrentid=70002",
+			// Group-sticky fallback: group 1001's artist ("Some Studio") maps to no category,
+			// so the fallback is seeded ONCE from the first torrent in key order (70001,
+			// CategoryId "1" -> 4050) and reused for every torrent in the group — matching
+			// Prowlarr's group-scoped `categories` variable (70002's own CategoryId "2" -> 4010
+			// is NOT recomputed).
+			Categories:           []int{4050},
+			Size:                 2147483648,
+			Files:                1,
+			Grabs:                0,
+			Seeders:              5,
+			Leechers:             1,
+			Peers:                6,
+			PublishDate:          "2020-01-02T00:00:00Z",
+			DownloadVolumeFactor: 0,
+			UploadVolumeFactor:   0,
+			MinimumSeedTime:      minimumSeedTimeSeconds,
+		},
+		{
+			Title:                "Cool Game (2018) [ISO Clone / Some Studio / English / Region Free]",
+			Link:                 "https://gazellegames.net/torrents.php?action=download&authkey=prowlarr&id=70001&torrent_pass=SYNTHETICPASSKEY",
+			Details:              "https://gazellegames.net/torrents.php?id=1001&torrentid=70001",
+			Categories:           []int{4050},
+			Size:                 1073741824,
+			Files:                12,
+			Grabs:                42,
+			Seeders:              10,
+			Leechers:             3,
+			Peers:                13,
+			PublishDate:          "2018-05-04T10:11:12Z",
+			DownloadVolumeFactor: 0,
+			UploadVolumeFactor:   1,
+			MinimumSeedTime:      minimumSeedTimeSeconds,
+		},
+		{
+			Title:                "A Manual 2016 [EPUB Retail / Book House]",
+			Link:                 "https://gazellegames.net/torrents.php?action=download&authkey=prowlarr&id=80001&torrent_pass=SYNTHETICPASSKEY",
+			Details:              "https://gazellegames.net/torrents.php?id=1003&torrentid=80001",
+			Categories:           []int{7020},
+			Size:                 1048576,
+			Files:                1,
+			Grabs:                7,
+			Seeders:              2,
+			Leechers:             0,
+			Peers:                2,
+			PublishDate:          "2016-06-06T06:06:06Z",
+			DownloadVolumeFactor: 0,
+			UploadVolumeFactor:   1,
+			MinimumSeedTime:      minimumSeedTimeSeconds,
+		},
+	}
+
+	if len(got) != len(want) {
+		t.Fatalf("got %d releases, want %d:\n%#v", len(got), len(want), got)
+	}
+	for i := range want {
+		if !reflect.DeepEqual(got[i], want[i]) {
+			t.Errorf("release[%d]:\n got = %#v\nwant = %#v", i, got[i], want[i])
+		}
+	}
+}
+
+// TestParsePlatformArtistCategory locks the parser's PRIMARY category path: a group whose
+// artist NAME is a platform ("PlayStation 4") derives its category from that name
+// (Console/PS4 = 1180) via MapTrackerCatDescToNewznab, NOT from the torrent's CategoryId
+// fallback ("1" -> PC/Games 4050). This is the path the ~90 platform-name caps feed.
+func TestParsePlatformArtistCategory(t *testing.T) {
+	t.Parallel()
+	d := parseDriver(t, map[string]string{"apikey": credAPIKey, "passkey": credPasskey})
+	got, err := d.parseSearch(readFixture(t, "testdata/platform.json"))
+	if err != nil {
+		t.Fatalf("parseSearch: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d releases, want 1", len(got))
+	}
+	if !reflect.DeepEqual(got[0].Categories, []int{1180}) {
+		t.Errorf("Categories = %v, want [1180] (Console/PS4 from the artist NAME, not the CategoryId fallback)", got[0].Categories)
+	}
+}
+
+// TestParseGroupStickyCategoryFallback proves the per-group category fallback is computed
+// ONCE and sticks for the whole group (Prowlarr's group-scoped `categories`): a group with
+// a non-mapping artist and two torrents whose CategoryIds map differently ("1"->4050,
+// "2"->4010) emits BOTH torrents with the FIRST torrent's category (4050, seeded in
+// torrentId key order), never each torrent's own CategoryId.
+func TestParseGroupStickyCategoryFallback(t *testing.T) {
+	t.Parallel()
+	const body = `{"status":"success","response":{"3001":{"Year":0,` +
+		`"Artists":[{"Id":"1","Name":"No Map Studio"}],` +
+		`"Torrents":{` +
+		`"95001":{"CategoryId":"1","ReleaseTitle":"First","Time":"2020-01-01 00:00:00","TorrentType":"Torrent","Size":"1","Seeders":"1","Leechers":"0"},` +
+		`"95002":{"CategoryId":"2","ReleaseTitle":"Second","Time":"2019-01-01 00:00:00","TorrentType":"Torrent","Size":"1","Seeders":"1","Leechers":"0"}` +
+		`}}}}`
+	d := parseDriver(t, map[string]string{"apikey": credAPIKey, "passkey": credPasskey})
+	got, err := d.parseSearch([]byte(body))
+	if err != nil {
+		t.Fatalf("parseSearch: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d releases, want 2", len(got))
+	}
+	for i, r := range got {
+		if !reflect.DeepEqual(r.Categories, []int{4050}) {
+			t.Errorf("release[%d] (%q) Categories = %v, want [4050] (group-sticky from first torrent)", i, r.Title, r.Categories)
+		}
+	}
+}
+
+// TestParseSearchFlexNumericFields proves the number-or-string tolerance that motivated the
+// fix: GGn returns a group Year as a string, an artist Id as a bare number, and a torrent
+// RemasterYear as a bare number — none of which a strict string/int64 decode accepts. All
+// three must decode (a single field-type mismatch fails the whole-page json.Unmarshal), and
+// the string Year + numeric RemasterYear must still render in the composed title.
+func TestParseSearchFlexNumericFields(t *testing.T) {
+	t.Parallel()
+	const body = `{"status":"success","response":{"4001":{"Year":"2018",` +
+		`"Artists":[{"Id":501,"Name":"Some Studio"}],` +
+		`"Torrents":{"96001":{"CategoryId":"1","ReleaseTitle":"Game","RemasterTitle":"Deluxe",` +
+		`"RemasterYear":2020,"Time":"2020-01-01 00:00:00","TorrentType":"Torrent",` +
+		`"Size":"1","Seeders":"1","Leechers":"0"}}}}}`
+	d := parseDriver(t, map[string]string{"apikey": credAPIKey, "passkey": credPasskey})
+	got, err := d.parseSearch([]byte(body))
+	if err != nil {
+		t.Fatalf("parseSearch: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d releases, want 1", len(got))
+	}
+	title := got[0].Title
+	if !strings.Contains(title, "(2018)") {
+		t.Errorf("title %q missing string-typed group Year (2018)", title)
+	}
+	if !strings.Contains(title, "2020") {
+		t.Errorf("title %q missing numeric torrent RemasterYear 2020", title)
+	}
+}
+
+// TestParseSearchEmpty proves a success body whose response is not a group object ([])
+// yields zero releases and no error (Prowlarr's "Response is not JObject" guard).
+func TestParseSearchEmpty(t *testing.T) {
+	t.Parallel()
+	d := parseDriver(t, map[string]string{"apikey": credAPIKey, "passkey": credPasskey})
+	got, err := d.parseSearch(readFixture(t, "testdata/empty.json"))
+	if err != nil {
+		t.Fatalf("parseSearch: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("got %d releases, want 0", len(got))
+	}
+}
+
+// TestParseSearchErrors proves a non-success body maps to the right sentinel: a numeric
+// 401 status is a login failure; a generic "failure" status is a parse error.
+func TestParseSearchErrors(t *testing.T) {
+	t.Parallel()
+	d := parseDriver(t, map[string]string{"apikey": credAPIKey, "passkey": credPasskey})
+
+	cases := []struct {
+		name    string
+		fixture string
+		want    error
+	}{
+		{"unauthorized", "testdata/unauthorized.json", login.ErrLoginFailed},
+		{"failure", "testdata/failure.json", search.ErrParseError},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := d.parseSearch(readFixture(t, c.fixture))
+			if !errors.Is(err, c.want) {
+				t.Fatalf("err = %v, want %v", err, c.want)
+			}
+		})
+	}
+}
+
+// TestParseSearchMalformed proves a non-JSON body is a parse error whose message now
+// carries an actionable, redacted decode detail (the byte-count shape hint) while still
+// wrapping search.ErrParseError.
+func TestParseSearchMalformed(t *testing.T) {
+	t.Parallel()
+	d := parseDriver(t, map[string]string{"apikey": credAPIKey})
+
+	cases := []struct {
+		name string
+		body []byte
+	}{
+		{"plaintext", []byte("not json")},
+		{"html", []byte("<html>not json</html>")},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := d.parseSearch(c.body)
+			if !errors.Is(err, search.ErrParseError) {
+				t.Fatalf("err = %v, want %v", err, search.ErrParseError)
+			}
+			// A non-JSON body renders the byte-count shape hint from DecodeErrorDetail.
+			if !strings.Contains(err.Error(), "bytes") {
+				t.Fatalf("err = %q, want an actionable detail containing %q", err, "bytes")
+			}
+			if err.Error() == search.ErrParseError.Error() {
+				t.Fatalf("err = %q, want more than the bare sentinel", err)
+			}
+		})
+	}
+}
+
+// TestParseGroupMalformedTorrents proves a Torrents payload that IS a JSON object but does
+// not decode into the torrentId-keyed torrent map is a parse error (search.ErrParseError),
+// not a silently dropped empty group. Here the torrent value is a string, not an object, so
+// the map decode fails.
+func TestParseGroupMalformedTorrents(t *testing.T) {
+	t.Parallel()
+	d := parseDriver(t, map[string]string{"apikey": credAPIKey, "passkey": credPasskey})
+	body := `{"status":"success","response":{"100":{"Artists":[],"Torrents":{"500":"not-an-object"}}}}`
+	_, err := d.parseSearch([]byte(body))
+	if !errors.Is(err, search.ErrParseError) {
+		t.Fatalf("err = %v, want %v", err, search.ErrParseError)
+	}
+	// The torrent value is a string, not an object: a JSON type/offset detail, not the
+	// byte-count fallback. Assert the actionable token survives while the sentinel wraps.
+	if got := err.Error(); !strings.Contains(got, "offset") && !strings.Contains(got, "invalid") {
+		t.Fatalf("err = %q, want an actionable detail containing %q or %q", got, "offset", "invalid")
+	}
+}
+
+// TestScrubAPIKey proves the configured apikey is redacted out of any surfaced message so
+// a server echo cannot leak it.
+func TestScrubAPIKey(t *testing.T) {
+	t.Parallel()
+	d := parseDriver(t, map[string]string{"apikey": credAPIKey})
+	if got := d.scrubAPIKey("token " + credAPIKey + " seen"); got != "token [redacted] seen" {
+		t.Fatalf("scrubAPIKey = %q, did not redact the key", got)
+	}
+}

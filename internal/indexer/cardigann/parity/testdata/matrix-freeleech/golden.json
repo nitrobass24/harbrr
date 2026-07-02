@@ -1,0 +1,28 @@
+[
+  {
+    "title": "Freeleech Double-Up Release",
+    "link": "https://fl.test/dl/1.torrent",
+    "size": 3221225472,
+    "categories": [
+      2000
+    ],
+    "seeders": 30,
+    "leechers": 5,
+    "peers": 35,
+    "downloadVolumeFactor": 0,
+    "uploadVolumeFactor": 2
+  },
+  {
+    "title": "Normal Ratio Release",
+    "link": "https://fl.test/dl/2.torrent",
+    "size": 1073741824,
+    "categories": [
+      2000
+    ],
+    "seeders": 10,
+    "leechers": 2,
+    "peers": 12,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  }
+]

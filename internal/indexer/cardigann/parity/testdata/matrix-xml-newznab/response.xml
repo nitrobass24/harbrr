@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:torznab="http://torznab.com/schemas/2015/feed">
+  <channel>
+    <title>XML Test Feed</title>
+    <item>
+      <title>XML Newznab Release 1080p</title>
+      <link>https://xml.test/dl/1.torrent</link>
+      <torznab:attr name="size" value="1073741824" />
+      <torznab:attr name="seeders" value="20" />
+      <torznab:attr name="leechers" value="5" />
+    </item>
+    <item>
+      <title>XML Newznab Release 720p</title>
+      <link>https://xml.test/dl/2.torrent</link>
+      <torznab:attr name="size" value="734003200" />
+      <torznab:attr name="seeders" value="8" />
+      <torznab:attr name="leechers" value="1" />
+    </item>
+  </channel>
+</rss>

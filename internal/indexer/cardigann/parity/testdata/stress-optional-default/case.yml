@@ -1,0 +1,12 @@
+name: stress-optional-default
+archetype: stress-optional-default
+golden_source: hand-derived
+mode: parse
+description: >
+  Stress: an optional field with a default. Row 0 has an img.poster, so poster is
+  its src; row 1 has none, so the optional miss renders the default template
+  (https://opt.test/default-poster.png). Pins the optional/default resolution.
+definition: definition.yml
+response: response.html
+query:
+  keywords: ""

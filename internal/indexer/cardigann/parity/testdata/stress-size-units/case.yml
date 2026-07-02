@@ -1,0 +1,12 @@
+name: stress-size-units
+archetype: stress-size-units
+golden_source: hand-derived
+mode: parse
+description: >
+  Stress: 1024-based size unit coverage (Jackett GetBytes). 512 KB = 524288,
+  700 MB = 734003200, 1.5 GB = 1610612736, 2 TB = 2199023255552. Pins the size
+  parser across units.
+definition: definition.yml
+response: response.html
+query:
+  keywords: ""

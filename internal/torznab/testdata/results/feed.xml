@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:torznab="http://torznab.com/schemas/2015/feed" xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/">
+  <channel>
+    <atom:link href="https://harbrr.local/api/indexers/demo/results/torznab" rel="self" type="application/rss+xml"></atom:link>
+    <title>Demo Tracker</title>
+    <description>Synthetic tracker for the Torznab results goldens.</description>
+    <link>https://demo.test/</link>
+    <language>en-US</language>
+    <category>search</category>
+    <newznab:response offset="0" total="4"></newznab:response>
+    <item>
+      <title>Example.Movie.2024.1080p.BluRay</title>
+      <guid>https://demo.test/download/1.torrent?passkey=synthetic-demo-key</guid>
+      <jackettindexer id="demo">Demo Tracker</jackettindexer>
+      <type>public</type>
+      <comments>https://demo.test/torrent/1</comments>
+      <pubDate>Thu, 14 Mar 2024 17:10:42 -0400</pubDate>
+      <size>5368709120</size>
+      <files>4</files>
+      <grabs>7</grabs>
+      <description></description>
+      <link>https://demo.test/download/1.torrent?passkey=synthetic-demo-key</link>
+      <category>2040</category>
+      <category>100001</category>
+      <enclosure url="https://demo.test/download/1.torrent?passkey=synthetic-demo-key" length="5368709120" type="application/x-bittorrent"></enclosure>
+      <torznab:attr name="category" value="2040"></torznab:attr>
+      <torznab:attr name="category" value="100001"></torznab:attr>
+      <torznab:attr name="rageid" value="75682"></torznab:attr>
+      <torznab:attr name="tvdbid" value="81189"></torznab:attr>
+      <torznab:attr name="imdb" value="0903747"></torznab:attr>
+      <torznab:attr name="imdbid" value="tt0903747"></torznab:attr>
+      <torznab:attr name="tmdbid" value="1396"></torznab:attr>
+      <torznab:attr name="tvmazeid" value="82701"></torznab:attr>
+      <torznab:attr name="traktid" value="1390"></torznab:attr>
+      <torznab:attr name="doubanid" value="1291543"></torznab:attr>
+      <torznab:attr name="genre" value="Drama, Crime"></torznab:attr>
+      <torznab:attr name="year" value="2024"></torznab:attr>
+      <torznab:attr name="seeders" value="12"></torznab:attr>
+      <torznab:attr name="peers" value="15"></torznab:attr>
+      <torznab:attr name="coverurl" value="https://demo.test/poster/1.jpg"></torznab:attr>
+      <torznab:attr name="minimumratio" value="1.5"></torznab:attr>
+      <torznab:attr name="minimumseedtime" value="172800"></torznab:attr>
+      <torznab:attr name="downloadvolumefactor" value="0"></torznab:attr>
+      <torznab:attr name="uploadvolumefactor" value="1"></torznab:attr>
+    </item>
+    <item>
+      <title>Magnet Only Release</title>
+      <guid>magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&amp;dn=Magnet+Only+Release</guid>
+      <jackettindexer id="demo">Demo Tracker</jackettindexer>
+      <type>public</type>
+      <pubDate>Sat, 13 Jun 2026 12:00:00 +0000</pubDate>
+      <size>0</size>
+      <description></description>
+      <link>magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&amp;dn=Magnet+Only+Release</link>
+      <category>5070</category>
+      <enclosure url="magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&amp;dn=Magnet+Only+Release" length="0" type="application/x-bittorrent"></enclosure>
+      <torznab:attr name="category" value="5070"></torznab:attr>
+      <torznab:attr name="seeders" value="0"></torznab:attr>
+      <torznab:attr name="peers" value="0"></torznab:attr>
+      <torznab:attr name="infohash" value="0123456789ABCDEF0123456789ABCDEF01234567"></torznab:attr>
+      <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&amp;dn=Magnet+Only+Release"></torznab:attr>
+      <torznab:attr name="downloadvolumefactor" value="1"></torznab:attr>
+      <torznab:attr name="uploadvolumefactor" value="1"></torznab:attr>
+    </item>
+    <item>
+      <title>MinimalRelease</title>
+      <guid>https://demo.test/download/2.torrent</guid>
+      <jackettindexer id="demo">Demo Tracker</jackettindexer>
+      <type>public</type>
+      <pubDate>Sat, 13 Jun 2026 12:00:00 +0000</pubDate>
+      <size>1048576</size>
+      <description></description>
+      <link>https://demo.test/download/2.torrent</link>
+      <category>2030</category>
+      <enclosure url="https://demo.test/download/2.torrent" length="1048576" type="application/x-bittorrent"></enclosure>
+      <torznab:attr name="category" value="2030"></torznab:attr>
+      <torznab:attr name="seeders" value="1"></torznab:attr>
+      <torznab:attr name="peers" value="1"></torznab:attr>
+      <torznab:attr name="downloadvolumefactor" value="1"></torznab:attr>
+      <torznab:attr name="uploadvolumefactor" value="1"></torznab:attr>
+    </item>
+    <item>
+      <title>Some Audiobook + Album Bundle</title>
+      <guid>https://demo.test/download/3.torrent</guid>
+      <jackettindexer id="demo">Demo Tracker</jackettindexer>
+      <type>public</type>
+      <pubDate>Wed, 01 May 2024 00:00:00 +0000</pubDate>
+      <size>256000000</size>
+      <description></description>
+      <link>https://demo.test/download/3.torrent</link>
+      <category>3030</category>
+      <enclosure url="https://demo.test/download/3.torrent" length="256000000" type="application/x-bittorrent"></enclosure>
+      <torznab:attr name="category" value="3030"></torznab:attr>
+      <torznab:attr name="author" value="Jane Author"></torznab:attr>
+      <torznab:attr name="booktitle" value="The Book"></torznab:attr>
+      <torznab:attr name="publisher" value="Pub House"></torznab:attr>
+      <torznab:attr name="artist" value="The Artist"></torznab:attr>
+      <torznab:attr name="album" value="The Album"></torznab:attr>
+      <torznab:attr name="label" value="The Label"></torznab:attr>
+      <torznab:attr name="track" value="Track One"></torznab:attr>
+      <torznab:attr name="seeders" value="3"></torznab:attr>
+      <torznab:attr name="peers" value="3"></torznab:attr>
+      <torznab:attr name="downloadvolumefactor" value="1"></torznab:attr>
+      <torznab:attr name="uploadvolumefactor" value="1"></torznab:attr>
+    </item>
+  </channel>
+</rss>

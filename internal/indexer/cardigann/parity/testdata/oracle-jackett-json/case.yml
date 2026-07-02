@@ -1,0 +1,26 @@
+name: oracle-jackett-json
+archetype: jackett-json-oracle
+golden_source: jackett-port
+mode: search
+description: >
+  Ported from Jackett CardigannIndexerJsonTests.TestCardigannJsonAsync at commit
+  b4140c7. Drives the byte-for-byte json-definition1.yml (a UNIT3D JSON API)
+  over json-response1.json and asserts Jackett's exact search URL plus its
+  first-release field values in jackett_oracle_test.go (78 releases; first is
+  "The Eyes of Tammy Faye"). The leading login GET is harbrr's eager-login
+  divergence (the def's login has no test block; Jackett would not issue it). The
+  search URL matches Jackett exactly. publishDate is canonical RFC3339 (same
+  instant as Jackett's RFC1123Z); Gain is omitted (not a harbrr field).
+definition: ../jackett/json-definition1.yml
+clock: 2026-06-12T00:00:00Z
+query:
+  keywords: 1080p
+steps:
+  - method: GET
+    url: https://jsondefinition1.com/api/torrents?api_token=
+    response: login.html
+    note: eager login (harbrr divergence; Jackett does not issue this)
+  - method: GET
+    url: https://jsondefinition1.com/api/torrents/filter?api_token=&name=1080p&sortField=created_at&sortDirection=desc&perPage=100&page=1
+    response: ../jackett/json-response1.json
+    note: search request (URL matches Jackett's RegisterRequestCallback)

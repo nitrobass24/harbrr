@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:torznab="http://torznab.com/schemas/2015/feed" xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/">
+  <channel>
+    <atom:link href="http://harbrr.test/api/indexers/e2edemo/results/torznab" rel="self" type="application/rss+xml"></atom:link>
+    <title>E2E Demo Tracker</title>
+    <description>Synthetic tracker for the Phase 3 offline end-to-end Torznab proof.</description>
+    <link>https://e2e.test/</link>
+    <language>en-US</language>
+    <category>search</category>
+    <newznab:response offset="0" total="2"></newznab:response>
+    <item>
+      <title>Example Movie 2024 1080p BluRay</title>
+      <guid>https://e2e.test/dl/1.torrent</guid>
+      <jackettindexer id="e2edemo">E2E Demo Tracker</jackettindexer>
+      <type>public</type>
+      <comments>https://e2e.test/t/1</comments>
+      <pubDate>Thu, 14 Mar 2024 17:10:42 +0000</pubDate>
+      <size>1610612736</size>
+      <description></description>
+      <link>https://e2e.test/dl/1.torrent</link>
+      <category>2040</category>
+      <category>100001</category>
+      <enclosure url="https://e2e.test/dl/1.torrent" length="1610612736" type="application/x-bittorrent"></enclosure>
+      <torznab:attr name="category" value="2040"></torznab:attr>
+      <torznab:attr name="category" value="100001"></torznab:attr>
+      <torznab:attr name="seeders" value="42"></torznab:attr>
+      <torznab:attr name="peers" value="47"></torznab:attr>
+      <torznab:attr name="downloadvolumefactor" value="1"></torznab:attr>
+      <torznab:attr name="uploadvolumefactor" value="1"></torznab:attr>
+    </item>
+    <item>
+      <title>Some Show S01E01 720p WEB</title>
+      <guid>https://e2e.test/dl/2.torrent</guid>
+      <jackettindexer id="e2edemo">E2E Demo Tracker</jackettindexer>
+      <type>public</type>
+      <comments>https://e2e.test/t/2</comments>
+      <pubDate>Fri, 15 Mar 2024 09:30:00 +0000</pubDate>
+      <size>838860800</size>
+      <description></description>
+      <link>https://e2e.test/dl/2.torrent</link>
+      <category>5040</category>
+      <enclosure url="https://e2e.test/dl/2.torrent" length="838860800" type="application/x-bittorrent"></enclosure>
+      <torznab:attr name="category" value="5040"></torznab:attr>
+      <torznab:attr name="seeders" value="7"></torznab:attr>
+      <torznab:attr name="peers" value="8"></torznab:attr>
+      <torznab:attr name="downloadvolumefactor" value="1"></torznab:attr>
+      <torznab:attr name="uploadvolumefactor" value="1"></torznab:attr>
+    </item>
+  </channel>
+</rss>

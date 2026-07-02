@@ -1,0 +1,40 @@
+---
+id: result_order
+name: Result Order Fixture
+description: "Cross-field .Result ordering: category reads an earlier field via .Result."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://order.invalid/
+
+caps:
+  categorymappings:
+    - {id: 1, cat: Movies}
+    - {id: 2, cat: TV}
+  modes:
+    search: [q]
+
+search:
+  path: /list
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: li.item
+  fields:
+    title:
+      selector: span.title
+    _raw_cat:
+      selector: span.kind
+      optional: true
+    category:
+      text: "{{ if .Result._raw_cat }}{{ .Result._raw_cat }}{{ else }}2{{ end }}"
+    download:
+      selector: a.dl
+      attribute: href
+    size:
+      selector: span.size
+    seeders:
+      selector: span.seeders
+    leechers:
+      selector: span.leechers

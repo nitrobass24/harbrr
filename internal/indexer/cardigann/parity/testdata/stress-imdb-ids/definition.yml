@@ -1,0 +1,41 @@
+---
+id: imdbids
+name: imdbids
+description: "imdbid tt-formatting plus tmdbid/tvdbid integer ids."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://imdb.test/
+caps:
+  categorymappings:
+    - {id: 1, cat: Movies}
+  modes:
+    search: [q]
+    movie-search: [q, imdbid, tmdbid]
+search:
+  path: /b
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: tr.row
+  fields:
+    title:
+      selector: a.title
+    download:
+      selector: a.dl
+      attribute: href
+    size:
+      selector: td.size
+    seeders:
+      selector: td.seeders
+    leechers:
+      selector: td.leechers
+    category:
+      text: "1"
+    imdbid:
+      selector: td.imdb
+    tmdbid:
+      selector: td.tmdb
+    tvdbid:
+      selector: td.tvdb

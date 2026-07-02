@@ -1,0 +1,48 @@
+{
+  "status": "success",
+  "response": {
+    "results": [
+      {
+        "groupId": "2002",
+        "groupName": "Some Audiobook Title",
+        "artist": "",
+        "groupYear": "2019",
+        "torrentId": 30000001,
+        "size": "734003200",
+        "fileCount": 3,
+        "snatches": 8,
+        "seeders": "15",
+        "leechers": "2",
+        "category": "Audiobooks",
+        "groupTime": "1556789430",
+        "cover": "",
+        "isFreeLeech": false,
+        "isNeutralLeech": false,
+        "isFreeload": false,
+        "isPersonalFreeLeech": false,
+        "canUseToken": false
+      },
+      {
+        "groupId": "2003",
+        "groupName": "Fresh Upload",
+        "artist": "",
+        "groupYear": "2024",
+        "torrentId": 30000002,
+        "size": "104857600",
+        "fileCount": 1,
+        "snatches": 0,
+        "seeders": "1",
+        "leechers": "0",
+        "category": null,
+        "groupTime": "now",
+        "isFreeLeech": false,
+        "isNeutralLeech": false,
+        "isFreeload": false,
+        "isPersonalFreeLeech": false,
+        "canUseToken": false
+      }
+    ],
+    "currentPage": "1",
+    "pages": "1"
+  }
+}

@@ -1,0 +1,41 @@
+/bin/
+/dist/
+*.out
+*.test
+lint-report.json
+
+# local config & data (may contain secrets)
+/config.toml
+/config.yaml
+/data/
+.env
+.env.*
+
+# Phase 5 live-smoke evidence (counts/titles only, secret-scrubbed — never committed)
+/internal/smoke/testdata/
+
+# Phase 9 live-smoke credential bundles — LIVE tracker secrets (passkeys/cookies/
+# mam_id/API keys) saved locally for repeatable re-runs. Machine-local only,
+# NEVER committed. (.env.phase9 is also covered by .env.* above; these make any
+# *.smoke.env name explicit too.)
+/.env.phase9
+*.smoke.env
+# Live API-key bundle for driving the stack over HTTP (harbrr + *arr/qui + Prowlarr).
+# LIVE secrets — machine-local only, NEVER committed.
+smoke.env
+/smoke.env
+
+# stray `go build ./cmd/harbrr` binary + a datadir created by running it directly
+# (use `make build` -> /bin instead)
+/harbrr
+/cmd/harbrr/harbrr
+/cmd/harbrr/data/
+
+.DS_Store
+
+# Local live-test findings (uncommitted; may reference tracker names — no secrets)
+LIVE_TEST_FINDINGS.md
+/LIVE_TEST_FINDINGS.md
+
+# Claude Code local config (not shared; enforcement moved to CI + pre-commit)
+.claude/

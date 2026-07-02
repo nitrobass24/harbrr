@@ -1,0 +1,15 @@
+name: matrix-non-latin-regexp2
+archetype: non-latin-regexp2
+golden_source: hand-derived
+mode: parse
+description: >
+  Compatibility matrix: non-Latin script routed to the regexp2 (.NET) engine. The
+  title re_replace pattern "(\S+) \1" uses a BACKREFERENCE — a .NET-only construct
+  RE2 cannot compile — and the def language is ru-RU, both of which route the
+  regex to regexp2. Over Cyrillic input it collapses a duplicated word: row 0
+  "Фильм Фильм 2023" -> "Фильм 2023"; row 1 "Сериал 2024" has no duplicate, so it
+  is unchanged. Sizes 1024-based; peers = seeders + leechers.
+definition: definition.yml
+response: response.html
+query:
+  keywords: ""

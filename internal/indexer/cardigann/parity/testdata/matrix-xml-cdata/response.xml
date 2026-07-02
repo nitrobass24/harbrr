@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:torznab="http://torznab.com/schemas/2015/feed">
+  <channel>
+    <title><![CDATA[CDATA Test Feed]]></title>
+    <item>
+      <!-- editorial note: must never appear in the extracted output -->
+      <title><![CDATA[Movie & Friends 2024 1080p BluRay]]></title>
+      <description><![CDATA[Quality: 1080p <BluRay> & DTS]]></description>
+      <link>https://xml.test/dl/1.torrent</link>
+      <torznab:attr name="size" value="1073741824" />
+      <torznab:attr name="seeders" value="12" />
+      <torznab:attr name="leechers" value="3" />
+    </item>
+  </channel>
+</rss>

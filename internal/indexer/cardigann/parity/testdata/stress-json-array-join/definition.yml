@@ -1,0 +1,38 @@
+---
+id: jsonarray
+name: jsonarray
+description: "JSON array field joined with commas (String.Join semantics)."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://jsonarr.test/
+caps:
+  categories:
+    movies: Movies
+  modes:
+    search: [q]
+search:
+  paths:
+    - path: /api
+      response:
+        type: json
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: results
+  fields:
+    title:
+      selector: name
+    download:
+      selector: dl
+    size:
+      selector: size
+    seeders:
+      selector: seeders
+    leechers:
+      selector: leechers
+    category:
+      text: movies
+    genre:
+      selector: tags

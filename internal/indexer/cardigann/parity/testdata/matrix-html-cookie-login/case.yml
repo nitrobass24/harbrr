@@ -1,0 +1,21 @@
+name: matrix-html-cookie-login
+archetype: html-cookie-login
+golden_source: hand-derived
+mode: search
+description: >
+  Compatibility matrix: HTML tracker, manual-COOKIE login. The cookie method
+  issues NO login request — it seeds the session jar from the configured cookie
+  string — so the only request is the search GET, which must carry that cookie
+  (expect_cookie asserts propagation). Hand-derived golden: size 8 GB =
+  8589934592 (1024-based), peers = 14 + 2 = 16, category Movies (2000).
+definition: definition.yml
+config:
+  cookie: "session=cookieval-synthetic-001"
+query:
+  keywords: release
+steps:
+  - method: GET
+    url: https://cookie.test/browse.php?q=release
+    response: search.html
+    expect_cookie: "session=cookieval-synthetic-001"
+    note: search carries the manually-seeded session cookie (no login request)

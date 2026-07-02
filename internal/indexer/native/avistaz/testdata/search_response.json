@@ -1,0 +1,51 @@
+{
+  "data": [
+    {
+      "url": "https://avistaz.to/torrent/1-the-matrix",
+      "download": "https://avistaz.to/rss/download/1/FIXTUREKEY-AAAA.torrent",
+      "file_name": "The Matrix 1999 1080p BluRay x264",
+      "info_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "leech": 3,
+      "completed": 120,
+      "seed": 47,
+      "file_size": 8589934592,
+      "file_count": 1,
+      "download_multiply": 0,
+      "upload_multiply": 1,
+      "video_quality": "1080p",
+      "type": "MOVIE",
+      "created_at_iso": "2024-01-15T10:30:00+00:00",
+      "movie_tv": { "imdb": "tt0133093", "tmdb": "603", "tvdb": "" }
+    },
+    {
+      "url": "https://avistaz.to/torrent/2-some-show",
+      "download": "https://avistaz.to/rss/download/2/FIXTUREKEY-BBBB.torrent",
+      "file_name": "Some Show S01E02 2160p WEB-DL",
+      "info_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "leech": 10,
+      "completed": 5,
+      "seed": 90,
+      "file_size": 64424509440,
+      "file_count": 1,
+      "download_multiply": 1,
+      "upload_multiply": 1,
+      "video_quality": "2160p",
+      "type": "TV-SHOW",
+      "created_at_iso": "2024-02-20T08:00:00+00:00",
+      "movie_tv": { "imdb": "", "tmdb": "", "tvdb": "121361" }
+    },
+    {
+      "url": "https://avistaz.to/torrent/3-some-album",
+      "download": "https://avistaz.to/rss/download/3/FIXTUREKEY-CCCC.torrent",
+      "file_name": "Some Artist - Album 2020 FLAC",
+      "info_hash": "cccccccccccccccccccccccccccccccccccccccc",
+      "leech": 0,
+      "completed": 8,
+      "seed": 12,
+      "file_size": 524288000,
+      "video_quality": "",
+      "type": "MUSIC",
+      "created_at_iso": "2024-03-01T00:00:00+00:00"
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+---
+id: json_api
+name: JSON API Fixture
+description: "JSON-API archetype: nested rows, paths, multi-category."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://json.invalid/
+
+caps:
+  categorymappings:
+    - {id: "movie", cat: Movies}
+    - {id: "show", cat: TV}
+  modes:
+    search: [q]
+
+search:
+  paths:
+    - path: /api/v1/search
+      response:
+        type: json
+  inputs:
+    query: "{{ .Keywords }}"
+  rows:
+    selector: results
+  fields:
+    title:
+      selector: name
+    download:
+      selector: url
+    category:
+      selector: kind
+    size:
+      selector: bytes
+    seeders:
+      selector: seeders
+    leechers:
+      selector: leechers
+    date:
+      # The JSON value "2022-06-01T10:30:00Z" is auto-converted by Newtonsoft.Json
+      # (DateParseHandling.DateTime) to a DateTime and read back as the .NET
+      # InvariantCulture string "06/01/2022 10:30:00"; harbrr reproduces this in the
+      # JSON selector. So real JSON defs (e.g. UNIT3D) append a zone and dateparse
+      # the MM/dd/yyyy form, not the raw ISO string.
+      selector: added
+      filters:
+        - name: append
+          args: " +00:00"
+        - name: dateparse
+          args: "MM/dd/yyyy HH:mm:ss zzz"

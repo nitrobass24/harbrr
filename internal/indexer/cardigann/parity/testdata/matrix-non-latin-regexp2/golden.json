@@ -1,0 +1,28 @@
+[
+  {
+    "title": "Фильм 2023",
+    "link": "https://nonlatin.test/dl/1.torrent",
+    "size": 3221225472,
+    "categories": [
+      2000
+    ],
+    "seeders": 18,
+    "leechers": 6,
+    "peers": 24,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  },
+  {
+    "title": "Сериал 2024",
+    "link": "https://nonlatin.test/dl/2.torrent",
+    "size": 943718400,
+    "categories": [
+      2000
+    ],
+    "seeders": 9,
+    "leechers": 3,
+    "peers": 12,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  }
+]

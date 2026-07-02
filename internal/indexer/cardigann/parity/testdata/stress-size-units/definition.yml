@@ -1,0 +1,34 @@
+---
+id: sizeunits
+name: sizeunits
+description: "Size unit coverage: KB/MB/GB/TB, 1024-based, period decimal (1.5 GB)."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://size.test/
+caps:
+  categorymappings:
+    - {id: 1, cat: Movies}
+  modes:
+    search: [q]
+search:
+  path: /b
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: tr.row
+  fields:
+    title:
+      selector: a.title
+    download:
+      selector: a.dl
+      attribute: href
+    size:
+      selector: td.size
+    seeders:
+      selector: td.seeders
+    leechers:
+      selector: td.leechers
+    category:
+      text: "1"

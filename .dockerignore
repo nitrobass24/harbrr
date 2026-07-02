@@ -1,0 +1,18 @@
+# Keep the build context small and free of local state/secrets. The vendored
+# Jackett definitions under internal/indexer/definitions/vendor are REQUIRED
+# (embedded), so they are intentionally NOT excluded.
+.git/
+.github/
+bin/
+dist/
+data/
+cmd/harbrr/data/
+/harbrr
+*.test
+*.out
+lint-report.json
+.env
+.env.*
+.DS_Store
+docs/
+*.md

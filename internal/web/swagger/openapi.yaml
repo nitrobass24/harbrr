@@ -1,0 +1,2024 @@
+openapi: 3.1.0
+info:
+  title: harbrr management API
+  version: 0.1.0
+  description: >
+    harbrr's HTTP surface: the management API (first-run setup, authentication,
+    API-key management, indexer and app-sync configuration) plus the entry points of
+    the *arr-facing Torznab feed. The Torznab wire contract itself — the XML body
+    shapes — is defined by Jackett/Newznab and served by internal/torznab; here we
+    document only its HTTP routes, parameters, and content types (see
+    docs/architecture.md). Hand-authored, embedded via //go:embed, and guarded by a
+    drift test that asserts the spec matches the mounted routes (make test-openapi).
+
+    Authentication: the management API uses a cookie session (after login) or the
+    X-API-Key header; the Torznab feed authenticates with an apikey (or passkey)
+    query parameter, as *arr clients expect. CSRF defence follows the autobrr
+    family — SameSite=Lax session cookies plus header-authenticated programmatic
+    access — so there is no separate CSRF token (see docs/divergences.md).
+  license:
+    name: GPL-2.0-or-later
+    url: https://www.gnu.org/licenses/gpl-2.0.html
+
+tags:
+  - name: Torznab Feed
+    description: >
+      The *arr-facing Torznab endpoints Sonarr/Radarr/Prowlarr point at: capabilities,
+      search, and the grab-time download proxy. Authenticated by an apikey/passkey
+      query parameter; responses are Torznab XML (or a torrent file for /dl).
+  - name: Indexers
+    description: Configure, test, search, and inspect the tracker instances harbrr serves.
+  - name: Indexer Definitions
+    description: The Cardigann definition catalog (vendored + native) available to configure.
+  - name: App Connections
+    description: Sonarr/Radarr/Lidarr/Readarr/Whisparr/qui apps harbrr pushes its indexers into (app-sync).
+  - name: Authentication
+    description: First-run setup, login/logout, identity, and password change.
+  - name: API Keys
+    description: Mint and revoke the keys that authorize programmatic and feed access.
+  - name: System
+    description: Liveness and other operational endpoints.
+  - name: Cache
+    description: >
+      The search-results cache backing the Torznab feed and JSON search. Inspect
+      hit-ratio and size, or flush every entry. When caching is disabled the
+      endpoints report a disabled state rather than 404.
+  - name: Notifications
+    description: >
+      Notification targets harbrr fires operational events at (an indexer health
+      failure today) via a generic webhook or a Discord webhook. The destination URL
+      is redacted.
+
+paths:
+  /healthz:
+    get:
+      summary: Liveness probe
+      operationId: getHealthz
+      tags: [System]
+      responses:
+        "200":
+          description: service is healthy; also carries the running build version and commit
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  version:
+                    type: string
+                    description: the running harbrr build version
+                  commit:
+                    type: string
+                    description: the git commit the build was cut from
+                required: [status, version, commit]
+
+  /api/auth/setup:
+    get:
+      summary: First-run setup status
+      operationId: getSetupStatus
+      tags: [Authentication]
+      responses:
+        "200":
+          description: whether the admin account exists
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  setupComplete:
+                    type: boolean
+                required: [setupComplete]
+    post:
+      summary: Create the single admin (first run only)
+      operationId: postSetup
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Credentials" }
+      responses:
+        "201":
+          description: admin created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  username: { type: string }
+                required: [username]
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/auth/login:
+    post:
+      summary: Log in and establish a session
+      operationId: login
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Credentials" }
+      responses:
+        "204": { description: logged in (session cookie set) }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/auth/logout:
+    post:
+      summary: Destroy the current session
+      operationId: logout
+      tags: [Authentication]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "204": { description: logged out }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/auth/me:
+    get:
+      summary: Current authenticated identity
+      operationId: me
+      tags: [Authentication]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the authenticated identity
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  username: { type: string }
+                  authMethod: { type: string }
+                required: [username, authMethod]
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/auth/change-password:
+    post:
+      summary: Change the admin password
+      description: >
+        Verifies the current admin password and replaces it (the password is never
+        recoverable). The session token is renewed. Operates on the single admin
+        account.
+      operationId: changePassword
+      tags: [Authentication]
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChangePassword" }
+      responses:
+        "204": { description: password changed }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/auth/oidc/login:
+    get:
+      summary: OIDC login (not implemented — deferred to a later phase)
+      operationId: oidcLogin
+      tags: [Authentication]
+      responses:
+        "501": { description: OIDC is not implemented yet }
+
+  /api/auth/oidc/callback:
+    get:
+      summary: OIDC callback (not implemented — deferred to a later phase)
+      operationId: oidcCallback
+      tags: [Authentication]
+      responses:
+        "501": { description: OIDC is not implemented yet }
+
+  /api/definitions:
+    get:
+      summary: List available tracker definitions
+      operationId: listDefinitions
+      tags: [Indexer Definitions]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the available definitions
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DefinitionSummary" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/definitions/{id}:
+    get:
+      summary: Get a definition's settings schema and capabilities
+      description: >
+        Returns a single definition's ordered settings fields (with a secret flag
+        per field, for rendering an add-indexer form) and its capabilities. This is
+        the definition schema, not a configured instance — it carries no stored
+        secret. Resolves both vendored and native definitions.
+      operationId: getDefinition
+      tags: [Indexer Definitions]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: the definition schema
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DefinitionDetail" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/apikeys:
+    get:
+      summary: List API keys (metadata only)
+      operationId: listApiKeys
+      tags: [API Keys]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the API keys
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ApiKey" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Mint a new API key (plaintext shown once)
+      operationId: mintApiKey
+      tags: [API Keys]
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+              required: [name]
+      responses:
+        "201":
+          description: the minted key (plaintext returned once)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MintedApiKey" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/apikeys/{id}:
+    delete:
+      summary: Revoke an API key
+      operationId: deleteApiKey
+      tags: [API Keys]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: revoked }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/indexers:
+    get:
+      summary: List configured indexers
+      operationId: listIndexers
+      tags: [Indexers]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the configured indexers
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Instance" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Add a configured indexer
+      operationId: addIndexer
+      tags: [Indexers]
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AddIndexer" }
+      responses:
+        "201":
+          description: the created indexer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Instance" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/indexers/stats:
+    get:
+      summary: Get per-indexer stats for all indexers
+      description: >
+        Returns Prowlarr-style stats for every configured indexer: query/grab counts,
+        average response time, failure tallies by kind, and last-query/last-failure
+        timestamps.
+      operationId: allIndexerStats
+      tags: [Indexers]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: per-indexer stats for all indexers
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/IndexerStats" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/indexers/{slug}:
+    get:
+      summary: Get a configured indexer (settings redacted)
+      operationId: getIndexer
+      tags: [Indexers]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: the indexer with its settings
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InstanceDetail" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      summary: Update an indexer (settings merged; <redacted> keeps the stored value)
+      operationId: updateIndexer
+      tags: [Indexers]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateIndexer" }
+      responses:
+        "204": { description: updated }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      summary: Delete a configured indexer
+      operationId: deleteIndexer
+      tags: [Indexers]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: deleted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/indexers/{slug}/enable:
+    post:
+      summary: Enable an indexer
+      operationId: enableIndexer
+      tags: [Indexers]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: enabled }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/indexers/{slug}/disable:
+    post:
+      summary: Disable an indexer
+      operationId: disableIndexer
+      tags: [Indexers]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: disabled }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/indexers/{slug}/test:
+    post:
+      summary: Test an indexer's credentials and connectivity
+      description: >
+        Validates the configured credentials against a fresh, uncached engine
+        (the login probe). A passing test returns ok=true; a credential or
+        connectivity failure returns ok=false with a sanitized, secret-free error.
+      operationId: testIndexer
+      tags: [Indexers]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: test result
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { type: boolean }
+                  error: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/indexers/{slug}/status:
+    get:
+      summary: Get an indexer's health status
+      description: >
+        Returns the indexer's derived health (healthy/unhealthy) and its recent
+        health events (auth_failure, rate_limited, parse_error, anti_bot). Event
+        details are credential-scrubbed before storage, so no secret is surfaced.
+      operationId: indexerStatus
+      tags: [Indexers]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: indexer health status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [slug, status, events]
+                properties:
+                  slug: { type: string }
+                  status: { type: string, enum: [healthy, unhealthy] }
+                  events:
+                    type: array
+                    items:
+                      type: object
+                      required: [kind, occurred_at]
+                      properties:
+                        kind:
+                          type: string
+                          enum: [auth_failure, rate_limited, parse_error, anti_bot]
+                        detail: { type: string }
+                        occurred_at: { type: string, format: date-time }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/indexers/{slug}/stats:
+    get:
+      summary: Get an indexer's stats
+      description: >
+        Returns the indexer's Prowlarr-style stats: query/grab counts, average response
+        time, failure tallies by kind (auth_failure, rate_limited, parse_error,
+        anti_bot), and last-query/last-failure timestamps.
+      operationId: indexerStats
+      tags: [Indexers]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: indexer stats
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IndexerStats" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/indexers/{slug}/search:
+    get:
+      summary: Search a configured indexer (JSON)
+      description: >
+        Runs a search against the indexer and returns the same releases the
+        Torznab feed serves for the same query (the shared pipeline — parity).
+        For a resolver-needing indexer each download link is sealed behind the
+        /dl proxy, so a passkey never appears in the response.
+      operationId: searchIndexer
+      tags: [Indexers]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+        - { name: q, in: query, required: false, schema: { type: string }, description: free-text query }
+        - { name: cat, in: query, required: false, schema: { type: string }, description: comma-separated newznab category ids }
+        - { name: imdbid, in: query, required: false, schema: { type: string } }
+        - { name: tmdbid, in: query, required: false, schema: { type: string } }
+        - { name: tvdbid, in: query, required: false, schema: { type: string } }
+        - { name: season, in: query, required: false, schema: { type: string } }
+        - { name: ep, in: query, required: false, schema: { type: string } }
+        - { name: limit, in: query, required: false, schema: { type: integer }, description: "page size, clamped to [1,100]" }
+        - { name: offset, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200":
+          description: the search results
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SearchResults" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500":
+          description: the search failed (a sanitized, secret-free error)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/indexers/{slug}/capabilities:
+    get:
+      summary: Get a configured indexer's search capabilities
+      description: >
+        Returns the indexer's search modes (with their supported params), the
+        advertised category tree, and the page-size limits. The internal
+        tracker<->newznab category lookup is not part of the response.
+      operationId: indexerCapabilities
+      tags: [Indexers]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: the indexer capabilities
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Capabilities" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/indexers/{slug}/crossseed-snippet:
+    get:
+      summary: Get a cross-seed v6 config.js snippet for an indexer
+      description: >
+        Returns a copy-paste torznab entry for cross-seed v6's config.js. cross-seed v6
+        has no indexer API (file config + restart), so harbrr emits the snippet instead
+        of pushing it. The URL is the freeleech-bypass /full variant (cross-seed must see
+        the full catalog). The apikey is a placeholder the operator replaces with one of
+        their minted harbrr API keys — harbrr stores keys only as hashes and cannot echo
+        a usable one.
+      operationId: indexerCrossSeedSnippet
+      tags: [Indexers]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: the cross-seed v6 config snippet
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CrossSeedSnippet" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/app-connections:
+    get:
+      summary: List *arr/qui app-sync connections
+      operationId: listConnections
+      tags: [App Connections]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the configured connections (app key redacted)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AppConnection" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Add an app-sync connection (mints a dedicated harbrr key)
+      operationId: createConnection
+      tags: [App Connections]
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateConnection" }
+      responses:
+        "201":
+          description: the created connection
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppConnection" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/app-connections/sync:
+    post:
+      summary: Reconcile every app-sync connection now
+      operationId: syncAllConnections
+      tags: [App Connections]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: per-connection sync outcomes (one entry per connection)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ConnectionSyncResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/app-connections/{id}:
+    get:
+      summary: Get an app-sync connection (app key redacted)
+      operationId: getConnection
+      tags: [App Connections]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200":
+          description: the connection
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppConnection" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      summary: Update an app-sync connection (a new apiKey rotates the app credential)
+      operationId: updateConnection
+      tags: [App Connections]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateConnection" }
+      responses:
+        "204": { description: updated }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      summary: Delete an app-sync connection (revokes its minted key)
+      operationId: deleteConnection
+      tags: [App Connections]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: deleted }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/app-connections/{id}/enable:
+    post:
+      summary: Enable an app-sync connection
+      operationId: enableConnection
+      tags: [App Connections]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: enabled }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/app-connections/{id}/disable:
+    post:
+      summary: Disable an app-sync connection
+      operationId: disableConnection
+      tags: [App Connections]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: disabled }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/app-connections/{id}/test:
+    post:
+      summary: Test a connection's reachability and credentials
+      operationId: testConnection
+      tags: [App Connections]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200":
+          description: the test result (ok=false carries a scrubbed error)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TestResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/app-connections/{id}/sync:
+    post:
+      summary: Reconcile harbrr's indexers into the connection's app now
+      operationId: syncConnection
+      tags: [App Connections]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200":
+          description: the per-indexer sync outcomes
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SyncReport" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/app-connections/{id}/status:
+    get:
+      summary: Get a connection plus its per-indexer sync ledger
+      operationId: connectionStatus
+      tags: [App Connections]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200":
+          description: the connection with its ledger
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConnectionStatus" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/app-connections/{id}/indexers:
+    put:
+      summary: Set the selected-indexer set (for index_scope=selected)
+      description: >
+        Replaces the connection's selected indexers: the given instance ids become
+        selected, every other currently-selected one is cleared. Only meaningful when
+        the connection's index_scope is "selected".
+      operationId: setConnectionIndexers
+      tags: [App Connections]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SelectIndexers" }
+      responses:
+        "204": { description: selection updated }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/announce-connections:
+    get:
+      summary: List cross-seed announce targets
+      description: >
+        The configured cross-seed tools (qui cross-seed, cross-seed v6) harbrr pushes
+        newly-seen releases to. The tool's API key is redacted.
+      operationId: listAnnounceConnections
+      tags: [Announce]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the announce connections
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/AnnounceConnection" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Add a cross-seed announce target
+      description: >
+        Mints a dedicated harbrr key for the connection (whose value signs the /dl link
+        the tool fetches) and stores both secrets encrypted.
+      operationId: createAnnounceConnection
+      tags: [Announce]
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateAnnounceConnection" }
+      responses:
+        "201":
+          description: the created connection
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AnnounceConnection" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/announce-connections/{id}:
+    get:
+      summary: Get one announce target
+      operationId: getAnnounceConnection
+      tags: [Announce]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200":
+          description: the announce connection
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AnnounceConnection" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      summary: Delete an announce target (revokes its minted key)
+      operationId: deleteAnnounceConnection
+      tags: [Announce]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: deleted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/announce-connections/{id}/enable:
+    post:
+      summary: Enable an announce target
+      operationId: enableAnnounceConnection
+      tags: [Announce]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: enabled }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/announce-connections/{id}/disable:
+    post:
+      summary: Disable an announce target
+      operationId: disableAnnounceConnection
+      tags: [Announce]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: disabled }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/notifications:
+    get:
+      summary: List notification targets
+      description: >
+        The configured notification targets (generic webhook, Discord webhook) harbrr
+        fires operational events at. The destination URL is redacted.
+      operationId: listNotifications
+      tags: [Notifications]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the notification targets
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Notification" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Add a notification target
+      description: Stores the destination URL encrypted at rest; it reads back redacted.
+      operationId: createNotification
+      tags: [Notifications]
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateNotification" }
+      responses:
+        "201":
+          description: the created target
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Notification" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/notifications/{id}:
+    get:
+      summary: Get one notification target
+      operationId: getNotification
+      tags: [Notifications]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200":
+          description: the notification target
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Notification" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      summary: Update a notification target (a new url rotates the destination)
+      operationId: updateNotification
+      tags: [Notifications]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateNotification" }
+      responses:
+        "204": { description: updated }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      summary: Delete a notification target
+      operationId: deleteNotification
+      tags: [Notifications]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: deleted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/notifications/{id}/enable:
+    post:
+      summary: Enable a notification target
+      operationId: enableNotification
+      tags: [Notifications]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: enabled }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/notifications/{id}/disable:
+    post:
+      summary: Disable a notification target
+      operationId: disableNotification
+      tags: [Notifications]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: disabled }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/notifications/{id}/test:
+    post:
+      summary: Send a synthetic event to a notification target
+      description: >
+        Delivers a test event to the target's destination so an operator can confirm it
+        works. A pass is {"ok":true}; a delivery failure is 200 with ok=false and a
+        scrubbed error; an unknown id is 404.
+      operationId: testNotification
+      tags: [Notifications]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200":
+          description: the test outcome
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TestResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/indexers/{slug}/results/torznab:
+    get:
+      tags: [Torznab Feed]
+      summary: Torznab capabilities and search (the *arr feed endpoint)
+      description: >
+        The Torznab endpoint Sonarr/Radarr/Prowlarr are configured with. With t=caps
+        it returns the indexer's capabilities document; otherwise it runs the search
+        mode named by t (defaulting to a general search) and returns a Torznab RSS
+        results feed. Authenticated by the apikey (or passkey) query parameter.
+        Credential and indexer-resolution failures are returned as a Torznab <error>
+        element with HTTP 200 (Jackett behavior, so *arr surfaces the code); an
+        unknown function or an unsupported id parameter returns HTTP 400. For a
+        resolver-needing indexer each download link is rewritten to the /dl proxy so
+        a passkey never appears in the feed.
+      operationId: torznabResults
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string }, description: the configured indexer slug }
+        - { name: apikey, in: query, required: false, schema: { type: string }, description: "feed credential (any minted harbrr API key); passkey is an accepted alias" }
+        - { name: passkey, in: query, required: false, schema: { type: string }, description: alias for apikey }
+        - { name: t, in: query, required: false, schema: { type: string }, description: "function: caps | search | tvsearch | movie | music | book (defaults to search)" }
+        - { name: q, in: query, required: false, schema: { type: string }, description: free-text query }
+        - { name: cat, in: query, required: false, schema: { type: string }, description: comma-separated newznab category ids }
+        - { name: imdbid, in: query, required: false, schema: { type: string } }
+        - { name: tmdbid, in: query, required: false, schema: { type: string } }
+        - { name: tvdbid, in: query, required: false, schema: { type: string } }
+        - { name: season, in: query, required: false, schema: { type: string } }
+        - { name: ep, in: query, required: false, schema: { type: string } }
+        - { name: limit, in: query, required: false, schema: { type: integer }, description: page size }
+        - { name: offset, in: query, required: false, schema: { type: integer } }
+        - { name: nocache, in: query, required: false, schema: { type: string, enum: ["1"] }, description: "set to 1 to bypass the search cache and force a live tracker fetch" }
+        - { name: If-None-Match, in: header, required: false, schema: { type: string }, description: "a previously-returned ETag; a match yields 304 Not Modified when the cached results are unchanged" }
+        - { name: Cache-Control, in: header, required: false, schema: { type: string }, description: "no-cache / no-store forces a live tracker fetch (the header sibling of nocache=1) and suppresses the 304 short-circuit" }
+      responses:
+        "200":
+          description: >
+            A Torznab capabilities document or results feed (XML). Also carries the
+            Torznab <error> element for an invalid API key or unsupported indexer,
+            which by convention is served with HTTP 200.
+          headers:
+            ETag:
+              schema: { type: string }
+              description: strong validator over the cached result set (present only for a cache-backed results feed)
+            Cache-Control:
+              schema: { type: string }
+              description: "private, max-age=<remaining cache TTL seconds> for a cache-backed results feed"
+          content:
+            application/xml:
+              schema:
+                type: string
+                description: Torznab/Newznab XML (caps document, RSS results feed, or an <error> element)
+        "304":
+          description: >
+            Not Modified — the request's If-None-Match matched the current cached
+            results, so the body is omitted. Carries the ETag and Cache-Control headers.
+          headers:
+            ETag:
+              schema: { type: string }
+            Cache-Control:
+              schema: { type: string }
+        "400":
+          description: a Torznab <error> element (XML) for an unknown function (t) or an unsupported id parameter
+          content:
+            application/xml:
+              schema: { type: string }
+        "500":
+          description: a generic Torznab <error> element (XML); the underlying error is never echoed
+          content:
+            application/xml:
+              schema: { type: string }
+
+  /api/indexers/{slug}/results/torznab/api:
+    get:
+      tags: [Torznab Feed]
+      summary: Torznab capabilities and search (/api alias)
+      description: >
+        Identical to /api/indexers/{slug}/results/torznab — the /api suffix
+        is the alternate path some clients use. Same parameters, authentication, and
+        responses.
+      operationId: torznabResultsApi
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string }, description: the configured indexer slug }
+        - { name: apikey, in: query, required: false, schema: { type: string }, description: "feed credential; passkey is an accepted alias" }
+        - { name: passkey, in: query, required: false, schema: { type: string }, description: alias for apikey }
+        - { name: t, in: query, required: false, schema: { type: string }, description: "function: caps | search | tvsearch | movie | music | book (defaults to search)" }
+        - { name: q, in: query, required: false, schema: { type: string }, description: free-text query }
+        - { name: cat, in: query, required: false, schema: { type: string }, description: comma-separated newznab category ids }
+        - { name: imdbid, in: query, required: false, schema: { type: string } }
+        - { name: tmdbid, in: query, required: false, schema: { type: string } }
+        - { name: tvdbid, in: query, required: false, schema: { type: string } }
+        - { name: season, in: query, required: false, schema: { type: string } }
+        - { name: ep, in: query, required: false, schema: { type: string } }
+        - { name: limit, in: query, required: false, schema: { type: integer }, description: page size }
+        - { name: offset, in: query, required: false, schema: { type: integer } }
+        - { name: nocache, in: query, required: false, schema: { type: string, enum: ["1"] }, description: "set to 1 to bypass the search cache and force a live tracker fetch" }
+        - { name: If-None-Match, in: header, required: false, schema: { type: string }, description: "a previously-returned ETag; a match yields 304 Not Modified when the cached results are unchanged" }
+        - { name: Cache-Control, in: header, required: false, schema: { type: string }, description: "no-cache / no-store forces a live tracker fetch (the header sibling of nocache=1) and suppresses the 304 short-circuit" }
+      responses:
+        "200":
+          description: a Torznab capabilities document or results feed (XML), or a Torznab <error> element
+          headers:
+            ETag:
+              schema: { type: string }
+              description: strong validator over the cached result set (present only for a cache-backed results feed)
+            Cache-Control:
+              schema: { type: string }
+              description: "private, max-age=<remaining cache TTL seconds> for a cache-backed results feed"
+          content:
+            application/xml:
+              schema: { type: string }
+        "304":
+          description: >
+            Not Modified — the request's If-None-Match matched the current cached
+            results, so the body is omitted (shares the base feed's cache behavior).
+          headers:
+            ETag:
+              schema: { type: string }
+            Cache-Control:
+              schema: { type: string }
+        "400":
+          description: a Torznab <error> element (XML) for an unknown function or an unsupported id parameter
+          content:
+            application/xml:
+              schema: { type: string }
+        "500":
+          description: a generic Torznab <error> element (XML)
+          content:
+            application/xml:
+              schema: { type: string }
+
+  /api/indexers/{slug}/results/torznab/full:
+    get:
+      tags: [Torznab Feed]
+      summary: Torznab search — freeleech-bypass variant (full catalog)
+      description: >
+        The freeleech-bypass feed variant for the same indexer: identical to
+        /api/indexers/{slug}/results/torznab, except the per-indexer
+        "freeleech only" view is bypassed so the full catalog is returned. harbrr
+        pushes this URL to cross-seed consumers (qui, cross-seed v6), which must see
+        every release; the *arr feed (the path without /full) honors the freeleech
+        setting. Both variants are served from a single cached fetch, so polling the
+        bypass variant after the *arr feed adds no tracker request.
+      operationId: torznabResultsFull
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string }, description: the configured indexer slug }
+        - { name: apikey, in: query, required: false, schema: { type: string }, description: "feed credential; passkey is an accepted alias" }
+        - { name: passkey, in: query, required: false, schema: { type: string }, description: alias for apikey }
+        - { name: t, in: query, required: false, schema: { type: string }, description: "function: caps | search | tvsearch | movie | music | book (defaults to search)" }
+        - { name: q, in: query, required: false, schema: { type: string }, description: free-text query }
+        - { name: cat, in: query, required: false, schema: { type: string }, description: comma-separated newznab category ids }
+        - { name: imdbid, in: query, required: false, schema: { type: string } }
+        - { name: tmdbid, in: query, required: false, schema: { type: string } }
+        - { name: tvdbid, in: query, required: false, schema: { type: string } }
+        - { name: season, in: query, required: false, schema: { type: string } }
+        - { name: ep, in: query, required: false, schema: { type: string } }
+        - { name: limit, in: query, required: false, schema: { type: integer }, description: page size }
+        - { name: offset, in: query, required: false, schema: { type: integer } }
+        - { name: nocache, in: query, required: false, schema: { type: string, enum: ["1"] }, description: "set to 1 to bypass the search cache and force a live tracker fetch" }
+        - { name: If-None-Match, in: header, required: false, schema: { type: string }, description: "a previously-returned ETag; a match yields 304 Not Modified when the cached results are unchanged" }
+        - { name: Cache-Control, in: header, required: false, schema: { type: string }, description: "no-cache / no-store forces a live tracker fetch (the header sibling of nocache=1) and suppresses the 304 short-circuit" }
+      responses:
+        "200":
+          description: a Torznab capabilities document or results feed (XML), or a Torznab <error> element
+          headers:
+            ETag:
+              schema: { type: string }
+              description: strong validator over the cached result set (present only for a cache-backed results feed)
+            Cache-Control:
+              schema: { type: string }
+              description: "private, max-age=<remaining cache TTL seconds> for a cache-backed results feed"
+          content:
+            application/xml:
+              schema: { type: string }
+        "304":
+          description: >
+            Not Modified — the request's If-None-Match matched the current cached
+            results, so the body is omitted (shares the base feed's cache behavior).
+          headers:
+            ETag:
+              schema: { type: string }
+            Cache-Control:
+              schema: { type: string }
+        "400":
+          description: a Torznab <error> element (XML) for an unknown function or an unsupported id parameter
+          content:
+            application/xml:
+              schema: { type: string }
+        "500":
+          description: a generic Torznab <error> element (XML)
+          content:
+            application/xml:
+              schema: { type: string }
+
+  /api/indexers/{slug}/results/torznab/full/api:
+    get:
+      tags: [Torznab Feed]
+      summary: Torznab search — freeleech-bypass variant (/api alias)
+      description: >
+        Identical to /api/indexers/{slug}/results/torznab/full — the /api
+        suffix is the alternate path some clients use.
+      operationId: torznabResultsFullApi
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string }, description: the configured indexer slug }
+        - { name: apikey, in: query, required: false, schema: { type: string }, description: "feed credential; passkey is an accepted alias" }
+        - { name: passkey, in: query, required: false, schema: { type: string }, description: alias for apikey }
+        - { name: t, in: query, required: false, schema: { type: string }, description: "function: caps | search | tvsearch | movie | music | book (defaults to search)" }
+        - { name: q, in: query, required: false, schema: { type: string }, description: free-text query }
+        - { name: cat, in: query, required: false, schema: { type: string }, description: comma-separated newznab category ids }
+        - { name: imdbid, in: query, required: false, schema: { type: string } }
+        - { name: tmdbid, in: query, required: false, schema: { type: string } }
+        - { name: tvdbid, in: query, required: false, schema: { type: string } }
+        - { name: season, in: query, required: false, schema: { type: string } }
+        - { name: ep, in: query, required: false, schema: { type: string } }
+        - { name: limit, in: query, required: false, schema: { type: integer }, description: page size }
+        - { name: offset, in: query, required: false, schema: { type: integer } }
+        - { name: nocache, in: query, required: false, schema: { type: string, enum: ["1"] }, description: "set to 1 to bypass the search cache and force a live tracker fetch" }
+        - { name: If-None-Match, in: header, required: false, schema: { type: string }, description: "a previously-returned ETag; a match yields 304 Not Modified when the cached results are unchanged" }
+        - { name: Cache-Control, in: header, required: false, schema: { type: string }, description: "no-cache / no-store forces a live tracker fetch (the header sibling of nocache=1) and suppresses the 304 short-circuit" }
+      responses:
+        "200":
+          description: a Torznab capabilities document or results feed (XML), or a Torznab <error> element
+          headers:
+            ETag:
+              schema: { type: string }
+              description: strong validator over the cached result set (present only for a cache-backed results feed)
+            Cache-Control:
+              schema: { type: string }
+              description: "private, max-age=<remaining cache TTL seconds> for a cache-backed results feed"
+          content:
+            application/xml:
+              schema: { type: string }
+        "304":
+          description: >
+            Not Modified — the request's If-None-Match matched the current cached
+            results, so the body is omitted (shares the base feed's cache behavior).
+          headers:
+            ETag:
+              schema: { type: string }
+            Cache-Control:
+              schema: { type: string }
+        "400":
+          description: a Torznab <error> element (XML) for an unknown function or an unsupported id parameter
+          content:
+            application/xml:
+              schema: { type: string }
+        "500":
+          description: a generic Torznab <error> element (XML)
+          content:
+            application/xml:
+              schema: { type: string }
+
+  /api/indexers/{slug}/dl:
+    get:
+      tags: [Torznab Feed]
+      summary: Grab-time download proxy (resolves and streams the torrent)
+      description: >
+        The download endpoint emitted in the feed for a resolver-needing indexer.
+        harbrr decodes the opaque, AEAD-sealed token into the original
+        (passkey-bearing) link, resolves and fetches the torrent server-side, and
+        streams it back — so the passkey never reaches the client. A resolved magnet
+        (public, no secret) is returned as a 302 redirect instead. Authenticated by
+        the apikey (or passkey) query parameter.
+      operationId: torznabDownload
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string }, description: the configured indexer slug }
+        - { name: apikey, in: query, required: false, schema: { type: string }, description: "feed credential; passkey is an accepted alias" }
+        - { name: passkey, in: query, required: false, schema: { type: string }, description: alias for apikey }
+        - { name: token, in: query, required: true, schema: { type: string }, description: "the opaque, AEAD-sealed download token from the feed" }
+      responses:
+        "200":
+          description: >
+            The torrent file (application/x-bittorrent) on success. Also carries a
+            Torznab <error> element (XML) — served with HTTP 200, Jackett-style — for
+            an invalid API key, an unsupported indexer, or a disabled download proxy.
+          content:
+            application/x-bittorrent:
+              schema: { type: string, format: binary }
+            application/xml:
+              schema:
+                type: string
+                description: a Torznab <error> element when the request is rejected before the grab
+        "302":
+          description: redirect to a resolved magnet URI (only ever a magnet, never an http link)
+        "400":
+          description: a Torznab <error> element (XML) for an invalid or forged download token
+          content:
+            application/xml:
+              schema: { type: string }
+        "500":
+          description: a generic Torznab <error> element (XML); the link/passkey is never echoed
+          content:
+            application/xml:
+              schema: { type: string }
+
+  /api/cache/stats:
+    get:
+      summary: Search-results cache statistics
+      description: >
+        Returns the cache's durable figures (entry count, total hits, approximate
+        size, and the oldest/newest/last-used timestamps) plus the cumulative hit
+        ratio. hitRatio derives from hit/miss counters that are persisted across
+        restarts. When caching is disabled the response is
+        {"enabled": false} with no figures.
+      operationId: cacheStats
+      tags: [Cache]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the cache statistics (or a disabled marker)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CacheStats" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/cache/flush:
+    post:
+      summary: Flush the search-results cache
+      description: >
+        Deletes every cache entry and returns the count purged. The cumulative
+        hit/miss counters are not reset. When caching is disabled the response is
+        {"flushed": 0}.
+      operationId: cacheFlush
+      tags: [Cache]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the number of entries flushed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CacheFlushResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/cache/config:
+    get:
+      summary: Get the search-results cache configuration
+      description: >
+        Returns the live, runtime-tunable cache config (enabled flag, TTL tiers, thin
+        threshold, refresh-ahead percentage). Durations are Go duration strings. With
+        no cache wired the response is a disabled, zero-valued config.
+      operationId: cacheConfigGet
+      tags: [Cache]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the live cache configuration
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CacheConfig" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      summary: Update the search-results cache configuration
+      description: >
+        Partially updates the cache config: provided fields are overlaid onto the
+        current config, validated, persisted (so they survive a restart), and applied
+        immediately without a restart. Omitted fields are left unchanged. Invalid
+        durations or out-of-range values answer 400 and leave the config untouched.
+      operationId: cacheConfigPut
+      tags: [Cache]
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CacheConfigUpdate" }
+      responses:
+        "200":
+          description: the updated cache configuration
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CacheConfig" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503":
+          description: the search cache is not available (no cache wired)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/config/log-level:
+    get:
+      summary: Get the runtime log level
+      description: >
+        Returns the effective process-wide log level — the live value (a persisted
+        override if set, else the config-file/env/flag seed) that every subsystem honors.
+      operationId: getLogLevel
+      tags: [System]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the effective log level
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LogLevel" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503":
+          description: log level control is unavailable
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    put:
+      summary: Set the runtime log level
+      description: >
+        Persists the new level, then applies it to the whole running process (no
+        restart) — so a write failure leaves the running level untouched rather than
+        desynchronizing runtime and stored state. A stored value overrides the
+        config-file/env/flag seed on the next start. An unknown level answers 400 and
+        changes nothing.
+      operationId: putLogLevel
+      tags: [System]
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LogLevel" }
+      responses:
+        "200":
+          description: the applied log level
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LogLevel" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503":
+          description: log level control is unavailable
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+components:
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: harbrr_session
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: >
+        A bearer credential — send over HTTPS only; it must never traverse a
+        cleartext link. Terminate TLS at harbrr or a trusted reverse proxy.
+  responses:
+    BadRequest:
+      description: invalid request
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: authentication required or failed
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: conflicting state
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: resource not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string, description: human-readable message }
+        code:
+          type: string
+          description: >
+            machine-readable code clients can branch on — one of: bad_request,
+            invalid, unauthorized, invalid_credentials, invalid_api_key, forbidden,
+            not_found, conflict, already_setup, not_implemented, internal.
+      required: [error, code]
+    ReservedSettings:
+      type: object
+      description: >
+        Optional reserved keys the engine understands when present in an indexer's
+        free-form settings map (alongside the definition's own settings). All are
+        optional; documented here because they are not part of any single
+        definition's schema. proxy_url and cookie are secrets (stored encrypted,
+        never echoed — they read back as the <redacted> sentinel).
+      properties:
+        proxy_type:
+          type: string
+          enum: [http, https, socks5, socks5h]
+          description: route this indexer's traffic through a proxy (socks4 is not supported)
+        proxy_url: { type: string, description: "proxy URL; may embed user:pass (secret)" }
+        timeout: { type: string, description: "per-request timeout as a Go duration, e.g. 30s" }
+        solver_type:
+          type: string
+          enum: [manual_cookie, flaresolverr]
+          description: anti-bot solver (manual_cookie replays the encrypted cookie setting)
+        flaresolverr_url: { type: string, description: "FlareSolverr base URL (when solver_type=flaresolverr)" }
+        flaresolverr_max_timeout: { type: string, description: "FlareSolverr maxTimeout in seconds (optional)" }
+    Credentials:
+      type: object
+      properties:
+        username: { type: string }
+        password: { type: string }
+      required: [username, password]
+    ChangePassword:
+      type: object
+      properties:
+        currentPassword: { type: string }
+        newPassword: { type: string }
+      required: [currentPassword, newPassword]
+    DefinitionSummary:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        type: { type: string }
+        language: { type: string }
+      required: [id, name]
+    SettingField:
+      type: object
+      description: >
+        One configurable field in a definition's settings schema. secret marks a
+        credential supplied by the operator, stored encrypted and never echoed back.
+      properties:
+        name: { type: string }
+        label: { type: string }
+        type: { type: string, description: "text | password | checkbox | select | multi-select | info*" }
+        default: { type: string }
+        options:
+          type: object
+          additionalProperties: { type: string }
+        secret: { type: boolean }
+      required: [name, type, secret]
+    DefinitionDetail:
+      allOf:
+        - { $ref: "#/components/schemas/DefinitionSummary" }
+        - type: object
+          properties:
+            settings:
+              type: array
+              items: { $ref: "#/components/schemas/SettingField" }
+            caps: { $ref: "#/components/schemas/Capabilities" }
+          required: [settings, caps]
+    ApiKey:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time }
+      required: [id, name, createdAt]
+    MintedApiKey:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        key: { type: string, description: "the plaintext key, shown once" }
+        createdAt: { type: string, format: date-time }
+      required: [id, name, key, createdAt]
+    Setting:
+      type: object
+      properties:
+        name: { type: string }
+        value: { type: string, description: secret values are the <redacted> sentinel }
+        secret: { type: boolean }
+      required: [name, value, secret]
+    Instance:
+      type: object
+      properties:
+        slug: { type: string }
+        definitionId: { type: string }
+        name: { type: string }
+        baseUrl: { type: string }
+        enabled: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [slug, definitionId, name, enabled, createdAt, updatedAt]
+    IndexerStats:
+      type: object
+      description: >
+        Per-indexer Prowlarr-style stats: durable query/grab/latency counters plus the
+        failure tally folded in from the health events. queries counts searches that
+        reached the tracker (a cache hit bypasses the counted path), so avgResponseMs
+        reflects real upstream latency. lastQueryAt/lastFailureAt are absent when never
+        observed.
+      properties:
+        slug: { type: string }
+        queries: { type: integer, format: int64 }
+        grabs: { type: integer, format: int64 }
+        avgResponseMs: { type: integer, format: int64 }
+        failures:
+          type: object
+          properties:
+            authFailure: { type: integer, format: int64 }
+            rateLimited: { type: integer, format: int64 }
+            parseError: { type: integer, format: int64 }
+            antiBot: { type: integer, format: int64 }
+          required: [authFailure, rateLimited, parseError, antiBot]
+        lastQueryAt: { type: string, format: date-time }
+        lastFailureAt: { type: string, format: date-time }
+      required: [slug, queries, grabs, avgResponseMs, failures]
+    InstanceDetail:
+      allOf:
+        - { $ref: "#/components/schemas/Instance" }
+        - type: object
+          properties:
+            settings:
+              type: array
+              items: { $ref: "#/components/schemas/Setting" }
+          required: [settings]
+    AddIndexer:
+      type: object
+      properties:
+        slug: { type: string, description: defaults to definitionId when omitted }
+        definitionId: { type: string }
+        name: { type: string }
+        baseUrl: { type: string }
+        settings:
+          type: object
+          additionalProperties: { type: string }
+          description: >
+            definition setting name -> value. May also carry the reserved engine
+            keys (see ReservedSettings): proxy_type/proxy_url, timeout,
+            solver_type/flaresolverr_url. Secret values are stored encrypted.
+      required: [definitionId]
+    UpdateIndexer:
+      type: object
+      properties:
+        name: { type: string }
+        baseUrl: { type: string }
+        settings:
+          type: object
+          additionalProperties: { type: string }
+          description: >
+            merged into the stored settings (see ReservedSettings for the reserved
+            engine keys). PATCH the <redacted> sentinel to keep an existing secret;
+            send new plaintext to rotate it.
+    Capabilities:
+      type: object
+      properties:
+        modes:
+          type: object
+          additionalProperties: { type: array, items: { type: string } }
+          description: search mode -> supported query params
+        allowRawSearch: { type: boolean }
+        allowTVSearchIMDB: { type: boolean }
+        categories:
+          type: array
+          items:
+            type: object
+            required: [id, name, isCustom, isParent]
+            properties:
+              id: { type: integer }
+              name: { type: string }
+              isCustom: { type: boolean }
+              isParent: { type: boolean }
+              parent: { type: string }
+        defaultCategories: { type: array, items: { type: string } }
+        limits:
+          type: object
+          required: [default, max]
+          properties:
+            default: { type: integer }
+            max: { type: integer }
+      required: [modes, allowRawSearch, allowTVSearchIMDB, categories, limits]
+    SearchResults:
+      type: object
+      description: >
+        A page of search results plus paging metadata (qui-shaped envelope). `total`
+        is the full match count after dedupe/filter but before the page slice, so it
+        can exceed the number of results returned; `hasMore` is true when results
+        beyond this page exist; `limit`/`offset` are the resolved page window. Deep
+        server-side multi-page upstream fetching is not yet implemented, so `total`
+        reflects the single engine fetch that backs every page of one query.
+      properties:
+        results:
+          type: array
+          items: { $ref: "#/components/schemas/Release" }
+        total:
+          type: integer
+          description: full match count before the page slice
+        hasMore:
+          type: boolean
+          description: whether results beyond this page exist (offset + page length < total)
+        limit:
+          type: integer
+          description: resolved page size (clamped to [1,100])
+        offset:
+          type: integer
+          description: resolved page offset
+      required: [results, total, hasMore, limit, offset]
+    Release:
+      type: object
+      description: >
+        A normalized release — the same shape the Torznab feed serializes. For a
+        resolver-needing indexer, `link` is the opaque /dl proxy URL (the passkey is
+        sealed inside, never exposed here). Zero values for size/seeders/leechers/
+        peers and the volume factors are meaningful and always present.
+      properties:
+        title: { type: string }
+        link: { type: string }
+        magnet: { type: string }
+        infohash: { type: string }
+        size: { type: integer, format: int64 }
+        categories: { type: array, items: { type: integer } }
+        seeders: { type: integer, format: int64 }
+        leechers: { type: integer, format: int64 }
+        peers: { type: integer, format: int64 }
+        grabs: { type: integer, format: int64 }
+        files: { type: integer, format: int64 }
+        publishDate: { type: string, format: date-time }
+        downloadVolumeFactor: { type: number }
+        uploadVolumeFactor: { type: number }
+        imdbid: { type: string }
+        tmdbid: { type: integer, format: int64 }
+        tvdbid: { type: integer, format: int64 }
+      required: [title]
+    TestResult:
+      type: object
+      description: >
+        The outcome of a test action. ok=false carries a credential-scrubbed error
+        message; the HTTP status is 200 even on a credential/connectivity failure.
+      properties:
+        ok: { type: boolean }
+        error: { type: string }
+      required: [ok]
+    AppConnection:
+      type: object
+      description: >
+        An *arr/qui app harbrr syncs its indexers into. The app's API key (apiKey) is
+        never echoed — it reads back as the <redacted> sentinel.
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        kind: { type: string, enum: [sonarr, radarr, lidarr, readarr, whisparr, qui] }
+        baseUrl: { type: string, description: the app's own API base URL }
+        harbrrUrl: { type: string, description: the base URL this app uses to reach harbrr's feed }
+        apiKey: { type: string, description: "the app's API key, redacted (<redacted>)" }
+        enabled: { type: boolean }
+        syncLevel:
+          type: string
+          enum: [full, add_update]
+          description: "full = add+update+remove orphans; add_update = add+update, never delete"
+        indexScope:
+          type: string
+          enum: [all, selected]
+          description: which harbrr indexers this connection mirrors
+        freeleechMode:
+          type: string
+          enum: [honor, bypass]
+          description: >
+            which feed variant is pushed: honor = the standard feed (the indexer's
+            freeleech setting is respected); bypass = the /full variant (full catalog,
+            for cross-seed). Defaults by kind (qui = bypass; *arrs = honor).
+        priority: { type: integer }
+        lastSyncAt: { type: string, format: date-time }
+        lastSyncStatus: { type: string, description: "ok | partial | error | skipped" }
+        lastSyncError: { type: string, description: scrubbed summary of the last failure }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, name, kind, baseUrl, harbrrUrl, enabled, syncLevel, indexScope, freeleechMode, priority, createdAt, updatedAt]
+    CreateConnection:
+      type: object
+      properties:
+        name: { type: string }
+        kind: { type: string, enum: [sonarr, radarr, lidarr, readarr, whisparr, qui] }
+        baseUrl: { type: string }
+        apiKey: { type: string, description: the app's API key (stored encrypted) }
+        harbrrUrl: { type: string }
+        syncLevel: { type: string, enum: [full, add_update], default: full }
+        indexScope: { type: string, enum: [all, selected], default: all }
+        freeleechMode: { type: string, enum: [honor, bypass], description: "defaults by kind (qui = bypass; *arrs = honor)" }
+        priority: { type: integer, default: 25 }
+      required: [name, kind, baseUrl, apiKey, harbrrUrl]
+    UpdateConnection:
+      type: object
+      description: >
+        A partial update; omitted fields are unchanged. apiKey, when present, rotates
+        the stored app credential.
+      properties:
+        name: { type: string }
+        baseUrl: { type: string }
+        apiKey: { type: string }
+        harbrrUrl: { type: string }
+        syncLevel: { type: string, enum: [full, add_update] }
+        indexScope: { type: string, enum: [all, selected] }
+        freeleechMode: { type: string, enum: [honor, bypass] }
+        priority: { type: integer }
+    AnnounceConnection:
+      type: object
+      description: >
+        A cross-seed tool harbrr pushes newly-seen releases to. The tool's API key
+        (apiKey) is never echoed — it reads back as the <redacted> sentinel.
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        kind: { type: string, enum: [qui, crossseed-v6] }
+        baseUrl: { type: string, description: the tool's own API base URL }
+        harbrrUrl: { type: string, description: "the base URL the tool uses to reach harbrr's /dl link (cross-seed v6)" }
+        apiKey: { type: string, description: "the tool's API key, redacted (<redacted>)" }
+        enabled: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, name, kind, baseUrl, enabled, createdAt, updatedAt]
+    CreateAnnounceConnection:
+      type: object
+      properties:
+        name: { type: string }
+        kind: { type: string, enum: [qui, crossseed-v6] }
+        baseUrl: { type: string }
+        apiKey: { type: string, description: the tool's API key (stored encrypted) }
+        harbrrUrl: { type: string, description: "the base URL the tool uses to reach harbrr's /dl link (both kinds fetch it)" }
+      required: [name, kind, baseUrl, apiKey, harbrrUrl]
+    Notification:
+      type: object
+      description: >
+        A notification target harbrr fires operational events at. The destination URL
+        (url) is never echoed — it reads back as the <redacted> sentinel.
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        type: { type: string, enum: [webhook, discord] }
+        url: { type: string, description: "the destination URL, redacted (<redacted>)" }
+        enabled: { type: boolean }
+        onHealthFailure: { type: boolean, description: fire on a classified indexer health failure }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, name, type, url, enabled, onHealthFailure, createdAt, updatedAt]
+    CreateNotification:
+      type: object
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [webhook, discord] }
+        url: { type: string, description: the destination URL (stored encrypted) }
+        onHealthFailure: { type: boolean, description: "fire on an indexer health failure (default true)" }
+      required: [name, type, url]
+    UpdateNotification:
+      type: object
+      description: a partial update; omitted fields are left unchanged
+      properties:
+        name: { type: string }
+        url: { type: string, description: rotates the destination (stored encrypted) }
+        onHealthFailure: { type: boolean }
+    CrossSeedSnippet:
+      type: object
+      description: a copy-paste cross-seed v6 config.js torznab entry for one indexer
+      properties:
+        indexer: { type: string, description: the indexer slug }
+        feedUrl: { type: string, description: the freeleech-bypass /full Torznab feed URL (no apikey) }
+        configJs: { type: string, description: "the torznab array entry for config.js, with an apikey placeholder" }
+      required: [indexer, feedUrl, configJs]
+    ConnectionIndexer:
+      type: object
+      description: one row of a connection's per-indexer sync ledger
+      properties:
+        instanceId: { type: integer, format: int64 }
+        remoteId: { type: string, description: the id the app assigned the pushed indexer }
+        selected: { type: boolean }
+        lastPushedAt: { type: string, format: date-time }
+        lastPushStatus: { type: string, description: "ok | error" }
+        lastPushError: { type: string, description: scrubbed error from the last push }
+      required: [instanceId, selected]
+    ConnectionStatus:
+      allOf:
+        - { $ref: "#/components/schemas/AppConnection" }
+        - type: object
+          properties:
+            indexers:
+              type: array
+              items: { $ref: "#/components/schemas/ConnectionIndexer" }
+          required: [indexers]
+    SyncResult:
+      type: object
+      properties:
+        slug: { type: string }
+        action: { type: string, description: "created | updated | noop | deleted | failed" }
+        error: { type: string, description: scrubbed error when action=failed }
+      required: [slug, action]
+    SyncReport:
+      type: object
+      properties:
+        status: { type: string, description: "ok | partial | error | skipped" }
+        results:
+          type: array
+          items: { $ref: "#/components/schemas/SyncResult" }
+      required: [status, results]
+    ConnectionSyncResult:
+      type: object
+      properties:
+        connectionId: { type: integer, format: int64 }
+        name: { type: string }
+        report: { $ref: "#/components/schemas/SyncReport" }
+        error: { type: string, description: scrubbed error when this connection failed to sync }
+      required: [connectionId, name, report]
+    SelectIndexers:
+      type: object
+      properties:
+        instanceIds:
+          type: array
+          items: { type: integer, format: int64 }
+          description: the indexer instance ids to select; all others are cleared
+      required: [instanceIds]
+    CacheStats:
+      type: object
+      description: >
+        Search-results cache statistics. When enabled is false, caching is off and
+        the remaining figures are absent/zero.
+      properties:
+        enabled: { type: boolean, description: whether caching is configured }
+        entries: { type: integer, format: int64, description: number of cached search results }
+        totalHits: { type: integer, format: int64, description: durable sum of per-entry hit counts }
+        hits:
+          type: integer
+          format: int64
+          description: >
+            Global cumulative cache hits (the aggregate of the per-indexer byIndexer
+            rows). Persisted across restarts.
+        misses:
+          type: integer
+          format: int64
+          description: >
+            Global cumulative cache misses (the aggregate of the per-indexer byIndexer
+            rows). Persisted across restarts.
+        hitRatio:
+          type: number
+          format: double
+          description: >
+            hits / (hits + misses), cumulative. The underlying hit/miss counters are
+            persisted across restarts.
+        approxSizeBytes: { type: integer, format: int64, description: approximate total size of cached payloads }
+        oldestCachedAt:
+          type: integer
+          format: int64
+          nullable: true
+          description: Unix seconds of the oldest entry's cached_at, or null when empty
+        newestCachedAt:
+          type: integer
+          format: int64
+          nullable: true
+          description: Unix seconds of the newest entry's cached_at, or null when empty
+        lastUsedAt:
+          type: integer
+          format: int64
+          nullable: true
+          description: Unix seconds of the most-recently-used entry, or null when empty
+        trackerHitsSaved:
+          type: integer
+          format: int64
+          description: >
+            Cumulative tracker requests served from cache (durable sum of per-entry hit
+            counts) — the headline kind-to-trackers metric. Equal to totalHits.
+        breakerSuppressed:
+          type: integer
+          format: int64
+          description: >
+            Cumulative count of misses short-circuited by the negative-result circuit
+            breaker (extra tracker requests spared a failing tracker). Persisted across
+            restarts.
+        byIndexer:
+          type: array
+          description: Per-indexer cache breakdown, ordered by instance id.
+          items: { $ref: "#/components/schemas/CacheIndexerStats" }
+      required: [enabled]
+    CacheIndexerStats:
+      type: object
+      description: One indexer's cache observability figures.
+      properties:
+        instanceId: { type: integer, format: int64 }
+        slug: { type: string, description: the indexer's configured slug (empty if unresolved) }
+        name: { type: string, description: the indexer's display name (empty if unresolved) }
+        entries: { type: integer, format: int64, description: durable number of cached entries for this indexer }
+        hitsSaved: { type: integer, format: int64, description: durable tracker requests this indexer served from cache }
+        hits: { type: integer, format: int64, description: cumulative cache hits for this indexer (persisted across restarts) }
+        misses: { type: integer, format: int64, description: cumulative cache misses for this indexer (persisted across restarts) }
+        hitRatio: { type: number, format: double, description: cumulative hits / (hits + misses) for this indexer }
+        approxSizeBytes: { type: integer, format: int64, description: approximate cached payload size for this indexer }
+        breakerSuppressed: { type: integer, format: int64, description: misses short-circuited by the breaker for this indexer }
+        breakerOpenUntil:
+          type: integer
+          format: int64
+          nullable: true
+          description: Unix seconds the breaker reopens this indexer to live traffic, or null when closed
+      required: [instanceId, entries, hitsSaved, hits, misses, hitRatio, approxSizeBytes, breakerSuppressed]
+    CacheFlushResult:
+      type: object
+      properties:
+        flushed: { type: integer, format: int64, description: number of entries purged (0 when caching is disabled) }
+      required: [flushed]
+
+    LogLevel:
+      type: object
+      description: The process-wide log level (get returns the effective value; put sets it).
+      properties:
+        level:
+          type: string
+          enum: [trace, debug, info, warn, error]
+          description: the log level applied across every subsystem
+      required: [level]
+
+    CacheConfig:
+      type: object
+      description: The live, runtime-tunable search-results cache configuration.
+      properties:
+        enabled: { type: boolean, description: whether caching is currently on (a runtime toggle) }
+        rssTtl: { type: string, description: 'TTL for an empty/RSS poll (Go duration, e.g. "5m0s")' }
+        keywordTtl: { type: string, description: TTL for a keyword search (Go duration) }
+        thinTtl: { type: string, description: short TTL clamp for a thin (few-result) response (Go duration) }
+        thinThreshold: { type: integer, description: result count at or below which the thin clamp applies }
+        refreshAheadPct: { type: integer, description: 'percent of a TTL after which a live hit fires one background refresh (0 disables)' }
+        negativeTtl: { type: string, description: 'negative-result circuit-breaker window (Go duration, e.g. "1m0s"); "0s" disables the breaker' }
+        cleanupInterval: { type: string, description: 'how often expired entries are reaped (Go duration >= 1s, e.g. "1h0m0s"); the cleanup loop re-reads it live' }
+      required: [enabled, rssTtl, keywordTtl, thinTtl, thinThreshold, refreshAheadPct, negativeTtl, cleanupInterval]
+
+    CacheConfigUpdate:
+      type: object
+      description: >
+        A partial cache-config update; every field is optional and an omitted field
+        leaves that knob unchanged. Durations are Go duration strings.
+      properties:
+        enabled: { type: boolean }
+        rssTtl: { type: string }
+        keywordTtl: { type: string }
+        thinTtl: { type: string }
+        thinThreshold: { type: integer }
+        refreshAheadPct: { type: integer }
+        negativeTtl: { type: string }
+        cleanupInterval: { type: string }

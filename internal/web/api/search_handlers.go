@@ -1,0 +1,106 @@
+package api
+
+import (
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
+	"github.com/autobrr/harbrr/internal/web/torznabhttp"
+)
+
+// searchResponse is the JSON body of GET /api/indexers/{slug}/search. It mirrors qui's
+// paged-list envelope: the results for this page plus the paging metadata, so a client
+// can page without re-deriving counts. Total is the full match count before the page
+// slice; HasMore reports whether results beyond this page exist; Limit/Offset are the
+// resolved window. The fields are additive — a pre-reshape consumer reading only
+// `results` is unaffected.
+type searchResponse struct {
+	Results []*normalizer.Release `json:"results"`
+	Total   int                   `json:"total"`
+	HasMore bool                  `json:"hasMore"`
+	Limit   int                   `json:"limit"`
+	Offset  int                   `json:"offset"`
+}
+
+// newSearchResponse builds the qui-shaped envelope from the shared pipeline's result
+// and the page's resolved (link-sealed) releases. HasMore is computed from the pipeline
+// page length and Total (the pre-slice match count), so it is correct at every boundary
+// — including an offset at or past Total (empty page, no more) and a partial last page.
+func newSearchResponse(res torznabhttp.SearchResult, results []*normalizer.Release) searchResponse {
+	return searchResponse{
+		Results: results,
+		Total:   res.Total,
+		HasMore: res.Offset+len(res.Releases) < res.Total,
+		Limit:   res.Limit,
+		Offset:  res.Offset,
+	}
+}
+
+// searchIndexer runs a JSON search against a configured indexer and returns the
+// same releases the Torznab feed serves for the same query — it calls the shared
+// read pipeline (torznabhttp.SearchReleases), so the result set is identical to the
+// feed's (parity). For a resolver-needing indexer each download link is sealed
+// behind the /dl proxy, so a passkey never reaches the response, exactly as the
+// feed does. Query params are the Torznab set (q, cat, the external ids, season/ep,
+// year, the music/book fields, limit, offset). An unknown or disabled slug is a 404;
+// a search failure is a redacted 500.
+func (rt *router) searchIndexer(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+	idx, ok := rt.registry.Indexer(r.Context(), slug)
+	if !ok {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	res, err := torznabhttp.SearchReleases(r.Context(), idx, r.URL.Query())
+	if err != nil {
+		rt.writeServiceError(w, "search indexer", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, newSearchResponse(res, rt.resolveSearchLinks(r, idx, res.Releases)))
+}
+
+// resolveSearchLinks returns copies of the releases with download links made safe to
+// serve: a resolver-needing indexer's link is sealed behind the /dl proxy (the
+// passkey stays inside harbrr), a direct link/magnet is served as-is, and — when the
+// proxy is disabled but the indexer needs resolution — the link is withheld rather
+// than served in the clear. Production always wires the keyring, so the withhold case
+// is a defensive guard. It copies each release so the engine's results are not
+// mutated.
+func (rt *router) resolveSearchLinks(r *http.Request, idx torznabhttp.Indexer, releases []*normalizer.Release) []*normalizer.Release {
+	rw := torznabhttp.NewDLRewriter(rt.dlToken, idx, torznabhttp.DLBaseURL(r, rt.basePath, idx.Info().ID), dlAPIKey(r))
+	withhold := rw == nil && torznabhttp.NeedsDLProxy(idx)
+	out := make([]*normalizer.Release, len(releases))
+	for i, rel := range releases {
+		cp := *rel
+		switch {
+		case rw != nil:
+			acq := cp.Link
+			if acq == "" {
+				acq = cp.Magnet
+			}
+			if link, _, ok := rw(acq); ok {
+				cp.Link = link
+			}
+		case withhold:
+			cp.Link, cp.Magnet = "", ""
+		}
+		out[i] = &cp
+	}
+	return out
+}
+
+// dlAPIKey resolves the API key to echo into a sealed /dl link so a later grab
+// authenticates. The Torznab feed takes the caller's key from the apikey query
+// param (apiKeyParam); the JSON search API additionally accepts the X-API-Key
+// header. Header wins, then the apikey query param. A SESSION-only caller (cookie,
+// no key presented) yields "" — but resolveSearchLinks then has no key to seal
+// with, so it would emit an unusable apikey= empty link; callers that need a
+// fetchable link must present a key. The key is the caller's own and is echoed by
+// design (NewDLRewriter), so this surfaces no NEW secret.
+func dlAPIKey(r *http.Request) string {
+	if k := r.Header.Get("X-API-Key"); k != "" {
+		return k
+	}
+	return r.URL.Query().Get("apikey")
+}

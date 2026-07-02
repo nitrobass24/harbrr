@@ -1,0 +1,28 @@
+[
+  {
+    "title": "XML Newznab Release 1080p",
+    "link": "https://xml.test/dl/1.torrent",
+    "size": 1073741824,
+    "categories": [
+      2000
+    ],
+    "seeders": 20,
+    "leechers": 5,
+    "peers": 25,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  },
+  {
+    "title": "XML Newznab Release 720p",
+    "link": "https://xml.test/dl/2.torrent",
+    "size": 734003200,
+    "categories": [
+      2000
+    ],
+    "seeders": 8,
+    "leechers": 1,
+    "peers": 9,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  }
+]

@@ -1,0 +1,30 @@
+[
+  {
+    "title": "Spring Release",
+    "link": "https://date.test/dl/1.torrent",
+    "size": 2147483648,
+    "categories": [
+      2000
+    ],
+    "seeders": 11,
+    "leechers": 2,
+    "peers": 13,
+    "publishDate": "2023-05-15T14:30:00Z",
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  },
+  {
+    "title": "New Year Release",
+    "link": "https://date.test/dl/2.torrent",
+    "size": 734003200,
+    "categories": [
+      2000
+    ],
+    "seeders": 6,
+    "leechers": 1,
+    "peers": 7,
+    "publishDate": "2024-01-03T09:05:00Z",
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  }
+]

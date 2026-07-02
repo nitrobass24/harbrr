@@ -1,0 +1,13 @@
+name: stress-json-array-join
+archetype: stress-json-array-join
+golden_source: hand-derived
+mode: parse
+response_type: json
+description: >
+  Stress: a JSON array leaf selected into a scalar field is comma-joined
+  (String.Join(",", array)). The tags ["x264","1080p","BluRay"] -> genre
+  "x264,1080p,BluRay". Pins the JSON array-join coercion.
+definition: definition.yml
+response: response.json
+query:
+  keywords: ""

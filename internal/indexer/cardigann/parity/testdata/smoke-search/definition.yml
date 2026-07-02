@@ -1,0 +1,38 @@
+---
+id: smokesearch
+name: smokesearch
+description: "Synthetic HTML tracker (search mode) for the parity harness."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://smoke.test/
+
+caps:
+  categories:
+    "1": Movies
+
+  modes:
+    search: [q]
+
+search:
+  paths:
+    - path: search
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: tr.row
+  fields:
+    title:
+      selector: a.title
+    download:
+      selector: a.dl
+      attribute: href
+    size:
+      selector: td.size
+    seeders:
+      selector: td.seeders
+    leechers:
+      selector: td.leechers
+    category:
+      text: "1"

@@ -1,0 +1,19 @@
+name: matrix-xml-newznab
+archetype: xml-newznab
+golden_source: hand-derived
+mode: parse
+response_type: xml
+description: >
+  Compatibility matrix: an XML/Newznab RSS feed. Cardigann has a dedicated XML
+  response mode (Jackett parses response.type=xml with AngleSharp's XmlParser,
+  not the HTML parser), which harbrr reproduces with a real XML backend
+  (selector.ParseXML): the feed is decoded into an element tree where <title> and
+  <link> are ordinary elements (the HTML5 parser would treat <link> as void and
+  <title> as raw-text), and namespaced <torznab:attr> keeps its prefix. Rows are
+  `rss > channel > item`; title from <title>, the download link from <link>'s
+  text, and size/seeders/leechers from the torznab:attr value attributes. Sizes
+  1024-based (1 GB = 1073741824, 700 MB = 734003200); peers = seeders + leechers.
+definition: definition.yml
+response: response.xml
+query:
+  keywords: ""

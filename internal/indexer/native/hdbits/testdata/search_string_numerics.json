@@ -1,0 +1,25 @@
+{
+  "status": 0,
+  "message": "",
+  "data": [
+    {
+      "id": "100001",
+      "hash": "ABC123DEF456",
+      "leechers": "2",
+      "seeders": "50",
+      "name": "The Matrix 1999 1080p BluRay REMUX",
+      "times_completed": "120",
+      "size": "42949672960",
+      "added": "2023-11-14T22:13:20+0000",
+      "numfiles": "3",
+      "filename": "the.matrix.1999.1080p.bluray.remux.torrent",
+      "freeleech": "no",
+      "type_category": "1",
+      "type_codec": "1",
+      "type_medium": "1",
+      "type_origin": "0",
+      "imdb": {"id": "133093", "year": "1999"},
+      "tvdb": null
+    }
+  ]
+}

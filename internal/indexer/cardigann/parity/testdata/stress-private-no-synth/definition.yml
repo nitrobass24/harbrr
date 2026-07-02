@@ -1,0 +1,36 @@
+---
+id: privnosynth
+name: privnosynth
+description: "Private indexer: info hash present but NO magnet synthesis."
+language: en-US
+type: private
+encoding: UTF-8
+links:
+  - https://priv.test/
+caps:
+  categorymappings:
+    - {id: 1, cat: Movies}
+  modes:
+    search: [q]
+search:
+  path: /b
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: tr.row
+  fields:
+    title:
+      selector: a.title
+    download:
+      selector: a.dl
+      attribute: href
+    infohash:
+      selector: td.hash
+    size:
+      selector: td.size
+    seeders:
+      selector: td.seeders
+    leechers:
+      selector: td.leechers
+    category:
+      text: "1"

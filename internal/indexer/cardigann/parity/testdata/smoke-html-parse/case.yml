@@ -1,0 +1,15 @@
+name: smoke-html-parse
+archetype: smoke
+golden_source: hand-derived
+mode: parse
+description: >
+  Harness smoke case: a two-row synthetic HTML table parsed offline. Hand-derived
+  golden (Jackett ParseFields semantics): size via 1024-based GetBytes
+  (1.5 GB = 1610612736, 700 MB = 734003200); peers = seeders + leechers;
+  relative download paths resolved against the def base URL; tracker category
+  "1"->Movies(2000), "2"->TV(5000) via caps.categories. No date field, so this
+  case is stable across the engine-gap commits.
+definition: definition.yml
+response: response.html
+query:
+  keywords: ""

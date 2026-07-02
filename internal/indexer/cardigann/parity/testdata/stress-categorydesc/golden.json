@@ -1,0 +1,30 @@
+[
+  {
+    "title": "HD Film",
+    "link": "https://catdesc.test/dl/1.torrent",
+    "size": 5368709120,
+    "categories": [
+      2000,
+      100001
+    ],
+    "seeders": 12,
+    "leechers": 2,
+    "peers": 14,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  },
+  {
+    "title": "Show",
+    "link": "https://catdesc.test/dl/2.torrent",
+    "size": 1073741824,
+    "categories": [
+      5000,
+      100002
+    ],
+    "seeders": 4,
+    "leechers": 1,
+    "peers": 5,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  }
+]

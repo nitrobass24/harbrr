@@ -1,0 +1,39 @@
+---
+id: nonlatin
+name: nonlatin
+description: "Synthetic Russian-language tracker exercising the regexp2 path."
+language: ru-RU
+type: public
+encoding: UTF-8
+links:
+  - https://nonlatin.test/
+
+caps:
+  categorymappings:
+    - {id: 1, cat: Movies}
+  modes:
+    search: [q]
+
+search:
+  path: /browse
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: tr.row
+  fields:
+    title:
+      selector: a.title
+      filters:
+        - name: re_replace
+          args: ["(\\S+) \\1", "$1"]
+    download:
+      selector: a.dl
+      attribute: href
+    size:
+      selector: td.size
+    seeders:
+      selector: td.seeders
+    leechers:
+      selector: td.leechers
+    category:
+      text: "1"

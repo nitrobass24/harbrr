@@ -1,0 +1,41 @@
+---
+id: jsoncase
+name: jsoncase
+description: "JSON case switch on an integer flag (freeleech 0/1 -> dvf)."
+language: en-US
+type: private
+encoding: UTF-8
+links:
+  - https://jsoncase.test/
+caps:
+  categories:
+    movies: Movies
+  modes:
+    search: [q]
+search:
+  paths:
+    - path: /api
+      response:
+        type: json
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: results
+  fields:
+    title:
+      selector: name
+    download:
+      selector: dl
+    size:
+      selector: size
+    seeders:
+      selector: seeders
+    leechers:
+      selector: leechers
+    category:
+      text: movies
+    downloadvolumefactor:
+      selector: freeleech
+      case:
+        "0": "1"
+        "1": "0"

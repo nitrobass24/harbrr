@@ -1,0 +1,6 @@
+{
+  "meta": { "total": 0 },
+  "data": [
+    { "id": 99, "attributes": { "name": "Should Be Ignored", "size": 1 } }
+  ]
+}

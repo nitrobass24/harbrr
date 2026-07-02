@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/">
+  <channel>
+    <title>Example Newznab</title>
+    <description>Newznab API results</description>
+    <item>
+      <title>Example.Movie.2023.1080p.WEB-DL</title>
+      <guid isPermaLink="true">https://news.example.test/details/abc123</guid>
+      <link>https://news.example.test/getnzb/abc123.nzb&amp;i=1&amp;r=APIKEYPLACEHOLDER</link>
+      <comments>https://news.example.test/details/abc123#comments</comments>
+      <description>An example movie release.</description>
+      <pubDate>Mon, 02 Jan 2023 15:04:05 +0000</pubDate>
+      <category>Movies &gt; HD</category>
+      <enclosure url="https://news.example.test/getnzb/abc123.nzb&amp;i=1&amp;r=APIKEYPLACEHOLDER" length="1500000000" type="application/x-nzb" />
+      <newznab:attr name="category" value="2000" />
+      <newznab:attr name="size" value="2147483648" />
+      <newznab:attr name="grabs" value="42" />
+      <newznab:attr name="files" value="7" />
+      <newznab:attr name="usenetdate" value="Sun, 01 Jan 2023 10:00:00 +0000" />
+      <newznab:attr name="imdb" value="0133093" />
+      <newznab:attr name="tmdbid" value="603" />
+      <newznab:attr name="coverurl" value="https://news.example.test/covers/abc123.jpg" />
+      <newznab:attr name="poster" value="uploader@example.test" />
+    </item>
+    <item>
+      <title>Example.Show.S01E02.720p</title>
+      <guid isPermaLink="false">def456</guid>
+      <pubDate>Tue, 03 Jan 2023 12:00:00 +0000</pubDate>
+      <enclosure url="https://news.example.test/getnzb/def456.nzb&amp;r=APIKEYPLACEHOLDER" length="734003200" type="application/x-nzb" />
+      <newznab:attr name="category" value="5000" />
+      <newznab:attr name="tvdbid" value="81189" />
+      <newznab:attr name="rageid" value="2930" />
+    </item>
+    <item>
+      <title>Skipped.No.Enclosure</title>
+      <guid isPermaLink="false">ghi789</guid>
+      <pubDate>Wed, 04 Jan 2023 12:00:00 +0000</pubDate>
+      <newznab:attr name="category" value="2000" />
+    </item>
+  </channel>
+</rss>

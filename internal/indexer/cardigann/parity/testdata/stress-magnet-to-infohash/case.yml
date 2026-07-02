@@ -1,0 +1,13 @@
+name: stress-magnet-to-infohash
+archetype: stress-magnet-to-infohash
+golden_source: hand-derived
+mode: parse
+description: >
+  Stress: a magnet field with no info-hash field. FixResults extracts the info
+  hash from the magnet's xt=urn:btih: unconditionally (even for public), so
+  infohash becomes abcdef0123456789abcdef0123456789abcdef01. The reverse of the
+  magnet-only archetype (infohash -> magnet).
+definition: definition.yml
+response: response.html
+query:
+  keywords: ""

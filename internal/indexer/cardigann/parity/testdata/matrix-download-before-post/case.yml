@@ -1,0 +1,35 @@
+name: matrix-download-before-post
+archetype: download-link-prerequest
+golden_source: hand-derived
+mode: search
+resolve_download: true
+description: >
+  Compatibility matrix: download POST pre-request carrying the release id. The
+  search result's download field is a DETAILS page (/details.php?id=42). The
+  download block resolves it: a POST "before" pre-request to /takethanks.php whose
+  body is torrentid=42 (pulled from .DownloadUri.Query.id), then the
+  a[href*="download.php?id="] selector over the fetched details page yields
+  /download.php?id=42, resolved against the details URL. testlinktorrent (default
+  true) then fetches that link and accepts it because the body is a bencoded
+  torrent (first byte 'd'). The harness rewrites the release link to the resolved
+  URL https://dl.test/download.php?id=42. Size 2 GB = 2147483648; peers = 11 + 2.
+definition: definition.yml
+query:
+  keywords: release
+steps:
+  - method: GET
+    url: https://dl.test/browse?q=release
+    response: search.html
+    note: search
+  - method: POST
+    url: https://dl.test/takethanks.php
+    response: thanks.html
+    note: download.before POST pre-request (body torrentid=42, asserted in the unit test)
+  - method: GET
+    url: https://dl.test/details.php?id=42
+    response: details.html
+    note: fetch the details page; the download.php selector yields the real torrent URL
+  - method: GET
+    url: https://dl.test/download.php?id=42
+    response: torrent.bin
+    note: testlinktorrent validation — bencoded body (first byte 'd') accepts the link

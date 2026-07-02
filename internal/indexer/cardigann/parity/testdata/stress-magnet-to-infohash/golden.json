@@ -1,0 +1,16 @@
+[
+  {
+    "title": "Magnet Release",
+    "magnet": "magnet:?xt=urn:btih:abcdef0123456789abcdef0123456789abcdef01\u0026dn=Magnet+Release",
+    "infohash": "abcdef0123456789abcdef0123456789abcdef01",
+    "size": 2147483648,
+    "categories": [
+      2000
+    ],
+    "seeders": 10,
+    "leechers": 3,
+    "peers": 13,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  }
+]

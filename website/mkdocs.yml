@@ -1,0 +1,45 @@
+site_name: harbrr
+site_description: A single-binary, Cardigann-compatible Torznab search provider for the autobrr family.
+docs_dir: docs
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Tracker coverage: coverage.md
+  - Guides:
+      - Adding an indexer: guides/add-indexer.md
+      - App Sync (*arr / qui): guides/app-sync.md
+      - Golden smoke test: guides/smoke-test.md
+  - Configuration: configuration.md
+  - API & Swagger UI: api.md
+  - Features:
+      - Search-results cache: features/search-results-cache.md
+      - Failing-tracker circuit breaker: features/circuit-breaker.md
+      - Usenet (Newznab) indexers: features/usenet-newznab.md
+      - Cross-seed & freeleech: features/cross-seed-freeleech.md
+      - Pagination: features/pagination.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - tables
+  - toc:
+      permalink: true

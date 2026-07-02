@@ -1,0 +1,55 @@
+---
+id: json_minimal
+name: JSON Minimal
+description: "A minimal valid JSON-API definition fixture."
+language: en-US
+type: private
+encoding: UTF-8
+links:
+  - https://example.invalid/
+
+caps:
+  categories:
+    XXX: XXX
+  modes:
+    search: [q]
+    movie-search: [q, imdbid]
+
+settings:
+  - name: apikey
+    type: text
+    label: API Key
+  - name: enabled
+    type: checkbox
+    label: Enabled
+    default: true
+
+search:
+  paths:
+    - path: /api/torrents
+      response:
+        type: json
+        noResultsMessage: "No results"
+      categories: [1, "x2"]
+  inputs:
+    $raw: "search={{ .Keywords }}"
+  keywordsfilters:
+    - name: re_replace
+      args: ["[._]", " "]
+  rows:
+    selector: data
+    count:
+      selector: total
+  fields:
+    title:
+      selector: name
+    categorydesc:
+      text: Movies
+    infohash:
+      selector: info_hash
+    size:
+      selector: size
+    seeders:
+      selector: seeders
+      default: 0
+      optional: true

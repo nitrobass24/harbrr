@@ -1,0 +1,36 @@
+---
+id: andmatch
+name: andmatch
+description: "andmatch row filter: keep only rows whose title contains the keywords."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://andmatch.test/
+caps:
+  categorymappings:
+    - {id: 1, cat: Movies}
+  modes:
+    search: [q]
+search:
+  path: /b
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: tr.row
+    filters:
+      - name: andmatch
+  fields:
+    title:
+      selector: a.title
+    download:
+      selector: a.dl
+      attribute: href
+    size:
+      selector: td.size
+    seeders:
+      selector: td.seeders
+    leechers:
+      selector: td.leechers
+    category:
+      text: "1"

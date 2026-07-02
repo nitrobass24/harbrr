@@ -1,0 +1,29 @@
+{
+  "count": 2,
+  "data": [
+    {
+      "id": 100,
+      "title": "Alpha Release 2024",
+      "freeleech": true,
+      "size": 1610612736,
+      "ratio": 1.5,
+      "tags": ["x264", "1080p"],
+      "category": "movies",
+      "meta": { "year": 2024, "uploader": "alice" },
+      "files": [
+        { "name": "alpha.mkv" },
+        { "name": "alpha.nfo" }
+      ]
+    },
+    {
+      "id": 200,
+      "title": "Beta Release",
+      "freeleech": false,
+      "size": 734003200,
+      "ratio": 0.75,
+      "tags": [],
+      "category": "tv",
+      "meta": { "year": 2023, "uploader": "bob" }
+    }
+  ]
+}

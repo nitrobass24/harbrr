@@ -1,0 +1,38 @@
+---
+id: multicat
+name: multicat
+description: "Synthetic tracker exercising category mapping incl. custom cats."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://cat.test/
+
+caps:
+  categorymappings:
+    - {id: 1, cat: Movies, desc: "HD Movies"}
+    - {id: 2, cat: TV}
+    - {id: 3, cat: Movies, desc: "SD Movies"}
+  modes:
+    search: [q]
+
+search:
+  path: /browse
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: tr.row
+  fields:
+    title:
+      selector: a.title
+    download:
+      selector: a.dl
+      attribute: href
+    size:
+      selector: td.size
+    seeders:
+      selector: td.seeders
+    leechers:
+      selector: td.leechers
+    category:
+      selector: td.cat

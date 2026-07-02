@@ -1,0 +1,16 @@
+[
+  {
+    "title": "Tagged Release",
+    "link": "https://jsonarr.test/dl/1.torrent",
+    "size": 1073741824,
+    "categories": [
+      2000
+    ],
+    "seeders": 6,
+    "leechers": 2,
+    "peers": 8,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1,
+    "genre": "x264,1080p,BluRay"
+  }
+]

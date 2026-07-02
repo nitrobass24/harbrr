@@ -1,0 +1,95 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit config for seekbrr. Tuned to the engine-parity discipline and the
+# never-edit-vendored-defs rule. CodeRabbit also auto-reads AGENTS.md as review criteria.
+
+language: "en-US"
+
+tone_instructions: "Be concise and direct. Prioritize correctness, Jackett-parity risks, and secret leaks over style nits already enforced by golangci-lint and gofumpt — don't restate linter findings."
+
+early_access: false
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+
+  # Never review the byte-for-byte upstream corpus, generated code, or saved fixtures.
+  path_filters:
+    - "!internal/indexer/definitions/vendor/**"
+    - "!**/*.gen.go"
+    - "!**/testdata/**"
+
+  path_instructions:
+    - path: "**/*.go"
+      instructions: |
+        Go 1.26. Enforce: wrap errors with context; no map[string]interface{} or bare `any` for
+        structured data (use typed structs); keep functions small and single-purpose (funlen/gocyclo/
+        gocognit/nestif gate this — flag god functions instead of suggesting a //nolint); interfaces
+        ≤5 methods. NEVER allow secrets in logs/traces — passkeys, cookies, API keys, download tokens.
+        Flag any logging of full URLs or Authorization/Cookie headers without redaction.
+    - path: "internal/indexer/cardigann/**"
+      instructions: |
+        The Cardigann engine; its entire value is behavioral parity with Jackett on the same input.
+        Flag changes that could diverge from Jackett semantics, silent error handling that could mask
+        a parse difference, and logic that belongs in a different pipeline stage (keep stages
+        decoupled). Behavior changes must come with table-driven tests + fixtures. NEVER suggest
+        editing files under internal/indexer/definitions/vendor/ — divergence is absorbed in the
+        engine, never in the def files.
+    - path: "internal/indexer/cardigann/regexadapter/**"
+      instructions: |
+        RE2 (Go regexp) is the default for ReDoS safety. regexp2 (.NET semantics) is only valid on def
+        opt-in, non-Latin `language:`, RE2 compile-failure, or .NET-only constructs. Flag any
+        unconditional regexp2 use and any pattern that could backtrack catastrophically. Both engines
+        must run on the same fixtures.
+    - path: "internal/http/**"
+      instructions: |
+        Auth/session executor and the pluggable solver interface. Scrutinize secret redaction in logs
+        and traces (passkeys appear in request URLs), cookie-jar handling, re-login, timeouts, and
+        backoff. No secret may reach a log line unredacted.
+    - path: "**/*_test.go"
+      instructions: |
+        Tests must be table-driven and pass with `-race -count=1`; fixtures live beside the code.
+        Engine and parity tests must be offline against saved responses — flag any test that reaches
+        the network.
+    - path: "scripts/**"
+      instructions: |
+        Shell scripts. Flag anything that writes to internal/indexer/definitions/vendor/ — that tree
+        is byte-for-byte upstream and must never be modified in place.
+
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    drafts: false
+
+  tools:
+    golangci-lint:
+      enabled: true
+    gitleaks:
+      enabled: true
+    shellcheck:
+      enabled: true
+    actionlint:
+      enabled: true
+    checkmake:
+      enabled: true
+
+  pre_merge_checks:
+    title:
+      mode: warning
+      requirements: "Follow Conventional Commits — type(scope): summary (e.g. feat(loader): ...). No AI attribution lines."
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "**/AGENTS.md"
+      - "**/CLAUDE.md"
+      - "docs/**/*.md"
+  learnings:
+    scope: auto

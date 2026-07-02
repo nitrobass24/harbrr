@@ -1,0 +1,30 @@
+[
+  {
+    "title": "JSON Movie 1080p",
+    "link": "https://json2.test/dl/1.torrent",
+    "size": 4000000000,
+    "categories": [
+      2000
+    ],
+    "seeders": 22,
+    "leechers": 8,
+    "peers": 30,
+    "publishDate": "2023-08-01T12:00:00Z",
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  },
+  {
+    "title": "JSON Show S02E03",
+    "link": "https://json2.test/dl/2.torrent",
+    "size": 1500000000,
+    "categories": [
+      5000
+    ],
+    "seeders": 5,
+    "leechers": 2,
+    "peers": 7,
+    "publishDate": "2024-02-15T08:30:00Z",
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  }
+]

@@ -1,0 +1,21 @@
+name: oracle-jackett-html
+archetype: jackett-html-oracle
+golden_source: jackett-port
+mode: search
+description: >
+  Ported from Jackett CardigannIndexerHtmlTests.TestCardigannHtmlAsync at commit
+  b4140c7. Drives the byte-for-byte html-definition1.yml over html-response1.html
+  and asserts Jackett's exact request URL plus its first-release field values in
+  jackett_oracle_test.go (25 releases; first is ubuntu-19.04-desktop-amd64.iso).
+  This def has no login block, so the only request is the search GET. The clock
+  is 2026 so the row's "2 years ago" date resolves to year 2024 (Jackett's
+  assertion). Gain is omitted (not a harbrr field).
+definition: ../jackett/html-definition1.yml
+clock: 2026-06-12T00:00:00Z
+query:
+  keywords: ubuntu
+steps:
+  - method: GET
+    url: https://www.testdefinition1.cc/search?query=ubuntu&sort=created
+    response: ../jackett/html-response1.html
+    note: search (no login block)

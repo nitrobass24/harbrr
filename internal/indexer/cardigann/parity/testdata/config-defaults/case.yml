@@ -1,0 +1,19 @@
+name: config-defaults
+archetype: smoke
+golden_source: hand-derived
+mode: search
+description: >
+  Proves settings defaults seed .Config end-to-end, with NO explicit config in
+  this case. The sort select default (created) and the freeleech checkbox default
+  (false) render the request: q=ubuntu&sort=created, with the empty `free` input
+  dropped. The replay asserts that exact URL — without the G5 defaults, sort would
+  be empty and the URL would not match. Hand-derived golden: size 2 GB =
+  2147483648 (1024-based), peers = 8 + 2 = 10, category "1" -> Movies (2000).
+definition: definition.yml
+query:
+  keywords: ubuntu
+steps:
+  - method: GET
+    url: https://cfg.test/search?q=ubuntu&sort=created
+    response: response.html
+    note: search request using settings-default config

@@ -1,0 +1,16 @@
+name: matrix-freeleech
+archetype: freeleech
+golden_source: hand-derived
+mode: parse
+description: >
+  Compatibility matrix: freeleech / volume factors. In HTML, case keys are CSS
+  selectors (not string equality), so the factors are mapped by the PRESENCE of a
+  badge element: span.freeleech -> dvf 0, span.doubleup -> uvf 2, else the "*"
+  catch-all -> 1. Row 0 has both badges -> dvf 0, uvf 2; row 1 has neither ->
+  dvf 1, uvf 1. The 0.0 dvf must survive marshalling (no omitempty on volume
+  factors). Sizes 1024-based (3 GB = 3221225472, 1 GB = 1073741824); peers =
+  seeders + leechers.
+definition: definition.yml
+response: response.html
+query:
+  keywords: ""

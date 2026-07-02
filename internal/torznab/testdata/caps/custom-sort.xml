@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<caps>
+  <server title="harbrr"></server>
+  <limits default="100" max="100"></limits>
+  <searching>
+    <search available="yes" supportedParams="q"></search>
+    <tv-search available="no" supportedParams="q"></tv-search>
+    <movie-search available="no" supportedParams="q"></movie-search>
+    <music-search available="no" supportedParams="q"></music-search>
+    <audio-search available="no" supportedParams="q"></audio-search>
+    <book-search available="no" supportedParams="q"></book-search>
+  </searching>
+  <categories>
+    <category id="4000" name="PC">
+      <subcat id="4060" name="PC/Mobile-iOS"></subcat>
+      <subcat id="4070" name="PC/Mobile-Android"></subcat>
+    </category>
+    <category id="100056" name="Apps/Android"></category>
+    <category id="100020" name="Apps/Linux"></category>
+    <category id="100057" name="Apps/iOS"></category>
+  </categories>
+</caps>

@@ -1,0 +1,52 @@
+---
+id: configdefaults
+name: configdefaults
+description: "Synthetic tracker proving settings defaults seed .Config."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://cfg.test/
+
+caps:
+  categories:
+    "1": Movies
+  modes:
+    search: [q]
+
+settings:
+  - name: sort
+    type: select
+    label: Sort
+    default: created
+    options:
+      created: created
+      seeders: seeders
+  - name: freeleech
+    type: checkbox
+    label: Freeleech only
+    default: false
+
+search:
+  paths:
+    - path: search
+  inputs:
+    q: "{{ .Keywords }}"
+    sort: "{{ .Config.sort }}"
+    free: "{{ if .Config.freeleech }}1{{ else }}{{ end }}"
+  rows:
+    selector: tr.row
+  fields:
+    title:
+      selector: a.title
+    download:
+      selector: a.dl
+      attribute: href
+    size:
+      selector: td.size
+    seeders:
+      selector: td.seeders
+    leechers:
+      selector: td.leechers
+    category:
+      text: "1"

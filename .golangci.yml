@@ -1,0 +1,93 @@
+version: "2"
+
+# Base: autobrr/qui's config (family consistency), extended for harbrr with
+# gofumpt formatting, no-god-function complexity gates, and extra type-safety.
+
+issues:
+  max-same-issues: 0
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    gofumpt:
+      extra-rules: true
+    goimports:
+      local-prefixes:
+        - github.com/autobrr/harbrr
+
+linters:
+  enable:
+    # --- inherited from autobrr/qui ---
+    - containedctx
+    - copyloopvar
+    - errname
+    - errorlint
+    - exhaustive
+    - fatcontext
+    - gocritic
+    - gosec
+    - loggercheck
+    - mirror
+    - misspell
+    - noctx
+    - perfsprint
+    - prealloc
+    - revive
+    - rowserrcheck
+    - spancheck
+    - testifylint
+    - unconvert
+    - whitespace
+    # --- harbrr: no god functions (enforced, not just reviewed) ---
+    - funlen
+    - gocyclo
+    - gocognit
+    - nestif
+    # --- harbrr: extra type safety ---
+    - forcetypeassert
+    - nilnil
+    - wrapcheck
+
+  settings:
+    exhaustive:
+      default-signifies-exhaustive: false
+    gosec:
+      excludes:
+        - G115
+    funlen:
+      lines: 80
+      statements: 50
+      ignore-comments: true
+    gocyclo:
+      min-complexity: 15
+    gocognit:
+      min-complexity: 20
+    nestif:
+      min-complexity: 5
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # Tests get table-driven length and helper-assertion latitude.
+      - path: _test\.go
+        linters:
+          - funlen
+          - gocognit
+          - gocyclo
+          - forcetypeassert
+          - wrapcheck
+      # Synthetic credentials live only in *_test.go (AGENTS.md "Security"), which
+      # trips gosec's hardcoded-credentials check (G101). The same paths are
+      # allowlisted for gitleaks/check-no-secrets; G101 stays fully active on
+      # production code. Scoped to G101 so other gosec checks still run in tests.
+      - path: _test\.go
+        text: "G101"
+        linters:
+          - gosec

@@ -1,0 +1,55 @@
+---
+id: html_scrape
+name: HTML Scrape Fixture
+description: "HTML scrape archetype: title, size, seeders, categories, date, freeleech."
+language: en-US
+type: private
+encoding: UTF-8
+links:
+  - https://html.invalid/
+
+caps:
+  categorymappings:
+    - {id: 1, cat: Movies}
+    - {id: 2, cat: TV}
+  modes:
+    search: [q]
+    tv-search: [q, season, ep]
+
+search:
+  path: /browse.php
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: table.results > tbody > tr
+    filters:
+      - name: andmatch
+  fields:
+    title:
+      selector: a.title
+    details:
+      selector: a.title
+      attribute: href
+    download:
+      selector: a.dl
+      attribute: href
+    category:
+      selector: td.cat
+      attribute: data-cat
+    size:
+      selector: td.size
+    seeders:
+      selector: td.seeders
+    leechers:
+      selector: td.leechers
+    date:
+      selector: td.added
+      filters:
+        - name: dateparse
+          args: "yyyy-MM-dd HH:mm:ss"
+    downloadvolumefactor:
+      case:
+        "span.freeleech": "0"
+        "*": "1"
+    uploadvolumefactor:
+      text: "1"

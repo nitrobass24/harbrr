@@ -1,0 +1,42 @@
+# https://pre-commit.com — set up with: pre-commit install
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: golangci-lint
+        name: golangci-lint
+        entry: golangci-lint run
+        language: system
+        types: [go]
+        pass_filenames: false
+
+      - id: gofumpt
+        name: gofumpt
+        entry: gofumpt -l -w .
+        language: system
+        types: [go]
+        pass_filenames: false
+
+      - id: no-tracker-secrets
+        name: no-tracker-secrets
+        entry: scripts/check-no-secrets.sh
+        language: system
+        pass_filenames: false
+
+      - id: no-vendored-def-edits
+        name: no-vendored-def-edits
+        entry: scripts/check-vendor-untouched.sh
+        language: system
+        pass_filenames: false

@@ -1,0 +1,13 @@
+name: stress-json-case
+archetype: stress-json-case
+golden_source: hand-derived
+mode: parse
+response_type: json
+description: >
+  Stress: a JSON case switch (string equality, unlike HTML's CSS-selector case).
+  The downloadvolumefactor field maps the freeleech integer: "1" -> dvf 0,
+  "0" -> dvf 1. Row 0 (freeleech 1) -> dvf 0; row 1 (freeleech 0) -> dvf 1.
+definition: definition.yml
+response: response.json
+query:
+  keywords: ""

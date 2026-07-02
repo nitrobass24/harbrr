@@ -1,0 +1,90 @@
+---
+id: aniRena
+name: AniRena
+description: "AniRena is a Public torrent tracker for the latest anime and Japanese related torrents"
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://www.anirena.com/
+
+settings:
+  - name: info_flaresolverr
+    type: info_flaresolverr
+
+caps:
+  categorymappings:
+    - {id: Anime, cat: TV/Anime, desc: "Anime"}
+    - {id: "Anime / Music Video", cat: Audio/Video, desc: "Anime / Music Video"}
+    - {id: "Anime / Subtitle(s) and/or Audio(s)", cat: TV/Anime, desc: "Anime / Subtitle(s) and/or Audio(s)"}
+    - {id: "Anime / RAW", cat: TV/Anime, desc: "Anime / RAW"}
+    - {id: "Manga/Manhwa/Comic", cat: Books/Comics, desc: "Manga/Manhwa/Comic"}
+    - {id: "Manga/Manhwa/Comic / Doujinshi", cat: Books/Comics, desc: "Manga/Manhwa/Comic / Doujinshi"}
+    - {id: "Manga/Manhwa/Comic / RAW", cat: Books/Comics, desc: "Manga/Manhwa/Comic / RAW"}
+    - {id: Audio, cat: Audio, desc: "Audio"}
+    - {id: "Audio / Lossless", cat: Audio/Lossless, desc: "Audio / Lossless"}
+    - {id: "Audio / Lossy", cat: Audio/MP3, desc: "Audio / Lossy"}
+    - {id: Literature, cat: Books, desc: "Literature"}
+    - {id: "Literature / Subtitle(s) and/or Text", cat: Books, desc: "Literature / Subtitle(s) and/or Text"}
+    - {id: "Literature / RAW", cat: Books, desc: "Literature / RAW"}
+    - {id: Live Action, cat: TV/Anime, desc: "Live Action"}
+    - {id: "Live Action / Subtitle(s) and/or Audio(s)", cat: TV, desc: "Live Action / Subtitle(s) and/or Audio(s)"}
+    - {id: "Live Action / Idol/Promotional Video", cat: TV, desc: "Live Action / Idol/Promotional Video"}
+    - {id: "Live Action / RAW", cat: TV, desc: "Live Action / RAW"}
+    - {id: Pictures, cat: Other, desc: "Pictures"}
+    - {id: "Pictures / Graphics", cat: Other, desc: "Pictures / Graphics"}
+    - {id: "Pictures / Photos", cat: Other, desc: "Pictures / Photos"}
+    - {id: Software, cat: Other, desc: "Software"}
+    - {id: "Software / Application", cat: PC/ISO, desc: "Software / Application"}
+    - {id: "Software / Game", cat: PC/Games, desc: "Software / Game"}
+    - {id: Other, cat: Other/Misc, desc: "Other"}
+
+  modes:
+    search: [q]
+    tv-search: [q, season, ep]
+    music-search: [q]
+    book-search: [q]
+
+search:
+  paths:
+    - path: /
+  inputs:
+    q: "{{ .Keywords }}"
+    page: 1
+
+  rows:
+    selector: table.tl-table > tbody > tr
+
+  fields:
+    category:
+      selector: td.col-cat
+      attribute: title
+    title:
+      selector: a.tl-torrent-name
+    details:
+      selector: a.tl-torrent-name
+      attribute: href
+    download:
+      selector: a[title="Download Torrent"]
+      attribute: href
+    poster:
+      selector: a.tl-torrent-name
+      attribute: data-anime-thumb
+    date:
+      selector: td.col-date
+      filters:
+        - name: dateparse
+          args: yyyy-MM-dd HH:mm
+    size:
+      selector: td.col-size
+    seeders:
+      selector: td.col-se
+    leechers:
+      selector: td.col-le
+    grabs:
+      selector: td.col-dl
+    downloadvolumefactor:
+      text: 0
+    uploadvolumefactor:
+      text: 1
+# engine n/a

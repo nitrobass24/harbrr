@@ -1,0 +1,40 @@
+---
+id: today_default
+name: Today Default Fixture
+description: "Clock-driven .Today: an optional date field defaults to .Today.Year when absent."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://today.invalid/
+
+caps:
+  categorymappings:
+    - {id: 1, cat: Movies}
+  modes:
+    search: [q]
+
+search:
+  path: /list
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: li.item
+  fields:
+    title:
+      selector: span.title
+    category:
+      text: "1"
+    download:
+      selector: a.dl
+      attribute: href
+    size:
+      selector: span.size
+    seeders:
+      selector: span.seeders
+    leechers:
+      selector: span.leechers
+    date:
+      selector: span.date
+      optional: true
+      default: "{{ .Today.Year }}-01-01"

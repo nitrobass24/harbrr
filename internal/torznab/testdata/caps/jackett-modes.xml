@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<caps>
+  <server title="harbrr"></server>
+  <limits default="100" max="100"></limits>
+  <searching>
+    <search available="yes" supportedParams="q"></search>
+    <tv-search available="yes" supportedParams="q,season,ep,tvdbid,rid"></tv-search>
+    <movie-search available="yes" supportedParams="q,imdbid,tmdbid"></movie-search>
+    <music-search available="yes" supportedParams="q,album,artist,label,year"></music-search>
+    <audio-search available="yes" supportedParams="q,album,artist,label,year"></audio-search>
+    <book-search available="yes" supportedParams="q,title,author"></book-search>
+  </searching>
+  <categories></categories>
+</caps>

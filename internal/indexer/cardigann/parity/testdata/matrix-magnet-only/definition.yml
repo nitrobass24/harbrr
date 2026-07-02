@@ -1,0 +1,35 @@
+---
+id: magnetonly
+name: magnetonly
+description: "Synthetic public tracker: info-hash rows, magnet synthesised."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://magnet.test/
+
+caps:
+  categorymappings:
+    - {id: 1, cat: Movies}
+  modes:
+    search: [q]
+
+search:
+  path: /api
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: tr.row
+  fields:
+    title:
+      selector: a.title
+    infohash:
+      selector: td.hash
+    size:
+      selector: td.size
+    seeders:
+      selector: td.seeders
+    leechers:
+      selector: td.leechers
+    category:
+      text: "1"

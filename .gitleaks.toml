@@ -1,0 +1,19 @@
+# gitleaks configuration — extends the built-in ruleset.
+#
+# The ONLY customization is a path allowlist for SYNTHETIC secrets: fixture
+# values that exist purely to prove the engine redacts them. They live only in
+# *_test.go, testdata/, and the vendored Jackett snapshot. Real secrets are never
+# committed (AGENTS.md non-negotiable) — this allowlist must stay in sync with
+# scripts/check-no-secrets.sh.
+title = "harbrr gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Synthetic test-fixture secrets and vendored definitions"
+paths = [
+  '''_test\.go$''',
+  '''(^|/)testdata/''',
+  '''^internal/indexer/definitions/vendor/''',
+]

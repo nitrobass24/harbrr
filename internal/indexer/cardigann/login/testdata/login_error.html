@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html>
+<head><title>Login</title></head>
+<body>
+  <form id="loginform" action="/takelogin.php" method="post">
+    <div class="warning">Invalid username or password</div>
+    <input type="hidden" name="csrf_token" value="CSRF-TOKEN-FROM-PAGE-9988">
+    <input type="text" name="username">
+    <input type="password" name="password">
+  </form>
+</body>
+</html>

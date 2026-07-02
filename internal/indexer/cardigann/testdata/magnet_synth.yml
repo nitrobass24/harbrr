@@ -1,0 +1,35 @@
+---
+id: magnet_synth
+name: Magnet Synth Fixture
+description: "Magnet/infohash archetype: infohash-only rows, public-magnet synthesis."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://magnet.invalid/
+
+caps:
+  categorymappings:
+    - {id: 1, cat: Movies}
+  modes:
+    search: [q]
+
+search:
+  path: /search
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: div.torrent
+  fields:
+    title:
+      selector: span.name
+    infohash:
+      selector: span.hash
+    category:
+      text: "1"
+    size:
+      selector: span.size
+    seeders:
+      selector: span.seeders
+    leechers:
+      selector: span.leechers

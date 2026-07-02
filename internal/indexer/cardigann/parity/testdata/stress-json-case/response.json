@@ -1,0 +1,6 @@
+{
+  "results": [
+    { "name": "Freeleech Item", "size": 2147483648, "seeders": 10, "leechers": 1, "dl": "https://jsoncase.test/dl/1.torrent", "freeleech": 1 },
+    { "name": "Normal Item", "size": 1073741824, "seeders": 4, "leechers": 0, "dl": "https://jsoncase.test/dl/2.torrent", "freeleech": 0 }
+  ]
+}

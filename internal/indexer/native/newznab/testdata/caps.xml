@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<caps>
+  <server version="1.1" title="Example News" strapline="best newz" email="admin@example.test" url="https://news.example.test/" image="https://news.example.test/logo.png"/>
+  <limits max="100" default="75"/>
+  <searching>
+    <search available="yes" supportedParams="q"/>
+    <tv-search available="yes" supportedParams="q,season,ep,imdbid,tvdbid,rid"/>
+    <movie-search available="yes" supportedParams="q,imdbid,tmdbid"/>
+    <audio-search available="yes" supportedParams="q,artist,album"/>
+    <book-search available="no" supportedParams="q,author,title"/>
+  </searching>
+  <categories>
+    <category id="2000" name="Movies">
+      <subcat id="2040" name="HD"/>
+      <subcat id="2999" name="Bollywood"/>
+    </category>
+    <category id="5000" name="TV">
+      <subcat id="5070" name="Anime"/>
+    </category>
+    <category id="3000" name="Audio"/>
+    <category id="7777" name="Wibble"/>
+  </categories>
+</caps>

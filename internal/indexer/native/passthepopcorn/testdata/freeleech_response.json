@@ -1,0 +1,56 @@
+{
+  "TotalResults": "1",
+  "Movies": [
+    {
+      "GroupId": "9001",
+      "CategoryId": "1",
+      "Title": "Freeleech Movie",
+      "Year": "2010",
+      "Cover": "https://passthepopcorn.me/cover/free.jpg",
+      "Tags": ["drama"],
+      "ImdbId": "1234567",
+      "Torrents": [
+        {
+          "Id": 3001,
+          "Resolution": "1080p",
+          "Size": "1000000000",
+          "UploadTime": "2010-06-01 10:00:00",
+          "Snatched": "1",
+          "Seeders": "1",
+          "Leechers": "0",
+          "ReleaseName": "Freeleech Movie 2010 Freeleech",
+          "Checked": false,
+          "GoldenPopcorn": false,
+          "FreeleechType": "Freeleech"
+        },
+        {
+          "Id": 3002,
+          "Resolution": "1080p",
+          "Size": "1000000000",
+          "UploadTime": "2010-06-01 09:00:00",
+          "Snatched": "2",
+          "Seeders": "2",
+          "Leechers": "0",
+          "ReleaseName": "Freeleech Movie 2010 Neutral",
+          "Checked": false,
+          "GoldenPopcorn": false,
+          "FreeleechType": "Neutral Leech"
+        },
+        {
+          "Id": 3003,
+          "Resolution": "1080p",
+          "Size": "1000000000",
+          "UploadTime": "2010-06-01 08:00:00",
+          "Snatched": "3",
+          "Seeders": "3",
+          "Leechers": "0",
+          "ReleaseName": "Freeleech Movie 2010 Half",
+          "Checked": false,
+          "GoldenPopcorn": false,
+          "FreeleechType": "Half Leech"
+        }
+      ]
+    }
+  ],
+  "Page": "1"
+}

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<caps>
+  <server title="harbrr"></server>
+  <limits default="100" max="100"></limits>
+  <searching>
+    <search available="yes" supportedParams="q"></search>
+    <tv-search available="yes" supportedParams="q,season,ep"></tv-search>
+    <movie-search available="yes" supportedParams="q,imdbid"></movie-search>
+    <music-search available="no" supportedParams="q"></music-search>
+    <audio-search available="no" supportedParams="q"></audio-search>
+    <book-search available="no" supportedParams="q"></book-search>
+  </searching>
+  <categories>
+    <category id="2000" name="Movies">
+      <subcat id="2040" name="Movies/HD"></subcat>
+    </category>
+    <category id="5000" name="TV">
+      <subcat id="5040" name="TV/HD"></subcat>
+    </category>
+    <category id="100001" name="HD Movies"></category>
+  </categories>
+</caps>

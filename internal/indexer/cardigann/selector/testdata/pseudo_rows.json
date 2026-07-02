@@ -1,0 +1,10 @@
+{
+  "meta": { "total": 5 },
+  "data": [
+    { "id": 1, "attributes": { "size": 100, "name": "Movie One 1080p", "poster": "a.jpg", "uploader": "alice" } },
+    { "id": 2, "attributes": { "size": 200, "name": "Movie Two 720p", "poster": "b.jpg", "uploader": "bob" } },
+    { "id": 3, "attributes": { "size": 300, "name": "Movie Three 1080p", "poster": "c.jpg", "uploader": "alice", "fake_att": 1 } },
+    { "id": 4, "attributes": { "size": 400, "name": "Movie Four 1080p", "poster": "d.jpg", "uploader": "BadGuy99" } },
+    { "id": 5, "attributes": { "name": "Movie Five 1080p", "poster": "e.jpg", "uploader": "carol" } }
+  ]
+}

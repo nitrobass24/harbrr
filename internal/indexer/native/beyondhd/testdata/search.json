@@ -1,0 +1,52 @@
+{
+  "status_code": 1,
+  "status_message": "",
+  "results": [
+    {
+      "name": "Some Movie 2021 1080p BluRay DD5.1 x264-GRP",
+      "info_hash": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "category": "Movies",
+      "type": "1080p",
+      "size": 6543210000,
+      "times_completed": 42,
+      "seeders": 25,
+      "leechers": 3,
+      "audios": "English, French",
+      "subtitles": "English, Spanish",
+      "created_at": "2024-03-15 12:30:45",
+      "url": "https://beyond-hd.me/details/12345",
+      "download_url": "https://beyond-hd.me/torrent/download/auto.12345.RSSKEY00000000000000000000000000",
+      "imdb_id": "tt1234567",
+      "tmdb_id": "movie/603",
+      "freeleech": true,
+      "promo25": false,
+      "promo50": false,
+      "promo75": false,
+      "limited": false,
+      "exclusive": false,
+      "internal": true
+    },
+    {
+      "name": "Some Show S01 720p WEB-DL DDP5.1 H264-GRP",
+      "info_hash": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+      "category": "TV",
+      "type": "720p",
+      "size": 1234567890,
+      "times_completed": 5,
+      "seeders": 10,
+      "leechers": 2,
+      "created_at": "2024-03-10 08:00:00",
+      "url": "https://beyond-hd.me/details/67890",
+      "download_url": "https://beyond-hd.me/torrent/download/auto.67890.RSSKEY00000000000000000000000000",
+      "imdb_id": "tt7654321",
+      "tmdb_id": "",
+      "freeleech": false,
+      "promo25": false,
+      "promo50": true,
+      "promo75": false,
+      "limited": false,
+      "exclusive": true,
+      "internal": false
+    }
+  ]
+}
