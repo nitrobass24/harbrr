@@ -9,6 +9,8 @@ import type {
   InstanceDetail,
   IndexerStats,
   IndexerStatus,
+  SearchParams,
+  SearchResults,
   TestResult,
   UpdateIndexer
 } from "@/types/api"
@@ -198,6 +200,17 @@ export class ApiClient {
 
   getCrossseedSnippet(slug: string): Promise<CrossSeedSnippet> {
     return this.request(`/indexers/${encodeURIComponent(slug)}/crossseed-snippet`)
+  }
+
+  // --- search ---
+
+  searchIndexer(slug: string, params: SearchParams): Promise<SearchResults> {
+    const qs = new URLSearchParams()
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== "") qs.set(key, String(value))
+    }
+    const suffix = qs.size > 0 ? `?${qs.toString()}` : ""
+    return this.request(`/indexers/${encodeURIComponent(slug)}/search${suffix}`)
   }
 }
 

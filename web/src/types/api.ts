@@ -105,5 +105,45 @@ export type CrossSeedSnippet = {
   configJs: string
 }
 
+export type Release = {
+  title: string
+  link?: string // /dl-sealed or direct — rendered verbatim, never rebuilt
+  magnet?: string
+  infohash?: string
+  size?: number
+  categories?: number[]
+  seeders?: number
+  leechers?: number
+  peers?: number
+  grabs?: number
+  files?: number
+  publishDate?: string
+  downloadVolumeFactor?: number
+  uploadVolumeFactor?: number
+  imdbid?: string
+  tmdbid?: number
+  tvdbid?: number
+}
+
+export type SearchResults = {
+  results: Release[]
+  total: number
+  hasMore: boolean
+  limit: number
+  offset: number
+}
+
+export type SearchParams = {
+  q?: string
+  cat?: string // comma-separated newznab category ids
+  imdbid?: string
+  tmdbid?: string
+  tvdbid?: string
+  season?: string
+  ep?: string
+  limit?: number
+  offset?: number
+}
+
 // The keep-stored sentinel for secret settings (see openapi.yaml Setting).
 export const REDACTED = "<redacted>"

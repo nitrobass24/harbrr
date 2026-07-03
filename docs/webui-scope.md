@@ -376,7 +376,7 @@ re-review.
       round-trip, 409 slug handling, post-save test.
       *Gate:* vitest renders each `SettingField` type from a fixture schema and asserts a PATCH
       payload preserves `<redacted>` for untouched secrets; manual add of a real definition.
-- [ ] **Search + grab** — query form, indexer multi-select, capability-driven category/mode pickers,
+- [x] **Search + grab** — query form, indexer multi-select, capability-driven category/mode pickers,
       merged results table with sort + pager, verbatim grab links.
       *Gate:* manual: a query against a live configured indexer returns rows and the grab link
       downloads a `.torrent`; vitest for the result-row rendering (size/age formatting).

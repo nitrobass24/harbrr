@@ -12,6 +12,19 @@ export function relativeTime(iso: string, now: Date = new Date()): string {
   return `${days}d ago`
 }
 
+// formatSize renders a byte count the way trackers do ("2.5 GiB").
+export function formatSize(bytes: number | undefined): string {
+  if (bytes === undefined || bytes <= 0) return "—"
+  const units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"]
+  let value = bytes
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit++
+  }
+  return `${unit === 0 ? value : value.toFixed(1)} ${units[unit]}`
+}
+
 // hostname extracts the display host from a base URL ("" when unparseable).
 export function hostname(url: string | undefined): string {
   if (!url) return ""
