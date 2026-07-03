@@ -30,5 +30,8 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
+    // globals gives @testing-library/react its afterEach auto-cleanup hook.
+    globals: true,
+    setupFiles: ["./src/test/setup.ts"],
   },
 })

@@ -358,7 +358,7 @@ re-review.
       *Gate:* `make build && ./bin/harbrr` serves the SPA at `/`, a deep link falls back to
       `index.html`, `/healthz` + a feed URL still answer; go tests for the handler (asset MIME,
       fallback, injection, not-built) pass; `make test-openapi` + `make precommit` green.
-- [ ] **App shell + theme** — `AppLayout` sidebar per mockup (nav groups, version chip, footer),
+- [x] **App shell + theme** — `AppLayout` sidebar per mockup (nav groups, version chip, footer),
       OKLCH tokens in `index.css`, next-themes toggle, NotFound page.
       *Gate:* vitest renders `AppLayout` with nav items + theme toggle flips the `dark` class;
       manual: shell matches the mockup in both themes.

@@ -49,8 +49,9 @@ export default tseslint.config([
   },
   {
     // TanStack Router file routes export the Route object beside the component
-    // by design, so the fast-refresh purity rule cannot hold there.
-    files: ["src/routes/**/*.tsx"],
+    // by design, and shadcn/ui files export their cva variants the same way, so
+    // the fast-refresh purity rule cannot hold in either tree.
+    files: ["src/routes/**/*.tsx", "src/components/ui/**/*.tsx"],
     rules: {
       "react-refresh/only-export-components": "off",
     },
