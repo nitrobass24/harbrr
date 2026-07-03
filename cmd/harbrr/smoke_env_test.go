@@ -10,7 +10,7 @@ func TestEnvFileRoundTrip(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "smoke.env")
 	in := map[string]string{
-		"SMOKE_HARBRR_URL":      "http://harbrr:7474",
+		"SMOKE_HARBRR_URL":      "http://harbrr:7478",
 		"SMOKE_HARBRR_APIKEY":   "key with spaces",
 		"SMOKE_PROWLARR_URL":    "http://prowlarr:9696",
 		"SMOKE_PROWLARR_APIKEY": `quote"inside`,
@@ -61,7 +61,7 @@ func TestParseEnvFileFormats(t *testing.T) {
 	content := "" +
 		"# a comment\n" +
 		"\n" +
-		"export SMOKE_HARBRR_URL=http://harbrr:7474\n" +
+		"export SMOKE_HARBRR_URL=http://harbrr:7478\n" +
 		"SMOKE_HARBRR_APIKEY=\"quoted-key\"\n" +
 		"export SMOKE_PROWLARR_URL='single-quoted'\n"
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
@@ -72,7 +72,7 @@ func TestParseEnvFileFormats(t *testing.T) {
 		t.Fatalf("parseEnvFile: %v", err)
 	}
 	want := map[string]string{
-		"SMOKE_HARBRR_URL":    "http://harbrr:7474",
+		"SMOKE_HARBRR_URL":    "http://harbrr:7478",
 		"SMOKE_HARBRR_APIKEY": "quoted-key",
 		"SMOKE_PROWLARR_URL":  "single-quoted",
 	}

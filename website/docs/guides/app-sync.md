@@ -29,14 +29,14 @@ backend. harbrr handles the differences per driver — you don't configure any o
 ## Create a connection
 
 ```bash
-curl -X POST http://<host>:7474/api/app-connections \
+curl -X POST http://<host>:7478/api/app-connections \
   -H 'Content-Type: application/json' \
   -d '{
         "name": "Sonarr",
         "kind": "sonarr",
         "baseUrl": "http://sonarr:8989",
         "apiKey": "<sonarr-api-key>",
-        "harbrrUrl": "http://harbrr:7474"
+        "harbrrUrl": "http://harbrr:7478"
       }'
 ```
 
@@ -64,13 +64,13 @@ A successful create returns `201` with the connection (the app key is redacted i
 
 ```bash
 # Verify harbrr can reach and authenticate to the app
-curl -X POST http://<host>:7474/api/app-connections/{id}/test
+curl -X POST http://<host>:7478/api/app-connections/{id}/test
 
 # Reconcile the app's indexers to match harbrr (add / update / remove per syncLevel)
-curl -X POST http://<host>:7474/api/app-connections/{id}/sync
+curl -X POST http://<host>:7478/api/app-connections/{id}/sync
 
 # See the last sync outcome per indexer
-curl http://<host>:7474/api/app-connections/{id}/status
+curl http://<host>:7478/api/app-connections/{id}/status
 ```
 
 Manage connections with the rest of the set: `GET`/`PATCH`/`DELETE /api/app-connections/{id}`

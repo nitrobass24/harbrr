@@ -66,7 +66,7 @@ harbrr ran as a LAN-reachable Docker container; a real **Sonarr 4.0.17** added i
 a Torznab indexer, tested it, searched it, and grabbed a release — the complete
 *arr → harbrr → download-client chain, end to end:
 
-- harbrr deployed via `docker run -p 7474:7474` (Jackett-style Torznab URL
+- harbrr deployed via `docker run -p 7478:7478` (Jackett-style Torznab URL
   `…/indexers/seedpool/results/torznab` + Sonarr `apiPath=/api`)
 - Sonarr indexer **connectivity test passed** (HTTP 201) once configured with
   seedpool's actual advertised TV categories (`5000`+subcats); the default

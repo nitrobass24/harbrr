@@ -160,7 +160,7 @@ func TestParseConfig(t *testing.T) {
 		return func(k string) string { return m[k] }
 	}
 	base := map[string]string{
-		"SMOKE_HARBRR_URL":      "http://harbrr:7474/",
+		"SMOKE_HARBRR_URL":      "http://harbrr:7478/",
 		"SMOKE_HARBRR_APIKEY":   "hk",
 		"SMOKE_PROWLARR_URL":    "http://prowlarr:9696",
 		"SMOKE_PROWLARR_APIKEY": "pk",
@@ -172,7 +172,7 @@ func TestParseConfig(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ParseConfig: %v", err)
 		}
-		if cfg.HarbrrURL != "http://harbrr:7474" {
+		if cfg.HarbrrURL != "http://harbrr:7478" {
 			t.Errorf("HarbrrURL = %q, want trailing slash trimmed", cfg.HarbrrURL)
 		}
 		if cfg.Query != "test" || cfg.FallbackQuery != "2024" {

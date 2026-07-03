@@ -14,7 +14,7 @@ trackers are already supported — you just supply your credentials.
 List the available tracker definitions:
 
 ```bash
-curl http://<host>:7474/api/definitions
+curl http://<host>:7478/api/definitions
 ```
 
 Each entry has an `id` (for example `torrentleech`, `filelist`). That `id` is what you
@@ -26,7 +26,7 @@ A definition declares which settings it needs (username/password, passkey, cooki
 which of them are secret:
 
 ```bash
-curl http://<host>:7474/api/definitions/torrentleech
+curl http://<host>:7478/api/definitions/torrentleech
 ```
 
 The response gives the definition's **settings fields** (with a `secret` flag on credential
@@ -39,7 +39,7 @@ Create a configured instance. Pass the definition `id` and a `settings` map of f
 value. Secret values are stored **encrypted at rest**.
 
 ```bash
-curl -X POST http://<host>:7474/api/indexers \
+curl -X POST http://<host>:7478/api/indexers \
   -H 'Content-Type: application/json' \
   -d '{
         "definitionId": "torrentleech",
@@ -72,7 +72,7 @@ Validate the credentials and connectivity against the live tracker — this uses
 uncached engine so it never disturbs a running session:
 
 ```bash
-curl -X POST http://<host>:7474/api/indexers/torrentleech/test
+curl -X POST http://<host>:7478/api/indexers/torrentleech/test
 ```
 
 `200 {"ok":true}` means the login/probe succeeded. `{"ok":false,"error":"..."}` returns a
@@ -95,7 +95,7 @@ Once an indexer is configured you can:
 - **Search over JSON** — `GET /api/indexers/{slug}/search?q=...` (the same results the feed
   serves, as JSON, with download links sealed behind the `/dl` proxy).
 - **Serve the Torznab feed** — point an app at
-  `http://<host>:7474/api/indexers/<slug>/results/torznab?apikey=<key>`
+  `http://<host>:7478/api/indexers/<slug>/results/torznab?apikey=<key>`
   (see [Getting started](../getting-started.md#5-point-sonarrradarr-at-the-feed)).
 
 To push this indexer into Sonarr/Radarr/qui automatically instead of configuring it in each

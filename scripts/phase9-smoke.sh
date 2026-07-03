@@ -18,7 +18,7 @@
 # The harness itself only ever writes secret-free evidence to internal/smoke/testdata/.
 #
 # Required env (EXTRACT mode):
-#   SMOKE_HARBRR_URL      e.g. http://127.0.0.1:7474
+#   SMOKE_HARBRR_URL      e.g. http://127.0.0.1:7478
 #   SMOKE_HARBRR_APIKEY   a harbrr API key (POST /api/apikeys)
 #   SMOKE_PROWLARR_URL    e.g. http://prowlarr:9696
 #   PROWLARR_DB           path to prowlarr.db (copy it first if Prowlarr is running)
@@ -57,7 +57,7 @@ else
 fi
 
 # Required in BOTH modes (a reuse bundle must carry these too) — validate before use.
-: "${SMOKE_HARBRR_URL:?set SMOKE_HARBRR_URL=http://host:7474}"
+: "${SMOKE_HARBRR_URL:?set SMOKE_HARBRR_URL=http://host:7478}"
 : "${SMOKE_HARBRR_APIKEY:?set SMOKE_HARBRR_APIKEY=<a harbrr API key>}"
 : "${SMOKE_PROWLARR_URL:?set SMOKE_PROWLARR_URL=http://host:9696}"
 

@@ -19,7 +19,7 @@ func TestAnnounceConnectionCRUD(t *testing.T) {
 	// Create a qui announce target.
 	create := map[string]string{
 		"name": "qui x-seed", "kind": "qui", "baseUrl": "http://qui:7476", "apiKey": "qui_secret",
-		"harbrrUrl": "http://harbrr:7474",
+		"harbrrUrl": "http://harbrr:7478",
 	}
 	resp, body := do(t, c, http.MethodPost, base+"/api/announce-connections", create, nil)
 	mustStatus(t, resp, body, http.StatusCreated)

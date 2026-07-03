@@ -6,10 +6,10 @@ search, grab, sync into your apps — happens through these endpoints.
 
 ## Interactive docs
 
-- **Swagger UI** — `http://<host>:7474/api/docs`. A live, try-it-out reference for every
+- **Swagger UI** — `http://<host>:7478/api/docs`. A live, try-it-out reference for every
   endpoint. Log in once (it stores your session) and you can exercise the whole API from the
   browser.
-- **Raw spec** — `http://<host>:7474/api/openapi.yaml`. The machine-readable OpenAPI
+- **Raw spec** — `http://<host>:7478/api/openapi.yaml`. The machine-readable OpenAPI
   document, if you'd rather generate a client or import it into another tool.
 
 (If you set `server.base_url`, both live under that subpath.)

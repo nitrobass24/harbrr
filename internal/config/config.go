@@ -126,7 +126,7 @@ func Defaults() Config {
 	return Config{
 		Server: ServerConfig{
 			Host: "127.0.0.1",
-			Port: 7474,
+			Port: 7478,
 		},
 		Log: LogConfig{
 			Level:  "info",

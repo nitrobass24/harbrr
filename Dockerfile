@@ -49,12 +49,12 @@ COPY --from=build --chmod=0755 /out/harbrr /usr/local/bin/harbrr
 
 USER harbrr
 VOLUME ["/config"]
-EXPOSE 7474
+EXPOSE 7478
 
 # Probes the management API liveness endpoint. If you set server.base_url, adjust
 # the path accordingly (e.g. /harbrr/healthz).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:7474/healthz >/dev/null 2>&1 || exit 1
+  CMD wget -qO- http://127.0.0.1:7478/healthz >/dev/null 2>&1 || exit 1
 
 ENTRYPOINT ["harbrr", "serve"]
 CMD ["--host", "0.0.0.0", "--data-dir", "/config"]

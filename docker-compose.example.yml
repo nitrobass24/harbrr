@@ -14,12 +14,12 @@
 #
 # First run (the API at /api/docs is the whole UI for now):
 #   1. docker compose -f docker-compose.example.yml up -d harbrr
-#   2. Browse http://<host>:7474/api/docs   (interactive Swagger UI)
+#   2. Browse http://<host>:7478/api/docs   (interactive Swagger UI)
 #   3. Create the admin:   POST /api/auth/setup  {"username":"...","password":"..."}
 #   4. Mint a Torznab key: POST /api/apikeys     {"name":"sonarr"}   (shown ONCE)
 #   5. Add an indexer:     POST /api/indexers     (credentials encrypted at rest)
 #   6. Point Sonarr/Radarr at a Generic Torznab indexer:
-#        URL:    http://harbrr:7474/api/v2.0/indexers/<slug>/results/torznab
+#        URL:    http://harbrr:7478/api/v2.0/indexers/<slug>/results/torznab
 #        apikey: the key minted in step 4
 
 services:
@@ -29,7 +29,7 @@ services:
     container_name: harbrr
     restart: unless-stopped
     ports:
-      - "7474:7474" # drop this if only same-network *arr need to reach it
+      - "7478:7478" # drop this if only same-network *arr need to reach it
     volumes:
       - harbrr-config:/config # or `./data:/config` (then `chown 1000:1000 ./data` — harbrr runs as uid 1000)
     environment:
@@ -38,12 +38,12 @@ services:
       # Set true when terminating TLS at a reverse proxy in front of harbrr:
       # - HARBRR_SERVER_SECURE_COOKIE=true
     # The image already runs `harbrr serve --host 0.0.0.0 --data-dir /config`, is
-    # non-root (uid 1000), exposes 7474, and ships a /healthz HEALTHCHECK.
+    # non-root (uid 1000), exposes 7478, and ships a /healthz HEALTHCHECK.
 
 volumes:
   harbrr-config:
 # To put harbrr on the SAME network as your existing *arr stack (so Sonarr/Radarr
-# reach it as http://harbrr:7474), attach it to that network instead of the default:
+# reach it as http://harbrr:7478), attach it to that network instead of the default:
 #
 # services:
 #   harbrr:

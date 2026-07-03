@@ -30,7 +30,7 @@ func TestDefaults(t *testing.T) {
 	t.Parallel()
 
 	d := config.Defaults()
-	if d.Server.Host != "127.0.0.1" || d.Server.Port != 7474 {
+	if d.Server.Host != "127.0.0.1" || d.Server.Port != 7478 {
 		t.Errorf("unexpected server defaults: %+v", d.Server)
 	}
 	if d.Log.Level != "info" || d.Log.Format != "console" {
@@ -203,8 +203,8 @@ func TestExampleConfigIsValid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("config.example.yaml failed to load/validate: %v", err)
 	}
-	if cfg.Server.Port != 7474 {
-		t.Errorf("example server.port = %d, want 7474", cfg.Server.Port)
+	if cfg.Server.Port != 7478 {
+		t.Errorf("example server.port = %d, want 7478", cfg.Server.Port)
 	}
 	if cfg.Auth.Mode != "required" {
 		t.Errorf("example auth.mode = %q, want required", cfg.Auth.Mode)

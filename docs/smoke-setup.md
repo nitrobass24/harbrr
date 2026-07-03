@@ -29,7 +29,7 @@ real trackers and is build-tagged (`//go:build smoke`) so it never runs in CI.
 
 | Var | Meaning |
 |---|---|
-| `SMOKE_HARBRR_URL` | harbrr base URL, e.g. `http://127.0.0.1:7474` |
+| `SMOKE_HARBRR_URL` | harbrr base URL, e.g. `http://127.0.0.1:7478` |
 | `SMOKE_HARBRR_APIKEY` | a harbrr API key (used for `X-API-Key` + the Torznab `?apikey=`) |
 | `SMOKE_PROWLARR_URL` | Prowlarr base URL |
 | `SMOKE_PROWLARR_APIKEY` | Prowlarr API key |
@@ -42,7 +42,7 @@ Example (`SMOKE_KEY_*` values are the real tracker keys, set in your shell — n
 checked in):
 
 ```sh
-export SMOKE_HARBRR_URL=http://127.0.0.1:7474
+export SMOKE_HARBRR_URL=http://127.0.0.1:7478
 export SMOKE_HARBRR_APIKEY=...
 export SMOKE_PROWLARR_URL=http://192.168.10.220:9696
 export SMOKE_PROWLARR_APIKEY=...

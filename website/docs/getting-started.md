@@ -26,7 +26,7 @@ services:
     container_name: harbrr
     restart: unless-stopped
     ports:
-      - "7474:7474"                # drop this if only same-network apps reach harbrr
+      - "7478:7478"                # drop this if only same-network apps reach harbrr
     volumes:
       - harbrr-config:/config      # SQLite db + the encryption keyfile (BACK THIS UP)
     environment:
@@ -38,7 +38,7 @@ volumes:
 ```
 
 The image already runs `harbrr serve --host 0.0.0.0 --data-dir /config`, is non-root
-(uid 1000), exposes port **7474**, and ships a `/healthz` healthcheck.
+(uid 1000), exposes port **7478**, and ships a `/healthz` healthcheck.
 
 **Getting an image** (no stable tag yet — pick one):
 
@@ -62,12 +62,12 @@ docker compose -f docker-compose.example.yml up -d harbrr
 
 ## 2. Create the admin (first run)
 
-Open the Swagger UI at **`http://<host>:7474/api/docs`** and run these, or use `curl`.
+Open the Swagger UI at **`http://<host>:7478/api/docs`** and run these, or use `curl`.
 
 harbrr starts with no users. Create the single admin account:
 
 ```bash
-curl -X POST http://<host>:7474/api/auth/setup \
+curl -X POST http://<host>:7478/api/auth/setup \
   -H 'Content-Type: application/json' \
   -d '{"username":"admin","password":"a-long-passphrase"}'
 ```
@@ -88,7 +88,7 @@ Sonarr/Radarr authenticate to the feed with an API key. Mint one — the **plain
 shown only once**, so copy it now:
 
 ```bash
-curl -X POST http://<host>:7474/api/apikeys \
+curl -X POST http://<host>:7478/api/apikeys \
   -H 'Content-Type: application/json' \
   -d '{"name":"sonarr"}'
 ```
@@ -103,7 +103,7 @@ independently with `DELETE /api/apikeys/{id}`.
 Add and configure a tracker (credentials are encrypted at rest). The short version:
 
 ```bash
-curl -X POST http://<host>:7474/api/indexers \
+curl -X POST http://<host>:7478/api/indexers \
   -H 'Content-Type: application/json' \
   -d '{"definitionId":"yourtracker","settings":{"username":"...","password":"..."}}'
 ```
@@ -118,7 +118,7 @@ before you rely on it.
 
 In Sonarr/Radarr, add a **Generic Torznab** indexer with:
 
-- **URL** — `http://harbrr:7474/api/indexers/<slug>/results/torznab`
+- **URL** — `http://harbrr:7478/api/indexers/<slug>/results/torznab`
   (use the container/host name your app can reach; `<slug>` is the indexer you added)
 - **API Key** — the key you minted in step 3
 
