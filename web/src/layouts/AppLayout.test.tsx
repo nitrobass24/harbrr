@@ -18,7 +18,11 @@ describe("AppLayout shell", () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it("renders the sidebar nav per the mockup for a signed-in user", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(meResponse())))
+    // me answers with the fixture; every other query (dashboard lists) gets [].
+    vi.stubGlobal("fetch", vi.fn().mockImplementation((url: unknown) => {
+      if (String(url).endsWith("/auth/me")) return Promise.resolve(meResponse())
+      return Promise.resolve(new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } }))
+    }))
 
     const router = createRouter({
       routeTree,
@@ -32,11 +36,12 @@ describe("AppLayout shell", () => {
       </QueryClientProvider>
     )
 
-    // Logo + every nav destination from docs/webui-scope.md §3. Dashboard also
-    // appears as the active page heading, so assert links by role + name.
+    // Logo + every nav destination from docs/webui-scope.md §3. Labels also
+    // appear on the page rendered at "/" (Dashboard heading, quick links), so
+    // assert at-least-one link per destination.
     expect(await screen.findByText("harbrr")).toBeTruthy()
     for (const label of ["Dashboard", "Indexers", "Search", "Applications", "Settings"]) {
-      expect(screen.getByRole("link", { name: label })).toBeTruthy()
+      expect(screen.getAllByRole("link", { name: label }).length).toBeGreaterThanOrEqual(1)
     }
     // Group titles.
     expect(screen.getByText("Manage")).toBeTruthy()

@@ -390,7 +390,7 @@ re-review.
       log level; change password; About (version, health, per-indexer stats, docs links).
       *Gate:* vitest: mint dialog shows the key exactly once and never re-renders it; manual cache
       `PUT` round-trip + flush against the live binary.
-- [ ] **Dashboard** — stat tiles (indexers configured/healthy, `trackerHitsSaved` + hit ratio, app
+- [x] **Dashboard** — stat tiles (indexers configured/healthy, `trackerHitsSaved` + hit ratio, app
       connections, breaker open count), per-indexer health strip (shared query keys with the
       Indexers screen), quick links; `_authenticated/index.tsx` default route at `/`.
       *Gate:* vitest renders the tiles from stats/status fixtures; manual against the live binary
