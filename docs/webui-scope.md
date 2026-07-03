@@ -362,7 +362,7 @@ re-review.
       OKLCH tokens in `index.css`, next-themes toggle, NotFound page.
       *Gate:* vitest renders `AppLayout` with nav items + theme toggle flips the `dark` class;
       manual: shell matches the mockup in both themes.
-- [ ] **Auth: login, setup, guard** — `useAuth`, API client with CSRF injection + 401 redirect +
+- [x] **Auth: login, setup, guard** — `useAuth`, API client with CSRF injection + 401 redirect +
       `APIError`, `/login` + `/setup` routes, `_authenticated` guard, auth-disabled branch, logout.
       *Gate:* vitest: client sets `X-CSRF-Token` on mutations and omits it when token empty;
       manual: full setup → login → logout round-trip against `./bin/harbrr`.

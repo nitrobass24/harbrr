@@ -1,8 +1,9 @@
 import { Link } from "@tanstack/react-router"
-import { LayoutDashboard, RefreshCw, Search, Server, Settings } from "lucide-react"
+import { LayoutDashboard, LogOut, RefreshCw, Search, Server, Settings } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { ThemeControl } from "@/components/layout/ThemeControl"
 import { Badge } from "@/components/ui/badge"
+import { useAuth } from "@/hooks/useAuth"
 
 type NavItem = {
   to: string
@@ -75,10 +76,38 @@ export function Sidebar() {
 
       <div className="flex flex-col gap-1 border-t border-sidebar-border px-3 py-3">
         <NavLink to="/settings" label="Settings" Icon={Settings} />
-        <div className="flex items-center justify-end px-2.5 pt-1">
-          <ThemeControl />
-        </div>
+        <UserChip />
       </div>
     </aside>
+  )
+}
+
+// Signed-in identity + logout + theme control. When auth is disabled there is
+// no account, so only the theme control renders.
+function UserChip() {
+  const { user, authDisabled, logout } = useAuth()
+
+  return (
+    <div className="flex items-center gap-2.5 px-2.5 pt-1">
+      {user && !authDisabled && (
+        <>
+          <div className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-sidebar-accent text-[12px] font-semibold text-muted-foreground">
+            {user.username.slice(0, 2).toUpperCase()}
+          </div>
+          <span className="truncate text-[12px] font-medium">{user.username}</span>
+          <button
+            type="button"
+            aria-label="Log out"
+            onClick={() => logout.mutate()}
+            className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground transition hover:bg-sidebar-accent hover:text-foreground"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+          </button>
+        </>
+      )}
+      <div className="ml-auto">
+        <ThemeControl />
+      </div>
+    </div>
   )
 }
