@@ -1,0 +1,84 @@
+# GoReleaser builds the release binaries + archives + checksums and cuts the GitHub
+# Release on a `v*` tag. The Docker image is published separately by ci.yml (on tags and
+# same-repo PRs), so it is intentionally NOT built here. See docs/architecture.md.
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: harbrr
+    main: ./cmd/harbrr
+    binary: harbrr
+    env:
+      - CGO_ENABLED=0 # pure-Go (modernc sqlite) — clean cross-compile, no C toolchain
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/autobrr/harbrr/internal/version.Version={{ .Version }}
+      - -X github.com/autobrr/harbrr/internal/version.Commit={{ .Commit }}
+      - -X github.com/autobrr/harbrr/internal/version.Date={{ .Date }}
+    goos:
+      - linux
+      - windows
+      - darwin
+      - freebsd
+    goarch:
+      - amd64
+      - arm
+      - arm64
+    goarm:
+      - "6"
+    ignore:
+      - { goos: windows, goarch: arm }
+      - { goos: windows, goarch: arm64 }
+      - { goos: darwin, goarch: arm }
+      - { goos: freebsd, goarch: arm }
+      - { goos: freebsd, goarch: arm64 }
+
+archives:
+  - id: harbrr-archive
+    ids: [harbrr]
+    format_overrides:
+      - goos: windows
+        formats: ["zip"]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^Merge pull request"
+      - "^Merge remote-tracking branch"
+      - "^Merge branch"
+      - "go mod tidy"
+  groups:
+    - title: "New Features"
+      regexp: '^.*feat(\(.+\))?!?:.*$'
+      order: 0
+    - title: "Bug Fixes"
+      regexp: '^.*fix(\(.+\))?!?:.*$'
+      order: 1
+    - title: "Other"
+      order: 999
+
+release:
+  prerelease: auto # a tag like v0.1.0-alpha is published as a pre-release
+  footer: |
+    **Full Changelog**: https://github.com/{{ .Env.GITHUB_REPOSITORY_OWNER }}/harbrr/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+    ## Docker image
+
+    - `docker pull ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/harbrr:{{ .Tag }}`
+    - `docker pull ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/harbrr:latest`

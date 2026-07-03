@@ -32,11 +32,11 @@ jobs:
       - name: Guard vendored definitions
         run: scripts/check-vendor-untouched.sh --ci
 
-  # Test and build run as separate, parallel jobs so a build failure and a test
-  # failure are reported independently and neither waits on the other. The engine
-  # is pure Go with no OS-specific files or build tags and ships as a Linux
-  # binary/container, so a single Linux leg with the race detector is
-  # authoritative; vet is covered by golangci-lint (govet) in lint.yml.
+  # `go test` compiles every package (and test file) before running, so it doubles as
+  # the compile check — there is no separate `build` job. The engine is pure Go with no
+  # OS-specific files or build tags and ships as a Linux binary/container, so a single
+  # Linux leg with the race detector is authoritative; cross-build below covers the other
+  # platforms and vet is covered by the golangci-lint (govet) job.
   test:
     name: test
     runs-on: ubuntu-latest
@@ -50,8 +50,8 @@ jobs:
       - name: test (race)
         run: go test -race -count=1 ./...
 
-  build:
-    name: build
+  golangci-lint:
+    name: golangci-lint
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -60,14 +60,59 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: build
-        run: go build ./...
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
+        with:
+          # Pin the version so the action's cache key is stable run-to-run
+          # (keep in sync with the version in `make tools`).
+          version: v2.12.2
+          only-new-issues: ${{ github.event_name == 'pull_request' }}
 
-  # Cross-compile the release binary for every native target on the Linux runner (Go
-  # cross-compiles natively — no emulation). This is both the portability check and the
-  # source of the Linux binaries the docker job packages: the image build COPYs these
-  # instead of recompiling Go in-container (the autobrr/qui + seedsync pattern), so the
-  # binary is built exactly once. Full packaging (GoReleaser) is a later job.
+  # gitleaks is the source-of-truth secret scanner; the CLI binary is run directly
+  # (pinned by version + SHA-256) because gitleaks/gitleaks-action needs a paid license
+  # on org repos. check-no-secrets.sh is a targeted tracker-credential backstop.
+  secret-scan:
+    name: secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0 # gitleaks scans full commit history
+      - name: install gitleaks
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+          GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o gitleaks.tar.gz
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          ./gitleaks version
+      - name: gitleaks scan
+        run: ./gitleaks git . --config .gitleaks.toml --redact --exit-code 1
+      - name: tracker-secret backstop
+        run: scripts/check-no-secrets.sh --all
+
+  # govulncheck reports CVEs on the call paths harbrr actually reaches (low noise); the
+  # vulnerability DB is fetched fresh each run.
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+  # Cross-compile the binary for every native target on the Linux runner (Go
+  # cross-compiles natively — no emulation): the PR-time portability check for
+  # linux/darwin/windows. It runs in parallel with the docker jobs (which build their own
+  # linux binaries), independent of them. Full packaging is the goreleaser job below.
   cross-build:
     # Name is the job key only — the matrix appends "(goos, goarch)", which is the exact
     # required-status-check context on main (e.g. "cross-build (linux, amd64)"). Do not
@@ -111,33 +156,20 @@ jobs:
             -X github.com/autobrr/harbrr/internal/version.Commit=${commit} \
             -X github.com/autobrr/harbrr/internal/version.Date=${date}" \
             -o dist/harbrr ./cmd/harbrr
-      # The docker job reuses these Linux binaries (COPYs them instead of recompiling Go
-      # in-container), so upload one per Linux arch for it to download.
-      - name: upload linux binary
-        if: ${{ matrix.target.goos == 'linux' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: bin-linux-${{ matrix.target.goarch }}
-          path: dist/harbrr
-          if-no-files-found: error
-          retention-days: 1
 
   # Package the container image so a broken Dockerfile fails CI — the Docker path is how
-  # *arr apps reach harbrr, so it must not silently rot. Each architecture builds on its
-  # OWN runner in parallel (wall-clock = slowest single arch, not the sum) with a
-  # per-arch GHA cache scope so the two don't evict each other's layers. The image build
-  # does NOT recompile Go: it injects the prebuilt linux binary from cross-build via a
-  # `build` build-context (so the Dockerfile's compile stage is replaced), leaving just
-  # COPYs + the native certs stage — no QEMU-emulated toolchain or package install on the
-  # critical path (the autobrr/qui + seedsync pattern). amd64 loads the image and runs
-  # `version` to prove it works. On a same-repo PR or a version tag each arch is pushed
-  # to GHCR by digest and docker-merge assembles the multi-arch manifest; a fork PR or a
-  # plain main push builds (to validate) but does not push.
+  # *arr apps reach harbrr, so it must not silently rot. Runs in PARALLEL with cross-build
+  # and test (no `needs`): each arch natively cross-compiles its own linux binary (Go, no
+  # emulation) and injects it via a `build` build-context, so the Dockerfile's compile
+  # stage is replaced — leaving just COPYs + the certs stage, no QEMU toolchain on the
+  # critical path. Each arch builds on its own runner with a per-arch GHA cache scope.
+  # amd64 loads the image and runs `version` to prove it works. On a same-repo PR or a
+  # version tag each arch is pushed to GHCR by digest; docker-merge (gated on test + lint)
+  # then assembles the pullable multi-arch manifest.
   docker:
     name: docker (${{ matrix.arch }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [cross-build]
     permissions:
       contents: read
       packages: write
@@ -156,18 +188,31 @@ jobs:
       # checkout, so don't persist the token in the git config (smaller blast radius).
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          fetch-depth: 0 # git describe for the version stamp
           persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
       - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
-      # The prebuilt linux binary from cross-build replaces the Dockerfile's `build`
-      # stage (build-contexts below), so the image build never recompiles Go. It lands at
-      # out/harbrr — the path the Dockerfile's `COPY --from=build /out/harbrr` expects.
-      - name: download prebuilt binary (${{ matrix.arch }})
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: bin-linux-${{ matrix.arch }}
-          path: /tmp/binctx/out
+      # Natively cross-compile this arch's linux binary (no QEMU) into the build-context
+      # the Dockerfile's `COPY --from=build /out/harbrr` expects — replacing its compile stage.
+      - name: build linux/${{ matrix.arch }} binary
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: "0"
+        run: |
+          version="$(git describe --tags --always --dirty 2>/dev/null || echo 0.0.0-dev)"
+          commit="$(git rev-parse --short HEAD)"
+          date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          go build -trimpath -ldflags "-s -w \
+            -X github.com/autobrr/harbrr/internal/version.Version=${version} \
+            -X github.com/autobrr/harbrr/internal/version.Commit=${commit} \
+            -X github.com/autobrr/harbrr/internal/version.Date=${date}" \
+            -o /tmp/binctx/out/harbrr ./cmd/harbrr
 
       # Always build this arch (validates the Dockerfile). amd64 loads it for the smoke
       # run; arm64 builds to cache without loading (it can't run on an amd64 host).
@@ -232,14 +277,16 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # Assemble the multi-arch manifest from the per-arch digests. Only runs when the docker
-  # job pushed (same-repo PR or tag); it builds nothing, so it is fast. Gated on `test`
-  # as well, so a failing test gate never publishes a pullable multi-arch tag (the
-  # per-arch digests pushed earlier stay unreferenced and are harmless until then).
+  # Assemble the multi-arch manifest from the per-arch digests — the pullable publish
+  # step. Only runs when the docker job pushed (same-repo PR or tag); it builds nothing,
+  # so it is fast. Gated on `test` AND `golangci-lint`: a red test or lint never publishes
+  # a pullable tag (the per-arch digests pushed earlier stay unreferenced/harmless until
+  # then). The arch builds still run in parallel, so build feedback is immediate; only the
+  # publish waits on the gate.
   docker-merge:
     name: docker-merge
     runs-on: ubuntu-latest
-    needs: [docker, test]
+    needs: [docker, test, golangci-lint]
     if: >-
       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]') ||
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
@@ -285,3 +332,31 @@ jobs:
         env:
           VERSION: ${{ steps.meta.outputs.version }}
         run: docker buildx imagetools inspect "$IMAGE:$VERSION"
+
+  # GoReleaser: on a v* tag, build the binaries/archives/checksums and cut the GitHub
+  # Release. On any other run (PR / main push) `goreleaser check` just validates
+  # .goreleaser.yml — fast, so it doesn't slow PRs. The container image is published by
+  # the docker jobs above; GoReleaser builds no image.
+  goreleaser:
+    name: goreleaser
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [test, golangci-lint]
+    permissions:
+      contents: write # create the GitHub Release (tag runs only)
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0 # full history so the changelog can diff against the previous tag
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: goreleaser
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: ${{ startsWith(github.ref, 'refs/tags/') && 'release --clean' || 'check' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
