@@ -63,6 +63,11 @@ check-web-dist:
 		exit 1; \
 	fi
 
+## web-ci: exactly what CI's web job runs (frozen install -> lint -> test -> build)
+.PHONY: web-ci
+web-ci:
+	cd web && pnpm install --frozen-lockfile && pnpm lint && pnpm test && pnpm build
+
 ## test: run the full suite with the race detector (always -race -count=1)
 .PHONY: test
 test:
@@ -131,9 +136,9 @@ smoke-test:
 .PHONY: precommit
 precommit: fmt lint test check-smoke-tag
 
-## ci: the checks CI enforces
+## ci: the checks CI enforces (Go jobs + the web job)
 .PHONY: ci
-ci: vet lint test build
+ci: vet lint test build web-ci
 
 ## docker: build the container image
 .PHONY: docker
