@@ -12,12 +12,18 @@ export default tseslint.config([
     files: ["**/*.{ts,tsx}"],
     extends: [
       js.configs.recommended,
-      tseslint.configs.recommended,
+      // Type-aware tier: unsafe any-flows, floating/misused promises, etc.
+      // (a deliberate step beyond qui's plain `recommended`).
+      tseslint.configs.recommendedTypeChecked,
       reactRefresh.configs.vite,
     ],
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
     },
     plugins: {
       "@stylistic": stylistic,

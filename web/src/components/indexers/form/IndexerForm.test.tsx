@@ -77,6 +77,6 @@ describe("IndexerForm", () => {
 
   it("slug is locked in edit mode", () => {
     render(<IndexerForm definition={DEFINITION} existing={EXISTING} pending={false} error={null} onSubmit={vi.fn()} />)
-    expect((screen.getByLabelText("Slug") as HTMLInputElement).disabled).toBe(true)
+    expect(screen.getByLabelText<HTMLInputElement>("Slug").disabled).toBe(true)
   })
 })
