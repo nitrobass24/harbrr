@@ -13,6 +13,7 @@ import { Route as SetupRouteImport } from './routes/setup'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
+import { Route as AuthenticatedIndexersRouteImport } from './routes/_authenticated/indexers'
 
 const SetupRoute = SetupRouteImport.update({
   id: '/setup',
@@ -33,15 +34,22 @@ const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedIndexersRoute = AuthenticatedIndexersRouteImport.update({
+  id: '/indexers',
+  path: '/indexers',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
+  '/indexers': typeof AuthenticatedIndexersRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
+  '/indexers': typeof AuthenticatedIndexersRoute
   '/': typeof AuthenticatedIndexRoute
 }
 export interface FileRoutesById {
@@ -49,14 +57,21 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
+  '/_authenticated/indexers': typeof AuthenticatedIndexersRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/login' | '/setup'
+  fullPaths: '/' | '/login' | '/setup' | '/indexers'
   fileRoutesByTo: FileRoutesByTo
-  to: '/login' | '/setup' | '/'
-  id: '__root__' | '/_authenticated' | '/login' | '/setup' | '/_authenticated/'
+  to: '/login' | '/setup' | '/indexers' | '/'
+  id:
+    | '__root__'
+    | '/_authenticated'
+    | '/login'
+    | '/setup'
+    | '/_authenticated/indexers'
+    | '/_authenticated/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -95,14 +110,23 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/indexers': {
+      id: '/_authenticated/indexers'
+      path: '/indexers'
+      fullPath: '/indexers'
+      preLoaderRoute: typeof AuthenticatedIndexersRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
   }
 }
 
 interface AuthenticatedRouteChildren {
+  AuthenticatedIndexersRoute: typeof AuthenticatedIndexersRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedIndexersRoute: AuthenticatedIndexersRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
 }
 

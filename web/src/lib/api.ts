@@ -1,4 +1,17 @@
 import { getApiBaseUrl, getBaseUrl } from "@/lib/base-url"
+import type {
+  AddIndexer,
+  Capabilities,
+  CrossSeedSnippet,
+  DefinitionDetail,
+  DefinitionSummary,
+  Instance,
+  InstanceDetail,
+  IndexerStats,
+  IndexerStatus,
+  TestResult,
+  UpdateIndexer
+} from "@/types/api"
 
 // APIError carries the server's error envelope ({error, code}) plus the HTTP
 // status, so callers branch on `code` (e.g. "invalid_credentials"), never on
@@ -129,6 +142,62 @@ export class ApiClient {
 
   logout(): Promise<void> {
     return this.request("/auth/logout", { method: "POST" })
+  }
+
+  // --- definitions ---
+
+  listDefinitions(): Promise<DefinitionSummary[]> {
+    return this.request("/definitions")
+  }
+
+  getDefinition(id: string): Promise<DefinitionDetail> {
+    return this.request(`/definitions/${encodeURIComponent(id)}`)
+  }
+
+  // --- indexers ---
+
+  listIndexers(): Promise<Instance[]> {
+    return this.request("/indexers")
+  }
+
+  addIndexer(body: AddIndexer): Promise<Instance> {
+    return this.request("/indexers", { method: "POST", body })
+  }
+
+  getIndexer(slug: string): Promise<InstanceDetail> {
+    return this.request(`/indexers/${encodeURIComponent(slug)}`)
+  }
+
+  updateIndexer(slug: string, body: UpdateIndexer): Promise<Instance> {
+    return this.request(`/indexers/${encodeURIComponent(slug)}`, { method: "PATCH", body })
+  }
+
+  deleteIndexer(slug: string): Promise<void> {
+    return this.request(`/indexers/${encodeURIComponent(slug)}`, { method: "DELETE" })
+  }
+
+  setIndexerEnabled(slug: string, enabled: boolean): Promise<void> {
+    return this.request(`/indexers/${encodeURIComponent(slug)}/${enabled ? "enable" : "disable"}`, { method: "POST" })
+  }
+
+  testIndexer(slug: string): Promise<TestResult> {
+    return this.request(`/indexers/${encodeURIComponent(slug)}/test`, { method: "POST" })
+  }
+
+  getIndexerStatus(slug: string): Promise<IndexerStatus> {
+    return this.request(`/indexers/${encodeURIComponent(slug)}/status`)
+  }
+
+  getIndexerStats(slug: string): Promise<IndexerStats> {
+    return this.request(`/indexers/${encodeURIComponent(slug)}/stats`)
+  }
+
+  getIndexerCapabilities(slug: string): Promise<Capabilities> {
+    return this.request(`/indexers/${encodeURIComponent(slug)}/capabilities`)
+  }
+
+  getCrossseedSnippet(slug: string): Promise<CrossSeedSnippet> {
+    return this.request(`/indexers/${encodeURIComponent(slug)}/crossseed-snippet`)
   }
 }
 

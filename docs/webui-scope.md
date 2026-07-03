@@ -366,12 +366,12 @@ re-review.
       `APIError`, `/login` + `/setup` routes, `_authenticated` guard, auth-disabled branch, logout.
       *Gate:* vitest: client sets `X-CSRF-Token` on mutations and omits it when token empty;
       manual: full setup → login → logout round-trip against `./bin/harbrr`.
-- [ ] **Indexers list** — table per mockup (avatar, type pill, categories, health fan-out, enabled
+- [x] **Indexers list** — table per mockup (avatar, type pill, categories, health fan-out, enabled
       switch with optimistic toggle, Test, kebab: delete/snippet/feed-URL copy), filter, detail
       drawer (status events + stats + caps).
       *Gate:* vitest renders the table from fixture JSON incl. health states; manual against a live
       binary with ≥2 configured indexers.
-- [ ] **Add/Edit indexer (dynamic form)** — definition picker, schema-driven `SettingField`
+- [x] **Add/Edit indexer (dynamic form)** — definition picker, schema-driven `SettingField`
       renderer (every field type incl. `info*`), Advanced/ReservedSettings section, `<redacted>`
       round-trip, 409 slug handling, post-save test.
       *Gate:* vitest renders each `SettingField` type from a fixture schema and asserts a PATCH
