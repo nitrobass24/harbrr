@@ -323,13 +323,15 @@ web/
   whatever is in `web/dist` (gitkeep-only OK for dev); **release builds run `web-build` first and
   hard-fail if `web/dist` contains only `.gitkeep`** (decided 2026-07-03 — every shipped
   binary/image must contain the UI).
-- **CI:** one new node job (pnpm install → lint → vitest → `pnpm build`) keyed on `web/**`; the
-  **PR-time Go jobs (test/lint/cross-build) stay untouched**. There is no standalone release
-  workflow — release artifacts are built by the `goreleaser` and `docker`/`docker-merge` jobs
-  inside `ci.yml`, and **both must gain a frontend build step** (or consume the node job's `dist`
-  artifact) on tag runs, **plus a guard step that hard-fails the release when `web/dist` contains
-  only `.gitkeep`** (decided 2026-07-03) — otherwise a shipped binary/image would embed an empty
-  `web/dist` and serve the "Frontend not built" 404.
+- **CI:** one new `web` job (pnpm frozen install → lint → vitest → `pnpm build`) running **in
+  parallel with the Go test/lint jobs**; it builds the frontend **exactly once** and uploads
+  `web/dist` as an artifact. Every binary-producing job — `cross-build` (all targets), `docker`
+  (both arches), and (on tag runs) `goreleaser`, all inside `ci.yml`; there is no standalone
+  release workflow — downloads that artifact instead of rebuilding, so every shipped binary
+  embeds the identical tested bundle, **guarded by `make check-web-dist`, which hard-fails when
+  `web/dist` lacks a real build** (decided 2026-07-03) — otherwise a shipped binary/image would
+  embed an empty `web/dist` and serve the "Frontend not built" 404. `make web-ci` mirrors the
+  web job's exact steps locally.
 - **OpenAPI drift test:** `make test-openapi` compares the spec to the *management router's* mounted
   routes — the SPA adds no management endpoints, so it is unaffected. The `server.go` re-shape
   (`/*` → `/api/*` for the management mount) must keep it and all `internal/server` tests green —
