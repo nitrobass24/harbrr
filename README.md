@@ -260,7 +260,10 @@ first-run, mint a key, point Sonarr/Radarr at the feed). Roadmap and status deta
 
 ## Contributing
 
-Contributions, testing, feedback, and ideas are welcome.
+Contributions, testing, feedback, and ideas are welcome. Start with
+**[CONTRIBUTING.md](CONTRIBUTING.md)** — how to build and test, the commit conventions, and the
+non-negotiable rules — and please review the **[Code of Conduct](CODE_OF_CONDUCT.md)**. Found a
+security issue? See **[SECURITY.md](SECURITY.md)** and report it privately, not as a public issue.
 
 Particularly helpful areas include:
 

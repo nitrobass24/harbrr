@@ -36,3 +36,18 @@ workaround (if any), and disposition (`[Workaround shipped]`, `[Report upstream]
   it is synced as `native` and shows as "native" in qui — there is no way to label
   it "harbrr". Purely cosmetic. A first-class harbrr backend would be a qui feature
   request. `[Accepted]` — `native` is semantically correct.
+
+### qui · shows indexers by numeric ID instead of name in some views — `[Report upstream]`
+- **Symptom:** in some qui screens/logs a harbrr-synced indexer appears as its numeric
+  qui id (e.g. `47`) rather than its name (e.g. `AURA4K`).
+- **Not a harbrr bug — verified 2026-07-02.** harbrr's qui driver sends the human name in
+  the create/update body (`internal/appsync/qui.go` → `buildIndexer`, `Name: d.Name`), and
+  qui stores and returns it: `GET /api/torznab/indexers` on the live stack lists every
+  harbrr-synced indexer with the correct `name` (`AURA4K`, `FileList`, `IPTorrents`, …). So
+  the name is present in qui's own data.
+- **Cause (qui side):** qui tracks results/activity by the integer `IndexerID` in several
+  subsystems (`internal/models/torznab_cache.go`, `internal/services/dirscan/search.go`,
+  cross-seed, and the frontend `web/src/types/{indexers,crossseed}.ts`) and does not always
+  join that id back to the stored `name` when rendering, so the id shows through.
+- **harbrr action:** none — harbrr already provides the name. `[Report upstream]`: qui should
+  resolve `IndexerID` → indexer `name` in those display paths.
