@@ -395,7 +395,7 @@ re-review.
       Indexers screen), quick links; `_authenticated/index.tsx` default route at `/`.
       *Gate:* vitest renders the tiles from stats/status fixtures; manual against the live binary
       with the cache warm.
-- [ ] **Polish pass** — empty states for every list (zero indexers, cache disabled, no
+- [x] **Polish pass** — empty states for every list (zero indexers, cache disabled, no
       connections), error toasts + `APIError.code` branching, loading skeletons, tablet-width
       no-break check, secret-hygiene sweep (no payload logging, masked fields everywhere).
       *Gate:* manual pass over every screen with (a) an empty database and (b) the server stopped

@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router"
 import { HealthCell } from "@/components/indexers/HealthCell"
 import { IndexerAvatar } from "@/components/indexers/IndexerAvatar"
 import { Button } from "@/components/ui/button"
+import { LoadError, LoadingBlock } from "@/components/ui/load-error"
 import { useIndexers, useIndexerStatuses } from "@/hooks/useIndexers"
 
 // Per-indexer health at a glance; shares query keys with the Indexers table.
@@ -9,6 +10,9 @@ export function HealthStrip() {
   const indexers = useIndexers()
   const list = indexers.data ?? []
   const statuses = useIndexerStatuses(list.map((ix) => ix.slug))
+
+  if (indexers.isError) return <LoadError what="indexers" />
+  if (indexers.isLoading) return <LoadingBlock />
 
   if (indexers.isSuccess && list.length === 0) {
     return (

@@ -16,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle
 } from "@/components/ui/dialog"
+import { LoadError, LoadingBlock } from "@/components/ui/load-error"
 import {
   useAppConnections,
   useCreateConnection,
@@ -80,6 +81,8 @@ function ApplicationsPage() {
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col gap-8 overflow-auto px-7 py-6">
+        {connections.isError && <LoadError what="app connections" />}
+        {connections.isLoading && <LoadingBlock />}
         <section className="flex flex-col gap-3">
           {(connections.data ?? []).map((conn) => (
             <ConnectionCard

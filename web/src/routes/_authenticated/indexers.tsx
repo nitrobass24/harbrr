@@ -9,6 +9,7 @@ import { SnippetDialog } from "@/components/indexers/SnippetDialog"
 import { IndexerSheet, type IndexerSheetState } from "@/components/indexers/form/AddIndexerSheet"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { LoadError, LoadingBlock } from "@/components/ui/load-error"
 import { useDefinitions } from "@/hooks/useDefinitions"
 import {
   useDeleteIndexer,
@@ -89,6 +90,8 @@ function IndexersPage() {
       </header>
 
       <div className="min-h-0 flex-1 overflow-auto px-7 py-6">
+        {indexers.isError && <LoadError what="indexers" />}
+        {indexers.isLoading && <LoadingBlock />}
         {total === 0 && indexers.isSuccess ? (
           <div className="grid place-items-center rounded-xl border border-dashed border-border py-16 text-center">
             <div>
@@ -99,7 +102,7 @@ function IndexersPage() {
               </Button>
             </div>
           </div>
-        ) : (
+        ) : indexers.isSuccess ? (
           <>
             <IndexersTable
               rows={rows}
@@ -122,7 +125,7 @@ function IndexersPage() {
             />
             <p className="mt-3 px-1 text-[12px] text-faint">Showing {rows.length} of {total} indexers</p>
           </>
-        )}
+        ) : null}
       </div>
 
       <IndexerSheet state={sheet} onClose={() => setSheet({ open: false })} />

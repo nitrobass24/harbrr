@@ -1,4 +1,5 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query"
+import { toast } from "sonner"
 import { api } from "@/lib/api"
 import type { AddIndexer, Instance, UpdateIndexer } from "@/types/api"
 
@@ -93,8 +94,9 @@ export function useSetIndexerEnabled() {
         list?.map((ix) => (ix.slug === slug ? { ...ix, enabled } : ix)))
       return { previous }
     },
-    onError: (_err, _vars, context) => {
+    onError: (_err, vars, context) => {
       if (context?.previous) qc.setQueryData(["indexers"], context.previous)
+      toast.error(`${vars.enabled ? "Enabling" : "Disabling"} ${vars.slug} failed`)
     },
     onSettled: () => qc.invalidateQueries({ queryKey: ["indexers"] }),
   })
