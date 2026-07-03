@@ -2,25 +2,35 @@ import { getApiBaseUrl, getBaseUrl } from "@/lib/base-url"
 import type {
   AddIndexer,
   AnnounceConnection,
+  ApiKey,
   AppConnection,
+  CacheConfig,
+  CacheConfigUpdate,
+  CacheStats,
   Capabilities,
   ConnectionStatus,
   ConnectionSyncResult,
   CreateAnnounceConnection,
   CreateConnection,
+  CreateNotification,
   CrossSeedSnippet,
   DefinitionDetail,
   DefinitionSummary,
+  Health,
   Instance,
   InstanceDetail,
   IndexerStats,
   IndexerStatus,
+  LogLevel,
+  MintedApiKey,
+  Notification,
   SearchParams,
   SearchResults,
   SyncReport,
   TestResult,
   UpdateConnection,
-  UpdateIndexer
+  UpdateIndexer,
+  UpdateNotification
 } from "@/types/api"
 
 // APIError carries the server's error envelope ({error, code}) plus the HTTP
@@ -110,6 +120,13 @@ export class ApiClient {
       throw await this.toError(res, endpoint)
     }
     if (res.status === 204) return undefined as T
+    return res.json() as Promise<T>
+  }
+
+  // requestAbsolute fetches a read-only path mounted beside /api (e.g. /healthz).
+  private async requestAbsolute<T>(path: string): Promise<T> {
+    const res = await fetch(`${getBaseUrl()}${path}`, { credentials: "same-origin" })
+    if (!res.ok) throw await this.toError(res, path)
     return res.json() as Promise<T>
   }
 
@@ -208,6 +225,81 @@ export class ApiClient {
 
   getCrossseedSnippet(slug: string): Promise<CrossSeedSnippet> {
     return this.request(`/indexers/${encodeURIComponent(slug)}/crossseed-snippet`)
+  }
+
+  // --- settings surfaces ---
+
+  getHealth(): Promise<Health> {
+    // /healthz lives beside /api, not under it.
+    return this.requestAbsolute("/healthz")
+  }
+
+  changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    return this.request("/auth/change-password", { method: "POST", body: { currentPassword, newPassword } })
+  }
+
+  listApiKeys(): Promise<ApiKey[]> {
+    return this.request("/apikeys")
+  }
+
+  mintApiKey(name: string): Promise<MintedApiKey> {
+    return this.request("/apikeys", { method: "POST", body: { name } })
+  }
+
+  revokeApiKey(id: number): Promise<void> {
+    return this.request(`/apikeys/${id}`, { method: "DELETE" })
+  }
+
+  listNotifications(): Promise<Notification[]> {
+    return this.request("/notifications")
+  }
+
+  createNotification(body: CreateNotification): Promise<Notification> {
+    return this.request("/notifications", { method: "POST", body })
+  }
+
+  updateNotification(id: number, body: UpdateNotification): Promise<Notification> {
+    return this.request(`/notifications/${id}`, { method: "PATCH", body })
+  }
+
+  deleteNotification(id: number): Promise<void> {
+    return this.request(`/notifications/${id}`, { method: "DELETE" })
+  }
+
+  setNotificationEnabled(id: number, enabled: boolean): Promise<void> {
+    return this.request(`/notifications/${id}/${enabled ? "enable" : "disable"}`, { method: "POST" })
+  }
+
+  testNotification(id: number): Promise<TestResult> {
+    return this.request(`/notifications/${id}/test`, { method: "POST" })
+  }
+
+  getCacheStats(): Promise<CacheStats> {
+    return this.request("/cache/stats")
+  }
+
+  flushCache(): Promise<{ flushed: number }> {
+    return this.request("/cache/flush", { method: "POST" })
+  }
+
+  getCacheConfig(): Promise<CacheConfig> {
+    return this.request("/cache/config")
+  }
+
+  updateCacheConfig(body: CacheConfigUpdate): Promise<CacheConfig> {
+    return this.request("/cache/config", { method: "PUT", body })
+  }
+
+  getLogLevel(): Promise<{ level: LogLevel }> {
+    return this.request("/config/log-level")
+  }
+
+  setLogLevel(level: LogLevel): Promise<{ level: LogLevel }> {
+    return this.request("/config/log-level", { method: "PUT", body: { level } })
+  }
+
+  listAllIndexerStats(): Promise<IndexerStats[]> {
+    return this.request("/indexers/stats")
   }
 
   // --- app connections (sync targets) ---

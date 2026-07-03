@@ -385,7 +385,7 @@ re-review.
       add/delete/toggle and the "edit = delete + recreate" notice; cross-seed snippet helper.
       *Gate:* vitest renders a `SyncReport` fixture (ok/partial/error, per-slug actions); manual
       sync against a live *arr or qui instance.
-- [ ] **Settings + stats** — cache stats card (`trackerHitsSaved` headline, `byIndexer`, breaker
+- [x] **Settings + stats** — cache stats card (`trackerHitsSaved` headline, `byIndexer`, breaker
       state) + flush + config form; API keys with one-time copy dialog; notifications CRUD + test;
       log level; change password; About (version, health, per-indexer stats, docs links).
       *Gate:* vitest: mint dialog shows the key exactly once and never re-renders it; manual cache

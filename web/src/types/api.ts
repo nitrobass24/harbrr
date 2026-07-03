@@ -234,5 +234,91 @@ export type CreateAnnounceConnection = {
   harbrrUrl: string
 }
 
+export type ApiKey = {
+  id: number
+  name: string
+  createdAt: string
+  lastUsedAt?: string
+}
+
+export type MintedApiKey = ApiKey & {
+  key: string // the plaintext key, shown exactly once
+}
+
+export type Notification = {
+  id: number
+  name: string
+  type: "webhook" | "discord"
+  url: string // always the <redacted> sentinel on reads
+  enabled: boolean
+  onHealthFailure: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export type CreateNotification = {
+  name: string
+  type: "webhook" | "discord"
+  url: string
+  onHealthFailure?: boolean
+}
+
+export type UpdateNotification = {
+  name?: string
+  url?: string // rotates the stored destination when present
+  onHealthFailure?: boolean
+}
+
+export type CacheIndexerStats = {
+  instanceId: number
+  slug?: string
+  name?: string
+  entries?: number
+  hitsSaved?: number
+  hits?: number
+  misses?: number
+  hitRatio?: number
+  approxSizeBytes?: number
+  breakerSuppressed?: number
+  breakerOpenUntil?: number | null // unix seconds; null = closed (healthy)
+}
+
+export type CacheStats = {
+  enabled: boolean
+  entries?: number
+  totalHits?: number
+  hits?: number
+  misses?: number
+  hitRatio?: number
+  approxSizeBytes?: number
+  oldestCachedAt?: string
+  newestCachedAt?: string
+  lastUsedAt?: string
+  trackerHitsSaved?: number // the headline kind-to-trackers metric
+  breakerSuppressed?: number
+  byIndexer?: CacheIndexerStats[]
+}
+
+export type CacheConfig = {
+  enabled: boolean
+  rssTtl: string
+  keywordTtl: string
+  thinTtl: string
+  thinThreshold: number
+  refreshAheadPct: number
+  negativeTtl: string
+  cleanupInterval: string
+}
+
+export type CacheConfigUpdate = Partial<CacheConfig>
+
+export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
+
+export type Health = {
+  status: string
+  version: string
+  commit: string
+}
+
 // The keep-stored sentinel for secret settings (see openapi.yaml Setting).
 export const REDACTED = "<redacted>"
