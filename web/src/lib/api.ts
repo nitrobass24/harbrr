@@ -1,7 +1,13 @@
 import { getApiBaseUrl, getBaseUrl } from "@/lib/base-url"
 import type {
   AddIndexer,
+  AnnounceConnection,
+  AppConnection,
   Capabilities,
+  ConnectionStatus,
+  ConnectionSyncResult,
+  CreateAnnounceConnection,
+  CreateConnection,
   CrossSeedSnippet,
   DefinitionDetail,
   DefinitionSummary,
@@ -11,7 +17,9 @@ import type {
   IndexerStatus,
   SearchParams,
   SearchResults,
+  SyncReport,
   TestResult,
+  UpdateConnection,
   UpdateIndexer
 } from "@/types/api"
 
@@ -200,6 +208,70 @@ export class ApiClient {
 
   getCrossseedSnippet(slug: string): Promise<CrossSeedSnippet> {
     return this.request(`/indexers/${encodeURIComponent(slug)}/crossseed-snippet`)
+  }
+
+  // --- app connections (sync targets) ---
+
+  listConnections(): Promise<AppConnection[]> {
+    return this.request("/app-connections")
+  }
+
+  createConnection(body: CreateConnection): Promise<AppConnection> {
+    return this.request("/app-connections", { method: "POST", body })
+  }
+
+  getConnection(id: number): Promise<AppConnection> {
+    return this.request(`/app-connections/${id}`)
+  }
+
+  updateConnection(id: number, body: UpdateConnection): Promise<AppConnection> {
+    return this.request(`/app-connections/${id}`, { method: "PATCH", body })
+  }
+
+  deleteConnection(id: number): Promise<void> {
+    return this.request(`/app-connections/${id}`, { method: "DELETE" })
+  }
+
+  setConnectionEnabled(id: number, enabled: boolean): Promise<void> {
+    return this.request(`/app-connections/${id}/${enabled ? "enable" : "disable"}`, { method: "POST" })
+  }
+
+  testConnection(id: number): Promise<TestResult> {
+    return this.request(`/app-connections/${id}/test`, { method: "POST" })
+  }
+
+  syncConnection(id: number): Promise<SyncReport> {
+    return this.request(`/app-connections/${id}/sync`, { method: "POST" })
+  }
+
+  syncAllConnections(): Promise<ConnectionSyncResult[]> {
+    return this.request("/app-connections/sync", { method: "POST" })
+  }
+
+  getConnectionStatus(id: number): Promise<ConnectionStatus> {
+    return this.request(`/app-connections/${id}/status`)
+  }
+
+  setSelectedIndexers(id: number, instanceIds: number[]): Promise<void> {
+    return this.request(`/app-connections/${id}/indexers`, { method: "PUT", body: { instanceIds } })
+  }
+
+  // --- announce connections (cross-seed push targets) ---
+
+  listAnnounceConnections(): Promise<AnnounceConnection[]> {
+    return this.request("/announce-connections")
+  }
+
+  createAnnounceConnection(body: CreateAnnounceConnection): Promise<AnnounceConnection> {
+    return this.request("/announce-connections", { method: "POST", body })
+  }
+
+  deleteAnnounceConnection(id: number): Promise<void> {
+    return this.request(`/announce-connections/${id}`, { method: "DELETE" })
+  }
+
+  setAnnounceEnabled(id: number, enabled: boolean): Promise<void> {
+    return this.request(`/announce-connections/${id}/${enabled ? "enable" : "disable"}`, { method: "POST" })
   }
 
   // --- search ---

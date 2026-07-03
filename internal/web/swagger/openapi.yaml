@@ -1573,6 +1573,12 @@ components:
     Instance:
       type: object
       properties:
+        id:
+          type: integer
+          format: int64
+          description: |
+            the numeric instance id — the handle the app-sync ledger
+            (ConnectionIndexer.instanceId) and SelectIndexers.instanceIds speak
         slug: { type: string }
         definitionId: { type: string }
         name: { type: string }
@@ -1580,7 +1586,7 @@ components:
         enabled: { type: boolean }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
-      required: [slug, definitionId, name, enabled, createdAt, updatedAt]
+      required: [id, slug, definitionId, name, enabled, createdAt, updatedAt]
     IndexerStats:
       type: object
       description: >

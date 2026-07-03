@@ -61,8 +61,12 @@ func summaryOf(d *loader.Definition) definitionSummary {
 	}
 }
 
-// instanceResponse is the API view of a configured indexer (no secrets).
+// instanceResponse is the API view of a configured indexer (no secrets). The
+// numeric id is the handle the app-sync ledger and the select-indexers call
+// (PUT /api/app-connections/{id}/indexers) speak, so clients can map it to a
+// slug without a second lookup.
 type instanceResponse struct {
+	ID           int64     `json:"id"`
 	Slug         string    `json:"slug"`
 	DefinitionID string    `json:"definitionId"`
 	Name         string    `json:"name"`
@@ -254,7 +258,7 @@ func toStatusResponse(st registry.HealthStatus) statusResponse {
 // toInstanceResponse maps a domain instance to its API view.
 func toInstanceResponse(inst domain.IndexerInstance) instanceResponse {
 	return instanceResponse{
-		Slug: inst.Slug, DefinitionID: inst.DefinitionID, Name: inst.Name,
+		ID: inst.ID, Slug: inst.Slug, DefinitionID: inst.DefinitionID, Name: inst.Name,
 		BaseURL: inst.BaseURL, Enabled: inst.Enabled,
 		CreatedAt: inst.CreatedAt, UpdatedAt: inst.UpdatedAt,
 	}

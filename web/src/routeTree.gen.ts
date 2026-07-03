@@ -15,6 +15,7 @@ import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
 import { Route as AuthenticatedSearchRouteImport } from './routes/_authenticated/search'
 import { Route as AuthenticatedIndexersRouteImport } from './routes/_authenticated/indexers'
+import { Route as AuthenticatedApplicationsRouteImport } from './routes/_authenticated/applications'
 
 const SetupRoute = SetupRouteImport.update({
   id: '/setup',
@@ -45,17 +46,25 @@ const AuthenticatedIndexersRoute = AuthenticatedIndexersRouteImport.update({
   path: '/indexers',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedApplicationsRoute =
+  AuthenticatedApplicationsRouteImport.update({
+    id: '/applications',
+    path: '/applications',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
+  '/applications': typeof AuthenticatedApplicationsRoute
   '/indexers': typeof AuthenticatedIndexersRoute
   '/search': typeof AuthenticatedSearchRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
+  '/applications': typeof AuthenticatedApplicationsRoute
   '/indexers': typeof AuthenticatedIndexersRoute
   '/search': typeof AuthenticatedSearchRoute
   '/': typeof AuthenticatedIndexRoute
@@ -65,20 +74,23 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
+  '/_authenticated/applications': typeof AuthenticatedApplicationsRoute
   '/_authenticated/indexers': typeof AuthenticatedIndexersRoute
   '/_authenticated/search': typeof AuthenticatedSearchRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/login' | '/setup' | '/indexers' | '/search'
+  fullPaths:
+    '/' | '/login' | '/setup' | '/applications' | '/indexers' | '/search'
   fileRoutesByTo: FileRoutesByTo
-  to: '/login' | '/setup' | '/indexers' | '/search' | '/'
+  to: '/login' | '/setup' | '/applications' | '/indexers' | '/search' | '/'
   id:
     | '__root__'
     | '/_authenticated'
     | '/login'
     | '/setup'
+    | '/_authenticated/applications'
     | '/_authenticated/indexers'
     | '/_authenticated/search'
     | '/_authenticated/'
@@ -134,16 +146,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedIndexersRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/applications': {
+      id: '/_authenticated/applications'
+      path: '/applications'
+      fullPath: '/applications'
+      preLoaderRoute: typeof AuthenticatedApplicationsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
   }
 }
 
 interface AuthenticatedRouteChildren {
+  AuthenticatedApplicationsRoute: typeof AuthenticatedApplicationsRoute
   AuthenticatedIndexersRoute: typeof AuthenticatedIndexersRoute
   AuthenticatedSearchRoute: typeof AuthenticatedSearchRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedApplicationsRoute: AuthenticatedApplicationsRoute,
   AuthenticatedIndexersRoute: AuthenticatedIndexersRoute,
   AuthenticatedSearchRoute: AuthenticatedSearchRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,

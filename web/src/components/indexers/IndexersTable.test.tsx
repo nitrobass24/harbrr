@@ -7,13 +7,13 @@ const BASE = { createdAt: "2026-07-01T00:00:00Z", updatedAt: "2026-07-01T00:00:0
 
 const ROWS: IndexerRowData[] = [
   {
-    instance: { slug: "torrentleech", definitionId: "torrentleech", name: "TorrentLeech", baseUrl: "https://www.torrentleech.org/", enabled: true, ...BASE },
+    instance: { id: 1, slug: "torrentleech", definitionId: "torrentleech", name: "TorrentLeech", baseUrl: "https://www.torrentleech.org/", enabled: true, ...BASE },
     type: "private",
     categories: "Movies, TV, Apps",
     status: { slug: "torrentleech", status: "healthy", events: [] },
   },
   {
-    instance: { slug: "rutor", definitionId: "rutor", name: "rutor", baseUrl: "https://rutor.info/", enabled: true, ...BASE },
+    instance: { id: 2, slug: "rutor", definitionId: "rutor", name: "rutor", baseUrl: "https://rutor.info/", enabled: true, ...BASE },
     type: "public",
     categories: "Movies, TV",
     status: {
@@ -23,7 +23,7 @@ const ROWS: IndexerRowData[] = [
     },
   },
   {
-    instance: { slug: "x1337", definitionId: "1337x", name: "1337x", enabled: false, ...BASE },
+    instance: { id: 3, slug: "x1337", definitionId: "1337x", name: "1337x", enabled: false, ...BASE },
     type: "public",
     categories: "Movies, TV, Games",
     // status still loading for this row

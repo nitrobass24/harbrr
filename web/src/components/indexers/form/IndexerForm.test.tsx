@@ -16,6 +16,7 @@ const DEFINITION: DefinitionDetail = {
 }
 
 const EXISTING: InstanceDetail = {
+  id: 1,
   slug: "tt",
   definitionId: "testtracker",
   name: "TT",

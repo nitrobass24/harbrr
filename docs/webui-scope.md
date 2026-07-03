@@ -380,7 +380,7 @@ re-review.
       merged results table with sort + pager, verbatim grab links.
       *Gate:* manual: a query against a live configured indexer returns rows and the grab link
       downloads a `.torrent`; vitest for the result-row rendering (size/age formatting).
-- [ ] **Applications (sync + announce)** — app-connection CRUD dialogs, test/sync/sync-all, status
+- [x] **Applications (sync + announce)** — app-connection CRUD dialogs, test/sync/sync-all, status
       ledger drawer, selected-indexers dialog, freeleech-mode control; announce-target list with
       add/delete/toggle and the "edit = delete + recreate" notice; cross-seed snippet helper.
       *Gate:* vitest renders a `SyncReport` fixture (ok/partial/error, per-slug actions); manual

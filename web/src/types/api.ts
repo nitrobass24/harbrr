@@ -1,6 +1,7 @@
 // Hand-written mirrors of the management API components (openapi.yaml).
 
 export type Instance = {
+  id: number // the handle the app-sync ledger + select-indexers call speak
   slug: string
   definitionId: string
   name: string
@@ -143,6 +144,94 @@ export type SearchParams = {
   ep?: string
   limit?: number
   offset?: number
+}
+
+export type ConnectionKind = "sonarr" | "radarr" | "lidarr" | "readarr" | "whisparr" | "qui"
+
+export type AppConnection = {
+  id: number
+  name: string
+  kind: ConnectionKind
+  baseUrl: string
+  harbrrUrl: string
+  apiKey?: string // always the <redacted> sentinel on reads
+  enabled: boolean
+  syncLevel: "full" | "add_update"
+  indexScope: "all" | "selected"
+  freeleechMode: "honor" | "bypass"
+  priority: number
+  lastSyncAt?: string
+  lastSyncStatus?: string // ok | partial | error | skipped
+  lastSyncError?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type CreateConnection = {
+  name: string
+  kind: ConnectionKind
+  baseUrl: string
+  apiKey: string
+  harbrrUrl: string
+  syncLevel?: "full" | "add_update"
+  indexScope?: "all" | "selected"
+  freeleechMode?: "honor" | "bypass"
+  priority?: number
+}
+
+export type UpdateConnection = Partial<Omit<CreateConnection, "kind">>
+
+export type ConnectionIndexer = {
+  instanceId: number
+  remoteId?: string
+  selected: boolean
+  lastPushedAt?: string
+  lastPushStatus?: string // ok | error
+  lastPushError?: string
+}
+
+export type ConnectionStatus = AppConnection & {
+  indexers: ConnectionIndexer[]
+}
+
+export type SyncResult = {
+  slug: string
+  action: string // created | updated | noop | deleted | failed
+  error?: string
+}
+
+export type SyncReport = {
+  status: string // ok | partial | error | skipped
+  results: SyncResult[]
+}
+
+export type ConnectionSyncResult = {
+  connectionId: number
+  name: string
+  report: SyncReport
+  error?: string
+}
+
+export type AnnounceKind = "qui" | "crossseed-v6"
+
+export type AnnounceConnection = {
+  id: number
+  name: string
+  kind: AnnounceKind
+  baseUrl: string
+  harbrrUrl?: string
+  apiKey?: string // always the <redacted> sentinel on reads
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export type CreateAnnounceConnection = {
+  name: string
+  kind: AnnounceKind
+  baseUrl: string
+  apiKey: string
+  harbrrUrl: string
 }
 
 // The keep-stored sentinel for secret settings (see openapi.yaml Setting).
