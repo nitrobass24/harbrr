@@ -608,7 +608,7 @@ the autobrr/Upbrr team first, the same way *harbrr → autobrr push* is; see the
       feature-complete.** **Stack: match qui's** — **verified 2026-07-03 against the qui repo**: Vite +
       React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui + TanStack Router/Query/Table/Form, embedded
       qui-style (`web/` + `go:embed`). **Full scope: `docs/webui-scope.md`** (screens, endpoint wiring
-      map, auth flow, build-order leaves); kickoff prompt: `docs/prompts/phase12-webui.md`. (Interactive
+      map, auth flow, build-order leaves). (Interactive
       **Swagger UI already shipped** at `/api/docs`, separate from the SPA — the web UI just links to
       it; raw spec at `/api/openapi.yaml`.)
 
