@@ -83,6 +83,14 @@ jobs:
       - name: test
         working-directory: web
         run: pnpm test
+      # The route tree is generated from src/routes and committed; a contributor
+      # who adds a route but forgets `pnpm generate:routes` fails here, not in a
+      # teammate's surprise diff later.
+      - name: route-tree drift check
+        working-directory: web
+        run: |
+          pnpm exec tsr generate
+          git diff --exit-code src/routeTree.gen.ts
       - name: build
         working-directory: web
         run: pnpm build

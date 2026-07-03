@@ -33,6 +33,25 @@ non-trivial change.
   Match the golangci-lint version CI pins (see `.github/workflows/ci.yml` / `make tools`) —
   an older local build can miss newer checks.
 
+## Frontend (web/)
+
+The management UI is a Vite + React + TypeScript SPA embedded into the binary; its stack and
+conventions mirror [qui](https://github.com/autobrr/qui). You need **Node ≥ 22.12** and
+**pnpm 10** (the exact version is pinned via `packageManager` in `web/package.json`).
+
+| Command | What it does |
+|---|---|
+| `make web-dev` | Vite dev server with `/api` proxied to a running `./bin/harbrr` on :7478 |
+| `make web-ci` | **the frontend gate** — exactly what CI runs: frozen install, type-aware ESLint, vitest, route-tree drift check, production build (type-checks via `tsc -b`) |
+| `make web-build` | build `web/dist` so the next `make build` embeds the UI |
+
+Run `make web-ci` before pushing any `web/` change. House rules that CI enforces: strict
+TypeScript with no `any`, type-aware lint (floating promises must be `void`ed or awaited),
+qui's formatting style, a committed `src/routeTree.gen.ts` after `pnpm generate:routes`, and
+all API calls through the `src/lib/api.ts` client. [`web/README.md`](web/README.md) has the
+full list — including the secret-handling contracts (`<redacted>` round-trip; never log or
+rebuild download URLs).
+
 ## Non-negotiable rules
 
 These are enforced by CI and hooks — please don't work around them:
@@ -48,7 +67,8 @@ These are enforced by CI and hooks — please don't work around them:
 
 1. Branch off `main`; keep commits focused.
 2. **Conventional commits:** `feat(scope): …`, `fix(scope): …`, `chore(scope): …`, `docs(scope): …`.
-3. Run **`make precommit` and `make build`** — both must be clean.
+3. Run **`make precommit` and `make build`** — both must be clean. For `web/` changes,
+   **`make web-ci`** too.
 4. Open a PR with a clear summary and a short testing note. Every substantive change should
    land with tests (table-driven, beside the code as `*_test.go`, reusing fixtures).
 5. If your change adds or moves an HTTP route, update the OpenAPI spec under
