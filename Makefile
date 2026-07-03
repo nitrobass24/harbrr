@@ -29,6 +29,40 @@ build:
 .PHONY: backend
 backend: build
 
+## web-deps: install frontend dependencies (pnpm)
+.PHONY: web-deps
+web-deps:
+	cd web && pnpm install
+
+## web-build: build the frontend bundle into web/dist (embedded by make build)
+.PHONY: web-build
+web-build: web-deps
+	cd web && pnpm build
+
+## web-dev: run the Vite dev server (proxies /api to a running ./bin/harbrr on :7478)
+.PHONY: web-dev
+web-dev:
+	cd web && pnpm dev
+
+## web-test: run the frontend test suite (vitest)
+.PHONY: web-test
+web-test:
+	cd web && pnpm test
+
+## web-lint: lint the frontend
+.PHONY: web-lint
+web-lint:
+	cd web && pnpm lint
+
+## check-web-dist: fail unless web/dist holds a real frontend build (release guard —
+## a gitkeep-only dist would ship a binary whose UI answers "frontend not built")
+.PHONY: check-web-dist
+check-web-dist:
+	@if [ ! -f web/dist/index.html ]; then \
+		echo "ERROR: web/dist is empty (no index.html) — run make web-build before a release build"; \
+		exit 1; \
+	fi
+
 ## test: run the full suite with the race detector (always -race -count=1)
 .PHONY: test
 test:

@@ -351,7 +351,7 @@ the cap, split Settings+Dashboard+polish into a fourth. Let CodeRabbit's PR-open
 (never post `@coderabbitai review` right after opening); push fix commits for incremental
 re-review.
 
-- [ ] **Scaffold + embed + serve (walking skeleton)** — `web/` scaffold (Vite + React + TS +
+- [x] **Scaffold + embed + serve (walking skeleton)** — `web/` scaffold (Vite + React + TS +
       Tailwind v4 + shadcn init + router with a stub index route); `web/build.go` embed;
       `internal/web/ui` handler (SPA fallback + base-URL/version injection + not-built 404);
       `server.go` re-shaped mount; Makefile `web-*` targets; CI node job.

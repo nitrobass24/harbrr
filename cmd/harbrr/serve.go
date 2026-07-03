@@ -33,6 +33,8 @@ import (
 	"github.com/autobrr/harbrr/internal/web/api"
 	"github.com/autobrr/harbrr/internal/web/swagger"
 	"github.com/autobrr/harbrr/internal/web/torznabhttp"
+	"github.com/autobrr/harbrr/internal/web/ui"
+	"github.com/autobrr/harbrr/web"
 )
 
 // canaryKeyID / canaryBlob are the app_meta keys for the startup secrets canary.
@@ -114,15 +116,8 @@ func serve(ctx context.Context, cfg *config.Config, log zerolog.Logger) error {
 	// enabled announce targets (best-effort, async — see newAnnounceSink).
 	searchCache.SetAnnounceSink(newAnnounceSink(announceSvc, db, keyring, cfg.Server.BaseURL, log))
 
-	// A persisted DB override (set via the management API) beats the config-file/env/flag
-	// seed; apply it now that the DB is open. A read error or stale value is non-fatal —
-	// the seed stays in effect.
 	logLevel := api.NewLogLevelStore(db, time.Now)
-	if applied, err := logLevel.ApplyPersisted(ctx); err != nil {
-		log.Warn().Err(err).Msg("serve: applying persisted log level failed; using configured level")
-	} else if applied {
-		log.Info().Str("level", logger.Level()).Msg("serve: applied persisted log-level override")
-	}
+	applyPersistedLogLevel(ctx, logLevel, log)
 
 	mgmt, err := api.NewRouter(api.Deps{
 		Auth: authSvc, Registry: reg, Loader: loader.New(dropinDir(cfg)), AppSync: appSync,
@@ -144,7 +139,12 @@ func serve(ctx context.Context, cfg *config.Config, log zerolog.Logger) error {
 		torznabhttp.WithDLToken(keyring),
 	)
 
-	srv := server.New(server.Deps{Management: mgmt, Torznab: tz, Spec: swagger.Spec(), DocsUI: swagger.UI(), Logger: log},
+	uiHandler, err := buildUIHandler(cfg)
+	if err != nil {
+		return err
+	}
+
+	srv := server.New(server.Deps{Management: mgmt, Torznab: tz, UI: uiHandler, Spec: swagger.Spec(), DocsUI: swagger.UI(), Logger: log},
 		server.Config{Addr: listenAddr(cfg), BasePath: cfg.Server.BaseURL})
 
 	// The session + search-cache reapers write to the DB on shutdown (the cache flushes
@@ -281,6 +281,27 @@ func apiKeyValidator(authSvc *auth.Service) func(string) bool {
 	return func(key string) bool {
 		_, err := authSvc.ValidateAPIKey(context.Background(), key)
 		return err == nil
+	}
+}
+
+// buildUIHandler serves the embedded SPA bundle (web/dist) with the base path
+// and version injected for the client (internal/web/ui).
+func buildUIHandler(cfg *config.Config) (http.Handler, error) {
+	distFS, err := web.Dist()
+	if err != nil {
+		return nil, fmt.Errorf("web ui bundle: %w", err)
+	}
+	return ui.NewHandler(distFS, cfg.Server.BaseURL, version.String()), nil
+}
+
+// applyPersistedLogLevel applies the DB log-level override (set via the management
+// API), which beats the config-file/env/flag seed. A read error or stale value is
+// non-fatal — the seed stays in effect.
+func applyPersistedLogLevel(ctx context.Context, logLevel *api.LogLevelStore, log zerolog.Logger) {
+	if applied, err := logLevel.ApplyPersisted(ctx); err != nil {
+		log.Warn().Err(err).Msg("serve: applying persisted log level failed; using configured level")
+	} else if applied {
+		log.Info().Str("level", logger.Level()).Msg("serve: applied persisted log-level override")
 	}
 }
 

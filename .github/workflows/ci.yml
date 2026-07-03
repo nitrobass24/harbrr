@@ -54,6 +54,37 @@ jobs:
       - name: test (race)
         run: go test -race -count=1 ./...
 
+  # Frontend: lint + vitest + a production build of the SPA (web/). Runs on every PR —
+  # it is fast with the pnpm cache and a required check must not be path-filtered. The
+  # built dist is NOT shared from here: the docker/goreleaser jobs build their own
+  # (the bundle is embedded into the Go binary at compile time).
+  web:
+    name: web
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: install
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      - name: lint
+        working-directory: web
+        run: pnpm lint
+      - name: test
+        working-directory: web
+        run: pnpm test
+      - name: build
+        working-directory: web
+        run: pnpm build
+
   golangci-lint:
     name: golangci-lint
     runs-on: ubuntu-latest
@@ -201,6 +232,23 @@ jobs:
           cache: true
       - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      # The image ships the UI: build the frontend bundle BEFORE the Go compile so
+      # web/dist is embedded (a gitkeep-only dist would serve "frontend not built"), and
+      # hard-fail if the build left dist empty. PR images get the UI too — they are
+      # pulled for live validation on real stacks.
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: build frontend (embedded into the binary)
+        run: |
+          cd web && pnpm install --frozen-lockfile && pnpm build && cd ..
+          make check-web-dist
 
       # Natively cross-compile this arch's linux binary (no QEMU) into the build-context
       # the Dockerfile's `COPY --from=build /out/harbrr` expects — replacing its compile stage.
@@ -357,6 +405,24 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      # Release binaries ship the UI: build the frontend before goreleaser compiles, and
+      # hard-fail the release if web/dist is empty. Tag runs only — PR/main runs execute
+      # `goreleaser check`, which builds nothing.
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: build frontend (embedded into release binaries)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          cd web && pnpm install --frozen-lockfile && pnpm build && cd ..
+          make check-web-dist
       - name: goreleaser
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:

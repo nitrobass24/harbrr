@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 
 	"github.com/alexedwards/scs/v2"
 	"github.com/rs/zerolog"
@@ -27,6 +28,7 @@ import (
 	"github.com/autobrr/harbrr/internal/web/api"
 	"github.com/autobrr/harbrr/internal/web/swagger"
 	"github.com/autobrr/harbrr/internal/web/torznabhttp"
+	"github.com/autobrr/harbrr/internal/web/ui"
 )
 
 const testKey = "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
@@ -157,7 +159,7 @@ func buildStack(t *testing.T, basePath string) (*stack, *stdhttp.Client) {
 		torznabhttp.WithBasePath(basePath),
 	)
 
-	srv := server.New(server.Deps{Management: mgmt, Torznab: tz, Spec: swagger.Spec(), DocsUI: swagger.UI(), Logger: zerolog.Nop()},
+	srv := server.New(server.Deps{Management: mgmt, Torznab: tz, UI: testUI(basePath), Spec: swagger.Spec(), DocsUI: swagger.UI(), Logger: zerolog.Nop()},
 		server.Config{BasePath: basePath})
 
 	ts := httptest.NewServer(srv.Handler())
@@ -184,21 +186,24 @@ func TestServerEndToEndBasePath(t *testing.T) {
 	runEndToEnd(t, "/harbrr")
 }
 
-// TestServerBasePathStripsExactPrefix covers the edge of base-path stripping: a
-// request to the base path itself ("/harbrr", no trailing slash) strips to an EMPTY
-// path and still reaches the management tree — the e2e tests only exercise
-// "/harbrr/..." subpaths, never the bare prefix.
-func TestServerBasePathStripsExactPrefix(t *testing.T) {
+// testUI builds the SPA handler over a one-page fixture bundle, mirroring what
+// cmd/harbrr wires from the embedded web/dist.
+func testUI(basePath string) *ui.Handler {
+	return ui.NewHandler(fstest.MapFS{
+		"index.html": {Data: []byte(`<!doctype html><html><head><title>harbrr</title></head>` +
+			`<body><div id="root"></div></body></html>`)},
+	}, basePath, "test")
+}
+
+// TestServerBareBasePathServesUI covers the edge of base-path stripping: a request
+// to the base path itself ("/harbrr", no trailing slash) strips to an EMPTY path
+// and lands on the SPA catch-all — neither the management tree (which owns only
+// /healthz + /api/*) nor the Torznab tree may see it.
+func TestServerBareBasePathServesUI(t *testing.T) {
 	t.Parallel()
 
-	var (
-		sawManagement bool
-		gotPath       string
-	)
-	mgmt := stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
-		sawManagement = true
-		gotPath = r.URL.Path
-		w.WriteHeader(stdhttp.StatusOK)
+	mgmt := stdhttp.HandlerFunc(func(_ stdhttp.ResponseWriter, r *stdhttp.Request) {
+		t.Errorf("management tree must not handle the bare base path (saw %q)", r.URL.Path)
 	})
 	torznab := stdhttp.HandlerFunc(func(_ stdhttp.ResponseWriter, _ *stdhttp.Request) {
 		t.Error("Torznab tree must not handle the bare base path")
@@ -206,6 +211,7 @@ func TestServerBasePathStripsExactPrefix(t *testing.T) {
 	srv := server.New(server.Deps{
 		Management: mgmt,
 		Torznab:    torznab,
+		UI:         testUI("/harbrr"),
 		Logger:     zerolog.Nop(),
 	}, server.Config{BasePath: "/harbrr"})
 
@@ -213,14 +219,11 @@ func TestServerBasePathStripsExactPrefix(t *testing.T) {
 	req := httptest.NewRequestWithContext(context.Background(), stdhttp.MethodGet, "/harbrr", nil)
 	srv.Handler().ServeHTTP(rec, req)
 
-	if !sawManagement {
-		t.Fatalf("management handler not reached for the bare base path (status %d)", rec.Code)
-	}
-	if gotPath != "" {
-		t.Errorf("management saw path %q, want \"\" after stripping the exact base path", gotPath)
-	}
 	if rec.Code != stdhttp.StatusOK {
-		t.Errorf("status = %d, want 200", rec.Code)
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if body := rec.Body.String(); !strings.Contains(body, `id="root"`) {
+		t.Errorf("bare base path did not serve the SPA shell: %q", body)
 	}
 }
 
@@ -232,6 +235,16 @@ func runEndToEnd(t *testing.T, basePath string) {
 	mustGet(t, c, s.url+"/api/openapi.yaml", stdhttp.StatusOK)
 	if docs := mustGet(t, c, s.url+"/api/docs", stdhttp.StatusOK); !strings.Contains(docs, "swagger-ui") {
 		t.Errorf("/api/docs did not serve the Swagger UI page")
+	}
+
+	// The SPA shell answers at the root and for client-route deep links (the
+	// index.html fallback), with the base path injected for the client router.
+	if shell := mustGet(t, c, s.url+"/", stdhttp.StatusOK); !strings.Contains(shell, `id="root"`) ||
+		!strings.Contains(shell, `window.__HARBRR_BASE_URL__="`+basePath+`"`) {
+		t.Errorf("root did not serve the SPA shell with the injected base path: %s", shell)
+	}
+	if deep := mustGet(t, c, s.url+"/indexers", stdhttp.StatusOK); !strings.Contains(deep, `id="root"`) {
+		t.Errorf("deep link did not fall back to the SPA shell: %s", deep)
 	}
 
 	// First-run setup + login.
