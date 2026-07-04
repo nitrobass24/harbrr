@@ -92,12 +92,6 @@ func WithBaseURL(u string) Option {
 	return func(o *options) { o.baseURL = u }
 }
 
-// WithSolver injects an anti-bot solver (login interstitials). Unset leaves the
-// login executor's default NoopSolver (fail loud on a challenge).
-func WithSolver(s login.Solver) Option {
-	return func(o *options) { o.solver = s }
-}
-
 // SolverOption returns the engine option wiring an anti-bot solver from an
 // instance's resolved .Config (the "solver_type" setting):
 //   - "manual_cookie" replays the encrypted "cookie" setting (ManualCookieSolver);

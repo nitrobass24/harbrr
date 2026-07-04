@@ -106,9 +106,6 @@ func WithClock(fn func() time.Time) Option {
 	}
 }
 
-// WithTimeout sets the per-request HTTP timeout for built engines.
-func WithTimeout(d time.Duration) Option { return func(r *Registry) { r.timeout = d } }
-
 // WithLogger sets the logger used for resolve failures (errors are redacted).
 func WithLogger(l zerolog.Logger) Option { return func(r *Registry) { r.log = l } }
 

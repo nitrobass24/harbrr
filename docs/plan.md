@@ -595,11 +595,14 @@ the autobrr/Upbrr team first, the same way *harbrr → autobrr push* is; see the
       vs the OpenAPI surface) found the set accurate; the only gaps it surfaced — prose pagination, a
       stale API table, no pacing note — are closed. **Decision: the full operator set is the gate, and
       it is met.**
-- [ ] **Code cleanup (non-blocking)** — the scaffolding + dead-code review found **no alpha blockers**:
+- [x] **Code cleanup (non-blocking)** — the scaffolding + dead-code review found **no alpha blockers**:
       codebase is clean (no `panic`/`TODO`/`FIXME` in non-test code, no parsed-but-dead config; OIDC `501`,
       two AnimeBytes parity nuances, and the captcha boundary are intentional deferrals). `deadcode -test`
       found only **3 unused option setters** (`auth.WithClock`, cardigann `WithSolver`, `registry.WithTimeout`)
-      — plausibly forward-API for deferred features; confirm intent, then keep or remove. Optional tidy.
+      — **decision (2026-07-03): removed all three** (no speculative forward-API per AGENTS.md; zero callers
+      incl. tests; each capability stays reachable — auth timestamps use `time.Now` directly, the solver is
+      wired via `SolverOption`, the registry fallback timeout via `defaultHTTPTimeout` + the per-instance
+      `timeout` setting). Shipped with the #19 engine-correctness batch.
 
 ## Phase 12 — Web UI
 
