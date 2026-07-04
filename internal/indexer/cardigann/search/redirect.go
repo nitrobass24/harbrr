@@ -59,7 +59,12 @@ func resolveRedirect(ctx context.Context, doer Doer, br builtRequest, first sear
 		if !isRedirectStatus(followed.status) {
 			return followed, nil
 		}
-		sr = followed // hop cap exhausted or magnet target: fall through unfollowed.
+		// Hop cap exhausted or magnet target: fall through to the unfollowed
+		// mapping below. This is Jackett-exact — FollowIfRedirect's magnet break
+		// leaves the response still IsRedirect, and the search flow's
+		// CheckIfLoginIsNeeded then fires on it (relogin / re-request); a magnet
+		// Location is terminal only in Jackett's DOWNLOAD flow, not in search.
+		sr = followed
 	}
 	if br.respType == responseTypeXML {
 		return sr, nil

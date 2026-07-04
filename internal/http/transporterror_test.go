@@ -108,6 +108,19 @@ func TestRedactURLError(t *testing.T) {
 		}
 	})
 
+	t.Run("nested url.Error chain is scrubbed at every layer", func(t *testing.T) {
+		t.Parallel()
+		inner := &url.Error{Op: "parse", URL: "https://inner.example/dl/" + secret, Err: errors.New("inner cause")}
+		outer := &url.Error{Op: "Get", URL: "https://outer.example/browse?tk=" + secret, Err: inner}
+		got := RedactURLError(outer)
+		if strings.Contains(got.Error(), secret) {
+			t.Fatalf("nested chain leaked a URL secret: %q", got.Error())
+		}
+		if !strings.Contains(got.Error(), "https://outer.example") || !strings.Contains(got.Error(), "inner cause") {
+			t.Errorf("nested chain lost the outer host or the innermost cause: %q", got.Error())
+		}
+	})
+
 	t.Run("non-url.Error passes through", func(t *testing.T) {
 		t.Parallel()
 		plain := errors.New("plain cause")

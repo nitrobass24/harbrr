@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	stdhttp "net/http"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -184,9 +185,9 @@ func TestFollowRedirects_HopCapLeavesRedirect(t *testing.T) {
 	for i := 1; i <= maxRedirectHops; i++ {
 		steps = append(steps, redirectStep{
 			wantMethod: "GET",
-			wantURL:    "https://r.test/hop" + string(rune('0'+i)),
+			wantURL:    "https://r.test/hop" + strconv.Itoa(i),
 			status:     stdhttp.StatusFound,
-			location:   "/hop" + string(rune('0'+i+1)),
+			location:   "/hop" + strconv.Itoa(i+1),
 		})
 	}
 	doer := &redirectDoer{t: t, steps: steps}
