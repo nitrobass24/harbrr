@@ -35,15 +35,23 @@ type AddParams struct {
 	Name         string
 	BaseURL      string
 	Settings     map[string]string
+	// ProxyID / SolverID reference the global proxy / solver resources this indexer
+	// uses (nil = none). The foreign key rejects a non-existent id.
+	ProxyID  *int64
+	SolverID *int64
 }
 
 // UpdateParams is the input to Update. Nil Name/BaseURL leave those unchanged;
 // Settings is merged into the existing set (a value of secrets.Redacted keeps the
-// stored value; omitted settings are kept).
+// stored value; omitted settings are kept). ProxyID/SolverID are applied verbatim
+// on every update (nil clears the reference) — the edit form always submits the
+// full desired state via its resource dropdowns.
 type UpdateParams struct {
 	Name     *string
 	BaseURL  *string
 	Settings map[string]string
+	ProxyID  *int64
+	SolverID *int64
 }
 
 // SettingView is the API-safe representation of a stored setting: a secret's value
@@ -74,6 +82,7 @@ func (r *Registry) Add(ctx context.Context, p AddParams) (domain.IndexerInstance
 	inst := domain.IndexerInstance{
 		Slug: slug, DefinitionID: p.DefinitionID, Name: orDefault(p.Name, def.Name),
 		BaseURL: p.BaseURL, Enabled: true, Protocol: def.EffectiveProtocol(),
+		ProxyID: p.ProxyID, SolverID: p.SolverID,
 		CreatedAt: now, UpdatedAt: now,
 	}
 
@@ -152,6 +161,9 @@ func (r *Registry) Update(ctx context.Context, slug string, p UpdateParams) erro
 	err = r.inTx(ctx, func(tx dbinterface.TxQuerier) error {
 		if err := r.instances.UpdateMeta(ctx, tx, inst.ID, name, baseURL, r.clock()); err != nil {
 			return fmt.Errorf("registry: update meta: %w", err)
+		}
+		if err := r.instances.SetRefs(ctx, tx, inst.ID, p.ProxyID, p.SolverID, r.clock()); err != nil {
+			return fmt.Errorf("registry: update refs: %w", err)
 		}
 		if err := r.instances.DeleteSettings(ctx, tx, inst.ID); err != nil {
 			return fmt.Errorf("registry: clear settings: %w", err)

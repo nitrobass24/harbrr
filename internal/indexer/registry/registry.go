@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"strconv"
 	"sync"
 	"time"
 
@@ -48,6 +49,8 @@ var errDisabled = errors.New("registry: instance disabled")
 type Registry struct {
 	db        *database.DB
 	instances database.Instances
+	proxies   database.Proxies
+	solvers   database.Solvers
 	health    database.Health
 	loader    *loader.Loader
 	keyring   secretsKeyring
@@ -270,6 +273,13 @@ func (r *Registry) buildAdapter(ctx context.Context, slug string) (*indexerAdapt
 	if err != nil {
 		return nil, err
 	}
+	// Resolve the instance's referenced global proxy / solver into cfg BEFORE the
+	// transport and solver are built, so buildTransport / SolverOption stay
+	// unchanged (they only read cfg keys). A reference wins over an inline setting;
+	// no reference leaves the inline value (the fallback) in place.
+	if err := r.resolveResourceRefs(ctx, inst, cfg); err != nil {
+		return nil, err
+	}
 
 	// freeleech is consumed as a SERVE-TIME view, not a fetch-time filter: the engine is
 	// built with the key cleared so every fetch returns the full catalog (cached once and
@@ -310,6 +320,46 @@ func (r *Registry) buildAdapter(ctx context.Context, slug string) (*indexerAdapt
 		clock:         r.clock,
 		log:           r.log,
 	}, nil
+}
+
+// resolveResourceRefs merges an instance's referenced global proxy / solver into
+// cfg, writing the same keys the inline settings use (proxy_type/proxy_url;
+// solver_type/flaresolverr_url/flaresolverr_max_timeout) so buildTransport and
+// SolverOption need no change. A reference overrides an inline value; no reference
+// leaves the inline fallback in place. A dangling reference (the resource was
+// deleted mid-flight, before the ON DELETE SET NULL fired) is skipped, not fatal —
+// the indexer degrades to no proxy / no solver.
+func (r *Registry) resolveResourceRefs(ctx context.Context, inst domain.IndexerInstance, cfg map[string]string) error {
+	if inst.ProxyID != nil {
+		p, err := r.proxies.GetProxy(ctx, r.db, *inst.ProxyID)
+		switch {
+		case err == nil:
+			url, derr := r.keyring.Decrypt(p.ID, domain.ProxySecretURL, p.URLEncrypted)
+			if derr != nil {
+				return fmt.Errorf("registry: decrypt proxy %d url: %w", p.ID, derr)
+			}
+			cfg["proxy_type"], cfg["proxy_url"] = p.Type, url
+		case !errors.Is(err, database.ErrNotFound):
+			return fmt.Errorf("registry: load proxy %d: %w", *inst.ProxyID, err)
+		}
+	}
+	if inst.SolverID != nil {
+		s, err := r.solvers.GetSolver(ctx, r.db, *inst.SolverID)
+		switch {
+		case err == nil:
+			url, derr := r.keyring.Decrypt(s.ID, domain.SolverSecretURL, s.URLEncrypted)
+			if derr != nil {
+				return fmt.Errorf("registry: decrypt solver %d url: %w", s.ID, derr)
+			}
+			cfg["solver_type"], cfg["flaresolverr_url"] = s.Type, url
+			if s.MaxTimeout > 0 {
+				cfg["flaresolverr_max_timeout"] = strconv.Itoa(s.MaxTimeout)
+			}
+		case !errors.Is(err, database.ErrNotFound):
+			return fmt.Errorf("registry: load solver %d: %w", *inst.SolverID, err)
+		}
+	}
+	return nil
 }
 
 // buildInner constructs the engine-shaped core: a native family driver when a
