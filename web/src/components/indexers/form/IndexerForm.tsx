@@ -16,7 +16,7 @@ const RESERVED_FIELDS: SettingField[] = [
   { name: "proxy_url", label: "Proxy URL (may embed user:pass)", type: "password", secret: true },
   { name: "timeout", label: "Request timeout (Go duration, e.g. 30s)", type: "text", secret: false },
   { name: "solver_type", label: "Anti-bot solver", type: "select", secret: false, options: { "": "none", manual_cookie: "manual cookie", flaresolverr: "FlareSolverr" }, default: "" },
-  { name: "flaresolverr_url", label: "FlareSolverr URL", type: "text", secret: false },
+  { name: "flaresolverr_url", label: "FlareSolverr URL (base, e.g. http://host:8191 — no /v1)", type: "text", secret: false },
   { name: "flaresolverr_max_timeout", label: "FlareSolverr maxTimeout (seconds)", type: "text", secret: false },
 ]
 

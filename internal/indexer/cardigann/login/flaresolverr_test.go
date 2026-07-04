@@ -213,3 +213,27 @@ func TestDo_DecompressesZlibDeflate(t *testing.T) {
 		t.Errorf("zlib-wrapped deflate not decompressed: %q", body)
 	}
 }
+
+func TestNormalizeFlareBaseURL(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		in, want string
+	}{
+		{"http://flaresolverr:8191", "http://flaresolverr:8191"},
+		{"http://flaresolverr:8191/", "http://flaresolverr:8191"},
+		{"http://flaresolverr:8191/v1", "http://flaresolverr:8191"},
+		{"http://flaresolverr:8191/v1/", "http://flaresolverr:8191"},
+		{"  http://flaresolverr:8191/v1  ", "http://flaresolverr:8191"},
+		{"http://host/flaresolverr/v1", "http://host/flaresolverr"},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := normalizeFlareBaseURL(c.in); got != c.want {
+			t.Errorf("normalizeFlareBaseURL(%q) = %q, want %q", c.in, got, c.want)
+		}
+		// solve() appends "/v1"; the normalized base + "/v1" must be the real endpoint.
+		if c.want != "" && normalizeFlareBaseURL(c.in)+"/v1" != c.want+"/v1" {
+			t.Errorf("normalized %q does not yield the /v1 endpoint", c.in)
+		}
+	}
+}
