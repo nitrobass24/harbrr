@@ -21,7 +21,9 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 	"github.com/autobrr/harbrr/internal/notify"
+	"github.com/autobrr/harbrr/internal/proxy"
 	"github.com/autobrr/harbrr/internal/secrets"
+	"github.com/autobrr/harbrr/internal/solver"
 	"github.com/autobrr/harbrr/internal/web/api"
 	"github.com/autobrr/harbrr/internal/web/swagger"
 	"github.com/autobrr/harbrr/internal/web/torznabhttp"
@@ -133,6 +135,8 @@ func newEnvWithCache(t *testing.T, cfg api.Config, buildCache func(db *database.
 	announceSvc := announce.NewService(db, authSvc, keyring,
 		announce.DefaultTargetFactory(http.DefaultClient, nil, nil), zerolog.Nop())
 	notifySvc := notify.NewService(db, keyring, http.DefaultClient, zerolog.Nop())
+	proxySvc := proxy.NewService(db, keyring)
+	solverSvc := solver.NewService(db, keyring)
 
 	var cache *registry.SearchCache
 	if buildCache != nil {
@@ -141,7 +145,7 @@ func newEnvWithCache(t *testing.T, cfg api.Config, buildCache func(db *database.
 
 	handler, err := api.NewRouter(api.Deps{
 		Auth: authSvc, Registry: reg, Loader: ldr, AppSync: appSync, Announce: announceSvc,
-		Notify: notifySvc, Sessions: sm,
+		Notify: notifySvc, Proxy: proxySvc, Solver: solverSvc, Sessions: sm,
 		Cache: cache, Logger: zerolog.Nop(), LogLevel: api.NewLogLevelStore(db, nil),
 	}, cfg)
 	if err != nil {

@@ -27,8 +27,10 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 	"github.com/autobrr/harbrr/internal/logger"
 	"github.com/autobrr/harbrr/internal/notify"
+	"github.com/autobrr/harbrr/internal/proxy"
 	"github.com/autobrr/harbrr/internal/secrets"
 	"github.com/autobrr/harbrr/internal/server"
+	"github.com/autobrr/harbrr/internal/solver"
 	"github.com/autobrr/harbrr/internal/version"
 	"github.com/autobrr/harbrr/internal/web/api"
 	"github.com/autobrr/harbrr/internal/web/swagger"
@@ -121,7 +123,7 @@ func serve(ctx context.Context, cfg *config.Config, log zerolog.Logger) error {
 
 	mgmt, err := api.NewRouter(api.Deps{
 		Auth: authSvc, Registry: reg, Loader: loader.New(dropinDir(cfg)), AppSync: appSync,
-		Announce: announceSvc, Notify: notifySvc, Sessions: sessions,
+		Announce: announceSvc, Notify: notifySvc, Proxy: proxy.NewService(db, keyring), Solver: solver.NewService(db, keyring), Sessions: sessions,
 		DLToken: keyring, BasePath: cfg.Server.BaseURL, Cache: searchCache, Logger: log,
 		LogLevel: logLevel,
 	}, api.Config{

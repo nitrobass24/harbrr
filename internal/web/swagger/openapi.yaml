@@ -51,6 +51,15 @@ tags:
       Notification targets harbrr fires operational events at (an indexer health
       failure today) via a generic webhook or a Discord webhook. The destination URL
       is redacted.
+  - name: Proxies
+    description: >
+      Global, reusable proxy resources an indexer references by id. The URL (which may
+      embed user:pass) is stored encrypted and reads back redacted.
+  - name: Solvers
+    description: >
+      Global, reusable anti-bot-solver resources (FlareSolverr) an indexer references by
+      id. The endpoint URL is stored encrypted and reads back redacted. The manual-cookie
+      solver stays per-indexer and is not modelled here.
 
 paths:
   /healthz:
@@ -1299,6 +1308,162 @@ paths:
             application/xml:
               schema: { type: string }
 
+  /api/proxies:
+    get:
+      summary: List proxies
+      operationId: listProxies
+      tags: [Proxies]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the proxies (URLs redacted)
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Proxy" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Add a proxy
+      description: Stores the URL encrypted at rest; it reads back redacted.
+      operationId: createProxy
+      tags: [Proxies]
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateProxy" }
+      responses:
+        "201":
+          description: the created proxy
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Proxy" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/proxies/{id}:
+    get:
+      summary: Get one proxy
+      operationId: getProxy
+      tags: [Proxies]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200":
+          description: the proxy
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Proxy" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      summary: Update a proxy (a new url rotates the endpoint)
+      operationId: updateProxy
+      tags: [Proxies]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateProxy" }
+      responses:
+        "204": { description: updated }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      summary: Delete a proxy (referencing indexers fall back to no proxy)
+      operationId: deleteProxy
+      tags: [Proxies]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: deleted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/solvers:
+    get:
+      summary: List solvers
+      operationId: listSolvers
+      tags: [Solvers]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the solvers (URLs redacted)
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Solver" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Add a solver
+      description: Stores the endpoint URL encrypted at rest; it reads back redacted.
+      operationId: createSolver
+      tags: [Solvers]
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateSolver" }
+      responses:
+        "201":
+          description: the created solver
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Solver" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/solvers/{id}:
+    get:
+      summary: Get one solver
+      operationId: getSolver
+      tags: [Solvers]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200":
+          description: the solver
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Solver" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      summary: Update a solver (a new url rotates the endpoint)
+      operationId: updateSolver
+      tags: [Solvers]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateSolver" }
+      responses:
+        "204": { description: updated }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      summary: Delete a solver (referencing indexers fall back to no solver)
+      operationId: deleteSolver
+      tags: [Solvers]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: deleted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /api/cache/stats:
     get:
       summary: Search-results cache statistics
@@ -1853,6 +2018,63 @@ components:
         name: { type: string }
         url: { type: string, description: rotates the destination (stored encrypted) }
         onHealthFailure: { type: boolean }
+    Proxy:
+      type: object
+      description: >
+        A global, reusable proxy an indexer references by id. The URL (url) is never
+        echoed — it reads back as the <redacted> sentinel.
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        type: { type: string, enum: [http, https, socks5, socks5h] }
+        url: { type: string, description: "the proxy URL, redacted (<redacted>)" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, name, type, url, createdAt, updatedAt]
+    CreateProxy:
+      type: object
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [http, https, socks5, socks5h] }
+        url: { type: string, description: the proxy URL (stored encrypted; may embed user:pass) }
+      required: [name, type, url]
+    UpdateProxy:
+      type: object
+      description: a partial update; omitted fields are left unchanged
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [http, https, socks5, socks5h] }
+        url: { type: string, description: rotates the endpoint (stored encrypted) }
+    Solver:
+      type: object
+      description: >
+        A global, reusable anti-bot solver (FlareSolverr) an indexer references by id.
+        The endpoint URL (url) is never echoed — it reads back as the <redacted> sentinel.
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        type: { type: string, enum: [flaresolverr] }
+        url: { type: string, description: "the endpoint URL, redacted (<redacted>)" }
+        maxTimeout: { type: integer, description: "per-solve budget in seconds (0 = the solver default)" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, name, type, url, maxTimeout, createdAt, updatedAt]
+    CreateSolver:
+      type: object
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [flaresolverr], description: "defaults to flaresolverr" }
+        url: { type: string, description: the endpoint URL (stored encrypted) }
+        maxTimeout: { type: integer, description: "per-solve budget in seconds (0 = default)" }
+      required: [name, url]
+    UpdateSolver:
+      type: object
+      description: a partial update; omitted fields are left unchanged
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [flaresolverr] }
+        url: { type: string, description: rotates the endpoint (stored encrypted) }
+        maxTimeout: { type: integer }
     CrossSeedSnippet:
       type: object
       description: a copy-paste cross-seed v6 config.js torznab entry for one indexer

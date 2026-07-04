@@ -17,6 +17,8 @@ import (
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 	"github.com/autobrr/harbrr/internal/notify"
+	"github.com/autobrr/harbrr/internal/proxy"
+	"github.com/autobrr/harbrr/internal/solver"
 )
 
 // errorResponse is the JSON error envelope: a human-readable message plus a
@@ -94,7 +96,7 @@ func (rt *router) writeServiceError(w http.ResponseWriter, op string, err error)
 		writeErrorCode(w, http.StatusNotFound, "not_found", "not found")
 	case errors.Is(err, registry.ErrConflict), errors.Is(err, appsync.ErrConflict), errors.Is(err, announce.ErrConflict):
 		writeErrorCode(w, http.StatusConflict, "conflict", err.Error())
-	case errors.Is(err, registry.ErrInvalid), errors.Is(err, appsync.ErrInvalid), errors.Is(err, announce.ErrInvalid), errors.Is(err, notify.ErrInvalid), errors.Is(err, auth.ErrWeakPassword), errors.Is(err, auth.ErrInvalidInput):
+	case errors.Is(err, registry.ErrInvalid), errors.Is(err, appsync.ErrInvalid), errors.Is(err, announce.ErrInvalid), errors.Is(err, notify.ErrInvalid), errors.Is(err, proxy.ErrInvalid), errors.Is(err, solver.ErrInvalid), errors.Is(err, auth.ErrWeakPassword), errors.Is(err, auth.ErrInvalidInput):
 		writeErrorCode(w, http.StatusBadRequest, "invalid", err.Error())
 	case errors.Is(err, auth.ErrAlreadySetup):
 		writeErrorCode(w, http.StatusConflict, "already_setup", "setup already complete")

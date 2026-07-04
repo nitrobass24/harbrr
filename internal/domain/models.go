@@ -206,6 +206,15 @@ const (
 // validated in Go so a future solver kind needs no migration.
 const SolverTypeFlaresolverr = "flaresolverr"
 
+// ProxySecretURL / SolverSecretURL are the AAD "setting" discriminators binding
+// each resource's encrypted endpoint URL to its own row id (mirroring notify's
+// secretURL). Shared so the management service encrypts and the engine decrypts
+// under the same name.
+const (
+	ProxySecretURL  = "url"
+	SolverSecretURL = "url"
+)
+
 // Proxy is a global, reusable proxy an indexer instance references by id. The URL
 // (which routinely embeds user:pass) is the stored secret: encrypted under KeyID
 // with the proxy's own id as AAD, read back <redacted> in the API.

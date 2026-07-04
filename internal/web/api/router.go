@@ -17,7 +17,9 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 	"github.com/autobrr/harbrr/internal/notify"
+	"github.com/autobrr/harbrr/internal/proxy"
 	"github.com/autobrr/harbrr/internal/secrets"
+	"github.com/autobrr/harbrr/internal/solver"
 	"github.com/autobrr/harbrr/internal/version"
 )
 
@@ -29,6 +31,8 @@ type Deps struct {
 	AppSync  *appsync.Service
 	Announce *announce.Service
 	Notify   *notify.Service
+	Proxy    *proxy.Service
+	Solver   *solver.Service
 	Sessions *scs.SessionManager
 	// DLToken seals a resolver-needing indexer's download link behind the /dl proxy
 	// for the JSON search response, exactly as the Torznab feed does, so a passkey
@@ -67,6 +71,8 @@ type router struct {
 	appsync  *appsync.Service
 	announce *announce.Service
 	notify   *notify.Service
+	proxy    *proxy.Service
+	solver   *solver.Service
 	sessions *scs.SessionManager
 	dlToken  *secrets.Keyring
 	basePath string
@@ -100,7 +106,8 @@ func NewRouter(deps Deps, cfg Config) (http.Handler, error) {
 
 	rt := &router{
 		auth: deps.Auth, registry: deps.Registry, loader: deps.Loader, appsync: deps.AppSync,
-		announce: deps.Announce, notify: deps.Notify, sessions: deps.Sessions, dlToken: deps.DLToken, basePath: deps.BasePath,
+		announce: deps.Announce, notify: deps.Notify, proxy: deps.Proxy, solver: deps.Solver,
+		sessions: deps.Sessions, dlToken: deps.DLToken, basePath: deps.BasePath,
 		cache: deps.Cache, cfg: cfg, log: deps.Logger, logLevel: deps.LogLevel,
 		allowlist: allow, trustedProxies: proxies,
 	}
@@ -184,6 +191,8 @@ func (rt *router) routes() http.Handler {
 			r.Post("/api/notifications/{id}/disable", rt.disableNotification)
 			r.Post("/api/notifications/{id}/test", rt.testNotification)
 
+			rt.mountResourceRoutes(r)
+
 			r.Get("/api/cache/stats", rt.cacheStats)
 			r.Post("/api/cache/flush", rt.cacheFlush)
 			r.Get("/api/cache/config", rt.cacheConfigGet)
@@ -194,6 +203,23 @@ func (rt *router) routes() http.Handler {
 		})
 	})
 	return r
+}
+
+// mountResourceRoutes registers the CRUD routes for the global proxy + anti-bot-solver
+// resources an indexer references by id. Split out of routes() to keep that function
+// under the funlen gate.
+func (rt *router) mountResourceRoutes(r chi.Router) {
+	r.Get("/api/proxies", rt.listProxies)
+	r.Post("/api/proxies", rt.createProxy)
+	r.Get("/api/proxies/{id}", rt.getProxy)
+	r.Patch("/api/proxies/{id}", rt.updateProxy)
+	r.Delete("/api/proxies/{id}", rt.deleteProxy)
+
+	r.Get("/api/solvers", rt.listSolvers)
+	r.Post("/api/solvers", rt.createSolver)
+	r.Get("/api/solvers/{id}", rt.getSolver)
+	r.Patch("/api/solvers/{id}", rt.updateSolver)
+	r.Delete("/api/solvers/{id}", rt.deleteSolver)
 }
 
 // healthResponse is the liveness-probe body: a fixed status plus the build identity,
