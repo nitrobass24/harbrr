@@ -3,6 +3,7 @@ package dateparse
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -65,9 +66,12 @@ func New(opts ...Option) *Parser {
 //  2. Translate the .NET layout to a Go layout (TranslateLayout).
 //  3. If a language is set and the layout carries month/day NAME tokens,
 //     substitute localized names -> English so Go's time.Parse can read them.
-//  4. time.Parse with the translated layout.
-//  5. Default a missing year to the clock's current year (Jackett's
-//     ParseExact-with-InvariantCulture defaults the year to now.Year).
+//  4. If the layout carries an AM/PM designator, uppercase it in the value:
+//     .NET ParseExact matches designators case-INsensitively ("3pm" parses),
+//     Go's "PM" reference token is uppercase-only.
+//  5. time.Parse with the translated layout.
+//  6. Default the date components the layout omitted (.NET DateTimeParse
+//     terminal-state defaults; see defaultMissingDate).
 //
 // Unlike the timeago/fuzzytime path, dateparse has NO fuzzy fallback in Jackett:
 // a ParseExact failure throws FormatException (logged, value unchanged). We
@@ -85,20 +89,59 @@ func (p *Parser) ParseDate(value, layout string) (string, error) {
 		value = localizeValue(value, loc)
 	}
 
+	if strings.Contains(goLayout, "PM") {
+		value = normalizeAMPM(value)
+	}
+
 	t, err := time.Parse(goLayout, value)
 	if err != nil {
 		return "", fmt.Errorf("%w: value %q layout %q (go %q)", ErrUnparseable, value, layout, goLayout)
 	}
 
-	t = defaultMissingYear(t, goLayout, p.now())
+	t = defaultMissingDate(t, layout, goLayout, p.now())
 
 	return t.Format(canonicalLayout), nil
+}
+
+// ampmRe matches an AM/PM designator in any case, standalone or attached to a
+// digit ("3pm"), but never inside a word — the boundary guards keep a name like
+// "Samstag" intact. RE2-safe (no lookarounds needed: the guards consume one
+// non-letter, which is fine since designators never abut letters).
+var ampmRe = regexp.MustCompile(`(?i)(^|[^a-zA-Z])([ap]m)([^a-zA-Z]|$)`)
+
+// normalizeAMPM uppercases AM/PM designators so a lowercase or mixed-case value
+// ("3:04 pm", "03:04 Pm") parses against Go's uppercase-only PM token, matching
+// .NET ParseExact's case-insensitive designator match (Jackett accepts these).
+// Applied only when the layout carries a designator token; the surrounding
+// boundary characters it consumes are non-letters, unaffected by ToUpper.
+func normalizeAMPM(value string) string {
+	return ampmRe.ReplaceAllStringFunc(value, strings.ToUpper)
 }
 
 // layoutHasNameToken reports whether a translated Go layout contains a
 // month-name or weekday-name token (the only tokens needing localization).
 func layoutHasNameToken(goLayout string) bool {
 	return strings.Contains(goLayout, "Jan") || strings.Contains(goLayout, "Mon")
+}
+
+// defaultMissingDate fills the date components the layout omitted, mirroring
+// .NET DateTimeParse's terminal-state defaults (DateTimeParse.CheckDefaultDateTime,
+// the ParseExact path Jackett rides):
+//
+//   - NO year/month/day token at all (a time-only layout like torrentqq's
+//     "HH:mm") → the full date comes from the reference clock (today).
+//   - SOME date tokens present → a missing year defaults to the current year;
+//     a missing month/day defaults to 1 — which is exactly Go's zero value
+//     (January 1), so only the year needs correcting.
+//
+// Weekday-name tokens (ddd/dddd) are not date components: they parse a name
+// without setting year/month/day, in .NET and Go alike.
+func defaultMissingDate(t time.Time, netLayout, goLayout string, ref time.Time) time.Time {
+	if !layoutHasDateTokens(netLayout) {
+		return time.Date(ref.Year(), ref.Month(), ref.Day(), t.Hour(), t.Minute(),
+			t.Second(), t.Nanosecond(), t.Location())
+	}
+	return defaultMissingYear(t, goLayout, ref)
 }
 
 // defaultMissingYear sets the year to ref.Year() when the layout omitted a year
