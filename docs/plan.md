@@ -120,9 +120,9 @@ Phase 3 "search real trackers end-to-end" goal.
       Plus the offline serializer fuzz/property test (`internal/torznab/results_fuzz_test.go`) asserting
       arbitrary `[]*Release` always produce well-formed, namespace-bindable XML and never panic.
 - [x] **Lazy login**: re-login + retry once when a search response looks logged-out (Jackett's
-      `CheckIfLoginIsNeeded` via the `login.test` selector / followed redirect — NOT `login.error`).
+      `CheckIfLoginIsNeeded` via the `login.test` selector / an unfollowed search 3xx — NOT `login.error`).
       Eager first-login is retained by design (parity goldens); the lazy relogin is the added half.
-      Bounded to one retry (no loop). Done in `search/logout.go` + `engine.go` relogin.
+      Bounded to one retry (no loop). Done in `search/logout.go` + `search/redirect.go` + `engine.go` relogin.
 - [x] **.NET-compatible URL encoder**: replace `url.QueryEscape` in the query/path value encoders so
       they match `WebUtility.UrlEncode` (Phase 2 leaves these escaped; see `parity/testdata/README.md`
       "Known divergences"). Done via `internal/indexer/cardigann/encode`; verified divergence is `!*()`

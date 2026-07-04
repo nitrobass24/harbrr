@@ -15,10 +15,10 @@ var ErrSearchLoggedOut = errors.New("search: response looks logged-out (login.te
 
 // looksLoggedOut reproduces the selector half of Jackett's CheckIfLoginIsNeeded:
 // when the definition declares a login.test selector and an HTML search response
-// does NOT contain it, the session has expired. Jackett also treats an HTTP
-// redirect as logged-out; harbrr's production client follows redirects, so a
-// logged-out 3xx lands on the login page whose body likewise lacks the selector
-// and this same check catches it.
+// does NOT contain it, the session has expired. The redirect half lives in
+// resolveRedirect (redirect.go): search requests are never auto-followed, so a
+// logged-out 3xx is detected from the raw redirect status itself, before any
+// body check.
 //
 // Detection is skipped (returns false) when the def has no login.test selector,
 // or for JSON/XML responses — matching Jackett gating the selector check on an

@@ -31,7 +31,10 @@ byte-compares the canonical JSON it produces against the case's golden.
 - `response` — saved body file (parse mode)
 - `steps` — ordered HTTP exchange (search mode): each step's `method` + `url` is
   asserted (request-construction parity) and its `response` body served with
-  `status` (default 200). Include any login probe/request the def implies, in
+  `status` (default 200) and, for a 3xx, `location` (the `Location` header).
+  Search requests are never auto-followed (Jackett WebClient semantics), so a
+  redirect hop appears as its own declared step only when the path opts in via
+  `followredirect`. Include any login probe/request the def implies, in
   order — harbrr logs in eagerly (see "Eager login" below).
 - `response_type` — override the def's response type (`json` / empty)
 - `base_url`, `clock` (RFC3339), `config` (the `.Config` namespace), `query`
@@ -103,13 +106,26 @@ Entries:
 - **Eager first login + lazy relogin** — harbrr logs in before the FIRST search
   (once per Engine), where Jackett logs in at configure time. This first-login
   divergence is unchanged: a login-bearing search case still declares the login
-  request(s) as leading steps. The engine adds the lazy half: a search response that
-  looks logged-out (the `login.test` selector absent from an HTML body, which also
-  covers a followed redirect to the login page) triggers exactly one re-login and
-  one retry, matching Jackett's `CheckIfLoginIsNeeded -> DoLogin -> re-request`.
-  Detection uses `login.test` (NOT `login.error`); JSON/XML responses only relogin
-  on the (followed) redirect case. The lazy relogin is the added half; the eager
+  request(s) as leading steps. The engine adds the lazy half, both halves of
+  Jackett's `CheckIfLoginIsNeeded`: an unfollowed 3xx search response (any
+  redirect, for a def with a login block — `matrix-search-redirect-relogin`) or
+  an HTML body missing the `login.test` selector triggers exactly one re-login
+  and one retry, matching `CheckIfLoginIsNeeded -> DoLogin -> re-request`.
+  Body detection uses `login.test` (NOT `login.error`); JSON/XML bodies only
+  relogin on the redirect case. The lazy relogin is the added half; the eager
   first login is retained by design. **`[Resolved]`**
+- **Search redirects (`followredirect`)** — search requests are never
+  auto-followed, matching Jackett's WebClient; a path-level `followredirect:
+  true` opts into a manual follow (≤5 bare-GET hops, magnet stops the loop —
+  `matrix-search-redirect-follow`), and the definition-level flag applies to
+  login/landing flows only (harbrr's login client always follows: a documented
+  superset). Three narrow tails diverge deliberately: harbrr does not implement
+  Jackett's cross-domain "Got redirected to another domain" error (the
+  logged-out signal / empty parse covers it); a def still redirected after the
+  bounded relogin retry surfaces an error where Jackett would parse the redirect
+  body; and for a def with NO login block harbrr parses the redirect body
+  immediately, skipping Jackett's wasted no-op-login re-request (same terminal
+  output, one fewer wire request). **`[Resolved]`**
 - **Date canonical form** — RFC3339 vs Jackett's RFC1123Z; see "Date
   canonicalization". Same instant, different string — a canonical-schema choice,
   not a parse difference. **`[Deliberate]`**

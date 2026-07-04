@@ -171,10 +171,21 @@ func Execute(ctx context.Context, def *loader.Definition, query Query, session *
 	respType := responseType(def)
 	var out []*normalizer.Release
 	for i := range reqs {
-		body, err := doRequest(ctx, doer, reqs[i], session)
+		sr, err := doSearchRequest(ctx, doer, reqs[i], session)
 		if err != nil {
 			return nil, err
 		}
+		// Search requests are never auto-followed (Jackett's WebClient semantics):
+		// a 3xx is followed manually only when the path opts in via followredirect,
+		// is a logged-out signal when the def can re-login, and is parsed as-is
+		// otherwise. See resolveRedirect.
+		if isRedirectStatus(sr.status) {
+			sr, err = resolveRedirect(ctx, doer, reqs[i], sr, def, session)
+			if err != nil {
+				return nil, err
+			}
+		}
+		body := sr.body
 		// Lazy login: a logged-out response (login.test selector absent) aborts the
 		// parse so the engine can re-login and retry once. Checked before parsing,
 		// matching Jackett's CheckIfLoginIsNeeded -> DoLogin order.

@@ -11,6 +11,7 @@ import (
 
 	"golang.org/x/net/proxy"
 
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
@@ -42,7 +43,12 @@ func newDoer(p ClientParams) (search.Doer, error) {
 	if err != nil {
 		return nil, err
 	}
-	base := &http.Client{Jar: jar, Timeout: timeout}
+	// RedirectPolicy keeps the stdlib follow behavior (incl. the 10-hop cap) for
+	// login/download/native requests, while search-path requests — stamped with
+	// apphttp.WithNoRedirectFollow — get their 3xx back raw so the engine can
+	// honor `followredirect` manually and detect logged-out redirects (Jackett's
+	// WebClient never auto-follows).
+	base := &http.Client{Jar: jar, Timeout: timeout, CheckRedirect: apphttp.RedirectPolicy}
 	// Assign Transport ONLY when a proxy transport was built. buildTransport returns a
 	// nil *http.Transport for the (common) no-proxy case; assigning that typed nil to
 	// the http.RoundTripper interface field makes Transport a non-nil interface wrapping

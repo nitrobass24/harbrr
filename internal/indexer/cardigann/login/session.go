@@ -16,7 +16,9 @@ import (
 // network call ever happens in this package's code or tests. Keeping the seam to
 // a single method (mirroring http.Client.Do) lets the production client own
 // cookie-jar persistence and redirect following while the executor stays
-// transport-agnostic.
+// transport-agnostic. (Login requests keep the client's follow behavior — the
+// post-login 302 lands on the page the error/test selectors read; only SEARCH
+// requests opt out via apphttp.WithNoRedirectFollow, see search/redirect.go.)
 type Doer interface {
 	Do(*stdhttp.Request) (*stdhttp.Response, error)
 }

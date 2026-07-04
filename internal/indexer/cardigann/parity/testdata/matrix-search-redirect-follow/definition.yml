@@ -1,0 +1,39 @@
+---
+id: redirfollow
+name: redirfollow
+description: "Synthetic tracker whose search path opts into followredirect (manual redirect follow)."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://redir.test/
+
+caps:
+  categories:
+    "1": Movies
+
+  modes:
+    search: [q]
+
+search:
+  paths:
+    - path: search
+      followredirect: true
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: tr.row
+  fields:
+    title:
+      selector: a.title
+    download:
+      selector: a.dl
+      attribute: href
+    size:
+      selector: td.size
+    seeders:
+      selector: td.seeders
+    leechers:
+      selector: td.leechers
+    category:
+      text: "1"

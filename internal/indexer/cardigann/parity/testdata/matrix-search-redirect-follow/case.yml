@@ -1,0 +1,26 @@
+name: matrix-search-redirect-follow
+archetype: redirect-follow
+golden_source: hand-derived
+mode: search
+description: >
+  Compatibility matrix: a search path with `followredirect: true`. Jackett's
+  WebClient never auto-follows; when the path opts in, FollowIfRedirect re-issues
+  the redirect target as a bare GET (CardigannIndexer.cs). The engine must
+  surface the 302 itself (no client auto-follow), then fetch the Location as its
+  own hop — both requests are asserted as separate steps. Hand-derived golden:
+  same normalization as smoke-search (size 3 GB = 3221225472, peers = 42 + 3 =
+  45, category "1" -> Movies (2000), download link resolved against the base
+  URL).
+definition: definition.yml
+query:
+  keywords: ubuntu
+steps:
+  - method: GET
+    url: https://redir.test/search?q=ubuntu
+    status: 302
+    location: https://redir.test/moved?q=ubuntu
+    note: search answers a redirect; the engine must not let the client follow it
+  - method: GET
+    url: https://redir.test/moved?q=ubuntu
+    response: response.html
+    note: the manual followredirect hop (bare GET to the Location target)
