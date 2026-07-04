@@ -70,7 +70,19 @@ export function NotificationsSection() {
         )}
       </div>
 
-      <Dialog open={adding} onOpenChange={setAdding}>
+      <Dialog
+        open={adding}
+        onOpenChange={(open) => {
+          setAdding(open)
+          // Reset the form on any close (submit, escape, or outside click) so a
+          // dismissed dialog does not reopen with stale values.
+          if (!open) {
+            setName("")
+            setUrl("")
+            setType("discord")
+          }
+        }}
+      >
         <DialogContent>
           <form
             className="flex flex-col gap-4"
@@ -79,8 +91,6 @@ export function NotificationsSection() {
               create.mutate({ name, type, url }, {
                 onSuccess: () => {
                   setAdding(false)
-                  setName("")
-                  setUrl("")
                 },
                 onError: (err) => toast.error(`Adding failed: ${err.message}`),
               })

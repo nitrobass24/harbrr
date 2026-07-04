@@ -70,6 +70,12 @@ type RequestOptions = {
 
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"])
 
+// AUTH_BOOTSTRAP endpoints handle their own 401 inline (session probe, login,
+// setup, logout), so they are exempt from the 401 hard-redirect that every other
+// endpoint triggers. A protected action (e.g. change-password) is NOT here — its
+// 401 means the session expired and should redirect.
+const AUTH_BOOTSTRAP = new Set(["/auth/me", "/auth/login", "/auth/setup", "/auth/logout"])
+
 // readCsrfCookie returns the non-HttpOnly CSRF companion cookie the server
 // sets at login (internal/web/api/csrf.go), or "" when absent.
 function readCsrfCookie(): string {
@@ -141,7 +147,10 @@ export class ApiClient {
       // non-JSON error body: keep the status text
     }
     const onAuthScreen = ["/login", "/setup"].includes(window.location.pathname.replace(getBaseUrl(), ""))
-    if (res.status === 401 && !endpoint.startsWith("/auth/") && !onAuthScreen) {
+    // Exempt only the bootstrap/auth-screen probes from the 401 hard-redirect (their
+    // 401 is handled inline, and redirecting would loop). A protected action like
+    // change-password SHOULD redirect on a 401 — the session has expired.
+    if (res.status === 401 && !AUTH_BOOTSTRAP.has(endpoint) && !onAuthScreen) {
       this.onUnauthorized()
     }
     return new APIError(res.status, code, message)

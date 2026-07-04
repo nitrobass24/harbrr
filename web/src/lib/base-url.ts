@@ -13,3 +13,11 @@ export function getBaseUrl(): string {
 export function getApiBaseUrl(): string {
   return `${getBaseUrl()}/api`
 }
+
+// defaultHarbrrUrl is the best-effort prefill for a form's "harbrr URL" field:
+// how this browser reaches harbrr is usually how an app can too (the operator
+// adjusts for container-network names as needed). Shared so the connection and
+// announce forms cannot drift.
+export function defaultHarbrrUrl(): string {
+  return `${window.location.origin}${getBaseUrl()}`
+}

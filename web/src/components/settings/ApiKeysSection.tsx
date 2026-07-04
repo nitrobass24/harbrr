@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { useApiKeys, useMintApiKey, useRevokeApiKey } from "@/hooks/useSettings"
+import { copyText } from "@/lib/clipboard"
 import { relativeTime } from "@/lib/format"
 import type { MintedApiKey } from "@/types/api"
 
@@ -95,8 +96,7 @@ export function ApiKeysSection() {
           <DialogFooter>
             <Button
               onClick={() => {
-                void navigator.clipboard.writeText(minted?.key ?? "")
-                toast.success("Key copied")
+                void copyText(minted?.key ?? "", "Key copied")
               }}
             >
               <Copy className="h-4 w-4" /> Copy key

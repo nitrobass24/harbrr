@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useAuth } from "@/hooks/useAuth"
-import { api } from "@/lib/api"
+import { api, APIError } from "@/lib/api"
 
 export const Route = createFileRoute("/setup")({
   component: Setup,
@@ -28,6 +28,18 @@ function Setup() {
   if (isAuthenticated) return <Navigate to="/" />
   if (setupComplete === true) return <Navigate to="/login" />
 
+  // Map the error code to a friendly message (matching login.tsx) rather than
+  // surfacing the raw API message.
+  const message = create.error instanceof APIError
+    ? create.error.code === "invalid"
+      ? "Enter a username and a password of at least 8 characters."
+      : create.error.code === "already_setup"
+        ? "Setup is already complete — sign in instead."
+        : "Setup failed — is the server reachable?"
+    : create.error
+      ? "Setup failed — is the server reachable?"
+      : null
+
   const mismatch = confirm !== "" && confirm !== password
 
   return (
@@ -39,10 +51,8 @@ function Setup() {
           create.mutate()
         }}
       >
-        {create.error && (
-          <p className="rounded-md border border-bad/40 bg-bad/10 px-3 py-2 text-[13px] text-bad">
-            Setup failed: {create.error.message}
-          </p>
+        {message && (
+          <p role="alert" className="rounded-md border border-bad/40 bg-bad/10 px-3 py-2 text-[13px] text-bad">{message}</p>
         )}
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="username">Username</Label>

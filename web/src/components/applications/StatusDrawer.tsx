@@ -1,7 +1,7 @@
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { useConnectionStatus } from "@/hooks/useAppConnections"
 import { useIndexers } from "@/hooks/useIndexers"
-import { relativeTime } from "@/lib/format"
+import { relativeTime, syncStatusClass } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 // Per-indexer sync ledger for one connection: what was pushed where, when,
@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils"
 export function StatusDrawer({ connectionId, onClose }: { connectionId: number | null, onClose: () => void }) {
   const status = useConnectionStatus(connectionId)
   const indexers = useIndexers()
-  const bySlug = new Map((indexers.data ?? []).map((ix) => [ix.id, ix]))
+  const byId = new Map((indexers.data ?? []).map((ix) => [ix.id, ix]))
 
   return (
     <Sheet open={connectionId !== null} onOpenChange={(open) => { if (!open) onClose() }}>
@@ -20,13 +20,13 @@ export function StatusDrawer({ connectionId, onClose }: { connectionId: number |
         </SheetHeader>
         <div className="flex flex-col gap-2 px-4 pb-6 text-[13px]">
           {(status.data?.indexers ?? []).map((row) => {
-            const ix = bySlug.get(row.instanceId)
+            const ix = byId.get(row.instanceId)
             return (
               <div key={row.instanceId} className="flex items-baseline gap-2 border-b border-border/60 pb-2">
                 <span className="font-medium">{ix?.name ?? `#${row.instanceId}`}</span>
                 {!row.selected && <span className="text-[11px] text-faint">not selected</span>}
                 {row.lastPushStatus && (
-                  <span className={cn("text-[12px]", row.lastPushStatus === "ok" ? "text-ok" : "text-bad")}>
+                  <span className={cn("text-[12px]", syncStatusClass(row.lastPushStatus))}>
                     {row.lastPushStatus}
                   </span>
                 )}

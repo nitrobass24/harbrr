@@ -33,7 +33,7 @@ function Login() {
         }}
       >
         {message && (
-          <p className="rounded-md border border-bad/40 bg-bad/10 px-3 py-2 text-[13px] text-bad">{message}</p>
+          <p role="alert" className="rounded-md border border-bad/40 bg-bad/10 px-3 py-2 text-[13px] text-bad">{message}</p>
         )}
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="username">Username</Label>

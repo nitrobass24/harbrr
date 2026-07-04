@@ -21,6 +21,7 @@ import {
   useTestIndexer
 } from "@/hooks/useIndexers"
 import { getBaseUrl } from "@/lib/base-url"
+import { copyText } from "@/lib/clipboard"
 import type { Capabilities } from "@/types/api"
 
 export const Route = createFileRoute("/_authenticated/indexers")({
@@ -137,8 +138,7 @@ function IndexersPage() {
                 onSnippet: setSnippetFor,
                 onCopyFeedUrl: (slug) => {
                   const url = `${window.location.origin}${getBaseUrl()}/api/indexers/${encodeURIComponent(slug)}/results/torznab`
-                  void navigator.clipboard.writeText(url)
-                  toast.success("Feed URL copied (apps still need an API key)")
+                  void copyText(url, "Feed URL copied (apps still need an API key)")
                 },
                 onDetails: setDetailsFor,
               }}

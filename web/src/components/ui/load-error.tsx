@@ -2,7 +2,7 @@
 // list, so a stopped harbrr never masquerades as an empty state.
 export function LoadError({ what }: { what: string }) {
   return (
-    <p className="rounded-xl border border-bad/40 bg-bad/10 px-5 py-4 text-[13px] text-bad">
+    <p role="alert" className="rounded-xl border border-bad/40 bg-bad/10 px-5 py-4 text-[13px] text-bad">
       Loading {what} failed — is harbrr running? The page retries automatically.
     </p>
   )

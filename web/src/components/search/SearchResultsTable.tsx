@@ -30,7 +30,13 @@ export function SearchResultsTable({ rows, catNames, sort, onSort }: {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((row, i) => <ResultRow key={`${row.indexer}-${i}`} row={row} catNames={catNames} />)}
+          {rows.map((row) => (
+            <ResultRow
+              key={`${row.indexer}::${row.release.link ?? row.release.magnet ?? row.release.infohash ?? row.release.title}`}
+              row={row}
+              catNames={catNames}
+            />
+          ))}
         </TableBody>
       </Table>
     </div>
@@ -87,6 +93,8 @@ function ResultRow({ row, catNames }: { row: SearchRow, catNames: Map<number, st
           {r.link && (
             <a
               href={r.link}
+              target="_blank"
+              rel="noopener noreferrer"
               aria-label={`Download ${r.title}`}
               className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
             >
@@ -96,6 +104,8 @@ function ResultRow({ row, catNames }: { row: SearchRow, catNames: Map<number, st
           {r.magnet && (
             <a
               href={r.magnet}
+              target="_blank"
+              rel="noopener noreferrer"
               aria-label={`Magnet for ${r.title}`}
               className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
             >

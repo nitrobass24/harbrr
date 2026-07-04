@@ -25,7 +25,7 @@ export function SelectIndexersDialog({ conn, pending, onClose, onSave }: {
   return (
     <Dialog open={conn !== null} onOpenChange={(open) => { if (!open) onClose() }}>
       <DialogContent>
-        {conn && <Picker conn={conn} pending={pending} onSave={onSave} />}
+        {conn && <Picker key={conn.id} conn={conn} pending={pending} onSave={onSave} />}
       </DialogContent>
     </Dialog>
   )

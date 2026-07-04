@@ -64,12 +64,13 @@ check-web-dist:
 	fi
 
 ## web-ci: exactly what CI's web job runs (frozen install -> lint -> test ->
-## route-tree drift check -> build)
+## route-tree drift check -> build -> bundle guard)
 .PHONY: web-ci
 web-ci:
 	cd web && pnpm install --frozen-lockfile && pnpm lint && pnpm test \
 		&& pnpm exec tsr generate && git diff --exit-code src/routeTree.gen.ts \
 		&& pnpm build
+	$(MAKE) check-web-dist
 
 ## test: run the full suite with the race detector (always -race -count=1)
 .PHONY: test

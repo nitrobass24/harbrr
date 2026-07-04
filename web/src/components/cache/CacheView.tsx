@@ -4,10 +4,18 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
+import { LoadError, LoadingBlock } from "@/components/ui/load-error"
 import { useCacheConfig, useCacheStats, useFlushCache, useUpdateCacheConfig } from "@/hooks/useSettings"
 import { formatSize } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import type { CacheConfig } from "@/types/api"
+
+// safeInt parses a numeric-input value, keeping the previous value rather than
+// storing NaN (an empty or partial entry like "-" would otherwise submit NaN).
+function safeInt(raw: string, previous: number): number {
+  const n = Number(raw)
+  return Number.isNaN(n) ? previous : n
+}
 
 // Cache observability + the live-tunable knobs, the body of the Cache page.
 // trackerHitsSaved is the headline: durable tracker requests answered from
@@ -15,6 +23,9 @@ import type { CacheConfig } from "@/types/api"
 export function CacheView() {
   const stats = useCacheStats()
   const flush = useFlushCache()
+
+  if (stats.isError) return <LoadError what="cache stats" />
+  if (stats.isLoading) return <LoadingBlock />
 
   return (
     <section className="flex flex-col gap-4">
@@ -146,7 +157,7 @@ function ConfigForm() {
             className="h-8 font-mono text-[12px]"
             type="number"
             value={draft.thinThreshold}
-            onChange={(e) => setDraft({ ...draft, thinThreshold: Number(e.target.value) })}
+            onChange={(e) => setDraft({ ...draft, thinThreshold: safeInt(e.target.value, draft.thinThreshold) })}
           />
         </span>
         <span className="flex flex-col gap-1.5">
@@ -156,7 +167,7 @@ function ConfigForm() {
             className="h-8 font-mono text-[12px]"
             type="number"
             value={draft.refreshAheadPct}
-            onChange={(e) => setDraft({ ...draft, refreshAheadPct: Number(e.target.value) })}
+            onChange={(e) => setDraft({ ...draft, refreshAheadPct: safeInt(e.target.value, draft.refreshAheadPct) })}
           />
         </span>
       </div>

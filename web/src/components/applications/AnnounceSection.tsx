@@ -20,7 +20,7 @@ import {
   useDeleteAnnounce,
   useSetAnnounceEnabled
 } from "@/hooks/useAppConnections"
-import { getBaseUrl } from "@/lib/base-url"
+import { defaultHarbrrUrl } from "@/lib/base-url"
 import { hostname } from "@/lib/format"
 import type { AnnounceKind } from "@/types/api"
 
@@ -97,7 +97,7 @@ function AddAnnounceForm({ pending, error, onSubmit }: {
   const [kind, setKind] = useState<AnnounceKind>("qui")
   const [baseUrl, setBaseUrl] = useState("")
   const [apiKey, setApiKey] = useState("")
-  const [harbrrUrl, setHarbrrUrl] = useState(`${window.location.origin}${getBaseUrl()}`)
+  const [harbrrUrl, setHarbrrUrl] = useState(defaultHarbrrUrl())
 
   return (
     <form

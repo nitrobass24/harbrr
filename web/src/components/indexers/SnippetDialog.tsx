@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
 import { Copy } from "lucide-react"
-import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -11,6 +10,7 @@ import {
   DialogTitle
 } from "@/components/ui/dialog"
 import { api } from "@/lib/api"
+import { copyText } from "@/lib/clipboard"
 
 // cross-seed v6 has no indexer API: this dialog surfaces the copy-paste
 // config.js torznab entry the server mints (freeleech-bypass /full feed).
@@ -38,8 +38,7 @@ export function SnippetDialog({ slug, onClose }: { slug: string | null, onClose:
           <Button
             disabled={!snippet.data}
             onClick={() => {
-              void navigator.clipboard.writeText(snippet.data?.configJs ?? "")
-              toast.success("Snippet copied")
+              void copyText(snippet.data?.configJs ?? "", "Snippet copied")
             }}
           >
             <Copy className="h-4 w-4" /> Copy

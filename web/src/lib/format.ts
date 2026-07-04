@@ -34,3 +34,21 @@ export function hostname(url: string | undefined): string {
     return url
   }
 }
+
+// syncStatusClass maps an app-sync status to its text color. Single source of
+// truth for the sync-status styling shared by the connection card, the sync
+// report, and the status drawer.
+export function syncStatusClass(status: string | undefined): string {
+  switch (status) {
+    case "ok":
+      return "text-ok"
+    case "partial":
+      return "text-warn"
+    case "error":
+      return "text-bad"
+    case "skipped":
+      return "text-faint"
+    default:
+      return "text-faint"
+  }
+}

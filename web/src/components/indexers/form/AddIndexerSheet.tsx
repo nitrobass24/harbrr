@@ -18,7 +18,7 @@ export function IndexerSheet({ state, onClose }: { state: IndexerSheetState, onC
   return (
     <Sheet open={state.open} onOpenChange={(open) => { if (!open) onClose() }}>
       <SheetContent side="right" className="w-full overflow-auto sm:max-w-lg">
-        {state.open && (state.mode === "create" ? <CreateFlow onClose={onClose} /> : <EditFlow slug={state.slug} onClose={onClose} />)}
+        {state.open && (state.mode === "create" ? <CreateFlow onClose={onClose} /> : <EditFlow key={state.slug} slug={state.slug} onClose={onClose} />)}
       </SheetContent>
     </Sheet>
   )

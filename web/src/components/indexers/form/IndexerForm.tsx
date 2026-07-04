@@ -57,7 +57,9 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
         e.preventDefault()
         const settings = settingsPayload(values, mode)
         if (mode === "edit") {
-          onSubmit({ mode, body: { name, baseUrl: baseUrl || undefined, settings } })
+          // Send baseUrl verbatim so clearing the field ("") actually clears the
+          // stored override; `|| undefined` would drop it and keep the old value.
+          onSubmit({ mode, body: { name, baseUrl, settings } })
         } else {
           onSubmit({ mode, body: { slug, definitionId: definition.id, name, baseUrl: baseUrl || undefined, settings } })
         }

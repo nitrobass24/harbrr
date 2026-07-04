@@ -37,6 +37,9 @@ func NewHandler(fsys fs.FS, basePath, version string) *Handler {
 // processIndex rewrites root-absolute src/href URLs under basePath and injects
 // the runtime globals before </head>.
 func processIndex(index []byte, basePath, version string) []byte {
+	// Normalize away a trailing slash so a basePath like "/harbrr/" cannot produce
+	// a doubled slash ("//assets/…") in the rewritten URLs or the injected global.
+	basePath = strings.TrimRight(basePath, "/")
 	if basePath != "" {
 		index = bytes.ReplaceAll(index, []byte(`src="/`), []byte(`src="`+basePath+`/`))
 		index = bytes.ReplaceAll(index, []byte(`href="/`), []byte(`href="`+basePath+`/`))

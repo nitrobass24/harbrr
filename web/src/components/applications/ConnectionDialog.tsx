@@ -11,7 +11,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
-import { getBaseUrl } from "@/lib/base-url"
+import { defaultHarbrrUrl } from "@/lib/base-url"
 import type { AppConnection, ConnectionKind, CreateConnection, UpdateConnection } from "@/types/api"
 
 const KINDS: ConnectionKind[] = ["sonarr", "radarr", "lidarr", "readarr", "whisparr", "qui"]
@@ -163,8 +163,3 @@ function FieldWrap({ id, label, children }: { id: string, label: string, childre
   )
 }
 
-// Best-effort prefill: how this browser reaches harbrr is usually how the app
-// can too (the operator adjusts for container-network names as needed).
-function defaultHarbrrUrl(): string {
-  return `${window.location.origin}${getBaseUrl()}`
-}

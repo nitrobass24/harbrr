@@ -9,7 +9,7 @@ import {
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu"
 import { Switch } from "@/components/ui/switch"
-import { hostname, relativeTime } from "@/lib/format"
+import { hostname, relativeTime, syncStatusClass } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import type { AppConnection } from "@/types/api"
 
@@ -21,13 +21,6 @@ export type ConnectionActions = {
   onDelete: (conn: AppConnection) => void
   onStatus: (id: number) => void
   onSelectIndexers: (conn: AppConnection) => void
-}
-
-const SYNC_STYLE: Record<string, string> = {
-  ok: "text-ok",
-  partial: "text-warn",
-  error: "text-bad",
-  skipped: "text-faint",
 }
 
 export function ConnectionCard({ conn, syncing, actions }: {
@@ -50,7 +43,7 @@ export function ConnectionCard({ conn, syncing, actions }: {
           {conn.lastSyncAt && (
             <span>
               · last sync{" "}
-              <span className={SYNC_STYLE[conn.lastSyncStatus ?? ""] ?? ""}>{conn.lastSyncStatus}</span>{" "}
+              <span className={syncStatusClass(conn.lastSyncStatus)}>{conn.lastSyncStatus}</span>{" "}
               {relativeTime(conn.lastSyncAt)}
             </span>
           )}

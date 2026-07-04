@@ -1,12 +1,6 @@
+import { syncStatusClass } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import type { SyncReport } from "@/types/api"
-
-const STATUS_STYLE: Record<string, string> = {
-  ok: "text-ok",
-  partial: "text-warn",
-  error: "text-bad",
-  skipped: "text-faint",
-}
 
 const ACTION_STYLE: Record<string, string> = {
   created: "text-ok",
@@ -23,7 +17,7 @@ export function SyncReportView({ report }: { report: SyncReport }) {
     <div className="flex flex-col gap-2 text-[13px]">
       <p>
         Sync status:{" "}
-        <span className={cn("font-medium", STATUS_STYLE[report.status] ?? "")}>{report.status}</span>
+        <span className={cn("font-medium", syncStatusClass(report.status))}>{report.status}</span>
       </p>
       {report.results.length > 0 && (
         <ul className="flex flex-col gap-1">
