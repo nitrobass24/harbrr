@@ -1,0 +1,43 @@
+---
+id: mixedresp
+name: mixedresp
+description: "Synthetic tracker mixing an HTML search path with a JSON API path (per-path response types)."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://mixed.test/
+
+caps:
+  categories:
+    movies: Movies
+
+  modes:
+    search: [q]
+
+# One selector vocabulary serves both paths: the HTML page uses custom elements
+# named like the JSON keys (<results>, <name>, <dl>, ...), so each path's body
+# parses under its own response type with the shared rows/fields blocks.
+search:
+  paths:
+    - path: browse
+    - path: api/search
+      response:
+        type: json
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: results
+  fields:
+    title:
+      selector: name
+    download:
+      selector: dl
+    size:
+      selector: size
+    seeders:
+      selector: seeders
+    leechers:
+      selector: leechers
+    category:
+      selector: cat

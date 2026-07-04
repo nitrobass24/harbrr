@@ -62,6 +62,50 @@ func TestBuildRequests_GET(t *testing.T) {
 	}
 }
 
+// TestBuildRequests_PerPathMeta asserts each built request carries ITS path's
+// followredirect + response type (Jackett reads both per SearchPath) — never a
+// neighbor's: the first-path-wins response-type reuse was a live bug for mixed
+// HTML+JSON defs.
+func TestBuildRequests_PerPathMeta(t *testing.T) {
+	t.Parallel()
+
+	follow := true
+	def := &loader.Definition{
+		Links: []string{"https://meta.invalid/"},
+		Search: loader.Search{
+			Paths: []loader.SearchPathBlock{
+				{Path: "/browse", FollowRedirect: &follow},
+				{Path: "/api", Response: &loader.ResponseBlock{Type: "json"}},
+				{Path: "/rss", Response: &loader.ResponseBlock{Type: "xml"}},
+			},
+		},
+	}
+
+	reqs, err := buildRequests(def, Query{Keywords: "x"}, testDeps("https://meta.invalid/", nil))
+	if err != nil {
+		t.Fatalf("buildRequests: %v", err)
+	}
+	if len(reqs) != 3 {
+		t.Fatalf("reqs = %d, want 3", len(reqs))
+	}
+	want := []struct {
+		followRedirect bool
+		respType       string
+	}{
+		{followRedirect: true, respType: ""},
+		{followRedirect: false, respType: "json"},
+		{followRedirect: false, respType: "xml"},
+	}
+	for i, w := range want {
+		if reqs[i].followRedirect != w.followRedirect {
+			t.Errorf("reqs[%d].followRedirect = %v, want %v", i, reqs[i].followRedirect, w.followRedirect)
+		}
+		if reqs[i].respType != w.respType {
+			t.Errorf("reqs[%d].respType = %q, want %q", i, reqs[i].respType, w.respType)
+		}
+	}
+}
+
 // TestBuildRequests_POST asserts a POST search renders inputs into a form body
 // with a form Content-Type, leaving the URL query empty.
 func TestBuildRequests_POST(t *testing.T) {

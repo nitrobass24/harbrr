@@ -1,0 +1,12 @@
+{
+  "results": [
+    {
+      "name": "JSON Movie 1080p",
+      "size": 4000000000,
+      "seeders": 22,
+      "leechers": 8,
+      "cat": "movies",
+      "dl": "https://mixed.test/dl/j1.torrent"
+    }
+  ]
+}

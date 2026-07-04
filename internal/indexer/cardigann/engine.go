@@ -387,13 +387,14 @@ func (e *Engine) ParseResponse(body []byte, responseType string) ([]*Release, er
 // ParseResponseQuery is ParseResponse with an explicit query, so the andmatch row
 // filter and any .Query.* field templates see the real search terms when
 // replaying a saved response. responseType overrides the definition's response
-// type when non-empty.
+// type when non-empty; when empty, the def's leading path type applies (a saved
+// single body carries no path identity, so the offline replay defaults to the
+// first declared type — the live search parses each response per-path instead).
 func (e *Engine) ParseResponseQuery(body []byte, responseType string, query Query) ([]*Release, error) {
-	def := e.def
-	if responseType != "" {
-		def = withResponseType(e.def, responseType)
+	if responseType == "" {
+		responseType = search.DefaultResponseType(e.def)
 	}
-	releases, err := search.ParseResults(def, body, query, e.deps)
+	releases, err := search.ParseResults(e.def, body, responseType, query, e.deps)
 	if err != nil {
 		return nil, fmt.Errorf("cardigann: parsing response for %q: %w", e.def.ID, err)
 	}
@@ -408,23 +409,4 @@ func (e *Engine) ResultsJSON(releases []*Release) ([]byte, error) {
 		return nil, fmt.Errorf("cardigann: marshaling results for %q: %w", e.def.ID, err)
 	}
 	return out, nil
-}
-
-// withResponseType returns a shallow copy of def with the first search path's
-// Response.Type overridden, so ParseResponseQuery can force HTML/JSON parsing of a
-// saved body without mutating the shared definition.
-func withResponseType(def *loader.Definition, responseType string) *loader.Definition {
-	cp := *def
-	paths := make([]loader.SearchPathBlock, len(def.Search.Paths))
-	copy(paths, def.Search.Paths)
-	if len(paths) == 0 {
-		paths = []loader.SearchPathBlock{{Path: def.Search.Path}}
-	}
-	resp := loader.ResponseBlock{Type: responseType}
-	if paths[0].Response != nil {
-		resp.NoResultsMessage = paths[0].Response.NoResultsMessage
-	}
-	paths[0].Response = &resp
-	cp.Search.Paths = paths
-	return &cp
 }

@@ -71,20 +71,20 @@ type Deps struct {
 	Clock func() time.Time
 }
 
-// ParseResults is the offline extraction half: it parses body per the response
-// type, splits it into rows, runs the per-row field loop IN DEFINITION ORDER
+// ParseResults is the offline extraction half: it parses body per respType
+// (the producing path's Response.Type — "" parses as HTML, Jackett's default),
+// splits it into rows, runs the per-row field loop IN DEFINITION ORDER
 // (so a later field template can read .Result.<earlier>), applies the row
 // filters against the query, and hands each surviving base-field map to the
 // normalizer. No HTTP happens here; it is the deterministic core the engine and
 // the parity harness replay saved bytes through.
-func ParseResults(def *loader.Definition, body []byte, query Query, deps Deps) ([]*normalizer.Release, error) {
+func ParseResults(def *loader.Definition, body []byte, respType string, query Query, deps Deps) ([]*normalizer.Release, error) {
 	// Install a fresh selector for this parse. Deps is taken by value, so this is
 	// local to the call: the field loop rebinds EvalTemplate per row on THIS
 	// instance, never on shared engine state, so concurrent searches on one reused
 	// Engine cannot race on the selector.
 	deps.Selector = selector.New()
 
-	respType := responseType(def)
 	doc, err := parseDocument(deps.Selector, body, respType)
 	if err != nil {
 		return nil, err
@@ -146,10 +146,12 @@ func parseDocument(eng *selector.Engine, body []byte, respType string) (*selecto
 	}
 }
 
-// responseType returns the effective response type for the search, reading the
-// first path's Response.Type (the corpus carries Response on the path block).
-// Defaults to HTML.
-func responseType(def *loader.Definition) string {
+// DefaultResponseType returns the definition's leading response type — the
+// first path carrying a Response.Type — as the fallback for OFFLINE replay of a
+// single saved body whose producing path is unknown (Engine.ParseResponseQuery
+// without an explicit override). The live search path never uses it: Execute
+// parses each response under its own path's type.
+func DefaultResponseType(def *loader.Definition) string {
 	for i := range def.Search.Paths {
 		if r := def.Search.Paths[i].Response; r != nil && r.Type != "" {
 			return r.Type
@@ -168,7 +170,6 @@ func Execute(ctx context.Context, def *loader.Definition, query Query, session *
 		return nil, err
 	}
 
-	respType := responseType(def)
 	var out []*normalizer.Release
 	for i := range reqs {
 		sr, err := doSearchRequest(ctx, doer, reqs[i], session)
@@ -186,13 +187,17 @@ func Execute(ctx context.Context, def *loader.Definition, query Query, session *
 			}
 		}
 		body := sr.body
+		// Each response is handled under ITS path's response type (Jackett reads
+		// SearchPath.Response per request); a mixed HTML+JSON def must never parse
+		// one path's body with another path's type.
+		respType := reqs[i].respType
 		// Lazy login: a logged-out response (login.test selector absent) aborts the
 		// parse so the engine can re-login and retry once. Checked before parsing,
 		// matching Jackett's CheckIfLoginIsNeeded -> DoLogin order.
 		if looksLoggedOut(def, body, respType, query, deps) {
 			return nil, ErrSearchLoggedOut
 		}
-		rels, err := ParseResults(def, body, query, deps)
+		rels, err := ParseResults(def, body, respType, query, deps)
 		if err != nil {
 			// Mark the parse boundary so the registry classifies it as parse_error
 			// (multiple %w keeps both the sentinel and the underlying cause).

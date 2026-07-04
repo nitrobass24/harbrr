@@ -30,6 +30,10 @@ type builtRequest struct {
 	// SearchPath.Followredirect here — the definition-level flag applies to
 	// login/landing flows and never to search, so there is no fallback).
 	followRedirect bool
+	// respType is this path's Response.Type ("" parses as HTML). Carried per
+	// request so a mixed HTML+JSON multi-path def parses each body under its own
+	// path's type, matching Jackett's per-SearchPath response handling.
+	respType string
 }
 
 // buildRequests renders every search path the definition declares (Search.Path
@@ -235,6 +239,7 @@ func assembleRequest(path loader.SearchPathBlock, absURL string, pairs []kv, hea
 			body:           encodeOrdered(pairs),
 			headers:        withFormContentType(headers),
 			followRedirect: boolVal(path.FollowRedirect),
+			respType:       pathResponseType(path),
 		}, nil
 	}
 
@@ -242,7 +247,22 @@ func assembleRequest(path loader.SearchPathBlock, absURL string, pairs []kv, hea
 	if err != nil {
 		return builtRequest{}, err
 	}
-	return builtRequest{method: stdhttp.MethodGet, url: full, headers: headers, followRedirect: boolVal(path.FollowRedirect)}, nil
+	return builtRequest{
+		method:         stdhttp.MethodGet,
+		url:            full,
+		headers:        headers,
+		followRedirect: boolVal(path.FollowRedirect),
+		respType:       pathResponseType(path),
+	}, nil
+}
+
+// pathResponseType reads a path's own Response.Type; "" (no response block)
+// parses as HTML, Jackett's default.
+func pathResponseType(path loader.SearchPathBlock) string {
+	if path.Response != nil {
+		return path.Response.Type
+	}
+	return ""
 }
 
 // encodeOrdered renders pairs as an ordered x-www-form-urlencoded string
