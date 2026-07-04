@@ -110,7 +110,13 @@ type UpdateParams struct {
 
 // Update applies a patch, re-encrypting the URL when rotated.
 func (s *Service) Update(ctx context.Context, id int64, p UpdateParams) error {
-	row, err := s.repo.GetSolver(ctx, s.db, id)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("solver: begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	row, err := s.repo.GetSolver(ctx, tx, id)
 	if err != nil {
 		return fmt.Errorf("solver: get: %w", err)
 	}
@@ -143,8 +149,11 @@ func (s *Service) Update(ctx context.Context, id int64, p UpdateParams) error {
 		}
 		row.URLEncrypted, row.KeyID = enc, s.keyring.KeyID()
 	}
-	if err := s.repo.UpdateSolver(ctx, s.db, row); err != nil {
+	if err := s.repo.UpdateSolver(ctx, tx, row); err != nil {
 		return fmt.Errorf("solver: update: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("solver: commit: %w", err)
 	}
 	return nil
 }

@@ -114,7 +114,13 @@ type UpdateParams struct {
 
 // Update applies a patch, re-encrypting the URL when rotated.
 func (s *Service) Update(ctx context.Context, id int64, p UpdateParams) error {
-	row, err := s.repo.GetProxy(ctx, s.db, id)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("proxy: begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	row, err := s.repo.GetProxy(ctx, tx, id)
 	if err != nil {
 		return fmt.Errorf("proxy: get: %w", err)
 	}
@@ -140,8 +146,11 @@ func (s *Service) Update(ctx context.Context, id int64, p UpdateParams) error {
 		}
 		row.URLEncrypted, row.KeyID = enc, s.keyring.KeyID()
 	}
-	if err := s.repo.UpdateProxy(ctx, s.db, row); err != nil {
+	if err := s.repo.UpdateProxy(ctx, tx, row); err != nil {
 		return fmt.Errorf("proxy: update: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("proxy: commit: %w", err)
 	}
 	return nil
 }
