@@ -18,13 +18,25 @@ import (
 
 // builtRequest is one fully resolved search request: its method, absolute URL,
 // optional form body (POST), and rendered headers. The URL is built but never
-// logged raw — it may carry a passkey; every error site routes it through
-// apphttp.RedactURL.
+// logged raw — a definition can embed a secret ANYWHERE in it (a passkey in the
+// path, a config value under an arbitrary query name), so every error site
+// surfaces host-only detail via apphttp.SchemeHost; RedactURL's name/length
+// heuristics are not trusted for def-driven URLs. Request-level diagnosis
+// stays available at the paced-client debug/trace logs.
 type builtRequest struct {
 	method  string
 	url     string
 	body    string
 	headers map[string][]string
+	// followRedirect mirrors the PATH-level `followredirect` opt-in, gating the
+	// manual follow of a 3xx search response (Jackett reads only
+	// SearchPath.Followredirect here — the definition-level flag applies to
+	// login/landing flows and never to search, so there is no fallback).
+	followRedirect bool
+	// respType is this path's Response.Type ("" parses as HTML). Carried per
+	// request so a mixed HTML+JSON multi-path def parses each body under its own
+	// path's type, matching Jackett's per-SearchPath response handling.
+	respType string
 }
 
 // buildRequests renders every search path the definition declares (Search.Path
@@ -225,10 +237,12 @@ func splitRaw(raw string) []kv {
 func assembleRequest(path loader.SearchPathBlock, absURL string, pairs []kv, headers map[string][]string) (builtRequest, error) {
 	if strings.EqualFold(path.Method, stdhttp.MethodPost) {
 		return builtRequest{
-			method:  stdhttp.MethodPost,
-			url:     absURL,
-			body:    encodeOrdered(pairs),
-			headers: withFormContentType(headers),
+			method:         stdhttp.MethodPost,
+			url:            absURL,
+			body:           encodeOrdered(pairs),
+			headers:        withFormContentType(headers),
+			followRedirect: boolVal(path.FollowRedirect),
+			respType:       pathResponseType(path),
 		}, nil
 	}
 
@@ -236,7 +250,22 @@ func assembleRequest(path loader.SearchPathBlock, absURL string, pairs []kv, hea
 	if err != nil {
 		return builtRequest{}, err
 	}
-	return builtRequest{method: stdhttp.MethodGet, url: full, headers: headers}, nil
+	return builtRequest{
+		method:         stdhttp.MethodGet,
+		url:            full,
+		headers:        headers,
+		followRedirect: boolVal(path.FollowRedirect),
+		respType:       pathResponseType(path),
+	}, nil
+}
+
+// pathResponseType reads a path's own Response.Type; "" (no response block)
+// parses as HTML, Jackett's default.
+func pathResponseType(path loader.SearchPathBlock) string {
+	if path.Response != nil {
+		return path.Response.Type
+	}
+	return ""
 }
 
 // encodeOrdered renders pairs as an ordered x-www-form-urlencoded string
@@ -285,7 +314,7 @@ func appendQuerySep(rawURL string, pairs []kv, sep string) (string, error) {
 	}
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return "", fmt.Errorf("parsing request URL %q: %w", apphttp.RedactURL(rawURL), err)
+		return "", fmt.Errorf("parsing request URL %q: %w", apphttp.SchemeHost(rawURL), apphttp.RedactURLError(err))
 	}
 	appended := encodeOrderedSep(pairs, sep)
 	switch {
@@ -334,19 +363,17 @@ func renderHeaders(in map[string][]string, ctx *template.Context) (map[string][]
 	return out, nil
 }
 
-// doRequest issues one builtRequest through the Doer, attaching the session
-// cookies and rendered headers, and reads the (capped) response body. A non-2xx
-// status fails fast: the tracker errored (403/429/500…) so the body is not
-// results, and silently parsing it would yield a misleading empty page. Every
-// error site redacts the URL.
-func doRequest(ctx context.Context, doer Doer, br builtRequest, session *login.Session) ([]byte, error) {
+// newRequest builds the *http.Request for a builtRequest: context, optional form
+// body, rendered headers, then the session cookies + solver UA (applySession).
+// Shared by doRequest and doSearchRequest so both issue byte-identical requests.
+func newRequest(ctx context.Context, br builtRequest, session *login.Session) (*stdhttp.Request, error) {
 	var bodyReader io.Reader
 	if br.body != "" {
 		bodyReader = strings.NewReader(br.body)
 	}
 	req, err := stdhttp.NewRequestWithContext(ctx, br.method, br.url, bodyReader)
 	if err != nil {
-		return nil, fmt.Errorf("building %s request to %s: %w", br.method, apphttp.RedactURL(br.url), err)
+		return nil, fmt.Errorf("building %s request to %s: %w", br.method, apphttp.SchemeHost(br.url), apphttp.RedactURLError(err))
 	}
 	for name, vals := range br.headers {
 		for _, v := range vals {
@@ -354,29 +381,109 @@ func doRequest(ctx context.Context, doer Doer, br builtRequest, session *login.S
 		}
 	}
 	applySession(req, session)
+	return req, nil
+}
 
+// checkStatus maps a non-2xx, non-redirect status to the loud error doRequest
+// has always produced: 429/503 are pacing signals the registry classifies as
+// rate_limited (and the paced client backs off on), carried as a typed,
+// status-bearing error; anything else fails fast — the tracker errored
+// (403/500…) so the body is not results, and silently parsing it would yield a
+// misleading empty page. The URL is redacted; RateLimitedError itself holds
+// none, so it can't leak a passkey.
+func checkStatus(resp *stdhttp.Response, br builtRequest) error {
+	if IsRateLimitStatus(resp.StatusCode) {
+		return fmt.Errorf("%s %s: %w", br.method, apphttp.SchemeHost(br.url),
+			&RateLimitedError{StatusCode: resp.StatusCode, RetryAfter: ParseRetryAfter(resp.Header.Get("Retry-After"), time.Now)})
+	}
+	return fmt.Errorf("%s %s: tracker returned HTTP %d", br.method, apphttp.SchemeHost(br.url), resp.StatusCode)
+}
+
+// doRequest issues one builtRequest through the Doer, attaching the session
+// cookies and rendered headers, and reads the (capped) response body. Any
+// non-2xx status fails fast (see checkStatus). Used by the download/grab flows,
+// whose requests keep the client's default redirect-following (Jackett's
+// download path always follows); search-path requests go through
+// doSearchRequest instead, which surfaces 3xx to the executor. Every error site
+// redacts the URL.
+func doRequest(ctx context.Context, doer Doer, br builtRequest, session *login.Session) ([]byte, error) {
+	req, err := newRequest(ctx, br, session)
+	if err != nil {
+		return nil, err
+	}
 	resp, err := doer.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%s %s: %w", br.method, apphttp.RedactURL(br.url), err)
+		return nil, fmt.Errorf("%s %s: %w", br.method, apphttp.SchemeHost(br.url), apphttp.RedactURLError(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		// 429/503 are pacing signals the registry classifies as rate_limited (and the
-		// paced client backs off on); carry a typed, status-bearing error. The URL is
-		// redacted here; RateLimitedError itself holds none, so it can't leak a passkey.
-		if IsRateLimitStatus(resp.StatusCode) {
-			return nil, fmt.Errorf("%s %s: %w", br.method, apphttp.RedactURL(br.url),
-				&RateLimitedError{StatusCode: resp.StatusCode, RetryAfter: ParseRetryAfter(resp.Header.Get("Retry-After"), time.Now)})
-		}
-		return nil, fmt.Errorf("%s %s: tracker returned HTTP %d", br.method, apphttp.RedactURL(br.url), resp.StatusCode)
+		return nil, checkStatus(resp, br)
 	}
 
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxSearchBodyBytes))
 	if err != nil {
-		return nil, fmt.Errorf("reading response from %s: %w", apphttp.RedactURL(br.url), err)
+		return nil, fmt.Errorf("reading response from %s: %w", apphttp.SchemeHost(br.url), err)
 	}
 	return data, nil
+}
+
+// searchResponse is one search-path exchange surfaced to the executor: 2xx
+// bodies and unfollowed 3xx redirects are both data (Jackett's WebClient never
+// auto-follows and hands the raw redirect back); everything else already failed
+// loud inside doSearchRequest.
+type searchResponse struct {
+	status int
+	// location is the redirect target resolved against the request URL; "" when
+	// the response is not a redirect or the 3xx carried no Location header. It is
+	// never logged raw — like the request URL, it can embed a secret.
+	location string
+	body     []byte
+}
+
+// doSearchRequest issues one search-path request. It stamps the context so the
+// production client's RedirectPolicy surfaces a 3xx instead of following it —
+// making the no-follow invariant structural rather than a caller obligation.
+// The executor then decides: manual follow (path followredirect), logged-out
+// signal, or parse-as-is.
+func doSearchRequest(ctx context.Context, doer Doer, br builtRequest, session *login.Session) (searchResponse, error) {
+	req, err := newRequest(apphttp.WithNoRedirectFollow(ctx), br, session)
+	if err != nil {
+		return searchResponse{}, err
+	}
+	resp, err := doer.Do(req)
+	if err != nil {
+		return searchResponse{}, fmt.Errorf("%s %s: %w", br.method, apphttp.SchemeHost(br.url), apphttp.RedactURLError(err))
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if (resp.StatusCode < 200 || resp.StatusCode >= 300) && !isRedirectStatus(resp.StatusCode) {
+		return searchResponse{}, checkStatus(resp, br)
+	}
+
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxSearchBodyBytes))
+	if err != nil {
+		return searchResponse{}, fmt.Errorf("reading response from %s: %w", apphttp.SchemeHost(br.url), err)
+	}
+	return searchResponse{status: resp.StatusCode, location: redirectTarget(resp, br.url), body: data}, nil
+}
+
+// redirectTarget resolves a 3xx response's Location header against the request
+// URL, so a relative Location works regardless of the Doer setting
+// resp.Request. Returns "" when there is no Location or it cannot be resolved.
+func redirectTarget(resp *stdhttp.Response, reqURL string) string {
+	if !isRedirectStatus(resp.StatusCode) {
+		return ""
+	}
+	loc := resp.Header.Get("Location")
+	if loc == "" {
+		return ""
+	}
+	abs, err := resolveURL(reqURL, loc)
+	if err != nil {
+		return ""
+	}
+	return abs
 }
 
 // maxSearchBodyBytes caps how much of a response the executor buffers, guarding
@@ -410,14 +517,14 @@ func applySession(req *stdhttp.Request, session *login.Session) {
 func resolveURL(baseURL, rendered string) (string, error) {
 	ref, err := url.Parse(rendered)
 	if err != nil {
-		return "", fmt.Errorf("parsing search path %q: %w", apphttp.RedactURL(rendered), err)
+		return "", fmt.Errorf("parsing search path %q: %w", apphttp.SchemeHost(rendered), apphttp.RedactURLError(err))
 	}
 	if ref.IsAbs() {
 		return ref.String(), nil
 	}
 	base, err := url.Parse(baseURL)
 	if err != nil {
-		return "", fmt.Errorf("parsing base URL %q: %w", apphttp.RedactURL(baseURL), err)
+		return "", fmt.Errorf("parsing base URL %q: %w", apphttp.SchemeHost(baseURL), apphttp.RedactURLError(err))
 	}
 	return base.ResolveReference(ref).String(), nil
 }

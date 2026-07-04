@@ -1,0 +1,26 @@
+name: matrix-search-mixed-response
+archetype: mixed-response-type
+golden_source: hand-derived
+mode: search
+description: >
+  Compatibility matrix: a multi-path search block mixing an HTML path (no
+  response block) with a JSON path (response.type json). Jackett handles the
+  response type per SearchPath, so each body must parse under ITS OWN path's
+  type — reusing the first path's type across the loop would parse the JSON
+  body as HTML (or vice versa) and corrupt/fail the whole search. Hand-derived
+  golden, releases in path order: HTML row (size 2 GB = 2147483648, peers
+  7 + 3 = 10) then JSON row (size 4000000000 bytes verbatim, peers 22 + 8 =
+  30); category "movies" -> Movies (2000) on both; absolute download links
+  pass through.
+definition: definition.yml
+query:
+  keywords: ubuntu
+steps:
+  - method: GET
+    url: https://mixed.test/browse?q=ubuntu
+    response: response.html
+    note: HTML path parses under the default HTML type
+  - method: GET
+    url: https://mixed.test/api/search?q=ubuntu
+    response: response.json
+    note: JSON path parses under its own response.type json

@@ -35,7 +35,9 @@ type netToken struct {
 //	hh   h          -> 12h zero-padded / non-padded
 //	mm   m          -> minute padded / non-padded
 //	ss   s          -> second padded / non-padded
-//	tt   t          -> AM/PM designator (Go only supports PM/pm; t maps to PM too)
+//	tt   t          -> AM/PM designator (Go only supports PM/pm; t maps to PM too).
+//	                   .NET matches designators case-INsensitively; ParseDate
+//	                   uppercases them in the value (normalizeAMPM) to compensate.
 //	zzz  zz         -> signed UTC offset +05:30 / +05
 //	K               -> round-trip kind: Z or signed offset
 //	fffffff..f      -> fractional seconds (trailing-zero-significant)
@@ -159,4 +161,30 @@ func matchToken(s string) (netToken, bool) {
 		}
 	}
 	return netToken{}, false
+}
+
+// layoutHasDateTokens reports whether the .NET layout carries a year, month, or
+// day-of-month token, walking it with the same greedy scanner TranslateLayout
+// uses (substring checks on the GO layout would misfire: month "1" is a
+// substring of hour "15", day "2" of year "2006"). Weekday-name tokens
+// (ddd/dddd) do not count — they parse a name without setting a date component.
+// Used by defaultMissingDate to spot time-only layouts.
+func layoutHasDateTokens(netLayout string) bool {
+	for i := 0; i < len(netLayout); {
+		if !strings.ContainsRune(formatLetters, rune(netLayout[i])) {
+			i++
+			continue
+		}
+		tok, ok := matchToken(netLayout[i:])
+		if !ok {
+			i++
+			continue
+		}
+		switch tok.net {
+		case "yyyy", "yyy", "yy", "y", "MMMM", "MMM", "MM", "M", "dd", "d":
+			return true
+		}
+		i += len(tok.net)
+	}
+	return false
 }

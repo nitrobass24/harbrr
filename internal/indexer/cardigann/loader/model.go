@@ -20,9 +20,11 @@ type Definition struct {
 	Language    string   `yaml:"language"`
 	Type        string   `yaml:"type"`
 	Encoding    string   `yaml:"encoding"`
-	// FollowRedirect is parsed (≈18 vendored defs set it) but NOT yet honored — harbrr
-	// uses the production client's default redirect policy regardless. Per-def redirect
-	// control is a tracked parity gap owned by the deferred engine effort.
+	// FollowRedirect (definition-level) gates only Jackett's LOGIN/landing-page
+	// redirect follow — never search (search reads the path-level flag alone; both
+	// default false independently in Jackett's model). harbrr's login client always
+	// follows redirects, a documented superset that subsumes this flag; the search
+	// stage honors the path-level flag (see search/redirect.go).
 	FollowRedirect  *bool           `yaml:"followredirect,omitempty"`
 	TestLinkTorrent *bool           `yaml:"testlinktorrent,omitempty"`
 	RequestDelay    *float64        `yaml:"requestDelay,omitempty"`
@@ -210,8 +212,11 @@ type Search struct {
 type SearchPathBlock struct {
 	Path   string `yaml:"path"`
 	Method string `yaml:"method,omitempty"`
-	// FollowRedirect is parsed but NOT yet honored (see the Definition.FollowRedirect
-	// note) — a tracked parity gap owned by the deferred engine effort.
+	// FollowRedirect opts this path's search response into a manual redirect
+	// follow (Jackett FollowIfRedirect: ≤5 GET hops). Unset/false means a 3xx is
+	// NOT followed — it is a logged-out signal (defs with login) or parsed as-is,
+	// matching Jackett's no-auto-follow WebClient. There is no fallback to the
+	// definition-level flag (see the Definition.FollowRedirect note).
 	FollowRedirect *bool          `yaml:"followredirect,omitempty"`
 	Categories     []Scalar       `yaml:"categories,omitempty"`
 	Inputs         InputsBlock    `yaml:"inputs,omitempty"`

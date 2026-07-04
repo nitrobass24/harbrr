@@ -62,6 +62,50 @@ func TestBuildRequests_GET(t *testing.T) {
 	}
 }
 
+// TestBuildRequests_PerPathMeta asserts each built request carries ITS path's
+// followredirect + response type (Jackett reads both per SearchPath) — never a
+// neighbor's: the first-path-wins response-type reuse was a live bug for mixed
+// HTML+JSON defs.
+func TestBuildRequests_PerPathMeta(t *testing.T) {
+	t.Parallel()
+
+	follow := true
+	def := &loader.Definition{
+		Links: []string{"https://meta.invalid/"},
+		Search: loader.Search{
+			Paths: []loader.SearchPathBlock{
+				{Path: "/browse", FollowRedirect: &follow},
+				{Path: "/api", Response: &loader.ResponseBlock{Type: "json"}},
+				{Path: "/rss", Response: &loader.ResponseBlock{Type: "xml"}},
+			},
+		},
+	}
+
+	reqs, err := buildRequests(def, Query{Keywords: "x"}, testDeps("https://meta.invalid/", nil))
+	if err != nil {
+		t.Fatalf("buildRequests: %v", err)
+	}
+	if len(reqs) != 3 {
+		t.Fatalf("reqs = %d, want 3", len(reqs))
+	}
+	want := []struct {
+		followRedirect bool
+		respType       string
+	}{
+		{followRedirect: true, respType: ""},
+		{followRedirect: false, respType: "json"},
+		{followRedirect: false, respType: "xml"},
+	}
+	for i, w := range want {
+		if reqs[i].followRedirect != w.followRedirect {
+			t.Errorf("reqs[%d].followRedirect = %v, want %v", i, reqs[i].followRedirect, w.followRedirect)
+		}
+		if reqs[i].respType != w.respType {
+			t.Errorf("reqs[%d].respType = %q, want %q", i, reqs[i].respType, w.respType)
+		}
+	}
+}
+
 // TestBuildRequests_POST asserts a POST search renders inputs into a form body
 // with a form Content-Type, leaving the URL query empty.
 func TestBuildRequests_POST(t *testing.T) {
@@ -226,25 +270,51 @@ func (errDoer) Do(*stdhttp.Request) (*stdhttp.Response, error) {
 	return nil, errors.New("dial failed")
 }
 
-// TestDoRequest_RedactsPasskeyInError proves the newly-wired search HTTP path
-// never leaks a passkey into an error: when the Doer fails on a URL carrying a
-// passkey, the returned error must route the URL through apphttp.RedactURL and
-// exclude the secret. The passkey-shaped value is assembled by concatenation so
-// scanners do not flag the fixture.
+// TestDoRequest_RedactsPasskeyInError proves the search HTTP path never leaks a
+// secret into an error, wherever the definition put it: error sites surface
+// host-only detail (apphttp.SchemeHost), so a passkey survives in neither a
+// query param (even under a name no scrub list knows) nor a PATH segment (where
+// a query-name scrub could never reach). The passkey-shaped values are
+// assembled by concatenation so scanners do not flag the fixture.
 func TestDoRequest_RedactsPasskeyInError(t *testing.T) {
 	t.Parallel()
 
 	passkey := "PK" + "1111111111111111111111111111"
-	br := builtRequest{
-		method: stdhttp.MethodGet,
-		url:    "https://leak.invalid/browse?passkey=" + passkey,
+	tests := []struct {
+		name     string
+		url      string
+		wantHost bool
+	}{
+		{"query passkey", "https://leak.invalid/browse?passkey=" + passkey, true},
+		{"query under an unlisted name", "https://leak.invalid/browse?pk=" + passkey, true},
+		{"path-embedded passkey", "https://leak.invalid/download/" + passkey + "/file.torrent", true},
+		// An UNPARSEABLE URL fails at request build with a *url.Error that quotes
+		// the FULL raw input; the wrap must not let it through (RedactURLError).
+		{"unparseable url with secret", "https://leak.invalid/dl/" + passkey + "/\x7f", false},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			br := builtRequest{method: stdhttp.MethodGet, url: tt.url}
 
-	_, err := doRequest(t.Context(), errDoer{}, br, nil)
-	if err == nil {
-		t.Fatal("doRequest returned nil error, want transport failure")
-	}
-	if strings.Contains(err.Error(), passkey) {
-		t.Errorf("error leaked passkey: %q", err.Error())
+			_, err := doRequest(t.Context(), errDoer{}, br, nil)
+			if err == nil {
+				t.Fatal("doRequest returned nil error, want failure")
+			}
+			if strings.Contains(err.Error(), passkey) {
+				t.Errorf("doRequest error leaked passkey: %q", err.Error())
+			}
+			if tt.wantHost && !strings.Contains(err.Error(), "https://leak.invalid") {
+				t.Errorf("doRequest error lost the host detail: %q", err.Error())
+			}
+
+			_, err = doSearchRequest(t.Context(), errDoer{}, br, nil)
+			if err == nil {
+				t.Fatal("doSearchRequest returned nil error, want failure")
+			}
+			if strings.Contains(err.Error(), passkey) {
+				t.Errorf("doSearchRequest error leaked passkey: %q", err.Error())
+			}
+		})
 	}
 }

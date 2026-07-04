@@ -15,6 +15,9 @@ var matrixArchetypes = []string{
 	"date-heavy",
 	"magnet-only",
 	"download-link-prerequest",
+	"redirect-follow",
+	"redirect-relogin",
+	"mixed-response-type",
 }
 
 // minFixtures is the Definition-of-done bar: match Jackett on >=25 saved-response

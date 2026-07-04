@@ -151,6 +151,26 @@ func TestParseDate(t *testing.T) {
 		{"tz-zz", "yyyy-MM-dd HH:mm:ss zz", "2023-01-02 15:04:05 +02", "2023-01-02T15:04:05+02:00"},
 		{"missing-year-defaults-clock", "MM/dd HH:mm", "03/15 09:30", "2024-03-15T09:30:00Z"},
 		{"missing-year-month-day", "MM-dd", "12-25", "2024-12-25T00:00:00Z"},
+		// .NET matches AM/PM designators case-insensitively (Jackett parses these);
+		// normalizeAMPM compensates for Go's uppercase-only PM token.
+		{"lowercase-pm", "yy-MM-dd hh:mm:ss tt", "23-01-02 03:04:05 pm", "2023-01-02T15:04:05Z"},
+		{"lowercase-am", "MMM d yyyy hh:mm tt", "Jan 2 2023 03:04 am", "2023-01-02T03:04:00Z"},
+		{"mixed-case-pm", "MMM d yyyy hh:mm tt", "Jan 2 2023 03:04 Pm", "2023-01-02T15:04:00Z"},
+		// 1337x's "htt MMM. d": designator attached to the hour digit, no year.
+		{"lowercase-pm-attached", "htt MMM. d", "3pm Jan. 2", "2024-01-02T15:00:00Z"},
+		// mixtapetorrent's "MMM d yyyy - h:mmtt zzz": designator attached to the
+		// minutes, followed by a zone.
+		{"lowercase-pm-attached-zone", "MMM d yyyy - h:mmtt zzz", "Jan 2 2023 - 3:04pm +02:00", "2023-01-02T15:04:00+02:00"},
+		// abtorrents' "MMM d yyyyh:mm tt": year and hour abut with no separator.
+		{"lowercase-pm-abutting-year", "MMM d yyyyh:mm tt", "Jan 2 20233:04 pm", "2023-01-02T15:04:00Z"},
+		// Time-only layouts take the FULL date from the clock (.NET DateTimeParse
+		// defaults, not Go's January 1): torrentqq's "HH:mm" and comicat's
+		// timeparse "HH:mm zzz" ("今天 14:30" -> replace/append -> "14:30 +08:00").
+		{"time-only-defaults-today", "HH:mm", "14:30", "2024-06-01T14:30:00Z"},
+		{"time-only-with-zone", "HH:mm zzz", "14:30 +08:00", "2024-06-01T14:30:00+08:00"},
+		// A weekday NAME is not a date component (.NET and Go alike): a layout with
+		// only a weekday + time still defaults the full date from the clock.
+		{"weekday-name-is-not-a-date", "ddd HH:mm", "Sat 14:30", "2024-06-01T14:30:00Z"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

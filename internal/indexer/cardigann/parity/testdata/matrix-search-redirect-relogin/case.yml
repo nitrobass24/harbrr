@@ -1,0 +1,34 @@
+name: matrix-search-redirect-relogin
+archetype: redirect-relogin
+golden_source: hand-derived
+mode: search
+description: >
+  Compatibility matrix: the redirect half of Jackett's CheckIfLoginIsNeeded. The
+  search path does NOT set followredirect, so an unfollowed 302 on the search
+  response is a logged-out signal (Jackett fires on ANY redirect,
+  unconditionally): the engine re-logins once and retries the search. The 302's
+  Location target is never fetched as a follow — the only /login.php request is
+  the relogin the login block declares. Hand-derived golden: same normalization
+  as smoke-search (size 3 GB = 3221225472, peers = 42 + 3 = 45, category "1" ->
+  Movies (2000)).
+definition: definition.yml
+query:
+  keywords: ubuntu
+steps:
+  - method: GET
+    url: https://relogin.test/profile
+    response: profile.html
+    note: eager first-login probe (login.test) finds the session valid
+  - method: GET
+    url: https://relogin.test/search?q=ubuntu
+    status: 302
+    location: /login.php?returnto=search
+    note: expired session answers a redirect; unfollowed, it signals logged-out
+  - method: GET
+    url: https://relogin.test/login.php
+    response: profile.html
+    note: relogin (login.method get), NOT a fetch of the redirect target
+  - method: GET
+    url: https://relogin.test/search?q=ubuntu
+    response: response.html
+    note: single bounded retry with the fresh session

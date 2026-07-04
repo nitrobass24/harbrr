@@ -1,0 +1,37 @@
+---
+id: multi_path_redirect
+name: Multi-Path Redirect Fixture
+description: "Two search paths; only the SECOND opts into followredirect."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://multi.invalid/
+
+caps:
+  categorymappings:
+    - {id: 1, cat: Movies}
+  modes:
+    search: [q]
+
+search:
+  paths:
+    - path: /a
+    - path: /b
+      followredirect: true
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: tr.row
+  fields:
+    title:
+      selector: a.title
+    download:
+      selector: a.dl
+      attribute: href
+    size:
+      selector: td.size
+    seeders:
+      selector: td.seeders
+    category:
+      text: "1"

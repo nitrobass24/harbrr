@@ -76,3 +76,56 @@ func TestSafeTransportDetail(t *testing.T) {
 		})
 	}
 }
+
+func TestRedactURLError(t *testing.T) {
+	t.Parallel()
+
+	secret := "PK" + "1111"
+
+	t.Run("url.Error is rebuilt host-only", func(t *testing.T) {
+		t.Parallel()
+		uerr := &url.Error{Op: "Get", URL: "https://t.example/dl/" + secret + "?tk=" + secret, Err: errors.New("dial failed")}
+		got := RedactURLError(uerr)
+		if strings.Contains(got.Error(), secret) {
+			t.Fatalf("rebuilt error leaked the URL secret: %q", got.Error())
+		}
+		if !strings.Contains(got.Error(), "https://t.example") || !strings.Contains(got.Error(), "dial failed") {
+			t.Errorf("rebuilt error lost host or cause: %q", got.Error())
+		}
+	})
+
+	t.Run("parse failure raw input is dropped", func(t *testing.T) {
+		t.Parallel()
+		// url.Parse quotes the FULL raw input into its *url.Error message; a %w
+		// wrap of the raw error would leak it one layer below any redacted args.
+		_, err := url.Parse("https://t.example/dl/" + secret + "/\x7f")
+		if err == nil {
+			t.Fatal("url.Parse should fail on the control character")
+		}
+		got := RedactURLError(err)
+		if strings.Contains(got.Error(), secret) {
+			t.Fatalf("rebuilt parse error leaked the raw input: %q", got.Error())
+		}
+	})
+
+	t.Run("nested url.Error chain is scrubbed at every layer", func(t *testing.T) {
+		t.Parallel()
+		inner := &url.Error{Op: "parse", URL: "https://inner.example/dl/" + secret, Err: errors.New("inner cause")}
+		outer := &url.Error{Op: "Get", URL: "https://outer.example/browse?tk=" + secret, Err: inner}
+		got := RedactURLError(outer)
+		if strings.Contains(got.Error(), secret) {
+			t.Fatalf("nested chain leaked a URL secret: %q", got.Error())
+		}
+		if !strings.Contains(got.Error(), "https://outer.example") || !strings.Contains(got.Error(), "inner cause") {
+			t.Errorf("nested chain lost the outer host or the innermost cause: %q", got.Error())
+		}
+	})
+
+	t.Run("non-url.Error passes through", func(t *testing.T) {
+		t.Parallel()
+		plain := errors.New("plain cause")
+		if got := RedactURLError(plain); got != plain { //nolint:errorlint // identity passthrough is the contract.
+			t.Fatalf("RedactURLError(plain) = %v, want the same error", got)
+		}
+	})
+}

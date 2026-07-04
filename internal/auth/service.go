@@ -38,28 +38,11 @@ type Service struct {
 	db      *database.DB
 	users   database.Users
 	apiKeys database.APIKeys
-	clock   func() time.Time
-}
-
-// Option configures the Service.
-type Option func(*Service)
-
-// WithClock injects the reference clock (timestamps).
-func WithClock(fn func() time.Time) Option {
-	return func(s *Service) {
-		if fn != nil {
-			s.clock = fn
-		}
-	}
 }
 
 // NewService builds the auth service over the database.
-func NewService(db *database.DB, opts ...Option) *Service {
-	s := &Service{db: db, clock: time.Now}
-	for _, o := range opts {
-		o(s)
-	}
-	return s
+func NewService(db *database.DB) *Service {
+	return &Service{db: db}
 }
 
 // SetupComplete reports whether the admin account exists.
@@ -92,7 +75,7 @@ func (s *Service) Setup(ctx context.Context, username, password string) (domain.
 	if err != nil {
 		return domain.User{}, fmt.Errorf("auth: hash password: %w", err)
 	}
-	now := s.clock()
+	now := time.Now()
 	u := domain.User{Username: username, PasswordHash: hash, CreatedAt: now, UpdatedAt: now}
 	id, err := s.users.Create(ctx, s.db, u)
 	if err != nil {
@@ -148,7 +131,7 @@ func (s *Service) ChangePassword(ctx context.Context, current, newPassword strin
 	if err != nil {
 		return fmt.Errorf("auth: hash password: %w", err)
 	}
-	if err := s.users.UpdatePassword(ctx, s.db, u.ID, hash, s.clock()); err != nil {
+	if err := s.users.UpdatePassword(ctx, s.db, u.ID, hash, time.Now()); err != nil {
 		return fmt.Errorf("auth: update password: %w", err)
 	}
 	return nil
@@ -161,7 +144,7 @@ func (s *Service) MintAPIKey(ctx context.Context, name string) (string, domain.A
 	if err != nil {
 		return "", domain.APIKey{}, fmt.Errorf("auth: generate api key: %w", err)
 	}
-	k := domain.APIKey{Name: name, KeyHash: secrets.HashToken(plaintext), CreatedAt: s.clock()}
+	k := domain.APIKey{Name: name, KeyHash: secrets.HashToken(plaintext), CreatedAt: time.Now()}
 	id, err := s.apiKeys.Create(ctx, s.db, k)
 	if err != nil {
 		return "", domain.APIKey{}, fmt.Errorf("auth: store api key: %w", err)

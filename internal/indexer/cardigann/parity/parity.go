@@ -28,6 +28,7 @@ import (
 
 	yaml "go.yaml.in/yaml/v3"
 
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 )
@@ -125,6 +126,12 @@ type CaseStep struct {
 	Response string `yaml:"response"`
 	// Status is the served HTTP status (defaults to 200).
 	Status int `yaml:"status"`
+	// Location is the Location header value served with a 3xx Status, for the
+	// followredirect / logged-out-redirect archetypes. The engine never
+	// auto-follows a search 3xx (Jackett WebClient semantics): a follow-up hop
+	// appears as its own declared step only when the path opts in via
+	// followredirect.
+	Location string `yaml:"location"`
 	// SetCookie are Set-Cookie header values the response carries, so a login
 	// response can establish a session cookie the cookie jar then sends on later
 	// steps (the cookie/form login archetypes).
@@ -288,7 +295,11 @@ func (c *Case) runSearch(dir string, def *loader.Definition, opts []cardigann.Op
 	if err != nil {
 		return nil, fmt.Errorf("building cookie jar: %w", err)
 	}
-	client := &stdhttp.Client{Transport: rep, Jar: jar}
+	// The production redirect policy is required, not optional: without it the
+	// client itself would consume a 302 step and issue an undeclared follow-up
+	// request, failing the replay assertion instead of exercising the engine's
+	// own followredirect / logged-out handling.
+	client := &stdhttp.Client{Transport: rep, Jar: jar, CheckRedirect: apphttp.RedirectPolicy}
 
 	eng, err := cardigann.NewEngine(def, append(opts, cardigann.WithDoer(client))...)
 	if err != nil {

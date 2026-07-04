@@ -34,6 +34,24 @@ func SafeTransportDetail(err error) string {
 	return fmt.Sprintf("%s %s: %s", uerr.Op, SchemeHost(uerr.URL), RedactError(uerr.Err))
 }
 
+// RedactURLError rebuilds any *url.Error in err's chain with host-only URL
+// detail, so wrapping the result with %w cannot re-embed the raw URL:
+// (*url.Error).Error() quotes its FULL URL into the message — including a parse
+// failure's raw input — one layer below whatever redaction a wrap site applies
+// to its own format args. It recurses into the cause, so a nested *url.Error
+// (each level quoting its own URL) is scrubbed at every layer. Callers that
+// wrap an error which may be a url.Parse/http-transport failure on a
+// secret-bearing URL must route it through this first (the paced client's
+// redactDoErr is the Do-path analogue). A non-*url.Error passes through
+// unchanged.
+func RedactURLError(err error) error {
+	var uerr *url.Error
+	if !errors.As(err, &uerr) {
+		return err
+	}
+	return fmt.Errorf("%s %s: %w", uerr.Op, SchemeHost(uerr.URL), RedactURLError(uerr.Err))
+}
+
 // SchemeHost returns "<scheme>://<host>" for a raw URL, dropping the path, query, and
 // userinfo. It is the safe way to surface "which endpoint" in a log or error without
 // risking a path/query-embedded secret: RedactURL only scrubs secret query params by name
