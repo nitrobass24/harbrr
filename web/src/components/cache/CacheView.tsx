@@ -9,17 +9,15 @@ import { formatSize } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import type { CacheConfig } from "@/types/api"
 
-// Cache observability + the live-tunable knobs. trackerHitsSaved is the
-// headline: durable tracker requests answered from cache instead of hitting
-// the tracker (the kind-to-trackers value metric).
-export function CacheSection() {
+// Cache observability + the live-tunable knobs, the body of the Cache page.
+// trackerHitsSaved is the headline: durable tracker requests answered from
+// cache instead of hitting the tracker (the kind-to-trackers value metric).
+export function CacheView() {
   const stats = useCacheStats()
   const flush = useFlushCache()
 
   return (
-    <section id="cache" className="flex flex-col gap-4">
-      <h2 className="text-[14px] font-semibold tracking-tight">Search cache</h2>
-
+    <section className="flex flex-col gap-4">
       {stats.data && !stats.data.enabled && (
         <p className="rounded-xl border border-dashed border-border px-5 py-6 text-center text-[13px] text-muted-foreground">
           Caching is disabled — every consumer poll reaches the tracker. Enable it below.

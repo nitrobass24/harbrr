@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router"
-import { LayoutDashboard, LogOut, RefreshCw, Search, Server, Settings } from "lucide-react"
+import { Database, LayoutDashboard, LogOut, RefreshCw, Search, Server, Settings } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { ThemeControl } from "@/components/layout/ThemeControl"
 import { Badge } from "@/components/ui/badge"
@@ -16,6 +16,7 @@ type NavItem = {
 // then the Manage and Sync groups; Settings lives in the footer.
 const MANAGE: NavItem[] = [
   { to: "/indexers", label: "Indexers", Icon: Server },
+  { to: "/cache", label: "Cache", Icon: Database },
   { to: "/search", label: "Search", Icon: Search },
 ]
 const SYNC: NavItem[] = [

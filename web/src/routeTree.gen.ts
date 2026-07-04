@@ -16,6 +16,7 @@ import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedSearchRouteImport } from './routes/_authenticated/search'
 import { Route as AuthenticatedIndexersRouteImport } from './routes/_authenticated/indexers'
+import { Route as AuthenticatedCacheRouteImport } from './routes/_authenticated/cache'
 import { Route as AuthenticatedApplicationsRouteImport } from './routes/_authenticated/applications'
 
 const SetupRoute = SetupRouteImport.update({
@@ -52,6 +53,11 @@ const AuthenticatedIndexersRoute = AuthenticatedIndexersRouteImport.update({
   path: '/indexers',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedCacheRoute = AuthenticatedCacheRouteImport.update({
+  id: '/cache',
+  path: '/cache',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedApplicationsRoute =
   AuthenticatedApplicationsRouteImport.update({
     id: '/applications',
@@ -64,6 +70,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
   '/applications': typeof AuthenticatedApplicationsRoute
+  '/cache': typeof AuthenticatedCacheRoute
   '/indexers': typeof AuthenticatedIndexersRoute
   '/search': typeof AuthenticatedSearchRoute
   '/settings': typeof AuthenticatedSettingsRoute
@@ -72,6 +79,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
   '/applications': typeof AuthenticatedApplicationsRoute
+  '/cache': typeof AuthenticatedCacheRoute
   '/indexers': typeof AuthenticatedIndexersRoute
   '/search': typeof AuthenticatedSearchRoute
   '/settings': typeof AuthenticatedSettingsRoute
@@ -83,6 +91,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
   '/_authenticated/applications': typeof AuthenticatedApplicationsRoute
+  '/_authenticated/cache': typeof AuthenticatedCacheRoute
   '/_authenticated/indexers': typeof AuthenticatedIndexersRoute
   '/_authenticated/search': typeof AuthenticatedSearchRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
@@ -95,6 +104,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/setup'
     | '/applications'
+    | '/cache'
     | '/indexers'
     | '/search'
     | '/settings'
@@ -103,6 +113,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/setup'
     | '/applications'
+    | '/cache'
     | '/indexers'
     | '/search'
     | '/settings'
@@ -113,6 +124,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/setup'
     | '/_authenticated/applications'
+    | '/_authenticated/cache'
     | '/_authenticated/indexers'
     | '/_authenticated/search'
     | '/_authenticated/settings'
@@ -176,6 +188,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedIndexersRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/cache': {
+      id: '/_authenticated/cache'
+      path: '/cache'
+      fullPath: '/cache'
+      preLoaderRoute: typeof AuthenticatedCacheRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/applications': {
       id: '/_authenticated/applications'
       path: '/applications'
@@ -188,6 +207,7 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedRouteChildren {
   AuthenticatedApplicationsRoute: typeof AuthenticatedApplicationsRoute
+  AuthenticatedCacheRoute: typeof AuthenticatedCacheRoute
   AuthenticatedIndexersRoute: typeof AuthenticatedIndexersRoute
   AuthenticatedSearchRoute: typeof AuthenticatedSearchRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
@@ -196,6 +216,7 @@ interface AuthenticatedRouteChildren {
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedApplicationsRoute: AuthenticatedApplicationsRoute,
+  AuthenticatedCacheRoute: AuthenticatedCacheRoute,
   AuthenticatedIndexersRoute: AuthenticatedIndexersRoute,
   AuthenticatedSearchRoute: AuthenticatedSearchRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
