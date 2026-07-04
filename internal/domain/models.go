@@ -209,10 +209,13 @@ const SolverTypeFlaresolverr = "flaresolverr"
 // ProxySecretURL / SolverSecretURL are the AAD "setting" discriminators binding
 // each resource's encrypted endpoint URL to its own row id (mirroring notify's
 // secretURL). Shared so the management service encrypts and the engine decrypts
-// under the same name.
+// under the same name. They are DISTINCT per resource type: proxies and solvers
+// have independent id sequences, so a shared discriminator would let a proxy blob
+// and a solver blob with the same id authenticate under the same key — the type
+// is part of the AAD namespace to prevent that cross-context confusion.
 const (
-	ProxySecretURL  = "url"
-	SolverSecretURL = "url"
+	ProxySecretURL  = "proxy_url"
+	SolverSecretURL = "solver_url" //nolint:gosec // G101: an AAD "setting" discriminator name, not a credential.
 )
 
 // Proxy is a global, reusable proxy an indexer instance references by id. The URL

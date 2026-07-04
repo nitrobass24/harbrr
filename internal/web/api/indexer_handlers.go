@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -15,6 +16,31 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 )
+
+// optionalRef is a JSON PATCH field for a nullable id reference. json only calls
+// UnmarshalJSON when the key is PRESENT, so an omitted field stays present=false
+// (leave the stored value) while an explicit null/number is present=true — the
+// tri-state that keeps a partial PATCH from clearing a reference it never mentions.
+type optionalRef struct {
+	present bool
+	value   *int64
+}
+
+func (o *optionalRef) UnmarshalJSON(b []byte) error {
+	o.present = true
+	if string(b) == "null" {
+		o.value = nil
+		return nil
+	}
+	if err := json.Unmarshal(b, &o.value); err != nil {
+		return fmt.Errorf("api: decode ref: %w", err)
+	}
+	return nil
+}
+
+func (o optionalRef) toRegistry() registry.RefUpdate {
+	return registry.RefUpdate{Present: o.present, Value: o.value}
+}
 
 // definitionSummary is the API view of an available definition (for the add form).
 type definitionSummary struct {
@@ -156,14 +182,15 @@ func (rt *router) updateIndexer(w http.ResponseWriter, r *http.Request) {
 		Name     *string           `json:"name"`
 		BaseURL  *string           `json:"baseUrl"`
 		Settings map[string]string `json:"settings"`
-		ProxyID  *int64            `json:"proxyId"`
-		SolverID *int64            `json:"solverId"`
+		ProxyID  optionalRef       `json:"proxyId"`
+		SolverID optionalRef       `json:"solverId"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
 	if err := rt.registry.Update(r.Context(), slug, registry.UpdateParams{
-		Name: req.Name, BaseURL: req.BaseURL, Settings: req.Settings, ProxyID: req.ProxyID, SolverID: req.SolverID,
+		Name: req.Name, BaseURL: req.BaseURL, Settings: req.Settings,
+		ProxyID: req.ProxyID.toRegistry(), SolverID: req.SolverID.toRegistry(),
 	}); err != nil {
 		rt.writeServiceError(w, "update indexer", err)
 		return
