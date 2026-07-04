@@ -516,6 +516,18 @@ func (r *Registry) invalidate(slug string) {
 	r.mu.Unlock()
 }
 
+// InvalidateAll drops every cached engine so the next resolve of each slug
+// rebuilds it. Used after a global proxy/solver resource changes: buildAdapter
+// bakes the resolved proxy/solver URL into the cached engine's transport, so a
+// resource edit/delete must evict the engines that reference it. Finding the exact
+// referencing slugs is possible but a full flush is cheaper to reason about for a
+// rare, single-user config change, and only forces a lazy rebuild on next search.
+func (r *Registry) InvalidateAll() {
+	r.mu.Lock()
+	clear(r.cache)
+	r.mu.Unlock()
+}
+
 // invalidateSearchCache purges the search-results cache entries for one instance
 // after a config mutation. It is nil-guarded (a no-op when caching is off) and
 // best-effort: a failed purge is logged (key/id only, never a payload) and never

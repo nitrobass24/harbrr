@@ -94,6 +94,8 @@ func (rt *router) updateSolver(w http.ResponseWriter, r *http.Request) {
 		rt.writeServiceError(w, "update solver", err)
 		return
 	}
+	// A cached engine bakes in the resolved solver config, so evict them.
+	rt.registry.InvalidateAll()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -107,6 +109,9 @@ func (rt *router) deleteSolver(w http.ResponseWriter, r *http.Request) {
 		rt.writeServiceError(w, "delete solver", err)
 		return
 	}
+	// The FK nulled solver_id, but cached engines still use the deleted solver
+	// until evicted.
+	rt.registry.InvalidateAll()
 	w.WriteHeader(http.StatusNoContent)
 }
 

@@ -133,6 +133,50 @@ func TestMigrateFoldsDedupsAndPreservesCookie(t *testing.T) {
 	}
 }
 
+// TestMigrateSkipsAlreadyWiredSlot covers the retry-window guard: an instance that
+// already references a resource (e.g. the operator wired it via the API after a
+// transient first-run failure) must NOT be re-folded — no duplicate resource, and
+// the explicit reference is preserved.
+func TestMigrateSkipsAlreadyWiredSlot(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db, kr := setup(t)
+
+	// A pre-existing chosen proxy resource, referenced by the instance.
+	now := time.Now().UTC()
+	chosen, err := (database.Proxies{}).InsertProxy(ctx, db, domain.Proxy{Name: "chosen", Type: domain.ProxyTypeHTTP, CreatedAt: now, UpdatedAt: now})
+	if err != nil {
+		t.Fatalf("InsertProxy: %v", err)
+	}
+	id := addInstance(t, db, "a")
+	if err := instRepo.SetRefs(ctx, db, id, &chosen, nil, now); err != nil {
+		t.Fatalf("SetRefs: %v", err)
+	}
+	// ...but the instance also still carries leftover inline proxy settings (the
+	// transient-failure state that left both a ref and inline config).
+	addPlain(t, db, id, "proxy_type", "socks5")
+	addSecret(t, db, kr, id, "proxy_url", "socks5://leftover:1080")
+
+	if err := resourcemigrate.Run(ctx, db, kr, time.Now, zerolog.Nop()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// No duplicate resource, and the instance still points at the chosen one.
+	proxies, _ := (database.Proxies{}).ListProxies(ctx, db)
+	if len(proxies) != 1 || proxies[0].ID != chosen {
+		t.Fatalf("proxies = %d (want 1, the chosen one), first id %d", len(proxies), func() int64 {
+			if len(proxies) > 0 {
+				return proxies[0].ID
+			}
+			return -1
+		}())
+	}
+	inst, _ := instRepo.GetBySlug(ctx, db, "a")
+	if inst.ProxyID == nil || *inst.ProxyID != chosen {
+		t.Fatalf("proxy_id = %v, want the chosen resource %d", inst.ProxyID, chosen)
+	}
+}
+
 func TestMigrateIsIdempotent(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

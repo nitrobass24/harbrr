@@ -87,6 +87,8 @@ func (rt *router) updateProxy(w http.ResponseWriter, r *http.Request) {
 		rt.writeServiceError(w, "update proxy", err)
 		return
 	}
+	// A cached engine bakes in the resolved proxy URL/transport, so evict them.
+	rt.registry.InvalidateAll()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -100,6 +102,9 @@ func (rt *router) deleteProxy(w http.ResponseWriter, r *http.Request) {
 		rt.writeServiceError(w, "delete proxy", err)
 		return
 	}
+	// The FK nulled proxy_id in the DB, but cached engines still tunnel through the
+	// deleted proxy until evicted.
+	rt.registry.InvalidateAll()
 	w.WriteHeader(http.StatusNoContent)
 }
 

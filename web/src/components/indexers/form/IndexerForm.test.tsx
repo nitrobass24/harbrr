@@ -145,4 +145,54 @@ describe("IndexerForm", () => {
     expect(body.settings?.solver_type).toBe("manual_cookie")
     expect(body.settings?.cookie).toBe(REDACTED)
   })
+
+  it("edit: switching the solver from manual-cookie to None clears solver_type + cookie", () => {
+    const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+    const existing: InstanceDetail = {
+      ...EXISTING,
+      settings: [
+        ...EXISTING.settings,
+        { name: "solver_type", value: "manual_cookie", secret: false },
+        { name: "cookie", value: REDACTED, secret: true },
+      ],
+    }
+    renderForm(<IndexerForm definition={DEFINITION} existing={existing} pending={false} error={null} onSubmit={onSubmit} />)
+
+    fireEvent.click(screen.getByRole("button", { name: /Advanced/ }))
+    // Turn the solver off.
+    fireEvent.change(screen.getByLabelText("Anti-bot solver"), { target: { value: "none" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+
+    const body = onSubmit.mock.calls[0][0].body
+    expect(body.solverId).toBe(null)
+    // Explicit "" so mergeSettings actually removes the stale manual cookie
+    // (omitting them would keep the stored values).
+    expect(body.settings?.solver_type).toBe("")
+    expect(body.settings?.cookie).toBe("")
+  })
+
+  it("edit: a definition's own cookie field renders normally and is preserved untouched", () => {
+    const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+    const cookieDef: DefinitionDetail = {
+      ...DEFINITION,
+      settings: [
+        { name: "cookie", label: "Cookie", type: "password", secret: true },
+      ],
+    }
+    const existing: InstanceDetail = {
+      ...EXISTING,
+      settings: [{ name: "cookie", value: REDACTED, secret: true }],
+    }
+    renderForm(<IndexerForm definition={cookieDef} existing={existing} pending={false} error={null} onSubmit={onSubmit} />)
+
+    // The def's Cookie field renders as a normal masked credential field (prefilled
+    // with the sentinel), NOT blanked by the solver-managed-keys stripping.
+    const cookieField = screen.getByLabelText<HTMLInputElement>("Cookie")
+    expect(cookieField.value).toBe(REDACTED)
+    expect(cookieField.getAttribute("type")).toBe("password")
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+    // Untouched -> the sentinel rides back and the server keeps the stored cookie.
+    expect(onSubmit.mock.calls[0][0].body.settings?.cookie).toBe(REDACTED)
+  })
 })

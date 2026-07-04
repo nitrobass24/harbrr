@@ -19,9 +19,13 @@ const TIMEOUT_FIELD: SettingField = {
   name: "timeout", label: "Request timeout (Go duration, e.g. 30s)", type: "text", secret: false,
 }
 
-// Settings the proxy/solver controls own — stripped from the schema-driven map so
-// they are never double-submitted (they ride proxyId/solverId + the cookie input).
-const MANAGED_KEYS = ["proxy_type", "proxy_url", "solver_type", "flaresolverr_url", "flaresolverr_max_timeout", "cookie"]
+// Inline settings the proxy/solver controls own — stripped from the schema-driven
+// map so they are never double-submitted (proxy rides proxyId, FlareSolverr rides
+// solverId, solver_type is set explicitly on submit). NOTE: `cookie` is NOT here —
+// a cookie-login definition declares its own `cookie` credential field, which must
+// render/submit normally; the manual-cookie SOLVER only manages `cookie` for a
+// definition that does not (see managesCookie below).
+const MANAGED_KEYS = ["proxy_type", "proxy_url", "solver_type", "flaresolverr_url", "flaresolverr_max_timeout"]
 
 export type IndexerFormSubmit =
   | { mode: "create", body: AddIndexer }
@@ -45,17 +49,23 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
   const proxies = useProxies()
   const solvers = useSolvers()
 
+  // When the definition declares its own `cookie` field (cookie-login trackers),
+  // that field owns the cookie; the manual-cookie solver only manages `cookie`
+  // for definitions that do not, so the two never fight over the key.
+  const definesCookie = definition.settings.some((f) => f.name === "cookie")
+
   const [name, setName] = useState(existing?.name ?? definition.name)
   const [slug, setSlug] = useState(existing?.slug ?? definition.id)
   const [baseUrl, setBaseUrl] = useState(existing?.baseUrl ?? "")
   const [values, setValues] = useState<Record<string, string>>(() => {
     const seeded = { ...defaultValues([TIMEOUT_FIELD]), ...defaultValues(definition.settings, existing?.settings) }
     for (const k of MANAGED_KEYS) delete seeded[k]
+    if (!definesCookie) delete seeded.cookie // solver-managed manual cookie, controlled below
     return seeded
   })
   const [proxyId, setProxyId] = useState<number | null>(existing?.proxyId ?? null)
   const [solver, setSolver] = useState<SolverChoice>(() => initialSolver(existing))
-  const [cookie, setCookie] = useState(existing?.settings.find((s) => s.name === "cookie")?.value ?? "")
+  const [cookie, setCookie] = useState(definesCookie ? "" : (existing?.settings.find((s) => s.name === "cookie")?.value ?? ""))
   const [showAdvanced, setShowAdvanced] = useState(false)
 
   const setValue = (fieldName: string) => (value: string) =>
@@ -72,7 +82,21 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
         const settings = settingsPayload(values, mode)
         if (solver === "cookie") {
           settings.solver_type = "manual_cookie"
-          settings.cookie = cookie
+          if (!definesCookie) settings.cookie = cookie
+        }
+        // On edit, mergeSettings keeps any inline setting we omit — so a control
+        // that now owns a key must send "" to actually clear a stale stored value
+        // (proxy is via proxyId, FlareSolverr via solverId; switching the solver to
+        // None/FlareSolverr must turn off an old manual cookie).
+        if (mode === "edit") {
+          settings.proxy_type = ""
+          settings.proxy_url = ""
+          settings.flaresolverr_url = ""
+          settings.flaresolverr_max_timeout = ""
+          if (solver !== "cookie") {
+            settings.solver_type = ""
+            if (!definesCookie) settings.cookie = ""
+          }
         }
         const solverId = typeof solver === "number" ? solver : null
         if (mode === "edit") {
@@ -151,7 +175,7 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
             <p className="text-[12px] text-faint">Manage FlareSolverr endpoints on the Proxies &amp; Solvers page.</p>
           </span>
 
-          {solver === "cookie" && (
+          {solver === "cookie" && !definesCookie && (
             <span className="flex flex-col gap-1.5">
               <Label htmlFor="ix-cookie">Cookie</Label>
               <Input id="ix-cookie" type="password" autoComplete="off" placeholder="cf_clearance=…; other=…" value={cookie} onChange={(e) => setCookie(e.target.value)} />

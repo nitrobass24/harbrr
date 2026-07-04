@@ -88,16 +88,26 @@ func (d *deps) migrateAll(ctx context.Context) (int, error) {
 		}
 		sm := settingsMap(settings)
 
-		proxyID, err := d.foldProxy(ctx, inst, sm)
-		if err != nil {
-			return 0, err
+		// Only fold a slot the instance hasn't already wired. The migration is
+		// re-runnable (a failed run rolls back with the flag unset), and in that
+		// window the operator can create a resource and point an un-migrated
+		// indexer at it via the API. Re-folding then would create a duplicate and
+		// SetRefs would clobber their explicit choice — so a non-nil ref means
+		// "already wired, leave it alone" (and don't touch its inline settings).
+		proxyID := inst.ProxyID
+		if proxyID == nil {
+			if proxyID, err = d.foldProxy(ctx, inst, sm); err != nil {
+				return 0, err
+			}
 		}
-		solverID, err := d.foldSolver(ctx, inst, sm)
-		if err != nil {
-			return 0, err
+		solverID := inst.SolverID
+		if solverID == nil {
+			if solverID, err = d.foldSolver(ctx, inst, sm); err != nil {
+				return 0, err
+			}
 		}
-		if proxyID == nil && solverID == nil {
-			continue
+		if proxyID == inst.ProxyID && solverID == inst.SolverID {
+			continue // nothing folded (no inline config, or both slots already wired)
 		}
 		if err := d.instRepo.SetRefs(ctx, d.tx, inst.ID, proxyID, solverID, d.clock()); err != nil {
 			return 0, fmt.Errorf("resourcemigrate: set refs for %q: %w", inst.Slug, err)
