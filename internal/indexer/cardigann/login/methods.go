@@ -185,7 +185,7 @@ func (e *Executor) checkErrors(l *loader.Login, rawURL string, body []byte, stat
 	if status == stdhttp.StatusUnauthorized {
 		switch loginMethod(l) {
 		case "form", "post":
-			return fmt.Errorf("%w: 401 Unauthorized from %s", ErrLoginFailed, apphttp.RedactURL(rawURL))
+			return fmt.Errorf("%w: 401 Unauthorized from %s", ErrLoginFailed, apphttp.SchemeHost(rawURL))
 		}
 	}
 	if len(l.Error) == 0 {
@@ -193,7 +193,7 @@ func (e *Executor) checkErrors(l *loader.Login, rawURL string, body []byte, stat
 	}
 	doc, err := e.Selector.ParseHTML(body)
 	if err != nil {
-		return fmt.Errorf("parsing login response from %s: %w", apphttp.RedactURL(rawURL), err)
+		return fmt.Errorf("parsing login response from %s: %w", apphttp.SchemeHost(rawURL), err)
 	}
 	root := doc.Root()
 	for i := range l.Error {
@@ -202,7 +202,7 @@ func (e *Executor) checkErrors(l *loader.Login, rawURL string, body []byte, stat
 			return err
 		}
 		if matched {
-			return fmt.Errorf("%w: %s (from %s)", ErrLoginFailed, msg, apphttp.RedactURL(rawURL))
+			return fmt.Errorf("%w: %s (from %s)", ErrLoginFailed, msg, apphttp.SchemeHost(rawURL))
 		}
 	}
 	return nil
@@ -257,7 +257,7 @@ func mergeFormHeaders(in map[string][]string) map[string][]string {
 func appendQuery(rawURL string, pairs url.Values) (string, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return "", fmt.Errorf("parsing login URL %s: %w", apphttp.RedactURL(rawURL), err)
+		return "", fmt.Errorf("parsing login URL %s: %w", apphttp.SchemeHost(rawURL), err)
 	}
 	q := u.Query()
 	for k, vs := range pairs {

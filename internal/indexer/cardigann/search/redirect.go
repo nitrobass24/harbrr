@@ -76,7 +76,7 @@ func followRedirects(ctx context.Context, doer Doer, sr searchResponse, session 
 		}
 		target, err := url.Parse(sr.location)
 		if err != nil {
-			return searchResponse{}, fmt.Errorf("parsing redirect target %s: %w", apphttp.RedactURL(sr.location), err)
+			return searchResponse{}, fmt.Errorf("parsing redirect target %s: %w", apphttp.SchemeHost(sr.location), err)
 		}
 		switch target.Scheme {
 		case "http", "https":

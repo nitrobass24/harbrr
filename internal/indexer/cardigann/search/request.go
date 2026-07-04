@@ -18,8 +18,11 @@ import (
 
 // builtRequest is one fully resolved search request: its method, absolute URL,
 // optional form body (POST), and rendered headers. The URL is built but never
-// logged raw — it may carry a passkey; every error site routes it through
-// apphttp.RedactURL.
+// logged raw — a definition can embed a secret ANYWHERE in it (a passkey in the
+// path, a config value under an arbitrary query name), so every error site
+// surfaces host-only detail via apphttp.SchemeHost; RedactURL's name/length
+// heuristics are not trusted for def-driven URLs. Request-level diagnosis
+// stays available at the paced-client debug/trace logs.
 type builtRequest struct {
 	method  string
 	url     string
@@ -311,7 +314,7 @@ func appendQuerySep(rawURL string, pairs []kv, sep string) (string, error) {
 	}
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return "", fmt.Errorf("parsing request URL %q: %w", apphttp.RedactURL(rawURL), err)
+		return "", fmt.Errorf("parsing request URL %q: %w", apphttp.SchemeHost(rawURL), err)
 	}
 	appended := encodeOrderedSep(pairs, sep)
 	switch {
@@ -370,7 +373,7 @@ func newRequest(ctx context.Context, br builtRequest, session *login.Session) (*
 	}
 	req, err := stdhttp.NewRequestWithContext(ctx, br.method, br.url, bodyReader)
 	if err != nil {
-		return nil, fmt.Errorf("building %s request to %s: %w", br.method, apphttp.RedactURL(br.url), err)
+		return nil, fmt.Errorf("building %s request to %s: %w", br.method, apphttp.SchemeHost(br.url), err)
 	}
 	for name, vals := range br.headers {
 		for _, v := range vals {
@@ -390,10 +393,10 @@ func newRequest(ctx context.Context, br builtRequest, session *login.Session) (*
 // none, so it can't leak a passkey.
 func checkStatus(resp *stdhttp.Response, br builtRequest) error {
 	if IsRateLimitStatus(resp.StatusCode) {
-		return fmt.Errorf("%s %s: %w", br.method, apphttp.RedactURL(br.url),
+		return fmt.Errorf("%s %s: %w", br.method, apphttp.SchemeHost(br.url),
 			&RateLimitedError{StatusCode: resp.StatusCode, RetryAfter: ParseRetryAfter(resp.Header.Get("Retry-After"), time.Now)})
 	}
-	return fmt.Errorf("%s %s: tracker returned HTTP %d", br.method, apphttp.RedactURL(br.url), resp.StatusCode)
+	return fmt.Errorf("%s %s: tracker returned HTTP %d", br.method, apphttp.SchemeHost(br.url), resp.StatusCode)
 }
 
 // doRequest issues one builtRequest through the Doer, attaching the session
@@ -410,7 +413,7 @@ func doRequest(ctx context.Context, doer Doer, br builtRequest, session *login.S
 	}
 	resp, err := doer.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%s %s: %w", br.method, apphttp.RedactURL(br.url), err)
+		return nil, fmt.Errorf("%s %s: %w", br.method, apphttp.SchemeHost(br.url), err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -420,7 +423,7 @@ func doRequest(ctx context.Context, doer Doer, br builtRequest, session *login.S
 
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxSearchBodyBytes))
 	if err != nil {
-		return nil, fmt.Errorf("reading response from %s: %w", apphttp.RedactURL(br.url), err)
+		return nil, fmt.Errorf("reading response from %s: %w", apphttp.SchemeHost(br.url), err)
 	}
 	return data, nil
 }
@@ -450,7 +453,7 @@ func doSearchRequest(ctx context.Context, doer Doer, br builtRequest, session *l
 	}
 	resp, err := doer.Do(req)
 	if err != nil {
-		return searchResponse{}, fmt.Errorf("%s %s: %w", br.method, apphttp.RedactURL(br.url), err)
+		return searchResponse{}, fmt.Errorf("%s %s: %w", br.method, apphttp.SchemeHost(br.url), err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -460,7 +463,7 @@ func doSearchRequest(ctx context.Context, doer Doer, br builtRequest, session *l
 
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxSearchBodyBytes))
 	if err != nil {
-		return searchResponse{}, fmt.Errorf("reading response from %s: %w", apphttp.RedactURL(br.url), err)
+		return searchResponse{}, fmt.Errorf("reading response from %s: %w", apphttp.SchemeHost(br.url), err)
 	}
 	return searchResponse{status: resp.StatusCode, location: redirectTarget(resp, br.url), body: data}, nil
 }
@@ -514,14 +517,14 @@ func applySession(req *stdhttp.Request, session *login.Session) {
 func resolveURL(baseURL, rendered string) (string, error) {
 	ref, err := url.Parse(rendered)
 	if err != nil {
-		return "", fmt.Errorf("parsing search path %q: %w", apphttp.RedactURL(rendered), err)
+		return "", fmt.Errorf("parsing search path %q: %w", apphttp.SchemeHost(rendered), err)
 	}
 	if ref.IsAbs() {
 		return ref.String(), nil
 	}
 	base, err := url.Parse(baseURL)
 	if err != nil {
-		return "", fmt.Errorf("parsing base URL %q: %w", apphttp.RedactURL(baseURL), err)
+		return "", fmt.Errorf("parsing base URL %q: %w", apphttp.SchemeHost(baseURL), err)
 	}
 	return base.ResolveReference(ref).String(), nil
 }

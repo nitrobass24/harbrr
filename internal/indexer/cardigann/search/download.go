@@ -89,7 +89,7 @@ func ResolveDownload(ctx context.Context, def *loader.Definition, link string, s
 func parseDownloadURI(link string) (*template.DownloadURI, error) {
 	u, err := url.Parse(link)
 	if err != nil {
-		return nil, fmt.Errorf("parsing download link %q: %w", apphttp.RedactURL(link), err)
+		return nil, fmt.Errorf("parsing download link %q: %w", apphttp.SchemeHost(link), err)
 	}
 	return template.NewDownloadURI(u), nil
 }
@@ -140,7 +140,7 @@ func fetchBefore(ctx context.Context, dl *loader.DownloadBlock, link string, du 
 			return nil, fmt.Errorf("download.before pathselector: %w", err)
 		}
 		if !found {
-			return nil, fmt.Errorf("download.before pathselector matched nothing for %s", apphttp.RedactURL(link))
+			return nil, fmt.Errorf("download.before pathselector matched nothing for %s", apphttp.SchemeHost(link))
 		}
 		path = selected
 	}
@@ -255,7 +255,7 @@ func resolveSelectors(ctx context.Context, def *loader.Definition, dl *loader.Do
 			return resolved, nil
 		}
 	}
-	return "", fmt.Errorf("download: no selector matched for %s", apphttp.RedactURL(link))
+	return "", fmt.Errorf("download: no selector matched for %s", apphttp.SchemeHost(link))
 }
 
 // selectorPageBody returns the body a selector reads: the before response when the

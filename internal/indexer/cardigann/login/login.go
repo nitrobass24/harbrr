@@ -141,18 +141,18 @@ func (e *Executor) EnsureLoggedIn(ctx context.Context, def *loader.Definition) e
 func (e *Executor) resolvePath(raw string) (string, error) {
 	rendered, err := template.Eval(raw, e.templateContext())
 	if err != nil {
-		return "", fmt.Errorf("rendering path %q: %w", apphttp.RedactURL(raw), err)
+		return "", fmt.Errorf("rendering path %q: %w", apphttp.SchemeHost(raw), err)
 	}
 	ref, err := url.Parse(rendered)
 	if err != nil {
-		return "", fmt.Errorf("parsing path %q: %w", apphttp.RedactURL(rendered), err)
+		return "", fmt.Errorf("parsing path %q: %w", apphttp.SchemeHost(rendered), err)
 	}
 	if ref.IsAbs() {
 		return ref.String(), nil
 	}
 	base, err := url.Parse(e.BaseURL)
 	if err != nil {
-		return "", fmt.Errorf("parsing base URL %q: %w", apphttp.RedactURL(e.BaseURL), err)
+		return "", fmt.Errorf("parsing base URL %q: %w", apphttp.SchemeHost(e.BaseURL), err)
 	}
 	return base.ResolveReference(ref).String(), nil
 }
@@ -175,7 +175,7 @@ func (e *Executor) get(ctx context.Context, rawURL string, headers map[string][]
 func (e *Executor) do(ctx context.Context, method, rawURL string, bodyReader io.Reader, headers map[string][]string) ([]byte, int, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, method, rawURL, bodyReader)
 	if err != nil {
-		return nil, 0, fmt.Errorf("building %s request to %s: %w", method, apphttp.RedactURL(rawURL), err)
+		return nil, 0, fmt.Errorf("building %s request to %s: %w", method, apphttp.SchemeHost(rawURL), err)
 	}
 	for name, vals := range headers {
 		for _, v := range vals {
@@ -197,7 +197,7 @@ func (e *Executor) do(ctx context.Context, method, rawURL string, bodyReader io.
 
 	resp, err := e.Client.Do(req)
 	if err != nil {
-		return nil, 0, fmt.Errorf("%s %s: %w", method, apphttp.RedactURL(rawURL), redactErr(err))
+		return nil, 0, fmt.Errorf("%s %s: %w", method, apphttp.SchemeHost(rawURL), redactErr(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -205,11 +205,11 @@ func (e *Executor) do(ctx context.Context, method, rawURL string, bodyReader io.
 
 	reader, err := decompressBody(resp)
 	if err != nil {
-		return nil, resp.StatusCode, fmt.Errorf("decompressing response from %s: %w", apphttp.RedactURL(rawURL), err)
+		return nil, resp.StatusCode, fmt.Errorf("decompressing response from %s: %w", apphttp.SchemeHost(rawURL), err)
 	}
 	data, err := io.ReadAll(io.LimitReader(reader, maxLoginBodyBytes))
 	if err != nil {
-		return nil, resp.StatusCode, fmt.Errorf("reading response from %s: %w", apphttp.RedactURL(rawURL), err)
+		return nil, resp.StatusCode, fmt.Errorf("reading response from %s: %w", apphttp.SchemeHost(rawURL), err)
 	}
 	return data, resp.StatusCode, nil
 }
@@ -280,12 +280,14 @@ func (e *Executor) storeJar(reqURL *url.URL, resp *stdhttp.Response) {
 
 // redactErr scrubs a transport error string of any embedded URL secrets. The
 // stdlib *url.Error stringifies the full URL (with query) into its message, so
-// we rebuild a redacted form rather than risk leaking a passkey in a wrapped
-// "Get \"...?passkey=...\"" error.
+// we rebuild it with host-only detail (SchemeHost, mirroring the paced client's
+// redactDoErr) — a def-driven login URL can embed a secret in its path, where a
+// query-name scrub cannot reach. In production the paced client has already
+// rewritten the *url.Error at its chokepoint; this covers non-paced Doers.
 func redactErr(err error) error {
 	var uerr *url.Error
 	if errors.As(err, &uerr) {
-		return fmt.Errorf("%s %s: %w", uerr.Op, apphttp.RedactURL(uerr.URL), uerr.Err)
+		return fmt.Errorf("%s %s: %w", uerr.Op, apphttp.SchemeHost(uerr.URL), uerr.Err)
 	}
 	return err
 }

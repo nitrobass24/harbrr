@@ -46,7 +46,7 @@ func (e *Executor) loginForm(ctx context.Context, def *loader.Definition) error 
 
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(body)))
 	if err != nil {
-		return fmt.Errorf("parsing login page from %s: %w", apphttp.RedactURL(landingURL), err)
+		return fmt.Errorf("parsing login page from %s: %w", apphttp.SchemeHost(landingURL), err)
 	}
 
 	form := selectForm(doc, def.Login.Form)
@@ -213,7 +213,7 @@ func (e *Executor) resolveFormTarget(l *loader.Login, form *goquery.Selection, l
 		// (resolvePath(submitUrlstr, new Uri(loginUrl))), not the bare site link.
 		rendered, err := template.Eval(l.SubmitPath, e.templateContext())
 		if err != nil {
-			return "", fmt.Errorf("rendering submitpath %q: %w", apphttp.RedactURL(l.SubmitPath), err)
+			return "", fmt.Errorf("rendering submitpath %q: %w", apphttp.SchemeHost(l.SubmitPath), err)
 		}
 		return resolveAgainst(landingURL, rendered)
 	}
@@ -268,7 +268,7 @@ func (e *Executor) selectorMatches(body []byte, sel string) (bool, error) {
 func (e *Executor) seedCookies(raw string) error {
 	host, err := url.Parse(e.BaseURL)
 	if err != nil {
-		return fmt.Errorf("parsing base URL %q for cookie seeding: %w", apphttp.RedactURL(e.BaseURL), err)
+		return fmt.Errorf("parsing base URL %q for cookie seeding: %w", apphttp.SchemeHost(e.BaseURL), err)
 	}
 	cookies := parseCookieHeader(raw)
 	if len(cookies) == 0 {
@@ -290,7 +290,7 @@ func (e *Executor) seedStaticCookies(cookies []string) error {
 	}
 	host, err := url.Parse(e.BaseURL)
 	if err != nil {
-		return fmt.Errorf("parsing base URL %q for static cookie seeding: %w", apphttp.RedactURL(e.BaseURL), err)
+		return fmt.Errorf("parsing base URL %q for static cookie seeding: %w", apphttp.SchemeHost(e.BaseURL), err)
 	}
 	parsed := parseCookieHeader(strings.Join(cookies, "; "))
 	if len(parsed) == 0 {
@@ -320,11 +320,11 @@ func isOptional(b loader.SelectorBlock) bool {
 func resolveAgainst(base, ref string) (string, error) {
 	b, err := url.Parse(base)
 	if err != nil {
-		return "", fmt.Errorf("parsing base %s: %w", apphttp.RedactURL(base), err)
+		return "", fmt.Errorf("parsing base %s: %w", apphttp.SchemeHost(base), err)
 	}
 	r, err := url.Parse(ref)
 	if err != nil {
-		return "", fmt.Errorf("parsing form action %s: %w", apphttp.RedactURL(ref), err)
+		return "", fmt.Errorf("parsing form action %s: %w", apphttp.SchemeHost(ref), err)
 	}
 	return b.ResolveReference(r).String(), nil
 }
