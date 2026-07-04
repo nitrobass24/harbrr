@@ -119,13 +119,33 @@ Entries:
   true` opts into a manual follow (≤5 bare-GET hops, magnet stops the loop —
   `matrix-search-redirect-follow`), and the definition-level flag applies to
   login/landing flows only (harbrr's login client always follows: a documented
-  superset). Three narrow tails diverge deliberately: harbrr does not implement
-  Jackett's cross-domain "Got redirected to another domain" error (the
-  logged-out signal / empty parse covers it); a def still redirected after the
-  bounded relogin retry surfaces an error where Jackett would parse the redirect
-  body; and for a def with NO login block harbrr parses the redirect body
-  immediately, skipping Jackett's wasted no-op-login re-request (same terminal
-  output, one fewer wire request). **`[Resolved]`**
+  superset). An unfollowed non-XML 3xx runs Jackett's `CheckIfLoginIsNeeded`:
+  login defs relogin + retry once (`matrix-search-redirect-relogin`); no-login
+  defs get Jackett's unconditional single re-request (the 302's Set-Cookie
+  rides the jar) and the second response parses as-is; XML paths skip the check
+  entirely (Jackett's XML branch has no login check). Deliberate tails:
+  - **Cookie-carrying hops** — Jackett's SEARCH-path `FollowIfRedirect` issues
+    hops with NO cookies (an anonymous WebRequest), landing a logged-in def's
+    redirected search on the login page (0 releases). harbrr's hops carry the
+    session cookies + solver UA — the additive behavior the
+    followredirect+login defs (kinozal, selezen, bjshare, hhanclub) actually
+    want; the production client's jar could not be bypassed per-request anyway.
+    **`[Accepted]`**
+  - **Cross-domain redirects** — Jackett throws "Got redirected to another
+    domain"; harbrr does not inspect the target domain (the logged-out signal /
+    re-request covers it). **`[Accepted]`**
+  - **Persistent redirect after relogin** — a login def still redirected after
+    the bounded relogin retry surfaces an error where Jackett would parse the
+    redirect body (0 releases, silent); harbrr's error is the more diagnosable
+    outcome and the retry stays bounded either way. **`[Accepted]`**
+  - **308 + Refresh-header pseudo-redirects** — Jackett's `WebResult.IsRedirect`
+    omits 308 (harbrr treats it like 301; no corpus def emits one) and counts
+    ANY response with a `Refresh` header as a redirect, including the obsolete
+    Cloudflare 503+Refresh interstitial (harbrr classifies a 503 as
+    rate-limited; modern anti-bot interstitials are the solver boundary's job).
+    **`[Accepted]`**
+
+  **`[Resolved]`**
 - **Date canonical form** — RFC3339 vs Jackett's RFC1123Z; see "Date
   canonicalization". Same instant, different string — a canonical-schema choice,
   not a parse difference. **`[Deliberate]`**

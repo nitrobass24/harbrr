@@ -272,14 +272,51 @@ func TestResolveRedirect_Mapping(t *testing.T) {
 			t.Fatalf("err = %v, want ErrSearchLoggedOut", err)
 		}
 	})
-	t.Run("no-login def -> redirect body parsed as-is", func(t *testing.T) {
+	t.Run("no-login def -> one re-request, second response parsed", func(t *testing.T) {
 		t.Parallel()
-		sr, err := resolveRedirect(t.Context(), &redirectDoer{t: t}, builtRequest{}, redirect, noLogin, nil)
+		// Jackett's CheckIfLoginIsNeeded fires even without a login block: DoLogin
+		// no-ops, the search is re-requested ONCE, and the second response is
+		// parsed (the 302's Set-Cookie already rides the client jar, so a
+		// cookie-gate tracker succeeds on this retry).
+		doer := &redirectDoer{t: t, steps: []redirectStep{
+			{wantMethod: "GET", wantURL: "https://r.test/browse", body: "second response"},
+		}}
+		br := builtRequest{method: stdhttp.MethodGet, url: "https://r.test/browse"}
+		sr, err := resolveRedirect(t.Context(), doer, br, redirect, noLogin, nil)
+		if err != nil {
+			t.Fatalf("resolveRedirect: %v", err)
+		}
+		if string(sr.body) != "second response" {
+			t.Errorf("body = %q, want the re-requested response", sr.body)
+		}
+		if len(doer.requests) != 1 {
+			t.Errorf("re-requests = %d, want exactly 1 (bounded, never a loop)", len(doer.requests))
+		}
+	})
+	t.Run("no-login def -> re-request still 302 parsed as-is", func(t *testing.T) {
+		t.Parallel()
+		doer := &redirectDoer{t: t, steps: []redirectStep{
+			{wantMethod: "GET", wantURL: "https://r.test/browse", status: stdhttp.StatusFound, location: "/login", body: "still moved"},
+		}}
+		br := builtRequest{method: stdhttp.MethodGet, url: "https://r.test/browse"}
+		sr, err := resolveRedirect(t.Context(), doer, br, redirect, noLogin, nil)
+		if err != nil {
+			t.Fatalf("resolveRedirect: %v", err)
+		}
+		if string(sr.body) != "still moved" || len(doer.requests) != 1 {
+			t.Errorf("body = %q after %d re-requests, want the second 302 body after exactly 1 (Jackett parses the second response as-is)", sr.body, len(doer.requests))
+		}
+	})
+	t.Run("xml path -> redirect body parsed as-is even with login", func(t *testing.T) {
+		t.Parallel()
+		// Jackett's XML branch never runs CheckIfLoginIsNeeded: no relogin, no
+		// re-request — the redirect body goes straight to the XML parser.
+		sr, err := resolveRedirect(t.Context(), &redirectDoer{t: t}, builtRequest{respType: responseTypeXML}, redirect, withLogin, nil)
 		if err != nil {
 			t.Fatalf("resolveRedirect: %v", err)
 		}
 		if string(sr.body) != "moved" {
-			t.Errorf("body = %q, want the redirect body handed back for parsing", sr.body)
+			t.Errorf("body = %q, want the redirect body handed back for XML parsing", sr.body)
 		}
 	})
 	t.Run("follow exhausted + login def -> logged-out signal", func(t *testing.T) {

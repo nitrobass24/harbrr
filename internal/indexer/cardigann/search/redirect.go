@@ -15,8 +15,13 @@ import (
 // (maxRedirects = 5).
 const maxRedirectHops = 5
 
-// isRedirectStatus reports whether status is one Jackett's WebResult.IsRedirect
-// recognizes: 301, 302, 303, 307, 308.
+// isRedirectStatus reports whether status is a Location-bearing redirect:
+// 301, 302, 303, 307, 308. Two accepted divergences from Jackett's
+// WebResult.IsRedirect, recorded in parity/testdata/README.md: Jackett omits
+// 308 (harbrr treats it like 301 — no corpus def emits one), and Jackett also
+// counts ANY response carrying a Refresh header as a redirect (an obsolete
+// Cloudflare interstitial pattern; harbrr's anti-bot handling lives at the
+// solver boundary instead).
 func isRedirectStatus(status int) bool {
 	switch status {
 	case stdhttp.StatusMovedPermanently, stdhttp.StatusFound, stdhttp.StatusSeeOther,
@@ -32,16 +37,18 @@ func isRedirectStatus(status int) bool {
 //
 //   - the path opted in via `followredirect` → follow manually (followRedirects);
 //     a chain that ends non-3xx is the response to parse.
-//   - still (or never) a redirect → Jackett's CheckIfLoginIsNeeded fires on ANY
-//     redirect, unconditionally: a def with a login block gets ErrSearchLoggedOut
-//     so the engine re-logins and retries once; a def without one has nothing to
-//     refresh, so the redirect body is parsed as-is (0 rows → 0 releases,
-//     Jackett's terminal outcome — harbrr skips its wasted no-op-login
-//     re-request).
+//   - an XML path parses the redirect body as-is: Jackett's XML branch never
+//     runs CheckIfLoginIsNeeded — no relogin, no re-request, login block or not.
+//   - otherwise Jackett's CheckIfLoginIsNeeded fires on ANY redirect: a def with
+//     a login block gets ErrSearchLoggedOut so the engine re-logins and retries
+//     once; a def without one still gets ONE re-request (Jackett's DoLogin
+//     no-ops, then re-requests unconditionally and parses the second response —
+//     not wasted: the 302's Set-Cookie is already in the client jar, so a
+//     cookie-gate tracker succeeds on the retry).
 //
 // Deliberate divergence: Jackett additionally throws "Got redirected to another
 // domain" for a cross-domain redirect; harbrr does not inspect the target
-// domain — the logged-out error / empty parse covers both cases.
+// domain — the logged-out error / re-request covers both cases.
 func resolveRedirect(ctx context.Context, doer Doer, br builtRequest, first searchResponse, def *loader.Definition, session *login.Session) (searchResponse, error) {
 	sr := first
 	if br.followRedirect {
@@ -54,21 +61,32 @@ func resolveRedirect(ctx context.Context, doer Doer, br builtRequest, first sear
 		}
 		sr = followed // hop cap exhausted or magnet target: fall through unfollowed.
 	}
+	if br.respType == responseTypeXML {
+		return sr, nil
+	}
 	if def.Login != nil {
 		return searchResponse{}, ErrSearchLoggedOut
 	}
-	return sr, nil
+	return doSearchRequest(ctx, doer, br, session)
 }
 
 // followRedirects reproduces Jackett's FollowIfRedirect for a search response:
 // up to maxRedirectHops hops, each re-issued as a bare GET (no method, body, or
-// definition headers carried over — only the session cookies + solver UA via
-// applySession, matching Jackett's redirect WebRequest carrying only cookies).
-// A magnet Location stops the loop with the redirect response intact (Jackett's
-// explicit magnet break); any other non-http(s) scheme is a loud error (Jackett's
-// HttpClient would throw). A 3xx without a Location also stops with the response
-// as-is. Hops go back through doSearchRequest, so each one is individually
-// paced/retried by the production client and can never be auto-followed.
+// definition headers carried over). A magnet Location stops the loop with the
+// redirect response intact (Jackett's explicit magnet break); any other
+// non-http(s) scheme is a loud error (Jackett's HttpClient would throw). A 3xx
+// without a Location also stops with the response as-is. Hops go back through
+// doSearchRequest, so each one is individually paced/retried by the production
+// client and can never be auto-followed.
+//
+// Accepted divergence (recorded in parity/testdata/README.md): hops carry the
+// session cookies + solver UA (applySession, plus the production client's own
+// jar). Jackett's SEARCH-path FollowIfRedirect issues its hops with NO cookies
+// (defaults: overrideCookies=null, accumulateCookies=false → an anonymous
+// WebRequest), which lands a logged-in def's redirected search on the login
+// page. harbrr deliberately keeps the hop authenticated — the additive behavior
+// every followredirect+login def (kinozal, selezen, bjshare, hhanclub) actually
+// wants — and the production jar could not be bypassed per-request anyway.
 func followRedirects(ctx context.Context, doer Doer, sr searchResponse, session *login.Session) (searchResponse, error) {
 	for hop := 0; hop < maxRedirectHops && isRedirectStatus(sr.status); hop++ {
 		if sr.location == "" {
