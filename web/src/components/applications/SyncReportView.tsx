@@ -1,3 +1,4 @@
+import { SyncError } from "@/components/applications/SyncError"
 import { syncStatusClass } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import type { SyncReport } from "@/types/api"
@@ -22,10 +23,12 @@ export function SyncReportView({ report }: { report: SyncReport }) {
       {report.results.length > 0 && (
         <ul className="flex flex-col gap-1">
           {report.results.map((r) => (
-            <li key={r.slug} className="flex items-baseline gap-2">
-              <span className="font-medium">{r.slug}</span>
-              <span className={cn(ACTION_STYLE[r.action] ?? "text-muted-foreground")}>{r.action}</span>
-              {r.error && <span className="truncate text-[12px] text-bad" title={r.error}>{r.error}</span>}
+            <li key={r.slug} className="flex flex-col gap-0.5">
+              <span className="flex items-baseline gap-2">
+                <span className="font-medium">{r.slug}</span>
+                <span className={cn(ACTION_STYLE[r.action] ?? "text-muted-foreground")}>{r.action}</span>
+              </span>
+              {r.error && <SyncError error={r.error} />}
             </li>
           ))}
         </ul>
