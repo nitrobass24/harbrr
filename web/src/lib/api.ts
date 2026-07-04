@@ -13,6 +13,8 @@ import type {
   CreateAnnounceConnection,
   CreateConnection,
   CreateNotification,
+  CreateProxy,
+  CreateSolver,
   CrossSeedSnippet,
   DefinitionDetail,
   DefinitionSummary,
@@ -24,13 +26,17 @@ import type {
   LogLevel,
   MintedApiKey,
   Notification,
+  Proxy,
   SearchParams,
   SearchResults,
+  Solver,
   SyncReport,
   TestResult,
   UpdateConnection,
   UpdateIndexer,
-  UpdateNotification
+  UpdateNotification,
+  UpdateProxy,
+  UpdateSolver
 } from "@/types/api"
 
 // APIError carries the server's error envelope ({error, code}) plus the HTTP
@@ -281,6 +287,42 @@ export class ApiClient {
 
   testNotification(id: number): Promise<TestResult> {
     return this.request(`/notifications/${id}/test`, { method: "POST" })
+  }
+
+  // --- proxies ---
+
+  listProxies(): Promise<Proxy[]> {
+    return this.request("/proxies")
+  }
+
+  createProxy(body: CreateProxy): Promise<Proxy> {
+    return this.request("/proxies", { method: "POST", body })
+  }
+
+  updateProxy(id: number, body: UpdateProxy): Promise<void> {
+    return this.request(`/proxies/${id}`, { method: "PATCH", body })
+  }
+
+  deleteProxy(id: number): Promise<void> {
+    return this.request(`/proxies/${id}`, { method: "DELETE" })
+  }
+
+  // --- solvers ---
+
+  listSolvers(): Promise<Solver[]> {
+    return this.request("/solvers")
+  }
+
+  createSolver(body: CreateSolver): Promise<Solver> {
+    return this.request("/solvers", { method: "POST", body })
+  }
+
+  updateSolver(id: number, body: UpdateSolver): Promise<void> {
+    return this.request(`/solvers/${id}`, { method: "PATCH", body })
+  }
+
+  deleteSolver(id: number): Promise<void> {
+    return this.request(`/solvers/${id}`, { method: "DELETE" })
   }
 
   getCacheStats(): Promise<CacheStats> {

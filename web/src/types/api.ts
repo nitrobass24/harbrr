@@ -7,6 +7,8 @@ export type Instance = {
   name: string
   baseUrl?: string
   enabled: boolean
+  proxyId: number | null // referenced global proxy resource, or null
+  solverId: number | null // referenced global solver resource, or null
   createdAt: string
   updatedAt: string
 }
@@ -65,13 +67,43 @@ export type AddIndexer = {
   name?: string
   baseUrl?: string
   settings?: Record<string, string>
+  proxyId?: number | null
+  solverId?: number | null
 }
 
 export type UpdateIndexer = {
   name?: string
   baseUrl?: string
   settings?: Record<string, string>
+  proxyId?: number | null
+  solverId?: number | null
 }
+
+// Proxy / Solver are the global, reusable resources an indexer references by id.
+// The endpoint url is always the <redacted> sentinel on reads.
+export type ProxyType = "http" | "https" | "socks5" | "socks5h"
+export type Proxy = {
+  id: number
+  name: string
+  type: ProxyType
+  url: string
+  createdAt: string
+  updatedAt: string
+}
+export type CreateProxy = { name: string, type: ProxyType, url: string }
+export type UpdateProxy = { name?: string, type?: ProxyType, url?: string }
+
+export type Solver = {
+  id: number
+  name: string
+  type: "flaresolverr"
+  url: string
+  maxTimeout: number
+  createdAt: string
+  updatedAt: string
+}
+export type CreateSolver = { name: string, type?: "flaresolverr", url: string, maxTimeout?: number }
+export type UpdateSolver = { name?: string, type?: "flaresolverr", url?: string, maxTimeout?: number }
 
 export type HealthEvent = {
   kind: "auth_failure" | "rate_limited" | "parse_error" | "anti_bot"

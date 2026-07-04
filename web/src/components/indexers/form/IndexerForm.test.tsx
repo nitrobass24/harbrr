@@ -1,8 +1,33 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen } from "@testing-library/react"
-import { describe, expect, it, vi } from "vitest"
+import type { ReactElement } from "react"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { REDACTED } from "@/types/api"
-import type { DefinitionDetail, InstanceDetail } from "@/types/api"
+import type { DefinitionDetail, InstanceDetail, Proxy, Solver } from "@/types/api"
 import { IndexerForm, type IndexerFormSubmit } from "./IndexerForm"
+
+// The form fetches the global proxy/solver resources for its Advanced dropdowns.
+const PROXIES: Proxy[] = [{ id: 7, name: "home", type: "socks5", url: REDACTED, createdAt: "", updatedAt: "" }]
+const SOLVERS: Solver[] = [{ id: 9, name: "fs", type: "flaresolverr", url: REDACTED, maxTimeout: 0, createdAt: "", updatedAt: "" }]
+
+function json(body: unknown): Response {
+  return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } })
+}
+
+beforeEach(() => {
+  vi.stubGlobal("fetch", vi.fn((url: string) => {
+    const path = String(url)
+    if (path.endsWith("/api/proxies")) return Promise.resolve(json(PROXIES))
+    if (path.endsWith("/api/solvers")) return Promise.resolve(json(SOLVERS))
+    return Promise.resolve(json([]))
+  }))
+})
+afterEach(() => vi.unstubAllGlobals())
+
+function renderForm(ui: ReactElement) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>)
+}
 
 const DEFINITION: DefinitionDetail = {
   id: "testtracker",
@@ -21,6 +46,8 @@ const EXISTING: InstanceDetail = {
   definitionId: "testtracker",
   name: "TT",
   enabled: true,
+  proxyId: null,
+  solverId: null,
   createdAt: "2026-07-01T00:00:00Z",
   updatedAt: "2026-07-01T00:00:00Z",
   settings: [
@@ -32,7 +59,7 @@ const EXISTING: InstanceDetail = {
 describe("IndexerForm", () => {
   it("edit: PATCH payload preserves the sentinel for an untouched secret", () => {
     const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
-    render(<IndexerForm definition={DEFINITION} existing={EXISTING} pending={false} error={null} onSubmit={onSubmit} />)
+    renderForm(<IndexerForm definition={DEFINITION} existing={EXISTING} pending={false} error={null} onSubmit={onSubmit} />)
 
     // The secret arrives prefilled with the sentinel in a masked input.
     const secret = screen.getByLabelText("API Key")
@@ -51,7 +78,7 @@ describe("IndexerForm", () => {
 
   it("edit: a rotated secret submits the new plaintext", () => {
     const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
-    render(<IndexerForm definition={DEFINITION} existing={EXISTING} pending={false} error={null} onSubmit={onSubmit} />)
+    renderForm(<IndexerForm definition={DEFINITION} existing={EXISTING} pending={false} error={null} onSubmit={onSubmit} />)
 
     fireEvent.change(screen.getByLabelText("API Key"), { target: { value: "fresh-key" } })
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
@@ -61,7 +88,7 @@ describe("IndexerForm", () => {
 
   it("create: empty fields are stripped and the definition seeds slug + name", () => {
     const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
-    render(<IndexerForm definition={DEFINITION} pending={false} error={null} onSubmit={onSubmit} />)
+    renderForm(<IndexerForm definition={DEFINITION} pending={false} error={null} onSubmit={onSubmit} />)
 
     fireEvent.change(screen.getByLabelText("API Key"), { target: { value: "k123" } })
     fireEvent.click(screen.getByRole("button", { name: "Add indexer" }))
@@ -76,7 +103,46 @@ describe("IndexerForm", () => {
   })
 
   it("slug is locked in edit mode", () => {
-    render(<IndexerForm definition={DEFINITION} existing={EXISTING} pending={false} error={null} onSubmit={vi.fn()} />)
+    renderForm(<IndexerForm definition={DEFINITION} existing={EXISTING} pending={false} error={null} onSubmit={vi.fn()} />)
     expect(screen.getByLabelText<HTMLInputElement>("Slug").disabled).toBe(true)
+  })
+
+  it("edit: proxy/solver references prefill the dropdowns and survive a save", async () => {
+    const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+    renderForm(<IndexerForm definition={DEFINITION} existing={{ ...EXISTING, proxyId: 7, solverId: 9 }} pending={false} error={null} onSubmit={onSubmit} />)
+
+    fireEvent.click(screen.getByRole("button", { name: /Advanced/ }))
+    // The dropdown options come from the proxies/solvers queries.
+    await screen.findByRole("option", { name: "home (socks5)" })
+    await screen.findByRole("option", { name: "fs (FlareSolverr)" })
+    expect(screen.getByLabelText<HTMLSelectElement>("Proxy").value).toBe("7")
+    expect(screen.getByLabelText<HTMLSelectElement>("Anti-bot solver").value).toBe("9")
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+    const body = onSubmit.mock.calls[0][0].body
+    expect(body.proxyId).toBe(7)
+    expect(body.solverId).toBe(9)
+  })
+
+  it("edit: a manual-cookie solver keeps solver_type + the cookie sentinel, no solverId", () => {
+    const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+    const existing: InstanceDetail = {
+      ...EXISTING,
+      settings: [
+        ...EXISTING.settings,
+        { name: "solver_type", value: "manual_cookie", secret: false },
+        { name: "cookie", value: REDACTED, secret: true },
+      ],
+    }
+    renderForm(<IndexerForm definition={DEFINITION} existing={existing} pending={false} error={null} onSubmit={onSubmit} />)
+
+    fireEvent.click(screen.getByRole("button", { name: /Advanced/ }))
+    expect(screen.getByLabelText<HTMLSelectElement>("Anti-bot solver").value).toBe("cookie")
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+    const body = onSubmit.mock.calls[0][0].body
+    expect(body.solverId).toBe(null)
+    expect(body.settings?.solver_type).toBe("manual_cookie")
+    expect(body.settings?.cookie).toBe(REDACTED)
   })
 })

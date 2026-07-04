@@ -3,30 +3,37 @@ import { ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { NativeSelect } from "@/components/ui/native-select"
 import { SettingFieldInput } from "@/components/indexers/form/SettingFieldInput"
 import { defaultValues, isInfoField, settingsPayload } from "@/components/indexers/form/settings-payload"
+import { useProxies, useSolvers } from "@/hooks/useResources"
 import { APIError } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import type { AddIndexer, DefinitionDetail, InstanceDetail, SettingField, UpdateIndexer } from "@/types/api"
 
-// The engine's reserved settings (openapi.yaml ReservedSettings) — not part of
-// any definition's schema, offered under "Advanced" on every indexer.
-const RESERVED_FIELDS: SettingField[] = [
-  { name: "proxy_type", label: "Proxy type", type: "select", secret: false, options: { "": "none", http: "http", https: "https", socks5: "socks5", socks5h: "socks5h" }, default: "" },
-  { name: "proxy_url", label: "Proxy URL (may embed user:pass)", type: "password", secret: true },
-  { name: "timeout", label: "Request timeout (Go duration, e.g. 30s)", type: "text", secret: false },
-  { name: "solver_type", label: "Anti-bot solver", type: "select", secret: false, options: { "": "none", manual_cookie: "manual cookie", flaresolverr: "FlareSolverr" }, default: "" },
-  { name: "flaresolverr_url", label: "FlareSolverr URL (base, e.g. http://host:8191 — no /v1)", type: "text", secret: false },
-  { name: "flaresolverr_max_timeout", label: "FlareSolverr maxTimeout (seconds)", type: "text", secret: false },
-]
+// The one reserved engine setting still entered inline. Proxy + FlareSolverr are
+// now global resources referenced by id (proxy_type/proxy_url, solver_type=
+// flaresolverr/flaresolverr_url are managed on the Proxies & Solvers page), and
+// the manual-cookie solver's cookie is entered under the solver control below.
+const TIMEOUT_FIELD: SettingField = {
+  name: "timeout", label: "Request timeout (Go duration, e.g. 30s)", type: "text", secret: false,
+}
+
+// Settings the proxy/solver controls own — stripped from the schema-driven map so
+// they are never double-submitted (they ride proxyId/solverId + the cookie input).
+const MANAGED_KEYS = ["proxy_type", "proxy_url", "solver_type", "flaresolverr_url", "flaresolverr_max_timeout", "cookie"]
 
 export type IndexerFormSubmit =
   | { mode: "create", body: AddIndexer }
   | { mode: "edit", body: UpdateIndexer }
 
+// none = no solver; cookie = inline manual-cookie; a number = a global solver id.
+type SolverChoice = "none" | "cookie" | number
+
 // Dual-use create/edit form: defaults come from the definition schema, with
 // stored settings layered on top in edit mode (secrets prefilled with the
-// <redacted> sentinel and PATCHed back verbatim when untouched).
+// <redacted> sentinel and PATCHed back verbatim when untouched). Proxy + solver
+// are chosen from the global resources; a manual cookie stays inline.
 export function IndexerForm({ definition, existing, pending, error, onSubmit }: {
   definition: DefinitionDetail
   existing?: InstanceDetail
@@ -35,13 +42,20 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
   onSubmit: (submit: IndexerFormSubmit) => void
 }) {
   const mode = existing ? "edit" : "create"
+  const proxies = useProxies()
+  const solvers = useSolvers()
+
   const [name, setName] = useState(existing?.name ?? definition.name)
   const [slug, setSlug] = useState(existing?.slug ?? definition.id)
   const [baseUrl, setBaseUrl] = useState(existing?.baseUrl ?? "")
   const [values, setValues] = useState<Record<string, string>>(() => {
-    const reserved = defaultValues(RESERVED_FIELDS)
-    return { ...reserved, ...defaultValues(definition.settings, existing?.settings) }
+    const seeded = { ...defaultValues([TIMEOUT_FIELD]), ...defaultValues(definition.settings, existing?.settings) }
+    for (const k of MANAGED_KEYS) delete seeded[k]
+    return seeded
   })
+  const [proxyId, setProxyId] = useState<number | null>(existing?.proxyId ?? null)
+  const [solver, setSolver] = useState<SolverChoice>(() => initialSolver(existing))
+  const [cookie, setCookie] = useState(existing?.settings.find((s) => s.name === "cookie")?.value ?? "")
   const [showAdvanced, setShowAdvanced] = useState(false)
 
   const setValue = (fieldName: string) => (value: string) =>
@@ -56,12 +70,16 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
       onSubmit={(e) => {
         e.preventDefault()
         const settings = settingsPayload(values, mode)
+        if (solver === "cookie") {
+          settings.solver_type = "manual_cookie"
+          settings.cookie = cookie
+        }
+        const solverId = typeof solver === "number" ? solver : null
         if (mode === "edit") {
-          // Send baseUrl verbatim so clearing the field ("") actually clears the
-          // stored override; `|| undefined` would drop it and keep the old value.
-          onSubmit({ mode, body: { name, baseUrl, settings } })
+          // baseUrl verbatim so clearing it ("") clears the stored override.
+          onSubmit({ mode, body: { name, baseUrl, settings, proxyId, solverId } })
         } else {
-          onSubmit({ mode, body: { slug, definitionId: definition.id, name, baseUrl: baseUrl || undefined, settings } })
+          onSubmit({ mode, body: { slug, definitionId: definition.id, name, baseUrl: baseUrl || undefined, settings, proxyId, solverId } })
         }
       }}
     >
@@ -113,13 +131,32 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
       </button>
       {showAdvanced && (
         <div className="flex flex-col gap-4 rounded-md border border-border p-3">
-          {RESERVED_FIELDS.map((field) => {
-            if (field.name.startsWith("flaresolverr") && values.solver_type !== "flaresolverr") return null
-            if (field.name === "proxy_url" && values.proxy_type === "") return null
-            return (
-              <SettingFieldInput key={field.name} field={field} value={values[field.name] ?? ""} onChange={setValue(field.name)} />
-            )
-          })}
+          <span className="flex flex-col gap-1.5">
+            <Label htmlFor="ix-proxy">Proxy</Label>
+            <NativeSelect id="ix-proxy" value={proxyId === null ? "" : String(proxyId)} onChange={(e) => setProxyId(e.target.value === "" ? null : Number(e.target.value))}>
+              <option value="">No proxy</option>
+              {(proxies.data ?? []).map((p) => <option key={p.id} value={p.id}>{p.name} ({p.type})</option>)}
+            </NativeSelect>
+          </span>
+
+          <SettingFieldInput field={TIMEOUT_FIELD} value={values.timeout ?? ""} onChange={setValue("timeout")} />
+
+          <span className="flex flex-col gap-1.5">
+            <Label htmlFor="ix-solver">Anti-bot solver</Label>
+            <NativeSelect id="ix-solver" value={solverValue(solver)} onChange={(e) => setSolver(parseSolver(e.target.value))}>
+              <option value="none">None</option>
+              <option value="cookie">Manual cookie</option>
+              {(solvers.data ?? []).map((s) => <option key={s.id} value={s.id}>{s.name} (FlareSolverr)</option>)}
+            </NativeSelect>
+            <p className="text-[12px] text-faint">Manage FlareSolverr endpoints on the Proxies &amp; Solvers page.</p>
+          </span>
+
+          {solver === "cookie" && (
+            <span className="flex flex-col gap-1.5">
+              <Label htmlFor="ix-cookie">Cookie</Label>
+              <Input id="ix-cookie" type="password" autoComplete="off" placeholder="cf_clearance=…; other=…" value={cookie} onChange={(e) => setCookie(e.target.value)} />
+            </span>
+          )}
         </div>
       )}
 
@@ -128,6 +165,23 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
       </Button>
     </form>
   )
+}
+
+// initialSolver derives the solver control's value from the stored instance: a
+// referenced global solver wins, else an inline manual_cookie, else none.
+function initialSolver(existing?: InstanceDetail): SolverChoice {
+  if (existing?.solverId != null) return existing.solverId
+  if (existing?.settings.some((s) => s.name === "solver_type" && s.value === "manual_cookie")) return "cookie"
+  return "none"
+}
+
+function solverValue(choice: SolverChoice): string {
+  return typeof choice === "number" ? String(choice) : choice
+}
+
+function parseSolver(value: string): SolverChoice {
+  if (value === "none" || value === "cookie") return value
+  return Number(value)
 }
 
 // exported for the picker step
@@ -152,4 +206,3 @@ export function DefinitionOption({ id, name, type, description, onPick }: {
     </button>
   )
 }
-

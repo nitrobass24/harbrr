@@ -15,6 +15,7 @@ import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedSearchRouteImport } from './routes/_authenticated/search'
+import { Route as AuthenticatedResourcesRouteImport } from './routes/_authenticated/resources'
 import { Route as AuthenticatedIndexersRouteImport } from './routes/_authenticated/indexers'
 import { Route as AuthenticatedCacheRouteImport } from './routes/_authenticated/cache'
 import { Route as AuthenticatedApplicationsRouteImport } from './routes/_authenticated/applications'
@@ -48,6 +49,11 @@ const AuthenticatedSearchRoute = AuthenticatedSearchRouteImport.update({
   path: '/search',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedResourcesRoute = AuthenticatedResourcesRouteImport.update({
+  id: '/resources',
+  path: '/resources',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedIndexersRoute = AuthenticatedIndexersRouteImport.update({
   id: '/indexers',
   path: '/indexers',
@@ -72,6 +78,7 @@ export interface FileRoutesByFullPath {
   '/applications': typeof AuthenticatedApplicationsRoute
   '/cache': typeof AuthenticatedCacheRoute
   '/indexers': typeof AuthenticatedIndexersRoute
+  '/resources': typeof AuthenticatedResourcesRoute
   '/search': typeof AuthenticatedSearchRoute
   '/settings': typeof AuthenticatedSettingsRoute
 }
@@ -81,6 +88,7 @@ export interface FileRoutesByTo {
   '/applications': typeof AuthenticatedApplicationsRoute
   '/cache': typeof AuthenticatedCacheRoute
   '/indexers': typeof AuthenticatedIndexersRoute
+  '/resources': typeof AuthenticatedResourcesRoute
   '/search': typeof AuthenticatedSearchRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/': typeof AuthenticatedIndexRoute
@@ -93,6 +101,7 @@ export interface FileRoutesById {
   '/_authenticated/applications': typeof AuthenticatedApplicationsRoute
   '/_authenticated/cache': typeof AuthenticatedCacheRoute
   '/_authenticated/indexers': typeof AuthenticatedIndexersRoute
+  '/_authenticated/resources': typeof AuthenticatedResourcesRoute
   '/_authenticated/search': typeof AuthenticatedSearchRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
@@ -106,6 +115,7 @@ export interface FileRouteTypes {
     | '/applications'
     | '/cache'
     | '/indexers'
+    | '/resources'
     | '/search'
     | '/settings'
   fileRoutesByTo: FileRoutesByTo
@@ -115,6 +125,7 @@ export interface FileRouteTypes {
     | '/applications'
     | '/cache'
     | '/indexers'
+    | '/resources'
     | '/search'
     | '/settings'
     | '/'
@@ -126,6 +137,7 @@ export interface FileRouteTypes {
     | '/_authenticated/applications'
     | '/_authenticated/cache'
     | '/_authenticated/indexers'
+    | '/_authenticated/resources'
     | '/_authenticated/search'
     | '/_authenticated/settings'
     | '/_authenticated/'
@@ -181,6 +193,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSearchRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/resources': {
+      id: '/_authenticated/resources'
+      path: '/resources'
+      fullPath: '/resources'
+      preLoaderRoute: typeof AuthenticatedResourcesRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/indexers': {
       id: '/_authenticated/indexers'
       path: '/indexers'
@@ -209,6 +228,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedApplicationsRoute: typeof AuthenticatedApplicationsRoute
   AuthenticatedCacheRoute: typeof AuthenticatedCacheRoute
   AuthenticatedIndexersRoute: typeof AuthenticatedIndexersRoute
+  AuthenticatedResourcesRoute: typeof AuthenticatedResourcesRoute
   AuthenticatedSearchRoute: typeof AuthenticatedSearchRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
@@ -218,6 +238,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedApplicationsRoute: AuthenticatedApplicationsRoute,
   AuthenticatedCacheRoute: AuthenticatedCacheRoute,
   AuthenticatedIndexersRoute: AuthenticatedIndexersRoute,
+  AuthenticatedResourcesRoute: AuthenticatedResourcesRoute,
   AuthenticatedSearchRoute: AuthenticatedSearchRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,

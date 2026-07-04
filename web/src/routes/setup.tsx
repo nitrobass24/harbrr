@@ -12,6 +12,17 @@ export const Route = createFileRoute("/setup")({
   component: Setup,
 })
 
+// setupErrorMessage maps a setup error to a friendly message (matching login.tsx),
+// never surfacing the raw API message.
+function setupErrorMessage(error: unknown): string | null {
+  if (error instanceof APIError) {
+    if (error.code === "invalid") return "Enter a username and a password of at least 8 characters."
+    if (error.code === "already_setup") return "Setup is already complete — sign in instead."
+    return "Setup failed — is the server reachable?"
+  }
+  return error ? "Setup failed — is the server reachable?" : null
+}
+
 // First-run wizard: create the single admin account, then sign in.
 function Setup() {
   const navigate = useNavigate()
@@ -30,15 +41,7 @@ function Setup() {
 
   // Map the error code to a friendly message (matching login.tsx) rather than
   // surfacing the raw API message.
-  const message = create.error instanceof APIError
-    ? create.error.code === "invalid"
-      ? "Enter a username and a password of at least 8 characters."
-      : create.error.code === "already_setup"
-        ? "Setup is already complete — sign in instead."
-        : "Setup failed — is the server reachable?"
-    : create.error
-      ? "Setup failed — is the server reachable?"
-      : null
+  const message = setupErrorMessage(create.error)
 
   const mismatch = confirm !== "" && confirm !== password
 
