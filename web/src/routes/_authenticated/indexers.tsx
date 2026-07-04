@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
-import { Plus, Search as SearchIcon } from "lucide-react"
+import { FlaskConical, Plus, Search as SearchIcon } from "lucide-react"
 import { toast } from "sonner"
 import { DeleteIndexerDialog } from "@/components/indexers/DeleteIndexerDialog"
 import { IndexerDetailsSheet } from "@/components/indexers/IndexerDetailsSheet"
@@ -17,6 +17,7 @@ import {
   useIndexers,
   useIndexerStatuses,
   useSetIndexerEnabled,
+  useTestAllIndexers,
   useTestIndexer
 } from "@/hooks/useIndexers"
 import { getBaseUrl } from "@/lib/base-url"
@@ -40,6 +41,7 @@ function IndexersPage() {
   const capabilities = useIndexerCapabilitiesMany(slugs)
   const toggle = useSetIndexerEnabled()
   const test = useTestIndexer()
+  const testAll = useTestAllIndexers()
   const remove = useDeleteIndexer()
 
   const [filter, setFilter] = useState("")
@@ -83,6 +85,24 @@ function IndexersPage() {
               onChange={(e) => setFilter(e.target.value)}
             />
           </div>
+          <Button
+            variant="outline"
+            disabled={testAll.isPending || total === 0}
+            onClick={() => testAll.mutate(slugs, {
+              onSuccess: (results) => {
+                const passed = results.filter((r) => r.ok).length
+                const failed = results.length - passed
+                if (failed === 0) {
+                  toast.success(`All ${results.length} indexers passed`)
+                } else {
+                  toast.warning(`${passed} passed, ${failed} failed`)
+                }
+              },
+              onError: () => toast.error("Test all failed"),
+            })}
+          >
+            <FlaskConical className="h-4 w-4" /> {testAll.isPending ? "Testing…" : "Test all"}
+          </Button>
           <Button onClick={() => setSheet({ open: true, mode: "create" })}>
             <Plus className="h-4 w-4" /> Add indexer
           </Button>

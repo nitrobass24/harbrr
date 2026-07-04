@@ -110,3 +110,24 @@ export function useTestIndexer() {
       qc.invalidateQueries({ queryKey: ["indexers", slug, "status"] }),
   })
 }
+
+export type TestAllResult = { slug: string, ok: boolean, error?: string }
+
+// Test every configured indexer in parallel, resolving each result (never
+// rejecting) so one failing tracker cannot mask the rest. Statuses are
+// refreshed once the whole batch settles.
+export function useTestAllIndexers() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (slugs: string[]): Promise<TestAllResult[]> =>
+      Promise.all(slugs.map(async (slug) => {
+        try {
+          const res = await api.testIndexer(slug)
+          return { slug, ok: res.ok, error: res.error }
+        } catch {
+          return { slug, ok: false, error: "test request failed" }
+        }
+      })),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["indexers"] }),
+  })
+}
