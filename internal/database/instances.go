@@ -190,6 +190,17 @@ func (Instances) DeleteSettings(ctx context.Context, q dbinterface.Execer, insta
 	return nil
 }
 
+// DeleteSetting removes one setting by (instance_id, name). Used by the one-time
+// resource migration to strip inline proxy/solver settings after they are folded
+// into a global resource.
+func (Instances) DeleteSetting(ctx context.Context, q dbinterface.Execer, instanceID int64, name string) error {
+	if _, err := q.ExecContext(ctx,
+		q.Rebind(`DELETE FROM indexer_settings WHERE instance_id = ? AND name = ?`), instanceID, name); err != nil {
+		return fmt.Errorf("database: delete setting %q: %w", name, err)
+	}
+	return nil
+}
+
 // SetEnabled toggles an instance's enabled flag by slug, returning ErrNotFound
 // when no row matches.
 func (Instances) SetEnabled(ctx context.Context, q dbinterface.Execer, slug string, enabled bool, updatedAt time.Time) error {

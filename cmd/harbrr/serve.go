@@ -28,6 +28,7 @@ import (
 	"github.com/autobrr/harbrr/internal/logger"
 	"github.com/autobrr/harbrr/internal/notify"
 	"github.com/autobrr/harbrr/internal/proxy"
+	"github.com/autobrr/harbrr/internal/resourcemigrate"
 	"github.com/autobrr/harbrr/internal/secrets"
 	"github.com/autobrr/harbrr/internal/server"
 	"github.com/autobrr/harbrr/internal/solver"
@@ -97,6 +98,7 @@ func serve(ctx context.Context, cfg *config.Config, log zerolog.Logger) error {
 	if err := verifyCanary(ctx, db, keyring); err != nil {
 		return err
 	}
+	migrateResources(ctx, db, keyring, log)
 
 	store := database.NewSessionStore(db)
 	sessions := sessionManager(store, cfg)
@@ -124,8 +126,7 @@ func serve(ctx context.Context, cfg *config.Config, log zerolog.Logger) error {
 	mgmt, err := api.NewRouter(api.Deps{
 		Auth: authSvc, Registry: reg, Loader: loader.New(dropinDir(cfg)), AppSync: appSync,
 		Announce: announceSvc, Notify: notifySvc, Proxy: proxy.NewService(db, keyring), Solver: solver.NewService(db, keyring), Sessions: sessions,
-		DLToken: keyring, BasePath: cfg.Server.BaseURL, Cache: searchCache, Logger: log,
-		LogLevel: logLevel,
+		DLToken: keyring, BasePath: cfg.Server.BaseURL, Cache: searchCache, Logger: log, LogLevel: logLevel,
 	}, api.Config{
 		AuthDisabled: cfg.Auth.AuthDisabled(), IPAllowlist: cfg.Auth.IPAllowlist, TrustedProxies: cfg.Auth.TrustedProxies,
 	})
@@ -177,6 +178,15 @@ func serve(ctx context.Context, cfg *config.Config, log zerolog.Logger) error {
 		return fmt.Errorf("serve: %w", err)
 	}
 	return nil
+}
+
+// migrateResources runs the one-time fold of legacy inline proxy/FlareSolverr
+// settings into global resources. Non-fatal: the engine keeps the inline settings
+// as a fallback, so a failure leaves every indexer working and retries next boot.
+func migrateResources(ctx context.Context, db *database.DB, keyring *secrets.Keyring, log zerolog.Logger) {
+	if err := resourcemigrate.Run(ctx, db, keyring, time.Now, log); err != nil {
+		log.Warn().Err(err).Msg("migrating inline proxy/FlareSolverr settings failed; inline settings remain in effect, will retry next boot")
+	}
 }
 
 // preflightBind verifies the resolved address can be bound, then releases it so
