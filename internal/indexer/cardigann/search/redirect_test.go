@@ -111,6 +111,29 @@ type roundTripFunc func(*stdhttp.Request) (*stdhttp.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *stdhttp.Request) (*stdhttp.Response, error) { return f(req) }
 
+// TestDoRequest_DownloadPathStillFollows pins the seam split: doRequest — the
+// download/grab request path — issues UNSTAMPED requests, so a client carrying
+// the production RedirectPolicy still auto-follows a 302 (Jackett's download
+// flow always follows). Only doSearchRequest opts out.
+func TestDoRequest_DownloadPathStillFollows(t *testing.T) {
+	t.Parallel()
+	rt := &redirectDoer{t: t, steps: []redirectStep{
+		{wantMethod: "GET", wantURL: "https://r.test/dl/1", status: stdhttp.StatusFound, location: "/dl/real.torrent"},
+		{wantMethod: "GET", wantURL: "https://r.test/dl/real.torrent", body: "torrent bytes"},
+	}}
+	client := &stdhttp.Client{Transport: roundTripFunc(rt.Do), CheckRedirect: apphttp.RedirectPolicy}
+	body, err := doRequest(t.Context(), client, builtRequest{method: stdhttp.MethodGet, url: "https://r.test/dl/1"}, nil)
+	if err != nil {
+		t.Fatalf("doRequest: %v", err)
+	}
+	if string(body) != "torrent bytes" {
+		t.Fatalf("body = %q, want the followed target", body)
+	}
+	if len(rt.requests) != 2 {
+		t.Errorf("transport saw %d requests, want 2 (client followed the 302)", len(rt.requests))
+	}
+}
+
 func TestFollowRedirects_FollowsChainAsBareGET(t *testing.T) {
 	t.Parallel()
 	doer := &redirectDoer{t: t, steps: []redirectStep{

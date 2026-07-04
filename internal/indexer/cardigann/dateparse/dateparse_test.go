@@ -158,6 +158,11 @@ func TestParseDate(t *testing.T) {
 		{"mixed-case-pm", "MMM d yyyy hh:mm tt", "Jan 2 2023 03:04 Pm", "2023-01-02T15:04:00Z"},
 		// 1337x's "htt MMM. d": designator attached to the hour digit, no year.
 		{"lowercase-pm-attached", "htt MMM. d", "3pm Jan. 2", "2024-01-02T15:00:00Z"},
+		// mixtapetorrent's "MMM d yyyy - h:mmtt zzz": designator attached to the
+		// minutes, followed by a zone.
+		{"lowercase-pm-attached-zone", "MMM d yyyy - h:mmtt zzz", "Jan 2 2023 - 3:04pm +02:00", "2023-01-02T15:04:00+02:00"},
+		// abtorrents' "MMM d yyyyh:mm tt": year and hour abut with no separator.
+		{"lowercase-pm-abutting-year", "MMM d yyyyh:mm tt", "Jan 2 20233:04 pm", "2023-01-02T15:04:00Z"},
 		// Time-only layouts take the FULL date from the clock (.NET DateTimeParse
 		// defaults, not Go's January 1): torrentqq's "HH:mm" and comicat's
 		// timeparse "HH:mm zzz" ("今天 14:30" -> replace/append -> "14:30 +08:00").

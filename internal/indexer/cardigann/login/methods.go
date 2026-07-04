@@ -257,7 +257,7 @@ func mergeFormHeaders(in map[string][]string) map[string][]string {
 func appendQuery(rawURL string, pairs url.Values) (string, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return "", fmt.Errorf("parsing login URL %s: %w", apphttp.SchemeHost(rawURL), err)
+		return "", fmt.Errorf("parsing login URL %s: %w", apphttp.SchemeHost(rawURL), apphttp.RedactURLError(err))
 	}
 	q := u.Query()
 	for k, vs := range pairs {

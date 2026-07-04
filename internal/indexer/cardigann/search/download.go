@@ -89,7 +89,7 @@ func ResolveDownload(ctx context.Context, def *loader.Definition, link string, s
 func parseDownloadURI(link string) (*template.DownloadURI, error) {
 	u, err := url.Parse(link)
 	if err != nil {
-		return nil, fmt.Errorf("parsing download link %q: %w", apphttp.SchemeHost(link), err)
+		return nil, fmt.Errorf("parsing download link %q: %w", apphttp.SchemeHost(link), apphttp.RedactURLError(err))
 	}
 	return template.NewDownloadURI(u), nil
 }

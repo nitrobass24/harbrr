@@ -268,7 +268,7 @@ func (e *Executor) selectorMatches(body []byte, sel string) (bool, error) {
 func (e *Executor) seedCookies(raw string) error {
 	host, err := url.Parse(e.BaseURL)
 	if err != nil {
-		return fmt.Errorf("parsing base URL %q for cookie seeding: %w", apphttp.SchemeHost(e.BaseURL), err)
+		return fmt.Errorf("parsing base URL %q for cookie seeding: %w", apphttp.SchemeHost(e.BaseURL), apphttp.RedactURLError(err))
 	}
 	cookies := parseCookieHeader(raw)
 	if len(cookies) == 0 {
@@ -290,7 +290,7 @@ func (e *Executor) seedStaticCookies(cookies []string) error {
 	}
 	host, err := url.Parse(e.BaseURL)
 	if err != nil {
-		return fmt.Errorf("parsing base URL %q for static cookie seeding: %w", apphttp.SchemeHost(e.BaseURL), err)
+		return fmt.Errorf("parsing base URL %q for static cookie seeding: %w", apphttp.SchemeHost(e.BaseURL), apphttp.RedactURLError(err))
 	}
 	parsed := parseCookieHeader(strings.Join(cookies, "; "))
 	if len(parsed) == 0 {
@@ -320,11 +320,11 @@ func isOptional(b loader.SelectorBlock) bool {
 func resolveAgainst(base, ref string) (string, error) {
 	b, err := url.Parse(base)
 	if err != nil {
-		return "", fmt.Errorf("parsing base %s: %w", apphttp.SchemeHost(base), err)
+		return "", fmt.Errorf("parsing base %s: %w", apphttp.SchemeHost(base), apphttp.RedactURLError(err))
 	}
 	r, err := url.Parse(ref)
 	if err != nil {
-		return "", fmt.Errorf("parsing form action %s: %w", apphttp.SchemeHost(ref), err)
+		return "", fmt.Errorf("parsing form action %s: %w", apphttp.SchemeHost(ref), apphttp.RedactURLError(err))
 	}
 	return b.ResolveReference(r).String(), nil
 }

@@ -10,6 +10,8 @@ import (
 	stdhttp "net/http"
 	"strings"
 	"time"
+
+	apphttp "github.com/autobrr/harbrr/internal/http"
 )
 
 // defaultFlareMaxTimeout is FlareSolverr's per-solve budget when unset; clamped to
@@ -103,7 +105,7 @@ func (s *FlareSolverrSolver) solve(ctx context.Context, fr flareRequest) (SolveR
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return SolveResult{}, fmt.Errorf("flaresolverr: %w", redactErr(err))
+		return SolveResult{}, fmt.Errorf("flaresolverr: %w", apphttp.RedactURLError(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 

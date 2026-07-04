@@ -158,12 +158,68 @@ func TestRedactionSelfAudit(t *testing.T) {
 		err := e.Login(t.Context(), def)
 		assertNoSecret(t, "error message selector", err)
 	})
+
+	// The next two cases discriminate host-only (SchemeHost) redaction from the
+	// old RedactURL heuristics: a secret in a PATH segment (too short for the
+	// length heuristic) and one under an UNLISTED query name would both survive a
+	// name/length scrub, so only host-only detail keeps them out.
+	t.Run("transport error with path-embedded secret", func(t *testing.T) {
+		t.Parallel()
+		def := &loader.Definition{Login: &loader.Login{
+			Method: "get",
+			Path:   "auth/" + pkFixture + "/login",
+		}}
+		e := New(WithClient(&errDoer{}), WithBaseURL(baseURL), WithConfig(cfg))
+		err := e.Login(t.Context(), def)
+		if err == nil {
+			t.Fatal("want transport error")
+		}
+		if strings.Contains(err.Error(), pkFixture) {
+			t.Errorf("transport error leaked path-embedded secret: %q", err.Error())
+		}
+	})
+
+	t.Run("transport error with unlisted query name", func(t *testing.T) {
+		t.Parallel()
+		def := &loader.Definition{Login: &loader.Login{
+			Method: "get",
+			Path:   "auth?tk=" + pkFixture,
+		}}
+		e := New(WithClient(&errDoer{}), WithBaseURL(baseURL), WithConfig(cfg))
+		err := e.Login(t.Context(), def)
+		if err == nil {
+			t.Fatal("want transport error")
+		}
+		if strings.Contains(err.Error(), pkFixture) {
+			t.Errorf("transport error leaked unlisted-name secret: %q", err.Error())
+		}
+	})
+
+	t.Run("unparseable login path with secret", func(t *testing.T) {
+		t.Parallel()
+		// url.Parse fails on the control character; the *url.Error it returns
+		// quotes the FULL raw input into its message, so the wrap site must route
+		// it through apphttp.RedactURLError or the secret leaks one layer below
+		// the redacted format args.
+		def := &loader.Definition{Login: &loader.Login{
+			Method: "get",
+			Path:   "auth/" + pkFixture + "/\x7f",
+		}}
+		e := New(WithClient(&errDoer{}), WithBaseURL(baseURL), WithConfig(cfg))
+		err := e.Login(t.Context(), def)
+		if err == nil {
+			t.Fatal("want parse error")
+		}
+		if strings.Contains(err.Error(), pkFixture) {
+			t.Errorf("parse error leaked path-embedded secret: %q", err.Error())
+		}
+	})
 }
 
 // errDoer is a Doer that always fails the way the stdlib *http.Client does: it
 // wraps the cause in a *url.Error whose URL field is the full request URL (query
-// and all). This proves redactErr scrubs the secret-bearing URL the stdlib
-// stringifies into the error message.
+// and all). This proves apphttp.RedactURLError scrubs the secret-bearing URL the
+// stdlib stringifies into the error message.
 type errDoer struct{}
 
 func (d *errDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {

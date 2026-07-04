@@ -281,12 +281,16 @@ func TestDoRequest_RedactsPasskeyInError(t *testing.T) {
 
 	passkey := "PK" + "1111111111111111111111111111"
 	tests := []struct {
-		name string
-		url  string
+		name     string
+		url      string
+		wantHost bool
 	}{
-		{"query passkey", "https://leak.invalid/browse?passkey=" + passkey},
-		{"query under an unlisted name", "https://leak.invalid/browse?pk=" + passkey},
-		{"path-embedded passkey", "https://leak.invalid/download/" + passkey + "/file.torrent"},
+		{"query passkey", "https://leak.invalid/browse?passkey=" + passkey, true},
+		{"query under an unlisted name", "https://leak.invalid/browse?pk=" + passkey, true},
+		{"path-embedded passkey", "https://leak.invalid/download/" + passkey + "/file.torrent", true},
+		// An UNPARSEABLE URL fails at request build with a *url.Error that quotes
+		// the FULL raw input; the wrap must not let it through (RedactURLError).
+		{"unparseable url with secret", "https://leak.invalid/dl/" + passkey + "/\x7f", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -295,18 +299,18 @@ func TestDoRequest_RedactsPasskeyInError(t *testing.T) {
 
 			_, err := doRequest(t.Context(), errDoer{}, br, nil)
 			if err == nil {
-				t.Fatal("doRequest returned nil error, want transport failure")
+				t.Fatal("doRequest returned nil error, want failure")
 			}
 			if strings.Contains(err.Error(), passkey) {
 				t.Errorf("doRequest error leaked passkey: %q", err.Error())
 			}
-			if !strings.Contains(err.Error(), "https://leak.invalid") {
+			if tt.wantHost && !strings.Contains(err.Error(), "https://leak.invalid") {
 				t.Errorf("doRequest error lost the host detail: %q", err.Error())
 			}
 
 			_, err = doSearchRequest(t.Context(), errDoer{}, br, nil)
 			if err == nil {
-				t.Fatal("doSearchRequest returned nil error, want transport failure")
+				t.Fatal("doSearchRequest returned nil error, want failure")
 			}
 			if strings.Contains(err.Error(), passkey) {
 				t.Errorf("doSearchRequest error leaked passkey: %q", err.Error())
