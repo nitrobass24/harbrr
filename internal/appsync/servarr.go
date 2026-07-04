@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	apphttp "github.com/autobrr/harbrr/internal/http"
 )
 
 // Servarr (Sonarr/Radarr) v3 Torznab-indexer contract. Both apps share the same
@@ -32,6 +34,12 @@ const (
 	servarrIndexerPathV3 = "/api/v3/indexer"
 	servarrIndexerPathV1 = "/api/v1/indexer"
 	newznabAnimeCategory = 5070
+	// forceSaveQuery makes Servarr persist the indexer even when its add/update-time
+	// validation test doesn't pass (e.g. "no results in the configured categories" for
+	// a marginal tracker) — Prowlarr parity, so a transient/warning test result doesn't
+	// hard-fail the sync. harbrr already category-prefilters before pushing (buildDesired),
+	// and health is tracked separately; a genuine failure now surfaces via statusError.
+	forceSaveQuery = "?forceSave=true"
 )
 
 // servarrField is one entry of a Servarr indexer's fields array. The value is
@@ -147,7 +155,7 @@ func (s *servarrDriver) List(ctx context.Context) ([]RemoteIndexer, error) {
 
 func (s *servarrDriver) Create(ctx context.Context, d DesiredIndexer) (string, error) {
 	var resp servarrIndexer
-	if _, err := s.do(ctx, http.MethodPost, s.indexerPath, s.buildIndexer(d), &resp); err != nil {
+	if _, err := s.do(ctx, http.MethodPost, s.indexerPath+forceSaveQuery, s.buildIndexer(d), &resp); err != nil {
 		return "", err
 	}
 	return strconv.Itoa(resp.ID), nil
@@ -160,7 +168,7 @@ func (s *servarrDriver) Update(ctx context.Context, remoteID string, d DesiredIn
 	}
 	body := s.buildIndexer(d)
 	body.ID = id
-	_, err = s.do(ctx, http.MethodPut, s.indexerPath+"/"+remoteID, body, nil)
+	_, err = s.do(ctx, http.MethodPut, s.indexerPath+"/"+remoteID+forceSaveQuery, body, nil)
 	return err
 }
 
@@ -210,12 +218,68 @@ func (s *servarrDriver) do(ctx context.Context, method, path string, body, out a
 	return resp.StatusCode, nil
 }
 
-// statusError builds an error from a non-2xx response. The body is deliberately NOT
-// echoed: it is attacker/app-shaped free text that can reproduce the request — which
-// carries the harbrr feed key — so the status code alone is surfaced (the app's own
-// logs hold the detail). This keeps the credential off every error surface.
+// statusError builds an error from a non-2xx response. Servarr's body carries the
+// actual validation detail (why the add/update was rejected), but it also echoes the
+// submitted config — which carries the harbrr feed key — so the extracted reason is
+// scrubbed at the source (parseServarrReason → RedactError) before it reaches any
+// error surface. When the body isn't a shape we recognize, the status alone is kept.
 func (s *servarrDriver) statusError(method, path string, resp *http.Response) error {
+	if reason := parseServarrReason(resp); reason != "" {
+		return fmt.Errorf("appsync: %s: %s %s: status %d: %s", s.kind, method, path, resp.StatusCode, reason)
+	}
 	return fmt.Errorf("appsync: %s: %s %s: status %d", s.kind, method, path, resp.StatusCode)
+}
+
+// servarrValidationFailure is one entry of Servarr's add/update validation-error
+// response (a JSON array). Only the human-readable text is read — never the echoed
+// submitted config.
+type servarrValidationFailure struct {
+	PropertyName string `json:"propertyName"`
+	ErrorMessage string `json:"errorMessage"`
+	Severity     string `json:"severity"`
+}
+
+// parseServarrReason extracts a redaction-safe reason from a non-2xx Servarr body: the
+// validation-failure array ([{propertyName,errorMessage,severity}]) or a bare {message}
+// object. The text is scrubbed (RedactError catches the echoed apiKey/feed-key in its
+// JSON `"key":"value"` and `key=value` forms) so the credential never rides the error.
+// Returns "" when the body is empty or an unrecognized shape.
+func parseServarrReason(resp *http.Response) string {
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	if err != nil || len(raw) == 0 {
+		return ""
+	}
+	var failures []servarrValidationFailure
+	if err := json.Unmarshal(raw, &failures); err == nil && len(failures) > 0 {
+		parts := make([]string, 0, len(failures))
+		for _, f := range failures {
+			msg := strings.TrimSpace(f.ErrorMessage)
+			if msg == "" {
+				continue
+			}
+			if f.PropertyName != "" {
+				msg = f.PropertyName + ": " + msg
+			}
+			parts = append(parts, msg)
+		}
+		if len(parts) > 0 {
+			return scrubReason(strings.Join(parts, "; "))
+		}
+	}
+	var obj struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(raw, &obj); err == nil && strings.TrimSpace(obj.Message) != "" {
+		return scrubReason(obj.Message)
+	}
+	return ""
+}
+
+// scrubReason runs a Servarr-supplied reason through the shared credential redaction
+// (RedactError scrubs Authorization/Cookie headers, JSON secret keys, and key=value
+// secret tokens — the forms the echoed harbrr feed key takes).
+func scrubReason(text string) string {
+	return apphttp.RedactError(errors.New(text))
 }
 
 // scrubURLError strips the request URL from a *url.Error so a credential a user may

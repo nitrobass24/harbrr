@@ -1,3 +1,4 @@
+import { SyncError } from "@/components/applications/SyncError"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { useConnectionStatus } from "@/hooks/useAppConnections"
 import { useIndexers } from "@/hooks/useIndexers"
@@ -22,20 +23,20 @@ export function StatusDrawer({ connectionId, onClose }: { connectionId: number |
           {(status.data?.indexers ?? []).map((row) => {
             const ix = byId.get(row.instanceId)
             return (
-              <div key={row.instanceId} className="flex items-baseline gap-2 border-b border-border/60 pb-2">
-                <span className="font-medium">{ix?.name ?? `#${row.instanceId}`}</span>
-                {!row.selected && <span className="text-[11px] text-faint">not selected</span>}
-                {row.lastPushStatus && (
-                  <span className={cn("text-[12px]", syncStatusClass(row.lastPushStatus))}>
-                    {row.lastPushStatus}
+              <div key={row.instanceId} className="flex flex-col gap-1 border-b border-border/60 pb-2">
+                <div className="flex items-baseline gap-2">
+                  <span className="font-medium">{ix?.name ?? `#${row.instanceId}`}</span>
+                  {!row.selected && <span className="text-[11px] text-faint">not selected</span>}
+                  {row.lastPushStatus && (
+                    <span className={cn("text-[12px]", syncStatusClass(row.lastPushStatus))}>
+                      {row.lastPushStatus}
+                    </span>
+                  )}
+                  <span className="ml-auto shrink-0 text-[12px] text-faint">
+                    {row.lastPushedAt ? relativeTime(row.lastPushedAt) : "never pushed"}
                   </span>
-                )}
-                <span className="ml-auto shrink-0 text-[12px] text-faint">
-                  {row.lastPushedAt ? relativeTime(row.lastPushedAt) : "never pushed"}
-                </span>
-                {row.lastPushError && (
-                  <span className="w-full truncate text-[12px] text-bad" title={row.lastPushError}>{row.lastPushError}</span>
-                )}
+                </div>
+                {row.lastPushError && <SyncError error={row.lastPushError} />}
               </div>
             )
           })}

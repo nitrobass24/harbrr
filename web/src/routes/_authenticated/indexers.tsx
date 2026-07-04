@@ -20,9 +20,15 @@ import {
   useTestAllIndexers,
   useTestIndexer
 } from "@/hooks/useIndexers"
+import { APIError } from "@/lib/api"
 import { getBaseUrl } from "@/lib/base-url"
 import { copyText } from "@/lib/clipboard"
 import type { Capabilities } from "@/types/api"
+
+// A 401/403 on a test means the session/CSRF is the problem, not the tracker — so it
+// reads as a re-login prompt rather than "the indexer failed" (the #56 confusion).
+const AUTH_FAILED_MSG = "Not authorized — your session may have expired. Reload the page and sign in again."
+const isAuthStatus = (status?: number) => status === 401 || status === 403
 
 export const Route = createFileRoute("/_authenticated/indexers")({
   component: IndexersPage,
@@ -93,7 +99,9 @@ function IndexersPage() {
               onSuccess: (results) => {
                 const passed = results.filter((r) => r.ok).length
                 const failed = results.length - passed
-                if (failed === 0) {
+                if (results.some((r) => isAuthStatus(r.status))) {
+                  toast.error(AUTH_FAILED_MSG)
+                } else if (failed === 0) {
                   toast.success(`All ${results.length} indexers passed`)
                 } else {
                   toast.warning(`${passed} passed, ${failed} failed`)
@@ -131,7 +139,7 @@ function IndexersPage() {
                 onToggle: (slug, enabled) => toggle.mutate({ slug, enabled }),
                 onTest: (slug) => test.mutate(slug, {
                   onSuccess: (r) => r.ok ? toast.success(`${slug}: test passed`) : toast.error(`${slug}: test failed — ${r.error ?? "unknown error"}`),
-                  onError: () => toast.error(`${slug}: test request failed`),
+                  onError: (err) => toast.error(err instanceof APIError && isAuthStatus(err.status) ? AUTH_FAILED_MSG : `${slug}: test request failed`),
                 }),
                 onEdit: (slug) => setSheet({ open: true, mode: "edit", slug }),
                 onDelete: setDeleting,

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -20,13 +21,15 @@ var update = flag.Bool("update", false, "regenerate golden files")
 // records the last request body and auth header, assigns ids on create, and serves
 // list/update/delete/test with the real status codes.
 type servarrStub struct {
-	t        *testing.T
-	mu       sync.Mutex
-	indexers map[int]servarrIndexer
-	nextID   int
-	lastBody []byte
-	lastAuth string
-	testFail bool
+	t          *testing.T
+	mu         sync.Mutex
+	indexers   map[int]servarrIndexer
+	nextID     int
+	lastBody   []byte
+	lastAuth   string
+	lastQuery  string
+	testFail   bool
+	createFail any // when non-nil, create returns 400 with this JSON body
 }
 
 func newServarrStub(t *testing.T) *servarrStub {
@@ -46,6 +49,7 @@ func (s *servarrStub) handler(base string) http.Handler {
 
 func (s *servarrStub) record(r *http.Request) servarrIndexer {
 	s.lastAuth = r.Header.Get("X-Api-Key")
+	s.lastQuery = r.URL.RawQuery
 	body, _ := readAll(r)
 	s.lastBody = body
 	var idx servarrIndexer
@@ -69,6 +73,10 @@ func (s *servarrStub) create(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	idx := s.record(r)
+	if s.createFail != nil {
+		writeJSONTest(w, http.StatusBadRequest, s.createFail)
+		return
+	}
 	s.nextID++
 	idx.ID = s.nextID
 	s.indexers[idx.ID] = idx
@@ -162,6 +170,63 @@ func TestServarrLifecycle(t *testing.T) {
 	}
 	if len(remote) != 0 {
 		t.Errorf("indexer survived Delete: %+v", remote)
+	}
+}
+
+// TestServarrForceSave proves Create/Update pass ?forceSave=true (Prowlarr parity) so
+// Servarr's add-time validation test doesn't hard-fail a marginal indexer.
+func TestServarrForceSave(t *testing.T) {
+	t.Parallel()
+	stub := newServarrStub(t)
+	srv := httptest.NewServer(stub.handler("/api/v3/indexer"))
+	t.Cleanup(srv.Close)
+	ctx := context.Background()
+	drv := NewSonarr(srv.URL, "app-key-123", srv.Client())
+
+	id, err := drv.Create(ctx, desired("show-tracker", true))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if stub.lastQuery != "forceSave=true" {
+		t.Errorf("create query = %q, want forceSave=true", stub.lastQuery)
+	}
+	if err := drv.Update(ctx, id, desired("show-tracker", true)); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if stub.lastQuery != "forceSave=true" {
+		t.Errorf("update query = %q, want forceSave=true", stub.lastQuery)
+	}
+}
+
+// TestServarrSurfacesRedactedReason proves a 400 now carries Servarr's own validation
+// message (so the operator can see *why*), with any echoed feed key scrubbed.
+func TestServarrSurfacesRedactedReason(t *testing.T) {
+	t.Parallel()
+	stub := newServarrStub(t)
+	// Servarr's validation-failure array shape, whose errorMessage echoes the submitted
+	// feed URL carrying the harbrr key — exactly what must not leak.
+	stub.createFail = []map[string]any{{
+		"propertyName": "",
+		"errorMessage": "Query successful, but no results in the configured categories; probed https://harbrr.local/feed?apikey=SUPERSECRETKEY",
+		"severity":     "warning",
+	}}
+	srv := httptest.NewServer(stub.handler("/api/v3/indexer"))
+	t.Cleanup(srv.Close)
+	drv := NewSonarr(srv.URL, "app-key-123", srv.Client())
+
+	_, err := drv.Create(context.Background(), desired("show-tracker", true))
+	if err == nil {
+		t.Fatal("Create should surface a 400 as an error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "no results in the configured categories") {
+		t.Errorf("error should carry Servarr's reason, got: %s", msg)
+	}
+	if !strings.Contains(msg, "status 400") {
+		t.Errorf("error should keep the status, got: %s", msg)
+	}
+	if strings.Contains(msg, "SUPERSECRETKEY") {
+		t.Errorf("feed key leaked into the surfaced error: %s", msg)
 	}
 }
 

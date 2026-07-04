@@ -1,4 +1,5 @@
 import { ListChecks, MoreVertical, Pencil, RefreshCw, Trash2 } from "lucide-react"
+import { SyncError } from "@/components/applications/SyncError"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -47,10 +48,8 @@ export function ConnectionCard({ conn, syncing, actions }: {
               {relativeTime(conn.lastSyncAt)}
             </span>
           )}
-          {conn.lastSyncError && (
-            <span className="truncate text-bad" title={conn.lastSyncError}>· {conn.lastSyncError}</span>
-          )}
         </div>
+        {conn.lastSyncError && <SyncError error={conn.lastSyncError} />}
       </div>
 
       <Switch

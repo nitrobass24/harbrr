@@ -1,6 +1,6 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
-import { api } from "@/lib/api"
+import { api, APIError } from "@/lib/api"
 import type { AddIndexer, Instance, UpdateIndexer } from "@/types/api"
 
 export function useIndexers() {
@@ -111,7 +111,9 @@ export function useTestIndexer() {
   })
 }
 
-export type TestAllResult = { slug: string, ok: boolean, error?: string }
+// status carries the HTTP status when the test request itself failed (threw), so a
+// caller can tell an auth/session failure (401/403) from a genuine tracker failure.
+export type TestAllResult = { slug: string, ok: boolean, error?: string, status?: number }
 
 // Test every configured indexer in parallel, resolving each result (never
 // rejecting) so one failing tracker cannot mask the rest. Statuses are
@@ -124,7 +126,8 @@ export function useTestAllIndexers() {
         try {
           const res = await api.testIndexer(slug)
           return { slug, ok: res.ok, error: res.error }
-        } catch {
+        } catch (err) {
+          if (err instanceof APIError) return { slug, ok: false, error: err.message, status: err.status }
           return { slug, ok: false, error: "test request failed" }
         }
       })),

@@ -99,17 +99,32 @@ func (rt *router) logout(w http.ResponseWriter, r *http.Request) {
 
 // me returns the authenticated identity and how it was authenticated.
 func (rt *router) me(w http.ResponseWriter, r *http.Request) {
-	username := rt.sessions.GetString(r.Context(), sessionUsername)
+	ctx := r.Context()
+	username := rt.sessions.GetString(ctx, sessionUsername)
 	if username == "" {
 		username = "admin" // API-key or auth-disabled mode has no session username
 	}
 	// csrfToken is the session's current token (empty for an apikey/auth-disabled
 	// caller, which needs no CSRF token) so a browser client can bootstrap it here as
 	// well as from the companion cookie.
+	csrfToken := rt.sessions.GetString(ctx, sessionCSRFToken)
+	// Backfill a token for a session-authenticated caller that predates CSRF binding
+	// (sessions persist 30 days): without this it would 403 on every mutation with no
+	// recovery but a manual re-login. /me is the bootstrap the client always calls on
+	// load, so minting here self-heals the session on the next page load. Gated on
+	// session auth so an apikey/auth-disabled caller never materializes a session; the
+	// cookie must be written before the body.
+	if csrfToken == "" && authMethodFrom(ctx) == authSession {
+		if err := rt.issueCSRFToken(ctx, w); err != nil {
+			rt.writeServiceError(w, "issue csrf token", err)
+			return
+		}
+		csrfToken = rt.sessions.GetString(ctx, sessionCSRFToken)
+	}
 	writeJSON(w, http.StatusOK, map[string]string{
 		"username":   username,
-		"authMethod": methodName(authMethodFrom(r.Context())),
-		"csrfToken":  rt.sessions.GetString(r.Context(), sessionCSRFToken),
+		"authMethod": methodName(authMethodFrom(ctx)),
+		"csrfToken":  csrfToken,
 	})
 }
 
