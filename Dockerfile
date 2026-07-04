@@ -32,10 +32,10 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath \
 # never runs `apk add` under QEMU emulation (the slow part of an arm64 build). Both are
 # architecture-independent data — the cert bundle Go reads at
 # /etc/ssl/certs/ca-certificates.crt and the zoneinfo database — so they copy across.
-FROM --platform=$BUILDPLATFORM alpine:3.21 AS certs
+FROM --platform=$BUILDPLATFORM alpine:3.24 AS certs
 RUN apk add --no-cache ca-certificates tzdata
 
-FROM alpine:3.21
+FROM alpine:3.24
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=certs /usr/share/zoneinfo /usr/share/zoneinfo
 # addgroup/adduser/mkdir are busybox builtins in the base image (no package install), so
