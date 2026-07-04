@@ -416,8 +416,8 @@ into the apps so they don't each configure indexers by hand.
 harbrr is already at **parity** with Prowlarr/Jackett — Cardigann engine, native drivers across **every
 auth shape** (Phase 8/9.5 + #62/#63), \*arr/qui app-sync (Phase 10), and a shipped search-results cache
 (#60). This phase is what makes the alpha **immediately superior the day it lands**, not merely
-equivalent. It is a **hard gate on the Web UI (Phase 12): no UI work begins until every box here is
-green.** The bar is a *feature-superset* of Prowlarr (now including usenet) **plus** the "kind to
+equivalent. It is a **hard gate on the Web UI (Phase 12): no UI work begins until every blocking
+box here is green** (items explicitly marked *non-blocking* don't hold the gate). The bar is a *feature-superset* of Prowlarr (now including usenet) **plus** the "kind to
 trackers" differentiators Prowlarr/Jackett don't have, **plus** the autobrr-family sync reach that makes
 harbrr the single source of truth for the whole stack.
 
@@ -608,9 +608,12 @@ the autobrr/Upbrr team first, the same way *harbrr → autobrr push* is; see the
 
 - [ ] **Web UI** — the management dashboard (indexer grid, add/edit forms, manual search, stats);
       depends on the Phase 4 management API. **Gated behind Phase 11 — does not start until the alpha is
-      feature-complete.** **Stack: match qui's** — believed Vite + React + Tailwind CSS; **verify against
-      the qui repo during scoping** before committing. (Interactive **Swagger UI already shipped** at
-      `/api/docs`, separate from the SPA — the web UI just links to it; raw spec at `/api/openapi.yaml`.)
+      feature-complete.** **Stack: match qui's** — **verified 2026-07-03 against the qui repo**: Vite +
+      React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui + TanStack Router/Query/Table/Form, embedded
+      qui-style (`web/` + `go:embed`). **Full scope: `docs/webui-scope.md`** (screens, endpoint wiring
+      map, auth flow, build-order leaves). (Interactive
+      **Swagger UI already shipped** at `/api/docs`, separate from the SPA — the web UI just links to
+      it; raw spec at `/api/openapi.yaml`.)
 
 ---
 

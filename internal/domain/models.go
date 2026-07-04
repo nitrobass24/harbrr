@@ -22,7 +22,13 @@ type IndexerInstance struct {
 	// Protocol is the acquisition protocol ("torrent" or "usenet"), derived from
 	// the definition at Add time and immutable per instance. NOT NULL in the DB,
 	// defaulting to "torrent".
-	Protocol  string
+	Protocol string
+	// ProxyID / SolverID reference the global proxy / anti-bot-solver resources
+	// this instance uses, or nil for none. The engine resolves them into the
+	// per-request config at build time (registry.buildAdapter); ON DELETE SET NULL
+	// means deleting a resource just drops the reference.
+	ProxyID   *int64
+	SolverID  *int64
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -183,6 +189,61 @@ type Notification struct {
 	OnHealthFailure bool
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+}
+
+// Proxy scheme types — stored verbatim in proxies.type, validated in Go (no DB
+// CHECK) so a new scheme needs no migration. These mirror the inline proxy_type
+// values buildTransport already accepts.
+const (
+	ProxyTypeHTTP    = "http"
+	ProxyTypeHTTPS   = "https"
+	ProxyTypeSOCKS5  = "socks5"
+	ProxyTypeSOCKS5H = "socks5h"
+)
+
+// SolverTypeFlaresolverr is the only global anti-bot-solver type today (the
+// manual-cookie solver stays inline per-tracker). Stored in solvers.type;
+// validated in Go so a future solver kind needs no migration.
+const SolverTypeFlaresolverr = "flaresolverr"
+
+// ProxySecretURL / SolverSecretURL are the AAD "setting" discriminators binding
+// each resource's encrypted endpoint URL to its own row id (mirroring notify's
+// secretURL). Shared so the management service encrypts and the engine decrypts
+// under the same name. They are DISTINCT per resource type: proxies and solvers
+// have independent id sequences, so a shared discriminator would let a proxy blob
+// and a solver blob with the same id authenticate under the same key — the type
+// is part of the AAD namespace to prevent that cross-context confusion.
+const (
+	ProxySecretURL  = "proxy_url"
+	SolverSecretURL = "solver_url" //nolint:gosec // G101: an AAD "setting" discriminator name, not a credential.
+)
+
+// Proxy is a global, reusable proxy an indexer instance references by id. The URL
+// (which routinely embeds user:pass) is the stored secret: encrypted under KeyID
+// with the proxy's own id as AAD, read back <redacted> in the API.
+type Proxy struct {
+	ID           int64
+	Name         string
+	Type         string
+	URLEncrypted string
+	KeyID        string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+// Solver is a global, reusable anti-bot solver an indexer instance references by
+// id (FlareSolverr today). The endpoint URL is stored encrypted like Proxy's;
+// MaxTimeout is the FlareSolverr per-solve budget in seconds (0 = the solver's
+// default).
+type Solver struct {
+	ID           int64
+	Name         string
+	Type         string
+	URLEncrypted string
+	KeyID        string
+	MaxTimeout   int
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 // AnnounceConnection is a configured cross-seed tool harbrr pushes newly-seen releases to.

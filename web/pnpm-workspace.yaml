@@ -1,0 +1,6 @@
+# pnpm settings for the frontend (pnpm 10 reads settings from this file).
+#
+# Supply-chain cooldown: refuse to install package versions published less than
+# 3 days ago (minutes), so a compromised release is usually yanked before it can
+# reach this lockfile. Dependabot PRs bump versions on a weekly cadence anyway.
+minimumReleaseAge: 4320

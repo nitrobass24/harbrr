@@ -68,10 +68,22 @@ func NewFlareSolverrSolver(baseURL string, maxTimeout time.Duration) *FlareSolve
 		maxTimeout = defaultFlareMaxTimeout
 	}
 	return &FlareSolverrSolver{
-		baseURL:    strings.TrimRight(baseURL, "/"),
+		baseURL:    normalizeFlareBaseURL(baseURL),
 		maxTimeout: maxTimeout,
 		client:     &stdhttp.Client{Timeout: maxTimeout + 30*time.Second},
 	}
+}
+
+// normalizeFlareBaseURL trims surrounding whitespace, trailing slashes, and a
+// trailing "/v1" so an operator can enter EITHER the base URL
+// (http://host:8191) or the full FlareSolverr endpoint (http://host:8191/v1).
+// solve() always appends "/v1", so accepting the endpoint form avoids a silent
+// ".../v1/v1" that fails every solve — the standard endpoint everyone copies
+// from FlareSolverr's own docs ends in /v1.
+func normalizeFlareBaseURL(raw string) string {
+	u := strings.TrimRight(strings.TrimSpace(raw), "/")
+	u = strings.TrimSuffix(u, "/v1")
+	return strings.TrimRight(u, "/")
 }
 
 // Solve asks FlareSolverr to clear targetURL and returns the resulting cookies +

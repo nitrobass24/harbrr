@@ -23,3 +23,18 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+  - package-ecosystem: "npm" # pnpm lockfile in web/
+    directory: "/web"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "chore(web-deps)"
+    groups:
+      web:
+        patterns: ["*"]
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "chore(docker)"

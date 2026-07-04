@@ -1,0 +1,129 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { toast } from "sonner"
+import { api } from "@/lib/api"
+import type { AppConnection, CreateAnnounceConnection, CreateConnection, UpdateConnection } from "@/types/api"
+
+export function useAppConnections() {
+  return useQuery({
+    queryKey: ["app-connections"],
+    queryFn: () => api.listConnections(),
+  })
+}
+
+export function useConnectionStatus(id: number | null) {
+  return useQuery({
+    queryKey: ["app-connections", id, "status"],
+    queryFn: () => api.getConnectionStatus(id as number),
+    enabled: id !== null,
+  })
+}
+
+function useInvalidateConnections() {
+  const qc = useQueryClient()
+  return () => qc.invalidateQueries({ queryKey: ["app-connections"] })
+}
+
+export function useCreateConnection() {
+  const invalidate = useInvalidateConnections()
+  return useMutation({
+    mutationFn: (body: CreateConnection) => api.createConnection(body),
+    onSettled: invalidate,
+  })
+}
+
+export function useUpdateConnection(id: number) {
+  const invalidate = useInvalidateConnections()
+  return useMutation({
+    mutationFn: (body: UpdateConnection) => api.updateConnection(id, body),
+    onSettled: invalidate,
+  })
+}
+
+export function useDeleteConnection() {
+  const invalidate = useInvalidateConnections()
+  return useMutation({
+    mutationFn: (id: number) => api.deleteConnection(id),
+    onSettled: invalidate,
+  })
+}
+
+// Optimistic switch flip, mirroring the indexers pattern.
+export function useSetConnectionEnabled() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, enabled }: { id: number, enabled: boolean }) => api.setConnectionEnabled(id, enabled),
+    onMutate: async ({ id, enabled }) => {
+      await qc.cancelQueries({ queryKey: ["app-connections"] })
+      const previous = qc.getQueryData<AppConnection[]>(["app-connections"])
+      qc.setQueryData<AppConnection[]>(["app-connections"], (list) =>
+        list?.map((c) => (c.id === id ? { ...c, enabled } : c)))
+      return { previous }
+    },
+    onError: (_err, vars, context) => {
+      if (context?.previous) qc.setQueryData(["app-connections"], context.previous)
+      toast.error(`${vars.enabled ? "Enabling" : "Disabling"} the connection failed`)
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["app-connections"] }),
+  })
+}
+
+export function useTestConnection() {
+  return useMutation({ mutationFn: (id: number) => api.testConnection(id) })
+}
+
+export function useSyncConnection() {
+  const invalidate = useInvalidateConnections()
+  return useMutation({
+    mutationFn: (id: number) => api.syncConnection(id),
+    onSettled: invalidate,
+  })
+}
+
+export function useSyncAll() {
+  const invalidate = useInvalidateConnections()
+  return useMutation({
+    mutationFn: () => api.syncAllConnections(),
+    onSettled: invalidate,
+  })
+}
+
+export function useSetSelectedIndexers(id: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (instanceIds: number[]) => api.setSelectedIndexers(id, instanceIds),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["app-connections", id, "status"] }),
+  })
+}
+
+// --- announce targets ---
+
+export function useAnnounceConnections() {
+  return useQuery({
+    queryKey: ["announce-connections"],
+    queryFn: () => api.listAnnounceConnections(),
+  })
+}
+
+export function useCreateAnnounce() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: CreateAnnounceConnection) => api.createAnnounceConnection(body),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["announce-connections"] }),
+  })
+}
+
+export function useDeleteAnnounce() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => api.deleteAnnounceConnection(id),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["announce-connections"] }),
+  })
+}
+
+export function useSetAnnounceEnabled() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, enabled }: { id: number, enabled: boolean }) => api.setAnnounceEnabled(id, enabled),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["announce-connections"] }),
+  })
+}

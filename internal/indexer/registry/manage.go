@@ -35,15 +35,31 @@ type AddParams struct {
 	Name         string
 	BaseURL      string
 	Settings     map[string]string
+	// ProxyID / SolverID reference the global proxy / solver resources this indexer
+	// uses (nil = none). The foreign key rejects a non-existent id.
+	ProxyID  *int64
+	SolverID *int64
+}
+
+// RefUpdate is a tri-state PATCH field for a nullable resource reference: Present
+// false leaves the stored reference unchanged; Present true with a nil Value clears
+// it; Present true with a value sets it. This keeps a partial PATCH (e.g. renaming
+// an indexer) from silently clearing its proxy/solver reference.
+type RefUpdate struct {
+	Present bool
+	Value   *int64
 }
 
 // UpdateParams is the input to Update. Nil Name/BaseURL leave those unchanged;
 // Settings is merged into the existing set (a value of secrets.Redacted keeps the
-// stored value; omitted settings are kept).
+// stored value; omitted settings are kept). ProxyID/SolverID are tri-state
+// (RefUpdate): only an explicitly-present field changes the reference.
 type UpdateParams struct {
 	Name     *string
 	BaseURL  *string
 	Settings map[string]string
+	ProxyID  RefUpdate
+	SolverID RefUpdate
 }
 
 // SettingView is the API-safe representation of a stored setting: a secret's value
@@ -74,6 +90,7 @@ func (r *Registry) Add(ctx context.Context, p AddParams) (domain.IndexerInstance
 	inst := domain.IndexerInstance{
 		Slug: slug, DefinitionID: p.DefinitionID, Name: orDefault(p.Name, def.Name),
 		BaseURL: p.BaseURL, Enabled: true, Protocol: def.EffectiveProtocol(),
+		ProxyID: p.ProxyID, SolverID: p.SolverID,
 		CreatedAt: now, UpdatedAt: now,
 	}
 
@@ -152,6 +169,13 @@ func (r *Registry) Update(ctx context.Context, slug string, p UpdateParams) erro
 	err = r.inTx(ctx, func(tx dbinterface.TxQuerier) error {
 		if err := r.instances.UpdateMeta(ctx, tx, inst.ID, name, baseURL, r.clock()); err != nil {
 			return fmt.Errorf("registry: update meta: %w", err)
+		}
+		// Only a present ref field changes the stored reference; an absent one keeps
+		// the instance's current value (so a partial PATCH can't clear it).
+		proxyRef := resolveRef(p.ProxyID, inst.ProxyID)
+		solverRef := resolveRef(p.SolverID, inst.SolverID)
+		if err := r.instances.SetRefs(ctx, tx, inst.ID, proxyRef, solverRef, r.clock()); err != nil {
+			return fmt.Errorf("registry: update refs: %w", err)
 		}
 		if err := r.instances.DeleteSettings(ctx, tx, inst.ID); err != nil {
 			return fmt.Errorf("registry: clear settings: %w", err)
@@ -460,4 +484,13 @@ func applyMeta(inst domain.IndexerInstance, p UpdateParams) (name, baseURL strin
 		baseURL = *p.BaseURL
 	}
 	return name, baseURL
+}
+
+// resolveRef applies a tri-state reference update: a present update wins (its
+// value, nil to clear); an absent one keeps the instance's current reference.
+func resolveRef(update RefUpdate, current *int64) *int64 {
+	if update.Present {
+		return update.Value
+	}
+	return current
 }

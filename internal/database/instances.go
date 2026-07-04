@@ -27,9 +27,10 @@ const timeLayout = time.RFC3339
 func (Instances) Insert(ctx context.Context, q dbinterface.Execer, inst domain.IndexerInstance) (int64, error) {
 	res, err := q.ExecContext(
 		ctx,
-		q.Rebind(`INSERT INTO indexer_instances (slug, definition_id, name, base_url, enabled, protocol, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
+		q.Rebind(`INSERT INTO indexer_instances (slug, definition_id, name, base_url, enabled, protocol, proxy_id, solver_id, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		inst.Slug, inst.DefinitionID, inst.Name, inst.BaseURL, boolToInt(inst.Enabled), inst.Protocol,
+		nullInt64(inst.ProxyID), nullInt64(inst.SolverID),
 		inst.CreatedAt.UTC().Format(timeLayout), inst.UpdatedAt.UTC().Format(timeLayout),
 	)
 	if err != nil {
@@ -87,7 +88,7 @@ func (Instances) UpsertSetting(ctx context.Context, q dbinterface.Execer, instan
 // GetBySlug returns the instance with the given slug, or ErrNotFound.
 func (Instances) GetBySlug(ctx context.Context, q dbinterface.Execer, slug string) (domain.IndexerInstance, error) {
 	row := q.QueryRowContext(ctx,
-		q.Rebind(`SELECT id, slug, definition_id, name, base_url, enabled, protocol, created_at, updated_at
+		q.Rebind(`SELECT id, slug, definition_id, name, base_url, enabled, protocol, proxy_id, solver_id, created_at, updated_at
 		 FROM indexer_instances WHERE slug = ?`), slug)
 	inst, err := scanInstance(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -103,7 +104,7 @@ func (Instances) GetBySlug(ctx context.Context, q dbinterface.Execer, slug strin
 // source to resolve a cache write-back's instance id back to its slug.
 func (Instances) GetByID(ctx context.Context, q dbinterface.Execer, id int64) (domain.IndexerInstance, error) {
 	row := q.QueryRowContext(ctx,
-		q.Rebind(`SELECT id, slug, definition_id, name, base_url, enabled, protocol, created_at, updated_at
+		q.Rebind(`SELECT id, slug, definition_id, name, base_url, enabled, protocol, proxy_id, solver_id, created_at, updated_at
 		 FROM indexer_instances WHERE id = ?`), id)
 	inst, err := scanInstance(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -148,7 +149,7 @@ func (Instances) Settings(ctx context.Context, q dbinterface.Execer, instanceID 
 // List returns all instances ordered by slug.
 func (Instances) List(ctx context.Context, q dbinterface.Execer) ([]domain.IndexerInstance, error) {
 	rows, err := q.QueryContext(ctx,
-		`SELECT id, slug, definition_id, name, base_url, enabled, protocol, created_at, updated_at
+		`SELECT id, slug, definition_id, name, base_url, enabled, protocol, proxy_id, solver_id, created_at, updated_at
 		 FROM indexer_instances ORDER BY slug`)
 	if err != nil {
 		return nil, fmt.Errorf("database: list instances: %w", err)
@@ -189,6 +190,17 @@ func (Instances) DeleteSettings(ctx context.Context, q dbinterface.Execer, insta
 	return nil
 }
 
+// DeleteSetting removes one setting by (instance_id, name). Used by the one-time
+// resource migration to strip inline proxy/solver settings after they are folded
+// into a global resource.
+func (Instances) DeleteSetting(ctx context.Context, q dbinterface.Execer, instanceID int64, name string) error {
+	if _, err := q.ExecContext(ctx,
+		q.Rebind(`DELETE FROM indexer_settings WHERE instance_id = ? AND name = ?`), instanceID, name); err != nil {
+		return fmt.Errorf("database: delete setting %q: %w", name, err)
+	}
+	return nil
+}
+
 // SetEnabled toggles an instance's enabled flag by slug, returning ErrNotFound
 // when no row matches.
 func (Instances) SetEnabled(ctx context.Context, q dbinterface.Execer, slug string, enabled bool, updatedAt time.Time) error {
@@ -217,16 +229,50 @@ func scanInstance(s interface{ Scan(...any) error }) (domain.IndexerInstance, er
 		inst                 domain.IndexerInstance
 		baseURL              sql.NullString
 		enabled              int
+		proxyID, solverID    sql.NullInt64
 		createdAt, updatedAt string
 	)
-	if err := s.Scan(&inst.ID, &inst.Slug, &inst.DefinitionID, &inst.Name, &baseURL, &enabled, &inst.Protocol, &createdAt, &updatedAt); err != nil {
+	if err := s.Scan(&inst.ID, &inst.Slug, &inst.DefinitionID, &inst.Name, &baseURL, &enabled, &inst.Protocol,
+		&proxyID, &solverID, &createdAt, &updatedAt); err != nil {
 		return domain.IndexerInstance{}, err //nolint:wrapcheck // sql.ErrNoRows is matched by the caller; other errors wrap there.
 	}
 	inst.BaseURL = baseURL.String
 	inst.Enabled = enabled != 0
+	inst.ProxyID = nullableToPtr(proxyID)
+	inst.SolverID = nullableToPtr(solverID)
 	inst.CreatedAt = parseTime(createdAt)
 	inst.UpdatedAt = parseTime(updatedAt)
 	return inst, nil
+}
+
+// SetRefs updates an instance's proxy_id / solver_id references (nil clears the
+// reference) and updated_at by id. Kept separate from UpdateMeta so the resource
+// wiring is an explicit, independently-testable write.
+func (Instances) SetRefs(ctx context.Context, q dbinterface.Execer, id int64, proxyID, solverID *int64, updatedAt time.Time) error {
+	_, err := q.ExecContext(ctx,
+		q.Rebind(`UPDATE indexer_instances SET proxy_id = ?, solver_id = ?, updated_at = ? WHERE id = ?`),
+		nullInt64(proxyID), nullInt64(solverID), updatedAt.UTC().Format(timeLayout), id)
+	if err != nil {
+		return fmt.Errorf("database: set instance refs: %w", err)
+	}
+	return nil
+}
+
+// nullInt64 binds an optional int64 as SQL NULL when nil.
+func nullInt64(p *int64) any {
+	if p == nil {
+		return nil
+	}
+	return *p
+}
+
+// nullableToPtr converts a scanned sql.NullInt64 to *int64 (nil when absent).
+func nullableToPtr(n sql.NullInt64) *int64 {
+	if !n.Valid {
+		return nil
+	}
+	v := n.Int64
+	return &v
 }
 
 // affectedOrNotFound maps a zero-rows-affected result to ErrNotFound.

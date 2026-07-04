@@ -24,6 +24,9 @@ type Deps struct {
 	Management http.Handler
 	// Torznab is the *arr-facing handler (serves /api/indexers/...).
 	Torznab http.Handler
+	// UI is the embedded SPA handler (internal/web/ui): static bundle files plus
+	// the index.html fallback for client-side routes. It owns the root catch-all.
+	UI http.Handler
 	// Spec is the embedded OpenAPI document, served at /api/openapi.yaml.
 	Spec []byte
 	// DocsUI is the embedded Swagger UI page, served at /api/docs.
@@ -48,12 +51,14 @@ type Server struct {
 
 // New assembles the root router and HTTP server. The *arr-facing Torznab feed
 // (/api/indexers/{slug}/results/* and .../dl) is mounted on the specific feed
-// suffixes ahead of the management catch-all, so the two contracts share the
-// /api/indexers/{slug} base yet stay on separate trees: the management router (which
-// owns /healthz and every other /api/*, including the JSON /api/indexers/{slug}
-// sub-resources) handles everything else. The feed suffixes (results/*, dl) never
-// collide with a management sub-resource. When BasePath is set, it is stripped before
-// routing so internal patterns stay absolute.
+// suffixes ahead of the management mounts, so the two contracts share the
+// /api/indexers/{slug} base yet stay on separate trees: the management router owns
+// /healthz and every other /api/* (including the JSON /api/indexers/{slug}
+// sub-resources), and the feed suffixes (results/*, dl) never collide with a
+// management sub-resource. The SPA (deps.UI) takes the root catch-all — every
+// non-API path serves a bundle file or the index.html fallback, so client-side
+// routes deep-link correctly. When BasePath is set, it is stripped before routing
+// so internal patterns stay absolute.
 func New(deps Deps, cfg Config) *Server {
 	root := chi.NewRouter()
 	root.Use(chimw.RequestID, chimw.Recoverer, requestLogger(deps.Logger))
@@ -62,7 +67,10 @@ func New(deps Deps, cfg Config) *Server {
 	root.Handle("/api/indexers/{slug}/dl", deps.Torznab)
 	root.Get("/api/openapi.yaml", specHandler(deps.Spec))
 	root.Get("/api/docs", docsHandler(deps.DocsUI))
-	root.Handle("/*", deps.Management)
+	root.Handle("/healthz", deps.Management)
+	root.Handle("/api", deps.Management)
+	root.Handle("/api/*", deps.Management)
+	root.Handle("/*", deps.UI)
 
 	var h http.Handler = root
 	if cfg.BasePath != "" {

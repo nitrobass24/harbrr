@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
-# CodeRabbit config for seekbrr. Tuned to the engine-parity discipline and the
+# CodeRabbit config for harbrr. Tuned to the engine-parity discipline and the
 # never-edit-vendored-defs rule. CodeRabbit also auto-reads AGENTS.md as review criteria.
 
 language: "en-US"
