@@ -68,7 +68,11 @@ func (s *Service) Sync(ctx context.Context, id int64) (SyncReport, error) {
 		return SyncReport{}, fmt.Errorf("appsync: list connection indexers: %w", err)
 	}
 
-	desired, err := s.buildDesired(ctx, instances, conn, harbrrKey, selectedByID(ledger))
+	profile, err := s.connProfile(ctx, conn)
+	if err != nil {
+		return SyncReport{}, err
+	}
+	desired, err := s.buildDesired(ctx, instances, conn, harbrrKey, selectedByID(ledger), profile)
 	if err != nil {
 		return SyncReport{}, err
 	}
@@ -112,9 +116,11 @@ func (s *Service) SyncAll(ctx context.Context) ([]ConnectionSyncResult, error) {
 }
 
 // buildDesired projects every in-scope indexer into a DesiredIndexer: the per-app feed
-// URL, the connection's harbrr key, and the indexer's categories. Scope "selected"
-// keeps only indexers flagged in the ledger.
-func (s *Service) buildDesired(ctx context.Context, instances []domain.IndexerInstance, conn domain.AppConnection, harbrrKey string, selected map[int64]bool) ([]DesiredIndexer, error) {
+// URL, the connection's harbrr key, and the (gated) categories. Scope "selected" keeps
+// only indexers flagged in the ledger. A non-nil profile narrows the pushed categories
+// (within the app's content type) and overrides the min-seeders floor and search-mode
+// toggles; nil profile is exactly today's behavior.
+func (s *Service) buildDesired(ctx context.Context, instances []domain.IndexerInstance, conn domain.AppConnection, harbrrKey string, selected map[int64]bool, profile *domain.SyncProfile) ([]DesiredIndexer, error) {
 	out := make([]DesiredIndexer, 0, len(instances))
 	for _, inst := range instances {
 		if conn.IndexScope == domain.IndexScopeSelected && !selected[inst.ID] {
@@ -129,23 +135,103 @@ func (s *Service) buildDesired(ctx context.Context, instances []domain.IndexerIn
 		if err != nil {
 			return nil, fmt.Errorf("appsync: categories for %q: %w", inst.Slug, err)
 		}
-		// Servarr apps only accept indexers that serve their content type (Prowlarr
-		// parity); qui is content-neutral and keeps everything. Custom/out-of-range
-		// categories never qualify an indexer for a Servarr app.
-		if !IndexerServesApp(conn.Kind, cats) {
+		// The content gate (kind range, optionally narrowed by the profile) both decides
+		// whether the indexer qualifies and produces the exact category set to push.
+		gated, ok := gateCategories(conn.Kind, profile, cats)
+		if !ok {
 			continue
 		}
 		caps, err := s.source.Capabilities(ctx, inst.Slug)
 		if err != nil {
 			return nil, fmt.Errorf("appsync: capabilities for %q: %w", inst.Slug, err)
 		}
+		rss, auto, interactive := resolveToggles(inst.Enabled, profile)
 		out = append(out, DesiredIndexer{
 			Slug: inst.Slug, Name: inst.Name, FeedURL: FeedURL(conn.HarbrrURL, inst.Slug, conn.FreeleechMode),
-			APIKey: harbrrKey, Categories: cats, Capabilities: caps,
+			APIKey: harbrrKey, Categories: gated, Capabilities: caps,
 			Priority: conn.Priority, Enabled: inst.Enabled, Protocol: inst.Protocol,
+			EnableRss: rss, EnableAutomaticSearch: auto, EnableInteractiveSearch: interactive,
+			MinSeeders: profileMinSeeders(profile),
 		})
 	}
 	return out, nil
+}
+
+// connProfile loads the sync profile a connection references, or nil when it has none or
+// is a qui connection (profiles never apply to qui — validation blocks the assignment, so
+// the kind check here is defensive). Loaded once per Sync and threaded into buildDesired.
+func (s *Service) connProfile(ctx context.Context, conn domain.AppConnection) (*domain.SyncProfile, error) {
+	if conn.SyncProfileID == nil || conn.Kind == domain.AppKindQui {
+		return nil, nil //nolint:nilnil // "no profile" is a valid, non-error outcome (today's default behavior).
+	}
+	profile, err := s.profiles.GetProfile(ctx, s.db, *conn.SyncProfileID)
+	if err != nil {
+		return nil, fmt.Errorf("appsync: load sync profile: %w", err)
+	}
+	return &profile, nil
+}
+
+// gateCategories applies the connection's content gate to an indexer's categories and
+// returns the exact set to push. With no profile (or an empty profile category set) it is
+// the existing kind gate: keep the full set iff IndexerServesApp is true (today's
+// behavior). A non-empty profile set narrows to the intersection of categories the app
+// serves AND the profile selects; the indexer qualifies only if that intersection is
+// non-empty. This is narrow-only — a profile can exclude categories but never cross the
+// app's content type (a books tracker never reaches Sonarr). The returned slice preserves
+// Category.Name so Sonarr's animeCategories still resolve.
+func gateCategories(kind string, profile *domain.SyncProfile, cats []Category) ([]Category, bool) {
+	if profile == nil || len(profile.Categories) == 0 {
+		if !IndexerServesApp(kind, cats) {
+			return nil, false
+		}
+		return cats, true
+	}
+	filtered := make([]Category, 0, len(cats))
+	for _, c := range cats {
+		if categoryServesApp(kind, c.ID) && profileMatch(profile.Categories, c.ID) {
+			filtered = append(filtered, c)
+		}
+	}
+	if len(filtered) == 0 {
+		return nil, false
+	}
+	return filtered, true
+}
+
+// profileMatch reports whether a profile's category-id set covers catID. A value that is
+// a multiple of 1000 is a parent covering the whole [v, v+999] block (e.g. 2000 covers
+// 2040); any other value matches exactly (e.g. 3030 matches only 3030). This mirrors the
+// Newznab parent/child convention the category-picker UI produces.
+func profileMatch(ids []int, catID int) bool {
+	for _, v := range ids {
+		if v == catID {
+			return true
+		}
+		if v%1000 == 0 && catID >= v && catID < v+1000 {
+			return true
+		}
+	}
+	return false
+}
+
+// resolveToggles combines an instance's enabled state with a profile's per-mode toggles:
+// each pushed flag is enabled AND the profile's matching toggle (no profile → all three
+// equal enabled). A disabled instance therefore forces every flag false regardless of the
+// profile — the instance's own state always wins.
+func resolveToggles(enabled bool, p *domain.SyncProfile) (rss, auto, interactive bool) {
+	if p == nil {
+		return enabled, enabled, enabled
+	}
+	return enabled && p.EnableRss, enabled && p.EnableAutomaticSearch, enabled && p.EnableInteractiveSearch
+}
+
+// profileMinSeeders is the connection's pushed minimum-seeders floor: the profile's value,
+// or 0 (unset → the app default) when there is no profile.
+func profileMinSeeders(p *domain.SyncProfile) int {
+	if p == nil {
+		return 0
+	}
+	return p.MinSeeders
 }
 
 // persistOutcomes writes the outcomes back to the ledger in one transaction so a
@@ -262,6 +348,21 @@ func IndexerServesApp(kind string, cats []Category) bool {
 		}
 	}
 	return false
+}
+
+// categoryServesApp is the single-category form of IndexerServesApp: whether one Newznab
+// category id belongs to a Servarr app of this kind (within its content range, or the
+// Readarr audiobook special-case). qui (no range) serves everything. Shared by the
+// profile category gate (buildDesired) and the attach-time overlap guard (validateProfileRef).
+func categoryServesApp(kind string, id int) bool {
+	lo, hi, ok := AppCategoryRange(kind)
+	if !ok {
+		return true
+	}
+	if id >= lo && id <= hi {
+		return true
+	}
+	return kind == domain.AppKindReadarr && id == audiobookCategory
 }
 
 // pushStatus maps a reconcile action to a stored per-indexer status.

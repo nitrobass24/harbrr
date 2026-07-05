@@ -113,15 +113,21 @@ func (s *servarrDriver) buildIndexer(d DesiredIndexer) servarrIndexer {
 	if d.Protocol == servarrUsenetProtocol {
 		impl, cfg, proto = servarrNewznabImpl, servarrNewznabConfig, servarrUsenetProtocol
 	}
+	// minimumSeeders is a TorznabSettings-only field (NewznabSettings has no seeders
+	// notion), so it rides only the torrent branch and only when the profile set it (>0).
+	// Omitted → the app's own default, exactly as before sync profiles existed.
+	if proto == servarrProtocol && d.MinSeeders > 0 {
+		fields = append(fields, field("minimumSeeders", d.MinSeeders))
+	}
 	return servarrIndexer{
 		Name:                    d.Name,
 		Implementation:          impl,
 		ImplementationName:      impl,
 		ConfigContract:          cfg,
 		Protocol:                proto,
-		EnableRss:               d.Enabled,
-		EnableAutomaticSearch:   d.Enabled,
-		EnableInteractiveSearch: d.Enabled,
+		EnableRss:               d.EnableRss,
+		EnableAutomaticSearch:   d.EnableAutomaticSearch,
+		EnableInteractiveSearch: d.EnableInteractiveSearch,
 		Priority:                d.Priority,
 		Fields:                  fields,
 		Tags:                    []int{},

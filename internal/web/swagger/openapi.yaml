@@ -60,6 +60,12 @@ tags:
       Global, reusable anti-bot-solver resources (FlareSolverr) an indexer references by
       id. The endpoint URL is stored encrypted and reads back redacted. The manual-cookie
       solver stays per-indexer and is not modelled here.
+  - name: Sync profiles
+    description: >
+      Named, reusable app-sync overrides a connection references by id (the Prowlarr
+      AppProfile equivalent): a category subset (narrowing within the app's own content
+      type), a pushed minimum-seeders floor, and the RSS/automatic/interactive-search
+      toggles. No secrets.
 
 paths:
   /healthz:
@@ -1464,6 +1470,87 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /api/sync-profiles:
+    get:
+      summary: List sync profiles
+      operationId: listSyncProfiles
+      tags: [Sync profiles]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the sync profiles
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/SyncProfile" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Add a sync profile
+      description: "Names a reusable set of app-sync overrides (category subset, min seeders, RSS/automatic/interactive toggles). A duplicate name is a 409."
+      operationId: createSyncProfile
+      tags: [Sync profiles]
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateSyncProfile" }
+      responses:
+        "201":
+          description: the created sync profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SyncProfile" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/sync-profiles/{id}:
+    get:
+      summary: Get one sync profile
+      operationId: getSyncProfile
+      tags: [Sync profiles]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200":
+          description: the sync profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SyncProfile" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      summary: Update a sync profile
+      description: "A partial update; omitted fields are unchanged. A present-but-empty categories array clears the category set (full-category behavior). A duplicate name is a 409."
+      operationId: updateSyncProfile
+      tags: [Sync profiles]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateSyncProfile" }
+      responses:
+        "204": { description: updated }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      summary: Delete a sync profile (referencing connections revert to default behavior)
+      operationId: deleteSyncProfile
+      tags: [Sync profiles]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: deleted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /api/cache/stats:
     get:
       summary: Search-results cache statistics
@@ -1936,6 +2023,15 @@ components:
             freeleech setting is respected); bypass = the /full variant (full catalog,
             for cross-seed). Defaults by kind (qui = bypass; *arrs = honor).
         priority: { type: integer }
+        syncProfileId:
+          type: integer
+          format: int64
+          nullable: true
+          description: >
+            the sync profile this connection uses, or null for none (default behavior).
+            ON DELETE SET NULL — deleting the profile drops the reference. Never set for
+            qui (sync profiles do not apply to it); a profile with a non-empty category
+            set must overlap the app's content range (the attach-time overlap guard).
         lastSyncAt: { type: string, format: date-time }
         lastSyncStatus: { type: string, description: "ok | partial | error | skipped" }
         lastSyncError: { type: string, description: scrubbed summary of the last failure }
@@ -1954,6 +2050,11 @@ components:
         indexScope: { type: string, enum: [all, selected], default: all }
         freeleechMode: { type: string, enum: [honor, bypass], description: "defaults by kind (qui = bypass; *arrs = honor)" }
         priority: { type: integer, default: 25 }
+        syncProfileId:
+          type: integer
+          format: int64
+          nullable: true
+          description: "optional sync profile reference; must exist, must not be set for qui, and a non-empty category set must overlap the app's content range (else 400)"
       required: [name, kind, baseUrl, apiKey, harbrrUrl]
     UpdateConnection:
       type: object
@@ -1969,6 +2070,13 @@ components:
         indexScope: { type: string, enum: [all, selected] }
         freeleechMode: { type: string, enum: [honor, bypass] }
         priority: { type: integer }
+        syncProfileId:
+          type: integer
+          format: int64
+          nullable: true
+          description: >
+            tri-state: omit to leave unchanged, null to clear, an id to set it (validated
+            as on create). Applied verbatim once validated.
     AnnounceConnection:
       type: object
       description: >
@@ -2081,6 +2189,53 @@ components:
         type: { type: string, enum: [flaresolverr] }
         url: { type: string, description: rotates the endpoint (stored encrypted) }
         maxTimeout: { type: integer }
+    SyncProfile:
+      type: object
+      description: >
+        A named, reusable set of app-sync overrides a connection references by id (the
+        Prowlarr AppProfile equivalent). Holds no secrets.
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        categories:
+          type: array
+          items: { type: integer }
+          description: >
+            Newznab category ids this profile narrows a connection to (deduped and
+            sorted). Empty means no narrowing (the full category set is pushed). A
+            profile only narrows within the app's own content type, never beyond it.
+        minSeeders: { type: integer, description: "pushed Torznab minimum-seeders floor (0 = the app default, not pushed)" }
+        enableRss: { type: boolean }
+        enableAutomaticSearch: { type: boolean }
+        enableInteractiveSearch: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, name, categories, minSeeders, enableRss, enableAutomaticSearch, enableInteractiveSearch, createdAt, updatedAt]
+    CreateSyncProfile:
+      type: object
+      properties:
+        name: { type: string }
+        categories:
+          type: array
+          items: { type: integer }
+          description: "Newznab category ids to narrow to (0 < id < 1000000); empty means no narrowing"
+        minSeeders: { type: integer, description: "minimum-seeders floor (>= 0); 0 = the app default" }
+        enableRss: { type: boolean, default: true }
+        enableAutomaticSearch: { type: boolean, default: true }
+        enableInteractiveSearch: { type: boolean, default: true }
+      required: [name]
+    UpdateSyncProfile:
+      type: object
+      description: >
+        A partial update; omitted fields are left unchanged. A present-but-empty
+        categories array clears the category set (revert to full-category behavior).
+      properties:
+        name: { type: string }
+        categories: { type: array, items: { type: integer } }
+        minSeeders: { type: integer }
+        enableRss: { type: boolean }
+        enableAutomaticSearch: { type: boolean }
+        enableInteractiveSearch: { type: boolean }
     CrossSeedSnippet:
       type: object
       description: a copy-paste cross-seed v6 config.js torznab entry for one indexer

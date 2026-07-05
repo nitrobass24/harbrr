@@ -15,6 +15,7 @@ import type {
   CreateNotification,
   CreateProxy,
   CreateSolver,
+  CreateSyncProfile,
   CrossSeedSnippet,
   DefinitionDetail,
   DefinitionSummary,
@@ -30,13 +31,15 @@ import type {
   SearchParams,
   SearchResults,
   Solver,
+  SyncProfile,
   SyncReport,
   TestResult,
   UpdateConnection,
   UpdateIndexer,
   UpdateNotification,
   UpdateProxy,
-  UpdateSolver
+  UpdateSolver,
+  UpdateSyncProfile
 } from "@/types/api"
 
 // APIError carries the server's error envelope ({error, code}) plus the HTTP
@@ -397,6 +400,24 @@ export class ApiClient {
 
   setSelectedIndexers(id: number, instanceIds: number[]): Promise<void> {
     return this.request(`/app-connections/${id}/indexers`, { method: "PUT", body: { instanceIds } })
+  }
+
+  // --- sync profiles (per-connection category/toggle overrides) ---
+
+  listSyncProfiles(): Promise<SyncProfile[]> {
+    return this.request("/sync-profiles")
+  }
+
+  createSyncProfile(body: CreateSyncProfile): Promise<SyncProfile> {
+    return this.request("/sync-profiles", { method: "POST", body })
+  }
+
+  updateSyncProfile(id: number, body: UpdateSyncProfile): Promise<SyncProfile> {
+    return this.request(`/sync-profiles/${id}`, { method: "PATCH", body })
+  }
+
+  deleteSyncProfile(id: number): Promise<void> {
+    return this.request(`/sync-profiles/${id}`, { method: "DELETE" })
   }
 
   // --- announce connections (cross-seed push targets) ---

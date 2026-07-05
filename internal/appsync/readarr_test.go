@@ -9,6 +9,7 @@ func TestReadarrBuildIndexerGolden(t *testing.T) {
 	drv := asServarr(t, NewReadarr("http://readarr:8787", "app-key", nil))
 	d := DesiredIndexer{
 		Slug: "book-tracker", Name: "Book Tracker", Priority: 25, Enabled: true,
+		EnableRss: true, EnableAutomaticSearch: true, EnableInteractiveSearch: true,
 		FeedURL:    "http://harbrr:8787/api/indexers/book-tracker/results/torznab",
 		APIKey:     "harbrr-feed-key",
 		Categories: []Category{{7000, "Books"}, {7020, "Books/EBook"}, {8010, "Books/Comics"}},
@@ -21,6 +22,7 @@ func TestReadarrBuildIndexerUsenetGolden(t *testing.T) {
 	drv := asServarr(t, NewReadarr("http://readarr:8787", "app-key", nil))
 	d := DesiredIndexer{
 		Slug: "book-tracker", Name: "Book Tracker", Priority: 25, Enabled: true,
+		EnableRss: true, EnableAutomaticSearch: true, EnableInteractiveSearch: true,
 		FeedURL:    "http://harbrr:8787/api/indexers/book-tracker/results/torznab",
 		APIKey:     "harbrr-feed-key",
 		Categories: []Category{{7000, "Books"}, {7020, "Books/EBook"}, {8010, "Books/Comics"}},

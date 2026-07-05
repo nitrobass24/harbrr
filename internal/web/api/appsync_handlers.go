@@ -29,6 +29,7 @@ type appConnectionResponse struct {
 	IndexScope     string     `json:"indexScope"`
 	FreeleechMode  string     `json:"freeleechMode"`
 	Priority       int        `json:"priority"`
+	SyncProfileID  *int64     `json:"syncProfileId,omitempty"`
 	LastSyncAt     *time.Time `json:"lastSyncAt,omitempty"`
 	LastSyncStatus string     `json:"lastSyncStatus,omitempty"`
 	LastSyncError  string     `json:"lastSyncError,omitempty"`
@@ -99,6 +100,7 @@ func (rt *router) createConnection(w http.ResponseWriter, r *http.Request) {
 		IndexScope    string `json:"indexScope"`
 		FreeleechMode string `json:"freeleechMode"`
 		Priority      int    `json:"priority"`
+		SyncProfileID *int64 `json:"syncProfileId"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -106,7 +108,7 @@ func (rt *router) createConnection(w http.ResponseWriter, r *http.Request) {
 	conn, err := rt.appsync.CreateConnection(r.Context(), appsync.CreateConnectionParams{
 		Name: req.Name, Kind: req.Kind, BaseURL: req.BaseURL, APIKey: req.APIKey,
 		HarbrrURL: req.HarbrrURL, SyncLevel: req.SyncLevel, IndexScope: req.IndexScope,
-		FreeleechMode: req.FreeleechMode, Priority: req.Priority,
+		FreeleechMode: req.FreeleechMode, Priority: req.Priority, SyncProfileID: req.SyncProfileID,
 	})
 	if err != nil {
 		rt.writeServiceError(w, "create connection", err)
@@ -136,14 +138,15 @@ func (rt *router) updateConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Name          *string `json:"name"`
-		BaseURL       *string `json:"baseUrl"`
-		APIKey        *string `json:"apiKey"`
-		HarbrrURL     *string `json:"harbrrUrl"`
-		SyncLevel     *string `json:"syncLevel"`
-		IndexScope    *string `json:"indexScope"`
-		FreeleechMode *string `json:"freeleechMode"`
-		Priority      *int    `json:"priority"`
+		Name          *string     `json:"name"`
+		BaseURL       *string     `json:"baseUrl"`
+		APIKey        *string     `json:"apiKey"`
+		HarbrrURL     *string     `json:"harbrrUrl"`
+		SyncLevel     *string     `json:"syncLevel"`
+		IndexScope    *string     `json:"indexScope"`
+		FreeleechMode *string     `json:"freeleechMode"`
+		Priority      *int        `json:"priority"`
+		SyncProfileID optionalRef `json:"syncProfileId"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -151,7 +154,7 @@ func (rt *router) updateConnection(w http.ResponseWriter, r *http.Request) {
 	if err := rt.appsync.UpdateConnection(r.Context(), id, appsync.UpdateConnectionParams{
 		Name: req.Name, BaseURL: req.BaseURL, APIKey: req.APIKey, HarbrrURL: req.HarbrrURL,
 		SyncLevel: req.SyncLevel, IndexScope: req.IndexScope, FreeleechMode: req.FreeleechMode,
-		Priority: req.Priority,
+		Priority: req.Priority, SyncProfileID: req.SyncProfileID.toAppSync(),
 	}); err != nil {
 		rt.writeServiceError(w, "update connection", err)
 		return
@@ -301,7 +304,8 @@ func toConnectionResponse(c domain.AppConnection) appConnectionResponse {
 	return appConnectionResponse{
 		ID: c.ID, Name: c.Name, Kind: c.Kind, BaseURL: c.BaseURL, HarbrrURL: c.HarbrrURL,
 		APIKey: secrets.Redacted, Enabled: c.Enabled, SyncLevel: c.SyncLevel,
-		IndexScope: c.IndexScope, FreeleechMode: c.FreeleechMode, Priority: c.Priority, LastSyncAt: c.LastSyncAt,
+		IndexScope: c.IndexScope, FreeleechMode: c.FreeleechMode, Priority: c.Priority,
+		SyncProfileID: c.SyncProfileID, LastSyncAt: c.LastSyncAt,
 		LastSyncStatus: c.LastSyncStatus, LastSyncError: c.LastSyncError,
 		CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
 	}

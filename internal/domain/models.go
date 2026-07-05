@@ -127,6 +127,25 @@ const (
 	SyncStatusError   = "error"
 )
 
+// SyncProfile is a named, reusable set of app-sync overrides a connection references
+// by id (the Prowlarr "Sync Profile" equivalent). Categories narrows which Newznab
+// categories a connection pushes — within the app's own content type, never beyond it
+// (an empty set keeps today's full-category behavior); MinSeeders is the pushed Torznab
+// minimum-seeders floor (0 = the app default, not pushed); the three Enable toggles gate
+// the pushed RSS/automatic/interactive-search flags (each ANDed with the instance's own
+// enabled state). No secrets live here.
+type SyncProfile struct {
+	ID                      int64
+	Name                    string
+	Categories              []int
+	MinSeeders              int
+	EnableRss               bool
+	EnableAutomaticSearch   bool
+	EnableInteractiveSearch bool
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
+}
+
 // AppConnection is a configured Sonarr/Radarr/qui app harbrr syncs its indexers
 // into. Two secrets are stored encrypted (base64 nonce‖ciphertext‖tag) under KeyID,
 // bound by the connection ID as encryption AAD: APIKeyEncrypted is the *app's* API
@@ -150,11 +169,15 @@ type AppConnection struct {
 	IndexScope            string
 	FreeleechMode         string
 	Priority              int
-	LastSyncAt            *time.Time
-	LastSyncStatus        string
-	LastSyncError         string
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
+	// SyncProfileID references the sync profile this connection uses, or nil for
+	// none (today's default behavior). ON DELETE SET NULL means deleting a profile
+	// just drops the reference — the next sync reverts to the defaults.
+	SyncProfileID  *int64
+	LastSyncAt     *time.Time
+	LastSyncStatus string
+	LastSyncError  string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 // Announce kinds — the cross-seed tools harbrr pushes new releases to. Stored verbatim in

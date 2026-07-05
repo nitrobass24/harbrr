@@ -116,6 +116,11 @@ func applyUpdate(conn *domain.AppConnection, p UpdateConnectionParams) error {
 		}
 		conn.FreeleechMode = *p.FreeleechMode
 	}
+	// The ref was already validated (validateProfileRef) before applyUpdate; here it is
+	// applied verbatim (a present nil clears the reference).
+	if p.SyncProfileID.Present {
+		conn.SyncProfileID = p.SyncProfileID.Value
+	}
 	return nil
 }
 

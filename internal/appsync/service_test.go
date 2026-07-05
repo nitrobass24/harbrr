@@ -112,7 +112,7 @@ func TestBuildDesiredQuiSkipsUsenet(t *testing.T) {
 
 	// qui is torrent-only: the usenet instance must be filtered out of the desired set.
 	qui := domain.AppConnection{Kind: domain.AppKindQui, IndexScope: domain.IndexScopeAll, HarbrrURL: "http://harbrr"}
-	got, err := svc.buildDesired(ctx, src.instances, qui, "k", nil)
+	got, err := svc.buildDesired(ctx, src.instances, qui, "k", nil, nil)
 	if err != nil {
 		t.Fatalf("buildDesired qui: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestBuildDesiredQuiSkipsUsenet(t *testing.T) {
 
 	// Sonarr keeps both and carries each instance's protocol through to DesiredIndexer.
 	sonarr := domain.AppConnection{Kind: domain.AppKindSonarr, IndexScope: domain.IndexScopeAll, HarbrrURL: "http://harbrr"}
-	got, err = svc.buildDesired(ctx, src.instances, sonarr, "k", nil)
+	got, err = svc.buildDesired(ctx, src.instances, sonarr, "k", nil, nil)
 	if err != nil {
 		t.Fatalf("buildDesired sonarr: %v", err)
 	}
@@ -259,7 +259,7 @@ func TestBuildDesiredContentCategoryFilter(t *testing.T) {
 		t.Run(tt.kind, func(t *testing.T) {
 			t.Parallel()
 			conn := domain.AppConnection{Kind: tt.kind, IndexScope: domain.IndexScopeAll, HarbrrURL: "http://harbrr"}
-			got, err := svc.buildDesired(ctx, src.instances, conn, "k", nil)
+			got, err := svc.buildDesired(ctx, src.instances, conn, "k", nil, nil)
 			if err != nil {
 				t.Fatalf("buildDesired %s: %v", tt.kind, err)
 			}
@@ -288,6 +288,175 @@ func equalStringSet(got, want []string) bool {
 		}
 	}
 	return true
+}
+
+// TestBuildDesiredWithProfile covers the narrow-only category gate: a profile narrows
+// within the app's content type (block-parent and exact matches), the intersection is
+// what gets pushed (names preserved), an empty intersection skips the indexer, a profile
+// can never cross content types, and an empty-category profile falls back to the kind gate.
+func TestBuildDesiredWithProfile(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	build := func(kind string, cats []Category, profile *domain.SyncProfile) ([]DesiredIndexer, error) {
+		src := &fakeSource{
+			instances: []domain.IndexerInstance{{ID: 1, Slug: "trk", Name: "Trk", Enabled: true, Protocol: "torrent"}},
+			cats:      map[string][]Category{"trk": cats},
+		}
+		svc := &Service{source: src}
+		conn := domain.AppConnection{Kind: kind, IndexScope: domain.IndexScopeAll, HarbrrURL: "http://harbrr"}
+		return svc.buildDesired(ctx, src.instances, conn, "k", nil, profile)
+	}
+	prof := func(cats ...int) *domain.SyncProfile {
+		return &domain.SyncProfile{Categories: cats, EnableRss: true, EnableAutomaticSearch: true, EnableInteractiveSearch: true}
+	}
+
+	tests := []struct {
+		name       string
+		kind       string
+		cats       []Category
+		profile    *domain.SyncProfile
+		wantPushed bool
+		wantCatIDs []int
+	}{
+		{
+			name: "narrow-only: books tracker + books profile on sonarr still skipped",
+			kind: domain.AppKindSonarr, cats: []Category{{7000, "Books"}}, profile: prof(7000),
+			wantPushed: false,
+		},
+		{
+			name: "music profile excludes audiobook-only lidarr tracker",
+			kind: domain.AppKindLidarr, cats: []Category{{3030, "Audiobook"}}, profile: prof(3010, 3040),
+			wantPushed: false,
+		},
+		{
+			name: "block parent 2000 covers child 2040 on radarr",
+			kind: domain.AppKindRadarr, cats: []Category{{2040, "Movies/HD"}}, profile: prof(2000),
+			wantPushed: true, wantCatIDs: []int{2040},
+		},
+		{
+			name: "exact 3030 matches only 3030 on lidarr",
+			kind: domain.AppKindLidarr, cats: []Category{{3030, "Audiobook"}, {3010, "MP3"}}, profile: prof(3030),
+			wantPushed: true, wantCatIDs: []int{3030},
+		},
+		{
+			name: "intersection pushes only matched cats",
+			kind: domain.AppKindSonarr, cats: []Category{{5000, "TV"}, {5040, "TV/HD"}, {5070, "TV/Anime"}}, profile: prof(5070),
+			wantPushed: true, wantCatIDs: []int{5070},
+		},
+		{
+			name: "empty-category profile falls back to kind gate (readarr audiobook 3030)",
+			kind: domain.AppKindReadarr, cats: []Category{{3030, "Audiobook"}}, profile: prof(),
+			wantPushed: true, wantCatIDs: []int{3030},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := build(tt.kind, tt.cats, tt.profile)
+			if err != nil {
+				t.Fatalf("buildDesired: %v", err)
+			}
+			if !tt.wantPushed {
+				if len(got) != 0 {
+					t.Fatalf("want skipped, got %+v", got)
+				}
+				return
+			}
+			if len(got) != 1 {
+				t.Fatalf("want one desired, got %d: %+v", len(got), got)
+			}
+			if !equalIntSlice(got[0].CategoryIDs(), tt.wantCatIDs) {
+				t.Errorf("pushed cats = %v, want %v", got[0].CategoryIDs(), tt.wantCatIDs)
+			}
+			for _, c := range got[0].Categories {
+				if c.Name == "" {
+					t.Errorf("pushed category %d lost its name", c.ID)
+				}
+			}
+		})
+	}
+}
+
+// TestBuildDesiredProfileTogglesAndMinSeeders proves resolveToggles (enabled AND profile
+// toggle, instance-disabled forcing all false) and that MinSeeders is carried.
+func TestBuildDesiredProfileTogglesAndMinSeeders(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	src := &fakeSource{
+		instances: []domain.IndexerInstance{
+			{ID: 1, Slug: "on", Name: "On", Enabled: true, Protocol: "torrent"},
+			{ID: 2, Slug: "off", Name: "Off", Enabled: false, Protocol: "torrent"},
+		},
+		cats: map[string][]Category{"on": {{5000, "TV"}}, "off": {{5000, "TV"}}},
+	}
+	svc := &Service{source: src}
+	profile := &domain.SyncProfile{
+		MinSeeders: 4, EnableRss: false, EnableAutomaticSearch: true, EnableInteractiveSearch: false,
+	}
+	conn := domain.AppConnection{Kind: domain.AppKindSonarr, IndexScope: domain.IndexScopeAll, HarbrrURL: "http://harbrr"}
+	got, err := svc.buildDesired(ctx, src.instances, conn, "k", nil, profile)
+	if err != nil {
+		t.Fatalf("buildDesired: %v", err)
+	}
+	byslug := map[string]DesiredIndexer{}
+	for _, d := range got {
+		byslug[d.Slug] = d
+	}
+	if on := byslug["on"]; on.EnableRss || !on.EnableAutomaticSearch || on.EnableInteractiveSearch || on.MinSeeders != 4 {
+		t.Errorf("enabled instance = rss %v auto %v interactive %v minSeeders %d, want false/true/false/4",
+			on.EnableRss, on.EnableAutomaticSearch, on.EnableInteractiveSearch, on.MinSeeders)
+	}
+	if off := byslug["off"]; off.EnableRss || off.EnableAutomaticSearch || off.EnableInteractiveSearch {
+		t.Errorf("disabled instance toggles must all be false, got rss %v auto %v interactive %v",
+			off.EnableRss, off.EnableAutomaticSearch, off.EnableInteractiveSearch)
+	}
+}
+
+// TestServiceSyncWithProfile is the end-to-end proof: create a profile, assign it to the
+// fixture connection, sync, and read the stub-captured bodies for the pushed overrides.
+func TestServiceSyncWithProfile(t *testing.T) {
+	t.Parallel()
+	f := newSyncFixture(t)
+	ctx := context.Background()
+
+	// TV parent 5000 covers both trackers (5000 and 5030); mixed toggles + a seeders floor.
+	prof, err := f.svc.CreateProfile(ctx, CreateProfileParams{
+		Name: "tv", Categories: []int{5000}, MinSeeders: 2,
+		EnableRss: ptr(true), EnableAutomaticSearch: ptr(false), EnableInteractiveSearch: ptr(true),
+	})
+	if err != nil {
+		t.Fatalf("CreateProfile: %v", err)
+	}
+	if err := f.svc.UpdateConnection(ctx, f.conn.ID, UpdateConnectionParams{
+		SyncProfileID: RefUpdate{Present: true, Value: &prof.ID},
+	}); err != nil {
+		t.Fatalf("assign profile: %v", err)
+	}
+	if _, err := f.svc.Sync(ctx, f.conn.ID); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+
+	a := f.stub.byName("Tracker A")
+	if a == nil {
+		t.Fatal("Tracker A not pushed")
+	}
+	if got := fieldInt(a.Fields, "minimumSeeders"); got != 2 {
+		t.Errorf("Tracker A minimumSeeders = %d, want 2", got)
+	}
+	if !a.EnableRss || a.EnableAutomaticSearch || !a.EnableInteractiveSearch {
+		t.Errorf("Tracker A toggles = rss %v auto %v interactive %v, want true/false/true",
+			a.EnableRss, a.EnableAutomaticSearch, a.EnableInteractiveSearch)
+	}
+	// The disabled instance is still pushed, but every toggle is forced false.
+	b := f.stub.byName("Tracker B")
+	if b == nil {
+		t.Fatal("Tracker B not pushed")
+	}
+	if b.EnableRss || b.EnableAutomaticSearch || b.EnableInteractiveSearch {
+		t.Errorf("disabled Tracker B toggles must all be false, got rss %v auto %v interactive %v",
+			b.EnableRss, b.EnableAutomaticSearch, b.EnableInteractiveSearch)
+	}
 }
 
 func seedInstance(t *testing.T, db *database.DB, slug, name string, enabled bool) int64 {

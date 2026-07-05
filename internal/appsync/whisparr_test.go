@@ -9,6 +9,7 @@ func TestWhisparrBuildIndexerGolden(t *testing.T) {
 	drv := asServarr(t, NewWhisparr("http://whisparr:6969", "app-key", nil))
 	d := DesiredIndexer{
 		Slug: "xxx-tracker", Name: "XXX Tracker", Priority: 25, Enabled: true,
+		EnableRss: true, EnableAutomaticSearch: true, EnableInteractiveSearch: true,
 		FeedURL:    "http://harbrr:8787/api/indexers/xxx-tracker/results/torznab",
 		APIKey:     "harbrr-feed-key",
 		Categories: []Category{{6000, "XXX"}, {6010, "XXX/DVD"}, {6040, "XXX/x264"}},
@@ -21,6 +22,7 @@ func TestWhisparrBuildIndexerUsenetGolden(t *testing.T) {
 	drv := asServarr(t, NewWhisparr("http://whisparr:6969", "app-key", nil))
 	d := DesiredIndexer{
 		Slug: "xxx-tracker", Name: "XXX Tracker", Priority: 25, Enabled: true,
+		EnableRss: true, EnableAutomaticSearch: true, EnableInteractiveSearch: true,
 		FeedURL:    "http://harbrr:8787/api/indexers/xxx-tracker/results/torznab",
 		APIKey:     "harbrr-feed-key",
 		Categories: []Category{{6000, "XXX"}, {6010, "XXX/DVD"}, {6040, "XXX/x264"}},
