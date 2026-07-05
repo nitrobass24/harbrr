@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbinterface"
 	"github.com/autobrr/harbrr/internal/domain"
 )
 
@@ -85,7 +86,16 @@ func (s *Service) CreateProfile(ctx context.Context, p CreateProfileParams) (dom
 // connection's category gate (a full-sync connection would then delete every
 // indexer it manages on its next sync).
 func (s *Service) UpdateProfile(ctx context.Context, id int64, p UpdateProfileParams) error {
-	profile, err := s.profiles.GetProfile(ctx, s.db, id)
+	// One transaction for read → overlap-validate → write, so a concurrent
+	// connection mutation can't slip between the in-use check and the update
+	// (the proxy/solver Update precedent).
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("appsync: begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	profile, err := s.profiles.GetProfile(ctx, tx, id)
 	if err != nil {
 		return fmt.Errorf("appsync: get sync profile: %w", err)
 	}
@@ -93,16 +103,19 @@ func (s *Service) UpdateProfile(ctx context.Context, id int64, p UpdateProfilePa
 		return err
 	}
 	if p.Categories != nil {
-		if err := s.validateProfileInUse(ctx, id, profile.Categories); err != nil {
+		if err := s.validateProfileInUse(ctx, tx, id, profile.Categories); err != nil {
 			return err
 		}
 	}
 	profile.UpdatedAt = s.clock()
-	if err := s.profiles.UpdateProfile(ctx, s.db, profile); err != nil {
+	if err := s.profiles.UpdateProfile(ctx, tx, profile); err != nil {
 		if database.IsUniqueViolation(err) {
 			return fmt.Errorf("%w: sync profile name %q already in use", ErrConflict, profile.Name)
 		}
 		return fmt.Errorf("appsync: update sync profile: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("appsync: commit: %w", err)
 	}
 	return nil
 }
@@ -235,12 +248,13 @@ func profileOverlapsKind(kind string, cats []int) bool {
 // validateProfileInUse re-runs the assignment-time overlap guard for every connection
 // referencing the profile, against a candidate category set. Rejecting the profile
 // edit here (naming the blocking connection) closes the hole where narrowing a live
-// profile silently empties a referencing connection's gate.
-func (s *Service) validateProfileInUse(ctx context.Context, id int64, cats []int) error {
+// profile silently empties a referencing connection's gate. q is the caller's
+// transaction so the check and the write see one consistent connection list.
+func (s *Service) validateProfileInUse(ctx context.Context, q dbinterface.Execer, id int64, cats []int) error {
 	if len(cats) == 0 {
 		return nil // no filter — usable by every kind
 	}
-	conns, err := s.repo.ListConnections(ctx, s.db)
+	conns, err := s.repo.ListConnections(ctx, q)
 	if err != nil {
 		return fmt.Errorf("appsync: list connections: %w", err)
 	}
