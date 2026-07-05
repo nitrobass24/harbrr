@@ -7,6 +7,7 @@ import { ConnectionCard } from "@/components/applications/ConnectionCard"
 import { ConnectionDialog, type ConnectionDialogState } from "@/components/applications/ConnectionDialog"
 import { SelectIndexersDialog } from "@/components/applications/SelectIndexersDialog"
 import { StatusDrawer } from "@/components/applications/StatusDrawer"
+import { SyncProfilesSection } from "@/components/applications/SyncProfilesSection"
 import { SyncReportView } from "@/components/applications/SyncReportView"
 import { Button } from "@/components/ui/button"
 import {
@@ -125,6 +126,8 @@ function ApplicationsPage() {
         </section>
 
         <AnnounceSection />
+
+        <SyncProfilesSection />
       </div>
 
       <ConnectionDialog

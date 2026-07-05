@@ -11,6 +11,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
+import { useSyncProfiles } from "@/hooks/useAppConnections"
 import { defaultHarbrrUrl } from "@/lib/base-url"
 import type { AppConnection, ConnectionKind, CreateConnection, UpdateConnection } from "@/types/api"
 
@@ -63,9 +64,13 @@ function ConnectionForm({ existing, pending, error, onCreate, onUpdate }: {
   const [syncLevel, setSyncLevel] = useState(existing?.syncLevel ?? "full")
   const [indexScope, setIndexScope] = useState(existing?.indexScope ?? "all")
   const [freeleechMode, setFreeleechMode] = useState<"" | "honor" | "bypass">(existing?.freeleechMode ?? "")
+  const [syncProfileId, setSyncProfileId] = useState<number | null>(existing?.syncProfileId ?? null)
 
+  const profiles = useSyncProfiles()
   const mode = existing ? "edit" : "create"
   const message = error instanceof Error ? error.message : null
+  // Profiles never apply to qui — it has no per-content-type category concept.
+  const showProfilePicker = kind !== "qui"
 
   return (
     <form
@@ -77,11 +82,14 @@ function ConnectionForm({ existing, pending, error, onCreate, onUpdate }: {
             name, baseUrl, harbrrUrl, syncLevel, indexScope,
             freeleechMode: freeleechMode || undefined,
             ...(apiKey !== "" ? { apiKey } : {}), // omit = keep the stored key
+            // Always send for non-qui edits (number or null) so clearing works; omit entirely for qui.
+            ...(showProfilePicker ? { syncProfileId } : {}),
           })
         } else {
           onCreate({
             name, kind, baseUrl, apiKey, harbrrUrl, syncLevel, indexScope,
             freeleechMode: freeleechMode || undefined,
+            ...(showProfilePicker && syncProfileId !== null ? { syncProfileId } : {}),
           })
         }
       }}
@@ -141,6 +149,19 @@ function ConnectionForm({ existing, pending, error, onCreate, onUpdate }: {
           </NativeSelect>
         </FieldWrap>
       </div>
+
+      {showProfilePicker && (
+        <FieldWrap id="conn-profile" label="Sync profile">
+          <NativeSelect
+            id="conn-profile"
+            value={syncProfileId === null ? "" : String(syncProfileId)}
+            onChange={(e) => setSyncProfileId(e.target.value === "" ? null : Number(e.target.value))}
+          >
+            <option value="">None</option>
+            {(profiles.data ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </NativeSelect>
+        </FieldWrap>
+      )}
 
       <DialogFooter>
         <Button

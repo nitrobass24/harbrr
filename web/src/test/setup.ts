@@ -12,3 +12,12 @@ Object.defineProperty(window, "matchMedia", {
     dispatchEvent: () => false,
   }),
 })
+
+// jsdom lacks ResizeObserver; Radix's Checkbox measures itself with one when
+// rendered inside a <form> (for its hidden form-submission bubble input).
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+window.ResizeObserver = ResizeObserverStub

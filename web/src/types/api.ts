@@ -192,6 +192,7 @@ export type AppConnection = {
   indexScope: "all" | "selected"
   freeleechMode: "honor" | "bypass"
   priority: number
+  syncProfileId?: number | null // narrows synced categories; never set for kind "qui"
   lastSyncAt?: string
   lastSyncStatus?: string // ok | partial | error | skipped
   lastSyncError?: string
@@ -209,9 +210,37 @@ export type CreateConnection = {
   indexScope?: "all" | "selected"
   freeleechMode?: "honor" | "bypass"
   priority?: number
+  syncProfileId?: number | null
 }
 
 export type UpdateConnection = Partial<Omit<CreateConnection, "kind">>
+
+// SyncProfile narrows which categories sync into a connection's app, on top of
+// its content type — it never extends beyond that type. Not applicable to
+// kind "qui" connections. Deleting a profile FK-nulls its connections' refs,
+// reverting them to default sync behavior.
+export type SyncProfile = {
+  id: number
+  name: string
+  categories: number[]
+  minSeeders: number
+  enableRss: boolean
+  enableAutomaticSearch: boolean
+  enableInteractiveSearch: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export type CreateSyncProfile = {
+  name: string
+  categories?: number[]
+  minSeeders?: number
+  enableRss?: boolean
+  enableAutomaticSearch?: boolean
+  enableInteractiveSearch?: boolean
+}
+
+export type UpdateSyncProfile = Partial<CreateSyncProfile>
 
 export type ConnectionIndexer = {
   instanceId: number

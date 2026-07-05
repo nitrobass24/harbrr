@@ -1,7 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { api } from "@/lib/api"
-import type { AppConnection, CreateAnnounceConnection, CreateConnection, UpdateConnection } from "@/types/api"
+import type {
+  AppConnection,
+  CreateAnnounceConnection,
+  CreateConnection,
+  CreateSyncProfile,
+  UpdateConnection,
+  UpdateSyncProfile
+} from "@/types/api"
 
 export function useAppConnections() {
   return useQuery({
@@ -93,6 +100,36 @@ export function useSetSelectedIndexers(id: number) {
     mutationFn: (instanceIds: number[]) => api.setSelectedIndexers(id, instanceIds),
     onSettled: () => qc.invalidateQueries({ queryKey: ["app-connections", id, "status"] }),
   })
+}
+
+// --- sync profiles ---
+
+export function useSyncProfiles() {
+  return useQuery({
+    queryKey: ["sync-profiles"],
+    queryFn: () => api.listSyncProfiles(),
+  })
+}
+
+export function useSyncProfileMutations() {
+  const qc = useQueryClient()
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["sync-profiles"] })
+  return {
+    create: useMutation({ mutationFn: (body: CreateSyncProfile) => api.createSyncProfile(body), onSettled: invalidate }),
+    update: useMutation({
+      mutationFn: ({ id, body }: { id: number, body: UpdateSyncProfile }) => api.updateSyncProfile(id, body),
+      onSettled: invalidate,
+    }),
+    // Deleting a profile nulls any connection's reference (ON DELETE SET NULL), so
+    // refresh the connection list too.
+    remove: useMutation({
+      mutationFn: (id: number) => api.deleteSyncProfile(id),
+      onSettled: () => {
+        void invalidate()
+        void qc.invalidateQueries({ queryKey: ["app-connections"] })
+      },
+    }),
+  }
 }
 
 // --- announce targets ---
