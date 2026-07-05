@@ -64,14 +64,15 @@ type KeyMinter interface {
 // app's key and the harbrr key minted for the connection), and reconciles harbrr's
 // indexers into each app on demand.
 type Service struct {
-	db      dbinterface.Querier
-	repo    database.AppConnections
-	source  IndexerSource
-	minter  KeyMinter
-	keyring *secrets.Keyring
-	client  *http.Client
-	clock   func() time.Time
-	log     zerolog.Logger
+	db       dbinterface.Querier
+	repo     database.AppConnections
+	profiles database.SyncProfiles
+	source   IndexerSource
+	minter   KeyMinter
+	keyring  *secrets.Keyring
+	client   *http.Client
+	clock    func() time.Time
+	log      zerolog.Logger
 }
 
 // NewService wires the app-sync service. client is shared by all drivers; clock is
@@ -99,6 +100,9 @@ type CreateConnectionParams struct {
 	IndexScope    string
 	FreeleechMode string
 	Priority      int
+	// SyncProfileID references a sync profile, or nil for none. Validated by
+	// validateProfileRef (must exist, kind != qui, category overlap).
+	SyncProfileID *int64
 }
 
 // CreateConnection mints a dedicated harbrr key for the connection, then persists the
@@ -107,6 +111,9 @@ type CreateConnectionParams struct {
 func (s *Service) CreateConnection(ctx context.Context, p CreateConnectionParams) (domain.AppConnection, error) {
 	p = p.withDefaults()
 	if err := validateCreate(&p); err != nil {
+		return domain.AppConnection{}, err
+	}
+	if err := s.validateProfileRef(ctx, p.Kind, p.SyncProfileID); err != nil {
 		return domain.AppConnection{}, err
 	}
 
@@ -142,7 +149,7 @@ func (s *Service) insertConnection(ctx context.Context, p CreateConnectionParams
 		Name: p.Name, Kind: p.Kind, BaseURL: p.BaseURL, HarbrrURL: p.HarbrrURL,
 		HarbrrAPIKeyID: harbrrKeyID, Enabled: true, SyncLevel: p.SyncLevel,
 		IndexScope: p.IndexScope, FreeleechMode: p.FreeleechMode, Priority: p.Priority,
-		CreatedAt: now, UpdatedAt: now,
+		SyncProfileID: p.SyncProfileID, CreatedAt: now, UpdatedAt: now,
 	}
 	id, err := s.repo.InsertConnection(ctx, tx, conn)
 	if err != nil {
@@ -180,8 +187,19 @@ func (s *Service) encryptSecrets(connID int64, appKey, harbrrKey string) (appEnc
 	return appEnc, harbrrEnc, nil
 }
 
+// RefUpdate is a tri-state PATCH field for a nullable resource reference: Present false
+// leaves the stored reference unchanged; Present true with a nil Value clears it; Present
+// true with a value sets it. It mirrors registry.RefUpdate (the same tri-state the
+// indexer PATCH uses for proxy/solver), redeclared here so appsync does not import
+// registry — the web layer maps its optionalRef into this.
+type RefUpdate struct {
+	Present bool
+	Value   *int64
+}
+
 // UpdateConnectionParams patches a connection; nil fields are left unchanged. APIKey,
-// when set, rotates the app's key (re-encrypted in place).
+// when set, rotates the app's key (re-encrypted in place). SyncProfileID is tri-state
+// (RefUpdate): only an explicitly-present field changes the reference.
 type UpdateConnectionParams struct {
 	Name          *string
 	BaseURL       *string
@@ -191,6 +209,7 @@ type UpdateConnectionParams struct {
 	IndexScope    *string
 	FreeleechMode *string
 	Priority      *int
+	SyncProfileID RefUpdate
 }
 
 // UpdateConnection applies a patch, re-encrypting the app key when rotated.
@@ -198,6 +217,13 @@ func (s *Service) UpdateConnection(ctx context.Context, id int64, p UpdateConnec
 	conn, err := s.repo.GetConnection(ctx, s.db, id)
 	if err != nil {
 		return fmt.Errorf("appsync: get connection: %w", err)
+	}
+	// A new profile ref is validated against the connection's kind before it is applied
+	// (existence, non-qui, category overlap), so a bad ref is a 400, not a stored orphan.
+	if p.SyncProfileID.Present {
+		if err := s.validateProfileRef(ctx, conn.Kind, p.SyncProfileID.Value); err != nil {
+			return err
+		}
 	}
 	if err := applyUpdate(&conn, p); err != nil {
 		return err

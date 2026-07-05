@@ -42,6 +42,18 @@ type DesiredIndexer struct {
 	Capabilities []string
 	Priority     int
 	Enabled      bool
+	// EnableRss / EnableAutomaticSearch / EnableInteractiveSearch are the per-search-mode
+	// flags a Servarr indexer is registered under. Each is resolved in buildDesired as the
+	// instance's Enabled AND the sync profile's matching toggle (no profile → all three
+	// equal Enabled), so a disabled instance forces every flag false regardless of profile.
+	// qui ignores them — it has a single Enabled flag.
+	EnableRss               bool
+	EnableAutomaticSearch   bool
+	EnableInteractiveSearch bool
+	// MinSeeders is the Torznab minimum-seeders floor pushed into a Servarr indexer, taken
+	// from the sync profile (0 = unset → the app default, not pushed). Torznab-only: it is
+	// never sent on a Newznab/usenet indexer.
+	MinSeeders int
 	// Protocol is the remote download protocol the app should register this indexer
 	// under: "torrent" (Torznab, the default for an empty value) or "usenet" (Newznab).
 	// It selects the Servarr Implementation/ConfigContract/protocol; qui has no usenet
@@ -76,6 +88,20 @@ func (d DesiredIndexer) hash() string {
 	// re-sync on upgrade); a usenet indexer fingerprints distinctly.
 	if d.Protocol != "" && d.Protocol != "torrent" {
 		fmt.Fprintf(h, "\x00%s", d.Protocol)
+	}
+	// MinSeeders joins only when set (>0) — same divergence rule as Protocol: a
+	// profile-less connection (MinSeeders 0) keeps its exact prior PayloadHash, so no
+	// fleet-wide re-push happens on upgrade; a profile that sets a floor fingerprints
+	// distinctly.
+	if d.MinSeeders > 0 {
+		fmt.Fprintf(h, "\x00ms=%d", d.MinSeeders)
+	}
+	// The enable triple joins only when a toggle diverges from Enabled (a sync profile
+	// narrowed the search modes). With no profile all three equal Enabled — already
+	// captured by the %t above — so the fingerprint is unchanged and no spurious re-sync
+	// happens on upgrade; a profile that flips a toggle fingerprints distinctly.
+	if d.EnableRss != d.Enabled || d.EnableAutomaticSearch != d.Enabled || d.EnableInteractiveSearch != d.Enabled {
+		fmt.Fprintf(h, "\x00en=%t,%t,%t", d.EnableRss, d.EnableAutomaticSearch, d.EnableInteractiveSearch)
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }

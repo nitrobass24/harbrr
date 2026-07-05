@@ -235,6 +235,7 @@ func TestSonarrBuildIndexerGolden(t *testing.T) {
 	drv := asServarr(t, NewSonarr("http://sonarr:8989", "app-key", nil))
 	d := DesiredIndexer{
 		Slug: "anime-tracker", Name: "Anime Tracker", Priority: 25, Enabled: true,
+		EnableRss: true, EnableAutomaticSearch: true, EnableInteractiveSearch: true,
 		FeedURL:    "http://harbrr:8787/api/indexers/anime-tracker/results/torznab",
 		APIKey:     "harbrr-feed-key",
 		Categories: []Category{{5000, "TV"}, {5040, "TV/HD"}, {5070, "TV/Anime"}, {2000, "Movies"}},
@@ -247,6 +248,7 @@ func TestSonarrBuildIndexerUsenetGolden(t *testing.T) {
 	drv := asServarr(t, NewSonarr("http://sonarr:8989", "app-key", nil))
 	d := DesiredIndexer{
 		Slug: "anime-tracker", Name: "Anime Tracker", Priority: 25, Enabled: true,
+		EnableRss: true, EnableAutomaticSearch: true, EnableInteractiveSearch: true,
 		FeedURL:    "http://harbrr:8787/api/indexers/anime-tracker/results/torznab",
 		APIKey:     "harbrr-feed-key",
 		Categories: []Category{{5000, "TV"}, {5040, "TV/HD"}, {5070, "TV/Anime"}, {2000, "Movies"}},
@@ -273,6 +275,70 @@ func TestServarrBuildIndexerTorrentUnchanged(t *testing.T) {
 			t.Errorf("protocol %q: torrent body changed: %+v", proto, got)
 		}
 	}
+}
+
+// TestSonarrBuildIndexerProfileGolden freezes a sync-profile body: mixed search-mode
+// toggles (rss off, automatic on, interactive off) and a minimumSeeders floor on a
+// torrent indexer.
+func TestSonarrBuildIndexerProfileGolden(t *testing.T) {
+	t.Parallel()
+	drv := asServarr(t, NewSonarr("http://sonarr:8989", "app-key", nil))
+	d := DesiredIndexer{
+		Slug: "anime-tracker", Name: "Anime Tracker", Priority: 25, Enabled: true,
+		EnableRss: false, EnableAutomaticSearch: true, EnableInteractiveSearch: false,
+		MinSeeders: 3,
+		FeedURL:    "http://harbrr:8787/api/indexers/anime-tracker/results/torznab",
+		APIKey:     "harbrr-feed-key",
+		Categories: []Category{{5000, "TV"}, {5040, "TV/HD"}, {5070, "TV/Anime"}},
+	}
+	assertGolden(t, "sonarr_create_profile.golden.json", drv.buildIndexer(d))
+}
+
+// TestServarrMinSeedersTorrentOnly proves minimumSeeders rides only the torrent branch:
+// present (with the profile's value) on Torznab, absent on Newznab/usenet, and absent
+// when unset (0 = the app default).
+func TestServarrMinSeedersTorrentOnly(t *testing.T) {
+	t.Parallel()
+	drv := asServarr(t, NewRadarr("http://radarr:7878", "k", nil))
+	base := DesiredIndexer{Slug: "s", Name: "s", MinSeeders: 7, Categories: []Category{{2000, "Movies"}}}
+
+	if got := fieldInt(drv.buildIndexer(base).Fields, "minimumSeeders"); got != 7 {
+		t.Errorf("torrent minimumSeeders = %d, want 7", got)
+	}
+
+	usenet := base
+	usenet.Protocol = "usenet"
+	if hasField(drv.buildIndexer(usenet).Fields, "minimumSeeders") {
+		t.Error("usenet (Newznab) indexer must not carry minimumSeeders even when MinSeeders>0")
+	}
+
+	base.MinSeeders = 0
+	if hasField(drv.buildIndexer(base).Fields, "minimumSeeders") {
+		t.Error("MinSeeders 0 must omit minimumSeeders (the app default)")
+	}
+}
+
+// fieldInt reads a named int field's value, or -1 when absent.
+func fieldInt(fields []servarrField, name string) int {
+	for _, f := range fields {
+		if f.Name == name {
+			var v int
+			if err := json.Unmarshal(f.Value, &v); err != nil {
+				return -1
+			}
+			return v
+		}
+	}
+	return -1
+}
+
+func hasField(fields []servarrField, name string) bool {
+	for _, f := range fields {
+		if f.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func TestServarrListRecognizesNewznab(t *testing.T) {

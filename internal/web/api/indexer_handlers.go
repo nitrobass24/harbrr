@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/autobrr/harbrr/internal/appsync"
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/domain"
 	apphttp "github.com/autobrr/harbrr/internal/http"
@@ -40,6 +41,13 @@ func (o *optionalRef) UnmarshalJSON(b []byte) error {
 
 func (o optionalRef) toRegistry() registry.RefUpdate {
 	return registry.RefUpdate{Present: o.present, Value: o.value}
+}
+
+// toAppSync maps the same tri-state onto appsync.RefUpdate (the connection PATCH's
+// sync-profile reference). appsync redeclares RefUpdate rather than importing registry,
+// so the two mappers are parallel by design.
+func (o optionalRef) toAppSync() appsync.RefUpdate {
+	return appsync.RefUpdate{Present: o.present, Value: o.value}
 }
 
 // definitionSummary is the API view of an available definition (for the add form).

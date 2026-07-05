@@ -20,11 +20,31 @@ One torrent + one usenet golden per Servarr-shaped target, freezing the `buildIn
 - `readarr_create.golden.json` / `readarr_create_usenet.golden.json`
 - `whisparr_create.golden.json` / `whisparr_create_usenet.golden.json`
 - `qui_create.golden.json` — the snake-case `native`-backend body (qui is a separate driver).
+- `sonarr_create_profile.golden.json` — a **sync-profile** body: mixed search-mode toggles
+  (`enableRss: false`, `enableAutomaticSearch: true`, `enableInteractiveSearch: false`) and a
+  `minimumSeeders` floor on a torrent indexer.
 
 The torrent body is `implementation: "Torznab"` / `configContract: "TorznabSettings"` /
 `protocol: "torrent"`; the usenet body flips those to `Newznab` / `NewznabSettings` / `usenet`.
 Everything else (the `fields[]` shape, the feed `baseUrl`, the empty `apiPath`, the categories)
 is identical between the two — the protocol flip is the only difference.
+
+## Sync profiles (min seeders + search-mode toggles)
+
+A connection's optional sync profile overrides three things in the pushed body, all captured
+by `sonarr_create_profile.golden.json`:
+
+- **`minimumSeeders`** is a `TorznabSettings`-only field, so `buildIndexer` appends it **only on
+  the torrent branch** and **only when the profile set it** (`MinSeeders > 0`). A Newznab/usenet
+  indexer never carries it (`NewznabSettings` has no seeders notion), and an unset floor (0) falls
+  back to the app's own default — exactly the pre-sync-profile behavior. `[Deliberate]`
+  (`internal/appsync/servarr.go` `buildIndexer`; `TestServarrMinSeedersTorrentOnly`).
+- **`enableRss` / `enableAutomaticSearch` / `enableInteractiveSearch`** come from the profile's
+  toggles ANDed with the instance's enabled state (a disabled instance forces all three false).
+  With no profile, all three equal the instance's `Enabled` flag — which is why every non-profile
+  golden above stayed **byte-identical** when the toggles were threaded through. `[Deliberate]`
+  (`internal/appsync/sync.go` `resolveToggles`; the `hash()` divergence rule keeps a profile-less
+  connection's `PayloadHash` unchanged on upgrade).
 
 ## Per-app decisions (Lidarr / Readarr / Whisparr)
 

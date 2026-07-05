@@ -1,8 +1,12 @@
 package appsync
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/url"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -25,6 +29,54 @@ func TestHashProtocolBackwardCompat(t *testing.T) {
 	}
 	if usenet.hash() == torrent.hash() {
 		t.Error("usenet must hash differently from torrent")
+	}
+}
+
+// TestHashProfileFieldsBackwardCompat is the upgrade-safety proof: a profile-less
+// indexer (toggles resolved equal to Enabled, MinSeeders 0 — what buildDesired produces
+// for a nil profile) must fingerprint EXACTLY as it did before sync profiles existed, so
+// upgrading harbrr does not re-hash and re-push every managed indexer. We reconstruct the
+// pre-sync-profile fingerprint by hand and assert the current hash() reproduces it.
+func TestHashProfileFieldsBackwardCompat(t *testing.T) {
+	t.Parallel()
+	d := DesiredIndexer{
+		Name: "trk", FeedURL: "http://h/api/indexers/trk/results/torznab",
+		Categories: []Category{{5000, "TV"}, {2000, "Movies"}}, Priority: 25, Enabled: true,
+		EnableRss: true, EnableAutomaticSearch: true, EnableInteractiveSearch: true, MinSeeders: 0,
+	}
+	cats := d.CategoryIDs()
+	sort.Ints(cats)
+	h := sha256.New()
+	fmt.Fprintf(h, "%s\x00%s\x00%v\x00%v\x00%d\x00%t", d.Name, d.FeedURL, cats, []string{}, d.Priority, d.Enabled)
+	want := hex.EncodeToString(h.Sum(nil))
+	if got := d.hash(); got != want {
+		t.Errorf("profile-less hash diverged from the pre-sync-profile fingerprint:\n got %s\nwant %s", got, want)
+	}
+}
+
+// TestHashProfileDivergence proves the fingerprint changes when a profile actually alters
+// the pushed intent — a search-mode toggle diverging from Enabled, or a min-seeders floor.
+func TestHashProfileDivergence(t *testing.T) {
+	t.Parallel()
+	base := DesiredIndexer{
+		Name: "trk", FeedURL: "http://h/api/indexers/trk/results/torznab", Priority: 25, Enabled: true,
+		EnableRss: true, EnableAutomaticSearch: true, EnableInteractiveSearch: true,
+	}
+	cases := map[string]func(*DesiredIndexer){
+		"rss diverges":         func(d *DesiredIndexer) { d.EnableRss = false },
+		"auto diverges":        func(d *DesiredIndexer) { d.EnableAutomaticSearch = false },
+		"interactive diverges": func(d *DesiredIndexer) { d.EnableInteractiveSearch = false },
+		"min seeders set":      func(d *DesiredIndexer) { d.MinSeeders = 3 },
+	}
+	for name, mut := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			changed := base
+			mut(&changed)
+			if changed.hash() == base.hash() {
+				t.Errorf("%s must change the hash", name)
+			}
+		})
 	}
 }
 

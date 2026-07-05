@@ -220,6 +220,12 @@ func (rt *router) mountResourceRoutes(r chi.Router) {
 	r.Get("/api/solvers/{id}", rt.getSolver)
 	r.Patch("/api/solvers/{id}", rt.updateSolver)
 	r.Delete("/api/solvers/{id}", rt.deleteSolver)
+
+	r.Get("/api/sync-profiles", rt.listSyncProfiles)
+	r.Post("/api/sync-profiles", rt.createSyncProfile)
+	r.Get("/api/sync-profiles/{id}", rt.getSyncProfile)
+	r.Patch("/api/sync-profiles/{id}", rt.updateSyncProfile)
+	r.Delete("/api/sync-profiles/{id}", rt.deleteSyncProfile)
 }
 
 // healthResponse is the liveness-probe body: a fixed status plus the build identity,
