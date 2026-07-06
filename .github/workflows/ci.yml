@@ -54,12 +54,83 @@ jobs:
       - name: test (race)
         run: go test -race -count=1 ./...
 
-  # Frontend: lint + vitest + a production build of the SPA (web/). Runs on every PR,
-  # in parallel with the Go test/lint jobs — it is fast with the pnpm cache and a
-  # required check must not be path-filtered. The frontend is built exactly ONCE here:
-  # the dist bundle is uploaded as an artifact and every binary-producing job
-  # (cross-build, docker, goreleaser) downloads it instead of rebuilding, so all
-  # shipped binaries embed the identical, already-tested bundle.
+  # Frontend Vitest suite — mirrors the Go `test` job and gates docker-merge alongside it.
+  web-test:
+    name: web-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: install
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      - name: test
+        working-directory: web
+        run: pnpm test
+
+  # Frontend ESLint (type-aware rules via typescript-eslint recommendedTypeChecked) —
+  # mirrors golangci-lint and runs in parallel with it.
+  web-lint:
+    name: web-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: install
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      - name: lint
+        working-directory: web
+        run: pnpm lint
+
+  # Frontend tsc type-check — independent of ESLint, mirrors golangci-lint tier.
+  # Uses `tsc -b` (project references; noEmit already set in tsconfig.app.json).
+  web-typecheck:
+    name: web-typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: install
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      - name: typecheck
+        working-directory: web
+        run: pnpm typecheck
+
+  # Production build of the SPA (web/). The dist bundle is uploaded as an artifact and
+  # every binary-producing job (cross-build, docker, goreleaser) downloads it instead of
+  # rebuilding, so all shipped binaries embed the identical bundle.
   web:
     name: web
     runs-on: ubuntu-latest
@@ -80,12 +151,6 @@ jobs:
       - name: install
         working-directory: web
         run: pnpm install --frozen-lockfile
-      - name: lint
-        working-directory: web
-        run: pnpm lint
-      - name: test
-        working-directory: web
-        run: pnpm test
       # The route tree is generated from src/routes and committed; a contributor
       # who adds a route but forgets `pnpm generate:routes` fails here, not in a
       # teammate's surprise diff later.
@@ -367,7 +432,7 @@ jobs:
   docker-merge:
     name: docker-merge
     runs-on: ubuntu-latest
-    needs: [docker, test, golangci-lint]
+    needs: [docker, test, web-test, golangci-lint, web-lint, web-typecheck]
     if: >-
       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]') ||
       ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/tags/'))
@@ -422,7 +487,7 @@ jobs:
     name: goreleaser
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [test, golangci-lint, web]
+    needs: [test, web-test, golangci-lint, web-lint, web-typecheck, web]
     permissions:
       contents: write # create the GitHub Release (tag runs only)
     steps:
