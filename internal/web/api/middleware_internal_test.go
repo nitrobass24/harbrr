@@ -36,7 +36,8 @@ func reqWith(remote, xff string) *http.Request {
 // X-Forwarded-For entry to bypass the auth.mode=disabled allowlist.
 func TestClientIPXFFSpoof(t *testing.T) {
 	t.Parallel()
-	rt := newAllowlistRouter(t,
+	rt := newAllowlistRouter(
+		t,
 		[]string{"1.2.3.4"},    // allowlisted admin IP
 		[]string{"10.0.0.0/8"}, // trusted reverse proxy network
 	)

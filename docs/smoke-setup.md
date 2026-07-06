@@ -3,24 +3,22 @@
 > **Operators:** for the built-in, no-toolchain golden smoke test — `harbrr smoke` (interactive
 > first-run, runs natively or `docker exec … harbrr smoke`, writes a shareable secret-scrubbed
 > `smoke-report.md`) — see the user guide: `website/docs/guides/smoke-test.md`. The rest of this
-> doc is the **developer** differential harness (`make smoke-test`), which adds trackers with live
-> per-tracker credentials and shares the same parity engine (`internal/smoke`).
+> doc is the **developer** differential harness (`make smoke-test`), which discovers already-enabled
+> indexers in a running daemon and shares the same parity engine (`internal/smoke`).
 
 The live smoke (`make smoke-test`) drives a **running harbrr daemon** like a real
-*arr: it adds each tracker to harbrr (credentials encrypted by the daemon),
-searches harbrr's Torznab feed, searches **Prowlarr** for the same tracker+query,
-and asserts the two agree within a tolerance. It is **manual only** — it reaches
-real trackers and is build-tagged (`//go:build smoke`) so it never runs in CI.
+*arr: it discovers the indexers already configured and enabled in the daemon,
+matches each against Prowlarr, searches both, and asserts the two agree within a
+tolerance. It is **manual only** — it reaches real trackers and is build-tagged
+(`//go:build smoke`) so it never runs in CI.
 
-> **Credentials live in env vars only** — never committed, never logged. The
-> harness POSTs each tracker key to the daemon's management API, which encrypts it
-> at rest (AES-256-GCM). Evidence files under `internal/smoke/testdata/` are
-> gitignored and secret-scrubbed before writing.
+No per-tracker credentials are needed — the daemon already holds them encrypted at
+rest. Evidence files under `internal/smoke/testdata/` are gitignored and
+secret-scrubbed before writing.
 
 ## Prerequisites
 
-- A running harbrr daemon (`bin/harbrr serve`) with first-run setup done and an
-  API key minted (`POST /api/apikeys`).
+- A running harbrr daemon with indexers already configured and enabled.
 - Prowlarr reachable, with the same trackers configured (the differential oracle).
 - For the grab half: a Sonarr with harbrr added as a Torznab indexer and a
   download client (qBittorrent) wired.
@@ -29,27 +27,27 @@ real trackers and is build-tagged (`//go:build smoke`) so it never runs in CI.
 
 | Var | Meaning |
 |---|---|
-| `SMOKE_HARBRR_URL` | harbrr base URL, e.g. `http://127.0.0.1:7478` |
+| `SMOKE_HARBRR_URL` | harbrr base URL, e.g. `http://192.168.10.220:7478` |
 | `SMOKE_HARBRR_APIKEY` | a harbrr API key (used for `X-API-Key` + the Torznab `?apikey=`) |
 | `SMOKE_PROWLARR_URL` | Prowlarr base URL |
 | `SMOKE_PROWLARR_APIKEY` | Prowlarr API key |
-| `SMOKE_TRACKERS` | comma-separated `slug|definitionId|prowlarrDefinitionName` (no secrets) |
-| `SMOKE_KEY_<SLUG>` | each tracker's API key; `<SLUG>` is the slug upper-cased with `-`/`.`→`_` |
 | `SMOKE_QUERY` | optional, default `test` |
 | `SMOKE_QUERY_FALLBACK` | optional, default `2024` (used when `test` returns 0 on both) |
+| `SMOKE_GRAB=1` | optional — also resolve the first release's download link |
 
-Example (`SMOKE_KEY_*` values are the real tracker keys, set in your shell — never
-checked in):
+Example:
 
 ```sh
-export SMOKE_HARBRR_URL=http://127.0.0.1:7478
+export SMOKE_HARBRR_URL=http://192.168.10.220:7478
 export SMOKE_HARBRR_APIKEY=...
 export SMOKE_PROWLARR_URL=http://192.168.10.220:9696
 export SMOKE_PROWLARR_APIKEY=...
-export SMOKE_TRACKERS="seedpool|seedpool-api|seedpool-api,onlyencodes|onlyencodes-api|onlyencodes-api,digitalcore|digitalcore-api|digitalcore-api,darkpeers|darkpeers|darkpeers,luminarr|luminarr-api|luminarr-api"
-export SMOKE_KEY_SEEDPOOL=... SMOKE_KEY_ONLYENCODES=... SMOKE_KEY_DIGITALCORE=... SMOKE_KEY_DARKPEERS=... SMOKE_KEY_LUMINARR=...
 make smoke-test
 ```
+
+The harness discovers every enabled harbrr indexer automatically and matches each
+against Prowlarr by name/slug. Indexers absent from Prowlarr are skipped
+(not-comparable), not failures.
 
 ## Differential pass criteria
 

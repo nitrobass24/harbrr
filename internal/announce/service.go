@@ -148,7 +148,8 @@ func (s *Service) insertConnection(ctx context.Context, p CreateConnectionParams
 // setSecrets writes both encrypted secret columns + key_id for a connection.
 func (s *Service) setSecrets(ctx context.Context, q dbinterface.Execer, c domain.AnnounceConnection) error {
 	_, err := q.ExecContext(ctx, q.Rebind(
-		`UPDATE announce_connections SET api_key_encrypted = ?, harbrr_api_key_encrypted = ?, key_id = ? WHERE id = ?`),
+		`UPDATE announce_connections SET api_key_encrypted = ?, harbrr_api_key_encrypted = ?, key_id = ? WHERE id = ?`,
+	),
 		c.APIKeyEncrypted, c.HarbrrAPIKeyEncrypted, c.KeyID, c.ID)
 	if err != nil {
 		return fmt.Errorf("announce: set secrets: %w", err)

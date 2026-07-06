@@ -63,7 +63,8 @@ func newRegistryWithSink(t *testing.T, doer search.Doer, sink registry.HealthSin
 	if err != nil {
 		t.Fatalf("open keyring: %v", err)
 	}
-	return registry.New(db, loader.New(dropin), keyring,
+	return registry.New(
+		db, loader.New(dropin), keyring,
 		registry.WithClock(fixedClock),
 		registry.WithDoerFactory(func(registry.ClientParams) (search.Doer, error) { return doer, nil }),
 		registry.WithHealthSink(sink),

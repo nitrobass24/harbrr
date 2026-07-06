@@ -172,10 +172,12 @@ func appSyncCheck(ctx context.Context, c *http.Client, cfg Config, app appTarget
 	switch {
 	case serves != present:
 		return []Finding{{Indexer: ix.Slug, Check: check, Status: StatusFail, Detail: fmt.Sprintf(
-			"category filter mismatch: should-serve-%s=%v but present-in-%s=%v", app.label, serves, app.label, present)}}
+			"category filter mismatch: should-serve-%s=%v but present-in-%s=%v", app.label, serves, app.label, present,
+		)}}
 	case !present:
 		return []Finding{{Indexer: ix.Slug, Check: check, Status: StatusPass, Detail: fmt.Sprintf(
-			"correctly absent (does not serve %s)", app.label)}}
+			"correctly absent (does not serve %s)", app.label,
+		)}}
 	default:
 		return presentFindings(ctx, c, cfg, app, ix.Slug, check, matched)
 	}
@@ -201,7 +203,8 @@ func presentFindings(ctx context.Context, c *http.Client, cfg Config, app appTar
 func appSyncResult(slug, check, feed string, issues []string) Finding {
 	if len(issues) == 0 {
 		return Finding{Indexer: slug, Check: check, Status: StatusPass, Detail: fmt.Sprintf(
-			"present, feed %s, caps 200", apphttp.RedactURL(feed))}
+			"present, feed %s, caps 200", apphttp.RedactURL(feed),
+		)}
 	}
 	return Finding{Indexer: slug, Check: check, Status: StatusFail, Detail: strings.Join(issues, "; ")}
 }
