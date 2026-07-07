@@ -313,6 +313,36 @@ func TestExecute_OnlineReplay(t *testing.T) {
 	}
 }
 
+// TestSearch_JSONNoResultsMessageEmptyBody drives the full Search path for a
+// JSON API declaring the empty-string noResultsMessage form (czteam-api,
+// superbits, digitalcore-api): a zero-result query answered with an EMPTY body
+// is a graceful empty page — nil error, no parse_error health event — exactly
+// as Jackett's pre-JToken.Parse check `continue`s. Without the message the
+// same body EOFs the JSON parse (pinned by TestExecute_NoResultsMessage in the
+// search package).
+func TestSearch_JSONNoResultsMessageEmptyBody(t *testing.T) {
+	t.Parallel()
+
+	def := loadFixtureDef(t, "json_api.yml")
+	def.Search.Paths[0].Response.NoResultsMessage = new(string)
+	doer := &engineReplay{body: ""}
+	eng, err := NewEngine(def, WithClock(fixedClock()), WithDoer(doer))
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+
+	releases, err := eng.Search(t.Context(), Query{Keywords: "empty"})
+	if err != nil {
+		t.Fatalf("Search: %v, want graceful zero-result page", err)
+	}
+	if len(releases) != 0 {
+		t.Errorf("releases = %d, want 0", len(releases))
+	}
+	if len(doer.requests) == 0 {
+		t.Fatal("no request issued")
+	}
+}
+
 // TestSearch_LoginMemoized proves login runs at most once per Engine: the def
 // has a login block and no login.test, so without memoization every Search would
 // re-run the login GET. After two searches exactly one /login.php request must

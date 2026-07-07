@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	stdhttp "net/http"
+	"strings"
 	"time"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/filter"
@@ -205,6 +206,13 @@ func Execute(ctx context.Context, def *loader.Definition, query Query, session *
 		if looksLoggedOut(def, body, respType, query, deps) {
 			return nil, ErrSearchLoggedOut
 		}
+		// A JSON path's noResultsMessage short-circuits row parsing: Jackett checks
+		// the raw body against it before JToken.Parse and `continue`s its SearchPath
+		// loop, so a matching body is a graceful empty page — never a parse error —
+		// while any remaining paths still run.
+		if noResultsMatch(reqs[i], sr) {
+			continue
+		}
 		rels, err := ParseResults(def, body, respType, query, deps)
 		if err != nil {
 			// Mark the parse boundary so the registry classifies it as parse_error
@@ -214,4 +222,23 @@ func Execute(ctx context.Context, def *loader.Definition, query Query, session *
 		out = append(out, rels...)
 	}
 	return out, nil
+}
+
+// noResultsMatch reports whether a response body is the path's declared
+// "no results" answer, reproducing Jackett's JSON-branch check: it applies only
+// to json paths on HTTP 200 (Jackett's OK gate), and only when the definition
+// sets noResultsMessage. A non-empty message matches the raw body by substring;
+// the empty-string form (`noResultsMessage: ""` — czteam-api, superbits,
+// digitalcore-api) matches an exactly-empty body, which several JSON APIs
+// return for a zero-result query and which would otherwise EOF the JSON parse.
+// A nil message (def doesn't declare one) never matches, so genuine parse
+// errors still surface.
+func noResultsMatch(br builtRequest, sr searchResponse) bool {
+	if br.respType != responseTypeJSON || br.noResultsMessage == nil || sr.status != stdhttp.StatusOK {
+		return false
+	}
+	if msg := *br.noResultsMessage; msg != "" {
+		return strings.Contains(string(sr.body), msg)
+	}
+	return len(sr.body) == 0
 }

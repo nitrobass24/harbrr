@@ -206,6 +206,55 @@ func TestCategoriesBlockPreservesOrder(t *testing.T) {
 	}
 }
 
+// TestParseNoResultsMessagePointer pins the three decode shapes of
+// response.noResultsMessage. Jackett distinguishes ABSENT (null — no
+// no-results check) from PRESENT-EMPTY (`noResultsMessage: ""` — an
+// exactly-empty body means zero results) from a non-empty substring message,
+// so the field must decode to *string: a missing key must stay nil and the
+// empty-string form must yield a non-nil pointer to "".
+func TestParseNoResultsMessagePointer(t *testing.T) {
+	t.Parallel()
+
+	const line = "        noResultsMessage: \"No results\"\n"
+	base := string(readFixture(t, "json_minimal.yml"))
+	if !strings.Contains(base, line) {
+		t.Fatal("json_minimal.yml no longer carries the noResultsMessage line this test rewrites")
+	}
+
+	tests := []struct {
+		name    string
+		yml     string
+		wantNil bool
+		wantVal string
+	}{
+		{name: "non-empty message", yml: base, wantVal: "No results"},
+		{name: "present-empty message", yml: strings.Replace(base, line, "        noResultsMessage: \"\"\n", 1), wantVal: ""},
+		{name: "absent message", yml: strings.Replace(base, line, "", 1), wantNil: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			def, err := Parse([]byte(tt.yml))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			got := def.Search.Paths[0].Response.NoResultsMessage
+			if tt.wantNil {
+				if got != nil {
+					t.Fatalf("NoResultsMessage = %q, want nil (absent)", *got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatalf("NoResultsMessage = nil, want %q", tt.wantVal)
+			}
+			if *got != tt.wantVal {
+				t.Errorf("NoResultsMessage = %q, want %q", *got, tt.wantVal)
+			}
+		})
+	}
+}
+
 func TestParseScalarRejectsNonScalar(t *testing.T) {
 	t.Parallel()
 	// A mapping where the schema permits a scalar union must be rejected by

@@ -37,6 +37,9 @@ type builtRequest struct {
 	// request so a mixed HTML+JSON multi-path def parses each body under its own
 	// path's type, matching Jackett's per-SearchPath response handling.
 	respType string
+	// noResultsMessage is this path's Response.NoResultsMessage; nil when the
+	// def doesn't declare one. Consumed by noResultsMatch (search.go).
+	noResultsMessage *string
 }
 
 // buildRequests renders each search path the definition declares (Search.Path
@@ -298,12 +301,13 @@ func splitRaw(raw string) []kv {
 func assembleRequest(path loader.SearchPathBlock, absURL string, pairs []kv, headers map[string][]string) (builtRequest, error) {
 	if strings.EqualFold(path.Method, stdhttp.MethodPost) {
 		return builtRequest{
-			method:         stdhttp.MethodPost,
-			url:            absURL,
-			body:           encodeOrdered(pairs),
-			headers:        withFormContentType(headers),
-			followRedirect: boolVal(path.FollowRedirect),
-			respType:       pathResponseType(path),
+			method:           stdhttp.MethodPost,
+			url:              absURL,
+			body:             encodeOrdered(pairs),
+			headers:          withFormContentType(headers),
+			followRedirect:   boolVal(path.FollowRedirect),
+			respType:         pathResponseType(path),
+			noResultsMessage: pathNoResultsMessage(path),
 		}, nil
 	}
 
@@ -312,11 +316,12 @@ func assembleRequest(path loader.SearchPathBlock, absURL string, pairs []kv, hea
 		return builtRequest{}, err
 	}
 	return builtRequest{
-		method:         stdhttp.MethodGet,
-		url:            full,
-		headers:        headers,
-		followRedirect: boolVal(path.FollowRedirect),
-		respType:       pathResponseType(path),
+		method:           stdhttp.MethodGet,
+		url:              full,
+		headers:          headers,
+		followRedirect:   boolVal(path.FollowRedirect),
+		respType:         pathResponseType(path),
+		noResultsMessage: pathNoResultsMessage(path),
 	}, nil
 }
 
@@ -327,6 +332,15 @@ func pathResponseType(path loader.SearchPathBlock) string {
 		return path.Response.Type
 	}
 	return ""
+}
+
+// pathNoResultsMessage reads a path's own Response.NoResultsMessage; nil (no
+// response block or no message) disables the no-results short-circuit.
+func pathNoResultsMessage(path loader.SearchPathBlock) *string {
+	if path.Response != nil {
+		return path.Response.NoResultsMessage
+	}
+	return nil
 }
 
 // encodeOrdered renders pairs as an ordered x-www-form-urlencoded string

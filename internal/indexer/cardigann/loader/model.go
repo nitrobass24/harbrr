@@ -304,8 +304,12 @@ type SearchPathBlock struct {
 
 // ResponseBlock mirrors ResponseBlock.
 type ResponseBlock struct {
-	Type             string `yaml:"type"`
-	NoResultsMessage string `yaml:"noResultsMessage,omitempty"`
+	Type string `yaml:"type"`
+	// NoResultsMessage is a pointer because Jackett distinguishes ABSENT
+	// (null — no check) from PRESENT-EMPTY (`noResultsMessage: ""` — an
+	// exactly-empty body means zero results): a non-empty message matches the
+	// raw body by substring. See search.noResultsMatch.
+	NoResultsMessage *string `yaml:"noResultsMessage,omitempty"`
 }
 
 // RowsBlock mirrors RowsBlock. It is a SelectorBlock-shaped block with extra
