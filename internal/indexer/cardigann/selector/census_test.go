@@ -10,8 +10,8 @@ import (
 
 // knownIncompatible is the documented baseline of EXACT literal selectors the
 // embedded Jackett snapshot uses that cascadia rejects but AngleSharp accepts.
-// Pattern-level divergences (:contains, :scope, :has edge forms) are classified
-// in classifyIncompatible; this map captures the one-off upstream-def quirks
+// The one pattern-level divergence (:scope) is classified in
+// classifyIncompatible; this map captures the one-off upstream-def quirks
 // that don't generalize. The census fails on any NEW uncompilable selector not
 // covered here, so regressions surface immediately.
 //
@@ -34,6 +34,19 @@ var knownIncompatible = map[string]string{
 	// AngleSharp accepts the relative form; this cascadia build parses :has only
 	// with a compound/descendant argument, not a leading "~" combinator.
 	"div#content > div.poststuff:has(~ div.entry a.download), div#content > div.poststuff ~ div.entry:has(a.download)": "cascadia :has rejects a leading sibling-combinator relative argument",
+
+	// Unquoted multi-word :contains argument: cascadia's grammar (mirrored by
+	// the engine's case-sensitivity rewrite) ends the identifier at the space
+	// after "Only" and never reaches the closing paren. Fix belongs upstream /
+	// in dropin. (dasunerwartete-api)
+	"free_button:contains(Only Upload)": "unquoted multi-word :contains argument rejected by cascadia",
+
+	// Type selector repeated mid-compound ("...))a:not(...") with no combinator:
+	// cascadia stops the compound at the second bare "a" and rejects the
+	// leftover bytes. The :contains pseudo itself compiles fine (rewritten to a
+	// case-sensitive :matches); the malformed compound is the failure.
+	// (puntotorrent)
+	`td:nth-child(2) a:not(:contains("HDTV"))a:not(:contains("hdtv"))a:not(:contains("REMUX"))a:not(:contains("Remux"))a:not(:contains("remux"))a:not(:contains("WEB"))a:not(:contains("web"))a:not(:contains("Web"))a:contains("1080"),:contains("2160"):contains("uhd")`: "type selector repeated mid-compound without a combinator rejected by cascadia",
 }
 
 // censusResult aggregates one pass over the corpus.
@@ -161,13 +174,6 @@ func containsTemplate(sel string) bool { return strings.Contains(sel, "{{") }
 func classifyIncompatible(sel string) string {
 	if r, ok := knownIncompatible[sel]; ok {
 		return r
-	}
-	if strings.Contains(sel, ":contains(") {
-		// :contains is a jQuery/Sizzle/AngleSharp text-pseudo extension that the
-		// W3C-conformant cascadia grammar does not implement. The engine routes
-		// these through a :contains shim (handled in the engine assembly, item
-		// 10); they are knownIncompatible at the raw-cascadia layer.
-		return "cascadia lacks the non-standard :contains() text pseudo-class"
 	}
 	if strings.Contains(sel, ":scope") {
 		// :scope anchors a selector to the query context element. AngleSharp

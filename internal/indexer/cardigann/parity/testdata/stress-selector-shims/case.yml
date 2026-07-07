@@ -3,9 +3,10 @@ archetype: stress-selector-shims
 golden_source: hand-derived
 mode: parse
 description: >
-  Stress: the :has and :contains selector shims, end to end. cascadia's W3C grammar
-  has :has but not the jQuery/AngleSharp :contains text pseudo-class, so the engine
-  shims :contains (and Jackett supports both) — this pins them through the full
+  Stress: the :has and :contains pseudo-classes, end to end. cascadia implements
+  both, but its :contains matches case-insensitively where AngleSharp's is
+  case-sensitive, so the engine rewrites :contains to a literal-quoted :matches
+  (see selector/contains.go) — this pins them through the full
   pipeline, not just the selector unit tests. The row selector `tr:has(a.dl)` keeps
   only the two rows that carry a download link, dropping the <th> header row and the
   advertisement row. downloadvolumefactor maps by a :contains case key:

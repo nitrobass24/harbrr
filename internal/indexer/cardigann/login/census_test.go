@@ -190,9 +190,9 @@ func compileErrorBlock(eng *selector.Engine, root selector.Row, blk loader.Error
 
 // compileSelector runs a selector block through Field on the empty doc. A
 // not-found result is fine (the doc is empty); only a compile/tokenize error is
-// a planning failure. cascadia-incompatible selectors (:contains, :scope, :has
-// edge forms) are handled by the engine assembly, so they are excluded
-// here exactly as the selector census excludes them.
+// a planning failure. :contains selectors ARE exercised (the engine rewrites
+// them to a case-sensitive :matches); the genuinely cascadia-incompatible forms
+// (:scope, :has edge forms) are excluded here as the selector census excludes them.
 func compileSelector(eng *selector.Engine, root selector.Row, blk loader.SelectorBlock) error {
 	if blk.Selector == "" || containsTemplate(blk.Selector) || cascadiaIncompatible(blk.Selector) {
 		return nil
@@ -205,13 +205,13 @@ func compileSelector(eng *selector.Engine, root selector.Row, blk loader.Selecto
 
 func containsTemplate(s string) bool { return strings.Contains(s, "{{") }
 
-// cascadiaIncompatible mirrors the selector census's classifyIncompatible: these
-// are AngleSharp-only constructs the engine shims at assembly time, so they are
-// not raw-cascadia planning failures here.
+// cascadiaIncompatible skips the constructs the selector census ledgers as
+// cascadia-uncompilable: :scope (unsupported pseudo-class) and the :has edge
+// forms in its knownIncompatible baseline. :contains compiles natively (the
+// engine rewrites it to a case-sensitive :matches at compile time), so those
+// selectors are exercised here.
 func cascadiaIncompatible(sel string) bool {
-	return strings.Contains(sel, ":contains(") ||
-		strings.Contains(sel, ":scope") ||
-		strings.Contains(sel, ":has(")
+	return strings.Contains(sel, ":scope") || strings.Contains(sel, ":has(")
 }
 
 func formatCounts(m map[string]int) string {

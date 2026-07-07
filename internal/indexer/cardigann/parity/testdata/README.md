@@ -230,16 +230,15 @@ Entries:
   (used by Cardigann to filter rows and map case keys) resolve correctly end to end in
   both HTML (cascadia) and JSON (`selector/jsonpseudo.go`) response modes, pinned by
   `parity/testdata/stress-selector-shims` (HTML) and `stress-json-has` (JSON) plus the
-  `selector` unit tests. One narrow divergence remains: **`:contains` is
-  case-INSENSITIVE in cascadia but case-SENSITIVE in AngleSharp** (Jackett). A def
-  whose `:contains("…")` literal matches the page text in the SAME case behaves
-  identically on both — which is how real defs are authored, since they target
-  Jackett's case-sensitive engine — so the fixtures (case-matched literals) agree with
-  Jackett. The divergence only surfaces if a def's literal differs from the page text
-  ONLY in case, where harbrr would match and Jackett would not. Fixing it means
-  replacing cascadia's built-in `:contains`; no vendored def is known to trip it.
-  The case-sensitive `:contains` gap is narrow, with no corpus def affected.
-  **`[Tracked]`**
+  `selector` unit tests. The case divergence — **`:contains` was case-INSENSITIVE in
+  cascadia but case-SENSITIVE in AngleSharp** (Jackett), so harbrr matched a strict
+  superset (wrong first-match `case:` arms, over-eager `remove:`) — is Resolved:
+  `compileCSS` rewrites every `:contains(x)` to cascadia's `:matches(...)` with a
+  literal-quoted pattern (`selector/contains.go`), which evaluates against the same
+  concatenated descendant text without lowercasing, reproducing AngleSharp's ordinal
+  `TextContent.Contains`. The rewrite applies wherever `:contains` appears, including
+  inside `:has(...)`/`:not(...)`; case-sensitivity is pinned by the `selector`
+  `contains_test.go` suite. **`[Resolved]`**
 - **JSON date auto-conversion (Newtonsoft)** — Resolved. Jackett parses
   JSON with Newtonsoft's default `DateParseHandling.DateTime`, so an ISO-8601
   string VALUE becomes a `DateTime` rendered back as the .NET InvariantCulture

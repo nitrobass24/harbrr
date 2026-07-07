@@ -219,12 +219,14 @@ func appendChildren(dst, src *goquery.Selection) {
 
 // compileCSS compiles a CSS selector with cascadia, the engine goquery uses.
 // cascadia.Compile yields a cascadia.Selector, which satisfies goquery.Matcher.
-// A compile failure is surfaced (never silenced): it means cascadia rejects a
-// construct AngleSharp accepts, which the corpus census tracks as a known
-// incompatibility. The error references only the selector text.
+// `:contains(...)` is first rewritten to a case-sensitive form (see
+// rewriteContains): cascadia's built-in :contains lowercases, AngleSharp's is
+// ordinal. A compile failure is surfaced (never silenced): it means cascadia
+// rejects a construct AngleSharp accepts, which the corpus census tracks as a
+// known incompatibility. The error references the original selector text.
 func compileCSS(sel string) (cascadia.Selector, error) {
 	s := strings.TrimSpace(sel)
-	c, err := cascadia.Compile(s)
+	c, err := cascadia.Compile(rewriteContains(s))
 	if err != nil {
 		return nil, fmt.Errorf("compiling css selector %q: %w", s, err)
 	}
