@@ -98,9 +98,53 @@ func (p *Parser) ParseDate(value, layout string) (string, error) {
 		return "", fmt.Errorf("%w: value %q layout %q (go %q)", ErrUnparseable, value, layout, goLayout)
 	}
 
-	t = defaultMissingDate(t, layout, goLayout, p.now())
+	now := p.now()
+	t = defaultMissingDate(t, layout, goLayout, now)
+	t = rollbackFutureYearless(t, layout, goLayout, now)
 
 	return t.Format(canonicalLayout), nil
+}
+
+// rollbackFutureYearless reproduces the tail of Jackett's
+// DateTimeUtil.ParseDateTimeGoLang: a yearless date that lands in the future is
+// rolled back one year. Jackett only REACHES that tail when the layout misses
+// its early return: `commonStandardFormats = {"y","h","d"}; if
+// (commonStandardFormats.Any(layout.ContainsIgnoreCase) && TryParseExact(...))
+// return;`. So any layout containing y/h/d (case-insensitive) that parses
+// directly never rolls back. Every vendored yearless layout (MM.dd, HH:mm,
+// HH:mm zzz, htt MMM. d, MM-dd, MM/dd HH:mm) contains d or h, so this rollback
+// is DORMANT for the current corpus and harbrr matches Jackett's non-rollback
+// there. It activates only for a letterless, yearless layout (e.g. a bare
+// "MMM"), matching Jackett's ParseDateTimeGoLangTest.
+func rollbackFutureYearless(t time.Time, netLayout, goLayout string, ref time.Time) time.Time {
+	if containsAnyFold(netLayout, "y", "h", "d") {
+		return t // Jackett's commonStandardFormats early return: no rollback.
+	}
+	if strings.Contains(goLayout, "2006") || strings.Contains(goLayout, "06") {
+		return t // has a year; Jackett checks !format.Contains("yy").
+	}
+	if t.After(ref) {
+		// A yearless future date rolls back one year. Go's AddDate normalizes
+		// Feb 29 -> Mar 1 where .NET AddYears clamps to Feb 28; unreachable in the
+		// current corpus (every dateparse layout is .NET-style with y/h/d, gated
+		// out above — only a hypothetical Go-style day-bearing layout could carry
+		// Feb 29 here).
+		return t.AddDate(-1, 0, 0)
+	}
+	return t
+}
+
+// containsAnyFold reports whether s contains any of the (already-lowercase)
+// substrings, case-insensitively — matching .NET string.ContainsIgnoreCase
+// (InvariantCulture) for the ASCII format letters checked here.
+func containsAnyFold(s string, lowerSubs ...string) bool {
+	lower := strings.ToLower(s)
+	for _, sub := range lowerSubs {
+		if strings.Contains(lower, sub) {
+			return true
+		}
+	}
+	return false
 }
 
 // ampmRe matches an AM/PM designator in any case, standalone or attached to a

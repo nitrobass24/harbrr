@@ -150,6 +150,10 @@ func TestParseDate(t *testing.T) {
 		{"two-digit-year", "yy-MM-dd hh:mm:ss tt", "23-01-02 03:04:05 PM", "2023-01-02T15:04:05Z"},
 		{"tz-zz", "yyyy-MM-dd HH:mm:ss zz", "2023-01-02 15:04:05 +02", "2023-01-02T15:04:05+02:00"},
 		{"missing-year-defaults-clock", "MM/dd HH:mm", "03/15 09:30", "2024-03-15T09:30:00Z"},
+		// Yearless layouts containing y/h/d hit Jackett's commonStandardFormats
+		// early return, so a FUTURE result is NOT rolled back (12-25 is after the
+		// 2024-06-01 clock but stays 2024). This pins parity against reintroducing
+		// an ungated rollback (see rollbackFutureYearless).
 		{"missing-year-month-day", "MM-dd", "12-25", "2024-12-25T00:00:00Z"},
 		// .NET matches AM/PM designators case-insensitively (Jackett parses these);
 		// normalizeAMPM compensates for Go's uppercase-only PM token.
@@ -171,6 +175,11 @@ func TestParseDate(t *testing.T) {
 		// A weekday NAME is not a date component (.NET and Go alike): a layout with
 		// only a weekday + time still defaults the full date from the clock.
 		{"weekday-name-is-not-a-date", "ddd HH:mm", "Sat 14:30", "2024-06-01T14:30:00Z"},
+		// Letterless yearless layouts (no y/h/d) DO reach Jackett's rollback tail
+		// (ParseDateTimeGoLangTest): a future result rolls back one year, a past
+		// result does not. Dormant for the corpus (no such layout exists today).
+		{"letterless-future-rolls-back", "MMM", "Dec", "2023-12-01T00:00:00Z"},
+		{"letterless-past-no-rollback", "MMM", "Jan", "2024-01-01T00:00:00Z"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
