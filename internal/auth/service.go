@@ -38,11 +38,46 @@ type Service struct {
 	db      *database.DB
 	users   database.Users
 	apiKeys database.APIKeys
+	hasher  PasswordHasher
+}
+
+// PasswordHasher owns password hashing and verification for auth flows.
+type PasswordHasher interface {
+	HashPassword(password string) (string, error)
+	VerifyPassword(password, encoded string) (bool, error)
+}
+
+type secretsPasswordHasher struct{}
+
+func (secretsPasswordHasher) HashPassword(password string) (string, error) {
+	hash, err := secrets.HashPassword(password)
+	if err != nil {
+		return "", fmt.Errorf("auth: hash password: %w", err)
+	}
+	return hash, nil
+}
+
+func (secretsPasswordHasher) VerifyPassword(password, encoded string) (bool, error) {
+	ok, err := secrets.VerifyPassword(password, encoded)
+	if err != nil {
+		return false, fmt.Errorf("auth: verify password: %w", err)
+	}
+	return ok, nil
 }
 
 // NewService builds the auth service over the database.
 func NewService(db *database.DB) *Service {
-	return &Service{db: db}
+	return NewServiceWithPasswordHasher(db, secretsPasswordHasher{})
+}
+
+// NewServiceWithPasswordHasher builds the auth service with an injected password
+// hasher. Production callers should use NewService; tests can provide a cheaper
+// deterministic hasher while keeping API behavior unchanged.
+func NewServiceWithPasswordHasher(db *database.DB, hasher PasswordHasher) *Service {
+	if hasher == nil {
+		hasher = secretsPasswordHasher{}
+	}
+	return &Service{db: db, hasher: hasher}
 }
 
 // SetupComplete reports whether the admin account exists.
@@ -71,7 +106,7 @@ func (s *Service) Setup(ctx context.Context, username, password string) (domain.
 		return domain.User{}, fmt.Errorf("%w: minimum %d characters", ErrWeakPassword, minPasswordLen)
 	}
 
-	hash, err := secrets.HashPassword(password)
+	hash, err := s.hasher.HashPassword(password)
 	if err != nil {
 		return domain.User{}, fmt.Errorf("auth: hash password: %w", err)
 	}
@@ -94,7 +129,7 @@ func (s *Service) Login(ctx context.Context, username, password string) (domain.
 	if err != nil {
 		return domain.User{}, fmt.Errorf("auth: lookup user: %w", err)
 	}
-	ok, err := secrets.VerifyPassword(password, u.PasswordHash)
+	ok, err := s.hasher.VerifyPassword(password, u.PasswordHash)
 	if err != nil {
 		return domain.User{}, fmt.Errorf("auth: verify password: %w", err)
 	}
@@ -117,7 +152,7 @@ func (s *Service) ChangePassword(ctx context.Context, current, newPassword strin
 	if err != nil {
 		return fmt.Errorf("auth: load admin: %w", err)
 	}
-	ok, err := secrets.VerifyPassword(current, u.PasswordHash)
+	ok, err := s.hasher.VerifyPassword(current, u.PasswordHash)
 	if err != nil {
 		return fmt.Errorf("auth: verify password: %w", err)
 	}
@@ -127,7 +162,7 @@ func (s *Service) ChangePassword(ctx context.Context, current, newPassword strin
 	if len(newPassword) < minPasswordLen {
 		return fmt.Errorf("%w: minimum %d characters", ErrWeakPassword, minPasswordLen)
 	}
-	hash, err := secrets.HashPassword(newPassword)
+	hash, err := s.hasher.HashPassword(newPassword)
 	if err != nil {
 		return fmt.Errorf("auth: hash password: %w", err)
 	}

@@ -2,12 +2,28 @@ package auth_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/autobrr/harbrr/internal/auth"
 	"github.com/autobrr/harbrr/internal/database"
 )
+
+type fastPasswordHasher struct{}
+
+func (fastPasswordHasher) HashPassword(password string) (string, error) {
+	return fastPasswordHash(password), nil
+}
+
+func (fastPasswordHasher) VerifyPassword(password, encoded string) (bool, error) {
+	return encoded == fastPasswordHash(password), nil
+}
+
+func fastPasswordHash(password string) string {
+	return fmt.Sprintf("test-sha256:%x", sha256.Sum256([]byte(password)))
+}
 
 func newService(t *testing.T) *auth.Service {
 	t.Helper()
@@ -19,7 +35,7 @@ func newService(t *testing.T) *auth.Service {
 	if err := db.Migrate(context.Background()); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	return auth.NewService(db)
+	return auth.NewServiceWithPasswordHasher(db, fastPasswordHasher{})
 }
 
 func TestSetupAndLogin(t *testing.T) {

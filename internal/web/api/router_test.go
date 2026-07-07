@@ -2,6 +2,8 @@ package api_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -31,6 +33,20 @@ import (
 
 // testKey is a synthetic 32-byte AES key (tests only).
 const testKey = "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+
+type fastPasswordHasher struct{}
+
+func (fastPasswordHasher) HashPassword(password string) (string, error) {
+	return fastPasswordHash(password), nil
+}
+
+func (fastPasswordHasher) VerifyPassword(password, encoded string) (bool, error) {
+	return encoded == fastPasswordHash(password), nil
+}
+
+func fastPasswordHash(password string) string {
+	return fmt.Sprintf("test-sha256:%x", sha256.Sum256([]byte(password)))
+}
 
 // defYAML is a minimal definition written to a drop-in dir so indexer-CRUD tests
 // have a definition to configure.
@@ -128,7 +144,7 @@ func newEnvWithCache(t *testing.T, cfg api.Config, buildCache func(db *database.
 	sm.Cookie.Persist = false
 	sm.Lifetime = time.Hour
 
-	authSvc := auth.NewService(db)
+	authSvc := auth.NewServiceWithPasswordHasher(db, fastPasswordHasher{})
 	reg := registry.New(db, ldr, keyring)
 	source := &fakeAppSource{}
 	appSync := appsync.NewService(db, source, authSvc, keyring, http.DefaultClient, zerolog.Nop())

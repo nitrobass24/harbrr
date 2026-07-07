@@ -4,7 +4,15 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+    paths-ignore:
+      - "docs/**"
+      - "website/**"
+      - "**/*.md"
   pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "website/**"
+      - "**/*.md"
   # Manual release fallback: dispatch this workflow against a `v*` tag to (re)run a
   # release without re-tagging — goreleaser and the docker publish treat a dispatch
   # aimed at a tag exactly like the tag push. Dispatching against a branch just runs CI.
@@ -12,6 +20,9 @@ on:
 
 permissions:
   contents: read
+
+env:
+  GO_VERSION: 1.26.5
 
 # Cancel superseded runs on a PR branch; never cancel main-branch history.
 concurrency:
@@ -37,22 +48,42 @@ jobs:
         run: scripts/check-vendor-untouched.sh --ci
 
   # `go test` compiles every package (and test file) before running, so it doubles as
-  # the compile check — there is no separate `build` job. The engine is pure Go with no
-  # OS-specific files or build tags and ships as a Linux binary/container, so a single
-  # Linux leg with the race detector is authoritative; cross-build below covers the other
-  # platforms and vet is covered by the golangci-lint (govet) job.
+  # the compile check. The race suite is split into package shards because the full
+  # single-job run is CI's long pole; every shard still runs with -race -count=1.
+  # Cross-build below covers other platforms and vet is covered by golangci-lint (govet).
   backend-test:
-    name: backend-test
+    name: backend-test (${{ matrix.shard.name }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - name: cardigann
+            packages: ./internal/indexer/cardigann/...
+          - name: state-api
+            packages: ./internal/appsync/... ./internal/auth/... ./internal/database/... ./internal/indexer/registry/... ./internal/web/api/...
+          - name: rest
+            packages: $(go list ./... | grep -Ev '/internal/indexer/cardigann(/|$)|/internal/(appsync|auth|database)(/|$)|/internal/indexer/registry(/|$)|/internal/web/api(/|$)')
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
-          go-version-file: go.mod
+          go-version: ${{ env.GO_VERSION }}
           cache: true
+      - name: guard shard package coverage
+        if: matrix.shard.name == 'rest'
+        run: |
+          ruby -ryaml -e 'YAML.load_file(".github/workflows/ci.yml").fetch("jobs").fetch("backend-test").fetch("strategy").fetch("matrix").fetch("shard").each { |s| puts "#{s.fetch("name")}\t#{s.fetch("packages")}" }' |
+            while IFS=$'\t' read -r shard packages; do
+              echo "expanding ${shard}" >&2
+              eval "go list ${packages}"
+            done |
+            sort -u > /tmp/backend-shard-packages.txt
+          go list ./... | sort -u > /tmp/backend-all-packages.txt
+          diff -u /tmp/backend-all-packages.txt /tmp/backend-shard-packages.txt
       - name: test (race)
-        run: go test -race -count=1 ./...
+        run: go test -race -count=1 ${{ matrix.shard.packages }}
 
   # Frontend Vitest suite — mirrors the Go `test` job and gates docker-merge alongside it.
   web-test:
@@ -180,7 +211,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
-          go-version-file: go.mod
+          go-version: ${{ env.GO_VERSION }}
           cache: true
       - name: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
@@ -221,26 +252,36 @@ jobs:
     name: govulncheck
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      GOVULNCHECK_VERSION: v1.5.0
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
-          go-version-file: go.mod
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: cache govulncheck
+        id: govulncheck-cache
+        uses: actions/cache@a7833574556fa59680c1b7cb190c1735db73ebf0 # v5.0.0
+        with:
+          path: ~/go/bin/govulncheck
+          key: govulncheck-${{ runner.os }}-${{ runner.arch }}-${{ env.GOVULNCHECK_VERSION }}
+      - name: install govulncheck
+        if: steps.govulncheck-cache.outputs.cache-hit != 'true'
+        run: go install golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}
       - name: govulncheck
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./...
+        run: govulncheck ./...
 
-  # Cross-compile the binary for every native target on the Linux runner (Go
-  # cross-compiles natively — no emulation): the PR-time portability check for
-  # linux/darwin/windows. Depends on the web job only to reuse its dist artifact —
-  # every cross-built binary embeds the same tested bundle. Full packaging is the
-  # goreleaser job below.
+  # Cross-compile the non-Linux targets on the Linux runner (Go cross-compiles
+  # natively — no emulation). Linux binaries are already built by the docker jobs,
+  # so keeping them here would duplicate CI work. Depends on the web job only to
+  # reuse its dist artifact — every cross-built binary embeds the same tested bundle.
+  # Full packaging is the goreleaser job below.
   cross-build:
-    # Name is the job key only — the matrix appends "(goos, goarch)", which is the exact
-    # required-status-check context on main (e.g. "cross-build (linux, amd64)"). Do not
-    # add a custom name: it would change the check name and the branch's required checks
-    # would wait forever on a context that no longer reports.
+    # Name is the job key only — the matrix appends "(goos, goarch)", which is the
+    # exact required-status-check context on main (e.g. "cross-build (darwin, amd64)").
+    # Do not add a custom name: it would change the check name and the branch's
+    # required checks would wait forever on a context that no longer reports.
     name: cross-build
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -249,8 +290,6 @@ jobs:
       fail-fast: false
       matrix:
         target:
-          - { goos: linux, goarch: amd64 }
-          - { goos: linux, goarch: arm64 }
           - { goos: darwin, goarch: amd64 }
           - { goos: darwin, goarch: arm64 }
           - { goos: windows, goarch: amd64 }
@@ -264,7 +303,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
-          go-version-file: go.mod
+          go-version: ${{ env.GO_VERSION }}
           cache: true
       - name: download web dist (built once by the web job)
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -314,9 +353,10 @@ jobs:
           - { arch: arm64, load: false }
     env:
       IMAGE: ghcr.io/${{ github.repository }}
-      # Push to GHCR on a same-repo PR (testable before merge) or a version tag (release,
-      # whether that tag arrived via push or a manual dispatch aimed at the tag).
-      PUSH: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]') || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/tags/')) }}
+      # Push to GHCR on a same-repo PR (testable before merge), main (develop tag),
+      # or a version tag (release, whether that tag arrived via push or a manual
+      # dispatch aimed at the tag).
+      PUSH: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]') || (github.event_name == 'push' && github.ref == 'refs/heads/main') || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/tags/')) }}
     steps:
       # The job pushes to a registry (packages: write) and runs no git operations after
       # checkout, so don't persist the token in the git config (smaller blast radius).
@@ -326,7 +366,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
-          go-version-file: go.mod
+          go-version: ${{ env.GO_VERSION }}
           cache: true
       - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
@@ -435,6 +475,7 @@ jobs:
     needs: [docker, backend-test, web-test, golangci-lint, web-lint, web-typecheck]
     if: >-
       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/tags/'))
     permissions:
       contents: read
@@ -462,6 +503,7 @@ jobs:
           images: ${{ env.IMAGE }}
           tags: |
             type=ref,event=pr
+            type=raw,value=develop,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,format=short
@@ -496,7 +538,7 @@ jobs:
           fetch-depth: 0 # full history so the changelog can diff against the previous tag
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
-          go-version-file: go.mod
+          go-version: ${{ env.GO_VERSION }}
           cache: true
       # Release binaries ship the UI: the web job built (and tested) the bundle once —
       # download it before goreleaser compiles, and hard-fail the release if it is
