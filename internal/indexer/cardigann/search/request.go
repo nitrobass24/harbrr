@@ -39,9 +39,10 @@ type builtRequest struct {
 	respType string
 }
 
-// buildRequests renders every search path the definition declares (Search.Path
-// or Search.Paths[]) against the query, producing one builtRequest per path.
-// Mirrors Jackett PerformQuery's per-SearchPath loop: render the path template,
+// buildRequests renders each search path the definition declares (Search.Path
+// or Search.Paths[]) against the query, producing one builtRequest per
+// surviving path. Mirrors Jackett PerformQuery's per-SearchPath loop: apply the
+// path's category gate (narrowToPathCategories), render the path template,
 // resolve it against BaseURL, assemble the inputs (inherited Search.Inputs then
 // path Inputs) into a GET query string or POST body, and attach Search.Headers.
 func buildRequests(def *loader.Definition, query Query, deps Deps) ([]builtRequest, error) {
@@ -52,13 +53,69 @@ func buildRequests(def *loader.Definition, query Query, deps Deps) ([]builtReque
 	paths := searchPaths(def)
 	out := make([]builtRequest, 0, len(paths))
 	for i := range paths {
-		req, err := buildOneRequest(def, paths[i], query, deps)
+		pathQuery, ok := narrowToPathCategories(query, paths[i].Categories)
+		if !ok {
+			continue
+		}
+		req, err := buildOneRequest(def, paths[i], pathQuery, deps)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, req)
 	}
 	return out, nil
+}
+
+// narrowToPathCategories applies a path's category gate, mirroring Jackett's
+// SearchPaths loop: a path with categories runs only when they intersect the
+// query's mapped categories — a leading "!" element inverts the test — and the
+// surviving path sees {{ .Categories }} narrowed to that intersection (empty
+// for a matching inverted path, exactly as Jackett's Intersect yields there).
+// A non-matching path is skipped. Paths without categories always run with the
+// full list. The query's Categories already carry the DefaultCategories
+// fallback (torznabhttp buildQuery), so like Jackett a query that still has no
+// categories skips every non-inverted category-gated path.
+func narrowToPathCategories(query Query, pathCats []loader.Scalar) (Query, bool) {
+	if len(pathCats) == 0 {
+		return query, true
+	}
+	cats := make([]string, len(pathCats))
+	for i := range pathCats {
+		cats[i] = pathCats[i].String()
+	}
+	intersection := intersect(query.Categories, cats)
+	matched := len(intersection) > 0
+	if cats[0] == "!" {
+		matched = !matched
+	}
+	if !matched {
+		return Query{}, false
+	}
+	query.Categories = intersection
+	return query, true
+}
+
+// intersect returns the distinct elements of a that also appear in b, in a's
+// order — .NET Enumerable.Intersect semantics, which the narrowed
+// {{ .Categories }} request bytes depend on.
+func intersect(a, b []string) []string {
+	inB := make(map[string]struct{}, len(b))
+	for _, v := range b {
+		inB[v] = struct{}{}
+	}
+	var out []string
+	seen := make(map[string]struct{}, len(a))
+	for _, v := range a {
+		if _, ok := inB[v]; !ok {
+			continue
+		}
+		if _, dup := seen[v]; dup {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
 }
 
 // searchPaths normalizes the Search.Path / Search.Paths oneOf into a single

@@ -205,6 +205,128 @@ func TestBuildRequests_InputOrder(t *testing.T) {
 	}
 }
 
+// TestBuildRequests_PathCategoryGate asserts the per-path category gate mirrors
+// Jackett's SearchPaths loop: a path with categories runs only when they
+// intersect the query's mapped categories (a leading "!" inverts the test), the
+// surviving path's {{ .Categories }} is NARROWED to the intersection, and paths
+// without categories always run with the full list. Before the fix every path
+// ran with the full query categories (e.g. 1ptbar issued an extra
+// wrong-category request to special.php on every search).
+func TestBuildRequests_PathCategoryGate(t *testing.T) {
+	t.Parallel()
+
+	cats := func(ids ...string) []loader.Scalar {
+		out := make([]loader.Scalar, len(ids))
+		for i, id := range ids {
+			out[i] = loader.Scalar{Value: id, Set: true}
+		}
+		return out
+	}
+	// Each path echoes its narrowed {{ .Categories }} into the query string so
+	// the test can assert both WHICH paths ran and WHAT categories they saw.
+	catsInput := loader.NewInputsBlock(loader.InputEntry{
+		Key: "cats", Value: loader.Scalar{Value: "{{ range .Categories }}{{ . }};{{ end }}", Set: true},
+	})
+	def := &loader.Definition{
+		Links: []string{"https://gate.invalid/"},
+		Search: loader.Search{
+			AllowEmptyInputs: boolPtr(true),
+			Paths: []loader.SearchPathBlock{
+				{Path: "/movies", Categories: cats("100", "101"), Inputs: catsInput},
+				{Path: "/tv", Categories: cats("200"), Inputs: catsInput},
+				{Path: "/all", Inputs: catsInput},
+			},
+		},
+	}
+
+	type want struct {
+		path string
+		cats string
+	}
+	tests := []struct {
+		name      string
+		queryCats []string
+		defPaths  []loader.SearchPathBlock // nil = use def's paths
+		wantBuilt []want
+	}{
+		{
+			name:      "movie query hits only the movies path, narrowed",
+			queryCats: []string{"100", "300"},
+			wantBuilt: []want{
+				{path: "/movies", cats: "100;"},
+				{path: "/all", cats: "100;300;"},
+			},
+		},
+		{
+			name:      "multi-category query narrows each matching path",
+			queryCats: []string{"101", "200"},
+			wantBuilt: []want{
+				{path: "/movies", cats: "101;"},
+				{path: "/tv", cats: "200;"},
+				{path: "/all", cats: "101;200;"},
+			},
+		},
+		{
+			name:      "no-category query skips gated paths, ungated still runs",
+			queryCats: nil,
+			wantBuilt: []want{
+				{path: "/all", cats: ""},
+			},
+		},
+		{
+			name:      "inverted path runs on non-matching query with empty .Categories",
+			queryCats: []string{"300"},
+			defPaths: []loader.SearchPathBlock{
+				{Path: "/special", Categories: cats("!", "100"), Inputs: catsInput},
+				{Path: "/main", Categories: cats("300"), Inputs: catsInput},
+			},
+			wantBuilt: []want{
+				{path: "/special", cats: ""},
+				{path: "/main", cats: "300;"},
+			},
+		},
+		{
+			name:      "inverted path is skipped on a matching query",
+			queryCats: []string{"100"},
+			defPaths: []loader.SearchPathBlock{
+				{Path: "/special", Categories: cats("!", "100"), Inputs: catsInput},
+				{Path: "/main", Categories: cats("100"), Inputs: catsInput},
+			},
+			wantBuilt: []want{
+				{path: "/main", cats: "100;"},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			d := *def
+			if tt.defPaths != nil {
+				d.Search.Paths = tt.defPaths
+			}
+			reqs, err := buildRequests(&d, Query{Categories: tt.queryCats}, testDeps("https://gate.invalid/", nil))
+			if err != nil {
+				t.Fatalf("buildRequests: %v", err)
+			}
+			if len(reqs) != len(tt.wantBuilt) {
+				t.Fatalf("built %d requests, want %d", len(reqs), len(tt.wantBuilt))
+			}
+			for i, w := range tt.wantBuilt {
+				u, err := url.Parse(reqs[i].url)
+				if err != nil {
+					t.Fatalf("parsing built URL: %v", err)
+				}
+				if u.Path != w.path {
+					t.Errorf("reqs[%d].path = %q, want %q", i, u.Path, w.path)
+				}
+				if got := u.Query().Get("cats"); got != w.cats {
+					t.Errorf("reqs[%d] .Categories rendered %q, want %q", i, got, w.cats)
+				}
+			}
+		})
+	}
+}
+
 // TestBuildRequests_EmbeddedQueryPreserved proves an embedded path query is kept
 // VERBATIM — order and empty values intact — and inputs append after it without
 // re-encoding. The JSON-API archetype (UNIT3D) builds the entire query inside
