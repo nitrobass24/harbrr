@@ -23,6 +23,14 @@ import (
 // Qualified names are preserved (e.g. <torznab:attr> stays "torznab:attr") so a
 // def's `torznab\:attr` selector matches, by mapping each element's resolved
 // namespace back to its declared prefix.
+//
+// Element names and attribute keys are ASCII-lowercased, because cascadia
+// lowercases type selectors and attribute keys at compile time and then
+// compares exactly — html.Parse gives the HTML backend the same lowercased
+// tree. Jackett needs no equivalent (AngleSharp keeps both sides' case), so a
+// def's `selector: pubDate` matches <pubDate> in both engines; the only
+// divergence is that a case-MISmatched selector/document pair matches here but
+// not in Jackett. Attribute values and text keep their original case.
 func (e *Engine) ParseXML(body []byte) (*Document, error) {
 	root, err := xmlToNode(body)
 	if err != nil {
@@ -58,7 +66,7 @@ func xmlToNode(body []byte) (*html.Node, error) {
 		switch t := tok.(type) {
 		case xml.StartElement:
 			scopes = append(scopes, namespaceDecls(t.Attr))
-			n := &html.Node{Type: html.ElementNode, Data: qualifyName(t.Name, scopes), Attr: elementAttrs(t.Attr, scopes)}
+			n := &html.Node{Type: html.ElementNode, Data: lowerASCII(qualifyName(t.Name, scopes)), Attr: elementAttrs(t.Attr, scopes)}
 			cur.AppendChild(n)
 			cur = n
 		case xml.EndElement:
@@ -105,9 +113,28 @@ func elementAttrs(attrs []xml.Attr, scopes []map[string]string) []html.Attribute
 		if a.Name.Space == "xmlns" || (a.Name.Space == "" && a.Name.Local == "xmlns") {
 			continue
 		}
-		out = append(out, html.Attribute{Key: qualifyName(a.Name, scopes), Val: a.Value})
+		out = append(out, html.Attribute{Key: lowerASCII(qualifyName(a.Name, scopes)), Val: a.Value})
 	}
 	return out
+}
+
+// lowerASCII lowercases ASCII capitals in an element or attribute name, ASCII-
+// only to mirror cascadia's toLowerASCII exactly: a non-ASCII capital (e.g.
+// Cyrillic) survives selector compilation, so it must survive here too.
+func lowerASCII(s string) string {
+	var b []byte
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; 'A' <= c && c <= 'Z' {
+			if b == nil {
+				b = []byte(s)
+			}
+			b[i] = c + ('a' - 'A')
+		}
+	}
+	if b == nil {
+		return s
+	}
+	return string(b)
 }
 
 // qualifyName renders an xml.Name as the prefix:local qualified name a selector

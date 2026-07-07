@@ -108,6 +108,76 @@ func TestParseXMLNamespaceScoping(t *testing.T) {
 	}
 }
 
+// TestParseXMLMixedCaseNames proves mixed-case element and attribute names are
+// selectable. cascadia ASCII-lowercases type selectors and attribute keys at
+// compile time and then compares exactly, so the tree must carry lowercased
+// names (as html.Parse produces for the HTML backend) or a def's
+// `selector: pubDate` — RSS's canonical casing, used by every vendored XML
+// def's date field — never matches and the required date miss drops every row.
+// Attribute VALUES and text content must keep their original case.
+func TestParseXMLMixedCaseNames(t *testing.T) {
+	t.Parallel()
+
+	const feed = `<rss xmlns:TZ="urn:test"><channel><item>
+  <title>Mixed Case</title>
+  <pubDate>Mon, 02 Jan 2006 15:04:05 -0700</pubDate>
+  <enclosure URL="https://xml.test/dl/MixedCase.torrent" contentLength="123"/>
+  <TZ:Info name="Seeders" value="42"/>
+</item></channel></rss>`
+
+	doc, err := New().ParseXML([]byte(feed))
+	if err != nil {
+		t.Fatalf("ParseXML: %v", err)
+	}
+	rows, err := doc.Rows(loader.RowsBlock{Selector: "item"})
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("rows = %d err = %v, want 1", len(rows), err)
+	}
+
+	tests := []struct {
+		name  string
+		block loader.SelectorBlock
+		want  string
+	}{
+		{
+			// The def's original casing, as vendored defs author it.
+			name:  "mixed-case element selector",
+			block: loader.SelectorBlock{Selector: "pubDate"},
+			want:  "Mon, 02 Jan 2006 15:04:05 -0700",
+		},
+		{
+			name:  "lowercase element selector",
+			block: loader.SelectorBlock{Selector: "pubdate"},
+			want:  "Mon, 02 Jan 2006 15:04:05 -0700",
+		},
+		{
+			// [contentLength] compiles to key "contentlength"; the attribute
+			// VALUE (the URL) keeps its case.
+			name:  "mixed-case attribute key in selector, value case preserved",
+			block: loader.SelectorBlock{Selector: "enclosure[contentLength]", Attribute: "url"},
+			want:  "https://xml.test/dl/MixedCase.torrent",
+		},
+		{
+			// Qualified names lowercase the prefix too; the value keeps case.
+			name:  "mixed-case namespaced element",
+			block: loader.SelectorBlock{Selector: `tz\:info[name="Seeders"]`, Attribute: "value"},
+			want:  "42",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, found, err := New().Field(rows[0], tt.block)
+			if err != nil || !found {
+				t.Fatalf("Field(%q): found=%v err=%v", tt.block.Selector, found, err)
+			}
+			if got != tt.want {
+				t.Errorf("Field(%q) = %q, want %q", tt.block.Selector, got, tt.want)
+			}
+		})
+	}
+}
+
 // TestParseXMLInvalid proves malformed XML degrades cleanly (a loud error, no
 // panic).
 func TestParseXMLInvalid(t *testing.T) {
