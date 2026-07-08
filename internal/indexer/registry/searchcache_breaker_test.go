@@ -249,6 +249,12 @@ func TestTripBreakerSkipsFollowerInheritedCancel(t *testing.T) {
 // context.Canceled (as a singleflight follower would receive from a cancelled leader)
 // leaves the breaker closed, so the very next consumer still probes the tracker live
 // instead of being suppressed.
+//
+// With U8R-F5 the live-ctx follower now also re-runs its OWN live search when the flight
+// returns an inherited context error, so the FIRST search calls inner twice (the coalesced
+// flight + the fallback) before surfacing the still-cancelling error; the recovery search
+// is the third call. The breaker staying closed — proven by the recover-and-serve — is the
+// invariant under test.
 func TestBreakerNotTrippedByInheritedCancelOnSearch(t *testing.T) {
 	t.Parallel()
 	sc, instID, _ := testCache(t, breakerTTL, 0)
@@ -271,8 +277,8 @@ func TestBreakerNotTrippedByInheritedCancelOnSearch(t *testing.T) {
 	if len(got) != 1 || got[0].Title != "OK" {
 		t.Fatalf("second search = %+v, want live OK (not suppressed)", got)
 	}
-	if c := inner.callCount(); c != 2 {
-		t.Fatalf("inner called %d times, want 2 (cancel did not trip the breaker)", c)
+	if c := inner.callCount(); c != 3 {
+		t.Fatalf("inner called %d times, want 3 (flight + U8R-F5 fallback, then recovery; cancel did not trip the breaker)", c)
 	}
 }
 
