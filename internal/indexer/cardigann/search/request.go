@@ -473,6 +473,20 @@ func newRequest(ctx context.Context, br builtRequest, session *login.Session) (*
 // (403/500…) so the body is not results, and silently parsing it would yield a
 // misleading empty page. The URL is redacted; RateLimitedError itself holds
 // none, so it can't leak a passkey.
+//
+// This is a DELIBERATE divergence from Jackett on the search path (recorded in
+// parity/testdata/README.md, "Non-2xx search-status handling"): Jackett's HTML
+// branch parses ANY-status body (only checkForError's 401 gate + its error
+// selectors can throw) and its XML branch has no status check at all, so a
+// parseable page or a login page served with a 403/404/500 yields
+// results/0-releases/a relogin there. harbrr instead fails fast — but the redirect
+// half of Jackett's logged-out detection is preserved: an unfollowed 3xx is
+// surfaced as data (isRedirectStatus), so a login page served as a 302 still
+// relogins. Only a non-redirect non-2xx body hard-fails where Jackett would parse
+// it — reloging in if a login.test selector is absent, else yielding 0 rows, but
+// never hard-failing. No offline corpus fixture carries a non-2xx search status
+// (per CLAUDE.md the parity target is Jackett's output on saved fixtures), so this
+// is a live-only difference, gated by TestDoSearchRequest_Non2xxFailsFast.
 func checkStatus(resp *stdhttp.Response, br builtRequest) error {
 	if IsRateLimitStatus(resp.StatusCode) {
 		return fmt.Errorf("%s %s: %w", br.method, apphttp.SchemeHost(br.url),
