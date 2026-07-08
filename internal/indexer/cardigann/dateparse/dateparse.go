@@ -62,7 +62,8 @@ func New(opts ...Option) *Parser {
 //
 // Flow (verified against Jackett DateTimeUtil.ParseDateTimeGoLang +
 // CardigannIndexer applyFilters):
-//  1. Normalize internal whitespace (Jackett NormalizeSpace).
+//  1. Collapse internal whitespace + NBSP (a deliberate lenient divergence from
+//     Jackett's trim-only NormalizeSpace; see normalizeSpace).
 //  2. Translate the .NET layout to a Go layout (TranslateLayout).
 //  3. If a language is set and the layout carries month/day NAME tokens,
 //     substitute localized names -> English so Go's time.Parse can read them.
@@ -200,8 +201,28 @@ func defaultMissingYear(t time.Time, goLayout string, ref time.Time) time.Time {
 		t.Second(), t.Nanosecond(), t.Location())
 }
 
-// normalizeSpace collapses runs of whitespace to a single space and trims ends,
-// matching Jackett's ParseUtil.NormalizeSpace applied before parsing.
+// normalizeSpace trims the ends AND collapses internal whitespace runs (including
+// NBSP, via strings.Fields) to a single ASCII space. This is a DELIBERATE lenient
+// divergence from Jackett, NOT a match of its ParseUtil.NormalizeSpace:
+//
+//   - Jackett's date path calls ParseUtil.NormalizeSpace, which is TRIM-ONLY
+//     (`s?.Trim() ?? ""`, mirrored in selector.normalizeSpace), then
+//     DateTime.ParseExact with DateTimeStyles.None (no AllowWhiteSpaces). A value
+//     with an internal double space or NBSP ("Jan  2 2023") therefore throws
+//     FormatException in Jackett, which its dateparse filter swallows — passing
+//     the RAW value through (CardigannIndexer.applyFilters) so a date field can
+//     still recover the instant via DateTimeUtil.FromUnknown's fuzzy fallback.
+//   - harbrr surfaces a ParseExact failure as an error, which the search stage
+//     turns into a row DROP rather than a raw passthrough (see ParseDate's doc and
+//     search/fields.go). Selector extraction is trim-only (matching Jackett), so
+//     scraped internal whitespace reaches ParseDate verbatim; collapsing it here
+//     keeps such values parseable — to the same instant Jackett resolves WHERE its
+//     fuzzy fallback succeeds (a double space: .NET DateTime.Parse is space-
+//     tolerant; an internal NBSP is not guaranteed, so there Jackett may itself
+//     drop the field — still lenient-direction, as harbrr keeps the row and never
+//     yields a wrong date). The divergence is thus a strict superset (lenient) with
+//     no wrong-date in the corpus; a trim-only port would REGRESS those rows into
+//     drops. Pinned by dateparse_test.go's TestParseDateInternalWhitespaceLenient.
 func normalizeSpace(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
