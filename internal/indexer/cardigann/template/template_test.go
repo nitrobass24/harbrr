@@ -502,8 +502,8 @@ func addSelector(add func(string), sel loader.SelectorBlock) {
 	if sel.Default != nil {
 		add(sel.Default.String())
 	}
-	for _, v := range sel.Case {
-		add(v.String())
+	for _, c := range sel.Case.Ordered() {
+		add(c.Value.String())
 	}
 	for _, f := range sel.Filters {
 		addArgs(add, f.Args)

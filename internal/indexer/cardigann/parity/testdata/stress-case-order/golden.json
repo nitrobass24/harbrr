@@ -1,0 +1,15 @@
+[
+  {
+    "title": "Some Movie 2160p",
+    "link": "https://caseorder.test/get/1.torrent",
+    "size": 1073741824,
+    "categories": [
+      2040
+    ],
+    "seeders": 10,
+    "leechers": 0,
+    "peers": 10,
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  }
+]

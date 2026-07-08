@@ -356,10 +356,10 @@ func TestFieldJSON(t *testing.T) {
 			name: "case equality match",
 			block: loader.SelectorBlock{
 				Selector: "category",
-				Case: map[string]loader.Scalar{
-					"movies": {Value: "2000", Set: true},
-					"tv":     {Value: "5000", Set: true},
-				},
+				Case: loader.NewCaseBlock(
+					loader.CaseEntry{Key: "movies", Value: loader.Scalar{Value: "2000", Set: true}},
+					loader.CaseEntry{Key: "tv", Value: loader.Scalar{Value: "5000", Set: true}},
+				),
 			},
 			wantValue: "2000",
 			wantFound: true,
@@ -368,10 +368,10 @@ func TestFieldJSON(t *testing.T) {
 			name: "case star catch-all",
 			block: loader.SelectorBlock{
 				Selector: "category",
-				Case: map[string]loader.Scalar{
-					"music": {Value: "3000", Set: true},
-					"*":     {Value: "8000", Set: true},
-				},
+				Case: loader.NewCaseBlock(
+					loader.CaseEntry{Key: "music", Value: loader.Scalar{Value: "3000", Set: true}},
+					loader.CaseEntry{Key: "*", Value: loader.Scalar{Value: "8000", Set: true}},
+				),
 			},
 			wantValue: "8000",
 			wantFound: true,
@@ -502,7 +502,7 @@ func TestEvalTemplateSeam(t *testing.T) {
 	// Case value is template-evaluated.
 	v, _, err = e.Field(row, loader.SelectorBlock{
 		Selector: "category",
-		Case:     map[string]loader.Scalar{"*": {Value: "cat", Set: true}},
+		Case:     loader.NewCaseBlock(loader.CaseEntry{Key: "*", Value: loader.Scalar{Value: "cat", Set: true}}),
 	})
 	if err != nil {
 		t.Fatal(err)

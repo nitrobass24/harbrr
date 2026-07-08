@@ -1,0 +1,18 @@
+name: stress-case-order
+archetype: stress-case-order
+golden_source: hand-derived
+mode: parse
+description: >
+  Stress: a selector `case:` block whose arms overlap, pinning Jackett's
+  declared-order first-match-wins (U1-F4a). The tag cell text "Bluray Remux 4K"
+  satisfies BOTH the `:contains("Bluray Remux")` arm (defined first -> tracker id
+  "hd" -> Movies/HD = 2040) and the `:contains("Bluray Remux 4K")` arm (defined
+  second -> "uhd" -> Movies/UHD = 2045). Jackett iterates the Case dictionary in
+  document order and breaks on the first match, so HD wins. The retired
+  orderedCases byte-sort put "Bluray Remux 4K" (space 0x20) before
+  "Bluray Remux\"" (0x22) and would have wrongly returned UHD (2045). Mirrors the
+  live wihd.yml category/size case blocks.
+definition: definition.yml
+response: response.html
+query:
+  keywords: ""
