@@ -45,6 +45,43 @@ func TestWebUtilityEncode(t *testing.T) {
 	}
 }
 
+func TestWebUtilityStringEncode(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"empty", "", ""},
+		{"plain", "ubuntu", "ubuntu"},
+		{"space to plus", "hello world", "hello+world"},
+		// The four sub-delimiters ! * ( ) are LEFT LITERAL — the one divergence
+		// from WebUtilityEncode (the .NET STRING form, matching MagnetUtil).
+		{"bang literal", "Mamma Mia!", "Mamma+Mia!"},
+		{"star literal", "a*b", "a*b"},
+		{"parens literal", "(a)", "(a)"},
+		{"all four literal", "!*()", "!*()"},
+		{"title year", "Big Buck Bunny (2008)", "Big+Buck+Bunny+(2008)"},
+		// ~ is still escaped, ' is still %27 — same as WebUtilityEncode.
+		{"tilde escaped", "a~b", "a%7Eb"},
+		{"apostrophe escaped", "Bob's Burgers", "Bob%27s+Burgers"},
+		// Reserved chars outside the safe set still escape identically.
+		{"ampersand equals", "a&b=c", "a%26b%3Dc"},
+		{"percent", "100%", "100%25"},
+		{"slash colon", "a/b:c", "a%2Fb%3Ac"},
+		// Unicode -> UTF-8 percent octets, same as .NET.
+		{"unicode jp", "日本語", "%E6%97%A5%E6%9C%AC%E8%AA%9E"},
+		// Mixed: sub-delims literal, space '+', ~ %7E, ' %27, unicode octets.
+		{"mixed", "Star*Trek (2009)! ~café's", "Star*Trek+(2009)!+%7Ecaf%C3%A9%27s"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := WebUtilityStringEncode(tt.in); got != tt.want {
+				t.Errorf("WebUtilityStringEncode(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestPathEscape(t *testing.T) {
 	tests := []struct {
 		name string
