@@ -71,6 +71,21 @@ func TestToInfoHash(t *testing.T) {
 		{name: "no xt argument", magnet: "magnet:?dn=x", want: ""},
 		{name: "no query string", magnet: "not-a-magnet", want: ""},
 		{name: "fragment dropped before parse", magnet: "magnet:?xt=urn:btih:AABB#frag", want: "AABB"},
+		{
+			// A sibling dn carrying a bare '%' makes Go's url.ParseQuery error;
+			// Jackett's lenient ParseQuery still extracts xt. The infohash must
+			// survive the malformed sibling.
+			name:   "bad percent in sibling dn does not drop xt",
+			magnet: "magnet:?xt=urn:btih:DEADBEEF&dn=100%_Wolf",
+			want:   "DEADBEEF",
+		},
+		{
+			// A ';' in dn: Go treats it as an (invalid) separator and errors;
+			// Jackett treats ';' as ordinary data. Either way xt must survive.
+			name:   "semicolon in sibling dn does not drop xt",
+			magnet: "magnet:?xt=urn:btih:CAFE&dn=a;b",
+			want:   "CAFE",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
