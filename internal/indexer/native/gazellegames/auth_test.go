@@ -142,3 +142,28 @@ func TestFetchPasskeyAuthFailures(t *testing.T) {
 		})
 	}
 }
+
+// TestStorePasskeyScrubsStatusEcho proves the SERVER-CONTROLLED quick_user `status` field
+// cannot leak a secret. The apikey rides in the X-API-Key header on that same request, so a
+// server that echoes the apikey (or a configured passkey) back into its status is
+// value-scrubbed via scrubSecrets before the status reaches the surfaced error (egress:
+// error -> health Detail -> webhook). Fail-before: storePasskey rendered
+// resp.Status.string() unscrubbed, so an echoed secret leaked.
+func TestStorePasskeyScrubsStatusEcho(t *testing.T) {
+	t.Parallel()
+	d := searchDriver(t, &scriptDoer{}) // apikey + passkey both configured
+	body := []byte(`{"status":"failure: key ` + credAPIKey + ` / pass ` + credPasskey + `","response":{"passkey":""}}`)
+	err := d.storePasskey(context.Background(), body)
+	if !errors.Is(err, login.ErrLoginFailed) {
+		t.Fatalf("err = %v, want login.ErrLoginFailed", err)
+	}
+	if strings.Contains(err.Error(), credAPIKey) {
+		t.Fatalf("storePasskey leaked the apikey via the status field: %q", err.Error())
+	}
+	if strings.Contains(err.Error(), credPasskey) {
+		t.Fatalf("storePasskey leaked the passkey via the status field: %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "[redacted]") {
+		t.Errorf("expected [redacted] placeholder, got %q", err.Error())
+	}
+}

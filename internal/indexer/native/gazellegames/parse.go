@@ -189,14 +189,18 @@ func isJSONObject(raw json.RawMessage) bool {
 
 // classifyStatusError maps a non-success status to a login or parse failure. A
 // credentials/authorization phrase (or a 401/403 numeric status) maps to
-// login.ErrLoginFailed, anything else to search.ErrParseError. The status and message are
-// scrubbed of the configured apikey before reaching the error string.
+// login.ErrLoginFailed, anything else to search.ErrParseError. Both the server-controlled
+// `status` and `error` fields are server-echoed free text that reach a persisted health
+// event / webhook, so both are scrubbed of the configured apikey AND passkey before reaching
+// the error string (mirrors hdbits/beyondhd). Auth classification keys off the RAW numeric
+// status ("401"/"403"), which a secret value can never equal, so scrubbing does not disturb it.
 func (d *driver) classifyStatusError(status, msg string) error {
-	scrubbed := d.scrubAPIKey(msg)
-	if looksLikeAuthFailure(status, scrubbed) {
-		return fmt.Errorf("gazellegames: search status %q: %s: %w", status, scrubbed, login.ErrLoginFailed)
+	scrubbedStatus := d.scrubSecrets(status)
+	scrubbedMsg := d.scrubSecrets(msg)
+	if looksLikeAuthFailure(status, scrubbedMsg) {
+		return fmt.Errorf("gazellegames: search status %q: %s: %w", scrubbedStatus, scrubbedMsg, login.ErrLoginFailed)
 	}
-	return fmt.Errorf("gazellegames: search status %q: %s: %w", status, scrubbed, search.ErrParseError)
+	return fmt.Errorf("gazellegames: search status %q: %s: %w", scrubbedStatus, scrubbedMsg, search.ErrParseError)
 }
 
 // looksLikeAuthFailure reports whether a GGn non-success status/message indicates a
