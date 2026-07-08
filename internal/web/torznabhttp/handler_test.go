@@ -412,6 +412,73 @@ func TestServeDL_RedirectsMagnet(t *testing.T) {
 	}
 }
 
+// TestServeDL_RejectsNonTorrentBody: when a grab returns non-torrent bytes (an
+// expired session served the login page as HTML with 200), the serve boundary
+// refuses to hand it to *arr as a .torrent — 404, not 200-with-HTML — mirroring
+// Jackett's DownloadController running BencodeParser.Parse and returning NotFound.
+func TestServeDL_RejectsNonTorrentBody(t *testing.T) {
+	t.Parallel()
+	loginHTML := []byte("<!DOCTYPE html><html><body>Please log in</body></html>")
+	idx := resolverDemoIndexer(t)
+	idx.grabResult = &search.GrabResult{Body: loginHTML, ContentType: "application/x-bittorrent"}
+	h, kr := newProxyHandler(t, idx)
+	token, err := encodeDLToken(kr, "demo", "https://demo.test/download.php?id=1")
+	if err != nil {
+		t.Fatalf("encodeDLToken: %v", err)
+	}
+	rec := doDL(t, h, "demo", "token="+url.QueryEscape(token))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 for non-torrent body", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); strings.Contains(ct, "x-bittorrent") {
+		t.Errorf("non-torrent body must not be served as x-bittorrent, got Content-Type %q", ct)
+	}
+	if strings.Contains(rec.Body.String(), "Please log in") {
+		t.Errorf("login-page HTML must not be served as a .torrent:\n%s", rec.Body.String())
+	}
+}
+
+// TestServeDL_RejectsEmptyBody: an empty grab body is not valid bencode, so the
+// serve boundary returns 404 rather than an empty 200 .torrent.
+func TestServeDL_RejectsEmptyBody(t *testing.T) {
+	t.Parallel()
+	idx := resolverDemoIndexer(t)
+	idx.grabResult = &search.GrabResult{Body: []byte{}, ContentType: "application/x-bittorrent"}
+	h, kr := newProxyHandler(t, idx)
+	token, err := encodeDLToken(kr, "demo", "https://demo.test/download.php?id=1")
+	if err != nil {
+		t.Fatalf("encodeDLToken: %v", err)
+	}
+	rec := doDL(t, h, "demo", "token="+url.QueryEscape(token))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 for empty body", rec.Code)
+	}
+}
+
+// TestServeDL_ServesNZBUnvalidated: a usenet .nzb (application/x-nzb) is XML, not
+// bencode, so the serve boundary must NOT bencode-check it — it streams through 200.
+func TestServeDL_ServesNZBUnvalidated(t *testing.T) {
+	t.Parallel()
+	nzb := []byte(`<?xml version="1.0"?><nzb></nzb>`)
+	idx := resolverDemoIndexer(t)
+	idx.grabResult = &search.GrabResult{Body: nzb, ContentType: "application/x-nzb"}
+	h, kr := newProxyHandler(t, idx)
+	token, err := encodeDLToken(kr, "demo", "https://demo.test/getnzb?id=1")
+	if err != nil {
+		t.Fatalf("encodeDLToken: %v", err)
+	}
+	rec := doDL(t, h, "demo", "token="+url.QueryEscape(token))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 for an nzb body", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/x-nzb" {
+		t.Errorf("Content-Type = %q, want application/x-nzb", ct)
+	}
+	if rec.Body.String() != string(nzb) {
+		t.Errorf("nzb body = %q", rec.Body.String())
+	}
+}
+
 // TestServeDL_InvalidToken: a forged/garbage token is a 400 and never reaches Grab.
 func TestServeDL_InvalidToken(t *testing.T) {
 	t.Parallel()

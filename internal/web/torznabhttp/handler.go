@@ -181,11 +181,36 @@ func (h *handler) serveDL(w http.ResponseWriter, r *http.Request) {
 	}
 	ct := result.ContentType
 	if ct == "" {
-		ct = "application/x-bittorrent"
+		ct = torrentContentType
+	}
+	// Serve boundary (Jackett's DownloadController analogue): a torrent body must be a
+	// bencoded dictionary before it is served as a .torrent. When the session has
+	// expired, the .torrent fetch 302s to the login page and the client follows it
+	// (deliberate, matching Jackett), so the login-page HTML can come back with HTTP
+	// 200 — refuse to hand that to *arr as a .torrent. Jackett runs BencodeParser.Parse
+	// on the bytes and returns 404 on failure; we mirror that. This gates on the torrent
+	// content type only: a magnet is the Redirect branch above, and a usenet .nzb (served
+	// as application/x-nzb) is XML, not bencode — neither is bencode-checked.
+	if ct == torrentContentType && !isBencodeTorrent(result.Body) {
+		h.log.Warn().
+			Str("stage", "grab").
+			Str("indexer", idx.Info().ID).
+			Int("bytes", len(result.Body)).
+			Msg("grab produced a non-torrent body (likely an expired session); refusing to serve it as a .torrent")
+		http.Error(w, "requested torrent is not available", http.StatusNotFound)
+		return
 	}
 	w.Header().Set("Content-Type", ct)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(result.Body) //nolint:gosec // G705: torrent file served as application/x-bittorrent, fixed non-HTML content type
+}
+
+// isBencodeTorrent reports whether body is a bencoded torrent: a top-level bencoded
+// dictionary starts with 'd'. This is the serve-boundary equivalent of Jackett's
+// BencodeParser.Parse — a cheap, robust sniff (all real .torrents begin with 'd', with
+// no leading whitespace) that rejects an empty body and login-page HTML alike.
+func isBencodeTorrent(body []byte) bool {
+	return len(body) > 0 && body[0] == 'd'
 }
 
 // serve is the request entry point: authenticate, resolve the indexer, then

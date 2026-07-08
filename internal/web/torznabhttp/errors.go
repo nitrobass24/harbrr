@@ -20,6 +20,9 @@ const (
 const (
 	contentTypeFeed  = "application/rss+xml; charset=utf-8"
 	contentTypeError = "application/xml; charset=utf-8"
+	// torrentContentType is what the /dl proxy serves a fetched .torrent as; it also
+	// gates the serve-boundary bencode check (only torrent bodies are validated).
+	torrentContentType = "application/x-bittorrent"
 )
 
 // writeXML writes a Torznab feed (caps or results) with the given status.
