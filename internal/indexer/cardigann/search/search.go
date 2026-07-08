@@ -138,7 +138,7 @@ func ParseResults(def *loader.Definition, body []byte, respType string, query Qu
 	// 200 while logged in). Jackett calls checkForError(response, Search.Error)
 	// AFTER parsing the document and BEFORE the rows selector, and only in its HTML
 	// branch (the JSON and XML branches skip it). Mirror that placement and scope.
-	if err := checkSearchError(def, doc, respType, deps.Selector); err != nil {
+	if err := checkSearchError(def, doc, respType, deps.Selector, deps.Config); err != nil {
 		return nil, err
 	}
 
@@ -211,7 +211,14 @@ func parseDocument(eng *selector.Engine, body []byte, respType string) (*selecto
 // evaluates each error block against the document root; the first match yields a
 // loud, message-bearing ErrTrackerError formatted as Jackett's "Error: <message>".
 // A match is a tracker refusal, not a parse failure — see ErrTrackerError.
-func checkSearchError(def *loader.Definition, doc *selector.Document, respType string, eng *selector.Engine) error {
+//
+// The extracted message is server-controlled free text lifted from the tracker's
+// RESPONSE body, so a page that echoes a submitted secret (passkey/apikey/rsskey in
+// the search request) would leak it into the returned error / log sink. It is
+// value-scrubbed of the configured credentials — derived from the loader's IsSecret
+// classifier over the def's settings, the SAME mechanism the login stage uses (see
+// login.SecretConfigValues) — before it is wrapped.
+func checkSearchError(def *loader.Definition, doc *selector.Document, respType string, eng *selector.Engine, config map[string]string) error {
 	if respType == responseTypeJSON || respType == responseTypeXML || len(def.Search.Error) == 0 {
 		return nil
 	}
@@ -220,7 +227,8 @@ func checkSearchError(def *loader.Definition, doc *selector.Document, respType s
 		return fmt.Errorf("evaluating search error selectors: %w", err)
 	}
 	if matched {
-		return fmt.Errorf("%w: Error: %s", ErrTrackerError, msg)
+		scrubbed := login.ScrubSecrets(msg, login.SecretConfigValues(def.Settings, config))
+		return fmt.Errorf("%w: Error: %s", ErrTrackerError, scrubbed)
 	}
 	return nil
 }
