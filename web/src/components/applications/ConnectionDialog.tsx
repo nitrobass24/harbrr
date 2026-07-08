@@ -17,6 +17,15 @@ import type { AppConnection, ConnectionKind, CreateConnection, UpdateConnection 
 
 const KINDS: ConnectionKind[] = ["sonarr", "radarr", "lidarr", "readarr", "whisparr", "qui"]
 
+// Mirrors the server's create-time materialization (internal/appsync/validate.go
+// defaultFreeleechMode): the "default by kind" choice resolves to bypass for qui — which
+// drives cross-seed off the full catalog — and honor for every *arr. On edit the PATCH is
+// pointer-semantics and applied only for non-nil fields, so we resolve the concrete value
+// client-side; sending an omitted/empty freeleechMode would silently keep the prior mode.
+function defaultFreeleechMode(kind: ConnectionKind): "honor" | "bypass" {
+  return kind === "qui" ? "bypass" : "honor"
+}
+
 export type ConnectionDialogState =
   | { open: false }
   | { open: true, existing?: AppConnection }
@@ -80,7 +89,11 @@ function ConnectionForm({ existing, pending, error, onCreate, onUpdate }: {
         if (mode === "edit" && existing) {
           onUpdate(existing.id, {
             name, baseUrl, harbrrUrl, syncLevel, indexScope,
-            freeleechMode: freeleechMode || undefined,
+            // Resolve "default by kind" to the kind's concrete default so the edit is honored:
+            // the PATCH omits an undefined field, which would silently keep the prior mode.
+            // Resolve "default by kind" to the kind's concrete default so the edit is honored:
+            // the PATCH omits an undefined field, which would silently keep the prior mode.
+            freeleechMode: freeleechMode || defaultFreeleechMode(kind),
             ...(apiKey !== "" ? { apiKey } : {}), // omit = keep the stored key
             // Always send for non-qui edits (number or null) so clearing works; omit entirely for qui.
             ...(showProfilePicker ? { syncProfileId } : {}),
@@ -183,4 +196,3 @@ function FieldWrap({ id, label, children }: { id: string, label: string, childre
     </div>
   )
 }
-

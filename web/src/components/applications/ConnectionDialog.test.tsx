@@ -142,3 +142,53 @@ describe("ConnectionDialog sync profile picker", () => {
     expect(onUpdate).toHaveBeenCalledWith(SONARR_CONN.id, expect.objectContaining({ syncProfileId: null }))
   })
 })
+
+describe("ConnectionDialog freeleech mode", () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it("edit: selecting 'default by kind' for an *arr resolves to the concrete honor default, not undefined", async () => {
+    stubFetch()
+    const onUpdate = vi.fn()
+    render(wrap(
+      <ConnectionDialog
+        state={{ open: true, existing: { ...SONARR_CONN, freeleechMode: "bypass" } }}
+        pending={false}
+        error={null}
+        onClose={vi.fn()}
+        onCreate={vi.fn()}
+        onUpdate={onUpdate}
+      />
+    ))
+
+    const select = await screen.findByLabelText("Freeleech feed")
+    expect((select as HTMLSelectElement).value).toBe("bypass")
+
+    // Choosing "default by kind" must be HONORED, not silently dropped: the PATCH omits an
+    // undefined field, so the client resolves it to the kind's concrete default (honor for *arr).
+    fireEvent.change(select, { target: { value: "" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+
+    expect(onUpdate).toHaveBeenCalledWith(SONARR_CONN.id, expect.objectContaining({ freeleechMode: "honor" }))
+  })
+
+  it("edit: selecting 'default by kind' for a qui connection resolves to the bypass default", async () => {
+    stubFetch()
+    const onUpdate = vi.fn()
+    render(wrap(
+      <ConnectionDialog
+        state={{ open: true, existing: { ...QUI_CONN, freeleechMode: "honor" } }}
+        pending={false}
+        error={null}
+        onClose={vi.fn()}
+        onCreate={vi.fn()}
+        onUpdate={onUpdate}
+      />
+    ))
+
+    const select = await screen.findByLabelText("Freeleech feed")
+    fireEvent.change(select, { target: { value: "" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+
+    expect(onUpdate).toHaveBeenCalledWith(QUI_CONN.id, expect.objectContaining({ freeleechMode: "bypass" }))
+  })
+})
