@@ -3,6 +3,7 @@ package filter
 import (
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // Row filters operate on the row SET (RowsBlock.Filters), not on a single field
@@ -13,9 +14,13 @@ import (
 // filters.
 
 // andMatchSplit mirrors Jackett's MatchQueryStringAND tokenizer: split on runs
-// of non-word characters (.NET Regex "[^\\w]+"). RE2's \w is ASCII-only, which
-// matches the practical effect on the keyword strings used here.
-var andMatchSplit = regexp.MustCompile(`[^\w]+`)
+// of non-word characters (.NET Regex "[^\\w]+"). .NET's \w is Unicode-aware —
+// it is exactly [\p{L}\p{Mn}\p{Nd}\p{Pc}] (letters, non-spacing marks, decimal
+// digits, connector punctuation). RE2's own \w is ASCII-only, so we spell out
+// the Unicode class instead; otherwise a multi-word non-Latin query ("война
+// мир", "三体 刘慈欣") would collapse to zero tokens and AndMatch would keep every
+// row (a superset vs Jackett). RE2 supports these Unicode general categories.
+var andMatchSplit = regexp.MustCompile(`[^\p{L}\p{Mn}\p{Nd}\p{Pc}]+`)
 
 // andMatchStopwords are the short words Jackett drops from the keyword set
 // before requiring an AND-match.
@@ -37,10 +42,17 @@ var andMatchStopwords = map[string]struct{}{"and": {}, "the": {}, "an": {}}
 func AndMatch(title, keywords string) bool {
 	lowerTitle := strings.ToLower(title)
 	for _, raw := range andMatchSplit.Split(keywords, -1) {
-		tok := strings.ToLower(raw)
-		if len(tok) <= 1 {
+		// Jackett drops parts with .NET string Length ≤ 1 (UTF-16 code units).
+		// Counting runes matches that for BMP text — a single CJK/Cyrillic char
+		// is one rune → dropped, just like Jackett — and also covers the empty
+		// strings the split leaves at boundaries. Astral chars (emoji, CJK
+		// extensions) are one rune here but Length 2 in .NET; they never appear
+		// as standalone AND-match tokens in tracker titles, so the difference is
+		// negligible.
+		if utf8.RuneCountInString(raw) <= 1 {
 			continue
 		}
+		tok := strings.ToLower(raw)
 		if _, stop := andMatchStopwords[tok]; stop {
 			continue
 		}
