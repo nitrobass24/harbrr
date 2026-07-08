@@ -160,6 +160,7 @@ func TestBackgroundCleanupFlushesBeforeClose(t *testing.T) {
 	var bg sync.WaitGroup
 	startSessionCleanup(bgCtx, &bg, database.NewSessionStore(db), zerolog.Nop())
 	startSearchCacheCleanup(bgCtx, &bg, sc, zerolog.Nop())
+	startHealthEventCleanup(bgCtx, &bg, db, zerolog.Nop())
 	bgCancel()
 	bg.Wait()
 
