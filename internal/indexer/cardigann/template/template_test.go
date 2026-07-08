@@ -345,6 +345,120 @@ func TestEvalBadIdentRewriteScope(t *testing.T) {
 	}
 }
 
+// TestEvalReReplaceResultIsData pins Jackett's single-pass semantics for
+// re_replace/join: the resolved result is a VALUE, never re-tokenized as
+// template source (CardigannIndexer.cs applyGoTemplateText does
+// `template.Replace(all, expanded)` and only the later logic/if/range/simple-
+// variable regexes run — the simple-variable pass `{{\s*(\..+?)\s*}}` needs a
+// leading dot and a closing `}}`, so unbalanced brace junk in a result is
+// emitted verbatim, quietly). A user keyword can carry `{{`-shaped junk into a
+// re_replace input; the render must SUCCEED with that junk passed through, not
+// fail the whole search with a template parse/execute error.
+func TestEvalReReplaceResultIsData(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		text   string
+		mutate func(*Context)
+		want   string
+	}{
+		{
+			// Probe 1: an unbalanced "{{bar" in the re_replace input. Jackett's
+			// simple-variable regex can't match it (no dot, no closing }}), so it
+			// survives verbatim. Current code re-parses the spliced text and dies
+			// with `function "bar" not defined`.
+			name:   "unbalanced open-brace junk in re_replace input stays verbatim",
+			text:   `{{ re_replace .Keywords "\s+" "+" }}`,
+			mutate: func(c *Context) { c.Keywords = "foo {{bar" },
+			want:   "foo+{{bar",
+		},
+		{
+			// Probe 2: the finding's `\s+`->`+` case. The keyword "{{ .Config.x }}"
+			// collapses to "{{+.Config.x+}}": the "+" right after "{{" defeats
+			// Jackett's simple-variable regex `{{\s*(\..+?)\s*}}` (it anchors on a
+			// dot immediately after optional space), so Jackett emits it verbatim.
+			// Current code re-parses "{{+.Config.x+}}" as an action and dies.
+			name:   "config-shaped action in re_replace result stays verbatim",
+			text:   `{{ re_replace .Keywords "\s+" "+" }}`,
+			mutate: func(c *Context) { c.Keywords = "{{ .Config.x }}" },
+			want:   "{{+.Config.x+}}",
+		},
+		{
+			// Leading-digit key shape inside a result — the "bad number syntax"
+			// case the finding calls out. Same `+`-after-`{{` shape, inert as data.
+			name:   "leading-digit config-shaped action in result stays verbatim",
+			text:   `{{ re_replace .Keywords "\s+" "+" }}`,
+			mutate: func(c *Context) { c.Keywords = "x {{ .Config.2y }}" },
+			want:   "x+{{+.Config.2y+}}",
+		},
+		{
+			// join result carrying brace junk is likewise inert data.
+			name:   "brace junk in join result stays verbatim",
+			text:   `{{ join .Categories "," }}`,
+			mutate: func(c *Context) { c.Categories = []string{"a", "{{b", "c"} },
+			want:   "a,{{b,c",
+		},
+		{
+			// A GENUINE def-authored action alongside a junk-bearing re_replace
+			// result: the author's action still resolves, the result stays data.
+			name: "genuine def action resolves while result stays data",
+			text: `{{ re_replace .Keywords "\s+" "+" }}&cat={{ .Config.catid }}`,
+			mutate: func(c *Context) {
+				c.Keywords = "foo {{bar"
+				c.Config["catid"] = "7"
+			},
+			want: "foo+{{bar&cat=7",
+		},
+		{
+			// re_replace-then-join ORDER is preserved: re_replace runs first, its
+			// result feeds nothing here, and join runs after — both spliced as data.
+			name: "re_replace then join order preserved",
+			text: `{{ re_replace .Keywords "\s+" "-" }}/{{ join .Categories "," }}`,
+			mutate: func(c *Context) {
+				c.Keywords = "Top Gear"
+				c.Categories = []string{"1", "2"}
+			},
+			want: "Top-Gear/1,2",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := NewContext()
+			if tt.mutate != nil {
+				tt.mutate(ctx)
+			}
+			got, err := Eval(tt.text, ctx)
+			if err != nil {
+				t.Fatalf("Eval(%q) error: %v", tt.text, err)
+			}
+			if got != tt.want {
+				t.Fatalf("Eval(%q) = %q, want %q", tt.text, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestEvalGenuineActionStillResolves guards that a real def-authored
+// `{{ .Config.x }}` (leading-digit / dashed keys included) still parses and
+// resolves after the sentinel-splice change — the fix must only make
+// re_replace/join RESULTS inert, never disturb author-written actions.
+func TestEvalGenuineActionStillResolves(t *testing.T) {
+	t.Parallel()
+
+	ctx := NewContext()
+	ctx.Config["2facode"] = "123456"
+	got, err := Eval(`code={{ .Config.2facode }}`, ctx)
+	if err != nil {
+		t.Fatalf("Eval error: %v", err)
+	}
+	if got != "code=123456" {
+		t.Fatalf("got %q, want %q", got, "code=123456")
+	}
+}
+
 // TestCorpusParses is the parse/eval gate for this stage: every template string
 // in every vendored definition must Eval cleanly (parse + execute) against a
 // representative Context. It proves the whole corpus parses and executes under
