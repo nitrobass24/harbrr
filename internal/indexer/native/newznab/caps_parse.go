@@ -68,11 +68,11 @@ type capsSubcat struct {
 // parseCaps decodes a ?t=caps response body. A Newznab error envelope (<error code=".."
 // description=".." />, returned even with HTTP 200) is detected first and classified exactly
 // like a search error (auth -> login.ErrLoginFailed, rate limit -> RateLimitedError); a
-// malformed body is an ErrParseError. The apikey is never echoed in an error description, so
-// the server text is surfaced as-is.
-func parseCaps(body []byte) (*capsRoot, error) {
+// malformed body is an ErrParseError. The server-controlled description is value-scrubbed of
+// the configured apikey as defense in depth (see toError).
+func parseCaps(body []byte, apikey string) (*capsRoot, error) {
 	if apiErr, ok := capsError(body); ok {
-		return nil, apiErr.toError()
+		return nil, apiErr.toError(apikey)
 	}
 	var root capsRoot
 	if err := xml.Unmarshal(body, &root); err != nil {

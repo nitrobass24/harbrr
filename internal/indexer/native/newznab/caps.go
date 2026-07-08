@@ -7,6 +7,7 @@ import (
 	stdhttp "net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -51,7 +52,7 @@ func (c *capsCache) rehydrate(cfg map[string]string) {
 	if raw == "" {
 		return
 	}
-	root, err := parseCaps([]byte(raw))
+	root, err := parseCaps([]byte(raw), strings.TrimSpace(cfg["apikey"]))
 	if err != nil {
 		return
 	}
@@ -129,7 +130,7 @@ func (d *driver) fetchCaps(ctx context.Context) (*mapper.Capabilities, error) {
 	if err != nil {
 		return nil, err
 	}
-	root, err := parseCaps(body)
+	root, err := parseCaps(body, d.apikey)
 	if err != nil {
 		return nil, err
 	}
