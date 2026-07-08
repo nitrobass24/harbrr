@@ -138,17 +138,33 @@ func NewHandler(provider Provider, opts ...Option) http.Handler {
 // the link/passkey never reaches a log, error body, or redirect.
 func (h *handler) serveDL(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
+	// The /dl route returns real HTTP status codes, matching Jackett's
+	// DownloadController — NOT the caps/search 200-envelope convention of
+	// ResultsController (errors.go). *arr fetches enclosures verbatim, so a
+	// gate failure must surface as a transport error (4xx/5xx) rather than a
+	// 200 body that later fails downstream as an "invalid torrent file". The
+	// <error> body stays informational (and secret-free); the status is what
+	// *arr checks.
 	if !h.authorized(q) {
-		writeError(w, http.StatusOK, codeInvalidAPIKey, "Invalid API Key")
+		// Jackett DownloadController: `if (_serverConfig.APIKey != jackett_apikey) return Unauthorized();`
+		writeError(w, http.StatusUnauthorized, codeInvalidAPIKey, "Invalid API Key")
 		return
 	}
 	idx, ok := h.provider.Indexer(r.Context(), r.PathValue("slug"))
 	if !ok {
-		writeError(w, http.StatusOK, codeBadParameter, "Indexer is not supported")
+		// Jackett's GetWebIndexer throws on an unknown id; DownloadController's catch
+		// returns NotFound() — 404. Jackett also has a 403 Forbid path for a KNOWN but
+		// unconfigured indexer; harbrr's provider returns !ok for both an unknown id AND
+		// a disabled instance (registry errDisabled), collapsing both into 404. A benign
+		// divergence: both are 4xx failed grabs to *arr, neither leaks, and the disabled
+		// case is only reachable here with an already-minted token.
+		writeError(w, http.StatusNotFound, codeBadParameter, "Indexer is not supported")
 		return
 	}
 	if h.dlToken == nil {
-		writeError(w, http.StatusOK, codeBadParameter, "download proxy is not enabled")
+		// No direct Jackett equivalent (Jackett always has download): the proxy feature
+		// is unavailable, so 503 Service Unavailable.
+		writeError(w, http.StatusServiceUnavailable, codeBadParameter, "download proxy is not enabled")
 		return
 	}
 	link, err := decodeDLToken(h.dlToken, idx.Info().ID, q.Get("token"))
