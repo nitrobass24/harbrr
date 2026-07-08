@@ -139,6 +139,12 @@ type CaseStep struct {
 	// ExpectCookie, when set, asserts the request's Cookie header contains this
 	// substring — proving the session cookie propagated from an earlier step.
 	ExpectCookie string `yaml:"expect_cookie"`
+	// ExpectHeader, when set, asserts the request carries each named header with a
+	// value containing the mapped substring — proving a def's search.headers (e.g.
+	// DigitalCore's X-API-KEY apikey carrier) reach the outgoing search request. A
+	// header value can be an api key, so like ExpectCookie the expected value is
+	// never echoed on mismatch.
+	ExpectHeader map[string]string `yaml:"expect_header"`
 	// Note documents the step's role (e.g. "login probe"); harness-ignored.
 	Note string `yaml:"note"`
 }
