@@ -147,14 +147,39 @@ func (r *Registry) List(ctx context.Context) ([]domain.IndexerInstance, error) {
 
 // Update merges new settings into an instance (secrets.Redacted keeps the stored
 // value; omitted settings are kept) and updates its name/base URL, atomically.
+// The whole read-modify-write — read current settings, merge the patch, then
+// delete+reinsert — runs inside one transaction (reading via the tx handle, not
+// r.db), so a concurrent persistSetting rotating a live credential (e.g. a native
+// driver refreshing MyAnonamouse's mam_id) can't be clobbered by this write
+// reinserting a stale merged set. SetMaxOpenConns(1) means the tx holds the only
+// connection, serializing the RMW against that Upsert (mirrors appsync U10-F1).
 func (r *Registry) Update(ctx context.Context, slug string, p UpdateParams) error {
-	inst, err := r.instances.GetBySlug(ctx, r.db, slug)
+	var instID int64
+	err := r.inTx(ctx, func(tx dbinterface.TxQuerier) error {
+		inst, err := r.instances.GetBySlug(ctx, tx, slug)
+		if err != nil {
+			return fmt.Errorf("registry: update %q: %w", slug, err)
+		}
+		instID = inst.ID
+		return r.updateInTx(ctx, tx, inst, p)
+	})
 	if err != nil {
-		return fmt.Errorf("registry: update %q: %w", slug, err)
+		return err
 	}
-	existing, err := r.instances.Settings(ctx, r.db, inst.ID)
+	r.invalidate(slug)
+	r.invalidateSearchCache(ctx, instID)
+	return nil
+}
+
+// updateInTx applies the settings merge and metadata/ref updates for inst inside
+// the caller's transaction. The current settings are read (via tx) and merged
+// here — inside the tx — so the read → merge → delete → reinsert is one atomic
+// unit that can't lose a concurrent single-setting Upsert. mergeSettings only
+// touches the keyring (no DB), so it is safe within the tx.
+func (r *Registry) updateInTx(ctx context.Context, tx dbinterface.TxQuerier, inst domain.IndexerInstance, p UpdateParams) error {
+	existing, err := r.instances.Settings(ctx, tx, inst.ID)
 	if err != nil {
-		return fmt.Errorf("registry: update %q settings: %w", slug, err)
+		return fmt.Errorf("registry: update %q settings: %w", inst.Slug, err)
 	}
 	def, _, err := r.definition(inst.DefinitionID)
 	if err != nil {
@@ -166,32 +191,24 @@ func (r *Registry) Update(ctx context.Context, slug string, p UpdateParams) erro
 	}
 
 	name, baseURL := applyMeta(inst, p)
-	err = r.inTx(ctx, func(tx dbinterface.TxQuerier) error {
-		if err := r.instances.UpdateMeta(ctx, tx, inst.ID, name, baseURL, r.clock()); err != nil {
-			return fmt.Errorf("registry: update meta: %w", err)
-		}
-		// Only a present ref field changes the stored reference; an absent one keeps
-		// the instance's current value (so a partial PATCH can't clear it).
-		proxyRef := resolveRef(p.ProxyID, inst.ProxyID)
-		solverRef := resolveRef(p.SolverID, inst.SolverID)
-		if err := r.instances.SetRefs(ctx, tx, inst.ID, proxyRef, solverRef, r.clock()); err != nil {
-			return fmt.Errorf("registry: update refs: %w", err)
-		}
-		if err := r.instances.DeleteSettings(ctx, tx, inst.ID); err != nil {
-			return fmt.Errorf("registry: clear settings: %w", err)
-		}
-		for _, s := range merged {
-			if err := r.instances.InsertSetting(ctx, tx, inst.ID, s); err != nil {
-				return fmt.Errorf("registry: write setting %q: %w", s.Name, err)
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return err
+	if err := r.instances.UpdateMeta(ctx, tx, inst.ID, name, baseURL, r.clock()); err != nil {
+		return fmt.Errorf("registry: update meta: %w", err)
 	}
-	r.invalidate(slug)
-	r.invalidateSearchCache(ctx, inst.ID)
+	// Only a present ref field changes the stored reference; an absent one keeps
+	// the instance's current value (so a partial PATCH can't clear it).
+	proxyRef := resolveRef(p.ProxyID, inst.ProxyID)
+	solverRef := resolveRef(p.SolverID, inst.SolverID)
+	if err := r.instances.SetRefs(ctx, tx, inst.ID, proxyRef, solverRef, r.clock()); err != nil {
+		return fmt.Errorf("registry: update refs: %w", err)
+	}
+	if err := r.instances.DeleteSettings(ctx, tx, inst.ID); err != nil {
+		return fmt.Errorf("registry: clear settings: %w", err)
+	}
+	for _, s := range merged {
+		if err := r.instances.InsertSetting(ctx, tx, inst.ID, s); err != nil {
+			return fmt.Errorf("registry: write setting %q: %w", s.Name, err)
+		}
+	}
 	return nil
 }
 
