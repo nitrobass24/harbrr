@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"html"
-	"net/url"
 	"strconv"
 	"strings"
 
@@ -205,10 +204,14 @@ func filterSplit(value string, args []string) (string, error) {
 	return parts[pos], nil
 }
 
-// filterQueryString implements querystring[param]: parse the value as a URL and
-// return the named query parameter (first occurrence), matching Jackett's
-// GetArgumentFromQueryString — split on '?', drop the '#' fragment, parse.
-// A missing '?' is an error (Jackett's split[1] would throw).
+// filterQueryString implements querystring[param]: return the named query
+// parameter (first occurrence) from the value's query component, matching
+// Jackett's ParseUtil.GetArgumentFromQueryString — split on the first '?', drop
+// a '#' fragment, then parse. A missing '?' is an error (Jackett's Split('?')[1]
+// would throw). The parse itself is done by queryStringFirst, which mirrors
+// QueryHelpers.ParseQuery and, unlike Go's url.ParseQuery, never errors — so a
+// download href with one malformed sibling param (a bare '%' or a ';') still
+// yields the target value instead of dropping the whole row.
 func filterQueryString(value string, args []string) (string, error) {
 	param := firstArg(args)
 	if param == "" {
@@ -219,12 +222,33 @@ func filterQueryString(value string, args []string) (string, error) {
 		return "", errors.New("querystring: value has no query component")
 	}
 	qsStr, _, _ := strings.Cut(after, "#")
-	qs, err := url.ParseQuery(qsStr)
-	if err != nil {
-		return "", fmt.Errorf("querystring: parsing query: %w", err)
+	return queryStringFirst(qsStr, param), nil
+}
+
+// queryStringFirst mirrors .NET QueryHelpers.ParseQuery followed by
+// qs[param].FirstOrDefault(): split the query on '&' ONLY (a ';' is ordinary
+// data, never a separator — the divergence that makes Go's url.ParseQuery drop
+// ';'-bearing pairs), split each pair on its first '=', lenient-decode key and
+// value, and return the value of the first pair whose decoded key equals param.
+// An absent param yields "" (FirstOrDefault on an empty collection).
+//
+// Decoding: Jackett runs each key/value through ReplacePlusWithSpace then
+// Uri.UnescapeDataString ('+' -> space, malformed '%' left literal, never
+// throws). webUtilityURLDecode (added for the urldecode filter, U2-F3) mirrors
+// .NET WebUtility.UrlDecode and produces the identical result for every input
+// here — both map '+' to space and leave an invalid '%' escape literal; they
+// diverge only on lone invalid-UTF-8 percent bytes, which do not occur in real
+// download hrefs — so it is reused rather than duplicated.
+func queryStringFirst(qs, param string) string {
+	for qs != "" {
+		var pair string
+		pair, qs, _ = strings.Cut(qs, "&")
+		key, val, _ := strings.Cut(pair, "=")
+		if webUtilityURLDecode(key) == param {
+			return webUtilityURLDecode(val)
+		}
 	}
-	// FirstOrDefault: absent param yields the empty string.
-	return qs.Get(param), nil
+	return ""
 }
 
 // filterValidFilename implements validfilename: replace filesystem-invalid

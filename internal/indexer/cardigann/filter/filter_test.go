@@ -93,6 +93,36 @@ func TestApplyStringFilters(t *testing.T) {
 			name: "querystring no query errors", in: "https://x.test/dl",
 			filters: []loader.FilterBlock{fb("querystring", "id")}, wantErr: true,
 		},
+		// Jackett's QueryHelpers.ParseQuery never throws; Go's url.ParseQuery does,
+		// which used to discard its partial result and drop the whole row. A sibling
+		// param with a bare '%' must not lose the target value.
+		{
+			name: "querystring sibling bad percent", in: "x?id=7&note=50%",
+			filters: []loader.FilterBlock{fb("querystring", "id")}, want: "7",
+		},
+		// ';' is data, not a separator: Jackett splits on '&' only, so the whole
+		// "1;b=2" is param a's value (Go's url.ParseQuery drops any ';'-bearing pair).
+		{
+			name: "querystring semicolon is data target sibling", in: "x?a=1;b=2&id=9",
+			filters: []loader.FilterBlock{fb("querystring", "id")}, want: "9",
+		},
+		{
+			name: "querystring semicolon is data target self", in: "x?a=1;b=2&id=9",
+			filters: []loader.FilterBlock{fb("querystring", "a")}, want: "1;b=2",
+		},
+		{
+			name: "querystring first occurrence wins", in: "x?id=7&id=9",
+			filters: []loader.FilterBlock{fb("querystring", "id")}, want: "7",
+		},
+		// Decoded like Jackett: '+' -> space, valid %XX applied to key and value.
+		{
+			name: "querystring value plus and escape", in: "x?title=a+b%2Fc",
+			filters: []loader.FilterBlock{fb("querystring", "title")}, want: "a b/c",
+		},
+		{
+			name: "querystring encoded key matched", in: "x?a%62=hit",
+			filters: []loader.FilterBlock{fb("querystring", "ab")}, want: "hit",
+		},
 		{
 			name: "validfilename strips invalid", in: `a/b:c*d?e`,
 			filters: []loader.FilterBlock{fb("validfilename")}, want: "a_b_c_d_e",
