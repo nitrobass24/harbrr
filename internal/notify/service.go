@@ -131,9 +131,19 @@ type UpdateNotificationParams struct {
 	OnHealthFailure *bool
 }
 
-// UpdateNotification applies a patch, re-encrypting the URL when rotated.
+// UpdateNotification applies a patch, re-encrypting the URL when rotated. The read and the
+// full-row write run in one transaction so two overlapping PATCHes can't lose each other's
+// write: under SetMaxOpenConns(1) the tx holds the only connection, serializing a concurrent
+// UpdateNotification so the second reads the first's committed row (mirrors appsync
+// UpdateConnection).
 func (s *Service) UpdateNotification(ctx context.Context, id int64, p UpdateNotificationParams) error {
-	n, err := s.repo.GetNotification(ctx, s.db, id)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("notify: begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	n, err := s.repo.GetNotification(ctx, tx, id)
 	if err != nil {
 		return fmt.Errorf("notify: get notification: %w", err)
 	}
@@ -159,8 +169,11 @@ func (s *Service) UpdateNotification(ctx context.Context, id int64, p UpdateNoti
 		n.URLEncrypted, n.KeyID = enc, s.keyring.KeyID()
 	}
 	n.UpdatedAt = s.clock()
-	if err := s.repo.UpdateNotification(ctx, s.db, n); err != nil {
+	if err := s.repo.UpdateNotification(ctx, tx, n); err != nil {
 		return fmt.Errorf("notify: update notification: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("notify: commit: %w", err)
 	}
 	return nil
 }
