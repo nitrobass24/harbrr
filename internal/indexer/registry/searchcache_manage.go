@@ -147,8 +147,14 @@ func (c *SearchCache) CleanupExpired(ctx context.Context) (int64, error) {
 }
 
 // InvalidateByInstance purges every entry for one instance (called after a config
-// mutation), returning the count purged.
+// mutation), returning the count purged. It bumps the instance's invalidation epoch
+// BEFORE the DB purge (in addition to it): a store from an engine built before this
+// call — a detached SWR refresh or an in-flight miss still holding the old decorator —
+// then sees the advanced epoch in storeBestEffort and drops its write-back instead of
+// resurrecting a stale-config entry. Bumping before the purge guarantees any store that
+// observes the completed purge also observes the new epoch (U8R-F4).
 func (c *SearchCache) InvalidateByInstance(ctx context.Context, instanceID int64) (int64, error) {
+	c.bumpInstanceEpoch(instanceID)
 	n, err := c.store.InvalidateByInstance(ctx, c.db, instanceID)
 	if err != nil {
 		return 0, err //nolint:wrapcheck // store wraps with the instance id; nothing secret to add.

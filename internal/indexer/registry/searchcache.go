@@ -100,6 +100,16 @@ type SearchCache struct {
 	// acceptable.
 	touchMu      sync.Mutex
 	touchPending map[string]pendingTouch
+
+	// epochMu guards instanceEpochs, the per-instance invalidation generation. A
+	// config-mutation purge (InvalidateByInstance) bumps the instance's epoch under this
+	// lock; wrap() snapshots the current value at engine-build time (cachedIndexer.
+	// builtEpoch), and storeBestEffort drops any write-back whose captured epoch is
+	// stale. This closes the window where a store from an OLD engine/config (a detached
+	// SWR refresh or an in-flight miss holding an old decorator) lands AFTER the purge
+	// and resurrects a stale-config entry served until TTL (U8R-F4).
+	epochMu        sync.Mutex
+	instanceEpochs map[int64]uint64
 }
 
 // pendingTouch is one key's buffered hit delta and most-recent use time.
@@ -134,6 +144,24 @@ func (c *SearchCache) instanceSnapshot(instanceID int64) (hits, misses, suppress
 	return ic.hits.Load(), ic.misses.Load(), ic.suppressed.Load()
 }
 
+// instanceEpoch reads instanceID's current invalidation generation (0 for an instance
+// never invalidated). Snapshotted at engine-build time and re-read before every store
+// to reject write-backs from a superseded config generation (U8R-F4).
+func (c *SearchCache) instanceEpoch(instanceID int64) uint64 {
+	c.epochMu.Lock()
+	defer c.epochMu.Unlock()
+	return c.instanceEpochs[instanceID]
+}
+
+// bumpInstanceEpoch advances instanceID's invalidation generation so any store from a
+// decorator built before this call is rejected by storeBestEffort's epoch gate. Called
+// from InvalidateByInstance under the config-mutation purge.
+func (c *SearchCache) bumpInstanceEpoch(instanceID int64) {
+	c.epochMu.Lock()
+	c.instanceEpochs[instanceID]++
+	c.epochMu.Unlock()
+}
+
 // NewSearchCache builds the cache layer. db is the shared store handle, t the
 // initial (config-seeded) tuning, clock the reference clock, and log a logger that
 // only ever sees cache keys and redacted errors. The tuning is held atomically so
@@ -143,12 +171,13 @@ func NewSearchCache(db dbinterface.Querier, t cacheTuning, clock func() time.Tim
 		clock = time.Now
 	}
 	c := &SearchCache{
-		db:           db,
-		clock:        clock,
-		log:          log,
-		touchPending: make(map[string]pendingTouch),
-		breaker:      newNegativeBreaker(),
-		announced:    newAnnounceWindow(),
+		db:             db,
+		clock:          clock,
+		log:            log,
+		touchPending:   make(map[string]pendingTouch),
+		breaker:        newNegativeBreaker(),
+		announced:      newAnnounceWindow(),
+		instanceEpochs: make(map[int64]uint64),
 	}
 	c.tuning.Store(&t)
 	return c
@@ -187,9 +216,15 @@ func NewSearchCacheWithParams(db dbinterface.Querier, p SearchCacheParams, clock
 }
 
 // wrap decorates an indexer with this cache. instanceID keys the entries; cfg
-// carries the per-instance "cache_ttl" override resolveTTL reads.
+// carries the per-instance "cache_ttl" override resolveTTL reads. The current
+// invalidation epoch is snapshotted here, at engine-build time: this decorator
+// represents one config generation of the engine, so a purge that bumps the epoch
+// after this build means every write-back from this decorator is stale-config and
+// storeBestEffort drops it. Capturing at build time (not just before the fetch) also
+// catches a purge that lands between the engine resolve and a later SWR trigger — a
+// pre-fetch capture would still read the bumped value and pass the gate (U8R-F4).
 func (c *SearchCache) wrap(inner torznabhttp.Indexer, instanceID int64, cfg map[string]string) torznabhttp.Indexer {
-	return &cachedIndexer{Indexer: inner, cache: c, instanceID: instanceID, cfg: cfg}
+	return &cachedIndexer{Indexer: inner, cache: c, instanceID: instanceID, cfg: cfg, builtEpoch: c.instanceEpoch(instanceID)}
 }
 
 // cachedIndexer is a torznabhttp.Indexer decorator that adds cache-aside behavior to
@@ -201,6 +236,10 @@ type cachedIndexer struct {
 	cache      *SearchCache
 	instanceID int64
 	cfg        map[string]string
+	// builtEpoch is the instance's invalidation generation at the moment this decorator
+	// was built (see wrap). storeBestEffort compares it against the live epoch and drops
+	// any write-back from a generation a config purge has since superseded (U8R-F4).
+	builtEpoch uint64
 }
 
 // SupportsOffsetPaging explicitly delegates to the wrapped indexer's OffsetPager
@@ -231,7 +270,7 @@ func (c *cachedIndexer) Search(ctx context.Context, q search.Query) ([]*normaliz
 	if !c.cache.tuning.Load().enabled {
 		return c.cache.fetchLive(ctx, c.Indexer, q)
 	}
-	return c.cache.search(ctx, c.instanceID, c.cfg, c.Indexer, q)
+	return c.cache.search(ctx, c.instanceID, c.cfg, c.builtEpoch, c.Indexer, q)
 }
 
 // search is the cache-aside read path. nocache bypasses the cache entirely (live
@@ -239,14 +278,14 @@ func (c *cachedIndexer) Search(ctx context.Context, q search.Query) ([]*normaliz
 // immediately (Touch + optional refresh-ahead async); a miss runs the live search
 // under singleflight and stores the result best-effort. A Fetch error degrades open
 // (falls through to a live search) and never fails the user's search.
-func (c *SearchCache) search(ctx context.Context, instanceID int64, cfg map[string]string, inner torznabhttp.Indexer, q search.Query) ([]*normalizer.Release, error) {
+func (c *SearchCache) search(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, inner torznabhttp.Indexer, q search.Query) ([]*normalizer.Release, error) {
 	// A paging-capable driver forwards offset/limit upstream, so each page is a distinct
 	// outbound request and gets its own cache entry; a non-paging driver keys page-free
 	// (one fetch serves every locally-sliced page), preserving the pre-paging key.
 	key := buildSearchCacheKey(instanceID, q, supportsOffsetPaging(inner))
 
 	if torznabhttp.CacheBypass(ctx) {
-		return c.liveAndStoreRecording(ctx, instanceID, cfg, inner, q, key)
+		return c.liveAndStoreRecording(ctx, instanceID, cfg, builtEpoch, inner, q, key)
 	}
 
 	entry, found, err := c.store.Fetch(ctx, c.db, key, c.clock())
@@ -257,9 +296,9 @@ func (c *SearchCache) search(ctx context.Context, instanceID int64, cfg map[stri
 		return c.fetchLive(ctx, inner, q)
 	}
 	if found {
-		return c.serveHit(ctx, instanceID, cfg, inner, q, key, entry)
+		return c.serveHit(ctx, instanceID, cfg, builtEpoch, inner, q, key, entry)
 	}
-	return c.missPath(ctx, instanceID, cfg, inner, q, key)
+	return c.missPath(ctx, instanceID, cfg, builtEpoch, inner, q, key)
 }
 
 // missPath drives a cache miss with the negative-result circuit breaker around it.
@@ -268,7 +307,7 @@ func (c *SearchCache) search(ctx context.Context, instanceID int64, cfg map[stri
 // miss and, on a tracker failure, trips the breaker so the next consumer's miss is
 // spared. It is the single funnel for every miss (the read-path miss and serveHit's
 // corrupt-payload fallback) so both honor the breaker.
-func (c *SearchCache) missPath(ctx context.Context, instanceID int64, cfg map[string]string, inner torznabhttp.Indexer, q search.Query, key string) ([]*normalizer.Release, error) {
+func (c *SearchCache) missPath(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, inner torznabhttp.Indexer, q search.Query, key string) ([]*normalizer.Release, error) {
 	// Consult the breaker only while it is armed (negative window > 0); reading the
 	// live config means a runtime disable (negative_ttl -> 0) stops suppression at
 	// once, without waiting for already-open windows to lapse. tripBreaker self-gates
@@ -280,7 +319,7 @@ func (c *SearchCache) missPath(ctx context.Context, instanceID int64, cfg map[st
 			return nil, rerr
 		}
 	}
-	releases, err := c.serveMiss(ctx, instanceID, cfg, inner, q, key)
+	releases, err := c.serveMiss(ctx, instanceID, cfg, builtEpoch, inner, q, key)
 	if err != nil {
 		c.tripBreaker(ctx, instanceID, err)
 		return nil, err
@@ -311,20 +350,20 @@ func (c *SearchCache) tripBreaker(ctx context.Context, instanceID int64, err err
 // serveHit returns the decoded cached slice immediately, bumps the hit counters,
 // records a Touch (async, best-effort), and fires a single refresh-ahead when the
 // entry is past its refresh threshold.
-func (c *SearchCache) serveHit(ctx context.Context, instanceID int64, cfg map[string]string, inner torznabhttp.Indexer, q search.Query, key string, entry database.SearchCacheEntry) ([]*normalizer.Release, error) {
+func (c *SearchCache) serveHit(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, inner torznabhttp.Indexer, q search.Query, key string, entry database.SearchCacheEntry) ([]*normalizer.Release, error) {
 	releases, err := decodeReleases(entry.ResultsJSON, key)
 	if err != nil {
 		// A corrupt payload is treated as a miss: never fail the search over it.
 		c.log.Warn().Str("cache_key", key).Str("error", apphttp.RedactError(err)).
 			Msg("registry: search cache decode failed; serving live")
-		return c.missPath(ctx, instanceID, cfg, inner, q, key)
+		return c.missPath(ctx, instanceID, cfg, builtEpoch, inner, q, key)
 	}
 	c.hits.Add(1)
 	c.counters(instanceID).hits.Add(1)
 	c.recordCacheInfo(ctx, torznabhttp.CacheInfo{ETag: payloadETag(entry.ResultsJSON), ExpiresAt: entry.ExpiresAt})
 	c.recordTouch(key)
 	if c.shouldRefreshAhead(entry) {
-		c.triggerSWR(ctx, instanceID, cfg, inner, q, key)
+		c.triggerSWR(ctx, instanceID, cfg, builtEpoch, inner, q, key)
 	}
 	return releases, nil
 }
@@ -333,7 +372,7 @@ func (c *SearchCache) serveHit(ctx context.Context, instanceID int64, cfg map[st
 // drive the tracker once), stores the result best-effort, and returns it. The
 // double-check inside the flight lets a request that lost the race read a freshly
 // stored entry instead of re-searching.
-func (c *SearchCache) serveMiss(ctx context.Context, instanceID int64, cfg map[string]string, inner torznabhttp.Indexer, q search.Query, key string) ([]*normalizer.Release, error) {
+func (c *SearchCache) serveMiss(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, inner torznabhttp.Indexer, q search.Query, key string) ([]*normalizer.Release, error) {
 	c.misses.Add(1)
 	c.counters(instanceID).misses.Add(1)
 	// The flight returns ([]*normalizer.Release, error); the inner error is already
@@ -345,7 +384,7 @@ func (c *SearchCache) serveMiss(ctx context.Context, instanceID int64, cfg map[s
 				return missResult{releases: releases, info: info}, nil
 			}
 		}
-		releases, info, lerr := c.liveAndStore(ctx, instanceID, cfg, inner, q, key)
+		releases, info, lerr := c.liveAndStore(ctx, instanceID, cfg, builtEpoch, inner, q, key)
 		if lerr != nil {
 			return nil, lerr
 		}
@@ -359,7 +398,7 @@ func (c *SearchCache) serveMiss(ctx context.Context, instanceID int64, cfg map[s
 		// Defensive: a value of an unexpected type can only mean this miss coalesced
 		// onto a flight that returned something else. Never serve an empty success on
 		// a type mismatch — run our own live search instead.
-		return c.liveAndStoreRecording(ctx, instanceID, cfg, inner, q, key)
+		return c.liveAndStoreRecording(ctx, instanceID, cfg, builtEpoch, inner, q, key)
 	}
 	// Record per CALLER, outside the flight, so every coalesced miss fills its own sink.
 	c.recordCacheInfo(ctx, res.info)
@@ -371,12 +410,12 @@ func (c *SearchCache) serveMiss(ctx context.Context, instanceID int64, cfg map[s
 // freshly stored entry's HTTP validators. An inner error is returned and never cached.
 // It does NOT record into the request sink — the caller does (per-caller, so a
 // singleflight follower also gets the validators).
-func (c *SearchCache) liveAndStore(ctx context.Context, instanceID int64, cfg map[string]string, inner torznabhttp.Indexer, q search.Query, key string) ([]*normalizer.Release, torznabhttp.CacheInfo, error) {
+func (c *SearchCache) liveAndStore(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, inner torznabhttp.Indexer, q search.Query, key string) ([]*normalizer.Release, torznabhttp.CacheInfo, error) {
 	releases, err := c.fetchLive(ctx, inner, q)
 	if err != nil {
 		return nil, torznabhttp.CacheInfo{}, err
 	}
-	etag, expiresAt := c.storeBestEffort(ctx, instanceID, cfg, q, key, releases)
+	etag, expiresAt := c.storeBestEffort(ctx, instanceID, cfg, builtEpoch, q, key, releases)
 	return releases, torznabhttp.CacheInfo{ETag: etag, ExpiresAt: expiresAt}, nil
 }
 
@@ -384,8 +423,8 @@ func (c *SearchCache) liveAndStore(ctx context.Context, instanceID int64, cfg ma
 // nocache bypass path and the defensive miss fallback): it records the validators into
 // this caller's own sink. The singleflight miss path instead records outside the flight
 // so every coalesced caller is covered.
-func (c *SearchCache) liveAndStoreRecording(ctx context.Context, instanceID int64, cfg map[string]string, inner torznabhttp.Indexer, q search.Query, key string) ([]*normalizer.Release, error) {
-	releases, info, err := c.liveAndStore(ctx, instanceID, cfg, inner, q, key)
+func (c *SearchCache) liveAndStoreRecording(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, inner torznabhttp.Indexer, q search.Query, key string) ([]*normalizer.Release, error) {
+	releases, info, err := c.liveAndStore(ctx, instanceID, cfg, builtEpoch, inner, q, key)
 	if err != nil {
 		return nil, err //nolint:wrapcheck // already wrapped by the adapter; no key/payload to add.
 	}
@@ -407,7 +446,19 @@ func (c *SearchCache) fetchLive(ctx context.Context, inner torznabhttp.Indexer, 
 // validators; an encode failure returns an empty etag (no validator emitted). The
 // validators are returned even if the Store write fails — the response content is still
 // valid, and an unstored entry simply misses on the next request.
-func (c *SearchCache) storeBestEffort(ctx context.Context, instanceID int64, cfg map[string]string, q search.Query, key string, releases []*normalizer.Release) (string, time.Time) {
+func (c *SearchCache) storeBestEffort(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, q search.Query, key string, releases []*normalizer.Release) (string, time.Time) {
+	// A config-mutation purge (InvalidateByInstance) bumps this instance's epoch. If it
+	// has advanced since the engine/decorator behind this fetch was built, the fetch ran
+	// through an OLD engine/config and this write-back would resurrect a stale-config
+	// entry the purge just removed — served until TTL, violating "a config change must
+	// never serve stale results". Skip the store (and the announce tap below, so a
+	// dropped write emits no spurious announce diff) and return empty validators; the
+	// purged cache stays empty and the next request rebuilds through the fresh engine.
+	if c.instanceEpoch(instanceID) != builtEpoch {
+		c.log.Debug().Str("cache_key", key).
+			Msg("registry: search cache store skipped; instance config changed during fetch")
+		return "", time.Time{}
+	}
 	// Derive the "what's new" announce stream from this write-back BEFORE the store, so
 	// the prior cached entry (the one we overwrite) is still readable for the GUID diff.
 	c.tapAnnounce(ctx, instanceID, q, key, releases)
@@ -520,7 +571,7 @@ func (c *SearchCache) shouldRefreshAhead(entry database.SearchCacheEntry) bool {
 // the same key (the two return incompatible value types). The goroutine detaches
 // from the request (WithoutCancel) but is bounded by a timeout. The write-back is
 // success-only: an error leaves the existing entry intact (never poisons the cache).
-func (c *SearchCache) triggerSWR(ctx context.Context, instanceID int64, cfg map[string]string, inner torznabhttp.Indexer, q search.Query, key string) {
+func (c *SearchCache) triggerSWR(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, inner torznabhttp.Indexer, q search.Query, key string) {
 	bg := context.WithoutCancel(ctx)
 	go func() {
 		rctx, cancel := context.WithTimeout(bg, swrRefreshTimeout)
@@ -531,7 +582,7 @@ func (c *SearchCache) triggerSWR(ctx context.Context, instanceID int64, cfg map[
 				// Success-only: leave the old entry; do not cache the error.
 				return struct{}{}, err
 			}
-			c.storeBestEffort(rctx, instanceID, cfg, q, key, releases)
+			c.storeBestEffort(rctx, instanceID, cfg, builtEpoch, q, key, releases)
 			return struct{}{}, nil
 		})
 	}()
