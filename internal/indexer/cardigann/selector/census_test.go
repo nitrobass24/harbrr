@@ -1,6 +1,7 @@
 package selector
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"testing"
@@ -10,10 +11,12 @@ import (
 
 // knownIncompatible is the documented baseline of EXACT literal selectors the
 // embedded Jackett snapshot uses that cascadia rejects but AngleSharp accepts.
-// The one pattern-level divergence (:scope) is classified in
-// classifyIncompatible; this map captures the one-off upstream-def quirks
-// that don't generalize. The census fails on any NEW uncompilable selector not
-// covered here, so regressions surface immediately.
+// The one pattern-level divergence (:scope) is not an unhandled incompatibility:
+// classifyIncompatible routes a leading :scope to the real matchScope shim
+// (html.go) and only excuses it once its inner compounds compile. This map
+// captures the one-off upstream-def quirks that don't generalize. The census
+// fails on any NEW uncompilable selector not covered here, so regressions
+// surface immediately.
 //
 // This is the standing AngleSharp-vs-cascadia incompatibility ledger referenced
 // in docs/architecture.md (invariant 2) — never silently skip; record and justify.
@@ -175,14 +178,39 @@ func classifyIncompatible(sel string) string {
 	if r, ok := knownIncompatible[sel]; ok {
 		return r
 	}
-	if strings.Contains(sel, ":scope") {
-		// :scope anchors a selector to the query context element. AngleSharp
-		// supports it (as does Jackett, alongside its manual :root handling);
-		// cascadia does not implement the :scope pseudo-class. The engine scopes
-		// queries to the row element directly, so :scope is handled in assembly.
-		return "cascadia lacks the :scope pseudo-class"
+	if hasScopePrefix(sel) {
+		// cascadia does not implement the :scope pseudo-class, so compileCSS
+		// fails here. AngleSharp (Jackett) binds :scope to the query-context
+		// element; the engine reproduces that in matchScope (html.go), which
+		// special-cases a leading :scope and walks the combinator chain relative
+		// to the row — so ":scope > span > a" resolves via ChildrenMatcher, NOT a
+		// descendant search. Verify each step's compound actually compiles so a
+		// genuinely broken :scope selector still surfaces as a new failure.
+		if err := scopeCompoundsCompile(sel); err != nil {
+			return ""
+		}
+		return "leading :scope handled by matchScope (scope-relative walk in html.go)"
 	}
 	return ""
+}
+
+// scopeCompoundsCompile checks that matchScope can actually evaluate a
+// scope-relative selector: every combinator after the leading :scope must be one
+// matchScope supports ('>' or descendant ' '), and every compound must compile
+// with cascadia. Either failure is a real incompatibility the census must not
+// excuse as a handled :scope — otherwise the ledger would green-light a selector
+// that fails silently at runtime (the very lie this finding removed).
+func scopeCompoundsCompile(sel string) error {
+	steps := splitSteps(strings.TrimSpace(sel))
+	for _, st := range steps[1:] {
+		if st.comb != '>' && st.comb != ' ' {
+			return fmt.Errorf("scope selector %q: unsupported combinator %q", sel, string(st.comb))
+		}
+		if _, err := compileCSS(st.compound); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // htmlSelectors gathers every CSS selector an HTML/XML def uses.
