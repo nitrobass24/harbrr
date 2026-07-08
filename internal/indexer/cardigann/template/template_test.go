@@ -70,7 +70,13 @@ func TestEvalTruthiness(t *testing.T) {
 			want:   "unset",
 		},
 		{
-			name:   "whitespace-only query collapses to .False for eq",
+			// DELIBERATE divergence, not parity: the whitespace collapse empties
+			// IMDBID to "" so Go's eq sees ""=="" (true) -> "empty". Jackett's eq is
+			// a RAW string compare (variables[param] as string, no IsNullOrWhiteSpace),
+			// so "   " != null (.False) -> onFalse -> "set". This degenerate
+			// whitespace-only eq input is unhit by the corpus; pinned as the accepted
+			// behavior. See TestEvalWhitespaceCollapseIsDeliberate.
+			name:   "whitespace-only query eq .False collapses (deliberate, not Jackett-raw)",
 			text:   `{{ if eq .Query.IMDBID .False }}empty{{ else }}set{{ end }}`,
 			mutate: func(c *Context) { c.Query["IMDBID"] = "   " },
 			want:   "empty",
@@ -132,6 +138,73 @@ func TestEvalTruthiness(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Fatalf("Eval(%q) = %q, want %q", tt.text, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestEvalWhitespaceCollapseIsDeliberate pins the DELIBERATE, non-parity edge of
+// the whitespace-only collapse. normalizeWhitespaceValues empties a whitespace-
+// only carrier value to "" on ALL read paths so bare {{ if .X }} truthiness matches
+// Jackett's !IsNullOrWhiteSpace. That same collapse also changes INTERPOLATION and
+// eq/ne comparison, where Jackett keeps the RAW value — a benign, degenerate
+// divergence (whitespace-ONLY .Query.Q / .Config.* / .Result.*) unhit by any
+// vendored def or offline golden. This test locks that accepted behavior; if a
+// faithful raw-interpolation split ever lands, these wants change deliberately.
+// See template.go's collapse contract and the parity README divergence entry.
+func TestEvalWhitespaceCollapseIsDeliberate(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		text    string
+		mutate  func(*Context)
+		want    string // harbrr's collapsed output
+		jackett string // what Jackett's raw handling would emit (documentation only)
+	}{
+		{
+			name:    "Config interpolation of a space value empties (Jackett keeps the space)",
+			text:    `a{{ .Config.sep }}b`,
+			mutate:  func(c *Context) { c.Config["sep"] = " " },
+			want:    "ab",
+			jackett: "a b",
+		},
+		{
+			name:    "Query.Q interpolation of whitespace empties (Jackett keeps it)",
+			text:    `q={{ .Query.Q }}`,
+			mutate:  func(c *Context) { c.Query["Q"] = "  \t " },
+			want:    "q=",
+			jackett: "q=  \t ",
+		},
+		{
+			name:    "Result interpolation of whitespace empties (Jackett keeps it)",
+			text:    `[{{ .Result.title }}]`,
+			mutate:  func(c *Context) { c.Result["title"] = "   " },
+			want:    "[]",
+			jackett: "[   ]",
+		},
+		{
+			name:    "eq compares collapsed empty, not Jackett's raw value",
+			text:    `{{ if eq .Query.IMDBID .False }}empty{{ else }}set{{ end }}`,
+			mutate:  func(c *Context) { c.Query["IMDBID"] = " " },
+			want:    "empty", // Jackett: raw " " != null (.False) -> "set"
+			jackett: "set",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := NewContext()
+			if tt.mutate != nil {
+				tt.mutate(ctx)
+			}
+			got, err := Eval(tt.text, ctx)
+			if err != nil {
+				t.Fatalf("Eval(%q) error: %v", tt.text, err)
+			}
+			if got != tt.want {
+				t.Fatalf("Eval(%q) = %q, want %q (Jackett would emit %q)", tt.text, got, tt.want, tt.jackett)
 			}
 		})
 	}

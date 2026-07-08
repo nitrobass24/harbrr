@@ -59,9 +59,29 @@ func Eval(text string, ctx *Context) (string, error) {
 		return text, nil
 	}
 
-	// Reproduce Jackett's string truthiness (!IsNullOrWhiteSpace): whitespace-only
-	// values are falsy there but truthy under Go's text/template, so collapse them
-	// to "" before rendering. See the .NET-truthiness contract on Context.
+	// Collapse whitespace-only string values to "" before rendering. This
+	// reproduces Jackett's string truthiness (!IsNullOrWhiteSpace) in bare
+	// {{ if .X }} conditions — whitespace-only is falsy there but truthy under Go's
+	// text/template — by mutating the ONE value Go's engine sees per variable.
+	//
+	// It is a DELIBERATE simplification, not full parity. Jackett applies
+	// IsNullOrWhiteSpace ONLY in if/else conditions (applyGoTemplateText's
+	// IfElseRegex branch) and uses the RAW value everywhere else, whereas collapsing
+	// the stored value also changes two degenerate whitespace-only edges Go's
+	// template drives off that same value:
+	//   - interpolation: `a{{ .Config.sep }}b` with sep=" " renders "ab" here vs
+	//     Jackett's "a b" (Jackett's simple-variable pass emits the raw value).
+	//   - eq/ne: `eq .Query.IMDBID .False` with IMDBID=" " compares ""=="" (true,
+	//     -> onTrue) here vs Jackett's raw " " != null (false, -> onFalse); Jackett's
+	//     eq is a raw string compare with no IsNullOrWhiteSpace.
+	// Both bite only a whitespace-ONLY carrier value (.Query.Q=" ", a space-valued
+	// .Config.*/.Result.*); .Keywords is pre-trimmed upstream. No vendored def or
+	// offline golden exercises one, so the parity gate is unaffected. A faithful
+	// split would mean rebuilding Jackett's regex mini-engine (raw interpolation +
+	// raw eq + whitespace-aware if) instead of delegating truthiness to Go's
+	// text/template — not justified for this degenerate edge. See the .NET-truthiness
+	// contract on Context and the "Whitespace-only value collapse" entry in the
+	// parity README.
 	normalizeWhitespaceValues(ctx)
 
 	expanded, subs, err := expandFuncs(text, ctx)
@@ -224,9 +244,12 @@ func submatchStrings(text string, idx []int) []string {
 
 // normalizeWhitespaceValues collapses whitespace-only string values in the
 // context to "" so Go's text/template (which treats only "" as falsy) matches
-// Jackett's !string.IsNullOrWhiteSpace truthiness. It mutates ctx in place; this
-// is safe because callers build a fresh Context per Eval and the normalized form
-// is observationally equivalent for every read path. Empty slices are already
+// Jackett's !string.IsNullOrWhiteSpace truthiness in {{ if .X }} conditions. It
+// mutates ctx in place, which is safe because callers build a fresh Context per
+// Eval. The collapse is NOT observationally equivalent on every read path: for a
+// whitespace-only value it also empties interpolation and eq/ne comparison — a
+// deliberate divergence from Jackett's raw handling on those paths, degenerate and
+// unhit by the corpus (see Eval's contract note above). Empty slices are already
 // falsy in Go, so Categories is untouched.
 func normalizeWhitespaceValues(ctx *Context) {
 	normalizeMapWhitespace(ctx.Config)
