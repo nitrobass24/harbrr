@@ -401,7 +401,14 @@ func TestReplacementTokenParity(t *testing.T) {
 		{"left-portion token", `(\d+)`, "ab12", "[$`]", "ab[ab]"},
 		{"right-portion token", `(\d+)`, "12cd", "[$']", "[cd]cd"},
 		{"entire-input token", `\d+`, "a1b", "[$_]", "a[a1b]b"},
-		{"last-group token", `(\d)(\d)`, "56", "$+", "6"},
+		// $+ is the LAST-NUMBERED group unconditionally (verified against native
+		// regexp2.Replace, the .NET oracle), NOT the highest group that captured.
+		{"last-group token", `(\d)(\d)`, "56", "$+", "6"}, // last-numbered == captured
+		// Alternation: only group 1 captures, but $+ names group 2 (last-numbered),
+		// which is empty -> "<>", not "<foo>".
+		{"last-group token alternation empty", `(foo)|(bar)`, "foo", "<$+>", "<>"},
+		// No explicit groups: $+ falls back to group 0 (the whole match).
+		{"last-group token no groups", `\d+`, "ab12cd", "<$+>", "ab<12>cd"},
 		{"unknown braced literal", `(\d)`, "5", "${nope}", "${nope}"},
 	}
 	for _, tc := range cases {

@@ -24,7 +24,10 @@ import (
 //	$`        input text to the left of the match
 //	$'        input text to the right of the match
 //	$_        the entire input
-//	$+        the last group that actually captured
+//	$+        the LAST-NUMBERED group, unconditionally: "" if that group did not
+//	          capture, or the whole match (group 0) when the pattern has no
+//	          explicit groups. .NET does NOT pick the highest group that happened
+//	          to capture — it always substitutes the last group by number.
 //	$ (other) literal "$"
 //
 // We never reimplement the *matching* engine — only the substitution, which both
@@ -42,8 +45,10 @@ type matchView struct {
 	right  string   // text to the right of the match ($' token)
 	groups []string // group[0] = whole match, group[n] = capture n ("" if absent)
 	names  []string // names[n] = name of group n ("" if unnamed); index-aligned
-	// lastCaptured is the value of the highest-numbered group that captured, for
-	// the .NET "$+" token; "" when no group captured.
+	// lastCaptured is the value of the LAST-NUMBERED group, for the .NET "$+"
+	// token: "" if that group did not capture, or the whole match (group 0) when
+	// the pattern has no explicit groups. .NET substitutes this group
+	// unconditionally, not the highest group that happened to capture.
 	lastCaptured string
 }
 
@@ -201,17 +206,13 @@ func regexp2MatchView(input string, runes []rune, m *regexp2.Match) matchView {
 	count := m.GroupCount()
 	groups := make([]string, count)
 	names := make([]string, count)
-	last := ""
 	for n := 0; n < count; n++ {
 		g := m.GroupByNumber(n)
 		if g == nil {
-			continue
+			continue // uncaptured group: leave groups[n] "" (the .NET $N value)
 		}
 		groups[n] = g.String()
 		names[n] = g.Name
-		if n > 0 && len(g.Captures) > 0 {
-			last = groups[n]
-		}
 	}
 	start, end := m.Index, m.Index+m.Length
 	return matchView{
@@ -221,7 +222,7 @@ func regexp2MatchView(input string, runes []rune, m *regexp2.Match) matchView {
 		right:        string(runes[end:]),
 		groups:       groups,
 		names:        names,
-		lastCaptured: last,
+		lastCaptured: groups[count-1], // .NET "$+": last-numbered group, unconditionally
 	}
 }
 
@@ -247,16 +248,12 @@ func (r *Regexp) replaceRE2(input, repl string) string {
 // re2MatchView builds a matchView from an RE2 byte-offset submatch slice.
 func re2MatchView(input string, loc []int, names []string) matchView {
 	groups := make([]string, len(loc)/2)
-	last := ""
 	for g := range groups {
 		s, e := loc[2*g], loc[2*g+1]
 		if s < 0 || e < 0 {
-			continue
+			continue // uncaptured group: leave groups[g] "" (the .NET $N value)
 		}
 		groups[g] = input[s:e]
-		if g > 0 {
-			last = groups[g]
-		}
 	}
 	return matchView{
 		input:        input,
@@ -265,7 +262,7 @@ func re2MatchView(input string, loc []int, names []string) matchView {
 		right:        input[loc[1]:],
 		groups:       groups,
 		names:        names,
-		lastCaptured: last,
+		lastCaptured: groups[len(groups)-1], // .NET "$+": last-numbered group, unconditionally
 	}
 }
 
