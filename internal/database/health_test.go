@@ -147,6 +147,59 @@ func TestHealthAllCounts(t *testing.T) {
 	}
 }
 
+// TestHealthDeleteBefore proves the retention purge removes only events strictly older
+// than the cutoff: it returns the count deleted, leaves newer rows intact, and — per the
+// `<` semantics — keeps an event landing exactly on the cutoff boundary.
+func TestHealthDeleteBefore(t *testing.T) {
+	t.Parallel()
+	db := openMigrated(t, filepath.Join(t.TempDir(), "health.db"))
+	ctx := context.Background()
+	id := seedInstance(t, db, "tt")
+	h := database.Health{}
+
+	cutoff := time.Date(2026, time.June, 14, 12, 0, 0, 0, time.UTC)
+	events := []domain.IndexerHealthEvent{
+		{InstanceID: id, Kind: domain.HealthAuthFailure, OccurredAt: cutoff.Add(-48 * time.Hour)}, // older -> deleted
+		{InstanceID: id, Kind: domain.HealthRateLimited, OccurredAt: cutoff.Add(-time.Minute)},    // older -> deleted
+		{InstanceID: id, Kind: domain.HealthParseError, OccurredAt: cutoff},                       // exactly on boundary -> kept (`<`)
+		{InstanceID: id, Kind: domain.HealthAntiBot, OccurredAt: cutoff.Add(time.Minute)},         // newer -> kept
+	}
+	for _, e := range events {
+		if err := h.Record(ctx, db, e); err != nil {
+			t.Fatalf("record %s: %v", e.Kind, err)
+		}
+	}
+
+	deleted, err := h.DeleteBefore(ctx, db, cutoff)
+	if err != nil {
+		t.Fatalf("DeleteBefore: %v", err)
+	}
+	if deleted != 2 {
+		t.Errorf("deleted = %d, want 2 (only the two strictly older than cutoff)", deleted)
+	}
+
+	// The survivors are exactly the boundary and newer events, newest first.
+	got, err := h.Recent(ctx, db, id, 10)
+	if err != nil {
+		t.Fatalf("recent: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("survivors = %d, want 2", len(got))
+	}
+	if got[0].Kind != domain.HealthAntiBot || got[1].Kind != domain.HealthParseError {
+		t.Errorf("survivors = [%q, %q], want [anti_bot, parse_error] (boundary kept)", got[0].Kind, got[1].Kind)
+	}
+
+	// A second purge at the same cutoff is a no-op (nothing left older than it).
+	again, err := h.DeleteBefore(ctx, db, cutoff)
+	if err != nil {
+		t.Fatalf("DeleteBefore (repeat): %v", err)
+	}
+	if again != 0 {
+		t.Errorf("second delete = %d, want 0", again)
+	}
+}
+
 // TestHealthCascadeOnInstanceDelete proves the FK ON DELETE CASCADE actually fires
 // (foreign_keys is ON): deleting the parent instance removes its health rows.
 func TestHealthCascadeOnInstanceDelete(t *testing.T) {
