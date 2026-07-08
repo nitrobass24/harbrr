@@ -108,17 +108,17 @@ func rotateKeys(ctx context.Context, db *database.DB, oldKR, newKR *secrets.Keyr
 		}
 	}
 
-	rekeyed, err := reencryptRows(ctx, db, oldKR, newKR)
+	plan, err := reencryptAll(ctx, db, oldKR, newKR)
 	if err != nil {
 		return rotateReport{}, err
 	}
 	if dryRun {
-		return rotateReport{rows: len(rekeyed)}, nil
+		return rotateReport{rows: plan.count()}, nil
 	}
-	if err := applyRotation(ctx, db, newKR, rekeyed); err != nil {
+	if err := applyRotation(ctx, db, newKR, plan); err != nil {
 		return rotateReport{}, err
 	}
-	return rotateReport{rows: len(rekeyed)}, nil
+	return rotateReport{rows: plan.count()}, nil
 }
 
 // rekeyedRow is a secret row's id and its ciphertext re-sealed under the new key.
@@ -127,9 +127,61 @@ type rekeyedRow struct {
 	blob string
 }
 
-// reencryptRows decrypts every secret row under the old key and re-encrypts it
-// under the new key in memory, failing loud (before any write) on a wrong old key.
-// An empty secret (empty ciphertext) stays empty — only its key_id is rotated.
+// rekeyedSurface holds a fixed-AAD surface's re-sealed rows (each row's ciphertext
+// columns are parallel to the surface's Columns).
+type rekeyedSurface struct {
+	surface database.FixedAADSurface
+	rows    []rekeyedSurfaceRow
+}
+
+// rekeyedSurfaceRow is one surface row's id and its ciphertext columns re-sealed
+// under the new key, in the surface's Columns order.
+type rekeyedSurfaceRow struct {
+	id    int64
+	blobs []string
+}
+
+// rekeyPlan is every secret in the store re-sealed under the new key, held in memory
+// before any write so a wrong old key fails loud with the store untouched. It spans
+// indexer_settings plus every fixed-AAD surface (SecretSurfaces).
+type rekeyPlan struct {
+	settings []rekeyedRow
+	surfaces []rekeyedSurface
+}
+
+// count is the number of secret rows re-sealed across every table (for the report).
+func (p rekeyPlan) count() int {
+	n := len(p.settings)
+	for _, s := range p.surfaces {
+		n += len(s.rows)
+	}
+	return n
+}
+
+// reencryptAll decrypts every stored secret under the old key and re-encrypts it
+// under the new key in memory — indexer_settings and every fixed-AAD surface — using
+// each surface's exact sealing AAD. It fails loud (before any write) on a wrong old
+// key. Nothing here is persisted; applyRotation writes the plan atomically.
+func reencryptAll(ctx context.Context, db *database.DB, oldKR, newKR *secrets.Keyring) (rekeyPlan, error) {
+	settings, err := reencryptRows(ctx, db, oldKR, newKR)
+	if err != nil {
+		return rekeyPlan{}, err
+	}
+	rot := database.Rotation{}
+	surfaces := make([]rekeyedSurface, 0, len(database.SecretSurfaces()))
+	for _, s := range database.SecretSurfaces() {
+		rs, serr := reencryptSurface(ctx, db, rot, s, oldKR, newKR)
+		if serr != nil {
+			return rekeyPlan{}, serr
+		}
+		surfaces = append(surfaces, rs)
+	}
+	return rekeyPlan{settings: settings, surfaces: surfaces}, nil
+}
+
+// reencryptRows decrypts every indexer_settings secret row under the old key and
+// re-encrypts it under the new key in memory, failing loud (before any write) on a
+// wrong old key. An empty secret (empty ciphertext) stays empty — only key_id rotates.
 func reencryptRows(ctx context.Context, db *database.DB, oldKR, newKR *secrets.Keyring) ([]rekeyedRow, error) {
 	rows, err := (database.Rotation{}).AllSecrets(ctx, db)
 	if err != nil {
@@ -154,9 +206,40 @@ func reencryptRows(ctx context.Context, db *database.DB, oldKR, newKR *secrets.K
 	return out, nil
 }
 
-// applyRotation writes the re-encrypted rows + the new canary + the new key_id in a
-// single transaction, so the store is never left half-rotated.
-func applyRotation(ctx context.Context, db *database.DB, newKR *secrets.Keyring, rekeyed []rekeyedRow) error {
+// reencryptSurface decrypts every ciphertext column of one fixed-AAD surface under
+// the old key (AAD = row id + the column's constant discriminator) and re-encrypts
+// it under the new key, failing loud on a wrong old key. An empty ciphertext column
+// stays empty — only key_id rotates.
+func reencryptSurface(ctx context.Context, db *database.DB, rot database.Rotation, s database.FixedAADSurface, oldKR, newKR *secrets.Keyring) (rekeyedSurface, error) {
+	rows, err := rot.SurfaceRows(ctx, db, s)
+	if err != nil {
+		return rekeyedSurface{}, fmt.Errorf("rotate-key: %w", err)
+	}
+	out := make([]rekeyedSurfaceRow, 0, len(rows))
+	for _, r := range rows {
+		blobs := make([]string, len(s.Columns))
+		for i, col := range s.Columns {
+			if r.Ciphers[i] == "" {
+				continue
+			}
+			pt, derr := oldKR.Decrypt(r.ID, col.Setting, r.Ciphers[i])
+			if derr != nil {
+				return rekeyedSurface{}, fmt.Errorf("rotate-key: cannot decrypt %s.%s %d under the old key (wrong key or tampered data)", s.Table, col.Cipher, r.ID)
+			}
+			blob, eerr := newKR.Encrypt(r.ID, col.Setting, pt)
+			if eerr != nil {
+				return rekeyedSurface{}, fmt.Errorf("rotate-key: re-encrypt %s.%s %d: %w", s.Table, col.Cipher, r.ID, eerr)
+			}
+			blobs[i] = blob
+		}
+		out = append(out, rekeyedSurfaceRow{id: r.ID, blobs: blobs})
+	}
+	return rekeyedSurface{surface: s, rows: out}, nil
+}
+
+// applyRotation writes the whole re-encrypted plan + the new canary + the new key_id
+// in a single transaction, so the store is never left half-rotated across tables.
+func applyRotation(ctx context.Context, db *database.DB, newKR *secrets.Keyring, plan rekeyPlan) error {
 	newCanary, err := newKR.EncryptCanary()
 	if err != nil {
 		return fmt.Errorf("rotate-key: seal canary: %w", err)
@@ -173,9 +256,16 @@ func applyRotation(ctx context.Context, db *database.DB, newKR *secrets.Keyring,
 	}()
 
 	rot := database.Rotation{}
-	for _, e := range rekeyed {
+	for _, e := range plan.settings {
 		if uerr := rot.UpdateSecret(ctx, tx, e.id, e.blob, newKR.KeyID()); uerr != nil {
 			return fmt.Errorf("rotate-key: %w", uerr)
+		}
+	}
+	for _, rs := range plan.surfaces {
+		for _, e := range rs.rows {
+			if uerr := rot.UpdateSurface(ctx, tx, rs.surface, e.id, e.blobs, newKR.KeyID()); uerr != nil {
+				return fmt.Errorf("rotate-key: %w", uerr)
+			}
 		}
 	}
 	meta := database.AppMeta{}

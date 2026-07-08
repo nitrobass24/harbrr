@@ -60,9 +60,15 @@ hashed.** The web-UI password and API keys are never stored in recoverable form,
   admin out of their own UI.
 - **Key rotation is shipped** (`harbrr rotate-key`, `cmd/harbrr/rotate_key.go` +
   `internal/database/rotation.go`): an offline command run with the daemon stopped that re-encrypts
-  every stored secret (and the canary) from an old key to a new key. It dry-runs (decrypts every row
-  under the old key) before any write and applies the rewrite in a single transaction, so a wrong old
-  key fails loud with the store untouched.
+  every stored secret (and the canary) from an old key to a new key. "Every stored secret" is the whole
+  set: `indexer_settings` plus every fixed-AAD surface enumerated in `database.SecretSurfaces`
+  (`app_connections` + `announce_connections` — each with two secret columns —, `notifications`,
+  `proxies`, `solvers`). Each column is re-sealed under the exact AAD its owning service uses, so the
+  new key decrypts cleanly everywhere. It dry-runs (decrypts every row under the old key) before any
+  write and applies the whole rewrite in a single transaction, so a wrong old key — or a mid-rotation
+  failure — fails loud with the store untouched (never half-rotated). **Adding a new secret-bearing
+  table means adding it to `SecretSurfaces` (or `AllSecrets` for a column-driven AAD); the rotation
+  test in `cmd/harbrr/rotate_key_test.go` seeds every surface as the standing guard against that drift.**
 
 ## Web-UI / management-API authentication
 
