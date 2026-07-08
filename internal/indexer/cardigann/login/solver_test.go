@@ -117,6 +117,57 @@ func TestFetchLandingPastAntiBot_NoopFailsLoud(t *testing.T) {
 	}
 }
 
+// decliningSolver always fails with a fixed error, so a test can assert the
+// concrete decline cause survives into the ErrSolverRequired chain.
+type decliningSolver struct{ err error }
+
+func (d decliningSolver) Solve(context.Context, string) (SolveResult, error) {
+	return SolveResult{}, d.err
+}
+
+func TestFetchLandingPastAntiBot_PreservesDeclineCause(t *testing.T) {
+	t.Parallel()
+	// A synthetic transport-style outage (e.g. FlareSolverr unreachable): the cause
+	// must survive so an outage is distinguishable from "no solver configured".
+	transportErr := errors.New("flaresolverr: connection refused")
+	tests := []struct {
+		name  string
+		cause error
+	}{
+		{name: "no solver configured", cause: ErrNoSolverConfigured},
+		{name: "solver outage", cause: transportErr},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			doer := &seqDoer{bodies: []string{"Just a moment..."}}
+			e := New(WithClient(doer), WithBaseURL("https://t.invalid/"), WithSolver(decliningSolver{err: tt.cause}))
+
+			_, err := e.fetchLandingPastAntiBot(t.Context(), "https://t.invalid/login.php?passkey=secrettoken", nil)
+			// (a) ErrSolverRequired preserved so classifyHealth routes it to the anti-bot kind.
+			if !errors.Is(err, ErrSolverRequired) {
+				t.Errorf("err = %v, want ErrSolverRequired", err)
+			}
+			// (b) the concrete decline cause survives (outage != "no solver configured").
+			if !errors.Is(err, tt.cause) {
+				t.Errorf("err = %v, want chain to contain cause %v", err, tt.cause)
+			}
+			// No secret (the target URL's passkey) leaks into the error string.
+			if strings.Contains(err.Error(), "secrettoken") || strings.Contains(err.Error(), "passkey") {
+				t.Errorf("error string leaked a secret: %q", err.Error())
+			}
+		})
+	}
+
+	// The two causes must be distinguishable from each other — the whole point of
+	// the fix (before it, both collapsed to the same generic message).
+	base := New(WithClient(&seqDoer{bodies: []string{"Just a moment..."}}), WithBaseURL("https://t.invalid/"), WithSolver(decliningSolver{err: ErrNoSolverConfigured}))
+	_, noSolverErr := base.fetchLandingPastAntiBot(t.Context(), "https://t.invalid/login.php", nil)
+	if errors.Is(noSolverErr, transportErr) {
+		t.Errorf("no-solver error should NOT match the transport cause: %v", noSolverErr)
+	}
+}
+
 func TestFetchLandingPastAntiBot_CleanPage(t *testing.T) {
 	t.Parallel()
 	doer := &seqDoer{bodies: []string{"<html><body>login form</body></html>"}}
