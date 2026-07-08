@@ -2,12 +2,15 @@ import { ArrowDown, ArrowUp, Download, Magnet } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatSize, relativeTime } from "@/lib/format"
+import { isSafeHref } from "@/lib/safe-href"
 import { cn } from "@/lib/utils"
 import type { SearchRow, Sort, SortKey } from "@/components/search/search-sort"
 
 // Merged, client-side-sorted results. Grab links are the API-returned URLs
 // rendered VERBATIM as anchor hrefs — the UI never rebuilds or logs them
-// (magnets may carry passkeys by design).
+// (magnets may carry passkeys by design). Trackers are untrusted, so the scheme
+// is allowlisted (http/https for `link`, magnet: for `magnet`) before a link is
+// rendered at all; anything else (javascript:, data:, etc.) is dropped silently.
 export function SearchResultsTable({ rows, catNames, sort, onSort }: {
   rows: SearchRow[]
   catNames: Map<number, string>
@@ -90,7 +93,7 @@ function ResultRow({ row, catNames }: { row: SearchRow, catNames: Map<number, st
       </TableCell>
       <TableCell className="pr-5">
         <span className="flex items-center justify-end gap-1">
-          {r.link && (
+          {r.link && isSafeHref(r.link, ["http:", "https:"]) && (
             <a
               href={r.link}
               target="_blank"
@@ -101,7 +104,7 @@ function ResultRow({ row, catNames }: { row: SearchRow, catNames: Map<number, st
               <Download className="h-4 w-4" />
             </a>
           )}
-          {r.magnet && (
+          {r.magnet && isSafeHref(r.magnet, ["magnet:"]) && (
             <a
               href={r.magnet}
               target="_blank"

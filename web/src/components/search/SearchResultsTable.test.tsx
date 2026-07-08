@@ -67,6 +67,29 @@ describe("SearchResultsTable", () => {
     expect(magnet.getAttribute("href")).toBe("magnet:?xt=urn:btih:abc")
   })
 
+  it.each([
+    ["javascript:", "javascript:fetch('/api/keys',{method:'DELETE'})"],
+    ["data:", "data:text/html,<script>alert(1)</script>"],
+    ["vbscript:", "vbscript:msgbox(1)"],
+    ["tab-obfuscated javascript:", "java\tscript:alert(1)"],
+    ["uppercase JavaScript:", "JavaScript:alert(1)"],
+  ])("never renders a clickable href for a %s link or magnet value", (_label, malicious) => {
+    const rows: SearchRow[] = [
+      {
+        indexer: "hostile",
+        release: {
+          title: "Hostile Release",
+          link: malicious,
+          magnet: malicious,
+          size: 1,
+        },
+      },
+    ]
+    renderTable(rows)
+    expect(screen.queryByLabelText("Download Hostile Release")).toBeNull()
+    expect(screen.queryByLabelText("Magnet for Hostile Release")).toBeNull()
+  })
+
   it("marks freeleech releases with the FL badge", () => {
     renderTable()
     const sintel = screen.getByText("Sintel 720p FL").closest("tr")!
