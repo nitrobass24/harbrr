@@ -1,0 +1,44 @@
+---
+id: searchheaders
+name: searchheaders
+description: "Synthetic HTML tracker (search mode) whose search request carries def-declared headers."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://headers.test/
+
+caps:
+  categories:
+    "1": Movies
+
+  modes:
+    search: [q]
+
+search:
+  # Two search.headers: a config-templated auth carrier (mirrors DigitalCore's
+  # X-API-KEY: {{ .Config.apikey }}) and a static header. Both must reach the
+  # outgoing GET — the case asserts that via expect_header.
+  headers:
+    X-API-KEY: ["{{ .Config.apikey }}"]
+    X-Test-Header: ["synthetic-search-header"]
+  paths:
+    - path: search
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: tr.row
+  fields:
+    title:
+      selector: a.title
+    download:
+      selector: a.dl
+      attribute: href
+    size:
+      selector: td.size
+    seeders:
+      selector: td.seeders
+    leechers:
+      selector: td.leechers
+    category:
+      text: "1"
