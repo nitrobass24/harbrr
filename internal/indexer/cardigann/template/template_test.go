@@ -541,11 +541,13 @@ func TestEvalGenuineActionStillResolves(t *testing.T) {
 // rewriting), so a failure here means the corpus uses a construct this stage
 // does not yet handle.
 //
-// Two excluded classes (documented, not silent):
-//   - knownDefBugs: upstream-malformed templates Jackett tolerates but no real
-//     parser can (see knownDefBugs).
-//   - re_replace patterns that need .NET (regexp2) semantics and fail to compile
-//     under RE2; that routing is the regexadapter's job, out of scope here.
+// One excluded class (documented, not silent): knownDefBugs — upstream-malformed
+// templates Jackett tolerates but no real parser can (see knownDefBugs).
+//
+// re_replace patterns are NOT excluded: the regexadapter transparently routes
+// RE2→regexp2, so a pattern needing .NET (regexp2) semantics compiles and parses
+// cleanly here. Only a pattern that compiles under NEITHER engine is a failure,
+// and that failure is caught loudly in `failures` below — never silently deferred.
 func TestCorpusParses(t *testing.T) {
 	t.Parallel()
 
@@ -560,7 +562,6 @@ func TestCorpusParses(t *testing.T) {
 	ctx := representativeContext()
 	var (
 		parsed   int
-		regexp2  int
 		failures []string
 	)
 
@@ -574,10 +575,6 @@ func TestCorpusParses(t *testing.T) {
 			if err == nil {
 				continue
 			}
-			if strings.Contains(err.Error(), "re_replace: compiling pattern") {
-				regexp2++
-				continue
-			}
 			failures = append(failures, def.ID+": "+strconv.Quote(tmpl)+": "+err.Error())
 		}
 	}
@@ -585,16 +582,7 @@ func TestCorpusParses(t *testing.T) {
 	if len(failures) > 0 {
 		t.Fatalf("%d template(s) failed:\n%s", len(failures), strings.Join(failures, "\n"))
 	}
-	// The regexp2 bucket conflates "needs .NET semantics" with "is a real broken
-	// pattern". Pin the current snapshot's count (0) so the bucket can't grow
-	// silently: a future non-zero count is a deliberate regexadapter decision, not a
-	// RE2 regression hiding in the deferred tally.
-	if regexp2 != 0 {
-		t.Fatalf("re_replace patterns failing RE2 compile: got %d, want 0 "+
-			"(if a def now needs regexp2 via the regexadapter, update this expectation deliberately)", regexp2)
-	}
-	t.Logf("evaluated %d template strings across %d definitions (%d deferred to the regexp2 regexadapter)",
-		parsed, len(defs), regexp2)
+	t.Logf("evaluated %d template strings across %d definitions", parsed, len(defs))
 }
 
 func representativeContext() *Context {
