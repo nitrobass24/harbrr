@@ -1,6 +1,7 @@
 package dateparse_test
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"testing"
@@ -237,6 +238,74 @@ func TestParseDateFailureSurfaces(t *testing.T) {
 	}
 }
 
+// TestParseDateInternalWhitespaceLenient pins the DELIBERATE lenient divergence in
+// normalizeSpace: harbrr collapses internal whitespace runs and NBSP before
+// ParseExact, so a value with a double space or NBSP still parses to the instant.
+// Jackett is trim-only on the date path (ParseUtil.NormalizeSpace) with
+// DateTimeStyles.None, so its ParseExact THROWS on these — the divergence is a
+// superset (lenient), accepted because harbrr surfaces a parse failure as a row
+// drop rather than Jackett's raw passthrough + fuzzy recovery (see normalizeSpace).
+func TestParseDateInternalWhitespaceLenient(t *testing.T) {
+	t.Parallel()
+	p := dateparse.New(dateparse.WithClock(fixedClock()))
+	const want = "2023-01-02T00:00:00Z"
+	cases := []struct {
+		name  string
+		value string
+	}{
+		{"single-space-baseline", "Jan 2 2023"},
+		{"internal-double-space", "Jan  2 2023"},
+		{"internal-nbsp", "Jan\u00A02 2023"},
+		{"leading-trailing-space", "  Jan 2 2023  "},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := p.ParseDate(c.value, "MMM d yyyy")
+			if err != nil {
+				t.Fatalf("ParseDate(%q) error: %v", c.value, err)
+			}
+			if got != want {
+				t.Fatalf("ParseDate(%q) = %q, want %q", c.value, got, want)
+			}
+		})
+	}
+}
+
+// TestCensusSampleWeekdayAlignsWithClock enforces the invariant checkCensusRoundTrip
+// relies on: censusSample and fixedClock must fall on the same weekday, so a
+// weekday-name-only layout (whose date correctly defaults to the clock) reformats
+// to censusSample's weekday and is not false-flagged. If a future edit moves
+// either constant, this fails loudly instead of silently breaking the census.
+func TestCensusSampleWeekdayAlignsWithClock(t *testing.T) {
+	t.Parallel()
+	if got, want := censusSample.Weekday(), fixedClock()().Weekday(); got != want {
+		t.Fatalf("censusSample weekday %v != clock weekday %v: adjust censusSample so they align", got, want)
+	}
+}
+
+// TestCensusCatchesGoStyleLayout pins that the hardened census round-trip flags a
+// Go-style layout (digits, not .NET letters) as a silent component drop, while
+// leaving legitimately partial layouts alone. Such a layout is not in the corpus:
+// Jackett's ParseDateTimeGoLang converts Go->.NET ("2006-01-02" -> "yyyy-MM-dd")
+// and preserves the date, but harbrr's .NET-first TranslateLayout leaves the
+// digits verbatim, so layoutHasDateTokens misreads it as time-only and stamps the
+// clock date. The census MUST catch it if one ever enters the corpus.
+func TestCensusCatchesGoStyleLayout(t *testing.T) {
+	t.Parallel()
+	p := dateparse.New(dateparse.WithClock(fixedClock()))
+	if err := checkCensusRoundTrip(p, "2006-01-02"); err == nil {
+		t.Fatal(`census round-trip should flag Go-style layout "2006-01-02" as a silent date drop, got nil`)
+	}
+	// Legitimately partial layouts (time-only, date-only, weekday-name-only) must
+	// NOT be false-flagged.
+	for _, ok := range []string{"HH:mm", "HH:mm zzz", "yyyy-MM-dd", "ddd HH:mm", "MMM"} {
+		if err := checkCensusRoundTrip(p, ok); err != nil {
+			t.Fatalf("census round-trip false-flagged partial layout %q: %v", ok, err)
+		}
+	}
+}
+
 func TestParseRelTime(t *testing.T) {
 	t.Parallel()
 	p := dateparse.New(dateparse.WithClock(fixedClock()))
@@ -363,38 +432,68 @@ func TestParseRelTimeFailure(t *testing.T) {
 	}
 }
 
-// representativeValue produces a value string by formatting a fixed sample
-// instant through the translated Go layout. The census parses it back to confirm
-// the translated layout is INTERNALLY CONSISTENT (Go can both format and parse
-// it).
+// censusSample is the fixed instant the census formats through each corpus layout
+// to synthesize a representative value. Its nanoseconds are zero (RFC3339, the
+// canonical ParseDate output, carries no sub-second field) and its weekday MUST
+// equal fixedClock's weekday — see checkCensusRoundTrip for why. 2023-07-08 and
+// the 2024-06-01 clock are both Saturdays. Month is deliberately NOT January and
+// day is NOT 1 (Go's time zero-value defaults): so a hypothetical bug that drops
+// an encoded month/day token and defaults it can't coincidentally reproduce the
+// sample and slip past the reform-compare.
+var censusSample = time.Date(2023, time.July, 8, 15, 4, 5, 0, time.FixedZone("", 2*3600))
+
+// checkCensusRoundTrip is the census's per-format assertion. It formats
+// censusSample through the layout, parses that value back with ParseDate, then
+// re-formats the parsed instant through the SAME Go layout and asserts the string
+// is unchanged.
 //
-// LIMITATION: because format and parse use the same translated layout, this
-// round-trip is self-fulfilling — it proves "translates and self-round-trips",
-// NOT "parses real Jackett feed values". A layout that translates to a Go layout
-// Go cannot parse against real input (the historic single-`z` -> "-7" case) would
-// still pass here. Real-value parity is the job of TestParseDate /
-// TestParseDateLocalizedNames (hand-written feed values); the census is a
-// translate-coverage gate over the whole corpus.
-func representativeValue(netLayout string) string {
-	// Build by translating then formatting the fixed sample instant through the
-	// Go layout; this guarantees a parseable value for any translatable layout.
+// Comparing only the error (the historic census) is self-fulfilling: a layout
+// that PARSES but silently DROPS a component it actually encodes still returns a
+// nil error. The concrete miss is a Go-style layout ("2006-01-02", digits not
+// .NET letters): TranslateLayout passes it through verbatim, so Go parses the
+// value, but layoutHasDateTokens (which scans for .NET y/M/d letters) reads it as
+// time-only and stamps the DATE to the clock — a wrong instant with no error.
+// Re-formatting exposes that: the dropped-then-defaulted component reformats to a
+// different string than the sample. A legitimately partial layout (time-only,
+// date-only, weekday-name-only) re-formats to the SAME string because it never
+// carried the defaulted component in the first place — provided the sample and
+// clock share a weekday, so a weekday-name-only layout (whose date correctly
+// defaults to the clock) reformats to the sample's weekday too.
+//
+// This strengthens but does not replace real-value parity: the value is still
+// synthesized from the layout, so TestParseDate / TestParseDateLocalizedNames
+// (hand-written feed values) remain the real-value gate.
+func checkCensusRoundTrip(p *dateparse.Parser, netLayout string) error {
 	goLayout, err := dateparse.TranslateLayout(netLayout)
 	if err != nil {
-		return ""
+		return fmt.Errorf("translate: %w", err)
 	}
-	sample := time.Date(2023, time.January, 2, 15, 4, 5, 0, time.FixedZone("", 2*3600))
-	return sample.Format(goLayout)
+	val := censusSample.Format(goLayout)
+	got, err := p.ParseDate(val, netLayout)
+	if err != nil {
+		return fmt.Errorf("parse %q: %w", val, err)
+	}
+	parsed, err := time.Parse(time.RFC3339, got)
+	if err != nil {
+		return fmt.Errorf("reparse canonical %q: %w", got, err)
+	}
+	if round := parsed.Format(goLayout); round != val {
+		return fmt.Errorf("round-trip mismatch: formatted %q, parsed+reformatted %q "+
+			"(layout silently dropped a component it encodes)", val, round)
+	}
+	return nil
 }
 
 // TestCorpusCensus is the translate-coverage gate: it loads the embedded Jackett
 // definition snapshot, collects every distinct dateparse/timeparse format-string
-// arg, and asserts each one translates without error and self-round-trips a
-// representative value through ParseDate. Any untranslatable format fails loudly
-// (never silently skipped). Per-format counts are reported via t.Logf.
+// arg, and asserts each one translates AND round-trips a representative value
+// through ParseDate without dropping a component it encodes (checkCensusRoundTrip).
+// Any untranslatable or lossy format fails loudly (never silently skipped).
+// Per-format counts are reported via t.Logf.
 //
 // This is a COVERAGE gate, not the real-value parity gate (see
-// representativeValue's limitation note) — TestParseDate /
-// TestParseDateLocalizedNames assert hand-written feed values for parity.
+// checkCensusRoundTrip's note) — TestParseDate / TestParseDateLocalizedNames
+// assert hand-written feed values for parity.
 func TestCorpusCensus(t *testing.T) {
 	t.Parallel()
 	defs, skipped, err := loader.New("").LoadAll()
@@ -425,23 +524,11 @@ func TestCorpusCensus(t *testing.T) {
 	var failures []string
 	for _, f := range formats {
 		t.Logf("%4d  %q", counts[f], f)
-		if _, err := dateparse.TranslateLayout(f); err != nil {
+		if err := checkCensusRoundTrip(p, f); err != nil {
 			if _, known := knownUnsupported[f]; known {
 				continue
 			}
-			failures = append(failures, f+" (translate: "+err.Error()+")")
-			continue
-		}
-		val := representativeValue(f)
-		if val == "" {
-			failures = append(failures, f+" (no representative value)")
-			continue
-		}
-		if _, err := p.ParseDate(val, f); err != nil {
-			if _, known := knownUnsupported[f]; known {
-				continue
-			}
-			failures = append(failures, f+" (parse "+val+": "+err.Error()+")")
+			failures = append(failures, fmt.Sprintf("%q (%v)", f, err))
 		}
 	}
 
