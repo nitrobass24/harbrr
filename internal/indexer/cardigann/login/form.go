@@ -22,7 +22,8 @@ import (
 //  4. Assemble the POST body: definition Inputs (template-rendered) overlaid with
 //     the extracted selector values.
 //  5. Resolve the submit target (Login.SubmitPath, else the form's action attr,
-//     else the landing path) and POST.
+//     else the landing path) and POST. A challenged POST is solved-and-retried
+//     (see postFormAbsolute).
 //  6. Run the error selectors.
 //
 // The cookie jar persists Set-Cookie from the landing GET into the POST.
@@ -233,9 +234,18 @@ func (e *Executor) resolveFormTarget(l *loader.Login, form *goquery.Selection, l
 // login form-encoding divergence note.
 func (e *Executor) postFormAbsolute(ctx context.Context, l *loader.Login, target string, pairs url.Values) error {
 	headers := mergeFormHeaders(l.Headers)
-	body, status, err := e.do(ctx, "POST", target, strings.NewReader(pairs.Encode()), headers)
+	encoded := pairs.Encode()
+	body, status, err := e.do(ctx, "POST", target, strings.NewReader(encoded), headers)
 	if err != nil {
 		return err
+	}
+	// The submit POST itself can be anti-bot challenged even when the landing GET
+	// was not (or the clearance lapsed between the two). Without this check the
+	// challenge page sails through checkErrors (no 401, no error-selector match)
+	// as a SILENT false success with no session cookies. Clear it exactly like
+	// postForm does: GET-solve the same URL, then retry the POST.
+	if detectAntiBot(body) != nil {
+		return e.solveAndRetryLoginPost(ctx, l, target, encoded, headers)
 	}
 	return e.checkErrors(l, target, body, status)
 }

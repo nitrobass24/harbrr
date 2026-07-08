@@ -100,7 +100,9 @@ func (e *Executor) loginOneURL(ctx context.Context, def *loader.Definition) erro
 }
 
 // postForm POSTs url.Values as application/x-www-form-urlencoded to the resolved
-// target path, then runs the error selectors. Shared by post and form methods.
+// target path, then runs the error selectors. Used by the post method only; the
+// form method posts its already-resolved form action via postFormAbsolute
+// (form.go). Both share solveAndRetryLoginPost for a challenged POST.
 //
 // Login form bodies use stdlib url.Values.Encode (alphabetically sorted keys,
 // url.QueryEscape values), which diverges from Jackett's WebUtility encoding on

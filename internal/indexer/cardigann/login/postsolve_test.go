@@ -2,6 +2,7 @@ package login
 
 import (
 	"context"
+	"errors"
 	"io"
 	stdhttp "net/http"
 	"net/http/cookiejar"
@@ -127,6 +128,147 @@ func TestPostForm_ChallengedLoginNoSolverFailsLoud(t *testing.T) {
 	}
 	if doer.posts != 1 {
 		t.Errorf("POSTs = %d, want 1 (no retry without a solver)", doer.posts)
+	}
+}
+
+// formSubmitDoer serves the clean login form for every GET (the landing page is
+// NOT challenged) and a Cloudflare challenge for the first POST; the retry POST
+// gets the logged-in page unless failAllPosts is set. It records the retry
+// request so the cf_clearance + UA replay can be asserted — postThenCleanDoer's
+// counterpart for the form method, whose landing GET must succeed first.
+type formSubmitDoer struct {
+	mu            sync.Mutex
+	failAllPosts  bool
+	posts         int
+	retryHeaders  stdhttp.Header
+	retryHadCFCkz bool
+}
+
+const formLandingHTML = `<html><body><form action="/takelogin.php">` +
+	`<input type="hidden" name="csrf" value="TOK-123"/></form></body></html>`
+
+func (d *formSubmitDoer) RoundTrip(req *stdhttp.Request) (*stdhttp.Response, error) {
+	if req.Method != stdhttp.MethodPost {
+		return htmlResponse(req, stdhttp.StatusOK, formLandingHTML), nil
+	}
+	d.mu.Lock()
+	d.posts++
+	challenged := d.posts == 1 || d.failAllPosts
+	if !challenged {
+		d.retryHeaders = req.Header.Clone()
+		for _, c := range req.Cookies() {
+			if c.Name == "cf_clearance" {
+				d.retryHadCFCkz = true
+			}
+		}
+	}
+	d.mu.Unlock()
+	if challenged {
+		return htmlResponse(req, stdhttp.StatusForbidden,
+			"<html><head><title>Just a moment...</title></head></html>"), nil
+	}
+	return htmlResponse(req, stdhttp.StatusOK, "<html><body>welcome, logged in</body></html>"), nil
+}
+
+func htmlResponse(req *stdhttp.Request, status int, body string) *stdhttp.Response {
+	return &stdhttp.Response{
+		StatusCode: status,
+		Header:     stdhttp.Header{},
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Request:    req,
+	}
+}
+
+// formChallengeDef builds a minimal form-method login. Method is deliberately
+// left UNSET: Jackett (and Login()) default it to "form", so these tests cover
+// the corpus's default login path, not just an explicit `method: form`.
+func formChallengeDef() *loader.Definition {
+	return &loader.Definition{Login: &loader.Login{
+		Path:   "login.php",
+		Inputs: map[string]loader.Scalar{"username": scalar("u"), "password": scalar("p")},
+	}}
+}
+
+// TestLoginForm_ChallengedSubmitGetSolvesThenRetries is the form-method (the
+// DEFAULT method) counterpart of TestPostForm_ChallengedLoginGetSolvesThenRetries:
+// the landing GET is clean but the submit POST is anti-bot challenged — which
+// previously slipped through checkErrors (no 401, no error-selector match) as a
+// silent no-cookie "success". The fix GET-solves the submit URL and retries the
+// POST carrying cf_clearance + the solver UA.
+func TestLoginForm_ChallengedSubmitGetSolvesThenRetries(t *testing.T) {
+	t.Parallel()
+	doer := &formSubmitDoer{}
+	solver := &solveURLSolver{}
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar.New: %v", err)
+	}
+	client := &stdhttp.Client{Transport: doer, Jar: jar}
+	e := New(WithClient(client), WithJar(jar), WithBaseURL("https://t.invalid/"), WithSolver(solver))
+
+	if err := e.Login(context.Background(), formChallengeDef()); err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+	if solver.solved != 1 {
+		t.Errorf("solver GET-solves = %d, want 1 (clear the challenged submit URL)", solver.solved)
+	}
+	if doer.posts != 2 {
+		t.Errorf("POSTs = %d, want 2 (challenged + retry after clearance)", doer.posts)
+	}
+	if !doer.retryHadCFCkz {
+		t.Error("retry POST did not carry the cf_clearance cookie")
+	}
+	if ua := doer.retryHeaders.Get("User-Agent"); ua != "BrowserUA/1.0" {
+		t.Errorf("retry POST User-Agent = %q, want the solver UA", ua)
+	}
+	if e.SolverUserAgent != "BrowserUA/1.0" {
+		t.Errorf("SolverUserAgent = %q, want the solver UA persisted for search", e.SolverUserAgent)
+	}
+}
+
+// TestLoginForm_ChallengedSubmitNoSolverFailsLoud pins the U4-F2 regression: a
+// challenged form submit with no solver must surface ErrSolverRequired — never
+// return nil (the old silent false success with an empty jar) and never
+// mis-report ErrLoginFailed.
+func TestLoginForm_ChallengedSubmitNoSolverFailsLoud(t *testing.T) {
+	t.Parallel()
+	doer := &formSubmitDoer{failAllPosts: true}
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar.New: %v", err)
+	}
+	client := &stdhttp.Client{Transport: doer, Jar: jar}
+	e := New(WithClient(client), WithJar(jar), WithBaseURL("https://t.invalid/")) // default NoopSolver
+
+	err = e.Login(context.Background(), formChallengeDef())
+	if !errors.Is(err, ErrSolverRequired) {
+		t.Fatalf("Login err = %v, want ErrSolverRequired (a challenged submit must fail loud)", err)
+	}
+	if doer.posts != 1 {
+		t.Errorf("POSTs = %d, want 1 (no retry without a solver)", doer.posts)
+	}
+}
+
+// TestLoginForm_ChallengedSubmitStillChallengedFailsLoud confirms the form path
+// inherits solveAndRetryLoginPost's no-loop guarantee: a retry POST that is
+// STILL challenged after solving fails loud with ErrSolverRequired.
+func TestLoginForm_ChallengedSubmitStillChallengedFailsLoud(t *testing.T) {
+	t.Parallel()
+	doer := &formSubmitDoer{failAllPosts: true}
+	solver := &solveURLSolver{}
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar.New: %v", err)
+	}
+	client := &stdhttp.Client{Transport: doer, Jar: jar}
+	e := New(WithClient(client), WithJar(jar), WithBaseURL("https://t.invalid/"), WithSolver(solver))
+
+	err = e.Login(context.Background(), formChallengeDef())
+	if !errors.Is(err, ErrSolverRequired) {
+		t.Fatalf("Login err = %v, want ErrSolverRequired", err)
+	}
+	if doer.posts != 2 {
+		t.Errorf("POSTs = %d, want exactly 2 (challenged + one retry, no loop)", doer.posts)
 	}
 }
 

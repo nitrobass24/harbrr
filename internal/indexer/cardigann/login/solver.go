@@ -131,13 +131,13 @@ func setHeaderIfAbsent(h map[string][]string, key, val string) {
 
 // SolveHost clears an anti-bot interstitial for rawURL's host by asking the
 // configured solver and seeding what it returns (cookies + the bound User-Agent)
-// into the session, so a SUBSEQUENT login and search reuse a fresh host-scoped
-// cf_clearance. The engine calls it during logged-out search recovery: a
-// CF-plus-form-login tracker whose challenge markers detectAntiBot does not match
-// would otherwise never trigger a solve. cf_clearance is a host cookie, so
-// clearing any URL on the host (the base URL) suffices. With the default
-// NoopSolver (or a solver that declines) it returns ErrNoSolverConfigured and the
-// caller proceeds to a plain re-login. It never fetches; it only seeds.
+// into the session, so SUBSEQUENT requests reuse a fresh host-scoped
+// cf_clearance. Its caller is solveAndRetryLoginPost (methods.go): the form and
+// post login methods route a challenged submit POST through it before retrying.
+// cf_clearance is a host cookie, so clearing any URL on the host suffices. With
+// the default NoopSolver (or a solver that declines) it returns
+// ErrNoSolverConfigured, which the caller surfaces as ErrSolverRequired. It
+// never fetches; it only seeds.
 func (e *Executor) SolveHost(ctx context.Context, rawURL string) error {
 	res, err := e.solver().Solve(ctx, rawURL)
 	if err != nil {

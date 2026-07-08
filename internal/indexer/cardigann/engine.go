@@ -267,7 +267,8 @@ func (e *Engine) Search(ctx context.Context, query Query) ([]*Release, error) {
 		// CheckIfLoginIsNeeded -> DoLogin -> re-request). The retry is bounded to
 		// one attempt: a second logged-out result is returned as the error below,
 		// never looped. The relogin re-runs the full login sequence, which clears a
-		// CF-gated login itself (login.solveAndRetryLoginPost), so the search retry
+		// CF-gated login itself (both the form and post methods route a challenged
+		// submit through login.solveAndRetryLoginPost), so the search retry
 		// inherits a fresh authenticated session + cf_clearance.
 		if rerr := e.relogin(ctx); rerr != nil {
 			return nil, fmt.Errorf("cardigann: re-login for %q after session expiry: %w", e.def.ID, rerr)
