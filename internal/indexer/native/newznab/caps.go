@@ -173,7 +173,9 @@ func (d *driver) getCaps(ctx context.Context, rawurl string) ([]byte, error) {
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxCapsBytes))
 	if err != nil {
-		return nil, fmt.Errorf("newznab: read caps response: %w", search.ErrParseError)
+		// Keep the ErrParseError sentinel (health classification) but include the
+		// real read error for diagnosability; a body-read error carries no secret.
+		return nil, fmt.Errorf("newznab: read caps response: %s: %w", err.Error(), search.ErrParseError)
 	}
 	return body, nil
 }

@@ -13,8 +13,33 @@ import (
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
+
+// TestCapsBodyReadErrorSurfacesCause mirrors the search-path test for the caps fetch: a
+// mid-body read failure keeps the ErrParseError classification and includes the real cause.
+func TestCapsBodyReadErrorSurfacesCause(t *testing.T) {
+	t.Parallel()
+	d, err := New(native.Params{
+		Def:     GenericDefinition(),
+		Cfg:     map[string]string{"apikey": testAPIKey},
+		Doer:    &bodyErrDoer{readErr: errors.New("connection reset by peer")},
+		BaseURL: "https://news.example.test",
+		Clock:   fixedClock,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	capsErr := d.Test(context.Background())
+	if !errors.Is(capsErr, search.ErrParseError) {
+		t.Fatalf("err = %v, want ErrParseError (health classification must be preserved)", capsErr)
+	}
+	if !strings.Contains(capsErr.Error(), "connection reset by peer") {
+		t.Fatalf("err = %q, want the real read cause included (not a bare parse_error)", capsErr.Error())
+	}
+	assertNoApikey(t, "caps body-read error", capsErr.Error())
+}
 
 // TestCapsModesAndIMDB proves the parsed caps map onto the right search modes: <audio-search>
 // is stored under music-search, an unavailable mode (book-search available="no") is dropped,
