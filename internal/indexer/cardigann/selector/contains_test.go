@@ -202,11 +202,13 @@ func TestContainsCaseSensitiveHTML(t *testing.T) {
 	}
 }
 
-// TestContainsCaseBlockArm reproduces the wihd.yml category hazard: two
-// multi-:contains case arms where the arm ordered first is a case-mismatched
-// near-miss. With cascadia's case-insensitive :contains the first arm matched
-// anyway and returned the wrong category id; case-sensitive matching falls
-// through to the arm whose literal matches the page text exactly.
+// TestContainsCaseBlockArm reproduces the wihd.yml category hazard as a
+// case-SENSITIVITY check: the first-defined arm is a case-mismatched near-miss
+// (capital "Bluray Remux") that must NOT match the lowercase page text. With
+// cascadia's old case-insensitive :contains the first arm matched anyway and
+// returned the wrong category id; case-sensitive matching skips it and the
+// second arm (whose literal matches exactly) wins. Arm order is preserved via
+// the ordered CaseBlock so the first-defined arm is genuinely tested first.
 func TestContainsCaseBlockArm(t *testing.T) {
 	t.Parallel()
 
@@ -220,15 +222,12 @@ func TestContainsCaseBlockArm(t *testing.T) {
 		t.Fatalf("rows err=%v n=%d", err, len(rows))
 	}
 
-	// orderedCases sorts arms, putting the "Bluray Remux" arm before the
-	// "Bluray remux 4K" arm ('R' < 'r'), mirroring wihd's def order where the
-	// plain-Remux arm precedes the 4K arm.
 	block := loader.SelectorBlock{
 		Selector: "div#row",
-		Case: map[string]loader.Scalar{
-			`a:contains("Films"):contains("Bluray Remux")`:    {Value: "hd-remux", Set: true},
-			`a:contains("Films"):contains("Bluray remux 4K")`: {Value: "uhd-remux", Set: true},
-		},
+		Case: loader.NewCaseBlock(
+			loader.CaseEntry{Key: `a:contains("Films"):contains("Bluray Remux")`, Value: loader.Scalar{Value: "hd-remux", Set: true}},
+			loader.CaseEntry{Key: `a:contains("Films"):contains("Bluray remux 4K")`, Value: loader.Scalar{Value: "uhd-remux", Set: true}},
+		),
 	}
 	v, found, err := New().Field(rows[0], block)
 	if err != nil || !found {
@@ -236,6 +235,77 @@ func TestContainsCaseBlockArm(t *testing.T) {
 	}
 	if v != "uhd-remux" {
 		t.Fatalf("case arm = %q, want uhd-remux (case-insensitive :contains would pick hd-remux)", v)
+	}
+}
+
+// TestCaseBlockDeclaredOrderFirstMatchWins pins the U1-F4a parity fix: when a
+// cell satisfies TWO case arms, Jackett returns the FIRST-DEFINED arm's value
+// (its Case dictionary iterates in document order, break-on-first-match). This
+// is the exact wihd.yml shape: a "Films / Bluray Remux 4K" cell matches both the
+// substring `:contains("Bluray Remux")` arm (defined first → Movies/HD) and the
+// `:contains("Bluray Remux 4K")` arm (defined later → Movies/UHD). Declared
+// order must pick HD. The retired orderedCases byte-sort put "Bluray Remux 4K"
+// (space 0x20) before "Bluray Remux\"" (0x22) and wrongly returned UHD.
+func TestCaseBlockDeclaredOrderFirstMatchWins(t *testing.T) {
+	t.Parallel()
+
+	const page = `<div id="row"><a href="/torrents/1">Films / Bluray Remux 4K</a></div>`
+	doc, err := New().ParseHTML([]byte(page))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := doc.Rows(loader.RowsBlock{Selector: "div#row"})
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("rows err=%v n=%d", err, len(rows))
+	}
+
+	block := loader.SelectorBlock{
+		Selector: "div#row",
+		Case: loader.NewCaseBlock(
+			loader.CaseEntry{Key: `a:contains("Films"):contains("Bluray Remux")`, Value: loader.Scalar{Value: "movies-hd", Set: true}},
+			loader.CaseEntry{Key: `a:contains("Films"):contains("Bluray Remux 4K")`, Value: loader.Scalar{Value: "movies-uhd", Set: true}},
+		),
+	}
+	v, found, err := New().Field(rows[0], block)
+	if err != nil || !found {
+		t.Fatalf("case field err=%v found=%v", err, found)
+	}
+	if v != "movies-hd" {
+		t.Fatalf("case arm = %q, want movies-hd (first-defined matching arm; byte-sort would pick movies-uhd)", v)
+	}
+}
+
+// TestCaseBlockStarIsPositional proves "*" is a positional arm, not a deferred
+// default: Jackett tests it inline (selection.Matches("*")) in document order and
+// breaks on first match, so a "*" authored BEFORE a specific arm wins over that
+// arm. The retired orderedCases forced "*" last and would have returned the
+// specific arm here.
+func TestCaseBlockStarIsPositional(t *testing.T) {
+	t.Parallel()
+
+	const page = `<div id="row"><span class="freeleech">FL</span></div>`
+	doc, err := New().ParseHTML([]byte(page))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := doc.Rows(loader.RowsBlock{Selector: "div#row"})
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("rows err=%v n=%d", err, len(rows))
+	}
+
+	block := loader.SelectorBlock{
+		Selector: "div#row",
+		Case: loader.NewCaseBlock(
+			loader.CaseEntry{Key: "*", Value: loader.Scalar{Value: "star", Set: true}},
+			loader.CaseEntry{Key: "span.freeleech", Value: loader.Scalar{Value: "specific", Set: true}},
+		),
+	}
+	v, found, err := New().Field(rows[0], block)
+	if err != nil || !found {
+		t.Fatalf("case field err=%v found=%v", err, found)
+	}
+	if v != "star" {
+		t.Fatalf("case arm = %q, want star (\"*\" defined first wins; deferring \"*\" would pick specific)", v)
 	}
 }
 

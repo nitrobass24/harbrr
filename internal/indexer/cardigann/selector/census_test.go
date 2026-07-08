@@ -189,7 +189,7 @@ func classifyIncompatible(sel string) string {
 func htmlSelectors(def *loader.Definition) []string {
 	var out []string
 	out = appendNonEmpty(out, def.Search.Rows.Selector, def.Search.Rows.Remove)
-	out = append(out, mapKeys(def.Search.Rows.Case)...)
+	out = append(out, caseKeys(def.Search.Rows.Case)...)
 	if c := def.Search.Rows.Count; c != nil {
 		out = appendSelectorBlock(out, *c)
 	}
@@ -206,7 +206,7 @@ func htmlSelectors(def *loader.Definition) []string {
 // remove, case keys). text/default/attribute are not CSS.
 func appendSelectorBlock(out []string, b loader.SelectorBlock) []string {
 	out = appendNonEmpty(out, b.Selector, b.Remove)
-	return append(out, scalarMapKeys(b.Case)...)
+	return append(out, caseKeys(b.Case)...)
 }
 
 // jsonPaths gathers every JSON path a JSON def uses (rows + fields + count).
@@ -233,21 +233,13 @@ func appendNonEmpty(out []string, vals ...string) []string {
 	return out
 }
 
-func mapKeys(m map[string]string) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		if k != "*" {
-			out = append(out, k)
-		}
-	}
-	return out
-}
-
-func scalarMapKeys(m map[string]loader.Scalar) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		if k != "*" {
-			out = append(out, k)
+// caseKeys returns a case block's CSS-selector arm keys in definition order,
+// dropping the "*" wildcard (which is not a CSS selector to compatibility-check).
+func caseKeys(cb loader.CaseBlock) []string {
+	out := make([]string, 0, cb.Len())
+	for _, c := range cb.Ordered() {
+		if c.Key != "*" {
+			out = append(out, c.Key)
 		}
 	}
 	return out

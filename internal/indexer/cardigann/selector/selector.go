@@ -157,7 +157,7 @@ func (e *Engine) Field(row Row, block loader.SelectorBlock) (value string, found
 // would mask it regardless. Documented rather than special-cased.
 func (e *Engine) extract(cur node, block loader.SelectorBlock) (string, bool, error) {
 	switch {
-	case len(block.Case) > 0:
+	case block.Case.Len() > 0:
 		return e.applyCase(cur, block.Case)
 	case block.Attribute != "":
 		v, ok := cur.attribute(block.Attribute)
@@ -170,21 +170,24 @@ func (e *Engine) extract(cur node, block loader.SelectorBlock) (string, bool, er
 	}
 }
 
-// applyCase evaluates the case switch. Each key is tested against cur in
-// definition order; the first match yields its template-evaluated value. "*" is
-// the catch-all (universal CSS selector for HTML; explicit wildcard for JSON).
-// No match returns found=false (the caller treats this as required-error or
-// optional-skip).
-func (e *Engine) applyCase(cur node, cases map[string]loader.Scalar) (string, bool, error) {
-	for _, c := range orderedCases(cases) {
-		ok, err := cur.caseMatch(c.key)
+// applyCase evaluates the case switch. Each arm is tested against cur in
+// DEFINITION order (CaseBlock.Ordered mirrors Jackett's ordered Case
+// dictionary); the first match yields its template-evaluated value. "*" is a
+// positional arm, not a deferred default — it happens to always match (universal
+// CSS selector for HTML; explicit wildcard for JSON), so an earlier specific arm
+// still wins and a "*" authored before a specific arm would win over it, exactly
+// as Jackett's break-on-first-match loop does. No match returns found=false (the
+// caller treats this as required-error or optional-skip).
+func (e *Engine) applyCase(cur node, cases loader.CaseBlock) (string, bool, error) {
+	for _, c := range cases.Ordered() {
+		ok, err := cur.caseMatch(c.Key)
 		if err != nil {
-			return "", false, fmt.Errorf("case selector %q: %w", c.key, err)
+			return "", false, fmt.Errorf("case selector %q: %w", c.Key, err)
 		}
 		if !ok {
 			continue
 		}
-		v, err := e.eval(c.value.String())
+		v, err := e.eval(c.Value.String())
 		if err != nil {
 			return "", false, err
 		}

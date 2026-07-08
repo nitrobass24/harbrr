@@ -1,0 +1,38 @@
+---
+id: caseorder
+name: caseorder
+description: "Synthetic tracker exercising declared-order first-match-wins in a :contains case block (wihd.yml shape)."
+language: en-US
+type: private
+encoding: UTF-8
+links:
+  - https://caseorder.test/
+
+caps:
+  categorymappings:
+    - {id: hd, cat: Movies/HD}
+    - {id: uhd, cat: Movies/UHD}
+  modes:
+    search: [q]
+
+search:
+  path: /browse
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: tr.row
+  fields:
+    title:
+      selector: a.title
+    download:
+      selector: a.dl
+      attribute: href
+    size:
+      text: "1 GB"
+    seeders:
+      text: "10"
+    category:
+      selector: td.tag
+      case:
+        ":contains(\"Bluray Remux\")": "hd"
+        ":contains(\"Bluray Remux 4K\")": "uhd"
