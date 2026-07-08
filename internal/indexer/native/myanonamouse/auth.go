@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	stdhttp "net/http"
+	"strings"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
@@ -23,6 +24,23 @@ func (d *driver) mamID() string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.currentMamID
+}
+
+// scrubSecret removes the mam_id session cookie (both the currently rotated value and the
+// originally configured one) from s so a server-echoed error string cannot leak it. MAM's
+// error text is server-controlled free text that reaches a persisted health event / webhook,
+// and mam_id is the sole secret, so it is value-scrubbed at the echo site (mirroring the
+// sibling native drivers' scrubAPIKey). Only non-empty values are replaced.
+func (d *driver) scrubSecret(s string) string {
+	d.mu.Lock()
+	current := d.currentMamID
+	d.mu.Unlock()
+	for _, secret := range []string{current, d.cfg["mam_id"]} {
+		if secret != "" {
+			s = strings.ReplaceAll(s, secret, "[redacted]")
+		}
+	}
+	return s
 }
 
 // captureRotatedMamID scans a response's Set-Cookie headers for a refreshed mam_id

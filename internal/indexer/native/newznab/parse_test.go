@@ -197,3 +197,52 @@ func TestParseMalformedBody(t *testing.T) {
 		t.Fatalf("err = %q, want an actionable decode detail containing %q", err.Error(), "invalid")
 	}
 }
+
+// TestToErrorScrubsAPIKey proves a server-echoed <error description> that reflects the
+// submitted apikey as free text is value-scrubbed before it reaches the error (and thus the
+// health-event / webhook egress). Fail-before: toError surfaced the description verbatim, so
+// the apikey leaked; pass-after: the raw value is replaced with the placeholder while the
+// surrounding non-secret message is preserved.
+func TestToErrorScrubsAPIKey(t *testing.T) {
+	t.Parallel()
+	const apikey = "APIKEY-SECRET-1234"
+	e := &apiError{Code: "100", Description: "Incorrect credentials: invalid key " + apikey}
+	err := e.toError(apikey)
+	if !errors.Is(err, login.ErrLoginFailed) {
+		t.Fatalf("err = %v, want login.ErrLoginFailed", err)
+	}
+	if strings.Contains(err.Error(), apikey) {
+		t.Fatalf("toError leaked apikey: %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "[redacted]") {
+		t.Errorf("expected [redacted] placeholder, got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "invalid key") {
+		t.Errorf("scrub removed non-secret context: %q", err.Error())
+	}
+}
+
+// TestParseReleasesScrubsAPIKeyFromError proves the scrub is wired end-to-end: a driver with a
+// configured apikey, fed an <error> body echoing that apikey, surfaces an error that does not
+// leak it. This is the egress path (parseReleases -> health Detail -> webhook).
+func TestParseReleasesScrubsAPIKeyFromError(t *testing.T) {
+	t.Parallel()
+	const apikey = "APIKEY-SECRET-5678"
+	d, err := New(native.Params{
+		Def:     GenericDefinition(),
+		BaseURL: "https://news.example.test",
+		Cfg:     map[string]string{"apikey": apikey},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	drv := d.(*driver)
+	body := []byte(`<?xml version="1.0"?><error code="100" description="key ` + apikey + ` rejected"/>`)
+	_, perr := drv.parseReleases(body, drv.caps.CategoryMap)
+	if perr == nil {
+		t.Fatal("want an error from an <error> envelope")
+	}
+	if strings.Contains(perr.Error(), apikey) {
+		t.Fatalf("parseReleases leaked apikey: %q", perr.Error())
+	}
+}

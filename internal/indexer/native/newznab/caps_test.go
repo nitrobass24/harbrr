@@ -258,7 +258,7 @@ func TestCapsPersistAndRehydrate(t *testing.T) {
 // buildGoldenCaps parses + builds the caps golden into a *mapper.Capabilities.
 func buildGoldenCaps(t *testing.T) *mapper.Capabilities {
 	t.Helper()
-	root, err := parseCaps(readGolden(t, "caps.xml"))
+	root, err := parseCaps(readGolden(t, "caps.xml"), "")
 	if err != nil {
 		t.Fatalf("parseCaps: %v", err)
 	}
