@@ -201,12 +201,12 @@ func TestCheckSearchError_BranchExclusion(t *testing.T) {
 	}
 
 	// HTML branch: the error selector matches, so this must error.
-	if err := checkSearchError(def, doc, "", eng); !errors.Is(err, ErrTrackerError) {
+	if err := checkSearchError(def, doc, "", eng, nil); !errors.Is(err, ErrTrackerError) {
 		t.Errorf("html branch: err = %v, want ErrTrackerError", err)
 	}
 	// JSON and XML branches skip the check even though the same doc would match.
 	for _, rt := range []string{responseTypeJSON, responseTypeXML} {
-		if err := checkSearchError(def, doc, rt, eng); err != nil {
+		if err := checkSearchError(def, doc, rt, eng, nil); err != nil {
 			t.Errorf("%s branch: err = %v, want nil (check skipped)", rt, err)
 		}
 	}
@@ -219,8 +219,93 @@ func TestCheckSearchError_BranchExclusion(t *testing.T) {
 	if len(noErr.Search.Error) != 0 {
 		t.Fatalf("test setup: expected the error block to be stripped")
 	}
-	if err := checkSearchError(noErr, doc, "", eng); err != nil {
+	if err := checkSearchError(noErr, doc, "", eng, nil); err != nil {
 		t.Errorf("no error block: err = %v, want nil", err)
+	}
+}
+
+// searchErrorSecretDef declares a secret setting (passkey) alongside a Search.Error
+// selector, so a server error page that echoes the configured passkey is a leak site.
+const searchErrorSecretDef = `---
+id: errsecret
+name: Error Secret Fixture
+description: search.error secret scrub
+type: private
+language: en-US
+encoding: UTF-8
+links:
+  - https://err.invalid/
+settings:
+  - name: passkey
+    type: text
+    label: Passkey
+caps:
+  categorymappings:
+    - {id: 1, cat: Movies}
+  modes:
+    search: [q]
+search:
+  path: /browse
+  inputs:
+    passkey: "{{ .Config.passkey }}"
+    q: "{{ .Keywords }}"
+  error:
+    - selector: div.errorpage
+  rows:
+    selector: table > tbody > tr.result
+  fields:
+    category:
+      text: Movies
+    title:
+      selector: a.title
+    download:
+      selector: a.title
+      attribute: href
+    seeders:
+      selector: span.seeders
+    size:
+      selector: span.size
+`
+
+// TestCheckSearchError_ScrubsSecret proves the search-error echo site value-scrubs a
+// configured secret the tracker's error page reflects back. The Search.Error message is
+// server-controlled free text; a page that echoes the submitted passkey would otherwise
+// leak it into ErrTrackerError → the returned-error / log sink. Fail-before: the message
+// was wrapped verbatim; pass-after: the passkey is replaced with [redacted] while the
+// non-secret surrounding text survives. Derived from IsSecret over def.Settings, the same
+// mechanism the login stage uses.
+func TestCheckSearchError_ScrubsSecret(t *testing.T) {
+	t.Parallel()
+
+	const passkey = "PASSKEY-SECRET-7788"
+	def, err := loader.Parse([]byte(searchErrorSecretDef))
+	if err != nil {
+		t.Fatalf("loader.Parse: %v", err)
+	}
+	body := `<html><body><div class="errorpage">Auth failed for passkey ` + passkey + ` please retry</div></body></html>`
+	eng := selector.New()
+	doc, err := eng.ParseHTML([]byte(body))
+	if err != nil {
+		t.Fatalf("ParseHTML: %v", err)
+	}
+
+	err = checkSearchError(def, doc, "", eng, map[string]string{"passkey": passkey})
+	if !errors.Is(err, ErrTrackerError) {
+		t.Fatalf("err = %v, want ErrTrackerError", err)
+	}
+	// The echoed passkey (a secret) must NOT survive...
+	if strings.Contains(err.Error(), passkey) {
+		t.Errorf("search error leaked passkey: %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "[redacted]") {
+		t.Errorf("expected [redacted] placeholder in error: %q", err.Error())
+	}
+	// ...but the non-secret error context must be preserved.
+	if !strings.Contains(err.Error(), "Auth failed for passkey") {
+		t.Errorf("scrub removed non-secret context: %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "please retry") {
+		t.Errorf("scrub removed trailing non-secret context: %q", err.Error())
 	}
 }
 

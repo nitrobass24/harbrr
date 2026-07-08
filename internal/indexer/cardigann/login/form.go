@@ -70,7 +70,7 @@ func (e *Executor) loginForm(ctx context.Context, def *loader.Definition) error 
 			return err
 		}
 	}
-	return e.postFormAbsolute(ctx, def.Login, target, pairs)
+	return e.postFormAbsolute(ctx, def.Login, target, pairs, e.loginSecrets(def))
 }
 
 // assembleFormPairs builds the POST body in Jackett's exact precedence order:
@@ -232,7 +232,7 @@ func (e *Executor) resolveFormTarget(l *loader.Login, form *goquery.Selection, l
 //
 // Form body uses url.Values.Encode — see postForm (methods.go) for the deliberate
 // login form-encoding divergence note.
-func (e *Executor) postFormAbsolute(ctx context.Context, l *loader.Login, target string, pairs url.Values) error {
+func (e *Executor) postFormAbsolute(ctx context.Context, l *loader.Login, target string, pairs url.Values, secrets []string) error {
 	headers := mergeFormHeaders(l.Headers)
 	encoded := pairs.Encode()
 	body, status, err := e.do(ctx, "POST", target, strings.NewReader(encoded), headers)
@@ -245,9 +245,9 @@ func (e *Executor) postFormAbsolute(ctx context.Context, l *loader.Login, target
 	// as a SILENT false success with no session cookies. Clear it exactly like
 	// postForm does: GET-solve the same URL, then retry the POST.
 	if detectAntiBot(body) != nil {
-		return e.solveAndRetryLoginPost(ctx, l, target, encoded, headers)
+		return e.solveAndRetryLoginPost(ctx, l, target, encoded, headers, secrets)
 	}
-	return e.checkErrors(l, target, body, status)
+	return e.checkErrors(l, target, body, status, secrets)
 }
 
 // selectorMatches reports whether sel matches at least one element in body. Used

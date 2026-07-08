@@ -33,8 +33,9 @@ var (
 	// ErrUnknownMethod reports a Login.Method this executor does not implement.
 	ErrUnknownMethod = errors.New("unknown login method")
 	// ErrLoginFailed reports that the login round-trip completed but an error
-	// selector matched (bad credentials, etc.). The wrapped message is the
-	// definition-authored error text, never a credential.
+	// selector matched (bad credentials, etc.). The wrapped message is extracted
+	// from the tracker's response body (server-controlled free text), so checkErrors
+	// value-scrubs the configured login credentials out of it before wrapping.
 	ErrLoginFailed = errors.New("login failed")
 )
 

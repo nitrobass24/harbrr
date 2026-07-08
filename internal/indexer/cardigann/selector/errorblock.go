@@ -23,8 +23,11 @@ import (
 // block is skipped; a selector evaluation error propagates; no match across all
 // blocks returns ("", false, nil).
 //
-// The returned message is trimmed and single-lined. It is definition-authored
-// error text (e.g. "Database error."), never a credential.
+// The returned message is trimmed and single-lined. The SELECTOR is definition-authored,
+// but the extracted TEXT is lifted from the server's RESPONSE body (server-controlled), so
+// it can echo a submitted credential. Any caller that SURFACES the message MUST value-scrub
+// its own secrets out of it first: both do — the login stage in checkErrors and the search
+// stage in checkSearchError, each via login.ScrubSecrets over the IsSecret-derived values.
 func (e *Engine) CheckErrorBlocks(root Row, blocks []loader.ErrorBlock) (message string, matched bool, err error) {
 	for i := range blocks {
 		msg, ok, blkErr := e.evalErrorBlock(root, blocks[i])
@@ -64,9 +67,10 @@ func (e *Engine) evalErrorBlock(root Row, blk loader.ErrorBlock) (msg string, ma
 }
 
 // trimErrorMessage trims and single-lines an extracted error message before it is
-// wrapped into a loud error. The message is definition-authored error text (e.g.
-// "Invalid username or password"), not a credential, but we keep it compact and
-// free of stray whitespace for clean logs and error strings.
+// wrapped into a loud error. The message is server-controlled text lifted from the
+// response body (it can echo a submitted credential — callers value-scrub their own
+// secrets); this just keeps it compact and free of stray whitespace for clean logs and
+// error strings.
 func trimErrorMessage(s string) string {
 	return strings.TrimSpace(strings.Join(strings.Fields(s), " "))
 }
