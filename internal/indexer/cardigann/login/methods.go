@@ -10,7 +10,6 @@ import (
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/selector"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/template"
 )
 
@@ -197,41 +196,14 @@ func (e *Executor) checkErrors(l *loader.Login, rawURL string, body []byte, stat
 	if err != nil {
 		return fmt.Errorf("parsing login response from %s: %w", apphttp.SchemeHost(rawURL), err)
 	}
-	root := doc.Root()
-	for i := range l.Error {
-		msg, matched, err := e.evalErrorBlock(root, l.Error[i])
-		if err != nil {
-			return err
-		}
-		if matched {
-			return fmt.Errorf("%w: %s (from %s)", ErrLoginFailed, msg, apphttp.SchemeHost(rawURL))
-		}
+	msg, matched, err := e.Selector.CheckErrorBlocks(doc.Root(), l.Error)
+	if err != nil {
+		return fmt.Errorf("checking login error selectors from %s: %w", apphttp.SchemeHost(rawURL), err)
+	}
+	if matched {
+		return fmt.Errorf("%w: %s (from %s)", ErrLoginFailed, msg, apphttp.SchemeHost(rawURL))
 	}
 	return nil
-}
-
-// evalErrorBlock tests one error selector. When it matches, it extracts the
-// error message: from the Message selector block if present, else the matched
-// element's text. The returned message is trimmed/single-lined.
-func (e *Executor) evalErrorBlock(root selector.Row, blk loader.ErrorBlock) (msg string, matched bool, err error) {
-	probe := loader.SelectorBlock{Selector: blk.Selector}
-	val, found, err := e.Selector.Field(root, probe)
-	if err != nil {
-		return "", false, fmt.Errorf("evaluating error selector %q: %w", blk.Selector, err)
-	}
-	if !found {
-		return "", false, nil
-	}
-	if blk.Message != nil {
-		mval, mfound, merr := e.Selector.Field(root, *blk.Message)
-		if merr != nil {
-			return "", false, fmt.Errorf("evaluating error message selector %q: %w", blk.Message.Selector, merr)
-		}
-		if mfound {
-			return trimMessage(mval), true, nil
-		}
-	}
-	return trimMessage(val), true, nil
 }
 
 // mergeFormHeaders returns the login headers with a form-urlencoded Content-Type

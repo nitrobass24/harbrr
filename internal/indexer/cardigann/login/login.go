@@ -298,11 +298,3 @@ func parseCookieHeader(raw string) []*stdhttp.Cookie {
 	}
 	return out
 }
-
-// trimMessage trims and single-lines an extracted error message before it is
-// wrapped into ErrLoginFailed. The message is definition-authored error text
-// (e.g. "Invalid username or password"), not a credential, but we still keep it
-// compact and free of stray whitespace for clean logs.
-func trimMessage(s string) string {
-	return strings.TrimSpace(strings.Join(strings.Fields(s), " "))
-}
