@@ -103,6 +103,11 @@ func (a *indexerAdapter) SupportsOffsetPaging() bool {
 func (a *indexerAdapter) Grab(ctx context.Context, link string) (*search.GrabResult, error) {
 	result, err := a.inner.Grab(ctx, link)
 	if err != nil {
+		// Classify grab-time failures too: a 429/503 rate-limit, a first-op login/
+		// anti-bot failure on a fresh engine, and the native drivers' auth sentinels
+		// all reach here. classifyHealth no-ops on an unclassified error, so an
+		// ordinary grab failure records nothing. Mirrors Search.
+		a.recordHealth(ctx, err)
 		return nil, fmt.Errorf("registry: grab %q: %w", a.info.ID, err)
 	}
 	// Count success only — a failed grab produced no download.
