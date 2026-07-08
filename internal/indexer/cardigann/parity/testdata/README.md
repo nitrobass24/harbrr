@@ -146,6 +146,28 @@ Entries:
     **`[Accepted]`**
 
   **`[Resolved]`**
+- **Non-2xx search-status handling** — harbrr's search path fails fast on a
+  non-redirect non-2xx response (`search/request.go` `checkStatus`): 429/503
+  become the typed `RateLimitedError` the registry backs off on, and any other
+  status (403/404/500…) is a loud `tracker returned HTTP <n>` error — the tracker
+  errored, so the body is not results and silently parsing it would surface a
+  misleading empty page. Jackett does the opposite on this path: its HTML branch
+  parses ANY-status body (only `checkForError`'s `401` gate + the def's error
+  selectors throw) and its XML branch has no status check at all, so a parseable
+  page served with a 403/404/500 yields results/0-releases there. The **redirect
+  half** of Jackett's `CheckIfLoginIsNeeded` is preserved (see "Search redirects"
+  above): an unfollowed 3xx is surfaced as data, so a login page served as a
+  **302** still relogins. The known limitation is the non-redirect case — a login
+  page served with a **403** (body-based logout, no redirect) hard-fails in harbrr
+  where Jackett parses the body — and relogins if the def has a `login.test`
+  selector that is absent, or otherwise just yields 0 rows; either way Jackett does
+  not hard-fail. No
+  offline corpus fixture carries a non-2xx search status (per CLAUDE.md the parity
+  target is Jackett's output on saved fixtures), so this is a live-only difference;
+  the JSON branch is unaffected (Jackett's JSON branch also throws on non-200, so
+  harbrr already matches it). Gated by `search/ratelimit_test.go`
+  (`TestDoSearchRequest_Non2xxFailsFast`, `TestDoSearchRequest_RateLimitedStatus`).
+  **`[Deliberate]`**
 - **Date canonical form** — RFC3339 vs Jackett's RFC1123Z; see "Date
   canonicalization". Same instant, different string — a canonical-schema choice,
   not a parse difference. **`[Deliberate]`**
