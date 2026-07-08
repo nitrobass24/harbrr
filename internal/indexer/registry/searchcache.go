@@ -391,6 +391,21 @@ func (c *SearchCache) serveMiss(ctx context.Context, instanceID int64, cfg map[s
 		return missResult{releases: releases, info: info}, nil
 	})
 	if err != nil {
+		// A singleflight FOLLOWER inherits the LEADER's flight result — including a
+		// context error if the leader's client disconnected or its request deadline
+		// elapsed mid-fetch. When our OWN context is still live, that cancellation is the
+		// LEADER's, not ours: we are a healthy request and must not return an errored feed
+		// just because the request we coalesced onto went away. Run our own live search
+		// instead (mirroring the type-mismatch fallback below) — the same reasoning
+		// tripBreaker uses to refuse poisoning the breaker on an inherited cancel. The
+		// ctx.Err() == nil guard is load-bearing: a follower whose OWN ctx is cancelled
+		// must still return the cancellation (never mask a real client-gone with a
+		// fresh search). Both context.Canceled (client disconnect) and
+		// context.DeadlineExceeded (leader request deadline) qualify — once our ctx is
+		// proven live, ANY context error in the flight result can only be the leader's.
+		if ctx.Err() == nil && isContextError(err) {
+			return c.liveAndStoreRecording(ctx, instanceID, cfg, builtEpoch, inner, q, key)
+		}
 		return nil, err //nolint:wrapcheck // already wrapped by liveAndStore/adapter; no key/payload to add.
 	}
 	res, ok := v.(missResult)
@@ -593,6 +608,15 @@ func (c *SearchCache) triggerSWR(ctx context.Context, instanceID int64, cfg map[
 // incompatible value types).
 func swrKey(key string) string {
 	return "swr:" + key
+}
+
+// isContextError reports whether err is (or wraps) a context cancellation or deadline —
+// the two shapes a singleflight leader's aborted request can leave in a coalesced
+// follower's flight result. Used by serveMiss to decide whether an inherited flight
+// error is the leader's (context error, our ctx live) and so should be retried on our
+// own context rather than returned as the follower's failure.
+func isContextError(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 // decodeReleases unmarshals a cached payload. The error wraps ONLY the cache key —
