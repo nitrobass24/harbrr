@@ -130,7 +130,11 @@ func (d *driver) storePasskey(ctx context.Context, body []byte) error {
 	}
 	passkey := strings.TrimSpace(resp.Response.Passkey)
 	if resp.Status.string() != statusSuccess || passkey == "" {
-		return fmt.Errorf("gazellegames: passkey fetch failed (status %q): %w", resp.Status.string(), login.ErrLoginFailed)
+		// resp.Status is the SERVER-CONTROLLED JSON `status` field (arbitrary server text,
+		// not an HTTP status), and the apikey rode in the X-API-Key header on this same
+		// request, so scrub both apikey and passkey out of any echoed status before it
+		// reaches a persisted health event / webhook (mirrors hdbits/beyondhd).
+		return fmt.Errorf("gazellegames: passkey fetch failed (status %q): %w", d.scrubSecrets(resp.Status.string()), login.ErrLoginFailed)
 	}
 
 	// Persist FIRST, then populate the in-memory cfg only on success. If persist fails,
