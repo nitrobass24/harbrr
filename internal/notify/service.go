@@ -22,6 +22,22 @@ import (
 // destination URL), bound alongside the notification id — mirroring appsync/announce.
 const secretURL = "url"
 
+// healthNotifyCooldown debounces repeated health-failure notifications for the same
+// (indexer, kind): a persistently-broken indexer is polled every 15–60 min by each app,
+// and recordHealth fires on every failure with no recovery edge to reset on, so without
+// a gate one broken indexer spams hundreds of identical messages a day and trains the
+// operator to mute the channel. One hour is long enough to collapse poll-spam yet short
+// enough to re-alert (roughly daily-ish) while the indexer stays broken.
+const healthNotifyCooldown = time.Hour
+
+// healthKey identifies a health-notification stream for cooldown accounting. The indexer
+// slug is stable and unique per indexer and Kind is one of the four classified health
+// kinds, so (indexer, kind) is a sufficient dedup key.
+type healthKey struct {
+	indexer string
+	kind    string
+}
+
 // Service persists notification targets (encrypting the destination URL) and dispatches
 // operational events to the enabled, matching ones. It implements the registry's health
 // sink: a recorded indexer health failure fans out to every enabled target whose
@@ -35,7 +51,12 @@ type Service struct {
 	keyring    *secrets.Keyring
 	client     *http.Client
 	clock      func() time.Time
-	log        zerolog.Logger
+	// healthMu guards lastHealthNotify, the per-(indexer, kind) time of the last
+	// dispatched health notification. It debounces poll-spam (see healthNotifyCooldown)
+	// and must be a distinct lock from dispatchWG's accounting.
+	healthMu         sync.Mutex
+	lastHealthNotify map[healthKey]time.Time
+	log              zerolog.Logger
 }
 
 // NewService wires the notify service. client is shared by all senders (nil installs a
@@ -44,7 +65,10 @@ func NewService(db dbinterface.Querier, keyring *secrets.Keyring, client *http.C
 	if client == nil {
 		client = defaultHTTPClient()
 	}
-	return &Service{db: db, keyring: keyring, client: client, clock: time.Now, log: log}
+	return &Service{
+		db: db, keyring: keyring, client: client, clock: time.Now,
+		lastHealthNotify: make(map[healthKey]time.Time), log: log,
+	}
 }
 
 // CreateNotificationParams is the input to CreateNotification. OnHealthFailure is a
@@ -204,12 +228,20 @@ func (s *Service) TestNotification(ctx context.Context, id int64) error {
 // detached context in its own goroutine, so a slow or failing webhook can't slow a
 // search or propagate an error back into it.
 func (s *Service) OnHealthEvent(ctx context.Context, indexer, kind, detail string) {
+	now := s.clock()
+	// Debounce: suppress a repeated failure of the same kind for the same indexer within
+	// the cooldown window — no dispatch, no goroutine, no send — so a persistently-broken
+	// indexer polled every cycle doesn't spam identical messages. The check-and-set is
+	// atomic under healthMu so concurrent calls for one key can't both pass the gate.
+	if s.healthSuppressed(indexer, kind, now) {
+		return
+	}
 	ev := Event{
 		Event:     EventIndexerHealth,
 		Indexer:   indexer,
 		Kind:      kind,
 		Detail:    detail,
-		Timestamp: s.clock(),
+		Timestamp: now,
 	}
 	// Detach from the caller's request context (which is cancelled the moment the search
 	// returns) so the send outlives it, but keep the process-wide cancellation absent —
@@ -222,6 +254,22 @@ func (s *Service) OnHealthEvent(ctx context.Context, indexer, kind, detail strin
 			return n.OnHealthFailure
 		})
 	}()
+}
+
+// healthSuppressed reports whether a health notification for (indexer, kind) falls inside
+// the cooldown window at now. When it does not (the first event, or one past the window),
+// it records now as the new last-notified time and returns false so the caller proceeds.
+// The check-and-set runs under a single lock so concurrent callers for the same key can't
+// both pass.
+func (s *Service) healthSuppressed(indexer, kind string, now time.Time) bool {
+	key := healthKey{indexer: indexer, kind: kind}
+	s.healthMu.Lock()
+	defer s.healthMu.Unlock()
+	if last, ok := s.lastHealthNotify[key]; ok && now.Sub(last) < healthNotifyCooldown {
+		return true
+	}
+	s.lastHealthNotify[key] = now
+	return false
 }
 
 // Drain waits for in-flight dispatch goroutines to finish before returning, bounded by

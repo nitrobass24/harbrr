@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -273,3 +274,99 @@ func TestTestNotification(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+// TestOnHealthEventCooldownSuppressesRepeat asserts a second failure of the same
+// (indexer, kind) inside the cooldown window is suppressed (one send), and a third
+// after the injected clock advances past the window re-alerts (a second send).
+func TestOnHealthEventCooldownSuppressesRepeat(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, _ := newService(t)
+	srv, hits := countingServer(t)
+	if _, err := svc.CreateNotification(ctx, CreateNotificationParams{
+		Name: "match", Type: domain.NotifyTypeWebhook, URL: srv.URL,
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	base := time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC)
+	now := base
+	svc.clock = func() time.Time { return now }
+
+	svc.OnHealthEvent(ctx, "mytracker", domain.HealthAntiBot, "blocked")
+	// A repeat one minute later (a fresh poll cycle) is inside the window: suppressed.
+	now = base.Add(time.Minute)
+	svc.OnHealthEvent(ctx, "mytracker", domain.HealthAntiBot, "blocked")
+	svc.Drain(drainCtx(t))
+	if got := atomic.LoadInt64(hits); got != 1 {
+		t.Fatalf("after two failures inside the window: %d sends, want 1", got)
+	}
+
+	// Past the cooldown the same failure re-alerts.
+	now = base.Add(healthNotifyCooldown + time.Second)
+	svc.OnHealthEvent(ctx, "mytracker", domain.HealthAntiBot, "blocked")
+	svc.Drain(drainCtx(t))
+	if got := atomic.LoadInt64(hits); got != 2 {
+		t.Fatalf("after the window elapsed: %d sends, want 2", got)
+	}
+}
+
+// TestOnHealthEventCooldownIndependentKeys proves cooldowns are per (indexer, kind): a
+// different kind on the same indexer and a different indexer with the same kind each get
+// their own send even within one window.
+func TestOnHealthEventCooldownIndependentKeys(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, _ := newService(t)
+	srv, hits := countingServer(t)
+	if _, err := svc.CreateNotification(ctx, CreateNotificationParams{
+		Name: "match", Type: domain.NotifyTypeWebhook, URL: srv.URL,
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	// Clock is fixed by newService, so every call below is inside one window.
+	svc.OnHealthEvent(ctx, "tracker-a", domain.HealthAntiBot, "blocked")
+	svc.OnHealthEvent(ctx, "tracker-a", domain.HealthAuthFailure, "bad creds") // same indexer, other kind
+	svc.OnHealthEvent(ctx, "tracker-b", domain.HealthAntiBot, "blocked")       // other indexer, same kind
+	svc.OnHealthEvent(ctx, "tracker-a", domain.HealthAntiBot, "blocked")       // duplicate of the first: suppressed
+	svc.Drain(drainCtx(t))
+	if got := atomic.LoadInt64(hits); got != 3 {
+		t.Fatalf("independent keys: %d sends, want 3 (the duplicate suppressed)", got)
+	}
+}
+
+// TestOnHealthEventCooldownConcurrent hammers one key from many goroutines: the
+// check-and-set under healthMu must let at most one through the window. Run with -race.
+func TestOnHealthEventCooldownConcurrent(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, _ := newService(t)
+	srv, hits := countingServer(t)
+	if _, err := svc.CreateNotification(ctx, CreateNotificationParams{
+		Name: "match", Type: domain.NotifyTypeWebhook, URL: srv.URL,
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	for range 50 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			svc.OnHealthEvent(ctx, "mytracker", domain.HealthRateLimited, "slow down")
+		}()
+	}
+	wg.Wait()
+	svc.Drain(drainCtx(t))
+	if got := atomic.LoadInt64(hits); got != 1 {
+		t.Errorf("concurrent same-key failures: %d sends, want exactly 1", got)
+	}
+}
+
+// drainCtx returns a short-bounded context for Drain so a stuck send can't hang the test.
+func drainCtx(t *testing.T) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+	return ctx
+}
