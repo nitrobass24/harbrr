@@ -113,7 +113,7 @@ func (s *Service) CreateConnection(ctx context.Context, p CreateConnectionParams
 	if err := validateCreate(&p); err != nil {
 		return domain.AppConnection{}, err
 	}
-	if err := s.validateProfileRef(ctx, p.Kind, p.SyncProfileID); err != nil {
+	if err := s.validateProfileRef(ctx, s.db, p.Kind, p.SyncProfileID); err != nil {
 		return domain.AppConnection{}, err
 	}
 
@@ -214,14 +214,27 @@ type UpdateConnectionParams struct {
 
 // UpdateConnection applies a patch, re-encrypting the app key when rotated.
 func (s *Service) UpdateConnection(ctx context.Context, id int64, p UpdateConnectionParams) error {
-	conn, err := s.repo.GetConnection(ctx, s.db, id)
+	// One transaction for read → profile-ref-validate → write, so a concurrent
+	// mutation can't slip between the check and the write (the UpdateProfile /
+	// proxy Update precedent). Two guarantees ride on this: a concurrent key
+	// rotation can't be lost by this full-row write reading a stale api_key, and a
+	// concurrent UpdateProfile can't narrow the referenced profile's categories
+	// between validateProfileRef and the ref write — which would leave a full-sync
+	// connection pointing at an empty gate that deletes every indexer it manages.
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("appsync: begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	conn, err := s.repo.GetConnection(ctx, tx, id)
 	if err != nil {
 		return fmt.Errorf("appsync: get connection: %w", err)
 	}
 	// A new profile ref is validated against the connection's kind before it is applied
 	// (existence, non-qui, category overlap), so a bad ref is a 400, not a stored orphan.
 	if p.SyncProfileID.Present {
-		if err := s.validateProfileRef(ctx, conn.Kind, p.SyncProfileID.Value); err != nil {
+		if err := s.validateProfileRef(ctx, tx, conn.Kind, p.SyncProfileID.Value); err != nil {
 			return err
 		}
 	}
@@ -239,11 +252,14 @@ func (s *Service) UpdateConnection(ctx context.Context, id int64, p UpdateConnec
 		conn.APIKeyEncrypted, conn.KeyID = enc, s.keyring.KeyID()
 	}
 	conn.UpdatedAt = s.clock()
-	if err := s.repo.UpdateConnection(ctx, s.db, conn); err != nil {
+	if err := s.repo.UpdateConnection(ctx, tx, conn); err != nil {
 		if database.IsUniqueViolation(err) {
 			return fmt.Errorf("%w: %s at %s", ErrConflict, conn.Kind, apphttp.RedactURL(conn.BaseURL))
 		}
 		return fmt.Errorf("appsync: update connection: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("appsync: commit: %w", err)
 	}
 	return nil
 }

@@ -210,14 +210,16 @@ func normalizeCategoryIDs(ids []int) ([]int, error) {
 // → ErrInvalid, not a 404); qui never takes a profile; and a non-empty category set must
 // overlap the kind's content range — else a full-sync connection would category-filter
 // down to zero indexers and silently delete every one it manages. A nil ref is valid.
-func (s *Service) validateProfileRef(ctx context.Context, kind string, id *int64) error {
+// q is the caller's handle (db or tx) so the ref check and the connection write that
+// follows it can share one transaction (the UpdateConnection precedent).
+func (s *Service) validateProfileRef(ctx context.Context, q dbinterface.Execer, kind string, id *int64) error {
 	if id == nil {
 		return nil
 	}
 	if kind == domain.AppKindQui {
 		return fmt.Errorf("%w: sync profiles do not apply to qui", ErrInvalid)
 	}
-	profile, err := s.profiles.GetProfile(ctx, s.db, *id)
+	profile, err := s.profiles.GetProfile(ctx, q, *id)
 	if err != nil {
 		if errors.Is(err, database.ErrNotFound) {
 			return fmt.Errorf("%w: sync profile %d does not exist", ErrInvalid, *id)
