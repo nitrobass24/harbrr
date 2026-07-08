@@ -183,8 +183,14 @@ Entries:
   (Go leaves it literal; .NET escapes it to `%7E`). The apostrophe `'` is `%27` in
   BOTH engines and was NOT a divergence (the earlier note here wrongly listed it
   and omitted `~`). Spaces match (`%20` in the path, `+` in the query). The magnet
-  synthesizer (`normalizer/synth.go`) uses the same encoder, matching
-  `MagnetUtil.InfoHashToPublicMagnet`. **`[Resolved]`** Login form-POST
+  synthesizer (`internal/indexer/cardigann/magnet`) uses `encode.WebUtilityStringEncode`
+  — the .NET WebUtility *STRING* form that leaves the sub-delimiters `! * ( )`
+  LITERAL — because `MagnetUtil.InfoHashToPublicMagnet` builds `dn=`/`tr=` via
+  `WebUtilityHelpers.UrlEncode` → `WebUtility.UrlEncodeToBytes` (safe set includes
+  `! * ( )`), and the synthesised magnet is Torznab OUTPUT, not an on-the-wire
+  tracker request. The request encoders keep the on-the-wire form (percent-encoded
+  `! * ( )`); the difference is only those four chars in `dn=` (a "Title (Year)"
+  emits `dn=…+(Year)` in both engines). **`[Resolved]`** Login form-POST
   bodies remain on stdlib `url.Values.Encode` — a deliberate divergence, see
   `login/methods.go` (`postForm`) and `login/encoding_divergence_test.go`.
 - **`.Today.Month` / `.Today.Day`** — harbrr exposes these template fields;

@@ -89,9 +89,13 @@ func queryArg(raw, name string) string {
 }
 
 // urlEncode matches Jackett's MagnetUtil encoding of the magnet dn=/tr= values:
-// WebUtilityHelpers.UrlEncode (= .NET WebUtility.UrlEncode, space -> '+'). A
-// title containing ! * ( ) ~ encodes differently from Go's url.QueryEscape, so
-// this routes through the encode package for exact parity.
+// WebUtilityHelpers.UrlEncode -> WebUtility.UrlEncodeToBytes, whose intermediate
+// STRING leaves the sub-delimiters ! * ( ) LITERAL (space -> '+', ~ -> %7E, ' ->
+// %27, Unicode -> UTF-8 octets). A magnet is Torznab OUTPUT, not a tracker
+// request, so it uses WebUtilityStringEncode (! * ( ) literal) rather than the
+// on-the-wire WebUtilityEncode the request path uses (which percent-encodes them
+// for WAF safety) — see the encode package doc. Tracker URLs carry none of
+// ! * ( ), so the tr= tail is byte-identical under either encoder.
 func urlEncode(s string) string {
-	return encode.WebUtilityEncode(s)
+	return encode.WebUtilityStringEncode(s)
 }

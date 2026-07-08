@@ -26,12 +26,23 @@ func TestFromInfoHash(t *testing.T) {
 	}{
 		{
 			// Full golden: uppercase hash preserved, title space -> '+' and
-			// '(' ')' percent-encoded (%28 %29 — the on-the-wire WebUtility form),
-			// then the full tracker tail.
+			// '(' ')' LEFT LITERAL — the .NET WebUtility.UrlEncode STRING form
+			// MagnetUtil.InfoHashToPublicMagnet emits (safe set includes ! * ( )),
+			// NOT the on-the-wire form (which would percent-encode them). Then the
+			// full tracker tail.
 			name:     "full magnet with tracker tail",
 			infoHash: "ABCDEF0123456789ABCDEF0123456789ABCDEF01",
 			title:    "Big Buck Bunny (2008)",
-			want:     "magnet:?xt=urn:btih:ABCDEF0123456789ABCDEF0123456789ABCDEF01&dn=Big+Buck+Bunny+%282008%29" + wantTrackerTail,
+			want:     "magnet:?xt=urn:btih:ABCDEF0123456789ABCDEF0123456789ABCDEF01&dn=Big+Buck+Bunny+(2008)" + wantTrackerTail,
+		},
+		{
+			// The four sub-delimiters ! * ( ) stay literal (STRING form), while a
+			// space still becomes '+' — proving the magnet encoder diverges from the
+			// on-the-wire request encoder for exactly these chars.
+			name:     "sub-delimiters left literal in dn",
+			infoHash: "ABCDEF0123456789ABCDEF0123456789ABCDEF01",
+			title:    "Mamma Mia! *Star* (Live)",
+			want:     "magnet:?xt=urn:btih:ABCDEF0123456789ABCDEF0123456789ABCDEF01&dn=Mamma+Mia!+*Star*+(Live)" + wantTrackerTail,
 		},
 		{
 			name:     "tilde in title percent-escaped (WebUtility, not Go)",
