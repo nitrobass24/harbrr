@@ -160,6 +160,12 @@ func ParseResults(def *loader.Definition, body []byte, respType string, query Qu
 	releases := make([]*normalizer.Release, 0, len(rows))
 	for i := range rows {
 		rel, keep, err := parseRow(def, rows[i], query, deps)
+		// Jackett runs the dateheaders backfill after the row survives its filters,
+		// before the release is collected; a kept row with no PublishDate looks back
+		// for its date header, which may also drop the row (see backfillDateHeader).
+		if err == nil && keep {
+			err = backfillDateHeader(def, rows[i], rel, query, deps, respType)
+		}
 		if err != nil {
 			if skipBadRow {
 				continue

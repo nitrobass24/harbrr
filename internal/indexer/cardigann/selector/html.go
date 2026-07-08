@@ -3,6 +3,7 @@ package selector
 import (
 	"bytes"
 	"fmt"
+	"iter"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
@@ -288,6 +289,44 @@ func (n *htmlNode) attribute(name string) (string, bool) {
 // lives in extract -> normalizeSpace, not here.
 func (n *htmlNode) text() string {
 	return n.sel.Text()
+}
+
+// PrecedingElements yields the elements to search for a date header, reproducing
+// the traversal in Jackett's dateheaders backfill (CardigannIndexer search loop):
+// the row's previous element sibling, then that element's previous element
+// sibling, and so on; when a level is exhausted, the parent element's previous
+// element sibling continues the walk up toward the root. It is HTML only — JSON
+// rows yield nothing, matching Jackett (the traversal is AngleSharp-DOM specific).
+// The sequence is lazy so the caller stops at the first matching header.
+func (r Row) PrecedingElements() iter.Seq[Row] {
+	return func(yield func(Row) bool) {
+		if r.kind != kindHTML || r.html == nil {
+			return
+		}
+		for sel := precedingElement(r.html.sel); sel != nil; sel = precedingElement(sel) {
+			if !yield(Row{kind: kindHTML, html: &htmlNode{sel: sel}}) {
+				return
+			}
+		}
+	}
+}
+
+// precedingElement returns the next node in the dateheaders walk from sel: its
+// previous element sibling, or, when there is none, its parent's previous element
+// sibling. Returns nil when neither exists (the walk ends), mirroring Jackett's
+// "PreviousElementSibling ?? ParentElement?.PreviousElementSibling" step.
+func precedingElement(sel *goquery.Selection) *goquery.Selection {
+	if prev := sel.Prev(); prev.Length() > 0 {
+		return prev
+	}
+	parent := sel.Parent()
+	if parent.Length() == 0 {
+		return nil
+	}
+	if prev := parent.Prev(); prev.Length() > 0 {
+		return prev
+	}
+	return nil
 }
 
 // Rows splits a Document into result rows per the rows block. For HTML, each
