@@ -1,6 +1,6 @@
 module github.com/autobrr/harbrr
 
-go 1.26
+go 1.26.5
 
 require (
 	github.com/PuerkitoBio/goquery v1.12.0
