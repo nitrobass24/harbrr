@@ -61,7 +61,13 @@ export function useAddIndexer() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (body: AddIndexer) => api.addIndexer(body),
-    onSettled: () => qc.invalidateQueries({ queryKey: ["indexers"] }),
+    // Adding an indexer grows the aggregate stat set (useAllIndexerStats), which
+    // is now keyed off ["indexer-stats"] and no longer caught by an ["indexers"]
+    // prefix invalidation, so refresh it explicitly.
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ["indexers"] })
+      void qc.invalidateQueries({ queryKey: ["indexer-stats"] })
+    },
   })
 }
 
@@ -77,7 +83,11 @@ export function useDeleteIndexer() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (slug: string) => api.deleteIndexer(slug),
-    onSettled: () => qc.invalidateQueries({ queryKey: ["indexers"] }),
+    // Deleting an indexer shrinks the aggregate stat set (see useAddIndexer note).
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ["indexers"] })
+      void qc.invalidateQueries({ queryKey: ["indexer-stats"] })
+    },
   })
 }
 
