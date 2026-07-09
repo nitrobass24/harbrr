@@ -102,9 +102,19 @@ export class ApiClient {
   private csrfToken = ""
 
   // onUnauthorized is replaceable for tests; the default is a full-page
-  // navigation so all client state resets.
+  // navigation so all client state resets. It appends the current in-app location
+  // as ?redirect= so an expired-session bounce returns the user where they were —
+  // skipped on the auth screens themselves (which would loop / be meaningless).
   onUnauthorized: () => void = () => {
-    window.location.assign(`${getBaseUrl()}/login`)
+    const base = getBaseUrl()
+    const target = `${base}/login`
+    const path = window.location.pathname.slice(base.length) || "/"
+    if (path === "/login" || path === "/setup") {
+      window.location.assign(target)
+      return
+    }
+    const redirect = path + window.location.search
+    window.location.assign(`${target}?redirect=${encodeURIComponent(redirect)}`)
   }
 
   setCsrfToken(token: string | undefined) {
