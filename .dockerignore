@@ -8,6 +8,8 @@ dist/
 data/
 cmd/harbrr/data/
 /harbrr
+**/*_test.go
+**/testdata/
 *.test
 *.out
 lint-report.json
