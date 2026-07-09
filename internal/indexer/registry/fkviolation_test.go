@@ -42,26 +42,44 @@ func TestAddDanglingProxyRefIsInvalid(t *testing.T) {
 	}
 }
 
-// TestUpdateDanglingProxyRefIsInvalid pins the same for Update: PATCHing an
-// existing indexer to a non-existent proxy trips the FK on SetRefs and must map
-// to registry.ErrInvalid.
-func TestUpdateDanglingProxyRefIsInvalid(t *testing.T) {
+// TestUpdateDanglingRefIsInvalid pins the same for Update: PATCHing an existing
+// indexer to a non-existent proxy or solver trips the FK on SetRefs and must map
+// to registry.ErrInvalid (→ 400), never a raw sqlite error (→ 500) — the same
+// SetRefs contract TestAddDanglingProxyRefIsInvalid pins for Add.
+func TestUpdateDanglingRefIsInvalid(t *testing.T) {
 	t.Parallel()
 
-	reg, _ := newRegistry(t, nil)
-	ctx := context.Background()
-	if _, err := reg.Add(ctx, registry.AddParams{Slug: "tt", DefinitionID: "testtracker"}); err != nil {
-		t.Fatalf("Add: %v", err)
+	tests := []struct {
+		name   string
+		update registry.UpdateParams
+	}{
+		{
+			name:   "dangling proxyId",
+			update: registry.UpdateParams{ProxyID: registry.RefUpdate{Present: true, Value: ptrInt64(999999)}},
+		},
+		{
+			name:   "dangling solverId",
+			update: registry.UpdateParams{SolverID: registry.RefUpdate{Present: true, Value: ptrInt64(888888)}},
+		},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	err := reg.Update(ctx, "tt", registry.UpdateParams{
-		ProxyID: registry.RefUpdate{Present: true, Value: ptrInt64(999999)},
-	})
-	if err == nil {
-		t.Fatal("Update with dangling proxyId succeeded, want an FK-classified error")
-	}
-	if !errors.Is(err, registry.ErrInvalid) {
-		t.Errorf("Update(dangling proxyId) err = %v, want errors.Is ErrInvalid", err)
+			reg, _ := newRegistry(t, nil)
+			ctx := context.Background()
+			if _, err := reg.Add(ctx, registry.AddParams{Slug: "tt", DefinitionID: "testtracker"}); err != nil {
+				t.Fatalf("Add: %v", err)
+			}
+
+			err := reg.Update(ctx, "tt", tt.update)
+			if err == nil {
+				t.Fatalf("Update with %s succeeded, want an FK-classified error", tt.name)
+			}
+			if !errors.Is(err, registry.ErrInvalid) {
+				t.Errorf("Update(%s) err = %v, want errors.Is ErrInvalid", tt.name, err)
+			}
+		})
 	}
 }
 
