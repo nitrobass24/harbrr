@@ -1,4 +1,5 @@
-import { createFileRoute, Navigate } from "@tanstack/react-router"
+import { useState } from "react"
+import { createFileRoute, Navigate, useRouter } from "@tanstack/react-router"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/hooks/useAuth"
 import { AppLayout } from "@/layouts/AppLayout"
@@ -12,6 +13,20 @@ export const Route = createFileRoute("/_authenticated")({
 
 function Guard() {
   const { isLoading, isError, retry, isAuthenticated, setupComplete, setupLoading } = useAuth()
+  const router = useRouter()
+  // Snapshot the attempted location once, at mount, so login can return the visitor
+  // there. location.pathname is basepath-relative (TanStack strips the router
+  // basepath), so this is already an app-internal path — no basepath to add or
+  // double-count. Reading router.state here (rather than subscribing via
+  // useLocation) is deliberate: a live subscription would re-fire the <Navigate>
+  // below on every transition commit and spin. The auth screens are top-level
+  // routes (never under this guard), but stay defensive: never seed a redirect back
+  // to /login or /setup, which would loop.
+  const [redirect] = useState<string | undefined>(() => {
+    const { pathname, searchStr } = router.state.location
+    if (pathname === "/login" || pathname === "/setup") return undefined
+    return pathname + searchStr
+  })
 
   if (isLoading) return null
   // A transient non-401 me-probe failure must NOT be read as "logged out" — that
@@ -24,7 +39,7 @@ function Guard() {
   if (isAuthenticated) return <AppLayout />
   if (setupLoading) return null
   if (setupComplete === false) return <Navigate to="/setup" />
-  return <Navigate to="/login" />
+  return <Navigate to="/login" search={{ redirect }} />
 }
 
 // AuthProbeError is shown when the session probe errors (not a 401) so the visitor
