@@ -61,4 +61,30 @@ describe("Setup route", () => {
     expect(await screen.findByRole("button", { name: "Sign in" })).toBeTruthy()
     expect(screen.queryByText("Create the admin account")).toBeNull()
   })
+
+  it("shows a retry state (not the create-admin form) when the setup probe errors", async () => {
+    // me is unauthenticated, but the setup-status probe fails (500). The form must
+    // NOT render — submitting it on a configured instance would just 409. Show a
+    // retry instead; on recovery the real first-run form appears.
+    let setupOk = false
+    vi.stubGlobal("fetch", vi.fn((url: unknown) => {
+      const u = String(url)
+      if (u.endsWith("/auth/me")) return Promise.resolve(json({ code: "unauthorized" }, 401))
+      if (u.endsWith("/auth/setup")) {
+        return Promise.resolve(setupOk ? json({ setupComplete: false }) : json({ code: "internal" }, 500))
+      }
+      return Promise.resolve(json({}))
+    }))
+
+    renderAt("/setup")
+
+    expect(await screen.findByRole("button", { name: "Retry" })).toBeTruthy()
+    expect(screen.queryByLabelText("Username")).toBeNull()
+
+    // Retry after the probe recovers reveals the create-admin form.
+    setupOk = true
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }))
+    expect(await screen.findByText("Create the admin account")).toBeTruthy()
+    expect(screen.getByLabelText("Username")).toBeTruthy()
+  })
 })

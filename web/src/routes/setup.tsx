@@ -2,6 +2,7 @@ import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute, Navigate, useNavigate } from "@tanstack/react-router"
 import { AuthCard } from "@/components/auth/AuthCard"
+import { ProbeError } from "@/components/auth/ProbeError"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -27,7 +28,7 @@ function setupErrorMessage(error: unknown): string | null {
 function Setup() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { isAuthenticated, setupComplete } = useAuth()
+  const { isLoading, isAuthenticated, setupComplete, setupError, retrySetup } = useAuth()
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [confirm, setConfirm] = useState("")
@@ -44,8 +45,16 @@ function Setup() {
     },
   })
 
+  if (isLoading) return null
   if (isAuthenticated) return <Navigate to="/" />
   if (setupComplete === true) return <Navigate to="/login" />
+  if (setupError) {
+    return <ProbeError message="Couldn't reach harbrr to check whether setup is needed. Check that the server is running, then retry." onRetry={retrySetup} />
+  }
+  // Only render the create-admin form once the probe confirms setup is NOT done.
+  // While it is still in flight setupComplete is undefined — return nothing rather
+  // than flash a form on a configured instance (or one whose probe is mid-request).
+  if (setupComplete !== false) return null
 
   // Map the error code to a friendly message (matching login.tsx) rather than
   // surfacing the raw API message.

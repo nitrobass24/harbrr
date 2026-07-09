@@ -57,6 +57,11 @@ export function useAuth() {
     authDisabled: me.data?.authMethod === "disabled",
     setupComplete: setup.data?.setupComplete,
     setupLoading: me.data === null && setup.isLoading,
+    // setupError mirrors isError for the setup probe: only meaningful once the probe
+    // is enabled (me resolved to null), so the /setup screen can show a retry state
+    // instead of a create-admin form it can't reason about.
+    setupError: me.data === null && setup.isError,
+    retrySetup: () => void setup.refetch(),
     login,
     logout,
   }
