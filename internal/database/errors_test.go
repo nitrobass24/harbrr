@@ -76,18 +76,15 @@ func TestIsForeignKeyViolation(t *testing.T) {
 	db := openMigrated(t, filepath.Join(t.TempDir(), "harbrr.db"))
 	ctx := context.Background()
 
-	// A dangling instance_id on indexer_settings → FK violation (code 787) → matched.
+	// A dangling instance_id on indexer_settings → FK violation (code 787).
 	_, fkErr := db.ExecContext(ctx,
 		"INSERT INTO indexer_settings (instance_id, name, value, is_secret) VALUES (?, ?, ?, 0)",
 		9999, "k", "v")
 	if fkErr == nil {
 		t.Fatal("insert with dangling instance_id succeeded, want a FOREIGN KEY violation")
 	}
-	if !database.IsForeignKeyViolation(fkErr) {
-		t.Errorf("IsForeignKeyViolation(FK violation) = false, want true: %v", fkErr)
-	}
 
-	// A UNIQUE(slug) collision → code 2067 → NOT a foreign-key violation.
+	// A UNIQUE(slug) collision → code 2067, a different code that must NOT match.
 	insertInstance := func() error {
 		_, err := db.ExecContext(ctx,
 			"INSERT INTO indexer_instances (slug, definition_id, name, created_at, updated_at) VALUES (?,?,?,?,?)",
@@ -101,15 +98,23 @@ func TestIsForeignKeyViolation(t *testing.T) {
 	if uniqueErr == nil {
 		t.Fatal("second insert with the same slug succeeded, want a UNIQUE violation")
 	}
-	if database.IsForeignKeyViolation(uniqueErr) {
-		t.Errorf("IsForeignKeyViolation(UNIQUE collision) = true, want false: %v", uniqueErr)
-	}
 
-	// Non-driver errors never match.
-	if database.IsForeignKeyViolation(errors.New("boom")) {
-		t.Error("IsForeignKeyViolation(plain error) = true, want false")
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"FK violation (code 787)", fkErr, true},
+		{"UNIQUE collision (code 2067)", uniqueErr, false},
+		{"plain non-driver error", errors.New("boom"), false},
+		{"nil", nil, false},
 	}
-	if database.IsForeignKeyViolation(nil) {
-		t.Error("IsForeignKeyViolation(nil) = true, want false")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := database.IsForeignKeyViolation(tt.err); got != tt.want {
+				t.Errorf("IsForeignKeyViolation(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
 	}
 }
