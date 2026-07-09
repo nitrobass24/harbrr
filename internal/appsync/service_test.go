@@ -654,6 +654,34 @@ func TestServiceCreateRevokeFailureFailsClosed(t *testing.T) {
 	}
 }
 
+// TestServiceCreateInvalidProfileRefMintsNoKey: an ordinary invalid profile ref must
+// fail before the key mint has side effects — the advisory pre-check runs against
+// s.db ahead of MintAPIKey, so a plain client 400 never churns the api-keys table
+// (the race-proof check inside insertConnection's transaction still backstops it).
+// The failing minter proves the point: were the mint reached, the revoke failure
+// would pollute the error.
+func TestServiceCreateInvalidProfileRefMintsNoKey(t *testing.T) {
+	t.Parallel()
+	f := newSyncFixture(t)
+	ctx := context.Background()
+	f.svc.minter = failRevokeMinter{inner: f.auth}
+
+	missing := int64(999999)
+	_, err := f.svc.CreateConnection(ctx, CreateConnectionParams{
+		Name: "bad-ref", Kind: domain.AppKindSonarr, BaseURL: "http://sonarr-bad-ref:8989",
+		APIKey: "k", HarbrrURL: "http://harbrr:8787", SyncProfileID: &missing,
+	})
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("create with missing profile = %v, want ErrInvalid", err)
+	}
+	if strings.Contains(err.Error(), "could not be revoked") {
+		t.Errorf("a pure validation rejection reached the mint/revoke path: %v", err)
+	}
+	if keys, _ := f.auth.ListAPIKeys(ctx); len(keys) != 1 {
+		t.Errorf("invalid create changed the key count: got %d, want 1 (the fixture's)", len(keys))
+	}
+}
+
 // TestServiceDeleteRevokeFailureFailsClosed: a delete whose key revoke fails returns
 // an error rather than swallowing it (the row is gone but the key still authorizes).
 func TestServiceDeleteRevokeFailureFailsClosed(t *testing.T) {
