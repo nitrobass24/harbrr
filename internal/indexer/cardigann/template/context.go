@@ -19,10 +19,15 @@ package template
 //     (CardigannIndexer.applyGoTemplateText), so a WHITESPACE-ONLY value (" ",
 //     "\t") is falsy in Jackett. Go's text/template only treats "" / empty-slice
 //     as falsy, so a bare whitespace value would be truthy in Go — a divergence.
-//     Eval closes this gap by normalizing whitespace-only string values to "" in
-//     the context maps (and Keywords) before rendering, reproducing
-//     IsNullOrWhiteSpace. Empty slices are already falsy in Go (Count > 0 in
-//     Jackett), so Categories needs no special handling.
+//     Eval closes this gap for {{ if .X }} conditions by normalizing whitespace-
+//     only string values to "" in the context maps (and Keywords) before
+//     rendering, reproducing IsNullOrWhiteSpace. This is a DELIBERATE
+//     simplification, not full parity: Jackett normalizes only in conditions and
+//     keeps the RAW value in interpolation and eq/ne, so a whitespace-only value
+//     here also interpolates and compares as "" rather than raw — a benign,
+//     degenerate edge no def or golden hits (see Eval's contract note + the parity
+//     README). Empty slices are already falsy in Go (Count > 0 in Jackett), so
+//     Categories needs no special handling.
 //   - True/False are Jackett's sentinels: True == "True", False == "" (Jackett's
 //     null). Templates compare against them, e.g. {{ if eq .Query.IMDBID .False }};
 //     because an absent .Query.IMDBID also resolves to "", eq "" "" is true,

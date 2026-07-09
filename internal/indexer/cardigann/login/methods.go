@@ -10,7 +10,6 @@ import (
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/selector"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/template"
 )
 
@@ -54,7 +53,7 @@ func (e *Executor) loginGet(ctx context.Context, def *loader.Definition) error {
 	if err != nil {
 		return err
 	}
-	return e.checkErrors(def.Login, full, body, status)
+	return e.checkErrors(def.Login, full, body, status, e.loginSecrets(def))
 }
 
 // loginCookie is the manual-cookie fallback: render the "cookie" input to a raw
@@ -96,7 +95,7 @@ func (e *Executor) loginOneURL(ctx context.Context, def *loader.Definition) erro
 	if err != nil {
 		return err
 	}
-	return e.checkErrors(def.Login, rawURL+one, body, status)
+	return e.checkErrors(def.Login, rawURL+one, body, status, e.loginSecrets(def))
 }
 
 // postForm POSTs url.Values as application/x-www-form-urlencoded to the resolved
@@ -119,6 +118,7 @@ func (e *Executor) postForm(ctx context.Context, def *loader.Definition, target 
 	}
 	headers := mergeFormHeaders(def.Login.Headers)
 	encoded := pairs.Encode()
+	secrets := e.loginSecrets(def)
 	body, status, err := e.do(ctx, stdhttp.MethodPost, rawURL, strings.NewReader(encoded), headers)
 	if err != nil {
 		return err
@@ -129,9 +129,9 @@ func (e *Executor) postForm(ctx context.Context, def *loader.Definition, target 
 	// IS challenged and yields a host-wide cf_clearance, so solve that, then retry
 	// the POST carrying the clearance cookie + the bound User-Agent.
 	if detectAntiBot(body) != nil {
-		return e.solveAndRetryLoginPost(ctx, def.Login, rawURL, encoded, headers)
+		return e.solveAndRetryLoginPost(ctx, def.Login, rawURL, encoded, headers, secrets)
 	}
-	return e.checkErrors(def.Login, rawURL, body, status)
+	return e.checkErrors(def.Login, rawURL, body, status, secrets)
 }
 
 // solveAndRetryLoginPost clears an anti-bot challenge on a login POST by GET-solving
@@ -139,7 +139,7 @@ func (e *Executor) postForm(ctx context.Context, def *loader.Definition, target 
 // do() then replays — and retrying the POST. It fails loud with ErrSolverRequired
 // when no solver is configured (or the solve declines) and when the retried POST is
 // still challenged, mirroring fetchLandingPastAntiBot. Credentials are never echoed.
-func (e *Executor) solveAndRetryLoginPost(ctx context.Context, l *loader.Login, rawURL, postData string, headers map[string][]string) error {
+func (e *Executor) solveAndRetryLoginPost(ctx context.Context, l *loader.Login, rawURL, postData string, headers map[string][]string, secrets []string) error {
 	if err := e.SolveHost(ctx, rawURL); err != nil {
 		// Keep the concrete cause (no solver configured vs a redacted solver outage)
 		// so an incident can be triaged; SolveHost's errors carry no secret.
@@ -152,7 +152,7 @@ func (e *Executor) solveAndRetryLoginPost(ctx context.Context, l *loader.Login, 
 	if detectAntiBot(body) != nil {
 		return fmt.Errorf("%w: the login POST is still challenged after solving", ErrSolverRequired)
 	}
-	return e.checkErrors(l, rawURL, body, status)
+	return e.checkErrors(l, rawURL, body, status, secrets)
 }
 
 // renderInputs template-renders each Login.Inputs value into url.Values. Keys
@@ -173,9 +173,15 @@ func (e *Executor) renderInputs(inputs map[string]loader.Scalar) (url.Values, er
 // checkErrors evaluates the login error selectors against the response body.
 // 401 is a hard failure (Jackett throws on Unauthorized). Otherwise, the first
 // matching error selector yields its message (optionally via a Message selector
-// block), wrapped into ErrLoginFailed. The message is definition error text, not
-// a credential; the URL is redacted.
-func (e *Executor) checkErrors(l *loader.Login, rawURL string, body []byte, status int) error {
+// block), wrapped into ErrLoginFailed. The selector is definition-authored, but the
+// extracted MESSAGE is server-controlled free text lifted from the tracker's response
+// body — a hostile/broken login page can echo a submitted credential back into it
+// (e.g. "The password 'hunter2' is incorrect"), so it is value-scrubbed of the
+// caller-supplied secrets (every non-empty config value the loader's IsSecret
+// classifier marks a credential — see loginSecrets) before it is wrapped into the
+// error (RedactError only catches key[=:]value forms, not a free-text echo); the URL
+// is redacted.
+func (e *Executor) checkErrors(l *loader.Login, rawURL string, body []byte, status int, secrets []string) error {
 	// A 401 on a credential-SUBMITTING login (form/post) is an unambiguous auth
 	// failure worth catching even when the def declares no error selector. For a
 	// get/cookie login a 401 is NOT treated as a failure: such a "login" is often a
@@ -197,41 +203,24 @@ func (e *Executor) checkErrors(l *loader.Login, rawURL string, body []byte, stat
 	if err != nil {
 		return fmt.Errorf("parsing login response from %s: %w", apphttp.SchemeHost(rawURL), err)
 	}
-	root := doc.Root()
-	for i := range l.Error {
-		msg, matched, err := e.evalErrorBlock(root, l.Error[i])
-		if err != nil {
-			return err
-		}
-		if matched {
-			return fmt.Errorf("%w: %s (from %s)", ErrLoginFailed, msg, apphttp.SchemeHost(rawURL))
-		}
+	msg, matched, err := e.Selector.CheckErrorBlocks(doc.Root(), l.Error)
+	if err != nil {
+		return fmt.Errorf("checking login error selectors from %s: %w", apphttp.SchemeHost(rawURL), err)
+	}
+	if matched {
+		return fmt.Errorf("%w: %s (from %s)", ErrLoginFailed, ScrubSecrets(msg, secrets), apphttp.SchemeHost(rawURL))
 	}
 	return nil
 }
 
-// evalErrorBlock tests one error selector. When it matches, it extracts the
-// error message: from the Message selector block if present, else the matched
-// element's text. The returned message is trimmed/single-lined.
-func (e *Executor) evalErrorBlock(root selector.Row, blk loader.ErrorBlock) (msg string, matched bool, err error) {
-	probe := loader.SelectorBlock{Selector: blk.Selector}
-	val, found, err := e.Selector.Field(root, probe)
-	if err != nil {
-		return "", false, fmt.Errorf("evaluating error selector %q: %w", blk.Selector, err)
-	}
-	if !found {
-		return "", false, nil
-	}
-	if blk.Message != nil {
-		mval, mfound, merr := e.Selector.Field(root, *blk.Message)
-		if merr != nil {
-			return "", false, fmt.Errorf("evaluating error message selector %q: %w", blk.Message.Selector, merr)
-		}
-		if mfound {
-			return trimMessage(mval), true, nil
-		}
-	}
-	return trimMessage(val), true, nil
+// loginSecrets resolves the credential VALUES to scrub out of a server-controlled
+// login-error message, derived from the loader's AUTHORITATIVE secret classifier
+// (SettingsField.IsSecret) over THIS definition's settings — never a hardcoded key
+// list, which would miss a def's differently-named credential field (e.g.
+// Bittorrentfiles' `pass`, type: password). username is not classified secret, so it
+// is preserved (a legitimate "no such user 'dave'" survives). See SecretConfigValues.
+func (e *Executor) loginSecrets(def *loader.Definition) []string {
+	return SecretConfigValues(def.Settings, e.Config)
 }
 
 // mergeFormHeaders returns the login headers with a form-urlencoded Content-Type

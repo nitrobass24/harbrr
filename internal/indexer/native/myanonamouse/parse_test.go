@@ -121,6 +121,43 @@ func TestParseReleasesErrors(t *testing.T) {
 	}
 }
 
+// TestParseReleasesScrubsMamID proves the server-echoed `error` string cannot leak the
+// configured mam_id session cookie: a server that reflects the submitted mam_id back into its
+// error text is value-scrubbed before the error reaches the health-event / webhook surface.
+// Fail-before: parseReleases surfaced resp.Error verbatim (mam_id leaked); pass-after: the raw
+// value is replaced with the placeholder while the surrounding message is preserved.
+func TestParseReleasesScrubsMamID(t *testing.T) {
+	t.Parallel()
+	const mamID = "MAMID-SESSION-SECRET-9911"
+	var d *driver
+	for _, f := range Families() {
+		if f.Definition.ID == "myanonamouse" {
+			drv, err := New(native.Params{Def: f.Definition, Cfg: map[string]string{"mam_id": mamID}})
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			d = drv.(*driver)
+		}
+	}
+	if d == nil {
+		t.Fatal("no myanonamouse family")
+	}
+	body := []byte(`{"error":"Bad session for mam_id=` + mamID + `","data":[]}`)
+	_, err := d.parseReleases(body)
+	if !errors.Is(err, search.ErrParseError) {
+		t.Fatalf("err = %v, want search.ErrParseError", err)
+	}
+	if strings.Contains(err.Error(), mamID) {
+		t.Fatalf("parseReleases leaked mam_id: %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "[redacted]") {
+		t.Errorf("expected [redacted] placeholder, got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "Bad session") {
+		t.Errorf("scrub removed non-secret context: %q", err.Error())
+	}
+}
+
 func TestParseSize(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

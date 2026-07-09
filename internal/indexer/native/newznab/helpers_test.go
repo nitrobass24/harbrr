@@ -51,3 +51,22 @@ func (s *scriptDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
 type errorDoer struct{ err error }
 
 func (e *errorDoer) Do(*stdhttp.Request) (*stdhttp.Response, error) { return nil, e.err }
+
+// bodyErrReadCloser is a 200 response body that fails partway through Read, simulating a
+// mid-body transport failure (timeout/reset) after the headers arrived.
+type bodyErrReadCloser struct{ err error }
+
+func (b bodyErrReadCloser) Read([]byte) (int, error) { return 0, b.err }
+func (bodyErrReadCloser) Close() error               { return nil }
+
+// bodyErrDoer returns a 200 whose body read fails, so a test can exercise the io.ReadAll
+// error path (distinct from a transport error on Do).
+type bodyErrDoer struct{ readErr error }
+
+func (d *bodyErrDoer) Do(*stdhttp.Request) (*stdhttp.Response, error) {
+	return &stdhttp.Response{
+		StatusCode: stdhttp.StatusOK,
+		Body:       bodyErrReadCloser{err: d.readErr},
+		Header:     stdhttp.Header{},
+	}, nil
+}

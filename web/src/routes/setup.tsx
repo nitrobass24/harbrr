@@ -1,12 +1,13 @@
 import { useState } from "react"
-import { useMutation } from "@tanstack/react-query"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute, Navigate, useNavigate } from "@tanstack/react-router"
 import { AuthCard } from "@/components/auth/AuthCard"
+import { ProbeError } from "@/components/auth/ProbeError"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useAuth } from "@/hooks/useAuth"
-import { api, APIError } from "@/lib/api"
+import { api, APIError, type SetupState } from "@/lib/api"
 
 export const Route = createFileRoute("/setup")({
   component: Setup,
@@ -26,18 +27,34 @@ function setupErrorMessage(error: unknown): string | null {
 // First-run wizard: create the single admin account, then sign in.
 function Setup() {
   const navigate = useNavigate()
-  const { isAuthenticated, setupComplete } = useAuth()
+  const queryClient = useQueryClient()
+  const { isLoading, isAuthenticated, setupComplete, setupError, retrySetup } = useAuth()
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [confirm, setConfirm] = useState("")
 
   const create = useMutation({
     mutationFn: () => api.setup({ username, password }),
-    onSuccess: () => void navigate({ to: "/login" }),
+    onSuccess: () => {
+      // Seed the setup-status cache synchronously so the /login guard reads the
+      // fresh {setupComplete:true} on arrival. Without this it reads the stale
+      // {setupComplete:false} and bounces back to /setup (a visible flash, or —
+      // when the cache is still fresh so no refetch fires — a stuck empty form).
+      queryClient.setQueryData<SetupState>(["auth", "setup"], { setupComplete: true })
+      void navigate({ to: "/login" })
+    },
   })
 
+  if (isLoading) return null
   if (isAuthenticated) return <Navigate to="/" />
   if (setupComplete === true) return <Navigate to="/login" />
+  if (setupError) {
+    return <ProbeError message="Couldn't reach harbrr to check whether setup is needed. Check that the server is running, then retry." onRetry={retrySetup} />
+  }
+  // Only render the create-admin form once the probe confirms setup is NOT done.
+  // While it is still in flight setupComplete is undefined — return nothing rather
+  // than flash a form on a configured instance (or one whose probe is mid-request).
+  if (setupComplete !== false) return null
 
   // Map the error code to a friendly message (matching login.tsx) rather than
   // surfacing the raw API message.

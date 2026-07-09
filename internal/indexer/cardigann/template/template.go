@@ -3,6 +3,7 @@ package template
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -58,18 +59,39 @@ func Eval(text string, ctx *Context) (string, error) {
 		return text, nil
 	}
 
-	// Reproduce Jackett's string truthiness (!IsNullOrWhiteSpace): whitespace-only
-	// values are falsy there but truthy under Go's text/template, so collapse them
-	// to "" before rendering. See the .NET-truthiness contract on Context.
+	// Collapse whitespace-only string values to "" before rendering. This
+	// reproduces Jackett's string truthiness (!IsNullOrWhiteSpace) in bare
+	// {{ if .X }} conditions — whitespace-only is falsy there but truthy under Go's
+	// text/template — by mutating the ONE value Go's engine sees per variable.
+	//
+	// It is a DELIBERATE simplification, not full parity. Jackett applies
+	// IsNullOrWhiteSpace ONLY in if/else conditions (applyGoTemplateText's
+	// IfElseRegex branch) and uses the RAW value everywhere else, whereas collapsing
+	// the stored value also changes two degenerate whitespace-only edges Go's
+	// template drives off that same value:
+	//   - interpolation: `a{{ .Config.sep }}b` with sep=" " renders "ab" here vs
+	//     Jackett's "a b" (Jackett's simple-variable pass emits the raw value).
+	//   - eq/ne: `eq .Query.IMDBID .False` with IMDBID=" " compares ""=="" (true,
+	//     -> onTrue) here vs Jackett's raw " " != null (false, -> onFalse); Jackett's
+	//     eq is a raw string compare with no IsNullOrWhiteSpace.
+	// Both bite only a whitespace-ONLY carrier value (.Query.Q=" ", a space-valued
+	// .Config.*/.Result.*); .Keywords is pre-trimmed upstream. No vendored def or
+	// offline golden exercises one, so the parity gate is unaffected. A faithful
+	// split would mean rebuilding Jackett's regex mini-engine (raw interpolation +
+	// raw eq + whitespace-aware if) instead of delegating truthiness to Go's
+	// text/template — not justified for this degenerate edge. See the .NET-truthiness
+	// contract on Context and the "Whitespace-only value collapse" entry in the
+	// parity README.
 	normalizeWhitespaceValues(ctx)
 
-	expanded, err := expandFuncs(text, ctx)
+	expanded, subs, err := expandFuncs(text, ctx)
 	if err != nil {
 		return "", err
 	}
-	// If the func phase consumed every action, skip the parser entirely.
+	// If the func phase consumed every action, skip the parser entirely — but
+	// still splice each re_replace/join result back in place of its sentinel.
 	if !strings.Contains(expanded, "{{") {
-		return expanded, nil
+		return subs.splice(expanded), nil
 	}
 
 	rewritten := rewriteBadIdentRefs(expanded)
@@ -83,18 +105,74 @@ func Eval(text string, ctx *Context) (string, error) {
 	if err := t.Execute(&b, ctx); err != nil {
 		return "", fmt.Errorf("executing template %q: %w", text, err)
 	}
-	return b.String(), nil
+	// Sentinels are literal text to the stdlib engine, so they survive Execute
+	// unchanged; swap them for their resolved values now that no re-parsing can
+	// happen. This is what makes a re_replace/join result pure data (Jackett's
+	// single-pass semantics), so brace junk in a result is emitted verbatim
+	// instead of re-entering the parser and failing the whole search.
+	return subs.splice(b.String()), nil
 }
+
+// substitutions records re_replace/join results and hands out a sentinel token
+// to stand in for each while the template is parsed and executed.
+//
+// Jackett's applyGoTemplateText resolves re_replace/join in a single pass and
+// treats each result as a plain VALUE: `template.Replace(all, expanded)` splices
+// the result in, and only the later logic/if/range/simple-variable regexes run
+// over it — the result is never re-tokenized as a fresh template. We mirror that
+// by splicing a sentinel (not the raw result) into the source, parsing/executing
+// with sentinels in place, then swapping sentinels for their values in the
+// OUTPUT. A result carrying `{{`-shaped junk (e.g. a user keyword "foo {{bar")
+// therefore never reaches the stdlib parser.
+//
+// The sentinel is NUL-delimited (\x00...\x00). NUL does not occur in practice in
+// Cardigann definition text, tracker config values, or search keywords (all UI-
+// or HTTP-query-sourced text, and Sonarr/Radarr never send it), so a token is
+// neither authored by a definition nor collides with a real value, and it
+// survives text/template parsing as ordinary literal text between actions. splice
+// does a single left-to-right pass, so a resolved value that itself contains
+// sentinel-shaped text is not re-scanned. The one contrived collision — a manual
+// query hand-crafting a literal NUL sentinel (e.g. q=%00hbtok0%00) — only
+// corrupts the user's own query on this single-user box; it exposes no secret and
+// cannot arise from a real client. (A defensive NUL-strip on keyword input would
+// make the invariant absolute; tracked as a follow-up.)
+type substitutions struct {
+	values []string
+}
+
+func (s *substitutions) add(value string) string {
+	token := sentinelPrefix + strconv.Itoa(len(s.values)) + sentinelSuffix
+	s.values = append(s.values, value)
+	return token
+}
+
+func (s *substitutions) splice(out string) string {
+	if len(s.values) == 0 {
+		return out
+	}
+	pairs := make([]string, 0, len(s.values)*2)
+	for i, v := range s.values {
+		pairs = append(pairs, sentinelPrefix+strconv.Itoa(i)+sentinelSuffix, v)
+	}
+	return strings.NewReplacer(pairs...).Replace(out)
+}
+
+const (
+	sentinelPrefix = "\x00hbtok"
+	sentinelSuffix = "\x00"
+)
 
 // expandFuncs resolves re_replace then join (Jackett's order) by regex
 // substitution, returning the template text with those actions replaced by
-// their rendered output.
-func expandFuncs(text string, ctx *Context) (string, error) {
-	out, err := expandReReplace(text, ctx)
+// sentinel tokens plus the substitutions map that maps each sentinel back to its
+// resolved result.
+func expandFuncs(text string, ctx *Context) (string, *substitutions, error) {
+	subs := &substitutions{}
+	out, err := expandReReplace(text, ctx, subs)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return expandJoin(out, ctx), nil
+	return expandJoin(out, ctx, subs), subs, nil
 }
 
 // expandReReplace implements {{ re_replace .Var "pattern" "repl" }}: route the
@@ -103,7 +181,7 @@ func expandFuncs(text string, ctx *Context) (string, error) {
 // new Regex(pat).Replace(input, repl) with arg order variable, pattern,
 // replacement. The template path carries no def language here; per-def language
 // routing is applied at the engine call site, so RouteOptions is zero.
-func expandReReplace(text string, ctx *Context) (string, error) {
+func expandReReplace(text string, ctx *Context, subs *substitutions) (string, error) {
 	var firstErr error
 	noteErr := func(err error) {
 		if firstErr == nil {
@@ -122,7 +200,7 @@ func expandReReplace(text string, ctx *Context) (string, error) {
 			noteErr(fmt.Errorf("re_replace: %w", err))
 			return ""
 		}
-		return out
+		return subs.add(out)
 	})
 	if firstErr != nil {
 		return "", firstErr
@@ -132,9 +210,9 @@ func expandReReplace(text string, ctx *Context) (string, error) {
 
 // expandJoin implements {{ join .Var "sep" }}: strings.Join(resolve(.Var), sep),
 // arg order variable then separator.
-func expandJoin(text string, ctx *Context) string {
+func expandJoin(text string, ctx *Context, subs *substitutions) string {
 	return replaceAllSubmatch(joinRe, text, func(groups []string) string {
-		return strings.Join(resolveSliceVar(groups[1], ctx), groups[2])
+		return subs.add(strings.Join(resolveSliceVar(groups[1], ctx), groups[2]))
 	})
 }
 
@@ -166,9 +244,12 @@ func submatchStrings(text string, idx []int) []string {
 
 // normalizeWhitespaceValues collapses whitespace-only string values in the
 // context to "" so Go's text/template (which treats only "" as falsy) matches
-// Jackett's !string.IsNullOrWhiteSpace truthiness. It mutates ctx in place; this
-// is safe because callers build a fresh Context per Eval and the normalized form
-// is observationally equivalent for every read path. Empty slices are already
+// Jackett's !string.IsNullOrWhiteSpace truthiness in {{ if .X }} conditions. It
+// mutates ctx in place, which is safe because callers build a fresh Context per
+// Eval. The collapse is NOT observationally equivalent on every read path: for a
+// whitespace-only value it also empties interpolation and eq/ne comparison — a
+// deliberate divergence from Jackett's raw handling on those paths, degenerate and
+// unhit by the corpus (see Eval's contract note above). Empty slices are already
 // falsy in Go, so Categories is untouched.
 func normalizeWhitespaceValues(ctx *Context) {
 	normalizeMapWhitespace(ctx.Config)

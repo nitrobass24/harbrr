@@ -480,6 +480,8 @@ func TestServeDL_ServesNZBUnvalidated(t *testing.T) {
 }
 
 // TestServeDL_InvalidToken: a forged/garbage token is a 400 and never reaches Grab.
+// The status is a regression guard for the /dl route's real-HTTP-status contract
+// (Jackett's DownloadController), distinct from the caps/search 200-envelope.
 func TestServeDL_InvalidToken(t *testing.T) {
 	t.Parallel()
 	idx := resolverDemoIndexer(t)
@@ -488,12 +490,15 @@ func TestServeDL_InvalidToken(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", rec.Code)
 	}
+	assertNoDLLeak(t, rec)
 	if idx.gotGrabLink != "" {
 		t.Errorf("Grab must not run for an invalid token, got %q", idx.gotGrabLink)
 	}
 }
 
 // TestServeDL_RequiresAPIKey: /dl without the apikey is rejected before any grab.
+// Jackett's DownloadController returns Unauthorized (401) — NOT a 200 envelope — so
+// *arr surfaces the auth failure as a transport error rather than a bad torrent file.
 func TestServeDL_RequiresAPIKey(t *testing.T) {
 	t.Parallel()
 	idx := resolverDemoIndexer(t)
@@ -506,11 +511,68 @@ func TestServeDL_RequiresAPIKey(t *testing.T) {
 		"/api/indexers/demo/dl?token="+url.QueryEscape(token), nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401 for a missing/invalid apikey", rec.Code)
+	}
 	if !strings.Contains(rec.Body.String(), "Invalid API Key") {
 		t.Errorf("expected an invalid-api-key error, got: %s", rec.Body.String())
 	}
+	assertNoDLLeak(t, rec)
 	if idx.gotGrabLink != "" {
 		t.Errorf("Grab must not run without an apikey")
+	}
+}
+
+// TestServeDL_UnknownIndexer: an unknown/unserved indexer id is a 404, matching
+// Jackett's DownloadController (GetWebIndexer throws on an unknown id → the catch
+// returns NotFound()). The provider omits unserved indexers, so this is the
+// unknown-id path, not the 403 configured-but-unconfigured one.
+func TestServeDL_UnknownIndexer(t *testing.T) {
+	t.Parallel()
+	idx := resolverDemoIndexer(t)
+	h, kr := newProxyHandler(t, idx)
+	token, err := encodeDLToken(kr, "demo", "https://demo.test/download.php?id=1")
+	if err != nil {
+		t.Fatalf("encodeDLToken: %v", err)
+	}
+	rec := doDL(t, h, "nonexistent", "token="+url.QueryEscape(token))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404 for an unknown indexer", rec.Code)
+	}
+	assertNoDLLeak(t, rec)
+	if idx.gotGrabLink != "" {
+		t.Errorf("Grab must not run for an unknown indexer")
+	}
+}
+
+// TestServeDL_ProxyDisabled: when the /dl proxy is not enabled (no DL keyring),
+// the route is a 503 Service Unavailable — the feature is unavailable. There is no
+// direct Jackett equivalent (Jackett always has download).
+func TestServeDL_ProxyDisabled(t *testing.T) {
+	t.Parallel()
+	idx := resolverDemoIndexer(t)
+	// A handler WITHOUT WithDLToken: the proxy is disabled.
+	h := NewHandler(fakeProvider{"demo": idx}, WithAPIKey(testAPIKey))
+	rec := doDL(t, h, "demo", "token=whatever")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503 when the proxy is disabled", rec.Code)
+	}
+	assertNoDLLeak(t, rec)
+	if idx.gotGrabLink != "" {
+		t.Errorf("Grab must not run when the proxy is disabled")
+	}
+}
+
+// assertNoDLLeak asserts a /dl error response never carries a secret: neither the
+// synthetic passkey nor a resolved download link reaches the error body.
+func assertNoDLLeak(t *testing.T, rec *httptest.ResponseRecorder) {
+	t.Helper()
+	body := rec.Body.String()
+	if strings.Contains(body, dlTestPasskey) {
+		t.Errorf("passkey leaked into a /dl error body:\n%s", body)
+	}
+	if strings.Contains(body, "download.php") || strings.Contains(body, "passkey=") {
+		t.Errorf("a download link leaked into a /dl error body:\n%s", body)
 	}
 }
 

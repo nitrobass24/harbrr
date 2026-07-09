@@ -26,6 +26,16 @@ var (
 // a clean Torznab path segment and management resource id.
 var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
+// reservedSlugs are slugs that must not name an indexer because they collide with
+// a static path segment registered as a sibling of /api/indexers/{slug} in
+// internal/web/api/router.go. chi prioritizes a static segment over the {slug}
+// param, so an indexer slugged "stats" would be shadowed by GET
+// /api/indexers/stats (allIndexerStats). Keep this in sync with the static
+// segments registered directly under /api/indexers/ in router.go.
+var reservedSlugs = map[string]struct{}{
+	"stats": {},
+}
+
 // AddParams is the input to Add. Slug defaults to DefinitionID when empty; Name
 // defaults to the definition's name; Settings is the user's setting values keyed
 // by setting name (secrets are encrypted on write).
@@ -78,6 +88,9 @@ func (r *Registry) Add(ctx context.Context, p AddParams) (domain.IndexerInstance
 	if !slugPattern.MatchString(slug) {
 		return domain.IndexerInstance{}, fmt.Errorf("%w: slug %q must be 1-64 chars of [a-z0-9._-] starting alphanumeric", ErrInvalid, slug)
 	}
+	if _, reserved := reservedSlugs[slug]; reserved {
+		return domain.IndexerInstance{}, fmt.Errorf("%w: slug %q is reserved", ErrInvalid, slug)
+	}
 	def, _, err := r.definition(p.DefinitionID)
 	if err != nil {
 		return domain.IndexerInstance{}, fmt.Errorf("%w: unknown definition %q", ErrInvalid, p.DefinitionID)
@@ -108,6 +121,12 @@ func (r *Registry) Add(ctx context.Context, p AddParams) (domain.IndexerInstance
 		// semantics hold either way.
 		if database.IsUniqueViolation(err) {
 			return domain.IndexerInstance{}, fmt.Errorf("%w: indexer %q", ErrConflict, slug)
+		}
+		// A dangling proxy_id/solver_id trips the FK constraint (foreign_keys=ON):
+		// the client referenced a proxy/solver that does not exist, so it is invalid
+		// input (400), not an internal error.
+		if database.IsForeignKeyViolation(err) {
+			return domain.IndexerInstance{}, fmt.Errorf("%w: unknown proxy or solver reference", ErrInvalid)
 		}
 		return domain.IndexerInstance{}, err
 	}
@@ -147,14 +166,45 @@ func (r *Registry) List(ctx context.Context) ([]domain.IndexerInstance, error) {
 
 // Update merges new settings into an instance (secrets.Redacted keeps the stored
 // value; omitted settings are kept) and updates its name/base URL, atomically.
+// The whole read-modify-write — read current settings, merge the patch, then
+// delete+reinsert — runs inside one transaction (reading via the tx handle, not
+// r.db), so a concurrent persistSetting rotating a live credential (e.g. a native
+// driver refreshing MyAnonamouse's mam_id) can't be clobbered by this write
+// reinserting a stale merged set. SetMaxOpenConns(1) means the tx holds the only
+// connection, serializing the RMW against that Upsert (mirrors appsync U10-F1).
 func (r *Registry) Update(ctx context.Context, slug string, p UpdateParams) error {
-	inst, err := r.instances.GetBySlug(ctx, r.db, slug)
+	var instID int64
+	err := r.inTx(ctx, func(tx dbinterface.TxQuerier) error {
+		inst, err := r.instances.GetBySlug(ctx, tx, slug)
+		if err != nil {
+			return fmt.Errorf("registry: update %q: %w", slug, err)
+		}
+		instID = inst.ID
+		return r.updateInTx(ctx, tx, inst, p)
+	})
 	if err != nil {
-		return fmt.Errorf("registry: update %q: %w", slug, err)
+		// A dangling proxy_id/solver_id trips the FK constraint on SetRefs
+		// (foreign_keys=ON): the client referenced a proxy/solver that does not
+		// exist, so it is invalid input (400), not an internal error.
+		if database.IsForeignKeyViolation(err) {
+			return fmt.Errorf("%w: unknown proxy or solver reference", ErrInvalid)
+		}
+		return err
 	}
-	existing, err := r.instances.Settings(ctx, r.db, inst.ID)
+	r.invalidate(slug)
+	r.invalidateSearchCache(ctx, instID)
+	return nil
+}
+
+// updateInTx applies the settings merge and metadata/ref updates for inst inside
+// the caller's transaction. The current settings are read (via tx) and merged
+// here — inside the tx — so the read → merge → delete → reinsert is one atomic
+// unit that can't lose a concurrent single-setting Upsert. mergeSettings only
+// touches the keyring (no DB), so it is safe within the tx.
+func (r *Registry) updateInTx(ctx context.Context, tx dbinterface.TxQuerier, inst domain.IndexerInstance, p UpdateParams) error {
+	existing, err := r.instances.Settings(ctx, tx, inst.ID)
 	if err != nil {
-		return fmt.Errorf("registry: update %q settings: %w", slug, err)
+		return fmt.Errorf("registry: update %q settings: %w", inst.Slug, err)
 	}
 	def, _, err := r.definition(inst.DefinitionID)
 	if err != nil {
@@ -166,32 +216,24 @@ func (r *Registry) Update(ctx context.Context, slug string, p UpdateParams) erro
 	}
 
 	name, baseURL := applyMeta(inst, p)
-	err = r.inTx(ctx, func(tx dbinterface.TxQuerier) error {
-		if err := r.instances.UpdateMeta(ctx, tx, inst.ID, name, baseURL, r.clock()); err != nil {
-			return fmt.Errorf("registry: update meta: %w", err)
-		}
-		// Only a present ref field changes the stored reference; an absent one keeps
-		// the instance's current value (so a partial PATCH can't clear it).
-		proxyRef := resolveRef(p.ProxyID, inst.ProxyID)
-		solverRef := resolveRef(p.SolverID, inst.SolverID)
-		if err := r.instances.SetRefs(ctx, tx, inst.ID, proxyRef, solverRef, r.clock()); err != nil {
-			return fmt.Errorf("registry: update refs: %w", err)
-		}
-		if err := r.instances.DeleteSettings(ctx, tx, inst.ID); err != nil {
-			return fmt.Errorf("registry: clear settings: %w", err)
-		}
-		for _, s := range merged {
-			if err := r.instances.InsertSetting(ctx, tx, inst.ID, s); err != nil {
-				return fmt.Errorf("registry: write setting %q: %w", s.Name, err)
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return err
+	if err := r.instances.UpdateMeta(ctx, tx, inst.ID, name, baseURL, r.clock()); err != nil {
+		return fmt.Errorf("registry: update meta: %w", err)
 	}
-	r.invalidate(slug)
-	r.invalidateSearchCache(ctx, inst.ID)
+	// Only a present ref field changes the stored reference; an absent one keeps
+	// the instance's current value (so a partial PATCH can't clear it).
+	proxyRef := resolveRef(p.ProxyID, inst.ProxyID)
+	solverRef := resolveRef(p.SolverID, inst.SolverID)
+	if err := r.instances.SetRefs(ctx, tx, inst.ID, proxyRef, solverRef, r.clock()); err != nil {
+		return fmt.Errorf("registry: update refs: %w", err)
+	}
+	if err := r.instances.DeleteSettings(ctx, tx, inst.ID); err != nil {
+		return fmt.Errorf("registry: clear settings: %w", err)
+	}
+	for _, s := range merged {
+		if err := r.instances.InsertSetting(ctx, tx, inst.ID, s); err != nil {
+			return fmt.Errorf("registry: write setting %q: %w", s.Name, err)
+		}
+	}
 	return nil
 }
 

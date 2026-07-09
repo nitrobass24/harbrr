@@ -146,6 +146,28 @@ Entries:
     **`[Accepted]`**
 
   **`[Resolved]`**
+- **Non-2xx search-status handling** — harbrr's search path fails fast on a
+  non-redirect non-2xx response (`search/request.go` `checkStatus`): 429/503
+  become the typed `RateLimitedError` the registry backs off on, and any other
+  status (403/404/500…) is a loud `tracker returned HTTP <n>` error — the tracker
+  errored, so the body is not results and silently parsing it would surface a
+  misleading empty page. Jackett does the opposite on this path: its HTML branch
+  parses ANY-status body (only `checkForError`'s `401` gate + the def's error
+  selectors throw) and its XML branch has no status check at all, so a parseable
+  page served with a 403/404/500 yields results/0-releases there. The **redirect
+  half** of Jackett's `CheckIfLoginIsNeeded` is preserved (see "Search redirects"
+  above): an unfollowed 3xx is surfaced as data, so a login page served as a
+  **302** still relogins. The known limitation is the non-redirect case — a login
+  page served with a **403** (body-based logout, no redirect) hard-fails in harbrr
+  where Jackett parses the body — and relogins if the def has a `login.test`
+  selector that is absent, or otherwise just yields 0 rows; either way Jackett does
+  not hard-fail. No
+  offline corpus fixture carries a non-2xx search status (per CLAUDE.md the parity
+  target is Jackett's output on saved fixtures), so this is a live-only difference;
+  the JSON branch is unaffected (Jackett's JSON branch also throws on non-200, so
+  harbrr already matches it). Gated by `search/ratelimit_test.go`
+  (`TestDoSearchRequest_Non2xxFailsFast`, `TestDoSearchRequest_RateLimitedStatus`).
+  **`[Deliberate]`**
 - **Date canonical form** — RFC3339 vs Jackett's RFC1123Z; see "Date
   canonicalization". Same instant, different string — a canonical-schema choice,
   not a parse difference. **`[Deliberate]`**
@@ -161,8 +183,14 @@ Entries:
   (Go leaves it literal; .NET escapes it to `%7E`). The apostrophe `'` is `%27` in
   BOTH engines and was NOT a divergence (the earlier note here wrongly listed it
   and omitted `~`). Spaces match (`%20` in the path, `+` in the query). The magnet
-  synthesizer (`normalizer/synth.go`) uses the same encoder, matching
-  `MagnetUtil.InfoHashToPublicMagnet`. **`[Resolved]`** Login form-POST
+  synthesizer (`internal/indexer/cardigann/magnet`) uses `encode.WebUtilityStringEncode`
+  — the .NET WebUtility *STRING* form that leaves the sub-delimiters `! * ( )`
+  LITERAL — because `MagnetUtil.InfoHashToPublicMagnet` builds `dn=`/`tr=` via
+  `WebUtilityHelpers.UrlEncode` → `WebUtility.UrlEncodeToBytes` (safe set includes
+  `! * ( )`), and the synthesised magnet is Torznab OUTPUT, not an on-the-wire
+  tracker request. The request encoders keep the on-the-wire form (percent-encoded
+  `! * ( )`); the difference is only those four chars in `dn=` (a "Title (Year)"
+  emits `dn=…+(Year)` in both engines). **`[Resolved]`** Login form-POST
   bodies remain on stdlib `url.Values.Encode` — a deliberate divergence, see
   `login/methods.go` (`postForm`) and `login/encoding_divergence_test.go`.
 - **`.Today.Month` / `.Today.Day`** — harbrr exposes these template fields;
@@ -247,6 +275,22 @@ Entries:
   (`selector/jsonpath.go`), which is what every UNIT3D-API def's `created_at`
   (`append " +00:00"` → `dateparse "MM/dd/yyyy HH:mm:ss zzz"`) relies on. Surfaced
   by the live smoke. **`[Resolved]`**
+- **Whitespace-only value collapse** — the template engine collapses a
+  whitespace-ONLY string value (`" "`, `"\t"`) to `""` on every read path before
+  rendering (`template/template.go` `normalizeWhitespaceValues`), so bare
+  `{{ if .X }}` truthiness matches Jackett's `!IsNullOrWhiteSpace`. Jackett applies
+  that rule ONLY in if/else conditions and keeps the RAW value in interpolation and
+  in `eq`/`ne` (a raw string compare). So for a whitespace-only carrier the collapse
+  also diverges on those paths: `a{{ .Config.sep }}b` with `sep=" "` renders `ab`
+  (Jackett `a b`), and `eq .Query.IMDBID .False` with `IMDBID=" "` takes the
+  true/`onTrue` branch (Jackett raw-compares `" " != null` → `onFalse`). It bites
+  only whitespace-ONLY `.Query.Q` / `.Config.*` / `.Result.*` (`.Keywords` is
+  pre-trimmed upstream); no vendored def or offline golden produces such a value, so
+  the gate is unaffected. A faithful split (raw interpolation + raw `eq` +
+  whitespace-aware `if`) would mean rebuilding Jackett's regex mini-engine instead of
+  delegating truthiness to Go's `text/template`; not justified for this degenerate
+  edge. Pinned by `template/template_test.go`
+  (`TestEvalWhitespaceCollapseIsDeliberate`). **`[Deliberate]`**
 - **Login status vs error selectors** — Jackett never fails a login on HTTP
   status; it relies on the def's error selectors. harbrr matches this for
   `get`/`cookie` logins (a `401` probe is not a failure — e.g. DigitalCore's apikey

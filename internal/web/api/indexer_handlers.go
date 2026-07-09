@@ -59,16 +59,36 @@ type definitionSummary struct {
 	Language    string `json:"language,omitempty"`
 }
 
-// listDefinitions returns the available tracker definitions (loaded once, cached).
+// listDefinitions returns the available tracker definitions (memoized on success).
+// A first-call failure is surfaced but NOT cached, so the next call retries — a
+// transient load blip never wedges the add-indexer UI at 500 until restart. The
+// mutex is held across the load to serialize concurrent first-calls (one loads,
+// the rest wait then see the cache); acceptable for this rarely-hit endpoint.
 func (rt *router) listDefinitions(w http.ResponseWriter, _ *http.Request) {
-	rt.defsOnce.Do(func() {
-		rt.defs, rt.defsErr = loadDefinitionSummaries(rt.loader, rt.registry.NativeDefinitions())
-	})
-	if rt.defsErr != nil {
-		rt.writeServiceError(w, "list definitions", rt.defsErr)
+	defs, err := rt.cachedDefinitions()
+	if err != nil {
+		rt.writeServiceError(w, "list definitions", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, rt.defs)
+	writeJSON(w, http.StatusOK, defs)
+}
+
+// cachedDefinitions returns the memoized definitions, loading them once on first
+// success. The lock is released via defer so a panic in the load can't leave the
+// mutex held (which would wedge every future call — worse than the bug this
+// fixes). A failed load leaves defsLoaded false, so the next call retries.
+func (rt *router) cachedDefinitions() ([]definitionSummary, error) {
+	rt.defsMu.Lock()
+	defer rt.defsMu.Unlock()
+	if !rt.defsLoaded {
+		defs, err := rt.loadDefs()
+		if err != nil {
+			return nil, err
+		}
+		rt.defs = defs
+		rt.defsLoaded = true
+	}
+	return rt.defs, nil
 }
 
 // loadDefinitionSummaries summarizes all addable definitions — the vendored

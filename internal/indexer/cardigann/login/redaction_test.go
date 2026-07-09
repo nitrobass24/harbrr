@@ -24,6 +24,7 @@ var secretSentinels = []string{
 	"API-KEY-987",
 	"COOKIE-SECRET-VAL",
 	"CSRF-TOKEN-FROM-PAGE-9988",
+	"AUTHKEY-SECRET-1122",
 	pkFixture,
 }
 
@@ -78,6 +79,164 @@ func TestLoginFailureErrorRedacted(t *testing.T) {
 	}
 	// ...but never the credential.
 	assertNoSecret(t, "login failure", err)
+}
+
+// TestLoginErrorPageEchoesPassword drives a login-error page that echoes the SUBMITTED
+// password back into the error selector's message as free text ("The password 's3cr3t-pass'
+// is incorrect for user dave"). The extracted message is server-controlled, so checkErrors
+// value-scrubs the configured credentials out of it. Fail-before: the message was wrapped
+// verbatim and RedactError's key[=:]value anchor could not catch the free-text echo, so the
+// password leaked to the health-event / webhook surface; pass-after: the raw password is
+// replaced with the placeholder while the non-secret username and surrounding text survive.
+func TestLoginErrorPageEchoesPassword(t *testing.T) {
+	t.Parallel()
+
+	rt := newReplay(
+		t,
+		step{
+			wantMethod: stdhttp.MethodPost,
+			wantPath:   "/takelogin.php",
+			bodyFile:   "login_echo_password.html",
+		},
+	)
+	def := &loader.Definition{
+		// settings classify which config keys are secret (IsSecret): password (type
+		// password) is scrubbed, username (text) is preserved.
+		Settings: []loader.SettingsField{
+			{Name: "username", Type: "text"},
+			{Name: "password", Type: "password"},
+		},
+		Login: &loader.Login{
+			Method: "post",
+			Path:   "takelogin.php",
+			Inputs: map[string]loader.Scalar{
+				"username": scalar("{{ .Config.username }}"),
+				"password": scalar("{{ .Config.password }}"),
+			},
+			Error: []loader.ErrorBlock{{Selector: "form#loginform .warning"}},
+		},
+	}
+	e := newExec(t, rt, map[string]string{
+		"username": "dave",
+		"password": "s3cr3t-pass",
+	})
+
+	err := e.Login(t.Context(), def)
+	if !errors.Is(err, ErrLoginFailed) {
+		t.Fatalf("err = %v, want ErrLoginFailed", err)
+	}
+	// The submitted password (a secret) must NOT survive in the surfaced error...
+	assertNoSecret(t, "password echo", err)
+	if !strings.Contains(err.Error(), "[redacted]") {
+		t.Errorf("expected [redacted] placeholder in error: %q", err.Error())
+	}
+	// ...but the non-secret username and the surrounding message must be preserved.
+	if !strings.Contains(err.Error(), "dave") {
+		t.Errorf("scrub removed the non-secret username: %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "is incorrect") {
+		t.Errorf("scrub removed non-secret context: %q", err.Error())
+	}
+}
+
+// TestLoginErrorPageEchoesPassField is the Bittorrentfiles shape: the credential
+// setting is named `pass` (type: password), NOT the conventional `password`, and the
+// login input posts {{ .Config.pass }}. The scrub set is derived from IsSecret over the
+// def's settings, so config["pass"] is scrubbed. Fail-before: the old hardcoded
+// {password,apikey,cookie,passkey} list did not include `pass`, so the echoed password
+// leaked into ErrLoginFailed + the auth_failure health event → webhook; pass-after: the
+// IsSecret-derived set catches it (type: password) and it is replaced with the placeholder.
+func TestLoginErrorPageEchoesPassField(t *testing.T) {
+	t.Parallel()
+
+	rt := newReplay(
+		t,
+		step{
+			wantMethod: stdhttp.MethodPost,
+			wantPath:   "/signin.php",
+			bodyFile:   "login_echo_pass.html",
+		},
+	)
+	def := &loader.Definition{
+		Settings: []loader.SettingsField{
+			{Name: "user", Type: "text"},
+			{Name: "pass", Type: "password"},
+			{Name: "freeleech", Type: "checkbox"}, // toggle, never secret
+		},
+		Login: &loader.Login{
+			Method: "post",
+			Path:   "signin.php",
+			Inputs: map[string]loader.Scalar{
+				"user": scalar("{{ .Config.user }}"),
+				"pass": scalar("{{ .Config.pass }}"),
+			},
+			Error: []loader.ErrorBlock{{Selector: ".error"}},
+		},
+	}
+	e := newExec(t, rt, map[string]string{
+		"user": "dave",
+		"pass": "s3cr3t-pass",
+	})
+
+	err := e.Login(t.Context(), def)
+	if !errors.Is(err, ErrLoginFailed) {
+		t.Fatalf("err = %v, want ErrLoginFailed", err)
+	}
+	// The `pass` value (a secret classified by IsSecret via type: password) must be gone...
+	assertNoSecret(t, "pass-field echo", err)
+	if !strings.Contains(err.Error(), "[redacted]") {
+		t.Errorf("expected [redacted] placeholder in error: %q", err.Error())
+	}
+	// ...while the non-secret username survives.
+	if !strings.Contains(err.Error(), "dave") {
+		t.Errorf("scrub removed the non-secret username: %q", err.Error())
+	}
+}
+
+// TestLoginErrorPageEchoesAuthkey proves the scrub set is DERIVED from IsSecret, not a
+// new hardcoded list: a text-typed setting named `authkey` (matched by the secretNameTokens
+// "authkey"/"auth_key") is classified secret and scrubbed. Fail-before: the old hardcoded
+// list did not include `authkey`, so the echoed key leaked; pass-after: the derivation
+// catches it by name token.
+func TestLoginErrorPageEchoesAuthkey(t *testing.T) {
+	t.Parallel()
+
+	rt := newReplay(
+		t,
+		step{
+			wantMethod: stdhttp.MethodPost,
+			wantPath:   "/takelogin.php",
+			bodyFile:   "login_echo_authkey.html",
+		},
+	)
+	def := &loader.Definition{
+		Settings: []loader.SettingsField{
+			{Name: "username", Type: "text"},
+			{Name: "authkey", Type: "text"}, // text-typed secret, matched by name token
+		},
+		Login: &loader.Login{
+			Method: "post",
+			Path:   "takelogin.php",
+			Inputs: map[string]loader.Scalar{"authkey": scalar("{{ .Config.authkey }}")},
+			Error:  []loader.ErrorBlock{{Selector: "form#loginform .warning"}},
+		},
+	}
+	e := newExec(t, rt, map[string]string{
+		"username": "dave",
+		"authkey":  "AUTHKEY-SECRET-1122",
+	})
+
+	err := e.Login(t.Context(), def)
+	if !errors.Is(err, ErrLoginFailed) {
+		t.Fatalf("err = %v, want ErrLoginFailed", err)
+	}
+	assertNoSecret(t, "authkey echo", err)
+	if !strings.Contains(err.Error(), "[redacted]") {
+		t.Errorf("expected [redacted] placeholder in error: %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "dave") {
+		t.Errorf("scrub removed the non-secret username: %q", err.Error())
+	}
 }
 
 // TestRedactionSelfAudit exercises every error/log-producing path with secrets

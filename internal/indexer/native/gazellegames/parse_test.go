@@ -305,3 +305,32 @@ func TestScrubAPIKey(t *testing.T) {
 		t.Fatalf("scrubAPIKey = %q, did not redact the key", got)
 	}
 }
+
+// TestParseSearchScrubsStatusEcho proves the server-controlled `status` and `error` fields
+// are both scrubbed of the apikey AND passkey before they reach the surfaced error (egress:
+// error -> health Detail -> webhook). Fail-before: parseSearch rendered the raw `status`
+// unscrubbed (only `error` went through scrubAPIKey), so an apikey/passkey echoed into the
+// status leaked; pass-after: both fields are value-scrubbed via scrubSecrets.
+func TestParseSearchScrubsStatusEcho(t *testing.T) {
+	t.Parallel()
+	d := parseDriver(t, map[string]string{"apikey": credAPIKey, "passkey": credPasskey})
+	// The server reflects the apikey into the status field and the passkey into the error.
+	body := `{"status":"failure ` + credAPIKey + `","error":"invalid credential; passkey ` + credPasskey + ` rejected"}`
+	_, err := d.parseSearch([]byte(body))
+	if err == nil {
+		t.Fatal("want an error from a non-success status")
+	}
+	if strings.Contains(err.Error(), credAPIKey) {
+		t.Fatalf("parseSearch leaked the apikey via the status field: %q", err.Error())
+	}
+	if strings.Contains(err.Error(), credPasskey) {
+		t.Fatalf("parseSearch leaked the passkey via the error field: %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "[redacted]") {
+		t.Errorf("expected [redacted] placeholder, got %q", err.Error())
+	}
+	// The "credential" phrase must survive so auth-failure classification still fires.
+	if !errors.Is(err, login.ErrLoginFailed) {
+		t.Errorf("err = %v, want login.ErrLoginFailed (auth phrase preserved)", err)
+	}
+}

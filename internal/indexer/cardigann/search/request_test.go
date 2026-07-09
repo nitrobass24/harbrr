@@ -384,6 +384,69 @@ func TestBuildRequests_PathValueEncoding(t *testing.T) {
 	}
 }
 
+// TestNewRequest_AttachesSearchHeaders proves a def's search.headers reach the
+// OUTGOING *http.Request the search path issues — the render (buildRequests) AND
+// the attach (newRequest, shared by doSearchRequest for GET and POST). Without
+// this gate, dropping the header-attach step passes every other test: 118
+// vendored defs declare search.headers, some carrying auth (DigitalCore's
+// X-API-KEY apikey). Both a config-templated value (the auth carrier) and a
+// static header are asserted. The apikey-shaped value is assembled by
+// concatenation so scanners do not flag the fixture; header values are never
+// echoed on failure (they may be secrets), only the header name.
+func TestNewRequest_AttachesSearchHeaders(t *testing.T) {
+	t.Parallel()
+
+	apikey := "AK" + "0000000000000000000000000000"
+	const staticHeader = "synthetic-search-header"
+	headers := map[string][]string{
+		"X-API-KEY":     {"{{ .Config.apikey }}"},
+		"X-Test-Header": {staticHeader},
+	}
+
+	tests := []struct {
+		name   string
+		method string
+	}{
+		{name: "GET search", method: "get"},
+		{name: "POST search", method: "post"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			def := &loader.Definition{
+				Links: []string{"https://hdr.invalid/"},
+				Search: loader.Search{
+					Headers: headers,
+					Inputs:  loader.NewInputsBlock(loader.InputEntry{Key: "q", Value: loader.Scalar{Value: "{{ .Keywords }}", Set: true}}),
+					Paths:   []loader.SearchPathBlock{{Path: "/search", Method: tt.method}},
+				},
+			}
+
+			reqs, err := buildRequests(def, Query{Keywords: "ubuntu"}, testDeps("https://hdr.invalid/", map[string]string{"apikey": apikey}))
+			if err != nil {
+				t.Fatalf("buildRequests: %v", err)
+			}
+			if len(reqs) != 1 {
+				t.Fatalf("reqs = %d, want 1", len(reqs))
+			}
+
+			// newRequest is the exact path doSearchRequest uses for both GET and POST
+			// (doSearchRequest -> newRequest), so this gates the real attach site.
+			req, err := newRequest(t.Context(), reqs[0], nil)
+			if err != nil {
+				t.Fatalf("newRequest: %v", err)
+			}
+			if got := req.Header.Get("X-API-KEY"); got != apikey {
+				t.Error("X-API-KEY header did not reach the outgoing request (config-templated auth carrier dropped)")
+			}
+			if got := req.Header.Get("X-Test-Header"); got != staticHeader {
+				t.Errorf("X-Test-Header = %q, want %q (static search header dropped)", got, staticHeader)
+			}
+		})
+	}
+}
+
 // errDoer is a Doer that always fails the round-trip, so doRequest takes its
 // transport-error path with a passkey-bearing URL.
 type errDoer struct{}

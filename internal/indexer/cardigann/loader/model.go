@@ -260,15 +260,86 @@ type ErrorBlock struct {
 // SelectorBlock mirrors SelectorBlock. Text and Default are scalar unions
 // (string|number) normalized to their string form.
 type SelectorBlock struct {
-	Selector  string            `yaml:"selector,omitempty"`
-	Attribute string            `yaml:"attribute,omitempty"`
-	Optional  *bool             `yaml:"optional,omitempty"`
-	Default   *Scalar           `yaml:"default,omitempty"`
-	Case      map[string]Scalar `yaml:"case,omitempty"`
-	Remove    string            `yaml:"remove,omitempty"`
-	Text      *Scalar           `yaml:"text,omitempty"`
-	Filters   []FilterBlock     `yaml:"filters,omitempty"`
+	Selector  string        `yaml:"selector,omitempty"`
+	Attribute string        `yaml:"attribute,omitempty"`
+	Optional  *bool         `yaml:"optional,omitempty"`
+	Default   *Scalar       `yaml:"default,omitempty"`
+	Case      CaseBlock     `yaml:"case,omitempty"`
+	Remove    string        `yaml:"remove,omitempty"`
+	Text      *Scalar       `yaml:"text,omitempty"`
+	Filters   []FilterBlock `yaml:"filters,omitempty"`
 }
+
+// CaseEntry is one (selector-key -> value) arm of a case switch, in definition
+// order. Value is a scalar union normalized to its string form.
+type CaseEntry struct {
+	Key   string
+	Value Scalar
+}
+
+// CaseBlock is the order-preserving `case:` switch of a SelectorBlock/RowsBlock.
+// Jackett deserializes Selector.Case into a YamlDotNet Dictionary (document
+// order) and, in handleSelector/handleJsonSelector, iterates it in that order,
+// breaking on the FIRST matching arm — with "*" tested inline as an ordinary key
+// (selection.Matches("*") for HTML, jcase.Key == "*" for JSON), so "*" is
+// POSITIONAL, not a deferred default. A plain Go map would randomize iteration
+// and, for a cell that satisfies two arms, could return a different arm than
+// Jackett's first-defined one. Mirrors FieldsBlock/InputsBlock: keys records
+// source order, values the scalars.
+type CaseBlock struct {
+	keys   []string
+	values map[string]Scalar
+}
+
+// NewCaseBlock builds a CaseBlock from ordered arms, preserving the given order
+// (first position, last value on a duplicate key). The loader builds these via
+// UnmarshalYAML; this constructor is for assembling blocks directly (e.g. in
+// tests) without losing order to a Go map literal.
+func NewCaseBlock(entries ...CaseEntry) CaseBlock {
+	cb := CaseBlock{values: make(map[string]Scalar, len(entries))}
+	for _, e := range entries {
+		if _, seen := cb.values[e.Key]; !seen {
+			cb.keys = append(cb.keys, e.Key)
+		}
+		cb.values[e.Key] = e.Value
+	}
+	return cb
+}
+
+// UnmarshalYAML decodes a mapping node into an order-preserving CaseBlock,
+// keeping a duplicate key's FIRST position but LAST value (go-yaml map
+// semantics), exactly as FieldsBlock/InputsBlock do.
+func (cb *CaseBlock) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("case: expected a mapping, got %s", kindName(node.Kind))
+	}
+	cb.keys = cb.keys[:0]
+	cb.values = make(map[string]Scalar, len(node.Content)/2)
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		key := node.Content[i].Value
+		var v Scalar
+		if err := node.Content[i+1].Decode(&v); err != nil {
+			return fmt.Errorf("case: decoding arm %q: %w", key, err)
+		}
+		if _, seen := cb.values[key]; !seen {
+			cb.keys = append(cb.keys, key)
+		}
+		cb.values[key] = v
+	}
+	return nil
+}
+
+// Ordered returns the case arms in definition (YAML) order.
+func (cb CaseBlock) Ordered() []CaseEntry {
+	out := make([]CaseEntry, 0, len(cb.keys))
+	for _, k := range cb.keys {
+		out = append(out, CaseEntry{Key: k, Value: cb.values[k]})
+	}
+	return out
+}
+
+// Len reports the number of case arms.
+func (cb CaseBlock) Len() int { return len(cb.keys) }
 
 // Search mirrors Search. Exactly one of Path or Paths is present (schema
 // oneOf); both are modelled to stay lossless.
@@ -315,18 +386,18 @@ type ResponseBlock struct {
 // RowsBlock mirrors RowsBlock. It is a SelectorBlock-shaped block with extra
 // row-specific fields and RowFilterBlock filters.
 type RowsBlock struct {
-	After                           *int              `yaml:"after,omitempty"`
-	DateHeaders                     *SelectorBlock    `yaml:"dateheaders,omitempty"`
-	Selector                        string            `yaml:"selector,omitempty"`
-	Attribute                       string            `yaml:"attribute,omitempty"`
-	Optional                        *bool             `yaml:"optional,omitempty"`
-	Multiple                        *bool             `yaml:"multiple,omitempty"`
-	MissingAttributeEqualsNoResults *bool             `yaml:"missingAttributeEqualsNoResults,omitempty"`
-	Case                            map[string]string `yaml:"case,omitempty"`
-	Remove                          string            `yaml:"remove,omitempty"`
-	Text                            *Scalar           `yaml:"text,omitempty"`
-	Filters                         []RowFilterBlock  `yaml:"filters,omitempty"`
-	Count                           *SelectorBlock    `yaml:"count,omitempty"`
+	After                           *int             `yaml:"after,omitempty"`
+	DateHeaders                     *SelectorBlock   `yaml:"dateheaders,omitempty"`
+	Selector                        string           `yaml:"selector,omitempty"`
+	Attribute                       string           `yaml:"attribute,omitempty"`
+	Optional                        *bool            `yaml:"optional,omitempty"`
+	Multiple                        *bool            `yaml:"multiple,omitempty"`
+	MissingAttributeEqualsNoResults *bool            `yaml:"missingAttributeEqualsNoResults,omitempty"`
+	Case                            CaseBlock        `yaml:"case,omitempty"`
+	Remove                          string           `yaml:"remove,omitempty"`
+	Text                            *Scalar          `yaml:"text,omitempty"`
+	Filters                         []RowFilterBlock `yaml:"filters,omitempty"`
+	Count                           *SelectorBlock   `yaml:"count,omitempty"`
 }
 
 // FieldEntry is one (key, block) pair from a FieldsBlock, in definition order.

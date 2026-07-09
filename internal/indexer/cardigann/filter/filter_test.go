@@ -93,6 +93,36 @@ func TestApplyStringFilters(t *testing.T) {
 			name: "querystring no query errors", in: "https://x.test/dl",
 			filters: []loader.FilterBlock{fb("querystring", "id")}, wantErr: true,
 		},
+		// Jackett's QueryHelpers.ParseQuery never throws; Go's url.ParseQuery does,
+		// which used to discard its partial result and drop the whole row. A sibling
+		// param with a bare '%' must not lose the target value.
+		{
+			name: "querystring sibling bad percent", in: "x?id=7&note=50%",
+			filters: []loader.FilterBlock{fb("querystring", "id")}, want: "7",
+		},
+		// ';' is data, not a separator: Jackett splits on '&' only, so the whole
+		// "1;b=2" is param a's value (Go's url.ParseQuery drops any ';'-bearing pair).
+		{
+			name: "querystring semicolon is data target sibling", in: "x?a=1;b=2&id=9",
+			filters: []loader.FilterBlock{fb("querystring", "id")}, want: "9",
+		},
+		{
+			name: "querystring semicolon is data target self", in: "x?a=1;b=2&id=9",
+			filters: []loader.FilterBlock{fb("querystring", "a")}, want: "1;b=2",
+		},
+		{
+			name: "querystring first occurrence wins", in: "x?id=7&id=9",
+			filters: []loader.FilterBlock{fb("querystring", "id")}, want: "7",
+		},
+		// Decoded like Jackett: '+' -> space, valid %XX applied to key and value.
+		{
+			name: "querystring value plus and escape", in: "x?title=a+b%2Fc",
+			filters: []loader.FilterBlock{fb("querystring", "title")}, want: "a b/c",
+		},
+		{
+			name: "querystring encoded key matched", in: "x?a%62=hit",
+			filters: []loader.FilterBlock{fb("querystring", "ab")}, want: "hit",
+		},
 		{
 			name: "validfilename strips invalid", in: `a/b:c*d?e`,
 			filters: []loader.FilterBlock{fb("validfilename")}, want: "a_b_c_d_e",
@@ -356,6 +386,45 @@ func TestRowFilters(t *testing.T) {
 		{name: "case insensitive", title: "BIG BUCK BUNNY", keywords: "buck bunny", want: true},
 		{name: "stopwords ignored", title: "Matrix", keywords: "the matrix and an", want: true},
 		{name: "short tokens ignored", title: "Matrix", keywords: "a matrix x", want: true},
+
+		// Non-Latin AND-match: .NET's \w is Unicode-aware, so both Cyrillic/CJK
+		// tokens must be present. RE2's ASCII \w used to tokenize these into
+		// zero tokens, making AndMatch always true (a superset vs Jackett) —
+		// the "missing token" rows below fail-before / pass-after the fix.
+		{name: "cyrillic both tokens present", title: "Война и мир 2007 BDRip", keywords: "война мир", want: true},
+		{name: "cyrillic missing token", title: "Война 2007 BDRip", keywords: "война мир", want: false},
+		{name: "cjk both tokens present", title: "三体 刘慈欣 2023 WEB-DL", keywords: "三体 刘慈欣", want: true},
+		{name: "cjk missing token", title: "三体 2023 WEB-DL", keywords: "三体 刘慈欣", want: false},
+		{name: "korean both tokens present", title: "오징어 게임 2021 1080p", keywords: "오징어 게임", want: true},
+		{name: "korean missing token", title: "오징어 2021 1080p", keywords: "오징어 게임", want: false},
+		{name: "vietnamese combining marks kept", title: "Mắt Biếc 2019 1080p", keywords: "mắt biếc", want: true},
+		{name: "vietnamese missing token", title: "Mắt 2019 1080p", keywords: "mắt biếc", want: false},
+
+		// Class-choice guards: these use the three general categories that
+		// distinguish the exact .NET \w class [\p{L}\p{Mn}\p{Nd}\p{Pc}] from the
+		// looser [^\pL\pN_] approximation. In each, treating the codepoint as a
+		// separator (the approximation / RE2's ASCII \w) would shred the token
+		// and flip the result — so they pin the exact class, not just Unicode.
+		// \p{Mn}: a DECOMPOSED combining acute (U+0301) must stay in-token; as a
+		// separator "éx" shreds to "e","x" (both dropped ≤1 rune), dropping
+		// the requirement and wrongly keeping the row.
+		{name: "combining mark keeps token (Mn)", title: "éx concert 2019", keywords: "éx concert", want: true},
+		{name: "combining mark required token missing (Mn)", title: "concert 2019 1080p", keywords: "éx concert", want: false},
+		// \p{Pc}: connector punctuation beyond '_' (U+203F ‿) is a word char in
+		// .NET \w; the '_'-only approximation would split "a‿b" and drop it.
+		{name: "connector punctuation required token missing (Pc)", title: "beta gamma 2019", keywords: "a‿b beta", want: false},
+		// \p{No}: a fraction (½ U+00BD) is NOT a word char in .NET \w, so "12½"
+		// splits to "12"; the \pN approximation would keep "12½" whole and miss.
+		{name: "number-other splits the token (No)", title: "12 inch vinyl 2019", keywords: "12½ inch", want: true},
+
+		// A single non-Latin char is one rune → dropped (Jackett's Length ≤ 1),
+		// so it is not required and the row is kept even though the title lacks
+		// that char.
+		{name: "single cjk char dropped", title: "刘慈欣 novel", keywords: "三 novel", want: true},
+
+		// Mixed Latin + non-Latin: every non-dropped token must be present.
+		{name: "mixed both present", title: "三体 Remembrance 1080p", keywords: "三体 remembrance", want: true},
+		{name: "mixed missing latin token", title: "三体 1080p", keywords: "三体 remembrance", want: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

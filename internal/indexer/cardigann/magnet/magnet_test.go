@@ -26,12 +26,23 @@ func TestFromInfoHash(t *testing.T) {
 	}{
 		{
 			// Full golden: uppercase hash preserved, title space -> '+' and
-			// '(' ')' percent-encoded (%28 %29 — the on-the-wire WebUtility form),
-			// then the full tracker tail.
+			// '(' ')' LEFT LITERAL — the .NET WebUtility.UrlEncode STRING form
+			// MagnetUtil.InfoHashToPublicMagnet emits (safe set includes ! * ( )),
+			// NOT the on-the-wire form (which would percent-encode them). Then the
+			// full tracker tail.
 			name:     "full magnet with tracker tail",
 			infoHash: "ABCDEF0123456789ABCDEF0123456789ABCDEF01",
 			title:    "Big Buck Bunny (2008)",
-			want:     "magnet:?xt=urn:btih:ABCDEF0123456789ABCDEF0123456789ABCDEF01&dn=Big+Buck+Bunny+%282008%29" + wantTrackerTail,
+			want:     "magnet:?xt=urn:btih:ABCDEF0123456789ABCDEF0123456789ABCDEF01&dn=Big+Buck+Bunny+(2008)" + wantTrackerTail,
+		},
+		{
+			// The four sub-delimiters ! * ( ) stay literal (STRING form), while a
+			// space still becomes '+' — proving the magnet encoder diverges from the
+			// on-the-wire request encoder for exactly these chars.
+			name:     "sub-delimiters left literal in dn",
+			infoHash: "ABCDEF0123456789ABCDEF0123456789ABCDEF01",
+			title:    "Mamma Mia! *Star* (Live)",
+			want:     "magnet:?xt=urn:btih:ABCDEF0123456789ABCDEF0123456789ABCDEF01&dn=Mamma+Mia!+*Star*+(Live)" + wantTrackerTail,
 		},
 		{
 			name:     "tilde in title percent-escaped (WebUtility, not Go)",
@@ -71,6 +82,21 @@ func TestToInfoHash(t *testing.T) {
 		{name: "no xt argument", magnet: "magnet:?dn=x", want: ""},
 		{name: "no query string", magnet: "not-a-magnet", want: ""},
 		{name: "fragment dropped before parse", magnet: "magnet:?xt=urn:btih:AABB#frag", want: "AABB"},
+		{
+			// A sibling dn carrying a bare '%' makes Go's url.ParseQuery error;
+			// Jackett's lenient ParseQuery still extracts xt. The infohash must
+			// survive the malformed sibling.
+			name:   "bad percent in sibling dn does not drop xt",
+			magnet: "magnet:?xt=urn:btih:DEADBEEF&dn=100%_Wolf",
+			want:   "DEADBEEF",
+		},
+		{
+			// A ';' in dn: Go treats it as an (invalid) separator and errors;
+			// Jackett treats ';' as ordinary data. Either way xt must survive.
+			name:   "semicolon in sibling dn does not drop xt",
+			magnet: "magnet:?xt=urn:btih:CAFE&dn=a;b",
+			want:   "CAFE",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

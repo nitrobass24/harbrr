@@ -7,6 +7,7 @@ import (
 	stdhttp "net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -51,7 +52,7 @@ func (c *capsCache) rehydrate(cfg map[string]string) {
 	if raw == "" {
 		return
 	}
-	root, err := parseCaps([]byte(raw))
+	root, err := parseCaps([]byte(raw), strings.TrimSpace(cfg["apikey"]))
 	if err != nil {
 		return
 	}
@@ -129,7 +130,7 @@ func (d *driver) fetchCaps(ctx context.Context) (*mapper.Capabilities, error) {
 	if err != nil {
 		return nil, err
 	}
-	root, err := parseCaps(body)
+	root, err := parseCaps(body, d.apikey)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +173,9 @@ func (d *driver) getCaps(ctx context.Context, rawurl string) ([]byte, error) {
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxCapsBytes))
 	if err != nil {
-		return nil, fmt.Errorf("newznab: read caps response: %w", search.ErrParseError)
+		// Keep the ErrParseError sentinel (health classification) but include the
+		// real read error for diagnosability; a body-read error carries no secret.
+		return nil, fmt.Errorf("newznab: read caps response: %s: %w", err.Error(), search.ErrParseError)
 	}
 	return body, nil
 }

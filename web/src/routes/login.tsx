@@ -6,18 +6,32 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useAuth } from "@/hooks/useAuth"
 import { APIError } from "@/lib/api"
+import { safeRedirectPath } from "@/lib/safe-redirect"
 
+// The `redirect` search param carries the page a logged-out visitor was bounced
+// from (set by the _authenticated guard and the 401 handler). Stored raw here and
+// only validated at consumption via safeRedirectPath — the param is attacker-
+// controllable, so it is never trusted as-is.
 export const Route = createFileRoute("/login")({
   component: Login,
+  validateSearch: (search: Record<string, unknown>): { redirect?: string } => ({
+    redirect: typeof search.redirect === "string" ? search.redirect : undefined,
+  }),
 })
 
 function Login() {
   const navigate = useNavigate()
+  const { redirect } = Route.useSearch()
   const { isAuthenticated, setupComplete, login } = useAuth()
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
 
-  if (isAuthenticated) return <Navigate to="/" />
+  // An already-authenticated visitor (or one who just signed in, while the me-probe
+  // refetch is in flight) honours the validated redirect too, so a deep-link →
+  // login → land-on-target flow isn't short-circuited to the dashboard by the race.
+  const destination = safeRedirectPath(redirect)
+
+  if (isAuthenticated) return <Navigate to={destination} />
   if (setupComplete === false) return <Navigate to="/setup" />
 
   const error = login.error
@@ -29,7 +43,7 @@ function Login() {
         className="flex flex-col gap-4"
         onSubmit={(e) => {
           e.preventDefault()
-          login.mutate({ username, password }, { onSuccess: () => void navigate({ to: "/" }) })
+          login.mutate({ username, password }, { onSuccess: () => void navigate({ to: destination }) })
         }}
       >
         {message && (

@@ -68,6 +68,20 @@ func (r *replay) RoundTrip(req *stdhttp.Request) (*stdhttp.Response, error) {
 		return nil, r.fail("step %d: request Cookie header did not contain the expected session cookie (it did not propagate)", r.idx-1)
 	}
 
+	for name, want := range step.ExpectHeader {
+		if want == "" {
+			// An empty expected value would make strings.Contains vacuously true —
+			// guard it so a fixture can't silently assert nothing (mirrors ExpectCookie).
+			return nil, r.fail("step %d: expect_header[%q] has an empty expected value", r.idx-1, name)
+		}
+		if !strings.Contains(req.Header.Get(name), want) {
+			// Only the header NAME is echoed — a search.headers value may be an api
+			// key (e.g. DigitalCore's X-API-KEY), so the expected value stays out of
+			// logs/traces exactly like ExpectCookie above.
+			return nil, r.fail("step %d: request %s header did not contain the expected value (it did not propagate)", r.idx-1, name)
+		}
+	}
+
 	resp, err := r.serve(req, step)
 	if err != nil {
 		return nil, r.fail("step %d: %v", r.idx-1, err)

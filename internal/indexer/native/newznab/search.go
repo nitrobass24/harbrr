@@ -52,7 +52,11 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
 	if err != nil {
-		return nil, fmt.Errorf("newznab: read search response: %w", search.ErrParseError)
+		// Keep the ErrParseError sentinel so the failure still records a health
+		// event (there is no transport health kind), but include the real read
+		// error so a mid-body timeout/reset is diagnosable instead of a bare
+		// "parse_error". A body-read error carries no URL/passkey.
+		return nil, fmt.Errorf("newznab: read search response: %s: %w", err.Error(), search.ErrParseError)
 	}
 	return d.parseReleases(body, catMap)
 }

@@ -40,6 +40,17 @@ const (
 // merely sparse page.
 var ErrParseError = errors.New("search: response parse error")
 
+// ErrTrackerError marks a tracker-authored error page: a Search.Error selector
+// matched the HTML response (Jackett's checkForError on the search response), so
+// the tracker reported a loud error (e.g. "Database error.", "no permission")
+// on an HTTP 200 body rather than results. Jackett throws here and catches it in
+// its generic parse-error path (OnParseError); harbrr deliberately treats it as a
+// distinct tracker refusal rather than an ErrParseError, because the parse
+// succeeded — the tracker refused — and a parse_error health event would misattribute
+// the cause. classifyHealth recognizes none of the four health kinds for it, so it
+// surfaces as a plain logged search failure carrying the tracker's message.
+var ErrTrackerError = errors.New("search: tracker returned an error page")
+
 // Doer is the narrow HTTP seam the executor drives, identical to login.Doer so a
 // single client/replay transport serves both stages. No live network call ever
 // happens in this package or its tests. The Doer owns the ONE cookie jar (see
@@ -122,6 +133,15 @@ func ParseResults(def *loader.Definition, body []byte, respType string, query Qu
 		return nil, err
 	}
 
+	// checkForError: on the HTML branch only, a Search.Error selector matching the
+	// parsed document is a tracker-authored error page (an error served with HTTP
+	// 200 while logged in). Jackett calls checkForError(response, Search.Error)
+	// AFTER parsing the document and BEFORE the rows selector, and only in its HTML
+	// branch (the JSON and XML branches skip it). Mirror that placement and scope.
+	if err := checkSearchError(def, doc, respType, deps.Selector, deps.Config); err != nil {
+		return nil, err
+	}
+
 	rowsBlock, err := renderRowsSelector(def.Search.Rows, query, deps)
 	if err != nil {
 		return nil, err
@@ -140,6 +160,12 @@ func ParseResults(def *loader.Definition, body []byte, respType string, query Qu
 	releases := make([]*normalizer.Release, 0, len(rows))
 	for i := range rows {
 		rel, keep, err := parseRow(def, rows[i], query, deps)
+		// Jackett runs the dateheaders backfill after the row survives its filters,
+		// before the release is collected; a kept row with no PublishDate looks back
+		// for its date header, which may also drop the row (see backfillDateHeader).
+		if err == nil && keep {
+			err = backfillDateHeader(def, rows[i], rel, query, deps, respType)
+		}
 		if err != nil {
 			if skipBadRow {
 				continue
@@ -176,6 +202,35 @@ func parseDocument(eng *selector.Engine, body []byte, respType string) (*selecto
 		}
 		return doc, nil
 	}
+}
+
+// checkSearchError reproduces Jackett's checkForError(response, Search.Error) on
+// the search response. It runs only on the HTML branch (respType is neither json
+// nor xml, matching Jackett, whose JSON and XML branches never call it) and only
+// when the definition declares Search.Error selectors. The shared selector helper
+// evaluates each error block against the document root; the first match yields a
+// loud, message-bearing ErrTrackerError formatted as Jackett's "Error: <message>".
+// A match is a tracker refusal, not a parse failure — see ErrTrackerError.
+//
+// The extracted message is server-controlled free text lifted from the tracker's
+// RESPONSE body, so a page that echoes a submitted secret (passkey/apikey/rsskey in
+// the search request) would leak it into the returned error / log sink. It is
+// value-scrubbed of the configured credentials — derived from the loader's IsSecret
+// classifier over the def's settings, the SAME mechanism the login stage uses (see
+// login.SecretConfigValues) — before it is wrapped.
+func checkSearchError(def *loader.Definition, doc *selector.Document, respType string, eng *selector.Engine, config map[string]string) error {
+	if respType == responseTypeJSON || respType == responseTypeXML || len(def.Search.Error) == 0 {
+		return nil
+	}
+	msg, matched, err := eng.CheckErrorBlocks(doc.Root(), def.Search.Error)
+	if err != nil {
+		return fmt.Errorf("evaluating search error selectors: %w", err)
+	}
+	if matched {
+		scrubbed := login.ScrubSecrets(msg, login.SecretConfigValues(def.Settings, config))
+		return fmt.Errorf("%w: Error: %s", ErrTrackerError, scrubbed)
+	}
+	return nil
 }
 
 // DefaultResponseType returns the definition's leading response type — the
@@ -243,6 +298,11 @@ func Execute(ctx context.Context, def *loader.Definition, query Query, session *
 		}
 		rels, err := ParseResults(def, body, respType, query, deps)
 		if err != nil {
+			// A tracker-authored error page (Search.Error matched) is not a parse
+			// failure: surface it as-is so it is NOT misclassified as parse_error.
+			if errors.Is(err, ErrTrackerError) {
+				return nil, err
+			}
 			// Mark the parse boundary so the registry classifies it as parse_error
 			// (multiple %w keeps both the sentinel and the underlying cause).
 			return nil, fmt.Errorf("%w: %w", ErrParseError, err)

@@ -66,6 +66,7 @@ func TestRateLimitedError_IsAndAs(t *testing.T) {
 type statusDoer struct {
 	status int
 	header stdhttp.Header
+	body   string
 }
 
 func (d statusDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
@@ -76,7 +77,7 @@ func (d statusDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
 	return &stdhttp.Response{
 		StatusCode: d.status,
 		Header:     h,
-		Body:       io.NopCloser(strings.NewReader("")),
+		Body:       io.NopCloser(strings.NewReader(d.body)),
 		Request:    req,
 	}, nil
 }
@@ -120,5 +121,53 @@ func TestDoRequest_OtherNon2xxNotRateLimited(t *testing.T) {
 	}
 	if errors.Is(err, ErrRateLimited) {
 		t.Errorf("HTTP 500 must not classify as rate_limited: %v", err)
+	}
+}
+
+// TestDoSearchRequest_Non2xxFailsFast pins harbrr's DELIBERATE divergence from
+// Jackett on the search path: a non-redirect non-2xx response (403/404/500) fails
+// fast — the body never reaches the executor — even when that body would parse
+// into rows in Jackett's HTML/XML branch. 429/503 stay the typed RateLimitedError.
+// See checkStatus and parity/testdata/README.md, "Non-2xx search-status handling".
+// The 3xx (redirect) half of logged-out detection is covered separately by
+// TestDoSearchRequest_RedirectSurfacedAsData; this test guards the non-redirect
+// statuses so the divergence is gated, not silent.
+func TestDoSearchRequest_Non2xxFailsFast(t *testing.T) {
+	t.Parallel()
+	// A body a def's rows selector could match: in Jackett this would yield a
+	// release (HTML) or 0-releases; harbrr must not surface it on a non-2xx.
+	const parseableBody = `<html><body><table><tr class="row"><td>a release</td></tr></table></body></html>`
+	for _, code := range []int{stdhttp.StatusForbidden, stdhttp.StatusNotFound, stdhttp.StatusInternalServerError} {
+		t.Run(stdhttp.StatusText(code), func(t *testing.T) {
+			t.Parallel()
+			br := builtRequest{method: stdhttp.MethodGet, url: "https://t.invalid/browse"}
+			sr, err := doSearchRequest(t.Context(), statusDoer{status: code, body: parseableBody}, br, nil)
+			if err == nil {
+				t.Fatalf("doSearchRequest surfaced HTTP %d body as data (%+v), want fail-fast error", code, sr)
+			}
+			if errors.Is(err, ErrRateLimited) {
+				t.Errorf("HTTP %d must not classify as rate_limited: %v", code, err)
+			}
+			if strings.Contains(err.Error(), parseableBody) {
+				t.Errorf("error leaked the response body: %q", err.Error())
+			}
+		})
+	}
+}
+
+// TestDoSearchRequest_RateLimitedStatus proves the search path keeps the typed,
+// status-bearing rate-limit error for 429/503 (the registry backs off on it) —
+// these are NOT swept into the generic non-2xx fail-fast.
+func TestDoSearchRequest_RateLimitedStatus(t *testing.T) {
+	t.Parallel()
+	for _, code := range []int{stdhttp.StatusTooManyRequests, stdhttp.StatusServiceUnavailable} {
+		t.Run(stdhttp.StatusText(code), func(t *testing.T) {
+			t.Parallel()
+			br := builtRequest{method: stdhttp.MethodGet, url: "https://t.invalid/browse"}
+			_, err := doSearchRequest(t.Context(), statusDoer{status: code}, br, nil)
+			if !errors.Is(err, ErrRateLimited) {
+				t.Fatalf("err = %v, want ErrRateLimited", err)
+			}
+		})
 	}
 }

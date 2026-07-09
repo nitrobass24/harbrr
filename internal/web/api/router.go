@@ -84,9 +84,15 @@ type router struct {
 	allowlist      []*net.IPNet
 	trustedProxies []*net.IPNet
 
-	defsOnce sync.Once
-	defs     []definitionSummary
-	defsErr  error
+	// loadDefs summarizes the addable definitions; injectable so a test can drive a
+	// fail-then-succeed load. Defaults (in NewRouter) to the real loader closure.
+	loadDefs func() ([]definitionSummary, error)
+	// The definition summary list is memoized on SUCCESS ONLY: defsLoaded gates the
+	// cache and is set solely after a nil-error load, so a transient first-call
+	// failure lets the next call retry rather than wedging the endpoint at 500.
+	defsMu     sync.Mutex
+	defs       []definitionSummary
+	defsLoaded bool
 }
 
 // NewRouter builds the management API handler. It fails closed: auth-disabled mode
@@ -110,6 +116,9 @@ func NewRouter(deps Deps, cfg Config) (http.Handler, error) {
 		sessions: deps.Sessions, dlToken: deps.DLToken, basePath: deps.BasePath,
 		cache: deps.Cache, cfg: cfg, log: deps.Logger, logLevel: deps.LogLevel,
 		allowlist: allow, trustedProxies: proxies,
+	}
+	rt.loadDefs = func() ([]definitionSummary, error) {
+		return loadDefinitionSummaries(rt.loader, rt.registry.NativeDefinitions())
 	}
 	return rt.routes(), nil
 }

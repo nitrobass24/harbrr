@@ -57,6 +57,35 @@ func TestSearchRecordsHealthEvent(t *testing.T) {
 	}
 }
 
+// TestGrabRecordsHealthEvent proves a classified GRAB failure is health-recorded too
+// (not just search): a 503 at grab time -> rate_limited, surfaced by Status. Before the
+// fix, Grab never classified its errors, so this event was dropped.
+func TestGrabRecordsHealthEvent(t *testing.T) {
+	t.Parallel()
+	reg, _ := newRegistry(t, statusDoer{status: stdhttp.StatusServiceUnavailable})
+	ctx := context.Background()
+	if _, err := reg.Add(ctx, registry.AddParams{
+		Slug: "tt", DefinitionID: "testtracker", Settings: map[string]string{"apikey": "x"},
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	idx, ok := reg.Indexer(ctx, "tt")
+	if !ok {
+		t.Fatal("Indexer(tt) not resolved")
+	}
+	if _, err := idx.Grab(ctx, "https://testtracker.example/download/1"); !errors.Is(err, search.ErrRateLimited) {
+		t.Fatalf("Grab err = %v, want ErrRateLimited", err)
+	}
+
+	st, err := reg.Status(ctx, "tt")
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if len(st.Events) != 1 || st.Events[0].Kind != domain.HealthRateLimited {
+		t.Fatalf("events = %+v, want exactly one rate_limited from the grab", st.Events)
+	}
+}
+
 // TestStatusUnknownSlug: Status for a missing indexer is ErrNotFound (404 at the API).
 func TestStatusUnknownSlug(t *testing.T) {
 	t.Parallel()

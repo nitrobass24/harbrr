@@ -48,9 +48,20 @@ export function useAuth() {
     user: me.data ?? null,
     isLoading: me.isLoading,
     isAuthenticated: Boolean(me.data),
+    // isError is set only when the me-probe fails with NO cached session — a 401 is
+    // caught above and resolves to null (not an error), so this is a transient
+    // non-401 failure (network blip, 500, restart). The guard renders a retry state
+    // for it instead of mistaking it for "logged out" and redirecting to /login.
+    isError: me.isError,
+    retry: () => void me.refetch(),
     authDisabled: me.data?.authMethod === "disabled",
     setupComplete: setup.data?.setupComplete,
     setupLoading: me.data === null && setup.isLoading,
+    // setupError mirrors isError for the setup probe: only meaningful once the probe
+    // is enabled (me resolved to null), so the /setup screen can show a retry state
+    // instead of a create-admin form it can't reason about.
+    setupError: me.data === null && setup.isError,
+    retrySetup: () => void setup.refetch(),
     login,
     logout,
   }

@@ -66,24 +66,36 @@ func ToInfoHash(magnet string) string {
 
 // queryArg extracts a single query-string argument from a magnet/URL string,
 // mirroring ParseUtil.GetArgumentFromQueryString (split on the first '?', drop
-// any '#' fragment, then parse). Returns "" when absent or unparseable.
+// any '#' fragment, then parse). Returns "" when absent.
+//
+// Jackett's ParseQuery is lenient — a malformed sibling param (a bare '%' or a
+// ';') never fails the whole parse — so we deliberately keep url.ParseQuery's
+// PARTIAL result on error rather than discarding it: a magnet whose dn sibling
+// carries a raw '%' or ';' still yields the xt/infohash. For the only argument
+// this package reads (xt = "urn:btih:<hex|base32>", never carrying a malformed
+// '%' or a bare ';' — a legitimately percent-encoded xt has only valid escapes,
+// which both parsers decode identically) the partial-map form is identical to a
+// fully faithful lenient parser, so magnet
+// stays a pure leaf instead of coupling to filter.queryStringFirst — the other
+// faithful mirror of this same Jackett function (see filter/string_filters.go).
 func queryArg(raw, name string) string {
 	_, qs, ok := strings.Cut(raw, "?")
 	if !ok {
 		return ""
 	}
 	qs, _, _ = strings.Cut(qs, "#") // drop any fragment
-	values, err := url.ParseQuery(qs)
-	if err != nil {
-		return ""
-	}
+	values, _ := url.ParseQuery(qs) // keep the partial map on error (lenient, like Jackett)
 	return values.Get(name)
 }
 
 // urlEncode matches Jackett's MagnetUtil encoding of the magnet dn=/tr= values:
-// WebUtilityHelpers.UrlEncode (= .NET WebUtility.UrlEncode, space -> '+'). A
-// title containing ! * ( ) ~ encodes differently from Go's url.QueryEscape, so
-// this routes through the encode package for exact parity.
+// WebUtilityHelpers.UrlEncode -> WebUtility.UrlEncodeToBytes, whose intermediate
+// STRING leaves the sub-delimiters ! * ( ) LITERAL (space -> '+', ~ -> %7E, ' ->
+// %27, Unicode -> UTF-8 octets). A magnet is Torznab OUTPUT, not a tracker
+// request, so it uses WebUtilityStringEncode (! * ( ) literal) rather than the
+// on-the-wire WebUtilityEncode the request path uses (which percent-encodes them
+// for WAF safety) — see the encode package doc. Tracker URLs carry none of
+// ! * ( ), so the tr= tail is byte-identical under either encoder.
 func urlEncode(s string) string {
-	return encode.WebUtilityEncode(s)
+	return encode.WebUtilityStringEncode(s)
 }

@@ -1291,16 +1291,14 @@ paths:
       responses:
         "200":
           description: >
-            The torrent file (application/x-bittorrent) on success. Also carries a
-            Torznab <error> element (XML) — served with HTTP 200, Jackett-style — for
-            an invalid API key, an unsupported indexer, or a disabled download proxy.
+            The torrent file (application/x-bittorrent) on success. Unlike the
+            caps/search feed, the /dl route returns real HTTP status codes for gate
+            failures (matching Jackett's DownloadController), so *arr surfaces them as
+            transport errors rather than accepting a 200 that later fails as an invalid
+            torrent file.
           content:
             application/x-bittorrent:
               schema: { type: string, format: binary }
-            application/xml:
-              schema:
-                type: string
-                description: a Torznab <error> element when the request is rejected before the grab
         "302":
           description: redirect to a resolved magnet URI (only ever a magnet, never an http link)
         "400":
@@ -1308,8 +1306,34 @@ paths:
           content:
             application/xml:
               schema: { type: string }
+        "401":
+          description: >
+            a Torznab <error> element (XML) for a missing or invalid API key
+            (Jackett's DownloadController returns Unauthorized)
+          content:
+            application/xml:
+              schema: { type: string }
+        "404":
+          description: >
+            a Torznab <error> element (XML) for an unknown/unsupported indexer, or a
+            plain-text body when the resolved payload is not a valid torrent (the
+            serve-boundary bencode check, mirroring Jackett's BencodeParser → NotFound,
+            uses http.Error rather than the Torznab XML shape); the link/passkey is
+            never echoed
+          content:
+            application/xml:
+              schema: { type: string }
+            text/plain:
+              schema: { type: string }
         "500":
           description: a generic Torznab <error> element (XML); the link/passkey is never echoed
+          content:
+            application/xml:
+              schema: { type: string }
+        "503":
+          description: >
+            a Torznab <error> element (XML) when the download proxy is not enabled
+            (the feature is unavailable)
           content:
             application/xml:
               schema: { type: string }

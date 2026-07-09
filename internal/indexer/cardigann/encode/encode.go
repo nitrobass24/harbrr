@@ -48,3 +48,43 @@ func WebUtilityEncode(s string) string {
 func PathEscape(s string) string {
 	return strings.ReplaceAll(WebUtilityEncode(s), "+", "%20")
 }
+
+// stringFormLiterals restores the four sub-delimiters that .NET's
+// WebUtility.UrlEncode leaves LITERAL in its output STRING (safe set
+// A-Za-z0-9-_.!*()), reversing the percent-encoding WebUtilityEncode applies for
+// the on-the-wire form. A "%21"/"%2A"/"%28"/"%29" run in WebUtilityEncode output
+// can only have come from a literal ! * ( ) in the input (a literal '%' becomes
+// "%25"), so this rewrite is unambiguous.
+var stringFormLiterals = strings.NewReplacer(
+	"%21", "!",
+	"%2A", "*",
+	"%28", "(",
+	"%29", ")",
+)
+
+// WebUtilityStringEncode reproduces the intermediate STRING that .NET's
+// WebUtility.UrlEncode produces (via WebUtility.UrlEncodeToBytes): identical to
+// WebUtilityEncode except the sub-delimiters ! * ( ) are left LITERAL rather than
+// percent-encoded. space -> '+', ~ -> %7E, ' -> %27, Unicode -> UTF-8 octets, all
+// as in WebUtilityEncode.
+//
+// This is the form Jackett emits into magnet-link dn=/tr= values — MagnetUtil.
+// InfoHashToPublicMagnet builds them via WebUtilityHelpers.UrlEncode ->
+// WebUtility.UrlEncodeToBytes, whose safe set includes ! * ( ). It is NOT for
+// on-the-wire request URLs: those use WebUtilityEncode, which percent-encodes
+// ! * ( ) to match .NET HttpClient's actual wire serialization and to dodge some
+// trackers' Cloudflare/WAF paren heuristics (see the package doc). A synthesised
+// magnet is Torznab OUTPUT, not a tracker request, so it must match Jackett's
+// STRING form.
+//
+// Caveat: Jackett ultimately emits r.MagnetUri.AbsoluteUri (ResultPage.ToXml),
+// i.e. new Uri(this-string).AbsoluteUri. That round-trip is a no-op for the
+// sub-delimiters ! * ( ) (valid unescaped in a query, kept literal) — which is
+// the byte-diff this encoder fixes — but AbsoluteUri unescapes RFC-3986
+// UNRESERVED chars, notably ~ (%7E -> ~), at least for hierarchical URIs. Whether
+// the magnet: OPAQUE scheme unescapes ~ is unverified here (no .NET available), so
+// the ~ -> %7E emission is pending a live differential diff; see the U6-F4
+// follow-up. Every corpus/synthesised title today is ~-free, so this is latent.
+func WebUtilityStringEncode(s string) string {
+	return stringFormLiterals.Replace(WebUtilityEncode(s))
+}

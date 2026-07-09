@@ -33,8 +33,9 @@ var (
 	// ErrUnknownMethod reports a Login.Method this executor does not implement.
 	ErrUnknownMethod = errors.New("unknown login method")
 	// ErrLoginFailed reports that the login round-trip completed but an error
-	// selector matched (bad credentials, etc.). The wrapped message is the
-	// definition-authored error text, never a credential.
+	// selector matched (bad credentials, etc.). The wrapped message is extracted
+	// from the tracker's response body (server-controlled free text), so checkErrors
+	// value-scrubs the configured login credentials out of it before wrapping.
 	ErrLoginFailed = errors.New("login failed")
 )
 
@@ -92,10 +93,29 @@ func (e *Executor) checkCaptcha(l *loader.Login) error {
 	return fmt.Errorf("%w: type=%q selector=%q", ErrCaptchaRequired, l.Captcha.Type, l.Captcha.Selector)
 }
 
-// CheckTest runs the Login.Test block: GET Test.Path and assert Test.Selector
-// matches at least one element (Jackett's TestLogin / CheckIfLoginIsNeeded
-// signal). A definition with no Test block cannot be probed, so CheckTest
-// reports false (login is needed) without error — the caller then runs Login.
+// CheckTest runs the Login.Test block to decide whether the session is still
+// authenticated, reproducing Jackett's TestLogin (CardigannIndexer.TestLogin).
+// A definition with no Login block reports true (nothing to log into); a Login
+// block with no Test block cannot be probed, so CheckTest reports false (login
+// is needed) without error — the caller then runs Login.
+//
+// Jackett's order, which harbrr matches for parity:
+//  1. Fetch Test.Path WITHOUT auto-following — Jackett's WebClient never
+//     follows, so a logged-out redirect is observable; harbrr stamps
+//     WithNoRedirectFollow to make the shared client surface the raw 3xx.
+//  2. Follow a SAME-DOMAIN redirect exactly once (TestLogin ~881-886, its
+//     FollowIfRedirect maxRedirects:1); a cross-domain redirect is never
+//     followed.
+//  3. If the response is STILL a redirect after that single follow, login is
+//     needed — bail BEFORE the selector check (~888-907), for both
+//     selector-bearing and selector-less test blocks.
+//  4. Otherwise a selector-less block trusts the non-redirect landing (Jackett
+//     returns true), and a selector-bearing block requires its selector to
+//     match at least one element (~909-920).
+//
+// This is the fix for U4-F4: the previous CheckTest let the client follow every
+// redirect and discarded the status, so an expired session that redirected to a
+// login page (cross-domain, or a chain) was reported as logged in.
 func (e *Executor) CheckTest(ctx context.Context, def *loader.Definition) (bool, error) {
 	if def.Login == nil {
 		return true, nil
@@ -108,18 +128,41 @@ func (e *Executor) CheckTest(ctx context.Context, def *loader.Definition) (bool,
 	if err != nil {
 		return false, err
 	}
-	body, _, err := e.get(ctx, testURL, def.Login.Headers)
+	body, status, location, err := e.getNoFollow(ctx, testURL, def.Login.Headers)
 	if err != nil {
 		return false, err
+	}
+	// Jackett follows a same-domain redirect once, then re-evaluates.
+	if isRedirectStatus(status) && location != "" && !e.crossDomainRedirect(testURL, location) {
+		body, status, _, err = e.getNoFollow(ctx, location, def.Login.Headers)
+		if err != nil {
+			return false, err
+		}
+	}
+	// A still-redirecting response — cross-domain, or a chain unresolved after
+	// one hop — means the session is gone: login needed, before any selector.
+	if isRedirectStatus(status) {
+		return false, nil
 	}
 	if def.Login.Test.Selector == "" {
 		return true, nil
 	}
-	matched, err := e.selectorMatches(body, def.Login.Test.Selector)
-	if err != nil {
-		return false, err
-	}
-	return matched, nil
+	return e.selectorMatches(body, def.Login.Test.Selector)
+}
+
+// crossDomainRedirect reports whether a redirect leaves the tracker's site,
+// mirroring Jackett's GetRedirectDomainHint: a redirect counts as cross-domain
+// only when the request was under BaseURL and the target is not. CheckTest
+// follows a same-domain redirect once but never follows a cross-domain one.
+//
+// The prefix is forced to end in "/" to match Jackett, whose SiteLink invariant
+// is slash-terminated for exactly this reason: without it, a BaseURL of
+// "https://t.example" (which a user can save unnormalized) would prefix-match a
+// look-alike host "https://t.example.evil.com/…" and wrongly treat it as
+// same-domain, following one hop off-site.
+func (e *Executor) crossDomainRedirect(requestURL, redirectURL string) bool {
+	base := strings.TrimRight(e.BaseURL, "/") + "/"
+	return strings.HasPrefix(requestURL, base) && !strings.HasPrefix(redirectURL, base)
 }
 
 // EnsureLoggedIn probes the session with CheckTest and only logs in when the
@@ -157,37 +200,61 @@ func (e *Executor) resolvePath(raw string) (string, error) {
 	return base.ResolveReference(ref).String(), nil
 }
 
-// get issues a GET, returning the (capped) body and final status. Cookies are
-// applied/recorded by the Doer's jar (see the Doer cookie contract); tests
-// assert on the recorded request. All error sites redact the URL.
+// get issues a GET, returning the (capped) body and final status. The shared
+// client follows redirects (see do); the login-test path uses getNoFollow.
+// Cookies are applied/recorded by the Doer's jar (see the Doer cookie contract);
+// tests assert on the recorded request. All error sites redact the URL.
 func (e *Executor) get(ctx context.Context, rawURL string, headers map[string][]string) (body []byte, status int, err error) {
 	return e.do(ctx, stdhttp.MethodGet, rawURL, nil, headers)
 }
 
-// do performs one request through the seam and reads the body. It deliberately
-// touches NO cookies: the Doer's jar is the single cookie authority — it applies
-// jar cookies to every hop and records Set-Cookie from every hop, including a
+// getNoFollow issues a GET whose redirects are surfaced to the caller instead of
+// followed: it stamps apphttp.WithNoRedirectFollow so the shared client's
+// RedirectPolicy hands back the raw 3xx (the same no-follow contract the search
+// stage uses). It additionally returns the redirect Location resolved against
+// rawURL ("" when the response is not a Location-bearing 3xx). Only CheckTest
+// uses it, to reproduce Jackett's TestLogin — whose WebClient never auto-follows.
+func (e *Executor) getNoFollow(ctx context.Context, rawURL string, headers map[string][]string) (body []byte, status int, location string, err error) {
+	return e.send(apphttp.WithNoRedirectFollow(ctx), stdhttp.MethodGet, rawURL, nil, headers)
+}
+
+// do performs one request through the seam and reads the body, letting the
+// client follow redirects — the post-login 302 lands on the page the error/test
+// selectors read. It discards the redirect Location (there is none on a followed
+// request's final response); the login-test path wants it, so it calls send via
+// getNoFollow instead.
+func (e *Executor) do(ctx context.Context, method, rawURL string, bodyReader io.Reader, headers map[string][]string) ([]byte, int, error) {
+	body, status, _, err := e.send(ctx, method, rawURL, bodyReader, headers)
+	return body, status, err
+}
+
+// send is the shared request core for do/getNoFollow. It deliberately touches NO
+// cookies: the Doer's jar is the single cookie authority — it applies jar
+// cookies to every hop and records Set-Cookie from every hop, including a
 // session rotation on a login POST's followed 302 (which this method never sees;
 // only the final response comes back). Writing a Cookie header here as well
 // would put a second, possibly stale pair on the wire — trackers (PHP) read the
 // FIRST pair, so a stale-first duplicate presents the logged-out session forever.
-func (e *Executor) do(ctx context.Context, method, rawURL string, bodyReader io.Reader, headers map[string][]string) ([]byte, int, error) {
+// Whether a redirect is followed is decided by the caller through ctx (see
+// getNoFollow); on an unfollowed 3xx, send returns the Location resolved against
+// rawURL.
+func (e *Executor) send(ctx context.Context, method, rawURL string, bodyReader io.Reader, headers map[string][]string) ([]byte, int, string, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, method, rawURL, bodyReader)
 	if err != nil {
-		return nil, 0, fmt.Errorf("building %s request to %s: %w", method, apphttp.SchemeHost(rawURL), apphttp.RedactURLError(err))
+		return nil, 0, "", fmt.Errorf("building %s request to %s: %w", method, apphttp.SchemeHost(rawURL), apphttp.RedactURLError(err))
 	}
 	for name, vals := range headers {
 		for _, v := range vals {
 			rendered, rerr := template.Eval(v, e.templateContext())
 			if rerr != nil {
-				return nil, 0, fmt.Errorf("rendering header %q: %w", name, rerr)
+				return nil, 0, "", fmt.Errorf("rendering header %q: %w", name, rerr)
 			}
 			req.Header.Add(name, rendered)
 		}
 	}
 	// A UA-bound cf_clearance is rejected unless every request reuses the solver's
 	// User-Agent, so once a solve set one this session, replay it here (the login
-	// POST, login.test, and the post-solve retry all flow through do()). A
+	// POST, login.test, and the post-solve retry all flow through send()). A
 	// definition's own User-Agent header still wins.
 	if ua := e.solverUA(); ua != "" && req.Header.Get("User-Agent") == "" {
 		req.Header.Set("User-Agent", ua)
@@ -195,19 +262,56 @@ func (e *Executor) do(ctx context.Context, method, rawURL string, bodyReader io.
 
 	resp, err := e.Client.Do(req)
 	if err != nil {
-		return nil, 0, fmt.Errorf("%s %s: %w", method, apphttp.SchemeHost(rawURL), apphttp.RedactURLError(err))
+		return nil, 0, "", fmt.Errorf("%s %s: %w", method, apphttp.SchemeHost(rawURL), apphttp.RedactURLError(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	reader, err := decompressBody(resp)
 	if err != nil {
-		return nil, resp.StatusCode, fmt.Errorf("decompressing response from %s: %w", apphttp.SchemeHost(rawURL), err)
+		return nil, resp.StatusCode, "", fmt.Errorf("decompressing response from %s: %w", apphttp.SchemeHost(rawURL), err)
 	}
 	data, err := io.ReadAll(io.LimitReader(reader, maxLoginBodyBytes))
 	if err != nil {
-		return nil, resp.StatusCode, fmt.Errorf("reading response from %s: %w", apphttp.SchemeHost(rawURL), err)
+		return nil, resp.StatusCode, "", fmt.Errorf("reading response from %s: %w", apphttp.SchemeHost(rawURL), err)
 	}
-	return data, resp.StatusCode, nil
+	return data, resp.StatusCode, redirectLocation(resp, rawURL), nil
+}
+
+// isRedirectStatus reports whether status is a Location-bearing redirect the
+// login-test path treats as Jackett's WebResult.IsRedirect does (301/302/303/
+// 307/308). Mirrors search.isRedirectStatus; kept local to avoid coupling the
+// login stage to the search package.
+func isRedirectStatus(status int) bool {
+	switch status {
+	case stdhttp.StatusMovedPermanently, stdhttp.StatusFound, stdhttp.StatusSeeOther,
+		stdhttp.StatusTemporaryRedirect, stdhttp.StatusPermanentRedirect:
+		return true
+	default:
+		return false
+	}
+}
+
+// redirectLocation resolves a 3xx response's Location against reqURL, so a
+// relative Location works regardless of whether the Doer set resp.Request.
+// Returns "" when the response is not a redirect or carries no usable Location.
+// The result is never logged raw — like the request URL it can embed a secret.
+func redirectLocation(resp *stdhttp.Response, reqURL string) string {
+	if !isRedirectStatus(resp.StatusCode) {
+		return ""
+	}
+	loc := resp.Header.Get("Location")
+	if loc == "" {
+		return ""
+	}
+	base, err := url.Parse(reqURL)
+	if err != nil {
+		return ""
+	}
+	ref, err := url.Parse(loc)
+	if err != nil {
+		return ""
+	}
+	return base.ResolveReference(ref).String()
 }
 
 // decompressBody wraps the response body when it carries a Content-Encoding that
@@ -297,12 +401,4 @@ func parseCookieHeader(raw string) []*stdhttp.Cookie {
 		out = append(out, &stdhttp.Cookie{Name: name, Value: strings.TrimSpace(value)}) //nolint:gosec // request cookie; Set-Cookie security attrs are N/A
 	}
 	return out
-}
-
-// trimMessage trims and single-lines an extracted error message before it is
-// wrapped into ErrLoginFailed. The message is definition-authored error text
-// (e.g. "Invalid username or password"), not a credential, but we still keep it
-// compact and free of stray whitespace for clean logs.
-func trimMessage(s string) string {
-	return strings.TrimSpace(strings.Join(strings.Fields(s), " "))
 }

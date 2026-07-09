@@ -359,9 +359,9 @@ export type CacheStats = {
   misses?: number
   hitRatio?: number
   approxSizeBytes?: number
-  oldestCachedAt?: string
-  newestCachedAt?: string
-  lastUsedAt?: string
+  oldestCachedAt?: number | null // unix seconds; null when the cache is empty
+  newestCachedAt?: number | null // unix seconds; null when the cache is empty
+  lastUsedAt?: number | null // unix seconds; null when nothing has been served yet
   trackerHitsSaved?: number // the headline kind-to-trackers metric
   breakerSuppressed?: number
   byIndexer?: CacheIndexerStats[]

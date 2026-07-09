@@ -88,7 +88,7 @@ func (d *driver) parseReleases(body []byte, catMap *mapper.CategoryMap) ([]*norm
 		return nil, fmt.Errorf("newznab: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
 	}
 	if apiErr := feed.firstError(); apiErr != nil {
-		return nil, apiErr.toError()
+		return nil, apiErr.toError(d.apikey)
 	}
 	releases := make([]*normalizer.Release, 0, len(feed.Channel.Items))
 	for i := range feed.Channel.Items {
@@ -137,11 +137,13 @@ const (
 // toError maps a Newznab error envelope to a Go error. A 100-199 code, or a "Request limit
 // reached" / apikey-related description, are classified for the registry's health
 // recording: auth failures unwrap to login.ErrLoginFailed, rate limits to a RateLimitedError;
-// every other code is a generic parse error. The description is server-controlled text and
-// carries no harbrr secret (the apikey is never echoed back in the description), so it is
-// surfaced as-is.
-func (e *apiError) toError() error {
-	desc := strings.TrimSpace(e.Description)
+// every other code is a generic parse error. The description is server-controlled free text
+// that reaches a persisted health event / webhook, so the configured apikey is value-scrubbed
+// out of it as defense in depth: a misbehaving server that echoes the submitted apikey back in
+// its description must not leak it (a bare "invalid key ABCD1234" would pass RedactError's
+// key[=:]value anchor untouched).
+func (e *apiError) toError(apikey string) error {
+	desc := scrubSecret(strings.TrimSpace(e.Description), apikey)
 	if strings.EqualFold(desc, "Request limit reached") {
 		return &search.RateLimitedError{StatusCode: 0}
 	}
@@ -150,6 +152,15 @@ func (e *apiError) toError() error {
 		return fmt.Errorf("newznab: auth failed (code %s): %s: %w", e.Code, desc, login.ErrLoginFailed)
 	}
 	return fmt.Errorf("newznab: api error (code %s): %s: %w", e.Code, desc, search.ErrParseError)
+}
+
+// scrubSecret removes a non-empty secret value from s so a server echo cannot leak it,
+// mirroring the value-scrub used by the sibling native drivers (gazelle.scrubAPIKey).
+func scrubSecret(s, secret string) string {
+	if secret == "" {
+		return s
+	}
+	return strings.ReplaceAll(s, secret, "[redacted]")
 }
 
 // mentionsAPIKey reports whether the error description references a missing/incorrect

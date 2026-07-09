@@ -3,6 +3,7 @@ package selector
 import (
 	"bytes"
 	"fmt"
+	"iter"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
@@ -68,6 +69,13 @@ func (n *htmlNode) caseMatch(key string) (bool, error) {
 // re-rooted at the document element, exactly as Jackett's QuerySelector helper
 // does (AngleSharp/cascadia handle :root specially, so we do it manually).
 func (n *htmlNode) matchSelector(sel string) (*goquery.Selection, bool, error) {
+	// A leading ":scope" binds to the query context (the row), which cascadia
+	// cannot compile. matchScope reproduces AngleSharp's element-scoped
+	// QuerySelector by walking the combinator chain relative to this element.
+	if hasScopePrefix(sel) {
+		return n.matchScope(strings.TrimSpace(sel))
+	}
+
 	root, rest := splitRoot(sel)
 	scope := n.sel
 	if root {
@@ -120,6 +128,147 @@ func documentRoot(sel *goquery.Selection) *goquery.Selection {
 	return goquery.NewDocumentFromNode(n).Selection
 }
 
+// hasScopePrefix reports whether a selector begins with the ":scope" pseudo-class
+// as a whole token (":scope", ":scope >", ":scope span", …) rather than an
+// identifier that merely starts with those bytes (":scope-foo" would not match).
+func hasScopePrefix(sel string) bool {
+	s := strings.TrimSpace(sel)
+	if !strings.HasPrefix(s, ":scope") {
+		return false
+	}
+	rest := s[len(":scope"):]
+	return rest == "" || strings.IndexByte(" \t\n>+~", rest[0]) >= 0
+}
+
+// matchScope evaluates a selector whose leading compound is ":scope", binding
+// :scope to n (the row) and walking the top-level combinator chain relative to
+// it. AngleSharp evaluates a field selector via Row.QuerySelector, where :scope
+// is the row element, so ":scope > span > a" selects a direct-child span's
+// direct-child a — NOT any descendant span's a. cascadia matches absolutely and
+// its Find/Children helpers search descendants/children, so we drive the walk
+// hop by hop to preserve the child (">") vs descendant (" ") distinction.
+func (n *htmlNode) matchScope(sel string) (*goquery.Selection, bool, error) {
+	steps := splitSteps(sel)
+	// steps[0] is the ":scope" anchor itself. Bare ":scope" resolves to the row.
+	if len(steps) <= 1 {
+		return n.sel.First(), n.sel.Length() > 0, nil
+	}
+
+	cur := n.sel
+	for _, st := range steps[1:] {
+		matcher, err := compileCSS(st.compound)
+		if err != nil {
+			return nil, false, err
+		}
+		switch st.comb {
+		case '>':
+			cur = cur.ChildrenMatcher(matcher)
+		case ' ':
+			cur = cur.FindMatcher(matcher)
+		default:
+			return nil, false, fmt.Errorf("scope selector %q: unsupported combinator %q", sel, string(st.comb))
+		}
+		if cur.Length() == 0 {
+			return nil, false, nil
+		}
+	}
+	return cur.First(), true, nil
+}
+
+// selStep is one compound selector plus the combinator that precedes it. The
+// first step's comb is 0 (no preceding combinator).
+type selStep struct {
+	comb     byte // '>', '+', '~', ' ' (descendant), or 0 for the first compound
+	compound string
+}
+
+// splitSteps tokenizes a CSS selector into its top-level compound selectors and
+// the combinators between them, ignoring any combinator bytes inside (), [], or a
+// quoted string (so ":contains(a > b)" stays one compound). Whitespace adjacent
+// to an explicit combinator is absorbed by it; other whitespace between compounds
+// is a descendant combinator.
+func splitSteps(sel string) []selStep {
+	var s stepSplitter
+	for i := 0; i < len(sel); i++ {
+		s.feed(sel[i])
+	}
+	s.done()
+	return s.steps
+}
+
+// stepSplitter is the byte-at-a-time state for splitSteps: the compound being
+// built (b), the combinator that precedes it (pending), whether a run of top-level
+// whitespace is buffered (sawSpace), and the paren/bracket depth and quote state
+// that suppress combinator detection inside (), [], or quotes.
+type stepSplitter struct {
+	steps    []selStep
+	b        strings.Builder
+	pending  byte
+	sawSpace bool
+	depth    int
+	quote    byte
+}
+
+func (s *stepSplitter) flush() {
+	s.steps = append(s.steps, selStep{comb: s.pending, compound: s.b.String()})
+	s.b.Reset()
+}
+
+func (s *stepSplitter) done() {
+	if s.b.Len() > 0 {
+		s.flush()
+	}
+}
+
+func (s *stepSplitter) feed(c byte) {
+	switch {
+	case s.quote != 0:
+		s.inQuote(c)
+	case isQuote(c):
+		s.quote = c
+		s.b.WriteByte(c)
+	case isOpen(c):
+		s.depth++
+		s.b.WriteByte(c)
+	case isClose(c):
+		s.depth--
+		s.b.WriteByte(c)
+	case s.depth == 0 && isCombinator(c):
+		s.done()
+		s.pending = c
+		s.sawSpace = false
+	case s.depth == 0 && isSpaceByte(c):
+		s.sawSpace = s.b.Len() > 0
+	default:
+		s.writeCompound(c)
+	}
+}
+
+// inQuote consumes a byte inside a quoted string, closing the quote on its match.
+func (s *stepSplitter) inQuote(c byte) {
+	s.b.WriteByte(c)
+	if c == s.quote {
+		s.quote = 0
+	}
+}
+
+// writeCompound appends a compound-selector byte, first realizing a buffered
+// top-level whitespace run as a descendant combinator between compounds.
+func (s *stepSplitter) writeCompound(c byte) {
+	if s.sawSpace {
+		s.flush()
+		s.pending = ' '
+		s.sawSpace = false
+	}
+	s.b.WriteByte(c)
+}
+
+func isQuote(c byte) bool      { return c == '"' || c == '\'' }
+func isOpen(c byte) bool       { return c == '(' || c == '[' }
+func isClose(c byte) bool      { return c == ')' || c == ']' }
+func isCombinator(c byte) bool { return c == '>' || c == '+' || c == '~' }
+func isSpaceByte(c byte) bool  { return c == ' ' || c == '\t' || c == '\n' }
+
 func (n *htmlNode) remove(sel string) error {
 	matcher, err := compileCSS(sel)
 	if err != nil {
@@ -140,6 +289,44 @@ func (n *htmlNode) attribute(name string) (string, bool) {
 // lives in extract -> normalizeSpace, not here.
 func (n *htmlNode) text() string {
 	return n.sel.Text()
+}
+
+// PrecedingElements yields the elements to search for a date header, reproducing
+// the traversal in Jackett's dateheaders backfill (CardigannIndexer search loop):
+// the row's previous element sibling, then that element's previous element
+// sibling, and so on; when a level is exhausted, the parent element's previous
+// element sibling continues the walk up toward the root. It is HTML only — JSON
+// rows yield nothing, matching Jackett (the traversal is AngleSharp-DOM specific).
+// The sequence is lazy so the caller stops at the first matching header.
+func (r Row) PrecedingElements() iter.Seq[Row] {
+	return func(yield func(Row) bool) {
+		if r.kind != kindHTML || r.html == nil {
+			return
+		}
+		for sel := precedingElement(r.html.sel); sel != nil; sel = precedingElement(sel) {
+			if !yield(Row{kind: kindHTML, html: &htmlNode{sel: sel}}) {
+				return
+			}
+		}
+	}
+}
+
+// precedingElement returns the next node in the dateheaders walk from sel: its
+// previous element sibling, or, when there is none, its parent's previous element
+// sibling. Returns nil when neither exists (the walk ends), mirroring Jackett's
+// "PreviousElementSibling ?? ParentElement?.PreviousElementSibling" step.
+func precedingElement(sel *goquery.Selection) *goquery.Selection {
+	if prev := sel.Prev(); prev.Length() > 0 {
+		return prev
+	}
+	parent := sel.Parent()
+	if parent.Length() == 0 {
+		return nil
+	}
+	if prev := parent.Prev(); prev.Length() > 0 {
+		return prev
+	}
+	return nil
 }
 
 // Rows splits a Document into result rows per the rows block. For HTML, each

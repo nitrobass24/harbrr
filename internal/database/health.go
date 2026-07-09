@@ -28,6 +28,19 @@ func (Health) Record(ctx context.Context, q dbinterface.Execer, e domain.Indexer
 	return nil
 }
 
+// DeleteBefore purges every event older than cutoff, returning the number removed.
+// cutoff is formatted exactly as Record stores occurred_at (a UTC RFC3339 string), so
+// the lexical `occurred_at < ?` comparison is chronological. Backs the retention ticker.
+func (Health) DeleteBefore(ctx context.Context, q dbinterface.Execer, cutoff time.Time) (int64, error) {
+	res, err := q.ExecContext(ctx,
+		q.Rebind(`DELETE FROM indexer_health_events WHERE occurred_at < ?`),
+		cutoff.UTC().Format(timeLayout))
+	if err != nil {
+		return 0, fmt.Errorf("database: delete health events before cutoff: %w", err)
+	}
+	return rowsAffected(res)
+}
+
 // HealthCounts is one instance's aggregated failure tally by kind plus the most
 // recent failure time (zero = no failures). It backs the per-indexer stats surface,
 // which folds these counts alongside the durable query/grab counters.

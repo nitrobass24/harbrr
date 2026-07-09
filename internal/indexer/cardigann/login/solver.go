@@ -83,9 +83,12 @@ func (e *Executor) fetchLandingPastAntiBot(ctx context.Context, rawURL string, h
 	}
 	res, serr := e.solver().Solve(ctx, rawURL)
 	if serr != nil {
-		// No usable solver: preserve the existing anti-bot signal (names the
-		// detector only, never page bytes).
-		return nil, fmt.Errorf("%w: detected an anti-bot challenge page", ErrSolverRequired)
+		// Preserve the concrete cause (no solver configured vs a solver outage) so an
+		// incident can be triaged; Solve's errors carry no secret (they never echo the
+		// target URL/passkey — see FlareSolverrSolver.solve), and the leading %w keeps
+		// errors.Is(ErrSolverRequired) true so this still routes to the anti-bot health
+		// kind. The detector is named only, never page bytes.
+		return nil, fmt.Errorf("%w: detected an anti-bot challenge page: %w", ErrSolverRequired, serr)
 	}
 	e.applySolveResult(rawURL, res)
 	// Anti-bot clearance is UA-coupled (cf_clearance is bound to the solver's

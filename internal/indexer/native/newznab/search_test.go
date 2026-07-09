@@ -128,6 +128,31 @@ func TestTestMethod(t *testing.T) {
 	}
 }
 
+// TestSearchBodyReadErrorSurfacesCause proves a mid-body read failure still classifies as
+// ErrParseError (so a health event is recorded — there is no transport health kind) AND
+// carries the real read error, instead of a bare "parse_error" with no cause.
+func TestSearchBodyReadErrorSurfacesCause(t *testing.T) {
+	t.Parallel()
+	d, err := New(native.Params{
+		Def:     GenericDefinition(),
+		Cfg:     map[string]string{"apikey": testAPIKey},
+		Doer:    &bodyErrDoer{readErr: errors.New("unexpected EOF reading body")},
+		BaseURL: "https://news.example.test",
+		Clock:   fixedClock,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	_, searchErr := d.Search(context.Background(), search.Query{Keywords: "x"})
+	if !errors.Is(searchErr, search.ErrParseError) {
+		t.Fatalf("err = %v, want ErrParseError (health classification must be preserved)", searchErr)
+	}
+	if !strings.Contains(searchErr.Error(), "unexpected EOF reading body") {
+		t.Fatalf("err = %q, want the real read cause included (not a bare parse_error)", searchErr.Error())
+	}
+	assertNoApikey(t, "search body-read error", searchErr.Error())
+}
+
 // minimalCaps is a tiny valid caps document for the Test() priming check.
 const minimalCaps = `<?xml version="1.0"?><caps>` +
 	`<searching><search available="yes" supportedParams="q"/></searching>` +

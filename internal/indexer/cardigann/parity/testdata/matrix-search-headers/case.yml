@@ -1,0 +1,25 @@
+name: matrix-search-headers
+archetype: search-headers
+golden_source: hand-derived
+mode: search
+description: >
+  Search-request parity for def-declared search.headers: the def carries a
+  config-templated auth header (X-API-KEY: {{ .Config.apikey }}, mirroring
+  DigitalCore's apikey carrier) plus a static X-Test-Header. The replay asserts
+  the engine issued exactly the GET AND that both headers reached that request
+  (expect_header) — a regression dropping the header-attach step fails here.
+  Hand-derived golden: same synthetic row as smoke-search — size 3 GB =
+  3221225472 (1024-based), peers = 42 + 3 = 45, category "1" -> Movies (2000).
+definition: definition.yml
+config:
+  apikey: synthetic-apikey-value
+query:
+  keywords: ubuntu
+steps:
+  - method: GET
+    url: https://headers.test/search?q=ubuntu
+    response: response.html
+    note: search request carrying the def's search.headers
+    expect_header:
+      X-API-KEY: synthetic-apikey-value
+      X-Test-Header: synthetic-search-header

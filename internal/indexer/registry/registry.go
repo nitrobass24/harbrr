@@ -87,6 +87,14 @@ type Registry struct {
 	// cache holds the per-slug served indexer. It is the wrapped (cached) indexer
 	// when searchCache != nil, else the bare adapter — both as torznabhttp.Indexer.
 	cache map[string]torznabhttp.Indexer
+	// gen is a per-slug generation counter bumped by invalidate; epoch is a global
+	// counter bumped by InvalidateAll. resolve captures both before it builds an
+	// engine outside the lock, and refuses to install that engine if either moved
+	// during the build. Without this, an invalidate landing mid-build is a no-op (the
+	// slug isn't cached yet) and resolve installs an engine built from pre-invalidation
+	// settings — a persistently stale engine until the next mutation (U8R-F3).
+	gen   map[string]uint64
+	epoch uint64
 }
 
 // secretsKeyring is the subset of *secrets.Keyring the registry uses, declared as
@@ -175,6 +183,7 @@ func New(db *database.DB, ldr *loader.Loader, keyring secretsKeyring, opts ...Op
 		log:     zerolog.Nop(),
 		native:  nativeFamilies(),
 		cache:   map[string]torznabhttp.Indexer{},
+		gen:     map[string]uint64{},
 	}
 	for _, o := range opts {
 		o(r)
@@ -206,12 +215,22 @@ func (r *Registry) Indexer(ctx context.Context, slug string) (torznabhttp.Indexe
 // happens outside the lock (it does DB I/O + crypto); a double-check after build
 // means that if two goroutines race to build the same uncached slug, the first to
 // cache wins and the other reuses it rather than installing a duplicate engine.
+//
+// build reads the instance's settings (proxy/solver refs, credentials) at build
+// time, so an invalidate landing during the build makes the just-built engine
+// stale. Because the slug is not cached while building, that invalidate's
+// delete(cache) is a no-op and cannot stop the install on its own. resolve
+// therefore captures the slug's generation and the global epoch before building and
+// declines to cache an engine whose generation moved: the stale engine is served
+// for this one request but never installed, so the next resolve rebuilds fresh
+// (U8R-F3).
 func (r *Registry) resolve(ctx context.Context, slug string) (torznabhttp.Indexer, error) {
 	r.mu.Lock()
 	if idx, ok := r.cache[slug]; ok {
 		r.mu.Unlock()
 		return idx, nil
 	}
+	genSlug, epoch := r.gen[slug], r.epoch
 	r.mu.Unlock()
 
 	idx, err := r.build(ctx, slug)
@@ -223,6 +242,13 @@ func (r *Registry) resolve(ctx context.Context, slug string) (torznabhttp.Indexe
 	defer r.mu.Unlock()
 	if cached, ok := r.cache[slug]; ok {
 		return cached, nil // another goroutine built it first; reuse its engine
+	}
+	if r.gen[slug] != genSlug || r.epoch != epoch {
+		// An invalidate (this slug) or InvalidateAll landed during build: idx was
+		// built from now-superseded settings. Return it for this request only —
+		// leaving the cache empty so the next resolve rebuilds fresh — rather than
+		// installing a stale engine that would persist until the next mutation.
+		return idx, nil
 	}
 	r.cache[slug] = idx
 	return idx, nil
@@ -506,10 +532,21 @@ func (r *Registry) logResolveError(slug string, err error) {
 		Msg("registry: resolve failed")
 }
 
-// invalidate drops a slug's cached engine so the next resolve rebuilds it.
+// invalidate drops a slug's cached engine so the next resolve rebuilds it. Bumping
+// the slug's generation additionally rejects an engine still being built by an
+// in-flight resolve (which has not yet cached it, so the delete alone is a no-op) —
+// see resolve (U8R-F3).
+//
+// INVARIANT: every caller must invalidate AFTER the settings change is durably
+// committed. The generation check only closes the mid-build race because the
+// commit happens-before the bump, so a build that read pre-commit settings is
+// guaranteed to see a stale generation. A caller that bumped before committing
+// would reopen the race. The gen map is deliberately never pruned: dropping a
+// slug's entry would reset it to 0 and reintroduce an ABA gap.
 func (r *Registry) invalidate(slug string) {
 	r.mu.Lock()
 	delete(r.cache, slug)
+	r.gen[slug]++
 	r.mu.Unlock()
 }
 
@@ -522,6 +559,10 @@ func (r *Registry) invalidate(slug string) {
 func (r *Registry) InvalidateAll() {
 	r.mu.Lock()
 	clear(r.cache)
+	// A global epoch bump (rather than per-slug generations we don't enumerate here)
+	// rejects every in-flight build, including builds for slugs not currently cached —
+	// see resolve (U8R-F3).
+	r.epoch++
 	r.mu.Unlock()
 }
 

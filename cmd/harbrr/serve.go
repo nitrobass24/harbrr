@@ -163,9 +163,7 @@ func serve(ctx context.Context, cfg *config.Config, log zerolog.Logger) error {
 		drainNotify(ctx, notifySvc) // join in-flight dispatches before the deferred db.Close
 	}()
 
-	startSessionCleanup(bgCtx, &bg, store, log)
-	startSearchCacheCleanup(bgCtx, &bg, searchCache, log)
-	startIndexerStatsFlush(bgCtx, &bg, reg)
+	startBackgroundReapers(bgCtx, &bg, db, store, searchCache, reg, log)
 
 	// Confirm the port is actually bindable before logging "listening": srv.Run binds
 	// asynchronously, so a fatal listen error (e.g. address in use) would otherwise
@@ -335,6 +333,18 @@ func drainNotify(ctx context.Context, svc *notify.Service) {
 	svc.Drain(drainCtx)
 }
 
+// startBackgroundReapers launches every periodic maintenance goroutine (session and
+// cache reaping, stat flushes, health-event retention) on the shared shutdown WaitGroup,
+// so serve() joins them all before closing the DB.
+func startBackgroundReapers(ctx context.Context, wg *sync.WaitGroup, db *database.DB,
+	store *database.SessionStore, sc *registry.SearchCache, reg *registry.Registry, log zerolog.Logger,
+) {
+	startSessionCleanup(ctx, wg, store, log)
+	startSearchCacheCleanup(ctx, wg, sc, log)
+	startIndexerStatsFlush(ctx, wg, reg)
+	startHealthEventCleanup(ctx, wg, db, log)
+}
+
 // startSessionCleanup reaps expired sessions hourly until ctx is cancelled. It joins
 // wg so serve() can wait for an in-flight reap to finish before closing the DB.
 func startSessionCleanup(ctx context.Context, wg *sync.WaitGroup, store *database.SessionStore, log zerolog.Logger) {
@@ -350,6 +360,40 @@ func startSessionCleanup(ctx context.Context, wg *sync.WaitGroup, store *databas
 			case <-t.C:
 				if err := store.DeleteExpired(ctx); err != nil && !errors.Is(err, context.Canceled) {
 					log.Warn().Err(err).Msg("session cleanup failed")
+				}
+			}
+		}
+	}()
+}
+
+// Health-event retention. The append-only indexer_health_events table has no other
+// bound, so a chronically-broken indexer polled every 15 min would grow it ~35k
+// rows/year forever. A generous 90-day window keeps a full quarter of history for the
+// dashboard (which reads the whole table per all-indexers load) while capping growth;
+// a daily reap is ample for such low-frequency rows. A const is proportionate here —
+// making the window configurable is a possible follow-up, not needed for this.
+const (
+	healthEventRetention       = 90 * 24 * time.Hour
+	healthEventCleanupInterval = 24 * time.Hour
+)
+
+// startHealthEventCleanup reaps health events older than healthEventRetention once a
+// day until ctx is cancelled, mirroring startSessionCleanup. It joins wg so serve()
+// waits for an in-flight reap to finish before closing the DB.
+func startHealthEventCleanup(ctx context.Context, wg *sync.WaitGroup, db *database.DB, log zerolog.Logger) {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		t := time.NewTicker(healthEventCleanupInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				cutoff := time.Now().Add(-healthEventRetention)
+				if _, err := (database.Health{}).DeleteBefore(ctx, db, cutoff); err != nil && !errors.Is(err, context.Canceled) {
+					log.Warn().Err(err).Msg("health event cleanup failed")
 				}
 			}
 		}

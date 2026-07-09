@@ -104,10 +104,10 @@ func TestFieldHTML(t *testing.T) {
 			name: "case switch first match wins",
 			block: loader.SelectorBlock{
 				Selector: "td.flag",
-				Case: map[string]loader.Scalar{
-					"span.freeleech": {Value: "yes", Set: true},
-					"*":              {Value: "no", Set: true},
-				},
+				Case: loader.NewCaseBlock(
+					loader.CaseEntry{Key: "span.freeleech", Value: loader.Scalar{Value: "yes", Set: true}},
+					loader.CaseEntry{Key: "*", Value: loader.Scalar{Value: "no", Set: true}},
+				),
 			},
 			wantValue: "yes",
 			wantFound: true,
@@ -116,10 +116,10 @@ func TestFieldHTML(t *testing.T) {
 			name: "case switch catch-all star",
 			block: loader.SelectorBlock{
 				Selector: "td.size",
-				Case: map[string]loader.Scalar{
-					"span.freeleech": {Value: "yes", Set: true},
-					"*":              {Value: "no", Set: true},
-				},
+				Case: loader.NewCaseBlock(
+					loader.CaseEntry{Key: "span.freeleech", Value: loader.Scalar{Value: "yes", Set: true}},
+					loader.CaseEntry{Key: "*", Value: loader.Scalar{Value: "no", Set: true}},
+				),
 			},
 			wantValue: "no",
 			wantFound: true,
@@ -128,9 +128,9 @@ func TestFieldHTML(t *testing.T) {
 			name: "case switch no match not found",
 			block: loader.SelectorBlock{
 				Selector: "td.size",
-				Case: map[string]loader.Scalar{
-					"span.freeleech": {Value: "yes", Set: true},
-				},
+				Case: loader.NewCaseBlock(
+					loader.CaseEntry{Key: "span.freeleech", Value: loader.Scalar{Value: "yes", Set: true}},
+				),
 			},
 			wantFound: false,
 		},
@@ -161,9 +161,9 @@ func TestFieldDefersRequiredDecision(t *testing.T) {
 	cases := []loader.SelectorBlock{
 		{Selector: "td.does-not-exist"},              // missing selector
 		{Selector: "a.dl", Attribute: "data-absent"}, // missing attribute
-		{Selector: "td.flag", Case: map[string]loader.Scalar{ // no case arm matches
-			"span.nope": {Value: "x", Set: true},
-		}},
+		{Selector: "td.flag", Case: loader.NewCaseBlock( // no case arm matches
+			loader.CaseEntry{Key: "span.nope", Value: loader.Scalar{Value: "x", Set: true}},
+		)},
 	}
 	for i := range cases {
 		v, found, err := New().Field(row, cases[i])

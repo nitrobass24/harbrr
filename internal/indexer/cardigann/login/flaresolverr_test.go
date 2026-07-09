@@ -12,6 +12,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/autobrr/harbrr/internal/domain"
 )
 
 // flareStub serves the FlareSolverr /v1 protocol with the given response, capturing
@@ -235,5 +238,14 @@ func TestNormalizeFlareBaseURL(t *testing.T) {
 		if c.want != "" && normalizeFlareBaseURL(c.in)+"/v1" != c.want+"/v1" {
 			t.Errorf("normalized %q does not yield the /v1 endpoint", c.in)
 		}
+	}
+}
+
+// TestFlareMaxTimeoutCapMatchesDomain is the drift guard: the login stage's cap
+// and the value the solver service validates against must be the same seconds.
+func TestFlareMaxTimeoutCapMatchesDomain(t *testing.T) {
+	t.Parallel()
+	if want := time.Duration(domain.FlareMaxTimeoutCapSeconds) * time.Second; flareMaxTimeoutCap != want {
+		t.Errorf("flareMaxTimeoutCap = %v, want %v (domain.FlareMaxTimeoutCapSeconds)", flareMaxTimeoutCap, want)
 	}
 }
