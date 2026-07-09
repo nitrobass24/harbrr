@@ -190,9 +190,12 @@ func compileErrorBlock(eng *selector.Engine, root selector.Row, blk loader.Error
 
 // compileSelector runs a selector block through Field on the empty doc. A
 // not-found result is fine (the doc is empty); only a compile/tokenize error is
-// a planning failure. :contains selectors ARE exercised (the engine rewrites
-// them to a case-sensitive :matches); the genuinely cascadia-incompatible forms
-// (:scope, :has edge forms) are excluded here as the selector census excludes them.
+// a planning failure. :contains and :has selectors ARE exercised (the engine
+// rewrites :contains to a case-sensitive :matches, and compiles :has natively);
+// only :scope (unsupported pseudo-class) and the EXACT :has forms in
+// loginKnownIncompatible are excluded — a blanket ":has(" skip would silently
+// stop counting valid nested :has(...:contains(...)) login selectors the engine
+// can compile.
 func compileSelector(eng *selector.Engine, root selector.Row, blk loader.SelectorBlock) error {
 	if blk.Selector == "" || containsTemplate(blk.Selector) || cascadiaIncompatible(blk.Selector) {
 		return nil
@@ -205,13 +208,23 @@ func compileSelector(eng *selector.Engine, root selector.Row, blk loader.Selecto
 
 func containsTemplate(s string) bool { return strings.Contains(s, "{{") }
 
-// cascadiaIncompatible skips the constructs the selector census ledgers as
-// cascadia-uncompilable: :scope (unsupported pseudo-class) and the :has edge
-// forms in its knownIncompatible baseline. :contains compiles natively (the
-// engine rewrites it to a case-sensitive :matches at compile time), so those
-// selectors are exercised here.
+// loginKnownIncompatible is the documented baseline of EXACT literal login
+// selectors known to be cascadia-uncompilable — mirrors selector/census_test.go's
+// knownIncompatible so this census fails loudly on a genuinely new incompatible
+// form instead of silently swallowing it under a substring skip. Empty today: no
+// login block in the corpus hits a known-bad :has() form.
+var loginKnownIncompatible = map[string]string{}
+
+// cascadiaIncompatible skips :scope (unsupported pseudo-class, still a blanket
+// substring skip — no login selector uses it today) and the exact :has() forms
+// in loginKnownIncompatible. :contains and ordinary :has(...) compile natively
+// and are exercised.
 func cascadiaIncompatible(sel string) bool {
-	return strings.Contains(sel, ":scope") || strings.Contains(sel, ":has(")
+	if strings.Contains(sel, ":scope") {
+		return true
+	}
+	_, known := loginKnownIncompatible[sel]
+	return known
 }
 
 func formatCounts(m map[string]int) string {
