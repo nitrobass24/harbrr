@@ -221,3 +221,55 @@ func TestBuildReconfigureValuesRequiredBlankKeyErrors(t *testing.T) {
 		t.Errorf("error = %v, want a required-key error", err)
 	}
 }
+
+// TestBuildReconfigureValuesClearSentinelOptional: the clear sentinel on an
+// optional app's URL clears it (no key prompt reached), while the required apps'
+// blank input keeps their saved URL+key.
+func TestBuildReconfigureValuesClearSentinelOptional(t *testing.T) {
+	t.Parallel()
+	existing := map[string]string{
+		"SMOKE_HARBRR_URL":      "http://harbrr:7478",
+		"SMOKE_HARBRR_APIKEY":   "saved-harbrr-key",
+		"SMOKE_PROWLARR_URL":    "http://prowlarr:9696",
+		"SMOKE_PROWLARR_APIKEY": "saved-prowlarr-key",
+		"SMOKE_SONARR_URL":      "http://sonarr:8989",
+		"SMOKE_SONARR_APIKEY":   "saved-sonarr-key",
+	}
+	// Keep harbrr+Prowlarr (blank URL); clear Sonarr with the sentinel; skip Radarr+Qui.
+	sp := &stubPrompts{
+		urls: []string{"", "", clearURLSentinel, "", ""},
+		keys: []string{"", ""}, // one per kept required app; Sonarr/Radarr/Qui never reach a key prompt
+	}
+	values, err := buildReconfigureValues(io.Discard, existing, sp.prompts())
+	if err != nil {
+		t.Fatalf("buildReconfigureValues: %v", err)
+	}
+	if _, ok := values["SMOKE_SONARR_URL"]; ok {
+		t.Errorf("SONARR_URL = %q, want cleared (absent) after the sentinel", values["SMOKE_SONARR_URL"])
+	}
+	if got := values["SMOKE_HARBRR_URL"]; got != "http://harbrr:7478" {
+		t.Errorf("harbrr URL = %q, want the saved URL kept", got)
+	}
+}
+
+// TestBuildReconfigureValuesClearSentinelRequiredErrors: the clear sentinel on a
+// REQUIRED app's URL must be rejected with the same required-URL error as a blank
+// input, never stored as the literal "-" URL.
+func TestBuildReconfigureValuesClearSentinelRequiredErrors(t *testing.T) {
+	t.Parallel()
+	existing := map[string]string{
+		"SMOKE_HARBRR_URL":    "http://harbrr:7478",
+		"SMOKE_HARBRR_APIKEY": "saved-harbrr-key",
+	}
+	sp := &stubPrompts{
+		urls: []string{clearURLSentinel},
+		keys: []string{},
+	}
+	_, err := buildReconfigureValues(io.Discard, existing, sp.prompts())
+	if err == nil {
+		t.Fatal("the clear sentinel on a required app's URL should error, not be stored")
+	}
+	if !strings.Contains(err.Error(), "harbrr URL is required") {
+		t.Errorf("error = %v, want a required-URL error", err)
+	}
+}

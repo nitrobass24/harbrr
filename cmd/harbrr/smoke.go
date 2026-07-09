@@ -183,32 +183,45 @@ func buildReconfigureValues(out io.Writer, existing map[string]string, p reconfi
 		}
 	}
 	for _, ap := range smokePrompts {
-		u := p.line(ap.name+" URL", existing[ap.urlKey])
-		if !ap.required && u == clearURLSentinel {
-			fmt.Fprintf(out, "  %s cleared (not configured)\n", ap.name)
-			continue
-		}
-		if u == "" {
-			if ap.required {
-				return nil, fmt.Errorf("smoke: %s URL is required", ap.name)
-			}
-			fmt.Fprintf(out, "  %s not configured (skipped)\n", ap.name)
-			continue
-		}
-		key, err := p.key(ap.name+" API key", existing[ap.keyKey] != "")
-		if err != nil {
+		if err := resolveAppReconfigure(out, ap, existing, p, values); err != nil {
 			return nil, err
 		}
-		if key == "" {
-			key = existing[ap.keyKey] // blank Enter keeps the saved key, never blanks it
-		}
-		if key == "" && ap.required {
-			return nil, fmt.Errorf("smoke: %s API key is required", ap.name)
-		}
-		values[ap.urlKey] = strings.TrimRight(u, "/")
-		values[ap.keyKey] = key
 	}
 	return values, nil
+}
+
+// resolveAppReconfigure prompts for one app's URL and (if it has one to give)
+// API key, writing the result into values; a cleared/skipped app leaves values
+// untouched. The clear sentinel is checked before the required gate, so a
+// required app rejects it exactly like a blank URL rather than storing the
+// literal "-" as its saved URL.
+func resolveAppReconfigure(out io.Writer, ap appPrompt, existing map[string]string, p reconfigurePrompts, values map[string]string) error {
+	u := p.line(ap.name+" URL", existing[ap.urlKey])
+	cleared := u == clearURLSentinel
+	if cleared || u == "" {
+		if ap.required {
+			return fmt.Errorf("smoke: %s URL is required", ap.name)
+		}
+		if cleared {
+			fmt.Fprintf(out, "  %s cleared (not configured)\n", ap.name)
+		} else {
+			fmt.Fprintf(out, "  %s not configured (skipped)\n", ap.name)
+		}
+		return nil
+	}
+	key, err := p.key(ap.name+" API key", existing[ap.keyKey] != "")
+	if err != nil {
+		return err
+	}
+	if key == "" {
+		key = existing[ap.keyKey] // blank Enter keeps the saved key, never blanks it
+	}
+	if key == "" && ap.required {
+		return fmt.Errorf("smoke: %s API key is required", ap.name)
+	}
+	values[ap.urlKey] = strings.TrimRight(u, "/")
+	values[ap.keyKey] = key
+	return nil
 }
 
 // promptLine writes a prompt (with any existing value as the default) and reads one
