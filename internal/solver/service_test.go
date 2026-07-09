@@ -61,10 +61,84 @@ func TestValidateRejectsBadInput(t *testing.T) {
 		{Name: "x", Type: "captcha-solver", URL: "http://h"},
 		{Name: "x", URL: ""},
 		{Name: "x", URL: "http://h", MaxTimeout: -1},
+		// Over the cap: the solve-time reset would silently drop these to the 60s
+		// default, so reject them at save instead of saving a lie.
+		{Name: "x", URL: "http://h", MaxTimeout: 300},
+		{Name: "x", URL: "http://h", MaxTimeout: domain.FlareMaxTimeoutCapSeconds + 1},
 	}
 	for _, c := range cases {
 		if _, err := svc.Create(ctx, c); !errors.Is(err, ErrInvalid) {
 			t.Errorf("Create(%+v) err = %v, want ErrInvalid", c, err)
 		}
+	}
+}
+
+// TestMaxTimeoutBounds pins the accepted/rejected boundary of the per-solve
+// budget on both the create and update paths (validate is the shared gate).
+func TestMaxTimeoutBounds(t *testing.T) {
+	t.Parallel()
+	svc, _ := newService(t)
+	ctx := context.Background()
+
+	const rawURL = "http://flaresolverr:8191"
+	cases := []struct {
+		name       string
+		maxTimeout int
+		wantErr    bool
+	}{
+		{"at cap accepted", domain.FlareMaxTimeoutCapSeconds, false},
+		{"just over cap rejected", domain.FlareMaxTimeoutCapSeconds + 1, true},
+		{"zero uses default", 0, false},
+		{"negative rejected", -1, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			// Create path.
+			_, err := svc.Create(ctx, CreateParams{Name: "fs", URL: rawURL, MaxTimeout: c.maxTimeout})
+			if c.wantErr {
+				if !errors.Is(err, ErrInvalid) {
+					t.Fatalf("Create(maxTimeout=%d) err = %v, want ErrInvalid", c.maxTimeout, err)
+				}
+			} else if err != nil {
+				t.Fatalf("Create(maxTimeout=%d) err = %v, want nil", c.maxTimeout, err)
+			}
+
+			// Update path: patch an existing valid solver to the same value.
+			base, err := svc.Create(ctx, CreateParams{Name: "base", URL: rawURL, MaxTimeout: 90})
+			if err != nil {
+				t.Fatalf("Create base: %v", err)
+			}
+			mt := c.maxTimeout
+			err = svc.Update(ctx, base.ID, UpdateParams{MaxTimeout: &mt})
+			if c.wantErr {
+				if !errors.Is(err, ErrInvalid) {
+					t.Fatalf("Update(maxTimeout=%d) err = %v, want ErrInvalid", c.maxTimeout, err)
+				}
+			} else if err != nil {
+				t.Fatalf("Update(maxTimeout=%d) err = %v, want nil", c.maxTimeout, err)
+			}
+		})
+	}
+}
+
+// TestValidateSkipsOmittedMaxTimeout proves the bound check is gated on the field
+// being present: a nil maxTimeout (an update patch that omits it) leaves the stored
+// value untouched — so an unrelated edit, or an over-cap value imported by
+// resourcemigrate (which bypasses validate), doesn't block the update — while a
+// supplied over-cap value is still rejected.
+func TestValidateSkipsOmittedMaxTimeout(t *testing.T) {
+	t.Parallel()
+	const url = "http://flaresolverr:8191"
+	if err := validate("fs", domain.SolverTypeFlaresolverr, url, nil); err != nil {
+		t.Fatalf("nil maxTimeout should skip the bound check, got %v", err)
+	}
+	over := domain.FlareMaxTimeoutCapSeconds + 1
+	if err := validate("fs", domain.SolverTypeFlaresolverr, url, &over); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("over-cap maxTimeout should be rejected, got %v", err)
+	}
+	ok := domain.FlareMaxTimeoutCapSeconds
+	if err := validate("fs", domain.SolverTypeFlaresolverr, url, &ok); err != nil {
+		t.Fatalf("boundary maxTimeout (%d) should be accepted, got %v", ok, err)
 	}
 }

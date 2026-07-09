@@ -68,7 +68,7 @@ func (s *Service) Create(ctx context.Context, p CreateParams) (domain.Solver, er
 	if p.Type == "" {
 		p.Type = domain.SolverTypeFlaresolverr
 	}
-	if err := validate(p.Name, p.Type, p.URL, p.MaxTimeout); err != nil {
+	if err := validate(p.Name, p.Type, p.URL, &p.MaxTimeout); err != nil {
 		return domain.Solver{}, err
 	}
 
@@ -137,7 +137,7 @@ func (s *Service) Update(ctx context.Context, id int64, p UpdateParams) error {
 	if p.URL != nil {
 		validateURL = newURL
 	}
-	if err := validate(row.Name, row.Type, validateURL, row.MaxTimeout); err != nil {
+	if err := validate(row.Name, row.Type, validateURL, p.MaxTimeout); err != nil {
 		return err
 	}
 
@@ -166,8 +166,9 @@ func (s *Service) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
-// validate enforces name, a known type, a parseable URL, and a non-negative timeout.
-func validate(name, typ, rawURL string, maxTimeout int) error {
+// validate enforces name, a known type, a parseable URL, and a timeout within
+// [0, domain.FlareMaxTimeoutCapSeconds] (0 = use the solver's default).
+func validate(name, typ, rawURL string, maxTimeout *int) error {
 	if name == "" {
 		return fmt.Errorf("%w: name is required", ErrInvalid)
 	}
@@ -180,8 +181,13 @@ func validate(name, typ, rawURL string, maxTimeout int) error {
 	if u, err := url.Parse(rawURL); err != nil || u.Host == "" {
 		return fmt.Errorf("%w: url must be an absolute URL", ErrInvalid)
 	}
-	if maxTimeout < 0 {
-		return fmt.Errorf("%w: maxTimeout must be >= 0", ErrInvalid)
+	// maxTimeout is nil when an update patch omits it — the stored value is left
+	// untouched (so an unrelated edit isn't blocked, and an already-stored/imported
+	// over-cap value isn't re-checked here). 0 means "use the solver's 60s default";
+	// anything above the cap would be silently reset to that default at solve time,
+	// so reject it here instead.
+	if maxTimeout != nil && (*maxTimeout < 0 || *maxTimeout > domain.FlareMaxTimeoutCapSeconds) {
+		return fmt.Errorf("%w: maxTimeout must be between 0 and %d seconds", ErrInvalid, domain.FlareMaxTimeoutCapSeconds)
 	}
 	return nil
 }
