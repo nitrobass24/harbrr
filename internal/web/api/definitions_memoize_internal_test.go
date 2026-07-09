@@ -78,24 +78,38 @@ func TestListDefinitionsMemoizesSuccess(t *testing.T) {
 // TestListDefinitionsConcurrentFirstCallLoadsOnce proves the mutex serializes
 // concurrent first-calls: with a success load, loadDefs runs exactly once and
 // every caller gets 200. Run under -race to catch a data race on the cache.
+//
+// A plain "go func(){...}()" loop does not guarantee genuine overlap — the first
+// goroutine can finish its whole call before the next one is even scheduled,
+// which would let a broken cache (e.g. a double-checked read of defsLoaded
+// outside the lock) pass by accident. So this gates: every goroutine signals
+// ready before calling listDefinitions, and loadDefs itself blocks until the
+// gate is released — forcing every goroutine to be running and contending for
+// the lock at the same instant, not just launched in sequence.
 func TestListDefinitionsConcurrentFirstCallLoadsOnce(t *testing.T) {
 	t.Parallel()
 	var calls atomic.Int64
+	gate := make(chan struct{})
 	rt := newDefsRouter(func() ([]definitionSummary, error) {
 		calls.Add(1)
+		<-gate // hold the lock here until every goroutine is confirmed running
 		return []definitionSummary{{ID: "acme", Name: "Acme"}}, nil
 	})
 
 	const n = 16
-	var wg sync.WaitGroup
+	var wg, ready sync.WaitGroup
+	wg.Add(n)
+	ready.Add(n)
 	codes := make([]int, n)
 	for i := range n {
-		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			ready.Done()
 			codes[i] = callListDefinitions(t, rt).Code
 		}()
 	}
+	ready.Wait() // every goroutine has started and is racing for the lock
+	close(gate)  // release the in-flight load (and every goroutine waiting behind it)
 	wg.Wait()
 
 	if got := calls.Load(); got != 1 {
