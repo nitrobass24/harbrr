@@ -1316,11 +1316,14 @@ paths:
         "404":
           description: >
             a Torznab <error> element (XML) for an unknown/unsupported indexer, or a
-            generic body when the resolved payload is not a valid torrent (the
-            serve-boundary bencode check, mirroring Jackett's BencodeParser → NotFound);
-            the link/passkey is never echoed
+            plain-text body when the resolved payload is not a valid torrent (the
+            serve-boundary bencode check, mirroring Jackett's BencodeParser → NotFound,
+            uses http.Error rather than the Torznab XML shape); the link/passkey is
+            never echoed
           content:
             application/xml:
+              schema: { type: string }
+            text/plain:
               schema: { type: string }
         "500":
           description: a generic Torznab <error> element (XML); the link/passkey is never echoed
