@@ -17,11 +17,14 @@ import (
 //
 // For each block IN DEFINITION ORDER: the block's Selector is tested against root.
 // The first match yields (message, true, nil); the message comes from the Message
-// selector block when present and it matches, else the matched element's text —
-// reproducing Jackett's `errorMessage = selection.TextContent; if (error.Message
-// != null) errorMessage = handleSelector(error.Message, root)`. A non-matching
-// block is skipped; a selector evaluation error propagates; no match across all
-// blocks returns ("", false, nil).
+// selector block when present, else the matched element's text — reproducing
+// Jackett's `errorMessage = selection.TextContent; if (error.Message != null)
+// errorMessage = handleSelector(error.Message, root)`. Jackett's handleSelector is
+// called there with its default required=true, so when Message is set but its
+// selector does NOT match, it throws — there is no fallback to the outer match;
+// this propagates that as an error too. A non-matching block is skipped; a
+// selector evaluation error propagates; no match across all blocks returns
+// ("", false, nil).
 //
 // The returned message is trimmed and single-lined. The SELECTOR is definition-authored,
 // but the extracted TEXT is lifted from the server's RESPONSE body (server-controlled), so
@@ -59,9 +62,14 @@ func (e *Engine) evalErrorBlock(root Row, blk loader.ErrorBlock) (msg string, ma
 		if merr != nil {
 			return "", false, fmt.Errorf("evaluating error message selector %q: %w", blk.Message.Selector, merr)
 		}
-		if mfound {
-			return trimErrorMessage(mval), true, nil
+		if !mfound {
+			// Jackett's handleSelector(error.Message, ...) runs with its default
+			// required=true, so a non-matching Message selector THROWS — there is
+			// no fallback to the outer error-block match. Propagate a loud error
+			// here too, rather than silently substituting val.
+			return "", false, fmt.Errorf("error message selector %q didn't match", blk.Message.Selector)
 		}
+		return trimErrorMessage(mval), true, nil
 	}
 	return trimErrorMessage(val), true, nil
 }
