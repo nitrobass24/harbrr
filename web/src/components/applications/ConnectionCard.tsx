@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Switch } from "@/components/ui/switch"
 import { useServerInfo } from "@/hooks/useAppConnections"
-import { urlHasExplicitPort, urlPort, withPort } from "@/lib/base-url"
+import { explicitUrlPort, withPort } from "@/lib/base-url"
 import { hostname, relativeTime, syncStatusClass } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import type { AppConnection } from "@/types/api"
@@ -24,7 +24,7 @@ export type ConnectionActions = {
   onDelete: (conn: AppConnection) => void
   onStatus: (id: number) => void
   onSelectIndexers: (conn: AppConnection) => void
-  onFixPort: (id: number, harbrrUrl: string) => void
+  onFixPort: (conn: AppConnection, harbrrUrl: string) => void
 }
 
 export function ConnectionCard({ conn, syncing, actions }: {
@@ -34,14 +34,14 @@ export function ConnectionCard({ conn, syncing, actions }: {
 }) {
   const serverInfo = useServerInfo()
   const livePort = serverInfo.data?.port
-  const storedPort = urlPort(conn.harbrrUrl)
-  // Only compare against harbrr's internal listen port when harbrrUrl names a
-  // port explicitly. A reverse-proxied URL (the common case defaultHarbrrUrl's
+  const storedPort = explicitUrlPort(conn.harbrrUrl)
+  // Only a URL that names a port outright is comparable against harbrr's own
+  // listen port: a reverse-proxied URL (the common case defaultHarbrrUrl's
   // window.location.origin prefill produces behind a TLS-terminating proxy)
-  // has no explicit port and is never comparable — flagging it would be a
-  // false positive whose "fix" breaks a working connection.
-  const portStale = livePort !== undefined && storedPort !== null && storedPort !== livePort
-    && urlHasExplicitPort(conn.harbrrUrl)
+  // has no explicit port and explicitUrlPort returns null for it. Even an
+  // explicit differing port can be a deliberate Docker port mapping, so the
+  // badge is advisory and the fix goes through a confirm dialog upstream.
+  const stalePort = livePort !== undefined && storedPort !== null && storedPort !== livePort ? livePort : null
 
   return (
     <div className="flex items-center gap-4 rounded-xl border border-border bg-card px-5 py-4">
@@ -52,15 +52,15 @@ export function ConnectionCard({ conn, syncing, actions }: {
           <Badge variant="outline" className="px-1.5 py-0 text-[11px]">{conn.freeleechMode === "bypass" ? "FL bypass" : "FL honor"}</Badge>
           <Badge variant="outline" className="px-1.5 py-0 text-[11px]">{conn.syncLevel === "full" ? "full sync" : "add/update"}</Badge>
           <Badge variant="outline" className="px-1.5 py-0 text-[11px]">{conn.indexScope === "all" ? "all indexers" : "selected"}</Badge>
-          {portStale && livePort !== undefined && (
+          {stalePort !== null && (
             <Badge variant="outline" className="flex items-center gap-1 px-1.5 py-0 text-[11px] text-warn">
               port may be outdated
               <button
                 type="button"
-                aria-label={`Update ${conn.name}'s harbrr URL port to ${livePort}`}
-                title={`Fix stale port (use ${livePort})`}
+                aria-label={`Update ${conn.name}'s harbrr URL port to ${stalePort}`}
+                title={`URL uses port ${storedPort}; harbrr's configured port is ${stalePort} — review and update`}
                 className="inline-flex items-center"
-                onClick={() => actions.onFixPort(conn.id, withPort(conn.harbrrUrl, livePort))}
+                onClick={() => actions.onFixPort(conn, withPort(conn.harbrrUrl, stalePort))}
               >
                 <RefreshCcw className="h-3 w-3" />
               </button>

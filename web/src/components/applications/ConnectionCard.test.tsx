@@ -86,20 +86,18 @@ describe("ConnectionCard stale-port indicator", () => {
     expect(screen.queryByText("port may be outdated")).toBeNull()
   })
 
-  it("clicking the fix action rewrites only the port and leaves scheme/host/path untouched", async () => {
+  it("clicking the fix action proposes the port-rewritten URL with scheme/host/path kept", async () => {
     stubFetch(9999)
     const onFixPort = vi.fn()
-    render(wrap(
-      <ConnectionCard
-        conn={{ ...CONN, harbrrUrl: "https://harbrr.example.com:7478/base" }}
-        actions={actions({ onFixPort })}
-      />
-    ))
+    const conn = { ...CONN, harbrrUrl: "https://harbrr.example.com:7478/base" }
+    render(wrap(<ConnectionCard conn={conn} actions={actions({ onFixPort })} />))
 
     const fix = await screen.findByLabelText("Update sonarr-main's harbrr URL port to 9999")
     fireEvent.click(fix)
 
+    // The card only proposes: the parent confirms before anything is written,
+    // since an explicit differing port can be a deliberate mapping/proxy.
     expect(onFixPort).toHaveBeenCalledTimes(1)
-    expect(onFixPort).toHaveBeenCalledWith(10, "https://harbrr.example.com:9999/base")
+    expect(onFixPort).toHaveBeenCalledWith(conn, "https://harbrr.example.com:9999/base")
   })
 })

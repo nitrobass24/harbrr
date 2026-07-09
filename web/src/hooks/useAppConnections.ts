@@ -47,20 +47,10 @@ export function useCreateConnection() {
   })
 }
 
-export function useUpdateConnection(id: number) {
-  const invalidate = useInvalidateConnections()
-  return useMutation({
-    mutationFn: (body: UpdateConnection) => api.updateConnection(id, body),
-    onSettled: invalidate,
-  })
-}
-
-// useUpdateConnectionById is useUpdateConnection's un-bound sibling: the id
-// travels with each mutate() call instead of being fixed at hook-creation
-// time, mirroring useSetConnectionEnabled — needed for actions (like the
-// stale-port fix) that apply to whichever connection a list row belongs to,
-// not a single dialog-scoped id.
-export function useUpdateConnectionById() {
+// The id travels with each mutate() call (mirroring useSetConnectionEnabled),
+// so one hook serves both the edit dialog and per-row actions like the
+// stale-port fix.
+export function useUpdateConnection() {
   const invalidate = useInvalidateConnections()
   return useMutation({
     mutationFn: ({ id, body }: { id: number, body: UpdateConnection }) => api.updateConnection(id, body),

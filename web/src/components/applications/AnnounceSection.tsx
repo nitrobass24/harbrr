@@ -18,9 +18,10 @@ import {
   useAnnounceConnections,
   useCreateAnnounce,
   useDeleteAnnounce,
-  useSetAnnounceEnabled
+  useSetAnnounceEnabled,
+  useServerInfo
 } from "@/hooks/useAppConnections"
-import { defaultHarbrrUrl } from "@/lib/base-url"
+import { defaultHarbrrUrl, explicitUrlPort } from "@/lib/base-url"
 import { hostname } from "@/lib/format"
 import type { AnnounceKind } from "@/types/api"
 
@@ -32,7 +33,19 @@ export function AnnounceSection() {
   const create = useCreateAnnounce()
   const remove = useDeleteAnnounce()
   const toggle = useSetAnnounceEnabled()
+  const serverInfo = useServerInfo()
   const [adding, setAdding] = useState(false)
+
+  // Same stale-port advisory as ConnectionCard: only a harbrrUrl naming a port
+  // outright is comparable to harbrr's listen port (a proxied URL has none).
+  // Badge-only here — announce targets have no update API, so the remedy is
+  // delete + re-add, per the section's standing note.
+  const stalePort = (harbrrUrl?: string): boolean => {
+    const livePort = serverInfo.data?.port
+    if (livePort === undefined || harbrrUrl === undefined) return false
+    const storedPort = explicitUrlPort(harbrrUrl)
+    return storedPort !== null && storedPort !== livePort
+  }
 
   return (
     <section className="flex flex-col gap-3">
@@ -55,6 +68,15 @@ export function AnnounceSection() {
             <span className="flex items-center gap-2 text-[14px] font-medium">
               {t.name}
               <Badge variant="secondary" className="px-1.5 py-0 text-[11px]">{t.kind}</Badge>
+              {stalePort(t.harbrrUrl) && (
+                <Badge
+                  variant="outline"
+                  className="px-1.5 py-0 text-[11px] text-warn"
+                  title={`This target's harbrr URL port doesn't match harbrr's configured port (${serverInfo.data?.port}). If it isn't a deliberate proxy/port mapping, delete and re-add the target.`}
+                >
+                  port may be outdated
+                </Badge>
+              )}
             </span>
             <span className="text-[12px] text-faint">{hostname(t.baseUrl)}</span>
           </div>

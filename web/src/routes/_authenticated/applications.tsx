@@ -14,6 +14,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle
 } from "@/components/ui/dialog"
@@ -27,8 +28,7 @@ import {
   useSyncAll,
   useSyncConnection,
   useTestConnection,
-  useUpdateConnection,
-  useUpdateConnectionById
+  useUpdateConnection
 } from "@/hooks/useAppConnections"
 import type { AppConnection, ConnectionSyncResult, SyncReport } from "@/types/api"
 
@@ -43,20 +43,31 @@ function ApplicationsPage() {
   const sync = useSyncConnection()
   const syncAll = useSyncAll()
   const remove = useDeleteConnection()
-  const fixPort = useUpdateConnectionById()
+  // A separate mutation instance from `update`, so a failed port fix can't
+  // surface as the edit dialog's error banner.
+  const fixPort = useUpdateConnection()
 
   const [dialog, setDialog] = useState<ConnectionDialogState>({ open: false })
   const [statusFor, setStatusFor] = useState<number | null>(null)
   const [selectFor, setSelectFor] = useState<AppConnection | null>(null)
   const [report, setReport] = useState<{ title: string, report: SyncReport } | null>(null)
   const [allReports, setAllReports] = useState<ConnectionSyncResult[] | null>(null)
+  // A pending stale-port rewrite awaiting the user's confirmation: an explicit
+  // differing port can be a deliberate Docker port mapping or proxy, so the
+  // one-click fix never applies without a look at the before/after URLs.
+  const [fixPortReq, setFixPortReq] = useState<{ conn: AppConnection, url: string } | null>(null)
 
   const editing = dialog.open ? dialog.existing : undefined
   const create = useCreateConnection()
-  const update = useUpdateConnection(editing?.id ?? 0)
+  const update = useUpdateConnection()
   const select = useSetSelectedIndexers(selectFor?.id ?? 0)
 
   const total = connections.data?.length ?? 0
+
+  const runSync = (id: number) => sync.mutate(id, {
+    onSuccess: (rep) => setReport({ title: connections.data?.find((c) => c.id === id)?.name ?? "", report: rep }),
+    onError: () => toast.error("Sync failed"),
+  })
 
   return (
     <div className="flex h-full flex-col">
@@ -98,10 +109,7 @@ function ApplicationsPage() {
                   onSuccess: (r) => r.ok ? toast.success("Connection OK") : toast.error(`Test failed — ${r.error ?? "unknown error"}`),
                   onError: () => toast.error("Test request failed"),
                 }),
-                onSync: (id) => sync.mutate(id, {
-                  onSuccess: (rep) => setReport({ title: connections.data?.find((c) => c.id === id)?.name ?? "", report: rep }),
-                  onError: () => toast.error("Sync failed"),
-                }),
+                onSync: runSync,
                 onEdit: (conn) => setDialog({ open: true, existing: conn }),
                 onDelete: (conn) => remove.mutate(conn.id, {
                   onSuccess: () => toast.success(`${conn.name} deleted`),
@@ -109,13 +117,7 @@ function ApplicationsPage() {
                 }),
                 onStatus: setStatusFor,
                 onSelectIndexers: setSelectFor,
-                onFixPort: (id, harbrrUrl) => fixPort.mutate({ id, body: { harbrrUrl } }, {
-                  onSuccess: () => sync.mutate(id, {
-                    onSuccess: (rep) => setReport({ title: connections.data?.find((c) => c.id === id)?.name ?? "", report: rep }),
-                    onError: () => toast.error("Sync failed"),
-                  }),
-                  onError: () => toast.error("Updating the connection's harbrr URL failed"),
-                }),
+                onFixPort: (conn, harbrrUrl) => setFixPortReq({ conn, url: harbrrUrl }),
               }}
             />
           ))}
@@ -156,13 +158,46 @@ function ApplicationsPage() {
             setDialog({ open: false })
           },
         })}
-        onUpdate={(_id, body) => update.mutate(body, {
+        onUpdate={(id, body) => update.mutate({ id, body }, {
           onSuccess: () => {
             toast.success("Connection updated")
             setDialog({ open: false })
           },
         })}
       />
+
+      <Dialog open={fixPortReq !== null} onOpenChange={(open) => { if (!open) setFixPortReq(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Update harbrr URL — {fixPortReq?.conn.name}</DialogTitle>
+            <DialogDescription>
+              This URL&apos;s port doesn&apos;t match the port harbrr is configured to listen on.
+              If {fixPortReq?.conn.name} reaches harbrr through a reverse proxy or a Docker port
+              mapping, the difference is intentional — keep the current URL.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-1 text-[13px]">
+            <p className="text-muted-foreground">current <span className="font-mono text-foreground">{fixPortReq?.conn.harbrrUrl}</span></p>
+            <p className="text-muted-foreground">rewritten <span className="font-mono text-foreground">{fixPortReq?.url}</span></p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFixPortReq(null)}>Keep current URL</Button>
+            <Button
+              onClick={() => {
+                const req = fixPortReq
+                if (!req) return
+                setFixPortReq(null)
+                fixPort.mutate({ id: req.conn.id, body: { harbrrUrl: req.url } }, {
+                  onSuccess: () => runSync(req.conn.id),
+                  onError: () => toast.error("Updating the connection's harbrr URL failed"),
+                })
+              }}
+            >
+              Rewrite and sync
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <StatusDrawer connectionId={statusFor} onClose={() => setStatusFor(null)} />
 
