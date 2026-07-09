@@ -70,6 +70,13 @@ make build                                   # -> bin/harbrr
 ./bin/harbrr serve --data-dir ./data         # open http://localhost:7478/api/docs
 ```
 
+> [!NOTE]
+> `make build` embeds whatever is in `web/dist`; a fresh checkout has none, so the binary
+> serves "frontend not built" until you run `make web-build` (needs Node + pnpm). Building
+> the image locally with `docker build` likewise needs the SPA built first — otherwise the
+> build fails fast rather than silently shipping a UI-less image. Published images already
+> bundle it.
+
 ---
 
 ## The API & Swagger UI

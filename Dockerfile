@@ -16,6 +16,19 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+
+# The Go build embeds web/dist (the compiled SPA). A plain local `docker build` from a
+# fresh clone has an empty web/dist (dist/.gitkeep only), which would otherwise silently
+# ship a UI-less binary whose pages answer "frontend not built". Fail loudly instead:
+# build the SPA first (`make web-build`) so `docker build` picks it up from the context,
+# or pull a published image. In CI this whole `build` stage is replaced by a
+# prebuilt-binary build-context, so this guard never runs there.
+RUN test -f web/dist/index.html || { \
+      echo "ERROR: web/dist is empty — the management UI is not built."; \
+      echo "Run 'make web-build' (needs Node + pnpm) before 'docker build', or pull a published ghcr.io/autobrr/harbrr image."; \
+      exit 1; \
+    }
+
 ARG VERSION=docker
 ARG COMMIT=none
 ARG DATE=unknown
