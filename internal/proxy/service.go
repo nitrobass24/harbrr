@@ -72,7 +72,7 @@ type CreateParams struct {
 // mint the id the AAD binds to), then the sealed secret, in one transaction.
 func (s *Service) Create(ctx context.Context, p CreateParams) (domain.Proxy, error) {
 	p.Name, p.Type, p.URL = strings.TrimSpace(p.Name), strings.TrimSpace(p.Type), strings.TrimSpace(p.URL)
-	if err := validate(p.Name, p.Type, p.URL); err != nil {
+	if err := validate(p.Name, p.Type, &p.URL); err != nil {
 		return domain.Proxy{}, err
 	}
 
@@ -131,11 +131,26 @@ func (s *Service) Update(ctx context.Context, id int64, p UpdateParams) error {
 		row.Type = strings.TrimSpace(*p.Type)
 	}
 	newURL := ""
+	var urlToValidate *string
 	if p.URL != nil {
 		newURL = strings.TrimSpace(*p.URL)
+		urlToValidate = &newURL
 	}
-	if err := validate(row.Name, row.Type, urlForValidation(p.URL, newURL)); err != nil {
+	if err := validate(row.Name, row.Type, urlToValidate); err != nil {
 		return err
+	}
+	// A type-only change (URL patch omitted) still has to be family-compatible with
+	// the STORED url, which validate skipped above. Decrypt it and re-check, so a
+	// type flip that would fail at search (e.g. http -> socks5 over an http:// url)
+	// is rejected at save instead. The error never includes the decrypted value.
+	if p.Type != nil && p.URL == nil {
+		stored, err := s.keyring.Decrypt(id, domain.ProxySecretURL, row.URLEncrypted)
+		if err != nil {
+			return fmt.Errorf("proxy: decrypt url: %w", err)
+		}
+		if err := validateURL(row.Type, stored); err != nil {
+			return err
+		}
 	}
 
 	row.UpdatedAt = s.clock()
@@ -163,23 +178,31 @@ func (s *Service) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
-// urlForValidation returns the URL to validate: the new value when rotating,
-// otherwise a non-empty placeholder so an unchanged (still-encrypted) URL passes.
-func urlForValidation(patch *string, newURL string) string {
-	if patch == nil {
-		return "unchanged://ok"
-	}
-	return newURL
-}
-
-// validate enforces name, an accepted type, and a parseable absolute URL.
-func validate(name, typ, rawURL string) error {
+// validate enforces name, an accepted type, and — when the URL is being set — a
+// URL whose scheme is present and in the same family as the type. A nil rawURL
+// means the URL is not changing (an update patch omitted it), so the
+// already-validated stored value is left untouched.
+func validate(name, typ string, rawURL *string) error {
 	if name == "" {
 		return fmt.Errorf("%w: name is required", ErrInvalid)
 	}
 	if _, ok := validTypes[typ]; !ok {
 		return fmt.Errorf("%w: unknown proxy type %q", ErrInvalid, typ)
 	}
+	if rawURL == nil {
+		return nil
+	}
+	return validateURL(typ, *rawURL)
+}
+
+// validateURL checks the proxy URL is absolute (host + scheme) and its scheme is
+// in the same family as the type. buildTransport (internal/indexer/registry)
+// routes {http,https} through http.ProxyURL, which honors the URL scheme, and
+// {socks5,socks5h} through proxy.FromURL, which needs a socks scheme — so a
+// scheme-less URL or a cross-family scheme fails at search time on every
+// referencing indexer. Rejecting it here fails at save instead. The error never
+// includes the URL value (it can embed user:pass) — only the safe scheme token.
+func validateURL(typ, rawURL string) error {
 	if rawURL == "" {
 		return fmt.Errorf("%w: url is required", ErrInvalid)
 	}
@@ -187,5 +210,34 @@ func validate(name, typ, rawURL string) error {
 	if err != nil || u.Host == "" {
 		return fmt.Errorf("%w: url must be an absolute URL", ErrInvalid)
 	}
+	if u.Scheme == "" {
+		return fmt.Errorf("%w: url must include a scheme (e.g. socks5:// or http://)", ErrInvalid)
+	}
+	if proxyFamily(typ) != proxyFamily(u.Scheme) {
+		return fmt.Errorf("%w: type %q requires a %s url, got scheme %q", ErrInvalid, typ, expectedSchemes(typ), u.Scheme)
+	}
 	return nil
+}
+
+// proxyFamily maps a proxy type or URL scheme to the transport family the search
+// build uses: "http" for http/https (http.ProxyURL), "socks" for socks5/socks5h
+// (proxy.FromURL), or "" for anything else. A validated type is always "http" or
+// "socks", so a foreign scheme (family "") never matches and is rejected.
+func proxyFamily(s string) string {
+	switch s {
+	case domain.ProxyTypeHTTP, domain.ProxyTypeHTTPS:
+		return "http"
+	case domain.ProxyTypeSOCKS5, domain.ProxyTypeSOCKS5H:
+		return "socks"
+	default:
+		return ""
+	}
+}
+
+// expectedSchemes names the accepted URL schemes for a type, for the error text.
+func expectedSchemes(typ string) string {
+	if proxyFamily(typ) == "socks" {
+		return "socks5:// or socks5h://"
+	}
+	return "http:// or https://"
 }
