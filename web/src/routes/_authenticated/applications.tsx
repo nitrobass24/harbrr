@@ -134,7 +134,13 @@ function ApplicationsPage() {
         state={dialog}
         pending={create.isPending || update.isPending}
         error={editing ? update.error : create.error}
-        onClose={() => setDialog({ open: false })}
+        onClose={() => {
+          // Clear any failed-mutation error so it can't resurface the next time the
+          // dialog opens (the form fields remount, but the mutation error persists).
+          create.reset()
+          update.reset()
+          setDialog({ open: false })
+        }}
         onCreate={(body) => create.mutate(body, {
           onSuccess: () => {
             toast.success(`${body.name} connected`)
