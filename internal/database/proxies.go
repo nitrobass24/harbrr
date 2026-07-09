@@ -46,7 +46,7 @@ func (Proxies) GetProxy(ctx context.Context, q dbinterface.Execer, id int64) (do
 		return domain.Proxy{}, fmt.Errorf("proxy %d: %w", id, ErrNotFound)
 	}
 	if err != nil {
-		return domain.Proxy{}, err
+		return domain.Proxy{}, fmt.Errorf("database: scan proxy %d: %w", id, err)
 	}
 	return p, nil
 }
@@ -63,7 +63,7 @@ func (Proxies) ListProxies(ctx context.Context, q dbinterface.Execer) ([]domain.
 	for rows.Next() {
 		p, err := scanProxy(rows)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("database: scan proxy row: %w", err)
 		}
 		out = append(out, p)
 	}

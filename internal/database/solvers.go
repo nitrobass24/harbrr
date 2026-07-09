@@ -44,7 +44,7 @@ func (Solvers) GetSolver(ctx context.Context, q dbinterface.Execer, id int64) (d
 		return domain.Solver{}, fmt.Errorf("solver %d: %w", id, ErrNotFound)
 	}
 	if err != nil {
-		return domain.Solver{}, err
+		return domain.Solver{}, fmt.Errorf("database: scan solver %d: %w", id, err)
 	}
 	return s, nil
 }
@@ -61,7 +61,7 @@ func (Solvers) ListSolvers(ctx context.Context, q dbinterface.Execer) ([]domain.
 	for rows.Next() {
 		s, err := scanSolver(rows)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("database: scan solver row: %w", err)
 		}
 		out = append(out, s)
 	}

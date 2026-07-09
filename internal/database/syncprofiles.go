@@ -49,7 +49,7 @@ func (SyncProfiles) GetProfile(ctx context.Context, q dbinterface.Execer, id int
 		return domain.SyncProfile{}, fmt.Errorf("sync profile %d: %w", id, ErrNotFound)
 	}
 	if err != nil {
-		return domain.SyncProfile{}, err
+		return domain.SyncProfile{}, fmt.Errorf("database: scan sync profile %d: %w", id, err)
 	}
 	return p, nil
 }
@@ -66,7 +66,7 @@ func (SyncProfiles) ListProfiles(ctx context.Context, q dbinterface.Execer) ([]d
 	for rows.Next() {
 		p, err := scanProfile(rows)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("database: scan sync profile row: %w", err)
 		}
 		out = append(out, p)
 	}
