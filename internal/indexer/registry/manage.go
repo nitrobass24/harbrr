@@ -26,6 +26,16 @@ var (
 // a clean Torznab path segment and management resource id.
 var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
+// reservedSlugs are slugs that must not name an indexer because they collide with
+// a static path segment registered as a sibling of /api/indexers/{slug} in
+// internal/web/api/router.go. chi prioritizes a static segment over the {slug}
+// param, so an indexer slugged "stats" would be shadowed by GET
+// /api/indexers/stats (allIndexerStats). Keep this in sync with the static
+// segments registered directly under /api/indexers/ in router.go.
+var reservedSlugs = map[string]struct{}{
+	"stats": {},
+}
+
 // AddParams is the input to Add. Slug defaults to DefinitionID when empty; Name
 // defaults to the definition's name; Settings is the user's setting values keyed
 // by setting name (secrets are encrypted on write).
@@ -77,6 +87,9 @@ func (r *Registry) Add(ctx context.Context, p AddParams) (domain.IndexerInstance
 	slug := orDefault(p.Slug, p.DefinitionID)
 	if !slugPattern.MatchString(slug) {
 		return domain.IndexerInstance{}, fmt.Errorf("%w: slug %q must be 1-64 chars of [a-z0-9._-] starting alphanumeric", ErrInvalid, slug)
+	}
+	if _, reserved := reservedSlugs[slug]; reserved {
+		return domain.IndexerInstance{}, fmt.Errorf("%w: slug %q is reserved", ErrInvalid, slug)
 	}
 	def, _, err := r.definition(p.DefinitionID)
 	if err != nil {

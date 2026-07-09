@@ -94,6 +94,11 @@ export function useChangePassword() {
   })
 }
 
+// Aggregate per-indexer stats. Keyed under its own ["indexer-stats"] root rather
+// than ["indexers", "stats"] so an indexer whose slug is "stats" can never share
+// a cache entry with the per-indexer detail key ["indexers", slug]. Add/delete of
+// an indexer change the stat set, so those mutations invalidate this key
+// explicitly (they no longer refresh it via an ["indexers"] prefix match).
 export function useAllIndexerStats() {
-  return useQuery({ queryKey: ["indexers", "stats"], queryFn: () => api.listAllIndexerStats() })
+  return useQuery({ queryKey: ["indexer-stats"], queryFn: () => api.listAllIndexerStats() })
 }

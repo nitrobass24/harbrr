@@ -371,6 +371,36 @@ func TestAddRejectsUnknownDefAndDuplicate(t *testing.T) {
 	}
 }
 
+// TestAddRejectsReservedSlug proves Add rejects a slug that collides with a
+// static /api/indexers/ sibling segment (e.g. "stats") as ErrInvalid (→ 400),
+// while a normal slug still succeeds. Guards U14-F3: an indexer slugged "stats"
+// would otherwise be shadowed by GET /api/indexers/stats (allIndexerStats).
+func TestAddRejectsReservedSlug(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		slug    string
+		wantErr error
+	}{
+		{name: "reserved stats", slug: "stats", wantErr: registry.ErrInvalid},
+		{name: "normal slug", slug: "notstats", wantErr: nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			reg, _ := newRegistry(t, nil)
+			_, err := reg.Add(context.Background(), registry.AddParams{Slug: tt.slug, DefinitionID: "testtracker"})
+			switch {
+			case tt.wantErr == nil && err != nil:
+				t.Fatalf("Add(%q) = %v, want success", tt.slug, err)
+			case tt.wantErr != nil && !errors.Is(err, tt.wantErr):
+				t.Fatalf("Add(%q) err = %v, want %v", tt.slug, err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func deref(s *string) string {
 	if s == nil {
 		return ""
