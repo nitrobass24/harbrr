@@ -122,6 +122,73 @@ func TestMaxTimeoutBounds(t *testing.T) {
 	}
 }
 
+// TestUpdateKeepsURLWhenOmitted covers the U11-F5 silent-revert class: a name-only
+// PATCH (URL omitted) must leave the stored encrypted URL untouched. It exercises the
+// placeholder-URL path in Update (validateURL = "unchanged://ok"), where p.URL == nil
+// skips both the cross-check and the re-encrypt, so a rename can't wipe the endpoint.
+func TestUpdateKeepsURLWhenOmitted(t *testing.T) {
+	t.Parallel()
+	svc, kr := newService(t)
+	ctx := context.Background()
+
+	const rawURL = "http://flaresolverr:8191"
+	s, err := svc.Create(ctx, CreateParams{Name: "fs", URL: rawURL, MaxTimeout: 90})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	name := "renamed"
+	if err := svc.Update(ctx, s.ID, UpdateParams{Name: &name}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	after, err := svc.Get(ctx, s.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	dec, err := kr.Decrypt(after.ID, domain.SolverSecretURL, after.URLEncrypted)
+	if err != nil {
+		t.Fatalf("Decrypt: %v", err)
+	}
+	// Compare as a bool so the endpoint value never lands in test output/logs.
+	if after.Name != "renamed" || dec != rawURL {
+		t.Fatalf("after name-only update: name %q urlUnchanged=%v (url must be unchanged)", after.Name, dec == rawURL)
+	}
+}
+
+// TestUpdateRotatesURL round-trips a URL rotation: PATCHing the URL re-encrypts the
+// new value at rest under the solver's own id (the AAD), and the stored ciphertext is
+// not the plaintext.
+func TestUpdateRotatesURL(t *testing.T) {
+	t.Parallel()
+	svc, kr := newService(t)
+	ctx := context.Background()
+
+	s, err := svc.Create(ctx, CreateParams{Name: "fs", URL: "http://flaresolverr:8191", MaxTimeout: 90})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	newURL := "http://flaresolverr-2:8191"
+	if err := svc.Update(ctx, s.ID, UpdateParams{URL: &newURL}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	after, err := svc.Get(ctx, s.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if after.URLEncrypted == newURL || after.URLEncrypted == "" {
+		t.Fatalf("rotated URL not encrypted at rest")
+	}
+	dec, err := kr.Decrypt(after.ID, domain.SolverSecretURL, after.URLEncrypted)
+	if err != nil {
+		t.Fatalf("Decrypt: %v", err)
+	}
+	// Compare as a bool so the endpoint value never lands in test output/logs.
+	if dec != newURL {
+		t.Fatalf("after rotation: stored url matches new value = %v; want true", dec == newURL)
+	}
+}
+
 // TestValidateSkipsOmittedMaxTimeout proves the bound check is gated on the field
 // being present: a nil maxTimeout (an update patch that omits it) leaves the stored
 // value untouched — so an unrelated edit, or an over-cap value imported by

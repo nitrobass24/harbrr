@@ -66,6 +66,74 @@ func addSecret(t *testing.T, db *database.DB, kr *secrets.Keyring, instID int64,
 	}
 }
 
+// addCorruptSecret inserts a settings row whose ValueEncrypted is not valid
+// ciphertext under the keyring, so any later decrypt of it fails. It carries no real
+// secret — the value exists only to trip the decrypt path.
+func addCorruptSecret(t *testing.T, db *database.DB, kr *secrets.Keyring, instID int64, name string) {
+	t.Helper()
+	if err := instRepo.InsertSetting(context.Background(), db, instID, domain.IndexerSetting{
+		Name: name, ValueEncrypted: "not-valid-ciphertext", KeyID: kr.KeyID(), IsSecret: true,
+	}); err != nil {
+		t.Fatalf("insert corrupt secret %q: %v", name, err)
+	}
+}
+
+// TestMigrateRollsBackOnDecryptFailure exercises the rollback invariant the Run doc
+// promises (~44-46): a secret that can't be decrypted mid-migration must roll the
+// whole transaction back — no partial resources, the done flag stays unset so the
+// next boot retries, and the instance's inline settings survive intact. The instance
+// here folds its proxy FIRST (creating a resource + stripping its inline settings
+// inside the tx); its corrupt flaresolverr_url then fails decrypt, so that
+// already-applied proxy work is what the rollback must undo.
+func TestMigrateRollsBackOnDecryptFailure(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db, kr := setup(t)
+
+	id := addInstance(t, db, "a")
+	// A valid inline proxy that folds successfully (resource created, settings stripped)...
+	addPlain(t, db, id, "proxy_type", "socks5")
+	addSecret(t, db, kr, id, "proxy_url", "socks5://10.0.0.9:1080")
+	// ...then a FlareSolverr solver whose URL ciphertext is corrupt: decrypt fails.
+	addPlain(t, db, id, "solver_type", "flaresolverr")
+	addCorruptSecret(t, db, kr, id, "flaresolverr_url")
+
+	if err := resourcemigrate.Run(ctx, db, kr, time.Now, zerolog.Nop()); err == nil {
+		t.Fatal("Run: want error from the corrupt secret, got nil")
+	}
+
+	// No partial resources: the proxy fold that ran first must be rolled back too.
+	proxies, _ := (database.Proxies{}).ListProxies(ctx, db)
+	solvers, _ := (database.Solvers{}).ListSolvers(ctx, db)
+	if len(proxies) != 0 || len(solvers) != 0 {
+		t.Fatalf("partial state after rollback: %d proxies, %d solvers; want 0 and 0", len(proxies), len(solvers))
+	}
+
+	// The done flag ("inline_proxy_solver_migrated", the unexported doneFlag) must stay
+	// unset so the migration retries next boot; a committed rollback would have set it.
+	if _, ok, err := (database.AppMeta{}).Get(ctx, db, "inline_proxy_solver_migrated"); err != nil {
+		t.Fatalf("AppMeta.Get: %v", err)
+	} else if ok {
+		t.Error("done flag set after a rolled-back migration; want unset (should retry)")
+	}
+
+	// The instance keeps its inline settings and gains no refs — the fold is fully undone.
+	inst, _ := instRepo.GetBySlug(ctx, db, "a")
+	if inst.ProxyID != nil || inst.SolverID != nil {
+		t.Errorf("instance got refs despite rollback: proxy %v solver %v", inst.ProxyID, inst.SolverID)
+	}
+	names := map[string]bool{}
+	settings, _ := instRepo.Settings(ctx, db, inst.ID)
+	for _, s := range settings {
+		names[s.Name] = true
+	}
+	for _, n := range []string{"proxy_type", "proxy_url", "solver_type", "flaresolverr_url"} {
+		if !names[n] {
+			t.Errorf("inline setting %q was stripped despite rollback", n)
+		}
+	}
+}
+
 func TestMigrateFoldsDedupsAndPreservesCookie(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
