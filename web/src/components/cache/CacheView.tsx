@@ -4,18 +4,12 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
+import { safeInt } from "@/components/cache/safe-int"
 import { LoadError, LoadingBlock } from "@/components/ui/load-error"
 import { useCacheConfig, useCacheStats, useFlushCache, useUpdateCacheConfig } from "@/hooks/useSettings"
 import { formatSize } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import type { CacheConfig } from "@/types/api"
-
-// safeInt parses a numeric-input value, keeping the previous value rather than
-// storing NaN (an empty or partial entry like "-" would otherwise submit NaN).
-function safeInt(raw: string, previous: number): number {
-  const n = Number(raw)
-  return Number.isNaN(n) ? previous : n
-}
 
 // Cache observability + the live-tunable knobs, the body of the Cache page.
 // trackerHitsSaved is the headline: durable tracker requests answered from
