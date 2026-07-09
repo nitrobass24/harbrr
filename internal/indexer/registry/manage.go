@@ -109,6 +109,12 @@ func (r *Registry) Add(ctx context.Context, p AddParams) (domain.IndexerInstance
 		if database.IsUniqueViolation(err) {
 			return domain.IndexerInstance{}, fmt.Errorf("%w: indexer %q", ErrConflict, slug)
 		}
+		// A dangling proxy_id/solver_id trips the FK constraint (foreign_keys=ON):
+		// the client referenced a proxy/solver that does not exist, so it is invalid
+		// input (400), not an internal error.
+		if database.IsForeignKeyViolation(err) {
+			return domain.IndexerInstance{}, fmt.Errorf("%w: unknown proxy or solver reference", ErrInvalid)
+		}
 		return domain.IndexerInstance{}, err
 	}
 	r.invalidate(slug)
@@ -164,6 +170,12 @@ func (r *Registry) Update(ctx context.Context, slug string, p UpdateParams) erro
 		return r.updateInTx(ctx, tx, inst, p)
 	})
 	if err != nil {
+		// A dangling proxy_id/solver_id trips the FK constraint on SetRefs
+		// (foreign_keys=ON): the client referenced a proxy/solver that does not
+		// exist, so it is invalid input (400), not an internal error.
+		if database.IsForeignKeyViolation(err) {
+			return fmt.Errorf("%w: unknown proxy or solver reference", ErrInvalid)
+		}
 		return err
 	}
 	r.invalidate(slug)
