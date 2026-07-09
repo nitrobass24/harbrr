@@ -35,20 +35,34 @@ func TestUpdateConnectionProfileTOCTOU(t *testing.T) {
 
 		var wg sync.WaitGroup
 		wg.Add(2)
-		// Attach the profile to the Sonarr connection.
+		// Attach the profile to the Sonarr connection. The only legitimate outcomes are
+		// success or an ErrInvalid rejection (e.g. the narrow won and the ref no longer
+		// overlaps) — anything else is an unexpected DB/FK fault masquerading as "the
+		// narrow won" below.
+		var attachErr error
 		go func() {
 			defer wg.Done()
-			_ = f.svc.UpdateConnection(ctx, f.conn.ID, UpdateConnectionParams{
+			attachErr = f.svc.UpdateConnection(ctx, f.conn.ID, UpdateConnectionParams{
 				SyncProfileID: RefUpdate{Present: true, Value: &tv.ID},
 			})
 		}()
 		// Narrow the profile to books-only, which no Sonarr connection can consume.
+		// Likewise, only success or ErrInvalid (validateProfileInUse rejecting the narrow
+		// because the attach already landed) are legitimate.
+		var narrowErr error
 		go func() {
 			defer wg.Done()
 			books := []int{7000}
-			_ = f.svc.UpdateProfile(ctx, tv.ID, UpdateProfileParams{Categories: &books})
+			narrowErr = f.svc.UpdateProfile(ctx, tv.ID, UpdateProfileParams{Categories: &books})
 		}()
 		wg.Wait()
+
+		if attachErr != nil && !errors.Is(attachErr, ErrInvalid) {
+			t.Fatalf("iter %d: attach: unexpected non-ErrInvalid error: %v", i, attachErr)
+		}
+		if narrowErr != nil && !errors.Is(narrowErr, ErrInvalid) {
+			t.Fatalf("iter %d: narrow: unexpected non-ErrInvalid error: %v", i, narrowErr)
+		}
 
 		conn, err := f.svc.GetConnection(ctx, f.conn.ID)
 		if err != nil {
@@ -145,9 +159,10 @@ func TestUpdateConnectionConcurrentProfileDeleteIsClean(t *testing.T) {
 				SyncProfileID: RefUpdate{Present: true, Value: &tv.ID},
 			})
 		}()
+		var deleteErr error
 		go func() {
 			defer wg.Done()
-			_ = f.svc.DeleteProfile(ctx, tv.ID)
+			deleteErr = f.svc.DeleteProfile(ctx, tv.ID)
 		}()
 		wg.Wait()
 
@@ -155,6 +170,11 @@ func TestUpdateConnectionConcurrentProfileDeleteIsClean(t *testing.T) {
 		// wrapped FK/500 that the handler couldn't classify.
 		if attachErr != nil && !errors.Is(attachErr, ErrInvalid) {
 			t.Fatalf("iter %d: concurrent delete surfaced non-ErrInvalid: %v", i, attachErr)
+		}
+		// The profile exists at the start of every iteration and nothing else deletes
+		// it, so DeleteProfile has exactly one legitimate outcome here: success.
+		if deleteErr != nil {
+			t.Fatalf("iter %d: DeleteProfile: unexpected error: %v", i, deleteErr)
 		}
 	}
 }
