@@ -11,14 +11,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/autobrr/harbrr/internal/domain"
 	apphttp "github.com/autobrr/harbrr/internal/http"
 )
 
 // defaultFlareMaxTimeout is FlareSolverr's per-solve budget when unset; clamped to
-// flareMaxTimeoutCap (a CF solve runs a real headless browser and is slow).
+// flareMaxTimeoutCap (a CF solve runs a real headless browser and is slow). The cap
+// is derived from domain.FlareMaxTimeoutCapSeconds (the single source of truth the
+// solver service also validates against) so the two can't drift.
 const (
 	defaultFlareMaxTimeout = 60 * time.Second
-	flareMaxTimeoutCap     = 180 * time.Second
+	flareMaxTimeoutCap     = time.Duration(domain.FlareMaxTimeoutCapSeconds) * time.Second
 )
 
 // flareRequest / flareResponse are the typed FlareSolverr /v1 model (no

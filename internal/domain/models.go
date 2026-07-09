@@ -229,6 +229,13 @@ const (
 // validated in Go so a future solver kind needs no migration.
 const SolverTypeFlaresolverr = "flaresolverr"
 
+// FlareMaxTimeoutCapSeconds is the upper bound (in seconds) on a solver's
+// per-solve FlareSolverr budget. It is the SINGLE SOURCE OF TRUTH for the cap:
+// the solver service rejects a MaxTimeout above it at save time, and the login
+// stage derives its flareMaxTimeoutCap from it (an out-of-range budget resets to
+// the 60s default). Keeping one const stops those two checks from drifting.
+const FlareMaxTimeoutCapSeconds = 180
+
 // ProxySecretURL / SolverSecretURL are the AAD "setting" discriminators binding
 // each resource's encrypted endpoint URL to its own row id (mirroring notify's
 // secretURL). Shared so the management service encrypts and the engine decrypts
