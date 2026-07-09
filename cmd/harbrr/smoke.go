@@ -138,6 +138,14 @@ func missingRequired(getenv func(string) string) bool {
 // previously-saved value (a blank line keeps the shown default instead).
 const clearURLSentinel = "-"
 
+// reconfigurePrompts are the two interactive reads the reconfigure flow needs. Injecting
+// them lets buildReconfigureValues be unit-tested without a TTY while runReconfigure wires
+// the real echoed-line and hidden-key readers.
+type reconfigurePrompts struct {
+	line func(label, def string) string                       // echoed; returns def on blank input
+	key  func(label string, hasExisting bool) (string, error) // hidden; may return blank
+}
+
 // runReconfigure prompts for every app's URL then key, one at a time in order, and
 // writes the result to envFile at 0600. URLs echo; keys are read without echo. A blank
 // optional-app URL marks that app not-configured (its key is not prompted).
@@ -146,35 +154,61 @@ func runReconfigure(cmd *cobra.Command, envFile string, existing map[string]stri
 	fmt.Fprintln(out, "Configuring harbrr smoke. URLs are echoed; API keys are read without echo.")
 	fmt.Fprintf(out, "Leave an optional app's URL blank to keep it (or skip if unset); enter %q to clear a saved one.\n", clearURLSentinel)
 	in := bufio.NewReader(cmd.InOrStdin())
-	values := map[string]string{}
-	for _, p := range smokePrompts {
-		u := promptLine(out, in, p.name+" URL", existing[p.urlKey])
-		if !p.required && u == clearURLSentinel {
-			fmt.Fprintf(out, "  %s cleared (not configured)\n", p.name)
-			continue
-		}
-		if u == "" {
-			if p.required {
-				return fmt.Errorf("smoke: %s URL is required", p.name)
-			}
-			fmt.Fprintf(out, "  %s not configured (skipped)\n", p.name)
-			continue
-		}
-		key, err := promptSecret(out, p.name+" API key")
-		if err != nil {
-			return err
-		}
-		if key == "" && p.required {
-			return fmt.Errorf("smoke: %s API key is required", p.name)
-		}
-		values[p.urlKey] = strings.TrimRight(u, "/")
-		values[p.keyKey] = key
+	prompts := reconfigurePrompts{
+		line: func(label, def string) string { return promptLine(out, in, label, def) },
+		key:  func(label string, hasExisting bool) (string, error) { return promptSecret(out, label, hasExisting) },
+	}
+	values, err := buildReconfigureValues(out, existing, prompts)
+	if err != nil {
+		return err
 	}
 	if err := writeEnvFile(envFile, values); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "wrote %s (mode 0600)\n", envFile)
 	return nil
+}
+
+// buildReconfigureValues is the pure decision core of the reconfigure flow: given the
+// existing env and the prompt callbacks, it produces the values map to write. It carries
+// over every hand-added (non-app) key so a reconfigure never drops SMOKE_QUERY and friends,
+// then walks the app prompts. A blank URL keeps the saved one (promptLine's default) unless
+// cleared with the sentinel; a blank key KEEPS the saved key rather than blanking it, and
+// only a still-empty required key is an error.
+func buildReconfigureValues(out io.Writer, existing map[string]string, p reconfigurePrompts) (map[string]string, error) {
+	values := map[string]string{}
+	for k, v := range existing {
+		if !isSmokeAppEnvKey(k) {
+			values[k] = v
+		}
+	}
+	for _, ap := range smokePrompts {
+		u := p.line(ap.name+" URL", existing[ap.urlKey])
+		if !ap.required && u == clearURLSentinel {
+			fmt.Fprintf(out, "  %s cleared (not configured)\n", ap.name)
+			continue
+		}
+		if u == "" {
+			if ap.required {
+				return nil, fmt.Errorf("smoke: %s URL is required", ap.name)
+			}
+			fmt.Fprintf(out, "  %s not configured (skipped)\n", ap.name)
+			continue
+		}
+		key, err := p.key(ap.name+" API key", existing[ap.keyKey] != "")
+		if err != nil {
+			return nil, err
+		}
+		if key == "" {
+			key = existing[ap.keyKey] // blank Enter keeps the saved key, never blanks it
+		}
+		if key == "" && ap.required {
+			return nil, fmt.Errorf("smoke: %s API key is required", ap.name)
+		}
+		values[ap.urlKey] = strings.TrimRight(u, "/")
+		values[ap.keyKey] = key
+	}
+	return values, nil
 }
 
 // promptLine writes a prompt (with any existing value as the default) and reads one
@@ -195,13 +229,18 @@ func promptLine(out io.Writer, in *bufio.Reader, label, def string) string {
 // promptSecret reads one line from the terminal without echoing it (so an API key is
 // never displayed). Hiding the echo requires a real TTY fd, so it reads os.Stdin directly
 // via x/term; when stdin is not a terminal (piped input, `docker exec` without -t) it
-// returns a clear, actionable error instead of a raw ioctl failure.
-func promptSecret(out io.Writer, label string) (string, error) {
+// returns a clear, actionable error instead of a raw ioctl failure. When hasExisting is
+// set, it hints that a blank Enter keeps the saved key (the value itself is never shown).
+func promptSecret(out io.Writer, label string, hasExisting bool) (string, error) {
 	fd := int(os.Stdin.Fd())
 	if !term.IsTerminal(fd) {
 		return "", fmt.Errorf("smoke: reading %s needs an interactive terminal; pre-populate the env file or run with `docker exec -it`", label)
 	}
-	fmt.Fprintf(out, "%s (hidden): ", label)
+	if hasExisting {
+		fmt.Fprintf(out, "%s (hidden, Enter to keep the saved key): ", label)
+	} else {
+		fmt.Fprintf(out, "%s (hidden): ", label)
+	}
 	b, err := term.ReadPassword(fd)
 	fmt.Fprintln(out)
 	if err != nil {
