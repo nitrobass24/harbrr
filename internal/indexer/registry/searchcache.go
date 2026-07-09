@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -369,15 +370,18 @@ func (c *SearchCache) serveHit(ctx context.Context, instanceID int64, cfg map[st
 }
 
 // serveMiss runs the live search under singleflight (so concurrent identical misses
-// drive the tracker once), stores the result best-effort, and returns it. The
-// double-check inside the flight lets a request that lost the race read a freshly
-// stored entry instead of re-searching.
+// AT THE SAME invalidation epoch drive the tracker once), stores the result
+// best-effort, and returns it. The flight key is epoch-scoped (cacheFlightKey) so a
+// request whose epoch has advanced past an in-flight leader's never coalesces onto
+// (and receives) that leader's stale-epoch result — it drives its own live search
+// instead. The double-check inside the flight lets a request that lost the race read
+// a freshly stored entry instead of re-searching.
 func (c *SearchCache) serveMiss(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, inner torznabhttp.Indexer, q search.Query, key string) ([]*normalizer.Release, error) {
 	c.misses.Add(1)
 	c.counters(instanceID).misses.Add(1)
 	// The flight returns ([]*normalizer.Release, error); the inner error is already
 	// wrapped by liveAndStore/the adapter, so it is returned unwrapped here.
-	v, err, _ := c.sf.Do(key, func() (any, error) {
+	v, err, _ := c.sf.Do(cacheFlightKey(key, builtEpoch), func() (any, error) {
 		if entry, found, ferr := c.store.Fetch(ctx, c.db, key, c.clock()); ferr == nil && found {
 			if releases, derr := decodeReleases(entry.ResultsJSON, key); derr == nil {
 				info := torznabhttp.CacheInfo{ETag: payloadETag(entry.ResultsJSON), ExpiresAt: entry.ExpiresAt}
@@ -581,17 +585,22 @@ func (c *SearchCache) shouldRefreshAhead(entry database.SearchCacheEntry) bool {
 }
 
 // triggerSWR fires one background refresh for key, guarded by singleflight on a
-// DEDICATED refresh key (swr:<key>) so at most one refresh runs per key even across
-// many concurrent stale hits, while NEVER sharing a flight with a real cache miss on
-// the same key (the two return incompatible value types). The goroutine detaches
-// from the request (WithoutCancel) but is bounded by a timeout. The write-back is
-// success-only: an error leaves the existing entry intact (never poisons the cache).
+// DEDICATED, epoch-scoped refresh key (swr:<key>@<epoch>) so at most one refresh runs
+// per key per epoch even across many concurrent stale hits, while NEVER sharing a
+// flight with a real cache miss on the same key (the two return incompatible value
+// types) nor with a refresh triggered under a since-superseded epoch (which would
+// otherwise write back under the OLD builtEpoch captured by whichever refresh won the
+// coalesce — storeBestEffort's own epoch check would then drop it anyway, but keeping
+// the flights separate avoids wasting the newer refresh's live fetch on a doomed
+// write). The goroutine detaches from the request (WithoutCancel) but is bounded by a
+// timeout. The write-back is success-only: an error leaves the existing entry intact
+// (never poisons the cache).
 func (c *SearchCache) triggerSWR(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, inner torznabhttp.Indexer, q search.Query, key string) {
 	bg := context.WithoutCancel(ctx)
 	go func() {
 		rctx, cancel := context.WithTimeout(bg, swrRefreshTimeout)
 		defer cancel()
-		_, _, _ = c.sf.Do(swrKey(key), func() (any, error) {
+		_, _, _ = c.sf.Do(swrKey(cacheFlightKey(key, builtEpoch)), func() (any, error) {
 			releases, err := c.fetchLive(rctx, inner, q)
 			if err != nil {
 				// Success-only: leave the old entry; do not cache the error.
@@ -608,6 +617,19 @@ func (c *SearchCache) triggerSWR(ctx context.Context, instanceID int64, cfg map[
 // incompatible value types).
 func swrKey(key string) string {
 	return "swr:" + key
+}
+
+// cacheFlightKey scopes a singleflight key to the instance's invalidation epoch
+// captured at the moment the caller resolved its engine (builtEpoch), so a request
+// from a NEWER epoch can never coalesce onto — and receive the result of — an
+// in-flight computation started under an OLDER, now-stale epoch. Without this, a
+// miss driven under a stale epoch could be served (not just written, which
+// storeBestEffort's own epoch check already blocks) to a follower whose own epoch
+// is current, resurrecting stale releases across an invalidation. The underlying DB
+// cache key (store.Fetch/liveAndStore) is intentionally left epoch-free — only the
+// in-memory flight coalescing point needs this.
+func cacheFlightKey(key string, builtEpoch uint64) string {
+	return key + "@" + strconv.FormatUint(builtEpoch, 10)
 }
 
 // isContextError reports whether err is (or wraps) a context cancellation or deadline —
