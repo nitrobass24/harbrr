@@ -28,7 +28,7 @@ func (noNetDoer) Do(*stdhttp.Request) (*stdhttp.Response, error) {
 	return nil, errors.New("no network in test")
 }
 
-// TestResolveRejectsStaleEngineOnConcurrentInvalidate pins Registry.resolve against
+// TestResolveRejectsStaleEngineOnConcurrentInvalidation pins Registry.resolve against
 // the persistently-stale-engine bug it exists to close (U8R-F3): resolve builds the
 // engine OUTSIDE the lock from the settings present at build time, then re-locks and
 // (pre-fix) double-checks only PRESENCE before installing. An invalidate that lands
@@ -41,8 +41,8 @@ func (noNetDoer) Do(*stdhttp.Request) (*stdhttp.Response, error) {
 // factory is called inside buildAdapter AFTER the instance's settings have been read
 // into ClientParams.Cfg and BEFORE resolve re-locks to install — exactly the window
 // the finding describes. On the first build only, the factory mutates the "sort"
-// setting in the DB and calls invalidate(slug), landing the invalidate inside the
-// build window; then resolve finishes.
+// setting in the DB and fires the table case's invalidation action, landing it inside
+// the build window; then resolve finishes.
 //
 // The factory records the "sort" value each build observed. build reads settings
 // fresh each time, so the value of the CURRENTLY-SERVED engine is the last recorded
@@ -50,160 +50,99 @@ func (noNetDoer) Do(*stdhttp.Request) (*stdhttp.Response, error) {
 // it from cache and never rebuilds, so the last (only) observed build is "OLD" — the
 // stale engine is served. Post-fix: the generation bump makes the first resolve skip
 // the install, so the second resolve rebuilds and reads "NEW" — fresh.
-func TestResolveRejectsStaleEngineOnConcurrentInvalidate(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
+//
+// Two cases exercise the two invalidation entry points that both must close this
+// window: per-slug invalidate(slug) (the original U8R-F3 finding) and InvalidateAll
+// (the global-epoch counterpart fired by a global proxy/solver resource change).
+func TestResolveRejectsStaleEngineOnConcurrentInvalidation(t *testing.T) {
+	tests := []struct {
+		name   string
+		action func(reg *Registry) // the mid-build invalidation this case fires
+	}{
+		{"per-slug invalidate", func(reg *Registry) { reg.invalidate("stale") }},
+		{"InvalidateAll (global epoch)", func(reg *Registry) { reg.InvalidateAll() }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
 
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := db.Migrate(ctx); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	dropin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dropin, "mamtest.yml"), []byte(mamDefYAML), 0o600); err != nil {
-		t.Fatalf("write def: %v", err)
-	}
-	kr, err := secrets.OpenKeyring(secrets.KeyringOptions{EncryptionKey: resolveTestKey}, zerolog.Nop())
-	if err != nil {
-		t.Fatalf("keyring: %v", err)
-	}
-	clock := func() time.Time { return time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC) }
+			db, err := database.Open(":memory:")
+			if err != nil {
+				t.Fatalf("open db: %v", err)
+			}
+			t.Cleanup(func() { _ = db.Close() })
+			if err := db.Migrate(ctx); err != nil {
+				t.Fatalf("migrate: %v", err)
+			}
+			dropin := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dropin, "mamtest.yml"), []byte(mamDefYAML), 0o600); err != nil {
+				t.Fatalf("write def: %v", err)
+			}
+			kr, err := secrets.OpenKeyring(secrets.KeyringOptions{EncryptionKey: resolveTestKey}, zerolog.Nop())
+			if err != nil {
+				t.Fatalf("keyring: %v", err)
+			}
+			clock := func() time.Time { return time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC) }
 
-	var (
-		mu       sync.Mutex // guards observed under -race across builds
-		observed []string   // the "sort" value each build read, in build order
-		once     sync.Once  // fires the mid-build invalidate on the first build only
-		reg      *Registry
-		instID   int64
-	)
+			var (
+				mu       sync.Mutex // guards observed under -race across builds
+				observed []string   // the "sort" value each build read, in build order
+				once     sync.Once  // fires the mid-build invalidation on the first build only
+				reg      *Registry
+				instID   int64
+			)
 
-	reg = New(
-		db, loader.New(dropin), kr, WithClock(clock),
-		WithDoerFactory(func(p ClientParams) (search.Doer, error) {
-			mu.Lock()
-			observed = append(observed, p.Cfg["sort"])
-			mu.Unlock()
-			once.Do(func() {
-				// Settings are already read into p.Cfg and the engine is about to be
-				// built from them; resolve has NOT re-locked to install. Mutate the
-				// config and invalidate the slug here to land the invalidate inside
-				// resolve's build window — the exact U8R-F3 interleaving.
-				if err := (database.Instances{}).UpsertSetting(ctx, db, instID, domain.IndexerSetting{Name: "sort", Value: "NEW"}); err != nil {
-					t.Errorf("mid-build mutate sort: %v", err)
-				}
-				reg.invalidate("stale")
+			reg = New(
+				db, loader.New(dropin), kr, WithClock(clock),
+				WithDoerFactory(func(p ClientParams) (search.Doer, error) {
+					mu.Lock()
+					observed = append(observed, p.Cfg["sort"])
+					mu.Unlock()
+					once.Do(func() {
+						// Settings are already read into p.Cfg and the engine is about to be
+						// built from them; resolve has NOT re-locked to install. Mutate the
+						// config and fire the invalidation here to land it inside resolve's
+						// build window — the exact U8R-F3 interleaving.
+						if err := (database.Instances{}).UpsertSetting(ctx, db, instID, domain.IndexerSetting{Name: "sort", Value: "NEW"}); err != nil {
+							t.Errorf("mid-build mutate sort: %v", err)
+						}
+						tt.action(reg)
+					})
+					return noNetDoer{}, nil
+				}),
+			)
+
+			inst, err := reg.Add(ctx, AddParams{
+				Slug: "stale", DefinitionID: "mamtest",
+				Settings: map[string]string{"mam_id": "session", "apikey": "key", "sort": "OLD"},
 			})
-			return noNetDoer{}, nil
-		}),
-	)
+			if err != nil {
+				t.Fatalf("Add: %v", err)
+			}
+			instID = inst.ID
 
-	inst, err := reg.Add(ctx, AddParams{
-		Slug: "stale", DefinitionID: "mamtest",
-		Settings: map[string]string{"mam_id": "session", "apikey": "key", "sort": "OLD"},
-	})
-	if err != nil {
-		t.Fatalf("Add: %v", err)
-	}
-	instID = inst.ID
+			// First resolve: build reads sort="OLD"; the factory then mutates sort→"NEW"
+			// and fires the invalidation mid-build. Pre-fix this installs the OLD (stale)
+			// engine.
+			if _, err := reg.resolve(ctx, "stale"); err != nil {
+				t.Fatalf("first resolve: %v", err)
+			}
+			// Second resolve: post-fix the cache is empty (the stale engine was never
+			// installed), so it rebuilds and reads sort="NEW". Pre-fix it returns the
+			// cached OLD engine and never rebuilds.
+			if _, err := reg.resolve(ctx, "stale"); err != nil {
+				t.Fatalf("second resolve: %v", err)
+			}
 
-	// First resolve: build reads sort="OLD"; the factory then mutates sort→"NEW" and
-	// invalidates the slug mid-build. Pre-fix this installs the OLD (stale) engine.
-	if _, err := reg.resolve(ctx, "stale"); err != nil {
-		t.Fatalf("first resolve: %v", err)
-	}
-	// Second resolve: post-fix the cache is empty (the stale engine was never installed),
-	// so it rebuilds and reads sort="NEW". Pre-fix it returns the cached OLD engine and
-	// never rebuilds.
-	if _, err := reg.resolve(ctx, "stale"); err != nil {
-		t.Fatalf("second resolve: %v", err)
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
-	if len(observed) == 0 {
-		t.Fatalf("no builds observed")
-	}
-	if last := observed[len(observed)-1]; last != "NEW" {
-		t.Fatalf("served engine built from superseded settings: observed builds = %v; want the last build to reflect the post-invalidation sort=%q (U8R-F3: a mid-build invalidate left a stale engine cached)", observed, "NEW")
-	}
-}
-
-// TestResolveRejectsStaleEngineOnConcurrentInvalidateAll is the InvalidateAll (global
-// epoch) counterpart: a global proxy/solver resource change flushes the whole cache
-// via InvalidateAll, which must also reject an engine still being built by an in-flight
-// resolve for a slug that isn't cached yet. Same deterministic mid-build hook, but the
-// factory calls InvalidateAll instead of invalidate(slug).
-func TestResolveRejectsStaleEngineOnConcurrentInvalidateAll(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := db.Migrate(ctx); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	dropin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dropin, "mamtest.yml"), []byte(mamDefYAML), 0o600); err != nil {
-		t.Fatalf("write def: %v", err)
-	}
-	kr, err := secrets.OpenKeyring(secrets.KeyringOptions{EncryptionKey: resolveTestKey}, zerolog.Nop())
-	if err != nil {
-		t.Fatalf("keyring: %v", err)
-	}
-	clock := func() time.Time { return time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC) }
-
-	var (
-		mu       sync.Mutex
-		observed []string
-		once     sync.Once
-		reg      *Registry
-		instID   int64
-	)
-
-	reg = New(
-		db, loader.New(dropin), kr, WithClock(clock),
-		WithDoerFactory(func(p ClientParams) (search.Doer, error) {
 			mu.Lock()
-			observed = append(observed, p.Cfg["sort"])
-			mu.Unlock()
-			once.Do(func() {
-				if err := (database.Instances{}).UpsertSetting(ctx, db, instID, domain.IndexerSetting{Name: "sort", Value: "NEW"}); err != nil {
-					t.Errorf("mid-build mutate sort: %v", err)
-				}
-				reg.InvalidateAll()
-			})
-			return noNetDoer{}, nil
-		}),
-	)
-
-	inst, err := reg.Add(ctx, AddParams{
-		Slug: "stale", DefinitionID: "mamtest",
-		Settings: map[string]string{"mam_id": "session", "apikey": "key", "sort": "OLD"},
-	})
-	if err != nil {
-		t.Fatalf("Add: %v", err)
-	}
-	instID = inst.ID
-
-	if _, err := reg.resolve(ctx, "stale"); err != nil {
-		t.Fatalf("first resolve: %v", err)
-	}
-	if _, err := reg.resolve(ctx, "stale"); err != nil {
-		t.Fatalf("second resolve: %v", err)
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
-	if len(observed) == 0 {
-		t.Fatalf("no builds observed")
-	}
-	if last := observed[len(observed)-1]; last != "NEW" {
-		t.Fatalf("served engine built from superseded settings: observed builds = %v; want the last build to reflect the post-InvalidateAll sort=%q (U8R-F3: a mid-build InvalidateAll left a stale engine cached)", observed, "NEW")
+			defer mu.Unlock()
+			if len(observed) == 0 {
+				t.Fatalf("no builds observed")
+			}
+			if last := observed[len(observed)-1]; last != "NEW" {
+				t.Fatalf("served engine built from superseded settings: observed builds = %v; want the last build to reflect the post-invalidation sort=%q (U8R-F3: a mid-build invalidation left a stale engine cached)", observed, "NEW")
+			}
+		})
 	}
 }
