@@ -43,12 +43,11 @@ describe("_authenticated guard", () => {
     expect(await screen.findByRole("button", { name: "Retry" })).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Sign in" })).toBeNull()
 
-    // Retry after the server recovers loads the app shell — assert the signed-in
-    // user chip (unique to the shell; "harbrr" also renders on the login card) and
-    // that we did not end up on the login screen.
+    // Retry after the server recovers loads the app shell — assert the logout button
+    // (unique to the authenticated shell) and that we did not end up on the login screen.
     meOk = true
     fireEvent.click(screen.getByRole("button", { name: "Retry" }))
-    expect(await screen.findByText("admin")).toBeTruthy()
+    expect(await screen.findByLabelText("Log out")).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Sign in" })).toBeNull()
   })
 })

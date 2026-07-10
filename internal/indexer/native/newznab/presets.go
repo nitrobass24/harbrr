@@ -16,6 +16,12 @@ type preset struct {
 	name       string
 	baseURL    string
 	categories []int
+	// typ overrides the privacy classification ("public" | "semi-private"). Omit for
+	// the common case ("private") — most Newznab indexers require an API key.
+	typ string
+	// settings overrides the default settingFields() when a preset needs custom
+	// labels or extra info fields (e.g. an optional-key notice for public indexers).
+	settings []loader.SettingsField
 }
 
 // presets is the parity table mirroring Prowlarr's Newznab.cs DefaultDefinitions
@@ -44,6 +50,13 @@ var presets = []preset{
 	{id: "nzblife", name: "Nzb.life", baseURL: "https://nzb.life"},
 	{id: "nzbnoob", name: "NzbNoob", baseURL: "https://www.nzbnoob.com"},
 	{id: "nzbndx", name: "NZBNDX", baseURL: "https://www.nzbndx.com"},
+	{
+		id: "nzbindex", name: "NZBIndex", baseURL: "https://nzbindex.com", typ: "public",
+		settings: []loader.SettingsField{
+			{Name: "apikey", Label: "API Key (optional — omit for rate-limited public access)", Type: "text"},
+			{Name: "apiPath", Label: "API Path", Type: "text", Default: &loader.Scalar{Value: defaultAPIPath, Set: true}},
+		},
+	},
 	{id: "tabularasa", name: "Tabula Rasa", baseURL: "https://www.tabula-rasa.pw"},
 }
 
@@ -73,17 +86,25 @@ func Families() []native.Family {
 // the addable-indexer list all work.
 func presetDefinition(p preset) *loader.Definition {
 	delay := requestDelaySeconds
+	typ := p.typ
+	if typ == "" {
+		typ = "private"
+	}
+	settings := p.settings
+	if settings == nil {
+		settings = settingFields()
+	}
 	return &loader.Definition{
 		ID:           p.id,
 		Name:         p.name,
 		Description:  p.name + " (native Newznab driver)",
 		Language:     "en-US",
-		Type:         "private",
+		Type:         typ,
 		Encoding:     "UTF-8",
 		Protocol:     loader.ProtocolUsenet,
 		Links:        []string{p.baseURL},
 		RequestDelay: &delay,
-		Settings:     settingFields(),
+		Settings:     settings,
 		Caps:         presetCaps(p.categories),
 	}
 }

@@ -104,29 +104,19 @@ function UserChip() {
   const { user, authDisabled, logout } = useAuth()
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex items-center gap-2 px-1.5 py-1">
       {user && !authDisabled && (
-        <>
-          <div className="flex items-center gap-2.5 rounded-md px-2.5 py-1.5">
-            <div className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-sidebar-accent text-[12px] font-semibold text-muted-foreground">
-              {user.username.slice(0, 2).toUpperCase()}
-            </div>
-            <span className="truncate text-[12px] font-medium">{user.username}</span>
-          </div>
-          <button
-            type="button"
-            aria-label="Log out"
-            onClick={() => logout.mutate()}
-            className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] text-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-foreground"
-          >
-            <LogOut className="h-4 w-4" />
-            Log out
-          </button>
-        </>
+        <button
+          type="button"
+          aria-label="Log out"
+          onClick={() => logout.mutate()}
+          className="flex flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-[13px] text-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-foreground"
+        >
+          <LogOut className="h-4 w-4" />
+          Log out
+        </button>
       )}
-      <div className="px-1 py-1">
-        <ThemeControl />
-      </div>
+      <ThemeControl />
     </div>
   )
 }
