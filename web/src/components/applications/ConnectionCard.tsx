@@ -49,9 +49,15 @@ export function ConnectionCard({ conn, syncing, actions }: {
         <div className="flex items-center gap-2">
           <span className={cn("text-[14px] font-medium", !conn.enabled && "text-muted-foreground")}>{conn.name}</span>
           <Badge variant="secondary" className="px-1.5 py-0 text-[11px] uppercase">{conn.kind}</Badge>
-          <Badge variant="outline" className="px-1.5 py-0 text-[11px]">{conn.freeleechMode === "bypass" ? "FL bypass" : "FL honor"}</Badge>
-          <Badge variant="outline" className="px-1.5 py-0 text-[11px]">{conn.syncLevel === "full" ? "full sync" : "add/update"}</Badge>
-          <Badge variant="outline" className="px-1.5 py-0 text-[11px]">{conn.indexScope === "all" ? "all indexers" : "selected"}</Badge>
+          <Badge variant="outline" className={cn("px-1.5 py-0 text-[11px]", conn.freeleechMode === "bypass" ? "border-warn/40 bg-warn/10 text-warn" : "border-ok/40 bg-ok/10 text-ok")}>
+            {conn.freeleechMode === "bypass" ? "FL bypass" : "FL honor"}
+          </Badge>
+          <Badge variant="outline" className={cn("px-1.5 py-0 text-[11px]", conn.syncLevel === "full" && "border-brand/40 bg-brand/10 text-brand")}>
+            {conn.syncLevel === "full" ? "full sync" : "add/update"}
+          </Badge>
+          <Badge variant="outline" className={cn("px-1.5 py-0 text-[11px]", conn.indexScope === "all" && "border-brand/40 bg-brand/10 text-brand")}>
+            {conn.indexScope === "all" ? "all indexers" : "selected"}
+          </Badge>
           {stalePort !== null && (
             <button
               type="button"
