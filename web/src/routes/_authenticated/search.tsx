@@ -1,12 +1,17 @@
 import { useMemo, useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
-import { Search as SearchIcon } from "lucide-react"
+import { ChevronDown, Search as SearchIcon } from "lucide-react"
 import { sortRows, type SearchRow, type Sort, type SortKey } from "@/components/search/search-sort"
 import { SearchResultsTable } from "@/components/search/SearchResultsTable"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
 import { useIndexerCapabilitiesMany, useIndexers } from "@/hooks/useIndexers"
 import { useSearchFanout } from "@/hooks/useSearch"
@@ -205,37 +210,77 @@ function IndexerPicker({ slugs, selected, onChange }: {
   selected: Set<string> | null
   onChange: (next: Set<string> | null) => void
 }) {
+  const [filter, setFilter] = useState("")
+
   if (slugs.length === 0) {
     return <p className="text-[13px] text-muted-foreground">No enabled indexers — add one first.</p>
   }
+
   const isChecked = (slug: string) => selected === null || selected.has(slug)
+  const filtered = filter ? slugs.filter((s) => s.toLowerCase().includes(filter.toLowerCase())) : slugs
+  const label = selected === null
+    ? "All indexers"
+    : selected.size === 1
+    ? "1 indexer"
+    : `${selected.size} of ${slugs.length} indexers`
+
+  const toggle = (slug: string, checked: boolean) => {
+    const next = new Set(selected ?? slugs)
+    if (checked) next.add(slug)
+    else next.delete(slug)
+    onChange(next.size === slugs.length ? null : next)
+  }
 
   return (
-    <div className="flex flex-wrap items-center gap-3 text-[13px]">
+    <div className="flex items-center gap-3 text-[13px]">
       <span className="text-[11px] font-medium uppercase tracking-wider text-faint">Indexers</span>
-      <span className="flex items-center gap-2">
-        <Checkbox
-          id="ix-all"
-          checked={selected === null}
-          onCheckedChange={(checked) => onChange(checked === true ? null : new Set(slugs))}
-        />
-        <Label htmlFor="ix-all" className="font-normal">All</Label>
-      </span>
-      {slugs.map((slug) => (
-        <span key={slug} className="flex items-center gap-2">
-          <Checkbox
-            id={`ix-${slug}`}
-            checked={isChecked(slug)}
-            onCheckedChange={(checked) => {
-              const next = new Set(selected ?? slugs)
-              if (checked === true) next.add(slug)
-              else next.delete(slug)
-              onChange(next.size === slugs.length ? null : next)
-            }}
-          />
-          <Label htmlFor={`ix-${slug}`} className="font-normal">{slug}</Label>
-        </span>
-      ))}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm" className="h-8 gap-1.5">
+            {label}
+            <ChevronDown className="size-3.5" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-56">
+          <div className="px-2 pb-1 pt-1">
+            <Input
+              className="h-7 text-[12px]"
+              placeholder="Filter indexers…"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              onKeyDown={(e) => e.stopPropagation()}
+            />
+          </div>
+          <DropdownMenuSeparator />
+          {filter === "" && (
+            <>
+              <DropdownMenuCheckboxItem
+                checked={selected === null}
+                onCheckedChange={(checked) => onChange(checked ? null : new Set(slugs))}
+                onSelect={(e) => e.preventDefault()}
+              >
+                All
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
+            </>
+          )}
+          <div className="max-h-52 overflow-y-auto">
+            {filtered.map((slug) => (
+              <DropdownMenuCheckboxItem
+                key={slug}
+                checked={isChecked(slug)}
+                onCheckedChange={(checked) => toggle(slug, checked === true)}
+                onSelect={(e) => e.preventDefault()}
+              >
+                {slug}
+              </DropdownMenuCheckboxItem>
+            ))}
+            {filtered.length === 0 && (
+              <p className="px-2 py-2 text-[12px] text-muted-foreground">No match.</p>
+            )}
+          </div>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   )
 }
