@@ -61,6 +61,14 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("read --config flag: %w", err)
 	}
+	// Materialize <data-dir>/config.toml on first run (never overwriting an
+	// edited one), so the port and friends have an obvious editable home
+	// beside the database. An explicit --config path opts out.
+	if cfgFile == "" {
+		if _, err := config.EnsureConfigFile(cmd.Flags()); err != nil {
+			return fmt.Errorf("ensure config file: %w", err)
+		}
+	}
 	cfg, err := config.Load(cfgFile, cmd.Flags())
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
@@ -518,6 +526,7 @@ func logStartup(log zerolog.Logger, cfg *config.Config, keyring *secrets.Keyring
 		Str("commit", version.Commit).
 		Str("addr", listenAddr(cfg)).
 		Str("base_url", cfg.Server.BaseURL).
+		Str("config_file", cfg.ConfigFile).
 		Str("data_dir", cfg.DataDir).
 		Str("log_level", logger.Level()).
 		Str("log_format", cfg.Log.Format).

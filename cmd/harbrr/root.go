@@ -20,7 +20,7 @@ func newRootCmd() *cobra.Command {
 
 	d := config.Defaults()
 	pf := root.PersistentFlags()
-	pf.String("config", "", "path to a YAML config file (default: search ./ and ./data for harbrr.yaml)")
+	pf.String("config", "", "path to a config file (default: <data-dir>/config.toml, created by serve on first run)")
 	pf.String("host", d.Server.Host, "HTTP listen host")
 	pf.Int("port", d.Server.Port, "HTTP listen port")
 	pf.String("base-url", d.Server.BaseURL, "serve under a subpath (e.g. /harbrr); empty serves at root")

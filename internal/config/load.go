@@ -21,18 +21,13 @@ var flagToKey = map[string]string{
 	"db-path":    "database.path",
 }
 
-// Load assembles a Config from defaults, an optional YAML config file,
-// environment variables (HARBRR_-prefixed), and command-line flags, with
-// precedence flag > env > file > default. flags may be nil (e.g. in tests).
+// Load assembles a Config from defaults, an optional config file (by default
+// <data-dir>/config.toml, created by serve on first run), environment variables
+// (HARBRR_-prefixed), and command-line flags, with precedence
+// flag > env > file > default. flags may be nil (e.g. in tests).
 func Load(cfgFile string, flags *pflag.FlagSet) (*Config, error) {
-	v := viper.New()
-	setDefaults(v)
-
-	v.SetEnvPrefix("HARBRR")
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	v.AutomaticEnv()
-
-	if err := bindFlags(v, flags); err != nil {
+	v, err := newViper(flags)
+	if err != nil {
 		return nil, err
 	}
 	if err := readConfigFile(v, cfgFile); err != nil {
@@ -43,10 +38,27 @@ func Load(cfgFile string, flags *pflag.FlagSet) (*Config, error) {
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("config: unmarshal: %w", err)
 	}
+	cfg.ConfigFile = v.ConfigFileUsed()
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+// newViper assembles the defaults + env + flags layers shared by Load and
+// EnsureConfigFile (everything except the config file itself).
+func newViper(flags *pflag.FlagSet) (*viper.Viper, error) {
+	v := viper.New()
+	setDefaults(v)
+
+	v.SetEnvPrefix("HARBRR")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+
+	if err := bindFlags(v, flags); err != nil {
+		return nil, err
+	}
+	return v, nil
 }
 
 func setDefaults(v *viper.Viper) {
@@ -96,10 +108,13 @@ func readConfigFile(v *viper.Viper, cfgFile string) error {
 	if cfgFile != "" {
 		v.SetConfigFile(cfgFile)
 	} else {
-		v.SetConfigName("harbrr")
-		v.SetConfigType("yaml")
-		v.AddConfigPath(".")
-		v.AddConfigPath("./data")
+		// The default config lives beside the database: <data-dir>/config.toml,
+		// created by serve on first run. The data dir is resolved from
+		// flag/env/default before the file is read, so the file itself cannot
+		// relocate the data dir it lives in.
+		v.SetConfigName("config")
+		v.SetConfigType("toml")
+		v.AddConfigPath(v.GetString("data_dir"))
 	}
 
 	if err := v.ReadInConfig(); err != nil {

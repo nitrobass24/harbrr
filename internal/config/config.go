@@ -27,6 +27,11 @@ type Config struct {
 	Secrets  SecretsConfig  `mapstructure:"secrets"`
 	Auth     AuthConfig     `mapstructure:"auth"`
 	Cache    CacheConfig    `mapstructure:"cache"`
+
+	// ConfigFile is the config file Load actually read ("" when none was found),
+	// surfaced in the startup log so operators know which file the port and
+	// friends came from. Not itself a config key.
+	ConfigFile string `mapstructure:"-"`
 }
 
 // CacheConfig tunes the search-results cache. Durations are Go duration strings
