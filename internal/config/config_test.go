@@ -227,9 +227,9 @@ func TestLoadFlagBeatsEnv(t *testing.T) {
 // TestExampleConfigIsValid keeps the shipped sample config loadable + valid, so it
 // never drifts from the config struct.
 func TestExampleConfigIsValid(t *testing.T) {
-	cfg, err := config.Load(filepath.Join("..", "..", "config.example.yaml"), nil)
+	cfg, err := config.Load(filepath.Join("..", "..", "config.example.toml"), nil)
 	if err != nil {
-		t.Fatalf("config.example.yaml failed to load/validate: %v", err)
+		t.Fatalf("config.example.toml failed to load/validate: %v", err)
 	}
 	if cfg.Server.Port != 7478 {
 		t.Errorf("example server.port = %d, want 7478", cfg.Server.Port)

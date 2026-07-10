@@ -1,0 +1,57 @@
+# harbrr sample configuration — the exhaustive, commented reference.
+#
+# You normally don't need this file: `harbrr serve` creates a starter
+# <data-dir>/config.toml on first run (beside the SQLite database) and reads it
+# from there on. Copy the keys you want to change into that file, or pass this
+# one explicitly with --config <path>.
+#
+# Every value is optional; the defaults shown are what harbrr uses when the key
+# is omitted. Precedence: command-line flag > environment variable > config file
+# > default. Environment variables are HARBRR_-prefixed with dots as
+# underscores, e.g. server.port -> HARBRR_SERVER_PORT, auth.mode ->
+# HARBRR_AUTH_MODE. List-valued keys (auth.ip_allowlist, auth.trusted_proxies)
+# can only be set in a config file.
+#
+# data_dir / database.path only take effect from a file passed via --config —
+# the auto-discovered <data-dir>/config.toml lives inside the data dir, so it
+# cannot relocate it. Changes take effect on restart.
+
+data_dir = "./data"        # data directory (created 0700); holds the db + keyfile
+
+[server]
+host = "127.0.0.1"         # listen host; use 0.0.0.0 in a container
+port = 7478
+base_url = ""              # serve under a subpath, e.g. "/harbrr" (no trailing slash)
+secure_cookie = false      # set true when reached over HTTPS (TLS-terminating proxy)
+
+[log]
+level = "info"             # trace | debug | info | warn | error
+format = "console"         # console | json
+
+[database]
+path = ""                  # SQLite path; defaults to <data_dir>/harbrr.db
+
+[secrets]
+# Encryption of tracker credentials is ALWAYS ON. With no key configured below,
+# harbrr auto-generates a keyfile at <data_dir>/.keys/harbrr.key (0600) on first
+# run and uses it — BACK IT UP separately from the database; losing it means
+# re-entering tracker credentials.
+encryption_key = ""        # inline 32-byte key (hex or base64); prefer key_file/env
+key_file = ""              # path to a 32-byte key file (raw or hex/base64 encoded)
+allow_plaintext = false    # opt into UNENCRYPTED storage; otherwise harbrr fails closed
+
+[auth]
+mode = "required"          # "required" (login) or "disabled" (trust a reverse proxy)
+ip_allowlist = []          # REQUIRED non-empty when mode = "disabled"; e.g. ["10.0.0.0/8", "192.168.1.5"]
+trusted_proxies = []       # peers whose X-Forwarded-For is trusted, e.g. ["172.16.0.0/12"]
+
+[cache]
+# Boot defaults — every knob is also runtime-tunable via PUT /api/cache/config.
+enabled = true             # false disables caching entirely (zero behavior change)
+rss_ttl = "5m"             # TTL for an empty/RSS poll
+keyword_ttl = "30m"        # TTL for a real keyword/id search
+thin_ttl = "2m"            # shorter TTL when a search returns few results
+thin_threshold = 5         # result count at/below which thin_ttl applies (only shortens)
+refresh_ahead_pct = 80     # serve cached + refresh once past this % of the TTL
+cleanup_interval = "1h"    # how often expired entries are reaped
+negative_ttl = "1m"        # TTL for a failed upstream fetch (serves the error, spares the tracker)

@@ -1,10 +1,29 @@
 # Configuration
 
-harbrr reads configuration from a YAML file, environment variables, and command-line flags.
+harbrr reads configuration from a TOML file, environment variables, and command-line flags.
 **Every value is optional** — the defaults below are what harbrr uses when a key is omitted.
 
-A complete, commented [`config.example.yaml`](https://github.com/autobrr/harbrr/blob/main/config.example.yaml)
-ships in the repo; copy it to `./harbrr.yaml` or `./data/harbrr.yaml`, or pass `--config <path>`.
+## The config file: `<data-dir>/config.toml`
+
+On first run, `harbrr serve` creates a commented starter **`config.toml` in the data
+directory, right beside the SQLite database** (in the Docker image that's
+`/config/config.toml`), and reads it from there on every start:
+
+- The file is created `0600` with the defaults filled in; harbrr **never overwrites your
+  edits** — it only writes the file when it doesn't exist yet.
+- **Changes take effect on restart.** The startup log's `config_file=` field names the file
+  that was actually loaded, so there's no guessing where a value came from.
+- `--config <path>` points harbrr at an explicit file anywhere instead (the extension picks
+  the format); the auto-generated file is skipped entirely in that case.
+- `data_dir` itself can only be set by flag (`--data-dir`) or environment
+  (`HARBRR_DATA_DIR`) — the auto-discovered file lives *inside* the data directory, so it
+  can't relocate it.
+
+The starter template covers the settings operators actually reach for (`[server]`, `[log]`,
+`[auth]`, `[secrets]`); **any** key documented on this page works in the same file. The
+exhaustive, commented reference is
+[`config.example.toml`](https://github.com/autobrr/harbrr/blob/main/config.example.toml)
+in the repo.
 
 ## Precedence and environment variables
 
@@ -18,6 +37,9 @@ Environment variables are `HARBRR_`-prefixed with dots replaced by underscores:
 | `auth.mode`       | `HARBRR_AUTH_MODE`            |
 | `log.level`       | `HARBRR_LOG_LEVEL`            |
 
+List-valued keys (`auth.ip_allowlist`, `auth.trusted_proxies`) can only be set in the
+config file, not via environment variables.
+
 !!! note "Runtime-tunable cache knobs"
     The `cache.*` values below are the **boot defaults**. Every one of them can also be
     changed at runtime — without a restart — via `GET`/`PUT /api/cache/config`. See the
@@ -25,45 +47,52 @@ Environment variables are `HARBRR_`-prefixed with dots replaced by underscores:
 
 ---
 
-## `server`
+## `[server]`
 
-```yaml
-server:
-  host: 127.0.0.1        # listen host; use 0.0.0.0 in a container
-  port: 7478
-  base_url: ""           # serve under a subpath, e.g. "/harbrr" (no trailing slash)
-  secure_cookie: false   # set true when reached over HTTPS (TLS-terminating proxy)
+```toml
+[server]
+host = "127.0.0.1"       # listen host; use 0.0.0.0 in a container
+port = 7478
+base_url = ""            # serve under a subpath, e.g. "/harbrr" (no trailing slash)
+secure_cookie = false    # set true when reached over HTTPS (TLS-terminating proxy)
 ```
 
-Set `secure_cookie: true` whenever harbrr is reached over HTTPS (for example behind a
+Set `secure_cookie = true` whenever harbrr is reached over HTTPS (for example behind a
 TLS-terminating reverse proxy) so the session cookie carries the `Secure` attribute.
 
-## `log`
+!!! tip "Changing the port"
+    Edit `port` in `<data-dir>/config.toml` and restart. Connection cards on the
+    Applications page flag app-sync URLs whose explicit port no longer matches the
+    configured one, with a guided fix — see the note there about reverse proxies and
+    Docker port mappings before applying it.
 
-```yaml
-log:
-  level: info            # trace | debug | info | warn | error
-  format: console        # console | json
+## `[log]`
+
+```toml
+[log]
+level = "info"           # trace | debug | info | warn | error
+format = "console"       # console | json
 ```
 
-## `data_dir` and `database`
+## `data_dir` and `[database]`
 
-```yaml
-data_dir: ./data         # data directory (created 0700); holds the db + keyfile
-database:
-  path: ""               # SQLite path; defaults to <data_dir>/harbrr.db
+```toml
+data_dir = "./data"      # data directory (created 0700); holds the db + keyfile
+[database]
+path = ""                # SQLite path; defaults to <data_dir>/harbrr.db
 ```
 
 harbrr is SQLite-only. The data directory is created `0700`; the database and its
-`-wal`/`-journal` side files are `0600`.
+`-wal`/`-journal` side files are `0600`. As noted above, these two keys only take effect
+from a file passed via `--config`.
 
-## `secrets`
+## `[secrets]`
 
-```yaml
-secrets:
-  encryption_key: ""     # inline 32-byte key (hex or base64); prefer key_file/env
-  key_file: ""           # path to a 32-byte key file (raw or hex/base64 encoded)
-  allow_plaintext: false # opt into UNENCRYPTED storage; otherwise harbrr fails closed
+```toml
+[secrets]
+encryption_key = ""      # inline 32-byte key (hex or base64); prefer key_file/env
+key_file = ""            # path to a 32-byte key file (raw or hex/base64 encoded)
+allow_plaintext = false  # opt into UNENCRYPTED storage; otherwise harbrr fails closed
 ```
 
 Encryption of tracker credentials is **always on**. With no key configured, harbrr
@@ -72,15 +101,15 @@ auto-generates a keyfile at `<data_dir>/.keys/harbrr.key` (`0600`) on first run.
 !!! warning "Back up the keyfile"
     Back the keyfile up **separately** from the database — losing it means re-entering every
     tracker credential. To store secrets unencrypted you must explicitly set
-    `allow_plaintext: true`; otherwise harbrr fails closed and emits a loud warning.
+    `allow_plaintext = true`; otherwise harbrr fails closed and emits a loud warning.
 
-## `auth`
+## `[auth]`
 
-```yaml
-auth:
-  mode: required         # "required" (login) or "disabled" (trust a reverse proxy)
-  ip_allowlist: []       # e.g. ["10.0.0.0/8", "192.168.1.5"]
-  trusted_proxies: []    # peers whose X-Forwarded-For is trusted, e.g. ["172.16.0.0/12"]
+```toml
+[auth]
+mode = "required"        # "required" (login) or "disabled" (trust a reverse proxy)
+ip_allowlist = []        # e.g. ["10.0.0.0/8", "192.168.1.5"]
+trusted_proxies = []     # peers whose X-Forwarded-For is trusted, e.g. ["172.16.0.0/12"]
 ```
 
 - **`required`** (default) — operators log in; the management API needs a session or an API key.
@@ -90,17 +119,17 @@ auth:
 Set `trusted_proxies` to the proxy peers whose `X-Forwarded-For` harbrr should trust when
 resolving the client IP.
 
-## `cache`
+## `[cache]`
 
-```yaml
-cache:
-  enabled: true          # set false to disable caching entirely (zero behavior change)
-  rss_ttl: 5m            # TTL for an empty/RSS poll
-  keyword_ttl: 30m       # TTL for a real keyword/id search
-  thin_ttl: 2m           # shorter TTL when a search returns few results
-  thin_threshold: 5      # result count at/below which thin_ttl applies (only shortens)
-  refresh_ahead_pct: 80  # serve cached + refresh once past this % of the TTL
-  cleanup_interval: 1h   # how often expired entries are reaped
+```toml
+[cache]
+enabled = true           # set false to disable caching entirely (zero behavior change)
+rss_ttl = "5m"           # TTL for an empty/RSS poll
+keyword_ttl = "30m"      # TTL for a real keyword/id search
+thin_ttl = "2m"          # shorter TTL when a search returns few results
+thin_threshold = 5       # result count at/below which thin_ttl applies (only shortens)
+refresh_ahead_pct = 80   # serve cached + refresh once past this % of the TTL
+cleanup_interval = "1h"  # how often expired entries are reaped
 ```
 
 These are the boot defaults; all are runtime-tunable via `PUT /api/cache/config`. The

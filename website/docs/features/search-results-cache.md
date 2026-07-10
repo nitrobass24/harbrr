@@ -77,7 +77,7 @@ and a **per-request bypass**.
 
 ### Global settings (config file)
 
-These live under `cache:` in your `harbrr.yaml`. The values below are the defaults — you
+These live under `[cache]` in your `config.toml`. The values below are the defaults — you
 only need to add the keys you want to change.
 
 !!! tip "All of these are tunable at runtime — no restart"
@@ -335,5 +335,5 @@ No. Cached answers are stored on disk and survive restarts, so harbrr doesn't st
 your trackers when it comes back up. (Only the in-memory `hitRatio` counter resets.)
 
 **How do I turn it off?**
-Set `cache.enabled: false` in `harbrr.yaml`. harbrr then behaves exactly as it did before
+Set `enabled = false` under `[cache]` in `config.toml`. harbrr then behaves exactly as it did before
 the cache existed.
