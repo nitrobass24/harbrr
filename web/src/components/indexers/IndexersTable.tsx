@@ -1,6 +1,7 @@
 import { ArrowRight, Copy, MoreVertical, Pencil, Trash2 } from "lucide-react"
 import { HealthCell } from "@/components/indexers/HealthCell"
 import { IndexerAvatar } from "@/components/indexers/IndexerAvatar"
+import { ProtocolPill } from "@/components/indexers/ProtocolPill"
 import { TypePill } from "@/components/indexers/TypePill"
 import { Button } from "@/components/ui/button"
 import {
@@ -18,7 +19,7 @@ import type { Instance, IndexerStatus } from "@/types/api"
 
 export type IndexerRowData = {
   instance: Instance
-  type?: string // from the definition (client-side join)
+  type?: string // privacy: private | public | semi-private (from definition)
   categories?: string // parent category names, joined
   status?: IndexerStatus
   testing?: boolean
@@ -43,7 +44,8 @@ export function IndexersTable({ rows, actions }: { rows: IndexerRowData[], actio
         <TableHeader>
           <TableRow className="text-[11px] uppercase tracking-wider">
             <TableHead className="pl-5">Indexer</TableHead>
-            <TableHead>Type</TableHead>
+            <TableHead>Protocol</TableHead>
+            <TableHead>Privacy</TableHead>
             <TableHead>Categories</TableHead>
             <TableHead>Health</TableHead>
             <TableHead className="text-center">Enabled</TableHead>
@@ -78,6 +80,7 @@ function IndexerRow({ row, actions }: { row: IndexerRowData, actions: IndexerRow
           </span>
         </button>
       </TableCell>
+      <TableCell><ProtocolPill protocol={row.instance.protocol} /></TableCell>
       <TableCell><TypePill type={row.type} /></TableCell>
       <TableCell className="max-w-56 truncate text-muted-foreground">{row.categories ?? ""}</TableCell>
       <TableCell><HealthCell status={row.status} /></TableCell>

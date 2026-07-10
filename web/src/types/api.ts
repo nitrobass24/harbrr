@@ -7,6 +7,7 @@ export type Instance = {
   name: string
   baseUrl?: string
   enabled: boolean
+  protocol: string // "torrent" | "usenet"
   proxyId: number | null // referenced global proxy resource, or null
   solverId: number | null // referenced global solver resource, or null
   createdAt: string

@@ -126,6 +126,7 @@ type instanceResponse struct {
 	Name         string    `json:"name"`
 	BaseURL      string    `json:"baseUrl,omitempty"`
 	Enabled      bool      `json:"enabled"`
+	Protocol     string    `json:"protocol"`
 	ProxyID      *int64    `json:"proxyId"`
 	SolverID     *int64    `json:"solverId"`
 	CreatedAt    time.Time `json:"createdAt"`
@@ -320,7 +321,8 @@ func toStatusResponse(st registry.HealthStatus) statusResponse {
 func toInstanceResponse(inst domain.IndexerInstance) instanceResponse {
 	return instanceResponse{
 		ID: inst.ID, Slug: inst.Slug, DefinitionID: inst.DefinitionID, Name: inst.Name,
-		BaseURL: inst.BaseURL, Enabled: inst.Enabled, ProxyID: inst.ProxyID, SolverID: inst.SolverID,
+		BaseURL: inst.BaseURL, Enabled: inst.Enabled, Protocol: inst.Protocol,
+		ProxyID: inst.ProxyID, SolverID: inst.SolverID,
 		CreatedAt: inst.CreatedAt, UpdatedAt: inst.UpdatedAt,
 	}
 }
