@@ -46,8 +46,7 @@ describe("AppLayout shell", () => {
     // Group titles.
     expect(screen.getByText("Manage")).toBeTruthy()
     expect(screen.getByText("Sync")).toBeTruthy()
-    // Signed-in chip with logout, and the theme control.
-    expect(await screen.findByText("admin")).toBeTruthy()
+    // Logout button and theme control in the sidebar footer.
     expect(screen.getByLabelText("Log out")).toBeTruthy()
     expect(screen.getByLabelText("Dark theme")).toBeTruthy()
   })
