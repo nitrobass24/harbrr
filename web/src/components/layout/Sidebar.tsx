@@ -109,6 +109,7 @@ function UserChip() {
           </div>
           <button
             type="button"
+            aria-label="Log out"
             onClick={() => logout.mutate()}
             className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] text-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-foreground"
           >

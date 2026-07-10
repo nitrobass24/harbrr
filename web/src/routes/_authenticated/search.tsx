@@ -214,11 +214,10 @@ function IndexerPicker({ slugs, selected, onChange }: {
 
   const isChecked = (slug: string) => selected === null || selected.has(slug)
   const filtered = filter ? slugs.filter((s) => s.toLowerCase().includes(filter.toLowerCase())) : slugs
-  const label = selected === null
-    ? "All indexers"
-    : selected.size === 1
-    ? "1 indexer"
-    : `${selected.size} of ${slugs.length} indexers`
+  let label = "All indexers"
+  if (selected !== null) {
+    label = selected.size === 1 ? "1 indexer" : `${selected.size} of ${slugs.length} indexers`
+  }
 
   const toggle = (slug: string, checked: boolean) => {
     const next = new Set(selected ?? slugs)
