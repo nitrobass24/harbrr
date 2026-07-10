@@ -7,6 +7,7 @@ import (
 	"io"
 	stdhttp "net/http"
 
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
@@ -23,9 +24,11 @@ var errDownloadTooLarge = errors.New("torrentday: download exceeds the size cap"
 // is why NeedsResolver is true and the served feed routes the download through /dl; this
 // is the server-side fetch /dl drives, so neither the cookie nor the download URL reaches
 // the feed. The download is a direct torrent (never a magnet), so Redirect is empty. No
-// error carries the download URL or cookie, and the bytes go to /dl, never a log.
+// error carries the download URL or cookie, and the bytes go to /dl, never a log. The
+// context is stamped WithNoRedirectFollow so a stale-cookie redirect to /login.php
+// surfaces as an auth failure (isLoginRedirect) rather than being followed.
 func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, error) {
-	resp, err := d.get(ctx, link, "")
+	resp, err := d.get(apphttp.WithNoRedirectFollow(ctx), link, "")
 	if err != nil {
 		return nil, sanitizeGrabError(err)
 	}
