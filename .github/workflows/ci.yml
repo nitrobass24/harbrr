@@ -38,7 +38,7 @@ jobs:
   vendor-guard:
     name: vendor-guard
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, docker, optane]
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -53,7 +53,7 @@ jobs:
   # Cross-build below covers other platforms and vet is covered by golangci-lint (govet).
   backend-test:
     name: backend-test (${{ matrix.shard.name }})
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, docker, optane]
     # Match the Dockerfile's build stage (golang:1.26-alpine) so the toolchain that
     # tests is the image's own musl Go — hence no actions/setup-go here (it would
     # download a glibc Go and shadow the image's on PATH, silently defeating the
@@ -127,6 +127,9 @@ jobs:
       - name: test (race, non-root)
         run: |
           chown -R ci: /home/ci
+          chown -R ci: "$PWD"
+          chmod a+rx "$(dirname "$PWD")" "$(dirname "$(dirname "$PWD")")"
+          chmod -R a+rX "$PWD"
           cat > /tmp/shard-test.sh <<'SCRIPT'
           set -eu
           export HOME=/home/ci CGO_ENABLED=1 GOTOOLCHAIN=local GOFLAGS=-buildvcs=false GOMODCACHE=/home/ci/go/pkg/mod GOCACHE=/home/ci/.cache/go-build
@@ -138,20 +141,18 @@ jobs:
   # Frontend Vitest suite — mirrors the Go `test` job and gates docker-merge alongside it.
   web-test:
     name: web-test
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, docker, optane]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
-        with:
-          package_json_file: web/package.json
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 22
-          cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          package_json_file: web/package.json
       - name: install
         working-directory: web
         run: pnpm install --frozen-lockfile
@@ -163,20 +164,18 @@ jobs:
   # mirrors golangci-lint and runs in parallel with it.
   web-lint:
     name: web-lint
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, docker, optane]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
-        with:
-          package_json_file: web/package.json
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 22
-          cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          package_json_file: web/package.json
       - name: install
         working-directory: web
         run: pnpm install --frozen-lockfile
@@ -188,20 +187,18 @@ jobs:
   # Uses `tsc -b` (project references; noEmit already set in tsconfig.app.json).
   web-typecheck:
     name: web-typecheck
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, docker, optane]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
-        with:
-          package_json_file: web/package.json
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 22
-          cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          package_json_file: web/package.json
       - name: install
         working-directory: web
         run: pnpm install --frozen-lockfile
@@ -214,21 +211,19 @@ jobs:
   # rebuilding, so all shipped binaries embed the identical bundle.
   web:
     name: web
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, docker, optane]
     timeout-minutes: 10
     steps:
       # read-only git ops (the route-tree drift check) after checkout, so don't persist the token in .git/config.
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
-        with:
-          package_json_file: web/package.json
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 22
-          cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          package_json_file: web/package.json
       - name: install
         working-directory: web
         run: pnpm install --frozen-lockfile
@@ -236,10 +231,9 @@ jobs:
       # who adds a route but forgets `pnpm generate:routes` fails here, not in a
       # teammate's surprise diff later.
       - name: route-tree drift check
-        working-directory: web
         run: |
-          pnpm exec tsr generate
-          git diff --exit-code src/routeTree.gen.ts
+          pnpm --dir web exec tsr generate
+          git diff --exit-code web/src/routeTree.gen.ts
       - name: build
         working-directory: web
         run: pnpm build
@@ -255,7 +249,7 @@ jobs:
 
   golangci-lint:
     name: golangci-lint
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, docker, optane]
     # Alpine container matching the Dockerfile's build stage, lint run by the
     # image's own Go — see backend-test above for the full gcompat / no-setup-go /
     # GOTOOLCHAIN=local rationale. No non-root user here: linting has no
@@ -282,7 +276,7 @@ jobs:
   # on org repos. check-no-secrets.sh is a targeted tracker-credential backstop.
   secret-scan:
     name: secret scan
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, docker, optane]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -306,7 +300,7 @@ jobs:
   # vulnerability DB is fetched fresh each run.
   govulncheck:
     name: govulncheck
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, docker, optane]
     timeout-minutes: 10
     env:
       GOVULNCHECK_VERSION: v1.5.0
@@ -339,7 +333,7 @@ jobs:
     # Do not add a custom name: it would change the check name and the branch's
     # required checks would wait forever on a context that no longer reports.
     name: cross-build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, docker, optane]
     timeout-minutes: 10
     needs: [web]
     strategy:
@@ -395,7 +389,7 @@ jobs:
   # then assembles the pullable multi-arch manifest.
   docker:
     name: docker (${{ matrix.arch }})
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, docker, optane]
     timeout-minutes: 20
     needs: [web]
     permissions:
@@ -527,7 +521,7 @@ jobs:
   # publish waits on the gate.
   docker-merge:
     name: docker-merge
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, docker, optane]
     needs: [docker, backend-test, web-test, golangci-lint, web-lint, web-typecheck]
     if: >-
       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]') ||
@@ -583,7 +577,7 @@ jobs:
   # the docker jobs above; GoReleaser builds no image.
   goreleaser:
     name: goreleaser
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, docker, optane]
     timeout-minutes: 20
     needs: [backend-test, web-test, golangci-lint, web-lint, web-typecheck, web]
     permissions:

@@ -28,7 +28,7 @@ concurrency:
 jobs:
   build-deploy:
     name: build & deploy docs
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, docker, optane]
     timeout-minutes: 10
     environment:
       name: github-pages
