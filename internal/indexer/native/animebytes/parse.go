@@ -13,6 +13,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // Newznab category ids the parser emits directly. AnimeBytes' scrape.php carries no
@@ -170,6 +171,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 		rels = append(rels, d.flattenGroup(&resp.Groups[i])...)
 	}
 	sortReleases(rels)
+	native.TraceReleases(d.log, d.def.ID, rels)
 	return rels, nil
 }
 

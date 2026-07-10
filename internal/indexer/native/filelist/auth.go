@@ -3,7 +3,6 @@ package filelist
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	stdhttp "net/http"
 	"strings"
@@ -31,9 +30,9 @@ func (d *driver) basicAuthHeader() string {
 // header when non-empty: the search expects JSON, but a torrent download must not
 // force JSON (a strict server could 406 or return JSON instead of the .torrent). The
 // caller owns the returned body and interprets the status. The URL may carry the
-// passkey in its query on a download (Grab builds it), so errors redact it; the raw
-// passkey never appears in a request the *search* issues (the passkey rides as a
-// header there).
+// passkey in its query on a download (Grab builds it), so a transport error surfaces
+// only its scheme://host (apphttp.SchemeHost drops the query); the raw passkey never
+// appears in a request the *search* issues (the passkey rides as a header there).
 func (d *driver) get(ctx context.Context, rawurl, accept string) (*stdhttp.Response, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
@@ -45,19 +44,11 @@ func (d *driver) get(ctx context.Context, rawurl, accept string) (*stdhttp.Respo
 	}
 	resp, err := d.doer.Do(req)
 	if err != nil {
-		// On a download the URL carries the passkey in its query, so the *url.Error from
-		// Do — which re-stringifies the FULL URL — must NOT be wrapped with %w. Context
-		// cancellation/deadline carry no URL and are passed through unwrapped so callers
-		// can classify them; otherwise surface only the RedactURL'd URL plus the
-		// configured-passkey scrub (mirrors animebytes; the download path further
-		// collapses this via sanitizeGrabError).
-		switch {
-		case errors.Is(err, context.Canceled):
-			return nil, context.Canceled
-		case errors.Is(err, context.DeadlineExceeded):
-			return nil, context.DeadlineExceeded
-		}
-		return nil, fmt.Errorf("filelist: request to %s: transport error", scrubPasskey(apphttp.RedactURL(rawurl), d.cfg))
+		// On a download the URL carries the passkey in its query; SchemeHost surfaces
+		// only scheme://host (dropping the query where the passkey lives) and
+		// RedactURLError rebuilds the cause host-only. %w preserves context.Canceled/
+		// DeadlineExceeded in the chain so callers still classify them via errors.Is.
+		return nil, fmt.Errorf("filelist: request to %s: %w", apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
 	}
 	return resp, nil
 }

@@ -1,0 +1,16 @@
+[
+  {
+    "title": "Ubuntu 24.04 Desktop amd64",
+    "link": "https://logoutct.test/dl/1.torrent",
+    "size": 3221225472,
+    "categories": [
+      2000
+    ],
+    "seeders": 42,
+    "leechers": 3,
+    "peers": 45,
+    "publishDate": "2024-01-02T03:04:05Z",
+    "downloadVolumeFactor": 1,
+    "uploadVolumeFactor": 1
+  }
+]

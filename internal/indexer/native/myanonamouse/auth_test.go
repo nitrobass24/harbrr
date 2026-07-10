@@ -10,6 +10,7 @@ import (
 	"time"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
@@ -58,6 +59,7 @@ func resp(status int, body string) *stdhttp.Response {
 
 func newDriver(doer *scriptDoer) *driver {
 	return &driver{
+		def:          &loader.Definition{ID: "myanonamouse"},
 		cfg:          map[string]string{"mam_id": mamSecret},
 		doer:         doer,
 		baseURL:      "https://mam.test/",

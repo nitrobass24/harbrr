@@ -5,8 +5,10 @@ import (
 	"errors"
 	stdhttp "net/http"
 	"net/url"
+	"strings"
 	"testing"
 
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
@@ -145,6 +147,39 @@ func TestSearchStatusDispatch(t *testing.T) {
 	if !errors.Is(err, login.ErrLoginFailed) {
 		t.Errorf("403: err = %v, want login.ErrLoginFailed", err)
 	}
+}
+
+// TestSearchTransportErrorHostOnly proves the changed get() transport wrap surfaces only
+// the scheme://host of a failing request. The doer returns a real *url.Error whose URL
+// hides a fabricated secret in BOTH a path segment and a query param; apphttp.SchemeHost
+// / apphttp.RedactURLError rebuild it host-only, so the host survives (it is not a
+// secret) while the token, the "/dl/<secret>" path, and "passkey=<secret>" are dropped.
+func TestSearchTransportErrorHostOnly(t *testing.T) {
+	t.Parallel()
+	const secret = "S3CRETTOKEN"
+	uerr := &url.Error{
+		Op:  "Get",
+		URL: "https://iptorrents.example/dl/" + secret + "?passkey=" + secret,
+		Err: errors.New("dial tcp: connection refused"),
+	}
+	d := testDriver(nil, nil)
+	d.doer = &errorDoer{err: uerr}
+
+	_, err := d.Search(context.Background(), search.Query{Categories: []string{"72"}, Keywords: "dune"})
+	if err == nil {
+		t.Fatal("want a transport error")
+	}
+	if !strings.Contains(err.Error(), "https://iptorrents.example") {
+		t.Errorf("host did not survive redaction: %v", err)
+	}
+	for _, leak := range []string{secret, "/dl/" + secret, "passkey=" + secret} {
+		if strings.Contains(err.Error(), leak) {
+			t.Errorf("error leaks %q: %v", leak, err)
+		}
+	}
+	// The configured cookie credential must not leak either.
+	assertNoSecret(t, err.Error())
+	assertNoSecret(t, apphttp.RedactError(err))
 }
 
 func TestFullIMDBID(t *testing.T) {

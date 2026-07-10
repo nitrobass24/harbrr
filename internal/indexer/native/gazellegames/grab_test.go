@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	stdhttp "net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -93,18 +94,34 @@ func TestGrabStatusErrors(t *testing.T) {
 }
 
 // TestGrabTransportErrorSanitized proves a transport failure during the download fetch
-// surfaces a fixed, passkey-free error even though the download URL carries the passkey
-// in its torrent_pass query.
+// surfaces the endpoint's scheme://host (a diagnosable, non-secret detail) while the
+// passkey-bearing path and query of the download URL never leak: get() rebuilds the real
+// *url.Error host-only and sanitizeGrabError's fallback %w-wraps that host-only cause.
 func TestGrabTransportErrorSanitized(t *testing.T) {
 	t.Parallel()
-	d := searchDriver(t, &errDoer{err: errors.New("connection refused")})
+	// A real *url.Error exactly as http.Client.Do returns on a transport failure, with the
+	// synthetic passkey seeded in BOTH a path segment and a query param.
+	leakURL := "https://gazellegames.net/dl/" + credPasskey + "?passkey=" + credPasskey
+	urlErr := &url.Error{Op: "Get", URL: leakURL, Err: errors.New("dial tcp: connection refused")}
+	d := searchDriver(t, &errDoer{err: urlErr})
 
 	_, err := d.Grab(context.Background(), downloadLink)
 	if err == nil {
 		t.Fatal("want a transport error")
 	}
-	if strings.Contains(err.Error(), credPasskey) || strings.Contains(err.Error(), downloadLink) {
-		t.Errorf("download URL/passkey leaked into the error: %v", err)
+	got := err.Error()
+	// The host now surfaces — it is not a secret and is needed to diagnose.
+	if !strings.Contains(got, "https://gazellegames.net") {
+		t.Errorf("error dropped the scheme://host: %v", err)
+	}
+	// The passkey and its path/query never surface.
+	if strings.Contains(got, credPasskey) ||
+		strings.Contains(got, "/dl/"+credPasskey) ||
+		strings.Contains(got, "passkey="+credPasskey) {
+		t.Errorf("download URL secret path/query leaked into the error: %v", err)
+	}
+	if !strings.Contains(got, "gazellegames: download request failed") {
+		t.Errorf("error lost its fixed prefix: %v", err)
 	}
 	if strings.Contains(apphttp.RedactError(err), credPasskey) {
 		t.Errorf("RedactError leaks the passkey: %v", apphttp.RedactError(err))

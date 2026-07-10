@@ -1,0 +1,47 @@
+---
+id: logoutct
+name: logoutct
+description: "Synthetic private JSON tracker: a logged-out search answers text/html, so looksLoggedOut must gate on the wire Content-Type (not the declared json) to relogin + retry."
+language: en-US
+type: private
+encoding: UTF-8
+links:
+  - https://logoutct.test/
+
+caps:
+  categories:
+    movies: Movies
+  modes:
+    search: [q]
+
+login:
+  path: /login.php
+  method: get
+  test:
+    path: /profile
+    selector: a.logout
+
+search:
+  paths:
+    - path: search
+      response:
+        type: json
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: results
+  fields:
+    title:
+      selector: name
+    download:
+      selector: dl
+    size:
+      selector: size
+    seeders:
+      selector: seeders
+    leechers:
+      selector: leechers
+    category:
+      selector: cat
+    date:
+      selector: added

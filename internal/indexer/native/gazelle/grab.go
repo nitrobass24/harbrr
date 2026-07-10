@@ -8,6 +8,7 @@ import (
 	stdhttp "net/http"
 	"strings"
 
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
@@ -51,8 +52,8 @@ func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, err
 
 // fetchTorrent GETs one download URL and returns its body and Content-Type. It maps a
 // 401/403 to login.ErrLoginFailed, a rate-limit status to a RateLimitedError, and any
-// other non-2xx to an error; transport and read errors pass through sanitizeGrabError so
-// no URL leaks.
+// other non-2xx to an error; transport and read errors pass through sanitizeGrabError,
+// which surfaces at most the host and never the download link or a credential.
 func (d *driver) fetchTorrent(ctx context.Context, link string) ([]byte, string, error) {
 	resp, err := d.get(ctx, link)
 	if err != nil {
@@ -100,12 +101,11 @@ func isBencoded(body []byte) bool {
 	return len(body) > 0 && body[0] == 'd'
 }
 
-// sanitizeGrabError strips a possibly URL-bearing transport error to a fixed, link-free
-// message. The download link carries no secret, but a verbose transport error may still
-// echo the host or full URL, so non-sentinel errors are replaced. Sentinels callers need
-// to classify pass through unchanged: auth and rate-limit (for health), context
-// cancellation/deadline (so a cancelled request is not misreported as a failure), and the
-// size-cap error.
+// sanitizeGrabError classifies a grab error. Sentinels callers need to classify pass
+// through unchanged: auth and rate-limit (for health), context cancellation/deadline (so
+// a cancelled request is not misreported as a failure), and the size-cap error. Every
+// other error is %w-wrapped in the generic failure message so the cause surfaces for
+// diagnosis.
 func sanitizeGrabError(err error) error {
 	switch {
 	case errors.Is(err, login.ErrLoginFailed),
@@ -118,7 +118,12 @@ func sanitizeGrabError(err error) error {
 	if errors.As(err, &rl) {
 		return err
 	}
-	return errors.New("gazelle: download request failed")
+	// The fallback %w-wraps the cause, which is host-only: either get()'s transport error
+	// (host-only by construction — apphttp.SchemeHost + RedactURLError) or readTorrent's io
+	// read error (URL-free). RedactURLError additionally rebuilds a stray build-request
+	// *url.Error host-only, so the download link's secret path/query never surfaces — only
+	// its scheme://host can.
+	return fmt.Errorf("gazelle: download request failed: %w", apphttp.RedactURLError(err))
 }
 
 // readTorrent reads up to limit bytes, returning errDownloadTooLarge when the source

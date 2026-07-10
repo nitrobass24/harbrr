@@ -13,6 +13,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // tvCategory is the newznab TV root (5000); the parser falls back to it when a
@@ -140,7 +141,9 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 		releases = append(releases, d.toRelease(id, &t))
 	}
 	sortReleases(releases)
-	return releasesOnly(releases), nil
+	out := releasesOnly(releases)
+	native.TraceReleases(d.log, d.def.ID, out)
+	return out, nil
 }
 
 // decodeTorrents resolves the result's torrents field into the id→torrent map. A

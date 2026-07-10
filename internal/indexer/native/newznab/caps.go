@@ -146,16 +146,17 @@ func (d *driver) fetchCaps(ctx context.Context) (*mapper.Capabilities, error) {
 
 // getCaps issues the caps GET and returns the body, classifying the status like a search: a
 // 401 is bad credentials (login.ErrLoginFailed), a 403/429/503 is a rate limit, any other
-// non-2xx is an error. The apikey-bearing URL is redacted in every error.
+// non-2xx is an error. Every error surfaces only the endpoint's scheme://host (the
+// apikey-bearing query is dropped).
 func (d *driver) getCaps(ctx context.Context, rawurl string) ([]byte, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
-		return nil, fmt.Errorf("newznab: build caps request to %s: %w", apphttp.RedactURL(rawurl), err)
+		return nil, fmt.Errorf("newznab: build caps request to %s: %w", apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
 	}
 	req.Header.Set("Accept", "application/rss+xml, application/xml, text/xml")
 	resp, err := d.doer.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("newznab: caps request to %s: %s", apphttp.RedactURL(rawurl), apphttp.RedactError(err))
+		return nil, fmt.Errorf("newznab: caps request to %s: %w", apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 

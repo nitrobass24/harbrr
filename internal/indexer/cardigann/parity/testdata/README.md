@@ -31,7 +31,9 @@ byte-compares the canonical JSON it produces against the case's golden.
 - `response` — saved body file (parse mode)
 - `steps` — ordered HTTP exchange (search mode): each step's `method` + `url` is
   asserted (request-construction parity) and its `response` body served with
-  `status` (default 200) and, for a 3xx, `location` (the `Location` header).
+  `status` (default 200), an optional `content_type` (the served `Content-Type`
+  header, for the logged-out wire-type gate), and, for a 3xx, `location` (the
+  `Location` header).
   Search requests are never auto-followed (Jackett WebClient semantics), so a
   redirect hop appears as its own declared step only when the path opts in via
   `followredirect`. Include any login probe/request the def implies, in
@@ -109,11 +111,15 @@ Entries:
   request(s) as leading steps. The engine adds the lazy half, both halves of
   Jackett's `CheckIfLoginIsNeeded`: an unfollowed 3xx search response (any
   redirect, for a def with a login block — `matrix-search-redirect-relogin`) or
-  an HTML body missing the `login.test` selector triggers exactly one re-login
-  and one retry, matching `CheckIfLoginIsNeeded -> DoLogin -> re-request`.
-  Body detection uses `login.test` (NOT `login.error`); JSON/XML bodies only
-  relogin on the redirect case. The lazy relogin is the added half; the eager
-  first login is retained by design. **`[Resolved]`**
+  a body whose wire `Content-Type` is `text/html` and is missing the `login.test`
+  selector triggers exactly one re-login and one retry, matching
+  `CheckIfLoginIsNeeded -> DoLogin -> re-request`. Body detection uses `login.test`
+  (NOT `login.error`) and gates on the response's actual `Content-Type` header, not
+  the def's declared response type — Jackett's `contentType?.Contains("text/html")
+  ?? true` (ordinal, case-sensitive; a missing header runs the check). So a def
+  declaring `json` that is served a `text/html` login page still relogins
+  (`matrix-search-logout-content-type`). The lazy relogin is the added half; the
+  eager first login is retained by design. **`[Resolved]`**
 - **Search redirects (`followredirect`)** — search requests are never
   auto-followed, matching Jackett's WebClient; a path-level `followredirect:
   true` opts into a manual follow (≤5 bare-GET hops, magnet stops the loop —

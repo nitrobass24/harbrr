@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	stdhttp "net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -16,8 +17,8 @@ import (
 // secrets live only in this test file.
 const grabURL = "https://broadcasthe.net/torrents.php?action=download&id=1555073&authkey=SYNTHETICKEY1&torrent_pass=SYNTHETICPASS1"
 
-// errorDoer fails every request with a transport error that echoes the URL, so the test
-// can prove the grab error never leaks the credential-bearing link.
+// errorDoer fails every request with a fixed transport error, so the test can prove the
+// grab error surfaces only the host and never the credential-bearing path/query.
 type errorDoer struct{ err error }
 
 func (e *errorDoer) Do(*stdhttp.Request) (*stdhttp.Response, error) { return nil, e.err }
@@ -76,20 +77,37 @@ func TestGrabReturnsTorrentBytes(t *testing.T) {
 }
 
 // TestGrabTransportErrorNeverLeaksURL proves a transport error from the download fetch
-// is sanitized to a fixed message that carries neither the URL nor the embedded
-// authkey/torrent_pass.
+// surfaces only the endpoint's scheme://host — never the secret path or query. It injects
+// the *url.Error shape http.Client.Do actually returns, embedding a synthetic secret in
+// both a path segment and a query param; RedactURLError must drop both while keeping the
+// host (which is not a secret) and the fixed "download request failed" wrapper.
 func TestGrabTransportErrorNeverLeaksURL(t *testing.T) {
 	t.Parallel()
-	// The transport error echoes the full URL (incl. the secrets) to simulate a hostile
-	// or verbose error; the sanitizer must drop all of it.
-	d := grabDriver(t, &errorDoer{err: errors.New("dial tcp: " + grabURL)})
+	const (
+		secret   = "SYNTHETICSECRET1"
+		baseHost = "https://api.broadcasthe.net"
+	)
+	// http.Client.Do returns a *url.Error whose URL is the full request target, secret path
+	// and query included; RedactURLError must rebuild it host-only.
+	transportErr := &url.Error{
+		Op:  "Get",
+		URL: baseHost + "/dl/" + secret + "?passkey=" + secret,
+		Err: errors.New("dial tcp: connection refused"),
+	}
+	d := grabDriver(t, &errorDoer{err: transportErr})
 
 	_, err := d.Grab(context.Background(), grabURL)
 	if err == nil {
 		t.Fatal("Grab should error on a transport failure")
 	}
 	msg := err.Error()
-	for _, leak := range []string{grabURL, "SYNTHETICKEY1", "SYNTHETICPASS1", "broadcasthe.net"} {
+	if !strings.Contains(msg, baseHost) {
+		t.Errorf("grab error should surface the base host %q (not a secret): %q", baseHost, msg)
+	}
+	if !strings.Contains(msg, "broadcastthenet: download request failed") {
+		t.Errorf("grab error should keep the fixed wrapper: %q", msg)
+	}
+	for _, leak := range []string{secret, "/dl/" + secret, "passkey=" + secret} {
 		if strings.Contains(msg, leak) {
 			t.Errorf("grab error leaks %q: %q", leak, msg)
 		}

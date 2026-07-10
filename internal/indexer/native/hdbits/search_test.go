@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	stdhttp "net/http"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -239,6 +240,45 @@ func TestSearchAuthFailureEnvelope(t *testing.T) {
 	for _, secret := range []string{credUser, credPass} {
 		if strings.Contains(err.Error(), secret) {
 			t.Errorf("error leaks a secret: %v", err)
+		}
+	}
+}
+
+// TestSearchTransportErrorHostOnly proves a *url.Error from the api/torrents POST (the
+// changed transport site in post()) surfaces only the endpoint's scheme://host. The doer
+// buries a fabricated passkey in BOTH a path segment and a query param of the url.Error;
+// SchemeHost + apphttp.RedactURLError must drop path and query, keeping the base host
+// (not a secret) while leaking neither the token nor the configured credentials.
+func TestSearchTransportErrorHostOnly(t *testing.T) {
+	t.Parallel()
+	const secret = "S3CRETTOKEN"
+	uerr := &url.Error{
+		Op:  "Post",
+		URL: "https://hdbits.org/dl/" + secret + "?passkey=" + secret,
+		Err: errors.New("dial tcp: connection refused"),
+	}
+	d := liveDriver(t, &scriptDoer{})
+	d.doer = &errorDoer{err: uerr}
+
+	_, err := d.Search(context.Background(), search.Query{Keywords: "the matrix"})
+	if err == nil {
+		t.Fatal("Search on a transport failure = nil, want an error")
+	}
+	msg := err.Error()
+	// The base host survives — it is which-endpoint context, not a secret.
+	if !strings.Contains(msg, "https://hdbits.org") {
+		t.Errorf("error dropped the endpoint host: %q", msg)
+	}
+	// The path/query-embedded secret must be gone (SchemeHost/RedactURLError emit no path).
+	for _, leak := range []string{secret, "/dl/" + secret, "passkey=" + secret} {
+		if strings.Contains(msg, leak) {
+			t.Errorf("error leaks %q: %q", leak, msg)
+		}
+	}
+	// The configured username/passkey never appear either.
+	for _, s := range []string{credUser, credPass} {
+		if strings.Contains(msg, s) {
+			t.Errorf("error leaks a credential: %q", msg)
 		}
 	}
 }

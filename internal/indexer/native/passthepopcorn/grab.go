@@ -7,6 +7,7 @@ import (
 	"io"
 	stdhttp "net/http"
 
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
@@ -33,7 +34,8 @@ var errNotTorrent = errors.New("passthepopcorn: download response is not a torre
 // a 403 (PTP's query-limit) or a 429/503 maps to a RateLimitedError (the parity target
 // raises RequestLimitReachedException on 403 — a transient pacing signal, not bad creds);
 // any other non-2xx is an error; transport and read errors pass through sanitizeGrabError so
-// no URL or credential surfaces. The bytes go to /dl, never a log.
+// only the host-only cause surfaces — never a path, query, or credential. The bytes go to
+// /dl, never a log.
 func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, error) {
 	resp, err := d.get(ctx, link, "")
 	if err != nil {
@@ -79,9 +81,13 @@ func (d *driver) Test(ctx context.Context) error {
 	return err
 }
 
-// sanitizeGrabError strips a possibly URL-bearing transport error to a fixed, link-free
-// message. The download link carries no secret, but a verbose transport error may still
-// echo the host or full URL, so non-sentinel errors are replaced. Sentinels callers need
+// sanitizeGrabError reduces a non-sentinel transport/read error to its host-only cause and
+// %w-wraps it. The cause is host-only either way: get's transport error is host-only by
+// construction (apphttp.SchemeHost + apphttp.RedactURLError) and readTorrent's io error is
+// URL-free. Routing the fallback through apphttp.RedactURLError additionally rebuilds a
+// stray build-request *url.Error host-only — get's NewRequestWithContext path %w-wraps the
+// raw *url.Error, which quotes its full URL — so the download link's secret path/query never
+// surfaces; only its scheme://host can, and the host is not a secret. Sentinels callers need
 // to classify pass through unchanged: auth and rate-limit (for health), context
 // cancellation/deadline (so a cancelled request is not misreported as a failure), and the
 // size-cap error.
@@ -97,7 +103,13 @@ func sanitizeGrabError(err error) error {
 	if errors.As(err, &rl) {
 		return err
 	}
-	return errors.New("passthepopcorn: download request failed")
+	// The cause reaching this fallback is host-only — either get's transport error
+	// (host-only by construction) or readTorrent's io error (URL-free). RedactURLError
+	// additionally rebuilds a stray build-request *url.Error host-only (get's
+	// NewRequestWithContext path %w-wraps the raw *url.Error, which quotes its full URL), so
+	// the download link's secret path/query never surfaces; only its scheme://host can,
+	// which is not a secret.
+	return fmt.Errorf("passthepopcorn: download request failed: %w", apphttp.RedactURLError(err))
 }
 
 // readTorrent reads up to limit bytes, returning errDownloadTooLarge when the source

@@ -33,8 +33,9 @@ func (d *driver) setAuth(req *stdhttp.Request) {
 // is set but never recorded. accept sets the Accept header when non-empty: the search
 // expects JSON, but a torrent download must not force JSON (a strict server could 406 or
 // return a JSON error instead of the .torrent), so Grab passes an empty accept. A
-// transport error routes the URL (which carries no secret) through apphttp.RedactURL. The
-// caller owns the returned body and interprets the status.
+// transport error surfaces only the endpoint's scheme://host (apphttp.SchemeHost) with
+// the cause routed through apphttp.RedactURLError. The caller owns the returned body and
+// interprets the status.
 func (d *driver) get(ctx context.Context, rawurl, accept string) (*stdhttp.Response, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
@@ -46,7 +47,7 @@ func (d *driver) get(ctx context.Context, rawurl, accept string) (*stdhttp.Respo
 	}
 	resp, err := d.doer.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("passthepopcorn: request to %s: %w", apphttp.RedactURL(rawurl), err)
+		return nil, fmt.Errorf("passthepopcorn: request to %s: %w", apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
 	}
 	return resp, nil
 }

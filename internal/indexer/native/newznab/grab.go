@@ -24,9 +24,10 @@ const maxNZBBytes = 64 << 20
 
 var (
 	errDownloadTooLarge = errors.New("newznab: download exceeds the size cap")
-	// errDownloadRequestFailed is the fixed, link-free transport failure: the download URL
-	// embeds the apikey, so the underlying *url.Error (which echoes the URL) is never
-	// surfaced. get() returns this directly so the secret cannot leak through %w.
+	// errDownloadRequestFailed is the transport-failure sentinel. A build-request failure
+	// returns it bare (there is no URL to leak). A transport failure from Do wraps it with a
+	// HOST-ONLY cause (apphttp.RedactURLError drops the apikey-bearing path/query), so the
+	// scheme://host surfaces for diagnosis while the apikey cannot re-leak through %w.
 	errDownloadRequestFailed = errors.New("newznab: download request failed")
 )
 
@@ -37,7 +38,8 @@ var (
 // is ALWAYS a Body (an .nzb is a direct download), NEVER a Redirect — redirecting an
 // apikey-bearing URL would leak the secret to the downstream client. ContentType is
 // application/x-nzb so the serializer/serve path tags the body correctly. No error carries
-// the download URL (its apikey sits in the query), and the bytes go to /dl, never a log.
+// the download URL — a transport failure surfaces only its scheme://host (the apikey sits in
+// the path/query, which is dropped) — and the bytes go to /dl, never a log.
 func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, error) {
 	resp, err := d.fetch(ctx, link)
 	if err != nil {
@@ -69,8 +71,9 @@ func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, err
 
 // fetch issues a plain GET for an .nzb download URL. The URL already carries the apikey in
 // its query, so no auth header is needed. The transport error from Do is a *url.Error whose
-// Error() embeds the FULL unredacted URL, so it is NOT interpolated here: fetch() returns a
-// fixed, link-free error so the apikey cannot re-leak through %w regardless of who calls
+// Error() embeds the FULL unredacted URL, so it is routed through apphttp.RedactURLError and
+// wrapped under errDownloadRequestFailed: the surfaced cause carries only the scheme://host
+// (path/query dropped), so the apikey cannot re-leak through %w regardless of who calls
 // fetch(). Context cancellation/deadline sentinels are preserved so normal cancellation stays
 // detectable. The caller owns the returned body and interprets the status.
 func (d *driver) fetch(ctx context.Context, rawurl string) (*stdhttp.Response, error) {
@@ -86,17 +89,18 @@ func (d *driver) fetch(ctx context.Context, rawurl string) (*stdhttp.Response, e
 		if errors.Is(err, context.DeadlineExceeded) {
 			return nil, context.DeadlineExceeded
 		}
-		return nil, errDownloadRequestFailed
+		return nil, fmt.Errorf("%w: %w", errDownloadRequestFailed, apphttp.RedactURLError(err))
 	}
 	return resp, nil
 }
 
-// sanitizeGrabError strips a possibly apikey-bearing transport error: the download URL
-// carries the apikey, so any non-sentinel error from the fetch is replaced with a fixed,
-// link-free message rather than risk surfacing the URL. Sentinels that carry no URL and that
-// callers need to classify are passed through: auth and rate-limit (for health), context
-// cancellation/deadline, and the size-cap error. As a belt-and-suspenders measure any
-// surfaced message is also routed through apphttp.RedactError.
+// sanitizeGrabError classifies a grab error for surfacing. Sentinels that carry no URL and
+// that callers need to classify are passed through: auth and rate-limit (for health), context
+// cancellation/deadline, and the size-cap error. An already-enriched errDownloadRequestFailed
+// (fetch's HOST-ONLY transport failure) is passed through verbatim so its scheme://host cause
+// is not collapsed or double-prefixed. Anything else (e.g. a readCapped io error, which is
+// already routed through apphttp.RedactError) is flattened to the bare errDownloadRequestFailed
+// sentinel rather than risk surfacing a URL.
 func sanitizeGrabError(err error) error {
 	switch {
 	case errors.Is(err, login.ErrLoginFailed),
@@ -107,6 +111,9 @@ func sanitizeGrabError(err error) error {
 	}
 	var rl *search.RateLimitedError
 	if errors.As(err, &rl) {
+		return err
+	}
+	if errors.Is(err, errDownloadRequestFailed) {
 		return err
 	}
 	return errDownloadRequestFailed

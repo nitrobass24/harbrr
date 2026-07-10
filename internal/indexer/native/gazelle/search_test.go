@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	stdhttp "net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -210,6 +211,38 @@ func TestSearchAuthFailure(t *testing.T) {
 		}
 		if strings.Contains(err.Error(), credAPIKey) {
 			t.Errorf("error leaks the apikey: %v", err)
+		}
+	}
+}
+
+// TestSearchTransportErrorHostOnly proves the changed browse transport wrap (get() in
+// auth.go) surfaces only the endpoint's scheme://host and drops the path+query when the
+// doer fails with a real *url.Error. The fabricated *url.Error hides a secret in BOTH a
+// path segment and a query param on the driver's own host; SchemeHost/RedactURLError keep
+// the host (safe to diagnose, not a secret) but strip the path and query, so neither the
+// fabricated URL secret nor the configured apikey can leak. RED's real browse URL carries
+// no secret (auth is the header), so the fabricated URL secret is what proves the drop.
+func TestSearchTransportErrorHostOnly(t *testing.T) {
+	t.Parallel()
+	const secret = "S3CRETTOKEN"
+	uerr := &url.Error{
+		Op:  "Get",
+		URL: "https://redacted.sh/dl/" + secret + "?passkey=" + secret,
+		Err: errors.New("dial tcp: connection refused"),
+	}
+	d := searchDriver(t, "redacted", &errDoer{err: uerr})
+
+	_, err := d.Search(context.Background(), search.Query{Keywords: "logistics"})
+	if err == nil {
+		t.Fatal("Search should error on a transport failure")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "https://redacted.sh") {
+		t.Errorf("error should surface the scheme://host (the host is not a secret), got %q", msg)
+	}
+	for _, leak := range []string{secret, "/dl/" + secret, "passkey=" + secret, credAPIKey} {
+		if strings.Contains(msg, leak) {
+			t.Errorf("transport error leaks %q: %q", leak, msg)
 		}
 	}
 }

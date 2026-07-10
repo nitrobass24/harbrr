@@ -7,6 +7,7 @@ import (
 	"io"
 	stdhttp "net/http"
 
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
@@ -22,10 +23,13 @@ var errDownloadTooLarge = errors.New("torrentday: download exceeds the size cap"
 // the session cookie and returns the .torrent bytes. *arr cannot send that cookie, which
 // is why NeedsResolver is true and the served feed routes the download through /dl; this
 // is the server-side fetch /dl drives, so neither the cookie nor the download URL reaches
-// the feed. The download is a direct torrent (never a magnet), so Redirect is empty. No
-// error carries the download URL or cookie, and the bytes go to /dl, never a log.
+// the feed. The download is a direct torrent (never a magnet), so Redirect is empty. A
+// transport error surfaces only its host-only cause (sanitizeGrabError) and never the
+// cookie, and the bytes go to /dl, never a log. The
+// context is stamped WithNoRedirectFollow so a stale-cookie redirect to /login.php
+// surfaces as an auth failure (isLoginRedirect) rather than being followed.
 func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, error) {
-	resp, err := d.get(ctx, link, "")
+	resp, err := d.get(apphttp.WithNoRedirectFollow(ctx), link, "")
 	if err != nil {
 		return nil, sanitizeGrabError(err)
 	}
@@ -52,13 +56,14 @@ func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, err
 	}, nil
 }
 
-// sanitizeGrabError strips a possibly link-bearing transport error: a download URL carries
-// the torrent id in its path, which the query-scoped URL redactor cannot reach, so any
-// non-sentinel error from the fetch is replaced with a fixed message. The scrubbedError
-// from get already strips the cookie, but a fixed message is the belt-and-suspenders that
-// also drops the URL. Sentinels that carry no URL and that callers need to classify are
-// passed through unchanged: auth and rate-limit (for health), context cancellation/deadline
-// (so normal cancellation is not misreported as a failure), and the size-cap error.
+// sanitizeGrabError passes through the sentinels callers need to classify — auth and
+// rate-limit (for health), context cancellation/deadline (so normal cancellation is not
+// misreported as a failure), and the size-cap error — and %w-wraps any other error with a
+// fixed prefix. The wrapped cause is host-only: it is either get()'s transport error (a
+// *scrubbedError, host-only by construction) or an io read error (URL-free). RedactURLError
+// additionally rebuilds a stray build-request *url.Error host-only, so the download link's
+// secret path/query never surfaces — only its scheme://host can, which is not a secret and
+// aids diagnosis.
 func sanitizeGrabError(err error) error {
 	switch {
 	case errors.Is(err, login.ErrLoginFailed),
@@ -71,7 +76,10 @@ func sanitizeGrabError(err error) error {
 	if errors.As(err, &rl) {
 		return err
 	}
-	return errors.New("torrentday: download request failed")
+	// The cause is host-only (get()'s *scrubbedError or a URL-free io read error);
+	// RedactURLError rebuilds any stray build-request *url.Error host-only so the download
+	// link's secret path/query cannot surface through %w — only its scheme://host can.
+	return fmt.Errorf("torrentday: download request failed: %w", apphttp.RedactURLError(err))
 }
 
 // readCapped reads up to limit bytes, returning errDownloadTooLarge when the source

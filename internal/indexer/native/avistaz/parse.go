@@ -13,6 +13,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // avistazResponse / avistazRelease mirror the api/v1/jackett/torrents JSON (the
@@ -84,6 +85,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	sort.SliceStable(releases, func(i, j int) bool {
 		return releases[i].PublishDate > releases[j].PublishDate
 	})
+	native.TraceReleases(d.log, d.profile.site, releases)
 	return releases, nil
 }
 

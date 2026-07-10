@@ -23,10 +23,11 @@ const (
 )
 
 // get issues a GET carrying the session cookie and User-Agent headers. The cookie is
-// a header (never the URL), so the URL carries no secret; errors still redact it. The
-// caller owns the returned body and interprets the status. accept sets the Accept
-// header when non-empty (the search wants HTML; a torrent download must not force a
-// content type).
+// a header (never the URL), so the URL carries no secret; a transport error still
+// surfaces only its scheme://host (apphttp.SchemeHost) with the cause routed through
+// apphttp.RedactURLError. The caller owns the returned body and interprets the status.
+// accept sets the Accept header when non-empty (the search wants HTML; a torrent
+// download must not force a content type).
 func (d *driver) get(ctx context.Context, rawurl, accept string) (*stdhttp.Response, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
@@ -43,7 +44,7 @@ func (d *driver) get(ctx context.Context, rawurl, accept string) (*stdhttp.Respo
 	}
 	resp, err := d.doer.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("iptorrents: request to %s: %w", apphttp.RedactURL(rawurl), err)
+		return nil, fmt.Errorf("iptorrents: request to %s: %w", apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
 	}
 	return resp, nil
 }

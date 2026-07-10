@@ -535,6 +535,11 @@ type searchResponse struct {
 	// never logged raw — like the request URL, it can embed a secret.
 	location string
 	body     []byte
+	// contentType is the response's raw Content-Type header (Jackett's
+	// WebResult.Headers["Content-Type"]). looksLoggedOut gates the login.test
+	// selector check on it exactly as Jackett does — only a text/html response
+	// runs the check — so it must be the WIRE header, not the def's declared type.
+	contentType string
 }
 
 // doSearchRequest issues one search-path request. It stamps the context so the
@@ -561,7 +566,12 @@ func doSearchRequest(ctx context.Context, doer Doer, br builtRequest, session *l
 	if err != nil {
 		return searchResponse{}, fmt.Errorf("reading response from %s: %w", apphttp.SchemeHost(br.url), err)
 	}
-	return searchResponse{status: resp.StatusCode, location: redirectTarget(resp, br.url), body: data}, nil
+	return searchResponse{
+		status:      resp.StatusCode,
+		location:    redirectTarget(resp, br.url),
+		body:        data,
+		contentType: resp.Header.Get("Content-Type"),
+	}, nil
 }
 
 // redirectTarget resolves a 3xx response's Location header against the request

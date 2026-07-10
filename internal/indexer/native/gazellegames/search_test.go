@@ -289,6 +289,43 @@ func TestSearchServerError(t *testing.T) {
 	}
 }
 
+// TestSearchTransportErrorHostOnly proves a real transport failure at the changed get()
+// site surfaces only the scheme://host of the endpoint. The doer returns a *url.Error whose
+// URL embeds a fabricated secret in BOTH a path segment (/dl/<secret>) and a torrent_pass-style
+// query param (?passkey=<secret>) — exactly where a real GGn download URL hides its passkey.
+// The driver wraps it through apphttp.SchemeHost + apphttp.RedactURLError, so the path/query
+// (and the secret) are dropped while the host — not a secret — survives for diagnosis.
+func TestSearchTransportErrorHostOnly(t *testing.T) {
+	t.Parallel()
+	const secret = "S3CRETTOKEN"
+	// Same scheme://host as the driver's real base URL, so the host is expected to survive.
+	uerr := &url.Error{
+		Op:  "Get",
+		URL: "https://gazellegames.net/dl/" + secret + "?passkey=" + secret,
+		Err: errors.New("dial tcp: connection refused"),
+	}
+	// searchDriver configures apikey + passkey, so ensurePasskey short-circuits and Search
+	// proceeds straight to get(), where the doer error hits the changed transport wrap.
+	d := searchDriver(t, &errDoer{err: uerr})
+	_, err := d.Search(context.Background(), search.Query{Keywords: "cool game"})
+	if err == nil {
+		t.Fatal("Search: want a transport error, got nil")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "https://gazellegames.net") {
+		t.Errorf("error dropped the host, want scheme://host to survive: %q", msg)
+	}
+	for _, leak := range []string{secret, "/dl/" + secret, "passkey=" + secret} {
+		if strings.Contains(msg, leak) {
+			t.Errorf("error leaks %q (path/query must be dropped): %q", leak, msg)
+		}
+	}
+	// The apikey rides the X-API-Key header, never the URL, so it must not appear either.
+	if strings.Contains(msg, credAPIKey) {
+		t.Errorf("error leaks the apikey: %q", msg)
+	}
+}
+
 // TestScrubSecrets proves both the apikey and the persisted passkey are redacted out of any
 // surfaced message so neither can leak through a server echo.
 func TestScrubSecrets(t *testing.T) {

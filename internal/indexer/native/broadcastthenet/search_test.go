@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	stdhttp "net/http"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -197,6 +198,39 @@ func TestSearchIssuesRPCPost(t *testing.T) {
 	var gotKey string
 	if err := json.Unmarshal(req.Params[0], &gotKey); err != nil || gotKey != credAPIKey {
 		t.Errorf("params[0] = %s, want the apikey", req.Params[0])
+	}
+}
+
+// TestSearchTransportErrorHostOnly proves the search POST's host-only redaction: when the
+// transport fails with a *url.Error whose URL hides a secret in BOTH a path segment and a
+// query param, Search surfaces only the endpoint's scheme://host. The host survives (it is
+// not a secret and is needed to diagnose), while SchemeHost/RedactURLError drop the path and
+// query — the two places a driver could carry a passkey/download token.
+func TestSearchTransportErrorHostOnly(t *testing.T) {
+	t.Parallel()
+	const secret = "S3CRETTOKEN"
+	// The transport error uses the SAME scheme://host as the BTN endpoint and hides the
+	// secret in both a /dl/<secret> path and a ?passkey=<secret> query; the wrap site must
+	// emit the host and nothing below it.
+	uerr := &url.Error{
+		Op:  "Post",
+		URL: "https://api.broadcasthe.net/dl/" + secret + "?passkey=" + secret,
+		Err: errors.New("dial tcp: connection refused"),
+	}
+	d := grabDriver(t, &errorDoer{err: uerr})
+
+	_, err := d.Search(context.Background(), search.Query{Keywords: "the wire"})
+	if err == nil {
+		t.Fatal("Search should error on a transport failure")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "https://api.broadcasthe.net") {
+		t.Errorf("error should keep the endpoint host (not a secret): %q", msg)
+	}
+	for _, leak := range []string{secret, "/dl/" + secret, "passkey=" + secret} {
+		if strings.Contains(msg, leak) {
+			t.Errorf("search transport error leaks %q: %q", leak, msg)
+		}
 	}
 }
 

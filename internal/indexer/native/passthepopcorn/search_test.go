@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	stdhttp "net/http"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -164,6 +165,42 @@ func TestSearchAuthFailure(t *testing.T) {
 	}
 	if err != nil && (strings.Contains(err.Error(), credAPIUser) || strings.Contains(err.Error(), credAPIKey)) {
 		t.Errorf("error leaked a credential: %v", err)
+	}
+}
+
+// TestSearchTransportErrorHostOnly proves a transport failure on the search request (the
+// changed get() wrap site) is reduced to scheme://host. The doer returns a real *url.Error
+// whose URL hides a fabricated secret in BOTH a path segment and a query param; the wrapped
+// error must surface the endpoint host (not a secret — it pins which tracker failed) while
+// apphttp.SchemeHost / apphttp.RedactURLError drop the path and query. Both credentials ride
+// in headers, never the URL, so they cannot leak here either.
+func TestSearchTransportErrorHostOnly(t *testing.T) {
+	t.Parallel()
+	const secret = "S3CRETTOKEN"
+	uerr := &url.Error{
+		Op:  "Get",
+		URL: "https://passthepopcorn.example/dl/" + secret + "?passkey=" + secret,
+		Err: errors.New("dial tcp: connection refused"),
+	}
+	_, err := searchDriver(t, &errDoer{err: uerr}).Search(context.Background(), search.Query{Keywords: "matrix"})
+	if err == nil {
+		t.Fatal("Search should error on a transport failure")
+	}
+	msg := err.Error()
+
+	// The endpoint host survives twice over: the real base host (via SchemeHost of the
+	// request URL) and the fabricated *url.Error host (via RedactURLError rebuilding it
+	// host-only). Neither is a secret.
+	for _, host := range []string{"https://passthepopcorn.me", "https://passthepopcorn.example"} {
+		if !strings.Contains(msg, host) {
+			t.Errorf("transport error dropped the endpoint host %q: %q", host, msg)
+		}
+	}
+	// The path/query secret is gone, and so is either credential.
+	for _, leak := range []string{secret, "/dl/" + secret, "passkey=" + secret, credAPIUser, credAPIKey} {
+		if strings.Contains(msg, leak) {
+			t.Errorf("transport error leaked %q: %q", leak, msg)
+		}
 	}
 }
 

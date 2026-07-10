@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	stdhttp "net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -127,24 +128,43 @@ func (a *authThenErrorDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) 
 }
 
 // TestGrabTransportErrorSanitized proves a transport failure during the download fetch
-// surfaces a fixed, link-free error even though the download URL carries a key in its
-// PATH (which the query-scoped URL redactor cannot reach).
+// surfaces only the scheme://host and never the download URL's secret, even though the
+// URL carries the key in BOTH a PATH segment (which the query-scoped URL redactor cannot
+// reach) and a query param. http.Client.Do returns a *url.Error whose Error() quotes the
+// full URL; sanitizeGrabError routes it through RedactURLError, which rebuilds it host-only.
 func TestGrabTransportErrorSanitized(t *testing.T) {
 	t.Parallel()
-	const link = "https://az.test/rss/download/9/PATHKEY-SECRET-zzzz.torrent"
+	const secret = "PATHKEY-SECRET-zzzz"
+	const dlURL = "https://avistaz.example/dl/" + secret + "?passkey=" + secret
 	d := &driver{
-		cfg:     map[string]string{"username": credUser, "password": credPass, "pid": credPID},
-		doer:    &authThenErrorDoer{downloadErr: errors.New("connection refused")},
-		baseURL: "https://az.test/",
+		cfg: map[string]string{"username": credUser, "password": credPass, "pid": credPID},
+		doer: &authThenErrorDoer{downloadErr: &url.Error{
+			Op:  "Get",
+			URL: dlURL,
+			Err: errors.New("dial tcp: connection refused"),
+		}},
+		baseURL: "https://avistaz.example/",
 		profile: profileFor("avistaz"),
 		clock:   fixedClock,
 	}
-	_, err := d.Grab(context.Background(), link)
+	_, err := d.Grab(context.Background(), dlURL)
 	if err == nil {
 		t.Fatal("want a transport error")
 	}
-	if strings.Contains(err.Error(), "PATHKEY-SECRET") || strings.Contains(err.Error(), link) {
+	msg := err.Error()
+	// The host is not a secret and now surfaces for diagnosability.
+	if !strings.Contains(msg, "https://avistaz.example") {
+		t.Errorf("want the scheme://host in the error for diagnosis, got: %v", err)
+	}
+	// The key — in the path and the query — must never surface.
+	if strings.Contains(msg, secret) ||
+		strings.Contains(msg, "/dl/"+secret) ||
+		strings.Contains(msg, "passkey="+secret) {
 		t.Errorf("download URL/key leaked into the error: %v", err)
+	}
+	// The fixed prefix is preserved so callers still recognize a failed download.
+	if !strings.Contains(msg, "avistaz: download request failed") {
+		t.Errorf("want the fixed download-failed prefix, got: %v", err)
 	}
 }
 

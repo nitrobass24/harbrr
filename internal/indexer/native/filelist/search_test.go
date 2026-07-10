@@ -232,6 +232,43 @@ func TestSearchStatusDispatch(t *testing.T) {
 	}
 }
 
+// TestSearchTransportErrorHostOnly proves that when the search transport fails with a
+// *url.Error carrying a secret in both a path segment and a query param, the wrapped
+// error surfaces only scheme://host: the host survives (it is not a secret) while
+// SchemeHost/RedactURLError drop the "/dl/"+token path and the "passkey="+token query.
+func TestSearchTransportErrorHostOnly(t *testing.T) {
+	t.Parallel()
+	const secret = "S3CRETTOKEN"
+	// The doer fails the request that reaches get()'s changed transport wrap with a
+	// *url.Error whose URL hides the secret in a path segment and a query param, on the
+	// same scheme://host the driver's base URL uses (so host survival is assertable).
+	uerr := &url.Error{
+		Op:  "Get",
+		URL: "https://filelist.test/dl/" + secret + "?passkey=" + secret,
+		Err: errors.New("dial tcp: connection refused"),
+	}
+	d := liveDriver(nil)
+	d.doer = &authErrorDoer{err: uerr}
+
+	_, err := d.Search(context.Background(), search.Query{Keywords: "dune", Categories: []string{"4"}})
+	if err == nil {
+		t.Fatal("want a transport error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "https://filelist.test") {
+		t.Errorf("error dropped the scheme://host: %q", msg)
+	}
+	for _, leak := range []string{secret, "/dl/" + secret, "passkey=" + secret} {
+		if strings.Contains(msg, leak) {
+			t.Errorf("error leaks %q: %q", leak, msg)
+		}
+	}
+	// The redactors must also keep the fabricated secret out of any derived string.
+	if strings.Contains(apphttp.RedactError(err), secret) {
+		t.Errorf("RedactError leaks the secret: %q", apphttp.RedactError(err))
+	}
+}
+
 // TestTestAction proves Test() returns nil on a good (200) probe and an auth failure
 // on a 403.
 func TestTestAction(t *testing.T) {

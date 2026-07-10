@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rs/zerolog"
+
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -33,6 +35,7 @@ type driver struct {
 	doer    search.Doer
 	baseURL string // normalised with a single trailing slash
 	clock   func() time.Time
+	log     zerolog.Logger
 
 	// persist durably writes a rotated mam_id back to the encrypted store (nil in
 	// tests / when the registry doesn't provide it). Fired best-effort on rotation so
@@ -71,6 +74,7 @@ func New(p native.Params) (native.Driver, error) {
 		doer:         p.Doer,
 		baseURL:      strings.TrimRight(base, "/") + "/",
 		clock:        clock,
+		log:          p.Logger,
 		persist:      p.PersistSetting,
 		currentMamID: strings.TrimSpace(p.Cfg["mam_id"]),
 	}, nil

@@ -395,6 +395,7 @@ func (r *Registry) buildInner(inst domain.IndexerInstance, def *loader.Definitio
 			Doer:    doer,
 			BaseURL: baseURLOf(inst, def),
 			Clock:   r.clock,
+			Logger:  r.log,
 			PersistSetting: func(ctx context.Context, name, value string) error {
 				return r.persistSetting(ctx, inst, def, name, value)
 			},

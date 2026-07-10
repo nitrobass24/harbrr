@@ -110,6 +110,9 @@ func (r *replay) serve(req *stdhttp.Request, step CaseStep) (*stdhttp.Response, 
 	if step.Location != "" {
 		header.Set("Location", step.Location)
 	}
+	if step.ContentType != "" {
+		header.Set("Content-Type", step.ContentType)
+	}
 	return &stdhttp.Response{
 		StatusCode: status,
 		Status:     strconv.Itoa(status),

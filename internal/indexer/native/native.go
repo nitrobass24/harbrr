@@ -15,6 +15,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/rs/zerolog"
+
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
@@ -53,6 +55,29 @@ type Params struct {
 	// mid-session survives a restart. Optional — nil for drivers that don't rotate
 	// credentials; MyAnonamouse uses it to persist the rotated mam_id cookie.
 	PersistSetting func(ctx context.Context, name, value string) error
+	// Logger is the registry's logger, handed to the driver so it can emit
+	// per-release trace diagnostics via TraceReleases. The zero value is a no-op
+	// (a zero zerolog.Logger discards a Trace event), so it is optional.
+	Logger zerolog.Logger
+}
+
+// TraceReleases emits one trace line per parsed release so a search can be diagnosed
+// without a live re-run. URL fields (Link/GUID/Details) are NEVER logged — a native
+// download link can embed a passkey — so only non-secret descriptive fields are
+// recorded. A zero-value Logger (the default) discards the events, so callers need no
+// enabled-check.
+func TraceReleases(log zerolog.Logger, driver string, rels []*normalizer.Release) {
+	for _, r := range rels {
+		log.Trace().
+			Str("driver", driver).
+			Str("title", r.Title).
+			Int64("size", r.Size).
+			Int64("seeders", r.Seeders).
+			Int64("leechers", r.Leechers).
+			Ints("categories", r.Categories).
+			Str("publish_date", r.PublishDate).
+			Msg("native: parsed release")
+	}
 }
 
 // OffsetPager is the optional capability a native driver implements when it can forward

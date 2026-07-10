@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -24,11 +25,13 @@ const (
 )
 
 // Search issues the TorrentDay /t.json request for the query and returns the parsed
-// releases. A login redirect (3xx -> /login.php) or a 401/403 is an auth failure; a
-// 429/503 is a rate-limit error; any other non-2xx is an error. The cookie rides as a
-// header (added by get), never the URL, so the served (recorded) URL carries no secret.
+// releases. The context is stamped WithNoRedirectFollow so a stale-cookie 3xx ->
+// /login.php surfaces as a raw redirect (isLoginRedirect) instead of being auto-followed
+// to the login page and misread as a parse error; that redirect or a 401/403 is an auth
+// failure; a 429/503 is a rate-limit error; any other non-2xx is an error. The cookie
+// rides as a header (added by get), never the URL, so the served URL carries no secret.
 func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
-	resp, err := d.get(ctx, d.buildSearchURL(q), "application/json")
+	resp, err := d.get(apphttp.WithNoRedirectFollow(ctx), d.buildSearchURL(q), "application/json")
 	if err != nil {
 		return nil, err
 	}

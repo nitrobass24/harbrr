@@ -11,6 +11,7 @@ import (
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 const (
@@ -79,6 +80,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 		}
 		releases = append(releases, rel)
 	}
+	native.TraceReleases(d.log, d.def.ID, releases)
 	return releases, nil
 }
 

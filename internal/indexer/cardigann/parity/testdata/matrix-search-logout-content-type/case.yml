@@ -1,0 +1,36 @@
+name: matrix-search-logout-content-type
+archetype: logout-content-type
+golden_source: hand-derived
+mode: search
+description: >
+  Compatibility matrix: looksLoggedOut gates the login.test selector check on the
+  WIRE Content-Type (Jackett: contentType?.Contains("text/html") ?? true), NOT the
+  def's declared response type. This def declares response type json, but an expired
+  session answers the search with a text/html login page (no a.logout). Because the
+  wire Content-Type is text/html the engine RUNS the selector check, finds the
+  session logged-out, relogins once (login.method get), and retries — then parses
+  the real application/json results. Under the old declared-type gate the html body
+  would have been parsed as json and failed. Hand-derived golden: cat "movies" ->
+  Movies(2000), size 3221225472, peers = 42 + 3 = 45.
+definition: definition.yml
+query:
+  keywords: ubuntu
+steps:
+  - method: GET
+    url: https://logoutct.test/profile
+    response: profile.html
+    note: eager login.test probe finds the session valid
+  - method: GET
+    url: https://logoutct.test/search?q=ubuntu
+    content_type: text/html
+    response: loggedout.html
+    note: expired session answers the JSON search with a text/html login page; the wire Content-Type gate detects the absent a.logout selector
+  - method: GET
+    url: https://logoutct.test/login.php
+    response: profile.html
+    note: relogin (login.method get), NOT a fetch of any redirect target
+  - method: GET
+    url: https://logoutct.test/search?q=ubuntu
+    content_type: application/json
+    response: results.json
+    note: single bounded retry with the fresh session -> real json results

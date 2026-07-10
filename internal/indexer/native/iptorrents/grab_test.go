@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	stdhttp "net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -95,20 +96,39 @@ type errorDoer struct{ err error }
 
 func (e *errorDoer) Do(*stdhttp.Request) (*stdhttp.Response, error) { return nil, e.err }
 
-// TestGrabTransportErrorSanitized proves a transport failure surfaces a fixed, link-free
-// error even though the download URL carries a token in its PATH (which the query-scoped
-// URL redactor cannot reach).
+// TestGrabTransportErrorSanitized proves a transport failure surfaces the endpoint's
+// scheme://host (not a secret, useful for diagnosis) while the download link's secret —
+// carried in BOTH a PATH segment and a query param of the real *url.Error http.Client.Do
+// returns — never reaches the error. The RedactURLError fallback rebuilds that *url.Error
+// host-only, which the query-scoped URL redactor could not do for the path secret.
 func TestGrabTransportErrorSanitized(t *testing.T) {
 	t.Parallel()
-	const link = "https://iptorrents.com/download.php/9/PATHKEY-SECRET-zzzz.torrent"
+	const (
+		base   = "https://iptorrents.example"
+		secret = "SECRET-dlkey-7f3a9c"
+		link   = base + "/download.php/9/file.torrent"
+	)
 	d := testDriver(nil, nil)
-	d.doer = &errorDoer{err: errors.New("connection refused")}
+	d.doer = &errorDoer{err: &url.Error{
+		Op:  "Get",
+		URL: base + "/dl/" + secret + "?passkey=" + secret,
+		Err: errors.New("dial tcp: connection refused"),
+	}}
 	_, err := d.Grab(context.Background(), link)
 	if err == nil {
 		t.Fatal("want a transport error")
 	}
-	if strings.Contains(err.Error(), "PATHKEY-SECRET") || strings.Contains(err.Error(), link) {
-		t.Errorf("download URL/key leaked into the error: %v", err)
+	got := err.Error()
+	if !strings.Contains(got, base) {
+		t.Errorf("error dropped the scheme://host %q (host is not a secret): %v", base, err)
+	}
+	if strings.Contains(got, secret) ||
+		strings.Contains(got, "/dl/"+secret) ||
+		strings.Contains(got, "passkey="+secret) {
+		t.Errorf("download link secret leaked into the error: %v", err)
+	}
+	if !strings.Contains(got, "iptorrents: download request failed") {
+		t.Errorf("error dropped the fixed prefix: %v", err)
 	}
 }
 

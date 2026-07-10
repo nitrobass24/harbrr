@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	stdhttp "net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -14,7 +15,7 @@ import (
 
 // downloadURL is the synthetic BeyondHD download_url shape: the rsskey rides in the URL
 // PATH (auto.<id>.<rsskey>), not the query, so apphttp.RedactURL cannot hide it and the
-// driver must keep the URL out of every error.
+// driver must keep the rsskey out of every error (only the scheme://host may surface).
 const downloadURL = "https://beyond-hd.me/torrent/download/auto.12345." + credRSSKey
 
 // TestGrabReturnsTorrentBytes proves Grab fetches the download_url server-side and returns
@@ -91,12 +92,21 @@ func TestGrabStatusDispatch(t *testing.T) {
 }
 
 // TestGrabTransportErrorNeverLeaksURL proves a transport (network) error from the download
-// fetch never surfaces the rsskey-bearing download URL. apphttp.RedactURL would NOT hide a
-// path-embedded rsskey, so the driver collapses the error to a fixed, link-free message.
+// fetch surfaces only the scheme://host (which is not a secret) and never the rsskey — even
+// when the failing *url.Error hides the rsskey in BOTH a path segment and a query param.
+// http.Client.Do returns a *url.Error whose Error() quotes its full URL, so the driver must
+// route the cause through host-only redaction before wrapping it.
 func TestGrabTransportErrorNeverLeaksURL(t *testing.T) {
 	t.Parallel()
 	def := Families()[0].Definition
-	doer := errDoer{err: errors.New("dial tcp beyond-hd.me/torrent/download/auto.12345." + credRSSKey + ": connection refused")}
+	// A realistic transport failure: http.Client.Do hands back a *url.Error carrying the
+	// rsskey in the path (/dl/<rsskey>) and the query (?passkey=<rsskey>).
+	failURL := "https://beyond-hd.me/dl/" + credRSSKey + "?passkey=" + credRSSKey
+	doer := errDoer{err: &url.Error{
+		Op:  "Get",
+		URL: failURL,
+		Err: errors.New("dial tcp: connection refused"),
+	}}
 	d, err := New(native.Params{Def: def, Cfg: creds(), Doer: doer, Clock: fixedClock})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -105,49 +115,75 @@ func TestGrabTransportErrorNeverLeaksURL(t *testing.T) {
 	if err == nil {
 		t.Fatal("Grab: err = nil, want a transport error")
 	}
-	if strings.Contains(err.Error(), credRSSKey) {
+	msg := err.Error()
+	// The host is not a secret and now surfaces so the failure is diagnosable.
+	if !strings.Contains(msg, "https://beyond-hd.me") {
+		t.Errorf("transport error should surface the host: %v", err)
+	}
+	// The rsskey must never surface, in any position it hid.
+	if strings.Contains(msg, credRSSKey) {
 		t.Errorf("transport error leaks the rsskey: %v", err)
 	}
-	if strings.Contains(err.Error(), "beyond-hd.me") {
-		t.Errorf("transport error leaks the download URL: %v", err)
+	if strings.Contains(msg, "/dl/"+credRSSKey) {
+		t.Errorf("transport error leaks the secret path segment: %v", err)
+	}
+	if strings.Contains(msg, "passkey="+credRSSKey) {
+		t.Errorf("transport error leaks the secret query param: %v", err)
+	}
+	// The fixed prefix is still present so the failure is recognizable.
+	if !strings.Contains(msg, "beyondhd: download request failed") {
+		t.Errorf("transport error missing the fixed prefix: %v", err)
 	}
 }
 
 // TestGrabPreservesSentinels proves sanitizeGrabError passes through the sentinels callers
-// must classify (auth, rate-limit, context cancellation/deadline, the size cap) unchanged
-// while collapsing any other error to the fixed link-free message.
+// must classify (auth, rate-limit, context cancellation/deadline, the size cap) unchanged,
+// while wrapping any other error under the fixed "download request failed" prefix (preserving
+// its already host-only cause via %w) without reclassifying it as a sentinel.
 func TestGrabPreservesSentinels(t *testing.T) {
 	t.Parallel()
 	rl := &search.RateLimitedError{StatusCode: stdhttp.StatusTooManyRequests}
-	cases := []struct {
+	sentinels := []struct {
 		name string
 		in   error
-		same bool // expect the same error back (sentinel preserved)
 	}{
-		{"auth", login.ErrLoginFailed, true},
-		{"rate-limit", rl, true},
-		{"context canceled", context.Canceled, true},
-		{"deadline", context.DeadlineExceeded, true},
-		{"too large", errDownloadTooLarge, true},
-		{"other transport", errors.New("dial tcp ...auto.12345." + credRSSKey + ": refused"), false},
+		{"auth", login.ErrLoginFailed},
+		{"rate-limit", rl},
+		{"context canceled", context.Canceled},
+		{"deadline", context.DeadlineExceeded},
+		{"too large", errDownloadTooLarge},
 	}
-	for _, tc := range cases {
+	for _, tc := range sentinels {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := sanitizeGrabError(tc.in)
-			if tc.same && !errors.Is(got, tc.in) {
+			if got := sanitizeGrabError(tc.in); !errors.Is(got, tc.in) {
 				t.Errorf("sanitizeGrabError(%v) = %v, want the sentinel preserved", tc.in, got)
-			}
-			if !tc.same {
-				if errors.Is(got, tc.in) {
-					t.Errorf("sanitizeGrabError did not collapse a non-sentinel error: %v", got)
-				}
-				if strings.Contains(got.Error(), credRSSKey) {
-					t.Errorf("collapsed error leaks the rsskey: %v", got)
-				}
 			}
 		})
 	}
+
+	t.Run("other transport", func(t *testing.T) {
+		t.Parallel()
+		// Production only ever hands sanitizeGrabError a host-only cause (get()'s transport
+		// wrap or readCapped's URL-free io error); the fallback wraps it under the fixed
+		// prefix, preserving the cause via %w without turning it into a sentinel.
+		cause := errors.New(`beyondhd: request to https://beyond-hd.me: Get "https://beyond-hd.me": dial tcp: connection refused`)
+		got := sanitizeGrabError(cause)
+		if !strings.Contains(got.Error(), "beyondhd: download request failed") {
+			t.Errorf("non-sentinel error not wrapped under the fixed prefix: %v", got)
+		}
+		if !errors.Is(got, cause) {
+			t.Errorf("wrap dropped the cause: %v", got)
+		}
+		for _, s := range []error{login.ErrLoginFailed, context.Canceled, context.DeadlineExceeded, errDownloadTooLarge} {
+			if errors.Is(got, s) {
+				t.Errorf("non-sentinel error misclassified as %v: %v", s, got)
+			}
+		}
+		if strings.Contains(got.Error(), credRSSKey) {
+			t.Errorf("wrapped error leaks the rsskey: %v", got)
+		}
+	})
 }
 
 // TestGrabDownloadTooLarge proves a download body over the cap is rejected (rather than

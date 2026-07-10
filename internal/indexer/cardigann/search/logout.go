@@ -2,6 +2,7 @@ package search
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/selector"
@@ -21,18 +22,22 @@ var ErrSearchLoggedOut = errors.New("search: response looks logged-out (login.te
 // body check.
 //
 // Detection is skipped (returns false) when the def has no login.test selector,
-// or for JSON/XML responses — matching Jackett gating the selector check on an
-// HTML content type. The API trackers that return JSON authenticate with a
-// stateless apikey and declare no login.test, so they never relogin.
+// or when the response's wire Content-Type is present and not text/html — matching
+// Jackett's contentType?.Contains("text/html") ?? true (ordinal, case-sensitive; a
+// MISSING header still runs the check). The API trackers that return JSON authenticate
+// with a stateless apikey and declare no login.test, so they never relogin.
 //
 // On any uncertainty (unparseable body, selector render/eval error) it returns
 // false: a relogin is only triggered on a clear logged-out signal, so a parsing
 // hiccup can never start a relogin loop.
-func looksLoggedOut(def *loader.Definition, body []byte, respType string, query Query, deps Deps) bool {
+func looksLoggedOut(def *loader.Definition, body []byte, contentType string, query Query, deps Deps) bool {
 	if def.Login == nil || def.Login.Test == nil || def.Login.Test.Selector == "" {
 		return false
 	}
-	if respType == responseTypeJSON || respType == responseTypeXML {
+	// Jackett: contentType?.Contains("text/html") ?? true — ordinal and
+	// case-sensitive; a missing header RUNS the check; the declared response type
+	// plays no role.
+	if contentType != "" && !strings.Contains(contentType, "text/html") {
 		return false
 	}
 	eng := selector.New()

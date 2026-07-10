@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	stdhttp "net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -36,8 +37,9 @@ func (s *seqDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
 	return resp, nil
 }
 
-// errDoer fails every request with a transport error that echoes the URL, so the test can
-// prove the grab error never leaks the link.
+// errDoer fails every request with the given transport error, standing in for
+// http.Client.Do so the grab tests can drive the sentinel-passthrough and host-only
+// redaction paths.
 type errDoer struct{ err error }
 
 func (e *errDoer) Do(*stdhttp.Request) (*stdhttp.Response, error) { return nil, e.err }
@@ -186,21 +188,36 @@ func TestGrabNoRetryWhenTokenDisabled(t *testing.T) {
 	}
 }
 
-// TestGrabTransportErrorNeverLeaksURL proves a transport error is sanitized to a fixed
-// message carrying neither the download URL nor the host.
-func TestGrabTransportErrorNeverLeaksURL(t *testing.T) {
+// TestGrabTransportErrorSurfacesHostOnly proves a real transport failure — the *url.Error
+// http.Client.Do returns — reaches the caller through get()'s host-only wrap and the grab
+// fallback: the returned error surfaces the endpoint's scheme://host (which is not a
+// secret) and the generic "download request failed" message, but never the download link's
+// secret, whether that secret hides in a path segment or a query param.
+func TestGrabTransportErrorSurfacesHostOnly(t *testing.T) {
 	t.Parallel()
-	link := "https://redacted.sh/ajax.php?action=download&id=12345"
-	d := grabDriver(t, "redacted", map[string]string{"apikey": credAPIKey},
-		&errDoer{err: errors.New("dial tcp: " + link)})
+	const secret = "SYNTHGRABSECRET1234"
+	transportErr := &url.Error{
+		Op:  "Get",
+		URL: "https://redacted.sh/dl/" + secret + "?passkey=" + secret,
+		Err: errors.New("dial tcp: connection refused"),
+	}
+	d := grabDriver(t, "redacted", map[string]string{"apikey": credAPIKey}, &errDoer{err: transportErr})
 
+	link := d.downloadLink(12345, false)
 	_, err := d.Grab(context.Background(), link)
 	if err == nil {
 		t.Fatal("Grab should error on a transport failure")
 	}
-	for _, leak := range []string{link, "redacted.sh", "id=12345", credAPIKey} {
-		if strings.Contains(err.Error(), leak) {
-			t.Errorf("grab error leaks %q: %q", leak, err.Error())
+	msg := err.Error()
+	if !strings.Contains(msg, "https://redacted.sh") {
+		t.Errorf("grab error should surface the host, got %q", msg)
+	}
+	if !strings.Contains(msg, "gazelle: download request failed") {
+		t.Errorf("grab error should carry the generic failure message, got %q", msg)
+	}
+	for _, leak := range []string{secret, "/dl/" + secret, "passkey=" + secret, credAPIKey} {
+		if strings.Contains(msg, leak) {
+			t.Errorf("grab error leaks %q: %q", leak, msg)
 		}
 	}
 }

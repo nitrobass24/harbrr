@@ -6,8 +6,10 @@ import (
 	stdhttp "net/http"
 	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
@@ -17,7 +19,7 @@ func builderDriver(cfg map[string]string) *driver {
 	if cfg == nil {
 		cfg = map[string]string{}
 	}
-	return &driver{cfg: cfg, baseURL: "https://mam.test/", clock: fixedClock}
+	return &driver{def: &loader.Definition{ID: "myanonamouse"}, cfg: cfg, baseURL: "https://mam.test/", clock: fixedClock}
 }
 
 // TestBuildSearchURL is the parity gate for the request: it asserts the exact query
@@ -168,6 +170,44 @@ func TestSearchStatusDispatch(t *testing.T) {
 	if !errors.As(err, &rl) {
 		t.Errorf("429: err = %v, want *search.RateLimitedError", err)
 	}
+}
+
+// TestSearchTransportErrorHostOnly proves the get() transport wrap reached via Search
+// surfaces only scheme://host when the doer fails with a real *url.Error. MAM hides no
+// secret in its search URL (mam_id rides in the Cookie header), but a *url.Error quotes
+// its FULL URL into its message, so a download-shaped URL carrying a token in BOTH a path
+// segment and a passkey query param is injected here to prove apphttp.SchemeHost +
+// apphttp.RedactURLError drop the path/query while keeping the host (not a secret).
+func TestSearchTransportErrorHostOnly(t *testing.T) {
+	t.Parallel()
+	const host = "https://www.myanonamouse.net"
+	const secret = "S3CRETTOKEN"
+	uerr := &url.Error{
+		Op:  "Get",
+		URL: host + "/dl/" + secret + "?passkey=" + secret,
+		Err: errors.New("dial tcp: connection refused"),
+	}
+	d := &driver{
+		cfg:          map[string]string{"mam_id": mamSecret},
+		doer:         &errorDoer{err: uerr},
+		baseURL:      host + "/",
+		clock:        fixedClock,
+		currentMamID: mamSecret,
+	}
+	_, err := d.Search(context.Background(), search.Query{Keywords: "dune"})
+	if err == nil {
+		t.Fatal("want a transport error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, host) {
+		t.Errorf("error dropped the scheme://host %q (host is not a secret): %q", host, msg)
+	}
+	for _, leak := range []string{secret, "/dl/" + secret, "passkey=" + secret} {
+		if strings.Contains(msg, leak) {
+			t.Errorf("error leaks %q (path/query must be dropped): %q", leak, msg)
+		}
+	}
+	assertNoSecret(t, msg)
 }
 
 func TestDistinctNonEmpty(t *testing.T) {

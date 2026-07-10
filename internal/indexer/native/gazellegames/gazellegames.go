@@ -18,6 +18,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rs/zerolog"
+
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -35,6 +37,7 @@ type driver struct {
 	baseURL string // normalised with a single trailing slash
 	clock   func() time.Time
 	persist func(ctx context.Context, name, value string) error
+	log     zerolog.Logger
 
 	// mu guards cfg, whose "passkey" entry is fetched on demand (request=quick_user) and
 	// persisted, so it is read while building download URLs and written by fetchPasskey.
@@ -74,6 +77,7 @@ func New(p native.Params) (native.Driver, error) {
 		baseURL: strings.TrimRight(base, "/") + "/",
 		clock:   clock,
 		persist: p.PersistSetting,
+		log:     p.Logger,
 	}, nil
 }
 

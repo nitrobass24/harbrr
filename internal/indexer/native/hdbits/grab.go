@@ -7,6 +7,7 @@ import (
 	"io"
 	stdhttp "net/http"
 
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
@@ -18,9 +19,11 @@ const maxTorrentBytes = 64 << 20
 
 var (
 	errDownloadTooLarge = errors.New("hdbits: download exceeds the size cap")
-	// errDownloadRequestFailed is the fixed, link-free transport failure: the download URL
-	// embeds the passkey, so the underlying *url.Error (which echoes the URL) is never
-	// surfaced. get() returns this directly so the secret cannot leak through %w.
+	// errDownloadRequestFailed is the grab-path transport failure. The download URL embeds the
+	// passkey in its query, so the underlying *url.Error (which echoes the full URL) is never
+	// surfaced verbatim: get()'s transport branch routes it through apphttp.RedactURLError and
+	// wraps only the host-only cause, so %w can re-expose at most "scheme://host" — never the
+	// passkey. The build-request branch and readCapped's io failures return it bare.
 	errDownloadRequestFailed = errors.New("hdbits: download request failed")
 )
 
@@ -30,8 +33,8 @@ var (
 // download through the /dl proxy; this is the server-side fetch /dl drives, so the
 // passkey-bearing URL never reaches the feed. The URL already carries its own passkey,
 // so no auth header is set. The download is a direct torrent (never a magnet), so
-// Redirect is empty. No error carries the download URL (its passkey sits in the query),
-// and the bytes go to /dl, never a log.
+// Redirect is empty. A grab error surfaces at most the download endpoint's scheme://host
+// (never the passkey, which sits in the query), and the bytes go to /dl, never a log.
 func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, error) {
 	resp, err := d.get(ctx, link)
 	if err != nil {
@@ -66,9 +69,10 @@ func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, err
 // get issues a plain GET for an HDBits download URL. The URL already carries its own
 // passkey in the query (download.php?id=…&passkey=…), so no auth header is needed. The
 // transport error from Do is a *url.Error whose Error() embeds the FULL unredacted URL, so
-// it is NOT interpolated here: get() returns a fixed, link-free error so the passkey cannot
-// re-leak through %w regardless of who calls get() (the contract does not depend on the
-// caller scrubbing). The caller owns the returned body and interprets the status.
+// it is routed through apphttp.RedactURLError first: get() wraps only the host-only cause
+// into errDownloadRequestFailed, so %w can re-expose at most "scheme://host" — never the
+// passkey — regardless of who calls get() (the contract does not depend on the caller
+// scrubbing). The caller owns the returned body and interprets the status.
 func (d *driver) get(ctx context.Context, rawurl string) (*stdhttp.Response, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
@@ -77,27 +81,30 @@ func (d *driver) get(ctx context.Context, rawurl string) (*stdhttp.Response, err
 	resp, err := d.doer.Do(req)
 	if err != nil {
 		// The transport error carries the passkey-bearing URL (via *url.Error, whose
-		// Error() embeds the full URL), so it is never interpolated. A context
-		// cancellation/deadline must stay detectable by the caller, so those sentinels are
-		// preserved (errors.Is sees through *url.Error); every other transport error is
-		// flattened to a fixed, link-free message.
+		// Error() embeds the full URL), so it is redacted to a host-only cause before
+		// wrapping. A context cancellation/deadline must stay detectable by the caller, so
+		// those sentinels are preserved (errors.Is sees through *url.Error); every other
+		// transport error is wrapped into errDownloadRequestFailed with only its
+		// scheme://host surfaced.
 		if errors.Is(err, context.Canceled) {
 			return nil, context.Canceled
 		}
 		if errors.Is(err, context.DeadlineExceeded) {
 			return nil, context.DeadlineExceeded
 		}
-		return nil, errDownloadRequestFailed
+		return nil, fmt.Errorf("%w: %w", errDownloadRequestFailed, apphttp.RedactURLError(err))
 	}
 	return resp, nil
 }
 
-// sanitizeGrabError strips a possibly passkey-bearing transport error: the download URL
-// carries the passkey in its query, so any non-sentinel error from the fetch is replaced
-// with a fixed, link-free message rather than risk surfacing the URL. Sentinels that carry
-// no URL and that callers need to classify are passed through unchanged: auth and
-// rate-limit (for health), context cancellation/deadline (so normal cancellation is not
-// misreported as a failure), and the size-cap error.
+// sanitizeGrabError classifies a grab-path error. Sentinels that carry no URL and that
+// callers need to classify are passed through unchanged: auth and rate-limit (for health),
+// context cancellation/deadline (so normal cancellation is not misreported as a failure),
+// and the size-cap error. An errDownloadRequestFailed — get()'s already-host-only transport
+// failure, or its bare build-request variant — is returned verbatim so its host-only cause
+// is preserved rather than collapsed or double-prefixed. Anything else (e.g. an unexpected
+// io read error that might carry free text) is flattened to the bare errDownloadRequestFailed
+// rather than risk surfacing an unredacted string.
 func sanitizeGrabError(err error) error {
 	switch {
 	case errors.Is(err, login.ErrLoginFailed),
@@ -108,6 +115,9 @@ func sanitizeGrabError(err error) error {
 	}
 	var rl *search.RateLimitedError
 	if errors.As(err, &rl) {
+		return err
+	}
+	if errors.Is(err, errDownloadRequestFailed) {
 		return err
 	}
 	return errDownloadRequestFailed

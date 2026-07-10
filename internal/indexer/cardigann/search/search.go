@@ -285,8 +285,10 @@ func Execute(ctx context.Context, def *loader.Definition, query Query, session *
 		decoded := decodeBody(deps.Encoding, body)
 		// Lazy login: a logged-out response (login.test selector absent) aborts the
 		// parse so the engine can re-login and retry once. Checked before parsing,
-		// matching Jackett's CheckIfLoginIsNeeded -> DoLogin order.
-		if looksLoggedOut(def, decoded, respType, query, deps) {
+		// matching Jackett's CheckIfLoginIsNeeded -> DoLogin order. The gate uses the
+		// redirect-resolved response's WIRE Content-Type (sr.contentType), not the
+		// def's declared respType — Jackett reads WebResult.Headers["Content-Type"].
+		if looksLoggedOut(def, decoded, sr.contentType, query, deps) {
 			return nil, ErrSearchLoggedOut
 		}
 		// A JSON path's noResultsMessage short-circuits row parsing: Jackett checks

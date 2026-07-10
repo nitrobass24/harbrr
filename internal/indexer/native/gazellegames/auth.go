@@ -3,7 +3,6 @@ package gazellegames
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	stdhttp "net/http"
@@ -22,10 +21,11 @@ const apiKeyHeader = "X-API-Key" //nolint:gosec // header NAME, not a credential
 
 // get issues an authenticated GET to a GGn endpoint (api.php search or a torrents.php
 // download). The API key rides in the X-API-Key header — never in the URL and never logged
-// — so the header is set but never recorded; Accept advertises JSON. A transport error
-// routes the URL (which, for the api.php search, carries no secret) through
-// apphttp.RedactURL so a passkey-bearing download URL can never leak. The caller owns the
-// returned body and interprets the status.
+// — so the header is set but never recorded; Accept advertises JSON. The download URL
+// (torrents.php) carries the passkey in its torrent_pass query, so a transport error
+// surfaces only its scheme://host (apphttp.SchemeHost, which drops the query) with the
+// cause routed through apphttp.RedactURLError — a passkey-bearing download URL can never
+// leak. The caller owns the returned body and interprets the status.
 func (d *driver) get(ctx context.Context, rawurl string) (*stdhttp.Response, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
@@ -35,18 +35,9 @@ func (d *driver) get(ctx context.Context, rawurl string) (*stdhttp.Response, err
 	req.Header.Set("Accept", "application/json")
 	resp, err := d.doer.Do(req)
 	if err != nil {
-		// The download URL (torrents.php) carries the passkey in its torrent_pass query,
-		// so the *url.Error from Do — which re-stringifies the FULL URL — must NOT be
-		// wrapped with %w. Context cancellation/deadline carry no URL and callers
-		// (Grab/sanitizeGrabError) classify them, so pass those sentinels through
-		// unwrapped; otherwise surface only the RedactURL'd URL (mirrors animebytes).
-		switch {
-		case errors.Is(err, context.Canceled):
-			return nil, context.Canceled
-		case errors.Is(err, context.DeadlineExceeded):
-			return nil, context.DeadlineExceeded
-		}
-		return nil, fmt.Errorf("gazellegames: request to %s: transport error", apphttp.RedactURL(rawurl))
+		// %w preserves context.Canceled/DeadlineExceeded in the chain, so callers
+		// (Grab/sanitizeGrabError) still classify them via errors.Is.
+		return nil, fmt.Errorf("gazellegames: request to %s: %w", apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
 	}
 	return resp, nil
 }

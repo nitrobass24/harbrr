@@ -71,19 +71,19 @@ func (d *driver) activeCategoryMap(ctx context.Context) *mapper.CategoryMap {
 	return d.caps.CategoryMap
 }
 
-// get issues the Newznab API GET. The URL embeds the apikey, so a transport error routes the
-// URL through apphttp.RedactURL (redacting the apikey query param) before it reaches the
-// error string; the apikey can never leak through the wrapped *url.Error. The caller owns
-// the returned body and interprets the status.
+// get issues the Newznab API GET. The URL embeds the apikey, so a transport error surfaces
+// only its scheme://host (apphttp.SchemeHost drops the apikey-bearing query) with the cause
+// routed through apphttp.RedactURLError; the apikey can never leak through the wrapped
+// *url.Error. The caller owns the returned body and interprets the status.
 func (d *driver) get(ctx context.Context, rawurl string) (*stdhttp.Response, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
-		return nil, fmt.Errorf("newznab: build request to %s: %w", apphttp.RedactURL(rawurl), err)
+		return nil, fmt.Errorf("newznab: build request to %s: %w", apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
 	}
 	req.Header.Set("Accept", "application/rss+xml, application/xml, text/xml")
 	resp, err := d.doer.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("newznab: request to %s: %s", apphttp.RedactURL(rawurl), apphttp.RedactError(err))
+		return nil, fmt.Errorf("newznab: request to %s: %w", apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
 	}
 	return resp, nil
 }

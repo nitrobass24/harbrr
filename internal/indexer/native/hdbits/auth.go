@@ -21,9 +21,9 @@ const searchPath = "api/torrents"
 
 // post issues the JSON POST to the api/torrents endpoint. The body carries the username
 // and passkey as top-level fields, so it is secret-bearing and never logged; a transport
-// error routes the URL (never the body) through apphttp.RedactURL. Content-Type and
-// Accept are application/json (Prowlarr sets both). The caller owns the returned body and
-// interprets the status.
+// error surfaces only the endpoint's scheme://host (apphttp.SchemeHost) with the cause
+// routed through apphttp.RedactURLError. Content-Type and Accept are application/json
+// (Prowlarr sets both). The caller owns the returned body and interprets the status.
 func (d *driver) post(ctx context.Context, body []byte) (*stdhttp.Response, error) {
 	rawurl := d.baseURL + searchPath
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodPost, rawurl, bytes.NewReader(body))
@@ -34,7 +34,7 @@ func (d *driver) post(ctx context.Context, body []byte) (*stdhttp.Response, erro
 	req.Header.Set("Accept", "application/json")
 	resp, err := d.doer.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("hdbits: request to %s: %w", apphttp.RedactURL(rawurl), err)
+		return nil, fmt.Errorf("hdbits: request to %s: %w", apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
 	}
 	return resp, nil
 }

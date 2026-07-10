@@ -7,6 +7,7 @@ import (
 	"io"
 	stdhttp "net/http"
 
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
@@ -23,8 +24,9 @@ var errDownloadTooLarge = errors.New("gazellegames: download exceeds the size ca
 // not see, which is why NeedsResolver is true and the served feed routes the download
 // through the /dl proxy; this is the server-side fetch /dl drives, so neither the
 // X-API-Key header nor the passkey in the URL reaches the feed. The download is a direct
-// torrent (never a magnet), so Redirect is empty. No error carries the download URL (its
-// passkey sits in the query), and the bytes go to /dl, never a log.
+// torrent (never a magnet), so Redirect is empty. No error surfaces the download URL's
+// secret path/query (its passkey sits in the query) — only its scheme://host can — and the
+// bytes go to /dl, never a log.
 func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, error) {
 	resp, err := d.get(ctx, link)
 	if err != nil {
@@ -54,12 +56,15 @@ func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, err
 	}, nil
 }
 
-// sanitizeGrabError strips a possibly passkey-bearing transport error: the download URL
-// carries the passkey in its torrent_pass query, so any non-sentinel error from the fetch
-// is replaced with a fixed, link-free message rather than risk surfacing the URL.
-// Sentinels that carry no URL and that callers need to classify are passed through
-// unchanged: auth and rate-limit (for health), context cancellation/deadline (so normal
-// cancellation is not misreported as a failure), and the size-cap error.
+// sanitizeGrabError classifies a grab-path error. Sentinels that carry no URL and that
+// callers need to classify are passed through unchanged: auth and rate-limit (for health),
+// context cancellation/deadline (so normal cancellation is not misreported as a failure),
+// and the size-cap error. Every other error hits the fallback, which %w-wraps the cause —
+// which is host-only: either get()'s transport error (host-only by construction, since get
+// rebuilds the *url.Error via apphttp.SchemeHost/RedactURLError) or an io read error
+// (URL-free). Routing the cause through apphttp.RedactURLError additionally rebuilds a stray
+// build-request *url.Error host-only, so the download link's secret path/query never
+// surfaces — only its scheme://host can.
 func sanitizeGrabError(err error) error {
 	switch {
 	case errors.Is(err, login.ErrLoginFailed),
@@ -72,7 +77,7 @@ func sanitizeGrabError(err error) error {
 	if errors.As(err, &rl) {
 		return err
 	}
-	return errors.New("gazellegames: download request failed")
+	return fmt.Errorf("gazellegames: download request failed: %w", apphttp.RedactURLError(err))
 }
 
 // readCapped reads up to limit bytes, returning errDownloadTooLarge when the source

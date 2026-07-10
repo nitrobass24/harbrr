@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
@@ -224,6 +225,53 @@ func TestSearchIssuesBearerRequest(t *testing.T) {
 		t.Errorf("recorded query = %v", u.Query())
 	}
 	assertNoSecret(t, got.url)
+}
+
+// errDoer fails every request with a fixed transport error. Search's first request is
+// the auth POST, so this drives the auth-POST transport wrap (authenticate, auth.go).
+type errDoer struct{ err error }
+
+func (e *errDoer) Do(*stdhttp.Request) (*stdhttp.Response, error) { return nil, e.err }
+
+// TestSearchTransportErrorHostOnly proves the search path's first transport wrap — the
+// auth POST in authenticate, which reads SchemeHost(authURL) + RedactURLError(err) —
+// surfaces ONLY scheme://host when the doer returns a real *url.Error whose URL hides a
+// secret in BOTH a path segment and a query param. The host survives (it is not a secret
+// and is needed to diagnose); the secret token, its /dl/<secret> path, and the
+// passkey=<secret> query are all dropped.
+func TestSearchTransportErrorHostOnly(t *testing.T) {
+	t.Parallel()
+	const secret = "S3CRETTOKEN"
+	// The url.Error carries the SAME scheme://host the driver's base URL uses, so the
+	// surviving host is unambiguous while the path + query (the secret) must vanish.
+	uerr := &url.Error{
+		Op:  "Post",
+		URL: "https://avistaz.example/dl/" + secret + "?passkey=" + secret,
+		Err: errors.New("dial tcp: connection refused"),
+	}
+	d := &driver{
+		cfg:     map[string]string{"username": credUser, "password": credPass, "pid": credPID},
+		doer:    &errDoer{err: uerr},
+		baseURL: "https://avistaz.example/",
+		profile: profileFor("avistaz"),
+		clock:   fixedClock,
+	}
+
+	_, err := d.Search(context.Background(), search.Query{Categories: []string{"1"}, Keywords: "dune"})
+	if err == nil {
+		t.Fatal("Search: want a transport error")
+	}
+	got := err.Error()
+	if !strings.Contains(got, "https://avistaz.example") {
+		t.Errorf("host did not survive redaction: %q", got)
+	}
+	for _, leak := range []string{secret, "/dl/" + secret, "passkey=" + secret} {
+		if strings.Contains(got, leak) {
+			t.Errorf("error leaks %q (path/query not dropped): %q", leak, got)
+		}
+	}
+	assertNoSecret(t, got)
+	assertNoSecret(t, apphttp.RedactError(err))
 }
 
 func TestSanitizeSearchTerm(t *testing.T) {

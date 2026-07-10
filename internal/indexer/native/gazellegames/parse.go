@@ -15,6 +15,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 const (
@@ -177,6 +178,7 @@ func (d *driver) parseSearch(body []byte) ([]*normalizer.Release, error) {
 		rels = append(rels, groupRels...)
 	}
 	sortReleases(rels)
+	native.TraceReleases(d.log, d.def.ID, rels)
 	return rels, nil
 }
 

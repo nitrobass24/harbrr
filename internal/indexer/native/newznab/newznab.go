@@ -20,6 +20,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog"
+
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -43,6 +45,9 @@ type driver struct {
 	// persist durably writes the fetched caps XML + fetched-at back to the encrypted
 	// store (nil when not wired), so the caps cache survives a restart.
 	persist func(ctx context.Context, name, value string) error
+	// log is the registry's logger, used to emit per-release trace diagnostics via
+	// native.TraceReleases. The zero value is a no-op.
+	log zerolog.Logger
 }
 
 var _ native.Driver = (*driver)(nil)
@@ -76,6 +81,7 @@ func New(p native.Params) (native.Driver, error) {
 		baseURL: strings.TrimRight(base, "/"),
 		clock:   clock,
 		persist: p.PersistSetting,
+		log:     p.Logger,
 	}
 	d.capsCache.rehydrate(p.Cfg)
 	return d, nil

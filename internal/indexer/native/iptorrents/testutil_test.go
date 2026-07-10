@@ -54,6 +54,7 @@ func testDriver(doer *scriptDoer, cfg map[string]string) *driver {
 		cfg = map[string]string{"cookie": credCookie, "user_agent": credUA}
 	}
 	return &driver{
+		def:     Families()[0].Definition,
 		caps:    iptCapabilities(),
 		cfg:     cfg,
 		doer:    doer,

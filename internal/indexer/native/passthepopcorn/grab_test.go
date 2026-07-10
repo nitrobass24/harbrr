@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	stdhttp "net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -15,8 +16,9 @@ import (
 // direct .torrent; the Grab returns it verbatim.
 const torrentBytes = "d8:announce11:fake-tracker4:infod6:lengthi1ee"
 
-// errDoer fails every request with a transport error that echoes the URL, so a test can
-// prove the grab error never leaks the link.
+// errDoer fails every request with a caller-supplied transport error — the *url.Error
+// http.Client.Do returns in production — letting a test drive the driver's transport-error
+// handling.
 type errDoer struct{ err error }
 
 func (e *errDoer) Do(*stdhttp.Request) (*stdhttp.Response, error) { return nil, e.err }
@@ -95,20 +97,39 @@ func TestGrabRejectsNonTorrentBody(t *testing.T) {
 	}
 }
 
-// TestGrabTransportErrorNeverLeaksURLOrSecret proves a transport error is sanitized to a
-// fixed message carrying neither the download URL, the host, nor either credential.
-func TestGrabTransportErrorNeverLeaksURLOrSecret(t *testing.T) {
+// TestGrabTransportErrorSurfacesHostOnly proves a real transport failure (the *url.Error
+// http.Client.Do returns) is reduced to its host-only cause: the endpoint scheme://host
+// survives (it is not a secret) while a secret hidden in a path segment or a query param —
+// and either credential — never does. The fixed "download request failed" prefix is kept so
+// the failure class stays recognisable.
+func TestGrabTransportErrorSurfacesHostOnly(t *testing.T) {
 	t.Parallel()
-	link := "https://passthepopcorn.me/torrents.php?action=download&id=12345"
-	d := searchDriver(t, &errDoer{err: errors.New("dial tcp " + link + " user=" + credAPIUser)})
+	const secret = "SYNTHETICDLTOKEN"
+	uerr := &url.Error{
+		Op:  "Get",
+		URL: "https://passthepopcorn.me/dl/" + secret + "?passkey=" + secret,
+		Err: errors.New("dial tcp: connection refused"),
+	}
+	d := searchDriver(t, &errDoer{err: uerr})
 
-	_, err := d.Grab(context.Background(), link)
+	_, err := d.Grab(context.Background(), d.downloadLink(12345))
 	if err == nil {
 		t.Fatal("Grab should error on a transport failure")
 	}
-	for _, leak := range []string{link, "passthepopcorn.me", "id=12345", credAPIUser, credAPIKey} {
-		if strings.Contains(err.Error(), leak) {
-			t.Errorf("grab error leaks %q: %q", leak, err.Error())
+	msg := err.Error()
+
+	// The endpoint host now surfaces (it is not a secret) and the failure-class prefix
+	// remains.
+	if !strings.Contains(msg, "https://passthepopcorn.me") {
+		t.Errorf("grab error dropped the endpoint host: %q", msg)
+	}
+	if !strings.Contains(msg, "passthepopcorn: download request failed") {
+		t.Errorf("grab error lost its failure-class prefix: %q", msg)
+	}
+	// The path/query secret and either credential never surface.
+	for _, leak := range []string{secret, "/dl/" + secret, "passkey=" + secret, credAPIUser, credAPIKey} {
+		if strings.Contains(msg, leak) {
+			t.Errorf("grab error leaked %q: %q", leak, msg)
 		}
 	}
 }

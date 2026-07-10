@@ -5,6 +5,7 @@ import (
 	"errors"
 	stdhttp "net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -39,6 +40,41 @@ func TestCapsBodyReadErrorSurfacesCause(t *testing.T) {
 		t.Fatalf("err = %q, want the real read cause included (not a bare parse_error)", capsErr.Error())
 	}
 	assertNoApikey(t, "caps body-read error", capsErr.Error())
+}
+
+// TestCapsTransportErrorRedactsApikey mirrors the search-path redaction for the caps fetch:
+// a real *url.Error whose URL hides the apikey in a path segment and query param surfaces
+// only the endpoint's scheme://host through getCaps' wrap, never the apikey.
+func TestCapsTransportErrorRedactsApikey(t *testing.T) {
+	t.Parallel()
+	const baseURL = "https://news.example.test"
+	uerr := &url.Error{
+		Op:  "Get",
+		URL: baseURL + "/dl/" + testAPIKey + "?apikey=" + testAPIKey,
+		Err: errors.New("dial tcp: connection refused"),
+	}
+	d, err := New(native.Params{
+		Def:     GenericDefinition(),
+		Cfg:     map[string]string{"apikey": testAPIKey},
+		Doer:    &errorDoer{err: uerr},
+		BaseURL: baseURL,
+		Clock:   fixedClock,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	capsErr := d.Test(context.Background())
+	if capsErr == nil {
+		t.Fatal("Test err = nil, want a transport error")
+	}
+	got := capsErr.Error()
+	if !strings.Contains(got, baseURL) {
+		t.Errorf("error dropped the endpoint host; got %q, want it to contain %q", got, baseURL)
+	}
+	if strings.Contains(got, "/dl/"+testAPIKey) || strings.Contains(got, "apikey="+testAPIKey) {
+		t.Errorf("error leaked the secret path/query: %q", got)
+	}
+	assertNoApikey(t, "caps transport error", got)
 }
 
 // TestCapsModesAndIMDB proves the parsed caps map onto the right search modes: <audio-search>

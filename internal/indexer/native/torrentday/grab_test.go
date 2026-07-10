@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	stdhttp "net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -98,27 +99,51 @@ func TestGrabStatusDispatch(t *testing.T) {
 	}
 }
 
-// TestGrabTransportErrorHidesURLAndSecret proves a transport error surfaces neither the
-// download URL nor the cookie: sanitizeGrabError replaces a non-sentinel error with a
-// fixed message (the URL can carry the torrent id; the cookie never escapes).
-func TestGrabTransportErrorHidesURLAndSecret(t *testing.T) {
+// grabErrHost is the scheme://host of the fabricated transport failure below. It is not a
+// secret: RedactURLError surfaces the host so a failure is diagnosable, while the
+// secret-bearing path and query are dropped.
+const grabErrHost = "https://torrentday.example"
+
+// TestGrabTransportErrorSurfacesHostHidesSecret proves a realistic transport error — a
+// *url.Error, the shape http.Client.Do returns — surfaces only its host-only cause: the
+// scheme://host survives (it is not a secret and aids diagnosis), while a secret hidden in
+// a path segment AND a query param is dropped, and the cookie never escapes. Production
+// only ever hands sanitizeGrabError a host-only error (get() rebuilds the *url.Error
+// host-only before wrapping), so the injected error mirrors that.
+func TestGrabTransportErrorSurfacesHostHidesSecret(t *testing.T) {
 	t.Parallel()
+	// A synthetic secret in both a path segment and a query param; the token is one
+	// assertNoSecret recognises, so a leak into the returned error is caught.
+	const secret = "SECRET-deadbeefdeadbeefdeadbeefdeadbeef"
 	d := testDriver(t, nil, nil)
-	d.doer = &errDoer{err: errors.New("dial tcp " + downloadLink + " cookie=" + credCookie + ": refused")}
+	d.doer = &errDoer{err: &url.Error{
+		Op:  "Get",
+		URL: grabErrHost + "/dl/" + secret + "?passkey=" + secret,
+		Err: errors.New("dial tcp: connection refused"),
+	}}
 
 	_, err := d.Grab(context.Background(), downloadLink)
 	if err == nil {
 		t.Fatal("Grab: want error, got nil")
 	}
-	assertNoSecret(t, err.Error())
-	if strings.Contains(err.Error(), "download.php") || strings.Contains(err.Error(), "2743197") {
-		t.Errorf("error leaks the download URL: %q", err)
+	got := err.Error()
+	assertNoSecret(t, got)
+	if !strings.Contains(got, grabErrHost) {
+		t.Errorf("error dropped the host (it is not a secret): %q", got)
+	}
+	if strings.Contains(got, secret) ||
+		strings.Contains(got, "/dl/"+secret) ||
+		strings.Contains(got, "passkey="+secret) {
+		t.Errorf("error leaks the path/query secret: %q", got)
+	}
+	if !strings.Contains(got, "torrentday: download request failed") {
+		t.Errorf("error dropped the fixed prefix: %q", got)
 	}
 }
 
 // TestGrabTransportErrorPreservesSentinels proves sanitizeGrabError keeps the auth and
-// rate-limit sentinels (for health classification) even though the get() error is
-// scrubbed.
+// rate-limit sentinels (for health classification) rather than flattening them into the
+// generic "download request failed" wrap.
 func TestGrabTransportErrorPreservesSentinels(t *testing.T) {
 	t.Parallel()
 	if got := sanitizeGrabError(login.ErrLoginFailed); !errors.Is(got, login.ErrLoginFailed) {
@@ -127,9 +152,6 @@ func TestGrabTransportErrorPreservesSentinels(t *testing.T) {
 	rl := &search.RateLimitedError{StatusCode: 429}
 	if got := sanitizeGrabError(rl); !errors.As(got, &rl) {
 		t.Errorf("sanitizeGrabError dropped rate-limit sentinel: %v", got)
-	}
-	if got := sanitizeGrabError(errors.New("dial tcp " + credCookie)); strings.Contains(got.Error(), credCookie) {
-		t.Errorf("sanitizeGrabError leaked secret: %v", got)
 	}
 }
 

@@ -70,7 +70,7 @@ func (d *driver) captureRotatedMamID(ctx context.Context, resp *stdhttp.Response
 // get issues an authenticated GET with the Cookie: mam_id=… header, captures any
 // rotated mam_id from the response, and returns the response for the caller to
 // interpret (404/429/2xx). The cookie rides as a header, never the URL, so the URL
-// carries no secret; errors still redact it.
+// carries no secret; a transport error still surfaces only its scheme://host.
 func (d *driver) get(ctx context.Context, rawurl, accept string) (*stdhttp.Response, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
@@ -85,7 +85,7 @@ func (d *driver) get(ctx context.Context, rawurl, accept string) (*stdhttp.Respo
 	}
 	resp, err := d.doer.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("myanonamouse: request to %s: %w", apphttp.RedactURL(rawurl), err)
+		return nil, fmt.Errorf("myanonamouse: request to %s: %w", apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
 	}
 	d.captureRotatedMamID(ctx, resp)
 	return resp, nil

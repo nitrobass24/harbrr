@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog"
+
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -33,6 +35,7 @@ type driver struct {
 	baseURL string // normalised with a single trailing slash
 	clock   func() time.Time
 	profile profile
+	log     zerolog.Logger
 }
 
 var _ native.Driver = (*driver)(nil)
@@ -81,6 +84,7 @@ func New(p native.Params) (native.Driver, error) {
 		baseURL: strings.TrimRight(base, "/") + "/",
 		clock:   clock,
 		profile: profileFor(p.Def.ID),
+		log:     p.Logger,
 	}, nil
 }
 

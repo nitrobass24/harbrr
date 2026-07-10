@@ -35,7 +35,10 @@ func (d *driver) searchURL() string {
 func (d *driver) post(ctx context.Context, body []byte) (*stdhttp.Response, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodPost, d.searchURL(), bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("beyondhd: build request: %w", err)
+		// A build failure is a *url.Error that quotes the full URL — including the
+		// path-embedded api_key — so route it through apphttp.RedactURLError, which
+		// rebuilds it host-only (mirrors the grab build-request path in grab.go).
+		return nil, fmt.Errorf("beyondhd: build request: %w", apphttp.RedactURLError(err))
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")

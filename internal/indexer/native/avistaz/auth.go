@@ -50,7 +50,7 @@ func (d *driver) authenticate(ctx context.Context) (string, error) {
 
 	resp, err := d.doer.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("avistaz: auth request to %s: %w", apphttp.RedactURL(authURL), err)
+		return "", fmt.Errorf("avistaz: auth request to %s: %w", apphttp.SchemeHost(authURL), apphttp.RedactURLError(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
@@ -132,8 +132,8 @@ func (d *driver) refreshToken(ctx context.Context) (string, error) {
 
 // get issues an authenticated GET, reactively re-authenticating ONCE on a 401/412
 // (Prowlarr's CheckIfLoginNeeded) and retrying. The caller owns the returned body
-// and interprets the status (404/429/2xx). The URL may carry no secret (the bearer
-// is a header), but errors still redact it.
+// and interprets the status (404/429/2xx). The URL carries no secret (the bearer
+// is a header), but a transport error still surfaces only its scheme://host.
 func (d *driver) get(ctx context.Context, rawurl, accept string) (*stdhttp.Response, error) {
 	token, err := d.ensureToken(ctx)
 	if err != nil {
@@ -168,7 +168,7 @@ func (d *driver) sendBearer(ctx context.Context, rawurl, token, accept string) (
 	}
 	resp, err := d.doer.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("avistaz: request to %s: %w", apphttp.RedactURL(rawurl), err)
+		return nil, fmt.Errorf("avistaz: request to %s: %w", apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
 	}
 	return resp, nil
 }

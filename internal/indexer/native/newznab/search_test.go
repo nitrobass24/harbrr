@@ -6,6 +6,7 @@ import (
 	"io"
 	stdhttp "net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -88,16 +89,27 @@ func TestSearchRateLimited(t *testing.T) {
 	}
 }
 
-// TestSearchTransportErrorRedactsApikey proves a transport failure (whose *url.Error echoes
-// the full apikey-bearing request URL) never leaks the apikey in the surfaced error.
+// TestSearchTransportErrorRedactsApikey proves a real *url.Error transport failure — whose
+// URL echoes the apikey in BOTH a PATH segment and a query param — surfaces only the
+// endpoint's scheme://host: the host survives (it is not a secret and is enough to diagnose)
+// while the apikey, its /dl/<secret> path, and its apikey=<secret> query are all dropped by
+// the get() wrap (apphttp.SchemeHost + apphttp.RedactURLError).
 func TestSearchTransportErrorRedactsApikey(t *testing.T) {
 	t.Parallel()
-	doer := &errorDoer{err: errors.New("dial tcp: connection refused")}
+	const baseURL = "https://news.example.test"
+	// A stdlib http.Client.Do failure is always a *url.Error quoting the full request URL;
+	// fabricate one that hides the apikey in a path segment and a query param, exercising
+	// both leak surfaces SchemeHost/RedactURLError must scrub.
+	uerr := &url.Error{
+		Op:  "Get",
+		URL: baseURL + "/dl/" + testAPIKey + "?apikey=" + testAPIKey,
+		Err: errors.New("dial tcp: connection refused"),
+	}
 	d, err := New(native.Params{
 		Def:     GenericDefinition(),
 		Cfg:     map[string]string{"apikey": testAPIKey},
-		Doer:    doer,
-		BaseURL: "https://news.example.test",
+		Doer:    &errorDoer{err: uerr},
+		BaseURL: baseURL,
 		Clock:   fixedClock,
 	})
 	if err != nil {
@@ -107,7 +119,17 @@ func TestSearchTransportErrorRedactsApikey(t *testing.T) {
 	if searchErr == nil {
 		t.Fatal("Search err = nil, want a transport error")
 	}
-	assertNoApikey(t, "search transport error", searchErr.Error())
+	got := searchErr.Error()
+	if !strings.Contains(got, baseURL) {
+		t.Errorf("error dropped the endpoint host; got %q, want it to contain %q", got, baseURL)
+	}
+	if strings.Contains(got, "/dl/"+testAPIKey) {
+		t.Errorf("error leaked the secret path segment: %q", got)
+	}
+	if strings.Contains(got, "apikey="+testAPIKey) {
+		t.Errorf("error leaked the secret query param: %q", got)
+	}
+	assertNoApikey(t, "search transport error", got)
 }
 
 // TestTestMethod proves Test() primes the caps cache: a clean 200 serving a valid <caps>

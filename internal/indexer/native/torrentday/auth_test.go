@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	stdhttp "net/http"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -14,18 +15,42 @@ type errDoer struct{ err error }
 
 func (e *errDoer) Do(*stdhttp.Request) (*stdhttp.Response, error) { return nil, e.err }
 
-// TestGetTransportErrorScrubsCookie proves a transport error never leaks the cookie and
-// that the underlying error chain is preserved (errors.Is still matches the cause).
+// TestGetTransportErrorScrubsCookie proves a transport error never leaks a secret and that
+// the underlying error chain is preserved (errors.Is still matches the cause). The real
+// http.Client failure shape is a *url.Error whose Error() quotes its FULL URL — here a
+// fabricated download URL hiding a secret in BOTH a path segment and a passkey query param,
+// with an inner cause that also echoes the session cookie. get() must surface only
+// scheme://host: SchemeHost(rawurl) + RedactURLError drop the path/query, and scrubSecrets
+// strips the cookie.
 func TestGetTransportErrorScrubsCookie(t *testing.T) {
 	t.Parallel()
-	cause := errors.New("dial failed with Cookie=" + credCookie)
+	const secret = "S3CRETTOKEN"
+	cause := &url.Error{
+		Op:  "Get",
+		URL: "https://torrentday.example/dl/" + secret + "?passkey=" + secret,
+		Err: errors.New("dial failed with Cookie=" + credCookie),
+	}
 	d := testDriver(t, nil, map[string]string{"cookie": credCookie})
 	d.doer = &errDoer{err: cause}
 	_, err := d.get(context.Background(), base+"t.json?q=x", "application/json")
 	if err == nil {
 		t.Fatal("get: want an error, got nil")
 	}
-	assertNoSecret(t, err.Error())
+	msg := err.Error()
+	// The session cookie is scrubbed...
+	assertNoSecret(t, msg)
+	// ...and so is the URL-embedded download secret: neither the raw token, nor its
+	// /dl/<secret> path segment, nor the passkey=<secret> query survive.
+	for _, leak := range []string{secret, "/dl/" + secret, "passkey=" + secret} {
+		if strings.Contains(msg, leak) {
+			t.Errorf("transport error leaks URL secret %q: %q", leak, msg)
+		}
+	}
+	// The host is not a secret and MUST survive (RedactURLError keeps the *url.Error's
+	// scheme://host while dropping its path/query).
+	if !strings.Contains(msg, "https://torrentday.example") {
+		t.Errorf("transport error dropped the host (scheme://host must survive): %q", msg)
+	}
 	if !errors.Is(err, cause) {
 		t.Errorf("get error does not preserve the cause chain: %v", err)
 	}

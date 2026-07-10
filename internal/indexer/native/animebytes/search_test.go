@@ -276,22 +276,42 @@ func TestGetNilDoerReturnsError(t *testing.T) {
 	}
 }
 
-// TestSearchTransportErrorRedactsPasskey proves a transport-layer error (whose underlying
-// *url.Error stringifies the full request URL) never leaks the passkey into the returned
-// error.
+// TestSearchTransportErrorRedactsPasskey proves the transport-error wrap at get()'s Do
+// site is rebuilt host-only. http.Client.Do returns a *url.Error that stringifies the
+// full request URL; the wrapped error must surface only scheme://host — dropping both the
+// real request URL's passkey (via SchemeHost(rawurl)) and any secret the *url.Error itself
+// quotes in a path segment or query param (via RedactURLError) — while keeping the host so
+// the failure stays diagnosable.
 func TestSearchTransportErrorRedactsPasskey(t *testing.T) {
 	t.Parallel()
 	d := liveDriver(nil)
-	// A *url.Error stringifies the full request URL (passkey included), the exact shape
-	// http.Client.Do returns; the wrapped error must not surface it.
-	leakURL := d.buildSearchURL(search.Query{Keywords: "dune"})
-	d.doer = &errDoer{err: &url.Error{Op: "Get", URL: leakURL, Err: errors.New("connection refused")}}
+	// Fabricate the exact shape http.Client.Do returns: a *url.Error stringifying the full
+	// URL, with a secret in BOTH a path segment and a query param, on the same scheme://host
+	// the driver uses — so we can assert the host survives while the secret is dropped.
+	const secret = "S3CRETTOKEN"
+	d.doer = &errDoer{err: &url.Error{
+		Op:  "Get",
+		URL: "https://animebytes.tv/dl/" + secret + "?passkey=" + secret,
+		Err: errors.New("dial tcp: connection refused"),
+	}}
 	_, err := d.Search(context.Background(), search.Query{Keywords: "dune"})
 	if err == nil {
 		t.Fatal("Search with failing transport: want error, got nil")
 	}
-	if strings.Contains(err.Error(), credPass) {
+	msg := err.Error()
+	// The scheme://host is not a secret and must survive so the failure is diagnosable.
+	if !strings.Contains(msg, "https://animebytes.tv") {
+		t.Errorf("transport error dropped the scheme://host: %v", err)
+	}
+	// The real request URL's passkey (surfaced through SchemeHost(rawurl)) must be gone.
+	if strings.Contains(msg, credPass) {
 		t.Errorf("transport error leaks the passkey: %v", err)
+	}
+	// The *url.Error's own path + query secret (rebuilt through RedactURLError) must be gone.
+	for _, leak := range []string{secret, "/dl/" + secret, "passkey=" + secret} {
+		if strings.Contains(msg, leak) {
+			t.Errorf("transport error leaks %q: %v", leak, err)
+		}
 	}
 }
 

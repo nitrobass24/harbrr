@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	stdhttp "net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -99,8 +100,8 @@ func TestGrabStatusErrors(t *testing.T) {
 }
 
 // authErrorDoer fails the download fetch with a transport error — the case where the
-// download URL (which carries the passkey in its query) could leak through the wrapped
-// error.
+// download URL (which carries the passkey in its path and query) could leak through the
+// wrapped error.
 type authErrorDoer struct{ err error }
 
 func (a *authErrorDoer) Do(_ *stdhttp.Request) (*stdhttp.Response, error) {
@@ -108,22 +109,41 @@ func (a *authErrorDoer) Do(_ *stdhttp.Request) (*stdhttp.Response, error) {
 }
 
 // TestGrabTransportErrorSanitized proves a transport failure during the download fetch
-// surfaces a fixed, passkey-free error even though the download URL carries the passkey
-// in its query.
+// surfaces an error that names the host (a host is not a secret) but drops the
+// passkey-bearing path and query of the download link — even when the doer returns a
+// real *url.Error whose URL embeds the secret in both a path segment and a query param,
+// the shape http.Client.Do actually returns.
 func TestGrabTransportErrorSanitized(t *testing.T) {
 	t.Parallel()
-	const link = "https://filelist.test/download.php?id=9&passkey=" + credPass
+	const secret = credPass
+	const base = "https://filelist.io"
+	link := base + "/dl/" + secret + "?passkey=" + secret
 	d := liveDriver(nil)
-	d.doer = &authErrorDoer{err: errors.New("connection refused")}
+	d.doer = &authErrorDoer{err: &url.Error{
+		Op:  "Get",
+		URL: link,
+		Err: errors.New("dial tcp: connection refused"),
+	}}
 
 	_, err := d.Grab(context.Background(), link)
 	if err == nil {
 		t.Fatal("want a transport error")
 	}
-	if strings.Contains(err.Error(), credPass) || strings.Contains(err.Error(), link) {
-		t.Errorf("download URL/passkey leaked into the error: %v", err)
+	got := err.Error()
+	// The host surfaces (it is not a secret and aids diagnosis)...
+	if !strings.Contains(got, base) {
+		t.Errorf("error should surface the host %q: %v", base, got)
 	}
-	if strings.Contains(apphttp.RedactError(err), credPass) {
+	// ...but the secret path/query never do.
+	if strings.Contains(got, secret) ||
+		strings.Contains(got, "/dl/"+secret) ||
+		strings.Contains(got, "passkey="+secret) {
+		t.Errorf("download link secret leaked into the error: %v", got)
+	}
+	if !strings.Contains(got, "filelist: download request failed") {
+		t.Errorf("error should carry the fixed prefix: %v", got)
+	}
+	if strings.Contains(apphttp.RedactError(err), secret) {
 		t.Errorf("RedactError leaks the passkey: %v", apphttp.RedactError(err))
 	}
 }

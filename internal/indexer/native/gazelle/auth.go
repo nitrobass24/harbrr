@@ -17,8 +17,9 @@ func (d *driver) authHeader() string {
 
 // get issues an authenticated GET to a Gazelle endpoint (browse or download). The API
 // key rides in the Authorization header — never in the URL and never logged — so the
-// header is set but never recorded; Accept advertises JSON. A transport error routes
-// the URL (which carries no secret) through apphttp.RedactURL. The caller owns the
+// header is set but never recorded; Accept advertises JSON. A transport error surfaces
+// only the endpoint's scheme://host (apphttp.SchemeHost) with the cause routed through
+// apphttp.RedactURLError — the engine's host-only redaction shape. The caller owns the
 // returned body and interprets the status.
 func (d *driver) get(ctx context.Context, rawurl string) (*stdhttp.Response, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
@@ -29,7 +30,7 @@ func (d *driver) get(ctx context.Context, rawurl string) (*stdhttp.Response, err
 	req.Header.Set("Accept", "application/json")
 	resp, err := d.doer.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("gazelle: request to %s: %w", apphttp.RedactURL(rawurl), err)
+		return nil, fmt.Errorf("gazelle: request to %s: %w", apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
 	}
 	return resp, nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	stdhttp "net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -100,20 +101,45 @@ type errDoer struct{ err error }
 
 func (e *errDoer) Do(_ *stdhttp.Request) (*stdhttp.Response, error) { return nil, e.err }
 
-// TestGrabTransportErrorSanitized proves a transport failure surfaces a fixed,
-// passkey-free, URL-free error even though the download URL carries the passkey in its
-// path (where RedactURL cannot reach it).
+// TestGrabTransportErrorSanitized proves a transport failure surfaces the download's
+// scheme://host (diagnosable, not a secret) while dropping the passkey — even though the
+// download URL carries the passkey in its path (where RedactURL cannot reach it). Production
+// only ever hands sanitizeGrabError a host-only error, so we inject the exact shape
+// http.Client.Do returns — a *url.Error stringifying the full URL — with a synthetic secret
+// in BOTH a path segment and a query param, and assert get()'s host-only wrap (SchemeHost +
+// RedactURLError) strips every secret before sanitizeGrabError wraps the cause.
 func TestGrabTransportErrorSanitized(t *testing.T) {
 	t.Parallel()
 	d := liveDriver(nil)
-	d.doer = &errDoer{err: errors.New("dial tcp: connection refused " + downloadLink)}
+	const secret = "S3CRETTOKEN"
+	d.doer = &errDoer{err: &url.Error{
+		Op:  "Get",
+		URL: "https://animebytes.tv/dl/" + secret + "?passkey=" + secret,
+		Err: errors.New("dial tcp: connection refused"),
+	}}
 
 	_, err := d.Grab(context.Background(), downloadLink)
 	if err == nil {
 		t.Fatal("want a transport error")
 	}
-	if strings.Contains(err.Error(), credPass) || strings.Contains(err.Error(), downloadLink) {
-		t.Errorf("download URL/passkey leaked into the error: %v", err)
+	msg := err.Error()
+	// The scheme://host now surfaces so the failure stays diagnosable; it is not a secret.
+	if !strings.Contains(msg, "https://animebytes.tv") {
+		t.Errorf("transport error dropped the scheme://host: %v", err)
+	}
+	// The fixed prefix identifies a grab failure without carrying the download URL.
+	if !strings.Contains(msg, "animebytes: download request failed") {
+		t.Errorf("err = %v, want it to carry the download-request-failed prefix", err)
+	}
+	// The real request URL's passkey (surfaced only host-only via SchemeHost(rawurl)) must be gone.
+	if strings.Contains(msg, credPass) {
+		t.Errorf("transport error leaks the passkey: %v", err)
+	}
+	// The *url.Error's own path + query secret (rebuilt host-only via RedactURLError) must be gone.
+	for _, leak := range []string{secret, "/dl/" + secret, "passkey=" + secret} {
+		if strings.Contains(msg, leak) {
+			t.Errorf("transport error leaks %q: %v", leak, err)
+		}
 	}
 	if strings.Contains(apphttp.RedactError(err), credPass) {
 		t.Errorf("RedactError leaks the passkey: %v", apphttp.RedactError(err))

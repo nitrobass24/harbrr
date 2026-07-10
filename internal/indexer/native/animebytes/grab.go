@@ -7,6 +7,7 @@ import (
 	"io"
 	stdhttp "net/http"
 
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
@@ -23,10 +24,11 @@ var errDownloadTooLarge = errors.New("animebytes: download exceeds the size cap"
 // see, which is why NeedsResolver is true and the served feed routes the download
 // through the /dl proxy; this is the server-side fetch /dl drives, so the
 // passkey-bearing URL never reaches the feed. The download is a direct torrent (never a
-// magnet), so Redirect is empty. No error carries the download URL — the passkey is in
-// the path, which RedactURL (query-only) cannot strip, so any non-sentinel transport
-// error is replaced with a fixed, link-free message — and the bytes go to /dl, never a
-// log.
+// magnet), so Redirect is empty. No error carries the passkey — the passkey is in the
+// path, which RedactURL (query-only) cannot strip, so the fetch already surfaces only the
+// host-only cause (SchemeHost + RedactURLError); sanitizeGrabError wraps that cause, so a
+// non-sentinel transport error surfaces the scheme://host but never the passkey — and the
+// bytes go to /dl, never a log.
 func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, error) {
 	resp, err := d.get(ctx, link, "")
 	if err != nil {
@@ -56,13 +58,13 @@ func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, err
 	}, nil
 }
 
-// sanitizeGrabError strips a possibly passkey-bearing transport error: the download URL
-// carries the passkey in its path (not just a query param), so RedactURL — which redacts
-// only query values — cannot guarantee a clean URL. Any non-sentinel error from the
-// fetch is therefore replaced with a fixed, link-free message rather than risk surfacing
-// the URL. Sentinels that carry no URL and that callers need to classify are passed
-// through unchanged: auth and rate-limit (for health), context cancellation/deadline (so
-// normal cancellation is not misreported as a failure), and the size-cap error.
+// sanitizeGrabError classifies a grab error. Sentinels that carry no URL and that callers
+// need to classify are passed through unchanged: auth and rate-limit (for health), context
+// cancellation/deadline (so normal cancellation is not misreported as a failure), and the
+// size-cap error. The fallback %w-wraps the cause, which is host-only — either get()'s
+// transport error (host-only by construction) or an io read error (URL-free) — and
+// RedactURLError additionally rebuilds a stray build-request *url.Error host-only, so the
+// download link's secret path/query never surfaces (only its scheme://host can).
 func sanitizeGrabError(err error) error {
 	switch {
 	case errors.Is(err, login.ErrLoginFailed),
@@ -75,7 +77,11 @@ func sanitizeGrabError(err error) error {
 	if errors.As(err, &rl) {
 		return err
 	}
-	return errors.New("animebytes: download request failed")
+	// Safety invariant: the %w-wrapped cause is host-only — either get()'s transport error
+	// (host-only by construction) or readCapped's io error (URL-free) — and RedactURLError
+	// additionally rebuilds a stray build-request *url.Error host-only, so the download
+	// link's secret path/query never surfaces (only its scheme://host can).
+	return fmt.Errorf("animebytes: download request failed: %w", apphttp.RedactURLError(err))
 }
 
 // readCapped reads up to limit bytes, returning errDownloadTooLarge when the source

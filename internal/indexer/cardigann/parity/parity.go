@@ -132,6 +132,10 @@ type CaseStep struct {
 	// appears as its own declared step only when the path opts in via
 	// followredirect.
 	Location string `yaml:"location"`
+	// ContentType, when set, is served as the response's Content-Type header, so a
+	// fixture can exercise looksLoggedOut's wire-Content-Type gate (Jackett reads
+	// WebResult.Headers["Content-Type"], not the def's declared response type).
+	ContentType string `yaml:"content_type"`
 	// SetCookie are Set-Cookie header values the response carries, so a login
 	// response can establish a session cookie the cookie jar then sends on later
 	// steps (the cookie/form login archetypes).

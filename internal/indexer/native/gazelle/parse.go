@@ -13,6 +13,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // customCatCutoff bounds the canonical newznab id range. The caps map carries a
@@ -156,6 +157,7 @@ func (d *driver) parseBrowse(body []byte) ([]*normalizer.Release, error) {
 		rels = append(rels, d.flattenGroup(&resp.Response.Results[i])...)
 	}
 	sortReleases(rels)
+	native.TraceReleases(d.log, d.def.ID, rels)
 	return rels, nil
 }
 

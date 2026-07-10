@@ -6,6 +6,7 @@ import (
 	"io"
 	stdhttp "net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -71,20 +72,41 @@ func TestGrabReturnsNZBBody(t *testing.T) {
 	assertNoApikey(t, "grab body", string(res.Body))
 }
 
-// TestGrabTransportErrorNeverLeaksURL proves a transport error from the .nzb fetch (whose
-// *url.Error echoes the full apikey-bearing URL) is flattened to a fixed, link-free message
-// — the apikey can never re-leak through the wrapped error.
-func TestGrabTransportErrorNeverLeaksURL(t *testing.T) {
+// TestGrabTransportErrorSurfacesHostOnly proves a real transport failure — a *url.Error, as
+// http.Client.Do returns, whose Error() echoes the FULL apikey-bearing URL (secret in both a
+// path segment and a query param) — surfaces only its scheme://host. The apikey-bearing
+// path/query is dropped, the enriched error still errors.Is the sentinel, and it still carries
+// the "download request failed" substring.
+func TestGrabTransportErrorSurfacesHostOnly(t *testing.T) {
 	t.Parallel()
-	doer := &errorDoer{err: errors.New("Get \"" + grabURL + "\": dial tcp: refused")}
-	d := grabDriver(t, doer)
-	_, err := d.Grab(context.Background(), grabURL)
+	// Secret in a PATH segment (/getnzb/<secret>) AND a query param (r=<secret>).
+	leakURL := "https://news.example.test/getnzb/" + testAPIKey + "?r=" + testAPIKey
+	uerr := &url.Error{
+		Op:  "Get",
+		URL: leakURL,
+		Err: errors.New("dial tcp: connection refused"),
+	}
+	d := grabDriver(t, &errorDoer{err: uerr})
+	_, err := d.Grab(context.Background(), leakURL)
 	if err == nil {
 		t.Fatal("Grab err = nil, want a transport error")
 	}
-	assertNoApikey(t, "grab transport error", err.Error())
-	if !strings.Contains(err.Error(), "download request failed") {
-		t.Errorf("err = %q, want the fixed link-free message", err.Error())
+	got := err.Error()
+	// The host now surfaces for diagnosis — it is not a secret.
+	if !strings.Contains(got, "https://news.example.test") {
+		t.Errorf("err = %q, want it to surface scheme://host", got)
+	}
+	// The apikey and its path/query carriers must be gone.
+	assertNoApikey(t, "grab transport error", got)
+	if strings.Contains(got, "/getnzb/"+testAPIKey) || strings.Contains(got, "r="+testAPIKey) {
+		t.Errorf("err = %q leaks the apikey-bearing path/query", got)
+	}
+	// The sentinel identity and its message must survive the host-only enrichment.
+	if !errors.Is(err, errDownloadRequestFailed) {
+		t.Errorf("err = %q, want errors.Is(errDownloadRequestFailed)", got)
+	}
+	if !strings.Contains(got, "newznab: download request failed") {
+		t.Errorf("err = %q, want the download-request-failed message", got)
 	}
 }
 

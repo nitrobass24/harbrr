@@ -23,10 +23,10 @@ const (
 
 // get issues a GET carrying the session cookie (and User-Agent when configured) as
 // headers. The cookie is a header, never the URL, so the served URL carries no secret;
-// a transport error still redacts the URL. The caller owns the returned body and
-// interprets the status. accept sets the Accept header when non-empty (the search wants
-// JSON; a torrent download must not force a content type). The cookie, headers, and
-// body are never logged.
+// a transport error still surfaces only its scheme://host. The caller owns the returned
+// body and interprets the status. accept sets the Accept header when non-empty (the
+// search wants JSON; a torrent download must not force a content type). The cookie,
+// headers, and body are never logged.
 func (d *driver) get(ctx context.Context, rawurl, accept string) (*stdhttp.Response, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
@@ -43,12 +43,13 @@ func (d *driver) get(ctx context.Context, rawurl, accept string) (*stdhttp.Respo
 	}
 	resp, err := d.doer.Do(req)
 	if err != nil {
-		// The cookie rides only the request header, never the URL, so the redacted URL
-		// and the transport error carry no session secret; scrubSecrets is a final
-		// belt-and-suspenders pass, and the wrapped err keeps the chain intact for
-		// context.Canceled / DeadlineExceeded callers.
+		// The cookie rides only the request header, never the URL. SchemeHost surfaces
+		// only scheme://host and RedactURLError rebuilds the cause host-only (the raw err
+		// is no longer interpolated); scrubSecrets is a final belt-and-suspenders pass,
+		// and Unwrap keeps the chain intact for context.Canceled / DeadlineExceeded
+		// callers.
 		return nil, &scrubbedError{
-			msg: scrubSecrets(fmt.Sprintf("torrentday: request to %s: %s", apphttp.RedactURL(rawurl), err), d.cfg),
+			msg: scrubSecrets(fmt.Sprintf("torrentday: request to %s: %s", apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err)), d.cfg),
 			err: err,
 		}
 	}

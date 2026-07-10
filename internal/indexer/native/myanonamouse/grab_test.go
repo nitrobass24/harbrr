@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	stdhttp "net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -90,15 +91,18 @@ type errorDoer struct{ err error }
 func (e *errorDoer) Do(*stdhttp.Request) (*stdhttp.Response, error) { return nil, e.err }
 
 // TestGrabTransportErrorSanitized proves a transport failure during the download fetch
-// surfaces a fixed, link-free error even though the download URL carries the dl hash in
-// its PATH (which the query-scoped URL redactor cannot reach).
+// surfaces the download endpoint's scheme://host (the host is not a secret) while the
+// secret-bearing PATH segment and query param of the download URL never leak — even though
+// http.Client.Do returns a *url.Error whose Error() embeds the FULL URL.
 func TestGrabTransportErrorSanitized(t *testing.T) {
 	t.Parallel()
-	const link = "https://mam.test/tor/download.php/PATHKEY-SECRET-zzzz?tid=9"
+	const secret = "DLPATH-SECRET-zzzz"
+	const base = "https://www.myanonamouse.net"
+	link := base + "/dl/" + secret + "?passkey=" + secret
 	d := &driver{
 		cfg:          map[string]string{"mam_id": mamSecret},
-		doer:         &errorDoer{err: errors.New("connection refused")},
-		baseURL:      "https://mam.test/",
+		doer:         &errorDoer{err: &url.Error{Op: "Get", URL: link, Err: errors.New("dial tcp: connection refused")}},
+		baseURL:      base + "/",
 		clock:        fixedClock,
 		currentMamID: mamSecret,
 	}
@@ -106,10 +110,17 @@ func TestGrabTransportErrorSanitized(t *testing.T) {
 	if err == nil {
 		t.Fatal("want a transport error")
 	}
-	if strings.Contains(err.Error(), "PATHKEY-SECRET") || strings.Contains(err.Error(), link) {
-		t.Errorf("download URL/key leaked into the error: %v", err)
+	got := err.Error()
+	if !strings.Contains(got, base) {
+		t.Errorf("error should surface the download host %q (the host is not a secret): %v", base, got)
 	}
-	assertNoSecret(t, err.Error())
+	if strings.Contains(got, secret) || strings.Contains(got, "/dl/"+secret) || strings.Contains(got, "passkey="+secret) {
+		t.Errorf("download URL secret leaked into the error: %v", err)
+	}
+	if !strings.Contains(got, "myanonamouse: download request failed") {
+		t.Errorf("error should carry the grab-failure prefix: %v", err)
+	}
+	assertNoSecret(t, got)
 }
 
 func TestReadCapped(t *testing.T) {

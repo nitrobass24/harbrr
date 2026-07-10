@@ -7,6 +7,7 @@ import (
 	"io"
 	stdhttp "net/http"
 
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
@@ -23,9 +24,9 @@ var errDownloadTooLarge = errors.New("filelist: download exceeds the size cap")
 // not see, which is why NeedsResolver is true and the served feed routes the download
 // through the /dl proxy; this is the server-side fetch /dl drives, so neither the
 // Basic header nor the passkey in the URL reaches the feed. The download is a direct
-// torrent (never a magnet), so Redirect is empty. No error carries the download URL
-// (its passkey sits in the query, and even RedactURL aside the URL is kept out of
-// every error), and the bytes go to /dl, never a log.
+// torrent (never a magnet), so Redirect is empty. On a fetch failure the error
+// surfaces only the download URL's scheme://host (its secret path/query never surface
+// — see sanitizeGrabError), and the bytes go to /dl, never a log.
 func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, error) {
 	resp, err := d.get(ctx, link, "")
 	if err != nil {
@@ -55,10 +56,13 @@ func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, err
 	}, nil
 }
 
-// sanitizeGrabError strips a possibly passkey-bearing transport error: the download
-// URL carries the passkey in its query, so any non-sentinel error from the fetch is
-// replaced with a fixed, link-free message rather than risk surfacing the URL. Auth
-// and rate-limit sentinels are kept for health classification.
+// sanitizeGrabError maps a download-fetch error to a stable, secret-safe error. Auth
+// and rate-limit sentinels are kept for health classification; every other cause hits
+// the fallback, which %w-wraps a host-only cause: get()'s transport error is host-only
+// by construction (get already rebuilds the *url.Error via SchemeHost), an io read
+// error is URL-free, and RedactURLError additionally rebuilds a stray build-request
+// *url.Error host-only. So the download link's secret path/query never surface — only
+// its scheme://host can, and the host is not a secret.
 func sanitizeGrabError(err error) error {
 	if errors.Is(err, login.ErrLoginFailed) {
 		return err
@@ -67,7 +71,7 @@ func sanitizeGrabError(err error) error {
 	if errors.As(err, &rl) {
 		return err
 	}
-	return errors.New("filelist: download request failed")
+	return fmt.Errorf("filelist: download request failed: %w", apphttp.RedactURLError(err))
 }
 
 // readCapped reads up to limit bytes, returning errDownloadTooLarge when the source

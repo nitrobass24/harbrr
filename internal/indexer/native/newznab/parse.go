@@ -11,6 +11,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // newznabAttrNS is the newznab attribute namespace URI. Feeds bind it to the prefix
@@ -96,6 +97,7 @@ func (d *driver) parseReleases(body []byte, catMap *mapper.CategoryMap) ([]*norm
 			releases = append(releases, rel)
 		}
 	}
+	native.TraceReleases(d.log, d.def.ID, releases)
 	return releases, nil
 }
 

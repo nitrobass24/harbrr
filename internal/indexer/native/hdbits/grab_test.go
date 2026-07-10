@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	stdhttp "net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -17,11 +18,23 @@ import (
 // configured passkey.
 const grabURL = "https://hdbits.test/download.php?id=100001&passkey=" + credPass
 
-// errorDoer fails every request with a transport error that echoes the URL, so the test
-// can prove the grab error never leaks the passkey-bearing link.
+// errorDoer fails every request with a caller-supplied transport error, so the test can
+// feed it the realistic *url.Error http.Client.Do returns and prove the grab error surfaces
+// only the host, never the passkey-bearing link.
 type errorDoer struct{ err error }
 
 func (e *errorDoer) Do(*stdhttp.Request) (*stdhttp.Response, error) { return nil, e.err }
+
+// leakURL is a synthetic transport-failure URL that hides credPass in BOTH a path segment
+// and a query param, mirroring where trackers stash download secrets. hdbits.org is the
+// real HDBits host; its scheme://host is not a secret and is allowed to surface.
+const leakURL = "https://hdbits.org/dl/" + credPass + "?passkey=" + credPass
+
+// transportErr is the *url.Error shape http.Client.Do returns on a dial failure: it echoes
+// the full secret-bearing URL, so the grab path must redact it to host-only before wrapping.
+func transportErr() error {
+	return &url.Error{Op: "Get", URL: leakURL, Err: errors.New("dial tcp: connection refused")}
+}
 
 // TestGrabReturnsTorrentBytes proves Grab GETs the download URL server-side and returns
 // the torrent body and Content-Type, with no extra auth header (the URL carries its own
@@ -57,43 +70,60 @@ func TestGrabReturnsTorrentBytes(t *testing.T) {
 	}
 }
 
-// TestGrabTransportErrorNeverLeaksURL proves a transport error from the download fetch is
-// sanitized to a fixed message that carries neither the URL nor the embedded passkey.
-func TestGrabTransportErrorNeverLeaksURL(t *testing.T) {
+// TestGrabTransportErrorSurfacesHostOnly proves a transport error from the download fetch
+// surfaces the endpoint's scheme://host (not a secret, useful for diagnosis) while dropping
+// the passkey wherever it hides — in the path segment and the query param — and still
+// classifies as errDownloadRequestFailed. Production only ever hands sanitizeGrabError this
+// host-only *url.Error shape, so the test injects exactly that.
+func TestGrabTransportErrorSurfacesHostOnly(t *testing.T) {
 	t.Parallel()
-	// The transport error echoes the full URL (incl. the passkey) to simulate a hostile or
-	// verbose error; the sanitizer must drop all of it.
 	d := liveDriver(t, &scriptDoer{})
-	d.doer = &errorDoer{err: errors.New("dial tcp: " + grabURL)}
+	d.doer = &errorDoer{err: transportErr()}
 
 	_, err := d.Grab(context.Background(), grabURL)
 	if err == nil {
 		t.Fatal("Grab should error on a transport failure")
 	}
 	msg := err.Error()
-	for _, leak := range []string{grabURL, credPass, "hdbits.test"} {
+	if !strings.Contains(msg, "https://hdbits.org") {
+		t.Errorf("grab error should surface the host-only cause, got %q", msg)
+	}
+	if !strings.Contains(msg, "hdbits: download request failed") {
+		t.Errorf("grab error should retain the fixed prefix, got %q", msg)
+	}
+	if !errors.Is(err, errDownloadRequestFailed) {
+		t.Errorf("grab error should still errors.Is errDownloadRequestFailed, got %v", err)
+	}
+	for _, leak := range []string{credPass, "/dl/" + credPass, "passkey=" + credPass} {
 		if strings.Contains(msg, leak) {
 			t.Errorf("grab error leaks %q: %q", leak, msg)
 		}
 	}
 }
 
-// TestGetSourceNeverLeaksURL proves get() itself (not just the Grab wrapper) returns a fixed
-// error whose %w cannot re-expose the passkey-bearing URL: a future direct caller of get()
-// must be safe even without sanitizeGrabError. The transport error echoes the full URL incl.
-// the passkey.
-func TestGetSourceNeverLeaksURL(t *testing.T) {
+// TestGetSourceSurfacesHostOnly proves get() itself (not just the Grab wrapper) redacts the
+// passkey-bearing *url.Error to a host-only cause, so a future direct caller of get() is safe
+// even without sanitizeGrabError: the host surfaces but the passkey (in both path and query)
+// does not, and the result still classifies as errDownloadRequestFailed.
+func TestGetSourceSurfacesHostOnly(t *testing.T) {
 	t.Parallel()
 	d := liveDriver(t, &scriptDoer{})
-	d.doer = &errorDoer{err: errors.New("dial tcp: " + grabURL)}
+	d.doer = &errorDoer{err: transportErr()}
 
 	_, err := d.get(context.Background(), grabURL)
 	if err == nil {
 		t.Fatal("get should error on a transport failure")
 	}
-	for _, leak := range []string{grabURL, credPass, "hdbits.test"} {
-		if strings.Contains(err.Error(), leak) {
-			t.Errorf("get error leaks %q: %q", leak, err)
+	msg := err.Error()
+	if !strings.Contains(msg, "https://hdbits.org") {
+		t.Errorf("get error should surface the host-only cause, got %q", msg)
+	}
+	if !errors.Is(err, errDownloadRequestFailed) {
+		t.Errorf("get error should errors.Is errDownloadRequestFailed, got %v", err)
+	}
+	for _, leak := range []string{credPass, "/dl/" + credPass, "passkey=" + credPass} {
+		if strings.Contains(msg, leak) {
+			t.Errorf("get error leaks %q: %q", leak, msg)
 		}
 	}
 }

@@ -1,0 +1,13 @@
+{
+  "results": [
+    {
+      "name": "Ubuntu 24.04 Desktop amd64",
+      "size": 3221225472,
+      "seeders": 42,
+      "leechers": 3,
+      "cat": "movies",
+      "dl": "https://logoutct.test/dl/1.torrent",
+      "added": "2024-01-02T03:04:05Z"
+    }
+  ]
+}
