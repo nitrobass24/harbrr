@@ -270,6 +270,33 @@ func TestSearchTransportErrorScrubbed(t *testing.T) {
 	}
 }
 
+// TestSearchBuildErrorScrubsAPIKey proves the search BUILD-request error is host-only. A
+// control character in the stored api_key makes NewRequestWithContext's url.Parse reject the
+// api_key-bearing PATH URL; the *url.Error it returns quotes the full URL, so it must be
+// rebuilt host-only rather than wrapped raw. Complements TestSearchTransportErrorScrubbed
+// (the Do path) — this covers the build path (grab.go's build path is covered separately).
+func TestSearchBuildErrorScrubsAPIKey(t *testing.T) {
+	t.Parallel()
+	const secret = "APIKEY-SECRET-DEADBEEF0000000000"
+	def := Families()[0].Definition
+	d, err := New(native.Params{
+		Def:   def,
+		Cfg:   map[string]string{"api_key": secret + "\n", "rsskey": credRSSKey},
+		Doer:  &scriptDoer{},
+		Clock: fixedClock,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	_, searchErr := d.Search(context.Background(), search.Query{Keywords: "x"})
+	if searchErr == nil {
+		t.Fatal("Search: want a build error from the malformed api_key URL")
+	}
+	if strings.Contains(searchErr.Error(), secret) {
+		t.Errorf("build error leaked the api_key: %v", searchErr)
+	}
+}
+
 // errDoer always fails the request with a fixed transport error.
 type errDoer struct{ err error }
 
