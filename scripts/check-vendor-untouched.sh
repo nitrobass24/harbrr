@@ -24,8 +24,15 @@ if [ "${GITHUB_HEAD_REF:-}" = "chore/vendor-definitions" ]; then
 fi
 
 if [ "${1:-}" = "--ci" ]; then
-  base="origin/${GITHUB_BASE_REF:-main}"
-  git fetch --quiet --depth=1 origin "${GITHUB_BASE_REF:-main}" 2>/dev/null || true
+  base_ref="${GITHUB_BASE_REF:-main}"
+  base="refs/remotes/origin/${base_ref}"
+  git fetch --quiet --depth=1 origin "${base_ref}:${base}" 2>/dev/null || true
+
+  if ! git rev-parse --verify --quiet "${base}^{commit}" >/dev/null; then
+    git fetch --quiet --depth=1 origin "${base_ref}"
+    base="FETCH_HEAD"
+  fi
+
   changed="$(git diff --name-only "${base}...HEAD" 2>/dev/null || git diff --name-only "${base}" HEAD)"
 else
   changed="$(git diff --cached --name-only)"

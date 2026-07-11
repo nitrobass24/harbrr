@@ -58,10 +58,7 @@ web-lint:
 ## a gitkeep-only dist would ship a binary whose UI answers "frontend not built")
 .PHONY: check-web-dist
 check-web-dist:
-	@if [ ! -f web/dist/index.html ]; then \
-		echo "ERROR: web/dist is empty (no index.html) — run make web-build before a release build"; \
-		exit 1; \
-	fi
+	@scripts/check-web-dist.sh
 
 ## web-ci: exactly what CI's web job runs (frozen install -> lint -> test ->
 ## route-tree drift check -> build -> bundle guard)

@@ -38,7 +38,7 @@ jobs:
   vendor-guard:
     name: vendor-guard
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -53,7 +53,7 @@ jobs:
   # Cross-build below covers other platforms and vet is covered by golangci-lint (govet).
   backend-test:
     name: backend-test (${{ matrix.shard.name }})
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     # Match the Dockerfile's build stage (golang:1.26-alpine) so the toolchain that
     # tests is the image's own musl Go — hence no actions/setup-go here (it would
     # download a glibc Go and shadow the image's on PATH, silently defeating the
@@ -90,22 +90,32 @@ jobs:
       GOMODCACHE: /home/ci/go/pkg/mod
       GOCACHE: /home/ci/.cache/go-build
     steps:
-      - name: install container prerequisites (gcompat for GHA's Node runtime, git for checkout/go mod, build-base for -race's cgo requirement, ruby for the shard-coverage guard)
+      - name: install container prerequisites (gcompat for GHA's Node runtime, git for checkout/go mod, build-base for -race's cgo requirement, ruby for the shard-coverage guard, tar for actions/cache)
         run: |
-          apk add --no-cache gcompat git build-base ruby
+          apk add --no-cache gcompat git build-base ruby tar
           adduser -D ci
       # No git ops after checkout, and the tests below run as the less-trusted `ci`
       # user — don't leave the GITHUB_TOKEN readable in .git/config.
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+      # Module cache is identical across shards, so key it on go.sum only (not the shard):
+      # the 3 shards share ONE entry instead of each storing a duplicate copy, easing the
+      # ~10GB per-repo cache LRU. Concurrent same-key saves from parallel shards no-op.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: |
-            /home/ci/go/pkg/mod
-            /home/ci/.cache/go-build
-          key: alpine-go-${{ hashFiles('go.sum') }}
-          restore-keys: alpine-go-
+          path: /home/ci/go/pkg/mod
+          key: alpine-gomod-${{ env.GO_VERSION }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            alpine-gomod-${{ env.GO_VERSION }}-
+      # Build cache is shard-specific (each shard compiles a different package set) — keep
+      # it per-shard for a warm incremental compile.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /home/ci/.cache/go-build
+          key: alpine-gobuild-${{ matrix.shard.name }}-${{ env.GO_VERSION }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            alpine-gobuild-${{ matrix.shard.name }}-${{ env.GO_VERSION }}-
       - name: guard shard package coverage
         if: matrix.shard.name == 'rest'
         run: |
@@ -138,20 +148,19 @@ jobs:
   # Frontend Vitest suite — mirrors the Go `test` job and gates docker-merge alongside it.
   web-test:
     name: web-test
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
+    container:
+      image: node:22-alpine
     timeout-minutes: 10
     steps:
+      - name: install container prerequisites
+        run: apk add --no-cache gcompat git libatomic
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
           package_json_file: web/package.json
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
       - name: install
         working-directory: web
         run: pnpm install --frozen-lockfile
@@ -163,20 +172,19 @@ jobs:
   # mirrors golangci-lint and runs in parallel with it.
   web-lint:
     name: web-lint
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
+    container:
+      image: node:22-alpine
     timeout-minutes: 10
     steps:
+      - name: install container prerequisites
+        run: apk add --no-cache gcompat git libatomic
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
           package_json_file: web/package.json
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
       - name: install
         working-directory: web
         run: pnpm install --frozen-lockfile
@@ -188,20 +196,19 @@ jobs:
   # Uses `tsc -b` (project references; noEmit already set in tsconfig.app.json).
   web-typecheck:
     name: web-typecheck
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
+    container:
+      image: node:22-alpine
     timeout-minutes: 10
     steps:
+      - name: install container prerequisites
+        run: apk add --no-cache gcompat git libatomic
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
           package_json_file: web/package.json
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
       - name: install
         working-directory: web
         run: pnpm install --frozen-lockfile
@@ -214,9 +221,13 @@ jobs:
   # rebuilding, so all shipped binaries embed the identical bundle.
   web:
     name: web
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
+    container:
+      image: node:22-alpine
     timeout-minutes: 10
     steps:
+      - name: install container prerequisites
+        run: apk add --no-cache bash gcompat git libatomic
       # read-only git ops (the route-tree drift check) after checkout, so don't persist the token in .git/config.
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -224,11 +235,6 @@ jobs:
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
           package_json_file: web/package.json
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
       - name: install
         working-directory: web
         run: pnpm install --frozen-lockfile
@@ -238,13 +244,14 @@ jobs:
       - name: route-tree drift check
         working-directory: web
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           pnpm exec tsr generate
-          git diff --exit-code src/routeTree.gen.ts
+          git -C "$GITHUB_WORKSPACE" diff --exit-code -- web/src/routeTree.gen.ts
       - name: build
         working-directory: web
-        run: pnpm build
+        run: pnpm build:bundle
       - name: guard the bundle
-        run: make check-web-dist
+        run: scripts/check-web-dist.sh
       - name: upload dist artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -255,7 +262,7 @@ jobs:
 
   golangci-lint:
     name: golangci-lint
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     # Alpine container matching the Dockerfile's build stage, lint run by the
     # image's own Go — see backend-test above for the full gcompat / no-setup-go /
     # GOTOOLCHAIN=local rationale. No non-root user here: linting has no
@@ -266,8 +273,8 @@ jobs:
     env:
       GOTOOLCHAIN: local
     steps:
-      - name: install container prerequisites (gcompat for GHA's Node runtime, git for checkout/go mod)
-        run: apk add --no-cache gcompat git
+      - name: install container prerequisites (gcompat for GHA's Node runtime, git for checkout/go mod, tar for golangci-lint-action's cache)
+        run: apk add --no-cache gcompat git tar
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
@@ -282,7 +289,7 @@ jobs:
   # on org repos. check-no-secrets.sh is a targeted tracker-credential backstop.
   secret-scan:
     name: secret scan
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -306,7 +313,7 @@ jobs:
   # vulnerability DB is fetched fresh each run.
   govulncheck:
     name: govulncheck
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 10
     env:
       GOVULNCHECK_VERSION: v1.5.0
@@ -315,7 +322,10 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache: true
+          # Host job on the shared persistent self-hosted fleet: GOMODCACHE/GOCACHE
+          # already persist in /root between runs, so a GHA cache round-trip is pure
+          # overhead. Container jobs that need caching (backend-test) use actions/cache.
+          cache: false
       - name: cache govulncheck
         id: govulncheck-cache
         uses: actions/cache@a7833574556fa59680c1b7cb190c1735db73ebf0 # v5.0.0
@@ -339,7 +349,7 @@ jobs:
     # Do not add a custom name: it would change the check name and the branch's
     # required checks would wait forever on a context that no longer reports.
     name: cross-build
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 10
     needs: [web]
     strategy:
@@ -360,22 +370,25 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache: true
+          # Host job on the shared persistent self-hosted fleet: GOMODCACHE/GOCACHE
+          # already persist in /root between runs, so a GHA cache round-trip is pure
+          # overhead. Container jobs that need caching (backend-test) use actions/cache.
+          cache: false
       - name: download web dist (built once by the web job)
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: web-dist
           path: web/dist
       - name: guard the bundle
-        run: make check-web-dist
+        run: scripts/check-web-dist.sh
       - name: build ${{ matrix.target.goos }}/${{ matrix.target.goarch }}
         env:
           GOOS: ${{ matrix.target.goos }}
           GOARCH: ${{ matrix.target.goarch }}
           CGO_ENABLED: "0"
         run: |
-          version="$(git describe --tags --always --dirty 2>/dev/null || echo 0.0.0-dev)"
-          commit="$(git rev-parse --short HEAD)"
+          version="$(git -c safe.directory="$GITHUB_WORKSPACE" describe --tags --always --dirty 2>/dev/null || echo 0.0.0-dev)"
+          commit="$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse --short HEAD)"
           date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           go build -trimpath -ldflags "-s -w \
             -X github.com/autobrr/harbrr/internal/version.Version=${version} \
@@ -395,7 +408,7 @@ jobs:
   # then assembles the pullable multi-arch manifest.
   docker:
     name: docker (${{ matrix.arch }})
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 20
     needs: [web]
     permissions:
@@ -409,6 +422,7 @@ jobs:
           - { arch: arm64, load: false }
     env:
       IMAGE: ghcr.io/${{ github.repository }}
+      IMAGE_TAG: harbrr:ci-${{ github.run_id }}-${{ matrix.arch }}
       # Push to GHCR on a same-repo PR (testable before merge), main (develop tag),
       # or a version tag (release, whether that tag arrived via push or a manual
       # dispatch aimed at the tag).
@@ -423,8 +437,12 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache: true
+          # Host job on the shared persistent self-hosted fleet: GOMODCACHE/GOCACHE
+          # already persist in /root between runs, so a GHA cache round-trip is pure
+          # overhead. Container jobs that need caching (backend-test) use actions/cache.
+          cache: false
       - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+        if: matrix.arch == 'arm64'
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       # The image ships the UI: the web job built (and tested) the bundle once; download
@@ -437,7 +455,7 @@ jobs:
           name: web-dist
           path: web/dist
       - name: guard the bundle
-        run: make check-web-dist
+        run: scripts/check-web-dist.sh
 
       # Natively cross-compile this arch's linux binary (no QEMU) into the build-context
       # the Dockerfile's `COPY --from=build /out/harbrr` expects — replacing its compile stage.
@@ -446,15 +464,18 @@ jobs:
           GOOS: linux
           GOARCH: ${{ matrix.arch }}
           CGO_ENABLED: "0"
+          BINCTX: ${{ runner.temp }}/binctx-${{ matrix.arch }}
         run: |
-          version="$(git describe --tags --always --dirty 2>/dev/null || echo 0.0.0-dev)"
-          commit="$(git rev-parse --short HEAD)"
+          rm -rf "$BINCTX"
+          mkdir -p "$BINCTX/out"
+          version="$(git -c safe.directory="$GITHUB_WORKSPACE" describe --tags --always --dirty 2>/dev/null || echo 0.0.0-dev)"
+          commit="$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse --short HEAD)"
           date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           go build -trimpath -ldflags "-s -w \
             -X github.com/autobrr/harbrr/internal/version.Version=${version} \
             -X github.com/autobrr/harbrr/internal/version.Commit=${commit} \
             -X github.com/autobrr/harbrr/internal/version.Date=${date}" \
-            -o /tmp/binctx/out/harbrr ./cmd/harbrr
+            -o "$BINCTX/out/harbrr" ./cmd/harbrr
 
       # Always build this arch (validates the Dockerfile). amd64 loads it for the smoke
       # run; arm64 builds to cache without loading (it can't run on an amd64 host).
@@ -463,17 +484,19 @@ jobs:
         with:
           context: .
           build-contexts: |
-            build=/tmp/binctx
+            build=${{ runner.temp }}/binctx-${{ matrix.arch }}
           push: false
           load: ${{ matrix.load }}
           platforms: linux/${{ matrix.arch }}
-          tags: harbrr:ci-${{ matrix.arch }}
-          cache-from: type=gha,scope=${{ matrix.arch }}
-          cache-to: type=gha,scope=${{ matrix.arch }},mode=max
+          tags: ${{ env.IMAGE_TAG }}
+          # No buildx GHA cache: in CI the compile runs in the prior `go build` step and is
+          # injected via build-contexts, so buildx only COPYs the binary and rebuilds the tiny
+          # native certs stage (seconds). type=gha,mode=max re-uploaded those layers for no
+          # reuse and was the biggest consumer of the ~10GB repo cache budget.
           provenance: false
       - name: validate image runs
         if: ${{ matrix.arch == 'amd64' }}
-        run: docker run --rm --entrypoint harbrr harbrr:ci-amd64 version
+        run: docker run --rm --entrypoint harbrr "$IMAGE_TAG" version
 
       # When publishing: log in, then push this arch by digest (a cache hit on the build
       # above) and record the digest for the merge job.
@@ -497,27 +520,32 @@ jobs:
         with:
           context: .
           build-contexts: |
-            build=/tmp/binctx
+            build=${{ runner.temp }}/binctx-${{ matrix.arch }}
           platforms: linux/${{ matrix.arch }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=${{ matrix.arch }}
-          cache-to: type=gha,scope=${{ matrix.arch }},mode=max
+          # No buildx GHA cache — see the build-image step above.
           provenance: false
       - name: export digest
         if: ${{ env.PUSH == 'true' }}
+        env:
+          DIGEST_DIR: ${{ runner.temp }}/digests-${{ matrix.arch }}
         run: |
-          mkdir -p /tmp/digests
+          rm -rf "$DIGEST_DIR"
+          mkdir -p "$DIGEST_DIR"
           digest="${{ steps.push.outputs.digest }}"
-          touch "/tmp/digests/${digest#sha256:}"
+          touch "$DIGEST_DIR/${digest#sha256:}"
       - name: upload digest
         if: ${{ env.PUSH == 'true' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: digests-${{ matrix.arch }}
-          path: /tmp/digests/*
+          path: ${{ runner.temp }}/digests-${{ matrix.arch }}/*
           if-no-files-found: error
           retention-days: 1
+      - name: cleanup local smoke image
+        if: ${{ always() && matrix.arch == 'amd64' }}
+        run: docker rmi "$IMAGE_TAG" || true
 
   # Assemble the multi-arch manifest from the per-arch digests — the pullable publish
   # step. Only runs when the docker job pushed (same-repo PR or tag); it builds nothing,
@@ -527,7 +555,7 @@ jobs:
   # publish waits on the gate.
   docker-merge:
     name: docker-merge
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: [docker, backend-test, web-test, golangci-lint, web-lint, web-typecheck]
     if: >-
       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]') ||
@@ -539,10 +567,16 @@ jobs:
     env:
       IMAGE: ghcr.io/${{ github.repository }}
     steps:
+      - name: prepare digest dir
+        env:
+          DIGEST_DIR: ${{ runner.temp }}/digests
+        run: |
+          rm -rf "$DIGEST_DIR"
+          mkdir -p "$DIGEST_DIR"
       - name: download digests
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          path: /tmp/digests
+          path: ${{ runner.temp }}/digests
           pattern: digests-*
           merge-multiple: true
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
@@ -564,8 +598,10 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=sha,format=short
       - name: create manifest list and push
-        working-directory: /tmp/digests
+        env:
+          DIGEST_DIR: ${{ runner.temp }}/digests
         run: |
+          cd "$DIGEST_DIR"
           # word-splitting is intentional: expand to `-t tag1 -t tag2 …` + one image
           # ref per digest file (the standard buildx imagetools manifest-merge idiom).
           # IMAGE / DOCKER_METADATA_OUTPUT_JSON come from env, not template interpolation.
@@ -583,7 +619,7 @@ jobs:
   # the docker jobs above; GoReleaser builds no image.
   goreleaser:
     name: goreleaser
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 20
     needs: [backend-test, web-test, golangci-lint, web-lint, web-typecheck, web]
     permissions:
@@ -595,7 +631,10 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache: true
+          # Host job on the shared persistent self-hosted fleet: GOMODCACHE/GOCACHE
+          # already persist in /root between runs, so a GHA cache round-trip is pure
+          # overhead. Container jobs that need caching (backend-test) use actions/cache.
+          cache: false
       # Release binaries ship the UI: the web job built (and tested) the bundle once —
       # download it before goreleaser compiles, and hard-fail the release if it is
       # empty. Tag runs only — PR/main runs execute `goreleaser check`, which builds
@@ -608,7 +647,7 @@ jobs:
           path: web/dist
       - name: guard the bundle
         if: startsWith(github.ref, 'refs/tags/')
-        run: make check-web-dist
+        run: scripts/check-web-dist.sh
       - name: goreleaser
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:

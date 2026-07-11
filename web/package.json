@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build && node -e \"const fs=require('fs'); fs.mkdirSync('dist',{recursive:true}); fs.closeSync(fs.openSync('dist/.gitkeep','a'));\"",
+    "build:bundle": "vite build && node -e \"const fs=require('fs'); fs.mkdirSync('dist',{recursive:true}); fs.closeSync(fs.openSync('dist/.gitkeep','a'));\"",
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
