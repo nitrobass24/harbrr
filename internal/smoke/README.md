@@ -37,9 +37,9 @@ Per tracker, page 1 only (the full criteria are in
 
 - **Prowlarr has results but harbrr returns 0 (or far fewer)** → **fail** — a real bug to report.
 - A `429`/`503` (rate-limit / anti-bot) is a **skip**, not a fail — re-run later.
-- Count ratio ≥ 0.50 **and** title Jaccard ≥ 0.30 → **pass**. (A full, config-sorted page can pass
-  on count parity alone — the two instances fetch different sort windows, so titles aren't
-  comparable there.)
+- Count ratio ≥ 0.50 **and** title Jaccard ≥ 0.30 → **pass**. (Exception: when **both** sides hit
+  the 100-result page cap **and** the count ratio is ≥ 0.90, low title Jaccard still passes — a
+  full page is a config-sorted window, so titles aren't comparable there.)
 
 ## Report a finding back
 
