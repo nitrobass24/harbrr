@@ -389,14 +389,49 @@ func TestImportForceGuard(t *testing.T) {
 	}
 }
 
+// TestImportForceGuardProtectsAdmin proves that a bundle which would replace the target's
+// admin login is refused without force even when no config resources exist (a first-run
+// instance being migrated onto), so an accidental import can't silently swap the login.
+func TestImportForceGuardProtectsAdmin(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	src, srcKR := openDB(t), openKeyring(t, keyA)
+	seed(t, src, srcKR) // carries an admin (+ config)
+	bundle, _ := backup.NewService(src, srcKR, zerolog.Nop()).Export(ctx, backup.ExportParams{Passphrase: "pw"})
+
+	// Target has only a bootstrap admin, no config resources.
+	dst, dstKR := openDB(t), openKeyring(t, keyB)
+	if _, err := (database.Users{}).Create(ctx, dst, domain.User{
+		Username: "existing", PasswordHash: passHash, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("seed target admin: %v", err)
+	}
+	svc := backup.NewService(dst, dstKR, zerolog.Nop())
+	if err := svc.Import(ctx, backup.ImportParams{Payload: bundle, Passphrase: "pw"}); !errors.Is(err, backup.ErrConflict) {
+		t.Fatalf("Import(no force, admin present) err = %v, want ErrConflict", err)
+	}
+	if err := svc.Import(ctx, backup.ImportParams{Payload: bundle, Passphrase: "pw", Force: true}); err != nil {
+		t.Fatalf("Import(force): %v", err)
+	}
+	if admin, _ := (database.Users{}).GetAdmin(ctx, dst); admin.Username != "admin" {
+		t.Errorf("admin username = %q after force import, want the bundle's 'admin'", admin.Username)
+	}
+}
+
 func TestImportRejectsForeignBundle(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc := backup.NewService(openDB(t), openKeyring(t, keyA), zerolog.Nop())
-	for _, payload := range []string{`not json`, `{"schemaVersion":999,"salt":"","payload":""}`} {
-		if err := svc.Import(ctx, backup.ImportParams{Payload: []byte(payload), Passphrase: "pw", Force: true}); !errors.Is(err, backup.ErrInvalid) {
-			t.Errorf("Import(%q) err = %v, want ErrInvalid", payload, err)
-		}
+	cases := map[string]string{
+		"not json":        `not json`,
+		"unknown version": `{"schemaVersion":999,"salt":"","payload":""}`,
+	}
+	for name, payload := range cases {
+		t.Run(name, func(t *testing.T) {
+			if err := svc.Import(ctx, backup.ImportParams{Payload: []byte(payload), Passphrase: "pw", Force: true}); !errors.Is(err, backup.ErrInvalid) {
+				t.Errorf("Import(%q) err = %v, want ErrInvalid", payload, err)
+			}
+		})
 	}
 }
 

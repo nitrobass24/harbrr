@@ -53,7 +53,7 @@ func (s *Service) restore(ctx context.Context, t *Tables, force bool) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if err := ensureRestorable(ctx, tx, force); err != nil {
+	if err := ensureRestorable(ctx, tx, force, t.Admin != nil); err != nil {
 		return err
 	}
 	// The admin is replaced only when the bundle carries one, so a bundle from a
@@ -70,8 +70,12 @@ func (s *Service) restore(ctx context.Context, t *Tables, force bool) error {
 	return nil
 }
 
-// ensureRestorable refuses to overwrite an already-configured instance unless force is set.
-func ensureRestorable(ctx context.Context, q dbinterface.Execer, force bool) error {
+// ensureRestorable refuses to overwrite existing state unless force is set: any configured
+// resource, or — because a bundle carrying an admin replaces the target's login — an
+// existing admin user. A truly-empty instance imports freely, but one that has completed
+// first-run setup must opt in before its admin is swapped (the import is authenticated, so
+// there is always an admin to protect once setup is done).
+func ensureRestorable(ctx context.Context, q dbinterface.Execer, force, bundleHasAdmin bool) error {
 	if force {
 		return nil
 	}
@@ -82,6 +86,15 @@ func ensureRestorable(ctx context.Context, q dbinterface.Execer, force bool) err
 		}
 		if n > 0 {
 			return fmt.Errorf("%w: %s already has %d row(s) — pass force to overwrite", ErrConflict, table, n)
+		}
+	}
+	if bundleHasAdmin {
+		n, err := countRows(ctx, q, "users")
+		if err != nil {
+			return err
+		}
+		if n > 0 {
+			return fmt.Errorf("%w: importing this bundle would replace the admin login — pass force to overwrite", ErrConflict)
 		}
 	}
 	return nil
@@ -148,7 +161,7 @@ func (s *Service) loadProxies(ctx context.Context, q dbinterface.Execer, rows []
 		if err != nil {
 			return nil, fmt.Errorf("backup: insert proxy %q: %w", r.Name, err)
 		}
-		if err := s.sealProxyURL(ctx, q, repo, newID, r.URL); err != nil {
+		if err := s.sealSecret(ctx, q, newID, domain.ProxySecretURL, r.URL, "proxy", repo.SetProxySecret); err != nil {
 			return nil, err
 		}
 		m[r.ID] = newID
@@ -156,13 +169,19 @@ func (s *Service) loadProxies(ctx context.Context, q dbinterface.Execer, rows []
 	return m, nil
 }
 
-func (s *Service) sealProxyURL(ctx context.Context, q dbinterface.Execer, repo database.Proxies, id int64, url string) error {
-	enc, err := s.keyring.Encrypt(id, domain.ProxySecretURL, url)
+// sealSecret encrypts plaintext under (id, disc) and writes the ciphertext through set
+// (each resource's SetXSecret, which share the (ctx, q, id, enc, keyID) shape); label
+// names the resource in any error. Shared by the single-secret loaders (proxies, solvers,
+// notifications); the two-secret connection tables use sealConnPair.
+func (s *Service) sealSecret(ctx context.Context, q dbinterface.Execer, id int64, disc, plaintext, label string,
+	set func(ctx context.Context, q dbinterface.Execer, id int64, enc, keyID string) error,
+) error {
+	enc, err := s.keyring.Encrypt(id, disc, plaintext)
 	if err != nil {
-		return fmt.Errorf("backup: seal proxy url: %w", err)
+		return fmt.Errorf("backup: seal %s secret: %w", label, err)
 	}
-	if err := repo.SetProxySecret(ctx, q, id, enc, s.keyring.KeyID()); err != nil {
-		return fmt.Errorf("backup: set proxy secret: %w", err)
+	if err := set(ctx, q, id, enc, s.keyring.KeyID()); err != nil {
+		return fmt.Errorf("backup: set %s secret: %w", label, err)
 	}
 	return nil
 }
@@ -178,12 +197,8 @@ func (s *Service) loadSolvers(ctx context.Context, q dbinterface.Execer, rows []
 		if err != nil {
 			return nil, fmt.Errorf("backup: insert solver %q: %w", r.Name, err)
 		}
-		enc, err := s.keyring.Encrypt(newID, domain.SolverSecretURL, r.URL)
-		if err != nil {
-			return nil, fmt.Errorf("backup: seal solver url: %w", err)
-		}
-		if err := repo.SetSolverSecret(ctx, q, newID, enc, s.keyring.KeyID()); err != nil {
-			return nil, fmt.Errorf("backup: set solver secret: %w", err)
+		if err := s.sealSecret(ctx, q, newID, domain.SolverSecretURL, r.URL, "solver", repo.SetSolverSecret); err != nil {
+			return nil, err
 		}
 		m[r.ID] = newID
 	}
@@ -336,12 +351,8 @@ func (s *Service) loadNotifications(ctx context.Context, q dbinterface.Execer, r
 		if err != nil {
 			return fmt.Errorf("backup: insert notification %q: %w", r.Name, err)
 		}
-		enc, err := s.keyring.Encrypt(newID, discURL, r.URL)
-		if err != nil {
-			return fmt.Errorf("backup: seal notification url: %w", err)
-		}
-		if err := repo.SetNotificationSecret(ctx, q, newID, enc, s.keyring.KeyID()); err != nil {
-			return fmt.Errorf("backup: set notification secret: %w", err)
+		if err := s.sealSecret(ctx, q, newID, discURL, r.URL, "notification", repo.SetNotificationSecret); err != nil {
+			return err
 		}
 	}
 	return nil
