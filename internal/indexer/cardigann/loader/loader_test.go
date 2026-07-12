@@ -436,6 +436,68 @@ func TestLoadAllVendoredCorpus(t *testing.T) {
 	}
 }
 
+// TestLoadResolvesMismatchedFilenameByContentID pins the fix for the class of
+// vendored files (inherited byte-for-byte from Jackett) whose filename differs
+// from their content id:. Before the fix, Load(<content-id>) looked for
+// vendor/<content-id>.yml and returned ErrNotFound, so the catalog offered ids
+// that could not be added (autobrr/harbrr#108). Load must resolve by content id
+// and return the definition whose id: matches the request.
+func TestLoadResolvesMismatchedFilenameByContentID(t *testing.T) {
+	t.Parallel()
+
+	// The known filename≠id vendored defs at the time of writing. The broader
+	// invariant is enforced by TestEveryCatalogDefinitionIsLoadableByID; this
+	// list documents the concrete regression and its failure symptom.
+	ids := []string{
+		"darkpeers-api",
+		"hdzero-api",
+		"nordicquality-api",
+		"upscalevault-api",
+		"aniRena",
+		"bluebirdhd",
+		"RockBox",
+	}
+	l := New("")
+	for _, id := range ids {
+		def, err := l.Load(id)
+		if err != nil {
+			t.Errorf("Load(%q) error: %v (content-id resolution regressed)", id, err)
+			continue
+		}
+		if def.ID != id {
+			t.Errorf("Load(%q).ID = %q, want %q (resolved the wrong definition)", id, def.ID, id)
+		}
+	}
+}
+
+// TestEveryCatalogDefinitionIsLoadableByID is the standing guard: every id the
+// catalog exposes (LoadAll keys entries by the parsed id:) must be Load-able by
+// that same id, which is exactly what the add/build path does. A future
+// `make vendor-defs` snapshot that reintroduces a filename≠id def without the
+// content-id fallback would fail here instead of shipping an un-addable tracker.
+func TestEveryCatalogDefinitionIsLoadableByID(t *testing.T) {
+	t.Parallel()
+
+	l := New("")
+	defs, skipped, err := l.LoadAll()
+	if err != nil {
+		t.Fatalf("LoadAll error: %v", err)
+	}
+	if len(skipped) != 0 {
+		t.Fatalf("LoadAll skipped %d definitions; expected empty skip-list", len(skipped))
+	}
+	for _, d := range defs {
+		got, err := l.Load(d.ID)
+		if err != nil {
+			t.Errorf("catalog offers %q but Load(%q) failed: %v", d.ID, d.ID, err)
+			continue
+		}
+		if got.ID != d.ID {
+			t.Errorf("Load(%q).ID = %q, want %q", d.ID, got.ID, d.ID)
+		}
+	}
+}
+
 func TestEffectiveProtocol(t *testing.T) {
 	t.Parallel()
 

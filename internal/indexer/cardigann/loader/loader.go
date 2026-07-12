@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	yaml "go.yaml.in/yaml/v3"
 
@@ -96,6 +97,15 @@ func rewriteSlashEscapes(data []byte) []byte {
 // precedence over the embedded vendored snapshot.
 type Loader struct {
 	dropinDir string
+
+	// vendorContentIdx maps a vendored definition's content id: to its embedded
+	// path, but ONLY for the handful of files whose name differs from their id
+	// (e.g. darkpeers.yml -> id darkpeers-api). It is built lazily on the first
+	// content-id fallback and cached, so the common filename==id path never pays
+	// for it. Guarded by vendorContentIdxOnce.
+	vendorContentIdxOnce sync.Once
+	vendorContentIdx     map[string]string
+	vendorContentIdxErr  error
 }
 
 // New constructs a Loader. dropinDir is the on-disk directory of user override
@@ -105,8 +115,9 @@ func New(dropinDir string) *Loader {
 }
 
 // Load resolves a definition by id with precedence dropin > vendored. It first
-// tries <dropinDir>/<id>.yml on disk, then vendor/<id>.yml in the embedded
-// snapshot. If neither exists it returns an error wrapping ErrNotFound.
+// tries <dropinDir>/<id>.yml on disk, then the vendored snapshot (by filename
+// vendor/<id>.yml, then by content id:). If neither exists it returns an error
+// wrapping ErrNotFound.
 func (l *Loader) Load(id string) (*Definition, error) {
 	if err := validateID(id); err != nil {
 		return nil, err
@@ -126,12 +137,12 @@ func (l *Loader) Load(id string) (*Definition, error) {
 		}
 	}
 
-	data, err := definitions.Vendored.ReadFile(vendorPath(id))
+	data, err := l.readVendored(id)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, fmt.Errorf("%q: %w", id, ErrNotFound)
 		}
-		return nil, fmt.Errorf("reading vendored definition %q: %w", id, err)
+		return nil, err
 	}
 
 	def, err := Parse(data)
@@ -139,6 +150,38 @@ func (l *Loader) Load(id string) (*Definition, error) {
 		return nil, fmt.Errorf("loading vendored definition %q: %w", id, err)
 	}
 	return def, nil
+}
+
+// readVendored returns the raw bytes of the vendored definition for id. It
+// resolves first by filename (vendor/<id>.yml, the common case where a file is
+// named for its id), then falls back to content-id resolution for the handful
+// of Jackett files whose name differs from their internal id: (e.g.
+// darkpeers.yml carries id darkpeers-api). Jackett keys definitions by content
+// id, and so does harbrr's own catalog (LoadAll indexes by the parsed id:), so
+// resolving the same way here keeps every id the catalog offers Load-able.
+// Returns a wrapped fs.ErrNotExist when neither resolution finds a file.
+func (l *Loader) readVendored(id string) ([]byte, error) {
+	data, err := definitions.Vendored.ReadFile(vendorPath(id))
+	if err == nil {
+		return data, nil
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("reading vendored definition %q: %w", id, err)
+	}
+
+	path, ok, idxErr := l.vendorPathByContentID(id)
+	if idxErr != nil {
+		return nil, idxErr
+	}
+	if !ok {
+		// Preserve fs.ErrNotExist so Load maps it to ErrNotFound.
+		return nil, fmt.Errorf("%q: %w", id, err)
+	}
+	data, err = definitions.Vendored.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading vendored definition %q: %w", id, err)
+	}
+	return data, nil
 }
 
 // SkipEntry records a definition that could not be loaded, so failures are
@@ -279,4 +322,55 @@ func definitionID(name string, isDir bool) (string, bool) {
 
 func vendorPath(id string) string {
 	return vendorDir + "/" + id + ".yml"
+}
+
+// vendorPathByContentID returns the embedded path of the vendored definition
+// whose content id: equals id, for the files whose name differs from their id.
+// The index is built once and cached; ok is false when no such mismatched
+// definition exists (the common case, where the filename already matched).
+func (l *Loader) vendorPathByContentID(id string) (path string, ok bool, err error) {
+	l.vendorContentIdxOnce.Do(func() {
+		l.vendorContentIdx, l.vendorContentIdxErr = buildVendorContentIndex()
+	})
+	if l.vendorContentIdxErr != nil {
+		return "", false, l.vendorContentIdxErr
+	}
+	path, ok = l.vendorContentIdx[id]
+	return path, ok, nil
+}
+
+// buildVendorContentIndex scans the vendored snapshot and maps each definition's
+// content id: to its embedded path, but only for files whose name differs from
+// their id (the filename==id majority is already resolved by direct lookup, so
+// indexing them would only add cost). A file that cannot be parsed for its id is
+// skipped, not fatal — LoadAll is the place that surfaces a malformed definition
+// as a visible skip; the index must not fail the whole fallback over one bad file.
+func buildVendorContentIndex() (map[string]string, error) {
+	entries, err := definitions.Vendored.ReadDir(vendorDir)
+	if err != nil {
+		return nil, fmt.Errorf("enumerating vendored definitions: %w", err)
+	}
+
+	idx := map[string]string{}
+	for _, e := range entries {
+		fileID, ok := definitionID(e.Name(), e.IsDir())
+		if !ok {
+			continue
+		}
+		path := vendorDir + "/" + e.Name()
+		data, err := definitions.Vendored.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("reading vendored definition %q: %w", e.Name(), err)
+		}
+		var head struct {
+			ID string `yaml:"id"`
+		}
+		if err := unmarshalYAML(data, &head); err != nil {
+			continue
+		}
+		if head.ID != "" && head.ID != fileID {
+			idx[head.ID] = path
+		}
+	}
+	return idx, nil
 }
