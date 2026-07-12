@@ -36,6 +36,13 @@ func (s *scriptDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
 	return s.handler(req), nil
 }
 
+// errorDoer fails every request with a transport error (e.g. a *url.Error whose Error()
+// echoes the request URL), so a test can prove a grab error surfaces the sentinel without
+// leaking the URL.
+type errorDoer struct{ err error }
+
+func (e *errorDoer) Do(*stdhttp.Request) (*stdhttp.Response, error) { return nil, e.err }
+
 // jsonResponse builds a 200 application/json response carrying body.
 func jsonResponse(body string) *stdhttp.Response {
 	return &stdhttp.Response{
