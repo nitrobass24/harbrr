@@ -17,27 +17,31 @@ import (
 // --- parity -----------------------------------------------------------------
 
 // parityCheck runs the Prowlarr differential for one indexer: search harbrr, resolve
-// the matching Prowlarr indexer by name, search Prowlarr, and DiffPass the two. An
+// the matching Prowlarr indexer by name, search Prowlarr, DiffPass the two result
+// sets, and then run the field-level differential over their shared titles. An
 // indexer absent from Prowlarr is not-comparable (StatusNA), an oracle hiccup is a
-// SKIP; only a genuine result-set divergence is a FAIL.
-func parityCheck(ctx context.Context, c *http.Client, cfg Config, ix harbrrIndexer) Finding {
+// SKIP; only a genuine result-set divergence is a result-set FAIL. It returns the
+// result-set parity finding and, when the sets were comparable, the field-parity
+// finding (reusing the already-fetched sets — no extra live calls).
+func parityCheck(ctx context.Context, c *http.Client, cfg Config, ix harbrrIndexer, catIDs []int) []Finding {
 	f := Finding{Indexer: ix.Slug, Check: CheckParity}
-	harbrr, query, skip := harbrrParity(ctx, c, cfg, ix.Slug)
+	primary, fallback := chooseQueries(catIDs, cfg)
+	harbrr, query, skip := harbrrParity(ctx, c, cfg, ix.Slug, primary, fallback)
 	if skip != "" {
-		return skipFinding(f, skip)
+		return []Finding{skipFinding(f, skip)}
 	}
 	id, isComparable, skip := prowlarrLookup(ctx, c, cfg, ix.Name, ix.Slug)
 	if skip != "" {
-		return skipFinding(f, skip)
+		return []Finding{skipFinding(f, skip)}
 	}
 	if !isComparable {
 		f.Status, f.Detail = StatusNA, fmt.Sprintf("no Prowlarr indexer matching %q (%s) (not comparable)", ix.Name, ix.Slug)
-		return f
+		return []Finding{f}
 	}
 	time.Sleep(betweenCallsDelay)
 	prowlarr, skip := prowlarrResults(ctx, c, cfg, id, query)
 	if skip != "" {
-		return skipFinding(f, skip)
+		return []Finding{skipFinding(f, skip)}
 	}
 	pass, notes := DiffPass(harbrr, prowlarr)
 	f.Status = StatusFail
@@ -51,14 +55,37 @@ func parityCheck(ctx context.Context, c *http.Client, cfg Config, ix harbrrIndex
 		f.Detail += fmt.Sprintf(" | harbrr sample: %v | prowlarr sample: %v",
 			firstTitles(harbrr, 3), firstTitles(prowlarr, 3))
 	}
+	return []Finding{f, fieldParityFinding(ix.Slug, query, harbrr, prowlarr, cfg.StrictFields)}
+}
+
+// fieldParityFinding builds the field-level differential finding for one indexer
+// from the already-fetched result sets. No shared titles is a SKIP; agreement across
+// every compared field is a PASS; any field divergence is a FAIL that names the
+// offending fields (secret-safe).
+func fieldParityFinding(slug, query string, harbrr, prowlarr []Result, strict bool) Finding {
+	f := Finding{Indexer: slug, Check: CheckFieldParity}
+	fp := fieldParity(harbrr, prowlarr, strict)
+	switch {
+	case fp.Windowed:
+		return skipFinding(f, fmt.Sprintf("q=%q both sets at the %d-result page cap (config-sorted windows; fields not comparable)", query, resultCap))
+	case fp.Compared == 0:
+		return skipFinding(f, "no shared titles to compare fields")
+	case len(fp.Divergences) == 0:
+		f.Status = StatusPass
+		f.Detail = fmt.Sprintf("q=%q %d shared titles: fields agree (strict=%v)", query, fp.Compared, strict)
+	default:
+		f.Status = StatusFail
+		f.Detail = fmt.Sprintf("q=%q %d shared titles, %d field divergence(s): %s (strict=%v)",
+			query, fp.Compared, len(fp.Divergences), summarizeDivergences(fp.Divergences), strict)
+	}
 	return f
 }
 
-// harbrrParity searches harbrr, falling back to the secondary query when the primary
-// returns nothing. It returns the results, the query that produced them, and a non-empty
-// skip reason on a rate-limit/transport/non-200.
-func harbrrParity(ctx context.Context, c *http.Client, cfg Config, slug string) ([]Result, string, string) {
-	res, status, err := HarbrrSearch(ctx, c, cfg.HarbrrURL, cfg.HarbrrKey, slug, cfg.Query)
+// harbrrParity searches harbrr with the primary query, falling back to the secondary
+// when the primary returns nothing. It returns the results, the query that produced
+// them, and a non-empty skip reason on a rate-limit/transport/non-200.
+func harbrrParity(ctx context.Context, c *http.Client, cfg Config, slug, primary, fallback string) ([]Result, string, string) {
+	res, status, err := HarbrrSearch(ctx, c, cfg.HarbrrURL, cfg.HarbrrKey, slug, primary)
 	if err != nil {
 		return nil, "", apphttp.RedactError(err)
 	}
@@ -68,10 +95,10 @@ func harbrrParity(ctx context.Context, c *http.Client, cfg Config, slug string) 
 	if status != http.StatusOK {
 		return nil, "", fmt.Sprintf("harbrr feed HTTP %d", status)
 	}
-	query := cfg.Query
+	query := primary
 	if len(res) == 0 {
-		if res2, s2, err2 := HarbrrSearch(ctx, c, cfg.HarbrrURL, cfg.HarbrrKey, slug, cfg.FallbackQuery); err2 == nil && s2 == http.StatusOK {
-			res, query = res2, cfg.FallbackQuery
+		if res2, s2, err2 := HarbrrSearch(ctx, c, cfg.HarbrrURL, cfg.HarbrrKey, slug, fallback); err2 == nil && s2 == http.StatusOK {
+			res, query = res2, fallback
 		}
 	}
 	return res, query, ""
@@ -141,14 +168,14 @@ func configuredApps(cfg Config) []appTarget {
 }
 
 // appSyncChecks runs the app-sync assertions for one indexer across every configured
-// app. It fetches the indexer's categories once, then delegates per app.
-func appSyncChecks(ctx context.Context, c *http.Client, cfg Config, apps []appTarget, ix harbrrIndexer) []Finding {
+// app, using the indexer's already-fetched categories (RunSuite fetches them once and
+// shares them with the parity query selection). capsErr is the error from that fetch.
+func appSyncChecks(ctx context.Context, c *http.Client, cfg Config, apps []appTarget, ix harbrrIndexer, cats []appsync.Category, capsErr error) []Finding {
 	if len(apps) == 0 {
 		return nil
 	}
-	cats, err := harbrrCategories(ctx, c, cfg, ix.Slug)
-	if err != nil {
-		return []Finding{skipFinding(Finding{Indexer: ix.Slug, Check: CheckAppSync}, apphttp.RedactError(err))}
+	if capsErr != nil {
+		return []Finding{skipFinding(Finding{Indexer: ix.Slug, Check: CheckAppSync}, apphttp.RedactError(capsErr))}
 	}
 	out := make([]Finding, 0, len(apps)+1)
 	for _, app := range apps {
@@ -258,9 +285,12 @@ func findManaged(remotes []appsync.RemoteIndexer, slug string) (appsync.RemoteIn
 
 // cacheCheck confirms the search-results cache serves a repeated query from cache: it
 // reads the baseline trackerHitsSaved, runs two identical harbrr searches, and asserts
-// the counter incremented. A disabled cache is a SKIP.
-func cacheCheck(ctx context.Context, c *http.Client, cfg Config, slug string) Finding {
+// the counter incremented. A disabled cache is a SKIP. It uses the same category-aware
+// query as the parity check (catIDs are the first-enabled indexer's categories) so it
+// exercises the keyword-search cache path rather than an empty poll.
+func cacheCheck(ctx context.Context, c *http.Client, cfg Config, slug string, catIDs []int) Finding {
 	f := Finding{Indexer: slug, Check: CheckCache}
+	query, _ := chooseQueries(catIDs, cfg)
 	before, enabled, err := cacheTrackerHits(ctx, c, cfg)
 	if err != nil {
 		return skipFinding(f, apphttp.RedactError(err))
@@ -269,7 +299,7 @@ func cacheCheck(ctx context.Context, c *http.Client, cfg Config, slug string) Fi
 		return skipFinding(f, "cache disabled")
 	}
 	for i := 0; i < 2; i++ {
-		if _, _, serr := HarbrrSearch(ctx, c, cfg.HarbrrURL, cfg.HarbrrKey, slug, cfg.Query); serr != nil {
+		if _, _, serr := HarbrrSearch(ctx, c, cfg.HarbrrURL, cfg.HarbrrKey, slug, query); serr != nil {
 			return skipFinding(f, apphttp.RedactError(serr))
 		}
 		time.Sleep(betweenCallsDelay)

@@ -31,23 +31,47 @@ func RunSuite(ctx context.Context, cfg Config) (Report, error) {
 	}
 	apps := configuredApps(cfg)
 	loadRemotes(ctx, apps)
-	rep := Report{Query: cfg.Query}
+	rep := Report{Query: queryLabel(cfg)}
 	firstEnabled := ""
+	var firstCatIDs []int
 	for _, ix := range indexers {
 		if !ix.Enabled {
 			continue
 		}
+		// Fetch the indexer's advertised categories once, shared by the category-aware
+		// parity query selection and the app-sync content filter.
+		cats, capsErr := harbrrCategories(ctx, c, cfg, ix.Slug)
+		catIDs := categoryIDsOf(cats)
 		if firstEnabled == "" {
-			firstEnabled = ix.Slug
+			firstEnabled, firstCatIDs = ix.Slug, catIDs
 		}
-		rep.Findings = append(rep.Findings, parityCheck(ctx, c, cfg, ix))
-		rep.Findings = append(rep.Findings, appSyncChecks(ctx, c, cfg, apps, ix)...)
+		rep.Findings = append(rep.Findings, parityCheck(ctx, c, cfg, ix, catIDs)...)
+		rep.Findings = append(rep.Findings, appSyncChecks(ctx, c, cfg, apps, ix, cats, capsErr)...)
 		time.Sleep(betweenTrackerDelay)
 	}
 	if firstEnabled != "" {
-		rep.Findings = append(rep.Findings, cacheCheck(ctx, c, cfg, firstEnabled))
+		rep.Findings = append(rep.Findings, cacheCheck(ctx, c, cfg, firstEnabled, firstCatIDs))
 	}
 	return rep, nil
+}
+
+// categoryIDsOf projects advertised categories to their raw IDs for the engine's
+// category-aware query selection (which is decoupled from the appsync type).
+func categoryIDsOf(cats []appsync.Category) []int {
+	ids := make([]int, 0, len(cats))
+	for _, cat := range cats {
+		ids = append(ids, cat.ID)
+	}
+	return ids
+}
+
+// queryLabel is the report header's query field: the explicit query when set, else a
+// note that each tracker used a category-aware default.
+func queryLabel(cfg Config) string {
+	if cfg.Query != "" {
+		return cfg.Query
+	}
+	return "per-tracker (category-aware defaults)"
 }
 
 // listHarbrrIndexers fetches harbrr's configured indexers (management API, X-API-Key).

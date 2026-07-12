@@ -175,8 +175,8 @@ func TestParseConfig(t *testing.T) {
 		if cfg.HarbrrURL != "http://harbrr:7478" {
 			t.Errorf("HarbrrURL = %q, want trailing slash trimmed", cfg.HarbrrURL)
 		}
-		if cfg.Query != "test" || cfg.FallbackQuery != "2024" {
-			t.Errorf("defaults not applied: query=%q fallback=%q", cfg.Query, cfg.FallbackQuery)
+		if cfg.Query != "" || cfg.FallbackQuery != "" {
+			t.Errorf("unset queries should be empty (a category-aware default is chosen per tracker later): query=%q fallback=%q", cfg.Query, cfg.FallbackQuery)
 		}
 		if cfg.SonarrURL != "" || cfg.RadarrURL != "" || cfg.QuiURL != "" {
 			t.Errorf("optional apps should be empty: %+v", cfg)
