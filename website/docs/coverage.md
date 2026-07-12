@@ -35,8 +35,8 @@ Bespoke code in Jackett/Prowlarr (no Cardigann definition); harbrr ships native 
 | PassThePopcorn | Bespoke API | ✅ | ⬜ |
 | GazelleGames | Bespoke API | ✅ | ⬜ |
 | AnimeBytes | Bespoke API | ✅ | ⬜ |
-| Usenet (Newznab) | Generic Newznab | ✅ | ⬜ |
-| NZBIndex | Bespoke JSON API (public) | ✅ | ⬜ |
+| Usenet (Newznab) | Generic Newznab | ✅ | ✅ |
+| NZBIndex | Bespoke JSON API (public) | ✅ | ✅ |
 
 ### Planned — vote for yours
 

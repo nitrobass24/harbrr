@@ -34,6 +34,10 @@ var liveTested = map[string]bool{
 	"seedpool-api": true, "uploadcx": true,
 	// Native drivers, live-validated.
 	"iptorrents": true, "filelist": true, "myanonamouse": true, "broadcastthenet": true,
+	// Usenet, live-validated against the deployed fix build (differential 100=100 vs
+	// Prowlarr): the generic Newznab driver via the dognzb preset (search + a real .nzb
+	// grab through /dl), and the NZBIndex native driver (search).
+	"newznab": true, "nzbindex": true,
 }
 
 type nativeRow struct {
@@ -61,7 +65,7 @@ var nativeBuilt = []nativeRow{
 	{name: "PassThePopcorn", pattern: "Bespoke API", id: "passthepopcorn"},
 	{name: "GazelleGames", pattern: "Bespoke API", id: "gazellegames"},
 	{name: "AnimeBytes", pattern: "Bespoke API", id: "animebytes"},
-	{name: "Usenet (Newznab)", pattern: "Generic Newznab", id: ""},
+	{name: "Usenet (Newznab)", pattern: "Generic Newznab", id: "newznab"},
 	{name: "NZBIndex", pattern: "Bespoke JSON API (public)", id: "nzbindex"},
 }
 
