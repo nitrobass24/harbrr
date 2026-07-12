@@ -58,13 +58,18 @@ func TestSmoke(t *testing.T) {
 
 	for i, ix := range enabled {
 		t.Run(ix.Slug, func(t *testing.T) {
-			q := cfg.Query
+			// Category-aware bounded default query (a specific film/episode/album/title)
+			// so the differential compares a small, stable, overlapping set instead of
+			// slamming the page cap. An explicit SMOKE_QUERY overrides.
+			cats, _ := harbrrCategories(context.Background(), c, cfg, ix.Slug)
+			primary, fallback := chooseQueries(categoryIDsOf(cats), cfg)
+			q := primary
 			harbrr, skipped := harbrrSearch(t, c, cfg, ix.Slug, q)
 			if skipped {
 				return
 			}
 			if len(harbrr) == 0 {
-				q = cfg.FallbackQuery
+				q = fallback
 				harbrr, skipped = harbrrSearch(t, c, cfg, ix.Slug, q)
 				if skipped {
 					return
@@ -95,6 +100,14 @@ func TestSmoke(t *testing.T) {
 			}
 
 			pass, notes := DiffPass(harbrr, prowlarr)
+			fp := fieldParity(harbrr, prowlarr, cfg.StrictFields)
+			if len(fp.Divergences) > 0 {
+				// Only the count reaches the evidence Notes (titles stay out of persisted
+				// evidence); the per-title detail is logged to the operator console, scrubbed
+				// in case a tracker echoed a credential into a release title.
+				notes += fmt.Sprintf(" | field divergences: %d across %d shared titles", len(fp.Divergences), fp.Compared)
+				t.Logf("%s: field divergences: %s", ix.Slug, scrubSecretValues(summarizeDivergences(fp.Divergences)))
+			}
 			rec := EvidenceRecord{
 				Tracker:              ix.Slug,
 				Query:                q,
@@ -113,6 +126,14 @@ func TestSmoke(t *testing.T) {
 			t.Logf("%s: harbrr=%d prowlarr=%d pass=%v (%s)", ix.Slug, len(harbrr), len(prowlarr), pass, notes)
 			if !pass {
 				t.Errorf("differential FAILED for %s: %s", ix.Slug, notes)
+			}
+			// Any field divergence fails the run, matching the CLI report path
+			// (fieldParityFinding). Only the STABLE fields (size, category, download-url)
+			// populate divergences by default; the volatile seeders/publishDate checks are
+			// added to fp.Divergences only under SMOKE_STRICT_FIELDS, so a routine run still
+			// stays green on volatile data.
+			if len(fp.Divergences) > 0 {
+				t.Errorf("field parity FAILED for %s: %s", ix.Slug, scrubSecretValues(summarizeDivergences(fp.Divergences)))
 			}
 			if i < len(enabled)-1 {
 				time.Sleep(betweenTrackerDelay)

@@ -12,10 +12,11 @@ const redactPlaceholder = "REDACTED"
 
 // Check names and Finding statuses used across the suite.
 const (
-	CheckParity   = "parity"
-	CheckAppSync  = "app-sync"
-	CheckCache    = "cache"
-	CheckFLBypass = "fl-bypass"
+	CheckParity      = "parity"
+	CheckFieldParity = "field-parity"
+	CheckAppSync     = "app-sync"
+	CheckCache       = "cache"
+	CheckFLBypass    = "fl-bypass"
 
 	StatusPass = "PASS"
 	StatusFail = "FAIL"

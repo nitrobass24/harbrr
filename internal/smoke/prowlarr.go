@@ -115,16 +115,53 @@ func ProwlarrSearch(ctx context.Context, c *http.Client, base, key string, index
 	if status != http.StatusOK {
 		return nil, status, nil
 	}
+	res, err := parseProwlarrResults(body)
+	return res, status, err
+}
+
+// parseProwlarrResults decodes Prowlarr's /api/v1/search JSON array into the
+// comparison Results, capturing the fields the field-level differential compares:
+// size, seeders, publish date, the download/magnet URL, and the flattened category
+// IDs. It is a pure function so the oracle-side decode is unit-testable, mirroring
+// ParseTorznab on the harbrr side.
+func parseProwlarrResults(body []byte) ([]Result, error) {
 	var rels []struct {
-		Title string `json:"title"`
-		Size  int64  `json:"size"`
+		Title       string `json:"title"`
+		Size        int64  `json:"size"`
+		Seeders     *int   `json:"seeders"`
+		PublishDate string `json:"publishDate"`
+		DownloadURL string `json:"downloadUrl"`
+		MagnetURL   string `json:"magnetUrl"`
+		Categories  []struct {
+			ID int `json:"id"`
+		} `json:"categories"`
 	}
 	if err := json.Unmarshal(body, &rels); err != nil {
-		return nil, status, fmt.Errorf("parse Prowlarr search: %w", err)
+		return nil, fmt.Errorf("parse Prowlarr search: %w", err)
 	}
 	out := make([]Result, 0, len(rels))
 	for _, r := range rels {
-		out = append(out, Result{Title: r.Title, Size: r.Size})
+		res := Result{
+			Title:       r.Title,
+			Size:        r.Size,
+			Seeders:     r.Seeders,
+			PublishDate: parsePubDate(r.PublishDate),
+			DownloadURL: firstNonEmpty(r.DownloadURL, r.MagnetURL),
+		}
+		for _, cat := range r.Categories {
+			res.Categories = append(res.Categories, cat.ID)
+		}
+		out = append(out, res)
 	}
-	return out, status, nil
+	return out, nil
+}
+
+// firstNonEmpty returns the first non-empty string, or "".
+func firstNonEmpty(vs ...string) string {
+	for _, v := range vs {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
