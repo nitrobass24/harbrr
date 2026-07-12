@@ -58,7 +58,7 @@ with Sonarr, Radarr, Lidarr, Readarr, Mylar, Whisparr, and any Torznab/Newznab c
   announce targets.
 - **Secure by default** — credentials encrypted at rest, secrets redacted everywhere, and
   encrypted config/DB backup export & import.
-- **Modern Go** — single static binary, Docker-first, low footprint, fast startup.
+- **Modern Go** — a single static binary for Linux, macOS, Windows and FreeBSD (or Docker); low footprint, fast startup.
 
 More detail on each lives in the **[feature docs](website/docs/features/)**.
 
@@ -102,12 +102,10 @@ services:
     ports:
       - "7478:7478"
     volumes:
-      - harbrr-config:/config      # SQLite db + encryption keyfile — BACK THIS UP
+      # bind mount — harbrr runs as uid 1000: `mkdir config && chown 1000:1000 config`
+      - ./config:/config           # SQLite db + encryption keyfile — BACK THIS UP
     environment:
       - TZ=Etc/UTC                 # match your stack so localized tracker dates parse
-
-volumes:
-  harbrr-config:
 ```
 
 ```bash
@@ -207,8 +205,8 @@ live-confirmed.
 
 Running the live smoke harness yourself (build-tagged, env-credentialed, and **never run in CI**)
 is one of the most useful contributions right now — see the **[smoke ledger](internal/smoke/README.md)**
-and the **[smoke-test guide](website/docs/guides/smoke-test.md)**. The roadmap lives in
-**[`docs/plan.md`](docs/plan.md)**; release-by-release changes are in **[CHANGELOG.md](CHANGELOG.md)**.
+and the **[smoke-test guide](website/docs/guides/smoke-test.md)**. Release-by-release changes are
+in **[CHANGELOG.md](CHANGELOG.md)**.
 
 ---
 
