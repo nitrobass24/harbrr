@@ -14,6 +14,7 @@ import (
 	"github.com/autobrr/harbrr/internal/announce"
 	"github.com/autobrr/harbrr/internal/appsync"
 	"github.com/autobrr/harbrr/internal/auth"
+	"github.com/autobrr/harbrr/internal/backup"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 	"github.com/autobrr/harbrr/internal/notify"
@@ -33,6 +34,7 @@ type Deps struct {
 	Notify   *notify.Service
 	Proxy    *proxy.Service
 	Solver   *solver.Service
+	Backup   *backup.Service
 	Sessions *scs.SessionManager
 	// DLToken seals a resolver-needing indexer's download link behind the /dl proxy
 	// for the JSON search response, exactly as the Torznab feed does, so a passkey
@@ -77,6 +79,7 @@ type router struct {
 	notify   *notify.Service
 	proxy    *proxy.Service
 	solver   *solver.Service
+	backup   *backup.Service
 	sessions *scs.SessionManager
 	dlToken  *secrets.Keyring
 	basePath string
@@ -117,6 +120,7 @@ func NewRouter(deps Deps, cfg Config) (http.Handler, error) {
 	rt := &router{
 		auth: deps.Auth, registry: deps.Registry, loader: deps.Loader, appsync: deps.AppSync,
 		announce: deps.Announce, notify: deps.Notify, proxy: deps.Proxy, solver: deps.Solver,
+		backup:   deps.Backup,
 		sessions: deps.Sessions, dlToken: deps.DLToken, basePath: deps.BasePath,
 		cache: deps.Cache, cfg: cfg, log: deps.Logger, logLevel: deps.LogLevel,
 		allowlist: allow, trustedProxies: proxies,
@@ -196,6 +200,9 @@ func (rt *router) routes() http.Handler {
 			r.Post("/api/announce-connections/{id}/disable", rt.disableAnnounceConnection)
 
 			rt.mountResourceRoutes(r)
+
+			r.Post("/api/export", rt.exportBackup)
+			r.Post("/api/import", rt.importBackup)
 
 			r.Get("/api/cache/stats", rt.cacheStats)
 			r.Post("/api/cache/flush", rt.cacheFlush)

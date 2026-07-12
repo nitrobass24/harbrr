@@ -13,6 +13,7 @@ import (
 	"github.com/autobrr/harbrr/internal/announce"
 	"github.com/autobrr/harbrr/internal/appsync"
 	"github.com/autobrr/harbrr/internal/auth"
+	"github.com/autobrr/harbrr/internal/backup"
 	"github.com/autobrr/harbrr/internal/database"
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
@@ -87,7 +88,13 @@ const maxRequestBodyBytes = 1 << 20 // 1 MiB
 // is size-capped (maxRequestBodyBytes); an oversize body writes a 413, any other
 // decode failure a 400. Returns false when it has written an error.
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+	return decodeJSONLimit(w, r, dst, maxRequestBodyBytes)
+}
+
+// decodeJSONLimit is decodeJSON with a caller-chosen body cap, for the rare endpoint
+// (a config-restore bundle) whose legitimate body can exceed the default 1 MiB.
+func decodeJSONLimit(w http.ResponseWriter, r *http.Request, dst any, limit int64) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
@@ -120,9 +127,9 @@ func (rt *router) writeServiceError(w http.ResponseWriter, op string, err error)
 	switch {
 	case errors.Is(err, database.ErrNotFound):
 		writeErrorCode(w, http.StatusNotFound, "not_found", "not found")
-	case errors.Is(err, registry.ErrConflict), errors.Is(err, appsync.ErrConflict), errors.Is(err, announce.ErrConflict):
+	case errors.Is(err, registry.ErrConflict), errors.Is(err, appsync.ErrConflict), errors.Is(err, announce.ErrConflict), errors.Is(err, backup.ErrConflict):
 		writeErrorCode(w, http.StatusConflict, "conflict", err.Error())
-	case errors.Is(err, registry.ErrInvalid), errors.Is(err, appsync.ErrInvalid), errors.Is(err, announce.ErrInvalid), errors.Is(err, notify.ErrInvalid), errors.Is(err, proxy.ErrInvalid), errors.Is(err, solver.ErrInvalid), errors.Is(err, auth.ErrWeakPassword), errors.Is(err, auth.ErrInvalidInput):
+	case errors.Is(err, registry.ErrInvalid), errors.Is(err, appsync.ErrInvalid), errors.Is(err, announce.ErrInvalid), errors.Is(err, notify.ErrInvalid), errors.Is(err, proxy.ErrInvalid), errors.Is(err, solver.ErrInvalid), errors.Is(err, backup.ErrInvalid), errors.Is(err, auth.ErrWeakPassword), errors.Is(err, auth.ErrInvalidInput):
 		writeErrorCode(w, http.StatusBadRequest, "invalid", err.Error())
 	case errors.Is(err, auth.ErrAlreadySetup):
 		writeErrorCode(w, http.StatusConflict, "already_setup", "setup already complete")

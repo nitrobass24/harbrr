@@ -20,6 +20,7 @@ import (
 	"github.com/autobrr/harbrr/internal/announce"
 	"github.com/autobrr/harbrr/internal/appsync"
 	"github.com/autobrr/harbrr/internal/auth"
+	"github.com/autobrr/harbrr/internal/backup"
 	"github.com/autobrr/harbrr/internal/config"
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
@@ -133,7 +134,8 @@ func serve(ctx context.Context, cfg *config.Config, log zerolog.Logger) error {
 
 	mgmt, err := api.NewRouter(api.Deps{
 		Auth: authSvc, Registry: reg, Loader: loader.New(dropinDir(cfg)), AppSync: appSync,
-		Announce: announceSvc, Notify: notifySvc, Proxy: proxy.NewService(db, keyring), Solver: solver.NewService(db, keyring), Sessions: sessions,
+		Announce: announceSvc, Notify: notifySvc, Proxy: proxy.NewService(db, keyring), Solver: solver.NewService(db, keyring),
+		Backup: backup.NewService(db, keyring, log), Sessions: sessions,
 		DLToken: keyring, BasePath: cfg.Server.BaseURL, Cache: searchCache, Logger: log, LogLevel: logLevel,
 	}, api.Config{
 		AuthDisabled: cfg.Auth.AuthDisabled(), IPAllowlist: cfg.Auth.IPAllowlist, TrustedProxies: cfg.Auth.TrustedProxies,
