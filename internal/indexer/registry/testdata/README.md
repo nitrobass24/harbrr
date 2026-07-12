@@ -45,8 +45,8 @@ These behaviours are pinned by tests in `internal/indexer/registry`
   per-indexer rate override or global default *setting* today, so a user cannot tune
   pacing for a domain they know to be strict or lax. `[Deliberate]`. Exposing a
   per-indexer override + a global default (the `ClientParams.RateInterval` seam is
-  already plumbed for it) is a product feature, not a divergence — see `docs/plan.md` →
-  "Beyond the alpha": user-configurable request rate.
+  already plumbed for it) is a product feature, not a divergence — see
+  autobrr/harbrr#104 (user-configurable request rate).
 - **Per-instance request timeout from a `timeout` setting, else a 60s default.** A
   per-indexer `timeout` setting (a Go duration, e.g. `30s`) bounds the whole request
   via `ClientParams.Timeout`; an unset/invalid value falls back to 60s. Jackett uses
@@ -73,7 +73,7 @@ These behaviours are pinned by tests in `internal/indexer/registry`
   records only the four failure kinds; `GET /api/indexers/{slug}/status` derives
   `healthy`/`unhealthy` from a 1h recency window. `[Deliberate]`. A fleet-wide
   `/api/indexers/status` roll-up is a product feature, not a divergence — see
-  `docs/plan.md` → "Beyond the alpha": fleet-wide indexer status.
+  autobrr/harbrr#102 (fleet-wide indexer status).
 - **Negative-result circuit breaker on the search cache.** After a live search to a
   configured instance fails, harbrr opens a per-instance breaker for a short window
   (`negative_ttl`, default 1m; a rate-limit response extends it to its `Retry-After`).
@@ -166,4 +166,4 @@ setting found this parity-exact except for the two cases below.
   unaffected. The only deep-paging driver (newznab/usenet) has no freeleech setting, so
   the related has-more-floor interaction is unreachable. `[Deliberate]`
   (`internal/indexer/registry/freeleech.go`; the single-engine-fetch model is the shared
-  "Better pagination support" design, `docs/plan.md`).
+  "Better pagination support" design, autobrr/harbrr#3).

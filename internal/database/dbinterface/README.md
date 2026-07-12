@@ -3,7 +3,7 @@
 Every repository depends on `Querier` / `Execer` / `TxQuerier`, never the concrete
 driver, so the store can be swapped without touching call sites. Only **SQLite** is
 wired today; **Postgres is demand-gated** — not on the alpha roadmap, built only
-when a multi-instance user needs it (see `docs/plan.md` → "Beyond the alpha").
+when a multi-instance user needs it (see `docs/architecture.md`).
 
 This file is the standing contract that keeps that swap a **bounded** change, plus
 the ledger of exactly what a Postgres backend must handle. Keeping this seam clean

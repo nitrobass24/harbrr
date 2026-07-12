@@ -1,8 +1,8 @@
 # Architecture
 
 Read this before changing cross-module data flow, service boundaries, API routing, or the engine
-pipeline shape. It is the load-bearing summary of how harbrr is built and why. The executable,
-phase-by-phase build checklist lives in [`plan.md`](plan.md).
+pipeline shape. It is the load-bearing summary of how harbrr is built and why. Forward work and the
+roadmap live in the project's GitHub issues.
 
 ## What harbrr is
 
@@ -82,8 +82,11 @@ added to the regexp2 routing. This is engine behavior — never silence a parity
    independently.
 4. **Regex routing is engine behavior, not a per-def edit.** RE2 by default (ReDoS-safe); regexp2 only
    on the defined triggers (opt-in / non-Latin / compile-fail / .NET-only constructs).
-5. **Storage is behind `dbinterface`.** SQLite only for now; Postgres is deliberately deferred — keep
-   the interface clean, don't implement it yet.
+5. **Storage is behind `dbinterface`.** SQLite only for now; Postgres is deliberately **demand-gated**
+   — built only when a real multi-instance user needs it. Keep the interface **dialect-portable**: all
+   repository SQL routes through the interface and its `Rebind` (`?`→`$N`) seam, no SQLite-specific SQL
+   or driver types leak to callers, and schema changes ship as SQLite migrations a Postgres backend can
+   mirror. Keeping the seam clean is required now; implementing Postgres is not.
 6. **Secrets never leak.** Redact in all logs/traces; encrypt at rest; never commit.
 
 ## Repository structure
@@ -140,5 +143,33 @@ internal/
   scope; "manage" is not.
 - **mkbrr / upbrr** own torrent creation / upload; harbrr only shares the tracker-identity layer.
 
-harbrr does not download torrents itself. The direct grab-to-client path is a post-alpha (Phase 11)
+harbrr does not download torrents itself. The direct grab-to-client path is a post-alpha
 feature — tracked in autobrr/harbrr#7 (interactive grab) and #8 (download-client implementations).
+
+## Search-results cache (design record)
+
+The one differentiator Prowlarr/Jackett lack: because harbrr is the Torznab *server*, a cache hit
+spares the **tracker's** infrastructure, not just harbrr's. Shipped in #60; user docs in
+`website/docs/features/search-results-cache.md`. The design decisions worth keeping:
+
+- **Seam** — cache-aside around `idx.Search` in the registry adapter, downstream of login/engine and
+  **upstream** of dedupe/category-filter/pagination/`/dl`-rewriting, so one entry serves every client
+  (the cached value is `[]*normalizer.Release` **before** `/dl` rewriting).
+- **Key** — SHA-256 over a schema-versioned canonical payload: `version | instance_id | search_mode |
+  keywords | categories(sorted) | ids | season/ep/year | …`. Categories **are** in the key (they change
+  the tracker request). `limit`/`offset` are excluded for a **non-paging** instance (applied post-cache,
+  so different pagination reuses one entry); a **paging-capable** instance — one whose driver forwards
+  `offset`/`limit` upstream (e.g. Newznab/usenet) — folds them into the key so each upstream page gets
+  its own entry. Byte-identical queries from a 1080p and a 4k \*arr instance collapse to one entry — the
+  multi-instance fix, TTL-independent.
+- **Storage** — SQLite as source of truth (survives restart, so no thundering re-poll on boot);
+  FK-cascade on instance delete; periodic cleanup.
+- **Singleflight** — concurrent misses for one key collapse to a single tracker request.
+- **Stale-while-revalidate** — past a refresh-ahead threshold, serve the stale value immediately + kick
+  one detached background refresh, so a tracker sees **≤1 request per TTL** regardless of client count.
+- **TTL tiers** (all per-indexer + globally tunable at runtime): RSS/empty-query **5 min**, keyword/ID
+  **30 min**, thin/empty result **2 min** (adaptive, shortens only — the staggered-release antidote).
+  `nocache=1` bypasses. Only successes are cached (incl. legitimately-empty sets); never errors.
+- **Secrets at rest** — cached `Link`/`Magnet` embed passkeys, so `results_json` is a secret at the same
+  trust level as the session cookies already in the `0600` DB. Decision: rely on the `0600` DB +
+  never-log posture, not per-row `internal/secrets` AES (the per-read cost isn't worth it here).

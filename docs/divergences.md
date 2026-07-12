@@ -9,8 +9,8 @@ parallel ledger to drift.
 
 **Scope:** this ledger is only for *behavioral* differences from Jackett on the same
 input. **Unbuilt product features** (OIDC, backup/restore, stats/event-log,
-user-configurable rate, fleet-status, …) are not divergences — they live in
-`docs/plan.md` → "Beyond the alpha" (the demand-gated backlog), never as `[Tracked]`
+user-configurable rate, fleet-status, …) are not divergences — they are tracked as
+**GitHub issues** (the demand-gated backlog), never as `[Tracked]`
 entries here.
 
 ## Disposition vocabulary
@@ -18,7 +18,7 @@ entries here.
 Every divergence entry carries exactly one disposition, so the record is a
 complete decision log rather than a half-tracked backlog:
 
-- **`[Tracked]`** — a real gap with a `docs/plan.md` follow-up item.
+- **`[Tracked]`** — a real gap with a **GitHub issue** tracking it.
 - **`[Partial]`** — partly implemented; the remainder is a `[Tracked]` gap (the
   entry cites both).
 - **`[Resolved]`** — a once-tracked gap now closed, kept in the log so the

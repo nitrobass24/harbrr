@@ -2,14 +2,14 @@
 
 Repo rules for AI agents (Claude Code, etc.) and contributors working on **harbrr** — a Go,
 single-binary, Cardigann-compatible Torznab/Newznab search provider for the autobrr family. Read this
-fully before editing. The full design is in `@docs/architecture.md`; the build checklist in `@docs/plan.md`.
+fully before editing. The full design is in `@docs/architecture.md`; forward work is tracked in GitHub issues.
 
 ## Prime directive
 
 harbrr's entire value is **behavioral parity with Jackett's Cardigann engine on the same input**.
-The build order retires that risk first: **test harness first, engine second, product third**
-(`docs/plan.md`). Do not build product surface (UI, app-sync, migration) before the engine passes its
-parity gate (the "Definition of done" in `docs/plan.md`, Phase 2).
+The build followed **test harness first, engine second, product third**, retiring that risk before any
+product surface. The engine's offline parity gate (`internal/indexer/cardigann/parity`) is the standing
+correctness gate and must never regress.
 
 ## Collaboration
 
@@ -18,7 +18,7 @@ parity gate (the "Definition of done" in `docs/plan.md`, Phase 2).
 - Treat other agent / CodeRabbit / reviewer feedback as input to discuss, not automatic action.
 - harbrr is single-user self-hosted software. Prefer readable, maintainable code over paranoid
   guards for impossible states.
-- Work **one `docs/plan.md` item at a time**; check its box only when its tests are green.
+- Track forward work in **GitHub issues**; keep each PR focused and land it only when its tests are green.
 
 ## Non-negotiable rules (enforced by hooks / CI — do not work around)
 
@@ -46,7 +46,7 @@ parity gate (the "Definition of done" in `docs/plan.md`, Phase 2).
 - Other: `internal/search`, `internal/http` (auth/session, solver interface, redaction),
   `internal/download` (stub — send-to-download-client is planned, see autobrr/harbrr#8),
   `internal/secrets`, `internal/database` + `dbinterface`.
-- Docs: `docs/architecture.md` (design), `docs/plan.md` (checklist), `docs/security.md`,
+- Docs: `docs/architecture.md` (design), `docs/security.md`,
   `docs/linting.md`.
 
 Before changing cross-module data flow, service boundaries, API routing, or the engine pipeline

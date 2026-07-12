@@ -14,7 +14,7 @@ import (
 // lets one tracker fetch serve both the honor feed (freeleech-only, for the *arrs)
 // and the bypass feed (full catalog, for qui/cross-seed) from a SINGLE cached entry —
 // so a later bypass poll never re-hits the tracker just because an *arr polled FL-only
-// first (docs/plan.md Phase-11).
+// first.
 //
 // freeleechOnly is the instance's stored `freeleech` setting. The engine itself is
 // built with that key cleared (buildAdapter), so it always returns the full catalog;

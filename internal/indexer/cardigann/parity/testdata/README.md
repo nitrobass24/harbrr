@@ -98,7 +98,7 @@ both and the shared disposition rule.
 Every entry carries an explicit **disposition** so the list is a complete
 decision record, not a half-tracked backlog:
 
-- **`[Tracked]`** — a real gap with a `docs/plan.md` follow-up item.
+- **`[Tracked]`** — a real gap with a GitHub issue tracking it.
 - **`[Deliberate]`** — an intentional design choice; not a gap.
 - **`[Accepted]`** — a difference we choose to keep (harbrr-additive or
   clean-degradation); no work planned. Revisit only if a vendored def needs it.
