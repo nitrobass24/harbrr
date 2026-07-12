@@ -138,6 +138,82 @@ func TestRedactURL(t *testing.T) {
 	}
 }
 
+func TestRedactURLIdentity(t *testing.T) {
+	t.Parallel()
+
+	const secret = "deadbeefcafe"
+	const hexID = "abcdef0123456789abcdef0123456789" // a synthetic 32-hex release id
+	tests := []struct {
+		name       string
+		raw        string
+		wantNoLeak []string
+		wantHas    []string
+	}{
+		{
+			// The whole point: a details permalink's hex release id is an IDENTITY, not a
+			// secret — it must survive so dedup-by-guid keeps distinct releases distinct.
+			name:    "hex release id in path preserved",
+			raw:     "https://dognzb.cr/details/" + hexID,
+			wantHas: []string{"dognzb.cr/details/" + hexID},
+		},
+		{
+			// A genuine secret in a query param is still scrubbed.
+			name:       "secret query param still redacted, path id kept",
+			raw:        "https://host/details/" + hexID + "?apikey=" + secret,
+			wantNoLeak: []string{secret},
+			wantHas:    []string{"details/" + hexID, "REDACTED"},
+		},
+		{
+			name:       "userinfo password redacted, path id kept",
+			raw:        "https://user:" + secret + "@host/details/" + hexID,
+			wantNoLeak: []string{secret},
+			wantHas:    []string{"user", "REDACTED", "details/" + hexID},
+		},
+		{
+			name:    "non-secret query preserved",
+			raw:     "https://host/d?id=42&cat=tv",
+			wantHas: []string{"id=42", "cat=tv"},
+		},
+		{
+			// Parse-failure fallback keeps the path (identity) and strips the query.
+			name:       "unparseable url keeps path, strips query secret",
+			raw:        "https://bad\x7fhost/details/" + hexID + "?passkey=" + secret,
+			wantNoLeak: []string{secret},
+			wantHas:    []string{hexID},
+		},
+		{name: "empty string", raw: "", wantHas: []string{}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := RedactURLIdentity(tt.raw)
+			for _, leak := range tt.wantNoLeak {
+				if strings.Contains(got, leak) {
+					t.Errorf("RedactURLIdentity(%q) = %q, leaked %q", tt.raw, got, leak)
+				}
+			}
+			for _, has := range tt.wantHas {
+				if !strings.Contains(got, has) {
+					t.Errorf("RedactURLIdentity(%q) = %q, want substring %q", tt.raw, got, has)
+				}
+			}
+		})
+	}
+}
+
+// TestRedactURLIdentity_KeepsDistinct is the regression for the Newznab dedup collapse:
+// two details permalinks that differ only in their hex release id must stay DISTINCT after
+// redaction (RedactURL would collapse both to ".../REDACTED", making dedup drop one).
+func TestRedactURLIdentity_KeepsDistinct(t *testing.T) {
+	t.Parallel()
+	a := RedactURLIdentity("https://dognzb.cr/details/0123456789abcdef0123456789abcdef")
+	b := RedactURLIdentity("https://dognzb.cr/details/fedcba9876543210fedcba9876543210")
+	if a == b {
+		t.Fatalf("distinct release ids collapsed to the same guid: %q", a)
+	}
+}
+
 func TestRedactHeader(t *testing.T) {
 	t.Parallel()
 

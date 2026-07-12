@@ -82,6 +82,54 @@ func RedactURL(raw string) string {
 	return u.String()
 }
 
+// RedactURLIdentity is RedactURL for a URL used as a stable IDENTITY — a dedup-key
+// <guid> or a details permalink — rather than a credential vector. It scrubs userinfo
+// passwords and secret query-parameter values but preserves the PATH verbatim.
+//
+// RedactURL redacts long hex/alphanumeric path tokens as possible passkeys
+// (redactPathSecrets); on an identity URL that is wrong, because a release's id is
+// often exactly such a token — e.g. a Newznab <guid> like
+// https://host/details/<32-hex>. Redacting it collapses every release to the same
+// string, so a downstream dedup-by-guid keeps only one of them. This variant leaves
+// that id intact so the identity stays distinct, while still scrubbing a genuine
+// secret carried in a query param or userinfo. Use it ONLY where the path is a public
+// identifier, never where the path itself can carry a credential.
+func RedactURLIdentity(raw string) string {
+	if raw == "" {
+		return raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return redactURLIdentityFallback(raw)
+	}
+	redactUserinfo(u)
+	if u.RawQuery == "" {
+		return u.String()
+	}
+	q := u.Query()
+	for name := range q {
+		if isSecretParam(name) {
+			vals := q[name]
+			for i := range vals {
+				vals[i] = redactedValue
+			}
+		}
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+// redactURLIdentityFallback handles input url.Parse rejects for RedactURLIdentity: it
+// scrubs a userinfo password and strips the query string (which may carry a secret) but
+// keeps the path verbatim, so the identity is preserved even when the URL is malformed.
+func redactURLIdentityFallback(raw string) string {
+	raw = rawUserinfoRe.ReplaceAllString(raw, `${1}`+redactedValue+`${2}`)
+	if path, _, found := strings.Cut(raw, "?"); found {
+		return path + "?" + redactedValue
+	}
+	return raw
+}
+
 // redactUserinfo scrubs a password embedded in the URL userinfo
 // (scheme://user:password@host). Some definitions place credentials there; the
 // stdlib would otherwise stringify them verbatim. The username is preserved
@@ -106,8 +154,8 @@ var rawUserinfoRe = regexp.MustCompile(`(//[^/?#@:]*:)[^/?#@]*(@)`)
 // a marker, and scrubs any secret-shaped PATH token from the kept structural prefix.
 func redactURLFallback(raw string) string {
 	raw = rawUserinfoRe.ReplaceAllString(raw, `${1}`+redactedValue+`${2}`)
-	if i := strings.IndexByte(raw, '?'); i >= 0 {
-		return redactPathSecrets(raw[:i]) + "?" + redactedValue
+	if path, _, found := strings.Cut(raw, "?"); found {
+		return redactPathSecrets(path) + "?" + redactedValue
 	}
 	return redactPathSecrets(raw)
 }
