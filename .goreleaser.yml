@@ -92,8 +92,10 @@ release:
 
     ## Docker image
 
-    - `docker pull ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/harbrr:{{ .Tag }}`
+    - `docker pull ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/harbrr:{{ .Version }}`
+    {{- if not .Prerelease }}
     - `docker pull ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/harbrr:latest`
+    {{- end }}
 
     ## Getting started
 
