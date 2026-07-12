@@ -157,8 +157,11 @@ spares the **tracker's** infrastructure, not just harbrr's. Shipped in #60; user
   (the cached value is `[]*normalizer.Release` **before** `/dl` rewriting).
 - **Key** — SHA-256 over a schema-versioned canonical payload: `version | instance_id | search_mode |
   keywords | categories(sorted) | ids | season/ep/year | …`. Categories **are** in the key (they change
-  the tracker request); `limit`/`offset` are **not** (applied post-cache). Byte-identical queries from a
-  1080p and a 4k \*arr instance collapse to one entry — the multi-instance fix, TTL-independent.
+  the tracker request). `limit`/`offset` are excluded for a **non-paging** instance (applied post-cache,
+  so different pagination reuses one entry); a **paging-capable** instance — one whose driver forwards
+  `offset`/`limit` upstream (e.g. Newznab/usenet) — folds them into the key so each upstream page gets
+  its own entry. Byte-identical queries from a 1080p and a 4k \*arr instance collapse to one entry — the
+  multi-instance fix, TTL-independent.
 - **Storage** — SQLite as source of truth (survives restart, so no thundering re-poll on boot);
   FK-cascade on instance delete; periodic cleanup.
 - **Singleflight** — concurrent misses for one key collapse to a single tracker request.

@@ -89,4 +89,4 @@ firehose (push, latency-optimized), parsed by regex, download link rebuilt from 
 passkey/cookie. It does **not** do on-demand search (even when it consumes a
 Torznab endpoint, it polls it RSS-style, never `t=search`). harbrr/Prowlarr/Jackett
 own the **search** surface; autobrr owns **announce**. They are complementary, not
-substitutes — which is the framing for the coverage matrix in `website/docs/coverage.md`.
+substitutes — which is the framing for the coverage matrix in `../website/docs/coverage.md`.
