@@ -128,6 +128,11 @@ docker run -d \
 The image runs non-root, exposes port 7478, ships a `/healthz` check, and already invokes
 `harbrr serve --host 0.0.0.0 --data-dir /config`.
 
+> [!NOTE]
+> `:latest` is published only for **stable** releases. During alpha (pre-releases) it won't
+> exist — pull the version tag instead, e.g. `ghcr.io/autobrr/harbrr:0.1.0-alpha` (no `v`
+> prefix). This applies to both the compose and run examples above.
+
 ### Linux / macOS / Windows / FreeBSD (prebuilt binary)
 
 Grab the archive for your platform from
