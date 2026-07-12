@@ -61,14 +61,21 @@ func (rt *router) searchIndexer(w http.ResponseWriter, r *http.Request) {
 }
 
 // resolveSearchLinks returns copies of the releases with download links made safe to
-// serve: a resolver-needing indexer's link is sealed behind the /dl proxy (the
-// passkey stays inside harbrr), a direct link/magnet is served as-is, and — when the
-// proxy is disabled but the indexer needs resolution — the link is withheld rather
-// than served in the clear. Production always wires the keyring, so the withhold case
-// is a defensive guard. It copies each release so the engine's results are not
-// mutated.
+// serve: a resolver-needing indexer's link is sealed behind the session-authed
+// management download route (the passkey stays inside harbrr), a direct link/magnet is
+// served as-is, and — when the proxy is disabled but the indexer needs resolution — the
+// link is withheld rather than served in the clear. Production always wires the keyring,
+// so the withhold case is a defensive guard. It copies each release so the engine's
+// results are not mutated.
+//
+// The JSON search API is the web-UI surface: it authenticates by session cookie (never
+// X-API-Key), so its links must NOT be the apikey-sealed feed /dl URL (which would carry
+// an empty apikey and 401 at grab). They are sealed to /api/indexers/{slug}/download/
+// {token} instead — the same authenticated group, so a cookie-authenticated browser (or
+// an X-API-Key caller of this JSON API) can fetch them. The feed's apikey /dl stays for
+// *arr.
 func (rt *router) resolveSearchLinks(r *http.Request, idx torznabhttp.Indexer, releases []*normalizer.Release) []*normalizer.Release {
-	rw := torznabhttp.NewDLRewriter(rt.dlToken, idx, torznabhttp.DLBaseURL(r, rt.basePath, idx.Info().ID), dlAPIKey(r))
+	rw := torznabhttp.NewManagementDLRewriter(rt.dlToken, idx, torznabhttp.DownloadBaseURL(r, rt.basePath, idx.Info().ID))
 	withhold := rw == nil && torznabhttp.NeedsDLProxy(idx)
 	out := make([]*normalizer.Release, len(releases))
 	for i, rel := range releases {
@@ -90,17 +97,18 @@ func (rt *router) resolveSearchLinks(r *http.Request, idx torznabhttp.Indexer, r
 	return out
 }
 
-// dlAPIKey resolves the API key to echo into a sealed /dl link so a later grab
-// authenticates. The Torznab feed takes the caller's key from the apikey query
-// param (apiKeyParam); the JSON search API additionally accepts the X-API-Key
-// header. Header wins, then the apikey query param. A SESSION-only caller (cookie,
-// no key presented) yields "" — but resolveSearchLinks then has no key to seal
-// with, so it would emit an unusable apikey= empty link; callers that need a
-// fetchable link must present a key. The key is the caller's own and is echoed by
-// design (NewDLRewriter), so this surfaces no NEW secret.
-func dlAPIKey(r *http.Request) string {
-	if k := r.Header.Get("X-API-Key"); k != "" {
-		return k
+// downloadRelease streams a search result's .torrent/.nzb bytes (or 302s a magnet) for
+// a session- or key-authenticated caller — the session-cookie sibling of the feed's
+// apikey /dl proxy, for the web UI (which never sends X-API-Key, so the /dl apikey gate
+// 401s it). It reuses the Torznab proxy's resolve/stream core (torznabhttp.ServeGrab),
+// decoding the opaque token the JSON search response sealed into the release link, so
+// the passkey stays server-side. An unknown or disabled slug is a 404; an invalid token
+// is a 400; a resolve failure is a redacted 500.
+func (rt *router) downloadRelease(w http.ResponseWriter, r *http.Request) {
+	idx, ok := rt.registry.Indexer(r.Context(), chi.URLParam(r, "slug"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "not found")
+		return
 	}
-	return r.URL.Query().Get("apikey")
+	torznabhttp.ServeGrab(w, r, idx, rt.dlToken, rt.log, chi.URLParam(r, "token"))
 }

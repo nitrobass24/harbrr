@@ -820,3 +820,87 @@ func TestHandlerSelfURLHasNoAPIKey(t *testing.T) {
 		t.Errorf("self URL not built from the request path without query:\n%s", body)
 	}
 }
+
+// TestServeGrab exercises the shared resolve/stream core directly. Both the apikey-gated
+// feed /dl proxy (serveDL) and the session-authed management download route delegate to
+// it; authorization is the caller's job, so it is called ungated here.
+func TestServeGrab(t *testing.T) {
+	t.Parallel()
+	kr, err := secrets.OpenKeyring(secrets.KeyringOptions{EncryptionKey: dlTestKey}, zerolog.Nop())
+	if err != nil {
+		t.Fatalf("keyring: %v", err)
+	}
+	tokenFor := func(t *testing.T, indexerID, link string) string {
+		t.Helper()
+		tok, err := encodeDLToken(kr, indexerID, link)
+		if err != nil {
+			t.Fatalf("encode token: %v", err)
+		}
+		return tok
+	}
+	serve := func(t *testing.T, idx Indexer, dlToken *secrets.Keyring, token string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/download/"+token, nil)
+		rec := httptest.NewRecorder()
+		ServeGrab(rec, req, idx, dlToken, zerolog.Nop(), token)
+		return rec
+	}
+	demo := &fakeIndexer{info: IndexerInfo{ID: "demo"}}
+
+	t.Run("streams a torrent body (200)", func(t *testing.T) {
+		t.Parallel()
+		idx := &fakeIndexer{info: IndexerInfo{ID: "demo"}, grabResult: &search.GrabResult{Body: []byte("d0:e"), ContentType: torrentContentType}}
+		rec := serve(t, idx, kr, tokenFor(t, "demo", "https://demo.test/x"))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		if rec.Body.String() != "d0:e" {
+			t.Errorf("body = %q, want the bencode bytes", rec.Body.String())
+		}
+		if cd := rec.Header().Get("Content-Disposition"); cd != `attachment; filename="demo.torrent"` {
+			t.Errorf("Content-Disposition = %q, want a .torrent attachment named for the indexer", cd)
+		}
+	})
+
+	t.Run("redirects a magnet (302)", func(t *testing.T) {
+		t.Parallel()
+		idx := &fakeIndexer{info: IndexerInfo{ID: "demo"}, grabResult: &search.GrabResult{Redirect: "magnet:?xt=urn:btih:abc"}}
+		rec := serve(t, idx, kr, tokenFor(t, "demo", "https://demo.test/x"))
+		if rec.Code != http.StatusFound {
+			t.Fatalf("status = %d, want 302", rec.Code)
+		}
+		if loc := rec.Header().Get("Location"); loc != "magnet:?xt=urn:btih:abc" {
+			t.Errorf("Location = %q, want the magnet", loc)
+		}
+	})
+
+	t.Run("rejects a malformed token (400)", func(t *testing.T) {
+		t.Parallel()
+		if rec := serve(t, demo, kr, "not-a-valid-token"); rec.Code != http.StatusBadRequest {
+			t.Errorf("status = %d, want 400", rec.Code)
+		}
+	})
+
+	t.Run("rejects a token minted for another indexer (400)", func(t *testing.T) {
+		t.Parallel()
+		// demo's ID is "demo"; a token bound to "other" fails the AAD check, not replayable.
+		if rec := serve(t, demo, kr, tokenFor(t, "other", "https://demo.test/x")); rec.Code != http.StatusBadRequest {
+			t.Errorf("cross-indexer token: status = %d, want 400", rec.Code)
+		}
+	})
+
+	t.Run("nil keyring is unavailable (503)", func(t *testing.T) {
+		t.Parallel()
+		if rec := serve(t, demo, nil, "tok"); rec.Code != http.StatusServiceUnavailable {
+			t.Errorf("status = %d, want 503", rec.Code)
+		}
+	})
+
+	t.Run("refuses a non-bencode torrent body (404)", func(t *testing.T) {
+		t.Parallel()
+		idx := &fakeIndexer{info: IndexerInfo{ID: "demo"}, grabResult: &search.GrabResult{Body: []byte("<html>login</html>"), ContentType: torrentContentType}}
+		if rec := serve(t, idx, kr, tokenFor(t, "demo", "https://demo.test/x")); rec.Code != http.StatusNotFound {
+			t.Errorf("status = %d, want 404", rec.Code)
+		}
+	})
+}

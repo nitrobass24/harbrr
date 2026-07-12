@@ -172,6 +172,10 @@ func (rt *router) routes() http.Handler {
 			r.Get("/api/indexers/{slug}/status", rt.indexerStatus)
 			r.Get("/api/indexers/{slug}/stats", rt.indexerStats)
 			r.Get("/api/indexers/{slug}/search", rt.searchIndexer)
+			// Session-authed download of a search result (the web UI's cookie-auth sibling
+			// of the feed's apikey /dl proxy); the token is sealed into the JSON search
+			// response link. GET, so exempt from CSRF.
+			r.Get("/api/indexers/{slug}/download/{token}", rt.downloadRelease)
 			r.Get("/api/indexers/{slug}/capabilities", rt.indexerCapabilities)
 			r.Get("/api/indexers/{slug}/crossseed-snippet", rt.crossSeedSnippet)
 

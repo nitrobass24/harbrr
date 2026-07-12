@@ -228,32 +228,30 @@ func TestSearchJSONEnvelopeCrossPage(t *testing.T) {
 }
 
 // TestResolveSearchLinksSealsResolverLink proves a resolver-needing indexer's
-// passkey-bearing link is replaced with a /dl proxy URL — the passkey is absent, the
-// source release is not mutated (the #1 redaction risk for JSON search), and the
-// sealed link carries a NON-EMPTY apikey (so a later grab authenticates) without
-// leaking the tracker passkey. The apikey is resolved from the X-API-Key header or
-// the apikey query param; a session caller that presented neither would previously
-// get an unusable apikey= empty link.
+// passkey-bearing link is replaced with the session-authed management download route
+// (/api/indexers/{slug}/download/{token}) — the passkey is absent, the source release
+// is not mutated (the #1 redaction risk for JSON search), and the link carries a
+// NON-EMPTY opaque token but NO apikey. Crucially this holds for a SESSION caller that
+// presents no key (the web UI): the previous /dl+apikey sealing minted an unusable
+// apikey= empty link for exactly that caller (the #7 Part A bug).
 func TestResolveSearchLinksSealsResolverLink(t *testing.T) {
 	t.Parallel()
 	rt := &router{dlToken: testKeyring(t)}
 	idx := fakeSearchIndexer{id: "demo", needsResolver: true}
+	const dlBase = "/api/indexers/demo/download/"
 
-	// Header- and query-sourced keys both seal a usable link.
+	// A session caller presents no key; a programmatic caller may present one. Both must
+	// seal an identical, usable management-route link (the key no longer shapes the URL).
 	for _, src := range []struct {
 		name string
 		req  func(t *testing.T) *http.Request
 	}{
+		{"session (no key)", func(t *testing.T) *http.Request { t.Helper(); return searchReq(t) }},
 		{"x-api-key header", func(t *testing.T) *http.Request {
 			t.Helper()
 			r := searchReq(t)
 			r.Header.Set("X-API-Key", "FEEDKEY123")
 			return r
-		}},
-		{"apikey query param", func(t *testing.T) *http.Request {
-			t.Helper()
-			return httptest.NewRequestWithContext(context.Background(), http.MethodGet,
-				"http://h.test/api/indexers/demo/search?apikey=FEEDKEY123", nil)
 		}},
 	} {
 		t.Run(src.name, func(t *testing.T) {
@@ -266,14 +264,15 @@ func TestResolveSearchLinksSealsResolverLink(t *testing.T) {
 			if strings.Contains(out[0].Link, "SECRETPASSKEY777") {
 				t.Fatalf("passkey leaked into the JSON link: %q", out[0].Link)
 			}
-			if !strings.Contains(out[0].Link, "/api/indexers/demo/dl?") {
-				t.Errorf("link not routed through /dl: %q", out[0].Link)
+			i := strings.Index(out[0].Link, dlBase)
+			if i < 0 {
+				t.Fatalf("link not routed through the management download route: %q", out[0].Link)
 			}
-			if strings.Contains(out[0].Link, "apikey=&") || strings.HasSuffix(out[0].Link, "apikey=") {
-				t.Errorf("sealed link carries an empty apikey: %q", out[0].Link)
+			if token := out[0].Link[i+len(dlBase):]; token == "" {
+				t.Errorf("sealed link missing the opaque token: %q", out[0].Link)
 			}
-			if !strings.Contains(out[0].Link, "apikey=FEEDKEY123") {
-				t.Errorf("sealed link missing the resolved apikey: %q", out[0].Link)
+			if strings.Contains(out[0].Link, "apikey=") {
+				t.Errorf("management link must carry no apikey: %q", out[0].Link)
 			}
 			if rels[0].Link != keyLink {
 				t.Error("source release was mutated (expected a copy)")
@@ -283,8 +282,9 @@ func TestResolveSearchLinksSealsResolverLink(t *testing.T) {
 }
 
 // TestResolveSearchLinksSealsLoginAuthLink: a login-auth indexer with no download
-// block (DownloadNeedsAuth=true, NeedsResolver=false) is sealed behind /dl too, so
-// JSON search matches the Torznab feed for the cookie/header-auth grab gap.
+// block (DownloadNeedsAuth=true, NeedsResolver=false) is sealed behind the management
+// download route too, so JSON search matches the Torznab feed for the cookie/header-auth
+// grab gap.
 func TestResolveSearchLinksSealsLoginAuthLink(t *testing.T) {
 	t.Parallel()
 	rt := &router{dlToken: testKeyring(t)}
@@ -293,8 +293,8 @@ func TestResolveSearchLinksSealsLoginAuthLink(t *testing.T) {
 	if strings.Contains(out[0].Link, "SECRETPASSKEY777") {
 		t.Fatalf("passkey leaked into the JSON link: %q", out[0].Link)
 	}
-	if !strings.Contains(out[0].Link, "/api/indexers/demo/dl?") {
-		t.Errorf("login-auth link not routed through /dl: %q", out[0].Link)
+	if !strings.Contains(out[0].Link, "/api/indexers/demo/download/") {
+		t.Errorf("login-auth link not routed through the management download route: %q", out[0].Link)
 	}
 }
 

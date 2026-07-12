@@ -148,7 +148,7 @@ export type CrossSeedSnippet = {
 
 export type Release = {
   title: string
-  link?: string // /dl-sealed or direct — rendered verbatim, never rebuilt
+  link?: string // session download route (…/download/{token}), or a direct link — rendered verbatim, never rebuilt
   magnet?: string
   infohash?: string
   size?: number

@@ -114,6 +114,16 @@ func DLBaseURL(r *http.Request, basePath, indexerID string) string {
 	return externalIndexerBase(r, basePath, indexerID) + "/dl"
 }
 
+// DownloadBaseURL builds the externally-visible session-authed management download
+// endpoint base for an indexer (…/api/indexers/{slug}/download); NewManagementDLRewriter
+// appends /{token} per release. Unlike the feed /dl URL it carries NO apikey — the
+// management route authenticates by session cookie or X-API-Key, so the web UI (which
+// authenticates by cookie and never sends X-API-Key) can fetch a release the apikey-
+// sealed /dl would 401.
+func DownloadBaseURL(r *http.Request, basePath, indexerID string) string {
+	return externalIndexerBase(r, basePath, indexerID) + "/download"
+}
+
 // DLBaseURLForOrigin builds the same /dl endpoint base as DLBaseURL but from an explicit
 // origin (scheme://host), for callers that have no *http.Request — the announce
 // background service derives the origin from the stored connection URL. It shares the
@@ -196,5 +206,32 @@ func NewDLRewriter(kr *secrets.Keyring, idx Indexer, dlBase, apiKey string) tzn.
 			return dlURLWithToken(dlBase, apiKey, ""), stableGUID(indexerID, original), true
 		}
 		return dlURLWithToken(dlBase, apiKey, token), stableGUID(indexerID, original), true
+	}
+}
+
+// NewManagementDLRewriter is NewDLRewriter's sibling for the JSON search API the web UI
+// consumes: it seals a resolver-needing indexer's passkey-bearing link into an opaque
+// token appended as a path segment to the session-authed management download route
+// (downloadBase + "/" + token), instead of the apikey-query feed /dl URL. The token is
+// base64url (RawURLEncoding), so it is path-safe. A cookie-authenticated browser can
+// fetch the result without presenting an API key. Returns nil when the proxy is disabled
+// or the indexer needs no resolution (callers serve the raw link); a magnet is kept
+// as-is; a token-mint failure emits a tokenless URL (rejected at grab) rather than
+// leaking the passkey.
+func NewManagementDLRewriter(kr *secrets.Keyring, idx Indexer, downloadBase string) tzn.AcquisitionRewriter {
+	if kr == nil || !NeedsDLProxy(idx) {
+		return nil
+	}
+	indexerID := idx.Info().ID
+	return func(original string) (link, guid string, ok bool) {
+		if original == "" || strings.HasPrefix(original, "magnet:") {
+			return "", "", false
+		}
+		g := stableGUID(indexerID, original)
+		token, err := encodeDLToken(kr, indexerID, original)
+		if err != nil {
+			return downloadBase + "/", g, true
+		}
+		return downloadBase + "/" + token, g, true
 	}
 }

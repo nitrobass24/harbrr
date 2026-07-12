@@ -551,6 +551,41 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /api/indexers/{slug}/download/{token}:
+    get:
+      summary: Download a search result (session-authed)
+      description: >
+        Resolves and streams a search result's .torrent/.nzb bytes (or 302-redirects a
+        magnet), authenticating by session cookie or X-API-Key — the web UI's sibling of
+        the feed's apikey-sealed /dl proxy (the UI authenticates by cookie and never
+        sends X-API-Key). The token is the opaque, indexer-bound value the JSON search
+        response sealed into each resolver-needing release link; the passkey-bearing
+        source link is resolved and fetched server-side and never exposed.
+      operationId: downloadRelease
+      tags: [Indexers]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+        - { name: token, in: path, required: true, schema: { type: string }, description: opaque download token from the search response link }
+      responses:
+        "200":
+          description: the torrent/nzb file bytes
+          content:
+            application/x-bittorrent:
+              schema: { type: string, format: binary }
+            application/x-nzb:
+              schema: { type: string, format: binary }
+        "302":
+          description: a resolved magnet link (Location header); no body
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500":
+          description: the grab failed (a sanitized, secret-free error)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /api/indexers/{slug}/capabilities:
     get:
       summary: Get a configured indexer's search capabilities
