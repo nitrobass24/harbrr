@@ -34,6 +34,10 @@ var liveTested = map[string]bool{
 	"seedpool-api": true, "uploadcx": true,
 	// Native drivers, live-validated.
 	"iptorrents": true, "filelist": true, "myanonamouse": true, "broadcastthenet": true,
+	// Usenet, live-validated against the deployed fix build (differential 100=100 vs
+	// Prowlarr): the generic Newznab driver via the dognzb preset (search + a real .nzb
+	// grab through /dl), and the NZBIndex native driver (search).
+	"newznab": true, "nzbindex": true,
 }
 
 type nativeRow struct {
@@ -61,7 +65,8 @@ var nativeBuilt = []nativeRow{
 	{name: "PassThePopcorn", pattern: "Bespoke API", id: "passthepopcorn"},
 	{name: "GazelleGames", pattern: "Bespoke API", id: "gazellegames"},
 	{name: "AnimeBytes", pattern: "Bespoke API", id: "animebytes"},
-	{name: "Usenet (Newznab)", pattern: "Generic Newznab", id: ""},
+	{name: "Usenet (Newznab)", pattern: "Generic Newznab", id: "newznab"},
+	{name: "NZBIndex", pattern: "Bespoke JSON API (public)", id: "nzbindex"},
 }
 
 // nativePlanned are native drivers we have issues for but haven't built.
@@ -156,7 +161,8 @@ Cardigann can't express — and how far each is validated.
   it passes its offline golden tests. ⬜ means a driver is planned but not built yet.
 - **Live-tested** ✅ — confirmed against the real tracker: a Prowlarr differential plus a real
   grab. ⬜ means built and offline-validated, but not yet live-verified (usually just needs an
-  account on that tracker).
+  account on that tracker). See **[Test status](test-status.md)** for the evidence behind this
+  column and the auth/fetch patterns proven live.
 
 **%d trackers** total: %d Cardigann corpus (all built) · %d native drivers built · %d native
 drivers planned. To configure one, see **[Adding an indexer](guides/add-indexer.md)**.

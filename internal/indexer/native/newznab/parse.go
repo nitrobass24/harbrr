@@ -196,11 +196,13 @@ func toRelease(it *item, catMap *mapper.CategoryMap) *normalizer.Release {
 		// Carry the upstream <guid> as the stable dedup identity (churn-immune to
 		// volatile download URLs). It is normally a passkey-free release id / details
 		// permalink, but the <guid> is server-controlled free text and this value is
-		// served verbatim in the feed, so redact any secret query params as defense in
+		// served verbatim in the feed, so scrub any secret query params as defense in
 		// depth — a misbehaving server that uses an apikey-bearing download URL as its
-		// guid must not leak it. RedactURL leaves bare ids and clean permalinks intact,
-		// so dedup stays stable and churn-immune.
-		GUID:        apphttp.RedactURL(strings.TrimSpace(it.GUID)),
+		// guid must not leak it. Use RedactURLIdentity (query/userinfo secrets only),
+		// NOT RedactURL: RedactURL also redacts long hex path tokens, which is exactly
+		// the per-release id in a details permalink (e.g. /details/<32-hex>) — redacting
+		// it would collapse every release to one guid and make dedup drop all but one.
+		GUID:        apphttp.RedactURLIdentity(strings.TrimSpace(it.GUID)),
 		Size:        it.size(),
 		Categories:  it.categories(catMap),
 		Grabs:       it.attrInt("grabs"),

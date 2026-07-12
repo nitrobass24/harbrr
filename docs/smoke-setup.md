@@ -81,3 +81,22 @@ manually through Sonarr (not by the smoke harness):
    Private trackers penalize grab-then-remove (hit-and-run); leaving it seeding is
    the safeguard.
 4. Confirm the grab in Sonarr's history and that the torrent reached qBittorrent.
+
+## Why it's worth running
+
+The offline golden suite injects a replay `Doer` and synthetic fixtures, so a whole
+class of defect is invisible to it and only a live run surfaces:
+
+- **Real server response shapes** — a real API sends fields in forms a synthetic
+  golden guessed wrong (e.g. integer flags typed as `bool`, or a `<guid>` whose id
+  looks credential-shaped and gets over-redacted, collapsing dedup).
+- **Real transport** — the offline suite never builds the real `*http.Client`, so a
+  transport-construction bug (e.g. a typed-nil `Transport`) can't show up there.
+- **Real auth/fetch** — login, cookie rotation, Cloudflare clearance, and the `/dl`
+  grab of a login/header-authenticated download only exercise against a live tracker.
+- **Wrong indexer modeling** — a tracker Prowlarr serves with a bespoke implementation
+  won't work as a generic driver; the differential (0 vs N results) exposes it.
+
+That's the value of the manual live pass: it catches what a fixture can't predict.
+When it catches one, follow the report loop in
+[`internal/smoke/README.md`](../internal/smoke/README.md).

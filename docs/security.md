@@ -100,12 +100,14 @@ carry no forgeable ambient credential and are **exempt**. `SameSite=Lax` remains
 
 - **Log & trace redaction** (`internal/http/redact.go`). A **single shared vocabulary** of
   credential-shaped names (`passkey`, `api[_-]?key`, `rss[_-]?key`, `torrent_pass`, `cf_clearance`,
-  `cookie`, `token`, `2fa`, …) drives every redaction surface at once — URL query params, HTTP headers
-  (incl. `Authorization`/`Cookie`), JSON object keys, URL userinfo (`scheme://user:pass@host`), and the
-  `key=value` scrubs in error strings — so the lists cannot drift apart. FlareSolverr request/response
-  fields (`response`, `headers`, `proxy`, `postdata`, `useragent`) are scrubbed on top. Placeholder is
-  a fixed `REDACTED` that carries no length/prefix hint. Served download/magnet links **do**
-  legitimately carry passkeys (intended output) — those are never *logged*.
+  `cookie`, `token`, `2fa`, …) drives every **name-matched** redaction surface at once — URL query
+  params, HTTP headers (incl. `Authorization`/`Cookie`), JSON object keys, and the `key=value` scrubs
+  in error strings — so the lists cannot drift apart. A URL's userinfo password
+  (`scheme://user:pass@host`) is redacted **structurally** (always, independent of the name).
+  FlareSolverr request/response fields (`response`, `headers`, `proxy`, `postdata`, `useragent`) are
+  scrubbed on top. The placeholder carries no length/prefix hint — `REDACTED` on the URL/header/JSON
+  surfaces, `<redacted>` in the error-string scrubs (`RedactError`). Served download/magnet links
+  **do** legitimately carry passkeys (intended output) — those are never *logged*.
 - **File permissions** (`internal/database/db.go`). Data dir `0700`; the database **and every SQLite
   side file** (`-wal`, `-shm`, `-journal`) `0600`, enforced regardless of umask.
 - **Level-gated diagnostics.** `log.level` (`trace`|`debug`|`info`|`warn`|`error`) controls how much a
@@ -123,8 +125,8 @@ carry no forgeable ambient credential and are **exempt**. `SameSite=Lax` remains
 
 These were in the original design but are **not implemented**; don't document them as shipped:
 
-- **OIDC** login.
-- **Safe config/DB export/import** with a `<redacted>`-by-default dump and a separately
-  **passphrase-encrypted** include-secrets opt-in. (Backup/restore is demand-gated — see `plan.md`
-  "Beyond the alpha".) Only in-config redaction and the response sentinel exist today.
-- **External KMS** for the encryption key.
+- **OIDC** login ([#9](https://github.com/autobrr/harbrr/issues/9)).
+- **Safe config/DB export/import** ([#91](https://github.com/autobrr/harbrr/issues/91)) with a
+  `<redacted>`-by-default dump and a separately **passphrase-encrypted** include-secrets opt-in.
+  (Backup/restore is demand-gated — see `plan.md` "Beyond the alpha".) Only in-config redaction and the
+  response sentinel exist today.

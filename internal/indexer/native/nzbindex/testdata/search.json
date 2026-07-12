@@ -1,0 +1,44 @@
+{
+  "data": {
+    "content": [
+      {
+        "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "name": "[23/33] \"Ubuntu Gubuntu 11.10 Unity Edition (64bit).rar\" yEnc",
+        "poster": "uploader@example.com",
+        "posted": 1700000000,
+        "size": 8589934592,
+        "fileCount": 42,
+        "complete": true,
+        "groups": ["alt.binaries.hdtv"]
+      },
+      {
+        "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+        "name": "[59/62] \"Some.TV.Show.S01E01.720p.WEB-DL-GROUP.mkv\" yEnc",
+        "poster": "other@example.com",
+        "posted": 1699900000,
+        "size": 1073741824,
+        "fileCount": 10,
+        "complete": true,
+        "groups": ["alt.binaries.teevee"]
+      },
+      {
+        "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+        "name": "Some.Unquoted.Subject.Without.Title-GROUP.wrong",
+        "poster": "third@example.com",
+        "posted": 1699800000,
+        "size": 524288000,
+        "fileCount": 5,
+        "complete": true,
+        "groups": ["alt.binaries.misc"]
+      }
+    ],
+    "page": {
+      "size": 100,
+      "number": 0,
+      "totalElements": 2,
+      "totalPages": 1
+    }
+  },
+  "error": false,
+  "errorMessage": null
+}

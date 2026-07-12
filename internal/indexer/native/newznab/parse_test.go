@@ -32,6 +32,51 @@ func readGolden(t *testing.T, name string) []byte {
 	return b
 }
 
+// TestParseReleases_GUIDIdentityPreserved is the regression for the dedup-collapse bug: a
+// Newznab <guid> that is a details permalink with a 32-hex release id must keep that id.
+// RedactURL used to redact a long-hex path token as a "path secret", collapsing every
+// release to the same ".../REDACTED" guid so the pipeline's dedupeByGUID dropped all but
+// one (dognzb returned 1 of ~100). RedactURLIdentity preserves the path id (distinct
+// releases stay distinct) while still scrubbing a genuine query-param secret in a guid.
+func TestParseReleases_GUIDIdentityPreserved(t *testing.T) {
+	t.Parallel()
+	d := parseDriver(t)
+	const idA = "0123456789abcdef0123456789abcdef"
+	const idB = "fedcba9876543210fedcba9876543210"
+	body := `<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/">
+ <channel>
+  <item>
+   <title>Release A</title>
+   <guid>https://news.example.test/details/` + idA + `</guid>
+   <enclosure url="https://news.example.test/getnzb/a.nzb" type="application/x-nzb" length="100"/>
+  </item>
+  <item>
+   <title>Release B</title>
+   <guid>https://news.example.test/details/` + idB + `?apikey=SUPERSECRETKEY</guid>
+   <enclosure url="https://news.example.test/getnzb/b.nzb" type="application/x-nzb" length="100"/>
+  </item>
+ </channel>
+</rss>`
+	releases, err := d.parseReleases([]byte(body), d.caps.CategoryMap)
+	if err != nil {
+		t.Fatalf("parseReleases: %v", err)
+	}
+	if len(releases) != 2 {
+		t.Fatalf("releases = %d, want 2", len(releases))
+	}
+	a, b := releases[0].GUID, releases[1].GUID
+	if !strings.Contains(a, idA) {
+		t.Errorf("release A GUID dropped its hex identity: %q", a)
+	}
+	if a == b {
+		t.Fatalf("distinct releases collapsed to the same guid %q (dedup would drop one)", a)
+	}
+	if strings.Contains(b, "SUPERSECRETKEY") {
+		t.Errorf("release B GUID leaked its apikey query secret: %q", b)
+	}
+}
+
 // TestParseReleases is the parity gate for the Newznab RSS -> Release mapping: enclosure
 // url -> Link, newznab:attr size over enclosure length, category via the CategoryMap,
 // grabs/files, ids, usenetdate overriding pubDate, coverurl -> Poster, the comments/details

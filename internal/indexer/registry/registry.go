@@ -35,6 +35,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/native/iptorrents"
 	"github.com/autobrr/harbrr/internal/indexer/native/myanonamouse"
 	"github.com/autobrr/harbrr/internal/indexer/native/newznab"
+	"github.com/autobrr/harbrr/internal/indexer/native/nzbindex"
 	"github.com/autobrr/harbrr/internal/indexer/native/passthepopcorn"
 	"github.com/autobrr/harbrr/internal/indexer/native/torrentday"
 	"github.com/autobrr/harbrr/internal/web/torznabhttp"
@@ -462,6 +463,7 @@ func nativeFamilies() map[string]native.Family {
 		gazellegames.Families(),
 		hdbits.Families(),
 		newznab.Families(),
+		nzbindex.Families(),
 		passthepopcorn.Families(),
 		torrentday.Families(),
 	} {
