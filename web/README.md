@@ -2,8 +2,8 @@
 
 The single-page management dashboard, embedded into the harbrr binary at build time.
 Stack mirrors [qui](https://github.com/autobrr/qui): Vite + React 19 + TypeScript
-(strict) + Tailwind CSS v4 + shadcn/ui + TanStack Router/Query. The full scope and
-architecture live in [`docs/webui-scope.md`](../docs/webui-scope.md).
+(strict) + Tailwind CSS v4 + shadcn/ui + TanStack Router/Query. This README and the
+code under `src/` are the source of truth for the UI's screens and architecture.
 
 ## Developing
 
