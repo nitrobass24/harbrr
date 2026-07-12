@@ -62,6 +62,7 @@ var nativeBuilt = []nativeRow{
 	{name: "GazelleGames", pattern: "Bespoke API", id: "gazellegames"},
 	{name: "AnimeBytes", pattern: "Bespoke API", id: "animebytes"},
 	{name: "Usenet (Newznab)", pattern: "Generic Newznab", id: ""},
+	{name: "NZBIndex", pattern: "Bespoke JSON API (public)", id: "nzbindex"},
 }
 
 // nativePlanned are native drivers we have issues for but haven't built.
