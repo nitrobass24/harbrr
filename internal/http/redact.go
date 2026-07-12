@@ -61,14 +61,22 @@ func RedactURL(raw string) string {
 	redactUserinfo(u)
 	if p := redactPathSecrets(u.Path); p != u.Path {
 		// A passkey/apikey/rsskey can ride in a PATH segment (animebytes, beyondhd),
-		// which the query-only scrub below cannot reach. Setting Path and clearing
-		// RawPath makes String() re-encode the redacted (canonical) path.
+		// which the query-only scrub cannot reach. Setting Path and clearing RawPath
+		// makes String() re-encode the redacted (canonical) path.
 		u.Path, u.RawPath = p, ""
 	}
-	if u.RawQuery == "" {
-		return u.String()
-	}
+	redactSecretQueryParams(u)
+	return u.String()
+}
 
+// redactSecretQueryParams replaces the values of any secret-named query parameters on
+// u with the placeholder and re-encodes the query, leaving non-secret params, the path,
+// and the fragment untouched. A URL with no query is a no-op. Shared by RedactURL and
+// RedactURLIdentity so the query-secret scrub has a single definition.
+func redactSecretQueryParams(u *url.URL) {
+	if u.RawQuery == "" {
+		return
+	}
 	q := u.Query()
 	for name := range q {
 		if isSecretParam(name) {
@@ -79,7 +87,6 @@ func RedactURL(raw string) string {
 		}
 	}
 	u.RawQuery = q.Encode()
-	return u.String()
 }
 
 // RedactURLIdentity is RedactURL for a URL used as a stable IDENTITY — a dedup-key
@@ -103,19 +110,7 @@ func RedactURLIdentity(raw string) string {
 		return redactURLIdentityFallback(raw)
 	}
 	redactUserinfo(u)
-	if u.RawQuery == "" {
-		return u.String()
-	}
-	q := u.Query()
-	for name := range q {
-		if isSecretParam(name) {
-			vals := q[name]
-			for i := range vals {
-				vals[i] = redactedValue
-			}
-		}
-	}
-	u.RawQuery = q.Encode()
+	redactSecretQueryParams(u)
 	return u.String()
 }
 
