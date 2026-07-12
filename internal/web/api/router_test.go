@@ -19,6 +19,7 @@ import (
 	"github.com/autobrr/harbrr/internal/announce"
 	"github.com/autobrr/harbrr/internal/appsync"
 	"github.com/autobrr/harbrr/internal/auth"
+	"github.com/autobrr/harbrr/internal/backup"
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
@@ -168,6 +169,7 @@ func newEnvFull(t *testing.T, cfg api.Config, buildCache func(db *database.DB) *
 	notifySvc := notify.NewService(db, keyring, http.DefaultClient, zerolog.Nop())
 	proxySvc := proxy.NewService(db, keyring)
 	solverSvc := solver.NewService(db, keyring)
+	backupSvc := backup.NewService(db, keyring, zerolog.Nop())
 
 	var cache *registry.SearchCache
 	if buildCache != nil {
@@ -176,7 +178,7 @@ func newEnvFull(t *testing.T, cfg api.Config, buildCache func(db *database.DB) *
 
 	handler, err := api.NewRouter(api.Deps{
 		Auth: authSvc, Registry: reg, Loader: ldr, AppSync: appSync, Announce: announceSvc,
-		Notify: notifySvc, Proxy: proxySvc, Solver: solverSvc, Sessions: sm,
+		Notify: notifySvc, Proxy: proxySvc, Solver: solverSvc, Backup: backupSvc, Sessions: sm,
 		Cache: cache, Logger: logger, LogLevel: api.NewLogLevelStore(db, nil),
 	}, cfg)
 	if err != nil {

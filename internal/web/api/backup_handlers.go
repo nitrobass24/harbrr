@@ -1,0 +1,60 @@
+package api
+
+import (
+	"encoding/base64"
+	"net/http"
+
+	"github.com/autobrr/harbrr/internal/backup"
+)
+
+// maxBackupBytes caps an /api/import body. A config bundle is KB-to-low-MB scale even
+// for a large instance; 32 MiB is a generous ceiling that still bounds a memory-
+// exhaustion POST (the default 1 MiB decodeJSON cap is too tight for a base64 bundle).
+const maxBackupBytes = 32 << 20
+
+// exportBackup returns a passphrase-encrypted bundle of harbrr's config + database. The
+// response body IS the bundle (a JSON envelope: cleartext metadata + a sealed payload),
+// offered as a file download. The passphrase is required and never echoed.
+func (rt *router) exportBackup(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Passphrase string `json:"passphrase"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	bundle, err := rt.backup.Export(r.Context(), backup.ExportParams{Passphrase: req.Passphrase})
+	if err != nil {
+		rt.writeServiceError(w, "export backup", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", `attachment; filename="harbrr-backup.json"`)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(bundle)
+}
+
+// importBackup restores a bundle. The body is {payload (base64 of the exported bundle),
+// passphrase, force}; force is required to overwrite an already-configured instance. A
+// wrong passphrase or a malformed bundle is a 400, a non-empty target without force a 409.
+func (rt *router) importBackup(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Payload    string `json:"payload"`
+		Passphrase string `json:"passphrase"`
+		Force      bool   `json:"force"`
+	}
+	if !decodeJSONLimit(w, r, &req, maxBackupBytes) {
+		return
+	}
+	payload, err := base64.StdEncoding.DecodeString(req.Payload)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "payload is not valid base64")
+		return
+	}
+	if err := rt.backup.Import(r.Context(), backup.ImportParams{
+		Payload: payload, Passphrase: req.Passphrase, Force: req.Force,
+	}); err != nil {
+		rt.writeServiceError(w, "import backup", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
