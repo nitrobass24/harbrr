@@ -99,11 +99,13 @@ services:
     image: ghcr.io/autobrr/harbrr:latest
     container_name: harbrr
     restart: unless-stopped
+    # Run as the uid:gid that owns ./config so the bind mount is writable.
+    # Find yours with `id`; the image itself defaults to 1000:1000.
+    user: "1000:1000"
     ports:
       - "7478:7478"
     volumes:
-      # bind mount — harbrr runs as uid 1000: `mkdir config && chown 1000:1000 config`
-      - ./config:/config           # SQLite db + encryption keyfile — BACK THIS UP
+      - ./config:/config           # bind mount — SQLite db + encryption keyfile; BACK THIS UP
     environment:
       - TZ=Etc/UTC                 # match your stack so localized tracker dates parse
 ```
@@ -119,7 +121,8 @@ docker compose up -d
 docker run -d \
   --name harbrr \
   -p 7478:7478 \
-  -v harbrr-config:/config \
+  --user 1000:1000 \
+  -v "$(pwd)/config:/config" \
   ghcr.io/autobrr/harbrr:latest
 ```
 
