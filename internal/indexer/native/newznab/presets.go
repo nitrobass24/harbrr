@@ -50,13 +50,6 @@ var presets = []preset{
 	{id: "nzblife", name: "Nzb.life", baseURL: "https://nzb.life"},
 	{id: "nzbnoob", name: "NzbNoob", baseURL: "https://www.nzbnoob.com"},
 	{id: "nzbndx", name: "NZBNDX", baseURL: "https://www.nzbndx.com"},
-	{
-		id: "nzbindex", name: "NZBIndex", baseURL: "https://nzbindex.com", typ: "public",
-		settings: []loader.SettingsField{
-			{Name: "apikey", Label: "API Key (optional — omit for rate-limited public access)", Type: "text"},
-			{Name: "apiPath", Label: "API Path", Type: "text", Default: &loader.Scalar{Value: defaultAPIPath, Set: true}},
-		},
-	},
 	{id: "tabularasa", name: "Tabula Rasa", baseURL: "https://www.tabula-rasa.pw"},
 }
 
