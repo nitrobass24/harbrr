@@ -174,6 +174,80 @@ func (s *Service) GetConnection(ctx context.Context, id int64) (domain.AnnounceC
 	return conn, nil
 }
 
+// UpdateConnectionParams patches a connection; nil fields are left unchanged. APIKey,
+// when set, rotates the tool's key (re-encrypted in place). Kind is immutable (a driver
+// swap is a delete + recreate), matching appsync.
+type UpdateConnectionParams struct {
+	Name      *string
+	BaseURL   *string
+	HarbrrURL *string
+	APIKey    *string
+}
+
+// UpdateConnection applies a patch, re-encrypting the tool key when rotated. Only the
+// mutable fields move — the minted harbrr key and the enabled flag are untouched (they
+// have their own paths). The read → write runs in one transaction so a concurrent key
+// rotation can't be lost by this full-row write reading a stale api_key (the appsync
+// UpdateConnection precedent).
+func (s *Service) UpdateConnection(ctx context.Context, id int64, p UpdateConnectionParams) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("announce: begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	conn, err := s.repo.GetAnnounceConnection(ctx, tx, id)
+	if err != nil {
+		return fmt.Errorf("announce: get connection: %w", err)
+	}
+	if err := applyAnnounceUpdate(&conn, p); err != nil {
+		return err
+	}
+	if p.APIKey != nil {
+		if strings.TrimSpace(*p.APIKey) == "" {
+			return fmt.Errorf("%w: api key must not be blank", ErrInvalid)
+		}
+		enc, err := s.keyring.Encrypt(conn.ID, secretApp, *p.APIKey)
+		if err != nil {
+			return fmt.Errorf("announce: encrypt tool key: %w", err)
+		}
+		conn.APIKeyEncrypted, conn.KeyID = enc, s.keyring.KeyID()
+	}
+	conn.UpdatedAt = s.clock()
+	if err := s.repo.UpdateAnnounceConnection(ctx, tx, conn); err != nil {
+		if database.IsUniqueViolation(err) {
+			return fmt.Errorf("%w: %s at %s", ErrConflict, conn.Kind, apphttp.RedactURL(conn.BaseURL))
+		}
+		return fmt.Errorf("announce: update connection: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("announce: commit: %w", err)
+	}
+	return nil
+}
+
+// TestConnection probes a connection's reachability (and, for qui, its API key) WITHOUT
+// injecting anything. It reuses the same per-kind driver factory Push does; the returned
+// error is already scrubbed by the driver.
+func (s *Service) TestConnection(ctx context.Context, id int64) error {
+	conn, err := s.repo.GetAnnounceConnection(ctx, s.db, id)
+	if err != nil {
+		return fmt.Errorf("announce: get connection: %w", err)
+	}
+	toolKey, err := s.keyring.Decrypt(conn.ID, secretApp, conn.APIKeyEncrypted)
+	if err != nil {
+		return fmt.Errorf("announce: decrypt tool key: %w", err)
+	}
+	target, err := s.factory(conn, toolKey)
+	if err != nil {
+		return err
+	}
+	if err := target.Probe(ctx); err != nil {
+		return fmt.Errorf("announce: test connection: %w", err)
+	}
+	return nil
+}
+
 // SetEnabled toggles a connection.
 func (s *Service) SetEnabled(ctx context.Context, id int64, enabled bool) error {
 	if err := s.repo.SetAnnounceConnectionEnabled(ctx, s.db, id, enabled, s.clock()); err != nil {
@@ -292,6 +366,34 @@ func validateCreate(p CreateConnectionParams) error {
 		return fmt.Errorf("%w: harbrr url is required (the tool fetches harbrr's /dl link)", ErrInvalid)
 	}
 	return validateAbsURL("harbrr url", p.HarbrrURL)
+}
+
+// applyAnnounceUpdate overlays the non-nil patch fields onto conn, trimming and validating
+// each (the same rules as create) so a partial edit can't persist a blank name or a
+// host-less URL. The tool key is handled by the caller (it re-encrypts); kind is immutable.
+func applyAnnounceUpdate(conn *domain.AnnounceConnection, p UpdateConnectionParams) error {
+	if p.Name != nil {
+		name := strings.TrimSpace(*p.Name)
+		if name == "" {
+			return fmt.Errorf("%w: name is required", ErrInvalid)
+		}
+		conn.Name = name
+	}
+	if p.BaseURL != nil {
+		base := strings.TrimSpace(*p.BaseURL)
+		if err := validateAbsURL("base url", base); err != nil {
+			return err
+		}
+		conn.BaseURL = base
+	}
+	if p.HarbrrURL != nil {
+		harbrr := strings.TrimSpace(*p.HarbrrURL)
+		if err := validateAbsURL("harbrr url", harbrr); err != nil {
+			return err
+		}
+		conn.HarbrrURL = harbrr
+	}
+	return nil
 }
 
 // validateAbsURL requires an absolute http(s) URL with a host, so a malformed/relative URL

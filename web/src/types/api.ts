@@ -303,6 +303,16 @@ export type CreateAnnounceConnection = {
   harbrrUrl: string
 }
 
+// UpdateAnnounceConnection is the PATCH body: every field optional, omit to keep the
+// stored value. Omit apiKey to keep the stored key (never re-send the <redacted>
+// sentinel); kind is immutable, so it is absent here.
+export type UpdateAnnounceConnection = {
+  name?: string
+  baseUrl?: string
+  apiKey?: string
+  harbrrUrl?: string
+}
+
 export type ApiKey = {
   id: number
   name: string

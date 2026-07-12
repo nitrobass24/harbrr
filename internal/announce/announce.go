@@ -58,6 +58,12 @@ type TorrentFetcher func(ctx context.Context, downloadURL string) ([]byte, error
 // with nil error; network/auth failures return a scrubbed error.
 type Target interface {
 	Announce(ctx context.Context, rel Release) (Result, error)
+	// Probe checks the tool is reachable — and, where the tool exposes a suitable
+	// non-mutating endpoint, that the API key is accepted — WITHOUT injecting anything.
+	// The management API's Test action uses it. A nil error is a pass; a scrubbed error
+	// means unreachable/unauthorized. Reachability-vs-credentials coverage is per-kind
+	// (qui validates the key; cross-seed v6 checks reachability only).
+	Probe(ctx context.Context) error
 }
 
 // poster carries the shared HTTP machinery both drivers reuse: an authenticated JSON POST
@@ -70,10 +76,7 @@ type poster struct {
 }
 
 // post sends body as JSON to baseURL+path with the api-key header, decoding a 2xx response
-// into out (when non-nil). It returns the HTTP status (set even on the error path so a
-// caller can branch on, e.g., 404) plus a scrubbed error for any transport failure or
-// non-2xx status. The response body is never surfaced — it can reproduce the request,
-// which carries the api key and the /dl link.
+// into out (when non-nil). See do for the return contract and redaction guarantees.
 func (p *poster) post(ctx context.Context, path string, body, out any) (int, error) {
 	payload, err := json.Marshal(body)
 	if err != nil {
@@ -83,10 +86,32 @@ func (p *poster) post(ctx context.Context, path string, body, out any) (int, err
 	if err != nil {
 		return 0, fmt.Errorf("announce: %s: build request: %w", p.kind, scrubURLError(err))
 	}
-	req.Header.Set(apiKeyHeader, p.apiKey)
 	req.Header.Set("Content-Type", "application/json")
+	return p.do(req, path, out)
+}
 
-	resp, err := p.client.Do(req)
+// get sends an authenticated GET to baseURL+path, decoding a 2xx response into out (when
+// non-nil). It is used by non-mutating reachability probes (cross-seed v6's /api/ping).
+// See do for the return contract and redaction guarantees.
+func (p *poster) get(ctx context.Context, path string, out any) (int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.baseURL+path, nil)
+	if err != nil {
+		return 0, fmt.Errorf("announce: %s: build request: %w", p.kind, scrubURLError(err))
+	}
+	return p.do(req, path, out)
+}
+
+// do sets the api-key header, sends req, and decodes a 2xx response into out (when
+// non-nil). It returns the HTTP status (set even on the error path so a caller can branch
+// on, e.g., 404) plus a scrubbed error for any transport failure or non-2xx status. The
+// response body is never surfaced — it can reproduce the request, which carries the api
+// key and the /dl link.
+func (p *poster) do(req *http.Request, path string, out any) (int, error) {
+	req.Header.Set(apiKeyHeader, p.apiKey)
+	// G704: the URL is p.baseURL (the operator-configured cross-seed tool address,
+	// validated absolute http(s) at create/update) + a fixed path — never end-user
+	// input. Reaching that address is the whole point, so this is not attacker SSRF.
+	resp, err := p.client.Do(req) //nolint:gosec // G704: operator-configured tool URL, not user input.
 	if err != nil {
 		return 0, fmt.Errorf("announce: %s: %s: %w", p.kind, path, scrubURLError(err))
 	}

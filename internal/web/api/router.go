@@ -191,9 +191,11 @@ func (rt *router) routes() http.Handler {
 			r.Get("/api/announce-connections", rt.listAnnounceConnections)
 			r.Post("/api/announce-connections", rt.createAnnounceConnection)
 			r.Get("/api/announce-connections/{id}", rt.getAnnounceConnection)
+			r.Patch("/api/announce-connections/{id}", rt.updateAnnounceConnection)
 			r.Delete("/api/announce-connections/{id}", rt.deleteAnnounceConnection)
 			r.Post("/api/announce-connections/{id}/enable", rt.enableAnnounceConnection)
 			r.Post("/api/announce-connections/{id}/disable", rt.disableAnnounceConnection)
+			r.Post("/api/announce-connections/{id}/test", rt.testAnnounceConnection)
 
 			rt.mountResourceRoutes(r)
 

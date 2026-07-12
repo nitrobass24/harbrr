@@ -18,6 +18,11 @@ const (
 	quiApplyPath = "/api/cross-seed/apply"
 
 	quiRecommendationDownload = "download"
+
+	// quiProbeName is the synthetic torrent name / indexer a Probe's webhook/check
+	// carries. It never matches a real release, so the check is a pure reachability +
+	// auth probe with no side effect (apply is never reached).
+	quiProbeName = "harbrr-connection-test"
 )
 
 // quiCheckRequest / quiCheckResponse are the webhook/check contract (the subset harbrr
@@ -81,6 +86,21 @@ func (q *quiAnnouncer) Announce(ctx context.Context, rel Release) (Result, error
 		return Result{Matched: false, Detail: "qui recommendation: " + cr.Recommendation}, nil
 	}
 	return q.apply(ctx, rel)
+}
+
+// Probe validates qui without injecting anything: it POSTs a synthetic webhook/check
+// (the same non-mutating first step Announce uses) with a token that matches no real
+// release, so apply is never reached. A 2xx (a real check verdict) and a 404 ("no match")
+// both mean the endpoint is reachable and the key was accepted; any other non-2xx /
+// transport failure is a scrubbed error.
+func (q *quiAnnouncer) Probe(ctx context.Context) error {
+	status, err := q.post(ctx, quiCheckPath, quiCheckRequest{
+		TorrentName: quiProbeName, Size: 0, Indexer: quiProbeName,
+	}, nil)
+	if err != nil && status != http.StatusNotFound {
+		return err
+	}
+	return nil
 }
 
 // apply fetches the .torrent bytes for a matched release and posts them base64-encoded.

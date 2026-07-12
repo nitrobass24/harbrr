@@ -191,6 +191,103 @@ func TestQuiAnnounce_EmptyTorrentBytesIsError(t *testing.T) {
 	}
 }
 
+func TestQuiProbe_NonMutatingAndReachable(t *testing.T) {
+	t.Parallel()
+	applyCalls := 0
+	var probedName, probedIndexer string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case quiCheckPath:
+			var cr quiCheckRequest
+			_ = json.NewDecoder(r.Body).Decode(&cr)
+			probedName, probedIndexer = cr.TorrentName, cr.Indexer
+			_ = json.NewEncoder(w).Encode(quiCheckResponse{CanCrossSeed: false, Recommendation: "skip"})
+		case quiApplyPath:
+			applyCalls++
+		}
+	}))
+	defer srv.Close()
+	tgt := NewQui(srv.URL, testAPIKey, srv.Client(), nil, nil)
+
+	if err := tgt.Probe(context.Background()); err != nil {
+		t.Fatalf("Probe: %v, want nil (reachable)", err)
+	}
+	if applyCalls != 0 {
+		t.Errorf("Probe called apply %d times, want 0 (probe must not inject)", applyCalls)
+	}
+	if probedName == "" || probedName != probedIndexer {
+		t.Errorf("probe check used name=%q indexer=%q, want a shared synthetic token", probedName, probedIndexer)
+	}
+}
+
+func TestQuiProbe_NotFoundIsReachable(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+	tgt := NewQui(srv.URL, testAPIKey, srv.Client(), nil, nil)
+	if err := tgt.Probe(context.Background()); err != nil {
+		t.Errorf("Probe: %v, want nil (404 = reachable no-match)", err)
+	}
+}
+
+func TestQuiProbe_ServerErrorIsScrubbed(t *testing.T) {
+	t.Parallel()
+	const leak = "qui_secretkey-LEAKED"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(leak))
+	}))
+	defer srv.Close()
+	tgt := NewQui(srv.URL, testAPIKey, srv.Client(), nil, nil)
+
+	err := tgt.Probe(context.Background())
+	if err == nil {
+		t.Fatal("Probe err = nil, want a 500 error")
+	}
+	if strings.Contains(err.Error(), leak) || strings.Contains(err.Error(), testAPIKey) {
+		t.Errorf("Probe error leaked secret/body: %v", err)
+	}
+}
+
+func TestCrossSeedV6Probe_PingUpIsReachable(t *testing.T) {
+	t.Parallel()
+	var probedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		probedPath = r.URL.Path
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	tgt := NewCrossSeedV6(srv.URL, "cs_secret", srv.Client())
+
+	if err := tgt.Probe(context.Background()); err != nil {
+		t.Fatalf("Probe: %v, want nil (ping up)", err)
+	}
+	if probedPath != csv6PingPath {
+		t.Errorf("probe hit %q, want %q", probedPath, csv6PingPath)
+	}
+}
+
+func TestCrossSeedV6Probe_PingDownIsScrubbed(t *testing.T) {
+	t.Parallel()
+	const leak = "cs_secret-LEAKED"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(leak))
+	}))
+	defer srv.Close()
+	tgt := NewCrossSeedV6(srv.URL, "cs_secret", srv.Client())
+
+	err := tgt.Probe(context.Background())
+	if err == nil {
+		t.Fatal("Probe err = nil, want a 503 error")
+	}
+	if strings.Contains(err.Error(), leak) || strings.Contains(err.Error(), "cs_secret") {
+		t.Errorf("Probe error leaked secret/body: %v", err)
+	}
+}
+
 // --- cross-seed v6 (one-step) ---
 
 func TestCrossSeedV6Announce_PostsLinkAndKey(t *testing.T) {

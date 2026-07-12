@@ -34,6 +34,7 @@ import type {
   SyncProfile,
   SyncReport,
   TestResult,
+  UpdateAnnounceConnection,
   UpdateConnection,
   UpdateIndexer,
   UpdateNotification,
@@ -446,12 +447,20 @@ export class ApiClient {
     return this.request("/announce-connections", { method: "POST", body })
   }
 
+  updateAnnounceConnection(id: number, body: UpdateAnnounceConnection): Promise<void> {
+    return this.request(`/announce-connections/${id}`, { method: "PATCH", body })
+  }
+
   deleteAnnounceConnection(id: number): Promise<void> {
     return this.request(`/announce-connections/${id}`, { method: "DELETE" })
   }
 
   setAnnounceEnabled(id: number, enabled: boolean): Promise<void> {
     return this.request(`/announce-connections/${id}/${enabled ? "enable" : "disable"}`, { method: "POST" })
+  }
+
+  testAnnounceConnection(id: number): Promise<TestResult> {
+    return this.request(`/announce-connections/${id}/test`, { method: "POST" })
   }
 
   // --- search ---

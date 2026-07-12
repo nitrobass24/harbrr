@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -8,7 +9,9 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/autobrr/harbrr/internal/announce"
+	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/domain"
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/secrets"
 )
 
@@ -74,6 +77,50 @@ func (rt *router) getAnnounceConnection(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, toAnnounceResponse(conn))
+}
+
+// updateAnnounceConnection patches an announce target. apiKey follows the pointer-omit
+// convention (a new key rotates the tool credential; an omitted apiKey keeps the stored
+// one — the client never re-submits the <redacted> sentinel).
+func (rt *router) updateAnnounceConnection(w http.ResponseWriter, r *http.Request) {
+	id, ok := announceConnectionID(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Name      *string `json:"name"`
+		BaseURL   *string `json:"baseUrl"`
+		APIKey    *string `json:"apiKey"`
+		HarbrrURL *string `json:"harbrrUrl"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.announce.UpdateConnection(r.Context(), id, announce.UpdateConnectionParams{
+		Name: req.Name, BaseURL: req.BaseURL, APIKey: req.APIKey, HarbrrURL: req.HarbrrURL,
+	}); err != nil {
+		rt.writeServiceError(w, "update announce connection", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// testAnnounceConnection probes the target without injecting anything (qui validates its
+// API key; cross-seed v6 checks reachability only). A pass is {"ok":true}; a failure is
+// 200 {"ok":false,"error":<scrubbed>}; an unknown id 404.
+func (rt *router) testAnnounceConnection(w http.ResponseWriter, r *http.Request) {
+	id, ok := announceConnectionID(w, r)
+	if !ok {
+		return
+	}
+	switch err := rt.announce.TestConnection(r.Context(), id); {
+	case err == nil:
+		writeJSON(w, http.StatusOK, testResult{OK: true})
+	case errors.Is(err, database.ErrNotFound):
+		rt.writeServiceError(w, "test announce connection", err)
+	default:
+		writeJSON(w, http.StatusOK, testResult{OK: false, Error: apphttp.RedactError(err)})
+	}
 }
 
 // deleteAnnounceConnection removes a connection and revokes its minted key.
