@@ -274,10 +274,11 @@ func TestServiceUpdateValidation(t *testing.T) {
 	}
 
 	cases := map[string]announce.UpdateConnectionParams{
-		"blank name":      {Name: ptr("  ")},
-		"blank api key":   {APIKey: ptr("")},
-		"relative base":   {BaseURL: ptr("qui:7476")},
-		"relative harbrr": {HarbrrURL: ptr("h:8787")},
+		"blank name":       {Name: ptr("  ")},
+		"blank api key":    {APIKey: ptr("")},
+		"redacted api key": {APIKey: ptr(secrets.Redacted)},
+		"relative base":    {BaseURL: ptr("qui:7476")},
+		"relative harbrr":  {HarbrrURL: ptr("h:8787")},
 	}
 	for name, params := range cases {
 		t.Run(name, func(t *testing.T) {

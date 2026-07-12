@@ -114,7 +114,14 @@ export function AnnounceSection() {
             checked={t.enabled}
             onCheckedChange={(checked) => toggle.mutate({ id: t.id, enabled: checked })}
           />
-          <Button variant="outline" size="sm" onClick={() => runTest(t)}>Test</Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={test.isPending && test.variables === t.id}
+            onClick={() => runTest(t)}
+          >
+            {test.isPending && test.variables === t.id ? "Testing…" : "Test"}
+          </Button>
           <Button variant="ghost" size="icon" aria-label={`Edit ${t.name}`} onClick={() => setDialog({ open: true, existing: t })}>
             <Pencil className="h-4 w-4" />
           </Button>

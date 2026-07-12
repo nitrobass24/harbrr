@@ -207,6 +207,12 @@ func (s *Service) UpdateConnection(ctx context.Context, id int64, p UpdateConnec
 		if strings.TrimSpace(*p.APIKey) == "" {
 			return fmt.Errorf("%w: api key must not be blank", ErrInvalid)
 		}
+		// The read view redacts the tool key to the <redacted> sentinel; a client that
+		// echoes it back means "keep the stored key" and must OMIT the field. Storing the
+		// sentinel literally would silently replace the real key, so reject it explicitly.
+		if secrets.IsRedacted(strings.TrimSpace(*p.APIKey)) {
+			return fmt.Errorf("%w: api key must not be the redacted placeholder (omit it to keep the stored key)", ErrInvalid)
+		}
 		enc, err := s.keyring.Encrypt(conn.ID, secretApp, *p.APIKey)
 		if err != nil {
 			return fmt.Errorf("announce: encrypt tool key: %w", err)
