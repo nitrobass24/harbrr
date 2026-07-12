@@ -69,7 +69,7 @@ type Query struct {
 	// the registry's freeleechIndexer decorator only: the Cardigann engine never templates
 	// it (the engine always fetches the full catalog regardless), and it is deliberately
 	// NOT part of the search-cache key — honor and bypass share one cached full-set entry,
-	// and the decorator narrows it post-cache. See docs/plan.md Phase-11.
+	// and the decorator narrows it post-cache. See website/docs/features/cross-seed-freeleech.md.
 	FreeleechBypass bool
 
 	// keywordsFiltered, when non-nil, is the joined keyword term after the

@@ -34,4 +34,4 @@ indexer's caps required it. Exercised by `caps_test.go`.
 `normalizer.Release` has no `guid` field and `search.Query` carries no `limit`/`offset`,
 so the driver serves the enclosure URL as the grab link and fetches a single page
 (`limit=100`, Prowlarr's default). Functionally complete for v1; richer pagination is
-tracked separately (`docs/plan.md`, issue #3). Not a divergence in served output.
+tracked separately (autobrr/harbrr#3). Not a divergence in served output.

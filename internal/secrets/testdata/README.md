@@ -5,7 +5,7 @@ server — deliberately or knowingly differs from its reference sibling
 **autobrr/qui** or from the `docs/security.md` security model. Each entry carries
 exactly one disposition (see `docs/divergences.md` for the vocabulary):
 `[Deliberate]` (intentional design choice), `[Accepted]` (a kept difference, no
-work planned), or `[Tracked]` (a real gap with a `docs/plan.md` item).
+work planned), or `[Tracked]` (a real gap with a GitHub issue).
 
 The behaviours below are pinned by tests in `internal/secrets`, `internal/auth`,
 `internal/database`, `internal/web/api`, and `internal/server`.
@@ -68,7 +68,7 @@ The behaviours below are pinned by tests in `internal/secrets`, `internal/auth`,
 ## Deferred product features → backlog, not this ledger
 
 These are **unbuilt product features**, not behavioral divergences from Jackett, so they
-live in `docs/plan.md` → "Beyond the alpha", not here: **OIDC auth** (`/api/auth/oidc/*`
+are tracked as GitHub issues, not here: **OIDC auth** (`/api/auth/oidc/*`
 returns 501 today; config seam only), **`api_keys.last_used_at` write** (validation is a
 pure read; the auth event log populates it later), and **safe config/DB export-import**
 (the `<redacted>` sentinel exists for the edit flow; the export/import path is deferred).
@@ -108,5 +108,4 @@ The one item that *shipped* and is kept here as a resolved record:
   traces, and the stats event log" as redaction targets, but harbrr has **no
   tracing and no stats/event-log subsystem** — those targets do not exist, so the
   audit cannot wire redaction into them. Building them is out of scope.
-  `[Accepted]` (revisit when the stats/event-log feature lands — `docs/plan.md` →
-  "Beyond the alpha").
+  `[Accepted]` (revisit when the stats/event-log feature lands — autobrr/harbrr#103).

@@ -25,7 +25,7 @@ func TestBuildSearchCacheKeyStability(t *testing.T) {
 // TestBuildSearchCacheKeyIgnoresFreeleechBypass proves the honor and freeleech-bypass
 // feed variants share ONE cache entry: the bypass flag is request context for the
 // serve-time freeleech view, never part of the cache key, so a bypass poll reuses the
-// full set a prior honor poll already fetched (no extra tracker hit). See docs/plan.md.
+// full set a prior honor poll already fetched (no extra tracker hit). See docs/architecture.md.
 func TestBuildSearchCacheKeyIgnoresFreeleechBypass(t *testing.T) {
 	t.Parallel()
 

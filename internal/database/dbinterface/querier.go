@@ -51,8 +51,8 @@ const (
 	// DialectSQLite is the only dialect harbrr wires a backend for today.
 	DialectSQLite Dialect = "sqlite"
 	// DialectPostgres is recognized by Rebind so the placeholder seam is provably
-	// ready, but NO Postgres backend exists — it is demand-gated (docs/plan.md
-	// "Beyond the alpha"). Adding one means wiring a driver + dialect detection in
+	// ready, but NO Postgres backend exists — it is demand-gated (see
+	// docs/architecture.md). Adding one means wiring a driver + dialect detection in
 	// Open, not rewriting repository SQL.
 	DialectPostgres Dialect = "postgres"
 )

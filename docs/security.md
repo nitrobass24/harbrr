@@ -128,5 +128,5 @@ These were in the original design but are **not implemented**; don't document th
 - **OIDC** login ([#9](https://github.com/autobrr/harbrr/issues/9)).
 - **Safe config/DB export/import** ([#91](https://github.com/autobrr/harbrr/issues/91)) with a
   `<redacted>`-by-default dump and a separately **passphrase-encrypted** include-secrets opt-in.
-  (Backup/restore is demand-gated — see `plan.md` "Beyond the alpha".) Only in-config redaction and the
+  (Backup/restore is tracked in autobrr/harbrr#91.) Only in-config redaction and the
   response sentinel exist today.

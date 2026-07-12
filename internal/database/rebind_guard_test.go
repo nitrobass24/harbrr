@@ -11,7 +11,7 @@ import (
 
 // TestNoUnboundPlaceholders guards the dialect-portability seam: every
 // placeholder-bearing query a repository issues must route through Rebind, so a
-// second backend (Postgres, demand-gated — see docs/plan.md "Beyond the alpha")
+// second backend (Postgres, demand-gated — see docs/architecture.md)
 // stays a one-function change in dbinterface.Rebind rather than a sweep of every
 // call site.
 //

@@ -6,8 +6,7 @@ per-app decisions for the Servarr-shaped forks. The disposition vocabulary (`[De
 `[Accepted]` / `[Tracked]`) is defined in `docs/divergences.md`.
 
 The goldens here are **doc-derived** — built from each app's documented indexer contract and the
-live `GET /indexer/schema` field set confirmed during Phase-10 live validation (see
-`docs/plan.md` Phase 10), never captured from a live save. The live Prowlarr differential and a
+live `GET /indexer/schema` field set confirmed during Phase-10 live validation, never captured from a live save. The live Prowlarr differential and a
 real sync are the live-validation gate.
 
 ## Fixtures
@@ -65,8 +64,7 @@ All three reuse the shared `servarrDriver`; they are thin constructors over the 
 - **Readarr is archived upstream** — `[Accepted]`. Readarr was archived by its maintainers; harbrr
   keeps the target because its v1 indexer API is unchanged and existing installs still benefit. No
   new behavior is gated on it. (User-facing note: `website/docs/guides/app-sync.md`.)
-- **Mylar is not a target** — `[Tracked]`. Comics (Mylar) is a separate spike, demand-gated in
-  `docs/plan.md` Phase 11; it is **not** a Servarr v3 fork and does not reuse this driver.
+- **Mylar is not a target** — `[Tracked]`. Comics (Mylar) is a separate spike, demand-gated; it is **not** a Servarr v3 fork and does not reuse this driver.
 
 ## Per-app freeleech routing + the kind CHECK (#85)
 

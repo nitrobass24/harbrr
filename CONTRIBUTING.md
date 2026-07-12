@@ -8,7 +8,7 @@ non-trivial change.
 ## Before you start
 
 - **Design & roadmap.** [`docs/architecture.md`](docs/architecture.md) is the load-bearing
-  design summary; [`docs/plan.md`](docs/plan.md) is the phase-by-phase build checklist.
+  design summary; the roadmap and forward work live in GitHub issues.
 - **Prime directive.** harbrr's value is **behavioral parity with Jackett's Cardigann engine
   on the same input**. Correctness is measured offline against Jackett, not against live
   trackers — see the parity suite in `internal/indexer/cardigann/parity`.
