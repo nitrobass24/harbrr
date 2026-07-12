@@ -386,8 +386,9 @@ jobs:
           GOOS: ${{ matrix.target.goos }}
           GOARCH: ${{ matrix.target.goarch }}
           CGO_ENABLED: "0"
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          version="$(git -c safe.directory="$GITHUB_WORKSPACE" describe --tags --always --dirty 2>/dev/null || echo 0.0.0-dev)"
+          version="$(scripts/ci-version.sh)"
           commit="$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse --short HEAD)"
           date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           go build -trimpath -ldflags "-s -w \
@@ -465,10 +466,11 @@ jobs:
           GOARCH: ${{ matrix.arch }}
           CGO_ENABLED: "0"
           BINCTX: ${{ runner.temp }}/binctx-${{ matrix.arch }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           rm -rf "$BINCTX"
           mkdir -p "$BINCTX/out"
-          version="$(git -c safe.directory="$GITHUB_WORKSPACE" describe --tags --always --dirty 2>/dev/null || echo 0.0.0-dev)"
+          version="$(scripts/ci-version.sh)"
           commit="$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse --short HEAD)"
           date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           go build -trimpath -ldflags "-s -w \
@@ -648,6 +650,21 @@ jobs:
       - name: guard the bundle
         if: startsWith(github.ref, 'refs/tags/')
         run: scripts/check-web-dist.sh
+      # Curated highlights for the GitHub Release header: pull the tag's section
+      # from CHANGELOG.md into $RELEASE_HEADER, which goreleaser renders via
+      # {{ .Env.RELEASE_HEADER }} above the auto feat/fix commit list. Runs on all
+      # events (empty on non-tag) so `goreleaser check` always has the var defined.
+      - name: assemble release header from CHANGELOG
+        run: |
+          header=""
+          case "$GITHUB_REF" in
+            refs/tags/*) header="$(scripts/changelog-extract.sh "${GITHUB_REF#refs/tags/}" || true)" ;;
+          esac
+          {
+            echo "RELEASE_HEADER<<HARBRR_NOTES_EOF"
+            printf '%s\n' "$header"
+            echo "HARBRR_NOTES_EOF"
+          } >> "$GITHUB_ENV"
       - name: goreleaser
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:

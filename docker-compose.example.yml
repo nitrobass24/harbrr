@@ -19,7 +19,7 @@
 #   4. Mint a Torznab key: POST /api/apikeys     {"name":"sonarr"}   (shown ONCE)
 #   5. Add an indexer:     POST /api/indexers     (credentials encrypted at rest)
 #   6. Point Sonarr/Radarr at a Generic Torznab indexer:
-#        URL:    http://harbrr:7478/api/v2.0/indexers/<slug>/results/torznab
+#        URL:    http://harbrr:7478/api/indexers/<slug>/results/torznab
 #        apikey: the key minted in step 4
 
 services:

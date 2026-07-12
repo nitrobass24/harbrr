@@ -1,32 +1,96 @@
-# Harbrr
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/logo-dark.png">
+    <img alt="harbrr logo" src=".github/assets/logo.png" width="120px"/>
+  </picture>
+  <br/>
+  harbrr
+</h1>
 
-> The tracker and indexer fabric for the autobrr ecosystem.
+<p align="center">The tracker and indexer fabric for the autobrr ecosystem — a single-binary, Cardigann-compatible <strong>Torznab/Newznab</strong> provider.</p>
 
-Harbrr is a single-binary, Cardigann-compatible **Torznab/Newznab** provider — the
-centralized intelligence layer between your trackers and your automation. Configure your
-trackers once, connect everything, and let harbrr aggregate feeds, deduplicate searches, and
-be a better private-tracker citizen.
+<p align="center">
+  <a href="https://github.com/autobrr/harbrr/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/autobrr/harbrr?include_prereleases&style=for-the-badge"></a>&nbsp;
+  <a href="https://github.com/autobrr/harbrr/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/autobrr/harbrr/total?style=for-the-badge"></a>&nbsp;
+  <a href="https://github.com/autobrr/harbrr/actions/workflows/ci.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/autobrr/harbrr/ci.yml?style=for-the-badge"></a>&nbsp;
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/autobrr/harbrr?style=for-the-badge"></a>&nbsp;
+  <a href="https://discord.autobrr.com"><img alt="Discord" src="https://img.shields.io/badge/discord-autobrr-5865F2?style=for-the-badge&logo=discord&logoColor=white"></a>
+</p>
 
-Built for **autobrr, qui, and cross-seed** from day one, while staying fully compatible with
-Sonarr, Radarr, Lidarr, Readarr, Mylar, Whisparr, and any Torznab client.
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/dashboard-dark.png">
+    <img alt="harbrr dashboard" src=".github/assets/dashboard-light.png" width="100%">
+  </picture>
+</p>
+
+Harbrr is the centralized intelligence layer between your trackers and your automation.
+Configure your trackers once, connect everything, and let harbrr aggregate feeds,
+deduplicate searches, and be a better private-tracker citizen.
+
+Built for **autobrr, qui, and cross-seed** from day one, while staying fully compatible
+with Sonarr, Radarr, Lidarr, Readarr, Mylar, Whisparr, and any Torznab/Newznab client.
 
 > [!NOTE]
-> **Alpha — operated via the API.** The Cardigann engine is at parity with Jackett/Prowlarr
-> (proven offline and live), native drivers cover the trackers Cardigann can't express, and
-> harbrr syncs indexers into Sonarr/Radarr/qui. harbrr already works as a **Swagger-only
-> Prowlarr replacement**; a web UI is the next phase. Until then, the interactive **Swagger
-> UI at `/api/docs`** is the interface.
+> **Alpha.** This first release ships a full **embedded web UI** alongside the engine and
+> daemon. The Cardigann engine is at parity with Jackett/Prowlarr (proven offline and live),
+> native drivers cover the trackers Cardigann can't express, and harbrr syncs indexers into
+> Sonarr/Radarr/qui. Expect rough edges and breaking changes before `v1.0` — and **back up your
+> `/config` directory** (SQLite DB + encryption keyfile). The interactive **Swagger UI at
+> `/api/docs`** remains available as the full API surface.
 
 ---
 
-## Quick start
+## Features
 
-harbrr listens on port **7478** and stores its SQLite database + encryption keyfile in a
-single data directory. Both quick starts land you at the Swagger UI — from there, follow
-**[Getting started](website/docs/getting-started.md)** to create the admin, mint a Torznab
-key, add an indexer, and point your apps at the feed.
+- **Centralized tracker management** — one source of truth for auth, capabilities, categories,
+  and search behavior across your whole stack. No duplicating tracker setup per app.
+- **Full Torznab/Newznab** — works with autobrr, qui, cross-seed, and the entire \*arr family
+  (Sonarr, Radarr, Lidarr, Readarr, Mylar, Whisparr).
+- **Cardigann compatibility** — reuses the mature Jackett/Prowlarr definition ecosystem with a
+  modernized execution engine, plus **native drivers** for trackers Cardigann can't express.
+- **App-sync** — push your indexers into Sonarr/Radarr/qui automatically, with configurable
+  sync profiles (category narrowing, min seeders, per-capability search toggles).
+- **Shared RSS + search-results cache** — many consumers, one upstream request; far fewer
+  tracker queries, lower latency, better tracker citizenship. Circuit breakers keep a flaky
+  tracker from taking down a search.
+- **Cross-seed aware** — freeleech-aware matching, optional freeleech-bypass, and cross-seed
+  announce targets.
+- **Secure by default** — credentials encrypted at rest, secrets redacted everywhere, and
+  encrypted config/DB backup export & import.
+- **Modern Go** — single static binary, Docker-first, low footprint, fast startup.
 
-### Docker
+More detail on each lives in the **[feature docs](website/docs/features/)**.
+
+---
+
+## Screenshots
+
+Everything harbrr does is available from the embedded management UI — and every action is also
+an HTTP endpoint (the **Swagger UI at `/api/docs`** is the full API reference). Light and dark
+themes included.
+
+<table>
+  <tr>
+    <td width="50%"><img alt="Indexers" src=".github/assets/indexers-dark.png"></td>
+    <td width="50%"><img alt="Applications / app-sync" src=".github/assets/applications-dark.png"></td>
+  </tr>
+  <tr>
+    <td align="center"><em>Indexers — add, test, enable/disable, filter</em></td>
+    <td align="center"><em>Applications — sync indexers into Sonarr/Radarr/qui</em></td>
+  </tr>
+</table>
+
+---
+
+## Installation
+
+harbrr listens on port **7478** and stores its SQLite database + encryption keyfile in a single
+data directory. Once it's up, open the web UI, create the admin, mint a Torznab key, add an
+indexer, and point your apps at the feed — see **[Getting started](website/docs/getting-started.md)**
+for the full walkthrough.
+
+### Docker (compose)
 
 ```yaml
 # docker-compose.yml — a ready-to-edit docker-compose.example.yml ships in the repo
@@ -48,115 +112,120 @@ volumes:
 
 ```bash
 docker compose up -d
-# open http://<host>:7478/api/docs
+# open http://<host>:7478
+```
+
+### Docker (run)
+
+```bash
+docker run -d \
+  --name harbrr \
+  -p 7478:7478 \
+  -v harbrr-config:/config \
+  ghcr.io/autobrr/harbrr:latest
 ```
 
 The image runs non-root, exposes port 7478, ships a `/healthz` check, and already invokes
 `harbrr serve --host 0.0.0.0 --data-dir /config`.
 
-> [!NOTE]
-> No stable image tag is published yet — `main` pushes don't publish images. Tag a release
-> (`git tag v0.1.0-alpha && git push origin v0.1.0-alpha`) to publish
-> `ghcr.io/autobrr/harbrr:0.1.0-alpha`, use a same-repo `pr-<n>` image, or build from source.
+### Linux / macOS / Windows / FreeBSD (prebuilt binary)
 
-### Linux (binary / source)
-
-Grab a prebuilt binary from [Releases](https://github.com/autobrr/harbrr/releases) once a
-`v*` tag is cut, or build from a checkout (Go 1.26+):
+Grab the archive for your platform from
+[Releases](https://github.com/autobrr/harbrr/releases) (Linux, macOS, Windows and FreeBSD across
+amd64 / arm / arm64):
 
 ```bash
-git clone https://github.com/autobrr/harbrr && cd harbrr
-make build                                   # -> bin/harbrr
-./bin/harbrr serve --data-dir ./data         # open http://localhost:7478/api/docs
+# download + extract the newest linux x86_64 build (works for pre-releases too)
+wget $(curl -s https://api.github.com/repos/autobrr/harbrr/releases \
+  | grep browser_download_url | grep linux_x86_64 | head -n1 | cut -d\" -f4)
+tar -C /usr/local/bin -xzf harbrr*.tar.gz
+
+harbrr serve --data-dir ~/.config/harbrr   # open http://localhost:7478
 ```
 
 > [!NOTE]
-> `make build` embeds whatever is in `web/dist`; a fresh checkout has none, so the binary
-> serves "frontend not built" until you run `make web-build` (needs Node + pnpm). Building
-> the image locally with `docker build` likewise needs the SPA built first — otherwise the
-> build fails fast rather than silently shipping a UI-less image. Published images already
-> bundle it.
+> During alpha, releases are published as **pre-releases**, so `/releases/latest` (which only
+> returns stable releases) won't find them — the command above lists all releases and takes the
+> newest asset. You can also just download from the [Releases page](https://github.com/autobrr/harbrr/releases).
+
+### Build from source
+
+```bash
+git clone https://github.com/autobrr/harbrr && cd harbrr
+make web-build                               # builds the SPA (needs Node + pnpm)
+make build                                   # -> bin/harbrr (embeds web/dist)
+./bin/harbrr serve --data-dir ./data         # open http://localhost:7478
+```
+
+> [!NOTE]
+> `make build` embeds whatever is in `web/dist`; a fresh checkout has none, so run
+> `make web-build` first — otherwise the binary serves "frontend not built". Published images
+> and release archives already bundle the UI.
+
+### First run
+
+1. Open **`http://<host>:7478`** and create the admin account.
+2. **Settings → API keys** — mint a Torznab/Newznab key (shown once).
+3. **Indexers → Add indexer** — pick a definition and enter credentials (encrypted at rest).
+4. Point Sonarr/Radarr at a **Generic Torznab** indexer, or connect them from **Applications**
+   to have harbrr sync your indexers automatically:
+   - URL: `http://harbrr:7478/api/indexers/<slug>/results/torznab`
+   - API key: the key minted in step 2
 
 ---
 
-## The API & Swagger UI
+## Status & testing
 
-Everything harbrr does is an HTTP endpoint, and the **Swagger UI at `/api/docs`** is the full
-interactive interface for the alpha — create the admin, mint API keys, add/test indexers,
-search, grab, and configure app-sync, all from the browser. See
-**[The API & Swagger UI](website/docs/api.md)** for the reference.
+harbrr is **alpha**, but the engine is heavily validated. It ships **574 trackers** — 556 from
+the embedded Cardigann corpus plus 18 native drivers (with **21 more native drivers planned**) —
+and every shipped tracker passes its **offline golden tests**. Live validation against real
+trackers and a real \*arr stack is tracked separately:
 
-<!-- TODO(#12): embed Swagger UI screenshots once a release image is running. -->
+- **[Tracker coverage](website/docs/coverage.md)** — the per-tracker Built / Live-tested matrix.
+- **[Test status](website/docs/test-status.md)** — the evidence: Prowlarr differentials, real
+  grabs, and which auth/fetch patterns are proven live.
 
----
+**Proven live:** API-key trackers (UNIT3D & friends), user/pass form login, Cloudflare via
+FlareSolverr, and server-side grabs (`/dl`) for both cookie- and header-auth trackers.
+BroadcastTheNet, IPTorrents, FileList, MyAnonamouse, NZBIndex and generic Newznab/Usenet are
+live-confirmed.
 
-## Why Harbrr?
+**Not yet proven / not working:**
 
-Private trackers are a **shared resource**, but most automation stacks hammer them with
-duplicate RSS polls and repeated searches from disconnected apps. Instead of every app
-talking to every tracker, harbrr sits in the middle and aggregates, caches, and optimizes
-that traffic.
+- **Send-to-download-client** is not implemented — harbrr resolves download links; handing a
+  release to a client is planned ([#8](https://github.com/autobrr/harbrr/issues/8)).
+- Cookie/manual-cookie definitions, non-Latin / `regexp2` trackers, and per-indexer proxies are
+  offline-gated but **not yet live-tested** (waiting on a qualifying account/environment).
+- Most native drivers (AvistaZ family, HDBits, BeyondHD, Redacted/Orpheus, PassThePopcorn, …)
+  are built and offline-gated, **pending credentials** for a live pass.
+- **Postgres** is deferred — SQLite only for now.
 
-- **Centralized tracker management** — one source of truth for auth, capabilities, categories,
-  and search behavior across your whole stack. No duplicating tracker setup per app.
-- **Shared RSS + search-results cache** — many consumers, one upstream request; far fewer
-  tracker queries, lower latency, better tracker citizenship.
-- **Cross-seed aware** — smarter release matching, freeleech-aware matching, and optional
-  freeleech-bypass logic.
-- **Cardigann compatibility** — reuses the mature Jackett/Prowlarr definition ecosystem with a
-  modernized execution engine.
-- **Full Torznab/Newznab** — works with autobrr, qui, cross-seed, and the entire \*arr family.
-- **Modern Go** — single static binary, Docker-first, low footprint, fast startup.
-
-More detail on each of these lives in the
-**[feature docs](website/docs/features/)**.
+Running the live smoke harness yourself (build-tagged, env-credentialed, and **never run in CI**)
+is one of the most useful contributions right now — see the **[smoke ledger](internal/smoke/README.md)**
+and the **[smoke-test guide](website/docs/guides/smoke-test.md)**. The roadmap lives in
+**[`docs/plan.md`](docs/plan.md)**; release-by-release changes are in **[CHANGELOG.md](CHANGELOG.md)**.
 
 ---
 
 ## Security
 
-harbrr treats tracker credentials as sensitive by default:
+Tracker credentials are **encrypted at rest** (AES-256-GCM), the admin password and API keys are
+**hashed**, and secrets are **redacted** from logs, errors and traces — a passkey never appears
+in the served feed (download links resolve server-side). See
+**[docs/security.md](docs/security.md)** for the model and **[SECURITY.md](SECURITY.md)** to
+report a vulnerability privately.
 
-- Credentials (passkeys, cookies, API keys) are **encrypted at rest** (AES-256-GCM); the key
-  is auto-generated on first run.
-- The admin password and API keys are **hashed**, never stored recoverably.
-- Secrets are **redacted** from logs, errors, and traces; a passkey never appears in the
-  served Torznab feed — download links resolve server-side.
+## Contributing & community
 
-See [Configuration](website/docs/configuration.md) for key management and keyfile backup, and
-**[SECURITY.md](SECURITY.md)** to report a vulnerability privately.
-
----
-
-## Roadmap & status
-
-The executable, up-to-date roadmap lives in **[`docs/plan.md`](docs/plan.md)** — built by risk
-retirement (engine parity first, product surface after). In short: the engine and parity gate
-are done, the daemon (SQLite, encrypted secrets, management API, Docker) is done, native
-drivers and Newznab are in, and app-sync into \*arr/qui works. The **web UI** is the next
-phase.
-
----
-
-## Contributing
-
-Contributions, testing, feedback, and ideas are welcome. Start with
-**[CONTRIBUTING.md](CONTRIBUTING.md)** — how to build and test, commit conventions, and the
-non-negotiable rules — and please review the **[Code of Conduct](CODE_OF_CONDUCT.md)**. Found a
-security issue? See **[SECURITY.md](SECURITY.md)** and report it privately, not as a public
-issue.
-
-Especially helpful: Cardigann definitions, tracker testing, Torznab interoperability, and
-autobrr/qui/cross-seed integration.
-
----
+Contributions, testing, and feedback are welcome — especially Cardigann definitions, tracker
+testing, and autobrr/qui/cross-seed integration. Start with **[CONTRIBUTING.md](CONTRIBUTING.md)**
+and the **[Code of Conduct](CODE_OF_CONDUCT.md)**, and join us on
+**[Discord](https://discord.autobrr.com)**.
 
 ## License
 
-harbrr is free software: you can redistribute it and/or modify it under the terms of the GNU
-General Public License as published by the Free Software Foundation, **either version 2 of the
-License, or (at your option) any later version** (GPL-2.0-or-later). The full text is in
-[LICENSE](LICENSE).
+harbrr is free software, released under the **GNU General Public License, version 2 or later
+(GPL-2.0-or-later)**. The full text is in [LICENSE](LICENSE).
 
 ---
 

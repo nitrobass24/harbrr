@@ -63,9 +63,9 @@ Native (non-Cardigann) drivers are all implemented and offline-gated against the
 autobrr/Prowlarr contracts; live validation needs an account on each tracker. Rather than
 duplicate the list, the **per-driver live status lives in the coverage matrix** — see the
 [Native drivers table in Tracker coverage](coverage.md#native-drivers). BroadcastTheNet,
-IPTorrents, and FileList are live-confirmed; the rest are built and offline-gated, pending
-credentials. Every driver **degrades cleanly** — a parse or auth failure surfaces as a health
-event, never a crash.
+IPTorrents, FileList and MyAnonamouse are live-confirmed, as are the Usenet drivers (generic
+Newznab and NZBIndex); the rest are built and offline-gated, pending credentials. Every driver
+**degrades cleanly** — a parse or auth failure surfaces as a health event, never a crash.
 
 ## Help close the gaps
 

@@ -54,27 +54,39 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+# The auto changelog is deliberately curated to the two groups that matter for a
+# release — features and fixes. Chore/ci/docs/deps/refactor/test/merge commits are
+# filtered out so the notes read as a product changelog, not a git dump. The
+# human-written highlights for the release are prepended via release.header (see
+# below); this section is what goreleaser appends beneath them.
 changelog:
   sort: asc
   use: github
   filters:
     exclude:
-      - "^Merge pull request"
-      - "^Merge remote-tracking branch"
-      - "^Merge branch"
+      - "^Merge "
       - "go mod tidy"
+      - "^harbrr: initial commit"
+      - '(?i)^(chore|ci|build|docs|test|style|refactor|perf)(\(.+\))?!?:'
+      # Internal-process churn — not a user-facing change even when typed as fix:
+      - '(?i)reviewed? findings?'
+      - '(?i)test fixtures?'
+      - '(?i)\blint\b'
   groups:
-    - title: "New Features"
+    - title: "🚀 New Features"
       regexp: '^.*feat(\(.+\))?!?:.*$'
       order: 0
-    - title: "Bug Fixes"
+    - title: "🐛 Bug Fixes"
       regexp: '^.*fix(\(.+\))?!?:.*$'
       order: 1
-    - title: "Other"
-      order: 999
 
 release:
   prerelease: auto # a tag like v0.1.0-alpha is published as a pre-release
+  # Curated highlights for the tag, injected by CI from the CHANGELOG.md section
+  # (scripts/changelog-extract.sh -> $RELEASE_HEADER). Empty when a tag has no
+  # CHANGELOG entry, so the release still publishes with just the commit list.
+  header: |
+    {{ .Env.RELEASE_HEADER }}
   footer: |
     **Full Changelog**: https://github.com/{{ .Env.GITHUB_REPOSITORY_OWNER }}/harbrr/compare/{{ .PreviousTag }}...{{ .Tag }}
 
@@ -82,3 +94,9 @@ release:
 
     - `docker pull ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/harbrr:{{ .Tag }}`
     - `docker pull ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/harbrr:latest`
+
+    ## Getting started
+
+    - [Getting started](https://github.com/{{ .Env.GITHUB_REPOSITORY_OWNER }}/harbrr/blob/main/website/docs/getting-started.md) · [Docker compose example](https://github.com/{{ .Env.GITHUB_REPOSITORY_OWNER }}/harbrr/blob/main/docker-compose.example.yml)
+
+    Thanks for trying harbrr! 🐇
