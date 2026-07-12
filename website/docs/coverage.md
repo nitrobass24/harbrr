@@ -10,7 +10,7 @@ Cardigann can't express — and how far each is validated.
   account on that tracker). See **[Test status](test-status.md)** for the evidence behind this
   column and the auth/fetch patterns proven live.
 
-**597 trackers** total: 559 Cardigann corpus (all built) · 17 native drivers built · 21 native
+**594 trackers** total: 556 Cardigann corpus (all built) · 17 native drivers built · 21 native
 drivers planned. To configure one, see **[Adding an indexer](guides/add-indexer.md)**.
 
 ## Native drivers
@@ -69,7 +69,7 @@ Native drivers we have issues for but haven't built. 👍 or comment on the issu
 
 Served through the shared engine from the vendored Jackett snapshot — all built. Live-tested where an operator instance covers them.
 
-### Private (409)
+### Private (406)
 
 | Tracker | Built | Live-tested |
 |---|:--:|:--:|
@@ -180,6 +180,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Explosiv-World | ✅ | ⬜ |
 | ExtremeBits | ✅ | ⬜ |
 | F1Carreras (API) | ✅ | ⬜ |
+| F1GP | ✅ | ⬜ |
 | FANO.IN | ✅ | ⬜ |
 | Fappaizuri | ✅ | ⬜ |
 | Fappaizuri2FA | ✅ | ⬜ |
@@ -196,7 +197,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Generation-Free (API) | ✅ | ⬜ |
 | GGPT | ✅ | ⬜ |
 | GigaTorrents | ✅ | ⬜ |
-| GimmePeers | ✅ | ⬜ |
 | Girotorrent | ✅ | ⬜ |
 | HaiDan | ✅ | ⬜ |
 | HappyFappy | ✅ | ⬜ |
@@ -284,6 +284,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | March | ✅ | ⬜ |
 | Matrix | ✅ | ⬜ |
 | MDAN | ✅ | ⬜ |
+| Memphis | ✅ | ⬜ |
 | MeseVilág | ✅ | ⬜ |
 | MetalGuru | ✅ | ⬜ |
 | MidnightScene | ✅ | ⬜ |
@@ -301,7 +302,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | NanyangPT (南洋) | ✅ | ⬜ |
 | nCore | ✅ | ⬜ |
 | New Heaven | ✅ | ⬜ |
-| Nexum (API) | ✅ | ⬜ |
 | NicePT | ✅ | ⬜ |
 | Nirvana (API) | ✅ | ⬜ |
 | njtupt (浦园) | ✅ | ⬜ |
@@ -334,7 +334,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Polish Torrent (API) | ✅ | ⬜ |
 | PolishTracker (API) | ✅ | ⬜ |
 | Pornbay | ✅ | ⬜ |
-| PornBytes (API) | ✅ | ⬜ |
 | Portugas (API) | ✅ | ⬜ |
 | ProAudioTorrents | ✅ | ⬜ |
 | PT GTK | ✅ | ⬜ |
@@ -395,7 +394,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | SportsCora (API) | ✅ | ⬜ |
 | SportsCult | ✅ | ⬜ |
 | SpringSunday | ✅ | ⬜ |
-| SugoiMusic | ✅ | ⬜ |
 | SunnyPT | ✅ | ⬜ |
 | Superbits | ✅ | ⬜ |
 | Swarmazon (API) | ✅ | ⬜ |
@@ -450,7 +448,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | TranceTraffic | ✅ | ⬜ |
 | TreZzoR | ✅ | ⬜ |
 | TreZzoRCookie | ✅ | ⬜ |
-| TSDB | ✅ | ⬜ |
 | TurkSeed (API) | ✅ | ⬜ |
 | TurkTorrent | ✅ | ⬜ |
 | U2 | ✅ | ⬜ |

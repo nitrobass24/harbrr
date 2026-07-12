@@ -156,7 +156,8 @@ Cardigann can't express — and how far each is validated.
   it passes its offline golden tests. ⬜ means a driver is planned but not built yet.
 - **Live-tested** ✅ — confirmed against the real tracker: a Prowlarr differential plus a real
   grab. ⬜ means built and offline-validated, but not yet live-verified (usually just needs an
-  account on that tracker).
+  account on that tracker). See **[Test status](test-status.md)** for the evidence behind this
+  column and the auth/fetch patterns proven live.
 
 **%d trackers** total: %d Cardigann corpus (all built) · %d native drivers built · %d native
 drivers planned. To configure one, see **[Adding an indexer](guides/add-indexer.md)**.
