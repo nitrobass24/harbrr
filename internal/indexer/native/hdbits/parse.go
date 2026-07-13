@@ -54,27 +54,27 @@ type hdbitsResponse struct {
 	Data    []hdbitsTorrent `json:"data"`
 }
 
-// hdbitsTorrent is one release row from data[]. Per Prowlarr's models id and hash are JSON
-// strings and the remaining numerics are real JSON numbers, but flexInt is used on the
-// numerics defensively (mirroring broadcastthenet/myanonamouse) so a string-encoded numeric
-// never fails the page decode.
+// hdbitsTorrent is one release row from data[]. HDBits has emitted id as both a JSON number
+// and string, so flexString preserves either wire form for URL construction. Hash is a JSON
+// string. flexInt accepts either wire form for the remaining numerics so a type change never
+// fails the page decode.
 type hdbitsTorrent struct {
-	ID             string    `json:"id"`
-	Hash           string    `json:"hash"`
-	Name           string    `json:"name"`
-	Filename       string    `json:"filename"`
-	Size           flexInt   `json:"size"`
-	Seeders        flexInt   `json:"seeders"`
-	Leechers       flexInt   `json:"leechers"`
-	TimesCompleted flexInt   `json:"times_completed"`
-	NumFiles       flexInt   `json:"numfiles"`
-	Added          string    `json:"added"`
-	Freeleech      string    `json:"freeleech"`
-	TypeCategory   flexInt   `json:"type_category"`
-	TypeMedium     flexInt   `json:"type_medium"`
-	TypeOrigin     flexInt   `json:"type_origin"`
-	Imdb           *imdbInfo `json:"imdb"`
-	Tvdb           *tvdbInfo `json:"tvdb"`
+	ID             flexString `json:"id"`
+	Hash           string     `json:"hash"`
+	Name           string     `json:"name"`
+	Filename       string     `json:"filename"`
+	Size           flexInt    `json:"size"`
+	Seeders        flexInt    `json:"seeders"`
+	Leechers       flexInt    `json:"leechers"`
+	TimesCompleted flexInt    `json:"times_completed"`
+	NumFiles       flexInt    `json:"numfiles"`
+	Added          string     `json:"added"`
+	Freeleech      string     `json:"freeleech"`
+	TypeCategory   flexInt    `json:"type_category"`
+	TypeMedium     flexInt    `json:"type_medium"`
+	TypeOrigin     flexInt    `json:"type_origin"`
+	Imdb           *imdbInfo  `json:"imdb"`
+	Tvdb           *tvdbInfo  `json:"tvdb"`
 }
 
 // imdbInfo is the nested imdb object; only id and year are used.
@@ -88,6 +88,34 @@ type imdbInfo struct {
 type tvdbInfo struct {
 	ID flexInt `json:"id"`
 }
+
+// flexString unmarshals a JSON string OR number into a string. HDBits has returned torrent
+// ids in both forms; Jackett's JObject conversion and upbrr's scalar normalization accept
+// either, so a strict Go string must not reject a valid response.
+type flexString string
+
+func (s *flexString) UnmarshalJSON(b []byte) error {
+	if len(b) == 0 || string(b) == "null" {
+		*s = ""
+		return nil
+	}
+	if b[0] == '"' {
+		var str string
+		if err := json.Unmarshal(b, &str); err != nil {
+			return fmt.Errorf("hdbits: decode string field: %w", err)
+		}
+		*s = flexString(str)
+		return nil
+	}
+	var number json.Number
+	if err := json.Unmarshal(b, &number); err != nil {
+		return fmt.Errorf("hdbits: decode string field: %w", err)
+	}
+	*s = flexString(number.String())
+	return nil
+}
+
+func (s flexString) str() string { return string(s) }
 
 // flexInt unmarshals a JSON number OR a JSON string into an int64. HDBits wire-encodes most
 // numerics as bare numbers, but a hostile/older server could string-encode one; this keeps a
@@ -173,8 +201,8 @@ func (d *driver) toRelease(row *hdbitsTorrent, useFilenames bool) *normalizer.Re
 	rel := &normalizer.Release{
 		Title:                title(row, useFilenames),
 		InfoHash:             row.Hash,
-		Link:                 d.downloadURL(row.ID),
-		Details:              d.detailsURL(row.ID),
+		Link:                 d.downloadURL(row.ID.str()),
+		Details:              d.detailsURL(row.ID.str()),
 		Categories:           d.categories(row.TypeCategory.int64()),
 		Size:                 row.Size.int64(),
 		Files:                row.NumFiles.int64(),

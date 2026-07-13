@@ -3,7 +3,7 @@
   "message": "",
   "data": [
     {
-      "id": "100001",
+      "id": 100001,
       "hash": "ABC123DEF456",
       "leechers": 2,
       "seeders": 50,
@@ -25,7 +25,7 @@
       "tvdb": null
     },
     {
-      "id": "100002",
+      "id": 100002,
       "hash": "FFEE0011",
       "leechers": 1,
       "seeders": 10,
@@ -47,7 +47,7 @@
       "tvdb": {"id": 81189, "season": 1, "episode": "1"}
     },
     {
-      "id": "100003",
+      "id": 100003,
       "hash": "99AA77",
       "leechers": 0,
       "seeders": 3,
