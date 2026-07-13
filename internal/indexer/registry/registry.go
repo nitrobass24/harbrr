@@ -17,7 +17,6 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/autobrr/harbrr/internal/database"
-	"github.com/autobrr/harbrr/internal/database/dbinterface"
 	"github.com/autobrr/harbrr/internal/domain"
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann"
@@ -45,9 +44,12 @@ import (
 // outcome (the indexer is not served), logged quietly, not as a failure.
 var errDisabled = errors.New("registry: instance disabled")
 
-// Registry resolves configured indexer slugs to engines and manages their
-// lifecycle. Built engines are cached per slug and invalidated on mutation.
-type Registry struct {
+// Resolver resolves configured indexer slugs to engines and is the invalidation
+// authority: built engines are cached per slug (guarded by mu) and invalidated on
+// mutation. It is the serve/resolve half of the registry — the latency-sensitive,
+// lock-heavy hot path — separated from transactional CRUD (Manager) and health/stats
+// reporting (StatsReporter).
+type Resolver struct {
 	db        *database.DB
 	instances database.Instances
 	proxies   database.Proxies
@@ -98,6 +100,16 @@ type Registry struct {
 	epoch uint64
 }
 
+// Registry is the composed facade the whole application holds. It embeds the three focused
+// types so New's signature and every external call site (Add / Indexer / Stats / …) stay
+// unchanged, while each concern owns one concurrency story. Method promotion exposes all
+// three surfaces off one value; the method names don't collide across the three.
+type Registry struct {
+	*Resolver
+	*Manager
+	*StatsReporter
+}
+
 // secretsKeyring is the subset of *secrets.Keyring the registry uses, declared as
 // an interface so it stays small and explicit (encrypt/decrypt + key id).
 type secretsKeyring interface {
@@ -109,11 +121,14 @@ type secretsKeyring interface {
 // Option configures the Registry.
 type Option func(*Registry)
 
-// WithClock injects the reference clock (timestamps + engine date parsing).
+// WithClock injects the reference clock (timestamps + engine date parsing). It qualifies
+// the field explicitly (r.Resolver.clock) because clock is the one field carried by all
+// three embedded types, so the promoted r.clock is an ambiguous selector; New copies the
+// finalized value into the Manager/StatsReporter after options run.
 func WithClock(fn func() time.Time) Option {
 	return func(r *Registry) {
 		if fn != nil {
-			r.clock = fn
+			r.Resolver.clock = fn
 		}
 	}
 }
@@ -173,9 +188,13 @@ func WithDoerFactory(fn func(ClientParams) (search.Doer, error)) Option {
 	}
 }
 
-// New builds a Registry over the given store, definition loader, and keyring.
+// New builds a Registry facade over the given store, definition loader, and keyring. It
+// constructs the Resolver first (options mutate it via r.Resolver.*), applies the
+// doerFactory/stats defaults, then builds the Manager and StatsReporter from the
+// Resolver's now-finalized handles — so each focused type carries only the state its
+// methods use, all sharing the same store handles + the single *IndexerStats.
 func New(db *database.DB, ldr *loader.Loader, keyring secretsKeyring, opts ...Option) *Registry {
-	r := &Registry{
+	res := &Resolver{
 		db:      db,
 		loader:  ldr,
 		keyring: keyring,
@@ -186,16 +205,36 @@ func New(db *database.DB, ldr *loader.Loader, keyring secretsKeyring, opts ...Op
 		cache:   map[string]torznabhttp.Indexer{},
 		gen:     map[string]uint64{},
 	}
+	r := &Registry{Resolver: res}
 	for _, o := range opts {
 		o(r)
 	}
-	if r.doerFactory == nil {
-		r.doerFactory = newDoer
+	if res.doerFactory == nil {
+		res.doerFactory = newDoer
 	}
-	// Built after the options loop so it captures the final r.log/r.clock, exactly like
-	// the doerFactory default above.
-	if r.stats == nil {
-		r.stats = newIndexerStats(db, r.clock, r.log)
+	// Built after the options loop so it captures the final clock/log, exactly like the
+	// doerFactory default above.
+	if res.stats == nil {
+		res.stats = newIndexerStats(db, res.clock, res.log)
+	}
+	// Manager and StatsReporter are built last, from the resolver's finalized handles: the
+	// same clock and the same *IndexerStats pointer. Manager evicts the serve path through
+	// the resolver via the invalidator seam (inv: res); it never holds a *Resolver.
+	r.Manager = &Manager{
+		db:        res.db,
+		instances: res.instances,
+		keyring:   res.keyring,
+		clock:     res.clock,
+		loader:    res.loader,
+		native:    res.native,
+		inv:       res,
+	}
+	r.StatsReporter = &StatsReporter{
+		stats:     res.stats,
+		instances: res.instances,
+		health:    res.health,
+		db:        res.db,
+		clock:     res.clock,
 	}
 	return r
 }
@@ -203,7 +242,7 @@ func New(db *database.DB, ldr *loader.Loader, keyring secretsKeyring, opts ...Op
 // Indexer resolves a slug to its Indexer, implementing torznabhttp.Provider. A
 // missing, disabled, or unbuildable instance returns ok=false so the handler
 // degrades cleanly (returns the standard "indexer not supported" error).
-func (r *Registry) Indexer(ctx context.Context, slug string) (torznabhttp.Indexer, bool) {
+func (r *Resolver) Indexer(ctx context.Context, slug string) (torznabhttp.Indexer, bool) {
 	idx, err := r.resolve(ctx, slug)
 	if err != nil {
 		r.logResolveError(slug, err)
@@ -225,7 +264,7 @@ func (r *Registry) Indexer(ctx context.Context, slug string) (torznabhttp.Indexe
 // declines to cache an engine whose generation moved: the stale engine is served
 // for this one request but never installed, so the next resolve rebuilds fresh
 // (U8R-F3).
-func (r *Registry) resolve(ctx context.Context, slug string) (torznabhttp.Indexer, error) {
+func (r *Resolver) resolve(ctx context.Context, slug string) (torznabhttp.Indexer, error) {
 	r.mu.Lock()
 	if idx, ok := r.cache[slug]; ok {
 		r.mu.Unlock()
@@ -260,7 +299,7 @@ func (r *Registry) resolve(ctx context.Context, slug string) (torznabhttp.Indexe
 // freeleech serve-time view as an inline top-to-bottom sequence (see indexerAdapter.
 // Search) — no decorator stack. resolve caches and serves this; Test deliberately uses
 // buildAdapter, which leaves cache nil so a credential probe never warms the cache.
-func (r *Registry) build(ctx context.Context, slug string) (torznabhttp.Indexer, error) {
+func (r *Resolver) build(ctx context.Context, slug string) (torznabhttp.Indexer, error) {
 	a, err := r.buildAdapter(ctx, slug)
 	if err != nil {
 		return nil, err
@@ -280,7 +319,7 @@ func (r *Registry) build(ctx context.Context, slug string) (torznabhttp.Indexer,
 // constructs the engine-shaped core (Cardigann engine OR native family driver)
 // wrapped in the shared adapter. It returns the adapter with cache left nil — Test
 // uses it so a credential probe never consults or warms the cache.
-func (r *Registry) buildAdapter(ctx context.Context, slug string) (*indexerAdapter, error) {
+func (r *Resolver) buildAdapter(ctx context.Context, slug string) (*indexerAdapter, error) {
 	inst, err := r.instances.GetBySlug(ctx, r.db, slug)
 	if err != nil {
 		return nil, fmt.Errorf("registry: load instance %q: %w", slug, err)
@@ -288,7 +327,7 @@ func (r *Registry) buildAdapter(ctx context.Context, slug string) (*indexerAdapt
 	if !inst.Enabled {
 		return nil, errDisabled
 	}
-	def, factory, err := r.definition(inst.DefinitionID)
+	def, factory, err := resolveDefinition(r.native, r.loader, inst.DefinitionID)
 	if err != nil {
 		return nil, err
 	}
@@ -361,7 +400,7 @@ func (r *Registry) buildAdapter(ctx context.Context, slug string) (*indexerAdapt
 // leaves the inline fallback in place. A dangling reference (the resource was
 // deleted mid-flight, before the ON DELETE SET NULL fired) is skipped, not fatal —
 // the indexer degrades to no proxy / no solver.
-func (r *Registry) resolveResourceRefs(ctx context.Context, inst domain.IndexerInstance, cfg map[string]string) error {
+func (r *Resolver) resolveResourceRefs(ctx context.Context, inst domain.IndexerInstance, cfg map[string]string) error {
 	if inst.ProxyID != nil {
 		p, err := r.proxies.GetProxy(ctx, r.db, *inst.ProxyID)
 		switch {
@@ -396,7 +435,7 @@ func (r *Registry) resolveResourceRefs(ctx context.Context, inst domain.IndexerI
 
 // buildInner constructs the engine-shaped core: a native family driver when a
 // factory is present, otherwise the Cardigann engine. Both satisfy native.Driver.
-func (r *Registry) buildInner(inst domain.IndexerInstance, def *loader.Definition, factory native.Factory, cfg map[string]string, doer search.Doer) (native.Driver, error) {
+func (r *Resolver) buildInner(inst domain.IndexerInstance, def *loader.Definition, factory native.Factory, cfg map[string]string, doer search.Doer) (native.Driver, error) {
 	if factory != nil {
 		d, err := factory(native.Params{
 			Def:     def,
@@ -432,14 +471,15 @@ func (r *Registry) buildInner(inst domain.IndexerInstance, def *loader.Definitio
 	return eng, nil
 }
 
-// definition resolves a definition id to its definition and, for a native family,
-// its driver factory (nil for the Cardigann path). Native families are checked
-// first, then the loader.
-func (r *Registry) definition(id string) (*loader.Definition, native.Factory, error) {
-	if fam, ok := r.native[id]; ok {
+// resolveDefinition resolves a definition id to its definition and, for a native family,
+// its driver factory (nil for the Cardigann path). Native families are checked first, then
+// the loader. It is a free function so both the serve path (Resolver.buildAdapter) and the
+// CRUD path (Manager.Add/updateInTx) call it without either type owning it.
+func resolveDefinition(fams map[string]native.Family, ldr *loader.Loader, id string) (*loader.Definition, native.Factory, error) {
+	if fam, ok := fams[id]; ok {
 		return fam.Definition, fam.Factory, nil
 	}
-	def, err := r.loader.Load(id)
+	def, err := ldr.Load(id)
 	if err != nil {
 		return nil, nil, fmt.Errorf("registry: load definition %q: %w", id, err)
 	}
@@ -448,7 +488,7 @@ func (r *Registry) definition(id string) (*loader.Definition, native.Factory, er
 
 // NativeDefinitions returns the Go-built definitions of the native families so the
 // management API can list them as addable alongside the Cardigann corpus.
-func (r *Registry) NativeDefinitions() []*loader.Definition {
+func (r *Resolver) NativeDefinitions() []*loader.Definition {
 	out := make([]*loader.Definition, 0, len(r.native))
 	for _, f := range r.native {
 		out = append(out, f.Definition)
@@ -496,7 +536,7 @@ func baseURLOf(inst domain.IndexerInstance, def *loader.Definition) string {
 
 // decryptConfig turns stored settings into the engine's .Config map, decrypting
 // each secret with the row-bound AAD.
-func (r *Registry) decryptConfig(instanceID int64, settings []domain.IndexerSetting) (map[string]string, error) {
+func (r *Resolver) decryptConfig(instanceID int64, settings []domain.IndexerSetting) (map[string]string, error) {
 	cfg := make(map[string]string, len(settings))
 	for _, s := range settings {
 		if !s.IsSecret {
@@ -517,8 +557,8 @@ func (r *Registry) decryptConfig(instanceID int64, settings []domain.IndexerSett
 // MyAnonamouse's mam_id). It deliberately does NOT invalidate the cache: the cached
 // driver's in-memory value stays the live source, and this write only refreshes the
 // restart fallback, so it cannot race a search by dropping the live session.
-func (r *Registry) persistSetting(ctx context.Context, inst domain.IndexerInstance, def *loader.Definition, name, value string) error {
-	s, err := r.toStored(inst.ID, name, value, settingFields(def))
+func (r *Resolver) persistSetting(ctx context.Context, inst domain.IndexerInstance, def *loader.Definition, name, value string) error {
+	s, err := encodeSetting(r.keyring, inst.ID, name, value, settingFields(def))
 	if err != nil {
 		// The error carries the setting name, never the value.
 		r.log.Warn().Str("indexer", inst.Slug).Str("setting", name).Err(err).Msg("registry: persist setting: encrypt failed")
@@ -533,7 +573,7 @@ func (r *Registry) persistSetting(ctx context.Context, inst domain.IndexerInstan
 
 // logResolveError logs a genuine resolve failure with the error redacted; a
 // not-found or disabled instance is expected and stays quiet.
-func (r *Registry) logResolveError(slug string, err error) {
+func (r *Resolver) logResolveError(slug string, err error) {
 	if errors.Is(err, database.ErrNotFound) || errors.Is(err, errDisabled) {
 		return
 	}
@@ -554,7 +594,7 @@ func (r *Registry) logResolveError(slug string, err error) {
 // guaranteed to see a stale generation. A caller that bumped before committing
 // would reopen the race. The gen map is deliberately never pruned: dropping a
 // slug's entry would reset it to 0 and reintroduce an ABA gap.
-func (r *Registry) invalidate(slug string) {
+func (r *Resolver) invalidate(slug string) {
 	r.mu.Lock()
 	delete(r.cache, slug)
 	r.gen[slug]++
@@ -567,7 +607,7 @@ func (r *Registry) invalidate(slug string) {
 // resource edit/delete must evict the engines that reference it. Finding the exact
 // referencing slugs is possible but a full flush is cheaper to reason about for a
 // rare, single-user config change, and only forces a lazy rebuild on next search.
-func (r *Registry) InvalidateAll() {
+func (r *Resolver) InvalidateAll() {
 	r.mu.Lock()
 	clear(r.cache)
 	// A global epoch bump (rather than per-slug generations we don't enumerate here)
@@ -581,7 +621,7 @@ func (r *Registry) InvalidateAll() {
 // after a config mutation. It is nil-guarded (a no-op when caching is off) and
 // best-effort: a failed purge is logged (key/id only, never a payload) and never
 // fails the mutation.
-func (r *Registry) invalidateSearchCache(ctx context.Context, instanceID int64) {
+func (r *Resolver) invalidateSearchCache(ctx context.Context, instanceID int64) {
 	if r.searchCache == nil {
 		return
 	}
@@ -596,29 +636,18 @@ func (r *Registry) invalidateSearchCache(ctx context.Context, instanceID int64) 
 // forgetCacheCounters drops a deleted instance's in-memory cache counters so the
 // global totals stay equal to the sum of the surviving rows and FlushCounters stops
 // re-Upserting a cascade-deleted row. No-op when caching is off.
-func (r *Registry) forgetCacheCounters(instanceID int64) {
+func (r *Resolver) forgetCacheCounters(instanceID int64) {
 	if r.searchCache == nil {
 		return
 	}
 	r.searchCache.ForgetInstance(instanceID)
 }
 
-// inTx runs fn inside a transaction, committing on success and rolling back on
-// error. The repo methods fn calls take an Execer, which the TxQuerier satisfies,
-// so an instance and its settings are written atomically.
-func (r *Registry) inTx(ctx context.Context, fn func(tx dbinterface.TxQuerier) error) error {
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("registry: begin tx: %w", err)
-	}
-	if err := fn(tx); err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("registry: commit: %w", err)
-	}
-	return nil
+// forgetStats drops a deleted instance's in-memory query/grab/latency counters, mirroring
+// forgetCacheCounters for the durable stats layer. It is the fourth invalidator seam method
+// the Manager calls after a committed Delete, keeping the Manager ignorant of *IndexerStats.
+func (r *Resolver) forgetStats(instanceID int64) {
+	r.stats.ForgetInstance(instanceID)
 }
 
 // indexerInfo assembles the public indexer identity from the instance + def (no

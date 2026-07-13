@@ -11,8 +11,47 @@ import (
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
 	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 	"github.com/autobrr/harbrr/internal/secrets"
 )
+
+// Manager is the transactional CRUD half of the registry: Add/Update/Delete plus the read
+// accessors. Its consistency comes from the DB transaction (inTx), not an in-memory lock;
+// after a committed mutation it evicts the serve path through the invalidator seam. It
+// holds only the handles its methods use — no resolve cache, no *IndexerStats.
+type Manager struct {
+	db        *database.DB
+	instances database.Instances
+	keyring   secretsKeyring
+	clock     func() time.Time
+	loader    *loader.Loader
+	native    map[string]native.Family
+	inv       invalidator
+}
+
+// invalidator is the eviction surface the Manager depends on: after a committed mutation it
+// drops the resolver's cached engine and purges the affected instance's derived state
+// (search-cache entries + cache counters + query/grab stats). Satisfied structurally by
+// *Resolver; declared here (consumer-side, UNEXPORTED) so the Manager depends only on
+// eviction — never on the resolve/build engine — and the eviction methods stay off the
+// public API (only InvalidateAll is exported).
+type invalidator interface {
+	invalidate(slug string)
+	invalidateSearchCache(ctx context.Context, id int64)
+	forgetCacheCounters(id int64)
+	forgetStats(id int64)
+}
+
+// StatsReporter is the health/stats reporting + lifecycle half of the registry: a read and
+// flush view over the already-safe IndexerStats and the health store. It touches no resolve
+// lock and holds no CRUD/serve state.
+type StatsReporter struct {
+	stats     *IndexerStats
+	instances database.Instances
+	health    database.Health
+	db        *database.DB
+	clock     func() time.Time
+}
 
 // Management-layer sentinels the API maps to HTTP status codes (400/409/404).
 var (
@@ -83,7 +122,7 @@ type SettingView struct {
 // Add persists a new indexer instance and its settings atomically (the instance
 // is inserted first so its id can bind each secret's AAD), then invalidates any
 // cached engine for the slug.
-func (r *Registry) Add(ctx context.Context, p AddParams) (domain.IndexerInstance, error) {
+func (r *Manager) Add(ctx context.Context, p AddParams) (domain.IndexerInstance, error) {
 	slug := orDefault(p.Slug, p.DefinitionID)
 	if !slugPattern.MatchString(slug) {
 		return domain.IndexerInstance{}, fmt.Errorf("%w: slug %q must be 1-64 chars of [a-z0-9._-] starting alphanumeric", ErrInvalid, slug)
@@ -91,7 +130,7 @@ func (r *Registry) Add(ctx context.Context, p AddParams) (domain.IndexerInstance
 	if _, reserved := reservedSlugs[slug]; reserved {
 		return domain.IndexerInstance{}, fmt.Errorf("%w: slug %q is reserved", ErrInvalid, slug)
 	}
-	def, _, err := r.definition(p.DefinitionID)
+	def, _, err := resolveDefinition(r.native, r.loader, p.DefinitionID)
 	if err != nil {
 		return domain.IndexerInstance{}, fmt.Errorf("%w: unknown definition %q", ErrInvalid, p.DefinitionID)
 	}
@@ -130,12 +169,12 @@ func (r *Registry) Add(ctx context.Context, p AddParams) (domain.IndexerInstance
 		}
 		return domain.IndexerInstance{}, err
 	}
-	r.invalidate(slug)
+	r.inv.invalidate(slug)
 	return inst, nil
 }
 
 // Get returns an instance and its settings with secret values redacted.
-func (r *Registry) Get(ctx context.Context, slug string) (domain.IndexerInstance, []SettingView, error) {
+func (r *Manager) Get(ctx context.Context, slug string) (domain.IndexerInstance, []SettingView, error) {
 	inst, err := r.instances.GetBySlug(ctx, r.db, slug)
 	if err != nil {
 		return domain.IndexerInstance{}, nil, fmt.Errorf("registry: get %q: %w", slug, err)
@@ -156,7 +195,7 @@ func (r *Registry) Get(ctx context.Context, slug string) (domain.IndexerInstance
 }
 
 // List returns all configured instances.
-func (r *Registry) List(ctx context.Context) ([]domain.IndexerInstance, error) {
+func (r *Manager) List(ctx context.Context) ([]domain.IndexerInstance, error) {
 	list, err := r.instances.List(ctx, r.db)
 	if err != nil {
 		return nil, fmt.Errorf("registry: list: %w", err)
@@ -172,7 +211,7 @@ func (r *Registry) List(ctx context.Context) ([]domain.IndexerInstance, error) {
 // driver refreshing MyAnonamouse's mam_id) can't be clobbered by this write
 // reinserting a stale merged set. SetMaxOpenConns(1) means the tx holds the only
 // connection, serializing the RMW against that Upsert (mirrors appsync U10-F1).
-func (r *Registry) Update(ctx context.Context, slug string, p UpdateParams) error {
+func (r *Manager) Update(ctx context.Context, slug string, p UpdateParams) error {
 	var instID int64
 	err := r.inTx(ctx, func(tx dbinterface.TxQuerier) error {
 		inst, err := r.instances.GetBySlug(ctx, tx, slug)
@@ -191,8 +230,8 @@ func (r *Registry) Update(ctx context.Context, slug string, p UpdateParams) erro
 		}
 		return err
 	}
-	r.invalidate(slug)
-	r.invalidateSearchCache(ctx, instID)
+	r.inv.invalidate(slug)
+	r.inv.invalidateSearchCache(ctx, instID)
 	return nil
 }
 
@@ -201,12 +240,12 @@ func (r *Registry) Update(ctx context.Context, slug string, p UpdateParams) erro
 // here — inside the tx — so the read → merge → delete → reinsert is one atomic
 // unit that can't lose a concurrent single-setting Upsert. mergeSettings only
 // touches the keyring (no DB), so it is safe within the tx.
-func (r *Registry) updateInTx(ctx context.Context, tx dbinterface.TxQuerier, inst domain.IndexerInstance, p UpdateParams) error {
+func (r *Manager) updateInTx(ctx context.Context, tx dbinterface.TxQuerier, inst domain.IndexerInstance, p UpdateParams) error {
 	existing, err := r.instances.Settings(ctx, tx, inst.ID)
 	if err != nil {
 		return fmt.Errorf("registry: update %q settings: %w", inst.Slug, err)
 	}
-	def, _, err := r.definition(inst.DefinitionID)
+	def, _, err := resolveDefinition(r.native, r.loader, inst.DefinitionID)
 	if err != nil {
 		return err
 	}
@@ -240,7 +279,7 @@ func (r *Registry) updateInTx(ctx context.Context, tx dbinterface.TxQuerier, ins
 // SetEnabled enables/disables an instance and invalidates its cached engine. It
 // loads the instance first to obtain its id for the search-cache purge (a config
 // change must never serve stale results).
-func (r *Registry) SetEnabled(ctx context.Context, slug string, enabled bool) error {
+func (r *Manager) SetEnabled(ctx context.Context, slug string, enabled bool) error {
 	inst, err := r.instances.GetBySlug(ctx, r.db, slug)
 	if err != nil {
 		return fmt.Errorf("registry: set enabled %q: %w", slug, err)
@@ -248,15 +287,15 @@ func (r *Registry) SetEnabled(ctx context.Context, slug string, enabled bool) er
 	if err := r.instances.SetEnabled(ctx, r.db, slug, enabled, r.clock()); err != nil {
 		return fmt.Errorf("registry: set enabled %q: %w", slug, err)
 	}
-	r.invalidate(slug)
-	r.invalidateSearchCache(ctx, inst.ID)
+	r.inv.invalidate(slug)
+	r.inv.invalidateSearchCache(ctx, inst.ID)
 	return nil
 }
 
 // Delete removes an instance (settings cascade) and invalidates its cached engine. It
 // loads the instance first to obtain its id, so the in-memory cache counters can be
 // pruned to match the cache_counters row the FK cascade removes.
-func (r *Registry) Delete(ctx context.Context, slug string) error {
+func (r *Manager) Delete(ctx context.Context, slug string) error {
 	inst, err := r.instances.GetBySlug(ctx, r.db, slug)
 	if err != nil {
 		return fmt.Errorf("registry: delete %q: %w", slug, err)
@@ -264,14 +303,14 @@ func (r *Registry) Delete(ctx context.Context, slug string) error {
 	if err := r.instances.Delete(ctx, r.db, slug); err != nil {
 		return fmt.Errorf("registry: delete %q: %w", slug, err)
 	}
-	r.invalidate(slug)
-	r.forgetCacheCounters(inst.ID)
-	r.stats.ForgetInstance(inst.ID)
+	r.inv.invalidate(slug)
+	r.inv.forgetCacheCounters(inst.ID)
+	r.inv.forgetStats(inst.ID)
 	return nil
 }
 
 // ensureSlugFree returns ErrConflict if the slug is taken.
-func (r *Registry) ensureSlugFree(ctx context.Context, slug string) error {
+func (r *Manager) ensureSlugFree(ctx context.Context, slug string) error {
 	_, err := r.instances.GetBySlug(ctx, r.db, slug)
 	switch {
 	case err == nil:
@@ -284,9 +323,9 @@ func (r *Registry) ensureSlugFree(ctx context.Context, slug string) error {
 }
 
 // writeSettings classifies and persists each new setting (encrypting secrets).
-func (r *Registry) writeSettings(ctx context.Context, tx dbinterface.TxQuerier, id int64, fields map[string]loader.SettingsField, settings map[string]string) error {
+func (r *Manager) writeSettings(ctx context.Context, tx dbinterface.TxQuerier, id int64, fields map[string]loader.SettingsField, settings map[string]string) error {
 	for name, val := range settings {
-		s, err := r.toStored(id, name, val, fields)
+		s, err := encodeSetting(r.keyring, id, name, val, fields)
 		if err != nil {
 			return err
 		}
@@ -300,7 +339,7 @@ func (r *Registry) writeSettings(ctx context.Context, tx dbinterface.TxQuerier, 
 // mergeSettings overlays incoming values onto the existing set: a Redacted value
 // keeps the stored row, any other value is (re)classified and (re)encrypted, and
 // settings absent from incoming are preserved.
-func (r *Registry) mergeSettings(id int64, fields map[string]loader.SettingsField, existing []domain.IndexerSetting, incoming map[string]string) ([]domain.IndexerSetting, error) {
+func (r *Manager) mergeSettings(id int64, fields map[string]loader.SettingsField, existing []domain.IndexerSetting, incoming map[string]string) ([]domain.IndexerSetting, error) {
 	byName := make(map[string]domain.IndexerSetting, len(existing)+len(incoming))
 	for _, s := range existing {
 		byName[s.Name] = s
@@ -309,7 +348,7 @@ func (r *Registry) mergeSettings(id int64, fields map[string]loader.SettingsFiel
 		if secrets.IsRedacted(val) {
 			continue // keep whatever is stored (or nothing, if unset)
 		}
-		s, err := r.toStored(id, name, val, fields)
+		s, err := encodeSetting(r.keyring, id, name, val, fields)
 		if err != nil {
 			return nil, err
 		}
@@ -322,17 +361,38 @@ func (r *Registry) mergeSettings(id int64, fields map[string]loader.SettingsFiel
 	return out, nil
 }
 
-// toStored classifies a setting and, if secret, encrypts its value bound to the
-// instance id + setting name.
-func (r *Registry) toStored(id int64, name, val string, fields map[string]loader.SettingsField) (domain.IndexerSetting, error) {
+// inTx runs fn inside a transaction, committing on success and rolling back on
+// error. The repo methods fn calls take an Execer, which the TxQuerier satisfies,
+// so an instance and its settings are written atomically. It is the Manager's
+// transactional helper (the CRUD writes are the only transactional path).
+func (r *Manager) inTx(ctx context.Context, fn func(tx dbinterface.TxQuerier) error) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("registry: begin tx: %w", err)
+	}
+	if err := fn(tx); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("registry: commit: %w", err)
+	}
+	return nil
+}
+
+// encodeSetting classifies a setting and, if secret, encrypts its value bound to the
+// instance id + setting name. A free function so both the serve write path
+// (Resolver.persistSetting) and the CRUD write path (Manager.writeSettings/mergeSettings)
+// call it without either type owning it.
+func encodeSetting(kr secretsKeyring, id int64, name, val string, fields map[string]loader.SettingsField) (domain.IndexerSetting, error) {
 	if !classifySecret(name, fields) {
 		return domain.IndexerSetting{Name: name, Value: val}, nil
 	}
-	blob, err := r.keyring.Encrypt(id, name, val)
+	blob, err := kr.Encrypt(id, name, val)
 	if err != nil {
 		return domain.IndexerSetting{}, fmt.Errorf("registry: encrypt setting %q: %w", name, err)
 	}
-	return domain.IndexerSetting{Name: name, ValueEncrypted: blob, KeyID: r.keyring.KeyID(), IsSecret: true}, nil
+	return domain.IndexerSetting{Name: name, ValueEncrypted: blob, KeyID: kr.KeyID(), IsSecret: true}, nil
 }
 
 // reservedSecretSettings are daemon-level settings (not declared in vendored
@@ -361,7 +421,7 @@ func classifySecret(name string, fields map[string]loader.SettingsField) bool {
 // discarded, so any cached production engine and its live session are untouched.
 // Returns nil when the credentials authenticate; otherwise the engine's login
 // error (which the API layer sanitizes before returning to the client).
-func (r *Registry) Test(ctx context.Context, slug string) error {
+func (r *Resolver) Test(ctx context.Context, slug string) error {
 	a, err := r.buildAdapter(ctx, slug)
 	if err != nil {
 		return err
@@ -390,7 +450,7 @@ type HealthStatus struct {
 
 // Status returns the indexer's derived health and recent events. An unknown slug
 // is database.ErrNotFound (the handler maps it to 404).
-func (r *Registry) Status(ctx context.Context, slug string) (HealthStatus, error) {
+func (r *StatsReporter) Status(ctx context.Context, slug string) (HealthStatus, error) {
 	inst, err := r.instances.GetBySlug(ctx, r.db, slug)
 	if err != nil {
 		return HealthStatus{}, fmt.Errorf("registry: status %q: %w", slug, err)
@@ -404,7 +464,7 @@ func (r *Registry) Status(ctx context.Context, slug string) (HealthStatus, error
 
 // deriveStatus reads "unhealthy" when the most recent event is within the recency
 // window, else "healthy" (no recent failure). Events are newest-first.
-func (r *Registry) deriveStatus(events []domain.IndexerHealthEvent) string {
+func (r *StatsReporter) deriveStatus(events []domain.IndexerHealthEvent) string {
 	if len(events) > 0 && r.clock().Sub(events[0].OccurredAt) <= healthRecencyWindow {
 		return "unhealthy"
 	}
@@ -439,7 +499,7 @@ type IndexerStat struct {
 // handler maps it to 404). Note the query count reflects searches that actually reached
 // the tracker — a cache hit bypasses the instrumented adapter — so avgResponseMs
 // measures real upstream latency.
-func (r *Registry) Stats(ctx context.Context, slug string) (IndexerStat, error) {
+func (r *StatsReporter) Stats(ctx context.Context, slug string) (IndexerStat, error) {
 	inst, err := r.instances.GetBySlug(ctx, r.db, slug)
 	if err != nil {
 		return IndexerStat{}, fmt.Errorf("registry: stats %q: %w", slug, err)
@@ -455,7 +515,7 @@ func (r *Registry) Stats(ctx context.Context, slug string) (IndexerStat, error) 
 // AllStats returns per-indexer stats for every configured instance. It reads the
 // failure aggregation for all instances in one query (no N+1) and folds each instance's
 // durable counters on top.
-func (r *Registry) AllStats(ctx context.Context) ([]IndexerStat, error) {
+func (r *StatsReporter) AllStats(ctx context.Context) ([]IndexerStat, error) {
 	list, err := r.instances.List(ctx, r.db)
 	if err != nil {
 		return nil, fmt.Errorf("registry: all stats: %w", err)
@@ -497,13 +557,13 @@ func buildIndexerStat(slug string, queries, grabs, respTotal int64, lastQuery ti
 
 // RehydrateStats folds the persisted per-indexer counters onto the in-memory atomics at
 // boot (a thin delegator to the stats layer for cmd/harbrr wiring).
-func (r *Registry) RehydrateStats(ctx context.Context) error {
+func (r *StatsReporter) RehydrateStats(ctx context.Context) error {
 	return r.stats.RehydrateCounters(ctx)
 }
 
 // FlushStats writes the live per-indexer counters back to the store (a thin delegator
 // for the periodic + shutdown flush in cmd/harbrr).
-func (r *Registry) FlushStats(ctx context.Context) {
+func (r *StatsReporter) FlushStats(ctx context.Context) {
 	r.stats.FlushCounters(ctx)
 }
 

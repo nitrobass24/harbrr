@@ -40,7 +40,8 @@ func TestClassifyHealth(t *testing.T) {
 func TestDeriveStatus(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, time.June, 14, 12, 0, 0, 0, time.UTC)
-	r := &Registry{clock: func() time.Time { return now }}
+	// deriveStatus lives on StatsReporter now; construct it directly (it needs only clock).
+	r := &StatsReporter{clock: func() time.Time { return now }}
 
 	if s := r.deriveStatus(nil); s != "healthy" {
 		t.Errorf("no events => %q, want healthy", s)
