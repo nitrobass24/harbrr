@@ -38,7 +38,7 @@ reviews:
         decoupled). Behavior changes must come with table-driven tests + fixtures. NEVER suggest
         editing files under internal/indexer/definitions/vendor/ — divergence is absorbed in the
         engine, never in the def files.
-    - path: "internal/indexer/cardigann/regexadapter/**"
+    - path: "internal/indexer/cardigann/internal/regexadapter/**"
       instructions: |
         RE2 (Go regexp) is the default for ReDoS safety. regexp2 (.NET semantics) is only valid on def
         opt-in, non-Latin `language:`, RE2 compile-failure, or .NET-only constructs. Flag any

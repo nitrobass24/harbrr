@@ -41,15 +41,18 @@ The Cardigann engine (`internal/indexer/cardigann`) is a compiler-style pipeline
 independently-tested stages:
 
 ```
-loader → mapper → template → filter → selector → dateparse → regexadapter → login → search → normalizer
-                                                                                          → torznab (serialize)
+loader → mapper → dateparse → login → search → normalizer
+                                             → torznab (serialize)
 ```
 
 Data flows one way. A stage takes typed input and returns typed output; stages do not reach across
-each other. Each stage owns its fixtures. Two support packages sit beside the pipeline: `encode`
-(.NET-equivalent WebUtility URL encoding) and `magnet` (infohash→magnet synthesis). This shape is
-deliberate — it keeps functions small (the complexity linters enforce it) and makes the parity
-harness (`cardigann/parity`) tractable. The Torznab/Newznab serializer lives in `internal/torznab`.
+each other. Each stage owns its fixtures. Engine-private support stages live under
+`cardigann/internal/` so they cannot be imported from outside the engine: `template` (Go
+text/template evaluation), `selector` (HTML/JSON selection), `regexadapter` (RE2/regexp2 routing)
+and `encode` (.NET-equivalent WebUtility URL encoding). The filter registry lives in `search`;
+magnet synthesis lives in `normalizer`. This shape is deliberate — it keeps functions small (the
+complexity linters enforce it) and makes the parity harness (`cardigann/parity`) tractable. The
+Torznab/Newznab serializer lives in `internal/torznab`.
 
 ## Regex — RE2 by default, regexp2 on demand
 
@@ -99,9 +102,8 @@ cmd/harbrr/              # cobra entrypoint: serve, smoke, rotate-key, announce,
 internal/
   indexer/
     cardigann/           # the engine pipeline (below) — the core of the project
-      loader/ mapper/ template/ filter/ selector/     # extraction stages
-      dateparse/ regexadapter/ login/ search/ normalizer/
-      encode/ magnet/    # engine support (WebUtility encoding, magnet synthesis)
+      loader/ mapper/ dateparse/ login/ search/ normalizer/   # pipeline stages
+      internal/          # engine-private support: template/ selector/ regexadapter/ encode/
       parity/            # differential-vs-Jackett harness — the correctness gate
     definitions/         # //go:embed vendored Jackett snapshot: vendor/ (read-only) + dropin/ (user overrides)
     native/              # bespoke Go drivers for trackers Cardigann YAML can't express

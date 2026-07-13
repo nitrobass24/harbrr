@@ -36,9 +36,10 @@ correctness gate and must never regress.
 ## Repo map
 
 - Entry: `cmd/harbrr`
-- Engine — a compiler-style pipeline, one package per stage under `internal/indexer/cardigann/`:
-  `loader → mapper → template → filter → selector → dateparse → regexadapter → login → search →
-  normalizer`; the serializer is `internal/torznab`. Keep stages decoupled; each owns its fixtures.
+- Engine — a compiler-style pipeline under `internal/indexer/cardigann/`:
+  `loader → mapper → dateparse → login → search → normalizer`, with engine-private support stages
+  (`template`, `selector`, `regexadapter`, `encode`) under `cardigann/internal/`; the serializer is
+  `internal/torznab`. Keep stages decoupled; each owns its fixtures.
   Parity gate: `internal/indexer/cardigann/parity`.
 - Definitions: `internal/indexer/definitions/` — `vendor/` (embedded Jackett snapshot, read-only) +
   `dropin/` (user overrides, take precedence).

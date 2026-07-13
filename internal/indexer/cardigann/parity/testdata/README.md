@@ -179,7 +179,7 @@ Entries:
   not a parse difference. **`[Deliberate]`**
 - **URL encoding (`.NET WebUtility.UrlEncode`)** — Resolved. Both the
   GET-query encoder (`encodeOrdered`) and the search-path value encoder now route
-  through `internal/indexer/cardigann/encode`, which reproduces .NET
+  through `internal/indexer/cardigann/internal/encode`, which reproduces .NET
   `WebUtility.UrlEncode` (the encoder Jackett uses for both halves of a request:
   `StringUtil.GetQueryString` → `WebUtilityHelpers.UrlEncode` for the query, and
   `applyGoTemplateText(..., WebUtility.UrlEncode)` + `Replace("+","%20")` for the
@@ -189,7 +189,7 @@ Entries:
   (Go leaves it literal; .NET escapes it to `%7E`). The apostrophe `'` is `%27` in
   BOTH engines and was NOT a divergence (the earlier note here wrongly listed it
   and omitted `~`). Spaces match (`%20` in the path, `+` in the query). The magnet
-  synthesizer (`internal/indexer/cardigann/magnet`) uses `encode.WebUtilityStringEncode`
+  synthesizer (in `internal/indexer/cardigann/normalizer`) uses `encode.WebUtilityStringEncode`
   — the .NET WebUtility *STRING* form that leaves the sub-delimiters `! * ( )`
   LITERAL — because `MagnetUtil.InfoHashToPublicMagnet` builds `dn=`/`tr=` via
   `WebUtilityHelpers.UrlEncode` → `WebUtility.UrlEncodeToBytes` (safe set includes
