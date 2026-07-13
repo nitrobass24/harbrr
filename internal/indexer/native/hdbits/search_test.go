@@ -71,7 +71,7 @@ func liveDriver(t *testing.T, doer *scriptDoer) *driver {
 // category int array).
 func TestBuildRequest(t *testing.T) {
 	t.Parallel()
-	d := &driver{cfg: creds()}
+	d := &driver{Base: native.Base{Cfg: creds()}}
 	cred := `"username":"` + credUser + `","passkey":"` + credPass + `"`
 	cases := []struct {
 		name  string
@@ -258,7 +258,7 @@ func TestSearchTransportErrorHostOnly(t *testing.T) {
 		Err: errors.New("dial tcp: connection refused"),
 	}
 	d := liveDriver(t, &scriptDoer{})
-	d.doer = &errorDoer{err: uerr}
+	d.Doer = &errorDoer{err: uerr}
 
 	_, err := d.Search(context.Background(), search.Query{Keywords: "the matrix"})
 	if err == nil {

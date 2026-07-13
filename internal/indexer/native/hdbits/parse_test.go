@@ -31,7 +31,7 @@ func parseDriver(t *testing.T, cfg map[string]string) *driver {
 		t.Fatalf("factory: %v", err)
 	}
 	drv := d.(*driver)
-	drv.baseURL = "https://hdbits.test/"
+	drv.BaseURL = "https://hdbits.test/"
 	return drv
 }
 

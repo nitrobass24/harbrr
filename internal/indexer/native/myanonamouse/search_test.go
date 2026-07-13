@@ -12,6 +12,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // builderDriver is a credential-light driver for the pure query-string builder tests.
@@ -19,7 +20,13 @@ func builderDriver(cfg map[string]string) *driver {
 	if cfg == nil {
 		cfg = map[string]string{}
 	}
-	return &driver{def: &loader.Definition{ID: "myanonamouse"}, cfg: cfg, baseURL: "https://mam.test/", clock: fixedClock}
+	return &driver{Base: native.Base{
+		Family:  "myanonamouse",
+		Def:     &loader.Definition{ID: "myanonamouse"},
+		Cfg:     cfg,
+		BaseURL: "https://mam.test/",
+		Clock:   fixedClock,
+	}}
 }
 
 // TestBuildSearchURL is the parity gate for the request: it asserts the exact query
@@ -188,10 +195,13 @@ func TestSearchTransportErrorHostOnly(t *testing.T) {
 		Err: errors.New("dial tcp: connection refused"),
 	}
 	d := &driver{
-		cfg:          map[string]string{"mam_id": mamSecret},
-		doer:         &errorDoer{err: uerr},
-		baseURL:      host + "/",
-		clock:        fixedClock,
+		Base: native.Base{
+			Family:  "myanonamouse",
+			Cfg:     map[string]string{"mam_id": mamSecret},
+			Doer:    &errorDoer{err: uerr},
+			BaseURL: host + "/",
+			Clock:   fixedClock,
+		},
 		currentMamID: mamSecret,
 	}
 	_, err := d.Search(context.Background(), search.Query{Keywords: "dune"})

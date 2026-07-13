@@ -3,56 +3,36 @@ package gazelle
 import (
 	"context"
 	"fmt"
-	"io"
-	stdhttp "net/http"
 	"net/url"
 	"strings"
 
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
-
-// maxBodyBytes caps a browse response. A Gazelle browse page is small JSON (LimitsMax
-// = 50 groups, each with a handful of nested torrents), so this is generous while still
-// bounding a hostile or runaway body.
-const maxBodyBytes = 8 << 20 // 8 MiB
 
 // vaArtist is the "various artists" sentinel Prowlarr skips for the artistname param —
 // a VA compilation has no single artist to filter on.
 const vaArtist = "VA"
 
 // Search issues the authenticated browse request for the query and returns the parsed
-// releases. A 401/403 is an auth failure wrapped with login.ErrLoginFailed (so the
-// registry records an auth_failure health event); a rate-limit status is a
-// RateLimitedError carrying any Retry-After; any other non-2xx is an error. A 200 body
-// is handed to parseBrowse, which distinguishes a status:"failure" (zero releases or a
-// login error) from a real page. The API key rides in the Authorization header, never
-// the URL, and is never logged.
+// releases. Status classification is the base ClassifyAuth403 dialect: 401/403 is an
+// auth failure wrapped with login.ErrLoginFailed (so the registry records an
+// auth_failure health event), a rate-limit status is a RateLimitedError carrying any
+// Retry-After, any other non-2xx is an error. A 200 body is handed to parseBrowse,
+// which distinguishes a status:"failure" (zero releases or a login error) from a real
+// page. The API key rides in the Authorization header, never the URL, and is never
+// logged.
 func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
-	resp, err := d.get(ctx, d.buildBrowseURL(q))
+	req, err := d.newRequest(ctx, d.buildBrowseURL(q))
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	switch {
-	case resp.StatusCode == stdhttp.StatusUnauthorized || resp.StatusCode == stdhttp.StatusForbidden:
-		return nil, fmt.Errorf("gazelle: search unauthorized: %w", login.ErrLoginFailed)
-	case search.IsRateLimitStatus(resp.StatusCode):
-		return nil, &search.RateLimitedError{
-			StatusCode: resp.StatusCode,
-			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.clock),
-		}
-	case resp.StatusCode < 200 || resp.StatusCode >= 300:
-		return nil, fmt.Errorf("gazelle: search returned HTTP %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
+	resp, err := d.Do(ctx, req, native.ClassifyAuth403)
 	if err != nil {
-		return nil, fmt.Errorf("gazelle: read search response: %w", err)
+		return nil, err
 	}
-	return d.parseBrowse(body)
+	return d.parseBrowse(resp.Body)
 }
 
 // buildBrowseURL composes the ajax.php?action=browse request URL. order_by=time and
@@ -83,7 +63,7 @@ func (d *driver) buildBrowseURL(q search.Query) string {
 	if cats := filterCats(q.Categories); cats != "" {
 		encoded += "&" + cats
 	}
-	return fmt.Sprintf("%sajax.php?%s", d.baseURL, encoded)
+	return fmt.Sprintf("%sajax.php?%s", d.BaseURL, encoded)
 }
 
 // sanitizeTerm trims the free-text term and replaces dots with spaces, matching

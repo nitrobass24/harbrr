@@ -212,8 +212,8 @@ func TestGrabTransportErrorSurfacesHostOnly(t *testing.T) {
 	if !strings.Contains(msg, "https://redacted.sh") {
 		t.Errorf("grab error should surface the host, got %q", msg)
 	}
-	if !strings.Contains(msg, "gazelle: download request failed") {
-		t.Errorf("grab error should carry the generic failure message, got %q", msg)
+	if !strings.Contains(msg, "gazelle: download") {
+		t.Errorf("grab error should carry the family/download prefix, got %q", msg)
 	}
 	for _, leak := range []string{secret, "/dl/" + secret, "passkey=" + secret, credAPIKey} {
 		if strings.Contains(msg, leak) {

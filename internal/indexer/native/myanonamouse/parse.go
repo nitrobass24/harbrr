@@ -124,7 +124,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	sort.SliceStable(releases, func(i, j int) bool {
 		return releases[i].PublishDate > releases[j].PublishDate
 	})
-	native.TraceReleases(d.log, d.def.ID, releases)
+	native.TraceReleases(d.Log, d.Def.ID, releases)
 	return releases, nil
 }
 
@@ -168,12 +168,12 @@ func (d *driver) toRelease(row *mamRelease) (*normalizer.Release, error) {
 // (rather than trusting an API link) keeps it deterministic and immune to a redacted
 // field.
 func (d *driver) downloadURL(row *mamRelease) string {
-	return d.baseURL + "tor/download.php/" + row.DL + "?tid=" + strconv.FormatInt(row.ID, 10)
+	return d.BaseURL + "tor/download.php/" + row.DL + "?tid=" + strconv.FormatInt(row.ID, 10)
 }
 
 // detailsURL is the torrent info page: {base}t/{id}.
 func (d *driver) detailsURL(row *mamRelease) string {
-	return d.baseURL + "t/" + strconv.FormatInt(row.ID, 10)
+	return d.BaseURL + "t/" + strconv.FormatInt(row.ID, 10)
 }
 
 // categories maps the row's category id through the site caps. main_cat is the
@@ -184,7 +184,7 @@ func (d *driver) categories(row *mamRelease) []int {
 	if id == "" {
 		id = strings.TrimSpace(string(row.MainCat))
 	}
-	mapped := d.caps.CategoryMap.MapTrackerCatToNewznab(id)
+	mapped := d.Caps.CategoryMap.MapTrackerCatToNewznab(id)
 	seen := make(map[int]struct{}, len(mapped))
 	out := make([]int, 0, len(mapped))
 	for _, c := range mapped {

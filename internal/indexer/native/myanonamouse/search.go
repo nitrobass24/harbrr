@@ -2,14 +2,10 @@ package myanonamouse
 
 import (
 	"context"
-	"fmt"
-	"io"
-	stdhttp "net/http"
 	"net/url"
 	"strconv"
 	"strings"
 
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
@@ -22,33 +18,20 @@ const (
 )
 
 // Search issues the loadSearchJSONbasic.php request for the query and returns the
-// parsed releases. A 403 is an auth failure (mam_id expired/invalid), wrapped with
-// login.ErrLoginFailed; a 429/503 is a rate-limit error; any other non-2xx is an
-// error. The 2xx body is parsed by parseReleases.
+// parsed releases. Status classification is the MAM dialect (classifyMAM): a 403 is
+// an auth failure (mam_id expired/invalid) wrapped with login.ErrLoginFailed, a
+// 429/503 is a rate-limit error, any other non-2xx is an error. The 2xx body is
+// parsed by parseReleases.
 func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
-	resp, err := d.get(ctx, d.buildSearchURL(q), "application/json")
+	req, err := d.newRequest(ctx, d.buildSearchURL(q), "application/json")
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	switch {
-	case resp.StatusCode == stdhttp.StatusForbidden:
-		return nil, fmt.Errorf("myanonamouse: search forbidden, mam_id expired or invalid: %w", login.ErrLoginFailed)
-	case search.IsRateLimitStatus(resp.StatusCode):
-		return nil, &search.RateLimitedError{
-			StatusCode: resp.StatusCode,
-			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.clock),
-		}
-	case resp.StatusCode < 200 || resp.StatusCode >= 300:
-		return nil, fmt.Errorf("myanonamouse: search returned HTTP %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
+	resp, err := d.do(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("myanonamouse: read search response: %w", err)
+		return nil, err
 	}
-	return d.parseReleases(body)
+	return d.parseReleases(resp.Body)
 }
 
 // buildSearchURL renders the loadSearchJSONbasic.php request for a query, matching
@@ -71,7 +54,7 @@ func (d *driver) buildSearchURL(q search.Query) string {
 	params.Set("thumbnails", "1")
 	params.Set("description", "1")
 	params.Set("dlLink", "1")
-	return d.baseURL + searchPath + "?" + params.Encode()
+	return d.BaseURL + searchPath + "?" + params.Encode()
 }
 
 // searchTerm is the free-text keyword. harbrr's search.Query carries the book author/
@@ -87,13 +70,13 @@ func (d *driver) addSearchIn(params url.Values) {
 	params.Set("tor[srchIn][title]", "true")
 	params.Set("tor[srchIn][author]", "true")
 	params.Set("tor[srchIn][narrator]", "true")
-	if boolSetting(d.cfg["search_in_description"]) {
+	if boolSetting(d.Cfg["search_in_description"]) {
 		params.Set("tor[srchIn][description]", "true")
 	}
-	if boolSetting(d.cfg["search_in_series"]) {
+	if boolSetting(d.Cfg["search_in_series"]) {
 		params.Set("tor[srchIn][series]", "true")
 	}
-	if boolSetting(d.cfg["search_in_filenames"]) {
+	if boolSetting(d.Cfg["search_in_filenames"]) {
 		params.Set("tor[srchIn][filenames]", "true")
 	}
 }

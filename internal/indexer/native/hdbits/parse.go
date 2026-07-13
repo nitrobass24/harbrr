@@ -164,8 +164,8 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 		return nil, d.statusError(resp.Status, resp.Message)
 	}
 
-	freeOnly := freeleechOnly(d.cfg)
-	useFilenames := useFilenames(d.cfg)
+	freeOnly := freeleechOnly(d.Cfg)
+	useFilenames := useFilenames(d.Cfg)
 	releases := make([]*normalizer.Release, 0, len(resp.Data))
 	for i := range resp.Data {
 		row := &resp.Data[i]
@@ -175,7 +175,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 		releases = append(releases, d.toRelease(row, useFilenames))
 	}
 	sortReleases(releases)
-	native.TraceReleases(d.log, d.def.ID, releases)
+	native.TraceReleases(d.Log, d.Def.ID, releases)
 	return releases, nil
 }
 
@@ -251,7 +251,7 @@ func stripTorrentExt(name string) string {
 // mapper also synthesises a 1:1 custom id (>= customCatCutoff) which is discarded so the
 // release carries exactly one category (matching Prowlarr, which emits one).
 func (d *driver) categories(typeCategory int64) []int {
-	for _, c := range d.caps.CategoryMap.MapTrackerCatToNewznab(strconv.FormatInt(typeCategory, 10)) {
+	for _, c := range d.Caps.CategoryMap.MapTrackerCatToNewznab(strconv.FormatInt(typeCategory, 10)) {
 		if c < customCatCutoff {
 			return []int{c}
 		}
@@ -330,15 +330,15 @@ func publishDate(added string) string {
 func (d *driver) downloadURL(id string) string {
 	params := url.Values{}
 	params.Set("id", id)
-	params.Set("passkey", strings.TrimSpace(d.cfg["passkey"]))
-	return d.baseURL + downloadPath + "?" + params.Encode()
+	params.Set("passkey", strings.TrimSpace(d.Cfg["passkey"]))
+	return d.BaseURL + downloadPath + "?" + params.Encode()
 }
 
 // detailsURL rebuilds the Prowlarr info URL: {base}details.php?id={id} (no secret).
 func (d *driver) detailsURL(id string) string {
 	params := url.Values{}
 	params.Set("id", id)
-	return d.baseURL + detailsPath + "?" + params.Encode()
+	return d.BaseURL + detailsPath + "?" + params.Encode()
 }
 
 // fullIMDBID renders a bare imdb id as the canonical "tt"+7-digit form harbrr stores
@@ -380,7 +380,7 @@ func useFilenames(cfg map[string]string) bool {
 // filelist.scrubPasskey). Both ride in the secret-bearing POST body.
 func (d *driver) scrubSecrets(s string) string {
 	for _, k := range []string{"passkey", "username"} {
-		if v := strings.TrimSpace(d.cfg[k]); v != "" {
+		if v := strings.TrimSpace(d.Cfg[k]); v != "" {
 			s = strings.ReplaceAll(s, v, "[redacted]")
 		}
 	}

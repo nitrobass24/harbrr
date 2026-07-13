@@ -13,6 +13,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // distinctive synthetic mam_id so a redaction check can prove it never escapes into a
@@ -59,11 +60,14 @@ func resp(status int, body string) *stdhttp.Response {
 
 func newDriver(doer *scriptDoer) *driver {
 	return &driver{
-		def:          &loader.Definition{ID: "myanonamouse"},
-		cfg:          map[string]string{"mam_id": mamSecret},
-		doer:         doer,
-		baseURL:      "https://mam.test/",
-		clock:        fixedClock,
+		Base: native.Base{
+			Family:  "myanonamouse",
+			Def:     &loader.Definition{ID: "myanonamouse"},
+			Cfg:     map[string]string{"mam_id": mamSecret},
+			Doer:    doer,
+			BaseURL: "https://mam.test/",
+			Clock:   fixedClock,
+		},
 		currentMamID: mamSecret,
 	}
 }
@@ -76,11 +80,13 @@ func TestGetSendsCookie(t *testing.T) {
 		return resp(stdhttp.StatusOK, `{"error":"","data":[]}`)
 	}}
 	d := newDriver(doer)
-	r, err := d.get(context.Background(), d.baseURL+searchPath+"?tor[text]=x", "application/json")
+	req, err := d.newRequest(context.Background(), d.BaseURL+searchPath+"?tor[text]=x", "application/json")
 	if err != nil {
-		t.Fatalf("get: %v", err)
+		t.Fatalf("newRequest: %v", err)
 	}
-	_ = r.Body.Close()
+	if _, err := d.do(context.Background(), req); err != nil {
+		t.Fatalf("do: %v", err)
+	}
 	if len(doer.reqs) != 1 {
 		t.Fatalf("requests = %d, want 1", len(doer.reqs))
 	}
