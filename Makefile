@@ -3,6 +3,9 @@ MODULE      := github.com/autobrr/harbrr
 BINARY      := harbrr
 BIN_DIR     := bin
 PKG         := ./...
+GOOS        ?= $(shell go env GOOS)
+BINARY_EXT  := $(if $(filter windows,$(GOOS)),.exe,)
+BINARY_PATH := $(BIN_DIR)/$(BINARY)$(BINARY_EXT)
 
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "0.0.0-dev")
 COMMIT      ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
@@ -19,11 +22,11 @@ LDFLAGS     := -s -w \
 help:
 	@grep -E '^##' $(MAKEFILE_LIST) | sed -E 's/## //'
 
-## build: compile the binary to bin/harbrr
+## build: compile to bin/harbrr (bin/harbrr.exe when GOOS=windows)
 .PHONY: build
 build:
 	@mkdir -p $(BIN_DIR)
-	go build -trimpath -ldflags '$(LDFLAGS)' -o $(BIN_DIR)/$(BINARY) ./cmd/harbrr
+	go build -trimpath -ldflags '$(LDFLAGS)' -o $(BINARY_PATH) ./cmd/harbrr
 
 ## backend: alias for build
 .PHONY: backend
