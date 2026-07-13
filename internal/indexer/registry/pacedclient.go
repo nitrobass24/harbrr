@@ -234,6 +234,19 @@ func (d *pacedDoer) issue(ctx context.Context, req *stdhttp.Request, lim *rate.L
 		ev = ev.Str("retry_after", ra)
 	}
 	ev.Msg("registry: outbound request")
+	// One level deeper (TRACE), also log the redacted query so a tracker definition
+	// can be debugged from the request it actually sent — keywords, categories, sort,
+	// paging. HostAndRedactedQuery drops the path (keeping the scheme://host-only
+	// safety of the DEBUG line above) and masks secret-named params. Guarded so the
+	// redaction cost is paid only when trace is on.
+	if d.log.GetLevel() <= zerolog.TraceLevel {
+		d.log.Trace().
+			Str("method", req.Method).
+			Str("url", apphttp.HostAndRedactedQuery(req.URL.String())).
+			Int("status", resp.StatusCode).
+			Dur("duration", dur).
+			Msg("registry: outbound request query")
+	}
 	if !search.IsRateLimitStatus(resp.StatusCode) {
 		return attemptResult{resp: resp}
 	}

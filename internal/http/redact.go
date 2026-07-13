@@ -89,6 +89,60 @@ func redactSecretQueryParams(u *url.URL) {
 	u.RawQuery = q.Encode()
 }
 
+// HostAndRedactedQuery returns "scheme://host?redacted-query" for raw: the origin
+// plus its query string with secret-named params masked, and the PATH dropped
+// entirely. It is the trace-level companion to SchemeHost, for logging what a
+// tracker request actually asked for when debugging a definition — the query is
+// where the search diagnostics live (keywords, categories, sort, paging). Dropping
+// the path is deliberate: a passkey/rsskey can ride in a PATH segment (animebytes,
+// beyond-hd) that path redaction can miss, so omitting the path guarantees it can
+// never reach a log — the same reason the routine request log stays at scheme://host.
+// An unparseable URL or one with no host returns REDACTED; a URL with no query
+// returns just scheme://host.
+//
+// Secret masking uses the shared isSecretParam, minus benignQueryParams: the shared
+// vocabulary substring-matches short tokens like "key"/"auth", which would otherwise
+// mask the very search params this log exists to show ("keywords" contains "key",
+// "author" contains "auth"). The allowlist only ever UN-masks explicitly-named benign
+// params, so it can never expose an unknown secret-shaped one.
+func HostAndRedactedQuery(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return redactedValue
+	}
+	origin := u.Scheme + "://" + u.Host
+	if u.RawQuery == "" {
+		return origin
+	}
+	q := u.Query()
+	for name := range q {
+		if !isSecretParam(name) || isBenignQueryParam(name) {
+			continue
+		}
+		for i := range q[name] {
+			q[name][i] = redactedValue
+		}
+	}
+	return origin + "?" + q.Encode()
+}
+
+// benignQueryParams are search-diagnostic query parameter names that are known-safe
+// but whose spelling contains a short secret token as a substring (e.g. "keywords"
+// contains "key", "author" contains "auth"), so the shared isSecretParam would
+// otherwise mask them. Matched case-insensitively and EXACTLY (a name must equal one
+// of these, never merely contain it), so the allowlist can only ever un-mask an
+// explicitly benign name — never expose an unknown secret-shaped param.
+var benignQueryParams = map[string]struct{}{
+	"keywords": {},
+	"keyword":  {},
+	"author":   {},
+}
+
+func isBenignQueryParam(name string) bool {
+	_, ok := benignQueryParams[strings.ToLower(name)]
+	return ok
+}
+
 // RedactURLIdentity is RedactURL for a URL used as a stable IDENTITY — a dedup-key
 // <guid> or a details permalink — rather than a credential vector. It scrubs userinfo
 // passwords and secret query-parameter values but preserves the PATH verbatim.
