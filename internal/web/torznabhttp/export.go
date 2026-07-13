@@ -49,7 +49,7 @@ func searchReleases(ctx context.Context, idx Indexer, caps *mapper.Capabilities,
 		ctx = WithCacheBypass(ctx)
 	}
 	pg := parsePaging(q)
-	// Carry the page window into the engine query. A paging-capable driver (Newznab)
+	// Carry the page window into the engine query. A paging-capable driver (newznab/nzbindex)
 	// forwards it upstream for deep-set paging; every other driver ignores it (Offset/
 	// Limit are request context, never templated), so the request URL stays byte-identical.
 	query.Offset, query.Limit = pg.offset, pg.limit
@@ -68,9 +68,9 @@ func searchReleases(ctx context.Context, idx Indexer, caps *mapper.Capabilities,
 	return localPageResult(releases, pg), nil
 }
 
-// localPageResult is the non-paging path (every Cardigann def, every non-Newznab native
-// driver): the driver returned the FULL result set, so Total is the real match count
-// pre-slice and the page is sliced locally to [offset, offset+limit).
+// localPageResult is the non-paging path (every Cardigann def, every native driver except
+// the newznab/nzbindex usenet pair): the driver returned the FULL result set, so Total is
+// the real match count pre-slice and the page is sliced locally to [offset, offset+limit).
 func localPageResult(releases []*normalizer.Release, pg paging) SearchResult {
 	return SearchResult{
 		Releases: pg.apply(releases),

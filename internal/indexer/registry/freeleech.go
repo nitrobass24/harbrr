@@ -41,8 +41,8 @@ func (f *freeleechIndexer) SupportsOffsetPaging() bool {
 // Paging note: this filter runs INSIDE the Search the handler's pager measures, so on a
 // deep-paging driver the honor feed's has-more floor is computed on the post-filter page
 // and can stop early (the documented pagination-dilution divergence). This is unreachable
-// for the shipped paging driver — only the newznab/usenet driver forwards offset upstream,
-// and usenet has no freeleech setting, so freeleechOnly is always false there.
+// for the shipped paging drivers — only usenet drivers (newznab, nzbindex) forward offset
+// upstream, and usenet has no freeleech setting, so freeleechOnly is always false there.
 func (f *freeleechIndexer) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
 	releases, err := f.Indexer.Search(ctx, q)
 	if err != nil || !f.freeleechOnly || q.FreeleechBypass {

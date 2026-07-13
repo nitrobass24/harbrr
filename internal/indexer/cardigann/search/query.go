@@ -57,9 +57,9 @@ type Query struct {
 
 	// Offset and Limit are REQUEST CONTEXT — the served page window — never templated.
 	// The Cardigann engine ignores them entirely (queryMap does not map them, like Mode),
-	// so every Cardigann request URL stays byte-identical: a paging-capable native driver
-	// (newznab) forwards them upstream for deep-set paging, while non-paging drivers leave
-	// them for the handler to slice the returned page. A zero Offset/Limit means "first
+	// so every Cardigann request URL stays byte-identical: paging-capable native drivers
+	// (newznab, nzbindex) forward them upstream for deep-set paging, while non-paging drivers
+	// leave them for the handler to slice the returned page. A zero Offset/Limit means "first
 	// page, default size".
 	Offset int
 	Limit  int

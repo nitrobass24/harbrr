@@ -85,10 +85,11 @@ func (a *indexerAdapter) NeedsResolver() bool { return a.inner.NeedsResolver() }
 func (a *indexerAdapter) DownloadNeedsAuth() bool { return a.inner.DownloadNeedsAuth() }
 
 // SupportsOffsetPaging delegates to the wrapped driver's optional OffsetPager capability,
-// reporting false for any driver that doesn't implement it (every Cardigann def and the
-// non-Newznab native drivers). When true, the handler forwards offset/limit upstream and
-// does not re-slice the returned page. The adapter promotes the signal so the cache layer
-// (which keys per-page for paging drivers) and the handler read the SAME capability.
+// reporting false for any driver that doesn't implement it (every Cardigann def and every
+// native driver except the newznab and nzbindex usenet pair). When true, the handler
+// forwards offset/limit upstream and does not re-slice the returned page. The adapter
+// promotes the signal so the cache layer (which keys per-page for paging drivers) and the
+// handler read the SAME capability.
 func (a *indexerAdapter) SupportsOffsetPaging() bool {
 	if p, ok := a.inner.(native.OffsetPager); ok {
 		return p.SupportsOffsetPaging()

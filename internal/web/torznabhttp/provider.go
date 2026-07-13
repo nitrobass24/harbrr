@@ -47,8 +47,8 @@ type Indexer interface {
 }
 
 // OffsetPager is the optional capability an Indexer implements when it forwards
-// offset/limit upstream for deep-set paging (the generic Newznab driver). It is kept
-// off the Indexer interface so the 13 Cardigann/native drivers and the test fakes don't
+// offset/limit upstream for deep-set paging (the newznab and nzbindex usenet drivers). It is
+// kept off the Indexer interface so the 13 Cardigann/native drivers and the test fakes don't
 // have to implement a method they'd answer false for; the handler and the cache layer
 // type-assert for it instead. The search-cache decorator must delegate it explicitly —
 // embedding the Indexer interface does NOT promote a method off the wrapped concrete type.
