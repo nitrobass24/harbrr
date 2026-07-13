@@ -1,4 +1,4 @@
-package filter
+package search
 
 import (
 	"fmt"
@@ -8,14 +8,14 @@ import (
 )
 
 // Regex filters route through regexadapter: RE2 by default (ReDoS-safe), regexp2
-// on .NET-only constructs, RE2 compile-failure, or — via the Registry's Language
-// field — a non-Latin def script. These are methods on Registry so the per-def
+// on .NET-only constructs, RE2 compile-failure, or — via the FilterRegistry's Language
+// field — a non-Latin def script. These are methods on FilterRegistry so the per-def
 // language routing seam (set by the engine per definition) is honored at call time.
 
 // filterReReplace implements re_replace[pattern,repl]: regex replace-all with
 // .NET replacement-token semantics. Routing uses the registry Language so a
 // non-Latin def reaches regexp2.
-func (r *Registry) filterReReplace(value string, args []string) (string, error) {
+func (r *FilterRegistry) filterReReplace(value string, args []string) (string, error) {
 	if len(args) < 2 {
 		return "", fmt.Errorf("re_replace needs 2 args, got %d: %w", len(args), errMissingArg)
 	}
@@ -34,7 +34,7 @@ func (r *Registry) filterReReplace(value string, args []string) (string, error) 
 // group 1's value. Jackett returns Match.Groups[1].Value, which is "" when the
 // pattern does not match or has no group 1 — so a no-match yields "". Routing
 // uses the registry Language.
-func (r *Registry) filterRegexp(value string, args []string) (string, error) {
+func (r *FilterRegistry) filterRegexp(value string, args []string) (string, error) {
 	re, err := regexadapter.Compile(firstArg(args), r.routeOptions())
 	if err != nil {
 		return "", fmt.Errorf("regexp: %w", err)
@@ -52,7 +52,7 @@ func (r *Registry) filterRegexp(value string, args []string) (string, error) {
 
 // routeOptions builds the regexadapter routing inputs from the registry's
 // per-def Language (set by the engine; "" = Latin default).
-func (r *Registry) routeOptions() regexadapter.RouteOptions {
+func (r *FilterRegistry) routeOptions() regexadapter.RouteOptions {
 	return regexadapter.RouteOptions{Language: r.Language}
 }
 

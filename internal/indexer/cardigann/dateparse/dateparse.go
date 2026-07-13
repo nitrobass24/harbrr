@@ -57,7 +57,7 @@ func New(opts ...Option) *Parser {
 	return p
 }
 
-// ParseDate implements the filter.Registry ParseDate seam: it parses value using
+// ParseDate implements the search.FilterRegistry ParseDate seam: it parses value using
 // the .NET-style layout and returns a canonical RFC3339 string.
 //
 // Flow (verified against Jackett DateTimeUtil.ParseDateTimeGoLang +

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/filter"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/selector"
@@ -187,7 +186,7 @@ func applyRowFilters(filters []loader.RowFilterBlock, title string, query Query)
 		if query.isIDSearch() {
 			continue
 		}
-		if !filter.AndMatch(title, query.templateKeywords()) {
+		if !andMatch(title, query.templateKeywords()) {
 			return true
 		}
 	}

@@ -17,7 +17,7 @@ import (
 // DAG it is today:
 //
 //	encode, loader  ->  mapper, selector, regexadapter, dateparse, parity
-//	                ->  template, filter, normalizer  ->  login  ->  search
+//	                ->  template, normalizer  ->  login  ->  search
 //
 // Maintenance: adding a new stage = insert one string into the correct layer
 // (or append a new layer); nothing else changes. The parent package
@@ -26,7 +26,7 @@ import (
 var stageLayers = [][]string{
 	{"encode", "loader"},
 	{"mapper", "selector", "regexadapter", "dateparse", "parity"},
-	{"template", "filter", "normalizer"},
+	{"template", "normalizer"},
 	{"login"},
 	{"search"},
 }

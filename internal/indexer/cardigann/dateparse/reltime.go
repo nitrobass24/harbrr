@@ -57,7 +57,7 @@ var humanLayouts = []string{
 	"2006/01/02 15:04:05",
 }
 
-// ParseRelTime implements the filter.Registry ParseRelTime seam for the
+// ParseRelTime implements the search.FilterRegistry ParseRelTime seam for the
 // timeago/reltime/fuzzytime filters. It returns a canonical RFC3339 string.
 //
 // Flow (verified against Jackett DateTimeUtil.FromTimeAgo + FromUnknown):

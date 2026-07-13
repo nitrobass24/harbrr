@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/filter"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/selector"
@@ -107,7 +106,7 @@ const (
 
 func searchErrorDeps() Deps {
 	return Deps{
-		Filters:    filter.NewRegistry(),
+		Filters:    NewFilterRegistry(),
 		Normalizer: normalizer.New(normalizer.WithBaseURL("https://err.invalid/")),
 		BaseURL:    "https://err.invalid/",
 	}

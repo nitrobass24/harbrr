@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/filter"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 )
 
@@ -76,7 +75,7 @@ func (d *scriptedDoer) sequence() []string {
 
 func downloadTestDeps() Deps {
 	return Deps{
-		Filters: filter.NewRegistry(),
+		Filters: NewFilterRegistry(),
 		BaseURL: "https://dl.test/",
 		Clock:   func() time.Time { return time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC) },
 	}

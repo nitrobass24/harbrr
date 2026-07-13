@@ -1,4 +1,4 @@
-package filter
+package search
 
 import (
 	"errors"
@@ -7,29 +7,29 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 )
 
-// ErrDateUnwired is returned by the default date dependencies before the engine
+// errDateUnwired is returned by the default date dependencies before the engine
 // injects the real implementations. Until injection, the registry knows the date
 // filter names but cannot evaluate them.
-var ErrDateUnwired = errors.New("date filters require the dateparse stage")
+var errDateUnwired = errors.New("date filters require the dateparse stage")
 
 // filterFunc transforms a field value given its (already []string-normalized)
 // filter arguments. It is the per-op unit dispatched by Apply.
 type filterFunc func(value string, args []string) (string, error)
 
-// Registry is the bounded Cardigann filter registry. It maps every filter name
+// FilterRegistry is the bounded Cardigann filter registry. It maps every filter name
 // in the schema vocabulary to its .NET-equivalent implementation and chains
 // them left-to-right over an extracted field value.
 //
 // Date-bearing filters delegate to injectable dependencies so this stage stays
 // decoupled from the dateparse stage, which supplies them. Regex-bearing filters
 // route through the shared .NET-aware regexadapter for RE2-vs-regexp2 selection.
-type Registry struct {
+type FilterRegistry struct {
 	// ParseDate evaluates dateparse/timeparse: value is the extracted string,
 	// layout is the .NET date layout from the filter args. Defaults to a
-	// function returning ErrDateUnwired; the engine injects the real parser.
+	// function returning errDateUnwired; the engine injects the real parser.
 	ParseDate func(value, layout string) (string, error)
 	// ParseRelTime evaluates timeago/reltime/fuzzytime relative-time formats.
-	// Defaults to a function returning ErrDateUnwired; the engine injects it.
+	// Defaults to a function returning errDateUnwired; the engine injects it.
 	ParseRelTime func(value string) (string, error)
 
 	// Language is the Cardigann def `language:` code, used to route the regex
@@ -40,16 +40,16 @@ type Registry struct {
 	ops map[string]filterFunc
 }
 
-// NewRegistry constructs a Registry with every schema filter wired. Regex
-// filters use RE2 inline; date dependencies default to ErrDateUnwired so the
+// NewFilterRegistry constructs a FilterRegistry with every schema filter wired. Regex
+// filters use RE2 inline; date dependencies default to errDateUnwired so the
 // injection seam is explicit and never silently passes a value through.
-func NewRegistry() *Registry {
-	r := &Registry{
+func NewFilterRegistry() *FilterRegistry {
+	r := &FilterRegistry{
 		ParseDate: func(string, string) (string, error) {
-			return "", ErrDateUnwired
+			return "", errDateUnwired
 		},
 		ParseRelTime: func(string) (string, error) {
-			return "", ErrDateUnwired
+			return "", errDateUnwired
 		},
 	}
 	r.ops = r.buildOps()
@@ -59,7 +59,7 @@ func NewRegistry() *Registry {
 // buildOps assembles the name->func dispatch table. Date and rel-time entries
 // close over the registry so the injected dependencies are honored at call
 // time (not at construction), keeping the item-6 seam live.
-func (r *Registry) buildOps() map[string]filterFunc {
+func (r *FilterRegistry) buildOps() map[string]filterFunc {
 	ops := map[string]filterFunc{
 		"querystring":   filterQueryString,
 		"regexp":        r.filterRegexp,
@@ -95,10 +95,10 @@ func (r *Registry) buildOps() map[string]filterFunc {
 // dateOp dispatches dateparse/timeparse to the injected ParseDate. The layout
 // is the first filter arg (Jackett casts Filter.Args to a single string). A nil
 // dependency (a caller reassigned the seam to nil) surfaces the package's loud
-// ErrDateUnwired rather than panicking on a nil call.
-func (r *Registry) dateOp(value string, args []string) (string, error) {
+// errDateUnwired rather than panicking on a nil call.
+func (r *FilterRegistry) dateOp(value string, args []string) (string, error) {
 	if r.ParseDate == nil {
-		return "", fmt.Errorf("dateparse filter: %w", ErrDateUnwired)
+		return "", fmt.Errorf("dateparse filter: %w", errDateUnwired)
 	}
 	out, err := r.ParseDate(value, firstArg(args))
 	if err != nil {
@@ -108,10 +108,10 @@ func (r *Registry) dateOp(value string, args []string) (string, error) {
 }
 
 // relTimeOp dispatches timeago/reltime/fuzzytime to the injected ParseRelTime. A
-// nil dependency surfaces ErrDateUnwired rather than panicking on a nil call.
-func (r *Registry) relTimeOp(value string, _ []string) (string, error) {
+// nil dependency surfaces errDateUnwired rather than panicking on a nil call.
+func (r *FilterRegistry) relTimeOp(value string, _ []string) (string, error) {
 	if r.ParseRelTime == nil {
-		return "", fmt.Errorf("reltime filter: %w", ErrDateUnwired)
+		return "", fmt.Errorf("reltime filter: %w", errDateUnwired)
 	}
 	out, err := r.ParseRelTime(value)
 	if err != nil {
@@ -123,7 +123,7 @@ func (r *Registry) relTimeOp(value string, _ []string) (string, error) {
 // Apply runs the filter chain over value, threading each op's output into the
 // next op's input (left-to-right), mirroring Jackett's applyFilters. An unknown
 // filter name is a loud error — the value is never silently passed through.
-func (r *Registry) Apply(value string, filters []loader.FilterBlock) (string, error) {
+func (r *FilterRegistry) Apply(value string, filters []loader.FilterBlock) (string, error) {
 	out := value
 	for i, f := range filters {
 		op, ok := r.ops[f.Name]
@@ -142,9 +142,9 @@ func (r *Registry) Apply(value string, filters []loader.FilterBlock) (string, er
 }
 
 // Known reports whether name is a registered FIELD filter. Validating a whole
-// definition requires BOTH this and RowFilterKnown (for RowsBlock.Filters) —
-// field and row chains are separate vocabularies; see RowFilterKnown.
-func (r *Registry) Known(name string) bool {
+// definition requires BOTH this and rowFilterKnown (for RowsBlock.Filters) —
+// field and row chains are separate vocabularies; see rowFilterKnown.
+func (r *FilterRegistry) Known(name string) bool {
 	_, ok := r.ops[name]
 	return ok
 }

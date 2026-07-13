@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/dateparse"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/filter"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
@@ -173,7 +172,7 @@ func resolveOptions(def *loader.Definition, opts []Option) options {
 }
 
 // buildDeps wires the extraction-half stages: the dateparse parser (def language
-// + injected clock) feeds the filter registry's date seams; the registry's
+// + injected clock) feeds the search filter registry's date seams; the registry's
 // language is the def language so regex filters route correctly; the normalizer
 // carries the base URL, def type, and category map. The selector is NOT wired
 // here — ParseResults installs a fresh one per call so concurrent searches on a
@@ -184,7 +183,7 @@ func buildDeps(def *loader.Definition, caps *mapper.Capabilities, o options) (se
 		dateparse.WithClock(o.clock),
 	)
 
-	registry := filter.NewRegistry()
+	registry := search.NewFilterRegistry()
 	registry.ParseDate = parser.ParseDate
 	registry.ParseRelTime = parser.ParseRelTime
 	registry.Language = def.Language

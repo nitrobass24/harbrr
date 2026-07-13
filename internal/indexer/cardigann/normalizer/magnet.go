@@ -76,9 +76,9 @@ func toInfoHash(magnet string) string {
 // this package reads (xt = "urn:btih:<hex|base32>", never carrying a malformed
 // '%' or a bare ';' — a legitimately percent-encoded xt has only valid escapes,
 // which both parsers decode identically) the partial-map form is identical to a
-// fully faithful lenient parser, so magnet
-// stays a pure leaf instead of coupling to filter.queryStringFirst — the other
-// faithful mirror of this same Jackett function (see filter/string_filters.go).
+// fully faithful lenient parser, so this file stays a pure leaf instead of
+// coupling to search's queryStringFirst — the other faithful mirror of this
+// same Jackett function (see search/string_filters.go).
 func queryArg(raw, name string) string {
 	_, qs, ok := strings.Cut(raw, "?")
 	if !ok {

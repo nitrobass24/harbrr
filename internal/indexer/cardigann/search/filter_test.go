@@ -1,4 +1,4 @@
-package filter_test
+package search
 
 import (
 	"errors"
@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/filter"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 )
 
@@ -145,7 +144,7 @@ func TestApplyStringFilters(t *testing.T) {
 		},
 	}
 
-	r := filter.NewRegistry()
+	r := NewFilterRegistry()
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -203,7 +202,7 @@ func TestApplyRegexFilters(t *testing.T) {
 		},
 	}
 
-	r := filter.NewRegistry()
+	r := NewFilterRegistry()
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -245,7 +244,7 @@ func TestJSONJoinArray(t *testing.T) {
 		},
 	}
 
-	r := filter.NewRegistry()
+	r := NewFilterRegistry()
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -258,7 +257,7 @@ func TestJSONJoinArray(t *testing.T) {
 func TestChaining(t *testing.T) {
 	t.Parallel()
 
-	r := filter.NewRegistry()
+	r := NewFilterRegistry()
 	// trim -> tolower -> replace, threaded left-to-right.
 	got, err := r.Apply("  HELLO WORLD  ", []loader.FilterBlock{
 		fb("trim"), fb("tolower"), fb("replace", " ", "_"),
@@ -274,7 +273,7 @@ func TestChaining(t *testing.T) {
 func TestUnknownFilterIsLoud(t *testing.T) {
 	t.Parallel()
 
-	r := filter.NewRegistry()
+	r := NewFilterRegistry()
 	_, err := r.Apply("v", []loader.FilterBlock{fb("not_a_filter")})
 	if err == nil {
 		t.Fatal("expected error for unknown filter, got nil")
@@ -287,13 +286,13 @@ func TestUnknownFilterIsLoud(t *testing.T) {
 func TestDateFiltersDefaultUnwired(t *testing.T) {
 	t.Parallel()
 
-	r := filter.NewRegistry()
+	r := NewFilterRegistry()
 	for _, name := range []string{"dateparse", "timeparse", "timeago", "reltime", "fuzzytime"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			_, err := r.Apply("2024-01-02", []loader.FilterBlock{fb(name, "yyyy-MM-dd")})
-			if !errors.Is(err, filter.ErrDateUnwired) {
-				t.Fatalf("%s: expected ErrDateUnwired, got %v", name, err)
+			if !errors.Is(err, errDateUnwired) {
+				t.Fatalf("%s: expected errDateUnwired, got %v", name, err)
 			}
 		})
 	}
@@ -303,16 +302,16 @@ func TestDateFiltersNilSeamIsLoud(t *testing.T) {
 	t.Parallel()
 
 	// A caller reassigning a date seam to nil must surface the loud
-	// ErrDateUnwired, never panic on a nil call.
-	r := filter.NewRegistry()
+	// errDateUnwired, never panic on a nil call.
+	r := NewFilterRegistry()
 	r.ParseDate = nil
 	r.ParseRelTime = nil
 	for _, name := range []string{"dateparse", "timeparse", "timeago", "reltime", "fuzzytime"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			_, err := r.Apply("2024-01-02", []loader.FilterBlock{fb(name, "yyyy-MM-dd")})
-			if !errors.Is(err, filter.ErrDateUnwired) {
-				t.Fatalf("%s: expected ErrDateUnwired, got %v", name, err)
+			if !errors.Is(err, errDateUnwired) {
+				t.Fatalf("%s: expected errDateUnwired, got %v", name, err)
 			}
 		})
 	}
@@ -322,7 +321,7 @@ func TestDateFiltersInjectedDispatch(t *testing.T) {
 	t.Parallel()
 
 	var gotValue, gotLayout string
-	r := filter.NewRegistry()
+	r := NewFilterRegistry()
 	r.ParseDate = func(value, layout string) (string, error) {
 		gotValue, gotLayout = value, layout
 		return "PARSED", nil
@@ -363,7 +362,7 @@ func TestDateFilterPropagatesInjectedError(t *testing.T) {
 	t.Parallel()
 
 	sentinel := errors.New("boom")
-	r := filter.NewRegistry()
+	r := NewFilterRegistry()
 	r.ParseDate = func(string, string) (string, error) { return "", sentinel }
 
 	_, err := r.Apply("x", []loader.FilterBlock{fb("dateparse", "L")})
@@ -389,7 +388,7 @@ func TestRowFilters(t *testing.T) {
 
 		// Non-Latin AND-match: .NET's \w is Unicode-aware, so both Cyrillic/CJK
 		// tokens must be present. RE2's ASCII \w used to tokenize these into
-		// zero tokens, making AndMatch always true (a superset vs Jackett) —
+		// zero tokens, making andMatch always true (a superset vs Jackett) —
 		// the "missing token" rows below fail-before / pass-after the fix.
 		{name: "cyrillic both tokens present", title: "Война и мир 2007 BDRip", keywords: "война мир", want: true},
 		{name: "cyrillic missing token", title: "Война 2007 BDRip", keywords: "война мир", want: false},
@@ -429,19 +428,19 @@ func TestRowFilters(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := filter.AndMatch(tc.title, tc.keywords); got != tc.want {
-				t.Fatalf("AndMatch(%q,%q) = %v, want %v", tc.title, tc.keywords, got, tc.want)
+			if got := andMatch(tc.title, tc.keywords); got != tc.want {
+				t.Fatalf("andMatch(%q,%q) = %v, want %v", tc.title, tc.keywords, got, tc.want)
 			}
 		})
 	}
 
-	if !filter.StrDump("anything") {
-		t.Fatal("StrDump should always retain the row")
+	if !strDump("anything") {
+		t.Fatal("strDump should always retain the row")
 	}
-	if !filter.RowFilterKnown("andmatch") || !filter.RowFilterKnown("strdump") {
+	if !rowFilterKnown("andmatch") || !rowFilterKnown("strdump") {
 		t.Fatal("row filter names must be known")
 	}
-	if filter.RowFilterKnown("bogus") {
+	if rowFilterKnown("bogus") {
 		t.Fatal("bogus row filter must not be known")
 	}
 }
@@ -461,7 +460,7 @@ func TestCorpusFilterCompleteness(t *testing.T) {
 	}
 	t.Logf("loaded %d definitions (%d skipped)", len(defs), len(skipped))
 
-	r := filter.NewRegistry()
+	r := NewFilterRegistry()
 	fieldCounts := map[string]int{}
 	rowCounts := map[string]int{}
 	var unknown []string
@@ -470,7 +469,7 @@ func TestCorpusFilterCompleteness(t *testing.T) {
 		walkDefFilters(def, func(name string, isRow bool) {
 			if isRow {
 				rowCounts[name]++
-				if !filter.RowFilterKnown(name) {
+				if !rowFilterKnown(name) {
 					unknown = append(unknown, "row:"+name+" in "+def.ID)
 				}
 				return

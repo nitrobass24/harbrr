@@ -4,7 +4,6 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/filter"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 )
@@ -76,7 +75,7 @@ func TestBuildRequests_KeywordsFilters(t *testing.T) {
 					),
 				},
 			}
-			deps := Deps{BaseURL: "https://kw.invalid/", Filters: filter.NewRegistry()}
+			deps := Deps{BaseURL: "https://kw.invalid/", Filters: NewFilterRegistry()}
 
 			reqs, err := buildRequests(def, tt.query, deps)
 			if err != nil {
@@ -161,7 +160,7 @@ func TestParseResults_KeywordsFiltersAndMatch(t *testing.T) {
 <div class="row" data-cat="1"><a class="title" href="/dl/2">Sintel 1080p</a><span class="size">2 GB</span><span class="seeders">3</span></div>
 </body></html>`)
 	deps := Deps{
-		Filters:    filter.NewRegistry(),
+		Filters:    NewFilterRegistry(),
 		Normalizer: normalizer.New(normalizer.WithBaseURL("https://kw.invalid/")),
 		BaseURL:    "https://kw.invalid/",
 	}

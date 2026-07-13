@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/filter"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 )
@@ -224,7 +223,7 @@ func TestParseResults_CodepageBody(t *testing.T) {
 			t.Fatalf("ResolveEncoding(%q): %v", name, rerr)
 		}
 		return Deps{
-			Filters:    filter.NewRegistry(),
+			Filters:    NewFilterRegistry(),
 			Normalizer: normalizer.New(normalizer.WithBaseURL("https://cp.invalid/")),
 			BaseURL:    "https://cp.invalid/",
 			Encoding:   enc,
