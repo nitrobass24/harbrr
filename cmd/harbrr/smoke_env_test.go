@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -22,13 +23,15 @@ func TestEnvFileRoundTrip(t *testing.T) {
 	if err := writeEnvFile(path, in); err != nil {
 		t.Fatalf("writeEnvFile: %v", err)
 	}
-	// Written at 0600 so keys never sit world-readable.
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("stat: %v", err)
-	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Errorf("mode = %o, want 600", perm)
+	// Windows does not expose POSIX permission bits through os.FileMode.
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("stat: %v", err)
+		}
+		if perm := info.Mode().Perm(); perm != 0o600 {
+			t.Errorf("mode = %o, want 600", perm)
+		}
 	}
 
 	got, err := parseEnvFile(path)

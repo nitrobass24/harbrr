@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -110,7 +111,8 @@ func TestKeyringAutoGeneratesKeyfile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("keyfile not created: %v", err)
 	}
-	if fi.Mode().Perm() != 0o600 {
+	// Windows does not expose POSIX permission bits through os.FileMode.
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 		t.Errorf("keyfile mode = %o, want 600", fi.Mode().Perm())
 	}
 
@@ -157,10 +159,14 @@ func TestKeyringMissingKeyFileIsFatal(t *testing.T) {
 
 // TestKeyringUnreadableKeyFileIsFatal covers the keyfile READ-error path: a
 // configured key_file that exists but cannot be read (permission denied) is fatal,
-// never a silent fallback to plaintext. Skipped under root, which bypasses file mode.
+// never a silent fallback to plaintext. Skipped under root, which bypasses file mode,
+// and Windows, where chmod does not implement Unix read permission semantics.
 func TestKeyringUnreadableKeyFileIsFatal(t *testing.T) {
 	t.Parallel()
 
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows chmod does not make a file unreadable")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("running as root bypasses file permissions")
 	}

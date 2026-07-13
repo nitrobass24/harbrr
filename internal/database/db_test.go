@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -229,6 +230,9 @@ func TestUpsertSetting(t *testing.T) {
 
 func TestFilePermissions(t *testing.T) {
 	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not expose POSIX permission bits through os.FileMode")
+	}
 
 	dir := t.TempDir()
 	// Tighten the temp dir afterwards is the daemon's job; here we point at a

@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/spf13/pflag"
@@ -32,19 +33,22 @@ func TestEnsureConfigFileCreatesTemplate(t *testing.T) {
 	if want := filepath.Join(dir, config.ConfigFileName); path != want {
 		t.Errorf("path = %q, want %q", path, want)
 	}
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("stat created file: %v", err)
-	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Errorf("file mode = %o, want 0600", perm)
-	}
-	dirInfo, err := os.Stat(dir)
-	if err != nil {
-		t.Fatalf("stat created dir: %v", err)
-	}
-	if perm := dirInfo.Mode().Perm(); perm != 0o700 {
-		t.Errorf("data dir mode = %o, want 0700", perm)
+	// Windows does not expose POSIX permission bits through os.FileMode.
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("stat created file: %v", err)
+		}
+		if perm := info.Mode().Perm(); perm != 0o600 {
+			t.Errorf("file mode = %o, want 0600", perm)
+		}
+		dirInfo, err := os.Stat(dir)
+		if err != nil {
+			t.Fatalf("stat created dir: %v", err)
+		}
+		if perm := dirInfo.Mode().Perm(); perm != 0o700 {
+			t.Errorf("data dir mode = %o, want 0700", perm)
+		}
 	}
 }
 
