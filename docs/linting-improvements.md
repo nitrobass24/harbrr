@@ -20,7 +20,7 @@ tools`) — an older local build silently misses newer checks (e.g. gosec G124).
   paced client hands the body to its caller; scoped `//nolint`; relaxed in `*_test.go`),
   `sqlclosecheck`, `bidichk`, `gocheckcompilerdirectives` — all others zero findings.
 - **Duration / slices / interfaces:** `durationcheck`, `makezero`, `interfacebloat` at **10**
-  (god-interface guardrail; the "≤5" convention stays a review norm — two core seams sit at 6).
+  (god-interface guardrail; the "≤5" convention stays a review norm — torznabhttp.Indexer sits at 6).
 - **Footgun guards:** `wastedassign`, `reassign`, `predeclared` (fixed one real hit — a smoke
   variable named `comparable` shadowing the builtin).
 - **Dependency CVEs:** a **`govulncheck`** job in `security.yml`.
@@ -44,9 +44,9 @@ Each line: the trial count, why it isn't in, and what enabling it would take.
 - **`contextcheck`** *(7)* — one real false positive (`server.go` shutdown deliberately uses a
   fresh `context.WithTimeout`) plus test helpers (`mintKey`). *Enable by:* `//nolint` the shutdown
   site and thread context through the test helpers.
-- **`interfacebloat` at ≤5** — `native.Driver` and `torznabhttp.Indexer` legitimately have 6
-  methods. Shipped at 10; to tighten to the documented ≤5 you'd split those two seams (or accept
-  them). Review norm for now.
+- **`interfacebloat` at ≤5** — `torznabhttp.Indexer` legitimately has 6 methods; `native.Driver`
+  is split into the `Searcher` (5) + `Tester` roles. Shipped at 10; to tighten to the documented
+  ≤5 you'd split the remaining `Indexer` seam (or accept it). Review norm for now.
 - **`usestdlibvars`** *(6, all tests)* — magic HTTP status numbers (`429`/`200`/`503`) →
   `http.StatusXxx` in `ratelimit_test.go` / `pacedclient_test.go`. Cosmetic, test-only.
 
