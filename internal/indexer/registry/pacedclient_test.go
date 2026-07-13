@@ -173,6 +173,82 @@ func TestPacedDoer_DebugLogsHostOnly(t *testing.T) {
 	}
 }
 
+// TestPacedDoer_TraceLogsRedactedQuery proves the TRACE-level companion surfaces the
+// benign search params (the diagnostic value) while still never leaking a query secret
+// (masked) or a PATH-embedded secret (the whole path is dropped, so even a heuristic-miss
+// path secret cannot appear).
+func TestPacedDoer_TraceLogsRedactedQuery(t *testing.T) {
+	t.Parallel()
+	const queryKey = "querysecretdeadbeefdeadbeef0000"
+	const pathKey = "PATHSECRET-not-hex-so-heuristic-misses-it"
+	var buf bytes.Buffer
+	log := zerolog.New(&buf).Level(zerolog.TraceLevel)
+
+	base := &scriptDoer{steps: []scriptStep{{status: 200}}}
+	d := newPacedDoer(base, time.Second, log)
+	d.limiter = unlimited
+
+	req, err := stdhttp.NewRequestWithContext(context.Background(), stdhttp.MethodGet,
+		"https://t.invalid/torrent/download/auto.5."+pathKey+"?passkey="+queryKey+"&q=deadliest+catch&cat=5000", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	if _, err := d.Do(req); err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+
+	out := buf.String()
+	// The query secret VALUE and every PATH segment must never appear, even at trace.
+	for _, leak := range []string{queryKey, pathKey, "download", "auto.5"} {
+		if strings.Contains(out, leak) {
+			t.Errorf("trace log leaked %q: %s", leak, out)
+		}
+	}
+	// The trace line must surface the benign search params (the diagnostic value) and
+	// mask the secret param's value.
+	for _, want := range []string{"outbound request query", "q=deadliest", "cat=5000", "REDACTED"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("trace log missing %q in: %s", want, out)
+		}
+	}
+}
+
+// TestPacedDoer_TraceLogsQueryOnFailure proves a transport failure ALSO emits the
+// redacted-query trace (a failing request is when you most want to see what it asked
+// for), with the same secret-safety as the success path.
+func TestPacedDoer_TraceLogsQueryOnFailure(t *testing.T) {
+	t.Parallel()
+	const queryKey = "querysecretdeadbeefdeadbeef0000"
+	const pathKey = "PATHSECRET-not-hex-so-heuristic-misses-it"
+	var buf bytes.Buffer
+	log := zerolog.New(&buf).Level(zerolog.TraceLevel)
+
+	base := &slowErrDoer{err: errors.New("connection refused")}
+	d := newPacedDoer(base, time.Second, log)
+	d.limiter = unlimited
+
+	req, err := stdhttp.NewRequestWithContext(context.Background(), stdhttp.MethodGet,
+		"https://t.invalid/torrent/download/auto.5."+pathKey+"?passkey="+queryKey+"&q=deadliest+catch&cat=5000", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	if _, err := d.Do(req); err == nil {
+		t.Fatal("Do: want a transport error, got nil")
+	}
+
+	out := buf.String()
+	for _, leak := range []string{queryKey, pathKey, "download", "auto.5"} {
+		if strings.Contains(out, leak) {
+			t.Errorf("failure trace leaked %q: %s", leak, out)
+		}
+	}
+	for _, want := range []string{"outbound request query", "q=deadliest", "cat=5000", "REDACTED"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("failure trace missing %q in: %s", want, out)
+		}
+	}
+}
+
 // TestRedactDoErrHostOnly proves the returned transport error is reduced to scheme://host,
 // so an upstream log.Error().Err(err) cannot leak a PATH-embedded secret (which RedactURL's
 // heuristic would miss) or a query secret.

@@ -223,6 +223,9 @@ func (d *pacedDoer) issue(ctx context.Context, req *stdhttp.Request, lim *rate.L
 			Dur("duration", dur).
 			Str("error", transportErrText(derr)).
 			Msg("registry: outbound request failed")
+		// A transport failure has no HTTP status; still surface the redacted query so a
+		// failing request can be debugged from what it asked for, like the success path.
+		d.traceQuery(req, 0, dur)
 		return attemptResult{err: fmt.Errorf("registry: %w", redactDoErr(derr))}
 	}
 	ev := d.log.Debug().
@@ -234,12 +237,34 @@ func (d *pacedDoer) issue(ctx context.Context, req *stdhttp.Request, lim *rate.L
 		ev = ev.Str("retry_after", ra)
 	}
 	ev.Msg("registry: outbound request")
+	d.traceQuery(req, resp.StatusCode, dur)
 	if !search.IsRateLimitStatus(resp.StatusCode) {
 		return attemptResult{resp: resp}
 	}
 	after := search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.now)
 	drainClose(resp.Body)
 	return attemptResult{rl: &rateLimitInfo{status: resp.StatusCode, after: after}}
+}
+
+// traceQuery emits, one level below the DEBUG request log, the outbound request's
+// redacted query — the search diagnostics (keywords, categories, sort, paging) the
+// host-only DEBUG line omits — so a tracker definition can be debugged from what it
+// actually asked for. HostAndRedactedQuery drops the path (preserving the DEBUG
+// line's scheme://host-only safety against a passkey in a path segment) and masks
+// secret-named params. A status <= 0 (a transport failure, no HTTP status) omits the
+// status field. Guarded so the redaction cost is paid only when trace is on.
+func (d *pacedDoer) traceQuery(req *stdhttp.Request, status int, dur time.Duration) {
+	if d.log.GetLevel() > zerolog.TraceLevel {
+		return
+	}
+	ev := d.log.Trace().
+		Str("method", req.Method).
+		Str("url", apphttp.HostAndRedactedQuery(req.URL.String())).
+		Dur("duration", dur)
+	if status > 0 {
+		ev = ev.Int("status", status)
+	}
+	ev.Msg("registry: outbound request query")
 }
 
 // classifyWaitErr turns a pacing-wait failure into the surfaced error: a genuine caller
