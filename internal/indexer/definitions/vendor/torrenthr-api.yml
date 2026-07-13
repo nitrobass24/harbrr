@@ -1,22 +1,47 @@
 ---
-id: infinity-api
-name: INFINITY (API)
-description: "INFINITY is a Private PAY2DL Torrent Tracker for MOVIES / TV"
-language: en-US
+id: torrenthr-api
+name: TorrentHR (API)
+description: "TorrentHR is a ratioless CROATIAN Private Torrent Tracker for 0DAY / GENERAL"
+language: hr-HR
 type: private
 encoding: UTF-8
 links:
-  - https://infinitylibrary.net/
+  - https://www.torrenthr.org/
 
 caps:
   categorymappings:
-    - {id: 1, cat: Movies, desc: "Movies"}
-    - {id: 2, cat: TV, desc: "TV"}
+    - {id: 31, cat: TV/Anime, desc: "Anime"}
+    - {id: 1, cat: PC/0day, desc: "Aplikacije"}
+    - {id: 25, cat: Books, desc: "E-books"}
+    - {id: 38, cat: PC/Mobile-Other, desc: "Smartphone"}
+    - {id: 16, cat: TV, desc: "THR Packs"}
+    - {id: 4, cat: Movies/SD, desc: "Filmovi/SD"}
+    - {id: 14, cat: Movies/DVD, desc: "Filmovi/DVD"}
+    - {id: 17, cat: Movies/HD, desc: "Filmovi/HD"}
+    - {id: 40, cat: Movies/BluRay, desc: "Filmovi/BD"}
+    - {id: 15, cat: TV/Sport, desc: "Sport"}
+    - {id: 18, cat: Movies/Foreign, desc: "Crtani Filmovi"}
+    - {id: 12, cat: TV/Documentary, desc: "Dokumentarni Filmovi"}
+    - {id: 11, cat: Audio, desc: "Koncerti/Spotovi"}
+    - {id: 3, cat: Audio/MP3, desc: "Glazba/MP3"}
+    - {id: 29, cat: Audio/Lossless, desc: "Glazba/FLAC"}
+    - {id: 5, cat: PC/Games, desc: "Igre/PC"}
+    - {id: 27, cat: Console/PS4, desc: "Igre/PS"}
+    - {id: 28, cat: Console/Wii, desc: "Igre/Wii"}
+    - {id: 26, cat: Console/XBox, desc: "Igre/Xbox"}
+    - {id: 13, cat: Other, desc: "Ostalo"}
+    - {id: 7, cat: TV/SD, desc: "Serije/SD"}
+    - {id: 34, cat: TV/HD, desc: "Serije/HD"}
+    - {id: 30, cat: Books/Comics, desc: "Stripovi"}
+    - {id: 10, cat: XXX, desc: "XXX/SD"}
+    - {id: 36, cat: XXX, desc: "XXX/HD"}
 
   modes:
     search: [q]
     tv-search: [q, season, ep, imdbid, tvdbid, tmdbid]
     movie-search: [q, imdbid, tmdbid]
+    music-search: [q]
+    book-search: [q]
 
 settings:
   - name: apikey
@@ -25,7 +50,7 @@ settings:
   - name: info_key
     type: info
     label: About your API key
-    default: "Find or Generate a new API Token by accessing your <a href=\"https://infinitylibrary.net/\" target=\"_blank\">INFINITY</a> account <i>My Settings</i> page and clicking on the <b>API Key</b> tab."
+    default: "Find or Generate a new API Token by accessing your <a href=\"https://www.torrenthr.org/\" target=\"_blank\">TorrentHR</a> account <i>Postavke (Settings)</i> page and selecting <b>API</b> from the <i>Opće (General)</i> pulldown."
   - name: freeleech
     type: checkbox
     label: Search freeleech only
@@ -50,10 +75,6 @@ settings:
     options:
       desc: desc
       asc: asc
-  - name: info_activity
-    type: info
-    label: Account Inactivity
-    default: "The system bot will prune inactive users after 90 days of no activity. If you wish to keep your account be sure to login."
 
 login:
   path: api/torrents
@@ -113,8 +134,6 @@ search:
       selector: details_link
     download:
       selector: download_link
-    infohash:
-      selector: info_hash
     poster:
       selector: meta.poster
       filters:
@@ -130,9 +149,17 @@ search:
       selector: meta.genres
       filters:
         - name: re_replace
-          args: ["(?i)(Science Fiction)", "Science_Fiction"]
+          args: ["(?i)(Akcija i avantura)", "Akcija_i_avantura"]
         - name: re_replace
-          args: ["(?i)(TV Movie)", "TV_Movie"]
+          args: ["(?i)(SF i fantazija)", "SF_i_fantazija"]
+        - name: replace
+          args: ["(?i)(Znanstvena fantastika)", "Znanstvena_fantastika"]
+        - name: replace
+          args: ["(?i)(Talk show)", "Talk_show"]
+        - name: replace
+          args: ["(?i)(TV film)", "TV_film"]
+        - name: replace
+          args: ["(?i)(Rat i politika)", "Rat_i_politika"]
         - name: replace
           args: [" & ", "_&_"]
     _internal:
@@ -183,10 +210,9 @@ search:
         True: 2 # double
     uploadvolumefactor:
       text: "{{ if .Result._featured }}2{{ else }}{{ .Result.uploadvolumefactor_double_upload }}{{ end }}"
-# global MR is 0.6 but torrents must be seeded for 7 days regardless of ratio
-#    minimumratio:
-#      text: 0.6
+    minimumratio:
+      text: 1.0
     minimumseedtime:
-      # 7 days (as seconds = 7 x 24 x 60 x 60)
-      text: 604800
-# json UNIT3D 8.3.6
+      # 3 days (as seconds = 3 x 24 x 60 x 60)
+      text: 259200
+# json TorrentHR v2.0 (based on UNIT3D 9.2.0)
