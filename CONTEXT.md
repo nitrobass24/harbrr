@@ -1,0 +1,61 @@
+# harbrr
+
+harbrr is the autobrr family's Torznab/Newznab search provider: it runs the community's
+Cardigann tracker definitions through a parity-gated engine and serves the results to the
+*arr apps. This glossary is the project's ubiquitous language; architectural design records
+live in `docs/architecture.md`.
+
+## Language
+
+### Trackers and definitions
+
+**Definition**:
+A declarative Cardigann YAML adapter for one tracker, consumed byte-for-byte from the
+vendored Jackett snapshot or a local drop-in.
+_Avoid_: config, template, indexer file
+
+**Native driver**:
+A Go-built driver for a tracker whose contract exceeds the declarative Cardigann format;
+it satisfies the same engine-shaped core the Cardigann engine does.
+_Avoid_: custom indexer, plugin
+
+**Family**:
+The unit a native driver covers — one API shape, possibly many sites (one Gazelle driver
+serves Redacted and Orpheus).
+_Avoid_: site, tracker (when the shape is meant)
+
+### Native driver anatomy
+
+**Driver base**:
+The shared implementation core every native driver embeds: instance wiring, transport,
+redaction, and status classification. A driver adds only its request generator and
+response parser.
+_Avoid_: base class, common helpers, utils
+
+**Request generator**:
+The per-family piece that turns a search query into an authenticated tracker request
+(Prowlarr's split).
+_Avoid_: query builder
+
+**Response parser**:
+The per-family piece that turns a tracker response body into normalized releases
+(Prowlarr's split).
+_Avoid_: scraper
+
+**Classification dialect**:
+An endpoint's mapping from HTTP statuses to meaning — which codes say "credentials bad"
+versus "back off" (403 is a spent rate budget on HDBits, an expired session on
+MyAnonamouse).
+_Avoid_: error mapping, status handling
+
+### Serving
+
+**Grab**:
+The server-side fetch of one release's torrent/NZB that the `/dl` proxy drives, so
+credentials and passkey-bearing links never reach the *arr client.
+_Avoid_: download (for the server-side fetch), snatch
+
+**Rotation**:
+A tracker refreshing a session credential on every response; the driver must capture and
+persist the new value or the session dies (MyAnonamouse's `mam_id`).
+_Avoid_: refresh, renewal

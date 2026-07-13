@@ -23,6 +23,28 @@ it. Jackett collapses the same logic into one `IndexerBase` file; prefer
 Prowlarr's split as the reference because it's cleaner to port and (on the points
 below) more correct.
 
+### The driver base (`native.Base`) — embed it, don't re-scaffold
+
+harbrr's side of that split is the **driver base**: every driver embeds
+`native.Base` (`internal/indexer/native/base.go`) and gets the instance wiring
+(`NewBase`: nil-def guard, capabilities build, base-URL normalisation, clock),
+the transport (`Do`/`DoDownload`: paced doer, host-only transport-error
+redaction, capped body reads — `DoDownload` errors with
+`native.ErrDownloadTooLarge` instead of truncating a torrent), and status
+classification. A new driver writes only its request generator (which injects
+its own auth — header, cookie, or body-embedded) and its response parser.
+
+Classification is a **required per-call parameter** — the endpoint's
+**classification dialect** — so it can never be forgotten: `ClassifyAuth403`
+(the majority: 401/403 = auth failure), `ClassifyRateLimit403` (HDBits/newznab:
+403 = spent rate budget), `ClassifyAuthOnly403` (MAM: 403 = expired session, no
+401), extended per endpoint with `AlsoAuth`/`AlsoRateLimited`/`WithAuthReason`
+(AvistaZ: 412 on search, 422 on login). `Do` returns the header shell alongside
+a classified-status error, so a rotation riding a 403/429 (MAM's `mam_id`) is
+never lost. `TestViaSearch` is the default credential probe. hdbits (body
+creds), gazelle (header auth), and myanonamouse (cookie + rotation) are the
+reference adopters.
+
 **Universal across these trackers:** none returns an infohash (the download is
 always an authenticated/tokenized `.torrent` URL); freeleech is a download-volume
 flag; tracker categories map to Torznab/Newznab ids. Build the download URL
