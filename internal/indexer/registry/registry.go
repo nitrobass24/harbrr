@@ -122,9 +122,11 @@ type secretsKeyring interface {
 type Option func(*Registry)
 
 // WithClock injects the reference clock (timestamps + engine date parsing). It qualifies
-// the field explicitly (r.Resolver.clock) because clock is the one field carried by all
-// three embedded types, so the promoted r.clock is an ambiguous selector; New copies the
-// finalized value into the Manager/StatsReporter after options run.
+// the field explicitly (r.Resolver.clock): clock, db, and instances are each duplicated
+// across all three embedded types (Resolver/Manager/StatsReporter), so those promoted
+// selectors are ambiguous on the facade — an option touching any of them must name the
+// intended embedded type. New copies the finalized clock into the Manager/StatsReporter
+// after options run.
 func WithClock(fn func() time.Time) Option {
 	return func(r *Registry) {
 		if fn != nil {
