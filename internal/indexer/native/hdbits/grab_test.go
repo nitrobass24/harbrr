@@ -72,13 +72,12 @@ func TestGrabReturnsTorrentBytes(t *testing.T) {
 
 // TestGrabTransportErrorSurfacesHostOnly proves a transport error from the download fetch
 // surfaces the endpoint's scheme://host (not a secret, useful for diagnosis) while dropping
-// the passkey wherever it hides — in the path segment and the query param — and still
-// classifies as errDownloadRequestFailed. Production only ever hands sanitizeGrabError this
-// host-only *url.Error shape, so the test injects exactly that.
+// the passkey wherever it hides — in the path segment and the query param. The redaction
+// itself is structural (base DoDownload); this proves the driver stays on that path.
 func TestGrabTransportErrorSurfacesHostOnly(t *testing.T) {
 	t.Parallel()
 	d := liveDriver(t, &scriptDoer{})
-	d.doer = &errorDoer{err: transportErr()}
+	d.Doer = &errorDoer{err: transportErr()}
 
 	_, err := d.Grab(context.Background(), grabURL)
 	if err == nil {
@@ -88,42 +87,12 @@ func TestGrabTransportErrorSurfacesHostOnly(t *testing.T) {
 	if !strings.Contains(msg, "https://hdbits.org") {
 		t.Errorf("grab error should surface the host-only cause, got %q", msg)
 	}
-	if !strings.Contains(msg, "hdbits: download request failed") {
-		t.Errorf("grab error should retain the fixed prefix, got %q", msg)
-	}
-	if !errors.Is(err, errDownloadRequestFailed) {
-		t.Errorf("grab error should still errors.Is errDownloadRequestFailed, got %v", err)
+	if !strings.Contains(msg, "hdbits: download") {
+		t.Errorf("grab error should retain the family/download prefix, got %q", msg)
 	}
 	for _, leak := range []string{credPass, "/dl/" + credPass, "passkey=" + credPass} {
 		if strings.Contains(msg, leak) {
 			t.Errorf("grab error leaks %q: %q", leak, msg)
-		}
-	}
-}
-
-// TestGetSourceSurfacesHostOnly proves get() itself (not just the Grab wrapper) redacts the
-// passkey-bearing *url.Error to a host-only cause, so a future direct caller of get() is safe
-// even without sanitizeGrabError: the host surfaces but the passkey (in both path and query)
-// does not, and the result still classifies as errDownloadRequestFailed.
-func TestGetSourceSurfacesHostOnly(t *testing.T) {
-	t.Parallel()
-	d := liveDriver(t, &scriptDoer{})
-	d.doer = &errorDoer{err: transportErr()}
-
-	_, err := d.get(context.Background(), grabURL)
-	if err == nil {
-		t.Fatal("get should error on a transport failure")
-	}
-	msg := err.Error()
-	if !strings.Contains(msg, "https://hdbits.org") {
-		t.Errorf("get error should surface the host-only cause, got %q", msg)
-	}
-	if !errors.Is(err, errDownloadRequestFailed) {
-		t.Errorf("get error should errors.Is errDownloadRequestFailed, got %v", err)
-	}
-	for _, leak := range []string{credPass, "/dl/" + credPass, "passkey=" + credPass} {
-		if strings.Contains(msg, leak) {
-			t.Errorf("get error leaks %q: %q", leak, msg)
 		}
 	}
 }
@@ -135,7 +104,7 @@ func TestGrabContextErrorPassesThrough(t *testing.T) {
 	t.Parallel()
 	for _, want := range []error{context.Canceled, context.DeadlineExceeded} {
 		d := liveDriver(t, &scriptDoer{})
-		d.doer = &errorDoer{err: want}
+		d.Doer = &errorDoer{err: want}
 		_, err := d.Grab(context.Background(), grabURL)
 		if !errors.Is(err, want) {
 			t.Errorf("Grab err = %v, want errors.Is %v", err, want)

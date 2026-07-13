@@ -11,31 +11,19 @@
 package gazelle
 
 import (
-	"errors"
-	"fmt"
-	"strings"
-	"time"
+	"context"
 
-	"github.com/rs/zerolog"
-
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // driver is one configured Gazelle-family instance. It is built once per instance and
 // cached by the registry. There is no login round-trip: every request carries the API
-// key in the Authorization header, so the driver holds no session state.
+// key in the Authorization header, so the driver holds no session state. Everything but
+// the Gazelle request/parse dialect and the per-site profile lives in the embedded
+// native.Base.
 type driver struct {
-	def     *loader.Definition
-	caps    *mapper.Capabilities
-	cfg     map[string]string
-	doer    search.Doer
-	baseURL string // normalised with a single trailing slash
-	clock   func() time.Time
+	native.Base
 	profile profile
-	log     zerolog.Logger
 }
 
 var _ native.Driver = (*driver)(nil)
@@ -57,39 +45,15 @@ func profileFor(id string) profile {
 	return profile{site: id, authPrefix: ""}
 }
 
-// New is the native.Factory for every Gazelle-family site. It builds the capabilities
-// from the (per-site) definition, normalises the base URL, and resolves the per-site
-// profile from the definition id.
+// New is the native.Factory for every Gazelle-family site. The per-site profile is
+// resolved from the definition id.
 func New(p native.Params) (native.Driver, error) {
-	if p.Def == nil {
-		return nil, errors.New("gazelle: nil definition")
-	}
-	caps, err := mapper.Build(p.Def)
+	b, err := native.NewBase("gazelle", p)
 	if err != nil {
-		return nil, fmt.Errorf("gazelle: build capabilities for %q: %w", p.Def.ID, err)
+		return nil, err
 	}
-	base := p.BaseURL
-	if base == "" && len(p.Def.Links) > 0 {
-		base = p.Def.Links[0]
-	}
-	clock := p.Clock
-	if clock == nil {
-		clock = time.Now
-	}
-	return &driver{
-		def:     p.Def,
-		caps:    caps,
-		cfg:     p.Cfg,
-		doer:    p.Doer,
-		baseURL: strings.TrimRight(base, "/") + "/",
-		clock:   clock,
-		profile: profileFor(p.Def.ID),
-		log:     p.Logger,
-	}, nil
+	return &driver{Base: b, profile: profileFor(p.Def.ID)}, nil
 }
-
-// Capabilities returns the per-site capabilities document.
-func (d *driver) Capabilities() *mapper.Capabilities { return d.caps }
 
 // NeedsResolver is false: the download URL (ajax.php?action=download&id=...) carries no
 // passkey, so the served feed link is safe to expose. The Authorization header is added
@@ -100,3 +64,10 @@ func (d *driver) NeedsResolver() bool { return false }
 // Authorization header, so the served feed routes through the /dl proxy and the
 // driver's Grab fetches the torrent server-side with the header attached.
 func (d *driver) DownloadNeedsAuth() bool { return true }
+
+// Test exercises the credentials with an empty browse query: a 401/403 surfaces as
+// login.ErrLoginFailed (the registry records an auth_failure health event), while a
+// parseable empty page confirms the key works.
+func (d *driver) Test(ctx context.Context) error {
+	return native.TestViaSearch(ctx, d)
+}

@@ -62,6 +62,13 @@ linters:
     - predeclared        # no shadowing predeclared identifiers (e.g. a var named `comparable`)
 
   settings:
+    wrapcheck:
+      # native.Base errors (Do/DoDownload/NewBase/TestViaSearch) are caller-ready by
+      # design: already family-prefixed, host-only-redacted, and sentinel-bearing.
+      # Re-wrapping them in a driver would double the family prefix ("hdbits: hdbits:")
+      # and add nothing — the base IS the drivers' error-shaping layer.
+      ignore-package-globs:
+        - github.com/autobrr/harbrr/internal/indexer/native
     interfacebloat:
       # Guardrail against future god-interfaces (default 10). AGENTS.md's "interfaces
       # ≤5 methods" stays a review norm, not a hard gate — torznabhttp.Indexer

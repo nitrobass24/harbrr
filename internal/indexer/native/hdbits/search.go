@@ -1,19 +1,19 @@
 package hdbits
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	stdhttp "net/http"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // searchLimit is the page size harbrr requests. Prowlarr hardcodes query.Limit=100 in
@@ -64,44 +64,35 @@ type tvdbQuery struct {
 	Episode string `json:"episode,omitempty"`
 }
 
-// Search posts an api/torrents query for the search and returns the parsed releases. A 401
-// is bad credentials (login.ErrLoginFailed -> auth_failure health). HDBits' 403 means the
-// query/rate budget is reached (Prowlarr's RequestLimitReached), so it is a RateLimitedError
-// alongside 429/503 -> the registry backs off instead of misreporting working creds as an
-// auth failure. Any other non-2xx is an error. The status==0 envelope and the status 4/5 ->
-// ErrLoginFailed mapping are handled by parseReleases. Username and passkey ride inside the
-// POST body, never the URL, and the body is never logged.
+// searchPath is the HDBits JSON search endpoint (Prowlarr: "{BaseUrl}/api/torrents",
+// HttpMethod.Post). The username and passkey ride as top-level fields inside the POST
+// body, never the URL.
+const searchPath = "api/torrents"
+
+// Search posts an api/torrents query for the search and returns the parsed releases.
+// Status classification is the base ClassifyRateLimit403 dialect: a 401 is bad
+// credentials (login.ErrLoginFailed -> auth_failure health), while HDBits' 403 means
+// the query/rate budget is reached (Prowlarr's RequestLimitReached), so it backs off
+// like 429/503 instead of misreporting working creds as an auth failure. The status==0
+// envelope and the status 4/5 -> ErrLoginFailed mapping are handled by parseReleases.
+// Username and passkey ride inside the POST body, never the URL, and the body is never
+// logged (Content-Type and Accept are application/json, matching Prowlarr).
 func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
 	body, err := d.buildRequest(q)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := d.post(ctx, body)
+	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodPost, d.BaseURL+searchPath, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("hdbits: build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	resp, err := d.Do(ctx, req, native.ClassifyRateLimit403)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	switch {
-	case resp.StatusCode == stdhttp.StatusUnauthorized:
-		return nil, fmt.Errorf("hdbits: search unauthorized: %w", login.ErrLoginFailed)
-	case resp.StatusCode == stdhttp.StatusForbidden || search.IsRateLimitStatus(resp.StatusCode):
-		// HDBits returns 403 when the per-query/rate budget is exhausted (Prowlarr maps it
-		// to RequestLimitReached, not an auth failure), so it backs off like 429/503 rather
-		// than recording an auth_failure for working credentials.
-		return nil, &search.RateLimitedError{
-			StatusCode: resp.StatusCode,
-			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.clock),
-		}
-	case resp.StatusCode < 200 || resp.StatusCode >= 300:
-		return nil, fmt.Errorf("hdbits: search returned HTTP %d", resp.StatusCode)
-	}
-
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
-	if err != nil {
-		return nil, fmt.Errorf("hdbits: read search response: %w", err)
-	}
-	return d.parseReleases(respBody)
+	return d.parseReleases(resp.Body)
 }
 
 // buildRequest marshals the api/torrents JSON body for a query. The username and passkey
@@ -110,8 +101,8 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 // secret-bearing (they embed the credentials) and must never be logged.
 func (d *driver) buildRequest(q search.Query) ([]byte, error) {
 	tq := torrentQuery{
-		Username: strings.TrimSpace(d.cfg["username"]),
-		Passkey:  strings.TrimSpace(d.cfg["passkey"]),
+		Username: strings.TrimSpace(d.Cfg["username"]),
+		Passkey:  strings.TrimSpace(d.Cfg["passkey"]),
 		Category: d.categoryParam(q),
 		Limit:    searchLimit,
 	}

@@ -6,18 +6,17 @@ import (
 	stdhttp "net/http"
 	"strings"
 
-	apphttp "github.com/autobrr/harbrr/internal/http"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
-const (
-	// maxBodyBytes caps a search response. A torrent download uses the larger
-	// maxTorrentBytes cap (grab.go).
-	maxBodyBytes = 8 << 20 // 8 MiB
-	// mamIDCookie is the session cookie name MAM authenticates with and rotates.
-	mamIDCookie = "mam_id"
-)
+// mamIDCookie is the session cookie name MAM authenticates with and rotates.
+const mamIDCookie = "mam_id"
+
+// classifyMAM is MAM's status dialect: a 403 means the mam_id session cookie expired
+// or is invalid (there is no 401), wrapped with login.ErrLoginFailed so the registry
+// records an auth_failure health event.
+var classifyMAM = native.ClassifyAuthOnly403.WithAuthReason("mam_id expired or invalid")
 
 // mamID returns the current (possibly rotated) mam_id under the mutex.
 func (d *driver) mamID() string {
@@ -35,7 +34,7 @@ func (d *driver) scrubSecret(s string) string {
 	d.mu.Lock()
 	current := d.currentMamID
 	d.mu.Unlock()
-	for _, secret := range []string{current, d.cfg["mam_id"]} {
+	for _, secret := range []string{current, d.Cfg["mam_id"]} {
 		if secret != "" {
 			s = strings.ReplaceAll(s, secret, "[redacted]")
 		}
@@ -51,8 +50,11 @@ func (d *driver) scrubSecret(s string) string {
 // stored value in rotation order — a detached goroutine could race and persist an
 // older token last. The write is best-effort (the registry logs a failure; it never
 // fails the search), and the new value is a secret never logged here.
-func (d *driver) captureRotatedMamID(ctx context.Context, resp *stdhttp.Response) {
-	for _, c := range resp.Cookies() {
+func (d *driver) captureRotatedMamID(ctx context.Context, header stdhttp.Header) {
+	// http.Response.Cookies is the stdlib Set-Cookie parser; a header-only shell
+	// response reuses it without carrying a body.
+	shell := stdhttp.Response{Header: header}
+	for _, c := range shell.Cookies() {
 		if c.Name == mamIDCookie && c.Value != "" {
 			d.mu.Lock()
 			changed := c.Value != d.currentMamID
@@ -67,11 +69,9 @@ func (d *driver) captureRotatedMamID(ctx context.Context, resp *stdhttp.Response
 	}
 }
 
-// get issues an authenticated GET with the Cookie: mam_id=… header, captures any
-// rotated mam_id from the response, and returns the response for the caller to
-// interpret (404/429/2xx). The cookie rides as a header, never the URL, so the URL
-// carries no secret; a transport error still surfaces only its scheme://host.
-func (d *driver) get(ctx context.Context, rawurl, accept string) (*stdhttp.Response, error) {
+// newRequest builds an authenticated GET with the Cookie: mam_id=… header. The cookie
+// rides as a header, never the URL, so the URL carries no secret.
+func (d *driver) newRequest(ctx context.Context, rawurl, accept string) (*stdhttp.Request, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
 		return nil, fmt.Errorf("myanonamouse: build request: %w", err)
@@ -83,35 +83,38 @@ func (d *driver) get(ctx context.Context, rawurl, accept string) (*stdhttp.Respo
 	if accept != "" {
 		req.Header.Set("Accept", accept)
 	}
-	resp, err := d.doer.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("myanonamouse: request to %s: %w", apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
+	return req, nil
+}
+
+// do routes a request through the base Do and captures any rotated mam_id from the
+// response headers — including a classified-status response (the base returns the
+// header shell alongside the error), so a rotation riding a 403/429 is never lost.
+func (d *driver) do(ctx context.Context, req *stdhttp.Request) (*native.Response, error) {
+	resp, err := d.Do(ctx, req, classifyMAM)
+	if resp != nil {
+		d.captureRotatedMamID(ctx, resp.Header)
 	}
-	d.captureRotatedMamID(ctx, resp)
-	return resp, nil
+	return resp, err
+}
+
+// doDownload is do for the grab path (torrent cap + download error wording).
+func (d *driver) doDownload(ctx context.Context, req *stdhttp.Request) (*native.Response, error) {
+	resp, err := d.DoDownload(ctx, req, classifyMAM)
+	if resp != nil {
+		d.captureRotatedMamID(ctx, resp.Header)
+	}
+	return resp, err
 }
 
 // Test verifies the configured mam_id authenticates (the management "test indexer"
-// action) via a cheap authenticated search. A 403 means the session cookie expired or
-// is invalid, wrapped with login.ErrLoginFailed so the registry records an
-// auth_failure health event.
+// action) via a cheap authenticated search: a 403 surfaces as login.ErrLoginFailed
+// (mam_id expired or invalid), a rate-limit status as a RateLimitedError, and a 2xx
+// confirms the session. The body is not parsed — only the classification matters.
 func (d *driver) Test(ctx context.Context) error {
-	resp, err := d.get(ctx, d.buildSearchURL(search.Query{}), "application/json")
+	req, err := d.newRequest(ctx, d.buildSearchURL(search.Query{}), "application/json")
 	if err != nil {
 		return err
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	switch {
-	case resp.StatusCode == stdhttp.StatusForbidden:
-		return fmt.Errorf("myanonamouse: mam_id expired or invalid: %w", login.ErrLoginFailed)
-	case search.IsRateLimitStatus(resp.StatusCode):
-		return &search.RateLimitedError{
-			StatusCode: resp.StatusCode,
-			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.clock),
-		}
-	case resp.StatusCode < 200 || resp.StatusCode >= 300:
-		return fmt.Errorf("myanonamouse: test returned HTTP %d", resp.StatusCode)
-	}
-	return nil
+	_, err = d.do(ctx, req)
+	return err
 }

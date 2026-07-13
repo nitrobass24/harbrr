@@ -157,7 +157,7 @@ func (d *driver) parseBrowse(body []byte) ([]*normalizer.Release, error) {
 		rels = append(rels, d.flattenGroup(&resp.Response.Results[i])...)
 	}
 	sortReleases(rels)
-	native.TraceReleases(d.log, d.def.ID, rels)
+	native.TraceReleases(d.Log, d.Def.ID, rels)
 	return rels, nil
 }
 
@@ -342,7 +342,7 @@ func (d *driver) wantToken(canUseToken, free bool) bool {
 // stores a checked checkbox as Jackett's "True" sentinel; common truthy spellings are
 // accepted too so whatever the management API persists is interpreted consistently.
 func (d *driver) useFreeleechToken() bool {
-	switch strings.ToLower(strings.TrimSpace(d.cfg["use_freeleech_token"])) {
+	switch strings.ToLower(strings.TrimSpace(d.Cfg["use_freeleech_token"])) {
 	case "true", "1", "on", "yes":
 		return true
 	default:
@@ -354,7 +354,7 @@ func (d *driver) useFreeleechToken() bool {
 // when withToken is true; it is NEVER sent as usetoken=0 (the OPS quirk — and harmless
 // for RED), so the param is simply omitted when off.
 func (d *driver) downloadLink(torrentID int64, withToken bool) string {
-	link := fmt.Sprintf("%sajax.php?action=download&id=%d", d.baseURL, torrentID)
+	link := fmt.Sprintf("%sajax.php?action=download&id=%d", d.BaseURL, torrentID)
 	if withToken {
 		link += "&usetoken=1"
 	}
@@ -366,12 +366,12 @@ func (d *driver) downloadLink(torrentID int64, withToken bool) string {
 // id. A null Category or one containing "Select Category" defaults to Audio ("1").
 func (d *driver) categories(category *string) []int {
 	if category == nil || strings.Contains(*category, "Select Category") {
-		return canonical(d.caps.CategoryMap.MapTrackerCatToNewznab(defaultCatID))
+		return canonical(d.Caps.CategoryMap.MapTrackerCatToNewznab(defaultCatID))
 	}
-	if mapped := canonical(d.caps.CategoryMap.MapTrackerCatDescToNewznab(*category)); mapped != nil {
+	if mapped := canonical(d.Caps.CategoryMap.MapTrackerCatDescToNewznab(*category)); mapped != nil {
 		return mapped
 	}
-	return canonical(d.caps.CategoryMap.MapTrackerCatToNewznab(defaultCatID))
+	return canonical(d.Caps.CategoryMap.MapTrackerCatToNewznab(defaultCatID))
 }
 
 // canonical keeps only the canonical newznab category id, dropping the mapper's
@@ -392,7 +392,7 @@ func (d *driver) publishDate(value string) string {
 	if strings.TrimSpace(value) == "" {
 		return ""
 	}
-	out, err := dateparse.New(dateparse.WithClock(d.clock)).ParseRelTime(value)
+	out, err := dateparse.New(dateparse.WithClock(d.Clock)).ParseRelTime(value)
 	if err != nil {
 		return ""
 	}
@@ -401,7 +401,7 @@ func (d *driver) publishDate(value string) string {
 
 // scrubAPIKey removes the configured apikey from s so a server echo cannot leak it.
 func (d *driver) scrubAPIKey(s string) string {
-	if key := strings.TrimSpace(d.cfg["apikey"]); key != "" {
+	if key := strings.TrimSpace(d.Cfg["apikey"]); key != "" {
 		s = strings.ReplaceAll(s, key, "[redacted]")
 	}
 	return s

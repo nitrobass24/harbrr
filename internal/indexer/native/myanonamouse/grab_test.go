@@ -11,6 +11,7 @@ import (
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // fakeTorrent is a minimal bencode-shaped body (content is irrelevant to the driver;
@@ -100,10 +101,13 @@ func TestGrabTransportErrorSanitized(t *testing.T) {
 	const base = "https://www.myanonamouse.net"
 	link := base + "/dl/" + secret + "?passkey=" + secret
 	d := &driver{
-		cfg:          map[string]string{"mam_id": mamSecret},
-		doer:         &errorDoer{err: &url.Error{Op: "Get", URL: link, Err: errors.New("dial tcp: connection refused")}},
-		baseURL:      base + "/",
-		clock:        fixedClock,
+		Base: native.Base{
+			Family:  "myanonamouse",
+			Cfg:     map[string]string{"mam_id": mamSecret},
+			Doer:    &errorDoer{err: &url.Error{Op: "Get", URL: link, Err: errors.New("dial tcp: connection refused")}},
+			BaseURL: base + "/",
+			Clock:   fixedClock,
+		},
 		currentMamID: mamSecret,
 	}
 	_, err := d.Grab(context.Background(), link)
@@ -117,23 +121,8 @@ func TestGrabTransportErrorSanitized(t *testing.T) {
 	if strings.Contains(got, secret) || strings.Contains(got, "/dl/"+secret) || strings.Contains(got, "passkey="+secret) {
 		t.Errorf("download URL secret leaked into the error: %v", err)
 	}
-	if !strings.Contains(got, "myanonamouse: download request failed") {
-		t.Errorf("error should carry the grab-failure prefix: %v", err)
+	if !strings.Contains(got, "myanonamouse: download") {
+		t.Errorf("error should carry the family/download prefix: %v", err)
 	}
 	assertNoSecret(t, got)
-}
-
-func TestReadCapped(t *testing.T) {
-	t.Parallel()
-	if _, err := readCapped(strings.NewReader("0123456789AB"), 10); !errors.Is(err, errDownloadTooLarge) {
-		t.Errorf("12 bytes over cap 10: err = %v, want errDownloadTooLarge", err)
-	}
-	got, err := readCapped(strings.NewReader("0123456789"), 10) // exactly at cap is fine
-	if err != nil || len(got) != 10 {
-		t.Errorf("at cap: len=%d err=%v, want 10/nil", len(got), err)
-	}
-	got, err = readCapped(strings.NewReader("hello"), 10)
-	if err != nil || string(got) != "hello" {
-		t.Errorf("under cap: got=%q err=%v", got, err)
-	}
 }
