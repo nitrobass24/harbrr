@@ -305,6 +305,11 @@ func (r *Registry) buildAdapter(ctx context.Context, slug string) (*indexerAdapt
 		return nil, err
 	}
 
+	// Canonicalize checkbox settings ("True"/"") before anything reads them: a value
+	// persisted as the literal "false" is non-empty and would otherwise read as CHECKED
+	// under both template truthiness and the freeleech `!= ""` view below (autobrr/harbrr#119).
+	cardigann.CanonicalizeCheckboxes(def, cfg)
+
 	// freeleech is consumed as a SERVE-TIME view, not a fetch-time filter: the engine is
 	// built with the key cleared so every fetch returns the full catalog (cached once and
 	// shared by the honor + bypass feeds). The stored value drives the freeleechIndexer
