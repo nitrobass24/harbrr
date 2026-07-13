@@ -23,10 +23,10 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
 
-// Driver is the engine-shaped core the registry adapter wraps: the four methods
-// both a native family driver and the Cardigann engine implement. The adapter adds
-// Info() and health recording, so a Driver never needs to know about either.
-type Driver interface {
+// Searcher is the engine-shaped serve/grab core the registry adapter wraps: the
+// methods that answer a Torznab query and resolve a /dl grab. The adapter adds Info()
+// and health recording, so a Searcher never needs to know about either.
+type Searcher interface {
 	Capabilities() *mapper.Capabilities
 	Search(ctx context.Context, query search.Query) ([]*normalizer.Release, error)
 	NeedsResolver() bool
@@ -35,9 +35,23 @@ type Driver interface {
 	// bare. A native driver whose NeedsResolver() is already true can return false.
 	DownloadNeedsAuth() bool
 	Grab(ctx context.Context, link string) (*search.GrabResult, error)
+}
+
+// Tester is the credential-probe role the management "test indexer" action drives.
+// Split out of the serve core because the serve path never calls it and the probe path
+// calls nothing else. Every shipped driver and the Cardigann engine implement it.
+type Tester interface {
 	// Test verifies the instance is usable (for a native driver: that the credentials
-	// authenticate). The management "test indexer" action drives it.
+	// authenticate).
 	Test(ctx context.Context) error
+}
+
+// Driver is the factory contract: a native family implements both the serve core and
+// the probe role, the same composed contract the Cardigann engine satisfies. Unchanged
+// behavior — every concrete driver already satisfies this.
+type Driver interface {
+	Searcher
+	Tester
 }
 
 // Params are the per-instance inputs the registry hands a native driver factory:
@@ -81,7 +95,7 @@ func TraceReleases(log zerolog.Logger, driver string, rels []*normalizer.Release
 }
 
 // OffsetPager is the optional capability a native driver implements when it can forward
-// offset/limit upstream for deep-set paging (currently only the generic Newznab driver).
+// offset/limit upstream for deep-set paging (currently the newznab and nzbindex usenet pair).
 // It is deliberately NOT a method on Driver: most drivers can't page upstream, and adding
 // it to the core interface would force every driver, the engine wrapper, and the fakes to
 // implement a method they'd answer false for. The registry adapter and the search-cache

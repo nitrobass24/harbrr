@@ -136,13 +136,13 @@ func (s *usenetStub) searchXML() string {
 	return strings.ReplaceAll(x, "{{KEY}}", usenetUpstreamAPIKey)
 }
 
-// usenetIndexer adapts a real native.Driver (the generic Newznab driver) to the
-// handler's Indexer interface for the offline end-to-end proof: the four engine-shaped
-// methods come straight from the driver, and Info() carries Protocol=usenet so the
+// usenetIndexer adapts a real native.Searcher (the generic Newznab driver) to the
+// handler's Indexer interface for the offline end-to-end proof: the five engine-shaped
+// serve methods come straight from the driver, and Info() carries Protocol=usenet so the
 // serializer renders an NZB enclosure and suppresses the torrent stat/factor attrs.
 type usenetIndexer struct {
 	info   IndexerInfo
-	driver native.Driver
+	driver native.Searcher
 }
 
 func (u *usenetIndexer) Info() IndexerInfo                  { return u.info }
