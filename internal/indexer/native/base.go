@@ -75,6 +75,11 @@ func NewBase(family string, p Params) (Base, error) {
 	if base == "" && len(p.Def.Links) > 0 {
 		base = p.Def.Links[0]
 	}
+	if base == "" {
+		// Fail fast rather than normalise an empty base into "/": every request
+		// would then target a relative URL and fail far from the misconfiguration.
+		return Base{}, fmt.Errorf("%s: no base URL: neither Params.BaseURL nor definition links for %q", family, p.Def.ID)
+	}
 	clock := p.Clock
 	if clock == nil {
 		clock = time.Now

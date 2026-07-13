@@ -102,6 +102,15 @@ func TestNewBaseScaffold(t *testing.T) {
 		}
 	})
 
+	t.Run("no base URL anywhere fails fast", func(t *testing.T) {
+		def := testDef()
+		def.Links = nil
+		_, err := NewBase("testfam", Params{Def: def})
+		if err == nil || !strings.Contains(err.Error(), "testfam: no base URL") {
+			t.Fatalf("want fail-fast no-base-URL error, got %v", err)
+		}
+	})
+
 	t.Run("clock defaults, caps built, cap default", func(t *testing.T) {
 		b := newTestBase(t, &fakeDoer{})
 		if b.Clock == nil || b.Caps == nil || b.Capabilities() != b.Caps {
