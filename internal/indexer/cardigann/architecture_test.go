@@ -16,7 +16,7 @@ import (
 // them). Together that keeps the production import graph the acyclic, layered
 // DAG it is today:
 //
-//	encode, loader  ->  magnet, mapper, selector, regexadapter, dateparse, parity
+//	encode, loader  ->  mapper, selector, regexadapter, dateparse, parity
 //	                ->  template, filter, normalizer  ->  login  ->  search
 //
 // Maintenance: adding a new stage = insert one string into the correct layer
@@ -25,7 +25,7 @@ import (
 // stages, not a stage itself, so it is deliberately absent here.
 var stageLayers = [][]string{
 	{"encode", "loader"},
-	{"magnet", "mapper", "selector", "regexadapter", "dateparse", "parity"},
+	{"mapper", "selector", "regexadapter", "dateparse", "parity"},
 	{"template", "filter", "normalizer"},
 	{"login"},
 	{"search"},

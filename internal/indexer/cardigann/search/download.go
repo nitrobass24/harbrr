@@ -11,7 +11,7 @@ import (
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/magnet"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/selector"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/template"
 )
@@ -222,7 +222,7 @@ func resolveInfoHash(ctx context.Context, dl *loader.DownloadBlock, link string,
 	if !found || title == "" {
 		return "", false, nil
 	}
-	m := magnet.FromInfoHash(hash, title)
+	m := normalizer.FromInfoHash(hash, title)
 	if m == "" {
 		return "", false, nil
 	}

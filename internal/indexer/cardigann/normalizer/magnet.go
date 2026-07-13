@@ -1,10 +1,11 @@
-// Package magnet reproduces Jackett's MagnetUtil: synthesising a public magnet
-// from an info hash (and the reverse) byte-for-byte, so a harbrr-synthesised
-// magnet matches Jackett's regardless of which stage builds it. It is a leaf
-// package shared by the normalizer (post-search FixResults synthesis) and the
-// download resolver (download.infohash → magnet), keeping a single source of
-// truth for the construction.
-package magnet
+package normalizer
+
+// This file reproduces Jackett's MagnetUtil: synthesising a public magnet from
+// an info hash (and the reverse) byte-for-byte, so a harbrr-synthesised magnet
+// matches Jackett's regardless of which stage builds it. It is shared by the
+// normalizer (post-search FixResults synthesis) and search's download resolver
+// (download.infohash → magnet), keeping a single source of truth for the
+// construction.
 
 import (
 	"net/url"
@@ -49,11 +50,11 @@ func FromInfoHash(infoHash, title string) string {
 	return b.String()
 }
 
-// ToInfoHash reproduces MagnetUtil.MagnetToInfoHash: read the xt query
+// toInfoHash reproduces MagnetUtil.MagnetToInfoHash: read the xt query
 // argument and return the segment after the final ':' (stripping the
 // "urn:btih:" prefix). Case is preserved, matching Jackett. A magnet without a
 // usable xt yields "".
-func ToInfoHash(magnet string) string {
+func toInfoHash(magnet string) string {
 	xt := queryArg(magnet, "xt")
 	if xt == "" {
 		return ""

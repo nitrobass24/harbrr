@@ -1,4 +1,4 @@
-package magnet
+package normalizer
 
 import "testing"
 
@@ -100,8 +100,8 @@ func TestToInfoHash(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := ToInfoHash(tt.magnet); got != tt.want {
-				t.Errorf("ToInfoHash(%q) = %q, want %q", tt.magnet, got, tt.want)
+			if got := toInfoHash(tt.magnet); got != tt.want {
+				t.Errorf("toInfoHash(%q) = %q, want %q", tt.magnet, got, tt.want)
 			}
 		})
 	}
@@ -111,7 +111,7 @@ func TestToInfoHash(t *testing.T) {
 // case intact — the property the normalizer relies on when reconciling the two.
 func TestRoundTrip(t *testing.T) {
 	const hash = "DEADBEEF0123456789ABCDEF0123456789ABCDEF"
-	got := ToInfoHash(FromInfoHash(hash, "Some Title"))
+	got := toInfoHash(FromInfoHash(hash, "Some Title"))
 	if got != hash {
 		t.Errorf("round trip = %q, want %q", got, hash)
 	}
