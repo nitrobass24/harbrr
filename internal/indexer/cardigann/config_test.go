@@ -44,6 +44,59 @@ func TestDefaultConfig(t *testing.T) {
 	}
 }
 
+// TestCanonicalizeCheckboxes pins the fix for autobrr/harbrr#119: a checkbox value
+// persisted as the literal "false" (non-empty) must canonicalize to "" so it is not
+// read as CHECKED by template truthiness or the freeleech `!= ""` view; only checkbox
+// settings are touched, and other types keep their stored value.
+func TestCanonicalizeCheckboxes(t *testing.T) {
+	t.Parallel()
+
+	def := &loader.Definition{
+		Settings: []loader.SettingsField{
+			{Name: "freeleech", Type: "checkbox"},
+			{Name: "internal", Type: "checkbox"},
+			{Name: "already_on", Type: "checkbox"},
+			{Name: "absent_cb", Type: "checkbox"},
+			{Name: "sort", Type: "select"},
+			{Name: "apikey", Type: "text"},
+		},
+	}
+	cfg := map[string]string{
+		"freeleech":  "false",   // the bug: non-empty -> read as checked
+		"internal":   "true",    // checked, non-canonical spelling
+		"already_on": "True",    // already canonical
+		"sort":       "false",   // NOT a checkbox -> must be left verbatim
+		"apikey":     "keep-me", // text -> untouched
+		// absent_cb not present -> stays absent
+	}
+
+	got := CanonicalizeCheckboxes(def, cfg)
+
+	want := map[string]string{
+		"freeleech":  "",         // "false" -> unchecked
+		"internal":   configTrue, // "true" -> "True"
+		"already_on": configTrue, // stays "True"
+		"sort":       "false",    // select value untouched
+		"apikey":     "keep-me",
+	}
+	for k, w := range want {
+		if g := got[k]; g != w {
+			t.Errorf("cfg[%q] = %q, want %q", k, g, w)
+		}
+	}
+	if _, present := got["absent_cb"]; present {
+		t.Errorf("absent checkbox must not be materialized, got %q", got["absent_cb"])
+	}
+	// The freeleech decorator keys on `!= ""`; "false" must now read as off.
+	if got["freeleech"] != "" {
+		t.Errorf("freeleech = %q, want \"\" so freeleechOnly is off", got["freeleech"])
+	}
+	// nil def is a safe no-op.
+	if CanonicalizeCheckboxes(nil, map[string]string{"x": "false"})["x"] != "false" {
+		t.Errorf("nil def must leave cfg untouched")
+	}
+}
+
 // TestMergeConfigOverrides proves an explicit WithConfig value wins over the
 // settings default (Jackett: a user-configured value replaces the Default).
 func TestMergeConfigOverrides(t *testing.T) {

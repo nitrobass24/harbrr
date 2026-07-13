@@ -52,6 +52,40 @@ func settingDefault(s loader.SettingsField) string {
 	}
 }
 
+// CanonicalizeCheckboxes rewrites, in place, every checkbox setting's value in cfg to
+// its canonical .Config form — configTrue ("True") when the stored value is truthy, ""
+// otherwise — and returns cfg. Persisted config can carry a checkbox as the literal
+// "false"/"0" (a stored form value for the unchecked state), which is NON-empty, so both
+// template truthiness ({{ if .Config.x }}) and the freeleech decorator's `!= ""` view
+// would read it as CHECKED. Canonicalizing on the way into the engine/decorator repairs
+// that for already-stored rows without a migration. Non-checkbox settings are untouched.
+func CanonicalizeCheckboxes(def *loader.Definition, cfg map[string]string) map[string]string {
+	if def == nil {
+		return cfg
+	}
+	for _, s := range def.Settings {
+		if s.Type != "checkbox" {
+			continue
+		}
+		if v, ok := cfg[s.Name]; ok {
+			cfg[s.Name] = canonicalCheckbox(v)
+		}
+	}
+	return cfg
+}
+
+// canonicalCheckbox maps a stored checkbox value to configTrue (checked) or "" (unchecked).
+// Truthy is "true"/"1"/"on"/"yes" (case-insensitive); everything else — including "false",
+// "0", and "" — is unchecked, matching settingDefault's checkbox mapping.
+func canonicalCheckbox(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "true", "1", "on", "yes":
+		return configTrue
+	default:
+		return ""
+	}
+}
+
 // defaultString returns the setting's Default scalar as a string, or "" when
 // absent.
 func defaultString(s loader.SettingsField) string {
