@@ -148,7 +148,7 @@ func TestApplyStringFilters(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := r.Apply(tc.in, tc.filters)
+			got, err := r.apply(tc.in, tc.filters)
 			assertResult(t, got, err, tc.want, tc.wantErr)
 		})
 	}
@@ -206,7 +206,7 @@ func TestApplyRegexFilters(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := r.Apply(tc.in, tc.filters)
+			got, err := r.apply(tc.in, tc.filters)
 			assertResult(t, got, err, tc.want, tc.wantErr)
 		})
 	}
@@ -248,7 +248,7 @@ func TestJSONJoinArray(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := r.Apply(tc.in, tc.filters)
+			got, err := r.apply(tc.in, tc.filters)
 			assertResult(t, got, err, tc.want, tc.wantErr)
 		})
 	}
@@ -259,7 +259,7 @@ func TestChaining(t *testing.T) {
 
 	r := NewFilterRegistry()
 	// trim -> tolower -> replace, threaded left-to-right.
-	got, err := r.Apply("  HELLO WORLD  ", []loader.FilterBlock{
+	got, err := r.apply("  HELLO WORLD  ", []loader.FilterBlock{
 		fb("trim"), fb("tolower"), fb("replace", " ", "_"),
 	})
 	if err != nil {
@@ -274,7 +274,7 @@ func TestUnknownFilterIsLoud(t *testing.T) {
 	t.Parallel()
 
 	r := NewFilterRegistry()
-	_, err := r.Apply("v", []loader.FilterBlock{fb("not_a_filter")})
+	_, err := r.apply("v", []loader.FilterBlock{fb("not_a_filter")})
 	if err == nil {
 		t.Fatal("expected error for unknown filter, got nil")
 	}
@@ -290,7 +290,7 @@ func TestDateFiltersDefaultUnwired(t *testing.T) {
 	for _, name := range []string{"dateparse", "timeparse", "timeago", "reltime", "fuzzytime"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			_, err := r.Apply("2024-01-02", []loader.FilterBlock{fb(name, "yyyy-MM-dd")})
+			_, err := r.apply("2024-01-02", []loader.FilterBlock{fb(name, "yyyy-MM-dd")})
 			if !errors.Is(err, errDateUnwired) {
 				t.Fatalf("%s: expected errDateUnwired, got %v", name, err)
 			}
@@ -309,7 +309,7 @@ func TestDateFiltersNilSeamIsLoud(t *testing.T) {
 	for _, name := range []string{"dateparse", "timeparse", "timeago", "reltime", "fuzzytime"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			_, err := r.Apply("2024-01-02", []loader.FilterBlock{fb(name, "yyyy-MM-dd")})
+			_, err := r.apply("2024-01-02", []loader.FilterBlock{fb(name, "yyyy-MM-dd")})
 			if !errors.Is(err, errDateUnwired) {
 				t.Fatalf("%s: expected errDateUnwired, got %v", name, err)
 			}
@@ -332,7 +332,7 @@ func TestDateFiltersInjectedDispatch(t *testing.T) {
 
 	// append " +02:00" then dateparse: confirms chaining feeds the date op the
 	// post-append value and the layout from the filter args.
-	got, err := r.Apply("2024-01-02 13:00", []loader.FilterBlock{
+	got, err := r.apply("2024-01-02 13:00", []loader.FilterBlock{
 		fb("append", " +02:00"),
 		fb("dateparse", "yyyy-MM-dd HH:mm zzz"),
 	})
@@ -349,7 +349,7 @@ func TestDateFiltersInjectedDispatch(t *testing.T) {
 		t.Fatalf("ParseDate layout = %q", gotLayout)
 	}
 
-	rel, err := r.Apply("2 hours ago", []loader.FilterBlock{fb("timeago")})
+	rel, err := r.apply("2 hours ago", []loader.FilterBlock{fb("timeago")})
 	if err != nil {
 		t.Fatalf("unexpected reltime error: %v", err)
 	}
@@ -365,7 +365,7 @@ func TestDateFilterPropagatesInjectedError(t *testing.T) {
 	r := NewFilterRegistry()
 	r.ParseDate = func(string, string) (string, error) { return "", sentinel }
 
-	_, err := r.Apply("x", []loader.FilterBlock{fb("dateparse", "L")})
+	_, err := r.apply("x", []loader.FilterBlock{fb("dateparse", "L")})
 	if !errors.Is(err, sentinel) {
 		t.Fatalf("expected wrapped sentinel, got %v", err)
 	}
@@ -475,7 +475,7 @@ func TestCorpusFilterCompleteness(t *testing.T) {
 				return
 			}
 			fieldCounts[name]++
-			if !r.Known(name) {
+			if !r.known(name) {
 				unknown = append(unknown, "field:"+name+" in "+def.ID)
 			}
 		})

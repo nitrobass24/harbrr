@@ -79,7 +79,7 @@ type Deps struct {
 	// see the growing Result map), so it carries no state across parses. The engine
 	// leaves it nil; do not rely on an injected value.
 	Selector *selector.Engine
-	// Filters applies each field's filter chain (Apply) with the date/language
+	// Filters applies each field's filter chain (apply) with the date/language
 	// seams already wired.
 	Filters *FilterRegistry
 	// Normalizer turns the base field map into a canonical Release.

@@ -320,7 +320,7 @@ func selectValue(du *template.DownloadURI, body []byte, sel loader.SelectorField
 	if !found {
 		return "", false, nil
 	}
-	value, err = deps.Filters.Apply(value, sel.Filters)
+	value, err = deps.Filters.apply(value, sel.Filters)
 	if err != nil {
 		return "", false, fmt.Errorf("download selector %q filters: %w", rendered, err)
 	}

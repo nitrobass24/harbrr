@@ -76,7 +76,7 @@ func handleHeaderSelector(block loader.SelectorBlock, cand selector.Row, query Q
 	if err != nil {
 		return "", false
 	}
-	value, err = deps.Filters.Apply(value, filters)
+	value, err = deps.Filters.apply(value, filters)
 	if err != nil {
 		return "", false
 	}

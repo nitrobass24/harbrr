@@ -25,7 +25,7 @@ func applyKeywordsFilters(def *loader.Definition, query Query, deps Deps) (Query
 	if err != nil {
 		return Query{}, fmt.Errorf("keywordsfilters: %w", err)
 	}
-	filtered, err := deps.Filters.Apply(query.keywords(), filters)
+	filtered, err := deps.Filters.apply(query.keywords(), filters)
 	if err != nil {
 		return Query{}, fmt.Errorf("keywordsfilters: %w", err)
 	}

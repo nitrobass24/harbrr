@@ -13,7 +13,7 @@ import (
 var errDateUnwired = errors.New("date filters require the dateparse stage")
 
 // filterFunc transforms a field value given its (already []string-normalized)
-// filter arguments. It is the per-op unit dispatched by Apply.
+// filter arguments. It is the per-op unit dispatched by apply.
 type filterFunc func(value string, args []string) (string, error)
 
 // FilterRegistry is the bounded Cardigann filter registry. It maps every filter name
@@ -120,10 +120,10 @@ func (r *FilterRegistry) relTimeOp(value string, _ []string) (string, error) {
 	return out, nil
 }
 
-// Apply runs the filter chain over value, threading each op's output into the
+// apply runs the filter chain over value, threading each op's output into the
 // next op's input (left-to-right), mirroring Jackett's applyFilters. An unknown
 // filter name is a loud error — the value is never silently passed through.
-func (r *FilterRegistry) Apply(value string, filters []loader.FilterBlock) (string, error) {
+func (r *FilterRegistry) apply(value string, filters []loader.FilterBlock) (string, error) {
 	out := value
 	for i, f := range filters {
 		op, ok := r.ops[f.Name]
@@ -141,10 +141,10 @@ func (r *FilterRegistry) Apply(value string, filters []loader.FilterBlock) (stri
 	return out, nil
 }
 
-// Known reports whether name is a registered FIELD filter. Validating a whole
+// known reports whether name is a registered FIELD filter. Validating a whole
 // definition requires BOTH this and rowFilterKnown (for RowsBlock.Filters) —
 // field and row chains are separate vocabularies; see rowFilterKnown.
-func (r *FilterRegistry) Known(name string) bool {
+func (r *FilterRegistry) known(name string) bool {
 	_, ok := r.ops[name]
 	return ok
 }

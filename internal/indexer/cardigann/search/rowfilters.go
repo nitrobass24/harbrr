@@ -8,7 +8,7 @@ import (
 
 // Row filters operate on the row SET (RowsBlock.Filters), not on a single field
 // value, so they are exposed as reusable helpers rather than chained through
-// Apply. Their APPLICATION to the parsed row set is wired by the selector stage
+// apply. Their APPLICATION to the parsed row set is wired by the selector stage
 // and the end-to-end Definition walk. The registry only needs to KNOW their
 // names (see rowFilterKnown) so the corpus completeness test sees zero unknown
 // filters.
@@ -71,7 +71,7 @@ func strDump(_ string) bool {
 
 // rowFilterNames is the bounded set of row-filter names from the schema
 // vocabulary. They are recognized (so the corpus test passes) but applied by
-// items 5/10, not by Apply.
+// items 5/10, not by apply.
 var rowFilterNames = map[string]struct{}{
 	"andmatch": {},
 	"strdump":  {},

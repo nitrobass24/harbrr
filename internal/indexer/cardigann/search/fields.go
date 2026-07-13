@@ -82,7 +82,7 @@ func parseField(fe loader.FieldEntry, row selector.Row, query Query, deps Deps, 
 		if ferr != nil {
 			return fmt.Errorf("field %q: %w", name, ferr)
 		}
-		value, err = deps.Filters.Apply(value, filters)
+		value, err = deps.Filters.apply(value, filters)
 		if err != nil {
 			return fmt.Errorf("field %q: %w", name, err)
 		}
