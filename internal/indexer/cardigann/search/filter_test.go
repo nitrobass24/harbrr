@@ -416,10 +416,16 @@ func TestRowFilters(t *testing.T) {
 		// splits to "12"; the \pN approximation would keep "12½" whole and miss.
 		{name: "number-other splits the token (No)", title: "12 inch vinyl 2019", keywords: "12½ inch", want: true},
 
-		// A single non-Latin char is one rune → dropped (Jackett's Length ≤ 1),
-		// so it is not required and the row is kept even though the title lacks
-		// that char.
+		// A single BMP non-Latin char is one UTF-16 code unit → dropped
+		// (Jackett's .NET Length ≤ 1), so it is not required and the row is
+		// kept even though the title lacks that char.
 		{name: "single cjk char dropped", title: "刘慈欣 novel", keywords: "三 novel", want: true},
+
+		// A single ASTRAL char (CJK Extension B, U+2000B) is one rune but a
+		// surrogate pair in .NET (Length 2) → KEPT and required, exactly like
+		// Jackett. A rune count would drop it and wrongly keep the row.
+		{name: "single astral cjk char required and missing", title: "novel 2023", keywords: "𠀋 novel", want: false},
+		{name: "single astral cjk char present", title: "𠀋 novel 2023", keywords: "𠀋 novel", want: true},
 
 		// Mixed Latin + non-Latin: every non-dropped token must be present.
 		{name: "mixed both present", title: "三体 Remembrance 1080p", keywords: "三体 remembrance", want: true},

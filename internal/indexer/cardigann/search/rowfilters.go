@@ -3,7 +3,6 @@ package search
 import (
 	"regexp"
 	"strings"
-	"unicode/utf8"
 )
 
 // Row filters operate on the row SET (RowsBlock.Filters), not on a single field
@@ -42,14 +41,12 @@ var andMatchStopwords = map[string]struct{}{"and": {}, "the": {}, "an": {}}
 func andMatch(title, keywords string) bool {
 	lowerTitle := strings.ToLower(title)
 	for _, raw := range andMatchSplit.Split(keywords, -1) {
-		// Jackett drops parts with .NET string Length ≤ 1 (UTF-16 code units).
-		// Counting runes matches that for BMP text — a single CJK/Cyrillic char
-		// is one rune → dropped, just like Jackett — and also covers the empty
-		// strings the split leaves at boundaries. Astral chars (emoji, CJK
-		// extensions) are one rune here but Length 2 in .NET; they never appear
-		// as standalone AND-match tokens in tracker titles, so the difference is
-		// negligible.
-		if utf8.RuneCountInString(raw) <= 1 {
+		// Jackett drops parts with .NET string Length ≤ 1 — UTF-16 code units,
+		// counted here exactly: a BMP rune (single CJK/Cyrillic char) is one
+		// unit → dropped, just like Jackett, while an astral rune (CJK
+		// extensions) is a surrogate pair (Length 2) → kept and required. The
+		// count also covers the empty strings the split leaves at boundaries.
+		if utf16Len(raw) <= 1 {
 			continue
 		}
 		tok := strings.ToLower(raw)
@@ -61,6 +58,19 @@ func andMatch(title, keywords string) bool {
 		}
 	}
 	return true
+}
+
+// utf16Len is .NET string Length: the number of UTF-16 code units, counting
+// each astral rune as its surrogate pair (two units).
+func utf16Len(s string) int {
+	n := 0
+	for _, r := range s {
+		n++
+		if r > 0xFFFF {
+			n++
+		}
+	}
+	return n
 }
 
 // strDump implements the strdump row filter: Jackett only debug-logs the row
