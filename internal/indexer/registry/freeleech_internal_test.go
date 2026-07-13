@@ -4,9 +4,14 @@ import (
 	"context"
 	"slices"
 	"testing"
+	"time"
 
+	"github.com/rs/zerolog"
+
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 	"github.com/autobrr/harbrr/internal/web/torznabhttp"
 )
 
@@ -29,7 +34,51 @@ func titles(rels []*normalizer.Release) []string {
 	return out
 }
 
-func TestFreeleechIndexer_Search(t *testing.T) {
+// fakeDriver is a minimal native.Driver test double returning a fixed release set. It is
+// the engine-shaped core the adapter wraps, so the freeleech serve-time view can be
+// exercised through the REAL indexerAdapter.Search (cache left nil ⇒ the live path).
+type fakeDriver struct {
+	releases []*normalizer.Release
+}
+
+func (d *fakeDriver) Capabilities() *mapper.Capabilities { return &mapper.Capabilities{} }
+func (d *fakeDriver) NeedsResolver() bool                { return false }
+func (d *fakeDriver) DownloadNeedsAuth() bool            { return false }
+func (d *fakeDriver) Test(context.Context) error         { return nil }
+
+func (d *fakeDriver) Search(_ context.Context, _ search.Query) ([]*normalizer.Release, error) {
+	return d.releases, nil
+}
+
+func (d *fakeDriver) Grab(context.Context, string) (*search.GrabResult, error) {
+	return &search.GrabResult{}, nil
+}
+
+// pagingDriver is a fakeDriver that also forwards offset/limit upstream (native.OffsetPager),
+// so the adapter's SupportsOffsetPaging type-assert reports true.
+type pagingDriver struct{ fakeDriver }
+
+func (p *pagingDriver) SupportsOffsetPaging() bool { return true }
+
+// newFreeleechAdapter builds a minimal cache-less adapter over inner. clock + stats are set
+// because liveSearch samples the clock and records a query unconditionally; cache stays nil
+// so Search takes the live branch, and info/health/db are only touched on a CLASSIFIED
+// error, which these fakes never return.
+func newFreeleechAdapter(inner native.Driver, freeleechOnly bool) *indexerAdapter {
+	return &indexerAdapter{
+		info:          torznabhttp.IndexerInfo{ID: "fake"},
+		inner:         inner,
+		freeleechOnly: freeleechOnly,
+		stats:         newIndexerStats(nil, time.Now, zerolog.Nop()),
+		clock:         time.Now,
+		log:           zerolog.Nop(),
+	}
+}
+
+// TestFreeleechAdapter_Search exercises the serve-time freeleech view now inlined in
+// indexerAdapter.Search: honor mode keeps only dvf==0, the bypass variant returns the full
+// catalog, and freeleech-off is a no-op.
+func TestFreeleechAdapter_Search(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -61,8 +110,8 @@ func TestFreeleechIndexer_Search(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			inner := &fakeInner{releases: relsFixture()}
-			idx := &freeleechIndexer{Indexer: inner, freeleechOnly: tt.freeleechOnly}
+			inner := &fakeDriver{releases: relsFixture()}
+			idx := newFreeleechAdapter(inner, tt.freeleechOnly)
 
 			got, err := idx.Search(context.Background(), search.Query{FreeleechBypass: tt.bypass})
 			if err != nil {
@@ -75,12 +124,12 @@ func TestFreeleechIndexer_Search(t *testing.T) {
 	}
 }
 
-// TestFreeleechIndexer_DoesNotMutateInner proves the filter allocates a fresh slice so
-// the cached full set (shared with the bypass feed + announce tap) is never mutated.
-func TestFreeleechIndexer_DoesNotMutateInner(t *testing.T) {
+// TestFreeleechAdapter_DoesNotMutateInner proves the filter allocates a fresh slice so the
+// cached full set (shared with the bypass feed + announce tap) is never mutated.
+func TestFreeleechAdapter_DoesNotMutateInner(t *testing.T) {
 	t.Parallel()
-	inner := &fakeInner{releases: relsFixture()}
-	idx := &freeleechIndexer{Indexer: inner, freeleechOnly: true}
+	inner := &fakeDriver{releases: relsFixture()}
+	idx := newFreeleechAdapter(inner, true)
 
 	if _, err := idx.Search(context.Background(), search.Query{}); err != nil {
 		t.Fatalf("Search: %v", err)
@@ -90,22 +139,24 @@ func TestFreeleechIndexer_DoesNotMutateInner(t *testing.T) {
 	}
 }
 
-// TestFreeleechIndexer_OffsetPagingDelegated proves the decorator forwards the optional
-// OffsetPager capability (embedding the interface would otherwise hide it from the
-// handler, which would then double-offset a deep-paging driver).
-func TestFreeleechIndexer_OffsetPagingDelegated(t *testing.T) {
+// TestFreeleechAdapter_OffsetPaging proves the flattened adapter reports the optional
+// OffsetPager capability directly off the wrapped driver — true for a paging driver, false
+// for one that does not implement native.OffsetPager. This replaces the old decorator's
+// hand-forwarding test; the compile-time var _ torznabhttp.OffsetPager assertion (adapter.go)
+// is the static backstop.
+func TestFreeleechAdapter_OffsetPaging(t *testing.T) {
 	t.Parallel()
-	idx := &freeleechIndexer{Indexer: &pagingInner{}, freeleechOnly: false}
-	pager, ok := torznabhttp.Indexer(idx).(torznabhttp.OffsetPager)
-	if !ok {
-		t.Fatal("freeleechIndexer does not satisfy OffsetPager")
+
+	paging := newFreeleechAdapter(&pagingDriver{}, false)
+	if !paging.SupportsOffsetPaging() {
+		t.Error("paging driver: SupportsOffsetPaging() = false, want true (promoted off the driver)")
 	}
-	if !pager.SupportsOffsetPaging() {
-		t.Error("SupportsOffsetPaging() = false, want true (delegated from inner)")
+	if _, ok := torznabhttp.Indexer(paging).(torznabhttp.OffsetPager); !ok {
+		t.Fatal("adapter does not satisfy torznabhttp.OffsetPager")
+	}
+
+	nonPaging := newFreeleechAdapter(&fakeDriver{}, false)
+	if nonPaging.SupportsOffsetPaging() {
+		t.Error("non-paging driver: SupportsOffsetPaging() = true, want false")
 	}
 }
-
-// pagingInner is a fakeInner that also forwards offset/limit upstream.
-type pagingInner struct{ fakeInner }
-
-func (p *pagingInner) SupportsOffsetPaging() bool { return true }

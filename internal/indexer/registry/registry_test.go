@@ -103,9 +103,9 @@ func (d *replayDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
 	}, nil
 }
 
-// newRegistry builds a registry over an in-memory DB, an inline-key keyring, and a
-// drop-in loader holding defYAML, with the replay Doer injected.
-func newRegistry(t *testing.T, doer search.Doer) (*registry.Registry, *database.DB) {
+// newRegistryDeps opens a migrated in-memory DB with the testtracker drop-in def + an
+// inline-key keyring — the pieces both registry constructors below assemble.
+func newRegistryDeps(t *testing.T) (*database.DB, *loader.Loader, *secrets.Keyring) {
 	t.Helper()
 
 	db, err := database.Open(":memory:")
@@ -126,12 +126,33 @@ func newRegistry(t *testing.T, doer search.Doer) (*registry.Registry, *database.
 	if err != nil {
 		t.Fatalf("open keyring: %v", err)
 	}
+	return db, loader.New(dropin), keyring
+}
 
+// newRegistry builds a registry over an in-memory DB, an inline-key keyring, and a
+// drop-in loader holding defYAML, with the replay Doer injected. Caching is OFF.
+func newRegistry(t *testing.T, doer search.Doer) (*registry.Registry, *database.DB) {
+	t.Helper()
+	db, ldr, keyring := newRegistryDeps(t)
 	opts := []registry.Option{registry.WithClock(fixedClock)}
 	if doer != nil {
 		opts = append(opts, registry.WithDoerFactory(func(registry.ClientParams) (search.Doer, error) { return doer, nil }))
 	}
-	return registry.New(db, loader.New(dropin), keyring, opts...), db
+	return registry.New(db, ldr, keyring, opts...), db
+}
+
+// newCachingRegistry is newRegistry with the search cache enabled, so reg.Indexer returns
+// the REAL flattened *indexerAdapter wired to the cache — the production serve shape. Used
+// by the driver-backed paging tests so they exercise the actual served value, not a scaffold.
+func newCachingRegistry(t *testing.T, doer search.Doer) (*registry.Registry, *database.DB) {
+	t.Helper()
+	db, ldr, keyring := newRegistryDeps(t)
+	sc := registry.NewSearchCacheForTest(db, fixedClock)
+	opts := []registry.Option{registry.WithClock(fixedClock), registry.WithSearchCache(sc)}
+	if doer != nil {
+		opts = append(opts, registry.WithDoerFactory(func(registry.ClientParams) (search.Doer, error) { return doer, nil }))
+	}
+	return registry.New(db, ldr, keyring, opts...), db
 }
 
 // testHexKey is a synthetic 32-byte AES key for tests only (AGENTS.md allows

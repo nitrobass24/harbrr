@@ -144,7 +144,7 @@ func TestSearchCacheEnabledGate(t *testing.T) {
 
 	sc, instID, _ := testCache(t, seedTTL(), 0)
 	inner := &fakeInner{releases: relSet("a")}
-	idx := sc.wrap(inner, instID, nil)
+	idx := sc.probe(inner, instID, nil)
 	ctx := context.Background()
 
 	disabled := false

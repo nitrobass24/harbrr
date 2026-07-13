@@ -60,7 +60,7 @@ func TestMissStoreSkippedWhenInstanceInvalidatedDuringFetch(t *testing.T) {
 			}
 		},
 	}
-	idx := sc.wrap(inner, instID, nil) // captures builtEpoch = 0
+	idx := sc.probe(inner, instID, nil) // captures builtEpoch = 0
 	q := search.Query{Keywords: "matrix"}
 
 	// The user's search still succeeds with the live result — degrade-open is intact.
@@ -91,7 +91,7 @@ func TestSWRStoreSkippedWhenInstanceInvalidatedDuringRefresh(t *testing.T) {
 	// Prime the cache through a plain indexer (builtEpoch 0), storing a full-TTL entry.
 	primer := &fakeInner{releases: primeSet}
 	q := search.Query{Keywords: "swr"}
-	if _, err := sc.wrap(primer, instID, nil).Search(context.Background(), q); err != nil {
+	if _, err := sc.probe(primer, instID, nil).Search(context.Background(), q); err != nil {
 		t.Fatalf("prime: %v", err)
 	}
 	key := buildSearchCacheKey(instID, q, false)
@@ -100,7 +100,7 @@ func TestSWRStoreSkippedWhenInstanceInvalidatedDuringRefresh(t *testing.T) {
 	// we can land the purge while the refresh is genuinely in flight.
 	gate := make(chan struct{})
 	refresher := &fakeInner{releases: refreshSet, gate: gate, firstSeen: make(chan struct{})}
-	idx := sc.wrap(refresher, instID, nil) // captures builtEpoch = 0
+	idx := sc.probe(refresher, instID, nil) // captures builtEpoch = 0
 
 	// Advance past the 80% refresh threshold (but before expiry) and take a hit: it
 	// serves the cached prime value and fires the gated SWR refresh in the background.
@@ -146,7 +146,7 @@ func TestStoreProceedsWhenEpochUnchanged(t *testing.T) {
 	sc, instID, _ := testCache(t, keywordTTL, 0)
 
 	inner := &fakeInner{releases: relSet("a1", "a2", "a3", "a4", "a5", "a6")}
-	idx := sc.wrap(inner, instID, nil)
+	idx := sc.probe(inner, instID, nil)
 	q := search.Query{Keywords: "matrix"}
 	if _, err := idx.Search(context.Background(), q); err != nil {
 		t.Fatalf("search: %v", err)

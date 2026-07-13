@@ -9,7 +9,7 @@ import (
 // feed variant signals that the serve-time freeleech view must be skipped (the full
 // catalog is served). It lives here, not in search.Query at request time, so the route
 // — not a query param — selects the variant; searchReleases copies it onto the engine
-// query for the registry's freeleechIndexer decorator to read.
+// query for the registry adapter's freeleech serve-time view to read.
 type freeleechBypassKey struct{}
 
 // WithFreeleechBypass marks ctx as a freeleech-bypass request (the `/results/torznab/full`

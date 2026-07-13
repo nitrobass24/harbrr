@@ -25,7 +25,7 @@ func TestBreakerShortCircuitsGenericError(t *testing.T) {
 	sc, instID, clk := testCache(t, breakerTTL, 0)
 	sentinel := errors.New("tracker down")
 	inner := &fakeInner{err: sentinel}
-	idx := sc.wrap(inner, instID, nil)
+	idx := sc.probe(inner, instID, nil)
 	q := search.Query{Keywords: "x"}
 
 	// First search drives the tracker, errors, and trips the breaker.
@@ -69,7 +69,7 @@ func TestBreakerHonorsRetryAfter(t *testing.T) {
 	sc, instID, clk := testCache(t, breakerTTL, 0) // negative window is 1m
 	rl := &search.RateLimitedError{StatusCode: 429, RetryAfter: 3 * time.Minute}
 	inner := &fakeInner{err: rl}
-	idx := sc.wrap(inner, instID, nil)
+	idx := sc.probe(inner, instID, nil)
 	q := search.Query{Keywords: "y"}
 
 	if _, err := idx.Search(context.Background(), q); !errors.Is(err, search.ErrRateLimited) {
@@ -103,7 +103,7 @@ func TestBreakerServesFreshCacheWhileOpen(t *testing.T) {
 	t.Parallel()
 	sc, instID, _ := testCache(t, breakerTTL, 0)
 	inner := &fakeInner{releases: relSet("Cached", "Cached2", "Cached3", "Cached4", "Cached5", "Cached6")}
-	idx := sc.wrap(inner, instID, nil)
+	idx := sc.probe(inner, instID, nil)
 	qa := search.Query{Keywords: "a"}
 
 	// Prime a successful entry for query A.
@@ -133,7 +133,7 @@ func TestBreakerBypassForcesLive(t *testing.T) {
 	t.Parallel()
 	sc, instID, _ := testCache(t, breakerTTL, 0)
 	inner := &fakeInner{err: errors.New("down")}
-	idx := sc.wrap(inner, instID, nil)
+	idx := sc.probe(inner, instID, nil)
 	q := search.Query{Keywords: "x"}
 
 	// Trip the breaker.
@@ -163,7 +163,7 @@ func TestBreakerDisabledWhenNegativeZero(t *testing.T) {
 	t.Parallel()
 	sc, instID, _ := testCache(t, keywordTTL, 0) // keywordTTL has negative=0
 	inner := &fakeInner{err: errors.New("down")}
-	idx := sc.wrap(inner, instID, nil)
+	idx := sc.probe(inner, instID, nil)
 	q := search.Query{Keywords: "x"}
 
 	for range 3 {
@@ -182,7 +182,7 @@ func TestBreakerRuntimeDisableIsImmediate(t *testing.T) {
 	t.Parallel()
 	sc, instID, _ := testCache(t, breakerTTL, 0)
 	inner := &fakeInner{err: errors.New("down")}
-	idx := sc.wrap(inner, instID, nil)
+	idx := sc.probe(inner, instID, nil)
 	q := search.Query{Keywords: "x"}
 	ctx := context.Background()
 
@@ -259,7 +259,7 @@ func TestBreakerNotTrippedByInheritedCancelOnSearch(t *testing.T) {
 	t.Parallel()
 	sc, instID, _ := testCache(t, breakerTTL, 0)
 	inner := &fakeInner{err: fmt.Errorf("registry: request aborted: %w", context.Canceled)}
-	idx := sc.wrap(inner, instID, nil)
+	idx := sc.probe(inner, instID, nil)
 	q := search.Query{Keywords: "x"}
 
 	if _, err := idx.Search(context.Background(), q); !errors.Is(err, context.Canceled) {
@@ -326,7 +326,7 @@ func TestPerInstanceCountersIsolate(t *testing.T) {
 	t.Parallel()
 	sc, instID, _ := testCache(t, breakerTTL, 0)
 	inner := &fakeInner{releases: relSet("A")}
-	idx := sc.wrap(inner, instID, nil)
+	idx := sc.probe(inner, instID, nil)
 	q := search.Query{Keywords: "a"}
 	ctx := context.Background()
 

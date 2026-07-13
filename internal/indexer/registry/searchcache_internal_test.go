@@ -120,7 +120,7 @@ func TestCacheHitDoesNotCallInner(t *testing.T) {
 	t.Parallel()
 	sc, instID, _ := testCache(t, keywordTTL, 0)
 	inner := &fakeInner{releases: relSet("Alpha", "Beta")}
-	idx := sc.wrap(inner, instID, nil)
+	idx := sc.probe(inner, instID, nil)
 	ctx := context.Background()
 	q := search.Query{Keywords: "alpha"}
 
@@ -152,7 +152,7 @@ func TestConcurrentMissesSingleflight(t *testing.T) {
 	sc, instID, _ := testCache(t, keywordTTL, 0)
 	gate := make(chan struct{})
 	inner := &fakeInner{releases: relSet("X"), gate: gate, firstSeen: make(chan struct{})}
-	idx := sc.wrap(inner, instID, nil)
+	idx := sc.probe(inner, instID, nil)
 	q := search.Query{Keywords: "x"}
 
 	const n = 16
@@ -189,7 +189,7 @@ func TestBypassForcesInnerAndWritesBack(t *testing.T) {
 	t.Parallel()
 	sc, instID, _ := testCache(t, keywordTTL, 0)
 	inner := &fakeInner{releases: relSet("Fresh")}
-	idx := sc.wrap(inner, instID, nil)
+	idx := sc.probe(inner, instID, nil)
 	q := search.Query{Keywords: "fresh"}
 
 	// Prime the cache with a normal miss.
@@ -226,7 +226,7 @@ func TestStaleHitFiresOneRefresh(t *testing.T) {
 	v2 := relSet("b1", "b2", "b3", "b4", "b5", "b6")
 	gate := make(chan struct{})
 	inner := &fakeInner{releases: v1, gate: gate}
-	idx := sc.wrap(inner, instID, nil)
+	idx := sc.probe(inner, instID, nil)
 	q := search.Query{Keywords: "v"}
 
 	// Prime: first miss stores v1 (open the gate so the prime does not block).
@@ -280,7 +280,7 @@ func TestInnerErrorNotCached(t *testing.T) {
 	sc, instID, _ := testCache(t, keywordTTL, 0)
 	sentinel := errors.New("boom")
 	inner := &fakeInner{err: sentinel}
-	idx := sc.wrap(inner, instID, nil)
+	idx := sc.probe(inner, instID, nil)
 	q := search.Query{Keywords: "err"}
 
 	if _, err := idx.Search(context.Background(), q); !errors.Is(err, sentinel) {
@@ -309,7 +309,7 @@ func TestStatsHitMissRatio(t *testing.T) {
 	t.Parallel()
 	sc, instID, _ := testCache(t, keywordTTL, 0)
 	inner := &fakeInner{releases: relSet("A")}
-	idx := sc.wrap(inner, instID, nil)
+	idx := sc.probe(inner, instID, nil)
 	q := search.Query{Keywords: "a"}
 	ctx := context.Background()
 
@@ -341,7 +341,7 @@ func TestCacheInfoRecordedOnMissAndHit(t *testing.T) {
 	t.Parallel()
 	sc, instID, _ := testCache(t, keywordTTL, 0)
 	inner := &fakeInner{releases: relSet("Alpha", "Beta")}
-	idx := sc.wrap(inner, instID, nil)
+	idx := sc.probe(inner, instID, nil)
 	q := search.Query{Keywords: "alpha"}
 
 	// Miss: the store-back records the validators for this request.
@@ -382,7 +382,7 @@ func TestCacheInfoRecordedForCoalescedMisses(t *testing.T) {
 	sc, instID, _ := testCache(t, keywordTTL, 0)
 	gate := make(chan struct{})
 	inner := &fakeInner{releases: relSet("X"), gate: gate, firstSeen: make(chan struct{})}
-	idx := sc.wrap(inner, instID, nil)
+	idx := sc.probe(inner, instID, nil)
 	q := search.Query{Keywords: "x"}
 
 	const n = 8

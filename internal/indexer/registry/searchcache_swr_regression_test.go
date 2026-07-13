@@ -77,14 +77,14 @@ func TestMissCoalescingOntoInflightSWRReturnsReleases(t *testing.T) {
 	// gatedInner's FIRST call is the SWR refresh, not the prime. We prime by storing
 	// directly through a plain fakeInner-equivalent: reuse sc.search via a bare wrap.
 	primer := &fakeInner{releases: primeSet}
-	primeIdx := sc.wrap(primer, instID, nil)
+	primeIdx := sc.probe(primer, instID, nil)
 	q := search.Query{Keywords: "swr"}
 	if _, err := primeIdx.Search(context.Background(), q); err != nil {
 		t.Fatalf("prime: %v", err)
 	}
 
 	// Now wrap the gated indexer for the refresh + miss phase.
-	idx := sc.wrap(inner, instID, nil)
+	idx := sc.probe(inner, instID, nil)
 
 	// Advance past 80% of the 30m TTL (24m) but before expiry, then take a hit. The
 	// hit serves the cached prime value and fires the gated SWR refresh in background.

@@ -21,8 +21,10 @@ func NewSearchCacheForTest(db dbinterface.Querier, clock func() time.Time) *Sear
 	return NewSearchCache(db, t, clock, zerolog.Nop())
 }
 
-// WrapForTest exposes the unexported cache decorator to the external test package so
-// it can serve a cached indexer through the real Torznab handler.
+// WrapForTest serves a fake indexer through the cache's cache-aside path (via the
+// test-only cacheProbe scaffold) so the external suite can drive a cached indexer through
+// the real Torznab handler. Driver-backed paging tests instead resolve the real flattened
+// adapter via reg.Indexer with WithSearchCache; this stays for fakes that are not drivers.
 func WrapForTest(sc *SearchCache, inner torznabhttp.Indexer, instanceID int64) torznabhttp.Indexer {
-	return sc.wrap(inner, instanceID, nil)
+	return sc.probe(inner, instanceID, nil)
 }

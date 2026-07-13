@@ -157,7 +157,7 @@ setting found this parity-exact except for the two cases below.
   the filter reconstructs the exact freeleech subset. `[Deliberate]` — the caching win
   (one tracker fetch shared by the honor + bypass feeds + the announce source) is worth
   one obscure tracker's honor feed; use the bypass `/full` feed for SceneTime cross-seed.
-  (`internal/indexer/registry/freeleech.go`.)
+  (`internal/indexer/registry/adapter.go`, `filterFreeleechOnly` + `indexerAdapter.Search`.)
 - **Honor-feed pagination dilution above one page.** harbrr does a single engine fetch
   (default page = max = 100) and filters it to freeleech at serve time, so a search whose
   full result set exceeds one page shows fewer freeleech items on the honor feed than a
@@ -165,5 +165,5 @@ setting found this parity-exact except for the two cases below.
   searches return well under 100, so it is invisible in practice; the bypass feed is
   unaffected. The only deep-paging driver (newznab/usenet) has no freeleech setting, so
   the related has-more-floor interaction is unreachable. `[Deliberate]`
-  (`internal/indexer/registry/freeleech.go`; the single-engine-fetch model is the shared
-  "Better pagination support" design, autobrr/harbrr#3).
+  (`internal/indexer/registry/adapter.go`, the "Paging note" on `indexerAdapter.Search`; the
+  single-engine-fetch model is the shared "Better pagination support" design, autobrr/harbrr#3).

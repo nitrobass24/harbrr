@@ -32,7 +32,7 @@ func TestServeMissDoesNotCoalesceAcrossEpochs(t *testing.T) {
 
 	leaderGate := make(chan struct{})
 	leaderInner := &fakeInner{releases: relSet("leader1", "leader2"), gate: leaderGate, firstSeen: make(chan struct{})}
-	leaderIdx := sc.wrap(leaderInner, instID, nil) // captures builtEpoch = 0
+	leaderIdx := sc.probe(leaderInner, instID, nil) // captures builtEpoch = 0
 
 	leaderDone := make(chan []*normalizer.Release, 1)
 	go func() {
@@ -56,7 +56,7 @@ func TestServeMissDoesNotCoalesceAcrossEpochs(t *testing.T) {
 	sc.bumpInstanceEpoch(instID)
 
 	followerInner := &fakeInner{releases: relSet("follower1", "follower2")}
-	followerIdx := sc.wrap(followerInner, instID, nil) // captures builtEpoch = 1
+	followerIdx := sc.probe(followerInner, instID, nil) // captures builtEpoch = 1
 
 	followerDone := make(chan []*normalizer.Release, 1)
 	go func() {

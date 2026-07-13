@@ -30,12 +30,20 @@ type indexerAdapter struct {
 	info       torznabhttp.IndexerInfo
 	inner      native.Driver
 	instanceID int64
-	// cfg is the decrypted per-instance settings map. The search-cache decorator
-	// reads its "cache_ttl" override; it carries secrets, so it is never logged.
+	// cfg is the decrypted per-instance settings map. Search's cache-aside stage reads
+	// its "cache_ttl" override; it carries secrets, so it is never logged.
 	cfg map[string]string
+	// cache is the registry-wide search cache, wired at build time when caching is
+	// configured (nil ⇒ caching not configured, so Search runs live). builtEpoch is the
+	// instance's invalidation generation snapshotted at that same build time (see
+	// Registry.build); storeBestEffort drops any write-back from a superseded generation
+	// (U8R-F4). Snapshotting at build — not per fetch — also catches a purge that lands
+	// between the resolve and a later SWR trigger.
+	cache      *SearchCache
+	builtEpoch uint64
 	// freeleechOnly is the instance's stored `freeleech` setting. The engine is built
 	// with that key cleared (so it always fetches the full catalog); the value is
-	// carried here only to drive the serve-time freeleechIndexer decorator.
+	// carried here only to drive the serve-time freeleech view in Search.
 	freeleechOnly bool
 	db            dbinterface.Execer
 	health        database.Health
@@ -50,8 +58,14 @@ type indexerAdapter struct {
 	log   zerolog.Logger
 }
 
-// Compile-time proof the adapter satisfies the handler's contract.
-var _ torznabhttp.Indexer = (*indexerAdapter)(nil)
+// Compile-time proof the adapter satisfies the handler's contract — including the
+// optional OffsetPager capability, which the flattened adapter implements directly. That
+// static guarantee replaces the runtime capability re-forwarding the old freeleech/cache
+// decorators had to hand-write on every layer.
+var (
+	_ torznabhttp.Indexer     = (*indexerAdapter)(nil)
+	_ torznabhttp.OffsetPager = (*indexerAdapter)(nil)
+)
 
 // Info returns the indexer identity (carries no secrets).
 func (a *indexerAdapter) Info() torznabhttp.IndexerInfo { return a.info }
@@ -59,13 +73,57 @@ func (a *indexerAdapter) Info() torznabhttp.IndexerInfo { return a.info }
 // Capabilities returns the built indexer's capabilities document.
 func (a *indexerAdapter) Capabilities() *mapper.Capabilities { return a.inner.Capabilities() }
 
-// Search runs the engine's online search. A classified failure (auth/anti-bot/
-// rate-limited/parse) is recorded as a health event before the error is wrapped
-// with the indexer id (not a secret) and returned; the caller redacts it.
-func (a *indexerAdapter) Search(ctx context.Context, query search.Query) ([]*normalizer.Release, error) {
-	// Count every search that reaches the tracker (this adapter is bypassed on a cache
-	// hit) and sample its latency around the inner call — a failed search is still a
-	// query attempt with a real latency sample.
+// Search is the served entry point. It sequences two stages in a fixed order: the
+// cache-aside read over the FULL catalog, then the freeleech serve-time view applied to
+// the cache's OUTPUT. Keeping freeleech OUTSIDE the cache is what lets one cached
+// full-catalog entry serve both the honor feed (freeleech-only, for the *arrs) and the
+// bypass feed (full catalog, for qui/cross-seed) from a SINGLE tracker fetch — so a later
+// bypass poll never re-hits the tracker just because an *arr polled FL-only first.
+func (a *indexerAdapter) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
+	// (1) Cache-aside over the full catalog. The two-level enabled distinction lives
+	// here: cache nil (never configured) OR the runtime toggle off ⇒ run liveSearch
+	// directly; otherwise the cache drives liveSearch on a miss so the tracker is hit
+	// exactly once. SupportsOffsetPaging is the SAME signal the handler reads, so a paging
+	// driver keys per-page in the cache and is not re-offset downstream.
+	var (
+		releases []*normalizer.Release
+		err      error
+	)
+	if a.cache != nil && a.cache.tuning.Load().enabled {
+		releases, err = a.cache.search(ctx, a.instanceID, a.cfg, a.builtEpoch, a.liveSearch, a.SupportsOffsetPaging(), q)
+	} else {
+		releases, err = a.liveSearch(ctx, q)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	// (2) Freeleech serve-time view, over the stored full catalog. The freeleech signal
+	// is downloadVolumeFactor == 0 — the per-row marker every freeleech def stamps
+	// independent of the setting. The bypass feed sets q.FreeleechBypass to skip it and
+	// reuse the same cached entry.
+	//
+	// Paging note: this filter runs INSIDE the Search the handler's pager measures, so on
+	// a deep-paging driver the honor feed's has-more floor is computed on the post-filter
+	// page and can stop early (the documented pagination-dilution divergence). This is
+	// unreachable for the shipped paging drivers — only usenet drivers (newznab, nzbindex)
+	// forward offset upstream, and usenet has no freeleech setting, so freeleechOnly is
+	// always false there.
+	if a.freeleechOnly && !q.FreeleechBypass {
+		releases = filterFreeleechOnly(releases)
+	}
+	return releases, nil
+}
+
+// liveSearch is the live seam the cache drives on a miss or a refresh (and that Search
+// calls directly when caching is off): it runs the engine's online search and returns the
+// FULL catalog. A classified failure (auth/anti-bot/rate-limited/parse) is recorded as a
+// health event before the error is wrapped with the indexer id (not a secret) and
+// returned; the caller redacts it.
+func (a *indexerAdapter) liveSearch(ctx context.Context, query search.Query) ([]*normalizer.Release, error) {
+	// Count every search that reaches the tracker (liveSearch is bypassed on a cache hit)
+	// and sample its latency around the inner call — a failed search is still a query
+	// attempt with a real latency sample.
 	start := a.clock()
 	releases, err := a.inner.Search(ctx, query)
 	a.stats.RecordQuery(a.instanceID, a.clock().Sub(start))
@@ -157,4 +215,19 @@ func classifyHealth(err error) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+// filterFreeleechOnly returns a NEW slice holding only freeleech releases
+// (DownloadVolumeFactor == 0). It allocates fresh so the cached slice — shared with the
+// bypass feed and the announce-source tap — is never mutated. Partial-leech releases
+// (factor 0.5/0.75) are not freeleech and are excluded, matching Jackett's freeleech
+// selector, which keys on the 100%-free marker.
+func filterFreeleechOnly(releases []*normalizer.Release) []*normalizer.Release {
+	out := make([]*normalizer.Release, 0, len(releases))
+	for _, r := range releases {
+		if r != nil && r.DownloadVolumeFactor == 0 {
+			out = append(out, r)
+		}
+	}
+	return out
 }

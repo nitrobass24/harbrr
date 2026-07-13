@@ -14,7 +14,7 @@ func TestStatsByInstanceMergesDurableAndMemory(t *testing.T) {
 	t.Parallel()
 	sc, instID, _ := testCache(t, breakerTTL, 0)
 	inner := &fakeInner{releases: relSet("A")}
-	idx := sc.wrap(inner, instID, nil)
+	idx := sc.probe(inner, instID, nil)
 	ctx := context.Background()
 	q := search.Query{Keywords: "a"}
 
@@ -76,7 +76,7 @@ func TestStatsByInstanceReportsFlushedInstance(t *testing.T) {
 	t.Parallel()
 	sc, instID, _ := testCache(t, breakerTTL, 0)
 	inner := &fakeInner{releases: relSet("A")}
-	idx := sc.wrap(inner, instID, nil)
+	idx := sc.probe(inner, instID, nil)
 	ctx := context.Background()
 
 	if _, err := idx.Search(ctx, search.Query{Keywords: "a"}); err != nil {

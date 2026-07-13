@@ -90,7 +90,7 @@ func TestServeMissFollowerRecoversFromInheritedLeaderError(t *testing.T) {
 			t.Parallel()
 			sc, instID, _ := testCache(t, keywordTTL, 0)
 			inner := &seqInner{firstErr: tt.flightErr, results: relSet("f1", "f2")}
-			idx := sc.wrap(inner, instID, nil)
+			idx := sc.probe(inner, instID, nil)
 			q := search.Query{Keywords: "follower"}
 
 			// The follower's OWN context is live throughout.
@@ -168,7 +168,7 @@ func TestServeMissReturnsOwnCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	inner := &cancelOnSearchInner{cancel: cancel, results: relSet("leaked")}
-	idx := sc.wrap(inner, instID, nil)
+	idx := sc.probe(inner, instID, nil)
 
 	got, err := idx.Search(ctx, search.Query{Keywords: "gone"})
 	if !errors.Is(err, context.Canceled) {
@@ -232,7 +232,7 @@ func TestSingleflightFollowerSurvivesLeaderCancel(t *testing.T) {
 		leaderRelease:   make(chan struct{}),
 		followerResults: relSet("f1", "f2"),
 	}
-	idx := sc.wrap(inner, instID, nil)
+	idx := sc.probe(inner, instID, nil)
 	q := search.Query{Keywords: "coalesce"}
 
 	leaderCtx, cancelLeader := context.WithCancel(context.Background())

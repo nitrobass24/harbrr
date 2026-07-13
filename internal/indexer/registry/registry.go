@@ -68,9 +68,9 @@ type Registry struct {
 	// Cardigann engine; everything else (caching, health, /dl, serializer) is shared.
 	native map[string]native.Family
 
-	// searchCache, when non-nil, wraps each resolved indexer in a cache-aside
-	// decorator (the served path only — Test stays uncached). Nil means caching is
-	// OFF and resolve returns the bare adapter unchanged.
+	// searchCache, when non-nil, is wired into each resolved adapter so its Search runs
+	// cache-aside (the served path only — Test stays uncached). Nil means caching is OFF
+	// and the adapter runs live.
 	searchCache *SearchCache
 
 	// healthSink, when non-nil, is notified best-effort after a health event is
@@ -85,8 +85,8 @@ type Registry struct {
 	stats *IndexerStats
 
 	mu sync.Mutex
-	// cache holds the per-slug served indexer. It is the wrapped (cached) indexer
-	// when searchCache != nil, else the bare adapter — both as torznabhttp.Indexer.
+	// cache holds the per-slug served indexer — the flattened adapter (cache-wired when
+	// searchCache != nil, else running live), served as a torznabhttp.Indexer.
 	cache map[string]torznabhttp.Indexer
 	// gen is a per-slug generation counter bumped by invalidate; epoch is a global
 	// counter bumped by InvalidateAll. resolve captures both before it builds an
@@ -121,8 +121,8 @@ func WithClock(fn func() time.Time) Option {
 // WithLogger sets the logger used for resolve failures (errors are redacted).
 func WithLogger(l zerolog.Logger) Option { return func(r *Registry) { r.log = l } }
 
-// WithSearchCache enables the search-results cache: resolved indexers are wrapped
-// in a cache-aside decorator. Nil (the default, when this Option is not passed)
+// WithSearchCache enables the search-results cache: each resolved adapter is wired to it
+// and its Search runs cache-aside. Nil (the default, when this Option is not passed)
 // leaves caching off with zero behavior change.
 func WithSearchCache(sc *SearchCache) Option {
 	return func(r *Registry) { r.searchCache = sc }
@@ -255,28 +255,31 @@ func (r *Registry) resolve(ctx context.Context, slug string) (torznabhttp.Indexe
 	return idx, nil
 }
 
-// build resolves the served indexer for a slug: the bare adapter wrapped in the
-// search-cache decorator when caching is enabled, else the bare adapter. resolve
-// caches and serves this; Test deliberately uses buildAdapter (uncached, unwrapped).
+// build resolves the served indexer for a slug: the flattened adapter, wired to the
+// search cache when caching is configured. The adapter owns the cache-aside read and the
+// freeleech serve-time view as an inline top-to-bottom sequence (see indexerAdapter.
+// Search) — no decorator stack. resolve caches and serves this; Test deliberately uses
+// buildAdapter, which leaves cache nil so a credential probe never warms the cache.
 func (r *Registry) build(ctx context.Context, slug string) (torznabhttp.Indexer, error) {
 	a, err := r.buildAdapter(ctx, slug)
 	if err != nil {
 		return nil, err
 	}
-	var inner torznabhttp.Indexer = a
 	if r.searchCache != nil {
-		inner = r.searchCache.wrap(a, a.instanceID, a.cfg)
+		a.cache = r.searchCache
+		// Snapshot the instance's invalidation generation now, at build time — the same
+		// capture wrap() used to take. storeBestEffort drops any write-back from a
+		// superseded generation, and capturing here (not per fetch) also catches a purge
+		// that lands between this resolve and a later SWR trigger (U8R-F4).
+		a.builtEpoch = r.searchCache.instanceEpoch(a.instanceID)
 	}
-	// The freeleech view is the OUTERMOST layer (outside the cache): the engine fetched
-	// and the cache stored the full catalog, and this decorator narrows it to FL-only at
-	// serve time for the honor feed — so the bypass feed reuses the same cached entry.
-	return &freeleechIndexer{Indexer: inner, freeleechOnly: a.freeleechOnly}, nil
+	return a, nil
 }
 
 // buildAdapter loads the instance + definition, decrypts its settings, and
 // constructs the engine-shaped core (Cardigann engine OR native family driver)
-// wrapped in the shared adapter. It returns the BARE adapter, never the cache
-// decorator — Test uses it so a credential probe never consults or warms the cache.
+// wrapped in the shared adapter. It returns the adapter with cache left nil — Test
+// uses it so a credential probe never consults or warms the cache.
 func (r *Registry) buildAdapter(ctx context.Context, slug string) (*indexerAdapter, error) {
 	inst, err := r.instances.GetBySlug(ctx, r.db, slug)
 	if err != nil {
@@ -312,9 +315,9 @@ func (r *Registry) buildAdapter(ctx context.Context, slug string) (*indexerAdapt
 
 	// freeleech is consumed as a SERVE-TIME view, not a fetch-time filter: the engine is
 	// built with the key cleared so every fetch returns the full catalog (cached once and
-	// shared by the honor + bypass feeds). The stored value drives the freeleechIndexer
-	// decorator. Go-template truthiness is "non-empty" (a checked box resolves to "True",
-	// config.go), so an empty/absent value is off.
+	// shared by the honor + bypass feeds). The stored value drives the serve-time freeleech
+	// view in indexerAdapter.Search. Go-template truthiness is "non-empty" (a checked box
+	// resolves to "True", config.go), so an empty/absent value is off.
 	freeleechOnly := cfg["freeleech"] != ""
 	engineCfg := cfg
 	if freeleechOnly {

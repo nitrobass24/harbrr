@@ -65,36 +65,34 @@ func pageRSS(offset string, n int) string {
 
 // TestNewznabDeepPagingThroughCache is the blocker-catching, production-shape test: it
 // drives the shared read pipeline (torznabhttp.SearchReleases) over the REAL generic
-// Newznab driver WRAPPED in the registry's *cachedIndexer with caching ENABLED. The
-// blocker it guards: *cachedIndexer embeds the torznabhttp.Indexer INTERFACE, which does
-// not promote SupportsOffsetPaging off the wrapped adapter, so without the explicit
-// delegating method the wrapper would NOT satisfy torznabhttp.OffsetPager and the pipeline
-// would take the local-slice branch — re-offsetting a driver that already paged upstream
-// and serving an EMPTY page. The assertion is on CONTENT: the offset=100 page's guids must
-// appear in res.Releases.
+// Newznab driver served through the registry's flattened *indexerAdapter with caching
+// ENABLED (via reg.Indexer, the actual served value — not a test scaffold). The blocker it
+// guards: the served value must satisfy torznabhttp.OffsetPager and report true, or the
+// pipeline takes the local-slice branch — re-offsetting a driver that already paged
+// upstream and serving an EMPTY page. The flattened adapter implements OffsetPager directly
+// (compile-time assured in adapter.go); this test asserts CONTENT: the offset=100 page's
+// guids must appear in res.Releases.
 func TestNewznabDeepPagingThroughCache(t *testing.T) {
 	caps, err := os.ReadFile("../native/newznab/testdata/caps.xml")
 	if err != nil {
 		t.Fatalf("read caps golden: %v", err)
 	}
 	doer := &pagingDoer{caps: string(caps)}
-	reg, db := newRegistry(t, doer)
+	reg, _ := newCachingRegistry(t, doer)
 	addNewznab(t, reg, "nzb-paging", "newznab", "https://news.example.test")
 
 	ctx := context.Background()
-	bare, ok := reg.Indexer(ctx, "nzb-paging")
+	// reg.Indexer returns the REAL flattened *indexerAdapter wired to the search cache (the
+	// production serve shape), so this drives the actual served value end-to-end.
+	cached, ok := reg.Indexer(ctx, "nzb-paging")
 	if !ok {
 		t.Fatal("nzb-paging should resolve")
 	}
 
-	// Wrap the adapter in the real cache decorator (caching enabled) — the production shape.
-	sc := registry.NewSearchCacheForTest(db, fixedClock)
-	cached := registry.WrapForTest(sc, bare, 1)
-
-	// The blocker tripwire: the wrapped, cached indexer MUST promote the paging capability.
+	// The blocker tripwire: the served adapter MUST promote the paging capability directly.
 	pager, ok := cached.(torznabhttp.OffsetPager)
 	if !ok || !pager.SupportsOffsetPaging() {
-		t.Fatal("blocker: *cachedIndexer must satisfy torznabhttp.OffsetPager and delegate true")
+		t.Fatal("blocker: the served *indexerAdapter must satisfy torznabhttp.OffsetPager and report true")
 	}
 
 	res, err := torznabhttp.SearchReleases(ctx, cached,
@@ -174,10 +172,12 @@ func (f *fixedReleasesIndexer) Grab(_ context.Context, _ string) (*search.GrabRe
 }
 
 // TestNonPagingControlLocalSlices is the control for the blocker test: a non-paging
-// indexer wrapped in the SAME *cachedIndexer must local-slice at offset=100 (the driver
-// returned the full set), so the deep page is the [100:150] slice — never an upstream-paged
-// page. This proves cachedIndexer.SupportsOffsetPaging() correctly reports false for a
-// driver that is not an OffsetPager, and the pipeline keeps the unchanged behavior.
+// indexer served through the cache (the cacheProbe scaffold, since fixedReleasesIndexer is
+// a torznabhttp.Indexer fake, not a native.Driver, so it can't traverse reg.Indexer) must
+// local-slice at offset=100 (the driver returned the full set), so the deep page is the
+// [100:150] slice — never an upstream-paged page. This proves the cache/handler report
+// SupportsOffsetPaging()=false for an indexer that is not an OffsetPager, and the pipeline
+// keeps the unchanged behavior.
 func TestNonPagingControlLocalSlices(t *testing.T) {
 	t.Parallel()
 	db, err := database.Open(":memory:")
@@ -227,7 +227,9 @@ func TestNonPagingControlLocalSlices(t *testing.T) {
 // TestPagingFetchPerPageVsNonPagingShared pins the cache-key consequence of step 4/5: a
 // paging-capable driver keys per page, so two distinct pages drive TWO upstream fetches; a
 // non-paging driver keys page-free, so two pages share ONE fetch (the single-fetch superset
-// the local-slice design preserves). Both run through the real *cachedIndexer.
+// the local-slice design preserves). The paging half runs through the real flattened
+// adapter (reg.Indexer, caching enabled); the non-paging half uses the cacheProbe scaffold
+// over a fake torznabhttp.Indexer.
 func TestPagingFetchPerPageVsNonPagingShared(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -238,13 +240,12 @@ func TestPagingFetchPerPageVsNonPagingShared(t *testing.T) {
 		t.Fatalf("read caps golden: %v", err)
 	}
 	doer := &pagingDoer{caps: string(caps)}
-	reg, db := newRegistry(t, doer)
+	reg, _ := newCachingRegistry(t, doer)
 	addNewznab(t, reg, "nzb-fetchcount", "newznab", "https://news.example.test")
-	bare, ok := reg.Indexer(ctx, "nzb-fetchcount")
+	pcache, ok := reg.Indexer(ctx, "nzb-fetchcount")
 	if !ok {
 		t.Fatal("nzb-fetchcount should resolve")
 	}
-	pcache := registry.WrapForTest(registry.NewSearchCacheForTest(db, fixedClock), bare, 1)
 
 	for _, off := range []string{"0", "100"} {
 		if _, err := torznabhttp.SearchReleases(ctx, pcache,
