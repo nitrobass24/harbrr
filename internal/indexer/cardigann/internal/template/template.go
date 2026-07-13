@@ -7,7 +7,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/regexadapter"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/regexadapter"
 )
 
 // The corpus does NOT fit a vanilla text/template parser. Jackett's

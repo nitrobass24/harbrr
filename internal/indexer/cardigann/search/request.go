@@ -10,10 +10,10 @@ import (
 	"time"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/encode"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/encode"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/template"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/template"
 )
 
 // builtRequest is one fully resolved search request: its method, absolute URL,

@@ -9,11 +9,11 @@ import (
 	"strings"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/selector"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/template"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/selector"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/template"
 )
 
 // ResolveDownload turns a release's download link into the real torrent URL,

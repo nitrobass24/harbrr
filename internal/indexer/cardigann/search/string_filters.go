@@ -9,7 +9,7 @@ import (
 
 	"golang.org/x/text/unicode/norm"
 
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/encode"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/encode"
 )
 
 // errMissingArg signals a filter invoked without a required argument. Callers

@@ -4,9 +4,9 @@ import (
 	"testing"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/dateparse"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/selector"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/selector"
 )
 
 // headerDeps wires the same date machinery the engine installs (dateparse ->

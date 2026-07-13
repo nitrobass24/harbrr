@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"unicode"
 
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/regexadapter"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/regexadapter"
 )
 
 // Regex filters route through regexadapter: RE2 by default (ReDoS-safe), regexp2

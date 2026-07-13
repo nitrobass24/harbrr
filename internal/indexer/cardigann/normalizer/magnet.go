@@ -11,7 +11,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/encode"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/encode"
 )
 
 // publicTrackers is the tracker list Jackett's MagnetUtil appends when

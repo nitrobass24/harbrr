@@ -4,18 +4,23 @@
 // kept as the interoperability contract with the existing community corpus.
 //
 // The engine is built as a compiler-style pipeline of small, independently
-// testable stages, each in its own subpackage:
+// testable stages. Stages consumed outside the engine are subpackages:
 //
 //	loader        parse + schema-validate a definition
 //	mapper        capabilities + category mapping
-//	template      Go text/template evaluation (.NET-equivalent truthiness)
-//	filter        the bounded Cardigann filter registry
-//	selector      HTML (cascadia/goquery) + JSON selection
 //	dateparse     .NET date-format strings -> Go layout (tz, relative, localized)
-//	regexadapter  RE2 by default, regexp2 (.NET semantics) on demand
 //	login         the login/session executor (form/post/get/cookie)
-//	search        execute a search, page, collect rows
-//	normalizer    produce normalized release objects
+//	search        execute a search, page, collect rows; owns the bounded
+//	              Cardigann filter registry (FilterRegistry)
+//	normalizer    produce normalized release objects; owns magnet synthesis
+//
+// Engine-private support stages live under internal/ so they cannot be
+// imported from outside the engine:
+//
+//	internal/template      Go text/template evaluation (.NET-equivalent truthiness)
+//	internal/selector      HTML (cascadia/goquery) + JSON selection
+//	internal/regexadapter  RE2 by default, regexp2 (.NET semantics) on demand
+//	internal/encode        .NET-compatible URL/HTML encoding helpers
 //
 // The Torznab/Newznab serializer lives in internal/torznab.
 //

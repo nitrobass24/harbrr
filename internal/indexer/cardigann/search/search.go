@@ -18,10 +18,10 @@ import (
 
 	"golang.org/x/text/encoding"
 
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/selector"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/selector"
 )
 
 // responseTypeJSON and responseTypeXML are the Response.Type values that select

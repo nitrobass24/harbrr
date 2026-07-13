@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/template"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/template"
 )
 
 // Query is the parsed search request the engine drives a definition with. It is

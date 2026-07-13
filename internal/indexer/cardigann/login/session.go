@@ -7,8 +7,8 @@ import (
 
 	"golang.org/x/net/publicsuffix"
 
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/selector"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/template"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/selector"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/template"
 )
 
 // Doer is the narrow HTTP seam the executor drives. It is satisfied by

@@ -3,8 +3,8 @@ package search
 import (
 	"testing"
 
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/selector"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/selector"
 )
 
 // TestRenderRowsSelector covers evaluating a templated row selector before it is

@@ -4,7 +4,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/encode"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/encode"
 )
 
 // TestLoginFormEncodingDivergence pins the (now single-character) divergence

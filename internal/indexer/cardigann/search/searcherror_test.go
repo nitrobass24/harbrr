@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/selector"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/selector"
 )
 
 // searchErrorDef parses a private-tracker def whose search block declares a

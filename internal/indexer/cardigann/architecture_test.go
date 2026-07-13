@@ -23,6 +23,9 @@ import (
 // (or append a new layer); nothing else changes. The parent package
 // internal/indexer/cardigann (engine.go) is the composition root above the
 // stages, not a stage itself, so it is deliberately absent here.
+// Engine-private support stages (encode, selector, regexadapter, template)
+// live under internal/; stageDir resolves either location, so a stage's rank
+// here is independent of where its directory sits.
 var stageLayers = [][]string{
 	{"encode", "loader"},
 	{"mapper", "selector", "regexadapter", "dateparse", "parity"},
@@ -69,12 +72,15 @@ func TestPipelineIsAcyclicDAG(t *testing.T) {
 // stageImports returns the cardigann stage names directly imported by stage's
 // non-test source. Any import path under stagePrefix is collapsed to its first
 // path segment, so a future sub-package (…/search/foo) is attributed to its
-// owning stage (search) before the rank lookup.
+// owning stage (search) before the rank lookup. An internal/ first segment is
+// skipped over to the stage name beneath it, so relocated support stages keep
+// their own rank instead of all collapsing to the unranked segment "internal".
 func stageImports(t *testing.T, stage string) []string {
 	t.Helper()
-	entries, err := os.ReadDir(stage)
+	dir := stageDir(stage)
+	entries, err := os.ReadDir(dir)
 	if err != nil {
-		t.Fatalf("read %s: %v", stage, err)
+		t.Fatalf("read %s: %v", dir, err)
 	}
 	fset := token.NewFileSet()
 	var deps []string
@@ -83,7 +89,7 @@ func stageImports(t *testing.T, stage string) []string {
 		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
-		f, err := parser.ParseFile(fset, filepath.Join(stage, name), nil, parser.ImportsOnly)
+		f, err := parser.ParseFile(fset, filepath.Join(dir, name), nil, parser.ImportsOnly)
 		if err != nil {
 			t.Fatalf("parse %s: %v", name, err)
 		}
@@ -93,10 +99,24 @@ func stageImports(t *testing.T, stage string) []string {
 				t.Fatalf("unquote import %s in %s: %v", spec.Path.Value, name, err)
 			}
 			if rest, ok := strings.CutPrefix(path, stagePrefix); ok {
-				seg, _, _ := strings.Cut(rest, "/") // collapse any sub-package to its owning stage
+				seg, more, _ := strings.Cut(rest, "/") // collapse any sub-package to its owning stage
+				if seg == "internal" {                 // engine-private support stage: internal/<stage>/...
+					seg, _, _ = strings.Cut(more, "/")
+				}
 				deps = append(deps, seg)
 			}
 		}
 	}
 	return deps
+}
+
+// stageDir resolves a stage name to its directory relative to this package:
+// engine-private support stages live under internal/, pipeline stages sit
+// directly beside this file.
+func stageDir(stage string) string {
+	nested := filepath.Join("internal", stage)
+	if fi, err := os.Stat(nested); err == nil && fi.IsDir() {
+		return nested
+	}
+	return stage
 }

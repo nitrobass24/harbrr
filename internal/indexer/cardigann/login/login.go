@@ -15,8 +15,8 @@ import (
 	"strings"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/template"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/template"
 )
 
 // Typed errors. Callers branch on these to decide whether to surface a

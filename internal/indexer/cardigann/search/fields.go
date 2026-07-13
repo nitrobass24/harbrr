@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/selector"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/template"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/selector"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/template"
 )
 
 // optionalFields mirrors Jackett's OptionalFields: fields treated as optional
