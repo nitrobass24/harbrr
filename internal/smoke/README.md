@@ -41,6 +41,27 @@ Per tracker, page 1 only (the full criteria are in
   the 100-result page cap **and** the count ratio is ≥ 0.90, low title Jaccard still passes — a
   full page is a config-sorted window, so titles aren't comparable there.)
 
+## The differential bypasses harbrr's search cache
+
+Every differential search (harbrr's half of each tracker's comparison) is issued with
+`nocache=1`, harbrr's exact search-cache bypass trigger (see
+`internal/web/torznabhttp/cachebypass.go`). Prowlarr, the oracle, is always queried live, so
+without the bypass a repeat run inside the keyword TTL compares Prowlarr's live page-1 against a
+**frozen harbrr cache window** — on a high-churn tracker that is a guaranteed false failure (see
+[#164](https://github.com/autobrr/harbrr/issues/164): nzbindex failed title Jaccard 0.00 this way
+while the driver itself was fine). Bypassing makes the comparison what the pass criteria already
+assume: harbrr's live engine/driver output vs. Prowlarr's live output.
+
+That means the differential no longer exercises harbrr's cache-aside read path. Cache coverage
+moved to a **dedicated, single cached-path check** (`CheckCache` in the report, `cache` subtest in
+`make smoke-test`): it runs once per suite, against one designated tracker (the first enabled
+one), issuing two identical searches **without** the bypass and asserting the cache-hit counter
+(`trackerHitsSaved` from `/api/cache/stats`) incremented. That is a direct signal that the second
+request was actually served from cache — stronger than inferring a cache hit from the two
+responses' result counts matching, which a coincidental re-fetch could also satisfy — and it's
+cheap: one tracker, not every tracker. It does not require that tracker's differential to have
+passed; the cache stores whatever harbrr returned regardless of whether it agreed with Prowlarr.
+
 ## Report a finding back
 
 When a tracker fails the differential, that's something for the maintainers to fix — **not**

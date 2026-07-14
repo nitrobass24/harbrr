@@ -57,8 +57,13 @@ func parityCheck(ctx context.Context, c *http.Client, cfg Config, ix harbrrIndex
 // harbrrParity searches harbrr, falling back to the secondary query when the primary
 // returns nothing. It returns the results, the query that produced them, and a non-empty
 // skip reason on a rate-limit/transport/non-200.
+//
+// Both searches bypass harbrr's search cache (nocache=1): Prowlarr, the oracle, is
+// always queried live below, so comparing it against a frozen harbrr cache window can
+// fail a perfectly healthy tracker on a repeat run inside the keyword TTL (issue #164).
+// cacheCheck is the dedicated check that still exercises the normal cache-aside path.
 func harbrrParity(ctx context.Context, c *http.Client, cfg Config, slug string) ([]Result, string, string) {
-	res, status, err := HarbrrSearch(ctx, c, cfg.HarbrrURL, cfg.HarbrrKey, slug, cfg.Query)
+	res, status, err := HarbrrSearch(ctx, c, cfg.HarbrrURL, cfg.HarbrrKey, slug, cfg.Query, true)
 	if err != nil {
 		return nil, "", apphttp.RedactError(err)
 	}
@@ -70,7 +75,7 @@ func harbrrParity(ctx context.Context, c *http.Client, cfg Config, slug string) 
 	}
 	query := cfg.Query
 	if len(res) == 0 {
-		if res2, s2, err2 := HarbrrSearch(ctx, c, cfg.HarbrrURL, cfg.HarbrrKey, slug, cfg.FallbackQuery); err2 == nil && s2 == http.StatusOK {
+		if res2, s2, err2 := HarbrrSearch(ctx, c, cfg.HarbrrURL, cfg.HarbrrKey, slug, cfg.FallbackQuery, true); err2 == nil && s2 == http.StatusOK {
 			res, query = res2, cfg.FallbackQuery
 		}
 	}
@@ -256,9 +261,20 @@ func findManaged(remotes []appsync.RemoteIndexer, slug string) (appsync.RemoteIn
 
 // --- cache ------------------------------------------------------------------
 
-// cacheCheck confirms the search-results cache serves a repeated query from cache: it
-// reads the baseline trackerHitsSaved, runs two identical harbrr searches, and asserts
-// the counter incremented. A disabled cache is a SKIP.
+// cacheCheck is the dedicated cached-path check: the differential (harbrrParity) now
+// always bypasses harbrr's search cache (nocache=1, see issue #164), so this is the
+// only place the suite still exercises the normal cache-aside read path. It confirms
+// the cache serves a repeated query from cache: it reads the baseline
+// trackerHitsSaved, runs two identical (non-bypassed) harbrr searches, and asserts the
+// counter incremented. A disabled cache is a SKIP.
+//
+// This runs once per suite, on a single designated tracker (the first enabled one,
+// picked by RunSuite), rather than per-tracker — cheap, and the trackerHitsSaved
+// counter is a direct signal that a request was served from cache, not an inference
+// from result-count equality (which a re-fetched-live response could also satisfy by
+// coincidence). It does not require that tracker's differential to have passed: the
+// cache stores whatever harbrr returned, so a hit/miss verdict here is independent of
+// whether that response happened to agree with Prowlarr.
 func cacheCheck(ctx context.Context, c *http.Client, cfg Config, slug string) Finding {
 	f := Finding{Indexer: slug, Check: CheckCache}
 	before, enabled, err := cacheTrackerHits(ctx, c, cfg)
@@ -269,7 +285,7 @@ func cacheCheck(ctx context.Context, c *http.Client, cfg Config, slug string) Fi
 		return skipFinding(f, "cache disabled")
 	}
 	for i := 0; i < 2; i++ {
-		if _, _, serr := HarbrrSearch(ctx, c, cfg.HarbrrURL, cfg.HarbrrKey, slug, cfg.Query); serr != nil {
+		if _, _, serr := HarbrrSearch(ctx, c, cfg.HarbrrURL, cfg.HarbrrKey, slug, cfg.Query, false); serr != nil {
 			return skipFinding(f, apphttp.RedactError(serr))
 		}
 		time.Sleep(betweenCallsDelay)

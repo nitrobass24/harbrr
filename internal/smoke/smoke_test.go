@@ -117,13 +117,32 @@ func TestSmoke(t *testing.T) {
 			}
 		})
 	}
+
+	// The differential above always bypasses the cache (nocache=1, see harbrrSearch),
+	// so it is no longer this suite's coverage of the cache-aside read path. Run the
+	// same single-tracker cached-path check RunSuite uses (cacheCheck, package-shared
+	// with checks.go): one designated tracker, not per-tracker, keeps this cheap.
+	t.Run("cache", func(t *testing.T) {
+		f := cacheCheck(context.Background(), c, cfg, enabled[0].Slug)
+		switch f.Status {
+		case StatusSkip:
+			t.Skip(f.Detail)
+		case StatusFail:
+			t.Errorf("cached-path check FAILED for %s: %s", f.Indexer, f.Detail)
+		default:
+			t.Logf("%s: %s", f.Indexer, f.Detail)
+		}
+	})
 }
 
-// harbrrSearch queries harbrr's Torznab feed. Returns (results, skipped); skipped
-// is true on a rate-limit/anti-bot signal (the test t.Skips rather than hammering).
+// harbrrSearch queries harbrr's Torznab feed for the differential, bypassing the
+// search cache (nocache=1) so it compares against Prowlarr's always-live query rather
+// than a possibly-frozen cache window (issue #164). Returns (results, skipped);
+// skipped is true on a rate-limit/anti-bot signal (the test t.Skips rather than
+// hammering).
 func harbrrSearch(t *testing.T, c *http.Client, cfg Config, slug, query string) ([]Result, bool) {
 	t.Helper()
-	res, status, err := HarbrrSearch(context.Background(), c, cfg.HarbrrURL, cfg.HarbrrKey, slug, query)
+	res, status, err := HarbrrSearch(context.Background(), c, cfg.HarbrrURL, cfg.HarbrrKey, slug, query, true)
 	if status == http.StatusTooManyRequests || status == http.StatusServiceUnavailable {
 		t.Skipf("%s: harbrr feed rate-limited (HTTP %d); backing off", slug, status)
 		return nil, true

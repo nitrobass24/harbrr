@@ -125,6 +125,32 @@ func TestTitleJaccard(t *testing.T) {
 	}
 }
 
+func TestHarbrrSearchURL(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		nocache bool
+		want    bool // want "nocache=1" present
+	}{
+		{"differential bypass adds nocache=1", true, true},
+		{"cached-path check omits nocache", false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			u := harbrrSearchURL("http://harbrr:7478", "key", "slug", "test query", tt.nocache)
+			got := strings.Contains(u, "nocache=1")
+			if got != tt.want {
+				t.Errorf("harbrrSearchURL(nocache=%v) = %q, contains nocache=1 = %v, want %v", tt.nocache, u, got, tt.want)
+			}
+			// The base request shape must be unaffected by the bypass flag.
+			if !strings.Contains(u, "t=search") || !strings.Contains(u, "q=test+query") || !strings.HasPrefix(u, "http://harbrr:7478/api/indexers/slug/results/torznab/api?") {
+				t.Errorf("harbrrSearchURL(nocache=%v) = %q, unexpected base shape", tt.nocache, u)
+			}
+		})
+	}
+}
+
 func TestParseTorznab(t *testing.T) {
 	t.Parallel()
 	body := []byte(`<?xml version="1.0"?><rss><channel>
