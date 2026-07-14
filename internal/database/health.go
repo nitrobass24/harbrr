@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -15,6 +16,14 @@ import (
 // routes every placeholder through q.Rebind. Mirrors AppMeta/Instances.
 type Health struct{}
 
+// HealthRecovery is the latest successful explicit indexer test. ThroughEventID is
+// the newest failure present when the test passed; OccurredAt is a fallback ordering
+// signal for the case where retention empties the event table and SQLite reuses ids.
+type HealthRecovery struct {
+	ThroughEventID int64
+	OccurredAt     time.Time
+}
+
 // Record appends one health event. detail must already be credential-scrubbed by
 // the caller (internal/http.RedactError); this layer stores it verbatim.
 func (Health) Record(ctx context.Context, q dbinterface.Execer, e domain.IndexerHealthEvent) error {
@@ -26,6 +35,42 @@ func (Health) Record(ctx context.Context, q dbinterface.Execer, e domain.Indexer
 		return fmt.Errorf("database: record health event: %w", err)
 	}
 	return nil
+}
+
+// RecordRecovery advances one instance's successful-test watermark without deleting
+// its failure history. The INSERT ... SELECT snapshots the current max event id in the
+// same statement as the upsert, so a later failure is always distinguishable.
+func (Health) RecordRecovery(ctx context.Context, q dbinterface.Execer, instanceID int64, occurredAt time.Time) error {
+	_, err := q.ExecContext(ctx,
+		q.Rebind(`INSERT INTO indexer_health_recovery (instance_id, through_event_id, occurred_at)
+		 SELECT ?, COALESCE(MAX(id), 0), ? FROM indexer_health_events WHERE instance_id = ?
+		 ON CONFLICT(instance_id) DO UPDATE SET
+		   through_event_id = excluded.through_event_id, occurred_at = excluded.occurred_at`),
+		instanceID, occurredAt.UTC().Format(timeLayout), instanceID)
+	if err != nil {
+		return fmt.Errorf("database: record health recovery: %w", err)
+	}
+	return nil
+}
+
+// Recovery returns the latest successful-test watermark for an instance. An
+// instance that has never passed an explicit test yields the zero value.
+func (Health) Recovery(ctx context.Context, q dbinterface.Execer, instanceID int64) (HealthRecovery, error) {
+	var (
+		recovery HealthRecovery
+		occurred string
+	)
+	err := q.QueryRowContext(ctx,
+		q.Rebind(`SELECT through_event_id, occurred_at FROM indexer_health_recovery WHERE instance_id = ?`),
+		instanceID).Scan(&recovery.ThroughEventID, &occurred)
+	if errors.Is(err, sql.ErrNoRows) {
+		return HealthRecovery{}, nil
+	}
+	if err != nil {
+		return HealthRecovery{}, fmt.Errorf("database: read health recovery: %w", err)
+	}
+	recovery.OccurredAt = parseTime(occurred)
+	return recovery, nil
 }
 
 // DeleteBefore purges every event older than cutoff, returning the number removed.

@@ -64,6 +64,35 @@ func TestHealthRecordAndRecent(t *testing.T) {
 	}
 }
 
+func TestHealthRecovery(t *testing.T) {
+	t.Parallel()
+	db := openMigrated(t, filepath.Join(t.TempDir(), "health.db"))
+	ctx := context.Background()
+	id := seedInstance(t, db, "tt")
+	h := database.Health{}
+
+	base := time.Date(2026, time.June, 14, 12, 0, 0, 0, time.UTC)
+	if got, err := h.Recovery(ctx, db, id); err != nil || (got != database.HealthRecovery{}) {
+		t.Fatalf("initial Recovery = (%+v, %v), want zero, nil", got, err)
+	}
+	if err := h.Record(ctx, db, domain.IndexerHealthEvent{
+		InstanceID: id, Kind: domain.HealthParseError, OccurredAt: base,
+	}); err != nil {
+		t.Fatalf("record failure: %v", err)
+	}
+	if err := h.RecordRecovery(ctx, db, id, base.Add(time.Minute)); err != nil {
+		t.Fatalf("record recovery: %v", err)
+	}
+
+	got, err := h.Recovery(ctx, db, id)
+	if err != nil {
+		t.Fatalf("Recovery: %v", err)
+	}
+	if got.ThroughEventID == 0 || !got.OccurredAt.Equal(base.Add(time.Minute)) {
+		t.Errorf("Recovery = %+v, want nonzero event watermark at %v", got, base.Add(time.Minute))
+	}
+}
+
 // TestHealthCounts proves Counts aggregates one instance's events by kind and reports
 // the newest failure time across all kinds; an instance with no events is the zero
 // struct.

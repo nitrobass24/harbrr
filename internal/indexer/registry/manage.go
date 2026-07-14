@@ -430,6 +430,9 @@ func (r *Resolver) Test(ctx context.Context, slug string) error {
 		a.recordHealth(ctx, err)
 		return fmt.Errorf("registry: test %q: %w", slug, err)
 	}
+	if err := a.health.RecordRecovery(ctx, a.db, a.instanceID, a.clock()); err != nil {
+		return fmt.Errorf("registry: record successful test for %q: %w", slug, err)
+	}
 	return nil
 }
 
@@ -459,16 +462,30 @@ func (r *StatsReporter) Status(ctx context.Context, slug string) (HealthStatus, 
 	if err != nil {
 		return HealthStatus{}, fmt.Errorf("registry: status events %q: %w", slug, err)
 	}
-	return HealthStatus{Slug: slug, Status: r.deriveStatus(events), Events: events}, nil
+	recovery, err := r.health.Recovery(ctx, r.db, inst.ID)
+	if err != nil {
+		return HealthStatus{}, fmt.Errorf("registry: status recovery %q: %w", slug, err)
+	}
+	return HealthStatus{Slug: slug, Status: r.deriveStatus(events, recovery), Events: events}, nil
 }
 
 // deriveStatus reads "unhealthy" when the most recent event is within the recency
-// window, else "healthy" (no recent failure). Events are newest-first.
-func (r *StatsReporter) deriveStatus(events []domain.IndexerHealthEvent) string {
-	if len(events) > 0 && r.clock().Sub(events[0].OccurredAt) <= healthRecencyWindow {
+// window and happened after the last successful explicit test. Events are newest-first.
+func (r *StatsReporter) deriveStatus(events []domain.IndexerHealthEvent, recovery database.HealthRecovery) string {
+	if len(events) > 0 && failureAfterRecovery(events[0], recovery) &&
+		r.clock().Sub(events[0].OccurredAt) <= healthRecencyWindow {
 		return "unhealthy"
 	}
 	return "healthy"
+}
+
+// failureAfterRecovery uses the monotonic event id in the normal case. OccurredAt
+// covers a later event whose id was reused after retention emptied the event table.
+func failureAfterRecovery(event domain.IndexerHealthEvent, recovery database.HealthRecovery) bool {
+	if recovery.OccurredAt.IsZero() {
+		return true
+	}
+	return event.ID > recovery.ThroughEventID || event.OccurredAt.After(recovery.OccurredAt)
 }
 
 // IndexerFailureCounts is one indexer's failure tally by health kind, folded in from

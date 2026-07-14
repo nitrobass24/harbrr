@@ -17,7 +17,7 @@ export function HealthCell({ status }: { status?: IndexerStatus }) {
   }
 
   const healthy = status.status === "healthy"
-  const latest = status.events[0]
+  const latest = healthy ? undefined : status.events[0]
 
   return (
     <div className="flex items-center gap-2 text-[13px]">

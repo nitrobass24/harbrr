@@ -48,7 +48,7 @@ func TestMigrateCreatesSchema(t *testing.T) {
 				"users", "api_keys", "indexer_instances",
 				"indexer_settings", "app_meta", "sessions", "search_cache", "app_settings",
 				"cache_counters", "indexer_stat_counters", "notifications",
-				"proxies", "solvers", "sync_profiles", "schema_migrations",
+				"proxies", "solvers", "sync_profiles", "indexer_health_recovery", "schema_migrations",
 			}
 			for _, tbl := range wantTables {
 				var n int
@@ -83,9 +83,10 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	// 0006_app_settings.sql, 0007_cache_counters.sql,
 	// 0008_app_connections_freeleech.sql, 0009_announce_connections.sql,
 	// 0010_indexer_stat_counters.sql, 0011_notifications.sql,
-	// 0012_proxies_solvers.sql, 0013_sync_profiles.sql), not duplicated by the
+	// 0012_proxies_solvers.sql, 0013_sync_profiles.sql,
+	// 0014_indexer_health_recovery.sql), not duplicated by the
 	// second apply.
-	const wantMigrations = 13
+	const wantMigrations = 14
 	var applied int
 	if err := db.QueryRowContext(context.Background(),
 		"SELECT count(*) FROM schema_migrations").Scan(&applied); err != nil {

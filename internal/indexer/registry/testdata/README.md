@@ -71,9 +71,10 @@ These behaviours are pinned by tests in `internal/indexer/registry`
   `[Deliberate]`.
 - **Health is an append-only event log; status is derived.** `indexer_health_events`
   records only the four failure kinds; `GET /api/indexers/{slug}/status` derives
-  `healthy`/`unhealthy` from a 1h recency window. `[Deliberate]`. A fleet-wide
-  `/api/indexers/status` roll-up is a product feature, not a divergence — see
-  autobrr/harbrr#102 (fleet-wide indexer status).
+  `healthy`/`unhealthy` from a 1h recency window, with a successful explicit Test
+  resolving failures that preceded it without deleting their history. `[Deliberate]`.
+  A fleet-wide `/api/indexers/status` roll-up is a product feature, not a divergence
+  — see autobrr/harbrr#102 (fleet-wide indexer status).
 - **Negative-result circuit breaker on the search cache.** After a live search to a
   configured instance fails, harbrr opens a per-instance breaker for a short window
   (`negative_ttl`, default 1m; a rate-limit response extends it to its `Retry-After`).

@@ -86,6 +86,53 @@ func TestGrabRecordsHealthEvent(t *testing.T) {
 	}
 }
 
+// TestSuccessfulTestClearsCurrentHealth proves issue #116: a passing explicit Test
+// immediately resolves a recent failure while preserving the append-only event and
+// its cumulative failure count.
+func TestSuccessfulTestClearsCurrentHealth(t *testing.T) {
+	t.Parallel()
+	reg, db := newRegistry(t, &replayDoer{body: bodyHTML})
+	ctx := context.Background()
+	inst, err := reg.Add(ctx, registry.AddParams{Slug: "tt", DefinitionID: "testtracker"})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := (database.Health{}).Record(ctx, db, domain.IndexerHealthEvent{
+		InstanceID: inst.ID, Kind: domain.HealthParseError, Detail: "bad row", OccurredAt: fixedClock(),
+	}); err != nil {
+		t.Fatalf("record failure: %v", err)
+	}
+
+	before, err := reg.Status(ctx, "tt")
+	if err != nil {
+		t.Fatalf("Status before Test: %v", err)
+	}
+	if before.Status != "unhealthy" {
+		t.Fatalf("status before Test = %q, want unhealthy", before.Status)
+	}
+	if err := reg.Test(ctx, "tt"); err != nil {
+		t.Fatalf("Test: %v", err)
+	}
+
+	after, err := reg.Status(ctx, "tt")
+	if err != nil {
+		t.Fatalf("Status after Test: %v", err)
+	}
+	if after.Status != "healthy" {
+		t.Errorf("status after Test = %q, want healthy", after.Status)
+	}
+	if len(after.Events) != 1 || after.Events[0].Kind != domain.HealthParseError {
+		t.Errorf("events after Test = %+v, want preserved parse_error", after.Events)
+	}
+	stats, err := reg.Stats(ctx, "tt")
+	if err != nil {
+		t.Fatalf("Stats after Test: %v", err)
+	}
+	if stats.Failures.ParseError != 1 {
+		t.Errorf("parse failure count after Test = %d, want 1", stats.Failures.ParseError)
+	}
+}
+
 // TestStatusUnknownSlug: Status for a missing indexer is ErrNotFound (404 at the API).
 func TestStatusUnknownSlug(t *testing.T) {
 	t.Parallel()

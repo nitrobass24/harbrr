@@ -10,7 +10,11 @@ const ROWS: IndexerRowData[] = [
     instance: { id: 1, slug: "torrentleech", definitionId: "torrentleech", name: "TorrentLeech", baseUrl: "https://www.torrentleech.org/", enabled: true, ...BASE },
     type: "private",
     categories: "Movies, TV, Apps",
-    status: { slug: "torrentleech", status: "healthy", events: [] },
+    status: {
+      slug: "torrentleech",
+      status: "healthy",
+      events: [{ kind: "parse_error", detail: "old failure", occurred_at: new Date(Date.now() - 3_600_000).toISOString() }],
+    },
   },
   {
     instance: { id: 2, slug: "rutor", definitionId: "rutor", name: "rutor", baseUrl: "https://rutor.info/", enabled: true, ...BASE },
@@ -53,6 +57,7 @@ describe("IndexersTable", () => {
     expect(within(tl).getByText("Private")).toBeTruthy()
     expect(within(tl).getByText("Movies, TV, Apps")).toBeTruthy()
     expect(within(tl).getByText("Healthy")).toBeTruthy()
+    expect(within(tl).queryByText(/parse error/)).toBeNull()
 
     // Unhealthy row surfaces the failure kind + relative time.
     const ru = screen.getByText("rutor").closest("tr")!
