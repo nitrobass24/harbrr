@@ -34,6 +34,14 @@ type Searcher interface {
 	// cookie / request header) and so must be routed through /dl rather than served
 	// bare. A native driver whose NeedsResolver() is already true can return false.
 	DownloadNeedsAuth() bool
+	// SupportsOffsetPaging reports whether the driver forwards offset/limit upstream
+	// for deep-set paging (currently only the newznab and nzbindex usenet pair). It is
+	// part of the core contract — not an optional capability type-asserted at the call
+	// site — so every driver must answer it explicitly; Base's default (false) covers
+	// the 12 families that can't page upstream for free, and the Cardigann engine
+	// answers false too (search.go / engine.go), so the registry adapter and the
+	// search-cache layer read one unconditional signal off the wrapped driver.
+	SupportsOffsetPaging() bool
 	Grab(ctx context.Context, link string) (*search.GrabResult, error)
 }
 
@@ -92,16 +100,6 @@ func TraceReleases(log zerolog.Logger, driver string, rels []*normalizer.Release
 			Str("publish_date", r.PublishDate).
 			Msg("native: parsed release")
 	}
-}
-
-// OffsetPager is the optional capability a native driver implements when it can forward
-// offset/limit upstream for deep-set paging (currently the newznab and nzbindex usenet pair).
-// It is deliberately NOT a method on Driver: most drivers can't page upstream, and adding
-// it to the core interface would force every driver, the engine wrapper, and the fakes to
-// implement a method they'd answer false for. The registry adapter and the search-cache
-// layer type-assert for it, so a driver that doesn't implement it is treated as non-paging.
-type OffsetPager interface {
-	SupportsOffsetPaging() bool
 }
 
 // Factory builds a Driver for one configured instance.

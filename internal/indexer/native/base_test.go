@@ -329,8 +329,9 @@ func (f searcherFunc) Capabilities() *mapper.Capabilities { return nil }
 func (f searcherFunc) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
 	return f(ctx, q)
 }
-func (f searcherFunc) NeedsResolver() bool     { return false }
-func (f searcherFunc) DownloadNeedsAuth() bool { return false }
+func (f searcherFunc) NeedsResolver() bool        { return false }
+func (f searcherFunc) DownloadNeedsAuth() bool    { return false }
+func (f searcherFunc) SupportsOffsetPaging() bool { return false }
 func (f searcherFunc) Grab(_ context.Context, _ string) (*search.GrabResult, error) {
 	return nil, errors.New("searcherFunc: Grab is not part of this test surface")
 }

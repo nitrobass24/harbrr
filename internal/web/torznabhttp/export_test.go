@@ -143,9 +143,9 @@ func TestSearchReleasesTotalIsHonest(t *testing.T) {
 	}
 }
 
-// pagingFakeIndexer is a fakeIndexer that also satisfies OffsetPager (the Newznab shape):
-// it reports that it forwards offset/limit upstream, so the pipeline treats the returned
-// slice as the already-paged window and must NOT re-offset it locally.
+// pagingFakeIndexer is a fakeIndexer that overrides SupportsOffsetPaging (the Newznab
+// shape): it reports that it forwards offset/limit upstream, so the pipeline treats the
+// returned slice as the already-paged window and must NOT re-offset it locally.
 type pagingFakeIndexer struct {
 	*fakeIndexer
 }

@@ -62,7 +62,7 @@ func searchReleases(ctx context.Context, idx Indexer, caps *mapper.Capabilities,
 	rawCount := len(releases)
 	// Jackett pipeline order: FixResults (dedupe) -> FilterResults (category drop) -> page.
 	releases = filterResults(dedupeByGUID(releases), requestedCats, caps)
-	if pager, ok := idx.(OffsetPager); ok && pager.SupportsOffsetPaging() {
+	if idx.SupportsOffsetPaging() {
 		return pagedResult(releases, pg, rawCount), nil
 	}
 	return localPageResult(releases, pg), nil

@@ -32,6 +32,7 @@ func (g *gatedInner) Info() torznabhttp.IndexerInfo      { return torznabhttp.In
 func (g *gatedInner) Capabilities() *mapper.Capabilities { return &mapper.Capabilities{} }
 func (g *gatedInner) NeedsResolver() bool                { return false }
 func (g *gatedInner) DownloadNeedsAuth() bool            { return false }
+func (g *gatedInner) SupportsOffsetPaging() bool         { return false }
 
 func (g *gatedInner) Grab(context.Context, string) (*search.GrabResult, error) {
 	return nil, errors.New("not implemented")

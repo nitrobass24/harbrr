@@ -115,8 +115,8 @@ func (d *driver) DownloadNeedsAuth() bool { return true }
 
 // SupportsOffsetPaging is true: the Newznab API takes offset/limit, so the driver forwards
 // the requested page window upstream (buildSearchURL) for deep-set paging rather than
-// fetching only the first 100 and letting the handler slice. It satisfies native.OffsetPager,
-// which the registry adapter and search-cache layer type-assert for.
+// fetching only the first 100 and letting the handler slice. It is part of the
+// native.Driver contract, which the registry adapter and search-cache layer read directly.
 func (d *driver) SupportsOffsetPaging() bool { return true }
 
 // Test verifies the instance is usable (the management "test indexer" action) and eagerly

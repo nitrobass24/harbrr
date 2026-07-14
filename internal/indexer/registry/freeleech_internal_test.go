@@ -44,6 +44,7 @@ type fakeDriver struct {
 func (d *fakeDriver) Capabilities() *mapper.Capabilities { return &mapper.Capabilities{} }
 func (d *fakeDriver) NeedsResolver() bool                { return false }
 func (d *fakeDriver) DownloadNeedsAuth() bool            { return false }
+func (d *fakeDriver) SupportsOffsetPaging() bool         { return false }
 func (d *fakeDriver) Test(context.Context) error         { return nil }
 
 func (d *fakeDriver) Search(_ context.Context, _ search.Query) ([]*normalizer.Release, error) {
@@ -54,8 +55,8 @@ func (d *fakeDriver) Grab(context.Context, string) (*search.GrabResult, error) {
 	return &search.GrabResult{}, nil
 }
 
-// pagingDriver is a fakeDriver that also forwards offset/limit upstream (native.OffsetPager),
-// so the adapter's SupportsOffsetPaging type-assert reports true.
+// pagingDriver is a fakeDriver that overrides SupportsOffsetPaging to true, so the
+// adapter's direct call to the wrapped driver's method reports true.
 type pagingDriver struct{ fakeDriver }
 
 func (p *pagingDriver) SupportsOffsetPaging() bool { return true }
@@ -139,11 +140,11 @@ func TestFreeleechAdapter_DoesNotMutateInner(t *testing.T) {
 	}
 }
 
-// TestFreeleechAdapter_OffsetPaging proves the flattened adapter reports the optional
-// OffsetPager capability directly off the wrapped driver — true for a paging driver, false
-// for one that does not implement native.OffsetPager. This replaces the old decorator's
-// hand-forwarding test; the compile-time var _ torznabhttp.OffsetPager assertion (adapter.go)
-// is the static backstop.
+// TestFreeleechAdapter_OffsetPaging proves the flattened adapter reports
+// SupportsOffsetPaging directly off the wrapped driver — true for a paging driver,
+// false for one that answers false. This replaces the old decorator's hand-forwarding
+// test; the compile-time var _ torznabhttp.Indexer assertion (adapter.go) is the static
+// backstop that SupportsOffsetPaging is part of the contract, not an optional type-assert.
 func TestFreeleechAdapter_OffsetPaging(t *testing.T) {
 	t.Parallel()
 
@@ -151,9 +152,7 @@ func TestFreeleechAdapter_OffsetPaging(t *testing.T) {
 	if !paging.SupportsOffsetPaging() {
 		t.Error("paging driver: SupportsOffsetPaging() = false, want true (promoted off the driver)")
 	}
-	if _, ok := torznabhttp.Indexer(paging).(torznabhttp.OffsetPager); !ok {
-		t.Fatal("adapter does not satisfy torznabhttp.OffsetPager")
-	}
+	var _ torznabhttp.Indexer = paging
 
 	nonPaging := newFreeleechAdapter(&fakeDriver{}, false)
 	if nonPaging.SupportsOffsetPaging() {

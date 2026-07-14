@@ -37,6 +37,7 @@ func (f *fakeInner) Info() torznabhttp.IndexerInfo      { return torznabhttp.Ind
 func (f *fakeInner) Capabilities() *mapper.Capabilities { return &mapper.Capabilities{} }
 func (f *fakeInner) NeedsResolver() bool                { return false }
 func (f *fakeInner) DownloadNeedsAuth() bool            { return false }
+func (f *fakeInner) SupportsOffsetPaging() bool         { return false }
 
 func (f *fakeInner) Grab(context.Context, string) (*search.GrabResult, error) {
 	return nil, errors.New("not implemented")

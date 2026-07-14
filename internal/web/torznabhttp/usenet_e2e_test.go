@@ -152,8 +152,9 @@ func (u *usenetIndexer) Search(ctx context.Context, q search.Query) ([]*normaliz
 	return u.driver.Search(ctx, q)
 }
 
-func (u *usenetIndexer) NeedsResolver() bool     { return u.driver.NeedsResolver() }
-func (u *usenetIndexer) DownloadNeedsAuth() bool { return u.driver.DownloadNeedsAuth() }
+func (u *usenetIndexer) NeedsResolver() bool        { return u.driver.NeedsResolver() }
+func (u *usenetIndexer) DownloadNeedsAuth() bool    { return u.driver.DownloadNeedsAuth() }
+func (u *usenetIndexer) SupportsOffsetPaging() bool { return u.driver.SupportsOffsetPaging() }
 
 func (u *usenetIndexer) Grab(ctx context.Context, link string) (*search.GrabResult, error) {
 	return u.driver.Grab(ctx, link)

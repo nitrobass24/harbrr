@@ -58,14 +58,11 @@ type indexerAdapter struct {
 	log   zerolog.Logger
 }
 
-// Compile-time proof the adapter satisfies the handler's contract — including the
-// optional OffsetPager capability, which the flattened adapter implements directly. That
-// static guarantee replaces the runtime capability re-forwarding the old freeleech/cache
+// Compile-time proof the adapter satisfies the handler's contract, including
+// SupportsOffsetPaging — now part of torznabhttp.Indexer proper, so this single
+// assertion replaces the runtime capability re-forwarding the old freeleech/cache
 // decorators had to hand-write on every layer.
-var (
-	_ torznabhttp.Indexer     = (*indexerAdapter)(nil)
-	_ torznabhttp.OffsetPager = (*indexerAdapter)(nil)
-)
+var _ torznabhttp.Indexer = (*indexerAdapter)(nil)
 
 // Info returns the indexer identity (carries no secrets).
 func (a *indexerAdapter) Info() torznabhttp.IndexerInfo { return a.info }
@@ -142,17 +139,14 @@ func (a *indexerAdapter) NeedsResolver() bool { return a.inner.NeedsResolver() }
 // bare.
 func (a *indexerAdapter) DownloadNeedsAuth() bool { return a.inner.DownloadNeedsAuth() }
 
-// SupportsOffsetPaging delegates to the wrapped driver's optional OffsetPager capability,
-// reporting false for any driver that doesn't implement it (every Cardigann def and every
-// native driver except the newznab and nzbindex usenet pair). When true, the handler
-// forwards offset/limit upstream and does not re-slice the returned page. The adapter
-// promotes the signal so the cache layer (which keys per-page for paging drivers) and the
+// SupportsOffsetPaging delegates to the wrapped driver's SupportsOffsetPaging, part of
+// the native.Driver contract: false for every Cardigann def and every native driver
+// except the newznab and nzbindex usenet pair. When true, the handler forwards
+// offset/limit upstream and does not re-slice the returned page. The adapter promotes
+// the signal so the cache layer (which keys per-page for paging drivers) and the
 // handler read the SAME capability.
 func (a *indexerAdapter) SupportsOffsetPaging() bool {
-	if p, ok := a.inner.(native.OffsetPager); ok {
-		return p.SupportsOffsetPaging()
-	}
-	return false
+	return a.inner.SupportsOffsetPaging()
 }
 
 // Grab performs the grab-time download for a release link (resolve + fetch the
