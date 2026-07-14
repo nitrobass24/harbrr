@@ -10,7 +10,7 @@ Cardigann can't express — and how far each is validated.
   account on that tracker). See **[Test status](test-status.md)** for the evidence behind this
   column and the auth/fetch patterns proven live.
 
-**593 trackers** total: 554 Cardigann corpus (all built) · 18 native drivers built · 21 native
+**597 trackers** total: 554 Cardigann corpus (all built) · 22 native drivers built · 21 native
 drivers planned. To configure one, see **[Adding an indexer](guides/add-indexer.md)**.
 
 ## Native drivers
@@ -37,6 +37,10 @@ Bespoke code in Jackett/Prowlarr (no Cardigann definition); harbrr ships native 
 | AnimeBytes | Bespoke API | ✅ | ⬜ |
 | Usenet (Newznab) | Generic Newznab | ✅ | ✅ |
 | NZBIndex | Bespoke JSON API (public) | ✅ | ✅ |
+| MoreThanTV | Torznab API (native) | ✅ | ✅ |
+| AnimeTosho | Torznab API (native) | ✅ | ⬜ |
+| Torrent Network | Torznab API (native) | ✅ | ⬜ |
+| Torznab (generic) | Generic Torznab | ✅ | ⬜ |
 
 ### Planned — vote for yours
 
