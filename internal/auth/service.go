@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbinterface"
 	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/secrets"
 )
@@ -35,7 +36,7 @@ const minPasswordLen = 8
 
 // Service performs authentication against the SQLite store.
 type Service struct {
-	db      *database.DB
+	db      dbinterface.Querier
 	users   database.Users
 	apiKeys database.APIKeys
 	hasher  PasswordHasher
@@ -66,14 +67,14 @@ func (secretsPasswordHasher) VerifyPassword(password, encoded string) (bool, err
 }
 
 // NewService builds the auth service over the database.
-func NewService(db *database.DB) *Service {
+func NewService(db dbinterface.Querier) *Service {
 	return NewServiceWithPasswordHasher(db, secretsPasswordHasher{})
 }
 
 // NewServiceWithPasswordHasher builds the auth service with an injected password
 // hasher. Production callers should use NewService; tests can provide a cheaper
 // deterministic hasher while keeping API behavior unchanged.
-func NewServiceWithPasswordHasher(db *database.DB, hasher PasswordHasher) *Service {
+func NewServiceWithPasswordHasher(db dbinterface.Querier, hasher PasswordHasher) *Service {
 	if hasher == nil {
 		hasher = secretsPasswordHasher{}
 	}
