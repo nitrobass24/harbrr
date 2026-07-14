@@ -4,14 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	stdhttp "net/http"
 	"net/url"
 	"strings"
 
-	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // apiKeyHeader is the GGn auth header. The api.php endpoint authenticates every request by
@@ -23,23 +21,19 @@ const apiKeyHeader = "X-API-Key" //nolint:gosec // header NAME, not a credential
 // download). The API key rides in the X-API-Key header — never in the URL and never logged
 // — so the header is set but never recorded; Accept advertises JSON. The download URL
 // (torrents.php) carries the passkey in its torrent_pass query, so a transport error
-// surfaces only its scheme://host (apphttp.SchemeHost, which drops the query) with the
-// cause routed through apphttp.RedactURLError — a passkey-bearing download URL can never
-// leak. The caller owns the returned body and interprets the status.
-func (d *driver) get(ctx context.Context, rawurl string) (*stdhttp.Response, error) {
+// surfaces only its scheme://host through native.Base, so a passkey-bearing download URL
+// can never leak.
+func (d *driver) get(ctx context.Context, rawurl string, download bool) (*native.Response, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
 		return nil, fmt.Errorf("gazellegames: build request: %w", err)
 	}
 	req.Header.Set(apiKeyHeader, strings.TrimSpace(d.cfgValue("apikey")))
 	req.Header.Set("Accept", "application/json")
-	resp, err := d.doer.Do(req)
-	if err != nil {
-		// %w preserves context.Canceled/DeadlineExceeded in the chain, so callers
-		// (Grab/sanitizeGrabError) still classify them via errors.Is.
-		return nil, fmt.Errorf("gazellegames: request to %s: %w", apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
+	if download {
+		return d.DoDownload(ctx, req, native.ClassifyAuth403)
 	}
-	return resp, nil
+	return d.Do(ctx, req, native.ClassifyAuth403)
 }
 
 // scrubSecrets removes the configured apikey (and any persisted passkey) from s so a
@@ -85,29 +79,11 @@ func (d *driver) ensurePasskey(ctx context.Context) error {
 // an auth failure (login.ErrLoginFailed). The passkey is a secret: it is never logged, and
 // any surfaced error is scrubbed of both the apikey and the passkey.
 func (d *driver) fetchPasskey(ctx context.Context) error {
-	resp, err := d.get(ctx, d.quickUserURL())
+	resp, err := d.get(ctx, d.quickUserURL(), false)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	switch {
-	case resp.StatusCode == stdhttp.StatusUnauthorized || resp.StatusCode == stdhttp.StatusForbidden:
-		return fmt.Errorf("gazellegames: passkey fetch unauthorized: %w", login.ErrLoginFailed)
-	case search.IsRateLimitStatus(resp.StatusCode):
-		return &search.RateLimitedError{
-			StatusCode: resp.StatusCode,
-			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.clock),
-		}
-	case resp.StatusCode < 200 || resp.StatusCode >= 300:
-		return fmt.Errorf("gazellegames: passkey fetch returned HTTP %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
-	if err != nil {
-		return fmt.Errorf("gazellegames: read passkey response: %w", err)
-	}
-	return d.storePasskey(ctx, body)
+	return d.storePasskey(ctx, resp.Body)
 }
 
 // storePasskey decodes a quick_user body and, on a success status with a non-empty passkey,
@@ -129,7 +105,7 @@ func (d *driver) storePasskey(ctx context.Context, body []byte) error {
 	}
 
 	// Persist FIRST, then populate the in-memory cfg only on success. If persist fails,
-	// d.cfg["passkey"] stays empty so ensurePasskey will retry on the next search rather
+	// d.Cfg["passkey"] stays empty so ensurePasskey will retry on the next search rather
 	// than serving a passkey the store never recorded (live/stored must not diverge).
 	d.mu.Lock()
 	persist := d.persist
@@ -142,7 +118,7 @@ func (d *driver) storePasskey(ctx context.Context, body []byte) error {
 	}
 
 	d.mu.Lock()
-	d.cfg["passkey"] = passkey
+	d.Cfg["passkey"] = passkey
 	d.mu.Unlock()
 	return nil
 }
@@ -152,5 +128,5 @@ func (d *driver) storePasskey(ctx context.Context, body []byte) error {
 func (d *driver) quickUserURL() string {
 	params := url.Values{}
 	params.Set("request", quickUserParam)
-	return d.baseURL + searchPath + "?" + params.Encode()
+	return d.BaseURL + searchPath + "?" + params.Encode()
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // TestGrab proves a .nzb download returns the body as an application/x-nzb GrabResult with no
@@ -104,15 +105,12 @@ func TestGrabTransportError(t *testing.T) {
 	}
 }
 
-// TestReadCappedRejectsOversized proves the size cap Grab applies (maxNZBBytes) errors with
-// errDownloadTooLarge rather than silently truncating a corrupt .nzb; a within-limit body reads.
-func TestReadCappedRejectsOversized(t *testing.T) {
+// TestGrabPreservesOversizedSentinel proves the shared Base download cap remains
+// classifiable by callers rather than being flattened to a generic request failure.
+func TestGrabPreservesOversizedSentinel(t *testing.T) {
 	t.Parallel()
-	if _, err := readCapped(strings.NewReader("0123456789"), 4); !errors.Is(err, errDownloadTooLarge) {
-		t.Fatalf("err = %v, want errDownloadTooLarge for a body over the cap", err)
-	}
-	body, err := readCapped(strings.NewReader("abc"), 4)
-	if err != nil || string(body) != "abc" {
-		t.Fatalf("readCapped within limit = (%q, %v), want (\"abc\", nil)", body, err)
+	err := sanitizeGrabError(native.ErrDownloadTooLarge)
+	if !errors.Is(err, native.ErrDownloadTooLarge) {
+		t.Fatalf("err = %v, want native.ErrDownloadTooLarge", err)
 	}
 }

@@ -58,7 +58,7 @@ func TestParseReleases_GUIDIdentityPreserved(t *testing.T) {
   </item>
  </channel>
 </rss>`
-	releases, err := d.parseReleases([]byte(body), d.caps.CategoryMap)
+	releases, err := d.parseReleases([]byte(body), d.Caps.CategoryMap)
 	if err != nil {
 		t.Fatalf("parseReleases: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestParseReleases_GUIDIdentityPreserved(t *testing.T) {
 func TestParseReleases(t *testing.T) {
 	t.Parallel()
 	d := parseDriver(t)
-	releases, err := d.parseReleases(readGolden(t, "search.xml"), d.caps.CategoryMap)
+	releases, err := d.parseReleases(readGolden(t, "search.xml"), d.Caps.CategoryMap)
 	if err != nil {
 		t.Fatalf("parseReleases: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestParseRedactsSecretInGUID(t *testing.T) {
 		`<guid isPermaLink="true">https://news.example.test/getnzb/abc.nzb?apikey=SUPERSECRET</guid>` +
 		`<enclosure url="https://news.example.test/getnzb/abc.nzb?apikey=SUPERSECRET" length="1000" type="application/x-nzb"/>` +
 		`</item></channel></rss>`)
-	rels, err := d.parseReleases(body, d.caps.CategoryMap)
+	rels, err := d.parseReleases(body, d.Caps.CategoryMap)
 	if err != nil {
 		t.Fatalf("parseReleases: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestParseRedactsSecretInGUID(t *testing.T) {
 func TestParseErrorEnvelopeAuth(t *testing.T) {
 	t.Parallel()
 	d := parseDriver(t)
-	_, err := d.parseReleases(readGolden(t, "error_auth.xml"), d.caps.CategoryMap)
+	_, err := d.parseReleases(readGolden(t, "error_auth.xml"), d.Caps.CategoryMap)
 	if !errors.Is(err, login.ErrLoginFailed) {
 		t.Fatalf("err = %v, want login.ErrLoginFailed", err)
 	}
@@ -211,7 +211,7 @@ func TestParseErrorEnvelopeAuth(t *testing.T) {
 func TestParseErrorEnvelopeAPIKey(t *testing.T) {
 	t.Parallel()
 	d := parseDriver(t)
-	_, err := d.parseReleases(readGolden(t, "error_apikey.xml"), d.caps.CategoryMap)
+	_, err := d.parseReleases(readGolden(t, "error_apikey.xml"), d.Caps.CategoryMap)
 	if !errors.Is(err, login.ErrLoginFailed) {
 		t.Fatalf("err = %v, want login.ErrLoginFailed (apikey error promoted to auth)", err)
 	}
@@ -223,7 +223,7 @@ func TestParseErrorRateLimit(t *testing.T) {
 	t.Parallel()
 	d := parseDriver(t)
 	body := []byte(`<?xml version="1.0"?><error code="500" description="Request limit reached" />`)
-	_, err := d.parseReleases(body, d.caps.CategoryMap)
+	_, err := d.parseReleases(body, d.Caps.CategoryMap)
 	if !errors.Is(err, search.ErrRateLimited) {
 		t.Fatalf("err = %v, want a rate-limit error", err)
 	}
@@ -233,7 +233,7 @@ func TestParseErrorRateLimit(t *testing.T) {
 func TestParseMalformedBody(t *testing.T) {
 	t.Parallel()
 	d := parseDriver(t)
-	_, err := d.parseReleases([]byte("<<<not xml"), d.caps.CategoryMap)
+	_, err := d.parseReleases([]byte("<<<not xml"), d.Caps.CategoryMap)
 	if !errors.Is(err, search.ErrParseError) {
 		t.Fatalf("err = %v, want ErrParseError", err)
 	}
@@ -283,7 +283,7 @@ func TestParseReleasesScrubsAPIKeyFromError(t *testing.T) {
 	}
 	drv := d.(*driver)
 	body := []byte(`<?xml version="1.0"?><error code="100" description="key ` + apikey + ` rejected"/>`)
-	_, perr := drv.parseReleases(body, drv.caps.CategoryMap)
+	_, perr := drv.parseReleases(body, drv.Caps.CategoryMap)
 	if perr == nil {
 		t.Fatal("want an error from an <error> envelope")
 	}

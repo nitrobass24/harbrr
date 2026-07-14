@@ -53,7 +53,7 @@ func (s *Service) Sync(ctx context.Context, id int64) (SyncReport, error) {
 	if conn.HarbrrAPIKeyID == 0 {
 		detail := "harbrr api key revoked; recreate the connection to re-mint it"
 		s.recordResult(ctx, conn.ID, domain.SyncStatusError, detail)
-		return SyncReport{}, fmt.Errorf("%w: %s", ErrInvalid, detail)
+		return SyncReport{}, fmt.Errorf("%w: %s", domain.ErrInvalid, detail)
 	}
 	driver, harbrrKey, err := s.driver(conn)
 	if err != nil {

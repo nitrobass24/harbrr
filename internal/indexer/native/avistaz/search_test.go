@@ -13,6 +13,7 @@ import (
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 func fixedClock() time.Time { return time.Unix(1_700_000_000, 0).UTC() }
@@ -22,7 +23,14 @@ func builderDriver(site string, cfg map[string]string) *driver {
 	if cfg == nil {
 		cfg = map[string]string{}
 	}
-	return &driver{cfg: cfg, baseURL: "https://az.test/", profile: profileFor(site), clock: fixedClock}
+	return &driver{
+		Base: native.Base{
+			Cfg:     cfg,
+			BaseURL: testBaseURL,
+			Clock:   fixedClock,
+		},
+		profile: profileFor(site),
+	}
 }
 
 // TestBuildSearchURL is the parity gate for the request: it asserts the exact query
@@ -155,13 +163,7 @@ func TestSearchStatusDispatch(t *testing.T) {
 			}
 			return resp(status, body)
 		}}
-		return &driver{
-			cfg:     map[string]string{"username": "u", "password": "p", "pid": "x"},
-			doer:    doer,
-			baseURL: "https://az.test/",
-			profile: profileFor("avistaz"),
-			clock:   fixedClock,
-		}
+		return testDriver(t, "avistaz", testBaseURL, map[string]string{"username": "u", "password": "p", "pid": "x"}, doer)
 	}
 
 	rel, err := mk(stdhttp.StatusNotFound, `{}`).Search(context.Background(), search.Query{Keywords: "x"})
@@ -192,13 +194,7 @@ func TestSearchIssuesBearerRequest(t *testing.T) {
 		}
 		return resp(stdhttp.StatusOK, `{"data":[]}`)
 	}}
-	d := &driver{
-		cfg:     map[string]string{"username": credUser, "password": credPass, "pid": credPID},
-		doer:    doer,
-		baseURL: "https://az.test/",
-		profile: profileFor("avistaz"),
-		clock:   fixedClock,
-	}
+	d := testDriver(t, "avistaz", testBaseURL, map[string]string{"username": credUser, "password": credPass, "pid": credPID}, doer)
 	if _, err := d.Search(context.Background(), search.Query{Categories: []string{"1"}, Keywords: "dune"}); err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -249,13 +245,7 @@ func TestSearchTransportErrorHostOnly(t *testing.T) {
 		URL: "https://avistaz.example/dl/" + secret + "?passkey=" + secret,
 		Err: errors.New("dial tcp: connection refused"),
 	}
-	d := &driver{
-		cfg:     map[string]string{"username": credUser, "password": credPass, "pid": credPID},
-		doer:    &errDoer{err: uerr},
-		baseURL: "https://avistaz.example/",
-		profile: profileFor("avistaz"),
-		clock:   fixedClock,
-	}
+	d := testDriver(t, "avistaz", "https://avistaz.example/", map[string]string{"username": credUser, "password": credPass, "pid": credPID}, &errDoer{err: uerr})
 
 	_, err := d.Search(context.Background(), search.Query{Categories: []string{"1"}, Keywords: "dune"})
 	if err == nil {

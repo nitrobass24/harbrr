@@ -130,72 +130,22 @@ func TestGrabTransportErrorNeverLeaksURL(t *testing.T) {
 	if strings.Contains(msg, "passkey="+credRSSKey) {
 		t.Errorf("transport error leaks the secret query param: %v", err)
 	}
-	// The fixed prefix is still present so the failure is recognizable.
-	if !strings.Contains(msg, "beyondhd: download request failed") {
-		t.Errorf("transport error missing the fixed prefix: %v", err)
+	// The base download prefix is still present so the failure is recognizable.
+	if !strings.Contains(msg, "beyondhd: download to https://beyond-hd.me failed") {
+		t.Errorf("transport error missing the base prefix: %v", err)
 	}
-}
-
-// TestGrabPreservesSentinels proves sanitizeGrabError passes through the sentinels callers
-// must classify (auth, rate-limit, context cancellation/deadline, the size cap) unchanged,
-// while wrapping any other error under the fixed "download request failed" prefix (preserving
-// its already host-only cause via %w) without reclassifying it as a sentinel.
-func TestGrabPreservesSentinels(t *testing.T) {
-	t.Parallel()
-	rl := &search.RateLimitedError{StatusCode: stdhttp.StatusTooManyRequests}
-	sentinels := []struct {
-		name string
-		in   error
-	}{
-		{"auth", login.ErrLoginFailed},
-		{"rate-limit", rl},
-		{"context canceled", context.Canceled},
-		{"deadline", context.DeadlineExceeded},
-		{"too large", errDownloadTooLarge},
-	}
-	for _, tc := range sentinels {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			if got := sanitizeGrabError(tc.in); !errors.Is(got, tc.in) {
-				t.Errorf("sanitizeGrabError(%v) = %v, want the sentinel preserved", tc.in, got)
-			}
-		})
-	}
-
-	t.Run("other transport", func(t *testing.T) {
-		t.Parallel()
-		// Production only ever hands sanitizeGrabError a host-only cause (get()'s transport
-		// wrap or readCapped's URL-free io error); the fallback wraps it under the fixed
-		// prefix, preserving the cause via %w without turning it into a sentinel.
-		cause := errors.New(`beyondhd: request to https://beyond-hd.me: Get "https://beyond-hd.me": dial tcp: connection refused`)
-		got := sanitizeGrabError(cause)
-		if !strings.Contains(got.Error(), "beyondhd: download request failed") {
-			t.Errorf("non-sentinel error not wrapped under the fixed prefix: %v", got)
-		}
-		if !errors.Is(got, cause) {
-			t.Errorf("wrap dropped the cause: %v", got)
-		}
-		for _, s := range []error{login.ErrLoginFailed, context.Canceled, context.DeadlineExceeded, errDownloadTooLarge} {
-			if errors.Is(got, s) {
-				t.Errorf("non-sentinel error misclassified as %v: %v", s, got)
-			}
-		}
-		if strings.Contains(got.Error(), credRSSKey) {
-			t.Errorf("wrapped error leaks the rsskey: %v", got)
-		}
-	})
 }
 
 // TestGrabDownloadTooLarge proves a download body over the cap is rejected (rather than
-// silently truncated) with the size-cap sentinel, which Grab passes through.
+// silently truncated) with the native size-cap sentinel, which Grab passes through.
 func TestGrabDownloadTooLarge(t *testing.T) {
 	t.Parallel()
-	big := strings.Repeat("x", maxTorrentBytes+1)
+	big := strings.Repeat("x", (64<<20)+1)
 	d := liveDriver(t, &scriptDoer{handler: func(_ *stdhttp.Request, _ string) *stdhttp.Response {
 		return mkResp(stdhttp.StatusOK, big)
 	}})
 	_, err := d.Grab(context.Background(), downloadURL)
-	if !errors.Is(err, errDownloadTooLarge) {
-		t.Errorf("err = %v, want errDownloadTooLarge", err)
+	if !errors.Is(err, native.ErrDownloadTooLarge) {
+		t.Errorf("err = %v, want native.ErrDownloadTooLarge", err)
 	}
 }

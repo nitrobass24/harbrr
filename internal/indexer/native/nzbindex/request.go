@@ -37,7 +37,7 @@ func (d *driver) buildSearchURL(q search.Query) string {
 			params.Set("p", strconv.Itoa(page))
 		}
 	}
-	return d.baseURL + "/api/search?" + params.Encode()
+	return d.BaseURL + "api/search?" + params.Encode()
 }
 
 // resolveLimit picks the upstream page size: the query's explicit limit when positive, else

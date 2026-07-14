@@ -1,7 +1,8 @@
-// Package server is harbrr's composition root: it mounts the *arr-facing Torznab
-// handler and the management API on one HTTP listener but separate route trees
-// (architecture invariant #3), serves the embedded OpenAPI spec + Swagger UI,
-// supports a base path, and shuts down gracefully.
+// Package server is harbrr's HTTP mount, not its composition root (see
+// internal/app): it mounts the *arr-facing Torznab handler and the management
+// API on one HTTP listener but separate route trees (architecture invariant
+// #3), serves the embedded OpenAPI spec + Swagger UI, supports a base path,
+// and shuts down gracefully.
 package server
 
 import (

@@ -60,7 +60,7 @@ func (s *Service) GetProfile(ctx context.Context, id int64) (domain.SyncProfile,
 }
 
 // CreateProfile validates and persists a new sync profile. A duplicate name maps to
-// ErrConflict (the handler's 409).
+// domain.ErrConflict (the handler's 409).
 func (s *Service) CreateProfile(ctx context.Context, p CreateProfileParams) (domain.SyncProfile, error) {
 	profile, err := buildProfile(p)
 	if err != nil {
@@ -71,7 +71,7 @@ func (s *Service) CreateProfile(ctx context.Context, p CreateProfileParams) (dom
 	id, err := s.profiles.InsertProfile(ctx, s.db, profile)
 	if err != nil {
 		if database.IsUniqueViolation(err) {
-			return domain.SyncProfile{}, fmt.Errorf("%w: sync profile name %q already in use", ErrConflict, profile.Name)
+			return domain.SyncProfile{}, fmt.Errorf("%w: sync profile name %q already in use", domain.ErrConflict, profile.Name)
 		}
 		return domain.SyncProfile{}, fmt.Errorf("appsync: insert sync profile: %w", err)
 	}
@@ -80,7 +80,7 @@ func (s *Service) CreateProfile(ctx context.Context, p CreateProfileParams) (dom
 }
 
 // UpdateProfile applies a patch to an existing profile. A duplicate name maps to
-// ErrConflict; an unknown id flows through as ErrNotFound. A category change is
+// domain.ErrConflict; an unknown id flows through as ErrNotFound. A category change is
 // re-checked against every connection referencing this profile — the same overlap
 // guard as assignment — so narrowing a live profile can't zero out a referencing
 // connection's category gate (a full-sync connection would then delete every
@@ -110,7 +110,7 @@ func (s *Service) UpdateProfile(ctx context.Context, id int64, p UpdateProfilePa
 	profile.UpdatedAt = s.clock()
 	if err := s.profiles.UpdateProfile(ctx, tx, profile); err != nil {
 		if database.IsUniqueViolation(err) {
-			return fmt.Errorf("%w: sync profile name %q already in use", ErrConflict, profile.Name)
+			return fmt.Errorf("%w: sync profile name %q already in use", domain.ErrConflict, profile.Name)
 		}
 		return fmt.Errorf("appsync: update sync profile: %w", err)
 	}
@@ -133,10 +133,10 @@ func (s *Service) DeleteProfile(ctx context.Context, id int64) error {
 func buildProfile(p CreateProfileParams) (domain.SyncProfile, error) {
 	name := strings.TrimSpace(p.Name)
 	if name == "" {
-		return domain.SyncProfile{}, fmt.Errorf("%w: sync profile name is required", ErrInvalid)
+		return domain.SyncProfile{}, fmt.Errorf("%w: sync profile name is required", domain.ErrInvalid)
 	}
 	if p.MinSeeders < 0 {
-		return domain.SyncProfile{}, fmt.Errorf("%w: min_seeders must not be negative", ErrInvalid)
+		return domain.SyncProfile{}, fmt.Errorf("%w: min_seeders must not be negative", domain.ErrInvalid)
 	}
 	cats, err := normalizeCategoryIDs(p.Categories)
 	if err != nil {
@@ -157,7 +157,7 @@ func applyProfileUpdate(profile *domain.SyncProfile, p UpdateProfileParams) erro
 	if p.Name != nil {
 		name := strings.TrimSpace(*p.Name)
 		if name == "" {
-			return fmt.Errorf("%w: sync profile name must not be blank", ErrInvalid)
+			return fmt.Errorf("%w: sync profile name must not be blank", domain.ErrInvalid)
 		}
 		profile.Name = name
 	}
@@ -170,7 +170,7 @@ func applyProfileUpdate(profile *domain.SyncProfile, p UpdateProfileParams) erro
 	}
 	if p.MinSeeders != nil {
 		if *p.MinSeeders < 0 {
-			return fmt.Errorf("%w: min_seeders must not be negative", ErrInvalid)
+			return fmt.Errorf("%w: min_seeders must not be negative", domain.ErrInvalid)
 		}
 		profile.MinSeeders = *p.MinSeeders
 	}
@@ -193,7 +193,7 @@ func normalizeCategoryIDs(ids []int) ([]int, error) {
 	out := make([]int, 0, len(ids))
 	for _, id := range ids {
 		if id <= 0 || id >= maxCategoryID {
-			return nil, fmt.Errorf("%w: category id %d out of range (0 < id < %d)", ErrInvalid, id, maxCategoryID)
+			return nil, fmt.Errorf("%w: category id %d out of range (0 < id < %d)", domain.ErrInvalid, id, maxCategoryID)
 		}
 		if seen[id] {
 			continue
@@ -207,7 +207,7 @@ func normalizeCategoryIDs(ids []int) ([]int, error) {
 
 // validateProfileRef checks that a connection's sync-profile reference is usable for its
 // kind before it is persisted: the profile must exist (an unknown id is a client mistake
-// → ErrInvalid, not a 404); qui never takes a profile; and a non-empty category set must
+// → domain.ErrInvalid, not a 404); qui never takes a profile; and a non-empty category set must
 // overlap the kind's content range — else a full-sync connection would category-filter
 // down to zero indexers and silently delete every one it manages. A nil ref is valid.
 // q is the caller's handle (db or tx) so the ref check and the connection write that
@@ -217,19 +217,19 @@ func (s *Service) validateProfileRef(ctx context.Context, q dbinterface.Execer, 
 		return nil
 	}
 	if kind == domain.AppKindQui {
-		return fmt.Errorf("%w: sync profiles do not apply to qui", ErrInvalid)
+		return fmt.Errorf("%w: sync profiles do not apply to qui", domain.ErrInvalid)
 	}
 	profile, err := s.profiles.GetProfile(ctx, q, *id)
 	if err != nil {
 		if errors.Is(err, database.ErrNotFound) {
-			return fmt.Errorf("%w: sync profile %d does not exist", ErrInvalid, *id)
+			return fmt.Errorf("%w: sync profile %d does not exist", domain.ErrInvalid, *id)
 		}
 		return fmt.Errorf("appsync: get sync profile: %w", err)
 	}
 	if profileOverlapsKind(kind, profile.Categories) {
 		return nil
 	}
-	return fmt.Errorf("%w: sync profile %d has no categories a %s connection can consume", ErrInvalid, *id, kind)
+	return fmt.Errorf("%w: sync profile %d has no categories a %s connection can consume", domain.ErrInvalid, *id, kind)
 }
 
 // profileOverlapsKind reports whether a profile category set is usable for an app
@@ -266,7 +266,7 @@ func (s *Service) validateProfileInUse(ctx context.Context, q dbinterface.Execer
 		}
 		if !profileOverlapsKind(conn.Kind, cats) {
 			return fmt.Errorf("%w: new category set has no categories the %s connection %q can consume — detach the profile first or keep a %s-range category",
-				ErrInvalid, conn.Kind, conn.Name, conn.Kind)
+				domain.ErrInvalid, conn.Kind, conn.Name, conn.Kind)
 		}
 	}
 	return nil

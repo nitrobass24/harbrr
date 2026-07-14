@@ -119,7 +119,7 @@ func TestGrabTransportErrorSanitized(t *testing.T) {
 	const base = "https://filelist.io"
 	link := base + "/dl/" + secret + "?passkey=" + secret
 	d := liveDriver(nil)
-	d.doer = &authErrorDoer{err: &url.Error{
+	d.Doer = &authErrorDoer{err: &url.Error{
 		Op:  "Get",
 		URL: link,
 		Err: errors.New("dial tcp: connection refused"),
@@ -140,25 +140,10 @@ func TestGrabTransportErrorSanitized(t *testing.T) {
 		strings.Contains(got, "passkey="+secret) {
 		t.Errorf("download link secret leaked into the error: %v", got)
 	}
-	if !strings.Contains(got, "filelist: download request failed") {
-		t.Errorf("error should carry the fixed prefix: %v", got)
+	if !strings.Contains(got, "filelist: download to "+base+" failed") {
+		t.Errorf("error should carry the base download prefix: %v", got)
 	}
 	if strings.Contains(apphttp.RedactError(err), secret) {
 		t.Errorf("RedactError leaks the passkey: %v", apphttp.RedactError(err))
-	}
-}
-
-func TestReadCapped(t *testing.T) {
-	t.Parallel()
-	if _, err := readCapped(strings.NewReader("0123456789AB"), 10); !errors.Is(err, errDownloadTooLarge) {
-		t.Errorf("12 bytes over cap 10: err = %v, want errDownloadTooLarge", err)
-	}
-	got, err := readCapped(strings.NewReader("0123456789"), 10)
-	if err != nil || len(got) != 10 {
-		t.Errorf("at cap: len=%d err=%v, want 10/nil", len(got), err)
-	}
-	got, err = readCapped(strings.NewReader("hello"), 10)
-	if err != nil || string(got) != "hello" {
-		t.Errorf("under cap: got=%q err=%v", got, err)
 	}
 }

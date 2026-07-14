@@ -141,7 +141,7 @@ func buildStack(t *testing.T, basePath string) (*stack, *stdhttp.Client) {
 
 	authSvc := auth.NewService(db)
 	doer := &replayDoer{body: bodyHTML}
-	reg := registry.New(db, loader.New(dropin), keyring,
+	reg := registry.New(db, loader.New(dropin), keyring, nil,
 		registry.WithDoerFactory(func(registry.ClientParams) (search.Doer, error) { return doer, nil }))
 
 	mgmt, err := api.NewRouter(api.Deps{

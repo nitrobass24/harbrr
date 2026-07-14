@@ -9,6 +9,7 @@ import (
 
 	"github.com/autobrr/harbrr/internal/auth"
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbinterface"
 )
 
 type fastPasswordHasher struct{}
@@ -35,7 +36,13 @@ func newService(t *testing.T) *auth.Service {
 	if err := db.Migrate(context.Background()); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	return auth.NewServiceWithPasswordHasher(db, fastPasswordHasher{})
+
+	// Construct over a dbinterface.Querier-typed variable (not the concrete
+	// *database.DB) so this seam can't silently regress to requiring the
+	// concrete storage type, matching the other services (notify, proxy,
+	// appsync, announce) that already depend on the Querier interface.
+	var q dbinterface.Querier = db
+	return auth.NewServiceWithPasswordHasher(q, fastPasswordHasher{})
 }
 
 func TestSetupAndLogin(t *testing.T) {

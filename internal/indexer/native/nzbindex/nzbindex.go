@@ -14,16 +14,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	stdhttp "net/http"
 	"strings"
-	"time"
-
-	"github.com/rs/zerolog"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -50,13 +45,8 @@ const (
 // apikey rides the search query, and the .nzb download is public, so the driver holds no
 // session state. caps are static (Prowlarr hardcodes them — NZBIndex has no ?t=caps).
 type driver struct {
-	def     *loader.Definition
-	caps    *mapper.Capabilities
-	apikey  string
-	doer    search.Doer
-	baseURL string // normalised with NO trailing slash
-	clock   func() time.Time
-	log     zerolog.Logger
+	native.Base
+	apikey string
 }
 
 var (
@@ -129,27 +119,20 @@ func New(p native.Params) (native.Driver, error) {
 	if err != nil {
 		return nil, fmt.Errorf("nzbindex: build capabilities for %q: %w", p.Def.ID, err)
 	}
-	base := p.BaseURL
-	if base == "" && len(p.Def.Links) > 0 {
-		base = p.Def.Links[0]
+	base, err := native.NewBase("nzbindex", p)
+	if err != nil {
+		return nil, err
 	}
-	clock := p.Clock
-	if clock == nil {
-		clock = time.Now
-	}
+	base.Caps = built
+	base.MaxBodyBytes = maxBodyBytes
 	return &driver{
-		def:     p.Def,
-		caps:    built,
-		apikey:  strings.TrimSpace(p.Cfg["apikey"]),
-		doer:    p.Doer,
-		baseURL: strings.TrimRight(base, "/"),
-		clock:   clock,
-		log:     p.Logger,
+		Base:   base,
+		apikey: strings.TrimSpace(p.Cfg["apikey"]),
 	}, nil
 }
 
 // Capabilities returns the static capabilities (no live caps fetch — NZBIndex has none).
-func (d *driver) Capabilities() *mapper.Capabilities { return d.caps }
+func (d *driver) Capabilities() *mapper.Capabilities { return d.Caps }
 
 // NeedsResolver is false: the .nzb download URL is known directly from the result id.
 func (d *driver) NeedsResolver() bool { return false }
@@ -182,39 +165,21 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	switch {
-	case resp.StatusCode == stdhttp.StatusUnauthorized:
-		return nil, fmt.Errorf("nzbindex: search unauthorized: %w", login.ErrLoginFailed)
-	case resp.StatusCode == stdhttp.StatusForbidden || search.IsRateLimitStatus(resp.StatusCode):
-		return nil, &search.RateLimitedError{
-			StatusCode: resp.StatusCode,
-			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.clock),
-		}
-	case resp.StatusCode < 200 || resp.StatusCode >= 300:
-		return nil, fmt.Errorf("nzbindex: search returned HTTP %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
-	if err != nil {
-		return nil, fmt.Errorf("nzbindex: read search response: %s: %w", apphttp.RedactError(err), search.ErrParseError)
-	}
-	return d.parseReleases(body)
+	return d.parseReleases(resp.Body)
 }
 
 // get issues the search GET with an Accept: application/json header. The URL may embed the
 // apikey, so a transport error surfaces only its scheme://host (apphttp.RedactURLError drops
 // the key-bearing query). The caller owns the returned body and interprets the status.
-func (d *driver) get(ctx context.Context, rawurl string) (*stdhttp.Response, error) {
+func (d *driver) get(ctx context.Context, rawurl string) (*native.Response, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
 		return nil, fmt.Errorf("nzbindex: build request to %s: %w", apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
 	}
 	req.Header.Set("Accept", "application/json")
-	resp, err := d.doer.Do(req)
+	resp, err := d.Do(ctx, req, native.ClassifyRateLimit403)
 	if err != nil {
-		return nil, fmt.Errorf("nzbindex: request to %s: %w", apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
+		return resp, normalizeReadError(err)
 	}
 	return resp, nil
 }

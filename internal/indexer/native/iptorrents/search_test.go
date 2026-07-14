@@ -163,7 +163,7 @@ func TestSearchTransportErrorHostOnly(t *testing.T) {
 		Err: errors.New("dial tcp: connection refused"),
 	}
 	d := testDriver(nil, nil)
-	d.doer = &errorDoer{err: uerr}
+	d.Doer = &errorDoer{err: uerr}
 
 	_, err := d.Search(context.Background(), search.Query{Categories: []string{"72"}, Keywords: "dune"})
 	if err == nil {

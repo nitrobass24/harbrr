@@ -3,15 +3,12 @@ package filelist
 import (
 	"context"
 	"fmt"
-	"io"
-	stdhttp "net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 	"unicode"
 
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
@@ -25,29 +22,11 @@ const searchPath = "api.php"
 // non-2xx is an error. The Basic header rides on the request (added by get), never
 // the URL, so the served (recorded) URL carries no passkey.
 func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
-	resp, err := d.get(ctx, d.buildSearchURL(q), "application/json")
+	resp, err := d.get(ctx, d.buildSearchURL(q), "application/json", false)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	switch {
-	case resp.StatusCode == stdhttp.StatusUnauthorized || resp.StatusCode == stdhttp.StatusForbidden:
-		return nil, fmt.Errorf("filelist: search unauthorized: %w", login.ErrLoginFailed)
-	case search.IsRateLimitStatus(resp.StatusCode):
-		return nil, &search.RateLimitedError{
-			StatusCode: resp.StatusCode,
-			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.clock),
-		}
-	case resp.StatusCode < 200 || resp.StatusCode >= 300:
-		return nil, fmt.Errorf("filelist: search returned HTTP %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
-	if err != nil {
-		return nil, fmt.Errorf("filelist: read search response: %w", err)
-	}
-	return d.parseReleases(body)
+	return d.parseReleases(resp.Body)
 }
 
 // buildSearchURL renders the api.php request for a query, matching Prowlarr's
@@ -61,7 +40,7 @@ func (d *driver) buildSearchURL(q search.Query) string {
 	params := url.Values{}
 	d.addSearchParams(params, q)
 	d.addCommonParams(params, q)
-	return d.baseURL + searchPath + "?" + params.Encode()
+	return d.BaseURL + searchPath + "?" + params.Encode()
 }
 
 // addSearchParams sets action/type/query and (for a name search) season/episode,
@@ -113,7 +92,7 @@ func (d *driver) addCommonParams(params url.Values, q search.Query) {
 	if cats := distinctCategories(q.Categories); cats != "" {
 		params.Set("category", cats)
 	}
-	if freeleechOnly(d.cfg) {
+	if freeleechOnly(d.Cfg) {
 		params.Set("freeleech", "1")
 	}
 }

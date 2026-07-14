@@ -3,22 +3,14 @@ package passthepopcorn
 import (
 	"context"
 	"fmt"
-	"io"
 	"mime"
-	stdhttp "net/http"
 	"net/url"
 	"strconv"
 	"strings"
 
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
-
-// maxBodyBytes caps a torrents.php?action=advanced response. A PTP page is small JSON
-// (PageSize 50 movie groups, each with a handful of nested torrents), so this is generous
-// while still bounding a hostile or runaway body.
-const maxBodyBytes = 8 << 20 // 8 MiB
 
 // fixed query params on every search request, confirmed in Prowlarr
 // PassThePopcornRequestGenerator.GetRequest: action=advanced selects the JSON search,
@@ -41,33 +33,15 @@ const (
 // must be JSON (Prowlarr rejects a non-JSON response) and is handed to parseReleases. The
 // ApiUser/ApiKey ride in headers, never the URL, and are never logged.
 func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
-	resp, err := d.get(ctx, d.buildSearchURL(q), "application/json")
+	resp, err := d.get(ctx, d.buildSearchURL(q), "application/json", false)
 	if err != nil {
 		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	switch {
-	case resp.StatusCode == stdhttp.StatusUnauthorized:
-		return nil, fmt.Errorf("passthepopcorn: search unauthorized: %w", login.ErrLoginFailed)
-	case resp.StatusCode == stdhttp.StatusForbidden || search.IsRateLimitStatus(resp.StatusCode):
-		return nil, &search.RateLimitedError{
-			StatusCode: resp.StatusCode,
-			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.clock),
-		}
-	case resp.StatusCode < 200 || resp.StatusCode >= 300:
-		return nil, fmt.Errorf("passthepopcorn: search returned HTTP %d", resp.StatusCode)
 	}
 
 	if !isJSONContentType(resp.Header.Get("Content-Type")) {
 		return nil, fmt.Errorf("passthepopcorn: search returned non-JSON response: %w", search.ErrParseError)
 	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
-	if err != nil {
-		return nil, fmt.Errorf("passthepopcorn: read search response: %w", err)
-	}
-	return d.parseReleases(body)
+	return d.parseReleases(resp.Body)
 }
 
 // buildSearchURL composes the torrents.php?action=advanced request URL. The five fixed
@@ -85,7 +59,7 @@ func (d *driver) buildSearchURL(q search.Query) string {
 	if term := searchTerm(q); term != "" {
 		params.Set("searchstr", term)
 	}
-	return fmt.Sprintf("%storrents.php?%s", d.baseURL, params.Encode())
+	return fmt.Sprintf("%storrents.php?%s", d.BaseURL, params.Encode())
 }
 
 // searchTerm resolves the searchstr value: the full "tt"-prefixed imdb id when the query

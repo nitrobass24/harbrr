@@ -63,7 +63,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 		return nil, fmt.Errorf("torrentday: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
 	}
 
-	freeOnly := freeleechOnly(d.cfg)
+	freeOnly := freeleechOnly(d.Cfg)
 	releases := make([]*normalizer.Release, 0, len(rows))
 	for i := range rows {
 		if freeOnly && rows[i].DownloadMultiplier.float64WithDefault(1) != 0 {
@@ -74,7 +74,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	sort.SliceStable(releases, func(i, j int) bool {
 		return releases[i].Link < releases[j].Link
 	})
-	native.TraceReleases(d.log, d.def.ID, releases)
+	native.TraceReleases(d.Log, d.Def.ID, releases)
 	return releases, nil
 }
 
@@ -120,7 +120,7 @@ func (d *driver) toRelease(row *torrentDayRow) *normalizer.Release {
 // 1:1 custom id (those ids are >= customCatCutoff). An unmapped id yields no category
 // (an uncategorised release) rather than failing the page.
 func (d *driver) categories(c flexInt) []int {
-	for _, id := range d.caps.CategoryMap.MapTrackerCatToNewznab(c.string()) {
+	for _, id := range d.Caps.CategoryMap.MapTrackerCatToNewznab(c.string()) {
 		if id < customCatCutoff {
 			return []int{id}
 		}
@@ -135,12 +135,12 @@ func (d *driver) categories(c flexInt) []int {
 // secret.
 func (d *driver) downloadURL(id int64) string {
 	idStr := strconv.FormatInt(id, 10)
-	return d.baseURL + downloadPath + "/" + idStr + "/" + idStr + ".torrent"
+	return d.BaseURL + downloadPath + "/" + idStr + "/" + idStr + ".torrent"
 }
 
 // detailsURL rebuilds the Prowlarr info URL: {base}details.php?id=<id>.
 func (d *driver) detailsURL(id int64) string {
-	return d.baseURL + detailsPath + "?id=" + strconv.FormatInt(id, 10)
+	return d.BaseURL + detailsPath + "?id=" + strconv.FormatInt(id, 10)
 }
 
 // normalizeIMDBID re-renders a row's imdb-id as harbrr's canonical "tt"+7-digit form

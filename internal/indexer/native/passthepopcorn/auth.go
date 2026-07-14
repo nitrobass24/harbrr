@@ -2,12 +2,13 @@ package passthepopcorn
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	stdhttp "net/http"
 	"sort"
 	"strings"
 
-	apphttp "github.com/autobrr/harbrr/internal/http"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // PTP authenticates every request with two HTTP headers, exact casing "ApiUser" and
@@ -24,8 +25,8 @@ const (
 // logged. The credentials ride only in headers — never the URL — so the request URL stays
 // secret-free and safe to record.
 func (d *driver) setAuth(req *stdhttp.Request) {
-	req.Header.Set(headerAPIUser, d.cfg["apiuser"])
-	req.Header.Set(headerAPIKey, d.cfg["apikey"])
+	req.Header.Set(headerAPIUser, d.Cfg["apiuser"])
+	req.Header.Set(headerAPIKey, d.Cfg["apikey"])
 }
 
 // get issues an authenticated GET to a PTP endpoint (search or download). The ApiUser/
@@ -33,10 +34,9 @@ func (d *driver) setAuth(req *stdhttp.Request) {
 // is set but never recorded. accept sets the Accept header when non-empty: the search
 // expects JSON, but a torrent download must not force JSON (a strict server could 406 or
 // return a JSON error instead of the .torrent), so Grab passes an empty accept. A
-// transport error surfaces only the endpoint's scheme://host (apphttp.SchemeHost) with
-// the cause routed through apphttp.RedactURLError. The caller owns the returned body and
-// interprets the status.
-func (d *driver) get(ctx context.Context, rawurl, accept string) (*stdhttp.Response, error) {
+// transport error surfaces only the endpoint's scheme://host through native.Base. The
+// caller owns the returned body and interprets the status.
+func (d *driver) get(ctx context.Context, rawurl, accept string, download bool) (*native.Response, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
 		return nil, fmt.Errorf("passthepopcorn: build request: %w", err)
@@ -45,11 +45,14 @@ func (d *driver) get(ctx context.Context, rawurl, accept string) (*stdhttp.Respo
 	if accept != "" {
 		req.Header.Set("Accept", accept)
 	}
-	resp, err := d.doer.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("passthepopcorn: request to %s: %w", apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
+	var resp *native.Response
+	classify := native.ClassifyRateLimit403
+	if download {
+		resp, err = d.DoDownload(ctx, req, classify)
+	} else {
+		resp, err = d.Do(ctx, req, classify)
 	}
-	return resp, nil
+	return resp, d.scrubError(err)
 }
 
 // scrubSecrets removes the configured ApiUser and ApiKey from s so a server echo (e.g. in
@@ -59,7 +62,7 @@ func (d *driver) get(ctx context.Context, rawurl, accept string) (*stdhttp.Respo
 func (d *driver) scrubSecrets(s string) string {
 	secrets := make([]string, 0, 2)
 	for _, key := range []string{"apikey", "apiuser"} {
-		if v := strings.TrimSpace(d.cfg[key]); v != "" {
+		if v := strings.TrimSpace(d.Cfg[key]); v != "" {
 			secrets = append(secrets, v)
 		}
 	}
@@ -71,4 +74,15 @@ func (d *driver) scrubSecrets(s string) string {
 		s = strings.ReplaceAll(s, v, "[redacted]")
 	}
 	return s
+}
+
+func (d *driver) scrubError(err error) error {
+	if err == nil {
+		return nil
+	}
+	msg := d.scrubSecrets(err.Error())
+	if msg == err.Error() {
+		return err
+	}
+	return errors.New(msg)
 }

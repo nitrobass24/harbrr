@@ -3,7 +3,6 @@ package avistaz
 import (
 	"context"
 	"fmt"
-	"io"
 	stdhttp "net/http"
 	"net/url"
 	"strconv"
@@ -11,7 +10,6 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
@@ -40,32 +38,14 @@ const (
 // suppression of NotFound); a 429 is a rate-limit error; any other non-2xx is an
 // error. The response body is parsed in the parser commit.
 func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
-	resp, err := d.get(ctx, d.buildSearchURL(q), "application/json")
+	resp, err := d.get(ctx, d.buildSearchURL(q), "application/json", false)
+	if resp != nil && resp.StatusCode == stdhttp.StatusNotFound {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	switch {
-	case resp.StatusCode == stdhttp.StatusNotFound:
-		return nil, nil
-	case search.IsRateLimitStatus(resp.StatusCode):
-		return nil, &search.RateLimitedError{
-			StatusCode: resp.StatusCode,
-			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.clock),
-		}
-	case resp.StatusCode == stdhttp.StatusUnauthorized || resp.StatusCode == stdhttp.StatusPreconditionFailed:
-		// A 401/412 that survives get's reactive re-auth is a genuine auth failure.
-		return nil, fmt.Errorf("avistaz: search unauthorized: %w", login.ErrLoginFailed)
-	case resp.StatusCode < 200 || resp.StatusCode >= 300:
-		return nil, fmt.Errorf("avistaz: search returned HTTP %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
-	if err != nil {
-		return nil, fmt.Errorf("avistaz: read search response: %w", err)
-	}
-	return d.parseReleases(body)
+	return d.parseReleases(resp.Body)
 }
 
 // buildSearchURL renders the api/v1/jackett/torrents request for a query, matching
@@ -86,11 +66,11 @@ func (d *driver) buildSearchURL(q search.Query) string {
 	params.Set("in", "1")
 	params.Set("type", typ)
 	params.Set("limit", strconv.Itoa(pageSize))
-	if freeleechOnly(d.cfg) {
+	if freeleechOnly(d.Cfg) {
 		params.Add("discount[]", "1")
 	}
 	d.addQueryParams(params, q, d.classify(q, typ))
-	return d.baseURL + searchPath + "?" + params.Encode()
+	return d.BaseURL + searchPath + "?" + params.Encode()
 }
 
 // addQueryParams adds the id/search params for the kind, mirroring the precedence in

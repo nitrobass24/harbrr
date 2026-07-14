@@ -11,6 +11,7 @@ import (
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // fakeTorrent is a minimal bencode-shaped body (content is irrelevant to the driver; it
@@ -95,8 +96,8 @@ func TestGrabStatusErrors(t *testing.T) {
 
 // TestGrabTransportErrorSanitized proves a transport failure during the download fetch
 // surfaces the endpoint's scheme://host (a diagnosable, non-secret detail) while the
-// passkey-bearing path and query of the download URL never leak: get() rebuilds the real
-// *url.Error host-only and sanitizeGrabError's fallback %w-wraps that host-only cause.
+// passkey-bearing path and query of the download URL never leak: native.Base rebuilds
+// the real *url.Error host-only.
 func TestGrabTransportErrorSanitized(t *testing.T) {
 	t.Parallel()
 	// A real *url.Error exactly as http.Client.Do returns on a transport failure, with the
@@ -120,16 +121,16 @@ func TestGrabTransportErrorSanitized(t *testing.T) {
 		strings.Contains(got, "passkey="+credPasskey) {
 		t.Errorf("download URL secret path/query leaked into the error: %v", err)
 	}
-	if !strings.Contains(got, "gazellegames: download request failed") {
-		t.Errorf("error lost its fixed prefix: %v", err)
+	if !strings.Contains(got, "gazellegames: download to https://gazellegames.net failed") {
+		t.Errorf("error lost its base download prefix: %v", err)
 	}
 	if strings.Contains(apphttp.RedactError(err), credPasskey) {
 		t.Errorf("RedactError leaks the passkey: %v", apphttp.RedactError(err))
 	}
 }
 
-// TestGrabContextSentinelsPreserved proves cancellation/deadline sentinels survive
-// sanitizeGrabError so normal cancellation is not misreported as a download failure.
+// TestGrabContextSentinelsPreserved proves cancellation/deadline sentinels survive so
+// normal cancellation is not misreported as a download failure.
 func TestGrabContextSentinelsPreserved(t *testing.T) {
 	t.Parallel()
 	for _, sentinel := range []error{context.Canceled, context.DeadlineExceeded} {
@@ -141,20 +142,15 @@ func TestGrabContextSentinelsPreserved(t *testing.T) {
 	}
 }
 
-// TestReadCapped proves the size cap errors (not truncates) over the limit and reads
-// through at and under it.
-func TestReadCapped(t *testing.T) {
+// TestGrabDownloadTooLarge proves the shared download size cap errors rather than
+// silently truncating a corrupt torrent.
+func TestGrabDownloadTooLarge(t *testing.T) {
 	t.Parallel()
-	if _, err := readCapped(strings.NewReader("0123456789AB"), 10); !errors.Is(err, errDownloadTooLarge) {
-		t.Errorf("12 bytes over cap 10: err = %v, want errDownloadTooLarge", err)
-	}
-	got, err := readCapped(strings.NewReader("0123456789"), 10)
-	if err != nil || len(got) != 10 {
-		t.Errorf("at cap: len=%d err=%v, want 10/nil", len(got), err)
-	}
-	got, err = readCapped(strings.NewReader("hello"), 10)
-	if err != nil || string(got) != "hello" {
-		t.Errorf("under cap: got=%q err=%v", got, err)
+	body := strings.Repeat("x", (64<<20)+1)
+	d := searchDriver(t, &scriptDoer{resp: mkResp(stdhttp.StatusOK, body)})
+	_, err := d.Grab(context.Background(), downloadLink)
+	if !errors.Is(err, native.ErrDownloadTooLarge) {
+		t.Errorf("err = %v, want native.ErrDownloadTooLarge", err)
 	}
 }
 

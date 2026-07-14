@@ -16,16 +16,6 @@
 package torrentday
 
 import (
-	"errors"
-	"fmt"
-	"strings"
-	"time"
-
-	"github.com/rs/zerolog"
-
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
@@ -33,13 +23,7 @@ import (
 // cached by the registry. There is no token to refresh — the session cookie is static
 // config, sent as the Cookie header on every request.
 type driver struct {
-	def     *loader.Definition
-	caps    *mapper.Capabilities
-	cfg     map[string]string
-	doer    search.Doer
-	baseURL string // normalised with a single trailing slash
-	clock   func() time.Time
-	log     zerolog.Logger
+	native.Base
 }
 
 var _ native.Driver = (*driver)(nil)
@@ -47,34 +31,12 @@ var _ native.Driver = (*driver)(nil)
 // New is the native.Factory for TorrentDay. It builds the capabilities from the
 // Go-built definition and normalises the base URL.
 func New(p native.Params) (native.Driver, error) {
-	if p.Def == nil {
-		return nil, errors.New("torrentday: nil definition")
-	}
-	caps, err := mapper.Build(p.Def)
+	b, err := native.NewBase("torrentday", p)
 	if err != nil {
-		return nil, fmt.Errorf("torrentday: build capabilities for %q: %w", p.Def.ID, err)
+		return nil, err
 	}
-	base := p.BaseURL
-	if base == "" && len(p.Def.Links) > 0 {
-		base = p.Def.Links[0]
-	}
-	clock := p.Clock
-	if clock == nil {
-		clock = time.Now
-	}
-	return &driver{
-		def:     p.Def,
-		caps:    caps,
-		cfg:     p.Cfg,
-		doer:    p.Doer,
-		baseURL: strings.TrimRight(base, "/") + "/",
-		clock:   clock,
-		log:     p.Logger,
-	}, nil
+	return &driver{Base: b}, nil
 }
-
-// Capabilities returns the TorrentDay capabilities document.
-func (d *driver) Capabilities() *mapper.Capabilities { return d.caps }
 
 // NeedsResolver is always true: a TorrentDay download must be fetched with the session
 // cookie *arr cannot send, so the served feed routes through the /dl proxy and the

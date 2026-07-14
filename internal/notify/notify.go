@@ -9,7 +9,6 @@ package notify
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -23,10 +22,6 @@ const httpClientTimeout = 15 * time.Second
 
 // defaultHTTPClient is the fallback client the senders use when none is injected.
 func defaultHTTPClient() *http.Client { return &http.Client{Timeout: httpClientTimeout} }
-
-// ErrInvalid is the service's input-mapping sentinel (the handler turns it into 400).
-// Not-found flows through database.ErrNotFound.
-var ErrInvalid = errors.New("notify: invalid input")
 
 // Event kinds — the operational triggers a notification fires on. Stored nowhere
 // (they are dispatch-time labels), carried in the sent payload's `event` field.
@@ -71,6 +66,6 @@ func newSender(typ, url string, client *http.Client) (Sender, error) {
 	case domain.NotifyTypeDiscord:
 		return newDiscord(url, client), nil
 	default:
-		return nil, fmt.Errorf("%w: unknown notification type %q", ErrInvalid, typ)
+		return nil, fmt.Errorf("%w: unknown notification type %q", domain.ErrInvalid, typ)
 	}
 }

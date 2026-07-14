@@ -27,7 +27,7 @@ func parseTestDriver(t *testing.T, cfg map[string]string) *driver {
 		t.Fatalf("New: %v", err)
 	}
 	drv := d.(*driver)
-	drv.baseURL = "https://animebytes.tv/"
+	drv.BaseURL = "https://animebytes.tv/"
 	return drv
 }
 

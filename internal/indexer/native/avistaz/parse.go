@@ -85,7 +85,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	sort.SliceStable(releases, func(i, j int) bool {
 		return releases[i].PublishDate > releases[j].PublishDate
 	})
-	native.TraceReleases(d.log, d.profile.site, releases)
+	native.TraceReleases(d.Log, d.profile.site, releases)
 	return releases, nil
 }
 
@@ -146,7 +146,7 @@ func (d *driver) exoticaCategories(row *avistazRelease) []int {
 	seen := map[int]struct{}{}
 	var cats []int
 	for key := range row.Category {
-		for _, id := range d.caps.CategoryMap.MapTrackerCatToNewznab(key) {
+		for _, id := range d.Caps.CategoryMap.MapTrackerCatToNewznab(key) {
 			if _, dup := seen[id]; dup {
 				continue
 			}

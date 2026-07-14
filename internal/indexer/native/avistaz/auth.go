@@ -8,16 +8,16 @@ import (
 	stdhttp "net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 const (
 	authPath     = "api/v1/jackett/auth"
-	maxBodyBytes = 8 << 20 // 8 MiB cap on an auth/search/torrent response
+	maxBodyBytes = 8 << 20 // 8 MiB cap on an auth response body
 )
 
 // authResponse + errorResponse are the JSON the auth endpoint returns.
@@ -36,11 +36,11 @@ type errorResponse struct {
 // a 429 is a rate-limit error.
 func (d *driver) authenticate(ctx context.Context) (string, error) {
 	form := url.Values{}
-	form.Set("username", strings.TrimSpace(d.cfg["username"]))
-	form.Set("password", strings.TrimSpace(d.cfg["password"]))
-	form.Set("pid", strings.TrimSpace(d.cfg["pid"]))
+	form.Set("username", strings.TrimSpace(d.Cfg["username"]))
+	form.Set("password", strings.TrimSpace(d.Cfg["password"]))
+	form.Set("pid", strings.TrimSpace(d.Cfg["pid"]))
 
-	authURL := d.baseURL + authPath
+	authURL := d.BaseURL + authPath
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodPost, authURL, strings.NewReader(form.Encode()))
 	if err != nil {
 		return "", fmt.Errorf("avistaz: build auth request: %w", err)
@@ -48,7 +48,7 @@ func (d *driver) authenticate(ctx context.Context) (string, error) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := d.doer.Do(req)
+	resp, err := d.Doer.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("avistaz: auth request to %s: %w", apphttp.SchemeHost(authURL), apphttp.RedactURLError(err))
 	}
@@ -64,7 +64,7 @@ func (d *driver) authenticate(ctx context.Context) (string, error) {
 	case search.IsRateLimitStatus(resp.StatusCode):
 		return "", &search.RateLimitedError{
 			StatusCode: resp.StatusCode,
-			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), time.Now),
+			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.Clock),
 		}
 	case resp.StatusCode < 200 || resp.StatusCode >= 300:
 		return "", fmt.Errorf("avistaz: auth returned HTTP %d", resp.StatusCode)
@@ -91,7 +91,7 @@ func (d *driver) authErrorMessage(body []byte) string {
 	if json.Unmarshal(body, &er) != nil || er.Message == "" {
 		return "authentication failed"
 	}
-	return scrubSubmittedCredentials(er.Message, d.cfg)
+	return scrubSubmittedCredentials(er.Message, d.Cfg)
 }
 
 // scrubSubmittedCredentials removes any occurrence of the submitted secret credential
@@ -134,30 +134,31 @@ func (d *driver) refreshToken(ctx context.Context) (string, error) {
 // (Prowlarr's CheckIfLoginNeeded) and retrying. The caller owns the returned body
 // and interprets the status (404/429/2xx). The URL carries no secret (the bearer
 // is a header), but a transport error still surfaces only its scheme://host.
-func (d *driver) get(ctx context.Context, rawurl, accept string) (*stdhttp.Response, error) {
+func (d *driver) get(ctx context.Context, rawurl, accept string, download bool) (*native.Response, error) {
 	token, err := d.ensureToken(ctx)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := d.sendBearer(ctx, rawurl, token, accept)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode == stdhttp.StatusUnauthorized || resp.StatusCode == stdhttp.StatusPreconditionFailed {
-		_ = resp.Body.Close()
+	resp, err := d.sendBearer(ctx, rawurl, token, accept, download)
+	if isExpiredToken(resp) {
 		token, err = d.refreshToken(ctx)
 		if err != nil {
 			return nil, err
 		}
-		return d.sendBearer(ctx, rawurl, token, accept)
+		return d.sendBearer(ctx, rawurl, token, accept, download)
 	}
-	return resp, nil
+	return resp, err
+}
+
+func isExpiredToken(resp *native.Response) bool {
+	return resp != nil &&
+		(resp.StatusCode == stdhttp.StatusUnauthorized || resp.StatusCode == stdhttp.StatusPreconditionFailed)
 }
 
 // sendBearer sends one GET with the Authorization: Bearer header. accept sets the
 // Accept header when non-empty: the search expects JSON, but a torrent download must
 // not force JSON (a strict server could 406 or return JSON instead of the .torrent).
-func (d *driver) sendBearer(ctx context.Context, rawurl, token, accept string) (*stdhttp.Response, error) {
+func (d *driver) sendBearer(ctx context.Context, rawurl, token, accept string, download bool) (*native.Response, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
 		return nil, fmt.Errorf("avistaz: build request: %w", err)
@@ -166,9 +167,9 @@ func (d *driver) sendBearer(ctx context.Context, rawurl, token, accept string) (
 	if accept != "" {
 		req.Header.Set("Accept", accept)
 	}
-	resp, err := d.doer.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("avistaz: request to %s: %w", apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
+	classify := native.ClassifyAuth403.AlsoAuth(stdhttp.StatusPreconditionFailed)
+	if download {
+		return d.DoDownload(ctx, req, classify)
 	}
-	return resp, nil
+	return d.Do(ctx, req, classify)
 }

@@ -153,7 +153,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 		releases = append(releases, d.toRelease(&resp.Results[i]))
 	}
 	sortReleases(releases)
-	native.TraceReleases(d.log, d.def.ID, releases)
+	native.TraceReleases(d.Log, d.Def.ID, releases)
 	return releases, nil
 }
 
@@ -211,7 +211,7 @@ func (d *driver) toRelease(row *bhdTorrent) *normalizer.Release {
 // synthesises a 1:1 custom id (>= customCatCutoff) which is discarded so the release
 // carries exactly one category (matching Prowlarr).
 func (d *driver) categories(category string) []int {
-	for _, c := range d.caps.CategoryMap.MapTrackerCatDescToNewznab(category) {
+	for _, c := range d.Caps.CategoryMap.MapTrackerCatDescToNewznab(category) {
 		if c < customCatCutoff {
 			return []int{c}
 		}
@@ -301,7 +301,7 @@ func tmdbID(raw string) int64 {
 // the secret-bearing URL path; the rsskey rides in the body + the download URL.
 func (d *driver) scrubSecrets(s string) string {
 	for _, k := range []string{"api_key", "rsskey"} {
-		if v := strings.TrimSpace(d.cfg[k]); v != "" {
+		if v := strings.TrimSpace(d.Cfg[k]); v != "" {
 			s = strings.ReplaceAll(s, v, "[redacted]")
 		}
 	}

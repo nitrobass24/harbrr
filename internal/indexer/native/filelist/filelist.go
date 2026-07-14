@@ -10,31 +10,17 @@ package filelist
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"strings"
-	"time"
 
-	"github.com/rs/zerolog"
-
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // driver is one configured FileList instance. It is built once per instance and
 // cached by the registry. There is no login round-trip: every request carries the
 // Authorization: Basic header built from the username + passkey, so the driver holds
-// no session state.
+// no session state. Everything but the FileList request/parse dialect lives in the
+// embedded native.Base.
 type driver struct {
-	def     *loader.Definition
-	caps    *mapper.Capabilities
-	cfg     map[string]string
-	doer    search.Doer
-	baseURL string // normalised with a single trailing slash
-	clock   func() time.Time
-	log     zerolog.Logger
+	native.Base
 }
 
 var _ native.Driver = (*driver)(nil)
@@ -42,34 +28,12 @@ var _ native.Driver = (*driver)(nil)
 // New is the native.Factory for FileList. It builds the capabilities from the
 // definition and normalises the base URL.
 func New(p native.Params) (native.Driver, error) {
-	if p.Def == nil {
-		return nil, errors.New("filelist: nil definition")
-	}
-	caps, err := mapper.Build(p.Def)
+	b, err := native.NewBase("filelist", p)
 	if err != nil {
-		return nil, fmt.Errorf("filelist: build capabilities for %q: %w", p.Def.ID, err)
+		return nil, err
 	}
-	base := p.BaseURL
-	if base == "" && len(p.Def.Links) > 0 {
-		base = p.Def.Links[0]
-	}
-	clock := p.Clock
-	if clock == nil {
-		clock = time.Now
-	}
-	return &driver{
-		def:     p.Def,
-		caps:    caps,
-		cfg:     p.Cfg,
-		doer:    p.Doer,
-		baseURL: strings.TrimRight(base, "/") + "/",
-		clock:   clock,
-		log:     p.Logger,
-	}, nil
+	return &driver{Base: b}, nil
 }
-
-// Capabilities returns the FileList capabilities document.
-func (d *driver) Capabilities() *mapper.Capabilities { return d.caps }
 
 // NeedsResolver is always true: a FileList download URL carries the passkey in its
 // query, which *arr must not see, so the served feed routes through the /dl proxy and
@@ -84,6 +48,5 @@ func (d *driver) DownloadNeedsAuth() bool { return false }
 // "test indexer" action). It issues a cheap latest-torrents search; a 401/403 is an
 // auth failure surfaced by the search.
 func (d *driver) Test(ctx context.Context) error {
-	_, err := d.Search(ctx, search.Query{})
-	return err
+	return native.TestViaSearch(ctx, d)
 }

@@ -3,13 +3,10 @@ package iptorrents
 import (
 	"context"
 	"fmt"
-	"io"
-	stdhttp "net/http"
 	"net/url"
 	"strconv"
 	"strings"
 
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
@@ -22,26 +19,11 @@ const searchPath = "t"
 // non-2xx is an error. The cookie + User-Agent ride as headers (added by get), never
 // the URL, so the served (recorded) URL carries no secret.
 func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
-	resp, err := d.get(ctx, d.buildSearchURL(q), "text/html")
+	resp, err := d.get(ctx, d.buildSearchURL(q), "text/html", false)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	switch {
-	case search.IsRateLimitStatus(resp.StatusCode):
-		return nil, &search.RateLimitedError{StatusCode: resp.StatusCode, RetryAfter: d.parseRetryAfter(resp)}
-	case resp.StatusCode == stdhttp.StatusUnauthorized || resp.StatusCode == stdhttp.StatusForbidden:
-		return nil, fmt.Errorf("iptorrents: search unauthorized: %w", login.ErrLoginFailed)
-	case resp.StatusCode < 200 || resp.StatusCode >= 300:
-		return nil, fmt.Errorf("iptorrents: search returned HTTP %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
-	if err != nil {
-		return nil, fmt.Errorf("iptorrents: read search response: %w", err)
-	}
-	return d.parseReleases(body)
+	return d.parseReleases(resp.Body)
 }
 
 // buildSearchURL renders the IPTorrents list request, matching Prowlarr's
@@ -60,7 +42,7 @@ func (d *driver) buildSearchURL(q search.Query) string {
 	for _, cat := range distinct(q.Categories) {
 		params.Set(cat, "")
 	}
-	if freeleechOnly(d.cfg) {
+	if freeleechOnly(d.Cfg) {
 		params.Set("free", "on")
 	}
 	imdb := fullIMDBID(q.IMDBID)
@@ -72,7 +54,7 @@ func (d *driver) buildSearchURL(q search.Query) string {
 		params.Set("q", sphinx(term))
 	}
 
-	raw := d.baseURL + searchPath
+	raw := d.BaseURL + searchPath
 	if len(params) > 0 {
 		raw += "?" + params.Encode()
 	}

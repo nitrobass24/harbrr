@@ -4,13 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	stdhttp "net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
@@ -49,25 +46,7 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	switch {
-	case resp.StatusCode == stdhttp.StatusUnauthorized || resp.StatusCode == stdhttp.StatusForbidden:
-		return nil, fmt.Errorf("beyondhd: search unauthorized: %w", login.ErrLoginFailed)
-	case search.IsRateLimitStatus(resp.StatusCode):
-		return nil, &search.RateLimitedError{
-			StatusCode: resp.StatusCode,
-			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.clock),
-		}
-	case resp.StatusCode < 200 || resp.StatusCode >= 300:
-		return nil, fmt.Errorf("beyondhd: search returned HTTP %d", resp.StatusCode)
-	}
-
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
-	if err != nil {
-		return nil, fmt.Errorf("beyondhd: read search response: %w", err)
-	}
-	return d.parseReleases(respBody)
+	return d.parseReleases(resp.Body)
 }
 
 // buildRequest marshals the api/torrents JSON body for a query. The rsskey is read from cfg
@@ -77,7 +56,7 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 func (d *driver) buildRequest(q search.Query) ([]byte, error) {
 	req := bhdRequest{
 		Action:     searchAction,
-		RSSKey:     strings.TrimSpace(d.cfg["rsskey"]),
+		RSSKey:     strings.TrimSpace(d.Cfg["rsskey"]),
 		Categories: d.categoryParam(q),
 	}
 	setSearchCriteria(&req, q)

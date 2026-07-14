@@ -12,16 +12,8 @@ package gazellegames
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"strings"
 	"sync"
-	"time"
 
-	"github.com/rs/zerolog"
-
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
@@ -31,18 +23,12 @@ import (
 // key in the X-API-Key header, so the driver holds no session state. The download
 // passkey is fetched on demand (request=quick_user) and persisted via persist.
 type driver struct {
-	def     *loader.Definition
-	caps    *mapper.Capabilities
-	doer    search.Doer
-	baseURL string // normalised with a single trailing slash
-	clock   func() time.Time
+	native.Base
 	persist func(ctx context.Context, name, value string) error
-	log     zerolog.Logger
 
-	// mu guards cfg, whose "passkey" entry is fetched on demand (request=quick_user) and
+	// mu guards Cfg, whose "passkey" entry is fetched on demand (request=quick_user) and
 	// persisted, so it is read while building download URLs and written by fetchPasskey.
-	mu  sync.Mutex
-	cfg map[string]string
+	mu sync.Mutex
 }
 
 var _ native.Driver = (*driver)(nil)
@@ -50,34 +36,16 @@ var _ native.Driver = (*driver)(nil)
 // New is the native.Factory for GazelleGames. It builds the capabilities from the
 // definition, normalises the base URL, and defaults the clock.
 func New(p native.Params) (native.Driver, error) {
-	if p.Def == nil {
-		return nil, errors.New("gazellegames: nil definition")
+	if p.Cfg == nil {
+		p.Cfg = map[string]string{}
 	}
-	caps, err := mapper.Build(p.Def)
+	b, err := native.NewBase("gazellegames", p)
 	if err != nil {
-		return nil, fmt.Errorf("gazellegames: build capabilities for %q: %w", p.Def.ID, err)
-	}
-	base := p.BaseURL
-	if base == "" && len(p.Def.Links) > 0 {
-		base = p.Def.Links[0]
-	}
-	clock := p.Clock
-	if clock == nil {
-		clock = time.Now
-	}
-	cfg := p.Cfg
-	if cfg == nil {
-		cfg = map[string]string{}
+		return nil, err
 	}
 	return &driver{
-		def:     p.Def,
-		caps:    caps,
-		cfg:     cfg,
-		doer:    p.Doer,
-		baseURL: strings.TrimRight(base, "/") + "/",
-		clock:   clock,
+		Base:    b,
 		persist: p.PersistSetting,
-		log:     p.Logger,
 	}, nil
 }
 
@@ -86,11 +54,8 @@ func New(p native.Params) (native.Driver, error) {
 func (d *driver) cfgValue(name string) string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	return d.cfg[name]
+	return d.Cfg[name]
 }
-
-// Capabilities returns the GazelleGames capabilities document.
-func (d *driver) Capabilities() *mapper.Capabilities { return d.caps }
 
 // NeedsResolver is always true: a GazelleGames download URL carries the passkey in its
 // torrent_pass query param, which *arr must not see, so the served feed routes through

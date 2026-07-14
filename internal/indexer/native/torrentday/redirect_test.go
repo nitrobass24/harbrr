@@ -32,13 +32,11 @@ func (c *captureDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
 func TestSearchAndGrabStampNoRedirectFollow(t *testing.T) {
 	t.Parallel()
 	newDriver := func(doer search.Doer) *driver {
-		d, err := New(native.Params{Def: Families()[0].Definition, Cfg: map[string]string{"cookie": credCookie}, Doer: doer})
+		d, err := New(native.Params{Def: Families()[0].Definition, Cfg: map[string]string{"cookie": credCookie}, Doer: doer, Clock: fixedClock})
 		if err != nil {
 			t.Fatalf("New: %v", err)
 		}
-		dr := d.(*driver)
-		dr.clock = fixedClock
-		return dr
+		return d.(*driver)
 	}
 
 	t.Run("search", func(t *testing.T) {
@@ -54,7 +52,7 @@ func TestSearchAndGrabStampNoRedirectFollow(t *testing.T) {
 		t.Parallel()
 		doer := &captureDoer{body: "d8:announce"}
 		dr := newDriver(doer)
-		if _, err := dr.Grab(context.Background(), dr.baseURL+"download.php/1/1.torrent"); err != nil {
+		if _, err := dr.Grab(context.Background(), dr.BaseURL+"download.php/1/1.torrent"); err != nil {
 			t.Fatalf("Grab: %v", err)
 		}
 		assertNoFollowStamped(t, doer.last)

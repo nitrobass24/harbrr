@@ -142,7 +142,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	}
 	sortReleases(releases)
 	out := releasesOnly(releases)
-	native.TraceReleases(d.log, d.def.ID, out)
+	native.TraceReleases(d.Log, d.Def.ID, out)
 	return out, nil
 }
 
@@ -235,7 +235,7 @@ func formatIMDB(imdbID string) string {
 // discarding the mapper's synthesised 1:1 custom id. An unmapped/blank resolution falls
 // back to the TV root (5000), matching Prowlarr (which emits exactly one category).
 func (d *driver) categories(resolution string) []int {
-	for _, c := range d.caps.CategoryMap.MapTrackerCatDescToNewznab(resolution) {
+	for _, c := range d.Caps.CategoryMap.MapTrackerCatDescToNewznab(resolution) {
 		if c < customCatCutoff {
 			return []int{c}
 		}
@@ -247,7 +247,7 @@ func (d *driver) categories(resolution string) []int {
 // message) cannot leak it. Mirrors filelist.scrubPasskey; the apikey is the body's first
 // positional param, never logged, but an error string is scrubbed defensively.
 func (d *driver) scrubAPIKey(s string) string {
-	if key := strings.TrimSpace(d.cfg["apikey"]); key != "" {
+	if key := strings.TrimSpace(d.Cfg["apikey"]); key != "" {
 		s = strings.ReplaceAll(s, key, "[redacted]")
 	}
 	return s

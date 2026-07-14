@@ -115,7 +115,7 @@ func TestBuildParameters(t *testing.T) {
 // params[0] inside the body.
 func TestBuildRPCBodyParity(t *testing.T) {
 	t.Parallel()
-	d := &driver{cfg: map[string]string{"apikey": credAPIKey}}
+	d := &driver{Base: native.Base{Cfg: map[string]string{"apikey": credAPIKey}}}
 	cases := []struct {
 		name  string
 		query search.Query

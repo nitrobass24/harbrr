@@ -107,7 +107,7 @@ func TestSearchRecordsAntiBotHealthEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("keyring: %v", err)
 	}
-	reg := registry.New(db, loader.New(dropin), kr,
+	reg := registry.New(db, loader.New(dropin), kr, nil,
 		registry.WithDoerFactory(func(registry.ClientParams) (search.Doer, error) { return cfDoer{}, nil }))
 
 	if _, err := reg.Add(ctx, registry.AddParams{

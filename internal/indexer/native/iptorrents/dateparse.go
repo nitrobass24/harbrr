@@ -21,7 +21,7 @@ var timeAgoRegex = regexp.MustCompile(`([0-9.]+)\s*([^0-9\s.]+)`)
 // week=7d, month=30d, year=365d and fractional values supported. An unknown unit is a
 // parse error (Prowlarr throws InvalidDateException).
 func (d *driver) parsePublishDate(s string) (time.Time, error) {
-	now := d.clock()
+	now := d.Clock()
 	lower := strings.ToLower(s)
 	if strings.Contains(lower, "now") {
 		return now, nil

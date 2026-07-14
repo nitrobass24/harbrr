@@ -29,7 +29,7 @@ func newResolveRegistry(t *testing.T) (*Registry, *secrets.Keyring, *database.DB
 	if err != nil {
 		t.Fatalf("keyring: %v", err)
 	}
-	return New(db, loader.New(t.TempDir()), kr), kr, db
+	return New(db, loader.New(t.TempDir()), kr, nil), kr, db
 }
 
 // seedProxy inserts a proxy with its URL sealed under the proxy's own id (the

@@ -61,14 +61,14 @@ type filelistError struct {
 // body or a {"error":…} envelope is a parse error.
 func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	if env, ok := decodeError(body); ok {
-		return nil, fmt.Errorf("filelist: api error: %s: %w", scrubPasskey(env, d.cfg), search.ErrParseError)
+		return nil, fmt.Errorf("filelist: api error: %s: %w", scrubPasskey(env, d.Cfg), search.ErrParseError)
 	}
 	var rows []filelistTorrent
 	if err := json.Unmarshal(body, &rows); err != nil {
 		return nil, fmt.Errorf("filelist: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
 	}
 
-	freeOnly := freeleechOnly(d.cfg)
+	freeOnly := freeleechOnly(d.Cfg)
 	releases := make([]*normalizer.Release, 0, len(rows))
 	for i := range rows {
 		if freeOnly && rows[i].FreeLeech == 0 {
@@ -80,7 +80,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 		}
 		releases = append(releases, rel)
 	}
-	native.TraceReleases(d.log, d.def.ID, releases)
+	native.TraceReleases(d.Log, d.Def.ID, releases)
 	return releases, nil
 }
 
@@ -110,7 +110,7 @@ func (d *driver) toRelease(row *filelistTorrent) (*normalizer.Release, error) {
 		Description:          row.SmallDescription,
 		Link:                 d.downloadURL(row.ID),
 		Details:              d.detailsURL(row.ID),
-		Categories:           d.caps.CategoryMap.MapTrackerCatDescToNewznab(row.Category),
+		Categories:           d.Caps.CategoryMap.MapTrackerCatDescToNewznab(row.Category),
 		Size:                 row.Size,
 		Files:                row.Files,
 		Grabs:                row.TimesCompleted,
@@ -133,15 +133,15 @@ func (d *driver) toRelease(row *filelistTorrent) (*normalizer.Release, error) {
 func (d *driver) downloadURL(id uint64) string {
 	params := url.Values{}
 	params.Set("id", uintToString(id))
-	params.Set("passkey", strings.TrimSpace(d.cfg["passkey"]))
-	return d.baseURL + downloadPath + "?" + params.Encode()
+	params.Set("passkey", strings.TrimSpace(d.Cfg["passkey"]))
+	return d.BaseURL + downloadPath + "?" + params.Encode()
 }
 
 // detailsURL rebuilds the Prowlarr info URL: {base}details.php?id={id}.
 func (d *driver) detailsURL(id uint64) string {
 	params := url.Values{}
 	params.Set("id", uintToString(id))
-	return d.baseURL + detailsPath + "?" + params.Encode()
+	return d.BaseURL + detailsPath + "?" + params.Encode()
 }
 
 // parsePublishDate reproduces Prowlarr's DateTime.Parse(upload_date + " +0300",

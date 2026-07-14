@@ -105,11 +105,11 @@ search/grab are the **live-validation** gate.
   `User-Agent` header. `redaction`-focused tests assert the synthetic cookie/UA values
   never appear in any recorded request URL or any error string.
 - **Download-URL path-key redaction** — `[Accepted]`. The URL redactor is
-  query-scoped, so the driver keeps the download URL out of every error it raises
-  (`sanitizeGrabError`), and the `/dl` proxy keeps the raw download URL out of the served
-  feed. IPT download URLs (`/download.php/{id}/{name}.torrent`) are authenticated by the
-  session cookie, not a path key, so there is no path secret to leak in the first place.
-  The query-scoped redactor is sufficient here; no path-aware redaction planned.
+  query-scoped, so the shared native transport keeps download errors host-only, and the
+  `/dl` proxy keeps the raw download URL out of the served feed. IPT download URLs
+  (`/download.php/{id}/{name}.torrent`) are authenticated by the session cookie, not a
+  path key, so there is no path secret to leak in the first place. The query-scoped
+  redactor is sufficient here; no path-aware redaction planned.
 
 ## RequestDelay
 

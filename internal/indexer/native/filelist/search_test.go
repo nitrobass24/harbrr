@@ -63,7 +63,7 @@ func builderDriver(cfg map[string]string) *driver {
 	if cfg == nil {
 		cfg = map[string]string{}
 	}
-	return &driver{cfg: cfg, baseURL: "https://filelist.test/", clock: fixedClock}
+	return &driver{Base: native.Base{Cfg: cfg, BaseURL: "https://filelist.test/", Clock: fixedClock}}
 }
 
 // liveDriver is a driver wired to a scriptDoer with the secret credentials, for the
@@ -81,9 +81,9 @@ func liveDriver(doer *scriptDoer) *driver {
 		panic(err)
 	}
 	drv := d.(*driver)
-	drv.baseURL = "https://filelist.test/"
+	drv.BaseURL = "https://filelist.test/"
 	if doer != nil {
-		drv.doer = doer
+		drv.Doer = doer
 	}
 	return drv
 }
@@ -248,7 +248,7 @@ func TestSearchTransportErrorHostOnly(t *testing.T) {
 		Err: errors.New("dial tcp: connection refused"),
 	}
 	d := liveDriver(nil)
-	d.doer = &authErrorDoer{err: uerr}
+	d.Doer = &authErrorDoer{err: uerr}
 
 	_, err := d.Search(context.Background(), search.Query{Keywords: "dune", Categories: []string{"4"}})
 	if err == nil {

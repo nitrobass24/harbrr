@@ -3,14 +3,13 @@ package newznab
 import (
 	"context"
 	"fmt"
-	"io"
 	stdhttp "net/http"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // maxBodyBytes caps a Newznab RSS response. A page is small XML (<= limit items of
@@ -36,29 +35,7 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	switch {
-	case resp.StatusCode == stdhttp.StatusUnauthorized:
-		return nil, fmt.Errorf("newznab: search unauthorized: %w", login.ErrLoginFailed)
-	case resp.StatusCode == stdhttp.StatusForbidden || search.IsRateLimitStatus(resp.StatusCode):
-		return nil, &search.RateLimitedError{
-			StatusCode: resp.StatusCode,
-			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.clock),
-		}
-	case resp.StatusCode < 200 || resp.StatusCode >= 300:
-		return nil, fmt.Errorf("newznab: search returned HTTP %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
-	if err != nil {
-		// Keep the ErrParseError sentinel so the failure still records a health
-		// event (there is no transport health kind), but include the real read
-		// error so a mid-body timeout/reset is diagnosable instead of a bare
-		// "parse_error". A body-read error carries no URL/passkey.
-		return nil, fmt.Errorf("newznab: read search response: %s: %w", err.Error(), search.ErrParseError)
-	}
-	return d.parseReleases(body, catMap)
+	return d.parseReleases(resp.Body, catMap)
 }
 
 // activeCategoryMap returns the category map of the live caps (lazily fetched), falling back
@@ -68,22 +45,22 @@ func (d *driver) activeCategoryMap(ctx context.Context) *mapper.CategoryMap {
 	if caps, err := d.capabilities(ctx); err == nil && caps != nil {
 		return caps.CategoryMap
 	}
-	return d.caps.CategoryMap
+	return d.Caps.CategoryMap
 }
 
 // get issues the Newznab API GET. The URL embeds the apikey, so a transport error surfaces
 // only its scheme://host (apphttp.SchemeHost drops the apikey-bearing query) with the cause
 // routed through apphttp.RedactURLError; the apikey can never leak through the wrapped
 // *url.Error. The caller owns the returned body and interprets the status.
-func (d *driver) get(ctx context.Context, rawurl string) (*stdhttp.Response, error) {
+func (d *driver) get(ctx context.Context, rawurl string) (*native.Response, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
 		return nil, fmt.Errorf("newznab: build request to %s: %w", apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
 	}
 	req.Header.Set("Accept", "application/rss+xml, application/xml, text/xml")
-	resp, err := d.doer.Do(req)
+	resp, err := d.Do(ctx, req, native.ClassifyRateLimit403)
 	if err != nil {
-		return nil, fmt.Errorf("newznab: request to %s: %w", apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
+		return resp, normalizeReadError(err)
 	}
 	return resp, nil
 }

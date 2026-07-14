@@ -58,7 +58,7 @@ func builderDriver(cfg map[string]string) *driver {
 	for k, v := range cfg {
 		base[k] = v
 	}
-	return &driver{cfg: base, baseURL: "https://animebytes.tv/", clock: fixedClock}
+	return &driver{Base: native.Base{Family: "animebytes", Cfg: base, BaseURL: "https://animebytes.tv/", Clock: fixedClock}}
 }
 
 // liveDriver wires a driver to a scriptDoer with the secret credentials, for the
@@ -75,7 +75,7 @@ func liveDriver(doer *scriptDoer) *driver {
 		panic(err)
 	}
 	drv := d.(*driver)
-	drv.baseURL = "https://animebytes.tv/"
+	drv.BaseURL = "https://animebytes.tv/"
 	return drv
 }
 
@@ -289,7 +289,7 @@ func TestSearchTransportErrorRedactsPasskey(t *testing.T) {
 	// URL, with a secret in BOTH a path segment and a query param, on the same scheme://host
 	// the driver uses — so we can assert the host survives while the secret is dropped.
 	const secret = "S3CRETTOKEN"
-	d.doer = &errDoer{err: &url.Error{
+	d.Doer = &errDoer{err: &url.Error{
 		Op:  "Get",
 		URL: "https://animebytes.tv/dl/" + secret + "?passkey=" + secret,
 		Err: errors.New("dial tcp: connection refused"),

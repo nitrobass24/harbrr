@@ -17,6 +17,7 @@ import (
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native/catalog"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 	"github.com/autobrr/harbrr/internal/secrets"
 )
@@ -138,7 +139,7 @@ func newRegistry(t *testing.T, doer search.Doer) (*registry.Registry, *database.
 	if doer != nil {
 		opts = append(opts, registry.WithDoerFactory(func(registry.ClientParams) (search.Doer, error) { return doer, nil }))
 	}
-	return registry.New(db, ldr, keyring, opts...), db
+	return registry.New(db, ldr, keyring, catalog.All(), opts...), db
 }
 
 // newCachingRegistry is newRegistry with the search cache enabled, so reg.Indexer returns
@@ -152,7 +153,7 @@ func newCachingRegistry(t *testing.T, doer search.Doer) (*registry.Registry, *da
 	if doer != nil {
 		opts = append(opts, registry.WithDoerFactory(func(registry.ClientParams) (search.Doer, error) { return doer, nil }))
 	}
-	return registry.New(db, ldr, keyring, opts...), db
+	return registry.New(db, ldr, keyring, catalog.All(), opts...), db
 }
 
 // testHexKey is a synthetic 32-byte AES key for tests only (AGENTS.md allows

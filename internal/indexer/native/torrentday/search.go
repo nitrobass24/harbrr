@@ -3,8 +3,6 @@ package torrentday
 import (
 	"context"
 	"fmt"
-	"io"
-	stdhttp "net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -31,28 +29,14 @@ const (
 // failure; a 429/503 is a rate-limit error; any other non-2xx is an error. The cookie
 // rides as a header (added by get), never the URL, so the served URL carries no secret.
 func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
-	resp, err := d.get(apphttp.WithNoRedirectFollow(ctx), d.buildSearchURL(q), "application/json")
+	resp, err := d.get(apphttp.WithNoRedirectFollow(ctx), d.buildSearchURL(q), "application/json", false)
 	if err != nil {
+		if resp != nil && isLoginRedirect(resp) {
+			return nil, fmt.Errorf("torrentday: search redirected to login: %w", login.ErrLoginFailed)
+		}
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	switch {
-	case search.IsRateLimitStatus(resp.StatusCode):
-		return nil, &search.RateLimitedError{StatusCode: resp.StatusCode, RetryAfter: d.parseRetryAfter(resp)}
-	case isLoginRedirect(resp):
-		return nil, fmt.Errorf("torrentday: search redirected to login: %w", login.ErrLoginFailed)
-	case resp.StatusCode == stdhttp.StatusUnauthorized || resp.StatusCode == stdhttp.StatusForbidden:
-		return nil, fmt.Errorf("torrentday: search unauthorized: %w", login.ErrLoginFailed)
-	case resp.StatusCode < 200 || resp.StatusCode >= 300:
-		return nil, fmt.Errorf("torrentday: search returned HTTP %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
-	if err != nil {
-		return nil, fmt.Errorf("torrentday: read search response: %w", err)
-	}
-	return d.parseReleases(body)
+	return d.parseReleases(resp.Body)
 }
 
 // buildSearchURL renders the TorrentDay /t.json request, matching Prowlarr's
@@ -66,11 +50,11 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 func (d *driver) buildSearchURL(q search.Query) string {
 	tokens := make([]string, 0, len(q.Categories)+2)
 	tokens = append(tokens, distinct(q.Categories)...)
-	if freeleechOnly(d.cfg) {
+	if freeleechOnly(d.Cfg) {
 		tokens = append(tokens, freeleechToken)
 	}
 	tokens = append(tokens, "q="+url.QueryEscape(d.searchTerm(q)))
-	return d.baseURL + searchPath + "?" + strings.Join(tokens, ";")
+	return d.BaseURL + searchPath + "?" + strings.Join(tokens, ";")
 }
 
 // searchTerm builds the TorrentDay search term, mirroring Prowlarr's per-criteria
