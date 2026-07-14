@@ -1,7 +1,7 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query"
-import { toast } from "sonner"
 import { api, APIError } from "@/lib/api"
 import type { AddIndexer, Instance, TestResult, UpdateIndexer } from "@/lib/api"
+import { notifyError, notifySuccess } from "@/lib/notify"
 import { keys } from "@/lib/query"
 
 export function useIndexers() {
@@ -105,21 +105,21 @@ export function useSetIndexerEnabled() {
         list?.map((ix) => (ix.slug === slug ? { ...ix, enabled } : ix)))
       return { previous }
     },
-    onError: (_err, vars, context) => {
+    onError: (err, vars, context) => {
       if (context?.previous) qc.setQueryData(keys.indexers.list(), context.previous)
-      toast.error(`${vars.enabled ? "Enabling" : "Disabling"} ${vars.slug} failed`)
+      notifyError(`${vars.enabled ? "Enabling" : "Disabling"} ${vars.slug} failed`, err)
     },
     onSettled: () => qc.invalidateQueries({ queryKey: keys.indexers.all }),
   })
 }
 
 function toastTestResult(result: TestResult, slug: string) {
-  if (result.ok) toast.success(`${slug}: test passed`)
-  else toast.error(`${slug}: test failed — ${result.error ?? "unknown error"}`)
+  if (result.ok) notifySuccess(`${slug}: test passed`)
+  else notifyError(`${slug}: test failed — ${result.error ?? "unknown error"}`)
 }
 
-function toastTestError(_err: unknown, slug: string) {
-  toast.error(`${slug}: test request failed`)
+function toastTestError(err: unknown, slug: string) {
+  notifyError(`${slug}: test request failed`, err)
 }
 
 // toastResult opts into hook-level pass/fail toasts. These are attached to the

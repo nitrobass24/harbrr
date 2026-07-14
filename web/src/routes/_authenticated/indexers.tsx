@@ -1,7 +1,6 @@
 import { useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { FlaskConical, Plus, Search as SearchIcon } from "lucide-react"
-import { toast } from "sonner"
 import { DeleteIndexerDialog } from "@/components/indexers/DeleteIndexerDialog"
 import { IndexerDetailsSheet } from "@/components/indexers/IndexerDetailsSheet"
 import { IndexersTable, type IndexerRowData } from "@/components/indexers/IndexersTable"
@@ -25,6 +24,7 @@ import { APIError } from "@/lib/api"
 import type { Capabilities } from "@/lib/api"
 import { getBaseUrl } from "@/lib/base-url"
 import { copyText } from "@/lib/clipboard"
+import { notifyError, notifySuccess, notifyWarn } from "@/lib/notify"
 
 // A 401/403 on a test means the session/CSRF is the problem, not the tracker — so it
 // reads as a re-login prompt rather than "the indexer failed" (the #56 confusion).
@@ -96,14 +96,14 @@ function IndexersPage() {
               const passed = results.filter((r) => r.ok).length
               const failed = results.length - passed
               if (results.some((r) => isAuthStatus(r.status))) {
-                toast.error(AUTH_FAILED_MSG)
+                notifyError(AUTH_FAILED_MSG)
               } else if (failed === 0) {
-                toast.success(`All ${results.length} indexers passed`)
+                notifySuccess(`All ${results.length} indexers passed`)
               } else {
-                toast.warning(`${passed} passed, ${failed} failed`)
+                notifyWarn(`${passed} passed, ${failed} failed`)
               }
             },
-            onError: () => toast.error("Test all failed"),
+            onError: (err) => notifyError("Test all failed", err),
           })}
         >
           <FlaskConical className="h-4 w-4" /> {testAll.isPending ? "Testing…" : "Test all"}
@@ -133,8 +133,8 @@ function IndexersPage() {
               actions={{
                 onToggle: (slug, enabled) => toggle.mutate({ slug, enabled }),
                 onTest: (slug) => test.mutate(slug, {
-                  onSuccess: (r) => r.ok ? toast.success(`${slug}: test passed`) : toast.error(`${slug}: test failed — ${r.error ?? "unknown error"}`),
-                  onError: (err) => toast.error(err instanceof APIError && isAuthStatus(err.status) ? AUTH_FAILED_MSG : `${slug}: test request failed`),
+                  onSuccess: (r) => r.ok ? notifySuccess(`${slug}: test passed`) : notifyError(`${slug}: test failed — ${r.error ?? "unknown error"}`),
+                  onError: (err) => notifyError(err instanceof APIError && isAuthStatus(err.status) ? AUTH_FAILED_MSG : `${slug}: test request failed`, err),
                 }),
                 onEdit: (slug) => setSheet({ open: true, mode: "edit", slug }),
                 onDelete: setDeleting,
@@ -160,10 +160,10 @@ function IndexersPage() {
         onClose={() => setDeleting(null)}
         onConfirm={(slug) => remove.mutate(slug, {
           onSuccess: () => {
-            toast.success(`${slug} deleted`)
+            notifySuccess(`${slug} deleted`)
             setDeleting(null)
           },
-          onError: () => toast.error(`Deleting ${slug} failed`),
+          onError: (err) => notifyError(`Deleting ${slug} failed`, err),
         })}
       />
     </div>

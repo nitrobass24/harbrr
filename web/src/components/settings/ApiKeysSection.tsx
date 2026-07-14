@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { Copy, Plus, Trash2 } from "lucide-react"
-import { toast } from "sonner"
+import { notifyError, notifySuccess } from "@/lib/notify"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -39,7 +39,7 @@ export function ApiKeysSection() {
               setMinted(key)
               setName("")
             },
-            onError: () => toast.error("Minting failed"),
+            onError: () => notifyError("Minting failed"),
           })
         }}
       >
@@ -68,7 +68,7 @@ export function ApiKeysSection() {
               className="ml-auto"
               aria-label={`Revoke ${k.name}`}
               onClick={() => revoke.mutate(k.id, {
-                onSuccess: () => toast.success(`${k.name} revoked — consumers using it stop working now`),
+                onSuccess: () => notifySuccess(`${k.name} revoked — consumers using it stop working now`),
               })}
             >
               <Trash2 className="h-4 w-4" />

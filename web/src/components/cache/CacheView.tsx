@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react"
-import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -8,6 +7,7 @@ import { safeInt } from "@/components/cache/safe-int"
 import { LoadError, LoadingBlock } from "@/components/ui/load-error"
 import { useCacheConfig, useCacheStats, useFlushCache, useUpdateCacheConfig } from "@/hooks/useSettings"
 import { formatSize } from "@/lib/format"
+import { notifyError, notifySuccess } from "@/lib/notify"
 import { cn } from "@/lib/utils"
 import type { CacheConfig } from "@/lib/api"
 
@@ -67,8 +67,8 @@ export function CacheView() {
           size="sm"
           disabled={flush.isPending || !stats.data?.enabled}
           onClick={() => flush.mutate(undefined, {
-            onSuccess: (r) => toast.success(`Flushed ${r.flushed} cached entries`),
-            onError: () => toast.error("Flush failed"),
+            onSuccess: (r) => notifySuccess(`Flushed ${r.flushed} cached entries`),
+            onError: () => notifyError("Flush failed"),
           })}
         >
           {flush.isPending ? "Flushing…" : "Flush cache"}
@@ -116,8 +116,8 @@ function ConfigForm() {
       onSubmit={(e) => {
         e.preventDefault()
         update.mutate(draft, {
-          onSuccess: () => toast.success("Cache config applied (live, no restart)"),
-          onError: (err) => toast.error(`Config rejected: ${err.message}`),
+          onSuccess: () => notifySuccess("Cache config applied (live, no restart)"),
+          onError: (err) => notifyError(`Config rejected: ${err.message}`, err),
         })
       }}
     >

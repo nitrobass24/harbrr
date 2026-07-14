@@ -1,6 +1,5 @@
 import { useState } from "react"
 import { Pencil, Plus, Trash2 } from "lucide-react"
-import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -14,6 +13,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useSolvers, useSolverMutations } from "@/hooks/useResources"
+import { notifyError, notifySuccess } from "@/lib/notify"
 import type { Solver } from "@/lib/api"
 
 // `null` = closed; `{ solver: null }` = add; `{ solver }` = edit that solver.
@@ -50,8 +50,8 @@ export function SolversSection() {
                 size="icon"
                 aria-label={`Delete ${s.name}`}
                 onClick={() => remove.mutate(s.id, {
-                  onSuccess: () => toast.success(`${s.name} deleted`),
-                  onError: () => toast.error(`Deleting ${s.name} failed`),
+                  onSuccess: () => notifySuccess(`${s.name} deleted`),
+                  onError: () => notifyError(`Deleting ${s.name} failed`),
                 })}
               >
                 <Trash2 className="h-4 w-4" />
@@ -70,7 +70,7 @@ export function SolversSection() {
               solver={editing.solver}
               pending={create.isPending || update.isPending}
               onSubmit={(id, body) => {
-                const done = { onSuccess: () => setEditing(null), onError: (err: Error) => toast.error(`Save failed: ${err.message}`) }
+                const done = { onSuccess: () => setEditing(null), onError: (err: Error) => notifyError(`Save failed: ${err.message}`, err) }
                 if (id === null) create.mutate({ name: body.name, url: body.url ?? "", maxTimeout: body.maxTimeout }, done)
                 else update.mutate({ id, body }, done)
               }}

@@ -1,6 +1,5 @@
 import { useState } from "react"
 import { Plus, Trash2 } from "lucide-react"
-import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -16,6 +15,7 @@ import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
 import { Switch } from "@/components/ui/switch"
 import { useNotificationMutations, useNotifications } from "@/hooks/useSettings"
+import { notifyError, notifySuccess } from "@/lib/notify"
 
 // Webhook/Discord targets for operational events (indexer health failures).
 // The destination URL is a secret (may embed tokens): stored encrypted, reads
@@ -48,8 +48,8 @@ export function NotificationsSection() {
                 variant="outline"
                 size="sm"
                 onClick={() => test.mutate(n.id, {
-                  onSuccess: (r) => r.ok ? toast.success("Test notification sent") : toast.error(`Test failed — ${r.error ?? ""}`),
-                  onError: () => toast.error("Test request failed"),
+                  onSuccess: (r) => r.ok ? notifySuccess("Test notification sent") : notifyError(`Test failed — ${r.error ?? ""}`),
+                  onError: () => notifyError("Test request failed"),
                 })}
               >
                 Test
@@ -92,7 +92,7 @@ export function NotificationsSection() {
                 onSuccess: () => {
                   setAdding(false)
                 },
-                onError: (err) => toast.error(`Adding failed: ${err.message}`),
+                onError: (err) => notifyError(`Adding failed: ${err.message}`, err),
               })
             }}
           >

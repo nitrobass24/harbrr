@@ -1,6 +1,5 @@
 import { useState } from "react"
 import { Pencil, Plus, Trash2 } from "lucide-react"
-import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -15,6 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { useSyncProfileMutations, useSyncProfiles } from "@/hooks/useAppConnections"
+import { notifyError, notifySuccess } from "@/lib/notify"
 import type { CreateSyncProfile, SyncProfile } from "@/lib/api"
 
 const NEWZNAB_PARENTS = [
@@ -77,8 +77,8 @@ export function SyncProfilesSection() {
                 size="icon"
                 aria-label={`Delete ${p.name}`}
                 onClick={() => remove.mutate(p.id, {
-                  onSuccess: () => toast.success(`${p.name} deleted`),
-                  onError: () => toast.error(`Deleting ${p.name} failed`),
+                  onSuccess: () => notifySuccess(`${p.name} deleted`),
+                  onError: () => notifyError(`Deleting ${p.name} failed`),
                 })}
               >
                 <Trash2 className="h-4 w-4" />
@@ -101,7 +101,7 @@ export function SyncProfilesSection() {
               profile={editing.profile}
               pending={create.isPending || update.isPending}
               onSubmit={(id, body) => {
-                const done = { onSuccess: () => setEditing(null), onError: (err: Error) => toast.error(`Save failed: ${err.message}`) }
+                const done = { onSuccess: () => setEditing(null), onError: (err: Error) => notifyError(`Save failed: ${err.message}`, err) }
                 if (id === null) create.mutate(body, done)
                 else update.mutate({ id, body }, done)
               }}

@@ -1,5 +1,4 @@
 import { useState } from "react"
-import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -8,6 +7,7 @@ import { useAuth } from "@/hooks/useAuth"
 import { useAllIndexerStats, useChangePassword, useHealth, useLogLevel, useSetLogLevel } from "@/hooks/useSettings"
 import { getBaseUrl } from "@/lib/base-url"
 import { relativeTime } from "@/lib/format"
+import { notifyError, notifySuccess } from "@/lib/notify"
 import type { LogLevel } from "@/lib/api"
 
 const LEVELS: LogLevel[] = ["trace", "debug", "info", "warn", "error"]
@@ -38,8 +38,8 @@ function LoggingBlock() {
           className="w-32"
           value={level.data?.level ?? "info"}
           onChange={(e) => setLevel.mutate(e.target.value as LogLevel, {
-            onSuccess: (r) => toast.success(`Log level set to ${r.level}`),
-            onError: () => toast.error("Setting the log level failed"),
+            onSuccess: (r) => notifySuccess(`Log level set to ${r.level}`),
+            onError: () => notifyError("Setting the log level failed"),
           })}
         >
           {LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
@@ -65,12 +65,12 @@ function AccountBlock() {
           e.preventDefault()
           change.mutate({ current, next }, {
             onSuccess: () => {
-              toast.success("Password changed")
+              notifySuccess("Password changed")
               setCurrent("")
               setNext("")
               setConfirm("")
             },
-            onError: (err) => toast.error(`Change failed: ${err.message}`),
+            onError: (err) => notifyError(`Change failed: ${err.message}`, err),
           })
         }}
       >

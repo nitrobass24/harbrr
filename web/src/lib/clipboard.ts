@@ -1,4 +1,4 @@
-import { toast } from "sonner"
+import { notifyError, notifySuccess } from "@/lib/notify"
 
 // copyText writes text to the clipboard and only reports success once the write
 // actually resolves — navigator.clipboard.writeText can reject (denied permission,
@@ -6,8 +6,8 @@ import { toast } from "sonner"
 export async function copyText(text: string, successMessage: string): Promise<void> {
   try {
     await navigator.clipboard.writeText(text)
-    toast.success(successMessage)
-  } catch {
-    toast.error("Copy failed — select and copy it manually")
+    notifySuccess(successMessage)
+  } catch (err) {
+    notifyError("Copy failed — select and copy it manually", err)
   }
 }

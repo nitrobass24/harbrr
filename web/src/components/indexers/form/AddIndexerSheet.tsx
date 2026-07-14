@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { toast } from "sonner"
+import { notifySuccess } from "@/lib/notify"
 import { Input } from "@/components/ui/input"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { DefinitionOption, IndexerForm, type IndexerFormSubmit } from "@/components/indexers/form/IndexerForm"
@@ -30,7 +30,7 @@ function useSaveAndTest(onClose: () => void) {
   // useTestIndexer in useIndexers.ts).
   const test = useTestIndexer({ toastResult: true })
   return (slug: string, verb: string) => {
-    toast.success(`${slug} ${verb} — testing…`)
+    notifySuccess(`${slug} ${verb} — testing…`)
     test.mutate(slug)
     onClose()
   }

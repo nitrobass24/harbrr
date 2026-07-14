@@ -1,6 +1,5 @@
 import { useState } from "react"
 import { Pencil, Plus, Trash2 } from "lucide-react"
-import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -15,6 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
 import { useProxies, useProxyMutations } from "@/hooks/useResources"
+import { notifyError, notifySuccess } from "@/lib/notify"
 import type { Proxy, ProxyType } from "@/lib/api"
 
 const PROXY_TYPES: ProxyType[] = ["http", "https", "socks5", "socks5h"]
@@ -52,8 +52,8 @@ export function ProxiesSection() {
                 size="icon"
                 aria-label={`Delete ${p.name}`}
                 onClick={() => remove.mutate(p.id, {
-                  onSuccess: () => toast.success(`${p.name} deleted`),
-                  onError: () => toast.error(`Deleting ${p.name} failed`),
+                  onSuccess: () => notifySuccess(`${p.name} deleted`),
+                  onError: () => notifyError(`Deleting ${p.name} failed`),
                 })}
               >
                 <Trash2 className="h-4 w-4" />
@@ -73,7 +73,7 @@ export function ProxiesSection() {
               proxy={editing.proxy}
               pending={create.isPending || update.isPending}
               onSubmit={(id, body) => {
-                const done = { onSuccess: () => setEditing(null), onError: (err: Error) => toast.error(`Save failed: ${err.message}`) }
+                const done = { onSuccess: () => setEditing(null), onError: (err: Error) => notifyError(`Save failed: ${err.message}`, err) }
                 if (id === null) create.mutate({ name: body.name, type: body.type, url: body.url ?? "" }, done)
                 else update.mutate({ id, body }, done)
               }}

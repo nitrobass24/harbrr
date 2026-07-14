@@ -1,7 +1,6 @@
 import { useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { Plus, RefreshCw } from "lucide-react"
-import { toast } from "sonner"
 import { AnnounceSection } from "@/components/applications/AnnounceSection"
 import { ConnectionCard } from "@/components/applications/ConnectionCard"
 import { ConnectionDialog, type ConnectionDialogState } from "@/components/applications/ConnectionDialog"
@@ -32,6 +31,7 @@ import {
   useUpdateConnection
 } from "@/hooks/useAppConnections"
 import type { AppConnection, ConnectionSyncResult, SyncReport } from "@/lib/api"
+import { notifyError, notifySuccess } from "@/lib/notify"
 
 export const Route = createFileRoute("/_authenticated/applications")({
   component: ApplicationsPage,
@@ -67,7 +67,7 @@ function ApplicationsPage() {
 
   const runSync = (id: number) => sync.mutate(id, {
     onSuccess: (rep) => setReport({ title: connections.data?.find((c) => c.id === id)?.name ?? "", report: rep }),
-    onError: () => toast.error("Sync failed"),
+    onError: (err) => notifyError("Sync failed", err),
   })
 
   return (
@@ -78,7 +78,7 @@ function ApplicationsPage() {
           disabled={syncAll.isPending || total === 0}
           onClick={() => syncAll.mutate(undefined, {
             onSuccess: setAllReports,
-            onError: () => toast.error("Sync all failed"),
+            onError: (err) => notifyError("Sync all failed", err),
           })}
         >
           <RefreshCw className={syncAll.isPending ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
@@ -101,14 +101,14 @@ function ApplicationsPage() {
               actions={{
                 onToggle: (id, enabled) => toggle.mutate({ id, enabled }),
                 onTest: (id) => test.mutate(id, {
-                  onSuccess: (r) => r.ok ? toast.success("Connection OK") : toast.error(`Test failed — ${r.error ?? "unknown error"}`),
-                  onError: () => toast.error("Test request failed"),
+                  onSuccess: (r) => r.ok ? notifySuccess("Connection OK") : notifyError(`Test failed — ${r.error ?? "unknown error"}`),
+                  onError: (err) => notifyError("Test request failed", err),
                 }),
                 onSync: runSync,
                 onEdit: (conn) => setDialog({ open: true, existing: conn }),
                 onDelete: (conn) => remove.mutate(conn.id, {
-                  onSuccess: () => toast.success(`${conn.name} deleted`),
-                  onError: () => toast.error(`Deleting ${conn.name} failed`),
+                  onSuccess: () => notifySuccess(`${conn.name} deleted`),
+                  onError: (err) => notifyError(`Deleting ${conn.name} failed`, err),
                 }),
                 onStatus: setStatusFor,
                 onSelectIndexers: setSelectFor,
@@ -149,13 +149,13 @@ function ApplicationsPage() {
         }}
         onCreate={(body) => create.mutate(body, {
           onSuccess: () => {
-            toast.success(`${body.name} connected`)
+            notifySuccess(`${body.name} connected`)
             setDialog({ open: false })
           },
         })}
         onUpdate={(id, body) => update.mutate({ id, body }, {
           onSuccess: () => {
-            toast.success("Connection updated")
+            notifySuccess("Connection updated")
             setDialog({ open: false })
           },
         })}
@@ -184,7 +184,7 @@ function ApplicationsPage() {
                 setFixPortReq(null)
                 fixPort.mutate({ id: req.conn.id, body: { harbrrUrl: req.url } }, {
                   onSuccess: () => runSync(req.conn.id),
-                  onError: () => toast.error("Updating the connection's harbrr URL failed"),
+                  onError: (err) => notifyError("Updating the connection's harbrr URL failed", err),
                 })
               }}
             >
@@ -202,10 +202,10 @@ function ApplicationsPage() {
         onClose={() => setSelectFor(null)}
         onSave={(_id, instanceIds) => select.mutate(instanceIds, {
           onSuccess: () => {
-            toast.success("Selection saved")
+            notifySuccess("Selection saved")
             setSelectFor(null)
           },
-          onError: () => toast.error("Saving the selection failed"),
+          onError: (err) => notifyError("Saving the selection failed", err),
         })}
       />
 

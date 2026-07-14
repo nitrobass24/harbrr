@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { toast } from "sonner"
 import { api } from "@/lib/api"
+import { notifyError } from "@/lib/notify"
 import { keys } from "@/lib/query"
 import type {
   AppConnection,
@@ -79,9 +79,9 @@ export function useSetConnectionEnabled() {
         list?.map((c) => (c.id === id ? { ...c, enabled } : c)))
       return { previous }
     },
-    onError: (_err, vars, context) => {
+    onError: (err, vars, context) => {
       if (context?.previous) qc.setQueryData(keys.appConnections.all, context.previous)
-      toast.error(`${vars.enabled ? "Enabling" : "Disabling"} the connection failed`)
+      notifyError(`${vars.enabled ? "Enabling" : "Disabling"} the connection failed`, err)
     },
     onSettled: () => qc.invalidateQueries({ queryKey: keys.appConnections.all }),
   })
