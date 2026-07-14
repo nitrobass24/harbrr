@@ -18,13 +18,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/rs/zerolog"
-
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
@@ -34,20 +29,13 @@ import (
 // the definition (the full standard table); capsCache holds the live ?t=caps document, which
 // supersedes the placeholder once fetched.
 type driver struct {
-	def       *loader.Definition
-	caps      *mapper.Capabilities // placeholder fallback (full standard table)
-	capsCache capsCache            // live ?t=caps document, lazily fetched + TTL-cached
+	native.Base
+	capsCache capsCache // live ?t=caps document, lazily fetched + TTL-cached
 	apikey    string
 	apiPath   string // normalised, no trailing slash (e.g. "/api")
-	doer      search.Doer
-	baseURL   string // normalised with NO trailing slash
-	clock     func() time.Time
 	// persist durably writes the fetched caps XML + fetched-at back to the encrypted
 	// store (nil when not wired), so the caps cache survives a restart.
 	persist func(ctx context.Context, name, value string) error
-	// log is the registry's logger, used to emit per-release trace diagnostics via
-	// native.TraceReleases. The zero value is a no-op.
-	log zerolog.Logger
 }
 
 var _ native.Driver = (*driver)(nil)
@@ -64,24 +52,23 @@ func New(p native.Params) (native.Driver, error) {
 	if err != nil {
 		return nil, fmt.Errorf("newznab: build capabilities for %q: %w", p.Def.ID, err)
 	}
-	base := p.BaseURL
-	if base == "" && len(p.Def.Links) > 0 {
-		base = p.Def.Links[0]
+	baseParams := p
+	if baseParams.BaseURL == "" && len(p.Def.Links) == 0 {
+		// The generic addable family intentionally has no default URL; keep it
+		// constructible for metadata/caps reads until an instance supplies BaseURL.
+		baseParams.BaseURL = "https://newznab.invalid"
 	}
-	clock := p.Clock
-	if clock == nil {
-		clock = time.Now
+	base, err := native.NewBase("newznab", baseParams)
+	if err != nil {
+		return nil, err
 	}
+	base.Caps = caps
+	base.MaxBodyBytes = maxBodyBytes
 	d := &driver{
-		def:     p.Def,
-		caps:    caps,
+		Base:    base,
 		apikey:  strings.TrimSpace(p.Cfg["apikey"]),
 		apiPath: normalizeAPIPath(p.Cfg["apiPath"]),
-		doer:    p.Doer,
-		baseURL: strings.TrimRight(base, "/"),
-		clock:   clock,
 		persist: p.PersistSetting,
-		log:     p.Logger,
 	}
 	d.capsCache.rehydrate(p.Cfg)
 	return d, nil
@@ -110,7 +97,7 @@ func normalizeAPIPath(raw string) string {
 func (d *driver) Capabilities() *mapper.Capabilities {
 	built, err := d.capabilities(context.Background())
 	if err != nil {
-		return d.caps
+		return d.Caps
 	}
 	return built
 }

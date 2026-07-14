@@ -2,21 +2,12 @@ package gazellegames
 
 import (
 	"context"
-	"fmt"
-	"io"
-	stdhttp "net/http"
 	"net/url"
 	"strings"
 
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
-
-// maxBodyBytes caps a search response. A GGn search page is small JSON (a bounded set of
-// groups, each with a handful of nested torrents), so this is generous while still bounding
-// a hostile or runaway body.
-const maxBodyBytes = 8 << 20 // 8 MiB
 
 // searchPath is the api.php endpoint Prowlarr's GazelleGamesRequestGenerator hits; the
 // driver's baseURL already ends in a single trailing slash.
@@ -52,29 +43,11 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 	if err := d.ensurePasskey(ctx); err != nil {
 		return nil, err
 	}
-	resp, err := d.get(ctx, d.buildSearchURL(q))
+	resp, err := d.get(ctx, d.buildSearchURL(q), false)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	switch {
-	case resp.StatusCode == stdhttp.StatusUnauthorized || resp.StatusCode == stdhttp.StatusForbidden:
-		return nil, fmt.Errorf("gazellegames: search unauthorized: %w", login.ErrLoginFailed)
-	case search.IsRateLimitStatus(resp.StatusCode):
-		return nil, &search.RateLimitedError{
-			StatusCode: resp.StatusCode,
-			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.clock),
-		}
-	case resp.StatusCode < 200 || resp.StatusCode >= 300:
-		return nil, fmt.Errorf("gazellegames: search returned HTTP %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
-	if err != nil {
-		return nil, fmt.Errorf("gazellegames: read search response: %w", err)
-	}
-	return d.parseSearch(body)
+	return d.parseSearch(resp.Body)
 }
 
 // buildSearchURL composes the api.php?request=search request URL. The static
@@ -101,7 +74,7 @@ func (d *driver) buildSearchURL(q search.Query) string {
 	if d.freeleechOnly() {
 		params.Set(paramFreeTorrent, "1")
 	}
-	return d.baseURL + searchPath + "?" + params.Encode()
+	return d.BaseURL + searchPath + "?" + params.Encode()
 }
 
 // addCategoryParams appends each resolved tracker category as an artistcheck[] value

@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	stdhttp "net/http"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // nzbContentType is what the /dl proxy serves a fetched .nzb as. harbrr's torrent
@@ -17,19 +17,11 @@ import (
 // driver sets its own.
 const nzbContentType = "application/x-nzb"
 
-// maxNZBBytes caps a fetched .nzb. An .nzb is a small XML pointer file (segment ids, not
-// the article bodies), so even a large multi-file post is well under this; readCapped errors
-// rather than silently truncating a corrupt nzb.
-const maxNZBBytes = 64 << 20
-
-var (
-	errDownloadTooLarge = errors.New("newznab: download exceeds the size cap")
-	// errDownloadRequestFailed is the transport-failure sentinel. A build-request failure
-	// returns it bare (there is no URL to leak). A transport failure from Do wraps it with a
-	// HOST-ONLY cause (apphttp.RedactURLError drops the apikey-bearing path/query), so the
-	// scheme://host surfaces for diagnosis while the apikey cannot re-leak through %w.
-	errDownloadRequestFailed = errors.New("newznab: download request failed")
-)
+// errDownloadRequestFailed is the transport-failure sentinel. A build-request failure
+// returns it bare (there is no URL to leak). A transport failure from Do wraps it with a
+// HOST-ONLY cause (apphttp.RedactURLError drops the apikey-bearing path/query), so the
+// scheme://host surfaces for diagnosis while the apikey cannot re-leak through %w.
+var errDownloadRequestFailed = errors.New("newznab: download request failed")
 
 // Grab fetches the .nzb body server-side and returns it as a GrabResult. The download URL
 // embeds the apikey, which the *arr/SABnzbd must not see, which is why DownloadNeedsAuth is
@@ -43,28 +35,13 @@ var (
 func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, error) {
 	resp, err := d.fetch(ctx, link)
 	if err != nil {
-		return nil, sanitizeGrabError(err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	switch {
-	case resp.StatusCode == stdhttp.StatusUnauthorized:
-		return nil, fmt.Errorf("newznab: download unauthorized: %w", login.ErrLoginFailed)
-	case resp.StatusCode == stdhttp.StatusForbidden || search.IsRateLimitStatus(resp.StatusCode):
-		return nil, &search.RateLimitedError{
-			StatusCode: resp.StatusCode,
-			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.clock),
+		if resp != nil {
+			return nil, err
 		}
-	case resp.StatusCode < 200 || resp.StatusCode >= 300:
-		return nil, fmt.Errorf("newznab: download returned HTTP %d", resp.StatusCode)
-	}
-
-	body, err := readCapped(resp.Body, maxNZBBytes)
-	if err != nil {
 		return nil, sanitizeGrabError(err)
 	}
 	return &search.GrabResult{
-		Body:        body,
+		Body:        resp.Body,
 		ContentType: nzbContentType,
 	}, nil
 }
@@ -76,18 +53,21 @@ func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, err
 // (path/query dropped), so the apikey cannot re-leak through %w regardless of who calls
 // fetch(). Context cancellation/deadline sentinels are preserved so normal cancellation stays
 // detectable. The caller owns the returned body and interprets the status.
-func (d *driver) fetch(ctx context.Context, rawurl string) (*stdhttp.Response, error) {
+func (d *driver) fetch(ctx context.Context, rawurl string) (*native.Response, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
 		return nil, errDownloadRequestFailed
 	}
-	resp, err := d.doer.Do(req)
+	resp, err := d.DoDownload(ctx, req, native.ClassifyRateLimit403)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return nil, context.Canceled
 		}
 		if errors.Is(err, context.DeadlineExceeded) {
 			return nil, context.DeadlineExceeded
+		}
+		if resp != nil {
+			return resp, err
 		}
 		return nil, fmt.Errorf("%w: %w", errDownloadRequestFailed, apphttp.RedactURLError(err))
 	}
@@ -106,7 +86,7 @@ func sanitizeGrabError(err error) error {
 	case errors.Is(err, login.ErrLoginFailed),
 		errors.Is(err, context.Canceled),
 		errors.Is(err, context.DeadlineExceeded),
-		errors.Is(err, errDownloadTooLarge):
+		errors.Is(err, native.ErrDownloadTooLarge):
 		return err
 	}
 	var rl *search.RateLimitedError
@@ -117,19 +97,4 @@ func sanitizeGrabError(err error) error {
 		return err
 	}
 	return errDownloadRequestFailed
-}
-
-// readCapped reads up to limit bytes, returning errDownloadTooLarge when the source exceeds
-// the cap rather than silently truncating (a truncated .nzb is corrupt). The returned errors
-// never carry the source URL. A transport read error is scrubbed through apphttp.RedactError
-// in case it echoes the apikey-bearing URL.
-func readCapped(r io.Reader, limit int64) ([]byte, error) {
-	body, err := io.ReadAll(io.LimitReader(r, limit+1))
-	if err != nil {
-		return nil, fmt.Errorf("newznab: read download response: %s", apphttp.RedactError(err))
-	}
-	if int64(len(body)) > limit {
-		return nil, errDownloadTooLarge
-	}
-	return body, nil
 }

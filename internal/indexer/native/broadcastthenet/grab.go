@@ -3,21 +3,13 @@ package broadcastthenet
 import (
 	"context"
 	"errors"
-	"fmt"
-	"io"
 	stdhttp "net/http"
 
-	apphttp "github.com/autobrr/harbrr/internal/http"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
-// maxTorrentBytes caps a fetched .torrent. It is far larger than the search JSON cap
-// because a large season pack carries megabytes of piece hashes; readCapped errors
-// rather than silently truncating a corrupt torrent.
-const maxTorrentBytes = 64 << 20
-
-var errDownloadTooLarge = errors.New("broadcastthenet: download exceeds the size cap")
+var errDownloadRequestFailed = errors.New("broadcastthenet: download request failed")
 
 // Grab fetches the BTN download URL server-side and returns the .torrent bytes. The
 // URL embeds the authkey/torrent_pass in its query, which *arr must not see, which is
@@ -28,66 +20,16 @@ var errDownloadTooLarge = errors.New("broadcastthenet: download exceeds the size
 // sit in the query); a transport error surfaces only its scheme://host, and the bytes go
 // to /dl, never a log.
 func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, error) {
-	resp, err := d.get(ctx, link)
+	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, link, nil)
 	if err != nil {
-		return nil, sanitizeGrabError(err)
+		return nil, errDownloadRequestFailed
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	switch {
-	case resp.StatusCode == stdhttp.StatusUnauthorized || resp.StatusCode == stdhttp.StatusForbidden:
-		return nil, fmt.Errorf("broadcastthenet: download unauthorized: %w", login.ErrLoginFailed)
-	case search.IsRateLimitStatus(resp.StatusCode):
-		return nil, &search.RateLimitedError{
-			StatusCode: resp.StatusCode,
-			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.clock),
-		}
-	case resp.StatusCode < 200 || resp.StatusCode >= 300:
-		return nil, fmt.Errorf("broadcastthenet: download returned HTTP %d", resp.StatusCode)
-	}
-
-	body, err := readCapped(resp.Body, maxTorrentBytes)
+	resp, err := d.DoDownload(ctx, req, native.ClassifyAuth403)
 	if err != nil {
-		return nil, sanitizeGrabError(err)
+		return nil, err
 	}
 	return &search.GrabResult{
-		Body:        body,
+		Body:        resp.Body,
 		ContentType: resp.Header.Get("Content-Type"),
 	}, nil
-}
-
-// sanitizeGrabError classifies a grab error. Sentinels that carry no URL and that callers
-// need to classify are passed through unchanged: auth and rate-limit (for health), context
-// cancellation/deadline (so normal cancellation is not misreported as a failure), and the
-// size-cap error. The fallback %w-wraps the cause, which is host-only — either get()'s
-// transport error (host-only by construction) or an io read error (URL-free) — and
-// RedactURLError additionally rebuilds a stray build-request *url.Error host-only, so the
-// download link's secret path/query never surfaces (only its scheme://host can).
-func sanitizeGrabError(err error) error {
-	switch {
-	case errors.Is(err, login.ErrLoginFailed),
-		errors.Is(err, context.Canceled),
-		errors.Is(err, context.DeadlineExceeded),
-		errors.Is(err, errDownloadTooLarge):
-		return err
-	}
-	var rl *search.RateLimitedError
-	if errors.As(err, &rl) {
-		return err
-	}
-	return fmt.Errorf("broadcastthenet: download request failed: %w", apphttp.RedactURLError(err))
-}
-
-// readCapped reads up to limit bytes, returning errDownloadTooLarge when the source
-// exceeds the cap rather than silently truncating (a truncated .torrent is corrupt).
-// The returned errors never carry the source URL.
-func readCapped(r io.Reader, limit int64) ([]byte, error) {
-	body, err := io.ReadAll(io.LimitReader(r, limit+1))
-	if err != nil {
-		return nil, fmt.Errorf("broadcastthenet: read download response: %w", err)
-	}
-	if int64(len(body)) > limit {
-		return nil, errDownloadTooLarge
-	}
-	return body, nil
 }

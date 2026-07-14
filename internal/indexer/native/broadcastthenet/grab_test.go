@@ -80,18 +80,19 @@ func TestGrabReturnsTorrentBytes(t *testing.T) {
 // surfaces only the endpoint's scheme://host — never the secret path or query. It injects
 // the *url.Error shape http.Client.Do actually returns, embedding a synthetic secret in
 // both a path segment and a query param; RedactURLError must drop both while keeping the
-// host (which is not a secret) and the fixed "download request failed" wrapper.
+// host (which is not a secret) and the base download wrapper.
 func TestGrabTransportErrorNeverLeaksURL(t *testing.T) {
 	t.Parallel()
 	const (
-		secret   = "SYNTHETICSECRET1"
-		baseHost = "https://api.broadcasthe.net"
+		secret    = "SYNTHETICSECRET1"
+		causeHost = "https://api.broadcasthe.net"
+		linkHost  = "https://broadcasthe.net"
 	)
 	// http.Client.Do returns a *url.Error whose URL is the full request target, secret path
 	// and query included; RedactURLError must rebuild it host-only.
 	transportErr := &url.Error{
 		Op:  "Get",
-		URL: baseHost + "/dl/" + secret + "?passkey=" + secret,
+		URL: causeHost + "/dl/" + secret + "?passkey=" + secret,
 		Err: errors.New("dial tcp: connection refused"),
 	}
 	d := grabDriver(t, &errorDoer{err: transportErr})
@@ -101,11 +102,11 @@ func TestGrabTransportErrorNeverLeaksURL(t *testing.T) {
 		t.Fatal("Grab should error on a transport failure")
 	}
 	msg := err.Error()
-	if !strings.Contains(msg, baseHost) {
-		t.Errorf("grab error should surface the base host %q (not a secret): %q", baseHost, msg)
+	if !strings.Contains(msg, causeHost) {
+		t.Errorf("grab error should surface the cause host %q (not a secret): %q", causeHost, msg)
 	}
-	if !strings.Contains(msg, "broadcastthenet: download request failed") {
-		t.Errorf("grab error should keep the fixed wrapper: %q", msg)
+	if !strings.Contains(msg, "broadcastthenet: download to "+linkHost+" failed") {
+		t.Errorf("grab error should keep the base wrapper: %q", msg)
 	}
 	for _, leak := range []string{secret, "/dl/" + secret, "passkey=" + secret} {
 		if strings.Contains(msg, leak) {
@@ -115,7 +116,7 @@ func TestGrabTransportErrorNeverLeaksURL(t *testing.T) {
 }
 
 // TestGrabContextErrorPassesThrough proves a cancellation/deadline from the fetch is
-// preserved (not flattened into the generic "download request failed"), so callers and
+// preserved (not flattened into the generic download failure), so callers and
 // health classification can tell a cancelled request from a real failure.
 func TestGrabContextErrorPassesThrough(t *testing.T) {
 	t.Parallel()

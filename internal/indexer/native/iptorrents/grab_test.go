@@ -11,6 +11,7 @@ import (
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // fakeTorrent is a minimal bencode-shaped body (content is irrelevant to the driver; it
@@ -109,7 +110,7 @@ func TestGrabTransportErrorSanitized(t *testing.T) {
 		link   = base + "/download.php/9/file.torrent"
 	)
 	d := testDriver(nil, nil)
-	d.doer = &errorDoer{err: &url.Error{
+	d.Doer = &errorDoer{err: &url.Error{
 		Op:  "Get",
 		URL: base + "/dl/" + secret + "?passkey=" + secret,
 		Err: errors.New("dial tcp: connection refused"),
@@ -127,18 +128,19 @@ func TestGrabTransportErrorSanitized(t *testing.T) {
 		strings.Contains(got, "passkey="+secret) {
 		t.Errorf("download link secret leaked into the error: %v", err)
 	}
-	if !strings.Contains(got, "iptorrents: download request failed") {
-		t.Errorf("error dropped the fixed prefix: %v", err)
+	if !strings.Contains(got, "iptorrents: download to "+base+" failed") {
+		t.Errorf("error dropped the base download prefix: %v", err)
 	}
 }
 
-func TestReadCapped(t *testing.T) {
+func TestGrabDownloadTooLarge(t *testing.T) {
 	t.Parallel()
-	if _, err := readCapped(strings.NewReader("0123456789AB"), 10); !errors.Is(err, errDownloadTooLarge) {
-		t.Errorf("12 bytes over cap 10: err = %v, want errDownloadTooLarge", err)
-	}
-	got, err := readCapped(strings.NewReader("0123456789"), 10)
-	if err != nil || len(got) != 10 {
-		t.Errorf("at cap: len=%d err=%v, want 10/nil", len(got), err)
+	big := strings.Repeat("x", (64<<20)+1)
+	d := testDriver(&scriptDoer{handler: func(_ *stdhttp.Request) *stdhttp.Response {
+		return resp(stdhttp.StatusOK, big)
+	}}, nil)
+	_, err := d.Grab(context.Background(), "https://iptorrents.com/download.php/9/file.torrent")
+	if !errors.Is(err, native.ErrDownloadTooLarge) {
+		t.Errorf("err = %v, want native.ErrDownloadTooLarge", err)
 	}
 }

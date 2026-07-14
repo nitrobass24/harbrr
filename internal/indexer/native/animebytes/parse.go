@@ -171,7 +171,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 		rels = append(rels, d.flattenGroup(&resp.Groups[i])...)
 	}
 	sortReleases(rels)
-	native.TraceReleases(d.log, d.def.ID, rels)
+	native.TraceReleases(d.Log, d.Def.ID, rels)
 	return rels, nil
 }
 
@@ -205,7 +205,7 @@ func looksLikeAuthFailure(msg string) bool {
 // the primary (main) title only — Prowlarr additionally fans out one release per Japanese
 // /Romaji/Alternative synonym, a parity feature deferred here (noted divergence).
 func (d *driver) flattenGroup(g *group) []*normalizer.Release {
-	freeOnly := freeleechOnly(d.cfg)
+	freeOnly := freeleechOnly(d.Cfg)
 	rels := make([]*normalizer.Release, 0, len(g.Torrents))
 	for i := range g.Torrents {
 		t := &g.Torrents[i]
@@ -271,13 +271,13 @@ func (d *driver) toRelease(g *group, t *torrent) (*normalizer.Release, bool) {
 
 // detailsURL is Prowlarr's InfoUrl: {base}torrent/{id}/group.
 func (d *driver) detailsURL(id int64) string {
-	return d.baseURL + "torrent/" + strconv.FormatInt(id, 10) + "/group"
+	return d.BaseURL + "torrent/" + strconv.FormatInt(id, 10) + "/group"
 }
 
 // scrubPasskey removes the configured passkey from s so a server echo cannot leak it
 // (mirrors filelist.scrubPasskey). The username is an identifier, not scrubbed.
 func (d *driver) scrubPasskey(s string) string {
-	if pass := strings.TrimSpace(d.cfg["passkey"]); pass != "" {
+	if pass := strings.TrimSpace(d.Cfg["passkey"]); pass != "" {
 		s = strings.ReplaceAll(s, pass, "[redacted]")
 	}
 	return s

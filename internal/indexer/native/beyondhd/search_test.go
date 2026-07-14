@@ -70,7 +70,7 @@ func liveDriver(t *testing.T, doer *scriptDoer) *driver {
 // imdb_id, the "movie/<id>" tmdb_id, imdb winning over tmdb, and the categories int array).
 func TestBuildRequest(t *testing.T) {
 	t.Parallel()
-	d := &driver{cfg: creds()}
+	d := &driver{Base: native.Base{Cfg: creds()}}
 	rss := `"action":"search","rsskey":"` + credRSSKey + `"`
 	cases := []struct {
 		name  string

@@ -4,25 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	stdhttp "net/http"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // nzbContentType is what a fetched .nzb is served as.
 const nzbContentType = "application/x-nzb"
 
-// maxNZBBytes caps a fetched .nzb. An .nzb is a small XML pointer file (segment ids, not the
-// article bodies), so even a large multi-file post is well under this.
-const maxNZBBytes = 64 << 20
-
-var (
-	errDownloadTooLarge      = errors.New("nzbindex: download exceeds the size cap")
-	errDownloadRequestFailed = errors.New("nzbindex: download request failed")
-)
+var errDownloadRequestFailed = errors.New("nzbindex: download request failed")
 
 // Grab fetches the .nzb body server-side and returns it as a GrabResult. NZBIndex download
 // links are public and carry no secret, so DownloadNeedsAuth is false and the feed normally
@@ -32,44 +25,32 @@ var (
 func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, error) {
 	resp, err := d.fetch(ctx, link)
 	if err != nil {
-		return nil, sanitizeGrabError(err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	switch {
-	case resp.StatusCode == stdhttp.StatusUnauthorized:
-		return nil, fmt.Errorf("nzbindex: download unauthorized: %w", login.ErrLoginFailed)
-	case resp.StatusCode == stdhttp.StatusForbidden || search.IsRateLimitStatus(resp.StatusCode):
-		return nil, &search.RateLimitedError{
-			StatusCode: resp.StatusCode,
-			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.clock),
+		if resp != nil {
+			return nil, err
 		}
-	case resp.StatusCode < 200 || resp.StatusCode >= 300:
-		return nil, fmt.Errorf("nzbindex: download returned HTTP %d", resp.StatusCode)
-	}
-
-	body, err := readCapped(resp.Body, maxNZBBytes)
-	if err != nil {
 		return nil, sanitizeGrabError(err)
 	}
-	return &search.GrabResult{Body: body, ContentType: nzbContentType}, nil
+	return &search.GrabResult{Body: resp.Body, ContentType: nzbContentType}, nil
 }
 
 // fetch issues a plain GET for a .nzb download URL. A transport error is a *url.Error whose
 // Error() embeds the full URL, so it is routed through apphttp.RedactURLError and wrapped
 // under errDownloadRequestFailed (scheme://host only). Context sentinels are preserved.
-func (d *driver) fetch(ctx context.Context, rawurl string) (*stdhttp.Response, error) {
+func (d *driver) fetch(ctx context.Context, rawurl string) (*native.Response, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
 		return nil, errDownloadRequestFailed
 	}
-	resp, err := d.doer.Do(req)
+	resp, err := d.DoDownload(ctx, req, native.ClassifyRateLimit403)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return nil, context.Canceled
 		}
 		if errors.Is(err, context.DeadlineExceeded) {
 			return nil, context.DeadlineExceeded
+		}
+		if resp != nil {
+			return resp, err
 		}
 		return nil, fmt.Errorf("%w: %w", errDownloadRequestFailed, apphttp.RedactURLError(err))
 	}
@@ -84,7 +65,7 @@ func sanitizeGrabError(err error) error {
 	case errors.Is(err, login.ErrLoginFailed),
 		errors.Is(err, context.Canceled),
 		errors.Is(err, context.DeadlineExceeded),
-		errors.Is(err, errDownloadTooLarge):
+		errors.Is(err, native.ErrDownloadTooLarge):
 		return err
 	}
 	var rl *search.RateLimitedError
@@ -95,17 +76,4 @@ func sanitizeGrabError(err error) error {
 		return err
 	}
 	return errDownloadRequestFailed
-}
-
-// readCapped reads up to limit bytes, erroring rather than silently truncating a corrupt
-// .nzb. Errors never carry the source URL (a read error is scrubbed through RedactError).
-func readCapped(r io.Reader, limit int64) ([]byte, error) {
-	body, err := io.ReadAll(io.LimitReader(r, limit+1))
-	if err != nil {
-		return nil, fmt.Errorf("nzbindex: read download response: %s", apphttp.RedactError(err))
-	}
-	if int64(len(body)) > limit {
-		return nil, errDownloadTooLarge
-	}
-	return body, nil
 }

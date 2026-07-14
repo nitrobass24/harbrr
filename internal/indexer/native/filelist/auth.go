@@ -8,11 +8,8 @@ import (
 	"strings"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
-
-// maxBodyBytes caps an api.php JSON response (search/latest/error). It is generous —
-// a FileList page is small JSON — but bounds a hostile or runaway body.
-const maxBodyBytes = 8 << 20 // 8 MiB
 
 // basicAuthHeader builds the Authorization: Basic value from the configured username
 // and passkey (both trimmed, matching Prowlarr's BasicNetworkCredential). The passkey
@@ -20,8 +17,8 @@ const maxBodyBytes = 8 << 20 // 8 MiB
 // is not a redaction (it is trivially reversible) — the protection is that this value
 // is never logged and the raw passkey never enters a recorded URL.
 func (d *driver) basicAuthHeader() string {
-	user := strings.TrimSpace(d.cfg["username"])
-	pass := strings.TrimSpace(d.cfg["passkey"])
+	user := strings.TrimSpace(d.Cfg["username"])
+	pass := strings.TrimSpace(d.Cfg["passkey"])
 	raw := user + ":" + pass
 	return "Basic " + base64.StdEncoding.EncodeToString([]byte(raw))
 }
@@ -33,24 +30,19 @@ func (d *driver) basicAuthHeader() string {
 // passkey in its query on a download (Grab builds it), so a transport error surfaces
 // only its scheme://host (apphttp.SchemeHost drops the query); the raw passkey never
 // appears in a request the *search* issues (the passkey rides as a header there).
-func (d *driver) get(ctx context.Context, rawurl, accept string) (*stdhttp.Response, error) {
+func (d *driver) get(ctx context.Context, rawurl, accept string, download bool) (*native.Response, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
-		return nil, fmt.Errorf("filelist: build request: %w", err)
+		return nil, fmt.Errorf("filelist: build request: %w", apphttp.RedactURLError(err))
 	}
 	req.Header.Set("Authorization", d.basicAuthHeader())
 	if accept != "" {
 		req.Header.Set("Accept", accept)
 	}
-	resp, err := d.doer.Do(req)
-	if err != nil {
-		// On a download the URL carries the passkey in its query; SchemeHost surfaces
-		// only scheme://host (dropping the query where the passkey lives) and
-		// RedactURLError rebuilds the cause host-only. %w preserves context.Canceled/
-		// DeadlineExceeded in the chain so callers still classify them via errors.Is.
-		return nil, fmt.Errorf("filelist: request to %s: %w", apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
+	if download {
+		return d.DoDownload(ctx, req, native.ClassifyAuth403)
 	}
-	return resp, nil
+	return d.Do(ctx, req, native.ClassifyAuth403)
 }
 
 // scrubPasskey removes any occurrence of the configured passkey from s. A hostile or

@@ -178,7 +178,7 @@ func (d *driver) parseSearch(body []byte) ([]*normalizer.Release, error) {
 		rels = append(rels, groupRels...)
 	}
 	sortReleases(rels)
-	native.TraceReleases(d.log, d.def.ID, rels)
+	native.TraceReleases(d.Log, d.Def.ID, rels)
 	return rels, nil
 }
 
@@ -253,7 +253,7 @@ func (d *driver) flattenGroup(groupID int64, g *gazelleGamesGroup) ([]*normalize
 		if len(cats) == 0 {
 			// First emitted torrent in a group with no artist-derived categories seeds the
 			// group fallback from its own CategoryId; it then sticks for every later torrent.
-			cats = canonical(d.caps.CategoryMap.MapTrackerCatToNewznab(t.CategoryID.string()))
+			cats = canonical(d.Caps.CategoryMap.MapTrackerCatToNewznab(t.CategoryID.string()))
 		}
 		rels = append(rels, d.toRelease(groupID, torrentID, g, &t, cats))
 	}
@@ -303,7 +303,7 @@ func (d *driver) groupCategories(g *gazelleGamesGroup) []int {
 	seen := map[int]struct{}{}
 	var out []int
 	for _, a := range g.Artists {
-		for _, id := range canonical(d.caps.CategoryMap.MapTrackerCatDescToNewznab(a.Name)) {
+		for _, id := range canonical(d.Caps.CategoryMap.MapTrackerCatDescToNewznab(a.Name)) {
 			if _, ok := seen[id]; ok {
 				continue
 			}
@@ -416,7 +416,7 @@ func (d *driver) downloadURL(torrentID int64) string {
 	params.Set("id", strconv.FormatInt(torrentID, 10))
 	params.Set("authkey", downloadAuthKeyDummy)
 	params.Set("torrent_pass", strings.TrimSpace(d.cfgValue("passkey")))
-	return d.baseURL + downloadPath + "?" + params.Encode()
+	return d.BaseURL + downloadPath + "?" + params.Encode()
 }
 
 // detailsURL rebuilds Prowlarr's GetInfoUrl: {base}torrents.php?id={groupId}&torrentid=
@@ -425,7 +425,7 @@ func (d *driver) detailsURL(groupID, torrentID int64) string {
 	params := url.Values{}
 	params.Set("id", strconv.FormatInt(groupID, 10))
 	params.Set("torrentid", strconv.FormatInt(torrentID, 10))
-	return d.baseURL + detailsPath + "?" + params.Encode()
+	return d.BaseURL + detailsPath + "?" + params.Encode()
 }
 
 // publishDate renders a GGn time value as UTC RFC3339. It tolerates the "yyyy-MM-dd
@@ -435,7 +435,7 @@ func (d *driver) publishDate(value string) string {
 	if strings.TrimSpace(value) == "" {
 		return ""
 	}
-	out, err := dateparse.New(dateparse.WithClock(d.clock)).ParseRelTime(value)
+	out, err := dateparse.New(dateparse.WithClock(d.Clock)).ParseRelTime(value)
 	if err != nil {
 		return ""
 	}

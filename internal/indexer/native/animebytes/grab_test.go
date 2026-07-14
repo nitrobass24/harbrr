@@ -11,6 +11,7 @@ import (
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // fakeTorrent is a minimal bencode-shaped body; its content is irrelevant to the driver
@@ -103,16 +104,15 @@ func (e *errDoer) Do(_ *stdhttp.Request) (*stdhttp.Response, error) { return nil
 
 // TestGrabTransportErrorSanitized proves a transport failure surfaces the download's
 // scheme://host (diagnosable, not a secret) while dropping the passkey — even though the
-// download URL carries the passkey in its path (where RedactURL cannot reach it). Production
-// only ever hands sanitizeGrabError a host-only error, so we inject the exact shape
-// http.Client.Do returns — a *url.Error stringifying the full URL — with a synthetic secret
-// in BOTH a path segment and a query param, and assert get()'s host-only wrap (SchemeHost +
-// RedactURLError) strips every secret before sanitizeGrabError wraps the cause.
+// download URL carries the passkey in its path (where RedactURL cannot reach it). We
+// inject the exact shape http.Client.Do returns — a *url.Error stringifying the full URL
+// — with a synthetic secret in BOTH a path segment and a query param, and assert
+// native.Base strips every secret before surfacing the cause.
 func TestGrabTransportErrorSanitized(t *testing.T) {
 	t.Parallel()
 	d := liveDriver(nil)
 	const secret = "S3CRETTOKEN"
-	d.doer = &errDoer{err: &url.Error{
+	d.Doer = &errDoer{err: &url.Error{
 		Op:  "Get",
 		URL: "https://animebytes.tv/dl/" + secret + "?passkey=" + secret,
 		Err: errors.New("dial tcp: connection refused"),
@@ -127,9 +127,10 @@ func TestGrabTransportErrorSanitized(t *testing.T) {
 	if !strings.Contains(msg, "https://animebytes.tv") {
 		t.Errorf("transport error dropped the scheme://host: %v", err)
 	}
-	// The fixed prefix identifies a grab failure without carrying the download URL.
-	if !strings.Contains(msg, "animebytes: download request failed") {
-		t.Errorf("err = %v, want it to carry the download-request-failed prefix", err)
+	// The base download prefix identifies a grab failure without carrying the full
+	// download URL.
+	if !strings.Contains(msg, "animebytes: download to https://animebytes.tv failed") {
+		t.Errorf("err = %v, want it to carry the base download prefix", err)
 	}
 	// The real request URL's passkey (surfaced only host-only via SchemeHost(rawurl)) must be gone.
 	if strings.Contains(msg, credPass) {
@@ -147,13 +148,13 @@ func TestGrabTransportErrorSanitized(t *testing.T) {
 }
 
 // TestGrabContextSentinelsPreserved proves context cancellation/deadline pass through
-// sanitizeGrabError unchanged (so normal cancellation is not misreported as a failure),
-// while still never carrying the URL.
+// unchanged (so normal cancellation is not misreported as a failure), while still never
+// carrying the URL.
 func TestGrabContextSentinelsPreserved(t *testing.T) {
 	t.Parallel()
 	for _, sentinel := range []error{context.Canceled, context.DeadlineExceeded} {
 		d := liveDriver(nil)
-		d.doer = &errDoer{err: sentinel}
+		d.Doer = &errDoer{err: sentinel}
 		_, err := d.Grab(context.Background(), downloadLink)
 		if !errors.Is(err, sentinel) {
 			t.Errorf("err = %v, want %v passed through", err, sentinel)
@@ -190,17 +191,14 @@ func TestTestSuccess(t *testing.T) {
 	}
 }
 
-func TestReadCapped(t *testing.T) {
+func TestGrabDownloadTooLarge(t *testing.T) {
 	t.Parallel()
-	if _, err := readCapped(strings.NewReader("0123456789AB"), 10); !errors.Is(err, errDownloadTooLarge) {
-		t.Errorf("12 bytes over cap 10: err = %v, want errDownloadTooLarge", err)
-	}
-	got, err := readCapped(strings.NewReader("0123456789"), 10)
-	if err != nil || len(got) != 10 {
-		t.Errorf("at cap: len=%d err=%v, want 10/nil", len(got), err)
-	}
-	got, err = readCapped(strings.NewReader("hello"), 10)
-	if err != nil || string(got) != "hello" {
-		t.Errorf("under cap: got=%q err=%v", got, err)
+	big := strings.Repeat("x", (64<<20)+1)
+	d := liveDriver(&scriptDoer{handler: func(_ *stdhttp.Request) *stdhttp.Response {
+		return httpResp(stdhttp.StatusOK, big)
+	}})
+	_, err := d.Grab(context.Background(), downloadLink)
+	if !errors.Is(err, native.ErrDownloadTooLarge) {
+		t.Errorf("err = %v, want native.ErrDownloadTooLarge", err)
 	}
 }

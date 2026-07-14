@@ -11,16 +11,6 @@
 package passthepopcorn
 
 import (
-	"errors"
-	"fmt"
-	"strings"
-	"time"
-
-	"github.com/rs/zerolog"
-
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
@@ -28,13 +18,7 @@ import (
 // cached by the registry. There is no login round-trip: every request carries the
 // ApiUser/ApiKey credentials in request headers, so the driver holds no session state.
 type driver struct {
-	def     *loader.Definition
-	caps    *mapper.Capabilities
-	cfg     map[string]string
-	doer    search.Doer
-	baseURL string // normalised with a single trailing slash
-	clock   func() time.Time
-	log     zerolog.Logger
+	native.Base
 }
 
 var _ native.Driver = (*driver)(nil)
@@ -42,34 +26,12 @@ var _ native.Driver = (*driver)(nil)
 // New is the native.Factory for PassThePopcorn. It builds the capabilities from the
 // definition and normalises the base URL.
 func New(p native.Params) (native.Driver, error) {
-	if p.Def == nil {
-		return nil, errors.New("passthepopcorn: nil definition")
-	}
-	caps, err := mapper.Build(p.Def)
+	b, err := native.NewBase("passthepopcorn", p)
 	if err != nil {
-		return nil, fmt.Errorf("passthepopcorn: build capabilities for %q: %w", p.Def.ID, err)
+		return nil, err
 	}
-	base := p.BaseURL
-	if base == "" && len(p.Def.Links) > 0 {
-		base = p.Def.Links[0]
-	}
-	clock := p.Clock
-	if clock == nil {
-		clock = time.Now
-	}
-	return &driver{
-		def:     p.Def,
-		caps:    caps,
-		cfg:     p.Cfg,
-		doer:    p.Doer,
-		baseURL: strings.TrimRight(base, "/") + "/",
-		clock:   clock,
-		log:     p.Logger,
-	}, nil
+	return &driver{Base: b}, nil
 }
-
-// Capabilities returns the PassThePopcorn capabilities document.
-func (d *driver) Capabilities() *mapper.Capabilities { return d.caps }
 
 // NeedsResolver is false: the download URL (torrents.php?action=download&id=...) carries
 // no passkey, so the served feed link is safe to expose. The ApiUser/ApiKey headers are
