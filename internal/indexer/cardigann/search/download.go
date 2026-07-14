@@ -96,11 +96,12 @@ func parseDownloadURI(link string) (*template.DownloadURI, error) {
 
 // downloadContext builds a fresh template context for a download/before template:
 // the base request context (config + sitelink + today) with the .DownloadUri
-// namespace populated. Fresh per call because template.Eval mutates the context.
+// namespace populated. See template.NewSeeded for the fresh-context-per-call
+// invariant.
 func downloadContext(du *template.DownloadURI, deps Deps) *template.Context {
-	ctx := requestContext(Query{}, deps)
-	ctx.DownloadUri = du
-	return ctx
+	params := requestParams(Query{}, deps)
+	params.DownloadURI = du
+	return template.NewSeeded(params)
 }
 
 // renderDownloadHeaders renders download.headers (else search.headers) against the

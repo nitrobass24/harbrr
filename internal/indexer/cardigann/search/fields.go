@@ -205,11 +205,12 @@ func bindEval(deps Deps, query Query, result map[string]string) selector.EvalFun
 }
 
 // evalTemplate evaluates one template fragment against a fresh context seeded
-// with config + query + the current Result map. A fresh context per call is
-// required because template.Eval mutates it.
+// with config + query + the current Result map. See template.NewSeeded for the
+// fresh-context-per-call invariant.
 func evalTemplate(deps Deps, query Query, result map[string]string, text string) (string, error) {
-	config := withSitelink(deps.Config, deps.BaseURL)
-	ctx := newContext(config, query.queryMap(), result, query.templateKeywords(), query.Categories, deps.Clock)
+	params := requestParams(query, deps)
+	params.Result = result
+	ctx := template.NewSeeded(params)
 	out, err := template.Eval(text, ctx)
 	if err != nil {
 		return "", fmt.Errorf("evaluating field template: %w", err)
