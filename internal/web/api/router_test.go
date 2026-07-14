@@ -112,6 +112,18 @@ func newEnv(t *testing.T, cfg api.Config) *env {
 // the same store the handlers read; a nil builder means caching is off (the
 // /api/cache routes then report a disabled state).
 func newEnvWithCache(t *testing.T, cfg api.Config, buildCache func(db *database.DB) *registry.SearchCache) *env {
+	return newEnvFull(t, cfg, buildCache, zerolog.Nop())
+}
+
+// newEnvWithLogger is newEnv with the router's Deps.Logger swapped for logger, so a test
+// can assert on what a handler actually wrote (e.g. postFrontendLog's relayed entry)
+// instead of only its HTTP response.
+func newEnvWithLogger(t *testing.T, cfg api.Config, logger zerolog.Logger) *env {
+	return newEnvFull(t, cfg, nil, logger)
+}
+
+// newEnvFull is the shared builder behind newEnv/newEnvWithCache/newEnvWithLogger.
+func newEnvFull(t *testing.T, cfg api.Config, buildCache func(db *database.DB) *registry.SearchCache, logger zerolog.Logger) *env {
 	t.Helper()
 
 	db, err := database.Open(":memory:")
@@ -162,7 +174,7 @@ func newEnvWithCache(t *testing.T, cfg api.Config, buildCache func(db *database.
 	handler, err := api.NewRouter(api.Deps{
 		Auth: authSvc, Registry: reg, Loader: ldr, AppSync: appSync, Announce: announceSvc,
 		Notify: notifySvc, Proxy: proxySvc, Solver: solverSvc, Sessions: sm,
-		Cache: cache, Logger: zerolog.Nop(), LogLevel: api.NewLogLevelStore(db, nil),
+		Cache: cache, Logger: logger, LogLevel: api.NewLogLevelStore(db, nil),
 	}, cfg)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)

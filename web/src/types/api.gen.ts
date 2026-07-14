@@ -1090,6 +1090,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/logs/frontend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Relay a web-UI toast into the daemon log
+         * @description harbrr is single-user self-hosted software — the daemon's own log is THE log. Many error/warning toasts describe client-only events (a fetch that never reached the server, a client-side validation rejection) the server never otherwise observes, so the web UI ships them here to land in that one log. The content is opaque: never parsed, expanded, or echoed back — just written as a single log entry at the given level.
+         */
+        post: operations["postFrontendLog"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/server-info": {
         parameters: {
             query?: never;
@@ -4172,6 +4192,40 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    postFrontendLog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @description the zerolog level the entry is written at
+                     * @enum {string}
+                     */
+                    level: "error" | "warn" | "info";
+                    /** @description short human-readable summary (the toast text) */
+                    message: string;
+                    /** @description optional extra detail — an error's message, never a whole response body */
+                    context?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description logged */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
         };
     };
     getServerInfo: {

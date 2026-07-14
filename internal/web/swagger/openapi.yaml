@@ -1756,6 +1756,44 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /api/logs/frontend:
+    post:
+      summary: Relay a web-UI toast into the daemon log
+      description: >
+        harbrr is single-user self-hosted software — the daemon's own log is THE log.
+        Many error/warning toasts describe client-only events (a fetch that never
+        reached the server, a client-side validation rejection) the server never
+        otherwise observes, so the web UI ships them here to land in that one log. The
+        content is opaque: never parsed, expanded, or echoed back — just written as a
+        single log entry at the given level.
+      operationId: postFrontendLog
+      tags: [System]
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                level:
+                  type: string
+                  enum: [error, warn, info]
+                  description: the zerolog level the entry is written at
+                message:
+                  type: string
+                  maxLength: 1024
+                  description: short human-readable summary (the toast text)
+                context:
+                  type: string
+                  maxLength: 4096
+                  description: optional extra detail — an error's message, never a whole response body
+              required: [level, message]
+      responses:
+        "204": { description: logged }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /api/server-info:
     get:
       summary: Get the server's effective listening port

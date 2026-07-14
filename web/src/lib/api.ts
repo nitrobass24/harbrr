@@ -57,6 +57,12 @@ export type ProxyType = components["schemas"]["Proxy"]["type"]
 // is the {level: LogLevel} wrapper the get/set endpoints exchange.
 export type LogLevel = components["schemas"]["LogLevel"]["level"]
 
+// FrontendLogLevel is the smaller enum POST /api/logs/frontend accepts (lib/notify.ts's
+// shipping set — no "trace"/"debug"). Pulled from the operation's inline request schema
+// since it has no named components["schemas"] entry.
+export type FrontendLogLevel =
+  operations["postFrontendLog"]["requestBody"]["content"]["application/json"]["level"]
+
 // Response shapes with no named schema component: the spec declares them inline, so
 // they're pulled from the operation's response instead of a components["schemas"] key.
 export type Me = operations["me"]["responses"]["200"]["content"]["application/json"]
@@ -401,6 +407,15 @@ export class ApiClient {
 
   setLogLevel(level: LogLevel): Promise<components["schemas"]["LogLevel"]> {
     return this.unwrap(this.http.PUT("/api/config/log-level", { body: { level } }), "/api/config/log-level")
+  }
+
+  // postFrontendLog relays a toast into the daemon's own log (see lib/notify.ts, the
+  // only caller — never call this directly from a component).
+  postFrontendLog(level: FrontendLogLevel, message: string, context?: string): Promise<void> {
+    return this.unwrap(
+      this.http.POST("/api/logs/frontend", { body: { level, message, context } }),
+      "/api/logs/frontend"
+    )
   }
 
   listAllIndexerStats(): Promise<IndexerStats[]> {

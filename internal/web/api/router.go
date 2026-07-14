@@ -209,6 +209,8 @@ func (rt *router) routes() http.Handler {
 			r.Get("/api/config/log-level", rt.getLogLevel)
 			r.Put("/api/config/log-level", rt.putLogLevel)
 
+			r.Post("/api/logs/frontend", rt.postFrontendLog)
+
 			r.Get("/api/server-info", rt.serverInfo)
 		})
 	})
