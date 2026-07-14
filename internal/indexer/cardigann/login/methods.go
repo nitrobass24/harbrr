@@ -199,11 +199,11 @@ func (e *Executor) checkErrors(l *loader.Login, rawURL string, body []byte, stat
 	if len(l.Error) == 0 {
 		return nil
 	}
-	doc, err := e.Selector.ParseHTML(body)
+	doc, err := e.selector.ParseHTML(body)
 	if err != nil {
 		return fmt.Errorf("parsing login response from %s: %w", apphttp.SchemeHost(rawURL), err)
 	}
-	msg, matched, err := e.Selector.CheckErrorBlocks(doc.Root(), l.Error)
+	msg, matched, err := e.selector.CheckErrorBlocks(doc.Root(), l.Error, e.eval)
 	if err != nil {
 		return fmt.Errorf("checking login error selectors from %s: %w", apphttp.SchemeHost(rawURL), err)
 	}
@@ -220,7 +220,7 @@ func (e *Executor) checkErrors(l *loader.Login, rawURL string, body []byte, stat
 // Bittorrentfiles' `pass`, type: password). username is not classified secret, so it
 // is preserved (a legitimate "no such user 'dave'" survives). See SecretConfigValues.
 func (e *Executor) loginSecrets(def *loader.Definition) []string {
-	return SecretConfigValues(def.Settings, e.Config)
+	return SecretConfigValues(def.Settings, e.config)
 }
 
 // mergeFormHeaders returns the login headers with a form-urlencoded Content-Type

@@ -139,7 +139,7 @@ func TestFieldHTML(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, found, err := New().Field(row(t), tc.block)
+			got, found, err := New().Field(row(t), tc.block, nil)
 			assertField(t, fieldResult{got, found, err}, tc.wantValue, tc.wantFound, tc.wantErr)
 		})
 	}
@@ -166,7 +166,7 @@ func TestFieldDefersRequiredDecision(t *testing.T) {
 		)},
 	}
 	for i := range cases {
-		v, found, err := New().Field(row, cases[i])
+		v, found, err := New().Field(row, cases[i], nil)
 		if err != nil {
 			t.Fatalf("case %d: unexpected error %v", i, err)
 		}

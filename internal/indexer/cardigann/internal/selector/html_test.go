@@ -24,7 +24,7 @@ func TestRowsHTML(t *testing.T) {
 			t.Fatalf("rows = %d, want 2", len(rows))
 		}
 		// Second row's name field.
-		v, found, err := New().Field(rows[1], loader.SelectorBlock{Selector: "td.name"})
+		v, found, err := New().Field(rows[1], loader.SelectorBlock{Selector: "td.name"}, nil)
 		if err != nil || !found {
 			t.Fatalf("field err=%v found=%v", err, found)
 		}
@@ -49,14 +49,14 @@ func TestRowsHTML(t *testing.T) {
 		}
 		// After merge, the detail cell from the following row is now reachable
 		// inside the kept row.
-		v, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "td.detail"})
+		v, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "td.detail"}, nil)
 		if err != nil || !found {
 			t.Fatalf("field err=%v found=%v", err, found)
 		}
 		if v != "First detail" {
 			t.Fatalf("merged detail = %q, want First detail", v)
 		}
-		title, _, _ := New().Field(rows[0], loader.SelectorBlock{Selector: "td.title"})
+		title, _, _ := New().Field(rows[0], loader.SelectorBlock{Selector: "td.title"}, nil)
 		if title != "First" {
 			t.Fatalf("title = %q, want First", title)
 		}
@@ -128,7 +128,7 @@ func TestEdgeCasesHTML(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, found, err := New().Field(row(t), tc.block)
+			got, found, err := New().Field(row(t), tc.block, nil)
 			assertField(t, fieldResult{got, found, err}, tc.wantValue, tc.wantFound, false)
 		})
 	}
@@ -143,7 +143,7 @@ func TestSelfMatchHTML(t *testing.T) {
 	row := firstHTMLRow(t, "edge.html", "div#row")
 
 	// The row is <div id="row">; a selector matching it self-matches.
-	v, found, err := New().Field(row, loader.SelectorBlock{Selector: "div#row", Attribute: "id"})
+	v, found, err := New().Field(row, loader.SelectorBlock{Selector: "div#row", Attribute: "id"}, nil)
 	if err != nil || !found {
 		t.Fatalf("self-match err=%v found=%v", err, found)
 	}
@@ -152,7 +152,7 @@ func TestSelfMatchHTML(t *testing.T) {
 	}
 
 	// A non-self, non-descendant selector still misses.
-	_, found, err = New().Field(row, loader.SelectorBlock{Selector: "div#absent"})
+	_, found, err = New().Field(row, loader.SelectorBlock{Selector: "div#absent"}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestRootSelectorHTML(t *testing.T) {
 	// From row 0, ":root tr[data-id='200'] td.name" reaches the second row, which
 	// a plain (descendant-scoped) selector could never see.
 	block := loader.SelectorBlock{Selector: ":root tr[data-id='200'] td.name"}
-	v, found, err := New().Field(rows[0], block)
+	v, found, err := New().Field(rows[0], block, nil)
 	if err != nil || !found {
 		t.Fatalf(":root cross-row err=%v found=%v", err, found)
 	}

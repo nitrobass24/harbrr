@@ -93,7 +93,7 @@ func TestFetchLandingPastAntiBot_ManualCookie(t *testing.T) {
 	// The solved cookie was seeded into the jar for the tracker host.
 	u, _ := url.Parse("https://t.invalid/login.php")
 	var seeded bool
-	for _, c := range e.Jar.Cookies(u) {
+	for _, c := range e.jar.Cookies(u) {
 		if c.Name == "cf_clearance" && c.Value == "token123" {
 			seeded = true
 		}

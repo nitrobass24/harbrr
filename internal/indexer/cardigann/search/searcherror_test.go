@@ -156,7 +156,7 @@ func TestParseResults_SearchError(t *testing.T) {
 			if err != nil {
 				t.Fatalf("loader.Parse: %v", err)
 			}
-			rels, err := ParseResults(def, []byte(tt.body), "", Query{Keywords: "ubuntu"}, searchErrorDeps())
+			rels, err := ParseResults(def, []byte(tt.body), "", Query{Keywords: "ubuntu"}, selector.New(), searchErrorDeps())
 			if !tt.wantErr {
 				if err != nil {
 					t.Fatalf("ParseResults: %v, want normal parse", err)
@@ -322,7 +322,7 @@ func TestExecute_SearchErrorNotParseError(t *testing.T) {
 	doer := &redirectDoer{t: t, steps: []redirectStep{
 		{wantMethod: "GET", wantURL: "https://err.invalid/browse?q=ubuntu", body: errorPage200},
 	}}
-	_, err = Execute(t.Context(), def, Query{Keywords: "ubuntu"}, nil, doer, searchErrorDeps())
+	_, err = Execute(t.Context(), def, Query{Keywords: "ubuntu"}, nil, doer, selector.New(), searchErrorDeps())
 	if !errors.Is(err, ErrTrackerError) {
 		t.Fatalf("Execute error = %v, want ErrTrackerError", err)
 	}

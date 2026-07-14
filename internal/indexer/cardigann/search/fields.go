@@ -29,14 +29,14 @@ type rowState struct {
 
 // parseRow runs the field loop for one row and decides whether to keep it. It
 // reproduces Jackett's per-row body: iterate Search.Fields IN DEFINITION ORDER,
-// extract+default+filter each field with the selector EvalTemplate bound to the
-// growing Result, accumulate into base/result, apply the row filters, then build
-// the Release. keep is false when a row filter (andmatch) drops the row.
-func parseRow(def *loader.Definition, row selector.Row, query Query, deps Deps) (rel *normalizer.Release, keep bool, err error) {
+// extract+default+filter each field with an eval func bound to the growing
+// Result, accumulate into base/result, apply the row filters, then build the
+// Release. keep is false when a row filter (andmatch) drops the row.
+func parseRow(def *loader.Definition, sel *selector.Engine, row selector.Row, query Query, deps Deps) (rel *normalizer.Release, keep bool, err error) {
 	state := rowState{result: map[string]string{}, base: map[string]string{}}
 
 	for _, fe := range def.Search.Fields.Ordered() {
-		if err := parseField(fe, row, query, deps, &state); err != nil {
+		if err := parseField(fe, sel, row, query, deps, &state); err != nil {
 			return nil, false, err
 		}
 	}
@@ -54,16 +54,17 @@ func parseRow(def *loader.Definition, row selector.Row, query Query, deps Deps) 
 
 // parseField extracts, defaults, and filters one field, then folds it into the
 // row state. The field key may carry modifiers ("title|append"); the base name
-// (FieldParts[0]) is what keys .Result and the base map. The selector's
-// EvalTemplate is rebound to see the Result map accumulated so far, reproducing
-// Jackett's handleSelector(variables) interleaving.
-func parseField(fe loader.FieldEntry, row selector.Row, query Query, deps Deps, state *rowState) error {
+// (FieldParts[0]) is what keys .Result and the base map. A fresh eval closure
+// bound to the Result map accumulated so far is built and passed into this
+// call's Field lookup, reproducing Jackett's handleSelector(variables)
+// interleaving without mutating any shared state.
+func parseField(fe loader.FieldEntry, sel *selector.Engine, row selector.Row, query Query, deps Deps, state *rowState) error {
 	name, modifiers := splitFieldKey(fe.Key)
 	optional := isOptional(fe.Key, name, modifiers, fe.Block)
 
-	bindEval(deps, query, state.result)
+	eval := bindEval(deps, query, state.result)
 
-	value, found, err := deps.Selector.Field(row, fe.Block)
+	value, found, err := sel.Field(row, fe.Block, eval)
 	if err != nil {
 		// A genuine fault (bad selector/template/case eval) — NOT "value absent",
 		// which Field reports as found=false with a nil error and which the
@@ -193,21 +194,23 @@ func applyRowFilters(filters []loader.RowFilterBlock, title string, query Query)
 	return false
 }
 
-// bindEval rebinds the selector's EvalTemplate seam so selector strings, case
-// values, and text are evaluated against the current Result map. Called before
-// each field so later fields see earlier .Result values.
-func bindEval(deps Deps, query Query, result map[string]string) {
-	deps.Selector.EvalTemplate = func(s string) (string, error) {
+// bindEval builds an eval closure over the current Result map so selector
+// strings, case values, and text are evaluated against it. Called before each
+// field so later fields see earlier .Result values; the closure is passed
+// directly into that field's Field call rather than mutating any shared state.
+func bindEval(deps Deps, query Query, result map[string]string) selector.EvalFunc {
+	return func(s string) (string, error) {
 		return evalTemplate(deps, query, result, s)
 	}
 }
 
 // evalTemplate evaluates one template fragment against a fresh context seeded
-// with config + query + the current Result map. A fresh context per call is
-// required because template.Eval mutates it.
+// with config + query + the current Result map. See template.NewSeeded for the
+// fresh-context-per-call invariant.
 func evalTemplate(deps Deps, query Query, result map[string]string, text string) (string, error) {
-	config := withSitelink(deps.Config, deps.BaseURL)
-	ctx := newContext(config, query.queryMap(), result, query.templateKeywords(), query.Categories, deps.Clock)
+	params := requestParams(query, deps)
+	params.Result = result
+	ctx := template.NewSeeded(params)
 	out, err := template.Eval(text, ctx)
 	if err != nil {
 		return "", fmt.Errorf("evaluating field template: %w", err)

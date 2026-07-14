@@ -67,7 +67,7 @@ func TestScopeFieldExtraction(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.field, func(t *testing.T) {
 			t.Parallel()
-			v, found, ferr := New().Field(rows[0], loader.SelectorBlock{Selector: tc.selector})
+			v, found, ferr := New().Field(rows[0], loader.SelectorBlock{Selector: tc.selector}, nil)
 			if ferr != nil {
 				t.Fatalf("Field(%q): %v", tc.selector, ferr)
 			}
@@ -95,7 +95,7 @@ func TestScopeDirectChildOnly(t *testing.T) {
 	}
 
 	// rows[1] has no direct-child <span><a>; only the nested wrapper does.
-	v, found, err := New().Field(rows[1], loader.SelectorBlock{Selector: ":scope > span > a"})
+	v, found, err := New().Field(rows[1], loader.SelectorBlock{Selector: ":scope > span > a"}, nil)
 	if err != nil {
 		t.Fatalf("Field: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestScopeDirectChildOnly(t *testing.T) {
 
 	// The date on that row is the 4th span with a ":" — proves :nth-child + a
 	// filtered pseudo compile and match against direct children.
-	date, found, err := New().Field(rows[1], loader.SelectorBlock{Selector: `:scope > span:nth-child(4):contains(":")`})
+	date, found, err := New().Field(rows[1], loader.SelectorBlock{Selector: `:scope > span:nth-child(4):contains(":")`}, nil)
 	if err != nil || !found || date != "2020-11-05 07:34:44" {
 		t.Fatalf("date = (%q, %v, %v), want (2020-11-05 07:34:44, true, nil)", date, found, err)
 	}
@@ -124,7 +124,7 @@ func TestScopeBare(t *testing.T) {
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("rows err=%v n=%d", err, len(rows))
 	}
-	v, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: ":scope"})
+	v, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: ":scope"}, nil)
 	if err != nil || !found || v != "alpha" {
 		t.Fatalf("bare :scope = (%q, %v, %v), want (alpha, true, nil)", v, found, err)
 	}

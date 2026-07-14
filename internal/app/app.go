@@ -24,6 +24,7 @@ import (
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/definitions"
+	"github.com/autobrr/harbrr/internal/indexer/native/catalog"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 	"github.com/autobrr/harbrr/internal/logger"
 	"github.com/autobrr/harbrr/internal/notify"
@@ -275,7 +276,7 @@ func cookiePath(baseURL string) string {
 func (a *App) initRegistry(ctx context.Context, httpClient *http.Client) {
 	a.searchCache = buildSearchCache(ctx, a.db, a.cfg, a.log)
 	a.notify = notify.NewService(a.db, a.keyring, httpClient, a.log)
-	a.registry = registry.New(a.db, loader.New(dropinDir(a.cfg)), a.keyring,
+	a.registry = registry.New(a.db, loader.New(dropinDir(a.cfg)), a.keyring, catalog.All(),
 		registry.WithLogger(a.log), registry.WithSearchCache(a.searchCache), registry.WithHealthSink(a.notify))
 	if err := a.registry.RehydrateStats(ctx); err != nil {
 		a.log.Warn().Err(err).Msg("loading indexer stat counters failed; counters start at zero this session")
@@ -411,7 +412,9 @@ func (a *App) Run(ctx context.Context) error {
 	bgCancel()
 	bg.Wait()
 	drainNotify(ctx, a.notify)
-	_ = a.db.Close()
+	if err := a.db.Close(); err != nil {
+		a.log.Warn().Err(err).Msg("closing database failed")
+	}
 
 	return runErr
 }

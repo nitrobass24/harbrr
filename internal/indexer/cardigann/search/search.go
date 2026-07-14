@@ -70,15 +70,8 @@ type JarOwner interface {
 // Deps are the wired pipeline stages the search executor reuses. The engine
 // (cardigann.NewEngine) builds and injects the per-def seams — the template
 // context, the filter registry's date/language seams, the normalizer's
-// base-URL/type/category map — once. The selector is the exception: ParseResults
-// installs a fresh one per call, so the reused Engine holds no mutable selector
-// state and concurrent searches cannot race on it.
+// base-URL/type/category map — once.
 type Deps struct {
-	// Selector parses the body and extracts row/field values. ParseResults installs
-	// a fresh instance per call (the field loop rebinds its EvalTemplate per row to
-	// see the growing Result map), so it carries no state across parses. The engine
-	// leaves it nil; do not rely on an injected value.
-	Selector *selector.Engine
 	// Filters applies each field's filter chain (apply) with the date/language
 	// seams already wired.
 	Filters *FilterRegistry
@@ -106,13 +99,11 @@ type Deps struct {
 // filters against the query, and hands each surviving base-field map to the
 // normalizer. No HTTP happens here; it is the deterministic core the engine and
 // the parity harness replay saved bytes through.
-func ParseResults(def *loader.Definition, body []byte, respType string, query Query, deps Deps) ([]*normalizer.Release, error) {
-	// Install a fresh selector for this parse. Deps is taken by value, so this is
-	// local to the call: the field loop rebinds EvalTemplate per row on THIS
-	// instance, never on shared engine state, so concurrent searches on one reused
-	// Engine cannot race on the selector.
-	deps.Selector = selector.New()
-
+//
+// sel is the selector engine to extract with. It holds no per-call state, so
+// the SAME instance is safe to share and call concurrently across searches —
+// the engine constructs one and passes it into every call.
+func ParseResults(def *loader.Definition, body []byte, respType string, query Query, sel *selector.Engine, deps Deps) ([]*normalizer.Release, error) {
 	// Filter the keyword term before any row/field templating, so .Keywords and
 	// the andmatch row filter see the same keywordsfilters-filtered value the
 	// request was built with (Jackett sets .Keywords once in PerformQuery).
@@ -127,7 +118,7 @@ func ParseResults(def *loader.Definition, body []byte, respType string, query Qu
 	// correct UTF-8 selection. A UTF-8/no-encoding def is a no-op.
 	body = decodeBody(deps.Encoding, body)
 
-	doc, err := parseDocument(deps.Selector, body, respType)
+	doc, err := parseDocument(sel, body, respType)
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +128,7 @@ func ParseResults(def *loader.Definition, body []byte, respType string, query Qu
 	// 200 while logged in). Jackett calls checkForError(response, Search.Error)
 	// AFTER parsing the document and BEFORE the rows selector, and only in its HTML
 	// branch (the JSON and XML branches skip it). Mirror that placement and scope.
-	if err := checkSearchError(def, doc, respType, deps.Selector, deps.Config); err != nil {
+	if err := checkSearchError(def, doc, respType, sel, deps.Config); err != nil {
 		return nil, err
 	}
 
@@ -158,12 +149,12 @@ func ParseResults(def *loader.Definition, body []byte, respType string, query Qu
 
 	releases := make([]*normalizer.Release, 0, len(rows))
 	for i := range rows {
-		rel, keep, err := parseRow(def, rows[i], query, deps)
+		rel, keep, err := parseRow(def, sel, rows[i], query, deps)
 		// Jackett runs the dateheaders backfill after the row survives its filters,
 		// before the release is collected; a kept row with no PublishDate looks back
 		// for its date header, which may also drop the row (see backfillDateHeader).
 		if err == nil && keep {
-			err = backfillDateHeader(def, rows[i], rel, query, deps, respType)
+			err = backfillDateHeader(def, sel, rows[i], rel, query, deps, respType)
 		}
 		if err != nil {
 			if skipBadRow {
@@ -221,7 +212,10 @@ func checkSearchError(def *loader.Definition, doc *selector.Document, respType s
 	if respType == responseTypeJSON || respType == responseTypeXML || len(def.Search.Error) == 0 {
 		return nil
 	}
-	msg, matched, err := eng.CheckErrorBlocks(doc.Root(), def.Search.Error)
+	// No eval seam: checkSearchError runs before the field loop, exactly where
+	// the old fresh-per-call selector's identity default applied — no template
+	// context existed yet at this point either way.
+	msg, matched, err := eng.CheckErrorBlocks(doc.Root(), def.Search.Error, nil)
 	if err != nil {
 		return fmt.Errorf("evaluating search error selectors: %w", err)
 	}
@@ -250,7 +244,10 @@ func DefaultResponseType(def *loader.Definition) string {
 // drive each through the Doer (carrying the session cookies), and parse the first
 // successful response into releases. The session may be nil (no login). It returns
 // the normalized releases or a loud, secret-free error.
-func Execute(ctx context.Context, def *loader.Definition, query Query, session *login.Session, doer Doer, deps Deps) ([]*normalizer.Release, error) {
+//
+// sel is forwarded to ParseResults unchanged; see its doc for why one shared
+// instance is safe across concurrent searches.
+func Execute(ctx context.Context, def *loader.Definition, query Query, session *login.Session, doer Doer, sel *selector.Engine, deps Deps) ([]*normalizer.Release, error) {
 	reqs, err := buildRequests(def, query, deps)
 	if err != nil {
 		return nil, err
@@ -297,7 +294,7 @@ func Execute(ctx context.Context, def *loader.Definition, query Query, session *
 		if noResultsMatch(reqs[i], sr.status, decoded) {
 			continue
 		}
-		rels, err := ParseResults(def, body, respType, query, deps)
+		rels, err := ParseResults(def, body, respType, query, sel, deps)
 		if err != nil {
 			// A tracker-authored error page (Search.Error matched) is not a parse
 			// failure: surface it as-is so it is NOT misclassified as parse_error.

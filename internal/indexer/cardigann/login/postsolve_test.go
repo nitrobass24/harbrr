@@ -95,8 +95,8 @@ func TestPostForm_ChallengedLoginGetSolvesThenRetries(t *testing.T) {
 	if ua := doer.retryHeaders.Get("User-Agent"); ua != "BrowserUA/1.0" {
 		t.Errorf("retry POST User-Agent = %q, want the solver UA", ua)
 	}
-	if e.SolverUserAgent != "BrowserUA/1.0" {
-		t.Errorf("SolverUserAgent = %q, want the solver UA persisted for search", e.SolverUserAgent)
+	if ua := e.Session().UserAgent; ua != "BrowserUA/1.0" {
+		t.Errorf("Session().UserAgent = %q, want the solver UA persisted for search", ua)
 	}
 }
 
@@ -221,8 +221,8 @@ func TestLoginForm_ChallengedSubmitGetSolvesThenRetries(t *testing.T) {
 	if ua := doer.retryHeaders.Get("User-Agent"); ua != "BrowserUA/1.0" {
 		t.Errorf("retry POST User-Agent = %q, want the solver UA", ua)
 	}
-	if e.SolverUserAgent != "BrowserUA/1.0" {
-		t.Errorf("SolverUserAgent = %q, want the solver UA persisted for search", e.SolverUserAgent)
+	if ua := e.Session().UserAgent; ua != "BrowserUA/1.0" {
+		t.Errorf("Session().UserAgent = %q, want the solver UA persisted for search", ua)
 	}
 }
 

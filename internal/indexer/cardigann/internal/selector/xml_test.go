@@ -44,7 +44,7 @@ func TestParseXML(t *testing.T) {
 		t.Fatalf("rows = %d, want 2", len(rows))
 	}
 
-	title, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "title"})
+	title, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "title"}, nil)
 	if err != nil || !found {
 		t.Fatalf("title: found=%v err=%v", found, err)
 	}
@@ -54,7 +54,7 @@ func TestParseXML(t *testing.T) {
 
 	// <link> round-trips as text (the HTML5 parser would treat it as void and
 	// the URL would leak out as a sibling).
-	link, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "link"})
+	link, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "link"}, nil)
 	if err != nil || !found {
 		t.Fatalf("link: found=%v err=%v", found, err)
 	}
@@ -66,7 +66,7 @@ func TestParseXML(t *testing.T) {
 	seeders, found, err := New().Field(rows[0], loader.SelectorBlock{
 		Selector:  `torznab\:attr[name="seeders"]`,
 		Attribute: "value",
-	})
+	}, nil)
 	if err != nil || !found {
 		t.Fatalf("torznab:attr seeders: found=%v err=%v", found, err)
 	}
@@ -93,17 +93,17 @@ func TestParseXMLNamespaceScoping(t *testing.T) {
 	}
 
 	// The sibling keeps the root prefix "a".
-	if _, found, err := New().Field(doc.Root(), loader.SelectorBlock{Selector: `a\:sibling`}); err != nil || !found {
+	if _, found, err := New().Field(doc.Root(), loader.SelectorBlock{Selector: `a\:sibling`}, nil); err != nil || !found {
 		t.Fatalf("a:sibling not found (found=%v err=%v) — root prefix lost", found, err)
 	}
 	// It must NOT have leaked the inner prefix "b".
-	if _, leaked, err := New().Field(doc.Root(), loader.SelectorBlock{Selector: `b\:sibling`}); err != nil {
+	if _, leaked, err := New().Field(doc.Root(), loader.SelectorBlock{Selector: `b\:sibling`}, nil); err != nil {
 		t.Fatalf("b:sibling query error: %v", err)
 	} else if leaked {
 		t.Error("sibling mislabeled b:sibling — nested namespace prefix leaked")
 	}
 	// The inner element inside child correctly uses prefix "b".
-	if _, found, err := New().Field(doc.Root(), loader.SelectorBlock{Selector: `b\:inner`}); err != nil || !found {
+	if _, found, err := New().Field(doc.Root(), loader.SelectorBlock{Selector: `b\:inner`}, nil); err != nil || !found {
 		t.Errorf("b:inner not found (found=%v err=%v)", found, err)
 	}
 }
@@ -167,7 +167,7 @@ func TestParseXMLMixedCaseNames(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, found, err := New().Field(rows[0], tt.block)
+			got, found, err := New().Field(rows[0], tt.block, nil)
 			if err != nil || !found {
 				t.Fatalf("Field(%q): found=%v err=%v", tt.block.Selector, found, err)
 			}
@@ -206,7 +206,7 @@ func TestParseXMLCDATA(t *testing.T) {
 		t.Fatalf("rows = %d err = %v, want 1", len(rows), err)
 	}
 
-	title, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "title"})
+	title, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "title"}, nil)
 	if err != nil || !found {
 		t.Fatalf("title: found=%v err=%v", found, err)
 	}
@@ -214,7 +214,7 @@ func TestParseXMLCDATA(t *testing.T) {
 		t.Errorf("CDATA title = %q, want literal %q", title, "Title & <Raw> Markup")
 	}
 
-	desc, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "desc"})
+	desc, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "desc"}, nil)
 	if err != nil || !found {
 		t.Fatalf("desc: found=%v err=%v", found, err)
 	}
@@ -246,7 +246,7 @@ func TestParseXMLComments(t *testing.T) {
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("rows = %d err = %v, want 1", len(rows), err)
 	}
-	title, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "title"})
+	title, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "title"}, nil)
 	if err != nil || !found {
 		t.Fatalf("title: found=%v err=%v", found, err)
 	}
@@ -278,7 +278,7 @@ func TestParseXMLDefaultNamespace(t *testing.T) {
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("rows = %d err = %v, want 1", len(rows), err)
 	}
-	title, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "title"})
+	title, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "title"}, nil)
 	if err != nil || !found {
 		t.Fatalf("title: found=%v err=%v", found, err)
 	}
@@ -301,7 +301,7 @@ func TestParseXMLUndeclaredPrefix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseXML of an undeclared prefix should degrade, not error: %v", err)
 	}
-	val, found, err := New().Field(doc.Root(), loader.SelectorBlock{Selector: `foo\:bar`})
+	val, found, err := New().Field(doc.Root(), loader.SelectorBlock{Selector: `foo\:bar`}, nil)
 	if err != nil || !found {
 		t.Fatalf("foo:bar: found=%v err=%v", found, err)
 	}

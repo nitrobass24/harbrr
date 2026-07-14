@@ -59,7 +59,7 @@ func TestRowsJSON(t *testing.T) {
 		if len(rows) != 3 {
 			t.Fatalf("rows = %d, want 3", len(rows))
 		}
-		v, _, _ := New().Field(rows[2], loader.SelectorBlock{Selector: "name"})
+		v, _, _ := New().Field(rows[2], loader.SelectorBlock{Selector: "name"}, nil)
 		if v != "three" {
 			t.Fatalf("name = %q, want three", v)
 		}
@@ -170,7 +170,7 @@ func TestRowsJSONPseudoFilters(t *testing.T) {
 	}
 	// id 1 is the surviving row: name contains 1080, has size+poster, uploader
 	// is not BadGuy, no fake_att.
-	got, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "id"})
+	got, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "id"}, nil)
 	if err != nil || !found {
 		t.Fatalf("Field id: found=%v err=%v", found, err)
 	}
@@ -193,7 +193,7 @@ func TestFieldJSONContainsCondition(t *testing.T) {
 
 	// Row 0 (id 1) name "Movie One 1080p" contains 1080 -> the conditioned
 	// selector yields the name.
-	v, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "attributes.name:contains(1080)"})
+	v, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "attributes.name:contains(1080)"}, nil)
 	if err != nil || !found {
 		t.Fatalf("row0 conditioned field: found=%v err=%v", found, err)
 	}
@@ -202,7 +202,7 @@ func TestFieldJSONContainsCondition(t *testing.T) {
 	}
 
 	// Row 1 (id 2) name "Movie Two 720p" does not contain 1080 -> not found.
-	_, found, err = New().Field(rows[1], loader.SelectorBlock{Selector: "attributes.name:contains(1080)"})
+	_, found, err = New().Field(rows[1], loader.SelectorBlock{Selector: "attributes.name:contains(1080)"}, nil)
 	if err != nil {
 		t.Fatalf("row1 conditioned field error: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestRowsJSONAttribute(t *testing.T) {
 	}
 
 	// Fields resolve against the attributes sub-object.
-	name, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "name"})
+	name, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "name"}, nil)
 	if err != nil || !found {
 		t.Fatalf("name: found=%v err=%v", found, err)
 	}
@@ -238,7 +238,7 @@ func TestRowsJSONAttribute(t *testing.T) {
 
 	// A ".." selector escapes to the full row element, reading a key OUTSIDE
 	// attributes (the top-level id).
-	id, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "..id"})
+	id, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "..id"}, nil)
 	if err != nil || !found {
 		t.Fatalf("..id: found=%v err=%v", found, err)
 	}
@@ -387,7 +387,7 @@ func TestFieldJSON(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, found, err := New().Field(row(t), tc.block)
+			got, found, err := New().Field(row(t), tc.block, nil)
 			assertField(t, fieldResult{got, found, err}, tc.wantValue, tc.wantFound, false)
 		})
 	}
@@ -417,7 +417,7 @@ func TestArrayIndexPath(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			v, found, err := New().Field(row(t), loader.SelectorBlock{Selector: tc.selector})
+			v, found, err := New().Field(row(t), loader.SelectorBlock{Selector: tc.selector}, nil)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -470,15 +470,15 @@ func TestMalformedJSONErrors(t *testing.T) {
 	}
 }
 
-// TestEvalTemplateSeam verifies the injected EvalTemplate is applied to selector
-// strings, case values, and text exactly where Jackett interleaves it, and that
-// the default is identity.
+// TestEvalTemplateSeam verifies the eval func passed into Field is applied to
+// selector strings, case values, and text exactly where Jackett interleaves it,
+// and that a nil eval defaults to identity.
 func TestEvalTemplateSeam(t *testing.T) {
 	t.Parallel()
 
 	// Eval rewrites the magic selector token, brackets literal case/text values,
 	// and passes plain path selectors through unchanged so they still resolve.
-	e := &Engine{EvalTemplate: func(s string) (string, error) {
+	eval := func(s string) (string, error) {
 		switch s {
 		case "{{ .sel }}":
 			return "title", nil
@@ -487,11 +487,12 @@ func TestEvalTemplateSeam(t *testing.T) {
 		default:
 			return s, nil
 		}
-	}}
+	}
+	e := New()
 	row := firstJSONRow(t, "rows.json", "data")
 
 	// Selector string is template-evaluated to "title".
-	v, _, err := e.Field(row, loader.SelectorBlock{Selector: "{{ .sel }}"})
+	v, _, err := e.Field(row, loader.SelectorBlock{Selector: "{{ .sel }}"}, eval)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -503,7 +504,7 @@ func TestEvalTemplateSeam(t *testing.T) {
 	v, _, err = e.Field(row, loader.SelectorBlock{
 		Selector: "category",
 		Case:     loader.NewCaseBlock(loader.CaseEntry{Key: "*", Value: loader.Scalar{Value: "cat", Set: true}}),
-	})
+	}, eval)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -512,11 +513,21 @@ func TestEvalTemplateSeam(t *testing.T) {
 	}
 
 	// Text is template-evaluated.
-	v, _, err = e.Field(row, loader.SelectorBlock{Text: scalar("lit")})
+	v, _, err = e.Field(row, loader.SelectorBlock{Text: scalar("lit")}, eval)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if v != "[lit]" {
 		t.Fatalf("templated text = %q, want [lit]", v)
+	}
+
+	// A nil eval defaults to identity: the literal selector resolves unchanged
+	// (rather than being routed through the "{{ .sel }}" -> "title" rewrite above).
+	v, found, err := e.Field(row, loader.SelectorBlock{Selector: "title"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found || v != "Alpha Release 2024" {
+		t.Fatalf("nil eval = (%q, %v), want (%q, true)", v, found, "Alpha Release 2024")
 	}
 }

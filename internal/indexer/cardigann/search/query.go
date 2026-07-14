@@ -6,8 +6,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/template"
 )
 
 // Query is the parsed search request the engine drives a definition with. It is
@@ -233,51 +231,3 @@ func (q Query) setQueryFlags(m map[string]string) {
 
 // trueSentinel mirrors Jackett's "True" string used for boolean query flags.
 const trueSentinel = "True"
-
-// newContext builds a fresh template.Context for one Eval. A fresh context per
-// call is required because template.Eval mutates it (whitespace normalization).
-// config supplies the .Config namespace (and .Config.sitelink); query supplies
-// .Query / .Keywords / .Categories; result seeds the growing per-row .Result map;
-// clock seeds the .Today namespace ({{ .Today.Year }}). A nil clock defaults to
-// time.Now so .Today is never silently empty.
-func newContext(config, query, result map[string]string, keywords string, categories []string, clock func() time.Time) *template.Context {
-	ctx := template.NewContext()
-	for k, v := range config {
-		ctx.Config[k] = v
-	}
-	for k, v := range query {
-		ctx.Query[k] = v
-	}
-	for k, v := range result {
-		ctx.Result[k] = v
-	}
-	ctx.Keywords = keywords
-	ctx.Categories = categories
-	ctx.Today = today(clock)
-	return ctx
-}
-
-// today renders the .Today namespace from the reference clock. Jackett seeds
-// .Today.Year/Month/Day from DateTime.Today (GetBaseTemplateVariables); the
-// engine injects a deterministic clock so date-defaulting templates are
-// reproducible.
-//
-// Jackett applies a deliberate quirk to .Today.Year: in January (month == 1) it
-// reports the PREVIOUS year — `Month > 1 ? Year : Year - 1` — so a def that
-// defaults a missing date to "{{ .Today.Year }}-01-01" does not stamp a
-// just-rolled-over release in the future. We reproduce it exactly for parity.
-func today(clock func() time.Time) template.Today {
-	if clock == nil {
-		clock = time.Now
-	}
-	now := clock()
-	year := now.Year()
-	if now.Month() == time.January {
-		year--
-	}
-	return template.Today{
-		Year:  strconv.Itoa(year),
-		Month: strconv.Itoa(int(now.Month())),
-		Day:   strconv.Itoa(now.Day()),
-	}
-}

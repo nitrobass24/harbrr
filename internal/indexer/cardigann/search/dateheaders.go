@@ -19,7 +19,7 @@ import (
 // and dateheaders is not optional, Jackett throws "No date header row found",
 // which its per-row try/catch turns into a dropped row — so backfillDateHeader
 // returns an error there and ParseResults' HTML row-skip drops the row identically.
-func backfillDateHeader(def *loader.Definition, row selector.Row, rel *normalizer.Release, query Query, deps Deps, respType string) error {
+func backfillDateHeader(def *loader.Definition, sel *selector.Engine, row selector.Row, rel *normalizer.Release, query Query, deps Deps, respType string) error {
 	block := def.Search.Rows.DateHeaders
 	if block == nil || respType == responseTypeJSON || respType == responseTypeXML {
 		return nil
@@ -29,7 +29,7 @@ func backfillDateHeader(def *loader.Definition, row selector.Row, rel *normalize
 	}
 
 	for cand := range row.PrecedingElements() {
-		value, ok := handleHeaderSelector(*block, cand, query, deps)
+		value, ok := handleHeaderSelector(sel, *block, cand, query, deps)
 		if !ok {
 			// Jackett swallows every handleSelector failure (no match, or a filter
 			// that threw) and keeps walking preceding elements.
@@ -60,11 +60,11 @@ func backfillDateHeader(def *loader.Definition, row selector.Row, rel *normalize
 // selector matches nothing on cand or any step errors, both of which Jackett's
 // try/catch treats as "keep walking". variables is empty because Jackett passes
 // null here — the dateheaders blocks in the corpus carry no `.Result` templates.
-func handleHeaderSelector(block loader.SelectorBlock, cand selector.Row, query Query, deps Deps) (string, bool) {
+func handleHeaderSelector(sel *selector.Engine, block loader.SelectorBlock, cand selector.Row, query Query, deps Deps) (string, bool) {
 	empty := map[string]string{}
-	bindEval(deps, query, empty)
+	eval := bindEval(deps, query, empty)
 
-	value, found, err := deps.Selector.Field(cand, block)
+	value, found, err := sel.Field(cand, block, eval)
 	if err != nil || !found {
 		return "", false
 	}

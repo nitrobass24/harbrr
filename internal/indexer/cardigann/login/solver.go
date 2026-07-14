@@ -62,10 +62,10 @@ func (m ManualCookieSolver) Solve(context.Context, string) (SolveResult, error) 
 // solver returns the configured solver, defaulting to NoopSolver when unset so
 // callers never need a nil check.
 func (e *Executor) solver() Solver {
-	if e.Solver == nil {
+	if e.configuredSolver == nil {
 		return NoopSolver{}
 	}
-	return e.Solver
+	return e.configuredSolver
 }
 
 // fetchLandingPastAntiBot GETs rawURL and, when the response is an anti-bot
@@ -157,12 +157,12 @@ func (e *Executor) applySolveResult(rawURL string, res SolveResult) {
 	if res.UserAgent != "" {
 		e.setSolverUA(res.UserAgent)
 	}
-	if e.Jar == nil || len(res.Cookies) == 0 {
+	if e.jar == nil || len(res.Cookies) == 0 {
 		return
 	}
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return
 	}
-	e.Jar.SetCookies(u, res.Cookies)
+	e.jar.SetCookies(u, res.Cookies)
 }

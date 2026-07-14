@@ -145,7 +145,7 @@ func newEnvWithCache(t *testing.T, cfg api.Config, buildCache func(db *database.
 	sm.Lifetime = time.Hour
 
 	authSvc := auth.NewServiceWithPasswordHasher(db, fastPasswordHasher{})
-	reg := registry.New(db, ldr, keyring)
+	reg := registry.New(db, ldr, keyring, nil)
 	source := &fakeAppSource{}
 	appSync := appsync.NewService(db, source, authSvc, keyring, http.DefaultClient, zerolog.Nop())
 	announceSvc := announce.NewService(db, authSvc, keyring,

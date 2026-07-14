@@ -62,16 +62,13 @@ func TestSolveHost_SeedsCookiesAndPersistsUA(t *testing.T) {
 	if err := e.SolveHost(t.Context(), "https://t.invalid/"); err != nil {
 		t.Fatalf("SolveHost: %v", err)
 	}
-	if e.SolverUserAgent != "Mozilla/5.0 (solver)" {
-		t.Errorf("SolverUserAgent = %q, want the solver UA", e.SolverUserAgent)
-	}
 	if e.Session().UserAgent != "Mozilla/5.0 (solver)" {
 		t.Errorf("Session().UserAgent = %q, want the solver UA", e.Session().UserAgent)
 	}
 	// cf_clearance seeded into the jar for the host.
 	u, _ := url.Parse("https://t.invalid/")
 	var seeded bool
-	for _, c := range e.Jar.Cookies(u) {
+	for _, c := range e.jar.Cookies(u) {
 		if c.Name == "cf_clearance" && c.Value == "CFTOKEN" {
 			seeded = true
 		}
@@ -87,8 +84,8 @@ func TestSolveHost_NoSolverDeclines(t *testing.T) {
 	if err := e.SolveHost(t.Context(), "https://t.invalid/"); !errors.Is(err, ErrNoSolverConfigured) {
 		t.Errorf("SolveHost err = %v, want ErrNoSolverConfigured", err)
 	}
-	if e.SolverUserAgent != "" {
-		t.Errorf("SolverUserAgent = %q, want empty when no solve occurred", e.SolverUserAgent)
+	if ua := e.Session().UserAgent; ua != "" {
+		t.Errorf("Session().UserAgent = %q, want empty when no solve occurred", ua)
 	}
 }
 
@@ -99,7 +96,7 @@ func TestSolverUserAgent_ReplayedOnLoginRequests(t *testing.T) {
 	t.Parallel()
 	d := &uaRecordingDoer{body: "<html>ok</html>"}
 	e := New(WithClient(d), WithBaseURL("https://t.invalid/"))
-	e.SolverUserAgent = "Mozilla/5.0 (solver)"
+	e.setSolverUA("Mozilla/5.0 (solver)")
 
 	if _, _, err := e.get(t.Context(), "https://t.invalid/login", nil); err != nil {
 		t.Fatalf("get (no def UA): %v", err)

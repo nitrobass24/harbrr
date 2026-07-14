@@ -57,7 +57,7 @@ func TestLoginPlanCensus(t *testing.T) {
 		unsupported: map[string]string{},
 	}
 	eng := selector.New()
-	eng.EvalTemplate = func(s string) (string, error) {
+	eval := func(s string) (string, error) {
 		return template.Eval(s, planContext())
 	}
 
@@ -67,7 +67,7 @@ func TestLoginPlanCensus(t *testing.T) {
 		}
 		c.withLogin++
 		c.perMethod[loginMethod(def.Login)]++
-		planLogin(def, eng, c)
+		planLogin(def, eng, eval, c)
 	}
 
 	t.Logf("login census: %d defs with a Login block; per-method: %s",
@@ -99,7 +99,7 @@ func planContext() *template.Context {
 
 // planLogin checks one def's login block: method recognized, every template
 // evaluable, every selector compilable.
-func planLogin(def *loader.Definition, eng *selector.Engine, c *censusCounts) {
+func planLogin(def *loader.Definition, eng *selector.Engine, eval selector.EvalFunc, c *censusCounts) {
 	l := def.Login
 	if !knownMethods[loginMethod(l)] {
 		c.unsupported[def.ID] = l.Method
@@ -109,7 +109,7 @@ func planLogin(def *loader.Definition, eng *selector.Engine, c *censusCounts) {
 		c.failures[def.ID] = err.Error()
 		return
 	}
-	if err := planSelectors(l, eng); err != nil {
+	if err := planSelectors(l, eng, eval); err != nil {
 		c.failures[def.ID] = err.Error()
 	}
 }
@@ -147,8 +147,8 @@ func planTemplates(l *loader.Login) error {
 // planSelectors compiles every selector in the login block by running it against
 // an empty document. Compilation/tokenization failures surface; a "no match"
 // against the empty doc is expected and fine. Template-bearing selectors are
-// resolved by the engine's EvalTemplate seam before cascadia sees them.
-func planSelectors(l *loader.Login, eng *selector.Engine) error {
+// resolved by eval before cascadia sees them.
+func planSelectors(l *loader.Login, eng *selector.Engine, eval selector.EvalFunc) error {
 	doc, err := eng.ParseHTML([]byte("<html><body></body></html>"))
 	if err != nil {
 		return fmt.Errorf("parsing empty doc: %w", err)
@@ -156,34 +156,34 @@ func planSelectors(l *loader.Login, eng *selector.Engine) error {
 	root := doc.Root()
 
 	for name, blk := range l.SelectorInputs {
-		if err := compileSelector(eng, root, blk); err != nil {
+		if err := compileSelector(eng, root, blk, eval); err != nil {
 			return fmt.Errorf("selectorinput %q: %w", name, err)
 		}
 	}
 	for name, blk := range l.GetSelectorInps {
-		if err := compileSelector(eng, root, blk); err != nil {
+		if err := compileSelector(eng, root, blk, eval); err != nil {
 			return fmt.Errorf("getselectorinput %q: %w", name, err)
 		}
 	}
 	for i := range l.Error {
-		if err := compileErrorBlock(eng, root, l.Error[i]); err != nil {
+		if err := compileErrorBlock(eng, root, l.Error[i], eval); err != nil {
 			return fmt.Errorf("error[%d]: %w", i, err)
 		}
 	}
 	if l.Test != nil && l.Test.Selector != "" {
-		if err := compileSelector(eng, root, loader.SelectorBlock{Selector: l.Test.Selector}); err != nil {
+		if err := compileSelector(eng, root, loader.SelectorBlock{Selector: l.Test.Selector}, eval); err != nil {
 			return fmt.Errorf("test selector: %w", err)
 		}
 	}
 	return nil
 }
 
-func compileErrorBlock(eng *selector.Engine, root selector.Row, blk loader.ErrorBlock) error {
-	if err := compileSelector(eng, root, loader.SelectorBlock{Selector: blk.Selector}); err != nil {
+func compileErrorBlock(eng *selector.Engine, root selector.Row, blk loader.ErrorBlock, eval selector.EvalFunc) error {
+	if err := compileSelector(eng, root, loader.SelectorBlock{Selector: blk.Selector}, eval); err != nil {
 		return err
 	}
 	if blk.Message != nil {
-		return compileSelector(eng, root, *blk.Message)
+		return compileSelector(eng, root, *blk.Message, eval)
 	}
 	return nil
 }
@@ -196,11 +196,11 @@ func compileErrorBlock(eng *selector.Engine, root selector.Row, blk loader.Error
 // loginKnownIncompatible are excluded — a blanket ":has(" skip would silently
 // stop counting valid nested :has(...:contains(...)) login selectors the engine
 // can compile.
-func compileSelector(eng *selector.Engine, root selector.Row, blk loader.SelectorBlock) error {
+func compileSelector(eng *selector.Engine, root selector.Row, blk loader.SelectorBlock, eval selector.EvalFunc) error {
 	if blk.Selector == "" || containsTemplate(blk.Selector) || cascadiaIncompatible(blk.Selector) {
 		return nil
 	}
-	if _, _, err := eng.Field(root, blk); err != nil {
+	if _, _, err := eng.Field(root, blk, eval); err != nil {
 		return fmt.Errorf("selector %q: %w", blk.Selector, err)
 	}
 	return nil

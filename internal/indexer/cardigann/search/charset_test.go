@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/selector"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 )
@@ -231,7 +232,7 @@ func TestParseResults_CodepageBody(t *testing.T) {
 	}
 
 	// With the def encoding wired: correct UTF-8, no U+FFFD.
-	rels, err := ParseResults(def, body, "", Query{Keywords: privetUTF8}, newDeps("windows-1251"))
+	rels, err := ParseResults(def, body, "", Query{Keywords: privetUTF8}, selector.New(), newDeps("windows-1251"))
 	if err != nil {
 		t.Fatalf("ParseResults: %v", err)
 	}
@@ -244,7 +245,7 @@ func TestParseResults_CodepageBody(t *testing.T) {
 
 	// Without it (nil encoding): the cp1251 bytes are mis-read as UTF-8 → mojibake,
 	// proving the fix is what produces the correct title above.
-	relsUTF8, err := ParseResults(def, body, "", Query{Keywords: privetUTF8}, newDeps("UTF-8"))
+	relsUTF8, err := ParseResults(def, body, "", Query{Keywords: privetUTF8}, selector.New(), newDeps("UTF-8"))
 	if err != nil {
 		t.Fatalf("ParseResults (utf-8): %v", err)
 	}

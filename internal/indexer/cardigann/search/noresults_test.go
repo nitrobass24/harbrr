@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/selector"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 )
 
@@ -90,7 +91,7 @@ func TestExecute_NoResultsMessage(t *testing.T) {
 			doer := &redirectDoer{t: t, steps: []redirectStep{
 				{wantMethod: "GET", wantURL: "https://nrm.invalid/api", body: tt.body},
 			}}
-			rels, err := Execute(t.Context(), noResultsDef(tt.message), Query{Keywords: "x"}, nil, doer, testDeps("https://nrm.invalid/", nil))
+			rels, err := Execute(t.Context(), noResultsDef(tt.message), Query{Keywords: "x"}, nil, doer, selector.New(), testDeps("https://nrm.invalid/", nil))
 			if tt.wantParse {
 				if !errors.Is(err, ErrParseError) {
 					t.Fatalf("Execute error = %v, want ErrParseError", err)
@@ -123,7 +124,7 @@ func TestExecute_NoResultsMessageContinuesPaths(t *testing.T) {
 		{wantMethod: "GET", wantURL: "https://nrm.invalid/api", body: ""},
 		{wantMethod: "GET", wantURL: "https://nrm.invalid/api2", body: ""},
 	}}
-	rels, err := Execute(t.Context(), def, Query{Keywords: "x"}, nil, doer, testDeps("https://nrm.invalid/", nil))
+	rels, err := Execute(t.Context(), def, Query{Keywords: "x"}, nil, doer, selector.New(), testDeps("https://nrm.invalid/", nil))
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}

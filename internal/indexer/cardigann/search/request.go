@@ -168,23 +168,48 @@ func buildOneRequest(def *loader.Definition, path loader.SearchPathBlock, query 
 	return assembleRequest(path, absURL, pairs, headers)
 }
 
+// requestParams builds the template.Params shared by every request-context
+// builder: config + query namespace + keywords + categories + today.
+// clockOrNow resolves deps.Clock exactly as Deps.Clock's doc promises: nil
+// falls back to time.Now so .Today is never silently empty.
+func requestParams(query Query, deps Deps) template.Params {
+	return template.Params{
+		Config:     deps.Config,
+		BaseURL:    deps.BaseURL,
+		Query:      query.queryMap(),
+		Keywords:   query.templateKeywords(),
+		Categories: query.Categories,
+		Clock:      clockOrNow(deps.Clock),
+	}
+}
+
+// clockOrNow defaults a nil clock to time.Now.
+func clockOrNow(clock func() time.Time) func() time.Time {
+	if clock == nil {
+		return time.Now
+	}
+	return clock
+}
+
 // requestContext builds the template context for request rendering: config +
-// query namespace + keywords + categories + today. A fresh context per call (Eval
-// mutates it).
+// query namespace + keywords + categories + today. See template.NewSeeded for
+// the fresh-context-per-call invariant.
 func requestContext(query Query, deps Deps) *template.Context {
-	config := withSitelink(deps.Config, deps.BaseURL)
-	return newContext(config, query.queryMap(), nil, query.templateKeywords(), query.Categories, deps.Clock)
+	return template.NewSeeded(requestParams(query, deps))
 }
 
 // requestPathContext is requestContext with every scalar variable value
 // URL-encoded for path-template substitution (space -> %20), reproducing
 // Jackett's `applyGoTemplateText(SearchPath.Path, ..., WebUtility.UrlEncode)`.
 // No vendored def substitutes .Config.sitelink (a URL) into a path, so encoding
-// all values is safe.
+// all values — including the sitelink NewSeeded defaulted in — is safe.
 func requestPathContext(query Query, deps Deps) *template.Context {
-	config := encodeStringValues(withSitelink(deps.Config, deps.BaseURL))
-	return newContext(config, encodeStringValues(query.queryMap()), nil,
-		pathEscape(query.templateKeywords()), encodeStringSlice(query.Categories), deps.Clock)
+	ctx := requestContext(query, deps)
+	ctx.Config = encodeStringValues(ctx.Config)
+	ctx.Query = encodeStringValues(ctx.Query)
+	ctx.Keywords = pathEscape(ctx.Keywords)
+	ctx.Categories = encodeStringSlice(ctx.Categories)
+	return ctx
 }
 
 // pathEscape URL-encodes a value for inlining into a path/query, with spaces as
@@ -211,19 +236,6 @@ func encodeStringSlice(s []string) []string {
 	out := make([]string, len(s))
 	for i, v := range s {
 		out[i] = pathEscape(v)
-	}
-	return out
-}
-
-// withSitelink returns a copy of config with .Config.sitelink defaulted to the
-// base URL, matching Jackett's GetBaseTemplateVariables seeding of sitelink.
-func withSitelink(config map[string]string, baseURL string) map[string]string {
-	out := make(map[string]string, len(config)+1)
-	for k, v := range config {
-		out[k] = v
-	}
-	if _, ok := out["sitelink"]; !ok {
-		out["sitelink"] = baseURL
 	}
 	return out
 }

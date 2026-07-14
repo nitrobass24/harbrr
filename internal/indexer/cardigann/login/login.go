@@ -161,7 +161,7 @@ func (e *Executor) CheckTest(ctx context.Context, def *loader.Definition) (bool,
 // look-alike host "https://t.example.evil.com/…" and wrongly treat it as
 // same-domain, following one hop off-site.
 func (e *Executor) crossDomainRedirect(requestURL, redirectURL string) bool {
-	base := strings.TrimRight(e.BaseURL, "/") + "/"
+	base := strings.TrimRight(e.baseURL, "/") + "/"
 	return strings.HasPrefix(requestURL, base) && !strings.HasPrefix(redirectURL, base)
 }
 
@@ -193,9 +193,9 @@ func (e *Executor) resolvePath(raw string) (string, error) {
 	if ref.IsAbs() {
 		return ref.String(), nil
 	}
-	base, err := url.Parse(e.BaseURL)
+	base, err := url.Parse(e.baseURL)
 	if err != nil {
-		return "", fmt.Errorf("parsing base URL %q: %w", apphttp.SchemeHost(e.BaseURL), apphttp.RedactURLError(err))
+		return "", fmt.Errorf("parsing base URL %q: %w", apphttp.SchemeHost(e.baseURL), apphttp.RedactURLError(err))
 	}
 	return base.ResolveReference(ref).String(), nil
 }
@@ -260,7 +260,7 @@ func (e *Executor) send(ctx context.Context, method, rawURL string, bodyReader i
 		req.Header.Set("User-Agent", ua)
 	}
 
-	resp, err := e.Client.Do(req)
+	resp, err := e.client.Do(req)
 	if err != nil {
 		return nil, 0, "", fmt.Errorf("%s %s: %w", method, apphttp.SchemeHost(rawURL), apphttp.RedactURLError(err))
 	}
