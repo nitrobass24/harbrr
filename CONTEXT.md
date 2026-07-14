@@ -68,3 +68,13 @@ construction order) and owns process lifecycle (`Run`) and the full-daemon test
 handler (`Handler`). `cmd/harbrr` only parses flags and calls it; `internal/server`
 only mounts HTTP handlers onto a listener.
 _Avoid_: bootstrap, wiring (as a package name), main package logic
+
+### Connections
+
+**Connection resource**:
+One of harbrr's encrypted-secret connection types (an app-sync connection, an announce
+connection, a notification target): a row plus one or more secrets sealed at rest under
+the row's own id, whose create/update/delete lifecycle — including an optional minted-key
+mint and fail-closed revoke — is sequenced by `internal/connresource.Lifecycle[T]`.
+_Avoid_: entity (too generic), integration (a different word already used for the app-sync
+targets themselves)

@@ -646,8 +646,8 @@ func TestServiceCreateRevokeFailureFailsClosed(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error from a duplicate create with a failing revoke")
 	}
-	if !errors.Is(err, ErrConflict) {
-		t.Errorf("error should still wrap ErrConflict, got %v", err)
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Errorf("error should still wrap domain.ErrConflict, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "could not be revoked") {
 		t.Errorf("error should surface the revoke failure, got %v", err)
@@ -671,8 +671,8 @@ func TestServiceCreateInvalidProfileRefMintsNoKey(t *testing.T) {
 		Name: "bad-ref", Kind: domain.AppKindSonarr, BaseURL: "http://sonarr-bad-ref:8989",
 		APIKey: "k", HarbrrURL: "http://harbrr:8787", SyncProfileID: &missing,
 	})
-	if !errors.Is(err, ErrInvalid) {
-		t.Fatalf("create with missing profile = %v, want ErrInvalid", err)
+	if !errors.Is(err, domain.ErrInvalid) {
+		t.Fatalf("create with missing profile = %v, want domain.ErrInvalid", err)
 	}
 	if strings.Contains(err.Error(), "could not be revoked") {
 		t.Errorf("a pure validation rejection reached the mint/revoke path: %v", err)
@@ -710,13 +710,13 @@ func TestServiceCreateRejectsNonAbsoluteURL(t *testing.T) {
 		{Name: "n", Kind: domain.AppKindSonarr, BaseURL: "http://:80", APIKey: "k", HarbrrURL: "http://harbrr:8787"}, // empty host, port only
 	}
 	for i, p := range bad {
-		if _, err := f.svc.CreateConnection(ctx, p); !errors.Is(err, ErrInvalid) {
-			t.Errorf("case %d: err = %v, want ErrInvalid", i, err)
+		if _, err := f.svc.CreateConnection(ctx, p); !errors.Is(err, domain.ErrInvalid) {
+			t.Errorf("case %d: err = %v, want domain.ErrInvalid", i, err)
 		}
 	}
 	// A relative URL on update is rejected too.
-	if err := f.svc.UpdateConnection(ctx, f.conn.ID, UpdateConnectionParams{BaseURL: ptr("nope")}); !errors.Is(err, ErrInvalid) {
-		t.Errorf("update with relative base url = %v, want ErrInvalid", err)
+	if err := f.svc.UpdateConnection(ctx, f.conn.ID, UpdateConnectionParams{BaseURL: ptr("nope")}); !errors.Is(err, domain.ErrInvalid) {
+		t.Errorf("update with relative base url = %v, want domain.ErrInvalid", err)
 	}
 }
 
@@ -903,8 +903,8 @@ func TestServiceCreateValidation(t *testing.T) {
 		{Name: "n", Kind: domain.AppKindSonarr, BaseURL: "x", APIKey: "k", HarbrrURL: "h", SyncLevel: "wat"}, // bad level
 	}
 	for i, p := range bad {
-		if _, err := f.svc.CreateConnection(ctx, p); !errors.Is(err, ErrInvalid) {
-			t.Errorf("case %d: err = %v, want ErrInvalid", i, err)
+		if _, err := f.svc.CreateConnection(ctx, p); !errors.Is(err, domain.ErrInvalid) {
+			t.Errorf("case %d: err = %v, want domain.ErrInvalid", i, err)
 		}
 	}
 }
@@ -921,8 +921,8 @@ func TestServiceUpdateRejectsBlankFields(t *testing.T) {
 		"blank api key":    {APIKey: &blank},
 	}
 	for name, p := range cases {
-		if err := f.svc.UpdateConnection(ctx, f.conn.ID, p); !errors.Is(err, ErrInvalid) {
-			t.Errorf("%s: err = %v, want ErrInvalid", name, err)
+		if err := f.svc.UpdateConnection(ctx, f.conn.ID, p); !errors.Is(err, domain.ErrInvalid) {
+			t.Errorf("%s: err = %v, want domain.ErrInvalid", name, err)
 		}
 	}
 	// A non-blank patch still succeeds.
@@ -936,8 +936,8 @@ func TestServiceSetSelectedRejectsUnknownID(t *testing.T) {
 	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
-	if err := f.svc.SetSelectedIndexers(ctx, f.conn.ID, []int64{99999}); !errors.Is(err, ErrInvalid) {
-		t.Errorf("unknown instance id err = %v, want ErrInvalid", err)
+	if err := f.svc.SetSelectedIndexers(ctx, f.conn.ID, []int64{99999}); !errors.Is(err, domain.ErrInvalid) {
+		t.Errorf("unknown instance id err = %v, want domain.ErrInvalid", err)
 	}
 	// A known id is accepted.
 	if err := f.svc.SetSelectedIndexers(ctx, f.conn.ID, []int64{f.source.instances[0].ID}); err != nil {
@@ -952,8 +952,8 @@ func TestServiceCreateDuplicateConflicts(t *testing.T) {
 	dup := CreateConnectionParams{
 		Name: "again", Kind: f.conn.Kind, BaseURL: f.conn.BaseURL, APIKey: "k", HarbrrURL: "http://harbrr:8787",
 	}
-	if _, err := f.svc.CreateConnection(ctx, dup); !errors.Is(err, ErrConflict) {
-		t.Errorf("duplicate (kind, base_url) err = %v, want ErrConflict", err)
+	if _, err := f.svc.CreateConnection(ctx, dup); !errors.Is(err, domain.ErrConflict) {
+		t.Errorf("duplicate (kind, base_url) err = %v, want domain.ErrConflict", err)
 	}
 	// The conflicting create must not leak a minted key.
 	if keys, _ := f.auth.ListAPIKeys(ctx); len(keys) != 1 {
