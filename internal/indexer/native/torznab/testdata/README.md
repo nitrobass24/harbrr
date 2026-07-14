@@ -1,9 +1,11 @@
 # Torznab driver — divergence records
 
 The native driver for the torrent-protocol twin of the Newznab API: a tracker that
-exposes its own Torznab RSS/XML search endpoint (currently only the MoreThanTV
-preset). MoreThanTV has no Cardigann definition; Jackett's `MoreThanTVAPI.cs` and
-Prowlarr's generic `Torznab.cs` preset are the parity references. Indexed by
+exposes its own Torznab RSS/XML search endpoint. The family carries a generic
+user-supplied-URL entry plus the presets Prowlarr's `Torznab.cs` ships as
+DefaultDefinitions (MoreThanTV, AnimeTosho, Torrent Network). None has a Cardigann
+definition; Jackett's `MoreThanTVAPI.cs` and Prowlarr's `Torznab.cs` /
+`TorznabRssParser.cs` are the parity references. Indexed by
 [`docs/divergences.md`](../../../../../docs/divergences.md) via the
 `*/testdata/README.md` glob.
 
@@ -34,16 +36,46 @@ renders `season=0` as `"00"`. Jackett's MoreThanTVAPI does neither: `imdbid` is
 (a zero/blank/negative season is omitted, not rewritten). Exercised by
 `request_test.go`.
 
-## `[Deliberate]` — apikey redaction-order + generic-entry scope match the newznab sibling
+## `[Deliberate]` — apikey emitted last, and omitted entirely when empty
 
 The apikey param is emitted last (a stability convention for redaction-safe golden
 tests — Jackett's literal C# order interleaves it earlier; wire order is otherwise
-irrelevant to a real server). There is deliberately no generic user-supplied-URL torznab
-preset (mirroring newznab's `Family()`/`GenericDefinition()` shape): the driving issue
-scoped that as in-scope only "if it falls out naturally", and with only one preset
-(MoreThanTV) built so far there is no second site to prove the generic shape against —
-tracked as a natural follow-up once AnimeTosho/Torrent Network (or another torznab
-tracker) are added.
+irrelevant to a real server) and is wholly absent when no key is configured: AnimeTosho
+is a keyless public feed (its `keyNone` policy even drops a stray configured value so
+it can never ride a request), and the generic entry's key is optional. Exercised by
+`request_test.go`.
+
+## `[Deliberate]` — apikey validation is per-preset, not a family rule
+
+The 32-char length check is Jackett's **MoreThanTV-specific** add-time validation
+(`MoreThanTVAPI.ApplyConfiguration`: "Expected length: 32") — Prowlarr's
+`TorznabSettingsValidator` validates nothing for these sites (its `ApiKeyAllowList` is
+empty). So each preset carries its own `keyPolicy`: MoreThanTV requires exactly 32
+chars; Torrent Network requires a non-empty key of any length (its length is
+undocumented); AnimeTosho has no key setting at all (public feed); the generic entry's
+key is optional and unvalidated (an unknown server may or may not require one).
+Exercised by `torznab_test.go` (`TestNewValidatesAPIKeyPerPolicy`).
+
+## `[Deliberate]` — NeedsResolver is per-preset, evidence-driven, sealed by default
+
+MoreThanTV: **true** — the real capture's `<link>`/enclosure both embed
+`authkey`+`torrent_pass`. AnimeTosho: **false** — the real capture
+(`torznab_animetosho.xml`) serves plain uncredentialed storage URLs
+(`…/torrents/<id>.torrent`) plus public magnets, so there is nothing to seal.
+Torrent Network and the generic entry: **true** — their link shapes are unknown, and
+sealing is the safe default (over-sealing costs a proxy hop; leaking a credentialed
+URL to the *arr is a secret exposure). Exercised by `torznab_test.go`
+(`TestFamilies`).
+
+## `[Accepted]` — the generic entry advertises only search/tv-search/movie-search
+
+Prowlarr's generic Torznab derives its caps (including music/book search) from a live
+`?t=caps` fetch harbrr's torznab driver does not perform, and the driver's request
+generator (Jackett's MoreThanTVAPI mapping) has no artist/album/author params.
+Advertising a mode whose params would be silently dropped is worse than clean
+degradation, so the placeholder caps advertise exactly the three modes the request
+generator expresses. Revisit if a torznab site needs music/book search (which likely
+also means adopting the newznab sibling's live caps fetch).
 
 ## `[Accepted]` — grabs/files read Jackett's plain-element fallback, not Prowlarr's attr-only form
 

@@ -36,7 +36,7 @@ difference is why they are two packages, not one with a flag:
   usenet driver zeroes them by design) and would proxy the download as if it were an
   apikey-only link, when the real secret is the URL-credentialed torrent link — a
   correctness AND a redaction bug, not a cosmetic one. Route it to the torznab family
-  instead, adding a preset there (or the torznab generic entry, once one exists).
+  instead — a preset, or its generic entry for a server without one.
 
 ## Deciding where a new tracker lands (the rubric)
 

@@ -94,6 +94,69 @@ func TestParseReleases_RealCapture(t *testing.T) {
 	}
 }
 
+// TestParseReleases_AnimeToshoCapture is the second real-capture golden: Prowlarr's
+// AnimeTosho feed fixture. It proves the branches the MTV capture cannot: uncredentialed
+// storage-URL enclosures (the NeedsResolver=false evidence), a details-page <link>
+// overridden by the x-bittorrent enclosure, public magneturl/infohash attrs, a
+// non-numeric <category> element ("Anime") falling back to the FIRST torznab:attr
+// category, a mixed x-bittorrent + x-nzb enclosure pair, and namespace disambiguation
+// (the feed carries parallel newznab: attrs that must NOT be read).
+func TestParseReleases_AnimeToshoCapture(t *testing.T) {
+	t.Parallel()
+	at, _ := presetByID("animetosho")
+	d, err := New(native.Params{Def: presetDefinition(at), Clock: fixedClock})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	drv := d.(*driver)
+	releases, err := drv.parseReleases(readGolden(t, "torznab_animetosho.xml"), drv.Caps.CategoryMap)
+	if err != nil {
+		t.Fatalf("parseReleases: %v", err)
+	}
+	if len(releases) != 2 {
+		t.Fatalf("releases = %d, want 2", len(releases))
+	}
+
+	r0 := releases[0]
+	if r0.Title != "[finFAGs]_Frame_Arms_Girl_07_(1280x720_TV_AAC)_[1262B6F7].mkv" {
+		t.Errorf("title = %q", r0.Title)
+	}
+	// The x-bittorrent enclosure (a plain storage URL) overrides the details-page <link>.
+	if r0.Link != "http://storage.localhost/torrents/123451.torrent" {
+		t.Errorf("Link = %q, want the storage enclosure url", r0.Link)
+	}
+	if r0.Magnet != "magnet:?xt=urn:btih:VU2QYN66WU7FTPXSG3TFDRXW6KTEBPBF" {
+		t.Errorf("Magnet = %q", r0.Magnet)
+	}
+	if r0.InfoHash != "2d69a861bef5a9f2cdf791b7328e37b7953205e1" {
+		t.Errorf("InfoHash = %q", r0.InfoHash)
+	}
+	// <category>Anime</category> is non-numeric -> the FIRST torznab:attr category
+	// ("5070"; the second, custom "100001", is ignored) -> mapped 1:1.
+	if len(r0.Categories) != 1 || r0.Categories[0] != 5070 {
+		t.Errorf("Categories = %v, want [5070]", r0.Categories)
+	}
+	if r0.Size != 316477946 {
+		t.Errorf("Size = %d, want 316477946 (torznab:attr size; enclosure length is 0)", r0.Size)
+	}
+	if r0.Files != 1 {
+		t.Errorf("Files = %d, want 1", r0.Files)
+	}
+	if r0.PublishDate != "2017-05-17T20:36:06Z" {
+		t.Errorf("PublishDate = %q", r0.PublishDate)
+	}
+
+	// The second item carries BOTH an x-bittorrent and an x-nzb enclosure: the
+	// torrent one must win.
+	r1 := releases[1]
+	if r1.Link != "http://storage.localhost/torrents/123452.torrent" {
+		t.Errorf("second release Link = %q, want the x-bittorrent enclosure (not the x-nzb one)", r1.Link)
+	}
+	if r1.Size != 473987489 {
+		t.Errorf("second release Size = %d, want 473987489", r1.Size)
+	}
+}
+
 // TestParseReleases_Synthetic exercises the branches the real capture does not:
 // magneturl, no <category> elements (falls back to the torznab:attr), and the
 // MoreThanTVAPI seeders/peers/DVF/UVF absent-attr defaults.

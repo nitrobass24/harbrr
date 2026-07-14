@@ -154,6 +154,89 @@ func TestBuildSearchURLBaseAndAPIPath(t *testing.T) {
 	}
 }
 
+// TestBuildSearchURLPerPreset proves the sibling presets' wire skeletons: AnimeTosho
+// hits the default /api path with NO apikey param at all (keyless public feed — a
+// stray configured key is dropped at construction, never sent); Torrent Network hits
+// its /api/torznab/api path with its (any-length) key.
+func TestBuildSearchURLPerPreset(t *testing.T) {
+	t.Parallel()
+
+	at, _ := presetByID("animetosho")
+	// A stray key is configured on purpose: keyNone must drop it before it can ride
+	// a request to the keyless server.
+	atDriver, err := New(native.Params{Def: presetDefinition(at), Cfg: map[string]string{"apikey": "stray-key"}})
+	if err != nil {
+		t.Fatalf("New(animetosho): %v", err)
+	}
+	atURL := atDriver.(*driver).buildSearchURL(search.Query{Keywords: "frame arms girl"})
+	prefix, _, _ := strings.Cut(atURL, "?")
+	if prefix != "https://feed.animetosho.org/api" {
+		t.Errorf("animetosho URL prefix = %q, want https://feed.animetosho.org/api (default apiPath)", prefix)
+	}
+	if parseQuery(t, atURL).Has("apikey") {
+		t.Errorf("animetosho request carries apikey=%q, want NO apikey param (keyless public feed)", parseQuery(t, atURL).Get("apikey"))
+	}
+
+	tn, _ := presetByID("torrentnetwork")
+	tnDriver, err := New(native.Params{Def: presetDefinition(tn), Cfg: map[string]string{"apikey": "tn-key-of-any-length"}})
+	if err != nil {
+		t.Fatalf("New(torrentnetwork): %v", err)
+	}
+	tnURL := tnDriver.(*driver).buildSearchURL(search.Query{Keywords: "x"})
+	prefix, _, _ = strings.Cut(tnURL, "?")
+	if prefix != "https://tntracker.org/api/torznab/api" {
+		t.Errorf("torrentnetwork URL prefix = %q, want https://tntracker.org/api/torznab/api", prefix)
+	}
+	if got := parseQuery(t, tnURL).Get("apikey"); got != "tn-key-of-any-length" {
+		t.Errorf("torrentnetwork apikey on the wire = %q, want the configured key", got)
+	}
+}
+
+// TestBuildSearchURLGeneric proves the generic entry's settings-driven construction:
+// the user-supplied base URL, the apiPath setting (default /api, custom values
+// normalized — trailing slash stripped, leading slash added), and the OPTIONAL apikey
+// (present when configured, wholly absent when not).
+func TestBuildSearchURLGeneric(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name       string
+		apiCfg     string
+		apikey     string
+		wantPrefix string
+		wantKey    bool
+	}{
+		{"default api path, no key", "", "", "https://tz.example.test/api", false},
+		{"default api path, with key", "", "generic-key", "https://tz.example.test/api", true},
+		{"custom path trailing slash trimmed", "/torznab/api/", "", "https://tz.example.test/torznab/api", false},
+		{"custom path missing leading slash", "torznab/api", "", "https://tz.example.test/torznab/api", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			d, err := New(native.Params{
+				Def:     GenericDefinition(),
+				Cfg:     map[string]string{"apikey": c.apikey, "apiPath": c.apiCfg},
+				BaseURL: "https://tz.example.test",
+			})
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			raw := d.(*driver).buildSearchURL(search.Query{})
+			prefix, _, _ := strings.Cut(raw, "?")
+			if prefix != c.wantPrefix {
+				t.Errorf("URL prefix = %q, want %q", prefix, c.wantPrefix)
+			}
+			q := parseQuery(t, raw)
+			if c.wantKey && q.Get("apikey") != c.apikey {
+				t.Errorf("apikey = %q, want %q", q.Get("apikey"), c.apikey)
+			}
+			if !c.wantKey && q.Has("apikey") {
+				t.Errorf("apikey = %q, want absent (optional key not configured)", q.Get("apikey"))
+			}
+		})
+	}
+}
+
 // TestBuildSearchURLCarriesAPIKeyButRedacts proves the built URL carries the apikey (so
 // the remote server authenticates) but RedactURL — the chokepoint every log/error
 // routes through — replaces it, so no log/error string can leak the apikey.

@@ -16,10 +16,10 @@ import (
 // constant, not query-driven like the newznab sibling's resolveLimit.
 const requestLimit = 100
 
-// Torznab t= function values. Only two named modes are ever requested (the
-// MoreThanTV preset's caps advertise only tv-search/movie-search); any other/unknown
-// mode collapses to the bare search branch, matching Jackett's PerformQuery
-// if/else-if/else chain.
+// Torznab t= function values. Only two named modes are ever requested (the family's
+// caps advertise only tv-search/movie-search beyond plain search — commonModes); any
+// other/unknown mode collapses to the bare search branch, matching Jackett's
+// PerformQuery if/else-if/else chain.
 const (
 	fnSearch = "search"
 	fnTV     = "tvsearch"
@@ -60,7 +60,11 @@ func (d *driver) buildSearchURL(q search.Query) string {
 		params.Set("season", season)
 	}
 	params.Set("limit", strconv.Itoa(requestLimit))
-	params.Set("apikey", d.apikey)
+	// Omitted entirely when empty: AnimeTosho is a keyless public feed, and the
+	// generic entry's key is optional.
+	if d.apikey != "" {
+		params.Set("apikey", d.apikey)
+	}
 	return strings.TrimRight(d.BaseURL, "/") + d.apiPath + "?" + encodeQuery(params)
 }
 
