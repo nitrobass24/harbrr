@@ -3,7 +3,9 @@
 ## Summary
 
 <!-- What changes and why. Link the issue this implements (file one first for anything
-     beyond a small fix — see CONTRIBUTING.md). -->
+     beyond a small fix — see CONTRIBUTING.md). For structural refactors, name the
+     docs/autobrr-app-template.md target and docs/architecture-refactor-rules.md rule this moves
+     toward. -->
 
 ## Testing
 
@@ -20,6 +22,10 @@
 ## Checklist
 
 - [ ] Tests accompany the change (table-driven, beside the code)
+- [ ] Architecture/refactor PRs cite the target rule, preserve stated invariants, and keep unrelated
+      cleanup out of scope
+- [ ] Docs/ADR updated when package ownership, shipped/planned status, security behavior, or API
+      contracts changed
 - [ ] No hand-edits under `internal/indexer/definitions/vendor/` (byte-for-byte from Jackett)
 - [ ] No secrets in code, fixtures, or logs; secret fields stay redacted end to end
 - [ ] No AI attribution / co-author lines in commits or this PR

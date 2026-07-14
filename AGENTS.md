@@ -19,6 +19,9 @@ correctness gate and must never regress.
 - harbrr is single-user self-hosted software. Prefer readable, maintainable code over paranoid
   guards for impossible states.
 - Track forward work in **GitHub issues**; keep each PR focused and land it only when its tests are green.
+- Structural refactors are judged against `docs/autobrr-app-template.md` and
+  `docs/architecture-refactor-rules.md`. If the target shape is wrong or missing, update the docs or
+  add an ADR before reshaping code.
 
 ## Non-negotiable rules (enforced by hooks / CI — do not work around)
 
@@ -44,14 +47,15 @@ correctness gate and must never regress.
 - Definitions: `internal/indexer/definitions/` — `vendor/` (embedded Jackett snapshot, read-only) +
   `dropin/` (user overrides, take precedence).
 - Native indexers: `internal/indexer/native/` (Avistaz family etc. — **post-parity**).
-- Other: `internal/search`, `internal/http` (auth/session, solver interface, redaction),
-  `internal/download` (stub — send-to-download-client is planned, see autobrr/harbrr#8),
-  `internal/secrets`, `internal/database` + `dbinterface`.
+- Other: `internal/http` (redaction and HTTP error shaping), `internal/download` (stub —
+  send-to-download-client is planned, see autobrr/harbrr#8), `internal/secrets`,
+  `internal/database` + `dbinterface`.
 - Docs: `docs/architecture.md` (design), `docs/security.md`,
-  `docs/linting.md`.
+  `docs/linting.md`, `docs/autobrr-app-template.md`, `docs/architecture-refactor-rules.md`.
 
-Before changing cross-module data flow, service boundaries, API routing, or the engine pipeline
-shape, read `docs/architecture.md`.
+Before changing cross-module data flow, service boundaries, API routing, the engine pipeline shape,
+or composition/lifecycle wiring, read `docs/architecture.md`, `docs/autobrr-app-template.md`, and
+`docs/architecture-refactor-rules.md`.
 
 ## Required commands
 

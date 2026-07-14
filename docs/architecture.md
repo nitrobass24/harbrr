@@ -2,7 +2,9 @@
 
 Read this before changing cross-module data flow, service boundaries, API routing, or the engine
 pipeline shape. It is the load-bearing summary of how harbrr is built and why. Forward work and the
-roadmap live in the project's GitHub issues.
+roadmap live in the project's GitHub issues. The target shape for the autobrr-family app spine lives
+in `docs/autobrr-app-template.md`; review rules for structural refactors live in
+`docs/architecture-refactor-rules.md`.
 
 ## What harbrr is
 

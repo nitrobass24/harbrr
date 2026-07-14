@@ -57,7 +57,7 @@ with Sonarr, Radarr, Lidarr, Readarr, Mylar, Whisparr, and any Torznab/Newznab c
 - **Cross-seed aware** — freeleech-aware matching, optional freeleech-bypass, and cross-seed
   announce targets.
 - **Secure by default** — credentials encrypted at rest, secrets redacted everywhere, and
-  encrypted config/DB backup export & import.
+  offline key rotation for stored secrets.
 - **Modern Go** — a single static binary for Linux, macOS, Windows and FreeBSD (or Docker); low footprint, fast startup.
 
 More detail on each lives in the **[feature docs](website/docs/features/)**.
