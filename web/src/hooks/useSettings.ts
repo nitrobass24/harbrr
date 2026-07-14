@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
+import type { CacheConfigUpdate, CreateNotification, LogLevel, UpdateNotification } from "@/lib/api"
 import { keys } from "@/lib/query"
-import type { CacheConfigUpdate, CreateNotification, LogLevel, UpdateNotification } from "@/types/api"
 
 export function useHealth() {
   return useQuery({ queryKey: keys.health.all, queryFn: () => api.getHealth() })

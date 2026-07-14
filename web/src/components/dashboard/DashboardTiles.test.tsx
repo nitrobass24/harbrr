@@ -16,8 +16,8 @@ describe("DashboardTiles", () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it("renders health, cache, connection, and breaker tiles from the APIs", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockImplementation((url: string) => {
-      const path = String(url)
+    vi.stubGlobal("fetch", vi.fn().mockImplementation((request: Request) => {
+      const path = request.url
       if (path.endsWith("/api/indexers")) return Promise.resolve(json(INDEXERS))
       if (path.includes("/status")) {
         const slug = path.includes("/a/") ? "a" : "b"

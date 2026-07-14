@@ -14,7 +14,7 @@ import { useServerInfo } from "@/hooks/useAppConnections"
 import { explicitUrlPort, withPort } from "@/lib/base-url"
 import { hostname, relativeTime, syncStatusClass } from "@/lib/format"
 import { cn } from "@/lib/utils"
-import type { AppConnection } from "@/types/api"
+import type { AppConnection } from "@/lib/api"
 
 export type ConnectionActions = {
   onToggle: (id: number, enabled: boolean) => void

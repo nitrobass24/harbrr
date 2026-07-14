@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { ReactNode } from "react"
-import type { AppConnection, SyncProfile } from "@/types/api"
+import type { AppConnection, SyncProfile } from "@/lib/api"
 import { ConnectionDialog } from "./ConnectionDialog"
 
 const PROFILES: SyncProfile[] = [

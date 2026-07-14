@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { api } from "@/lib/api"
-import { keys } from "@/lib/query"
 import type {
   AppConnection,
   CreateAnnounceConnection,
@@ -9,7 +8,8 @@ import type {
   CreateSyncProfile,
   UpdateConnection,
   UpdateSyncProfile
-} from "@/types/api"
+} from "@/lib/api"
+import { keys } from "@/lib/query"
 
 export function useAppConnections() {
   return useQuery({

@@ -22,9 +22,9 @@ import {
 } from "@/hooks/useIndexers"
 import { PageHeader } from "@/components/layout/PageHeader"
 import { APIError } from "@/lib/api"
+import type { Capabilities } from "@/lib/api"
 import { getBaseUrl } from "@/lib/base-url"
 import { copyText } from "@/lib/clipboard"
-import type { Capabilities } from "@/types/api"
 
 // A 401/403 on a test means the session/CSRF is the problem, not the tracker — so it
 // reads as a re-login prompt rather than "the indexer failed" (the #56 confusion).

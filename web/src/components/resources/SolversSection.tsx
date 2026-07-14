@@ -14,7 +14,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useSolvers, useSolverMutations } from "@/hooks/useResources"
-import type { Solver } from "@/types/api"
+import type { Solver } from "@/lib/api"
 
 // `null` = closed; `{ solver: null }` = add; `{ solver }` = edit that solver.
 type Editing = { solver: Solver | null } | null

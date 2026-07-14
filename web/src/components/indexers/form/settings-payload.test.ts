@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { REDACTED } from "@/types/api"
-import type { Setting, SettingField } from "@/types/api"
+import { REDACTED } from "@/lib/api"
+import type { Setting, SettingField } from "@/lib/api"
 import { defaultValues, isInfoField, settingsPayload } from "./settings-payload"
 
 const SCHEMA: SettingField[] = [

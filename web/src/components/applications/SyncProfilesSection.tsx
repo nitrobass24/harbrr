@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { useSyncProfileMutations, useSyncProfiles } from "@/hooks/useAppConnections"
-import type { CreateSyncProfile, SyncProfile } from "@/types/api"
+import type { CreateSyncProfile, SyncProfile } from "@/lib/api"
 
 const NEWZNAB_PARENTS = [
   { id: 2000, label: "Movies" },

@@ -20,8 +20,8 @@ function wrap(children: ReactNode) {
 }
 
 function stubFetch() {
-  const fetchMock = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
-    if (init?.method === "POST") {
+  const fetchMock = vi.fn().mockImplementation((request: Request) => {
+    if (request.method === "POST") {
       return Promise.resolve(new Response(JSON.stringify(MINTED), { status: 201, headers: { "Content-Type": "application/json" } }))
     }
     return Promise.resolve(new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }))

@@ -2,8 +2,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen } from "@testing-library/react"
 import type { ReactElement } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { REDACTED } from "@/types/api"
-import type { DefinitionDetail, InstanceDetail, Proxy, Solver } from "@/types/api"
+import { REDACTED } from "@/lib/api"
+import type { DefinitionDetail, InstanceDetail, Proxy, Solver } from "@/lib/api"
 import { IndexerForm, type IndexerFormSubmit } from "./IndexerForm"
 
 // The form fetches the global proxy/solver resources for its Advanced dropdowns.
@@ -15,10 +15,9 @@ function json(body: unknown): Response {
 }
 
 beforeEach(() => {
-  vi.stubGlobal("fetch", vi.fn((url: string) => {
-    const path = String(url)
-    if (path.endsWith("/api/proxies")) return Promise.resolve(json(PROXIES))
-    if (path.endsWith("/api/solvers")) return Promise.resolve(json(SOLVERS))
+  vi.stubGlobal("fetch", vi.fn((request: Request) => {
+    if (request.url.endsWith("/api/proxies")) return Promise.resolve(json(PROXIES))
+    if (request.url.endsWith("/api/solvers")) return Promise.resolve(json(SOLVERS))
     return Promise.resolve(json([]))
   }))
 })
@@ -37,7 +36,13 @@ const DEFINITION: DefinitionDetail = {
     { name: "username", label: "Username", type: "text", secret: false },
     { name: "apikey", label: "API Key", type: "password", secret: true },
   ],
-  caps: { modes: { search: ["q"] } },
+  caps: {
+    modes: { search: ["q"] },
+    allowRawSearch: false,
+    allowTVSearchIMDB: false,
+    categories: [],
+    limits: { default: 100, max: 100 },
+  },
 }
 
 const EXISTING: InstanceDetail = {

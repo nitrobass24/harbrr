@@ -21,11 +21,9 @@ function json(body: unknown, status = 200): Response {
 // connections, sync-profiles) with an empty list. The one mutation we exercise —
 // POST /app-connections (useCreateConnection) — fails 500 so create.error is set.
 function stubFetch() {
-  vi.stubGlobal("fetch", vi.fn((url: unknown, init?: RequestInit) => {
-    const u = String(url)
-    const method = (init?.method ?? "GET").toUpperCase()
-    if (u.endsWith("/auth/me")) return Promise.resolve(json(ME))
-    if (u.endsWith("/app-connections") && method === "POST") {
+  vi.stubGlobal("fetch", vi.fn((request: Request) => {
+    if (request.url.endsWith("/auth/me")) return Promise.resolve(json(ME))
+    if (request.url.endsWith("/app-connections") && request.method === "POST") {
       return Promise.resolve(json({ error: CREATE_ERROR, code: "internal" }, 500))
     }
     // Every other GET (app-connections list, announce-connections, sync-profiles,

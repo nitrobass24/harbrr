@@ -1,4 +1,4 @@
-import type { Release } from "@/types/api"
+import type { Release } from "@/lib/api"
 
 export type SearchRow = {
   release: Release

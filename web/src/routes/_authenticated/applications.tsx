@@ -31,7 +31,7 @@ import {
   useTestConnection,
   useUpdateConnection
 } from "@/hooks/useAppConnections"
-import type { AppConnection, ConnectionSyncResult, SyncReport } from "@/types/api"
+import type { AppConnection, ConnectionSyncResult, SyncReport } from "@/lib/api"
 
 export const Route = createFileRoute("/_authenticated/applications")({
   component: ApplicationsPage,

@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { ReactNode } from "react"
-import type { AppConnection } from "@/types/api"
+import type { AppConnection } from "@/lib/api"
 import { ConnectionCard } from "./ConnectionCard"
 import type { ConnectionActions } from "./ConnectionCard"
 

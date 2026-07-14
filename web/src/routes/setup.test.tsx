@@ -16,12 +16,10 @@ function json(body: unknown, status = 200): Response {
 // reporting {setupComplete:false} — so the only way the /login guard can learn setup
 // is done is the cache the setup mutation seeds on success (the U16-F1 fix).
 function stubAuthFetch() {
-  vi.stubGlobal("fetch", vi.fn((url: unknown, init?: RequestInit) => {
-    const u = String(url)
-    const method = (init?.method ?? "GET").toUpperCase()
-    if (u.endsWith("/auth/me")) return Promise.resolve(json({ code: "unauthorized", error: "no session" }, 401))
-    if (u.endsWith("/auth/setup") && method === "POST") return Promise.resolve(json({ username: "admin" }, 201))
-    if (u.endsWith("/auth/setup")) return Promise.resolve(json({ setupComplete: false }))
+  vi.stubGlobal("fetch", vi.fn((request: Request) => {
+    if (request.url.endsWith("/auth/me")) return Promise.resolve(json({ code: "unauthorized", error: "no session" }, 401))
+    if (request.url.endsWith("/auth/setup") && request.method === "POST") return Promise.resolve(json({ username: "admin" }, 201))
+    if (request.url.endsWith("/auth/setup")) return Promise.resolve(json({ setupComplete: false }))
     return Promise.resolve(json({}))
   }))
 }
@@ -67,10 +65,9 @@ describe("Setup route", () => {
     // NOT render — submitting it on a configured instance would just 409. Show a
     // retry instead; on recovery the real first-run form appears.
     let setupOk = false
-    vi.stubGlobal("fetch", vi.fn((url: unknown) => {
-      const u = String(url)
-      if (u.endsWith("/auth/me")) return Promise.resolve(json({ code: "unauthorized" }, 401))
-      if (u.endsWith("/auth/setup")) {
+    vi.stubGlobal("fetch", vi.fn((request: Request) => {
+      if (request.url.endsWith("/auth/me")) return Promise.resolve(json({ code: "unauthorized" }, 401))
+      if (request.url.endsWith("/auth/setup")) {
         return Promise.resolve(setupOk ? json({ setupComplete: false }) : json({ code: "internal" }, 500))
       }
       return Promise.resolve(json({}))

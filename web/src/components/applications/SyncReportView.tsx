@@ -1,7 +1,7 @@
 import { SyncError } from "@/components/applications/SyncError"
 import { syncStatusClass } from "@/lib/format"
 import { cn } from "@/lib/utils"
-import type { SyncReport } from "@/types/api"
+import type { SyncReport } from "@/lib/api"
 
 const ACTION_STYLE: Record<string, string> = {
   created: "text-ok",

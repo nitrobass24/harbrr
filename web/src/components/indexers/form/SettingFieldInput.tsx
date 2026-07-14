@@ -3,7 +3,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
 import { isInfoField } from "@/components/indexers/form/settings-payload"
-import type { SettingField } from "@/types/api"
+import type { SettingField } from "@/lib/api"
 
 // Renders one definition setting by its schema type: text | password |
 // checkbox | select | multi-select | info*. Secret fields are masked; their

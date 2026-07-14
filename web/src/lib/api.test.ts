@@ -14,11 +14,14 @@ describe("ApiClient", () => {
   let unauthorized: ReturnType<typeof vi.fn<() => void>>
 
   beforeEach(() => {
-    client = new ApiClient()
     unauthorized = vi.fn<() => void>()
-    client.onUnauthorized = unauthorized
     fetchMock = vi.fn().mockResolvedValue(jsonResponse(204))
+    // Stub the global before constructing the client: the client's fetch indirection
+    // reads globalThis.fetch at call time, but stubbing first keeps this in step with
+    // how the app actually boots (module load happens after index.html sets up fetch).
     vi.stubGlobal("fetch", fetchMock)
+    client = new ApiClient()
+    client.onUnauthorized = unauthorized
   })
 
   afterEach(() => {
@@ -26,33 +29,34 @@ describe("ApiClient", () => {
     document.cookie = "harbrr_csrf=; expires=Thu, 01 Jan 1970 00:00:00 GMT"
   })
 
-  function sentHeaders(): Record<string, string> {
-    const init = fetchMock.mock.calls[0][1] as RequestInit
-    return init.headers as Record<string, string>
+  // openapi-fetch dispatches `fetch(request: Request, requestInitExt?)`, not
+  // `fetch(url, init)`, so assertions read the sent Request's own headers/method/url.
+  function sentRequest(callIndex = 0): Request {
+    return fetchMock.mock.calls[callIndex][0] as Request
   }
 
   it("sends X-CSRF-Token on mutations from the companion cookie", async () => {
     document.cookie = "harbrr_csrf=tok-from-cookie"
     await client.logout()
-    expect(sentHeaders()["X-CSRF-Token"]).toBe("tok-from-cookie")
+    expect(sentRequest().headers.get("X-CSRF-Token")).toBe("tok-from-cookie")
   })
 
   it("falls back to the me-payload token when the cookie is absent", async () => {
     client.setCsrfToken("tok-from-me")
     await client.logout()
-    expect(sentHeaders()["X-CSRF-Token"]).toBe("tok-from-me")
+    expect(sentRequest().headers.get("X-CSRF-Token")).toBe("tok-from-me")
   })
 
   it("omits the CSRF header entirely when no token exists (auth disabled)", async () => {
     await client.logout()
-    expect(sentHeaders()["X-CSRF-Token"]).toBeUndefined()
+    expect(sentRequest().headers.get("X-CSRF-Token")).toBeNull()
   })
 
   it("never sends the CSRF header on reads", async () => {
     document.cookie = "harbrr_csrf=tok-from-cookie"
     fetchMock.mockResolvedValue(jsonResponse(200, { setupComplete: true }))
     await client.getSetup()
-    expect(sentHeaders()["X-CSRF-Token"]).toBeUndefined()
+    expect(sentRequest().headers.get("X-CSRF-Token")).toBeNull()
   })
 
   it("parses the error envelope into APIError with the machine code", async () => {
@@ -77,10 +81,8 @@ describe("ApiClient", () => {
     expect(unauthorized).not.toHaveBeenCalled() // /auth/logout is an auth endpoint
 
     fetchMock.mockResolvedValue(jsonResponse(401, { error: "no session", code: "unauthorized" }))
-    // Simulate any non-auth resource call through the private request path.
-    const err = await (client as unknown as {
-      request: (e: string, o?: object) => Promise<unknown>
-    }).request("/indexers").catch((e: unknown) => e)
+    // Any non-auth resource call goes through the same 401 handling.
+    const err = await client.listIndexers().catch((e: unknown) => e)
     expect(err).toBeInstanceOf(APIError)
     expect(unauthorized).toHaveBeenCalledTimes(1)
   })
@@ -90,7 +92,6 @@ describe("ApiClient", () => {
     await client.getMe()
     fetchMock.mockResolvedValueOnce(jsonResponse(204))
     await client.logout()
-    const init = fetchMock.mock.calls[1][1] as RequestInit
-    expect((init.headers as Record<string, string>)["X-CSRF-Token"]).toBe("tok-me")
+    expect(sentRequest(1).headers.get("X-CSRF-Token")).toBe("tok-me")
   })
 })

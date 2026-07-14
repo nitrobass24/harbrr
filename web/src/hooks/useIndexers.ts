@@ -1,8 +1,8 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { api, APIError } from "@/lib/api"
+import type { AddIndexer, Instance, TestResult, UpdateIndexer } from "@/lib/api"
 import { keys } from "@/lib/query"
-import type { AddIndexer, Instance, TestResult, UpdateIndexer } from "@/types/api"
 
 export function useIndexers() {
   return useQuery({

@@ -1,5 +1,5 @@
-import { REDACTED } from "@/types/api"
-import type { Setting, SettingField } from "@/types/api"
+import { REDACTED } from "@/lib/api"
+import type { Setting, SettingField } from "@/lib/api"
 
 // isInfoField: info* rows are rendered documentation, never inputs, and never
 // submitted (text | password | checkbox | select | multi-select are inputs).

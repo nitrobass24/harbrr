@@ -1,7 +1,7 @@
 import { useQueries } from "@tanstack/react-query"
 import { api } from "@/lib/api"
+import type { SearchParams } from "@/lib/api"
 import { keys } from "@/lib/query"
-import type { SearchParams } from "@/types/api"
 
 // Fan-out: one query per selected indexer, merged by the page. Keys carry the
 // full param set so paging/re-querying caches independently. Queries only run

@@ -12,7 +12,7 @@ import {
 import { Label } from "@/components/ui/label"
 import { useConnectionStatus } from "@/hooks/useAppConnections"
 import { useIndexers } from "@/hooks/useIndexers"
-import type { AppConnection } from "@/types/api"
+import type { AppConnection } from "@/lib/api"
 
 // Which harbrr indexers a scope=selected connection mirrors. PUT replaces the
 // whole selection (instanceIds), so the dialog stages a full set.

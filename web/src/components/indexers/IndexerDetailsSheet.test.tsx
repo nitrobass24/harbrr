@@ -11,8 +11,8 @@ describe("IndexerDetailsSheet", () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it("renders the summed failure count from the per-kind object without crashing", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockImplementation((url: string) => {
-      const path = String(url)
+    vi.stubGlobal("fetch", vi.fn().mockImplementation((request: Request) => {
+      const path = request.url
       if (path.includes("/stats")) {
         return Promise.resolve(json({
           slug: "torrentleech",

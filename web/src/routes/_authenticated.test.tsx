@@ -30,9 +30,8 @@ describe("_authenticated guard", () => {
     // me is a transient 500 (server restart / network blip), not a 401. Everything
     // else answers empty so the shell would render if we got that far.
     let meOk = false
-    vi.stubGlobal("fetch", vi.fn((url: unknown) => {
-      const u = String(url)
-      if (u.endsWith("/auth/me")) return Promise.resolve(meOk ? json(ME) : json({ code: "internal", error: "boom" }, 500))
+    vi.stubGlobal("fetch", vi.fn((request: Request) => {
+      if (request.url.endsWith("/auth/me")) return Promise.resolve(meOk ? json(ME) : json({ code: "internal", error: "boom" }, 500))
       return Promise.resolve(json([]))
     }))
 

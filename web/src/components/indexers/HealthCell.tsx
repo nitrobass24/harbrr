@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils"
 import { relativeTime } from "@/lib/format"
-import type { IndexerStatus } from "@/types/api"
+import type { IndexerStatus } from "@/lib/api"
 
 const EVENT_LABEL: Record<string, string> = {
   auth_failure: "auth failed",

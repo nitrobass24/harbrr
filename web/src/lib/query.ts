@@ -1,5 +1,5 @@
 import { QueryClient } from "@tanstack/react-query"
-import type { SearchParams } from "@/types/api"
+import type { SearchParams } from "@/lib/api"
 
 // QueryClient defaults, per docs/autobrr-app-template.md "Frontend" (QueryClient
 // defaults live in web/src/lib/query.ts). These values are the currently-effective

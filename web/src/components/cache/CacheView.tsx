@@ -9,7 +9,7 @@ import { LoadError, LoadingBlock } from "@/components/ui/load-error"
 import { useCacheConfig, useCacheStats, useFlushCache, useUpdateCacheConfig } from "@/hooks/useSettings"
 import { formatSize } from "@/lib/format"
 import { cn } from "@/lib/utils"
-import type { CacheConfig } from "@/types/api"
+import type { CacheConfig } from "@/lib/api"
 
 // Cache observability + the live-tunable knobs, the body of the Cache page.
 // trackerHitsSaved is the headline: durable tracker requests answered from

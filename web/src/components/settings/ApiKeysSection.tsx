@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input"
 import { useApiKeys, useMintApiKey, useRevokeApiKey } from "@/hooks/useSettings"
 import { copyText } from "@/lib/clipboard"
 import { relativeTime } from "@/lib/format"
-import type { MintedApiKey } from "@/types/api"
+import type { MintedApiKey } from "@/lib/api"
 
 // Torznab/API keys for consumers (*arr, autobrr, cross-seed). The plaintext
 // key exists in the response of the mint call ONLY — this section shows it

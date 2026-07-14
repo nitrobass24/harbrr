@@ -8,8 +8,8 @@ import { SettingFieldInput } from "@/components/indexers/form/SettingFieldInput"
 import { defaultValues, isInfoField, settingsPayload } from "@/components/indexers/form/settings-payload"
 import { useProxies, useSolvers } from "@/hooks/useResources"
 import { APIError } from "@/lib/api"
+import type { AddIndexer, DefinitionDetail, InstanceDetail, SettingField, UpdateIndexer } from "@/lib/api"
 import { cn } from "@/lib/utils"
-import type { AddIndexer, DefinitionDetail, InstanceDetail, SettingField, UpdateIndexer } from "@/types/api"
 
 // The one reserved engine setting still entered inline. Proxy + FlareSolverr are
 // now global resources referenced by id (proxy_type/proxy_url, solver_type=

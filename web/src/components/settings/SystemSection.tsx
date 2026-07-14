@@ -8,7 +8,7 @@ import { useAuth } from "@/hooks/useAuth"
 import { useAllIndexerStats, useChangePassword, useHealth, useLogLevel, useSetLogLevel } from "@/hooks/useSettings"
 import { getBaseUrl } from "@/lib/base-url"
 import { relativeTime } from "@/lib/format"
-import type { LogLevel } from "@/types/api"
+import type { LogLevel } from "@/lib/api"
 
 const LEVELS: LogLevel[] = ["trace", "debug", "info", "warn", "error"]
 

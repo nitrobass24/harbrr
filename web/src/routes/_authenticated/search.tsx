@@ -10,13 +10,13 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
+  DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { NativeSelect } from "@/components/ui/native-select"
 import { useIndexerCapabilitiesMany, useIndexers } from "@/hooks/useIndexers"
 import { useSearchFanout } from "@/hooks/useSearch"
-import type { SearchParams } from "@/types/api"
+import type { SearchParams } from "@/lib/api"
 
 export const Route = createFileRoute("/_authenticated/search")({
   component: SearchPage,

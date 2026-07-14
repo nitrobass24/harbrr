@@ -1,7 +1,7 @@
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { useIndexerCapabilities, useIndexerStats, useIndexerStatuses } from "@/hooks/useIndexers"
 import { relativeTime } from "@/lib/format"
-import type { Capabilities, IndexerFailureCounts } from "@/types/api"
+import type { Capabilities, IndexerFailureCounts } from "@/lib/api"
 
 // Sums the per-kind failure tally into the single count the details sheet displays.
 function totalFailures(failures: IndexerFailureCounts | undefined): number {

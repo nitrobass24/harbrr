@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
+import type { CreateProxy, CreateSolver, UpdateProxy, UpdateSolver } from "@/lib/api"
 import { keys } from "@/lib/query"
-import type { CreateProxy, CreateSolver, UpdateProxy, UpdateSolver } from "@/types/api"
 
 // Global proxy + anti-bot-solver resources an indexer references by id. Kept
 // together (one screen, one concept) but with independent query keys.

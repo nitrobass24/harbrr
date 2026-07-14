@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
-import type { SyncReport } from "@/types/api"
+import type { SyncReport } from "@/lib/api"
 import { SyncReportView } from "./SyncReportView"
 
 const PARTIAL: SyncReport = {

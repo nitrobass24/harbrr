@@ -3,7 +3,7 @@ import { render, renderHook, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { useEffect, type ReactNode } from "react"
 import { useSetIndexerEnabled, useTestIndexer } from "./useIndexers"
-import type { Instance } from "@/types/api"
+import type { Instance } from "@/lib/api"
 
 const { toastSuccess, toastError, testIndexerMock, setIndexerEnabledMock } = vi.hoisted(() => ({
   toastSuccess: vi.fn(),

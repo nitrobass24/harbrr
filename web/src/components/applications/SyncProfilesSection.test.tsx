@@ -29,8 +29,8 @@ function wrap(children: ReactNode) {
 }
 
 function stubFetch() {
-  const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
-    if (init?.method === "POST" && String(url).endsWith("/sync-profiles")) {
+  const fetchMock = vi.fn().mockImplementation((request: Request) => {
+    if (request.method === "POST" && request.url.endsWith("/sync-profiles")) {
       return Promise.resolve(jsonResponse(CREATED, 201))
     }
     return Promise.resolve(jsonResponse([]))
@@ -69,9 +69,9 @@ describe("SyncProfilesSection", () => {
 
     // The dialog closes on a successful create — wait for that before inspecting the request.
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
-    const postCall = fetchMock.mock.calls.find(([, init]) => (init as RequestInit | undefined)?.method === "POST")
+    const postCall = fetchMock.mock.calls.find(([request]) => (request as Request).method === "POST")
     expect(postCall).toBeTruthy()
-    const body: unknown = JSON.parse((postCall![1] as RequestInit).body as string)
+    const body: unknown = JSON.parse(await (postCall![0] as Request).text())
     expect(body).toEqual({
       name: "tv-profile",
       categories: [2000, 3030, 5000],

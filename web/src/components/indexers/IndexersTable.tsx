@@ -15,7 +15,7 @@ import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { hostname } from "@/lib/format"
 import { cn } from "@/lib/utils"
-import type { Instance, IndexerStatus } from "@/types/api"
+import type { Instance, IndexerStatus } from "@/lib/api"
 
 export type IndexerRowData = {
   instance: Instance

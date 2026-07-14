@@ -3,7 +3,7 @@ import { renderHook, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { type ReactNode } from "react"
 import { useSetConnectionEnabled } from "./useAppConnections"
-import type { AppConnection } from "@/types/api"
+import type { AppConnection } from "@/lib/api"
 
 const { toastError, setConnectionEnabledMock } = vi.hoisted(() => ({
   toastError: vi.fn(),

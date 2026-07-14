@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
 import { useSyncProfiles } from "@/hooks/useAppConnections"
 import { defaultHarbrrUrl } from "@/lib/base-url"
-import type { AppConnection, ConnectionKind, CreateConnection, UpdateConnection } from "@/types/api"
+import type { AppConnection, ConnectionKind, CreateConnection, UpdateConnection } from "@/lib/api"
 
 const KINDS: ConnectionKind[] = ["sonarr", "radarr", "lidarr", "readarr", "whisparr", "qui"]
 

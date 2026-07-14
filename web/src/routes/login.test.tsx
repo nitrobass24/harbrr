@@ -17,17 +17,15 @@ const ME = { username: "admin", authMethod: "password", csrfToken: "tok" }
 // authenticated shell renders.
 function stubAuthFetch() {
   let loggedIn = false
-  vi.stubGlobal("fetch", vi.fn((url: unknown, init?: RequestInit) => {
-    const u = String(url)
-    const method = (init?.method ?? "GET").toUpperCase()
-    if (u.endsWith("/auth/login") && method === "POST") {
+  vi.stubGlobal("fetch", vi.fn((request: Request) => {
+    if (request.url.endsWith("/auth/login") && request.method === "POST") {
       loggedIn = true
       return Promise.resolve(json({}))
     }
-    if (u.endsWith("/auth/me")) {
+    if (request.url.endsWith("/auth/me")) {
       return Promise.resolve(loggedIn ? json(ME) : json({ code: "unauthorized", error: "no session" }, 401))
     }
-    if (u.endsWith("/auth/setup")) return Promise.resolve(json({ setupComplete: true }))
+    if (request.url.endsWith("/auth/setup")) return Promise.resolve(json({ setupComplete: true }))
     return Promise.resolve(json([]))
   }))
 }

@@ -23,7 +23,7 @@ import {
 } from "@/hooks/useAppConnections"
 import { defaultHarbrrUrl, explicitUrlPort } from "@/lib/base-url"
 import { hostname } from "@/lib/format"
-import type { AnnounceKind } from "@/types/api"
+import type { AnnounceKind } from "@/lib/api"
 
 // Cross-seed push targets: harbrr announces newly-seen releases to qui's
 // cross-seed webhook or cross-seed v6's /api/announce. The API has no PATCH or

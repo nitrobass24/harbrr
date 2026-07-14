@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
 import { useProxies, useProxyMutations } from "@/hooks/useResources"
-import type { Proxy, ProxyType } from "@/types/api"
+import type { Proxy, ProxyType } from "@/lib/api"
 
 const PROXY_TYPES: ProxyType[] = ["http", "https", "socks5", "socks5h"]
 

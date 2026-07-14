@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { ReactNode } from "react"
-import type { AppConnection, ConnectionStatus, Instance } from "@/types/api"
+import type { AppConnection, ConnectionStatus, Instance } from "@/lib/api"
 import { SelectIndexersDialog } from "./SelectIndexersDialog"
 
 const CONN: AppConnection = {
@@ -77,8 +77,8 @@ function wrap(children: ReactNode) {
 // rejected/error response, or a promise that never settles (simulating the
 // in-flight window before the query resolves).
 function stubFetch(statusImpl: () => Promise<Response>) {
-  vi.stubGlobal("fetch", vi.fn((url: string) => {
-    if (url.includes("/status")) return statusImpl()
+  vi.stubGlobal("fetch", vi.fn((request: Request) => {
+    if (request.url.includes("/status")) return statusImpl()
     return Promise.resolve(jsonResponse(INDEXERS))
   }))
 }
