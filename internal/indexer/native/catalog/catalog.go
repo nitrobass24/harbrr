@@ -22,6 +22,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/native/nzbindex"
 	"github.com/autobrr/harbrr/internal/indexer/native/passthepopcorn"
 	"github.com/autobrr/harbrr/internal/indexer/native/torrentday"
+	"github.com/autobrr/harbrr/internal/indexer/native/torznab"
 )
 
 // All builds the native-family catalog keyed by definition id, aggregating every
@@ -44,6 +45,7 @@ func All() map[string]native.Family {
 		nzbindex.Families(),
 		passthepopcorn.Families(),
 		torrentday.Families(),
+		torznab.Families(),
 	} {
 		for _, f := range fams {
 			m[f.Definition.ID] = f

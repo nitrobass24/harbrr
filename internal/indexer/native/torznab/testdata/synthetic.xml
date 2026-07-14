@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Synthetic fixture (NOT a live capture) covering parse branches the real MoreThanTV
+  capture (torznab_morethantv.xml) does not exercise:
+    - a torznab:attr "magneturl" (Magnet field)
+    - no <category> elements at all -> falls back to the torznab:attr "category" value
+    - no seeders/peers/downloadvolumefactor/uploadvolumefactor attrs at all -> the
+      MoreThanTVAPI-override defaults (seeders/peers -> 0, DVF -> 0, UVF -> 1)
+    - a plain <link> with NO x-bittorrent enclosure at all (link is not overridden)
+  No real secrets appear here; the placeholder apikey lives only in *_test.go.
+-->
+<rss version="2.0" xmlns:torznab="http://torznab.com/schemas/2015/feed">
+	<channel>
+		<item>
+			<title>Synthetic.Release.2024.1080p.WEB-DL</title>
+			<guid isPermaLink="true">https://torznab.example.test/torrents.php?id=999&amp;torrentid=999</guid>
+			<link>https://torznab.example.test/torrents.php?action=download&amp;id=999&amp;authkey=SYNTHKEY&amp;torrent_pass=SYNTHPASS</link>
+			<comments>https://torznab.example.test/torrents.php?id=999&amp;torrentid=999#comments</comments>
+			<pubDate>Wed, 01 Jan 2025 12:00:00 +0000</pubDate>
+			<description>A synthetic release for offline parse coverage.</description>
+			<torznab:attr name="category" value="2050" />
+			<torznab:attr name="magneturl" value="magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&amp;dn=Synthetic.Release.2024.1080p.WEB-DL" />
+			<torznab:attr name="infohash" value="0123456789abcdef0123456789abcdef01234567" />
+			<torznab:attr name="imdbid" value="tt1234567" />
+		</item>
+	</channel>
+</rss>
