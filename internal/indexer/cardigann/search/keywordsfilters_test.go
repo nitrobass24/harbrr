@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/selector"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 )
@@ -165,7 +166,7 @@ func TestParseResults_KeywordsFiltersAndMatch(t *testing.T) {
 		BaseURL:    "https://kw.invalid/",
 	}
 
-	releases, err := ParseResults(def, body, "", Query{Keywords: "big buck bunny"}, deps)
+	releases, err := ParseResults(def, body, "", Query{Keywords: "big buck bunny"}, selector.New(), deps)
 	if err != nil {
 		t.Fatalf("ParseResults: %v", err)
 	}

@@ -229,7 +229,7 @@ func TestContainsCaseBlockArm(t *testing.T) {
 			loader.CaseEntry{Key: `a:contains("Films"):contains("Bluray remux 4K")`, Value: loader.Scalar{Value: "uhd-remux", Set: true}},
 		),
 	}
-	v, found, err := New().Field(rows[0], block)
+	v, found, err := New().Field(rows[0], block, nil)
 	if err != nil || !found {
 		t.Fatalf("case field err=%v found=%v", err, found)
 	}
@@ -266,7 +266,7 @@ func TestCaseBlockDeclaredOrderFirstMatchWins(t *testing.T) {
 			loader.CaseEntry{Key: `a:contains("Films"):contains("Bluray Remux 4K")`, Value: loader.Scalar{Value: "movies-uhd", Set: true}},
 		),
 	}
-	v, found, err := New().Field(rows[0], block)
+	v, found, err := New().Field(rows[0], block, nil)
 	if err != nil || !found {
 		t.Fatalf("case field err=%v found=%v", err, found)
 	}
@@ -300,7 +300,7 @@ func TestCaseBlockStarIsPositional(t *testing.T) {
 			loader.CaseEntry{Key: "span.freeleech", Value: loader.Scalar{Value: "specific", Set: true}},
 		),
 	}
-	v, found, err := New().Field(rows[0], block)
+	v, found, err := New().Field(rows[0], block, nil)
 	if err != nil || !found {
 		t.Fatalf("case field err=%v found=%v", err, found)
 	}
@@ -328,7 +328,7 @@ func TestContainsRemoveRespectsCase(t *testing.T) {
 		Selector: "div.tags",
 		Remove:   `span:contains("VIP")`,
 	}
-	v, found, err := New().Field(rows[0], block)
+	v, found, err := New().Field(rows[0], block, nil)
 	if err != nil || !found {
 		t.Fatalf("field err=%v found=%v", err, found)
 	}

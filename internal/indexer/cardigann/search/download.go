@@ -313,7 +313,7 @@ func selectValue(du *template.DownloadURI, body []byte, sel loader.SelectorField
 	if err != nil {
 		return "", false, fmt.Errorf("parsing download page: %w", err)
 	}
-	value, found, err := eng.Field(doc.Root(), loader.SelectorBlock{Selector: rendered, Attribute: sel.Attribute})
+	value, found, err := eng.Field(doc.Root(), loader.SelectorBlock{Selector: rendered, Attribute: sel.Attribute}, nil)
 	if err != nil {
 		return "", false, fmt.Errorf("download selector %q: %w", rendered, err)
 	}

@@ -33,7 +33,7 @@ func TestCheckErrorBlocksMessageSelector(t *testing.T) {
 			Selector: "div.error",
 			Message:  &loader.SelectorBlock{Selector: "p.detail"},
 		}}
-		msg, matched, err := New().CheckErrorBlocks(root, blocks)
+		msg, matched, err := New().CheckErrorBlocks(root, blocks, nil)
 		if err != nil {
 			t.Fatalf("CheckErrorBlocks: %v", err)
 		}
@@ -49,7 +49,7 @@ func TestCheckErrorBlocksMessageSelector(t *testing.T) {
 			Selector: "div.error",
 			Message:  &loader.SelectorBlock{Selector: "p.nonexistent"},
 		}}
-		msg, matched, err := New().CheckErrorBlocks(root, blocks)
+		msg, matched, err := New().CheckErrorBlocks(root, blocks, nil)
 		if err == nil {
 			t.Fatalf("CheckErrorBlocks: want an error when the message selector doesn't match, got msg=%q matched=%v", msg, matched)
 		}
@@ -65,7 +65,7 @@ func TestCheckErrorBlocksMessageSelector(t *testing.T) {
 		t.Parallel()
 		root := rootFromHTML(t, page)
 		blocks := []loader.ErrorBlock{{Selector: "div.error"}}
-		msg, matched, err := New().CheckErrorBlocks(root, blocks)
+		msg, matched, err := New().CheckErrorBlocks(root, blocks, nil)
 		if err != nil {
 			t.Fatalf("CheckErrorBlocks: %v", err)
 		}
@@ -78,7 +78,7 @@ func TestCheckErrorBlocksMessageSelector(t *testing.T) {
 		t.Parallel()
 		root := rootFromHTML(t, page)
 		blocks := []loader.ErrorBlock{{Selector: "div.nonexistent"}}
-		msg, matched, err := New().CheckErrorBlocks(root, blocks)
+		msg, matched, err := New().CheckErrorBlocks(root, blocks, nil)
 		if err != nil || matched || msg != "" {
 			t.Fatalf("CheckErrorBlocks = (%q, %v, %v), want (\"\", false, nil)", msg, matched, err)
 		}

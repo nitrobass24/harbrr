@@ -49,7 +49,7 @@ func looksLoggedOut(def *loader.Definition, body []byte, contentType string, que
 	if err != nil {
 		return false
 	}
-	_, found, err := eng.Field(doc.Root(), loader.SelectorBlock{Selector: rendered})
+	_, found, err := eng.Field(doc.Root(), loader.SelectorBlock{Selector: rendered}, nil)
 	if err != nil {
 		return false
 	}

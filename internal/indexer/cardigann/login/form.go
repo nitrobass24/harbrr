@@ -190,7 +190,7 @@ func (e *Executor) extractSelectorInputs(body []byte, inputs map[string]loader.S
 	out := url.Values{}
 	for _, name := range sortedSelectorKeys(inputs) {
 		blk := inputs[name]
-		val, found, ferr := e.Selector.Field(root, blk)
+		val, found, ferr := e.Selector.Field(root, blk, e.eval)
 		if ferr != nil {
 			return nil, fmt.Errorf("extracting selector input %q: %w", name, ferr)
 		}
@@ -261,7 +261,7 @@ func (e *Executor) selectorMatches(body []byte, sel string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("rendering test selector: %w", err)
 	}
-	_, found, err := e.Selector.Field(doc.Root(), loader.SelectorBlock{Selector: rendered})
+	_, found, err := e.Selector.Field(doc.Root(), loader.SelectorBlock{Selector: rendered}, e.eval)
 	if err != nil {
 		// Report the ORIGINAL (un-rendered) selector text, never the rendered
 		// form, which could interpolate a config value into the message.

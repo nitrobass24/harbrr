@@ -1,6 +1,7 @@
 package login
 
 import (
+	"fmt"
 	stdhttp "net/http"
 	"net/http/cookiejar"
 	"sync"
@@ -145,13 +146,20 @@ func New(opts ...Option) *Executor {
 	if e.Selector == nil {
 		e.Selector = selector.New()
 	}
-	// Bind the selector's template seam to evaluate against this executor's
-	// config, so SelectorInputs/error-message templates resolve the same way the
-	// rest of the pipeline does.
-	e.Selector.EvalTemplate = func(s string) (string, error) {
-		return template.Eval(s, e.templateContext())
-	}
 	return e
+}
+
+// eval evaluates a Go-template fragment against this executor's config, so
+// SelectorInputs/error-message templates resolve the same way the rest of the
+// pipeline does. Passed explicitly into each Selector.Field/CheckErrorBlocks
+// call rather than bound onto the selector engine, which holds no per-call
+// state.
+func (e *Executor) eval(s string) (string, error) {
+	out, err := template.Eval(s, e.templateContext())
+	if err != nil {
+		return "", fmt.Errorf("evaluating template fragment: %w", err)
+	}
+	return out, nil
 }
 
 // templateContext builds a fresh template.Context seeded with the executor's

@@ -203,7 +203,7 @@ func (e *Executor) checkErrors(l *loader.Login, rawURL string, body []byte, stat
 	if err != nil {
 		return fmt.Errorf("parsing login response from %s: %w", apphttp.SchemeHost(rawURL), err)
 	}
-	msg, matched, err := e.Selector.CheckErrorBlocks(doc.Root(), l.Error)
+	msg, matched, err := e.Selector.CheckErrorBlocks(doc.Root(), l.Error, e.eval)
 	if err != nil {
 		return fmt.Errorf("checking login error selectors from %s: %w", apphttp.SchemeHost(rawURL), err)
 	}

@@ -17,32 +17,31 @@ var ErrSelectorNoMatch = errors.New("selector matched no element")
 
 // EvalFunc is the injectable template-eval seam. Jackett interleaves Go-template
 // evaluation into handleSelector (for selector strings, case values, text, and
-// default). To keep this stage decoupled from the template package,
-// the Engine takes an EvalFunc; New defaults it to identity so selector tests
-// use literal values and the engine binds template.Eval later.
+// default). To keep this stage decoupled from the template package, each
+// row-extraction call takes an EvalFunc explicitly rather than the Engine
+// holding one: a nil EvalFunc defaults to identity (see evalFragment), so
+// callers with no template context (most selector tests) can pass nil.
 type EvalFunc func(string) (string, error)
 
 // Engine extracts field values from parsed HTML/JSON documents, reproducing
-// Jackett's CardigannIndexer.handleSelector / handleJsonSelector semantics.
-type Engine struct {
-	// EvalTemplate evaluates a Go-template fragment. Defaults to identity.
-	EvalTemplate EvalFunc
-}
+// Jackett's CardigannIndexer.handleSelector / handleJsonSelector semantics. It
+// holds no per-call state, so a single Engine is safe to share and call
+// concurrently across searches.
+type Engine struct{}
 
-// New constructs an Engine with EvalTemplate defaulting to identity.
+// New constructs an Engine.
 func New() *Engine {
-	return &Engine{EvalTemplate: identity}
+	return &Engine{}
 }
 
-func identity(s string) (string, error) { return s, nil }
-
-// eval runs the injected template seam, defaulting to identity when unset so a
-// zero-value Engine is still usable.
-func (e *Engine) eval(s string) (string, error) {
-	if e.EvalTemplate == nil {
+// evalFragment runs eval over s, defaulting to identity when eval is nil so a
+// caller with no template context can pass nil rather than wiring an identity
+// closure.
+func evalFragment(eval EvalFunc, s string) (string, error) {
+	if eval == nil {
 		return s, nil
 	}
-	out, err := e.EvalTemplate(s)
+	out, err := eval(s)
 	if err != nil {
 		return "", fmt.Errorf("evaluating template fragment: %w", err)
 	}
@@ -112,9 +111,14 @@ func (r Row) backend() node {
 // selector string, on case values, and on text. The default is NOT applied here
 // (Jackett applies it in the field loop); a non-optional empty result
 // is reported via found=false so the caller decides between default and error.
-func (e *Engine) Field(row Row, block loader.SelectorBlock) (value string, found bool, err error) {
+//
+// eval is the template-eval seam for THIS call only (e.g. the search stage
+// rebuilds it per row to see the growing .Result map); nil defaults to identity.
+// The Engine itself holds no eval state, so concurrent callers never share or
+// race on it.
+func (e *Engine) Field(row Row, block loader.SelectorBlock, eval EvalFunc) (value string, found bool, err error) {
 	if block.Text != nil {
-		v, err := e.eval(block.Text.String())
+		v, err := evalFragment(eval, block.Text.String())
 		if err != nil {
 			return "", false, err
 		}
@@ -123,7 +127,7 @@ func (e *Engine) Field(row Row, block loader.SelectorBlock) (value string, found
 
 	cur := row.backend()
 	if block.Selector != "" {
-		sel, err := e.eval(block.Selector)
+		sel, err := evalFragment(eval, block.Selector)
 		if err != nil {
 			return "", false, err
 		}
@@ -143,7 +147,7 @@ func (e *Engine) Field(row Row, block loader.SelectorBlock) (value string, found
 		}
 	}
 
-	return e.extract(cur, block)
+	return e.extract(cur, block, eval)
 }
 
 // extract performs the case/attribute/text branch of handleSelector after the
@@ -155,10 +159,10 @@ func (e *Engine) Field(row Row, block loader.SelectorBlock) (value string, found
 // the row node's canonical string. No vendored JSON def authors a selector-less
 // field, so this path is never exercised; the engine's required/optional handling
 // would mask it regardless. Documented rather than special-cased.
-func (e *Engine) extract(cur node, block loader.SelectorBlock) (string, bool, error) {
+func (e *Engine) extract(cur node, block loader.SelectorBlock, eval EvalFunc) (string, bool, error) {
 	switch {
 	case block.Case.Len() > 0:
-		return e.applyCase(cur, block.Case)
+		return e.applyCase(cur, block.Case, eval)
 	case block.Attribute != "":
 		v, ok := cur.attribute(block.Attribute)
 		if !ok {
@@ -178,7 +182,7 @@ func (e *Engine) extract(cur node, block loader.SelectorBlock) (string, bool, er
 // still wins and a "*" authored before a specific arm would win over it, exactly
 // as Jackett's break-on-first-match loop does. No match returns found=false (the
 // caller treats this as required-error or optional-skip).
-func (e *Engine) applyCase(cur node, cases loader.CaseBlock) (string, bool, error) {
+func (e *Engine) applyCase(cur node, cases loader.CaseBlock, eval EvalFunc) (string, bool, error) {
 	for _, c := range cases.Ordered() {
 		ok, err := cur.caseMatch(c.Key)
 		if err != nil {
@@ -187,7 +191,7 @@ func (e *Engine) applyCase(cur node, cases loader.CaseBlock) (string, bool, erro
 		if !ok {
 			continue
 		}
-		v, err := e.eval(c.Value.String())
+		v, err := evalFragment(eval, c.Value.String())
 		if err != nil {
 			return "", false, err
 		}
