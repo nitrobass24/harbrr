@@ -1,7 +1,6 @@
 package login
 
 import (
-	"fmt"
 	stdhttp "net/http"
 	"net/http/cookiejar"
 	"sync"
@@ -155,11 +154,7 @@ func New(opts ...Option) *Executor {
 // call rather than bound onto the selector engine, which holds no per-call
 // state.
 func (e *Executor) eval(s string) (string, error) {
-	out, err := template.Eval(s, e.templateContext())
-	if err != nil {
-		return "", fmt.Errorf("evaluating template fragment: %w", err)
-	}
-	return out, nil
+	return template.Eval(s, e.templateContext()) //nolint:wrapcheck // wrapped by the selector's evalFragment at every call site; wrapping here doubles the prefix
 }
 
 // templateContext builds a fresh template.Context seeded with the executor's
