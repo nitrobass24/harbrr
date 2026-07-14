@@ -28,6 +28,7 @@ import (
 var liveTested = map[string]bool{
 	// Cardigann corpus, live-validated in an operator instance. The "-api"
 	// suffixed ids are the UNIT3D API-variant defs those indexers use.
+	"aither-api": true, "anthelion-api": true,
 	"aura4k-api": true, "digitalcore-api": true, "hdspace": true, "lst": true,
 	"luminarr-api": true, "onlyencodes-api": true, "racing4everyone-api": true, "reelflix-api": true,
 	"retromoviesclub-api": true, "torrentleech": true, "yuscene-api": true, "racingforme": true,

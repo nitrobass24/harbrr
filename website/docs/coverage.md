@@ -87,12 +87,12 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Aftershock | ✅ | ⬜ |
 | AGSVPT | ✅ | ⬜ |
 | Aidoru!Online | ✅ | ⬜ |
-| Aither (API) | ✅ | ⬜ |
+| Aither (API) | ✅ | ✅ |
 | alingPT | ✅ | ⬜ |
 | Amigos Share Club | ✅ | ⬜ |
 | AnimeTorrents.ro | ✅ | ⬜ |
 | AnimeWorld (API) | ✅ | ⬜ |
-| Anthelion (API) | ✅ | ⬜ |
+| Anthelion (API) | ✅ | ✅ |
 | ArabaFenice | ✅ | ⬜ |
 | ArabicSource (API) | ✅ | ⬜ |
 | ArabP2P | ✅ | ⬜ |
