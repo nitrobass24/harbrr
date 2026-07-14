@@ -261,7 +261,11 @@ func (e *Executor) selectorMatches(body []byte, sel string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("rendering test selector: %w", err)
 	}
-	_, found, err := e.Selector.Field(doc.Root(), loader.SelectorBlock{Selector: rendered}, e.eval)
+	// rendered is already fully evaluated above (so a render failure keeps its own
+	// error branch and the raw sel — never a config value — reaches the message);
+	// pass a nil eval so Field does not evaluate the selector a second time,
+	// matching the other pre-rendered call sites (logout, download).
+	_, found, err := e.Selector.Field(doc.Root(), loader.SelectorBlock{Selector: rendered}, nil)
 	if err != nil {
 		// Report the ORIGINAL (un-rendered) selector text, never the rendered
 		// form, which could interpolate a config value into the message.
