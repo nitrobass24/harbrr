@@ -158,15 +158,12 @@ func (e *Executor) eval(s string) (string, error) {
 }
 
 // templateContext builds a fresh template.Context seeded with the executor's
-// Config (and .Config.sitelink) on each call. A fresh context per call is
-// required because template.Eval mutates the context (whitespace normalization).
+// Config (and .Config.sitelink) on each call. See template.NewSeeded for the
+// fresh-context-per-call invariant. Login never renders .Today, so no Clock is
+// passed (NewSeeded leaves .Today at its zero value).
 func (e *Executor) templateContext() *template.Context {
-	ctx := template.NewContext()
-	for k, v := range e.Config {
-		ctx.Config[k] = v
-	}
-	if _, ok := ctx.Config["sitelink"]; !ok {
-		ctx.Config["sitelink"] = e.BaseURL
-	}
-	return ctx
+	return template.NewSeeded(template.Params{
+		Config:  e.Config,
+		BaseURL: e.BaseURL,
+	})
 }
