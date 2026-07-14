@@ -368,6 +368,14 @@ func (e *Engine) DownloadNeedsAuth() bool {
 	return e.def.Login != nil
 }
 
+// SupportsOffsetPaging is always false: the declarative Cardigann engine has no
+// per-def offset/limit request shape, so every def's driver fetches the full result
+// set and the shared read pipeline slices the requested page locally. Only the two
+// native usenet drivers (newznab, nzbindex) forward offset/limit upstream.
+func (e *Engine) SupportsOffsetPaging() bool {
+	return false
+}
+
 // ResolveDownload turns a release's download link into the real torrent URL when
 // the definition declares a download block (the full Jackett download algorithm:
 // before pre-request, infohash->magnet, selectors). A def with no download block

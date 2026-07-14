@@ -44,15 +44,12 @@ type Indexer interface {
 	// returned as a redirect. The /dl proxy drives this so a passkey-bearing link is
 	// resolved and fetched server-side, never exposed in the served feed.
 	Grab(ctx context.Context, link string) (*search.GrabResult, error)
-}
-
-// OffsetPager is the optional capability an Indexer implements when it forwards
-// offset/limit upstream for deep-set paging (the newznab and nzbindex usenet drivers). It is
-// kept off the Indexer interface so the 13 Cardigann/native drivers and the test fakes don't
-// have to implement a method they'd answer false for; the handler and the cache layer
-// type-assert for it instead. The search-cache decorator must delegate it explicitly —
-// embedding the Indexer interface does NOT promote a method off the wrapped concrete type.
-type OffsetPager interface {
+	// SupportsOffsetPaging reports whether this Indexer forwards offset/limit upstream
+	// for deep-set paging (the newznab and nzbindex usenet drivers, via the flattened
+	// registry adapter). It is part of the contract — not a type-asserted optional
+	// capability — so the handler and the cache layer read one unconditional signal;
+	// every other implementer (every Cardigann def, every other native driver, and the
+	// test fakes) answers false.
 	SupportsOffsetPaging() bool
 }
 

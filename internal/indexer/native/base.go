@@ -100,8 +100,8 @@ func NewBase(family string, p Params) (Base, error) {
 // Capabilities returns the family's capabilities document.
 func (b *Base) Capabilities() *mapper.Capabilities { return b.Caps }
 
-// SupportsOffsetPaging is the OffsetPager default: most trackers cannot forward
-// offset/limit upstream. The usenet drivers override it.
+// SupportsOffsetPaging is the Driver method's default: most trackers cannot forward
+// offset/limit upstream. The usenet drivers (newznab, nzbindex) override it.
 func (b *Base) SupportsOffsetPaging() bool { return false }
 
 // Response is the owned result of a Do/DoDownload round-trip: the status, the

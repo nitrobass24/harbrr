@@ -25,6 +25,7 @@ func (h *hookInner) Info() torznabhttp.IndexerInfo      { return torznabhttp.Ind
 func (h *hookInner) Capabilities() *mapper.Capabilities { return &mapper.Capabilities{} }
 func (h *hookInner) NeedsResolver() bool                { return false }
 func (h *hookInner) DownloadNeedsAuth() bool            { return false }
+func (h *hookInner) SupportsOffsetPaging() bool         { return false }
 
 func (h *hookInner) Grab(context.Context, string) (*search.GrabResult, error) {
 	return nil, errors.New("not implemented")

@@ -31,6 +31,7 @@ func (s *seqInner) Info() torznabhttp.IndexerInfo      { return torznabhttp.Inde
 func (s *seqInner) Capabilities() *mapper.Capabilities { return &mapper.Capabilities{} }
 func (s *seqInner) NeedsResolver() bool                { return false }
 func (s *seqInner) DownloadNeedsAuth() bool            { return false }
+func (s *seqInner) SupportsOffsetPaging() bool         { return false }
 
 func (s *seqInner) Grab(context.Context, string) (*search.GrabResult, error) {
 	return nil, errors.New("not implemented")
@@ -141,6 +142,7 @@ func (c *cancelOnSearchInner) Info() torznabhttp.IndexerInfo {
 func (c *cancelOnSearchInner) Capabilities() *mapper.Capabilities { return &mapper.Capabilities{} }
 func (c *cancelOnSearchInner) NeedsResolver() bool                { return false }
 func (c *cancelOnSearchInner) DownloadNeedsAuth() bool            { return false }
+func (c *cancelOnSearchInner) SupportsOffsetPaging() bool         { return false }
 
 func (c *cancelOnSearchInner) Grab(context.Context, string) (*search.GrabResult, error) {
 	return nil, errors.New("not implemented")
@@ -199,6 +201,7 @@ func (c *coalesceInner) Info() torznabhttp.IndexerInfo {
 func (c *coalesceInner) Capabilities() *mapper.Capabilities { return &mapper.Capabilities{} }
 func (c *coalesceInner) NeedsResolver() bool                { return false }
 func (c *coalesceInner) DownloadNeedsAuth() bool            { return false }
+func (c *coalesceInner) SupportsOffsetPaging() bool         { return false }
 
 func (c *coalesceInner) Grab(context.Context, string) (*search.GrabResult, error) {
 	return nil, errors.New("not implemented")

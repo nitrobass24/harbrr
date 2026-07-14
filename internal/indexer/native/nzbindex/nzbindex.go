@@ -49,10 +49,7 @@ type driver struct {
 	apikey string
 }
 
-var (
-	_ native.Driver      = (*driver)(nil)
-	_ native.OffsetPager = (*driver)(nil)
-)
+var _ native.Driver = (*driver)(nil)
 
 // Families returns the single NZBIndex native family, wired into the registry's
 // nativeFamilies() so the indexer is addable like any other native.
