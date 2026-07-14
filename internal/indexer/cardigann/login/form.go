@@ -182,7 +182,7 @@ func (e *Executor) extractSelectorInputs(body []byte, inputs map[string]loader.S
 	if len(inputs) == 0 {
 		return url.Values{}, nil
 	}
-	doc, err := e.Selector.ParseHTML(body)
+	doc, err := e.selector.ParseHTML(body)
 	if err != nil {
 		return nil, fmt.Errorf("parsing login page for selector inputs: %w", err)
 	}
@@ -190,7 +190,7 @@ func (e *Executor) extractSelectorInputs(body []byte, inputs map[string]loader.S
 	out := url.Values{}
 	for _, name := range sortedSelectorKeys(inputs) {
 		blk := inputs[name]
-		val, found, ferr := e.Selector.Field(root, blk, e.eval)
+		val, found, ferr := e.selector.Field(root, blk, e.eval)
 		if ferr != nil {
 			return nil, fmt.Errorf("extracting selector input %q: %w", name, ferr)
 		}
@@ -253,7 +253,7 @@ func (e *Executor) postFormAbsolute(ctx context.Context, l *loader.Login, target
 // selectorMatches reports whether sel matches at least one element in body. Used
 // by CheckTest to reproduce Jackett's "selection.Length == 0 => login needed".
 func (e *Executor) selectorMatches(body []byte, sel string) (bool, error) {
-	doc, err := e.Selector.ParseHTML(body)
+	doc, err := e.selector.ParseHTML(body)
 	if err != nil {
 		return false, fmt.Errorf("parsing test page: %w", err)
 	}
@@ -265,7 +265,7 @@ func (e *Executor) selectorMatches(body []byte, sel string) (bool, error) {
 	// error branch and the raw sel — never a config value — reaches the message);
 	// pass a nil eval so Field does not evaluate the selector a second time,
 	// matching the other pre-rendered call sites (logout, download).
-	_, found, err := e.Selector.Field(doc.Root(), loader.SelectorBlock{Selector: rendered}, nil)
+	_, found, err := e.selector.Field(doc.Root(), loader.SelectorBlock{Selector: rendered}, nil)
 	if err != nil {
 		// Report the ORIGINAL (un-rendered) selector text, never the rendered
 		// form, which could interpolate a config value into the message.
@@ -280,15 +280,15 @@ func (e *Executor) selectorMatches(body []byte, sel string) (bool, error) {
 // error so a misconfigured manual cookie fails loud rather than silently
 // "logging in" with no session.
 func (e *Executor) seedCookies(raw string) error {
-	host, err := url.Parse(e.BaseURL)
+	host, err := url.Parse(e.baseURL)
 	if err != nil {
-		return fmt.Errorf("parsing base URL %q for cookie seeding: %w", apphttp.SchemeHost(e.BaseURL), apphttp.RedactURLError(err))
+		return fmt.Errorf("parsing base URL %q for cookie seeding: %w", apphttp.SchemeHost(e.baseURL), apphttp.RedactURLError(err))
 	}
 	cookies := parseCookieHeader(raw)
 	if len(cookies) == 0 {
 		return fmt.Errorf("%w: cookie method got an empty cookie value", ErrLoginFailed)
 	}
-	e.Jar.SetCookies(host, cookies)
+	e.jar.SetCookies(host, cookies)
 	return nil
 }
 
@@ -302,15 +302,15 @@ func (e *Executor) seedStaticCookies(cookies []string) error {
 	if len(cookies) == 0 {
 		return nil
 	}
-	host, err := url.Parse(e.BaseURL)
+	host, err := url.Parse(e.baseURL)
 	if err != nil {
-		return fmt.Errorf("parsing base URL %q for static cookie seeding: %w", apphttp.SchemeHost(e.BaseURL), apphttp.RedactURLError(err))
+		return fmt.Errorf("parsing base URL %q for static cookie seeding: %w", apphttp.SchemeHost(e.baseURL), apphttp.RedactURLError(err))
 	}
 	parsed := parseCookieHeader(strings.Join(cookies, "; "))
 	if len(parsed) == 0 {
 		return nil
 	}
-	e.Jar.SetCookies(host, parsed)
+	e.jar.SetCookies(host, parsed)
 	return nil
 }
 

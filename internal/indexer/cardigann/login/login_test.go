@@ -502,7 +502,7 @@ func jarNames(t *testing.T, e *Executor) []string {
 	if err != nil {
 		t.Fatalf("parse baseURL: %v", err)
 	}
-	cookies := e.Jar.Cookies(u)
+	cookies := e.jar.Cookies(u)
 	out := make([]string, 0, len(cookies))
 	for _, c := range cookies {
 		out = append(out, c.Name)

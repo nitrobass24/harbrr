@@ -56,7 +56,7 @@ func (e *Executor) Session() *Session {
 func (e *Executor) solverUA() string {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	return e.SolverUserAgent
+	return e.solverUserAgent
 }
 
 // setSolverUA persists the solver User-Agent under the write lock. Called from
@@ -65,7 +65,7 @@ func (e *Executor) solverUA() string {
 func (e *Executor) setSolverUA(ua string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.SolverUserAgent = ua
+	e.solverUserAgent = ua
 }
 
 // Executor performs a definition's login sequence against the injected Doer.
@@ -73,33 +73,36 @@ func (e *Executor) setSolverUA(ua string) {
 // reference to for SEEDING (manual-cookie method, static Login.Cookies, solver
 // results); it never applies or stores cookies on the wire itself (see Doer).
 type Executor struct {
-	// Client is the HTTP seam. Required.
-	Client Doer
-	// Jar is the cookie jar the executor seeds. It MUST be the same jar the
-	// Client applies (an *http.Client's Jar), or seeded cookies never reach the
+	// client is the HTTP seam. Required.
+	client Doer
+	// jar is the cookie jar the executor seeds. It MUST be the same jar the
+	// client applies (an *http.Client's Jar), or seeded cookies never reach the
 	// wire; the engine wires this via login.WithJar from the Doer's own jar.
-	Jar stdhttp.CookieJar
-	// BaseURL is the tracker site link, used to resolve relative login/test
+	jar stdhttp.CookieJar
+	// baseURL is the tracker site link, used to resolve relative login/test
 	// paths and to scope seeded cookies. Trailing-slash-insensitive.
-	BaseURL string
-	// Config supplies template variables (.Config.username, .Config.cookie, ...).
+	baseURL string
+	// config supplies template variables (.Config.username, .Config.cookie, ...).
 	// Passed in as a map by the engine; this stage never touches the secrets store.
-	Config map[string]string
-	// Selector extracts CSRF inputs, error messages, and test-page selectors.
-	Selector *selector.Engine
-	// Solver is the optional anti-bot solver consulted when a login landing page
-	// is an interstitial (Cloudflare etc.). Nil defaults to NoopSolver (fail loud).
-	Solver Solver
-	// SolverUserAgent is the User-Agent the solver reported on its most recent
+	config map[string]string
+	// selector extracts CSRF inputs, error messages, and test-page selectors.
+	selector *selector.Engine
+	// configuredSolver is the optional anti-bot solver consulted when a login
+	// landing page is an interstitial (Cloudflare etc.). Nil defaults to
+	// NoopSolver (fail loud); access it through the solver() accessor, which
+	// applies that default, never the field directly.
+	configuredSolver Solver
+	// solverUserAgent is the User-Agent the solver reported on its most recent
 	// solve this session. Once set, do() replays it on every subsequent request
 	// (login POST, login.test) so a UA-bound cf_clearance keeps working; Session
 	// hands it to the search stage for the same reason. Empty until a solve occurs.
 	//
 	// Guarded by mu: the write (applySolveResult, during a loginMu-held login) races
-	// the read on the search/grab path (Session), which does NOT hold loginMu. Access
-	// it through setSolverUA/solverUA off the hot path, never the field directly.
-	SolverUserAgent string
-	// mu guards SolverUserAgent. A dedicated RWMutex keeps the fix local to the
+	// the read on the search/grab path (Session), which does NOT hold loginMu. It
+	// is unexported, so setSolverUA/solverUA are the only access path — the
+	// compiler enforces going through the lock.
+	solverUserAgent string
+	// mu guards solverUserAgent. A dedicated RWMutex keeps the fix local to the
 	// executor instead of relying on the engine's loginMu (the search read path does
 	// not hold it).
 	mu sync.RWMutex
@@ -109,24 +112,24 @@ type Executor struct {
 type Option func(*Executor)
 
 // WithClient sets the HTTP Doer seam.
-func WithClient(c Doer) Option { return func(e *Executor) { e.Client = c } }
+func WithClient(c Doer) Option { return func(e *Executor) { e.client = c } }
 
 // WithJar sets the cookie jar the executor seeds. Pass the SAME jar the Doer
 // applies (the *http.Client's Jar) — one shared jar is what keeps login and
 // search cookies consistent on the wire. When unset, New installs a
 // publicsuffix-backed jar; seeding still works locally, but a Doer that does
 // not share it will never send the seeded cookies.
-func WithJar(j stdhttp.CookieJar) Option { return func(e *Executor) { e.Jar = j } }
+func WithJar(j stdhttp.CookieJar) Option { return func(e *Executor) { e.jar = j } }
 
 // WithBaseURL sets the tracker site link used to resolve relative paths.
-func WithBaseURL(u string) Option { return func(e *Executor) { e.BaseURL = u } }
+func WithBaseURL(u string) Option { return func(e *Executor) { e.baseURL = u } }
 
 // WithConfig sets the template-variable config map.
-func WithConfig(c map[string]string) Option { return func(e *Executor) { e.Config = c } }
+func WithConfig(c map[string]string) Option { return func(e *Executor) { e.config = c } }
 
 // WithSolver sets the anti-bot solver consulted on a login interstitial. Unset
 // leaves the default NoopSolver (fail loud).
-func WithSolver(s Solver) Option { return func(e *Executor) { e.Solver = s } }
+func WithSolver(s Solver) Option { return func(e *Executor) { e.configuredSolver = s } }
 
 // New constructs an Executor. It installs a publicsuffix-backed cookie jar and a
 // selector engine bound to the template context unless overridden. Production
@@ -134,16 +137,16 @@ func WithSolver(s Solver) Option { return func(e *Executor) { e.Solver = s } }
 // does this in buildLogin). cookiejar.New with the publicsuffix list never
 // returns an error, so the fallback is unconditional.
 func New(opts ...Option) *Executor {
-	e := &Executor{Config: map[string]string{}}
+	e := &Executor{config: map[string]string{}}
 	for _, opt := range opts {
 		opt(e)
 	}
-	if e.Jar == nil {
+	if e.jar == nil {
 		jar, _ := cookiejar.New(&cookiejar.Options{PublicSuffixList: publicsuffix.List})
-		e.Jar = jar
+		e.jar = jar
 	}
-	if e.Selector == nil {
-		e.Selector = selector.New()
+	if e.selector == nil {
+		e.selector = selector.New()
 	}
 	return e
 }
@@ -163,7 +166,7 @@ func (e *Executor) eval(s string) (string, error) {
 // passed (NewSeeded leaves .Today at its zero value).
 func (e *Executor) templateContext() *template.Context {
 	return template.NewSeeded(template.Params{
-		Config:  e.Config,
-		BaseURL: e.BaseURL,
+		Config:  e.config,
+		BaseURL: e.baseURL,
 	})
 }
