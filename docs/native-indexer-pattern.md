@@ -13,6 +13,48 @@ stack when this pattern was first written — are now **shipped**, and are the w
 below. The remaining native-only trackers are tracked as demand-gated issues under the
 [`native-driver`](https://github.com/autobrr/harbrr/labels/native-driver) label.
 
+## Hard rule: newznab is usenet-only — a torrent tracker never gets a newznab preset
+
+`internal/indexer/native/newznab` and `internal/indexer/native/torznab` speak the
+**same wire format** (Newznab/Torznab RSS+XML, `torznab:attr`/`newznab:attr` are
+interchangeable on the wire) but codify **different protocol semantics**, and that
+difference is why they are two packages, not one with a flag:
+
+- **Acquisition protocol.** newznab is `Protocol=usenet` (no seeders/leechers/peers, no
+  DVF/UVF, a bare `.nzb` grab); torznab is `Protocol=torrent` (seeders/peers/DVF/UVF are
+  real, meaningful fields on `normalizer.Release`, mapped the way the gazelle/gazellegames
+  torrent drivers do it, not left zero).
+- **Download-link shape and grab posture.** A Newznab `.nzb` link carries only the
+  apikey; harbrr fetches it server-side and proxies the bytes (`NeedsResolver()=false`,
+  `DownloadNeedsAuth()=true`). A Torznab tracker's download link is Gazelle-style
+  URL-credentialed (`authkey`+`torrent_pass` riding the query, per the real MoreThanTV
+  capture) — a fundamentally different secret shape requiring `NeedsResolver()=true`
+  like FileList/GazelleGames, not the newznab pattern.
+- **A torrent tracker that happens to expose Torznab is NEVER served by the newznab
+  driver**, even though the newznab driver's XML parser would technically decode the
+  feed without error. Doing so would silently drop every seeders/DVF/UVF field (the
+  usenet driver zeroes them by design) and would proxy the download as if it were an
+  apikey-only link, when the real secret is the URL-credentialed torrent link — a
+  correctness AND a redaction bug, not a cosmetic one. Route it to the torznab family
+  instead, adding a preset there (or the torznab generic entry, once one exists).
+
+## Deciding where a new tracker lands (the rubric)
+
+Given a new tracker to support, in order:
+
+1. **A Cardigann definition exists** (vendored or drop-in) → it belongs to the **engine**
+   (`internal/indexer/cardigann/`), not a native driver. This is always the first check —
+   the engine is the standing parity gate and covers the overwhelming majority of
+   trackers for free.
+2. **No definition, but the tracker exposes a native Newznab or Torznab API** → a preset
+   on the **matching-protocol family** (`native/newznab` for `Protocol=usenet`,
+   `native/torznab` for `Protocol=torrent` — per the hard rule above, protocol decides
+   the family, never the wire format alone).
+3. **No definition, and a proprietary (non-Newznab/Torznab) API** → a **bespoke native
+   driver** (the AvistaZ/Gazelle/FileList/GazelleGames/IPTorrents/MyAnonamouse shape
+   below), or join an existing family if another tracker already proved the same API
+   *shape* (see "Leverage & effort").
+
 ## The shared shape (Prowlarr — follow this, not Jackett's monolith)
 
 Every Prowlarr native indexer is a `TorrentIndexerBase<TSettings>` subclass that
