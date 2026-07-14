@@ -119,7 +119,7 @@ func newAnnounceSink(svc *announce.Service, db dbinterface.Execer, keyring *secr
 			defer cancel()
 			inst, err := instances.GetByID(ctx, db, instanceID)
 			if err != nil {
-				log.Warn().Int64("instance_id", instanceID).Msg("announce: resolve indexer slug failed")
+				log.Warn().Err(err).Int64("instance_id", instanceID).Msg("announce: resolve indexer slug failed")
 				return
 			}
 			svc.Push(ctx, func(conn domain.AnnounceConnection) []announce.Release {

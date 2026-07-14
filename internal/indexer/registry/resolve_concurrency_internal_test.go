@@ -94,7 +94,7 @@ func TestResolveRejectsStaleEngineOnConcurrentInvalidation(t *testing.T) {
 			)
 
 			reg = New(
-				db, loader.New(dropin), kr, WithClock(clock),
+				db, loader.New(dropin), kr, nil, WithClock(clock),
 				WithDoerFactory(func(p ClientParams) (search.Doer, error) {
 					mu.Lock()
 					observed = append(observed, p.Cfg["sort"])

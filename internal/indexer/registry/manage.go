@@ -20,7 +20,7 @@ import (
 // after a committed mutation it evicts the serve path through the invalidator seam. It
 // holds only the handles its methods use — no resolve cache, no *IndexerStats.
 type Manager struct {
-	db        *database.DB
+	db        dbinterface.Querier
 	instances database.Instances
 	keyring   secretsKeyring
 	clock     func() time.Time
@@ -49,7 +49,7 @@ type StatsReporter struct {
 	stats     *IndexerStats
 	instances database.Instances
 	health    database.Health
-	db        *database.DB
+	db        dbinterface.Querier
 	clock     func() time.Time
 }
 
