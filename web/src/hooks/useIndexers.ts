@@ -1,18 +1,19 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { api, APIError } from "@/lib/api"
+import { keys } from "@/lib/query"
 import type { AddIndexer, Instance, TestResult, UpdateIndexer } from "@/types/api"
 
 export function useIndexers() {
   return useQuery({
-    queryKey: ["indexers"],
+    queryKey: keys.indexers.list(),
     queryFn: () => api.listIndexers(),
   })
 }
 
 export function useIndexer(slug: string, enabled = true) {
   return useQuery({
-    queryKey: ["indexers", slug],
+    queryKey: keys.indexers.detail(slug),
     queryFn: () => api.getIndexer(slug),
     enabled,
   })
@@ -23,7 +24,7 @@ export function useIndexer(slug: string, enabled = true) {
 export function useIndexerStatuses(slugs: string[]) {
   return useQueries({
     queries: slugs.map((slug) => ({
-      queryKey: ["indexers", slug, "status"],
+      queryKey: keys.indexers.status(slug),
       queryFn: () => api.getIndexerStatus(slug),
       refetchInterval: 30_000,
     })),
@@ -32,7 +33,7 @@ export function useIndexerStatuses(slugs: string[]) {
 
 export function useIndexerCapabilities(slug: string) {
   return useQuery({
-    queryKey: ["indexers", slug, "capabilities"],
+    queryKey: keys.indexers.capabilities(slug),
     queryFn: () => api.getIndexerCapabilities(slug),
     staleTime: 5 * 60_000, // caps only change on definition refresh
   })
@@ -42,7 +43,7 @@ export function useIndexerCapabilities(slug: string) {
 export function useIndexerCapabilitiesMany(slugs: string[]) {
   return useQueries({
     queries: slugs.map((slug) => ({
-      queryKey: ["indexers", slug, "capabilities"],
+      queryKey: keys.indexers.capabilities(slug),
       queryFn: () => api.getIndexerCapabilities(slug),
       staleTime: 5 * 60_000,
     })),
@@ -51,7 +52,7 @@ export function useIndexerCapabilitiesMany(slugs: string[]) {
 
 export function useIndexerStats(slug: string, enabled = true) {
   return useQuery({
-    queryKey: ["indexers", slug, "stats"],
+    queryKey: keys.indexers.stats(slug),
     queryFn: () => api.getIndexerStats(slug),
     enabled,
   })
@@ -62,11 +63,11 @@ export function useAddIndexer() {
   return useMutation({
     mutationFn: (body: AddIndexer) => api.addIndexer(body),
     // Adding an indexer grows the aggregate stat set (useAllIndexerStats), which
-    // is now keyed off ["indexer-stats"] and no longer caught by an ["indexers"]
-    // prefix invalidation, so refresh it explicitly.
+    // lives under keys.indexerStats (its own root) and so is no longer caught by
+    // an indexers.all prefix invalidation — refresh it explicitly.
     onSettled: () => {
-      void qc.invalidateQueries({ queryKey: ["indexers"] })
-      void qc.invalidateQueries({ queryKey: ["indexer-stats"] })
+      void qc.invalidateQueries({ queryKey: keys.indexers.all })
+      void qc.invalidateQueries({ queryKey: keys.indexerStats.all })
     },
   })
 }
@@ -75,7 +76,7 @@ export function useUpdateIndexer(slug: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (body: UpdateIndexer) => api.updateIndexer(slug, body),
-    onSettled: () => qc.invalidateQueries({ queryKey: ["indexers"] }),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.indexers.all }),
   })
 }
 
@@ -85,8 +86,8 @@ export function useDeleteIndexer() {
     mutationFn: (slug: string) => api.deleteIndexer(slug),
     // Deleting an indexer shrinks the aggregate stat set (see useAddIndexer note).
     onSettled: () => {
-      void qc.invalidateQueries({ queryKey: ["indexers"] })
-      void qc.invalidateQueries({ queryKey: ["indexer-stats"] })
+      void qc.invalidateQueries({ queryKey: keys.indexers.all })
+      void qc.invalidateQueries({ queryKey: keys.indexerStats.all })
     },
   })
 }
@@ -98,17 +99,17 @@ export function useSetIndexerEnabled() {
   return useMutation({
     mutationFn: ({ slug, enabled }: { slug: string, enabled: boolean }) => api.setIndexerEnabled(slug, enabled),
     onMutate: async ({ slug, enabled }) => {
-      await qc.cancelQueries({ queryKey: ["indexers"] })
-      const previous = qc.getQueryData<Instance[]>(["indexers"])
-      qc.setQueryData<Instance[]>(["indexers"], (list) =>
+      await qc.cancelQueries({ queryKey: keys.indexers.all })
+      const previous = qc.getQueryData<Instance[]>(keys.indexers.list())
+      qc.setQueryData<Instance[]>(keys.indexers.list(), (list) =>
         list?.map((ix) => (ix.slug === slug ? { ...ix, enabled } : ix)))
       return { previous }
     },
     onError: (_err, vars, context) => {
-      if (context?.previous) qc.setQueryData(["indexers"], context.previous)
+      if (context?.previous) qc.setQueryData(keys.indexers.list(), context.previous)
       toast.error(`${vars.enabled ? "Enabling" : "Disabling"} ${vars.slug} failed`)
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: ["indexers"] }),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.indexers.all }),
   })
 }
 
@@ -135,7 +136,7 @@ export function useTestIndexer(options?: { toastResult?: boolean }) {
     onSuccess: options?.toastResult ? toastTestResult : undefined,
     onError: options?.toastResult ? toastTestError : undefined,
     onSettled: (_res, _err, slug) =>
-      qc.invalidateQueries({ queryKey: ["indexers", slug, "status"] }),
+      qc.invalidateQueries({ queryKey: keys.indexers.status(slug) }),
   })
 }
 
@@ -159,6 +160,6 @@ export function useTestAllIndexers() {
           return { slug, ok: false, error: "test request failed" }
         }
       })),
-    onSettled: () => qc.invalidateQueries({ queryKey: ["indexers"] }),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.indexers.all }),
   })
 }

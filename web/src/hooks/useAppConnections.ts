@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { api } from "@/lib/api"
+import { keys } from "@/lib/query"
 import type {
   AppConnection,
   CreateAnnounceConnection,
@@ -12,7 +13,7 @@ import type {
 
 export function useAppConnections() {
   return useQuery({
-    queryKey: ["app-connections"],
+    queryKey: keys.appConnections.all,
     queryFn: () => api.listConnections(),
   })
 }
@@ -21,14 +22,14 @@ export function useAppConnections() {
 // connections whose stored harbrrUrl port has drifted stale.
 export function useServerInfo() {
   return useQuery({
-    queryKey: ["server-info"],
+    queryKey: keys.serverInfo.all,
     queryFn: () => api.getServerInfo(),
   })
 }
 
 export function useConnectionStatus(id: number | null) {
   return useQuery({
-    queryKey: ["app-connections", id, "status"],
+    queryKey: keys.appConnections.status(id),
     queryFn: () => api.getConnectionStatus(id as number),
     enabled: id !== null,
   })
@@ -36,7 +37,7 @@ export function useConnectionStatus(id: number | null) {
 
 function useInvalidateConnections() {
   const qc = useQueryClient()
-  return () => qc.invalidateQueries({ queryKey: ["app-connections"] })
+  return () => qc.invalidateQueries({ queryKey: keys.appConnections.all })
 }
 
 export function useCreateConnection() {
@@ -72,17 +73,17 @@ export function useSetConnectionEnabled() {
   return useMutation({
     mutationFn: ({ id, enabled }: { id: number, enabled: boolean }) => api.setConnectionEnabled(id, enabled),
     onMutate: async ({ id, enabled }) => {
-      await qc.cancelQueries({ queryKey: ["app-connections"] })
-      const previous = qc.getQueryData<AppConnection[]>(["app-connections"])
-      qc.setQueryData<AppConnection[]>(["app-connections"], (list) =>
+      await qc.cancelQueries({ queryKey: keys.appConnections.all })
+      const previous = qc.getQueryData<AppConnection[]>(keys.appConnections.all)
+      qc.setQueryData<AppConnection[]>(keys.appConnections.all, (list) =>
         list?.map((c) => (c.id === id ? { ...c, enabled } : c)))
       return { previous }
     },
     onError: (_err, vars, context) => {
-      if (context?.previous) qc.setQueryData(["app-connections"], context.previous)
+      if (context?.previous) qc.setQueryData(keys.appConnections.all, context.previous)
       toast.error(`${vars.enabled ? "Enabling" : "Disabling"} the connection failed`)
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: ["app-connections"] }),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.appConnections.all }),
   })
 }
 
@@ -110,7 +111,7 @@ export function useSetSelectedIndexers(id: number) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (instanceIds: number[]) => api.setSelectedIndexers(id, instanceIds),
-    onSettled: () => qc.invalidateQueries({ queryKey: ["app-connections", id, "status"] }),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.appConnections.status(id) }),
   })
 }
 
@@ -118,14 +119,14 @@ export function useSetSelectedIndexers(id: number) {
 
 export function useSyncProfiles() {
   return useQuery({
-    queryKey: ["sync-profiles"],
+    queryKey: keys.syncProfiles.all,
     queryFn: () => api.listSyncProfiles(),
   })
 }
 
 export function useSyncProfileMutations() {
   const qc = useQueryClient()
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["sync-profiles"] })
+  const invalidate = () => qc.invalidateQueries({ queryKey: keys.syncProfiles.all })
   return {
     create: useMutation({ mutationFn: (body: CreateSyncProfile) => api.createSyncProfile(body), onSettled: invalidate }),
     update: useMutation({
@@ -138,7 +139,7 @@ export function useSyncProfileMutations() {
       mutationFn: (id: number) => api.deleteSyncProfile(id),
       onSettled: () => {
         void invalidate()
-        void qc.invalidateQueries({ queryKey: ["app-connections"] })
+        void qc.invalidateQueries({ queryKey: keys.appConnections.all })
       },
     }),
   }
@@ -148,7 +149,7 @@ export function useSyncProfileMutations() {
 
 export function useAnnounceConnections() {
   return useQuery({
-    queryKey: ["announce-connections"],
+    queryKey: keys.announceConnections.all,
     queryFn: () => api.listAnnounceConnections(),
   })
 }
@@ -157,7 +158,7 @@ export function useCreateAnnounce() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (body: CreateAnnounceConnection) => api.createAnnounceConnection(body),
-    onSettled: () => qc.invalidateQueries({ queryKey: ["announce-connections"] }),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.announceConnections.all }),
   })
 }
 
@@ -165,7 +166,7 @@ export function useDeleteAnnounce() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: number) => api.deleteAnnounceConnection(id),
-    onSettled: () => qc.invalidateQueries({ queryKey: ["announce-connections"] }),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.announceConnections.all }),
   })
 }
 
@@ -173,6 +174,6 @@ export function useSetAnnounceEnabled() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ id, enabled }: { id: number, enabled: boolean }) => api.setAnnounceEnabled(id, enabled),
-    onSettled: () => qc.invalidateQueries({ queryKey: ["announce-connections"] }),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.announceConnections.all }),
   })
 }

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useAuth } from "@/hooks/useAuth"
 import { api, APIError, type SetupState } from "@/lib/api"
+import { keys } from "@/lib/query"
 
 export const Route = createFileRoute("/setup")({
   component: Setup,
@@ -40,7 +41,7 @@ function Setup() {
       // fresh {setupComplete:true} on arrival. Without this it reads the stale
       // {setupComplete:false} and bounces back to /setup (a visible flash, or —
       // when the cache is still fresh so no refetch fires — a stuck empty form).
-      queryClient.setQueryData<SetupState>(["auth", "setup"], { setupComplete: true })
+      queryClient.setQueryData<SetupState>(keys.auth.setup(), { setupComplete: true })
       void navigate({ to: "/login" })
     },
   })

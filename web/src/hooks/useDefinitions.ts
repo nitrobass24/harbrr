@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query"
 import { api } from "@/lib/api"
+import { keys } from "@/lib/query"
 
 export function useDefinitions() {
   return useQuery({
-    queryKey: ["definitions"],
+    queryKey: keys.definitions.all,
     queryFn: () => api.listDefinitions(),
     staleTime: 5 * 60_000, // the catalog changes only on a vendor refresh
   })
@@ -11,7 +12,7 @@ export function useDefinitions() {
 
 export function useDefinition(id: string | null) {
   return useQuery({
-    queryKey: ["definitions", id],
+    queryKey: keys.definitions.detail(id),
     queryFn: () => api.getDefinition(id as string),
     enabled: id !== null,
   })

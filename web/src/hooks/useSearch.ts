@@ -1,5 +1,6 @@
 import { useQueries } from "@tanstack/react-query"
 import { api } from "@/lib/api"
+import { keys } from "@/lib/query"
 import type { SearchParams } from "@/types/api"
 
 // Fan-out: one query per selected indexer, merged by the page. Keys carry the
@@ -8,7 +9,7 @@ import type { SearchParams } from "@/types/api"
 export function useSearchFanout(slugs: string[], params: SearchParams | null) {
   return useQueries({
     queries: slugs.map((slug) => ({
-      queryKey: ["search", slug, params],
+      queryKey: keys.search.fanout(slug, params),
       queryFn: () => api.searchIndexer(slug, params as SearchParams),
       enabled: params !== null,
       retry: false,

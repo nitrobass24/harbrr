@@ -11,12 +11,13 @@ import {
 } from "@/components/ui/dialog"
 import { api } from "@/lib/api"
 import { copyText } from "@/lib/clipboard"
+import { keys } from "@/lib/query"
 
 // cross-seed v6 has no indexer API: this dialog surfaces the copy-paste
 // config.js torznab entry the server mints (freeleech-bypass /full feed).
 export function SnippetDialog({ slug, onClose }: { slug: string | null, onClose: () => void }) {
   const snippet = useQuery({
-    queryKey: ["indexers", slug, "crossseed-snippet"],
+    queryKey: keys.indexers.crossseedSnippet(slug),
     queryFn: () => api.getCrossseedSnippet(slug as string),
     enabled: slug !== null,
   })

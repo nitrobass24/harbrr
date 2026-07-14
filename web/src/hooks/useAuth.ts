@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { api, APIError, type Credentials } from "@/lib/api"
+import { keys } from "@/lib/query"
 
 // useAuth is the bootstrap: one me-query drives the guard, the login/setup
 // screens, and the sidebar user chip. A 401 resolves to user=null (not an
@@ -8,7 +9,7 @@ export function useAuth() {
   const queryClient = useQueryClient()
 
   const me = useQuery({
-    queryKey: ["auth", "me"],
+    queryKey: keys.auth.me(),
     queryFn: async () => {
       try {
         return await api.getMe()
@@ -23,7 +24,7 @@ export function useAuth() {
 
   // Only probed when unauthenticated: routes the visitor to /setup vs /login.
   const setup = useQuery({
-    queryKey: ["auth", "setup"],
+    queryKey: keys.auth.setup(),
     queryFn: () => api.getSetup(),
     enabled: me.data === null,
     retry: false,
@@ -31,7 +32,7 @@ export function useAuth() {
 
   const login = useMutation({
     mutationFn: (creds: Credentials) => api.login(creds),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["auth"] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.auth.all }),
   })
 
   const logout = useMutation({
