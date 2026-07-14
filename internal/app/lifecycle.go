@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"errors"
-	"runtime/pprof"
 	"sync"
 	"time"
 
@@ -25,33 +24,27 @@ import (
 // cache and indexer stats commit their buffered writes before the composition
 // root closes the database. wg lets the caller join every reaper before that
 // close (see App.Run).
-func reap(ctx context.Context, wg *sync.WaitGroup, name string, interval func() time.Duration, tick, final func(ctx context.Context)) {
+func reap(ctx context.Context, wg *sync.WaitGroup, interval func() time.Duration, tick, final func(ctx context.Context)) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		pprof.Do(ctx, pprof.Labels("reaper", name), func(ctx context.Context) {
-			runReapLoop(ctx, interval, tick, final)
-		})
-	}()
-}
-
-func runReapLoop(ctx context.Context, interval func() time.Duration, tick, final func(ctx context.Context)) {
-	t := time.NewTimer(interval())
-	defer t.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			if final != nil {
-				fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-				final(fctx)
-				cancel()
+		t := time.NewTimer(interval())
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				if final != nil {
+					fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+					final(fctx)
+					cancel()
+				}
+				return
+			case <-t.C:
+				tick(ctx)
+				t.Reset(interval())
 			}
-			return
-		case <-t.C:
-			tick(ctx)
-			t.Reset(interval())
 		}
-	}
+	}()
 }
 
 // fixedInterval adapts a constant duration to reap's re-read-each-cycle interval func.
@@ -73,7 +66,7 @@ func startReapers(ctx context.Context, wg *sync.WaitGroup, db *database.DB,
 
 // startSessionCleanup reaps expired sessions hourly until ctx is cancelled.
 func startSessionCleanup(ctx context.Context, wg *sync.WaitGroup, store *database.SessionStore, log zerolog.Logger) {
-	reap(ctx, wg, "session", fixedInterval(time.Hour), func(ctx context.Context) {
+	reap(ctx, wg, fixedInterval(time.Hour), func(ctx context.Context) {
 		if err := store.DeleteExpired(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			log.Warn().Err(err).Msg("session cleanup failed")
 		}
@@ -94,7 +87,7 @@ const (
 // startHealthEventCleanup reaps health events older than healthEventRetention once a
 // day until ctx is cancelled, mirroring startSessionCleanup.
 func startHealthEventCleanup(ctx context.Context, wg *sync.WaitGroup, db *database.DB, log zerolog.Logger) {
-	reap(ctx, wg, "health-event", fixedInterval(healthEventCleanupInterval), func(ctx context.Context) {
+	reap(ctx, wg, fixedInterval(healthEventCleanupInterval), func(ctx context.Context) {
 		cutoff := time.Now().Add(-healthEventRetention)
 		if _, err := (database.Health{}).DeleteBefore(ctx, db, cutoff); err != nil && !errors.Is(err, context.Canceled) {
 			log.Warn().Err(err).Msg("health event cleanup failed")
@@ -113,7 +106,7 @@ const indexerStatsFlushInterval = 60 * time.Second
 // runs a final flush so the shutdown counters commit before the database closes
 // (App.Run joins this goroutine first).
 func startIndexerStatsFlush(ctx context.Context, wg *sync.WaitGroup, reg *registry.Registry) {
-	reap(ctx, wg, "indexer-stats", fixedInterval(indexerStatsFlushInterval), func(ctx context.Context) {
+	reap(ctx, wg, fixedInterval(indexerStatsFlushInterval), func(ctx context.Context) {
 		reg.FlushStats(ctx)
 	}, func(ctx context.Context) {
 		reg.FlushStats(ctx)
@@ -129,7 +122,7 @@ func startIndexerStatsFlush(ctx context.Context, wg *sync.WaitGroup, reg *regist
 // stat counters, so App.Run's join-then-close ordering commits them before the database
 // closes.
 func startSearchCacheCleanup(ctx context.Context, wg *sync.WaitGroup, sc *registry.SearchCache, log zerolog.Logger) {
-	reap(ctx, wg, "search-cache", func() time.Duration { return cleanupTickInterval(sc) }, func(ctx context.Context) {
+	reap(ctx, wg, func() time.Duration { return cleanupTickInterval(sc) }, func(ctx context.Context) {
 		sc.FlushTouches(ctx)
 		sc.FlushCounters(ctx)
 		if _, err := sc.CleanupExpired(ctx); err != nil && !errors.Is(err, context.Canceled) {

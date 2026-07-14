@@ -29,7 +29,9 @@ type options struct {
 
 // WithDatabase injects an already-open, migrated database instead of letting
 // New open one from Deps.Config (New skips openDatabase entirely when set).
-// App.Run still closes it on the way out, injected or not.
+// Close ownership differs by outcome: on success, App.Run closes it on the way
+// out same as a New-opened database. On a New error, the injector keeps
+// ownership and must close it itself — New only closes a database it opened.
 func WithDatabase(db *database.DB) Option {
 	return func(o *options) { o.db = db }
 }

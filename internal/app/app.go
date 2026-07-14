@@ -63,8 +63,9 @@ type App struct {
 	db      *database.DB
 	keyring *secrets.Keyring
 
-	sessions *scs.SessionManager
-	auth     *auth.Service
+	sessions     *scs.SessionManager
+	sessionStore *database.SessionStore
+	auth         *auth.Service
 
 	searchCache *registry.SearchCache
 	registry    *registry.Registry
@@ -105,9 +106,28 @@ func New(ctx context.Context, deps Deps, opts ...Option) (*App, error) {
 		return nil, err
 	}
 	a.db = db
+	ownsDB := o.db == nil // New opened it itself, vs. a test injecting an already-open one.
 
-	if err := a.initSecrets(ctx); err != nil {
+	if err := a.build(ctx, httpClient); err != nil {
+		// New opened the DB itself, so New closes it on the way out too — the
+		// caller never got an *App to close it through. A WithDatabase-injected
+		// DB is left open on error: the injector owns its lifecycle either way
+		// (see the WithDatabase doc comment). On success, Run always closes it.
+		if ownsDB {
+			_ = a.db.Close()
+		}
 		return nil, err
+	}
+
+	return a, nil
+}
+
+// build wires everything after the database is open: secrets/canary, sessions/
+// auth, the registry graph, app-sync/announce, the log-level store, proxy/
+// solver, and finally the mounted HTTP handlers.
+func (a *App) build(ctx context.Context, httpClient *http.Client) error {
+	if err := a.initSecrets(ctx); err != nil {
+		return err
 	}
 	a.initAuth()
 	a.initRegistry(ctx, httpClient)
@@ -118,11 +138,10 @@ func New(ctx context.Context, deps Deps, opts ...Option) (*App, error) {
 
 	srv, err := newServer(a)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	a.server = srv
-
-	return a, nil
+	return nil
 }
 
 // resolveDatabase opens+migrates the database from cfg, unless a test injected
@@ -218,9 +237,12 @@ func initCanary(ctx context.Context, db *database.DB, meta database.AppMeta, key
 	return nil
 }
 
-// initAuth builds the session manager and the auth service.
+// initAuth builds the session store, the session manager, and the auth
+// service. The store is kept as a field (it is stateless over a.db, but Run's
+// session reaper needs the same instance the session manager uses).
 func (a *App) initAuth() {
-	a.sessions = sessionManager(database.NewSessionStore(a.db), a.cfg)
+	a.sessionStore = database.NewSessionStore(a.db)
+	a.sessions = sessionManager(a.sessionStore, a.cfg)
 	a.auth = auth.NewService(a.db)
 }
 
@@ -382,7 +404,7 @@ func (a *App) Handler() http.Handler { return a.server.Handler() }
 func (a *App) Run(ctx context.Context) error {
 	bgCtx, bgCancel := context.WithCancel(ctx)
 	var bg sync.WaitGroup
-	startReapers(bgCtx, &bg, a.db, database.NewSessionStore(a.db), a.searchCache, a.registry, a.log)
+	startReapers(bgCtx, &bg, a.db, a.sessionStore, a.searchCache, a.registry, a.log)
 
 	runErr := a.serveUntilDone(ctx)
 
