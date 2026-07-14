@@ -55,7 +55,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 			releases = append(releases, rel)
 		}
 	}
-	native.TraceReleases(d.log, d.def.ID, releases)
+	native.TraceReleases(d.Log, d.Def.ID, releases)
 	return releases, nil
 }
 
@@ -69,7 +69,7 @@ func (d *driver) toRelease(row *apiRow) *normalizer.Release {
 	if id == "" || title == "" {
 		return nil
 	}
-	details := d.baseURL + "/collection/" + id
+	details := d.BaseURL + "collection/" + id
 	return &normalizer.Release{
 		Title:   title,
 		Details: details,
@@ -78,7 +78,7 @@ func (d *driver) toRelease(row *apiRow) *normalizer.Release {
 		// defense in depth without collapsing the per-release id — see the Newznab guid
 		// note for why the path must not be redacted.
 		GUID:        apphttp.RedactURLIdentity(details),
-		Link:        d.baseURL + "/api/download/" + id + ".nzb",
+		Link:        d.BaseURL + "api/download/" + id + ".nzb",
 		Categories:  []int{categoryOther},
 		Size:        row.Size,
 		Files:       row.FileCount,

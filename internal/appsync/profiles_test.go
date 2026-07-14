@@ -53,8 +53,8 @@ func TestCreateProfileValidation(t *testing.T) {
 		"negative seeders":  {Name: "c", MinSeeders: -1},
 	}
 	for name, p := range bad {
-		if _, err := f.svc.CreateProfile(ctx, p); !errors.Is(err, ErrInvalid) {
-			t.Errorf("%s: err = %v, want ErrInvalid", name, err)
+		if _, err := f.svc.CreateProfile(ctx, p); !errors.Is(err, domain.ErrInvalid) {
+			t.Errorf("%s: err = %v, want domain.ErrInvalid", name, err)
 		}
 	}
 }
@@ -66,8 +66,8 @@ func TestCreateProfileDuplicateName(t *testing.T) {
 	if _, err := f.svc.CreateProfile(ctx, CreateProfileParams{Name: "dup"}); err != nil {
 		t.Fatalf("first CreateProfile: %v", err)
 	}
-	if _, err := f.svc.CreateProfile(ctx, CreateProfileParams{Name: "dup"}); !errors.Is(err, ErrConflict) {
-		t.Errorf("duplicate name err = %v, want ErrConflict", err)
+	if _, err := f.svc.CreateProfile(ctx, CreateProfileParams{Name: "dup"}); !errors.Is(err, domain.ErrConflict) {
+		t.Errorf("duplicate name err = %v, want domain.ErrConflict", err)
 	}
 }
 
@@ -95,8 +95,8 @@ func TestUpdateProfileClearsAndValidates(t *testing.T) {
 
 	// A negative minSeeders patch is rejected.
 	neg := -1
-	if err := f.svc.UpdateProfile(ctx, p.ID, UpdateProfileParams{MinSeeders: &neg}); !errors.Is(err, ErrInvalid) {
-		t.Errorf("negative minSeeders update = %v, want ErrInvalid", err)
+	if err := f.svc.UpdateProfile(ctx, p.ID, UpdateProfileParams{MinSeeders: &neg}); !errors.Is(err, domain.ErrInvalid) {
+		t.Errorf("negative minSeeders update = %v, want domain.ErrInvalid", err)
 	}
 
 	// An unknown id flows through as ErrNotFound.
@@ -119,14 +119,14 @@ func TestUpdateProfileNamePatch(t *testing.T) {
 
 	// A blank name patch is rejected.
 	blank := "  "
-	if err := f.svc.UpdateProfile(ctx, b.ID, UpdateProfileParams{Name: &blank}); !errors.Is(err, ErrInvalid) {
-		t.Errorf("blank name update = %v, want ErrInvalid", err)
+	if err := f.svc.UpdateProfile(ctx, b.ID, UpdateProfileParams{Name: &blank}); !errors.Is(err, domain.ErrInvalid) {
+		t.Errorf("blank name update = %v, want domain.ErrInvalid", err)
 	}
 
 	// Renaming onto an existing name is a conflict (the UPDATE-path unique mapping).
 	taken := "a"
-	if err := f.svc.UpdateProfile(ctx, b.ID, UpdateProfileParams{Name: &taken}); !errors.Is(err, ErrConflict) {
-		t.Errorf("duplicate rename = %v, want ErrConflict", err)
+	if err := f.svc.UpdateProfile(ctx, b.ID, UpdateProfileParams{Name: &taken}); !errors.Is(err, domain.ErrConflict) {
+		t.Errorf("duplicate rename = %v, want domain.ErrConflict", err)
 	}
 
 	// A fresh name lands.
@@ -163,8 +163,8 @@ func TestUpdateProfileGuardsReferencingConnections(t *testing.T) {
 
 	// Narrowing to books-only would empty the Sonarr connection's gate — rejected.
 	books := []int{7000}
-	if err := f.svc.UpdateProfile(ctx, tv.ID, UpdateProfileParams{Categories: &books}); !errors.Is(err, ErrInvalid) {
-		t.Errorf("in-use narrowing to books = %v, want ErrInvalid", err)
+	if err := f.svc.UpdateProfile(ctx, tv.ID, UpdateProfileParams{Categories: &books}); !errors.Is(err, domain.ErrInvalid) {
+		t.Errorf("in-use narrowing to books = %v, want domain.ErrInvalid", err)
 	}
 
 	// Clearing to empty is always fine (empty = no filter).
@@ -222,8 +222,8 @@ func TestConnectionProfileRefValidation(t *testing.T) {
 	}
 	for name, tc := range refCases {
 		_, err := f.svc.CreateConnection(ctx, connParams(name, tc.kind, tc.baseURL, tc.profile))
-		if !errors.Is(err, ErrInvalid) {
-			t.Errorf("%s: create err = %v, want ErrInvalid", name, err)
+		if !errors.Is(err, domain.ErrInvalid) {
+			t.Errorf("%s: create err = %v, want domain.ErrInvalid", name, err)
 		}
 	}
 
@@ -239,8 +239,8 @@ func TestConnectionProfileRefValidation(t *testing.T) {
 	// Update: an unknown ref is a 400; a present-nil clears it.
 	if err := f.svc.UpdateConnection(ctx, conn.ID, UpdateConnectionParams{
 		SyncProfileID: RefUpdate{Present: true, Value: &unknown},
-	}); !errors.Is(err, ErrInvalid) {
-		t.Errorf("update unknown ref = %v, want ErrInvalid", err)
+	}); !errors.Is(err, domain.ErrInvalid) {
+		t.Errorf("update unknown ref = %v, want domain.ErrInvalid", err)
 	}
 	if err := f.svc.UpdateConnection(ctx, conn.ID, UpdateConnectionParams{
 		SyncProfileID: RefUpdate{Present: true, Value: nil},

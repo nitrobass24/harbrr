@@ -161,7 +161,7 @@ func TestUpdateDoesNotClobberRotatedCredential(t *testing.T) {
 	}
 	kr := &hookedKeyring{inner: realKR}
 	clock := func() time.Time { return time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC) }
-	reg := New(db, loader.New(dropin), kr, WithClock(clock))
+	reg := New(db, loader.New(dropin), kr, nil, WithClock(clock))
 
 	inst, err := reg.Add(ctx, AddParams{
 		Slug: "mam", DefinitionID: "mamtest",

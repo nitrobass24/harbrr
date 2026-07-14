@@ -293,7 +293,7 @@ func TestScrubSecretsOverlapping(t *testing.T) {
 		shortSecret = "USER123"
 		longSecret  = "USER123KEY"
 	)
-	d := &driver{cfg: map[string]string{"apiuser": shortSecret, "apikey": longSecret}}
+	d := &driver{Base: native.Base{Cfg: map[string]string{"apiuser": shortSecret, "apikey": longSecret}}}
 	got := d.scrubSecrets("leak " + longSecret + " and " + shortSecret)
 	if strings.Contains(got, shortSecret) {
 		t.Errorf("scrubSecrets left a credential fragment: %q", got)

@@ -56,7 +56,7 @@ func (d *driver) buildSearchURL(q search.Query) string {
 	if d.apikey != "" {
 		params.Set("apikey", d.apikey)
 	}
-	return d.baseURL + d.apiPath + "?" + encodeQuery(params)
+	return strings.TrimRight(d.BaseURL, "/") + d.apiPath + "?" + encodeQuery(params)
 }
 
 // resolveLimit picks the upstream page size: the query's explicit limit when positive,

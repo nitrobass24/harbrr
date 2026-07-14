@@ -17,26 +17,13 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbinterface"
 	"github.com/autobrr/harbrr/internal/domain"
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
-	"github.com/autobrr/harbrr/internal/indexer/native/animebytes"
-	"github.com/autobrr/harbrr/internal/indexer/native/avistaz"
-	"github.com/autobrr/harbrr/internal/indexer/native/beyondhd"
-	"github.com/autobrr/harbrr/internal/indexer/native/broadcastthenet"
-	"github.com/autobrr/harbrr/internal/indexer/native/filelist"
-	"github.com/autobrr/harbrr/internal/indexer/native/gazelle"
-	"github.com/autobrr/harbrr/internal/indexer/native/gazellegames"
-	"github.com/autobrr/harbrr/internal/indexer/native/hdbits"
-	"github.com/autobrr/harbrr/internal/indexer/native/iptorrents"
-	"github.com/autobrr/harbrr/internal/indexer/native/myanonamouse"
-	"github.com/autobrr/harbrr/internal/indexer/native/newznab"
-	"github.com/autobrr/harbrr/internal/indexer/native/nzbindex"
-	"github.com/autobrr/harbrr/internal/indexer/native/passthepopcorn"
-	"github.com/autobrr/harbrr/internal/indexer/native/torrentday"
 	"github.com/autobrr/harbrr/internal/web/torznabhttp"
 )
 
@@ -50,7 +37,7 @@ var errDisabled = errors.New("registry: instance disabled")
 // lock-heavy hot path — separated from transactional CRUD (Manager) and health/stats
 // reporting (StatsReporter).
 type Resolver struct {
-	db        *database.DB
+	db        dbinterface.Querier
 	instances database.Instances
 	proxies   database.Proxies
 	solvers   database.Solvers
@@ -190,12 +177,17 @@ func WithDoerFactory(fn func(ClientParams) (search.Doer, error)) Option {
 	}
 }
 
-// New builds a Registry facade over the given store, definition loader, and keyring. It
-// constructs the Resolver first (options mutate it via r.Resolver.*), applies the
-// doerFactory/stats defaults, then builds the Manager and StatsReporter from the
-// Resolver's now-finalized handles — so each focused type carries only the state its
-// methods use, all sharing the same store handles + the single *IndexerStats.
-func New(db *database.DB, ldr *loader.Loader, keyring secretsKeyring, opts ...Option) *Registry {
+// New builds a Registry facade over the given store, definition loader, keyring, and
+// native-family catalog. families is the caller's native driver catalog (production
+// wiring passes catalog.All(); a test that only exercises the Cardigann engine path
+// may pass an explicitly-nil map — a deliberate, visible choice rather than a hidden
+// default). It is a required parameter, not an Option: a default-empty catalog would
+// make every native indexer silently fail to resolve. It constructs the Resolver
+// first (options mutate it via r.Resolver.*), applies the doerFactory/stats defaults,
+// then builds the Manager and StatsReporter from the Resolver's now-finalized
+// handles — so each focused type carries only the state its methods use, all sharing
+// the same store handles + the single *IndexerStats.
+func New(db dbinterface.Querier, ldr *loader.Loader, keyring secretsKeyring, families map[string]native.Family, opts ...Option) *Registry {
 	res := &Resolver{
 		db:      db,
 		loader:  ldr,
@@ -203,7 +195,7 @@ func New(db *database.DB, ldr *loader.Loader, keyring secretsKeyring, opts ...Op
 		clock:   time.Now,
 		timeout: defaultHTTPTimeout,
 		log:     zerolog.Nop(),
-		native:  nativeFamilies(),
+		native:  families,
 		cache:   map[string]torznabhttp.Indexer{},
 		gen:     map[string]uint64{},
 	}
@@ -496,32 +488,6 @@ func (r *Resolver) NativeDefinitions() []*loader.Definition {
 		out = append(out, f.Definition)
 	}
 	return out
-}
-
-// nativeFamilies builds the native-family catalog keyed by definition id.
-func nativeFamilies() map[string]native.Family {
-	m := make(map[string]native.Family)
-	for _, fams := range [][]native.Family{
-		animebytes.Families(),
-		avistaz.Families(),
-		beyondhd.Families(),
-		broadcastthenet.Families(),
-		filelist.Families(),
-		myanonamouse.Families(),
-		iptorrents.Families(),
-		gazelle.Families(),
-		gazellegames.Families(),
-		hdbits.Families(),
-		newznab.Families(),
-		nzbindex.Families(),
-		passthepopcorn.Families(),
-		torrentday.Families(),
-	} {
-		for _, f := range fams {
-			m[f.Definition.ID] = f
-		}
-	}
-	return m
 }
 
 // baseURLOf is an instance's effective base URL: its override, else the

@@ -11,21 +11,17 @@ import (
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // fakeTorrent is a minimal bencode-shaped body (content is irrelevant to the driver;
 // it is returned verbatim to the /dl proxy).
 const fakeTorrent = "d8:announce18:https://az.test/an4:infod6:lengthi1e4:name4:fileee"
 
-func grabDriver(handler func(*stdhttp.Request, string) *stdhttp.Response) (*driver, *scriptDoer) {
+func grabDriver(t *testing.T, handler func(*stdhttp.Request, string) *stdhttp.Response) (*driver, *scriptDoer) {
+	t.Helper()
 	doer := &scriptDoer{handler: handler}
-	d := &driver{
-		cfg:     map[string]string{"username": credUser, "password": credPass, "pid": credPID},
-		doer:    doer,
-		baseURL: "https://az.test/",
-		profile: profileFor("avistaz"),
-		clock:   fixedClock,
-	}
+	d := testDriver(t, "avistaz", testBaseURL, map[string]string{"username": credUser, "password": credPass, "pid": credPID}, doer)
 	return d, doer
 }
 
@@ -33,7 +29,7 @@ func grabDriver(handler func(*stdhttp.Request, string) *stdhttp.Response) (*driv
 // direct torrent (no redirect), and that no credential leaks into the result.
 func TestGrab(t *testing.T) {
 	t.Parallel()
-	d, doer := grabDriver(func(req *stdhttp.Request, _ string) *stdhttp.Response {
+	d, doer := grabDriver(t, func(req *stdhttp.Request, _ string) *stdhttp.Response {
 		if strings.HasSuffix(req.URL.Path, "/"+authPath) {
 			return resp(stdhttp.StatusOK, `{"token":"tok-grab"}`)
 		}
@@ -83,7 +79,7 @@ func TestGrab(t *testing.T) {
 func TestGrabStatusErrors(t *testing.T) {
 	t.Parallel()
 	mk := func(status int) *driver {
-		d, _ := grabDriver(func(req *stdhttp.Request, _ string) *stdhttp.Response {
+		d, _ := grabDriver(t, func(req *stdhttp.Request, _ string) *stdhttp.Response {
 			if strings.HasSuffix(req.URL.Path, "/"+authPath) {
 				return resp(stdhttp.StatusOK, `{"token":"t"}`)
 			}
@@ -136,17 +132,11 @@ func TestGrabTransportErrorSanitized(t *testing.T) {
 	t.Parallel()
 	const secret = "PATHKEY-SECRET-zzzz"
 	const dlURL = "https://avistaz.example/dl/" + secret + "?passkey=" + secret
-	d := &driver{
-		cfg: map[string]string{"username": credUser, "password": credPass, "pid": credPID},
-		doer: &authThenErrorDoer{downloadErr: &url.Error{
-			Op:  "Get",
-			URL: dlURL,
-			Err: errors.New("dial tcp: connection refused"),
-		}},
-		baseURL: "https://avistaz.example/",
-		profile: profileFor("avistaz"),
-		clock:   fixedClock,
-	}
+	d := testDriver(t, "avistaz", "https://avistaz.example/", map[string]string{"username": credUser, "password": credPass, "pid": credPID}, &authThenErrorDoer{downloadErr: &url.Error{
+		Op:  "Get",
+		URL: dlURL,
+		Err: errors.New("dial tcp: connection refused"),
+	}})
 	_, err := d.Grab(context.Background(), dlURL)
 	if err == nil {
 		t.Fatal("want a transport error")
@@ -168,17 +158,10 @@ func TestGrabTransportErrorSanitized(t *testing.T) {
 	}
 }
 
-func TestReadCapped(t *testing.T) {
+func TestGrabPreservesOversizedSentinel(t *testing.T) {
 	t.Parallel()
-	if _, err := readCapped(strings.NewReader("0123456789AB"), 10); !errors.Is(err, errDownloadTooLarge) {
-		t.Errorf("12 bytes over cap 10: err = %v, want errDownloadTooLarge", err)
-	}
-	got, err := readCapped(strings.NewReader("0123456789"), 10) // exactly at cap is fine
-	if err != nil || len(got) != 10 {
-		t.Errorf("at cap: len=%d err=%v, want 10/nil", len(got), err)
-	}
-	got, err = readCapped(strings.NewReader("hello"), 10)
-	if err != nil || string(got) != "hello" {
-		t.Errorf("under cap: got=%q err=%v", got, err)
+	err := sanitizeGrabError(native.ErrDownloadTooLarge)
+	if !errors.Is(err, native.ErrDownloadTooLarge) {
+		t.Fatalf("err = %v, want native.ErrDownloadTooLarge", err)
 	}
 }

@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
 
+	"github.com/autobrr/harbrr/internal/connresource"
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
 	"github.com/autobrr/harbrr/internal/domain"
@@ -41,7 +41,9 @@ type healthKey struct {
 // Service persists notification targets (encrypting the destination URL) and dispatches
 // operational events to the enabled, matching ones. It implements the registry's health
 // sink: a recorded indexer health failure fans out to every enabled target whose
-// on_health_failure flag is set, asynchronously and best-effort.
+// on_health_failure flag is set, asynchronously and best-effort. Create/Update/Delete of
+// the target row and its encrypted secret are sequenced by connresource.Lifecycle; notify
+// mints nothing (unlike appsync/announce), so its specs simply leave Minter nil.
 type Service struct {
 	// dispatchWG tracks in-flight detached dispatch goroutines so Drain can join them
 	// before the DB is torn down at shutdown (dispatch reads the DB).
@@ -51,6 +53,7 @@ type Service struct {
 	keyring    *secrets.Keyring
 	client     *http.Client
 	clock      func() time.Time
+	life       *connresource.Lifecycle[domain.Notification]
 	// healthMu guards lastHealthNotify, the per-(indexer, kind) time of the last
 	// dispatched health notification. It debounces poll-spam (see healthNotifyCooldown)
 	// and must be a distinct lock from dispatchWG's accounting.
@@ -60,15 +63,19 @@ type Service struct {
 }
 
 // NewService wires the notify service. client is shared by all senders (nil installs a
-// timeout-bounded default); clock is injectable for deterministic tests.
+// timeout-bounded default); clock is injectable for deterministic tests (assigning to the
+// returned Service's clock field also retunes its Lifecycle, which reads clock through an
+// indirection).
 func NewService(db dbinterface.Querier, keyring *secrets.Keyring, client *http.Client, log zerolog.Logger) *Service {
 	if client == nil {
 		client = defaultHTTPClient()
 	}
-	return &Service{
+	s := &Service{
 		db: db, keyring: keyring, client: client, clock: time.Now,
 		lastHealthNotify: make(map[healthKey]time.Time), log: log,
 	}
+	s.life = connresource.New[domain.Notification](db, keyring, func() time.Time { return s.clock() })
+	return s
 }
 
 // CreateNotificationParams is the input to CreateNotification. OnHealthFailure is a
@@ -90,37 +97,28 @@ func (s *Service) CreateNotification(ctx context.Context, p CreateNotificationPa
 	if err := validateCreate(p); err != nil {
 		return domain.Notification{}, err
 	}
-
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return domain.Notification{}, fmt.Errorf("notify: begin tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	now := s.clock()
-	n := domain.Notification{
-		Name: p.Name, Type: p.Type, Enabled: true,
-		OnHealthFailure: p.OnHealthFailure == nil || *p.OnHealthFailure,
-		CreatedAt:       now, UpdatedAt: now,
-	}
-	id, err := s.repo.InsertNotification(ctx, tx, n)
-	if err != nil {
-		return domain.Notification{}, fmt.Errorf("notify: insert notification: %w", err)
-	}
-	n.ID = id
-
-	enc, err := s.keyring.Encrypt(id, secretURL, p.URL)
-	if err != nil {
-		return domain.Notification{}, fmt.Errorf("notify: encrypt url: %w", err)
-	}
-	if err := s.repo.SetNotificationSecret(ctx, tx, id, enc, s.keyring.KeyID()); err != nil {
-		return domain.Notification{}, fmt.Errorf("notify: set notification secret: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return domain.Notification{}, fmt.Errorf("notify: commit: %w", err)
-	}
-	n.URLEncrypted, n.KeyID = enc, s.keyring.KeyID()
-	return n, nil
+	return s.life.Create(ctx, connresource.CreateSpec[domain.Notification]{
+		Build: func(now time.Time, _ int64) domain.Notification {
+			return domain.Notification{
+				Name: p.Name, Type: p.Type, Enabled: true,
+				OnHealthFailure: p.OnHealthFailure == nil || *p.OnHealthFailure,
+				CreatedAt:       now, UpdatedAt: now,
+			}
+		},
+		Insert: func(ctx context.Context, q dbinterface.Execer, n domain.Notification) (int64, error) {
+			return s.repo.InsertNotification(ctx, q, n)
+		},
+		Secrets: func(_ domain.Notification, _ string) []connresource.Secret {
+			return []connresource.Secret{{Discriminator: secretURL, Plaintext: p.URL}}
+		},
+		SetSecrets: func(ctx context.Context, q dbinterface.Execer, id int64, encrypted []string, keyID string) error {
+			return s.repo.SetNotificationSecret(ctx, q, id, encrypted[0], keyID)
+		},
+		Finalize: func(n domain.Notification, id int64, encrypted []string, keyID string) domain.Notification {
+			n.ID, n.URLEncrypted, n.KeyID = id, encrypted[0], keyID
+			return n
+		},
+	})
 }
 
 // UpdateNotificationParams patches a target; nil fields are left unchanged. URL, when
@@ -137,45 +135,39 @@ type UpdateNotificationParams struct {
 // UpdateNotification so the second reads the first's committed row (mirrors appsync
 // UpdateConnection).
 func (s *Service) UpdateNotification(ctx context.Context, id int64, p UpdateNotificationParams) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("notify: begin tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	n, err := s.repo.GetNotification(ctx, tx, id)
-	if err != nil {
-		return fmt.Errorf("notify: get notification: %w", err)
-	}
-	if p.Name != nil {
-		name := strings.TrimSpace(*p.Name)
-		if name == "" {
-			return fmt.Errorf("%w: name must not be blank", ErrInvalid)
-		}
-		n.Name = name
-	}
-	if p.OnHealthFailure != nil {
-		n.OnHealthFailure = *p.OnHealthFailure
-	}
-	if p.URL != nil {
-		raw := strings.TrimSpace(*p.URL)
-		if err := validateURL(raw); err != nil {
-			return err
-		}
-		enc, err := s.keyring.Encrypt(n.ID, secretURL, raw)
-		if err != nil {
-			return fmt.Errorf("notify: encrypt url: %w", err)
-		}
-		n.URLEncrypted, n.KeyID = enc, s.keyring.KeyID()
-	}
-	n.UpdatedAt = s.clock()
-	if err := s.repo.UpdateNotification(ctx, tx, n); err != nil {
-		return fmt.Errorf("notify: update notification: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("notify: commit: %w", err)
-	}
-	return nil
+	return s.life.Update(ctx, id, connresource.UpdateSpec[domain.Notification]{
+		Get: func(ctx context.Context, q dbinterface.Execer, id int64) (domain.Notification, error) {
+			return s.repo.GetNotification(ctx, q, id)
+		},
+		Patch: func(n *domain.Notification) error {
+			if p.Name != nil {
+				name := strings.TrimSpace(*p.Name)
+				if name == "" {
+					return fmt.Errorf("%w: name must not be blank", domain.ErrInvalid)
+				}
+				n.Name = name
+			}
+			if p.OnHealthFailure != nil {
+				n.OnHealthFailure = *p.OnHealthFailure
+			}
+			return nil
+		},
+		Rotate: func(_ *domain.Notification) (connresource.Secret, bool, error) {
+			if p.URL == nil {
+				return connresource.Secret{}, false, nil
+			}
+			raw := strings.TrimSpace(*p.URL)
+			if err := validateURL(raw); err != nil {
+				return connresource.Secret{}, false, err
+			}
+			return connresource.Secret{Discriminator: secretURL, Plaintext: raw}, true, nil
+		},
+		Apply: func(n *domain.Notification, encrypted, keyID string) { n.URLEncrypted, n.KeyID = encrypted, keyID },
+		Touch: func(n *domain.Notification, now time.Time) { n.UpdatedAt = now },
+		Write: func(ctx context.Context, q dbinterface.Execer, n domain.Notification) error {
+			return s.repo.UpdateNotification(ctx, q, n)
+		},
+	})
 }
 
 // ListNotifications / GetNotification expose persisted state (the URL stays encrypted;
@@ -204,12 +196,17 @@ func (s *Service) SetEnabled(ctx context.Context, id int64, enabled bool) error 
 	return nil
 }
 
-// DeleteNotification removes a target by id.
+// DeleteNotification removes a target by id. Unlike appsync/announce, notify mints
+// nothing, so this is a plain get-then-delete with no revoke step.
 func (s *Service) DeleteNotification(ctx context.Context, id int64) error {
-	if err := s.repo.DeleteNotification(ctx, s.db, id); err != nil {
-		return fmt.Errorf("notify: delete notification: %w", err)
-	}
-	return nil
+	return s.life.Delete(ctx, id, connresource.DeleteSpec[domain.Notification]{
+		Get: func(ctx context.Context, q dbinterface.Execer, id int64) (domain.Notification, error) {
+			return s.repo.GetNotification(ctx, q, id)
+		},
+		Delete: func(ctx context.Context, q dbinterface.Execer, id int64) error {
+			return s.repo.DeleteNotification(ctx, q, id)
+		},
+	})
 }
 
 // TestNotification sends a synthetic event to one target so an operator can confirm the
@@ -346,7 +343,7 @@ func (s *Service) sender(n domain.Notification) (Sender, error) {
 // validateCreate checks a create request: name, a known type, and a well-formed URL.
 func validateCreate(p CreateNotificationParams) error {
 	if p.Name == "" {
-		return fmt.Errorf("%w: name is required", ErrInvalid)
+		return fmt.Errorf("%w: name is required", domain.ErrInvalid)
 	}
 	if err := validateType(p.Type); err != nil {
 		return err
@@ -360,16 +357,14 @@ func validateType(typ string) error {
 	case domain.NotifyTypeWebhook, domain.NotifyTypeDiscord:
 		return nil
 	default:
-		return fmt.Errorf("%w: type must be webhook or discord (got %q)", ErrInvalid, typ)
+		return fmt.Errorf("%w: type must be webhook or discord (got %q)", domain.ErrInvalid, typ)
 	}
 }
 
 // validateURL requires an absolute http(s) URL with a host, so a malformed/relative
-// destination can't be persisted and later fail every send.
+// destination can't be persisted and later fail every send. The trimmed return is
+// discarded: notify persists a separately-trimmed value at each call site.
 func validateURL(raw string) error {
-	u, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") {
-		return fmt.Errorf("%w: url must be an absolute http(s) URL", ErrInvalid)
-	}
-	return nil
+	_, err := domain.ValidateAbsURL("url", raw)
+	return err
 }

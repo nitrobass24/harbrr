@@ -1,22 +1,80 @@
-package main
+package app
 
 import (
 	"context"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/rs/zerolog"
 
 	"github.com/autobrr/harbrr/internal/announce"
+	"github.com/autobrr/harbrr/internal/appsync"
+	"github.com/autobrr/harbrr/internal/auth"
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
 	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 	"github.com/autobrr/harbrr/internal/secrets"
-	tzn "github.com/autobrr/harbrr/internal/torznab"
+	"github.com/autobrr/harbrr/internal/torznab"
 	"github.com/autobrr/harbrr/internal/web/torznabhttp"
 )
+
+// appSyncClient is the HTTP client app-sync drivers use to reach the *arr/qui apps.
+// A bounded timeout keeps a hung app from stalling a sync. It is the default
+// client for New; WithHTTPClient overrides it (test-widening seam).
+func appSyncClient() *http.Client {
+	return &http.Client{Timeout: 30 * time.Second}
+}
+
+// registrySource adapts the indexer registry to appsync.IndexerSource: the configured
+// instances and each one's advertised Newznab categories. Keeping it in the
+// composition root keeps the appsync package free of an engine dependency.
+type registrySource struct {
+	reg *registry.Registry
+}
+
+func (s registrySource) List(ctx context.Context) ([]domain.IndexerInstance, error) {
+	return s.reg.List(ctx) //nolint:wrapcheck // composition-root adapter; the service wraps.
+}
+
+// Categories returns the indexer's advertised categories. An indexer that fails to
+// resolve yields no categories rather than failing the whole sync — the indexer is
+// still pushed (the app falls back to all categories).
+func (s registrySource) Categories(ctx context.Context, slug string) ([]appsync.Category, error) {
+	idx, ok := s.reg.Indexer(ctx, slug)
+	if !ok {
+		return nil, nil
+	}
+	caps := idx.Capabilities()
+	out := make([]appsync.Category, 0, len(caps.Categories))
+	for _, c := range caps.Categories {
+		out = append(out, appsync.Category{ID: c.ID, Name: c.Name})
+	}
+	return out, nil
+}
+
+// Capabilities returns the indexer's flat Torznab capability tokens (tv-search,
+// movie-search-imdbid, ...) derived from its advertised search modes — what qui
+// stores per indexer. An unresolvable indexer yields none rather than failing the
+// sync.
+func (s registrySource) Capabilities(ctx context.Context, slug string) ([]string, error) {
+	idx, ok := s.reg.Indexer(ctx, slug)
+	if !ok {
+		return nil, nil
+	}
+	return torznab.CapabilityTokens(idx.Capabilities()), nil
+}
+
+// apiKeyValidator wires the Torznab apikey check to the auth service so any minted
+// key (stored only as a hash) authorizes the feed.
+func apiKeyValidator(authSvc *auth.Service) func(string) bool {
+	return func(key string) bool {
+		_, err := authSvc.ValidateAPIKey(context.Background(), key)
+		return err == nil
+	}
+}
 
 // announcePushTimeout bounds one detached announce-push fan-out.
 const announcePushTimeout = 60 * time.Second
@@ -45,7 +103,7 @@ func newAnnounceSink(svc *announce.Service, db dbinterface.Execer, keyring *secr
 	return func(_ context.Context, instanceID int64, fresh []*normalizer.Release) {
 		snap := make([]srcRelease, 0, len(fresh))
 		for _, r := range fresh {
-			snap = append(snap, srcRelease{name: r.Title, guid: tzn.GUIDFor(r), link: r.Link, magnet: r.Magnet, size: r.Size})
+			snap = append(snap, srcRelease{name: r.Title, guid: torznab.GUIDFor(r), link: r.Link, magnet: r.Magnet, size: r.Size})
 		}
 		select {
 		case sem <- struct{}{}:
@@ -61,7 +119,7 @@ func newAnnounceSink(svc *announce.Service, db dbinterface.Execer, keyring *secr
 			defer cancel()
 			inst, err := instances.GetByID(ctx, db, instanceID)
 			if err != nil {
-				log.Warn().Int64("instance_id", instanceID).Msg("announce: resolve indexer slug failed")
+				log.Warn().Err(err).Int64("instance_id", instanceID).Msg("announce: resolve indexer slug failed")
 				return
 			}
 			svc.Push(ctx, func(conn domain.AnnounceConnection) []announce.Release {

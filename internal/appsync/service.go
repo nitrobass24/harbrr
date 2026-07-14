@@ -2,7 +2,6 @@ package appsync
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/autobrr/harbrr/internal/connresource"
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
 	"github.com/autobrr/harbrr/internal/domain"
@@ -34,13 +34,6 @@ const (
 	StatusSkipped = "skipped"
 )
 
-// ErrInvalid and ErrConflict are the service's input-mapping sentinels (the handler
-// turns them into 400 / 409). Not-found flows through database.ErrNotFound.
-var (
-	ErrInvalid  = errors.New("appsync: invalid input")
-	ErrConflict = errors.New("appsync: connection already exists")
-)
-
 // IndexerSource is the slice of the registry app-sync needs: the configured indexers,
 // each one's Newznab categories, and its Torznab capability tokens. Implemented by a
 // registry adapter (serve.go).
@@ -53,38 +46,37 @@ type IndexerSource interface {
 	Capabilities(ctx context.Context, slug string) ([]string, error)
 }
 
-// KeyMinter is the slice of auth.Service app-sync needs: mint a dedicated harbrr API
-// key per connection and revoke it on delete.
-type KeyMinter interface {
-	MintAPIKey(ctx context.Context, name string) (string, domain.APIKey, error)
-	RevokeAPIKey(ctx context.Context, id int64) error
-}
-
 // Service orchestrates app-sync connections: it persists them (encrypting both the
 // app's key and the harbrr key minted for the connection), and reconciles harbrr's
-// indexers into each app on demand.
+// indexers into each app on demand. Create/Update/Delete of the connection row and
+// its encrypted secrets are sequenced by connresource.Lifecycle; this service
+// supplies the connection-specific data and repo calls.
 type Service struct {
 	db       dbinterface.Querier
 	repo     database.AppConnections
 	profiles database.SyncProfiles
 	source   IndexerSource
-	minter   KeyMinter
+	minter   connresource.KeyMinter
 	keyring  *secrets.Keyring
 	client   *http.Client
 	clock    func() time.Time
+	life     *connresource.Lifecycle[domain.AppConnection]
 	log      zerolog.Logger
 }
 
 // NewService wires the app-sync service. client is shared by all drivers; clock is
-// injectable for deterministic tests.
-func NewService(db dbinterface.Querier, source IndexerSource, minter KeyMinter, keyring *secrets.Keyring, client *http.Client, log zerolog.Logger) *Service {
+// injectable for deterministic tests (assigning to the returned Service's clock
+// field also retunes its Lifecycle, which reads clock through an indirection).
+func NewService(db dbinterface.Querier, source IndexerSource, minter connresource.KeyMinter, keyring *secrets.Keyring, client *http.Client, log zerolog.Logger) *Service {
 	if client == nil {
 		client = defaultHTTPClient()
 	}
-	return &Service{
+	s := &Service{
 		db: db, source: source, minter: minter, keyring: keyring,
 		client: client, clock: time.Now, log: log,
 	}
+	s.life = connresource.New[domain.AppConnection](db, keyring, func() time.Time { return s.clock() })
+	return s
 }
 
 // CreateConnectionParams is the input to CreateConnection. APIKey is the app's own
@@ -114,86 +106,48 @@ func (s *Service) CreateConnection(ctx context.Context, p CreateConnectionParams
 		return domain.AppConnection{}, err
 	}
 	// Advisory pre-check so an ordinary invalid profile ref fails before the key
-	// mint below has side effects; the authoritative, race-proof check runs again
-	// inside insertConnection's transaction.
+	// mint has side effects; the authoritative, race-proof check runs again inside
+	// Lifecycle.Create's transaction (the Hook below).
 	if err := s.validateProfileRef(ctx, s.db, p.Kind, p.SyncProfileID); err != nil {
 		return domain.AppConnection{}, err
 	}
-	plaintext, key, err := s.minter.MintAPIKey(ctx, "app-sync: "+p.Name)
-	if err != nil {
-		return domain.AppConnection{}, fmt.Errorf("appsync: mint connection key: %w", err)
-	}
-	conn, err := s.insertConnection(ctx, p, key.ID, plaintext)
-	if err != nil {
-		// Fail closed (parity with internal/announce): an orphan key that cannot be
-		// revoked remains a valid feed credential, so surface the revoke failure
-		// alongside the create failure rather than swallowing it in a log line.
-		if revErr := s.minter.RevokeAPIKey(ctx, key.ID); revErr != nil {
-			return domain.AppConnection{}, fmt.Errorf("%w (and its orphan key %d could not be revoked — revoke it manually: %w)",
-				err, key.ID, revErr)
-		}
-		return domain.AppConnection{}, err
-	}
-	return conn, nil
-}
-
-// insertConnection writes the connection in two phases inside one transaction: the row
-// first (to mint the id the encryption AAD binds to), then its encrypted secrets.
-func (s *Service) insertConnection(ctx context.Context, p CreateConnectionParams, harbrrKeyID int64, harbrrKeyPlain string) (domain.AppConnection, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return domain.AppConnection{}, fmt.Errorf("appsync: begin tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	// Validate the profile ref against this same transaction (not the bare s.db
-	// handle), so a concurrent profile delete or category-narrow can't slip between
-	// the check and the insert below (the UpdateConnection precedent).
-	if err := s.validateProfileRef(ctx, tx, p.Kind, p.SyncProfileID); err != nil {
-		return domain.AppConnection{}, err
-	}
-
-	now := s.clock()
-	conn := domain.AppConnection{
-		Name: p.Name, Kind: p.Kind, BaseURL: p.BaseURL, HarbrrURL: p.HarbrrURL,
-		HarbrrAPIKeyID: harbrrKeyID, Enabled: true, SyncLevel: p.SyncLevel,
-		IndexScope: p.IndexScope, FreeleechMode: p.FreeleechMode, Priority: p.Priority,
-		SyncProfileID: p.SyncProfileID, CreatedAt: now, UpdatedAt: now,
-	}
-	id, err := s.repo.InsertConnection(ctx, tx, conn)
-	if err != nil {
-		if database.IsUniqueViolation(err) {
-			return domain.AppConnection{}, fmt.Errorf("%w: %s at %s", ErrConflict, p.Kind, apphttp.RedactURL(p.BaseURL))
-		}
-		return domain.AppConnection{}, fmt.Errorf("appsync: insert connection: %w", err)
-	}
-	conn.ID = id
-
-	appEnc, harbrrEnc, err := s.encryptSecrets(id, p.APIKey, harbrrKeyPlain)
-	if err != nil {
-		return domain.AppConnection{}, err
-	}
-	if err := s.repo.SetConnectionSecrets(ctx, tx, id, appEnc, harbrrEnc, s.keyring.KeyID()); err != nil {
-		return domain.AppConnection{}, fmt.Errorf("appsync: set connection secrets: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return domain.AppConnection{}, fmt.Errorf("appsync: commit: %w", err)
-	}
-	conn.APIKeyEncrypted, conn.HarbrrAPIKeyEncrypted, conn.KeyID = appEnc, harbrrEnc, s.keyring.KeyID()
-	return conn, nil
-}
-
-// encryptSecrets seals both connection secrets under the connection id.
-func (s *Service) encryptSecrets(connID int64, appKey, harbrrKey string) (appEnc, harbrrEnc string, err error) {
-	appEnc, err = s.keyring.Encrypt(connID, secretApp, appKey)
-	if err != nil {
-		return "", "", fmt.Errorf("appsync: encrypt app key: %w", err)
-	}
-	harbrrEnc, err = s.keyring.Encrypt(connID, secretHarbrr, harbrrKey)
-	if err != nil {
-		return "", "", fmt.Errorf("appsync: encrypt harbrr key: %w", err)
-	}
-	return appEnc, harbrrEnc, nil
+	return s.life.Create(ctx, connresource.CreateSpec[domain.AppConnection]{
+		Minter:   s.minter,
+		MintName: "app-sync: " + p.Name,
+		Build: func(now time.Time, mintedKeyID int64) domain.AppConnection {
+			return domain.AppConnection{
+				Name: p.Name, Kind: p.Kind, BaseURL: p.BaseURL, HarbrrURL: p.HarbrrURL,
+				HarbrrAPIKeyID: mintedKeyID, Enabled: true, SyncLevel: p.SyncLevel,
+				IndexScope: p.IndexScope, FreeleechMode: p.FreeleechMode, Priority: p.Priority,
+				SyncProfileID: p.SyncProfileID, CreatedAt: now, UpdatedAt: now,
+			}
+		},
+		Hook: func(ctx context.Context, q dbinterface.Execer, conn *domain.AppConnection) error {
+			// Re-validated against this same transaction (not the bare s.db handle
+			// used by the advisory pre-check above), so a concurrent profile delete
+			// or category-narrow can't slip between the check and the insert below.
+			return s.validateProfileRef(ctx, q, conn.Kind, conn.SyncProfileID)
+		},
+		Insert: func(ctx context.Context, q dbinterface.Execer, conn domain.AppConnection) (int64, error) {
+			return s.repo.InsertConnection(ctx, q, conn)
+		},
+		Secrets: func(_ domain.AppConnection, mintedPlain string) []connresource.Secret {
+			return []connresource.Secret{
+				{Discriminator: secretApp, Plaintext: p.APIKey},
+				{Discriminator: secretHarbrr, Plaintext: mintedPlain},
+			}
+		},
+		SetSecrets: func(ctx context.Context, q dbinterface.Execer, id int64, encrypted []string, keyID string) error {
+			return s.repo.SetConnectionSecrets(ctx, q, id, encrypted[0], encrypted[1], keyID)
+		},
+		Finalize: func(conn domain.AppConnection, id int64, encrypted []string, keyID string) domain.AppConnection {
+			conn.ID, conn.APIKeyEncrypted, conn.HarbrrAPIKeyEncrypted, conn.KeyID = id, encrypted[0], encrypted[1], keyID
+			return conn
+		},
+		Conflict: func(conn domain.AppConnection) error {
+			return fmt.Errorf("%w: %s at %s", domain.ErrConflict, conn.Kind, apphttp.RedactURL(conn.BaseURL))
+		},
+	})
 }
 
 // RefUpdate is a tri-state PATCH field for a nullable resource reference: Present false
@@ -221,56 +175,52 @@ type UpdateConnectionParams struct {
 	SyncProfileID RefUpdate
 }
 
-// UpdateConnection applies a patch, re-encrypting the app key when rotated.
+// UpdateConnection applies a patch, re-encrypting the app key when rotated. The
+// read, profile-ref-validate, and write run in one Lifecycle.Update transaction,
+// so a concurrent mutation can't slip between the check and the write (the
+// UpdateProfile / proxy Update precedent). Two guarantees ride on this: a
+// concurrent key rotation can't be lost by this full-row write reading a stale
+// api_key, and a concurrent UpdateProfile can't narrow the referenced profile's
+// categories between validateProfileRef and the ref write — which would leave a
+// full-sync connection pointing at an empty gate that deletes every indexer it
+// manages.
 func (s *Service) UpdateConnection(ctx context.Context, id int64, p UpdateConnectionParams) error {
-	// One transaction for read → profile-ref-validate → write, so a concurrent
-	// mutation can't slip between the check and the write (the UpdateProfile /
-	// proxy Update precedent). Two guarantees ride on this: a concurrent key
-	// rotation can't be lost by this full-row write reading a stale api_key, and a
-	// concurrent UpdateProfile can't narrow the referenced profile's categories
-	// between validateProfileRef and the ref write — which would leave a full-sync
-	// connection pointing at an empty gate that deletes every indexer it manages.
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("appsync: begin tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	conn, err := s.repo.GetConnection(ctx, tx, id)
-	if err != nil {
-		return fmt.Errorf("appsync: get connection: %w", err)
-	}
-	// A new profile ref is validated against the connection's kind before it is applied
-	// (existence, non-qui, category overlap), so a bad ref is a 400, not a stored orphan.
-	if p.SyncProfileID.Present {
-		if err := s.validateProfileRef(ctx, tx, conn.Kind, p.SyncProfileID.Value); err != nil {
-			return err
-		}
-	}
-	if err := applyUpdate(&conn, p); err != nil {
-		return err
-	}
-	if p.APIKey != nil {
-		if strings.TrimSpace(*p.APIKey) == "" {
-			return fmt.Errorf("%w: api key must not be blank", ErrInvalid)
-		}
-		enc, err := s.keyring.Encrypt(conn.ID, secretApp, *p.APIKey)
-		if err != nil {
-			return fmt.Errorf("appsync: encrypt app key: %w", err)
-		}
-		conn.APIKeyEncrypted, conn.KeyID = enc, s.keyring.KeyID()
-	}
-	conn.UpdatedAt = s.clock()
-	if err := s.repo.UpdateConnection(ctx, tx, conn); err != nil {
-		if database.IsUniqueViolation(err) {
-			return fmt.Errorf("%w: %s at %s", ErrConflict, conn.Kind, apphttp.RedactURL(conn.BaseURL))
-		}
-		return fmt.Errorf("appsync: update connection: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("appsync: commit: %w", err)
-	}
-	return nil
+	return s.life.Update(ctx, id, connresource.UpdateSpec[domain.AppConnection]{
+		Get: func(ctx context.Context, q dbinterface.Execer, id int64) (domain.AppConnection, error) {
+			return s.repo.GetConnection(ctx, q, id)
+		},
+		Hook: func(ctx context.Context, q dbinterface.Execer, conn *domain.AppConnection) error {
+			// A new profile ref is validated against the connection's kind before it
+			// is applied (existence, non-qui, category overlap), so a bad ref is a
+			// 400, not a stored orphan.
+			if !p.SyncProfileID.Present {
+				return nil
+			}
+			return s.validateProfileRef(ctx, q, conn.Kind, p.SyncProfileID.Value)
+		},
+		Patch: func(conn *domain.AppConnection) error {
+			return applyUpdate(conn, p)
+		},
+		Rotate: func(_ *domain.AppConnection) (connresource.Secret, bool, error) {
+			if p.APIKey == nil {
+				return connresource.Secret{}, false, nil
+			}
+			if strings.TrimSpace(*p.APIKey) == "" {
+				return connresource.Secret{}, false, fmt.Errorf("%w: api key must not be blank", domain.ErrInvalid)
+			}
+			return connresource.Secret{Discriminator: secretApp, Plaintext: *p.APIKey}, true, nil
+		},
+		Apply: func(conn *domain.AppConnection, encrypted, keyID string) {
+			conn.APIKeyEncrypted, conn.KeyID = encrypted, keyID
+		},
+		Touch: func(conn *domain.AppConnection, now time.Time) { conn.UpdatedAt = now },
+		Write: func(ctx context.Context, q dbinterface.Execer, conn domain.AppConnection) error {
+			return s.repo.UpdateConnection(ctx, q, conn)
+		},
+		Conflict: func(conn domain.AppConnection) error {
+			return fmt.Errorf("%w: %s at %s", domain.ErrConflict, conn.Kind, apphttp.RedactURL(conn.BaseURL))
+		},
+	})
 }
 
 // SetSelectedIndexers replaces a connection's selected-indexer set (the scope
@@ -335,7 +285,7 @@ func (s *Service) validateInstanceIDs(ctx context.Context, instanceIDs []int64) 
 	}
 	for _, instID := range instanceIDs {
 		if !known[instID] {
-			return fmt.Errorf("%w: unknown indexer instance id %d", ErrInvalid, instID)
+			return fmt.Errorf("%w: unknown indexer instance id %d", domain.ErrInvalid, instID)
 		}
 	}
 	return nil
@@ -343,23 +293,23 @@ func (s *Service) validateInstanceIDs(ctx context.Context, instanceIDs []int64) 
 
 // DeleteConnection removes the connection (ledger cascades) and revokes its minted key.
 func (s *Service) DeleteConnection(ctx context.Context, id int64) error {
-	conn, err := s.repo.GetConnection(ctx, s.db, id)
-	if err != nil {
-		return fmt.Errorf("appsync: get connection: %w", err)
-	}
-	if err := s.repo.DeleteConnection(ctx, s.db, id); err != nil {
-		return fmt.Errorf("appsync: delete connection: %w", err)
-	}
-	if conn.HarbrrAPIKeyID != 0 {
+	return s.life.Delete(ctx, id, connresource.DeleteSpec[domain.AppConnection]{
+		Get: func(ctx context.Context, q dbinterface.Execer, id int64) (domain.AppConnection, error) {
+			return s.repo.GetConnection(ctx, q, id)
+		},
+		Delete: func(ctx context.Context, q dbinterface.Execer, id int64) error {
+			return s.repo.DeleteConnection(ctx, q, id)
+		},
+		Minter:      s.minter,
+		MintedKeyID: func(conn domain.AppConnection) int64 { return conn.HarbrrAPIKeyID },
 		// Fail closed (parity with internal/announce): the row is gone, but a
-		// still-valid minted key would keep authorizing the feed, so surface a revoke
-		// failure instead of swallowing it.
-		if err := s.minter.RevokeAPIKey(ctx, conn.HarbrrAPIKeyID); err != nil {
+		// still-valid minted key would keep authorizing the feed, so surface a
+		// revoke failure instead of swallowing it.
+		RevokeFailMsg: func(_ domain.AppConnection, keyID int64, revokeErr error) error {
 			return fmt.Errorf("appsync: connection deleted but its harbrr key (%d) could not be revoked — revoke it manually: %w",
-				conn.HarbrrAPIKeyID, err)
-		}
-	}
-	return nil
+				keyID, revokeErr)
+		},
+	})
 }
 
 // SetEnabled toggles a connection's enabled flag.
@@ -444,6 +394,6 @@ func newDriver(kind, baseURL, apiKey string, client *http.Client) (Target, error
 	case domain.AppKindQui:
 		return NewQui(baseURL, apiKey, client), nil
 	default:
-		return nil, fmt.Errorf("%w: unknown kind %q", ErrInvalid, kind)
+		return nil, fmt.Errorf("%w: unknown kind %q", domain.ErrInvalid, kind)
 	}
 }

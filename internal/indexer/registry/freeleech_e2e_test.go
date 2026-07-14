@@ -99,7 +99,7 @@ func newFreeleechRegistry(t *testing.T, doer search.Doer) *registry.Registry {
 		t.Fatalf("open keyring: %v", err)
 	}
 	return registry.New(
-		db, loader.New(dropin), keyring,
+		db, loader.New(dropin), keyring, nil,
 		registry.WithClock(fixedClock),
 		registry.WithDoerFactory(func(registry.ClientParams) (search.Doer, error) { return doer, nil }),
 	)

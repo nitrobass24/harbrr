@@ -30,7 +30,7 @@ func DefaultTargetFactory(client *http.Client, fetch TorrentFetcher, tags []stri
 		case domain.AnnounceKindCrossSeedV6:
 			return NewCrossSeedV6(conn.BaseURL, toolKey, client), nil
 		default:
-			return nil, fmt.Errorf("%w: unknown kind %q", ErrInvalid, conn.Kind)
+			return nil, fmt.Errorf("%w: unknown kind %q", domain.ErrInvalid, conn.Kind)
 		}
 	}
 }

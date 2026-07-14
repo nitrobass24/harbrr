@@ -9,16 +9,8 @@ package avistaz
 import (
 	"context"
 	"errors"
-	"fmt"
-	"strings"
 	"sync"
-	"time"
 
-	"github.com/rs/zerolog"
-
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
@@ -26,14 +18,8 @@ import (
 // and cached by the registry; the bearer token is held per driver and refreshed
 // reactively on a 401/412.
 type driver struct {
-	def     *loader.Definition
-	caps    *mapper.Capabilities
-	cfg     map[string]string
-	doer    search.Doer
-	baseURL string // normalised with a single trailing slash
-	clock   func() time.Time
+	native.Base
 	profile profile
-	log     zerolog.Logger
 
 	mu    sync.Mutex
 	token string // cached bearer; refreshed reactively
@@ -64,32 +50,15 @@ func New(p native.Params) (native.Driver, error) {
 	if p.Def == nil {
 		return nil, errors.New("avistaz: nil definition")
 	}
-	caps, err := mapper.Build(p.Def)
+	base, err := native.NewBase("avistaz", p)
 	if err != nil {
-		return nil, fmt.Errorf("avistaz: build capabilities for %q: %w", p.Def.ID, err)
-	}
-	base := p.BaseURL
-	if base == "" && len(p.Def.Links) > 0 {
-		base = p.Def.Links[0]
-	}
-	clock := p.Clock
-	if clock == nil {
-		clock = time.Now
+		return nil, err
 	}
 	return &driver{
-		def:     p.Def,
-		caps:    caps,
-		cfg:     p.Cfg,
-		doer:    p.Doer,
-		baseURL: strings.TrimRight(base, "/") + "/",
-		clock:   clock,
+		Base:    base,
 		profile: profileFor(p.Def.ID),
-		log:     p.Logger,
 	}, nil
 }
-
-// Capabilities returns the per-site capabilities document.
-func (d *driver) Capabilities() *mapper.Capabilities { return d.caps }
 
 // NeedsResolver is always true: an AvistaZ download URL must be fetched with the
 // Bearer header *arr cannot send, so the served feed routes through the /dl proxy

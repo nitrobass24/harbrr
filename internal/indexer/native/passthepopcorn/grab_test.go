@@ -10,6 +10,7 @@ import (
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // torrentBytes is a minimal bencoded payload: a bencoded dict starts with 'd'. PTP serves a
@@ -100,8 +101,8 @@ func TestGrabRejectsNonTorrentBody(t *testing.T) {
 // TestGrabTransportErrorSurfacesHostOnly proves a real transport failure (the *url.Error
 // http.Client.Do returns) is reduced to its host-only cause: the endpoint scheme://host
 // survives (it is not a secret) while a secret hidden in a path segment or a query param —
-// and either credential — never does. The fixed "download request failed" prefix is kept so
-// the failure class stays recognisable.
+// and either credential — never does. The base download prefix is kept so the failure
+// class stays recognisable.
 func TestGrabTransportErrorSurfacesHostOnly(t *testing.T) {
 	t.Parallel()
 	const secret = "SYNTHETICDLTOKEN"
@@ -123,7 +124,7 @@ func TestGrabTransportErrorSurfacesHostOnly(t *testing.T) {
 	if !strings.Contains(msg, "https://passthepopcorn.me") {
 		t.Errorf("grab error dropped the endpoint host: %q", msg)
 	}
-	if !strings.Contains(msg, "passthepopcorn: download request failed") {
+	if !strings.Contains(msg, "passthepopcorn: download to https://passthepopcorn.me failed") {
 		t.Errorf("grab error lost its failure-class prefix: %q", msg)
 	}
 	// The path/query secret and either credential never surface.
@@ -176,12 +177,11 @@ func TestGrabStatusDispatch(t *testing.T) {
 // corrupt) rather than returning a silently truncated payload.
 func TestGrabRejectsOversizeBody(t *testing.T) {
 	t.Parallel()
-	got, err := readTorrent(strings.NewReader(strings.Repeat("x", 17)), 16)
-	if !errors.Is(err, errDownloadTooLarge) {
-		t.Fatalf("readTorrent err = %v, want errDownloadTooLarge", err)
-	}
-	if got != nil {
-		t.Errorf("oversize body returned %d bytes, want nil", len(got))
+	body := strings.Repeat("x", (64<<20)+1)
+	d := searchDriver(t, &scriptDoer{resp: torrentResp(body)})
+	_, err := d.Grab(context.Background(), d.downloadLink(12345))
+	if !errors.Is(err, native.ErrDownloadTooLarge) {
+		t.Fatalf("Grab err = %v, want native.ErrDownloadTooLarge", err)
 	}
 }
 

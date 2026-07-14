@@ -172,7 +172,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 		rels = append(rels, d.flattenMovie(&resp.Movies[i])...)
 	}
 	sortReleases(rels)
-	native.TraceReleases(d.log, d.def.ID, rels)
+	native.TraceReleases(d.Log, d.Def.ID, rels)
 	return rels, nil
 }
 
@@ -225,13 +225,13 @@ func (d *driver) toRelease(m *ptpMovie, t *ptpTorrent) *normalizer.Release {
 // query param; auth is re-attached via the ApiUser/ApiKey headers at grab time, so the
 // served feed link carries no secret (Prowlarr PassThePopcornParser.GetDownloadUrl).
 func (d *driver) downloadLink(torrentID int64) string {
-	return fmt.Sprintf("%storrents.php?action=download&id=%d", d.baseURL, torrentID)
+	return fmt.Sprintf("%storrents.php?action=download&id=%d", d.BaseURL, torrentID)
 }
 
 // infoURL builds the human details URL (torrents.php?id=<groupId>&torrentid=<id>),
 // mirroring Prowlarr PassThePopcornParser.GetInfoUrl.
 func (d *driver) infoURL(groupID string, torrentID int64) string {
-	return fmt.Sprintf("%storrents.php?id=%s&torrentid=%d", d.baseURL, url.QueryEscape(groupID), torrentID)
+	return fmt.Sprintf("%storrents.php?id=%s&torrentid=%d", d.BaseURL, url.QueryEscape(groupID), torrentID)
 }
 
 // categories maps the movie-group CategoryId (1-6) to its newznab category through the
@@ -243,10 +243,10 @@ func (d *driver) categories(categoryID string) []int {
 	if id == "" {
 		id = defaultCatID
 	}
-	if mapped := canonical(d.caps.CategoryMap.MapTrackerCatToNewznab(id)); mapped != nil {
+	if mapped := canonical(d.Caps.CategoryMap.MapTrackerCatToNewznab(id)); mapped != nil {
 		return mapped
 	}
-	return canonical(d.caps.CategoryMap.MapTrackerCatToNewznab(defaultCatID))
+	return canonical(d.Caps.CategoryMap.MapTrackerCatToNewznab(defaultCatID))
 }
 
 // canonical keeps only the canonical newznab category id, dropping the mapper's

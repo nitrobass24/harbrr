@@ -21,7 +21,7 @@ func parseDriver(cfg map[string]string) *driver {
 		panic(err)
 	}
 	drv := d.(*driver)
-	drv.baseURL = "https://filelist.test/"
+	drv.BaseURL = "https://filelist.test/"
 	return drv
 }
 

@@ -57,7 +57,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	if parseErr != nil {
 		return nil, parseErr
 	}
-	native.TraceReleases(d.log, d.def.ID, releases)
+	native.TraceReleases(d.Log, d.Def.ID, releases)
 	return releases, nil
 }
 
@@ -112,7 +112,7 @@ func (d *driver) rowCategories(row *goquery.Selection) []int {
 	if !ok {
 		return nil
 	}
-	return d.caps.CategoryMap.MapTrackerCatToNewznab(strings.TrimPrefix(href, "?"))
+	return d.Caps.CategoryMap.MapTrackerCatToNewznab(strings.TrimPrefix(href, "?"))
 }
 
 // rowPublishText extracts the relative-date text from `div.sub`, mirroring Prowlarr:
@@ -137,7 +137,7 @@ func freeleechFactor(row *goquery.Selection) float64 {
 // absoluteURL resolves a site-relative href against the base URL, matching Prowlarr's
 // `new Uri(BaseUrl + href.TrimStart('/'))`.
 func (d *driver) absoluteURL(href string) string {
-	return d.baseURL + strings.TrimLeft(strings.TrimSpace(href), "/")
+	return d.BaseURL + strings.TrimLeft(strings.TrimSpace(href), "/")
 }
 
 func attrOr(sel *goquery.Selection, name string) string {

@@ -2,7 +2,6 @@ package appsync
 
 import (
 	"fmt"
-	"net/url"
 	"strings"
 
 	"github.com/autobrr/harbrr/internal/domain"
@@ -40,24 +39,23 @@ func defaultFreeleechMode(kind string) string {
 // so the caller persists the normalized URLs.
 func validateCreate(p *CreateConnectionParams) error {
 	if strings.TrimSpace(p.Name) == "" {
-		return fmt.Errorf("%w: name is required", ErrInvalid)
+		return fmt.Errorf("%w: name is required", domain.ErrInvalid)
 	}
 	if err := validateKind(p.Kind); err != nil {
 		return err
 	}
 	// Both URLs must be absolute http(s): harbrr calls BaseURL, and HarbrrURL is
 	// embedded in each pushed indexer so the app can reach harbrr's feed — a
-	// malformed/relative value would silently produce an unreachable connection
-	// (parity with internal/announce's validateAbsURL).
-	base, err := validateAbsURL("base url", p.BaseURL)
+	// malformed/relative value would silently produce an unreachable connection.
+	base, err := domain.ValidateAbsURL("base url", p.BaseURL)
 	if err != nil {
 		return err
 	}
 	p.BaseURL = base
 	if strings.TrimSpace(p.APIKey) == "" {
-		return fmt.Errorf("%w: api key is required", ErrInvalid)
+		return fmt.Errorf("%w: api key is required", domain.ErrInvalid)
 	}
-	harbrr, err := validateAbsURL("harbrr url", p.HarbrrURL)
+	harbrr, err := domain.ValidateAbsURL("harbrr url", p.HarbrrURL)
 	if err != nil {
 		return err
 	}
@@ -82,14 +80,14 @@ func applyUpdate(conn *domain.AppConnection, p UpdateConnectionParams) error {
 		conn.Name = *p.Name
 	}
 	if p.BaseURL != nil {
-		base, err := validateAbsURL("base url", *p.BaseURL)
+		base, err := domain.ValidateAbsURL("base url", *p.BaseURL)
 		if err != nil {
 			return err
 		}
 		conn.BaseURL = base
 	}
 	if p.HarbrrURL != nil {
-		harbrr, err := validateAbsURL("harbrr url", *p.HarbrrURL)
+		harbrr, err := domain.ValidateAbsURL("harbrr url", *p.HarbrrURL)
 		if err != nil {
 			return err
 		}
@@ -127,22 +125,9 @@ func applyUpdate(conn *domain.AppConnection, p UpdateConnectionParams) error {
 // requireNonBlank rejects an empty/whitespace value for a required field.
 func requireNonBlank(field, value string) error {
 	if strings.TrimSpace(value) == "" {
-		return fmt.Errorf("%w: %s must not be blank", ErrInvalid, field)
+		return fmt.Errorf("%w: %s must not be blank", domain.ErrInvalid, field)
 	}
 	return nil
-}
-
-// validateAbsURL requires an absolute http(s) URL with a host, so a malformed/relative
-// URL is rejected at the boundary rather than producing an unreachable connection
-// (mirrors internal/announce.validateAbsURL). It returns the TRIMMED value so callers
-// persist the normalized URL rather than whitespace-padded input.
-func validateAbsURL(field, raw string) (string, error) {
-	trimmed := strings.TrimSpace(raw)
-	u, err := url.Parse(trimmed)
-	if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") {
-		return "", fmt.Errorf("%w: %s must be an absolute http(s) URL", ErrInvalid, field)
-	}
-	return trimmed, nil
 }
 
 func validateKind(kind string) error {
@@ -151,7 +136,7 @@ func validateKind(kind string) error {
 		domain.AppKindReadarr, domain.AppKindWhisparr, domain.AppKindQui:
 		return nil
 	default:
-		return fmt.Errorf("%w: kind must be sonarr, radarr, lidarr, readarr, whisparr, or qui (got %q)", ErrInvalid, kind)
+		return fmt.Errorf("%w: kind must be sonarr, radarr, lidarr, readarr, whisparr, or qui (got %q)", domain.ErrInvalid, kind)
 	}
 }
 
@@ -160,7 +145,7 @@ func validateSyncLevel(level string) error {
 	case domain.SyncLevelFull, domain.SyncLevelAddUpdate:
 		return nil
 	default:
-		return fmt.Errorf("%w: sync_level must be full or add_update (got %q)", ErrInvalid, level)
+		return fmt.Errorf("%w: sync_level must be full or add_update (got %q)", domain.ErrInvalid, level)
 	}
 }
 
@@ -169,7 +154,7 @@ func validateIndexScope(scope string) error {
 	case domain.IndexScopeAll, domain.IndexScopeSelected:
 		return nil
 	default:
-		return fmt.Errorf("%w: index_scope must be all or selected (got %q)", ErrInvalid, scope)
+		return fmt.Errorf("%w: index_scope must be all or selected (got %q)", domain.ErrInvalid, scope)
 	}
 }
 
@@ -178,6 +163,6 @@ func validateFreeleechMode(mode string) error {
 	case domain.FreeleechModeHonor, domain.FreeleechModeBypass:
 		return nil
 	default:
-		return fmt.Errorf("%w: freeleech_mode must be honor or bypass (got %q)", ErrInvalid, mode)
+		return fmt.Errorf("%w: freeleech_mode must be honor or bypass (got %q)", domain.ErrInvalid, mode)
 	}
 }

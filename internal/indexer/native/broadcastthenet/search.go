@@ -3,13 +3,10 @@ package broadcastthenet
 import (
 	"context"
 	"fmt"
-	"io"
-	stdhttp "net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
@@ -54,35 +51,17 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	switch {
-	case resp.StatusCode == stdhttp.StatusUnauthorized || resp.StatusCode == stdhttp.StatusForbidden:
-		return nil, fmt.Errorf("broadcastthenet: search unauthorized: %w", login.ErrLoginFailed)
-	case search.IsRateLimitStatus(resp.StatusCode):
-		return nil, &search.RateLimitedError{
-			StatusCode: resp.StatusCode,
-			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.clock),
-		}
-	case resp.StatusCode < 200 || resp.StatusCode >= 300:
-		return nil, fmt.Errorf("broadcastthenet: search returned HTTP %d", resp.StatusCode)
-	}
-
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
-	if err != nil {
-		return nil, fmt.Errorf("broadcastthenet: read search response: %w", err)
-	}
 	// BTN signals a rate limit as an HTTP 200 body containing "Call Limit Exceeded"
 	// (not a 429), so it must be detected before parseReleases would turn it into a
 	// parse error — matching Prowlarr's BroadcastheNetParser, which throws
 	// RequestLimitReachedException on that body before JSON parsing.
-	if isCallLimitBody(respBody) {
+	if isCallLimitBody(resp.Body) {
 		return nil, &search.RateLimitedError{
 			StatusCode: resp.StatusCode,
-			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.clock),
+			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.Clock),
 		}
 	}
-	return d.parseReleases(respBody)
+	return d.parseReleases(resp.Body)
 }
 
 // callLimitMarker is the substring BTN returns (in an HTTP 200 body) when the API call

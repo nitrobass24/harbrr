@@ -65,13 +65,11 @@ func testDriver(t *testing.T, doer *scriptDoer, cfg map[string]string) *driver {
 	if cfg == nil {
 		cfg = map[string]string{"cookie": credCookie, "user_agent": credUA}
 	}
-	d, err := New(native.Params{Def: Families()[0].Definition, Cfg: cfg, Doer: doer})
+	d, err := New(native.Params{Def: Families()[0].Definition, Cfg: cfg, Doer: doer, Clock: fixedClock})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	dr := d.(*driver)
-	dr.clock = fixedClock
-	return dr
+	return d.(*driver)
 }
 
 // assertNoSecret fails if s leaks any synthetic credential.

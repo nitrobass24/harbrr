@@ -47,13 +47,9 @@ const (
 	credPID  = "PID-SECRET-1234"
 )
 
-func newDriver(doer *scriptDoer) *driver {
-	return &driver{
-		cfg:     map[string]string{"username": credUser, "password": credPass, "pid": credPID},
-		doer:    doer,
-		baseURL: "https://az.test/",
-		profile: profileFor("avistaz"),
-	}
+func newDriver(t *testing.T, doer *scriptDoer) *driver {
+	t.Helper()
+	return testDriver(t, "avistaz", testBaseURL, map[string]string{"username": credUser, "password": credPass, "pid": credPID}, doer)
 }
 
 // TestAuthenticate proves the form-encoded POST to api/v1/jackett/auth carries the
@@ -63,7 +59,7 @@ func TestAuthenticate(t *testing.T) {
 	doer := &scriptDoer{t: t, handler: func(_ *stdhttp.Request, _ string) *stdhttp.Response {
 		return resp(stdhttp.StatusOK, `{"token":"tok-123"}`)
 	}}
-	d := newDriver(doer)
+	d := newDriver(t, doer)
 	tok, err := d.authenticate(context.Background())
 	if err != nil {
 		t.Fatalf("authenticate: %v", err)
@@ -97,8 +93,8 @@ func TestAuthenticateTrims(t *testing.T) {
 	doer := &scriptDoer{t: t, handler: func(_ *stdhttp.Request, _ string) *stdhttp.Response {
 		return resp(stdhttp.StatusOK, `{"token":"t"}`)
 	}}
-	d := newDriver(doer)
-	d.cfg = map[string]string{"username": "  u  ", "password": " p ", "pid": "\tx\n"}
+	d := newDriver(t, doer)
+	d.Cfg = map[string]string{"username": "  u  ", "password": " p ", "pid": "\tx\n"}
 	if _, err := d.authenticate(context.Background()); err != nil {
 		t.Fatalf("authenticate: %v", err)
 	}
@@ -115,7 +111,7 @@ func TestAuthFailure(t *testing.T) {
 	doer := &scriptDoer{t: t, handler: func(_ *stdhttp.Request, _ string) *stdhttp.Response {
 		return resp(stdhttp.StatusUnauthorized, `{"message":"Invalid user credentials"}`)
 	}}
-	d := newDriver(doer)
+	d := newDriver(t, doer)
 	_, err := d.authenticate(context.Background())
 	if err == nil || !errors.Is(err, login.ErrLoginFailed) {
 		t.Fatalf("err = %v, want login.ErrLoginFailed", err)
@@ -138,7 +134,7 @@ func TestAuthFailureScrubsEchoedCredentials(t *testing.T) {
 	doer := &scriptDoer{t: t, handler: func(_ *stdhttp.Request, _ string) *stdhttp.Response {
 		return resp(stdhttp.StatusUnprocessableEntity, echo)
 	}}
-	d := newDriver(doer)
+	d := newDriver(t, doer)
 	_, err := d.authenticate(context.Background())
 	if err == nil || !errors.Is(err, login.ErrLoginFailed) {
 		t.Fatalf("err = %v, want login.ErrLoginFailed", err)
@@ -163,12 +159,11 @@ func TestReactiveRefresh(t *testing.T) {
 		}
 		return resp(stdhttp.StatusOK, `{"data":[]}`)
 	}}
-	d := newDriver(doer)
-	r, err := d.get(context.Background(), d.baseURL+"api/v1/jackett/torrents?in=1", "application/json")
+	d := newDriver(t, doer)
+	r, err := d.get(context.Background(), d.BaseURL+"api/v1/jackett/torrents?in=1", "application/json", false)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	_ = r.Body.Close()
 	if r.StatusCode != stdhttp.StatusOK {
 		t.Errorf("final status = %d, want 200", r.StatusCode)
 	}
@@ -199,7 +194,7 @@ func TestTokenCaching(t *testing.T) {
 		auths++
 		return resp(stdhttp.StatusOK, `{"token":"t"}`)
 	}}
-	d := newDriver(doer)
+	d := newDriver(t, doer)
 	for range 3 {
 		if _, err := d.ensureToken(context.Background()); err != nil {
 			t.Fatalf("ensureToken: %v", err)
@@ -213,13 +208,13 @@ func TestTokenCaching(t *testing.T) {
 // TestTestAction proves Test() returns nil on good creds and the auth error on bad.
 func TestTestAction(t *testing.T) {
 	t.Parallel()
-	ok := newDriver(&scriptDoer{t: t, handler: func(_ *stdhttp.Request, _ string) *stdhttp.Response {
+	ok := newDriver(t, &scriptDoer{t: t, handler: func(_ *stdhttp.Request, _ string) *stdhttp.Response {
 		return resp(stdhttp.StatusOK, `{"token":"t"}`)
 	}})
 	if err := ok.Test(context.Background()); err != nil {
 		t.Errorf("Test on good creds = %v, want nil", err)
 	}
-	bad := newDriver(&scriptDoer{t: t, handler: func(_ *stdhttp.Request, _ string) *stdhttp.Response {
+	bad := newDriver(t, &scriptDoer{t: t, handler: func(_ *stdhttp.Request, _ string) *stdhttp.Response {
 		return resp(stdhttp.StatusUnauthorized, `{"message":"nope"}`)
 	}})
 	if err := bad.Test(context.Background()); !errors.Is(err, login.ErrLoginFailed) {

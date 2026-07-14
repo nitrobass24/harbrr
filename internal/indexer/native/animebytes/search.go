@@ -2,12 +2,12 @@ package animebytes
 
 import (
 	"context"
+	"errors"
 	stdhttp "net/http"
 	"net/url"
 	"regexp"
 	"strings"
 
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -30,29 +30,17 @@ const (
 // parseReleases, which also discriminates the JSON {"error":…} envelope AnimeBytes
 // returns with HTTP 200.
 func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
-	resp, err := d.get(ctx, d.buildSearchURL(q), "application/json")
+	resp, err := d.get(ctx, d.buildSearchURL(q), "application/json", false)
 	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	switch {
-	case resp.StatusCode == stdhttp.StatusUnauthorized || resp.StatusCode == stdhttp.StatusForbidden:
-		return nil, login.ErrLoginFailed
-	case search.IsRateLimitStatus(resp.StatusCode):
-		return nil, &search.RateLimitedError{
-			StatusCode: resp.StatusCode,
-			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.clock),
+		if resp != nil && resp.StatusCode != stdhttp.StatusUnauthorized && resp.StatusCode != stdhttp.StatusForbidden {
+			var rl *search.RateLimitedError
+			if !errors.As(err, &rl) {
+				return nil, search.ErrParseError
+			}
 		}
-	case resp.StatusCode < 200 || resp.StatusCode >= 300:
-		return nil, search.ErrParseError
-	}
-
-	body, err := d.readBody(resp)
-	if err != nil {
 		return nil, err
 	}
-	return d.parseReleases(body)
+	return d.parseReleases(resp.Body)
 }
 
 // buildSearchURL renders the scrape.php request for a query, reproducing Prowlarr's
@@ -64,8 +52,8 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 // never logged.
 func (d *driver) buildSearchURL(q search.Query) string {
 	params := url.Values{}
-	params.Set("username", strings.TrimSpace(d.cfg["username"]))
-	params.Set("torrent_pass", strings.TrimSpace(d.cfg["passkey"]))
+	params.Set("username", strings.TrimSpace(d.Cfg["username"]))
+	params.Set("torrent_pass", strings.TrimSpace(d.Cfg["passkey"]))
 	params.Set("sort", "grouptime")
 	params.Set("way", "desc")
 
@@ -78,10 +66,10 @@ func (d *driver) buildSearchURL(q search.Query) string {
 
 	d.addTypeParams(params, q, typ)
 	d.addCategoryParams(params, q)
-	if freeleechOnly(d.cfg) {
+	if freeleechOnly(d.Cfg) {
 		params.Set("freeleech", "1")
 	}
-	return d.baseURL + searchPath + "?" + params.Encode()
+	return d.BaseURL + searchPath + "?" + params.Encode()
 }
 
 // addTypeParams sets the music-only artist/album/year params, matching Prowlarr's

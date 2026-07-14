@@ -105,18 +105,16 @@ func TestGrabStatusDispatch(t *testing.T) {
 const grabErrHost = "https://torrentday.example"
 
 // TestGrabTransportErrorSurfacesHostHidesSecret proves a realistic transport error — a
-// *url.Error, the shape http.Client.Do returns — surfaces only its host-only cause: the
+// *url.Error, the shape http.Client.Do returns — surfaces only host-only details: the
 // scheme://host survives (it is not a secret and aids diagnosis), while a secret hidden in
-// a path segment AND a query param is dropped, and the cookie never escapes. Production
-// only ever hands sanitizeGrabError a host-only error (get() rebuilds the *url.Error
-// host-only before wrapping), so the injected error mirrors that.
+// a path segment AND a query param is dropped, and the cookie never escapes.
 func TestGrabTransportErrorSurfacesHostHidesSecret(t *testing.T) {
 	t.Parallel()
 	// A synthetic secret in both a path segment and a query param; the token is one
 	// assertNoSecret recognises, so a leak into the returned error is caught.
 	const secret = "SECRET-deadbeefdeadbeefdeadbeefdeadbeef"
 	d := testDriver(t, nil, nil)
-	d.doer = &errDoer{err: &url.Error{
+	d.Doer = &errDoer{err: &url.Error{
 		Op:  "Get",
 		URL: grabErrHost + "/dl/" + secret + "?passkey=" + secret,
 		Err: errors.New("dial tcp: connection refused"),
@@ -136,33 +134,19 @@ func TestGrabTransportErrorSurfacesHostHidesSecret(t *testing.T) {
 		strings.Contains(got, "passkey="+secret) {
 		t.Errorf("error leaks the path/query secret: %q", got)
 	}
-	if !strings.Contains(got, "torrentday: download request failed") {
-		t.Errorf("error dropped the fixed prefix: %q", got)
-	}
-}
-
-// TestGrabTransportErrorPreservesSentinels proves sanitizeGrabError keeps the auth and
-// rate-limit sentinels (for health classification) rather than flattening them into the
-// generic "download request failed" wrap.
-func TestGrabTransportErrorPreservesSentinels(t *testing.T) {
-	t.Parallel()
-	if got := sanitizeGrabError(login.ErrLoginFailed); !errors.Is(got, login.ErrLoginFailed) {
-		t.Errorf("sanitizeGrabError dropped login sentinel: %v", got)
-	}
-	rl := &search.RateLimitedError{StatusCode: 429}
-	if got := sanitizeGrabError(rl); !errors.As(got, &rl) {
-		t.Errorf("sanitizeGrabError dropped rate-limit sentinel: %v", got)
+	if !strings.Contains(got, "torrentday: download to https://www.torrentday.com failed") {
+		t.Errorf("error dropped the base download prefix: %q", got)
 	}
 }
 
 // TestGrabContextErrorPassesThrough proves a cancellation/deadline from the fetch is
-// preserved (not flattened into the generic "download request failed"), so callers and
+// preserved, so callers and
 // health classification can tell a cancelled request from a real failure.
 func TestGrabContextErrorPassesThrough(t *testing.T) {
 	t.Parallel()
 	for _, want := range []error{context.Canceled, context.DeadlineExceeded} {
 		d := testDriver(t, nil, nil)
-		d.doer = &errDoer{err: want}
+		d.Doer = &errDoer{err: want}
 		_, err := d.Grab(context.Background(), downloadLink)
 		if !errors.Is(err, want) {
 			t.Errorf("Grab err = %v, want errors.Is %v", err, want)

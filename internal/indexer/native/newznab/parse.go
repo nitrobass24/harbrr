@@ -97,7 +97,7 @@ func (d *driver) parseReleases(body []byte, catMap *mapper.CategoryMap) ([]*norm
 			releases = append(releases, rel)
 		}
 	}
-	native.TraceReleases(d.log, d.def.ID, releases)
+	native.TraceReleases(d.Log, d.Def.ID, releases)
 	return releases, nil
 }
 

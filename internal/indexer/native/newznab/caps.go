@@ -3,7 +3,6 @@ package newznab
 import (
 	"context"
 	"fmt"
-	"io"
 	stdhttp "net/http"
 	"net/url"
 	"strconv"
@@ -13,18 +12,13 @@ import (
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // capsTTL is the cache lifetime of a fetched caps document (Prowlarr caches ~7 days). Past
 // this age the next Capabilities()/Search() refetches.
 const capsTTL = 7 * 24 * time.Hour
-
-// maxCapsBytes caps a ?t=caps response. A caps document is small XML (modes + a category
-// tree), so this bounds a hostile or runaway body while staying generous.
-const maxCapsBytes = 4 << 20 // 4 MiB
 
 // Persisted setting keys for the cross-restart caps cache. The raw caps XML carries no
 // secret (apikey is never in the caps body), but it flows through the encrypted settings
@@ -90,18 +84,18 @@ func (c *capsCache) store(built *mapper.Capabilities, now time.Time) {
 // cache (even if stale) so a transient remote outage does not strand search; only a cold
 // cache with no fallback surfaces the error.
 func (d *driver) capabilities(ctx context.Context) (*mapper.Capabilities, error) {
-	now := d.clock()
+	now := d.Clock()
 	if built, ok := d.capsCache.get(now); ok {
 		return built, nil
 	}
 	// No transport configured (e.g. the addable-indexer list builds the driver only to read
 	// the placeholder caps): there is no way to fetch, so serve any cached caps or the
 	// placeholder fallback without a network attempt.
-	if d.doer == nil {
+	if d.Doer == nil {
 		if fallback := d.capsCache.current(); fallback != nil {
 			return fallback, nil
 		}
-		return d.caps, nil
+		return d.Caps, nil
 	}
 	built, err := d.fetchCaps(ctx)
 	if err != nil {
@@ -138,7 +132,7 @@ func (d *driver) fetchCaps(ctx context.Context) (*mapper.Capabilities, error) {
 	if err != nil {
 		return nil, err
 	}
-	now := d.clock()
+	now := d.Clock()
 	d.capsCache.store(built, now)
 	d.persistCaps(ctx, body, now)
 	return built, nil
@@ -154,31 +148,11 @@ func (d *driver) getCaps(ctx context.Context, rawurl string) ([]byte, error) {
 		return nil, fmt.Errorf("newznab: build caps request to %s: %w", apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
 	}
 	req.Header.Set("Accept", "application/rss+xml, application/xml, text/xml")
-	resp, err := d.doer.Do(req)
+	resp, err := d.Do(ctx, req, native.ClassifyRateLimit403)
 	if err != nil {
-		return nil, fmt.Errorf("newznab: caps request to %s: %w", apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
+		return nil, normalizeReadError(err)
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	switch {
-	case resp.StatusCode == stdhttp.StatusUnauthorized:
-		return nil, fmt.Errorf("newznab: caps unauthorized: %w", login.ErrLoginFailed)
-	case resp.StatusCode == stdhttp.StatusForbidden || search.IsRateLimitStatus(resp.StatusCode):
-		return nil, &search.RateLimitedError{
-			StatusCode: resp.StatusCode,
-			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), d.clock),
-		}
-	case resp.StatusCode < 200 || resp.StatusCode >= 300:
-		return nil, fmt.Errorf("newznab: caps returned HTTP %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxCapsBytes))
-	if err != nil {
-		// Keep the ErrParseError sentinel (health classification) but include the
-		// real read error for diagnosability; a body-read error carries no secret.
-		return nil, fmt.Errorf("newznab: read caps response: %s: %w", err.Error(), search.ErrParseError)
-	}
-	return body, nil
+	return resp.Body, nil
 }
 
 // buildCapsURL builds {baseUrl}{apiPath}?t=caps[&apikey=...]. apikey is appended only when
@@ -189,7 +163,7 @@ func (d *driver) buildCapsURL() string {
 	if d.apikey != "" {
 		params.Set("apikey", d.apikey)
 	}
-	return d.baseURL + d.apiPath + "?" + encodeCapsQuery(params)
+	return strings.TrimRight(d.BaseURL, "/") + d.apiPath + "?" + encodeCapsQuery(params)
 }
 
 // encodeCapsQuery encodes the caps params with t first and apikey last (stable, redaction-
