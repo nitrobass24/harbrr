@@ -67,8 +67,20 @@ linters:
       # design: already family-prefixed, host-only-redacted, and sentinel-bearing.
       # Re-wrapping them in a driver would double the family prefix ("hdbits: hdbits:")
       # and add nothing — the base IS the drivers' error-shaping layer.
+      #
+      # connresource.Lifecycle[T].Create/Update/Delete are the same shape: they are
+      # appsync/announce/notify's error-shaping layer for the connection-resource
+      # lifecycle, already sentinel-bearing (domain.ErrInvalid/ErrConflict) or a
+      # fully-formed fail-closed revoke message via the spec's Conflict/RevokeFailMsg
+      # closures. Re-wrapping at each call site would only add a redundant prefix.
+      #
+      # domain.ValidateAbsURL is the one canonical URL validator appsync/announce/
+      # notify share; it already returns a domain.ErrInvalid-wrapped, field-labeled
+      # message a caller returns verbatim (that message IS the api-facing text).
       ignore-package-globs:
         - github.com/autobrr/harbrr/internal/indexer/native
+        - github.com/autobrr/harbrr/internal/connresource
+        - github.com/autobrr/harbrr/internal/domain
     interfacebloat:
       # Guardrail against future god-interfaces (default 10). AGENTS.md's "interfaces
       # ≤5 methods" stays a review norm, not a hard gate — torznabhttp.Indexer

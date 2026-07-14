@@ -38,7 +38,7 @@ func TestUpdateConnectionProfileTOCTOU(t *testing.T) {
 		var wg sync.WaitGroup
 		wg.Add(2)
 		// Attach the profile to the Sonarr connection. The only legitimate outcomes are
-		// success or an ErrInvalid rejection (e.g. the narrow won and the ref no longer
+		// success or an domain.ErrInvalid rejection (e.g. the narrow won and the ref no longer
 		// overlaps) — anything else is an unexpected DB/FK fault masquerading as "the
 		// narrow won" below.
 		var attachErr error
@@ -49,7 +49,7 @@ func TestUpdateConnectionProfileTOCTOU(t *testing.T) {
 			})
 		}()
 		// Narrow the profile to books-only, which no Sonarr connection can consume.
-		// Likewise, only success or ErrInvalid (validateProfileInUse rejecting the narrow
+		// Likewise, only success or domain.ErrInvalid (validateProfileInUse rejecting the narrow
 		// because the attach already landed) are legitimate.
 		var narrowErr error
 		go func() {
@@ -59,11 +59,11 @@ func TestUpdateConnectionProfileTOCTOU(t *testing.T) {
 		}()
 		wg.Wait()
 
-		if attachErr != nil && !errors.Is(attachErr, ErrInvalid) {
-			t.Fatalf("iter %d: attach: unexpected non-ErrInvalid error: %v", i, attachErr)
+		if attachErr != nil && !errors.Is(attachErr, domain.ErrInvalid) {
+			t.Fatalf("iter %d: attach: unexpected non-domain.ErrInvalid error: %v", i, attachErr)
 		}
-		if narrowErr != nil && !errors.Is(narrowErr, ErrInvalid) {
-			t.Fatalf("iter %d: narrow: unexpected non-ErrInvalid error: %v", i, narrowErr)
+		if narrowErr != nil && !errors.Is(narrowErr, domain.ErrInvalid) {
+			t.Fatalf("iter %d: narrow: unexpected non-domain.ErrInvalid error: %v", i, narrowErr)
 		}
 
 		conn, err := f.svc.GetConnection(ctx, f.conn.ID)
@@ -111,7 +111,7 @@ func TestCreateConnectionProfileTOCTOU(t *testing.T) {
 		var wg sync.WaitGroup
 		wg.Add(2)
 		// Create a second Sonarr connection attached to the profile. The only legitimate
-		// outcomes are success or an ErrInvalid rejection (e.g. the narrow won and the ref
+		// outcomes are success or an domain.ErrInvalid rejection (e.g. the narrow won and the ref
 		// no longer overlaps) — anything else is an unexpected DB/FK fault masquerading
 		// as "the narrow won" below.
 		var created domain.AppConnection
@@ -128,7 +128,7 @@ func TestCreateConnectionProfileTOCTOU(t *testing.T) {
 			})
 		}()
 		// Narrow the profile to books-only, which no Sonarr connection can consume.
-		// Likewise, only success or ErrInvalid (validateProfileInUse rejecting the narrow
+		// Likewise, only success or domain.ErrInvalid (validateProfileInUse rejecting the narrow
 		// because the create already landed) are legitimate.
 		var narrowErr error
 		go func() {
@@ -138,11 +138,11 @@ func TestCreateConnectionProfileTOCTOU(t *testing.T) {
 		}()
 		wg.Wait()
 
-		if createErr != nil && !errors.Is(createErr, ErrInvalid) {
-			t.Fatalf("iter %d: create: unexpected non-ErrInvalid error: %v", i, createErr)
+		if createErr != nil && !errors.Is(createErr, domain.ErrInvalid) {
+			t.Fatalf("iter %d: create: unexpected non-domain.ErrInvalid error: %v", i, createErr)
 		}
-		if narrowErr != nil && !errors.Is(narrowErr, ErrInvalid) {
-			t.Fatalf("iter %d: narrow: unexpected non-ErrInvalid error: %v", i, narrowErr)
+		if narrowErr != nil && !errors.Is(narrowErr, domain.ErrInvalid) {
+			t.Fatalf("iter %d: narrow: unexpected non-domain.ErrInvalid error: %v", i, narrowErr)
 		}
 		if createErr != nil {
 			continue // the narrow won; the create was correctly rejected
@@ -217,11 +217,11 @@ func TestUpdateConnectionNoLostUpdate(t *testing.T) {
 }
 
 // TestUpdateConnectionConcurrentProfileDeleteIsClean confirms finding U10-F1(c): a
-// profile deleted concurrently with an attach surfaces as a clean 400 (ErrInvalid via
+// profile deleted concurrently with an attach surfaces as a clean 400 (domain.ErrInvalid via
 // validateProfileRef's not-found mapping), never a raw FK-violation 500. Because the
 // RMW holds the single DB connection for its whole span, a concurrent DeleteProfile
 // either commits before the tx's profile read (so validateProfileRef sees it gone and
-// returns ErrInvalid) or after the connection write (the attach already succeeded) —
+// returns domain.ErrInvalid) or after the connection write (the attach already succeeded) —
 // no interleaving yields an FK error at the write.
 func TestUpdateConnectionConcurrentProfileDeleteIsClean(t *testing.T) {
 	t.Parallel()
@@ -252,8 +252,8 @@ func TestUpdateConnectionConcurrentProfileDeleteIsClean(t *testing.T) {
 
 		// Either the attach won (nil) or it was rejected as invalid input — never a
 		// wrapped FK/500 that the handler couldn't classify.
-		if attachErr != nil && !errors.Is(attachErr, ErrInvalid) {
-			t.Fatalf("iter %d: concurrent delete surfaced non-ErrInvalid: %v", i, attachErr)
+		if attachErr != nil && !errors.Is(attachErr, domain.ErrInvalid) {
+			t.Fatalf("iter %d: concurrent delete surfaced non-domain.ErrInvalid: %v", i, attachErr)
 		}
 		// The profile exists at the start of every iteration and nothing else deletes
 		// it, so DeleteProfile has exactly one legitimate outcome here: success.

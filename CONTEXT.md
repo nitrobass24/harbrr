@@ -59,3 +59,13 @@ _Avoid_: download (for the server-side fetch), snatch
 A tracker refreshing a session credential on every response; the driver must capture and
 persist the new value or the session dies (MyAnonamouse's `mam_id`).
 _Avoid_: refresh, renewal
+
+### Connections
+
+**Connection resource**:
+One of harbrr's encrypted-secret connection types (an app-sync connection, an announce
+connection, a notification target): a row plus one or more secrets sealed at rest under
+the row's own id, whose create/update/delete lifecycle — including an optional minted-key
+mint and fail-closed revoke — is sequenced by `internal/connresource.Lifecycle[T]`.
+_Avoid_: entity (too generic), integration (a different word already used for the app-sync
+targets themselves)

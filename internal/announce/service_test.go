@@ -96,7 +96,7 @@ func TestServiceCreateValidation(t *testing.T) {
 	_, err := svc.CreateConnection(ctx, announce.CreateConnectionParams{
 		Name: "cs", Kind: domain.AnnounceKindCrossSeedV6, BaseURL: "http://cs:2468", APIKey: "k",
 	})
-	if !errors.Is(err, announce.ErrInvalid) {
+	if !errors.Is(err, domain.ErrInvalid) {
 		t.Errorf("missing harbrrUrl err = %v, want ErrInvalid", err)
 	}
 
@@ -104,7 +104,7 @@ func TestServiceCreateValidation(t *testing.T) {
 	_, err = svc.CreateConnection(ctx, announce.CreateConnectionParams{
 		Name: "x", Kind: "sabnzbd", BaseURL: "http://x", APIKey: "k",
 	})
-	if !errors.Is(err, announce.ErrInvalid) {
+	if !errors.Is(err, domain.ErrInvalid) {
 		t.Errorf("bad kind err = %v, want ErrInvalid", err)
 	}
 
@@ -112,7 +112,7 @@ func TestServiceCreateValidation(t *testing.T) {
 	_, err = svc.CreateConnection(ctx, announce.CreateConnectionParams{
 		Name: "q", Kind: domain.AnnounceKindQui, BaseURL: "qui:7476", APIKey: "k", HarbrrURL: "http://h:8787",
 	})
-	if !errors.Is(err, announce.ErrInvalid) {
+	if !errors.Is(err, domain.ErrInvalid) {
 		t.Errorf("relative base url err = %v, want ErrInvalid", err)
 	}
 }
@@ -149,7 +149,7 @@ func TestServiceCreateTrimsURLs(t *testing.T) {
 		Name: "qui2", Kind: domain.AnnounceKindQui,
 		BaseURL: "http://qui:7476", APIKey: "k", HarbrrURL: "http://h:8787",
 	})
-	if !errors.Is(err, announce.ErrConflict) {
+	if !errors.Is(err, domain.ErrConflict) {
 		t.Errorf("duplicate (unpadded) base url err = %v, want ErrConflict", err)
 	}
 }
@@ -160,7 +160,7 @@ func TestServiceHarbrrKeyRejectsRevoked(t *testing.T) {
 	t.Parallel()
 	svc, _ := newService(t, func(domain.AnnounceConnection, string) (announce.Target, error) { return &fakeTarget{}, nil })
 	_, err := svc.HarbrrKey(domain.AnnounceConnection{ID: 1, HarbrrAPIKeyID: 0})
-	if !errors.Is(err, announce.ErrInvalid) {
+	if !errors.Is(err, domain.ErrInvalid) {
 		t.Errorf("HarbrrKey(revoked) err = %v, want ErrInvalid", err)
 	}
 }

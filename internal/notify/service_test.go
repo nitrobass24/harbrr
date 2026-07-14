@@ -113,8 +113,8 @@ func TestCreateValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if _, err := svc.CreateNotification(context.Background(), tt.p); !errors.Is(err, ErrInvalid) {
-				t.Errorf("err = %v, want ErrInvalid", err)
+			if _, err := svc.CreateNotification(context.Background(), tt.p); !errors.Is(err, domain.ErrInvalid) {
+				t.Errorf("err = %v, want domain.ErrInvalid", err)
 			}
 		})
 	}
@@ -161,8 +161,8 @@ func TestUpdateRejectsBadURL(t *testing.T) {
 		Name: "ops", Type: domain.NotifyTypeWebhook, URL: "https://old.example/hook",
 	})
 	bad := "not-a-url"
-	if err := svc.UpdateNotification(ctx, n.ID, UpdateNotificationParams{URL: &bad}); !errors.Is(err, ErrInvalid) {
-		t.Errorf("err = %v, want ErrInvalid", err)
+	if err := svc.UpdateNotification(ctx, n.ID, UpdateNotificationParams{URL: &bad}); !errors.Is(err, domain.ErrInvalid) {
+		t.Errorf("err = %v, want domain.ErrInvalid", err)
 	}
 }
 
