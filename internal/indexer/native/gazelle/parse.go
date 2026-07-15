@@ -166,7 +166,7 @@ func (d *driver) parseBrowse(body []byte) ([]*normalizer.Release, error) {
 // maps to login.ErrLoginFailed, anything else to search.ErrParseError. The message is
 // scrubbed of the configured apikey before it reaches the error string.
 func (d *driver) classifyStatusError(status, msg string) error {
-	scrubbed := d.scrubAPIKey(msg)
+	scrubbed := d.Scrub(msg)
 	if looksLikeAuthFailure(scrubbed) {
 		return fmt.Errorf("gazelle: browse status %q: %s: %w", status, scrubbed, login.ErrLoginFailed)
 	}
@@ -397,14 +397,6 @@ func (d *driver) publishDate(value string) string {
 		return ""
 	}
 	return out
-}
-
-// scrubAPIKey removes the configured apikey from s so a server echo cannot leak it.
-func (d *driver) scrubAPIKey(s string) string {
-	if key := strings.TrimSpace(d.Cfg["apikey"]); key != "" {
-		s = strings.ReplaceAll(s, key, "[redacted]")
-	}
-	return s
 }
 
 // sortReleases orders releases by PublishDate descending to mirror Prowlarr's terminal

@@ -44,14 +44,3 @@ func (d *driver) get(ctx context.Context, rawurl, accept string, download bool) 
 	}
 	return d.Do(ctx, req, native.ClassifyAuth403)
 }
-
-// scrubPasskey removes any occurrence of the configured passkey from s. A hostile or
-// buggy server could echo a submitted passkey (e.g. in an error body), and RedactURL
-// only catches a key=value query shape — not free prose — so the raw passkey value is
-// scrubbed before it can reach an error string or a persisted health-event detail.
-func scrubPasskey(s string, cfg map[string]string) string {
-	if pass := strings.TrimSpace(cfg["passkey"]); pass != "" {
-		s = strings.ReplaceAll(s, pass, "[redacted]")
-	}
-	return s
-}

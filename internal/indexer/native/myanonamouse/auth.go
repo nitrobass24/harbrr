@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	stdhttp "net/http"
-	"strings"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
@@ -25,21 +24,20 @@ func (d *driver) mamID() string {
 	return d.currentMamID
 }
 
-// scrubSecret removes the mam_id session cookie (both the currently rotated value and the
-// originally configured one) from s so a server-echoed error string cannot leak it. MAM's
-// error text is server-controlled free text that reaches a persisted health event / webhook,
-// and mam_id is the sole secret, so it is value-scrubbed at the echo site (mirroring the
-// sibling native drivers' scrubAPIKey). Only non-empty values are replaced.
-func (d *driver) scrubSecret(s string) string {
+// scrub removes the mam_id session cookie (both the currently ROTATED value and the
+// originally configured one) from s so a server-echoed error string cannot leak it.
+// MAM's error text is server-controlled free text that reaches a persisted health
+// event / webhook, and mam_id is the sole secret, so it is value-scrubbed at the echo
+// site via Base.Scrub. The originally configured mam_id is IsSecret-classified (type
+// "password"), so it comes from Base.Scrub's derived set (b.Cfg); the rotated value
+// lives only in currentMamID (never written back to Cfg — captureRotatedMamID updates
+// it and persists it separately), so it is passed as an explicit extra, read under the
+// mutex it shares with captureRotatedMamID's writer.
+func (d *driver) scrub(s string) string {
 	d.mu.Lock()
 	current := d.currentMamID
 	d.mu.Unlock()
-	for _, secret := range []string{current, d.Cfg["mam_id"]} {
-		if secret != "" {
-			s = strings.ReplaceAll(s, secret, "[redacted]")
-		}
-	}
-	return s
+	return d.Scrub(s, current)
 }
 
 // captureRotatedMamID scans a response's Set-Cookie headers for a refreshed mam_id

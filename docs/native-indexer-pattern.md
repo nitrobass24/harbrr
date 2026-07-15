@@ -76,6 +76,19 @@ redaction, capped body reads — `DoDownload` errors with
 classification. A new driver writes only its request generator (which injects
 its own auth — header, cookie, or body-embedded) and its response parser.
 
+A server-controlled response can echo a submitted credential back into a status/error
+message (e.g. "invalid apikey ABCD1234"), which `Do`/`DoDownload`'s URL-only redaction
+cannot catch. Use `Base.Scrub(s, extra...)` / `Base.ScrubErr(err, extra...)` at that echo
+site rather than hand-rolling a `strings.ReplaceAll` loop — they derive the secret set
+from the definition's `IsSecret`-classified settings automatically; pass `extra` only
+for a value the tracker submits that ISN'T a declared secret setting (a non-credential
+field like `user_agent`) or one held outside `Cfg` (a runtime-rotated session token).
+`ScrubErr` preserves `errors.Is`/`errors.As` to the original error's sentinel through the
+scrub — never reconstruct a scrubbed error with `errors.New`, which silently drops it. A
+driver that mutates its OWN `Cfg` after construction (rare — GazelleGames' on-demand
+download passkey is the only one) cannot use `Base.Scrub` directly, since it reads `Cfg`
+without synchronization; it needs its own lock-protected snapshot first.
+
 Classification is a **required per-call parameter** — the endpoint's
 **classification dialect** — so it can never be forgotten: `ClassifyAuth403`
 (the majority: 401/403 = auth failure), `ClassifyRateLimit403` (HDBits/newznab:

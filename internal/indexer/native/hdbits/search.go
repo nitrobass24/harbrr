@@ -111,7 +111,7 @@ func (d *driver) buildRequest(q search.Query) ([]byte, error) {
 	if err != nil {
 		// A marshal error could quote the body (which holds the credentials), so it is
 		// scrubbed before it can surface.
-		return nil, fmt.Errorf("hdbits: build request body: %s", d.scrubSecrets(err.Error()))
+		return nil, fmt.Errorf("hdbits: build request body: %s", d.Scrub(err.Error()))
 	}
 	return body, nil
 }

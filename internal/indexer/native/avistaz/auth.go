@@ -91,20 +91,7 @@ func (d *driver) authErrorMessage(body []byte) string {
 	if json.Unmarshal(body, &er) != nil || er.Message == "" {
 		return "authentication failed"
 	}
-	return scrubSubmittedCredentials(er.Message, d.Cfg)
-}
-
-// scrubSubmittedCredentials removes any occurrence of the submitted secret credential
-// values (password, pid) from s. They are matched as submitted (trimmed) — the only
-// form the server could have received. username is text, not secret-classified, so it
-// is left intact.
-func scrubSubmittedCredentials(s string, cfg map[string]string) string {
-	for _, key := range [...]string{"password", "pid"} {
-		if v := strings.TrimSpace(cfg[key]); v != "" {
-			s = strings.ReplaceAll(s, v, "[redacted]")
-		}
-	}
-	return s
+	return d.Scrub(er.Message)
 }
 
 // ensureToken returns the cached bearer or fetches one.

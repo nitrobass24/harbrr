@@ -297,7 +297,7 @@ func TestParseBrowseSuccessEmpty(t *testing.T) {
 }
 
 // TestParseErrorScrubsAPIKey proves an error message echoing the configured apikey cannot
-// leak it (scrubAPIKey replaces it before the error surfaces).
+// leak it (Base.Scrub replaces it before the error surfaces).
 func TestParseErrorScrubsAPIKey(t *testing.T) {
 	t.Parallel()
 	d := parseDriver(t, "redacted", map[string]string{"apikey": credAPIKey})

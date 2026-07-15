@@ -263,8 +263,8 @@ func TestSearchTransportErrorScrubbed(t *testing.T) {
 		}
 	}
 	// Sanity: apphttp.RedactURL alone does NOT scrub a path-embedded api_key (it only
-	// redacts query params), so the driver's own scrubSecrets is what protects the URL
-	// surfaced in a transport error.
+	// redacts query params), so Base.ScrubErr is what protects the URL surfaced in a
+	// transport error.
 	if !strings.Contains(apphttp.RedactURL("https://beyond-hd.me/api/torrents/"+credAPIKey), credAPIKey) {
 		t.Error("RedactURL unexpectedly scrubbed a path-embedded api_key; the scrub assertion above is no longer load-bearing")
 	}

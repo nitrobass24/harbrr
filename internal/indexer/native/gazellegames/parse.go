@@ -197,8 +197,8 @@ func isJSONObject(raw json.RawMessage) bool {
 // the error string (mirrors hdbits/beyondhd). Auth classification keys off the RAW numeric
 // status ("401"/"403"), which a secret value can never equal, so scrubbing does not disturb it.
 func (d *driver) classifyStatusError(status, msg string) error {
-	scrubbedStatus := d.scrubSecrets(status)
-	scrubbedMsg := d.scrubSecrets(msg)
+	scrubbedStatus := d.scrub(status)
+	scrubbedMsg := d.scrub(msg)
 	if looksLikeAuthFailure(status, scrubbedMsg) {
 		return fmt.Errorf("gazellegames: search status %q: %s: %w", scrubbedStatus, scrubbedMsg, login.ErrLoginFailed)
 	}
@@ -452,14 +452,6 @@ func canonical(ids []int) []int {
 		}
 	}
 	return out
-}
-
-// scrubAPIKey removes the configured apikey from s so a server echo cannot leak it.
-func (d *driver) scrubAPIKey(s string) string {
-	if key := strings.TrimSpace(d.cfgValue("apikey")); key != "" {
-		s = strings.ReplaceAll(s, key, "[redacted]")
-	}
-	return s
 }
 
 // sortReleases orders releases by PublishDate descending (Prowlarr's terminal

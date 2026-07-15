@@ -3,7 +3,6 @@ package beyondhd
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	stdhttp "net/http"
 
@@ -27,7 +26,8 @@ func (d *driver) searchURL() string {
 // post issues the JSON POST to api/torrents/{api_key}. The api_key rides in the URL path
 // and the rsskey rides inside the body, so neither the URL nor the body is ever logged.
 // Content-Type and Accept are application/json (Prowlarr sets both). A transport error
-// surfaces with the path-embedded api_key scrubbed (apphttp.RedactError + scrubSecrets);
+// surfaces with the path-embedded api_key scrubbed (apphttp.RedactError + Base.ScrubErr,
+// which preserves any wrapped sentinel — e.g. login.ErrLoginFailed — through the scrub);
 // the raw URL is never placed in the error.
 func (d *driver) post(ctx context.Context, body []byte) (*native.Response, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodPost, d.searchURL(), bytes.NewReader(body))
@@ -40,12 +40,5 @@ func (d *driver) post(ctx context.Context, body []byte) (*native.Response, error
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	resp, err := d.Do(ctx, req, native.ClassifyAuth403)
-	if err == nil {
-		return resp, nil
-	}
-	msg := d.scrubSecrets(err.Error())
-	if msg == err.Error() {
-		return resp, err
-	}
-	return resp, errors.New(msg)
+	return resp, d.ScrubErr(err)
 }

@@ -108,6 +108,19 @@ carry no forgeable ambient credential and are **exempt**. `SameSite=Lax` remains
   scrubbed on top. The placeholder carries no length/prefix hint — `REDACTED` on the URL/header/JSON
   surfaces, `<redacted>` in the error-string scrubs (`RedactError`). Served download/magnet links
   **do** legitimately carry passkeys (intended output) — those are never *logged*.
+- **Value scrub** (`internal/http/scrub.go`, `apphttp.ScrubValues`), the *other* half of the
+  redaction seam alongside `RedactError`'s name-matched scrub above: instead of matching a
+  field NAME, it replaces a caller-supplied credential VALUE wherever it appears in free text
+  — a server response that echoes a submitted password/apikey/passkey back into an error or
+  status message, which a name-matched scrub cannot catch. The VALUES to scrub are derived
+  from the loader's authoritative `SettingsField.IsSecret` classifier
+  (`loader.SecretValues(settings, config)`), so both the Cardigann engine's `login`/`search`
+  stages and every native driver (`native.Base.Scrub`/`Base.ScrubErr`) share one derivation and
+  one placeholder (`[redacted]`) — replacing ~13 hand-rolled per-driver `ReplaceAll` scrubs that
+  had drifted (divergent placeholders, inconsistent substring-safety ordering).
+  `Base.ScrubErr` preserves `errors.Is`/`errors.As` to the original error's sentinel
+  (`login.ErrLoginFailed`, `*search.RateLimitedError`) through the scrub, so a redacted message
+  never silently breaks the registry's health-event classification.
 - **File permissions** (`internal/database/db.go`). Data dir `0700`; the database **and every SQLite
   side file** (`-wal`, `-shm`, `-journal`) `0600`, enforced regardless of umask.
 - **Level-gated diagnostics.** `log.level` (`trace`|`debug`|`info`|`warn`|`error`) controls how much a

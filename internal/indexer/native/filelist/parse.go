@@ -61,7 +61,7 @@ type filelistError struct {
 // body or a {"error":…} envelope is a parse error.
 func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	if env, ok := decodeError(body); ok {
-		return nil, fmt.Errorf("filelist: api error: %s: %w", scrubPasskey(env, d.Cfg), search.ErrParseError)
+		return nil, fmt.Errorf("filelist: api error: %s: %w", d.Scrub(env), search.ErrParseError)
 	}
 	var rows []filelistTorrent
 	if err := json.Unmarshal(body, &rows); err != nil {

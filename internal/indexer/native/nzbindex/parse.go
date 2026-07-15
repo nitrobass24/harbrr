@@ -47,7 +47,8 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 		return nil, fmt.Errorf("nzbindex: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
 	}
 	if resp.Error {
-		return nil, fmt.Errorf("nzbindex: api error: %s: %w", scrubSecret(resp.ErrorMessage, d.apikey), search.ErrParseError)
+		msg := apphttp.ScrubValues(strings.TrimSpace(resp.ErrorMessage), []string{d.apikey})
+		return nil, fmt.Errorf("nzbindex: api error: %s: %w", msg, search.ErrParseError)
 	}
 	releases := make([]*normalizer.Release, 0, len(resp.Data.Content))
 	for i := range resp.Data.Content {
@@ -103,14 +104,4 @@ func formatPosted(posted int64) string {
 		return ""
 	}
 	return time.Unix(posted, 0).UTC().Format(time.RFC3339)
-}
-
-// scrubSecret removes a non-empty secret value from s so a server echo cannot leak it,
-// mirroring the sibling drivers' value scrub.
-func scrubSecret(s, secret string) string {
-	s = strings.TrimSpace(s)
-	if secret == "" {
-		return s
-	}
-	return strings.ReplaceAll(s, secret, "[redacted]")
 }

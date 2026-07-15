@@ -213,7 +213,7 @@ func TestParseStatusSentinels(t *testing.T) {
 }
 
 // TestParseStatusErrorScrubsSecrets proves a failure message that echoes the api_key or
-// rsskey cannot leak either (scrubSecrets redacts them before the error surfaces).
+// rsskey cannot leak either (Base.Scrub redacts them before the error surfaces).
 func TestParseStatusErrorScrubsSecrets(t *testing.T) {
 	t.Parallel()
 	d := parseDriver(t, creds())

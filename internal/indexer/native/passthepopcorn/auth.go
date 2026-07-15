@@ -2,11 +2,8 @@ package passthepopcorn
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	stdhttp "net/http"
-	"sort"
-	"strings"
 
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
@@ -52,37 +49,5 @@ func (d *driver) get(ctx context.Context, rawurl, accept string, download bool) 
 	} else {
 		resp, err = d.Do(ctx, req, classify)
 	}
-	return resp, d.scrubError(err)
-}
-
-// scrubSecrets removes the configured ApiUser and ApiKey from s so a server echo (e.g. in
-// an error message or response body) cannot leak either credential. Mirrors
-// broadcastthenet.scrubAPIKey; both credentials ride only in headers and are never
-// logged, but any error string is scrubbed defensively before it can surface.
-func (d *driver) scrubSecrets(s string) string {
-	secrets := make([]string, 0, 2)
-	for _, key := range []string{"apikey", "apiuser"} {
-		if v := strings.TrimSpace(d.Cfg[key]); v != "" {
-			secrets = append(secrets, v)
-		}
-	}
-	// Redact the LONGER credential first: if one secret is a substring of the other
-	// (e.g. ApiUser inside ApiKey), replacing the shorter first would mangle or
-	// partially miss the longer one, leaking a fragment.
-	sort.Slice(secrets, func(i, j int) bool { return len(secrets[i]) > len(secrets[j]) })
-	for _, v := range secrets {
-		s = strings.ReplaceAll(s, v, "[redacted]")
-	}
-	return s
-}
-
-func (d *driver) scrubError(err error) error {
-	if err == nil {
-		return nil
-	}
-	msg := d.scrubSecrets(err.Error())
-	if msg == err.Error() {
-		return err
-	}
-	return errors.New(msg)
+	return resp, d.ScrubErr(err)
 }

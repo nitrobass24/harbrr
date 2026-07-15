@@ -19,7 +19,7 @@ func (e *errDoer) Do(*stdhttp.Request) (*stdhttp.Response, error) { return nil, 
 // http.Client failure shape is a *url.Error whose Error() quotes its FULL URL — here a
 // fabricated download URL hiding a secret in BOTH a path segment and a passkey query param,
 // with an inner cause that also echoes the session cookie. get() must surface only
-// scheme://host: SchemeHost(rawurl) + RedactURLError drop the path/query, and scrubSecrets
+// scheme://host: SchemeHost(rawurl) + RedactURLError drop the path/query, and Base.ScrubErr
 // strips the cookie.
 func TestGetTransportErrorScrubsCookie(t *testing.T) {
 	t.Parallel()
@@ -52,23 +52,27 @@ func TestGetTransportErrorScrubsCookie(t *testing.T) {
 	}
 }
 
-// TestScrubSecrets proves the configured cookie and User-Agent are removed from a string
-// (so a wrapped transport error can never leak the session secret), and that an empty
-// cfg is a no-op.
+// TestScrubSecrets proves the configured cookie (Base.Scrub's IsSecret-derived set)
+// and User-Agent (an explicit extra — user_agent carries no credential token and is
+// not a declared setting) are both removed from a string, using the SAME "[redacted]"
+// placeholder for both (the torrentday-specific [REDACTED-COOKIE]/[REDACTED-UA]
+// placeholders this replaces are gone: every native driver now shares one placeholder
+// via apphttp.ScrubValues). An empty cfg is a no-op.
 func TestScrubSecrets(t *testing.T) {
 	t.Parallel()
-	cfg := map[string]string{"cookie": credCookie, "user_agent": credUA}
+	d := testDriver(t, &scriptDoer{}, map[string]string{"cookie": credCookie, "user_agent": credUA})
 	in := "dial failed for Cookie=" + credCookie + " UA=" + credUA
-	out := scrubSecrets(in, cfg)
+	out := d.Scrub(in, strings.TrimSpace(d.Cfg["user_agent"]))
 	if strings.Contains(out, credCookie) || strings.Contains(out, credUA) {
-		t.Errorf("scrubSecrets left a secret: %q", out)
+		t.Errorf("Scrub left a secret: %q", out)
 	}
-	if !strings.Contains(out, "[REDACTED-COOKIE]") {
-		t.Errorf("scrubSecrets did not insert the cookie placeholder: %q", out)
+	if !strings.Contains(out, "[redacted]") {
+		t.Errorf("Scrub did not insert the placeholder: %q", out)
 	}
 
 	// An empty cfg leaves the string untouched.
-	if got := scrubSecrets("plain message", map[string]string{}); got != "plain message" {
-		t.Errorf("scrubSecrets(empty cfg) = %q, want unchanged", got)
+	empty := testDriver(t, &scriptDoer{}, map[string]string{})
+	if got := empty.Scrub("plain message"); got != "plain message" {
+		t.Errorf("Scrub(empty cfg) = %q, want unchanged", got)
 	}
 }

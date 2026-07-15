@@ -146,7 +146,7 @@ func TestFetchPasskeyAuthFailures(t *testing.T) {
 // TestStorePasskeyScrubsStatusEcho proves the SERVER-CONTROLLED quick_user `status` field
 // cannot leak a secret. The apikey rides in the X-API-Key header on that same request, so a
 // server that echoes the apikey (or a configured passkey) back into its status is
-// value-scrubbed via scrubSecrets before the status reaches the surfaced error (egress:
+// value-scrubbed via d.scrub before the status reaches the surfaced error (egress:
 // error -> health Detail -> webhook). Fail-before: storePasskey rendered
 // resp.Status.string() unscrubbed, so an echoed secret leaked.
 func TestStorePasskeyScrubsStatusEcho(t *testing.T) {

@@ -331,8 +331,8 @@ func TestSearchTransportErrorHostOnly(t *testing.T) {
 func TestScrubSecrets(t *testing.T) {
 	t.Parallel()
 	d := searchDriver(t, &scriptDoer{})
-	got := d.scrubSecrets("key " + credAPIKey + " pass " + credPasskey)
+	got := d.scrub("key " + credAPIKey + " pass " + credPasskey)
 	if strings.Contains(got, credAPIKey) || strings.Contains(got, credPasskey) {
-		t.Fatalf("scrubSecrets left a secret: %q", got)
+		t.Fatalf("scrub left a secret: %q", got)
 	}
 }

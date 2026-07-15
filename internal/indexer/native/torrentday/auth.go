@@ -2,7 +2,6 @@ package torrentday
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	stdhttp "net/http"
 	"strings"
@@ -19,9 +18,14 @@ const (
 
 // get issues a GET carrying the session cookie (and User-Agent when configured) as
 // headers. The cookie is a header, never the URL, so the served URL carries no secret;
-// a transport error still surfaces only its scheme://host through native.Base. accept
-// sets the Accept header when non-empty (the search wants JSON; a torrent download must
-// not force a content type). The cookie, headers, and body are never logged.
+// a transport error still surfaces only its scheme://host through native.Base, then
+// Base.ScrubErr value-scrubs any echoed cookie/user_agent while preserving the
+// wrapped sentinel (e.g. login.ErrLoginFailed) through the scrub. cookie is
+// IsSecret-classified (its name carries the "cookie" token) so it comes from
+// Base.Scrub's derived set; user_agent carries no credential token and is not a
+// declared setting at all, so it is passed as an explicit extra. accept sets the
+// Accept header when non-empty (the search wants JSON; a torrent download must not
+// force a content type). The cookie, headers, and body are never logged.
 func (d *driver) get(ctx context.Context, rawurl, accept string, download bool) (*native.Response, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
@@ -42,7 +46,7 @@ func (d *driver) get(ctx context.Context, rawurl, accept string, download bool) 
 	} else {
 		resp, err = d.Do(ctx, req, native.ClassifyAuth403)
 	}
-	return resp, d.scrubError(err)
+	return resp, d.ScrubErr(err, strings.TrimSpace(d.Cfg["user_agent"]))
 }
 
 // isLoginRedirect reports whether resp is a 3xx redirect whose Location points at the
@@ -54,30 +58,4 @@ func isLoginRedirect(resp *native.Response) bool {
 		return false
 	}
 	return strings.Contains(resp.Header.Get("Location"), loginRedirectMarker)
-}
-
-func (d *driver) scrubError(err error) error {
-	if err == nil {
-		return nil
-	}
-	msg := scrubSecrets(err.Error(), d.Cfg)
-	if msg == err.Error() {
-		return err
-	}
-	return errors.New(msg)
-}
-
-// scrubSecrets removes the configured session cookie (and User-Agent) from a string so
-// a wrapped transport error can never leak the secret. The cookie rides only in the
-// request header; should a redirect or transport error ever echo it into a message, it
-// is replaced with a fixed placeholder.
-func scrubSecrets(s string, cfg map[string]string) string {
-	out := s
-	if cookie := strings.TrimSpace(cfg["cookie"]); cookie != "" {
-		out = strings.ReplaceAll(out, cookie, "[REDACTED-COOKIE]")
-	}
-	if ua := strings.TrimSpace(cfg["user_agent"]); ua != "" {
-		out = strings.ReplaceAll(out, ua, "[REDACTED-UA]")
-	}
-	return out
 }

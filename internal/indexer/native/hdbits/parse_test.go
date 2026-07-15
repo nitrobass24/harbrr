@@ -239,7 +239,7 @@ func TestParseStatusSentinels(t *testing.T) {
 }
 
 // TestParseStatusErrorScrubsSecrets proves a non-zero status whose message echoes the
-// username/passkey cannot leak either (scrubSecrets redacts them before the error surfaces).
+// username/passkey cannot leak either (Base.Scrub redacts them before the error surfaces).
 func TestParseStatusErrorScrubsSecrets(t *testing.T) {
 	t.Parallel()
 	d := parseDriver(t, creds())

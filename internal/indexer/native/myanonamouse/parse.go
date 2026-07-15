@@ -105,7 +105,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 		return nil, nil
 	}
 	if resp.Error != "" {
-		return nil, fmt.Errorf("myanonamouse: search error %q: %w", d.scrubSecret(resp.Error), search.ErrParseError)
+		return nil, fmt.Errorf("myanonamouse: search error %q: %w", d.scrub(resp.Error), search.ErrParseError)
 	}
 	if resp.Data == nil {
 		return nil, fmt.Errorf("myanonamouse: search response carried no data array: %w", search.ErrParseError)

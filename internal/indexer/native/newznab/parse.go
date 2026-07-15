@@ -145,7 +145,7 @@ const (
 // its description must not leak it (a bare "invalid key ABCD1234" would pass RedactError's
 // key[=:]value anchor untouched).
 func (e *apiError) toError(apikey string) error {
-	desc := scrubSecret(strings.TrimSpace(e.Description), apikey)
+	desc := apphttp.ScrubValues(strings.TrimSpace(e.Description), []string{apikey})
 	if strings.EqualFold(desc, "Request limit reached") {
 		return &search.RateLimitedError{StatusCode: 0}
 	}
@@ -154,15 +154,6 @@ func (e *apiError) toError(apikey string) error {
 		return fmt.Errorf("newznab: auth failed (code %s): %s: %w", e.Code, desc, login.ErrLoginFailed)
 	}
 	return fmt.Errorf("newznab: api error (code %s): %s: %w", e.Code, desc, search.ErrParseError)
-}
-
-// scrubSecret removes a non-empty secret value from s so a server echo cannot leak it,
-// mirroring the value-scrub used by the sibling native drivers (gazelle.scrubAPIKey).
-func scrubSecret(s, secret string) string {
-	if secret == "" {
-		return s
-	}
-	return strings.ReplaceAll(s, secret, "[redacted]")
 }
 
 // mentionsAPIKey reports whether the error description references a missing/incorrect

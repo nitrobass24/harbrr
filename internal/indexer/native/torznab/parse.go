@@ -147,7 +147,7 @@ const (
 // server-controlled free text that reaches a persisted health event, so the configured
 // apikey is value-scrubbed out of it as defense in depth.
 func (e *apiError) toError(apikey string) error {
-	desc := scrubAPIKey(strings.TrimSpace(e.Description), apikey)
+	desc := apphttp.ScrubValues(strings.TrimSpace(e.Description), []string{apikey})
 	if strings.EqualFold(desc, "Request limit reached") {
 		return &search.RateLimitedError{StatusCode: 0}
 	}
@@ -156,15 +156,6 @@ func (e *apiError) toError(apikey string) error {
 		return fmt.Errorf("torznab: auth failed (code %s): %s: %w", e.Code, desc, login.ErrLoginFailed)
 	}
 	return fmt.Errorf("torznab: api error (code %s): %s: %w", e.Code, desc, search.ErrParseError)
-}
-
-// scrubAPIKey removes a non-empty apikey value from s so a server echo cannot leak it
-// — the same value-scrub idiom as filelist's scrubPasskey.
-func scrubAPIKey(s, apikey string) string {
-	if apikey == "" {
-		return s
-	}
-	return strings.ReplaceAll(s, apikey, "[redacted]")
 }
 
 // mentionsAPIKey reports whether the error description references a missing/incorrect

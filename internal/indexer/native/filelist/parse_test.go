@@ -163,7 +163,7 @@ func TestParseReleasesErrors(t *testing.T) {
 }
 
 // TestParseErrorEnvelopeScrubsPasskey proves an {"error":…} envelope that echoes the
-// passkey cannot leak it (scrubPasskey replaces it before the error surfaces).
+// passkey cannot leak it (Base.Scrub replaces it before the error surfaces).
 func TestParseErrorEnvelopeScrubsPasskey(t *testing.T) {
 	t.Parallel()
 	d := parseDriver(map[string]string{"passkey": credPass})

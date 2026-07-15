@@ -36,18 +36,6 @@ func (d *driver) get(ctx context.Context, rawurl string, download bool) (*native
 	return d.Do(ctx, req, native.ClassifyAuth403)
 }
 
-// scrubSecrets removes the configured apikey (and any persisted passkey) from s so a
-// transport/server message echo cannot leak a secret. It mirrors scrubAPIKey but also
-// covers the download passkey, which the X-API-Key header never carries but a rebuilt URL
-// could surface.
-func (d *driver) scrubSecrets(s string) string {
-	s = d.scrubAPIKey(s)
-	if pass := strings.TrimSpace(d.cfgValue("passkey")); pass != "" {
-		s = strings.ReplaceAll(s, pass, "[redacted]")
-	}
-	return s
-}
-
 // quickUserParam is the api.php request that returns the authenticated user's profile,
 // including the download passkey (Prowlarr's FetchPasskey).
 const quickUserParam = "quick_user"
@@ -101,7 +89,7 @@ func (d *driver) storePasskey(ctx context.Context, body []byte) error {
 		// not an HTTP status), and the apikey rode in the X-API-Key header on this same
 		// request, so scrub both apikey and passkey out of any echoed status before it
 		// reaches a persisted health event / webhook (mirrors hdbits/beyondhd).
-		return fmt.Errorf("gazellegames: passkey fetch failed (status %q): %w", d.scrubSecrets(resp.Status.string()), login.ErrLoginFailed)
+		return fmt.Errorf("gazellegames: passkey fetch failed (status %q): %w", d.scrub(resp.Status.string()), login.ErrLoginFailed)
 	}
 
 	// Persist FIRST, then populate the in-memory cfg only on success. If persist fails,

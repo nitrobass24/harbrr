@@ -180,7 +180,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 // not a transient parse failure); anything else is a parse error. The message is scrubbed
 // of the configured passkey first.
 func (d *driver) classifyError(msg string) error {
-	scrubbed := d.scrubPasskey(msg)
+	scrubbed := d.Scrub(msg)
 	if looksLikeAuthFailure(scrubbed) {
 		return fmt.Errorf("animebytes: api error: %s: %w", scrubbed, login.ErrLoginFailed)
 	}
@@ -272,15 +272,6 @@ func (d *driver) toRelease(g *group, t *torrent) (*normalizer.Release, bool) {
 // detailsURL is Prowlarr's InfoUrl: {base}torrent/{id}/group.
 func (d *driver) detailsURL(id int64) string {
 	return d.BaseURL + "torrent/" + strconv.FormatInt(id, 10) + "/group"
-}
-
-// scrubPasskey removes the configured passkey from s so a server echo cannot leak it
-// (mirrors filelist.scrubPasskey). The username is an identifier, not scrubbed.
-func (d *driver) scrubPasskey(s string) string {
-	if pass := strings.TrimSpace(d.Cfg["passkey"]); pass != "" {
-		s = strings.ReplaceAll(s, pass, "[redacted]")
-	}
-	return s
 }
 
 // minimumSeedTime reproduces Prowlarr's AnimeBytes MST: 259200 seconds (72h) plus an

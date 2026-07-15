@@ -122,10 +122,10 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	}
 	if resp.Error != nil {
 		if resp.Error.Code == invalidAPIKeyCode {
-			return nil, fmt.Errorf("broadcastthenet: %s: %w", d.scrubAPIKey(resp.Error.Message), login.ErrLoginFailed)
+			return nil, fmt.Errorf("broadcastthenet: %s: %w", d.Scrub(resp.Error.Message), login.ErrLoginFailed)
 		}
 		return nil, fmt.Errorf("broadcastthenet: api error %d: %s: %w",
-			resp.Error.Code, d.scrubAPIKey(resp.Error.Message), search.ErrParseError)
+			resp.Error.Code, d.Scrub(resp.Error.Message), search.ErrParseError)
 	}
 	if resp.Result == nil {
 		return nil, fmt.Errorf("broadcastthenet: null result: %w", search.ErrParseError)
@@ -241,16 +241,6 @@ func (d *driver) categories(resolution string) []int {
 		}
 	}
 	return []int{tvCategory}
-}
-
-// scrubAPIKey removes the configured API key from s so a server echo (e.g. in an error
-// message) cannot leak it. Mirrors filelist.scrubPasskey; the apikey is the body's first
-// positional param, never logged, but an error string is scrubbed defensively.
-func (d *driver) scrubAPIKey(s string) string {
-	if key := strings.TrimSpace(d.Cfg["apikey"]); key != "" {
-		s = strings.ReplaceAll(s, key, "[redacted]")
-	}
-	return s
 }
 
 // releasesOnly unwraps the sort wrappers back to plain releases (the sort key was only

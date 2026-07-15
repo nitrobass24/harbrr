@@ -183,7 +183,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 // AuthDataMissing (4) and AuthFailed (5) are credential failures (login.ErrLoginFailed); any
 // other non-zero status is a parse error.
 func (d *driver) statusError(status int, message string) error {
-	msg := d.scrubSecrets(message)
+	msg := d.Scrub(message)
 	if status == statusAuthDataMissing || status == statusAuthFailed {
 		return fmt.Errorf("hdbits: auth failed (status %d): %s: %w", status, msg, login.ErrLoginFailed)
 	}
@@ -373,18 +373,6 @@ func useFilenames(cfg map[string]string) bool {
 	default:
 		return true
 	}
-}
-
-// scrubSecrets removes the configured username and passkey from s so a server echo (e.g. in
-// an error message) cannot leak either credential (mirrors broadcastthenet.scrubAPIKey /
-// filelist.scrubPasskey). Both ride in the secret-bearing POST body.
-func (d *driver) scrubSecrets(s string) string {
-	for _, k := range []string{"passkey", "username"} {
-		if v := strings.TrimSpace(d.Cfg[k]); v != "" {
-			s = strings.ReplaceAll(s, v, "[redacted]")
-		}
-	}
-	return s
 }
 
 // sortReleases orders releases by ascending numeric id (the data[] order is server-defined;

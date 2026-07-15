@@ -168,7 +168,7 @@ func containsInvalidKey(body []byte) bool {
 // message naming an invalid key is a login failure; any other failure is a generic indexer
 // parse error (search.ErrParseError).
 func (d *driver) statusError(message string) error {
-	msg := d.scrubSecrets(message)
+	msg := d.Scrub(message)
 	if strings.Contains(message, invalidKeyMarker) {
 		return fmt.Errorf("beyondhd: %s: %w", msg, login.ErrLoginFailed)
 	}
@@ -294,18 +294,6 @@ func tmdbID(raw string) int64 {
 		return 0
 	}
 	return id
-}
-
-// scrubSecrets removes the configured api_key and rsskey from s so a server echo (e.g. in
-// an error message) cannot leak either (mirrors hdbits.scrubSecrets). The api_key rides in
-// the secret-bearing URL path; the rsskey rides in the body + the download URL.
-func (d *driver) scrubSecrets(s string) string {
-	for _, k := range []string{"api_key", "rsskey"} {
-		if v := strings.TrimSpace(d.Cfg[k]); v != "" {
-			s = strings.ReplaceAll(s, v, "[redacted]")
-		}
-	}
-	return s
 }
 
 // sortReleases orders releases by descending publish date (Prowlarr orders by PublishDate

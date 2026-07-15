@@ -301,16 +301,16 @@ func TestParseGroupMalformedTorrents(t *testing.T) {
 func TestScrubAPIKey(t *testing.T) {
 	t.Parallel()
 	d := parseDriver(t, map[string]string{"apikey": credAPIKey})
-	if got := d.scrubAPIKey("token " + credAPIKey + " seen"); got != "token [redacted] seen" {
-		t.Fatalf("scrubAPIKey = %q, did not redact the key", got)
+	if got := d.scrub("token " + credAPIKey + " seen"); got != "token [redacted] seen" {
+		t.Fatalf("scrub = %q, did not redact the key", got)
 	}
 }
 
 // TestParseSearchScrubsStatusEcho proves the server-controlled `status` and `error` fields
 // are both scrubbed of the apikey AND passkey before they reach the surfaced error (egress:
 // error -> health Detail -> webhook). Fail-before: parseSearch rendered the raw `status`
-// unscrubbed (only `error` went through scrubAPIKey), so an apikey/passkey echoed into the
-// status leaked; pass-after: both fields are value-scrubbed via scrubSecrets.
+// unscrubbed (only `error` went through the apikey-only scrub), so an apikey/passkey echoed
+// into the status leaked; pass-after: both fields are value-scrubbed via d.scrub.
 func TestParseSearchScrubsStatusEcho(t *testing.T) {
 	t.Parallel()
 	d := parseDriver(t, map[string]string{"apikey": credAPIKey, "passkey": credPasskey})

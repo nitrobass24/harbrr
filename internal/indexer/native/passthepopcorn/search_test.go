@@ -272,30 +272,35 @@ func TestIsJSONContentType(t *testing.T) {
 }
 
 // TestScrubSecrets proves both credentials are redacted from an arbitrary string (a
-// defensive scrub for any error a future leaf might wrap).
+// defensive scrub for any error a future leaf might wrap). Both apiuser and apikey are
+// IsSecret-classified (apiuser is force-typed "password" precisely so it is; see
+// sites.go's credentialSettings), so Base.Scrub's derived set catches both with no
+// extras.
 func TestScrubSecrets(t *testing.T) {
 	t.Parallel()
 	d := searchDriver(t, &scriptDoer{})
 	in := "boom user=" + credAPIUser + " key=" + credAPIKey
-	got := d.scrubSecrets(in)
+	got := d.Scrub(in)
 	if strings.Contains(got, credAPIUser) || strings.Contains(got, credAPIKey) {
-		t.Errorf("scrubSecrets left a credential: %q", got)
+		t.Errorf("Scrub left a credential: %q", got)
 	}
 }
 
 // TestScrubSecretsOverlapping proves the longer credential is redacted first: when one
 // secret is a substring of the other (here ApiUser "USER123" is contained in ApiKey
 // "USER123KEY"), redacting the shorter first would mangle the longer and leak the "KEY"
-// fragment. Sorting by length descending keeps both fully redacted.
+// fragment. apphttp.ScrubValues (which Base.Scrub delegates to) sorts longest-first
+// unconditionally, so this is no longer a per-driver concern.
 func TestScrubSecretsOverlapping(t *testing.T) {
 	t.Parallel()
 	const (
 		shortSecret = "USER123"
 		longSecret  = "USER123KEY"
 	)
-	d := &driver{Base: native.Base{Cfg: map[string]string{"apiuser": shortSecret, "apikey": longSecret}}}
-	got := d.scrubSecrets("leak " + longSecret + " and " + shortSecret)
+	d := searchDriver(t, &scriptDoer{})
+	d.Cfg = map[string]string{"apiuser": shortSecret, "apikey": longSecret}
+	got := d.Scrub("leak " + longSecret + " and " + shortSecret)
 	if strings.Contains(got, shortSecret) {
-		t.Errorf("scrubSecrets left a credential fragment: %q", got)
+		t.Errorf("Scrub left a credential fragment: %q", got)
 	}
 }
