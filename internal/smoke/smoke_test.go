@@ -31,6 +31,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	apphttp "github.com/autobrr/harbrr/internal/http"
 )
 
 func TestSmoke(t *testing.T) {
@@ -42,7 +44,7 @@ func TestSmoke(t *testing.T) {
 
 	indexers, err := listHarbrrIndexers(context.Background(), c, cfg)
 	if err != nil {
-		t.Fatalf("smoke: list harbrr indexers: %v", err)
+		t.Fatalf("smoke: list harbrr indexers: %s", apphttp.RedactError(err))
 	}
 	enabled := make([]harbrrIndexer, 0, len(indexers))
 	for _, ix := range indexers {
@@ -72,7 +74,7 @@ func TestSmoke(t *testing.T) {
 			time.Sleep(betweenCallsDelay)
 			prowlarrID, ok, perr := ProwlarrIndexerID(context.Background(), c, cfg.ProwlarrURL, cfg.ProwlarrKey, ix.Name, ix.Slug)
 			if perr != nil {
-				t.Skipf("%s: Prowlarr oracle unavailable (%v); skipping differential", ix.Slug, perr)
+				t.Skipf("%s: Prowlarr oracle unavailable (%s); skipping differential", ix.Slug, apphttp.RedactError(perr))
 				return
 			}
 			if !ok {
@@ -82,7 +84,7 @@ func TestSmoke(t *testing.T) {
 			prowlarr, pStatus, perr := ProwlarrSearch(context.Background(), c, cfg.ProwlarrURL, cfg.ProwlarrKey, prowlarrID, q)
 			switch {
 			case perr != nil:
-				t.Skipf("%s: Prowlarr oracle unavailable (%v); skipping differential", ix.Slug, perr)
+				t.Skipf("%s: Prowlarr oracle unavailable (%s); skipping differential", ix.Slug, apphttp.RedactError(perr))
 				return
 			case pStatus == http.StatusTooManyRequests || pStatus == http.StatusServiceUnavailable:
 				t.Skipf("%s: Prowlarr rate-limited (HTTP %d); backing off", ix.Slug, pStatus)
@@ -148,7 +150,7 @@ func harbrrSearch(t *testing.T, c *http.Client, cfg Config, slug, query string) 
 		return nil, true
 	}
 	if err != nil {
-		t.Fatalf("%s: harbrr feed: %v", slug, err)
+		t.Fatalf("%s: harbrr feed: %s", slug, apphttp.RedactError(err))
 	}
 	if status != http.StatusOK {
 		t.Fatalf("%s: harbrr feed HTTP %d", slug, status)
@@ -171,7 +173,7 @@ func grabResolve(t *testing.T, c *http.Client, cfg Config, slug, query string) s
 	}
 	body, status, err := httpGet(context.Background(), c, link, nil)
 	if err != nil {
-		t.Fatalf("grab %s: %v", slug, err)
+		t.Fatalf("grab %s: %s", slug, apphttp.RedactError(err))
 	}
 	if status != http.StatusOK {
 		return fmt.Sprintf("download HTTP %d", status)
