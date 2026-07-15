@@ -3,9 +3,10 @@ package login
 import (
 	"context"
 	"fmt"
+	"maps"
 	stdhttp "net/http"
 	"net/url"
-	"sort"
+	"slices"
 	"strings"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
@@ -170,7 +171,7 @@ func (e *Executor) solveAndRetryLoginPost(ctx context.Context, l *loader.Login, 
 // NEVER logged. A render error references the field name only.
 func (e *Executor) renderInputs(inputs map[string]loader.Scalar) (url.Values, error) {
 	out := url.Values{}
-	for _, name := range sortedKeys(inputs) {
+	for _, name := range slices.Sorted(maps.Keys(inputs)) {
 		rendered, err := template.Eval(inputs[name].String(), e.templateContext())
 		if err != nil {
 			return nil, fmt.Errorf("rendering login input %q: %w", name, err)
@@ -268,15 +269,4 @@ func appendQuery(rawURL string, pairs url.Values) (string, error) {
 	}
 	u.RawQuery = q.Encode()
 	return u.String(), nil
-}
-
-// sortedKeys returns map keys in a deterministic order so rendered form bodies
-// and query strings are stable (test-assertable) regardless of map iteration.
-func sortedKeys(m map[string]loader.Scalar) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }

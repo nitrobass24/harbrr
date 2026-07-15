@@ -52,8 +52,8 @@ type cacheFlushBody struct {
 }
 
 // newCacheParams returns sane TTL tiers for a test cache.
-func newCacheParams() registry.SearchCacheParams {
-	return registry.SearchCacheParams{
+func newCacheParams() registry.CacheConfigView {
+	return registry.CacheConfigView{
 		Enabled:         true,
 		RSSTTL:          5 * time.Minute,
 		KeywordTTL:      30 * time.Minute,
@@ -205,7 +205,7 @@ func TestCacheConfigDisabled(t *testing.T) {
 // cacheBuilder builds a SearchCache bound to a given db with the fixed clock.
 func cacheBuilder(now time.Time) func(db *database.DB) *registry.SearchCache {
 	return func(db *database.DB) *registry.SearchCache {
-		return registry.NewSearchCacheWithParams(db, newCacheParams(), func() time.Time { return now }, zerolog.Nop())
+		return registry.NewSearchCacheFromConfig(db, newCacheParams(), func() time.Time { return now }, zerolog.Nop())
 	}
 }
 

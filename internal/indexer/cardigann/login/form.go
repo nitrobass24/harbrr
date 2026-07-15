@@ -3,8 +3,9 @@ package login
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/url"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
@@ -113,7 +114,7 @@ func (e *Executor) renderFormInputs(l *loader.Login, doc *goquery.Document) (url
 		return e.renderInputs(l.Inputs)
 	}
 	out := url.Values{}
-	for _, key := range sortedKeys(l.Inputs) {
+	for _, key := range slices.Sorted(maps.Keys(l.Inputs)) {
 		rendered, err := template.Eval(l.Inputs[key].String(), e.templateContext())
 		if err != nil {
 			return nil, fmt.Errorf("rendering login input %q: %w", key, err)
@@ -188,7 +189,7 @@ func (e *Executor) extractSelectorInputs(body []byte, inputs map[string]loader.S
 	}
 	root := doc.Root()
 	out := url.Values{}
-	for _, name := range sortedSelectorKeys(inputs) {
+	for _, name := range slices.Sorted(maps.Keys(inputs)) {
 		blk := inputs[name]
 		val, found, ferr := e.selector.Field(root, blk, e.eval)
 		if ferr != nil {
@@ -301,17 +302,6 @@ func (e *Executor) seedStaticCookies(cookies []string) error {
 	}
 	e.jar.SetCookies(host, parsed)
 	return nil
-}
-
-// sortedSelectorKeys returns map keys in deterministic order so extracted form
-// fields are stable.
-func sortedSelectorKeys(m map[string]loader.SelectorBlock) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 // isOptional reports whether a selector block is marked optional.

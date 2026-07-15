@@ -94,17 +94,3 @@ func defaultString(s loader.SettingsField) string {
 	}
 	return s.Default.String()
 }
-
-// mergeConfig overlays over onto a copy of base (over wins per key), so explicit
-// WithConfig values override the settings defaults — matching Jackett, where a
-// user's configured value replaces the setting Default.
-func mergeConfig(base, over map[string]string) map[string]string {
-	merged := make(map[string]string, len(base)+len(over))
-	for k, v := range base {
-		merged[k] = v
-	}
-	for k, v := range over {
-		merged[k] = v
-	}
-	return merged
-}

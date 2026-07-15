@@ -1,6 +1,7 @@
 package cardigann
 
 import (
+	"maps"
 	"testing"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
@@ -98,14 +99,16 @@ func TestCanonicalizeCheckboxes(t *testing.T) {
 }
 
 // TestMergeConfigOverrides proves an explicit WithConfig value wins over the
-// settings default (Jackett: a user-configured value replaces the Default).
+// settings default (Jackett: a user-configured value replaces the Default), via
+// the same maps.Clone+maps.Copy sequence engine.go uses to assemble o.config.
 func TestMergeConfigOverrides(t *testing.T) {
 	t.Parallel()
 
 	base := map[string]string{"sort": "created_at", "apikey": ""}
 	over := map[string]string{"apikey": "SECRET", "extra": "x"}
 
-	merged := mergeConfig(base, over)
+	merged := maps.Clone(base)
+	maps.Copy(merged, over)
 
 	if merged["sort"] != "created_at" {
 		t.Errorf("sort = %q, want created_at (default kept)", merged["sort"])
@@ -118,6 +121,6 @@ func TestMergeConfigOverrides(t *testing.T) {
 	}
 	// Inputs are not mutated.
 	if base["apikey"] != "" {
-		t.Errorf("mergeConfig mutated base: apikey = %q", base["apikey"])
+		t.Errorf("merge mutated base: apikey = %q", base["apikey"])
 	}
 }

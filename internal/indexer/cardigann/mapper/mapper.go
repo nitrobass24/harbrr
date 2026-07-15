@@ -104,7 +104,7 @@ func (m *CategoryMap) MapTrackerCatToNewznab(trackerCategory string) []int {
 	}
 	var out []int
 	for _, e := range m.entries {
-		if !isBlank(e.trackerCategory) && equalsFold(e.trackerCategory, trackerCategory) {
+		if !isBlank(e.trackerCategory) && strings.EqualFold(e.trackerCategory, trackerCategory) {
 			out = append(out, e.newznabID)
 		}
 	}
@@ -120,7 +120,7 @@ func (m *CategoryMap) MapTrackerCatDescToNewznab(trackerCategoryDesc string) []i
 	}
 	var out []int
 	for _, e := range m.entries {
-		if !isBlank(e.desc) && equalsFold(e.desc, trackerCategoryDesc) {
+		if !isBlank(e.desc) && strings.EqualFold(e.desc, trackerCategoryDesc) {
 			out = append(out, e.newznabID)
 		}
 	}
@@ -281,11 +281,4 @@ func boolValue(p *bool) bool {
 // string.IsNullOrWhiteSpace guard.
 func isBlank(s string) bool {
 	return strings.TrimSpace(s) == ""
-}
-
-// equalsFold compares case-insensitively, mirroring Jackett's
-// StringComparison.InvariantCultureIgnoreCase for the ASCII category ids/descs
-// that appear in definitions.
-func equalsFold(a, b string) bool {
-	return strings.EqualFold(a, b)
 }

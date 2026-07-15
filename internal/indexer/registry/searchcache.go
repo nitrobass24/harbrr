@@ -176,31 +176,11 @@ func NewSearchCache(db dbinterface.Querier, t cacheTuning, clock func() time.Tim
 // a nil sink leaves the tap a no-op. Called once at wiring time, before serving.
 func (c *SearchCache) SetAnnounceSink(sink AnnounceSink) { c.announceSink = sink }
 
-// SearchCacheParams carries the resolved TTL tiers and refresh-ahead threshold a
-// caller (cmd/harbrr) reads from config to build a SearchCache without reaching
-// into the unexported ttlConfig.
-type SearchCacheParams struct {
-	Enabled         bool
-	RSSTTL          time.Duration
-	KeywordTTL      time.Duration
-	ThinTTL         time.Duration
-	ThinThreshold   int
-	RefreshAheadPct int
-	NegativeTTL     time.Duration
-	CleanupInterval time.Duration
-}
-
-// NewSearchCacheWithParams builds a SearchCache from config-resolved tiers. It is
+// NewSearchCacheFromConfig builds a SearchCache from a CacheConfigView. It is
 // the exported entry point for cmd/harbrr; NewSearchCache stays internal so the
 // ttlConfig tier struct does not leak across the package boundary.
-func NewSearchCacheWithParams(db dbinterface.Querier, p SearchCacheParams, clock func() time.Time, log zerolog.Logger) *SearchCache {
-	t := cacheTuning{
-		enabled:   p.Enabled,
-		ttl:       ttlConfig{rss: p.RSSTTL, keyword: p.KeywordTTL, thin: p.ThinTTL, thinThreshold: p.ThinThreshold, negative: p.NegativeTTL},
-		refreshAt: p.RefreshAheadPct,
-		cleanup:   p.CleanupInterval,
-	}
-	return NewSearchCache(db, t, clock, log)
+func NewSearchCacheFromConfig(db dbinterface.Querier, v CacheConfigView, clock func() time.Time, log zerolog.Logger) *SearchCache {
+	return NewSearchCache(db, v.tuning(), clock, log)
 }
 
 // liveSearchFn is the live-fetch seam the cache drives on a miss or a refresh: the

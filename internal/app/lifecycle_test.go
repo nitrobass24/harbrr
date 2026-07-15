@@ -42,7 +42,7 @@ func TestBackgroundCleanupFlushesBeforeClose(t *testing.T) {
 	}
 
 	shutdownNow := time.Date(2026, 6, 30, 12, 0, 0, 0, time.UTC)
-	sc := registry.NewSearchCacheWithParams(db, registry.SearchCacheParams{
+	sc := registry.NewSearchCacheFromConfig(db, registry.CacheConfigView{
 		Enabled: true, KeywordTTL: 30 * time.Minute, CleanupInterval: time.Hour,
 	}, func() time.Time { return shutdownNow }, zerolog.Nop())
 	if err := sc.RehydrateCounters(context.Background()); err != nil {

@@ -151,7 +151,7 @@ func baseRow() map[string]string {
 func TestReleaseFreeleechVolumeFactors(t *testing.T) {
 	t.Parallel()
 	cm := fakeCategoryMap(t, [][2]string{{"1", "Movies/HD"}})
-	n := New(WithCategoryMap(cm))
+	n := New(Config{Categories: cm})
 
 	tests := []struct {
 		name      string
@@ -198,7 +198,7 @@ func TestZeroVolumeFactorNotOmitted(t *testing.T) {
 	row := baseRow()
 	row["downloadvolumefactor"] = "0"
 	row["uploadvolumefactor"] = "0"
-	r, err := New(WithCategoryMap(cm)).Release(row)
+	r, err := New(Config{Categories: cm}).Release(row)
 	if err != nil {
 		t.Fatalf("Release: %v", err)
 	}
@@ -255,7 +255,7 @@ func TestReleaseCategories(t *testing.T) {
 			if tt.catDesc != "" {
 				row["categorydesc"] = tt.catDesc
 			}
-			r, err := New(WithCategoryMap(cm)).Release(row)
+			r, err := New(Config{Categories: cm}).Release(row)
 			if err != nil {
 				t.Fatalf("Release: %v", err)
 			}
@@ -295,7 +295,7 @@ func TestMagnetFromInfoHash(t *testing.T) {
 	row := baseRow()
 	delete(row, "download")
 	row["infohash"] = "ABCDEF0123456789ABCDEF0123456789ABCDEF01"
-	r, err := New(WithCategoryMap(cm)).Release(row)
+	r, err := New(Config{Categories: cm}).Release(row)
 	if err != nil {
 		t.Fatalf("Release: %v", err)
 	}
@@ -319,7 +319,7 @@ func TestPrivateIndexerDoesNotSynthesizeMagnet(t *testing.T) {
 	cm := fakeCategoryMap(t, [][2]string{{"1", "Movies/HD"}})
 	row := baseRow()
 	row["infohash"] = "ABCDEF0123456789ABCDEF0123456789ABCDEF01"
-	r, err := New(WithType("private"), WithCategoryMap(cm)).Release(row)
+	r, err := New(Config{Type: "private", Categories: cm}).Release(row)
 	if err != nil {
 		t.Fatalf("Release: %v", err)
 	}
@@ -339,7 +339,7 @@ func TestPrivateIndexerStillExtractsInfoHashFromMagnet(t *testing.T) {
 	row := baseRow()
 	delete(row, "download")
 	row["magnet"] = "magnet:?xt=urn:btih:DEADBEEF0123456789ABCDEF0123456789ABCDEF&dn=Title"
-	r, err := New(WithType("private"), WithCategoryMap(cm)).Release(row)
+	r, err := New(Config{Type: "private", Categories: cm}).Release(row)
 	if err != nil {
 		t.Fatalf("Release: %v", err)
 	}
@@ -354,7 +354,7 @@ func TestInfoHashFromMagnet(t *testing.T) {
 	row := baseRow()
 	delete(row, "download")
 	row["magnet"] = "magnet:?xt=urn:btih:DEADBEEF0123456789ABCDEF0123456789ABCDEF&dn=Title"
-	r, err := New(WithCategoryMap(cm)).Release(row)
+	r, err := New(Config{Categories: cm}).Release(row)
 	if err != nil {
 		t.Fatalf("Release: %v", err)
 	}
@@ -368,7 +368,7 @@ func TestDownloadMagnetGoesToMagnetField(t *testing.T) {
 	cm := fakeCategoryMap(t, [][2]string{{"1", "Movies/HD"}})
 	row := baseRow()
 	row["download"] = "magnet:?xt=urn:btih:AABBCCDDEEFF00112233445566778899AABBCCDD&dn=x"
-	r, err := New(WithCategoryMap(cm)).Release(row)
+	r, err := New(Config{Categories: cm}).Release(row)
 	if err != nil {
 		t.Fatalf("Release: %v", err)
 	}
@@ -390,7 +390,7 @@ func TestRelativeURLResolution(t *testing.T) {
 	row["download"] = "/torrents/download/42"
 	row["details"] = "details/42"
 	row["poster"] = "/img/42.jpg"
-	r, err := New(WithBaseURL("https://tracker.example/"), WithCategoryMap(cm)).Release(row)
+	r, err := New(Config{BaseURL: "https://tracker.example/", Categories: cm}).Release(row)
 	if err != nil {
 		t.Fatalf("Release: %v", err)
 	}
@@ -412,7 +412,7 @@ func TestAbsoluteURLUnchanged(t *testing.T) {
 	cm := fakeCategoryMap(t, [][2]string{{"1", "Movies/HD"}})
 	row := baseRow()
 	row["download"] = "https://cdn.example/get/9"
-	r, err := New(WithBaseURL("https://tracker.example/"), WithCategoryMap(cm)).Release(row)
+	r, err := New(Config{BaseURL: "https://tracker.example/", Categories: cm}).Release(row)
 	if err != nil {
 		t.Fatalf("Release: %v", err)
 	}
@@ -427,7 +427,7 @@ func TestPeersEqualsSeedersPlusLeechers(t *testing.T) {
 	row := baseRow()
 	row["seeders"] = "10"
 	row["leechers"] = "3"
-	r, err := New(WithCategoryMap(cm)).Release(row)
+	r, err := New(Config{Categories: cm}).Release(row)
 	if err != nil {
 		t.Fatalf("Release: %v", err)
 	}
@@ -441,7 +441,7 @@ func TestSeedersSanityCap(t *testing.T) {
 	cm := fakeCategoryMap(t, [][2]string{{"1", "Movies/HD"}})
 	row := baseRow()
 	row["seeders"] = "9999999"
-	r, err := New(WithCategoryMap(cm)).Release(row)
+	r, err := New(Config{Categories: cm}).Release(row)
 	if err != nil {
 		t.Fatalf("Release: %v", err)
 	}
@@ -453,7 +453,7 @@ func TestSeedersSanityCap(t *testing.T) {
 func TestRequiredTrioErrors(t *testing.T) {
 	t.Parallel()
 	cm := fakeCategoryMap(t, [][2]string{{"1", "Movies/HD"}})
-	n := New(WithCategoryMap(cm))
+	n := New(Config{Categories: cm})
 
 	tests := []struct {
 		name string
@@ -490,7 +490,7 @@ func TestErrorsNeverLeakSecrets(t *testing.T) {
 	row := baseRow()
 	row["title"] = ""
 	row["download"] = "https://x.example/dl?passkey=SECRETVALUE"
-	_, err := New(WithCategoryMap(cm)).Release(row)
+	_, err := New(Config{Categories: cm}).Release(row)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -502,7 +502,7 @@ func TestErrorsNeverLeakSecrets(t *testing.T) {
 func TestMarshalDeterministic(t *testing.T) {
 	t.Parallel()
 	cm := fakeCategoryMap(t, [][2]string{{"1", "TV/HD"}, {"1", "Movies/HD"}})
-	n := New(WithBaseURL("https://t.example/"), WithCategoryMap(cm))
+	n := New(Config{BaseURL: "https://t.example/", Categories: cm})
 	build := func() []*Release {
 		titles := []string{"A 1080p", "B 720p"}
 		rs := make([]*Release, 0, len(titles))
@@ -572,7 +572,7 @@ func TestIMDBFormat(t *testing.T) {
 	cm := fakeCategoryMap(t, [][2]string{{"1", "Movies/HD"}})
 	row := baseRow()
 	row["imdbid"] = "tt0111161"
-	r, err := New(WithCategoryMap(cm)).Release(row)
+	r, err := New(Config{Categories: cm}).Release(row)
 	if err != nil {
 		t.Fatalf("Release: %v", err)
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -146,7 +147,7 @@ func parseCIDRs(entries []string) ([]*net.IPNet, error) {
 			if ip.To4() == nil {
 				bits = 128
 			}
-			e += "/" + itoa(bits)
+			e += "/" + strconv.Itoa(bits)
 		}
 		_, n, err := net.ParseCIDR(e)
 		if err != nil {
@@ -155,12 +156,4 @@ func parseCIDRs(entries []string) ([]*net.IPNet, error) {
 		out = append(out, n)
 	}
 	return out, nil
-}
-
-// itoa avoids strconv for a tiny two-value case (32/128).
-func itoa(n int) string {
-	if n == 32 {
-		return "32"
-	}
-	return "128"
 }

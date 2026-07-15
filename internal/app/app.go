@@ -289,7 +289,7 @@ func (a *App) initRegistry(ctx context.Context, httpClient *http.Client) {
 // persisted app_settings overrides are overlaid. An overrides-load failure is
 // logged and non-fatal (the config-file seed stands).
 func buildSearchCache(ctx context.Context, db *database.DB, cfg *config.Config, log zerolog.Logger) *registry.SearchCache {
-	sc := registry.NewSearchCacheWithParams(db, registry.SearchCacheParams{
+	sc := registry.NewSearchCacheFromConfig(db, registry.CacheConfigView{
 		Enabled:         cfg.Cache.Enabled,
 		RSSTTL:          cfg.Cache.RSSDuration(),
 		KeywordTTL:      cfg.Cache.KeywordDuration(),

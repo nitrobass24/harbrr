@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	stdhttp "net/http"
 	"strconv"
 	"strings"
@@ -171,7 +172,9 @@ func resolveOptions(def *loader.Definition, opts []Option) options {
 	// Seed .Config from the definition's settings defaults, then overlay the
 	// caller's explicit config so user-supplied values win — matching Jackett,
 	// where a request template reads the setting Default until the user sets it.
-	o.config = mergeConfig(DefaultConfig(def), o.config)
+	cfg := maps.Clone(DefaultConfig(def))
+	maps.Copy(cfg, o.config)
+	o.config = cfg
 	if o.baseURL == "" {
 		o.baseURL = firstLink(def)
 	}
@@ -195,11 +198,11 @@ func buildDeps(def *loader.Definition, caps *mapper.Capabilities, o options) (se
 	registry.ParseRelTime = parser.ParseRelTime
 	registry.Language = def.Language
 
-	norm := normalizer.New(
-		normalizer.WithBaseURL(o.baseURL),
-		normalizer.WithType(def.Type),
-		normalizer.WithCategoryMap(caps.CategoryMap),
-	)
+	norm := normalizer.New(normalizer.Config{
+		BaseURL:    o.baseURL,
+		Type:       def.Type,
+		Categories: caps.CategoryMap,
+	})
 
 	// Resolve the def's declared charset once. A non-UTF-8 def with an
 	// unresolvable encoding fails loud here rather than silently emitting mojibake

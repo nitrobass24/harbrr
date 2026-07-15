@@ -84,33 +84,26 @@ type Normalizer struct {
 	Categories *mapper.CategoryMap
 }
 
-// Option configures a Normalizer.
-type Option func(*Normalizer)
-
-// WithBaseURL sets the base URL used to resolve relative release URLs.
-func WithBaseURL(baseURL string) Option {
-	return func(n *Normalizer) { n.BaseURL = baseURL }
+// Config configures a Normalizer. Fields mirror Normalizer's own; New copies
+// them directly.
+type Config struct {
+	// BaseURL resolves relative release URLs.
+	BaseURL string
+	// Type is the definition's indexer type ("private"/"public"/
+	// "semi-private"). Jackett only synthesises a public magnet from an info
+	// hash when the type is not "private".
+	Type string
+	// Categories is the tracker<->newznab category map.
+	Categories *mapper.CategoryMap
 }
 
-// WithType sets the definition's indexer type ("private"/"public"/
-// "semi-private"). Jackett only synthesises a public magnet from an info hash
-// when the type is not "private".
-func WithType(typ string) Option {
-	return func(n *Normalizer) { n.Type = typ }
-}
-
-// WithCategoryMap sets the tracker<->newznab category map.
-func WithCategoryMap(cm *mapper.CategoryMap) Option {
-	return func(n *Normalizer) { n.Categories = cm }
-}
-
-// New constructs a Normalizer with the given options.
-func New(opts ...Option) *Normalizer {
-	n := &Normalizer{}
-	for _, opt := range opts {
-		opt(n)
+// New constructs a Normalizer from cfg.
+func New(cfg Config) *Normalizer {
+	return &Normalizer{
+		BaseURL:    cfg.BaseURL,
+		Type:       cfg.Type,
+		Categories: cfg.Categories,
 	}
-	return n
 }
 
 // Default volume factor when a definition does not extract the field. Jackett's

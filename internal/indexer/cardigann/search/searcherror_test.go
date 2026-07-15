@@ -107,7 +107,7 @@ const (
 func searchErrorDeps() Deps {
 	return Deps{
 		Filters:    NewFilterRegistry(),
-		Normalizer: normalizer.New(normalizer.WithBaseURL("https://err.invalid/")),
+		Normalizer: normalizer.New(normalizer.Config{BaseURL: "https://err.invalid/"}),
 		BaseURL:    "https://err.invalid/",
 	}
 }

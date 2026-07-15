@@ -162,7 +162,7 @@ func TestParseResults_KeywordsFiltersAndMatch(t *testing.T) {
 </body></html>`)
 	deps := Deps{
 		Filters:    NewFilterRegistry(),
-		Normalizer: normalizer.New(normalizer.WithBaseURL("https://kw.invalid/")),
+		Normalizer: normalizer.New(normalizer.Config{BaseURL: "https://kw.invalid/"}),
 		BaseURL:    "https://kw.invalid/",
 	}
 
