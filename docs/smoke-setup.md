@@ -51,6 +51,14 @@ against Prowlarr by name/slug. Indexers absent from Prowlarr are skipped
 
 ## Differential pass criteria
 
+Every differential search against harbrr is issued with `nocache=1` (harbrr's exact search-cache
+bypass — see `internal/web/torznabhttp/cachebypass.go`), so it compares harbrr's live
+engine/driver output against Prowlarr's always-live output rather than a possibly-frozen harbrr
+cache window (see [#164](https://github.com/autobrr/harbrr/issues/164)). Cache coverage instead
+comes from a single dedicated cached-path check, once per suite on one designated tracker: see
+[`internal/smoke/README.md`](../internal/smoke/README.md#the-differential-bypasses-harbrrs-search-cache)
+for the detail.
+
 Per tracker, page-1 only:
 
 - both empty → **pass** (the tracker had nothing for the query)

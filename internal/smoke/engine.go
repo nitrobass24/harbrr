@@ -123,9 +123,16 @@ func httpGet(ctx context.Context, c *http.Client, rawURL string, headers map[str
 // results, the HTTP status (so the caller decides whether to skip on a rate-limit or
 // fail on another non-200), and any transport/parse error. A non-200 yields nil
 // results with a nil error and the status for the caller to act on.
-func HarbrrSearch(ctx context.Context, c *http.Client, base, key, slug, query string) ([]Result, int, error) {
-	u := fmt.Sprintf("%s/api/indexers/%s/results/torznab/api?t=search&q=%s&apikey=%s",
-		base, url.PathEscape(slug), url.QueryEscape(query), url.QueryEscape(key))
+//
+// nocache selects which read path is exercised: true appends harbrr's strict cache
+// bypass trigger (nocache=1 — see internal/web/torznabhttp/cachebypass.go), forcing a
+// live upstream fetch; false leaves the request on the normal cache-aside path. The
+// differential (harbrrParity, the smoke_test.go per-tracker loop) always bypasses —
+// Prowlarr, the oracle, is always queried live, so comparing against a frozen harbrr
+// cache window can fail a healthy tracker (see issue #164). cacheCheck deliberately
+// passes false: it is the dedicated check that still exercises the cache-aside path.
+func HarbrrSearch(ctx context.Context, c *http.Client, base, key, slug, query string, nocache bool) ([]Result, int, error) {
+	u := harbrrSearchURL(base, key, slug, query, nocache)
 	body, status, err := httpGet(ctx, c, u, nil)
 	if err != nil {
 		return nil, status, err
@@ -135,6 +142,18 @@ func HarbrrSearch(ctx context.Context, c *http.Client, base, key, slug, query st
 	}
 	res, err := ParseTorznab(body)
 	return res, status, err
+}
+
+// harbrrSearchURL builds the harbrr Torznab search URL for a slug+query, optionally
+// appending the exact cache-bypass trigger (nocache=1). Split out from HarbrrSearch so
+// the URL shape — nocache present vs. absent — is unit-testable without a live server.
+func harbrrSearchURL(base, key, slug, query string, nocache bool) string {
+	u := fmt.Sprintf("%s/api/indexers/%s/results/torznab/api?t=search&q=%s&apikey=%s",
+		base, url.PathEscape(slug), url.QueryEscape(query), url.QueryEscape(key))
+	if nocache {
+		u += "&nocache=1"
+	}
+	return u
 }
 
 // --- Torznab feed parsing ---------------------------------------------------
