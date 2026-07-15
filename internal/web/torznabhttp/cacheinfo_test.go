@@ -106,7 +106,10 @@ func revalidateHandler() *handler {
 // writeResults doc comment) — the composed decision that, before the revalidator
 // extraction, was reachable only end-to-end (full handler + fake indexer + cache
 // decorator, as TestFreeleechBypassETagDistinct and TestFeedConditionalGetPagingAware
-// still exercise). It drives h.revalidate in isolation to prove the guard directly.
+// still exercise). It captures the honor variant's page-0 served ETag once, then each
+// case revalidates a variant/page combination with that ETag in If-None-Match: only
+// the identical variant AND page may be answered 304. Subtests are sequential (no
+// t.Parallel) because they all read the ETag captured in the setup step.
 func TestRevalidateWrongVariantOrPageGuard(t *testing.T) {
 	t.Parallel()
 	h := revalidateHandler()
@@ -122,7 +125,7 @@ func TestRevalidateWrongVariantOrPageGuard(t *testing.T) {
 	// call only sets validators and reports handled=false).
 	rec := httptest.NewRecorder()
 	if handled := h.revalidate(rec, http.Header{}, ci, honorPage0, false, false); handled {
-		t.Fatal("first call unexpectedly answered 304 (no If-None-Match to match)")
+		t.Fatal("capture call unexpectedly answered 304 (no If-None-Match to match)")
 	}
 	honorPage0ETag := rec.Header().Get("ETag")
 	if honorPage0ETag == "" {
@@ -130,32 +133,51 @@ func TestRevalidateWrongVariantOrPageGuard(t *testing.T) {
 	}
 	ifNoneMatch := http.Header{"If-None-Match": {honorPage0ETag}}
 
-	// The /full bypass variant, same page window, revalidated with the honor variant's
-	// ETag: must NOT be 304 — the bypass fold keeps the two variants distinct even
-	// though they hash the same underlying releases slice.
-	recBypass := httptest.NewRecorder()
-	if handled := h.revalidate(recBypass, ifNoneMatch, ci, honorPage0, true, false); handled {
-		t.Error("bypass variant revalidated with the honor variant's ETag was wrongly answered 304")
+	tests := []struct {
+		name string
+		page servedPage
+		// bypass selects the /full freeleech-bypass variant for the revalidate call.
+		bypass bool
+		// wantHandled is whether the call may answer 304: only the SAME variant and
+		// page as the captured ETag — a cross-variant or cross-page match must fall
+		// through to a 200 with the correct body instead.
+		wantHandled bool
+		// wantSameETag is whether the served ETag emitted by this call must equal the
+		// captured one (it must differ for a different variant or page — the folds are
+		// what keep the validators from cross-matching).
+		wantSameETag bool
+	}{
+		{
+			// The bypass fold keeps the two variants distinct even though they hash
+			// the same underlying releases slice.
+			name:   "cross-variant: bypass with the honor ETag is not 304",
+			page:   honorPage0,
+			bypass: true,
+		},
+		{
+			// The page-window fold keeps the two pages distinct.
+			name: "cross-page: page 1 with page 0's ETag is not 304",
+			page: honorPage1,
+		},
+		{
+			// Sanity: the guard rejects only a cross-variant/cross-page match, not
+			// every match.
+			name:         "same variant and page with its own ETag is 304",
+			page:         honorPage0,
+			wantHandled:  true,
+			wantSameETag: true,
+		},
 	}
-	if recBypass.Header().Get("ETag") == honorPage0ETag {
-		t.Error("bypass variant's served ETag must differ from the honor variant's")
-	}
-
-	// The honor variant's page 1, revalidated with page 0's ETag: must NOT be 304 — the
-	// page-window fold keeps the two pages distinct.
-	recPage1 := httptest.NewRecorder()
-	if handled := h.revalidate(recPage1, ifNoneMatch, ci, honorPage1, false, false); handled {
-		t.Error("page 1 revalidated with page 0's ETag was wrongly answered 304")
-	}
-	if recPage1.Header().Get("ETag") == honorPage0ETag {
-		t.Error("page 1's served ETag must differ from page 0's")
-	}
-
-	// Sanity: the SAME variant and page, revalidated with its own just-emitted ETag,
-	// DOES 304 — the guard rejects only a cross-variant/cross-page match, not every match.
-	recSame := httptest.NewRecorder()
-	if handled := h.revalidate(recSame, ifNoneMatch, ci, honorPage0, false, false); !handled {
-		t.Error("same variant+page revalidated with its own ETag should be answered 304")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			if handled := h.revalidate(rec, ifNoneMatch, ci, tt.page, tt.bypass, false); handled != tt.wantHandled {
+				t.Errorf("revalidate handled = %v, want %v", handled, tt.wantHandled)
+			}
+			if sameETag := rec.Header().Get("ETag") == honorPage0ETag; sameETag != tt.wantSameETag {
+				t.Errorf("served ETag == captured ETag is %v, want %v", sameETag, tt.wantSameETag)
+			}
+		})
 	}
 }
 
