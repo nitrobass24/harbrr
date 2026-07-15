@@ -336,8 +336,8 @@ func TestStatsHitMissRatio(t *testing.T) {
 }
 
 // TestCacheInfoRecordedOnMissAndHit proves the cache fills the request's CacheInfo
-// sink with a stable content ETag + expiry on both the storing miss and the serving
-// hit, so the feed handler can emit conditional-GET validators.
+// sink with Cached=true + a stable expiry on both the storing miss and the serving
+// hit, so the feed handler knows to emit conditional-GET validators.
 func TestCacheInfoRecordedOnMissAndHit(t *testing.T) {
 	t.Parallel()
 	sc, instID, _ := testCache(t, keywordTTL, 0)
@@ -345,22 +345,22 @@ func TestCacheInfoRecordedOnMissAndHit(t *testing.T) {
 	idx := sc.probe(inner, instID, nil)
 	q := search.Query{Keywords: "alpha"}
 
-	// Miss: the store-back records the validators for this request.
+	// Miss: the store-back records the cache info for this request.
 	missCtx, missInfo := torznabhttp.WithCacheInfoSink(context.Background())
 	if _, err := idx.Search(missCtx, q); err != nil {
 		t.Fatalf("miss: %v", err)
 	}
-	if missInfo.ETag == "" || missInfo.ExpiresAt.IsZero() {
+	if !missInfo.Cached || missInfo.ExpiresAt.IsZero() {
 		t.Fatalf("miss did not record cache info: %+v", missInfo)
 	}
 
-	// Hit: a fresh sink is filled with the SAME etag (content-derived, stable).
+	// Hit: a fresh sink is filled with Cached=true too.
 	hitCtx, hitInfo := torznabhttp.WithCacheInfoSink(context.Background())
 	if _, err := idx.Search(hitCtx, q); err != nil {
 		t.Fatalf("hit: %v", err)
 	}
-	if hitInfo.ETag != missInfo.ETag {
-		t.Errorf("hit etag %q != miss etag %q (content hash must be stable)", hitInfo.ETag, missInfo.ETag)
+	if !hitInfo.Cached {
+		t.Errorf("hit did not record Cached=true")
 	}
 	// The hit path must also record the entry's expiry (for the Cache-Control max-age),
 	// and with the fixed test clock it matches the miss's stored expiry exactly.
@@ -406,7 +406,7 @@ func TestCacheInfoRecordedForCoalescedMisses(t *testing.T) {
 		t.Fatalf("inner called %d times, want 1 (coalesced)", inner.callCount())
 	}
 	for i, ci := range infos {
-		if ci.ETag == "" || ci.ExpiresAt.IsZero() {
+		if !ci.Cached || ci.ExpiresAt.IsZero() {
 			t.Errorf("caller %d sink not filled: %+v", i, ci)
 		}
 	}

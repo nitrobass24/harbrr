@@ -14,17 +14,16 @@ import (
 )
 
 // CacheInfo is the per-request cache metadata the search-cache decorator records so
-// the feed handler can emit HTTP cache validators (ETag + Cache-Control) and answer a
-// conditional GET with 304 Not Modified. It is populated only when a response was
-// produced from — or freshly stored into — the cache; a cache-disabled or degraded
-// path leaves it zero (no validators are emitted).
+// the feed handler knows whether to emit HTTP cache validators (ETag + Cache-Control)
+// and answer a conditional GET with 304 Not Modified. It is populated only when a
+// response was produced from — or freshly stored into — the cache; a cache-disabled
+// or degraded path leaves it zero (Cached stays false, no validators are emitted).
 type CacheInfo struct {
-	// ETag is a strong validator over the cached result payload, already quoted and
-	// ready for the ETag header. It changes iff the result set changes (it is a hash
-	// of the pre-/dl payload, NOT the rendered body — the /dl token rotates per
-	// request, so the body is never byte-stable, but the underlying releases are).
-	// Empty when the response did not come through the cache.
-	ETag string
+	// Cached reports whether this response came from — or was freshly stored into —
+	// the search cache. The handler derives the SERVED validator itself from the
+	// post-filter page it is about to write (servedPayloadETag + pagedETag); this is
+	// only the boolean signal that a validator should be emitted at all.
+	Cached bool
 	// ExpiresAt is when the cached entry expires; the handler derives max-age from it.
 	ExpiresAt time.Time
 }
@@ -131,11 +130,51 @@ func servedPayloadETag(releases []*normalizer.Release, bypass bool) (string, boo
 }
 
 // setCacheValidators writes the ETag and Cache-Control headers for a cached response.
-// max-age is the entry's remaining lifetime (clamped at 0). The directive is `private`
+// etag is the served validator (servedPayloadETag+pagedETag, already quoted); max-age
+// is expiresAt's remaining lifetime from now (clamped at 0). The directive is `private`
 // because the feed URL carries the caller's apikey, so a shared/CDN cache must not
 // store it — the validator still lets the client itself revalidate cheaply.
-func setCacheValidators(w http.ResponseWriter, ci *CacheInfo, now time.Time) {
-	w.Header().Set("ETag", ci.ETag)
-	maxAge := max(int(ci.ExpiresAt.Sub(now).Seconds()), 0)
+func setCacheValidators(w http.ResponseWriter, etag string, expiresAt, now time.Time) {
+	w.Header().Set("ETag", etag)
+	maxAge := max(int(expiresAt.Sub(now).Seconds()), 0)
 	w.Header().Set("Cache-Control", "private, max-age="+strconv.Itoa(maxAge))
+}
+
+// servedPage is the page of releases the handler is about to serialize — the content
+// the revalidator's served ETag needs to track (servedPayloadETag+pagedETag), not the
+// cache layer's pre-page, pre-filter payload.
+type servedPage struct {
+	releases []*normalizer.Release
+	offset   int
+	limit    int
+}
+
+// revalidate is the conditional-GET 304 protocol for a cache-backed feed response — the
+// single place the "never answer a 304 with the wrong feed-variant or page body" hazard
+// is decided, so it can be tested directly rather than only through the full handler.
+//
+// When ci reports no cached entry, or the served page fails to hash, it writes nothing
+// and returns false: the caller falls through to serializing the full body. Otherwise it
+// computes and emits the served validators — servedPayloadETag(page, bypass) folded with
+// page's offset/limit via pagedETag, ExpiresAt for Cache-Control's max-age — so the
+// response always carries them, even on a 200. It then answers 304 (handled=true, nothing
+// more written) only when fresh does not force a live body AND requestHeaders'
+// If-None-Match matches the JUST-EMITTED validator; the fold means a client revalidating
+// one variant/page can never match another's, so it always falls through to 200 with the
+// live body instead of a 304 for the wrong content.
+func (h *handler) revalidate(w http.ResponseWriter, requestHeaders http.Header, ci CacheInfo, page servedPage, bypass, fresh bool) (handled bool) {
+	if !ci.Cached {
+		return false
+	}
+	view, ok := servedPayloadETag(page.releases, bypass)
+	if !ok {
+		return false
+	}
+	etag := pagedETag(view, page.offset, page.limit)
+	setCacheValidators(w, etag, ci.ExpiresAt, h.clock())
+	if fresh || !ifNoneMatchMatches(requestHeaders.Get("If-None-Match"), etag) {
+		return false
+	}
+	w.WriteHeader(http.StatusNotModified)
+	return true
 }

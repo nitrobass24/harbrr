@@ -87,12 +87,98 @@ func TestIfNoneMatchMatches(t *testing.T) {
 func TestCacheInfoSinkRoundTrip(t *testing.T) {
 	t.Parallel()
 	ctx, ci := WithCacheInfoSink(context.Background())
-	RecordCacheInfo(ctx, CacheInfo{ETag: `"x"`, ExpiresAt: feedClock})
-	if ci.ETag != `"x"` || !ci.ExpiresAt.Equal(feedClock) {
+	RecordCacheInfo(ctx, CacheInfo{Cached: true, ExpiresAt: feedClock})
+	if !ci.Cached || !ci.ExpiresAt.Equal(feedClock) {
 		t.Fatalf("sink not filled: %+v", ci)
 	}
 	// Recording into a ctx without a sink must be a no-op (no panic).
-	RecordCacheInfo(context.Background(), CacheInfo{ETag: `"y"`})
+	RecordCacheInfo(context.Background(), CacheInfo{Cached: true})
+}
+
+// revalidateHandler is a minimal handler for driving revalidate directly (no provider,
+// no HTTP routing) — only the clock it reads for Cache-Control's max-age matters.
+func revalidateHandler() *handler {
+	return &handler{clock: func() time.Time { return feedClock }}
+}
+
+// TestRevalidateWrongVariantOrPageGuard is the DIRECT test for the documented
+// "never answer a 304 with the wrong feed-variant or page body" hazard (handler.go's
+// writeResults doc comment) — the composed decision that, before the revalidator
+// extraction, was reachable only end-to-end (full handler + fake indexer + cache
+// decorator, as TestFreeleechBypassETagDistinct and TestFeedConditionalGetPagingAware
+// still exercise). It captures the honor variant's page-0 served ETag once, then each
+// case revalidates a variant/page combination with that ETag in If-None-Match: only
+// the identical variant AND page may be answered 304. Subtests are sequential (no
+// t.Parallel) because they all read the ETag captured in the setup step.
+func TestRevalidateWrongVariantOrPageGuard(t *testing.T) {
+	t.Parallel()
+	h := revalidateHandler()
+	ci := CacheInfo{Cached: true, ExpiresAt: feedClock.Add(5 * time.Minute)}
+	releases := []*normalizer.Release{
+		demoRelease("P0", "https://rich.test/dl/0.torrent", []int{2000}),
+		demoRelease("P1", "https://rich.test/dl/1.torrent", []int{2000}),
+	}
+	honorPage0 := servedPage{releases: releases, offset: 0, limit: 1}
+	honorPage1 := servedPage{releases: releases, offset: 1, limit: 1}
+
+	// Capture the honor variant's page-0 served ETag (no If-None-Match yet, so this
+	// call only sets validators and reports handled=false).
+	rec := httptest.NewRecorder()
+	if handled := h.revalidate(rec, http.Header{}, ci, honorPage0, false, false); handled {
+		t.Fatal("capture call unexpectedly answered 304 (no If-None-Match to match)")
+	}
+	honorPage0ETag := rec.Header().Get("ETag")
+	if honorPage0ETag == "" {
+		t.Fatal("expected a served ETag to be set")
+	}
+	ifNoneMatch := http.Header{"If-None-Match": {honorPage0ETag}}
+
+	tests := []struct {
+		name string
+		page servedPage
+		// bypass selects the /full freeleech-bypass variant for the revalidate call.
+		bypass bool
+		// wantHandled is whether the call may answer 304: only the SAME variant and
+		// page as the captured ETag — a cross-variant or cross-page match must fall
+		// through to a 200 with the correct body instead.
+		wantHandled bool
+		// wantSameETag is whether the served ETag emitted by this call must equal the
+		// captured one (it must differ for a different variant or page — the folds are
+		// what keep the validators from cross-matching).
+		wantSameETag bool
+	}{
+		{
+			// The bypass fold keeps the two variants distinct even though they hash
+			// the same underlying releases slice.
+			name:   "cross-variant: bypass with the honor ETag is not 304",
+			page:   honorPage0,
+			bypass: true,
+		},
+		{
+			// The page-window fold keeps the two pages distinct.
+			name: "cross-page: page 1 with page 0's ETag is not 304",
+			page: honorPage1,
+		},
+		{
+			// Sanity: the guard rejects only a cross-variant/cross-page match, not
+			// every match.
+			name:         "same variant and page with its own ETag is 304",
+			page:         honorPage0,
+			wantHandled:  true,
+			wantSameETag: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			if handled := h.revalidate(rec, ifNoneMatch, ci, tt.page, tt.bypass, false); handled != tt.wantHandled {
+				t.Errorf("revalidate handled = %v, want %v", handled, tt.wantHandled)
+			}
+			if sameETag := rec.Header().Get("ETag") == honorPage0ETag; sameETag != tt.wantSameETag {
+				t.Errorf("served ETag == captured ETag is %v, want %v", sameETag, tt.wantSameETag)
+			}
+		})
+	}
 }
 
 // feedDo drives a feed request against a cache-recording indexer, with optional
@@ -113,12 +199,14 @@ func feedDo(t *testing.T, idx *fakeIndexer, rawQuery string, hdr http.Header) *h
 	return rec
 }
 
-// cachingIndexer is a rich indexer that reports a cached response with the given etag,
-// expiring 5 minutes after the fixed feed clock.
-func cachingIndexer(t *testing.T, etag string) *fakeIndexer {
+// cachingIndexer is a rich indexer that reports a cached response, expiring 5 minutes
+// after the fixed feed clock. The served ETag header value is always derived by the
+// handler from the served page (servedPayloadETag+pagedETag), never from CacheInfo —
+// this only arranges for the cache-came-from signal to be true so validators are emitted.
+func cachingIndexer(t *testing.T) *fakeIndexer {
 	t.Helper()
 	idx := richIndexer(t)
-	idx.recordInfo = &CacheInfo{ETag: etag, ExpiresAt: feedClock.Add(5 * time.Minute)}
+	idx.recordInfo = &CacheInfo{Cached: true, ExpiresAt: feedClock.Add(5 * time.Minute)}
 	return idx
 }
 
@@ -128,7 +216,7 @@ func cachingIndexer(t *testing.T, etag string) *fakeIndexer {
 // folded with this page's window (offset=0, limit=defaultLimit for a window-less request).
 func TestFeedEmitsValidators(t *testing.T) {
 	t.Parallel()
-	idx := cachingIndexer(t, `"abc"`)
+	idx := cachingIndexer(t)
 	rec := feedDo(t, idx, "t=search&q=x", nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
@@ -155,12 +243,12 @@ func TestFeedConditionalGet304(t *testing.T) {
 	t.Parallel()
 
 	// Capture the served validator from a normal request, then revalidate with it.
-	first := feedDo(t, cachingIndexer(t, `"abc"`), "t=search&q=x", nil)
+	first := feedDo(t, cachingIndexer(t), "t=search&q=x", nil)
 	served := first.Header().Get("ETag")
 	if served == "" {
 		t.Fatal("first response emitted no ETag to revalidate against")
 	}
-	rec := feedDo(t, cachingIndexer(t, `"abc"`), "t=search&q=x",
+	rec := feedDo(t, cachingIndexer(t), "t=search&q=x",
 		http.Header{"If-None-Match": {served}})
 	if rec.Code != http.StatusNotModified {
 		t.Fatalf("status = %d, want 304", rec.Code)
@@ -175,7 +263,7 @@ func TestFeedConditionalGet304(t *testing.T) {
 		t.Errorf("304 Cache-Control = %q, want private, max-age=300", got)
 	}
 
-	rec = feedDo(t, cachingIndexer(t, `"abc"`), "t=search&q=x",
+	rec = feedDo(t, cachingIndexer(t), "t=search&q=x",
 		http.Header{"If-None-Match": {`"stale"`}})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("non-matching If-None-Match status = %d, want 200", rec.Code)
@@ -189,7 +277,7 @@ func TestFeedConditionalGet304(t *testing.T) {
 func TestFeedConditionalGetPagingAware(t *testing.T) {
 	t.Parallel()
 	newIdx := func() *fakeIndexer {
-		idx := cachingIndexer(t, `"abc"`)
+		idx := cachingIndexer(t)
 		idx.releases = []*normalizer.Release{
 			demoRelease("P0", "https://rich.test/dl/0.torrent", []int{2000}),
 			demoRelease("P1", "https://rich.test/dl/1.torrent", []int{2000}),
@@ -232,7 +320,7 @@ func TestFeedConditionalGetPagingAware(t *testing.T) {
 // client's If-None-Match would otherwise match.
 func TestFeedNoCacheHeaderForcesFresh(t *testing.T) {
 	t.Parallel()
-	idx := cachingIndexer(t, `"abc"`)
+	idx := cachingIndexer(t)
 	rec := feedDo(t, idx, "t=search&q=x",
 		http.Header{"If-None-Match": {`"abc"`}, "Cache-Control": {"no-cache"}})
 	if rec.Code != http.StatusOK {
@@ -277,7 +365,7 @@ func feedTotal(t *testing.T, body string) int {
 // unique links, for the cross-page paging tests.
 func pagingIndexer(t *testing.T, n int) *fakeIndexer {
 	t.Helper()
-	idx := cachingIndexer(t, `"abc"`) // a non-empty payload ETag so validators are emitted
+	idx := cachingIndexer(t) // Cached=true so validators are emitted
 	rels := make([]*normalizer.Release, n)
 	for i := range rels {
 		rels[i] = demoRelease(

@@ -93,7 +93,7 @@ func TestFreeleechBypassETagDistinct(t *testing.T) {
 
 	cachingDemo := func() *fakeIndexer {
 		idx := demoIndexer(t)
-		idx.recordInfo = &CacheInfo{ETag: `"abc"`, ExpiresAt: feedClock.Add(5 * time.Minute)}
+		idx.recordInfo = &CacheInfo{Cached: true, ExpiresAt: feedClock.Add(5 * time.Minute)}
 		return idx
 	}
 	mk := func(idx *fakeIndexer) http.Handler {

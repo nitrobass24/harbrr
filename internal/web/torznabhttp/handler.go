@@ -390,10 +390,11 @@ func (h *handler) writeResults(w http.ResponseWriter, r *http.Request, idx Index
 	if !h.resolveMode(w, q, caps) {
 		return
 	}
-	// A CacheInfo sink lets the cache decorator surface the served entry's validators
-	// (ETag + expiry) for the conditional-GET response below. A `no-cache` request
-	// header forces a live fetch — the header sibling of the `nocache=1` query param —
-	// and, like it, suppresses the 304 short-circuit so the client gets a fresh body.
+	// A CacheInfo sink lets the cache decorator surface whether this response came
+	// from — or was freshly stored into — the cache, plus the entry's expiry, for the
+	// conditional-GET response below. A `no-cache` request header forces a live fetch
+	// — the header sibling of the `nocache=1` query param — and, like it, suppresses
+	// the 304 short-circuit so the client gets a fresh body.
 	ctx, ci := WithCacheInfoSink(r.Context())
 	headerFresh := requestNoCache(r)
 	if headerFresh {
@@ -406,23 +407,16 @@ func (h *handler) writeResults(w http.ResponseWriter, r *http.Request, idx Index
 		h.writeInternalError(w, "search", idx.Info().ID, err)
 		return
 	}
-	// When the response came through the cache, emit validators and honor a matching
-	// If-None-Match with 304 — unless the client forced a fresh fetch (header or query).
-	// The served validator hashes the POST-filter page the freeleech view actually serves
-	// (not the cache's pre-filter payload) and folds in both the freeleech-bypass variant
-	// and this page's window (servedPayloadETag + pagedETag): the honor feed and the /full
-	// bypass feed share one cached entry, and the payload ETag is page-independent, so
-	// without these folds a revalidation of one feed/page could be answered 304 with
-	// another variant's or page's body.
-	if ci.ETag != "" {
-		if view, ok := servedPayloadETag(res.Releases, freeleechBypass(ctx)); ok {
-			served := &CacheInfo{ETag: pagedETag(view, res.Offset, res.Limit), ExpiresAt: ci.ExpiresAt}
-			setCacheValidators(w, served, h.clock())
-			if !headerFresh && !wantsNoCache(q) && ifNoneMatchMatches(r.Header.Get("If-None-Match"), served.ETag) {
-				w.WriteHeader(http.StatusNotModified)
-				return
-			}
-		}
+	// revalidate owns the full conditional-GET 304 protocol, including the "never answer
+	// a 304 with the wrong feed-variant or page body" guard: the served validator hashes
+	// the POST-filter page the freeleech view actually serves (not the cache's pre-filter
+	// payload) and folds in both the freeleech-bypass variant and this page's window, so
+	// the honor feed and the /full bypass feed sharing one cached entry can never
+	// cross-match. fresh (header or query) forces a live body even on a match.
+	sp := servedPage{releases: res.Releases, offset: res.Offset, limit: res.Limit}
+	fresh := headerFresh || wantsNoCache(q)
+	if h.revalidate(w, r.Header, *ci, sp, freeleechBypass(ctx), fresh) {
+		return
 	}
 	page := tzn.Page{Offset: res.Offset, Total: res.Total}
 	body, err := tzn.MarshalResultsRewritten(h.feedInfo(r, idx), res.Releases, page, h.clock(), h.dlRewriter(r, idx))

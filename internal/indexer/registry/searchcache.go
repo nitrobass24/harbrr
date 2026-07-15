@@ -2,8 +2,6 @@ package registry
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strconv"
@@ -313,7 +311,7 @@ func (c *SearchCache) serveHit(ctx context.Context, instanceID int64, cfg map[st
 	}
 	c.hits.Add(1)
 	c.counters(instanceID).hits.Add(1)
-	c.recordCacheInfo(ctx, torznabhttp.CacheInfo{ETag: payloadETag(entry.ResultsJSON), ExpiresAt: entry.ExpiresAt})
+	c.recordCacheInfo(ctx, torznabhttp.CacheInfo{Cached: true, ExpiresAt: entry.ExpiresAt})
 	c.recordTouch(key)
 	if c.shouldRefreshAhead(entry) {
 		c.triggerSWR(ctx, instanceID, cfg, builtEpoch, live, q, key)
@@ -336,7 +334,7 @@ func (c *SearchCache) serveMiss(ctx context.Context, instanceID int64, cfg map[s
 	v, err, _ := c.sf.Do(cacheFlightKey(key, builtEpoch), func() (any, error) {
 		if entry, found, ferr := c.store.Fetch(ctx, c.db, key, c.clock()); ferr == nil && found {
 			if releases, derr := decodeReleases(entry.ResultsJSON, key); derr == nil {
-				info := torznabhttp.CacheInfo{ETag: payloadETag(entry.ResultsJSON), ExpiresAt: entry.ExpiresAt}
+				info := torznabhttp.CacheInfo{Cached: true, ExpiresAt: entry.ExpiresAt}
 				return missResult{releases: releases, info: info}, nil
 			}
 		}
@@ -377,21 +375,21 @@ func (c *SearchCache) serveMiss(ctx context.Context, instanceID int64, cfg map[s
 }
 
 // liveAndStore runs the live search and, on success, writes the result back
-// best-effort (a store failure never fails the search), returning the releases and the
-// freshly stored entry's HTTP validators. An inner error is returned and never cached.
-// It does NOT record into the request sink — the caller does (per-caller, so a
-// singleflight follower also gets the validators).
+// best-effort (a store failure never fails the search), returning the releases and
+// whether the entry is now cached (plus its expiry). An inner error is returned and
+// never cached. It does NOT record into the request sink — the caller does
+// (per-caller, so a singleflight follower also gets the cache info).
 func (c *SearchCache) liveAndStore(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, live liveSearchFn, q search.Query, key string) ([]*normalizer.Release, torznabhttp.CacheInfo, error) {
 	releases, err := c.fetchLive(ctx, live, q)
 	if err != nil {
 		return nil, torznabhttp.CacheInfo{}, err
 	}
-	etag, expiresAt := c.storeBestEffort(ctx, instanceID, cfg, builtEpoch, q, key, releases)
-	return releases, torznabhttp.CacheInfo{ETag: etag, ExpiresAt: expiresAt}, nil
+	cached, expiresAt := c.storeBestEffort(ctx, instanceID, cfg, builtEpoch, q, key, releases)
+	return releases, torznabhttp.CacheInfo{Cached: cached, ExpiresAt: expiresAt}, nil
 }
 
 // liveAndStoreRecording is liveAndStore for the synchronous, non-flight callers (the
-// nocache bypass path and the defensive miss fallback): it records the validators into
+// nocache bypass path and the defensive miss fallback): it records the cache info into
 // this caller's own sink. The singleflight miss path instead records outside the flight
 // so every coalesced caller is covered.
 func (c *SearchCache) liveAndStoreRecording(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, live liveSearchFn, q search.Query, key string) ([]*normalizer.Release, error) {
@@ -413,22 +411,22 @@ func (c *SearchCache) fetchLive(ctx context.Context, live liveSearchFn, q search
 // engine count (the slice is pre-dedupe/pre-filter, so this count can exceed what
 // the user ultimately sees — the thin clamp is measured on raw results, by design).
 // A non-positive TTL or any store error is logged (key only) and swallowed. It returns
-// the content ETag and expiry so the synchronous caller can surface the conditional-GET
-// validators; an encode failure returns an empty etag (no validator emitted). The
-// validators are returned even if the Store write fails — the response content is still
-// valid, and an unstored entry simply misses on the next request.
-func (c *SearchCache) storeBestEffort(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, q search.Query, key string, releases []*normalizer.Release) (string, time.Time) {
+// whether the entry is now cached and its expiry, so the synchronous caller can surface
+// the conditional-GET signal; an encode failure returns cached=false. The cached signal
+// is still true even if the Store write fails — the response content is still valid,
+// and an unstored entry simply misses on the next request.
+func (c *SearchCache) storeBestEffort(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, q search.Query, key string, releases []*normalizer.Release) (bool, time.Time) {
 	// A config-mutation purge (InvalidateByInstance) bumps this instance's epoch. If it
 	// has advanced since the adapter behind this fetch was built, the fetch ran
 	// through an OLD engine/config and this write-back would resurrect a stale-config
 	// entry the purge just removed — served until TTL, violating "a config change must
 	// never serve stale results". Skip the store (and the announce tap below, so a
-	// dropped write emits no spurious announce diff) and return empty validators; the
+	// dropped write emits no spurious announce diff) and report not-cached; the
 	// purged cache stays empty and the next request rebuilds through the fresh engine.
 	if c.instanceEpoch(instanceID) != builtEpoch {
 		c.log.Debug().Str("cache_key", key).
 			Msg("registry: search cache store skipped; instance config changed during fetch")
-		return "", time.Time{}
+		return false, time.Time{}
 	}
 	// Derive the "what's new" announce stream from this write-back BEFORE the store, so
 	// the prior cached entry (the one we overwrite) is still readable for the GUID diff.
@@ -438,7 +436,7 @@ func (c *SearchCache) storeBestEffort(ctx context.Context, instanceID int64, cfg
 	if err != nil {
 		c.log.Warn().Str("cache_key", key).Str("error", apphttp.RedactError(err)).
 			Msg("registry: search cache encode failed; not caching")
-		return "", time.Time{}
+		return false, time.Time{}
 	}
 	now := c.clock()
 	ttl := c.tuning.Load().ttl.resolveTTL(cfg, q, len(releases))
@@ -455,31 +453,24 @@ func (c *SearchCache) storeBestEffort(ctx context.Context, instanceID int64, cfg
 		c.log.Warn().Str("cache_key", key).Str("error", apphttp.RedactError(err)).
 			Msg("registry: search cache store failed")
 	}
-	return payloadETag(payload), entry.ExpiresAt
+	return true, entry.ExpiresAt
 }
 
-// payloadETag is a strong HTTP validator over the cached payload: a quoted hex SHA-256
-// of the serialized release slice. It changes iff the result set changes, so a client
-// holding it can be answered with 304 while the cached answer is unchanged.
-func payloadETag(payload []byte) string {
-	sum := sha256.Sum256(payload)
-	return `"` + hex.EncodeToString(sum[:]) + `"`
-}
-
-// recordCacheInfo surfaces the served entry's HTTP validators to the feed handler via
-// the request's CacheInfo sink (a no-op when there is none — the JSON API and the
-// detached SWR refresh carry none). An empty etag records nothing. It is called per
-// CALLER, outside the singleflight, so coalesced misses each fill their own sink.
+// recordCacheInfo surfaces whether this response came from — or was freshly stored
+// into — the cache to the feed handler via the request's CacheInfo sink (a no-op when
+// there is none — the JSON API and the detached SWR refresh carry none). An
+// uncached info records nothing. It is called per CALLER, outside the singleflight,
+// so coalesced misses each fill their own sink.
 func (c *SearchCache) recordCacheInfo(ctx context.Context, info torznabhttp.CacheInfo) {
-	if info.ETag == "" {
+	if !info.Cached {
 		return
 	}
 	torznabhttp.RecordCacheInfo(ctx, info)
 }
 
 // missResult is the singleflight return for a cache miss: the released slice plus the
-// validators to surface. The flight leader computes both; every coalesced caller then
-// records the validators into its own request sink after the flight returns (recording
+// cache info to surface. The flight leader computes both; every coalesced caller then
+// records the cache info into its own request sink after the flight returns (recording
 // inside the flight would fill only the leader's sink).
 type missResult struct {
 	releases []*normalizer.Release
