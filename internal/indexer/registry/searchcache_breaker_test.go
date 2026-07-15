@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
-	"github.com/autobrr/harbrr/internal/web/torznabhttp"
+	"github.com/autobrr/harbrr/internal/indexer/core"
 )
 
 // breakerTTL is keywordTTL with the negative-result breaker armed (60s window).
@@ -145,7 +145,7 @@ func TestBreakerBypassForcesLive(t *testing.T) {
 	inner.err = nil
 	inner.releases = relSet("Live")
 	inner.mu.Unlock()
-	got, err := idx.Search(torznabhttp.WithCacheBypass(context.Background()), q)
+	got, err := idx.Search(core.WithCacheBypass(context.Background()), q)
 	if err != nil {
 		t.Fatalf("bypass: %v", err)
 	}

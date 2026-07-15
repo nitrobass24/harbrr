@@ -6,7 +6,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
-	"github.com/autobrr/harbrr/internal/web/torznabhttp"
+	"github.com/autobrr/harbrr/internal/indexer/core"
 )
 
 // NewSearchCacheForTest builds a SearchCache with default keyword/rss/thin tiers and
@@ -25,6 +25,6 @@ func NewSearchCacheForTest(db dbinterface.Querier, clock func() time.Time) *Sear
 // test-only cacheProbe scaffold) so the external suite can drive a cached indexer through
 // the real Torznab handler. Driver-backed paging tests instead resolve the real flattened
 // adapter via reg.Indexer with WithSearchCache; this stays for fakes that are not drivers.
-func WrapForTest(sc *SearchCache, inner torznabhttp.Indexer, instanceID int64) torznabhttp.Indexer {
+func WrapForTest(sc *SearchCache, inner core.Indexer, instanceID int64) core.Indexer {
 	return sc.probe(inner, instanceID, nil)
 }

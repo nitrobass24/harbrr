@@ -17,7 +17,7 @@ import (
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
-	"github.com/autobrr/harbrr/internal/web/torznabhttp"
+	"github.com/autobrr/harbrr/internal/indexer/core"
 )
 
 // swrRefreshTimeout bounds a stale-while-revalidate background refresh so a slow
@@ -216,7 +216,7 @@ func NewSearchCacheWithParams(db dbinterface.Querier, p SearchCacheParams, clock
 
 // liveSearchFn is the live-fetch seam the cache drives on a miss or a refresh: the
 // adapter's liveSearch (driver call + stats + health + id-wrap), returning the FULL
-// catalog. The cache holds only this narrow seam, never the whole torznabhttp.Indexer — it
+// catalog. The cache holds only this narrow seam, never the whole core.Indexer — it
 // only ever needed to fetch — so the paging signal is passed in as a bool taken off the
 // concrete adapter (SupportsOffsetPaging) rather than re-discovered by an interface
 // type-assert, and the enabled gate + freeleech view stay in the adapter.
@@ -235,7 +235,7 @@ func (c *SearchCache) search(ctx context.Context, instanceID int64, cfg map[stri
 	// handler can never disagree about how a driver pages.
 	key := buildSearchCacheKey(instanceID, q, paging)
 
-	if torznabhttp.CacheBypass(ctx) {
+	if core.CacheBypass(ctx) {
 		return c.liveAndStoreRecording(ctx, instanceID, cfg, builtEpoch, live, q, key)
 	}
 
@@ -311,7 +311,7 @@ func (c *SearchCache) serveHit(ctx context.Context, instanceID int64, cfg map[st
 	}
 	c.hits.Add(1)
 	c.counters(instanceID).hits.Add(1)
-	c.recordCacheInfo(ctx, torznabhttp.CacheInfo{Cached: true, ExpiresAt: entry.ExpiresAt})
+	c.recordCacheInfo(ctx, core.CacheInfo{Cached: true, ExpiresAt: entry.ExpiresAt})
 	c.recordTouch(key)
 	if c.shouldRefreshAhead(entry) {
 		c.triggerSWR(ctx, instanceID, cfg, builtEpoch, live, q, key)
@@ -334,7 +334,7 @@ func (c *SearchCache) serveMiss(ctx context.Context, instanceID int64, cfg map[s
 	v, err, _ := c.sf.Do(cacheFlightKey(key, builtEpoch), func() (any, error) {
 		if entry, found, ferr := c.store.Fetch(ctx, c.db, key, c.clock()); ferr == nil && found {
 			if releases, derr := decodeReleases(entry.ResultsJSON, key); derr == nil {
-				info := torznabhttp.CacheInfo{Cached: true, ExpiresAt: entry.ExpiresAt}
+				info := core.CacheInfo{Cached: true, ExpiresAt: entry.ExpiresAt}
 				return missResult{releases: releases, info: info}, nil
 			}
 		}
@@ -379,13 +379,13 @@ func (c *SearchCache) serveMiss(ctx context.Context, instanceID int64, cfg map[s
 // whether the entry is now cached (plus its expiry). An inner error is returned and
 // never cached. It does NOT record into the request sink — the caller does
 // (per-caller, so a singleflight follower also gets the cache info).
-func (c *SearchCache) liveAndStore(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, live liveSearchFn, q search.Query, key string) ([]*normalizer.Release, torznabhttp.CacheInfo, error) {
+func (c *SearchCache) liveAndStore(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, live liveSearchFn, q search.Query, key string) ([]*normalizer.Release, core.CacheInfo, error) {
 	releases, err := c.fetchLive(ctx, live, q)
 	if err != nil {
-		return nil, torznabhttp.CacheInfo{}, err
+		return nil, core.CacheInfo{}, err
 	}
 	cached, expiresAt := c.storeBestEffort(ctx, instanceID, cfg, builtEpoch, q, key, releases)
-	return releases, torznabhttp.CacheInfo{Cached: cached, ExpiresAt: expiresAt}, nil
+	return releases, core.CacheInfo{Cached: cached, ExpiresAt: expiresAt}, nil
 }
 
 // liveAndStoreRecording is liveAndStore for the synchronous, non-flight callers (the
@@ -461,11 +461,11 @@ func (c *SearchCache) storeBestEffort(ctx context.Context, instanceID int64, cfg
 // there is none — the JSON API and the detached SWR refresh carry none). An
 // uncached info records nothing. It is called per CALLER, outside the singleflight,
 // so coalesced misses each fill their own sink.
-func (c *SearchCache) recordCacheInfo(ctx context.Context, info torznabhttp.CacheInfo) {
+func (c *SearchCache) recordCacheInfo(ctx context.Context, info core.CacheInfo) {
 	if !info.Cached {
 		return
 	}
-	torznabhttp.RecordCacheInfo(ctx, info)
+	core.RecordCacheInfo(ctx, info)
 }
 
 // missResult is the singleflight return for a cache miss: the released slice plus the
@@ -474,7 +474,7 @@ func (c *SearchCache) recordCacheInfo(ctx context.Context, info torznabhttp.Cach
 // inside the flight would fill only the leader's sink).
 type missResult struct {
 	releases []*normalizer.Release
-	info     torznabhttp.CacheInfo
+	info     core.CacheInfo
 }
 
 // recordTouch buffers a served hit in memory (cheap, non-blocking) instead of

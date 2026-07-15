@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/autobrr/harbrr/internal/indexer/core"
 )
 
 // TestFeedURL covers the externally-visible feed URL builder: scheme derivation, the
@@ -93,7 +95,7 @@ func TestFreeleechBypassETagDistinct(t *testing.T) {
 
 	cachingDemo := func() *fakeIndexer {
 		idx := demoIndexer(t)
-		idx.recordInfo = &CacheInfo{Cached: true, ExpiresAt: feedClock.Add(5 * time.Minute)}
+		idx.recordInfo = &core.CacheInfo{Cached: true, ExpiresAt: feedClock.Add(5 * time.Minute)}
 		return idx
 	}
 	mk := func(idx *fakeIndexer) http.Handler {

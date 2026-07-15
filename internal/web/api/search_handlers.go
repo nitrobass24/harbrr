@@ -6,6 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
+	"github.com/autobrr/harbrr/internal/indexer/core"
 	"github.com/autobrr/harbrr/internal/web/torznabhttp"
 )
 
@@ -27,7 +28,7 @@ type searchResponse struct {
 // and the page's resolved (link-sealed) releases. HasMore is computed from the pipeline
 // page length and Total (the pre-slice match count), so it is correct at every boundary
 // — including an offset at or past Total (empty page, no more) and a partial last page.
-func newSearchResponse(res torznabhttp.SearchResult, results []*normalizer.Release) searchResponse {
+func newSearchResponse(res core.SearchResult, results []*normalizer.Release) searchResponse {
 	return searchResponse{
 		Results: results,
 		Total:   res.Total,
@@ -39,7 +40,7 @@ func newSearchResponse(res torznabhttp.SearchResult, results []*normalizer.Relea
 
 // searchIndexer runs a JSON search against a configured indexer and returns the
 // same releases the Torznab feed serves for the same query — it calls the shared
-// read pipeline (torznabhttp.SearchReleases), so the result set is identical to the
+// read pipeline (core.SearchReleases), so the result set is identical to the
 // feed's (parity). For a resolver-needing indexer each download link is sealed
 // behind the /dl proxy, so a passkey never reaches the response, exactly as the
 // feed does. Query params are the Torznab set (q, cat, the external ids, season/ep,
@@ -52,7 +53,7 @@ func (rt *router) searchIndexer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	res, err := torznabhttp.SearchReleases(r.Context(), idx, r.URL.Query())
+	res, err := core.SearchReleases(r.Context(), idx, r.URL.Query())
 	if err != nil {
 		rt.writeServiceError(w, "search indexer", err)
 		return
@@ -74,7 +75,7 @@ func (rt *router) searchIndexer(w http.ResponseWriter, r *http.Request) {
 // {token} instead — the same authenticated group, so a cookie-authenticated browser (or
 // an X-API-Key caller of this JSON API) can fetch them. The feed's apikey /dl stays for
 // *arr.
-func (rt *router) resolveSearchLinks(r *http.Request, idx torznabhttp.Indexer, releases []*normalizer.Release) []*normalizer.Release {
+func (rt *router) resolveSearchLinks(r *http.Request, idx core.Indexer, releases []*normalizer.Release) []*normalizer.Release {
 	rw := torznabhttp.NewManagementDLRewriter(rt.dlToken, idx, torznabhttp.DownloadBaseURL(r, rt.basePath, idx.Info().ID))
 	withhold := rw == nil && torznabhttp.NeedsDLProxy(idx)
 	out := make([]*normalizer.Release, len(releases))

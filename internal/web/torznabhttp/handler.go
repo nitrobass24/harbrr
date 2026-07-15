@@ -13,15 +13,15 @@ import (
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
+	"github.com/autobrr/harbrr/internal/indexer/core"
 	"github.com/autobrr/harbrr/internal/secrets"
 	tzn "github.com/autobrr/harbrr/internal/torznab"
 )
 
 // handler serves the Torznab endpoint for a set of indexers resolved via a
-// Provider.
+// core.Provider.
 type handler struct {
-	provider        Provider
+	provider        core.Provider
 	apiKey          string
 	apiKeyValidator func(string) bool
 	basePath        string
@@ -111,7 +111,7 @@ func Routes() []Route {
 
 // NewHandler builds the *arr-facing Torznab HTTP handler over the routes in
 // torznabRoutes (see Routes).
-func NewHandler(provider Provider, opts ...Option) http.Handler {
+func NewHandler(provider core.Provider, opts ...Option) http.Handler {
 	h := &handler{provider: provider, clock: time.Now, log: zerolog.Nop()}
 	for _, o := range opts {
 		o(h)
@@ -205,7 +205,7 @@ func torznabGrabError(w http.ResponseWriter, status int, msg string) {
 // default) forecloses it — a token cannot be forged. We do not host-filter the link: a
 // self-hosted operator may run a private/LAN tracker, so a filter would break legitimate
 // setups for little gain.
-func ServeGrab(w http.ResponseWriter, r *http.Request, idx Indexer, dlToken *secrets.Keyring, log zerolog.Logger, token string, errw ErrorWriter) {
+func ServeGrab(w http.ResponseWriter, r *http.Request, idx core.Indexer, dlToken *secrets.Keyring, log zerolog.Logger, token string, errw ErrorWriter) {
 	if dlToken == nil {
 		// No direct Jackett equivalent (Jackett always has download): the proxy feature
 		// is unavailable, so 503 Service Unavailable.
@@ -319,7 +319,7 @@ func (h *handler) authorized(q url.Values) bool {
 }
 
 // writeCaps serializes and writes the capabilities document (t=caps).
-func (h *handler) writeCaps(w http.ResponseWriter, idx Indexer) {
+func (h *handler) writeCaps(w http.ResponseWriter, idx core.Indexer) {
 	body, err := tzn.MarshalCaps(idx.Capabilities())
 	if err != nil {
 		h.writeInternalError(w, "caps", idx.Info().ID, err)
@@ -336,7 +336,7 @@ func (h *handler) writeCaps(w http.ResponseWriter, idx Indexer) {
 // no resolution (direct links/magnets are served as-is). A magnet release keeps its
 // magnet (public, no secret), and a token-mint failure falls back to the direct
 // link rather than dropping the release.
-func (h *handler) dlRewriter(r *http.Request, idx Indexer) tzn.AcquisitionRewriter {
+func (h *handler) dlRewriter(r *http.Request, idx core.Indexer) tzn.AcquisitionRewriter {
 	if h.dlToken == nil || !NeedsDLProxy(idx) {
 		return nil
 	}
@@ -385,7 +385,7 @@ func stableGUID(indexerID, original string) string {
 // valid empty feed (HTTP 200), never an error. Resolver-needing indexers have their
 // links routed through the /dl proxy at serialization (no per-release resolution
 // happens here — the grab resolves server-side).
-func (h *handler) writeResults(w http.ResponseWriter, r *http.Request, idx Indexer, q url.Values) {
+func (h *handler) writeResults(w http.ResponseWriter, r *http.Request, idx core.Indexer, q url.Values) {
 	caps := idx.Capabilities()
 	if !h.resolveMode(w, q, caps) {
 		return
@@ -395,14 +395,14 @@ func (h *handler) writeResults(w http.ResponseWriter, r *http.Request, idx Index
 	// conditional-GET response below. A `no-cache` request header forces a live fetch
 	// — the header sibling of the `nocache=1` query param — and, like it, suppresses
 	// the 304 short-circuit so the client gets a fresh body.
-	ctx, ci := WithCacheInfoSink(r.Context())
+	ctx, ci := core.WithCacheInfoSink(r.Context())
 	headerFresh := requestNoCache(r)
 	if headerFresh {
-		ctx = WithCacheBypass(ctx)
+		ctx = core.WithCacheBypass(ctx)
 	}
-	// searchReleases is the shared read pipeline (map -> search -> dedupe -> filter
-	// -> page); the management API's JSON search runs the same code for parity.
-	res, err := searchReleases(ctx, idx, caps, q)
+	// SearchReleasesWithCaps is the shared read pipeline (map -> search -> dedupe ->
+	// filter -> page); the management API's JSON search runs the same code for parity.
+	res, err := core.SearchReleasesWithCaps(ctx, idx, caps, q)
 	if err != nil {
 		h.writeInternalError(w, "search", idx.Info().ID, err)
 		return
@@ -414,8 +414,8 @@ func (h *handler) writeResults(w http.ResponseWriter, r *http.Request, idx Index
 	// the honor feed and the /full bypass feed sharing one cached entry can never
 	// cross-match. fresh (header or query) forces a live body even on a match.
 	sp := servedPage{releases: res.Releases, offset: res.Offset, limit: res.Limit}
-	fresh := headerFresh || wantsNoCache(q)
-	if h.revalidate(w, r.Header, *ci, sp, freeleechBypass(ctx), fresh) {
+	fresh := headerFresh || core.WantsNoCache(q)
+	if h.revalidate(w, r.Header, *ci, sp, core.FreeleechBypass(ctx), fresh) {
 		return
 	}
 	page := tzn.Page{Offset: res.Offset, Total: res.Total}
@@ -475,29 +475,9 @@ func unsupportedIDParam(caps *mapper.Capabilities, capsKey string, q url.Values)
 	return "", true
 }
 
-// dedupeByGUID drops releases sharing a guid (Jackett's post-FixResults GroupBy),
-// keeping the first occurrence and preserving order, so *arr never sees duplicate
-// items. nil entries are skipped defensively.
-func dedupeByGUID(releases []*normalizer.Release) []*normalizer.Release {
-	seen := make(map[string]struct{}, len(releases))
-	out := make([]*normalizer.Release, 0, len(releases))
-	for _, rel := range releases {
-		if rel == nil {
-			continue
-		}
-		guid := tzn.GUIDFor(rel)
-		if _, dup := seen[guid]; dup {
-			continue
-		}
-		seen[guid] = struct{}{}
-		out = append(out, rel)
-	}
-	return out
-}
-
 // feedInfo assembles the feed metadata from the indexer identity + the request's
 // self URL.
-func (h *handler) feedInfo(r *http.Request, idx Indexer) tzn.FeedInfo {
+func (h *handler) feedInfo(r *http.Request, idx core.Indexer) tzn.FeedInfo {
 	info := idx.Info()
 	return tzn.FeedInfo{
 		IndexerID:   info.ID,

@@ -15,21 +15,21 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/core"
 	"github.com/autobrr/harbrr/internal/secrets"
-	"github.com/autobrr/harbrr/internal/web/torznabhttp"
 )
 
 // keyLink is a synthetic passkey-bearing download link (test only).
 const keyLink = "https://demo.test/dl?passkey=SECRETPASSKEY777" //nolint:gosec // G101: synthetic test passkey
 
-// fakeSearchIndexer is a torznabhttp.Indexer for the link-resolution unit test.
+// fakeSearchIndexer is a core.Indexer for the link-resolution unit test.
 type fakeSearchIndexer struct {
 	id                string
 	needsResolver     bool
 	downloadNeedsAuth bool
 }
 
-func (f fakeSearchIndexer) Info() torznabhttp.IndexerInfo      { return torznabhttp.IndexerInfo{ID: f.id} }
+func (f fakeSearchIndexer) Info() core.IndexerInfo             { return core.IndexerInfo{ID: f.id} }
 func (f fakeSearchIndexer) Capabilities() *mapper.Capabilities { return nil }
 
 func (f fakeSearchIndexer) Search(context.Context, search.Query) ([]*normalizer.Release, error) {
@@ -70,7 +70,7 @@ func TestNewSearchResponse(t *testing.T) {
 	rel := func(n string) *normalizer.Release { return &normalizer.Release{Title: n} }
 	tests := []struct {
 		name        string
-		res         torznabhttp.SearchResult
+		res         core.SearchResult
 		wantTotal   int
 		wantHasMore bool
 		wantLimit   int
@@ -78,27 +78,27 @@ func TestNewSearchResponse(t *testing.T) {
 	}{
 		{
 			name:      "mid set has more",
-			res:       torznabhttp.SearchResult{Releases: []*normalizer.Release{rel("a"), rel("b")}, Total: 10, Offset: 0, Limit: 2},
+			res:       core.SearchResult{Releases: []*normalizer.Release{rel("a"), rel("b")}, Total: 10, Offset: 0, Limit: 2},
 			wantTotal: 10, wantHasMore: true, wantLimit: 2, wantOffset: 0,
 		},
 		{
 			name:      "last full page no more",
-			res:       torznabhttp.SearchResult{Releases: []*normalizer.Release{rel("i"), rel("j")}, Total: 10, Offset: 8, Limit: 2},
+			res:       core.SearchResult{Releases: []*normalizer.Release{rel("i"), rel("j")}, Total: 10, Offset: 8, Limit: 2},
 			wantTotal: 10, wantHasMore: false, wantLimit: 2, wantOffset: 8,
 		},
 		{
 			name:      "partial last page no more",
-			res:       torznabhttp.SearchResult{Releases: []*normalizer.Release{rel("x")}, Total: 5, Offset: 4, Limit: 10},
+			res:       core.SearchResult{Releases: []*normalizer.Release{rel("x")}, Total: 5, Offset: 4, Limit: 10},
 			wantTotal: 5, wantHasMore: false, wantLimit: 10, wantOffset: 4,
 		},
 		{
 			name:      "offset at total empty no more",
-			res:       torznabhttp.SearchResult{Releases: nil, Total: 10, Offset: 10, Limit: 2},
+			res:       core.SearchResult{Releases: nil, Total: 10, Offset: 10, Limit: 2},
 			wantTotal: 10, wantHasMore: false, wantLimit: 2, wantOffset: 10,
 		},
 		{
 			name:      "empty result set",
-			res:       torznabhttp.SearchResult{Releases: nil, Total: 0, Offset: 0, Limit: 100},
+			res:       core.SearchResult{Releases: nil, Total: 0, Offset: 0, Limit: 100},
 			wantTotal: 0, wantHasMore: false, wantLimit: 100, wantOffset: 0,
 		},
 	}
@@ -129,7 +129,7 @@ func TestNewSearchResponse(t *testing.T) {
 	// derives from res. Use a distinct resolved slice so the two cannot be confused.
 	t.Run("results come from the resolved arg", func(t *testing.T) {
 		t.Parallel()
-		res := torznabhttp.SearchResult{Releases: []*normalizer.Release{rel("raw")}, Total: 1, Offset: 0, Limit: 10}
+		res := core.SearchResult{Releases: []*normalizer.Release{rel("raw")}, Total: 1, Offset: 0, Limit: 10}
 		resolved := []*normalizer.Release{rel("resolved-a"), rel("resolved-b")}
 		got := newSearchResponse(res, resolved)
 		if len(got.Results) != 2 || got.Results[0].Title != "resolved-a" || got.Results[1].Title != "resolved-b" {
@@ -142,15 +142,15 @@ func TestNewSearchResponse(t *testing.T) {
 	})
 }
 
-// pagedAPIIndexer is a direct-link torznabhttp.Indexer with real caps and synthetic
+// pagedAPIIndexer is a direct-link core.Indexer with real caps and synthetic
 // releases, for the JSON cross-page test. The JSON search runs the same
-// torznabhttp.SearchReleases pipeline the feed does, so this proves feed/JSON paging parity.
+// core.SearchReleases pipeline the feed does, so this proves feed/JSON paging parity.
 type pagedAPIIndexer struct {
 	caps     *mapper.Capabilities
 	releases []*normalizer.Release
 }
 
-func (p *pagedAPIIndexer) Info() torznabhttp.IndexerInfo      { return torznabhttp.IndexerInfo{ID: "demo"} }
+func (p *pagedAPIIndexer) Info() core.IndexerInfo             { return core.IndexerInfo{ID: "demo"} }
 func (p *pagedAPIIndexer) Capabilities() *mapper.Capabilities { return p.caps }
 
 func (p *pagedAPIIndexer) Search(context.Context, search.Query) ([]*normalizer.Release, error) {
@@ -183,7 +183,7 @@ func pagedAPICaps(t *testing.T) *mapper.Capabilities {
 
 // TestSearchJSONEnvelopeCrossPage proves the qui-shaped JSON envelope pages a
 // >100-result fetch into DISJOINT windows with a stable Total and correct HasMore —
-// identical to the feed, since both call torznabhttp.SearchReleases. HasMore is true on
+// identical to the feed, since both call core.SearchReleases. HasMore is true on
 // page 0 (results remain) and false on page 1 (the partial last page), and no release
 // appears on both pages — the property Prowlarr violates (#1428: it re-serves page 0).
 func TestSearchJSONEnvelopeCrossPage(t *testing.T) {
@@ -200,7 +200,7 @@ func TestSearchJSONEnvelopeCrossPage(t *testing.T) {
 
 	page := func(offset string) searchResponse {
 		t.Helper()
-		res, err := torznabhttp.SearchReleases(context.Background(), idx,
+		res, err := core.SearchReleases(context.Background(), idx,
 			url.Values{"q": {"x"}, "limit": {"100"}, "offset": {offset}})
 		if err != nil {
 			t.Fatalf("SearchReleases(offset=%s): %v", offset, err)

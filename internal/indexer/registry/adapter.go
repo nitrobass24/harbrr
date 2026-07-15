@@ -16,18 +16,18 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/core"
 	"github.com/autobrr/harbrr/internal/indexer/native"
-	"github.com/autobrr/harbrr/internal/web/torznabhttp"
 )
 
 // indexerAdapter presents a built indexer (the Cardigann engine OR a native family
-// driver) as a torznabhttp.Indexer, so the Torznab handler depends only on the
+// driver) as a core.Indexer, so the Torznab handler depends only on the
 // interface, never the concrete engine. It is the unit the registry caches per
 // slug. It also records per-indexer health events: a classified Search failure
 // appends one event (append-only) so the management status endpoint can surface why
 // an indexer is unhealthy.
 type indexerAdapter struct {
-	info       torznabhttp.IndexerInfo
+	info       core.IndexerInfo
 	inner      native.Driver
 	instanceID int64
 	// cfg is the decrypted per-instance settings map. Search's cache-aside stage reads
@@ -59,13 +59,13 @@ type indexerAdapter struct {
 }
 
 // Compile-time proof the adapter satisfies the handler's contract, including
-// SupportsOffsetPaging — now part of torznabhttp.Indexer proper, so this single
+// SupportsOffsetPaging — now part of core.Indexer proper, so this single
 // assertion replaces the runtime capability re-forwarding the old freeleech/cache
 // decorators had to hand-write on every layer.
-var _ torznabhttp.Indexer = (*indexerAdapter)(nil)
+var _ core.Indexer = (*indexerAdapter)(nil)
 
 // Info returns the indexer identity (carries no secrets).
-func (a *indexerAdapter) Info() torznabhttp.IndexerInfo { return a.info }
+func (a *indexerAdapter) Info() core.IndexerInfo { return a.info }
 
 // Capabilities returns the built indexer's capabilities document.
 func (a *indexerAdapter) Capabilities() *mapper.Capabilities { return a.inner.Capabilities() }

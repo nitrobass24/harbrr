@@ -14,6 +14,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/core"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 	"github.com/autobrr/harbrr/internal/indexer/native/newznab"
 	"github.com/autobrr/harbrr/internal/secrets"
@@ -141,11 +142,11 @@ func (s *usenetStub) searchXML() string {
 // serve methods come straight from the driver, and Info() carries Protocol=usenet so the
 // serializer renders an NZB enclosure and suppresses the torrent stat/factor attrs.
 type usenetIndexer struct {
-	info   IndexerInfo
+	info   core.IndexerInfo
 	driver native.Searcher
 }
 
-func (u *usenetIndexer) Info() IndexerInfo                  { return u.info }
+func (u *usenetIndexer) Info() core.IndexerInfo             { return u.info }
 func (u *usenetIndexer) Capabilities() *mapper.Capabilities { return u.driver.Capabilities() }
 
 func (u *usenetIndexer) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
@@ -178,7 +179,7 @@ func newUsenetE2EHandler(t *testing.T, stub *usenetStub) http.Handler {
 		t.Fatalf("newznab.New: %v", err)
 	}
 	idx := &usenetIndexer{
-		info: IndexerInfo{
+		info: core.IndexerInfo{
 			ID: "usenetdemo", Name: def.Name, Description: def.Description,
 			SiteLink: stub.server.URL, Type: def.Type, Protocol: def.EffectiveProtocol(),
 		},

@@ -9,10 +9,10 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
-	"github.com/autobrr/harbrr/internal/web/torznabhttp"
+	"github.com/autobrr/harbrr/internal/indexer/core"
 )
 
-// hookInner is a torznabhttp.Indexer test double that runs onSearch synchronously
+// hookInner is a core.Indexer test double that runs onSearch synchronously
 // inside its (single) Search call, before returning releases. It lets a test land a
 // config-mutation purge DURING the live fetch — exactly the U8R-F4 window where a
 // store from an old-config engine would otherwise resurrect a purged entry.
@@ -21,7 +21,7 @@ type hookInner struct {
 	onSearch func()
 }
 
-func (h *hookInner) Info() torznabhttp.IndexerInfo      { return torznabhttp.IndexerInfo{ID: "hook"} }
+func (h *hookInner) Info() core.IndexerInfo             { return core.IndexerInfo{ID: "hook"} }
 func (h *hookInner) Capabilities() *mapper.Capabilities { return &mapper.Capabilities{} }
 func (h *hookInner) NeedsResolver() bool                { return false }
 func (h *hookInner) DownloadNeedsAuth() bool            { return false }

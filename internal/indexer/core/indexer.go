@@ -1,4 +1,4 @@
-package torznabhttp
+package core
 
 import (
 	"context"
@@ -19,11 +19,11 @@ type IndexerInfo struct {
 	Protocol    string // "torrent" / "usenet"
 }
 
-// Indexer is one searchable tracker the handler serves: its identity, its
-// capabilities (for the caps document and request validation/category mapping),
+// Indexer is one searchable tracker as the rest of harbrr consumes it: its identity,
+// its capabilities (for the caps document and request validation/category mapping),
 // and a search entry point that returns normalized releases. It is satisfied by
 // an adapter over the Cardigann engine in production and by a fake in
-// tests, so the handler never depends on the concrete engine.
+// tests, so a consumer never depends on the concrete engine.
 type Indexer interface {
 	Info() IndexerInfo
 	Capabilities() *mapper.Capabilities

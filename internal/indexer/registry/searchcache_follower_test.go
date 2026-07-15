@@ -13,10 +13,10 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
-	"github.com/autobrr/harbrr/internal/web/torznabhttp"
+	"github.com/autobrr/harbrr/internal/indexer/core"
 )
 
-// seqInner is a torznabhttp.Indexer test double whose FIRST Search returns firstErr and
+// seqInner is a core.Indexer test double whose FIRST Search returns firstErr and
 // every subsequent Search returns results. It models the serveMiss branch a singleflight
 // FOLLOWER lands on: the coalesced flight returned the leader's error (call 1), then the
 // follower's own fallback live search succeeds (call 2). Deterministic — no goroutines or
@@ -27,7 +27,7 @@ type seqInner struct {
 	results  []*normalizer.Release
 }
 
-func (s *seqInner) Info() torznabhttp.IndexerInfo      { return torznabhttp.IndexerInfo{ID: "seq"} }
+func (s *seqInner) Info() core.IndexerInfo             { return core.IndexerInfo{ID: "seq"} }
 func (s *seqInner) Capabilities() *mapper.Capabilities { return &mapper.Capabilities{} }
 func (s *seqInner) NeedsResolver() bool                { return false }
 func (s *seqInner) DownloadNeedsAuth() bool            { return false }
@@ -136,8 +136,8 @@ type cancelOnSearchInner struct {
 	results []*normalizer.Release
 }
 
-func (c *cancelOnSearchInner) Info() torznabhttp.IndexerInfo {
-	return torznabhttp.IndexerInfo{ID: "cancel"}
+func (c *cancelOnSearchInner) Info() core.IndexerInfo {
+	return core.IndexerInfo{ID: "cancel"}
 }
 func (c *cancelOnSearchInner) Capabilities() *mapper.Capabilities { return &mapper.Capabilities{} }
 func (c *cancelOnSearchInner) NeedsResolver() bool                { return false }
@@ -195,8 +195,8 @@ type coalesceInner struct {
 	followerResults []*normalizer.Release
 }
 
-func (c *coalesceInner) Info() torznabhttp.IndexerInfo {
-	return torznabhttp.IndexerInfo{ID: "coalesce"}
+func (c *coalesceInner) Info() core.IndexerInfo {
+	return core.IndexerInfo{ID: "coalesce"}
 }
 func (c *coalesceInner) Capabilities() *mapper.Capabilities { return &mapper.Capabilities{} }
 func (c *coalesceInner) NeedsResolver() bool                { return false }

@@ -14,10 +14,10 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
-	"github.com/autobrr/harbrr/internal/web/torznabhttp"
+	"github.com/autobrr/harbrr/internal/indexer/core"
 )
 
-// fakeInner is a torznabhttp.Indexer test double. It counts Search calls, can block on
+// fakeInner is a core.Indexer test double. It counts Search calls, can block on
 // a gate (to exercise singleflight), and can return a fixed error or release set.
 type fakeInner struct {
 	mu       sync.Mutex
@@ -33,7 +33,7 @@ type fakeInner struct {
 	firstOnce sync.Once
 }
 
-func (f *fakeInner) Info() torznabhttp.IndexerInfo      { return torznabhttp.IndexerInfo{ID: "fake"} }
+func (f *fakeInner) Info() core.IndexerInfo             { return core.IndexerInfo{ID: "fake"} }
 func (f *fakeInner) Capabilities() *mapper.Capabilities { return &mapper.Capabilities{} }
 func (f *fakeInner) NeedsResolver() bool                { return false }
 func (f *fakeInner) DownloadNeedsAuth() bool            { return false }
@@ -198,7 +198,7 @@ func TestBypassForcesInnerAndWritesBack(t *testing.T) {
 		t.Fatalf("prime: %v", err)
 	}
 	// Bypass must call inner again despite the warm entry.
-	bypassCtx := torznabhttp.WithCacheBypass(context.Background())
+	bypassCtx := core.WithCacheBypass(context.Background())
 	if _, err := idx.Search(bypassCtx, q); err != nil {
 		t.Fatalf("bypass search: %v", err)
 	}
@@ -346,7 +346,7 @@ func TestCacheInfoRecordedOnMissAndHit(t *testing.T) {
 	q := search.Query{Keywords: "alpha"}
 
 	// Miss: the store-back records the cache info for this request.
-	missCtx, missInfo := torznabhttp.WithCacheInfoSink(context.Background())
+	missCtx, missInfo := core.WithCacheInfoSink(context.Background())
 	if _, err := idx.Search(missCtx, q); err != nil {
 		t.Fatalf("miss: %v", err)
 	}
@@ -355,7 +355,7 @@ func TestCacheInfoRecordedOnMissAndHit(t *testing.T) {
 	}
 
 	// Hit: a fresh sink is filled with Cached=true too.
-	hitCtx, hitInfo := torznabhttp.WithCacheInfoSink(context.Background())
+	hitCtx, hitInfo := core.WithCacheInfoSink(context.Background())
 	if _, err := idx.Search(hitCtx, q); err != nil {
 		t.Fatalf("hit: %v", err)
 	}
@@ -387,11 +387,11 @@ func TestCacheInfoRecordedForCoalescedMisses(t *testing.T) {
 	q := search.Query{Keywords: "x"}
 
 	const n = 8
-	infos := make([]*torznabhttp.CacheInfo, n)
+	infos := make([]*core.CacheInfo, n)
 	var wg sync.WaitGroup
 	wg.Add(n)
 	for i := range n {
-		ctx, ci := torznabhttp.WithCacheInfoSink(context.Background())
+		ctx, ci := core.WithCacheInfoSink(context.Background())
 		infos[i] = ci
 		go func() {
 			defer wg.Done()
@@ -421,7 +421,7 @@ func advance(clk *atomic.Pointer[time.Time], d time.Duration) {
 
 // waitForTitle polls idx.Search until the first served release has the wanted
 // title (the SWR write-back is asynchronous) or a timeout fires.
-func waitForTitle(t *testing.T, idx torznabhttp.Indexer, q search.Query, want string) {
+func waitForTitle(t *testing.T, idx core.Indexer, q search.Query, want string) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
 	var lastTitle string

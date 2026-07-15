@@ -17,15 +17,16 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/core"
 	"github.com/autobrr/harbrr/internal/secrets"
 )
 
 const testAPIKey = "harbrr-test-key" //nolint:gosec // G101: synthetic test API key, not a real credential
 
-// fakeIndexer is a Provider-backed Indexer for the handler tests: it serves
+// fakeIndexer is a core.Provider-backed core.Indexer for the handler tests: it serves
 // canned capabilities + releases and records the search query it received.
 type fakeIndexer struct {
-	info              IndexerInfo
+	info              core.IndexerInfo
 	caps              *mapper.Capabilities
 	releases          []*normalizer.Release
 	searchErr         error
@@ -36,17 +37,17 @@ type fakeIndexer struct {
 	grabResult        *search.GrabResult // when set, Grab returns it
 	grabErr           error
 	gotGrabLink       string
-	recordInfo        *CacheInfo // when set, Search records it into the ctx sink (simulates a cache hit/store)
+	recordInfo        *core.CacheInfo // when set, Search records it into the ctx sink (simulates a cache hit/store)
 }
 
-func (f *fakeIndexer) Info() IndexerInfo                  { return f.info }
+func (f *fakeIndexer) Info() core.IndexerInfo             { return f.info }
 func (f *fakeIndexer) Capabilities() *mapper.Capabilities { return f.caps }
 
 func (f *fakeIndexer) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
 	f.gotCtx = ctx
 	f.gotQuery = q
 	if f.recordInfo != nil {
-		RecordCacheInfo(ctx, *f.recordInfo)
+		core.RecordCacheInfo(ctx, *f.recordInfo)
 	}
 	return f.releases, f.searchErr
 }
@@ -66,9 +67,9 @@ func (f *fakeIndexer) Grab(_ context.Context, link string) (*search.GrabResult, 
 	return &search.GrabResult{Body: []byte("d0:e"), ContentType: "application/x-bittorrent"}, nil
 }
 
-type fakeProvider map[string]Indexer
+type fakeProvider map[string]core.Indexer
 
-func (p fakeProvider) Indexer(_ context.Context, id string) (Indexer, bool) {
+func (p fakeProvider) Indexer(_ context.Context, id string) (core.Indexer, bool) {
 	i, ok := p[id]
 	return i, ok
 }
@@ -121,7 +122,7 @@ func newTestHandler(t *testing.T, idx *fakeIndexer) http.Handler {
 
 func demoIndexer(t *testing.T) *fakeIndexer {
 	return &fakeIndexer{
-		info: IndexerInfo{ID: "demo", Name: "Demo Tracker", Description: "demo", SiteLink: "https://demo.test/", Type: "public"},
+		info: core.IndexerInfo{ID: "demo", Name: "Demo Tracker", Description: "demo", SiteLink: "https://demo.test/", Type: "public"},
 		caps: testCaps(t),
 		releases: []*normalizer.Release{
 			demoRelease("Movie A", "https://demo.test/dl/1.torrent", []int{2000}),
@@ -156,7 +157,7 @@ func richIndexer(t *testing.T) *fakeIndexer {
 		t.Fatalf("mapper.Build: %v", err)
 	}
 	return &fakeIndexer{
-		info:     IndexerInfo{ID: "rich", Name: "Rich", Description: "rich", SiteLink: "https://rich.test/", Type: "public"},
+		info:     core.IndexerInfo{ID: "rich", Name: "Rich", Description: "rich", SiteLink: "https://rich.test/", Type: "public"},
 		caps:     caps,
 		releases: []*normalizer.Release{demoRelease("Result", "https://rich.test/dl/1.torrent", []int{2000})},
 	}
@@ -839,18 +840,18 @@ func TestServeGrab(t *testing.T) {
 		}
 		return tok
 	}
-	serve := func(t *testing.T, idx Indexer, dlToken *secrets.Keyring, token string) *httptest.ResponseRecorder {
+	serve := func(t *testing.T, idx core.Indexer, dlToken *secrets.Keyring, token string) *httptest.ResponseRecorder {
 		t.Helper()
 		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/download/"+token, nil)
 		rec := httptest.NewRecorder()
 		ServeGrab(rec, req, idx, dlToken, zerolog.Nop(), token, torznabGrabError)
 		return rec
 	}
-	demo := &fakeIndexer{info: IndexerInfo{ID: "demo"}}
+	demo := &fakeIndexer{info: core.IndexerInfo{ID: "demo"}}
 
 	t.Run("streams a torrent body (200)", func(t *testing.T) {
 		t.Parallel()
-		idx := &fakeIndexer{info: IndexerInfo{ID: "demo"}, grabResult: &search.GrabResult{Body: []byte("d0:e"), ContentType: torrentContentType}}
+		idx := &fakeIndexer{info: core.IndexerInfo{ID: "demo"}, grabResult: &search.GrabResult{Body: []byte("d0:e"), ContentType: torrentContentType}}
 		rec := serve(t, idx, kr, tokenFor(t, "demo", "https://demo.test/x"))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200", rec.Code)
@@ -865,7 +866,7 @@ func TestServeGrab(t *testing.T) {
 
 	t.Run("redirects a magnet (302)", func(t *testing.T) {
 		t.Parallel()
-		idx := &fakeIndexer{info: IndexerInfo{ID: "demo"}, grabResult: &search.GrabResult{Redirect: "magnet:?xt=urn:btih:abc"}}
+		idx := &fakeIndexer{info: core.IndexerInfo{ID: "demo"}, grabResult: &search.GrabResult{Redirect: "magnet:?xt=urn:btih:abc"}}
 		rec := serve(t, idx, kr, tokenFor(t, "demo", "https://demo.test/x"))
 		if rec.Code != http.StatusFound {
 			t.Fatalf("status = %d, want 302", rec.Code)
@@ -917,7 +918,7 @@ func TestServeGrab(t *testing.T) {
 
 	t.Run("refuses a non-bencode torrent body (404)", func(t *testing.T) {
 		t.Parallel()
-		idx := &fakeIndexer{info: IndexerInfo{ID: "demo"}, grabResult: &search.GrabResult{Body: []byte("<html>login</html>"), ContentType: torrentContentType}}
+		idx := &fakeIndexer{info: core.IndexerInfo{ID: "demo"}, grabResult: &search.GrabResult{Body: []byte("<html>login</html>"), ContentType: torrentContentType}}
 		if rec := serve(t, idx, kr, tokenFor(t, "demo", "https://demo.test/x")); rec.Code != http.StatusNotFound {
 			t.Errorf("status = %d, want 404", rec.Code)
 		}

@@ -1,4 +1,4 @@
-package torznabhttp
+package core
 
 import (
 	"net/url"

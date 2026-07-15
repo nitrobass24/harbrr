@@ -6,31 +6,31 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
-	"github.com/autobrr/harbrr/internal/web/torznabhttp"
+	"github.com/autobrr/harbrr/internal/indexer/core"
 )
 
 // cacheProbe is a test-only scaffold that drives SearchCache's cache-aside path over a
-// fake torznabhttp.Indexer, exactly as the flattened indexerAdapter.Search does in
+// fake core.Indexer, exactly as the flattened indexerAdapter.Search does in
 // production — without needing a full native.Driver + adapter. It replaces the deleted
 // cachedIndexer decorator and the sc.wrap helper for the cache-internal tests.
 //
 // It snapshots builtEpoch at construction (matching indexerAdapter's build-time capture in
 // Registry.build), so the epoch timing the flightepoch/epoch_regression tests depend on is
-// preserved. It implements the FULL torznabhttp.Indexer — forwarding every method,
+// preserved. It implements the FULL core.Indexer — forwarding every method,
 // including SupportsOffsetPaging, to inner — so the external handler tests can serve it.
 type cacheProbe struct {
-	inner      torznabhttp.Indexer
+	inner      core.Indexer
 	cache      *SearchCache
 	instanceID int64
 	cfg        map[string]string
 	builtEpoch uint64
 }
 
-var _ torznabhttp.Indexer = (*cacheProbe)(nil)
+var _ core.Indexer = (*cacheProbe)(nil)
 
 // probe builds a cacheProbe over inner, snapshotting the instance's invalidation epoch at
 // construction — the same capture Registry.build performs into indexerAdapter.builtEpoch.
-func (c *SearchCache) probe(inner torznabhttp.Indexer, instanceID int64, cfg map[string]string) *cacheProbe {
+func (c *SearchCache) probe(inner core.Indexer, instanceID int64, cfg map[string]string) *cacheProbe {
 	return &cacheProbe{inner: inner, cache: c, instanceID: instanceID, cfg: cfg, builtEpoch: c.instanceEpoch(instanceID)}
 }
 
@@ -44,7 +44,7 @@ func (p *cacheProbe) Search(ctx context.Context, q search.Query) ([]*normalizer.
 	return p.cache.search(ctx, p.instanceID, p.cfg, p.builtEpoch, p.inner.Search, p.inner.SupportsOffsetPaging(), q)
 }
 
-func (p *cacheProbe) Info() torznabhttp.IndexerInfo      { return p.inner.Info() }
+func (p *cacheProbe) Info() core.IndexerInfo             { return p.inner.Info() }
 func (p *cacheProbe) Capabilities() *mapper.Capabilities { return p.inner.Capabilities() }
 func (p *cacheProbe) NeedsResolver() bool                { return p.inner.NeedsResolver() }
 func (p *cacheProbe) DownloadNeedsAuth() bool            { return p.inner.DownloadNeedsAuth() }

@@ -15,6 +15,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/core"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 	"github.com/autobrr/harbrr/internal/secrets"
 	"github.com/autobrr/harbrr/internal/web/torznabhttp"
@@ -27,7 +28,7 @@ var dlRegPasskey = strings.Repeat("7c6d", 8)
 
 const dlRegAPIKey = "harbrr-reg-key" //nolint:gosec // G101: synthetic test API key.
 
-// resolverFakeIndexer is a minimal torznabhttp.Indexer whose download needs resolving,
+// resolverFakeIndexer is a minimal core.Indexer whose download needs resolving,
 // so its passkey-bearing link must be sealed behind the /dl proxy. It counts Search
 // calls so the test can prove the second poll is a cache hit (inner not re-called).
 type resolverFakeIndexer struct {
@@ -36,8 +37,8 @@ type resolverFakeIndexer struct {
 	calls    int
 }
 
-func (f *resolverFakeIndexer) Info() torznabhttp.IndexerInfo {
-	return torznabhttp.IndexerInfo{ID: "demo", Name: "Demo", Type: "private"}
+func (f *resolverFakeIndexer) Info() core.IndexerInfo {
+	return core.IndexerInfo{ID: "demo", Name: "Demo", Type: "private"}
 }
 func (f *resolverFakeIndexer) Capabilities() *mapper.Capabilities { return f.caps }
 func (f *resolverFakeIndexer) NeedsResolver() bool                { return true }
@@ -149,9 +150,9 @@ func demoRegRelease() *normalizer.Release {
 	}
 }
 
-type regProvider map[string]torznabhttp.Indexer
+type regProvider map[string]core.Indexer
 
-func (p regProvider) Indexer(_ context.Context, id string) (torznabhttp.Indexer, bool) {
+func (p regProvider) Indexer(_ context.Context, id string) (core.Indexer, bool) {
 	i, ok := p[id]
 	return i, ok
 }

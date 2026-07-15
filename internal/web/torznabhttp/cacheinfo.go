@@ -1,7 +1,6 @@
 package torznabhttp
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -11,45 +10,8 @@ import (
 	"time"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
+	"github.com/autobrr/harbrr/internal/indexer/core"
 )
-
-// CacheInfo is the per-request cache metadata the search-cache decorator records so
-// the feed handler knows whether to emit HTTP cache validators (ETag + Cache-Control)
-// and answer a conditional GET with 304 Not Modified. It is populated only when a
-// response was produced from — or freshly stored into — the cache; a cache-disabled
-// or degraded path leaves it zero (Cached stays false, no validators are emitted).
-type CacheInfo struct {
-	// Cached reports whether this response came from — or was freshly stored into —
-	// the search cache. The handler derives the SERVED validator itself from the
-	// post-filter page it is about to write (servedPayloadETag + pagedETag); this is
-	// only the boolean signal that a validator should be emitted at all.
-	Cached bool
-	// ExpiresAt is when the cached entry expires; the handler derives max-age from it.
-	ExpiresAt time.Time
-}
-
-// cacheInfoKey is the unexported context key under which a request carries its
-// CacheInfo sink (a pointer the cache layer fills). It lives here, beside the
-// cache-bypass key, so cache plumbing never leaks into the engine query.
-type cacheInfoKey struct{}
-
-// WithCacheInfoSink attaches a fresh CacheInfo sink to ctx and returns both. The feed
-// handler creates the sink before Search; the cache layer fills it via RecordCacheInfo
-// on the synchronous read path; the handler reads it after Search to set validators.
-func WithCacheInfoSink(ctx context.Context) (context.Context, *CacheInfo) {
-	ci := &CacheInfo{}
-	return context.WithValue(ctx, cacheInfoKey{}, ci), ci
-}
-
-// RecordCacheInfo writes info into ctx's CacheInfo sink when one is present, and is a
-// no-op otherwise — so a background refresh (whose detached ctx carries no sink) or
-// the JSON search API (which sets none) never touches a stale sink. It is the cache
-// layer's one entry point for surfacing validators to the feed handler.
-func RecordCacheInfo(ctx context.Context, info CacheInfo) {
-	if ci, ok := ctx.Value(cacheInfoKey{}).(*CacheInfo); ok && ci != nil {
-		*ci = info
-	}
-}
 
 // requestNoCache reports whether the request asked harbrr to revalidate against the
 // tracker rather than serve from cache: a `Cache-Control: no-cache`/`no-store` or a
@@ -162,7 +124,7 @@ type servedPage struct {
 // If-None-Match matches the JUST-EMITTED validator; the fold means a client revalidating
 // one variant/page can never match another's, so it always falls through to 200 with the
 // live body instead of a 304 for the wrong content.
-func (h *handler) revalidate(w http.ResponseWriter, requestHeaders http.Header, ci CacheInfo, page servedPage, bypass, fresh bool) (handled bool) {
+func (h *handler) revalidate(w http.ResponseWriter, requestHeaders http.Header, ci core.CacheInfo, page servedPage, bypass, fresh bool) (handled bool) {
 	if !ci.Cached {
 		return false
 	}

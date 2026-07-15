@@ -15,20 +15,21 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/core"
 )
 
-// engineIndexer adapts a real Cardigann engine to the handler's Indexer
+// engineIndexer adapts a real Cardigann engine to the handler's core.Indexer
 // interface for the offline end-to-end proof: capabilities come from the engine,
 // and Search extracts releases from a SAVED tracker response with no network
 // (ParseResponseQuery), exercising the real loader -> mapper -> selector ->
 // filter -> dateparse -> normalizer pipeline behind the HTTP handler.
 type engineIndexer struct {
-	info   IndexerInfo
+	info   core.IndexerInfo
 	engine *cardigann.Engine
 	body   []byte
 }
 
-func (e *engineIndexer) Info() IndexerInfo                  { return e.info }
+func (e *engineIndexer) Info() core.IndexerInfo             { return e.info }
 func (e *engineIndexer) Capabilities() *mapper.Capabilities { return e.engine.Capabilities() }
 
 func (e *engineIndexer) Search(_ context.Context, q search.Query) ([]*normalizer.Release, error) {
@@ -67,7 +68,7 @@ func newE2EHandler(t *testing.T) http.Handler {
 		t.Fatalf("NewEngine: %v", err)
 	}
 	idx := &engineIndexer{
-		info: IndexerInfo{
+		info: core.IndexerInfo{
 			ID: def.ID, Name: def.Name, Description: def.Description,
 			SiteLink: def.Links[0], Type: def.Type,
 		},

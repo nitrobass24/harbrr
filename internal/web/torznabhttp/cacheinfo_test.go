@@ -1,7 +1,6 @@
 package torznabhttp
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +11,8 @@ import (
 	"time"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
+	"github.com/autobrr/harbrr/internal/indexer/core"
+	tzn "github.com/autobrr/harbrr/internal/torznab"
 )
 
 // feedClock is the fixed reference time for the conditional-GET handler tests.
@@ -84,17 +85,6 @@ func TestIfNoneMatchMatches(t *testing.T) {
 	}
 }
 
-func TestCacheInfoSinkRoundTrip(t *testing.T) {
-	t.Parallel()
-	ctx, ci := WithCacheInfoSink(context.Background())
-	RecordCacheInfo(ctx, CacheInfo{Cached: true, ExpiresAt: feedClock})
-	if !ci.Cached || !ci.ExpiresAt.Equal(feedClock) {
-		t.Fatalf("sink not filled: %+v", ci)
-	}
-	// Recording into a ctx without a sink must be a no-op (no panic).
-	RecordCacheInfo(context.Background(), CacheInfo{Cached: true})
-}
-
 // revalidateHandler is a minimal handler for driving revalidate directly (no provider,
 // no HTTP routing) — only the clock it reads for Cache-Control's max-age matters.
 func revalidateHandler() *handler {
@@ -110,7 +100,7 @@ func revalidateHandler() *handler {
 func TestRevalidateWrongVariantOrPageGuard(t *testing.T) {
 	t.Parallel()
 	h := revalidateHandler()
-	ci := CacheInfo{Cached: true, ExpiresAt: feedClock.Add(5 * time.Minute)}
+	ci := core.CacheInfo{Cached: true, ExpiresAt: feedClock.Add(5 * time.Minute)}
 	releases := []*normalizer.Release{
 		demoRelease("P0", "https://rich.test/dl/0.torrent", []int{2000}),
 		demoRelease("P1", "https://rich.test/dl/1.torrent", []int{2000}),
@@ -184,14 +174,14 @@ func feedDo(t *testing.T, idx *fakeIndexer, rawQuery string, hdr http.Header) *h
 func cachingIndexer(t *testing.T) *fakeIndexer {
 	t.Helper()
 	idx := richIndexer(t)
-	idx.recordInfo = &CacheInfo{Cached: true, ExpiresAt: feedClock.Add(5 * time.Minute)}
+	idx.recordInfo = &core.CacheInfo{Cached: true, ExpiresAt: feedClock.Add(5 * time.Minute)}
 	return idx
 }
 
 // TestFeedEmitsValidators proves a cache-backed feed response carries ETag +
 // Cache-Control with the entry's remaining TTL as max-age. The emitted ETag is the
 // served validator: the POST-filter served page hashed (servedPayloadETag, honor variant)
-// folded with this page's window (offset=0, limit=defaultLimit for a window-less request).
+// folded with this page's window (offset=0, limit=tzn.LimitsMax for a window-less request).
 func TestFeedEmitsValidators(t *testing.T) {
 	t.Parallel()
 	idx := cachingIndexer(t)
@@ -203,7 +193,7 @@ func TestFeedEmitsValidators(t *testing.T) {
 	if !ok {
 		t.Fatal("servedPayloadETag failed to hash the served page")
 	}
-	want := pagedETag(view, 0, defaultLimit)
+	want := pagedETag(view, 0, tzn.LimitsMax)
 	if got := rec.Header().Get("ETag"); got != want {
 		t.Errorf("ETag = %q, want %q", got, want)
 	}
@@ -304,7 +294,7 @@ func TestFeedNoCacheHeaderForcesFresh(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (no-cache suppresses 304)", rec.Code)
 	}
-	if !CacheBypass(idx.gotCtx) {
+	if !core.CacheBypass(idx.gotCtx) {
 		t.Error("a no-cache request header must set cache bypass on the search ctx")
 	}
 }

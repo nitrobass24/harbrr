@@ -1,4 +1,4 @@
-package torznabhttp
+package core
 
 import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"

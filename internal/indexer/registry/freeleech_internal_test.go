@@ -11,8 +11,8 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/core"
 	"github.com/autobrr/harbrr/internal/indexer/native"
-	"github.com/autobrr/harbrr/internal/web/torznabhttp"
 )
 
 // relsFixture is a mixed set: two freeleech releases (dvf 0) and two non-free (dvf 1
@@ -67,7 +67,7 @@ func (p *pagingDriver) SupportsOffsetPaging() bool { return true }
 // error, which these fakes never return.
 func newFreeleechAdapter(inner native.Driver, freeleechOnly bool) *indexerAdapter {
 	return &indexerAdapter{
-		info:          torznabhttp.IndexerInfo{ID: "fake"},
+		info:          core.IndexerInfo{ID: "fake"},
 		inner:         inner,
 		freeleechOnly: freeleechOnly,
 		stats:         newIndexerStats(nil, time.Now, zerolog.Nop()),
@@ -143,7 +143,7 @@ func TestFreeleechAdapter_DoesNotMutateInner(t *testing.T) {
 // TestFreeleechAdapter_OffsetPaging proves the flattened adapter reports
 // SupportsOffsetPaging directly off the wrapped driver — true for a paging driver,
 // false for one that answers false. This replaces the old decorator's hand-forwarding
-// test; the compile-time var _ torznabhttp.Indexer assertion (adapter.go) is the static
+// test; the compile-time var _ core.Indexer assertion (adapter.go) is the static
 // backstop that SupportsOffsetPaging is part of the contract, not an optional type-assert.
 func TestFreeleechAdapter_OffsetPaging(t *testing.T) {
 	t.Parallel()
@@ -152,7 +152,7 @@ func TestFreeleechAdapter_OffsetPaging(t *testing.T) {
 	if !paging.SupportsOffsetPaging() {
 		t.Error("paging driver: SupportsOffsetPaging() = false, want true (promoted off the driver)")
 	}
-	var _ torznabhttp.Indexer = paging
+	var _ core.Indexer = paging
 
 	nonPaging := newFreeleechAdapter(&fakeDriver{}, false)
 	if nonPaging.SupportsOffsetPaging() {
