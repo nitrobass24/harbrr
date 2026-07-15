@@ -81,15 +81,8 @@ type searchCacheKeyPayload struct {
 // cat= order or a duplicate cat cannot fork the cache; nil and empty []string
 // canonicalize identically.
 func buildSearchCacheKey(instanceID int64, q search.Query, paged bool) string {
-	return keyWithSchemaVersion(searchCacheSchemaVersion, instanceID, q, paged)
-}
-
-// keyWithSchemaVersion is the version-parameterized core of buildSearchCacheKey.
-// Production always calls it with searchCacheSchemaVersion; tests use it to prove
-// a version bump changes every key.
-func keyWithSchemaVersion(version int, instanceID int64, q search.Query, paged bool) string {
 	payload := searchCacheKeyPayload{
-		SchemaVersion: version,
+		SchemaVersion: searchCacheSchemaVersion,
 		InstanceID:    instanceID,
 		Keywords:      strings.ToLower(strings.TrimSpace(q.Keywords)),
 		Categories:    canonicalCategories(q.Categories),

@@ -82,7 +82,7 @@ func testCache(t *testing.T, ttl ttlConfig, refreshPct int) (*SearchCache, int64
 	var clk atomic.Pointer[time.Time]
 	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
 	clk.Store(&now)
-	sc := NewSearchCache(db, cacheTuning{enabled: true, ttl: ttl, refreshAt: refreshPct, cleanup: time.Hour}, func() time.Time { return *clk.Load() }, zerolog.Nop())
+	sc := newSearchCache(db, cacheTuning{enabled: true, ttl: ttl, refreshAt: refreshPct, cleanup: time.Hour}, func() time.Time { return *clk.Load() }, zerolog.Nop())
 	return sc, instID, &clk
 }
 

@@ -169,26 +169,22 @@ func buildOneRequest(def *loader.Definition, path loader.SearchPathBlock, query 
 }
 
 // requestParams builds the template.Params shared by every request-context
-// builder: config + query namespace + keywords + categories + today.
-// clockOrNow resolves deps.Clock exactly as Deps.Clock's doc promises: nil
-// falls back to time.Now so .Today is never silently empty.
+// builder: config + query namespace + keywords + categories + today. Clock
+// resolves deps.Clock exactly as Deps.Clock's doc promises: nil falls back to
+// time.Now so .Today is never silently empty.
 func requestParams(query Query, deps Deps) template.Params {
+	clock := deps.Clock
+	if clock == nil {
+		clock = time.Now
+	}
 	return template.Params{
 		Config:     deps.Config,
 		BaseURL:    deps.BaseURL,
 		Query:      query.queryMap(),
 		Keywords:   query.templateKeywords(),
 		Categories: query.Categories,
-		Clock:      clockOrNow(deps.Clock),
+		Clock:      clock,
 	}
-}
-
-// clockOrNow defaults a nil clock to time.Now.
-func clockOrNow(clock func() time.Time) func() time.Time {
-	if clock == nil {
-		return time.Now
-	}
-	return clock
 }
 
 // requestContext builds the template context for request rendering: config +
@@ -207,23 +203,18 @@ func requestPathContext(query Query, deps Deps) *template.Context {
 	ctx := requestContext(query, deps)
 	ctx.Config = encodeStringValues(ctx.Config)
 	ctx.Query = encodeStringValues(ctx.Query)
-	ctx.Keywords = pathEscape(ctx.Keywords)
+	ctx.Keywords = encode.PathEscape(ctx.Keywords)
 	ctx.Categories = encodeStringSlice(ctx.Categories)
 	return ctx
 }
 
-// pathEscape URL-encodes a value for inlining into a path/query, with spaces as
-// %20, matching Jackett's WebUtility.UrlEncode followed by +->%20 (see the
-// encode package for the exact .NET-compatible character set).
-func pathEscape(s string) string {
-	return encode.PathEscape(s)
-}
-
-// encodeStringValues returns a copy of m with each value path-escaped.
+// encodeStringValues returns a copy of m with each value path-escaped (URL-encoded
+// with spaces as %20, matching Jackett's WebUtility.UrlEncode followed by +->%20 —
+// see the encode package for the exact .NET-compatible character set).
 func encodeStringValues(m map[string]string) map[string]string {
 	out := make(map[string]string, len(m))
 	for k, v := range m {
-		out[k] = pathEscape(v)
+		out[k] = encode.PathEscape(v)
 	}
 	return out
 }
@@ -235,7 +226,7 @@ func encodeStringSlice(s []string) []string {
 	}
 	out := make([]string, len(s))
 	for i, v := range s {
-		out[i] = pathEscape(v)
+		out[i] = encode.PathEscape(v)
 	}
 	return out
 }
@@ -329,7 +320,7 @@ func assembleRequest(path loader.SearchPathBlock, absURL string, pairs []kv, hea
 		}, nil
 	}
 
-	full, err := appendQuery(absURL, pairs)
+	full, err := appendQuerySep(absURL, pairs, "&")
 	if err != nil {
 		return builtRequest{}, err
 	}
@@ -389,18 +380,14 @@ func encodeOrderedSep(pairs []kv, sep string) string {
 	return b.String()
 }
 
-// appendQuery appends pairs (in order) to rawURL, preserving the resolved path's
-// embedded query string VERBATIM. Jackett keeps the rendered path's query as-is
-// and appends inputs to it in definition order (CardigannIndexer.PerformQuery);
-// re-encoding via url.Values would re-sort both and break request parity.
-func appendQuery(rawURL string, pairs []kv) (string, error) {
-	return appendQuerySep(rawURL, pairs, "&")
-}
-
-// appendQuerySep is appendQuery with a caller-supplied pair separator (the
-// download.before queryseparator). The separator joins the appended pairs and, when
-// the path already carries a query, also joins the existing query to the new pairs,
-// matching Jackett's GetQueryString(separator) appended to the path.
+// appendQuerySep appends pairs (in order) to rawURL using sep as the pair separator
+// (the download.before queryseparator; the search path always passes "&"),
+// preserving the resolved path's embedded query string VERBATIM. Jackett keeps the
+// rendered path's query as-is and appends inputs to it in definition order
+// (CardigannIndexer.PerformQuery); re-encoding via url.Values would re-sort both and
+// break request parity. The separator joins the appended pairs and, when the path
+// already carries a query, also joins the existing query to the new pairs, matching
+// Jackett's GetQueryString(separator) appended to the path.
 func appendQuerySep(rawURL string, pairs []kv, sep string) (string, error) {
 	if sep == "" {
 		sep = "&"

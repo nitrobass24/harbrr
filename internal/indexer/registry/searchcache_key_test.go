@@ -1,6 +1,9 @@
 package registry
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"testing"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -224,16 +227,40 @@ func TestBuildSearchCacheKeySchemaVersionBump(t *testing.T) {
 	q := search.Query{Keywords: "x", Categories: []string{"1"}}
 	live := buildSearchCacheKey(5, q, false)
 
-	// Recompute the key with a bumped schema version; it must differ from the
-	// live key, proving a version bump invalidates every entry.
-	bumped := keyWithSchemaVersion(searchCacheSchemaVersion+1, 5, q, false)
+	// Recompute the SAME payload buildSearchCacheKey would hash, but with a bumped
+	// SchemaVersion. It must hash differently, proving SchemaVersion is part of the
+	// canonical payload — so bumping searchCacheSchemaVersion invalidates every entry.
+	bumped := hashPayloadForTest(t, searchCacheKeyPayload{
+		SchemaVersion: searchCacheSchemaVersion + 1,
+		InstanceID:    5,
+		Keywords:      q.Keywords,
+		Categories:    canonicalCategories(q.Categories),
+	})
 	if live == bumped {
 		t.Fatalf("schema version bump did not change the key")
 	}
 	// Sanity: recomputing at the live version reproduces the live key.
-	if same := keyWithSchemaVersion(searchCacheSchemaVersion, 5, q, false); same != live {
+	if same := hashPayloadForTest(t, searchCacheKeyPayload{
+		SchemaVersion: searchCacheSchemaVersion,
+		InstanceID:    5,
+		Keywords:      q.Keywords,
+		Categories:    canonicalCategories(q.Categories),
+	}); same != live {
 		t.Fatalf("recompute at live version mismatched: %q != %q", same, live)
 	}
+}
+
+// hashPayloadForTest reproduces buildSearchCacheKey's hex(sha256(json(payload))) step
+// for a caller-constructed payload, letting tests probe how a specific field (e.g.
+// SchemaVersion) affects the key without a version parameter on the production path.
+func hashPayloadForTest(t *testing.T, payload searchCacheKeyPayload) string {
+	t.Helper()
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
 }
 
 // TestBuildSearchCacheKeyPagingDistinguishesPages proves that, for a paging-capable

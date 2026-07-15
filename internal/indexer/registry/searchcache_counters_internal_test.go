@@ -31,7 +31,7 @@ func openCacheDB(t *testing.T, path string) *database.DB {
 func newCacheOn(db *database.DB) *SearchCache {
 	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
 	t := cacheTuning{enabled: true, ttl: ttlConfig{rss: time.Hour, keyword: time.Hour, thin: time.Hour}, cleanup: time.Hour}
-	return NewSearchCache(db, t, func() time.Time { return now }, zerolog.Nop())
+	return newSearchCache(db, t, func() time.Time { return now }, zerolog.Nop())
 }
 
 // insertInstanceSlug inserts a minimal enabled instance with the given (unique) slug,

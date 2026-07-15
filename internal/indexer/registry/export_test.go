@@ -18,7 +18,7 @@ func NewSearchCacheForTest(db dbinterface.Querier, clock func() time.Time) *Sear
 		ttl:       ttlConfig{rss: 5 * time.Minute, keyword: 30 * time.Minute, thin: 2 * time.Minute, thinThreshold: 5},
 		refreshAt: 0,
 	}
-	return NewSearchCache(db, t, clock, zerolog.Nop())
+	return newSearchCache(db, t, clock, zerolog.Nop())
 }
 
 // WrapForTest serves a fake indexer through the cache's cache-aside path (via the

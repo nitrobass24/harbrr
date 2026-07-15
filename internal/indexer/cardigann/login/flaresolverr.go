@@ -90,22 +90,17 @@ func normalizeFlareBaseURL(raw string) string {
 }
 
 // Solve asks FlareSolverr to clear targetURL and returns the resulting cookies +
-// User-Agent. A non-ok status, transport error, or bad response fails loud (the
+// User-Agent. It sends one FlareSolverr /v1 request.get with MaxTimeout filled in
+// from s.maxTimeout. (request.post is intentionally unused: FlareSolverr cannot
+// complete a JS challenge mid-POST — see solveAndRetryLoginPost, which GET-solves
+// then re-POSTs.) A non-ok status, transport error, or bad response fails loud (the
 // caller surfaces it as ErrSolverRequired -> an anti_bot health event). No secret
 // (the base URL's embedded auth, cookies) is echoed into an error.
 func (s *FlareSolverrSolver) Solve(ctx context.Context, targetURL string) (SolveResult, error) {
-	return s.solve(ctx, flareRequest{Cmd: "request.get", URL: targetURL})
-}
-
-// solve sends one FlareSolverr /v1 request.get and returns the solution's cookies +
-// User-Agent. fr.MaxTimeout is filled here so callers only specify the command and
-// URL. (request.post is intentionally unused: FlareSolverr cannot complete a JS
-// challenge mid-POST — see solveAndRetryLoginPost, which GET-solves then re-POSTs.)
-func (s *FlareSolverrSolver) solve(ctx context.Context, fr flareRequest) (SolveResult, error) {
 	if s.baseURL == "" {
 		return SolveResult{}, fmt.Errorf("%w: flaresolverr_url is not configured", ErrNoSolverConfigured)
 	}
-	fr.MaxTimeout = int(s.maxTimeout / time.Millisecond)
+	fr := flareRequest{Cmd: "request.get", URL: targetURL, MaxTimeout: int(s.maxTimeout / time.Millisecond)}
 	reqBody, err := json.Marshal(fr)
 	if err != nil {
 		return SolveResult{}, fmt.Errorf("flaresolverr: encode request: %w", err)

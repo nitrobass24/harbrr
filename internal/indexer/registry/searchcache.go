@@ -150,11 +150,13 @@ func (c *SearchCache) bumpInstanceEpoch(instanceID int64) {
 	c.epochMu.Unlock()
 }
 
-// NewSearchCache builds the cache layer. db is the shared store handle, t the
+// newSearchCache builds the cache layer. db is the shared store handle, t the
 // initial (config-seeded) tuning, clock the reference clock, and log a logger that
 // only ever sees cache keys and redacted errors. The tuning is held atomically so
-// SetConfig can swap it at runtime.
-func NewSearchCache(db dbinterface.Querier, t cacheTuning, clock func() time.Time, log zerolog.Logger) *SearchCache {
+// SetConfig can swap it at runtime. Unexported: t is the unexported cacheTuning, so
+// this is unconstructable outside the package anyway; NewSearchCacheFromConfig is
+// the exported entry point.
+func newSearchCache(db dbinterface.Querier, t cacheTuning, clock func() time.Time, log zerolog.Logger) *SearchCache {
 	if clock == nil {
 		clock = time.Now
 	}
@@ -177,10 +179,10 @@ func NewSearchCache(db dbinterface.Querier, t cacheTuning, clock func() time.Tim
 func (c *SearchCache) SetAnnounceSink(sink AnnounceSink) { c.announceSink = sink }
 
 // NewSearchCacheFromConfig builds a SearchCache from a CacheConfigView. It is
-// the exported entry point for cmd/harbrr; NewSearchCache stays internal so the
+// the exported entry point for cmd/harbrr; newSearchCache stays internal so the
 // ttlConfig tier struct does not leak across the package boundary.
 func NewSearchCacheFromConfig(db dbinterface.Querier, v CacheConfigView, clock func() time.Time, log zerolog.Logger) *SearchCache {
-	return NewSearchCache(db, v.tuning(), clock, log)
+	return newSearchCache(db, v.tuning(), clock, log)
 }
 
 // liveSearchFn is the live-fetch seam the cache drives on a miss or a refresh: the
