@@ -1209,6 +1209,11 @@ export interface components {
             baseUrl?: string;
             enabled: boolean;
             /**
+             * @description acquisition protocol, derived from the definition
+             * @enum {string}
+             */
+            protocol: "torrent" | "usenet";
+            /**
              * Format: int64
              * @description referenced global proxy resource, or null
              */

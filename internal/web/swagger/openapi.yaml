@@ -1924,11 +1924,12 @@ components:
         name: { type: string }
         baseUrl: { type: string }
         enabled: { type: boolean }
+        protocol: { type: string, enum: [torrent, usenet], description: "acquisition protocol, derived from the definition" }
         proxyId: { type: integer, format: int64, nullable: true, description: "referenced global proxy resource, or null" }
         solverId: { type: integer, format: int64, nullable: true, description: "referenced global solver resource, or null" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
-      required: [id, slug, definitionId, name, enabled, createdAt, updatedAt]
+      required: [id, slug, definitionId, name, enabled, protocol, createdAt, updatedAt]
     IndexerStats:
       type: object
       description: >

@@ -7,18 +7,9 @@ import type { components, operations, paths } from "@/types/api.gen"
 // derived references into the generated types, not hand-mirrored copies — never add a
 // type here whose shape is retyped by hand instead of indexed from `components`/
 // `operations`.
-// KNOWN SPEC/CODE MISMATCH (see PR description / issue tracking #147 follow-up): the
-// server always sends `protocol` on an indexer instance (internal/web/api/indexer_handlers.go
-// instanceResponse.Protocol, backed by the persisted internal/database/instances.go
-// column) and the Indexers table renders it (ProtocolPill), but openapi.yaml's Instance
-// schema omits the property — a spec-authoring gap, not a frontend error. openapi.yaml
-// is read-only from this package, so the field is patched on here instead of hand-mirroring
-// the whole schema; remove this intersection once the spec gains `protocol` and re-run
-// `pnpm generate:api`.
-type WithProtocol = { protocol: "torrent" | "usenet" }
-export type Instance = components["schemas"]["Instance"] & WithProtocol
+export type Instance = components["schemas"]["Instance"]
 export type Setting = components["schemas"]["Setting"]
-export type InstanceDetail = components["schemas"]["InstanceDetail"] & WithProtocol
+export type InstanceDetail = components["schemas"]["InstanceDetail"]
 export type DefinitionSummary = components["schemas"]["DefinitionSummary"]
 export type SettingField = components["schemas"]["SettingField"]
 export type DefinitionDetail = components["schemas"]["DefinitionDetail"]
@@ -238,25 +229,19 @@ export class ApiClient {
 
   // --- indexers ---
 
-  // These three are the ONLY methods whose return is asserted past what the generated
-  // types say: the response is narrowed from the spec's Instance to Instance-with-
-  // `protocol` (the field the server always sends but openapi.yaml omits — see the
-  // WithProtocol note above). The assertion sits on the RESULT, not on unwrap's type
-  // parameter, so the endpoint→data inference stays intact and the cast disappears
-  // with the WithProtocol patch once the spec gains `protocol`.
   listIndexers(): Promise<Instance[]> {
-    return this.unwrap(this.http.GET("/api/indexers"), "/api/indexers") as Promise<Instance[]>
+    return this.unwrap(this.http.GET("/api/indexers"), "/api/indexers")
   }
 
   addIndexer(body: AddIndexer): Promise<Instance> {
-    return this.unwrap(this.http.POST("/api/indexers", { body }), "/api/indexers") as Promise<Instance>
+    return this.unwrap(this.http.POST("/api/indexers", { body }), "/api/indexers")
   }
 
   getIndexer(slug: string): Promise<InstanceDetail> {
     return this.unwrap(
       this.http.GET("/api/indexers/{slug}", { params: { path: { slug } } }),
       "/api/indexers/{slug}"
-    ) as Promise<InstanceDetail>
+    )
   }
 
   // The server answers 204 (no body) on update, not the updated Instance — the old
