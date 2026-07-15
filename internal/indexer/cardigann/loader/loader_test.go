@@ -17,6 +17,28 @@ func readFixture(t *testing.T, name string) []byte {
 	return data
 }
 
+// fieldBlock looks up a FieldsBlock entry by key via Ordered, mirroring the
+// deleted FieldsBlock.Get for test call sites.
+func fieldBlock(fb FieldsBlock, key string) (SelectorBlock, bool) {
+	for _, e := range fb.Ordered() {
+		if e.Key == key {
+			return e.Block, true
+		}
+	}
+	return SelectorBlock{}, false
+}
+
+// categoryName looks up a CategoriesBlock entry by tracker id via Ordered,
+// mirroring the deleted CategoriesBlock.Get for test call sites.
+func categoryName(cb CategoriesBlock, trackerID string) (string, bool) {
+	for _, e := range cb.Ordered() {
+		if e.TrackerID == trackerID {
+			return e.Name, true
+		}
+	}
+	return "", false
+}
+
 func TestParseValid(t *testing.T) {
 	t.Parallel()
 
@@ -69,7 +91,7 @@ func TestParseValid(t *testing.T) {
 			name:    "filter args scalar and array normalized to []string",
 			fixture: "html_minimal.yml",
 			check: func(t *testing.T, def *Definition) {
-				catBlock, _ := def.Search.Fields.Get("category")
+				catBlock, _ := fieldBlock(def.Search.Fields, "category")
 				catFilters := catBlock.Filters
 				if len(catFilters) != 1 || catFilters[0].Name != "querystring" {
 					t.Fatalf("category filters = %+v", catFilters)
@@ -77,7 +99,7 @@ func TestParseValid(t *testing.T) {
 				if got := catFilters[0].Args; len(got) != 1 || got[0] != "cat" {
 					t.Errorf("scalar filter args = %v, want [cat]", got)
 				}
-				seedBlock, _ := def.Search.Fields.Get("seeders")
+				seedBlock, _ := fieldBlock(def.Search.Fields, "seeders")
 				seedFilters := seedBlock.Filters
 				if len(seedFilters) != 1 {
 					t.Fatalf("seeders filters = %+v", seedFilters)
@@ -91,7 +113,7 @@ func TestParseValid(t *testing.T) {
 			name:    "json api categories object + paths + selectorblock unions",
 			fixture: "json_minimal.yml",
 			check: func(t *testing.T, def *Definition) {
-				if name, _ := def.Caps.Categories.Get("XXX"); name != "XXX" {
+				if name, _ := categoryName(def.Caps.Categories, "XXX"); name != "XXX" {
 					t.Errorf("categories[XXX] = %q, want XXX", name)
 				}
 				if len(def.Search.Paths) != 1 || def.Search.Paths[0].Response == nil {
@@ -104,11 +126,11 @@ func TestParseValid(t *testing.T) {
 				if len(cats) != 2 || cats[0].String() != "1" || cats[1].String() != "x2" {
 					t.Errorf("path categories = %v, want [1 x2]", cats)
 				}
-				cd, _ := def.Search.Fields.Get("categorydesc")
+				cd, _ := fieldBlock(def.Search.Fields, "categorydesc")
 				if cd.Text == nil || cd.Text.String() != "Movies" {
 					t.Errorf("categorydesc text = %v, want Movies", cd.Text)
 				}
-				seeders, _ := def.Search.Fields.Get("seeders")
+				seeders, _ := fieldBlock(def.Search.Fields, "seeders")
 				if seeders.Default == nil || seeders.Default.String() != "0" {
 					t.Errorf("seeders default = %v, want 0 (number normalized)", seeders.Default)
 				}

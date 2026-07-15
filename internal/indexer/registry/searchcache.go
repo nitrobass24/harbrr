@@ -132,17 +132,6 @@ func (c *SearchCache) counters(instanceID int64) *instanceCounters {
 	return ic
 }
 
-// instanceSnapshot reads instanceID's current hit/miss/suppressed counts (zeroes for
-// an instance with no recorded traffic).
-func (c *SearchCache) instanceSnapshot(instanceID int64) (hits, misses, suppressed int64) {
-	v, ok := c.instCounters.Load(instanceID)
-	if !ok {
-		return 0, 0, 0
-	}
-	ic, _ := v.(*instanceCounters)
-	return ic.hits.Load(), ic.misses.Load(), ic.suppressed.Load()
-}
-
 // instanceEpoch reads instanceID's current invalidation generation (0 for an instance
 // never invalidated). Snapshotted at engine-build time and re-read before every store
 // to reject write-backs from a superseded config generation (U8R-F4).

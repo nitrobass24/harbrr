@@ -113,34 +113,6 @@ func New(opts ...Option) *Normalizer {
 	return n
 }
 
-// handledFields is the set of STANDARD Cardigann base field names the Release
-// model reads. It is the parity contract for the corpus field-coverage census:
-// every non-intermediate field name a definition uses must appear here, or a
-// corpus field would be silently dropped. Keep it in sync with Release.
-var handledFields = map[string]struct{}{
-	"title": {}, "description": {}, "details": {}, "comments": {},
-	"download": {}, "magnet": {}, "infohash": {},
-	"size": {}, "category": {}, "categorydesc": {},
-	"seeders": {}, "leechers": {}, "files": {}, "grabs": {},
-	"date": {}, "downloadvolumefactor": {}, "uploadvolumefactor": {},
-	"minimumratio": {}, "minimumseedtime": {},
-	"imdb": {}, "imdbid": {}, "tmdbid": {}, "tvdbid": {}, "tvmazeid": {},
-	"traktid": {}, "doubanid": {}, "rageid": {},
-	"genre": {}, "year": {}, "poster": {},
-	"author": {}, "booktitle": {}, "publisher": {},
-	"album": {}, "artist": {}, "label": {}, "track": {},
-}
-
-// HandledFields returns the set of STANDARD base field names the Release model
-// handles. Exposed for the corpus field-coverage census.
-func HandledFields() map[string]struct{} {
-	out := make(map[string]struct{}, len(handledFields))
-	for k := range handledFields {
-		out[k] = struct{}{}
-	}
-	return out
-}
-
 // Default volume factor when a definition does not extract the field. Jackett's
 // downstream consumers treat an unset factor as 1.0 (full count); harbrr makes
 // that explicit so a real freeleech 0.0 is distinguishable from "absent".

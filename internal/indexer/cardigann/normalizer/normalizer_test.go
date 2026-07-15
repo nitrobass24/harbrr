@@ -594,15 +594,31 @@ func TestCorpusFieldCensus(t *testing.T) {
 	}
 	t.Logf("corpus: %d definitions loaded, %d skipped", len(defs), len(skipped))
 
-	handled := HandledFields()
+	// handled is the set of STANDARD Cardigann base field names the Release
+	// model reads. It is the parity contract for this census: every
+	// non-intermediate field name a definition uses must appear here, or a
+	// corpus field would be silently dropped. Keep it in sync with Release.
+	handled := map[string]struct{}{
+		"title": {}, "description": {}, "details": {}, "comments": {},
+		"download": {}, "magnet": {}, "infohash": {},
+		"size": {}, "category": {}, "categorydesc": {},
+		"seeders": {}, "leechers": {}, "files": {}, "grabs": {},
+		"date": {}, "downloadvolumefactor": {}, "uploadvolumefactor": {},
+		"minimumratio": {}, "minimumseedtime": {},
+		"imdb": {}, "imdbid": {}, "tmdbid": {}, "tvdbid": {}, "tvmazeid": {},
+		"traktid": {}, "doubanid": {}, "rageid": {},
+		"genre": {}, "year": {}, "poster": {},
+		"author": {}, "booktitle": {}, "publisher": {},
+		"album": {}, "artist": {}, "label": {}, "track": {},
+	}
 	counts := map[string]int{}
 	var unmodeled []string
 	hasDownloadOrMagnetOrHash := false
 	hasCategorySource := false
 
 	for _, d := range defs {
-		for _, key := range d.Search.Fields.Names() {
-			base := standardFieldBase(key)
+		for _, entry := range d.Search.Fields.Ordered() {
+			base := standardFieldBase(entry.Key)
 			if base == "" {
 				continue // intermediate "_"-prefixed key
 			}

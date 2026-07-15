@@ -81,25 +81,8 @@ func TestTableMatchesSchemaEnum(t *testing.T) {
 	}
 }
 
-func TestChildrenAndParent(t *testing.T) {
+func TestParentAndCustom(t *testing.T) {
 	t.Parallel()
-
-	kids := Children("Other")
-	wantKids := []string{"Other/Misc", "Other/Hashed"}
-	if len(kids) != len(wantKids) {
-		t.Fatalf("Children(Other) len = %d, want %d", len(kids), len(wantKids))
-	}
-	for i, k := range kids {
-		if k.Name != wantKids[i] {
-			t.Errorf("Children(Other)[%d] = %q, want %q", i, k.Name, wantKids[i])
-		}
-	}
-	if Children("Movies/HD") != nil {
-		t.Error("Children of a non-parent should be nil")
-	}
-	if Children("Nope") != nil {
-		t.Error("Children of unknown name should be nil")
-	}
 
 	hd, _ := GetByName("Movies/HD")
 	if hd.IsParent() {

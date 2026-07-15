@@ -40,7 +40,7 @@ func TestBreakerShortCircuitsGenericError(t *testing.T) {
 	if got := inner.callCount(); got != 1 {
 		t.Fatalf("inner called %d times, want 1 (second short-circuited)", got)
 	}
-	if _, _, sup := sc.instanceSnapshot(instID); sup != 1 {
+	if sup := sc.counters(instID).suppressed.Load(); sup != 1 {
 		t.Fatalf("breaker suppressed = %d, want 1", sup)
 	}
 
@@ -336,12 +336,14 @@ func TestPerInstanceCountersIsolate(t *testing.T) {
 	if _, err := idx.Search(ctx, q); err != nil { // hit
 		t.Fatal(err)
 	}
-	hits, misses, sup := sc.instanceSnapshot(instID)
+	ic := sc.counters(instID)
+	hits, misses, sup := ic.hits.Load(), ic.misses.Load(), ic.suppressed.Load()
 	if hits != 1 || misses != 1 || sup != 0 {
 		t.Fatalf("instance counters = %d/%d/%d, want 1/1/0", hits, misses, sup)
 	}
 	// An unseen instance reports zeroes.
-	if h, m, s := sc.instanceSnapshot(instID + 999); h != 0 || m != 0 || s != 0 {
+	uic := sc.counters(instID + 999)
+	if h, m, s := uic.hits.Load(), uic.misses.Load(), uic.suppressed.Load(); h != 0 || m != 0 || s != 0 {
 		t.Fatalf("unseen instance = %d/%d/%d, want zeroes", h, m, s)
 	}
 }

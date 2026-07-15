@@ -151,22 +151,6 @@ func (c Category) Parent() string {
 	return c.Name
 }
 
-// Children returns the subcategories of a parent family in id order. The parent
-// itself is not included. An unknown or non-parent name returns nil.
-func Children(parentName string) []Category {
-	if _, ok := catByName[parentName]; !ok {
-		return nil
-	}
-	prefix := parentName + "/"
-	var kids []Category
-	for _, c := range standardCategories {
-		if strings.HasPrefix(c.Name, prefix) {
-			kids = append(kids, c)
-		}
-	}
-	return kids
-}
-
 // StandardCategories returns a copy of the full canonical table in id order.
 func StandardCategories() []Category {
 	out := make([]Category, len(standardCategories))

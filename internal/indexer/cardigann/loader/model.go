@@ -137,15 +137,6 @@ func (cb CategoriesBlock) Ordered() []CategoryEntry {
 	return out
 }
 
-// Get returns the category name for a tracker id and whether it is present.
-func (cb CategoriesBlock) Get(trackerID string) (string, bool) {
-	name, ok := cb.names[trackerID]
-	return name, ok
-}
-
-// Len reports the number of categories.
-func (cb CategoriesBlock) Len() int { return len(cb.keys) }
-
 // CategoryMapping mirrors CategoryMapping. The id is a scalar union
 // (integer|string) normalized to its string form.
 type CategoryMapping struct {
@@ -451,8 +442,8 @@ type FieldEntry struct {
 // earlier field via {{ .Result.<name> }}. A plain Go map randomizes iteration
 // and would break that contract, so FieldsBlock preserves the YAML key order via
 // a custom UnmarshalYAML: keys records the order, blocks the values. Read access
-// goes through Ordered/Get/Names; schema validation still runs on the generic
-// decode, unaffected by this typed shape.
+// goes through Ordered; schema validation still runs on the generic decode,
+// unaffected by this typed shape.
 type FieldsBlock struct {
 	keys   []string
 	blocks map[string]SelectorBlock
@@ -491,22 +482,6 @@ func (fb FieldsBlock) Ordered() []FieldEntry {
 	}
 	return out
 }
-
-// Get returns the SelectorBlock for a field key and whether it is present.
-func (fb FieldsBlock) Get(key string) (SelectorBlock, bool) {
-	b, ok := fb.blocks[key]
-	return b, ok
-}
-
-// Names returns the field keys in definition (YAML) order.
-func (fb FieldsBlock) Names() []string {
-	out := make([]string, len(fb.keys))
-	copy(out, fb.keys)
-	return out
-}
-
-// Len reports the number of fields.
-func (fb FieldsBlock) Len() int { return len(fb.keys) }
 
 // InputEntry is one (key, value) search input in definition order.
 type InputEntry struct {
@@ -571,9 +546,6 @@ func (ib InputsBlock) Ordered() []InputEntry {
 	}
 	return out
 }
-
-// Len reports the number of inputs.
-func (ib InputsBlock) Len() int { return len(ib.keys) }
 
 // DownloadBlock mirrors DownloadBlock.
 type DownloadBlock struct {
