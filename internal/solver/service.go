@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/autobrr/harbrr/internal/connresource"
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
 	"github.com/autobrr/harbrr/internal/domain"
@@ -23,16 +24,23 @@ import (
 var ErrInvalid = errors.New("solver: invalid input")
 
 // Service persists solver resources, encrypting the endpoint URL at rest.
+// Create/Update of the row and its encrypted secret are sequenced by
+// connresource.Lifecycle (Delete stays a bare repo delete — see Delete's doc).
 type Service struct {
 	db      dbinterface.Querier
 	repo    database.Solvers
 	keyring *secrets.Keyring
 	clock   func() time.Time
+	life    *connresource.Lifecycle[domain.Solver]
 }
 
-// NewService wires the solver service.
+// NewService wires the solver service. clock is injectable for deterministic
+// tests (assigning to the returned Service's clock field also retunes its
+// Lifecycle, which reads clock through an indirection).
 func NewService(db dbinterface.Querier, keyring *secrets.Keyring) *Service {
-	return &Service{db: db, keyring: keyring, clock: time.Now}
+	s := &Service{db: db, keyring: keyring, clock: time.Now}
+	s.life = connresource.New[domain.Solver](db, keyring, func() time.Time { return s.clock() })
+	return s
 }
 
 // List returns all solvers (URLs stay encrypted; the handler redacts).
@@ -71,33 +79,24 @@ func (s *Service) Create(ctx context.Context, p CreateParams) (domain.Solver, er
 	if err := validate(p.Name, p.Type, p.URL, &p.MaxTimeout); err != nil {
 		return domain.Solver{}, err
 	}
-
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return domain.Solver{}, fmt.Errorf("solver: begin tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	now := s.clock()
-	row := domain.Solver{Name: p.Name, Type: p.Type, MaxTimeout: p.MaxTimeout, CreatedAt: now, UpdatedAt: now}
-	id, err := s.repo.InsertSolver(ctx, tx, row)
-	if err != nil {
-		return domain.Solver{}, fmt.Errorf("solver: insert: %w", err)
-	}
-	row.ID = id
-
-	enc, err := s.keyring.Encrypt(id, domain.SolverSecretURL, p.URL)
-	if err != nil {
-		return domain.Solver{}, fmt.Errorf("solver: encrypt url: %w", err)
-	}
-	if err := s.repo.SetSolverSecret(ctx, tx, id, enc, s.keyring.KeyID()); err != nil {
-		return domain.Solver{}, fmt.Errorf("solver: set secret: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return domain.Solver{}, fmt.Errorf("solver: commit: %w", err)
-	}
-	row.URLEncrypted, row.KeyID = enc, s.keyring.KeyID()
-	return row, nil
+	return s.life.Create(ctx, connresource.CreateSpec[domain.Solver]{
+		Build: func(now time.Time, _ int64) domain.Solver {
+			return domain.Solver{Name: p.Name, Type: p.Type, MaxTimeout: p.MaxTimeout, CreatedAt: now, UpdatedAt: now}
+		},
+		Insert: func(ctx context.Context, q dbinterface.Execer, row domain.Solver) (int64, error) {
+			return s.repo.InsertSolver(ctx, q, row)
+		},
+		Secrets: func(_ domain.Solver, _ string) []connresource.Secret {
+			return []connresource.Secret{{Discriminator: domain.SolverSecretURL, Plaintext: p.URL}}
+		},
+		SetSecrets: func(ctx context.Context, q dbinterface.Execer, id int64, encrypted []string, keyID string) error {
+			return s.repo.SetSolverSecret(ctx, q, id, encrypted[0], keyID)
+		},
+		Finalize: func(row domain.Solver, id int64, encrypted []string, keyID string) domain.Solver {
+			row.ID, row.URLEncrypted, row.KeyID = id, encrypted[0], keyID
+			return row
+		},
+	})
 }
 
 // UpdateParams patches a solver; nil fields are left unchanged.
@@ -108,54 +107,45 @@ type UpdateParams struct {
 	MaxTimeout *int
 }
 
-// Update applies a patch, re-encrypting the URL when rotated.
+// Update applies a patch, re-encrypting the URL when rotated. The read and the
+// full-row write run in one transaction so two overlapping PATCHes can't lose each
+// other's write.
 func (s *Service) Update(ctx context.Context, id int64, p UpdateParams) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("solver: begin tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	row, err := s.repo.GetSolver(ctx, tx, id)
-	if err != nil {
-		return fmt.Errorf("solver: get: %w", err)
-	}
-	if p.Name != nil {
-		row.Name = strings.TrimSpace(*p.Name)
-	}
-	if p.Type != nil {
-		row.Type = strings.TrimSpace(*p.Type)
-	}
-	if p.MaxTimeout != nil {
-		row.MaxTimeout = *p.MaxTimeout
-	}
-	newURL := ""
-	if p.URL != nil {
-		newURL = strings.TrimSpace(*p.URL)
-	}
-	validateURL := "unchanged://ok"
-	if p.URL != nil {
-		validateURL = newURL
-	}
-	if err := validate(row.Name, row.Type, validateURL, p.MaxTimeout); err != nil {
-		return err
-	}
-
-	row.UpdatedAt = s.clock()
-	if p.URL != nil {
-		enc, err := s.keyring.Encrypt(id, domain.SolverSecretURL, newURL)
-		if err != nil {
-			return fmt.Errorf("solver: encrypt url: %w", err)
-		}
-		row.URLEncrypted, row.KeyID = enc, s.keyring.KeyID()
-	}
-	if err := s.repo.UpdateSolver(ctx, tx, row); err != nil {
-		return fmt.Errorf("solver: update: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("solver: commit: %w", err)
-	}
-	return nil
+	return s.life.Update(ctx, id, connresource.UpdateSpec[domain.Solver]{
+		Get: func(ctx context.Context, q dbinterface.Execer, id int64) (domain.Solver, error) {
+			return s.repo.GetSolver(ctx, q, id)
+		},
+		Patch: func(row *domain.Solver) error {
+			if p.Name != nil {
+				row.Name = strings.TrimSpace(*p.Name)
+			}
+			if p.Type != nil {
+				row.Type = strings.TrimSpace(*p.Type)
+			}
+			if p.MaxTimeout != nil {
+				row.MaxTimeout = *p.MaxTimeout
+			}
+			// The URL isn't changing here (Rotate handles it), so validate is passed a
+			// placeholder that always satisfies its own well-formedness checks — this
+			// call exists to validate name/type/maxTimeout only.
+			return validate(row.Name, row.Type, "unchanged://ok", p.MaxTimeout)
+		},
+		Rotate: func(row *domain.Solver) (connresource.Secret, bool, error) {
+			if p.URL == nil {
+				return connresource.Secret{}, false, nil
+			}
+			newURL := strings.TrimSpace(*p.URL)
+			if err := validate(row.Name, row.Type, newURL, p.MaxTimeout); err != nil {
+				return connresource.Secret{}, false, err
+			}
+			return connresource.Secret{Discriminator: domain.SolverSecretURL, Plaintext: newURL}, true, nil
+		},
+		Apply: func(row *domain.Solver, encrypted, keyID string) { row.URLEncrypted, row.KeyID = encrypted, keyID },
+		Touch: func(row *domain.Solver, now time.Time) { row.UpdatedAt = now },
+		Write: func(ctx context.Context, q dbinterface.Execer, row domain.Solver) error {
+			return s.repo.UpdateSolver(ctx, q, row)
+		},
+	})
 }
 
 // Delete removes a solver; referencing instances' solver_id is nulled by the FK.

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/autobrr/harbrr/internal/connresource"
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
 	"github.com/autobrr/harbrr/internal/domain"
@@ -30,17 +31,24 @@ var validTypes = map[string]struct{}{
 	domain.ProxyTypeSOCKS5H: {},
 }
 
-// Service persists proxy resources, encrypting the URL at rest.
+// Service persists proxy resources, encrypting the URL at rest. Create/Update of
+// the row and its encrypted secret are sequenced by connresource.Lifecycle (Delete
+// stays a bare repo delete — see Delete's doc).
 type Service struct {
 	db      dbinterface.Querier
 	repo    database.Proxies
 	keyring *secrets.Keyring
 	clock   func() time.Time
+	life    *connresource.Lifecycle[domain.Proxy]
 }
 
-// NewService wires the proxy service.
+// NewService wires the proxy service. clock is injectable for deterministic tests
+// (assigning to the returned Service's clock field also retunes its Lifecycle,
+// which reads clock through an indirection).
 func NewService(db dbinterface.Querier, keyring *secrets.Keyring) *Service {
-	return &Service{db: db, keyring: keyring, clock: time.Now}
+	s := &Service{db: db, keyring: keyring, clock: time.Now}
+	s.life = connresource.New[domain.Proxy](db, keyring, func() time.Time { return s.clock() })
+	return s
 }
 
 // List returns all proxies (URLs stay encrypted; the handler redacts).
@@ -75,33 +83,24 @@ func (s *Service) Create(ctx context.Context, p CreateParams) (domain.Proxy, err
 	if err := validate(p.Name, p.Type, &p.URL); err != nil {
 		return domain.Proxy{}, err
 	}
-
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return domain.Proxy{}, fmt.Errorf("proxy: begin tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	now := s.clock()
-	row := domain.Proxy{Name: p.Name, Type: p.Type, CreatedAt: now, UpdatedAt: now}
-	id, err := s.repo.InsertProxy(ctx, tx, row)
-	if err != nil {
-		return domain.Proxy{}, fmt.Errorf("proxy: insert: %w", err)
-	}
-	row.ID = id
-
-	enc, err := s.keyring.Encrypt(id, domain.ProxySecretURL, p.URL)
-	if err != nil {
-		return domain.Proxy{}, fmt.Errorf("proxy: encrypt url: %w", err)
-	}
-	if err := s.repo.SetProxySecret(ctx, tx, id, enc, s.keyring.KeyID()); err != nil {
-		return domain.Proxy{}, fmt.Errorf("proxy: set secret: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return domain.Proxy{}, fmt.Errorf("proxy: commit: %w", err)
-	}
-	row.URLEncrypted, row.KeyID = enc, s.keyring.KeyID()
-	return row, nil
+	return s.life.Create(ctx, connresource.CreateSpec[domain.Proxy]{
+		Build: func(now time.Time, _ int64) domain.Proxy {
+			return domain.Proxy{Name: p.Name, Type: p.Type, CreatedAt: now, UpdatedAt: now}
+		},
+		Insert: func(ctx context.Context, q dbinterface.Execer, row domain.Proxy) (int64, error) {
+			return s.repo.InsertProxy(ctx, q, row)
+		},
+		Secrets: func(_ domain.Proxy, _ string) []connresource.Secret {
+			return []connresource.Secret{{Discriminator: domain.ProxySecretURL, Plaintext: p.URL}}
+		},
+		SetSecrets: func(ctx context.Context, q dbinterface.Execer, id int64, encrypted []string, keyID string) error {
+			return s.repo.SetProxySecret(ctx, q, id, encrypted[0], keyID)
+		},
+		Finalize: func(row domain.Proxy, id int64, encrypted []string, keyID string) domain.Proxy {
+			row.ID, row.URLEncrypted, row.KeyID = id, encrypted[0], keyID
+			return row
+		},
+	})
 }
 
 // UpdateParams patches a proxy; nil fields are left unchanged. URL rotates the
@@ -112,62 +111,56 @@ type UpdateParams struct {
 	URL  *string
 }
 
-// Update applies a patch, re-encrypting the URL when rotated.
+// Update applies a patch, re-encrypting the URL when rotated. The read and the
+// full-row write run in one transaction so two overlapping PATCHes can't lose each
+// other's write.
 func (s *Service) Update(ctx context.Context, id int64, p UpdateParams) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("proxy: begin tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	row, err := s.repo.GetProxy(ctx, tx, id)
-	if err != nil {
-		return fmt.Errorf("proxy: get: %w", err)
-	}
-	if p.Name != nil {
-		row.Name = strings.TrimSpace(*p.Name)
-	}
-	if p.Type != nil {
-		row.Type = strings.TrimSpace(*p.Type)
-	}
-	newURL := ""
-	var urlToValidate *string
-	if p.URL != nil {
-		newURL = strings.TrimSpace(*p.URL)
-		urlToValidate = &newURL
-	}
-	if err := validate(row.Name, row.Type, urlToValidate); err != nil {
-		return err
-	}
-	// A type-only change (URL patch omitted) still has to be family-compatible with
-	// the STORED url, which validate skipped above. Decrypt it and re-check, so a
-	// type flip that would fail at search (e.g. http -> socks5 over an http:// url)
-	// is rejected at save instead. The error never includes the decrypted value.
-	if p.Type != nil && p.URL == nil {
-		stored, err := s.keyring.Decrypt(id, domain.ProxySecretURL, row.URLEncrypted)
-		if err != nil {
-			return fmt.Errorf("proxy: decrypt url: %w", err)
-		}
-		if err := validateURL(row.Type, stored); err != nil {
-			return err
-		}
-	}
-
-	row.UpdatedAt = s.clock()
-	if p.URL != nil {
-		enc, err := s.keyring.Encrypt(id, domain.ProxySecretURL, newURL)
-		if err != nil {
-			return fmt.Errorf("proxy: encrypt url: %w", err)
-		}
-		row.URLEncrypted, row.KeyID = enc, s.keyring.KeyID()
-	}
-	if err := s.repo.UpdateProxy(ctx, tx, row); err != nil {
-		return fmt.Errorf("proxy: update: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("proxy: commit: %w", err)
-	}
-	return nil
+	return s.life.Update(ctx, id, connresource.UpdateSpec[domain.Proxy]{
+		Get: func(ctx context.Context, q dbinterface.Execer, id int64) (domain.Proxy, error) {
+			return s.repo.GetProxy(ctx, q, id)
+		},
+		Patch: func(row *domain.Proxy) error {
+			if p.Name != nil {
+				row.Name = strings.TrimSpace(*p.Name)
+			}
+			if p.Type != nil {
+				row.Type = strings.TrimSpace(*p.Type)
+			}
+			if err := validate(row.Name, row.Type, nil); err != nil {
+				return err
+			}
+			// A type-only change (URL patch omitted) still has to be family-compatible
+			// with the STORED url, which validate skips when passed a nil rawURL.
+			// Decrypt it and re-check, so a type flip that would fail at search (e.g.
+			// http -> socks5 over an http:// url) is rejected at save instead. The
+			// error never includes the decrypted value.
+			if p.Type != nil && p.URL == nil {
+				stored, err := s.keyring.Decrypt(row.ID, domain.ProxySecretURL, row.URLEncrypted)
+				if err != nil {
+					return fmt.Errorf("proxy: decrypt url: %w", err)
+				}
+				if err := validateURL(row.Type, stored); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+		Rotate: func(row *domain.Proxy) (connresource.Secret, bool, error) {
+			if p.URL == nil {
+				return connresource.Secret{}, false, nil
+			}
+			newURL := strings.TrimSpace(*p.URL)
+			if err := validateURL(row.Type, newURL); err != nil {
+				return connresource.Secret{}, false, err
+			}
+			return connresource.Secret{Discriminator: domain.ProxySecretURL, Plaintext: newURL}, true, nil
+		},
+		Apply: func(row *domain.Proxy, encrypted, keyID string) { row.URLEncrypted, row.KeyID = encrypted, keyID },
+		Touch: func(row *domain.Proxy, now time.Time) { row.UpdatedAt = now },
+		Write: func(ctx context.Context, q dbinterface.Execer, row domain.Proxy) error {
+			return s.repo.UpdateProxy(ctx, q, row)
+		},
+	})
 }
 
 // Delete removes a proxy; referencing instances' proxy_id is nulled by the FK.

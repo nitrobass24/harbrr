@@ -72,9 +72,15 @@ _Avoid_: bootstrap, wiring (as a package name), main package logic
 ### Connections
 
 **Connection resource**:
-One of harbrr's encrypted-secret connection types (an app-sync connection, an announce
-connection, a notification target): a row plus one or more secrets sealed at rest under
-the row's own id, whose create/update/delete lifecycle — including an optional minted-key
-mint and fail-closed revoke — is sequenced by `internal/connresource.Lifecycle[T]`.
+One of harbrr's three encrypted-secret connection types (an app-sync connection, an
+announce connection, a notification target): a row plus one or more secrets sealed at
+rest under the row's own id, whose create/update/delete lifecycle — including an
+optional minted-key mint and fail-closed revoke — is sequenced by
+`internal/connresource.Lifecycle[T]`. `Lifecycle[T]` also sequences Create and Update
+(not Delete) for two encrypted-secret **infra resources** — proxy and solver — but those
+are not connections: each is a transport or anti-bot endpoint an indexer instance points
+at, not a harbrr-to-remote-service link, and neither mints a key. "Connection resource"
+stays the term for appsync/announce/notify specifically; **encrypted-secret resource** is
+the broader umbrella covering all five.
 _Avoid_: entity (too generic), integration (a different word already used for the app-sync
 targets themselves)

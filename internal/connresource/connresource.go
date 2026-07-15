@@ -1,9 +1,19 @@
-// Package connresource extracts the lifecycle shared by harbrr's three
-// encrypted-secret connection resources — appsync connections, announce
-// connections, notification targets — into one generic module: an optional key
-// mint with fail-closed orphan revoke plus insert-then-seal on create, a
-// single-tx read/hook/patch/rotate/write on update, and a get/delete/fail-closed
-// revoke on delete.
+// Package connresource extracts the lifecycle shared by harbrr's five
+// encrypted-secret resources into one generic module: an optional key mint with
+// fail-closed orphan revoke plus insert-then-seal on create, a single-tx
+// read/hook/patch/rotate/write on update, and a get/delete/fail-closed revoke on
+// delete.
+//
+// Three of the five are connection resources — appsync connections, announce
+// connections, notification targets — each a link from harbrr to a remote
+// service, two of which mint a dedicated harbrr key the remote side calls back
+// with. The other two, proxy and solver, are referenced infra resources: a
+// transport or anti-bot endpoint an indexer instance points at, not a
+// harbrr-to-remote-service connection, and they mint nothing. Proxy and solver
+// adopt Lifecycle for Create and Update only — their Delete stays a bare repo
+// delete, since Delete seals no secret (so it carries none of the consolidated
+// invariant) and Lifecycle.Delete's Get-then-Delete would change its not-found
+// semantics for no benefit.
 //
 // This is composition, not an object-oriented port. Lifecycle[T] takes plain
 // data and first-class functions (CreateSpec/UpdateSpec/DeleteSpec) — the same
