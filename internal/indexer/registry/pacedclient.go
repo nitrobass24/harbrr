@@ -380,7 +380,7 @@ func redactDoErr(err error) error {
 	var uerr *url.Error
 	if errors.As(err, &uerr) {
 		hostOnly := fmt.Errorf("%s %s: %w", uerr.Op, apphttp.SchemeHost(uerr.URL), uerr.Err)
-		return fmt.Errorf("%w", apphttp.MarkHostRedacted(hostOnly))
+		return apphttp.MarkHostRedacted(hostOnly) //nolint:wrapcheck // hostOnly is already the fully-shaped, host-redacted transport error; the marker is a transparent Error()/Unwrap() passthrough, and re-wrapping would only add noise
 	}
 	return fmt.Errorf("request failed: %w", err)
 }

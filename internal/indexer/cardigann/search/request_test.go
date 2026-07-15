@@ -1,6 +1,7 @@
 package search
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	stdhttp "net/http"
@@ -535,33 +536,37 @@ func TestDoRequest_HostRedactedNotDoublePrinted(t *testing.T) {
 	doer := registryLikeErrDoer{host: host, cause: cause}
 	br := builtRequest{method: stdhttp.MethodGet, url: host + "/browse?q=x"}
 
-	t.Run("doRequest", func(t *testing.T) {
-		t.Parallel()
-		_, err := doRequest(t.Context(), doer, br, nil)
-		if err == nil {
-			t.Fatal("doRequest returned nil error, want failure")
-		}
-		if n := strings.Count(err.Error(), host); n != 1 {
-			t.Errorf("doRequest error mentions host %d times, want exactly 1: %q", n, err.Error())
-		}
-		if !errors.Is(err, cause) {
-			t.Errorf("doRequest error lost the underlying cause via errors.Is: %q", err.Error())
-		}
-	})
-
-	t.Run("doSearchRequest", func(t *testing.T) {
-		t.Parallel()
-		_, err := doSearchRequest(t.Context(), doer, br, nil)
-		if err == nil {
-			t.Fatal("doSearchRequest returned nil error, want failure")
-		}
-		if n := strings.Count(err.Error(), host); n != 1 {
-			t.Errorf("doSearchRequest error mentions host %d times, want exactly 1: %q", n, err.Error())
-		}
-		if !errors.Is(err, cause) {
-			t.Errorf("doSearchRequest error lost the underlying cause via errors.Is: %q", err.Error())
-		}
-	})
+	// The two functions under test share a call shape but differ in success
+	// return type, so each row's do closure discards the value and yields the
+	// error the transport-failure path produced.
+	tests := []struct {
+		name string
+		do   func(ctx context.Context, doer Doer, br builtRequest) error
+	}{
+		{"doRequest", func(ctx context.Context, doer Doer, br builtRequest) error {
+			_, err := doRequest(ctx, doer, br, nil)
+			return err
+		}},
+		{"doSearchRequest", func(ctx context.Context, doer Doer, br builtRequest) error {
+			_, err := doSearchRequest(ctx, doer, br, nil)
+			return err
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := tt.do(t.Context(), doer, br)
+			if err == nil {
+				t.Fatalf("%s returned nil error, want failure", tt.name)
+			}
+			if n := strings.Count(err.Error(), host); n != 1 {
+				t.Errorf("%s error mentions host %d times, want exactly 1: %q", tt.name, n, err.Error())
+			}
+			if !errors.Is(err, cause) {
+				t.Errorf("%s error lost the underlying cause via errors.Is: %q", tt.name, err.Error())
+			}
+		})
+	}
 }
 
 // TestDoRequest_NonRegistryDoerStillGetsHostFallback proves the defense-in-depth
