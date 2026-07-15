@@ -1965,9 +1965,10 @@ components:
         protocol: { type: string, enum: [torrent, usenet], description: "acquisition protocol, derived from the definition" }
         proxyId: { type: integer, format: int64, nullable: true, description: "referenced global proxy resource, or null" }
         solverId: { type: integer, format: int64, nullable: true, description: "referenced global solver resource, or null" }
+        freeleech: { type: boolean, description: "the freeleech-only checkbox's canonical state" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
-      required: [id, slug, definitionId, name, enabled, protocol, createdAt, updatedAt]
+      required: [id, slug, definitionId, name, enabled, protocol, freeleech, createdAt, updatedAt]
     IndexerStats:
       type: object
       description: >

@@ -129,6 +129,7 @@ type instanceResponse struct {
 	Protocol     string    `json:"protocol"`
 	ProxyID      *int64    `json:"proxyId"`
 	SolverID     *int64    `json:"solverId"`
+	Freeleech    bool      `json:"freeleech"`
 	CreatedAt    time.Time `json:"createdAt"`
 	UpdatedAt    time.Time `json:"updatedAt"`
 }
@@ -156,7 +157,13 @@ func (rt *router) listIndexers(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]instanceResponse, 0, len(list))
 	for _, inst := range list {
-		out = append(out, toInstanceResponse(inst))
+		resp := toInstanceResponse(inst)
+		freeleech, err := rt.registry.Freeleech(r.Context(), inst)
+		if err != nil {
+			rt.log.Warn().Err(err).Str("slug", inst.Slug).Msg("resolve freeleech state")
+		}
+		resp.Freeleech = freeleech
+		out = append(out, resp)
 	}
 	writeJSON(w, http.StatusOK, out)
 }

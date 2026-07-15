@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest"
 import type { IndexerRowActions, IndexerRowData } from "./IndexersTable"
 import { IndexersTable } from "./IndexersTable"
 
-const BASE = { proxyId: null, solverId: null, protocol: "torrent" as const, createdAt: "2026-07-01T00:00:00Z", updatedAt: "2026-07-01T00:00:00Z" }
+const BASE = { proxyId: null, solverId: null, protocol: "torrent" as const, freeleech: false, createdAt: "2026-07-01T00:00:00Z", updatedAt: "2026-07-01T00:00:00Z" }
 
 const ROWS: IndexerRowData[] = [
   {
@@ -17,7 +17,7 @@ const ROWS: IndexerRowData[] = [
     },
   },
   {
-    instance: { id: 2, slug: "rutor", definitionId: "rutor", name: "rutor", baseUrl: "https://rutor.info/", enabled: true, ...BASE },
+    instance: { id: 2, slug: "rutor", definitionId: "rutor", name: "rutor", baseUrl: "https://rutor.info/", enabled: true, ...BASE, freeleech: true },
     type: "public",
     categories: "Movies, TV",
     status: {
@@ -68,6 +68,16 @@ describe("IndexersTable", () => {
     // ("1337x" appears as both name and host fallback, hence getAllByText).
     const x = screen.getAllByText("1337x")[0].closest("tr")!
     expect(within(x).getByText("…")).toBeTruthy()
+  })
+
+  it("shows the Freeleech badge only for instances with freeleech enabled", () => {
+    render(<IndexersTable rows={ROWS} actions={noopActions()} />)
+
+    const ru = screen.getByText("rutor").closest("tr")!
+    expect(within(ru).getByText("Freeleech")).toBeTruthy()
+
+    const tl = screen.getByText("TorrentLeech").closest("tr")!
+    expect(within(tl).queryByText("Freeleech")).toBeNull()
   })
 
   it("reflects enabled state on the switch and fires the toggle", () => {
