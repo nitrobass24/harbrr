@@ -14,6 +14,7 @@ import (
 	"github.com/rs/zerolog"
 	"golang.org/x/time/rate"
 
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
 
@@ -251,7 +252,10 @@ func TestPacedDoer_TraceLogsQueryOnFailure(t *testing.T) {
 
 // TestRedactDoErrHostOnly proves the returned transport error is reduced to scheme://host,
 // so an upstream log.Error().Err(err) cannot leak a PATH-embedded secret (which RedactURL's
-// heuristic would miss) or a query secret.
+// heuristic would miss) or a query secret. It also proves the result carries the
+// apphttp.MarkHostRedacted marker exactly once (autobrr/harbrr#181): that marker is what lets
+// the cardigann search layer (request.go's wrapDoErr) skip re-prepending its own host prefix
+// and double-printing the host, so a caller consuming this error must be able to see it.
 func TestRedactDoErrHostOnly(t *testing.T) {
 	t.Parallel()
 	const pathKey = "PATHSECRET-not-hex-so-heuristic-misses-it"
@@ -260,7 +264,8 @@ func TestRedactDoErrHostOnly(t *testing.T) {
 		URL: "https://t.invalid/torrent/download/auto.7." + pathKey + "?passkey=querysecret000",
 		Err: errors.New("connection refused"),
 	}
-	got := redactDoErr(uerr).Error()
+	err := redactDoErr(uerr)
+	got := err.Error()
 	for _, leak := range []string{pathKey, "querysecret000", "passkey", "download", "auto.7"} {
 		if strings.Contains(got, leak) {
 			t.Errorf("redactDoErr leaked %q: %q", leak, got)
@@ -270,6 +275,23 @@ func TestRedactDoErrHostOnly(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("redactDoErr missing %q: %q", want, got)
 		}
+	}
+	if n := strings.Count(got, "t.invalid"); n != 1 {
+		t.Errorf("redactDoErr host appears %d times, want exactly 1: %q", n, got)
+	}
+	if !apphttp.IsHostRedacted(err) {
+		t.Error("redactDoErr result is not marked apphttp.IsHostRedacted — a caller cannot detect the host was already printed")
+	}
+}
+
+// TestRedactDoErr_RequestFailedFallbackUnmarked proves the "request failed: %w" fallback
+// (a non-*url.Error transport failure) is left UNMARKED: it adds no host prefix of its own,
+// so a caller must still be free to add one.
+func TestRedactDoErr_RequestFailedFallbackUnmarked(t *testing.T) {
+	t.Parallel()
+	err := redactDoErr(errors.New("boom"))
+	if apphttp.IsHostRedacted(err) {
+		t.Error("the host-less fallback must not be marked host-redacted")
 	}
 }
 

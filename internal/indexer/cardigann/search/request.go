@@ -507,6 +507,24 @@ func checkStatus(resp *stdhttp.Response, br builtRequest) error {
 	return fmt.Errorf("%s %s: tracker returned HTTP %d", br.method, apphttp.SchemeHost(br.url), resp.StatusCode)
 }
 
+// wrapDoErr wraps a doer.Do transport failure for the log/error surface. When err
+// already carries the paced client's host-only-redacted prefix
+// (apphttp.IsHostRedacted, set by registry's redactDoErr), re-prepending
+// method+SchemeHost here would print the host a second time
+// (autobrr/harbrr#181) — the paced client's own prefix already identifies the
+// verb and host, and the caller up the stack (engine.Execute et al.) adds its own
+// stage context ("cardigann: search for %q: ..."), so a marked error is returned
+// unchanged. A plain, non-registry Doer's raw error is typically a *url.Error that
+// stringifies the FULL url (path and query included), so it still gets the full
+// SchemeHost+RedactURLError wrap below — the defense-in-depth for a caller that
+// bypasses the paced client.
+func wrapDoErr(br builtRequest, err error) error {
+	if apphttp.IsHostRedacted(err) {
+		return err
+	}
+	return fmt.Errorf("%s %s: %w", br.method, apphttp.SchemeHost(br.url), apphttp.RedactURLError(err))
+}
+
 // doRequest issues one builtRequest through the Doer, attaching the rendered
 // headers and session UA, and reads the (capped) response body. Any
 // non-2xx status fails fast (see checkStatus). Used by the download/grab flows,
@@ -521,7 +539,7 @@ func doRequest(ctx context.Context, doer Doer, br builtRequest, session *login.S
 	}
 	resp, err := doer.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%s %s: %w", br.method, apphttp.SchemeHost(br.url), apphttp.RedactURLError(err))
+		return nil, wrapDoErr(br, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -566,7 +584,7 @@ func doSearchRequest(ctx context.Context, doer Doer, br builtRequest, session *l
 	}
 	resp, err := doer.Do(req)
 	if err != nil {
-		return searchResponse{}, fmt.Errorf("%s %s: %w", br.method, apphttp.SchemeHost(br.url), apphttp.RedactURLError(err))
+		return searchResponse{}, wrapDoErr(br, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 

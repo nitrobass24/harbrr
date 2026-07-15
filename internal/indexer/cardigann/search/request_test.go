@@ -1,12 +1,15 @@
 package search
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	stdhttp "net/http"
 	"net/url"
 	"strings"
 	"testing"
 
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 )
 
@@ -503,3 +506,97 @@ func TestDoRequest_RedactsPasskeyInError(t *testing.T) {
 		})
 	}
 }
+
+// registryLikeErrDoer is a Doer whose Do() fails with an error shaped exactly like
+// the registry paced client's redactDoErr output -- "<op> <scheme>://<host>: <cause>",
+// marked via apphttp.MarkHostRedacted, then wrapped once more the way pacedDoer.issue
+// wraps it ("registry: %w") -- WITHOUT actually importing the registry package (which
+// would be a cycle: registry imports search). This reproduces the shape a live paced
+// Doer hands to doRequest/doSearchRequest, so the composed error is what a caller
+// downstream (e.g. the daemon log) would actually see.
+type registryLikeErrDoer struct {
+	host  string
+	cause error
+}
+
+func (d registryLikeErrDoer) Do(*stdhttp.Request) (*stdhttp.Response, error) {
+	inner := fmt.Errorf("Get %s: %w", d.host, d.cause)
+	return nil, fmt.Errorf("registry: %w", apphttp.MarkHostRedacted(inner))
+}
+
+// TestDoRequest_HostRedactedNotDoublePrinted proves autobrr/harbrr#181's fix: when
+// doer.Do fails with an error that already carries the paced client's host-only
+// prefix (apphttp.IsHostRedacted), doRequest/doSearchRequest must NOT re-prepend
+// their own method+SchemeHost -- the host must appear exactly once in the final
+// error, matching the issue's before/after example.
+func TestDoRequest_HostRedactedNotDoublePrinted(t *testing.T) {
+	t.Parallel()
+	const host = "https://t.invalid"
+	cause := errors.New("net/http: TLS handshake timeout")
+	doer := registryLikeErrDoer{host: host, cause: cause}
+	br := builtRequest{method: stdhttp.MethodGet, url: host + "/browse?q=x"}
+
+	// The two functions under test share a call shape but differ in success
+	// return type, so each row's do closure discards the value and yields the
+	// error the transport-failure path produced.
+	tests := []struct {
+		name string
+		do   func(ctx context.Context, doer Doer, br builtRequest) error
+	}{
+		{"doRequest", func(ctx context.Context, doer Doer, br builtRequest) error {
+			_, err := doRequest(ctx, doer, br, nil)
+			return err
+		}},
+		{"doSearchRequest", func(ctx context.Context, doer Doer, br builtRequest) error {
+			_, err := doSearchRequest(ctx, doer, br, nil)
+			return err
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := tt.do(t.Context(), doer, br)
+			if err == nil {
+				t.Fatalf("%s returned nil error, want failure", tt.name)
+			}
+			if n := strings.Count(err.Error(), host); n != 1 {
+				t.Errorf("%s error mentions host %d times, want exactly 1: %q", tt.name, n, err.Error())
+			}
+			if !errors.Is(err, cause) {
+				t.Errorf("%s error lost the underlying cause via errors.Is: %q", tt.name, err.Error())
+			}
+		})
+	}
+}
+
+// TestDoRequest_NonRegistryDoerStillGetsHostFallback proves the defense-in-depth
+// fallback is intact: a plain Doer whose failure is NOT marked host-redacted (e.g. a
+// raw *url.Error from a bare *http.Client, or any other non-registry transport) still
+// gets doRequest/doSearchRequest's own SchemeHost+RedactURLError wrap, so the host is
+// never silently dropped just because the caller isn't the paced client.
+func TestDoRequest_NonRegistryDoerStillGetsHostFallback(t *testing.T) {
+	t.Parallel()
+	const host = "https://t.invalid"
+	uerr := &url.Error{Op: "Get", URL: host + "/browse?passkey=SHOULDNOTLEAK", Err: errors.New("connection refused")}
+	br := builtRequest{method: stdhttp.MethodGet, url: host + "/browse?passkey=SHOULDNOTLEAK"}
+
+	_, err := doRequest(t.Context(), plainErrDoer{err: uerr}, br, nil)
+	if err == nil {
+		t.Fatal("doRequest returned nil error, want failure")
+	}
+	if !strings.Contains(err.Error(), host) {
+		t.Errorf("doRequest error lost the host fallback prefix: %q", err.Error())
+	}
+	if strings.Contains(err.Error(), "SHOULDNOTLEAK") {
+		t.Errorf("doRequest error leaked the query secret: %q", err.Error())
+	}
+	if apphttp.IsHostRedacted(err) {
+		t.Error("a non-registry Doer's error must not read as already host-redacted")
+	}
+}
+
+// plainErrDoer is a Doer that fails with a caller-supplied error, unmarked -- the
+// shape a plain, non-registry Doer (a bare *http.Client, a test fake) returns.
+type plainErrDoer struct{ err error }
+
+func (d plainErrDoer) Do(*stdhttp.Request) (*stdhttp.Response, error) { return nil, d.err }

@@ -369,10 +369,18 @@ func transportErrText(err error) string {
 // misses a secret hidden in a URL PATH segment (a native driver's api_key/rsskey/passkey)
 // that its length heuristic does not match — so, like the trace log, the path/query are
 // dropped entirely. The inner cause (uerr.Err) carries no URL and is preserved via %w.
+//
+// The rebuilt host-only error is marked via apphttp.MarkHostRedacted: cardigann's
+// search layer wraps whatever the Doer returns with its own method+SchemeHost prefix
+// as a fallback for a plain, non-registry Doer (see request.go's wrapDoErr) — without
+// the marker that wrap would re-prepend the same host this function already printed,
+// logging it twice (autobrr/harbrr#181). The "request failed" fallback below adds no
+// host prefix of its own, so it is left unmarked.
 func redactDoErr(err error) error {
 	var uerr *url.Error
 	if errors.As(err, &uerr) {
-		return fmt.Errorf("%s %s: %w", uerr.Op, apphttp.SchemeHost(uerr.URL), uerr.Err)
+		hostOnly := fmt.Errorf("%s %s: %w", uerr.Op, apphttp.SchemeHost(uerr.URL), uerr.Err)
+		return apphttp.MarkHostRedacted(hostOnly) //nolint:wrapcheck // hostOnly is already the fully-shaped, host-redacted transport error; the marker is a transparent Error()/Unwrap() passthrough, and re-wrapping would only add noise
 	}
 	return fmt.Errorf("request failed: %w", err)
 }
