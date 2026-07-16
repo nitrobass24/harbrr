@@ -308,8 +308,16 @@ func (d *pacedDoer) pacedWait(ctx context.Context, lim *rate.Limiter, remaining 
 }
 
 // pacedSleep waits out a backoff delay via the injectable timer (real time.After when
-// nil), bounded by BOTH the caller ctx and the remaining pacing budget. It returns how
-// long it slept (to debit the budget) and any error (a budget cap or a caller cancel).
+// nil), bounded by BOTH the caller ctx and the remaining pacing budget. The delay wait
+// is started first and checked non-blockingly before the (real) budget timer is even
+// created: an already-fired delay channel — always true for an injected instant test
+// timer, and for delay<=0 — wins outright, so it can never be raced against a budget
+// timer that only becomes ready later. That determinism is what makes the budget/delay
+// select safe under -race jitter, where the old design (racing a real budget timer
+// against the delay channel in one select from the start) could let both channels turn
+// ready before the select was scheduled, and Go picks a ready case at random. It returns
+// how long it slept (to debit the budget) and any error (a budget cap or a caller
+// cancel).
 func (d *pacedDoer) pacedSleep(ctx context.Context, delay, remaining time.Duration) (time.Duration, error) {
 	if remaining <= 0 {
 		return 0, context.DeadlineExceeded
@@ -318,11 +326,17 @@ func (d *pacedDoer) pacedSleep(ctx context.Context, delay, remaining time.Durati
 	if d.timer != nil {
 		after = d.timer.After
 	}
+	start := d.now()
+	delayCh := after(delay)
+	select {
+	case <-delayCh:
+		return d.now().Sub(start), nil
+	default:
+	}
 	budget := time.NewTimer(remaining)
 	defer budget.Stop()
-	start := d.now()
 	select {
-	case <-after(delay):
+	case <-delayCh:
 		return d.now().Sub(start), nil
 	case <-budget.C:
 		return remaining, context.DeadlineExceeded
