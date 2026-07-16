@@ -54,7 +54,10 @@ function NavGroup({ title, items }: { title: string; items: NavItem[] }) {
 
 export function Sidebar() {
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
+    <aside
+      data-testid="sidebar"
+      className="hidden w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex"
+    >
       <div className="flex h-14 items-center gap-2.5 px-5">
         <Logo className="h-6 w-6" />
         <span className="text-[15px] font-semibold tracking-tight">harbrr</span>

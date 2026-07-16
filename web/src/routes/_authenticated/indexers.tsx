@@ -113,7 +113,7 @@ function IndexersPage() {
         </Button>
       </PageHeader>
 
-      <div className="min-h-0 flex-1 overflow-auto px-7 py-6">
+      <div className="min-h-0 flex-1 overflow-auto px-4 md:px-7 py-6">
         {indexers.isError && <LoadError what="indexers" />}
         {indexers.isLoading && <LoadingBlock />}
         {total === 0 && indexers.isSuccess ? (

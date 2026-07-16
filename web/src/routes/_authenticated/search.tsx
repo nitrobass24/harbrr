@@ -94,7 +94,7 @@ function SearchPage() {
     <div className="flex h-full flex-col">
       <PageHeader title="Search" subtitle={`Manual search across ${active.length} of ${enabled.length} enabled indexers`} />
 
-      <div className="min-h-0 flex-1 overflow-auto px-7 py-6">
+      <div className="min-h-0 flex-1 overflow-auto px-4 md:px-7 py-6">
         <form
           className="mb-5 flex flex-col gap-3"
           onSubmit={(e) => {

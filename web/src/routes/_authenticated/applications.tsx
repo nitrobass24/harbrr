@@ -99,7 +99,7 @@ function ApplicationsPage() {
         </Button>
       </PageHeader>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-8 overflow-auto px-7 py-6">
+      <div className="flex min-h-0 flex-1 flex-col gap-8 overflow-auto px-4 md:px-7 py-6">
         {connections.isError && <LoadError what="app connections" />}
         {connections.isLoading && <LoadingBlock />}
         <section className="flex flex-col gap-3">

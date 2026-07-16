@@ -12,7 +12,7 @@ function SettingsPage() {
   return (
     <div className="flex h-full flex-col">
       <PageHeader title="Settings" subtitle="API keys, notifications, logging, account" />
-      <div className="flex min-h-0 flex-1 flex-col gap-10 overflow-auto px-7 py-6">
+      <div className="flex min-h-0 flex-1 flex-col gap-10 overflow-auto px-4 md:px-7 py-6">
         <ApiKeysSection />
         <NotificationsSection />
         <SystemSection />

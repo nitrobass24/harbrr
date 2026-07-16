@@ -23,7 +23,7 @@ function Dashboard() {
           <Link to="/indexers"><Plus className="h-3.5 w-3.5" /> Add indexer</Link>
         </Button>
       </PageHeader>
-      <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-auto px-7 py-6">
+      <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-auto px-4 md:px-7 py-6">
         <DashboardTiles />
         <HealthStrip />
       </div>
