@@ -94,6 +94,25 @@ func TestParseReleases_RealCapture(t *testing.T) {
 	}
 }
 
+// TestParseReleases_SingleDigitDayPubDate pins autobrr/harbrr#196: an RFC1123-style
+// pubDate with an unpadded single-digit day ("Fri, 1 Oct 2021 ...", days 1-9 of the
+// month) must still parse to a PublishDate rather than silently going empty (which the
+// torznab serializer's now-fallback then masks as age~=0 downstream).
+func TestParseReleases_SingleDigitDayPubDate(t *testing.T) {
+	t.Parallel()
+	d := parseDriver(t)
+	releases, err := d.parseReleases(readGolden(t, "torznab_morethantv_single_digit_day.xml"), d.Caps.CategoryMap)
+	if err != nil {
+		t.Fatalf("parseReleases: %v", err)
+	}
+	if len(releases) != 1 {
+		t.Fatalf("releases = %d, want 1", len(releases))
+	}
+	if got, want := releases[0].PublishDate, "2021-10-01T10:05:54Z"; got != want {
+		t.Errorf("PublishDate = %q, want %q (single-digit day must not fail to parse)", got, want)
+	}
+}
+
 // TestParseReleases_AnimeToshoCapture is the second real-capture golden: Prowlarr's
 // AnimeTosho feed fixture. It proves the branches the MTV capture cannot: uncredentialed
 // storage-URL enclosures (the NeedsResolver=false evidence), a details-page <link>
