@@ -259,20 +259,37 @@ func TestListIndexersReportsFreeleechState(t *testing.T) {
 	base, c := serve(t, e)
 	setupAndLogin(t, base, c)
 
-	// freeleech unset -> off.
-	resp, body := do(t, c, http.MethodPost, base+"/api/indexers",
-		map[string]any{"slug": "off", "definitionId": "testtracker"}, nil)
-	mustStatus(t, resp, body, http.StatusCreated)
+	type addPayload struct {
+		Slug         string            `json:"slug"`
+		DefinitionID string            `json:"definitionId"`
+		Settings     map[string]string `json:"settings,omitempty"`
+	}
+	tests := []struct {
+		name string
+		add  addPayload
+		want bool
+	}{
+		{
+			name: "freeleech unset -> off",
+			add:  addPayload{Slug: "off", DefinitionID: "testtracker"},
+			want: false,
+		},
+		{
+			name: "freeleech checked -> on",
+			add: addPayload{
+				Slug: "on", DefinitionID: "testtracker",
+				Settings: map[string]string{"freeleech": "true"},
+			},
+			want: true,
+		},
+	}
 
-	// freeleech checked -> on.
-	resp, body = do(t, c, http.MethodPost, base+"/api/indexers",
-		map[string]any{
-			"slug": "on", "definitionId": "testtracker",
-			"settings": map[string]string{"freeleech": "true"},
-		}, nil)
-	mustStatus(t, resp, body, http.StatusCreated)
+	for _, tt := range tests {
+		resp, body := do(t, c, http.MethodPost, base+"/api/indexers", tt.add, nil)
+		mustStatus(t, resp, body, http.StatusCreated)
+	}
 
-	resp, body = do(t, c, http.MethodGet, base+"/api/indexers", nil, nil)
+	resp, body := do(t, c, http.MethodGet, base+"/api/indexers", nil, nil)
 	mustStatus(t, resp, body, http.StatusOK)
 
 	var list []struct {
@@ -286,11 +303,10 @@ func TestListIndexersReportsFreeleechState(t *testing.T) {
 	for _, item := range list {
 		got[item.Slug] = item.Freeleech
 	}
-	if got["off"] {
-		t.Errorf("indexer %q freeleech = true, want false", "off")
-	}
-	if !got["on"] {
-		t.Errorf("indexer %q freeleech = false, want true", "on")
+	for _, tt := range tests {
+		if got[tt.add.Slug] != tt.want {
+			t.Errorf("%s: indexer %q freeleech = %v, want %v", tt.name, tt.add.Slug, got[tt.add.Slug], tt.want)
+		}
 	}
 }
 
