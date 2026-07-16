@@ -72,18 +72,18 @@ func (b *Base) GrabNZB(ctx context.Context, link, contentType string, classify C
 			// pass through unsanitized so callers keep their classification.
 			return nil, err
 		}
-		return nil, sanitizeGrabError(fmt.Errorf("%w: %w", errDownloadRequestFailed, apphttp.RedactURLError(err)), errDownloadRequestFailed)
+		return nil, sanitizeGrabError(err, errDownloadRequestFailed)
 	}
 	return &search.GrabResult{Body: resp.Body, ContentType: contentType}, nil
 }
 
-// sanitizeGrabError classifies a GrabNZB error for surfacing. Sentinels that carry no URL
-// and that callers need to classify are passed through: auth and rate-limit (for health),
-// context cancellation/deadline, and the size-cap error. An already-enriched
-// errDownloadRequestFailed (GrabNZB's HOST-ONLY transport failure) is passed through
-// verbatim so its scheme://host cause is not collapsed or double-prefixed. Anything else
-// is flattened to the bare errDownloadRequestFailed sentinel rather than risk surfacing a
-// URL.
+// sanitizeGrabError classifies GrabNZB's RAW DoDownload error for surfacing. Sentinels
+// that carry no URL and that callers need to classify are passed through: auth and
+// rate-limit (for health), context cancellation/deadline, and the size-cap error. A
+// transport failure roundTrip marked host-redacted (its cause is PROVABLY scrubbed to
+// scheme://host) keeps its detail, wrapped as errDownloadRequestFailed. Anything else is
+// flattened to the bare errDownloadRequestFailed sentinel: an unmarked error may embed a
+// secret-bearing URL in free text that no scrubber can safely rewrite.
 func sanitizeGrabError(err, errDownloadRequestFailed error) error {
 	switch {
 	case errors.Is(err, login.ErrLoginFailed),
@@ -96,8 +96,8 @@ func sanitizeGrabError(err, errDownloadRequestFailed error) error {
 	if errors.As(err, &rl) {
 		return err
 	}
-	if errors.Is(err, errDownloadRequestFailed) {
-		return err
+	if apphttp.IsHostRedacted(err) {
+		return fmt.Errorf("%w: %w", errDownloadRequestFailed, err)
 	}
 	return errDownloadRequestFailed
 }

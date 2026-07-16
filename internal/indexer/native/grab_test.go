@@ -111,6 +111,22 @@ func TestGrabNZBTransportErrorSanitized(t *testing.T) {
 	}
 }
 
+// TestGrabNZBUnexpectedErrorFlattened proves a transport error that is NOT a *url.Error —
+// free text that may embed a secret-bearing URL no scrubber can safely rewrite — is
+// flattened to the bare caller sentinel instead of being surfaced.
+func TestGrabNZBUnexpectedErrorFlattened(t *testing.T) {
+	sentinel := errors.New("fam: download request failed")
+	const secret = "APIKEY0123456789"
+	b := newTestBase(t, &fakeDoer{err: errors.New("proxy said: https://tracker.example/getnzb?r=" + secret)})
+	_, err := b.GrabNZB(context.Background(), "https://tracker.example/getnzb?r="+secret, "application/x-nzb", ClassifyRateLimit403, sentinel)
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("err = %v, want errors.Is(sentinel)", err)
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Errorf("err = %q leaks the apikey", err)
+	}
+}
+
 // TestGrabNZBPreservesOversizedSentinel proves the shared Base download cap remains
 // classifiable through GrabNZB rather than being flattened to the generic sentinel.
 func TestGrabNZBPreservesOversizedSentinel(t *testing.T) {
