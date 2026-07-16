@@ -102,13 +102,17 @@ carry no forgeable ambient credential and are **exempt**. `SameSite=Lax` remains
 - **Log & trace redaction** (`internal/http/redact.go`). A **single shared vocabulary** of
   credential-shaped names (`passkey`, `api[_-]?key`, `rss[_-]?key`, `torrent_pass`, `cf_clearance`,
   `cookie`, `token`, `2fa`, …) drives every **name-matched** redaction surface at once — URL query
-  params, HTTP headers (incl. `Authorization`/`Cookie`), JSON object keys, and the `key=value` scrubs
-  in error strings — so the lists cannot drift apart. A URL's userinfo password
-  (`scheme://user:pass@host`) is redacted **structurally** (always, independent of the name).
-  FlareSolverr request/response fields (`response`, `headers`, `proxy`, `postdata`, `useragent`) are
-  scrubbed on top. The placeholder carries no length/prefix hint — `REDACTED` on the URL/header/JSON
-  surfaces, `<redacted>` in the error-string scrubs (`RedactError`). Served download/magnet links
-  **do** legitimately carry passkeys (intended output) — those are never *logged*.
+  params (`RedactURL`, `RedactURLIdentity`, `HostAndRedactedQuery`) and the `key=value` /
+  `"key":value` scrubs in error strings (`RedactError`) — so the lists cannot drift apart. A URL's
+  userinfo password (`scheme://user:pass@host`) is redacted **structurally** (always, independent of
+  the name). The placeholder carries no length/prefix hint — `REDACTED` on the URL surfaces,
+  `<redacted>` in the error-string scrubs. Served download/magnet links **do** legitimately carry
+  passkeys (intended output) — those are never *logged*.
+  **Standing obligation:** harbrr today never logs or traces raw request/response HEADERS or solver
+  JSON BODIES, so no header- or JSON-body-redaction helper is currently wired (autobrr/harbrr#189
+  deleted the unused `RedactHeader`/`RedactJSONBody`/`RedactProxyURL`, which had zero production
+  callers). Any future change that logs or traces headers or a solver JSON body **must** reintroduce
+  a redaction helper — with redaction tests — in the *same* PR, never after the fact.
 - **Value scrub** (`internal/http/scrub.go`, `apphttp.ScrubValues`), the *other* half of the
   redaction seam alongside `RedactError`'s name-matched scrub above: instead of matching a
   field NAME, it replaces a caller-supplied credential VALUE wherever it appears in free text

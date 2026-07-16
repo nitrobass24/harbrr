@@ -1,7 +1,6 @@
 package http
 
 import (
-	"net/http"
 	"strings"
 	"testing"
 )
@@ -211,58 +210,5 @@ func TestRedactURLIdentity_KeepsDistinct(t *testing.T) {
 	b := RedactURLIdentity("https://dognzb.cr/details/fedcba9876543210fedcba9876543210")
 	if a == b {
 		t.Fatalf("distinct release ids collapsed to the same guid: %q", a)
-	}
-}
-
-func TestRedactHeader(t *testing.T) {
-	t.Parallel()
-
-	in := http.Header{
-		"Authorization":       {"Bearer sk-secret-token"},
-		"Cookie":              {"session=abc123; uid=42"},
-		"Set-Cookie":          {"session=xyz; HttpOnly"},
-		"X-Api-Key":           {"xapikeysecret"},
-		"Api-Key":             {"apikeysecret"},
-		"Proxy-Authorization": {"Basic proxysecret"},
-		"Content-Type":        {"text/html"},
-		"User-Agent":          {"harbrr/1.0"},
-	}
-	out := RedactHeader(in)
-
-	// Sensitive headers redacted — including the hyphenated api-key spellings.
-	for _, name := range []string{"Authorization", "Cookie", "Set-Cookie", "X-Api-Key", "Api-Key", "Proxy-Authorization"} {
-		if got := out.Get(name); got != "REDACTED" {
-			t.Errorf("header %s = %q, want REDACTED", name, got)
-		}
-	}
-	// Non-sensitive headers preserved.
-	if got := out.Get("Content-Type"); got != "text/html" {
-		t.Errorf("Content-Type = %q, want text/html", got)
-	}
-	if got := out.Get("User-Agent"); got != "harbrr/1.0" {
-		t.Errorf("User-Agent = %q, want harbrr/1.0", got)
-	}
-
-	// Input must not be mutated.
-	if got := in.Get("Authorization"); got != "Bearer sk-secret-token" {
-		t.Errorf("input mutated: Authorization = %q", got)
-	}
-	if got := in.Get("Cookie"); got != "session=abc123; uid=42" {
-		t.Errorf("input mutated: Cookie = %q", got)
-	}
-
-	// No secret content survives anywhere in the redacted header.
-	for _, vals := range out {
-		for _, v := range vals {
-			for _, leak := range []string{"sk-secret-token", "abc123", "xyz", "xapikeysecret", "apikeysecret", "proxysecret"} {
-				if strings.Contains(v, leak) {
-					t.Fatalf("redacted header leaked %q in %q", leak, v)
-				}
-			}
-		}
-	}
-
-	if RedactHeader(nil) != nil {
-		t.Error("RedactHeader(nil) should return nil")
 	}
 }

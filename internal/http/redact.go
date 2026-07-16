@@ -1,8 +1,6 @@
 package http
 
 import (
-	"encoding/json"
-	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
@@ -14,34 +12,21 @@ import (
 const redactedValue = "REDACTED"
 
 // secretNameAlternation is the SINGLE shared vocabulary of credential-shaped
-// key/parameter/header names. Every name-based redaction surface (URL query
-// params via RedactURL, HTTP headers via RedactHeader, JSON object keys via
-// RedactJSONBody, and the credential key=value / "key":value scrubs in
-// RedactError) derives its matcher from this one alternation, so the three
-// formerly-drifted lists can no longer diverge. It is intentionally broad —
-// Cardigann definitions and trackers spell these many ways — and matches the
-// `_`/`-`/none separator variants (api_key, api-key, x-api-key) in one go.
-// Longer/more-specific tokens precede their shorter prefixes so the key-capturing
-// regexes group the whole word (e.g. "password" before "pass", "downloadtoken"
-// before "token", "api[_-]?key" before bare "key").
+// key/parameter names. Every name-based redaction surface (URL query params via
+// RedactURL, and the credential key=value / "key":value scrubs in RedactError)
+// derives its matcher from this one alternation, so the surfaces can never
+// diverge. It is intentionally broad — Cardigann definitions and trackers spell
+// these many ways — and matches the `_`/`-`/none separator variants (api_key,
+// api-key, x-api-key) in one go. Longer/more-specific tokens precede their
+// shorter prefixes so the key-capturing regexes group the whole word (e.g.
+// "password" before "pass", "downloadtoken" before "token", "api[_-]?key"
+// before bare "key").
 const secretNameAlternation = `passphrase|passkey|passid|password|x[_-]?api[_-]?key|api[_-]?key|auth[_-]?key|rss[_-]?key|torrent[_-]?pass|downloadtoken|cf[_-]?clearance|secret|token|cookie|2fa|otp|auth|key|pass|pid`
 
 // secretNameRe matches (case-insensitively, anywhere in the name) any credential
 // name token. Used as the boolean "is this name a secret?" test for query
-// parameters, headers, and JSON keys so all three share one vocabulary.
+// parameters so RedactURL/HostAndRedactedQuery share one vocabulary.
 var secretNameRe = regexp.MustCompile(`(?i)(?:` + secretNameAlternation + `)`)
-
-// flaresolverrSecretKeys are JSON keys that are NOT credential-named but still carry
-// secrets/PII in the FlareSolverr /v1 request/response shape, so RedactJSONBody scrubs
-// them on top of the shared credential vocabulary. (cookie/cookies/set-cookie and
-// cf_clearance are already caught by secretNameRe.)
-var flaresolverrSecretKeys = map[string]struct{}{
-	"postdata": {}, "useragent": {}, "user-agent": {},
-	// FlareSolverr solution fields: the raw page HTML (may embed session tokens) and
-	// the response header map (Set-Cookie etc.) are redacted wholesale, and the
-	// request "proxy" field may embed user:pass.
-	"response": {}, "headers": {}, "proxy": {},
-}
 
 // RedactURL returns raw with the values of any secret query parameters replaced
 // by a fixed placeholder, preserving the URL's structure (scheme, host, path,
@@ -230,29 +215,6 @@ func redactPathSecrets(path string) string {
 	return pathSecretRe.ReplaceAllString(path, redactedValue)
 }
 
-// RedactHeader returns a copy of h with the values of sensitive headers
-// (Authorization, Cookie, Set-Cookie, ...) replaced by a fixed placeholder. The
-// input is never mutated. A nil header returns nil.
-func RedactHeader(h http.Header) http.Header {
-	if h == nil {
-		return nil
-	}
-	out := make(http.Header, len(h))
-	for name, vals := range h {
-		// One shared vocabulary: catches Authorization, Cookie/Set-Cookie,
-		// Proxy-Authorization, and every api-key spelling (X-Api-Key, Api-Key,
-		// x-api-key) without a per-name allowlist that could drift.
-		if secretNameRe.MatchString(name) {
-			out[name] = []string{redactedValue}
-			continue
-		}
-		cp := make([]string, len(vals))
-		copy(cp, vals)
-		out[name] = cp
-	}
-	return out
-}
-
 // secretTokenRe matches a credential-shaped key and its value (plain text or in a
 // URL query) so the value can be scrubbed from an error message. The key alternation
 // is the shared secretNameAlternation, so it can never drift from the URL/header/JSON
@@ -293,74 +255,4 @@ func RedactError(err error) string {
 	msg = cookieHeaderRe.ReplaceAllString(msg, "${1}${2}<redacted>")
 	msg = jsonSecretRe.ReplaceAllString(msg, `${1}"<redacted>"`)
 	return secretTokenRe.ReplaceAllString(msg, "${1}${2}<redacted>")
-}
-
-// RedactProxyURL is RedactURL for a proxy URL: it scrubs the WHOLE userinfo
-// (username AND password — a proxy username can itself be an account id), not just
-// the password as RedactURL does, plus any secret query parameters. An unparseable
-// URL falls back to RedactURL's own unparseable handling.
-func RedactProxyURL(raw string) string {
-	u, err := url.Parse(raw)
-	if err != nil {
-		// A malformed proxy URL can still carry userinfo before the parse error;
-		// RedactURL's textual fallback would keep that prefix, so return a fixed
-		// marker rather than risk leaking proxy credentials.
-		return redactedValue
-	}
-	if u.User != nil {
-		u.User = url.User(redactedValue)
-	}
-	return RedactURL(u.String())
-}
-
-// isSecretJSONKey reports whether a JSON object key's value must be redacted: any
-// credential-shaped name (the shared secretNameRe vocabulary — cookie, apikey,
-// rsskey, authkey, torrent_pass, ...) or a FlareSolverr structural key that carries
-// secrets/PII without a credential-shaped name (postData, userAgent, response, ...).
-func isSecretJSONKey(k string) bool {
-	if _, ok := flaresolverrSecretKeys[strings.ToLower(k)]; ok {
-		return true
-	}
-	return secretNameRe.MatchString(k)
-}
-
-// RedactJSONBody returns body with the values of any credential-shaped keys (at any
-// nesting depth) replaced by a placeholder, so a FlareSolverr /v1 request/response
-// body can be logged safely (RedactURL/RedactHeader cannot reach JSON). A body that
-// is not valid JSON is replaced wholesale rather than risk leaking it raw.
-func RedactJSONBody(body []byte) []byte {
-	var v any
-	if err := json.Unmarshal(body, &v); err != nil {
-		return []byte(`"` + redactedValue + `"`)
-	}
-	out, err := json.Marshal(scrubJSON(v))
-	if err != nil {
-		return []byte(`"` + redactedValue + `"`)
-	}
-	return out
-}
-
-// scrubJSON recursively replaces the value of any secret-named key with the
-// placeholder, recursing into nested objects/arrays otherwise.
-func scrubJSON(v any) any {
-	switch t := v.(type) {
-	case map[string]any:
-		out := make(map[string]any, len(t))
-		for k, val := range t {
-			if isSecretJSONKey(k) {
-				out[k] = redactedValue
-				continue
-			}
-			out[k] = scrubJSON(val)
-		}
-		return out
-	case []any:
-		out := make([]any, len(t))
-		for i, val := range t {
-			out[i] = scrubJSON(val)
-		}
-		return out
-	default:
-		return v
-	}
 }
