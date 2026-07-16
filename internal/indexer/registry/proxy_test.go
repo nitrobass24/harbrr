@@ -149,13 +149,18 @@ func TestBuildTransportResponseHeaderTimeout(t *testing.T) {
 			if aerr != nil {
 				return
 			}
-			// Accept the connection and read the request, but never write a
-			// response — simulates a tracker that hangs mid-request.
+			// Accept the connection and keep reading without ever writing a
+			// response — simulates a tracker that hangs mid-request. The loop
+			// exits (and the conn closes) when the client aborts the request
+			// after ResponseHeaderTimeout fires.
 			go func(c net.Conn) {
 				defer c.Close()
 				buf := make([]byte, 1024)
-				_, _ = c.Read(buf)
-				select {}
+				for {
+					if _, rerr := c.Read(buf); rerr != nil {
+						return
+					}
+				}
 			}(conn)
 		}
 	}()
