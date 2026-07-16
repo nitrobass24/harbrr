@@ -249,6 +249,67 @@ func TestIndexerCRUDViaAPIRedactsSecrets(t *testing.T) {
 	mustStatus(t, resp, body, http.StatusNotFound)
 }
 
+// TestListIndexersReportsFreeleechState pins the list-time freeleech view
+// (autobrr/harbrr#188): GET /api/indexers surfaces each instance's freeleech-only
+// checkbox using the same canonical rule the engine applies at build time.
+func TestListIndexersReportsFreeleechState(t *testing.T) {
+	t.Parallel()
+
+	e := newEnv(t, api.Config{})
+	base, c := serve(t, e)
+	setupAndLogin(t, base, c)
+
+	type addPayload struct {
+		Slug         string            `json:"slug"`
+		DefinitionID string            `json:"definitionId"`
+		Settings     map[string]string `json:"settings,omitempty"`
+	}
+	tests := []struct {
+		name string
+		add  addPayload
+		want bool
+	}{
+		{
+			name: "freeleech unset -> off",
+			add:  addPayload{Slug: "off", DefinitionID: "testtracker"},
+			want: false,
+		},
+		{
+			name: "freeleech checked -> on",
+			add: addPayload{
+				Slug: "on", DefinitionID: "testtracker",
+				Settings: map[string]string{"freeleech": "true"},
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		resp, body := do(t, c, http.MethodPost, base+"/api/indexers", tt.add, nil)
+		mustStatus(t, resp, body, http.StatusCreated)
+	}
+
+	resp, body := do(t, c, http.MethodGet, base+"/api/indexers", nil, nil)
+	mustStatus(t, resp, body, http.StatusOK)
+
+	var list []struct {
+		Slug      string `json:"slug"`
+		Freeleech bool   `json:"freeleech"`
+	}
+	if err := json.Unmarshal(body, &list); err != nil {
+		t.Fatalf("decode indexer list: %v", err)
+	}
+	got := make(map[string]bool, len(list))
+	for _, item := range list {
+		got[item.Slug] = item.Freeleech
+	}
+	for _, tt := range tests {
+		if got[tt.add.Slug] != tt.want {
+			t.Errorf("%s: indexer %q freeleech = %v, want %v", tt.name, tt.add.Slug, got[tt.add.Slug], tt.want)
+		}
+	}
+}
+
 // setupAndLogin creates the admin and logs the client in.
 func setupAndLogin(t *testing.T, base string, c *http.Client) {
 	t.Helper()

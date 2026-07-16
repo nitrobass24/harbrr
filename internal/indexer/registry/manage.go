@@ -10,6 +10,7 @@ import (
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
 	"github.com/autobrr/harbrr/internal/domain"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 	"github.com/autobrr/harbrr/internal/secrets"
@@ -192,6 +193,31 @@ func (r *Manager) Get(ctx context.Context, slug string) (domain.IndexerInstance,
 		views = append(views, SettingView{Name: s.Name, Value: value, Secret: s.IsSecret})
 	}
 	return inst, views, nil
+}
+
+// Freeleech reports whether inst's freeleech-only checkbox is enabled, using the same
+// canonical rule buildAdapter applies at engine-build time: canonicalize the stored
+// checkbox value, then read cfg["freeleech"] != "" (registry.go). The freeleech setting
+// is never a secret, so this reads its raw stored value directly — no decryption pass
+// needed — keeping the list-time seam cheap.
+func (r *Manager) Freeleech(ctx context.Context, inst domain.IndexerInstance) (bool, error) {
+	def, _, err := resolveDefinition(r.native, r.loader, inst.DefinitionID)
+	if err != nil {
+		return false, fmt.Errorf("registry: load definition %q: %w", inst.DefinitionID, err)
+	}
+	settings, err := r.instances.Settings(ctx, r.db, inst.ID)
+	if err != nil {
+		return false, fmt.Errorf("registry: get settings for %q: %w", inst.Slug, err)
+	}
+	cfg := make(map[string]string, 1)
+	for _, s := range settings {
+		if s.Name == "freeleech" {
+			cfg["freeleech"] = s.Value
+			break
+		}
+	}
+	cardigann.CanonicalizeCheckboxes(def, cfg)
+	return cfg["freeleech"] != "", nil
 }
 
 // List returns all configured instances.

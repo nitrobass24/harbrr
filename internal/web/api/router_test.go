@@ -68,6 +68,9 @@ settings:
   - name: apikey
     type: text
     label: API Key
+  - name: freeleech
+    type: checkbox
+    label: Freeleech only
 search:
   path: /browse.php
   inputs:

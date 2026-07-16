@@ -1243,6 +1243,8 @@ export interface components {
              * @description referenced global solver resource, or null
              */
             solverId?: number | null;
+            /** @description the freeleech-only checkbox's canonical state */
+            freeleech: boolean;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */

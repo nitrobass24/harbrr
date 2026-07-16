@@ -1,4 +1,5 @@
 import { ArrowRight, Copy, MoreVertical, Pencil, Trash2 } from "lucide-react"
+import { FreeleechPill } from "@/components/indexers/FreeleechPill"
 import { HealthCell } from "@/components/indexers/HealthCell"
 import { IndexerAvatar } from "@/components/indexers/IndexerAvatar"
 import { ProtocolPill } from "@/components/indexers/ProtocolPill"
@@ -81,7 +82,12 @@ function IndexerRow({ row, actions }: { row: IndexerRowData, actions: IndexerRow
         </button>
       </TableCell>
       <TableCell><ProtocolPill protocol={row.instance.protocol} /></TableCell>
-      <TableCell><TypePill type={row.type} /></TableCell>
+      <TableCell>
+        <div className="flex items-center gap-1.5">
+          <TypePill type={row.type} />
+          <FreeleechPill freeleech={ix.freeleech} />
+        </div>
+      </TableCell>
       <TableCell className="max-w-56 truncate text-muted-foreground">{row.categories ?? ""}</TableCell>
       <TableCell><HealthCell status={row.status} /></TableCell>
       <TableCell className="text-center">
