@@ -567,6 +567,7 @@ type IndexerFailureCounts struct {
 	RateLimited int64
 	ParseError  int64
 	AntiBot     int64
+	Transport   int64
 }
 
 // IndexerStat is one indexer's Prowlarr-style stats: the durable query/grab/latency
@@ -638,6 +639,7 @@ func buildIndexerStat(slug string, queries, grabs, respTotal int64, lastQuery ti
 			RateLimited: counts.RateLimited,
 			ParseError:  counts.ParseError,
 			AntiBot:     counts.AntiBot,
+			Transport:   counts.Transport,
 		},
 		LastQueryAt:   lastQuery,
 		LastFailureAt: counts.LastFailureAt,

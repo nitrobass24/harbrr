@@ -356,7 +356,7 @@ export interface paths {
         };
         /**
          * Get an indexer's health status
-         * @description Returns the indexer's derived health (healthy/unhealthy) and its recent health events (auth_failure, rate_limited, parse_error, anti_bot). Event details are credential-scrubbed before storage, so no secret is surfaced.
+         * @description Returns the indexer's derived health (healthy/unhealthy) and its recent health events (auth_failure, rate_limited, parse_error, anti_bot, transport). Event details are credential-scrubbed before storage, so no secret is surfaced.
          */
         get: operations["indexerStatus"];
         put?: never;
@@ -376,7 +376,7 @@ export interface paths {
         };
         /**
          * Get an indexer's stats
-         * @description Returns the indexer's Prowlarr-style stats: query/grab counts, average response time, failure tallies by kind (auth_failure, rate_limited, parse_error, anti_bot), and last-query/last-failure timestamps.
+         * @description Returns the indexer's Prowlarr-style stats: query/grab counts, average response time, failure tallies by kind (auth_failure, rate_limited, parse_error, anti_bot, transport), and last-query/last-failure timestamps.
          */
         get: operations["indexerStats"];
         put?: never;
@@ -1308,6 +1308,8 @@ export interface components {
                 parseError: number;
                 /** Format: int64 */
                 antiBot: number;
+                /** Format: int64 */
+                transport: number;
             };
             /** Format: date-time */
             lastQueryAt?: string;
@@ -1324,7 +1326,7 @@ export interface components {
                 status: "healthy" | "unhealthy";
                 lastEvent?: {
                     /** @enum {string} */
-                    kind: "auth_failure" | "rate_limited" | "parse_error" | "anti_bot";
+                    kind: "auth_failure" | "rate_limited" | "parse_error" | "anti_bot" | "transport";
                     detail?: string;
                     /** Format: date-time */
                     occurred_at: string;
@@ -2545,7 +2547,7 @@ export interface operations {
                         status: "healthy" | "unhealthy";
                         events: {
                             /** @enum {string} */
-                            kind: "auth_failure" | "rate_limited" | "parse_error" | "anti_bot";
+                            kind: "auth_failure" | "rate_limited" | "parse_error" | "anti_bot" | "transport";
                             detail?: string;
                             /** Format: date-time */
                             occurred_at: string;

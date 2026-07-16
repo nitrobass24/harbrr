@@ -1,8 +1,12 @@
 package registry
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net"
+	"net/url"
 	"testing"
 	"time"
 
@@ -14,6 +18,10 @@ import (
 
 func TestClassifyHealth(t *testing.T) {
 	t.Parallel()
+	// timeoutErr satisfies net.Error (Timeout()==true), the client-timeout shape.
+	timeoutErr := &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("i/o timeout")}
+	dnsErr := &net.DNSError{Err: "no such host", Name: "example.invalid", IsNotFound: true}
+	connRefused := &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connection refused")}
 	tests := []struct {
 		name string
 		err  error
@@ -26,6 +34,15 @@ func TestClassifyHealth(t *testing.T) {
 		{"parse", search.ErrParseError, domain.HealthParseError, true},
 		{"wrapped auth", fmt.Errorf("cardigann: login for x: %w", login.ErrLoginFailed), domain.HealthAuthFailure, true},
 		{"unclassified", errors.New("boom"), "", false},
+		{"net.Error timeout", timeoutErr, domain.HealthTransport, true},
+		{"connection refused", connRefused, domain.HealthTransport, true},
+		{"dns failure", dnsErr, domain.HealthTransport, true},
+		{"context deadline exceeded", context.DeadlineExceeded, domain.HealthTransport, true},
+		{"url.Error chain", &url.Error{Op: "Get", URL: "https://tracker.example/x", Err: errors.New("connection reset by peer")}, domain.HealthTransport, true},
+		{"wrapped net error", fmt.Errorf("GET https://tracker.example: %w", timeoutErr), domain.HealthTransport, true},
+		{"unexpected EOF read", fmt.Errorf("reading response from https://tracker.example: %w", io.ErrUnexpectedEOF), domain.HealthTransport, true},
+		{"plain EOF read", fmt.Errorf("reading response from https://tracker.example: %w", io.EOF), domain.HealthTransport, true},
+		{"gateway status (untyped)", errors.New("GET https://tracker.example: tracker returned HTTP 502"), "", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

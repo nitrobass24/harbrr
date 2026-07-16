@@ -94,6 +94,7 @@ type HealthCounts struct {
 	RateLimited   int64
 	ParseError    int64
 	AntiBot       int64
+	Transport     int64
 	LastFailureAt time.Time // zero = none
 }
 
@@ -174,6 +175,8 @@ func applyHealthCount(hc *HealthCounts, kind string, count int64, maxOcc sql.Nul
 		hc.ParseError = count
 	case domain.HealthAntiBot:
 		hc.AntiBot = count
+	case domain.HealthTransport:
+		hc.Transport = count
 	}
 	if maxOcc.Valid {
 		if occ := parseTime(maxOcc.String); occ.After(hc.LastFailureAt) {

@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net"
+	"net/url"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -114,7 +117,7 @@ func (a *indexerAdapter) Search(ctx context.Context, q search.Query) ([]*normali
 
 // liveSearch is the live seam the cache drives on a miss or a refresh (and that Search
 // calls directly when caching is off): it runs the engine's online search and returns the
-// FULL catalog. A classified failure (auth/anti-bot/rate-limited/parse) is recorded as a
+// FULL catalog. A classified failure (auth/anti-bot/rate-limited/parse/transport) is recorded as a
 // health event before the error is wrapped with the indexer id (not a secret) and
 // returned; the caller redacts it.
 func (a *indexerAdapter) liveSearch(ctx context.Context, query search.Query) ([]*normalizer.Release, error) {
@@ -168,7 +171,7 @@ func (a *indexerAdapter) Grab(ctx context.Context, link string) (*search.GrabRes
 	return result, nil
 }
 
-// recordHealth classifies err and, when it is one of the four health kinds,
+// recordHealth classifies err and, when it is one of the health kinds,
 // appends a health event with a credential-scrubbed detail. It is best-effort:
 // a failed write is logged (redacted) and never masks the original search error.
 func (a *indexerAdapter) recordHealth(ctx context.Context, err error) {
@@ -195,7 +198,7 @@ func (a *indexerAdapter) recordHealth(ctx context.Context, err error) {
 }
 
 // classifyHealth maps an engine error to a health-event kind. Returns ok=false
-// for errors outside the four categories (no event recorded).
+// for errors outside the five categories (no event recorded).
 func classifyHealth(err error) (string, bool) {
 	switch {
 	case errors.Is(err, login.ErrLoginFailed):
@@ -206,9 +209,31 @@ func classifyHealth(err error) (string, bool) {
 		return domain.HealthRateLimited, true
 	case errors.Is(err, search.ErrParseError):
 		return domain.HealthParseError, true
+	case isTransportError(err):
+		return domain.HealthTransport, true
 	default:
 		return "", false
 	}
+}
+
+// isTransportError reports whether err is a transport-level failure — connection
+// refused/reset, TLS handshake failure, DNS failure, client timeout (all covered by
+// net.Error, which *net.OpError, *net.DNSError, and context.DeadlineExceeded all
+// implement), a *url.Error chain, or an EOF mid-read (io.EOF / io.ErrUnexpectedEOF) —
+// as opposed to a reachable-but-unhappy response. Kept coarse (#223): one kind, not a
+// taxonomy; the event detail string carries the specifics. Gateway statuses
+// (502/504/522) surface from checkStatus as plain fmt errors with no distinguishing
+// type, so they fall through unclassified here — their code still reaches the detail
+// string via the wrapped error text.
+func isTransportError(err error) bool {
+	var (
+		netErr net.Error
+		urlErr *url.Error
+	)
+	if errors.As(err, &netErr) || errors.As(err, &urlErr) {
+		return true
+	}
+	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
 }
 
 // filterFreeleechOnly returns a NEW slice holding only freeleech releases
