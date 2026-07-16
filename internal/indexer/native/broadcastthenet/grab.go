@@ -2,14 +2,10 @@ package broadcastthenet
 
 import (
 	"context"
-	"errors"
-	stdhttp "net/http"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
-
-var errDownloadRequestFailed = errors.New("broadcastthenet: download request failed")
 
 // Grab fetches the BTN download URL server-side and returns the .torrent bytes. The
 // URL embeds the authkey/torrent_pass in its query, which *arr must not see, which is
@@ -18,18 +14,8 @@ var errDownloadRequestFailed = errors.New("broadcastthenet: download request fai
 // reaches the feed. The download is a direct torrent (never a magnet), so Redirect is
 // empty. No error carries the download link's secret path/query (its authkey/torrent_pass
 // sit in the query); a transport error surfaces only its scheme://host, and the bytes go
-// to /dl, never a log.
+// to /dl, never a log. GrabDirect (Base) owns the shared build-GET/DoDownload/GrabResult
+// shape; ClassifyAuth403 is this family's dialect.
 func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, error) {
-	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, link, nil)
-	if err != nil {
-		return nil, errDownloadRequestFailed
-	}
-	resp, err := d.DoDownload(ctx, req, native.ClassifyAuth403)
-	if err != nil {
-		return nil, err
-	}
-	return &search.GrabResult{
-		Body:        resp.Body,
-		ContentType: resp.Header.Get("Content-Type"),
-	}, nil
+	return d.GrabDirect(ctx, link, native.ClassifyAuth403)
 }

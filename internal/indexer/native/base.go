@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	stdhttp "net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -217,8 +218,17 @@ func (b *Base) roundTrip(ctx context.Context, req *stdhttp.Request, c Classify, 
 		// unredacted URL (which may carry a passkey), so only its scheme://host
 		// survives. %w keeps context.Canceled/DeadlineExceeded and the paced
 		// client's sentinels detectable through errors.Is.
-		return nil, fmt.Errorf("%s: %s to %s failed: %w",
+		werr := fmt.Errorf("%s: %s to %s failed: %w",
 			b.Family, op, apphttp.SchemeHost(req.URL.String()), apphttp.RedactURLError(err))
+		// Mark the wrap host-redacted only when the cause is PROVABLY scrubbed —
+		// a *url.Error just rebuilt host-only, or a paced-client error that arrived
+		// pre-redacted — so sanitizeGrabError can tell it apart from free text that
+		// may embed a secret-bearing URL and must be flattened.
+		var uerr *url.Error
+		if errors.As(err, &uerr) || apphttp.IsHostRedacted(err) {
+			werr = apphttp.MarkHostRedacted(werr)
+		}
+		return nil, werr //nolint:wrapcheck // werr is already the fully-shaped, host-redacted transport error; the marker is a transparent Error()/Unwrap() passthrough, and re-wrapping would only add noise
 	}
 	defer func() { _ = resp.Body.Close() }()
 

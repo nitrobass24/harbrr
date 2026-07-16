@@ -2,17 +2,10 @@ package hdbits
 
 import (
 	"context"
-	"errors"
-	stdhttp "net/http"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
-
-// errDownloadRequestFailed is the grab-path build-request failure. A request that
-// cannot even be built may quote the passkey-bearing download URL in its cause, so it
-// is returned bare — never wrapped around the underlying error.
-var errDownloadRequestFailed = errors.New("hdbits: download request failed")
 
 // Grab fetches the rebuilt download.php URL server-side and returns the .torrent bytes.
 // The download URL embeds the passkey in its query (download.php?id=…&passkey=…), which
@@ -23,18 +16,8 @@ var errDownloadRequestFailed = errors.New("hdbits: download request failed")
 // Redirect is empty. Transport redaction and the 403-is-rate-limit classification
 // (mirroring Search) live in the base DoDownload: a grab error surfaces at most the
 // download endpoint's scheme://host — never the passkey — and the bytes go to /dl,
-// never a log.
+// never a log. GrabDirect (Base) owns the shared build-GET/DoDownload/GrabResult shape;
+// ClassifyRateLimit403 is this family's dialect (403 is a spent query budget, not auth).
 func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, error) {
-	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, link, nil)
-	if err != nil {
-		return nil, errDownloadRequestFailed
-	}
-	resp, err := d.DoDownload(ctx, req, native.ClassifyRateLimit403)
-	if err != nil {
-		return nil, err
-	}
-	return &search.GrabResult{
-		Body:        resp.Body,
-		ContentType: resp.Header.Get("Content-Type"),
-	}, nil
+	return d.GrabDirect(ctx, link, native.ClassifyRateLimit403)
 }

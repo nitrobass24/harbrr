@@ -109,7 +109,16 @@ func TestGrabTransportError(t *testing.T) {
 // classifiable by callers rather than being flattened to a generic request failure.
 func TestGrabPreservesOversizedSentinel(t *testing.T) {
 	t.Parallel()
-	err := sanitizeGrabError(native.ErrDownloadTooLarge)
+	big := strings.Repeat("x", (64<<20)+1)
+	doer := &scriptDoer{handler: func(*stdhttp.Request) *stdhttp.Response {
+		return &stdhttp.Response{
+			StatusCode: stdhttp.StatusOK,
+			Header:     stdhttp.Header{"Content-Type": {"application/x-nzb"}},
+			Body:       io.NopCloser(strings.NewReader(big)),
+		}
+	}}
+	d := testDriver(t, nil, doer)
+	_, err := d.Grab(t.Context(), testBaseURL+"/api/download/big.nzb")
 	if !errors.Is(err, native.ErrDownloadTooLarge) {
 		t.Fatalf("err = %v, want native.ErrDownloadTooLarge", err)
 	}
