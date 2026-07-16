@@ -33,11 +33,12 @@ updates:
       web:
         patterns: ["*"]
     ignore:
-      # TypeScript 7 (the native/Go compiler) does not ship the JS compiler API
-      # yet; openapi-typescript (api-types generation) and typescript-eslint
-      # both crash on it. Revisit when both support TS 7.
+      # TypeScript 7.0.x (the native/Go compiler) does not ship the JS compiler
+      # API; openapi-typescript (api-types generation) and typescript-eslint
+      # both crash on it. Only 7.0.x is ignored, so dependabot retries at 7.1
+      # and that PR's CI is the revisit gate — see autobrr/harbrr#213.
       - dependency-name: "typescript"
-        update-types: ["version-update:semver-major"]
+        versions: ["7.0.x"]
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
