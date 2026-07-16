@@ -169,6 +169,9 @@ func TestSearchBodyReadErrorSurfacesCause(t *testing.T) {
 	if !errors.Is(searchErr, search.ErrParseError) {
 		t.Fatalf("err = %v, want ErrParseError (health classification must be preserved)", searchErr)
 	}
+	if !errors.Is(searchErr, native.ErrBodyRead) {
+		t.Fatalf("err = %v, want errors.Is(native.ErrBodyRead)", searchErr)
+	}
 	if !strings.Contains(searchErr.Error(), "unexpected EOF reading body") {
 		t.Fatalf("err = %q, want the real read cause included (not a bare parse_error)", searchErr.Error())
 	}

@@ -3,6 +3,7 @@ package native
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	stdhttp "net/http"
 	"net/url"
@@ -157,18 +158,33 @@ func TestGrabNZBContextSentinelsSurvive(t *testing.T) {
 }
 
 // TestNormalizeReadError proves the mid-body read failure keeps its ErrParseError health
-// classification while any other error (transport/status) passes through unchanged.
+// classification (and its ErrBodyRead cause) while any other error (transport/status)
+// passes through unchanged.
 func TestNormalizeReadError(t *testing.T) {
 	if NormalizeReadError(nil) != nil {
 		t.Fatal("nil in, nil out")
 	}
-	readErr := errors.New("testfam: read request response: unexpected EOF")
+	readErr := fmt.Errorf("testfam: %w: %w", ErrBodyRead, errors.New("unexpected EOF"))
 	got := NormalizeReadError(readErr)
 	if !errors.Is(got, search.ErrParseError) {
 		t.Fatalf("err = %v, want errors.Is(search.ErrParseError)", got)
 	}
+	if !errors.Is(got, ErrBodyRead) {
+		t.Fatalf("err = %v, want errors.Is(ErrBodyRead)", got)
+	}
 	other := errors.New("testfam: request returned HTTP 500")
 	if !errors.Is(NormalizeReadError(other), other) {
 		t.Fatalf("non-read error must pass through unchanged, got %v", NormalizeReadError(other))
+	}
+}
+
+// TestNormalizeReadErrorSurvivesRewording proves the errors.Is classification is
+// text-independent: reworded human-readable wrapping around ErrBodyRead (as if
+// roundTrip's message in base.go changed) still classifies as ErrParseError.
+func TestNormalizeReadErrorSurvivesRewording(t *testing.T) {
+	readErr := fmt.Errorf("testfam: totally different wording here: %w: %w", ErrBodyRead, errors.New("EOF"))
+	got := NormalizeReadError(readErr)
+	if !errors.Is(got, search.ErrParseError) {
+		t.Fatalf("err = %v, want errors.Is(search.ErrParseError) even after rewording", got)
 	}
 }
