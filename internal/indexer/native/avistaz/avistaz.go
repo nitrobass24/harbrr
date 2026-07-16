@@ -8,7 +8,6 @@ package avistaz
 
 import (
 	"context"
-	"errors"
 	"sync"
 
 	"github.com/autobrr/harbrr/internal/indexer/native"
@@ -47,9 +46,6 @@ func profileFor(id string) profile {
 // New is the native.Factory for every AvistaZ-family site. It builds the
 // capabilities from the (per-site) definition and normalises the base URL.
 func New(p native.Params) (native.Driver, error) {
-	if p.Def == nil {
-		return nil, errors.New("avistaz: nil definition")
-	}
 	base, err := native.NewBase("avistaz", p)
 	if err != nil {
 		return nil, err

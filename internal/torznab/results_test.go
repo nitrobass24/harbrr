@@ -12,6 +12,25 @@ import (
 // fixedNow is the deterministic pubDate fallback clock for the results goldens.
 func fixedNow() time.Time { return time.Date(2026, time.June, 13, 12, 0, 0, 0, time.UTC) }
 
+// marshalResults is the removed MarshalResults convenience, rebuilt for tests on
+// top of MarshalResultsRewritten: the natural page (offset 0, total = number of
+// non-nil releases) with no acquisition rewriter.
+func marshalResults(feed FeedInfo, releases []*normalizer.Release, now time.Time) ([]byte, error) {
+	return MarshalResultsRewritten(feed, releases, Page{Offset: 0, Total: nonNilCount(releases)}, now, nil)
+}
+
+// nonNilCount counts the non-nil releases — exactly the items
+// MarshalResultsRewritten renders (it skips a stray nil).
+func nonNilCount(releases []*normalizer.Release) int {
+	n := 0
+	for _, r := range releases {
+		if r != nil {
+			n++
+		}
+	}
+	return n
+}
+
 func demoFeed() FeedInfo {
 	return FeedInfo{
 		IndexerID:   "demo",
@@ -133,7 +152,7 @@ func TestMarshalResultsGolden(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := MarshalResults(demoFeed(), tt.releases, fixedNow())
+			got, err := marshalResults(demoFeed(), tt.releases, fixedNow())
 			if err != nil {
 				t.Fatalf("MarshalResults: %v", err)
 			}
@@ -169,7 +188,7 @@ func TestResultsGuidPrecedence(t *testing.T) {
 // and a freeleech downloadvolumefactor of 0 are all emitted (not dropped).
 func TestResultsZeroSizeAndFreeleech(t *testing.T) {
 	t.Parallel()
-	got, err := MarshalResults(demoFeed(), []*normalizer.Release{magnetOnlyRelease()}, fixedNow())
+	got, err := marshalResults(demoFeed(), []*normalizer.Release{magnetOnlyRelease()}, fixedNow())
 	if err != nil {
 		t.Fatalf("MarshalResults: %v", err)
 	}
@@ -191,7 +210,7 @@ func TestResultsZeroSizeAndFreeleech(t *testing.T) {
 // before marshaling (parity with Jackett's RemoveInvalidXMLChars).
 func TestResultsStripsInvalidXMLChars(t *testing.T) {
 	t.Parallel()
-	got, err := MarshalResults(demoFeed(), []*normalizer.Release{minimalBadCharRelease()}, fixedNow())
+	got, err := marshalResults(demoFeed(), []*normalizer.Release{minimalBadCharRelease()}, fixedNow())
 	if err != nil {
 		t.Fatalf("MarshalResults: %v", err)
 	}
@@ -208,7 +227,7 @@ func TestResultsStripsInvalidXMLChars(t *testing.T) {
 // a full <channel> header and zero items, not a bare/empty document.
 func TestResultsEmptyFeedHasChannel(t *testing.T) {
 	t.Parallel()
-	got, err := MarshalResults(demoFeed(), nil, fixedNow())
+	got, err := marshalResults(demoFeed(), nil, fixedNow())
 	if err != nil {
 		t.Fatalf("MarshalResults: %v", err)
 	}
@@ -323,7 +342,7 @@ func TestResultsFutureDateClamp(t *testing.T) {
 		PublishDate:          "2099-01-01T00:00:00Z",
 		DownloadVolumeFactor: 1, UploadVolumeFactor: 1,
 	}
-	got, err := MarshalResults(demoFeed(), []*normalizer.Release{future}, fixedNow())
+	got, err := marshalResults(demoFeed(), []*normalizer.Release{future}, fixedNow())
 	if err != nil {
 		t.Fatalf("MarshalResults: %v", err)
 	}
@@ -342,7 +361,7 @@ func TestResultsGenreWireForm(t *testing.T) {
 		Categories: []int{2000}, Seeders: 1, Peers: 1, Genre: "Drama,Crime,Thriller",
 		DownloadVolumeFactor: 1, UploadVolumeFactor: 1,
 	}
-	got, err := MarshalResults(demoFeed(), []*normalizer.Release{r}, fixedNow())
+	got, err := marshalResults(demoFeed(), []*normalizer.Release{r}, fixedNow())
 	if err != nil {
 		t.Fatalf("MarshalResults: %v", err)
 	}
@@ -357,7 +376,7 @@ func TestResultsGenreWireForm(t *testing.T) {
 // bind correctly. This is the surest check that *arr will parse the feed.
 func TestResultsNamespaceBinding(t *testing.T) {
 	t.Parallel()
-	got, err := MarshalResults(demoFeed(), []*normalizer.Release{fullRelease()}, fixedNow())
+	got, err := marshalResults(demoFeed(), []*normalizer.Release{fullRelease()}, fixedNow())
 	if err != nil {
 		t.Fatalf("MarshalResults: %v", err)
 	}
@@ -414,7 +433,7 @@ func TestResultsPrivateIndexer(t *testing.T) {
 		Categories: []int{5040}, Seeders: 9, Peers: 9,
 		DownloadVolumeFactor: 1, UploadVolumeFactor: 1,
 	}
-	got, err := MarshalResults(feed, []*normalizer.Release{r}, fixedNow())
+	got, err := marshalResults(feed, []*normalizer.Release{r}, fixedNow())
 	if err != nil {
 		t.Fatalf("MarshalResults: %v", err)
 	}
@@ -481,7 +500,7 @@ func TestResultsUsenetProtocol(t *testing.T) {
 			t.Parallel()
 			feed := demoFeed()
 			feed.Protocol = tt.protocol
-			got, err := MarshalResults(feed, []*normalizer.Release{rel()}, fixedNow())
+			got, err := marshalResults(feed, []*normalizer.Release{rel()}, fixedNow())
 			if err != nil {
 				t.Fatalf("MarshalResults: %v", err)
 			}

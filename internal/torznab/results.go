@@ -136,33 +136,8 @@ type torznabAttr struct {
 // link never reaches the feed, while keeping a stable, passkey-free guid.
 type AcquisitionRewriter func(acquisitionLink string) (link, guid string, ok bool)
 
-// MarshalResults renders the Torznab results feed (t=search and the typed search
-// modes) for an indexer's releases. now supplies the pubDate fallback for a
-// release without a date (Jackett uses DateTime.Now). An empty release slice
-// renders a valid feed with a full <channel> header and zero <item>s. The
-// serializer is pure: it renders exactly the releases given, in order; guid
-// de-duplication (Jackett's behavior) is the caller's responsibility via GUIDFor.
-// It reports the natural page (offset 0, total = number of renderable releases); a
-// caller that has paged a larger match set passes the real window via
-// MarshalResultsRewritten.
-func MarshalResults(feed FeedInfo, releases []*normalizer.Release, now time.Time) ([]byte, error) {
-	return MarshalResultsRewritten(feed, releases, Page{Offset: 0, Total: countRenderable(releases)}, now, nil)
-}
-
-// countRenderable counts the non-nil releases — exactly the items
-// MarshalResultsRewritten will emit (it skips a stray nil) — so the default
-// <newznab:response total> matches the rendered item count.
-func countRenderable(releases []*normalizer.Release) int {
-	n := 0
-	for _, r := range releases {
-		if r != nil {
-			n++
-		}
-	}
-	return n
-}
-
-// MarshalResultsRewritten is MarshalResults with the resolved paging window (emitted as
+// MarshalResultsRewritten renders the Torznab results feed (t=search and the typed
+// search modes) for an indexer's releases, with the resolved paging window (emitted as
 // <newznab:response offset total>) and an optional per-release acquisition rewriter (the
 // /dl proxy). A nil rewriter serves links and guids unchanged. page.Total is the full
 // match count before the page slice, so it can exceed len(releases).

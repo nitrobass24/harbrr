@@ -3,7 +3,6 @@ package secrets
 import (
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -33,10 +32,4 @@ func GenerateAPIKey() (string, error) {
 func HashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
-}
-
-// VerifyToken reports whether a presented token matches a stored SHA-256 hex
-// hash, comparing in constant time.
-func VerifyToken(token, storedHash string) bool {
-	return subtle.ConstantTimeCompare([]byte(HashToken(token)), []byte(storedHash)) == 1
 }

@@ -46,7 +46,7 @@ func TestAnnounceConnectionRoundTrip(t *testing.T) {
 	}
 }
 
-func TestAnnounceConnectionUpdateEnableDelete(t *testing.T) {
+func TestAnnounceConnectionEnableDelete(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	db := openMigrated(t, ":memory:")
@@ -56,18 +56,6 @@ func TestAnnounceConnectionUpdateEnableDelete(t *testing.T) {
 	id, err := repo.InsertAnnounceConnection(ctx, db, sampleAnnounceConnection(mintKey(t, db, "k"), domain.AnnounceKindQui, now))
 	if err != nil {
 		t.Fatalf("insert: %v", err)
-	}
-
-	conn, _ := repo.GetAnnounceConnection(ctx, db, id)
-	conn.Name = "renamed"
-	conn.BaseURL = "http://qui:9999"
-	conn.UpdatedAt = now.Add(time.Minute)
-	if err := repo.UpdateAnnounceConnection(ctx, db, conn); err != nil {
-		t.Fatalf("update: %v", err)
-	}
-	got, _ := repo.GetAnnounceConnection(ctx, db, id)
-	if got.Name != "renamed" || got.BaseURL != "http://qui:9999" {
-		t.Errorf("update not applied: %+v", got)
 	}
 
 	if err := repo.SetAnnounceConnectionEnabled(ctx, db, id, false, now.Add(2*time.Minute)); err != nil {

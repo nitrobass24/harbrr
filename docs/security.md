@@ -25,8 +25,9 @@ hashed.** The web-UI password and API keys are never stored in recoverable form,
 
 - Passwords: `secrets.HashPassword` / `VerifyPassword` (`internal/secrets/password.go`) — argon2id
   parameters exactly as above, PHC-encoded, `subtle.ConstantTimeCompare`.
-- Bearer tokens: `secrets.GenerateAPIKey` (32 random bytes) / `HashToken` (SHA-256) / `VerifyToken`
-  (`internal/secrets/token.go`). Plain SHA-256 is correct here: the input is a 256-bit random token,
+- Bearer tokens: `secrets.GenerateAPIKey` (32 random bytes) / `HashToken` (SHA-256)
+  (`internal/secrets/token.go`); verification is a lookup of the presented token's hash against the
+  stored hash (`internal/auth`). Plain SHA-256 is correct here: the input is a 256-bit random token,
   not a low-entropy password, so a slow KDF buys nothing.
 - Tracker credentials: the `Keyring` (`internal/secrets/keyring.go`, `aead.go`) — see below.
 

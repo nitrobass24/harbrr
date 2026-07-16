@@ -165,7 +165,7 @@ func TestMarshalResultsRobustness(t *testing.T) {
 	now := time.Date(2026, time.June, 14, 0, 0, 0, 0, time.UTC)
 
 	prop := func(fr fuzzReleases) bool {
-		data, err := MarshalResults(feed, fr, now)
+		data, err := marshalResults(feed, fr, now)
 		if err != nil {
 			t.Logf("MarshalResults returned error on %d releases: %v", len(fr), err)
 			return false

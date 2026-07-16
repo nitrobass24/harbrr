@@ -76,20 +76,6 @@ func (AnnounceConnections) ListAnnounceConnections(ctx context.Context, q dbinte
 	return out, nil
 }
 
-// UpdateAnnounceConnection writes a connection's mutable fields (name, base_url, the
-// re-encrypted tool key, key_id) by id, returning ErrNotFound when no row matches.
-func (AnnounceConnections) UpdateAnnounceConnection(ctx context.Context, q dbinterface.Execer, c domain.AnnounceConnection) error {
-	res, err := q.ExecContext(ctx,
-		q.Rebind(`UPDATE announce_connections SET
-			name = ?, base_url = ?, api_key_encrypted = ?, harbrr_url = ?, key_id = ?, updated_at = ?
-			WHERE id = ?`),
-		c.Name, c.BaseURL, c.APIKeyEncrypted, c.HarbrrURL, c.KeyID, c.UpdatedAt.UTC().Format(timeLayout), c.ID)
-	if err != nil {
-		return fmt.Errorf("database: update announce connection: %w", err)
-	}
-	return affectedOrNotFoundID(res, c.ID)
-}
-
 // SetAnnounceConnectionEnabled toggles the enabled flag.
 func (AnnounceConnections) SetAnnounceConnectionEnabled(ctx context.Context, q dbinterface.Execer, id int64, enabled bool, updatedAt time.Time) error {
 	res, err := q.ExecContext(ctx,
