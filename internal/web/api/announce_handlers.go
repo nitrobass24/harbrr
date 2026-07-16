@@ -73,19 +73,14 @@ func (rt *router) createAnnounceTargetFromAppConnection(w http.ResponseWriter, r
 	if !ok {
 		return
 	}
-	appConn, err := rt.appsync.GetConnection(r.Context(), id)
-	if err != nil {
-		rt.writeServiceError(w, "seed announce target", err)
-		return
-	}
-	baseURL, apiKey, harbrrURL, err := rt.appsync.QuiSeed(r.Context(), id)
+	seed, err := rt.appsync.QuiSeed(r.Context(), id)
 	if err != nil {
 		rt.writeServiceError(w, "seed announce target", err)
 		return
 	}
 	conn, err := rt.announce.CreateConnection(r.Context(), announce.CreateConnectionParams{
-		Name: appConn.Name, Kind: domain.AnnounceKindQui,
-		BaseURL: baseURL, APIKey: apiKey, HarbrrURL: harbrrURL,
+		Name: seed.Name, Kind: domain.AnnounceKindQui,
+		BaseURL: seed.BaseURL, APIKey: seed.APIKey, HarbrrURL: seed.HarbrrURL,
 	})
 	if err != nil {
 		rt.writeServiceError(w, "seed announce target", err)

@@ -24,12 +24,13 @@ func TestQuiSeedReturnsDecryptedCredentials(t *testing.T) {
 		t.Fatalf("CreateConnection qui: %v", err)
 	}
 
-	baseURL, apiKey, harbrrURL, err := f.svc.QuiSeed(ctx, qui.ID)
+	seed, err := f.svc.QuiSeed(ctx, qui.ID)
 	if err != nil {
 		t.Fatalf("QuiSeed: %v", err)
 	}
-	if baseURL != "http://qui:7476" || apiKey != "qui-secret" || harbrrURL != "http://harbrr:7478" {
-		t.Errorf("QuiSeed = (%q, %q, %q), want (http://qui:7476, qui-secret, http://harbrr:7478)", baseURL, apiKey, harbrrURL)
+	want := QuiSeedResult{Name: "qui", BaseURL: "http://qui:7476", APIKey: "qui-secret", HarbrrURL: "http://harbrr:7478"}
+	if seed != want {
+		t.Errorf("QuiSeed = %+v, want %+v", seed, want)
 	}
 }
 
@@ -41,7 +42,7 @@ func TestQuiSeedRejectsNonQuiKind(t *testing.T) {
 	f := newSyncFixture(t)
 	ctx := context.Background()
 
-	if _, _, _, err := f.svc.QuiSeed(ctx, f.conn.ID); !errors.Is(err, domain.ErrInvalid) {
+	if _, err := f.svc.QuiSeed(ctx, f.conn.ID); !errors.Is(err, domain.ErrInvalid) {
 		t.Errorf("QuiSeed on sonarr connection = %v, want domain.ErrInvalid", err)
 	}
 }
