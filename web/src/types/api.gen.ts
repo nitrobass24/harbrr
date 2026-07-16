@@ -254,6 +254,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/indexers/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get fleet-wide indexer health status
+         * @description Returns healthy/unhealthy counts across every configured indexer, plus each indexer's derived status and most recent health event, sorted by slug.
+         */
+        get: operations["allIndexerStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/indexers/{slug}": {
         parameters: {
             query?: never;
@@ -1294,6 +1314,23 @@ export interface components {
             /** Format: date-time */
             lastFailureAt?: string;
         };
+        /** @description Fleet-wide indexer health roll-up: healthy/unhealthy counts plus each configured indexer's derived status and most recent health event, sorted by slug. */
+        FleetStatus: {
+            healthy: number;
+            unhealthy: number;
+            indexers: {
+                slug: string;
+                /** @enum {string} */
+                status: "healthy" | "unhealthy";
+                lastEvent?: {
+                    /** @enum {string} */
+                    kind: "auth_failure" | "rate_limited" | "parse_error" | "anti_bot";
+                    detail?: string;
+                    /** Format: date-time */
+                    occurred_at: string;
+                };
+            }[];
+        };
         InstanceDetail: components["schemas"]["Instance"] & {
             settings: components["schemas"]["Setting"][];
         };
@@ -2308,6 +2345,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IndexerStats"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    allIndexerStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description fleet-wide indexer status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetStatus"];
                 };
             };
             401: components["responses"]["Unauthorized"];
