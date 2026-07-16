@@ -1,7 +1,6 @@
 package torznabhttp
 
 import (
-	"context"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -17,7 +16,7 @@ import (
 // indexer id.
 func TestDLBaseURL(t *testing.T) {
 	t.Parallel()
-	r := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "http://h.test/api/indexers/demo/search", nil)
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "http://h.test/api/indexers/demo/search", nil)
 	r.Host = "h.test"
 	if got, want := DLBaseURL(r, URLConfig{BasePath: "/harbrr"}, "demo"), "http://h.test/harbrr/api/indexers/demo/dl"; got != want {
 		t.Errorf("DLBaseURL = %q, want %q", got, want)
