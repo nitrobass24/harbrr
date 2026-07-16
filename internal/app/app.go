@@ -22,6 +22,7 @@ import (
 	"github.com/autobrr/harbrr/internal/auth"
 	"github.com/autobrr/harbrr/internal/config"
 	"github.com/autobrr/harbrr/internal/database"
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/definitions"
 	"github.com/autobrr/harbrr/internal/indexer/native/catalog"
@@ -248,6 +249,10 @@ func (a *App) initAuth() {
 }
 
 // sessionManager builds the SCS session manager with the family cookie hardening.
+// Secure is computed once here from config (never mutated per-request): either the
+// manual secure_cookie override, or automatically when external_url's scheme is
+// https. The CSRF companion cookie (internal/web/api/csrf.go) inherits Secure from
+// this same sm.Cookie, so it never needs its own derivation.
 func sessionManager(store *database.SessionStore, cfg *config.Config) *scs.SessionManager {
 	sm := scs.New()
 	sm.Store = store
@@ -256,7 +261,7 @@ func sessionManager(store *database.SessionStore, cfg *config.Config) *scs.Sessi
 	sm.Cookie.HttpOnly = true
 	sm.Cookie.SameSite = http.SameSiteLaxMode
 	sm.Cookie.Persist = false
-	sm.Cookie.Secure = cfg.Server.SecureCookie
+	sm.Cookie.Secure = cfg.Server.SecureCookie || cfg.Server.ExternalHTTPS()
 	sm.Cookie.Path = cookiePath(cfg.Server.BaseURL)
 	return sm
 }
@@ -317,7 +322,7 @@ func buildSearchCache(ctx context.Context, db *database.DB, cfg *config.Config, 
 func (a *App) initSyncServices(httpClient *http.Client) {
 	a.appsync = appsync.NewService(a.db, registrySource{reg: a.registry}, a.auth, a.keyring, httpClient, a.log)
 	a.announce = announce.NewService(a.db, a.auth, a.keyring, announce.DefaultTargetFactory(httpClient, nil, nil), a.log)
-	a.searchCache.SetAnnounceSink(newAnnounceSink(a.announce, a.db, a.keyring, a.cfg.Server.BaseURL, a.log))
+	a.searchCache.SetAnnounceSink(newAnnounceSink(a.announce, a.db, a.keyring, a.cfg.Server.BaseURL, a.cfg.Server.ExternalOrigin(), a.log))
 }
 
 // initLogLevel builds the persisted log-level store and applies any override.
@@ -340,10 +345,15 @@ func applyPersistedLogLevel(ctx context.Context, logLevel *api.LogLevelStore, lo
 // newServer builds the management API router, the Torznab feed handler, and
 // the embedded UI handler, then mounts them on internal/server.
 func newServer(a *App) (*server.Server, error) {
+	urlCfg, err := feedURLConfig(a.cfg)
+	if err != nil {
+		return nil, err
+	}
+
 	mgmt, err := api.NewRouter(api.Deps{
 		Auth: a.auth, Registry: a.registry, Loader: loader.New(dropinDir(a.cfg)), AppSync: a.appsync,
 		Announce: a.announce, Notify: a.notify, Proxy: a.proxy, Solver: a.solver, Sessions: a.sessions,
-		DLToken: a.keyring, BasePath: a.cfg.Server.BaseURL, Cache: a.searchCache, Logger: a.log, LogLevel: a.logLevel,
+		DLToken: a.keyring, URLConfig: urlCfg, Cache: a.searchCache, Logger: a.log, LogLevel: a.logLevel,
 	}, api.Config{
 		AuthDisabled: a.cfg.Auth.AuthDisabled(), IPAllowlist: a.cfg.Auth.IPAllowlist, TrustedProxies: a.cfg.Auth.TrustedProxies,
 		Port: a.cfg.Server.Port,
@@ -355,7 +365,9 @@ func newServer(a *App) (*server.Server, error) {
 	tz := torznabhttp.NewHandler(
 		a.registry,
 		torznabhttp.WithAPIKeyValidator(apiKeyValidator(a.auth)),
-		torznabhttp.WithBasePath(a.cfg.Server.BaseURL),
+		torznabhttp.WithBasePath(urlCfg.BasePath),
+		torznabhttp.WithExternalURL(urlCfg.ExternalOrigin),
+		torznabhttp.WithTrustedProxies(urlCfg.TrustedProxies),
 		torznabhttp.WithLogger(a.log),
 		torznabhttp.WithDLToken(a.keyring),
 	)
@@ -369,14 +381,31 @@ func newServer(a *App) (*server.Server, error) {
 		server.Config{Addr: listenAddr(a.cfg), BasePath: a.cfg.Server.BaseURL}), nil
 }
 
-// buildUIHandler serves the embedded SPA bundle (web/dist) with the base path
-// and version injected for the client (internal/web/ui).
+// feedURLConfig builds the shared input for every absolute feed/dl URL the Torznab
+// handler and the management API's crossseed/download routes build: the base path,
+// the operator-configured external origin (authoritative when set), and the
+// trusted-proxy check gating X-Forwarded-Proto in the request-derived fallback
+// (auth.trusted_proxies — the same peers already trusted for X-Forwarded-For).
+func feedURLConfig(cfg *config.Config) (torznabhttp.URLConfig, error) {
+	trusted, err := apphttp.ParseTrustedProxies(cfg.Auth.TrustedProxies)
+	if err != nil {
+		return torznabhttp.URLConfig{}, fmt.Errorf("auth.trusted_proxies: %w", err)
+	}
+	return torznabhttp.URLConfig{
+		BasePath:       cfg.Server.BaseURL,
+		ExternalOrigin: cfg.Server.ExternalOrigin(),
+		TrustedProxies: trusted,
+	}, nil
+}
+
+// buildUIHandler serves the embedded SPA bundle (web/dist) with the base path,
+// version, and configured external_url injected for the client (internal/web/ui).
 func buildUIHandler(cfg *config.Config) (http.Handler, error) {
 	distFS, err := web.Dist()
 	if err != nil {
 		return nil, fmt.Errorf("web ui bundle: %w", err)
 	}
-	return ui.NewHandler(distFS, cfg.Server.BaseURL, version.String()), nil
+	return ui.NewHandler(distFS, cfg.Server.BaseURL, version.String(), cfg.Server.ExternalURL), nil
 }
 
 // dropinDir is the on-disk drop-in definitions directory under the data dir.

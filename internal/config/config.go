@@ -7,6 +7,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
@@ -65,8 +66,34 @@ type ServerConfig struct {
 	// BaseURL serves harbrr under a subpath (e.g. "/harbrr"); empty serves at root.
 	BaseURL string `mapstructure:"base_url"`
 	// SecureCookie marks the session cookie Secure. Set it when harbrr is reached
-	// over HTTPS (typically a TLS-terminating reverse proxy).
+	// over HTTPS (typically a TLS-terminating reverse proxy). ExternalURL's https
+	// scheme also implies Secure — see ExternalHTTPS.
 	SecureCookie bool `mapstructure:"secure_cookie"`
+	// ExternalURL is the operator-configured externally-visible "scheme://host[/base]"
+	// harbrr is reached at (e.g. "https://harbrr.example.com"), typically behind a
+	// TLS-terminating reverse proxy. When set it is authoritative for every absolute
+	// link harbrr serves (feed self-URLs, /dl); empty keeps today's request-derived
+	// behavior. A path, if present, must equal BaseURL (validateExternalURL).
+	ExternalURL string `mapstructure:"external_url"`
+}
+
+// ExternalHTTPS reports whether ExternalURL is set and its scheme is https, so the
+// session cookie can be marked Secure automatically without a manual secure_cookie
+// override. Assumes ExternalURL has already passed Validate.
+func (s ServerConfig) ExternalHTTPS() bool {
+	u, err := url.Parse(s.ExternalURL)
+	return err == nil && u.Scheme == "https"
+}
+
+// ExternalOrigin returns ExternalURL's "scheme://host" prefix (no path), or "" when
+// ExternalURL is unset or fails to parse. This is the origin the absolute-URL
+// builders (torznabhttp.URLConfig.ExternalOrigin) prepend to the base path.
+func (s ServerConfig) ExternalOrigin() string {
+	u, err := url.Parse(s.ExternalURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // AuthConfig is the management-API authentication posture.
@@ -238,7 +265,10 @@ func (c Config) Validate() error {
 	if err := c.validateAuth(); err != nil {
 		return err
 	}
-	return c.validateBaseURL()
+	if err := c.validateBaseURL(); err != nil {
+		return err
+	}
+	return c.validateExternalURL()
 }
 
 // validateAuth checks the auth mode and the fail-closed allowlist requirement.
@@ -267,6 +297,31 @@ func (c Config) validateBaseURL() error {
 	}
 	if strings.HasSuffix(b, "/") {
 		return fmt.Errorf("config: server.base_url %q must not end with '/'", b)
+	}
+	return nil
+}
+
+// validateExternalURL requires an absolute http(s) URL with a host; empty is allowed
+// (keeps today's request-derived behavior). A path, if present, must equal
+// server.base_url exactly — ExternalOrigin strips it, so a mismatch would silently
+// serve links at the wrong subpath.
+func (c Config) validateExternalURL() error {
+	e := c.Server.ExternalURL
+	if e == "" {
+		return nil
+	}
+	u, err := url.Parse(e)
+	if err != nil {
+		return fmt.Errorf("config: server.external_url %q: %w", e, err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("config: server.external_url %q must be an absolute http:// or https:// URL", e)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("config: server.external_url %q must include a host", e)
+	}
+	if p := strings.TrimRight(u.Path, "/"); p != "" && p != c.Server.BaseURL {
+		return fmt.Errorf("config: server.external_url %q path %q must equal server.base_url %q", e, u.Path, c.Server.BaseURL)
 	}
 	return nil
 }

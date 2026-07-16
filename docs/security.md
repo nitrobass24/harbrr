@@ -75,16 +75,19 @@ hashed.** The web-UI password and API keys are never stored in recoverable form,
 
 - A **first-run setup** flow creates the single admin (argon2id password, minimum length enforced) —
   `internal/auth/service.go`.
-- **Server-side sessions** via SCS with a database-backed store (`cmd/harbrr/serve.go` →
-  `sessionManager`): cookie `HttpOnly`, `SameSite=Lax`, `Secure` when `server.secure_cookie` is set,
-  path-scoped to the base URL, 30-day lifetime.
+- **Server-side sessions** via SCS with a database-backed store (`internal/app/app.go` →
+  `sessionManager`): cookie `HttpOnly`, `SameSite=Lax`, path-scoped to the base URL, 30-day lifetime.
+  `Secure` is computed once at startup (never mutated per-request) from `server.secure_cookie` OR an
+  `https` `server.external_url` — either one marks it Secure; see `docs/reverse-proxy.md`.
 - An **`X-API-Key`** header for programmatic clients, and a query-param `apikey` on the *arr-facing
   Torznab feed URL. Auth precedence (`internal/web/api/middleware.go`): `X-API-Key` → SCS session →
   auth-disabled mode.
 - An **auth-disabled + IP-allowlist** mode for users behind an authenticating reverse proxy
   (`auth.mode=disabled` requires a non-empty `auth.ip_allowlist`, else harbrr refuses to serve).
   `X-Forwarded-For` is honored only from configured `auth.trusted_proxies`, taking the rightmost
-  non-proxy hop so a client cannot forge an allowlisted IP.
+  non-proxy hop so a client cannot forge an allowlisted IP. The same `auth.trusted_proxies` gates
+  `X-Forwarded-Proto` trust for the feed/`/dl` self-URLs' request-derived scheme fallback (used when
+  `server.external_url` is unset) — an untrusted peer can no longer force an `https` self-URL.
 
 **CSRF** (`internal/web/api/csrf.go`). Cookie-authenticated **mutating** requests
 (`POST`/`PUT`/`PATCH`/`DELETE`) require a **session-bound token** echoed in an `X-CSRF-Token`

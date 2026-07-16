@@ -63,6 +63,24 @@ func TestValidate(t *testing.T) {
 			c.Secrets.KeyFile = "/tmp/key"
 		}, true},
 		{"single secret source ok", func(c *config.Config) { c.Secrets.EncryptionKey = "k" }, false},
+		{"empty external_url ok", func(c *config.Config) { c.Server.ExternalURL = "" }, false},
+		{"https external_url ok", func(c *config.Config) { c.Server.ExternalURL = "https://harbrr.example.com" }, false},
+		{"http external_url ok", func(c *config.Config) { c.Server.ExternalURL = "http://harbrr.example.com" }, false},
+		{"external_url with matching base_url path ok", func(c *config.Config) {
+			c.Server.BaseURL = "/harbrr"
+			c.Server.ExternalURL = "https://harbrr.example.com/harbrr"
+		}, false},
+		{"external_url path mismatching base_url", func(c *config.Config) {
+			c.Server.BaseURL = "/harbrr"
+			c.Server.ExternalURL = "https://harbrr.example.com/other"
+		}, true},
+		{"external_url path with empty base_url", func(c *config.Config) {
+			c.Server.ExternalURL = "https://harbrr.example.com/harbrr"
+		}, true},
+		{"external_url missing scheme", func(c *config.Config) { c.Server.ExternalURL = "harbrr.example.com" }, true},
+		{"external_url missing host", func(c *config.Config) { c.Server.ExternalURL = "https:///path" }, true},
+		{"external_url unsupported scheme", func(c *config.Config) { c.Server.ExternalURL = "ftp://harbrr.example.com" }, true},
+		{"external_url unparseable", func(c *config.Config) { c.Server.ExternalURL = "https://%zz" }, true},
 	}
 
 	for _, tt := range tests {
@@ -76,6 +94,55 @@ func TestValidate(t *testing.T) {
 			}
 			if !tt.wantErr && err != nil {
 				t.Fatalf("Validate() = %v, want nil", err)
+			}
+		})
+	}
+}
+
+func TestExternalHTTPS(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		url  string
+		want bool
+	}{
+		{"unset", "", false},
+		{"https", "https://harbrr.example.com", true},
+		{"http", "http://harbrr.example.com", false},
+		{"unparseable", "https://%zz", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := config.ServerConfig{ExternalURL: tt.url}
+			if got := s.ExternalHTTPS(); got != tt.want {
+				t.Errorf("ExternalHTTPS() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExternalOrigin(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{"unset", "", ""},
+		{"root", "https://harbrr.example.com", "https://harbrr.example.com"},
+		{"with subpath keeps only origin", "https://harbrr.example.com/harbrr", "https://harbrr.example.com"},
+		{"http", "http://harbrr.example.com:8080", "http://harbrr.example.com:8080"},
+		{"unparseable", "https://%zz", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := config.ServerConfig{ExternalURL: tt.url}
+			if got := s.ExternalOrigin(); got != tt.want {
+				t.Errorf("ExternalOrigin() = %q, want %q", got, tt.want)
 			}
 		})
 	}

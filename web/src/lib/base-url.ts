@@ -14,12 +14,14 @@ export function getApiBaseUrl(): string {
   return `${getBaseUrl()}/api`
 }
 
-// defaultHarbrrUrl is the best-effort prefill for a form's "harbrr URL" field:
-// how this browser reaches harbrr is usually how an app can too (the operator
-// adjusts for container-network names as needed). Shared so the connection and
-// announce forms cannot drift.
+// defaultHarbrrUrl is the best-effort prefill for a form's "harbrr URL" field. When the
+// operator configured server.external_url, it is authoritative (it's what the server
+// itself uses for feed/announce links, cutting connection drift); otherwise how this
+// browser reaches harbrr is usually how an app can too (the operator adjusts for
+// container-network names as needed). Shared so the connection and announce forms
+// cannot drift from each other.
 export function defaultHarbrrUrl(): string {
-  return `${window.location.origin}${getBaseUrl()}`
+  return window.__HARBRR_EXTERNAL_URL__ || `${window.location.origin}${getBaseUrl()}`
 }
 
 // explicitUrlPort returns the port a URL names outright, or null when it

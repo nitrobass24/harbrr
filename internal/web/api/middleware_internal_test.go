@@ -5,17 +5,19 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	apphttp "github.com/autobrr/harbrr/internal/http"
 )
 
 // newAllowlistRouter builds a router with the given trusted-proxy and allowlist
 // CIDRs/IPs for clientIP/ipAllowed tests.
 func newAllowlistRouter(t *testing.T, allow, proxies []string) *router {
 	t.Helper()
-	a, err := parseCIDRs(allow)
+	a, err := apphttp.ParseCIDRs(allow)
 	if err != nil {
 		t.Fatalf("parse allowlist: %v", err)
 	}
-	p, err := parseCIDRs(proxies)
+	p, err := apphttp.ParseTrustedProxies(proxies)
 	if err != nil {
 		t.Fatalf("parse proxies: %v", err)
 	}

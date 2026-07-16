@@ -76,7 +76,7 @@ func (rt *router) searchIndexer(w http.ResponseWriter, r *http.Request) {
 // an X-API-Key caller of this JSON API) can fetch them. The feed's apikey /dl stays for
 // *arr.
 func (rt *router) resolveSearchLinks(r *http.Request, idx core.Indexer, releases []*normalizer.Release) []*normalizer.Release {
-	rw := torznabhttp.NewManagementDLRewriter(rt.dlToken, idx, torznabhttp.DownloadBaseURL(r, rt.basePath, idx.Info().ID))
+	rw := torznabhttp.NewManagementDLRewriter(rt.dlToken, idx, torznabhttp.DownloadBaseURL(r, rt.urlCfg, idx.Info().ID))
 	withhold := rw == nil && torznabhttp.NeedsDLProxy(idx)
 	out := make([]*normalizer.Release, len(releases))
 	for i, rel := range releases {

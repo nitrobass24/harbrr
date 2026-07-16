@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest"
-import { explicitUrlPort, getApiBaseUrl, getBaseUrl, withPort } from "./base-url"
+import { defaultHarbrrUrl, explicitUrlPort, getApiBaseUrl, getBaseUrl, withPort } from "./base-url"
 
 describe("getBaseUrl", () => {
   afterEach(() => {
@@ -21,6 +21,23 @@ describe("getBaseUrl", () => {
       expect(getApiBaseUrl()).toBe(`${c.want}/api`)
     })
   }
+})
+
+describe("defaultHarbrrUrl", () => {
+  afterEach(() => {
+    delete window.__HARBRR_EXTERNAL_URL__
+    delete window.__HARBRR_BASE_URL__
+  })
+
+  it("prefers the configured external_url when set", () => {
+    window.__HARBRR_EXTERNAL_URL__ = "https://harbrr.example.com"
+    expect(defaultHarbrrUrl()).toBe("https://harbrr.example.com")
+  })
+
+  it("falls back to window.location.origin + base path when unset", () => {
+    window.__HARBRR_BASE_URL__ = "/harbrr"
+    expect(defaultHarbrrUrl()).toBe(`${window.location.origin}/harbrr`)
+  })
 })
 
 describe("explicitUrlPort", () => {

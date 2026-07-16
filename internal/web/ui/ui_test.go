@@ -36,7 +36,7 @@ func get(t *testing.T, h http.Handler, method, target string) *httptest.Response
 
 func TestHandlerServesBundle(t *testing.T) {
 	t.Parallel()
-	h := ui.NewHandler(builtFS(), "", "v1.2.3")
+	h := ui.NewHandler(builtFS(), "", "v1.2.3", "https://harbrr.example.com")
 
 	tests := []struct {
 		name         string
@@ -51,7 +51,7 @@ func TestHandlerServesBundle(t *testing.T) {
 		{
 			name: "root serves the shell with injected globals", method: http.MethodGet, target: "/",
 			wantStatus: http.StatusOK, wantType: "text/html",
-			wantBody:  `window.__HARBRR_BASE_URL__="";window.__HARBRR_VERSION__="v1.2.3"`,
+			wantBody:  `window.__HARBRR_BASE_URL__="";window.__HARBRR_VERSION__="v1.2.3";window.__HARBRR_EXTERNAL_URL__="https://harbrr.example.com"`,
 			wantCache: "no-cache",
 		},
 		{
@@ -115,7 +115,7 @@ func TestHandlerServesBundle(t *testing.T) {
 
 func TestHandlerBasePathRewrite(t *testing.T) {
 	t.Parallel()
-	h := ui.NewHandler(builtFS(), "/harbrr", "v1.2.3")
+	h := ui.NewHandler(builtFS(), "/harbrr", "v1.2.3", "")
 
 	body := get(t, h, http.MethodGet, "/").Body.String()
 	for _, want := range []string{
@@ -132,7 +132,7 @@ func TestHandlerBasePathRewrite(t *testing.T) {
 func TestHandlerFrontendNotBuilt(t *testing.T) {
 	t.Parallel()
 	// A fresh checkout embeds only dist/.gitkeep — no index.html.
-	h := ui.NewHandler(fstest.MapFS{".gitkeep": {Data: nil}}, "", "dev")
+	h := ui.NewHandler(fstest.MapFS{".gitkeep": {Data: nil}}, "", "dev", "")
 
 	rec := get(t, h, http.MethodGet, "/")
 	if rec.Code != http.StatusNotFound {

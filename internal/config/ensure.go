@@ -28,6 +28,10 @@ port = 7478
 #base_url = ""
 # Set true when a reverse proxy terminates TLS in front of harbrr.
 #secure_cookie = false
+# The externally-visible URL, e.g. "https://harbrr.example.com". When set it is
+# authoritative for every absolute link harbrr serves and implies secure_cookie
+# for an https scheme. See docs/reverse-proxy.md.
+#external_url = ""
 
 [log]
 # trace | debug | info | warn | error

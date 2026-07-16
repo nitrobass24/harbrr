@@ -1,6 +1,7 @@
 package torznabhttp
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -9,21 +10,25 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/core"
 )
 
-// TestFeedURL covers the externally-visible feed URL builder: scheme derivation, the
-// base path, and the /full bypass suffix.
+// TestFeedURL covers the externally-visible feed URL builder: scheme derivation
+// (X-Forwarded-Proto gated on a trusted proxy peer), the base path, external_url, and
+// the /full bypass suffix.
 func TestFeedURL(t *testing.T) {
 	t.Parallel()
+	trustAll := func(net.IP) bool { return true }
 	tests := []struct {
 		name     string
-		basePath string
+		cfg      URLConfig
 		bypass   bool
 		fwdProto string
 		want     string
 	}{
-		{"honor", "", false, "", "http://h.test/api/indexers/tt/results/torznab"},
-		{"bypass appends /full", "", true, "", "http://h.test/api/indexers/tt/results/torznab/full"},
-		{"base path", "/harbrr", false, "", "http://h.test/harbrr/api/indexers/tt/results/torznab"},
-		{"forwarded https", "", true, "https", "https://h.test/api/indexers/tt/results/torznab/full"},
+		{"honor", URLConfig{}, false, "", "http://h.test/api/indexers/tt/results/torznab"},
+		{"bypass appends /full", URLConfig{}, true, "", "http://h.test/api/indexers/tt/results/torznab/full"},
+		{"base path", URLConfig{BasePath: "/harbrr"}, false, "", "http://h.test/harbrr/api/indexers/tt/results/torznab"},
+		{"forwarded https from untrusted peer is ignored", URLConfig{}, true, "https", "http://h.test/api/indexers/tt/results/torznab/full"},
+		{"forwarded https from trusted peer", URLConfig{TrustedProxies: trustAll}, true, "https", "https://h.test/api/indexers/tt/results/torznab/full"},
+		{"external_url overrides the request-derived origin", URLConfig{ExternalOrigin: "https://ext.example.com", BasePath: "/harbrr"}, false, "", "https://ext.example.com/harbrr/api/indexers/tt/results/torznab"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -33,7 +38,7 @@ func TestFeedURL(t *testing.T) {
 			if tt.fwdProto != "" {
 				req.Header.Set("X-Forwarded-Proto", tt.fwdProto)
 			}
-			if got := FeedURL(req, tt.basePath, "tt", tt.bypass); got != tt.want {
+			if got := FeedURL(req, tt.cfg, "tt", tt.bypass); got != tt.want {
 				t.Errorf("FeedURL = %q, want %q", got, tt.want)
 			}
 		})

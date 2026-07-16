@@ -5,16 +5,28 @@ import (
 	"net/url"
 	"strings"
 
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/core"
 	"github.com/autobrr/harbrr/internal/secrets"
 	tzn "github.com/autobrr/harbrr/internal/torznab"
 )
 
-// DLBaseURL builds the externally-visible /dl endpoint base for an indexer from the
-// request scheme/host and the configured base path — the same URL the Torznab feed
-// emits. The apikey and token are appended per release by NewDLRewriter.
-func DLBaseURL(r *http.Request, basePath, indexerID string) string {
-	return externalIndexerBase(r, basePath, indexerID) + "/dl"
+// URLConfig is the shared input the absolute-URL builders (DLBaseURL, DownloadBaseURL,
+// FeedURL, and the feed handler's own self URL) need beyond the *http.Request:
+// BasePath is re-added after the server strips it; ExternalOrigin ("scheme://host"),
+// when set, is authoritative over the request-derived origin; TrustedProxies gates
+// X-Forwarded-Proto trust in that request-derived fallback.
+type URLConfig struct {
+	BasePath       string
+	ExternalOrigin string
+	TrustedProxies apphttp.TrustedProxies
+}
+
+// DLBaseURL builds the externally-visible /dl endpoint base for an indexer — the same
+// URL the Torznab feed emits. The apikey and token are appended per release by
+// NewDLRewriter.
+func DLBaseURL(r *http.Request, cfg URLConfig, indexerID string) string {
+	return externalIndexerBase(r, cfg, indexerID) + "/dl"
 }
 
 // DownloadBaseURL builds the externally-visible session-authed management download
@@ -23,8 +35,8 @@ func DLBaseURL(r *http.Request, basePath, indexerID string) string {
 // management route authenticates by session cookie or X-API-Key, so the web UI (which
 // authenticates by cookie and never sends X-API-Key) can fetch a release the apikey-
 // sealed /dl would 401.
-func DownloadBaseURL(r *http.Request, basePath, indexerID string) string {
-	return externalIndexerBase(r, basePath, indexerID) + "/download"
+func DownloadBaseURL(r *http.Request, cfg URLConfig, indexerID string) string {
+	return externalIndexerBase(r, cfg, indexerID) + "/download"
 }
 
 // DLBaseURLForOrigin builds the same /dl endpoint base as DLBaseURL but from an explicit
@@ -38,9 +50,9 @@ func DLBaseURLForOrigin(origin, basePath, slug string) string {
 // FeedURL builds the externally-visible Torznab results-feed URL for an indexer (no
 // apikey appended). bypass selects the freeleech-bypass /full variant — the URL harbrr
 // hands cross-seed consumers that must see the full catalog. It reuses the same
-// scheme/host/base-path derivation as DLBaseURL so the two stay consistent.
-func FeedURL(r *http.Request, basePath, indexerID string, bypass bool) string {
-	u := externalIndexerBase(r, basePath, indexerID) + "/results/torznab"
+// origin/base-path derivation as DLBaseURL so the two stay consistent.
+func FeedURL(r *http.Request, cfg URLConfig, indexerID string, bypass bool) string {
+	u := externalIndexerBase(r, cfg, indexerID) + "/results/torznab"
 	if bypass {
 		u += "/full"
 	}
@@ -61,14 +73,16 @@ func SealedDLURL(kr *secrets.Keyring, indexerID, dlBase, apiKey, originalLink st
 	return dlURLWithToken(dlBase, apiKey, token), nil
 }
 
-// externalIndexerBase is the shared scheme://host<basePath>/api/indexers/<id>
-// prefix the feed and /dl URLs hang off, deriving the origin from the request.
-func externalIndexerBase(r *http.Request, basePath, indexerID string) string {
-	scheme := "http"
-	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
-		scheme = "https"
+// externalIndexerBase is the shared origin<basePath>/api/indexers/<id> prefix the feed
+// and /dl URLs hang off. The origin is cfg.ExternalOrigin when the operator configured
+// one; otherwise it derives from the request scheme/host, honoring X-Forwarded-Proto
+// only from a trusted proxy peer (apphttp.RequestScheme).
+func externalIndexerBase(r *http.Request, cfg URLConfig, indexerID string) string {
+	origin := cfg.ExternalOrigin
+	if origin == "" {
+		origin = apphttp.RequestScheme(r, cfg.TrustedProxies) + "://" + r.Host
 	}
-	return indexerBaseURL(scheme+"://"+r.Host, basePath, indexerID)
+	return indexerBaseURL(origin, cfg.BasePath, indexerID)
 }
 
 // indexerBaseURL is the single builder for the {origin}{basePath}/api/indexers/{slug}

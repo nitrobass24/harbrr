@@ -24,7 +24,7 @@ type handler struct {
 	provider        core.Provider
 	apiKey          string
 	apiKeyValidator func(string) bool
-	basePath        string
+	urlCfg          URLConfig
 	clock           func() time.Time
 	log             zerolog.Logger
 	dlToken         *secrets.Keyring
@@ -49,7 +49,23 @@ func WithAPIKeyValidator(fn func(string) bool) Option {
 
 // WithBasePath sets the external base path (e.g. "/harbrr") so the served feed's
 // self URL reflects the externally-visible URL after the server strips the prefix.
-func WithBasePath(prefix string) Option { return func(h *handler) { h.basePath = prefix } }
+func WithBasePath(prefix string) Option { return func(h *handler) { h.urlCfg.BasePath = prefix } }
+
+// WithExternalURL sets the operator-configured external origin (scheme://host, no
+// path — WithBasePath supplies that). When set, it is authoritative for every
+// absolute URL the handler serves (self URL, /dl base) instead of the
+// request-derived scheme+Host; "" restores the request-derived fallback.
+func WithExternalURL(origin string) Option {
+	return func(h *handler) { h.urlCfg.ExternalOrigin = origin }
+}
+
+// WithTrustedProxies gates X-Forwarded-Proto trust, in the request-derived fallback,
+// on the direct peer being a configured trusted proxy — the feed-serving sibling of
+// internal/web/api's trusted_proxies-gated X-Forwarded-For. Unset (nil), the header
+// is never honored; wire it to auth.trusted_proxies to trust a fronting proxy.
+func WithTrustedProxies(trusted apphttp.TrustedProxies) Option {
+	return func(h *handler) { h.urlCfg.TrustedProxies = trusted }
+}
 
 // WithClock injects the reference clock used for the results pubDate fallback.
 // Defaults to time.Now.
@@ -349,7 +365,7 @@ func (h *handler) dlRewriter(r *http.Request, idx core.Indexer) tzn.AcquisitionR
 // the request, the configured base path re-added), without query — the apikey and
 // token are appended per release. It mirrors selfURL's scheme/host derivation.
 func (h *handler) dlBaseURL(r *http.Request, indexerID string) string {
-	return DLBaseURL(r, h.basePath, indexerID)
+	return DLBaseURL(r, h.urlCfg, indexerID)
 }
 
 // dlURLWithToken appends the caller's apikey (so *arr can authenticate the grab) and
@@ -490,18 +506,19 @@ func (h *handler) feedInfo(r *http.Request, idx core.Indexer) tzn.FeedInfo {
 	}
 }
 
-// selfURL builds the atom:link self href from the request scheme/host/path,
-// dropping the query string entirely so harbrr never reflects the caller's apikey,
-// then routes it through RedactURL as defense in depth. It re-adds the configured
-// base path (the server strips it before routing) so the served URL is the
-// externally-visible one, and honors X-Forwarded-Proto so a TLS-terminating proxy
-// yields https.
+// selfURL builds the atom:link self href, dropping the query string entirely so
+// harbrr never reflects the caller's apikey, then routes it through RedactURL as
+// defense in depth. It re-adds the configured base path (the server strips it before
+// routing) so the served URL is the externally-visible one. The origin is
+// h.urlCfg.ExternalOrigin when the operator configured one; otherwise it derives from
+// the request scheme/host, honoring X-Forwarded-Proto only from a trusted proxy peer
+// (apphttp.RequestScheme).
 func (h *handler) selfURL(r *http.Request) string {
-	scheme := "http"
-	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
-		scheme = "https"
+	origin := h.urlCfg.ExternalOrigin
+	if origin == "" {
+		origin = apphttp.RequestScheme(r, h.urlCfg.TrustedProxies) + "://" + r.Host
 	}
-	return apphttp.RedactURL(scheme + "://" + r.Host + h.basePath + r.URL.Path)
+	return apphttp.RedactURL(origin + h.urlCfg.BasePath + r.URL.Path)
 }
 
 // writeInternalError logs the failure and returns a generic 900 document — the

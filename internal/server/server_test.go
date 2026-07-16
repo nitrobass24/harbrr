@@ -192,7 +192,7 @@ func testUI(basePath string) *ui.Handler {
 	return ui.NewHandler(fstest.MapFS{
 		"index.html": {Data: []byte(`<!doctype html><html><head><title>harbrr</title></head>` +
 			`<body><div id="root"></div></body></html>`)},
-	}, basePath, "test")
+	}, basePath, "test", "")
 }
 
 // TestServerBareBasePathServesUI covers the edge of base-path stripping: a request

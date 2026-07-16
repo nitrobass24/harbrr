@@ -32,7 +32,7 @@ func (rt *router) crossSeedSnippet(w http.ResponseWriter, r *http.Request) {
 		rt.writeServiceError(w, "cross-seed snippet", err)
 		return
 	}
-	feedURL := torznabhttp.FeedURL(r, rt.basePath, slug, true)
+	feedURL := torznabhttp.FeedURL(r, rt.urlCfg, slug, true)
 	writeJSON(w, http.StatusOK, crossSeedSnippetResponse{
 		Indexer:  slug,
 		FeedURL:  feedURL,

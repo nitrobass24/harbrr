@@ -23,20 +23,20 @@ type Handler struct {
 
 // NewHandler prepares the SPA handler: it loads index.html once, rewrites
 // Vite's absolute asset URLs to live under basePath (the same serve-time
-// rewrite qui uses), and injects the base path + version globals the client
-// bootstraps from. A dist without index.html (fresh checkout, .gitkeep only)
-// yields a handler that answers "frontend not built".
-func NewHandler(fsys fs.FS, basePath, version string) *Handler {
+// rewrite qui uses), and injects the base path + version + external URL globals
+// the client bootstraps from. A dist without index.html (fresh checkout,
+// .gitkeep only) yields a handler that answers "frontend not built".
+func NewHandler(fsys fs.FS, basePath, version, externalURL string) *Handler {
 	raw, err := fs.ReadFile(fsys, "index.html")
 	if err != nil {
 		return &Handler{fsys: fsys}
 	}
-	return &Handler{fsys: fsys, index: processIndex(raw, basePath, version)}
+	return &Handler{fsys: fsys, index: processIndex(raw, basePath, version, externalURL)}
 }
 
 // processIndex rewrites root-absolute src/href URLs under basePath and injects
 // the runtime globals before </head>.
-func processIndex(index []byte, basePath, version string) []byte {
+func processIndex(index []byte, basePath, version, externalURL string) []byte {
 	// Normalize away a trailing slash so a basePath like "/harbrr/" cannot produce
 	// a doubled slash ("//assets/…") in the rewritten URLs or the injected global.
 	basePath = strings.TrimRight(basePath, "/")
@@ -44,8 +44,10 @@ func processIndex(index []byte, basePath, version string) []byte {
 		index = bytes.ReplaceAll(index, []byte(`src="/`), []byte(`src="`+basePath+`/`))
 		index = bytes.ReplaceAll(index, []byte(`href="/`), []byte(`href="`+basePath+`/`))
 	}
-	inject := fmt.Sprintf("<script>window.__HARBRR_BASE_URL__=%q;window.__HARBRR_VERSION__=%q;</script></head>",
-		basePath, version)
+	inject := fmt.Sprintf(
+		"<script>window.__HARBRR_BASE_URL__=%q;window.__HARBRR_VERSION__=%q;window.__HARBRR_EXTERNAL_URL__=%q;</script></head>",
+		basePath, version, externalURL,
+	)
 	return bytes.Replace(index, []byte("</head>"), []byte(inject), 1)
 }
 

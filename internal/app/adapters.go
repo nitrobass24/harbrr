@@ -97,7 +97,7 @@ type srcRelease struct {
 // announce target. The HTTP fan-out is detached (its own goroutine + a fresh, bounded
 // context), so a push never blocks or fails a search; only the cheap snapshot loop runs on
 // the caller's goroutine.
-func newAnnounceSink(svc *announce.Service, db dbinterface.Execer, keyring *secrets.Keyring, basePath string, log zerolog.Logger) registry.AnnounceSink {
+func newAnnounceSink(svc *announce.Service, db dbinterface.Execer, keyring *secrets.Keyring, basePath, externalOrigin string, log zerolog.Logger) registry.AnnounceSink {
 	instances := database.Instances{}
 	sem := make(chan struct{}, maxConcurrentAnnouncePushes)
 	return func(_ context.Context, instanceID int64, fresh []*normalizer.Release) {
@@ -123,23 +123,37 @@ func newAnnounceSink(svc *announce.Service, db dbinterface.Execer, keyring *secr
 				return
 			}
 			svc.Push(ctx, func(conn domain.AnnounceConnection) []announce.Release {
-				return announceReleasesFor(conn, svc, keyring, basePath, inst.Slug, snap, log)
+				return announceReleasesFor(conn, svc, keyring, basePath, externalOrigin, inst.Slug, snap, log)
 			})
 		}()
 	}
 }
 
+// announceOrigin picks the /dl base origin for an announce push: the operator-configured
+// server.external_url when set (authoritative over the connection's own stored harbrr
+// URL, cutting the drift the serverinfo staleness check otherwise works around), else
+// the connection's HarbrrURL as before.
+func announceOrigin(externalOrigin, harbrrURL string) string {
+	if externalOrigin != "" {
+		return externalOrigin
+	}
+	return strings.TrimRight(harbrrURL, "/")
+}
+
 // announceReleasesFor projects the source snapshot into per-connection announce.Release
 // values: the DownloadURL is a magnet as-is (public, no secret) or a sealed /dl proxy URL
-// built from the connection's harbrr URL + its minted key, so the passkey never leaves
-// harbrr. A release with no acquirable link is dropped.
-func announceReleasesFor(conn domain.AnnounceConnection, svc *announce.Service, keyring *secrets.Keyring, basePath, slug string, snap []srcRelease, log zerolog.Logger) []announce.Release {
+// built from the sink's origin + its minted key, so the passkey never leaves harbrr. The
+// origin is the operator-configured server.external_url when set — authoritative over the
+// connection's own stored harbrr URL, cutting the drift the serverinfo staleness check
+// otherwise works around — else the per-connection HarbrrURL as before. A release with no
+// acquirable link is dropped.
+func announceReleasesFor(conn domain.AnnounceConnection, svc *announce.Service, keyring *secrets.Keyring, basePath, externalOrigin, slug string, snap []srcRelease, log zerolog.Logger) []announce.Release {
 	harbrrKey, err := svc.HarbrrKey(conn)
 	if err != nil {
 		log.Warn().Int64("connection_id", conn.ID).Msg("announce: decrypt harbrr key failed")
 		return nil
 	}
-	dlBase := torznabhttp.DLBaseURLForOrigin(strings.TrimRight(conn.HarbrrURL, "/"), basePath, slug)
+	dlBase := torznabhttp.DLBaseURLForOrigin(announceOrigin(externalOrigin, conn.HarbrrURL), basePath, slug)
 	out := make([]announce.Release, 0, len(snap))
 	for _, s := range snap {
 		dl := s.magnet

@@ -14,6 +14,7 @@ import (
 	"github.com/autobrr/harbrr/internal/announce"
 	"github.com/autobrr/harbrr/internal/appsync"
 	"github.com/autobrr/harbrr/internal/auth"
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 	"github.com/autobrr/harbrr/internal/notify"
@@ -21,6 +22,7 @@ import (
 	"github.com/autobrr/harbrr/internal/secrets"
 	"github.com/autobrr/harbrr/internal/solver"
 	"github.com/autobrr/harbrr/internal/version"
+	"github.com/autobrr/harbrr/internal/web/torznabhttp"
 )
 
 // Deps are the collaborators the management API drives.
@@ -39,9 +41,11 @@ type Deps struct {
 	// never reaches the client. Nil disables the proxy (then resolver links are
 	// withheld from the JSON response rather than served in the clear).
 	DLToken *secrets.Keyring
-	// BasePath is the externally-visible base path, used to build absolute /dl URLs
-	// (the server strips it before routing, so it must be re-added).
-	BasePath string
+	// URLConfig is the shared input for building absolute /dl and feed URLs: the
+	// externally-visible base path (the server strips it before routing, so it must be
+	// re-added), the operator-configured external origin (authoritative when set), and
+	// the trusted-proxy check gating X-Forwarded-Proto in the request-derived fallback.
+	URLConfig torznabhttp.URLConfig
 	// Cache is the search-results cache backing the /api/cache stats/flush routes.
 	// Nil means caching is disabled; those routes then report a disabled state
 	// rather than 404 (wired in a later leaf).
@@ -79,14 +83,14 @@ type router struct {
 	solver   *solver.Service
 	sessions *scs.SessionManager
 	dlToken  *secrets.Keyring
-	basePath string
+	urlCfg   torznabhttp.URLConfig
 	cache    *registry.SearchCache
 	cfg      Config
 	log      zerolog.Logger
 	logLevel *LogLevelStore
 
 	allowlist      []*net.IPNet
-	trustedProxies []*net.IPNet
+	trustedProxies apphttp.TrustedProxies
 
 	// loadDefs summarizes the addable definitions; injectable so a test can drive a
 	// fail-then-succeed load. Defaults (in NewRouter) to the real loader closure.
@@ -102,11 +106,11 @@ type router struct {
 // NewRouter builds the management API handler. It fails closed: auth-disabled mode
 // without an IP allowlist is rejected rather than serving an open instance.
 func NewRouter(deps Deps, cfg Config) (http.Handler, error) {
-	allow, err := parseCIDRs(cfg.IPAllowlist)
+	allow, err := apphttp.ParseCIDRs(cfg.IPAllowlist)
 	if err != nil {
 		return nil, fmt.Errorf("api: ip_allowlist: %w", err)
 	}
-	proxies, err := parseCIDRs(cfg.TrustedProxies)
+	proxies, err := apphttp.ParseTrustedProxies(cfg.TrustedProxies)
 	if err != nil {
 		return nil, fmt.Errorf("api: trusted_proxies: %w", err)
 	}
@@ -117,7 +121,7 @@ func NewRouter(deps Deps, cfg Config) (http.Handler, error) {
 	rt := &router{
 		auth: deps.Auth, registry: deps.Registry, loader: deps.Loader, appsync: deps.AppSync,
 		announce: deps.Announce, notify: deps.Notify, proxy: deps.Proxy, solver: deps.Solver,
-		sessions: deps.Sessions, dlToken: deps.DLToken, basePath: deps.BasePath,
+		sessions: deps.Sessions, dlToken: deps.DLToken, urlCfg: deps.URLConfig,
 		cache: deps.Cache, cfg: cfg, log: deps.Logger, logLevel: deps.LogLevel,
 		allowlist: allow, trustedProxies: proxies,
 	}

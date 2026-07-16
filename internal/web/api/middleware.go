@@ -4,7 +4,6 @@ import (
 	"context"
 	"net"
 	"net/http"
-	"strconv"
 	"strings"
 )
 
@@ -99,7 +98,7 @@ func (rt *router) clientIP(r *http.Request) net.IP {
 		host = r.RemoteAddr
 	}
 	peer := net.ParseIP(host)
-	if peer == nil || !rt.isTrustedProxy(peer) {
+	if peer == nil || !rt.trustedProxies(peer) {
 		return peer
 	}
 	xff := r.Header.Get("X-Forwarded-For")
@@ -109,7 +108,7 @@ func (rt *router) clientIP(r *http.Request) net.IP {
 	parts := strings.Split(xff, ",")
 	for i := len(parts) - 1; i >= 0; i-- {
 		hop := net.ParseIP(strings.TrimSpace(parts[i]))
-		if hop == nil || rt.isTrustedProxy(hop) {
+		if hop == nil || rt.trustedProxies(hop) {
 			continue
 		}
 		return hop
@@ -117,43 +116,4 @@ func (rt *router) clientIP(r *http.Request) net.IP {
 	// Every forwarded hop was a trusted proxy (or unparseable); fall back to the
 	// direct peer rather than trusting a client-controlled value.
 	return peer
-}
-
-// isTrustedProxy reports whether ip is a configured trusted proxy.
-func (rt *router) isTrustedProxy(ip net.IP) bool {
-	for _, n := range rt.trustedProxies {
-		if n.Contains(ip) {
-			return true
-		}
-	}
-	return false
-}
-
-// parseCIDRs parses a list of IPs or CIDRs into networks. A bare IP becomes a
-// host network (/32 or /128).
-func parseCIDRs(entries []string) ([]*net.IPNet, error) {
-	out := make([]*net.IPNet, 0, len(entries))
-	for _, e := range entries {
-		e = strings.TrimSpace(e)
-		if e == "" {
-			continue
-		}
-		if !strings.Contains(e, "/") {
-			ip := net.ParseIP(e)
-			if ip == nil {
-				return nil, &net.ParseError{Type: "IP address", Text: e}
-			}
-			bits := 32
-			if ip.To4() == nil {
-				bits = 128
-			}
-			e += "/" + strconv.Itoa(bits)
-		}
-		_, n, err := net.ParseCIDR(e)
-		if err != nil {
-			return nil, err //nolint:wrapcheck // surfaced verbatim at construction.
-		}
-		out = append(out, n)
-	}
-	return out, nil
 }
