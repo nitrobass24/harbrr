@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router"
 import { ChevronDown, Search as SearchIcon } from "lucide-react"
 import { PageHeader } from "@/components/layout/PageHeader"
 import { sortRows, type SearchRow, type Sort, type SortKey } from "@/components/search/search-sort"
-import { SearchResultsTable } from "@/components/search/SearchResultsTable"
+import { SearchResultsResponsive } from "@/components/search/SearchResultsResponsive"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -103,7 +103,7 @@ function SearchPage() {
           }}
         >
           <div className="flex flex-wrap items-end gap-2.5">
-            <div className="relative min-w-64 flex-1">
+            <div className="relative w-full flex-1 md:min-w-64">
               <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint" />
               <Input
                 className="h-9 pl-8"
@@ -155,7 +155,7 @@ function SearchPage() {
         {submitted !== null && !searching && (
           rows.length > 0 ? (
             <>
-              <SearchResultsTable rows={rows} catNames={catNames} sort={sort} onSort={(key: SortKey) =>
+              <SearchResultsResponsive rows={rows} catNames={catNames} sort={sort} onSort={(key: SortKey) =>
                 setSort((prev) => prev.key === key ? { key, dir: prev.dir === "desc" ? "asc" : "desc" } : { key, dir: "desc" })} />
               <div className="mt-3 flex items-center gap-3 px-1 text-[12px] text-faint">
                 <span>{rows.length} results · page {offset / PAGE_SIZE + 1}</span>
