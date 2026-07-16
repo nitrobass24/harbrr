@@ -2,14 +2,16 @@ import { useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { FlaskConical, Plus, Search as SearchIcon } from "lucide-react"
 import { DeleteIndexerDialog } from "@/components/indexers/DeleteIndexerDialog"
+import { IndexerCardsMobile } from "@/components/indexers/IndexerCardsMobile"
 import { IndexerDetailsSheet } from "@/components/indexers/IndexerDetailsSheet"
-import { IndexersTable, type IndexerRowData } from "@/components/indexers/IndexersTable"
+import { IndexersTable, type IndexerRowActions, type IndexerRowData } from "@/components/indexers/IndexersTable"
 import { SnippetDialog } from "@/components/indexers/SnippetDialog"
 import { IndexerSheet, type IndexerSheetState } from "@/components/indexers/form/AddIndexerSheet"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { LoadError, LoadingBlock } from "@/components/ui/load-error"
 import { useDefinitions } from "@/hooks/useDefinitions"
+import { useIsMobile } from "@/hooks/useMediaQuery"
 import {
   useDeleteIndexer,
   useIndexerCapabilitiesMany,
@@ -42,6 +44,7 @@ function parentCategories(caps?: Capabilities): string {
 }
 
 function IndexersPage() {
+  const isMobile = useIsMobile()
   const indexers = useIndexers()
   const definitions = useDefinitions()
   const slugs = (indexers.data ?? []).map((ix) => ix.slug)
@@ -75,6 +78,22 @@ function IndexersPage() {
 
   const healthy = statuses.filter((s) => s.data?.status === "healthy").length
   const total = indexers.data?.length ?? 0
+
+  const rowActions: IndexerRowActions = {
+    onToggle: (slug, enabled) => toggle.mutate({ slug, enabled }),
+    onTest: (slug) => test.mutate(slug, {
+      onSuccess: (r) => r.ok ? notifySuccess(`${slug}: test passed`) : notifyError(`${slug}: test failed — ${r.error ?? "unknown error"}`),
+      onError: (err) => notifyError(err instanceof APIError && isAuthStatus(err.status) ? AUTH_FAILED_MSG : `${slug}: test request failed`, err),
+    }),
+    onEdit: (slug) => setSheet({ open: true, mode: "edit", slug }),
+    onDelete: setDeleting,
+    onSnippet: setSnippetFor,
+    onCopyFeedUrl: (slug) => {
+      const url = `${window.location.origin}${getBaseUrl()}/api/indexers/${encodeURIComponent(slug)}/results/torznab`
+      void copyText(url, "Feed URL copied (apps still need an API key)")
+    },
+    onDetails: setDetailsFor,
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -128,24 +147,7 @@ function IndexersPage() {
           </div>
         ) : indexers.isSuccess ? (
           <>
-            <IndexersTable
-              rows={rows}
-              actions={{
-                onToggle: (slug, enabled) => toggle.mutate({ slug, enabled }),
-                onTest: (slug) => test.mutate(slug, {
-                  onSuccess: (r) => r.ok ? notifySuccess(`${slug}: test passed`) : notifyError(`${slug}: test failed — ${r.error ?? "unknown error"}`),
-                  onError: (err) => notifyError(err instanceof APIError && isAuthStatus(err.status) ? AUTH_FAILED_MSG : `${slug}: test request failed`, err),
-                }),
-                onEdit: (slug) => setSheet({ open: true, mode: "edit", slug }),
-                onDelete: setDeleting,
-                onSnippet: setSnippetFor,
-                onCopyFeedUrl: (slug) => {
-                  const url = `${window.location.origin}${getBaseUrl()}/api/indexers/${encodeURIComponent(slug)}/results/torznab`
-                  void copyText(url, "Feed URL copied (apps still need an API key)")
-                },
-                onDetails: setDetailsFor,
-              }}
-            />
+            {isMobile ? <IndexerCardsMobile rows={rows} actions={rowActions} /> : <IndexersTable rows={rows} actions={rowActions} />}
             <p className="mt-3 px-1 text-[12px] text-faint">Showing {rows.length} of {total} indexers</p>
           </>
         ) : null}
