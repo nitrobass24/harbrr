@@ -123,6 +123,14 @@ func newAnnounceSink(svc *announce.Service, db dbinterface.Execer, keyring *secr
 				log.Warn().Err(err).Int64("instance_id", instanceID).Msg("announce: resolve indexer slug failed")
 				return
 			}
+			// Every announce target today (qui cross-seed, cross-seed v6) is
+			// torrent-only — pushing usenet releases at them is pure waste and
+			// burns the in-flight push budget (#231).
+			if inst.Protocol != "torrent" {
+				log.Debug().Str("indexer", inst.Slug).Str("protocol", inst.Protocol).
+					Msg("announce: skipping push for non-torrent indexer")
+				return
+			}
 			svc.Push(ctx, func(conn domain.AnnounceConnection) []announce.Release {
 				return announceReleasesFor(conn, svc, keyring, basePath, externalOrigin, inst.Slug, snap, log)
 			})
