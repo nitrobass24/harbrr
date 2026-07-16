@@ -14,6 +14,7 @@ import (
 	"github.com/autobrr/harbrr/internal/announce"
 	"github.com/autobrr/harbrr/internal/appsync"
 	"github.com/autobrr/harbrr/internal/auth"
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 	"github.com/autobrr/harbrr/internal/notify"
@@ -89,7 +90,7 @@ type router struct {
 	logLevel *LogLevelStore
 
 	allowlist      []*net.IPNet
-	trustedProxies []*net.IPNet
+	trustedProxies apphttp.TrustedProxies
 
 	// loadDefs summarizes the addable definitions; injectable so a test can drive a
 	// fail-then-succeed load. Defaults (in NewRouter) to the real loader closure.
@@ -105,11 +106,11 @@ type router struct {
 // NewRouter builds the management API handler. It fails closed: auth-disabled mode
 // without an IP allowlist is rejected rather than serving an open instance.
 func NewRouter(deps Deps, cfg Config) (http.Handler, error) {
-	allow, err := parseCIDRs(cfg.IPAllowlist)
+	allow, err := apphttp.ParseCIDRs(cfg.IPAllowlist)
 	if err != nil {
 		return nil, fmt.Errorf("api: ip_allowlist: %w", err)
 	}
-	proxies, err := parseCIDRs(cfg.TrustedProxies)
+	proxies, err := apphttp.ParseTrustedProxies(cfg.TrustedProxies)
 	if err != nil {
 		return nil, fmt.Errorf("api: trusted_proxies: %w", err)
 	}

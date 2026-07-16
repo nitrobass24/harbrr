@@ -8,7 +8,7 @@ import (
 )
 
 // TrustedProxies reports whether ip is a configured trusted reverse-proxy peer. It is
-// the shared shape internal/web/api's allowlist gate and internal/web/torznabhttp's
+// the shared shape internal/web/api's X-Forwarded-For gate and internal/web/torznabhttp's
 // X-Forwarded-Proto gate both consume, so a CIDR-match bug can't diverge between them.
 // A nil TrustedProxies trusts nothing (fail closed).
 type TrustedProxies func(ip net.IP) bool
@@ -16,7 +16,7 @@ type TrustedProxies func(ip net.IP) bool
 // ParseTrustedProxies parses a list of IPs/CIDRs (a bare IP becomes a host network) into
 // a TrustedProxies check.
 func ParseTrustedProxies(entries []string) (TrustedProxies, error) {
-	nets, err := parseCIDRs(entries)
+	nets, err := ParseCIDRs(entries)
 	if err != nil {
 		return nil, err
 	}
@@ -30,10 +30,10 @@ func ParseTrustedProxies(entries []string) (TrustedProxies, error) {
 	}, nil
 }
 
-// parseCIDRs parses a list of IPs or CIDRs into networks. A bare IP becomes a host
-// network (/32 or /128). Mirrors internal/web/api's parseCIDRs (that copy stays local to
-// avoid an import-direction dependency on this package's ancestor callers).
-func parseCIDRs(entries []string) ([]*net.IPNet, error) {
+// ParseCIDRs parses a list of IPs or CIDRs into networks. A bare IP becomes a host
+// network (/32 or /128). It is the single parse behind ParseTrustedProxies and
+// internal/web/api's IP allowlist, so the bare-IP/trimming rules can't drift apart.
+func ParseCIDRs(entries []string) ([]*net.IPNet, error) {
 	out := make([]*net.IPNet, 0, len(entries))
 	for _, e := range entries {
 		e = strings.TrimSpace(e)
@@ -53,7 +53,7 @@ func parseCIDRs(entries []string) ([]*net.IPNet, error) {
 		}
 		_, n, err := net.ParseCIDR(e)
 		if err != nil {
-			return nil, err //nolint:wrapcheck // surfaced verbatim at construction, matches internal/web/api's parseCIDRs.
+			return nil, err //nolint:wrapcheck // surfaced verbatim at construction; callers add their own config-key context.
 		}
 		out = append(out, n)
 	}
