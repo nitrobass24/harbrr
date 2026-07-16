@@ -317,6 +317,54 @@ func toStatusResponse(st registry.HealthStatus) statusResponse {
 	return statusResponse{Slug: st.Slug, Status: st.Status, Events: events}
 }
 
+// fleetIndexerStatus is one indexer's entry in the fleet-wide status roll-up: its
+// derived status plus the most recent health event (reusing statusEvent's shape),
+// omitted when the indexer has no events.
+type fleetIndexerStatus struct {
+	Slug      string       `json:"slug"`
+	Status    string       `json:"status"`
+	LastEvent *statusEvent `json:"lastEvent,omitempty"`
+}
+
+// fleetStatusResponse is the JSON body of GET /api/indexers/status: healthy/unhealthy
+// counts across the fleet plus each configured indexer's derived status, sorted by slug.
+type fleetStatusResponse struct {
+	Healthy   int                  `json:"healthy"`
+	Unhealthy int                  `json:"unhealthy"`
+	Indexers  []fleetIndexerStatus `json:"indexers"`
+}
+
+// allIndexerStatus returns the fleet-wide health roll-up: healthy/unhealthy counts
+// plus every configured indexer's derived status and most recent health event.
+func (rt *router) allIndexerStatus(w http.ResponseWriter, r *http.Request) {
+	statuses, err := rt.registry.AllStatuses(r.Context())
+	if err != nil {
+		rt.writeServiceError(w, "all indexer status", err)
+		return
+	}
+	out := fleetStatusResponse{Indexers: make([]fleetIndexerStatus, 0, len(statuses))}
+	for _, st := range statuses {
+		if st.Status == "healthy" {
+			out.Healthy++
+		} else {
+			out.Unhealthy++
+		}
+		out.Indexers = append(out.Indexers, toFleetIndexerStatus(st))
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// toFleetIndexerStatus maps a registry FleetStatus to its API view, reusing
+// statusEvent for the most recent event (nil when the indexer has none).
+func toFleetIndexerStatus(st registry.FleetStatus) fleetIndexerStatus {
+	fs := fleetIndexerStatus{Slug: st.Slug, Status: st.Status}
+	if len(st.Events) > 0 {
+		e := st.Events[0]
+		fs.LastEvent = &statusEvent{Kind: e.Kind, Detail: e.Detail, OccurredAt: e.OccurredAt}
+	}
+	return fs
+}
+
 // toInstanceResponse maps a domain instance to its API view.
 func toInstanceResponse(inst domain.IndexerInstance) instanceResponse {
 	return instanceResponse{

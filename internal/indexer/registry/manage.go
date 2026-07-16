@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"time"
 
 	"github.com/autobrr/harbrr/internal/database"
@@ -68,11 +69,13 @@ var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 // reservedSlugs are slugs that must not name an indexer because they collide with
 // a static path segment registered as a sibling of /api/indexers/{slug} in
 // internal/web/api/router.go. chi prioritizes a static segment over the {slug}
-// param, so an indexer slugged "stats" would be shadowed by GET
-// /api/indexers/stats (allIndexerStats). Keep this in sync with the static
-// segments registered directly under /api/indexers/ in router.go.
+// param, so an indexer slugged "stats" or "status" would be shadowed by GET
+// /api/indexers/stats (allIndexerStats) or /api/indexers/status
+// (allIndexerStatus). Keep this in sync with the static segments registered
+// directly under /api/indexers/ in router.go.
 var reservedSlugs = map[string]struct{}{
-	"stats": {},
+	"stats":  {},
+	"status": {},
 }
 
 // AddParams is the input to Add. Slug defaults to DefinitionID when empty; Name
@@ -458,15 +461,56 @@ func (r *StatsReporter) Status(ctx context.Context, slug string) (HealthStatus, 
 	if err != nil {
 		return HealthStatus{}, fmt.Errorf("registry: status %q: %w", slug, err)
 	}
-	events, err := r.health.Recent(ctx, r.db, inst.ID, healthEventLimit)
+	events, status, err := r.statusOf(ctx, inst.ID, healthEventLimit)
 	if err != nil {
-		return HealthStatus{}, fmt.Errorf("registry: status events %q: %w", slug, err)
+		return HealthStatus{}, fmt.Errorf("registry: status %q: %w", slug, err)
 	}
-	recovery, err := r.health.Recovery(ctx, r.db, inst.ID)
+	return HealthStatus{Slug: slug, Status: status, Events: events}, nil
+}
+
+// FleetStatus is one indexer's derived health for the fleet-wide roll-up: the
+// status plus its single most recent health event (Events is empty when it has
+// none, mirroring HealthStatus.Events).
+type FleetStatus struct {
+	Slug   string
+	Status string
+	Events []domain.IndexerHealthEvent
+}
+
+// AllStatuses returns every configured instance's derived health, sorted by slug.
+// Like Status, it derives from only the newest event per instance (deriveStatus
+// reads events[0]), so it fetches with limit 1 rather than pulling healthEventLimit
+// events per instance.
+func (r *StatsReporter) AllStatuses(ctx context.Context) ([]FleetStatus, error) {
+	list, err := r.instances.List(ctx, r.db)
 	if err != nil {
-		return HealthStatus{}, fmt.Errorf("registry: status recovery %q: %w", slug, err)
+		return nil, fmt.Errorf("registry: all statuses: %w", err)
 	}
-	return HealthStatus{Slug: slug, Status: r.deriveStatus(events, recovery), Events: events}, nil
+	sort.Slice(list, func(i, j int) bool { return list[i].Slug < list[j].Slug })
+	out := make([]FleetStatus, 0, len(list))
+	for _, inst := range list {
+		events, status, err := r.statusOf(ctx, inst.ID, 1)
+		if err != nil {
+			return nil, fmt.Errorf("registry: all statuses %q: %w", inst.Slug, err)
+		}
+		out = append(out, FleetStatus{Slug: inst.Slug, Status: status, Events: events})
+	}
+	return out, nil
+}
+
+// statusOf is the shared derivation core behind Status and AllStatuses: it fetches
+// the instance's most recent events (capped at limit) plus its recovery marker and
+// derives the status exactly the same way for both callers.
+func (r *StatsReporter) statusOf(ctx context.Context, instanceID int64, limit int) ([]domain.IndexerHealthEvent, string, error) {
+	events, err := r.health.Recent(ctx, r.db, instanceID, limit)
+	if err != nil {
+		return nil, "", fmt.Errorf("events: %w", err)
+	}
+	recovery, err := r.health.Recovery(ctx, r.db, instanceID)
+	if err != nil {
+		return nil, "", fmt.Errorf("recovery: %w", err)
+	}
+	return events, r.deriveStatus(events, recovery), nil
 }
 
 // deriveStatus reads "unhealthy" when the most recent event is within the recency

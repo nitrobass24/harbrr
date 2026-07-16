@@ -360,6 +360,23 @@ paths:
                 items: { $ref: "#/components/schemas/IndexerStats" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /api/indexers/status:
+    get:
+      summary: Get fleet-wide indexer health status
+      description: >
+        Returns healthy/unhealthy counts across every configured indexer, plus each
+        indexer's derived status and most recent health event, sorted by slug.
+      operationId: allIndexerStatus
+      tags: [Indexers]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: fleet-wide indexer status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FleetStatus" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /api/indexers/{slug}:
     get:
       summary: Get a configured indexer (settings redacted)
@@ -1992,6 +2009,33 @@ components:
         lastQueryAt: { type: string, format: date-time }
         lastFailureAt: { type: string, format: date-time }
       required: [slug, queries, grabs, avgResponseMs, failures]
+    FleetStatus:
+      type: object
+      description: >
+        Fleet-wide indexer health roll-up: healthy/unhealthy counts plus each
+        configured indexer's derived status and most recent health event, sorted
+        by slug.
+      properties:
+        healthy: { type: integer }
+        unhealthy: { type: integer }
+        indexers:
+          type: array
+          items:
+            type: object
+            required: [slug, status]
+            properties:
+              slug: { type: string }
+              status: { type: string, enum: [healthy, unhealthy] }
+              lastEvent:
+                type: object
+                required: [kind, occurred_at]
+                properties:
+                  kind:
+                    type: string
+                    enum: [auth_failure, rate_limited, parse_error, anti_bot]
+                  detail: { type: string }
+                  occurred_at: { type: string, format: date-time }
+      required: [healthy, unhealthy, indexers]
     InstanceDetail:
       allOf:
         - { $ref: "#/components/schemas/Instance" }

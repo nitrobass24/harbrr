@@ -159,10 +159,12 @@ func (rt *router) routes() http.Handler {
 
 			r.Get("/api/indexers", rt.listIndexers)
 			r.Post("/api/indexers", rt.addIndexer)
-			// The static "stats" segment is registered so chi prioritizes it over the
-			// {slug} param at the same level: GET /api/indexers/stats resolves to
-			// allIndexerStats, not getIndexer.
+			// The static "stats"/"status" segments are registered so chi prioritizes
+			// them over the {slug} param at the same level: GET /api/indexers/stats and
+			// /api/indexers/status resolve to allIndexerStats/allIndexerStatus, not
+			// getIndexer.
 			r.Get("/api/indexers/stats", rt.allIndexerStats)
+			r.Get("/api/indexers/status", rt.allIndexerStatus)
 			r.Get("/api/indexers/{slug}", rt.getIndexer)
 			r.Patch("/api/indexers/{slug}", rt.updateIndexer)
 			r.Delete("/api/indexers/{slug}", rt.deleteIndexer)
