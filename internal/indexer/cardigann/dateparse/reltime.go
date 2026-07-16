@@ -21,8 +21,12 @@ var isoLayouts = []string{
 	"2006-01-02 15:04:05",
 	"2006-01-02 15:04",
 	"2006-01-02",
-	time.RFC1123Z,
-	time.RFC1123,
+	// Day-lenient RFC1123Z/RFC1123 equivalents: Go's "2" day token accepts both
+	// zero-padded and single-digit days, subsuming the strict "02" forms below.
+	// MTV (and other feeds) emit unpadded days for 1-9 (e.g. "Fri, 1 Oct 2021
+	// 10:05:54 +0000"), which time.RFC1123Z/RFC1123 reject outright.
+	"Mon, 2 Jan 2006 15:04:05 -0700",
+	"Mon, 2 Jan 2006 15:04:05 MST",
 }
 
 // humanLayouts are the human-readable absolute formats Jackett's

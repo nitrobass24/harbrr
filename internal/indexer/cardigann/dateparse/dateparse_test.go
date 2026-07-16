@@ -367,6 +367,14 @@ func TestParseRelTime(t *testing.T) {
 		{"day-month-abbr", "15 Aug 2023", "2023-08-15T00:00:00Z"},
 		{"slash-ymd", "2023/08/15", "2023-08-15T00:00:00Z"},
 		{"slash-mdy-invariant", "08/15/2023", "2023-08-15T00:00:00Z"},
+		// MTV (autobrr/harbrr#196) emits RFC1123-style pubDates with an unpadded
+		// single-digit day for days 1-9; time.RFC1123Z/RFC1123 reject these, so
+		// isoLayouts carries a day-lenient equivalent instead. Both single-digit and
+		// zero-padded days, and both the numeric-offset and named-zone forms, must
+		// parse.
+		{"rfc1123z-single-digit-day", "Fri, 1 Oct 2021 10:05:54 +0000", "2021-10-01T10:05:54Z"},
+		{"rfc1123z-padded-day", "Fri, 01 Oct 2021 10:05:54 +0000", "2021-10-01T10:05:54Z"},
+		{"rfc1123-single-digit-day-mst", "Fri, 1 Oct 2021 10:05:54 UTC", "2021-10-01T10:05:54Z"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -361,6 +361,12 @@ func (d *driver) publishDate(value string) string {
 	}
 	out, err := dateparse.New(dateparse.WithClock(d.Clock)).ParseRelTime(v)
 	if err != nil {
+		// Surfaced rather than silently swallowed (autobrr/harbrr#196): an
+		// unparseable pubDate used to vanish into "" and the torznab serializer's
+		// now-fallback masked it as age≈0 downstream, with no signal a new feed
+		// format had appeared.
+		d.Log.Debug().Str("driver", d.Def.ID).Str("value", v).Err(err).
+			Msg("torznab: pubDate parse failed")
 		return ""
 	}
 	return out

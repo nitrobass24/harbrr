@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Synthetic, MTV-shaped item reproducing autobrr/harbrr#196: a single-digit-day
+  RFC1123-style pubDate ("Fri, 1 Oct 2021 ...") for days 1-9 of the month. This form is
+  real (confirmed live against MTV) but is not exercised by torznab_morethantv.xml
+  (whose capture's pubDates happen to fall on a padded day, "20"). See
+  TestParseReleases_SingleDigitDayPubDate in parse_test.go.
+-->
+<rss version="2.0" xmlns:torznab="http://torznab.com/schemas/2015/feed">
+	<channel>
+		<item>
+			<title>Seinfeld S01E01 720p BluRay FLAC2.0 x264-CtrlHD.mkv</title>
+			<guid isPermaLink="true">https://www.morethantv.me/torrents.php?id=(removed)&amp;torrentid=1</guid>
+			<link>https://www.morethantv.me/torrents.php?action=download&amp;id=(removed)&amp;authkey=(removed)&amp;torrent_pass=(removed)</link>
+			<pubDate>Fri, 1 Oct 2021 10:05:54 +0000</pubDate>
+			<size>1</size>
+			<category>2000</category>
+			<enclosure url="https://www.morethantv.me/torrents.php?action=download&amp;id=(removed)&amp;authkey=(removed)&amp;torrent_pass=(removed)" length="1" type="application/x-bittorrent" />
+		</item>
+	</channel>
+</rss>
