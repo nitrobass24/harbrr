@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"net"
 	stdhttp "net/http"
 	"strings"
 	"testing"
@@ -16,11 +17,14 @@ func TestBuildTransport(t *testing.T) {
 		check   func(t *testing.T, tr *stdhttp.Transport)
 	}{
 		{
-			name: "no proxy returns nil (stdlib default)",
+			name: "no proxy returns a non-nil cloned transport with ResponseHeaderTimeout set",
 			cfg:  map[string]string{},
 			check: func(t *testing.T, tr *stdhttp.Transport) {
-				if tr != nil {
-					t.Errorf("want nil transport, got %v", tr)
+				if tr == nil {
+					t.Fatal("want non-nil transport")
+				}
+				if tr.ResponseHeaderTimeout != responseHeaderTimeout {
+					t.Errorf("ResponseHeaderTimeout = %v, want %v", tr.ResponseHeaderTimeout, responseHeaderTimeout)
 				}
 			},
 		},
@@ -35,6 +39,9 @@ func TestBuildTransport(t *testing.T) {
 				u, err := tr.Proxy(req)
 				if err != nil || u == nil || u.String() != "http://proxy.test:8080" {
 					t.Errorf("Proxy(req) = %v, %v; want http://proxy.test:8080", u, err)
+				}
+				if tr.ResponseHeaderTimeout != responseHeaderTimeout {
+					t.Errorf("proxy path ResponseHeaderTimeout = %v, want %v", tr.ResponseHeaderTimeout, responseHeaderTimeout)
 				}
 			},
 		},
@@ -120,6 +127,61 @@ func TestNewDoerWrapsProxyTransport(t *testing.T) {
 	}
 	if base.Timeout != 30*time.Second {
 		t.Errorf("base timeout = %v, want 30s", base.Timeout)
+	}
+}
+
+// TestBuildTransportResponseHeaderTimeout proves ResponseHeaderTimeout actually
+// aborts a request against a server that accepts the connection but never
+// writes a status line — production uses the 30s responseHeaderTimeout
+// constant; this test overrides it to ~100ms on the built transport so the
+// case runs fast without waiting out the real constant.
+func TestBuildTransportResponseHeaderTimeout(t *testing.T) {
+	t.Parallel()
+	var lc net.ListenConfig
+	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			conn, aerr := ln.Accept()
+			if aerr != nil {
+				return
+			}
+			// Accept the connection and keep reading without ever writing a
+			// response — simulates a tracker that hangs mid-request. The loop
+			// exits (and the conn closes) when the client aborts the request
+			// after ResponseHeaderTimeout fires.
+			go func(c net.Conn) {
+				defer c.Close()
+				buf := make([]byte, 1024)
+				for {
+					if _, rerr := c.Read(buf); rerr != nil {
+						return
+					}
+				}
+			}(conn)
+		}
+	}()
+
+	tr, err := buildTransport(nil)
+	if err != nil {
+		t.Fatalf("buildTransport: %v", err)
+	}
+	tr.ResponseHeaderTimeout = 100 * time.Millisecond
+
+	client := &stdhttp.Client{Transport: tr}
+	req, _ := stdhttp.NewRequestWithContext(t.Context(), stdhttp.MethodGet, "http://"+ln.Addr().String(), nil)
+
+	start := time.Now()
+	_, err = client.Do(req)
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("want error from a server that never responds")
+	}
+	if elapsed >= time.Second {
+		t.Errorf("request took %v, want well under 1s (ResponseHeaderTimeout should fire)", elapsed)
 	}
 }
 

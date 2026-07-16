@@ -20,6 +20,12 @@ import (
 // defaultHTTPTimeout bounds a tracker request when no timeout is configured.
 const defaultHTTPTimeout = 60 * time.Second
 
+// responseHeaderTimeout bounds how long the transport waits for a response's
+// status line + headers after fully writing the request, so a tracker that
+// accepts a connection but never responds fails fast instead of hanging until
+// defaultHTTPTimeout (or a configured, possibly much longer, timeout).
+const responseHeaderTimeout = 30 * time.Second
+
 // newDoer builds the production HTTP client the engine drives for one instance:
 // a per-instance cookie jar (so a login response's Set-Cookie carries into the
 // search request) and a per-instance timeout, wrapped in a paced client that
@@ -53,30 +59,29 @@ func newDoer(p ClientParams) (search.Doer, error) {
 	// apphttp.WithNoRedirectFollow — get their 3xx back raw so the engine can
 	// honor `followredirect` manually and detect logged-out redirects (Jackett's
 	// WebClient never auto-follows).
-	base := &http.Client{Jar: jar, Timeout: timeout, CheckRedirect: apphttp.RedirectPolicy}
-	// Assign Transport ONLY when a proxy transport was built. buildTransport returns a
-	// nil *http.Transport for the (common) no-proxy case; assigning that typed nil to
-	// the http.RoundTripper interface field makes Transport a non-nil interface wrapping
-	// a nil pointer, so the stdlib calls into a nil *Transport and panics
-	// (alternateRoundTripper) instead of falling back to http.DefaultTransport.
-	if transport != nil {
-		base.Transport = transport
-	}
+	base := &http.Client{Jar: jar, Timeout: timeout, CheckRedirect: apphttp.RedirectPolicy, Transport: transport}
 	return newPacedDoer(base, p.RateInterval, p.Logger), nil
 }
 
-// buildTransport returns the per-instance HTTP transport: a clone of the default
-// transport routed through the configured proxy (proxy_type + proxy_url), or nil
-// (the stdlib default transport) when no proxy is set. HTTP/HTTPS proxies use
+// buildTransport returns the per-instance HTTP transport: always a clone of the
+// stdlib default transport, with ResponseHeaderTimeout applied, routed through
+// the configured proxy (proxy_type + proxy_url) when set. HTTP/HTTPS proxies use
 // Transport.Proxy; SOCKS5 uses an x/net/proxy ContextDialer via DialContext
 // (net/http's env-proxy ignores SOCKS, so the dialer is explicit). A bad config
 // fails loud. Error messages never include proxy_url (it may embed credentials).
 // SOCKS4 is not yet supported (x/net/proxy has no socks4 dialer) — it fails loud.
 func buildTransport(cfg map[string]string) (*http.Transport, error) {
+	def, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return nil, errors.New("registry: default transport is not *http.Transport")
+	}
+	transport := def.Clone()
+	transport.ResponseHeaderTimeout = responseHeaderTimeout
+
 	proxyType := strings.ToLower(strings.TrimSpace(cfg["proxy_type"]))
 	rawURL := strings.TrimSpace(cfg["proxy_url"])
 	if proxyType == "" && rawURL == "" {
-		return nil, nil //nolint:nilnil // nil transport => the stdlib default (no proxy)
+		return transport, nil
 	}
 	if rawURL == "" {
 		return nil, fmt.Errorf("registry: proxy_type %q set but proxy_url is empty", proxyType)
@@ -85,12 +90,6 @@ func buildTransport(cfg map[string]string) (*http.Transport, error) {
 	if err != nil {
 		return nil, errors.New("registry: proxy_url is not a valid URL")
 	}
-
-	def, ok := http.DefaultTransport.(*http.Transport)
-	if !ok {
-		return nil, errors.New("registry: default transport is not *http.Transport")
-	}
-	transport := def.Clone()
 
 	switch proxyType {
 	case "http", "https":

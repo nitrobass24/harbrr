@@ -42,13 +42,9 @@ func TestNewDoerExposesClientJar(t *testing.T) {
 	}
 }
 
-// TestNewDoerNoProxyUsesDefaultTransport guards the typed-nil Transport panic:
-// buildTransport returns a nil *http.Transport for the common no-proxy case, and
-// assigning that to http.Client.Transport (a RoundTripper interface) used to make it
-// a non-nil interface wrapping a nil pointer — so the stdlib called into a nil
-// *Transport and panicked (alternateRoundTripper) on the first request instead of
-// falling back to http.DefaultTransport. Offline tests inject a replay Doer and never
-// build this client, so the panic only surfaced on a live run.
+// TestNewDoerNoProxyUsesDefaultTransport pins the no-proxy path: buildTransport
+// always returns a non-nil cloned *http.Transport (with ResponseHeaderTimeout
+// set), so base.Transport is always assigned and a real request succeeds.
 func TestNewDoerNoProxyUsesDefaultTransport(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, _ *stdhttp.Request) {
@@ -61,11 +57,19 @@ func TestNewDoerNoProxyUsesDefaultTransport(t *testing.T) {
 		t.Fatalf("newDoer: %v", err)
 	}
 
-	// Structural: with no proxy, Transport must stay a TRUE nil interface (not a
-	// typed-nil *http.Transport), so the client falls back to http.DefaultTransport.
+	// Structural: no-proxy still gets a non-nil, cloned transport with the
+	// response-header timeout applied.
 	if pd, ok := d.(*pacedDoer); ok {
-		if c, ok := pd.base.(*stdhttp.Client); ok && c.Transport != nil {
-			t.Errorf("no-proxy client Transport is non-nil (typed-nil bug): %#v", c.Transport)
+		c, ok := pd.base.(*stdhttp.Client)
+		if !ok {
+			t.Fatalf("paced base = %T, want *http.Client", pd.base)
+		}
+		tr, ok := c.Transport.(*stdhttp.Transport)
+		if !ok {
+			t.Fatalf("no-proxy client Transport = %T, want *http.Transport", c.Transport)
+		}
+		if tr.ResponseHeaderTimeout != responseHeaderTimeout {
+			t.Errorf("no-proxy Transport.ResponseHeaderTimeout = %v, want %v", tr.ResponseHeaderTimeout, responseHeaderTimeout)
 		}
 	}
 
