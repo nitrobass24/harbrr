@@ -71,6 +71,14 @@ func TestAllIndexerStatus(t *testing.T) {
 	}
 
 	var health database.Health
+	// unhealthy-recent gets two events; lastEvent must pick the newer auth_failure,
+	// not this older parse_error.
+	if err := health.Record(ctx, e.db, domain.IndexerHealthEvent{
+		InstanceID: instanceIDs["unhealthy-recent"], Kind: "parse_error", Detail: "bad page",
+		OccurredAt: time.Now().Add(-30 * time.Minute),
+	}); err != nil {
+		t.Fatalf("record older failure: %v", err)
+	}
 	if err := health.Record(ctx, e.db, domain.IndexerHealthEvent{
 		InstanceID: instanceIDs["unhealthy-recent"], Kind: "auth_failure", Detail: "login failed",
 		OccurredAt: time.Now().Add(-1 * time.Minute),
@@ -132,6 +140,6 @@ func TestAllIndexerStatus(t *testing.T) {
 		t.Errorf("unhealthy-recent status = %q, want unhealthy", byStatus["unhealthy-recent"])
 	}
 	if lastEventKind["unhealthy-recent"] != "auth_failure" {
-		t.Errorf("unhealthy-recent lastEvent.kind = %q, want auth_failure", lastEventKind["unhealthy-recent"])
+		t.Errorf("unhealthy-recent lastEvent.kind = %q, want auth_failure (the newest of its two events)", lastEventKind["unhealthy-recent"])
 	}
 }
