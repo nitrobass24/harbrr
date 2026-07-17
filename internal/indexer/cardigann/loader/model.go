@@ -156,7 +156,8 @@ type Modes struct {
 }
 
 // SettingsField mirrors SettingsField. The default is a scalar union
-// (string|integer|boolean) normalized to its string form.
+// (string|integer|boolean) normalized to its string form. Required fields must
+// contain a non-whitespace value before an indexer instance can be persisted.
 type SettingsField struct {
 	Name     string            `yaml:"name"`
 	Label    string            `yaml:"label,omitempty"`

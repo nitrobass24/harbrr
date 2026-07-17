@@ -139,7 +139,8 @@ func (r *Manager) Add(ctx context.Context, p AddParams) (domain.IndexerInstance,
 	if err != nil {
 		return domain.IndexerInstance{}, fmt.Errorf("%w: unknown definition %q", ErrInvalid, p.DefinitionID)
 	}
-	if err := validateRequiredSettings(def.Settings, p.Settings); err != nil {
+	fields := settingFields(def)
+	if err := validateRequiredSettings(fields, p.Settings); err != nil {
 		return domain.IndexerInstance{}, err
 	}
 	if err := r.ensureSlugFree(ctx, slug); err != nil {
@@ -160,7 +161,7 @@ func (r *Manager) Add(ctx context.Context, p AddParams) (domain.IndexerInstance,
 			return fmt.Errorf("registry: insert instance: %w", err)
 		}
 		inst.ID = id
-		return r.writeSettings(ctx, tx, id, settingFields(def), p.Settings)
+		return r.writeSettings(ctx, tx, id, fields, p.Settings)
 	})
 	if err != nil {
 		// ensureSlugFree is a pre-check; a concurrent Add can still lose the race
@@ -284,11 +285,15 @@ func (r *Manager) updateInTx(ctx context.Context, tx dbinterface.TxQuerier, inst
 	if err != nil {
 		return err
 	}
-	if err := r.validateMergedRequiredSettings(inst.ID, def.Settings, existing, p.Settings); err != nil {
-		return err
-	}
 	merged, err := r.mergeSettings(inst.ID, settingFields(def), existing, p.Settings)
 	if err != nil {
+		return err
+	}
+	cfg, err := decryptConfig(r.keyring, inst.ID, merged)
+	if err != nil {
+		return err
+	}
+	if err := validateRequiredSettings(settingFields(def), cfg); err != nil {
 		return err
 	}
 
@@ -397,52 +402,6 @@ func (r *Manager) mergeSettings(id int64, fields map[string]loader.SettingsField
 		out = append(out, s)
 	}
 	return out, nil
-}
-
-// validateMergedRequiredSettings validates the effective post-update values. A
-// redacted secret keeps its stored plaintext; omitted settings keep their stored
-// value. Definitions without required settings avoid the decryption work entirely.
-func (r *Manager) validateMergedRequiredSettings(id int64, fields []loader.SettingsField, existing []domain.IndexerSetting, incoming map[string]string) error {
-	if !hasRequiredSettings(fields) {
-		return nil
-	}
-	effective, err := decryptConfig(r.keyring, id, existing)
-	if err != nil {
-		return fmt.Errorf("registry: validate required settings: %w", err)
-	}
-	for name, value := range incoming {
-		if secrets.IsRedacted(value) {
-			continue
-		}
-		effective[name] = value
-	}
-	return validateRequiredSettings(fields, effective)
-}
-
-// hasRequiredSettings reports whether any field is required, a cheap guard so the
-// common no-required-settings definition skips the decryption above.
-func hasRequiredSettings(fields []loader.SettingsField) bool {
-	for _, field := range fields {
-		if field.Required {
-			return true
-		}
-	}
-	return false
-}
-
-// validateRequiredSettings rejects absent, blank, or redacted-placeholder values
-// before persistence. Errors name the missing field but never include its value.
-func validateRequiredSettings(fields []loader.SettingsField, settings map[string]string) error {
-	for _, field := range fields {
-		if !field.Required {
-			continue
-		}
-		value, ok := settings[field.Name]
-		if !ok || strings.TrimSpace(value) == "" || secrets.IsRedacted(value) {
-			return fmt.Errorf("%w: setting %q is required", ErrInvalid, field.Name)
-		}
-	}
-	return nil
 }
 
 // inTx runs fn inside a transaction, committing on success and rolling back on
@@ -718,6 +677,22 @@ func settingFields(def *loader.Definition) map[string]loader.SettingsField {
 		m[s.Name] = s
 	}
 	return m
+}
+
+// validateRequiredSettings rejects missing, empty, whitespace-only, and
+// redacted-placeholder values for definition fields marked required — a client
+// echoing the <redacted> read-back sentinel must never persist it as the secret.
+func validateRequiredSettings(fields map[string]loader.SettingsField, settings map[string]string) error {
+	for name, field := range fields {
+		if !field.Required {
+			continue
+		}
+		value := settings[name]
+		if strings.TrimSpace(value) == "" || secrets.IsRedacted(value) {
+			return fmt.Errorf("%w: setting %q is required", ErrInvalid, name)
+		}
+	}
+	return nil
 }
 
 // applyMeta resolves the post-update name and base URL from the optional params.
