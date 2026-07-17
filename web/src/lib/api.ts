@@ -24,6 +24,7 @@ export type CreateConnection = components["schemas"]["CreateConnection"]
 export type UpdateConnection = components["schemas"]["UpdateConnection"]
 export type AnnounceConnection = components["schemas"]["AnnounceConnection"]
 export type CreateAnnounceConnection = components["schemas"]["CreateAnnounceConnection"]
+export type UpdateAnnounceConnection = components["schemas"]["UpdateAnnounceConnection"]
 export type Notification = components["schemas"]["Notification"]
 export type CreateNotification = components["schemas"]["CreateNotification"]
 export type UpdateNotification = components["schemas"]["UpdateNotification"]
@@ -531,6 +532,15 @@ export class ApiClient {
     return this.unwrap(this.http.POST("/api/announce-connections", { body }), "/api/announce-connections")
   }
 
+  // The server answers 204 on update; see the updateIndexer note (no caller reads
+  // the resolved value — useUpdateAnnounce invalidates and refetches instead).
+  updateAnnounceConnection(id: number, body: UpdateAnnounceConnection): Promise<void> {
+    return this.unwrap(
+      this.http.PATCH("/api/announce-connections/{id}", { params: { path: { id } }, body }),
+      "/api/announce-connections/{id}"
+    )
+  }
+
   deleteAnnounceConnection(id: number): Promise<void> {
     return this.unwrap(
       this.http.DELETE("/api/announce-connections/{id}", { params: { path: { id } } }),
@@ -545,6 +555,13 @@ export class ApiClient {
     ): this.unwrap(
       this.http.POST("/api/announce-connections/{id}/disable", { params: { path: { id } } }),
       "/api/announce-connections/{id}/disable"
+    )
+  }
+
+  testAnnounceConnection(id: number): Promise<TestResult> {
+    return this.unwrap(
+      this.http.POST("/api/announce-connections/{id}/test", { params: { path: { id } } }),
+      "/api/announce-connections/{id}/test"
     )
   }
 

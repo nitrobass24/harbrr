@@ -958,6 +958,24 @@ paths:
               schema: { $ref: "#/components/schemas/AnnounceConnection" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      summary: Update an announce target (a new apiKey rotates the tool credential)
+      operationId: updateAnnounceConnection
+      tags: [Announce]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateAnnounceConnection" }
+      responses:
+        "204": { description: updated }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
     delete:
       summary: Delete an announce target (revokes its minted key)
       operationId: deleteAnnounceConnection
@@ -993,6 +1011,29 @@ paths:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
         "204": { description: disabled }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/announce-connections/{id}/test:
+    post:
+      summary: Test an announce target's reachability (qui also validates its API key)
+      description: >
+        Probes the target WITHOUT injecting anything. qui posts a synthetic, non-mutating
+        webhook/check — validating reachability AND the API key. cross-seed v6 has no authed
+        health endpoint, so it hits the unauthenticated /api/ping — reachability ONLY, the
+        key is not verified.
+      operationId: testAnnounceConnection
+      tags: [Announce]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200":
+          description: the test result (ok=false carries a scrubbed error)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TestResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
@@ -2383,6 +2424,17 @@ components:
         apiKey: { type: string, description: the tool's API key (stored encrypted) }
         harbrrUrl: { type: string, description: "the base URL the tool uses to reach harbrr's /dl link (both kinds fetch it)" }
       required: [name, kind, baseUrl, apiKey, harbrrUrl]
+    UpdateAnnounceConnection:
+      type: object
+      description: >
+        A partial update; omitted fields are unchanged. apiKey, when present, rotates the
+        stored tool credential (omit it to keep the stored key — never re-submit the
+        <redacted> sentinel). kind is immutable (change it by delete + recreate).
+      properties:
+        name: { type: string }
+        baseUrl: { type: string }
+        apiKey: { type: string }
+        harbrrUrl: { type: string }
     Notification:
       type: object
       description: >

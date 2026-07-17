@@ -691,7 +691,8 @@ export interface paths {
         delete: operations["deleteAnnounceConnection"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Update an announce target (a new apiKey rotates the tool credential) */
+        patch: operations["updateAnnounceConnection"];
         trace?: never;
     };
     "/api/announce-connections/{id}/enable": {
@@ -722,6 +723,26 @@ export interface paths {
         put?: never;
         /** Disable an announce target */
         post: operations["disableAnnounceConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/announce-connections/{id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test an announce target's reachability (qui also validates its API key)
+         * @description Probes the target WITHOUT injecting anything. qui posts a synthetic, non-mutating webhook/check — validating reachability AND the API key. cross-seed v6 has no authed health endpoint, so it hits the unauthenticated /api/ping — reachability ONLY, the key is not verified.
+         */
+        post: operations["testAnnounceConnection"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1619,6 +1640,13 @@ export interface components {
             apiKey: string;
             /** @description the base URL the tool uses to reach harbrr's /dl link (both kinds fetch it) */
             harbrrUrl: string;
+        };
+        /** @description A partial update; omitted fields are unchanged. apiKey, when present, rotates the stored tool credential (omit it to keep the stored key — never re-submit the <redacted> sentinel). kind is immutable (change it by delete + recreate). */
+        UpdateAnnounceConnection: {
+            name?: string;
+            baseUrl?: string;
+            apiKey?: string;
+            harbrrUrl?: string;
         };
         /** @description A notification target harbrr fires operational events at. The destination URL (url) is never echoed — it reads back as the <redacted> sentinel. */
         Notification: {
@@ -3247,6 +3275,34 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    updateAnnounceConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAnnounceConnection"];
+            };
+        };
+        responses: {
+            /** @description updated */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
     enableAnnounceConnection: {
         parameters: {
             query?: never;
@@ -3287,6 +3343,31 @@ export interface operations {
                 };
                 content?: never;
             };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    testAnnounceConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description the test result (ok=false carries a scrubbed error) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };

@@ -7,6 +7,7 @@ import type {
   CreateAnnounceConnection,
   CreateConnection,
   CreateSyncProfile,
+  UpdateAnnounceConnection,
   UpdateConnection,
   UpdateSyncProfile
 } from "@/lib/api"
@@ -175,12 +176,26 @@ export function useCreateAnnounce() {
   })
 }
 
+// The id travels with each mutate() call (mirroring useUpdateConnection), so the one
+// hook serves the edit dialog directly.
+export function useUpdateAnnounce() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, body }: { id: number, body: UpdateAnnounceConnection }) => api.updateAnnounceConnection(id, body),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["announce-connections"] }),
+  })
+}
+
 export function useDeleteAnnounce() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: number) => api.deleteAnnounceConnection(id),
     onSettled: () => qc.invalidateQueries({ queryKey: keys.announceConnections.all }),
   })
+}
+
+export function useTestAnnounce() {
+  return useMutation({ mutationFn: (id: number) => api.testAnnounceConnection(id) })
 }
 
 export function useSetAnnounceEnabled() {

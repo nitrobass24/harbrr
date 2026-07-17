@@ -36,6 +36,62 @@ func TestScrubURLError(t *testing.T) {
 	}
 }
 
+// TestDefaultClientRedirectHostGuard proves the shared client refuses to follow a redirect
+// onto a different host (so the custom X-API-Key never leaves the configured host, since Go
+// only auto-strips Authorization/Cookie cross-origin) while still following a same-host one.
+func TestDefaultClientRedirectHostGuard(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		crossHost   bool // the redirect points at a different host than the origin
+		wantErr     bool
+		wantKeySent bool // the api key reached the redirect target
+	}{
+		{name: "cross-host redirect refused", crossHost: true, wantErr: true, wantKeySent: false},
+		{name: "same-host redirect followed", crossHost: false, wantErr: false, wantKeySent: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var landedKey string
+			// landing records whether the api key arrived and returns a clean 2xx so a
+			// followed redirect completes without error.
+			landing := func(w http.ResponseWriter, r *http.Request) {
+				landedKey = r.Header.Get(apiKeyHeader)
+				w.WriteHeader(http.StatusOK)
+			}
+			other := httptest.NewServer(http.HandlerFunc(landing))
+			defer other.Close()
+
+			var origin *httptest.Server
+			origin = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/landing" { // the same-host redirect target
+					landing(w, r)
+					return
+				}
+				dest := origin.URL + "/landing"
+				if tt.crossHost {
+					dest = other.URL + "/landing"
+				}
+				http.Redirect(w, r, dest, http.StatusFound)
+			}))
+			defer origin.Close()
+
+			tgt := NewCrossSeedV6(origin.URL, "cs_secret", defaultHTTPClient())
+			_, err := tgt.Announce(context.Background(), sampleRelease())
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Announce err = %v, wantErr %v", err, tt.wantErr)
+			}
+			if (landedKey != "") != tt.wantKeySent {
+				t.Errorf("api key delivered to redirect target = %v, want %v", landedKey != "", tt.wantKeySent)
+			}
+			if err != nil && strings.Contains(err.Error(), "cs_secret") {
+				t.Errorf("error leaked the api key: %v", err)
+			}
+		})
+	}
+}
+
 const testAPIKey = "qui_secretkey" //nolint:gosec // synthetic test credential
 
 func sampleRelease() Release {
@@ -188,6 +244,103 @@ func TestQuiAnnounce_EmptyTorrentBytesIsError(t *testing.T) {
 	}
 	if applyCalls != 0 {
 		t.Errorf("apply called %d times on empty bytes, want 0 (no garbage POST)", applyCalls)
+	}
+}
+
+func TestQuiProbe_NonMutatingAndReachable(t *testing.T) {
+	t.Parallel()
+	applyCalls := 0
+	var probedName, probedIndexer string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case quiCheckPath:
+			var cr quiCheckRequest
+			_ = json.NewDecoder(r.Body).Decode(&cr)
+			probedName, probedIndexer = cr.TorrentName, cr.Indexer
+			_ = json.NewEncoder(w).Encode(quiCheckResponse{CanCrossSeed: false, Recommendation: "skip"})
+		case quiApplyPath:
+			applyCalls++
+		}
+	}))
+	defer srv.Close()
+	tgt := NewQui(srv.URL, testAPIKey, srv.Client(), nil, nil)
+
+	if err := tgt.Probe(context.Background()); err != nil {
+		t.Fatalf("Probe: %v, want nil (reachable)", err)
+	}
+	if applyCalls != 0 {
+		t.Errorf("Probe called apply %d times, want 0 (probe must not inject)", applyCalls)
+	}
+	if probedName == "" || probedName != probedIndexer {
+		t.Errorf("probe check used name=%q indexer=%q, want a shared synthetic token", probedName, probedIndexer)
+	}
+}
+
+func TestQuiProbe_NotFoundIsReachable(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+	tgt := NewQui(srv.URL, testAPIKey, srv.Client(), nil, nil)
+	if err := tgt.Probe(context.Background()); err != nil {
+		t.Errorf("Probe: %v, want nil (404 = reachable no-match)", err)
+	}
+}
+
+func TestQuiProbe_ServerErrorIsScrubbed(t *testing.T) {
+	t.Parallel()
+	const leak = "qui_secretkey-LEAKED"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(leak))
+	}))
+	defer srv.Close()
+	tgt := NewQui(srv.URL, testAPIKey, srv.Client(), nil, nil)
+
+	err := tgt.Probe(context.Background())
+	if err == nil {
+		t.Fatal("Probe err = nil, want a 500 error")
+	}
+	if strings.Contains(err.Error(), leak) || strings.Contains(err.Error(), testAPIKey) {
+		t.Errorf("Probe error leaked secret/body: %v", err)
+	}
+}
+
+func TestCrossSeedV6Probe_PingUpIsReachable(t *testing.T) {
+	t.Parallel()
+	var probedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		probedPath = r.URL.Path
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	tgt := NewCrossSeedV6(srv.URL, "cs_secret", srv.Client())
+
+	if err := tgt.Probe(context.Background()); err != nil {
+		t.Fatalf("Probe: %v, want nil (ping up)", err)
+	}
+	if probedPath != csv6PingPath {
+		t.Errorf("probe hit %q, want %q", probedPath, csv6PingPath)
+	}
+}
+
+func TestCrossSeedV6Probe_PingDownIsScrubbed(t *testing.T) {
+	t.Parallel()
+	const leak = "cs_secret-LEAKED"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(leak))
+	}))
+	defer srv.Close()
+	tgt := NewCrossSeedV6(srv.URL, "cs_secret", srv.Client())
+
+	err := tgt.Probe(context.Background())
+	if err == nil {
+		t.Fatal("Probe err = nil, want a 503 error")
+	}
+	if strings.Contains(err.Error(), leak) || strings.Contains(err.Error(), "cs_secret") {
+		t.Errorf("Probe error leaked secret/body: %v", err)
 	}
 }
 

@@ -55,6 +55,8 @@ func (c countingTarget) Announce(context.Context, announce.Release) (announce.Re
 	return announce.Result{}, nil
 }
 
+func (c countingTarget) Probe(context.Context) error { return nil }
+
 // TestAnnounceSinkSkipsUsenet pins #231: every announce target today (qui cross-seed,
 // cross-seed v6) is torrent-only, so a usenet instance's RSS fill must not fan out a
 // push, while a torrent instance's still does.
@@ -132,6 +134,8 @@ func (s slowTarget) Announce(context.Context, announce.Release) (announce.Result
 	s.n.Add(1)
 	return announce.Result{}, nil
 }
+
+func (s slowTarget) Probe(context.Context) error { return nil }
 
 // syncBuffer is a mutex-guarded bytes.Buffer: the sink's worker pool logs from multiple
 // goroutines concurrently, and bytes.Buffer alone isn't safe for that.
@@ -307,3 +311,5 @@ func (g gatedTarget) Announce(ctx context.Context, _ announce.Release) (announce
 	g.n.Add(1)
 	return announce.Result{}, nil
 }
+
+func (g gatedTarget) Probe(context.Context) error { return nil }
