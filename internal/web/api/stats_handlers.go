@@ -15,6 +15,7 @@ type indexerFailureCounts struct {
 	RateLimited int64 `json:"rateLimited"`
 	ParseError  int64 `json:"parseError"`
 	AntiBot     int64 `json:"antiBot"`
+	Transport   int64 `json:"transport"`
 }
 
 // indexerStatsResponse is the JSON body of the per-indexer stats endpoints: the durable
@@ -71,6 +72,7 @@ func toStatsResponse(st registry.IndexerStat) indexerStatsResponse {
 			RateLimited: st.Failures.RateLimited,
 			ParseError:  st.Failures.ParseError,
 			AntiBot:     st.Failures.AntiBot,
+			Transport:   st.Failures.Transport,
 		},
 		LastQueryAt:   zeroToNil(st.LastQueryAt),
 		LastFailureAt: zeroToNil(st.LastFailureAt),

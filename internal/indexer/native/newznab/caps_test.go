@@ -36,6 +36,9 @@ func TestCapsBodyReadErrorSurfacesCause(t *testing.T) {
 	if !errors.Is(capsErr, search.ErrParseError) {
 		t.Fatalf("err = %v, want ErrParseError (health classification must be preserved)", capsErr)
 	}
+	if !errors.Is(capsErr, native.ErrBodyRead) {
+		t.Fatalf("err = %v, want errors.Is(native.ErrBodyRead)", capsErr)
+	}
 	if !strings.Contains(capsErr.Error(), "connection reset by peer") {
 		t.Fatalf("err = %q, want the real read cause included (not a bare parse_error)", capsErr.Error())
 	}

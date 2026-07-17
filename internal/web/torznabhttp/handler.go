@@ -546,9 +546,13 @@ const internalErrorMsg = "internal error processing the request"
 // logInternalError records a failed request with the error redacted, response-free —
 // ServeGrab logs here and answers through its caller-supplied ErrorWriter.
 func logInternalError(log zerolog.Logger, stage, indexerID string, err error) {
+	// "indexer request failed", not "torznab request failed": this layer serves BOTH
+	// protocols over the torznab-shaped feed API, and naming the API surface here reads
+	// as a protocol mismatch when the indexer is usenet (a newznab driver error inside
+	// a "torznab" failure).
 	log.Error().
 		Str("stage", stage).
 		Str("indexer", indexerID).
 		Str("error", apphttp.RedactError(err)).
-		Msg("torznab request failed")
+		Msg("indexer request failed")
 }

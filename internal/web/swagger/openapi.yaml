@@ -479,7 +479,7 @@ paths:
       summary: Get an indexer's health status
       description: >
         Returns the indexer's derived health (healthy/unhealthy) and its recent
-        health events (auth_failure, rate_limited, parse_error, anti_bot). Event
+        health events (auth_failure, rate_limited, parse_error, anti_bot, transport). Event
         details are credential-scrubbed before storage, so no secret is surfaced.
       operationId: indexerStatus
       tags: [Indexers]
@@ -505,7 +505,7 @@ paths:
                       properties:
                         kind:
                           type: string
-                          enum: [auth_failure, rate_limited, parse_error, anti_bot]
+                          enum: [auth_failure, rate_limited, parse_error, anti_bot, transport]
                         detail: { type: string }
                         occurred_at: { type: string, format: date-time }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -517,7 +517,7 @@ paths:
       description: >
         Returns the indexer's Prowlarr-style stats: query/grab counts, average response
         time, failure tallies by kind (auth_failure, rate_limited, parse_error,
-        anti_bot), and last-query/last-failure timestamps.
+        anti_bot, transport), and last-query/last-failure timestamps.
       operationId: indexerStats
       tags: [Indexers]
       security: [{ session: [] }, { apiKey: [] }]
@@ -2072,7 +2072,8 @@ components:
             rateLimited: { type: integer, format: int64 }
             parseError: { type: integer, format: int64 }
             antiBot: { type: integer, format: int64 }
-          required: [authFailure, rateLimited, parseError, antiBot]
+            transport: { type: integer, format: int64 }
+          required: [authFailure, rateLimited, parseError, antiBot, transport]
         lastQueryAt: { type: string, format: date-time }
         lastFailureAt: { type: string, format: date-time }
       required: [slug, queries, grabs, avgResponseMs, failures]
@@ -2099,7 +2100,7 @@ components:
                 properties:
                   kind:
                     type: string
-                    enum: [auth_failure, rate_limited, parse_error, anti_bot]
+                    enum: [auth_failure, rate_limited, parse_error, anti_bot, transport]
                   detail: { type: string }
                   occurred_at: { type: string, format: date-time }
       required: [healthy, unhealthy, indexers]

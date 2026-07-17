@@ -64,6 +64,33 @@ func TestHealthRecordAndRecent(t *testing.T) {
 	}
 }
 
+// TestHealthRecordTransportKind proves the 0016 migration widened the kind CHECK to
+// accept domain.HealthTransport — Record must succeed rather than violate the
+// constraint (#223).
+func TestHealthRecordTransportKind(t *testing.T) {
+	t.Parallel()
+	db := openMigrated(t, filepath.Join(t.TempDir(), "health.db"))
+	ctx := context.Background()
+	id := seedInstance(t, db, "tt")
+	h := database.Health{}
+
+	ev := domain.IndexerHealthEvent{
+		InstanceID: id, Kind: domain.HealthTransport, Detail: "dial tcp: connection refused",
+		OccurredAt: time.Now(),
+	}
+	if err := h.Record(ctx, db, ev); err != nil {
+		t.Fatalf("record transport event: %v", err)
+	}
+
+	got, err := h.Recent(ctx, db, id, 1)
+	if err != nil {
+		t.Fatalf("recent: %v", err)
+	}
+	if len(got) != 1 || got[0].Kind != domain.HealthTransport {
+		t.Fatalf("recent = %+v, want single transport event", got)
+	}
+}
+
 func TestHealthRecovery(t *testing.T) {
 	t.Parallel()
 	db := openMigrated(t, filepath.Join(t.TempDir(), "health.db"))

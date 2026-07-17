@@ -200,9 +200,11 @@ func (r *Manager) Get(ctx context.Context, slug string) (domain.IndexerInstance,
 
 // Freeleech reports whether inst's freeleech-only checkbox is enabled, using the same
 // canonical rule buildAdapter applies at engine-build time: canonicalize the stored
-// checkbox value, then read cfg["freeleech"] != "" (registry.go). The freeleech setting
-// is never a secret, so this reads its raw stored value directly — no decryption pass
-// needed — keeping the list-time seam cheap.
+// checkbox value, then read it non-empty (registry.go). Cardigann defs name the checkbox
+// "freeleech"; the native drivers (avistaz, filelist, gazellegames, iptorrents,
+// torrentday) name theirs "freeleech_only" — same signal, both matched (#227). The
+// setting is never a secret, so this reads its raw stored value directly — no decryption
+// pass needed — keeping the list-time seam cheap.
 func (r *Manager) Freeleech(ctx context.Context, inst domain.IndexerInstance) (bool, error) {
 	def, _, err := resolveDefinition(r.native, r.loader, inst.DefinitionID)
 	if err != nil {
@@ -214,13 +216,13 @@ func (r *Manager) Freeleech(ctx context.Context, inst domain.IndexerInstance) (b
 	}
 	cfg := make(map[string]string, 1)
 	for _, s := range settings {
-		if s.Name == "freeleech" {
-			cfg["freeleech"] = s.Value
+		if s.Name == "freeleech" || s.Name == "freeleech_only" {
+			cfg[s.Name] = s.Value
 			break
 		}
 	}
 	cardigann.CanonicalizeCheckboxes(def, cfg)
-	return cfg["freeleech"] != "", nil
+	return cfg["freeleech"] != "" || cfg["freeleech_only"] != "", nil
 }
 
 // List returns all configured instances.
@@ -565,6 +567,7 @@ type IndexerFailureCounts struct {
 	RateLimited int64
 	ParseError  int64
 	AntiBot     int64
+	Transport   int64
 }
 
 // IndexerStat is one indexer's Prowlarr-style stats: the durable query/grab/latency
@@ -636,6 +639,7 @@ func buildIndexerStat(slug string, queries, grabs, respTotal int64, lastQuery ti
 			RateLimited: counts.RateLimited,
 			ParseError:  counts.ParseError,
 			AntiBot:     counts.AntiBot,
+			Transport:   counts.Transport,
 		},
 		LastQueryAt:   lastQuery,
 		LastFailureAt: counts.LastFailureAt,

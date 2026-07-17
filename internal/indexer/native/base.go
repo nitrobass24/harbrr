@@ -36,6 +36,12 @@ const (
 // corrupt. Drivers and tests classify with errors.Is.
 var ErrDownloadTooLarge = errors.New("download exceeds the size cap")
 
+// ErrBodyRead is returned by roundTrip's API-response path when io.ReadAll fails
+// mid-body (status already read, body truncated/dropped). NormalizeReadError
+// classifies via errors.Is rather than matching this wrap's assembled text, so
+// rewording the message below can't silently break that health classification.
+var ErrBodyRead = errors.New("read response body")
+
 // Base is the shared implementation core a native driver embeds: the per-instance
 // wiring every family carries (definition, capabilities, decrypted settings, paced
 // doer, normalised base URL, clock, logger) plus the Do/DoDownload transport that
@@ -249,7 +255,7 @@ func (b *Base) roundTrip(ctx context.Context, req *stdhttp.Request, c Classify, 
 	}
 	out.Body, err = io.ReadAll(io.LimitReader(resp.Body, bodyCap))
 	if err != nil {
-		return nil, fmt.Errorf("%s: read %s response: %w", b.Family, op, err)
+		return nil, fmt.Errorf("%s: %w: %w", b.Family, ErrBodyRead, err)
 	}
 	return out, nil
 }

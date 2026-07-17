@@ -53,13 +53,18 @@ type APIKey struct {
 	LastUsedAt *time.Time
 }
 
-// Health-event kinds — the four categories an indexer failure classifies
-// into. Stored verbatim in indexer_health_events.kind.
+// Health-event kinds — the categories an indexer failure classifies into.
+// Stored verbatim in indexer_health_events.kind.
 const (
 	HealthAuthFailure = "auth_failure"
 	HealthRateLimited = "rate_limited"
 	HealthParseError  = "parse_error"
 	HealthAntiBot     = "anti_bot"
+	// HealthTransport covers transport-level failures — connection refused/reset,
+	// TLS/DNS failures, client timeouts, EOF-after-200 reads — that leave a tracker
+	// unreachable rather than reachable-but-unhappy. One coarse kind; the event
+	// detail string carries the specifics (#223).
+	HealthTransport = "transport"
 )
 
 // IndexerHealthEvent is one recorded health signal for an instance: a classified

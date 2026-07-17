@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	stdhttp "net/http"
-	"strings"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
@@ -105,12 +104,13 @@ func sanitizeGrabError(err, errDownloadRequestFailed error) error {
 // NormalizeReadError keeps the pre-Base health sentinel for a mid-body API read failure
 // (Do's io.ReadAll after the status is already 2xx) while leaving transport/status errors
 // in Base's native form. Shared verbatim by newznab and nzbindex, whose per-package copies
-// were byte-identical.
+// were byte-identical. Classifies via errors.Is(err, ErrBodyRead) rather than matching
+// roundTrip's assembled error text, so rewording that text can't silently break it.
 func NormalizeReadError(err error) error {
 	if err == nil {
 		return nil
 	}
-	if strings.Contains(err.Error(), "read request response") {
+	if errors.Is(err, ErrBodyRead) {
 		return fmt.Errorf("%w: %w", err, search.ErrParseError)
 	}
 	return err

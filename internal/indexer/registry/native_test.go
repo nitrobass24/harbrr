@@ -90,3 +90,35 @@ func TestNativeInstanceUpdatable(t *testing.T) {
 		t.Errorf("after update: name=%q baseURL=%q, want %q / %q", inst.Name, inst.BaseURL, name, base)
 	}
 }
+
+// TestNativeFreeleechOnlyReported pins #227: the native drivers' "freeleech_only"
+// checkbox must surface through Manager.Freeleech exactly like the Cardigann corpus's
+// "freeleech" key — previously it read false while the driver actively filtered, so
+// the API flag, the Indexers-page badge, and FL-baseline tooling all misreported.
+func TestNativeFreeleechOnlyReported(t *testing.T) {
+	reg, _ := newRegistry(t, statusDoer{status: stdhttp.StatusOK})
+	ctx := context.Background()
+
+	tests := []struct {
+		slug     string
+		settings map[string]string
+		want     bool
+	}{
+		{slug: "fl-on", settings: map[string]string{"cookie": "c", "freeleech_only": "true"}, want: true},
+		{slug: "fl-off", settings: map[string]string{"cookie": "c", "freeleech_only": "false"}, want: false},
+		{slug: "fl-unset", settings: map[string]string{"cookie": "c"}, want: false},
+	}
+	for _, tt := range tests {
+		inst, err := reg.Add(ctx, registry.AddParams{Slug: tt.slug, DefinitionID: "iptorrents", Settings: tt.settings})
+		if err != nil {
+			t.Fatalf("Add(%s): %v", tt.slug, err)
+		}
+		got, err := reg.Freeleech(ctx, inst)
+		if err != nil {
+			t.Fatalf("Freeleech(%s): %v", tt.slug, err)
+		}
+		if got != tt.want {
+			t.Errorf("Freeleech(%s) = %v, want %v", tt.slug, got, tt.want)
+		}
+	}
+}
