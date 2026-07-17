@@ -22,7 +22,9 @@ function triggerDownload(blob: Blob, filename: string) {
   a.href = url
   a.download = filename
   a.click()
-  URL.revokeObjectURL(url)
+  // Defer the revoke: revoking synchronously can cancel the download while the
+  // browser is still processing the click asynchronously.
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 // BackupSection covers export (encrypt config + DB to a downloadable bundle)
@@ -145,7 +147,7 @@ function ImportBlock() {
         <h3 className="text-[13px] font-medium">Import</h3>
         <span className="flex flex-col gap-1.5">
           <Label htmlFor="import-file">Backup file</Label>
-          <Input id="import-file" ref={fileRef} type="file" accept=".json,application/json" />
+          <Input id="import-file" ref={fileRef} type="file" accept=".json,application/json" required />
         </span>
         <span className="flex flex-col gap-1.5">
           <Label htmlFor="import-passphrase">Passphrase</Label>

@@ -23,6 +23,16 @@ function setPassphraseFile(passphrase: string) {
   fireEvent.change(input, { target: { files: [file] } })
 }
 
+// submitImport fires the form's submit event directly. The file input carries
+// `required`, and clicking a submit button (or requestSubmit) runs native
+// constraint validation, which jsdom fails because it doesn't treat a
+// programmatically-set FileList as satisfying `required` — a real browser does.
+// Dispatching submit exercises onSubmit, which is what these tests assert.
+function submitImport() {
+  const form = screen.getByRole("button", { name: "Import backup" }).closest("form")!
+  fireEvent.submit(form)
+}
+
 describe("BackupSection", () => {
   afterEach(() => vi.unstubAllGlobals())
 
@@ -71,7 +81,7 @@ describe("BackupSection", () => {
 
     render(wrap(<BackupSection />))
     setPassphraseFile("sekrit")
-    fireEvent.click(screen.getByRole("button", { name: "Import backup" }))
+    submitImport()
 
     expect(await screen.findByText("Replace everything?")).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Replace everything" }))
@@ -88,7 +98,7 @@ describe("BackupSection", () => {
 
     render(wrap(<BackupSection />))
     setPassphraseFile("wrong")
-    fireEvent.click(screen.getByRole("button", { name: "Import backup" }))
+    submitImport()
 
     expect(await screen.findByText("wrong passphrase or corrupted bundle")).toBeTruthy()
   })
@@ -103,7 +113,7 @@ describe("BackupSection", () => {
 
     render(wrap(<BackupSection />))
     setPassphraseFile("sekrit")
-    fireEvent.click(screen.getByRole("button", { name: "Import backup" }))
+    submitImport()
 
     await waitFor(() => expect(reload).toHaveBeenCalled())
   })
