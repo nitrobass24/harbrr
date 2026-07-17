@@ -95,6 +95,22 @@ export function useChangePassword() {
   })
 }
 
+export function useExportBackup() {
+  return useMutation({
+    mutationFn: (passphrase: string) => api.exportBackup(passphrase),
+  })
+}
+
+// useImportBackup restores a bundle (wipe-and-load) — no query invalidation on
+// success, since a restore replaces API keys and possibly the admin account, so
+// the caller hard-reloads the page instead of patching cached queries.
+export function useImportBackup() {
+  return useMutation({
+    mutationFn: ({ payload, passphrase, force }: { payload: string, passphrase: string, force?: boolean }) =>
+      api.importBackup(payload, passphrase, force),
+  })
+}
+
 // Aggregate per-indexer stats. Keyed under its own ["indexer-stats"] root rather
 // than ["indexers", "stats"] so an indexer whose slug is "stats" can never share
 // a cache entry with the per-indexer detail key ["indexers", slug]. Add/delete of

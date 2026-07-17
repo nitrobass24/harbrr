@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { PageHeader } from "@/components/layout/PageHeader"
 import { ApiKeysSection } from "@/components/settings/ApiKeysSection"
+import { BackupSection } from "@/components/settings/BackupSection"
 import { NotificationsSection } from "@/components/settings/NotificationsSection"
 import { SystemSection } from "@/components/settings/SystemSection"
 
@@ -15,6 +16,7 @@ function SettingsPage() {
       <div className="flex min-h-0 flex-1 flex-col gap-10 overflow-auto px-4 md:px-7 py-6">
         <ApiKeysSection />
         <NotificationsSection />
+        <BackupSection />
         <SystemSection />
       </div>
     </div>
