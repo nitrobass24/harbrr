@@ -1,9 +1,12 @@
 package announce_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/rs/zerolog"
 
@@ -225,5 +228,128 @@ func TestServicePushSwallowsErrors(t *testing.T) {
 	})
 	if matched != 0 {
 		t.Errorf("matched = %d, want 0 (the announce errored)", matched)
+	}
+}
+
+// TestServicePushFailureRedactsGUID pins #230: the push-failure warn logs the release
+// GUID, and for passkey-in-GUID trackers (FileList-style) the GUID is the
+// credential-bearing download URL — it must log scrubbed, never in cleartext.
+func TestServicePushFailureRedactsGUID(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db, err := database.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	kr, err := secrets.OpenKeyring(secrets.KeyringOptions{EncryptionKey: testKey}, zerolog.Nop())
+	if err != nil {
+		t.Fatalf("keyring: %v", err)
+	}
+	var buf bytes.Buffer
+	svc := announce.NewService(db, auth.NewService(db), kr, func(domain.AnnounceConnection, string) (announce.Target, error) {
+		return &fakeTarget{err: errors.New("boom")}, nil
+	}, zerolog.New(&buf))
+	if _, err := svc.CreateConnection(ctx, announce.CreateConnectionParams{
+		Name: "qui", Kind: domain.AnnounceKindQui, BaseURL: "http://qui:7476", APIKey: "k", HarbrrURL: "http://h:8787",
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	const secret = "SECRETPASSKEY123" //nolint:gosec // G101: synthetic test passkey
+	svc.Push(ctx, func(domain.AnnounceConnection) []announce.Release {
+		return []announce.Release{{Name: "X", GUID: "https://tracker.example/download.php?id=1&passkey=" + secret}}
+	})
+	logged := buf.String()
+	if !strings.Contains(logged, "push failed") {
+		t.Fatalf("expected a push-failed warn, got %q", logged)
+	}
+	if strings.Contains(logged, secret) {
+		t.Errorf("log leaks the passkey: %q", logged)
+	}
+}
+
+// hangTarget hangs on ctx.Done() for exactly one call (simulating a stuck request against a
+// dead-but-not-erroring target) and returns immediately for every other call.
+type hangTarget struct {
+	hangAt int
+	calls  int
+}
+
+func (h *hangTarget) Announce(ctx context.Context, _ announce.Release) (announce.Result, error) {
+	idx := h.calls
+	h.calls++
+	if idx == h.hangAt {
+		<-ctx.Done()
+		return announce.Result{}, ctx.Err()
+	}
+	return announce.Result{}, nil
+}
+
+// TestServicePushOneCapsPerReleaseTimeout pins #232: without a per-release deadline, one
+// stuck release consumes the whole shared batch context and every release queued behind it
+// in the loop starves too. Each release must get its own bounded window instead.
+func TestServicePushOneCapsPerReleaseTimeout(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	tgt := &hangTarget{hangAt: 0}
+	svc, _ := newService(t, func(domain.AnnounceConnection, string) (announce.Target, error) { return tgt, nil })
+	if _, err := svc.CreateConnection(ctx, announce.CreateConnectionParams{
+		Name: "qui", Kind: domain.AnnounceKindQui, BaseURL: "http://qui:7476", APIKey: "k", HarbrrURL: "http://h:8787",
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	rels := []announce.Release{{Name: "stuck", GUID: "g0"}, {Name: "after1", GUID: "g1"}, {Name: "after2", GUID: "g2"}}
+	start := time.Now()
+	svc.Push(ctx, func(domain.AnnounceConnection) []announce.Release { return rels })
+	elapsed := time.Since(start)
+
+	if tgt.calls != len(rels) {
+		t.Fatalf("calls = %d, want %d (the stuck release must not starve the rest of the batch)", tgt.calls, len(rels))
+	}
+	if elapsed >= 2*announce.PerReleaseTimeout {
+		t.Errorf("elapsed %v for %d releases (1 stuck), want close to PerReleaseTimeout (%v) — the stuck call must not compound", elapsed, len(rels), announce.PerReleaseTimeout)
+	}
+}
+
+// TestServicePushBatchSummaryLogsOnce pins #232 point 3: a batch with several failures logs
+// one summary line, not one WRN per failed release (94 identical lines was the log-spam
+// complaint that buried the passkey leak in #230).
+func TestServicePushBatchSummaryLogsOnce(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	var buf bytes.Buffer
+	db, err := database.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	kr, err := secrets.OpenKeyring(secrets.KeyringOptions{EncryptionKey: testKey}, zerolog.Nop())
+	if err != nil {
+		t.Fatalf("keyring: %v", err)
+	}
+	svc := announce.NewService(db, auth.NewService(db), kr, func(domain.AnnounceConnection, string) (announce.Target, error) {
+		return &fakeTarget{err: errors.New("boom")}, nil
+	}, zerolog.New(&buf))
+	if _, err := svc.CreateConnection(ctx, announce.CreateConnectionParams{
+		Name: "qui", Kind: domain.AnnounceKindQui, BaseURL: "http://qui:7476", APIKey: "k", HarbrrURL: "http://h:8787",
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	rels := make([]announce.Release, 20)
+	for i := range rels {
+		rels[i] = announce.Release{Name: "X", GUID: "g"}
+	}
+	svc.Push(ctx, func(domain.AnnounceConnection) []announce.Release { return rels })
+
+	if n := strings.Count(buf.String(), "push failed"); n != 1 {
+		t.Errorf(`"push failed" appears %d times in the log, want exactly 1 (one batch summary, not one per release)`, n)
 	}
 }

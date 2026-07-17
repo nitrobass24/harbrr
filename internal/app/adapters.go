@@ -14,6 +14,7 @@ import (
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
 	"github.com/autobrr/harbrr/internal/domain"
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 	"github.com/autobrr/harbrr/internal/secrets"
@@ -76,14 +77,26 @@ func apiKeyValidator(authSvc *auth.Service) func(string) bool {
 	}
 }
 
-// announcePushTimeout bounds one detached announce-push fan-out.
-const announcePushTimeout = 60 * time.Second
+// announcePushTimeoutMax is the flat hard cap on one fill's whole push fan-out, so a
+// huge fill against slow targets can't hold a worker (and its queue slot) forever. The
+// announce Service scales each CONNECTION's budget by its release count internally
+// (connPushBudget) — this outer deadline only backstops the total.
+const announcePushTimeoutMax = 10 * time.Minute
 
-// maxConcurrentAnnouncePushes bounds in-flight detached pushes so a burst of RSS fills (or
-// a slow/down announce target holding goroutines for the full timeout) cannot pile up
-// without limit and starve request handling. Excess fills are dropped with a log rather
-// than queued — the next RSS poll re-derives the same "what's new" set.
+// maxConcurrentAnnouncePushes sizes the fixed worker pool that processes queued announce
+// pushes, bounding how many run at once so a burst of RSS fills (or a slow/down announce
+// target) cannot consume unbounded resources.
 const maxConcurrentAnnouncePushes = 8
+
+// announcePushQueueCapacity bounds how many fills can wait for a free worker before
+// newAnnounceSink starts dropping (see announceQueueEnqueueGrace). Sized as a small multiple
+// of the worker pool so a burst queues rather than instantly drops.
+const announcePushQueueCapacity = maxConcurrentAnnouncePushes * 4
+
+// announceQueueEnqueueGrace is how long a fill waits for a free queue slot before it's
+// dropped. A slow target should cost latency, not delivery (#232) — but the sink runs on the
+// caller's (RSS poll) goroutine, so the wait is bounded rather than indefinite.
+const announceQueueEnqueueGrace = 2 * time.Second
 
 // srcRelease is the minimal snapshot the announce sink lifts out of a cache write-back, so
 // the async push never holds (or races on) the cached release slice.
@@ -94,38 +107,53 @@ type srcRelease struct {
 
 // newAnnounceSink builds the cross-seed announce source: a registry.AnnounceSink that, on an
 // RSS/empty-query cache fill, asynchronously pushes the new releases to every enabled
-// announce target. The HTTP fan-out is detached (its own goroutine + a fresh, bounded
-// context), so a push never blocks or fails a search; only the cheap snapshot loop runs on
-// the caller's goroutine.
+// announce target. The HTTP fan-out runs on a fixed worker pool (its own goroutines + a
+// fresh, per-batch context sized off the release count), so a push never blocks or fails a
+// search; only the cheap snapshot + enqueue runs on the caller's goroutine. A fill queues
+// behind a slow pool rather than dropping immediately — it's dropped only if the queue
+// itself stays full past announceQueueEnqueueGrace (#232).
 func newAnnounceSink(svc *announce.Service, db dbinterface.Execer, keyring *secrets.Keyring, basePath, externalOrigin string, log zerolog.Logger) registry.AnnounceSink {
 	instances := database.Instances{}
-	sem := make(chan struct{}, maxConcurrentAnnouncePushes)
+	queue := make(chan func(), announcePushQueueCapacity)
+	for range maxConcurrentAnnouncePushes {
+		//nolint:gosec // G118: intentionally detached — workers must outlive any single triggering request.
+		go func() {
+			for job := range queue {
+				job()
+			}
+		}()
+	}
 	return func(_ context.Context, instanceID int64, fresh []*normalizer.Release) {
 		snap := make([]srcRelease, 0, len(fresh))
 		for _, r := range fresh {
 			snap = append(snap, srcRelease{name: r.Title, guid: torznab.GUIDFor(r), link: r.Link, magnet: r.Magnet, size: r.Size})
 		}
-		select {
-		case sem <- struct{}{}:
-		default:
-			log.Warn().Int64("instance_id", instanceID).Int("releases", len(snap)).
-				Msg("announce: push backpressure — too many in-flight pushes; dropping (next RSS poll re-derives)")
-			return
-		}
-		//nolint:gosec // G118: intentionally detached — the announce push must outlive the triggering search request.
-		go func() {
-			defer func() { <-sem }()
-			ctx, cancel := context.WithTimeout(context.Background(), announcePushTimeout)
+		job := func() {
+			ctx, cancel := context.WithTimeout(context.Background(), announcePushTimeoutMax)
 			defer cancel()
 			inst, err := instances.GetByID(ctx, db, instanceID)
 			if err != nil {
 				log.Warn().Err(err).Int64("instance_id", instanceID).Msg("announce: resolve indexer slug failed")
 				return
 			}
+			// Every announce target today (qui cross-seed, cross-seed v6) is
+			// torrent-only — pushing usenet releases at them is pure waste and
+			// burns the push worker pool (#231).
+			if inst.Protocol != "torrent" {
+				log.Debug().Str("indexer", inst.Slug).Str("protocol", inst.Protocol).
+					Msg("announce: skipping push for non-torrent indexer")
+				return
+			}
 			svc.Push(ctx, func(conn domain.AnnounceConnection) []announce.Release {
 				return announceReleasesFor(conn, svc, keyring, basePath, externalOrigin, inst.Slug, snap, log)
 			})
-		}()
+		}
+		select {
+		case queue <- job:
+		case <-time.After(announceQueueEnqueueGrace):
+			log.Warn().Int64("instance_id", instanceID).Int("releases", len(snap)).
+				Msg("announce: push backpressure — too many in-flight pushes; dropping (next RSS poll re-derives)")
+		}
 	}
 }
 
@@ -160,9 +188,11 @@ func announceReleasesFor(conn domain.AnnounceConnection, svc *announce.Service, 
 		if dl == "" && s.link != "" {
 			sealed, serr := torznabhttp.SealedDLURL(keyring, slug, dlBase, harbrrKey, s.link)
 			if serr != nil {
-				// The error never carries the link; log non-secret context so a dropped
-				// release is debuggable rather than vanishing silently.
-				log.Warn().Int64("connection_id", conn.ID).Str("indexer", slug).Str("guid", s.guid).
+				// The error never carries the link, and the guid is scrubbed: for
+				// passkey-in-GUID trackers (FileList-style) the guid IS the
+				// credential-bearing download URL (#230).
+				log.Warn().Int64("connection_id", conn.ID).Str("indexer", slug).
+					Str("guid", apphttp.RedactURL(s.guid)).
 					Msg("announce: seal /dl link failed; skipping release")
 				continue
 			}

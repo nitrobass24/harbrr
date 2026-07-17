@@ -183,13 +183,43 @@ func (s *Service) Push(ctx context.Context, build func(conn domain.AnnounceConne
 		if !conn.Enabled {
 			continue
 		}
-		matched += s.pushOne(ctx, conn, build(conn))
+		rels := build(conn)
+		// Per-connection budget: Push repeats delivery per connection, so a batch
+		// deadline scaled only by release count starves the SECOND connection's tail
+		// behind a slow first one. Each connection gets its own release-scaled budget;
+		// the caller's ctx stays the overall hard cap.
+		connCtx, cancel := context.WithTimeout(ctx, connPushBudget(len(rels)))
+		matched += s.pushOne(connCtx, conn, rels)
+		cancel()
 	}
 	return matched
 }
 
-// pushOne builds the connection's driver and announces each release, returning the match
-// count. All failures are logged (scrubbed), never propagated.
+// pushBudgetBase is the floor of one connection's push budget — enough for a
+// handful of releases against a live target even with PerReleaseTimeout applied
+// per release inside pushOne.
+const pushBudgetBase = 30 * time.Second
+
+// connPushBudget scales one connection's push deadline with its release count:
+// pushOne announces sequentially at up to PerReleaseTimeout each, so a fixed
+// budget that fits a small batch fails a large one's tail. The caller's context
+// carries the overall hard cap, so no cap is applied here.
+func connPushBudget(releases int) time.Duration {
+	return pushBudgetBase + time.Duration(releases)*PerReleaseTimeout
+}
+
+// PerReleaseTimeout bounds a single release's announce POST. A batch shares one caller-
+// supplied context, but pushOne announces releases sequentially — without a per-release
+// deadline, one slow/stuck release stalls the shared context until every release after it
+// in the batch fails "context deadline exceeded" too (#232). newAnnounceSink sizes its batch
+// context off this constant so a big batch gets a proportionally bigger budget.
+const PerReleaseTimeout = 10 * time.Second
+
+// pushOne builds the connection's driver and announces each release (each capped at
+// PerReleaseTimeout), returning the match count. Per-release failures are not logged
+// individually — a large batch would otherwise emit one WRN per failure (#232) — they're
+// folded into one batch-summary log after the loop: WRN with the first (redacted) failure
+// when any release failed, DBG otherwise.
 func (s *Service) pushOne(ctx context.Context, conn domain.AnnounceConnection, rels []Release) int {
 	if len(rels) == 0 {
 		return 0
@@ -204,18 +234,36 @@ func (s *Service) pushOne(ctx context.Context, conn domain.AnnounceConnection, r
 		s.log.Warn().Int64("connection_id", conn.ID).Str("error", apphttp.RedactError(err)).Msg("announce: build target failed")
 		return 0
 	}
-	matched := 0
+
+	start := time.Now()
+	matched, failed := 0, 0
+	var firstFailGUID, firstFailErr string
 	for _, rel := range rels {
-		res, err := target.Announce(ctx, rel)
+		relCtx, cancel := context.WithTimeout(ctx, PerReleaseTimeout)
+		res, err := target.Announce(relCtx, rel)
+		cancel()
 		if err != nil {
-			s.log.Warn().Int64("connection_id", conn.ID).Str("guid", rel.GUID).
-				Str("error", apphttp.RedactError(err)).Msg("announce: push failed")
+			failed++
+			if firstFailErr == "" {
+				// The guid is scrubbed: for passkey-in-GUID trackers (FileList-style)
+				// it IS the credential-bearing download URL (#230).
+				firstFailGUID, firstFailErr = apphttp.RedactURL(rel.GUID), apphttp.RedactError(err)
+			}
 			continue
 		}
 		if res.Matched {
 			matched++
 		}
 	}
+
+	msg := "announce: push batch complete"
+	ev := s.log.Debug()
+	if failed > 0 {
+		msg = fmt.Sprintf("announce: push failed for %d/%d releases in batch", failed, len(rels))
+		ev = s.log.Warn().Str("guid", firstFailGUID).Str("error", firstFailErr)
+	}
+	ev.Int64("connection_id", conn.ID).Int("pushed", len(rels)-failed).Int("failed", failed).
+		Dur("duration", time.Since(start)).Msg(msg)
 	return matched
 }
 
