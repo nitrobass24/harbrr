@@ -18,6 +18,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/native/hdbits"
 	"github.com/autobrr/harbrr/internal/indexer/native/iptorrents"
 	"github.com/autobrr/harbrr/internal/indexer/native/myanonamouse"
+	"github.com/autobrr/harbrr/internal/indexer/native/nebulance"
 	"github.com/autobrr/harbrr/internal/indexer/native/newznab"
 	"github.com/autobrr/harbrr/internal/indexer/native/nzbindex"
 	"github.com/autobrr/harbrr/internal/indexer/native/passthepopcorn"
@@ -37,6 +38,7 @@ func All() map[string]native.Family {
 		broadcastthenet.Families(),
 		filelist.Families(),
 		myanonamouse.Families(),
+		nebulance.Families(),
 		iptorrents.Families(),
 		gazelle.Families(),
 		gazellegames.Families(),

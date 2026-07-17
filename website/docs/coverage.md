@@ -10,7 +10,7 @@ Cardigann can't express — and how far each is validated.
   account on that tracker). See **[Test status](test-status.md)** for the evidence behind this
   column and the auth/fetch patterns proven live.
 
-**597 trackers** total: 554 Cardigann corpus (all built) · 22 native drivers built · 21 native
+**597 trackers** total: 554 Cardigann corpus (all built) · 23 native drivers built · 20 native
 drivers planned. To configure one, see **[Adding an indexer](guides/add-indexer.md)**.
 
 ## Native drivers
@@ -35,6 +35,7 @@ Bespoke code in Jackett/Prowlarr (no Cardigann definition); harbrr ships native 
 | PassThePopcorn | Bespoke API | ✅ | ✅ |
 | GazelleGames | Bespoke API | ✅ | ⬜ |
 | AnimeBytes | Bespoke API | ✅ | ⬜ |
+| Nebulance | Bespoke JSON API | ✅ | ⬜ |
 | Usenet (Newznab) | Generic Newznab | ✅ | ✅ |
 | NZBIndex | Bespoke JSON API (public) | ✅ | ✅ |
 | MoreThanTV | Torznab API (native) | ✅ | ✅ |
@@ -63,7 +64,6 @@ Native drivers we have issues for but haven't built. 👍 or comment on the issu
 | [Libble](https://github.com/autobrr/harbrr/issues/29) | Gazelle (username / password) | ⬜ | ⬜ |
 | [GreatPosterWall](https://github.com/autobrr/harbrr/issues/30) | Gazelle (username / password) | ⬜ | ⬜ |
 | [BrokenStones](https://github.com/autobrr/harbrr/issues/31) | Gazelle (username / password) | ⬜ | ⬜ |
-| [Nebulance](https://github.com/autobrr/harbrr/issues/32) | Bespoke API | ⬜ | ⬜ |
 | [RuTracker](https://github.com/autobrr/harbrr/issues/37) | Public / niche | ⬜ | ⬜ |
 | [LostFilm](https://github.com/autobrr/harbrr/issues/38) | Public / niche | ⬜ | ⬜ |
 | [Toloka](https://github.com/autobrr/harbrr/issues/39) | Public / niche | ⬜ | ⬜ |

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/autobrr/harbrr/internal/database"
@@ -138,6 +139,10 @@ func (r *Manager) Add(ctx context.Context, p AddParams) (domain.IndexerInstance,
 	if err != nil {
 		return domain.IndexerInstance{}, fmt.Errorf("%w: unknown definition %q", ErrInvalid, p.DefinitionID)
 	}
+	fields := settingFields(def)
+	if err := validateRequiredSettings(fields, p.Settings); err != nil {
+		return domain.IndexerInstance{}, err
+	}
 	if err := r.ensureSlugFree(ctx, slug); err != nil {
 		return domain.IndexerInstance{}, err
 	}
@@ -156,7 +161,7 @@ func (r *Manager) Add(ctx context.Context, p AddParams) (domain.IndexerInstance,
 			return fmt.Errorf("registry: insert instance: %w", err)
 		}
 		inst.ID = id
-		return r.writeSettings(ctx, tx, id, settingFields(def), p.Settings)
+		return r.writeSettings(ctx, tx, id, fields, p.Settings)
 	})
 	if err != nil {
 		// ensureSlugFree is a pre-check; a concurrent Add can still lose the race
@@ -282,6 +287,13 @@ func (r *Manager) updateInTx(ctx context.Context, tx dbinterface.TxQuerier, inst
 	}
 	merged, err := r.mergeSettings(inst.ID, settingFields(def), existing, p.Settings)
 	if err != nil {
+		return err
+	}
+	cfg, err := decryptConfig(r.keyring, inst.ID, merged)
+	if err != nil {
+		return err
+	}
+	if err := validateRequiredSettings(settingFields(def), cfg); err != nil {
 		return err
 	}
 
@@ -665,6 +677,17 @@ func settingFields(def *loader.Definition) map[string]loader.SettingsField {
 		m[s.Name] = s
 	}
 	return m
+}
+
+// validateRequiredSettings rejects missing, empty, and whitespace-only values for
+// definition fields marked required.
+func validateRequiredSettings(fields map[string]loader.SettingsField, settings map[string]string) error {
+	for name, field := range fields {
+		if field.Required && strings.TrimSpace(settings[name]) == "" {
+			return fmt.Errorf("%w: setting %q is required", ErrInvalid, name)
+		}
+	}
+	return nil
 }
 
 // applyMeta resolves the post-update name and base URL from the optional params.
