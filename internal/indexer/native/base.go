@@ -37,9 +37,10 @@ const (
 var ErrDownloadTooLarge = errors.New("download exceeds the size cap")
 
 // ErrBodyRead is returned by roundTrip's API-response path when io.ReadAll fails
-// mid-body (status already read, body truncated/dropped). NormalizeReadError
-// classifies via errors.Is rather than matching this wrap's assembled text, so
-// rewording the message below can't silently break that health classification.
+// mid-body (status already read, body truncated/dropped). The registry's health
+// classifier matches it via errors.Is as a TRANSPORT failure (#234) — a connection
+// dying mid-read is not a parse problem — so rewording the message below can't
+// silently break that classification.
 var ErrBodyRead = errors.New("read response body")
 
 // Base is the shared implementation core a native driver embeds: the per-instance

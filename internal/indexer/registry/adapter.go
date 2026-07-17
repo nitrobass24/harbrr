@@ -233,6 +233,12 @@ func isTransportError(err error) bool {
 	if errors.As(err, &netErr) || errors.As(err, &urlErr) {
 		return true
 	}
+	// The native Base marks a mid-body read failure (after a 200) with ErrBodyRead —
+	// the definitive transport marker even when the cause isn't an EOF/net.Error
+	// shape (#234; these used to be misclassified as parse_error).
+	if errors.Is(err, native.ErrBodyRead) {
+		return true
+	}
 	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
 }
 

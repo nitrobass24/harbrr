@@ -14,6 +14,7 @@ import (
 	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 func TestClassifyHealth(t *testing.T) {
@@ -43,6 +44,10 @@ func TestClassifyHealth(t *testing.T) {
 		{"unexpected EOF read", fmt.Errorf("reading response from https://tracker.example: %w", io.ErrUnexpectedEOF), domain.HealthTransport, true},
 		{"plain EOF read", fmt.Errorf("reading response from https://tracker.example: %w", io.EOF), domain.HealthTransport, true},
 		{"gateway status (untyped)", errors.New("GET https://tracker.example: tracker returned HTTP 502"), "", false},
+		// A mid-body read failure carries the native ErrBodyRead marker: transport,
+		// not parse (#234) — even when the underlying cause is a bespoke error shape
+		// that isn't itself an EOF or net.Error.
+		{"body-read marker", fmt.Errorf("newznab: %w: %w", native.ErrBodyRead, errors.New("bespoke stream error")), domain.HealthTransport, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

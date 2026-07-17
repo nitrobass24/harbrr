@@ -19,7 +19,7 @@ import (
 )
 
 // TestCapsBodyReadErrorSurfacesCause mirrors the search-path test for the caps fetch: a
-// mid-body read failure keeps the ErrParseError classification and includes the real cause.
+// mid-body read failure carries ErrBodyRead (transport, #234) and the real cause.
 func TestCapsBodyReadErrorSurfacesCause(t *testing.T) {
 	t.Parallel()
 	d, err := New(native.Params{
@@ -33,8 +33,8 @@ func TestCapsBodyReadErrorSurfacesCause(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	capsErr := d.Test(context.Background())
-	if !errors.Is(capsErr, search.ErrParseError) {
-		t.Fatalf("err = %v, want ErrParseError (health classification must be preserved)", capsErr)
+	if errors.Is(capsErr, search.ErrParseError) {
+		t.Fatalf("err = %v, must NOT be ErrParseError (mid-body reads are transport, #234)", capsErr)
 	}
 	if !errors.Is(capsErr, native.ErrBodyRead) {
 		t.Fatalf("err = %v, want errors.Is(native.ErrBodyRead)", capsErr)

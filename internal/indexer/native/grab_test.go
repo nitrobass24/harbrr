@@ -3,7 +3,6 @@ package native
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	stdhttp "net/http"
 	"net/url"
@@ -11,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
 
 // TestGrabDirectReturnsResult proves the shared direct-GET grab path (beyondhd,
@@ -154,37 +152,5 @@ func TestGrabNZBContextSentinelsSurvive(t *testing.T) {
 		if !errors.Is(err, want) {
 			t.Errorf("err = %v, want errors.Is(%v)", err, want)
 		}
-	}
-}
-
-// TestNormalizeReadError proves the mid-body read failure keeps its ErrParseError health
-// classification (and its ErrBodyRead cause) while any other error (transport/status)
-// passes through unchanged.
-func TestNormalizeReadError(t *testing.T) {
-	if NormalizeReadError(nil) != nil {
-		t.Fatal("nil in, nil out")
-	}
-	readErr := fmt.Errorf("testfam: %w: %w", ErrBodyRead, errors.New("unexpected EOF"))
-	got := NormalizeReadError(readErr)
-	if !errors.Is(got, search.ErrParseError) {
-		t.Fatalf("err = %v, want errors.Is(search.ErrParseError)", got)
-	}
-	if !errors.Is(got, ErrBodyRead) {
-		t.Fatalf("err = %v, want errors.Is(ErrBodyRead)", got)
-	}
-	other := errors.New("testfam: request returned HTTP 500")
-	if !errors.Is(NormalizeReadError(other), other) {
-		t.Fatalf("non-read error must pass through unchanged, got %v", NormalizeReadError(other))
-	}
-}
-
-// TestNormalizeReadErrorSurvivesRewording proves the errors.Is classification is
-// text-independent: reworded human-readable wrapping around ErrBodyRead (as if
-// roundTrip's message in base.go changed) still classifies as ErrParseError.
-func TestNormalizeReadErrorSurvivesRewording(t *testing.T) {
-	readErr := fmt.Errorf("testfam: totally different wording here: %w: %w", ErrBodyRead, errors.New("EOF"))
-	got := NormalizeReadError(readErr)
-	if !errors.Is(got, search.ErrParseError) {
-		t.Fatalf("err = %v, want errors.Is(search.ErrParseError) even after rewording", got)
 	}
 }

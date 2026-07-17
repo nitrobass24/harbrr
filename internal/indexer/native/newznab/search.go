@@ -60,7 +60,7 @@ func (d *driver) get(ctx context.Context, rawurl string) (*native.Response, erro
 	req.Header.Set("Accept", "application/rss+xml, application/xml, text/xml")
 	resp, err := d.Do(ctx, req, native.ClassifyRateLimit403)
 	if err != nil {
-		return resp, native.NormalizeReadError(err)
+		return resp, err
 	}
 	return resp, nil
 }

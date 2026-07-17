@@ -150,9 +150,9 @@ func TestTestMethod(t *testing.T) {
 	}
 }
 
-// TestSearchBodyReadErrorSurfacesCause proves a mid-body read failure still classifies as
-// ErrParseError (so a health event is recorded — there is no transport health kind) AND
-// carries the real read error, instead of a bare "parse_error" with no cause.
+// TestSearchBodyReadErrorSurfacesCause proves a mid-body read failure carries the
+// ErrBodyRead marker (the registry classifies it as a TRANSPORT health event, #234)
+// AND the real read error — and is no longer mislabeled ErrParseError.
 func TestSearchBodyReadErrorSurfacesCause(t *testing.T) {
 	t.Parallel()
 	d, err := New(native.Params{
@@ -166,8 +166,8 @@ func TestSearchBodyReadErrorSurfacesCause(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	_, searchErr := d.Search(context.Background(), search.Query{Keywords: "x"})
-	if !errors.Is(searchErr, search.ErrParseError) {
-		t.Fatalf("err = %v, want ErrParseError (health classification must be preserved)", searchErr)
+	if errors.Is(searchErr, search.ErrParseError) {
+		t.Fatalf("err = %v, must NOT be ErrParseError (mid-body reads are transport, #234)", searchErr)
 	}
 	if !errors.Is(searchErr, native.ErrBodyRead) {
 		t.Fatalf("err = %v, want errors.Is(native.ErrBodyRead)", searchErr)
