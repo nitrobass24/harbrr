@@ -2,12 +2,9 @@ package gazelle
 
 import (
 	"context"
-	"errors"
 	"strings"
 
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
-	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // usetokenParam is the query suffix that requests a freeleech token on a download. The
@@ -40,55 +37,31 @@ func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, err
 	return &search.GrabResult{Body: body, ContentType: contentType}, nil
 }
 
-// fetchTorrent fetches one download URL server-side. RED/OPS hand the request to the base
-// DoDownload with the ClassifyAuth403 dialect; the base owns the torrent size cap
-// (native.ErrDownloadTooLarge rather than a silent truncation), status classification,
-// and host-only redaction. AlphaRatio routes through the cookie-session path so an
-// expired session renews once and retries.
-func (d *driver) fetchTorrent(ctx context.Context, link string) ([]byte, string, error) {
-	if d.profile.cookieAuth {
-		return d.fetchTorrentAttempt(ctx, link, true)
-	}
-	req, err := d.newRequest(ctx, link)
-	if err != nil {
-		return nil, "", err
-	}
-	resp, err := d.DoDownload(ctx, req, native.ClassifyAuth403)
-	if err != nil {
-		return nil, "", err
-	}
-	return resp.Body, resp.Header.Get("Content-Type"), nil
+// fetchResult is fetchTorrent's sessionRetry payload: a torrent body and its
+// Content-Type, retried as a pair so a renewed session refetches both together.
+type fetchResult struct {
+	body        []byte
+	contentType string
 }
 
-// fetchTorrentAttempt fetches one AlphaRatio download through the base transport under the
-// cookie-session dialect. A classified auth failure (redirect/401/403) renews the session
-// once and retries; a rate-limit, size-cap, or other transport error propagates as-is
-// (already redacted and sentinel-bearing from the base).
-func (d *driver) fetchTorrentAttempt(ctx context.Context, link string, allowRenew bool) ([]byte, string, error) {
-	if err := d.ensureSession(ctx); err != nil {
-		return nil, "", err
-	}
-	session := d.sessionSnapshot()
-	req, err := d.newCookieRequest(ctx, link, session.cookie)
-	if err != nil {
-		return nil, "", err
-	}
-	resp, err := d.DoDownload(d.requestContext(ctx), req, classifyARCookie)
-	if err == nil {
-		return resp.Body, resp.Header.Get("Content-Type"), nil
-	}
-	// Only a classified auth failure (redirect/401/403) is renewable; a rate-limit,
-	// size-cap, or other transport error propagates as-is.
-	if !errors.Is(err, login.ErrLoginFailed) {
-		return nil, "", err
-	}
-	if !allowRenew {
-		return nil, "", alphaRatioSessionRejected("download")
-	}
-	if rerr := d.renewSession(ctx, session.generation); rerr != nil {
-		return nil, "", rerr
-	}
-	return d.fetchTorrentAttempt(ctx, link, false)
+// fetchTorrent fetches one download URL server-side through sessionRetry: the site's
+// strategy attaches auth on every attempt (newRequest), and an auth-classified failure
+// (redirect/401/403) gets exactly one recovery-and-retry via the strategy before
+// surfacing. The base DoDownload owns the torrent size cap (native.ErrDownloadTooLarge
+// rather than a silent truncation), status classification, and host-only redaction.
+func (d *driver) fetchTorrent(ctx context.Context, link string) ([]byte, string, error) {
+	res, err := sessionRetry(ctx, d, "download", func(ctx context.Context) (fetchResult, error) {
+		req, err := d.newRequest(ctx, link)
+		if err != nil {
+			return fetchResult{}, err
+		}
+		resp, err := d.DoDownload(d.requestContext(ctx), req, d.site.classify)
+		if err != nil {
+			return fetchResult{}, err
+		}
+		return fetchResult{body: resp.Body, contentType: resp.Header.Get("Content-Type")}, nil
+	})
+	return res.body, res.contentType, err
 }
 
 // isTokenRequest reports whether a download link requested a freeleech token, mirroring

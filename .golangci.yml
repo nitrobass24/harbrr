@@ -81,6 +81,12 @@ linters:
         - github.com/autobrr/harbrr/internal/indexer/native
         - github.com/autobrr/harbrr/internal/connresource
         - github.com/autobrr/harbrr/internal/domain
+      # gazelle's authStrategy (ADR 0003) is the same shape: Prepare/Recover already
+      # return gazelle-prefixed, sentinel-bearing errors (login.ErrLoginFailed via
+      # ensureSession/renewSession/loginLocked), so a caller re-wrapping them would only
+      # double the prefix.
+      ignore-interface-regexps:
+        - authStrategy
     interfacebloat:
       # Guardrail against future god-interfaces (default 10). AGENTS.md's "interfaces
       # ≤5 methods" stays a review norm, not a hard gate — torznabhttp.Indexer

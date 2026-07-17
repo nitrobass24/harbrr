@@ -228,7 +228,7 @@ func (d *driver) musicRelease(g *group, t *torrent) *normalizer.Release {
 		DownloadVolumeFactor: volumeFactor(free),
 		UploadVolumeFactor:   d.uploadVolumeFactor(t.IsNeutralLeech, t.IsFreeload),
 	}
-	d.applyProfile(release, g.GroupID.int64(), t.TorrentID.int64(), g.Tags)
+	d.applyProfile(release, g.GroupID.int64(), t.TorrentID.int64(), 0, g.Tags)
 	return release
 }
 
@@ -251,10 +251,7 @@ func (d *driver) nonMusicRelease(g *group) *normalizer.Release {
 		DownloadVolumeFactor: volumeFactor(free),
 		UploadVolumeFactor:   d.uploadVolumeFactor(g.IsNeutralLeech, g.IsFreeload),
 	}
-	if d.profile.site == "alpharatio" {
-		release.Files = g.FileCount.int64()
-	}
-	d.applyProfile(release, g.GroupID.int64(), g.TorrentID.int64(), g.Tags)
+	d.applyProfile(release, g.GroupID.int64(), g.TorrentID.int64(), g.FileCount.int64(), g.Tags)
 	return release
 }
 
@@ -311,7 +308,7 @@ func titleFlags(t *torrent) []string {
 // driver profile.
 func (d *driver) musicFreeleech(t *torrent) bool {
 	free := t.IsFreeLeech || t.IsNeutralLeech || t.IsPersonalFreeLeech
-	if d.profile.site == "redacted" {
+	if d.site.countsFreeloadAsFree {
 		free = free || t.IsFreeload
 	}
 	return free
@@ -320,7 +317,7 @@ func (d *driver) musicFreeleech(t *torrent) bool {
 // groupFreeleech is the NON-MUSIC equivalent of musicFreeleech using group-level flags.
 func (d *driver) groupFreeleech(g *group) bool {
 	free := g.IsFreeLeech || g.IsNeutralLeech || g.IsPersonalFreeLeech
-	if d.profile.site == "redacted" {
+	if d.site.countsFreeloadAsFree {
 		free = free || g.IsFreeload
 	}
 	return free
@@ -329,7 +326,7 @@ func (d *driver) groupFreeleech(g *group) bool {
 // uploadVolumeFactor is 0 for neutral-leech (and, RED-only, freeload) torrents, 1
 // otherwise — mirroring Prowlarr RedactedParser's UploadVolumeFactor.
 func (d *driver) uploadVolumeFactor(neutralLeech, freeload bool) float64 {
-	if neutralLeech || (d.profile.site == "redacted" && freeload) {
+	if neutralLeech || (d.site.countsFreeloadAsFree && freeload) {
 		return 0
 	}
 	return 1
@@ -368,7 +365,7 @@ func (d *driver) useFreeleechToken() bool {
 // for RED), so the param is simply omitted when off.
 func (d *driver) downloadLink(torrentID int64, withToken bool) string {
 	path := "ajax.php"
-	if d.profile.downloadViaTorrents {
+	if d.site.downloadViaTorrents {
 		path = "torrents.php"
 	}
 	link := fmt.Sprintf("%s%s?action=download&id=%d", d.BaseURL, path, torrentID)
@@ -378,13 +375,16 @@ func (d *driver) downloadLink(torrentID int64, withToken bool) string {
 	return link
 }
 
-func (d *driver) applyProfile(release *normalizer.Release, groupID, torrentID int64, tags []string) {
-	if d.profile.site == "alpharatio" {
-		release.Details = fmt.Sprintf("%storrents.php?id=%d&torrentid=%d", d.BaseURL, groupID, torrentID)
-		release.IMDBID = imdbTag(tags)
+// applyProfile assigns the seeding minimums every site declares as data, then runs the
+// site's optional parseProfile hook for release-shaping quirks (AlphaRatio's Details
+// link, IMDB tag, and file count) — the composed, non-branching equivalent of the old
+// id-keyed special case.
+func (d *driver) applyProfile(release *normalizer.Release, groupID, torrentID, fileCount int64, tags []string) {
+	release.MinimumRatio = d.site.minimumRatio
+	release.MinimumSeedTime = d.site.minimumSeedTime
+	if d.site.parseProfile != nil {
+		d.site.parseProfile(d, release, groupID, torrentID, fileCount, tags)
 	}
-	release.MinimumRatio = d.profile.minimumRatio
-	release.MinimumSeedTime = d.profile.minimumSeedTime
 }
 
 func imdbTag(tags []string) string {
@@ -439,38 +439,16 @@ func (d *driver) publishDate(value string) string {
 	return out
 }
 
-// scrubCredentials removes configured credentials and every AlphaRatio session that
-// can overlap an in-flight request through the shared Base.Scrub chokepoint:
-// apikey/password ride in via Base.Scrub's own IsSecret-derived set (both are
-// declared secret settings), while username (not IsSecret — it is not a stored
-// secret, only a value the driver still submits to the tracker) and every AlphaRatio
-// session cookie (undeclared in Settings, so Base.Scrub never sees it on its own)
-// are supplied as extras. Session cookies are covered in both serialized-header and
-// bare-value forms.
+// scrubCredentials removes configured credentials and every session value that can
+// overlap an in-flight request through the shared Base.Scrub chokepoint: apikey/password
+// ride in via Base.Scrub's own IsSecret-derived set (both are declared secret settings),
+// while the request's exact session snapshot (requestCookie — undeclared in Settings, so
+// Base.Scrub never sees it on its own) plus the strategy's own secrets (username, the
+// configured and current sessions — see authStrategy.Scrub) are supplied as extras.
+// Session cookies are covered in both serialized-header and bare-value forms.
 func (d *driver) scrubCredentials(s, requestCookie string) string {
-	extras := append([]string{d.Cfg["username"]},
-		cookieScrubExtras(d.Cfg[alphaRatioCookieSetting], requestCookie, d.sessionSnapshot().cookie)...)
+	extras := append(cookieScrubExtras(requestCookie), d.site.strategy.Scrub(d)...)
 	return d.Scrub(s, extras...)
-}
-
-// cookieScrubExtras expands each non-empty serialized cookie into itself plus its
-// component bare values, matching Base.Scrub's literal-substring contract. Malformed
-// input still contributes its exact raw form.
-func cookieScrubExtras(cookies ...string) []string {
-	var extra []string
-	for _, raw := range cookies {
-		raw = strings.TrimSpace(raw)
-		if raw == "" {
-			continue
-		}
-		extra = append(extra, raw)
-		for _, cookie := range parseCookieHeader(raw) {
-			if value := strings.TrimSpace(cookie.Value); value != "" {
-				extra = append(extra, value)
-			}
-		}
-	}
-	return extra
 }
 
 // sortReleases orders releases by PublishDate descending to mirror Prowlarr's terminal

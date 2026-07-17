@@ -4,10 +4,15 @@
 // and rides the resulting session cookie. Music groups flatten their nested torrents,
 // while AlphaRatio's non-music groups are already one release each. All downloads are
 // fetched server-side through /dl so header/cookie credentials never reach feed
-// consumers. Everything but the Gazelle request/parse dialect and the per-site profile
-// (plus AlphaRatio's cookie-session state) lives in the embedded native.Base, whose
-// Do/DoDownload own the paced transport, host-only redaction, status classification, and
-// capped body reads.
+// consumers. Everything but the Gazelle request/parse dialect and the per-site config
+// (plus the form-login regime's cookie-session state) lives in the embedded native.Base,
+// whose Do/DoDownload own the paced transport, host-only redaction, status
+// classification, and capped body reads.
+//
+// Per-site variation (ADR 0003, docs/adr/0003-gazelle-auth-strategy-seam.md) is data:
+// siteConfigs (sites.go) composes an authStrategy (strategy.go/strategy_formlogin.go)
+// plus caps/paging/parse-profile quirks per site id. auth.go/parse.go/search.go/grab.go
+// read that data and dispatch through the strategy; none of them branch on a site id.
 package gazelle
 
 import (
@@ -25,11 +30,12 @@ import (
 
 // driver is one configured Gazelle-family instance. It is built once per instance and
 // cached by the registry. RED/OPS carry a static API key and hold no session state;
-// AlphaRatio keeps a persisted cookie session and serializes automatic login/renewal
-// through loginGate. The cookie-session fields are unused for the API-key sites.
+// AlphaRatio (and the planned #28-#31 sites) keep a persisted cookie session and
+// serialize automatic login/renewal through loginGate. The cookie-session fields are
+// unused for apiKeyAuth sites.
 type driver struct {
 	native.Base
-	profile profile
+	site siteConfig
 
 	persist   func(ctx context.Context, name, value string) error
 	jar       stdhttp.CookieJar
@@ -49,53 +55,31 @@ type sessionState struct {
 
 var _ native.Driver = (*driver)(nil)
 
-// profile captures per-site auth, download, paging, and seeding behavior keyed by
-// definition id. The zero/default profile is Redacted; Orpheus changes its auth prefix;
-// AlphaRatio switches to cookie auth and fixed-page, torrents.php downloads.
-type profile struct {
-	site                string
-	authPrefix          string
-	cookieAuth          bool
-	downloadViaTorrents bool
-	pageSize            int
-	minimumRatio        float64
-	minimumSeedTime     int64
-}
-
-func profileFor(id string) profile {
-	switch id {
-	case "alpharatio":
-		return profile{
-			site:                id,
-			cookieAuth:          true,
-			downloadViaTorrents: true,
-			pageSize:            50,
-			minimumRatio:        1,
-			minimumSeedTime:     259200,
-		}
-	case "orpheus":
-		return profile{site: id, authPrefix: "token "}
-	default:
-		return profile{site: id}
-	}
-}
-
 // New is the native.Factory for every Gazelle-family site. It builds the shared base
-// (capabilities, normalised base URL, clock), resolves the per-site profile from the
-// definition id, and — for AlphaRatio — seeds the cookie session from the stored
-// setting and primes the doer's cookie jar when it has one.
+// (capabilities, normalised base URL, clock), resolves the per-site config from the
+// definition id (siteConfigs — a data lookup, never a branch), and — only for a site
+// that declares a sessionCookieSetting — seeds the cookie session from the stored
+// setting and primes the doer's cookie jar when it has one. An apiKeyAuth site declares
+// no sessionCookieSetting, so it carries no session state at all.
 func New(p native.Params) (native.Driver, error) {
 	b, err := native.NewBase("gazelle", p)
 	if err != nil {
 		return nil, err
 	}
+	site, ok := siteConfigs[p.Def.ID]
+	if !ok {
+		return nil, fmt.Errorf("gazelle: no site config for %q", p.Def.ID)
+	}
 	cookieURL, err := url.Parse(b.BaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("gazelle: parse base URL: %w", err)
 	}
-	session := sessionState{cookie: strings.TrimSpace(p.Cfg[alphaRatioCookieSetting])}
-	if session.cookie != "" {
-		session.generation = 1
+	var session sessionState
+	if site.sessionCookieSetting != "" {
+		session.cookie = strings.TrimSpace(p.Cfg[site.sessionCookieSetting])
+		if session.cookie != "" {
+			session.generation = 1
+		}
 	}
 	jar := doerCookieJar(p.Doer)
 	if jar != nil && session.cookie != "" {
@@ -103,7 +87,7 @@ func New(p native.Params) (native.Driver, error) {
 	}
 	return &driver{
 		Base:      b,
-		profile:   profileFor(p.Def.ID),
+		site:      site,
 		persist:   p.PersistSetting,
 		jar:       jar,
 		cookieURL: cookieURL,
@@ -118,18 +102,19 @@ func New(p native.Params) (native.Driver, error) {
 func (d *driver) NeedsResolver() bool { return false }
 
 // DownloadNeedsAuth is true: the download authenticates out-of-band via an API-key
-// header or AlphaRatio session cookie, so the served feed routes through the /dl proxy
-// and the driver's Grab fetches the torrent server-side with credentials attached.
+// header or session cookie, so the served feed routes through the /dl proxy and the
+// driver's Grab fetches the torrent server-side with credentials attached.
 func (d *driver) DownloadNeedsAuth() bool { return true }
 
-// SupportsOffsetPaging reports true only for AlphaRatio. Its API exposes fixed 50-row
-// pages; Search fetches enough upstream pages to satisfy harbrr's requested window.
-func (d *driver) SupportsOffsetPaging() bool { return d.profile.pageSize > 0 }
+// SupportsOffsetPaging reports true only for sites with a fixed-page upstream API
+// (currently AlphaRatio). Its API exposes fixed 50-row pages; Search fetches enough
+// upstream pages to satisfy harbrr's requested window.
+func (d *driver) SupportsOffsetPaging() bool { return d.site.pageSize > 0 }
 
-// Test exercises the credentials with an empty browse query: for AlphaRatio this drives
-// an automatic login, and any site surfaces a 401/403 as login.ErrLoginFailed (the
-// registry records an auth_failure health event), while a parseable empty page confirms
-// the credentials work.
+// Test exercises the credentials with an empty browse query: for a form-login site this
+// drives an automatic login, and any site surfaces a 401/403 as login.ErrLoginFailed
+// (the registry records an auth_failure health event), while a parseable empty page
+// confirms the credentials work.
 func (d *driver) Test(ctx context.Context) error {
 	return native.TestViaSearch(ctx, d)
 }

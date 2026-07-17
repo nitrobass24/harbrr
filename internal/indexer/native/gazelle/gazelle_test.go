@@ -81,25 +81,33 @@ func TestFamilies(t *testing.T) {
 	}
 }
 
-// TestProfileAuthPrefix pins the per-site Authorization header prefix: RED sends the
-// apikey bare (""), OPS prefixes it with "token ".
-func TestProfileAuthPrefix(t *testing.T) {
+// TestSiteAuthStrategy pins each site's declared auth strategy (ADR 0003): RED/OPS use
+// apiKeyAuth with the per-site Authorization prefix (RED bare "", OPS "token "),
+// AlphaRatio uses formLoginAuth — composed data in siteConfigs, never an id branch.
+func TestSiteAuthStrategy(t *testing.T) {
 	t.Parallel()
-	cases := []struct {
+	apiKeyCases := []struct {
 		id   string
 		want string
 	}{
 		{"redacted", ""},
 		{"orpheus", "token "},
-		{"alpharatio", ""},
 	}
-	for _, c := range cases {
-		if got := profileFor(c.id).authPrefix; got != c.want {
-			t.Errorf("profileFor(%q).authPrefix = %q, want %q", c.id, got, c.want)
+	for _, c := range apiKeyCases {
+		cfg, ok := siteConfigs[c.id]
+		if !ok {
+			t.Fatalf("no site config for %q", c.id)
 		}
-		if got := profileFor(c.id).site; got != c.id {
-			t.Errorf("profileFor(%q).site = %q, want %q", c.id, got, c.id)
+		strategy, ok := cfg.strategy.(apiKeyAuth)
+		if !ok {
+			t.Fatalf("%q: strategy = %T, want apiKeyAuth", c.id, cfg.strategy)
 		}
+		if strategy.prefix != c.want {
+			t.Errorf("%q: apiKeyAuth.prefix = %q, want %q", c.id, strategy.prefix, c.want)
+		}
+	}
+	if _, ok := siteConfigs["alpharatio"].strategy.(formLoginAuth); !ok {
+		t.Errorf("alpharatio: strategy = %T, want formLoginAuth", siteConfigs["alpharatio"].strategy)
 	}
 }
 
