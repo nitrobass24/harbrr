@@ -43,7 +43,15 @@ func TestClassifyHealth(t *testing.T) {
 		{"wrapped net error", fmt.Errorf("GET https://tracker.example: %w", timeoutErr), domain.HealthTransport, true},
 		{"unexpected EOF read", fmt.Errorf("reading response from https://tracker.example: %w", io.ErrUnexpectedEOF), domain.HealthTransport, true},
 		{"plain EOF read", fmt.Errorf("reading response from https://tracker.example: %w", io.EOF), domain.HealthTransport, true},
-		{"gateway status (untyped)", errors.New("GET https://tracker.example: tracker returned HTTP 502"), "", false},
+		// Gateway statuses (#247): the request-path builders wrap search.ErrGatewayStatus
+		// for 502/504/522 only, so these now classify as transport — a reachable-but-
+		// unhappy tracker answering with a plain 404/500 stays unclassified (the tracker
+		// itself answered; that's not a gateway outage).
+		{"gateway 502", fmt.Errorf("GET https://tracker.example: tracker returned HTTP 502: %w", search.ErrGatewayStatus), domain.HealthTransport, true},
+		{"gateway 504", fmt.Errorf("GET https://tracker.example: tracker returned HTTP 504: %w", search.ErrGatewayStatus), domain.HealthTransport, true},
+		{"gateway 522", fmt.Errorf("GET https://tracker.example: tracker returned HTTP 522: %w", search.ErrGatewayStatus), domain.HealthTransport, true},
+		{"not-found status stays unclassified", errors.New("GET https://tracker.example: tracker returned HTTP 404"), "", false},
+		{"server error status stays unclassified", errors.New("GET https://tracker.example: tracker returned HTTP 500"), "", false},
 		// A mid-body read failure carries the native ErrBodyRead marker: transport,
 		// not parse (#234) — even when the underlying cause is a bespoke error shape
 		// that isn't itself an EOF or net.Error.

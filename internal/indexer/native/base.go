@@ -189,6 +189,8 @@ func (c Classify) statusError(family, op string, resp *stdhttp.Response, clock f
 			StatusCode: code,
 			RetryAfter: search.ParseRetryAfter(resp.Header.Get("Retry-After"), clock),
 		}
+	case search.IsGatewayStatus(code):
+		return fmt.Errorf("%s: %s returned HTTP %d: %w", family, op, code, search.ErrGatewayStatus)
 	case code < 200 || code >= 300:
 		return fmt.Errorf("%s: %s returned HTTP %d", family, op, code)
 	}

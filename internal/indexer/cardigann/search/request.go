@@ -491,6 +491,10 @@ func checkStatus(resp *stdhttp.Response, br builtRequest) error {
 		return fmt.Errorf("%s %s: %w", br.method, apphttp.SchemeHost(br.url),
 			&RateLimitedError{StatusCode: resp.StatusCode, RetryAfter: ParseRetryAfter(resp.Header.Get("Retry-After"), time.Now)})
 	}
+	if IsGatewayStatus(resp.StatusCode) {
+		return fmt.Errorf("%s %s: tracker returned HTTP %d: %w",
+			br.method, apphttp.SchemeHost(br.url), resp.StatusCode, ErrGatewayStatus)
+	}
 	return fmt.Errorf("%s %s: tracker returned HTTP %d", br.method, apphttp.SchemeHost(br.url), resp.StatusCode)
 }
 

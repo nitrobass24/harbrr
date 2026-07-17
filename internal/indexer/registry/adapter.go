@@ -219,12 +219,15 @@ func classifyHealth(err error) (string, bool) {
 // isTransportError reports whether err is a transport-level failure — connection
 // refused/reset, TLS handshake failure, DNS failure, client timeout (all covered by
 // net.Error, which *net.OpError, *net.DNSError, and context.DeadlineExceeded all
-// implement), a *url.Error chain, or an EOF mid-read (io.EOF / io.ErrUnexpectedEOF) —
-// as opposed to a reachable-but-unhappy response. Kept coarse (#223): one kind, not a
-// taxonomy; the event detail string carries the specifics. Gateway statuses
-// (502/504/522) surface from checkStatus as plain fmt errors with no distinguishing
-// type, so they fall through unclassified here — their code still reaches the detail
-// string via the wrapped error text.
+// implement), a *url.Error chain, an EOF mid-read (io.EOF / io.ErrUnexpectedEOF), or
+// a gateway status (502/504/522, search.ErrGatewayStatus) — as opposed to a
+// reachable-but-unhappy response. Kept coarse (#223): one kind, not a taxonomy; the
+// event detail string carries the specifics. A gateway status is treated the same as
+// a dropped connection (#247): the tracker itself never answered, the outage is just
+// observed one hop closer via the proxy/CDN in front of it. 429/503 are rate-limit
+// codes (already classified separately, never reach here) and other non-2xx codes
+// (401/403 auth, 404/500...) are the tracker answering, not a gateway outage, so they
+// stay unclassified.
 func isTransportError(err error) bool {
 	var (
 		netErr net.Error
@@ -237,6 +240,9 @@ func isTransportError(err error) bool {
 	// the definitive transport marker even when the cause isn't an EOF/net.Error
 	// shape (#234; these used to be misclassified as parse_error).
 	if errors.Is(err, native.ErrBodyRead) {
+		return true
+	}
+	if errors.Is(err, search.ErrGatewayStatus) {
 		return true
 	}
 	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)

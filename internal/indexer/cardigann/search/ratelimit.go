@@ -41,6 +41,23 @@ func IsRateLimitStatus(code int) bool {
 	return code == stdhttp.StatusTooManyRequests || code == stdhttp.StatusServiceUnavailable
 }
 
+// ErrGatewayStatus is the sentinel for a reverse-proxy/CDN reporting the origin
+// unreachable (502 Bad Gateway, 504 Gateway Timeout, 522 Connection Timed Out —
+// the last a Cloudflare-specific extension many trackers sit behind). The
+// registry classifies it as a TRANSPORT health event (autobrr/harbrr#247): the
+// tracker itself never answered, which is the same "down" signal as a refused
+// connection, just observed one hop closer via the gateway's own error page.
+// Deliberately narrow — 429/503 are rate-limit codes (already handled above,
+// never reach here), 401/403 are auth, and other 4xx/5xx (404/500...) are the
+// tracker itself answering, not a gateway outage, so they stay unclassified.
+var ErrGatewayStatus = errors.New("gateway reported the origin unreachable")
+
+// IsGatewayStatus reports whether code is one of the gateway/bad-upstream
+// statuses ErrGatewayStatus covers.
+func IsGatewayStatus(code int) bool {
+	return code == stdhttp.StatusBadGateway || code == stdhttp.StatusGatewayTimeout || code == 522
+}
+
 // maxRetryAfter caps how long a Retry-After can hold a request, so a hostile or
 // misconfigured tracker can't park harbrr for hours.
 const maxRetryAfter = 5 * time.Minute
