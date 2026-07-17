@@ -156,13 +156,14 @@ func (s *Service) loadProxies(ctx context.Context, q dbinterface.Execer, rows []
 	m := make(idMap, len(rows))
 	for _, r := range rows {
 		newID, err := repo.InsertProxy(ctx, q, domain.Proxy{
-			Name: r.Name, Type: r.Type, URLEncrypted: "", KeyID: s.keyring.KeyID(),
+			Name: r.Name, Type: r.Type, Host: r.Host, Port: r.Port, Username: r.Username,
+			PasswordEncrypted: "", KeyID: s.keyring.KeyID(),
 			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("backup: insert proxy %q: %w", r.Name, err)
 		}
-		if err := s.sealSecret(ctx, q, newID, domain.ProxySecretURL, r.URL, "proxy", repo.SetProxySecret); err != nil {
+		if err := s.sealSecret(ctx, q, newID, domain.ProxySecretPassword, r.Password, "proxy", repo.SetProxySecret); err != nil {
 			return nil, err
 		}
 		m[r.ID] = newID

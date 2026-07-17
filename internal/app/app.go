@@ -20,6 +20,7 @@ import (
 	"github.com/autobrr/harbrr/internal/announce"
 	"github.com/autobrr/harbrr/internal/appsync"
 	"github.com/autobrr/harbrr/internal/auth"
+	"github.com/autobrr/harbrr/internal/backup"
 	"github.com/autobrr/harbrr/internal/config"
 	"github.com/autobrr/harbrr/internal/database"
 	apphttp "github.com/autobrr/harbrr/internal/http"
@@ -78,6 +79,7 @@ type App struct {
 
 	proxy  *proxy.Service
 	solver *solver.Service
+	backup *backup.Service
 
 	logLevel *api.LogLevelStore
 
@@ -137,6 +139,7 @@ func (a *App) build(ctx context.Context, httpClient *http.Client) error {
 	a.initLogLevel(ctx)
 	a.proxy = proxy.NewService(a.db, a.keyring)
 	a.solver = solver.NewService(a.db, a.keyring)
+	a.backup = backup.NewService(a.db, a.keyring, a.log)
 
 	srv, err := newServer(a)
 	if err != nil {
@@ -355,7 +358,7 @@ func newServer(a *App) (*server.Server, error) {
 
 	mgmt, err := api.NewRouter(api.Deps{
 		Auth: a.auth, Registry: a.registry, Loader: loader.New(dropinDir(a.cfg)), AppSync: a.appsync,
-		Announce: a.announce, Notify: a.notify, Proxy: a.proxy, Solver: a.solver, Sessions: a.sessions,
+		Announce: a.announce, Notify: a.notify, Proxy: a.proxy, Solver: a.solver, Backup: a.backup, Sessions: a.sessions,
 		DLToken: a.keyring, URLConfig: urlCfg, Cache: a.searchCache, Logger: a.log, LogLevel: a.logLevel,
 	}, api.Config{
 		AuthDisabled: a.cfg.Auth.AuthDisabled(), IPAllowlist: a.cfg.Auth.IPAllowlist, TrustedProxies: a.cfg.Auth.TrustedProxies,

@@ -84,12 +84,13 @@ func (s *Service) collectProxies(ctx context.Context, q dbinterface.Execer) ([]P
 	}
 	out := make([]ProxyRow, 0, len(list))
 	for _, p := range list {
-		url, err := s.decryptSecret(p.ID, domain.ProxySecretURL, p.URLEncrypted)
+		password, err := s.decryptSecret(p.ID, domain.ProxySecretPassword, p.PasswordEncrypted)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, ProxyRow{
-			ID: p.ID, Name: p.Name, Type: p.Type, URL: url,
+			ID: p.ID, Name: p.Name, Type: p.Type, Host: p.Host, Port: p.Port,
+			Username: p.Username, Password: password,
 			CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
 		})
 	}

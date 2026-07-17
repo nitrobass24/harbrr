@@ -53,16 +53,24 @@ type Tables struct {
 	Admin       *UserRow        `json:"admin,omitempty"`
 }
 
-// ProxyRow / SolverRow carry the decrypted upstream URL (which embeds credentials); it is
-// re-sealed under the target keyring on import.
+// ProxyRow carries the proxy's structured fields (host/port/username are plaintext;
+// only the password is a secret) since #71 split the composite URL into structured
+// storage. Password is decrypted at export and re-sealed under the target keyring on
+// import.
 type ProxyRow struct {
 	ID        int64     `json:"id"`
 	Name      string    `json:"name"`
 	Type      string    `json:"type"`
-	URL       string    `json:"url"`
+	Host      string    `json:"host"`
+	Port      int       `json:"port"`
+	Username  string    `json:"username"`
+	Password  string    `json:"password"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
+
+// SolverRow carries the decrypted upstream URL (which embeds credentials); it is
+// re-sealed under the target keyring on import.
 
 type SolverRow struct {
 	ID         int64     `json:"id"`

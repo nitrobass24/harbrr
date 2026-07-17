@@ -19,7 +19,7 @@ const (
 	keyA = "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
 	keyB = "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
 
-	proxySecret  = "http://user:PROXYSECRET@proxy:8080"
+	proxySecret  = "PROXYSECRET-password"
 	solverSecret = "http://user:SOLVERSECRET@flare:8191"
 	appKey       = "APPKEY-secret"
 	appHarbrr    = "APPHARBRR-secret"
@@ -90,11 +90,13 @@ func seed(t *testing.T, db *database.DB, kr *secrets.Keyring) {
 func seedProxy(t *testing.T, db *database.DB, kr *secrets.Keyring) int64 {
 	t.Helper()
 	ctx := context.Background()
-	id, err := (database.Proxies{}).InsertProxy(ctx, db, domain.Proxy{Name: "px", Type: "http", KeyID: kr.KeyID()})
+	id, err := (database.Proxies{}).InsertProxy(ctx, db, domain.Proxy{
+		Name: "px", Type: "http", Host: "proxy", Port: 8080, Username: "user", KeyID: kr.KeyID(),
+	})
 	if err != nil {
 		t.Fatalf("seed proxy: %v", err)
 	}
-	enc, err := kr.Encrypt(id, domain.ProxySecretURL, proxySecret)
+	enc, err := kr.Encrypt(id, domain.ProxySecretPassword, proxySecret)
 	if err != nil {
 		t.Fatalf("seal proxy: %v", err)
 	}
@@ -235,13 +237,16 @@ func assertProxyRestored(t *testing.T, dstDB *database.DB, dstKR *secrets.Keyrin
 	if len(proxies) != 1 {
 		t.Fatalf("restored proxies = %d, want 1", len(proxies))
 	}
-	url, err := dstKR.Decrypt(proxies[0].ID, domain.ProxySecretURL, proxies[0].URLEncrypted)
-	if err != nil || url != proxySecret {
-		t.Fatalf("proxy url under key B = %q, err %v; want %q", url, err, proxySecret)
+	if proxies[0].Host != "proxy" || proxies[0].Port != 8080 || proxies[0].Username != "user" {
+		t.Errorf("proxy structured fields = %+v, want host=proxy port=8080 username=user", proxies[0])
+	}
+	password, err := dstKR.Decrypt(proxies[0].ID, domain.ProxySecretPassword, proxies[0].PasswordEncrypted)
+	if err != nil || password != proxySecret {
+		t.Fatalf("proxy password under key B = %q, err %v; want %q", password, err, proxySecret)
 	}
 	// Re-seal proof: the target ciphertext differs from the source's (different at-rest key).
 	srcProxies, _ := (database.Proxies{}).ListProxies(ctx, srcDB)
-	if proxies[0].URLEncrypted == srcProxies[0].URLEncrypted {
+	if proxies[0].PasswordEncrypted == srcProxies[0].PasswordEncrypted {
 		t.Error("proxy ciphertext identical across different at-rest keys (not re-sealed)")
 	}
 	_ = srcKR

@@ -212,9 +212,6 @@ func (rt *router) routes() http.Handler {
 
 			rt.mountResourceRoutes(r)
 
-			r.Post("/api/export", rt.exportBackup)
-			r.Post("/api/import", rt.importBackup)
-
 			r.Get("/api/cache/stats", rt.cacheStats)
 			r.Post("/api/cache/flush", rt.cacheFlush)
 			r.Get("/api/cache/config", rt.cacheConfigGet)
@@ -232,9 +229,13 @@ func (rt *router) routes() http.Handler {
 }
 
 // mountResourceRoutes registers the CRUD routes for the global proxy + anti-bot-solver
-// resources an indexer references by id, plus notifications. Split out of routes() to
-// keep that function under the funlen gate.
+// resources an indexer references by id, plus notifications, sync profiles, and the
+// config/DB backup export/import routes. Split out of routes() to keep that function
+// under the funlen gate.
 func (rt *router) mountResourceRoutes(r chi.Router) {
+	r.Post("/api/export", rt.exportBackup)
+	r.Post("/api/import", rt.importBackup)
+
 	r.Get("/api/notifications", rt.listNotifications)
 	r.Post("/api/notifications", rt.createNotification)
 	r.Get("/api/notifications/{id}", rt.getNotification)
