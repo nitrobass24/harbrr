@@ -80,6 +80,26 @@ func (a *indexerAdapter) Capabilities() *mapper.Capabilities { return a.inner.Ca
 // bypass feed (full catalog, for qui/cross-seed) from a SINGLE tracker fetch — so a later
 // bypass poll never re-hits the tracker just because an *arr polled FL-only first.
 func (a *indexerAdapter) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
+	// RSS/empty polls only: canonicalize categories to the def's default set so every RSS
+	// consumer (Sonarr/Radarr/qui, each narrowing with a different cat=) collapses onto ONE
+	// cache key and drives ONE outbound fetch, instead of forking a cache entry per category
+	// set (#249). This is safe because core.filterResults ALREADY re-narrows the returned
+	// catalog to each consumer's actually-requested categories on every call, cache hit or
+	// miss alike — so this changes nothing about what a consumer is served, only how often
+	// the tracker is hit for the shared "browse latest" case. Keyword searches are untouched:
+	// there Categories drives real server-side narrowing and must stay as requested.
+	//
+	// ponytail: DefaultCategories, not the full advertised set. For newznab (the dognzb
+	// target) DefaultCategories is empty → the fetch goes out unfiltered = broadest, correct.
+	// The ceiling: a categorymappings def that flags SOME cats default and a consumer that
+	// RSS-polls a NON-default cat would under-fetch it here. Chosen over the full-advertised
+	// set because that amplifies a multi-search-path def to one request per category — worse
+	// for "nice to indexers." Upgrade to the full set if a non-default-cat RSS under-fetch is
+	// observed on such a def.
+	if isEmptyQuery(q) {
+		q.Categories = a.inner.Capabilities().DefaultCategories
+	}
+
 	// (1) Cache-aside over the full catalog. The two-level enabled distinction lives
 	// here: cache nil (never configured) OR the runtime toggle off ⇒ run liveSearch
 	// directly; otherwise the cache drives liveSearch on a miss so the tracker is hit
