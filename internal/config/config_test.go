@@ -104,6 +104,9 @@ func TestValidate(t *testing.T) {
 		{"oidc enabled redirect_url not absolute", func(c *config.Config) {
 			c.Auth.OIDC = config.OIDCConfig{Enabled: true, Issuer: "https://idp.example.com", ClientID: "id", ClientSecret: "secret", RedirectURL: "/api/auth/oidc/callback"}
 		}, true},
+		{"oidc enabled redirect_url non-http scheme", func(c *config.Config) {
+			c.Auth.OIDC = config.OIDCConfig{Enabled: true, Issuer: "https://idp.example.com", ClientID: "id", ClientSecret: "secret", RedirectURL: "ftp://harbrr.example.com/callback"}
+		}, true},
 		{"oidc enabled with auth.mode=disabled rejected", func(c *config.Config) {
 			c.Auth.Mode = "disabled"
 			c.Auth.IPAllowlist = []string{"127.0.0.1/32"}

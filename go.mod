@@ -10,6 +10,7 @@ require (
 	github.com/dlclark/regexp2 v1.12.0
 	github.com/getkin/kin-openapi v0.142.0
 	github.com/go-chi/chi/v5 v5.3.1
+	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/rs/zerolog v1.35.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/spf13/cobra v1.10.2
@@ -29,7 +30,6 @@ require (
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
-	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-openapi/jsonpointer v0.22.5 // indirect
 	github.com/go-openapi/swag/jsonname v0.25.5 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect

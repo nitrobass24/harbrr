@@ -247,8 +247,11 @@ func (h *oidcHandler) verifyAndDeriveUsername(ctx context.Context, token *oauth2
 		return "", fmt.Errorf("%w: parse claims: %w", errOIDCTokenInvalid, err)
 	}
 	// Best-effort: a userinfo-endpoint failure keeps the ID token's claims
-	// rather than failing the whole login (mirrors qui).
-	if userInfo, err := h.provider.UserInfo(ctx, oauth2.StaticTokenSource(token)); err == nil {
+	// rather than failing the whole login (mirrors qui). go-oidc does NOT check
+	// that the userinfo subject matches the verified ID token's, so we do — per
+	// the OIDC spec, a userinfo response whose sub differs must be discarded, or
+	// a rogue/misconfigured endpoint could override the session identity.
+	if userInfo, err := h.provider.UserInfo(ctx, oauth2.StaticTokenSource(token)); err == nil && userInfo.Subject == claims.Sub {
 		var fromUserInfo oidcClaims
 		if err := userInfo.Claims(&fromUserInfo); err == nil {
 			claims = mergeOIDCClaims(claims, fromUserInfo)

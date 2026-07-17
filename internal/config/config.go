@@ -325,7 +325,7 @@ func (c Config) validateOIDC() error {
 		return errors.New("config: auth.oidc.enabled requires issuer, client_id, client_secret, and redirect_url")
 	}
 	u, err := url.Parse(o.RedirectURL)
-	if err != nil || u.Scheme == "" || u.Host == "" {
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return fmt.Errorf("config: auth.oidc.redirect_url %q must be an absolute http:// or https:// URL", o.RedirectURL)
 	}
 	return nil

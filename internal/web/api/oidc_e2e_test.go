@@ -3,6 +3,8 @@ package api_test
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -31,6 +33,11 @@ type fakeOIDCProvider struct {
 	claims   map[string]any // extra ID-token claims (username fields, sub, ...)
 	userInfo map[string]any // userinfo-endpoint response (nil = 404)
 	wantPKCE bool           // advertise S256 in discovery when true
+
+	// expectChallenge, when set, makes the token endpoint require the form's
+	// code_verifier and reject it unless base64url(sha256(verifier)) equals this
+	// value — proving PKCE round-trips, not just that the challenge was issued.
+	expectChallenge string
 }
 
 func newFakeOIDCProvider(t *testing.T, claims map[string]any, wantPKCE bool) *fakeOIDCProvider {
@@ -105,12 +112,18 @@ func (p *fakeOIDCProvider) token(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
-	// A real IdP would validate client_id/client_secret/code/PKCE here; this
-	// fixture's only job is to hand back a well-formed, correctly-signed token
-	// response — the callback's own state/code/PKCE handling is exercised at
-	// the harbrr HTTP layer above this fixture, not inside it. The oauth2
-	// client may send client_id via Basic auth rather than the form body
-	// (AuthStyleAutoDetect), so the fixture's own clientID is used as the
+	// When a PKCE challenge was issued, verify the round-trip: the form's
+	// code_verifier must S256-hash to the challenge harbrr sent to /authorize.
+	if p.expectChallenge != "" {
+		verifier := r.PostFormValue("code_verifier")
+		sum := sha256.Sum256([]byte(verifier))
+		if verifier == "" || base64.RawURLEncoding.EncodeToString(sum[:]) != p.expectChallenge {
+			http.Error(w, "pkce verification failed", http.StatusBadRequest)
+			return
+		}
+	}
+	// The oauth2 client may send client_id via Basic auth rather than the form
+	// body (AuthStyleAutoDetect), so the fixture's own clientID is used as the
 	// token's audience rather than trying to read it back off the request.
 	idToken, err := p.idToken(p.clientID)
 	if err != nil {
@@ -193,9 +206,12 @@ func TestOIDCCallbackHappyPath(t *testing.T) {
 	if state == "" {
 		t.Fatal("authorization url carries no state")
 	}
-	if authURL.Query().Get("code_challenge") == "" {
+	challenge := authURL.Query().Get("code_challenge")
+	if challenge == "" {
 		t.Error("authorization url carries no code_challenge; want PKCE (provider advertises S256)")
 	}
+	// Make the token endpoint enforce the round-trip against the issued challenge.
+	provider.expectChallenge = challenge
 
 	resp, body := do(t, noRedirectClientFrom(c), http.MethodGet,
 		fmt.Sprintf("%s/api/auth/oidc/callback?code=test-code&state=%s", base, state), nil, nil)
@@ -231,7 +247,9 @@ func TestOIDCCallbackUserInfoOverridesIDToken(t *testing.T) {
 	t.Parallel()
 
 	provider := newFakeOIDCProvider(t, map[string]any{"preferred_username": "from-id-token"}, false)
-	provider.userInfo = map[string]any{"preferred_username": "from-userinfo"}
+	// Matching sub: userinfo is trusted only when its subject equals the verified
+	// ID token's (test-subject, set in idToken).
+	provider.userInfo = map[string]any{"sub": "test-subject", "preferred_username": "from-userinfo"}
 	base, c := serve(t, newEnv(t, api.Config{OIDC: api.OIDCConfig{
 		Enabled: true, Issuer: provider.srv.URL, ClientID: "client-id", ClientSecret: "client-secret",
 		RedirectURL: "https://harbrr.example.test/api/auth/oidc/callback",
@@ -254,6 +272,37 @@ func TestOIDCCallbackUserInfoOverridesIDToken(t *testing.T) {
 	mustStatus(t, resp, body, http.StatusOK)
 	if !strings.Contains(string(body), `"username":"from-userinfo"`) {
 		t.Errorf("/me = %s, want username from-userinfo (userinfo overrides id token)", body)
+	}
+}
+
+// TestOIDCCallbackUserInfoSubjectMismatchIgnored pins the security rule that a
+// userinfo response whose sub differs from the verified ID token's is discarded
+// — a rogue/misconfigured userinfo endpoint must not override the session identity.
+func TestOIDCCallbackUserInfoSubjectMismatchIgnored(t *testing.T) {
+	t.Parallel()
+
+	provider := newFakeOIDCProvider(t, map[string]any{"preferred_username": "from-id-token"}, false)
+	// Mismatched sub: this userinfo must be ignored entirely.
+	provider.userInfo = map[string]any{"sub": "attacker-subject", "preferred_username": "from-userinfo"}
+	base, c := serve(t, newEnv(t, api.Config{OIDC: api.OIDCConfig{
+		Enabled: true, Issuer: provider.srv.URL, ClientID: "client-id", ClientSecret: "client-secret",
+		RedirectURL: "https://harbrr.example.test/api/auth/oidc/callback",
+	}}))
+
+	cfg := getOIDCConfigBody(t, c, base)
+	state, _ := url.Parse(cfg.AuthorizationURL)
+	resp, body := do(t, noRedirectClientFrom(c), http.MethodGet,
+		fmt.Sprintf("%s/api/auth/oidc/callback?code=test-code&state=%s", base, state.Query().Get("state")), nil, nil)
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("callback status = %d, want 302 (body: %s)", resp.StatusCode, body)
+	}
+	resp, body = do(t, c, http.MethodGet, base+"/api/auth/me", nil, nil)
+	mustStatus(t, resp, body, http.StatusOK)
+	if strings.Contains(string(body), "from-userinfo") {
+		t.Errorf("/me = %s, mismatched-subject userinfo must NOT override identity", body)
+	}
+	if !strings.Contains(string(body), `"username":"from-id-token"`) {
+		t.Errorf("/me = %s, want the ID token's username to stand", body)
 	}
 }
 

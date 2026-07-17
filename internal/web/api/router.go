@@ -154,7 +154,7 @@ func (rt *router) initOIDC() {
 	}
 	h, err := newOIDCHandler(context.Background(), rt.cfg.OIDC)
 	if err != nil {
-		rt.log.Warn().Err(err).Msg("api: oidc initialization failed; SSO login is disabled this run")
+		rt.log.Warn().Str("error", apphttp.RedactError(err)).Msg("api: oidc initialization failed; SSO login is disabled this run")
 		return
 	}
 	rt.oidc = h
