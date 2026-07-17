@@ -4,7 +4,7 @@
  */
 
 import { Link, useLocation } from "@tanstack/react-router"
-import { Database, LayoutDashboard, MoreHorizontal, RefreshCw, Search, Server, Settings, Shield } from "lucide-react"
+import { Database, HardDriveDownload, LayoutDashboard, MoreHorizontal, RefreshCw, Search, Server, Settings, Shield } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import {
   DropdownMenu,
@@ -31,6 +31,7 @@ const OVERFLOW: NavItem[] = [
   { to: "/settings", label: "Settings", Icon: Settings },
   { to: "/cache", label: "Cache", Icon: Database },
   { to: "/resources", label: "Proxies & Solvers", Icon: Shield },
+  { to: "/download-clients", label: "Download Clients", Icon: HardDriveDownload },
 ]
 
 function FooterLink({ to, label, Icon, active }: NavItem & { active: boolean }) {
@@ -48,7 +49,7 @@ function FooterLink({ to, label, Icon, active }: NavItem & { active: boolean }) 
   )
 }
 
-// Bottom nav bar shown on mobile viewports only; mirrors the Sidebar's 7 destinations
+// Bottom nav bar shown on mobile viewports only; mirrors the Sidebar's 8 destinations
 // with the overflow items folded into a "More" dropdown.
 export function MobileFooterNav() {
   const location = useLocation()

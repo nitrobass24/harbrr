@@ -959,6 +959,100 @@ export interface paths {
         patch: operations["updateProxy"];
         trace?: never;
     };
+    "/api/download-clients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List download clients */
+        get: operations["listDownloadClients"];
+        put?: never;
+        /**
+         * Add a download client
+         * @description Stores the client's secret encrypted at rest; it reads back redacted.
+         */
+        post: operations["createDownloadClient"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/download-clients/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get one download client */
+        get: operations["getDownloadClient"];
+        put?: never;
+        post?: never;
+        /** Delete a download client */
+        delete: operations["deleteDownloadClient"];
+        options?: never;
+        head?: never;
+        /** Update a download client (a new secret rotates the credential; kind is immutable) */
+        patch: operations["updateDownloadClient"];
+        trace?: never;
+    };
+    "/api/download-clients/{id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test a download client's connection
+         * @description Confirms the configured client is reachable with its stored credentials. A pass is {"ok":true}; a connection failure is 200 with ok=false and a scrubbed error; an unknown id is 404.
+         */
+        post: operations["testDownloadClient"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/download-clients/{id}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enable a download client */
+        post: operations["enableDownloadClient"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/download-clients/{id}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Disable a download client */
+        post: operations["disableDownloadClient"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/solvers": {
         parameters: {
             query?: never;
@@ -1674,6 +1768,54 @@ export interface components {
             username?: string;
             /** @description rotates the password (stored encrypted); omitted keeps the stored one */
             password?: string;
+        };
+        /** @description qBittorrent-specific per-client options; all fields are optional. */
+        QBittorrentSettings: {
+            category?: string;
+            tags?: string[];
+            startPaused?: boolean;
+            tlsSkipVerify?: boolean;
+        };
+        /** @description Kind-specific options, keyed by kind — at most the one field matching the client's own kind is populated. */
+        DownloadClientSettings: {
+            qbittorrent?: components["schemas"]["QBittorrentSettings"];
+        };
+        /** @description A configured download client harbrr can send grabbed releases to. host/username are plain; the secret (password or API key, depending on kind) is write-only and is never echoed back — it reads back as the <redacted> sentinel. */
+        DownloadClient: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            /** @enum {string} */
+            kind: "qbittorrent" | "sabnzbd" | "nzbget" | "qui" | "flood" | "download-station" | "transmission" | "deluge" | "rtorrent" | "blackhole";
+            enabled: boolean;
+            host: string;
+            username: string;
+            /** @description the client's secret, redacted (<redacted>) */
+            secret: string;
+            settings: components["schemas"]["DownloadClientSettings"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        CreateDownloadClient: {
+            name: string;
+            /** @enum {string} */
+            kind: "qbittorrent" | "sabnzbd" | "nzbget" | "qui" | "flood" | "download-station" | "transmission" | "deluge" | "rtorrent" | "blackhole";
+            host: string;
+            username?: string;
+            /** @description optional; stored encrypted */
+            secret?: string;
+            settings?: components["schemas"]["DownloadClientSettings"];
+        };
+        /** @description a partial update; omitted fields are left unchanged. Kind is immutable and not accepted here. */
+        UpdateDownloadClient: {
+            name?: string;
+            host?: string;
+            username?: string;
+            /** @description rotates the secret (stored encrypted); omitted keeps the stored one */
+            secret?: string;
+            settings?: components["schemas"]["DownloadClientSettings"];
         };
         /** @description A global, reusable anti-bot solver (FlareSolverr) an indexer references by id. The endpoint URL (url) is never echoed — it reads back as the <redacted> sentinel. */
         Solver: {
@@ -3972,6 +4114,196 @@ export interface operations {
                 content?: never;
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listDownloadClients: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description the download clients (secrets redacted) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DownloadClient"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createDownloadClient: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDownloadClient"];
+            };
+        };
+        responses: {
+            /** @description the created download client */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DownloadClient"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getDownloadClient: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description the download client */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DownloadClient"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteDownloadClient: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateDownloadClient: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateDownloadClient"];
+            };
+        };
+        responses: {
+            /** @description updated */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    testDownloadClient: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description the test outcome */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestResult"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    enableDownloadClient: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description enabled */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    disableDownloadClient: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description disabled */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };

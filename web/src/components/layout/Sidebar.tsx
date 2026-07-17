@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router"
-import { Copyright, Database, ExternalLink, LayoutDashboard, LogOut, RefreshCw, Search, Server, Settings, Shield } from "lucide-react"
+import { Copyright, Database, ExternalLink, HardDriveDownload, LayoutDashboard, LogOut, RefreshCw, Search, Server, Settings, Shield } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { ThemeControl } from "@/components/layout/ThemeControl"
 import { Badge } from "@/components/ui/badge"
@@ -17,6 +17,7 @@ const MANAGE: NavItem[] = [
   { to: "/indexers", label: "Indexers", Icon: Server },
   { to: "/cache", label: "Cache", Icon: Database },
   { to: "/resources", label: "Proxies & Solvers", Icon: Shield },
+  { to: "/download-clients", label: "Download Clients", Icon: HardDriveDownload },
   { to: "/search", label: "Search", Icon: Search },
 ]
 const SYNC: NavItem[] = [

@@ -15,6 +15,7 @@ import (
 	"github.com/autobrr/harbrr/internal/appsync"
 	"github.com/autobrr/harbrr/internal/auth"
 	"github.com/autobrr/harbrr/internal/backup"
+	"github.com/autobrr/harbrr/internal/download"
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
@@ -35,6 +36,7 @@ type Deps struct {
 	Announce *announce.Service
 	Notify   *notify.Service
 	Proxy    *proxy.Service
+	Download *download.Service
 	Solver   *solver.Service
 	Backup   *backup.Service
 	Sessions *scs.SessionManager
@@ -82,6 +84,7 @@ type router struct {
 	announce *announce.Service
 	notify   *notify.Service
 	proxy    *proxy.Service
+	download *download.Service
 	solver   *solver.Service
 	backup   *backup.Service
 	sessions *scs.SessionManager
@@ -123,7 +126,7 @@ func NewRouter(deps Deps, cfg Config) (http.Handler, error) {
 
 	rt := &router{
 		auth: deps.Auth, registry: deps.Registry, loader: deps.Loader, appsync: deps.AppSync,
-		announce: deps.Announce, notify: deps.Notify, proxy: deps.Proxy, solver: deps.Solver,
+		announce: deps.Announce, notify: deps.Notify, proxy: deps.Proxy, download: deps.Download, solver: deps.Solver,
 		backup:   deps.Backup,
 		sessions: deps.Sessions, dlToken: deps.DLToken, urlCfg: deps.URLConfig,
 		cache: deps.Cache, cfg: cfg, log: deps.Logger, logLevel: deps.LogLevel,
@@ -229,9 +232,9 @@ func (rt *router) routes() http.Handler {
 }
 
 // mountResourceRoutes registers the CRUD routes for the global proxy + anti-bot-solver
-// resources an indexer references by id, plus notifications, sync profiles, and the
-// config/DB backup export/import routes. Split out of routes() to keep that function
-// under the funlen gate.
+// resources an indexer references by id, plus notifications, download clients, sync
+// profiles, and the config/DB backup export/import routes. Split out of routes() to
+// keep that function under the funlen gate.
 func (rt *router) mountResourceRoutes(r chi.Router) {
 	r.Post("/api/export", rt.exportBackup)
 	r.Post("/api/import", rt.importBackup)
@@ -250,6 +253,15 @@ func (rt *router) mountResourceRoutes(r chi.Router) {
 	r.Get("/api/proxies/{id}", rt.getProxy)
 	r.Patch("/api/proxies/{id}", rt.updateProxy)
 	r.Delete("/api/proxies/{id}", rt.deleteProxy)
+
+	r.Get("/api/download-clients", rt.listDownloadClients)
+	r.Post("/api/download-clients", rt.createDownloadClient)
+	r.Get("/api/download-clients/{id}", rt.getDownloadClient)
+	r.Patch("/api/download-clients/{id}", rt.updateDownloadClient)
+	r.Delete("/api/download-clients/{id}", rt.deleteDownloadClient)
+	r.Post("/api/download-clients/{id}/test", rt.testDownloadClient)
+	r.Post("/api/download-clients/{id}/enable", rt.enableDownloadClient)
+	r.Post("/api/download-clients/{id}/disable", rt.disableDownloadClient)
 
 	r.Get("/api/solvers", rt.listSolvers)
 	r.Post("/api/solvers", rt.createSolver)

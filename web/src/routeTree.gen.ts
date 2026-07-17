@@ -17,6 +17,7 @@ import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedSearchRouteImport } from './routes/_authenticated/search'
 import { Route as AuthenticatedResourcesRouteImport } from './routes/_authenticated/resources'
 import { Route as AuthenticatedIndexersRouteImport } from './routes/_authenticated/indexers'
+import { Route as AuthenticatedDownloadClientsRouteImport } from './routes/_authenticated/download-clients'
 import { Route as AuthenticatedCacheRouteImport } from './routes/_authenticated/cache'
 import { Route as AuthenticatedApplicationsRouteImport } from './routes/_authenticated/applications'
 
@@ -59,6 +60,12 @@ const AuthenticatedIndexersRoute = AuthenticatedIndexersRouteImport.update({
   path: '/indexers',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedDownloadClientsRoute =
+  AuthenticatedDownloadClientsRouteImport.update({
+    id: '/download-clients',
+    path: '/download-clients',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedCacheRoute = AuthenticatedCacheRouteImport.update({
   id: '/cache',
   path: '/cache',
@@ -77,6 +84,7 @@ export interface FileRoutesByFullPath {
   '/setup': typeof SetupRoute
   '/applications': typeof AuthenticatedApplicationsRoute
   '/cache': typeof AuthenticatedCacheRoute
+  '/download-clients': typeof AuthenticatedDownloadClientsRoute
   '/indexers': typeof AuthenticatedIndexersRoute
   '/resources': typeof AuthenticatedResourcesRoute
   '/search': typeof AuthenticatedSearchRoute
@@ -87,6 +95,7 @@ export interface FileRoutesByTo {
   '/setup': typeof SetupRoute
   '/applications': typeof AuthenticatedApplicationsRoute
   '/cache': typeof AuthenticatedCacheRoute
+  '/download-clients': typeof AuthenticatedDownloadClientsRoute
   '/indexers': typeof AuthenticatedIndexersRoute
   '/resources': typeof AuthenticatedResourcesRoute
   '/search': typeof AuthenticatedSearchRoute
@@ -100,6 +109,7 @@ export interface FileRoutesById {
   '/setup': typeof SetupRoute
   '/_authenticated/applications': typeof AuthenticatedApplicationsRoute
   '/_authenticated/cache': typeof AuthenticatedCacheRoute
+  '/_authenticated/download-clients': typeof AuthenticatedDownloadClientsRoute
   '/_authenticated/indexers': typeof AuthenticatedIndexersRoute
   '/_authenticated/resources': typeof AuthenticatedResourcesRoute
   '/_authenticated/search': typeof AuthenticatedSearchRoute
@@ -114,6 +124,7 @@ export interface FileRouteTypes {
     | '/setup'
     | '/applications'
     | '/cache'
+    | '/download-clients'
     | '/indexers'
     | '/resources'
     | '/search'
@@ -124,6 +135,7 @@ export interface FileRouteTypes {
     | '/setup'
     | '/applications'
     | '/cache'
+    | '/download-clients'
     | '/indexers'
     | '/resources'
     | '/search'
@@ -136,6 +148,7 @@ export interface FileRouteTypes {
     | '/setup'
     | '/_authenticated/applications'
     | '/_authenticated/cache'
+    | '/_authenticated/download-clients'
     | '/_authenticated/indexers'
     | '/_authenticated/resources'
     | '/_authenticated/search'
@@ -207,6 +220,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedIndexersRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/download-clients': {
+      id: '/_authenticated/download-clients'
+      path: '/download-clients'
+      fullPath: '/download-clients'
+      preLoaderRoute: typeof AuthenticatedDownloadClientsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/cache': {
       id: '/_authenticated/cache'
       path: '/cache'
@@ -227,6 +247,7 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedRouteChildren {
   AuthenticatedApplicationsRoute: typeof AuthenticatedApplicationsRoute
   AuthenticatedCacheRoute: typeof AuthenticatedCacheRoute
+  AuthenticatedDownloadClientsRoute: typeof AuthenticatedDownloadClientsRoute
   AuthenticatedIndexersRoute: typeof AuthenticatedIndexersRoute
   AuthenticatedResourcesRoute: typeof AuthenticatedResourcesRoute
   AuthenticatedSearchRoute: typeof AuthenticatedSearchRoute
@@ -237,6 +258,7 @@ interface AuthenticatedRouteChildren {
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedApplicationsRoute: AuthenticatedApplicationsRoute,
   AuthenticatedCacheRoute: AuthenticatedCacheRoute,
+  AuthenticatedDownloadClientsRoute: AuthenticatedDownloadClientsRoute,
   AuthenticatedIndexersRoute: AuthenticatedIndexersRoute,
   AuthenticatedResourcesRoute: AuthenticatedResourcesRoute,
   AuthenticatedSearchRoute: AuthenticatedSearchRoute,

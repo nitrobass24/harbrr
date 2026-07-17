@@ -95,6 +95,9 @@ export const keys = {
   solvers: {
     all: ["solvers"] as const,
   },
+  downloadClients: {
+    all: ["download-clients"] as const,
+  },
   appConnections: {
     all: ["app-connections"] as const,
     status: (id: number | null) => ["app-connections", id, "status"] as const,

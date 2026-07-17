@@ -33,6 +33,11 @@ export type UpdateProxy = components["schemas"]["UpdateProxy"]
 export type Solver = components["schemas"]["Solver"]
 export type CreateSolver = components["schemas"]["CreateSolver"]
 export type UpdateSolver = components["schemas"]["UpdateSolver"]
+export type DownloadClient = components["schemas"]["DownloadClient"]
+export type CreateDownloadClient = components["schemas"]["CreateDownloadClient"]
+export type UpdateDownloadClient = components["schemas"]["UpdateDownloadClient"]
+export type DownloadClientSettings = components["schemas"]["DownloadClientSettings"]
+export type QBittorrentSettings = components["schemas"]["QBittorrentSettings"]
 export type SyncProfile = components["schemas"]["SyncProfile"]
 export type CreateSyncProfile = components["schemas"]["CreateSyncProfile"]
 export type UpdateSyncProfile = components["schemas"]["UpdateSyncProfile"]
@@ -53,6 +58,7 @@ export type CacheConfigUpdate = components["schemas"]["CacheConfigUpdate"]
 export type ConnectionKind = components["schemas"]["AppConnection"]["kind"]
 export type AnnounceKind = components["schemas"]["AnnounceConnection"]["kind"]
 export type ProxyType = components["schemas"]["Proxy"]["type"]
+export type DownloadClientKind = components["schemas"]["DownloadClient"]["kind"]
 // LogLevel is the bare string union call sites switch on; components["schemas"]["LogLevel"]
 // is the {level: LogLevel} wrapper the get/set endpoints exchange.
 export type LogLevel = components["schemas"]["LogLevel"]["level"]
@@ -383,6 +389,35 @@ export class ApiClient {
 
   deleteSolver(id: number): Promise<void> {
     return this.unwrap(this.http.DELETE("/api/solvers/{id}", { params: { path: { id } } }), "/api/solvers/{id}")
+  }
+
+  // --- download clients ---
+
+  listDownloadClients(): Promise<DownloadClient[]> {
+    return this.unwrap(this.http.GET("/api/download-clients"), "/api/download-clients")
+  }
+
+  createDownloadClient(body: CreateDownloadClient): Promise<DownloadClient> {
+    return this.unwrap(this.http.POST("/api/download-clients", { body }), "/api/download-clients")
+  }
+
+  updateDownloadClient(id: number, body: UpdateDownloadClient): Promise<void> {
+    return this.unwrap(
+      this.http.PATCH("/api/download-clients/{id}", { params: { path: { id } }, body }),
+      "/api/download-clients/{id}"
+    )
+  }
+
+  deleteDownloadClient(id: number): Promise<void> {
+    return this.unwrap(this.http.DELETE("/api/download-clients/{id}", { params: { path: { id } } }), "/api/download-clients/{id}")
+  }
+
+  setDownloadClientEnabled(id: number, enabled: boolean): Promise<void> {
+    return enabled ? this.unwrap(this.http.POST("/api/download-clients/{id}/enable", { params: { path: { id } } }), "/api/download-clients/{id}/enable") : this.unwrap(this.http.POST("/api/download-clients/{id}/disable", { params: { path: { id } } }), "/api/download-clients/{id}/disable")
+  }
+
+  testDownloadClient(id: number): Promise<TestResult> {
+    return this.unwrap(this.http.POST("/api/download-clients/{id}/test", { params: { path: { id } } }), "/api/download-clients/{id}/test")
   }
 
   getCacheStats(): Promise<CacheStats> {

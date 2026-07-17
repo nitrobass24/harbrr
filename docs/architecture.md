@@ -150,8 +150,10 @@ internal/
   scope; "manage" is not.
 - **mkbrr / upbrr** own torrent creation / upload; harbrr only shares the tracker-identity layer.
 
-harbrr does not download torrents itself. The direct grab-to-client path is a post-alpha
-feature — tracked in autobrr/harbrr#7 (interactive grab) and #8 (download-client implementations).
+harbrr does not download torrents itself — `internal/download` hands a resolved release to a
+configured client's driver (qBittorrent first; the rest are tracked in autobrr/harbrr#8), which
+starts the download and takes over management from there; interactive grab (#7) is the remaining
+piece of the direct grab-to-client path.
 
 ## Search-results cache (design record)
 

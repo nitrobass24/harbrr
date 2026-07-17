@@ -47,8 +47,8 @@ correctness gate and must never regress.
 - Definitions: `internal/indexer/definitions/` — `vendor/` (embedded Jackett snapshot, read-only) +
   `dropin/` (user overrides, take precedence).
 - Native indexers: `internal/indexer/native/` (Avistaz family etc. — **post-parity**).
-- Other: `internal/http` (redaction and HTTP error shaping), `internal/download` (stub —
-  send-to-download-client is planned, see autobrr/harbrr#8), `internal/secrets`,
+- Other: `internal/http` (redaction and HTTP error shaping), `internal/download` (download-client
+  platform + drivers — qBittorrent lands first, see autobrr/harbrr#8 for the rest), `internal/secrets`,
   `internal/database` + `dbinterface`.
 - Docs: `docs/architecture.md` (design), `docs/security.md`,
   `docs/linting.md`, `docs/autobrr-app-template.md`, `docs/architecture-refactor-rules.md`.

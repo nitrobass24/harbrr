@@ -328,3 +328,63 @@ type AppConnectionIndexer struct {
 	LastPushStatus string
 	LastPushError  string
 }
+
+// Download-client kinds — stored verbatim in download_clients.kind, validated in Go
+// (no DB CHECK, the #85 lesson) so adding a kind needs no migration. All ten are
+// seeded here up front; a kind is only *creatable* once its driver registers in
+// internal/download's factory map — until then Service.Create rejects it as
+// unregistered (domain.ErrInvalid). See autobrr/harbrr#8 for the sub-issues that
+// register the remaining nine.
+const (
+	DownloadClientKindQBittorrent     = "qbittorrent"
+	DownloadClientKindSabnzbd         = "sabnzbd"
+	DownloadClientKindNZBGet          = "nzbget"
+	DownloadClientKindQui             = "qui"
+	DownloadClientKindFlood           = "flood"
+	DownloadClientKindDownloadStation = "download-station"
+	DownloadClientKindTransmission    = "transmission"
+	DownloadClientKindDeluge          = "deluge"
+	DownloadClientKindRTorrent        = "rtorrent"
+	DownloadClientKindBlackhole       = "blackhole"
+)
+
+// DownloadClientSecret is the AAD "setting" discriminator binding a download
+// client's encrypted secret (password/API key, meaning depends on kind) to its own
+// row id, mirroring notify's secretURL / proxy's ProxySecretPassword.
+const DownloadClientSecret = "download_client_secret" //nolint:gosec // G101: an AAD discriminator name, not a credential.
+
+// QBittorrentSettings holds the qBittorrent-specific per-client options. All
+// fields are optional (zero value = client default / unset).
+type QBittorrentSettings struct {
+	Category      string   `json:"category,omitempty"`
+	Tags          []string `json:"tags,omitempty"`
+	StartPaused   bool     `json:"startPaused,omitempty"`
+	TLSSkipVerify bool     `json:"tlsSkipVerify,omitempty"`
+}
+
+// DownloadClientSettings is the typed wrapper persisted (marshalled) into
+// download_clients.settings_json: one pointer field per kind, never a bare
+// map[string]any. Exactly one field may be populated, and it must match the
+// owning row's Kind — a mismatch is domain.ErrInvalid (checked by the download
+// service, since only it knows the row's Kind).
+type DownloadClientSettings struct {
+	QBittorrent *QBittorrentSettings `json:"qbittorrent,omitempty"`
+}
+
+// DownloadClient is a configured download client harbrr can send grabbed
+// releases to. Host/Username are plain; Secret (password or API key, depending on
+// kind) is the only stored secret, encrypted under KeyID with the client's own id
+// as AAD. Settings holds kind-specific options (see DownloadClientSettings).
+type DownloadClient struct {
+	ID              int64
+	Name            string
+	Kind            string
+	Enabled         bool
+	Host            string
+	Username        string
+	SecretEncrypted string
+	KeyID           string
+	Settings        DownloadClientSettings
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}

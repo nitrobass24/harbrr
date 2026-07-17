@@ -1500,6 +1500,133 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /api/download-clients:
+    get:
+      summary: List download clients
+      operationId: listDownloadClients
+      tags: [Download Clients]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the download clients (secrets redacted)
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/DownloadClient" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Add a download client
+      description: Stores the client's secret encrypted at rest; it reads back redacted.
+      operationId: createDownloadClient
+      tags: [Download Clients]
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateDownloadClient" }
+      responses:
+        "201":
+          description: the created download client
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DownloadClient" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/download-clients/{id}:
+    get:
+      summary: Get one download client
+      operationId: getDownloadClient
+      tags: [Download Clients]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200":
+          description: the download client
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DownloadClient" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      summary: Update a download client (a new secret rotates the credential; kind is immutable)
+      operationId: updateDownloadClient
+      tags: [Download Clients]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateDownloadClient" }
+      responses:
+        "204": { description: updated }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      summary: Delete a download client
+      operationId: deleteDownloadClient
+      tags: [Download Clients]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: deleted }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/download-clients/{id}/test:
+    post:
+      summary: Test a download client's connection
+      description: >
+        Confirms the configured client is reachable with its stored credentials. A
+        pass is {"ok":true}; a connection failure is 200 with ok=false and a
+        scrubbed error; an unknown id is 404.
+      operationId: testDownloadClient
+      tags: [Download Clients]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200":
+          description: the test outcome
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TestResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/download-clients/{id}/enable:
+    post:
+      summary: Enable a download client
+      operationId: enableDownloadClient
+      tags: [Download Clients]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: enabled }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/download-clients/{id}/disable:
+    post:
+      summary: Disable a download client
+      operationId: disableDownloadClient
+      tags: [Download Clients]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: disabled }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /api/solvers:
     get:
       summary: List solvers
@@ -2415,6 +2542,63 @@ components:
         port: { type: integer }
         username: { type: string }
         password: { type: string, description: "rotates the password (stored encrypted); omitted keeps the stored one" }
+    QBittorrentSettings:
+      type: object
+      description: qBittorrent-specific per-client options; all fields are optional.
+      properties:
+        category: { type: string }
+        tags: { type: array, items: { type: string } }
+        startPaused: { type: boolean }
+        tlsSkipVerify: { type: boolean }
+    DownloadClientSettings:
+      type: object
+      description: >
+        Kind-specific options, keyed by kind — at most the one field matching the
+        client's own kind is populated.
+      properties:
+        qbittorrent: { $ref: "#/components/schemas/QBittorrentSettings" }
+    DownloadClient:
+      type: object
+      description: >
+        A configured download client harbrr can send grabbed releases to.
+        host/username are plain; the secret (password or API key, depending on
+        kind) is write-only and is never echoed back — it reads back as the
+        <redacted> sentinel.
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        kind:
+          type: string
+          enum: [qbittorrent, sabnzbd, nzbget, qui, flood, download-station, transmission, deluge, rtorrent, blackhole]
+        enabled: { type: boolean }
+        host: { type: string }
+        username: { type: string }
+        secret: { type: string, description: "the client's secret, redacted (<redacted>)" }
+        settings: { $ref: "#/components/schemas/DownloadClientSettings" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, name, kind, enabled, host, username, secret, settings, createdAt, updatedAt]
+    CreateDownloadClient:
+      type: object
+      properties:
+        name: { type: string }
+        kind:
+          type: string
+          enum: [qbittorrent, sabnzbd, nzbget, qui, flood, download-station, transmission, deluge, rtorrent, blackhole]
+        host: { type: string }
+        username: { type: string }
+        secret: { type: string, description: "optional; stored encrypted" }
+        settings: { $ref: "#/components/schemas/DownloadClientSettings" }
+      required: [name, kind, host]
+    UpdateDownloadClient:
+      type: object
+      description: a partial update; omitted fields are left unchanged. Kind is immutable and not accepted here.
+      properties:
+        name: { type: string }
+        host: { type: string }
+        username: { type: string }
+        secret: { type: string, description: "rotates the secret (stored encrypted); omitted keeps the stored one" }
+        settings: { $ref: "#/components/schemas/DownloadClientSettings" }
     Solver:
       type: object
       description: >

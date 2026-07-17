@@ -23,6 +23,7 @@ import (
 	"github.com/autobrr/harbrr/internal/backup"
 	"github.com/autobrr/harbrr/internal/config"
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/download"
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/definitions"
@@ -77,9 +78,10 @@ type App struct {
 	appsync  *appsync.Service
 	announce *announce.Service
 
-	proxy  *proxy.Service
-	solver *solver.Service
-	backup *backup.Service
+	proxy    *proxy.Service
+	download *download.Service
+	solver   *solver.Service
+	backup   *backup.Service
 
 	logLevel *api.LogLevelStore
 
@@ -138,6 +140,7 @@ func (a *App) build(ctx context.Context, httpClient *http.Client) error {
 	a.initSyncServices(httpClient)
 	a.initLogLevel(ctx)
 	a.proxy = proxy.NewService(a.db, a.keyring)
+	a.download = download.NewService(a.db, a.keyring, httpClient, a.log)
 	a.solver = solver.NewService(a.db, a.keyring)
 	a.backup = backup.NewService(a.db, a.keyring, a.log)
 
@@ -358,7 +361,7 @@ func newServer(a *App) (*server.Server, error) {
 
 	mgmt, err := api.NewRouter(api.Deps{
 		Auth: a.auth, Registry: a.registry, Loader: loader.New(dropinDir(a.cfg)), AppSync: a.appsync,
-		Announce: a.announce, Notify: a.notify, Proxy: a.proxy, Solver: a.solver, Backup: a.backup, Sessions: a.sessions,
+		Announce: a.announce, Notify: a.notify, Proxy: a.proxy, Download: a.download, Solver: a.solver, Backup: a.backup, Sessions: a.sessions,
 		DLToken: a.keyring, URLConfig: urlCfg, Cache: a.searchCache, Logger: a.log, LogLevel: a.logLevel,
 	}, api.Config{
 		AuthDisabled: a.cfg.Auth.AuthDisabled(), IPAllowlist: a.cfg.Auth.IPAllowlist, TrustedProxies: a.cfg.Auth.TrustedProxies,
