@@ -188,12 +188,33 @@ func TestAuthDisabledRequiresAllowlist(t *testing.T) {
 	}
 }
 
-func TestOIDCStubNotImplemented(t *testing.T) {
+// TestOIDCDisabledAnswersConfig pins the disabled-by-default behavior every
+// OIDC test plan case builds on: /config always answers 200 with
+// enabled:false (never an error a logged-out visitor could trip on), and the
+// callback is unreachable (404, "OIDC is not configured") rather than
+// pretending to process a code/state it has no provider to validate.
+func TestOIDCDisabledAnswersConfig(t *testing.T) {
 	t.Parallel()
 
 	base, c := serve(t, newEnv(t, api.Config{}))
-	resp, body := do(t, c, http.MethodGet, base+"/api/auth/oidc/login", nil, nil)
-	mustStatus(t, resp, body, http.StatusNotImplemented)
+
+	resp, body := do(t, c, http.MethodGet, base+"/api/auth/oidc/config", nil, nil)
+	mustStatus(t, resp, body, http.StatusOK)
+	var cfg struct {
+		Enabled             bool   `json:"enabled"`
+		AuthorizationURL    string `json:"authorizationUrl"`
+		DisableBuiltInLogin bool   `json:"disableBuiltInLogin"`
+		IssuerURL           string `json:"issuerUrl"`
+	}
+	if err := json.Unmarshal(body, &cfg); err != nil {
+		t.Fatalf("decode oidc config: %v", err)
+	}
+	if cfg.Enabled || cfg.AuthorizationURL != "" || cfg.DisableBuiltInLogin || cfg.IssuerURL != "" {
+		t.Errorf("oidc config = %+v, want the disabled default", cfg)
+	}
+
+	resp, body = do(t, c, http.MethodGet, base+"/api/auth/oidc/callback", nil, nil)
+	mustStatus(t, resp, body, http.StatusNotFound)
 }
 
 func TestIndexerCRUDViaAPIRedactsSecrets(t *testing.T) {

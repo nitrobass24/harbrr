@@ -199,21 +199,42 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
-  /api/auth/oidc/login:
+  /api/auth/oidc/config:
     get:
-      summary: OIDC login (not implemented — deferred to a later phase)
-      operationId: oidcLogin
+      summary: OIDC/SSO configuration for the login screen
+      description: >
+        Public (no auth). Answers {enabled:false, ...} when OIDC is disabled or
+        failed to initialize — never an error, since a logged-out visitor has
+        no session to fail on. When enabled, generates a fresh state (and, when
+        the provider supports it, a PKCE challenge) stored in the session, and
+        returns the ready-to-use authorization URL.
+      operationId: getOIDCConfig
       tags: [Authentication]
       responses:
-        "501": { description: OIDC is not implemented yet }
+        "200":
+          description: the OIDC configuration
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OIDCConfig" }
 
   /api/auth/oidc/callback:
     get:
-      summary: OIDC callback (not implemented — deferred to a later phase)
+      summary: OIDC/SSO callback
+      description: >
+        Public (no auth). Validates state, exchanges the authorization code,
+        verifies the ID token, and establishes a session exactly like
+        POST /api/auth/login (RenewToken, then a CSRF token is issued), before
+        redirecting into the app.
       operationId: oidcCallback
       tags: [Authentication]
+      parameters:
+        - { name: code, in: query, required: false, schema: { type: string } }
+        - { name: state, in: query, required: false, schema: { type: string } }
       responses:
-        "501": { description: OIDC is not implemented yet }
+        "302": { description: authenticated; redirected into the app }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: OIDC is not configured }
 
   /api/definitions:
     get:
@@ -1947,7 +1968,8 @@ components:
           description: >
             machine-readable code clients can branch on — one of: bad_request,
             invalid, unauthorized, invalid_credentials, invalid_api_key, forbidden,
-            not_found, conflict, already_setup, not_implemented, internal.
+            not_found, conflict, already_setup, not_implemented, internal. An OIDC
+            ID-token verification failure also uses invalid_credentials.
       required: [error, code]
     ReservedSettings:
       type: object
@@ -1976,6 +1998,18 @@ components:
         username: { type: string }
         password: { type: string }
       required: [username, password]
+    OIDCConfig:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        authorizationUrl:
+          type: string
+          description: pre-built with state (and PKCE challenge, when supported) — empty when disabled
+        disableBuiltInLogin:
+          type: boolean
+          description: hide the password form in the UI (POST /api/auth/login stays registered either way)
+        issuerUrl: { type: string }
+      required: [enabled, authorizationUrl, disableBuiltInLogin, issuerUrl]
     ChangePassword:
       type: object
       properties:

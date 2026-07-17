@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/pflag"
@@ -39,10 +40,39 @@ func Load(cfgFile string, flags *pflag.FlagSet) (*Config, error) {
 		return nil, fmt.Errorf("config: unmarshal: %w", err)
 	}
 	cfg.ConfigFile = v.ConfigFileUsed()
+	if err := applyOIDCClientSecretFile(&cfg); err != nil {
+		return nil, err
+	}
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+// oidcClientSecretFileEnv is the docker-secrets-style env var: when set (and
+// auth.oidc.client_secret is not already set some other way), its content is
+// read as the client secret. This keeps the secret out of the environment/
+// config file for a container deployment that mounts a secrets file instead.
+const oidcClientSecretFileEnv = "HARBRR_AUTH_OIDC_CLIENT_SECRET_FILE" //nolint:gosec // G101: an env var NAME, not a credential.
+
+// applyOIDCClientSecretFile resolves oidcClientSecretFileEnv, if set, into
+// cfg.Auth.OIDC.ClientSecret. A file path that fails to read is a hard error
+// (the operator explicitly asked for it) rather than a silent fallback to an
+// unset secret.
+func applyOIDCClientSecretFile(cfg *Config) error {
+	if cfg.Auth.OIDC.ClientSecret != "" {
+		return nil
+	}
+	path := strings.TrimSpace(os.Getenv(oidcClientSecretFileEnv))
+	if path == "" {
+		return nil
+	}
+	data, err := os.ReadFile(path) //nolint:gosec // path is operator-configured via env var.
+	if err != nil {
+		return fmt.Errorf("config: read %s: %w", oidcClientSecretFileEnv, err)
+	}
+	cfg.Auth.OIDC.ClientSecret = strings.TrimSpace(string(data))
+	return nil
 }
 
 // newViper assembles the defaults + env + flags layers shared by Load and
@@ -71,6 +101,12 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("database.path", d.Database.Path)
 	v.SetDefault("server.base_url", d.Server.BaseURL)
 	v.SetDefault("auth.mode", d.Auth.Mode)
+	v.SetDefault("auth.oidc.enabled", d.Auth.OIDC.Enabled)
+	v.SetDefault("auth.oidc.issuer", d.Auth.OIDC.Issuer)
+	v.SetDefault("auth.oidc.client_id", d.Auth.OIDC.ClientID)
+	v.SetDefault("auth.oidc.client_secret", d.Auth.OIDC.ClientSecret)
+	v.SetDefault("auth.oidc.redirect_url", d.Auth.OIDC.RedirectURL)
+	v.SetDefault("auth.oidc.disable_built_in_login", d.Auth.OIDC.DisableBuiltInLogin)
 	// Registering these keys lets AutomaticEnv resolve them through Unmarshal
 	// (viper only binds env for known keys). The list-valued auth.ip_allowlist /
 	// auth.trusted_proxies are set via the config file.

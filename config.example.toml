@@ -46,6 +46,19 @@ mode = "required"          # "required" (login) or "disabled" (trust a reverse p
 ip_allowlist = []          # REQUIRED non-empty when mode = "disabled"; e.g. ["10.0.0.0/8", "192.168.1.5"]
 trusted_proxies = []       # peers whose X-Forwarded-For is trusted, e.g. ["172.16.0.0/12"]
 
+[auth.oidc]
+# OpenID Connect / SSO login. Coexists with the password login above — set
+# disable_built_in_login to hide the password form in the UI (the login API
+# route itself stays registered either way). Session-only: a verified OIDC
+# identity gets an authenticated session, no local user row is created.
+enabled = false
+issuer = ""                # e.g. "https://idp.example.com/application/o/harbrr/"
+client_id = ""
+client_secret = ""         # or set HARBRR_AUTH_OIDC_CLIENT_SECRET_FILE=/path/to/secret
+redirect_url = ""          # explicit absolute callback URL registered with the IdP,
+                            # e.g. "https://harbrr.example.com/api/auth/oidc/callback"
+disable_built_in_login = false
+
 [cache]
 # Boot defaults — every knob is also runtime-tunable via PUT /api/cache/config.
 enabled = true             # false disables caching entirely (zero behavior change)

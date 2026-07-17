@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -81,6 +82,39 @@ func TestValidate(t *testing.T) {
 		{"external_url missing host", func(c *config.Config) { c.Server.ExternalURL = "https:///path" }, true},
 		{"external_url unsupported scheme", func(c *config.Config) { c.Server.ExternalURL = "ftp://harbrr.example.com" }, true},
 		{"external_url unparseable", func(c *config.Config) { c.Server.ExternalURL = "https://%zz" }, true},
+		{"oidc disabled ok even with empty fields", func(*config.Config) {}, false},
+		{"oidc enabled with everything set ok", func(c *config.Config) {
+			c.Auth.OIDC = config.OIDCConfig{
+				Enabled: true, Issuer: "https://idp.example.com", ClientID: "id",
+				ClientSecret: "secret", RedirectURL: "https://harbrr.example.com/api/auth/oidc/callback",
+			}
+		}, false},
+		{"oidc enabled missing issuer", func(c *config.Config) {
+			c.Auth.OIDC = config.OIDCConfig{Enabled: true, ClientID: "id", ClientSecret: "secret", RedirectURL: "https://harbrr.example.com/cb"}
+		}, true},
+		{"oidc enabled missing client_id", func(c *config.Config) {
+			c.Auth.OIDC = config.OIDCConfig{Enabled: true, Issuer: "https://idp.example.com", ClientSecret: "secret", RedirectURL: "https://harbrr.example.com/cb"}
+		}, true},
+		{"oidc enabled missing client_secret", func(c *config.Config) {
+			c.Auth.OIDC = config.OIDCConfig{Enabled: true, Issuer: "https://idp.example.com", ClientID: "id", RedirectURL: "https://harbrr.example.com/cb"}
+		}, true},
+		{"oidc enabled missing redirect_url", func(c *config.Config) {
+			c.Auth.OIDC = config.OIDCConfig{Enabled: true, Issuer: "https://idp.example.com", ClientID: "id", ClientSecret: "secret"}
+		}, true},
+		{"oidc enabled redirect_url not absolute", func(c *config.Config) {
+			c.Auth.OIDC = config.OIDCConfig{Enabled: true, Issuer: "https://idp.example.com", ClientID: "id", ClientSecret: "secret", RedirectURL: "/api/auth/oidc/callback"}
+		}, true},
+		{"oidc enabled redirect_url non-http scheme", func(c *config.Config) {
+			c.Auth.OIDC = config.OIDCConfig{Enabled: true, Issuer: "https://idp.example.com", ClientID: "id", ClientSecret: "secret", RedirectURL: "ftp://harbrr.example.com/callback"}
+		}, true},
+		{"oidc enabled with auth.mode=disabled rejected", func(c *config.Config) {
+			c.Auth.Mode = "disabled"
+			c.Auth.IPAllowlist = []string{"127.0.0.1/32"}
+			c.Auth.OIDC = config.OIDCConfig{
+				Enabled: true, Issuer: "https://idp.example.com", ClientID: "id",
+				ClientSecret: "secret", RedirectURL: "https://harbrr.example.com/api/auth/oidc/callback",
+			}
+		}, true},
 	}
 
 	for _, tt := range tests {
@@ -163,6 +197,73 @@ func TestRedacted(t *testing.T) {
 	}
 	if cfg.Secrets.EncryptionKey != "super-secret-key" {
 		t.Error("Redacted() mutated the original config")
+	}
+}
+
+// TestRedactedMasksOIDCClientSecret pins the OIDC counterpart of TestRedacted
+// (autobrr/harbrr#9's test plan): the client secret never survives Redacted(),
+// and never appears in a logged Config (String() renders the redacted copy;
+// %+v-style dumps of the redacted copy must also come up clean).
+func TestRedactedMasksOIDCClientSecret(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.Defaults()
+	cfg.Auth.OIDC.ClientSecret = "super-secret-oidc-client-secret"
+
+	r := cfg.Redacted()
+	if r.Auth.OIDC.ClientSecret == "super-secret-oidc-client-secret" {
+		t.Error("Redacted() did not mask auth.oidc.client_secret")
+	}
+	if cfg.Auth.OIDC.ClientSecret != "super-secret-oidc-client-secret" {
+		t.Error("Redacted() mutated the original config")
+	}
+	if strings.Contains(fmt.Sprintf("%+v", r), "super-secret-oidc-client-secret") {
+		t.Errorf("%%+v of the redacted config leaked the client secret: %+v", r)
+	}
+	if strings.Contains(cfg.String(), "super-secret-oidc-client-secret") {
+		t.Errorf("String() leaked the oidc client secret: %q", cfg.String())
+	}
+}
+
+// TestLoadOIDCClientSecretFile pins the docker-secrets convention:
+// HARBRR_AUTH_OIDC_CLIENT_SECRET_FILE, when set, is read as the client secret
+// (trimmed), letting a container mount a secrets file instead of putting the
+// secret in the environment or config file directly.
+func TestLoadOIDCClientSecretFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "oidc-client-secret")
+	if err := os.WriteFile(path, []byte("secret-from-file\n"), 0o600); err != nil {
+		t.Fatalf("write secret file: %v", err)
+	}
+	t.Setenv("HARBRR_AUTH_OIDC_CLIENT_SECRET_FILE", path)
+
+	cfg, err := config.Load("", nil)
+	if err != nil {
+		t.Fatalf("Load() = %v", err)
+	}
+	if cfg.Auth.OIDC.ClientSecret != "secret-from-file" {
+		t.Errorf("auth.oidc.client_secret = %q, want %q (trimmed file content)", cfg.Auth.OIDC.ClientSecret, "secret-from-file")
+	}
+}
+
+// TestLoadOIDCClientSecretEnvWinsOverFile pins the precedence: an explicit
+// HARBRR_AUTH_OIDC_CLIENT_SECRET beats the _FILE fallback (the file is only
+// consulted when the secret is otherwise unset).
+func TestLoadOIDCClientSecretEnvWinsOverFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "oidc-client-secret")
+	if err := os.WriteFile(path, []byte("secret-from-file"), 0o600); err != nil {
+		t.Fatalf("write secret file: %v", err)
+	}
+	t.Setenv("HARBRR_AUTH_OIDC_CLIENT_SECRET_FILE", path)
+	t.Setenv("HARBRR_AUTH_OIDC_CLIENT_SECRET", "secret-from-env")
+
+	cfg, err := config.Load("", nil)
+	if err != nil {
+		t.Fatalf("Load() = %v", err)
+	}
+	if cfg.Auth.OIDC.ClientSecret != "secret-from-env" {
+		t.Errorf("auth.oidc.client_secret = %q, want the env value to win", cfg.Auth.OIDC.ClientSecret)
 	}
 }
 

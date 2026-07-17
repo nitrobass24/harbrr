@@ -362,7 +362,7 @@ func newServer(a *App) (*server.Server, error) {
 		DLToken: a.keyring, URLConfig: urlCfg, Cache: a.searchCache, Logger: a.log, LogLevel: a.logLevel,
 	}, api.Config{
 		AuthDisabled: a.cfg.Auth.AuthDisabled(), IPAllowlist: a.cfg.Auth.IPAllowlist, TrustedProxies: a.cfg.Auth.TrustedProxies,
-		Port: a.cfg.Server.Port,
+		Port: a.cfg.Server.Port, OIDC: oidcConfig(a.cfg.Auth.OIDC),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("management api: %w", err)
@@ -402,6 +402,15 @@ func feedURLConfig(cfg *config.Config) (torznabhttp.URLConfig, error) {
 		ExternalOrigin: cfg.Server.ExternalOrigin(),
 		TrustedProxies: trusted,
 	}, nil
+}
+
+// oidcConfig maps config.OIDCConfig onto api.OIDCConfig (the router's
+// primitive-typed view — see api.Config's other fields for the precedent).
+func oidcConfig(c config.OIDCConfig) api.OIDCConfig {
+	return api.OIDCConfig{
+		Enabled: c.Enabled, Issuer: c.Issuer, ClientID: c.ClientID,
+		ClientSecret: c.ClientSecret, RedirectURL: c.RedirectURL, DisableBuiltInLogin: c.DisableBuiltInLogin,
+	}
 }
 
 // buildUIHandler serves the embedded SPA bundle (web/dist) with the base path,

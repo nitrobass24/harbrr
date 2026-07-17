@@ -135,6 +135,9 @@ func (rt *router) writeServiceError(w http.ResponseWriter, op string, err error)
 		writeErrorCode(w, http.StatusUnauthorized, "invalid_credentials", "invalid credentials")
 	case errors.Is(err, auth.ErrInvalidAPIKey):
 		writeErrorCode(w, http.StatusUnauthorized, "invalid_api_key", "invalid api key")
+	case errors.Is(err, errOIDCTokenInvalid):
+		rt.log.Warn().Str("op", op).Str("error", apphttp.RedactError(err)).Msg("api: oidc id token verification failed")
+		writeErrorCode(w, http.StatusUnauthorized, "invalid_credentials", "oidc: id token verification failed")
 	default:
 		rt.log.Error().Str("op", op).Str("error", apphttp.RedactError(err)).Msg("api: request failed")
 		writeErrorCode(w, http.StatusInternalServerError, "internal", "internal error")

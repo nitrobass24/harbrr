@@ -2,6 +2,90 @@ package api
 
 import "net/http"
 
+// oidcConfig answers the login screen's OIDC probe (public). It always
+// returns 200: {enabled:false, ...} when OIDC is disabled or failed to
+// initialize (mirrors qui's api.ts getOIDCConfig() default), never an error —
+// a logged-out visitor has no session yet to fail on. When enabled, it clears
+// any prior state/PKCE verifier, generates a fresh pair, and stashes them in
+// the session for the callback to validate.
+func (rt *router) oidcConfig(w http.ResponseWriter, r *http.Request) {
+	rt.sessions.Remove(r.Context(), sessionOIDCState)
+	rt.sessions.Remove(r.Context(), sessionOIDCPKCE)
+	if rt.oidc == nil {
+		writeJSON(w, http.StatusOK, oidcConfigResponse{})
+		return
+	}
+	resp, state, verifier, err := rt.oidc.configResponse()
+	if err != nil {
+		rt.writeServiceError(w, "oidc config", err)
+		return
+	}
+	rt.sessions.Put(r.Context(), sessionOIDCState, state)
+	if verifier != "" {
+		rt.sessions.Put(r.Context(), sessionOIDCPKCE, verifier)
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// oidcCallback validates the IdP's redirect, exchanges the code, verifies the
+// ID token, and mirrors login's session-establishment sequence (RenewToken →
+// Put(authenticated) → Put(username) → issueCSRFToken) before redirecting
+// into the app. Session-only gate: no local user row is created or matched
+// (autobrr/harbrr#9) — the username comes straight from the verified claims.
+func (rt *router) oidcCallback(w http.ResponseWriter, r *http.Request) {
+	if rt.oidc == nil {
+		writeError(w, http.StatusNotFound, "OIDC is not configured")
+		return
+	}
+	ctx := r.Context()
+
+	expectedState := rt.sessions.GetString(ctx, sessionOIDCState)
+	if expectedState == "" {
+		writeError(w, http.StatusBadRequest, "invalid state: no state found in session")
+		return
+	}
+	if r.URL.Query().Get("state") != expectedState {
+		writeError(w, http.StatusBadRequest, "invalid state: state mismatch")
+		return
+	}
+	rt.sessions.Remove(ctx, sessionOIDCState)
+	verifier := rt.sessions.GetString(ctx, sessionOIDCPKCE)
+	rt.sessions.Remove(ctx, sessionOIDCPKCE)
+
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		writeError(w, http.StatusBadRequest, "authorization code is missing from callback request")
+		return
+	}
+
+	token, err := rt.oidc.exchange(ctx, code, verifier)
+	if err != nil {
+		rt.writeServiceError(w, "oidc callback exchange", err)
+		return
+	}
+	username, err := rt.oidc.verifyAndDeriveUsername(ctx, token)
+	if err != nil {
+		rt.writeServiceError(w, "oidc callback verify", err)
+		return
+	}
+
+	// Renew the token on privilege change (session-fixation guard), then mark the
+	// session authenticated — same sequence as login (auth_handlers.go).
+	if err := rt.sessions.RenewToken(ctx); err != nil {
+		rt.writeServiceError(w, "oidc callback session", err)
+		return
+	}
+	rt.sessions.Put(ctx, sessionAuthenticated, true)
+	rt.sessions.Put(ctx, sessionUsername, username)
+	if err := rt.issueCSRFToken(ctx, w); err != nil {
+		rt.writeServiceError(w, "oidc callback session", err)
+		return
+	}
+
+	redirect := oidcPostLoginRedirect(rt.oidc.cfg.RedirectURL, rt.urlCfg.BasePath)
+	http.Redirect(w, r, redirect, http.StatusFound)
+}
+
 // getSetup reports whether first-run setup is complete (public).
 func (rt *router) getSetup(w http.ResponseWriter, r *http.Request) {
 	done, err := rt.auth.SetupComplete(r.Context())

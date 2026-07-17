@@ -11,11 +11,13 @@ function json(body: unknown, status = 200): Response {
 
 const ME = { username: "admin", authMethod: "password", csrfToken: "tok" }
 
+const OIDC_DISABLED = { enabled: false, authorizationUrl: "", disableBuiltInLogin: false, issuerUrl: "" }
+
 // stubAuthFetch answers a logged-out visitor: /auth/me is 401 until a successful
 // POST /auth/login flips the session on, setup is already complete (so /login does
-// not bounce to /setup), and every other read answers with an empty list so the
-// authenticated shell renders.
-function stubAuthFetch() {
+// not bounce to /setup), OIDC is disabled unless oidc overrides it, and every
+// other read answers with an empty list so the authenticated shell renders.
+function stubAuthFetch(oidc: typeof OIDC_DISABLED = OIDC_DISABLED) {
   let loggedIn = false
   vi.stubGlobal("fetch", vi.fn((request: Request) => {
     if (request.url.endsWith("/auth/login") && request.method === "POST") {
@@ -26,6 +28,7 @@ function stubAuthFetch() {
       return Promise.resolve(loggedIn ? json(ME) : json({ code: "unauthorized", error: "no session" }, 401))
     }
     if (request.url.endsWith("/auth/setup")) return Promise.resolve(json({ setupComplete: true }))
+    if (request.url.endsWith("/auth/oidc/config")) return Promise.resolve(json(oidc))
     return Promise.resolve(json([]))
   }))
 }
@@ -82,5 +85,40 @@ describe("Login redirect", () => {
     await waitFor(() => expect(router.state.location.pathname).toBe("/login"))
     expect(router.state.location.search.redirect).toBe("/indexers")
     expect(await screen.findByRole("button", { name: "Sign in" })).toBeTruthy()
+  })
+})
+
+describe("Login OIDC/SSO (autobrr/harbrr#9)", () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it("shows both the password form and the SSO button when OIDC coexists with built-in login", async () => {
+    stubAuthFetch({ enabled: true, authorizationUrl: "https://idp.example.com/authorize?state=x", disableBuiltInLogin: false, issuerUrl: "https://idp.example.com" })
+    renderAt("/login")
+
+    expect(await screen.findByLabelText("Username")).toBeTruthy()
+    expect(await screen.findByRole("button", { name: "Sign in with SSO" })).toBeTruthy()
+  })
+
+  it("hides the password form when disableBuiltInLogin is set", async () => {
+    stubAuthFetch({ enabled: true, authorizationUrl: "https://idp.example.com/authorize?state=x", disableBuiltInLogin: true, issuerUrl: "https://idp.example.com" })
+    renderAt("/login")
+
+    expect(await screen.findByRole("button", { name: "Sign in with SSO" })).toBeTruthy()
+    expect(screen.queryByLabelText("Username")).toBeNull()
+  })
+
+  it("navigates the full page to the authorization URL on SSO click", async () => {
+    stubAuthFetch({ enabled: true, authorizationUrl: "https://idp.example.com/authorize?state=x", disableBuiltInLogin: false, issuerUrl: "https://idp.example.com" })
+    renderAt("/login")
+
+    const button = await screen.findByRole("button", { name: "Sign in with SSO" })
+    // jsdom doesn't implement navigation; assert intent via the click handler
+    // rather than window.location, which jsdom throws on when reassigned.
+    let navigatedTo = ""
+    const original = window.location
+    Object.defineProperty(window, "location", { value: { ...original, set href(v: string) { navigatedTo = v } }, writable: true })
+    fireEvent.click(button)
+    expect(navigatedTo).toBe("https://idp.example.com/authorize?state=x")
+    Object.defineProperty(window, "location", { value: original, writable: true })
   })
 })

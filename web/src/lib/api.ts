@@ -72,6 +72,7 @@ export type IndexerStatus = operations["indexerStatus"]["responses"]["200"]["con
 export type SearchParams = NonNullable<operations["searchIndexer"]["parameters"]["query"]>
 
 export type Credentials = components["schemas"]["Credentials"]
+export type OIDCConfig = components["schemas"]["OIDCConfig"]
 
 // The keep-stored sentinel for secret settings (see openapi.yaml Setting) — a value,
 // not a spec-mirrored type, so it stays hand-written.
@@ -221,6 +222,18 @@ export class ApiClient {
       this.http.POST("/api/auth/change-password", { body: { currentPassword, newPassword } }),
       "/api/auth/change-password"
     )
+  }
+
+  // getOIDCConfig probes the login screen's OIDC/SSO posture. The endpoint itself
+  // always answers 200 (disabled default) even when OIDC isn't configured — the
+  // catch here is a defensive fallback for the request failing outright (network,
+  // server down), so the login screen still renders the password form.
+  async getOIDCConfig(): Promise<OIDCConfig> {
+    try {
+      return await this.unwrap(this.http.GET("/api/auth/oidc/config"), "/api/auth/oidc/config")
+    } catch {
+      return { enabled: false, authorizationUrl: "", disableBuiltInLogin: false, issuerUrl: "" }
+    }
   }
 
   // --- definitions ---

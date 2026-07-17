@@ -47,6 +47,16 @@ level = "info"
 #ip_allowlist = []
 #trusted_proxies = []
 
+#[auth.oidc]
+# OpenID Connect / SSO login (coexists with the password login above; see
+# docs). Requires issuer/client_id/client_secret/redirect_url when enabled.
+#enabled = false
+#issuer = ""
+#client_id = ""
+#client_secret = ""
+#redirect_url = ""
+#disable_built_in_login = false
+
 #[secrets]
 # Key for encrypting tracker credentials at rest; alternatively point key_file
 # at a file holding it, or set HARBRR_SECRETS_ENCRYPTION_KEY. Without any of

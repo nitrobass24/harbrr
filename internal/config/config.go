@@ -106,10 +106,34 @@ type AuthConfig struct {
 	TrustedProxies []string `mapstructure:"trusted_proxies"`
 	// IPAllowlist is the set of IPs/CIDRs permitted in disabled mode.
 	IPAllowlist []string `mapstructure:"ip_allowlist"`
+	// OIDC configures OpenID Connect / SSO login (autobrr/harbrr#9). It coexists
+	// with password login — see OIDCConfig.DisableBuiltInLogin.
+	OIDC OIDCConfig `mapstructure:"oidc"`
 }
 
 // AuthDisabled reports whether auth is disabled (trusted-proxy mode).
 func (c AuthConfig) AuthDisabled() bool { return c.Mode == authModeDisabled }
+
+// OIDCConfig is the OpenID Connect / SSO login posture. It is session-only (no
+// local user row is created or matched — see the design decisions in
+// autobrr/harbrr#9): a verified OIDC identity gets an authenticated harbrr
+// session, exactly like a password login. Scopes are hardcoded
+// "openid profile email", mirroring qui.
+type OIDCConfig struct {
+	Enabled      bool   `mapstructure:"enabled"`
+	Issuer       string `mapstructure:"issuer"`
+	ClientID     string `mapstructure:"client_id"`
+	ClientSecret string `mapstructure:"client_secret"`
+	// RedirectURL is the explicit, absolute callback URL the operator registers
+	// with the IdP (e.g. "https://harbrr.example.com/api/auth/oidc/callback").
+	// harbrr derives the post-login app redirect from this URL's host, so it
+	// never trusts a request-derived Host/X-Forwarded-Host for that purpose.
+	RedirectURL string `mapstructure:"redirect_url"`
+	// DisableBuiltInLogin hides the password form in the UI when true. The
+	// POST /api/auth/login route stays registered either way (UI-level hide
+	// only, mirroring qui).
+	DisableBuiltInLogin bool `mapstructure:"disable_built_in_login"`
+}
 
 const (
 	authModeRequired = "required"
@@ -271,7 +295,8 @@ func (c Config) Validate() error {
 	return c.validateExternalURL()
 }
 
-// validateAuth checks the auth mode and the fail-closed allowlist requirement.
+// validateAuth checks the auth mode, the fail-closed allowlist requirement, and
+// (when enabled) that OIDC has everything it needs to initialize.
 func (c Config) validateAuth() error {
 	switch c.Auth.Mode {
 	case "", authModeRequired, authModeDisabled:
@@ -280,6 +305,28 @@ func (c Config) validateAuth() error {
 	}
 	if c.Auth.AuthDisabled() && len(c.Auth.IPAllowlist) == 0 {
 		return errors.New("config: auth.mode=disabled requires a non-empty auth.ip_allowlist (refusing to serve an open instance)")
+	}
+	return c.validateOIDC()
+}
+
+// validateOIDC rejects an OIDC config that can't possibly initialize: enabling
+// it alongside auth.mode=disabled (there is no session to gate — trusted-proxy
+// mode already admits every allowlisted caller), or enabling it without the
+// issuer/client-id/secret/redirect-url every OIDC flow needs.
+func (c Config) validateOIDC() error {
+	if !c.Auth.OIDC.Enabled {
+		return nil
+	}
+	if c.Auth.AuthDisabled() {
+		return errors.New("config: auth.oidc.enabled requires auth.mode=required (auth.mode=disabled has no session to gate)")
+	}
+	o := c.Auth.OIDC
+	if o.Issuer == "" || o.ClientID == "" || o.ClientSecret == "" || o.RedirectURL == "" {
+		return errors.New("config: auth.oidc.enabled requires issuer, client_id, client_secret, and redirect_url")
+	}
+	u, err := url.Parse(o.RedirectURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("config: auth.oidc.redirect_url %q must be an absolute http:// or https:// URL", o.RedirectURL)
 	}
 	return nil
 }
@@ -335,6 +382,9 @@ func (c Config) Redacted() Config {
 	}
 	if redacted.Secrets.KeyFile != "" {
 		redacted.Secrets.KeyFile = redactedMask
+	}
+	if redacted.Auth.OIDC.ClientSecret != "" {
+		redacted.Auth.OIDC.ClientSecret = redactedMask
 	}
 	return redacted
 }

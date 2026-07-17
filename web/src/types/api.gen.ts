@@ -110,15 +110,18 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/auth/oidc/login": {
+    "/api/auth/oidc/config": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** OIDC login (not implemented — deferred to a later phase) */
-        get: operations["oidcLogin"];
+        /**
+         * OIDC/SSO configuration for the login screen
+         * @description Public (no auth). Answers {enabled:false, ...} when OIDC is disabled or failed to initialize — never an error, since a logged-out visitor has no session to fail on. When enabled, generates a fresh state (and, when the provider supports it, a PKCE challenge) stored in the session, and returns the ready-to-use authorization URL.
+         */
+        get: operations["getOIDCConfig"];
         put?: never;
         post?: never;
         delete?: never;
@@ -134,7 +137,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** OIDC callback (not implemented — deferred to a later phase) */
+        /**
+         * OIDC/SSO callback
+         * @description Public (no auth). Validates state, exchanges the authorization code, verifies the ID token, and establishes a session exactly like POST /api/auth/login (RenewToken, then a CSRF token is issued), before redirecting into the app.
+         */
         get: operations["oidcCallback"];
         put?: never;
         post?: never;
@@ -1217,7 +1223,7 @@ export interface components {
         Error: {
             /** @description human-readable message */
             error: string;
-            /** @description machine-readable code clients can branch on — one of: bad_request, invalid, unauthorized, invalid_credentials, invalid_api_key, forbidden, not_found, conflict, already_setup, not_implemented, internal. */
+            /** @description machine-readable code clients can branch on — one of: bad_request, invalid, unauthorized, invalid_credentials, invalid_api_key, forbidden, not_found, conflict, already_setup, not_implemented, internal. An OIDC ID-token verification failure also uses invalid_credentials. */
             code: string;
         };
         /** @description Optional reserved keys the engine understands when present in an indexer's free-form settings map (alongside the definition's own settings). All are optional; documented here because they are not part of any single definition's schema. proxy_url and cookie are secrets (stored encrypted, never echoed — they read back as the <redacted> sentinel). */
@@ -1244,6 +1250,14 @@ export interface components {
         Credentials: {
             username: string;
             password: string;
+        };
+        OIDCConfig: {
+            enabled: boolean;
+            /** @description pre-built with state (and PKCE challenge, when supported) — empty when disabled */
+            authorizationUrl: string;
+            /** @description hide the password form in the UI (POST /api/auth/login stays registered either way) */
+            disableBuiltInLogin: boolean;
+            issuerUrl: string;
         };
         ChangePassword: {
             currentPassword: string;
@@ -2213,7 +2227,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
-    oidcLogin: {
+    getOIDCConfig: {
         parameters: {
             query?: never;
             header?: never;
@@ -2222,26 +2236,40 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OIDC is not implemented yet */
-            501: {
+            /** @description the OIDC configuration */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["OIDCConfig"];
+                };
             };
         };
     };
     oidcCallback: {
         parameters: {
-            query?: never;
+            query?: {
+                code?: string;
+                state?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description OIDC is not implemented yet */
-            501: {
+            /** @description authenticated; redirected into the app */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description OIDC is not configured */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

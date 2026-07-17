@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -71,6 +72,10 @@ type Config struct {
 	// via /api/server-info so the frontend can flag app-sync connections whose stored
 	// HarbrrURL was baked in against a since-changed port.
 	Port int
+	// OIDC configures OpenID Connect / SSO login (autobrr/harbrr#9). A zero value
+	// disables it; discovery failure at NewRouter time also disables it for the
+	// run (logged, not fatal) rather than refusing to serve.
+	OIDC OIDCConfig
 }
 
 // router holds the management API's dependencies and resolved config.
@@ -91,6 +96,9 @@ type router struct {
 	cfg      Config
 	log      zerolog.Logger
 	logLevel *LogLevelStore
+	// oidc is nil when OIDC is disabled or its provider discovery failed at
+	// startup; every OIDC handler treats a nil oidc as "answer as disabled".
+	oidc *oidcHandler
 
 	allowlist      []*net.IPNet
 	trustedProxies apphttp.TrustedProxies
@@ -132,7 +140,24 @@ func NewRouter(deps Deps, cfg Config) (http.Handler, error) {
 	rt.loadDefs = func() ([]definitionSummary, error) {
 		return loadDefinitionSummaries(rt.loader, rt.registry.NativeDefinitions())
 	}
+	rt.initOIDC()
 	return rt.routes(), nil
+}
+
+// initOIDC discovers the OIDC provider (retrying — see discoverOIDCProvider)
+// when configured. Discovery failure is logged and non-fatal: the instance
+// still serves, OIDC just answers as disabled for this run rather than
+// refusing to start over a slow or unreachable IdP.
+func (rt *router) initOIDC() {
+	if !rt.cfg.OIDC.Enabled {
+		return
+	}
+	h, err := newOIDCHandler(context.Background(), rt.cfg.OIDC)
+	if err != nil {
+		rt.log.Warn().Str("error", apphttp.RedactError(err)).Msg("api: oidc initialization failed; SSO login is disabled this run")
+		return
+	}
+	rt.oidc = h
 }
 
 // routes registers the chi route tree. Paths are flat (not nested Route groups)
@@ -148,8 +173,8 @@ func (rt *router) routes() http.Handler {
 		r.Get("/api/auth/setup", rt.getSetup)
 		r.Post("/api/auth/setup", rt.postSetup)
 		r.Post("/api/auth/login", rt.login)
-		r.Get("/api/auth/oidc/login", oidcStub)
-		r.Get("/api/auth/oidc/callback", oidcStub)
+		r.Get("/api/auth/oidc/config", rt.oidcConfig)
+		r.Get("/api/auth/oidc/callback", rt.oidcCallback)
 
 		// Authenticated routes (session or X-API-Key; auth-disabled mode allowed).
 		r.Group(func(r chi.Router) {
@@ -279,10 +304,4 @@ func (rt *router) healthz(w http.ResponseWriter, _ *http.Request) {
 		Version: version.Version,
 		Commit:  version.Commit,
 	})
-}
-
-// oidcStub answers the deferred OIDC endpoints with 501 (see the end-of-phase
-// report; OIDC is a later-phase item).
-func oidcStub(w http.ResponseWriter, _ *http.Request) {
-	writeError(w, http.StatusNotImplemented, "OIDC is not implemented yet")
 }
