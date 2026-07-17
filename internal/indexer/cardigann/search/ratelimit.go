@@ -34,6 +34,30 @@ func (e *RateLimitedError) Error() string {
 // in a wrapped chain, so the registry classifier needs only the sentinel.
 func (e *RateLimitedError) Unwrap() error { return ErrRateLimited }
 
+// ErrQuotaExceeded is the sentinel for a tracker's own DECLARED request-quota cap
+// (e.g. dognzb's newznab code 910 "Daily API limit reached"), as opposed to an
+// ordinary transient 429/503. It is distinct from ErrRateLimited because it drives a
+// different registry response: a quota error marks the indexer's counted budget spent
+// until the unit's reset (autobrr/harbrr#251's reactive-learning path — how harbrr
+// discovers a cap it was never configured with), not just a bounded backoff/retry.
+var ErrQuotaExceeded = errors.New("indexer reported its request quota exceeded")
+
+// QuotaExceededError carries the classified detail for a tracker-declared quota cap.
+// It unwraps to BOTH ErrRateLimited (so the existing health/breaker classification
+// keeps treating it as a rate-limited failure — no separate health kind needed) and
+// ErrQuotaExceeded (so the registry's budget tracker can additionally mark the
+// relevant counter exhausted). It carries no URL, matching RateLimitedError.
+type QuotaExceededError struct {
+	Detail string
+}
+
+func (e *QuotaExceededError) Error() string {
+	return "indexer quota exceeded: " + e.Detail
+}
+
+// Unwrap lets errors.Is match either sentinel anywhere in a wrapped chain.
+func (e *QuotaExceededError) Unwrap() []error { return []error{ErrRateLimited, ErrQuotaExceeded} }
+
 // IsRateLimitStatus reports whether a status code is one harbrr backs off on
 // (429 Too Many Requests / 503 Service Unavailable). Other non-2xx codes are
 // not retried — they are genuine failures, not pacing signals.

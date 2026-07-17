@@ -71,6 +71,7 @@ func newFreeleechAdapter(inner native.Driver, freeleechOnly bool) *indexerAdapte
 		inner:         inner,
 		freeleechOnly: freeleechOnly,
 		stats:         newIndexerStats(nil, time.Now, zerolog.Nop()),
+		budget:        newRequestBudget(nil, time.Now, zerolog.Nop()),
 		clock:         time.Now,
 		log:           zerolog.Nop(),
 	}

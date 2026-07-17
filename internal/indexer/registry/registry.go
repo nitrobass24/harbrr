@@ -75,6 +75,11 @@ type Resolver struct {
 	// time from the health events, not tracked here.
 	stats *IndexerStats
 
+	// budget enforces the per-indexer request budget (autobrr/harbrr#251): always
+	// present (built in New, like stats), instrumented by the per-instance
+	// indexerAdapter's Search/Grab before an outbound hit.
+	budget *RequestBudget
+
 	mu sync.Mutex
 	// cache holds the per-slug served indexer — the flattened adapter (cache-wired when
 	// searchCache != nil, else running live), served as a core.Indexer.
@@ -212,6 +217,9 @@ func New(db dbinterface.Querier, ldr *loader.Loader, keyring secretsKeyring, fam
 	// doerFactory default above.
 	if res.stats == nil {
 		res.stats = newIndexerStats(db, res.clock, res.log)
+	}
+	if res.budget == nil {
+		res.budget = newRequestBudget(db, res.clock, res.log)
 	}
 	// Manager and StatsReporter are built last, from the resolver's finalized handles: the
 	// same clock and the same *IndexerStats pointer. Manager evicts the serve path through
@@ -384,6 +392,7 @@ func (r *Resolver) buildAdapter(ctx context.Context, slug string) (*indexerAdapt
 		health:        r.health,
 		healthSink:    r.healthSink,
 		stats:         r.stats,
+		budget:        r.budget,
 		clock:         r.clock,
 		log:           r.log,
 	}, nil
@@ -636,6 +645,12 @@ func (r *Resolver) forgetCacheCounters(instanceID int64) {
 // the Manager calls after a committed Delete, keeping the Manager ignorant of *IndexerStats.
 func (r *Resolver) forgetStats(instanceID int64) {
 	r.stats.ForgetInstance(instanceID)
+}
+
+// forgetBudget drops a deleted instance's in-memory budget counters, mirroring
+// forgetStats for the request-budget tracker.
+func (r *Resolver) forgetBudget(instanceID int64) {
+	r.budget.ForgetInstance(instanceID)
 }
 
 // indexerInfo assembles the public indexer identity from the instance + def (no
