@@ -40,6 +40,20 @@ func (AnnounceConnections) InsertAnnounceConnection(ctx context.Context, q dbint
 	return id, nil
 }
 
+// SetAnnounceConnectionSecrets writes both encrypted secret columns + key_id by id
+// (mirrors AppConnections.SetConnectionSecrets). Used by restore, which must insert the
+// row first to mint the id its secrets' AAD binds to, then seal them under that id.
+func (AnnounceConnections) SetAnnounceConnectionSecrets(ctx context.Context, q dbinterface.Execer, id int64, apiKeyEncrypted, harbrrKeyEncrypted, keyID string) error {
+	res, err := q.ExecContext(ctx,
+		q.Rebind(`UPDATE announce_connections SET api_key_encrypted = ?, harbrr_api_key_encrypted = ?, key_id = ?
+			WHERE id = ?`),
+		apiKeyEncrypted, harbrrKeyEncrypted, keyID, id)
+	if err != nil {
+		return fmt.Errorf("database: set announce connection secrets: %w", err)
+	}
+	return affectedOrNotFoundID(res, id)
+}
+
 // GetAnnounceConnection returns the connection with the given id, or ErrNotFound.
 func (AnnounceConnections) GetAnnounceConnection(ctx context.Context, q dbinterface.Execer, id int64) (domain.AnnounceConnection, error) {
 	row := q.QueryRowContext(ctx,

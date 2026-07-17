@@ -1042,6 +1042,46 @@ export interface paths {
         patch: operations["updateSyncProfile"];
         trace?: never;
     };
+    "/api/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Export config + database as a passphrase-encrypted bundle
+         * @description Returns a single encrypted bundle of harbrr's configuration and database (backup / restore / migrate-to-a-new-host). The whole table payload is sealed under a key derived from the passphrase (argon2id → AES-256-GCM), so the bundle is safe to store anywhere; only the passphrase opens it. The passphrase is required and never echoed.
+         */
+        post: operations["exportBackup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore a passphrase-encrypted bundle (wipe-and-load)
+         * @description Restores a bundle produced by /api/export. Destructive: it wipes the backed-up tables and re-inserts everything, re-sealing each secret under this host's at-rest key and remapping ids. force is required to overwrite an already-configured instance. A wrong passphrase or malformed bundle is a 400; a non-empty target without force is a 409.
+         */
+        post: operations["importBackup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/cache/stats": {
         parameters: {
             query?: never;
@@ -1878,6 +1918,42 @@ export interface components {
              * @description number of entries purged (0 when caching is disabled)
              */
             flushed: number;
+        };
+        ExportRequest: {
+            /** @description seals the bundle (argon2id → AES-256-GCM); required, never echoed */
+            passphrase: string;
+        };
+        ImportRequest: {
+            /** @description base64 of the exported bundle bytes */
+            payload: string;
+            /** @description the passphrase the bundle was sealed with */
+            passphrase: string;
+            /**
+             * @description overwrite an already-configured instance
+             * @default false
+             */
+            force?: boolean;
+        };
+        /** @description The export envelope: cleartext provenance + the KDF/salt an importer needs before it has the passphrase, plus the passphrase-sealed table payload. No secret ever appears in cleartext — the payload is opaque AES-256-GCM ciphertext. */
+        BackupBundle: {
+            schemaVersion: number;
+            harbrrVersion?: string;
+            /** Format: date-time */
+            createdAt?: string;
+            kdf?: {
+                /** @description always "argon2id" */
+                algorithm?: string;
+                /** @description argon2id memory cost (KiB) */
+                memory?: number;
+                /** @description argon2id iterations */
+                time?: number;
+                /** @description argon2id lanes */
+                threads?: number;
+            };
+            /** @description base64 argon2id salt */
+            salt: string;
+            /** @description base64(AES-256-GCM(table JSON)) */
+            payload: string;
         };
         /** @description The process-wide log level (get returns the effective value; put sets it). */
         LogLevel: {
@@ -4143,6 +4219,57 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    exportBackup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExportRequest"];
+            };
+        };
+        responses: {
+            /** @description the encrypted bundle (a JSON envelope), offered as a file download */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupBundle"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    importBackup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportRequest"];
+            };
+        };
+        responses: {
+            /** @description restored */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
             409: components["responses"]["Conflict"];
         };
     };

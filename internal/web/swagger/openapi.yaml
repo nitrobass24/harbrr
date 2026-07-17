@@ -1663,6 +1663,55 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /api/export:
+    post:
+      summary: Export config + database as a passphrase-encrypted bundle
+      description: >
+        Returns a single encrypted bundle of harbrr's configuration and database
+        (backup / restore / migrate-to-a-new-host). The whole table payload is sealed
+        under a key derived from the passphrase (argon2id → AES-256-GCM), so the bundle
+        is safe to store anywhere; only the passphrase opens it. The passphrase is
+        required and never echoed.
+      operationId: exportBackup
+      tags: [Backup]
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExportRequest" }
+      responses:
+        "200":
+          description: the encrypted bundle (a JSON envelope), offered as a file download
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BackupBundle" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/import:
+    post:
+      summary: Restore a passphrase-encrypted bundle (wipe-and-load)
+      description: >
+        Restores a bundle produced by /api/export. Destructive: it wipes the backed-up
+        tables and re-inserts everything, re-sealing each secret under this host's
+        at-rest key and remapping ids. force is required to overwrite an
+        already-configured instance. A wrong passphrase or malformed bundle is a 400; a
+        non-empty target without force is a 409.
+      operationId: importBackup
+      tags: [Backup]
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ImportRequest" }
+      responses:
+        "204": { description: restored }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
   /api/cache/stats:
     get:
       summary: Search-results cache statistics
@@ -2588,6 +2637,41 @@ components:
       properties:
         flushed: { type: integer, format: int64, description: number of entries purged (0 when caching is disabled) }
       required: [flushed]
+
+    ExportRequest:
+      type: object
+      properties:
+        passphrase: { type: string, description: "seals the bundle (argon2id → AES-256-GCM); required, never echoed" }
+      required: [passphrase]
+
+    ImportRequest:
+      type: object
+      properties:
+        payload: { type: string, description: base64 of the exported bundle bytes }
+        passphrase: { type: string, description: the passphrase the bundle was sealed with }
+        force: { type: boolean, default: false, description: overwrite an already-configured instance }
+      required: [payload, passphrase]
+
+    BackupBundle:
+      type: object
+      description: >
+        The export envelope: cleartext provenance + the KDF/salt an importer needs before
+        it has the passphrase, plus the passphrase-sealed table payload. No secret ever
+        appears in cleartext — the payload is opaque AES-256-GCM ciphertext.
+      properties:
+        schemaVersion: { type: integer }
+        harbrrVersion: { type: string }
+        createdAt: { type: string, format: date-time }
+        kdf:
+          type: object
+          properties:
+            algorithm: { type: string, description: always "argon2id" }
+            memory: { type: integer, description: argon2id memory cost (KiB) }
+            time: { type: integer, description: argon2id iterations }
+            threads: { type: integer, description: argon2id lanes }
+        salt: { type: string, description: base64 argon2id salt }
+        payload: { type: string, description: "base64(AES-256-GCM(table JSON))" }
+      required: [schemaVersion, salt, payload]
 
     LogLevel:
       type: object
