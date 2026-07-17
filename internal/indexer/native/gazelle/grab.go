@@ -51,13 +51,15 @@ type fetchResult struct {
 // rather than a silent truncation), status classification, and host-only redaction.
 func (d *driver) fetchTorrent(ctx context.Context, link string) ([]byte, string, error) {
 	res, err := sessionRetry(ctx, d, "download", func(ctx context.Context) (fetchResult, error) {
-		req, err := d.newRequest(ctx, link)
+		req, session, err := d.newRequest(ctx, link)
 		if err != nil {
 			return fetchResult{}, err
 		}
 		resp, err := d.DoDownload(d.requestContext(ctx), req, d.site.classify)
 		if err != nil {
-			return fetchResult{}, err
+			// Tag the auth failure with the request-used generation so Recover
+			// renews the right session rather than coalescing against a stale one.
+			return fetchResult{}, withGeneration(err, session.generation)
 		}
 		return fetchResult{body: resp.Body, contentType: resp.Header.Get("Content-Type")}, nil
 	})

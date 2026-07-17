@@ -33,19 +33,22 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 // recovery-and-retry via the strategy before surfacing.
 func (d *driver) searchPage(ctx context.Context, rawURL string) ([]*normalizer.Release, error) {
 	return sessionRetry(ctx, d, "search", func(ctx context.Context) ([]*normalizer.Release, error) {
-		req, err := d.newRequest(ctx, rawURL)
+		req, session, err := d.newRequest(ctx, rawURL)
 		if err != nil {
 			return nil, err
 		}
-		// Snapshot the session AFTER Prepare (so it reflects what actually rode on
-		// req) but BEFORE Do, so a concurrent renewal mid-flight can't be confused
-		// with the cookie this specific request used.
-		requestCookie := d.sessionSnapshot().cookie
+		// session is exactly what Prepare attached: its generation tags an
+		// auth failure so Recover renews the right session (empty-session login
+		// 0→1 included), and its cookie is the one to scrub from any error.
 		resp, err := d.Do(d.requestContext(ctx), req, d.site.classify)
 		if err != nil {
-			return nil, err
+			return nil, withGeneration(err, session.generation)
 		}
-		return d.parseBrowse(resp.Body, requestCookie)
+		releases, err := d.parseBrowse(resp.Body, session.cookie)
+		if err != nil {
+			return nil, withGeneration(err, session.generation)
+		}
+		return releases, nil
 	})
 }
 

@@ -3,6 +3,7 @@ package gazelle
 import (
 	"context"
 	"errors"
+	"fmt"
 	stdhttp "net/http"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
@@ -73,7 +74,9 @@ func generationFrom(err error) uint64 {
 // to) and the retried attempt still failed authentication. op names the operation
 // ("search" or "download") for the diagnostic.
 func sessionRejected(op string) error {
-	return errors.New("gazelle: automatic session renewal did not authenticate " + op + "; verify configured credentials: " + login.ErrLoginFailed.Error())
+	// Wraps login.ErrLoginFailed (not just its text) so errors.Is still matches and
+	// the registry classifies the exhausted-renewal failure as an auth health event.
+	return fmt.Errorf("gazelle: automatic session renewal did not authenticate %s; verify configured credentials: %w", op, login.ErrLoginFailed)
 }
 
 // sessionRetry runs attempt once, and on an auth-classified failure gives the site's
@@ -82,12 +85,14 @@ func sessionRejected(op string) error {
 // neither caller branches on which auth regime a site uses.
 func sessionRetry[T any](ctx context.Context, d *driver, op string, attempt func(context.Context) (T, error)) (T, error) {
 	var zero T
-	generation := d.sessionSnapshot().generation
 	result, attemptErr := attempt(ctx)
 	if attemptErr == nil || !errors.Is(attemptErr, login.ErrLoginFailed) {
 		return result, attemptErr
 	}
-	retry, recoverErr := d.site.strategy.Recover(ctx, d, withGeneration(attemptErr, generation))
+	// attemptErr already carries the generation the request actually used (the closure
+	// wraps it via withGeneration off newRequest's session), so Recover coalesces
+	// against the right one — the pre-attempt snapshot would miss an in-attempt login.
+	retry, recoverErr := d.site.strategy.Recover(ctx, d, attemptErr)
 	if recoverErr != nil {
 		return zero, recoverErr
 	}

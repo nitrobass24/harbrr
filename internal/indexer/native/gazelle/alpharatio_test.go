@@ -3,6 +3,7 @@ package gazelle
 import (
 	"context"
 	"errors"
+	"fmt"
 	stdhttp "net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -637,5 +638,95 @@ func TestAlphaRatioConcurrentExpiryCoalescesLogin(t *testing.T) {
 	}
 	if got := loginCalls.Load(); got != 1 {
 		t.Errorf("login calls = %d, want one coalesced renewal", got)
+	}
+}
+
+// alpharatioLoginMux builds a login+ajax server where the login POST hands out a fresh
+// cookie each call and ajax accepts only cookies for which accept(value) is true. It
+// reports the login-call count. Used to exercise the renew-on-first-rejected paths.
+func alpharatioLoginMux(t *testing.T, accept func(value string) bool, loginCalls *atomic.Int32) *httptest.Server {
+	t.Helper()
+	mux := stdhttp.NewServeMux()
+	mux.HandleFunc("/login.php", func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+		if r.Method != stdhttp.MethodPost {
+			_, _ = w.Write([]byte(`<form id="loginform"></form>`))
+			return
+		}
+		n := loginCalls.Add(1)
+		//nolint:gosec // G124: synthetic httptest cookie must remain non-Secure so the HTTP test server receives it.
+		stdhttp.SetCookie(w, &stdhttp.Cookie{Name: "session", Value: fmt.Sprintf("AR-COOKIE-%d", n), Path: "/", HttpOnly: true})
+		_, _ = w.Write([]byte(`<a href="/logout.php">Logout</a>`))
+	})
+	mux.HandleFunc("/ajax.php", func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+		if c, err := r.Cookie("session"); err == nil && accept(c.Value) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"success","response":{"results":[]}}`))
+			return
+		}
+		stdhttp.Redirect(w, r, "/login.php", stdhttp.StatusFound)
+	})
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	return server
+}
+
+func alpharatioSessionDriver(t *testing.T, server *httptest.Server) *driver {
+	t.Helper()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar.New: %v", err)
+	}
+	client := server.Client()
+	client.Jar = jar
+	client.CheckRedirect = apphttp.RedirectPolicy
+	built, err := New(native.Params{
+		Def:            familyByID(t, "alpharatio").Definition,
+		Cfg:            map[string]string{"username": alphaRatioUsername, "password": alphaRatioPassword},
+		Doer:           client,
+		BaseURL:        server.URL,
+		PersistSetting: func(context.Context, string, string) error { return nil },
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return built.(*driver)
+}
+
+// TestAlphaRatioFirstLoginCookieRejectedThenSucceeds pins the generation-threading fix
+// (#131 review): an empty session logs in (generation 0→1), and when that first cookie
+// is rejected the retry must RENEW (generation 1→2) rather than reuse the rejected
+// cookie — the pre-attempt generation snapshot mistook the in-attempt login for a
+// concurrent renewal and skipped the second login.
+func TestAlphaRatioFirstLoginCookieRejectedThenSucceeds(t *testing.T) {
+	t.Parallel()
+	var loginCalls atomic.Int32
+	// AR-COOKIE-1 (first login) is rejected; AR-COOKIE-2 (renewal) is accepted.
+	server := alpharatioLoginMux(t, func(v string) bool { return v == "AR-COOKIE-2" }, &loginCalls)
+	d := alpharatioSessionDriver(t, server)
+
+	if _, err := d.Search(context.Background(), search.Query{}); err != nil {
+		t.Fatalf("Search after first-cookie rejection = %v, want success on renewal", err)
+	}
+	if got := loginCalls.Load(); got != 2 {
+		t.Errorf("login calls = %d, want 2 (initial login + one renewal)", got)
+	}
+}
+
+// TestAlphaRatioExhaustedRenewalPreservesSentinel pins finding #131.2: when renewal
+// produces a cookie the tracker still rejects, the terminal error must wrap
+// login.ErrLoginFailed so the registry classifies it as an auth health event.
+func TestAlphaRatioExhaustedRenewalPreservesSentinel(t *testing.T) {
+	t.Parallel()
+	var loginCalls atomic.Int32
+	// Every cookie is rejected: initial login, then one renewal, then sessionRejected.
+	server := alpharatioLoginMux(t, func(string) bool { return false }, &loginCalls)
+	d := alpharatioSessionDriver(t, server)
+
+	_, err := d.Search(context.Background(), search.Query{})
+	if !errors.Is(err, login.ErrLoginFailed) {
+		t.Fatalf("Search error = %v, want errors.Is(login.ErrLoginFailed)", err)
+	}
+	if got := loginCalls.Load(); got != 2 {
+		t.Errorf("login calls = %d, want 2 (initial + one renewal before giving up)", got)
 	}
 }
