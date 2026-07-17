@@ -692,41 +692,42 @@ func alpharatioSessionDriver(t *testing.T, server *httptest.Server) *driver {
 	return built.(*driver)
 }
 
-// TestAlphaRatioFirstLoginCookieRejectedThenSucceeds pins the generation-threading fix
-// (#131 review): an empty session logs in (generation 0→1), and when that first cookie
-// is rejected the retry must RENEW (generation 1→2) rather than reuse the rejected
-// cookie — the pre-attempt generation snapshot mistook the in-attempt login for a
-// concurrent renewal and skipped the second login.
-func TestAlphaRatioFirstLoginCookieRejectedThenSucceeds(t *testing.T) {
+// TestAlphaRatioSessionRenewalOnRejectedCookie covers the generation-threading fix
+// (#131 review) across both terminal outcomes: an empty session logs in (generation
+// 0→1), and a rejected first cookie must RENEW (1→2) rather than reuse the rejected
+// one — the pre-attempt generation snapshot mistook the in-attempt login for a
+// concurrent renewal and skipped the second login. Both cases perform exactly one
+// renewal (loginCalls==2); they differ only in whether that renewed cookie is accepted.
+func TestAlphaRatioSessionRenewalOnRejectedCookie(t *testing.T) {
 	t.Parallel()
-	var loginCalls atomic.Int32
-	// AR-COOKIE-1 (first login) is rejected; AR-COOKIE-2 (renewal) is accepted.
-	server := alpharatioLoginMux(t, func(v string) bool { return v == "AR-COOKIE-2" }, &loginCalls)
-	d := alpharatioSessionDriver(t, server)
-
-	if _, err := d.Search(context.Background(), search.Query{}); err != nil {
-		t.Fatalf("Search after first-cookie rejection = %v, want success on renewal", err)
+	tests := []struct {
+		name    string
+		accept  func(string) bool // which cookie the tracker accepts
+		wantErr bool              // true: renewal still rejected → sentinel error; false: renewal accepted → success
+	}{
+		// AR-COOKIE-1 (first login) rejected, AR-COOKIE-2 (renewal) accepted → success.
+		{name: "renewal accepted", accept: func(v string) bool { return v == "AR-COOKIE-2" }, wantErr: false},
+		// Every cookie rejected → initial login, one renewal, then sessionRejected; the
+		// terminal error must wrap login.ErrLoginFailed so the registry classifies it as auth.
+		{name: "renewal still rejected", accept: func(string) bool { return false }, wantErr: true},
 	}
-	if got := loginCalls.Load(); got != 2 {
-		t.Errorf("login calls = %d, want 2 (initial login + one renewal)", got)
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var loginCalls atomic.Int32
+			server := alpharatioLoginMux(t, tt.accept, &loginCalls)
+			d := alpharatioSessionDriver(t, server)
 
-// TestAlphaRatioExhaustedRenewalPreservesSentinel pins finding #131.2: when renewal
-// produces a cookie the tracker still rejects, the terminal error must wrap
-// login.ErrLoginFailed so the registry classifies it as an auth health event.
-func TestAlphaRatioExhaustedRenewalPreservesSentinel(t *testing.T) {
-	t.Parallel()
-	var loginCalls atomic.Int32
-	// Every cookie is rejected: initial login, then one renewal, then sessionRejected.
-	server := alpharatioLoginMux(t, func(string) bool { return false }, &loginCalls)
-	d := alpharatioSessionDriver(t, server)
-
-	_, err := d.Search(context.Background(), search.Query{})
-	if !errors.Is(err, login.ErrLoginFailed) {
-		t.Fatalf("Search error = %v, want errors.Is(login.ErrLoginFailed)", err)
-	}
-	if got := loginCalls.Load(); got != 2 {
-		t.Errorf("login calls = %d, want 2 (initial + one renewal before giving up)", got)
+			_, err := d.Search(context.Background(), search.Query{})
+			switch {
+			case tt.wantErr && !errors.Is(err, login.ErrLoginFailed):
+				t.Fatalf("Search error = %v, want errors.Is(login.ErrLoginFailed)", err)
+			case !tt.wantErr && err != nil:
+				t.Fatalf("Search after first-cookie rejection = %v, want success on renewal", err)
+			}
+			if got := loginCalls.Load(); got != 2 {
+				t.Errorf("login calls = %d, want 2 (initial login + one renewal)", got)
+			}
+		})
 	}
 }
