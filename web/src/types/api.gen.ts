@@ -1563,6 +1563,11 @@ export interface components {
                 default: number;
                 max: number;
             };
+            /** @description The indexer's own advertised request-count limit — for Newznab, the remote `?t=caps` <limits max= default=> element. Defaults to 100/100 when the source has none. Measure-only for now: nothing enforces a budget against it. */
+            upstreamLimits: {
+                default: number;
+                max: number;
+            };
         };
         /** @description A page of search results plus paging metadata (qui-shaped envelope). `total` is the full match count after dedupe/filter but before the page slice, so it can exceed the number of results returned; `hasMore` is true when results beyond this page exist; `limit`/`offset` are the resolved page window. Deep server-side multi-page upstream fetching is not yet implemented, so `total` reflects the single engine fetch that backs every page of one query. */
         SearchResults: {

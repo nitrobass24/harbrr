@@ -58,6 +58,21 @@ type Capabilities struct {
 	// DefaultCategories`). Only the categorymappings list form carries a default
 	// flag; the caps.categories object form has none, so this is nil there.
 	DefaultCategories []string
+
+	// Limits is the upstream indexer's own advertised request-count limit — for
+	// Newznab, the remote `?t=caps` <limits max= default=> element (see
+	// newznab.buildFromCaps, which sets this after mapper.Build since no
+	// definition carries it). The zero value means the source does not model
+	// this (every non-Newznab def today). Measure-only for now (#250): nothing
+	// reads this to enforce a budget yet (that's #251).
+	Limits Limits
+}
+
+// Limits is the (default, max) pair from an upstream indexer's advertised
+// request-count limit. See Capabilities.Limits.
+type Limits struct {
+	Default int
+	Max     int
 }
 
 // Mode name constants mirror the caps.modes keys.
@@ -162,8 +177,17 @@ func (b builder) build() (*Capabilities, error) {
 		Categories:        b.sortedAdvertised(),
 		CategoryMap:       b.catMap,
 		DefaultCategories: *b.defaultCats,
+		// No definition (vendored or native) carries a Limits source yet — only Newznab's
+		// ?t=caps <limits> element does, and that is layered on after Build (see
+		// newznab.buildFromCaps). Default to Prowlarr's IndexerCapabilities default (100/100)
+		// so an indexer with no known limit still reports a sane value instead of 0/0.
+		Limits: Limits{Default: defaultLimit, Max: defaultLimit},
 	}, nil
 }
+
+// defaultLimit is Prowlarr's IndexerCapabilities default request-count limit, used when a
+// definition carries no more specific Limits source.
+const defaultLimit = 100
 
 // mapCategories handles the caps.categories object form (tracker id -> category
 // name), iterating in definition (YAML) order so the category map's entry order

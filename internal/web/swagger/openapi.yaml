@@ -2381,7 +2381,17 @@ components:
           properties:
             default: { type: integer }
             max: { type: integer }
-      required: [modes, allowRawSearch, allowTVSearchIMDB, categories, limits]
+        upstreamLimits:
+          type: object
+          description: >
+            The indexer's own advertised request-count limit — for Newznab, the remote
+            `?t=caps` <limits max= default=> element. Defaults to 100/100 when the
+            source has none. Measure-only for now: nothing enforces a budget against it.
+          required: [default, max]
+          properties:
+            default: { type: integer }
+            max: { type: integer }
+      required: [modes, allowRawSearch, allowTVSearchIMDB, categories, limits, upstreamLimits]
     SearchResults:
       type: object
       description: >

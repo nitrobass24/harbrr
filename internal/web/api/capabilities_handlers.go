@@ -18,6 +18,11 @@ type capabilitiesResponse struct {
 	Categories        []categoryResponse  `json:"categories"`
 	DefaultCategories []string            `json:"defaultCategories,omitempty"`
 	Limits            limitsResponse      `json:"limits"`
+	// UpstreamLimits is the indexer's own advertised request-count limit — for Newznab, the
+	// remote `?t=caps` <limits max= default=> element (#250). It defaults to 100/100
+	// (Prowlarr's convention) when the source has none. Measure-only: nothing enforces a
+	// budget against it yet (#251).
+	UpstreamLimits limitsResponse `json:"upstreamLimits"`
 }
 
 // categoryResponse is one advertised category.
@@ -65,5 +70,6 @@ func toCapabilitiesResponse(caps *mapper.Capabilities) capabilitiesResponse {
 		Categories:        cats,
 		DefaultCategories: caps.DefaultCategories,
 		Limits:            limitsResponse{Default: tzn.LimitsDefault, Max: tzn.LimitsMax},
+		UpstreamLimits:    limitsResponse{Default: caps.Limits.Default, Max: caps.Limits.Max},
 	}
 }

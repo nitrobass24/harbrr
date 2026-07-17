@@ -198,13 +198,16 @@ func (d *driver) persistCaps(ctx context.Context, rawXML []byte, now time.Time) 
 
 // buildFromCaps translates a parsed caps document into a *mapper.Capabilities via
 // mapper.Build, using a synthetic caps-only definition so the category map, custom-category
-// synthesis, and family-root advertising all come from the shared builder.
+// synthesis, and family-root advertising all come from the shared builder. loader.Caps has
+// no Limits field (it is a Cardigann definition concept; <limits> is Newznab-only), so the
+// advertised request-count limit is set directly from the parsed root afterward.
 func buildFromCaps(root *capsRoot) (*mapper.Capabilities, error) {
 	def := &loader.Definition{ID: "newznab", Caps: capsToLoaderCaps(root)}
 	caps, err := mapper.Build(def)
 	if err != nil {
 		return nil, fmt.Errorf("newznab: build capabilities from caps: %w", err)
 	}
+	caps.Limits = root.Limits.limitsOrDefault()
 	return caps, nil
 }
 

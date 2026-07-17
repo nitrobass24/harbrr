@@ -42,6 +42,7 @@ const DEFINITION: DefinitionDetail = {
     allowTVSearchIMDB: false,
     categories: [],
     limits: { default: 100, max: 100 },
+    upstreamLimits: { default: 100, max: 100 },
   },
 }
 

@@ -104,6 +104,48 @@ func TestCapsModesAndIMDB(t *testing.T) {
 	}
 }
 
+// TestCapsLimits proves the golden's <limits max="100" default="75"/> parses into
+// mapper.Capabilities.Limits, and that an absent <limits> element defaults to 100/100
+// (Prowlarr's IndexerCapabilities convention, #250).
+func TestCapsLimits(t *testing.T) {
+	t.Parallel()
+
+	build := func(t *testing.T, xml string) *mapper.Capabilities {
+		t.Helper()
+		root, err := parseCaps([]byte(xml), "")
+		if err != nil {
+			t.Fatalf("parseCaps: %v", err)
+		}
+		caps, err := buildFromCaps(root)
+		if err != nil {
+			t.Fatalf("buildFromCaps: %v", err)
+		}
+		return caps
+	}
+	tests := []struct {
+		name             string
+		caps             func(t *testing.T) *mapper.Capabilities
+		wantDef, wantMax int
+	}{
+		{name: "golden <limits max=100 default=75>", caps: buildGoldenCaps, wantDef: 75, wantMax: 100},
+		{
+			name: "no <limits> element defaults 100/100", wantDef: 100, wantMax: 100,
+			caps: func(t *testing.T) *mapper.Capabilities {
+				return build(t, `<?xml version="1.0"?><caps><searching/><categories/></caps>`)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := tt.caps(t)
+			if got.Limits.Default != tt.wantDef || got.Limits.Max != tt.wantMax {
+				t.Errorf("Limits = %+v, want {Default:%d Max:%d}", got.Limits, tt.wantDef, tt.wantMax)
+			}
+		})
+	}
+}
+
 // TestCapsCategoryResolution is the parity gate for the category map: a parent by name, a
 // subcat by combined name, a subcat that falls back to Parent/Other, a parent-only category,
 // and an unknown parent that falls back to Other — each keyed by its remote id.

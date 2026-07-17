@@ -3,21 +3,58 @@ package newznab
 import (
 	"encoding/xml"
 	"fmt"
+	"strconv"
 	"strings"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
 
-// capsRoot is the <caps> document a Newznab server returns for ?t=caps. Only the parts
-// harbrr models are decoded: <searching> mode children (each carries available + a
-// supportedParams list) and the <categories> tree (<category id name> with nested
-// <subcat id name>). <server> and <limits> are informational and intentionally not
-// modelled (mapper.Capabilities has no Server/Limits field).
+// capsRoot is the <caps> document a Newznab server returns for ?t=caps. The parts harbrr
+// models are decoded: <limits max= default=> (the upstream's advertised request-count
+// limit, #250), <searching> mode children (each carries available + a supportedParams
+// list), and the <categories> tree (<category id name> with nested <subcat id name>).
+// <server> is purely informational and still not modelled.
 type capsRoot struct {
 	XMLName    xml.Name      `xml:"caps"`
+	Limits     capsLimits    `xml:"limits"`
 	Searching  capsSearching `xml:"searching"`
 	Categories capsCatList   `xml:"categories"`
+}
+
+// capsLimits is the <limits max= default=> element. Attributes are decoded as strings
+// (rather than int) because a server may omit either or both, and a bare `int` field
+// would silently coerce a missing/blank attribute to 0 instead of "absent" — see
+// limitsOrDefault, which treats a non-positive value as absent and falls back to
+// Prowlarr's 100/100 default.
+type capsLimits struct {
+	Max     string `xml:"max,attr"`
+	Default string `xml:"default,attr"`
+}
+
+// limitsOrDefault converts the parsed <limits> attributes to mapper.Limits, defaulting
+// each of max/default to 100 when blank or not a positive integer — mirroring Prowlarr's
+// IndexerCapabilities default (NewznabCapabilitiesProvider parses `<limits>` the same way).
+func (l capsLimits) limitsOrDefault() mapper.Limits {
+	return mapper.Limits{
+		Max:     positiveIntOr(l.Max, defaultCapsLimit),
+		Default: positiveIntOr(l.Default, defaultCapsLimit),
+	}
+}
+
+// defaultCapsLimit is the fallback when the upstream omits <limits> or an attribute is
+// blank/invalid, matching Prowlarr's IndexerCapabilities default.
+const defaultCapsLimit = 100
+
+// positiveIntOr parses raw as a positive int, returning fallback when raw is blank or not
+// a positive integer.
+func positiveIntOr(raw string, fallback int) int {
+	n, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || n <= 0 {
+		return fallback
+	}
+	return n
 }
 
 // capsSearching collects every direct child of <searching> by element name. The element
