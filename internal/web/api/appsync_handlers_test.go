@@ -150,9 +150,11 @@ func TestAppConnectionUpdateConflictAndSelect(t *testing.T) {
 	resp, body = do(t, c, http.MethodPost, url, createConnBody("B", "http://b:8989"), nil)
 	mustStatus(t, resp, body, http.StatusCreated)
 
-	// Patching A's baseUrl onto B's (same kind) is a 409, not a 500.
-	resp, body = do(t, c, http.MethodPatch, url+"/"+itoa(a.ID), map[string]any{"baseUrl": "http://b:8989"}, nil)
-	mustStatus(t, resp, body, http.StatusConflict)
+	// Identity (base URL) is App-level now — a connection PATCH is surface-fields only.
+	// A name patch succeeds (204); the create path still enforces (kind, base_url)
+	// uniqueness (covered separately by the duplicate-create test).
+	resp, body = do(t, c, http.MethodPatch, url+"/"+itoa(a.ID), map[string]any{"name": "A-renamed"}, nil)
+	mustStatus(t, resp, body, http.StatusNoContent)
 
 	// Selecting indexers returns 204 (empty set is valid).
 	resp, body = do(t, c, http.MethodPut, url+"/"+itoa(a.ID)+"/indexers", map[string]any{"instanceIds": []int64{}}, nil)

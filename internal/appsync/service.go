@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/rs/zerolog"
 
+	"github.com/autobrr/harbrr/internal/apps"
 	"github.com/autobrr/harbrr/internal/connresource"
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
@@ -24,10 +24,9 @@ const httpClientTimeout = 30 * time.Second
 // defaultHTTPClient is the fallback client the drivers use when none is injected.
 func defaultHTTPClient() *http.Client { return &http.Client{Timeout: httpClientTimeout} }
 
-// AAD discriminators distinguishing a connection's two encrypted secrets (the app's
-// own key vs the harbrr key minted for it), plus service defaults.
+// secretHarbrr is the AAD discriminator for the harbrr key minted per connection (the
+// app's own credential lives on the App now, decrypted via s.apps, not on the row).
 const (
-	secretApp       = "app"
 	secretHarbrr    = "harbrr"
 	defaultPriority = 25
 	// StatusSkipped is the sync status for a disabled connection (no remote calls).
@@ -56,6 +55,7 @@ type Service struct {
 	repo     database.AppConnections
 	profiles database.SyncProfiles
 	source   IndexerSource
+	apps     *apps.Service
 	minter   connresource.KeyMinter
 	keyring  *secrets.Keyring
 	client   *http.Client
@@ -64,29 +64,33 @@ type Service struct {
 	log      zerolog.Logger
 }
 
-// NewService wires the app-sync service. client is shared by all drivers; clock is
-// injectable for deterministic tests (assigning to the returned Service's clock
-// field also retunes its Lifecycle, which reads clock through an indirection).
-func NewService(db dbinterface.Querier, source IndexerSource, minter connresource.KeyMinter, keyring *secrets.Keyring, client *http.Client, log zerolog.Logger) *Service {
+// NewService wires the app-sync service. appsSvc owns the app identity/credential a
+// connection references; client is shared by all drivers; clock is injectable for
+// deterministic tests (assigning to the returned Service's clock field also retunes
+// its Lifecycle, which reads clock through an indirection).
+func NewService(db dbinterface.Querier, source IndexerSource, appsSvc *apps.Service, minter connresource.KeyMinter, keyring *secrets.Keyring, client *http.Client, log zerolog.Logger) *Service {
 	if client == nil {
 		client = defaultHTTPClient()
 	}
 	s := &Service{
-		db: db, source: source, minter: minter, keyring: keyring,
+		db: db, source: source, apps: appsSvc, minter: minter, keyring: keyring,
 		client: client, clock: time.Now, log: log,
 	}
 	s.life = connresource.New[domain.AppConnection](db, keyring, func() time.Time { return s.clock() })
 	return s
 }
 
-// CreateConnectionParams is the input to CreateConnection. APIKey is the app's own
-// API key (so harbrr can call it); HarbrrURL is the base URL this app uses to reach
-// harbrr's feed. SyncLevel/IndexScope/Priority default when empty.
+// CreateConnectionParams is the input to CreateConnection. It references the App
+// holding the app's identity + credential either by AppID (reuse) or inline
+// (BaseURL/APIKey/Username get-or-create by identity); HarbrrURL, when set, backfills
+// the App's harbrr feed URL. SyncLevel/IndexScope/Priority default when empty.
 type CreateConnectionParams struct {
 	Name          string
 	Kind          string
+	AppID         *int64
 	BaseURL       string
 	APIKey        string
+	Username      string
 	HarbrrURL     string
 	SyncLevel     string
 	IndexScope    string
@@ -97,9 +101,11 @@ type CreateConnectionParams struct {
 	SyncProfileID *int64
 }
 
-// CreateConnection mints a dedicated harbrr key for the connection, then persists the
-// connection with both secrets encrypted. If persistence fails, the orphaned key is
-// revoked so a failed create leaves nothing behind.
+// CreateConnection resolves the App the connection references (get-or-create),
+// enforces that it has a harbrr feed URL, then mints a dedicated harbrr key and
+// persists the connection referencing the App. Only the minted harbrr key is sealed on
+// the row — the app's own credential lives on the App. A failed persist revokes the
+// orphaned key.
 func (s *Service) CreateConnection(ctx context.Context, p CreateConnectionParams) (domain.AppConnection, error) {
 	p = p.withDefaults()
 	if err := validateCreate(&p); err != nil {
@@ -111,12 +117,21 @@ func (s *Service) CreateConnection(ctx context.Context, p CreateConnectionParams
 	if err := s.validateProfileRef(ctx, s.db, p.Kind, p.SyncProfileID); err != nil {
 		return domain.AppConnection{}, err
 	}
+	app, err := s.apps.Resolve(ctx, apps.Ref{
+		AppID: p.AppID, Kind: p.Kind, Name: p.Name, BaseURL: p.BaseURL, Username: p.Username, APIKey: p.APIKey, HarbrrURL: p.HarbrrURL,
+	})
+	if err != nil {
+		return domain.AppConnection{}, fmt.Errorf("appsync: resolve app: %w", err)
+	}
+	if app.HarbrrURL == "" {
+		return domain.AppConnection{}, fmt.Errorf("%w: harbrr url is required (the app embeds it in each pushed indexer to reach harbrr's feed)", domain.ErrInvalid)
+	}
 	return s.life.Create(ctx, connresource.CreateSpec[domain.AppConnection]{
 		Minter:   s.minter,
 		MintName: "app-sync: " + p.Name,
 		Build: func(now time.Time, mintedKeyID int64) domain.AppConnection {
 			return domain.AppConnection{
-				Name: p.Name, Kind: p.Kind, BaseURL: p.BaseURL, HarbrrURL: p.HarbrrURL,
+				Name: p.Name, Kind: p.Kind, AppID: &app.ID, BaseURL: app.BaseURL,
 				HarbrrAPIKeyID: mintedKeyID, Enabled: true, SyncLevel: p.SyncLevel,
 				IndexScope: p.IndexScope, FreeleechMode: p.FreeleechMode, Priority: p.Priority,
 				SyncProfileID: p.SyncProfileID, CreatedAt: now, UpdatedAt: now,
@@ -131,17 +146,16 @@ func (s *Service) CreateConnection(ctx context.Context, p CreateConnectionParams
 		Insert: func(ctx context.Context, q dbinterface.Execer, conn domain.AppConnection) (int64, error) {
 			return s.repo.InsertConnection(ctx, q, conn)
 		},
+		// Only the minted harbrr key is sealed on the connection; the app credential
+		// lives on the App (base_url is written for the (kind, base_url) unique index).
 		Secrets: func(_ domain.AppConnection, mintedPlain string) []connresource.Secret {
-			return []connresource.Secret{
-				{Discriminator: secretApp, Plaintext: p.APIKey},
-				{Discriminator: secretHarbrr, Plaintext: mintedPlain},
-			}
+			return []connresource.Secret{{Discriminator: secretHarbrr, Plaintext: mintedPlain}}
 		},
 		SetSecrets: func(ctx context.Context, q dbinterface.Execer, id int64, encrypted []string, keyID string) error {
-			return s.repo.SetConnectionSecrets(ctx, q, id, encrypted[0], encrypted[1], keyID)
+			return s.repo.SetConnectionSecrets(ctx, q, id, "", encrypted[0], keyID)
 		},
 		Finalize: func(conn domain.AppConnection, id int64, encrypted []string, keyID string) domain.AppConnection {
-			conn.ID, conn.APIKeyEncrypted, conn.HarbrrAPIKeyEncrypted, conn.KeyID = id, encrypted[0], encrypted[1], keyID
+			conn.ID, conn.HarbrrAPIKeyEncrypted, conn.KeyID = id, encrypted[0], keyID
 			return conn
 		},
 		Conflict: func(conn domain.AppConnection) error {
@@ -160,14 +174,12 @@ type RefUpdate struct {
 	Value   *int64
 }
 
-// UpdateConnectionParams patches a connection; nil fields are left unchanged. APIKey,
-// when set, rotates the app's key (re-encrypted in place). SyncProfileID is tri-state
-// (RefUpdate): only an explicitly-present field changes the reference.
+// UpdateConnectionParams patches a connection's surface fields; nil fields are left
+// unchanged. Identity + credential (base URL, api key, harbrr URL) are App-level now —
+// rotated via the App, not here. SyncProfileID is tri-state (RefUpdate): only an
+// explicitly-present field changes the reference.
 type UpdateConnectionParams struct {
 	Name          *string
-	BaseURL       *string
-	HarbrrURL     *string
-	APIKey        *string
 	SyncLevel     *string
 	IndexScope    *string
 	FreeleechMode *string
@@ -175,15 +187,11 @@ type UpdateConnectionParams struct {
 	SyncProfileID RefUpdate
 }
 
-// UpdateConnection applies a patch, re-encrypting the app key when rotated. The
-// read, profile-ref-validate, and write run in one Lifecycle.Update transaction,
-// so a concurrent mutation can't slip between the check and the write (the
-// UpdateProfile / proxy Update precedent). Two guarantees ride on this: a
-// concurrent key rotation can't be lost by this full-row write reading a stale
-// api_key, and a concurrent UpdateProfile can't narrow the referenced profile's
-// categories between validateProfileRef and the ref write — which would leave a
-// full-sync connection pointing at an empty gate that deletes every indexer it
-// manages.
+// UpdateConnection applies a surface-field patch. The read, profile-ref-validate, and
+// write run in one Lifecycle.Update transaction, so a concurrent UpdateProfile can't
+// narrow the referenced profile's categories between validateProfileRef and the ref
+// write — which would leave a full-sync connection pointing at an empty gate that
+// deletes every indexer it manages.
 func (s *Service) UpdateConnection(ctx context.Context, id int64, p UpdateConnectionParams) error {
 	return s.life.Update(ctx, id, connresource.UpdateSpec[domain.AppConnection]{
 		Get: func(ctx context.Context, q dbinterface.Execer, id int64) (domain.AppConnection, error) {
@@ -200,18 +208,6 @@ func (s *Service) UpdateConnection(ctx context.Context, id int64, p UpdateConnec
 		},
 		Patch: func(conn *domain.AppConnection) error {
 			return applyUpdate(conn, p)
-		},
-		Rotate: func(_ *domain.AppConnection) (connresource.Secret, bool, error) {
-			if p.APIKey == nil {
-				return connresource.Secret{}, false, nil
-			}
-			if strings.TrimSpace(*p.APIKey) == "" {
-				return connresource.Secret{}, false, fmt.Errorf("%w: api key must not be blank", domain.ErrInvalid)
-			}
-			return connresource.Secret{Discriminator: secretApp, Plaintext: *p.APIKey}, true, nil
-		},
-		Apply: func(conn *domain.AppConnection, encrypted, keyID string) {
-			conn.APIKeyEncrypted, conn.KeyID = encrypted, keyID
 		},
 		Touch: func(conn *domain.AppConnection, now time.Time) { conn.UpdatedAt = now },
 		Write: func(ctx context.Context, q dbinterface.Execer, conn domain.AppConnection) error {
@@ -321,11 +317,25 @@ func (s *Service) SetEnabled(ctx context.Context, id int64, enabled bool) error 
 }
 
 // ListConnections / GetConnection / ConnectionIndexers expose the persisted state for
-// the API layer (secrets stay encrypted; the handler redacts).
+// the API layer, each connection's base URL + harbrr URL enriched from its App (the
+// single read path — no legacy-column fallback). A pending (NULL app_id) row lists with
+// blank identity fields rather than erroring; a *use* path (Sync/Test/driver) is where
+// the pending state surfaces as ErrAppMigrationPending.
 func (s *Service) ListConnections(ctx context.Context) ([]domain.AppConnection, error) {
 	list, err := s.repo.ListConnections(ctx, s.db)
 	if err != nil {
 		return nil, fmt.Errorf("appsync: list connections: %w", err)
+	}
+	index, err := s.apps.Index(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("appsync: list apps: %w", err)
+	}
+	for i := range list {
+		if list[i].AppID != nil {
+			if app, ok := index[*list[i].AppID]; ok {
+				list[i].BaseURL, list[i].HarbrrURL = app.BaseURL, app.HarbrrURL
+			}
+		}
 	}
 	return list, nil
 }
@@ -334,6 +344,13 @@ func (s *Service) GetConnection(ctx context.Context, id int64) (domain.AppConnec
 	conn, err := s.repo.GetConnection(ctx, s.db, id)
 	if err != nil {
 		return domain.AppConnection{}, fmt.Errorf("appsync: get connection: %w", err)
+	}
+	if conn.AppID != nil {
+		app, err := s.apps.Get(ctx, *conn.AppID)
+		if err != nil {
+			return domain.AppConnection{}, fmt.Errorf("appsync: get app: %w", err)
+		}
+		conn.BaseURL, conn.HarbrrURL = app.BaseURL, app.HarbrrURL
 	}
 	return conn, nil
 }
@@ -353,7 +370,7 @@ func (s *Service) TestConnection(ctx context.Context, id int64) error {
 	if err != nil {
 		return fmt.Errorf("appsync: get connection: %w", err)
 	}
-	driver, _, err := s.driver(conn)
+	driver, _, err := s.driver(ctx, conn)
 	if err != nil {
 		return err
 	}
@@ -363,38 +380,28 @@ func (s *Service) TestConnection(ctx context.Context, id int64) error {
 	return nil
 }
 
-// QuiSeedResult carries the qui app-connection fields reused to seed a matching
-// announce-connection: everything the seeding endpoint needs from one lookup.
-type QuiSeedResult struct {
-	Name      string
-	BaseURL   string
-	APIKey    string
-	HarbrrURL string
+// appFor loads the App a connection references (the sole identity/credential source),
+// guarding a pending (NULL app_id) row with ErrAppMigrationPending.
+func (s *Service) appFor(ctx context.Context, conn domain.AppConnection) (domain.App, error) {
+	if conn.AppID == nil {
+		return domain.App{}, fmt.Errorf("app connection %d: %w", conn.ID, domain.ErrAppMigrationPending)
+	}
+	app, err := s.apps.Get(ctx, *conn.AppID)
+	if err != nil {
+		return domain.App{}, fmt.Errorf("appsync: get app: %w", err)
+	}
+	return app, nil
 }
 
-// QuiSeed decrypts a qui app-connection's own credentials for reuse when seeding a
-// matching announce-connection (see internal/announce). It reuses the connection's
-// existing base URL and harbrr URL as-is and rejects any non-qui kind, since only qui
-// has a matching announce-connection kind to seed.
-func (s *Service) QuiSeed(ctx context.Context, id int64) (QuiSeedResult, error) {
-	conn, err := s.repo.GetConnection(ctx, s.db, id)
+// driver loads the connection's App for the base URL + decrypted app credential and
+// builds its Target, returning the harbrr feed key separately (it is pushed into each
+// indexer body, not used to call the app).
+func (s *Service) driver(ctx context.Context, conn domain.AppConnection) (Target, string, error) {
+	app, err := s.appFor(ctx, conn)
 	if err != nil {
-		return QuiSeedResult{}, fmt.Errorf("appsync: get connection: %w", err)
+		return nil, "", err
 	}
-	if conn.Kind != domain.AppKindQui {
-		return QuiSeedResult{}, fmt.Errorf("%w: connection %d is not a qui connection", domain.ErrInvalid, id)
-	}
-	apiKey, err := s.keyring.Decrypt(conn.ID, secretApp, conn.APIKeyEncrypted)
-	if err != nil {
-		return QuiSeedResult{}, fmt.Errorf("appsync: decrypt app key: %w", err)
-	}
-	return QuiSeedResult{Name: conn.Name, BaseURL: conn.BaseURL, APIKey: apiKey, HarbrrURL: conn.HarbrrURL}, nil
-}
-
-// driver decrypts a connection's keys and builds its Target, returning the harbrr feed
-// key separately (it is pushed into each indexer body, not used to call the app).
-func (s *Service) driver(conn domain.AppConnection) (Target, string, error) {
-	appKey, err := s.keyring.Decrypt(conn.ID, secretApp, conn.APIKeyEncrypted)
+	appKey, err := s.apps.DecryptKey(app)
 	if err != nil {
 		return nil, "", fmt.Errorf("appsync: decrypt app key: %w", err)
 	}
@@ -402,7 +409,7 @@ func (s *Service) driver(conn domain.AppConnection) (Target, string, error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("appsync: decrypt harbrr key: %w", err)
 	}
-	t, err := newDriver(conn.Kind, conn.BaseURL, appKey, s.client)
+	t, err := newDriver(conn.Kind, app.BaseURL, appKey, s.client)
 	return t, harbrrKey, err
 }
 

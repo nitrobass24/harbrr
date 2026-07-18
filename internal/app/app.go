@@ -18,6 +18,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/autobrr/harbrr/internal/announce"
+	"github.com/autobrr/harbrr/internal/apps"
 	"github.com/autobrr/harbrr/internal/appsync"
 	"github.com/autobrr/harbrr/internal/auth"
 	"github.com/autobrr/harbrr/internal/backup"
@@ -75,6 +76,7 @@ type App struct {
 	registry    *registry.Registry
 
 	notify   *notify.Service
+	apps     *apps.Service
 	appsync  *appsync.Service
 	announce *announce.Service
 
@@ -136,11 +138,12 @@ func (a *App) build(ctx context.Context, httpClient *http.Client) error {
 		return err
 	}
 	a.initAuth()
+	a.apps = apps.NewService(a.db, a.keyring, httpClient, a.log)
 	a.initRegistry(ctx, httpClient)
 	a.initSyncServices(httpClient)
 	a.initLogLevel(ctx)
 	a.proxy = proxy.NewService(a.db, a.keyring)
-	a.download = download.NewService(a.db, a.keyring, httpClient, a.log)
+	a.download = download.NewService(a.db, a.apps, a.keyring, httpClient, a.log)
 	a.solver = solver.NewService(a.db, a.keyring)
 	a.backup = backup.NewService(a.db, a.keyring, a.log)
 
@@ -208,6 +211,9 @@ func migrateResources(ctx context.Context, db *database.DB, keyring *secrets.Key
 	}
 	if err := resourcemigrate.SplitProxyURLs(ctx, db, keyring, log); err != nil {
 		log.Warn().Err(err).Msg("splitting legacy proxy URLs into structured fields failed; will retry next boot")
+	}
+	if err := resourcemigrate.FoldApps(ctx, db, keyring, time.Now, log); err != nil {
+		log.Warn().Err(err).Msg("folding legacy surface rows into first-class apps failed; surfaces stay pending, will retry next boot")
 	}
 }
 
@@ -329,8 +335,8 @@ func buildSearchCache(ctx context.Context, db *database.DB, cfg *config.Config, 
 // and stays explicit at the composition root rather than folded into either
 // constructor.
 func (a *App) initSyncServices(httpClient *http.Client) {
-	a.appsync = appsync.NewService(a.db, registrySource{reg: a.registry}, a.auth, a.keyring, httpClient, a.log)
-	a.announce = announce.NewService(a.db, a.auth, a.keyring, announce.DefaultTargetFactory(httpClient, nil, nil), a.log)
+	a.appsync = appsync.NewService(a.db, registrySource{reg: a.registry}, a.apps, a.auth, a.keyring, httpClient, a.log)
+	a.announce = announce.NewService(a.db, a.apps, a.auth, a.keyring, announce.DefaultTargetFactory(httpClient, nil, nil), a.log)
 	a.searchCache.SetAnnounceSink(newAnnounceSink(a.announce, a.db, a.keyring, a.cfg.Server.BaseURL, a.cfg.Server.ExternalOrigin(), a.log))
 }
 
@@ -360,7 +366,7 @@ func newServer(a *App) (*server.Server, error) {
 	}
 
 	mgmt, err := api.NewRouter(api.Deps{
-		Auth: a.auth, Registry: a.registry, Loader: loader.New(dropinDir(a.cfg)), AppSync: a.appsync,
+		Auth: a.auth, Registry: a.registry, Loader: loader.New(dropinDir(a.cfg)), Apps: a.apps, AppSync: a.appsync,
 		Announce: a.announce, Notify: a.notify, Proxy: a.proxy, Download: a.download, Solver: a.solver, Backup: a.backup, Sessions: a.sessions,
 		DLToken: a.keyring, URLConfig: urlCfg, Cache: a.searchCache, Logger: a.log, LogLevel: a.logLevel,
 	}, api.Config{

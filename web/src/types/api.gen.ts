@@ -632,20 +632,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/app-connections/{id}/announce-target": {
+    "/api/apps": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
-        put?: never;
         /**
-         * Seed a qui announce target from this app-connection
-         * @description One-click cross-seed setup for a qui app-connection: reuses its base URL, decrypted qui API key, and harbrr URL to create a matching announce-connection (kind qui), minting a fresh dedicated harbrr key for the new row. Only valid for a qui app-connection; fails with 409 if a qui announce target for the same base URL already exists.
+         * List first-class app identities (credentials redacted)
+         * @description Apps hold an external service's identity + one sealed credential + its harbrr vantage, stored once and referenced by the app-sync, announce, and download surfaces (ADR 0004). Each entry carries per-surface reference counts.
          */
-        post: operations["createAnnounceTargetFromAppConnection"];
+        get: operations["listApps"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/apps/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get one app (credential redacted) */
+        get: operations["getApp"];
+        put?: never;
+        post?: never;
+        /** Delete an app (409 when still referenced by a surface) */
+        delete: operations["deleteApp"];
+        options?: never;
+        head?: never;
+        /** Update an app (a new apiKey rotates the credential for every surface) */
+        patch: operations["updateApp"];
+        trace?: never;
+    };
+    "/api/apps/{id}/qui-instances": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Proxy a qui app's instance list (server-side; the key never leaves harbrr) */
+        get: operations["appQuiInstances"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1620,6 +1656,50 @@ export interface components {
             ok: boolean;
             error?: string;
         };
+        /** @description A first-class external service harbrr connects to — a (kind, base_url) identity plus one sealed credential and the app's harbrr vantage, stored once and referenced by the app-sync/announce/download surfaces (ADR 0004). The credential (apiKey) is never echoed — it reads back as the <redacted> sentinel. */
+        App: {
+            /** Format: int64 */
+            id: number;
+            kind: string;
+            name: string;
+            baseUrl: string;
+            /** @description empty for API-key apps; set for user+password apps */
+            username: string;
+            /** @description the credential (API key or password), redacted (<redacted>) */
+            apiKey: string;
+            /** @description how this app reaches harbrr's feed (unused by download clients) */
+            harbrrUrl: string;
+            enabled: boolean;
+            /** @description how many surface rows reference this app */
+            references: {
+                appConnections: number;
+                announce: number;
+                download: number;
+            };
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        /** @description A partial update; omitted fields are unchanged. apiKey, when present, rotates the credential — every referencing surface decrypts through the app, so the rotation propagates. Omit apiKey to keep the stored credential (never re-submit <redacted>). */
+        UpdateApp: {
+            name?: string;
+            baseUrl?: string;
+            username?: string;
+            harbrrUrl?: string;
+            enabled?: boolean;
+            apiKey?: string;
+        };
+        QuiInstance: {
+            id: number;
+            name: string;
+        };
+        /** @description The proxied qui instance list. ok=false carries a credential-scrubbed error (reachability/auth failure), mirroring the test endpoints; the HTTP status is 200. */
+        QuiInstances: {
+            ok: boolean;
+            error?: string;
+            instances?: components["schemas"]["QuiInstance"][];
+        };
         /** @description An *arr/qui app harbrr syncs its indexers into. The app's API key (apiKey) is never echoed — it reads back as the <redacted> sentinel. */
         AppConnection: {
             /** Format: int64 */
@@ -1627,9 +1707,14 @@ export interface components {
             name: string;
             /** @enum {string} */
             kind: "sonarr" | "radarr" | "lidarr" | "readarr" | "whisparr" | "qui";
-            /** @description the app's own API base URL */
+            /**
+             * Format: int64
+             * @description the App holding this connection's identity + credential (ADR 0004)
+             */
+            appId?: number | null;
+            /** @description the app's own API base URL (enriched from the App) */
             baseUrl: string;
-            /** @description the base URL this app uses to reach harbrr's feed */
+            /** @description the base URL this app uses to reach harbrr's feed (from the App) */
             harbrrUrl: string;
             /** @description the app's API key, redacted (<redacted>) */
             apiKey?: string;
@@ -1666,14 +1751,23 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
+        /** @description References the App holding the app's identity + credential either by appId (reuse an existing App) OR inline (baseUrl + apiKey [+ username], which get-or-creates the App by (kind, base_url)). harbrrUrl is required on the inline path (it backfills the App's feed URL). */
         CreateConnection: {
             name: string;
             /** @enum {string} */
             kind: "sonarr" | "radarr" | "lidarr" | "readarr" | "whisparr" | "qui";
-            baseUrl: string;
-            /** @description the app's API key (stored encrypted) */
-            apiKey: string;
-            harbrrUrl: string;
+            /**
+             * Format: int64
+             * @description reuse an existing App (omit baseUrl/apiKey/harbrrUrl)
+             */
+            appId?: number;
+            /** @description inline App identity (get-or-create) */
+            baseUrl?: string;
+            /** @description the app's API key (sealed on the App) */
+            apiKey?: string;
+            /** @description for user+password apps (empty for API-key apps) */
+            username?: string;
+            harbrrUrl?: string;
             /**
              * @default full
              * @enum {string}
@@ -1697,12 +1791,9 @@ export interface components {
              */
             syncProfileId?: number | null;
         };
-        /** @description A partial update; omitted fields are unchanged. apiKey, when present, rotates the stored app credential. */
+        /** @description A partial update of the connection's surface fields; omitted fields are unchanged. Identity + credential (base URL, api key, harbrr URL) are App-level — rotated via the App (PATCH /api/apps/{id}), not here. */
         UpdateConnection: {
             name?: string;
-            baseUrl?: string;
-            apiKey?: string;
-            harbrrUrl?: string;
             /** @enum {string} */
             syncLevel?: "full" | "add_update";
             /** @enum {string} */
@@ -1723,9 +1814,14 @@ export interface components {
             name: string;
             /** @enum {string} */
             kind: "qui" | "crossseed-v6";
-            /** @description the tool's own API base URL */
+            /**
+             * Format: int64
+             * @description the App holding this connection's identity + credential (ADR 0004)
+             */
+            appId?: number | null;
+            /** @description the tool's own API base URL (enriched from the App) */
             baseUrl: string;
-            /** @description the base URL the tool uses to reach harbrr's /dl link (cross-seed v6) */
+            /** @description the base URL the tool uses to reach harbrr's /dl link (from the App) */
             harbrrUrl?: string;
             /** @description the tool's API key, redacted (<redacted>) */
             apiKey?: string;
@@ -1735,22 +1831,27 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
+        /** @description References the App by appId (reuse) OR inline (baseUrl + apiKey [+ username], get-or-create). harbrrUrl is required on the inline path. */
         CreateAnnounceConnection: {
             name: string;
             /** @enum {string} */
             kind: "qui" | "crossseed-v6";
-            baseUrl: string;
-            /** @description the tool's API key (stored encrypted) */
-            apiKey: string;
+            /**
+             * Format: int64
+             * @description reuse an existing App (omit baseUrl/apiKey/harbrrUrl)
+             */
+            appId?: number;
+            /** @description inline App identity (get-or-create) */
+            baseUrl?: string;
+            /** @description the tool's API key (sealed on the App) */
+            apiKey?: string;
+            username?: string;
             /** @description the base URL the tool uses to reach harbrr's /dl link (both kinds fetch it) */
-            harbrrUrl: string;
+            harbrrUrl?: string;
         };
-        /** @description A partial update; omitted fields are unchanged. apiKey, when present, rotates the stored tool credential (omit it to keep the stored key — never re-submit the <redacted> sentinel). kind is immutable (change it by delete + recreate). */
+        /** @description A partial update; omitted fields are unchanged. Identity + credential are App-level now — this PATCH is name-only. kind is immutable. */
         UpdateAnnounceConnection: {
             name?: string;
-            baseUrl?: string;
-            apiKey?: string;
-            harbrrUrl?: string;
         };
         /** @description A notification target harbrr fires operational events at. The destination URL (url) is never echoed — it reads back as the <redacted> sentinel. */
         Notification: {
@@ -1871,7 +1972,13 @@ export interface components {
             name: string;
             /** @enum {string} */
             kind: "qbittorrent" | "blackhole" | "qui" | "flood" | "download-station";
+            /**
+             * Format: int64
+             * @description the App holding this client's identity + credential; null for host-less kinds (blackhole) (ADR 0004)
+             */
+            appId?: number | null;
             enabled: boolean;
+            /** @description enriched from the App (blank for host-less kinds) */
             host: string;
             username: string;
             /** @description the client's secret, redacted (<redacted>) */
@@ -1882,24 +1989,26 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
+        /** @description A networked kind references the App by appId (reuse) OR inline (host [+ username + secret], get-or-create). A host-less kind (blackhole) takes neither — Settings only. */
         CreateDownloadClient: {
             name: string;
             /** @enum {string} */
             kind: "qbittorrent" | "blackhole" | "qui" | "flood" | "download-station";
-            /** @description must be empty for kinds with no network endpoint (e.g. blackhole) */
-            host: string;
+            /**
+             * Format: int64
+             * @description reuse an existing App (omit host/username/secret)
+             */
+            appId?: number;
+            /** @description inline App identity (get-or-create); must be empty for host-less kinds (blackhole) */
+            host?: string;
             username?: string;
-            /** @description optional; stored encrypted */
+            /** @description optional; sealed on the App */
             secret?: string;
             settings?: components["schemas"]["DownloadClientSettings"];
         };
-        /** @description a partial update; omitted fields are left unchanged. Kind is immutable and not accepted here. */
+        /** @description A partial update of the client's surface fields; omitted fields are unchanged. Identity + credential (host, username, secret) are App-level now. Kind is immutable. */
         UpdateDownloadClient: {
             name?: string;
-            host?: string;
-            username?: string;
-            /** @description rotates the secret (stored encrypted); omitted keeps the stored one */
-            secret?: string;
             settings?: components["schemas"]["DownloadClientSettings"];
         };
         /** @description A global, reusable anti-bot solver (FlareSolverr) an indexer references by id. The endpoint URL (url) is never echoed — it reads back as the <redacted> sentinel. */
@@ -3345,7 +3454,28 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
-    createAnnounceTargetFromAppConnection: {
+    listApps: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description the configured apps (credentials redacted) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["App"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getApp: {
         parameters: {
             query?: never;
             header?: never;
@@ -3356,19 +3486,95 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description the created announce connection */
-            201: {
+            /** @description the app */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AnnounceConnection"];
+                    "application/json": components["schemas"]["App"];
                 };
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    deleteApp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    updateApp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateApp"];
+            };
+        };
+        responses: {
+            /** @description updated */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    appQuiInstances: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description the qui instances (ok=false carries a scrubbed error) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuiInstances"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
         };
     };
     listAnnounceConnections: {

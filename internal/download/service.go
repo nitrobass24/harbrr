@@ -11,6 +11,7 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/autobrr/harbrr/internal/apps"
 	"github.com/autobrr/harbrr/internal/connresource"
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
@@ -18,72 +19,79 @@ import (
 	"github.com/autobrr/harbrr/internal/secrets"
 )
 
-// Service persists download clients (encrypting the client's secret) and builds
-// their Driver on demand. Create/Update/Delete of the row and its encrypted
-// secret are sequenced by connresource.Lifecycle; download mints nothing (like
-// notify), so its specs simply leave Minter nil.
+// Service persists download clients and builds their Driver on demand. A networked
+// client's identity + credential live on a first-class App (ADR 0004) referenced by
+// app_id; host-less kinds (blackhole) have no App. Create/Update/Delete of the row are
+// sequenced by connresource.Lifecycle; download mints nothing (Minter nil), and the
+// credential is sealed on the App, not the row.
 type Service struct {
-	db      dbinterface.Querier
-	repo    database.DownloadClients
-	keyring *secrets.Keyring
-	client  *http.Client
-	clock   func() time.Time
-	life    *connresource.Lifecycle[domain.DownloadClient]
-	log     zerolog.Logger
+	db     dbinterface.Querier
+	repo   database.DownloadClients
+	apps   *apps.Service
+	client *http.Client
+	clock  func() time.Time
+	life   *connresource.Lifecycle[domain.DownloadClient]
+	log    zerolog.Logger
 }
 
 // NewService wires the download service. client is shared by drivers thin enough
 // to use one (nil installs a timeout-bounded default); clock is injectable for
 // deterministic tests (assigning to the returned Service's clock field also
 // retunes its Lifecycle, which reads clock through an indirection).
-func NewService(db dbinterface.Querier, keyring *secrets.Keyring, client *http.Client, log zerolog.Logger) *Service {
+func NewService(db dbinterface.Querier, appsSvc *apps.Service, keyring *secrets.Keyring, client *http.Client, log zerolog.Logger) *Service {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
-	s := &Service{db: db, keyring: keyring, client: client, clock: time.Now, log: log}
+	s := &Service{db: db, apps: appsSvc, client: client, clock: time.Now, log: log}
 	s.life = connresource.New[domain.DownloadClient](db, keyring, func() time.Time { return s.clock() })
 	return s
 }
 
-// CreateParams is the input to Create. Secret is optional (a credential-free
-// qBittorrent instance behind a localhost bypass is valid).
+// CreateParams is the input to Create. A networked kind references an App either by
+// AppID (reuse) or by the inline Host/Username/Secret (get-or-create by identity);
+// Secret is optional (a credential-free qBittorrent behind a localhost bypass is
+// valid). A host-less kind (blackhole) takes none of these — Settings only.
 type CreateParams struct {
 	Name     string
 	Kind     string
+	AppID    *int64
 	Host     string
 	Username string
 	Secret   string
 	Settings domain.DownloadClientSettings
 }
 
-// Create persists a client with its secret encrypted: the row is written first
-// (to mint the id the AAD binds to), then the sealed secret, in one transaction.
+// Create persists a client. For a networked kind it get-or-creates the App holding the
+// identity/credential and stores only app_id on the row; a host-less kind stores
+// neither. The row insert runs in the Lifecycle transaction for its name-uniqueness
+// mapping (it seals no per-row secret — the credential lives on the App).
 func (s *Service) Create(ctx context.Context, p CreateParams) (domain.DownloadClient, error) {
 	p.Name = strings.TrimSpace(p.Name)
 	p.Kind = strings.TrimSpace(p.Kind)
 	p.Host = strings.TrimSpace(p.Host)
 	p.Username = strings.TrimSpace(p.Username)
-	if err := validate(p.Name, p.Kind, p.Host, p.Settings); err != nil {
+	if err := validate(p.Name, p.Kind, p.Host, p.Settings, p.AppID); err != nil {
+		return domain.DownloadClient{}, err
+	}
+	appID, err := s.resolveApp(ctx, p)
+	if err != nil {
 		return domain.DownloadClient{}, err
 	}
 	return s.life.Create(ctx, connresource.CreateSpec[domain.DownloadClient]{
 		Build: func(now time.Time, _ int64) domain.DownloadClient {
 			return domain.DownloadClient{
-				Name: p.Name, Kind: p.Kind, Enabled: true, Host: p.Host, Username: p.Username,
+				Name: p.Name, Kind: p.Kind, AppID: appID, Enabled: true,
 				Settings: p.Settings, CreatedAt: now, UpdatedAt: now,
 			}
 		},
 		Insert: func(ctx context.Context, q dbinterface.Execer, c domain.DownloadClient) (int64, error) {
 			return s.repo.InsertDownloadClient(ctx, q, c)
 		},
-		Secrets: func(_ domain.DownloadClient, _ string) []connresource.Secret {
-			return []connresource.Secret{{Discriminator: domain.DownloadClientSecret, Plaintext: p.Secret}}
-		},
-		SetSecrets: func(ctx context.Context, q dbinterface.Execer, id int64, encrypted []string, keyID string) error {
-			return s.repo.SetDownloadClientSecret(ctx, q, id, encrypted[0], keyID)
-		},
-		Finalize: func(c domain.DownloadClient, id int64, encrypted []string, keyID string) domain.DownloadClient {
-			c.ID, c.SecretEncrypted, c.KeyID = id, encrypted[0], keyID
+		// The credential is sealed on the App, not the row: the row seals nothing.
+		Secrets:    func(_ domain.DownloadClient, _ string) []connresource.Secret { return nil },
+		SetSecrets: func(context.Context, dbinterface.Execer, int64, []string, string) error { return nil },
+		Finalize: func(c domain.DownloadClient, id int64, _ []string, _ string) domain.DownloadClient {
+			c.ID = id
 			return c
 		},
 		Conflict: func(_ domain.DownloadClient) error {
@@ -92,20 +100,31 @@ func (s *Service) Create(ctx context.Context, p CreateParams) (domain.DownloadCl
 	})
 }
 
-// UpdateParams patches a client; nil fields are left unchanged. Kind is
-// immutable (no field here — the UI disables the kind select on edit). Secret is
-// nil = keep stored; a non-nil value (including "") rotates it.
+// resolveApp get-or-creates the App for a networked create, returning nil for a
+// host-less kind (which has no App).
+func (s *Service) resolveApp(ctx context.Context, p CreateParams) (*int64, error) {
+	if hostless(p.Kind) {
+		return nil, nil //nolint:nilnil // host-less kinds intentionally carry no App.
+	}
+	app, err := s.apps.Resolve(ctx, apps.Ref{
+		AppID: p.AppID, Kind: p.Kind, Name: p.Name, BaseURL: p.Host, Username: p.Username, APIKey: p.Secret,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("download: resolve app: %w", err)
+	}
+	return &app.ID, nil
+}
+
+// UpdateParams patches a client; nil fields are left unchanged. Identity and
+// credential are App-level now (rotated via the App), so only surface fields remain:
+// Name and the kind-specific Settings. Kind is immutable.
 type UpdateParams struct {
 	Name     *string
-	Host     *string
-	Username *string
-	Secret   *string
 	Settings *domain.DownloadClientSettings
 }
 
-// Update applies a patch, re-encrypting the secret when rotated. The read and
-// the full-row write run in one transaction so two overlapping PATCHes can't
-// lose each other's write.
+// Update applies a patch to the row's surface fields. The read and the full-row write
+// run in one transaction so two overlapping PATCHes can't lose each other's write.
 func (s *Service) Update(ctx context.Context, id int64, p UpdateParams) error {
 	return s.life.Update(ctx, id, connresource.UpdateSpec[domain.DownloadClient]{
 		Get: func(ctx context.Context, q dbinterface.Execer, id int64) (domain.DownloadClient, error) {
@@ -115,24 +134,11 @@ func (s *Service) Update(ctx context.Context, id int64, p UpdateParams) error {
 			if p.Name != nil {
 				c.Name = strings.TrimSpace(*p.Name)
 			}
-			if p.Host != nil {
-				c.Host = strings.TrimSpace(*p.Host)
-			}
-			if p.Username != nil {
-				c.Username = strings.TrimSpace(*p.Username)
-			}
 			if p.Settings != nil {
 				c.Settings = *p.Settings
 			}
-			return validate(c.Name, c.Kind, c.Host, c.Settings)
+			return validateNameKindSettings(c.Name, c.Kind, c.Settings)
 		},
-		Rotate: func(_ *domain.DownloadClient) (connresource.Secret, bool, error) {
-			if p.Secret == nil {
-				return connresource.Secret{}, false, nil
-			}
-			return connresource.Secret{Discriminator: domain.DownloadClientSecret, Plaintext: *p.Secret}, true, nil
-		},
-		Apply: func(c *domain.DownloadClient, encrypted, keyID string) { c.SecretEncrypted, c.KeyID = encrypted, keyID },
 		Touch: func(c *domain.DownloadClient, now time.Time) { c.UpdatedAt = now },
 		Write: func(ctx context.Context, q dbinterface.Execer, c domain.DownloadClient) error {
 			return s.repo.UpdateDownloadClient(ctx, q, c)
@@ -143,20 +149,39 @@ func (s *Service) Update(ctx context.Context, id int64, p UpdateParams) error {
 	})
 }
 
-// List returns all clients (the secret stays encrypted; the handler redacts it).
+// List returns all clients, each networked one's host/username enriched from its App
+// (a single App lookup shared across the list). Blackhole rows keep blank host.
 func (s *Service) List(ctx context.Context) ([]domain.DownloadClient, error) {
 	list, err := s.repo.ListDownloadClients(ctx, s.db)
 	if err != nil {
 		return nil, fmt.Errorf("download: list: %w", err)
 	}
+	index, err := s.apps.Index(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("download: list apps: %w", err)
+	}
+	for i := range list {
+		if list[i].AppID != nil {
+			if app, ok := index[*list[i].AppID]; ok {
+				list[i].Host, list[i].Username = app.BaseURL, app.Username
+			}
+		}
+	}
 	return list, nil
 }
 
-// Get returns one client by id.
+// Get returns one client by id, its host/username enriched from its App.
 func (s *Service) Get(ctx context.Context, id int64) (domain.DownloadClient, error) {
 	c, err := s.repo.GetDownloadClient(ctx, s.db, id)
 	if err != nil {
 		return domain.DownloadClient{}, fmt.Errorf("download: get: %w", err)
+	}
+	if c.AppID != nil {
+		app, err := s.apps.Get(ctx, *c.AppID)
+		if err != nil {
+			return domain.DownloadClient{}, fmt.Errorf("download: get app: %w", err)
+		}
+		c.Host, c.Username = app.BaseURL, app.Username
 	}
 	return c, nil
 }
@@ -182,19 +207,14 @@ func (s *Service) Delete(ctx context.Context, id int64) error {
 	})
 }
 
-// TestConnection decrypts a client's secret and confirms its driver can reach it.
-// Decrypt-then-build stays a Service seam: a future sync-to-apps feature (#237)
-// will need the plaintext secret at sync time, reached the same way.
+// TestConnection builds a client's driver (resolving identity + credential from its
+// App for a networked kind) and confirms it can reach the client.
 func (s *Service) TestConnection(ctx context.Context, id int64) error {
 	c, err := s.repo.GetDownloadClient(ctx, s.db, id)
 	if err != nil {
 		return fmt.Errorf("download: get: %w", err)
 	}
-	secret, err := s.keyring.Decrypt(c.ID, domain.DownloadClientSecret, c.SecretEncrypted)
-	if err != nil {
-		return fmt.Errorf("download: decrypt secret: %w", err)
-	}
-	driver, err := newDriver(c, secret, s.client)
+	driver, err := s.buildDriver(ctx, c)
 	if err != nil {
 		return err
 	}
@@ -204,42 +224,79 @@ func (s *Service) TestConnection(ctx context.Context, id int64) error {
 	return nil
 }
 
-// validate enforces a name, a registered kind, a host matching the kind's
-// hostMode, and settings matching the kind.
-func validate(name, kind, host string, settings domain.DownloadClientSettings) error {
+// buildDriver resolves a client's driver: a host-less kind uses its Settings only; a
+// networked kind loads its App for the host + decrypted credential (a NULL app_id on a
+// networked row means the boot fold hasn't run — ErrAppMigrationPending).
+func (s *Service) buildDriver(ctx context.Context, c domain.DownloadClient) (Driver, error) {
+	if hostless(c.Kind) {
+		return newDriver(c, "", s.client)
+	}
+	if c.AppID == nil {
+		return nil, fmt.Errorf("download client %d: %w", c.ID, domain.ErrAppMigrationPending)
+	}
+	app, err := s.apps.Get(ctx, *c.AppID)
+	if err != nil {
+		return nil, fmt.Errorf("download: get app: %w", err)
+	}
+	secret, err := s.apps.DecryptKey(app)
+	if err != nil {
+		return nil, fmt.Errorf("download: decrypt credential: %w", err)
+	}
+	c.Host, c.Username = app.BaseURL, app.Username
+	return newDriver(c, secret, s.client)
+}
+
+// hostless reports whether a kind has no network endpoint of its own (blackhole), and
+// therefore no App.
+func hostless(kind string) bool { return drivers[kind].host == hostNone }
+
+// validate enforces a name, a registered kind, a host/app reference appropriate to the
+// kind, and settings matching the kind.
+func validate(name, kind, host string, settings domain.DownloadClientSettings, appID *int64) error {
+	if err := validateNameKindSettings(name, kind, settings); err != nil {
+		return err
+	}
+	return validateHost(kind, host, appID)
+}
+
+// validateNameKindSettings checks the surface fields shared by create and update.
+func validateNameKindSettings(name, kind string, settings domain.DownloadClientSettings) error {
 	if name == "" {
 		return fmt.Errorf("%w: name is required", domain.ErrInvalid)
 	}
 	if !validateKind(kind) {
 		return fmt.Errorf("%w: unknown or unregistered download client kind %q", domain.ErrInvalid, kind)
 	}
-	if err := validateHost(kind, host); err != nil {
-		return err
-	}
 	return validateSettings(kind, settings)
 }
 
-// validateHost dispatches host validation on the kind's registered hostMode:
-// hostNone rejects any host (blackhole has no network endpoint of its own),
-// hostPort requires "host:port", and the default (hostURL) requires an
-// absolute http(s) URL.
-func validateHost(kind, host string) error {
-	switch drivers[kind].host {
-	case hostNone:
-		if host != "" {
-			return fmt.Errorf("%w: host must be empty for kind %q", domain.ErrInvalid, kind)
+// validateHost checks the create-time identity reference. A host-less kind
+// (blackhole) must carry no host or app. A networked kind references its App either by
+// app_id (reuse — host optional/ignored) or by an inline host validated against the
+// kind's hostMode (get-or-create).
+func validateHost(kind, host string, appID *int64) error {
+	if hostless(kind) {
+		if host != "" || appID != nil {
+			return fmt.Errorf("%w: host-less kind %q takes no host or app", domain.ErrInvalid, kind)
 		}
 		return nil
-	case hostPort:
+	}
+	if appID != nil {
+		return nil
+	}
+	if host == "" {
+		return fmt.Errorf("%w: host or app is required for kind %q", domain.ErrInvalid, kind)
+	}
+	// Only two host modes reach here (hostNone was handled above): a "host:port"
+	// kind or the default absolute-URL kind.
+	if drivers[kind].host == hostPort {
 		if _, _, err := net.SplitHostPort(host); err != nil {
 			return fmt.Errorf("%w: host must be host:port for kind %q", domain.ErrInvalid, kind)
 		}
 		return nil
-	case hostURL:
-		_, err := domain.ValidateAbsURL("host", host)
-		return err
 	}
-	return nil
+	_, err := domain.ValidateAbsURL("host", host)
+	return err
 }
 
 // validateSettings rejects a populated settings field that doesn't match kind,

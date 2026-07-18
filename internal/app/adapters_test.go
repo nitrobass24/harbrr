@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -13,6 +14,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/autobrr/harbrr/internal/announce"
+	"github.com/autobrr/harbrr/internal/apps"
 	"github.com/autobrr/harbrr/internal/auth"
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/domain"
@@ -77,7 +79,8 @@ func TestAnnounceSinkSkipsUsenet(t *testing.T) {
 	}
 
 	var announced atomic.Int64
-	svc := announce.NewService(db, auth.NewService(db), kr, func(domain.AnnounceConnection, string) (announce.Target, error) {
+	appsSvc := apps.NewService(db, kr, http.DefaultClient, zerolog.Nop())
+	svc := announce.NewService(db, appsSvc, auth.NewService(db), kr, func(domain.AnnounceConnection, string) (announce.Target, error) {
 		return countingTarget{n: &announced}, nil
 	}, zerolog.Nop())
 	if _, err := svc.CreateConnection(ctx, announce.CreateConnectionParams{
@@ -178,7 +181,8 @@ func newSinkTestEnv(t *testing.T, log zerolog.Logger, factory announce.TargetFac
 	if err != nil {
 		t.Fatalf("keyring: %v", err)
 	}
-	svc := announce.NewService(db, auth.NewService(db), kr, factory, zerolog.Nop())
+	appsSvc := apps.NewService(db, kr, http.DefaultClient, zerolog.Nop())
+	svc := announce.NewService(db, appsSvc, auth.NewService(db), kr, factory, zerolog.Nop())
 	if _, err := svc.CreateConnection(ctx, announce.CreateConnectionParams{
 		Name: "qui", Kind: domain.AnnounceKindQui, BaseURL: "http://qui:7476", APIKey: "k", HarbrrURL: "http://h:8787",
 	}); err != nil {

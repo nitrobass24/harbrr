@@ -84,15 +84,17 @@ func TestAnnounceConnectionUpdateAndTest(t *testing.T) {
 	base, c := serve(t, newEnv(t, api.Config{}))
 	setupAndLogin(t, base, c)
 
+	// Base URL points at the stub from the start (identity is App-level now; it is
+	// not patchable via the connection).
 	create := map[string]string{
-		"name": "qui", "kind": "qui", "baseUrl": "http://qui:7476", "apiKey": "qui_secret",
+		"name": "qui", "kind": "qui", "baseUrl": srv.URL, "apiKey": "qui_secret",
 		"harbrrUrl": "http://harbrr:7478",
 	}
 	resp, body := do(t, c, http.MethodPost, base+"/api/announce-connections", create, nil)
 	mustStatus(t, resp, body, http.StatusCreated)
 
-	// PATCH: rename and repoint the base URL at the stub; apiKey omitted keeps the key.
-	patch := map[string]any{"name": "qui-renamed", "baseUrl": srv.URL}
+	// PATCH is name-only now (base/harbrr/apikey moved to the App).
+	patch := map[string]any{"name": "qui-renamed"}
 	resp, body = do(t, c, http.MethodPatch, base+"/api/announce-connections/1", patch, nil)
 	mustStatus(t, resp, body, http.StatusNoContent)
 
@@ -113,11 +115,7 @@ func TestAnnounceConnectionUpdateAndTest(t *testing.T) {
 		t.Errorf("apiKey = %q, want redacted after patch", got.APIKey)
 	}
 
-	// A non-absolute base URL is a 400 (and leaves the stored URL intact).
-	resp, body = do(t, c, http.MethodPatch, base+"/api/announce-connections/1", map[string]any{"baseUrl": "nope"}, nil)
-	mustStatus(t, resp, body, http.StatusBadRequest)
-
-	// Test probes the repointed stub (reachable, key kept) → ok:true.
+	// Test probes the stub (reachable, key kept) → ok:true.
 	resp, body = do(t, c, http.MethodPost, base+"/api/announce-connections/1/test", nil, nil)
 	mustStatus(t, resp, body, http.StatusOK)
 	var res struct {

@@ -35,8 +35,10 @@ func defaultFreeleechMode(kind string) string {
 }
 
 // validateCreate checks the required fields and enumerated values of a create request.
-// It normalizes p.BaseURL/p.HarbrrURL to their trimmed form in place (via the pointer)
-// so the caller persists the normalized URLs.
+// Identity (base URL, api key, harbrr URL) is the App's concern and is validated by the
+// apps service on get-or-create; here they are required only for the inline path (no
+// AppID) so an inline create can actually mint an App. For the AppID (reuse) path the
+// App already owns validated identity. Normalizes the inline URLs in place.
 func validateCreate(p *CreateConnectionParams) error {
 	if strings.TrimSpace(p.Name) == "" {
 		return fmt.Errorf("%w: name is required", domain.ErrInvalid)
@@ -44,22 +46,24 @@ func validateCreate(p *CreateConnectionParams) error {
 	if err := validateKind(p.Kind); err != nil {
 		return err
 	}
-	// Both URLs must be absolute http(s): harbrr calls BaseURL, and HarbrrURL is
-	// embedded in each pushed indexer so the app can reach harbrr's feed — a
-	// malformed/relative value would silently produce an unreachable connection.
-	base, err := domain.ValidateAbsURL("base url", p.BaseURL)
-	if err != nil {
-		return err
+	if p.AppID == nil {
+		// Inline get-or-create: harbrr calls BaseURL, and HarbrrURL is embedded in
+		// each pushed indexer so the app can reach harbrr's feed — a malformed/relative
+		// value would silently produce an unreachable connection.
+		base, err := domain.ValidateAbsURL("base url", p.BaseURL)
+		if err != nil {
+			return err
+		}
+		p.BaseURL = base
+		if strings.TrimSpace(p.APIKey) == "" {
+			return fmt.Errorf("%w: api key is required", domain.ErrInvalid)
+		}
+		harbrr, err := domain.ValidateAbsURL("harbrr url", p.HarbrrURL)
+		if err != nil {
+			return err
+		}
+		p.HarbrrURL = harbrr
 	}
-	p.BaseURL = base
-	if strings.TrimSpace(p.APIKey) == "" {
-		return fmt.Errorf("%w: api key is required", domain.ErrInvalid)
-	}
-	harbrr, err := domain.ValidateAbsURL("harbrr url", p.HarbrrURL)
-	if err != nil {
-		return err
-	}
-	p.HarbrrURL = harbrr
 	if err := validateSyncLevel(p.SyncLevel); err != nil {
 		return err
 	}
@@ -78,20 +82,6 @@ func applyUpdate(conn *domain.AppConnection, p UpdateConnectionParams) error {
 			return err
 		}
 		conn.Name = *p.Name
-	}
-	if p.BaseURL != nil {
-		base, err := domain.ValidateAbsURL("base url", *p.BaseURL)
-		if err != nil {
-			return err
-		}
-		conn.BaseURL = base
-	}
-	if p.HarbrrURL != nil {
-		harbrr, err := domain.ValidateAbsURL("harbrr url", *p.HarbrrURL)
-		if err != nil {
-			return err
-		}
-		conn.HarbrrURL = harbrr
 	}
 	if p.Priority != nil {
 		conn.Priority = *p.Priority

@@ -21,6 +21,7 @@ type announceConnectionResponse struct {
 	ID        int64     `json:"id"`
 	Name      string    `json:"name"`
 	Kind      string    `json:"kind"`
+	AppID     *int64    `json:"appId,omitempty"`
 	BaseURL   string    `json:"baseUrl"`
 	HarbrrURL string    `json:"harbrrUrl,omitempty"`
 	APIKey    string    `json:"apiKey"`
@@ -48,6 +49,7 @@ func (rt *router) createAnnounceConnection(w http.ResponseWriter, r *http.Reques
 	var req struct {
 		Name      string `json:"name"`
 		Kind      string `json:"kind"`
+		AppID     *int64 `json:"appId"`
 		BaseURL   string `json:"baseUrl"`
 		APIKey    string `json:"apiKey"`
 		HarbrrURL string `json:"harbrrUrl"`
@@ -56,37 +58,10 @@ func (rt *router) createAnnounceConnection(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	conn, err := rt.announce.CreateConnection(r.Context(), announce.CreateConnectionParams{
-		Name: req.Name, Kind: req.Kind, BaseURL: req.BaseURL, APIKey: req.APIKey, HarbrrURL: req.HarbrrURL,
+		Name: req.Name, Kind: req.Kind, AppID: req.AppID, BaseURL: req.BaseURL, APIKey: req.APIKey, HarbrrURL: req.HarbrrURL,
 	})
 	if err != nil {
 		rt.writeServiceError(w, "create announce connection", err)
-		return
-	}
-	writeJSON(w, http.StatusCreated, toAnnounceResponse(conn))
-}
-
-// createAnnounceTargetFromAppConnection seeds a new qui announce-connection from an
-// existing qui app-connection: it reuses the app-connection's base URL, decrypted qui
-// API key, and harbrr URL, minting a fresh dedicated harbrr key for the new row (issue
-// #72 — one-click announce target, no re-entering credentials). QuiSeed rejects
-// non-qui kinds; CreateConnection's existing (kind, base_url) unique constraint
-// rejects a duplicate target with 409.
-func (rt *router) createAnnounceTargetFromAppConnection(w http.ResponseWriter, r *http.Request) {
-	id, ok := rt.connectionID(w, r)
-	if !ok {
-		return
-	}
-	seed, err := rt.appsync.QuiSeed(r.Context(), id)
-	if err != nil {
-		rt.writeServiceError(w, "seed announce target", err)
-		return
-	}
-	conn, err := rt.announce.CreateConnection(r.Context(), announce.CreateConnectionParams{
-		Name: seed.Name, Kind: domain.AnnounceKindQui,
-		BaseURL: seed.BaseURL, APIKey: seed.APIKey, HarbrrURL: seed.HarbrrURL,
-	})
-	if err != nil {
-		rt.writeServiceError(w, "seed announce target", err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, toAnnounceResponse(conn))
@@ -115,16 +90,13 @@ func (rt *router) updateAnnounceConnection(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	var req struct {
-		Name      *string `json:"name"`
-		BaseURL   *string `json:"baseUrl"`
-		APIKey    *string `json:"apiKey"`
-		HarbrrURL *string `json:"harbrrUrl"`
+		Name *string `json:"name"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
 	if err := rt.announce.UpdateConnection(r.Context(), id, announce.UpdateConnectionParams{
-		Name: req.Name, BaseURL: req.BaseURL, APIKey: req.APIKey, HarbrrURL: req.HarbrrURL,
+		Name: req.Name,
 	}); err != nil {
 		rt.writeServiceError(w, "update announce connection", err)
 		return
@@ -196,7 +168,7 @@ func announceConnectionID(w http.ResponseWriter, r *http.Request) (int64, bool) 
 // toAnnounceResponse maps a connection to its API view, redacting the tool key.
 func toAnnounceResponse(c domain.AnnounceConnection) announceConnectionResponse {
 	return announceConnectionResponse{
-		ID: c.ID, Name: c.Name, Kind: c.Kind, BaseURL: c.BaseURL, HarbrrURL: c.HarbrrURL,
+		ID: c.ID, Name: c.Name, Kind: c.Kind, AppID: c.AppID, BaseURL: c.BaseURL, HarbrrURL: c.HarbrrURL,
 		APIKey: secrets.Redacted, Enabled: c.Enabled, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
 	}
 }

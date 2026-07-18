@@ -17,10 +17,12 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/autobrr/harbrr/internal/announce"
+	"github.com/autobrr/harbrr/internal/apps"
 	"github.com/autobrr/harbrr/internal/appsync"
 	"github.com/autobrr/harbrr/internal/auth"
 	"github.com/autobrr/harbrr/internal/backup"
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/download"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/native/catalog"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
@@ -164,9 +166,11 @@ func newEnvFull(t *testing.T, cfg api.Config, buildCache func(db *database.DB) *
 	authSvc := auth.NewServiceWithPasswordHasher(db, fastPasswordHasher{})
 	reg := registry.New(db, ldr, keyring, catalog.All(), registryOpts...)
 	source := &fakeAppSource{}
-	appSync := appsync.NewService(db, source, authSvc, keyring, http.DefaultClient, zerolog.Nop())
-	announceSvc := announce.NewService(db, authSvc, keyring,
+	appsSvc := apps.NewService(db, keyring, http.DefaultClient, zerolog.Nop())
+	appSync := appsync.NewService(db, source, appsSvc, authSvc, keyring, http.DefaultClient, zerolog.Nop())
+	announceSvc := announce.NewService(db, appsSvc, authSvc, keyring,
 		announce.DefaultTargetFactory(http.DefaultClient, nil, nil), zerolog.Nop())
+	downloadSvc := download.NewService(db, appsSvc, keyring, http.DefaultClient, zerolog.Nop())
 	notifySvc := notify.NewService(db, keyring, http.DefaultClient, zerolog.Nop())
 	proxySvc := proxy.NewService(db, keyring)
 	solverSvc := solver.NewService(db, keyring)
@@ -178,8 +182,8 @@ func newEnvFull(t *testing.T, cfg api.Config, buildCache func(db *database.DB) *
 	}
 
 	handler, err := api.NewRouter(api.Deps{
-		Auth: authSvc, Registry: reg, Loader: ldr, AppSync: appSync, Announce: announceSvc,
-		Notify: notifySvc, Proxy: proxySvc, Solver: solverSvc, Backup: backupSvc, Sessions: sm,
+		Auth: authSvc, Registry: reg, Loader: ldr, Apps: appsSvc, AppSync: appSync, Announce: announceSvc,
+		Download: downloadSvc, Notify: notifySvc, Proxy: proxySvc, Solver: solverSvc, Backup: backupSvc, Sessions: sm,
 		Cache: cache, Logger: logger, LogLevel: api.NewLogLevelStore(db, nil),
 	}, cfg)
 	if err != nil {

@@ -884,30 +884,90 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
-  /api/app-connections/{id}/announce-target:
-    post:
-      summary: Seed a qui announce target from this app-connection
+  /api/apps:
+    get:
+      summary: List first-class app identities (credentials redacted)
       description: >
-        One-click cross-seed setup for a qui app-connection: reuses its base URL,
-        decrypted qui API key, and harbrr URL to create a matching announce-connection
-        (kind qui), minting a fresh dedicated harbrr key for the new row. Only valid for
-        a qui app-connection; fails with 409 if a qui announce target for the same base
-        URL already exists.
-      operationId: createAnnounceTargetFromAppConnection
-      tags: [App Connections]
+        Apps hold an external service's identity + one sealed credential + its harbrr
+        vantage, stored once and referenced by the app-sync, announce, and download
+        surfaces (ADR 0004). Each entry carries per-surface reference counts.
+      operationId: listApps
+      tags: [Apps]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the configured apps (credentials redacted)
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/App" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/apps/{id}:
+    get:
+      summary: Get one app (credential redacted)
+      operationId: getApp
+      tags: [Apps]
       security: [{ session: [] }, { apiKey: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
       responses:
-        "201":
-          description: the created announce connection
+        "200":
+          description: the app
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/AnnounceConnection" }
+              schema: { $ref: "#/components/schemas/App" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      summary: Update an app (a new apiKey rotates the credential for every surface)
+      operationId: updateApp
+      tags: [Apps]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateApp" }
+      responses:
+        "204": { description: updated }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      summary: Delete an app (409 when still referenced by a surface)
+      operationId: deleteApp
+      tags: [Apps]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: deleted }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/apps/{id}/qui-instances:
+    get:
+      summary: Proxy a qui app's instance list (server-side; the key never leaves harbrr)
+      operationId: appQuiInstances
+      tags: [Apps]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "200":
+          description: the qui instances (ok=false carries a scrubbed error)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QuiInstances" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /api/announce-connections:
     get:
@@ -2465,6 +2525,62 @@ components:
         ok: { type: boolean }
         error: { type: string }
       required: [ok]
+    App:
+      type: object
+      description: >
+        A first-class external service harbrr connects to — a (kind, base_url) identity
+        plus one sealed credential and the app's harbrr vantage, stored once and
+        referenced by the app-sync/announce/download surfaces (ADR 0004). The credential
+        (apiKey) is never echoed — it reads back as the <redacted> sentinel.
+      properties:
+        id: { type: integer, format: int64 }
+        kind: { type: string }
+        name: { type: string }
+        baseUrl: { type: string }
+        username: { type: string, description: empty for API-key apps; set for user+password apps }
+        apiKey: { type: string, description: "the credential (API key or password), redacted (<redacted>)" }
+        harbrrUrl: { type: string, description: how this app reaches harbrr's feed (unused by download clients) }
+        enabled: { type: boolean }
+        references:
+          type: object
+          description: how many surface rows reference this app
+          properties:
+            appConnections: { type: integer }
+            announce: { type: integer }
+            download: { type: integer }
+          required: [appConnections, announce, download]
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, kind, name, baseUrl, username, apiKey, harbrrUrl, enabled, references, createdAt, updatedAt]
+    UpdateApp:
+      type: object
+      description: >
+        A partial update; omitted fields are unchanged. apiKey, when present, rotates the
+        credential — every referencing surface decrypts through the app, so the rotation
+        propagates. Omit apiKey to keep the stored credential (never re-submit <redacted>).
+      properties:
+        name: { type: string }
+        baseUrl: { type: string }
+        username: { type: string }
+        harbrrUrl: { type: string }
+        enabled: { type: boolean }
+        apiKey: { type: string }
+    QuiInstance:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+      required: [id, name]
+    QuiInstances:
+      type: object
+      description: >
+        The proxied qui instance list. ok=false carries a credential-scrubbed error
+        (reachability/auth failure), mirroring the test endpoints; the HTTP status is 200.
+      properties:
+        ok: { type: boolean }
+        error: { type: string }
+        instances: { type: array, items: { $ref: "#/components/schemas/QuiInstance" } }
+      required: [ok]
     AppConnection:
       type: object
       description: >
@@ -2474,8 +2590,9 @@ components:
         id: { type: integer, format: int64 }
         name: { type: string }
         kind: { type: string, enum: [sonarr, radarr, lidarr, readarr, whisparr, qui] }
-        baseUrl: { type: string, description: the app's own API base URL }
-        harbrrUrl: { type: string, description: the base URL this app uses to reach harbrr's feed }
+        appId: { type: integer, format: int64, nullable: true, description: the App holding this connection's identity + credential (ADR 0004) }
+        baseUrl: { type: string, description: the app's own API base URL (enriched from the App) }
+        harbrrUrl: { type: string, description: the base URL this app uses to reach harbrr's feed (from the App) }
         apiKey: { type: string, description: "the app's API key, redacted (<redacted>)" }
         enabled: { type: boolean }
         syncLevel:
@@ -2511,11 +2628,18 @@ components:
       required: [id, name, kind, baseUrl, harbrrUrl, enabled, syncLevel, indexScope, freeleechMode, priority, createdAt, updatedAt]
     CreateConnection:
       type: object
+      description: >
+        References the App holding the app's identity + credential either by appId
+        (reuse an existing App) OR inline (baseUrl + apiKey [+ username], which
+        get-or-creates the App by (kind, base_url)). harbrrUrl is required on the inline
+        path (it backfills the App's feed URL).
       properties:
         name: { type: string }
         kind: { type: string, enum: [sonarr, radarr, lidarr, readarr, whisparr, qui] }
-        baseUrl: { type: string }
-        apiKey: { type: string, description: the app's API key (stored encrypted) }
+        appId: { type: integer, format: int64, description: reuse an existing App (omit baseUrl/apiKey/harbrrUrl) }
+        baseUrl: { type: string, description: inline App identity (get-or-create) }
+        apiKey: { type: string, description: the app's API key (sealed on the App) }
+        username: { type: string, description: for user+password apps (empty for API-key apps) }
         harbrrUrl: { type: string }
         syncLevel: { type: string, enum: [full, add_update], default: full }
         indexScope: { type: string, enum: [all, selected], default: all }
@@ -2526,17 +2650,15 @@ components:
           format: int64
           nullable: true
           description: "optional sync profile reference; must exist, must not be set for qui, and a non-empty category set must overlap the app's content range (else 400)"
-      required: [name, kind, baseUrl, apiKey, harbrrUrl]
+      required: [name, kind]
     UpdateConnection:
       type: object
       description: >
-        A partial update; omitted fields are unchanged. apiKey, when present, rotates
-        the stored app credential.
+        A partial update of the connection's surface fields; omitted fields are
+        unchanged. Identity + credential (base URL, api key, harbrr URL) are App-level —
+        rotated via the App (PATCH /api/apps/{id}), not here.
       properties:
         name: { type: string }
-        baseUrl: { type: string }
-        apiKey: { type: string }
-        harbrrUrl: { type: string }
         syncLevel: { type: string, enum: [full, add_update] }
         indexScope: { type: string, enum: [all, selected] }
         freeleechMode: { type: string, enum: [honor, bypass] }
@@ -2557,8 +2679,9 @@ components:
         id: { type: integer, format: int64 }
         name: { type: string }
         kind: { type: string, enum: [qui, crossseed-v6] }
-        baseUrl: { type: string, description: the tool's own API base URL }
-        harbrrUrl: { type: string, description: "the base URL the tool uses to reach harbrr's /dl link (cross-seed v6)" }
+        appId: { type: integer, format: int64, nullable: true, description: the App holding this connection's identity + credential (ADR 0004) }
+        baseUrl: { type: string, description: the tool's own API base URL (enriched from the App) }
+        harbrrUrl: { type: string, description: "the base URL the tool uses to reach harbrr's /dl link (from the App)" }
         apiKey: { type: string, description: "the tool's API key, redacted (<redacted>)" }
         enabled: { type: boolean }
         createdAt: { type: string, format: date-time }
@@ -2566,24 +2689,25 @@ components:
       required: [id, name, kind, baseUrl, enabled, createdAt, updatedAt]
     CreateAnnounceConnection:
       type: object
+      description: >
+        References the App by appId (reuse) OR inline (baseUrl + apiKey [+ username],
+        get-or-create). harbrrUrl is required on the inline path.
       properties:
         name: { type: string }
         kind: { type: string, enum: [qui, crossseed-v6] }
-        baseUrl: { type: string }
-        apiKey: { type: string, description: the tool's API key (stored encrypted) }
+        appId: { type: integer, format: int64, description: reuse an existing App (omit baseUrl/apiKey/harbrrUrl) }
+        baseUrl: { type: string, description: inline App identity (get-or-create) }
+        apiKey: { type: string, description: the tool's API key (sealed on the App) }
+        username: { type: string }
         harbrrUrl: { type: string, description: "the base URL the tool uses to reach harbrr's /dl link (both kinds fetch it)" }
-      required: [name, kind, baseUrl, apiKey, harbrrUrl]
+      required: [name, kind]
     UpdateAnnounceConnection:
       type: object
       description: >
-        A partial update; omitted fields are unchanged. apiKey, when present, rotates the
-        stored tool credential (omit it to keep the stored key — never re-submit the
-        <redacted> sentinel). kind is immutable (change it by delete + recreate).
+        A partial update; omitted fields are unchanged. Identity + credential are
+        App-level now — this PATCH is name-only. kind is immutable.
       properties:
         name: { type: string }
-        baseUrl: { type: string }
-        apiKey: { type: string }
-        harbrrUrl: { type: string }
     Notification:
       type: object
       description: >
@@ -2716,8 +2840,9 @@ components:
         kind:
           type: string
           enum: [qbittorrent, blackhole, qui, flood, download-station]
+        appId: { type: integer, format: int64, nullable: true, description: the App holding this client's identity + credential; null for host-less kinds (blackhole) (ADR 0004) }
         enabled: { type: boolean }
-        host: { type: string }
+        host: { type: string, description: enriched from the App (blank for host-less kinds) }
         username: { type: string }
         secret: { type: string, description: "the client's secret, redacted (<redacted>)" }
         settings: { $ref: "#/components/schemas/DownloadClientSettings" }
@@ -2726,24 +2851,28 @@ components:
       required: [id, name, kind, enabled, host, username, secret, settings, createdAt, updatedAt]
     CreateDownloadClient:
       type: object
+      description: >
+        A networked kind references the App by appId (reuse) OR inline (host [+ username
+        + secret], get-or-create). A host-less kind (blackhole) takes neither — Settings
+        only.
       properties:
         name: { type: string }
         kind:
           type: string
           enum: [qbittorrent, blackhole, qui, flood, download-station]
-        host: { type: string, description: "must be empty for kinds with no network endpoint (e.g. blackhole)" }
+        appId: { type: integer, format: int64, description: reuse an existing App (omit host/username/secret) }
+        host: { type: string, description: "inline App identity (get-or-create); must be empty for host-less kinds (blackhole)" }
         username: { type: string }
-        secret: { type: string, description: "optional; stored encrypted" }
+        secret: { type: string, description: "optional; sealed on the App" }
         settings: { $ref: "#/components/schemas/DownloadClientSettings" }
-      required: [name, kind, host]
+      required: [name, kind]
     UpdateDownloadClient:
       type: object
-      description: a partial update; omitted fields are left unchanged. Kind is immutable and not accepted here.
+      description: >
+        A partial update of the client's surface fields; omitted fields are unchanged.
+        Identity + credential (host, username, secret) are App-level now. Kind is immutable.
       properties:
         name: { type: string }
-        host: { type: string }
-        username: { type: string }
-        secret: { type: string, description: "rotates the secret (stored encrypted); omitted keeps the stored one" }
         settings: { $ref: "#/components/schemas/DownloadClientSettings" }
     Solver:
       type: object

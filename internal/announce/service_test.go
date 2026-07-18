@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/autobrr/harbrr/internal/announce"
+	"github.com/autobrr/harbrr/internal/apps"
 	"github.com/autobrr/harbrr/internal/auth"
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/domain"
@@ -41,7 +42,7 @@ func (f *fakeTarget) Announce(_ context.Context, rel announce.Release) (announce
 
 func (f *fakeTarget) Probe(context.Context) error { return f.probeErr }
 
-func newService(t *testing.T, factory announce.TargetFactory) (*announce.Service, *database.DB) {
+func newService(t *testing.T, factory announce.TargetFactory) (*announce.Service, *database.DB, *apps.Service) {
 	t.Helper()
 	db, err := database.Open(":memory:")
 	if err != nil {
@@ -55,13 +56,14 @@ func newService(t *testing.T, factory announce.TargetFactory) (*announce.Service
 	if err != nil {
 		t.Fatalf("keyring: %v", err)
 	}
-	return announce.NewService(db, auth.NewService(db), kr, factory, zerolog.Nop()), db
+	appsSvc := apps.NewService(db, kr, http.DefaultClient, zerolog.Nop())
+	return announce.NewService(db, appsSvc, auth.NewService(db), kr, factory, zerolog.Nop()), db, appsSvc
 }
 
 func TestServiceCreateGetDelete(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, _ := newService(t, func(domain.AnnounceConnection, string) (announce.Target, error) {
+	svc, _, appsSvc := newService(t, func(domain.AnnounceConnection, string) (announce.Target, error) {
 		return &fakeTarget{}, nil
 	})
 
@@ -71,7 +73,7 @@ func TestServiceCreateGetDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateConnection: %v", err)
 	}
-	if conn.ID == 0 || conn.HarbrrAPIKeyID == 0 {
+	if conn.ID == 0 || conn.HarbrrAPIKeyID == 0 || conn.AppID == nil {
 		t.Fatalf("connection not fully persisted: %+v", conn)
 	}
 
@@ -79,8 +81,21 @@ func TestServiceCreateGetDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetConnection: %v", err)
 	}
-	if got.APIKeyEncrypted == "" || got.APIKeyEncrypted == "qui_secret" {
-		t.Errorf("tool key not encrypted at rest: %q", got.APIKeyEncrypted)
+	// The tool credential is no longer sealed on the connection row — only the App owns
+	// it now (AAD (app.ID, domain.AppSecret)).
+	if got.APIKeyEncrypted != "" {
+		t.Errorf("tool key sealed on the connection row, want it App-only: %q", got.APIKeyEncrypted)
+	}
+	app, err := appsSvc.Get(ctx, *conn.AppID)
+	if err != nil {
+		t.Fatalf("apps.Get: %v", err)
+	}
+	if app.APIKeyEncrypted == "" || app.APIKeyEncrypted == "qui_secret" {
+		t.Errorf("tool key not encrypted at rest on the app: %q", app.APIKeyEncrypted)
+	}
+	toolKey, err := appsSvc.DecryptKey(app)
+	if err != nil || toolKey != "qui_secret" {
+		t.Errorf("DecryptKey(app) = %q, err %v, want the original tool key round-tripping", toolKey, err)
 	}
 
 	// the decrypted harbrr key (for the /dl link) round-trips and is not the ciphertext.
@@ -100,7 +115,7 @@ func TestServiceCreateGetDelete(t *testing.T) {
 func TestServiceCreateValidation(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, _ := newService(t, func(domain.AnnounceConnection, string) (announce.Target, error) { return &fakeTarget{}, nil })
+	svc, _, _ := newService(t, func(domain.AnnounceConnection, string) (announce.Target, error) { return &fakeTarget{}, nil })
 
 	// cross-seed v6 requires a harbrr URL (it fetches the /dl link).
 	_, err := svc.CreateConnection(ctx, announce.CreateConnectionParams{
@@ -132,7 +147,7 @@ func TestServiceCreateValidation(t *testing.T) {
 func TestServiceCreateTrimsURLs(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, _ := newService(t, func(domain.AnnounceConnection, string) (announce.Target, error) { return &fakeTarget{}, nil })
+	svc, _, _ := newService(t, func(domain.AnnounceConnection, string) (announce.Target, error) { return &fakeTarget{}, nil })
 
 	conn, err := svc.CreateConnection(ctx, announce.CreateConnectionParams{
 		Name: "qui", Kind: domain.AnnounceKindQui,
@@ -164,11 +179,117 @@ func TestServiceCreateTrimsURLs(t *testing.T) {
 	}
 }
 
+// TestServiceCreateReusesAppByID proves the AppID (reuse) create path: a second
+// connection created with the first's AppID skips the inline identity fields entirely
+// and both connections read back the same App's BaseURL/HarbrrURL — no second App row
+// is created.
+func TestServiceCreateReusesAppByID(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, _, appsSvc := newService(t, func(domain.AnnounceConnection, string) (announce.Target, error) { return &fakeTarget{}, nil })
+
+	// The App pre-exists — e.g. it was created by some other surface (app-sync) pointed
+	// at the same qui instance — so this exercises the pure AppID (reuse) path, not
+	// announce's own create-and-reference.
+	app, err := appsSvc.Resolve(ctx, apps.Ref{
+		Kind: domain.AnnounceKindQui, Name: "qui", BaseURL: "http://qui:7476", APIKey: "k", HarbrrURL: "http://h:8787",
+	})
+	if err != nil {
+		t.Fatalf("pre-create app: %v", err)
+	}
+
+	conn, err := svc.CreateConnection(ctx, announce.CreateConnectionParams{
+		Name: "qui-conn", Kind: domain.AnnounceKindQui, AppID: &app.ID,
+	})
+	if err != nil {
+		t.Fatalf("create by AppID: %v", err)
+	}
+	if conn.AppID == nil || *conn.AppID != app.ID {
+		t.Fatalf("conn.AppID = %v, want the reused %v", conn.AppID, app.ID)
+	}
+
+	got, err := svc.GetConnection(ctx, conn.ID)
+	if err != nil {
+		t.Fatalf("GetConnection: %v", err)
+	}
+	if got.BaseURL != "http://qui:7476" || got.HarbrrURL != "http://h:8787" {
+		t.Errorf("connection not enriched from the reused App: %+v", got)
+	}
+
+	list, err := appsSvc.List(ctx)
+	if err != nil {
+		t.Fatalf("apps.List: %v", err)
+	}
+	if len(list) != 1 {
+		t.Errorf("apps after AppID-reuse create = %d, want exactly 1 (no second App row)", len(list))
+	}
+}
+
+// TestServiceListEnrichesFromApp proves ListConnections enriches each row's
+// BaseURL/HarbrrURL from its App (the single read path), not from the row's own
+// (now-blank) columns.
+func TestServiceListEnrichesFromApp(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, _, _ := newService(t, func(domain.AnnounceConnection, string) (announce.Target, error) { return &fakeTarget{}, nil })
+
+	if _, err := svc.CreateConnection(ctx, announce.CreateConnectionParams{
+		Name: "qui", Kind: domain.AnnounceKindQui, BaseURL: "http://qui:7476", APIKey: "k", HarbrrURL: "http://h:8787",
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	list, err := svc.ListConnections(ctx)
+	if err != nil {
+		t.Fatalf("ListConnections: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("ListConnections len = %d, want 1", len(list))
+	}
+	if list[0].BaseURL != "http://qui:7476" || list[0].HarbrrURL != "http://h:8787" {
+		t.Errorf("ListConnections did not enrich from the App: %+v", list[0])
+	}
+}
+
+// TestServicePendingAppMigration proves a row whose app_id is still NULL (the boot fold
+// hasn't run yet) is refused with domain.ErrAppMigrationPending on a *use* path
+// (TestConnection), and is skipped — not fatal — inside Push's best-effort fan-out.
+func TestServicePendingAppMigration(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	pushed := 0
+	svc, db, _ := newService(t, func(domain.AnnounceConnection, string) (announce.Target, error) {
+		pushed++
+		return &fakeTarget{matched: true}, nil
+	})
+
+	repo := database.AnnounceConnections{}
+	now := time.Now().UTC()
+	id, err := repo.InsertAnnounceConnection(ctx, db, domain.AnnounceConnection{
+		Name: "pending", Kind: domain.AnnounceKindQui, Enabled: true, // AppID left nil
+		CreatedAt: now, UpdatedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("insert pending row: %v", err)
+	}
+
+	if err := svc.TestConnection(ctx, id); !errors.Is(err, domain.ErrAppMigrationPending) {
+		t.Errorf("TestConnection(pending) err = %v, want ErrAppMigrationPending", err)
+	}
+
+	matched := svc.Push(ctx, func(domain.AnnounceConnection) []announce.Release {
+		return []announce.Release{{Name: "X", GUID: "g1"}}
+	})
+	if matched != 0 || pushed != 0 {
+		t.Errorf("Push(pending row) matched=%d pushed=%d, want 0/0 (skipped, not fatal)", matched, pushed)
+	}
+}
+
 // TestServiceHarbrrKeyRejectsRevoked proves HarbrrKey refuses a connection whose minted key
 // was revoked out of band (FK SET NULL → id 0), so a dead /dl signing key is never used.
 func TestServiceHarbrrKeyRejectsRevoked(t *testing.T) {
 	t.Parallel()
-	svc, _ := newService(t, func(domain.AnnounceConnection, string) (announce.Target, error) { return &fakeTarget{}, nil })
+	svc, _, _ := newService(t, func(domain.AnnounceConnection, string) (announce.Target, error) { return &fakeTarget{}, nil })
 	_, err := svc.HarbrrKey(domain.AnnounceConnection{ID: 1, HarbrrAPIKeyID: 0})
 	if !errors.Is(err, domain.ErrInvalid) {
 		t.Errorf("HarbrrKey(revoked) err = %v, want ErrInvalid", err)
@@ -179,7 +300,7 @@ func TestServicePushFansOutToEnabledOnly(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	targets := map[int64]*fakeTarget{}
-	svc, _ := newService(t, func(conn domain.AnnounceConnection, _ string) (announce.Target, error) {
+	svc, _, _ := newService(t, func(conn domain.AnnounceConnection, _ string) (announce.Target, error) {
 		tgt := &fakeTarget{matched: true}
 		targets[conn.ID] = tgt
 		return tgt, nil
@@ -217,13 +338,14 @@ func TestServicePushFansOutToEnabledOnly(t *testing.T) {
 	}
 }
 
-// TestServiceUpdateConnection proves the PATCH merge semantics: a non-nil field is applied
-// (name/base/harbrr), an omitted apiKey keeps the stored ciphertext untouched, and a
-// provided apiKey rotates it.
+// TestServiceUpdateConnection proves UpdateConnection is name-only now (identity/
+// credential moved to the App): a non-nil Name patches, and BaseURL/HarbrrURL/
+// APIKeyEncrypted — which UpdateConnectionParams no longer even exposes — stay exactly
+// as CreateConnection left them.
 func TestServiceUpdateConnection(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, _ := newService(t, func(domain.AnnounceConnection, string) (announce.Target, error) { return &fakeTarget{}, nil })
+	svc, _, _ := newService(t, func(domain.AnnounceConnection, string) (announce.Target, error) { return &fakeTarget{}, nil })
 
 	conn, err := svc.CreateConnection(ctx, announce.CreateConnectionParams{
 		Name: "qui", Kind: domain.AnnounceKindQui, BaseURL: "http://qui:7476", APIKey: "orig_key", HarbrrURL: "http://h:8787",
@@ -233,42 +355,30 @@ func TestServiceUpdateConnection(t *testing.T) {
 	}
 	origCipher := conn.APIKeyEncrypted
 
-	// Name/base/harbrr merge; apiKey omitted must keep the stored key.
-	if err := svc.UpdateConnection(ctx, conn.ID, announce.UpdateConnectionParams{
-		Name: ptr("qui-renamed"), BaseURL: ptr("http://qui:9999"), HarbrrURL: ptr("http://h2:8787"),
-	}); err != nil {
+	if err := svc.UpdateConnection(ctx, conn.ID, announce.UpdateConnectionParams{Name: ptr("qui-renamed")}); err != nil {
 		t.Fatalf("UpdateConnection: %v", err)
 	}
 	got, err := svc.GetConnection(ctx, conn.ID)
 	if err != nil {
 		t.Fatalf("GetConnection: %v", err)
 	}
-	if got.Name != "qui-renamed" || got.BaseURL != "http://qui:9999" || got.HarbrrURL != "http://h2:8787" {
-		t.Errorf("merge not applied: %+v", got)
+	if got.Name != "qui-renamed" {
+		t.Errorf("name not applied: %+v", got)
+	}
+	if got.BaseURL != "http://qui:7476" || got.HarbrrURL != "http://h:8787" {
+		t.Errorf("identity moved despite a name-only patch: %+v", got)
 	}
 	if got.APIKeyEncrypted != origCipher {
-		t.Errorf("omitted apiKey rotated the stored key: %q -> %q", origCipher, got.APIKeyEncrypted)
-	}
-
-	// A provided apiKey rotates the ciphertext.
-	if err := svc.UpdateConnection(ctx, conn.ID, announce.UpdateConnectionParams{APIKey: ptr("new_key")}); err != nil {
-		t.Fatalf("UpdateConnection(rotate): %v", err)
-	}
-	rotated, err := svc.GetConnection(ctx, conn.ID)
-	if err != nil {
-		t.Fatalf("GetConnection: %v", err)
-	}
-	if rotated.APIKeyEncrypted == origCipher {
-		t.Error("provided apiKey did not rotate the stored key")
+		t.Errorf("a name-only patch rotated the stored key: %q -> %q", origCipher, got.APIKeyEncrypted)
 	}
 }
 
-// TestServiceUpdateValidation proves a partial edit can't persist a blank name, a blank
-// key, or a host-less URL, and that an unknown id surfaces as not-found.
+// TestServiceUpdateValidation proves a partial edit can't persist a blank name, and
+// that an unknown id surfaces as not-found.
 func TestServiceUpdateValidation(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, _ := newService(t, func(domain.AnnounceConnection, string) (announce.Target, error) { return &fakeTarget{}, nil })
+	svc, _, _ := newService(t, func(domain.AnnounceConnection, string) (announce.Target, error) { return &fakeTarget{}, nil })
 	conn, err := svc.CreateConnection(ctx, announce.CreateConnectionParams{
 		Name: "qui", Kind: domain.AnnounceKindQui, BaseURL: "http://qui:7476", APIKey: "k", HarbrrURL: "http://h:8787",
 	})
@@ -276,49 +386,12 @@ func TestServiceUpdateValidation(t *testing.T) {
 		t.Fatalf("CreateConnection: %v", err)
 	}
 
-	cases := map[string]announce.UpdateConnectionParams{
-		"blank name":       {Name: ptr("  ")},
-		"blank api key":    {APIKey: ptr("")},
-		"redacted api key": {APIKey: ptr(secrets.Redacted)},
-		"relative base":    {BaseURL: ptr("qui:7476")},
-		"relative harbrr":  {HarbrrURL: ptr("h:8787")},
-	}
-	for name, params := range cases {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			if err := svc.UpdateConnection(ctx, conn.ID, params); !errors.Is(err, domain.ErrInvalid) {
-				t.Errorf("UpdateConnection(%s) err = %v, want ErrInvalid", name, err)
-			}
-		})
+	if err := svc.UpdateConnection(ctx, conn.ID, announce.UpdateConnectionParams{Name: ptr("  ")}); !errors.Is(err, domain.ErrInvalid) {
+		t.Errorf("UpdateConnection(blank name) err = %v, want ErrInvalid", err)
 	}
 
 	if err := svc.UpdateConnection(ctx, 9999, announce.UpdateConnectionParams{Name: ptr("x")}); !errors.Is(err, database.ErrNotFound) {
 		t.Errorf("UpdateConnection(unknown id) err = %v, want ErrNotFound", err)
-	}
-}
-
-// TestServiceUpdateConflict proves repointing a connection's base_url onto an existing
-// (kind, base_url) pair maps the unique violation to ErrConflict (the handler's 409).
-func TestServiceUpdateConflict(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	svc, _ := newService(t, func(domain.AnnounceConnection, string) (announce.Target, error) { return &fakeTarget{}, nil })
-
-	first, err := svc.CreateConnection(ctx, announce.CreateConnectionParams{
-		Name: "first", Kind: domain.AnnounceKindQui, BaseURL: "http://qui:7476", APIKey: "k", HarbrrURL: "http://h:8787",
-	})
-	if err != nil {
-		t.Fatalf("create first: %v", err)
-	}
-	second, err := svc.CreateConnection(ctx, announce.CreateConnectionParams{
-		Name: "second", Kind: domain.AnnounceKindQui, BaseURL: "http://qui:9999", APIKey: "k", HarbrrURL: "http://h:8787",
-	})
-	if err != nil {
-		t.Fatalf("create second: %v", err)
-	}
-
-	if err := svc.UpdateConnection(ctx, second.ID, announce.UpdateConnectionParams{BaseURL: ptr(first.BaseURL)}); !errors.Is(err, domain.ErrConflict) {
-		t.Errorf("repoint onto existing (kind, base_url) err = %v, want ErrConflict", err)
 	}
 }
 
@@ -378,7 +451,7 @@ func TestServiceTestConnection(t *testing.T) {
 			ctx := context.Background()
 			srv := httptest.NewServer(tt.handler)
 			defer srv.Close()
-			svc, _ := newService(t, announce.DefaultTargetFactory(srv.Client(), nil, nil))
+			svc, _, _ := newService(t, announce.DefaultTargetFactory(srv.Client(), nil, nil))
 			conn, err := svc.CreateConnection(ctx, announce.CreateConnectionParams{
 				Name: tt.name, Kind: tt.kind, BaseURL: srv.URL, APIKey: "k", HarbrrURL: srv.URL,
 			})
@@ -391,7 +464,7 @@ func TestServiceTestConnection(t *testing.T) {
 		})
 	}
 
-	svc, _ := newService(t, func(domain.AnnounceConnection, string) (announce.Target, error) { return &fakeTarget{}, nil })
+	svc, _, _ := newService(t, func(domain.AnnounceConnection, string) (announce.Target, error) { return &fakeTarget{}, nil })
 	if err := svc.TestConnection(context.Background(), 9999); !errors.Is(err, database.ErrNotFound) {
 		t.Errorf("TestConnection(unknown id) err = %v, want ErrNotFound", err)
 	}
@@ -402,7 +475,7 @@ func TestServiceTestConnection(t *testing.T) {
 func TestServicePushSwallowsErrors(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, _ := newService(t, func(domain.AnnounceConnection, string) (announce.Target, error) {
+	svc, _, _ := newService(t, func(domain.AnnounceConnection, string) (announce.Target, error) {
 		return &fakeTarget{err: errors.New("boom")}, nil
 	})
 	if _, err := svc.CreateConnection(ctx, announce.CreateConnectionParams{
@@ -437,7 +510,8 @@ func TestServicePushFailureRedactsGUID(t *testing.T) {
 		t.Fatalf("keyring: %v", err)
 	}
 	var buf bytes.Buffer
-	svc := announce.NewService(db, auth.NewService(db), kr, func(domain.AnnounceConnection, string) (announce.Target, error) {
+	appsSvc := apps.NewService(db, kr, http.DefaultClient, zerolog.Nop())
+	svc := announce.NewService(db, appsSvc, auth.NewService(db), kr, func(domain.AnnounceConnection, string) (announce.Target, error) {
 		return &fakeTarget{err: errors.New("boom")}, nil
 	}, zerolog.New(&buf))
 	if _, err := svc.CreateConnection(ctx, announce.CreateConnectionParams{
@@ -484,7 +558,7 @@ func TestServicePushOneCapsPerReleaseTimeout(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	tgt := &hangTarget{hangAt: 0}
-	svc, _ := newService(t, func(domain.AnnounceConnection, string) (announce.Target, error) { return tgt, nil })
+	svc, _, _ := newService(t, func(domain.AnnounceConnection, string) (announce.Target, error) { return tgt, nil })
 	if _, err := svc.CreateConnection(ctx, announce.CreateConnectionParams{
 		Name: "qui", Kind: domain.AnnounceKindQui, BaseURL: "http://qui:7476", APIKey: "k", HarbrrURL: "http://h:8787",
 	}); err != nil {
@@ -523,7 +597,8 @@ func TestServicePushBatchSummaryLogsOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("keyring: %v", err)
 	}
-	svc := announce.NewService(db, auth.NewService(db), kr, func(domain.AnnounceConnection, string) (announce.Target, error) {
+	appsSvc := apps.NewService(db, kr, http.DefaultClient, zerolog.Nop())
+	svc := announce.NewService(db, appsSvc, auth.NewService(db), kr, func(domain.AnnounceConnection, string) (announce.Target, error) {
 		return &fakeTarget{err: errors.New("boom")}, nil
 	}, zerolog.New(&buf))
 	if _, err := svc.CreateConnection(ctx, announce.CreateConnectionParams{

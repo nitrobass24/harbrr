@@ -21,6 +21,7 @@ type downloadClientResponse struct {
 	ID        int64                         `json:"id"`
 	Name      string                        `json:"name"`
 	Kind      string                        `json:"kind"`
+	AppID     *int64                        `json:"appId,omitempty"`
 	Enabled   bool                          `json:"enabled"`
 	Host      string                        `json:"host"`
 	Username  string                        `json:"username"`
@@ -49,6 +50,7 @@ func (rt *router) createDownloadClient(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name     string                        `json:"name"`
 		Kind     string                        `json:"kind"`
+		AppID    *int64                        `json:"appId"`
 		Host     string                        `json:"host"`
 		Username string                        `json:"username"`
 		Secret   string                        `json:"secret"`
@@ -58,7 +60,7 @@ func (rt *router) createDownloadClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c, err := rt.download.Create(r.Context(), download.CreateParams{
-		Name: req.Name, Kind: req.Kind, Host: req.Host, Username: req.Username,
+		Name: req.Name, Kind: req.Kind, AppID: req.AppID, Host: req.Host, Username: req.Username,
 		Secret: req.Secret, Settings: req.Settings,
 	})
 	if err != nil {
@@ -91,16 +93,13 @@ func (rt *router) updateDownloadClient(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		Name     *string                        `json:"name"`
-		Host     *string                        `json:"host"`
-		Username *string                        `json:"username"`
-		Secret   *string                        `json:"secret"`
 		Settings *domain.DownloadClientSettings `json:"settings"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
 	err := rt.download.Update(r.Context(), id, download.UpdateParams{
-		Name: req.Name, Host: req.Host, Username: req.Username, Secret: req.Secret, Settings: req.Settings,
+		Name: req.Name, Settings: req.Settings,
 	})
 	if err != nil {
 		rt.writeServiceError(w, "update download client", err)
@@ -174,7 +173,7 @@ func downloadClientID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 // toDownloadClientResponse maps a client to its API view, redacting the secret.
 func toDownloadClientResponse(c domain.DownloadClient) downloadClientResponse {
 	return downloadClientResponse{
-		ID: c.ID, Name: c.Name, Kind: c.Kind, Enabled: c.Enabled, Host: c.Host, Username: c.Username,
+		ID: c.ID, Name: c.Name, Kind: c.Kind, AppID: c.AppID, Enabled: c.Enabled, Host: c.Host, Username: c.Username,
 		Secret: secrets.Redacted, Settings: c.Settings, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
 	}
 }

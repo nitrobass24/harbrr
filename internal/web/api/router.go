@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/autobrr/harbrr/internal/announce"
+	"github.com/autobrr/harbrr/internal/apps"
 	"github.com/autobrr/harbrr/internal/appsync"
 	"github.com/autobrr/harbrr/internal/auth"
 	"github.com/autobrr/harbrr/internal/backup"
@@ -33,6 +34,7 @@ type Deps struct {
 	Auth     *auth.Service
 	Registry *registry.Registry
 	Loader   *loader.Loader
+	Apps     *apps.Service
 	AppSync  *appsync.Service
 	Announce *announce.Service
 	Notify   *notify.Service
@@ -85,6 +87,7 @@ type router struct {
 	auth     *auth.Service
 	registry *registry.Registry
 	loader   *loader.Loader
+	apps     *apps.Service
 	appsync  *appsync.Service
 	announce *announce.Service
 	notify   *notify.Service
@@ -133,7 +136,7 @@ func NewRouter(deps Deps, cfg Config) (http.Handler, error) {
 	}
 
 	rt := &router{
-		auth: deps.Auth, registry: deps.Registry, loader: deps.Loader, appsync: deps.AppSync,
+		auth: deps.Auth, registry: deps.Registry, loader: deps.Loader, apps: deps.Apps, appsync: deps.AppSync,
 		announce: deps.Announce, notify: deps.Notify, proxy: deps.Proxy, download: deps.Download, solver: deps.Solver,
 		backup:   deps.Backup,
 		sessions: deps.Sessions, dlToken: deps.DLToken, urlCfg: deps.URLConfig,
@@ -229,7 +232,6 @@ func (rt *router) routes() http.Handler {
 			r.Post("/api/app-connections/{id}/sync", rt.syncConnection)
 			r.Get("/api/app-connections/{id}/status", rt.connectionStatus)
 			r.Put("/api/app-connections/{id}/indexers", rt.setConnectionIndexers)
-			r.Post("/api/app-connections/{id}/announce-target", rt.createAnnounceTargetFromAppConnection)
 
 			r.Get("/api/announce-connections", rt.listAnnounceConnections)
 			r.Post("/api/announce-connections", rt.createAnnounceConnection)
@@ -263,6 +265,12 @@ func (rt *router) routes() http.Handler {
 // profiles, and the config/DB backup export/import routes. Split out of routes() to
 // keep that function under the funlen gate.
 func (rt *router) mountResourceRoutes(r chi.Router) {
+	r.Get("/api/apps", rt.listApps)
+	r.Get("/api/apps/{id}", rt.getApp)
+	r.Patch("/api/apps/{id}", rt.updateApp)
+	r.Delete("/api/apps/{id}", rt.deleteApp)
+	r.Get("/api/apps/{id}/qui-instances", rt.appQuiInstances)
+
 	r.Post("/api/export", rt.exportBackup)
 	r.Post("/api/import", rt.importBackup)
 

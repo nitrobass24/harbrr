@@ -18,8 +18,10 @@ import (
 // service's concern, exactly as Instances treats indexer settings.
 type AppConnections struct{}
 
-// connectionColumns is the full select list, in scan order.
-const connectionColumns = `id, name, kind, base_url, api_key_encrypted, harbrr_url,
+// connectionColumns is the full select list, in scan order. app_id is the App
+// reference (ADR 0004); the legacy base_url/api_key_encrypted/harbrr_url columns are
+// still selected but the service reads identity from the App, not from them.
+const connectionColumns = `id, name, kind, app_id, base_url, api_key_encrypted, harbrr_url,
 	harbrr_api_key_id, harbrr_api_key_encrypted, key_id, enabled, sync_level,
 	index_scope, freeleech_mode, priority, sync_profile_id, last_sync_at, last_sync_status, last_sync_error,
 	created_at, updated_at`
@@ -28,11 +30,11 @@ const connectionColumns = `id, name, kind, base_url, api_key_encrypted, harbrr_u
 func (AppConnections) InsertConnection(ctx context.Context, q dbinterface.Execer, c domain.AppConnection) (int64, error) {
 	res, err := q.ExecContext(ctx,
 		q.Rebind(`INSERT INTO app_connections
-			(name, kind, base_url, api_key_encrypted, harbrr_url, harbrr_api_key_id,
+			(name, kind, app_id, base_url, api_key_encrypted, harbrr_url, harbrr_api_key_id,
 			 harbrr_api_key_encrypted, key_id, enabled, sync_level, index_scope,
 			 freeleech_mode, priority, sync_profile_id, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
-		c.Name, c.Kind, c.BaseURL, c.APIKeyEncrypted, c.HarbrrURL, nullIfZero(c.HarbrrAPIKeyID),
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+		c.Name, c.Kind, nullInt64(c.AppID), c.BaseURL, c.APIKeyEncrypted, c.HarbrrURL, nullIfZero(c.HarbrrAPIKeyID),
 		c.HarbrrAPIKeyEncrypted, c.KeyID, boolToInt(c.Enabled), c.SyncLevel, c.IndexScope,
 		c.FreeleechMode, c.Priority, nullInt64(c.SyncProfileID), c.CreatedAt.UTC().Format(timeLayout), c.UpdatedAt.UTC().Format(timeLayout))
 	if err != nil {
@@ -220,21 +222,33 @@ func (AppConnections) DeleteConnectionIndexer(ctx context.Context, q dbinterface
 	return nil
 }
 
+// SetConnectionAppID sets a connection's app_id by id (the boot fold's write-back,
+// linking a legacy row to the App its identity was folded into).
+func (AppConnections) SetConnectionAppID(ctx context.Context, q dbinterface.Execer, id, appID int64) error {
+	res, err := q.ExecContext(ctx,
+		q.Rebind(`UPDATE app_connections SET app_id = ? WHERE id = ?`), appID, id)
+	if err != nil {
+		return fmt.Errorf("database: set app connection app_id: %w", err)
+	}
+	return affectedOrNotFoundID(res, id)
+}
+
 // scanConnection reads one app_connections row from a *sql.Row or *sql.Rows.
 func scanConnection(s interface{ Scan(...any) error }) (domain.AppConnection, error) {
 	var (
 		c                                      domain.AppConnection
-		harbrrKeyID, syncProfileID             sql.NullInt64
+		appID, harbrrKeyID, syncProfileID      sql.NullInt64
 		enabled                                int
 		lastSyncAt, lastSyncStatus, lastSyncEr sql.NullString
 		createdAt, updatedAt                   string
 	)
-	if err := s.Scan(&c.ID, &c.Name, &c.Kind, &c.BaseURL, &c.APIKeyEncrypted, &c.HarbrrURL,
+	if err := s.Scan(&c.ID, &c.Name, &c.Kind, &appID, &c.BaseURL, &c.APIKeyEncrypted, &c.HarbrrURL,
 		&harbrrKeyID, &c.HarbrrAPIKeyEncrypted, &c.KeyID, &enabled, &c.SyncLevel,
 		&c.IndexScope, &c.FreeleechMode, &c.Priority, &syncProfileID, &lastSyncAt, &lastSyncStatus, &lastSyncEr,
 		&createdAt, &updatedAt); err != nil {
 		return domain.AppConnection{}, err //nolint:wrapcheck // sql.ErrNoRows matched by caller; others wrapped there.
 	}
+	c.AppID = nullableToPtr(appID)
 	c.HarbrrAPIKeyID = harbrrKeyID.Int64
 	c.SyncProfileID = nullableToPtr(syncProfileID)
 	c.Enabled = enabled != 0

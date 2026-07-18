@@ -55,7 +55,15 @@ func (s *Service) Sync(ctx context.Context, id int64) (SyncReport, error) {
 		s.recordResult(ctx, conn.ID, domain.SyncStatusError, detail)
 		return SyncReport{}, fmt.Errorf("%w: %s", domain.ErrInvalid, detail)
 	}
-	driver, harbrrKey, err := s.driver(conn)
+	// Enrich the connection's identity from its App (the single read path): the feed
+	// URL pushed into each indexer needs the App's harbrr URL. A pending (NULL app_id)
+	// row surfaces here as ErrAppMigrationPending.
+	app, err := s.appFor(ctx, conn)
+	if err != nil {
+		return SyncReport{}, err
+	}
+	conn.BaseURL, conn.HarbrrURL = app.BaseURL, app.HarbrrURL
+	driver, harbrrKey, err := s.driver(ctx, conn)
 	if err != nil {
 		return SyncReport{}, err
 	}

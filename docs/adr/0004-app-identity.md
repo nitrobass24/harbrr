@@ -97,7 +97,10 @@ through the App. Minted per-connection harbrr keys are unchanged (still AAD = th
 Deleting an App that is still referenced → **409** naming the referencing surfaces (block, not
 cascade — a config convenience must never silently delete a working download client). Deleting a
 surface row never deletes the App. Orphan Apps are listable and deletable. Single-user
-self-hosted: no sharing/ACL — the App is a config convenience, not a tenancy boundary.
+self-hosted: no sharing/ACL — the App is a config convenience, not a tenancy boundary. A base-URL
+change on the App propagates (same tx) to the surface rows' interim `base_url`/`host` copies, so
+their `UNIQUE(kind, base_url)` indexes stay truthful until #269 drops the copies — the "rotation
+propagates" principle (§4) extended to the identity URL.
 
 ### 7. Migration (boot fold, `internal/resourcemigrate`)
 
