@@ -1847,9 +1847,19 @@ export interface components {
             /** @description relative to a shared folder; no leading slash */
             directory?: string;
         };
+        /** @description blackhole watch-folder configuration. At least one of torrentDir/nzbDir must be set; a payload whose protocol has no configured dir fails as unsupported. */
+        BlackholeSettings: {
+            /** @description absolute path a .torrent/.magnet is written into */
+            torrentDir?: string;
+            /** @description absolute path a .nzb is written into */
+            nzbDir?: string;
+            /** @description write a magnet-only release as a .magnet file instead of failing */
+            saveMagnetFiles?: boolean;
+        };
         /** @description Kind-specific options, keyed by kind — at most the one field matching the client's own kind is populated. */
         DownloadClientSettings: {
             qbittorrent?: components["schemas"]["QBittorrentSettings"];
+            blackhole?: components["schemas"]["BlackholeSettings"];
             qui?: components["schemas"]["QuiSettings"];
             flood?: components["schemas"]["FloodSettings"];
             downloadStation?: components["schemas"]["DownloadStationSettings"];
@@ -1860,7 +1870,7 @@ export interface components {
             id: number;
             name: string;
             /** @enum {string} */
-            kind: "qbittorrent" | "qui" | "flood" | "download-station";
+            kind: "qbittorrent" | "blackhole" | "qui" | "flood" | "download-station";
             enabled: boolean;
             host: string;
             username: string;
@@ -1875,7 +1885,8 @@ export interface components {
         CreateDownloadClient: {
             name: string;
             /** @enum {string} */
-            kind: "qbittorrent" | "qui" | "flood" | "download-station";
+            kind: "qbittorrent" | "blackhole" | "qui" | "flood" | "download-station";
+            /** @description must be empty for kinds with no network endpoint (e.g. blackhole) */
             host: string;
             username?: string;
             /** @description optional; stored encrypted */

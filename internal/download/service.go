@@ -3,7 +3,9 @@ package download
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -202,8 +204,8 @@ func (s *Service) TestConnection(ctx context.Context, id int64) error {
 	return nil
 }
 
-// validate enforces a name, a registered kind, an absolute http(s) host, and
-// settings matching the kind.
+// validate enforces a name, a registered kind, a host matching the kind's
+// hostMode, and settings matching the kind.
 func validate(name, kind, host string, settings domain.DownloadClientSettings) error {
 	if name == "" {
 		return fmt.Errorf("%w: name is required", domain.ErrInvalid)
@@ -211,16 +213,39 @@ func validate(name, kind, host string, settings domain.DownloadClientSettings) e
 	if !validateKind(kind) {
 		return fmt.Errorf("%w: unknown or unregistered download client kind %q", domain.ErrInvalid, kind)
 	}
-	if _, err := domain.ValidateAbsURL("host", host); err != nil {
+	if err := validateHost(kind, host); err != nil {
 		return err
 	}
 	return validateSettings(kind, settings)
 }
 
-// validateSettings rejects a populated settings field that doesn't match kind, and
+// validateHost dispatches host validation on the kind's registered hostMode:
+// hostNone rejects any host (blackhole has no network endpoint of its own),
+// hostPort requires "host:port", and the default (hostURL) requires an
+// absolute http(s) URL.
+func validateHost(kind, host string) error {
+	switch drivers[kind].host {
+	case hostNone:
+		if host != "" {
+			return fmt.Errorf("%w: host must be empty for kind %q", domain.ErrInvalid, kind)
+		}
+		return nil
+	case hostPort:
+		if _, _, err := net.SplitHostPort(host); err != nil {
+			return fmt.Errorf("%w: host must be host:port for kind %q", domain.ErrInvalid, kind)
+		}
+		return nil
+	case hostURL:
+		_, err := domain.ValidateAbsURL("host", host)
+		return err
+	}
+	return nil
+}
+
+// validateSettings rejects a populated settings field that doesn't match kind,
 // enforces the one required field among the kind-specific settings (qui's
 // InstanceID — qui is keyed by int instance id, so an unset/zero id can never be
-// a valid target).
+// a valid target), and validates the kind-specific settings that need it.
 func validateSettings(kind string, settings domain.DownloadClientSettings) error {
 	if settings.QBittorrent != nil && kind != domain.DownloadClientKindQBittorrent {
 		return fmt.Errorf("%w: qbittorrent settings given for kind %q", domain.ErrInvalid, kind)
@@ -237,6 +262,27 @@ func validateSettings(kind string, settings domain.DownloadClientSettings) error
 	}
 	if settings.DownloadStation != nil && kind != domain.DownloadClientKindDownloadStation {
 		return fmt.Errorf("%w: download-station settings given for kind %q", domain.ErrInvalid, kind)
+	}
+	if settings.Blackhole != nil && kind != domain.DownloadClientKindBlackhole {
+		return fmt.Errorf("%w: blackhole settings given for kind %q", domain.ErrInvalid, kind)
+	}
+	if kind == domain.DownloadClientKindBlackhole {
+		return validateBlackholeSettings(settings.Blackhole)
+	}
+	return nil
+}
+
+// validateBlackholeSettings requires at least one watch-folder dir and rejects
+// a relative one. It deliberately does not check the dir exists — the folder
+// may be a mount that comes and goes; Test is the probe for that.
+func validateBlackholeSettings(s *domain.BlackholeSettings) error {
+	if s == nil || (s.TorrentDir == "" && s.NZBDir == "") {
+		return fmt.Errorf("%w: blackhole requires at least one of torrentDir/nzbDir", domain.ErrInvalid)
+	}
+	for _, dir := range []string{s.TorrentDir, s.NZBDir} {
+		if dir != "" && !filepath.IsAbs(dir) {
+			return fmt.Errorf("%w: blackhole directories must be absolute paths", domain.ErrInvalid)
+		}
 	}
 	return nil
 }

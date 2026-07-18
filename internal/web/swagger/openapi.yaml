@@ -2683,6 +2683,15 @@ components:
       description: Synology Download Station-specific per-client options.
       properties:
         directory: { type: string, description: "relative to a shared folder; no leading slash" }
+    BlackholeSettings:
+      type: object
+      description: >
+        blackhole watch-folder configuration. At least one of torrentDir/nzbDir must
+        be set; a payload whose protocol has no configured dir fails as unsupported.
+      properties:
+        torrentDir: { type: string, description: "absolute path a .torrent/.magnet is written into" }
+        nzbDir: { type: string, description: "absolute path a .nzb is written into" }
+        saveMagnetFiles: { type: boolean, description: "write a magnet-only release as a .magnet file instead of failing" }
     DownloadClientSettings:
       type: object
       description: >
@@ -2690,6 +2699,7 @@ components:
         client's own kind is populated.
       properties:
         qbittorrent: { $ref: "#/components/schemas/QBittorrentSettings" }
+        blackhole: { $ref: "#/components/schemas/BlackholeSettings" }
         qui: { $ref: "#/components/schemas/QuiSettings" }
         flood: { $ref: "#/components/schemas/FloodSettings" }
         downloadStation: { $ref: "#/components/schemas/DownloadStationSettings" }
@@ -2705,7 +2715,7 @@ components:
         name: { type: string }
         kind:
           type: string
-          enum: [qbittorrent, qui, flood, download-station]
+          enum: [qbittorrent, blackhole, qui, flood, download-station]
         enabled: { type: boolean }
         host: { type: string }
         username: { type: string }
@@ -2720,8 +2730,8 @@ components:
         name: { type: string }
         kind:
           type: string
-          enum: [qbittorrent, qui, flood, download-station]
-        host: { type: string }
+          enum: [qbittorrent, blackhole, qui, flood, download-station]
+        host: { type: string, description: "must be empty for kinds with no network endpoint (e.g. blackhole)" }
         username: { type: string }
         secret: { type: string, description: "optional; stored encrypted" }
         settings: { $ref: "#/components/schemas/DownloadClientSettings" }
