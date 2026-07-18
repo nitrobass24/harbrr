@@ -43,7 +43,10 @@ func newSabnzbd(c domain.DownloadClient, secret string, client *http.Client) (Dr
 // with a body Version can't decode (its ported client never checks HTTP status).
 func (d *sabnzbdDriver) Test(ctx context.Context) error {
 	if _, err := d.client.Version(ctx); err != nil {
-		return fmt.Errorf("download: sabnzbd: version: %w", err)
+		// The version request URL itself carries the configured apikey (as a query
+		// param); a transport failure surfaces as a *url.Error whose text embeds
+		// that full URL — scrubURLError drops it, same treatment as Add.
+		return fmt.Errorf("download: sabnzbd: version: %w", scrubURLError(err))
 	}
 	return nil
 }

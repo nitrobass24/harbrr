@@ -83,6 +83,27 @@ func TestSabnzbdTest_OK(t *testing.T) {
 	}
 }
 
+// TestSabnzbdTest_TransportErrorRedactsAPIKey mirrors
+// TestSabnzbdAdd_TransportErrorRedactsSecrets for Test: the version request URL
+// carries the configured apikey as a query param, so a transport-level failure
+// (a *url.Error) must not leak it either.
+func TestSabnzbdTest_TransportErrorRedactsAPIKey(t *testing.T) {
+	t.Parallel()
+	stub := &sabnzbdStub{}
+	srv := newSabnzbdStub(t, stub)
+	const sabnzbdAPIKey = "SABAPIKEY0123456789ABC"
+	drv := newTestSabnzbdDriver(srv.URL, sabnzbdAPIKey, "")
+	srv.Close() // force a connection-refused transport error
+
+	err := drv.Test(context.Background())
+	if err == nil {
+		t.Fatal("expected an error after closing the stub server")
+	}
+	if strings.Contains(err.Error(), sabnzbdAPIKey) {
+		t.Fatalf("error leaks the configured sabnzbd apikey: %q", err)
+	}
+}
+
 func TestSabnzbdTest_BadKey(t *testing.T) {
 	t.Parallel()
 	stub := &sabnzbdStub{wantInvalidBody: true}
