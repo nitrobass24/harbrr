@@ -78,7 +78,7 @@ func TestCreateValidation(t *testing.T) {
 		p    CreateParams
 	}{
 		{"blank name", CreateParams{Name: "  ", Kind: domain.DownloadClientKindQBittorrent, Host: "http://x.invalid"}},
-		{"unregistered kind", CreateParams{Name: "n", Kind: domain.DownloadClientKindDeluge, Host: "http://x.invalid"}},
+		{"unregistered kind", CreateParams{Name: "n", Kind: "no-such-kind", Host: "http://x.invalid"}},
 		{"unknown kind", CreateParams{Name: "n", Kind: "bogus", Host: "http://x.invalid"}},
 		{"relative host", CreateParams{Name: "n", Kind: domain.DownloadClientKindQBittorrent, Host: "/x"}},
 		{"blank host", CreateParams{Name: "n", Kind: domain.DownloadClientKindQBittorrent, Host: ""}},
@@ -155,9 +155,8 @@ func TestUpdatePatchNilKeepsSecretNonNilRotates(t *testing.T) {
 }
 
 // TestValidateSettingsKindMismatch exercises the settings/kind cross-check
-// directly: no download client kind other than qbittorrent is registered yet, so
-// a genuine mismatch can't be produced through Create/Update (validateKind
-// rejects the unregistered kind first) — this is the only reachable path to it.
+// directly against the pure function, rather than through Create/Update, to
+// keep the assertion focused on validateSettings alone.
 func TestValidateSettingsKindMismatch(t *testing.T) {
 	t.Parallel()
 	settings := domain.DownloadClientSettings{QBittorrent: &domain.QBittorrentSettings{Category: "tv"}}

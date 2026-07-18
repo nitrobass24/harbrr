@@ -1828,9 +1828,31 @@ export interface components {
             startPaused?: boolean;
             tlsSkipVerify?: boolean;
         };
+        /** @description Transmission-specific per-client options; all fields are optional. */
+        TransmissionSettings: {
+            downloadDir?: string;
+            startPaused?: boolean;
+        };
+        /** @description Deluge-specific per-client options; all fields are optional. v1 selects the legacy 1.3 daemon protocol — the default is the v2 daemon. */
+        DelugeSettings: {
+            v1?: boolean;
+            label?: string;
+            downloadDir?: string;
+            startPaused?: boolean;
+        };
+        /** @description rTorrent-specific per-client options; all fields are optional. */
+        RTorrentSettings: {
+            label?: string;
+            directory?: string;
+            startPaused?: boolean;
+            tlsSkipVerify?: boolean;
+        };
         /** @description Kind-specific options, keyed by kind — at most the one field matching the client's own kind is populated. */
         DownloadClientSettings: {
             qbittorrent?: components["schemas"]["QBittorrentSettings"];
+            transmission?: components["schemas"]["TransmissionSettings"];
+            deluge?: components["schemas"]["DelugeSettings"];
+            rtorrent?: components["schemas"]["RTorrentSettings"];
         };
         /** @description A configured download client harbrr can send grabbed releases to. host/username are plain; the secret (password or API key, depending on kind) is write-only and is never echoed back — it reads back as the <redacted> sentinel. */
         DownloadClient: {
@@ -1838,7 +1860,7 @@ export interface components {
             id: number;
             name: string;
             /** @enum {string} */
-            kind: "qbittorrent";
+            kind: "qbittorrent" | "transmission" | "deluge" | "rtorrent";
             enabled: boolean;
             host: string;
             username: string;
@@ -1853,7 +1875,7 @@ export interface components {
         CreateDownloadClient: {
             name: string;
             /** @enum {string} */
-            kind: "qbittorrent";
+            kind: "qbittorrent" | "transmission" | "deluge" | "rtorrent";
             host: string;
             username?: string;
             /** @description optional; stored encrypted */

@@ -25,10 +25,16 @@ import {
 import { notifyError, notifySuccess } from "@/lib/notify"
 import type { CreateDownloadClient, DownloadClient, DownloadClientKind, DownloadClientSettings, UpdateDownloadClient } from "@/lib/api"
 
-// Only qbittorrent has a registered driver today (autobrr/harbrr#240); the other
-// kinds are seeded server-side but rejected on create until their own driver
-// lands (autobrr/harbrr#8). Keep the picker limited to what actually works.
-const DOWNLOAD_CLIENT_KINDS: DownloadClientKind[] = ["qbittorrent"]
+// Kinds with a registered driver today (autobrr/harbrr#240, #243); the rest are
+// seeded server-side but rejected on create until their own driver lands
+// (autobrr/harbrr#8). Keep the picker limited to what actually works.
+const DOWNLOAD_CLIENT_KINDS: DownloadClientKind[] = ["qbittorrent", "transmission", "deluge", "rtorrent"]
+
+// HOST_PLACEHOLDER is per-kind: every kind but Deluge takes an absolute http(s)
+// URL; Deluge's daemon RPC is a raw "host:port" socket address, not a URL.
+const HOST_PLACEHOLDER: Partial<Record<DownloadClientKind, string>> = {
+  deluge: "localhost:58846",
+}
 
 // `null` = closed; `{ client: null }` = add; `{ client }` = edit that client.
 type Editing = { client: DownloadClient | null } | null
@@ -144,19 +150,49 @@ function DownloadClientForm({ client, pending, onSubmit }: {
   const [startPaused, setStartPaused] = useState(client?.settings.qbittorrent?.startPaused ?? false)
   const [tlsSkipVerify, setTlsSkipVerify] = useState(client?.settings.qbittorrent?.tlsSkipVerify ?? false)
 
+  const [transmissionDownloadDir, setTransmissionDownloadDir] = useState(client?.settings.transmission?.downloadDir ?? "")
+  const [transmissionStartPaused, setTransmissionStartPaused] = useState(client?.settings.transmission?.startPaused ?? false)
+
+  const [delugeV1, setDelugeV1] = useState(client?.settings.deluge?.v1 ?? false)
+  const [delugeLabel, setDelugeLabel] = useState(client?.settings.deluge?.label ?? "")
+  const [delugeDownloadDir, setDelugeDownloadDir] = useState(client?.settings.deluge?.downloadDir ?? "")
+  const [delugeStartPaused, setDelugeStartPaused] = useState(client?.settings.deluge?.startPaused ?? false)
+
+  const [rtorrentLabel, setRtorrentLabel] = useState(client?.settings.rtorrent?.label ?? "")
+  const [rtorrentDirectory, setRtorrentDirectory] = useState(client?.settings.rtorrent?.directory ?? "")
+  const [rtorrentStartPaused, setRtorrentStartPaused] = useState(client?.settings.rtorrent?.startPaused ?? false)
+  const [rtorrentTlsSkipVerify, setRtorrentTlsSkipVerify] = useState(client?.settings.rtorrent?.tlsSkipVerify ?? false)
+
   return (
     <form
       className="flex flex-col gap-4"
       onSubmit={(e) => {
         e.preventDefault()
-        const settings: DownloadClientSettings = kind === "qbittorrent" ? {
-          qbittorrent: {
+        let settings: DownloadClientSettings = {}
+        if (kind === "qbittorrent") {
+          settings = { qbittorrent: {
             category: category || undefined,
             tags: tags ? tags.split(",").map((t) => t.trim()).filter(Boolean) : undefined,
             startPaused: startPaused || undefined,
             tlsSkipVerify: tlsSkipVerify || undefined,
-          },
-        } : {}
+          } }
+        } else if (kind === "transmission") {
+          settings = { transmission: { downloadDir: transmissionDownloadDir || undefined, startPaused: transmissionStartPaused || undefined } }
+        } else if (kind === "deluge") {
+          settings = { deluge: {
+            v1: delugeV1 || undefined,
+            label: delugeLabel || undefined,
+            downloadDir: delugeDownloadDir || undefined,
+            startPaused: delugeStartPaused || undefined,
+          } }
+        } else if (kind === "rtorrent") {
+          settings = { rtorrent: {
+            label: rtorrentLabel || undefined,
+            directory: rtorrentDirectory || undefined,
+            startPaused: rtorrentStartPaused || undefined,
+            tlsSkipVerify: rtorrentTlsSkipVerify || undefined,
+          } }
+        }
         // On edit, an empty secret keeps the stored one (only a typed value rotates).
         onSubmit(client?.id ?? null, {
           name, kind, host, username, settings,
@@ -182,7 +218,7 @@ function DownloadClientForm({ client, pending, onSubmit }: {
       </div>
       <span className="flex flex-col gap-1.5">
         <Label htmlFor="dlc-host">Host</Label>
-        <Input id="dlc-host" placeholder="http://localhost:8080" value={host} onChange={(e) => setHost(e.target.value)} />
+        <Input id="dlc-host" placeholder={HOST_PLACEHOLDER[kind] ?? "http://localhost:8080"} value={host} onChange={(e) => setHost(e.target.value)} />
       </span>
       <div className="grid grid-cols-2 gap-3">
         <span className="flex flex-col gap-1.5">
@@ -212,6 +248,62 @@ function DownloadClientForm({ client, pending, onSubmit }: {
           </label>
           <label className="flex items-center gap-2 text-[13px]">
             <Switch checked={tlsSkipVerify} onCheckedChange={setTlsSkipVerify} />
+            Skip TLS certificate verification
+          </label>
+        </div>
+      )}
+      {kind === "transmission" && (
+        <div className="flex flex-col gap-3 rounded-lg border border-border/60 p-3">
+          <span className="flex flex-col gap-1.5">
+            <Label htmlFor="dlc-transmission-dir">Download directory <span className="text-faint">(optional)</span></Label>
+            <Input id="dlc-transmission-dir" value={transmissionDownloadDir} onChange={(e) => setTransmissionDownloadDir(e.target.value)} />
+          </span>
+          <label className="flex items-center gap-2 text-[13px]">
+            <Switch checked={transmissionStartPaused} onCheckedChange={setTransmissionStartPaused} />
+            Start paused
+          </label>
+        </div>
+      )}
+      {kind === "deluge" && (
+        <div className="flex flex-col gap-3 rounded-lg border border-border/60 p-3">
+          <div className="grid grid-cols-2 gap-3">
+            <span className="flex flex-col gap-1.5">
+              <Label htmlFor="dlc-deluge-label">Label <span className="text-faint">(optional)</span></Label>
+              <Input id="dlc-deluge-label" value={delugeLabel} onChange={(e) => setDelugeLabel(e.target.value)} />
+            </span>
+            <span className="flex flex-col gap-1.5">
+              <Label htmlFor="dlc-deluge-dir">Download directory <span className="text-faint">(optional)</span></Label>
+              <Input id="dlc-deluge-dir" value={delugeDownloadDir} onChange={(e) => setDelugeDownloadDir(e.target.value)} />
+            </span>
+          </div>
+          <label className="flex items-center gap-2 text-[13px]">
+            <Switch checked={delugeV1} onCheckedChange={setDelugeV1} />
+            Deluge 1.3 daemon <span className="text-faint">(default is the v2 daemon)</span>
+          </label>
+          <label className="flex items-center gap-2 text-[13px]">
+            <Switch checked={delugeStartPaused} onCheckedChange={setDelugeStartPaused} />
+            Start paused
+          </label>
+        </div>
+      )}
+      {kind === "rtorrent" && (
+        <div className="flex flex-col gap-3 rounded-lg border border-border/60 p-3">
+          <div className="grid grid-cols-2 gap-3">
+            <span className="flex flex-col gap-1.5">
+              <Label htmlFor="dlc-rtorrent-label">Label <span className="text-faint">(optional)</span></Label>
+              <Input id="dlc-rtorrent-label" value={rtorrentLabel} onChange={(e) => setRtorrentLabel(e.target.value)} />
+            </span>
+            <span className="flex flex-col gap-1.5">
+              <Label htmlFor="dlc-rtorrent-dir">Directory <span className="text-faint">(optional)</span></Label>
+              <Input id="dlc-rtorrent-dir" value={rtorrentDirectory} onChange={(e) => setRtorrentDirectory(e.target.value)} />
+            </span>
+          </div>
+          <label className="flex items-center gap-2 text-[13px]">
+            <Switch checked={rtorrentStartPaused} onCheckedChange={setRtorrentStartPaused} />
+            Start paused
+          </label>
+          <label className="flex items-center gap-2 text-[13px]">
+            <Switch checked={rtorrentTlsSkipVerify} onCheckedChange={setRtorrentTlsSkipVerify} />
             Skip TLS certificate verification
           </label>
         </div>

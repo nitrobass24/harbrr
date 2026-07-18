@@ -58,11 +58,30 @@ type Driver interface {
 // ignores it).
 type driverBuilder func(c domain.DownloadClient, secret string, client *http.Client) (Driver, error)
 
+// hostMode is the shape a kind's host column must take, since not every
+// registered client is reachable by URL: Deluge's daemon RPC is a raw socket
+// address ("host:port"), not a URL at all.
+type hostMode int
+
+const (
+	hostURL  hostMode = iota // absolute http(s) URL (the default)
+	hostPort                 // "host:port" via net.SplitHostPort
+)
+
+// driverSpec pairs a kind's driver constructor with its host column's shape.
+type driverSpec struct {
+	build driverBuilder
+	host  hostMode
+}
+
 // drivers is the single source of truth for both construction AND kind validity:
-// a kind is creatable only once it has an entry here. Adding driver #2 is one map
+// a kind is creatable only once it has an entry here. Adding a driver is one map
 // entry (plus its own file) — no other platform code changes.
-var drivers = map[string]driverBuilder{
-	domain.DownloadClientKindQBittorrent: newQBittorrent,
+var drivers = map[string]driverSpec{
+	domain.DownloadClientKindQBittorrent:  {build: newQBittorrent, host: hostURL},
+	domain.DownloadClientKindTransmission: {build: newTransmission, host: hostURL},
+	domain.DownloadClientKindRTorrent:     {build: newRTorrent, host: hostURL},
+	domain.DownloadClientKindDeluge:       {build: newDeluge, host: hostPort},
 }
 
 // validateKind reports whether kind has a registered driver.
@@ -74,9 +93,9 @@ func validateKind(kind string) bool {
 // newDriver builds the Driver for a configured client, or an error if its kind
 // has no registered driver.
 func newDriver(c domain.DownloadClient, secret string, client *http.Client) (Driver, error) {
-	build, ok := drivers[c.Kind]
+	spec, ok := drivers[c.Kind]
 	if !ok {
 		return nil, fmt.Errorf("%w: unregistered download client kind %q", domain.ErrInvalid, c.Kind)
 	}
-	return build(c, secret, client)
+	return spec.build(c, secret, client)
 }

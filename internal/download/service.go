@@ -3,6 +3,7 @@ package download
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -202,8 +203,8 @@ func (s *Service) TestConnection(ctx context.Context, id int64) error {
 	return nil
 }
 
-// validate enforces a name, a registered kind, an absolute http(s) host, and
-// settings matching the kind.
+// validate enforces a name, a registered kind, a host matching the kind's
+// registered hostMode, and settings matching the kind.
 func validate(name, kind, host string, settings domain.DownloadClientSettings) error {
 	if name == "" {
 		return fmt.Errorf("%w: name is required", domain.ErrInvalid)
@@ -211,16 +212,39 @@ func validate(name, kind, host string, settings domain.DownloadClientSettings) e
 	if !validateKind(kind) {
 		return fmt.Errorf("%w: unknown or unregistered download client kind %q", domain.ErrInvalid, kind)
 	}
-	if _, err := domain.ValidateAbsURL("host", host); err != nil {
+	if err := validateHost(kind, host); err != nil {
 		return err
 	}
 	return validateSettings(kind, settings)
+}
+
+// validateHost enforces the host column's shape per kind's registered
+// hostMode: hostPort requires "host:port" (Deluge's raw daemon socket, which
+// isn't a URL at all); every other kind requires an absolute http(s) URL.
+func validateHost(kind, host string) error {
+	if drivers[kind].host == hostPort {
+		if _, _, err := net.SplitHostPort(host); err != nil {
+			return fmt.Errorf("%w: host must be host:port (e.g. localhost:58846): %w", domain.ErrInvalid, err)
+		}
+		return nil
+	}
+	_, err := domain.ValidateAbsURL("host", host)
+	return err
 }
 
 // validateSettings rejects a populated settings field that doesn't match kind.
 func validateSettings(kind string, settings domain.DownloadClientSettings) error {
 	if settings.QBittorrent != nil && kind != domain.DownloadClientKindQBittorrent {
 		return fmt.Errorf("%w: qbittorrent settings given for kind %q", domain.ErrInvalid, kind)
+	}
+	if settings.Transmission != nil && kind != domain.DownloadClientKindTransmission {
+		return fmt.Errorf("%w: transmission settings given for kind %q", domain.ErrInvalid, kind)
+	}
+	if settings.Deluge != nil && kind != domain.DownloadClientKindDeluge {
+		return fmt.Errorf("%w: deluge settings given for kind %q", domain.ErrInvalid, kind)
+	}
+	if settings.RTorrent != nil && kind != domain.DownloadClientKindRTorrent {
+		return fmt.Errorf("%w: rtorrent settings given for kind %q", domain.ErrInvalid, kind)
 	}
 	return nil
 }

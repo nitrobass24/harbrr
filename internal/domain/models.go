@@ -362,13 +362,39 @@ type QBittorrentSettings struct {
 	TLSSkipVerify bool     `json:"tlsSkipVerify,omitempty"`
 }
 
+// TransmissionSettings holds the Transmission-specific per-client options.
+type TransmissionSettings struct {
+	DownloadDir string `json:"downloadDir,omitempty"`
+	StartPaused bool   `json:"startPaused,omitempty"`
+}
+
+// DelugeSettings holds the Deluge-specific per-client options. V1 selects the
+// legacy 1.3 daemon protocol; the default is the v2 daemon.
+type DelugeSettings struct {
+	V1          bool   `json:"v1,omitempty"`
+	Label       string `json:"label,omitempty"`
+	DownloadDir string `json:"downloadDir,omitempty"`
+	StartPaused bool   `json:"startPaused,omitempty"`
+}
+
+// RTorrentSettings holds the rTorrent-specific per-client options.
+type RTorrentSettings struct {
+	Label         string `json:"label,omitempty"`
+	Directory     string `json:"directory,omitempty"`
+	StartPaused   bool   `json:"startPaused,omitempty"`
+	TLSSkipVerify bool   `json:"tlsSkipVerify,omitempty"`
+}
+
 // DownloadClientSettings is the typed wrapper persisted (marshalled) into
 // download_clients.settings_json: one pointer field per kind, never a bare
 // map[string]any. Exactly one field may be populated, and it must match the
 // owning row's Kind — a mismatch is domain.ErrInvalid (checked by the download
 // service, since only it knows the row's Kind).
 type DownloadClientSettings struct {
-	QBittorrent *QBittorrentSettings `json:"qbittorrent,omitempty"`
+	QBittorrent  *QBittorrentSettings  `json:"qbittorrent,omitempty"`
+	Transmission *TransmissionSettings `json:"transmission,omitempty"`
+	Deluge       *DelugeSettings       `json:"deluge,omitempty"`
+	RTorrent     *RTorrentSettings     `json:"rtorrent,omitempty"`
 }
 
 // DownloadClient is a configured download client harbrr can send grabbed
