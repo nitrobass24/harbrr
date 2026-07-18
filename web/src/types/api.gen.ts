@@ -1828,6 +1828,14 @@ export interface components {
             startPaused?: boolean;
             tlsSkipVerify?: boolean;
         };
+        /** @description SABnzbd-specific per-client options; the default category an Add falls back to when the caller doesn't supply one. The client's username column is unused for this kind (auth is apikey-only). */
+        SabnzbdSettings: {
+            category?: string;
+        };
+        /** @description NZBGet-specific per-client options; the default category an Add falls back to when the caller doesn't supply one. */
+        NZBGetSettings: {
+            category?: string;
+        };
         /** @description blackhole watch-folder configuration. At least one of torrentDir/nzbDir must be set; a payload whose protocol has no configured dir fails as unsupported. */
         BlackholeSettings: {
             /** @description absolute path a .torrent/.magnet is written into */
@@ -1841,6 +1849,8 @@ export interface components {
         DownloadClientSettings: {
             qbittorrent?: components["schemas"]["QBittorrentSettings"];
             blackhole?: components["schemas"]["BlackholeSettings"];
+            sabnzbd?: components["schemas"]["SabnzbdSettings"];
+            nzbget?: components["schemas"]["NZBGetSettings"];
         };
         /** @description A configured download client harbrr can send grabbed releases to. host/username are plain; the secret (password or API key, depending on kind) is write-only and is never echoed back — it reads back as the <redacted> sentinel. */
         DownloadClient: {
@@ -1848,7 +1858,7 @@ export interface components {
             id: number;
             name: string;
             /** @enum {string} */
-            kind: "qbittorrent" | "blackhole";
+            kind: "qbittorrent" | "blackhole" | "sabnzbd" | "nzbget";
             enabled: boolean;
             host: string;
             username: string;
@@ -1863,7 +1873,7 @@ export interface components {
         CreateDownloadClient: {
             name: string;
             /** @enum {string} */
-            kind: "qbittorrent" | "blackhole";
+            kind: "qbittorrent" | "blackhole" | "sabnzbd" | "nzbget";
             /** @description must be empty for kinds with no network endpoint (e.g. blackhole) */
             host: string;
             username?: string;
