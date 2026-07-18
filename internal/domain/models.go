@@ -386,6 +386,18 @@ type DownloadStationSettings struct {
 	Directory string `json:"directory,omitempty"`
 }
 
+// SabnzbdSettings holds the SABnzbd-specific per-client options: the default
+// category an Add falls back to when the caller doesn't supply one.
+type SabnzbdSettings struct {
+	Category string `json:"category,omitempty"`
+}
+
+// NZBGetSettings holds the NZBGet-specific per-client options: the default
+// category an Add falls back to when the caller doesn't supply one.
+type NZBGetSettings struct {
+	Category string `json:"category,omitempty"`
+}
+
 // BlackholeSettings holds the blackhole driver's watch-folder configuration: the
 // resolved release is written as a complete file into TorrentDir/NZBDir for a
 // real client to pick up. At least one dir must be set (validated by the
@@ -406,6 +418,8 @@ type BlackholeSettings struct {
 type DownloadClientSettings struct {
 	QBittorrent     *QBittorrentSettings     `json:"qbittorrent,omitempty"`
 	Blackhole       *BlackholeSettings       `json:"blackhole,omitempty"`
+	Sabnzbd         *SabnzbdSettings         `json:"sabnzbd,omitempty"`
+	NZBGet          *NZBGetSettings          `json:"nzbget,omitempty"`
 	Qui             *QuiSettings             `json:"qui,omitempty"`
 	Flood           *FloodSettings           `json:"flood,omitempty"`
 	DownloadStation *DownloadStationSettings `json:"downloadStation,omitempty"`

@@ -25,10 +25,11 @@ import {
 import { notifyError, notifySuccess } from "@/lib/notify"
 import type { CreateDownloadClient, DownloadClient, DownloadClientKind, DownloadClientSettings, UpdateDownloadClient } from "@/lib/api"
 
-// Only kinds with a registered driver work today (autobrr/harbrr#240, #242,
-// #244); the rest are seeded server-side but rejected on create until their own
-// driver lands (autobrr/harbrr#8). Keep the picker limited to what actually works.
-const DOWNLOAD_CLIENT_KINDS: DownloadClientKind[] = ["qbittorrent", "blackhole", "qui", "flood", "download-station"]
+// Only kinds with a registered driver work today (autobrr/harbrr#240, #241,
+// #242, #244); the rest are seeded server-side but rejected on create until
+// their own driver lands (autobrr/harbrr#8). Keep the picker limited to what
+// actually works.
+const DOWNLOAD_CLIENT_KINDS: DownloadClientKind[] = ["qbittorrent", "blackhole", "sabnzbd", "nzbget", "qui", "flood", "download-station"]
 
 // `null` = closed; `{ client: null }` = add; `{ client }` = edit that client.
 type Editing = { client: DownloadClient | null } | null
@@ -139,9 +140,11 @@ function DownloadClientForm({ client, pending, onSubmit }: {
   const [host, setHost] = useState(client?.host ?? "")
   const [username, setUsername] = useState(client?.username ?? "")
   const [secret, setSecret] = useState("")
-  // category/tags/startPaused are shared by qbittorrent and qui (identical concepts);
+  // category/tags/startPaused are shared across kinds with identical concepts;
   // destination/directory/instanceId/tlsSkipVerify are single-kind.
-  const [category, setCategory] = useState(client?.settings.qbittorrent?.category ?? client?.settings.qui?.category ?? "")
+  const [category, setCategory] = useState(
+    client?.settings.qbittorrent?.category ?? client?.settings.qui?.category ?? client?.settings.sabnzbd?.category ?? client?.settings.nzbget?.category ?? ""
+  )
   const [tags, setTags] = useState((client?.settings.qbittorrent?.tags ?? client?.settings.qui?.tags ?? client?.settings.flood?.tags ?? []).join(", "))
   const [startPaused, setStartPaused] = useState(
     client?.settings.qbittorrent?.startPaused ?? client?.settings.qui?.startPaused ?? client?.settings.flood?.startPaused ?? false
@@ -165,6 +168,10 @@ function DownloadClientForm({ client, pending, onSubmit }: {
           settings = { qbittorrent: { category: category || undefined, tags: tagList, startPaused: startPaused || undefined, tlsSkipVerify: tlsSkipVerify || undefined } }
         } else if (kind === "blackhole") {
           settings = { blackhole: { torrentDir: torrentDir || undefined, nzbDir: nzbDir || undefined, saveMagnetFiles: saveMagnetFiles || undefined } }
+        } else if (kind === "sabnzbd") {
+          settings = { sabnzbd: { category: category || undefined } }
+        } else if (kind === "nzbget") {
+          settings = { nzbget: { category: category || undefined } }
         } else if (kind === "qui") {
           settings = { qui: { instanceId: Number(instanceId) || 0, category: category || undefined, tags: tagList, startPaused: startPaused || undefined } }
         } else if (kind === "flood") {
@@ -203,14 +210,14 @@ function DownloadClientForm({ client, pending, onSubmit }: {
             <Input id="dlc-host" placeholder="http://localhost:8080" value={host} onChange={(e) => setHost(e.target.value)} />
           </span>
           <div className="grid grid-cols-2 gap-3">
-            {kind !== "qui" && (
+            {kind !== "qui" && kind !== "sabnzbd" && (
               <span className="flex flex-col gap-1.5">
                 <Label htmlFor="dlc-username">Username <span className="text-faint">(optional)</span></Label>
                 <Input id="dlc-username" autoComplete="off" value={username} onChange={(e) => setUsername(e.target.value)} />
               </span>
             )}
-            <span className={`flex flex-col gap-1.5 ${kind === "qui" ? "col-span-2" : ""}`}>
-              <Label htmlFor="dlc-secret">{kind === "qui" ? "API key" : "Password"} {isEdit && <span className="text-faint">(leave blank to keep)</span>}</Label>
+            <span className={`flex flex-col gap-1.5 ${kind === "qui" || kind === "sabnzbd" ? "col-span-2" : ""}`}>
+              <Label htmlFor="dlc-secret">{kind === "qui" || kind === "sabnzbd" ? "API key" : "Password"} {isEdit && <span className="text-faint">(leave blank to keep)</span>}</Label>
               <Input id="dlc-secret" type="password" autoComplete="off" value={secret} onChange={(e) => setSecret(e.target.value)} />
             </span>
           </div>
@@ -232,6 +239,14 @@ function DownloadClientForm({ client, pending, onSubmit }: {
             <Switch checked={saveMagnetFiles} onCheckedChange={setSaveMagnetFiles} />
             Save magnet-only releases as .magnet files
           </label>
+        </div>
+      )}
+      {(kind === "sabnzbd" || kind === "nzbget") && (
+        <div className="flex flex-col gap-3 rounded-lg border border-border/60 p-3">
+          <span className="flex flex-col gap-1.5">
+            <Label htmlFor="dlc-category">Category <span className="text-faint">(optional)</span></Label>
+            <Input id="dlc-category" value={category} onChange={(e) => setCategory(e.target.value)} />
+          </span>
         </div>
       )}
       {(kind === "qbittorrent" || kind === "qui") && (

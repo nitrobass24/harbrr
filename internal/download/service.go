@@ -247,26 +247,32 @@ func validateHost(kind, host string) error {
 // InstanceID — qui is keyed by int instance id, so an unset/zero id can never be
 // a valid target), and validates the kind-specific settings that need it.
 func validateSettings(kind string, settings domain.DownloadClientSettings) error {
-	if settings.QBittorrent != nil && kind != domain.DownloadClientKindQBittorrent {
-		return fmt.Errorf("%w: qbittorrent settings given for kind %q", domain.ErrInvalid, kind)
+	// One row per settings shape: a populated field whose kind doesn't own it is a
+	// mismatch. Adding a kind is one row here, not another guard clause.
+	mismatches := []struct {
+		name string
+		set  bool
+		kind string
+	}{
+		{"qbittorrent", settings.QBittorrent != nil, domain.DownloadClientKindQBittorrent},
+		{"blackhole", settings.Blackhole != nil, domain.DownloadClientKindBlackhole},
+		{"sabnzbd", settings.Sabnzbd != nil, domain.DownloadClientKindSabnzbd},
+		{"nzbget", settings.NZBGet != nil, domain.DownloadClientKindNZBGet},
+		{"qui", settings.Qui != nil, domain.DownloadClientKindQui},
+		{"flood", settings.Flood != nil, domain.DownloadClientKindFlood},
+		{"download-station", settings.DownloadStation != nil, domain.DownloadClientKindDownloadStation},
 	}
-	if kind == domain.DownloadClientKindQui {
+	for _, m := range mismatches {
+		if m.set && kind != m.kind {
+			return fmt.Errorf("%w: %s settings given for kind %q", domain.ErrInvalid, m.name, kind)
+		}
+	}
+	switch kind {
+	case domain.DownloadClientKindQui:
 		if settings.Qui == nil || settings.Qui.InstanceID <= 0 {
 			return fmt.Errorf("%w: qui settings instanceId must be > 0", domain.ErrInvalid)
 		}
-	} else if settings.Qui != nil {
-		return fmt.Errorf("%w: qui settings given for kind %q", domain.ErrInvalid, kind)
-	}
-	if settings.Flood != nil && kind != domain.DownloadClientKindFlood {
-		return fmt.Errorf("%w: flood settings given for kind %q", domain.ErrInvalid, kind)
-	}
-	if settings.DownloadStation != nil && kind != domain.DownloadClientKindDownloadStation {
-		return fmt.Errorf("%w: download-station settings given for kind %q", domain.ErrInvalid, kind)
-	}
-	if settings.Blackhole != nil && kind != domain.DownloadClientKindBlackhole {
-		return fmt.Errorf("%w: blackhole settings given for kind %q", domain.ErrInvalid, kind)
-	}
-	if kind == domain.DownloadClientKindBlackhole {
+	case domain.DownloadClientKindBlackhole:
 		return validateBlackholeSettings(settings.Blackhole)
 	}
 	return nil

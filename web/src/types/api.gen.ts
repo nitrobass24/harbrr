@@ -1847,6 +1847,14 @@ export interface components {
             /** @description relative to a shared folder; no leading slash */
             directory?: string;
         };
+        /** @description SABnzbd-specific per-client options; the default category an Add falls back to when the caller doesn't supply one. The client's username column is unused for this kind (auth is apikey-only). */
+        SabnzbdSettings: {
+            category?: string;
+        };
+        /** @description NZBGet-specific per-client options; the default category an Add falls back to when the caller doesn't supply one. */
+        NZBGetSettings: {
+            category?: string;
+        };
         /** @description blackhole watch-folder configuration. At least one of torrentDir/nzbDir must be set; a payload whose protocol has no configured dir fails as unsupported. */
         BlackholeSettings: {
             /** @description absolute path a .torrent/.magnet is written into */
@@ -1860,6 +1868,8 @@ export interface components {
         DownloadClientSettings: {
             qbittorrent?: components["schemas"]["QBittorrentSettings"];
             blackhole?: components["schemas"]["BlackholeSettings"];
+            sabnzbd?: components["schemas"]["SabnzbdSettings"];
+            nzbget?: components["schemas"]["NZBGetSettings"];
             qui?: components["schemas"]["QuiSettings"];
             flood?: components["schemas"]["FloodSettings"];
             downloadStation?: components["schemas"]["DownloadStationSettings"];
@@ -1870,7 +1880,7 @@ export interface components {
             id: number;
             name: string;
             /** @enum {string} */
-            kind: "qbittorrent" | "blackhole" | "qui" | "flood" | "download-station";
+            kind: "qbittorrent" | "blackhole" | "sabnzbd" | "nzbget" | "qui" | "flood" | "download-station";
             enabled: boolean;
             host: string;
             username: string;
@@ -1885,7 +1895,7 @@ export interface components {
         CreateDownloadClient: {
             name: string;
             /** @enum {string} */
-            kind: "qbittorrent" | "blackhole" | "qui" | "flood" | "download-station";
+            kind: "qbittorrent" | "blackhole" | "sabnzbd" | "nzbget" | "qui" | "flood" | "download-station";
             /** @description must be empty for kinds with no network endpoint (e.g. blackhole) */
             host: string;
             username?: string;
