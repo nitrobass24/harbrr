@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/autobrr/harbrr/internal/database"
@@ -40,6 +41,12 @@ type Service struct {
 	users   database.Users
 	apiKeys database.APIKeys
 	hasher  PasswordHasher
+
+	// touchMu guards touchPending, the in-memory buffer coalescing successful
+	// key validations into one last_used_at UPDATE per key at flush time (the
+	// searchcache FlushTouches idiom) — validation itself never writes.
+	touchMu      sync.Mutex
+	touchPending map[int64]time.Time
 }
 
 // PasswordHasher owns password hashing and verification for auth flows.
@@ -78,7 +85,7 @@ func NewServiceWithPasswordHasher(db dbinterface.Querier, hasher PasswordHasher)
 	if hasher == nil {
 		hasher = secretsPasswordHasher{}
 	}
-	return &Service{db: db, hasher: hasher}
+	return &Service{db: db, hasher: hasher, touchPending: make(map[int64]time.Time)}
 }
 
 // SetupComplete reports whether the admin account exists.
@@ -190,7 +197,9 @@ func (s *Service) MintAPIKey(ctx context.Context, name string) (string, domain.A
 }
 
 // ValidateAPIKey returns the API key matching a presented plaintext, or
-// ErrInvalidAPIKey. It is a pure read (no write on the request path).
+// ErrInvalidAPIKey. It never writes to the DB on the request path: a successful
+// validation only buffers a last_used_at touch in memory, drained later by
+// FlushAPIKeyTouches.
 func (s *Service) ValidateAPIKey(ctx context.Context, plaintext string) (domain.APIKey, error) {
 	if plaintext == "" {
 		return domain.APIKey{}, ErrInvalidAPIKey
@@ -202,7 +211,30 @@ func (s *Service) ValidateAPIKey(ctx context.Context, plaintext string) (domain.
 	if err != nil {
 		return domain.APIKey{}, fmt.Errorf("auth: lookup api key: %w", err)
 	}
+	s.touchMu.Lock()
+	s.touchPending[k.ID] = time.Now()
+	s.touchMu.Unlock()
 	return k, nil
+}
+
+// FlushAPIKeyTouches drains the buffered validation touches to the store, one
+// last_used_at UPDATE per key stamped with its most recent use. Called on the
+// lifecycle flush tick and at shutdown, never per request. Best-effort: failures
+// are joined for the caller to log, and the buffered stamps for failed keys are
+// lost — acceptable, last_used_at is observability, not state.
+func (s *Service) FlushAPIKeyTouches(ctx context.Context) error {
+	s.touchMu.Lock()
+	pending := s.touchPending
+	s.touchPending = make(map[int64]time.Time, len(pending))
+	s.touchMu.Unlock()
+
+	var errs []error
+	for id, usedAt := range pending {
+		if err := s.apiKeys.Touch(ctx, s.db, id, usedAt); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // ListAPIKeys returns all API keys (hashes only).

@@ -452,7 +452,7 @@ func (a *App) Handler() http.Handler { return a.server.Handler() }
 func (a *App) Run(ctx context.Context) error {
 	bgCtx, bgCancel := context.WithCancel(ctx)
 	var bg sync.WaitGroup
-	startReapers(bgCtx, &bg, a.db, a.sessionStore, a.searchCache, a.registry, a.log)
+	startReapers(bgCtx, &bg, a.db, a.sessionStore, a.searchCache, a.registry, a.auth, a.log)
 
 	runErr := a.serveUntilDone(ctx)
 
