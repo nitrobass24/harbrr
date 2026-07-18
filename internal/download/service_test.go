@@ -221,17 +221,31 @@ func TestUpdateDoesNotTouchAppCredential(t *testing.T) {
 }
 
 // TestValidateSettingsKindMismatch exercises the settings/kind cross-check
-// directly: deluge is still unregistered, so a genuine mismatch against it
-// can't be produced through Create/Update (validateKind rejects the
-// unregistered kind first) — this is the only reachable path to that case.
+// directly for every settings shape: a populated settings field only validates
+// against its own kind, and mismatches (including against an unregistered kind,
+// which validateSettings itself doesn't distinguish — validateKind rejects that
+// earlier in the Create/Update path) are domain.ErrInvalid.
 func TestValidateSettingsKindMismatch(t *testing.T) {
 	t.Parallel()
-	settings := domain.DownloadClientSettings{QBittorrent: &domain.QBittorrentSettings{Category: "tv"}}
-	if err := validateSettings(domain.DownloadClientKindQBittorrent, settings); err != nil {
-		t.Errorf("matching kind: err = %v, want nil", err)
+	tests := []struct {
+		name     string
+		settings domain.DownloadClientSettings
+		match    string
+	}{
+		{"qbittorrent", domain.DownloadClientSettings{QBittorrent: &domain.QBittorrentSettings{Category: "tv"}}, domain.DownloadClientKindQBittorrent},
+		{"sabnzbd", domain.DownloadClientSettings{Sabnzbd: &domain.SabnzbdSettings{Category: "tv"}}, domain.DownloadClientKindSabnzbd},
+		{"nzbget", domain.DownloadClientSettings{NZBGet: &domain.NZBGetSettings{Category: "tv"}}, domain.DownloadClientKindNZBGet},
 	}
-	if err := validateSettings(domain.DownloadClientKindDeluge, settings); !errors.Is(err, domain.ErrInvalid) {
-		t.Errorf("mismatched kind: err = %v, want domain.ErrInvalid", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if err := validateSettings(tt.match, tt.settings); err != nil {
+				t.Errorf("matching kind: err = %v, want nil", err)
+			}
+			if err := validateSettings(domain.DownloadClientKindDeluge, tt.settings); !errors.Is(err, domain.ErrInvalid) {
+				t.Errorf("mismatched kind: err = %v, want domain.ErrInvalid", err)
+			}
+		})
 	}
 }
 

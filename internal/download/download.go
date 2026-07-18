@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 
 	"github.com/autobrr/harbrr/internal/domain"
 )
@@ -42,6 +43,12 @@ type AddOptions struct {
 // ErrUnsupportedProtocol is returned by a Driver whose client cannot handle the
 // given Payload's Protocol (e.g. a torrent-only client sent a usenet payload).
 var ErrUnsupportedProtocol = errors.New("download: client does not support payload protocol")
+
+// ErrURLRequired is returned by a Driver whose client only adds a release by URL
+// (e.g. SABnzbd/NZBGet's add-by-URL-only ports) when Payload has no URL — a
+// bytes-only payload it cannot handle. Distinct from ErrUnsupportedProtocol: the
+// protocol IS supported, just not this delivery form.
+var ErrURLRequired = errors.New("download: client requires a URL payload (bytes-only add is unsupported)")
 
 // Driver is the minimal interface a download-client kind implements. Test proves
 // the configured client is reachable with its stored credentials; Add hands it a
@@ -82,6 +89,8 @@ type driverSpec struct {
 var drivers = map[string]driverSpec{
 	domain.DownloadClientKindQBittorrent:     {build: newQBittorrent, host: hostURL},
 	domain.DownloadClientKindBlackhole:       {build: newBlackhole, host: hostNone},
+	domain.DownloadClientKindSabnzbd:         {build: newSabnzbd, host: hostURL},
+	domain.DownloadClientKindNZBGet:          {build: newNZBGet, host: hostURL},
 	domain.DownloadClientKindQui:             {build: newQui, host: hostURL},
 	domain.DownloadClientKindFlood:           {build: newFlood, host: hostURL},
 	domain.DownloadClientKindDownloadStation: {build: newDownloadStation, host: hostURL},
@@ -130,4 +139,18 @@ func mergeTags(base, extra []string) []string {
 		out = append(out, t)
 	}
 	return out
+}
+
+// scrubURLError strips the request URL from a *url.Error — the shape net/http
+// returns for a failed request, whose .URL field is the full (percent-encoded)
+// request URL and so can carry a client's own apikey/password plus, embedded in
+// it, harbrr's own sealed-nzb-URL apikey. Same treatment as announce's
+// scrubURLError (internal/announce/announce.go); reimplemented here rather than
+// imported so package download stays independent of internal/announce.
+func scrubURLError(err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return fmt.Errorf("%s: %w", ue.Op, ue.Err)
+	}
+	return err
 }
