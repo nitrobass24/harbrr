@@ -162,11 +162,13 @@ func (d *downloadStationDriver) queryInfo(ctx context.Context) (map[string]dsAPI
 }
 
 // login authenticates for a DownloadStation session and returns the resulting
-// _sid. The account/password ride in the request's query string — every error
-// path routes through apphttp.RedactURLError, which drops the whole query (not
-// just named params), so the password can never reach a returned error.
+// _sid. account/passwd ride in a POST form body, not the URL — SYNO.API.Auth
+// accepts application/x-www-form-urlencoded — so the credentials never appear on
+// the wire path a proxy/access log records (the request line + query string),
+// unlike the GET-with-query-params shape every other DS call uses. Every error
+// path still routes through apphttp.RedactURLError as a second line of defense.
 func (d *downloadStationDriver) login(ctx context.Context, authPath string, version int) (string, error) {
-	q := url.Values{
+	form := url.Values{
 		"api":     {"SYNO.API.Auth"},
 		"version": {strconv.Itoa(version)},
 		"method":  {"login"},
@@ -175,11 +177,12 @@ func (d *downloadStationDriver) login(ctx context.Context, authPath string, vers
 		"session": {"DownloadStation"},
 		"format":  {"sid"},
 	}
-	u := d.host + "/webapi/" + authPath + "?" + q.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	u := d.host + "/webapi/" + authPath
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, strings.NewReader(form.Encode()))
 	if err != nil {
 		return "", fmt.Errorf("download: download-station: build login request: %w", apphttp.RedactURLError(err))
 	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := d.client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("download: download-station: login: %w", apphttp.RedactURLError(err))

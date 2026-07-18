@@ -22,10 +22,13 @@ type dsStub struct {
 	wantAccount, wantPassword      string
 	createSuccess                  bool
 
-	gotAuthVersion string
-	gotCreateQuery url.Values // GET create's full query, or POST create's URL query (for _sid)
-	gotCreateForm  map[string][]string
-	gotFileBytes   []byte
+	gotAuthVersion      string
+	gotLoginMethod      string
+	gotLoginURLQuery    url.Values // login request's URL query — must be empty (creds ride in the form body)
+	gotLoginContentType string
+	gotCreateQuery      url.Values // GET create's full query, or POST create's URL query (for _sid)
+	gotCreateForm       map[string][]string
+	gotFileBytes        []byte
 }
 
 func newDSStub(t *testing.T, s *dsStub) *httptest.Server {
@@ -45,9 +48,16 @@ func newDSStub(t *testing.T, s *dsStub) *httptest.Server {
 			`}}`))
 	})
 	mux.HandleFunc("/webapi/auth.cgi", func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query()
-		s.gotAuthVersion = q.Get("version")
-		if s.wantAccount != "" && (q.Get("account") != s.wantAccount || q.Get("passwd") != s.wantPassword) {
+		s.gotLoginMethod = r.Method
+		s.gotLoginURLQuery = r.URL.Query()
+		s.gotLoginContentType = r.Header.Get("Content-Type")
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("parse login form: %v", err)
+			http.Error(w, "bad form", http.StatusInternalServerError)
+			return
+		}
+		s.gotAuthVersion = r.FormValue("version")
+		if s.wantAccount != "" && (r.FormValue("account") != s.wantAccount || r.FormValue("passwd") != s.wantPassword) {
 			_, _ = w.Write([]byte(`{"success":false,"error":{"code":400}}`))
 			return
 		}
@@ -57,13 +67,17 @@ func newDSStub(t *testing.T, s *dsStub) *httptest.Server {
 		s.gotCreateQuery = r.URL.Query()
 		if r.Method == http.MethodPost {
 			if err := r.ParseMultipartForm(1 << 20); err != nil { //nolint:gosec // test stub; body is a fixed small fixture, not attacker-controlled.
-				t.Fatalf("parse multipart form: %v", err)
+				t.Errorf("parse multipart form: %v", err)
+				http.Error(w, "bad form", http.StatusInternalServerError)
+				return
 			}
 			s.gotCreateForm = r.MultipartForm.Value
 			if files := r.MultipartForm.File["fileData"]; len(files) == 1 {
 				f, err := files[0].Open()
 				if err != nil {
-					t.Fatalf("open fileData part: %v", err)
+					t.Errorf("open fileData part: %v", err)
+					http.Error(w, "bad file part", http.StatusInternalServerError)
+					return
 				}
 				defer f.Close()
 				buf := make([]byte, files[0].Size)
@@ -117,6 +131,29 @@ func TestDSTest_TaskV2Unsupported(t *testing.T) {
 
 	if err := drv.Test(context.Background()); err == nil {
 		t.Fatal("expected an error when SYNO.DownloadStation2.Task doesn't support v2")
+	}
+}
+
+// TestDSLogin_CredentialsRideFormBodyNotURL pins credential hygiene: account and
+// passwd must never appear in the login request's URL (query strings land in
+// proxy/access logs on the wire path) — they belong in a POST form body instead.
+func TestDSLogin_CredentialsRideFormBodyNotURL(t *testing.T) {
+	t.Parallel()
+	stub := &dsStub{wantAccount: "admin", wantPassword: "hunter2"}
+	srv := newDSStub(t, stub)
+	drv := newTestDS(srv.URL, "admin", "hunter2", domain.DownloadStationSettings{})
+
+	if err := drv.Test(context.Background()); err != nil {
+		t.Fatalf("Test: %v", err)
+	}
+	if stub.gotLoginMethod != http.MethodPost {
+		t.Fatalf("login method = %q, want POST", stub.gotLoginMethod)
+	}
+	if !strings.HasPrefix(stub.gotLoginContentType, "application/x-www-form-urlencoded") {
+		t.Fatalf("login Content-Type = %q, want application/x-www-form-urlencoded", stub.gotLoginContentType)
+	}
+	if len(stub.gotLoginURLQuery) != 0 {
+		t.Fatalf("login URL query = %v, want empty (account/passwd must ride in the form body, not the URL)", stub.gotLoginURLQuery)
 	}
 }
 
@@ -236,10 +273,10 @@ func TestDSAdd_CreateFailureSurfaced(t *testing.T) {
 	}
 }
 
-// TestDSLogin_ErrorRedactsPassword pins that the password (which rides in the
-// login request's query string) can never reach a returned error: every
-// transport error routes through apphttp.RedactURLError, which drops the query
-// wholesale rather than scrubbing named params.
+// TestDSLogin_ErrorRedactsPassword pins that the password can never reach a
+// returned error even on a transport failure (a *url.Error whose Error()
+// otherwise quotes the request URL): every error path routes through
+// apphttp.RedactURLError, which drops the query wholesale.
 func TestDSLogin_ErrorRedactsPassword(t *testing.T) {
 	t.Parallel()
 	// An unroutable host forces a transport-level *url.Error without a live server

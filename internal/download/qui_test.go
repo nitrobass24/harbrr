@@ -36,13 +36,17 @@ func newQuiStub(t *testing.T, instanceID int, s *quiStub) *httptest.Server {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(instances); err != nil {
-			t.Fatalf("encode instances: %v", err)
+			t.Errorf("encode instances: %v", err)
+			http.Error(w, "encode failed", http.StatusInternalServerError)
+			return
 		}
 	})
 	mux.HandleFunc("/api/instances/"+strconv.Itoa(instanceID)+"/torrents", func(w http.ResponseWriter, r *http.Request) {
 		s.gotKey = r.Header.Get("X-API-Key")
 		if err := r.ParseMultipartForm(1 << 20); err != nil { //nolint:gosec // test stub; body is a fixed small torrent fixture, not attacker-controlled.
-			t.Fatalf("parse multipart form: %v", err)
+			t.Errorf("parse multipart form: %v", err)
+			http.Error(w, "bad form", http.StatusInternalServerError)
+			return
 		}
 		s.addForm = r.MultipartForm.Value
 		s.addWasBytes = len(r.MultipartForm.File["torrent"]) > 0

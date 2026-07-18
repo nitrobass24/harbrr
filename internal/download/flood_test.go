@@ -40,7 +40,9 @@ func newFloodStub(t *testing.T, s *floodStub) *httptest.Server {
 		s.authCalls++
 		var body struct{ Username, Password string }
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatalf("decode auth body: %v", err)
+			t.Errorf("decode auth body: %v", err)
+			http.Error(w, "bad body", http.StatusInternalServerError)
+			return
 		}
 		if s.wantUsername != "" && (body.Username != s.wantUsername || body.Password != s.wantPassword) {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -74,7 +76,9 @@ func newFloodStub(t *testing.T, s *floodStub) *httptest.Server {
 		}
 		s.lastAddPath = r.URL.Path
 		if err := json.NewDecoder(r.Body).Decode(&s.lastAdd); err != nil {
-			t.Fatalf("decode add body: %v", err)
+			t.Errorf("decode add body: %v", err)
+			http.Error(w, "bad body", http.StatusInternalServerError)
+			return
 		}
 		w.WriteHeader(http.StatusOK)
 	}
