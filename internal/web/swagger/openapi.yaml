@@ -2658,6 +2658,31 @@ components:
         tags: { type: array, items: { type: string } }
         startPaused: { type: boolean }
         tlsSkipVerify: { type: boolean }
+    QuiSettings:
+      type: object
+      description: >
+        qui-specific per-client options. qui (autobrr/qui) is a multi-instance
+        qBittorrent manager keyed by int instance id — instanceId is required.
+      properties:
+        instanceId: { type: integer, description: "required; > 0" }
+        category: { type: string }
+        tags: { type: array, items: { type: string } }
+        startPaused: { type: boolean }
+      required: [instanceId]
+    FloodSettings:
+      type: object
+      description: >
+        Flood-specific per-client options. Flood has no category concept — a
+        caller's category is folded into tags on add.
+      properties:
+        destination: { type: string }
+        tags: { type: array, items: { type: string } }
+        startPaused: { type: boolean }
+    DownloadStationSettings:
+      type: object
+      description: Synology Download Station-specific per-client options.
+      properties:
+        directory: { type: string, description: "relative to a shared folder; no leading slash" }
     DownloadClientSettings:
       type: object
       description: >
@@ -2665,6 +2690,9 @@ components:
         client's own kind is populated.
       properties:
         qbittorrent: { $ref: "#/components/schemas/QBittorrentSettings" }
+        qui: { $ref: "#/components/schemas/QuiSettings" }
+        flood: { $ref: "#/components/schemas/FloodSettings" }
+        downloadStation: { $ref: "#/components/schemas/DownloadStationSettings" }
     DownloadClient:
       type: object
       description: >
@@ -2677,7 +2705,7 @@ components:
         name: { type: string }
         kind:
           type: string
-          enum: [qbittorrent]
+          enum: [qbittorrent, qui, flood, download-station]
         enabled: { type: boolean }
         host: { type: string }
         username: { type: string }
@@ -2692,7 +2720,7 @@ components:
         name: { type: string }
         kind:
           type: string
-          enum: [qbittorrent]
+          enum: [qbittorrent, qui, flood, download-station]
         host: { type: string }
         username: { type: string }
         secret: { type: string, description: "optional; stored encrypted" }

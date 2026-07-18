@@ -217,10 +217,26 @@ func validate(name, kind, host string, settings domain.DownloadClientSettings) e
 	return validateSettings(kind, settings)
 }
 
-// validateSettings rejects a populated settings field that doesn't match kind.
+// validateSettings rejects a populated settings field that doesn't match kind, and
+// enforces the one required field among the kind-specific settings (qui's
+// InstanceID — qui is keyed by int instance id, so an unset/zero id can never be
+// a valid target).
 func validateSettings(kind string, settings domain.DownloadClientSettings) error {
 	if settings.QBittorrent != nil && kind != domain.DownloadClientKindQBittorrent {
 		return fmt.Errorf("%w: qbittorrent settings given for kind %q", domain.ErrInvalid, kind)
+	}
+	if kind == domain.DownloadClientKindQui {
+		if settings.Qui == nil || settings.Qui.InstanceID <= 0 {
+			return fmt.Errorf("%w: qui settings instanceId must be > 0", domain.ErrInvalid)
+		}
+	} else if settings.Qui != nil {
+		return fmt.Errorf("%w: qui settings given for kind %q", domain.ErrInvalid, kind)
+	}
+	if settings.Flood != nil && kind != domain.DownloadClientKindFlood {
+		return fmt.Errorf("%w: flood settings given for kind %q", domain.ErrInvalid, kind)
+	}
+	if settings.DownloadStation != nil && kind != domain.DownloadClientKindDownloadStation {
+		return fmt.Errorf("%w: download-station settings given for kind %q", domain.ErrInvalid, kind)
 	}
 	return nil
 }

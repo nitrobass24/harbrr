@@ -1828,9 +1828,31 @@ export interface components {
             startPaused?: boolean;
             tlsSkipVerify?: boolean;
         };
+        /** @description qui-specific per-client options. qui (autobrr/qui) is a multi-instance qBittorrent manager keyed by int instance id — instanceId is required. */
+        QuiSettings: {
+            /** @description required; > 0 */
+            instanceId: number;
+            category?: string;
+            tags?: string[];
+            startPaused?: boolean;
+        };
+        /** @description Flood-specific per-client options. Flood has no category concept — a caller's category is folded into tags on add. */
+        FloodSettings: {
+            destination?: string;
+            tags?: string[];
+            startPaused?: boolean;
+        };
+        /** @description Synology Download Station-specific per-client options. */
+        DownloadStationSettings: {
+            /** @description relative to a shared folder; no leading slash */
+            directory?: string;
+        };
         /** @description Kind-specific options, keyed by kind — at most the one field matching the client's own kind is populated. */
         DownloadClientSettings: {
             qbittorrent?: components["schemas"]["QBittorrentSettings"];
+            qui?: components["schemas"]["QuiSettings"];
+            flood?: components["schemas"]["FloodSettings"];
+            downloadStation?: components["schemas"]["DownloadStationSettings"];
         };
         /** @description A configured download client harbrr can send grabbed releases to. host/username are plain; the secret (password or API key, depending on kind) is write-only and is never echoed back — it reads back as the <redacted> sentinel. */
         DownloadClient: {
@@ -1838,7 +1860,7 @@ export interface components {
             id: number;
             name: string;
             /** @enum {string} */
-            kind: "qbittorrent";
+            kind: "qbittorrent" | "qui" | "flood" | "download-station";
             enabled: boolean;
             host: string;
             username: string;
@@ -1853,7 +1875,7 @@ export interface components {
         CreateDownloadClient: {
             name: string;
             /** @enum {string} */
-            kind: "qbittorrent";
+            kind: "qbittorrent" | "qui" | "flood" | "download-station";
             host: string;
             username?: string;
             /** @description optional; stored encrypted */

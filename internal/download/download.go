@@ -62,7 +62,10 @@ type driverBuilder func(c domain.DownloadClient, secret string, client *http.Cli
 // a kind is creatable only once it has an entry here. Adding driver #2 is one map
 // entry (plus its own file) — no other platform code changes.
 var drivers = map[string]driverBuilder{
-	domain.DownloadClientKindQBittorrent: newQBittorrent,
+	domain.DownloadClientKindQBittorrent:     newQBittorrent,
+	domain.DownloadClientKindQui:             newQui,
+	domain.DownloadClientKindFlood:           newFlood,
+	domain.DownloadClientKindDownloadStation: newDownloadStation,
 }
 
 // validateKind reports whether kind has a registered driver.
@@ -79,4 +82,33 @@ func newDriver(c domain.DownloadClient, secret string, client *http.Client) (Dri
 		return nil, fmt.Errorf("%w: unregistered download client kind %q", domain.ErrInvalid, c.Kind)
 	}
 	return build(c, secret, client)
+}
+
+// mergeTags returns the union of base and extra, deduped and order-preserving
+// (base first). Shared by qui and Flood, whose Add merges a client's configured
+// default tags with the caller's per-add AddOptions.Tags.
+func mergeTags(base, extra []string) []string {
+	seen := make(map[string]struct{}, len(base)+len(extra))
+	out := make([]string, 0, len(base)+len(extra))
+	for _, t := range base {
+		if t == "" {
+			continue
+		}
+		if _, ok := seen[t]; ok {
+			continue
+		}
+		seen[t] = struct{}{}
+		out = append(out, t)
+	}
+	for _, t := range extra {
+		if t == "" {
+			continue
+		}
+		if _, ok := seen[t]; ok {
+			continue
+		}
+		seen[t] = struct{}{}
+		out = append(out, t)
+	}
+	return out
 }

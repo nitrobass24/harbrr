@@ -362,13 +362,40 @@ type QBittorrentSettings struct {
 	TLSSkipVerify bool     `json:"tlsSkipVerify,omitempty"`
 }
 
+// QuiSettings holds the qui-specific per-client options. qui (autobrr/qui) is a
+// multi-instance qBittorrent manager keyed by int instance id — InstanceID is the
+// only required field (validated > 0 by the download service).
+type QuiSettings struct {
+	InstanceID  int      `json:"instanceId"`
+	Category    string   `json:"category,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+	StartPaused bool     `json:"startPaused,omitempty"`
+}
+
+// FloodSettings holds the Flood-specific per-client options. Flood has no category
+// concept, so a caller's AddOptions.Category is folded into Tags by the driver.
+type FloodSettings struct {
+	Destination string   `json:"destination,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+	StartPaused bool     `json:"startPaused,omitempty"`
+}
+
+// DownloadStationSettings holds the Synology Download Station-specific per-client
+// option: a destination folder relative to a shared folder (no leading slash).
+type DownloadStationSettings struct {
+	Directory string `json:"directory,omitempty"`
+}
+
 // DownloadClientSettings is the typed wrapper persisted (marshalled) into
 // download_clients.settings_json: one pointer field per kind, never a bare
 // map[string]any. Exactly one field may be populated, and it must match the
 // owning row's Kind — a mismatch is domain.ErrInvalid (checked by the download
 // service, since only it knows the row's Kind).
 type DownloadClientSettings struct {
-	QBittorrent *QBittorrentSettings `json:"qbittorrent,omitempty"`
+	QBittorrent     *QBittorrentSettings     `json:"qbittorrent,omitempty"`
+	Qui             *QuiSettings             `json:"qui,omitempty"`
+	Flood           *FloodSettings           `json:"flood,omitempty"`
+	DownloadStation *DownloadStationSettings `json:"downloadStation,omitempty"`
 }
 
 // DownloadClient is a configured download client harbrr can send grabbed
