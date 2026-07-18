@@ -59,6 +59,16 @@ func TestDiffPass(t *testing.T) {
 			nResults("h", resultCap), nResults("p", resultCap),
 			true, "count parity",
 		},
+		{
+			"uncapped oracle: harbrr full page vs unpaged Prowlarr superset",
+			nResults("t", resultCap), nResults("t", 696),
+			true, "clamped",
+		},
+		{
+			"uncapped oracle: harbrr under-filled page still fails",
+			nResults("t", 40), nResults("t", 696),
+			false, "count ratio",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

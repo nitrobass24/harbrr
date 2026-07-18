@@ -61,6 +61,13 @@ for the detail.
 
 Per tracker, page-1 only:
 
+- Prowlarr above the 100-result page cap while harbrr serves a full page → the
+  oracle response is **unpaged** (Prowlarr's search API has no page cap, so a
+  driver with no upstream paging — e.g. a Gazelle browse — hands it the entire
+  result set in one response, while harbrr correctly serves a 100-result Torznab
+  page). Prowlarr is clamped to harbrr's page-1 window before the ratio/Jaccard
+  below — full-set-vs-one-page is a paging artifact, not a count mismatch
+  (BrokenStones: Prowlarr 696 vs harbrr's page of 100 with identical heads).
 - both empty → **pass** (the tracker had nothing for the query)
 - Prowlarr > 0, harbrr = 0 → **fail**
 - harbrr > 0, Prowlarr = 0 → **pass** (likely a Prowlarr cache miss)
