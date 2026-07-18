@@ -126,11 +126,33 @@ func resolveTimeout(cfg map[string]string, fallback time.Duration) time.Duration
 	return fallback
 }
 
-// rateInterval picks the per-host spacing: the definition's requestDelay (seconds)
-// when set, else defaultRateInterval.
-func rateInterval(def *loader.Definition) time.Duration {
+// defRequestDelay returns the definition's own requestDelay floor — a tracker
+// requirement resolveRateInterval must never undercut — or 0 when the def declares
+// none.
+func defRequestDelay(def *loader.Definition) time.Duration {
 	if def != nil && def.RequestDelay != nil && *def.RequestDelay > 0 {
 		return time.Duration(*def.RequestDelay * float64(time.Second))
 	}
-	return defaultRateInterval
+	return 0
+}
+
+// resolveRateInterval picks the effective per-host spacing (autobrr/harbrr#104): the
+// instance's "rate_interval" override (a reserved setting, like "timeout" — a Go
+// duration string; invalid/non-positive is ignored) REPLACES the live global default
+// when present — an operator setting one indexer faster than the global default is
+// preference layering, not a floor violation. Either way, the definition's own
+// requestDelay is a tracker-respect floor that always wins: the result is never
+// below it, so user config can only slow harbrr down relative to the def, never
+// speed it past what the tracker itself declared.
+func resolveRateInterval(def *loader.Definition, cfg map[string]string, globalDefault time.Duration) time.Duration {
+	user := globalDefault
+	if v := cfg["rate_interval"]; v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			user = d
+		}
+	}
+	if floor := defRequestDelay(def); floor > user {
+		return floor
+	}
+	return user
 }
