@@ -26,7 +26,10 @@ func TestStatsCountsQueryAndFailure(t *testing.T) {
 	if !ok {
 		t.Fatal("Indexer(tt) not resolved")
 	}
-	// Two failing searches: both still count as query attempts.
+	// Two calls: the first reaches the tracker and counts as a query attempt (a
+	// classified 503 -> rate_limited failure). The second is gated by the #253
+	// circuit breaker, which the first failure just escalated — it must NOT reach
+	// the tracker again, so both counters stay at exactly one.
 	for i := 0; i < 2; i++ {
 		if _, err := idx.Search(ctx, search.Query{Keywords: "bunny"}); err == nil {
 			t.Fatal("Search unexpectedly succeeded")
@@ -37,14 +40,14 @@ func TestStatsCountsQueryAndFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stats: %v", err)
 	}
-	if st.Queries != 2 {
-		t.Errorf("queries = %d, want 2 (failed searches still count)", st.Queries)
+	if st.Queries != 1 {
+		t.Errorf("queries = %d, want 1 (a failed search still counts, but the second search was gated)", st.Queries)
 	}
 	if st.Grabs != 0 {
 		t.Errorf("grabs = %d, want 0", st.Grabs)
 	}
-	if st.Failures.RateLimited != 2 {
-		t.Errorf("failures.rateLimited = %d, want 2", st.Failures.RateLimited)
+	if st.Failures.RateLimited != 1 {
+		t.Errorf("failures.rateLimited = %d, want 1 (the gated second search records no new event)", st.Failures.RateLimited)
 	}
 	if st.LastFailureAt.IsZero() {
 		t.Error("lastFailureAt is zero, want the recorded failure time")

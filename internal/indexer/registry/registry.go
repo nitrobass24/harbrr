@@ -39,14 +39,19 @@ var errDisabled = errors.New("registry: instance disabled")
 // lock-heavy hot path — separated from transactional CRUD (Manager) and health/stats
 // reporting (StatsReporter).
 type Resolver struct {
-	db        dbinterface.Querier
-	instances database.Instances
-	proxies   database.Proxies
-	solvers   database.Solvers
-	health    database.Health
-	loader    *loader.Loader
-	keyring   secretsKeyring
-	clock     func() time.Time
+	db           dbinterface.Querier
+	instances    database.Instances
+	proxies      database.Proxies
+	solvers      database.Solvers
+	health       database.Health
+	circuit      database.Circuit
+	circuitLocks *circuitLocks
+	loader       *loader.Loader
+	keyring      secretsKeyring
+	clock        func() time.Time
+	// startedAt is the registry's boot time (captured in New, after WithClock
+	// applies), used only to compute the circuit breaker's startup grace window.
+	startedAt time.Time
 	timeout   time.Duration
 	log       zerolog.Logger
 	// doerFactory builds the HTTP client an engine drives, given the per-instance
@@ -221,6 +226,10 @@ func New(db dbinterface.Querier, ldr *loader.Loader, keyring secretsKeyring, fam
 	if res.budget == nil {
 		res.budget = newRequestBudget(db, res.clock, res.log)
 	}
+	// Captured last (after the options loop finalizes clock) so an injected test clock
+	// establishes the startup-grace reference point instead of the wall clock.
+	res.startedAt = res.clock()
+	res.circuitLocks = &circuitLocks{}
 	// Manager and StatsReporter are built last, from the resolver's finalized handles: the
 	// same clock and the same *IndexerStats pointer. Manager evicts the serve path through
 	// the resolver via the invalidator seam (inv: res); it never holds a *Resolver.
@@ -237,6 +246,7 @@ func New(db dbinterface.Querier, ldr *loader.Loader, keyring secretsKeyring, fam
 		stats:     res.stats,
 		instances: res.instances,
 		health:    res.health,
+		circuit:   res.circuit,
 		db:        res.db,
 		clock:     res.clock,
 	}
@@ -390,6 +400,9 @@ func (r *Resolver) buildAdapter(ctx context.Context, slug string) (*indexerAdapt
 		freeleechOnly: freeleechOnly,
 		db:            r.db,
 		health:        r.health,
+		circuit:       r.circuit,
+		circuitLocks:  r.circuitLocks,
+		startedAt:     r.startedAt,
 		healthSink:    r.healthSink,
 		stats:         r.stats,
 		budget:        r.budget,

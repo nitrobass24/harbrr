@@ -1,4 +1,4 @@
--- 0018_indexer_budget_counters.sql — durable per-indexer request-budget counters
+-- 0019_indexer_budget_counters.sql — durable per-indexer request-budget counters
 -- (autobrr/harbrr#251).
 --
 -- One row per instance holding the query/grab counters for the CURRENT rolling

@@ -82,6 +82,7 @@ func TestDeriveStatus(t *testing.T) {
 		name     string
 		events   []domain.IndexerHealthEvent
 		recovery database.HealthRecovery
+		disabled bool
 		want     string
 	}{
 		{name: "no events", want: "healthy"},
@@ -89,11 +90,14 @@ func TestDeriveStatus(t *testing.T) {
 		{name: "old failure", events: old, want: "healthy"},
 		{name: "recovered failure", events: recent, recovery: recovered, want: "healthy"},
 		{name: "failure after recovery", events: later, recovery: recovered, want: "unhealthy"},
+		// #253: an open circuit reads unhealthy even with no recent triggering event (a
+		// high escalation rung can outlast healthRecencyWindow).
+		{name: "circuit open, old failure", events: old, disabled: true, want: "unhealthy"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := r.deriveStatus(tt.events, tt.recovery); got != tt.want {
+			if got := r.deriveStatus(tt.events, tt.recovery, tt.disabled); got != tt.want {
 				t.Errorf("deriveStatus() = %q, want %q", got, tt.want)
 			}
 		})

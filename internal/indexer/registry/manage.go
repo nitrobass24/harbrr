@@ -53,6 +53,7 @@ type StatsReporter struct {
 	stats     *IndexerStats
 	instances database.Instances
 	health    database.Health
+	circuit   database.Circuit
 	db        dbinterface.Querier
 	clock     func() time.Time
 }
@@ -489,11 +490,13 @@ const healthEventLimit = 20
 const healthRecencyWindow = 1 * time.Hour
 
 // HealthStatus is one indexer's derived health plus the recent events behind it
-// (details already credential-scrubbed at write time).
+// (details already credential-scrubbed at write time). DisabledTill is non-nil
+// while the circuit breaker (#253) currently excludes the indexer from dispatch.
 type HealthStatus struct {
-	Slug   string
-	Status string
-	Events []domain.IndexerHealthEvent
+	Slug         string
+	Status       string
+	Events       []domain.IndexerHealthEvent
+	DisabledTill *time.Time
 }
 
 // Status returns the indexer's derived health and recent events. An unknown slug
@@ -503,20 +506,21 @@ func (r *StatsReporter) Status(ctx context.Context, slug string) (HealthStatus, 
 	if err != nil {
 		return HealthStatus{}, fmt.Errorf("registry: status %q: %w", slug, err)
 	}
-	events, status, err := r.statusOf(ctx, inst.ID, healthEventLimit)
+	events, status, disabledTill, err := r.statusOf(ctx, inst.ID, healthEventLimit)
 	if err != nil {
 		return HealthStatus{}, fmt.Errorf("registry: status %q: %w", slug, err)
 	}
-	return HealthStatus{Slug: slug, Status: status, Events: events}, nil
+	return HealthStatus{Slug: slug, Status: status, Events: events, DisabledTill: disabledTill}, nil
 }
 
 // FleetStatus is one indexer's derived health for the fleet-wide roll-up: the
 // status plus its single most recent health event (Events is empty when it has
-// none, mirroring HealthStatus.Events).
+// none, mirroring HealthStatus.Events). DisabledTill mirrors HealthStatus.
 type FleetStatus struct {
-	Slug   string
-	Status string
-	Events []domain.IndexerHealthEvent
+	Slug         string
+	Status       string
+	Events       []domain.IndexerHealthEvent
+	DisabledTill *time.Time
 }
 
 // AllStatuses returns every configured instance's derived health, sorted by slug.
@@ -531,33 +535,50 @@ func (r *StatsReporter) AllStatuses(ctx context.Context) ([]FleetStatus, error) 
 	sort.Slice(list, func(i, j int) bool { return list[i].Slug < list[j].Slug })
 	out := make([]FleetStatus, 0, len(list))
 	for _, inst := range list {
-		events, status, err := r.statusOf(ctx, inst.ID, 1)
+		events, status, disabledTill, err := r.statusOf(ctx, inst.ID, 1)
 		if err != nil {
 			return nil, fmt.Errorf("registry: all statuses %q: %w", inst.Slug, err)
 		}
-		out = append(out, FleetStatus{Slug: inst.Slug, Status: status, Events: events})
+		out = append(out, FleetStatus{Slug: inst.Slug, Status: status, Events: events, DisabledTill: disabledTill})
 	}
 	return out, nil
 }
 
 // statusOf is the shared derivation core behind Status and AllStatuses: it fetches
-// the instance's most recent events (capped at limit) plus its recovery marker and
-// derives the status exactly the same way for both callers.
-func (r *StatsReporter) statusOf(ctx context.Context, instanceID int64, limit int) ([]domain.IndexerHealthEvent, string, error) {
+// the instance's most recent events (capped at limit), its recovery marker, and its
+// circuit-breaker state, and derives the status exactly the same way for both
+// callers. The returned *time.Time is non-nil only while the circuit is open.
+func (r *StatsReporter) statusOf(ctx context.Context, instanceID int64, limit int) ([]domain.IndexerHealthEvent, string, *time.Time, error) {
 	events, err := r.health.Recent(ctx, r.db, instanceID, limit)
 	if err != nil {
-		return nil, "", fmt.Errorf("events: %w", err)
+		return nil, "", nil, fmt.Errorf("events: %w", err)
 	}
 	recovery, err := r.health.Recovery(ctx, r.db, instanceID)
 	if err != nil {
-		return nil, "", fmt.Errorf("recovery: %w", err)
+		return nil, "", nil, fmt.Errorf("recovery: %w", err)
 	}
-	return events, r.deriveStatus(events, recovery), nil
+	circuit, err := r.circuit.Get(ctx, r.db, instanceID)
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("circuit: %w", err)
+	}
+	now := r.clock()
+	var disabledTill *time.Time
+	if circuit.IsDisabled(now) {
+		till := circuit.DisabledTill
+		disabledTill = &till
+	}
+	return events, r.deriveStatus(events, recovery, disabledTill != nil), disabledTill, nil
 }
 
-// deriveStatus reads "unhealthy" when the most recent event is within the recency
-// window and happened after the last successful explicit test. Events are newest-first.
-func (r *StatsReporter) deriveStatus(events []domain.IndexerHealthEvent, recovery database.HealthRecovery) string {
+// deriveStatus reads "unhealthy" when either the circuit breaker currently excludes
+// the indexer from dispatch (disabled, #253 — this can outlast healthRecencyWindow
+// on a high escalation rung, e.g. a 24h disable well past its 1h-old triggering
+// event) or the most recent event is within the recency window and happened after
+// the last successful explicit test. Events are newest-first.
+func (r *StatsReporter) deriveStatus(events []domain.IndexerHealthEvent, recovery database.HealthRecovery, disabled bool) string {
+	if disabled {
+		return "unhealthy"
+	}
 	if len(events) > 0 && failureAfterRecovery(events[0], recovery) &&
 		r.clock().Sub(events[0].OccurredAt) <= healthRecencyWindow {
 		return "unhealthy"

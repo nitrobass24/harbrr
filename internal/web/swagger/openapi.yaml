@@ -529,6 +529,12 @@ paths:
                           enum: [auth_failure, rate_limited, parse_error, anti_bot, transport]
                         detail: { type: string }
                         occurred_at: { type: string, format: date-time }
+                  disabledTill:
+                    type: string
+                    format: date-time
+                    description: >
+                      Present only while the circuit breaker (autobrr/harbrr#253)
+                      currently excludes the indexer from search/grab dispatch.
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
@@ -2313,6 +2319,12 @@ components:
                     enum: [auth_failure, rate_limited, parse_error, anti_bot, transport]
                   detail: { type: string }
                   occurred_at: { type: string, format: date-time }
+              disabledTill:
+                type: string
+                format: date-time
+                description: >
+                  Present only while the circuit breaker (autobrr/harbrr#253) currently
+                  excludes the indexer from search/grab dispatch.
       required: [healthy, unhealthy, indexers]
     InstanceDetail:
       allOf:

@@ -1500,6 +1500,11 @@ export interface components {
                     /** Format: date-time */
                     occurred_at: string;
                 };
+                /**
+                 * Format: date-time
+                 * @description Present only while the circuit breaker (autobrr/harbrr#253) currently excludes the indexer from search/grab dispatch.
+                 */
+                disabledTill?: string;
             }[];
         };
         InstanceDetail: components["schemas"]["Instance"] & {
@@ -2831,6 +2836,11 @@ export interface operations {
                             /** Format: date-time */
                             occurred_at: string;
                         }[];
+                        /**
+                         * Format: date-time
+                         * @description Present only while the circuit breaker (autobrr/harbrr#253) currently excludes the indexer from search/grab dispatch.
+                         */
+                        disabledTill?: string;
                     };
                 };
             };
