@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 
 	"github.com/autobrr/harbrr/internal/domain"
 )
@@ -43,6 +44,12 @@ type AddOptions struct {
 // given Payload's Protocol (e.g. a torrent-only client sent a usenet payload).
 var ErrUnsupportedProtocol = errors.New("download: client does not support payload protocol")
 
+// ErrURLRequired is returned by a Driver whose client only adds a release by URL
+// (e.g. SABnzbd/NZBGet's add-by-URL-only ports) when Payload has no URL — a
+// bytes-only payload it cannot handle. Distinct from ErrUnsupportedProtocol: the
+// protocol IS supported, just not this delivery form.
+var ErrURLRequired = errors.New("download: client requires a URL payload (bytes-only add is unsupported)")
+
 // Driver is the minimal interface a download-client kind implements. Test proves
 // the configured client is reachable with its stored credentials; Add hands it a
 // resolved release to start downloading.
@@ -63,6 +70,8 @@ type driverBuilder func(c domain.DownloadClient, secret string, client *http.Cli
 // entry (plus its own file) — no other platform code changes.
 var drivers = map[string]driverBuilder{
 	domain.DownloadClientKindQBittorrent: newQBittorrent,
+	domain.DownloadClientKindSabnzbd:     newSabnzbd,
+	domain.DownloadClientKindNZBGet:      newNZBGet,
 }
 
 // validateKind reports whether kind has a registered driver.
@@ -79,4 +88,18 @@ func newDriver(c domain.DownloadClient, secret string, client *http.Client) (Dri
 		return nil, fmt.Errorf("%w: unregistered download client kind %q", domain.ErrInvalid, c.Kind)
 	}
 	return build(c, secret, client)
+}
+
+// scrubURLError strips the request URL from a *url.Error — the shape net/http
+// returns for a failed request, whose .URL field is the full (percent-encoded)
+// request URL and so can carry a client's own apikey/password plus, embedded in
+// it, harbrr's own sealed-nzb-URL apikey. Same treatment as announce's
+// scrubURLError (internal/announce/announce.go); reimplemented here rather than
+// imported so package download stays independent of internal/announce.
+func scrubURLError(err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return fmt.Errorf("%s: %w", ue.Op, ue.Err)
+	}
+	return err
 }

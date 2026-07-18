@@ -222,5 +222,11 @@ func validateSettings(kind string, settings domain.DownloadClientSettings) error
 	if settings.QBittorrent != nil && kind != domain.DownloadClientKindQBittorrent {
 		return fmt.Errorf("%w: qbittorrent settings given for kind %q", domain.ErrInvalid, kind)
 	}
+	if settings.Sabnzbd != nil && kind != domain.DownloadClientKindSabnzbd {
+		return fmt.Errorf("%w: sabnzbd settings given for kind %q", domain.ErrInvalid, kind)
+	}
+	if settings.NZBGet != nil && kind != domain.DownloadClientKindNZBGet {
+		return fmt.Errorf("%w: nzbget settings given for kind %q", domain.ErrInvalid, kind)
+	}
 	return nil
 }

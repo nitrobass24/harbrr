@@ -1828,9 +1828,19 @@ export interface components {
             startPaused?: boolean;
             tlsSkipVerify?: boolean;
         };
+        /** @description SABnzbd-specific per-client options; the default category an Add falls back to when the caller doesn't supply one. The client's username column is unused for this kind (auth is apikey-only). */
+        SabnzbdSettings: {
+            category?: string;
+        };
+        /** @description NZBGet-specific per-client options; the default category an Add falls back to when the caller doesn't supply one. */
+        NZBGetSettings: {
+            category?: string;
+        };
         /** @description Kind-specific options, keyed by kind — at most the one field matching the client's own kind is populated. */
         DownloadClientSettings: {
             qbittorrent?: components["schemas"]["QBittorrentSettings"];
+            sabnzbd?: components["schemas"]["SabnzbdSettings"];
+            nzbget?: components["schemas"]["NZBGetSettings"];
         };
         /** @description A configured download client harbrr can send grabbed releases to. host/username are plain; the secret (password or API key, depending on kind) is write-only and is never echoed back — it reads back as the <redacted> sentinel. */
         DownloadClient: {
@@ -1838,7 +1848,7 @@ export interface components {
             id: number;
             name: string;
             /** @enum {string} */
-            kind: "qbittorrent";
+            kind: "qbittorrent" | "sabnzbd" | "nzbget";
             enabled: boolean;
             host: string;
             username: string;
@@ -1853,7 +1863,7 @@ export interface components {
         CreateDownloadClient: {
             name: string;
             /** @enum {string} */
-            kind: "qbittorrent";
+            kind: "qbittorrent" | "sabnzbd" | "nzbget";
             host: string;
             username?: string;
             /** @description optional; stored encrypted */

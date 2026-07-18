@@ -25,10 +25,11 @@ import {
 import { notifyError, notifySuccess } from "@/lib/notify"
 import type { CreateDownloadClient, DownloadClient, DownloadClientKind, DownloadClientSettings, UpdateDownloadClient } from "@/lib/api"
 
-// Only qbittorrent has a registered driver today (autobrr/harbrr#240); the other
-// kinds are seeded server-side but rejected on create until their own driver
-// lands (autobrr/harbrr#8). Keep the picker limited to what actually works.
-const DOWNLOAD_CLIENT_KINDS: DownloadClientKind[] = ["qbittorrent"]
+// Only qbittorrent, sabnzbd, and nzbget have a registered driver today
+// (autobrr/harbrr#240, #241); the other kinds are seeded server-side but
+// rejected on create until their own driver lands (autobrr/harbrr#8). Keep the
+// picker limited to what actually works.
+const DOWNLOAD_CLIENT_KINDS: DownloadClientKind[] = ["qbittorrent", "sabnzbd", "nzbget"]
 
 // `null` = closed; `{ client: null }` = add; `{ client }` = edit that client.
 type Editing = { client: DownloadClient | null } | null
@@ -139,7 +140,9 @@ function DownloadClientForm({ client, pending, onSubmit }: {
   const [host, setHost] = useState(client?.host ?? "")
   const [username, setUsername] = useState(client?.username ?? "")
   const [secret, setSecret] = useState("")
-  const [category, setCategory] = useState(client?.settings.qbittorrent?.category ?? "")
+  const [category, setCategory] = useState(
+    client?.settings.qbittorrent?.category ?? client?.settings.sabnzbd?.category ?? client?.settings.nzbget?.category ?? ""
+  )
   const [tags, setTags] = useState((client?.settings.qbittorrent?.tags ?? []).join(", "))
   const [startPaused, setStartPaused] = useState(client?.settings.qbittorrent?.startPaused ?? false)
   const [tlsSkipVerify, setTlsSkipVerify] = useState(client?.settings.qbittorrent?.tlsSkipVerify ?? false)
@@ -149,14 +152,21 @@ function DownloadClientForm({ client, pending, onSubmit }: {
       className="flex flex-col gap-4"
       onSubmit={(e) => {
         e.preventDefault()
-        const settings: DownloadClientSettings = kind === "qbittorrent" ? {
-          qbittorrent: {
-            category: category || undefined,
-            tags: tags ? tags.split(",").map((t) => t.trim()).filter(Boolean) : undefined,
-            startPaused: startPaused || undefined,
-            tlsSkipVerify: tlsSkipVerify || undefined,
-          },
-        } : {}
+        let settings: DownloadClientSettings = {}
+        if (kind === "qbittorrent") {
+          settings = {
+            qbittorrent: {
+              category: category || undefined,
+              tags: tags ? tags.split(",").map((t) => t.trim()).filter(Boolean) : undefined,
+              startPaused: startPaused || undefined,
+              tlsSkipVerify: tlsSkipVerify || undefined,
+            },
+          }
+        } else if (kind === "sabnzbd") {
+          settings = { sabnzbd: { category: category || undefined } }
+        } else if (kind === "nzbget") {
+          settings = { nzbget: { category: category || undefined } }
+        }
         // On edit, an empty secret keeps the stored one (only a typed value rotates).
         onSubmit(client?.id ?? null, {
           name, kind, host, username, settings,
@@ -185,15 +195,25 @@ function DownloadClientForm({ client, pending, onSubmit }: {
         <Input id="dlc-host" placeholder="http://localhost:8080" value={host} onChange={(e) => setHost(e.target.value)} />
       </span>
       <div className="grid grid-cols-2 gap-3">
-        <span className="flex flex-col gap-1.5">
-          <Label htmlFor="dlc-username">Username <span className="text-faint">(optional)</span></Label>
-          <Input id="dlc-username" autoComplete="off" value={username} onChange={(e) => setUsername(e.target.value)} />
-        </span>
-        <span className="flex flex-col gap-1.5">
-          <Label htmlFor="dlc-secret">Password {isEdit && <span className="text-faint">(leave blank to keep)</span>}</Label>
+        {kind !== "sabnzbd" && (
+          <span className="flex flex-col gap-1.5">
+            <Label htmlFor="dlc-username">Username <span className="text-faint">(optional)</span></Label>
+            <Input id="dlc-username" autoComplete="off" value={username} onChange={(e) => setUsername(e.target.value)} />
+          </span>
+        )}
+        <span className={`flex flex-col gap-1.5 ${kind === "sabnzbd" ? "col-span-2" : ""}`}>
+          <Label htmlFor="dlc-secret">{kind === "sabnzbd" ? "API key" : "Password"} {isEdit && <span className="text-faint">(leave blank to keep)</span>}</Label>
           <Input id="dlc-secret" type="password" autoComplete="off" value={secret} onChange={(e) => setSecret(e.target.value)} />
         </span>
       </div>
+      {(kind === "sabnzbd" || kind === "nzbget") && (
+        <div className="flex flex-col gap-3 rounded-lg border border-border/60 p-3">
+          <span className="flex flex-col gap-1.5">
+            <Label htmlFor="dlc-category">Category <span className="text-faint">(optional)</span></Label>
+            <Input id="dlc-category" value={category} onChange={(e) => setCategory(e.target.value)} />
+          </span>
+        </div>
+      )}
       {kind === "qbittorrent" && (
         <div className="flex flex-col gap-3 rounded-lg border border-border/60 p-3">
           <div className="grid grid-cols-2 gap-3">

@@ -2658,6 +2658,21 @@ components:
         tags: { type: array, items: { type: string } }
         startPaused: { type: boolean }
         tlsSkipVerify: { type: boolean }
+    SabnzbdSettings:
+      type: object
+      description: >
+        SABnzbd-specific per-client options; the default category an Add falls
+        back to when the caller doesn't supply one. The client's username column
+        is unused for this kind (auth is apikey-only).
+      properties:
+        category: { type: string }
+    NZBGetSettings:
+      type: object
+      description: >
+        NZBGet-specific per-client options; the default category an Add falls
+        back to when the caller doesn't supply one.
+      properties:
+        category: { type: string }
     DownloadClientSettings:
       type: object
       description: >
@@ -2665,6 +2680,8 @@ components:
         client's own kind is populated.
       properties:
         qbittorrent: { $ref: "#/components/schemas/QBittorrentSettings" }
+        sabnzbd: { $ref: "#/components/schemas/SabnzbdSettings" }
+        nzbget: { $ref: "#/components/schemas/NZBGetSettings" }
     DownloadClient:
       type: object
       description: >
@@ -2677,7 +2694,7 @@ components:
         name: { type: string }
         kind:
           type: string
-          enum: [qbittorrent]
+          enum: [qbittorrent, sabnzbd, nzbget]
         enabled: { type: boolean }
         host: { type: string }
         username: { type: string }
@@ -2692,7 +2709,7 @@ components:
         name: { type: string }
         kind:
           type: string
-          enum: [qbittorrent]
+          enum: [qbittorrent, sabnzbd, nzbget]
         host: { type: string }
         username: { type: string }
         secret: { type: string, description: "optional; stored encrypted" }

@@ -362,6 +362,18 @@ type QBittorrentSettings struct {
 	TLSSkipVerify bool     `json:"tlsSkipVerify,omitempty"`
 }
 
+// SabnzbdSettings holds the SABnzbd-specific per-client options: the default
+// category an Add falls back to when the caller doesn't supply one.
+type SabnzbdSettings struct {
+	Category string `json:"category,omitempty"`
+}
+
+// NZBGetSettings holds the NZBGet-specific per-client options: the default
+// category an Add falls back to when the caller doesn't supply one.
+type NZBGetSettings struct {
+	Category string `json:"category,omitempty"`
+}
+
 // DownloadClientSettings is the typed wrapper persisted (marshalled) into
 // download_clients.settings_json: one pointer field per kind, never a bare
 // map[string]any. Exactly one field may be populated, and it must match the
@@ -369,6 +381,8 @@ type QBittorrentSettings struct {
 // service, since only it knows the row's Kind).
 type DownloadClientSettings struct {
 	QBittorrent *QBittorrentSettings `json:"qbittorrent,omitempty"`
+	Sabnzbd     *SabnzbdSettings     `json:"sabnzbd,omitempty"`
+	NZBGet      *NZBGetSettings      `json:"nzbget,omitempty"`
 }
 
 // DownloadClient is a configured download client harbrr can send grabbed
