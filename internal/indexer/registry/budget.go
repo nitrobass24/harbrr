@@ -159,10 +159,12 @@ func (b *RequestBudget) reserve(ctx context.Context, instanceID int64, cfg map[s
 		count++
 	}
 	st.set(kind, period, count, exhausted)
-	snapshot := st.row(instanceID, b.clock())
+	// Persisted under st.mu so snapshots reach the store in mutation order —
+	// unlocking first would let two concurrent reserves persist in reverse and
+	// leave a stale count (or a dropped exhausted latch) for the next process
+	// start to reload.
+	b.persist(ctx, st.row(instanceID, b.clock()))
 	st.mu.Unlock()
-
-	b.persist(ctx, snapshot)
 	return allow
 }
 
@@ -184,10 +186,9 @@ func (b *RequestBudget) MarkQuotaSpent(ctx context.Context, instanceID int64, cf
 		count = 0
 	}
 	st.set(kind, period, count, true)
-	snapshot := st.row(instanceID, b.clock())
+	// Under st.mu for the same write-ordering reason as reserve.
+	b.persist(ctx, st.row(instanceID, b.clock()))
 	st.mu.Unlock()
-
-	b.persist(ctx, snapshot)
 }
 
 // persist writes row to the store, best-effort: a failure is logged and the

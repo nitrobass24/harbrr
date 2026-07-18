@@ -3,6 +3,8 @@ package registry
 import (
 	"context"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -199,5 +201,52 @@ func TestRequestBudget_PersistsAcrossRestart(t *testing.T) {
 	}
 	if b2.ReserveGrab(context.Background(), instID, cfg, now) {
 		t.Fatal("grab budget should still read as reactively exhausted after restart")
+	}
+}
+
+// TestRequestBudget_PersistOrderUnderConcurrency proves the store snapshot is written
+// under the same per-instance lock as the in-memory mutation: after concurrent
+// reserves the persisted row carries the FINAL count and the exhausted latch, never a
+// stale intermediate that an out-of-order late write left behind (which a restart
+// would reload as an undercount, or worse, a dropped latch).
+func TestRequestBudget_PersistOrderUnderConcurrency(t *testing.T) {
+	t.Parallel()
+	db := openBudgetDB(t, filepath.Join(t.TempDir(), "harbrr.db"))
+	b := newRequestBudget(db, time.Now, zerolog.Nop())
+	instID := insertTestInstance(t, db)
+	cfg := map[string]string{"query_limit": "64"}
+	now := time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)
+
+	var wg sync.WaitGroup
+	var allows atomic.Int64
+	for i := 0; i < 128; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if b.ReserveQuery(context.Background(), instID, cfg, now) {
+				allows.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if got := allows.Load(); got != 64 {
+		t.Fatalf("allowed %d concurrent queries, want exactly the configured limit 64", got)
+	}
+	row, found, err := (database.BudgetCountersStore{}).Get(context.Background(), db, instID)
+	if err != nil || !found {
+		t.Fatalf("Get persisted row: found=%v err=%v", found, err)
+	}
+	if row.QueryCount != 64 {
+		t.Fatalf("persisted QueryCount = %d, want 64 (a stale snapshot won the write race)", row.QueryCount)
+	}
+
+	b.MarkQuotaSpent(context.Background(), instID, cfg, budgetKindQuery, now)
+	row, _, err = (database.BudgetCountersStore{}).Get(context.Background(), db, instID)
+	if err != nil {
+		t.Fatalf("Get after MarkQuotaSpent: %v", err)
+	}
+	if !row.QueryExhausted {
+		t.Fatal("persisted QueryExhausted = false after MarkQuotaSpent")
 	}
 }

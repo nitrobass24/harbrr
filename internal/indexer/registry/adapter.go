@@ -128,12 +128,13 @@ func (a *indexerAdapter) Search(ctx context.Context, q search.Query) ([]*normali
 	} else {
 		releases, err = a.budgetedLiveSearch(ctx, q)
 	}
-	if errors.Is(err, errBudgetExhausted) && a.cache != nil {
+	if errors.Is(err, errBudgetExhausted) && a.cache != nil && !core.CacheBypass(ctx) {
 		// The query budget has no capacity left for this period: prefer serving
 		// whatever was last cached, even expired, over refusing the request outright
 		// (autobrr/harbrr#251). A cache miss here (nothing ever cached, or the stale
 		// row itself failed to decode) falls through and surfaces the original
-		// budget-exhausted error.
+		// budget-exhausted error. A nocache request opted out of cached results
+		// entirely, so it gets the error, never a stale serve.
 		if stale, ok, serr := a.cache.fetchStale(ctx, a.instanceID, a.SupportsOffsetPaging(), q); serr == nil && ok {
 			releases, err = stale, nil
 		}

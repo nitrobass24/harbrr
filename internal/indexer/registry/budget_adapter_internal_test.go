@@ -78,17 +78,20 @@ func newBudgetTestAdapter(t *testing.T, inner *budgetFakeDriver, cfg map[string]
 	budget := newRequestBudget(db, clock, zerolog.Nop())
 
 	a := &indexerAdapter{
-		info:       core.IndexerInfo{ID: "fake"},
-		inner:      inner,
-		instanceID: instID,
-		cfg:        cfg,
-		cache:      sc,
-		db:         db,
-		health:     database.Health{},
-		stats:      newIndexerStats(db, clock, zerolog.Nop()),
-		budget:     budget,
-		clock:      clock,
-		log:        zerolog.Nop(),
+		info:         core.IndexerInfo{ID: "fake"},
+		inner:        inner,
+		instanceID:   instID,
+		cfg:          cfg,
+		cache:        sc,
+		db:           db,
+		health:       database.Health{},
+		stats:        newIndexerStats(db, clock, zerolog.Nop()),
+		budget:       budget,
+		circuit:      database.Circuit{},
+		circuitLocks: &circuitLocks{},
+		startedAt:    now,
+		clock:        clock,
+		log:          zerolog.Nop(),
 	}
 	return a, &clk
 }
@@ -130,6 +133,30 @@ func TestAdapterSearch_ExhaustedQueryServesStale(t *testing.T) {
 	}
 	if got := inner.searchCalls.Load(); got != 1 {
 		t.Fatalf("tracker hit %d times after second search, want still 1 (never re-hit once budget exhausted)", got)
+	}
+}
+
+// TestAdapterSearch_ExhaustedQueryBypassRefusesStale proves a nocache (cache-bypass)
+// request never gets the prefer-stale serve: the caller explicitly opted out of
+// cached results, so an exhausted budget surfaces the error instead of an expired
+// cache entry.
+func TestAdapterSearch_ExhaustedQueryBypassRefusesStale(t *testing.T) {
+	t.Parallel()
+	inner := &budgetFakeDriver{releases: []*normalizer.Release{{Title: "cached-release"}}}
+	a, _ := newBudgetTestAdapter(t, inner, map[string]string{"query_limit": "1"})
+	q := search.Query{Keywords: "x"}
+
+	// Populate the cache and spend the whole budget.
+	if _, err := a.Search(context.Background(), q); err != nil {
+		t.Fatalf("first Search: %v", err)
+	}
+
+	ctx := core.WithCacheBypass(context.Background())
+	if _, err := a.Search(ctx, q); !errors.Is(err, errBudgetExhausted) {
+		t.Fatalf("bypass Search err = %v, want errBudgetExhausted (never a stale serve)", err)
+	}
+	if got := inner.searchCalls.Load(); got != 1 {
+		t.Fatalf("tracker hit %d times, want 1 (bypass must not buy an outbound hit past the budget)", got)
 	}
 }
 
