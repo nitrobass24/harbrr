@@ -36,7 +36,9 @@ func newRTorrentStub(t *testing.T, s *rtorrentStub) *httptest.Server {
 
 		name, params, _, err := xmlrpc.Unmarshal(r.Body)
 		if err != nil {
-			t.Fatalf("unmarshal xmlrpc request: %v", err)
+			t.Errorf("unmarshal xmlrpc request: %v", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
 		}
 		s.lastMethod, s.lastParams = name, params
 
@@ -47,12 +49,16 @@ func newRTorrentStub(t *testing.T, s *rtorrentStub) *httptest.Server {
 		case "load.start", "load.normal", "load.raw", "load.raw_start":
 			result = 0
 		default:
-			t.Fatalf("unexpected method %q", name)
+			t.Errorf("unexpected method %q", name)
+			http.Error(w, "unexpected method", http.StatusBadRequest)
+			return
 		}
 
 		w.Header().Set("Content-Type", "text/xml")
 		if err := xmlrpc.Marshal(w, "", result); err != nil {
-			t.Fatalf("marshal response: %v", err)
+			t.Errorf("marshal response: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 	})
 	srv := httptest.NewServer(mux)
@@ -221,6 +227,75 @@ func TestRTorrentAdd_BasicAuthCredentials(t *testing.T) {
 	}
 	if stub.gotUser != "admin" || stub.gotPass != "adminadmin" {
 		t.Fatalf("basic auth = %s/%s, want admin/adminadmin", stub.gotUser, stub.gotPass)
+	}
+}
+
+// TestRTorrentAdd_RejectsQuoteInjection pins the guard against go-rtorrent's
+// unescaped field.set="<value>" formatting: a '"' in any of the three
+// candidate values (opts.Category, settings.Label, settings.Directory) must
+// be rejected before a FieldValue is ever built, whichever one carries it.
+func TestRTorrentAdd_RejectsQuoteInjection(t *testing.T) {
+	t.Parallel()
+	stub := &rtorrentStub{}
+	srv := newRTorrentStub(t, stub)
+
+	tests := []struct {
+		name     string
+		opts     AddOptions
+		settings domain.RTorrentSettings
+	}{
+		{"category", AddOptions{Category: `tv"; execute={rm,-rf,/}`}, domain.RTorrentSettings{}},
+		{"settings label", AddOptions{}, domain.RTorrentSettings{Label: `tv"; execute={rm,-rf,/}`}},
+		{"settings directory", AddOptions{}, domain.RTorrentSettings{Directory: `/downloads"; execute={rm,-rf,/}`}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			drv := newTestRTorrent(srv.URL+"/RPC2", "admin", "adminadmin", tt.settings)
+			err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}, tt.opts)
+			if !errors.Is(err, errRTorrentFieldValue) {
+				t.Fatalf("Add error = %v, want errRTorrentFieldValue", err)
+			}
+		})
+	}
+}
+
+// TestNewRTorrent_TLSSkipVerify proves the InsecureSkipVerify transport clone
+// actually takes effect: against a self-signed-cert server, a driver built
+// without the setting fails TLS verification and one built with it succeeds —
+// exercised end to end rather than by inspecting the unexported client fields.
+func TestNewRTorrent_TLSSkipVerify(t *testing.T) {
+	t.Parallel()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/RPC2", func(w http.ResponseWriter, r *http.Request) {
+		name, _, _, err := xmlrpc.Unmarshal(r.Body)
+		if err != nil || name != "system.hostname" {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "text/xml")
+		_ = xmlrpc.Marshal(w, "", "rtorrent-host")
+	})
+	srv := httptest.NewTLSServer(mux)
+	t.Cleanup(srv.Close)
+
+	strict, err := newRTorrent(domain.DownloadClient{Host: srv.URL + "/RPC2"}, "", http.DefaultClient)
+	if err != nil {
+		t.Fatalf("newRTorrent (strict): %v", err)
+	}
+	if err := strict.Test(context.Background()); err == nil {
+		t.Fatal("Test against a self-signed cert without TLSSkipVerify: expected a certificate error")
+	}
+
+	lenient, err := newRTorrent(domain.DownloadClient{
+		Host:     srv.URL + "/RPC2",
+		Settings: domain.DownloadClientSettings{RTorrent: &domain.RTorrentSettings{TLSSkipVerify: true}},
+	}, "", http.DefaultClient)
+	if err != nil {
+		t.Fatalf("newRTorrent (lenient): %v", err)
+	}
+	if err := lenient.Test(context.Background()); err != nil {
+		t.Fatalf("Test with TLSSkipVerify: %v", err)
 	}
 }
 

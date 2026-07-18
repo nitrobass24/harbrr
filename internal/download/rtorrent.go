@@ -3,13 +3,24 @@ package download
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/autobrr/go-rtorrent"
 
 	"github.com/autobrr/harbrr/internal/domain"
 )
+
+// errRTorrentFieldValue is returned when a label/directory value can't be sent
+// as an rTorrent extra-arg: go-rtorrent's FieldValue.String() formats
+// field.set="<value>" with no escaping, so a literal '"' would break out of
+// the quoted argument and let the value inject additional rtorrent commands.
+// Rejected rather than silently stripped — the value came from a release's
+// category or a configured label/directory, and silently mangling it would be
+// more surprising than a clear error.
+var errRTorrentFieldValue = errors.New("download: rtorrent: field value must not contain a double quote")
 
 // rtorrentDriver wraps autobrr/go-rtorrent (XML-RPC over HTTP(S)).
 type rtorrentDriver struct {
@@ -33,8 +44,10 @@ type rtorrentDriver struct {
 // WithHTTPClient method) always replaces its own TLS-aware transport
 // (xmlrpc.NewClient builds a TLSSkipVerify-configured transport first, then
 // unconditionally overwrites it if a Client is given). A dedicated client is
-// built only when the setting is on; otherwise harbrr's shared client is
-// reused, same as Transmission.
+// built only when the setting is on — a shallow copy of the shared client with
+// its Transport cloned and InsecureSkipVerify set, so Timeout and everything
+// else about the shared client's configuration survives; otherwise harbrr's
+// shared client is reused as-is, same as Transmission.
 func newRTorrent(c domain.DownloadClient, secret string, client *http.Client) (Driver, error) {
 	var settings domain.RTorrentSettings
 	if c.Settings.RTorrent != nil {
@@ -43,10 +56,18 @@ func newRTorrent(c domain.DownloadClient, secret string, client *http.Client) (D
 
 	httpClient := client
 	if settings.TLSSkipVerify {
-		httpClient = &http.Client{
-			Timeout:   client.Timeout,
-			Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}, //nolint:gosec // opt-in per client, mirrors qBittorrent's TLSSkipVerify.
+		clone := *client // shallow copy: keeps Timeout, CheckRedirect, Jar, etc.
+		transport, ok := client.Transport.(*http.Transport)
+		if !ok {
+			transport = http.DefaultTransport.(*http.Transport) //nolint:forcetypeassert // http.DefaultTransport is always *http.Transport.
 		}
+		transport = transport.Clone()
+		if transport.TLSClientConfig == nil {
+			transport.TLSClientConfig = &tls.Config{}
+		}
+		transport.TLSClientConfig.InsecureSkipVerify = true //nolint:gosec // opt-in per client, mirrors qBittorrent's TLSSkipVerify.
+		clone.Transport = transport
+		httpClient = &clone
 	}
 
 	cfg := rtorrent.Config{Addr: c.Host, TLSSkipVerify: settings.TLSSkipVerify, BasicUser: c.Username, BasicPass: secret}
@@ -72,10 +93,12 @@ func (d *rtorrentDriver) Add(ctx context.Context, p Payload, opts AddOptions) er
 		return fmt.Errorf("download: rtorrent: %w: %s", ErrUnsupportedProtocol, p.Protocol)
 	}
 
-	args := d.fieldArgs(opts)
+	args, err := d.fieldArgs(opts)
+	if err != nil {
+		return err
+	}
 	paused := opts.Paused || d.settings.StartPaused
 
-	var err error
 	switch {
 	case len(p.Bytes) > 0 && paused:
 		err = d.cli.AddTorrentStopped(ctx, p.Bytes, args...)
@@ -94,8 +117,15 @@ func (d *rtorrentDriver) Add(ctx context.Context, p Payload, opts AddOptions) er
 
 // fieldArgs builds the d.custom1 (label) / d.directory extra args for the add
 // call: label falls back to settings when no category is given; directory is
-// settings-only (harbrr has no per-add directory option).
-func (d *rtorrentDriver) fieldArgs(opts AddOptions) []*rtorrent.FieldValue {
+// settings-only (harbrr has no per-add directory option). Every candidate
+// value is checked for an injection-capable '"' before any FieldValue is built.
+func (d *rtorrentDriver) fieldArgs(opts AddOptions) ([]*rtorrent.FieldValue, error) {
+	for _, v := range []string{opts.Category, d.settings.Label, d.settings.Directory} {
+		if strings.Contains(v, `"`) {
+			return nil, fmt.Errorf("%w: %q", errRTorrentFieldValue, v)
+		}
+	}
+
 	var args []*rtorrent.FieldValue
 	label := opts.Category
 	if label == "" {
@@ -107,5 +137,5 @@ func (d *rtorrentDriver) fieldArgs(opts AddOptions) []*rtorrent.FieldValue {
 	if d.settings.Directory != "" {
 		args = append(args, rtorrent.DDirectory.SetValue(d.settings.Directory))
 	}
-	return args
+	return args, nil
 }

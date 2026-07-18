@@ -54,7 +54,9 @@ func newTransmissionStub(t *testing.T, s *transmissionStub) *httptest.Server {
 
 		var req transmissionRPCRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Fatalf("decode request: %v", err)
+			t.Errorf("decode request: %v", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -71,7 +73,9 @@ func newTransmissionStub(t *testing.T, s *transmissionStub) *httptest.Server {
 				"arguments": map[string]any{"torrent-added": map[string]any{"id": 1, "hashString": "abc", "name": "test"}},
 			})
 		default:
-			t.Fatalf("unexpected method %q", req.Method)
+			t.Errorf("unexpected method %q", req.Method)
+			http.Error(w, "unexpected method", http.StatusBadRequest)
+			return
 		}
 	})
 	srv := httptest.NewServer(mux)
@@ -91,7 +95,7 @@ func newTestTransmission(host, username, secret string, settings domain.Transmis
 
 func TestTransmissionTest_OK(t *testing.T) {
 	t.Parallel()
-	stub := &transmissionStub{}
+	stub := &transmissionStub{requireUser: "admin", requirePass: "adminadmin"}
 	srv := newTransmissionStub(t, stub)
 	drv := newTestTransmission(srv.URL+"/transmission/rpc", "admin", "adminadmin", domain.TransmissionSettings{})
 

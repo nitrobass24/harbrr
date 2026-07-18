@@ -82,6 +82,10 @@ func TestCreateValidation(t *testing.T) {
 		{"unknown kind", CreateParams{Name: "n", Kind: "bogus", Host: "http://x.invalid"}},
 		{"relative host", CreateParams{Name: "n", Kind: domain.DownloadClientKindQBittorrent, Host: "/x"}},
 		{"blank host", CreateParams{Name: "n", Kind: domain.DownloadClientKindQBittorrent, Host: ""}},
+		{"hostPort empty host", CreateParams{Name: "n", Kind: domain.DownloadClientKindDeluge, Host: ":58846"}},
+		{"hostPort empty port", CreateParams{Name: "n", Kind: domain.DownloadClientKindDeluge, Host: "localhost:"}},
+		{"hostPort non-numeric port", CreateParams{Name: "n", Kind: domain.DownloadClientKindDeluge, Host: "localhost:not-a-port"}},
+		{"hostPort zero port", CreateParams{Name: "n", Kind: domain.DownloadClientKindDeluge, Host: "localhost:0"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

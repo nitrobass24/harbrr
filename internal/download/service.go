@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -223,13 +224,25 @@ func validate(name, kind, host string, settings domain.DownloadClientSettings) e
 // isn't a URL at all); every other kind requires an absolute http(s) URL.
 func validateHost(kind, host string) error {
 	if drivers[kind].host == hostPort {
-		if _, _, err := net.SplitHostPort(host); err != nil {
-			return fmt.Errorf("%w: host must be host:port (e.g. localhost:58846): %w", domain.ErrInvalid, err)
-		}
-		return nil
+		return validateHostPort(host)
 	}
 	_, err := domain.ValidateAbsURL("host", host)
 	return err
+}
+
+// validateHostPort enforces a non-empty host and a numeric port in 1-65535.
+// net.SplitHostPort alone is not enough: it accepts ":58846" (empty host),
+// "localhost:" (empty port), and "localhost:abc" (non-numeric port).
+func validateHostPort(host string) error {
+	h, portStr, err := net.SplitHostPort(host)
+	if err != nil || h == "" {
+		return fmt.Errorf("%w: host must be host:port (e.g. localhost:58846)", domain.ErrInvalid)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf("%w: host must be host:port with a numeric port 1-65535 (e.g. localhost:58846)", domain.ErrInvalid)
+	}
+	return nil
 }
 
 // validateSettings rejects a populated settings field that doesn't match kind.
