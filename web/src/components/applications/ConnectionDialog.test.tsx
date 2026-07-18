@@ -2,8 +2,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { ReactNode } from "react"
-import type { AppConnection, SyncProfile } from "@/lib/api"
+import type { App, AppConnection, SyncProfile } from "@/lib/api"
 import { ConnectionDialog } from "./ConnectionDialog"
+
+const SONARR_APP: App = {
+  id: 3, kind: "sonarr", name: "sonarr-app", baseUrl: "http://sonarr:8989", username: "",
+  apiKey: "<redacted>", harbrrUrl: "http://harbrr:7478", enabled: true,
+  references: { appConnections: 0, announce: 0, download: 0 },
+  createdAt: "2026-07-01T00:00:00Z", updatedAt: "2026-07-01T00:00:00Z",
+}
 
 const PROFILES: SyncProfile[] = [
   {
@@ -49,8 +56,11 @@ function wrap(children: ReactNode) {
   )
 }
 
+// A fresh Response per call: the form now fires two concurrent GETs (sync profiles +
+// apps), and a Response body can only be read once — mockResolvedValue would hand both
+// callers the same singleton Response, so the second .json() throws.
 function stubFetch() {
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(PROFILES)))
+  vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(jsonResponse(PROFILES))))
 }
 
 describe("ConnectionDialog sync profile picker", () => {
@@ -190,5 +200,56 @@ describe("ConnectionDialog freeleech mode", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
 
     expect(onUpdate).toHaveBeenCalledWith(QUI_CONN.id, expect.objectContaining({ freeleechMode: "bypass" }))
+  })
+})
+
+describe("ConnectionDialog create — App picker", () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  function stubFetchWithApp() {
+    vi.stubGlobal("fetch", vi.fn((request: Request) => {
+      if (request.url.includes("/apps")) return Promise.resolve(jsonResponse([SONARR_APP]))
+      return Promise.resolve(jsonResponse(PROFILES))
+    }))
+  }
+
+  it("picking an existing app hides the inline fields and submits appId", async () => {
+    stubFetchWithApp()
+    const onCreate = vi.fn()
+    render(wrap(
+      <ConnectionDialog state={{ open: true }} pending={false} error={null} onClose={vi.fn()} onCreate={onCreate} onUpdate={vi.fn()} />
+    ))
+
+    const appSelect = await screen.findByLabelText("App")
+    await screen.findByRole("option", { name: "sonarr-app (sonarr)" })
+    fireEvent.change(appSelect, { target: { value: String(SONARR_APP.id) } })
+
+    expect(screen.queryByLabelText("App base URL")).toBeNull()
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "sonarr-new" } })
+    fireEvent.click(screen.getByRole("button", { name: "Add application" }))
+
+    expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ name: "sonarr-new", kind: "sonarr", appId: SONARR_APP.id }))
+    expect(onCreate.mock.calls[0][0]).not.toHaveProperty("baseUrl")
+  })
+
+  it("no app: inline fields render and the create submits them", async () => {
+    stubFetchWithApp()
+    const onCreate = vi.fn()
+    render(wrap(
+      <ConnectionDialog state={{ open: true }} pending={false} error={null} onClose={vi.fn()} onCreate={onCreate} onUpdate={vi.fn()} />
+    ))
+
+    await screen.findByLabelText("App")
+    expect(screen.getByLabelText("App base URL")).toBeTruthy()
+
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "sonarr-new" } })
+    fireEvent.change(screen.getByLabelText("App base URL"), { target: { value: "http://sonarr:8989" } })
+    fireEvent.change(screen.getByLabelText("App API key"), { target: { value: "app-key" } })
+    fireEvent.click(screen.getByRole("button", { name: "Add application" }))
+
+    expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({
+      name: "sonarr-new", kind: "sonarr", baseUrl: "http://sonarr:8989", apiKey: "app-key",
+    }))
+    expect(onCreate.mock.calls[0][0]).not.toHaveProperty("appId")
   })
 })

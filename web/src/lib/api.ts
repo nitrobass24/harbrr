@@ -19,6 +19,10 @@ export type Capabilities = components["schemas"]["Capabilities"]
 export type SearchResults = components["schemas"]["SearchResults"]
 export type Release = components["schemas"]["Release"]
 export type TestResult = components["schemas"]["TestResult"]
+export type App = components["schemas"]["App"]
+export type UpdateApp = components["schemas"]["UpdateApp"]
+export type QuiInstance = components["schemas"]["QuiInstance"]
+export type QuiInstances = components["schemas"]["QuiInstances"]
 export type AppConnection = components["schemas"]["AppConnection"]
 export type CreateConnection = components["schemas"]["CreateConnection"]
 export type UpdateConnection = components["schemas"]["UpdateConnection"]
@@ -559,12 +563,30 @@ export class ApiClient {
     )
   }
 
-  // Seeds a qui announce target from a qui app-connection (#72): reuses its base URL,
-  // qui API key, and harbrr URL, minting a fresh dedicated harbrr key.
-  createAnnounceTargetFromAppConnection(id: number): Promise<AnnounceConnection> {
+  // --- apps (first-class (kind, base_url) identities, ADR 0004) ---
+
+  listApps(): Promise<App[]> {
+    return this.unwrap(this.http.GET("/api/apps"), "/api/apps")
+  }
+
+  getApp(id: number): Promise<App> {
+    return this.unwrap(this.http.GET("/api/apps/{id}", { params: { path: { id } } }), "/api/apps/{id}")
+  }
+
+  // The server answers 204 on update; see the updateIndexer note (no caller reads
+  // the resolved value — useUpdateApp invalidates and refetches instead).
+  updateApp(id: number, body: UpdateApp): Promise<void> {
+    return this.unwrap(this.http.PATCH("/api/apps/{id}", { params: { path: { id } }, body }), "/api/apps/{id}")
+  }
+
+  deleteApp(id: number): Promise<void> {
+    return this.unwrap(this.http.DELETE("/api/apps/{id}", { params: { path: { id } } }), "/api/apps/{id}")
+  }
+
+  getQuiInstances(id: number): Promise<QuiInstances> {
     return this.unwrap(
-      this.http.POST("/api/app-connections/{id}/announce-target", { params: { path: { id } } }),
-      "/api/app-connections/{id}/announce-target"
+      this.http.GET("/api/apps/{id}/qui-instances", { params: { path: { id } } }),
+      "/api/apps/{id}/qui-instances"
     )
   }
 

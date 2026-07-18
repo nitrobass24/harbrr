@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
-import { notifyError, notifySuccess } from "@/lib/notify"
+import { notifyError } from "@/lib/notify"
 import { keys } from "@/lib/query"
 import type {
   AppConnection,
@@ -113,19 +113,6 @@ export function useSetSelectedIndexers(id: number) {
   return useMutation({
     mutationFn: (instanceIds: number[]) => api.setSelectedIndexers(id, instanceIds),
     onSettled: () => qc.invalidateQueries({ queryKey: keys.appConnections.status(id) }),
-  })
-}
-
-// Seeds a qui announce target from a qui app-connection (#72), reusing its stored
-// credentials — no re-entry. Invalidates the announce-connections query so
-// AnnounceSection (and the ConnectionCard's own duplicate check) see the new target.
-export function useCreateAnnounceTargetFromAppConnection() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (id: number) => api.createAnnounceTargetFromAppConnection(id),
-    onSuccess: () => notifySuccess("Announce target created"),
-    onError: (err) => notifyError("Creating the announce target failed", err),
-    onSettled: () => qc.invalidateQueries({ queryKey: keys.announceConnections.all }),
   })
 }
 

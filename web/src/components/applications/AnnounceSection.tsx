@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { Pencil, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
+import { ManagedByAppHint } from "@/components/applications/ManagedByAppHint"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -24,9 +25,14 @@ import {
   useTestAnnounce,
   useUpdateAnnounce
 } from "@/hooks/useAppConnections"
+import { useApps } from "@/hooks/useApps"
 import { defaultHarbrrUrl, explicitUrlPort } from "@/lib/base-url"
 import { hostname } from "@/lib/format"
 import type { AnnounceConnection, AnnounceKind, CreateAnnounceConnection, UpdateAnnounceConnection } from "@/lib/api"
+
+// Sentinel select value for "no existing App picked, use the inline fields below" —
+// mirrors ConnectionDialog's create-time App picker.
+const NEW_APP = "new"
 
 type DialogState =
   | { open: false }
@@ -176,12 +182,18 @@ function AnnounceForm({ existing, pending, error, onCreate, onUpdate }: {
 }) {
   const [name, setName] = useState(existing?.name ?? "")
   const [kind, setKind] = useState<AnnounceKind>(existing?.kind ?? "qui")
-  const [baseUrl, setBaseUrl] = useState(existing?.baseUrl ?? "")
+  // Create-only: which App backs this target. NEW_APP reveals the inline
+  // baseUrl/apiKey/harbrrUrl fields below; anything else reuses that App's identity.
+  const [appSel, setAppSel] = useState<string>(NEW_APP)
+  const [baseUrl, setBaseUrl] = useState("")
   const [apiKey, setApiKey] = useState("")
-  const [harbrrUrl, setHarbrrUrl] = useState(existing?.harbrrUrl ?? defaultHarbrrUrl())
+  const [harbrrUrl, setHarbrrUrl] = useState(defaultHarbrrUrl())
 
+  const apps = useApps()
   const mode = existing ? "edit" : "create"
   const message = error instanceof Error ? error.message : null
+  const appsOfKind = (apps.data ?? []).filter((a) => a.kind === kind)
+  const usingNewApp = appSel === NEW_APP
 
   return (
     <form
@@ -189,12 +201,12 @@ function AnnounceForm({ existing, pending, error, onCreate, onUpdate }: {
       onSubmit={(e) => {
         e.preventDefault()
         if (mode === "edit" && existing) {
-          onUpdate(existing.id, {
-            name, baseUrl, harbrrUrl,
-            ...(apiKey !== "" ? { apiKey } : {}), // omit = keep the stored key
-          })
+          onUpdate(existing.id, { name })
         } else {
-          onCreate({ name, kind, baseUrl, apiKey, harbrrUrl })
+          onCreate({
+            name, kind,
+            ...(usingNewApp ? { baseUrl, apiKey, harbrrUrl } : { appId: Number(appSel) }),
+          })
         }
       }}
     >
@@ -212,26 +224,58 @@ function AnnounceForm({ existing, pending, error, onCreate, onUpdate }: {
         </span>
         <span className="flex flex-col gap-1.5">
           <Label htmlFor="ann-kind">Kind</Label>
-          <NativeSelect id="ann-kind" value={kind} disabled={mode === "edit"} onChange={(e) => setKind(e.target.value as AnnounceKind)}>
+          <NativeSelect
+            id="ann-kind"
+            value={kind}
+            disabled={mode === "edit"}
+            onChange={(e) => {
+              setKind(e.target.value as AnnounceKind)
+              setAppSel(NEW_APP) // the app list for the new kind is different; re-pick.
+            }}
+          >
             <option value="qui">qui</option>
             <option value="crossseed-v6">cross-seed v6</option>
           </NativeSelect>
         </span>
       </div>
-      <span className="flex flex-col gap-1.5">
-        <Label htmlFor="ann-base">Tool base URL</Label>
-        <Input id="ann-base" placeholder="http://cross-seed:2468" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
-      </span>
-      <span className="flex flex-col gap-1.5">
-        <Label htmlFor="ann-key">{mode === "edit" ? "Tool API key (leave blank to keep the stored key)" : "Tool API key"}</Label>
-        <Input id="ann-key" type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
-      </span>
-      <span className="flex flex-col gap-1.5">
-        <Label htmlFor="ann-harbrr">harbrr URL as the tool reaches it</Label>
-        <Input id="ann-harbrr" value={harbrrUrl} onChange={(e) => setHarbrrUrl(e.target.value)} />
-      </span>
+
+      {mode === "create" && (
+        <span className="flex flex-col gap-1.5">
+          <Label htmlFor="ann-app">App</Label>
+          <NativeSelect id="ann-app" value={appSel} onChange={(e) => setAppSel(e.target.value)}>
+            <option value={NEW_APP}>New app…</option>
+            {appsOfKind.map((a) => <option key={a.id} value={a.id}>{a.name} ({hostname(a.baseUrl)})</option>)}
+          </NativeSelect>
+        </span>
+      )}
+
+      {mode === "edit" && <ManagedByAppHint appId={existing?.appId} />}
+
+      {mode === "create" && usingNewApp && (
+        <>
+          <span className="flex flex-col gap-1.5">
+            <Label htmlFor="ann-base">Tool base URL</Label>
+            <Input id="ann-base" placeholder="http://cross-seed:2468" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
+          </span>
+          <span className="flex flex-col gap-1.5">
+            <Label htmlFor="ann-key">Tool API key</Label>
+            <Input id="ann-key" type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
+          </span>
+          <span className="flex flex-col gap-1.5">
+            <Label htmlFor="ann-harbrr">harbrr URL as the tool reaches it</Label>
+            <Input id="ann-harbrr" value={harbrrUrl} onChange={(e) => setHarbrrUrl(e.target.value)} />
+          </span>
+        </>
+      )}
+
       <DialogFooter>
-        <Button type="submit" disabled={pending || !name || !baseUrl || !harbrrUrl || (mode === "create" && !apiKey)}>
+        <Button
+          type="submit"
+          disabled={
+            pending || !name ||
+            (mode === "create" && usingNewApp && (!baseUrl || !harbrrUrl || !apiKey))
+          }
+        >
           {pending ? "Saving…" : mode === "edit" ? "Save changes" : "Add target"}
         </Button>
       </DialogFooter>
