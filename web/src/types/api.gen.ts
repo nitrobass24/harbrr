@@ -1828,9 +1828,19 @@ export interface components {
             startPaused?: boolean;
             tlsSkipVerify?: boolean;
         };
+        /** @description blackhole watch-folder configuration. At least one of torrentDir/nzbDir must be set; a payload whose protocol has no configured dir fails as unsupported. */
+        BlackholeSettings: {
+            /** @description absolute path a .torrent/.magnet is written into */
+            torrentDir?: string;
+            /** @description absolute path a .nzb is written into */
+            nzbDir?: string;
+            /** @description write a magnet-only release as a .magnet file instead of failing */
+            saveMagnetFiles?: boolean;
+        };
         /** @description Kind-specific options, keyed by kind — at most the one field matching the client's own kind is populated. */
         DownloadClientSettings: {
             qbittorrent?: components["schemas"]["QBittorrentSettings"];
+            blackhole?: components["schemas"]["BlackholeSettings"];
         };
         /** @description A configured download client harbrr can send grabbed releases to. host/username are plain; the secret (password or API key, depending on kind) is write-only and is never echoed back — it reads back as the <redacted> sentinel. */
         DownloadClient: {
@@ -1838,7 +1848,7 @@ export interface components {
             id: number;
             name: string;
             /** @enum {string} */
-            kind: "qbittorrent";
+            kind: "qbittorrent" | "blackhole";
             enabled: boolean;
             host: string;
             username: string;
@@ -1853,7 +1863,8 @@ export interface components {
         CreateDownloadClient: {
             name: string;
             /** @enum {string} */
-            kind: "qbittorrent";
+            kind: "qbittorrent" | "blackhole";
+            /** @description must be empty for kinds with no network endpoint (e.g. blackhole) */
             host: string;
             username?: string;
             /** @description optional; stored encrypted */

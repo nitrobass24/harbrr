@@ -83,6 +83,19 @@ describe("DownloadClientsSection", () => {
     expect(body.secret).toBe("new-secret")
   })
 
+  it("add: selecting blackhole hides host/username/password and shows watch-folder fields", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse([CLIENT])))
+    render(wrap(<DownloadClientsSection />))
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add download client" }))
+    fireEvent.change(await screen.findByLabelText("Kind"), { target: { value: "blackhole" } })
+
+    expect(screen.queryByLabelText("Host")).toBeNull()
+    expect(screen.queryByLabelText(/Password/)).toBeNull()
+    expect(screen.getByLabelText(/Torrent watch folder/)).toBeTruthy()
+    expect(screen.getByLabelText(/NZB watch folder/)).toBeTruthy()
+  })
+
   it("test: posts to the test endpoint and surfaces a toast", async () => {
     const fetchMock = vi.fn((req: Request) => {
       if (req.method === "POST" && req.url.includes("/test")) return Promise.resolve(jsonResponse({ ok: true }))

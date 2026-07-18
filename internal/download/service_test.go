@@ -155,9 +155,9 @@ func TestUpdatePatchNilKeepsSecretNonNilRotates(t *testing.T) {
 }
 
 // TestValidateSettingsKindMismatch exercises the settings/kind cross-check
-// directly: no download client kind other than qbittorrent is registered yet, so
-// a genuine mismatch can't be produced through Create/Update (validateKind
-// rejects the unregistered kind first) — this is the only reachable path to it.
+// directly: deluge is still unregistered, so a genuine mismatch against it
+// can't be produced through Create/Update (validateKind rejects the
+// unregistered kind first) — this is the only reachable path to that case.
 func TestValidateSettingsKindMismatch(t *testing.T) {
 	t.Parallel()
 	settings := domain.DownloadClientSettings{QBittorrent: &domain.QBittorrentSettings{Category: "tv"}}
@@ -181,6 +181,60 @@ func TestUpdateSettingsKindMismatch(t *testing.T) {
 	settings := domain.DownloadClientSettings{QBittorrent: &domain.QBittorrentSettings{Category: "tv"}}
 	if err := svc.Update(ctx, c.ID, UpdateParams{Settings: &settings}); err != nil {
 		t.Errorf("Update with matching-kind settings: %v", err)
+	}
+}
+
+func TestCreateBlackhole_HostMustBeEmpty(t *testing.T) {
+	t.Parallel()
+	svc, _ := newService(t)
+	_, err := svc.Create(context.Background(), CreateParams{
+		Name: "bh", Kind: domain.DownloadClientKindBlackhole, Host: "http://x.invalid",
+		Settings: domain.DownloadClientSettings{Blackhole: &domain.BlackholeSettings{TorrentDir: "/watch"}},
+	})
+	if !errors.Is(err, domain.ErrInvalid) {
+		t.Errorf("err = %v, want domain.ErrInvalid", err)
+	}
+}
+
+func TestCreateBlackhole_RequiresADir(t *testing.T) {
+	t.Parallel()
+	svc, _ := newService(t)
+	_, err := svc.Create(context.Background(), CreateParams{
+		Name: "bh", Kind: domain.DownloadClientKindBlackhole,
+		Settings: domain.DownloadClientSettings{Blackhole: &domain.BlackholeSettings{}},
+	})
+	if !errors.Is(err, domain.ErrInvalid) {
+		t.Errorf("err = %v, want domain.ErrInvalid", err)
+	}
+}
+
+func TestCreateBlackhole_RelativeDirRejected(t *testing.T) {
+	t.Parallel()
+	svc, _ := newService(t)
+	_, err := svc.Create(context.Background(), CreateParams{
+		Name: "bh", Kind: domain.DownloadClientKindBlackhole,
+		Settings: domain.DownloadClientSettings{Blackhole: &domain.BlackholeSettings{TorrentDir: "relative/dir"}},
+	})
+	if !errors.Is(err, domain.ErrInvalid) {
+		t.Errorf("err = %v, want domain.ErrInvalid", err)
+	}
+}
+
+func TestCreateBlackhole_Success(t *testing.T) {
+	t.Parallel()
+	svc, _ := newService(t)
+	c, err := svc.Create(context.Background(), CreateParams{
+		Name: "bh", Kind: domain.DownloadClientKindBlackhole,
+		Settings: domain.DownloadClientSettings{Blackhole: &domain.BlackholeSettings{TorrentDir: "/watch/torrents"}},
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if c.Host != "" {
+		t.Errorf("Host = %q, want empty", c.Host)
+	}
+	if c.Settings.Blackhole == nil || c.Settings.Blackhole.TorrentDir != "/watch/torrents" {
+		t.Errorf("Settings.Blackhole = %+v, want TorrentDir /watch/torrents", c.Settings.Blackhole)
 	}
 }
 
