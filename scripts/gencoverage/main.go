@@ -36,6 +36,9 @@ var liveTested = map[string]bool{
 	// Native drivers, live-validated.
 	"iptorrents": true, "filelist": true, "myanonamouse": true, "broadcastthenet": true,
 	"passthepopcorn": true, "hdbits": true,
+	// BrokenStones, live-validated 2026-07-17: full parity vs the Prowlarr oracle
+	// (696 = 696 across harbrr's Torznab pages, head titles identical in order).
+	"brokenstones": true,
 	// Usenet, live-validated against the deployed fix build (differential 100=100 vs
 	// Prowlarr): the generic Newznab driver via the dognzb preset (search + a real .nzb
 	// grab through /dl), and the NZBIndex native driver (search).

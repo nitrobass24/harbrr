@@ -86,6 +86,18 @@ func TestCreateValidation(t *testing.T) {
 		{"hostPort empty port", CreateParams{Name: "n", Kind: domain.DownloadClientKindDeluge, Host: "localhost:"}},
 		{"hostPort non-numeric port", CreateParams{Name: "n", Kind: domain.DownloadClientKindDeluge, Host: "localhost:not-a-port"}},
 		{"hostPort zero port", CreateParams{Name: "n", Kind: domain.DownloadClientKindDeluge, Host: "localhost:0"}},
+		{"blackhole host must be empty", CreateParams{
+			Name: "bh", Kind: domain.DownloadClientKindBlackhole, Host: "http://x.invalid",
+			Settings: domain.DownloadClientSettings{Blackhole: &domain.BlackholeSettings{TorrentDir: "/watch"}},
+		}},
+		{"blackhole requires a dir", CreateParams{
+			Name: "bh", Kind: domain.DownloadClientKindBlackhole,
+			Settings: domain.DownloadClientSettings{Blackhole: &domain.BlackholeSettings{}},
+		}},
+		{"blackhole relative dir", CreateParams{
+			Name: "bh", Kind: domain.DownloadClientKindBlackhole,
+			Settings: domain.DownloadClientSettings{Blackhole: &domain.BlackholeSettings{TorrentDir: "relative/dir"}},
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -184,6 +196,24 @@ func TestUpdateSettingsKindMismatch(t *testing.T) {
 	settings := domain.DownloadClientSettings{QBittorrent: &domain.QBittorrentSettings{Category: "tv"}}
 	if err := svc.Update(ctx, c.ID, UpdateParams{Settings: &settings}); err != nil {
 		t.Errorf("Update with matching-kind settings: %v", err)
+	}
+}
+
+func TestCreateBlackhole_Success(t *testing.T) {
+	t.Parallel()
+	svc, _ := newService(t)
+	c, err := svc.Create(context.Background(), CreateParams{
+		Name: "bh", Kind: domain.DownloadClientKindBlackhole,
+		Settings: domain.DownloadClientSettings{Blackhole: &domain.BlackholeSettings{TorrentDir: "/watch/torrents"}},
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if c.Host != "" {
+		t.Errorf("Host = %q, want empty", c.Host)
+	}
+	if c.Settings.Blackhole == nil || c.Settings.Blackhole.TorrentDir != "/watch/torrents" {
+		t.Errorf("Settings.Blackhole = %+v, want TorrentDir /watch/torrents", c.Settings.Blackhole)
 	}
 }
 

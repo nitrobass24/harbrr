@@ -25,10 +25,10 @@ import {
 import { notifyError, notifySuccess } from "@/lib/notify"
 import type { CreateDownloadClient, DownloadClient, DownloadClientKind, DownloadClientSettings, UpdateDownloadClient } from "@/lib/api"
 
-// Kinds with a registered driver today (autobrr/harbrr#240, #243); the rest are
-// seeded server-side but rejected on create until their own driver lands
-// (autobrr/harbrr#8). Keep the picker limited to what actually works.
-const DOWNLOAD_CLIENT_KINDS: DownloadClientKind[] = ["qbittorrent", "transmission", "deluge", "rtorrent"]
+// Only kinds with a registered driver work today (autobrr/harbrr#240, #243,
+// #244); the rest are seeded server-side but rejected on create until their own
+// driver lands (autobrr/harbrr#8). Keep the picker limited to what actually works.
+const DOWNLOAD_CLIENT_KINDS: DownloadClientKind[] = ["qbittorrent", "blackhole", "transmission", "deluge", "rtorrent"]
 
 // HOST_PLACEHOLDER is per-kind: every kind but Deluge takes an absolute http(s)
 // URL; Deluge's daemon RPC is a raw "host:port" socket address, not a URL.
@@ -149,6 +149,9 @@ function DownloadClientForm({ client, pending, onSubmit }: {
   const [tags, setTags] = useState((client?.settings.qbittorrent?.tags ?? []).join(", "))
   const [startPaused, setStartPaused] = useState(client?.settings.qbittorrent?.startPaused ?? false)
   const [tlsSkipVerify, setTlsSkipVerify] = useState(client?.settings.qbittorrent?.tlsSkipVerify ?? false)
+  const [torrentDir, setTorrentDir] = useState(client?.settings.blackhole?.torrentDir ?? "")
+  const [nzbDir, setNzbDir] = useState(client?.settings.blackhole?.nzbDir ?? "")
+  const [saveMagnetFiles, setSaveMagnetFiles] = useState(client?.settings.blackhole?.saveMagnetFiles ?? false)
 
   const [transmissionDownloadDir, setTransmissionDownloadDir] = useState(client?.settings.transmission?.downloadDir ?? "")
   const [transmissionStartPaused, setTransmissionStartPaused] = useState(client?.settings.transmission?.startPaused ?? false)
@@ -176,6 +179,12 @@ function DownloadClientForm({ client, pending, onSubmit }: {
             startPaused: startPaused || undefined,
             tlsSkipVerify: tlsSkipVerify || undefined,
           } }
+        } else if (kind === "blackhole") {
+          settings = { blackhole: {
+            torrentDir: torrentDir || undefined,
+            nzbDir: nzbDir || undefined,
+            saveMagnetFiles: saveMagnetFiles || undefined,
+          } }
         } else if (kind === "transmission") {
           settings = { transmission: { downloadDir: transmissionDownloadDir || undefined, startPaused: transmissionStartPaused || undefined } }
         } else if (kind === "deluge") {
@@ -194,8 +203,9 @@ function DownloadClientForm({ client, pending, onSubmit }: {
           } }
         }
         // On edit, an empty secret keeps the stored one (only a typed value rotates).
+        // blackhole has no network endpoint of its own — its host must always be empty.
         onSubmit(client?.id ?? null, {
-          name, kind, host, username, settings,
+          name, kind, host: kind === "blackhole" ? "" : host, username, settings,
           secret: isEdit ? (secret || undefined) : secret,
         })
       }}
@@ -216,20 +226,42 @@ function DownloadClientForm({ client, pending, onSubmit }: {
           </NativeSelect>
         </span>
       </div>
-      <span className="flex flex-col gap-1.5">
-        <Label htmlFor="dlc-host">Host</Label>
-        <Input id="dlc-host" placeholder={HOST_PLACEHOLDER[kind] ?? "http://localhost:8080"} value={host} onChange={(e) => setHost(e.target.value)} />
-      </span>
-      <div className="grid grid-cols-2 gap-3">
-        <span className="flex flex-col gap-1.5">
-          <Label htmlFor="dlc-username">Username <span className="text-faint">(optional)</span></Label>
-          <Input id="dlc-username" autoComplete="off" value={username} onChange={(e) => setUsername(e.target.value)} />
-        </span>
-        <span className="flex flex-col gap-1.5">
-          <Label htmlFor="dlc-secret">Password {isEdit && <span className="text-faint">(leave blank to keep)</span>}</Label>
-          <Input id="dlc-secret" type="password" autoComplete="off" value={secret} onChange={(e) => setSecret(e.target.value)} />
-        </span>
-      </div>
+      {kind !== "blackhole" && (
+        <>
+          <span className="flex flex-col gap-1.5">
+            <Label htmlFor="dlc-host">Host</Label>
+            <Input id="dlc-host" placeholder={HOST_PLACEHOLDER[kind] ?? "http://localhost:8080"} value={host} onChange={(e) => setHost(e.target.value)} />
+          </span>
+          <div className="grid grid-cols-2 gap-3">
+            <span className="flex flex-col gap-1.5">
+              <Label htmlFor="dlc-username">Username <span className="text-faint">(optional)</span></Label>
+              <Input id="dlc-username" autoComplete="off" value={username} onChange={(e) => setUsername(e.target.value)} />
+            </span>
+            <span className="flex flex-col gap-1.5">
+              <Label htmlFor="dlc-secret">Password {isEdit && <span className="text-faint">(leave blank to keep)</span>}</Label>
+              <Input id="dlc-secret" type="password" autoComplete="off" value={secret} onChange={(e) => setSecret(e.target.value)} />
+            </span>
+          </div>
+        </>
+      )}
+      {kind === "blackhole" && (
+        <div className="flex flex-col gap-3 rounded-lg border border-border/60 p-3">
+          <div className="grid grid-cols-2 gap-3">
+            <span className="flex flex-col gap-1.5">
+              <Label htmlFor="dlc-torrent-dir">Torrent watch folder <span className="text-faint">(optional)</span></Label>
+              <Input id="dlc-torrent-dir" placeholder="/watch/torrents" value={torrentDir} onChange={(e) => setTorrentDir(e.target.value)} />
+            </span>
+            <span className="flex flex-col gap-1.5">
+              <Label htmlFor="dlc-nzb-dir">NZB watch folder <span className="text-faint">(optional)</span></Label>
+              <Input id="dlc-nzb-dir" placeholder="/watch/nzbs" value={nzbDir} onChange={(e) => setNzbDir(e.target.value)} />
+            </span>
+          </div>
+          <label className="flex items-center gap-2 text-[13px]">
+            <Switch checked={saveMagnetFiles} onCheckedChange={setSaveMagnetFiles} />
+            Save magnet-only releases as .magnet files
+          </label>
+        </div>
+      )}
       {kind === "qbittorrent" && (
         <div className="flex flex-col gap-3 rounded-lg border border-border/60 p-3">
           <div className="grid grid-cols-2 gap-3">
@@ -309,7 +341,7 @@ function DownloadClientForm({ client, pending, onSubmit }: {
         </div>
       )}
       <DialogFooter>
-        <Button type="submit" disabled={pending || !name || !host}>
+        <Button type="submit" disabled={pending || !name || (kind !== "blackhole" ? !host : !torrentDir && !nzbDir)}>
           {pending ? "Saving…" : isEdit ? "Save changes" : "Add download client"}
         </Button>
       </DialogFooter>

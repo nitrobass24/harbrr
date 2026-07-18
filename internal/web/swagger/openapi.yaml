@@ -2682,6 +2682,15 @@ components:
         directory: { type: string }
         startPaused: { type: boolean }
         tlsSkipVerify: { type: boolean }
+    BlackholeSettings:
+      type: object
+      description: >
+        blackhole watch-folder configuration. At least one of torrentDir/nzbDir must
+        be set; a payload whose protocol has no configured dir fails as unsupported.
+      properties:
+        torrentDir: { type: string, description: "absolute path a .torrent/.magnet is written into" }
+        nzbDir: { type: string, description: "absolute path a .nzb is written into" }
+        saveMagnetFiles: { type: boolean, description: "write a magnet-only release as a .magnet file instead of failing" }
     DownloadClientSettings:
       type: object
       description: >
@@ -2689,6 +2698,7 @@ components:
         client's own kind is populated.
       properties:
         qbittorrent: { $ref: "#/components/schemas/QBittorrentSettings" }
+        blackhole: { $ref: "#/components/schemas/BlackholeSettings" }
         transmission: { $ref: "#/components/schemas/TransmissionSettings" }
         deluge: { $ref: "#/components/schemas/DelugeSettings" }
         rtorrent: { $ref: "#/components/schemas/RTorrentSettings" }
@@ -2704,7 +2714,7 @@ components:
         name: { type: string }
         kind:
           type: string
-          enum: [qbittorrent, transmission, deluge, rtorrent]
+          enum: [qbittorrent, blackhole, transmission, deluge, rtorrent]
         enabled: { type: boolean }
         host: { type: string }
         username: { type: string }
@@ -2719,8 +2729,8 @@ components:
         name: { type: string }
         kind:
           type: string
-          enum: [qbittorrent, transmission, deluge, rtorrent]
-        host: { type: string }
+          enum: [qbittorrent, blackhole, transmission, deluge, rtorrent]
+        host: { type: string, description: "must be empty for kinds with no network endpoint (e.g. blackhole)" }
         username: { type: string }
         secret: { type: string, description: "optional; stored encrypted" }
         settings: { $ref: "#/components/schemas/DownloadClientSettings" }

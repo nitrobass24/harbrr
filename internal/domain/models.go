@@ -385,6 +385,18 @@ type RTorrentSettings struct {
 	TLSSkipVerify bool   `json:"tlsSkipVerify,omitempty"`
 }
 
+// BlackholeSettings holds the blackhole driver's watch-folder configuration: the
+// resolved release is written as a complete file into TorrentDir/NZBDir for a
+// real client to pick up. At least one dir must be set (validated by the
+// download service, since only it knows the row's Kind); SaveMagnetFiles opts
+// into writing a magnet-only release as a <name>.magnet link file — without it,
+// Add fails rather than silently dropping the release.
+type BlackholeSettings struct {
+	TorrentDir      string `json:"torrentDir,omitempty"`
+	NZBDir          string `json:"nzbDir,omitempty"`
+	SaveMagnetFiles bool   `json:"saveMagnetFiles,omitempty"`
+}
+
 // DownloadClientSettings is the typed wrapper persisted (marshalled) into
 // download_clients.settings_json: one pointer field per kind, never a bare
 // map[string]any. Exactly one field may be populated, and it must match the
@@ -392,6 +404,7 @@ type RTorrentSettings struct {
 // service, since only it knows the row's Kind).
 type DownloadClientSettings struct {
 	QBittorrent  *QBittorrentSettings  `json:"qbittorrent,omitempty"`
+	Blackhole    *BlackholeSettings    `json:"blackhole,omitempty"`
 	Transmission *TransmissionSettings `json:"transmission,omitempty"`
 	Deluge       *DelugeSettings       `json:"deluge,omitempty"`
 	RTorrent     *RTorrentSettings     `json:"rtorrent,omitempty"`

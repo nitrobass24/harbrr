@@ -58,17 +58,19 @@ type Driver interface {
 // ignores it).
 type driverBuilder func(c domain.DownloadClient, secret string, client *http.Client) (Driver, error)
 
-// hostMode is the shape a kind's host column must take, since not every
-// registered client is reachable by URL: Deluge's daemon RPC is a raw socket
-// address ("host:port"), not a URL at all.
+// hostMode is how a kind's host column is validated, since not every registered
+// client is reachable by URL: Deluge's daemon RPC is a raw socket address
+// ("host:port"), not a URL at all, and a driver with no network endpoint of its
+// own (blackhole's watch folders) has no host to validate.
 type hostMode int
 
 const (
 	hostURL  hostMode = iota // absolute http(s) URL (the default)
 	hostPort                 // "host:port" via net.SplitHostPort
+	hostNone                 // host column must be empty
 )
 
-// driverSpec pairs a kind's driver constructor with its host column's shape.
+// driverSpec pairs a kind's constructor with how its host column is validated.
 type driverSpec struct {
 	build driverBuilder
 	host  hostMode
@@ -79,6 +81,7 @@ type driverSpec struct {
 // entry (plus its own file) — no other platform code changes.
 var drivers = map[string]driverSpec{
 	domain.DownloadClientKindQBittorrent:  {build: newQBittorrent, host: hostURL},
+	domain.DownloadClientKindBlackhole:    {build: newBlackhole, host: hostNone},
 	domain.DownloadClientKindTransmission: {build: newTransmission, host: hostURL},
 	domain.DownloadClientKindRTorrent:     {build: newRTorrent, host: hostURL},
 	domain.DownloadClientKindDeluge:       {build: newDeluge, host: hostPort},

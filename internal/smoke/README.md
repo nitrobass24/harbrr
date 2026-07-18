@@ -40,6 +40,9 @@ Per tracker, page 1 only (the full criteria are in
 - Count ratio ≥ 0.50 **and** title Jaccard ≥ 0.30 → **pass**. (Exception: when **both** sides hit
   the 100-result page cap **and** the count ratio is ≥ 0.90, low title Jaccard still passes — a
   full page is a config-sorted window, so titles aren't comparable there.)
+- A Prowlarr response **above** the 100-result page cap is clamped to harbrr's page-1 window
+  before comparing — Prowlarr's search API is unpaged while harbrr correctly serves Torznab
+  pages, so full-set-vs-one-page is a paging artifact, not a count mismatch.
 
 ## The differential bypasses harbrr's search cache
 

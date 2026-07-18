@@ -213,21 +213,32 @@ func DiffPass(harbrr, prowlarr []Result) (bool, string) {
 	case p == 0 && h > 0:
 		return true, fmt.Sprintf("harbrr %d, Prowlarr 0 (likely a Prowlarr cache miss)", h)
 	}
+	// Prowlarr's search API has no page cap: a driver with no upstream paging (e.g.
+	// a Gazelle browse that returns the whole result set in one response) hands it
+	// everything, while harbrr correctly serves a resultCap-sized Torznab page.
+	// Comparing the full oracle set against harbrr's one full page false-fails on
+	// count (BrokenStones: harbrr 100 vs Prowlarr 696 with identical heads), so
+	// clamp the oracle to harbrr's page-1 window.
+	note := ""
+	if h >= resultCap && p > resultCap {
+		note = fmt.Sprintf(" (oracle uncapped at %d, clamped to harbrr's %d-result page window)", p, resultCap)
+		prowlarr, p = prowlarr[:resultCap], resultCap
+	}
 	ratio := float64(min(h, p)) / float64(max(h, p))
 	jac := titleJaccard(harbrr, prowlarr)
 	if ratio < countRatioMin {
-		return false, fmt.Sprintf("count ratio %.2f < %.2f (harbrr %d, Prowlarr %d)", ratio, countRatioMin, h, p)
+		return false, fmt.Sprintf("count ratio %.2f < %.2f (harbrr %d, Prowlarr %d)%s", ratio, countRatioMin, h, p, note)
 	}
 	if jac >= titleJaccardMin {
-		return true, fmt.Sprintf("count ratio %.2f, title Jaccard %.2f", ratio, jac)
+		return true, fmt.Sprintf("count ratio %.2f, title Jaccard %.2f%s", ratio, jac, note)
 	}
 	// Low title overlap but a full page on both sides: a sort-dependent window of a
 	// larger result set (config-driven sort differs between harbrr and Prowlarr).
 	// Titles aren't comparable here; accept on strong count parity with a caveat.
 	if h >= resultCap && p >= resultCap && ratio >= 0.90 {
-		return true, fmt.Sprintf("count parity %.2f at the %d-result page cap; titles incomparable (config-sorted window, Jaccard %.2f)", ratio, resultCap, jac)
+		return true, fmt.Sprintf("count parity %.2f at the %d-result page cap; titles incomparable (config-sorted window, Jaccard %.2f)%s", ratio, resultCap, jac, note)
 	}
-	return false, fmt.Sprintf("title Jaccard %.2f < %.2f (harbrr %d, Prowlarr %d)", jac, titleJaccardMin, h, p)
+	return false, fmt.Sprintf("title Jaccard %.2f < %.2f (harbrr %d, Prowlarr %d)%s", jac, titleJaccardMin, h, p, note)
 }
 
 func titleJaccard(a, b []Result) float64 {
