@@ -155,6 +155,19 @@ configured client's driver (qBittorrent first; the rest are tracked in autobrr/h
 starts the download and takes over management from there; interactive grab (#7) is the remaining
 piece of the direct grab-to-client path.
 
+### App boundary (identity, stored once)
+
+The three surfaces that connect to an external service — app-sync (`internal/appsync`), announce
+(`internal/announce`), and download clients (`internal/download`) — no longer each store that
+service's base URL + credential. A first-class **App** (`internal/apps`, table `apps`) holds a
+`(kind, base_url)` identity, one sealed credential, and the app's harbrr vantage **once**; the
+surface rows reference it by `app_id`. A create get-or-creates the App inline or reuses one by
+`appId`; a credential rotation (`PATCH /api/apps/{id}`) propagates to every surface. A one-time
+boot fold (`internal/resourcemigrate.FoldApps`) migrates legacy per-row identity/credential into
+Apps. This supersedes #266's copy-seed design and #72's announce-target seed endpoint. Full
+rationale, the single-read-path rule, and the legacy-column cleanup follow-up (#269) are in
+`docs/adr/0004-app-identity.md`.
+
 ## Search-results cache (design record)
 
 The one differentiator Prowlarr/Jackett lack: because harbrr is the Torznab *server*, a cache hit
