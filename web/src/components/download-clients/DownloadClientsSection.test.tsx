@@ -91,9 +91,21 @@ describe("DownloadClientsSection", () => {
     fireEvent.change(await screen.findByLabelText("Kind"), { target: { value: "blackhole" } })
 
     expect(screen.queryByLabelText("Host")).toBeNull()
+    expect(screen.queryByLabelText(/Username/)).toBeNull()
     expect(screen.queryByLabelText(/Password/)).toBeNull()
     expect(screen.getByLabelText(/Torrent watch folder/)).toBeTruthy()
     expect(screen.getByLabelText(/NZB watch folder/)).toBeTruthy()
+
+    // Submit stays blocked until at least one watch folder is set (the server
+    // would 400 on dir-less blackhole settings; the form doesn't offer the trip).
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "bh" } })
+    // Two buttons share this label in add mode (toolbar opener + form submit).
+    const submit = screen
+      .getAllByRole("button", { name: "Add download client" })
+      .find((b): b is HTMLButtonElement => b instanceof HTMLButtonElement && b.type === "submit")!
+    expect(submit.disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText(/Torrent watch folder/), { target: { value: "/watch/torrents" } })
+    expect(submit.disabled).toBe(false)
   })
 
   it("test: posts to the test endpoint and surfaces a toast", async () => {

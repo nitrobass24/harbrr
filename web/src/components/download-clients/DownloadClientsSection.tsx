@@ -249,7 +249,7 @@ function DownloadClientForm({ client, pending, onSubmit }: {
         </div>
       )}
       <DialogFooter>
-        <Button type="submit" disabled={pending || !name || (kind !== "blackhole" && !host)}>
+        <Button type="submit" disabled={pending || !name || (kind !== "blackhole" ? !host : !torrentDir && !nzbDir)}>
           {pending ? "Saving…" : isEdit ? "Save changes" : "Add download client"}
         </Button>
       </DialogFooter>
