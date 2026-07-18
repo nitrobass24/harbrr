@@ -25,10 +25,11 @@ import {
 import { notifyError, notifySuccess } from "@/lib/notify"
 import type { CreateDownloadClient, DownloadClient, DownloadClientKind, DownloadClientSettings, UpdateDownloadClient } from "@/lib/api"
 
-// Only kinds with a registered driver work today (autobrr/harbrr#240, #243,
-// #244); the rest are seeded server-side but rejected on create until their own
-// driver lands (autobrr/harbrr#8). Keep the picker limited to what actually works.
-const DOWNLOAD_CLIENT_KINDS: DownloadClientKind[] = ["qbittorrent", "blackhole", "transmission", "deluge", "rtorrent"]
+// Only kinds with a registered driver work today (autobrr/harbrr#240, #241,
+// #243, #244); the rest are seeded server-side but rejected on create until
+// their own driver lands (autobrr/harbrr#8). Keep the picker limited to what
+// actually works.
+const DOWNLOAD_CLIENT_KINDS: DownloadClientKind[] = ["qbittorrent", "blackhole", "sabnzbd", "nzbget", "transmission", "deluge", "rtorrent"]
 
 // HOST_PLACEHOLDER is per-kind: every kind but Deluge takes an absolute http(s)
 // URL; Deluge's daemon RPC is a raw "host:port" socket address, not a URL.
@@ -145,7 +146,9 @@ function DownloadClientForm({ client, pending, onSubmit }: {
   const [host, setHost] = useState(client?.host ?? "")
   const [username, setUsername] = useState(client?.username ?? "")
   const [secret, setSecret] = useState("")
-  const [category, setCategory] = useState(client?.settings.qbittorrent?.category ?? "")
+  const [category, setCategory] = useState(
+    client?.settings.qbittorrent?.category ?? client?.settings.sabnzbd?.category ?? client?.settings.nzbget?.category ?? ""
+  )
   const [tags, setTags] = useState((client?.settings.qbittorrent?.tags ?? []).join(", "))
   const [startPaused, setStartPaused] = useState(client?.settings.qbittorrent?.startPaused ?? false)
   const [tlsSkipVerify, setTlsSkipVerify] = useState(client?.settings.qbittorrent?.tlsSkipVerify ?? false)
@@ -185,6 +188,10 @@ function DownloadClientForm({ client, pending, onSubmit }: {
             nzbDir: nzbDir || undefined,
             saveMagnetFiles: saveMagnetFiles || undefined,
           } }
+        } else if (kind === "sabnzbd") {
+          settings = { sabnzbd: { category: category || undefined } }
+        } else if (kind === "nzbget") {
+          settings = { nzbget: { category: category || undefined } }
         } else if (kind === "transmission") {
           settings = { transmission: { downloadDir: transmissionDownloadDir || undefined, startPaused: transmissionStartPaused || undefined } }
         } else if (kind === "deluge") {
@@ -233,12 +240,14 @@ function DownloadClientForm({ client, pending, onSubmit }: {
             <Input id="dlc-host" placeholder={HOST_PLACEHOLDER[kind] ?? "http://localhost:8080"} value={host} onChange={(e) => setHost(e.target.value)} />
           </span>
           <div className="grid grid-cols-2 gap-3">
-            <span className="flex flex-col gap-1.5">
-              <Label htmlFor="dlc-username">Username <span className="text-faint">(optional)</span></Label>
-              <Input id="dlc-username" autoComplete="off" value={username} onChange={(e) => setUsername(e.target.value)} />
-            </span>
-            <span className="flex flex-col gap-1.5">
-              <Label htmlFor="dlc-secret">Password {isEdit && <span className="text-faint">(leave blank to keep)</span>}</Label>
+            {kind !== "sabnzbd" && (
+              <span className="flex flex-col gap-1.5">
+                <Label htmlFor="dlc-username">Username <span className="text-faint">(optional)</span></Label>
+                <Input id="dlc-username" autoComplete="off" value={username} onChange={(e) => setUsername(e.target.value)} />
+              </span>
+            )}
+            <span className={`flex flex-col gap-1.5 ${kind === "sabnzbd" ? "col-span-2" : ""}`}>
+              <Label htmlFor="dlc-secret">{kind === "sabnzbd" ? "API key" : "Password"} {isEdit && <span className="text-faint">(leave blank to keep)</span>}</Label>
               <Input id="dlc-secret" type="password" autoComplete="off" value={secret} onChange={(e) => setSecret(e.target.value)} />
             </span>
           </div>
@@ -260,6 +269,14 @@ function DownloadClientForm({ client, pending, onSubmit }: {
             <Switch checked={saveMagnetFiles} onCheckedChange={setSaveMagnetFiles} />
             Save magnet-only releases as .magnet files
           </label>
+        </div>
+      )}
+      {(kind === "sabnzbd" || kind === "nzbget") && (
+        <div className="flex flex-col gap-3 rounded-lg border border-border/60 p-3">
+          <span className="flex flex-col gap-1.5">
+            <Label htmlFor="dlc-category">Category <span className="text-faint">(optional)</span></Label>
+            <Input id="dlc-category" value={category} onChange={(e) => setCategory(e.target.value)} />
+          </span>
         </div>
       )}
       {kind === "qbittorrent" && (

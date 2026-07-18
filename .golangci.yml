@@ -142,3 +142,12 @@ linters:
         text: "G101"
         linters:
           - gosec
+      # internal/download/sabnzbd is a verbatim port of autobrr's pkg/sabnzbd
+      # (#241, byte-identical apart from the two documented import rewrites): its
+      # `return nil, err` sites (stdlib url.JoinPath/url.Parse/
+      # http.NewRequestWithContext/http.Client.Do) are upstream's own unwrapped
+      # shape — internal/download/sabnzbd.go (the driver adapter) is the wrapping
+      # layer for anything this package returns.
+      - path: internal/download/sabnzbd/sabnzbd\.go
+        linters:
+          - wrapcheck

@@ -258,20 +258,25 @@ func validateHostPort(host string) error {
 // validateSettings rejects a populated settings field that doesn't match kind,
 // and validates the kind-specific settings that need it.
 func validateSettings(kind string, settings domain.DownloadClientSettings) error {
-	if settings.QBittorrent != nil && kind != domain.DownloadClientKindQBittorrent {
-		return fmt.Errorf("%w: qbittorrent settings given for kind %q", domain.ErrInvalid, kind)
+	// One row per settings shape: a populated field whose kind doesn't own it is a
+	// mismatch. Adding a kind is one row here, not another guard clause.
+	mismatches := []struct {
+		name string
+		set  bool
+		kind string
+	}{
+		{"qbittorrent", settings.QBittorrent != nil, domain.DownloadClientKindQBittorrent},
+		{"blackhole", settings.Blackhole != nil, domain.DownloadClientKindBlackhole},
+		{"sabnzbd", settings.Sabnzbd != nil, domain.DownloadClientKindSabnzbd},
+		{"nzbget", settings.NZBGet != nil, domain.DownloadClientKindNZBGet},
+		{"transmission", settings.Transmission != nil, domain.DownloadClientKindTransmission},
+		{"deluge", settings.Deluge != nil, domain.DownloadClientKindDeluge},
+		{"rtorrent", settings.RTorrent != nil, domain.DownloadClientKindRTorrent},
 	}
-	if settings.Transmission != nil && kind != domain.DownloadClientKindTransmission {
-		return fmt.Errorf("%w: transmission settings given for kind %q", domain.ErrInvalid, kind)
-	}
-	if settings.Deluge != nil && kind != domain.DownloadClientKindDeluge {
-		return fmt.Errorf("%w: deluge settings given for kind %q", domain.ErrInvalid, kind)
-	}
-	if settings.RTorrent != nil && kind != domain.DownloadClientKindRTorrent {
-		return fmt.Errorf("%w: rtorrent settings given for kind %q", domain.ErrInvalid, kind)
-	}
-	if settings.Blackhole != nil && kind != domain.DownloadClientKindBlackhole {
-		return fmt.Errorf("%w: blackhole settings given for kind %q", domain.ErrInvalid, kind)
+	for _, m := range mismatches {
+		if m.set && kind != m.kind {
+			return fmt.Errorf("%w: %s settings given for kind %q", domain.ErrInvalid, m.name, kind)
+		}
 	}
 	if kind == domain.DownloadClientKindBlackhole {
 		return validateBlackholeSettings(settings.Blackhole)

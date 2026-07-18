@@ -1,5 +1,5 @@
 // Package download sends grabbed releases to the user's configured download
-// clients (qBittorrent today; SABnzbd, NZBGet, qui, Flood, Download Station,
+// clients (qBittorrent, SABnzbd, and NZBGet today; qui, Flood, Download Station,
 // Transmission, Deluge, rTorrent, and a blackhole watch-folder are seeded kind
 // constants awaiting their own driver — see autobrr/harbrr#8). harbrr never
 // downloads a torrent/nzb itself; it hands the resolved Payload (bytes it fetched

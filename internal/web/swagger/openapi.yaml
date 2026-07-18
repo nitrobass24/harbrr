@@ -2682,6 +2682,21 @@ components:
         directory: { type: string }
         startPaused: { type: boolean }
         tlsSkipVerify: { type: boolean }
+    SabnzbdSettings:
+      type: object
+      description: >
+        SABnzbd-specific per-client options; the default category an Add falls
+        back to when the caller doesn't supply one. The client's username column
+        is unused for this kind (auth is apikey-only).
+      properties:
+        category: { type: string }
+    NZBGetSettings:
+      type: object
+      description: >
+        NZBGet-specific per-client options; the default category an Add falls
+        back to when the caller doesn't supply one.
+      properties:
+        category: { type: string }
     BlackholeSettings:
       type: object
       description: >
@@ -2699,6 +2714,8 @@ components:
       properties:
         qbittorrent: { $ref: "#/components/schemas/QBittorrentSettings" }
         blackhole: { $ref: "#/components/schemas/BlackholeSettings" }
+        sabnzbd: { $ref: "#/components/schemas/SabnzbdSettings" }
+        nzbget: { $ref: "#/components/schemas/NZBGetSettings" }
         transmission: { $ref: "#/components/schemas/TransmissionSettings" }
         deluge: { $ref: "#/components/schemas/DelugeSettings" }
         rtorrent: { $ref: "#/components/schemas/RTorrentSettings" }
@@ -2714,7 +2731,7 @@ components:
         name: { type: string }
         kind:
           type: string
-          enum: [qbittorrent, blackhole, transmission, deluge, rtorrent]
+          enum: [qbittorrent, blackhole, sabnzbd, nzbget, transmission, deluge, rtorrent]
         enabled: { type: boolean }
         host: { type: string }
         username: { type: string }
@@ -2729,7 +2746,7 @@ components:
         name: { type: string }
         kind:
           type: string
-          enum: [qbittorrent, blackhole, transmission, deluge, rtorrent]
+          enum: [qbittorrent, blackhole, sabnzbd, nzbget, transmission, deluge, rtorrent]
         host: { type: string, description: "must be empty for kinds with no network endpoint (e.g. blackhole)" }
         username: { type: string }
         secret: { type: string, description: "optional; stored encrypted" }
