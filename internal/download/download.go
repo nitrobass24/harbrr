@@ -65,13 +65,32 @@ type Driver interface {
 // ignores it).
 type driverBuilder func(c domain.DownloadClient, secret string, client *http.Client) (Driver, error)
 
+// hostMode is how a kind's host column is validated: most clients need an
+// absolute URL to dial, but a driver with no network endpoint of its own (e.g.
+// blackhole's watch folders) has no host to validate — and a future kind may
+// take a bare "host:port" instead.
+type hostMode int
+
+const (
+	hostURL  hostMode = iota // absolute http(s) URL (the default)
+	hostPort                 // "host:port" via net.SplitHostPort
+	hostNone                 // host column must be empty
+)
+
+// driverSpec pairs a kind's constructor with how its host column is validated.
+type driverSpec struct {
+	build driverBuilder
+	host  hostMode
+}
+
 // drivers is the single source of truth for both construction AND kind validity:
 // a kind is creatable only once it has an entry here. Adding driver #2 is one map
 // entry (plus its own file) — no other platform code changes.
-var drivers = map[string]driverBuilder{
-	domain.DownloadClientKindQBittorrent: newQBittorrent,
-	domain.DownloadClientKindSabnzbd:     newSabnzbd,
-	domain.DownloadClientKindNZBGet:      newNZBGet,
+var drivers = map[string]driverSpec{
+	domain.DownloadClientKindQBittorrent: {build: newQBittorrent, host: hostURL},
+	domain.DownloadClientKindBlackhole:   {build: newBlackhole, host: hostNone},
+	domain.DownloadClientKindSabnzbd:     {build: newSabnzbd, host: hostURL},
+	domain.DownloadClientKindNZBGet:      {build: newNZBGet, host: hostURL},
 }
 
 // validateKind reports whether kind has a registered driver.
@@ -83,11 +102,11 @@ func validateKind(kind string) bool {
 // newDriver builds the Driver for a configured client, or an error if its kind
 // has no registered driver.
 func newDriver(c domain.DownloadClient, secret string, client *http.Client) (Driver, error) {
-	build, ok := drivers[c.Kind]
+	spec, ok := drivers[c.Kind]
 	if !ok {
 		return nil, fmt.Errorf("%w: unregistered download client kind %q", domain.ErrInvalid, c.Kind)
 	}
-	return build(c, secret, client)
+	return spec.build(c, secret, client)
 }
 
 // scrubURLError strips the request URL from a *url.Error — the shape net/http
