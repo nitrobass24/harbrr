@@ -222,11 +222,10 @@ func (r *Manager) Freeleech(ctx context.Context, inst domain.IndexerInstance) (b
 	if err != nil {
 		return false, fmt.Errorf("registry: get settings for %q: %w", inst.Slug, err)
 	}
-	cfg := make(map[string]string, 1)
+	cfg := make(map[string]string, 2)
 	for _, s := range settings {
 		if s.Name == "freeleech" || s.Name == "freeleech_only" {
 			cfg[s.Name] = s.Value
-			break
 		}
 	}
 	cardigann.CanonicalizeCheckboxes(def, cfg)

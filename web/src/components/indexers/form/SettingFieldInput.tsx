@@ -27,17 +27,24 @@ export function SettingFieldInput({ field, value, onChange }: {
   const id = `setting-${field.name}`
 
   switch (field.type) {
-    case "checkbox":
+    case "checkbox": {
+      // Recognize the backend's truthy sentinels, not just the literal "true" this form
+      // writes: cardigann's own canonical checked value is "True" (config.go's configTrue),
+      // and settingEnabled additionally reads "1" as on. Without this a value the backend
+      // already treats as ON renders unchecked, and clicking it to "fix" that overwrites an
+      // already-on value with "true" (autobrr/harbrr#273).
+      const v = value.toLowerCase()
       return (
         <div className="flex items-center gap-2">
           <Checkbox
             id={id}
-            checked={value === "true"}
+            checked={v === "true" || v === "1"}
             onCheckedChange={(checked) => onChange(checked === true ? "true" : "")}
           />
           <Label htmlFor={id} className="font-normal">{label}</Label>
         </div>
       )
+    }
     case "select":
       return (
         <Field id={id} label={label}>

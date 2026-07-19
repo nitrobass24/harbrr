@@ -42,6 +42,24 @@ describe("SettingFieldInput", () => {
     expect(onChange).toHaveBeenCalledWith("")
   })
 
+  // autobrr/harbrr#273 CodeRabbit follow-up: the checked state must recognize every
+  // truthy value settingEnabled(backend) treats as ON, not just the literal "true" this
+  // form writes — otherwise a value the backend already reads as ON renders unchecked.
+  it("checkbox renders checked for the backend's \"True\" sentinel", () => {
+    renderField({ name: "fl", label: "Freeleech", type: "checkbox", secret: false }, "True")
+    expect(screen.getByLabelText("Freeleech").getAttribute("data-state")).toBe("checked")
+  })
+
+  it("checkbox renders checked for \"1\"", () => {
+    renderField({ name: "fl", label: "Freeleech", type: "checkbox", secret: false }, "1")
+    expect(screen.getByLabelText("Freeleech").getAttribute("data-state")).toBe("checked")
+  })
+
+  it("checkbox renders unchecked for \"false\"", () => {
+    renderField({ name: "fl", label: "Freeleech", type: "checkbox", secret: false }, "false")
+    expect(screen.getByLabelText("Freeleech").getAttribute("data-state")).toBe("unchecked")
+  })
+
   it("select renders every option and reports the key", () => {
     const onChange = renderField(
       { name: "sort", label: "Sort", type: "select", secret: false, options: { created: "Created", seeders: "Seeders" }, default: "created" },

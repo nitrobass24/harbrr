@@ -109,6 +109,11 @@ func TestNativeFreeleechOnlyReported(t *testing.T) {
 		{slug: "fl-on", settings: map[string]string{"cookie": "c", "freeleech_only": "true"}, want: true},
 		{slug: "fl-off", settings: map[string]string{"cookie": "c", "freeleech_only": "false"}, want: false},
 		{slug: "fl-unset", settings: map[string]string{"cookie": "c"}, want: false},
+		// #273 follow-up: an instance carrying BOTH keys must not drop the second one.
+		// Settings() orders rows alphabetically by name, so "freeleech" is always scanned
+		// before "freeleech_only" — the dropped break() previously discarded whichever key
+		// scanned second, reading this as OFF instead of ON.
+		{slug: "fl-both-keys", settings: map[string]string{"cookie": "c", "freeleech": "false", "freeleech_only": "true"}, want: true},
 	}
 	for _, tt := range tests {
 		inst, err := reg.Add(ctx, registry.AddParams{Slug: tt.slug, DefinitionID: "iptorrents", Settings: tt.settings})
