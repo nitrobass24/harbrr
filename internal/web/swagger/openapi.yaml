@@ -2734,6 +2734,30 @@ components:
       description: Synology Download Station-specific per-client options.
       properties:
         directory: { type: string, description: "relative to a shared folder; no leading slash" }
+    TransmissionSettings:
+      type: object
+      description: Transmission-specific per-client options; all fields are optional.
+      properties:
+        downloadDir: { type: string }
+        startPaused: { type: boolean }
+    DelugeSettings:
+      type: object
+      description: >
+        Deluge-specific per-client options; all fields are optional. v1 selects
+        the legacy 1.3 daemon protocol — the default is the v2 daemon.
+      properties:
+        v1: { type: boolean }
+        label: { type: string }
+        downloadDir: { type: string }
+        startPaused: { type: boolean }
+    RTorrentSettings:
+      type: object
+      description: rTorrent-specific per-client options; all fields are optional.
+      properties:
+        label: { type: string }
+        directory: { type: string }
+        startPaused: { type: boolean }
+        tlsSkipVerify: { type: boolean }
     SabnzbdSettings:
       type: object
       description: >
@@ -2771,6 +2795,9 @@ components:
         qui: { $ref: "#/components/schemas/QuiSettings" }
         flood: { $ref: "#/components/schemas/FloodSettings" }
         downloadStation: { $ref: "#/components/schemas/DownloadStationSettings" }
+        transmission: { $ref: "#/components/schemas/TransmissionSettings" }
+        deluge: { $ref: "#/components/schemas/DelugeSettings" }
+        rtorrent: { $ref: "#/components/schemas/RTorrentSettings" }
     DownloadClient:
       type: object
       description: >
@@ -2783,7 +2810,7 @@ components:
         name: { type: string }
         kind:
           type: string
-          enum: [qbittorrent, blackhole, sabnzbd, nzbget, qui, flood, download-station]
+          enum: [qbittorrent, blackhole, sabnzbd, nzbget, qui, flood, download-station, transmission, deluge, rtorrent]
         enabled: { type: boolean }
         host: { type: string }
         username: { type: string }
@@ -2798,7 +2825,7 @@ components:
         name: { type: string }
         kind:
           type: string
-          enum: [qbittorrent, blackhole, sabnzbd, nzbget, qui, flood, download-station]
+          enum: [qbittorrent, blackhole, sabnzbd, nzbget, qui, flood, download-station, transmission, deluge, rtorrent]
         host: { type: string, description: "must be empty for kinds with no network endpoint (e.g. blackhole)" }
         username: { type: string }
         secret: { type: string, description: "optional; stored encrypted" }

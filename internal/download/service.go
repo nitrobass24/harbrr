@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -205,7 +206,7 @@ func (s *Service) TestConnection(ctx context.Context, id int64) error {
 }
 
 // validate enforces a name, a registered kind, a host matching the kind's
-// hostMode, and settings matching the kind.
+// registered hostMode, and settings matching the kind.
 func validate(name, kind, host string, settings domain.DownloadClientSettings) error {
 	if name == "" {
 		return fmt.Errorf("%w: name is required", domain.ErrInvalid)
@@ -221,8 +222,8 @@ func validate(name, kind, host string, settings domain.DownloadClientSettings) e
 
 // validateHost dispatches host validation on the kind's registered hostMode:
 // hostNone rejects any host (blackhole has no network endpoint of its own),
-// hostPort requires "host:port", and the default (hostURL) requires an
-// absolute http(s) URL.
+// hostPort requires "host:port" (Deluge's raw daemon socket, which isn't a URL
+// at all), and the default (hostURL) requires an absolute http(s) URL.
 func validateHost(kind, host string) error {
 	switch drivers[kind].host {
 	case hostNone:
@@ -231,13 +232,25 @@ func validateHost(kind, host string) error {
 		}
 		return nil
 	case hostPort:
-		if _, _, err := net.SplitHostPort(host); err != nil {
-			return fmt.Errorf("%w: host must be host:port for kind %q", domain.ErrInvalid, kind)
-		}
-		return nil
+		return validateHostPort(host)
 	case hostURL:
 		_, err := domain.ValidateAbsURL("host", host)
 		return err
+	}
+	return nil
+}
+
+// validateHostPort enforces a non-empty host and a numeric port in 1-65535.
+// net.SplitHostPort alone is not enough: it accepts ":58846" (empty host),
+// "localhost:" (empty port), and "localhost:abc" (non-numeric port).
+func validateHostPort(host string) error {
+	h, portStr, err := net.SplitHostPort(host)
+	if err != nil || h == "" {
+		return fmt.Errorf("%w: host must be host:port (e.g. localhost:58846)", domain.ErrInvalid)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf("%w: host must be host:port with a numeric port 1-65535 (e.g. localhost:58846)", domain.ErrInvalid)
 	}
 	return nil
 }
@@ -261,6 +274,9 @@ func validateSettings(kind string, settings domain.DownloadClientSettings) error
 		{"qui", settings.Qui != nil, domain.DownloadClientKindQui},
 		{"flood", settings.Flood != nil, domain.DownloadClientKindFlood},
 		{"download-station", settings.DownloadStation != nil, domain.DownloadClientKindDownloadStation},
+		{"transmission", settings.Transmission != nil, domain.DownloadClientKindTransmission},
+		{"deluge", settings.Deluge != nil, domain.DownloadClientKindDeluge},
+		{"rtorrent", settings.RTorrent != nil, domain.DownloadClientKindRTorrent},
 	}
 	for _, m := range mismatches {
 		if m.set && kind != m.kind {

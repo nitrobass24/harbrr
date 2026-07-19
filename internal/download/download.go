@@ -65,10 +65,10 @@ type Driver interface {
 // ignores it).
 type driverBuilder func(c domain.DownloadClient, secret string, client *http.Client) (Driver, error)
 
-// hostMode is how a kind's host column is validated: most clients need an
-// absolute URL to dial, but a driver with no network endpoint of its own (e.g.
-// blackhole's watch folders) has no host to validate — and a future kind may
-// take a bare "host:port" instead.
+// hostMode is how a kind's host column is validated, since not every registered
+// client is reachable by URL: Deluge's daemon RPC is a raw socket address
+// ("host:port"), not a URL at all, and a driver with no network endpoint of its
+// own (blackhole's watch folders) has no host to validate.
 type hostMode int
 
 const (
@@ -84,7 +84,7 @@ type driverSpec struct {
 }
 
 // drivers is the single source of truth for both construction AND kind validity:
-// a kind is creatable only once it has an entry here. Adding driver #2 is one map
+// a kind is creatable only once it has an entry here. Adding a driver is one map
 // entry (plus its own file) — no other platform code changes.
 var drivers = map[string]driverSpec{
 	domain.DownloadClientKindQBittorrent:     {build: newQBittorrent, host: hostURL},
@@ -94,6 +94,9 @@ var drivers = map[string]driverSpec{
 	domain.DownloadClientKindQui:             {build: newQui, host: hostURL},
 	domain.DownloadClientKindFlood:           {build: newFlood, host: hostURL},
 	domain.DownloadClientKindDownloadStation: {build: newDownloadStation, host: hostURL},
+	domain.DownloadClientKindTransmission:    {build: newTransmission, host: hostURL},
+	domain.DownloadClientKindRTorrent:        {build: newRTorrent, host: hostURL},
+	domain.DownloadClientKindDeluge:          {build: newDeluge, host: hostPort},
 }
 
 // validateKind reports whether kind has a registered driver.

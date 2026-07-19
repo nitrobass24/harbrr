@@ -362,6 +362,29 @@ type QBittorrentSettings struct {
 	TLSSkipVerify bool     `json:"tlsSkipVerify,omitempty"`
 }
 
+// TransmissionSettings holds the Transmission-specific per-client options.
+type TransmissionSettings struct {
+	DownloadDir string `json:"downloadDir,omitempty"`
+	StartPaused bool   `json:"startPaused,omitempty"`
+}
+
+// DelugeSettings holds the Deluge-specific per-client options. V1 selects the
+// legacy 1.3 daemon protocol; the default is the v2 daemon.
+type DelugeSettings struct {
+	V1          bool   `json:"v1,omitempty"`
+	Label       string `json:"label,omitempty"`
+	DownloadDir string `json:"downloadDir,omitempty"`
+	StartPaused bool   `json:"startPaused,omitempty"`
+}
+
+// RTorrentSettings holds the rTorrent-specific per-client options.
+type RTorrentSettings struct {
+	Label         string `json:"label,omitempty"`
+	Directory     string `json:"directory,omitempty"`
+	StartPaused   bool   `json:"startPaused,omitempty"`
+	TLSSkipVerify bool   `json:"tlsSkipVerify,omitempty"`
+}
+
 // QuiSettings holds the qui-specific per-client options. qui (autobrr/qui) is a
 // multi-instance qBittorrent manager keyed by int instance id — InstanceID is the
 // only required field (validated > 0 by the download service).
@@ -423,6 +446,9 @@ type DownloadClientSettings struct {
 	Qui             *QuiSettings             `json:"qui,omitempty"`
 	Flood           *FloodSettings           `json:"flood,omitempty"`
 	DownloadStation *DownloadStationSettings `json:"downloadStation,omitempty"`
+	Transmission    *TransmissionSettings    `json:"transmission,omitempty"`
+	Deluge          *DelugeSettings          `json:"deluge,omitempty"`
+	RTorrent        *RTorrentSettings        `json:"rtorrent,omitempty"`
 }
 
 // DownloadClient is a configured download client harbrr can send grabbed

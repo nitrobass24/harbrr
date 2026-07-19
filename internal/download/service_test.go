@@ -78,10 +78,14 @@ func TestCreateValidation(t *testing.T) {
 		p    CreateParams
 	}{
 		{"blank name", CreateParams{Name: "  ", Kind: domain.DownloadClientKindQBittorrent, Host: "http://x.invalid"}},
-		{"unregistered kind", CreateParams{Name: "n", Kind: domain.DownloadClientKindDeluge, Host: "http://x.invalid"}},
+		{"unregistered kind", CreateParams{Name: "n", Kind: "no-such-kind", Host: "http://x.invalid"}},
 		{"unknown kind", CreateParams{Name: "n", Kind: "bogus", Host: "http://x.invalid"}},
 		{"relative host", CreateParams{Name: "n", Kind: domain.DownloadClientKindQBittorrent, Host: "/x"}},
 		{"blank host", CreateParams{Name: "n", Kind: domain.DownloadClientKindQBittorrent, Host: ""}},
+		{"hostPort empty host", CreateParams{Name: "n", Kind: domain.DownloadClientKindDeluge, Host: ":58846"}},
+		{"hostPort empty port", CreateParams{Name: "n", Kind: domain.DownloadClientKindDeluge, Host: "localhost:"}},
+		{"hostPort non-numeric port", CreateParams{Name: "n", Kind: domain.DownloadClientKindDeluge, Host: "localhost:not-a-port"}},
+		{"hostPort zero port", CreateParams{Name: "n", Kind: domain.DownloadClientKindDeluge, Host: "localhost:0"}},
 		{"blackhole host must be empty", CreateParams{
 			Name: "bh", Kind: domain.DownloadClientKindBlackhole, Host: "http://x.invalid",
 			Settings: domain.DownloadClientSettings{Blackhole: &domain.BlackholeSettings{TorrentDir: "/watch"}},

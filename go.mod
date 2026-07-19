@@ -6,12 +6,15 @@ require (
 	github.com/PuerkitoBio/goquery v1.12.0
 	github.com/alexedwards/scs/v2 v2.9.0
 	github.com/andybalholm/cascadia v1.3.4
+	github.com/autobrr/go-deluge v1.4.0
 	github.com/autobrr/go-qbittorrent v1.16.0
+	github.com/autobrr/go-rtorrent v1.12.0
 	github.com/coreos/go-oidc/v3 v3.20.0
 	github.com/dlclark/regexp2 v1.12.0
 	github.com/getkin/kin-openapi v0.142.0
 	github.com/go-chi/chi/v5 v5.3.1
 	github.com/go-jose/go-jose/v4 v4.1.4
+	github.com/hekmon/transmissionrpc/v3 v3.0.0
 	github.com/rs/zerolog v1.35.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/spf13/cobra v1.10.2
@@ -33,10 +36,13 @@ require (
 	github.com/avast/retry-go v3.0.0+incompatible // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
+	github.com/gdm85/go-rencode v0.1.8 // indirect
 	github.com/go-openapi/jsonpointer v0.22.5 // indirect
 	github.com/go-openapi/swag/jsonname v0.25.5 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
+	github.com/hekmon/cunits/v2 v2.1.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect

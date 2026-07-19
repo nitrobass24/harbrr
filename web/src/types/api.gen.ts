@@ -1873,6 +1873,25 @@ export interface components {
             /** @description relative to a shared folder; no leading slash */
             directory?: string;
         };
+        /** @description Transmission-specific per-client options; all fields are optional. */
+        TransmissionSettings: {
+            downloadDir?: string;
+            startPaused?: boolean;
+        };
+        /** @description Deluge-specific per-client options; all fields are optional. v1 selects the legacy 1.3 daemon protocol — the default is the v2 daemon. */
+        DelugeSettings: {
+            v1?: boolean;
+            label?: string;
+            downloadDir?: string;
+            startPaused?: boolean;
+        };
+        /** @description rTorrent-specific per-client options; all fields are optional. */
+        RTorrentSettings: {
+            label?: string;
+            directory?: string;
+            startPaused?: boolean;
+            tlsSkipVerify?: boolean;
+        };
         /** @description SABnzbd-specific per-client options; the default category an Add falls back to when the caller doesn't supply one. The client's username column is unused for this kind (auth is apikey-only). */
         SabnzbdSettings: {
             category?: string;
@@ -1899,6 +1918,9 @@ export interface components {
             qui?: components["schemas"]["QuiSettings"];
             flood?: components["schemas"]["FloodSettings"];
             downloadStation?: components["schemas"]["DownloadStationSettings"];
+            transmission?: components["schemas"]["TransmissionSettings"];
+            deluge?: components["schemas"]["DelugeSettings"];
+            rtorrent?: components["schemas"]["RTorrentSettings"];
         };
         /** @description A configured download client harbrr can send grabbed releases to. host/username are plain; the secret (password or API key, depending on kind) is write-only and is never echoed back — it reads back as the <redacted> sentinel. */
         DownloadClient: {
@@ -1906,7 +1928,7 @@ export interface components {
             id: number;
             name: string;
             /** @enum {string} */
-            kind: "qbittorrent" | "blackhole" | "sabnzbd" | "nzbget" | "qui" | "flood" | "download-station";
+            kind: "qbittorrent" | "blackhole" | "sabnzbd" | "nzbget" | "qui" | "flood" | "download-station" | "transmission" | "deluge" | "rtorrent";
             enabled: boolean;
             host: string;
             username: string;
@@ -1921,7 +1943,7 @@ export interface components {
         CreateDownloadClient: {
             name: string;
             /** @enum {string} */
-            kind: "qbittorrent" | "blackhole" | "sabnzbd" | "nzbget" | "qui" | "flood" | "download-station";
+            kind: "qbittorrent" | "blackhole" | "sabnzbd" | "nzbget" | "qui" | "flood" | "download-station" | "transmission" | "deluge" | "rtorrent";
             /** @description must be empty for kinds with no network endpoint (e.g. blackhole) */
             host: string;
             username?: string;
