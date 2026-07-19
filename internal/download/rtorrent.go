@@ -117,20 +117,21 @@ func (d *rtorrentDriver) Add(ctx context.Context, p Payload, opts AddOptions) er
 
 // fieldArgs builds the d.custom1 (label) / d.directory extra args for the add
 // call: label falls back to settings when no category is given; directory is
-// settings-only (harbrr has no per-add directory option). Every candidate
-// value is checked for an injection-capable '"' before any FieldValue is built.
+// settings-only (harbrr has no per-add directory option). Only the values that
+// will actually be emitted are checked for an injection-capable '"' — a stored
+// label a per-add category overrides is never sent, so it can't reject the add.
 func (d *rtorrentDriver) fieldArgs(opts AddOptions) ([]*rtorrent.FieldValue, error) {
-	for _, v := range []string{opts.Category, d.settings.Label, d.settings.Directory} {
+	label := opts.Category
+	if label == "" {
+		label = d.settings.Label
+	}
+	for _, v := range []string{label, d.settings.Directory} {
 		if strings.Contains(v, `"`) {
 			return nil, fmt.Errorf("%w: %q", errRTorrentFieldValue, v)
 		}
 	}
 
 	var args []*rtorrent.FieldValue
-	label := opts.Category
-	if label == "" {
-		label = d.settings.Label
-	}
 	if label != "" {
 		args = append(args, rtorrent.DLabel.SetValue(label))
 	}

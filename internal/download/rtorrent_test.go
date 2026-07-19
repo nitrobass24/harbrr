@@ -236,8 +236,6 @@ func TestRTorrentAdd_BasicAuthCredentials(t *testing.T) {
 // be rejected before a FieldValue is ever built, whichever one carries it.
 func TestRTorrentAdd_RejectsQuoteInjection(t *testing.T) {
 	t.Parallel()
-	stub := &rtorrentStub{}
-	srv := newRTorrentStub(t, stub)
 
 	tests := []struct {
 		name     string
@@ -251,12 +249,35 @@ func TestRTorrentAdd_RejectsQuoteInjection(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+			// Each subtest owns its stub + server: no shared mutable recording state
+			// across parallel runs, even in the failure mode where a request escapes.
+			srv := newRTorrentStub(t, &rtorrentStub{})
 			drv := newTestRTorrent(srv.URL+"/RPC2", "admin", "adminadmin", tt.settings)
 			err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}, tt.opts)
 			if !errors.Is(err, errRTorrentFieldValue) {
 				t.Fatalf("Add error = %v, want errRTorrentFieldValue", err)
 			}
 		})
+	}
+}
+
+// TestRTorrentAdd_OverriddenQuotedLabelNotValidated proves fieldArgs validates only
+// the values it will emit: a stored settings label carrying a '"' is irrelevant when
+// a clean per-add category overrides it, so the add proceeds with the category.
+func TestRTorrentAdd_OverriddenQuotedLabelNotValidated(t *testing.T) {
+	t.Parallel()
+	stub := &rtorrentStub{}
+	srv := newRTorrentStub(t, stub)
+	drv := newTestRTorrent(srv.URL+"/RPC2", "admin", "adminadmin",
+		domain.RTorrentSettings{Label: `stale"quoted`})
+
+	err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"},
+		AddOptions{Category: "tv"})
+	if err != nil {
+		t.Fatalf("Add with clean overriding category: %v", err)
+	}
+	if got := rtorrentParamString(t, stub.lastParams, 2); got != `d.custom1.set="tv"` {
+		t.Fatalf("params[2] (label) = %q, want d.custom1.set=\"tv\" (the overridden stored label must never be sent)", got)
 	}
 }
 
@@ -274,7 +295,9 @@ func TestNewRTorrent_TLSSkipVerify(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "text/xml")
-		_ = xmlrpc.Marshal(w, "", "rtorrent-host")
+		if err := xmlrpc.Marshal(w, "", "rtorrent-host"); err != nil {
+			t.Errorf("marshal xmlrpc response: %v", err)
+		}
 	})
 	srv := httptest.NewTLSServer(mux)
 	t.Cleanup(srv.Close)
