@@ -59,6 +59,26 @@ describe("AppsSection", () => {
     })
   })
 
+  it("edit: a typed credential is sent as apiKey", async () => {
+    const fetchMock = vi.fn((request: Request) => {
+      if (request.method === "PATCH") return Promise.resolve(jsonResponse(null, 204))
+      return Promise.resolve(jsonResponse([APP]))
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    render(wrap(<AppsSection />))
+
+    fireEvent.click(await screen.findByLabelText("Edit sonarr-app"))
+    fireEvent.change(await screen.findByLabelText(/Credential/), { target: { value: "new-key" } })
+    fireEvent.click(await screen.findByRole("button", { name: "Save changes" }))
+
+    await waitFor(async () => {
+      const patch = fetchMock.mock.calls.find(([request]) => request.method === "PATCH")
+      expect(patch).toBeTruthy()
+      const body = JSON.parse(await patch![0].clone().text()) as Record<string, unknown>
+      expect(body).toMatchObject({ apiKey: "new-key" })
+    })
+  })
+
   // The 409 conflict message itself is covered by useApps.test.tsx (useDeleteApp
   // owns the toast); this just confirms the row wires the click through to DELETE.
   it("delete: posts to the delete endpoint", async () => {

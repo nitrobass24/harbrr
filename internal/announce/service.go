@@ -94,7 +94,7 @@ func (s *Service) CreateConnection(ctx context.Context, p CreateConnectionParams
 		MintName: "announce: " + p.Name,
 		Build: func(now time.Time, mintedKeyID int64) domain.AnnounceConnection {
 			return domain.AnnounceConnection{
-				Name: p.Name, Kind: p.Kind, AppID: &app.ID, BaseURL: app.BaseURL,
+				Name: p.Name, Kind: p.Kind, AppID: &app.ID, BaseURL: app.BaseURL, HarbrrURL: app.HarbrrURL,
 				HarbrrAPIKeyID: mintedKeyID, Enabled: true, CreatedAt: now, UpdatedAt: now,
 			}
 		},

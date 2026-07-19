@@ -74,9 +74,13 @@ func (s *Service) Create(ctx context.Context, p CreateParams) (domain.DownloadCl
 	if err := validate(p.Name, p.Kind, p.Host, p.Settings, p.AppID); err != nil {
 		return domain.DownloadClient{}, err
 	}
-	appID, err := s.resolveApp(ctx, p)
+	app, err := s.resolveApp(ctx, p)
 	if err != nil {
 		return domain.DownloadClient{}, err
+	}
+	var appID *int64
+	if app != nil {
+		appID = &app.ID
 	}
 	return s.life.Create(ctx, connresource.CreateSpec[domain.DownloadClient]{
 		Build: func(now time.Time, _ int64) domain.DownloadClient {
@@ -91,8 +95,12 @@ func (s *Service) Create(ctx context.Context, p CreateParams) (domain.DownloadCl
 		// The credential is sealed on the App, not the row: the row seals nothing.
 		Secrets:    func(_ domain.DownloadClient, _ string) []connresource.Secret { return nil },
 		SetSecrets: func(context.Context, dbinterface.Execer, int64, []string, string) error { return nil },
+		// Hydrate host/username from the App so the create response matches List/Get.
 		Finalize: func(c domain.DownloadClient, id int64, _ []string, _ string) domain.DownloadClient {
 			c.ID = id
+			if app != nil {
+				c.Host, c.Username = app.BaseURL, app.Username
+			}
 			return c
 		},
 		Conflict: func(_ domain.DownloadClient) error {
@@ -103,7 +111,7 @@ func (s *Service) Create(ctx context.Context, p CreateParams) (domain.DownloadCl
 
 // resolveApp get-or-creates the App for a networked create, returning nil for a
 // host-less kind (which has no App).
-func (s *Service) resolveApp(ctx context.Context, p CreateParams) (*int64, error) {
+func (s *Service) resolveApp(ctx context.Context, p CreateParams) (*domain.App, error) {
 	if hostless(p.Kind) {
 		return nil, nil //nolint:nilnil // host-less kinds intentionally carry no App.
 	}
@@ -113,7 +121,7 @@ func (s *Service) resolveApp(ctx context.Context, p CreateParams) (*int64, error
 	if err != nil {
 		return nil, fmt.Errorf("download: resolve app: %w", err)
 	}
-	return &app.ID, nil
+	return &app, nil
 }
 
 // UpdateParams patches a client; nil fields are left unchanged. Identity and

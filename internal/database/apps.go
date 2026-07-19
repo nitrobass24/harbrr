@@ -69,7 +69,8 @@ func (Apps) GetAppByIdentity(ctx context.Context, q dbinterface.Execer, kind, ba
 	row := q.QueryRowContext(ctx, q.Rebind(`SELECT `+appColumns+` FROM apps WHERE kind = ? AND base_url = ?`), kind, baseURL)
 	a, err := scanApp(row)
 	if errors.Is(err, sql.ErrNoRows) {
-		return domain.App{}, fmt.Errorf("app %s at %s: %w", kind, baseURL, ErrNotFound)
+		// No base URL in the error — URLs never belong in database-layer errors.
+		return domain.App{}, fmt.Errorf("app %s: %w", kind, ErrNotFound)
 	}
 	if err != nil {
 		return domain.App{}, fmt.Errorf("database: scan app by identity: %w", err)

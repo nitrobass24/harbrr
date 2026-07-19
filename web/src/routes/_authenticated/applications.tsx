@@ -185,8 +185,12 @@ function ApplicationsPage() {
             <Button
               onClick={() => {
                 const req = fixPortReq
-                if (!req || req.conn.appId == null) return
+                if (!req) return
                 setFixPortReq(null)
+                if (req.conn.appId == null) {
+                  notifyError("This connection is not yet migrated to an app — restart harbrr and try again")
+                  return
+                }
                 fixPort.mutate({ id: req.conn.appId, body: { harbrrUrl: req.url } }, {
                   onSuccess: () => runSync(req.conn.id),
                   onError: (err) => notifyError("Updating the app's harbrr URL failed", err),

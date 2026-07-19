@@ -131,7 +131,7 @@ func (s *Service) CreateConnection(ctx context.Context, p CreateConnectionParams
 		MintName: "app-sync: " + p.Name,
 		Build: func(now time.Time, mintedKeyID int64) domain.AppConnection {
 			return domain.AppConnection{
-				Name: p.Name, Kind: p.Kind, AppID: &app.ID, BaseURL: app.BaseURL,
+				Name: p.Name, Kind: p.Kind, AppID: &app.ID, BaseURL: app.BaseURL, HarbrrURL: app.HarbrrURL,
 				HarbrrAPIKeyID: mintedKeyID, Enabled: true, SyncLevel: p.SyncLevel,
 				IndexScope: p.IndexScope, FreeleechMode: p.FreeleechMode, Priority: p.Priority,
 				SyncProfileID: p.SyncProfileID, CreatedAt: now, UpdatedAt: now,

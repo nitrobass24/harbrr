@@ -85,6 +85,10 @@ func (s *Service) Resolve(ctx context.Context, ref Ref) (domain.App, error) {
 		return app, nil
 	}
 	ref.BaseURL = strings.TrimSpace(ref.BaseURL)
+	// Trim the credential once here so every downstream seal/copy (create's Secrets,
+	// reconcile's rotate) stores the same value the blank/redacted checks validated —
+	// a whitespace-padded paste must not be sealed verbatim.
+	ref.APIKey = strings.TrimSpace(ref.APIKey)
 	app, err := s.repo.GetAppByIdentity(ctx, s.db, ref.Kind, ref.BaseURL)
 	switch {
 	case err == nil:
@@ -255,7 +259,7 @@ func (s *Service) UpdateCredential(ctx context.Context, id int64, p UpdateParams
 			if secrets.IsRedacted(key) {
 				return connresource.Secret{}, false, fmt.Errorf("%w: credential must not be the redacted placeholder (omit it to keep the stored one)", domain.ErrInvalid)
 			}
-			return connresource.Secret{Discriminator: domain.AppSecret, Plaintext: *p.APIKey}, true, nil
+			return connresource.Secret{Discriminator: domain.AppSecret, Plaintext: key}, true, nil
 		},
 		Apply: func(a *domain.App, encrypted, keyID string) { a.APIKeyEncrypted, a.KeyID = encrypted, keyID },
 		Touch: func(a *domain.App, now time.Time) { a.UpdatedAt = now },
