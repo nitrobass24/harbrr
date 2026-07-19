@@ -2858,6 +2858,30 @@ components:
       description: Synology Download Station-specific per-client options.
       properties:
         directory: { type: string, description: "relative to a shared folder; no leading slash" }
+    TransmissionSettings:
+      type: object
+      description: Transmission-specific per-client options; all fields are optional.
+      properties:
+        downloadDir: { type: string }
+        startPaused: { type: boolean }
+    DelugeSettings:
+      type: object
+      description: >
+        Deluge-specific per-client options; all fields are optional. v1 selects
+        the legacy 1.3 daemon protocol — the default is the v2 daemon.
+      properties:
+        v1: { type: boolean }
+        label: { type: string }
+        downloadDir: { type: string }
+        startPaused: { type: boolean }
+    RTorrentSettings:
+      type: object
+      description: rTorrent-specific per-client options; all fields are optional.
+      properties:
+        label: { type: string }
+        directory: { type: string }
+        startPaused: { type: boolean }
+        tlsSkipVerify: { type: boolean }
     SabnzbdSettings:
       type: object
       description: >
@@ -2895,6 +2919,9 @@ components:
         qui: { $ref: "#/components/schemas/QuiSettings" }
         flood: { $ref: "#/components/schemas/FloodSettings" }
         downloadStation: { $ref: "#/components/schemas/DownloadStationSettings" }
+        transmission: { $ref: "#/components/schemas/TransmissionSettings" }
+        deluge: { $ref: "#/components/schemas/DelugeSettings" }
+        rtorrent: { $ref: "#/components/schemas/RTorrentSettings" }
     DownloadClient:
       type: object
       description: >
@@ -2907,7 +2934,7 @@ components:
         name: { type: string }
         kind:
           type: string
-          enum: [qbittorrent, blackhole, sabnzbd, nzbget, qui, flood, download-station]
+          enum: [qbittorrent, blackhole, sabnzbd, nzbget, qui, flood, download-station, transmission, deluge, rtorrent]
         appId: { type: integer, format: int64, nullable: true, description: the App holding this client's identity + credential; null for host-less kinds (blackhole) (ADR 0004) }
         enabled: { type: boolean }
         host: { type: string, description: enriched from the App (blank for host-less kinds) }
@@ -2927,7 +2954,7 @@ components:
         name: { type: string }
         kind:
           type: string
-          enum: [qbittorrent, blackhole, sabnzbd, nzbget, qui, flood, download-station]
+          enum: [qbittorrent, blackhole, sabnzbd, nzbget, qui, flood, download-station, transmission, deluge, rtorrent]
         appId: { type: integer, format: int64, description: reuse an existing App (omit host/username/secret) }
         host: { type: string, description: "inline App identity (get-or-create); must be empty for host-less kinds (blackhole)" }
         username: { type: string }

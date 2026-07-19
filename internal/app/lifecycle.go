@@ -8,6 +8,7 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/autobrr/harbrr/internal/auth"
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 )
@@ -56,12 +57,14 @@ func fixedInterval(d time.Duration) func() time.Duration {
 // reaping, stat flushes, health-event retention) on the shared shutdown WaitGroup,
 // so App.Run joins them all before closing the database.
 func startReapers(ctx context.Context, wg *sync.WaitGroup, db *database.DB,
-	store *database.SessionStore, sc *registry.SearchCache, reg *registry.Registry, log zerolog.Logger,
+	store *database.SessionStore, sc *registry.SearchCache, reg *registry.Registry,
+	authSvc *auth.Service, log zerolog.Logger,
 ) {
 	startSessionCleanup(ctx, wg, store, log)
 	startSearchCacheCleanup(ctx, wg, sc, log)
 	startIndexerStatsFlush(ctx, wg, reg)
 	startHealthEventCleanup(ctx, wg, db, log)
+	startAPIKeyTouchFlush(ctx, wg, authSvc, log)
 }
 
 // startSessionCleanup reaps expired sessions hourly until ctx is cancelled.
@@ -111,6 +114,23 @@ func startIndexerStatsFlush(ctx context.Context, wg *sync.WaitGroup, reg *regist
 	}, func(ctx context.Context) {
 		reg.FlushStats(ctx)
 	})
+}
+
+// apiKeyTouchFlushInterval is how often buffered API-key validations are flushed to
+// last_used_at. Same tolerance as the stat counters: observability-only, so losing
+// the stamps since the last tick on a hard crash is acceptable.
+const apiKeyTouchFlushInterval = 60 * time.Second
+
+// startAPIKeyTouchFlush periodically drains the auth service's buffered key-use
+// stamps until ctx is cancelled, mirroring startIndexerStatsFlush. On shutdown it
+// runs a final flush so the last stamps commit before the database closes.
+func startAPIKeyTouchFlush(ctx context.Context, wg *sync.WaitGroup, authSvc *auth.Service, log zerolog.Logger) {
+	flush := func(ctx context.Context) {
+		if err := authSvc.FlushAPIKeyTouches(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			log.Warn().Err(err).Msg("api key touch flush failed")
+		}
+	}
+	reap(ctx, wg, fixedInterval(apiKeyTouchFlushInterval), flush, flush)
 }
 
 // startSearchCacheCleanup reaps expired cache entries until ctx is cancelled,

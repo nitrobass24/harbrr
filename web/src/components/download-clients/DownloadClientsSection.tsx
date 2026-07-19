@@ -29,10 +29,16 @@ import { notifyError, notifySuccess } from "@/lib/notify"
 import type { CreateDownloadClient, DownloadClient, DownloadClientKind, DownloadClientSettings, UpdateDownloadClient } from "@/lib/api"
 
 // Only kinds with a registered driver work today (autobrr/harbrr#240, #241,
-// #242, #244); the rest are seeded server-side but rejected on create until
-// their own driver lands (autobrr/harbrr#8). Keep the picker limited to what
-// actually works.
-const DOWNLOAD_CLIENT_KINDS: DownloadClientKind[] = ["qbittorrent", "blackhole", "sabnzbd", "nzbget", "qui", "flood", "download-station"]
+// #242, #243, #244); the rest are seeded server-side but rejected on create
+// until their own driver lands (autobrr/harbrr#8). Keep the picker limited to
+// what actually works.
+const DOWNLOAD_CLIENT_KINDS: DownloadClientKind[] = ["qbittorrent", "blackhole", "sabnzbd", "nzbget", "qui", "flood", "download-station", "transmission", "deluge", "rtorrent"]
+
+// HOST_PLACEHOLDER is per-kind: every kind but Deluge takes an absolute http(s)
+// URL; Deluge's daemon RPC is a raw "host:port" socket address, not a URL.
+const HOST_PLACEHOLDER: Partial<Record<DownloadClientKind, string>> = {
+  deluge: "localhost:58846",
+}
 
 // Sentinel select value for "no existing qui App picked, use the inline host/API key
 // fields below" — the create-time fallback for the very first qui app.
@@ -189,6 +195,18 @@ function DownloadClientForm({ client, pending, onSubmit }: {
   // Edit never touches identity (host/instance are fixed or App-level now); create
   // needs a watch folder (blackhole), a picked instance (qui via an App), or a host.
   const identityValid = kind === "blackhole"? torrentDir !== "" || nzbDir !== "": isEdit || (usingQuiApp ? instanceId !== "" : host !== "")
+  const [transmissionDownloadDir, setTransmissionDownloadDir] = useState(client?.settings.transmission?.downloadDir ?? "")
+  const [transmissionStartPaused, setTransmissionStartPaused] = useState(client?.settings.transmission?.startPaused ?? false)
+
+  const [delugeV1, setDelugeV1] = useState(client?.settings.deluge?.v1 ?? false)
+  const [delugeLabel, setDelugeLabel] = useState(client?.settings.deluge?.label ?? "")
+  const [delugeDownloadDir, setDelugeDownloadDir] = useState(client?.settings.deluge?.downloadDir ?? "")
+  const [delugeStartPaused, setDelugeStartPaused] = useState(client?.settings.deluge?.startPaused ?? false)
+
+  const [rtorrentLabel, setRtorrentLabel] = useState(client?.settings.rtorrent?.label ?? "")
+  const [rtorrentDirectory, setRtorrentDirectory] = useState(client?.settings.rtorrent?.directory ?? "")
+  const [rtorrentStartPaused, setRtorrentStartPaused] = useState(client?.settings.rtorrent?.startPaused ?? false)
+  const [rtorrentTlsSkipVerify, setRtorrentTlsSkipVerify] = useState(client?.settings.rtorrent?.tlsSkipVerify ?? false)
 
   return (
     <form
@@ -211,6 +229,22 @@ function DownloadClientForm({ client, pending, onSubmit }: {
           settings = { flood: { destination: destination || undefined, tags: tagList, startPaused: startPaused || undefined } }
         } else if (kind === "download-station") {
           settings = { downloadStation: { directory: directory || undefined } }
+        } else if (kind === "transmission") {
+          settings = { transmission: { downloadDir: transmissionDownloadDir || undefined, startPaused: transmissionStartPaused || undefined } }
+        } else if (kind === "deluge") {
+          settings = { deluge: {
+            v1: delugeV1 || undefined,
+            label: delugeLabel || undefined,
+            downloadDir: delugeDownloadDir || undefined,
+            startPaused: delugeStartPaused || undefined,
+          } }
+        } else if (kind === "rtorrent") {
+          settings = { rtorrent: {
+            label: rtorrentLabel || undefined,
+            directory: rtorrentDirectory || undefined,
+            startPaused: rtorrentStartPaused || undefined,
+            tlsSkipVerify: rtorrentTlsSkipVerify || undefined,
+          } }
         }
         // On edit, an empty secret keeps the stored one (only a typed value rotates).
         // blackhole has no network endpoint of its own — its host must always be empty.
@@ -257,7 +291,7 @@ function DownloadClientForm({ client, pending, onSubmit }: {
         <>
           <span className="flex flex-col gap-1.5">
             <Label htmlFor="dlc-host">Host</Label>
-            <Input id="dlc-host" placeholder="http://localhost:8080" value={host} onChange={(e) => setHost(e.target.value)} />
+            <Input id="dlc-host" placeholder={HOST_PLACEHOLDER[kind] ?? "http://localhost:8080"} value={host} onChange={(e) => setHost(e.target.value)} />
           </span>
           <div className="grid grid-cols-2 gap-3">
             {kind !== "qui" && kind !== "sabnzbd" && (
@@ -364,6 +398,63 @@ function DownloadClientForm({ client, pending, onSubmit }: {
           <label className="flex items-center gap-2 text-[13px]">
             <Switch checked={startPaused} onCheckedChange={setStartPaused} />
             Start paused
+          </label>
+        </div>
+      )}
+
+      {kind === "transmission" && (
+        <div className="flex flex-col gap-3 rounded-lg border border-border/60 p-3">
+          <span className="flex flex-col gap-1.5">
+            <Label htmlFor="dlc-transmission-dir">Download directory <span className="text-faint">(optional)</span></Label>
+            <Input id="dlc-transmission-dir" value={transmissionDownloadDir} onChange={(e) => setTransmissionDownloadDir(e.target.value)} />
+          </span>
+          <label className="flex items-center gap-2 text-[13px]">
+            <Switch checked={transmissionStartPaused} onCheckedChange={setTransmissionStartPaused} />
+            Start paused
+          </label>
+        </div>
+      )}
+      {kind === "deluge" && (
+        <div className="flex flex-col gap-3 rounded-lg border border-border/60 p-3">
+          <div className="grid grid-cols-2 gap-3">
+            <span className="flex flex-col gap-1.5">
+              <Label htmlFor="dlc-deluge-label">Label <span className="text-faint">(optional)</span></Label>
+              <Input id="dlc-deluge-label" value={delugeLabel} onChange={(e) => setDelugeLabel(e.target.value)} />
+            </span>
+            <span className="flex flex-col gap-1.5">
+              <Label htmlFor="dlc-deluge-dir">Download directory <span className="text-faint">(optional)</span></Label>
+              <Input id="dlc-deluge-dir" value={delugeDownloadDir} onChange={(e) => setDelugeDownloadDir(e.target.value)} />
+            </span>
+          </div>
+          <label className="flex items-center gap-2 text-[13px]">
+            <Switch checked={delugeV1} onCheckedChange={setDelugeV1} />
+            Deluge 1.3 daemon <span className="text-faint">(default is the v2 daemon)</span>
+          </label>
+          <label className="flex items-center gap-2 text-[13px]">
+            <Switch checked={delugeStartPaused} onCheckedChange={setDelugeStartPaused} />
+            Start paused
+          </label>
+        </div>
+      )}
+      {kind === "rtorrent" && (
+        <div className="flex flex-col gap-3 rounded-lg border border-border/60 p-3">
+          <div className="grid grid-cols-2 gap-3">
+            <span className="flex flex-col gap-1.5">
+              <Label htmlFor="dlc-rtorrent-label">Label <span className="text-faint">(optional)</span></Label>
+              <Input id="dlc-rtorrent-label" value={rtorrentLabel} onChange={(e) => setRtorrentLabel(e.target.value)} />
+            </span>
+            <span className="flex flex-col gap-1.5">
+              <Label htmlFor="dlc-rtorrent-dir">Directory <span className="text-faint">(optional)</span></Label>
+              <Input id="dlc-rtorrent-dir" value={rtorrentDirectory} onChange={(e) => setRtorrentDirectory(e.target.value)} />
+            </span>
+          </div>
+          <label className="flex items-center gap-2 text-[13px]">
+            <Switch checked={rtorrentStartPaused} onCheckedChange={setRtorrentStartPaused} />
+            Start paused
+          </label>
+          <label className="flex items-center gap-2 text-[13px]">
+            <Switch checked={rtorrentTlsSkipVerify} onCheckedChange={setRtorrentTlsSkipVerify} />
+            Skip TLS certificate verification
           </label>
         </div>
       )}

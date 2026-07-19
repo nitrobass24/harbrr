@@ -85,8 +85,17 @@ linters:
       # return gazelle-prefixed, sentinel-bearing errors (login.ErrLoginFailed via
       # ensureSession/renewSession/loginLocked), so a caller re-wrapping them would only
       # double the prefix.
+      #
+      # download's delugeClient/delugeVendorClient (#243) exist purely as a testability
+      # seam over a library that can't be pointed at httptest (rencode over a raw TLS
+      # socket): delugeDriver.Test/Add already wrap every call at their own top-level
+      # statement ("download: deluge: connect: %w" etc.), so the pass-through adapter
+      # (realDelugeClient) and the addTorrent/setLabel helpers that hand a raw error back
+      # to Add for that single wrap would only double the prefix if wrapped again here.
       ignore-interface-regexps:
         - authStrategy
+        - delugeClient
+        - delugeVendorClient
     interfacebloat:
       # Guardrail against future god-interfaces (default 10). AGENTS.md's "interfaces
       # ≤5 methods" stays a review norm, not a hard gate — torznabhttp.Indexer
