@@ -87,13 +87,16 @@ type driverSpec struct {
 // a kind is creatable only once it has an entry here. Adding a driver is one map
 // entry (plus its own file) — no other platform code changes.
 var drivers = map[string]driverSpec{
-	domain.DownloadClientKindQBittorrent:  {build: newQBittorrent, host: hostURL},
-	domain.DownloadClientKindBlackhole:    {build: newBlackhole, host: hostNone},
-	domain.DownloadClientKindSabnzbd:      {build: newSabnzbd, host: hostURL},
-	domain.DownloadClientKindNZBGet:       {build: newNZBGet, host: hostURL},
-	domain.DownloadClientKindTransmission: {build: newTransmission, host: hostURL},
-	domain.DownloadClientKindRTorrent:     {build: newRTorrent, host: hostURL},
-	domain.DownloadClientKindDeluge:       {build: newDeluge, host: hostPort},
+	domain.DownloadClientKindQBittorrent:     {build: newQBittorrent, host: hostURL},
+	domain.DownloadClientKindBlackhole:       {build: newBlackhole, host: hostNone},
+	domain.DownloadClientKindSabnzbd:         {build: newSabnzbd, host: hostURL},
+	domain.DownloadClientKindNZBGet:          {build: newNZBGet, host: hostURL},
+	domain.DownloadClientKindQui:             {build: newQui, host: hostURL},
+	domain.DownloadClientKindFlood:           {build: newFlood, host: hostURL},
+	domain.DownloadClientKindDownloadStation: {build: newDownloadStation, host: hostURL},
+	domain.DownloadClientKindTransmission:    {build: newTransmission, host: hostURL},
+	domain.DownloadClientKindRTorrent:        {build: newRTorrent, host: hostURL},
+	domain.DownloadClientKindDeluge:          {build: newDeluge, host: hostPort},
 }
 
 // validateKind reports whether kind has a registered driver.
@@ -110,6 +113,35 @@ func newDriver(c domain.DownloadClient, secret string, client *http.Client) (Dri
 		return nil, fmt.Errorf("%w: unregistered download client kind %q", domain.ErrInvalid, c.Kind)
 	}
 	return spec.build(c, secret, client)
+}
+
+// mergeTags returns the union of base and extra, deduped and order-preserving
+// (base first). Shared by qui and Flood, whose Add merges a client's configured
+// default tags with the caller's per-add AddOptions.Tags.
+func mergeTags(base, extra []string) []string {
+	seen := make(map[string]struct{}, len(base)+len(extra))
+	out := make([]string, 0, len(base)+len(extra))
+	for _, t := range base {
+		if t == "" {
+			continue
+		}
+		if _, ok := seen[t]; ok {
+			continue
+		}
+		seen[t] = struct{}{}
+		out = append(out, t)
+	}
+	for _, t := range extra {
+		if t == "" {
+			continue
+		}
+		if _, ok := seen[t]; ok {
+			continue
+		}
+		seen[t] = struct{}{}
+		out = append(out, t)
+	}
+	return out
 }
 
 // scrubURLError strips the request URL from a *url.Error — the shape net/http

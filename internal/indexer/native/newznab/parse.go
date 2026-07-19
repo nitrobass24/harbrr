@@ -136,20 +136,33 @@ const (
 	errorCodeAuthHigh = 199
 )
 
+// errorCodeDailyQuota is dognzb's documented newznab code for "Daily API limit
+// reached" — a tracker-declared request-quota cap, not an ordinary transient
+// rate-limit. Kept as a single exact code (not the whole 900-999 "generic/unknown"
+// band): only this code is documented as a quota cap by a vendor, so classifying the
+// rest of that band as quota-exceeded would be guessing at other trackers' unrelated
+// 9xx error meanings (autobrr/harbrr#251 asks to be conservative here). Extend this
+// with more codes only once another vendor's quota code is similarly documented.
+const errorCodeDailyQuota = 910
+
 // toError maps a Newznab error envelope to a Go error. A 100-199 code, or a "Request limit
 // reached" / apikey-related description, are classified for the registry's health
-// recording: auth failures unwrap to login.ErrLoginFailed, rate limits to a RateLimitedError;
-// every other code is a generic parse error. The description is server-controlled free text
-// that reaches a persisted health event / webhook, so the configured apikey is value-scrubbed
-// out of it as defense in depth: a misbehaving server that echoes the submitted apikey back in
-// its description must not leak it (a bare "invalid key ABCD1234" would pass RedactError's
-// key[=:]value anchor untouched).
+// recording: auth failures unwrap to login.ErrLoginFailed, rate limits to a RateLimitedError,
+// the dognzb-style daily-quota code to a QuotaExceededError; every other code is a generic
+// parse error. The description is server-controlled free text that reaches a persisted
+// health event / webhook, so the configured apikey is value-scrubbed out of it as defense in
+// depth: a misbehaving server that echoes the submitted apikey back in its description must
+// not leak it (a bare "invalid key ABCD1234" would pass RedactError's key[=:]value anchor
+// untouched).
 func (e *apiError) toError(apikey string) error {
 	desc := apphttp.ScrubValues(strings.TrimSpace(e.Description), []string{apikey})
 	if strings.EqualFold(desc, "Request limit reached") {
 		return &search.RateLimitedError{StatusCode: 0}
 	}
 	code, _ := strconv.Atoi(strings.TrimSpace(e.Code))
+	if code == errorCodeDailyQuota {
+		return &search.QuotaExceededError{Detail: fmt.Sprintf("newznab: api error (code %d): %s", code, desc)}
+	}
 	if (code >= errorCodeAuthLow && code <= errorCodeAuthHigh) || mentionsAPIKey(desc) {
 		return fmt.Errorf("newznab: auth failed (code %s): %s: %w", e.Code, desc, login.ErrLoginFailed)
 	}

@@ -2042,6 +2042,49 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /api/config/rate-limit:
+    get:
+      summary: Get the global rate-limit default
+      description: >
+        Returns the live global default minimum spacing between requests to any
+        tracker host (autobrr/harbrr#104): a persisted override if set, else the
+        hardcoded 1s seed. An indexer's own "rate_interval" reserved setting (see
+        ReservedSettings) replaces this default for that indexer only; either way, a
+        definition's own requestDelay is a floor that always wins.
+      operationId: getRateLimitDefault
+      tags: [System]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the effective global rate-limit default
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RateLimitConfig" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      summary: Set the global rate-limit default
+      description: >
+        Persists the new default, then applies it to every configured indexer's paced
+        client immediately (no restart) by invalidating every cached engine — the same
+        mechanism a global proxy/solver resource edit already uses. A non-positive or
+        unparseable duration answers 400 and changes nothing.
+      operationId: putRateLimitDefault
+      tags: [System]
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RateLimitConfig" }
+      responses:
+        "200":
+          description: the applied global rate-limit default
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RateLimitConfig" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /api/logs/frontend:
     post:
       summary: Relay a web-UI toast into the daemon log
@@ -2160,6 +2203,14 @@ components:
           description: route this indexer's traffic through a proxy (socks4 is not supported)
         proxy_url: { type: string, description: "proxy URL; may embed user:pass (secret)" }
         timeout: { type: string, description: "per-request timeout as a Go duration, e.g. 30s" }
+        rate_interval:
+          type: string
+          description: >
+            per-indexer minimum spacing between requests to this indexer's host, as a
+            Go duration (e.g. 5s); autobrr/harbrr#104. Replaces the global rate-limit
+            default (GET/PUT /api/config/rate-limit) for this indexer only — it can
+            set this indexer faster or slower than the global default, but never below
+            the definition's own requestDelay, which always wins as a floor.
         solver_type:
           type: string
           enum: [manual_cookie, flaresolverr]
@@ -2347,7 +2398,7 @@ components:
           additionalProperties: { type: string }
           description: >
             definition setting name -> value. May also carry the reserved engine
-            keys (see ReservedSettings): proxy_type/proxy_url, timeout,
+            keys (see ReservedSettings): proxy_type/proxy_url, timeout, rate_interval,
             solver_type/flaresolverr_url. Secret values are stored encrypted.
         proxyId: { type: integer, format: int64, nullable: true, description: reference a global proxy resource (nil = none) }
         solverId: { type: integer, format: int64, nullable: true, description: reference a global solver resource (nil = none) }
@@ -2658,6 +2709,31 @@ components:
         tags: { type: array, items: { type: string } }
         startPaused: { type: boolean }
         tlsSkipVerify: { type: boolean }
+    QuiSettings:
+      type: object
+      description: >
+        qui-specific per-client options. qui (autobrr/qui) is a multi-instance
+        qBittorrent manager keyed by int instance id — instanceId is required.
+      properties:
+        instanceId: { type: integer, description: "required; > 0" }
+        category: { type: string }
+        tags: { type: array, items: { type: string } }
+        startPaused: { type: boolean }
+      required: [instanceId]
+    FloodSettings:
+      type: object
+      description: >
+        Flood-specific per-client options. Flood has no category concept — a
+        caller's category is folded into tags on add.
+      properties:
+        destination: { type: string }
+        tags: { type: array, items: { type: string } }
+        startPaused: { type: boolean }
+    DownloadStationSettings:
+      type: object
+      description: Synology Download Station-specific per-client options.
+      properties:
+        directory: { type: string, description: "relative to a shared folder; no leading slash" }
     TransmissionSettings:
       type: object
       description: Transmission-specific per-client options; all fields are optional.
@@ -2716,6 +2792,9 @@ components:
         blackhole: { $ref: "#/components/schemas/BlackholeSettings" }
         sabnzbd: { $ref: "#/components/schemas/SabnzbdSettings" }
         nzbget: { $ref: "#/components/schemas/NZBGetSettings" }
+        qui: { $ref: "#/components/schemas/QuiSettings" }
+        flood: { $ref: "#/components/schemas/FloodSettings" }
+        downloadStation: { $ref: "#/components/schemas/DownloadStationSettings" }
         transmission: { $ref: "#/components/schemas/TransmissionSettings" }
         deluge: { $ref: "#/components/schemas/DelugeSettings" }
         rtorrent: { $ref: "#/components/schemas/RTorrentSettings" }
@@ -2731,7 +2810,7 @@ components:
         name: { type: string }
         kind:
           type: string
-          enum: [qbittorrent, blackhole, sabnzbd, nzbget, transmission, deluge, rtorrent]
+          enum: [qbittorrent, blackhole, sabnzbd, nzbget, qui, flood, download-station, transmission, deluge, rtorrent]
         enabled: { type: boolean }
         host: { type: string }
         username: { type: string }
@@ -2746,7 +2825,7 @@ components:
         name: { type: string }
         kind:
           type: string
-          enum: [qbittorrent, blackhole, sabnzbd, nzbget, transmission, deluge, rtorrent]
+          enum: [qbittorrent, blackhole, sabnzbd, nzbget, qui, flood, download-station, transmission, deluge, rtorrent]
         host: { type: string, description: "must be empty for kinds with no network endpoint (e.g. blackhole)" }
         username: { type: string }
         secret: { type: string, description: "optional; stored encrypted" }
@@ -3028,6 +3107,19 @@ components:
           enum: [trace, debug, info, warn, error]
           description: the log level applied across every subsystem
       required: [level]
+
+    RateLimitConfig:
+      type: object
+      description: >
+        The live global rate-limit default (autobrr/harbrr#104): the minimum spacing
+        between requests to any tracker host that has no per-indexer "rate_interval"
+        override (get returns the effective value; put sets it). Always a Go duration
+        string. Never undercuts a definition's own requestDelay.
+      properties:
+        defaultInterval:
+          type: string
+          description: minimum spacing as a Go duration, e.g. 1s
+      required: [defaultInterval]
 
     ServerInfo:
       type: object

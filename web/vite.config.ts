@@ -76,5 +76,8 @@ export default defineConfig({
     // globals gives @testing-library/react its afterEach auto-cleanup hook.
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
+    // Headroom over setup.ts's 4s asyncUtilTimeout: a test with a couple of
+    // slow-but-passing waits on a loaded CI runner must not trip the 5s default.
+    testTimeout: 15000,
   },
 })

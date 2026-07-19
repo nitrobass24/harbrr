@@ -229,6 +229,46 @@ func TestParseErrorRateLimit(t *testing.T) {
 	}
 }
 
+// TestParseErrorDailyQuota proves dognzb's documented newznab code 910 ("Daily API
+// limit reached") is classified as a *search.QuotaExceededError — distinct from the
+// generic ErrParseError every other unclassified code falls into, and from a plain
+// rate-limit — so the registry's reactive quota-learning (autobrr/harbrr#251) can
+// mark the indexer's budget spent until reset. It still unwraps to ErrRateLimited so
+// existing health/breaker classification treats it the same as any other rate limit.
+func TestParseErrorDailyQuota(t *testing.T) {
+	t.Parallel()
+	d := parseDriver(t)
+	body := []byte(`<?xml version="1.0"?><error code="910" description="Daily API limit reached" />`)
+	_, err := d.parseReleases(body, d.Caps.CategoryMap)
+	var qee *search.QuotaExceededError
+	if !errors.As(err, &qee) {
+		t.Fatalf("err = %v, want *search.QuotaExceededError", err)
+	}
+	if !errors.Is(err, search.ErrQuotaExceeded) {
+		t.Fatalf("err = %v, want it to unwrap to search.ErrQuotaExceeded", err)
+	}
+	if !errors.Is(err, search.ErrRateLimited) {
+		t.Fatalf("err = %v, want it to ALSO unwrap to search.ErrRateLimited (health/breaker classification)", err)
+	}
+}
+
+// TestParseErrorOtherNineHundredsStayGeneric proves the conservative-scope choice: only
+// the documented code 910 is promoted to a quota error. A neighboring 9xx code (unknown
+// to any vendor's documented quota semantics) stays the generic parse error rather than
+// being guessed at.
+func TestParseErrorOtherNineHundredsStayGeneric(t *testing.T) {
+	t.Parallel()
+	d := parseDriver(t)
+	body := []byte(`<?xml version="1.0"?><error code="900" description="Unknown error" />`)
+	_, err := d.parseReleases(body, d.Caps.CategoryMap)
+	if errors.Is(err, search.ErrQuotaExceeded) {
+		t.Fatalf("err = %v, code 900 must NOT be classified as a quota error (only 910 is documented)", err)
+	}
+	if !errors.Is(err, search.ErrParseError) {
+		t.Fatalf("err = %v, want the generic ErrParseError", err)
+	}
+}
+
 // TestParseMalformedBody proves a non-XML body is an ErrParseError, not a panic.
 func TestParseMalformedBody(t *testing.T) {
 	t.Parallel()

@@ -256,7 +256,9 @@ func validateHostPort(host string) error {
 }
 
 // validateSettings rejects a populated settings field that doesn't match kind,
-// and validates the kind-specific settings that need it.
+// enforces the one required field among the kind-specific settings (qui's
+// InstanceID — qui is keyed by int instance id, so an unset/zero id can never be
+// a valid target), and validates the kind-specific settings that need it.
 func validateSettings(kind string, settings domain.DownloadClientSettings) error {
 	// One row per settings shape: a populated field whose kind doesn't own it is a
 	// mismatch. Adding a kind is one row here, not another guard clause.
@@ -269,6 +271,9 @@ func validateSettings(kind string, settings domain.DownloadClientSettings) error
 		{"blackhole", settings.Blackhole != nil, domain.DownloadClientKindBlackhole},
 		{"sabnzbd", settings.Sabnzbd != nil, domain.DownloadClientKindSabnzbd},
 		{"nzbget", settings.NZBGet != nil, domain.DownloadClientKindNZBGet},
+		{"qui", settings.Qui != nil, domain.DownloadClientKindQui},
+		{"flood", settings.Flood != nil, domain.DownloadClientKindFlood},
+		{"download-station", settings.DownloadStation != nil, domain.DownloadClientKindDownloadStation},
 		{"transmission", settings.Transmission != nil, domain.DownloadClientKindTransmission},
 		{"deluge", settings.Deluge != nil, domain.DownloadClientKindDeluge},
 		{"rtorrent", settings.RTorrent != nil, domain.DownloadClientKindRTorrent},
@@ -278,7 +283,12 @@ func validateSettings(kind string, settings domain.DownloadClientSettings) error
 			return fmt.Errorf("%w: %s settings given for kind %q", domain.ErrInvalid, m.name, kind)
 		}
 	}
-	if kind == domain.DownloadClientKindBlackhole {
+	switch kind {
+	case domain.DownloadClientKindQui:
+		if settings.Qui == nil || settings.Qui.InstanceID <= 0 {
+			return fmt.Errorf("%w: qui settings instanceId must be > 0", domain.ErrInvalid)
+		}
+	case domain.DownloadClientKindBlackhole:
 		return validateBlackholeSettings(settings.Blackhole)
 	}
 	return nil

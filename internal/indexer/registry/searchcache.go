@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -223,6 +224,31 @@ func (c *SearchCache) search(ctx context.Context, instanceID int64, cfg map[stri
 	return c.missPath(ctx, instanceID, cfg, builtEpoch, live, q, key)
 }
 
+// fetchStale reads the cache entry for (instanceID, q) REGARDLESS of expiry (via
+// store.FetchAny), for the request-budget exhaustion path (autobrr/harbrr#251):
+// when the query budget has no capacity left for an outbound fetch, Search prefers
+// serving whatever was last cached — even expired — over refusing the request
+// outright. found=false when there is no entry at all (nothing to serve stale), in
+// which case the caller surfaces the budget-exhausted error instead. This never
+// re-stores the entry (unlike a live fetch), so serving a stale hit does not reset
+// its expiry or mark it freshly cached.
+func (c *SearchCache) fetchStale(ctx context.Context, instanceID int64, paging bool, q search.Query) ([]*normalizer.Release, bool, error) {
+	key := buildSearchCacheKey(instanceID, q, paging)
+	entry, found, err := c.store.FetchAny(ctx, c.db, key)
+	if err != nil {
+		return nil, false, fmt.Errorf("registry: fetch stale search cache %q: %w", key, err)
+	}
+	if !found {
+		return nil, false, nil
+	}
+	releases, derr := decodeReleases(entry.ResultsJSON, key)
+	if derr != nil {
+		return nil, false, derr //nolint:wrapcheck // decodeReleases already wraps with the key only.
+	}
+	c.recordCacheInfo(ctx, core.CacheInfo{Cached: true, ExpiresAt: entry.ExpiresAt})
+	return releases, true, nil
+}
+
 // missPath drives a cache miss with the negative-result circuit breaker around it.
 // If the breaker is open for the instance, it short-circuits to the recorded error
 // without touching the tracker (counting one suppression). Otherwise it runs the live
@@ -260,6 +286,14 @@ func (c *SearchCache) missPath(ctx context.Context, instanceID int64, cfg map[st
 // the breaker instance-wide, suppressing every other consumer for the full window.
 func (c *SearchCache) tripBreaker(ctx context.Context, instanceID int64, err error) {
 	if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+		return
+	}
+	// A request-budget refusal (autobrr/harbrr#251) is a self-imposed guard, not the
+	// tracker failing — tripping the breaker over it would suppress every OTHER
+	// consumer's request for the negative-TTL window even though the tracker itself
+	// is healthy. Composing budget-exhaustion with the breaker is explicitly a
+	// serve-stale concern, never a circuit trip.
+	if errors.Is(err, errBudgetExhausted) {
 		return
 	}
 	until, ok := classifyBreakerError(err, c.tuning.Load().ttl.negative, c.clock())

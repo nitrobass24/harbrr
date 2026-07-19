@@ -43,6 +43,7 @@ type invalidator interface {
 	invalidateSearchCache(ctx context.Context, id int64)
 	forgetCacheCounters(id int64)
 	forgetStats(id int64)
+	forgetBudget(id int64)
 }
 
 // StatsReporter is the health/stats reporting + lifecycle half of the registry: a read and
@@ -350,6 +351,7 @@ func (r *Manager) Delete(ctx context.Context, slug string) error {
 	r.inv.invalidate(slug)
 	r.inv.forgetCacheCounters(inst.ID)
 	r.inv.forgetStats(inst.ID)
+	r.inv.forgetBudget(inst.ID)
 	return nil
 }
 
