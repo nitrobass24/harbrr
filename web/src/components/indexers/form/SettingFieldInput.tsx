@@ -33,7 +33,7 @@ export function SettingFieldInput({ field, value, onChange }: {
           <Checkbox
             id={id}
             checked={value === "true"}
-            onCheckedChange={(checked) => onChange(checked === true ? "true" : "false")}
+            onCheckedChange={(checked) => onChange(checked === true ? "true" : "")}
           />
           <Label htmlFor={id} className="font-normal">{label}</Label>
         </div>

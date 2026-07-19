@@ -375,15 +375,17 @@ func (r *Resolver) buildAdapter(ctx context.Context, slug string) (*indexerAdapt
 
 	// Canonicalize checkbox settings ("True"/"") before anything reads them: a value
 	// persisted as the literal "false" is non-empty and would otherwise read as CHECKED
-	// under both template truthiness and the freeleech `!= ""` view below (autobrr/harbrr#119).
+	// under template truthiness (autobrr/harbrr#119).
 	cardigann.CanonicalizeCheckboxes(def, cfg)
 
 	// freeleech is consumed as a SERVE-TIME view, not a fetch-time filter: the engine is
 	// built with the key cleared so every fetch returns the full catalog (cached once and
 	// shared by the honor + bypass feeds). The stored value drives the serve-time freeleech
-	// view in indexerAdapter.Search. Go-template truthiness is "non-empty" (a checked box
-	// resolves to "True", config.go), so an empty/absent value is off.
-	freeleechOnly := cfg["freeleech"] != ""
+	// view in indexerAdapter.Search. Go-template truthiness alone is "non-empty" (a checked
+	// box resolves to "True", config.go), so settingEnabled hardens the read against every
+	// writer: a value ParseBool recognizes as false (e.g. a persisted literal "false") reads
+	// as off even though it is non-empty (autobrr/harbrr#273).
+	freeleechOnly := settingEnabled(cfg["freeleech"])
 	engineCfg := cfg
 	if freeleechOnly {
 		engineCfg = maps.Clone(cfg)
