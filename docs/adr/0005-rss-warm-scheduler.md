@@ -41,8 +41,10 @@ warm. There is no retry loop to reason about separately from the normal per-tick
 
 The scheduler ticks at a fixed one-minute granularity (`WarmTickInterval`) regardless of how
 long any individual target's interval is. Configured intervals are clamped to [10m, 120m], so the
-worst-case scheduling jitter from the 1-minute tick is ≤1 minute against a ≥10-minute interval —
-negligible, and it keeps the loop itself dead simple (reusing `app/lifecycle.go`'s existing
+nominal ticker-granularity jitter is ≤1 minute against a ≥10-minute interval. Actual delay can
+exceed that: a tick warms its due targets serially, so a slow upstream `Search` (or several
+targets due on the same tick) pushes later warms past the minute — acceptable for a cache
+freshener, and it keeps the loop itself dead simple (reusing `app/lifecycle.go`'s existing
 `reap` skeleton) rather than needing a per-target timer.
 
 ## Defer-and-stagger the first warm

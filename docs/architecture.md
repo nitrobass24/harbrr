@@ -195,11 +195,13 @@ reacting to whichever client happens to poll first after a TTL expiry.
   (core.WithCacheBypass(ctx), search.Query{})` — so the warm write lands under the identical
   cache key #257's downstream RSS polls read, with zero duplicated cache-key/budget/breaker logic.
 - **Opt-in, default-off** — `rss_warm_interval`, a reserved per-instance Go-duration setting
-  (like `rate_interval`/`cache_ttl`), clamped to [10m, 120m]; absent/invalid disables it.
+  (like `rate_interval`/`cache_ttl`), clamped to [10m, 120m]; absent, invalid, or non-positive
+  disables it.
   Backend-only, no API/web surface.
 - **Budget and breaker fall out for free** — `errBudgetExhausted` / `errCircuitOpen` from the
   served path are logged skips, never a retry loop; the breaker never trips on a budget refusal.
 - **Stagger** — a stable per-instance phase offset spreads first-due times across the first
-  interval and keeps them spread at every later boundary, avoiding an N-concurrent-fetch herd
-  through a shared proxy/FlareSolverr.
+  interval and keeps them spread at every later boundary, generally avoiding an
+  N-concurrent-fetch herd through a shared proxy/FlareSolverr (the modulo slotting can still
+  land two instances on the same minute — reduced, not eliminated).
 - **Loop** — reuses `app/lifecycle.go`'s `reap` skeleton; no new ticker/shutdown code.
