@@ -86,11 +86,9 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	// 0012_proxies_solvers.sql, 0013_sync_profiles.sql,
 	// 0014_indexer_health_recovery.sql, 0015_proxy_structured_fields.sql,
 	// 0016_indexer_health_transport.sql, 0017_download_clients.sql,
-	// 0018_indexer_circuit_state.sql, 0020_apps.sql), not
-	// duplicated by the second apply. (0019 is claimed by an in-flight sibling PR;
-	// on this branch the applied count is 19 — the gap is intentional and the
-	// second-lander to merge bumps this count.)
-	const wantMigrations = 19
+	// 0018_indexer_circuit_state.sql, 0019_indexer_budget_counters.sql,
+	// 0020_apps.sql), not duplicated by the second apply.
+	const wantMigrations = 20
 	var applied int
 	if err := db.QueryRowContext(context.Background(),
 		"SELECT count(*) FROM schema_migrations").Scan(&applied); err != nil {

@@ -1327,6 +1327,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/config/rate-limit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the global rate-limit default
+         * @description Returns the live global default minimum spacing between requests to any tracker host (autobrr/harbrr#104): a persisted override if set, else the hardcoded 1s seed. An indexer's own "rate_interval" reserved setting (see ReservedSettings) replaces this default for that indexer only; either way, a definition's own requestDelay is a floor that always wins.
+         */
+        get: operations["getRateLimitDefault"];
+        /**
+         * Set the global rate-limit default
+         * @description Persists the new default, then applies it to every configured indexer's paced client immediately (no restart) by invalidating every cached engine — the same mechanism a global proxy/solver resource edit already uses. A non-positive or unparseable duration answers 400 and changes nothing.
+         */
+        put: operations["putRateLimitDefault"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/logs/frontend": {
         parameters: {
             query?: never;
@@ -1388,6 +1412,8 @@ export interface components {
             proxy_url?: string;
             /** @description per-request timeout as a Go duration, e.g. 30s */
             timeout?: string;
+            /** @description per-indexer minimum spacing between requests to this indexer's host, as a Go duration (e.g. 5s); autobrr/harbrr#104. Replaces the global rate-limit default (GET/PUT /api/config/rate-limit) for this indexer only — it can set this indexer faster or slower than the global default, but never below the definition's own requestDelay, which always wins as a floor. */
+            rate_interval?: string;
             /**
              * @description anti-bot solver (manual_cookie replays the encrypted cookie setting)
              * @enum {string}
@@ -1552,7 +1578,7 @@ export interface components {
             definitionId: string;
             name?: string;
             baseUrl?: string;
-            /** @description definition setting name -> value. May also carry the reserved engine keys (see ReservedSettings): proxy_type/proxy_url, timeout, solver_type/flaresolverr_url. Secret values are stored encrypted. */
+            /** @description definition setting name -> value. May also carry the reserved engine keys (see ReservedSettings): proxy_type/proxy_url, timeout, rate_interval, solver_type/flaresolverr_url. Secret values are stored encrypted. */
             settings?: {
                 [key: string]: string;
             };
@@ -2308,6 +2334,11 @@ export interface components {
              * @enum {string}
              */
             level: "trace" | "debug" | "info" | "warn" | "error";
+        };
+        /** @description The live global rate-limit default (autobrr/harbrr#104): the minimum spacing between requests to any tracker host that has no per-indexer "rate_interval" override (get returns the effective value; put sets it). Always a Go duration string. Never undercuts a definition's own requestDelay. */
+        RateLimitConfig: {
+            /** @description minimum spacing as a Go duration, e.g. 1s */
+            defaultInterval: string;
         };
         /** @description The server's live effective listening configuration. */
         ServerInfo: {
@@ -5139,6 +5170,53 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    getRateLimitDefault: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description the effective global rate-limit default */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitConfig"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    putRateLimitDefault: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RateLimitConfig"];
+            };
+        };
+        responses: {
+            /** @description the applied global rate-limit default */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitConfig"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
         };
     };
     postFrontendLog: {

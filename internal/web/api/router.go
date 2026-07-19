@@ -243,21 +243,30 @@ func (rt *router) routes() http.Handler {
 			r.Post("/api/announce-connections/{id}/test", rt.testAnnounceConnection)
 
 			rt.mountResourceRoutes(r)
-
-			r.Get("/api/cache/stats", rt.cacheStats)
-			r.Post("/api/cache/flush", rt.cacheFlush)
-			r.Get("/api/cache/config", rt.cacheConfigGet)
-			r.Put("/api/cache/config", rt.cacheConfigPut)
-
-			r.Get("/api/config/log-level", rt.getLogLevel)
-			r.Put("/api/config/log-level", rt.putLogLevel)
-
-			r.Post("/api/logs/frontend", rt.postFrontendLog)
-
-			r.Get("/api/server-info", rt.serverInfo)
+			rt.mountSystemRoutes(r)
 		})
 	})
 	return r
+}
+
+// mountSystemRoutes registers the cache/config/logging/server-info endpoints —
+// split out of routes() (which trips funlen otherwise) alongside the existing
+// mountResourceRoutes split.
+func (rt *router) mountSystemRoutes(r chi.Router) {
+	r.Get("/api/cache/stats", rt.cacheStats)
+	r.Post("/api/cache/flush", rt.cacheFlush)
+	r.Get("/api/cache/config", rt.cacheConfigGet)
+	r.Put("/api/cache/config", rt.cacheConfigPut)
+
+	r.Get("/api/config/log-level", rt.getLogLevel)
+	r.Put("/api/config/log-level", rt.putLogLevel)
+
+	r.Get("/api/config/rate-limit", rt.rateLimitGet)
+	r.Put("/api/config/rate-limit", rt.rateLimitPut)
+
+	r.Post("/api/logs/frontend", rt.postFrontendLog)
+
+	r.Get("/api/server-info", rt.serverInfo)
 }
 
 // mountResourceRoutes registers the CRUD routes for the global proxy + anti-bot-solver

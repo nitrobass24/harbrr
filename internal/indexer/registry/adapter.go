@@ -67,8 +67,12 @@ type indexerAdapter struct {
 	// stats records the durable per-indexer query/grab/latency counters. Increments are
 	// in-memory atomics (no hot-path DB write); the registry flushes them periodically.
 	stats *IndexerStats
-	clock func() time.Time
-	log   zerolog.Logger
+	// budget enforces the per-indexer request budget (autobrr/harbrr#251): Search/Grab
+	// reserve capacity before an outbound hit, and a tracker-declared quota error marks
+	// the relevant kind spent until reset (the reactive-learning path).
+	budget *RequestBudget
+	clock  func() time.Time
+	log    zerolog.Logger
 }
 
 // Compile-time proof the adapter satisfies the handler's contract, including
@@ -120,9 +124,20 @@ func (a *indexerAdapter) Search(ctx context.Context, q search.Query) ([]*normali
 		err      error
 	)
 	if a.cache != nil && a.cache.tuning.Load().enabled {
-		releases, err = a.cache.search(ctx, a.instanceID, a.cfg, a.builtEpoch, a.liveSearch, a.SupportsOffsetPaging(), q)
+		releases, err = a.cache.search(ctx, a.instanceID, a.cfg, a.builtEpoch, a.budgetedLiveSearch, a.SupportsOffsetPaging(), q)
 	} else {
-		releases, err = a.liveSearch(ctx, q)
+		releases, err = a.budgetedLiveSearch(ctx, q)
+	}
+	if errors.Is(err, errBudgetExhausted) && a.cache != nil && !core.CacheBypass(ctx) {
+		// The query budget has no capacity left for this period: prefer serving
+		// whatever was last cached, even expired, over refusing the request outright
+		// (autobrr/harbrr#251). A cache miss here (nothing ever cached, or the stale
+		// row itself failed to decode) falls through and surfaces the original
+		// budget-exhausted error. A nocache request opted out of cached results
+		// entirely, so it gets the error, never a stale serve.
+		if stale, ok, serr := a.cache.fetchStale(ctx, a.instanceID, a.SupportsOffsetPaging(), q); serr == nil && ok {
+			releases, err = stale, nil
+		}
 	}
 	if err != nil {
 		return nil, err
@@ -145,11 +160,25 @@ func (a *indexerAdapter) Search(ctx context.Context, q search.Query) ([]*normali
 	return releases, nil
 }
 
-// liveSearch is the live seam the cache drives on a miss or a refresh (and that Search
-// calls directly when caching is off): it runs the engine's online search and returns the
+// budgetedLiveSearch is the liveSearchFn the cache drives on a miss or refresh (and
+// that Search calls directly when caching is off): it reserves one unit of the
+// query budget BEFORE the outbound hit and, when the budget has no capacity left for
+// this period, refuses without ever touching the tracker — errBudgetExhausted, which
+// Search catches to prefer a stale cache serve, and which the breaker explicitly
+// never trips on (searchcache.go's tripBreaker).
+func (a *indexerAdapter) budgetedLiveSearch(ctx context.Context, query search.Query) ([]*normalizer.Release, error) {
+	if !a.budget.ReserveQuery(ctx, a.instanceID, a.cfg, a.clock()) {
+		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, errBudgetExhausted)
+	}
+	return a.liveSearch(ctx, query)
+}
+
+// liveSearch is the actual online search: it runs the engine's search and returns the
 // FULL catalog. A classified failure (auth/anti-bot/rate-limited/parse/transport) is recorded as a
 // health event before the error is wrapped with the indexer id (not a secret) and
-// returned; the caller redacts it.
+// returned; the caller redacts it. A tracker-declared quota error (search.
+// ErrQuotaExceeded) additionally marks the query budget spent until reset — the
+// reactive-learning path that discovers a cap harbrr was never configured with.
 func (a *indexerAdapter) liveSearch(ctx context.Context, query search.Query) ([]*normalizer.Release, error) {
 	// The circuit-breaker gate (autobrr/harbrr#253): a disabled instance is skipped
 	// before it ever reaches the tracker, the actual "nice to indexers" win — a
@@ -166,10 +195,21 @@ func (a *indexerAdapter) liveSearch(ctx context.Context, query search.Query) ([]
 	a.stats.RecordQuery(a.instanceID, a.clock().Sub(start))
 	if err != nil {
 		a.recordHealth(ctx, err)
+		a.learnQuotaSpent(ctx, err, budgetKindQuery)
 		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, err)
 	}
 	a.recordCircuitSuccess(ctx)
 	return releases, nil
+}
+
+// learnQuotaSpent marks kind's budget spent until reset when err is a tracker-declared
+// quota-cap error (search.ErrQuotaExceeded — e.g. dognzb's newznab code 910). A no-op
+// for any other error, including an ordinary rate-limit.
+func (a *indexerAdapter) learnQuotaSpent(ctx context.Context, err error, kind budgetKind) {
+	if !errors.Is(err, search.ErrQuotaExceeded) {
+		return
+	}
+	a.budget.MarkQuotaSpent(ctx, a.instanceID, a.cfg, kind, a.clock())
 }
 
 // NeedsResolver reports whether the definition declares a download block.
@@ -200,6 +240,13 @@ func (a *indexerAdapter) Grab(ctx context.Context, link string) (*search.GrabRes
 	if err := a.checkCircuit(ctx); err != nil {
 		return nil, fmt.Errorf("registry: grab %q: %w", a.info.ID, err)
 	}
+	// The grab budget has no cache to fall back on (a grab is a one-shot download,
+	// never cached), so an exhausted budget refuses outright rather than serving
+	// stale — the grab-path half of #251's enforcement. Gated after the breaker: a
+	// tripped instance must not consume budget.
+	if !a.budget.ReserveGrab(ctx, a.instanceID, a.cfg, a.clock()) {
+		return nil, fmt.Errorf("registry: grab %q: %w", a.info.ID, errBudgetExhausted)
+	}
 	result, err := a.inner.Grab(ctx, link)
 	if err != nil {
 		// Classify grab-time failures too: a 429/503 rate-limit, a first-op login/
@@ -207,6 +254,7 @@ func (a *indexerAdapter) Grab(ctx context.Context, link string) (*search.GrabRes
 		// all reach here. classifyHealth no-ops on an unclassified error, so an
 		// ordinary grab failure records nothing. Mirrors Search.
 		a.recordHealth(ctx, err)
+		a.learnQuotaSpent(ctx, err, budgetKindGrab)
 		return nil, fmt.Errorf("registry: grab %q: %w", a.info.ID, err)
 	}
 	a.recordCircuitSuccess(ctx)

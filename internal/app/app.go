@@ -298,6 +298,9 @@ func (a *App) initRegistry(ctx context.Context, httpClient *http.Client) {
 	a.notify = notify.NewService(a.db, a.keyring, httpClient, a.log)
 	a.registry = registry.New(a.db, loader.New(dropinDir(a.cfg)), a.keyring, catalog.All(),
 		registry.WithLogger(a.log), registry.WithSearchCache(a.searchCache), registry.WithHealthSink(a.notify))
+	if err := a.registry.LoadRateDefaultOverride(ctx); err != nil {
+		a.log.Warn().Err(err).Msg("loading rate-limit default override failed; using hardcoded default")
+	}
 	if err := a.registry.RehydrateStats(ctx); err != nil {
 		a.log.Warn().Err(err).Msg("loading indexer stat counters failed; counters start at zero this session")
 	}

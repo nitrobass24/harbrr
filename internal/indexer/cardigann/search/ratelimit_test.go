@@ -61,6 +61,29 @@ func TestRateLimitedError_IsAndAs(t *testing.T) {
 	}
 }
 
+// TestQuotaExceededError_UnwrapsToBothSentinels proves QuotaExceededError matches
+// BOTH ErrRateLimited (so existing health/breaker classification needs no change)
+// AND ErrQuotaExceeded (so the registry's budget tracker can additionally react to
+// it), including through a wrapping fmt.Errorf %w.
+func TestQuotaExceededError_UnwrapsToBothSentinels(t *testing.T) {
+	t.Parallel()
+	err := &QuotaExceededError{Detail: "daily limit reached"}
+	if !errors.Is(err, ErrRateLimited) {
+		t.Fatal("QuotaExceededError must match ErrRateLimited")
+	}
+	if !errors.Is(err, ErrQuotaExceeded) {
+		t.Fatal("QuotaExceededError must match ErrQuotaExceeded")
+	}
+	wrapped := fmt.Errorf("newznab: %w", err)
+	if !errors.Is(wrapped, ErrRateLimited) || !errors.Is(wrapped, ErrQuotaExceeded) {
+		t.Fatal("wrapped QuotaExceededError must still match both sentinels")
+	}
+	var qee *QuotaExceededError
+	if !errors.As(wrapped, &qee) || qee.Detail != "daily limit reached" {
+		t.Fatalf("errors.As did not recover QuotaExceededError: %+v", qee)
+	}
+}
+
 // statusDoer returns a canned status + headers, recording nothing — for the
 // doRequest classification tests.
 type statusDoer struct {

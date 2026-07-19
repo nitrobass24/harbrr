@@ -86,6 +86,7 @@ func newRSSCacheAdapter(t *testing.T, inner native.Driver) *indexerAdapter {
 		cache:      sc,
 		builtEpoch: sc.instanceEpoch(instID),
 		stats:      newIndexerStats(nil, time.Now, zerolog.Nop()),
+		budget:     newRequestBudget(nil, time.Now, zerolog.Nop()),
 		clock:      time.Now,
 		log:        zerolog.Nop(),
 	}

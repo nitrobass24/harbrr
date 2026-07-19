@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -79,6 +80,19 @@ type Resolver struct {
 	// boot and flushed periodically + at shutdown. Failure counts are folded in at read
 	// time from the health events, not tracked here.
 	stats *IndexerStats
+
+	// rateDefault is the live global rate-limit default (nanoseconds; time.Duration),
+	// read by every buildAdapter call via RateDefault(). Seeded to defaultRateInterval
+	// in New() so an untouched system behaves exactly like before this knob existed
+	// (autobrr/harbrr#104). rateMu serializes SetRateDefault's persist+swap so two
+	// concurrent writers can't leave the persisted and live values disagreeing.
+	rateDefault atomic.Int64
+	rateMu      sync.Mutex
+
+	// budget enforces the per-indexer request budget (autobrr/harbrr#251): always
+	// present (built in New, like stats), instrumented by the per-instance
+	// indexerAdapter's Search/Grab before an outbound hit.
+	budget *RequestBudget
 
 	mu sync.Mutex
 	// cache holds the per-slug served indexer — the flattened adapter (cache-wired when
@@ -165,8 +179,10 @@ type ClientParams struct {
 	// per-instance "timeout" setting, else the registry default); newDoer clamps
 	// <=0 to defaultHTTPTimeout.
 	Timeout time.Duration
-	// RateInterval is the per-host minimum spacing (resolved from the def's
-	// requestDelay, else defaultRateInterval).
+	// RateInterval is the per-host minimum spacing (autobrr/harbrr#104): the
+	// instance's "rate_interval" override when set, else the live global default —
+	// but never below the definition's own requestDelay, which always wins as a
+	// tracker-respect floor. See resolveRateInterval.
 	RateInterval time.Duration
 	// Logger is the registry logger threaded into the paced doer so outbound requests
 	// trace (method/redacted-URL/status/duration) at debug. A zero value is fine: the
@@ -206,6 +222,7 @@ func New(db dbinterface.Querier, ldr *loader.Loader, keyring secretsKeyring, fam
 		cache:   map[string]core.Indexer{},
 		gen:     map[string]uint64{},
 	}
+	res.rateDefault.Store(int64(defaultRateInterval))
 	r := &Registry{Resolver: res}
 	for _, o := range opts {
 		o(r)
@@ -217,6 +234,9 @@ func New(db dbinterface.Querier, ldr *loader.Loader, keyring secretsKeyring, fam
 	// doerFactory default above.
 	if res.stats == nil {
 		res.stats = newIndexerStats(db, res.clock, res.log)
+	}
+	if res.budget == nil {
+		res.budget = newRequestBudget(db, res.clock, res.log)
 	}
 	// Captured last (after the options loop finalizes clock) so an injected test clock
 	// establishes the startup-grace reference point instead of the wall clock.
@@ -374,7 +394,7 @@ func (r *Resolver) buildAdapter(ctx context.Context, slug string) (*indexerAdapt
 		Instance:     inst,
 		Cfg:          cfg,
 		Timeout:      resolveTimeout(cfg, r.timeout),
-		RateInterval: rateInterval(def), // a native def carries RequestDelay, so it is paced too
+		RateInterval: resolveRateInterval(def, cfg, r.RateDefault()), // a native def carries RequestDelay, so it is paced too
 		Logger:       r.log,
 	})
 	if err != nil {
@@ -397,6 +417,7 @@ func (r *Resolver) buildAdapter(ctx context.Context, slug string) (*indexerAdapt
 		startedAt:     r.startedAt,
 		healthSink:    r.healthSink,
 		stats:         r.stats,
+		budget:        r.budget,
 		clock:         r.clock,
 		log:           r.log,
 	}, nil
@@ -649,6 +670,12 @@ func (r *Resolver) forgetCacheCounters(instanceID int64) {
 // the Manager calls after a committed Delete, keeping the Manager ignorant of *IndexerStats.
 func (r *Resolver) forgetStats(instanceID int64) {
 	r.stats.ForgetInstance(instanceID)
+}
+
+// forgetBudget drops a deleted instance's in-memory budget counters, mirroring
+// forgetStats for the request-budget tracker.
+func (r *Resolver) forgetBudget(instanceID int64) {
+	r.budget.ForgetInstance(instanceID)
 }
 
 // indexerInfo assembles the public indexer identity from the instance + def (no
