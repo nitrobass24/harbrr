@@ -207,8 +207,9 @@ func (r *Manager) Get(ctx context.Context, slug string) (domain.IndexerInstance,
 
 // Freeleech reports whether inst's freeleech-only checkbox is enabled, using the same
 // canonical rule buildAdapter applies at engine-build time: canonicalize the stored
-// checkbox value, then read it non-empty (registry.go). Cardigann defs name the checkbox
-// "freeleech"; the native drivers (avistaz, filelist, gazellegames, iptorrents,
+// checkbox value, then read it via settingEnabled, which stays hardened even if a value
+// slips past canonicalization (registry.go, autobrr/harbrr#273). Cardigann defs name the
+// checkbox "freeleech"; the native drivers (avistaz, filelist, gazellegames, iptorrents,
 // torrentday) name theirs "freeleech_only" — same signal, both matched (#227). The
 // setting is never a secret, so this reads its raw stored value directly — no decryption
 // pass needed — keeping the list-time seam cheap.
@@ -221,15 +222,14 @@ func (r *Manager) Freeleech(ctx context.Context, inst domain.IndexerInstance) (b
 	if err != nil {
 		return false, fmt.Errorf("registry: get settings for %q: %w", inst.Slug, err)
 	}
-	cfg := make(map[string]string, 1)
+	cfg := make(map[string]string, 2)
 	for _, s := range settings {
 		if s.Name == "freeleech" || s.Name == "freeleech_only" {
 			cfg[s.Name] = s.Value
-			break
 		}
 	}
 	cardigann.CanonicalizeCheckboxes(def, cfg)
-	return cfg["freeleech"] != "" || cfg["freeleech_only"] != "", nil
+	return settingEnabled(cfg["freeleech"]) || settingEnabled(cfg["freeleech_only"]), nil
 }
 
 // List returns all configured instances.

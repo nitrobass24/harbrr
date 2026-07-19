@@ -28,10 +28,36 @@ describe("SettingFieldInput", () => {
     expect(screen.getByLabelText("Cookie").getAttribute("type")).toBe("password")
   })
 
-  it("checkbox maps to the true/false string contract", () => {
-    const onChange = renderField({ name: "fl", label: "Freeleech", type: "checkbox", secret: false }, "false")
+  it("checkbox checking writes \"true\"", () => {
+    const onChange = renderField({ name: "fl", label: "Freeleech", type: "checkbox", secret: false }, "")
     fireEvent.click(screen.getByLabelText("Freeleech"))
     expect(onChange).toHaveBeenCalledWith("true")
+  })
+
+  // autobrr/harbrr#273: unchecking must clear the key to "", not write the literal
+  // "false" — a stored "false" is non-empty and reads as CHECKED downstream.
+  it("checkbox unchecking clears to \"\" (autobrr/harbrr#273)", () => {
+    const onChange = renderField({ name: "fl", label: "Freeleech", type: "checkbox", secret: false }, "true")
+    fireEvent.click(screen.getByLabelText("Freeleech"))
+    expect(onChange).toHaveBeenCalledWith("")
+  })
+
+  // autobrr/harbrr#273 CodeRabbit follow-up: the checked state must recognize every
+  // truthy value settingEnabled(backend) treats as ON, not just the literal "true" this
+  // form writes — otherwise a value the backend already reads as ON renders unchecked.
+  it("checkbox renders checked for the backend's \"True\" sentinel", () => {
+    renderField({ name: "fl", label: "Freeleech", type: "checkbox", secret: false }, "True")
+    expect(screen.getByLabelText("Freeleech").getAttribute("data-state")).toBe("checked")
+  })
+
+  it("checkbox renders checked for \"1\"", () => {
+    renderField({ name: "fl", label: "Freeleech", type: "checkbox", secret: false }, "1")
+    expect(screen.getByLabelText("Freeleech").getAttribute("data-state")).toBe("checked")
+  })
+
+  it("checkbox renders unchecked for \"false\"", () => {
+    renderField({ name: "fl", label: "Freeleech", type: "checkbox", secret: false }, "false")
+    expect(screen.getByLabelText("Freeleech").getAttribute("data-state")).toBe("unchecked")
   })
 
   it("select renders every option and reports the key", () => {
