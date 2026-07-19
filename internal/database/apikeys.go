@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
 	"github.com/autobrr/harbrr/internal/domain"
@@ -82,8 +83,19 @@ func (APIKeys) Delete(ctx context.Context, q dbinterface.Execer, id int64) error
 	return nil
 }
 
-// last_used_at is populated by a later phase (a debounced touch), not on every
-// validation — validating an API key must not write on the request path.
+// Touch stamps a key's last_used_at. It is called only from the auth service's
+// debounced flush (which coalesces per-request validations in memory), never on
+// the request path — validating an API key must not write per request. A missing
+// row is not an error: the key was revoked between use and flush.
+func (APIKeys) Touch(ctx context.Context, q dbinterface.Execer, id int64, usedAt time.Time) error {
+	_, err := q.ExecContext(ctx,
+		q.Rebind(`UPDATE api_keys SET last_used_at = ? WHERE id = ?`),
+		usedAt.UTC().Format(timeLayout), id)
+	if err != nil {
+		return fmt.Errorf("database: touch api key: %w", err)
+	}
+	return nil
+}
 
 // scanAPIKey reads one api_keys row.
 func scanAPIKey(s interface{ Scan(...any) error }) (domain.APIKey, error) {

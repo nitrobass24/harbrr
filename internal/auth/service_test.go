@@ -10,6 +10,7 @@ import (
 	"github.com/autobrr/harbrr/internal/auth"
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
+	"github.com/autobrr/harbrr/internal/domain"
 )
 
 type fastPasswordHasher struct{}
@@ -123,6 +124,60 @@ func TestAPIKeyLifecycle(t *testing.T) {
 	if err := s.RevokeAPIKey(ctx, k.ID); !errors.Is(err, database.ErrNotFound) {
 		t.Errorf("RevokeAPIKey missing err = %v, want ErrNotFound", err)
 	}
+}
+
+func TestAPIKeyTouchFlush(t *testing.T) {
+	t.Parallel()
+	s := newService(t)
+	ctx := context.Background()
+
+	plaintext, k, err := s.MintAPIKey(ctx, "smoke")
+	if err != nil {
+		t.Fatalf("MintAPIKey: %v", err)
+	}
+
+	// Validation buffers the touch in memory — nothing lands until a flush.
+	if _, err := s.ValidateAPIKey(ctx, plaintext); err != nil {
+		t.Fatalf("ValidateAPIKey: %v", err)
+	}
+	if got := listOneKey(t, s); got.LastUsedAt != nil {
+		t.Errorf("LastUsedAt before flush = %v, want nil", got.LastUsedAt)
+	}
+
+	if err := s.FlushAPIKeyTouches(ctx); err != nil {
+		t.Fatalf("FlushAPIKeyTouches: %v", err)
+	}
+	if got := listOneKey(t, s); got.LastUsedAt == nil {
+		t.Error("LastUsedAt after flush = nil, want set")
+	}
+
+	// A failed validation buffers nothing; a drained buffer flushes clean.
+	if _, err := s.ValidateAPIKey(ctx, "bogus"); !errors.Is(err, auth.ErrInvalidAPIKey) {
+		t.Fatalf("ValidateAPIKey(bogus) err = %v, want ErrInvalidAPIKey", err)
+	}
+	if err := s.FlushAPIKeyTouches(ctx); err != nil {
+		t.Errorf("FlushAPIKeyTouches on empty buffer: %v", err)
+	}
+
+	// A key revoked between use and flush is not an error (the UPDATE misses).
+	if _, err := s.ValidateAPIKey(ctx, plaintext); err != nil {
+		t.Fatalf("ValidateAPIKey: %v", err)
+	}
+	if err := s.RevokeAPIKey(ctx, k.ID); err != nil {
+		t.Fatalf("RevokeAPIKey: %v", err)
+	}
+	if err := s.FlushAPIKeyTouches(ctx); err != nil {
+		t.Errorf("FlushAPIKeyTouches after revoke: %v", err)
+	}
+}
+
+func listOneKey(t *testing.T, s *auth.Service) domain.APIKey {
+	t.Helper()
+	keys, err := s.ListAPIKeys(context.Background())
+	if err != nil || len(keys) != 1 {
+		t.Fatalf("ListAPIKeys = (%d,%v), want 1", len(keys), err)
+	}
+	return keys[0]
 }
 
 func TestChangePassword(t *testing.T) {
