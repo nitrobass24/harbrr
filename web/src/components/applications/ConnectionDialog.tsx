@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { ManagedByAppHint } from "@/components/applications/ManagedByAppHint"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -12,8 +13,15 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
 import { useSyncProfiles } from "@/hooks/useAppConnections"
+import { useApps } from "@/hooks/useApps"
 import { defaultHarbrrUrl } from "@/lib/base-url"
+import { hostname } from "@/lib/format"
 import type { AppConnection, ConnectionKind, CreateConnection, UpdateConnection } from "@/lib/api"
+
+// Sentinel select value for "no existing App picked, use the inline fields below" — the
+// create-time fallback when no App of this kind exists yet, or the operator wants a
+// fresh one.
+const NEW_APP = "new"
 
 const KINDS: ConnectionKind[] = ["sonarr", "radarr", "lidarr", "readarr", "whisparr", "qui"]
 
@@ -67,42 +75,48 @@ function ConnectionForm({ existing, pending, error, onCreate, onUpdate }: {
 }) {
   const [name, setName] = useState(existing?.name ?? "")
   const [kind, setKind] = useState<ConnectionKind>(existing?.kind ?? "sonarr")
-  const [baseUrl, setBaseUrl] = useState(existing?.baseUrl ?? "")
+  // Create-only: which App backs this connection. NEW_APP reveals the inline
+  // baseUrl/apiKey/harbrrUrl fields below; anything else reuses that App's identity.
+  const [appSel, setAppSel] = useState<string>(NEW_APP)
+  const [baseUrl, setBaseUrl] = useState("")
   const [apiKey, setApiKey] = useState("")
-  const [harbrrUrl, setHarbrrUrl] = useState(existing?.harbrrUrl ?? defaultHarbrrUrl())
+  const [harbrrUrl, setHarbrrUrl] = useState(defaultHarbrrUrl())
   const [syncLevel, setSyncLevel] = useState(existing?.syncLevel ?? "full")
   const [indexScope, setIndexScope] = useState(existing?.indexScope ?? "all")
   const [freeleechMode, setFreeleechMode] = useState<"" | "honor" | "bypass">(existing?.freeleechMode ?? "")
   const [syncProfileId, setSyncProfileId] = useState<number | null>(existing?.syncProfileId ?? null)
 
   const profiles = useSyncProfiles()
+  const apps = useApps()
   const mode = existing ? "edit" : "create"
   const message = error instanceof Error ? error.message : null
   // Profiles never apply to qui — it has no per-content-type category concept.
   const showProfilePicker = kind !== "qui"
+  const appsOfKind = (apps.data ?? []).filter((a) => a.kind === kind)
+  const usingNewApp = appSel === NEW_APP
 
   return (
     <form
       className="flex flex-col gap-4"
       onSubmit={(e) => {
         e.preventDefault()
+        // Resolve "default by kind" to the kind's concrete default so the edit is
+        // honored: the PATCH omits an undefined field, which would silently keep the
+        // prior mode.
+        const resolvedFreeleechMode = freeleechMode || defaultFreeleechMode(kind)
         if (mode === "edit" && existing) {
           onUpdate(existing.id, {
-            name, baseUrl, harbrrUrl, syncLevel, indexScope,
-            // Resolve "default by kind" to the kind's concrete default so the edit is honored:
-            // the PATCH omits an undefined field, which would silently keep the prior mode.
-            // Resolve "default by kind" to the kind's concrete default so the edit is honored:
-            // the PATCH omits an undefined field, which would silently keep the prior mode.
-            freeleechMode: freeleechMode || defaultFreeleechMode(kind),
-            ...(apiKey !== "" ? { apiKey } : {}), // omit = keep the stored key
+            name, syncLevel, indexScope,
+            freeleechMode: resolvedFreeleechMode,
             // Always send for non-qui edits (number or null) so clearing works; omit entirely for qui.
             ...(showProfilePicker ? { syncProfileId } : {}),
           })
         } else {
           onCreate({
-            name, kind, baseUrl, apiKey, harbrrUrl, syncLevel, indexScope,
+            name, kind, syncLevel, indexScope,
             freeleechMode: freeleechMode || undefined,
             ...(showProfilePicker && syncProfileId !== null ? { syncProfileId } : {}),
+            ...(usingNewApp ? { baseUrl, apiKey, harbrrUrl } : { appId: Number(appSel) }),
           })
         }
       }}
@@ -123,23 +137,46 @@ function ConnectionForm({ existing, pending, error, onCreate, onUpdate }: {
           <Input id="conn-name" value={name} onChange={(e) => setName(e.target.value)} />
         </FieldWrap>
         <FieldWrap id="conn-kind" label="Kind">
-          <NativeSelect id="conn-kind" value={kind} disabled={mode === "edit"} onChange={(e) => setKind(e.target.value as ConnectionKind)}>
+          <NativeSelect
+            id="conn-kind"
+            value={kind}
+            disabled={mode === "edit"}
+            onChange={(e) => {
+              setKind(e.target.value as ConnectionKind)
+              setAppSel(NEW_APP) // the app list for the new kind is different; re-pick.
+            }}
+          >
             {KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
           </NativeSelect>
         </FieldWrap>
       </div>
 
-      <FieldWrap id="conn-baseurl" label="App base URL">
-        <Input id="conn-baseurl" placeholder="http://sonarr:8989" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
-      </FieldWrap>
+      {mode === "create" && (
+        <FieldWrap id="conn-app" label="App">
+          <NativeSelect id="conn-app" value={appSel} onChange={(e) => setAppSel(e.target.value)}>
+            <option value={NEW_APP}>New app…</option>
+            {appsOfKind.map((a) => <option key={a.id} value={a.id}>{a.name} ({hostname(a.baseUrl)})</option>)}
+          </NativeSelect>
+        </FieldWrap>
+      )}
 
-      <FieldWrap id="conn-apikey" label={mode === "edit" ? "App API key (leave blank to keep the stored key)" : "App API key"}>
-        <Input id="conn-apikey" type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
-      </FieldWrap>
+      {mode === "edit" && <ManagedByAppHint appId={existing?.appId} />}
 
-      <FieldWrap id="conn-harbrr" label="harbrr URL as the app reaches it">
-        <Input id="conn-harbrr" placeholder="http://harbrr:7478" value={harbrrUrl} onChange={(e) => setHarbrrUrl(e.target.value)} />
-      </FieldWrap>
+      {mode === "create" && usingNewApp && (
+        <>
+          <FieldWrap id="conn-baseurl" label="App base URL">
+            <Input id="conn-baseurl" placeholder="http://sonarr:8989" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
+          </FieldWrap>
+
+          <FieldWrap id="conn-apikey" label="App API key">
+            <Input id="conn-apikey" type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
+          </FieldWrap>
+
+          <FieldWrap id="conn-harbrr" label="harbrr URL as the app reaches it">
+            <Input id="conn-harbrr" placeholder="http://harbrr:7478" value={harbrrUrl} onChange={(e) => setHarbrrUrl(e.target.value)} />
+          </FieldWrap>
+        </>
+      )}
 
       <div className="grid grid-cols-3 gap-3">
         <FieldWrap id="conn-level" label="Sync level">
@@ -179,7 +216,10 @@ function ConnectionForm({ existing, pending, error, onCreate, onUpdate }: {
       <DialogFooter>
         <Button
           type="submit"
-          disabled={pending || name === "" || baseUrl === "" || harbrrUrl === "" || (mode === "create" && apiKey === "")}
+          disabled={
+            pending || name === "" ||
+            (mode === "create" && usingNewApp && (baseUrl === "" || harbrrUrl === "" || apiKey === ""))
+          }
         >
           {pending ? "Saving…" : mode === "edit" ? "Save changes" : "Add application"}
         </Button>

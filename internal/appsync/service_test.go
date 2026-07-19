@@ -10,18 +10,21 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/autobrr/harbrr/internal/apps"
 	"github.com/autobrr/harbrr/internal/auth"
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/secrets"
 )
 
-// syncFixture wires a real in-memory DB + auth service + plaintext keyring against an
-// httptest Sonarr stub, so Sync exercises the real driver, reconciler, and ledger.
+// syncFixture wires a real in-memory DB + auth service + apps service + plaintext
+// keyring against an httptest Sonarr stub, so Sync exercises the real driver,
+// reconciler, and ledger.
 type syncFixture struct {
 	svc    *Service
 	db     *database.DB
 	auth   *auth.Service
+	apps   *apps.Service
 	source *fakeSource
 	stub   *servarrStub
 	conn   domain.AppConnection
@@ -82,7 +85,8 @@ func newSyncFixture(t *testing.T) *syncFixture {
 	t.Cleanup(srv.Close)
 
 	authSvc := auth.NewService(db)
-	svc := NewService(db, source, authSvc, kr, srv.Client(), zerolog.Nop())
+	appsSvc := apps.NewService(db, kr, srv.Client(), zerolog.Nop())
+	svc := NewService(db, source, appsSvc, authSvc, kr, srv.Client(), zerolog.Nop())
 
 	conn, err := svc.CreateConnection(ctx, CreateConnectionParams{
 		Name: "Sonarr", Kind: domain.AppKindSonarr, BaseURL: srv.URL,
@@ -91,7 +95,7 @@ func newSyncFixture(t *testing.T) *syncFixture {
 	if err != nil {
 		t.Fatalf("CreateConnection: %v", err)
 	}
-	return &syncFixture{svc: svc, db: db, auth: authSvc, source: source, stub: stub, conn: conn}
+	return &syncFixture{svc: svc, db: db, auth: authSvc, apps: appsSvc, source: source, stub: stub, conn: conn}
 }
 
 func TestBuildDesiredQuiSkipsUsenet(t *testing.T) {
@@ -714,10 +718,6 @@ func TestServiceCreateRejectsNonAbsoluteURL(t *testing.T) {
 			t.Errorf("case %d: err = %v, want domain.ErrInvalid", i, err)
 		}
 	}
-	// A relative URL on update is rejected too.
-	if err := f.svc.UpdateConnection(ctx, f.conn.ID, UpdateConnectionParams{BaseURL: ptr("nope")}); !errors.Is(err, domain.ErrInvalid) {
-		t.Errorf("update with relative base url = %v, want domain.ErrInvalid", err)
-	}
 }
 
 func TestServiceCreatePersistsTrimmedURL(t *testing.T) {
@@ -737,8 +737,13 @@ func TestServiceCreatePersistsTrimmedURL(t *testing.T) {
 	if conn.BaseURL != "http://radarr:7878" {
 		t.Errorf("BaseURL = %q, want the trimmed value", conn.BaseURL)
 	}
-	if conn.HarbrrURL != "http://harbrr:8787" {
-		t.Errorf("HarbrrURL = %q, want the trimmed value", conn.HarbrrURL)
+	// HarbrrURL is App-level, enriched on read (not returned by Create itself).
+	got, err := f.svc.GetConnection(ctx, conn.ID)
+	if err != nil {
+		t.Fatalf("GetConnection: %v", err)
+	}
+	if got.HarbrrURL != "http://harbrr:8787" {
+		t.Errorf("HarbrrURL = %q, want the trimmed value", got.HarbrrURL)
 	}
 }
 
@@ -915,10 +920,7 @@ func TestServiceUpdateRejectsBlankFields(t *testing.T) {
 	ctx := context.Background()
 	blank := " "
 	cases := map[string]UpdateConnectionParams{
-		"blank name":       {Name: &blank},
-		"blank base url":   {BaseURL: &blank},
-		"blank harbrr url": {HarbrrURL: &blank},
-		"blank api key":    {APIKey: &blank},
+		"blank name": {Name: &blank},
 	}
 	for name, p := range cases {
 		if err := f.svc.UpdateConnection(ctx, f.conn.ID, p); !errors.Is(err, domain.ErrInvalid) {
@@ -958,6 +960,155 @@ func TestServiceCreateDuplicateConflicts(t *testing.T) {
 	// The conflicting create must not leak a minted key.
 	if keys, _ := f.auth.ListAPIKeys(ctx); len(keys) != 1 {
 		t.Errorf("orphan key leaked on conflict: %d keys, want 1", len(keys))
+	}
+}
+
+// TestServiceCreateWithAppIDReusesApp proves the AppID (reuse) create path: given an
+// App that already exists (as if another surface — a download client, say — created
+// it), attaching an appsync connection to it by id mints no new App and needs no
+// inline credential.
+func TestServiceCreateWithAppIDReusesApp(t *testing.T) {
+	t.Parallel()
+	f := newSyncFixture(t)
+	ctx := context.Background()
+
+	app, err := f.apps.Resolve(ctx, apps.Ref{
+		Kind: domain.AppKindRadarr, BaseURL: "http://shared-radarr:7878", APIKey: "k", HarbrrURL: "http://harbrr:8787",
+	})
+	if err != nil {
+		t.Fatalf("Resolve (prime app): %v", err)
+	}
+	before, err := f.apps.List(ctx)
+	if err != nil {
+		t.Fatalf("List apps: %v", err)
+	}
+
+	conn, err := f.svc.CreateConnection(ctx, CreateConnectionParams{
+		Name: "radarr-via-appid", Kind: domain.AppKindRadarr, AppID: &app.ID,
+	})
+	if err != nil {
+		t.Fatalf("CreateConnection with AppID (no inline credential): %v", err)
+	}
+	if conn.AppID == nil || *conn.AppID != app.ID {
+		t.Fatalf("connection AppID = %v, want %d", conn.AppID, app.ID)
+	}
+	if conn.BaseURL != app.BaseURL {
+		t.Errorf("connection BaseURL = %q, want the App's %q", conn.BaseURL, app.BaseURL)
+	}
+
+	after, err := f.apps.List(ctx)
+	if err != nil {
+		t.Fatalf("List apps after: %v", err)
+	}
+	if len(after) != len(before) {
+		t.Errorf("AppID create minted a new App: before=%d after=%d", len(before), len(after))
+	}
+}
+
+// TestServiceConnectionsShareOneApp pins the App registry's core invariant: two
+// connections identifying the same (kind, base_url) — the fixture's own appsync
+// connection, and a second resolve standing in for another surface's create (announce,
+// download) — share exactly one App row rather than minting a duplicate. (A second
+// appsync connection at the literal same kind+base_url is separately rejected by
+// app_connections' own UNIQUE(kind, base_url) — see TestServiceCreateDuplicateConflicts
+// — so cross-surface sharing is exercised here via apps.Resolve directly.)
+func TestServiceConnectionsShareOneApp(t *testing.T) {
+	t.Parallel()
+	f := newSyncFixture(t)
+	ctx := context.Background()
+
+	again, err := f.apps.Resolve(ctx, apps.Ref{Kind: domain.AppKindSonarr, BaseURL: f.conn.BaseURL})
+	if err != nil {
+		t.Fatalf("Resolve same identity: %v", err)
+	}
+	if f.conn.AppID == nil || again.ID != *f.conn.AppID {
+		t.Errorf("second resolve minted a new App: got id %d, want %v (the fixture connection's App)", again.ID, f.conn.AppID)
+	}
+	all, err := f.apps.List(ctx)
+	if err != nil {
+		t.Fatalf("List apps: %v", err)
+	}
+	if len(all) != 1 {
+		t.Errorf("apps = %d, want exactly 1 (shared identity, no duplicate)", len(all))
+	}
+}
+
+// TestServiceSyncPendingAppMigration pins the ErrAppMigrationPending guard: a row with
+// a NULL app_id (the boot fold has not run yet) is unusable on any USE path — Sync and
+// TestConnection both refuse it rather than treating a blank identity as a live one.
+// The row is inserted directly via the repo (bypassing the service, which always
+// resolves an App on create) with a real minted harbrr key so the row passes the
+// stale-key guard and reaches the App lookup.
+func TestServiceSyncPendingAppMigration(t *testing.T) {
+	t.Parallel()
+	f := newSyncFixture(t)
+	ctx := context.Background()
+
+	_, key, err := f.auth.MintAPIKey(ctx, "pending-fixture")
+	if err != nil {
+		t.Fatalf("MintAPIKey: %v", err)
+	}
+	now := time.Now().UTC()
+	id, err := (database.AppConnections{}).InsertConnection(ctx, f.db, domain.AppConnection{
+		Name: "pending", Kind: domain.AppKindSonarr, AppID: nil,
+		HarbrrAPIKeyID: key.ID, Enabled: true, SyncLevel: domain.SyncLevelFull,
+		IndexScope: domain.IndexScopeAll, FreeleechMode: domain.FreeleechModeHonor,
+		Priority: defaultPriority, CreatedAt: now, UpdatedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("InsertConnection: %v", err)
+	}
+
+	if _, err := f.svc.Sync(ctx, id); !errors.Is(err, domain.ErrAppMigrationPending) {
+		t.Errorf("Sync on NULL app_id row = %v, want domain.ErrAppMigrationPending", err)
+	}
+	if err := f.svc.TestConnection(ctx, id); !errors.Is(err, domain.ErrAppMigrationPending) {
+		t.Errorf("TestConnection on NULL app_id row = %v, want domain.ErrAppMigrationPending", err)
+	}
+}
+
+// TestServiceListGetEnrichFromApp proves ListConnections and GetConnection are the
+// single read path for identity: both project BaseURL/HarbrrURL from the referenced
+// App, not from the connection row's own (legacy) columns.
+func TestServiceListGetEnrichFromApp(t *testing.T) {
+	t.Parallel()
+	f := newSyncFixture(t)
+	ctx := context.Background()
+
+	app, err := f.apps.Get(ctx, *f.conn.AppID)
+	if err != nil {
+		t.Fatalf("apps.Get: %v", err)
+	}
+	if app.HarbrrURL != "http://harbrr:8787" {
+		t.Fatalf("fixture app HarbrrURL = %q, want http://harbrr:8787", app.HarbrrURL)
+	}
+
+	got, err := f.svc.GetConnection(ctx, f.conn.ID)
+	if err != nil {
+		t.Fatalf("GetConnection: %v", err)
+	}
+	if got.BaseURL != app.BaseURL || got.HarbrrURL != app.HarbrrURL {
+		t.Errorf("GetConnection identity = base %q harbrr %q, want the App's base %q harbrr %q",
+			got.BaseURL, got.HarbrrURL, app.BaseURL, app.HarbrrURL)
+	}
+
+	list, err := f.svc.ListConnections(ctx)
+	if err != nil {
+		t.Fatalf("ListConnections: %v", err)
+	}
+	var found bool
+	for _, c := range list {
+		if c.ID != f.conn.ID {
+			continue
+		}
+		found = true
+		if c.BaseURL != app.BaseURL || c.HarbrrURL != app.HarbrrURL {
+			t.Errorf("ListConnections identity = base %q harbrr %q, want the App's base %q harbrr %q",
+				c.BaseURL, c.HarbrrURL, app.BaseURL, app.HarbrrURL)
+		}
+	}
+	if !found {
+		t.Fatalf("ListConnections did not include the fixture connection")
 	}
 }
 

@@ -16,18 +16,20 @@ import (
 // already-encrypted secret values; encryption is the service's concern.
 type AnnounceConnections struct{}
 
-// announceColumns is the full select list, in scan order.
-const announceColumns = `id, name, kind, base_url, api_key_encrypted, harbrr_url,
+// announceColumns is the full select list, in scan order. app_id is the App
+// reference (ADR 0004); legacy identity columns are still selected but unused by the
+// service (identity comes from the App).
+const announceColumns = `id, name, kind, app_id, base_url, api_key_encrypted, harbrr_url,
 	harbrr_api_key_id, harbrr_api_key_encrypted, key_id, enabled, created_at, updated_at`
 
 // InsertAnnounceConnection writes a row and returns its new id.
 func (AnnounceConnections) InsertAnnounceConnection(ctx context.Context, q dbinterface.Execer, c domain.AnnounceConnection) (int64, error) {
 	res, err := q.ExecContext(ctx,
 		q.Rebind(`INSERT INTO announce_connections
-			(name, kind, base_url, api_key_encrypted, harbrr_url, harbrr_api_key_id,
+			(name, kind, app_id, base_url, api_key_encrypted, harbrr_url, harbrr_api_key_id,
 			 harbrr_api_key_encrypted, key_id, enabled, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
-		c.Name, c.Kind, c.BaseURL, c.APIKeyEncrypted, c.HarbrrURL, nullIfZero(c.HarbrrAPIKeyID),
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+		c.Name, c.Kind, nullInt64(c.AppID), c.BaseURL, c.APIKeyEncrypted, c.HarbrrURL, nullIfZero(c.HarbrrAPIKeyID),
 		c.HarbrrAPIKeyEncrypted, c.KeyID, boolToInt(c.Enabled),
 		c.CreatedAt.UTC().Format(timeLayout), c.UpdatedAt.UTC().Format(timeLayout))
 	if err != nil {
@@ -124,18 +126,30 @@ func (AnnounceConnections) DeleteAnnounceConnection(ctx context.Context, q dbint
 	return affectedOrNotFoundID(res, id)
 }
 
+// SetAnnounceConnectionAppID sets a connection's app_id by id (the boot fold's
+// write-back).
+func (AnnounceConnections) SetAnnounceConnectionAppID(ctx context.Context, q dbinterface.Execer, id, appID int64) error {
+	res, err := q.ExecContext(ctx,
+		q.Rebind(`UPDATE announce_connections SET app_id = ? WHERE id = ?`), appID, id)
+	if err != nil {
+		return fmt.Errorf("database: set announce connection app_id: %w", err)
+	}
+	return affectedOrNotFoundID(res, id)
+}
+
 // scanAnnounceConnection reads one announce_connections row.
 func scanAnnounceConnection(s interface{ Scan(...any) error }) (domain.AnnounceConnection, error) {
 	var (
 		c                    domain.AnnounceConnection
-		harbrrKeyID          sql.NullInt64
+		appID, harbrrKeyID   sql.NullInt64
 		enabled              int
 		createdAt, updatedAt string
 	)
-	if err := s.Scan(&c.ID, &c.Name, &c.Kind, &c.BaseURL, &c.APIKeyEncrypted, &c.HarbrrURL,
+	if err := s.Scan(&c.ID, &c.Name, &c.Kind, &appID, &c.BaseURL, &c.APIKeyEncrypted, &c.HarbrrURL,
 		&harbrrKeyID, &c.HarbrrAPIKeyEncrypted, &c.KeyID, &enabled, &createdAt, &updatedAt); err != nil {
 		return domain.AnnounceConnection{}, err //nolint:wrapcheck // sql.ErrNoRows matched by caller; others wrapped there.
 	}
+	c.AppID = nullableToPtr(appID)
 	c.HarbrrAPIKeyID = harbrrKeyID.Int64
 	c.Enabled = enabled != 0
 	c.CreatedAt, c.UpdatedAt = parseTime(createdAt), parseTime(updatedAt)

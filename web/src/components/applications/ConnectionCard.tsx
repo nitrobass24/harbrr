@@ -1,4 +1,4 @@
-import { ListChecks, MoreVertical, Pencil, RefreshCcw, RefreshCw, Rss, Trash2 } from "lucide-react"
+import { ListChecks, MoreVertical, Pencil, RefreshCcw, RefreshCw, Trash2 } from "lucide-react"
 import { SyncError } from "@/components/applications/SyncError"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -25,16 +25,11 @@ export type ConnectionActions = {
   onStatus: (id: number) => void
   onSelectIndexers: (conn: AppConnection) => void
   onFixPort: (conn: AppConnection, harbrrUrl: string) => void
-  onSeedAnnounceTarget: (conn: AppConnection) => void
 }
 
-export function ConnectionCard({ conn, syncing, hasAnnounceTarget, actions }: {
+export function ConnectionCard({ conn, syncing, actions }: {
   conn: AppConnection
   syncing?: boolean
-  // Whether a qui announce-connection already exists for conn.baseUrl (only
-  // meaningful for conn.kind === "qui"); disables the seed action when true so
-  // one-click add can't mint a second, redundant target (#72).
-  hasAnnounceTarget?: boolean
   actions: ConnectionActions
 }) {
   const serverInfo = useServerInfo()
@@ -117,15 +112,6 @@ export function ConnectionCard({ conn, syncing, hasAnnounceTarget, actions }: {
           {conn.indexScope === "selected" && (
             <DropdownMenuItem onClick={() => actions.onSelectIndexers(conn)}>
               <ListChecks className="h-4 w-4" /> Select indexers
-            </DropdownMenuItem>
-          )}
-          {conn.kind === "qui" && (
-            <DropdownMenuItem
-              disabled={hasAnnounceTarget}
-              title={hasAnnounceTarget ? "An announce target for this qui already exists" : undefined}
-              onClick={() => actions.onSeedAnnounceTarget(conn)}
-            >
-              <Rss className="h-4 w-4" /> Add as announce target
             </DropdownMenuItem>
           )}
           <DropdownMenuSeparator />

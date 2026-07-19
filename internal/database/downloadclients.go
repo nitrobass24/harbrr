@@ -18,8 +18,11 @@ import (
 // concern.
 type DownloadClients struct{}
 
-// downloadClientColumns is the full select list, in scan order.
-const downloadClientColumns = `id, name, kind, enabled, host, username, secret_encrypted, key_id, settings_json, created_at, updated_at`
+// downloadClientColumns is the full select list, in scan order. app_id is the App
+// reference (ADR 0004; NULL for host-less kinds like blackhole); legacy
+// host/username/secret_encrypted columns are still selected but the service reads a
+// networked client's identity from the App.
+const downloadClientColumns = `id, name, kind, app_id, enabled, host, username, secret_encrypted, key_id, settings_json, created_at, updated_at`
 
 // InsertDownloadClient writes a row with an empty secret_encrypted/key_id (so its
 // id can bind the encryption AAD) and returns the new id; the service writes the
@@ -31,9 +34,9 @@ func (DownloadClients) InsertDownloadClient(ctx context.Context, q dbinterface.E
 	}
 	res, err := q.ExecContext(ctx,
 		q.Rebind(`INSERT INTO download_clients
-			(name, kind, enabled, host, username, secret_encrypted, key_id, settings_json, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, '', '', ?, ?, ?)`),
-		c.Name, c.Kind, boolToInt(c.Enabled), c.Host, c.Username, settingsJSON,
+			(name, kind, app_id, enabled, host, username, secret_encrypted, key_id, settings_json, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, '', '', ?, ?, ?)`),
+		c.Name, c.Kind, nullInt64(c.AppID), boolToInt(c.Enabled), c.Host, c.Username, settingsJSON,
 		c.CreatedAt.UTC().Format(timeLayout), c.UpdatedAt.UTC().Format(timeLayout))
 	if err != nil {
 		return 0, fmt.Errorf("database: insert download client: %w", err)
@@ -143,18 +146,31 @@ func marshalDownloadClientSettings(s domain.DownloadClientSettings) (string, err
 	return string(b), nil
 }
 
+// SetDownloadClientAppID sets a client's app_id by id (the boot fold's write-back;
+// host-less kinds like blackhole keep NULL and are never folded).
+func (DownloadClients) SetDownloadClientAppID(ctx context.Context, q dbinterface.Execer, id, appID int64) error {
+	res, err := q.ExecContext(ctx,
+		q.Rebind(`UPDATE download_clients SET app_id = ? WHERE id = ?`), appID, id)
+	if err != nil {
+		return fmt.Errorf("database: set download client app_id: %w", err)
+	}
+	return affectedOrNotFoundID(res, id)
+}
+
 // scanDownloadClient reads one download_clients row from a *sql.Row or *sql.Rows.
 func scanDownloadClient(s interface{ Scan(...any) error }) (domain.DownloadClient, error) {
 	var (
 		c                    domain.DownloadClient
+		appID                sql.NullInt64
 		enabled              int
 		settingsJSON         string
 		createdAt, updatedAt string
 	)
-	if err := s.Scan(&c.ID, &c.Name, &c.Kind, &enabled, &c.Host, &c.Username,
+	if err := s.Scan(&c.ID, &c.Name, &c.Kind, &appID, &enabled, &c.Host, &c.Username,
 		&c.SecretEncrypted, &c.KeyID, &settingsJSON, &createdAt, &updatedAt); err != nil {
 		return domain.DownloadClient{}, err //nolint:wrapcheck // sql.ErrNoRows matched by caller; others wrapped there.
 	}
+	c.AppID = nullableToPtr(appID)
 	c.Enabled = enabled != 0
 	if err := json.Unmarshal([]byte(settingsJSON), &c.Settings); err != nil {
 		return domain.DownloadClient{}, fmt.Errorf("database: unmarshal download client %d settings: %w", c.ID, err)

@@ -101,6 +101,36 @@ const (
 	AppKindQui      = "qui"
 )
 
+// AppSecret is the AAD "setting" discriminator binding an App's one encrypted
+// credential (api_key_encrypted — an API key OR a password, depending on kind) to
+// the App's own id. It is the string "app" — the same discriminator the surface
+// tables used for their per-row app credential before the App registry (so the boot
+// fold decrypts a legacy row under (rowID, "app") and re-seals under (appID, "app")).
+const AppSecret = "app"
+
+// App is a first-class external service harbrr connects to — a (kind, base_url)
+// identity plus one sealed credential and the app's vantage onto harbrr — stored
+// ONCE and referenced by the three surface tables (app_connections,
+// announce_connections, download_clients) via app_id. APIKeyEncrypted holds the
+// credential (an API key for qui/*arrs where Username is empty; a password for
+// user+password kinds where Username is set), sealed under KeyID with the App's own
+// id as AAD (discriminator AppSecret). HarbrrURL is how THIS app reaches harbrr's
+// feed — identical across every push surface that uses the App; download clients
+// never read it. UNIQUE(kind, base_url).
+type App struct {
+	ID              int64
+	Kind            string
+	Name            string
+	BaseURL         string
+	Username        string
+	APIKeyEncrypted string
+	KeyID           string
+	HarbrrURL       string
+	Enabled         bool
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
 // Sync levels — what reconciliation is allowed to do, set per connection (the
 // Prowlarr "Sync Level" equivalent). Full mirrors harbrr exactly (add + update +
 // remove orphans); AddUpdate never deletes (orphans are left for manual removal).
@@ -160,9 +190,15 @@ type SyncProfile struct {
 // that minted key for revocation on delete. HarbrrURL is the base URL *this app*
 // uses to reach harbrr's Torznab feed (it can differ per app on a Docker/LAN).
 type AppConnection struct {
-	ID                    int64
-	Name                  string
-	Kind                  string
+	ID   int64
+	Name string
+	Kind string
+	// AppID references the App holding this connection's identity + credential
+	// (base_url, api key, harbrr_url). Post-fold it is always set; a NULL value on a
+	// non-hostless row means the boot fold has not run yet (ErrAppMigrationPending).
+	// BaseURL/HarbrrURL are enriched from the App by the service on read — the legacy
+	// columns below are no longer read (dropped by a later cleanup migration).
+	AppID                 *int64
 	BaseURL               string
 	APIKeyEncrypted       string
 	HarbrrURL             string
@@ -298,9 +334,12 @@ type Solver struct {
 // HarbrrAPIKeyEncrypted is the plaintext of the dedicated minted harbrr key whose value
 // signs the /dl link the tool fetches back. HarbrrAPIKeyID points at that key for revocation.
 type AnnounceConnection struct {
-	ID                    int64
-	Name                  string
-	Kind                  string
+	ID   int64
+	Name string
+	Kind string
+	// AppID references the App holding this connection's identity + credential; see
+	// AppConnection.AppID. BaseURL/HarbrrURL are enriched from the App on read.
+	AppID                 *int64
 	BaseURL               string
 	APIKeyEncrypted       string
 	HarbrrURL             string
@@ -456,9 +495,14 @@ type DownloadClientSettings struct {
 // kind) is the only stored secret, encrypted under KeyID with the client's own id
 // as AAD. Settings holds kind-specific options (see DownloadClientSettings).
 type DownloadClient struct {
-	ID              int64
-	Name            string
-	Kind            string
+	ID   int64
+	Name string
+	Kind string
+	// AppID references the App holding this client's identity + credential
+	// (host, username, secret). NULL only for host-less kinds (blackhole), which have
+	// no network endpoint or credential of their own. Host/Username are enriched from
+	// the App on read; the legacy columns below are no longer read.
+	AppID           *int64
 	Enabled         bool
 	Host            string
 	Username        string

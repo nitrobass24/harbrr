@@ -2,6 +2,7 @@ import { useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { Plus, RefreshCw } from "lucide-react"
 import { AnnounceSection } from "@/components/applications/AnnounceSection"
+import { AppsSection } from "@/components/applications/AppsSection"
 import { ConnectionCard } from "@/components/applications/ConnectionCard"
 import { ConnectionDialog, type ConnectionDialogState } from "@/components/applications/ConnectionDialog"
 import { SelectIndexersDialog } from "@/components/applications/SelectIndexersDialog"
@@ -20,9 +21,7 @@ import {
 } from "@/components/ui/dialog"
 import { LoadError, LoadingBlock } from "@/components/ui/load-error"
 import {
-  useAnnounceConnections,
   useAppConnections,
-  useCreateAnnounceTargetFromAppConnection,
   useCreateConnection,
   useDeleteConnection,
   useSetConnectionEnabled,
@@ -32,6 +31,7 @@ import {
   useTestConnection,
   useUpdateConnection
 } from "@/hooks/useAppConnections"
+import { useUpdateApp } from "@/hooks/useApps"
 import type { AppConnection, ConnectionSyncResult, SyncReport } from "@/lib/api"
 import { notifyError, notifySuccess } from "@/lib/notify"
 
@@ -46,17 +46,10 @@ function ApplicationsPage() {
   const sync = useSyncConnection()
   const syncAll = useSyncAll()
   const remove = useDeleteConnection()
-  // A separate mutation instance from `update`, so a failed port fix can't
-  // surface as the edit dialog's error banner.
-  const fixPort = useUpdateConnection()
-  // Shared with AnnounceSection via the same query key (react-query dedupes the
-  // fetch), so this card can tell whether a qui connection already has a matching
-  // announce target without a second network round trip.
-  const announceTargets = useAnnounceConnections()
-  const seedAnnounceTarget = useCreateAnnounceTargetFromAppConnection()
-  const quiAnnounceBaseUrls = new Set(
-    (announceTargets.data ?? []).filter((t) => t.kind === "qui").map((t) => t.baseUrl)
-  )
+  // harbrrUrl is App-level now (ADR 0004); the fix rewrites the App's harbrrUrl, not
+  // the connection. A separate mutation instance from `update`, so a failed port fix
+  // can't surface as the edit dialog's error banner.
+  const fixPort = useUpdateApp()
 
   const [dialog, setDialog] = useState<ConnectionDialogState>({ open: false })
   const [statusFor, setStatusFor] = useState<number | null>(null)
@@ -108,7 +101,6 @@ function ApplicationsPage() {
               key={conn.id}
               conn={conn}
               syncing={sync.isPending && sync.variables === conn.id}
-              hasAnnounceTarget={quiAnnounceBaseUrls.has(conn.baseUrl)}
               actions={{
                 onToggle: (id, enabled) => toggle.mutate({ id, enabled }),
                 onTest: (id) => test.mutate(id, {
@@ -124,7 +116,6 @@ function ApplicationsPage() {
                 onStatus: setStatusFor,
                 onSelectIndexers: setSelectFor,
                 onFixPort: (conn, harbrrUrl) => setFixPortReq({ conn, url: harbrrUrl }),
-                onSeedAnnounceTarget: (conn) => seedAnnounceTarget.mutate(conn.id),
               }}
             />
           ))}
@@ -146,6 +137,8 @@ function ApplicationsPage() {
         <AnnounceSection />
 
         <SyncProfilesSection />
+
+        <AppsSection />
       </div>
 
       <ConnectionDialog
@@ -194,9 +187,13 @@ function ApplicationsPage() {
                 const req = fixPortReq
                 if (!req) return
                 setFixPortReq(null)
-                fixPort.mutate({ id: req.conn.id, body: { harbrrUrl: req.url } }, {
+                if (req.conn.appId == null) {
+                  notifyError("This connection is not yet migrated to an app — restart harbrr and try again")
+                  return
+                }
+                fixPort.mutate({ id: req.conn.appId, body: { harbrrUrl: req.url } }, {
                   onSuccess: () => runSync(req.conn.id),
-                  onError: (err) => notifyError("Updating the connection's harbrr URL failed", err),
+                  onError: (err) => notifyError("Updating the app's harbrr URL failed", err),
                 })
               }}
             >

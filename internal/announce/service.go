@@ -8,6 +8,7 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/autobrr/harbrr/internal/apps"
 	"github.com/autobrr/harbrr/internal/connresource"
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
@@ -16,12 +17,9 @@ import (
 	"github.com/autobrr/harbrr/internal/secrets"
 )
 
-// AAD discriminators for a connection's two encrypted secrets (the tool's own key vs the
-// minted harbrr key), mirroring appsync.
-const (
-	secretApp    = "app"
-	secretHarbrr = "harbrr"
-)
+// secretHarbrr is the AAD discriminator for the minted harbrr key (the tool's own key
+// lives on the App now, decrypted via s.apps, not on the row).
+const secretHarbrr = "harbrr"
 
 // TargetFactory builds the per-kind announce driver for a connection, given the decrypted
 // tool API key. It is injected so Push is testable with a fake driver and so the live wiring
@@ -36,6 +34,7 @@ type TargetFactory func(conn domain.AnnounceConnection, toolKey string) (Target,
 type Service struct {
 	db      dbinterface.Querier
 	repo    database.AnnounceConnections
+	apps    *apps.Service
 	minter  connresource.KeyMinter
 	keyring *secrets.Keyring
 	factory TargetFactory
@@ -44,64 +43,74 @@ type Service struct {
 	log     zerolog.Logger
 }
 
-// NewService wires the announce service. factory builds the per-kind driver (see
-// DefaultTargetFactory for the production wiring).
-func NewService(db dbinterface.Querier, minter connresource.KeyMinter, keyring *secrets.Keyring, factory TargetFactory, log zerolog.Logger) *Service {
+// NewService wires the announce service. appsSvc owns the app identity/credential a
+// connection references; factory builds the per-kind driver (see DefaultTargetFactory
+// for the production wiring).
+func NewService(db dbinterface.Querier, appsSvc *apps.Service, minter connresource.KeyMinter, keyring *secrets.Keyring, factory TargetFactory, log zerolog.Logger) *Service {
 	s := &Service{
-		db: db, minter: minter, keyring: keyring, factory: factory,
+		db: db, apps: appsSvc, minter: minter, keyring: keyring, factory: factory,
 		clock: time.Now, log: log,
 	}
 	s.life = connresource.New[domain.AnnounceConnection](db, keyring, func() time.Time { return s.clock() })
 	return s
 }
 
-// CreateConnectionParams is the input to CreateConnection. APIKey is the tool's own API
-// key; HarbrrURL is the base URL the tool uses to reach harbrr's /dl link.
+// CreateConnectionParams is the input to CreateConnection. It references the App holding
+// the tool's identity + credential either by AppID (reuse) or inline
+// (BaseURL/APIKey/Username get-or-create); HarbrrURL, when set, backfills the App's
+// harbrr /dl URL.
 type CreateConnectionParams struct {
 	Name      string
 	Kind      string
+	AppID     *int64
 	BaseURL   string
 	APIKey    string
+	Username  string
 	HarbrrURL string
 }
 
-// CreateConnection mints a dedicated harbrr key, then persists the connection with both
-// secrets encrypted. A failed persist revokes the orphan key.
+// CreateConnection resolves the App the connection references (get-or-create), enforces
+// that it has a harbrr /dl URL, then mints a dedicated harbrr key and persists the
+// connection. Only the minted harbrr key is sealed on the row — the tool's credential
+// lives on the App. A failed persist revokes the orphan key.
 func (s *Service) CreateConnection(ctx context.Context, p CreateConnectionParams) (domain.AnnounceConnection, error) {
-	// Trim before validating AND persisting, so a whitespace-padded URL can't bypass the
-	// (kind, base_url) uniqueness contract or leave a trailing space in a posted/dl URL.
 	p.Name = strings.TrimSpace(p.Name)
 	p.BaseURL = strings.TrimSpace(p.BaseURL)
 	p.HarbrrURL = strings.TrimSpace(p.HarbrrURL)
 	if err := validateCreate(p); err != nil {
 		return domain.AnnounceConnection{}, err
 	}
+	app, err := s.apps.Resolve(ctx, apps.Ref{
+		AppID: p.AppID, Kind: p.Kind, Name: p.Name, BaseURL: p.BaseURL, Username: p.Username, APIKey: p.APIKey, HarbrrURL: p.HarbrrURL,
+	})
+	if err != nil {
+		return domain.AnnounceConnection{}, fmt.Errorf("announce: resolve app: %w", err)
+	}
+	if app.HarbrrURL == "" {
+		return domain.AnnounceConnection{}, fmt.Errorf("%w: harbrr url is required (the tool fetches harbrr's /dl link)", domain.ErrInvalid)
+	}
 	return s.life.Create(ctx, connresource.CreateSpec[domain.AnnounceConnection]{
 		Minter:   s.minter,
 		MintName: "announce: " + p.Name,
 		Build: func(now time.Time, mintedKeyID int64) domain.AnnounceConnection {
 			return domain.AnnounceConnection{
-				Name: p.Name, Kind: p.Kind, BaseURL: p.BaseURL, HarbrrURL: p.HarbrrURL,
+				Name: p.Name, Kind: p.Kind, AppID: &app.ID, BaseURL: app.BaseURL, HarbrrURL: app.HarbrrURL,
 				HarbrrAPIKeyID: mintedKeyID, Enabled: true, CreatedAt: now, UpdatedAt: now,
 			}
 		},
 		Insert: func(ctx context.Context, q dbinterface.Execer, conn domain.AnnounceConnection) (int64, error) {
 			return s.repo.InsertAnnounceConnection(ctx, q, conn)
 		},
+		// Only the minted harbrr key is sealed on the connection; the tool credential
+		// lives on the App (base_url is written for the (kind, base_url) unique index).
 		Secrets: func(_ domain.AnnounceConnection, mintedPlain string) []connresource.Secret {
-			return []connresource.Secret{
-				{Discriminator: secretApp, Plaintext: p.APIKey},
-				{Discriminator: secretHarbrr, Plaintext: mintedPlain},
-			}
+			return []connresource.Secret{{Discriminator: secretHarbrr, Plaintext: mintedPlain}}
 		},
-		// The row is inserted with empty secret columns (so its id could bind the
-		// AAD); this writes the sealed secrets back via the same raw-SQL helper
-		// setSecrets uses elsewhere (announce has no repo method for it).
 		SetSecrets: func(ctx context.Context, q dbinterface.Execer, id int64, encrypted []string, keyID string) error {
-			return s.setSecrets(ctx, q, domain.AnnounceConnection{ID: id, APIKeyEncrypted: encrypted[0], HarbrrAPIKeyEncrypted: encrypted[1], KeyID: keyID})
+			return s.setSecrets(ctx, q, domain.AnnounceConnection{ID: id, HarbrrAPIKeyEncrypted: encrypted[0], KeyID: keyID})
 		},
 		Finalize: func(conn domain.AnnounceConnection, id int64, encrypted []string, keyID string) domain.AnnounceConnection {
-			conn.ID, conn.APIKeyEncrypted, conn.HarbrrAPIKeyEncrypted, conn.KeyID = id, encrypted[0], encrypted[1], keyID
+			conn.ID, conn.HarbrrAPIKeyEncrypted, conn.KeyID = id, encrypted[0], keyID
 			return conn
 		},
 		Conflict: func(conn domain.AnnounceConnection) error {
@@ -110,23 +119,37 @@ func (s *Service) CreateConnection(ctx context.Context, p CreateConnectionParams
 	})
 }
 
-// setSecrets writes both encrypted secret columns + key_id for a connection.
+// setSecrets writes the encrypted harbrr key column + key_id for a connection (the
+// tool credential lives on the App; api_key_encrypted is left empty).
 func (s *Service) setSecrets(ctx context.Context, q dbinterface.Execer, c domain.AnnounceConnection) error {
 	_, err := q.ExecContext(ctx, q.Rebind(
-		`UPDATE announce_connections SET api_key_encrypted = ?, harbrr_api_key_encrypted = ?, key_id = ? WHERE id = ?`,
+		`UPDATE announce_connections SET api_key_encrypted = '', harbrr_api_key_encrypted = ?, key_id = ? WHERE id = ?`,
 	),
-		c.APIKeyEncrypted, c.HarbrrAPIKeyEncrypted, c.KeyID, c.ID)
+		c.HarbrrAPIKeyEncrypted, c.KeyID, c.ID)
 	if err != nil {
 		return fmt.Errorf("announce: set secrets: %w", err)
 	}
 	return nil
 }
 
-// ListConnections / GetConnection expose persisted state (secrets stay encrypted).
+// ListConnections / GetConnection expose persisted state, base URL + harbrr URL enriched
+// from each connection's App (the single read path). A pending (NULL app_id) row lists
+// with blank identity; a *use* path (Push/Test) surfaces ErrAppMigrationPending.
 func (s *Service) ListConnections(ctx context.Context) ([]domain.AnnounceConnection, error) {
 	list, err := s.repo.ListAnnounceConnections(ctx, s.db)
 	if err != nil {
 		return nil, fmt.Errorf("announce: list connections: %w", err)
+	}
+	index, err := s.apps.Index(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("announce: list apps: %w", err)
+	}
+	for i := range list {
+		if list[i].AppID != nil {
+			if app, ok := index[*list[i].AppID]; ok {
+				list[i].BaseURL, list[i].HarbrrURL = app.BaseURL, app.HarbrrURL
+			}
+		}
 	}
 	return list, nil
 }
@@ -136,24 +159,25 @@ func (s *Service) GetConnection(ctx context.Context, id int64) (domain.AnnounceC
 	if err != nil {
 		return domain.AnnounceConnection{}, fmt.Errorf("announce: get connection: %w", err)
 	}
+	if conn.AppID != nil {
+		app, err := s.apps.Get(ctx, *conn.AppID)
+		if err != nil {
+			return domain.AnnounceConnection{}, fmt.Errorf("announce: get app: %w", err)
+		}
+		conn.BaseURL, conn.HarbrrURL = app.BaseURL, app.HarbrrURL
+	}
 	return conn, nil
 }
 
-// UpdateConnectionParams patches a connection; nil fields are left unchanged. APIKey,
-// when set, rotates the tool's key (re-encrypted in place). Kind is immutable (a driver
-// swap is a delete + recreate), matching appsync.
+// UpdateConnectionParams patches a connection's surface fields; nil fields are left
+// unchanged. Identity + credential (base URL, api key, harbrr URL) are App-level now —
+// rotated via the App — so a PATCH is name-only. Kind is immutable.
 type UpdateConnectionParams struct {
-	Name      *string
-	BaseURL   *string
-	HarbrrURL *string
-	APIKey    *string
+	Name *string
 }
 
-// UpdateConnection applies a patch, re-encrypting the tool key when rotated. Only the
-// mutable fields move — the minted harbrr key and the enabled flag are untouched (they
-// have their own paths). The read → write runs in one transaction so a concurrent key
-// rotation can't be lost by this full-row write reading a stale api_key (the appsync
-// UpdateConnection precedent).
+// UpdateConnection applies a name-only patch. The read → write runs in one transaction
+// (the appsync UpdateConnection precedent).
 func (s *Service) UpdateConnection(ctx context.Context, id int64, p UpdateConnectionParams) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -168,22 +192,6 @@ func (s *Service) UpdateConnection(ctx context.Context, id int64, p UpdateConnec
 	if err := applyAnnounceUpdate(&conn, p); err != nil {
 		return err
 	}
-	if p.APIKey != nil {
-		if strings.TrimSpace(*p.APIKey) == "" {
-			return fmt.Errorf("%w: api key must not be blank", domain.ErrInvalid)
-		}
-		// The read view redacts the tool key to the <redacted> sentinel; a client that
-		// echoes it back means "keep the stored key" and must OMIT the field. Storing the
-		// sentinel literally would silently replace the real key, so reject it explicitly.
-		if secrets.IsRedacted(strings.TrimSpace(*p.APIKey)) {
-			return fmt.Errorf("%w: api key must not be the redacted placeholder (omit it to keep the stored key)", domain.ErrInvalid)
-		}
-		enc, err := s.keyring.Encrypt(conn.ID, secretApp, *p.APIKey)
-		if err != nil {
-			return fmt.Errorf("announce: encrypt tool key: %w", err)
-		}
-		conn.APIKeyEncrypted, conn.KeyID = enc, s.keyring.KeyID()
-	}
 	conn.UpdatedAt = s.clock()
 	if err := s.repo.UpdateAnnounceConnection(ctx, tx, conn); err != nil {
 		if database.IsUniqueViolation(err) {
@@ -197,18 +205,36 @@ func (s *Service) UpdateConnection(ctx context.Context, id int64, p UpdateConnec
 	return nil
 }
 
+// appFor loads the App a connection references (the sole identity/credential source),
+// guarding a pending (NULL app_id) row with ErrAppMigrationPending.
+func (s *Service) appFor(ctx context.Context, conn domain.AnnounceConnection) (domain.App, error) {
+	if conn.AppID == nil {
+		return domain.App{}, fmt.Errorf("announce connection %d: %w", conn.ID, domain.ErrAppMigrationPending)
+	}
+	app, err := s.apps.Get(ctx, *conn.AppID)
+	if err != nil {
+		return domain.App{}, fmt.Errorf("announce: get app: %w", err)
+	}
+	return app, nil
+}
+
 // TestConnection probes a connection's reachability (and, for qui, its API key) WITHOUT
-// injecting anything. It reuses the same per-kind driver factory Push does; the returned
-// error is already scrubbed by the driver.
+// injecting anything. It loads the connection's App for the base URL + decrypted tool
+// key; the returned error is already scrubbed by the driver.
 func (s *Service) TestConnection(ctx context.Context, id int64) error {
 	conn, err := s.repo.GetAnnounceConnection(ctx, s.db, id)
 	if err != nil {
 		return fmt.Errorf("announce: get connection: %w", err)
 	}
-	toolKey, err := s.keyring.Decrypt(conn.ID, secretApp, conn.APIKeyEncrypted)
+	app, err := s.appFor(ctx, conn)
+	if err != nil {
+		return err
+	}
+	toolKey, err := s.apps.DecryptKey(app)
 	if err != nil {
 		return fmt.Errorf("announce: decrypt tool key: %w", err)
 	}
+	conn.BaseURL = app.BaseURL
 	target, err := s.factory(conn, toolKey)
 	if err != nil {
 		return err
@@ -263,13 +289,22 @@ func (s *Service) Push(ctx context.Context, build func(conn domain.AnnounceConne
 		if !conn.Enabled {
 			continue
 		}
+		// Enrich identity from the connection's App (the single read path) before
+		// building /dl links (needs the App's harbrr URL) or the driver (needs its base
+		// URL). A pending (NULL app_id) row is skipped best-effort, not fatal.
+		app, err := s.appFor(ctx, conn)
+		if err != nil {
+			s.log.Warn().Int64("connection_id", conn.ID).Str("error", apphttp.RedactError(err)).Msg("announce: skip connection for push")
+			continue
+		}
+		conn.BaseURL, conn.HarbrrURL = app.BaseURL, app.HarbrrURL
 		rels := build(conn)
 		// Per-connection budget: Push repeats delivery per connection, so a batch
 		// deadline scaled only by release count starves the SECOND connection's tail
 		// behind a slow first one. Each connection gets its own release-scaled budget;
 		// the caller's ctx stays the overall hard cap.
 		connCtx, cancel := context.WithTimeout(ctx, connPushBudget(len(rels)))
-		matched += s.pushOne(connCtx, conn, rels)
+		matched += s.pushOne(connCtx, conn, app, rels)
 		cancel()
 	}
 	return matched
@@ -300,11 +335,11 @@ const PerReleaseTimeout = 10 * time.Second
 // individually — a large batch would otherwise emit one WRN per failure (#232) — they're
 // folded into one batch-summary log after the loop: WRN with the first (redacted) failure
 // when any release failed, DBG otherwise.
-func (s *Service) pushOne(ctx context.Context, conn domain.AnnounceConnection, rels []Release) int {
+func (s *Service) pushOne(ctx context.Context, conn domain.AnnounceConnection, app domain.App, rels []Release) int {
 	if len(rels) == 0 {
 		return 0
 	}
-	toolKey, err := s.keyring.Decrypt(conn.ID, secretApp, conn.APIKeyEncrypted)
+	toolKey, err := s.apps.DecryptKey(app)
 	if err != nil {
 		s.log.Warn().Int64("connection_id", conn.ID).Msg("announce: decrypt tool key failed")
 		return 0
@@ -363,6 +398,10 @@ func (s *Service) HarbrrKey(conn domain.AnnounceConnection) (string, error) {
 	return key, nil
 }
 
+// validateCreate checks the required fields of a create request. Identity (base URL,
+// api key, harbrr URL) is the App's concern — validated by the apps service on
+// get-or-create — so it is required here only for the inline path (no AppID); the
+// AppID (reuse) path references an App that already owns validated identity.
 func validateCreate(p CreateConnectionParams) error {
 	if strings.TrimSpace(p.Name) == "" {
 		return fmt.Errorf("%w: name is required", domain.ErrInvalid)
@@ -370,14 +409,15 @@ func validateCreate(p CreateConnectionParams) error {
 	if err := validateKind(p.Kind); err != nil {
 		return err
 	}
+	if p.AppID != nil {
+		return nil
+	}
 	if strings.TrimSpace(p.BaseURL) == "" {
 		return fmt.Errorf("%w: base url is required", domain.ErrInvalid)
 	}
 	if strings.TrimSpace(p.APIKey) == "" {
 		return fmt.Errorf("%w: api key is required", domain.ErrInvalid)
 	}
-	// The trimmed return is discarded: CreateConnection already trimmed p.BaseURL
-	// before validateCreate ran, so the raw and normalized forms are identical here.
 	if _, err := domain.ValidateAbsURL("base url", p.BaseURL); err != nil {
 		return err
 	}
@@ -391,9 +431,8 @@ func validateCreate(p CreateConnectionParams) error {
 	return err
 }
 
-// applyAnnounceUpdate overlays the non-nil patch fields onto conn, trimming and validating
-// each (the same rules as create) so a partial edit can't persist a blank name or a
-// host-less URL. The tool key is handled by the caller (it re-encrypts); kind is immutable.
+// applyAnnounceUpdate overlays the name patch onto conn (identity is App-level now, so
+// a PATCH is name-only). Kind is immutable.
 func applyAnnounceUpdate(conn *domain.AnnounceConnection, p UpdateConnectionParams) error {
 	if p.Name != nil {
 		name := strings.TrimSpace(*p.Name)
@@ -401,20 +440,6 @@ func applyAnnounceUpdate(conn *domain.AnnounceConnection, p UpdateConnectionPara
 			return fmt.Errorf("%w: name is required", domain.ErrInvalid)
 		}
 		conn.Name = name
-	}
-	if p.BaseURL != nil {
-		base, err := domain.ValidateAbsURL("base url", *p.BaseURL)
-		if err != nil {
-			return err
-		}
-		conn.BaseURL = base
-	}
-	if p.HarbrrURL != nil {
-		harbrr, err := domain.ValidateAbsURL("harbrr url", *p.HarbrrURL)
-		if err != nil {
-			return err
-		}
-		conn.HarbrrURL = harbrr
 	}
 	return nil
 }

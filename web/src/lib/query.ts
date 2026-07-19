@@ -102,6 +102,10 @@ export const keys = {
     all: ["app-connections"] as const,
     status: (id: number | null) => ["app-connections", id, "status"] as const,
   },
+  apps: {
+    all: ["apps"] as const,
+    quiInstances: (id: number | null) => ["apps", id, "qui-instances"] as const,
+  },
   serverInfo: {
     all: ["server-info"] as const,
   },

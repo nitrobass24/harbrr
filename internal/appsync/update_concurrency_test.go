@@ -167,28 +167,28 @@ func TestCreateConnectionProfileTOCTOU(t *testing.T) {
 }
 
 // TestUpdateConnectionNoLostUpdate pins that two overlapping UpdateConnection patches
-// — one rotating the app API key, one changing priority — cannot lose each other's
-// write. Each UpdateConnection is a full-row read-modify-write; without a transaction
-// the two reads both see the pre-write row and the second commit reverts the first
-// field (a rotated key silently reverting → every later sync 401s). With the RMW under
-// one transaction (serialized by the single DB connection) the second writer reads the
-// first's commit, so both a fresh key and the new priority survive. Runs many
-// interleavings under -race, asserting both fields landed each time.
+// — one renaming, one changing priority — cannot lose each other's write. Each
+// UpdateConnection is a full-row read-modify-write; without a transaction the two reads
+// both see the pre-write row and the second commit reverts the first field. With the
+// RMW under one transaction (serialized by the single DB connection) the second writer
+// reads the first's commit, so both fields survive. Runs many interleavings under
+// -race, asserting both fields landed each time. (Identity/credential — base URL, api
+// key, harbrr URL — are App-level now and rotate via internal/apps, not here.)
 func TestUpdateConnectionNoLostUpdate(t *testing.T) {
 	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
 
 	for i := range 40 {
-		wantKey := fmt.Sprintf("rotated-key-%d", i)
+		wantName := fmt.Sprintf("renamed-%d", i)
 		wantPriority := i + 1
 
 		var wg sync.WaitGroup
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			if err := f.svc.UpdateConnection(ctx, f.conn.ID, UpdateConnectionParams{APIKey: &wantKey}); err != nil {
-				t.Errorf("iter %d: rotate key: %v", i, err)
+			if err := f.svc.UpdateConnection(ctx, f.conn.ID, UpdateConnectionParams{Name: &wantName}); err != nil {
+				t.Errorf("iter %d: rename: %v", i, err)
 			}
 		}()
 		go func() {
@@ -206,12 +206,8 @@ func TestUpdateConnectionNoLostUpdate(t *testing.T) {
 		if conn.Priority != wantPriority {
 			t.Fatalf("iter %d: priority = %d, want %d (priority write lost)", i, conn.Priority, wantPriority)
 		}
-		gotKey, err := f.svc.keyring.Decrypt(conn.ID, secretApp, conn.APIKeyEncrypted)
-		if err != nil {
-			t.Fatalf("iter %d: decrypt app key: %v", i, err)
-		}
-		if gotKey != wantKey {
-			t.Fatalf("iter %d: app key = %q, want %q (key rotation lost)", i, gotKey, wantKey)
+		if conn.Name != wantName {
+			t.Fatalf("iter %d: name = %q, want %q (name write lost)", i, conn.Name, wantName)
 		}
 	}
 }
