@@ -182,3 +182,24 @@ spares the **tracker's** infrastructure, not just harbrr's. Shipped in #60; user
 - **Secrets at rest** — cached `Link`/`Magnet` embed passkeys, so `results_json` is a secret at the same
   trust level as the session cookies already in the `0600` DB. Decision: rely on the `0600` DB +
   never-log posture, not per-row `internal/secrets` AES (the per-read cost isn't worth it here).
+
+## Scheduled RSS warm-cache poller (design record)
+
+harbrr's first scheduler beyond the reap-style maintenance goroutines (#252; ADR
+[0005](adr/0005-rss-warm-scheduler.md)). Another differentiator Prowlarr/Jackett structurally
+cannot offer: because harbrr sits between the tracker and every RSS-polling client, it can
+proactively keep the shared cache entry warm on the tracker's behalf, instead of only ever
+reacting to whichever client happens to poll first after a TTL expiry.
+
+- **Mechanism** — per opted-in indexer, drives the exact served path — `adapter.Search
+  (core.WithCacheBypass(ctx), search.Query{})` — so the warm write lands under the identical
+  cache key #257's downstream RSS polls read, with zero duplicated cache-key/budget/breaker logic.
+- **Opt-in, default-off** — `rss_warm_interval`, a reserved per-instance Go-duration setting
+  (like `rate_interval`/`cache_ttl`), clamped to [10m, 120m]; absent/invalid disables it.
+  Backend-only, no API/web surface.
+- **Budget and breaker fall out for free** — `errBudgetExhausted` / `errCircuitOpen` from the
+  served path are logged skips, never a retry loop; the breaker never trips on a budget refusal.
+- **Stagger** — a stable per-instance phase offset spreads first-due times across the first
+  interval and keeps them spread at every later boundary, avoiding an N-concurrent-fetch herd
+  through a shared proxy/FlareSolverr.
+- **Loop** — reuses `app/lifecycle.go`'s `reap` skeleton; no new ticker/shutdown code.
