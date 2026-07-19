@@ -65,6 +65,10 @@ The fix is a stable **per-instance phase offset** in `[0, interval)`:
 `now + warmPhase(...)` instead of uniformly at `now + interval`. Because `nextDue` always advances
 by `+interval` from its own previous *scheduled* value (not from "now"), the phase is preserved
 forever: no drift, and the herd is killed at every future boundary too, not just the first one.
+When advancing past a due tick, `nextDue` skips ahead by whole intervals until it lands strictly
+after "now" (not just one `+interval` step) — otherwise a process suspended (laptop/VM sleep) past
+several intervals would replay one warm per missed interval instead of the single refresh the
+cache actually needs, while still landing on the original phase.
 
 `ponytail:` the modulo can collide two instance IDs into the same one-minute slot — still far
 better than every target firing at once. Upgrade to an `i·interval/n` stable-ordering assignment

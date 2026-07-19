@@ -9,6 +9,8 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
+	"github.com/autobrr/harbrr/internal/indexer/native/catalog"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 )
 
@@ -69,6 +71,45 @@ func TestBackgroundCleanupFlushesBeforeClose(t *testing.T) {
 	if !rows[0].UpdatedAt.Equal(shutdownNow) {
 		t.Fatalf("counter updated_at = %v, want %v (shutdown flush must commit before close)",
 			rows[0].UpdatedAt, shutdownNow)
+	}
+}
+
+// TestStartRSSWarmerJoinsOnShutdown proves the RSS warmer reaper (#252) is wired
+// through the same reap skeleton as every other maintenance goroutine: it must
+// join the WaitGroup promptly once ctx is cancelled, exactly like
+// TestBackgroundCleanupFlushesBeforeClose proves for the existing reapers.
+// searchCache is left nil (caching not configured), the D3 gate that makes
+// TickOnce a no-op — this test is about the goroutine's shutdown contract, not
+// about a live warm firing.
+func TestStartRSSWarmerJoinsOnShutdown(t *testing.T) {
+	t.Parallel()
+
+	db, err := database.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Migrate(context.Background()); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	reg := registry.New(db, loader.New(""), nil, catalog.All(), registry.WithLogger(zerolog.Nop()))
+
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+	var bg sync.WaitGroup
+	startRSSWarmer(bgCtx, &bg, reg, zerolog.Nop())
+
+	done := make(chan struct{})
+	go func() {
+		bg.Wait()
+		close(done)
+	}()
+	bgCancel()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("RSS warmer goroutine did not join within 5s of ctx cancellation")
 	}
 }
 

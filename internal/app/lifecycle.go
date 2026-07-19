@@ -54,8 +54,8 @@ func fixedInterval(d time.Duration) func() time.Duration {
 }
 
 // startReapers launches every periodic maintenance goroutine (session and cache
-// reaping, stat flushes, health-event retention) on the shared shutdown WaitGroup,
-// so App.Run joins them all before closing the database.
+// reaping, stat flushes, health-event retention, RSS warm-cache polling) on the
+// shared shutdown WaitGroup, so App.Run joins them all before closing the database.
 func startReapers(ctx context.Context, wg *sync.WaitGroup, db *database.DB,
 	store *database.SessionStore, sc *registry.SearchCache, reg *registry.Registry,
 	authSvc *auth.Service, log zerolog.Logger,
@@ -65,6 +65,17 @@ func startReapers(ctx context.Context, wg *sync.WaitGroup, db *database.DB,
 	startIndexerStatsFlush(ctx, wg, reg)
 	startHealthEventCleanup(ctx, wg, db, log)
 	startAPIKeyTouchFlush(ctx, wg, authSvc, log)
+	startRSSWarmer(ctx, wg, reg, log)
+}
+
+// startRSSWarmer runs the RSS warm-cache poller (autobrr/harbrr#252; ADR 0005)
+// every registry.WarmTickInterval until ctx is cancelled, reusing reap's ticker
+// skeleton like every other maintenance goroutine — no new ticker/shutdown code.
+// It has no final flush: a warm is a live fetch into the search cache, which
+// already commits its own writes; there is nothing left to flush on shutdown.
+func startRSSWarmer(ctx context.Context, wg *sync.WaitGroup, reg *registry.Registry, log zerolog.Logger) {
+	w := registry.NewWarmer(reg, time.Now, log)
+	reap(ctx, wg, fixedInterval(registry.WarmTickInterval), w.TickOnce, nil)
 }
 
 // startSessionCleanup reaps expired sessions hourly until ctx is cancelled.
