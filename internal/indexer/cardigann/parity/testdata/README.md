@@ -177,6 +177,19 @@ Entries:
 - **Date canonical form** — RFC3339 vs Jackett's RFC1123Z; see "Date
   canonicalization". Same instant, different string — a canonical-schema choice,
   not a parse difference. **`[Deliberate]`**
+- **Unitless integer sizes parsed exactly** — Jackett routes even an
+  already-exact raw byte count (a selector like `data-size-bytes="94329473840"`)
+  through its float32 `GetBytes`/`BytesFrom*` chain, quantizing large values
+  (off by up to the float32 step — 8 KiB at ~90 GB; Jackett#16959, the same loss
+  Prowlarr#2740 reports). harbrr's `parseSize` instead parses a unitless plain
+  integer with `strconv.ParseInt` and returns it losslessly, because the value
+  is already the final byte count and downstream byte-equality matching (e.g.
+  cross-seed) breaks on the quantized form (autobrr/harbrr#275). Unit-bearing
+  (`1.5 GB`), decimal (`123.5`), and overflowing values keep the float32 parity
+  chain unchanged — truncation and MaxInt64 clamp included. Gated by
+  `normalizer_test.go` `TestParseSize` (the "raw bytes …" cases pin the exact
+  path; "decimal raw bytes truncate" and "raw bytes overflow clamps" pin the
+  retained parity fallback). **`[Deliberate]`**
 - **URL encoding (`.NET WebUtility.UrlEncode`)** — Resolved. Both the
   GET-query encoder (`encodeOrdered`) and the search-path value encoder now route
   through `internal/indexer/cardigann/internal/encode`, which reproduces .NET

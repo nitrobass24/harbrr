@@ -23,10 +23,16 @@ const sizeStep float32 = 1024
 //     KB are identical. The unit match is by Contains in KB→MB→GB→TB order.
 //   - The byte count is (long)(value * multiplier) computed in float32 and
 //     truncated toward zero, matching Jackett's float32 BytesFrom* chain.
-//   - A value with no recognised unit is treated as a raw byte count.
+//   - A value with no recognised unit is treated as a raw byte count — and when
+//     it is a plain integer it is parsed exactly, NOT through float32. This is
+//     a deliberate parity exception (autobrr/harbrr#275): Jackett quantizes
+//     even already-exact byte counts (Jackett#16959), off by up to 8 KiB at
+//     ~90 GB, which breaks downstream byte-equality matching. See the
+//     "Unitless integer sizes" entry in parity/testdata/README.md.
 //   - Empty/"-"/"---" coerce to 0.
 func parseSize(s string) int64 {
-	val := coerceFloatForSize(numericPart(s))
+	num := numericPart(s)
+	val := coerceFloatForSize(num)
 	unit := strings.ToLower(strings.ReplaceAll(lettersOnly(s), "i", ""))
 
 	switch {
@@ -39,6 +45,12 @@ func parseSize(s string) int64 {
 	case strings.Contains(unit, "tb"):
 		return bytesFromKB(val * sizeStep * sizeStep * sizeStep)
 	default:
+		// Lossless fast path for an already-exact byte count (see the parity
+		// exception above). Decimal or overflowing values fall back to the
+		// float32 parity chain — same truncation and MaxInt64 clamp as before.
+		if n, err := strconv.ParseInt(num, 10, 64); err == nil {
+			return n
+		}
 		return truncBytes(val)
 	}
 }

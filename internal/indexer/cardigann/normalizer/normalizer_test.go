@@ -3,6 +3,7 @@ package normalizer
 import (
 	"bytes"
 	"errors"
+	"math"
 	"sort"
 	"strings"
 	"testing"
@@ -50,10 +51,21 @@ func TestParseSize(t *testing.T) {
 		{"thousands then decimal", "1.018,29 MB", 1067754432},
 		{"lowercase unit", "4 gb", 4294967296},
 		{"no unit raw bytes", "1048576", 1048576},
+		// The unitless-integer lossless path (#275): exact above float32's 2^24
+		// integer boundary, where the old parity chain quantized.
+		{"raw bytes exact above float32 precision", "94329473840", 94329473840},
+		{"raw bytes just past float32 boundary", "16777217", 16777217},
+		{"raw bytes exact past float64 boundary", "9007199254740993", 9007199254740993},
+		{"raw bytes max int64", "9223372036854775807", math.MaxInt64},
+		// Overflow and decimal raw values keep the float32 parity chain:
+		// clamp to MaxInt64 and truncate toward zero respectively.
+		{"raw bytes overflow clamps", "92233720368547758080", math.MaxInt64},
+		{"decimal raw bytes truncate", "123.5", 123},
 		{"dash zero", "-", 0},
 		{"triple dash zero", "---", 0},
 		{"empty", "", 0},
 		{"bytes word", "123 B", 123},
+		{"bytes word exact", "94329473840 B", 94329473840},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

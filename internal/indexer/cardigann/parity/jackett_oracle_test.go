@@ -112,7 +112,10 @@ func TestJackettOracleJSON(t *testing.T) {
 	assertStr(t, "infohash", r.InfoHash, "") // Jackett InfoHash == null
 	assertStr(t, "poster", r.Poster, "https://image.tmdb.org/t/p/w92/iBjkm6oxTPrvNkzr63cmnrpsQPR.jpg")
 	assertYear(t, "publishDate", r.PublishDate, "2021") // PublishDate.Year == 2021
-	assertInt(t, "size", r.Size, 17964744704)           // float32 GetBytes precision, as Jackett
+	// Raw byte count parsed exactly — deliberate parity exception (#275); Jackett's
+	// float32 GetBytes chain yields 17964744704 here (see "Unitless integer sizes"
+	// in testdata/README.md).
+	assertInt(t, "size", r.Size, 17964744495)
 	assertInt(t, "seeders", r.Seeders, 27)
 	assertInt(t, "peers", r.Peers, 30)
 	assertInt(t, "files", r.Files, 1)
