@@ -164,15 +164,13 @@ func TestMigrateFoldsDedupsAndPreservesCookie(t *testing.T) {
 	if len(proxies) != 1 || len(solvers) != 1 {
 		t.Fatalf("resources = %d proxies, %d solvers; want 1 and 1", len(proxies), len(solvers))
 	}
-	// Run folds inline settings into the pre-#71 legacy shape (one composite URL,
-	// no host yet); ListProxies excludes url_encrypted, so read it via the
-	// backfill's own work-list query.
-	pending, _ := (database.Proxies{}).ProxiesPendingSplit(ctx, db)
-	if len(pending) != 1 {
-		t.Fatalf("proxies pending split = %d, want 1", len(pending))
+	// Run parses the inline URL directly into structured fields (#294 dropped the
+	// legacy url_encrypted round trip).
+	if proxies[0].Host != "10.0.0.9" || proxies[0].Port != 1080 || proxies[0].Username != "" {
+		t.Errorf("proxy fields = %+v, want host 10.0.0.9 port 1080 no username", proxies[0])
 	}
-	if url, _ := kr.Decrypt(pending[0].ID, domain.ProxySecretURL, pending[0].URLEncrypted); url != "socks5://10.0.0.9:1080" {
-		t.Errorf("proxy url = %q", url)
+	if pass, err := kr.Decrypt(proxies[0].ID, domain.ProxySecretPassword, proxies[0].PasswordEncrypted); err != nil || pass != "" {
+		t.Errorf("proxy password = %q, %v; want empty", pass, err)
 	}
 	if solvers[0].MaxTimeout != 120 {
 		t.Errorf("solver maxTimeout = %d, want 120", solvers[0].MaxTimeout)

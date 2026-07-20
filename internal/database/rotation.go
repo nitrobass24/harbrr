@@ -122,8 +122,8 @@ func SecretSurfaces() []FixedAADSurface {
 		},
 		{
 			// internal/proxy/service.go seals the password with the proxy id;
-			// domain.ProxySecretPassword. url_encrypted is legacy (pre-#71) storage the
-			// boot backfill alone reads, never a rotation target.
+			// domain.ProxySecretPassword. Host/port/username are plain (#71); the
+			// legacy composite url_encrypted column itself is gone (#294).
 			Table: "proxies", KeyIDCol: "key_id",
 			Columns: []SecretColumn{{Cipher: "password_encrypted", Setting: domain.ProxySecretPassword}},
 		},

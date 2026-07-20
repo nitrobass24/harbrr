@@ -170,27 +170,58 @@ func (d *deps) foldSolver(ctx context.Context, inst domain.IndexerInstance, sm m
 }
 
 // ensureProxy returns the id of a shared proxy for (type, url), creating it once.
+// The inline URL is parsed directly into structured host/port/username/password
+// fields (#294 removed the legacy url_encrypted round trip a boot backfill used to
+// do right after Run, on the same boot).
 func (d *deps) ensureProxy(ctx context.Context, typ, rawURL string) (int64, error) {
 	key := typ + "\x00" + rawURL
 	if id, ok := d.proxyByKey[key]; ok {
 		return id, nil
 	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return 0, fmt.Errorf("resourcemigrate: parse proxy url: %w", err)
+	}
+	port, _ := strconv.Atoi(u.Port())
+	if u.Port() == "" {
+		// A port-less inline URL previously worked (net/http defaults the dial
+		// port by scheme), so backfill the scheme's conventional default rather
+		// than 0 — composeProxyURL always emits an explicit host:port.
+		port = defaultProxyPort(typ)
+	}
+	password, _ := u.User.Password()
+
 	now := d.clock()
-	id, err := d.proxRepo.InsertProxy(ctx, d.tx, domain.Proxy{Name: resourceName("proxy", rawURL, len(d.proxyByKey)), Type: typ, CreatedAt: now, UpdatedAt: now})
+	id, err := d.proxRepo.InsertProxy(ctx, d.tx, domain.Proxy{
+		Name: resourceName("proxy", rawURL, len(d.proxyByKey)), Type: typ,
+		Host: u.Hostname(), Port: port, Username: u.User.Username(),
+		CreatedAt: now, UpdatedAt: now,
+	})
 	if err != nil {
 		return 0, fmt.Errorf("resourcemigrate: insert proxy: %w", err)
 	}
-	// Folded in the pre-#71 shape (one composite URL, no host yet): SplitProxyURLs
-	// converts it to structured fields right after Run, on the same boot.
-	sealed, err := d.kr.Encrypt(id, domain.ProxySecretURL, rawURL)
+	sealed, err := d.kr.Encrypt(id, domain.ProxySecretPassword, password)
 	if err != nil {
-		return 0, fmt.Errorf("resourcemigrate: encrypt proxy url: %w", err)
+		return 0, fmt.Errorf("resourcemigrate: encrypt proxy password: %w", err)
 	}
-	if err := d.proxRepo.SetProxyLegacyURL(ctx, d.tx, id, sealed); err != nil {
+	if err := d.proxRepo.SetProxySecret(ctx, d.tx, id, sealed, d.kr.KeyID()); err != nil {
 		return 0, fmt.Errorf("resourcemigrate: seal proxy: %w", err)
 	}
 	d.proxyByKey[key] = id
 	return id, nil
+}
+
+// defaultProxyPort is the conventional port for a proxy scheme, used when an
+// inline URL carried none: http 80, https 443, socks5/socks5h 1080.
+func defaultProxyPort(scheme string) int {
+	switch scheme {
+	case domain.ProxyTypeHTTPS:
+		return 443
+	case domain.ProxyTypeSOCKS5, domain.ProxyTypeSOCKS5H:
+		return 1080
+	default: // http
+		return 80
+	}
 }
 
 // ensureSolver returns the id of a shared FlareSolverr solver for (url, maxTimeout).

@@ -204,13 +204,12 @@ func (a *App) initSecrets(ctx context.Context) error {
 // settings into global resources. Non-fatal: the engine keeps the inline settings
 // as a fallback, so a failure leaves every indexer working and retries next boot.
 // (The App-identity fold, resourcemigrate.FoldApps, was removed in #269 once
-// migration 0021's guard made it a permanent no-op — see that migration's comment.)
+// migration 0021's guard made it a permanent no-op — see that migration's comment.
+// The proxy-URL-split backfill, resourcemigrate.SplitProxyURLs, was removed in #294
+// for the same reason, once migration 0022's guard made it a permanent no-op.)
 func migrateResources(ctx context.Context, db *database.DB, keyring *secrets.Keyring, log zerolog.Logger) {
 	if err := resourcemigrate.Run(ctx, db, keyring, time.Now, log); err != nil {
 		log.Warn().Err(err).Msg("migrating inline proxy/FlareSolverr settings failed; inline settings remain in effect, will retry next boot")
-	}
-	if err := resourcemigrate.SplitProxyURLs(ctx, db, keyring, log); err != nil {
-		log.Warn().Err(err).Msg("splitting legacy proxy URLs into structured fields failed; will retry next boot")
 	}
 }
 

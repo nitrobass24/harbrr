@@ -92,8 +92,8 @@ func TestAddValidProxyRefSucceeds(t *testing.T) {
 	ctx := context.Background()
 
 	res, err := db.ExecContext(ctx,
-		`INSERT INTO proxies (name, type, url_encrypted, key_id, created_at, updated_at)
-		 VALUES ('p1', 'http', 'enc', 'k1', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`)
+		`INSERT INTO proxies (name, type, host, port, password_encrypted, key_id, created_at, updated_at)
+		 VALUES ('p1', 'http', 'proxy.example', 8080, 'enc', 'k1', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`)
 	if err != nil {
 		t.Fatalf("insert proxy: %v", err)
 	}

@@ -276,20 +276,13 @@ const SolverTypeFlaresolverr = "flaresolverr"
 // the 60s default). Keeping one const stops those two checks from drifting.
 const FlareMaxTimeoutCapSeconds = 180
 
-// ProxySecretURL / SolverSecretURL are the AAD "setting" discriminators binding
-// each resource's encrypted endpoint URL to its own row id (mirroring notify's
+// ProxySecretPassword / SolverSecretURL are the AAD "setting" discriminators
+// binding each resource's encrypted secret to its own row id (mirroring notify's
 // secretURL). Shared so the management service encrypts and the engine decrypts
-// under the same name. They are DISTINCT per resource type: proxies and solvers
-// have independent id sequences, so a shared discriminator would let a proxy blob
-// and a solver blob with the same id authenticate under the same key — the type
-// is part of the AAD namespace to prevent that cross-context confusion.
-//
-// ProxySecretURL is legacy and decrypt-only (#71 split the proxy into structured
-// fields): it remains solely so the boot backfill (internal/resourcemigrate) can
-// decrypt a pre-split row's composite URL. ProxySecretPassword is the current
-// proxy secret — only the password, never the full URL.
+// under the same name. ProxySecretPassword is only the proxy's password (#71 split
+// the rest of the proxy — host/port/username — into plain structured fields);
+// SolverSecretURL is still the solver's full endpoint URL, its secret in whole.
 const (
-	ProxySecretURL      = "proxy_url"
 	ProxySecretPassword = "proxy_password" //nolint:gosec // G101: an AAD "setting" discriminator name, not a credential.
 	SolverSecretURL     = "solver_url"     //nolint:gosec // G101: an AAD "setting" discriminator name, not a credential.
 )
