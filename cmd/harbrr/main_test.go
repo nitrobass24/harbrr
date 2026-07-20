@@ -96,11 +96,7 @@ func waitForListen(t *testing.T, addr string, done <-chan error) {
 	for time.Now().Before(deadline) {
 		select {
 		case err := <-done:
-			msg := "nil"
-			if err != nil {
-				msg = err.Error()
-			}
-			t.Fatalf("serve exited early: %s", msg)
+			t.Fatalf("serve exited early: %v", err)
 		default:
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
