@@ -15,6 +15,7 @@ import (
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/domain"
 	apphttp "github.com/autobrr/harbrr/internal/http"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 	"github.com/autobrr/harbrr/internal/proxy"
 	"github.com/autobrr/harbrr/internal/solver"
@@ -140,6 +141,8 @@ func (rt *router) writeServiceError(w http.ResponseWriter, op string, err error)
 	case errors.Is(err, errOIDCTokenInvalid):
 		rt.log.Warn().Str("op", op).Str("error", apphttp.RedactError(err)).Msg("api: oidc id token verification failed")
 		writeErrorCode(w, http.StatusUnauthorized, "invalid_credentials", "oidc: id token verification failed")
+	case errors.Is(err, search.ErrGatewayStatus):
+		writeErrorCode(w, http.StatusBadGateway, "upstream_unreachable", "indexer origin unreachable")
 	default:
 		rt.log.Error().Str("op", op).Str("error", apphttp.RedactError(err)).Msg("api: request failed")
 		writeErrorCode(w, http.StatusInternalServerError, "internal", "internal error")
