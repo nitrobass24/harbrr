@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -334,5 +336,53 @@ func TestResolveSearchLinksMagnetAsIs(t *testing.T) {
 	out := rt.resolveSearchLinks(searchReq(t), fakeSearchIndexer{id: "demo", needsResolver: true}, rels)
 	if out[0].Magnet != m {
 		t.Errorf("magnet altered: %q", out[0].Magnet)
+	}
+}
+
+// TestWriteServiceErrorGatewayStatus proves a wrapped search.ErrGatewayStatus (a
+// reverse-proxy/CDN reporting the tracker origin unreachable) maps to 502
+// upstream_unreachable instead of falling into the generic 500 default arm, and that
+// an unrelated error still takes the default arm unchanged (regression guard).
+func TestWriteServiceErrorGatewayStatus(t *testing.T) {
+	t.Parallel()
+	rt := &router{log: zerolog.Nop()}
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantCode   string
+	}{
+		{
+			name:       "wrapped gateway status sentinel",
+			err:        fmt.Errorf("registry: search %q: %w", "x", search.ErrGatewayStatus),
+			wantStatus: http.StatusBadGateway,
+			wantCode:   "upstream_unreachable",
+		},
+		{
+			name:       "unrelated error falls to default",
+			err:        errors.New("boom"),
+			wantStatus: http.StatusInternalServerError,
+			wantCode:   "internal",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			rec := httptest.NewRecorder()
+			rt.writeServiceError(rec, "op", tt.err)
+			if rec.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+			var body errorResponse
+			if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+				t.Fatalf("decode body: %v", err)
+			}
+			if body.Code != tt.wantCode {
+				t.Errorf("code = %q, want %q", body.Code, tt.wantCode)
+			}
+			if body.Error == "" {
+				t.Error("expected a non-empty message")
+			}
+		})
 	}
 }
