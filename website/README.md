@@ -4,8 +4,9 @@ User-facing documentation for harbrr — written in plain English for people run
 not for people hacking on it. (Design notes and the build plan live in the repo's
 top-level `docs/` folder; this folder is the *product* documentation.)
 
-Built with [Docusaurus](https://docusaurus.io/). The marketing landing page lives at `/`;
-the docs themselves are under `/docs/`.
+Built with [Docusaurus](https://docusaurus.io/). On the deployed site the marketing
+landing page lives at `/harbrr/` and the docs under `/harbrr/docs/` (the configured
+`baseUrl`); the local preview serves the same pages at `http://localhost:3000/harbrr/`.
 
 ## Structure
 
@@ -30,7 +31,7 @@ website/
 ```
 
 The pages are plain Markdown. Admonitions use Docusaurus `:::note` / `:::tip` /
-`:::warning` blocks instead of MkDocs' `!!!` syntax.
+`:::info` / `:::warning` blocks instead of MkDocs' `!!!` syntax.
 
 ## Previewing
 
