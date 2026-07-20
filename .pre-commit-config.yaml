@@ -7,6 +7,9 @@ repos:
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-added-large-files
+        # website/package-lock.json is a generated Docusaurus/npm lockfile —
+        # legitimately >500KB, not an accidental binary commit.
+        exclude: ^website/package-lock\.json$
 
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.21.2

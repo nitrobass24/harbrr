@@ -1,0 +1,38 @@
+.features {
+  display: flex;
+  align-items: center;
+  padding: 2rem 0 4rem;
+  width: 100%;
+}
+
+.featureCol {
+  margin-bottom: 2rem;
+}
+
+.featureCard {
+  display: block;
+  height: 100%;
+  padding: 1.5rem;
+  border-radius: var(--ifm-card-border-radius);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  color: var(--ifm-font-color-base);
+  text-decoration: none;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+a.featureCard:hover,
+a.featureCard:focus {
+  border-color: var(--ifm-color-primary);
+  color: var(--ifm-font-color-base);
+  text-decoration: none;
+  transform: translateY(-2px);
+}
+
+.featureCard h3 {
+  margin-bottom: 0.5rem;
+}
+
+.featureCard p {
+  margin-bottom: 0;
+  color: var(--ifm-color-emphasis-700);
+}

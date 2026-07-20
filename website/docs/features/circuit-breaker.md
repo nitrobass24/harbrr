@@ -52,10 +52,13 @@ tracker asked — across *all* your apps, not just the one that got the 429.
   [bypass](search-results-cache.md#per-request-bypass-nocache1) the cache honors), or by
   hitting the indexer's **Test** action — neither is blocked by an open breaker.
 
-!!! note "Per tracker, not per query"
-    The breaker opens for a whole **tracker** (indexer instance), because a down tracker is
-    down for every search, not just the one that failed. A caller that *cancels* its own
-    request never trips the breaker — that's your app giving up, not the tracker failing.
+:::note[Per tracker, not per query]
+
+The breaker opens for a whole **tracker** (indexer instance), because a down tracker is
+down for every search, not just the one that failed. A caller that *cancels* its own
+request never trips the breaker — that's your app giving up, not the tracker failing.
+
+:::
 
 ---
 

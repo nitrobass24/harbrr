@@ -8,9 +8,12 @@ Everything here is done over harbrr's HTTP API. The interactive **Swagger UI at 
 is the whole interface for the alpha — there is no separate web UI yet, so the steps below
 are the operator path. See **[The API & Swagger UI](api.md)** for the full reference.
 
-!!! note "Alpha status"
-    No stable image tag is published yet (`main` pushes do **not** publish images; only
-    `v*` tags and same-repo PRs do). Pick a way to get a runnable image in step 1.
+:::note[Alpha status]
+
+No stable image tag is published yet (`main` pushes do **not** publish images; only
+`v*` tags and same-repo PRs do). Pick a way to get a runnable image in step 1.
+
+:::
 
 ---
 
@@ -53,10 +56,13 @@ Then bring it up:
 docker compose -f docker-compose.example.yml up -d harbrr
 ```
 
-!!! warning "Back up the keyfile"
-    The `/config` volume holds the SQLite database **and** the auto-generated encryption
-    keyfile (`.keys/harbrr.key`). Tracker credentials are encrypted with that key — back it
-    up **separately** from the database. Losing it means re-entering every tracker credential.
+:::warning[Back up the keyfile]
+
+The `/config` volume holds the SQLite database **and** the auto-generated encryption
+keyfile (`.keys/harbrr.key`). Tracker credentials are encrypted with that key — back it
+up **separately** from the database. Losing it means re-entering every tracker credential.
+
+:::
 
 ---
 
@@ -75,10 +81,13 @@ curl -X POST http://<host>:7478/api/auth/setup \
 `GET /api/auth/setup` reports whether setup is still pending. After this, log in with
 `POST /api/auth/login` to get a session cookie (the Swagger UI does this for you).
 
-!!! tip "Auth modes"
-    The default `auth.mode: required` means a login. If harbrr sits behind an
-    authenticating reverse proxy, you can run `auth.mode: disabled` with an `ip_allowlist`
-    instead — see **[Configuration](configuration.md#auth)**.
+:::tip[Auth modes]
+
+The default `auth.mode: required` means a login. If harbrr sits behind an
+authenticating reverse proxy, you can run `auth.mode: disabled` with an `ip_allowlist`
+instead — see **[Configuration](configuration.md#auth)**.
+
+:::
 
 ---
 

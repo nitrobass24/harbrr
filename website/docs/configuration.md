@@ -40,10 +40,13 @@ Environment variables are `HARBRR_`-prefixed with dots replaced by underscores:
 List-valued keys (`auth.ip_allowlist`, `auth.trusted_proxies`) can only be set in the
 config file, not via environment variables.
 
-!!! note "Runtime-tunable cache knobs"
-    The `cache.*` values below are the **boot defaults**. Every one of them can also be
-    changed at runtime — without a restart — via `GET`/`PUT /api/cache/config`. See the
-    [search-results cache](features/search-results-cache.md) page.
+:::note[Runtime-tunable cache knobs]
+
+The `cache.*` values below are the **boot defaults**. Every one of them can also be
+changed at runtime — without a restart — via `GET`/`PUT /api/cache/config`. See the
+[search-results cache](features/search-results-cache.md) page.
+
+:::
 
 ---
 
@@ -60,11 +63,14 @@ secure_cookie = false    # set true when reached over HTTPS (TLS-terminating pro
 Set `secure_cookie = true` whenever harbrr is reached over HTTPS (for example behind a
 TLS-terminating reverse proxy) so the session cookie carries the `Secure` attribute.
 
-!!! tip "Changing the port"
-    Edit `port` in `<data-dir>/config.toml` and restart. Connection cards on the
-    Applications page flag app-sync URLs whose explicit port no longer matches the
-    configured one, with a guided fix — see the note there about reverse proxies and
-    Docker port mappings before applying it.
+:::tip[Changing the port]
+
+Edit `port` in `<data-dir>/config.toml` and restart. Connection cards on the
+Applications page flag app-sync URLs whose explicit port no longer matches the
+configured one, with a guided fix — see the note there about reverse proxies and
+Docker port mappings before applying it.
+
+:::
 
 ## `[log]`
 
@@ -98,10 +104,13 @@ allow_plaintext = false  # opt into UNENCRYPTED storage; otherwise harbrr fails 
 Encryption of tracker credentials is **always on**. With no key configured, harbrr
 auto-generates a keyfile at `<data_dir>/.keys/harbrr.key` (`0600`) on first run.
 
-!!! warning "Back up the keyfile"
-    Back the keyfile up **separately** from the database — losing it means re-entering every
-    tracker credential. To store secrets unencrypted you must explicitly set
-    `allow_plaintext = true`; otherwise harbrr fails closed and emits a loud warning.
+:::warning[Back up the keyfile]
+
+Back the keyfile up **separately** from the database — losing it means re-entering every
+tracker credential. To store secrets unencrypted you must explicitly set
+`allow_plaintext = true`; otherwise harbrr fails closed and emits a loud warning.
+
+:::
 
 ## `[auth]`
 

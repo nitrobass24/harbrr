@@ -39,3 +39,8 @@ LIVE_TEST_FINDINGS.md
 
 # Claude Code local config (not shared; enforcement moved to CI + pre-commit)
 .claude/
+
+# Docusaurus site build artifacts (website/)
+/website/node_modules/
+/website/build/
+/website/.docusaurus/
