@@ -1033,40 +1033,6 @@ func TestServiceConnectionsShareOneApp(t *testing.T) {
 	}
 }
 
-// TestServiceSyncPendingAppMigration pins the ErrAppMigrationPending guard: a row with
-// a NULL app_id (the boot fold has not run yet) is unusable on any USE path — Sync and
-// TestConnection both refuse it rather than treating a blank identity as a live one.
-// The row is inserted directly via the repo (bypassing the service, which always
-// resolves an App on create) with a real minted harbrr key so the row passes the
-// stale-key guard and reaches the App lookup.
-func TestServiceSyncPendingAppMigration(t *testing.T) {
-	t.Parallel()
-	f := newSyncFixture(t)
-	ctx := context.Background()
-
-	_, key, err := f.auth.MintAPIKey(ctx, "pending-fixture")
-	if err != nil {
-		t.Fatalf("MintAPIKey: %v", err)
-	}
-	now := time.Now().UTC()
-	id, err := (database.AppConnections{}).InsertConnection(ctx, f.db, domain.AppConnection{
-		Name: "pending", Kind: domain.AppKindSonarr, AppID: nil,
-		HarbrrAPIKeyID: key.ID, Enabled: true, SyncLevel: domain.SyncLevelFull,
-		IndexScope: domain.IndexScopeAll, FreeleechMode: domain.FreeleechModeHonor,
-		Priority: defaultPriority, CreatedAt: now, UpdatedAt: now,
-	})
-	if err != nil {
-		t.Fatalf("InsertConnection: %v", err)
-	}
-
-	if _, err := f.svc.Sync(ctx, id); !errors.Is(err, domain.ErrAppMigrationPending) {
-		t.Errorf("Sync on NULL app_id row = %v, want domain.ErrAppMigrationPending", err)
-	}
-	if err := f.svc.TestConnection(ctx, id); !errors.Is(err, domain.ErrAppMigrationPending) {
-		t.Errorf("TestConnection on NULL app_id row = %v, want domain.ErrAppMigrationPending", err)
-	}
-}
-
 // TestServiceListGetEnrichFromApp proves ListConnections and GetConnection are the
 // single read path for identity: both project BaseURL/HarbrrURL from the referenced
 // App, not from the connection row's own (legacy) columns.

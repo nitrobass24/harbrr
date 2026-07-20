@@ -17,19 +17,19 @@ import (
 type AnnounceConnections struct{}
 
 // announceColumns is the full select list, in scan order. app_id is the App
-// reference (ADR 0004); legacy identity columns are still selected but unused by the
-// service (identity comes from the App).
-const announceColumns = `id, name, kind, app_id, base_url, api_key_encrypted, harbrr_url,
+// reference (ADR 0004) — the sole identity source; base_url/api_key_encrypted/
+// harbrr_url were dropped by #269 once every row was guaranteed a non-NULL app_id.
+const announceColumns = `id, name, kind, app_id,
 	harbrr_api_key_id, harbrr_api_key_encrypted, key_id, enabled, created_at, updated_at`
 
 // InsertAnnounceConnection writes a row and returns its new id.
 func (AnnounceConnections) InsertAnnounceConnection(ctx context.Context, q dbinterface.Execer, c domain.AnnounceConnection) (int64, error) {
 	res, err := q.ExecContext(ctx,
 		q.Rebind(`INSERT INTO announce_connections
-			(name, kind, app_id, base_url, api_key_encrypted, harbrr_url, harbrr_api_key_id,
+			(name, kind, app_id, harbrr_api_key_id,
 			 harbrr_api_key_encrypted, key_id, enabled, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
-		c.Name, c.Kind, nullInt64(c.AppID), c.BaseURL, c.APIKeyEncrypted, c.HarbrrURL, nullIfZero(c.HarbrrAPIKeyID),
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+		c.Name, c.Kind, nullInt64(c.AppID), nullIfZero(c.HarbrrAPIKeyID),
 		c.HarbrrAPIKeyEncrypted, c.KeyID, boolToInt(c.Enabled),
 		c.CreatedAt.UTC().Format(timeLayout), c.UpdatedAt.UTC().Format(timeLayout))
 	if err != nil {
@@ -42,14 +42,15 @@ func (AnnounceConnections) InsertAnnounceConnection(ctx context.Context, q dbint
 	return id, nil
 }
 
-// SetAnnounceConnectionSecrets writes both encrypted secret columns + key_id by id
-// (mirrors AppConnections.SetConnectionSecrets). Used by restore, which must insert the
-// row first to mint the id its secrets' AAD binds to, then seal them under that id.
-func (AnnounceConnections) SetAnnounceConnectionSecrets(ctx context.Context, q dbinterface.Execer, id int64, apiKeyEncrypted, harbrrKeyEncrypted, keyID string) error {
+// SetAnnounceConnectionSecrets writes the minted harbrr key column + key_id by id
+// (mirrors AppConnections.SetConnectionSecrets; the tool's own key lives on the App).
+// Used by restore, which must insert the row first to mint the id its secret's AAD
+// binds to, then seal it under that id.
+func (AnnounceConnections) SetAnnounceConnectionSecrets(ctx context.Context, q dbinterface.Execer, id int64, harbrrKeyEncrypted, keyID string) error {
 	res, err := q.ExecContext(ctx,
-		q.Rebind(`UPDATE announce_connections SET api_key_encrypted = ?, harbrr_api_key_encrypted = ?, key_id = ?
+		q.Rebind(`UPDATE announce_connections SET harbrr_api_key_encrypted = ?, key_id = ?
 			WHERE id = ?`),
-		apiKeyEncrypted, harbrrKeyEncrypted, keyID, id)
+		harbrrKeyEncrypted, keyID, id)
 	if err != nil {
 		return fmt.Errorf("database: set announce connection secrets: %w", err)
 	}
@@ -97,9 +98,9 @@ func (AnnounceConnections) ListAnnounceConnections(ctx context.Context, q dbinte
 func (AnnounceConnections) UpdateAnnounceConnection(ctx context.Context, q dbinterface.Execer, c domain.AnnounceConnection) error {
 	res, err := q.ExecContext(ctx,
 		q.Rebind(`UPDATE announce_connections SET
-			name = ?, base_url = ?, api_key_encrypted = ?, harbrr_url = ?, key_id = ?, updated_at = ?
+			name = ?, key_id = ?, updated_at = ?
 			WHERE id = ?`),
-		c.Name, c.BaseURL, c.APIKeyEncrypted, c.HarbrrURL, c.KeyID, c.UpdatedAt.UTC().Format(timeLayout), c.ID)
+		c.Name, c.KeyID, c.UpdatedAt.UTC().Format(timeLayout), c.ID)
 	if err != nil {
 		return fmt.Errorf("database: update announce connection: %w", err)
 	}
@@ -145,7 +146,7 @@ func scanAnnounceConnection(s interface{ Scan(...any) error }) (domain.AnnounceC
 		enabled              int
 		createdAt, updatedAt string
 	)
-	if err := s.Scan(&c.ID, &c.Name, &c.Kind, &appID, &c.BaseURL, &c.APIKeyEncrypted, &c.HarbrrURL,
+	if err := s.Scan(&c.ID, &c.Name, &c.Kind, &appID,
 		&harbrrKeyID, &c.HarbrrAPIKeyEncrypted, &c.KeyID, &enabled, &createdAt, &updatedAt); err != nil {
 		return domain.AnnounceConnection{}, err //nolint:wrapcheck // sql.ErrNoRows matched by caller; others wrapped there.
 	}

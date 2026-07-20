@@ -143,7 +143,7 @@ func (a *App) build(ctx context.Context, httpClient *http.Client) error {
 	a.proxy = proxy.NewService(a.db, a.keyring)
 	a.download = download.NewService(a.db, a.apps, a.keyring, httpClient, a.log)
 	a.solver = solver.NewService(a.db, a.keyring)
-	a.backup = backup.NewService(a.db, a.keyring, a.log)
+	a.backup = backup.NewService(a.db, a.keyring, a.apps, a.log)
 
 	srv, err := newServer(a)
 	if err != nil {
@@ -203,15 +203,14 @@ func (a *App) initSecrets(ctx context.Context) error {
 // migrateResources runs the one-time fold of legacy inline proxy/FlareSolverr
 // settings into global resources. Non-fatal: the engine keeps the inline settings
 // as a fallback, so a failure leaves every indexer working and retries next boot.
+// (The App-identity fold, resourcemigrate.FoldApps, was removed in #269 once
+// migration 0021's guard made it a permanent no-op — see that migration's comment.)
 func migrateResources(ctx context.Context, db *database.DB, keyring *secrets.Keyring, log zerolog.Logger) {
 	if err := resourcemigrate.Run(ctx, db, keyring, time.Now, log); err != nil {
 		log.Warn().Err(err).Msg("migrating inline proxy/FlareSolverr settings failed; inline settings remain in effect, will retry next boot")
 	}
 	if err := resourcemigrate.SplitProxyURLs(ctx, db, keyring, log); err != nil {
 		log.Warn().Err(err).Msg("splitting legacy proxy URLs into structured fields failed; will retry next boot")
-	}
-	if err := resourcemigrate.FoldApps(ctx, db, keyring, time.Now, log); err != nil {
-		log.Warn().Err(err).Msg("folding legacy surface rows into first-class apps failed; surfaces stay pending, will retry next boot")
 	}
 }
 

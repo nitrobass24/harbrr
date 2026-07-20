@@ -9,6 +9,7 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/autobrr/harbrr/internal/apps"
 	"github.com/autobrr/harbrr/internal/backup"
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/domain"
@@ -52,6 +53,13 @@ func openKeyring(t *testing.T, key string) *secrets.Keyring {
 	return kr
 }
 
+// newBackupService wires a backup.Service the way internal/app does: with an apps.Service
+// over the same db+keyring (App-sourced collect, Resolve-based restore — see internal/
+// backup/collect.go and restore.go).
+func newBackupService(db *database.DB, kr *secrets.Keyring) *backup.Service {
+	return backup.NewService(db, kr, apps.NewService(db, kr, nil, zerolog.Nop()), zerolog.Nop())
+}
+
 // seed inserts one row of every backed-up table with representative secrets + FKs, sealed
 // under kr, mirroring how the services persist. It returns nothing — the tests read the
 // target back through the repos after a round-trip.
@@ -73,8 +81,10 @@ func seed(t *testing.T, db *database.DB, kr *secrets.Keyring) {
 	}
 
 	seedInstance(t, db, kr, proxyID, solverID)
-	seedAppConn(t, db, kr, apiKeyID, profileID)
-	seedAnnounceConn(t, db, kr, apiKeyID)
+	sonarrAppID := seedApp(t, db, kr, "sonarr", "http://sonarr:8989", "http://h:7478", appKey)
+	seedAppConn(t, db, kr, "sonarr", sonarrAppID, apiKeyID, &profileID)
+	quiAppID := seedApp(t, db, kr, "qui", "http://qui:7476", "http://h:7478", annKey)
+	seedAnnounceConn(t, db, kr, "qui", quiAppID, apiKeyID)
 	seedNotification(t, db, kr)
 
 	if err := (database.AppSettings{}).Set(ctx, db, "log.level", "debug", time.Now()); err != nil {
@@ -146,41 +156,62 @@ func seedInstance(t *testing.T, db *database.DB, kr *secrets.Keyring, proxyID, s
 	}
 }
 
-func seedAppConn(t *testing.T, db *database.DB, kr *secrets.Keyring, apiKeyID, profileID int64) {
+// seedApp inserts an App row directly (mirrors how the fold/apps.Service would seal it)
+// and returns its id.
+func seedApp(t *testing.T, db *database.DB, kr *secrets.Keyring, kind, baseURL, harbrrURL, key string) int64 {
+	t.Helper()
+	ctx := context.Background()
+	id, err := (database.Apps{}).InsertApp(ctx, db, domain.App{
+		Kind: kind, Name: kind, BaseURL: baseURL, HarbrrURL: harbrrURL, Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("seed app %s: %v", kind, err)
+	}
+	enc, err := kr.Encrypt(id, domain.AppSecret, key)
+	if err != nil {
+		t.Fatalf("seal app %s: %v", kind, err)
+	}
+	if err := (database.Apps{}).SetAppSecret(ctx, db, id, enc, kr.KeyID()); err != nil {
+		t.Fatalf("set app secret %s: %v", kind, err)
+	}
+	return id
+}
+
+func seedAppConn(t *testing.T, db *database.DB, kr *secrets.Keyring, kind string, appID, apiKeyID int64, profileID *int64) int64 {
 	t.Helper()
 	ctx := context.Background()
 	repo := database.AppConnections{}
 	id, err := repo.InsertConnection(ctx, db, domain.AppConnection{
-		Name: "sonarr", Kind: "sonarr", BaseURL: "http://sonarr:8989", HarbrrURL: "http://h:7478",
+		Name: kind, Kind: kind, AppID: &appID,
 		HarbrrAPIKeyID: apiKeyID, KeyID: kr.KeyID(), Enabled: true, SyncLevel: "full",
-		IndexScope: "all", FreeleechMode: "honor", Priority: 25, SyncProfileID: &profileID,
+		IndexScope: "all", FreeleechMode: "honor", Priority: 25, SyncProfileID: profileID,
 	})
 	if err != nil {
 		t.Fatalf("seed app conn: %v", err)
 	}
-	appEnc, _ := kr.Encrypt(id, "app", appKey)
 	harbrrEnc, _ := kr.Encrypt(id, "harbrr", appHarbrr)
-	if err := repo.SetConnectionSecrets(ctx, db, id, appEnc, harbrrEnc, kr.KeyID()); err != nil {
+	if err := repo.SetConnectionSecrets(ctx, db, id, harbrrEnc, kr.KeyID()); err != nil {
 		t.Fatalf("set app conn secrets: %v", err)
 	}
+	return id
 }
 
-func seedAnnounceConn(t *testing.T, db *database.DB, kr *secrets.Keyring, apiKeyID int64) {
+func seedAnnounceConn(t *testing.T, db *database.DB, kr *secrets.Keyring, kind string, appID, apiKeyID int64) int64 {
 	t.Helper()
 	ctx := context.Background()
 	repo := database.AnnounceConnections{}
 	id, err := repo.InsertAnnounceConnection(ctx, db, domain.AnnounceConnection{
-		Name: "qui", Kind: "qui", BaseURL: "http://qui:7476", HarbrrURL: "http://h:7478",
+		Name: kind, Kind: kind, AppID: &appID,
 		HarbrrAPIKeyID: apiKeyID, KeyID: kr.KeyID(), Enabled: true,
 	})
 	if err != nil {
 		t.Fatalf("seed announce conn: %v", err)
 	}
-	appEnc, _ := kr.Encrypt(id, "app", annKey)
 	harbrrEnc, _ := kr.Encrypt(id, "harbrr", annHarbrr)
-	if err := repo.SetAnnounceConnectionSecrets(ctx, db, id, appEnc, harbrrEnc, kr.KeyID()); err != nil {
+	if err := repo.SetAnnounceConnectionSecrets(ctx, db, id, harbrrEnc, kr.KeyID()); err != nil {
 		t.Fatalf("set announce conn secrets: %v", err)
 	}
+	return id
 }
 
 func seedNotification(t *testing.T, db *database.DB, kr *secrets.Keyring) {
@@ -207,7 +238,7 @@ func TestExportImportRoundTripAcrossKeys(t *testing.T) {
 	srcDB, srcKR := openDB(t), openKeyring(t, keyA)
 	seed(t, srcDB, srcKR)
 
-	bundle, err := backup.NewService(srcDB, srcKR, zerolog.Nop()).Export(ctx, backup.ExportParams{Passphrase: "pw"})
+	bundle, err := newBackupService(srcDB, srcKR).Export(ctx, backup.ExportParams{Passphrase: "pw"})
 	if err != nil {
 		t.Fatalf("Export: %v", err)
 	}
@@ -219,7 +250,7 @@ func TestExportImportRoundTripAcrossKeys(t *testing.T) {
 	}
 
 	dstDB, dstKR := openDB(t), openKeyring(t, keyB)
-	if err := backup.NewService(dstDB, dstKR, zerolog.Nop()).Import(ctx, backup.ImportParams{Payload: bundle, Passphrase: "pw", Force: true}); err != nil {
+	if err := newBackupService(dstDB, dstKR).Import(ctx, backup.ImportParams{Payload: bundle, Passphrase: "pw", Force: true}); err != nil {
 		t.Fatalf("Import: %v", err)
 	}
 
@@ -295,19 +326,26 @@ func assertConnectionsRestored(t *testing.T, dstDB *database.DB, dstKR *secrets.
 	}
 	newAPIKeyID := apiKeys[0].ID
 
-	apps, _ := (database.AppConnections{}).ListConnections(ctx, dstDB)
-	if len(apps) != 1 {
-		t.Fatalf("restored app connections = %d, want 1", len(apps))
+	appConns, _ := (database.AppConnections{}).ListConnections(ctx, dstDB)
+	if len(appConns) != 1 {
+		t.Fatalf("restored app connections = %d, want 1", len(appConns))
 	}
-	ac := apps[0]
+	ac := appConns[0]
 	if ac.HarbrrAPIKeyID != newAPIKeyID {
 		t.Errorf("app conn harbrr_api_key_id = %d, want remapped %d", ac.HarbrrAPIKeyID, newAPIKeyID)
 	}
 	if ac.SyncProfileID == nil {
 		t.Error("app conn sync_profile_id lost")
 	}
-	if v, err := dstKR.Decrypt(ac.ID, "app", ac.APIKeyEncrypted); err != nil || v != appKey {
-		t.Errorf("app conn app key = %q, err %v; want %q", v, err, appKey)
+	if ac.AppID == nil {
+		t.Fatal("app conn AppID = nil, want set (restore is App-aware post-#269)")
+	}
+	acApp, err := (database.Apps{}).GetApp(ctx, dstDB, *ac.AppID)
+	if err != nil {
+		t.Fatalf("get restored app conn's App: %v", err)
+	}
+	if v, err := dstKR.Decrypt(acApp.ID, domain.AppSecret, acApp.APIKeyEncrypted); err != nil || v != appKey {
+		t.Errorf("app conn's App key = %q, err %v; want %q", v, err, appKey)
 	}
 	if v, err := dstKR.Decrypt(ac.ID, "harbrr", ac.HarbrrAPIKeyEncrypted); err != nil || v != appHarbrr {
 		t.Errorf("app conn harbrr key = %q, err %v; want %q", v, err, appHarbrr)
@@ -321,8 +359,15 @@ func assertConnectionsRestored(t *testing.T, dstDB *database.DB, dstKR *secrets.
 	if an.HarbrrAPIKeyID != newAPIKeyID {
 		t.Errorf("announce harbrr_api_key_id = %d, want %d", an.HarbrrAPIKeyID, newAPIKeyID)
 	}
-	if v, err := dstKR.Decrypt(an.ID, "app", an.APIKeyEncrypted); err != nil || v != annKey {
-		t.Errorf("announce tool key = %q, err %v; want %q", v, err, annKey)
+	if an.AppID == nil {
+		t.Fatal("announce conn AppID = nil, want set (restore is App-aware post-#269)")
+	}
+	anApp, err := (database.Apps{}).GetApp(ctx, dstDB, *an.AppID)
+	if err != nil {
+		t.Fatalf("get restored announce conn's App: %v", err)
+	}
+	if v, err := dstKR.Decrypt(anApp.ID, domain.AppSecret, anApp.APIKeyEncrypted); err != nil || v != annKey {
+		t.Errorf("announce conn's App key = %q, err %v; want %q", v, err, annKey)
 	}
 }
 
@@ -370,18 +415,20 @@ func seedSelectedConn(t *testing.T, db *database.DB, kr *secrets.Keyring) []stri
 		t.Fatalf("delete instance: %v", err)
 	}
 
+	appID := seedApp(t, db, kr, "radarr", "http://radarr:7878", "http://h:7478", appKey)
 	conns := database.AppConnections{}
-	connID, err := conns.InsertConnection(ctx, db, domain.AppConnection{
-		Name: "radarr", Kind: "radarr", BaseURL: "http://radarr:7878", HarbrrURL: "http://h:7478",
-		KeyID: kr.KeyID(), Enabled: true, SyncLevel: "full", IndexScope: "selected", FreeleechMode: "honor",
-	})
+	connID := seedAppConn(t, db, kr, "radarr", appID, 0, nil)
+
+	// Selected connection needs scope="selected" — the shared seedAppConn helper defaults
+	// to IndexScope "all", so patch it directly.
+	got, err := conns.GetConnection(ctx, db, connID)
 	if err != nil {
-		t.Fatalf("seed selected conn: %v", err)
+		t.Fatalf("get selected conn: %v", err)
 	}
-	appEnc, _ := kr.Encrypt(connID, "app", appKey)
-	harbrrEnc, _ := kr.Encrypt(connID, "harbrr", appHarbrr)
-	if err := conns.SetConnectionSecrets(ctx, db, connID, appEnc, harbrrEnc, kr.KeyID()); err != nil {
-		t.Fatalf("set selected conn secrets: %v", err)
+	got.IndexScope = "selected"
+	got.UpdatedAt = time.Now().UTC()
+	if err := conns.UpdateConnection(ctx, db, got); err != nil {
+		t.Fatalf("set index scope selected: %v", err)
 	}
 
 	// Select a subset (gamma + delta, not alpha) — the ledger `selected` flags are the
@@ -410,13 +457,13 @@ func TestExportImportPreservesIndexerSelection(t *testing.T) {
 	srcDB, srcKR := openDB(t), openKeyring(t, keyA)
 	wantSlugs := seedSelectedConn(t, srcDB, srcKR)
 
-	bundle, err := backup.NewService(srcDB, srcKR, zerolog.Nop()).Export(ctx, backup.ExportParams{Passphrase: "pw"})
+	bundle, err := newBackupService(srcDB, srcKR).Export(ctx, backup.ExportParams{Passphrase: "pw"})
 	if err != nil {
 		t.Fatalf("Export: %v", err)
 	}
 
 	dstDB, dstKR := openDB(t), openKeyring(t, keyB)
-	if err := backup.NewService(dstDB, dstKR, zerolog.Nop()).Import(ctx, backup.ImportParams{Payload: bundle, Passphrase: "pw", Force: true}); err != nil {
+	if err := newBackupService(dstDB, dstKR).Import(ctx, backup.ImportParams{Payload: bundle, Passphrase: "pw", Force: true}); err != nil {
 		t.Fatalf("Import: %v", err)
 	}
 
@@ -462,12 +509,12 @@ func TestImportWrongPassphraseFails(t *testing.T) {
 	ctx := context.Background()
 	db, kr := openDB(t), openKeyring(t, keyA)
 	seed(t, db, kr)
-	bundle, err := backup.NewService(db, kr, zerolog.Nop()).Export(ctx, backup.ExportParams{Passphrase: "right"})
+	bundle, err := newBackupService(db, kr).Export(ctx, backup.ExportParams{Passphrase: "right"})
 	if err != nil {
 		t.Fatalf("Export: %v", err)
 	}
 	dst := openDB(t)
-	err = backup.NewService(dst, openKeyring(t, keyB), zerolog.Nop()).Import(ctx, backup.ImportParams{Payload: bundle, Passphrase: "wrong", Force: true})
+	err = newBackupService(dst, openKeyring(t, keyB)).Import(ctx, backup.ImportParams{Payload: bundle, Passphrase: "wrong", Force: true})
 	if !errors.Is(err, backup.ErrInvalid) {
 		t.Fatalf("Import(wrong passphrase) err = %v, want ErrInvalid", err)
 	}
@@ -482,12 +529,12 @@ func TestImportForceGuard(t *testing.T) {
 	ctx := context.Background()
 	src, srcKR := openDB(t), openKeyring(t, keyA)
 	seed(t, src, srcKR)
-	bundle, _ := backup.NewService(src, srcKR, zerolog.Nop()).Export(ctx, backup.ExportParams{Passphrase: "pw"})
+	bundle, _ := newBackupService(src, srcKR).Export(ctx, backup.ExportParams{Passphrase: "pw"})
 
 	// A configured target refuses import without force.
 	dst, dstKR := openDB(t), openKeyring(t, keyB)
 	seed(t, dst, dstKR)
-	svc := backup.NewService(dst, dstKR, zerolog.Nop())
+	svc := newBackupService(dst, dstKR)
 	if err := svc.Import(ctx, backup.ImportParams{Payload: bundle, Passphrase: "pw"}); !errors.Is(err, backup.ErrConflict) {
 		t.Fatalf("Import(no force, non-empty) err = %v, want ErrConflict", err)
 	}
@@ -508,7 +555,7 @@ func TestImportForceGuardProtectsAdmin(t *testing.T) {
 	ctx := context.Background()
 	src, srcKR := openDB(t), openKeyring(t, keyA)
 	seed(t, src, srcKR) // carries an admin (+ config)
-	bundle, _ := backup.NewService(src, srcKR, zerolog.Nop()).Export(ctx, backup.ExportParams{Passphrase: "pw"})
+	bundle, _ := newBackupService(src, srcKR).Export(ctx, backup.ExportParams{Passphrase: "pw"})
 
 	// Target has only a bootstrap admin, no config resources.
 	dst, dstKR := openDB(t), openKeyring(t, keyB)
@@ -517,7 +564,7 @@ func TestImportForceGuardProtectsAdmin(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed target admin: %v", err)
 	}
-	svc := backup.NewService(dst, dstKR, zerolog.Nop())
+	svc := newBackupService(dst, dstKR)
 	if err := svc.Import(ctx, backup.ImportParams{Payload: bundle, Passphrase: "pw"}); !errors.Is(err, backup.ErrConflict) {
 		t.Fatalf("Import(no force, admin present) err = %v, want ErrConflict", err)
 	}
@@ -532,7 +579,7 @@ func TestImportForceGuardProtectsAdmin(t *testing.T) {
 func TestImportRejectsForeignBundle(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc := backup.NewService(openDB(t), openKeyring(t, keyA), zerolog.Nop())
+	svc := newBackupService(openDB(t), openKeyring(t, keyA))
 	cases := map[string]string{
 		"not json":        `not json`,
 		"unknown version": `{"schemaVersion":999,"salt":"","payload":""}`,
@@ -549,11 +596,57 @@ func TestImportRejectsForeignBundle(t *testing.T) {
 func TestExportRequiresPassphrase(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc := backup.NewService(openDB(t), openKeyring(t, keyA), zerolog.Nop())
+	svc := newBackupService(openDB(t), openKeyring(t, keyA))
 	if _, err := svc.Export(ctx, backup.ExportParams{Passphrase: "  "}); !errors.Is(err, backup.ErrInvalid) {
 		t.Errorf("Export(blank passphrase) err = %v, want ErrInvalid", err)
 	}
 	if err := svc.Import(ctx, backup.ImportParams{Payload: []byte(`{}`), Passphrase: ""}); !errors.Is(err, backup.ErrInvalid) {
 		t.Errorf("Import(blank passphrase) err = %v, want ErrInvalid", err)
+	}
+}
+
+// TestExportImportSharedAppNotDuplicated proves restore's Resolve-based load dedups by
+// identity: one App (kind="qui") referenced by BOTH an app-sync connection and an
+// announce connection round-trips to exactly ONE restored App, not two — the two
+// connections must still share it post-restore (ADR 0004's shared-App design, exercised
+// here through the one kind whose two enums collide: domain.AppKindQui ==
+// domain.AnnounceKindQui == "qui").
+func TestExportImportSharedAppNotDuplicated(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	srcDB, srcKR := openDB(t), openKeyring(t, keyA)
+	appID := seedApp(t, srcDB, srcKR, "qui", "http://qui:7476", "http://h:7478", appKey)
+	seedAppConn(t, srcDB, srcKR, "qui", appID, 0, nil)
+	seedAnnounceConn(t, srcDB, srcKR, "qui", appID, 0)
+
+	bundle, err := newBackupService(srcDB, srcKR).Export(ctx, backup.ExportParams{Passphrase: "pw"})
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	dstDB, dstKR := openDB(t), openKeyring(t, keyB)
+	if err := newBackupService(dstDB, dstKR).Import(ctx, backup.ImportParams{Payload: bundle, Passphrase: "pw", Force: true}); err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+
+	restoredApps, err := (database.Apps{}).ListApps(ctx, dstDB)
+	if err != nil {
+		t.Fatalf("list apps: %v", err)
+	}
+	if len(restoredApps) != 1 {
+		t.Fatalf("restored apps = %d, want 1 (shared identity must not duplicate)", len(restoredApps))
+	}
+
+	appConns, _ := (database.AppConnections{}).ListConnections(ctx, dstDB)
+	annConns, _ := (database.AnnounceConnections{}).ListAnnounceConnections(ctx, dstDB)
+	if len(appConns) != 1 || len(annConns) != 1 {
+		t.Fatalf("restored connections = %d app-sync, %d announce; want 1 each", len(appConns), len(annConns))
+	}
+	if appConns[0].AppID == nil || annConns[0].AppID == nil || *appConns[0].AppID != *annConns[0].AppID {
+		t.Errorf("app-sync AppID=%v, announce AppID=%v; want the same shared App", appConns[0].AppID, annConns[0].AppID)
+	}
+	if appConns[0].AppID == nil || *appConns[0].AppID != restoredApps[0].ID {
+		t.Errorf("restored connections reference app %v, want the sole restored app %d", appConns[0].AppID, restoredApps[0].ID)
 	}
 }

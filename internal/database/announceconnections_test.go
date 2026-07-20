@@ -9,10 +9,13 @@ import (
 	"github.com/autobrr/harbrr/internal/domain"
 )
 
-func sampleAnnounceConnection(harbrrKeyID int64, kind string, now time.Time) domain.AnnounceConnection {
+// sampleAnnounceConnection builds a fully-populated connection referencing appID (nil is
+// valid — the partial unique index on app_id only applies to non-NULL values). Identity
+// (base_url, the tool's own api key) is no longer stored on this row (#269) — it lives on
+// the referenced App.
+func sampleAnnounceConnection(appID *int64, harbrrKeyID int64, kind string, now time.Time) domain.AnnounceConnection {
 	return domain.AnnounceConnection{
-		Name: kind, Kind: kind, BaseURL: "http://" + kind + ":2468",
-		APIKeyEncrypted: "enc(tool-key)", HarbrrAPIKeyID: harbrrKeyID,
+		Name: kind, Kind: kind, AppID: appID, HarbrrAPIKeyID: harbrrKeyID,
 		HarbrrAPIKeyEncrypted: "enc(harbrr-key)", KeyID: "key-1", Enabled: true,
 		CreatedAt: now, UpdatedAt: now,
 	}
@@ -27,7 +30,8 @@ func TestAnnounceConnectionRoundTrip(t *testing.T) {
 
 	for _, kind := range []string{domain.AnnounceKindQui, domain.AnnounceKindCrossSeedV6} {
 		t.Run(kind, func(t *testing.T) {
-			conn := sampleAnnounceConnection(mintKey(t, db, "k-"+kind), kind, now)
+			appID := mintApp(t, db, kind, "http://"+kind+":2468")
+			conn := sampleAnnounceConnection(&appID, mintKey(t, db, "k-"+kind), kind, now)
 			id, err := repo.InsertAnnounceConnection(ctx, db, conn)
 			if err != nil {
 				t.Fatalf("InsertAnnounceConnection(%s): %v", kind, err)
@@ -36,13 +40,34 @@ func TestAnnounceConnectionRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GetAnnounceConnection(%s): %v", kind, err)
 			}
-			if got.Kind != kind || got.BaseURL != conn.BaseURL || !got.Enabled {
-				t.Errorf("round-trip = %+v, want kind=%s baseURL=%s enabled", got, kind, conn.BaseURL)
+			if got.Kind != kind || got.AppID == nil || *got.AppID != appID || !got.Enabled {
+				t.Errorf("round-trip = %+v, want kind=%s appID=%d enabled", got, kind, appID)
 			}
-			if got.APIKeyEncrypted != "enc(tool-key)" || got.HarbrrAPIKeyEncrypted != "enc(harbrr-key)" {
-				t.Error("encrypted secrets not round-tripped")
+			if got.HarbrrAPIKeyEncrypted != "enc(harbrr-key)" {
+				t.Error("encrypted harbrr key not round-tripped")
 			}
 		})
+	}
+}
+
+// TestAnnounceConnectionUniqueAppID proves the partial UNIQUE(app_id) index (#269 —
+// replacing the old UNIQUE(kind, base_url)) rejects a second row at the same non-NULL
+// app_id, but exempts NULL.
+func TestAnnounceConnectionUniqueAppID(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db := openMigrated(t, ":memory:")
+	repo := database.AnnounceConnections{}
+	now := time.Now().UTC()
+
+	appID := mintApp(t, db, domain.AnnounceKindQui, "http://qui:7476")
+	conn := sampleAnnounceConnection(&appID, mintKey(t, db, "a"), domain.AnnounceKindQui, now)
+	if _, err := repo.InsertAnnounceConnection(ctx, db, conn); err != nil {
+		t.Fatalf("first insert: %v", err)
+	}
+	dup := sampleAnnounceConnection(&appID, mintKey(t, db, "b"), domain.AnnounceKindQui, now)
+	if _, err := repo.InsertAnnounceConnection(ctx, db, dup); !database.IsUniqueViolation(err) {
+		t.Fatalf("duplicate app_id error = %v, want unique violation", err)
 	}
 }
 
@@ -53,7 +78,7 @@ func TestAnnounceConnectionEnableDelete(t *testing.T) {
 	repo := database.AnnounceConnections{}
 	now := time.Now().UTC().Truncate(time.Second)
 
-	id, err := repo.InsertAnnounceConnection(ctx, db, sampleAnnounceConnection(mintKey(t, db, "k"), domain.AnnounceKindQui, now))
+	id, err := repo.InsertAnnounceConnection(ctx, db, sampleAnnounceConnection(nil, mintKey(t, db, "k"), domain.AnnounceKindQui, now))
 	if err != nil {
 		t.Fatalf("insert: %v", err)
 	}
@@ -83,7 +108,7 @@ func TestAnnounceConnectionKeyRevocationSetsNull(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 
 	keyID := mintKey(t, db, "k")
-	id, err := repo.InsertAnnounceConnection(ctx, db, sampleAnnounceConnection(keyID, domain.AnnounceKindQui, now))
+	id, err := repo.InsertAnnounceConnection(ctx, db, sampleAnnounceConnection(nil, keyID, domain.AnnounceKindQui, now))
 	if err != nil {
 		t.Fatalf("insert: %v", err)
 	}

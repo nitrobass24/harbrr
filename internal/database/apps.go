@@ -116,23 +116,6 @@ func (Apps) UpdateApp(ctx context.Context, q dbinterface.Execer, a domain.App) e
 	return affectedOrNotFoundID(res, a.ID)
 }
 
-// PropagateAppBaseURL rewrites the interim base_url/host copies every referencing
-// surface row carries for its UNIQUE(kind, base_url) index, so an app base_url change
-// keeps those indexes truthful until the cleanup migration (#269) drops the copies.
-// Must run in the same tx as the app's UpdateApp.
-func (Apps) PropagateAppBaseURL(ctx context.Context, q dbinterface.Execer, appID int64, baseURL string) error {
-	for _, stmt := range []string{
-		`UPDATE app_connections SET base_url = ? WHERE app_id = ?`,
-		`UPDATE announce_connections SET base_url = ? WHERE app_id = ?`,
-		`UPDATE download_clients SET host = ? WHERE app_id = ?`,
-	} {
-		if _, err := q.ExecContext(ctx, q.Rebind(stmt), baseURL, appID); err != nil {
-			return fmt.Errorf("database: propagate app base_url: %w", err)
-		}
-	}
-	return nil
-}
-
 // DeleteApp removes an app by id, returning ErrNotFound when absent. The caller
 // (apps.Service) checks references first and returns a 409 rather than relying on an
 // FK error, so the referencing surfaces can be named.

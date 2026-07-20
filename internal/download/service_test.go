@@ -61,9 +61,6 @@ func TestCreateSealsSecretOnApp(t *testing.T) {
 	if !c.Enabled {
 		t.Error("Enabled default = false, want true")
 	}
-	if c.SecretEncrypted != "" {
-		t.Errorf("row SecretEncrypted = %q, want empty (credential lives on the App)", c.SecretEncrypted)
-	}
 	if c.AppID == nil {
 		t.Fatal("AppID = nil, want set")
 	}
@@ -379,30 +376,6 @@ func TestTestConnectionUnknownID(t *testing.T) {
 	svc, _ := newService(t)
 	if err := svc.TestConnection(context.Background(), 999); !errors.Is(err, database.ErrNotFound) {
 		t.Errorf("err = %v, want database.ErrNotFound", err)
-	}
-}
-
-// TestTestConnectionMigrationPending simulates a pre-fold row (a networked kind
-// with a NULL app_id, the state a legacy row is in before the boot fold in
-// internal/resourcemigrate runs) by writing it directly through the repo — the
-// service's own Create always resolves an App, so this state is otherwise
-// unreachable through the public API.
-func TestTestConnectionMigrationPending(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	svc, _ := newService(t)
-
-	now := svc.clock()
-	id, err := (database.DownloadClients{}).InsertDownloadClient(ctx, svc.db, domain.DownloadClient{
-		Name: "legacy", Kind: domain.DownloadClientKindQBittorrent, Enabled: true,
-		CreatedAt: now, UpdatedAt: now,
-	})
-	if err != nil {
-		t.Fatalf("insert legacy row: %v", err)
-	}
-
-	if err := svc.TestConnection(ctx, id); !errors.Is(err, domain.ErrAppMigrationPending) {
-		t.Errorf("err = %v, want domain.ErrAppMigrationPending", err)
 	}
 }
 

@@ -234,14 +234,12 @@ func (s *Service) TestConnection(ctx context.Context, id int64) error {
 }
 
 // buildDriver resolves a client's driver: a host-less kind uses its Settings only; a
-// networked kind loads its App for the host + decrypted credential (a NULL app_id on a
-// networked row means the boot fold hasn't run — ErrAppMigrationPending).
+// networked kind loads its App for the host + decrypted credential. AppID is never nil
+// on a networked row here: migration 0021 refuses to apply while one still is, so this
+// dereference is safe by construction, not defensively guarded.
 func (s *Service) buildDriver(ctx context.Context, c domain.DownloadClient) (Driver, error) {
 	if hostless(c.Kind) {
 		return newDriver(c, "", s.client)
-	}
-	if c.AppID == nil {
-		return nil, fmt.Errorf("download client %d: %w", c.ID, domain.ErrAppMigrationPending)
 	}
 	app, err := s.apps.Get(ctx, *c.AppID)
 	if err != nil {

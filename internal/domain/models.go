@@ -181,26 +181,25 @@ type SyncProfile struct {
 	UpdatedAt               time.Time
 }
 
-// AppConnection is a configured Sonarr/Radarr/qui app harbrr syncs its indexers
-// into. Two secrets are stored encrypted (base64 nonce‖ciphertext‖tag) under KeyID,
-// bound by the connection ID as encryption AAD: APIKeyEncrypted is the *app's* API
-// key (so harbrr can call it), and HarbrrAPIKeyEncrypted is the plaintext of the
-// dedicated harbrr key minted for this connection — persisted so every re-sync can
-// re-push it into the app (api_keys stores only the hash). HarbrrAPIKeyID points at
-// that minted key for revocation on delete. HarbrrURL is the base URL *this app*
-// uses to reach harbrr's Torznab feed (it can differ per app on a Docker/LAN).
+// AppConnection is a configured Sonarr/Radarr/qui app harbrr syncs its indexers into.
+// The app's own API key lives on the referenced App (AppID), not here. The one secret
+// stored on this row is HarbrrAPIKeyEncrypted: the plaintext of the dedicated harbrr key
+// minted for this connection (base64 nonce‖ciphertext‖tag under KeyID, bound by the
+// connection ID as encryption AAD) — persisted so every re-sync can re-push it into the
+// app (api_keys stores only the hash). HarbrrAPIKeyID points at that minted key for
+// revocation on delete. HarbrrURL is the base URL *this app* uses to reach harbrr's
+// Torznab feed (it can differ per app on a Docker/LAN) — populated from the App, see AppID.
 type AppConnection struct {
 	ID   int64
 	Name string
 	Kind string
 	// AppID references the App holding this connection's identity + credential
-	// (base_url, api key, harbrr_url). Post-fold it is always set; a NULL value on a
-	// non-hostless row means the boot fold has not run yet (ErrAppMigrationPending).
-	// BaseURL/HarbrrURL are enriched from the App by the service on read — the legacy
-	// columns below are no longer read (dropped by a later cleanup migration).
+	// (base_url, api key, harbrr_url); always set (the migration that dropped the
+	// legacy columns refuses to apply while any non-hostless row is still NULL).
+	// BaseURL/HarbrrURL are populated by the service from the App on read — they have
+	// no backing column on this row (dropped by #269; the App is the sole store).
 	AppID                 *int64
 	BaseURL               string
-	APIKeyEncrypted       string
 	HarbrrURL             string
 	HarbrrAPIKeyID        int64
 	HarbrrAPIKeyEncrypted string
@@ -329,19 +328,18 @@ type Solver struct {
 }
 
 // AnnounceConnection is a configured cross-seed tool harbrr pushes newly-seen releases to.
-// Like AppConnection it stores two encrypted secrets under KeyID (AAD = the connection id):
-// APIKeyEncrypted is the tool's own API key (so harbrr can call it), and
-// HarbrrAPIKeyEncrypted is the plaintext of the dedicated minted harbrr key whose value
-// signs the /dl link the tool fetches back. HarbrrAPIKeyID points at that key for revocation.
+// The tool's own API key lives on the referenced App (AppID), not here. Like AppConnection,
+// the one secret stored on this row is HarbrrAPIKeyEncrypted under KeyID (AAD = the
+// connection id): the plaintext of the dedicated minted harbrr key whose value signs the
+// /dl link the tool fetches back. HarbrrAPIKeyID points at that key for revocation.
 type AnnounceConnection struct {
 	ID   int64
 	Name string
 	Kind string
 	// AppID references the App holding this connection's identity + credential; see
-	// AppConnection.AppID. BaseURL/HarbrrURL are enriched from the App on read.
+	// AppConnection.AppID. BaseURL/HarbrrURL are populated from the App on read.
 	AppID                 *int64
 	BaseURL               string
-	APIKeyEncrypted       string
 	HarbrrURL             string
 	HarbrrAPIKeyID        int64
 	HarbrrAPIKeyEncrypted string
@@ -490,25 +488,25 @@ type DownloadClientSettings struct {
 	RTorrent        *RTorrentSettings        `json:"rtorrent,omitempty"`
 }
 
-// DownloadClient is a configured download client harbrr can send grabbed
-// releases to. Host/Username are plain; Secret (password or API key, depending on
-// kind) is the only stored secret, encrypted under KeyID with the client's own id
-// as AAD. Settings holds kind-specific options (see DownloadClientSettings).
+// DownloadClient is a configured download client harbrr can send grabbed releases to.
+// A networked kind's host/username/credential live on the referenced App (AppID); this
+// row seals no credential of its own (KeyID is unused going forward — kept only because
+// nothing forces its removal, see #269). Settings holds kind-specific options (see
+// DownloadClientSettings).
 type DownloadClient struct {
 	ID   int64
 	Name string
 	Kind string
-	// AppID references the App holding this client's identity + credential
-	// (host, username, secret). NULL only for host-less kinds (blackhole), which have
-	// no network endpoint or credential of their own. Host/Username are enriched from
-	// the App on read; the legacy columns below are no longer read.
-	AppID           *int64
-	Enabled         bool
-	Host            string
-	Username        string
-	SecretEncrypted string
-	KeyID           string
-	Settings        DownloadClientSettings
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// AppID references the App holding this client's identity + credential (host,
+	// username, secret). NULL only for host-less kinds (blackhole), which have no
+	// network endpoint or credential of their own. Host/Username are populated from
+	// the App on read — they have no backing column on this row (dropped by #269).
+	AppID     *int64
+	Enabled   bool
+	Host      string
+	Username  string
+	KeyID     string
+	Settings  DownloadClientSettings
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }

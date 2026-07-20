@@ -10,16 +10,17 @@ import (
 	"github.com/autobrr/harbrr/internal/domain"
 )
 
-// sampleConnection builds a fully-populated connection bound to the given minted
-// harbrr key id. Both secret columns carry opaque (pretend-encrypted) blobs — the
-// repo stores them verbatim, encryption being the service's concern.
-func sampleConnection(harbrrKeyID int64, now time.Time) domain.AppConnection {
+// sampleConnection builds a fully-populated connection referencing appID (nil is valid —
+// the partial unique index on app_id only applies to non-NULL values) and bound to the
+// given minted harbrr key id. HarbrrAPIKeyEncrypted carries an opaque (pretend-encrypted)
+// blob — the repo stores it verbatim, encryption being the service's concern. Identity
+// (base_url, the app's own api key) is no longer stored on this row at all (#269) — it
+// lives on the referenced App.
+func sampleConnection(appID *int64, harbrrKeyID int64, now time.Time) domain.AppConnection {
 	return domain.AppConnection{
 		Name:                  "Sonarr",
 		Kind:                  domain.AppKindSonarr,
-		BaseURL:               "http://sonarr:8989",
-		APIKeyEncrypted:       "enc(app-key)",
-		HarbrrURL:             "http://harbrr:8787",
+		AppID:                 appID,
 		HarbrrAPIKeyID:        harbrrKeyID,
 		HarbrrAPIKeyEncrypted: "enc(harbrr-key)",
 		KeyID:                 "key-1",
@@ -44,6 +45,19 @@ func mintKey(t *testing.T, db *database.DB, name string) int64 {
 	return id
 }
 
+// mintApp inserts an apps row so a connection's app_id FK resolves.
+func mintApp(t *testing.T, db *database.DB, kind, baseURL string) int64 {
+	t.Helper()
+	now := time.Now().UTC()
+	id, err := (database.Apps{}).InsertApp(context.Background(), db, domain.App{
+		Kind: kind, Name: kind, BaseURL: baseURL, CreatedAt: now, UpdatedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("mint app: %v", err)
+	}
+	return id
+}
+
 // TestAppConnectionAllKindsRoundTrip inserts and reads back a connection for EVERY
 // supported app kind. This is the coverage gap that let #85 ship: the kind support in
 // Go (validateKind/newDriver) was widened to lidarr/readarr/whisparr but the DB CHECK
@@ -62,10 +76,10 @@ func TestAppConnectionAllKindsRoundTrip(t *testing.T) {
 	}
 	for _, kind := range kinds {
 		t.Run(kind, func(t *testing.T) {
-			conn := sampleConnection(mintKey(t, db, "key-"+kind), now)
+			appID := mintApp(t, db, kind, "http://"+kind+":9999")
+			conn := sampleConnection(&appID, mintKey(t, db, "key-"+kind), now)
 			conn.Kind = kind
 			conn.Name = kind
-			conn.BaseURL = "http://" + kind + ":9999"
 			mode := domain.FreeleechModeHonor
 			if kind == domain.AppKindQui {
 				mode = domain.FreeleechModeBypass
@@ -97,8 +111,9 @@ func TestAppConnectionInsertGetList(t *testing.T) {
 	repo := database.AppConnections{}
 	now := time.Now().UTC().Truncate(time.Second)
 
+	appID := mintApp(t, db, domain.AppKindSonarr, "http://sonarr:8989")
 	keyID := mintKey(t, db, "sonarr")
-	id, err := repo.InsertConnection(ctx, db, sampleConnection(keyID, now))
+	id, err := repo.InsertConnection(ctx, db, sampleConnection(&appID, keyID, now))
 	if err != nil {
 		t.Fatalf("InsertConnection: %v", err)
 	}
@@ -108,9 +123,9 @@ func TestAppConnectionInsertGetList(t *testing.T) {
 		t.Fatalf("GetConnection: %v", err)
 	}
 	switch {
-	case got.Name != "Sonarr", got.Kind != domain.AppKindSonarr, got.BaseURL != "http://sonarr:8989":
+	case got.Name != "Sonarr", got.Kind != domain.AppKindSonarr, got.AppID == nil || *got.AppID != appID:
 		t.Errorf("identity round-trip mismatch: %+v", got)
-	case got.APIKeyEncrypted != "enc(app-key)" || got.HarbrrAPIKeyEncrypted != "enc(harbrr-key)":
+	case got.HarbrrAPIKeyEncrypted != "enc(harbrr-key)":
 		t.Errorf("secret round-trip mismatch: %+v", got)
 	case got.HarbrrAPIKeyID != keyID || got.KeyID != "key-1":
 		t.Errorf("key linkage mismatch: %+v", got)
@@ -138,21 +153,35 @@ func TestAppConnectionGetNotFound(t *testing.T) {
 	}
 }
 
-func TestAppConnectionUniqueKindBaseURL(t *testing.T) {
+// TestAppConnectionUniqueAppID proves the partial UNIQUE(app_id) index (#269 — replacing
+// the old UNIQUE(kind, base_url)) rejects a second row at the same non-NULL app_id, but
+// exempts NULL (multiple host-less/unresolved rows are allowed).
+func TestAppConnectionUniqueAppID(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	db := openMigrated(t, ":memory:")
 	repo := database.AppConnections{}
 	now := time.Now().UTC()
 
-	conn := sampleConnection(mintKey(t, db, "a"), now)
+	appID := mintApp(t, db, domain.AppKindSonarr, "http://sonarr:8989")
+	conn := sampleConnection(&appID, mintKey(t, db, "a"), now)
 	if _, err := repo.InsertConnection(ctx, db, conn); err != nil {
 		t.Fatalf("first insert: %v", err)
 	}
-	dup := sampleConnection(mintKey(t, db, "b"), now) // same kind+base_url
-	_, err := repo.InsertConnection(ctx, db, dup)
-	if !database.IsUniqueViolation(err) {
-		t.Fatalf("duplicate (kind, base_url) error = %v, want unique violation", err)
+	dup := sampleConnection(&appID, mintKey(t, db, "b"), now) // same app_id
+	if _, err := repo.InsertConnection(ctx, db, dup); !database.IsUniqueViolation(err) {
+		t.Fatalf("duplicate app_id error = %v, want unique violation", err)
+	}
+
+	null1 := sampleConnection(nil, mintKey(t, db, "c"), now)
+	null1.Name = "null1"
+	if _, err := repo.InsertConnection(ctx, db, null1); err != nil {
+		t.Fatalf("first NULL app_id insert: %v", err)
+	}
+	null2 := sampleConnection(nil, mintKey(t, db, "d"), now)
+	null2.Name = "null2"
+	if _, err := repo.InsertConnection(ctx, db, null2); err != nil {
+		t.Fatalf("second NULL app_id insert (must be exempt from the partial index): %v", err)
 	}
 }
 
@@ -163,12 +192,12 @@ func TestAppConnectionUpdateAndEnable(t *testing.T) {
 	repo := database.AppConnections{}
 	now := time.Now().UTC().Truncate(time.Second)
 
-	id, err := repo.InsertConnection(ctx, db, sampleConnection(mintKey(t, db, "k"), now))
+	id, err := repo.InsertConnection(ctx, db, sampleConnection(nil, mintKey(t, db, "k"), now))
 	if err != nil {
 		t.Fatalf("insert: %v", err)
 	}
 
-	updated := sampleConnection(0, now)
+	updated := sampleConnection(nil, 0, now)
 	updated.ID = id
 	updated.Name = "Sonarr 4K"
 	updated.SyncLevel = domain.SyncLevelAddUpdate
@@ -204,7 +233,7 @@ func TestAppConnectionRecordSyncResult(t *testing.T) {
 	repo := database.AppConnections{}
 	now := time.Now().UTC().Truncate(time.Second)
 
-	id, _ := repo.InsertConnection(ctx, db, sampleConnection(mintKey(t, db, "k"), now))
+	id, _ := repo.InsertConnection(ctx, db, sampleConnection(nil, mintKey(t, db, "k"), now))
 	at := now.Add(time.Hour)
 	if err := repo.RecordSyncResult(ctx, db, id, domain.SyncStatusPartial, "1 of 3 failed", at); err != nil {
 		t.Fatalf("RecordSyncResult: %v", err)
@@ -225,7 +254,7 @@ func TestAppConnectionIndexerLedger(t *testing.T) {
 	repo := database.AppConnections{}
 	now := time.Now().UTC().Truncate(time.Second)
 
-	connID, _ := repo.InsertConnection(ctx, db, sampleConnection(mintKey(t, db, "k"), now))
+	connID, _ := repo.InsertConnection(ctx, db, sampleConnection(nil, mintKey(t, db, "k"), now))
 	instID := insertInstance(t, db, "show-tracker")
 
 	pushed := now.Add(time.Minute)
@@ -268,7 +297,7 @@ func TestAppConnectionDeleteCascadesLedger(t *testing.T) {
 	repo := database.AppConnections{}
 	now := time.Now().UTC().Truncate(time.Second)
 
-	connID, _ := repo.InsertConnection(ctx, db, sampleConnection(mintKey(t, db, "k"), now))
+	connID, _ := repo.InsertConnection(ctx, db, sampleConnection(nil, mintKey(t, db, "k"), now))
 	instID := insertInstance(t, db, "show-tracker")
 	_ = repo.UpsertConnectionIndexer(ctx, db, domain.AppConnectionIndexer{
 		ConnectionID: connID, InstanceID: instID, Selected: true,
@@ -293,7 +322,7 @@ func TestAppConnectionKeyRevocationSetsNull(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 
 	keyID := mintKey(t, db, "sonarr")
-	connID, _ := repo.InsertConnection(ctx, db, sampleConnection(keyID, now))
+	connID, _ := repo.InsertConnection(ctx, db, sampleConnection(nil, keyID, now))
 
 	// Revoking the minted key out of band must null the link, not orphan-block the delete.
 	if err := (database.APIKeys{}).Delete(ctx, db, keyID); err != nil {

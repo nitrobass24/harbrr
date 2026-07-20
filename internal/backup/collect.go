@@ -13,8 +13,10 @@ import (
 
 // Secret AAD discriminators, byte-matching the sealing services (the single source of
 // truth is database.SecretSurfaces()). proxies/solvers use the exported domain consts.
+// The app-sync/announce connections' own app credential is no longer sealed on the row
+// at all (it lives on the App, decrypted via s.apps.DecryptKey — see resolveConnApp) —
+// discHarbrr is the only connection-row secret left.
 const (
-	discApp    = "app"    // *_connections api_key_encrypted
 	discHarbrr = "harbrr" // *_connections harbrr_api_key_encrypted
 	discURL    = "url"    // notifications url_encrypted
 )
@@ -41,10 +43,14 @@ func (s *Service) collect(ctx context.Context, q dbinterface.Execer) (*Tables, e
 	if t.IndexerInstances, err = s.collectInstances(ctx, q); err != nil {
 		return nil, err
 	}
-	if t.AppConnections, err = s.collectAppConnections(ctx, q); err != nil {
+	appIndex, err := s.apps.Index(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("backup: list apps: %w", err)
+	}
+	if t.AppConnections, err = s.collectAppConnections(ctx, q, appIndex); err != nil {
 		return nil, err
 	}
-	if t.AnnounceConnections, err = s.collectAnnounceConnections(ctx, q); err != nil {
+	if t.AnnounceConnections, err = s.collectAnnounceConnections(ctx, q, appIndex); err != nil {
 		return nil, err
 	}
 	if t.Notifications, err = s.collectNotifications(ctx, q); err != nil {
@@ -186,14 +192,34 @@ func (s *Service) collectSettings(ctx context.Context, q dbinterface.Execer, ins
 	return out, nil
 }
 
-func (s *Service) collectAppConnections(ctx context.Context, q dbinterface.Execer) ([]AppConnRow, error) {
+// resolveConnApp looks up a connection's App in the pre-loaded index and decrypts its
+// credential — the shared step for app-sync/announce collect. Every connection is
+// guaranteed a non-nil AppID by migration 0021's guard (and restore's App-aware load,
+// see restore.go), so a nil or dangling reference here is a bug, not a legitimate
+// pending state.
+func (s *Service) resolveConnApp(connID int64, appID *int64, appIndex map[int64]domain.App) (domain.App, string, error) {
+	if appID == nil {
+		return domain.App{}, "", fmt.Errorf("backup: connection %d has no app_id", connID)
+	}
+	app, ok := appIndex[*appID]
+	if !ok {
+		return domain.App{}, "", fmt.Errorf("backup: connection %d references missing app %d", connID, *appID)
+	}
+	key, err := s.apps.DecryptKey(app)
+	if err != nil {
+		return domain.App{}, "", fmt.Errorf("backup: decrypt app %d credential: %w", app.ID, err)
+	}
+	return app, key, nil
+}
+
+func (s *Service) collectAppConnections(ctx context.Context, q dbinterface.Execer, appIndex map[int64]domain.App) ([]AppConnRow, error) {
 	list, err := (database.AppConnections{}).ListConnections(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("backup: list app connections: %w", err)
 	}
 	out := make([]AppConnRow, 0, len(list))
 	for _, c := range list {
-		appKey, err := s.decryptSecret(c.ID, discApp, c.APIKeyEncrypted)
+		app, appKey, err := s.resolveConnApp(c.ID, c.AppID, appIndex)
 		if err != nil {
 			return nil, err
 		}
@@ -206,8 +232,8 @@ func (s *Service) collectAppConnections(ctx context.Context, q dbinterface.Exece
 			return nil, err
 		}
 		out = append(out, AppConnRow{
-			ID: c.ID, Name: c.Name, Kind: c.Kind, BaseURL: c.BaseURL, APIKey: appKey,
-			HarbrrURL: c.HarbrrURL, HarbrrAPIKeyID: nilIfZero(c.HarbrrAPIKeyID), HarbrrAPIKey: harbrrKey,
+			ID: c.ID, Name: c.Name, Kind: c.Kind, BaseURL: app.BaseURL, APIKey: appKey,
+			HarbrrURL: app.HarbrrURL, HarbrrAPIKeyID: nilIfZero(c.HarbrrAPIKeyID), HarbrrAPIKey: harbrrKey,
 			Enabled: c.Enabled, SyncLevel: c.SyncLevel, IndexScope: c.IndexScope,
 			FreeleechMode: c.FreeleechMode, Priority: c.Priority, SyncProfileID: c.SyncProfileID,
 			SelectedInstanceIDs: selected, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
@@ -233,14 +259,14 @@ func collectSelectedInstances(ctx context.Context, q dbinterface.Execer, connID 
 	return out, nil
 }
 
-func (s *Service) collectAnnounceConnections(ctx context.Context, q dbinterface.Execer) ([]AnnounceConnRow, error) {
+func (s *Service) collectAnnounceConnections(ctx context.Context, q dbinterface.Execer, appIndex map[int64]domain.App) ([]AnnounceConnRow, error) {
 	list, err := (database.AnnounceConnections{}).ListAnnounceConnections(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("backup: list announce connections: %w", err)
 	}
 	out := make([]AnnounceConnRow, 0, len(list))
 	for _, c := range list {
-		appKey, err := s.decryptSecret(c.ID, discApp, c.APIKeyEncrypted)
+		app, appKey, err := s.resolveConnApp(c.ID, c.AppID, appIndex)
 		if err != nil {
 			return nil, err
 		}
@@ -249,8 +275,8 @@ func (s *Service) collectAnnounceConnections(ctx context.Context, q dbinterface.
 			return nil, err
 		}
 		out = append(out, AnnounceConnRow{
-			ID: c.ID, Name: c.Name, Kind: c.Kind, BaseURL: c.BaseURL, APIKey: appKey,
-			HarbrrURL: c.HarbrrURL, HarbrrAPIKeyID: nilIfZero(c.HarbrrAPIKeyID), HarbrrAPIKey: harbrrKey,
+			ID: c.ID, Name: c.Name, Kind: c.Kind, BaseURL: app.BaseURL, APIKey: appKey,
+			HarbrrURL: app.HarbrrURL, HarbrrAPIKeyID: nilIfZero(c.HarbrrAPIKeyID), HarbrrAPIKey: harbrrKey,
 			Enabled: c.Enabled, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
 		})
 	}

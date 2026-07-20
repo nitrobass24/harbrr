@@ -264,15 +264,7 @@ func (s *Service) UpdateCredential(ctx context.Context, id int64, p UpdateParams
 		Apply: func(a *domain.App, encrypted, keyID string) { a.APIKeyEncrypted, a.KeyID = encrypted, keyID },
 		Touch: func(a *domain.App, now time.Time) { a.UpdatedAt = now },
 		Write: func(ctx context.Context, q dbinterface.Execer, a domain.App) error {
-			if err := s.repo.UpdateApp(ctx, q, a); err != nil {
-				return fmt.Errorf("apps: update app: %w", err)
-			}
-			// A base_url change must propagate to the surface rows' interim identity
-			// copies (same tx) so their UNIQUE(kind, base_url) index stays truthful.
-			if p.BaseURL == nil {
-				return nil
-			}
-			return s.repo.PropagateAppBaseURL(ctx, q, a.ID, a.BaseURL)
+			return s.repo.UpdateApp(ctx, q, a)
 		},
 		Conflict: func(a domain.App) error {
 			return fmt.Errorf("%w: %s at %s", domain.ErrConflict, a.Kind, apphttp.RedactURL(a.BaseURL))

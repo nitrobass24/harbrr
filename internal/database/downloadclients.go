@@ -19,14 +19,11 @@ import (
 type DownloadClients struct{}
 
 // downloadClientColumns is the full select list, in scan order. app_id is the App
-// reference (ADR 0004; NULL for host-less kinds like blackhole); legacy
-// host/username/secret_encrypted columns are still selected but the service reads a
-// networked client's identity from the App.
-const downloadClientColumns = `id, name, kind, app_id, enabled, host, username, secret_encrypted, key_id, settings_json, created_at, updated_at`
+// reference (ADR 0004; NULL for host-less kinds like blackhole) — the sole identity
+// source for a networked client; host/username/secret_encrypted were dropped by #269.
+const downloadClientColumns = `id, name, kind, app_id, enabled, key_id, settings_json, created_at, updated_at`
 
-// InsertDownloadClient writes a row with an empty secret_encrypted/key_id (so its
-// id can bind the encryption AAD) and returns the new id; the service writes the
-// sealed secret back via SetDownloadClientSecret in the same tx.
+// InsertDownloadClient writes a row and returns the new id.
 func (DownloadClients) InsertDownloadClient(ctx context.Context, q dbinterface.Execer, c domain.DownloadClient) (int64, error) {
 	settingsJSON, err := marshalDownloadClientSettings(c.Settings)
 	if err != nil {
@@ -34,9 +31,9 @@ func (DownloadClients) InsertDownloadClient(ctx context.Context, q dbinterface.E
 	}
 	res, err := q.ExecContext(ctx,
 		q.Rebind(`INSERT INTO download_clients
-			(name, kind, app_id, enabled, host, username, secret_encrypted, key_id, settings_json, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, '', '', ?, ?, ?)`),
-		c.Name, c.Kind, nullInt64(c.AppID), boolToInt(c.Enabled), c.Host, c.Username, settingsJSON,
+			(name, kind, app_id, enabled, key_id, settings_json, created_at, updated_at)
+			VALUES (?, ?, ?, ?, '', ?, ?, ?)`),
+		c.Name, c.Kind, nullInt64(c.AppID), boolToInt(c.Enabled), settingsJSON,
 		c.CreatedAt.UTC().Format(timeLayout), c.UpdatedAt.UTC().Format(timeLayout))
 	if err != nil {
 		return 0, fmt.Errorf("database: insert download client: %w", err)
@@ -46,19 +43,6 @@ func (DownloadClients) InsertDownloadClient(ctx context.Context, q dbinterface.E
 		return 0, fmt.Errorf("database: download client last insert id: %w", err)
 	}
 	return id, nil
-}
-
-// SetDownloadClientSecret writes the encrypted secret column + key_id by id
-// (phase two of the insert-then-seal write, so the credential binds to the
-// freshly-minted row id).
-func (DownloadClients) SetDownloadClientSecret(ctx context.Context, q dbinterface.Execer, id int64, secretEncrypted, keyID string) error {
-	res, err := q.ExecContext(ctx,
-		q.Rebind(`UPDATE download_clients SET secret_encrypted = ?, key_id = ? WHERE id = ?`),
-		secretEncrypted, keyID, id)
-	if err != nil {
-		return fmt.Errorf("database: set download client secret: %w", err)
-	}
-	return affectedOrNotFoundID(res, id)
 }
 
 // GetDownloadClient returns the client with the given id, or ErrNotFound.
@@ -106,10 +90,10 @@ func (DownloadClients) UpdateDownloadClient(ctx context.Context, q dbinterface.E
 		return err
 	}
 	res, err := q.ExecContext(ctx,
-		q.Rebind(`UPDATE download_clients SET name = ?, enabled = ?, host = ?, username = ?,
-			secret_encrypted = ?, key_id = ?, settings_json = ?, updated_at = ?
+		q.Rebind(`UPDATE download_clients SET name = ?, enabled = ?,
+			key_id = ?, settings_json = ?, updated_at = ?
 			WHERE id = ?`),
-		c.Name, boolToInt(c.Enabled), c.Host, c.Username, c.SecretEncrypted, c.KeyID, settingsJSON,
+		c.Name, boolToInt(c.Enabled), c.KeyID, settingsJSON,
 		c.UpdatedAt.UTC().Format(timeLayout), c.ID)
 	if err != nil {
 		return fmt.Errorf("database: update download client: %w", err)
@@ -166,8 +150,8 @@ func scanDownloadClient(s interface{ Scan(...any) error }) (domain.DownloadClien
 		settingsJSON         string
 		createdAt, updatedAt string
 	)
-	if err := s.Scan(&c.ID, &c.Name, &c.Kind, &appID, &enabled, &c.Host, &c.Username,
-		&c.SecretEncrypted, &c.KeyID, &settingsJSON, &createdAt, &updatedAt); err != nil {
+	if err := s.Scan(&c.ID, &c.Name, &c.Kind, &appID, &enabled,
+		&c.KeyID, &settingsJSON, &createdAt, &updatedAt); err != nil {
 		return domain.DownloadClient{}, err //nolint:wrapcheck // sql.ErrNoRows matched by caller; others wrapped there.
 	}
 	c.AppID = nullableToPtr(appID)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/autobrr/harbrr/internal/apps"
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
 	"github.com/autobrr/harbrr/internal/domain"
@@ -44,30 +45,78 @@ var wipeOrder = []string{
 }
 
 // restore applies a decoded bundle as a transactional wipe-and-load: refuse a configured
-// instance unless force, wipe the backed-up tables, then re-insert everything, re-sealing
-// each secret under the target keyring with the new row id and remapping foreign keys.
+// instance unless force, resolve every app-sync/announce connection's App, wipe the
+// backed-up tables, then re-insert everything, re-sealing each secret under the target
+// keyring with the new row id and remapping foreign keys.
+//
+// App resolution (resolveConnApps) MUST run before the transaction opens: db.go configures
+// the underlying *sql.DB with SetMaxOpenConns(1) (a single physical connection), and
+// apps.Service.Resolve always runs against its own s.db handle, never the caller's tx (ADR
+// 0004 §6 — an orphan App from a later-failing create is an accepted risk, exactly the risk
+// accepted here too). Calling Resolve from inside this tx would try to check out that same
+// single connection while the tx already holds it, deadlocking the pool. The force-guard
+// check runs before resolution too (on s.db, not tx-scoped), so a rejected import creates or
+// rotates no App as a side effect — the small check-then-wipe TOCTOU window this opens is
+// accepted for single-user self-hosted software (CLAUDE.md).
 func (s *Service) restore(ctx context.Context, t *Tables, force bool) error {
+	if err := ensureRestorable(ctx, s.db, force, t.Admin != nil); err != nil {
+		return err
+	}
+	appConnApps, err := s.resolveAppConnApps(ctx, t.AppConnections)
+	if err != nil {
+		return err
+	}
+	announceConnApps, err := s.resolveAnnounceConnApps(ctx, t.AnnounceConnections)
+	if err != nil {
+		return err
+	}
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("backup: begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if err := ensureRestorable(ctx, tx, force, t.Admin != nil); err != nil {
-		return err
-	}
 	// The admin is replaced only when the bundle carries one, so a bundle from a
 	// fresh (pre-setup) instance can't lock the operator out of the target.
 	if err := wipe(ctx, tx, t.Admin != nil); err != nil {
 		return err
 	}
-	if err := s.load(ctx, tx, t); err != nil {
+	if err := s.load(ctx, tx, t, appConnApps, announceConnApps); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("backup: commit restore: %w", err)
 	}
 	return nil
+}
+
+// resolveAppConnApps / resolveAnnounceConnApps get-or-create the App each bundled
+// connection references (see resolveConnAppForLoad), keyed by the row's ORIGINAL (source)
+// id — loadAppConnections/loadAnnounceConnections look up the pre-resolved App id by that
+// key instead of calling Resolve themselves (see restore's doc comment for why).
+func (s *Service) resolveAppConnApps(ctx context.Context, rows []AppConnRow) (idMap, error) {
+	out := make(idMap, len(rows))
+	for _, r := range rows {
+		app, err := s.resolveConnAppForLoad(ctx, r.Kind, r.Name, r.BaseURL, r.APIKey, r.HarbrrURL)
+		if err != nil {
+			return nil, err
+		}
+		out[r.ID] = app.ID
+	}
+	return out, nil
+}
+
+func (s *Service) resolveAnnounceConnApps(ctx context.Context, rows []AnnounceConnRow) (idMap, error) {
+	out := make(idMap, len(rows))
+	for _, r := range rows {
+		app, err := s.resolveConnAppForLoad(ctx, r.Kind, r.Name, r.BaseURL, r.APIKey, r.HarbrrURL)
+		if err != nil {
+			return nil, err
+		}
+		out[r.ID] = app.ID
+	}
+	return out, nil
 }
 
 // ensureRestorable refuses to overwrite existing state unless force is set: any configured
@@ -114,8 +163,10 @@ func wipe(ctx context.Context, q dbinterface.Execer, includeUsers bool) error {
 }
 
 // load re-inserts every table in foreign-key order (parents first), threading each
-// parent's source→target id map into the children that reference it.
-func (s *Service) load(ctx context.Context, q dbinterface.Execer, t *Tables) error {
+// parent's source→target id map into the children that reference it. appConnApps/
+// announceConnApps are the pre-resolved (source row id -> App id) maps built before this
+// transaction opened (see restore's doc comment).
+func (s *Service) load(ctx context.Context, q dbinterface.Execer, t *Tables, appConnApps, announceConnApps idMap) error {
 	proxyIDs, err := s.loadProxies(ctx, q, t.Proxies)
 	if err != nil {
 		return err
@@ -136,10 +187,10 @@ func (s *Service) load(ctx context.Context, q dbinterface.Execer, t *Tables) err
 	if err != nil {
 		return err
 	}
-	if err := s.loadAppConnections(ctx, q, t.AppConnections, apiKeyIDs, profileIDs, instanceIDs); err != nil {
+	if err := s.loadAppConnections(ctx, q, t.AppConnections, appConnApps, apiKeyIDs, profileIDs, instanceIDs); err != nil {
 		return err
 	}
-	if err := s.loadAnnounceConnections(ctx, q, t.AnnounceConnections, apiKeyIDs); err != nil {
+	if err := s.loadAnnounceConnections(ctx, q, t.AnnounceConnections, announceConnApps, apiKeyIDs); err != nil {
 		return err
 	}
 	if err := s.loadNotifications(ctx, q, t.Notifications); err != nil {
@@ -286,11 +337,27 @@ func (s *Service) loadSettings(ctx context.Context, q dbinterface.Execer, instan
 	return nil
 }
 
-func (s *Service) loadAppConnections(ctx context.Context, q dbinterface.Execer, rows []AppConnRow, apiKeyIDs, profileIDs, instanceIDs idMap) error {
+// resolveConnAppForLoad get-or-creates the App a bundled connection references (by
+// (kind, base_url), exactly like a live create — see apps.Service.Resolve), sealing/
+// rotating its credential under the App's own id. Two connections carrying the same
+// (kind, base_url) — e.g. an app-sync and an announce connection both against the same
+// qui instance — resolve to the SAME App rather than minting a duplicate, mirroring the
+// live create paths' dedup. Called only from the pre-transaction resolve pass (see
+// restore's doc comment) — never while the wipe/load tx is open.
+func (s *Service) resolveConnAppForLoad(ctx context.Context, kind, name, baseURL, apiKey, harbrrURL string) (domain.App, error) {
+	app, err := s.apps.Resolve(ctx, apps.Ref{Kind: kind, Name: name, BaseURL: baseURL, APIKey: apiKey, HarbrrURL: harbrrURL})
+	if err != nil {
+		return domain.App{}, fmt.Errorf("backup: resolve app for %q: %w", name, err)
+	}
+	return app, nil
+}
+
+func (s *Service) loadAppConnections(ctx context.Context, q dbinterface.Execer, rows []AppConnRow, appConnApps, apiKeyIDs, profileIDs, instanceIDs idMap) error {
 	repo := database.AppConnections{}
 	for _, r := range rows {
+		appID := appConnApps[r.ID]
 		newID, err := repo.InsertConnection(ctx, q, domain.AppConnection{
-			Name: r.Name, Kind: r.Kind, BaseURL: r.BaseURL, APIKeyEncrypted: "", HarbrrURL: r.HarbrrURL,
+			Name: r.Name, Kind: r.Kind, AppID: &appID,
 			HarbrrAPIKeyID: zeroIfNil(apiKeyIDs.remap(r.HarbrrAPIKeyID)), HarbrrAPIKeyEncrypted: "",
 			KeyID: s.keyring.KeyID(), Enabled: r.Enabled, SyncLevel: r.SyncLevel, IndexScope: r.IndexScope,
 			FreeleechMode: r.FreeleechMode, Priority: r.Priority, SyncProfileID: profileIDs.remap(r.SyncProfileID),
@@ -299,11 +366,11 @@ func (s *Service) loadAppConnections(ctx context.Context, q dbinterface.Execer, 
 		if err != nil {
 			return fmt.Errorf("backup: insert app connection %q: %w", r.Name, err)
 		}
-		appEnc, harbrrEnc, err := s.sealConnPair(newID, r.APIKey, r.HarbrrAPIKey)
+		harbrrEnc, err := s.sealHarbrrKey(newID, r.HarbrrAPIKey)
 		if err != nil {
 			return err
 		}
-		if err := repo.SetConnectionSecrets(ctx, q, newID, appEnc, harbrrEnc, s.keyring.KeyID()); err != nil {
+		if err := repo.SetConnectionSecrets(ctx, q, newID, harbrrEnc, s.keyring.KeyID()); err != nil {
 			return fmt.Errorf("backup: set app connection secrets: %w", err)
 		}
 		if err := loadIndexerSelection(ctx, q, repo, newID, r.SelectedInstanceIDs, instanceIDs); err != nil {
@@ -330,38 +397,38 @@ func loadIndexerSelection(ctx context.Context, q dbinterface.Execer, repo databa
 	return nil
 }
 
-func (s *Service) loadAnnounceConnections(ctx context.Context, q dbinterface.Execer, rows []AnnounceConnRow, apiKeyIDs idMap) error {
+func (s *Service) loadAnnounceConnections(ctx context.Context, q dbinterface.Execer, rows []AnnounceConnRow, announceConnApps, apiKeyIDs idMap) error {
 	repo := database.AnnounceConnections{}
 	for _, r := range rows {
+		appID := announceConnApps[r.ID]
 		newID, err := repo.InsertAnnounceConnection(ctx, q, domain.AnnounceConnection{
-			Name: r.Name, Kind: r.Kind, BaseURL: r.BaseURL, APIKeyEncrypted: "", HarbrrURL: r.HarbrrURL,
+			Name: r.Name, Kind: r.Kind, AppID: &appID,
 			HarbrrAPIKeyID: zeroIfNil(apiKeyIDs.remap(r.HarbrrAPIKeyID)), HarbrrAPIKeyEncrypted: "",
 			KeyID: s.keyring.KeyID(), Enabled: r.Enabled, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		})
 		if err != nil {
 			return fmt.Errorf("backup: insert announce connection %q: %w", r.Name, err)
 		}
-		appEnc, harbrrEnc, err := s.sealConnPair(newID, r.APIKey, r.HarbrrAPIKey)
+		harbrrEnc, err := s.sealHarbrrKey(newID, r.HarbrrAPIKey)
 		if err != nil {
 			return err
 		}
-		if err := repo.SetAnnounceConnectionSecrets(ctx, q, newID, appEnc, harbrrEnc, s.keyring.KeyID()); err != nil {
+		if err := repo.SetAnnounceConnectionSecrets(ctx, q, newID, harbrrEnc, s.keyring.KeyID()); err != nil {
 			return fmt.Errorf("backup: set announce connection secrets: %w", err)
 		}
 	}
 	return nil
 }
 
-// sealConnPair re-seals a connection's two secrets (the tool/app key + the minted harbrr
-// key) under the new connection id.
-func (s *Service) sealConnPair(connID int64, appKey, harbrrKey string) (appEnc, harbrrEnc string, err error) {
-	if appEnc, err = s.keyring.Encrypt(connID, discApp, appKey); err != nil {
-		return "", "", fmt.Errorf("backup: seal app key: %w", err)
+// sealHarbrrKey re-seals a connection's minted harbrr key under the new connection id
+// (the app/tool credential is sealed separately, on the App, by apps.Service.Resolve —
+// see resolveConnAppForLoad).
+func (s *Service) sealHarbrrKey(connID int64, harbrrKey string) (string, error) {
+	enc, err := s.keyring.Encrypt(connID, discHarbrr, harbrrKey)
+	if err != nil {
+		return "", fmt.Errorf("backup: seal harbrr key: %w", err)
 	}
-	if harbrrEnc, err = s.keyring.Encrypt(connID, discHarbrr, harbrrKey); err != nil {
-		return "", "", fmt.Errorf("backup: seal harbrr key: %w", err)
-	}
-	return appEnc, harbrrEnc, nil
+	return enc, nil
 }
 
 func (s *Service) loadNotifications(ctx context.Context, q dbinterface.Execer, rows []NotificationRow) error {
