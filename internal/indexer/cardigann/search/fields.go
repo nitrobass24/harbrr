@@ -2,6 +2,7 @@ package search
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/selector"
@@ -165,7 +166,7 @@ func resolveValue(value string, found, optional bool, block loader.SelectorBlock
 // value (title|append / description|append in the corpus). The Result map always
 // records the latest value for cross-field .Result reads.
 func storeField(state *rowState, name string, modifiers []string, value string) {
-	if hasModifier(modifiers, "append") {
+	if slices.Contains(modifiers, "append") {
 		state.base[name] += value
 	} else {
 		state.base[name] = value
@@ -248,7 +249,7 @@ func renderFilterArgs(filters []loader.FilterBlock, deps Deps, query Query, resu
 	out := make([]loader.FilterBlock, len(filters))
 	for i, f := range filters {
 		out[i] = f
-		if !argsNeedRender(f.Args) {
+		if !slices.ContainsFunc(f.Args, func(a string) bool { return strings.Contains(a, "{{") }) {
 			continue
 		}
 		rendered := make([]string, len(f.Args))
@@ -268,17 +269,6 @@ func renderFilterArgs(filters []loader.FilterBlock, deps Deps, query Query, resu
 	return out, nil
 }
 
-// argsNeedRender reports whether any arg carries a template fragment, so the common
-// no-template filter chain skips the per-arg copy entirely.
-func argsNeedRender(args []string) bool {
-	for _, a := range args {
-		if strings.Contains(a, "{{") {
-			return true
-		}
-	}
-	return false
-}
-
 // splitFieldKey splits "title|append|optional" into the base name and modifiers.
 func splitFieldKey(key string) (name string, modifiers []string) {
 	parts := strings.Split(key, "|")
@@ -294,18 +284,8 @@ func isOptional(key, name string, modifiers []string, block loader.SelectorBlock
 	if _, ok := optionalFields[name]; ok {
 		return true
 	}
-	if hasModifier(modifiers, "optional") {
+	if slices.Contains(modifiers, "optional") {
 		return true
 	}
 	return block.Optional != nil && *block.Optional
-}
-
-// hasModifier reports whether modifiers contains name.
-func hasModifier(modifiers []string, name string) bool {
-	for _, m := range modifiers {
-		if m == name {
-			return true
-		}
-	}
-	return false
 }

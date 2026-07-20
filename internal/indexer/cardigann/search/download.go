@@ -178,7 +178,7 @@ func buildBeforeRequest(before *loader.BeforeBlock, absURL string, pairs []kv, h
 		return builtRequest{
 			method:  stdhttp.MethodPost,
 			url:     absURL,
-			body:    encodeOrdered(pairs),
+			body:    encodeOrderedSep(pairs, "&"),
 			headers: withFormContentType(headers),
 		}, nil
 	}

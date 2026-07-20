@@ -13,13 +13,12 @@ import (
 // against the schema happens before decoding into this struct, so the
 // struct itself stays a faithful, lossless representation.
 type Definition struct {
-	ID          string   `yaml:"id"`
-	Replaces    []string `yaml:"replaces,omitempty"`
-	Name        string   `yaml:"name"`
-	Description string   `yaml:"description"`
-	Language    string   `yaml:"language"`
-	Type        string   `yaml:"type"`
-	Encoding    string   `yaml:"encoding"`
+	ID          string `yaml:"id"`
+	Name        string `yaml:"name"`
+	Description string `yaml:"description"`
+	Language    string `yaml:"language"`
+	Type        string `yaml:"type"`
+	Encoding    string `yaml:"encoding"`
 	// FollowRedirect (definition-level) gates only Jackett's LOGIN/landing-page
 	// redirect follow — never search (search reads the path-level flag alone; both
 	// default false independently in Jackett's model). harbrr's login client always
@@ -29,8 +28,6 @@ type Definition struct {
 	TestLinkTorrent *bool           `yaml:"testlinktorrent,omitempty"`
 	RequestDelay    *float64        `yaml:"requestDelay,omitempty"`
 	Links           []string        `yaml:"links"`
-	LegacyLinks     []string        `yaml:"legacylinks,omitempty"`
-	Certificates    []string        `yaml:"certificates,omitempty"`
 	Caps            Caps            `yaml:"caps"`
 	Settings        []SettingsField `yaml:"settings,omitempty"`
 	Login           *Login          `yaml:"login,omitempty"`
@@ -109,22 +106,11 @@ func NewCategoriesBlock(entries ...CategoryEntry) CategoriesBlock {
 // CategoriesBlock, keeping a duplicate key's FIRST position but LAST value
 // (go-yaml map semantics), exactly as InputsBlock and FieldsBlock do.
 func (cb *CategoriesBlock) UnmarshalYAML(node *yaml.Node) error {
-	if node.Kind != yaml.MappingNode {
-		return fmt.Errorf("categories: expected a mapping, got %s", kindName(node.Kind))
+	keys, names, err := decodeOrderedMap[string](node, "categories")
+	if err != nil {
+		return err
 	}
-	cb.keys = cb.keys[:0]
-	cb.names = make(map[string]string, len(node.Content)/2)
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		key := node.Content[i].Value
-		var name string
-		if err := node.Content[i+1].Decode(&name); err != nil {
-			return fmt.Errorf("categories: decoding category %q: %w", key, err)
-		}
-		if _, seen := cb.names[key]; !seen {
-			cb.keys = append(cb.keys, key)
-		}
-		cb.names[key] = name
-	}
+	cb.keys, cb.names = keys, names
 	return nil
 }
 
@@ -339,22 +325,11 @@ func NewCaseBlock(entries ...CaseEntry) CaseBlock {
 // keeping a duplicate key's FIRST position but LAST value (go-yaml map
 // semantics), exactly as FieldsBlock/InputsBlock do.
 func (cb *CaseBlock) UnmarshalYAML(node *yaml.Node) error {
-	if node.Kind != yaml.MappingNode {
-		return fmt.Errorf("case: expected a mapping, got %s", kindName(node.Kind))
+	keys, values, err := decodeOrderedMap[Scalar](node, "case")
+	if err != nil {
+		return err
 	}
-	cb.keys = cb.keys[:0]
-	cb.values = make(map[string]Scalar, len(node.Content)/2)
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		key := node.Content[i].Value
-		var v Scalar
-		if err := node.Content[i+1].Decode(&v); err != nil {
-			return fmt.Errorf("case: decoding arm %q: %w", key, err)
-		}
-		if _, seen := cb.values[key]; !seen {
-			cb.keys = append(cb.keys, key)
-		}
-		cb.values[key] = v
-	}
+	cb.keys, cb.values = keys, values
 	return nil
 }
 
@@ -457,22 +432,11 @@ type FieldsBlock struct {
 // A duplicate key keeps its FIRST position but its LAST value, matching go-yaml's
 // last-wins map semantics while leaving the field loop's order stable.
 func (fb *FieldsBlock) UnmarshalYAML(node *yaml.Node) error {
-	if node.Kind != yaml.MappingNode {
-		return fmt.Errorf("fields: expected a mapping, got %s", kindName(node.Kind))
+	keys, blocks, err := decodeOrderedMap[SelectorBlock](node, "fields")
+	if err != nil {
+		return err
 	}
-	fb.keys = fb.keys[:0]
-	fb.blocks = make(map[string]SelectorBlock, len(node.Content)/2)
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		key := node.Content[i].Value
-		var block SelectorBlock
-		if err := node.Content[i+1].Decode(&block); err != nil {
-			return fmt.Errorf("fields: decoding field %q: %w", key, err)
-		}
-		if _, seen := fb.blocks[key]; !seen {
-			fb.keys = append(fb.keys, key)
-		}
-		fb.blocks[key] = block
-	}
+	fb.keys, fb.blocks = keys, blocks
 	return nil
 }
 
@@ -521,22 +485,11 @@ func NewInputsBlock(entries ...InputEntry) InputsBlock {
 // keeping a duplicate key's FIRST position but LAST value (go-yaml map
 // semantics), exactly as FieldsBlock does.
 func (ib *InputsBlock) UnmarshalYAML(node *yaml.Node) error {
-	if node.Kind != yaml.MappingNode {
-		return fmt.Errorf("inputs: expected a mapping, got %s", kindName(node.Kind))
+	keys, values, err := decodeOrderedMap[Scalar](node, "inputs")
+	if err != nil {
+		return err
 	}
-	ib.keys = ib.keys[:0]
-	ib.values = make(map[string]Scalar, len(node.Content)/2)
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		key := node.Content[i].Value
-		var v Scalar
-		if err := node.Content[i+1].Decode(&v); err != nil {
-			return fmt.Errorf("inputs: decoding input %q: %w", key, err)
-		}
-		if _, seen := ib.values[key]; !seen {
-			ib.keys = append(ib.keys, key)
-		}
-		ib.values[key] = v
-	}
+	ib.keys, ib.values = keys, values
 	return nil
 }
 
@@ -650,6 +603,28 @@ func (a *FilterArgs) UnmarshalYAML(node *yaml.Node) error {
 	}
 	*a = out
 	return nil
+}
+
+// decodeOrderedMap decodes a YAML mapping node into order-preserving keys and
+// a value map, keeping a duplicate key's FIRST position but LAST value
+// (go-yaml map semantics). label is used only in the returned error's prefix.
+func decodeOrderedMap[V any](node *yaml.Node, label string) (keys []string, values map[string]V, err error) {
+	if node.Kind != yaml.MappingNode {
+		return nil, nil, fmt.Errorf("%s: expected a mapping, got %s", label, kindName(node.Kind))
+	}
+	values = make(map[string]V, len(node.Content)/2)
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		key := node.Content[i].Value
+		var v V
+		if err := node.Content[i+1].Decode(&v); err != nil {
+			return nil, nil, fmt.Errorf("%s: decoding %q: %w", label, key, err)
+		}
+		if _, seen := values[key]; !seen {
+			keys = append(keys, key)
+		}
+		values[key] = v
+	}
+	return keys, values, nil
 }
 
 func kindName(k yaml.Kind) string {

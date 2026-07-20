@@ -139,7 +139,7 @@ func buildOneRequest(def *loader.Definition, path loader.SearchPathBlock, query 
 	// passkey inlined into the path (e.g. `?filename={{ .Keywords }}`, as teamos
 	// and other defs do) becomes a valid, parity-matching URL rather than carrying
 	// a literal space. Inputs and headers use the un-encoded context (inputs are
-	// encoded later by encodeOrdered; headers are not URL values).
+	// encoded later by encodeOrderedSep; headers are not URL values).
 	rendered, err := template.Eval(path.Path, requestPathContext(query, deps))
 	if err != nil {
 		return builtRequest{}, fmt.Errorf("rendering search path: %w", err)
@@ -312,7 +312,7 @@ func assembleRequest(path loader.SearchPathBlock, absURL string, pairs []kv, hea
 		return builtRequest{
 			method:           stdhttp.MethodPost,
 			url:              absURL,
-			body:             encodeOrdered(pairs),
+			body:             encodeOrderedSep(pairs, "&"),
 			headers:          withFormContentType(headers),
 			followRedirect:   boolVal(path.FollowRedirect),
 			respType:         pathResponseType(path),
@@ -352,18 +352,14 @@ func pathNoResultsMessage(path loader.SearchPathBlock) *string {
 	return nil
 }
 
-// encodeOrdered renders pairs as an ordered x-www-form-urlencoded string
+// encodeOrderedSep renders pairs as an ordered x-www-form-urlencoded string
 // (k=v&k=v) in the GIVEN order, matching Jackett's ordered queryCollection
 // (StringUtil.GetQueryString). url.Values.Encode would sort keys and corrupt
 // request parity, so we encode by hand with the .NET-compatible WebUtility
-// encoder (space -> '+'; see the encode package).
-func encodeOrdered(pairs []kv) string {
-	return encodeOrderedSep(pairs, "&")
-}
-
-// encodeOrderedSep is encodeOrdered with a caller-supplied pair separator, used by
-// the download.before GET request whose queryseparator the definition may override
-// (Jackett's requestBlock.Queryseparator, default "&"). An empty sep defaults to "&".
+// encoder (space -> '+'; see the encode package). sep is a caller-supplied pair
+// separator, used by the download.before GET request whose queryseparator the
+// definition may override (Jackett's requestBlock.Queryseparator, default "&").
+// An empty sep defaults to "&". Callers pass "&" directly for the search path.
 func encodeOrderedSep(pairs []kv, sep string) string {
 	if sep == "" {
 		sep = "&"

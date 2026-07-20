@@ -225,7 +225,7 @@ func TestParseResults_CodepageBody(t *testing.T) {
 		}
 		return Deps{
 			Filters:    NewFilterRegistry(),
-			Normalizer: normalizer.New(normalizer.Config{BaseURL: "https://cp.invalid/"}),
+			Normalizer: &normalizer.Normalizer{BaseURL: "https://cp.invalid/"},
 			BaseURL:    "https://cp.invalid/",
 			Encoding:   enc,
 		}

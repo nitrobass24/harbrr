@@ -19,7 +19,7 @@ func headerDeps() Deps {
 	reg.ParseRelTime = p.ParseRelTime
 	return Deps{
 		Filters:    reg,
-		Normalizer: normalizer.New(normalizer.Config{BaseURL: "https://t.invalid/"}),
+		Normalizer: &normalizer.Normalizer{BaseURL: "https://t.invalid/"},
 		Config:     map[string]string{},
 		BaseURL:    "https://t.invalid/",
 	}

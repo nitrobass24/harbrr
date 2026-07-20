@@ -198,11 +198,11 @@ func buildDeps(def *loader.Definition, caps *mapper.Capabilities, o options) (se
 	registry.ParseRelTime = parser.ParseRelTime
 	registry.Language = def.Language
 
-	norm := normalizer.New(normalizer.Config{
+	norm := &normalizer.Normalizer{
 		BaseURL:    o.baseURL,
 		Type:       def.Type,
 		Categories: caps.CategoryMap,
-	})
+	}
 
 	// Resolve the def's declared charset once. A non-UTF-8 def with an
 	// unresolvable encoding fails loud here rather than silently emitting mojibake

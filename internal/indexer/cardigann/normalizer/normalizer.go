@@ -84,28 +84,6 @@ type Normalizer struct {
 	Categories *mapper.CategoryMap
 }
 
-// Config configures a Normalizer. Fields mirror Normalizer's own; New copies
-// them directly.
-type Config struct {
-	// BaseURL resolves relative release URLs.
-	BaseURL string
-	// Type is the definition's indexer type ("private"/"public"/
-	// "semi-private"). Jackett only synthesises a public magnet from an info
-	// hash when the type is not "private".
-	Type string
-	// Categories is the tracker<->newznab category map.
-	Categories *mapper.CategoryMap
-}
-
-// New constructs a Normalizer from cfg.
-func New(cfg Config) *Normalizer {
-	return &Normalizer{
-		BaseURL:    cfg.BaseURL,
-		Type:       cfg.Type,
-		Categories: cfg.Categories,
-	}
-}
-
 // Default volume factor when a definition does not extract the field. Jackett's
 // downstream consumers treat an unset factor as 1.0 (full count); harbrr makes
 // that explicit so a real freeleech 0.0 is distinguishable from "absent".

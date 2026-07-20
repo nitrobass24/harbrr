@@ -57,7 +57,7 @@ func (r *replay) RoundTrip(req *stdhttp.Request) (*stdhttp.Response, error) {
 	step := r.steps[r.idx]
 	r.idx++
 
-	if !equalFoldMethod(req.Method, step.Method) || req.URL.String() != step.URL {
+	if !strings.EqualFold(req.Method, step.Method) || req.URL.String() != step.URL {
 		return nil, r.fail("step %d: got %s %s, want %s %s", r.idx-1,
 			req.Method, apphttp.RedactURL(req.URL.String()), step.Method, apphttp.RedactURL(step.URL))
 	}
@@ -145,25 +145,4 @@ func (r *replay) fail(format string, args ...any) error {
 		r.err = err
 	}
 	return err
-}
-
-// equalFoldMethod compares HTTP methods case-insensitively (the engine
-// uppercases; cases may write GET/get).
-func equalFoldMethod(a, b string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := 0; i < len(a); i++ {
-		ca, cb := a[i], b[i]
-		if ca >= 'a' && ca <= 'z' {
-			ca -= 'a' - 'A'
-		}
-		if cb >= 'a' && cb <= 'z' {
-			cb -= 'a' - 'A'
-		}
-		if ca != cb {
-			return false
-		}
-	}
-	return true
 }
