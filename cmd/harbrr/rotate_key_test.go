@@ -10,6 +10,7 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/autobrr/harbrr/internal/app"
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/notify"
@@ -68,10 +69,10 @@ func seedEncryptedStore(t *testing.T, kr *secrets.Keyring) *database.DB {
 	if err != nil {
 		t.Fatalf("canary: %v", err)
 	}
-	if err := meta.Set(ctx, db, canaryBlobKey, canary); err != nil {
+	if err := meta.Set(ctx, db, app.CanaryBlobKey, canary); err != nil {
 		t.Fatalf("set canary: %v", err)
 	}
-	if err := meta.Set(ctx, db, canaryIDKey, kr.KeyID()); err != nil {
+	if err := meta.Set(ctx, db, app.CanaryIDKey, kr.KeyID()); err != nil {
 		t.Fatalf("set key id: %v", err)
 	}
 	return db
@@ -113,11 +114,11 @@ func TestRotateKeys_Success(t *testing.T) {
 	}
 
 	meta := database.AppMeta{}
-	storedID, _, _ := meta.Get(ctx, db, canaryIDKey)
+	storedID, _, _ := meta.Get(ctx, db, app.CanaryIDKey)
 	if storedID != krB.KeyID() {
 		t.Errorf("stored key id = %q, want new %q", storedID, krB.KeyID())
 	}
-	blob, _, _ := meta.Get(ctx, db, canaryBlobKey)
+	blob, _, _ := meta.Get(ctx, db, app.CanaryBlobKey)
 	if err := krB.VerifyCanary(storedID, blob); err != nil {
 		t.Errorf("canary fails to verify under new key: %v", err)
 	}
@@ -265,7 +266,7 @@ func TestRotateKeys_WrongOldKeyFailsBeforeWrite(t *testing.T) {
 	if _, err := rotateKeys(ctx, db, krC, krB, false); err == nil {
 		t.Fatal("want error for a wrong old key")
 	}
-	storedID, _, _ := (database.AppMeta{}).Get(ctx, db, canaryIDKey)
+	storedID, _, _ := (database.AppMeta{}).Get(ctx, db, app.CanaryIDKey)
 	if storedID != krA.KeyID() {
 		t.Errorf("store mutated on wrong-key rotate: key id = %q, want old", storedID)
 	}
@@ -284,7 +285,7 @@ func TestRotateKeys_DryRunNoWrites(t *testing.T) {
 	if rep.rows != 2 {
 		t.Errorf("dry-run rows = %d, want 2", rep.rows)
 	}
-	storedID, _, _ := (database.AppMeta{}).Get(ctx, db, canaryIDKey)
+	storedID, _, _ := (database.AppMeta{}).Get(ctx, db, app.CanaryIDKey)
 	if storedID != krA.KeyID() {
 		t.Errorf("dry-run mutated the store: key id = %q, want old", storedID)
 	}

@@ -8,6 +8,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 
+	"github.com/autobrr/harbrr/internal/app"
 	"github.com/autobrr/harbrr/internal/config"
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/secrets"
@@ -48,9 +49,9 @@ func newRotateKeyCmd() *cobra.Command {
 			if ctx == nil {
 				ctx = context.Background()
 			}
-			db, err := openDatabase(ctx, cfg)
+			db, err := app.OpenDatabase(ctx, cfg)
 			if err != nil {
-				return err
+				return fmt.Errorf("rotate-key: %w", err)
 			}
 			defer func() { _ = db.Close() }()
 
@@ -88,7 +89,7 @@ func rotateKeys(ctx context.Context, db *database.DB, oldKR, newKR *secrets.Keyr
 		return rotateReport{}, errors.New("rotate-key: plaintext mode has no key to rotate (configure encryption keys)")
 	}
 	meta := database.AppMeta{}
-	storedID, haveID, err := meta.Get(ctx, db, canaryIDKey)
+	storedID, haveID, err := meta.Get(ctx, db, app.CanaryIDKey)
 	if err != nil {
 		return rotateReport{}, fmt.Errorf("rotate-key: read stored key id: %w", err)
 	}
@@ -100,7 +101,7 @@ func rotateKeys(ctx context.Context, db *database.DB, oldKR, newKR *secrets.Keyr
 	case storedID != oldKR.KeyID():
 		return rotateReport{}, errors.New("rotate-key: --old-key does not match the store's key id (wrong old key)")
 	}
-	if blob, ok, cerr := meta.Get(ctx, db, canaryBlobKey); cerr != nil {
+	if blob, ok, cerr := meta.Get(ctx, db, app.CanaryBlobKey); cerr != nil {
 		return rotateReport{}, fmt.Errorf("rotate-key: read canary: %w", cerr)
 	} else if ok {
 		if verr := oldKR.VerifyCanary(storedID, blob); verr != nil {
@@ -269,10 +270,10 @@ func applyRotation(ctx context.Context, db *database.DB, newKR *secrets.Keyring,
 		}
 	}
 	meta := database.AppMeta{}
-	if serr := meta.Set(ctx, tx, canaryBlobKey, newCanary); serr != nil {
+	if serr := meta.Set(ctx, tx, app.CanaryBlobKey, newCanary); serr != nil {
 		return fmt.Errorf("rotate-key: write canary: %w", serr)
 	}
-	if serr := meta.Set(ctx, tx, canaryIDKey, newKR.KeyID()); serr != nil {
+	if serr := meta.Set(ctx, tx, app.CanaryIDKey, newKR.KeyID()); serr != nil {
 		return fmt.Errorf("rotate-key: write key id: %w", serr)
 	}
 	if cerr := tx.Commit(); cerr != nil {
