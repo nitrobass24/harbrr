@@ -31,9 +31,10 @@ secret-scrubbed before writing.
 | `SMOKE_HARBRR_APIKEY` | a harbrr API key (used for `X-API-Key` + the Torznab `?apikey=`) |
 | `SMOKE_PROWLARR_URL` | Prowlarr base URL |
 | `SMOKE_PROWLARR_APIKEY` | Prowlarr API key |
-| `SMOKE_QUERY` | optional, default `test` |
-| `SMOKE_QUERY_FALLBACK` | optional, default `2024` (used when `test` returns 0 on both) |
+| `SMOKE_QUERY` | optional — force one query for every tracker; unset = **category-aware default** (see below) |
+| `SMOKE_QUERY_FALLBACK` | optional — secondary query when the primary returns 0 (only used alongside an explicit `SMOKE_QUERY`) |
 | `SMOKE_GRAB=1` | optional — also resolve the first release's download link |
+| `SMOKE_STRICT_FIELDS=1` | optional — also fail the run on volatile field divergences (`seeders`, `publishDate`); the stable field checks always run |
 
 Example:
 
@@ -48,6 +49,27 @@ make smoke-test
 The harness discovers every enabled harbrr indexer automatically and matches each
 against Prowlarr by name/slug. Indexers absent from Prowlarr are skipped
 (not-comparable), not failures.
+
+### Category-aware default queries
+
+A broad query (`test`, `2024`) makes both sides return a full 100-result page, which is a
+sort-dependent *window* of a much larger set — the titles then don't overlap and can't be
+compared (the count-parity caveat below, and the field diff skips too). To avoid that, when
+`SMOKE_QUERY` is **unset** each tracker is searched with a **bounded, content-appropriate**
+query chosen from its advertised categories:
+
+| Tracker content (major category) | Default query |
+|---|---|
+| Movies (2000) | a specific film — e.g. `Oppenheimer 2023` |
+| TV (5000) | a **single episode**, not a series — e.g. `The Last of Us S01E01` |
+| Audio (3000) | one album — e.g. `Radiohead In Rainbows` |
+| Books (7000) | one title — e.g. `Project Hail Mary` |
+| PC/apps (4000), games (1000) | a specific title |
+| none recognized / caps unavailable | a generic film title |
+
+A general tracker that serves several types uses the first match in that order. Setting
+`SMOKE_QUERY` overrides this and forces the same query for every tracker (with
+`SMOKE_QUERY_FALLBACK` as the secondary).
 
 ## Differential pass criteria
 
@@ -83,6 +105,34 @@ Per tracker, page-1 only:
 
 Tolerances are intentionally loose: live data is non-deterministic and harbrr
 applies category filtering, so its count can be legitimately lower than Prowlarr's.
+
+### Field-level differential
+
+Beyond the result-set counts/titles above, the harness also compares **normalized
+fields** on the titles present in **both** sets (matched by normalized title, only
+when the title is unique on both sides). A field either side leaves unpopulated is
+**not-comparable** (skipped), never a fail — so this is non-flaky by construction and
+surfaces as a separate `field-parity` finding per tracker:
+
+- **Always compared (stable):**
+  - `size` — must differ by more than **both** 2% and 64 MiB. The absolute floor absorbs
+    1-decimal "X.Y GB" display rounding (one side scrapes a rounded string, the other reports exact
+    API bytes); the relative floor still catches a proportional GiB-vs-GB unit bug (~7.4%) on
+    releases roughly ≥ 1 GB. On smaller releases (e.g. music/ebooks) the 64 MiB floor makes the size
+    check lenient — a unit bug there is caught by category/count checks, not size.
+  - `category` — the *major* Torznab bucket (2040 → 2000) must overlap; a movie mis-mapped to TV
+    fails. Sub-category granularity and indexer-custom categories (≥ 100000) are ignored.
+  - **download-link shape** — when the indexer's links are sealed (NeedsResolver /
+    DownloadNeedsAuth), harbrr's `<link>`/`<enclosure>` must be a sealed `/dl` URL or a
+    magnet; a raw tracker `passkey`/`torrent_pass`/`authkey`/`rsskey` link fails (parity defect
+    **and** a secret leak). Direct-link trackers (Gazelle-style, no sealing) legitimately serve
+    their credential-bearing links bare — the check is gated on active sealing.
+- **Only under `SMOKE_STRICT_FIELDS=1` (volatile):**
+  - `seeders` — presence only: harbrr must report a positive count when Prowlarr reports a healthy
+    swarm (≥ 5). Magnitudes move constantly, so they aren't compared.
+  - `publishDate` — within 48h (some indexers report coarse dates).
+
+Finding details name the offending field and title but **never** echo a URL or a secret value.
 
 ## The grab half (no hit-and-run)
 
