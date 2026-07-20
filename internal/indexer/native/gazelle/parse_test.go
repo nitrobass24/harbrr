@@ -128,7 +128,7 @@ func TestParseBrowseSortsByPublishDateDesc(t *testing.T) {
 // RemasterTitle emits no empty "[ ]" bracket, matching Prowlarr's IsNotNullOrWhiteSpace.
 func TestComposeTitleSkipsWhitespaceFields(t *testing.T) {
 	t.Parallel()
-	g := &group{Artist: "Artist", GroupName: "Album", GroupYear: flexInt(2024), ReleaseType: "   "}
+	g := &group{Artist: "Artist", GroupName: "Album", GroupYear: native.FlexInt(2024), ReleaseType: "   "}
 	tr := &torrent{Format: "FLAC", Encoding: "Lossless", Media: "CD", RemasterTitle: "  "}
 	got := composeTitle(g, tr)
 	want := "Artist - Album (2024) [FLAC Lossless / CD]"
@@ -358,32 +358,6 @@ func TestScrubCredentialsCookies(t *testing.T) {
 				t.Errorf("scrubCredentials() = %q, want %q", got, tc.want)
 			}
 		})
-	}
-}
-
-// TestFlexIntDecode proves flexInt accepts a JSON string and a bare number and degrades
-// blank/garbage/null to 0.
-func TestFlexIntDecode(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		in   string
-		want int64
-	}{
-		{`"527749302"`, 527749302},
-		{`42`, 42},
-		{`""`, 0},
-		{`null`, 0},
-		{`"notanumber"`, 0},
-	}
-	for _, c := range cases {
-		var n flexInt
-		if err := n.UnmarshalJSON([]byte(c.in)); err != nil {
-			t.Errorf("UnmarshalJSON(%s): %v", c.in, err)
-			continue
-		}
-		if got := n.int64(); got != c.want {
-			t.Errorf("flexInt(%s).int64() = %d, want %d", c.in, got, c.want)
-		}
 	}
 }
 

@@ -198,8 +198,8 @@ func TestAlphaRatioTokenAndCredentialScrubbing(t *testing.T) {
 	})
 	category := "MovieHD"
 	release := d.nonMusicRelease(&group{
-		GroupID:     flexInt(44),
-		TorrentID:   flexInt(55),
+		GroupID:     native.FlexInt(44),
+		TorrentID:   native.FlexInt(55),
 		GroupName:   "Paid Example",
 		Category:    &category,
 		CanUseToken: true,

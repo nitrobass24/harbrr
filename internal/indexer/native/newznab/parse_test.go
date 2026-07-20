@@ -292,7 +292,7 @@ func TestToErrorScrubsAPIKey(t *testing.T) {
 	t.Parallel()
 	const apikey = "APIKEY-SECRET-1234"
 	e := &apiError{Code: "100", Description: "Incorrect credentials: invalid key " + apikey}
-	err := e.toError(apikey)
+	err := toError(e, apikey)
 	if !errors.Is(err, login.ErrLoginFailed) {
 		t.Fatalf("err = %v, want login.ErrLoginFailed", err)
 	}

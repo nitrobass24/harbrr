@@ -109,7 +109,7 @@ type capsSubcat struct {
 // the configured apikey as defense in depth (see toError).
 func parseCaps(body []byte, apikey string) (*capsRoot, error) {
 	if apiErr, ok := capsError(body); ok {
-		return nil, apiErr.toError(apikey)
+		return nil, toError(apiErr, apikey)
 	}
 	var root capsRoot
 	if err := xml.Unmarshal(body, &root); err != nil {

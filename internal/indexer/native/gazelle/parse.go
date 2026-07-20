@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -42,31 +41,31 @@ type browseResponse struct {
 
 // browseResponseBody holds the result groups. Pagination fields are JSON strings.
 type browseResponseBody struct {
-	CurrentPage flexInt `json:"currentPage"`
-	Pages       flexInt `json:"pages"`
-	Results     []group `json:"results"`
+	CurrentPage native.FlexInt `json:"currentPage"`
+	Pages       native.FlexInt `json:"pages"`
+	Results     []group        `json:"results"`
 }
 
 // group is one browse result. A MUSIC group carries nested Torrents (one release per
 // torrent); a NON-MUSIC group has Torrents == nil and IS one release using the
 // group-level TorrentID/Size/Seeders/Leechers/Category/Snatches/GroupTime fields.
 type group struct {
-	GroupID     flexInt   `json:"groupId"`
-	GroupName   string    `json:"groupName"`
-	Artist      string    `json:"artist"`
-	GroupYear   flexInt   `json:"groupYear"`
-	ReleaseType string    `json:"releaseType"`
-	Tags        []string  `json:"tags"`
-	Torrents    []torrent `json:"torrents"`
+	GroupID     native.FlexInt `json:"groupId"`
+	GroupName   string         `json:"groupName"`
+	Artist      string         `json:"artist"`
+	GroupYear   native.FlexInt `json:"groupYear"`
+	ReleaseType string         `json:"releaseType"`
+	Tags        []string       `json:"tags"`
+	Torrents    []torrent      `json:"torrents"`
 
-	TorrentID flexInt `json:"torrentId"`
-	Size      flexInt `json:"size"`
-	FileCount flexInt `json:"fileCount"`
-	Seeders   flexInt `json:"seeders"`
-	Leechers  flexInt `json:"leechers"`
-	Snatches  flexInt `json:"snatches"`
-	Category  *string `json:"category"`
-	GroupTime string  `json:"groupTime"`
+	TorrentID native.FlexInt `json:"torrentId"`
+	Size      native.FlexInt `json:"size"`
+	FileCount native.FlexInt `json:"fileCount"`
+	Seeders   native.FlexInt `json:"seeders"`
+	Leechers  native.FlexInt `json:"leechers"`
+	Snatches  native.FlexInt `json:"snatches"`
+	Category  *string        `json:"category"`
+	GroupTime string         `json:"groupTime"`
 
 	IsFreeLeech         bool `json:"isFreeleech"`
 	IsNeutralLeech      bool `json:"isNeutralLeech"`
@@ -76,24 +75,24 @@ type group struct {
 }
 
 // torrent is one nested torrent inside a MUSIC group. Numerics are JSON strings on the
-// wire, so flexInt tolerates string-or-number. Time is a datetime string (parsed UTC).
+// wire, so native.FlexInt tolerates string-or-number. Time is a datetime string (parsed UTC).
 type torrent struct {
-	TorrentID     flexInt `json:"torrentId"`
-	Format        string  `json:"format"`
-	Encoding      string  `json:"encoding"`
-	Media         string  `json:"media"`
-	RemasterTitle string  `json:"remasterTitle"`
-	RemasterYear  flexInt `json:"remasterYear"`
-	HasLog        bool    `json:"hasLog"`
-	LogScore      int     `json:"logScore"`
-	HasCue        bool    `json:"hasCue"`
-	Scene         bool    `json:"scene"`
-	Size          flexInt `json:"size"`
-	Seeders       flexInt `json:"seeders"`
-	Leechers      flexInt `json:"leechers"`
-	Snatches      flexInt `json:"snatches"`
-	Time          string  `json:"time"`
-	Category      *string `json:"category"`
+	TorrentID     native.FlexInt `json:"torrentId"`
+	Format        string         `json:"format"`
+	Encoding      string         `json:"encoding"`
+	Media         string         `json:"media"`
+	RemasterTitle string         `json:"remasterTitle"`
+	RemasterYear  native.FlexInt `json:"remasterYear"`
+	HasLog        bool           `json:"hasLog"`
+	LogScore      int            `json:"logScore"`
+	HasCue        bool           `json:"hasCue"`
+	Scene         bool           `json:"scene"`
+	Size          native.FlexInt `json:"size"`
+	Seeders       native.FlexInt `json:"seeders"`
+	Leechers      native.FlexInt `json:"leechers"`
+	Snatches      native.FlexInt `json:"snatches"`
+	Time          string         `json:"time"`
+	Category      *string        `json:"category"`
 
 	IsFreeLeech         bool `json:"isFreeleech"`
 	IsNeutralLeech      bool `json:"isNeutralLeech"`
@@ -101,40 +100,6 @@ type torrent struct {
 	IsPersonalFreeLeech bool `json:"isPersonalFreeleech"`
 	CanUseToken         bool `json:"canUseToken"`
 }
-
-// flexInt unmarshals a JSON string OR number into an int64. Gazelle wire-encodes
-// Size/Seeders/Leechers/Snatches as JSON STRINGS (Prowlarr long.Parse/int.Parse), but a
-// bare number is tolerated too so a strict struct decode never rejects the page.
-type flexInt int64
-
-func (n *flexInt) UnmarshalJSON(b []byte) error {
-	if len(b) == 0 || string(b) == "null" {
-		*n = 0
-		return nil
-	}
-	s := string(b)
-	if b[0] == '"' {
-		var str string
-		if err := json.Unmarshal(b, &str); err != nil {
-			return fmt.Errorf("gazelle: decode numeric field: %w", err)
-		}
-		s = strings.TrimSpace(str)
-	}
-	if s == "" {
-		*n = 0
-		return nil
-	}
-	v, err := strconv.ParseInt(s, 10, 64)
-	if err != nil {
-		*n = 0 // a malformed numeric degrades to 0, never failing the whole page
-		return nil
-	}
-	*n = flexInt(v)
-	return nil
-}
-
-// int64 returns the decoded value as a plain int64.
-func (n flexInt) int64() int64 { return int64(n) }
 
 // parseBrowse decodes a browse body into normalized releases. A non-JSON or malformed
 // body is a parse error. A non-"success" status is NOT an empty-page condition here: it
@@ -161,7 +126,7 @@ func (d *driver) parseBrowse(body []byte, requestCookie string) ([]*normalizer.R
 	for i := range resp.Response.Results {
 		rels = append(rels, d.flattenGroup(&resp.Response.Results[i])...)
 	}
-	sortReleases(rels)
+	native.SortByPublishDateDesc(rels)
 	native.TraceReleases(d.Log, d.Def.ID, rels)
 	return rels, nil
 }
@@ -213,22 +178,22 @@ func (d *driver) musicRelease(g *group, t *torrent) *normalizer.Release {
 	free := d.musicFreeleech(t)
 	release := &normalizer.Release{
 		Title:                composeTitle(g, t),
-		Link:                 d.downloadLink(t.TorrentID.int64(), d.wantToken(t.CanUseToken, free)),
+		Link:                 d.downloadLink(t.TorrentID.Int64(), d.wantToken(t.CanUseToken, free)),
 		Artist:               g.Artist,
 		Album:                g.GroupName,
-		Year:                 g.GroupYear.int64(),
+		Year:                 g.GroupYear.Int64(),
 		Genre:                strings.Join(g.Tags, ", "),
 		Categories:           d.categories(t.Category),
-		Size:                 t.Size.int64(),
-		Grabs:                t.Snatches.int64(),
-		Seeders:              t.Seeders.int64(),
-		Leechers:             t.Leechers.int64(),
-		Peers:                t.Seeders.int64() + t.Leechers.int64(),
+		Size:                 t.Size.Int64(),
+		Grabs:                t.Snatches.Int64(),
+		Seeders:              t.Seeders.Int64(),
+		Leechers:             t.Leechers.Int64(),
+		Peers:                t.Seeders.Int64() + t.Leechers.Int64(),
 		PublishDate:          d.publishDate(t.Time),
 		DownloadVolumeFactor: volumeFactor(free),
 		UploadVolumeFactor:   d.uploadVolumeFactor(t.IsNeutralLeech, t.IsFreeload),
 	}
-	d.applyProfile(release, g.GroupID.int64(), t.TorrentID.int64(), 0, g.Tags)
+	d.applyProfile(release, g.GroupID.Int64(), t.TorrentID.Int64(), 0, g.Tags)
 	return release
 }
 
@@ -239,19 +204,19 @@ func (d *driver) nonMusicRelease(g *group) *normalizer.Release {
 	free := d.groupFreeleech(g)
 	release := &normalizer.Release{
 		Title:                html.UnescapeString(g.GroupName),
-		Link:                 d.downloadLink(g.TorrentID.int64(), d.wantToken(g.CanUseToken, free)),
-		Year:                 g.GroupYear.int64(),
+		Link:                 d.downloadLink(g.TorrentID.Int64(), d.wantToken(g.CanUseToken, free)),
+		Year:                 g.GroupYear.Int64(),
 		Categories:           d.categories(g.Category),
-		Size:                 g.Size.int64(),
-		Grabs:                g.Snatches.int64(),
-		Seeders:              g.Seeders.int64(),
-		Leechers:             g.Leechers.int64(),
-		Peers:                g.Seeders.int64() + g.Leechers.int64(),
+		Size:                 g.Size.Int64(),
+		Grabs:                g.Snatches.Int64(),
+		Seeders:              g.Seeders.Int64(),
+		Leechers:             g.Leechers.Int64(),
+		Peers:                g.Seeders.Int64() + g.Leechers.Int64(),
 		PublishDate:          d.publishDate(g.GroupTime),
 		DownloadVolumeFactor: volumeFactor(free),
 		UploadVolumeFactor:   d.uploadVolumeFactor(g.IsNeutralLeech, g.IsFreeload),
 	}
-	d.applyProfile(release, g.GroupID.int64(), g.TorrentID.int64(), g.FileCount.int64(), g.Tags)
+	d.applyProfile(release, g.GroupID.Int64(), g.TorrentID.Int64(), g.FileCount.Int64(), g.Tags)
 	return release
 }
 
@@ -266,7 +231,7 @@ func (d *driver) nonMusicRelease(g *group) *normalizer.Release {
 // "Cue" if HasCue]. The whole title is HTML-unescaped.
 func composeTitle(g *group, t *torrent) string {
 	var b strings.Builder
-	if y := g.GroupYear.int64(); y > 0 {
+	if y := g.GroupYear.Int64(); y > 0 {
 		fmt.Fprintf(&b, "%s - %s (%d)", g.Artist, g.GroupName, y)
 	} else {
 		fmt.Fprintf(&b, "%s - %s", g.Artist, g.GroupName)
@@ -278,7 +243,7 @@ func composeTitle(g *group, t *torrent) string {
 	}
 	if strings.TrimSpace(t.RemasterTitle) != "" {
 		remaster := strings.TrimSpace(t.RemasterTitle)
-		if y := t.RemasterYear.int64(); y > 0 {
+		if y := t.RemasterYear.Int64(); y > 0 {
 			remaster = strings.TrimSpace(fmt.Sprintf("%s %d", remaster, y))
 		}
 		fmt.Fprintf(&b, " [%s]", remaster)
@@ -449,15 +414,4 @@ func (d *driver) publishDate(value string) string {
 func (d *driver) scrubCredentials(s, requestCookie string) string {
 	extras := append(cookieScrubExtras(requestCookie), d.site.strategy.Scrub(d)...)
 	return d.Scrub(s, extras...)
-}
-
-// sortReleases orders releases by PublishDate descending to mirror Prowlarr's terminal
-// OrderByDescending(o => o.PublishDate) in both the RED and OPS parsers. PublishDate is a
-// UTC RFC3339 string, which sorts lexically in chronological order, so a plain string
-// comparison is correct. The stable sort preserves group/torrent input order for any tie
-// (equal timestamps), keeping the feed deterministic.
-func sortReleases(rels []*normalizer.Release) {
-	sort.SliceStable(rels, func(i, j int) bool {
-		return rels[i].PublishDate > rels[j].PublishDate
-	})
 }

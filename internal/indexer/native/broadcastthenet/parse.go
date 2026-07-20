@@ -38,14 +38,14 @@ type btnResponse struct {
 }
 
 // btnResult is the success payload. Results is the total match count (BTN sends it as a
-// JSON string, so flexString decodes it). Torrents is kept as RawMessage because PHP
+// JSON string, so native.FlexString decodes it). Torrents is kept as RawMessage because PHP
 // serializes an empty associative array as a JSON ARRAY (`[]`) rather than an object
 // (`{}`): decoding it straight into a map would fail the struct decode on a zero-result
 // page, so the array wire form is tolerated and only an object (`{…}`) is unmarshalled
 // into the id→torrent map (cf. Prowlarr, which short-circuits on a zero count).
 type btnResult struct {
-	Results  flexString      `json:"results"`
-	Torrents json.RawMessage `json:"torrents"`
+	Results  native.FlexString `json:"results"`
+	Torrents json.RawMessage   `json:"torrents"`
 }
 
 // btnError is the JSON-RPC error object.
@@ -55,59 +55,25 @@ type btnError struct {
 }
 
 // btnTorrent is one torrent row. BTN wire-encodes EVERY field as a JSON string,
-// including the numerics, so every numeric uses flexString and is parsed at mapping
+// including the numerics, so every numeric uses native.FlexString and is parsed at mapping
 // time (mirroring myanonamouse's tolerant decode and Prowlarr's JSON converter).
 type btnTorrent struct {
-	TorrentID   flexString `json:"TorrentID"`
-	GroupID     flexString `json:"GroupID"`
-	ReleaseName string     `json:"ReleaseName"`
-	Category    string     `json:"Category"`
-	Resolution  string     `json:"Resolution"`
-	Origin      string     `json:"Origin"`
-	Size        flexString `json:"Size"`
-	Time        flexString `json:"Time"`
-	Snatched    flexString `json:"Snatched"`
-	Seeders     flexString `json:"Seeders"`
-	Leechers    flexString `json:"Leechers"`
-	TvdbID      flexString `json:"TvdbID"`
-	TvrageID    flexString `json:"TvrageID"`
-	ImdbID      flexString `json:"ImdbID"`
-	InfoHash    string     `json:"InfoHash"`
-	DownloadURL string     `json:"DownloadURL"`
-}
-
-// flexString unmarshals a JSON string OR number into a string. BTN sends every field
-// (incl. numerics like TorrentID, Size, Seeders) as a JSON string, but the count field
-// and a hardened decode tolerate a bare number too — so a strict struct decode never
-// rejects the body (cf. myanonamouse mamFlexString).
-type flexString string
-
-func (s *flexString) UnmarshalJSON(b []byte) error {
-	if len(b) == 0 || string(b) == "null" {
-		*s = ""
-		return nil
-	}
-	if b[0] == '"' {
-		var str string
-		if err := json.Unmarshal(b, &str); err != nil {
-			return fmt.Errorf("broadcastthenet: decode string field: %w", err)
-		}
-		*s = flexString(str)
-		return nil
-	}
-	*s = flexString(b) // a bare JSON number: keep its literal text
-	return nil
-}
-
-// int64 parses the flexString as a base-10 int64; a blank or unparseable value yields 0
-// (BTN sends "0" for absent numerics, and a malformed numeric must not fail the whole
-// page — it degrades to 0, matching the tolerant decode the contract requires).
-func (s flexString) int64() int64 {
-	n, err := strconv.ParseInt(strings.TrimSpace(string(s)), 10, 64)
-	if err != nil {
-		return 0
-	}
-	return n
+	TorrentID   native.FlexString `json:"TorrentID"`
+	GroupID     native.FlexString `json:"GroupID"`
+	ReleaseName string            `json:"ReleaseName"`
+	Category    string            `json:"Category"`
+	Resolution  string            `json:"Resolution"`
+	Origin      string            `json:"Origin"`
+	Size        native.FlexString `json:"Size"`
+	Time        native.FlexString `json:"Time"`
+	Snatched    native.FlexString `json:"Snatched"`
+	Seeders     native.FlexString `json:"Seeders"`
+	Leechers    native.FlexString `json:"Leechers"`
+	TvdbID      native.FlexString `json:"TvdbID"`
+	TvrageID    native.FlexString `json:"TvrageID"`
+	ImdbID      native.FlexString `json:"ImdbID"`
+	InfoHash    string            `json:"InfoHash"`
+	DownloadURL string            `json:"DownloadURL"`
 }
 
 // parseReleases decodes a getTorrents JSON-RPC body into normalized releases. It checks
@@ -153,13 +119,13 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 // must be a JSON object — a non-object there is a malformed response, not an empty page,
 // so it is reported as a parse error instead of silently dropping the results.
 func decodeTorrents(result *btnResult) (map[string]btnTorrent, error) {
-	if result.Results.int64() == 0 {
+	if result.Results.Int64() == 0 {
 		return map[string]btnTorrent{}, nil
 	}
 	raw := bytes.TrimSpace(result.Torrents)
 	if len(raw) == 0 || raw[0] != '{' {
 		return nil, fmt.Errorf("broadcastthenet: torrents not an object for %d results: %w",
-			result.Results.int64(), search.ErrParseError)
+			result.Results.Int64(), search.ErrParseError)
 	}
 	var torrents map[string]btnTorrent
 	if err := json.Unmarshal(raw, &torrents); err != nil {
@@ -197,26 +163,26 @@ type sortableRelease struct {
 // Time seconds rendered as UTC RFC3339, and IMDBID from ImdbID (canonicalised to
 // the "tt"+7-digit feed form; Prowlarr emits it and the PTP sibling already does).
 func (d *driver) toRelease(mapKey string, t *btnTorrent) *sortableRelease {
-	seeders := t.Seeders.int64()
-	leechers := t.Leechers.int64()
+	seeders := t.Seeders.Int64()
+	leechers := t.Leechers.Int64()
 	rel := &normalizer.Release{
 		Title:                t.ReleaseName,
 		Link:                 t.DownloadURL,
 		InfoHash:             t.InfoHash,
 		Categories:           d.categories(t.Resolution),
-		Size:                 t.Size.int64(),
-		Grabs:                t.Snatched.int64(),
+		Size:                 t.Size.Int64(),
+		Grabs:                t.Snatched.Int64(),
 		Seeders:              seeders,
 		Leechers:             leechers,
 		Peers:                seeders + leechers,
-		PublishDate:          time.Unix(t.Time.int64(), 0).UTC().Format(time.RFC3339),
-		TVDBID:               t.TvdbID.int64(),
-		RageID:               t.TvrageID.int64(),
+		PublishDate:          time.Unix(t.Time.Int64(), 0).UTC().Format(time.RFC3339),
+		TVDBID:               t.TvdbID.Int64(),
+		RageID:               t.TvrageID.Int64(),
 		IMDBID:               formatIMDB(string(t.ImdbID)),
 		DownloadVolumeFactor: 1,
 		UploadVolumeFactor:   1,
 	}
-	return &sortableRelease{Release: rel, torrentIDSortKey: t.TorrentID.int64(), mapKey: mapKey}
+	return &sortableRelease{Release: rel, torrentIDSortKey: t.TorrentID.Int64(), mapKey: mapKey}
 }
 
 // formatIMDB renders BTN's digits-only ImdbID ("7252812") as the canonical

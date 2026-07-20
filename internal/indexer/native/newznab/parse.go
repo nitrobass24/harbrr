@@ -42,11 +42,10 @@ type channel struct {
 }
 
 // apiError is the Newznab error envelope: <error code=".." description=".." />. Both are
-// attributes.
-type apiError struct {
-	Code        string `xml:"code,attr"`
-	Description string `xml:"description,attr"`
-}
+// attributes. Aliased to native.APIError so the decode/lookup logic (FirstError,
+// APIErrorFromAttrs, MentionsAPIKey) is shared with the torznab sibling while this struct
+// stays package-private per docs/native-indexer-pattern.md.
+type apiError = native.APIError
 
 // item is one RSS result row. Enclosure and the newznab:attr set are decoded; the attr
 // namespace is matched by URI in attrValue so a torznab: feed parses identically.
@@ -89,7 +88,7 @@ func (d *driver) parseReleases(body []byte, catMap *mapper.CategoryMap) ([]*norm
 		return nil, fmt.Errorf("newznab: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
 	}
 	if apiErr := feed.firstError(); apiErr != nil {
-		return nil, apiErr.toError(d.apikey)
+		return nil, toError(apiErr, d.apikey)
 	}
 	releases := make([]*normalizer.Release, 0, len(feed.Channel.Items))
 	for i := range feed.Channel.Items {
@@ -105,27 +104,7 @@ func (d *driver) parseReleases(body []byte, catMap *mapper.CategoryMap) ([]*norm
 // <error> at rss or channel level. A bare root carries its code/description on the captured
 // root attributes (the child mapping does not match the root element itself).
 func (f *rss) firstError() *apiError {
-	if strings.EqualFold(f.XMLName.Local, "error") {
-		return apiErrorFromAttrs(f.Attrs)
-	}
-	if f.Error != nil {
-		return f.Error
-	}
-	return f.Channel.Error
-}
-
-// apiErrorFromAttrs builds an apiError from the attributes of a bare <error> root element.
-func apiErrorFromAttrs(attrs []xml.Attr) *apiError {
-	e := &apiError{}
-	for _, a := range attrs {
-		switch strings.ToLower(a.Name.Local) {
-		case "code":
-			e.Code = a.Value
-		case "description":
-			e.Description = a.Value
-		}
-	}
-	return e
+	return native.FirstError(f.XMLName, f.Attrs, f.Error, f.Channel.Error)
 }
 
 // errorCodeAuthLow / errorCodeAuthHigh bound the Newznab "incorrect credentials" code range
@@ -154,7 +133,11 @@ const errorCodeDailyQuota = 910
 // depth: a misbehaving server that echoes the submitted apikey back in its description must
 // not leak it (a bare "invalid key ABCD1234" would pass RedactError's key[=:]value anchor
 // untouched).
-func (e *apiError) toError(apikey string) error {
+//
+// A plain function, not a method: apiError is an alias for native.APIError (a type defined
+// in another package), and Go forbids attaching methods to a type from outside its home
+// package even via a local alias.
+func toError(e *apiError, apikey string) error {
 	desc := apphttp.ScrubValues(strings.TrimSpace(e.Description), []string{apikey})
 	if strings.EqualFold(desc, "Request limit reached") {
 		return &search.RateLimitedError{StatusCode: 0}
@@ -163,17 +146,10 @@ func (e *apiError) toError(apikey string) error {
 	if code == errorCodeDailyQuota {
 		return &search.QuotaExceededError{Detail: fmt.Sprintf("newznab: api error (code %d): %s", code, desc)}
 	}
-	if (code >= errorCodeAuthLow && code <= errorCodeAuthHigh) || mentionsAPIKey(desc) {
+	if (code >= errorCodeAuthLow && code <= errorCodeAuthHigh) || native.MentionsAPIKey(desc) {
 		return fmt.Errorf("newznab: auth failed (code %s): %s: %w", e.Code, desc, login.ErrLoginFailed)
 	}
 	return fmt.Errorf("newznab: api error (code %s): %s: %w", e.Code, desc, search.ErrParseError)
-}
-
-// mentionsAPIKey reports whether the error description references a missing/incorrect
-// apikey, which Prowlarr promotes to an auth failure (e.g. code 200 "Missing parameter:
-// apikey").
-func mentionsAPIKey(desc string) bool {
-	return strings.Contains(strings.ToLower(desc), "apikey")
 }
 
 // toRelease maps one <item> to a normalized usenet release, or nil when the item carries no
@@ -195,7 +171,7 @@ func toRelease(it *item, catMap *mapper.CategoryMap) *normalizer.Release {
 		Title:       title,
 		Description: strings.TrimSpace(it.Description),
 		Comments:    strings.TrimSpace(it.Comments),
-		Details:     trimComments(it.Comments),
+		Details:     native.TrimComments(it.Comments),
 		Link:        nzbURL,
 		// Carry the upstream <guid> as the stable dedup identity (churn-immune to
 		// volatile download URLs). It is normally a passkey-free release id / details
@@ -306,11 +282,11 @@ func (it *item) publishDate() string {
 // and parses the rest as int64.
 func (it *item) fillIDs(rel *normalizer.Release) {
 	rel.IMDBID = imdbAttr(firstNonEmpty(it.attr("imdb"), it.attr("imdbid")))
-	rel.TMDBID = parseInt64(firstNonEmpty(it.attr("tmdbid"), it.attr("tmdb")))
-	rel.TVDBID = parseInt64(firstNonEmpty(it.attr("tvdbid"), it.attr("tvdb")))
-	rel.TVMazeID = parseInt64(firstNonEmpty(it.attr("tvmazeid"), it.attr("tvmaze")))
-	rel.TraktID = parseInt64(firstNonEmpty(it.attr("traktid"), it.attr("trakt")))
-	rel.RageID = parseInt64(it.attr("rageid"))
+	rel.TMDBID = native.ParseInt64(firstNonEmpty(it.attr("tmdbid"), it.attr("tmdb")))
+	rel.TVDBID = native.ParseInt64(firstNonEmpty(it.attr("tvdbid"), it.attr("tvdb")))
+	rel.TVMazeID = native.ParseInt64(firstNonEmpty(it.attr("tvmazeid"), it.attr("tvmaze")))
+	rel.TraktID = native.ParseInt64(firstNonEmpty(it.attr("traktid"), it.attr("trakt")))
+	rel.RageID = native.ParseInt64(it.attr("rageid"))
 }
 
 // attr returns the value of the first newznab:attr with the given name (case-insensitive on
@@ -343,7 +319,7 @@ func (it *item) attrAll(name string) []string {
 // attrInt returns the first newznab:attr with the given name parsed as int64 (0 when absent
 // or unparseable).
 func (it *item) attrInt(name string) int64 {
-	return parseInt64(it.attr(name))
+	return native.ParseInt64(it.attr(name))
 }
 
 // isNewznab reports whether the attr element is in the newznab attribute namespace. Some
@@ -352,13 +328,6 @@ func (it *item) attrInt(name string) int64 {
 // the disambiguator).
 func (a *nzbAttr) isNewznab() bool {
 	return a.XMLName.Space == newznabAttrNS || a.XMLName.Space == ""
-}
-
-// trimComments strips a trailing "#comments" fragment from a comments URL (Prowlarr's
-// GetInfoUrl), yielding the details URL.
-func trimComments(comments string) string {
-	c := strings.TrimSpace(comments)
-	return strings.TrimSuffix(c, "#comments")
 }
 
 // imdbAttr keeps the raw imdb id string (an int-parse would drop a tt prefix; Prowlarr
@@ -376,17 +345,4 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
-}
-
-// parseInt64 parses s as a base-10 int64, returning 0 on blank/unparseable input.
-func parseInt64(s string) int64 {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return 0
-	}
-	n, err := strconv.ParseInt(s, 10, 64)
-	if err != nil {
-		return 0
-	}
-	return n
 }

@@ -56,37 +56,37 @@ type hdbitsResponse struct {
 
 // hdbitsTorrent is one release row from data[]. HDBits has emitted id as both a JSON number
 // and string, so flexString preserves either wire form for URL construction. Hash is a JSON
-// string. flexInt accepts either wire form for the remaining numerics so a type change never
+// string. native.FlexInt accepts either wire form for the remaining numerics so a type change never
 // fails the page decode.
 type hdbitsTorrent struct {
-	ID             flexString `json:"id"`
-	Hash           string     `json:"hash"`
-	Name           string     `json:"name"`
-	Filename       string     `json:"filename"`
-	Size           flexInt    `json:"size"`
-	Seeders        flexInt    `json:"seeders"`
-	Leechers       flexInt    `json:"leechers"`
-	TimesCompleted flexInt    `json:"times_completed"`
-	NumFiles       flexInt    `json:"numfiles"`
-	Added          string     `json:"added"`
-	Freeleech      string     `json:"freeleech"`
-	TypeCategory   flexInt    `json:"type_category"`
-	TypeMedium     flexInt    `json:"type_medium"`
-	TypeOrigin     flexInt    `json:"type_origin"`
-	Imdb           *imdbInfo  `json:"imdb"`
-	Tvdb           *tvdbInfo  `json:"tvdb"`
+	ID             flexString     `json:"id"`
+	Hash           string         `json:"hash"`
+	Name           string         `json:"name"`
+	Filename       string         `json:"filename"`
+	Size           native.FlexInt `json:"size"`
+	Seeders        native.FlexInt `json:"seeders"`
+	Leechers       native.FlexInt `json:"leechers"`
+	TimesCompleted native.FlexInt `json:"times_completed"`
+	NumFiles       native.FlexInt `json:"numfiles"`
+	Added          string         `json:"added"`
+	Freeleech      string         `json:"freeleech"`
+	TypeCategory   native.FlexInt `json:"type_category"`
+	TypeMedium     native.FlexInt `json:"type_medium"`
+	TypeOrigin     native.FlexInt `json:"type_origin"`
+	Imdb           *imdbInfo      `json:"imdb"`
+	Tvdb           *tvdbInfo      `json:"tvdb"`
 }
 
 // imdbInfo is the nested imdb object; only id and year are used.
 type imdbInfo struct {
-	ID   flexInt `json:"id"`
-	Year flexInt `json:"year"`
+	ID   native.FlexInt `json:"id"`
+	Year native.FlexInt `json:"year"`
 }
 
 // tvdbInfo is the nested tvdb object; only the series id is mapped (season/episode are
 // request-side only).
 type tvdbInfo struct {
-	ID flexInt `json:"id"`
+	ID native.FlexInt `json:"id"`
 }
 
 // flexString unmarshals a JSON string OR number into a string. HDBits has returned torrent
@@ -116,39 +116,6 @@ func (s *flexString) UnmarshalJSON(b []byte) error {
 }
 
 func (s flexString) str() string { return string(s) }
-
-// flexInt unmarshals a JSON number OR a JSON string into an int64. HDBits wire-encodes most
-// numerics as bare numbers, but a hostile/older server could string-encode one; this keeps a
-// strict struct decode from rejecting the whole page (cf. broadcastthenet flexString).
-type flexInt int64
-
-func (n *flexInt) UnmarshalJSON(b []byte) error {
-	if len(b) == 0 || string(b) == "null" {
-		*n = 0
-		return nil
-	}
-	if b[0] == '"' {
-		var s string
-		if err := json.Unmarshal(b, &s); err != nil {
-			return fmt.Errorf("hdbits: decode numeric field: %w", err)
-		}
-		v, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
-		if err != nil {
-			*n = 0
-			return nil
-		}
-		*n = flexInt(v)
-		return nil
-	}
-	var v int64
-	if err := json.Unmarshal(b, &v); err != nil {
-		return fmt.Errorf("hdbits: decode numeric field: %w", err)
-	}
-	*n = flexInt(v)
-	return nil
-}
-
-func (n flexInt) int64() int64 { return int64(n) }
 
 // parseReleases decodes an api/torrents JSON body into normalized releases. A status of 4/5
 // (AuthDataMissing/AuthFailed) maps to login.ErrLoginFailed; any other non-zero status is a
@@ -196,17 +163,17 @@ func (d *driver) statusError(status int, message string) error {
 // through /dl by NeedsResolver, so its passkey never reaches the feed); the volume factors
 // follow the freeleech/XXX/half-leech rules.
 func (d *driver) toRelease(row *hdbitsTorrent, useFilenames bool) *normalizer.Release {
-	seeders := row.Seeders.int64()
-	leechers := row.Leechers.int64()
+	seeders := row.Seeders.Int64()
+	leechers := row.Leechers.Int64()
 	rel := &normalizer.Release{
 		Title:                title(row, useFilenames),
 		InfoHash:             row.Hash,
 		Link:                 d.downloadURL(row.ID.str()),
 		Details:              d.detailsURL(row.ID.str()),
-		Categories:           d.categories(row.TypeCategory.int64()),
-		Size:                 row.Size.int64(),
-		Files:                row.NumFiles.int64(),
-		Grabs:                row.TimesCompleted.int64(),
+		Categories:           d.categories(row.TypeCategory.Int64()),
+		Size:                 row.Size.Int64(),
+		Files:                row.NumFiles.Int64(),
+		Grabs:                row.TimesCompleted.Int64(),
 		Seeders:              seeders,
 		Leechers:             leechers,
 		Peers:                seeders + leechers,
@@ -215,11 +182,11 @@ func (d *driver) toRelease(row *hdbitsTorrent, useFilenames bool) *normalizer.Re
 		UploadVolumeFactor:   uploadVolumeFactor(row),
 	}
 	if row.Imdb != nil {
-		rel.IMDBID = fullIMDBID(row.Imdb.ID.int64())
-		rel.Year = row.Imdb.Year.int64()
+		rel.IMDBID = fullIMDBID(row.Imdb.ID.Int64())
+		rel.Year = row.Imdb.Year.Int64()
 	}
 	if row.Tvdb != nil {
-		rel.TVDBID = row.Tvdb.ID.int64()
+		rel.TVDBID = row.Tvdb.ID.Int64()
 	}
 	return rel
 }
@@ -228,8 +195,8 @@ func (d *driver) toRelease(row *hdbitsTorrent, useFilenames bool) *normalizer.Re
 // use_filenames is on and the row is neither XXX (cat 7) nor a full disc (medium 1) and the
 // filename is non-empty; otherwise the name (Prowlarr HDBitsParser).
 func title(row *hdbitsTorrent, useFilenames bool) string {
-	cat := row.TypeCategory.int64()
-	medium := row.TypeMedium.int64()
+	cat := row.TypeCategory.Int64()
+	medium := row.TypeMedium.Int64()
 	fn := strings.TrimSpace(row.Filename)
 	if cat != xxxCategory && medium != fullDiscMedium && useFilenames && fn != "" {
 		return stripTorrentExt(fn)
@@ -266,14 +233,14 @@ func downloadVolumeFactor(row *hdbitsTorrent) float64 {
 	if isFreeleech(row.Freeleech) {
 		return 0
 	}
-	cat := row.TypeCategory.int64()
+	cat := row.TypeCategory.Int64()
 	if cat == xxxCategory {
 		return 0
 	}
-	if _, half := halfLeechMediums[row.TypeMedium.int64()]; half {
+	if _, half := halfLeechMediums[row.TypeMedium.Int64()]; half {
 		return 0.5
 	}
-	if row.TypeOrigin.int64() == internalOrigin || cat == 2 || cat == 3 {
+	if row.TypeOrigin.Int64() == internalOrigin || cat == 2 || cat == 3 {
 		return 0.5
 	}
 	return 1
@@ -282,7 +249,7 @@ func downloadVolumeFactor(row *hdbitsTorrent) float64 {
 // uploadVolumeFactor reproduces Prowlarr's GetUploadVolumeFactor: XXX uploads count zero, all
 // others 1x.
 func uploadVolumeFactor(row *hdbitsTorrent) float64 {
-	if row.TypeCategory.int64() == xxxCategory {
+	if row.TypeCategory.Int64() == xxxCategory {
 		return 0
 	}
 	return 1

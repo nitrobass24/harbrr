@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -54,25 +53,25 @@ var commonReleaseGroupPrefixes = []string{"softsubs", "hardsubs", "raw", "transl
 const uploadTimeLayout = "2006-01-02 15:04:05"
 
 // response is the scrape.php JSON envelope. Matches is the total hit count (string-or
-// -number on the wire, so flexInt). Error carries a server-side failure message; the
+// -number on the wire, so native.FlexInt). Error carries a server-side failure message; the
 // real AB error body uses the lowercase "error" key (Prowlarr's success model tags it
 // "Error", but the live envelope is lowercase — the lowercase key matches what we must
 // discriminate on).
 type response struct {
-	Matches flexInt `json:"Matches"`
-	Groups  []group `json:"Groups"`
-	Error   string  `json:"error"`
+	Matches native.FlexInt `json:"Matches"`
+	Groups  []group        `json:"Groups"`
+	Error   string         `json:"error"`
 }
 
 // group is one scrape result (a series/album/game …) holding one or more torrents. Year
-// is string-or-number on the wire (Prowlarr's AllowReadingFromString), so flexInt.
+// is string-or-number on the wire (Prowlarr's AllowReadingFromString), so native.FlexInt.
 type group struct {
-	ID           flexInt           `json:"ID"`
+	ID           native.FlexInt    `json:"ID"`
 	CategoryName string            `json:"CategoryName"`
 	GroupName    string            `json:"GroupName"`
 	FullName     string            `json:"FullName"`
 	SeriesName   string            `json:"SeriesName"`
-	Year         flexInt           `json:"Year"`
+	Year         native.FlexInt    `json:"Year"`
 	Image        string            `json:"Image"`
 	SynonymnsV2  map[string]string `json:"SynonymnsV2"`
 	Description  string            `json:"Description"`
@@ -81,24 +80,24 @@ type group struct {
 }
 
 // torrent is one downloadable item inside a group. The numeric fields are typed int/long
-// in Prowlarr; house convention uses flexInt for all of them so a string-encoded numeric
+// in Prowlarr; house convention uses native.FlexInt for all of them so a string-encoded numeric
 // (which AB has been seen to emit) never fails the whole-page decode. Link embeds the
 // passkey — the served feed routes it through /dl (NeedsResolver=true), so it is never
 // logged.
 type torrent struct {
-	ID                flexInt      `json:"ID"`
-	EditionData       *editionData `json:"EditionData"`
-	RawDownMultiplier float64      `json:"RawDownMultiplier"`
-	RawUpMultiplier   float64      `json:"RawUpMultiplier"`
-	Link              string       `json:"Link"`
-	Property          string       `json:"Property"`
-	Snatched          flexInt      `json:"Snatched"`
-	Seeders           flexInt      `json:"Seeders"`
-	Leechers          flexInt      `json:"Leechers"`
-	Size              flexInt      `json:"Size"`
-	FileCount         flexInt      `json:"FileCount"`
-	FileList          []file       `json:"FileList"`
-	UploadTime        string       `json:"UploadTime"`
+	ID                native.FlexInt `json:"ID"`
+	EditionData       *editionData   `json:"EditionData"`
+	RawDownMultiplier float64        `json:"RawDownMultiplier"`
+	RawUpMultiplier   float64        `json:"RawUpMultiplier"`
+	Link              string         `json:"Link"`
+	Property          string         `json:"Property"`
+	Snatched          native.FlexInt `json:"Snatched"`
+	Seeders           native.FlexInt `json:"Seeders"`
+	Leechers          native.FlexInt `json:"Leechers"`
+	Size              native.FlexInt `json:"Size"`
+	FileCount         native.FlexInt `json:"FileCount"`
+	FileList          []file         `json:"FileList"`
+	UploadTime        string         `json:"UploadTime"`
 }
 
 // editionData carries a torrent's season/episode descriptor (e.g. "Season 1").
@@ -108,44 +107,9 @@ type editionData struct {
 
 // file is one entry in a torrent's FileList.
 type file struct {
-	FileName string  `json:"filename"`
-	FileSize flexInt `json:"size"`
+	FileName string         `json:"filename"`
+	FileSize native.FlexInt `json:"size"`
 }
-
-// flexInt unmarshals a JSON string OR number into an int64. AnimeBytes encodes Year as a
-// string-or-number (Prowlarr AllowReadingFromString); the other numerics are typed in
-// Prowlarr but tolerated as string-or-number here so a strict struct decode never rejects
-// the page (mirrors gazelle.flexInt / broadcastthenet.flexString).
-type flexInt int64
-
-func (n *flexInt) UnmarshalJSON(b []byte) error {
-	if len(b) == 0 || string(b) == "null" {
-		*n = 0
-		return nil
-	}
-	s := string(b)
-	if b[0] == '"' {
-		var str string
-		if err := json.Unmarshal(b, &str); err != nil {
-			return fmt.Errorf("animebytes: decode numeric field: %w", err)
-		}
-		s = strings.TrimSpace(str)
-	}
-	if s == "" {
-		*n = 0
-		return nil
-	}
-	v, err := strconv.ParseInt(s, 10, 64)
-	if err != nil {
-		*n = 0 // a malformed numeric degrades to 0, never failing the whole page
-		return nil
-	}
-	*n = flexInt(v)
-	return nil
-}
-
-// int64 returns the decoded value as a plain int64.
-func (n flexInt) int64() int64 { return int64(n) }
 
 // parseReleases decodes a scrape.php body into normalized releases, reproducing
 // Prowlarr's AnimeBytesParser. The discriminator order matches Prowlarr exactly: a
@@ -162,7 +126,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	if strings.TrimSpace(resp.Error) != "" {
 		return nil, d.classifyError(resp.Error)
 	}
-	if resp.Matches.int64() == 0 {
+	if resp.Matches.Int64() == 0 {
 		return nil, nil
 	}
 
@@ -170,7 +134,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	for i := range resp.Groups {
 		rels = append(rels, d.flattenGroup(&resp.Groups[i])...)
 	}
-	sortReleases(rels)
+	native.SortByPublishDateDesc(rels)
 	native.TraceReleases(d.Log, d.Def.ID, rels)
 	return rels, nil
 }
@@ -243,28 +207,28 @@ func (d *driver) toRelease(g *group, t *torrent) (*normalizer.Release, bool) {
 		return nil, false
 	}
 	props := torrentProperties(t.Property)
-	seeders := t.Seeders.int64()
-	leechers := t.Leechers.int64()
+	seeders := t.Seeders.Int64()
+	leechers := t.Leechers.Int64()
 	rel := &normalizer.Release{
 		Title:                composeTitle(g, t, props),
 		Description:          g.Description,
 		Link:                 t.Link,
-		Details:              d.detailsURL(t.ID.int64()),
+		Details:              d.detailsURL(t.ID.Int64()),
 		Poster:               g.Image,
 		Categories:           categories(g, props),
-		Size:                 t.Size.int64(),
-		Files:                t.FileCount.int64(),
-		Grabs:                t.Snatched.int64(),
+		Size:                 t.Size.Int64(),
+		Files:                t.FileCount.Int64(),
+		Grabs:                t.Snatched.Int64(),
 		Seeders:              seeders,
 		Leechers:             leechers,
 		Peers:                seeders + leechers,
-		Year:                 g.Year.int64(),
+		Year:                 g.Year.Int64(),
 		Genre:                strings.Join(g.Tags, ", "),
 		PublishDate:          published.UTC().Format(time.RFC3339),
 		DownloadVolumeFactor: t.RawDownMultiplier,
 		UploadVolumeFactor:   t.RawUpMultiplier,
 		MinimumRatio:         minimumRatio,
-		MinimumSeedTime:      minimumSeedTime(t.Size.int64()),
+		MinimumSeedTime:      minimumSeedTime(t.Size.Int64()),
 	}
 	return rel, true
 }
@@ -292,16 +256,6 @@ func freeleechOnly(cfg map[string]string) bool {
 	default:
 		return false
 	}
-}
-
-// sortReleases orders releases by PublishDate descending (Prowlarr's terminal
-// OrderByDescending(PublishDate)). UTC RFC3339 sorts lexically in chronological order, so
-// a plain string compare is correct; the stable sort keeps group/torrent input order for
-// equal timestamps, so the feed is deterministic.
-func sortReleases(rels []*normalizer.Release) {
-	sort.SliceStable(rels, func(i, j int) bool {
-		return rels[i].PublishDate > rels[j].PublishDate
-	})
 }
 
 // torrentProperties splits a torrent Property string into its ordered, de-duplicated

@@ -30,7 +30,7 @@ func composeTitle(g *group, t *torrent, props []string) string {
 	mainTitle := mainTitle(g)
 	infoString := infoString(props)
 	releaseGroup := releaseGroupPrefix(props)
-	year := g.Year.int64()
+	year := g.Year.Int64()
 
 	if g.GroupName == "Movie" || g.GroupName == "Live Action Movie" {
 		return strings.TrimSpace(fmt.Sprintf("%s%s %d %s", releaseGroup, mainTitle, year, infoString))
@@ -169,7 +169,7 @@ func seasonEpisode(t *torrent) (season int, hasSeason bool, episode int) {
 // the year must be positive AND appear in one of the torrent's file names (Prowlarr
 // useYearInTitle).
 func useYearInTitle(g *group, t *torrent) bool {
-	year := g.Year.int64()
+	year := g.Year.Int64()
 	if year <= 0 {
 		return false
 	}

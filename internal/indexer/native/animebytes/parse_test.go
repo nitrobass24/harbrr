@@ -230,19 +230,3 @@ func TestMovieTitle(t *testing.T) {
 		t.Errorf("categories = %v, want [%d]", got[0].Categories, catMovies)
 	}
 }
-
-// TestFlexIntStringAndNumber proves the flexInt decode tolerates both a JSON string and a
-// bare number for the same field.
-func TestFlexIntStringAndNumber(t *testing.T) {
-	t.Parallel()
-	var n flexInt
-	if err := n.UnmarshalJSON([]byte(`"2020"`)); err != nil || n.int64() != 2020 {
-		t.Errorf("string decode = %d (err %v), want 2020", n.int64(), err)
-	}
-	if err := n.UnmarshalJSON([]byte(`2019`)); err != nil || n.int64() != 2019 {
-		t.Errorf("number decode = %d (err %v), want 2019", n.int64(), err)
-	}
-	if err := n.UnmarshalJSON([]byte(`"x"`)); err != nil || n.int64() != 0 {
-		t.Errorf("malformed decode = %d (err %v), want 0", n.int64(), err)
-	}
-}

@@ -56,13 +56,13 @@ var yearRegex = regexp.MustCompile(`\b(?:19|20|21)\d{2}\b`)
 
 // gazelleGamesResponse is the api.php?request=search envelope. Status is "success" on a
 // good page; on a non-success body Status carries a different string or the numeric HTTP
-// code (so flexString tolerates string-or-number). Response is the keyed group map on
+// code (so native.FlexString tolerates string-or-number). Response is the keyed group map on
 // success and an arbitrary shape (string/array/missing) otherwise, so it is held as raw
 // JSON and only decoded as a map after the success gate. Error carries the server message.
 type gazelleGamesResponse struct {
-	Status   flexString      `json:"status"`
-	Error    string          `json:"error"`
-	Response json.RawMessage `json:"response"`
+	Status   native.FlexString `json:"status"`
+	Error    string            `json:"error"`
+	Response json.RawMessage   `json:"response"`
 }
 
 // gazelleGamesGroup is one search-result group (the value of the groupId-keyed response
@@ -72,78 +72,43 @@ type gazelleGamesResponse struct {
 type gazelleGamesGroup struct {
 	Artists  []gazelleGamesArtist `json:"Artists"`
 	Torrents json.RawMessage      `json:"Torrents"`
-	Year     flexString           `json:"Year"`
+	Year     native.FlexString    `json:"Year"`
 }
 
 // gazelleGamesArtist is one artist/platform entry. Its Name is mapped through the
 // description-keyed category map (a platform name like "Windows" or a real category).
 type gazelleGamesArtist struct {
-	ID   flexString `json:"Id"`
-	Name string     `json:"Name"`
+	ID   native.FlexString `json:"Id"`
+	Name string            `json:"Name"`
 }
 
 // gazelleGamesTorrent is one torrent inside a group (the value of the torrentId-keyed
 // torrent map). Numerics GGn wire-encodes as JSON strings (Size, Snatched can be null) use
-// flexString; Time is a "yyyy-MM-dd HH:mm:ss" datetime (parsed UTC). FreeTorrent is a
+// native.FlexString; Time is a "yyyy-MM-dd HH:mm:ss" datetime (parsed UTC). FreeTorrent is a
 // string enum (Normal/FreeLeech/Neutral/Either).
 type gazelleGamesTorrent struct {
-	CategoryID    flexString `json:"CategoryId"`
-	Format        string     `json:"Format"`
-	Encoding      string     `json:"Encoding"`
-	Language      string     `json:"Language"`
-	Region        string     `json:"Region"`
-	RemasterYear  flexString `json:"RemasterYear"`
-	RemasterTitle string     `json:"RemasterTitle"`
-	ReleaseTitle  string     `json:"ReleaseTitle"`
-	Miscellaneous string     `json:"Miscellaneous"`
-	Scene         flexString `json:"Scene"`
-	Dupable       flexString `json:"Dupable"`
-	Time          string     `json:"Time"`
-	TorrentType   string     `json:"TorrentType"`
-	FileCount     flexString `json:"FileCount"`
-	Size          flexString `json:"Size"`
-	Snatched      flexString `json:"Snatched"`
-	Seeders       flexString `json:"Seeders"`
-	Leechers      flexString `json:"Leechers"`
-	FreeTorrent   string     `json:"FreeTorrent"`
-	LowSeedFL     bool       `json:"LowSeedFL"`
-	GameDoxType   string     `json:"GameDOXType"`
+	CategoryID    native.FlexString `json:"CategoryId"`
+	Format        string            `json:"Format"`
+	Encoding      string            `json:"Encoding"`
+	Language      string            `json:"Language"`
+	Region        string            `json:"Region"`
+	RemasterYear  native.FlexString `json:"RemasterYear"`
+	RemasterTitle string            `json:"RemasterTitle"`
+	ReleaseTitle  string            `json:"ReleaseTitle"`
+	Miscellaneous string            `json:"Miscellaneous"`
+	Scene         native.FlexString `json:"Scene"`
+	Dupable       native.FlexString `json:"Dupable"`
+	Time          string            `json:"Time"`
+	TorrentType   string            `json:"TorrentType"`
+	FileCount     native.FlexString `json:"FileCount"`
+	Size          native.FlexString `json:"Size"`
+	Snatched      native.FlexString `json:"Snatched"`
+	Seeders       native.FlexString `json:"Seeders"`
+	Leechers      native.FlexString `json:"Leechers"`
+	FreeTorrent   string            `json:"FreeTorrent"`
+	LowSeedFL     bool              `json:"LowSeedFL"`
+	GameDoxType   string            `json:"GameDOXType"`
 }
-
-// flexString unmarshals a JSON string OR number into a string. GGn wire-encodes numerics
-// (Size, Seeders, Scene, …) as JSON strings, but a bare number (or null) is tolerated too
-// so a strict struct decode never rejects the body (mirrors broadcastthenet flexString).
-type flexString string
-
-func (s *flexString) UnmarshalJSON(b []byte) error {
-	if len(b) == 0 || string(b) == "null" {
-		*s = ""
-		return nil
-	}
-	if b[0] == '"' {
-		var str string
-		if err := json.Unmarshal(b, &str); err != nil {
-			return fmt.Errorf("gazellegames: decode string field: %w", err)
-		}
-		*s = flexString(str)
-		return nil
-	}
-	*s = flexString(b) // a bare JSON number/bool: keep its literal text
-	return nil
-}
-
-// int64 parses the flexString as a base-10 int64; a blank or malformed value yields 0 (a
-// bad numeric degrades to 0 rather than failing the whole page).
-func (s flexString) int64() int64 {
-	n, err := strconv.ParseInt(strings.TrimSpace(string(s)), 10, 64)
-	if err != nil {
-		return 0
-	}
-	return n
-}
-
-// string returns the decoded text.
-func (s flexString) string() string { return string(s) }
 
 // parseSearch decodes a search body into normalized releases. A non-JSON or malformed body
 // is a parse error. A non-"success" status is classified as a login failure when the
@@ -157,8 +122,8 @@ func (d *driver) parseSearch(body []byte) ([]*normalizer.Release, error) {
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, fmt.Errorf("gazellegames: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
 	}
-	if resp.Status.string() != statusSuccess {
-		return nil, d.classifyStatusError(resp.Status.string(), resp.Error)
+	if resp.Status.Str() != statusSuccess {
+		return nil, d.classifyStatusError(resp.Status.Str(), resp.Error)
 	}
 
 	if !isJSONObject(resp.Response) {
@@ -177,7 +142,7 @@ func (d *driver) parseSearch(body []byte) ([]*normalizer.Release, error) {
 		}
 		rels = append(rels, groupRels...)
 	}
-	sortReleases(rels)
+	native.SortByPublishDateDescLinkTiebreak(rels)
 	native.TraceReleases(d.Log, d.Def.ID, rels)
 	return rels, nil
 }
@@ -253,7 +218,7 @@ func (d *driver) flattenGroup(groupID int64, g *gazelleGamesGroup) ([]*normalize
 		if len(cats) == 0 {
 			// First emitted torrent in a group with no artist-derived categories seeds the
 			// group fallback from its own CategoryId; it then sticks for every later torrent.
-			cats = canonical(d.Caps.CategoryMap.MapTrackerCatToNewznab(t.CategoryID.string()))
+			cats = canonical(d.Caps.CategoryMap.MapTrackerCatToNewznab(t.CategoryID.Str()))
 		}
 		rels = append(rels, d.toRelease(groupID, torrentID, g, &t, cats))
 	}
@@ -283,12 +248,12 @@ func (d *driver) toRelease(groupID, torrentID int64, g *gazelleGamesGroup, t *ga
 		Link:                 d.downloadURL(torrentID),
 		Details:              d.detailsURL(groupID, torrentID),
 		Categories:           cats,
-		Size:                 t.Size.int64(),
-		Files:                t.FileCount.int64(),
-		Grabs:                t.Snatched.int64(),
-		Seeders:              t.Seeders.int64(),
-		Leechers:             t.Leechers.int64(),
-		Peers:                t.Seeders.int64() + t.Leechers.int64(),
+		Size:                 t.Size.Int64(),
+		Files:                t.FileCount.Int64(),
+		Grabs:                t.Snatched.Int64(),
+		Seeders:              t.Seeders.Int64(),
+		Leechers:             t.Leechers.Int64(),
+		Peers:                t.Seeders.Int64() + t.Leechers.Int64(),
 		PublishDate:          d.publishDate(t.Time),
 		DownloadVolumeFactor: downloadVolumeFactor(t, free),
 		UploadVolumeFactor:   uploadVolumeFactor(t),
@@ -326,11 +291,11 @@ func (d *driver) groupCategories(g *gazelleGamesGroup) []int {
 // Miscellaneous, "Trumpable" if Dupable==1], keeping only the non-blank entries.
 func composeTitle(g *gazelleGamesGroup, t *gazelleGamesTorrent) string {
 	title := html.UnescapeString(t.ReleaseTitle)
-	if g.Year.int64() > 0 && strings.TrimSpace(title) != "" && !yearRegex.MatchString(title) {
-		title += fmt.Sprintf(" (%d)", g.Year.int64())
+	if g.Year.Int64() > 0 && strings.TrimSpace(title) != "" && !yearRegex.MatchString(title) {
+		title += fmt.Sprintf(" (%d)", g.Year.Int64())
 	}
 	if strings.TrimSpace(t.RemasterTitle) != "" {
-		title += fmt.Sprintf(" [%s]", strings.TrimSpace(html.UnescapeString(t.RemasterTitle)+" "+t.RemasterYear.string()))
+		title += fmt.Sprintf(" [%s]", strings.TrimSpace(html.UnescapeString(t.RemasterTitle)+" "+t.RemasterYear.Str()))
 	}
 	if flags := titleFlags(g, t); len(flags) > 0 {
 		title += " [" + strings.Join(flags, " / ") + "]"
@@ -352,7 +317,7 @@ func titleFlags(g *gazelleGamesGroup, t *gazelleGamesTorrent) []string {
 		t.Region,
 		t.Miscellaneous,
 	}
-	if t.Dupable.int64() == 1 {
+	if t.Dupable.Int64() == 1 {
 		candidates = append(candidates, "Trumpable")
 	}
 	flags := make([]string, 0, len(candidates))
@@ -452,18 +417,4 @@ func canonical(ids []int) []int {
 		}
 	}
 	return out
-}
-
-// sortReleases orders releases by PublishDate descending (Prowlarr's terminal
-// OrderByDescending(PublishDate)). PublishDate is a UTC RFC3339 string, which sorts
-// lexically in chronological order, so a plain string comparison is correct; ties break on
-// the rebuilt download Link so the map-iteration order does not make the feed
-// non-deterministic.
-func sortReleases(rels []*normalizer.Release) {
-	sort.SliceStable(rels, func(i, j int) bool {
-		if rels[i].PublishDate != rels[j].PublishDate {
-			return rels[i].PublishDate > rels[j].PublishDate
-		}
-		return rels[i].Link < rels[j].Link
-	})
 }
