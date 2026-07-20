@@ -339,8 +339,10 @@ describe("ConnectionDialog create — Already configured block", () => {
     ))
 
     const appSelect = await screen.findByLabelText<HTMLSelectElement>("App")
-    await screen.findByRole("option", { name: "sonarr-app (sonarr)" })
-    // A used app would 409 on create (one sync row per App), so it is never the default.
+    // A used app would 409 on create (one sync row per App), so it is never the
+    // default and its option is disabled, marked "already added".
+    const option = await screen.findByRole<HTMLOptionElement>("option", { name: /sonarr-app \(sonarr\) — already added/ })
+    expect(option.disabled).toBe(true)
     expect(appSelect.value).toBe("new")
     expect(screen.getByLabelText("App base URL")).toBeTruthy()
   })

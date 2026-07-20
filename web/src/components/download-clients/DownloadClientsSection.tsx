@@ -277,6 +277,9 @@ function DownloadClientForm({ client, pending, onSubmit }: {
             onChange={(e) => {
               setKind(e.target.value as DownloadClientKind)
               setAppSel(null) // the app list for the new kind is different; re-default.
+              // The re-default can land on a different qui app, so a kept instance id
+              // could pair with an app it doesn't belong to.
+              setInstanceId("")
             }}
           >
             {DOWNLOAD_CLIENT_KINDS.map((k) => <option key={k} value={k}>{kindLabel(k)}</option>)}

@@ -196,9 +196,10 @@ function AnnounceForm({ existing, pending, error, onCreate, onUpdate }: {
   const mode = existing ? "edit" : "create"
   const message = error instanceof Error ? error.message : null
   const appsOfKind = (apps.data ?? []).filter((a) => a.kind === kind)
-  // Default skips apps an announce target already uses: announce is one-row-per-App, so
-  // defaulting to a used app would pre-select a create the server is guaranteed to 409.
-  const firstFree = appsOfKind.find((a) => a.references.announce === 0)
+  // Announce is one-row-per-App, so a used app is not offerable: the default skips it
+  // and its picker option is disabled — otherwise it pre-selects a guaranteed 409.
+  const isUsed = (a: App) => a.references.announce > 0
+  const firstFree = appsOfKind.find((a) => !isUsed(a))
   const effectiveAppSel = appSel ?? (firstFree ? String(firstFree.id) : NEW_APP)
   const usingNewApp = effectiveAppSel === NEW_APP
   const configuredApps = (apps.data ?? []).filter((a) => a.kind === "qui" || a.kind === "crossseed-v6")
@@ -229,7 +230,7 @@ function AnnounceForm({ existing, pending, error, onCreate, onUpdate }: {
       {mode === "create" && (
         <ConfiguredAppsBlock
           apps={configuredApps}
-          isUsed={(a) => a.references.announce > 0}
+          isUsed={isUsed}
           onPick={(a: App) => {
             setKind(a.kind as AnnounceKind)
             setAppSel(String(a.id))
@@ -264,7 +265,11 @@ function AnnounceForm({ existing, pending, error, onCreate, onUpdate }: {
         <span className="flex flex-col gap-1.5">
           <Label htmlFor="ann-app">App</Label>
           <NativeSelect id="ann-app" value={effectiveAppSel} onChange={(e) => setAppSel(e.target.value)}>
-            {appsOfKind.map((a) => <option key={a.id} value={a.id}>{a.name} ({hostname(a.baseUrl)})</option>)}
+            {appsOfKind.map((a) => (
+              <option key={a.id} value={a.id} disabled={isUsed(a)}>
+                {a.name} ({hostname(a.baseUrl)}){isUsed(a) ? " — already added" : ""}
+              </option>
+            ))}
             <option value={NEW_APP}>New app…</option>
           </NativeSelect>
         </span>

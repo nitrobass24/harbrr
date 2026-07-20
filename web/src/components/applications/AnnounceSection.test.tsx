@@ -205,8 +205,10 @@ describe("AnnounceSection create — Already configured block", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Add target" }))
 
     const appSelect = await screen.findByLabelText<HTMLSelectElement>("App")
-    await screen.findByRole("option", { name: "qui-main-app (qui)" })
-    // A used app would 409 on create (one announce row per App), so it is never the default.
+    // A used app would 409 on create (one announce row per App), so it is never the
+    // default and its option is disabled, marked "already added".
+    const option = await screen.findByRole<HTMLOptionElement>("option", { name: /qui-main-app \(qui\) — already added/ })
+    expect(option.disabled).toBe(true)
     expect(appSelect.value).toBe("new")
     expect(screen.getByLabelText("Tool base URL")).toBeTruthy()
   })

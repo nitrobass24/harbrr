@@ -191,6 +191,31 @@ describe("DownloadClientsSection", () => {
     expect(await screen.findByText(/pick an instance below/)).toBeTruthy()
   })
 
+  it("add: changing kind clears a picked instance, so it can't pair with a re-defaulted app", async () => {
+    const fetchMock = vi.fn((req: Request) => {
+      if (req.url.includes("/qui-instances")) {
+        return Promise.resolve(jsonResponse({ ok: true, instances: [{ id: 3, name: "main" }] }))
+      }
+      if (req.url.includes("/apps")) return Promise.resolve(jsonResponse([QUI_APP]))
+      return Promise.resolve(jsonResponse([]))
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    render(wrap(<DownloadClientsSection />))
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add download client" }))
+    fireEvent.click(await screen.findByRole("button", { name: /qui-main/ }))
+    const instanceSelect = await screen.findByLabelText<HTMLSelectElement>("Instance")
+    await screen.findByRole("option", { name: "main" }) // instances load async; the option must exist before selecting
+    fireEvent.change(instanceSelect, { target: { value: "3" } })
+    expect(instanceSelect.value).toBe("3")
+
+    const kindSelect = screen.getByLabelText<HTMLSelectElement>("Kind")
+    fireEvent.change(kindSelect, { target: { value: "qbittorrent" } })
+    fireEvent.change(kindSelect, { target: { value: "qui" } })
+
+    expect((await screen.findByLabelText<HTMLSelectElement>("Instance")).value).toBe("")
+  })
+
   it("add: the block is absent when no qui App exists", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse([])))
     render(wrap(<DownloadClientsSection />))

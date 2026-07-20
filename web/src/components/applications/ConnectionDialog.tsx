@@ -97,9 +97,10 @@ function ConnectionForm({ existing, pending, error, onCreate, onUpdate }: {
   // Profiles never apply to qui — it has no per-content-type category concept.
   const showProfilePicker = kind !== "qui"
   const appsOfKind = (apps.data ?? []).filter((a) => a.kind === kind)
-  // Default skips apps a sync connection already uses: app-sync is one-row-per-App, so
-  // defaulting to a used app would pre-select a create the server is guaranteed to 409.
-  const firstFree = appsOfKind.find((a) => a.references.appConnections === 0)
+  // App-sync is one-row-per-App, so a used app is not offerable: the default skips it
+  // and its picker option is disabled — otherwise it pre-selects a guaranteed 409.
+  const isUsed = (a: App) => a.references.appConnections > 0
+  const firstFree = appsOfKind.find((a) => !isUsed(a))
   const effectiveAppSel = appSel ?? (firstFree ? String(firstFree.id) : NEW_APP)
   const usingNewApp = effectiveAppSel === NEW_APP
   const configuredApps = (apps.data ?? []).filter((a) => (KINDS as string[]).includes(a.kind))
@@ -144,7 +145,7 @@ function ConnectionForm({ existing, pending, error, onCreate, onUpdate }: {
       {mode === "create" && (
         <ConfiguredAppsBlock
           apps={configuredApps}
-          isUsed={(a) => a.references.appConnections > 0}
+          isUsed={isUsed}
           onPick={(a: App) => {
             setKind(a.kind as ConnectionKind)
             setAppSel(String(a.id))
@@ -175,7 +176,11 @@ function ConnectionForm({ existing, pending, error, onCreate, onUpdate }: {
       {mode === "create" && (
         <FieldWrap id="conn-app" label="App">
           <NativeSelect id="conn-app" value={effectiveAppSel} onChange={(e) => setAppSel(e.target.value)}>
-            {appsOfKind.map((a) => <option key={a.id} value={a.id}>{a.name} ({hostname(a.baseUrl)})</option>)}
+            {appsOfKind.map((a) => (
+              <option key={a.id} value={a.id} disabled={isUsed(a)}>
+                {a.name} ({hostname(a.baseUrl)}){isUsed(a) ? " — already added" : ""}
+              </option>
+            ))}
             <option value={NEW_APP}>New app…</option>
           </NativeSelect>
         </FieldWrap>
