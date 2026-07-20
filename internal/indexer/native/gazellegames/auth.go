@@ -43,7 +43,7 @@ const quickUserParam = "quick_user"
 // gazelleGamesUserResponse is the api.php?request=quick_user envelope. Status is "success"
 // on a good response; Response.Passkey carries the download passkey (a secret).
 type gazelleGamesUserResponse struct {
-	Status   flexString `json:"status"`
+	Status   native.FlexString `json:"status"`
 	Response struct {
 		Passkey string `json:"passkey"`
 	} `json:"response"`
@@ -84,12 +84,12 @@ func (d *driver) storePasskey(ctx context.Context, body []byte) error {
 		return fmt.Errorf("gazellegames: decode passkey response: %w", login.ErrLoginFailed)
 	}
 	passkey := strings.TrimSpace(resp.Response.Passkey)
-	if resp.Status.string() != statusSuccess || passkey == "" {
+	if resp.Status.Str() != statusSuccess || passkey == "" {
 		// resp.Status is the SERVER-CONTROLLED JSON `status` field (arbitrary server text,
 		// not an HTTP status), and the apikey rode in the X-API-Key header on this same
 		// request, so scrub both apikey and passkey out of any echoed status before it
 		// reaches a persisted health event / webhook (mirrors hdbits/beyondhd).
-		return fmt.Errorf("gazellegames: passkey fetch failed (status %q): %w", d.scrub(resp.Status.string()), login.ErrLoginFailed)
+		return fmt.Errorf("gazellegames: passkey fetch failed (status %q): %w", d.scrub(resp.Status.Str()), login.ErrLoginFailed)
 	}
 
 	// Persist FIRST, then populate the in-memory cfg only on success. If persist fails,

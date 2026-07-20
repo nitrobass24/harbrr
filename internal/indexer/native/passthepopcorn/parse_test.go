@@ -228,58 +228,6 @@ func TestParseReleasesMalformed(t *testing.T) {
 	}
 }
 
-// TestFlexStringDecode proves flexString accepts a JSON string, a bare number, and
-// degrades blank/null/garbage to 0.
-func TestFlexStringDecode(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		in   string
-		want int64
-	}{
-		{`"42"`, 42},
-		{`42`, 42},
-		{`""`, 0},
-		{`null`, 0},
-		{`"notanumber"`, 0},
-	}
-	for _, c := range cases {
-		var s flexString
-		if err := s.UnmarshalJSON([]byte(c.in)); err != nil {
-			t.Errorf("UnmarshalJSON(%s): %v", c.in, err)
-			continue
-		}
-		if got := s.int64(); got != c.want {
-			t.Errorf("flexString(%s).int64() = %d, want %d", c.in, got, c.want)
-		}
-	}
-}
-
-// TestFlexIntDecode proves the polymorphic Torrent.Id decodes from both an int and a
-// string wire form, degrading blank/null/garbage to 0.
-func TestFlexIntDecode(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		in   string
-		want int64
-	}{
-		{`1100`, 1100},
-		{`"1101"`, 1101},
-		{`""`, 0},
-		{`null`, 0},
-		{`"x"`, 0},
-	}
-	for _, c := range cases {
-		var n flexInt
-		if err := n.UnmarshalJSON([]byte(c.in)); err != nil {
-			t.Errorf("UnmarshalJSON(%s): %v", c.in, err)
-			continue
-		}
-		if got := n.int64(); got != c.want {
-			t.Errorf("flexInt(%s).int64() = %d, want %d", c.in, got, c.want)
-		}
-	}
-}
-
 // TestFormatIMDB proves the digits-only ImdbId -> "tt"+7-digit feed form, with blank/0/
 // non-numeric ids omitted.
 func TestFormatIMDB(t *testing.T) {

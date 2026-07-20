@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -42,116 +41,47 @@ const uploadTimeLayout = "2006-01-02 15:04:05"
 // empty). Page is unused. AuthKey/PassKey appear at this level in the live JSON but are
 // empty strings in the feed (download auth is via headers), so they are not modelled.
 type ptpResponse struct {
-	TotalResults flexString `json:"TotalResults"`
-	Movies       []ptpMovie `json:"Movies"`
-	Page         string     `json:"Page"`
+	TotalResults native.FlexString `json:"TotalResults"`
+	Movies       []ptpMovie        `json:"Movies"`
+	Page         string            `json:"Page"`
 }
 
 // ptpMovie is one movie group. CategoryId (1-6) drives the release's newznab category
 // (all map to Movies); Year/ImdbId are JSON strings; Tags become the Genre list; Cover
 // is the poster URL. Torrents is the nested torrent list flattened one release each.
 type ptpMovie struct {
-	GroupID    string       `json:"GroupId"`
-	CategoryID string       `json:"CategoryId"`
-	Title      string       `json:"Title"`
-	Year       flexString   `json:"Year"`
-	Cover      string       `json:"Cover"`
-	Tags       []string     `json:"Tags"`
-	ImdbID     flexString   `json:"ImdbId"`
-	Torrents   []ptpTorrent `json:"Torrents"`
+	GroupID    string            `json:"GroupId"`
+	CategoryID string            `json:"CategoryId"`
+	Title      string            `json:"Title"`
+	Year       native.FlexString `json:"Year"`
+	Cover      string            `json:"Cover"`
+	Tags       []string          `json:"Tags"`
+	ImdbID     native.FlexString `json:"ImdbId"`
+	Torrents   []ptpTorrent      `json:"Torrents"`
 }
 
-// ptpTorrent is one torrent row. Id is polymorphic (int OR string), so flexInt tolerates
-// either. Size/Snatched/Seeders/Leechers are JSON strings (flexString). FreeleechType is
+// ptpTorrent is one torrent row. Id is polymorphic (int OR string), so native.FlexInt tolerates
+// either. Size/Snatched/Seeders/Leechers are JSON strings (native.FlexString). FreeleechType is
 // a nullable string driving the volume factors; Checked/GoldenPopcorn are flags.
 type ptpTorrent struct {
-	ID            flexInt    `json:"Id"`
-	Quality       string     `json:"Quality"`
-	Source        string     `json:"Source"`
-	Container     string     `json:"Container"`
-	Codec         string     `json:"Codec"`
-	Resolution    string     `json:"Resolution"`
-	Scene         bool       `json:"Scene"`
-	Size          flexString `json:"Size"`
-	UploadTime    string     `json:"UploadTime"`
-	Snatched      flexString `json:"Snatched"`
-	Seeders       flexString `json:"Seeders"`
-	Leechers      flexString `json:"Leechers"`
-	ReleaseName   string     `json:"ReleaseName"`
-	Checked       bool       `json:"Checked"`
-	GoldenPopcorn bool       `json:"GoldenPopcorn"`
-	FreeleechType *string    `json:"FreeleechType"`
-	RemasterTitle *string    `json:"RemasterTitle"`
+	ID            native.FlexInt    `json:"Id"`
+	Quality       string            `json:"Quality"`
+	Source        string            `json:"Source"`
+	Container     string            `json:"Container"`
+	Codec         string            `json:"Codec"`
+	Resolution    string            `json:"Resolution"`
+	Scene         bool              `json:"Scene"`
+	Size          native.FlexString `json:"Size"`
+	UploadTime    string            `json:"UploadTime"`
+	Snatched      native.FlexString `json:"Snatched"`
+	Seeders       native.FlexString `json:"Seeders"`
+	Leechers      native.FlexString `json:"Leechers"`
+	ReleaseName   string            `json:"ReleaseName"`
+	Checked       bool              `json:"Checked"`
+	GoldenPopcorn bool              `json:"GoldenPopcorn"`
+	FreeleechType *string           `json:"FreeleechType"`
+	RemasterTitle *string           `json:"RemasterTitle"`
 }
-
-// flexString unmarshals a JSON string OR number into a string. PTP wire-encodes
-// TotalResults/Year/ImdbId/Size/Snatched/Seeders/Leechers as JSON STRINGS, but a bare
-// number is tolerated too so a strict struct decode never rejects the body.
-type flexString string
-
-func (s *flexString) UnmarshalJSON(b []byte) error {
-	if len(b) == 0 || string(b) == "null" {
-		*s = ""
-		return nil
-	}
-	if b[0] == '"' {
-		var str string
-		if err := json.Unmarshal(b, &str); err != nil {
-			return fmt.Errorf("passthepopcorn: decode string field: %w", err)
-		}
-		*s = flexString(str)
-		return nil
-	}
-	*s = flexString(b) // a bare JSON number: keep its literal text
-	return nil
-}
-
-// str returns the trimmed string value.
-func (s flexString) str() string { return strings.TrimSpace(string(s)) }
-
-// int64 parses the flexString as a base-10 int64; a blank or unparseable value yields 0
-// (a malformed numeric must not fail the whole page — it degrades to 0).
-func (s flexString) int64() int64 {
-	n, err := strconv.ParseInt(s.str(), 10, 64)
-	if err != nil {
-		return 0
-	}
-	return n
-}
-
-// flexInt unmarshals a JSON string OR number into an int64. PTP's Torrent.Id is
-// polymorphic (int in some rows, string in others — autobrr's pkg/ptp has a custom
-// UnmarshalJSON switching float64/string), so both wire forms are tolerated.
-type flexInt int64
-
-func (n *flexInt) UnmarshalJSON(b []byte) error {
-	if len(b) == 0 || string(b) == "null" {
-		*n = 0
-		return nil
-	}
-	s := string(b)
-	if b[0] == '"' {
-		var str string
-		if err := json.Unmarshal(b, &str); err != nil {
-			return fmt.Errorf("passthepopcorn: decode numeric field: %w", err)
-		}
-		s = strings.TrimSpace(str)
-	}
-	if s == "" {
-		*n = 0
-		return nil
-	}
-	v, err := strconv.ParseInt(s, 10, 64)
-	if err != nil {
-		*n = 0
-		return nil
-	}
-	*n = flexInt(v)
-	return nil
-}
-
-// int64 returns the decoded value as a plain int64.
-func (n flexInt) int64() int64 { return int64(n) }
 
 // parseReleases decodes a torrents.php?action=advanced body into normalized releases. A
 // non-JSON or malformed body is a parse error. A TotalResults of "0"/blank or a null
@@ -163,7 +93,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, fmt.Errorf("passthepopcorn: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
 	}
-	if resp.TotalResults.str() == "" || resp.TotalResults.int64() == 0 || resp.Movies == nil {
+	if resp.TotalResults.Str() == "" || resp.TotalResults.Int64() == 0 || resp.Movies == nil {
 		return nil, nil
 	}
 
@@ -171,7 +101,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	for i := range resp.Movies {
 		rels = append(rels, d.flattenMovie(&resp.Movies[i])...)
 	}
-	sortReleases(rels)
+	native.SortByPublishDateDesc(rels)
 	native.TraceReleases(d.Log, d.Def.ID, rels)
 	return rels, nil
 }
@@ -184,7 +114,7 @@ func (d *driver) flattenMovie(m *ptpMovie) []*normalizer.Release {
 	for i := range m.Torrents {
 		// A torrent whose Id decoded to 0 (empty/malformed) would yield a broken
 		// download link (action=download&id=0); skip the row rather than emit it.
-		if m.Torrents[i].ID.int64() == 0 {
+		if m.Torrents[i].ID.Int64() == 0 {
 			continue
 		}
 		rels = append(rels, d.toRelease(m, &m.Torrents[i]))
@@ -197,21 +127,21 @@ func (d *driver) flattenMovie(m *ptpMovie) []*normalizer.Release {
 // download URL (torrents.php?action=download&id=<id>); the ApiUser/ApiKey headers are
 // re-attached server-side at grab time. PublishDate is UploadTime parsed as UTC.
 func (d *driver) toRelease(m *ptpMovie, t *ptpTorrent) *normalizer.Release {
-	seeders := t.Seeders.int64()
-	leechers := t.Leechers.int64()
+	seeders := t.Seeders.Int64()
+	leechers := t.Leechers.Int64()
 	return &normalizer.Release{
 		Title:                t.ReleaseName,
-		Link:                 d.downloadLink(t.ID.int64()),
-		Details:              d.infoURL(m.GroupID, t.ID.int64()),
+		Link:                 d.downloadLink(t.ID.Int64()),
+		Details:              d.infoURL(m.GroupID, t.ID.Int64()),
 		Categories:           d.categories(m.CategoryID),
-		Size:                 t.Size.int64(),
-		Grabs:                t.Snatched.int64(),
+		Size:                 t.Size.Int64(),
+		Grabs:                t.Snatched.Int64(),
 		Seeders:              seeders,
 		Leechers:             leechers,
 		Peers:                seeders + leechers,
 		PublishDate:          publishDate(t.UploadTime),
-		IMDBID:               formatIMDB(m.ImdbID.str()),
-		Year:                 m.Year.int64(),
+		IMDBID:               formatIMDB(m.ImdbID.Str()),
+		Year:                 m.Year.Int64(),
 		Genre:                strings.Join(m.Tags, ", "),
 		Poster:               posterURL(m.Cover),
 		DownloadVolumeFactor: downloadVolumeFactor(t.FreeleechType),
@@ -330,13 +260,4 @@ func posterURL(cover string) string {
 		return ""
 	}
 	return c
-}
-
-// sortReleases orders releases by PublishDate descending to mirror a deterministic feed.
-// PublishDate is UTC RFC3339, which sorts lexically in chronological order; the stable
-// sort preserves group/torrent input order on any tie (equal timestamps).
-func sortReleases(rels []*normalizer.Release) {
-	sort.SliceStable(rels, func(i, j int) bool {
-		return rels[i].PublishDate > rels[j].PublishDate
-	})
 }

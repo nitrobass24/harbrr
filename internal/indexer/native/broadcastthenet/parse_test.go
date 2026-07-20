@@ -255,29 +255,3 @@ func TestCategoriesFallback(t *testing.T) {
 		}
 	}
 }
-
-// TestFlexStringDecode proves flexString accepts both a JSON string and a bare JSON
-// number, and that int64() parses tolerantly (blank/garbage -> 0).
-func TestFlexStringDecode(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		in   string
-		want int64
-	}{
-		{`"42"`, 42},
-		{`42`, 42},
-		{`""`, 0},
-		{`null`, 0},
-		{`"notanumber"`, 0},
-	}
-	for _, c := range cases {
-		var s flexString
-		if err := s.UnmarshalJSON([]byte(c.in)); err != nil {
-			t.Errorf("UnmarshalJSON(%s): %v", c.in, err)
-			continue
-		}
-		if got := s.int64(); got != c.want {
-			t.Errorf("flexString(%s).int64() = %d, want %d", c.in, got, c.want)
-		}
-	}
-}

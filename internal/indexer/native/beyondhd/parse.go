@@ -3,7 +3,6 @@ package beyondhd
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -52,66 +51,35 @@ type bhdResponse struct {
 }
 
 // bhdTorrent is one release row. Per Prowlarr's models the numerics are real JSON numbers
-// and the ids are strings, but flexInt/flexBool are used defensively (mirroring
+// and the ids are strings, but native.FlexInt/flexBool are used defensively (mirroring
 // hdbits/broadcastthenet) so a string-encoded value never fails the page decode.
 type bhdTorrent struct {
-	Name           string   `json:"name"`
-	InfoHash       string   `json:"info_hash"`
-	Category       string   `json:"category"`
-	Type           string   `json:"type"`
-	Size           flexInt  `json:"size"`
-	TimesCompleted flexInt  `json:"times_completed"`
-	Seeders        flexInt  `json:"seeders"`
-	Leechers       flexInt  `json:"leechers"`
-	CreatedAt      string   `json:"created_at"`
-	URL            string   `json:"url"`
-	DownloadURL    string   `json:"download_url"`
-	ImdbID         string   `json:"imdb_id"`
-	TmdbID         string   `json:"tmdb_id"`
-	Freeleech      flexBool `json:"freeleech"`
-	Promo25        flexBool `json:"promo25"`
-	Promo50        flexBool `json:"promo50"`
-	Promo75        flexBool `json:"promo75"`
-	Limited        flexBool `json:"limited"`
-	Exclusive      flexBool `json:"exclusive"`
-	Internal       flexBool `json:"internal"`
-}
-
-// flexInt unmarshals a JSON number OR a JSON string into an int64. BeyondHD wire-encodes
-// the numerics as bare numbers, but a hostile/older server could string-encode one; this
-// keeps a strict struct decode from rejecting the whole page (cf. hdbits flexInt).
-type flexInt int64
-
-func (n *flexInt) UnmarshalJSON(b []byte) error {
-	if len(b) == 0 || string(b) == "null" {
-		*n = 0
-		return nil
-	}
-	if b[0] == '"' {
-		var s string
-		if err := json.Unmarshal(b, &s); err != nil {
-			return fmt.Errorf("beyondhd: decode numeric field: %w", err)
-		}
-		v, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
-		if err != nil {
-			*n = 0
-			return nil
-		}
-		*n = flexInt(v)
-		return nil
-	}
-	var v int64
-	if err := json.Unmarshal(b, &v); err != nil {
-		return fmt.Errorf("beyondhd: decode numeric field: %w", err)
-	}
-	*n = flexInt(v)
-	return nil
+	Name           string         `json:"name"`
+	InfoHash       string         `json:"info_hash"`
+	Category       string         `json:"category"`
+	Type           string         `json:"type"`
+	Size           native.FlexInt `json:"size"`
+	TimesCompleted native.FlexInt `json:"times_completed"`
+	Seeders        native.FlexInt `json:"seeders"`
+	Leechers       native.FlexInt `json:"leechers"`
+	CreatedAt      string         `json:"created_at"`
+	URL            string         `json:"url"`
+	DownloadURL    string         `json:"download_url"`
+	ImdbID         string         `json:"imdb_id"`
+	TmdbID         string         `json:"tmdb_id"`
+	Freeleech      flexBool       `json:"freeleech"`
+	Promo25        flexBool       `json:"promo25"`
+	Promo50        flexBool       `json:"promo50"`
+	Promo75        flexBool       `json:"promo75"`
+	Limited        flexBool       `json:"limited"`
+	Exclusive      flexBool       `json:"exclusive"`
+	Internal       flexBool       `json:"internal"`
 }
 
 // flexBool unmarshals a JSON boolean, a number (1/0), or a string ("true"/"false"/"1"/"0")
 // into a bool. BeyondHD wire-encodes these as real JSON booleans, but a hostile/older server
 // could send 1/0 or a quoted form; anything unrecognized degrades to false rather than
-// failing the whole-page decode (mirroring flexInt's degrade-to-0, cf. hdbits).
+// failing the whole-page decode (mirroring native.FlexInt's degrade-to-0, cf. hdbits).
 type flexBool bool
 
 func (b *flexBool) UnmarshalJSON(data []byte) error {
@@ -128,8 +96,6 @@ func (b *flexBool) UnmarshalJSON(data []byte) error {
 	}
 	return nil
 }
-
-func (n flexInt) int64() int64 { return int64(n) }
 
 // parseReleases decodes an api/torrents JSON body into normalized releases. A body that
 // is non-JSON or whose message contains "Invalid API Key" maps to login.ErrLoginFailed; a
@@ -152,7 +118,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	for i := range resp.Results {
 		releases = append(releases, d.toRelease(&resp.Results[i]))
 	}
-	sortReleases(releases)
+	native.SortByPublishDateDescLinkTiebreak(releases)
 	native.TraceReleases(d.Log, d.Def.ID, releases)
 	return releases, nil
 }
@@ -182,16 +148,16 @@ func (d *driver) statusError(message string) error {
 // Grabs=times_completed; the publish date is created_at as UTC RFC3339; the volume factors
 // follow the freeleech/limited/promo matrix.
 func (d *driver) toRelease(row *bhdTorrent) *normalizer.Release {
-	seeders := row.Seeders.int64()
-	leechers := row.Leechers.int64()
+	seeders := row.Seeders.Int64()
+	leechers := row.Leechers.Int64()
 	rel := &normalizer.Release{
 		Title:                row.Name,
 		InfoHash:             row.InfoHash,
 		Link:                 row.DownloadURL,
 		Details:              row.URL,
 		Categories:           d.categories(row.Category),
-		Size:                 row.Size.int64(),
-		Grabs:                row.TimesCompleted.int64(),
+		Size:                 row.Size.Int64(),
+		Grabs:                row.TimesCompleted.Int64(),
 		Seeders:              seeders,
 		Leechers:             leechers,
 		Peers:                seeders + leechers,
@@ -294,16 +260,4 @@ func tmdbID(raw string) int64 {
 		return 0
 	}
 	return id
-}
-
-// sortReleases orders releases by descending publish date (Prowlarr orders by PublishDate
-// desc); ties break on the download URL (unique per release) so the order is total and
-// deterministic even when two rows share a timestamp.
-func sortReleases(releases []*normalizer.Release) {
-	sort.SliceStable(releases, func(i, j int) bool {
-		if releases[i].PublishDate != releases[j].PublishDate {
-			return releases[i].PublishDate > releases[j].PublishDate
-		}
-		return releases[i].Link < releases[j].Link
-	})
 }
