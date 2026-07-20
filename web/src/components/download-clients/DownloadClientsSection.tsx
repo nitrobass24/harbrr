@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react"
+import { useState } from "react"
 import { Pencil, Plus, Trash2 } from "lucide-react"
+import { ConfiguredAppsBlock, ReusingAppHint } from "@/components/applications/ConfiguredApps"
 import { ManagedByAppHint } from "@/components/applications/ManagedByAppHint"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -24,9 +25,9 @@ import {
   useUpdateDownloadClient
 } from "@/hooks/useDownloadClients"
 import { useApps, useQuiInstances } from "@/hooks/useApps"
-import { hostname } from "@/lib/format"
+import { hostname, kindLabel } from "@/lib/format"
 import { notifyError, notifySuccess } from "@/lib/notify"
-import type { CreateDownloadClient, DownloadClient, DownloadClientKind, DownloadClientSettings, UpdateDownloadClient } from "@/lib/api"
+import type { App, CreateDownloadClient, DownloadClient, DownloadClientKind, DownloadClientSettings, UpdateDownloadClient } from "@/lib/api"
 
 // Only kinds with a registered driver work today (autobrr/harbrr#240, #241,
 // #242, #243, #244); the rest are seeded server-side but rejected on create
@@ -152,10 +153,12 @@ function DownloadClientForm({ client, pending, onSubmit }: {
   const isEdit = client !== null
   const [name, setName] = useState(client?.name ?? "")
   const [kind, setKind] = useState<DownloadClientKind>(client?.kind ?? "qbittorrent")
-  // Create-only: which qui App backs this client. NEW_APP reveals the inline host/API
-  // key fields below (the fallback for the very first qui app); anything else reuses
-  // that App's identity and drives the instance dropdown instead of a typed id.
-  const [appSel, setAppSel] = useState<string>(NEW_APP)
+  // Create-only: which qui App backs this client. `null` means the operator hasn't
+  // chosen yet, so the picker defaults to the first qui App once apps arrive
+  // (effectiveAppSel below). NEW_APP reveals the inline host/API key fields (the
+  // fallback for the very first qui app); anything else reuses that App's identity and
+  // drives the instance dropdown instead of a typed id.
+  const [appSel, setAppSel] = useState<string | null>(null)
   const [host, setHost] = useState(client?.host ?? "")
   const [username, setUsername] = useState(client?.username ?? "")
   const [secret, setSecret] = useState("")
@@ -178,20 +181,11 @@ function DownloadClientForm({ client, pending, onSubmit }: {
 
   const apps = useApps()
   const quiApps = (apps.data ?? []).filter((a) => a.kind === "qui")
-  // One-click: when exactly one qui App already exists, default straight to it instead
-  // of making the operator pick from a list of one. Fires once (autoSelectedRef) so a
-  // later manual switch back to "New app…" isn't overridden.
-  const autoSelectedRef = useRef(false)
-  useEffect(() => {
-    if (isEdit || kind !== "qui" || autoSelectedRef.current) return
-    if (quiApps.length === 1) {
-      setAppSel(String(quiApps[0].id))
-      autoSelectedRef.current = true
-    }
-  }, [isEdit, kind, quiApps])
-
-  const usingQuiApp = kind === "qui" && !isEdit && appSel !== NEW_APP
-  const quiInstances = useQuiInstances(usingQuiApp ? Number(appSel) : null)
+  // Defaults to the first qui App once apps arrive; NEW_APP outside kind "qui" (there's
+  // no reuse path for the other kinds today).
+  const effectiveAppSel = kind === "qui" ? (appSel ?? (quiApps[0] ? String(quiApps[0].id) : NEW_APP)) : NEW_APP
+  const usingQuiApp = kind === "qui" && !isEdit && effectiveAppSel !== NEW_APP
+  const quiInstances = useQuiInstances(usingQuiApp ? Number(effectiveAppSel) : null)
   // Edit never touches identity (host/instance are fixed or App-level now); create
   // needs a watch folder (blackhole), a picked instance (qui via an App), or a host.
   const identityValid = kind === "blackhole"? torrentDir !== "" || nzbDir !== "": isEdit || (usingQuiApp ? instanceId !== "" : host !== "")
@@ -249,7 +243,7 @@ function DownloadClientForm({ client, pending, onSubmit }: {
         // On edit, an empty secret keeps the stored one (only a typed value rotates).
         // blackhole has no network endpoint of its own — its host must always be empty.
         // Picking an existing qui App reuses its identity — no host/username/secret.
-        const identity = usingQuiApp? { appId: Number(appSel) }: { host: kind === "blackhole" ? "" : host, username: kind === "qui" ? "" : username, secret: isEdit ? (secret || undefined) : secret }
+        const identity = usingQuiApp? { appId: Number(effectiveAppSel) }: { host: kind === "blackhole" ? "" : host, username: kind === "qui" ? "" : username, secret: isEdit ? (secret || undefined) : secret }
         onSubmit(client?.id ?? null, { name, kind, settings, ...identity })
       }}
     >
@@ -257,6 +251,18 @@ function DownloadClientForm({ client, pending, onSubmit }: {
         <DialogTitle>{isEdit ? "Edit download client" : "Add download client"}</DialogTitle>
         <DialogDescription>Host and username are visible; the secret is stored encrypted and never shown again.</DialogDescription>
       </DialogHeader>
+
+      {!isEdit && (
+        <ConfiguredAppsBlock
+          apps={quiApps}
+          onPick={(a: App) => {
+            setKind("qui")
+            setAppSel(String(a.id))
+            setInstanceId("")
+          }}
+        />
+      )}
+
       <div className="grid grid-cols-2 gap-3">
         <span className="flex flex-col gap-1.5">
           <Label htmlFor="dlc-name">Name</Label>
@@ -270,21 +276,27 @@ function DownloadClientForm({ client, pending, onSubmit }: {
             disabled={isEdit}
             onChange={(e) => {
               setKind(e.target.value as DownloadClientKind)
-              setAppSel(NEW_APP) // the app list for the new kind is different; re-pick.
+              setAppSel(null) // the app list for the new kind is different; re-default.
             }}
           >
-            {DOWNLOAD_CLIENT_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
+            {DOWNLOAD_CLIENT_KINDS.map((k) => <option key={k} value={k}>{kindLabel(k)}</option>)}
           </NativeSelect>
         </span>
       </div>
       {kind === "qui" && !isEdit && (
         <span className="flex flex-col gap-1.5">
           <Label htmlFor="dlc-qui-app">qui app</Label>
-          <NativeSelect id="dlc-qui-app" value={appSel} onChange={(e) => { setAppSel(e.target.value); setInstanceId("") }}>
-            <option value={NEW_APP}>New app…</option>
+          <NativeSelect id="dlc-qui-app" value={effectiveAppSel} onChange={(e) => { setAppSel(e.target.value); setInstanceId("") }}>
             {quiApps.map((a) => <option key={a.id} value={a.id}>{a.name} ({hostname(a.baseUrl)})</option>)}
+            <option value={NEW_APP}>New app…</option>
           </NativeSelect>
         </span>
+      )}
+      {kind === "qui" && !isEdit && usingQuiApp && (
+        <ReusingAppHint
+          app={quiApps.find((a) => String(a.id) === effectiveAppSel)}
+          tail="pick an instance below"
+        />
       )}
       {isEdit && kind !== "blackhole" && <ManagedByAppHint appId={client?.appId} />}
       {!isEdit && kind !== "blackhole" && !usingQuiApp && (

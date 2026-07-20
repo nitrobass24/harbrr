@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { ReactNode } from "react"
-import type { AnnounceConnection } from "@/lib/api"
+import type { AnnounceConnection, App } from "@/lib/api"
 import { AnnounceSection } from "./AnnounceSection"
 
 const TARGET: AnnounceConnection = {
@@ -106,7 +106,7 @@ describe("AnnounceSection create — App picker", () => {
     })
   })
 
-  it("no app: inline fields render and the create submits them", async () => {
+  it("no app: switching to 'New app…' reveals inline fields and the create submits them", async () => {
     const fetchMock = vi.fn((request: Request) => {
       if (request.method === "POST" && request.url.includes("/announce-connections")) {
         return Promise.resolve(jsonResponse(TARGET, 201))
@@ -120,7 +120,10 @@ describe("AnnounceSection create — App picker", () => {
     render(wrap(<AnnounceSection />))
 
     fireEvent.click(await screen.findByRole("button", { name: "Add target" }))
-    await screen.findByLabelText("App")
+    const appSelect = await screen.findByLabelText("App")
+    // An App of this kind exists, so the picker defaults to it; switch to "New app…"
+    // to exercise the inline-fields fallback.
+    fireEvent.change(appSelect, { target: { value: "new" } })
     expect(screen.getByLabelText("Tool base URL")).toBeTruthy()
     expect(screen.getByLabelText("Tool API key")).toBeTruthy()
 
@@ -139,6 +142,84 @@ describe("AnnounceSection create — App picker", () => {
         baseUrl: "http://cross-seed:2468", apiKey: "cs-key", harbrrUrl: "http://harbrr:7478",
       })
     })
+  })
+
+  it("flipped default: the App picker defaults to the existing app without interaction", async () => {
+    const fetchMock = vi.fn((request: Request) => {
+      if (request.url.includes("/apps")) return Promise.resolve(jsonResponse([APP]))
+      if (request.url.includes("/announce-connections")) return Promise.resolve(jsonResponse([]))
+      if (request.url.includes("/server-info")) return Promise.resolve(jsonResponse({ port: 7478 }))
+      return Promise.resolve(jsonResponse([]))
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    render(wrap(<AnnounceSection />))
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add target" }))
+    const appSelect = await screen.findByLabelText<HTMLSelectElement>("App")
+    await screen.findByRole("option", { name: "qui-main-app (qui)" })
+    expect(appSelect.value).toBe(String(APP.id))
+    expect(screen.queryByLabelText("Tool base URL")).toBeNull()
+  })
+})
+
+describe("AnnounceSection create — Already configured block", () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  const APP: App = {
+    id: 7, kind: "qui", name: "qui-main-app", baseUrl: "http://qui:7476", username: "",
+    apiKey: "<redacted>", harbrrUrl: "http://harbrr:7478", enabled: true,
+    references: { appConnections: 0, announce: 0, download: 0 },
+    createdAt: "2026-07-01T00:00:00Z", updatedAt: "2026-07-01T00:00:00Z",
+  }
+
+  function stubFetchWithApps(apps: App[]) {
+    vi.stubGlobal("fetch", vi.fn((request: Request) => {
+      if (request.url.includes("/apps")) return Promise.resolve(jsonResponse(apps))
+      if (request.url.includes("/announce-connections")) return Promise.resolve(jsonResponse([]))
+      if (request.url.includes("/server-info")) return Promise.resolve(jsonResponse({ port: 7478 }))
+      return Promise.resolve(jsonResponse([]))
+    }))
+  }
+
+  it("renders only when compatible Apps exist", async () => {
+    stubFetchWithApps([APP])
+    render(wrap(<AnnounceSection />))
+    fireEvent.click(await screen.findByRole("button", { name: "Add target" }))
+
+    expect(await screen.findByText("Already configured")).toBeTruthy()
+  })
+
+  it("renders nothing when no compatible App exists", async () => {
+    stubFetchWithApps([])
+    render(wrap(<AnnounceSection />))
+    fireEvent.click(await screen.findByRole("button", { name: "Add target" }))
+
+    await screen.findByLabelText("Name")
+    expect(screen.queryByText("Already configured")).toBeNull()
+  })
+
+  it("only a used app of the kind: the picker defaults to 'New app…' with inline fields visible", async () => {
+    const usedApp: App = { ...APP, references: { appConnections: 0, announce: 1, download: 0 } }
+    stubFetchWithApps([usedApp])
+    render(wrap(<AnnounceSection />))
+    fireEvent.click(await screen.findByRole("button", { name: "Add target" }))
+
+    const appSelect = await screen.findByLabelText<HTMLSelectElement>("App")
+    await screen.findByRole("option", { name: "qui-main-app (qui)" })
+    // A used app would 409 on create (one announce row per App), so it is never the default.
+    expect(appSelect.value).toBe("new")
+    expect(screen.getByLabelText("Tool base URL")).toBeTruthy()
+  })
+
+  it("disables a row already used by an announce target", async () => {
+    const usedApp: App = { ...APP, references: { appConnections: 0, announce: 1, download: 0 } }
+    stubFetchWithApps([usedApp])
+    render(wrap(<AnnounceSection />))
+    fireEvent.click(await screen.findByRole("button", { name: "Add target" }))
+
+    const row = await screen.findByRole<HTMLButtonElement>("button", { name: /qui-main-app/ })
+    expect(row.disabled).toBe(true)
+    expect(await screen.findByText("already added")).toBeTruthy()
   })
 })
 

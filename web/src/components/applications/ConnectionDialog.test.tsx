@@ -213,6 +213,25 @@ describe("ConnectionDialog create — App picker", () => {
     }))
   }
 
+  it("flipped default: an existing app of the current kind pre-selects — inline fields start hidden", async () => {
+    stubFetchWithApp()
+    render(wrap(
+      <ConnectionDialog state={{ open: true }} pending={false} error={null} onClose={vi.fn()} onCreate={vi.fn()} onUpdate={vi.fn()} />
+    ))
+
+    const appSelect = await screen.findByLabelText<HTMLSelectElement>("App")
+    await screen.findByRole("option", { name: "sonarr-app (sonarr)" })
+    // No interaction — the picker itself defaults to the existing app.
+    expect(appSelect.value).toBe(String(SONARR_APP.id))
+    expect(screen.queryByLabelText("App base URL")).toBeNull()
+
+    // "New app…" is the last option and, once chosen, brings the inline fields back.
+    const options = Array.from(appSelect.options)
+    expect(options[options.length - 1].textContent).toBe("New app…")
+    fireEvent.change(appSelect, { target: { value: "new" } })
+    expect(screen.getByLabelText("App base URL")).toBeTruthy()
+  })
+
   it("picking an existing app hides the inline fields and submits appId", async () => {
     stubFetchWithApp()
     const onCreate = vi.fn()
@@ -232,14 +251,16 @@ describe("ConnectionDialog create — App picker", () => {
     expect(onCreate.mock.calls[0][0]).not.toHaveProperty("baseUrl")
   })
 
-  it("no app: inline fields render and the create submits them", async () => {
+  it("no app: switching to 'New app…' reveals the inline fields and the create submits them", async () => {
     stubFetchWithApp()
     const onCreate = vi.fn()
     render(wrap(
       <ConnectionDialog state={{ open: true }} pending={false} error={null} onClose={vi.fn()} onCreate={onCreate} onUpdate={vi.fn()} />
     ))
 
-    await screen.findByLabelText("App")
+    const appSelect = await screen.findByLabelText("App")
+    await screen.findByRole("option", { name: "sonarr-app (sonarr)" })
+    fireEvent.change(appSelect, { target: { value: "new" } })
     expect(screen.getByLabelText("App base URL")).toBeTruthy()
 
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "sonarr-new" } })
@@ -251,5 +272,102 @@ describe("ConnectionDialog create — App picker", () => {
       name: "sonarr-new", kind: "sonarr", baseUrl: "http://sonarr:8989", apiKey: "app-key",
     }))
     expect(onCreate.mock.calls[0][0]).not.toHaveProperty("appId")
+  })
+})
+
+describe("ConnectionDialog create — Already configured block", () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  function stubFetchWithApps(apps: App[]) {
+    vi.stubGlobal("fetch", vi.fn((request: Request) => {
+      if (request.url.includes("/apps")) return Promise.resolve(jsonResponse(apps))
+      return Promise.resolve(jsonResponse(PROFILES))
+    }))
+  }
+
+  it("renders only when compatible Apps exist", async () => {
+    stubFetchWithApps([SONARR_APP])
+    render(wrap(
+      <ConnectionDialog state={{ open: true }} pending={false} error={null} onClose={vi.fn()} onCreate={vi.fn()} onUpdate={vi.fn()} />
+    ))
+
+    expect(await screen.findByText("Already configured")).toBeTruthy()
+  })
+
+  it("renders nothing when no compatible App exists", async () => {
+    stubFetchWithApps([])
+    render(wrap(
+      <ConnectionDialog state={{ open: true }} pending={false} error={null} onClose={vi.fn()} onCreate={vi.fn()} onUpdate={vi.fn()} />
+    ))
+
+    await screen.findByLabelText("Name")
+    expect(screen.queryByText("Already configured")).toBeNull()
+  })
+
+  it("picking a row pre-selects kind + app, hides identity fields, shows the reuse hint, and prefills Name", async () => {
+    const radarrApp: App = { ...SONARR_APP, id: 8, kind: "radarr", name: "radarr-app" }
+    stubFetchWithApps([radarrApp])
+    render(wrap(
+      <ConnectionDialog state={{ open: true }} pending={false} error={null} onClose={vi.fn()} onCreate={vi.fn()} onUpdate={vi.fn()} />
+    ))
+
+    fireEvent.click(await screen.findByRole("button", { name: /radarr-app/ }))
+
+    expect((screen.getByLabelText<HTMLSelectElement>("Kind")).value).toBe("radarr")
+    expect(screen.queryByLabelText("App base URL")).toBeNull()
+    expect(await screen.findByText(/Reusing/)).toBeTruthy()
+    expect(screen.getByLabelText<HTMLInputElement>("Name").value).toBe("radarr-app")
+  })
+
+  it("does not overwrite a Name the operator already typed", async () => {
+    stubFetchWithApps([SONARR_APP])
+    render(wrap(
+      <ConnectionDialog state={{ open: true }} pending={false} error={null} onClose={vi.fn()} onCreate={vi.fn()} onUpdate={vi.fn()} />
+    ))
+
+    fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "custom-name" } })
+    fireEvent.click(screen.getByRole("button", { name: /sonarr-app/ }))
+
+    expect(screen.getByLabelText<HTMLInputElement>("Name").value).toBe("custom-name")
+  })
+
+  it("only a used app of the kind: the picker defaults to 'New app…' with inline fields visible", async () => {
+    const usedApp: App = { ...SONARR_APP, references: { appConnections: 1, announce: 0, download: 0 } }
+    stubFetchWithApps([usedApp])
+    render(wrap(
+      <ConnectionDialog state={{ open: true }} pending={false} error={null} onClose={vi.fn()} onCreate={vi.fn()} onUpdate={vi.fn()} />
+    ))
+
+    const appSelect = await screen.findByLabelText<HTMLSelectElement>("App")
+    await screen.findByRole("option", { name: "sonarr-app (sonarr)" })
+    // A used app would 409 on create (one sync row per App), so it is never the default.
+    expect(appSelect.value).toBe("new")
+    expect(screen.getByLabelText("App base URL")).toBeTruthy()
+  })
+
+  it("disables a row already used by app-sync, with an 'already added' note", async () => {
+    const usedApp: App = { ...SONARR_APP, references: { appConnections: 1, announce: 0, download: 0 } }
+    stubFetchWithApps([usedApp])
+    render(wrap(
+      <ConnectionDialog state={{ open: true }} pending={false} error={null} onClose={vi.fn()} onCreate={vi.fn()} onUpdate={vi.fn()} />
+    ))
+
+    const row = await screen.findByRole<HTMLButtonElement>("button", { name: /sonarr-app/ })
+    expect(row.disabled).toBe(true)
+    expect(await screen.findByText("already added")).toBeTruthy()
+  })
+
+  it("create-via-block-pick posts appId, not inline identity", async () => {
+    stubFetchWithApps([SONARR_APP])
+    const onCreate = vi.fn()
+    render(wrap(
+      <ConnectionDialog state={{ open: true }} pending={false} error={null} onClose={vi.fn()} onCreate={onCreate} onUpdate={vi.fn()} />
+    ))
+
+    fireEvent.click(await screen.findByRole("button", { name: /sonarr-app/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Add application" }))
+
+    expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ name: "sonarr-app", kind: "sonarr", appId: SONARR_APP.id }))
+    expect(onCreate.mock.calls[0][0]).not.toHaveProperty("baseUrl")
   })
 })
