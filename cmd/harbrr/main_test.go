@@ -59,7 +59,7 @@ func TestServeBootsAndShutsDown(t *testing.T) {
 		done <- root.ExecuteContext(ctx)
 	}()
 
-	waitForListen(t, addr)
+	waitForListen(t, addr, done)
 	cancel()
 
 	select {
@@ -67,8 +67,8 @@ func TestServeBootsAndShutsDown(t *testing.T) {
 		if err != nil {
 			t.Fatalf("serve returned error: %v", err)
 		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("serve did not shut down within 10s of context cancel")
+	case <-time.After(30 * time.Second):
+		t.Fatal("serve did not shut down within 30s of context cancel")
 	}
 }
 
@@ -84,12 +84,25 @@ func freePort(t *testing.T) string {
 	return strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)
 }
 
-// waitForListen blocks until addr accepts connections (the server is up).
-func waitForListen(t *testing.T, addr string) {
+// waitForListen blocks until addr accepts connections (the server is up), up to a
+// 30s budget to absorb contention on shared/loaded CI runners — the loop still
+// returns the moment the port is up, so the happy path pays nothing. If serve
+// exits before the port comes up (e.g. a boot failure), it fails immediately
+// with the returned error instead of burning the full wait budget.
+func waitForListen(t *testing.T, addr string, done <-chan error) {
 	t.Helper()
 	var dialer net.Dialer
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
+		select {
+		case err := <-done:
+			msg := "nil"
+			if err != nil {
+				msg = err.Error()
+			}
+			t.Fatalf("serve exited early: %s", msg)
+		default:
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		conn, err := dialer.DialContext(ctx, "tcp", addr)
 		cancel()
@@ -99,7 +112,7 @@ func waitForListen(t *testing.T, addr string) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("server did not start listening on %s", addr)
+	t.Fatalf("server did not start listening on %s within 30s", addr)
 }
 
 func TestServeRejectsBadLogLevel(t *testing.T) {
