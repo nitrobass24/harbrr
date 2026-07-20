@@ -45,15 +45,13 @@ import (
 	"github.com/autobrr/harbrr/web"
 )
 
-// canaryBlobKey / canaryIDKey are the app_meta keys for the startup secrets canary.
-//
-// cmd/harbrr/serve.go keeps its own copy of these two consts (and of
-// openDatabase below) because the rotate-key subcommand also needs them and
-// out-of-scope subcommand wiring is a follow-up, not this refactor — see
-// AGENTS.md and the #144 PR notes.
+// CanaryBlobKey / CanaryIDKey are the app_meta keys for the startup secrets
+// canary. Exported because cmd/harbrr's rotate-key subcommand reads and
+// writes them directly (via OpenDatabase below) to re-encrypt the canary
+// under a new key without duplicating this package's logic.
 const (
-	canaryBlobKey = "secrets_canary"
-	canaryIDKey   = "secrets_key_id"
+	CanaryBlobKey = "secrets_canary"
+	CanaryIDKey   = "secrets_key_id"
 )
 
 // App is harbrr's dependency graph: every subsystem serve() used to wire by
@@ -161,11 +159,11 @@ func resolveDatabase(ctx context.Context, cfg *config.Config, injected *database
 	if injected != nil {
 		return injected, nil
 	}
-	return openDatabase(ctx, cfg)
+	return OpenDatabase(ctx, cfg)
 }
 
-// openDatabase opens and migrates the SQLite database.
-func openDatabase(ctx context.Context, cfg *config.Config) (*database.DB, error) {
+// OpenDatabase opens and migrates the SQLite database.
+func OpenDatabase(ctx context.Context, cfg *config.Config) (*database.DB, error) {
 	db, err := database.Open(cfg.DatabasePath())
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
@@ -221,11 +219,11 @@ func migrateResources(ctx context.Context, db *database.DB, keyring *secrets.Key
 // runs — failing loud (refusing to start) on a wrong/changed key.
 func verifyCanary(ctx context.Context, db *database.DB, keyring *secrets.Keyring) error {
 	meta := database.AppMeta{}
-	blob, haveBlob, err := meta.Get(ctx, db, canaryBlobKey)
+	blob, haveBlob, err := meta.Get(ctx, db, CanaryBlobKey)
 	if err != nil {
 		return err //nolint:wrapcheck // already "database:"-wrapped.
 	}
-	keyID, haveID, err := meta.Get(ctx, db, canaryIDKey)
+	keyID, haveID, err := meta.Get(ctx, db, CanaryIDKey)
 	if err != nil {
 		return err //nolint:wrapcheck // already "database:"-wrapped.
 	}
@@ -245,10 +243,10 @@ func initCanary(ctx context.Context, db *database.DB, meta database.AppMeta, key
 	if err != nil {
 		return fmt.Errorf("startup: write canary: %w", err)
 	}
-	if err := meta.Set(ctx, db, canaryBlobKey, blob); err != nil {
+	if err := meta.Set(ctx, db, CanaryBlobKey, blob); err != nil {
 		return err //nolint:wrapcheck // already "database:"-wrapped.
 	}
-	if err := meta.Set(ctx, db, canaryIDKey, keyring.KeyID()); err != nil {
+	if err := meta.Set(ctx, db, CanaryIDKey, keyring.KeyID()); err != nil {
 		return err //nolint:wrapcheck // already "database:"-wrapped.
 	}
 	return nil

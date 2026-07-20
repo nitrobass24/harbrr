@@ -39,9 +39,10 @@ type Deps struct {
 type Config struct {
 	Addr     string
 	BasePath string
-	// ShutdownTimeout bounds graceful shutdown; defaults to 15s when zero.
-	ShutdownTimeout time.Duration
 }
+
+// shutdownTimeout bounds graceful shutdown.
+const shutdownTimeout = 15 * time.Second
 
 // Server wraps the HTTP server with graceful lifecycle.
 type Server struct {
@@ -78,10 +79,6 @@ func New(deps Deps, cfg Config) *Server {
 		h = http.StripPrefix(cfg.BasePath, root)
 	}
 
-	timeout := cfg.ShutdownTimeout
-	if timeout == 0 {
-		timeout = 15 * time.Second
-	}
 	return &Server{
 		http: &http.Server{
 			Addr:              cfg.Addr,
@@ -89,7 +86,7 @@ func New(deps Deps, cfg Config) *Server {
 			ReadHeaderTimeout: 10 * time.Second,
 		},
 		log:      deps.Logger,
-		shutdown: timeout,
+		shutdown: shutdownTimeout,
 	}
 }
 
