@@ -120,10 +120,7 @@ func applyImplicitDate(name, value string, deps Deps) (string, error) {
 	if name != "date" || strings.TrimSpace(value) == "" {
 		return value, nil
 	}
-	if deps.Filters == nil || deps.Filters.ParseRelTime == nil {
-		return value, nil
-	}
-	parsed, err := deps.Filters.ParseRelTime(value)
+	parsed, err := deps.Filters.parseRelTime(value)
 	if err != nil {
 		return "", fmt.Errorf("parsing date field: %w", err)
 	}

@@ -75,7 +75,7 @@ func (d *scriptedDoer) sequence() []string {
 
 func downloadTestDeps() Deps {
 	return Deps{
-		Filters: NewFilterRegistry(),
+		Filters: NewFilterRegistry(stubDateParse, stubRelTime, ""),
 		BaseURL: "https://dl.test/",
 		Clock:   func() time.Time { return time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC) },
 	}

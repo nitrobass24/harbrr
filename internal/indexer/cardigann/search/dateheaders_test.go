@@ -14,9 +14,7 @@ import (
 // path a `date` field uses.
 func headerDeps() Deps {
 	p := dateparse.New()
-	reg := NewFilterRegistry()
-	reg.ParseDate = p.ParseDate
-	reg.ParseRelTime = p.ParseRelTime
+	reg := NewFilterRegistry(p.ParseDate, p.ParseRelTime, "")
 	return Deps{
 		Filters:    reg,
 		Normalizer: &normalizer.Normalizer{BaseURL: "https://t.invalid/"},

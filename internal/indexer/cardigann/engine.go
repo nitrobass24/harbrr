@@ -193,10 +193,7 @@ func buildDeps(def *loader.Definition, caps *mapper.Capabilities, o options) (se
 		dateparse.WithClock(o.clock),
 	)
 
-	registry := search.NewFilterRegistry()
-	registry.ParseDate = parser.ParseDate
-	registry.ParseRelTime = parser.ParseRelTime
-	registry.Language = def.Language
+	registry := search.NewFilterRegistry(parser.ParseDate, parser.ParseRelTime, def.Language)
 
 	norm := &normalizer.Normalizer{
 		BaseURL:    o.baseURL,

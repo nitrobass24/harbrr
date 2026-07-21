@@ -15,6 +15,11 @@ func fb(name string, args ...string) loader.FilterBlock {
 	return loader.FilterBlock{Name: name, Args: args}
 }
 
+// stubDateParse and stubRelTime are trivial non-nil date dependencies for tests
+// that exercise no date filter — NewFilterRegistry requires both at construction.
+func stubDateParse(string, string) (string, error) { return "", nil }
+func stubRelTime(string) (string, error)           { return "", nil }
+
 func TestApplyStringFilters(t *testing.T) {
 	t.Parallel()
 
@@ -144,7 +149,7 @@ func TestApplyStringFilters(t *testing.T) {
 		},
 	}
 
-	r := NewFilterRegistry()
+	r := NewFilterRegistry(stubDateParse, stubRelTime, "")
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -202,7 +207,7 @@ func TestApplyRegexFilters(t *testing.T) {
 		},
 	}
 
-	r := NewFilterRegistry()
+	r := NewFilterRegistry(stubDateParse, stubRelTime, "")
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -244,7 +249,7 @@ func TestJSONJoinArray(t *testing.T) {
 		},
 	}
 
-	r := NewFilterRegistry()
+	r := NewFilterRegistry(stubDateParse, stubRelTime, "")
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -257,7 +262,7 @@ func TestJSONJoinArray(t *testing.T) {
 func TestChaining(t *testing.T) {
 	t.Parallel()
 
-	r := NewFilterRegistry()
+	r := NewFilterRegistry(stubDateParse, stubRelTime, "")
 	// trim -> tolower -> replace, threaded left-to-right.
 	got, err := r.apply("  HELLO WORLD  ", []loader.FilterBlock{
 		fb("trim"), fb("tolower"), fb("replace", " ", "_"),
@@ -273,7 +278,7 @@ func TestChaining(t *testing.T) {
 func TestUnknownFilterIsLoud(t *testing.T) {
 	t.Parallel()
 
-	r := NewFilterRegistry()
+	r := NewFilterRegistry(stubDateParse, stubRelTime, "")
 	_, err := r.apply("v", []loader.FilterBlock{fb("not_a_filter")})
 	if err == nil {
 		t.Fatal("expected error for unknown filter, got nil")
@@ -283,52 +288,18 @@ func TestUnknownFilterIsLoud(t *testing.T) {
 	}
 }
 
-func TestDateFiltersDefaultUnwired(t *testing.T) {
-	t.Parallel()
-
-	r := NewFilterRegistry()
-	for _, name := range []string{"dateparse", "timeparse", "timeago", "reltime", "fuzzytime"} {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			_, err := r.apply("2024-01-02", []loader.FilterBlock{fb(name, "yyyy-MM-dd")})
-			if !errors.Is(err, errDateUnwired) {
-				t.Fatalf("%s: expected errDateUnwired, got %v", name, err)
-			}
-		})
-	}
-}
-
-func TestDateFiltersNilSeamIsLoud(t *testing.T) {
-	t.Parallel()
-
-	// A caller reassigning a date seam to nil must surface the loud
-	// errDateUnwired, never panic on a nil call.
-	r := NewFilterRegistry()
-	r.ParseDate = nil
-	r.ParseRelTime = nil
-	for _, name := range []string{"dateparse", "timeparse", "timeago", "reltime", "fuzzytime"} {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			_, err := r.apply("2024-01-02", []loader.FilterBlock{fb(name, "yyyy-MM-dd")})
-			if !errors.Is(err, errDateUnwired) {
-				t.Fatalf("%s: expected errDateUnwired, got %v", name, err)
-			}
-		})
-	}
-}
-
 func TestDateFiltersInjectedDispatch(t *testing.T) {
 	t.Parallel()
 
 	var gotValue, gotLayout string
-	r := NewFilterRegistry()
-	r.ParseDate = func(value, layout string) (string, error) {
+	parseDate := func(value, layout string) (string, error) {
 		gotValue, gotLayout = value, layout
 		return "PARSED", nil
 	}
-	r.ParseRelTime = func(value string) (string, error) {
+	parseRelTime := func(value string) (string, error) {
 		return "REL:" + value, nil
 	}
+	r := NewFilterRegistry(parseDate, parseRelTime, "")
 
 	// append " +02:00" then dateparse: confirms chaining feeds the date op the
 	// post-append value and the layout from the filter args.
@@ -362,8 +333,8 @@ func TestDateFilterPropagatesInjectedError(t *testing.T) {
 	t.Parallel()
 
 	sentinel := errors.New("boom")
-	r := NewFilterRegistry()
-	r.ParseDate = func(string, string) (string, error) { return "", sentinel }
+	parseDate := func(string, string) (string, error) { return "", sentinel }
+	r := NewFilterRegistry(parseDate, stubRelTime, "")
 
 	_, err := r.apply("x", []loader.FilterBlock{fb("dateparse", "L")})
 	if !errors.Is(err, sentinel) {
@@ -466,7 +437,7 @@ func TestCorpusFilterCompleteness(t *testing.T) {
 	}
 	t.Logf("loaded %d definitions (%d skipped)", len(defs), len(skipped))
 
-	r := NewFilterRegistry()
+	r := NewFilterRegistry(stubDateParse, stubRelTime, "")
 	fieldCounts := map[string]int{}
 	rowCounts := map[string]int{}
 	var unknown []string
