@@ -222,17 +222,6 @@ func (AppConnections) DeleteConnectionIndexer(ctx context.Context, q dbinterface
 	return nil
 }
 
-// SetConnectionAppID sets a connection's app_id by id (the boot fold's write-back,
-// linking a legacy row to the App its identity was folded into).
-func (AppConnections) SetConnectionAppID(ctx context.Context, q dbinterface.Execer, id, appID int64) error {
-	res, err := q.ExecContext(ctx,
-		q.Rebind(`UPDATE app_connections SET app_id = ? WHERE id = ?`), appID, id)
-	if err != nil {
-		return fmt.Errorf("database: set app connection app_id: %w", err)
-	}
-	return affectedOrNotFoundID(res, id)
-}
-
 // scanConnection reads one app_connections row from a *sql.Row or *sql.Rows.
 func scanConnection(s interface{ Scan(...any) error }) (domain.AppConnection, error) {
 	var (
