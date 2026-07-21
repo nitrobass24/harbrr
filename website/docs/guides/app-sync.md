@@ -76,11 +76,14 @@ curl http://<host>:7478/api/app-connections/{id}/status
 Manage connections with the rest of the set: `GET`/`PATCH`/`DELETE /api/app-connections/{id}`
 and `POST .../enable` · `.../disable`.
 
-!!! note "qui and usenet"
-    qui takes torrent indexers; usenet (Newznab) indexers are skipped for qui and registered
-    as Newznab indexers in the Servarr apps (Sonarr / Radarr / Lidarr / Readarr / Whisparr). A
-    movie-only indexer is correctly accepted by Radarr and rejected by Sonarr (no `tv-search`) —
-    that's expected, not a sync failure.
+:::note[qui and usenet]
+
+qui takes torrent indexers; usenet (Newznab) indexers are skipped for qui and registered
+as Newznab indexers in the Servarr apps (Sonarr / Radarr / Lidarr / Readarr / Whisparr). A
+movie-only indexer is correctly accepted by Radarr and rejected by Sonarr (no `tv-search`) —
+that's expected, not a sync failure.
+
+:::
 
 ---
 
@@ -100,10 +103,13 @@ take both torrent (Torznab) and usenet (Newznab) indexers; qui takes torrent onl
 | `readarr`  | Readarr  | Servarr **v1**     | books — see the caveat below                   |
 | `qui`      | qui      | native snake-case  | torrent only (usenet indexers are skipped)     |
 
-!!! warning "Readarr is archived upstream"
-    Readarr was archived by its maintainers and is no longer actively developed. harbrr still
-    syncs to it (the v1 indexer API is unchanged) for users running an existing install, but no
-    new development should depend on it.
+:::warning[Readarr is archived upstream]
+
+Readarr was archived by its maintainers and is no longer actively developed. harbrr still
+syncs to it (the v1 indexer API is unchanged) for users running an existing install, but no
+new development should depend on it.
+
+:::
 
 **Mylar** (comics) is not yet a target — it's a separate spike, demand-gated. Pushing tracker
 **credentials** into Upbrr is a separate, planned outbound sync.

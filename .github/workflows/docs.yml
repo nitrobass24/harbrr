@@ -1,14 +1,22 @@
 name: docs
 
-# Build the MkDocs Material site (website/) and publish it to GitHub Pages.
+# Build the Docusaurus site (website/) and publish it to GitHub Pages.
+#
+# The `build` job validates every docs change on pull requests and produces the Pages
+# artifact (upload is dispatch-only — PR runs just prove the strict build). The `deploy`
+# job publishes that artifact.
 #
 # ACTIVATION: GitHub Pages needs the repo to be PUBLIC (or an org paid plan) with
 # Settings -> Pages -> Source set to "GitHub Actions". While the repo is private on the
-# Free plan, Pages is unavailable — so this workflow is manual-only for now. When you go
-# public and enable Pages (see the pre-alpha checklist, #14), uncomment the `push` trigger
-# below so the site auto-deploys on every docs change to main.
+# Free plan, Pages is unavailable — so deploy is manual-only for now. When you go public
+# and enable Pages (see the pre-alpha checklist, #14), uncomment the `push` trigger below
+# so the site auto-deploys on every docs change to main.
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - "website/**"
+      - ".github/workflows/docs.yml"
   # push:
   #   branches: [main]
   #   paths:
@@ -17,8 +25,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 # Serialize deploys; never cancel an in-flight publish.
 concurrency:
@@ -26,28 +32,46 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-deploy:
-    name: build & deploy docs
+  build:
+    name: build docs
     runs-on: self-hosted
     timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - name: npm ci
+        working-directory: website
+        run: npm ci
+      - name: build (strict — broken links fail the build)
+        working-directory: website
+        run: npm run build
+      - name: upload Pages artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: website/build
+
+  deploy:
+    name: deploy docs
+    needs: build
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: self-hosted
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
-        with:
-          python-version: "3.x"
-          cache: pip
-      - name: install mkdocs-material
-        run: pip install mkdocs-material
-      - name: build (strict — broken links/nav fail the build)
-        working-directory: website
-        run: mkdocs build --strict
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-        with:
-          path: website/site
       - name: deploy to GitHub Pages
         id: deploy
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

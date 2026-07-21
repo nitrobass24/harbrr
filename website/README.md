@@ -4,33 +4,49 @@ User-facing documentation for harbrr — written in plain English for people run
 not for people hacking on it. (Design notes and the build plan live in the repo's
 top-level `docs/` folder; this folder is the *product* documentation.)
 
+Built with [Docusaurus](https://docusaurus.io/). On the deployed site the marketing
+landing page lives at `/harbrr/` and the docs under `/harbrr/docs/` (the configured
+`baseUrl`); the local preview serves the same pages at `http://localhost:3000/harbrr/`.
+
 ## Structure
 
 ```text
 website/
-├── mkdocs.yml              # optional site config (MkDocs + Material) — see "Previewing"
+├── docusaurus.config.js    # site config: title, nav, branding, deploy target
+├── sidebars.js             # docs sidebar — mirrors the old mkdocs.yml nav 1:1
+├── src/
+│   ├── pages/index.js      # landing page (hero + feature grid)
+│   ├── components/         # HomepageFeatures (the feature-card grid)
+│   └── css/custom.css      # brand colors (#0074ca light / #3b9cf6 dark)
+├── static/img/              # logo (light/dark) + favicon
 └── docs/
-    ├── index.md            # landing page
+    ├── index.md            # docs home (served at /docs/)
+    ├── getting-started.md
+    ├── coverage.md
+    ├── test-status.md
+    ├── configuration.md
+    ├── api.md
+    ├── guides/
     └── features/
-        └── search-results-cache.md
 ```
 
-The pages are plain Markdown. They render fine as a GitHub wiki, in a plain Markdown
-viewer, or through a static-site generator. `mkdocs.yml` is provided as a ready-to-go
-starting point but nothing here depends on it.
+The pages are plain Markdown. Admonitions use Docusaurus `:::note` / `:::tip` /
+`:::info` / `:::warning` blocks instead of MkDocs' `!!!` syntax.
 
-## Previewing (optional)
-
-With [MkDocs](https://www.mkdocs.org/) + the Material theme installed:
+## Previewing
 
 ```bash
-pip install mkdocs-material
 cd website
-mkdocs serve        # live preview at http://127.0.0.1:8000
+npm install
+npm start        # live preview at http://localhost:3000
 ```
 
-To use a different generator (Docusaurus, Astro Starlight, etc.), point it at the
-`docs/` content tree — the Markdown is portable.
+Before committing, run a production build — it's the only mode that enforces broken
+links/anchors (`onBrokenLinks` / `onBrokenMarkdownLinks` are both `'throw'`):
+
+```bash
+npm run build
+```
 
 ## Writing style
 

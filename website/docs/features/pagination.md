@@ -47,13 +47,16 @@ what harbrr guarantees.
 
 ## Conditional GET is paging-aware
 
-The feed's [`ETag` / `If-None-Match`](search-results-cache.md#conditional-requests-etag-if-none-match)
+The feed's [`ETag` / `If-None-Match`](search-results-cache.md#conditional-requests-etag--if-none-match)
 revalidation folds the **page window** into the validator, so a `304 Not Modified` for one
 page can never be answered with another page's body. Each page revalidates independently and
 correctly.
 
-!!! note "Single-fetch `total` (for now)"
-    `total` reflects the **one** engine fetch that backs every page of a query — harbrr does
-    not yet fan out across an upstream tracker's own page 2, 3, … on your behalf. Deep
-    server-side multi-page upstream fetching is tracked post-alpha; when it lands, paginating
-    trackers will return genuine page-2+ results while keeping every guarantee above.
+:::note[Single-fetch `total` (for now)]
+
+`total` reflects the **one** engine fetch that backs every page of a query — harbrr does
+not yet fan out across an upstream tracker's own page 2, 3, … on your behalf. Deep
+server-side multi-page upstream fetching is tracked post-alpha; when it lands, paginating
+trackers will return genuine page-2+ results while keeping every guarantee above.
+
+:::

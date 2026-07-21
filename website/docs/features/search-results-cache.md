@@ -80,11 +80,14 @@ and a **per-request bypass**.
 These live under `[cache]` in your `config.toml`. The values below are the defaults — you
 only need to add the keys you want to change.
 
-!!! tip "All of these are tunable at runtime — no restart"
-    Every knob below is also editable live via `PUT /api/cache/config` and takes effect
-    immediately (a `cleanup_interval` change applies on the next cleanup cycle). The config
-    file is just the seed; a value set through the API overrides it and persists across
-    restarts. `GET /api/cache/config` shows the live configuration.
+:::tip[All of these are tunable at runtime — no restart]
+
+Every knob below is also editable live via `PUT /api/cache/config` and takes effect
+immediately (a `cleanup_interval` change applies on the next cleanup cycle). The config
+file is just the seed; a value set through the API overrides it and persists across
+restarts. `GET /api/cache/config` shows the live configuration.
+
+:::
 
 ```yaml
 cache:
@@ -129,10 +132,13 @@ harbrr uses the shorter **`thin_ttl`** instead. This is the staggered-release an
 when only the 720p exists, the result is "thin", so harbrr re-checks within `thin_ttl`
 (2 minutes) and catches the 1080p/4K as they drop.
 
-!!! note "The thin rule can only *shorten*, never lengthen"
-    If you set a long TTL (globally or per-indexer), a thin result is still capped at
-    `thin_ttl`. You can't accidentally configure harbrr to sit on a half-empty result for
-    an hour and miss the later qualities.
+:::note[The thin rule can only *shorten*, never lengthen]
+
+If you set a long TTL (globally or per-indexer), a thin result is still capped at
+`thin_ttl`. You can't accidentally configure harbrr to sit on a half-empty result for
+an hour and miss the later qualities.
+
+:::
 
 ### Per-indexer override
 
@@ -239,10 +245,13 @@ harbrr exposes the cache through its management API.
 | `oldestCachedAt` / `newestCachedAt` / `lastUsedAt` | Unix timestamps (seconds) for the oldest/newest stored entry and the most recent hit. |
 | `byIndexer` | The same figures broken down **per indexer**, plus `breakerOpenUntil` (the Unix time the breaker reopens that tracker, or `null` when it's healthy). |
 
-!!! info "`hitRatio` resets on restart"
-    The ratio (and the hits/misses behind it) is counted in memory for the life of the
-    process, so it starts fresh each time harbrr restarts. The stored entries themselves
-    survive a restart — harbrr won't re-poll every tracker just because it was bounced.
+:::info[`hitRatio` resets on restart]
+
+The ratio (and the hits/misses behind it) is counted in memory for the life of the
+process, so it starts fresh each time harbrr restarts. The stored entries themselves
+survive a restart — harbrr won't re-poll every tracker just because it was bounced.
+
+:::
 
 ### `POST /api/cache/flush`
 

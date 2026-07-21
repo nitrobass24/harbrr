@@ -81,7 +81,10 @@ announces only what a consumer already polls, so it adds **zero** tracker load. 
 is fetched only on a confirmed match, which is strictly less load than a consumer
 polling + grabbing.
 
-!!! note "cross-seed v6 reachability"
-    The link harbrr hands cross-seed v6 is built from the connection's **harbrr URL**, so
-    set it to an address cross-seed can actually reach (e.g. harbrr's LAN/container host),
-    not `127.0.0.1` if cross-seed runs elsewhere.
+:::note[cross-seed v6 reachability]
+
+The link harbrr hands cross-seed v6 is built from the connection's **harbrr URL**, so
+set it to an address cross-seed can actually reach (e.g. harbrr's LAN/container host),
+not `127.0.0.1` if cross-seed runs elsewhere.
+
+:::

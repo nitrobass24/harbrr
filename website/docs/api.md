@@ -48,9 +48,12 @@ The **Torznab/Newznab feed** itself lives at
 `/api/indexers/{slug}/results/torznab` (with `/dl` for proxied downloads) — that's the
 URL your apps consume, separate from the JSON management API above.
 
-!!! note "OIDC is stubbed"
-    `/api/auth/oidc/*` returns `501` for now — OIDC is deferred to a later phase. Use session
-    or API-key auth.
+:::note[OIDC is stubbed]
+
+`/api/auth/oidc/*` returns `501` for now — OIDC is deferred to a later phase. Use session
+or API-key auth.
+
+:::
 
 ## Where to start
 

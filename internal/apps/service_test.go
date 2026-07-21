@@ -291,4 +291,14 @@ func TestUpdateBaseURLReflectsOnSurfaces(t *testing.T) {
 	if got.BaseURL != "http://new:7476" {
 		t.Errorf("app base_url = %q, want the rotated value", got.BaseURL)
 	}
+	// The referencing row holds no base_url copy that could go stale — it still just
+	// references the App. (The reading service enriching BaseURL from the App is
+	// appsync's contract, covered by TestServiceListGetEnrichFromApp there.)
+	conns, err := (database.AppConnections{}).ListConnections(ctx, db)
+	if err != nil {
+		t.Fatalf("list connections: %v", err)
+	}
+	if len(conns) != 1 || conns[0].AppID == nil || *conns[0].AppID != app.ID {
+		t.Errorf("connection no longer references app %d after rotation: %+v", app.ID, conns)
+	}
 }
