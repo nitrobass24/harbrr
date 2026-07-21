@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
+import { useInitialAppPick } from "@/hooks/useInitialAppPick"
 import { Pencil, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { ConfiguredAppsBlock, ReusingAppHint } from "@/components/applications/ConfiguredApps"
@@ -204,18 +205,12 @@ function AnnounceForm({ existing, initialAppId, pending, error, onCreate, onUpda
   const [harbrrUrl, setHarbrrUrl] = useState(defaultHarbrrUrl())
 
   // "Use as…" deep-link (autobrr/harbrr#300): pre-pick the App the same way
-  // ConfiguredAppsBlock's onPick below does — applied once, the first time the target
-  // App shows up in `apps.data`.
-  const appliedInitialPick = useRef(false)
-  useEffect(() => {
-    if (initialAppId === undefined || appliedInitialPick.current) return
-    const app = apps.data?.find((a) => a.id === initialAppId)
-    if (!app) return
-    appliedInitialPick.current = true
+  // ConfiguredAppsBlock's onPick below does.
+  useInitialAppPick(initialAppId, apps.data, (app) => {
     setKind(app.kind as AnnounceKind)
     setAppSel(String(app.id))
     setName((prev) => (prev === "" ? app.name : prev))
-  }, [initialAppId, apps.data])
+  })
 
   const mode = existing ? "edit" : "create"
   const message = error instanceof Error ? error.message : null

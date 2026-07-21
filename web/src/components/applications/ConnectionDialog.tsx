@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react"
+import { useState } from "react"
+import { useInitialAppPick } from "@/hooks/useInitialAppPick"
 import { ConfiguredAppsBlock, ReusingAppHint } from "@/components/applications/ConfiguredApps"
 import { ManagedByAppHint } from "@/components/applications/ManagedByAppHint"
 import { Button } from "@/components/ui/button"
@@ -96,18 +97,12 @@ function ConnectionForm({ existing, initialAppId, pending, error, onCreate, onUp
 
   // "Use as…" deep-link (autobrr/harbrr#300): pre-pick the App the same way
   // ConfiguredAppsBlock's onPick below does (kind + app selected, name defaulted if
-  // blank) — applied once, the first time the target App shows up in `apps.data`
-  // (already true at mount if it's cached from the page the deep-link came from).
-  const appliedInitialPick = useRef(false)
-  useEffect(() => {
-    if (initialAppId === undefined || appliedInitialPick.current) return
-    const app = apps.data?.find((a) => a.id === initialAppId)
-    if (!app) return
-    appliedInitialPick.current = true
+  // blank).
+  useInitialAppPick(initialAppId, apps.data, (app) => {
     setKind(app.kind as ConnectionKind)
     setAppSel(String(app.id))
     setName((prev) => (prev === "" ? app.name : prev))
-  }, [initialAppId, apps.data])
+  })
 
   const profiles = useSyncProfiles()
   const mode = existing ? "edit" : "create"

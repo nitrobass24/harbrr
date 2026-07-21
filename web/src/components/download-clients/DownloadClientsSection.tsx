@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
+import { useInitialAppPick } from "@/hooks/useInitialAppPick"
 import { Pencil, Plus, Trash2 } from "lucide-react"
 import { ConfiguredAppsBlock, ReusingAppHint } from "@/components/applications/ConfiguredApps"
 import { ManagedByAppHint } from "@/components/applications/ManagedByAppHint"
@@ -194,20 +195,14 @@ function DownloadClientForm({ client, initialAppId, pending, onSubmit }: {
   const quiApps = (apps.data ?? []).filter((a) => a.kind === "qui")
 
   // "Use as…" deep-link (autobrr/harbrr#300): pre-pick the App the same way
-  // ConfiguredAppsBlock's onPick below does — applied once, the first time the target
-  // App shows up in `quiApps`. Download's reuse path only exists for kind "qui"
-  // (AppsSection only offers this action for qui Apps), so kind is fixed here too.
-  const appliedInitialPick = useRef(false)
-  useEffect(() => {
-    if (initialAppId === undefined || appliedInitialPick.current) return
-    const app = quiApps.find((a) => a.id === initialAppId)
-    if (!app) return
-    appliedInitialPick.current = true
+  // ConfiguredAppsBlock's onPick below does. Download's reuse path only exists for
+  // kind "qui" (AppsSection only offers this action for qui Apps), so kind is fixed.
+  useInitialAppPick(initialAppId, quiApps, (app) => {
     setKind("qui")
     setAppSel(String(app.id))
     setInstanceId("")
     setName((prev) => (prev === "" ? app.name : prev))
-  }, [initialAppId, quiApps])
+  })
 
   // Defaults to the first qui App once apps arrive; NEW_APP outside kind "qui" (there's
   // no reuse path for the other kinds today).
