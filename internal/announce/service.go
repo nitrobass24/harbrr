@@ -107,7 +107,7 @@ func (s *Service) CreateConnection(ctx context.Context, p CreateConnectionParams
 			return []connresource.Secret{{Discriminator: secretHarbrr, Plaintext: mintedPlain}}
 		},
 		SetSecrets: func(ctx context.Context, q dbinterface.Execer, id int64, encrypted []string, keyID string) error {
-			return s.setSecrets(ctx, q, domain.AnnounceConnection{ID: id, HarbrrAPIKeyEncrypted: encrypted[0], KeyID: keyID})
+			return s.repo.SetAnnounceConnectionSecrets(ctx, q, id, encrypted[0], keyID)
 		},
 		Finalize: func(conn domain.AnnounceConnection, id int64, encrypted []string, keyID string) domain.AnnounceConnection {
 			conn.ID, conn.HarbrrAPIKeyEncrypted, conn.KeyID = id, encrypted[0], keyID
@@ -120,19 +120,6 @@ func (s *Service) CreateConnection(ctx context.Context, p CreateConnectionParams
 			return fmt.Errorf("%w: %s at %s", domain.ErrConflict, app.Kind, apphttp.RedactURL(app.BaseURL))
 		},
 	})
-}
-
-// setSecrets writes the encrypted harbrr key column + key_id for a connection (the
-// tool credential lives on the App, not on this row).
-func (s *Service) setSecrets(ctx context.Context, q dbinterface.Execer, c domain.AnnounceConnection) error {
-	_, err := q.ExecContext(ctx, q.Rebind(
-		`UPDATE announce_connections SET harbrr_api_key_encrypted = ?, key_id = ? WHERE id = ?`,
-	),
-		c.HarbrrAPIKeyEncrypted, c.KeyID, c.ID)
-	if err != nil {
-		return fmt.Errorf("announce: set secrets: %w", err)
-	}
-	return nil
 }
 
 // ListConnections / GetConnection expose persisted state, base URL + harbrr URL enriched

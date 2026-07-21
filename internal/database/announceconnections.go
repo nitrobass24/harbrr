@@ -127,17 +127,6 @@ func (AnnounceConnections) DeleteAnnounceConnection(ctx context.Context, q dbint
 	return affectedOrNotFoundID(res, id)
 }
 
-// SetAnnounceConnectionAppID sets a connection's app_id by id (the boot fold's
-// write-back).
-func (AnnounceConnections) SetAnnounceConnectionAppID(ctx context.Context, q dbinterface.Execer, id, appID int64) error {
-	res, err := q.ExecContext(ctx,
-		q.Rebind(`UPDATE announce_connections SET app_id = ? WHERE id = ?`), appID, id)
-	if err != nil {
-		return fmt.Errorf("database: set announce connection app_id: %w", err)
-	}
-	return affectedOrNotFoundID(res, id)
-}
-
 // scanAnnounceConnection reads one announce_connections row.
 func scanAnnounceConnection(s interface{ Scan(...any) error }) (domain.AnnounceConnection, error) {
 	var (

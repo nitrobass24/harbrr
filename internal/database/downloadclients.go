@@ -130,17 +130,6 @@ func marshalDownloadClientSettings(s domain.DownloadClientSettings) (string, err
 	return string(b), nil
 }
 
-// SetDownloadClientAppID sets a client's app_id by id (the boot fold's write-back;
-// host-less kinds like blackhole keep NULL and are never folded).
-func (DownloadClients) SetDownloadClientAppID(ctx context.Context, q dbinterface.Execer, id, appID int64) error {
-	res, err := q.ExecContext(ctx,
-		q.Rebind(`UPDATE download_clients SET app_id = ? WHERE id = ?`), appID, id)
-	if err != nil {
-		return fmt.Errorf("database: set download client app_id: %w", err)
-	}
-	return affectedOrNotFoundID(res, id)
-}
-
 // scanDownloadClient reads one download_clients row from a *sql.Row or *sql.Rows.
 func scanDownloadClient(s interface{ Scan(...any) error }) (domain.DownloadClient, error) {
 	var (
