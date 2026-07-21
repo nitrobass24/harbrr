@@ -113,17 +113,20 @@ func (s *Service) CreateConnection(ctx context.Context, p CreateConnectionParams
 			conn.ID, conn.HarbrrAPIKeyEncrypted, conn.KeyID = id, encrypted[0], keyID
 			return conn
 		},
-		Conflict: func(conn domain.AnnounceConnection) error {
-			return fmt.Errorf("%w: %s at %s", domain.ErrConflict, conn.Kind, apphttp.RedactURL(conn.BaseURL))
+		// The conflict IS about the App now (uniqueness moved to app_id): close over the
+		// already-resolved app rather than relying on conn.BaseURL being copied correctly
+		// by Build (it is, but this reads clearer).
+		Conflict: func(_ domain.AnnounceConnection) error {
+			return fmt.Errorf("%w: %s at %s", domain.ErrConflict, app.Kind, apphttp.RedactURL(app.BaseURL))
 		},
 	})
 }
 
 // setSecrets writes the encrypted harbrr key column + key_id for a connection (the
-// tool credential lives on the App; api_key_encrypted is left empty).
+// tool credential lives on the App, not on this row).
 func (s *Service) setSecrets(ctx context.Context, q dbinterface.Execer, c domain.AnnounceConnection) error {
 	_, err := q.ExecContext(ctx, q.Rebind(
-		`UPDATE announce_connections SET api_key_encrypted = '', harbrr_api_key_encrypted = ?, key_id = ? WHERE id = ?`,
+		`UPDATE announce_connections SET harbrr_api_key_encrypted = ?, key_id = ? WHERE id = ?`,
 	),
 		c.HarbrrAPIKeyEncrypted, c.KeyID, c.ID)
 	if err != nil {
@@ -133,8 +136,8 @@ func (s *Service) setSecrets(ctx context.Context, q dbinterface.Execer, c domain
 }
 
 // ListConnections / GetConnection expose persisted state, base URL + harbrr URL enriched
-// from each connection's App (the single read path). A pending (NULL app_id) row lists
-// with blank identity; a *use* path (Push/Test) surfaces ErrAppMigrationPending.
+// from each connection's App (the single read path — the App is the sole store for
+// these fields).
 func (s *Service) ListConnections(ctx context.Context) ([]domain.AnnounceConnection, error) {
 	list, err := s.repo.ListAnnounceConnections(ctx, s.db)
 	if err != nil {
@@ -193,10 +196,10 @@ func (s *Service) UpdateConnection(ctx context.Context, id int64, p UpdateConnec
 		return err
 	}
 	conn.UpdatedAt = s.clock()
+	// No IsUniqueViolation check here: this patch is name-only (UpdateConnectionParams
+	// never touches app_id), and app_id — not name — is what UNIQUE(app_id) guards, so
+	// this write can never violate it.
 	if err := s.repo.UpdateAnnounceConnection(ctx, tx, conn); err != nil {
-		if database.IsUniqueViolation(err) {
-			return fmt.Errorf("%w: %s at %s", domain.ErrConflict, conn.Kind, apphttp.RedactURL(conn.BaseURL))
-		}
 		return fmt.Errorf("announce: update connection: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -205,12 +208,10 @@ func (s *Service) UpdateConnection(ctx context.Context, id int64, p UpdateConnec
 	return nil
 }
 
-// appFor loads the App a connection references (the sole identity/credential source),
-// guarding a pending (NULL app_id) row with ErrAppMigrationPending.
+// appFor loads the App a connection references (the sole identity/credential source).
+// AppID is never nil here: migration 0021 refuses to apply while any non-hostless row
+// still has a NULL app_id, so every announce connection this service can read is folded.
 func (s *Service) appFor(ctx context.Context, conn domain.AnnounceConnection) (domain.App, error) {
-	if conn.AppID == nil {
-		return domain.App{}, fmt.Errorf("announce connection %d: %w", conn.ID, domain.ErrAppMigrationPending)
-	}
 	app, err := s.apps.Get(ctx, *conn.AppID)
 	if err != nil {
 		return domain.App{}, fmt.Errorf("announce: get app: %w", err)
@@ -291,7 +292,8 @@ func (s *Service) Push(ctx context.Context, build func(conn domain.AnnounceConne
 		}
 		// Enrich identity from the connection's App (the single read path) before
 		// building /dl links (needs the App's harbrr URL) or the driver (needs its base
-		// URL). A pending (NULL app_id) row is skipped best-effort, not fatal.
+		// URL). A lookup failure skips the connection best-effort rather than failing
+		// the whole batch.
 		app, err := s.appFor(ctx, conn)
 		if err != nil {
 			s.log.Warn().Int64("connection_id", conn.ID).Str("error", apphttp.RedactError(err)).Msg("announce: skip connection for push")

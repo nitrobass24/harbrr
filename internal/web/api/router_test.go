@@ -174,7 +174,7 @@ func newEnvFull(t *testing.T, cfg api.Config, buildCache func(db *database.DB) *
 	notifySvc := notify.NewService(db, keyring, http.DefaultClient, zerolog.Nop())
 	proxySvc := proxy.NewService(db, keyring)
 	solverSvc := solver.NewService(db, keyring)
-	backupSvc := backup.NewService(db, keyring, zerolog.Nop())
+	backupSvc := backup.NewService(db, keyring, appsSvc, zerolog.Nop())
 
 	var cache *registry.SearchCache
 	if buildCache != nil {

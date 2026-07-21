@@ -11,6 +11,7 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/autobrr/harbrr/internal/apps"
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
 	"github.com/autobrr/harbrr/internal/secrets"
 	"github.com/autobrr/harbrr/internal/version"
@@ -28,17 +29,20 @@ var (
 // Service exports harbrr's config + database to a passphrase-encrypted bundle and
 // restores one. It reads/writes secrets through the at-rest keyring (decrypt on export,
 // re-seal on import) but the bundle itself is sealed under a separate passphrase key, so
-// it is portable across hosts and at-rest keys.
+// it is portable across hosts and at-rest keys. appsSvc resolves/decrypts App identity —
+// every app-sync/announce connection's own identity+credential lives on its App, not on
+// the connection row (ADR 0004, #269).
 type Service struct {
 	db      dbinterface.Querier
+	apps    *apps.Service
 	keyring *secrets.Keyring
 	clock   func() time.Time
 	log     zerolog.Logger
 }
 
 // NewService wires the backup service.
-func NewService(db dbinterface.Querier, keyring *secrets.Keyring, log zerolog.Logger) *Service {
-	return &Service{db: db, keyring: keyring, clock: time.Now, log: log}
+func NewService(db dbinterface.Querier, keyring *secrets.Keyring, appsSvc *apps.Service, log zerolog.Logger) *Service {
+	return &Service{db: db, apps: appsSvc, keyring: keyring, clock: time.Now, log: log}
 }
 
 // ExportParams is the input to Export. Passphrase is required — every export is sealed.

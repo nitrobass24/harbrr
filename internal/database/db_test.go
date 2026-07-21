@@ -87,8 +87,8 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	// 0014_indexer_health_recovery.sql, 0015_proxy_structured_fields.sql,
 	// 0016_indexer_health_transport.sql, 0017_download_clients.sql,
 	// 0018_indexer_circuit_state.sql, 0019_indexer_budget_counters.sql,
-	// 0020_apps.sql), not duplicated by the second apply.
-	const wantMigrations = 20
+	// 0020_apps.sql, 0021_drop_legacy_app_columns.sql), not duplicated by the second apply.
+	const wantMigrations = 21
 	var applied int
 	if err := db.QueryRowContext(context.Background(),
 		"SELECT count(*) FROM schema_migrations").Scan(&applied); err != nil {

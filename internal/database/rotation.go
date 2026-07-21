@@ -96,20 +96,24 @@ type FixedAADSurface struct {
 func SecretSurfaces() []FixedAADSurface {
 	return []FixedAADSurface{
 		{
-			// internal/appsync/service.go + internal/announce/service.go seal both
-			// columns with the connection id as AAD id; secretApp="app", secretHarbrr="harbrr".
-			Table: "app_connections", KeyIDCol: "key_id",
-			Columns: []SecretColumn{
-				{Cipher: "api_key_encrypted", Setting: "app"},
-				{Cipher: "harbrr_api_key_encrypted", Setting: "harbrr"},
-			},
+			// internal/apps/service.go seals the app's own credential (API key or
+			// password) with the App's own id as AAD; domain.AppSecret="app". Since #269
+			// this is the ONLY place an app-sync/announce connection's app-side credential
+			// is stored — app_connections/announce_connections dropped api_key_encrypted.
+			Table: "apps", KeyIDCol: "key_id",
+			Columns: []SecretColumn{{Cipher: "api_key_encrypted", Setting: domain.AppSecret}},
 		},
 		{
+			// internal/appsync/service.go seals only the minted harbrr key with the
+			// connection id as AAD; secretHarbrr="harbrr" (the app's own key lives on
+			// the App, above).
+			Table: "app_connections", KeyIDCol: "key_id",
+			Columns: []SecretColumn{{Cipher: "harbrr_api_key_encrypted", Setting: "harbrr"}},
+		},
+		{
+			// internal/announce/service.go: same shape (tool credential lives on the App).
 			Table: "announce_connections", KeyIDCol: "key_id",
-			Columns: []SecretColumn{
-				{Cipher: "api_key_encrypted", Setting: "app"},
-				{Cipher: "harbrr_api_key_encrypted", Setting: "harbrr"},
-			},
+			Columns: []SecretColumn{{Cipher: "harbrr_api_key_encrypted", Setting: "harbrr"}},
 		},
 		{
 			// internal/notify/service.go seals with the notification id; secretURL="url".

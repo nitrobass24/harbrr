@@ -126,8 +126,6 @@ func (rt *router) writeServiceError(w http.ResponseWriter, op string, err error)
 	switch {
 	case errors.Is(err, database.ErrNotFound):
 		writeErrorCode(w, http.StatusNotFound, "not_found", "not found")
-	case errors.Is(err, domain.ErrAppMigrationPending):
-		writeErrorCode(w, http.StatusServiceUnavailable, "app_migration_pending", err.Error())
 	case errors.Is(err, registry.ErrConflict), errors.Is(err, domain.ErrConflict), errors.Is(err, backup.ErrConflict):
 		writeErrorCode(w, http.StatusConflict, "conflict", err.Error())
 	case errors.Is(err, registry.ErrInvalid), errors.Is(err, domain.ErrInvalid), errors.Is(err, proxy.ErrInvalid), errors.Is(err, solver.ErrInvalid), errors.Is(err, backup.ErrInvalid), errors.Is(err, auth.ErrWeakPassword), errors.Is(err, auth.ErrInvalidInput):

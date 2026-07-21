@@ -152,14 +152,17 @@ func (s *Service) CreateConnection(ctx context.Context, p CreateConnectionParams
 			return []connresource.Secret{{Discriminator: secretHarbrr, Plaintext: mintedPlain}}
 		},
 		SetSecrets: func(ctx context.Context, q dbinterface.Execer, id int64, encrypted []string, keyID string) error {
-			return s.repo.SetConnectionSecrets(ctx, q, id, "", encrypted[0], keyID)
+			return s.repo.SetConnectionSecrets(ctx, q, id, encrypted[0], keyID)
 		},
 		Finalize: func(conn domain.AppConnection, id int64, encrypted []string, keyID string) domain.AppConnection {
 			conn.ID, conn.HarbrrAPIKeyEncrypted, conn.KeyID = id, encrypted[0], keyID
 			return conn
 		},
-		Conflict: func(conn domain.AppConnection) error {
-			return fmt.Errorf("%w: %s at %s", domain.ErrConflict, conn.Kind, apphttp.RedactURL(conn.BaseURL))
+		// The conflict IS about the App now (uniqueness moved to app_id): close over the
+		// already-resolved app rather than relying on conn.BaseURL being copied correctly
+		// by Build (it is, but this reads clearer).
+		Conflict: func(_ domain.AppConnection) error {
+			return fmt.Errorf("%w: %s at %s", domain.ErrConflict, app.Kind, apphttp.RedactURL(app.BaseURL))
 		},
 	})
 }
@@ -213,9 +216,10 @@ func (s *Service) UpdateConnection(ctx context.Context, id int64, p UpdateConnec
 		Write: func(ctx context.Context, q dbinterface.Execer, conn domain.AppConnection) error {
 			return s.repo.UpdateConnection(ctx, q, conn)
 		},
-		Conflict: func(conn domain.AppConnection) error {
-			return fmt.Errorf("%w: %s at %s", domain.ErrConflict, conn.Kind, apphttp.RedactURL(conn.BaseURL))
-		},
+		// No Conflict callback: UpdateConnectionParams never changes AppID/kind, so a
+		// UNIQUE(app_id) violation can never occur from this Write (uniqueness moved off
+		// (kind, base_url) — the only fields an update could theoretically collide on —
+		// onto app_id, which is create-only here).
 	})
 }
 
@@ -318,9 +322,7 @@ func (s *Service) SetEnabled(ctx context.Context, id int64, enabled bool) error 
 
 // ListConnections / GetConnection / ConnectionIndexers expose the persisted state for
 // the API layer, each connection's base URL + harbrr URL enriched from its App (the
-// single read path — no legacy-column fallback). A pending (NULL app_id) row lists with
-// blank identity fields rather than erroring; a *use* path (Sync/Test/driver) is where
-// the pending state surfaces as ErrAppMigrationPending.
+// single read path — the App is the sole store for these fields).
 func (s *Service) ListConnections(ctx context.Context) ([]domain.AppConnection, error) {
 	list, err := s.repo.ListConnections(ctx, s.db)
 	if err != nil {
@@ -380,12 +382,10 @@ func (s *Service) TestConnection(ctx context.Context, id int64) error {
 	return nil
 }
 
-// appFor loads the App a connection references (the sole identity/credential source),
-// guarding a pending (NULL app_id) row with ErrAppMigrationPending.
+// appFor loads the App a connection references (the sole identity/credential source).
+// AppID is never nil here: migration 0021 refuses to apply while any non-hostless row
+// still has a NULL app_id, so every app-sync connection this service can read is folded.
 func (s *Service) appFor(ctx context.Context, conn domain.AppConnection) (domain.App, error) {
-	if conn.AppID == nil {
-		return domain.App{}, fmt.Errorf("app connection %d: %w", conn.ID, domain.ErrAppMigrationPending)
-	}
 	app, err := s.apps.Get(ctx, *conn.AppID)
 	if err != nil {
 		return domain.App{}, fmt.Errorf("appsync: get app: %w", err)

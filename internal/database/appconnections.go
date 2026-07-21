@@ -19,9 +19,9 @@ import (
 type AppConnections struct{}
 
 // connectionColumns is the full select list, in scan order. app_id is the App
-// reference (ADR 0004); the legacy base_url/api_key_encrypted/harbrr_url columns are
-// still selected but the service reads identity from the App, not from them.
-const connectionColumns = `id, name, kind, app_id, base_url, api_key_encrypted, harbrr_url,
+// reference (ADR 0004) — the sole identity source; base_url/api_key_encrypted/
+// harbrr_url were dropped by #269 once every row was guaranteed a non-NULL app_id.
+const connectionColumns = `id, name, kind, app_id,
 	harbrr_api_key_id, harbrr_api_key_encrypted, key_id, enabled, sync_level,
 	index_scope, freeleech_mode, priority, sync_profile_id, last_sync_at, last_sync_status, last_sync_error,
 	created_at, updated_at`
@@ -30,11 +30,11 @@ const connectionColumns = `id, name, kind, app_id, base_url, api_key_encrypted, 
 func (AppConnections) InsertConnection(ctx context.Context, q dbinterface.Execer, c domain.AppConnection) (int64, error) {
 	res, err := q.ExecContext(ctx,
 		q.Rebind(`INSERT INTO app_connections
-			(name, kind, app_id, base_url, api_key_encrypted, harbrr_url, harbrr_api_key_id,
+			(name, kind, app_id, harbrr_api_key_id,
 			 harbrr_api_key_encrypted, key_id, enabled, sync_level, index_scope,
 			 freeleech_mode, priority, sync_profile_id, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
-		c.Name, c.Kind, nullInt64(c.AppID), c.BaseURL, c.APIKeyEncrypted, c.HarbrrURL, nullIfZero(c.HarbrrAPIKeyID),
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+		c.Name, c.Kind, nullInt64(c.AppID), nullIfZero(c.HarbrrAPIKeyID),
 		c.HarbrrAPIKeyEncrypted, c.KeyID, boolToInt(c.Enabled), c.SyncLevel, c.IndexScope,
 		c.FreeleechMode, c.Priority, nullInt64(c.SyncProfileID), c.CreatedAt.UTC().Format(timeLayout), c.UpdatedAt.UTC().Format(timeLayout))
 	if err != nil {
@@ -89,10 +89,10 @@ func (AppConnections) ListConnections(ctx context.Context, q dbinterface.Execer)
 func (AppConnections) UpdateConnection(ctx context.Context, q dbinterface.Execer, c domain.AppConnection) error {
 	res, err := q.ExecContext(ctx,
 		q.Rebind(`UPDATE app_connections SET
-			name = ?, base_url = ?, api_key_encrypted = ?, harbrr_url = ?, key_id = ?,
+			name = ?, key_id = ?,
 			sync_level = ?, index_scope = ?, freeleech_mode = ?, priority = ?, sync_profile_id = ?, updated_at = ?
 			WHERE id = ?`),
-		c.Name, c.BaseURL, c.APIKeyEncrypted, c.HarbrrURL, c.KeyID,
+		c.Name, c.KeyID,
 		c.SyncLevel, c.IndexScope, c.FreeleechMode, c.Priority, nullInt64(c.SyncProfileID), c.UpdatedAt.UTC().Format(timeLayout), c.ID)
 	if err != nil {
 		return fmt.Errorf("database: update app connection: %w", err)
@@ -100,15 +100,15 @@ func (AppConnections) UpdateConnection(ctx context.Context, q dbinterface.Execer
 	return affectedOrNotFoundID(res, c.ID)
 }
 
-// SetConnectionSecrets writes the encrypted secret columns by id. Connections are
-// inserted in two phases inside one transaction — the row first (to mint the id the
-// encryption AAD binds to), then its secrets — so a credential is never bound to the
-// wrong row.
-func (AppConnections) SetConnectionSecrets(ctx context.Context, q dbinterface.Execer, id int64, apiKeyEncrypted, harbrrKeyEncrypted, keyID string) error {
+// SetConnectionSecrets writes the minted harbrr key column by id (the app's own key
+// lives on the App, sealed there — not on this row). Connections are inserted in two
+// phases inside one transaction — the row first (to mint the id the encryption AAD
+// binds to), then its secret — so a credential is never bound to the wrong row.
+func (AppConnections) SetConnectionSecrets(ctx context.Context, q dbinterface.Execer, id int64, harbrrKeyEncrypted, keyID string) error {
 	res, err := q.ExecContext(ctx,
-		q.Rebind(`UPDATE app_connections SET api_key_encrypted = ?, harbrr_api_key_encrypted = ?, key_id = ?
+		q.Rebind(`UPDATE app_connections SET harbrr_api_key_encrypted = ?, key_id = ?
 			WHERE id = ?`),
-		apiKeyEncrypted, harbrrKeyEncrypted, keyID, id)
+		harbrrKeyEncrypted, keyID, id)
 	if err != nil {
 		return fmt.Errorf("database: set connection secrets: %w", err)
 	}
@@ -242,7 +242,7 @@ func scanConnection(s interface{ Scan(...any) error }) (domain.AppConnection, er
 		lastSyncAt, lastSyncStatus, lastSyncEr sql.NullString
 		createdAt, updatedAt                   string
 	)
-	if err := s.Scan(&c.ID, &c.Name, &c.Kind, &appID, &c.BaseURL, &c.APIKeyEncrypted, &c.HarbrrURL,
+	if err := s.Scan(&c.ID, &c.Name, &c.Kind, &appID,
 		&harbrrKeyID, &c.HarbrrAPIKeyEncrypted, &c.KeyID, &enabled, &c.SyncLevel,
 		&c.IndexScope, &c.FreeleechMode, &c.Priority, &syncProfileID, &lastSyncAt, &lastSyncStatus, &lastSyncEr,
 		&createdAt, &updatedAt); err != nil {

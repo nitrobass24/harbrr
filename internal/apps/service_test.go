@@ -256,10 +256,12 @@ func TestDeleteMissingNotFound(t *testing.T) {
 	}
 }
 
-// TestUpdateBaseURLPropagatesToSurfaces proves a base_url PATCH rewrites the interim
-// base_url/host copies every referencing surface row carries for its UNIQUE(kind,
-// base_url) index (else the guard goes stale until #269 drops the copies).
-func TestUpdateBaseURLPropagatesToSurfaces(t *testing.T) {
+// TestUpdateBaseURLReflectsOnSurfaces proves a base_url PATCH is visible to every
+// referencing surface without any propagated copy: post-#269 there is no base_url/host
+// column on the surface tables to keep in sync (PropagateAppBaseURL was removed) — a
+// referencing row's BaseURL/Host is populated live from the App by the reading service,
+// so a rotation is instantly visible with nothing to propagate.
+func TestUpdateBaseURLReflectsOnSurfaces(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, db := newService(t)
@@ -272,31 +274,31 @@ func TestUpdateBaseURLPropagatesToSurfaces(t *testing.T) {
 		t.Fatalf("Resolve: %v", err)
 	}
 	if _, err := (database.AppConnections{}).InsertConnection(ctx, db, domain.AppConnection{
-		Name: "c", Kind: domain.AppKindQui, AppID: &app.ID, BaseURL: "http://old:7476",
+		Name: "c", Kind: domain.AppKindQui, AppID: &app.ID,
 		SyncLevel: domain.SyncLevelFull, IndexScope: domain.IndexScopeAll, FreeleechMode: domain.FreeleechModeBypass,
 	}); err != nil {
 		t.Fatalf("insert app_connections: %v", err)
-	}
-	if _, err := (database.AnnounceConnections{}).InsertAnnounceConnection(ctx, db, domain.AnnounceConnection{
-		Name: "a", Kind: domain.AnnounceKindQui, AppID: &app.ID, BaseURL: "http://old:7476",
-	}); err != nil {
-		t.Fatalf("insert announce_connections: %v", err)
-	}
-	if _, err := (database.DownloadClients{}).InsertDownloadClient(ctx, db, domain.DownloadClient{
-		Name: "d", Kind: domain.DownloadClientKindQui, AppID: &app.ID, Host: "http://old:7476",
-		Settings: domain.DownloadClientSettings{Qui: &domain.QuiSettings{InstanceID: 1}},
-	}); err != nil {
-		t.Fatalf("insert download_clients: %v", err)
 	}
 
 	if err := svc.UpdateCredential(ctx, app.ID, apps.UpdateParams{BaseURL: ptr("http://new:7476")}); err != nil {
 		t.Fatalf("UpdateCredential: %v", err)
 	}
 
-	ac, _ := (database.AppConnections{}).GetConnection(ctx, db, 1)
-	an, _ := (database.AnnounceConnections{}).GetAnnounceConnection(ctx, db, 1)
-	dc, _ := (database.DownloadClients{}).GetDownloadClient(ctx, db, 1)
-	if ac.BaseURL != "http://new:7476" || an.BaseURL != "http://new:7476" || dc.Host != "http://new:7476" {
-		t.Errorf("copies not propagated: app_conn=%q announce=%q download=%q", ac.BaseURL, an.BaseURL, dc.Host)
+	got, err := svc.Get(ctx, app.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.BaseURL != "http://new:7476" {
+		t.Errorf("app base_url = %q, want the rotated value", got.BaseURL)
+	}
+	// The referencing row holds no base_url copy that could go stale — it still just
+	// references the App. (The reading service enriching BaseURL from the App is
+	// appsync's contract, covered by TestServiceListGetEnrichFromApp there.)
+	conns, err := (database.AppConnections{}).ListConnections(ctx, db)
+	if err != nil {
+		t.Fatalf("list connections: %v", err)
+	}
+	if len(conns) != 1 || conns[0].AppID == nil || *conns[0].AppID != app.ID {
+		t.Errorf("connection no longer references app %d after rotation: %+v", app.ID, conns)
 	}
 }

@@ -81,11 +81,6 @@ func TestServiceCreateGetDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetConnection: %v", err)
 	}
-	// The tool credential is no longer sealed on the connection row — only the App owns
-	// it now (AAD (app.ID, domain.AppSecret)).
-	if got.APIKeyEncrypted != "" {
-		t.Errorf("tool key sealed on the connection row, want it App-only: %q", got.APIKeyEncrypted)
-	}
 	app, err := appsSvc.Get(ctx, *conn.AppID)
 	if err != nil {
 		t.Fatalf("apps.Get: %v", err)
@@ -251,40 +246,6 @@ func TestServiceListEnrichesFromApp(t *testing.T) {
 	}
 }
 
-// TestServicePendingAppMigration proves a row whose app_id is still NULL (the boot fold
-// hasn't run yet) is refused with domain.ErrAppMigrationPending on a *use* path
-// (TestConnection), and is skipped — not fatal — inside Push's best-effort fan-out.
-func TestServicePendingAppMigration(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	pushed := 0
-	svc, db, _ := newService(t, func(domain.AnnounceConnection, string) (announce.Target, error) {
-		pushed++
-		return &fakeTarget{matched: true}, nil
-	})
-
-	repo := database.AnnounceConnections{}
-	now := time.Now().UTC()
-	id, err := repo.InsertAnnounceConnection(ctx, db, domain.AnnounceConnection{
-		Name: "pending", Kind: domain.AnnounceKindQui, Enabled: true, // AppID left nil
-		CreatedAt: now, UpdatedAt: now,
-	})
-	if err != nil {
-		t.Fatalf("insert pending row: %v", err)
-	}
-
-	if err := svc.TestConnection(ctx, id); !errors.Is(err, domain.ErrAppMigrationPending) {
-		t.Errorf("TestConnection(pending) err = %v, want ErrAppMigrationPending", err)
-	}
-
-	matched := svc.Push(ctx, func(domain.AnnounceConnection) []announce.Release {
-		return []announce.Release{{Name: "X", GUID: "g1"}}
-	})
-	if matched != 0 || pushed != 0 {
-		t.Errorf("Push(pending row) matched=%d pushed=%d, want 0/0 (skipped, not fatal)", matched, pushed)
-	}
-}
-
 // TestServiceHarbrrKeyRejectsRevoked proves HarbrrKey refuses a connection whose minted key
 // was revoked out of band (FK SET NULL → id 0), so a dead /dl signing key is never used.
 func TestServiceHarbrrKeyRejectsRevoked(t *testing.T) {
@@ -339,9 +300,9 @@ func TestServicePushFansOutToEnabledOnly(t *testing.T) {
 }
 
 // TestServiceUpdateConnection proves UpdateConnection is name-only now (identity/
-// credential moved to the App): a non-nil Name patches, and BaseURL/HarbrrURL/
-// APIKeyEncrypted — which UpdateConnectionParams no longer even exposes — stay exactly
-// as CreateConnection left them.
+// credential moved to the App): a non-nil Name patches, and BaseURL/HarbrrURL — which
+// UpdateConnectionParams no longer even exposes — stay exactly as CreateConnection left
+// them (enriched from the same, untouched App).
 func TestServiceUpdateConnection(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -353,7 +314,6 @@ func TestServiceUpdateConnection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateConnection: %v", err)
 	}
-	origCipher := conn.APIKeyEncrypted
 
 	if err := svc.UpdateConnection(ctx, conn.ID, announce.UpdateConnectionParams{Name: ptr("qui-renamed")}); err != nil {
 		t.Fatalf("UpdateConnection: %v", err)
@@ -367,9 +327,6 @@ func TestServiceUpdateConnection(t *testing.T) {
 	}
 	if got.BaseURL != "http://qui:7476" || got.HarbrrURL != "http://h:8787" {
 		t.Errorf("identity moved despite a name-only patch: %+v", got)
-	}
-	if got.APIKeyEncrypted != origCipher {
-		t.Errorf("a name-only patch rotated the stored key: %q -> %q", origCipher, got.APIKeyEncrypted)
 	}
 }
 

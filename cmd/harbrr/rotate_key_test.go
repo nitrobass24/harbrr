@@ -160,50 +160,80 @@ func seedAllSurfaces(t *testing.T, db *database.DB, kr *secrets.Keyring) []surfa
 		t.Fatalf("seed notification: %v", err)
 	}
 
-	// app_connections + announce_connections: seal both secret columns with the row id
-	// as AAD id and the service discriminators (secretApp="app", secretHarbrr="harbrr").
-	seedConnRow(t, db, kr, "app_connections",
-		`INSERT INTO app_connections (id,name,kind,base_url,api_key_encrypted,harbrr_url,harbrr_api_key_encrypted,key_id,created_at,updated_at)
-		 VALUES (1,'ac','sonarr','http://sonarr',?,'http://h',?,?,?,?)`)
-	seedConnRow(t, db, kr, "announce_connections",
-		`INSERT INTO announce_connections (id,name,kind,base_url,api_key_encrypted,harbrr_url,harbrr_api_key_encrypted,key_id,created_at,updated_at)
-		 VALUES (1,'nc','cross-seed','http://xseed',?,'http://h',?,?,?,?)`)
+	// apps + app_connections + announce_connections: since #269 the app/tool credential
+	// lives solely on the apps row (sealed under the App's own id, domain.AppSecret="app");
+	// each connection row seals only its minted harbrr key with the connection id as AAD.
+	appSonarrID := seedAppRow(t, db, kr, "sonarr", "http://sonarr")
+	seedConnRow(t, db, kr, "app_connections", appSonarrID,
+		`INSERT INTO app_connections (id,name,kind,app_id,harbrr_api_key_encrypted,key_id,created_at,updated_at)
+		 VALUES (1,'ac','sonarr',?,?,?,?,?)`)
+	appCrossSeedID := seedAppRow(t, db, kr, "cross-seed", "http://xseed")
+	seedConnRow(t, db, kr, "announce_connections", appCrossSeedID,
+		`INSERT INTO announce_connections (id,name,kind,app_id,harbrr_api_key_encrypted,key_id,created_at,updated_at)
+		 VALUES (1,'nc','cross-seed',?,?,?,?,?)`)
 
 	return []surfaceSecret{
 		{table: "proxies", col: "password_encrypted", setting: domain.ProxySecretPassword, id: px.ID, want: "pass"},
 		{table: "solvers", col: "url_encrypted", setting: domain.SolverSecretURL, id: sv.ID, want: "http://flare:8191"},
 		{table: "notifications", col: "url_encrypted", setting: "url", id: nt.ID, want: "http://hook/token-abc"},
-		{table: "app_connections", col: "api_key_encrypted", setting: "app", id: 1, want: "APP-KEY-app_connections"},
+		{table: "apps", col: "api_key_encrypted", setting: domain.AppSecret, id: appSonarrID, want: "APP-KEY-sonarr"},
 		{table: "app_connections", col: "harbrr_api_key_encrypted", setting: "harbrr", id: 1, want: "HARBRR-KEY-app_connections"},
-		{table: "announce_connections", col: "api_key_encrypted", setting: "app", id: 1, want: "APP-KEY-announce_connections"},
+		{table: "apps", col: "api_key_encrypted", setting: domain.AppSecret, id: appCrossSeedID, want: "APP-KEY-cross-seed"},
 		{table: "announce_connections", col: "harbrr_api_key_encrypted", setting: "harbrr", id: 1, want: "HARBRR-KEY-announce_connections"},
 	}
 }
 
-// seedConnRow inserts one connection row whose two secret columns (api_key, harbrr_api_key)
-// are sealed under kr with the row id as AAD id and the "app"/"harbrr" discriminators.
-func seedConnRow(t *testing.T, db *database.DB, kr *secrets.Keyring, table, insert string) {
+// seedAppRow seeds+seals an apps row with a real credential under kr, keyed by kind
+// (mirrors internal/apps.Service's insert-then-seal write). Returns the new App's id.
+func seedAppRow(t *testing.T, db *database.DB, kr *secrets.Keyring, kind, baseURL string) int64 {
 	t.Helper()
 	ctx := context.Background()
-	appEnc, err := kr.Encrypt(1, "app", "APP-KEY-"+table)
+	ts := time.Now().UTC().Format(time.RFC3339)
+	res, err := db.ExecContext(ctx, db.Rebind(
+		`INSERT INTO apps (kind,name,base_url,api_key_encrypted,key_id,created_at,updated_at) VALUES (?,?,?,'','',?,?)`,
+	),
+		kind, kind, baseURL, ts, ts)
 	if err != nil {
-		t.Fatalf("seed %s app secret: %v", table, err)
+		t.Fatalf("seed app %s: %v", kind, err)
 	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		t.Fatalf("app %s last insert id: %v", kind, err)
+	}
+	enc, err := kr.Encrypt(id, domain.AppSecret, "APP-KEY-"+kind)
+	if err != nil {
+		t.Fatalf("seal app %s: %v", kind, err)
+	}
+	if _, err := db.ExecContext(ctx, db.Rebind(`UPDATE apps SET api_key_encrypted = ?, key_id = ? WHERE id = ?`),
+		enc, kr.KeyID(), id); err != nil {
+		t.Fatalf("set app %s secret: %v", kind, err)
+	}
+	return id
+}
+
+// seedConnRow inserts one connection row referencing appID, sealing only its minted
+// harbrr key under kr with the row id as AAD id and the "harbrr" discriminator (the
+// app/tool credential lives on the App — see seedAppRow).
+func seedConnRow(t *testing.T, db *database.DB, kr *secrets.Keyring, table string, appID int64, insert string) {
+	t.Helper()
+	ctx := context.Background()
 	harbrrEnc, err := kr.Encrypt(1, "harbrr", "HARBRR-KEY-"+table)
 	if err != nil {
 		t.Fatalf("seed %s harbrr secret: %v", table, err)
 	}
 	ts := time.Now().UTC().Format(time.RFC3339)
-	if _, err := db.ExecContext(ctx, db.Rebind(insert), appEnc, harbrrEnc, kr.KeyID(), ts, ts); err != nil {
+	if _, err := db.ExecContext(ctx, db.Rebind(insert), appID, harbrrEnc, kr.KeyID(), ts, ts); err != nil {
 		t.Fatalf("insert %s: %v", table, err)
 	}
 }
 
 // TestRotateKeys_AllSurfaces is the U8-F1 regression guard: it seeds a ciphertext in
-// every non-indexer secret column (the five tables rotate-key used to skip), rotates
-// old→new, and asserts each one still decrypts under the NEW key with its service's
-// AAD, no longer decrypts under the OLD key, and had its key_id rotated. Before the
-// fix, rotate-key never touched these rows, so the new-key decrypts would fail.
+// every non-indexer secret column (the fixed-AAD tables rotate-key used to skip —
+// proxies/solvers/notifications, plus apps/app_connections/announce_connections since
+// #269 moved the app/tool credential onto apps), rotates old→new, and asserts each one
+// still decrypts under the NEW key with its service's AAD, no longer decrypts under the
+// OLD key, and had its key_id rotated. Before the original fix, rotate-key never touched
+// these rows, so the new-key decrypts would fail.
 func TestRotateKeys_AllSurfaces(t *testing.T) {
 	t.Parallel()
 	krA, krB := keyring(t, "a1"), keyring(t, "b2")
@@ -215,9 +245,10 @@ func TestRotateKeys_AllSurfaces(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rotateKeys: %v", err)
 	}
-	// 2 indexer_settings (apikey + empty cookie) + 5 surface rows.
-	if rep.rows != 7 {
-		t.Errorf("rotated rows = %d, want 7", rep.rows)
+	// 2 indexer_settings (apikey + empty cookie) + 7 surface rows (proxies, solvers,
+	// notifications, 2 apps, app_connections, announce_connections).
+	if rep.rows != 9 {
+		t.Errorf("rotated rows = %d, want 9", rep.rows)
 	}
 
 	for _, w := range want {

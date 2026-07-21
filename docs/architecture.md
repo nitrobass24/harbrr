@@ -161,11 +161,13 @@ The three surfaces that connect to an external service — app-sync (`internal/a
 (`internal/announce`), and download clients (`internal/download`) — no longer each store that
 service's base URL + credential. A first-class **App** (`internal/apps`, table `apps`) holds a
 `(kind, base_url)` identity, one sealed credential, and the app's harbrr vantage **once**; the
-surface rows reference it by `app_id`. A create get-or-creates the App inline or reuses one by
-`appId`; a credential rotation (`PATCH /api/apps/{id}`) propagates to every surface. A one-time
-boot fold (`internal/resourcemigrate.FoldApps`) migrates legacy per-row identity/credential into
-Apps. This supersedes #266's copy-seed design and #72's announce-target seed endpoint. Full
-rationale, the single-read-path rule, and the legacy-column cleanup follow-up (#269) are in
+surface rows reference it by `app_id` (`NOT NULL`-in-practice, enforced by migration 0021's guard —
+see below). A create get-or-creates the App inline or reuses one by `appId`; a credential rotation
+(`PATCH /api/apps/{id}`) is read live by every surface off the App, so nothing needs propagating.
+This supersedes #266's copy-seed design and #72's announce-target seed endpoint. #269 dropped the
+legacy per-row identity/credential columns the one-time boot fold (`resourcemigrate.FoldApps`,
+also removed) had migrated into Apps — migration 0021 refuses to apply while any un-folded row
+remains, which is also what makes the fold's removal safe. Full rationale is in
 `docs/adr/0004-app-identity.md`.
 
 ## Search-results cache (design record)
