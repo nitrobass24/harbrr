@@ -2,7 +2,6 @@ import { useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { Plus, RefreshCw } from "lucide-react"
 import { AnnounceSection } from "@/components/applications/AnnounceSection"
-import { AppsSection } from "@/components/applications/AppsSection"
 import { ConnectionCard } from "@/components/applications/ConnectionCard"
 import { ConnectionDialog, type ConnectionDialogState } from "@/components/applications/ConnectionDialog"
 import { SelectIndexersDialog } from "@/components/applications/SelectIndexersDialog"
@@ -134,11 +133,9 @@ function ApplicationsPage() {
           )}
         </section>
 
-        <AnnounceSection />
-
         <SyncProfilesSection />
 
-        <AppsSection />
+        <AnnounceSection />
       </div>
 
       <ConnectionDialog

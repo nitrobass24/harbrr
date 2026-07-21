@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { ReactNode } from "react"
+import { withMemoryRouter } from "@/test/router"
 import type { App, DownloadClient, DownloadClientSettings } from "@/lib/api"
 import { DownloadClientsSection } from "./DownloadClientsSection"
 
@@ -84,7 +85,9 @@ describe("DownloadClientsSection", () => {
 
   it("edit: identity fields are gone (App-level now); PATCH sends name + settings only", async () => {
     const { patchBody } = stubFetchAndCapturePatch()
-    render(wrap(<DownloadClientsSection />))
+    // The fixture's appId mounts ManagedByAppHint, which links via the router `Link` —
+    // needs router context.
+    render(wrap(withMemoryRouter(<DownloadClientsSection />)))
 
     fireEvent.click(await screen.findByLabelText("Edit seedbox"))
     // Host/username/secret inputs no longer exist on the edit form — they rotate via
