@@ -184,11 +184,8 @@ function ApplicationsPage() {
                 const req = fixPortReq
                 if (!req) return
                 setFixPortReq(null)
-                if (req.conn.appId == null) {
-                  notifyError("This connection is not yet migrated to an app — restart harbrr and try again")
-                  return
-                }
-                fixPort.mutate({ id: req.conn.appId, body: { harbrrUrl: req.url } }, {
+                // appId is non-null on every hosted surface row post-#293 (boot fold removed).
+                fixPort.mutate({ id: req.conn.appId!, body: { harbrrUrl: req.url } }, {
                   onSuccess: () => runSync(req.conn.id),
                   onError: (err) => notifyError("Updating the app's harbrr URL failed", err),
                 })
