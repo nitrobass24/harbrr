@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/autobrr/harbrr/internal/apps"
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
+	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/secrets"
 	"github.com/autobrr/harbrr/internal/version"
 )
@@ -20,10 +20,16 @@ import (
 // ErrInvalid and ErrConflict are the service's input-mapping sentinels (the handler turns
 // them into 400 / 409). A wrong passphrase, a malformed/foreign bundle, and an
 // unsupported version are all ErrInvalid (a 400 the operator can act on); a restore into
-// a non-empty instance without force is ErrConflict.
+// a non-empty instance without force is ErrConflict. Both wrap the matching domain
+// sentinel so the api layer's writeServiceError only needs to check errors.Is against
+// domain.ErrInvalid/domain.ErrConflict.
 var (
-	ErrInvalid  = errors.New("backup: invalid input")
-	ErrConflict = errors.New("backup: target instance is not empty")
+	ErrInvalid = fmt.Errorf("backup: %w", domain.ErrInvalid)
+	// ErrConflict keeps its historical "target instance is not empty" text (the
+	// restore-target message is load-bearing UX) via %.0w: fmt treats %w like %v but
+	// precision .0 emits zero characters, so nothing is appended to the message while
+	// the error still wraps domain.ErrConflict for errors.Is.
+	ErrConflict = fmt.Errorf("backup: target instance is not empty%.0w", domain.ErrConflict)
 )
 
 // Service exports harbrr's config + database to a passphrase-encrypted bundle and

@@ -58,12 +58,17 @@ type StatsReporter struct {
 	clock     func() time.Time
 }
 
-// Management-layer sentinels the API maps to HTTP status codes (400/409/404).
+// Management-layer sentinels the API maps to HTTP status codes (400/409/404). Both
+// wrap the matching domain sentinel so the api layer's writeServiceError only needs
+// to check errors.Is against domain.ErrInvalid/domain.ErrConflict.
 var (
-	// ErrInvalid marks bad input (e.g. a malformed slug).
-	ErrInvalid = errors.New("registry: invalid request")
+	// ErrInvalid marks bad input (e.g. a malformed slug). Keeps its historical
+	// "invalid request" text via %.0w: fmt treats %w like %v but precision .0 emits
+	// zero characters, so nothing is appended while the error still wraps
+	// domain.ErrInvalid for errors.Is.
+	ErrInvalid = fmt.Errorf("registry: invalid request%.0w", domain.ErrInvalid)
 	// ErrConflict marks a slug already in use.
-	ErrConflict = errors.New("registry: already exists")
+	ErrConflict = fmt.Errorf("registry: %w", domain.ErrConflict)
 )
 
 // slugPattern restricts a slug to a URL-safe, filename-safe identifier so it is

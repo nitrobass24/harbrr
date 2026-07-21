@@ -8,7 +8,6 @@ package proxy
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -20,8 +19,10 @@ import (
 	"github.com/autobrr/harbrr/internal/secrets"
 )
 
-// ErrInvalid is the sentinel the API maps to 400 for malformed input.
-var ErrInvalid = errors.New("proxy: invalid input")
+// ErrInvalid is the sentinel the API maps to 400 for malformed input. It wraps
+// domain.ErrInvalid so the api layer's writeServiceError only needs to check the
+// domain sentinel.
+var ErrInvalid = fmt.Errorf("proxy: %w", domain.ErrInvalid)
 
 // validTypes is the set of accepted proxy schemes (mirrors buildTransport). The
 // type IS the transport scheme now — there is no separate URL to cross-check it

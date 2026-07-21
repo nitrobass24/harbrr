@@ -7,7 +7,6 @@ package solver
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -20,8 +19,10 @@ import (
 	"github.com/autobrr/harbrr/internal/secrets"
 )
 
-// ErrInvalid is the sentinel the API maps to 400 for malformed input.
-var ErrInvalid = errors.New("solver: invalid input")
+// ErrInvalid is the sentinel the API maps to 400 for malformed input. It wraps
+// domain.ErrInvalid so the api layer's writeServiceError only needs to check the
+// domain sentinel.
+var ErrInvalid = fmt.Errorf("solver: %w", domain.ErrInvalid)
 
 // Service persists solver resources, encrypting the endpoint URL at rest.
 // Create/Update of the row and its encrypted secret are sequenced by
