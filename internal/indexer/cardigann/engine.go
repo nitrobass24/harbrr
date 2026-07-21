@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/dateparse"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/httpx"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/selector"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
@@ -32,9 +33,11 @@ type (
 // Doer is the narrow HTTP seam the engine drives for login and search. It is
 // satisfied by *http.Client in production and a replay transport in tests, so no
 // live network call ever happens in the engine or its tests.
-type Doer interface {
-	Do(*stdhttp.Request) (*stdhttp.Response, error)
-}
+//
+// Aliased to httpx.Doer, the one definition shared with the login and search
+// stages (see httpx.Doer's doc); nothing outside this package references
+// cardigann.Doer today, but the alias keeps the exported symbol stable.
+type Doer = httpx.Doer
 
 // Engine assembles every pipeline stage for one definition and runs them
 // end-to-end. NewEngine wires the per-def seams the stages left open (the mapper

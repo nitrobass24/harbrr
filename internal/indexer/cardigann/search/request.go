@@ -11,6 +11,7 @@ import (
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/encode"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/httpx"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/template"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
@@ -575,7 +576,7 @@ func doSearchRequest(ctx context.Context, doer Doer, br builtRequest, session *l
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if (resp.StatusCode < 200 || resp.StatusCode >= 300) && !isRedirectStatus(resp.StatusCode) {
+	if (resp.StatusCode < 200 || resp.StatusCode >= 300) && !httpx.IsRedirectStatus(resp.StatusCode) {
 		return searchResponse{}, checkStatus(resp, br)
 	}
 
@@ -594,8 +595,16 @@ func doSearchRequest(ctx context.Context, doer Doer, br builtRequest, session *l
 // redirectTarget resolves a 3xx response's Location header against the request
 // URL, so a relative Location works regardless of the Doer setting
 // resp.Request. Returns "" when there is no Location or it cannot be resolved.
+//
+// This deliberately stays on resolveURL rather than httpx.ResolveLocation: for
+// an ABSOLUTE Location, resolveURL returns it verbatim (matching
+// buildOneRequest's path-resolution behavior, which this function shares
+// resolveURL with), while httpx.ResolveLocation always routes an absolute
+// Location through url.ResolveReference, which additionally cleans "." / ".."
+// path segments — a real, confirmed divergence (issue #324's Location-
+// equivalence check), not an oversight.
 func redirectTarget(resp *stdhttp.Response, reqURL string) string {
-	if !isRedirectStatus(resp.StatusCode) {
+	if !httpx.IsRedirectStatus(resp.StatusCode) {
 		return ""
 	}
 	loc := resp.Header.Get("Location")

@@ -7,6 +7,7 @@ import (
 
 	"golang.org/x/net/publicsuffix"
 
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/httpx"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/selector"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/template"
 )
@@ -27,9 +28,10 @@ import (
 // only the final response). The executor NEVER writes a Cookie header itself;
 // it only SEEDS its Jar (which must be the Doer's jar, see WithJar) for the
 // manual-cookie method, static Login.Cookies, and solver results.
-type Doer interface {
-	Do(*stdhttp.Request) (*stdhttp.Response, error)
-}
+//
+// Aliased to httpx.Doer, the one definition shared with the search stage and
+// the engine (see httpx.Doer's doc); this package's signatures are unchanged.
+type Doer = httpx.Doer
 
 // Session carries the login state the search stage must replay. Cookies are NOT
 // part of it: the shared client jar applies them transport-side (see Doer).

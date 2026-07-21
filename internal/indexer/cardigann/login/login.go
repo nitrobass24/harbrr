@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/httpx"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/template"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 )
@@ -133,7 +134,7 @@ func (e *Executor) CheckTest(ctx context.Context, def *loader.Definition) (bool,
 		return false, err
 	}
 	// Jackett follows a same-domain redirect once, then re-evaluates.
-	if isRedirectStatus(status) && location != "" && !e.crossDomainRedirect(testURL, location) {
+	if httpx.IsRedirectStatus(status) && location != "" && !e.crossDomainRedirect(testURL, location) {
 		body, status, _, err = e.getNoFollow(ctx, location, def.Login.Headers)
 		if err != nil {
 			return false, err
@@ -141,7 +142,7 @@ func (e *Executor) CheckTest(ctx context.Context, def *loader.Definition) (bool,
 	}
 	// A still-redirecting response — cross-domain, or a chain unresolved after
 	// one hop — means the session is gone: login needed, before any selector.
-	if isRedirectStatus(status) {
+	if httpx.IsRedirectStatus(status) {
 		return false, nil
 	}
 	if def.Login.Test.Selector == "" {
@@ -274,44 +275,7 @@ func (e *Executor) send(ctx context.Context, method, rawURL string, bodyReader i
 	if err != nil {
 		return nil, resp.StatusCode, "", fmt.Errorf("reading response from %s: %w", apphttp.SchemeHost(rawURL), err)
 	}
-	return data, resp.StatusCode, redirectLocation(resp, rawURL), nil
-}
-
-// isRedirectStatus reports whether status is a Location-bearing redirect the
-// login-test path treats as Jackett's WebResult.IsRedirect does (301/302/303/
-// 307/308). Mirrors search.isRedirectStatus; kept local to avoid coupling the
-// login stage to the search package.
-func isRedirectStatus(status int) bool {
-	switch status {
-	case stdhttp.StatusMovedPermanently, stdhttp.StatusFound, stdhttp.StatusSeeOther,
-		stdhttp.StatusTemporaryRedirect, stdhttp.StatusPermanentRedirect:
-		return true
-	default:
-		return false
-	}
-}
-
-// redirectLocation resolves a 3xx response's Location against reqURL, so a
-// relative Location works regardless of whether the Doer set resp.Request.
-// Returns "" when the response is not a redirect or carries no usable Location.
-// The result is never logged raw — like the request URL it can embed a secret.
-func redirectLocation(resp *stdhttp.Response, reqURL string) string {
-	if !isRedirectStatus(resp.StatusCode) {
-		return ""
-	}
-	loc := resp.Header.Get("Location")
-	if loc == "" {
-		return ""
-	}
-	base, err := url.Parse(reqURL)
-	if err != nil {
-		return ""
-	}
-	ref, err := url.Parse(loc)
-	if err != nil {
-		return ""
-	}
-	return base.ResolveReference(ref).String()
+	return data, resp.StatusCode, httpx.ResolveLocation(resp, rawURL), nil
 }
 
 // decompressBody wraps the response body when it carries a Content-Encoding that

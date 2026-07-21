@@ -19,6 +19,7 @@ import (
 	"golang.org/x/text/encoding"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/httpx"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/selector"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
@@ -55,9 +56,10 @@ var ErrTrackerError = errors.New("search: tracker returned an error page")
 // single client/replay transport serves both stages. No live network call ever
 // happens in this package or its tests. The Doer owns the ONE cookie jar (see
 // login.Doer's cookie contract); this package never writes Cookie headers.
-type Doer interface {
-	Do(*stdhttp.Request) (*stdhttp.Response, error)
-}
+//
+// Aliased to httpx.Doer, the one definition shared with the login stage and
+// the engine (see httpx.Doer's doc); this package's signatures are unchanged.
+type Doer = httpx.Doer
 
 // JarOwner is the optional Doer capability reporting the cookie jar the Doer
 // applies to outgoing requests. A wrapper around an *http.Client (the registry's
@@ -264,7 +266,7 @@ func Execute(ctx context.Context, def *loader.Definition, query Query, session *
 		// a 3xx is followed manually only when the path opts in via followredirect,
 		// is a logged-out signal when the def can re-login, and is parsed as-is
 		// otherwise. See resolveRedirect.
-		if isRedirectStatus(sr.status) {
+		if httpx.IsRedirectStatus(sr.status) {
 			sr, err = resolveRedirect(ctx, doer, reqs[i], sr, def, session)
 			if err != nil {
 				return nil, err

@@ -7,6 +7,7 @@ import (
 	"net/url"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/httpx"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 )
@@ -14,23 +15,6 @@ import (
 // maxRedirectHops caps the manual follow at Jackett's FollowIfRedirect default
 // (maxRedirects = 5).
 const maxRedirectHops = 5
-
-// isRedirectStatus reports whether status is a Location-bearing redirect:
-// 301, 302, 303, 307, 308. Two accepted divergences from Jackett's
-// WebResult.IsRedirect, recorded in parity/testdata/README.md: Jackett omits
-// 308 (harbrr treats it like 301 — no corpus def emits one), and Jackett also
-// counts ANY response carrying a Refresh header as a redirect (an obsolete
-// Cloudflare interstitial pattern; harbrr's anti-bot handling lives at the
-// solver boundary instead).
-func isRedirectStatus(status int) bool {
-	switch status {
-	case stdhttp.StatusMovedPermanently, stdhttp.StatusFound, stdhttp.StatusSeeOther,
-		stdhttp.StatusTemporaryRedirect, stdhttp.StatusPermanentRedirect:
-		return true
-	default:
-		return false
-	}
-}
 
 // resolveRedirect maps a 3xx search response to its final outcome, reproducing
 // Jackett's PerformQuery redirect handling:
@@ -56,7 +40,7 @@ func resolveRedirect(ctx context.Context, doer Doer, br builtRequest, first sear
 		if err != nil {
 			return searchResponse{}, err
 		}
-		if !isRedirectStatus(followed.status) {
+		if !httpx.IsRedirectStatus(followed.status) {
 			return followed, nil
 		}
 		// Hop cap exhausted or magnet target: fall through to the unfollowed
@@ -93,7 +77,7 @@ func resolveRedirect(ctx context.Context, doer Doer, br builtRequest, first sear
 // every followredirect+login def (kinozal, selezen, bjshare, hhanclub) actually
 // wants — and the production jar could not be bypassed per-request anyway.
 func followRedirects(ctx context.Context, doer Doer, sr searchResponse, session *login.Session) (searchResponse, error) {
-	for hop := 0; hop < maxRedirectHops && isRedirectStatus(sr.status); hop++ {
+	for hop := 0; hop < maxRedirectHops && httpx.IsRedirectStatus(sr.status); hop++ {
 		if sr.location == "" {
 			return sr, nil
 		}

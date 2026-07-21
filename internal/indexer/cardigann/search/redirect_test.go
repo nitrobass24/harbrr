@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/httpx"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 )
@@ -199,7 +200,7 @@ func TestFollowRedirects_HopCapLeavesRedirect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("followRedirects: %v", err)
 	}
-	if !isRedirectStatus(final.status) {
+	if !httpx.IsRedirectStatus(final.status) {
 		t.Fatalf("final status = %d, want a still-redirect after the %d-hop cap", final.status, maxRedirectHops)
 	}
 	if got := len(doer.requests); got != 1+maxRedirectHops {
