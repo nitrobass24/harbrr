@@ -36,11 +36,17 @@ func writeXML(w http.ResponseWriter, status int, body []byte) {
 }
 
 // writeError writes a Torznab <error> document. The status code follows
-// Jackett's split policy: credential (100) and indexer-resolution (201) gate
-// failures return HTTP 200 with the error body so *arr clients parse the <error>
-// code rather than treating the response as a hard transport failure; in-request
-// errors (202/203) return 400; internal errors (900) return 500. description
-// must be secret-free.
+// Jackett's split policy with one deliberate divergence (autobrr/harbrr#312):
+// credential (100) and indexer-resolution (201) gate failures return HTTP 200
+// with the error body so *arr clients parse the <error> code rather than
+// treating the response as a hard transport failure; in-request errors
+// (202/203) return 400; internal errors (900) return HTTP 500 — Jackett's
+// generic catch-all returns 400 there (GetErrorXML's default status, with the
+// raw exception text as description), but a failed indexer request is a
+// server-side, usually transient condition and 5xx is the honest retry signal;
+// clients that care parse the code-900 body, which is identical either way.
+// description must be secret-free — harbrr never mirrors Jackett's raw
+// exception echoes.
 func writeError(w http.ResponseWriter, status, code int, description string) {
 	w.Header().Set("Content-Type", contentTypeError)
 	w.WriteHeader(status)
