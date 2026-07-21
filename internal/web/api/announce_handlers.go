@@ -1,17 +1,12 @@
 package api
 
 import (
-	"errors"
+	"context"
 	"net/http"
-	"strconv"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-
 	"github.com/autobrr/harbrr/internal/announce"
-	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/domain"
-	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/secrets"
 )
 
@@ -69,7 +64,7 @@ func (rt *router) createAnnounceConnection(w http.ResponseWriter, r *http.Reques
 
 // getAnnounceConnection returns one announce connection (tool key redacted).
 func (rt *router) getAnnounceConnection(w http.ResponseWriter, r *http.Request) {
-	id, ok := announceConnectionID(w, r)
+	id, ok := pathID(w, r, "connection")
 	if !ok {
 		return
 	}
@@ -85,7 +80,7 @@ func (rt *router) getAnnounceConnection(w http.ResponseWriter, r *http.Request) 
 // convention (a new key rotates the tool credential; an omitted apiKey keeps the stored
 // one — the client never re-submits the <redacted> sentinel).
 func (rt *router) updateAnnounceConnection(w http.ResponseWriter, r *http.Request) {
-	id, ok := announceConnectionID(w, r)
+	id, ok := pathID(w, r, "connection")
 	if !ok {
 		return
 	}
@@ -108,23 +103,18 @@ func (rt *router) updateAnnounceConnection(w http.ResponseWriter, r *http.Reques
 // API key; cross-seed v6 checks reachability only). A pass is {"ok":true}; a failure is
 // 200 {"ok":false,"error":<scrubbed>}; an unknown id 404.
 func (rt *router) testAnnounceConnection(w http.ResponseWriter, r *http.Request) {
-	id, ok := announceConnectionID(w, r)
+	id, ok := pathID(w, r, "connection")
 	if !ok {
 		return
 	}
-	switch err := rt.announce.TestConnection(r.Context(), id); {
-	case err == nil:
-		writeJSON(w, http.StatusOK, testResult{OK: true})
-	case errors.Is(err, database.ErrNotFound):
-		rt.writeServiceError(w, "test announce connection", err)
-	default:
-		writeJSON(w, http.StatusOK, testResult{OK: false, Error: apphttp.RedactError(err)})
-	}
+	rt.testEndpoint(w, r, "test announce connection", func(ctx context.Context) error {
+		return rt.announce.TestConnection(ctx, id)
+	})
 }
 
 // deleteAnnounceConnection removes a connection and revokes its minted key.
 func (rt *router) deleteAnnounceConnection(w http.ResponseWriter, r *http.Request) {
-	id, ok := announceConnectionID(w, r)
+	id, ok := pathID(w, r, "connection")
 	if !ok {
 		return
 	}
@@ -136,33 +126,11 @@ func (rt *router) deleteAnnounceConnection(w http.ResponseWriter, r *http.Reques
 }
 
 func (rt *router) enableAnnounceConnection(w http.ResponseWriter, r *http.Request) {
-	rt.setAnnounceEnabled(w, r, true)
+	rt.setResourceEnabled(w, r, "connection", "set announce connection enabled", rt.announce.SetEnabled, true)
 }
 
 func (rt *router) disableAnnounceConnection(w http.ResponseWriter, r *http.Request) {
-	rt.setAnnounceEnabled(w, r, false)
-}
-
-func (rt *router) setAnnounceEnabled(w http.ResponseWriter, r *http.Request, enabled bool) {
-	id, ok := announceConnectionID(w, r)
-	if !ok {
-		return
-	}
-	if err := rt.announce.SetEnabled(r.Context(), id, enabled); err != nil {
-		rt.writeServiceError(w, "set announce connection enabled", err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// announceConnectionID parses the {id} path param.
-func announceConnectionID(w http.ResponseWriter, r *http.Request) (int64, bool) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid connection id")
-		return 0, false
-	}
-	return id, true
+	rt.setResourceEnabled(w, r, "connection", "set announce connection enabled", rt.announce.SetEnabled, false)
 }
 
 // toAnnounceResponse maps a connection to its API view, redacting the tool key.

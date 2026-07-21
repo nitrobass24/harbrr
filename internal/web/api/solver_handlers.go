@@ -2,10 +2,7 @@ package api
 
 import (
 	"net/http"
-	"strconv"
 	"time"
-
-	"github.com/go-chi/chi/v5"
 
 	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/secrets"
@@ -61,7 +58,7 @@ func (rt *router) createSolver(w http.ResponseWriter, r *http.Request) {
 
 // getSolver returns one solver (URL redacted).
 func (rt *router) getSolver(w http.ResponseWriter, r *http.Request) {
-	id, ok := solverID(w, r)
+	id, ok := pathID(w, r, "solver")
 	if !ok {
 		return
 	}
@@ -75,7 +72,7 @@ func (rt *router) getSolver(w http.ResponseWriter, r *http.Request) {
 
 // updateSolver patches a solver (a new url rotates the endpoint).
 func (rt *router) updateSolver(w http.ResponseWriter, r *http.Request) {
-	id, ok := solverID(w, r)
+	id, ok := pathID(w, r, "solver")
 	if !ok {
 		return
 	}
@@ -101,7 +98,7 @@ func (rt *router) updateSolver(w http.ResponseWriter, r *http.Request) {
 
 // deleteSolver removes a solver (referencing indexers fall back to no solver).
 func (rt *router) deleteSolver(w http.ResponseWriter, r *http.Request) {
-	id, ok := solverID(w, r)
+	id, ok := pathID(w, r, "solver")
 	if !ok {
 		return
 	}
@@ -113,16 +110,6 @@ func (rt *router) deleteSolver(w http.ResponseWriter, r *http.Request) {
 	// until evicted.
 	rt.registry.InvalidateAll()
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// solverID parses the {id} path param, writing a 400 on a malformed value.
-func solverID(w http.ResponseWriter, r *http.Request) (int64, bool) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid solver id")
-		return 0, false
-	}
-	return id, true
 }
 
 // toSolverResponse maps a solver to its API view, redacting the endpoint URL.

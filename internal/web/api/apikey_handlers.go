@@ -2,10 +2,7 @@ package api
 
 import (
 	"net/http"
-	"strconv"
 	"time"
-
-	"github.com/go-chi/chi/v5"
 
 	"github.com/autobrr/harbrr/internal/domain"
 )
@@ -62,9 +59,8 @@ func (rt *router) mintAPIKey(w http.ResponseWriter, r *http.Request) {
 
 // deleteAPIKey revokes an API key by id.
 func (rt *router) deleteAPIKey(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid api key id")
+	id, ok := pathID(w, r, "api key")
+	if !ok {
 		return
 	}
 	if err := rt.auth.RevokeAPIKey(r.Context(), id); err != nil {

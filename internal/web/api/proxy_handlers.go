@@ -2,10 +2,7 @@ package api
 
 import (
 	"net/http"
-	"strconv"
 	"time"
-
-	"github.com/go-chi/chi/v5"
 
 	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/proxy"
@@ -64,7 +61,7 @@ func (rt *router) createProxy(w http.ResponseWriter, r *http.Request) {
 
 // getProxy returns one proxy (password omitted).
 func (rt *router) getProxy(w http.ResponseWriter, r *http.Request) {
-	id, ok := proxyID(w, r)
+	id, ok := pathID(w, r, "proxy")
 	if !ok {
 		return
 	}
@@ -78,7 +75,7 @@ func (rt *router) getProxy(w http.ResponseWriter, r *http.Request) {
 
 // updateProxy patches a proxy (an omitted password keeps the stored one).
 func (rt *router) updateProxy(w http.ResponseWriter, r *http.Request) {
-	id, ok := proxyID(w, r)
+	id, ok := pathID(w, r, "proxy")
 	if !ok {
 		return
 	}
@@ -107,7 +104,7 @@ func (rt *router) updateProxy(w http.ResponseWriter, r *http.Request) {
 
 // deleteProxy removes a proxy (referencing indexers fall back to no proxy).
 func (rt *router) deleteProxy(w http.ResponseWriter, r *http.Request) {
-	id, ok := proxyID(w, r)
+	id, ok := pathID(w, r, "proxy")
 	if !ok {
 		return
 	}
@@ -119,16 +116,6 @@ func (rt *router) deleteProxy(w http.ResponseWriter, r *http.Request) {
 	// deleted proxy until evicted.
 	rt.registry.InvalidateAll()
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// proxyID parses the {id} path param, writing a 400 on a malformed value.
-func proxyID(w http.ResponseWriter, r *http.Request) (int64, bool) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid proxy id")
-		return 0, false
-	}
-	return id, true
 }
 
 // toProxyResponse maps a proxy to its API view; the password is never included.

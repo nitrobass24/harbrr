@@ -3,10 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
-	"strconv"
 	"time"
-
-	"github.com/go-chi/chi/v5"
 
 	"github.com/autobrr/harbrr/internal/apps"
 	"github.com/autobrr/harbrr/internal/database"
@@ -60,7 +57,7 @@ func (rt *router) listApps(w http.ResponseWriter, r *http.Request) {
 
 // getApp returns one app with its reference counts (credential redacted).
 func (rt *router) getApp(w http.ResponseWriter, r *http.Request) {
-	id, ok := appID(w, r)
+	id, ok := pathID(w, r, "app")
 	if !ok {
 		return
 	}
@@ -80,7 +77,7 @@ func (rt *router) getApp(w http.ResponseWriter, r *http.Request) {
 // updateApp patches an app's fields and rotates its credential (an omitted apiKey keeps
 // the stored one). A rotation propagates to every referencing surface.
 func (rt *router) updateApp(w http.ResponseWriter, r *http.Request) {
-	id, ok := appID(w, r)
+	id, ok := pathID(w, r, "app")
 	if !ok {
 		return
 	}
@@ -108,7 +105,7 @@ func (rt *router) updateApp(w http.ResponseWriter, r *http.Request) {
 // deleteApp removes an app, returning 409 (naming the referencing surfaces) when it is
 // still in use.
 func (rt *router) deleteApp(w http.ResponseWriter, r *http.Request) {
-	id, ok := appID(w, r)
+	id, ok := pathID(w, r, "app")
 	if !ok {
 		return
 	}
@@ -123,7 +120,7 @@ func (rt *router) deleteApp(w http.ResponseWriter, r *http.Request) {
 // the key). 400 for a non-qui app; a reachability/auth failure is 200
 // {"ok":false,"error":<scrubbed>} mirroring the test endpoints; an unknown id 404.
 func (rt *router) appQuiInstances(w http.ResponseWriter, r *http.Request) {
-	id, ok := appID(w, r)
+	id, ok := pathID(w, r, "app")
 	if !ok {
 		return
 	}
@@ -148,16 +145,6 @@ type quiInstancesResponse struct {
 
 func toQuiInstancesResponse(instances []apps.QuiInstance) quiInstancesResponse {
 	return quiInstancesResponse{OK: true, Instances: instances}
-}
-
-// appID parses the {id} path param, writing a 400 on a malformed value.
-func appID(w http.ResponseWriter, r *http.Request) (int64, bool) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid app id")
-		return 0, false
-	}
-	return id, true
 }
 
 // toAppResponse maps an app + its reference counts to the API view, redacting the

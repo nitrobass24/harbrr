@@ -1,16 +1,11 @@
 package api
 
 import (
-	"errors"
+	"context"
 	"net/http"
-	"strconv"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-
-	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/domain"
-	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/notify"
 	"github.com/autobrr/harbrr/internal/secrets"
 )
@@ -65,7 +60,7 @@ func (rt *router) createNotification(w http.ResponseWriter, r *http.Request) {
 
 // getNotification returns one target (URL redacted).
 func (rt *router) getNotification(w http.ResponseWriter, r *http.Request) {
-	id, ok := notificationID(w, r)
+	id, ok := pathID(w, r, "notification")
 	if !ok {
 		return
 	}
@@ -79,7 +74,7 @@ func (rt *router) getNotification(w http.ResponseWriter, r *http.Request) {
 
 // updateNotification patches a target (a new url rotates the destination).
 func (rt *router) updateNotification(w http.ResponseWriter, r *http.Request) {
-	id, ok := notificationID(w, r)
+	id, ok := pathID(w, r, "notification")
 	if !ok {
 		return
 	}
@@ -102,7 +97,7 @@ func (rt *router) updateNotification(w http.ResponseWriter, r *http.Request) {
 
 // deleteNotification removes a target.
 func (rt *router) deleteNotification(w http.ResponseWriter, r *http.Request) {
-	id, ok := notificationID(w, r)
+	id, ok := pathID(w, r, "notification")
 	if !ok {
 		return
 	}
@@ -115,50 +110,23 @@ func (rt *router) deleteNotification(w http.ResponseWriter, r *http.Request) {
 
 // enableNotification / disableNotification toggle a target.
 func (rt *router) enableNotification(w http.ResponseWriter, r *http.Request) {
-	rt.setNotificationEnabled(w, r, true)
+	rt.setResourceEnabled(w, r, "notification", "set notification enabled", rt.notify.SetEnabled, true)
 }
 
 func (rt *router) disableNotification(w http.ResponseWriter, r *http.Request) {
-	rt.setNotificationEnabled(w, r, false)
-}
-
-func (rt *router) setNotificationEnabled(w http.ResponseWriter, r *http.Request, enabled bool) {
-	id, ok := notificationID(w, r)
-	if !ok {
-		return
-	}
-	if err := rt.notify.SetEnabled(r.Context(), id, enabled); err != nil {
-		rt.writeServiceError(w, "set notification enabled", err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	rt.setResourceEnabled(w, r, "notification", "set notification enabled", rt.notify.SetEnabled, false)
 }
 
 // testNotification sends a synthetic event to the target. A pass is {"ok":true}; a
 // delivery failure is 200 {"ok":false,"error":<scrubbed>}; an unknown id 404.
 func (rt *router) testNotification(w http.ResponseWriter, r *http.Request) {
-	id, ok := notificationID(w, r)
+	id, ok := pathID(w, r, "notification")
 	if !ok {
 		return
 	}
-	switch err := rt.notify.TestNotification(r.Context(), id); {
-	case err == nil:
-		writeJSON(w, http.StatusOK, testResult{OK: true})
-	case errors.Is(err, database.ErrNotFound):
-		rt.writeServiceError(w, "test notification", err)
-	default:
-		writeJSON(w, http.StatusOK, testResult{OK: false, Error: apphttp.RedactError(err)})
-	}
-}
-
-// notificationID parses the {id} path param, writing a 400 on a malformed value.
-func notificationID(w http.ResponseWriter, r *http.Request) (int64, bool) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid notification id")
-		return 0, false
-	}
-	return id, true
+	rt.testEndpoint(w, r, "test notification", func(ctx context.Context) error {
+		return rt.notify.TestNotification(ctx, id)
+	})
 }
 
 // toNotificationResponse maps a target to its API view, redacting the destination URL.
