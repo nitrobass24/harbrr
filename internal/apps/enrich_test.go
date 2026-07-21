@@ -87,7 +87,9 @@ func TestBind(t *testing.T) {
 				t.Errorf("Bind(%d) app.ID = %d, want %d", id, app.ID, id)
 			}
 			if key != tt.wantKey {
-				t.Errorf("Bind(%d) key = %q, want %q", id, key, tt.wantKey)
+				// The values are synthetic, but a credential never belongs in
+				// test output either.
+				t.Errorf("Bind(%d) returned a credential that does not match the seeded secret", id)
 			}
 		})
 	}
@@ -118,24 +120,32 @@ func TestEnrichList(t *testing.T) {
 	}
 	dangling := int64(999999)
 
-	rows := []enrichRow{
-		{AppID: nil, BaseURL: "stored-nil"},
-		{AppID: &dangling, BaseURL: "stored-dangling"},
-		{AppID: &app.ID, BaseURL: "stored-valid"},
+	tests := []struct {
+		name   string
+		appID  *int64
+		stored string
+		want   string
+	}{
+		{name: "nil app id keeps stored field", appID: nil, stored: "stored-nil", want: "stored-nil"},
+		{name: "dangling app id keeps stored field", appID: &dangling, stored: "stored-dangling", want: "stored-dangling"},
+		{name: "valid app id overwrites from the App", appID: &app.ID, stored: "stored-valid", want: app.BaseURL},
 	}
 
+	// One EnrichList call over the mixed batch — handling all three shapes from a
+	// single Index lookup is part of the contract under test.
+	rows := make([]enrichRow, len(tests))
+	for i, tt := range tests {
+		rows[i] = enrichRow{AppID: tt.appID, BaseURL: tt.stored}
+	}
 	if err := apps.EnrichList(ctx, svc, rows, enrichRowAppID, enrichRowApply); err != nil {
 		t.Fatalf("EnrichList: %v", err)
 	}
-
-	if rows[0].BaseURL != "stored-nil" {
-		t.Errorf("nil-id row = %q, want stored field kept (stored-nil)", rows[0].BaseURL)
-	}
-	if rows[1].BaseURL != "stored-dangling" {
-		t.Errorf("dangling-id row = %q, want stored field kept (stored-dangling)", rows[1].BaseURL)
-	}
-	if rows[2].BaseURL != app.BaseURL {
-		t.Errorf("valid-id row = %q, want the App's BaseURL %q", rows[2].BaseURL, app.BaseURL)
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if rows[i].BaseURL != tt.want {
+				t.Errorf("row = %q, want %q", rows[i].BaseURL, tt.want)
+			}
+		})
 	}
 }
 
