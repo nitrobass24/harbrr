@@ -106,7 +106,7 @@ const (
 
 func searchErrorDeps() Deps {
 	return Deps{
-		Filters:    NewFilterRegistry(),
+		Filters:    NewFilterRegistry(stubDateParse, stubRelTime, ""),
 		Normalizer: &normalizer.Normalizer{BaseURL: "https://err.invalid/"},
 		BaseURL:    "https://err.invalid/",
 	}

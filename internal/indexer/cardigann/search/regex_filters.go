@@ -8,12 +8,12 @@ import (
 )
 
 // Regex filters route through regexadapter: RE2 by default (ReDoS-safe), regexp2
-// on .NET-only constructs, RE2 compile-failure, or — via the FilterRegistry's Language
+// on .NET-only constructs, RE2 compile-failure, or — via the FilterRegistry's language
 // field — a non-Latin def script. These are methods on FilterRegistry so the per-def
 // language routing seam (set by the engine per definition) is honored at call time.
 
 // filterReReplace implements re_replace[pattern,repl]: regex replace-all with
-// .NET replacement-token semantics. Routing uses the registry Language so a
+// .NET replacement-token semantics. Routing uses the registry language so a
 // non-Latin def reaches regexp2.
 func (r *FilterRegistry) filterReReplace(value string, args []string) (string, error) {
 	if len(args) < 2 {
@@ -33,7 +33,7 @@ func (r *FilterRegistry) filterReReplace(value string, args []string) (string, e
 // filterRegexp implements regexp[pattern]: match the pattern and return capture
 // group 1's value. Jackett returns Match.Groups[1].Value, which is "" when the
 // pattern does not match or has no group 1 — so a no-match yields "". Routing
-// uses the registry Language.
+// uses the registry language.
 func (r *FilterRegistry) filterRegexp(value string, args []string) (string, error) {
 	re, err := regexadapter.Compile(firstArg(args), r.routeOptions())
 	if err != nil {
@@ -51,9 +51,9 @@ func (r *FilterRegistry) filterRegexp(value string, args []string) (string, erro
 }
 
 // routeOptions builds the regexadapter routing inputs from the registry's
-// per-def Language (set by the engine; "" = Latin default).
+// per-def language (set by the engine; "" = Latin default).
 func (r *FilterRegistry) routeOptions() regexadapter.RouteOptions {
-	return regexadapter.RouteOptions{Language: r.Language}
+	return regexadapter.RouteOptions{Language: r.language}
 }
 
 // isNonSpacingMark reports whether r is a Unicode non-spacing mark (category

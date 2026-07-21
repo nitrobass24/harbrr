@@ -224,7 +224,7 @@ func TestParseResults_CodepageBody(t *testing.T) {
 			t.Fatalf("ResolveEncoding(%q): %v", name, rerr)
 		}
 		return Deps{
-			Filters:    NewFilterRegistry(),
+			Filters:    NewFilterRegistry(stubDateParse, stubRelTime, ""),
 			Normalizer: &normalizer.Normalizer{BaseURL: "https://cp.invalid/"},
 			BaseURL:    "https://cp.invalid/",
 			Encoding:   enc,

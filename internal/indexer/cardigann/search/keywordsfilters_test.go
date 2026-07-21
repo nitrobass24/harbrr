@@ -76,7 +76,7 @@ func TestBuildRequests_KeywordsFilters(t *testing.T) {
 					),
 				},
 			}
-			deps := Deps{BaseURL: "https://kw.invalid/", Filters: NewFilterRegistry()}
+			deps := Deps{BaseURL: "https://kw.invalid/", Filters: NewFilterRegistry(stubDateParse, stubRelTime, "")}
 
 			reqs, err := buildRequests(def, tt.query, deps)
 			if err != nil {
@@ -161,7 +161,7 @@ func TestParseResults_KeywordsFiltersAndMatch(t *testing.T) {
 <div class="row" data-cat="1"><a class="title" href="/dl/2">Sintel 1080p</a><span class="size">2 GB</span><span class="seeders">3</span></div>
 </body></html>`)
 	deps := Deps{
-		Filters:    NewFilterRegistry(),
+		Filters:    NewFilterRegistry(stubDateParse, stubRelTime, ""),
 		Normalizer: &normalizer.Normalizer{BaseURL: "https://kw.invalid/"},
 		BaseURL:    "https://kw.invalid/",
 	}

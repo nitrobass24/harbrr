@@ -1,16 +1,10 @@
 package search
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 )
-
-// errDateUnwired is returned by the default date dependencies before the engine
-// injects the real implementations. Until injection, the registry knows the date
-// filter names but cannot evaluate them.
-var errDateUnwired = errors.New("date filters require the dateparse stage")
 
 // filterFunc transforms a field value given its (already []string-normalized)
 // filter arguments. It is the per-op unit dispatched by apply.
@@ -23,35 +17,32 @@ type filterFunc func(value string, args []string) (string, error)
 // Date-bearing filters delegate to injectable dependencies so this stage stays
 // decoupled from the dateparse stage, which supplies them. Regex-bearing filters
 // route through the shared .NET-aware regexadapter for RE2-vs-regexp2 selection.
+// The seam is constructor injection: NewFilterRegistry requires the date
+// dependencies and language up front, so there is no unwired state to defend
+// against once a registry exists.
 type FilterRegistry struct {
-	// ParseDate evaluates dateparse/timeparse: value is the extracted string,
-	// layout is the .NET date layout from the filter args. Defaults to a
-	// function returning errDateUnwired; the engine injects the real parser.
-	ParseDate func(value, layout string) (string, error)
-	// ParseRelTime evaluates timeago/reltime/fuzzytime relative-time formats.
-	// Defaults to a function returning errDateUnwired; the engine injects it.
-	ParseRelTime func(value string) (string, error)
+	// parseDate evaluates dateparse/timeparse: value is the extracted string,
+	// layout is the .NET date layout from the filter args.
+	parseDate func(value, layout string) (string, error)
+	// parseRelTime evaluates timeago/reltime/fuzzytime relative-time formats.
+	parseRelTime func(value string) (string, error)
 
-	// Language is the Cardigann def `language:` code, used to route the regex
+	// language is the Cardigann def `language:` code, used to route the regex
 	// filters (re_replace/regexp) to regexp2 for non-Latin scripts. The empty
-	// default is Latin (RE2). The engine sets this per definition.
-	Language string
+	// value is Latin (RE2). The engine sets this per definition.
+	language string
 
 	ops map[string]filterFunc
 }
 
-// NewFilterRegistry constructs a FilterRegistry with every schema filter wired. Regex
-// filters use RE2 inline; date dependencies default to errDateUnwired so the
-// injection seam is explicit and never silently passes a value through.
-func NewFilterRegistry() *FilterRegistry {
-	r := &FilterRegistry{
-		ParseDate: func(string, string) (string, error) {
-			return "", errDateUnwired
-		},
-		ParseRelTime: func(string) (string, error) {
-			return "", errDateUnwired
-		},
-	}
+// NewFilterRegistry constructs a FilterRegistry with every schema filter wired.
+// The date dependencies are required at construction — there is no unwired state.
+func NewFilterRegistry(
+	parseDate func(value, layout string) (string, error),
+	parseRelTime func(value string) (string, error),
+	language string,
+) *FilterRegistry {
+	r := &FilterRegistry{parseDate: parseDate, parseRelTime: parseRelTime, language: language}
 	r.ops = r.buildOps()
 	return r
 }
@@ -92,28 +83,19 @@ func (r *FilterRegistry) buildOps() map[string]filterFunc {
 	return ops
 }
 
-// dateOp dispatches dateparse/timeparse to the injected ParseDate. The layout
-// is the first filter arg (Jackett casts Filter.Args to a single string). A nil
-// dependency (a caller reassigned the seam to nil) surfaces the package's loud
-// errDateUnwired rather than panicking on a nil call.
+// dateOp dispatches dateparse/timeparse to the injected parseDate. The layout
+// is the first filter arg (Jackett casts Filter.Args to a single string).
 func (r *FilterRegistry) dateOp(value string, args []string) (string, error) {
-	if r.ParseDate == nil {
-		return "", fmt.Errorf("dateparse filter: %w", errDateUnwired)
-	}
-	out, err := r.ParseDate(value, firstArg(args))
+	out, err := r.parseDate(value, firstArg(args))
 	if err != nil {
 		return "", fmt.Errorf("dateparse filter: %w", err)
 	}
 	return out, nil
 }
 
-// relTimeOp dispatches timeago/reltime/fuzzytime to the injected ParseRelTime. A
-// nil dependency surfaces errDateUnwired rather than panicking on a nil call.
+// relTimeOp dispatches timeago/reltime/fuzzytime to the injected parseRelTime.
 func (r *FilterRegistry) relTimeOp(value string, _ []string) (string, error) {
-	if r.ParseRelTime == nil {
-		return "", fmt.Errorf("reltime filter: %w", errDateUnwired)
-	}
-	out, err := r.ParseRelTime(value)
+	out, err := r.parseRelTime(value)
 	if err != nil {
 		return "", fmt.Errorf("reltime filter: %w", err)
 	}
