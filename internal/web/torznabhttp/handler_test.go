@@ -824,8 +824,9 @@ func TestHandlerInternalErrorIsRedacted(t *testing.T) {
 				t.Errorf("want description %q in:\n%s", tt.wantMsg, body)
 			}
 			// The served body must never echo the raw error (which could embed a secret).
+			// On failure the body is deliberately withheld — it would contain the leak.
 			if strings.Contains(body, "topsecret12345") || strings.Contains(body, "passkey") {
-				t.Errorf("error body leaked the underlying error:\n%s", body)
+				t.Error("error body leaked the underlying error (body withheld)")
 			}
 		})
 	}
