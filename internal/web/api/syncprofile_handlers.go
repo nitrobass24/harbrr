@@ -2,10 +2,7 @@ package api
 
 import (
 	"net/http"
-	"strconv"
 	"time"
-
-	"github.com/go-chi/chi/v5"
 
 	"github.com/autobrr/harbrr/internal/appsync"
 	"github.com/autobrr/harbrr/internal/domain"
@@ -66,7 +63,7 @@ func (rt *router) createSyncProfile(w http.ResponseWriter, r *http.Request) {
 
 // getSyncProfile returns one sync profile.
 func (rt *router) getSyncProfile(w http.ResponseWriter, r *http.Request) {
-	id, ok := syncProfileID(w, r)
+	id, ok := pathID(w, r, "sync profile")
 	if !ok {
 		return
 	}
@@ -80,7 +77,7 @@ func (rt *router) getSyncProfile(w http.ResponseWriter, r *http.Request) {
 
 // updateSyncProfile patches a sync profile (present-empty categories clears the set).
 func (rt *router) updateSyncProfile(w http.ResponseWriter, r *http.Request) {
-	id, ok := syncProfileID(w, r)
+	id, ok := pathID(w, r, "sync profile")
 	if !ok {
 		return
 	}
@@ -108,7 +105,7 @@ func (rt *router) updateSyncProfile(w http.ResponseWriter, r *http.Request) {
 
 // deleteSyncProfile removes a sync profile (referencing connections revert to defaults).
 func (rt *router) deleteSyncProfile(w http.ResponseWriter, r *http.Request) {
-	id, ok := syncProfileID(w, r)
+	id, ok := pathID(w, r, "sync profile")
 	if !ok {
 		return
 	}
@@ -117,16 +114,6 @@ func (rt *router) deleteSyncProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// syncProfileID parses the {id} path param, writing a 400 on a malformed value.
-func syncProfileID(w http.ResponseWriter, r *http.Request) (int64, bool) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid sync profile id")
-		return 0, false
-	}
-	return id, true
 }
 
 // toSyncProfileResponse maps a sync profile to its API view (categories never null).

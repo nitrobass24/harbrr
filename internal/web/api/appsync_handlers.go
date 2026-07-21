@@ -1,17 +1,12 @@
 package api
 
 import (
-	"errors"
+	"context"
 	"net/http"
-	"strconv"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-
 	"github.com/autobrr/harbrr/internal/appsync"
-	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/domain"
-	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/secrets"
 )
 
@@ -122,7 +117,7 @@ func (rt *router) createConnection(w http.ResponseWriter, r *http.Request) {
 
 // getConnection returns one connection (app key redacted).
 func (rt *router) getConnection(w http.ResponseWriter, r *http.Request) {
-	id, ok := rt.connectionID(w, r)
+	id, ok := pathID(w, r, "connection")
 	if !ok {
 		return
 	}
@@ -136,7 +131,7 @@ func (rt *router) getConnection(w http.ResponseWriter, r *http.Request) {
 
 // updateConnection patches a connection (a new apiKey rotates the app credential).
 func (rt *router) updateConnection(w http.ResponseWriter, r *http.Request) {
-	id, ok := rt.connectionID(w, r)
+	id, ok := pathID(w, r, "connection")
 	if !ok {
 		return
 	}
@@ -164,7 +159,7 @@ func (rt *router) updateConnection(w http.ResponseWriter, r *http.Request) {
 
 // deleteConnection removes a connection and revokes its minted key.
 func (rt *router) deleteConnection(w http.ResponseWriter, r *http.Request) {
-	id, ok := rt.connectionID(w, r)
+	id, ok := pathID(w, r, "connection")
 	if !ok {
 		return
 	}
@@ -177,45 +172,28 @@ func (rt *router) deleteConnection(w http.ResponseWriter, r *http.Request) {
 
 // enableConnection / disableConnection toggle a connection.
 func (rt *router) enableConnection(w http.ResponseWriter, r *http.Request) {
-	rt.setConnectionEnabled(w, r, true)
+	rt.setResourceEnabled(w, r, "connection", "set connection enabled", rt.appsync.SetEnabled, true)
 }
 
 func (rt *router) disableConnection(w http.ResponseWriter, r *http.Request) {
-	rt.setConnectionEnabled(w, r, false)
-}
-
-func (rt *router) setConnectionEnabled(w http.ResponseWriter, r *http.Request, enabled bool) {
-	id, ok := rt.connectionID(w, r)
-	if !ok {
-		return
-	}
-	if err := rt.appsync.SetEnabled(r.Context(), id, enabled); err != nil {
-		rt.writeServiceError(w, "set connection enabled", err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	rt.setResourceEnabled(w, r, "connection", "set connection enabled", rt.appsync.SetEnabled, false)
 }
 
 // testConnection probes the app's reachability and credentials. A pass is
 // {"ok":true}; a failure is 200 {"ok":false,"error":<scrubbed>}; an unknown id 404.
 func (rt *router) testConnection(w http.ResponseWriter, r *http.Request) {
-	id, ok := rt.connectionID(w, r)
+	id, ok := pathID(w, r, "connection")
 	if !ok {
 		return
 	}
-	switch err := rt.appsync.TestConnection(r.Context(), id); {
-	case err == nil:
-		writeJSON(w, http.StatusOK, testResult{OK: true})
-	case errors.Is(err, database.ErrNotFound):
-		rt.writeServiceError(w, "test connection", err)
-	default:
-		writeJSON(w, http.StatusOK, testResult{OK: false, Error: apphttp.RedactError(err)})
-	}
+	rt.testEndpoint(w, r, "test connection", func(ctx context.Context) error {
+		return rt.appsync.TestConnection(ctx, id)
+	})
 }
 
 // syncConnection runs reconciliation now and returns the per-indexer outcomes.
 func (rt *router) syncConnection(w http.ResponseWriter, r *http.Request) {
-	id, ok := rt.connectionID(w, r)
+	id, ok := pathID(w, r, "connection")
 	if !ok {
 		return
 	}
@@ -249,7 +227,7 @@ func (rt *router) syncAllConnections(w http.ResponseWriter, r *http.Request) {
 // index_scope=selected). The body is the instance ids to select; all others are
 // cleared.
 func (rt *router) setConnectionIndexers(w http.ResponseWriter, r *http.Request) {
-	id, ok := rt.connectionID(w, r)
+	id, ok := pathID(w, r, "connection")
 	if !ok {
 		return
 	}
@@ -268,7 +246,7 @@ func (rt *router) setConnectionIndexers(w http.ResponseWriter, r *http.Request) 
 
 // connectionStatus returns a connection plus its per-indexer ledger.
 func (rt *router) connectionStatus(w http.ResponseWriter, r *http.Request) {
-	id, ok := rt.connectionID(w, r)
+	id, ok := pathID(w, r, "connection")
 	if !ok {
 		return
 	}
@@ -286,17 +264,6 @@ func (rt *router) connectionStatus(w http.ResponseWriter, r *http.Request) {
 		appConnectionResponse: toConnectionResponse(conn),
 		Indexers:              toLedgerResponse(ledger),
 	})
-}
-
-// connectionID parses the {id} path param, writing a 400 and returning false on a
-// malformed value.
-func (rt *router) connectionID(w http.ResponseWriter, r *http.Request) (int64, bool) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid connection id")
-		return 0, false
-	}
-	return id, true
 }
 
 // toConnectionResponse maps a connection to its API view, redacting the app key.

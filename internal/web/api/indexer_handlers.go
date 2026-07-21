@@ -1,8 +1,8 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -11,9 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/autobrr/harbrr/internal/appsync"
-	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/domain"
-	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 )
@@ -276,14 +274,9 @@ type testResult struct {
 // client.
 func (rt *router) testIndexer(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
-	switch err := rt.registry.Test(r.Context(), slug); {
-	case err == nil:
-		writeJSON(w, http.StatusOK, testResult{OK: true})
-	case errors.Is(err, database.ErrNotFound):
-		rt.writeServiceError(w, "test indexer", err)
-	default:
-		writeJSON(w, http.StatusOK, testResult{OK: false, Error: apphttp.RedactError(err)})
-	}
+	rt.testEndpoint(w, r, "test indexer", func(ctx context.Context) error {
+		return rt.registry.Test(ctx, slug)
+	})
 }
 
 // statusEvent is one health event in the status response (detail already scrubbed

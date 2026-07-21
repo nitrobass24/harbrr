@@ -1,17 +1,12 @@
 package api
 
 import (
-	"errors"
+	"context"
 	"net/http"
-	"strconv"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-
-	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/download"
-	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/secrets"
 )
 
@@ -72,7 +67,7 @@ func (rt *router) createDownloadClient(w http.ResponseWriter, r *http.Request) {
 
 // getDownloadClient returns one download client (secret redacted).
 func (rt *router) getDownloadClient(w http.ResponseWriter, r *http.Request) {
-	id, ok := downloadClientID(w, r)
+	id, ok := pathID(w, r, "download client")
 	if !ok {
 		return
 	}
@@ -87,7 +82,7 @@ func (rt *router) getDownloadClient(w http.ResponseWriter, r *http.Request) {
 // updateDownloadClient patches a download client (an omitted secret keeps the
 // stored one; Kind is immutable and not accepted here).
 func (rt *router) updateDownloadClient(w http.ResponseWriter, r *http.Request) {
-	id, ok := downloadClientID(w, r)
+	id, ok := pathID(w, r, "download client")
 	if !ok {
 		return
 	}
@@ -110,7 +105,7 @@ func (rt *router) updateDownloadClient(w http.ResponseWriter, r *http.Request) {
 
 // deleteDownloadClient removes a download client.
 func (rt *router) deleteDownloadClient(w http.ResponseWriter, r *http.Request) {
-	id, ok := downloadClientID(w, r)
+	id, ok := pathID(w, r, "download client")
 	if !ok {
 		return
 	}
@@ -123,51 +118,24 @@ func (rt *router) deleteDownloadClient(w http.ResponseWriter, r *http.Request) {
 
 // enableDownloadClient / disableDownloadClient toggle a client.
 func (rt *router) enableDownloadClient(w http.ResponseWriter, r *http.Request) {
-	rt.setDownloadClientEnabled(w, r, true)
+	rt.setResourceEnabled(w, r, "download client", "set download client enabled", rt.download.SetEnabled, true)
 }
 
 func (rt *router) disableDownloadClient(w http.ResponseWriter, r *http.Request) {
-	rt.setDownloadClientEnabled(w, r, false)
-}
-
-func (rt *router) setDownloadClientEnabled(w http.ResponseWriter, r *http.Request, enabled bool) {
-	id, ok := downloadClientID(w, r)
-	if !ok {
-		return
-	}
-	if err := rt.download.SetEnabled(r.Context(), id, enabled); err != nil {
-		rt.writeServiceError(w, "set download client enabled", err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	rt.setResourceEnabled(w, r, "download client", "set download client enabled", rt.download.SetEnabled, false)
 }
 
 // testDownloadClient confirms the configured client is reachable with its
 // stored credentials. A pass is {"ok":true}; a connection failure is 200
 // {"ok":false,"error":<scrubbed>}; an unknown id 404.
 func (rt *router) testDownloadClient(w http.ResponseWriter, r *http.Request) {
-	id, ok := downloadClientID(w, r)
+	id, ok := pathID(w, r, "download client")
 	if !ok {
 		return
 	}
-	switch err := rt.download.TestConnection(r.Context(), id); {
-	case err == nil:
-		writeJSON(w, http.StatusOK, testResult{OK: true})
-	case errors.Is(err, database.ErrNotFound):
-		rt.writeServiceError(w, "test download client", err)
-	default:
-		writeJSON(w, http.StatusOK, testResult{OK: false, Error: apphttp.RedactError(err)})
-	}
-}
-
-// downloadClientID parses the {id} path param, writing a 400 on a malformed value.
-func downloadClientID(w http.ResponseWriter, r *http.Request) (int64, bool) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid download client id")
-		return 0, false
-	}
-	return id, true
+	rt.testEndpoint(w, r, "test download client", func(ctx context.Context) error {
+		return rt.download.TestConnection(ctx, id)
+	})
 }
 
 // toDownloadClientResponse maps a client to its API view, redacting the secret.
