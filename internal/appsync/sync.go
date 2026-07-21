@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/autobrr/harbrr/internal/apps"
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
 	"github.com/autobrr/harbrr/internal/domain"
 	apphttp "github.com/autobrr/harbrr/internal/http"
@@ -57,11 +58,9 @@ func (s *Service) Sync(ctx context.Context, id int64) (SyncReport, error) {
 	}
 	// Enrich the connection's identity from its App (the single read path): the feed
 	// URL pushed into each indexer needs the App's harbrr URL.
-	app, err := s.appFor(ctx, conn)
-	if err != nil {
-		return SyncReport{}, err
+	if err := apps.EnrichOne(ctx, s.apps, &conn, connAppID, connApplyApp); err != nil {
+		return SyncReport{}, fmt.Errorf("appsync: enrich connection: %w", err)
 	}
-	conn.BaseURL, conn.HarbrrURL = app.BaseURL, app.HarbrrURL
 	driver, harbrrKey, err := s.driver(ctx, conn)
 	if err != nil {
 		return SyncReport{}, err

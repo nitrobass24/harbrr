@@ -122,6 +122,15 @@ func (s *Service) CreateConnection(ctx context.Context, p CreateConnectionParams
 	})
 }
 
+// annAppID and annApplyApp are the App-projection accessors apps.EnrichList/EnrichOne
+// need: which field on the row holds the App reference, and which fields the App
+// projects onto it.
+func annAppID(c *domain.AnnounceConnection) *int64 { return c.AppID }
+
+func annApplyApp(c *domain.AnnounceConnection, a domain.App) {
+	c.BaseURL, c.HarbrrURL = a.BaseURL, a.HarbrrURL
+}
+
 // ListConnections / GetConnection expose persisted state, base URL + harbrr URL enriched
 // from each connection's App (the single read path — the App is the sole store for
 // these fields).
@@ -130,16 +139,8 @@ func (s *Service) ListConnections(ctx context.Context) ([]domain.AnnounceConnect
 	if err != nil {
 		return nil, fmt.Errorf("announce: list connections: %w", err)
 	}
-	index, err := s.apps.Index(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("announce: list apps: %w", err)
-	}
-	for i := range list {
-		if list[i].AppID != nil {
-			if app, ok := index[*list[i].AppID]; ok {
-				list[i].BaseURL, list[i].HarbrrURL = app.BaseURL, app.HarbrrURL
-			}
-		}
+	if err := apps.EnrichList(ctx, s.apps, list, annAppID, annApplyApp); err != nil {
+		return nil, fmt.Errorf("announce: enrich connections: %w", err)
 	}
 	return list, nil
 }
@@ -149,12 +150,8 @@ func (s *Service) GetConnection(ctx context.Context, id int64) (domain.AnnounceC
 	if err != nil {
 		return domain.AnnounceConnection{}, fmt.Errorf("announce: get connection: %w", err)
 	}
-	if conn.AppID != nil {
-		app, err := s.apps.Get(ctx, *conn.AppID)
-		if err != nil {
-			return domain.AnnounceConnection{}, fmt.Errorf("announce: get app: %w", err)
-		}
-		conn.BaseURL, conn.HarbrrURL = app.BaseURL, app.HarbrrURL
+	if err := apps.EnrichOne(ctx, s.apps, &conn, annAppID, annApplyApp); err != nil {
+		return domain.AnnounceConnection{}, fmt.Errorf("announce: enrich connection: %w", err)
 	}
 	return conn, nil
 }
@@ -195,32 +192,19 @@ func (s *Service) UpdateConnection(ctx context.Context, id int64, p UpdateConnec
 	return nil
 }
 
-// appFor loads the App a connection references (the sole identity/credential source).
-// AppID is never nil here: migration 0021 refuses to apply while any non-hostless row
-// still has a NULL app_id, so every announce connection this service can read is folded.
-func (s *Service) appFor(ctx context.Context, conn domain.AnnounceConnection) (domain.App, error) {
-	app, err := s.apps.Get(ctx, *conn.AppID)
-	if err != nil {
-		return domain.App{}, fmt.Errorf("announce: get app: %w", err)
-	}
-	return app, nil
-}
-
 // TestConnection probes a connection's reachability (and, for qui, its API key) WITHOUT
 // injecting anything. It loads the connection's App for the base URL + decrypted tool
-// key; the returned error is already scrubbed by the driver.
+// key; the returned error is already scrubbed by the driver. AppID is never nil here:
+// migration 0021 refuses to apply while any non-hostless row still has a NULL app_id, so
+// every announce connection this service can read is folded.
 func (s *Service) TestConnection(ctx context.Context, id int64) error {
 	conn, err := s.repo.GetAnnounceConnection(ctx, s.db, id)
 	if err != nil {
 		return fmt.Errorf("announce: get connection: %w", err)
 	}
-	app, err := s.appFor(ctx, conn)
+	app, toolKey, err := s.apps.Bind(ctx, *conn.AppID)
 	if err != nil {
-		return err
-	}
-	toolKey, err := s.apps.DecryptKey(app)
-	if err != nil {
-		return fmt.Errorf("announce: decrypt tool key: %w", err)
+		return fmt.Errorf("announce: bind app: %w", err)
 	}
 	conn.BaseURL = app.BaseURL
 	target, err := s.factory(conn, toolKey)
@@ -281,19 +265,17 @@ func (s *Service) Push(ctx context.Context, build func(conn domain.AnnounceConne
 		// building /dl links (needs the App's harbrr URL) or the driver (needs its base
 		// URL). A lookup failure skips the connection best-effort rather than failing
 		// the whole batch.
-		app, err := s.appFor(ctx, conn)
-		if err != nil {
+		if err := apps.EnrichOne(ctx, s.apps, &conn, annAppID, annApplyApp); err != nil {
 			s.log.Warn().Int64("connection_id", conn.ID).Str("error", apphttp.RedactError(err)).Msg("announce: skip connection for push")
 			continue
 		}
-		conn.BaseURL, conn.HarbrrURL = app.BaseURL, app.HarbrrURL
 		rels := build(conn)
 		// Per-connection budget: Push repeats delivery per connection, so a batch
 		// deadline scaled only by release count starves the SECOND connection's tail
 		// behind a slow first one. Each connection gets its own release-scaled budget;
 		// the caller's ctx stays the overall hard cap.
 		connCtx, cancel := context.WithTimeout(ctx, connPushBudget(len(rels)))
-		matched += s.pushOne(connCtx, conn, app, rels)
+		matched += s.pushOne(connCtx, conn, rels)
 		cancel()
 	}
 	return matched
@@ -319,18 +301,21 @@ func connPushBudget(releases int) time.Duration {
 // context off this constant so a big batch gets a proportionally bigger budget.
 const PerReleaseTimeout = 10 * time.Second
 
-// pushOne builds the connection's driver and announces each release (each capped at
-// PerReleaseTimeout), returning the match count. Per-release failures are not logged
-// individually — a large batch would otherwise emit one WRN per failure (#232) — they're
-// folded into one batch-summary log after the loop: WRN with the first (redacted) failure
-// when any release failed, DBG otherwise.
-func (s *Service) pushOne(ctx context.Context, conn domain.AnnounceConnection, app domain.App, rels []Release) int {
+// pushOne binds the connection's App for its decrypted tool key, builds the driver, and
+// announces each release (each capped at PerReleaseTimeout), returning the match count.
+// Bind runs after the empty-rels short-circuit, so a connection with nothing to push
+// never decrypts its App's key at all (Push already Get-enriched it once, for the /dl
+// links; Bind here is a second, independent App lookup for the credential). Per-release
+// failures are not logged individually — a large batch would otherwise emit one WRN per
+// failure (#232) — they're folded into one batch-summary log after the loop: WRN with the
+// first (redacted) failure when any release failed, DBG otherwise.
+func (s *Service) pushOne(ctx context.Context, conn domain.AnnounceConnection, rels []Release) int {
 	if len(rels) == 0 {
 		return 0
 	}
-	toolKey, err := s.apps.DecryptKey(app)
+	_, toolKey, err := s.apps.Bind(ctx, *conn.AppID)
 	if err != nil {
-		s.log.Warn().Int64("connection_id", conn.ID).Msg("announce: decrypt tool key failed")
+		s.log.Warn().Int64("connection_id", conn.ID).Str("error", apphttp.RedactError(err)).Msg("announce: bind app failed")
 		return 0
 	}
 	target, err := s.factory(conn, toolKey)
