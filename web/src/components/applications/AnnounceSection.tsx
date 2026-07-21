@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Pencil, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { ConfiguredAppsBlock, ReusingAppHint } from "@/components/applications/ConfiguredApps"
@@ -37,12 +37,12 @@ const NEW_APP = "new"
 
 type DialogState =
   | { open: false }
-  | { open: true, existing?: AnnounceConnection }
+  | { open: true, existing?: AnnounceConnection, initialAppId?: number }
 
 // Cross-seed push targets: harbrr announces newly-seen releases to qui's cross-seed
 // webhook or cross-seed v6's /api/announce. Each target can be edited in place and
 // tested (a non-mutating reachability probe — qui also validates the API key).
-export function AnnounceSection() {
+export function AnnounceSection({ initialCreate }: { initialCreate?: { appId: number } } = {}) {
   const targets = useAnnounceConnections()
   const create = useCreateAnnounce()
   const update = useUpdateAnnounce()
@@ -51,6 +51,13 @@ export function AnnounceSection() {
   const test = useTestAnnounce()
   const serverInfo = useServerInfo()
   const [dialog, setDialog] = useState<DialogState>({ open: false })
+
+  // "Use as…" deep-link (autobrr/harbrr#300): the applications route owns the search
+  // params and hands the pick down as a prop — this section owns its own dialog state,
+  // so it opens itself the first time the prop shows up.
+  useEffect(() => {
+    if (initialCreate) setDialog({ open: true, initialAppId: initialCreate.appId })
+  }, [initialCreate])
 
   const editing = dialog.open ? dialog.existing : undefined
 
@@ -149,6 +156,7 @@ export function AnnounceSection() {
           {dialog.open && (
             <AnnounceForm
               existing={dialog.existing}
+              initialAppId={dialog.initialAppId}
               pending={create.isPending || update.isPending}
               error={editing ? update.error : create.error}
               onCreate={(body) => create.mutate(body, {
@@ -174,13 +182,16 @@ export function AnnounceSection() {
 // AnnounceForm creates or edits a target. The tool's API key is stored encrypted and
 // never read back: on edit the field starts empty and is only sent when the operator
 // types a replacement (omit = keep the stored key, per the API). Kind is fixed on edit.
-function AnnounceForm({ existing, pending, error, onCreate, onUpdate }: {
+function AnnounceForm({ existing, initialAppId, pending, error, onCreate, onUpdate }: {
   existing?: AnnounceConnection
+  initialAppId?: number
   pending: boolean
   error: unknown
   onCreate: (body: CreateAnnounceConnection) => void
   onUpdate: (id: number, body: UpdateAnnounceConnection) => void
 }) {
+  const apps = useApps()
+
   const [name, setName] = useState(existing?.name ?? "")
   const [kind, setKind] = useState<AnnounceKind>(existing?.kind ?? "qui")
   // Create-only: which App backs this target. `null` means the operator hasn't chosen
@@ -192,7 +203,20 @@ function AnnounceForm({ existing, pending, error, onCreate, onUpdate }: {
   const [apiKey, setApiKey] = useState("")
   const [harbrrUrl, setHarbrrUrl] = useState(defaultHarbrrUrl())
 
-  const apps = useApps()
+  // "Use as…" deep-link (autobrr/harbrr#300): pre-pick the App the same way
+  // ConfiguredAppsBlock's onPick below does — applied once, the first time the target
+  // App shows up in `apps.data`.
+  const appliedInitialPick = useRef(false)
+  useEffect(() => {
+    if (initialAppId === undefined || appliedInitialPick.current) return
+    const app = apps.data?.find((a) => a.id === initialAppId)
+    if (!app) return
+    appliedInitialPick.current = true
+    setKind(app.kind as AnnounceKind)
+    setAppSel(String(app.id))
+    setName((prev) => (prev === "" ? app.name : prev))
+  }, [initialAppId, apps.data])
+
   const mode = existing ? "edit" : "create"
   const message = error instanceof Error ? error.message : null
   const appsOfKind = (apps.data ?? []).filter((a) => a.kind === kind)

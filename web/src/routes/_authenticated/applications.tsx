@@ -1,5 +1,5 @@
-import { useState } from "react"
-import { createFileRoute } from "@tanstack/react-router"
+import { useEffect, useState } from "react"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Plus, RefreshCw } from "lucide-react"
 import { AnnounceSection } from "@/components/applications/AnnounceSection"
 import { ConnectionCard } from "@/components/applications/ConnectionCard"
@@ -36,9 +36,21 @@ import { notifyError, notifySuccess } from "@/lib/notify"
 
 export const Route = createFileRoute("/_authenticated/applications")({
   component: ApplicationsPage,
+  // "Use as…" deep-link (autobrr/harbrr#300): AppsSection lands here with the target
+  // surface + App pre-picked. Anything that doesn't match — wrong type, an unknown
+  // surface name — degrades to undefined rather than crash; the page just opens with
+  // nothing pre-picked.
+  validateSearch: (search: Record<string, unknown>): { create?: "sync" | "announce", appId?: number } => ({
+    create: search.create === "sync" || search.create === "announce" ? search.create : undefined,
+    appId: typeof search.appId === "number" ? search.appId : undefined,
+  }),
 })
 
 function ApplicationsPage() {
+  const navigate = useNavigate()
+  // Renamed from the search param's own `create` — useCreateConnection() below already
+  // claims that name for the create mutation.
+  const { create: createSurface, appId } = Route.useSearch()
   const connections = useAppConnections()
   const toggle = useSetConnectionEnabled()
   const test = useTestConnection()
@@ -59,6 +71,17 @@ function ApplicationsPage() {
   // differing port can be a deliberate Docker port mapping or proxy, so the
   // one-click fix never applies without a look at the before/after URLs.
   const [fixPortReq, setFixPortReq] = useState<{ conn: AppConnection, url: string } | null>(null)
+
+  // "Use as…" deep-link (autobrr/harbrr#300): open the matching surface's create
+  // dialog pre-picked, then clear the search params (replace: true) so a close-and-
+  // reopen or the back button doesn't re-trigger it. Sync opens directly (its dialog
+  // state lives here); announce is handed the pick via a prop — it owns its own
+  // dialog state, and reads the value on its own mount effect before this clears it.
+  useEffect(() => {
+    if (createSurface === undefined) return
+    if (createSurface === "sync" && appId !== undefined) setDialog({ open: true, initialAppId: appId })
+    void navigate({ to: "/applications", search: {}, replace: true })
+  }, [createSurface, appId, navigate])
 
   const editing = dialog.open ? dialog.existing : undefined
   const create = useCreateConnection()
@@ -135,7 +158,9 @@ function ApplicationsPage() {
 
         <SyncProfilesSection />
 
-        <AnnounceSection />
+        <AnnounceSection
+          initialCreate={createSurface === "announce" && appId !== undefined ? { appId } : undefined}
+        />
       </div>
 
       <ConnectionDialog

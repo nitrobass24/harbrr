@@ -1,5 +1,6 @@
 import { useState } from "react"
-import { Pencil, Trash2 } from "lucide-react"
+import { useNavigate } from "@tanstack/react-router"
+import { ChevronDown, Pencil, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -10,6 +11,12 @@ import {
   DialogHeader,
   DialogTitle
 } from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
@@ -17,6 +24,15 @@ import { useApps, useDeleteApp, useUpdateApp } from "@/hooks/useApps"
 import { hostname } from "@/lib/format"
 import { notifySuccess } from "@/lib/notify"
 import type { App, UpdateApp } from "@/lib/api"
+
+// Which surfaces' create dialog knows how to reuse an App of a given kind — mirrors
+// each dialog's own hardcoded compatible-kind set (ConnectionDialog's KINDS,
+// AnnounceSection's qui/crossseed-v6, DownloadClientsSection's qui-only reuse path).
+// Deliberately NOT hoisted into a shared surface→kinds mapping (autobrr/harbrr#304's
+// tripwire) — these three literals are this file's own copy, same as the dialogs'.
+const SYNC_KINDS = ["sonarr", "radarr", "lidarr", "readarr", "whisparr", "qui"]
+const ANNOUNCE_KINDS = ["qui", "crossseed-v6"]
+const DOWNLOAD_KINDS = ["qui"]
 
 // Apps are the first-class (kind, base URL) identities behind app-sync, announce, and
 // download-client surfaces (ADR 0004): one stored credential, referenced by id instead
@@ -53,6 +69,7 @@ export function AppsSection() {
                 </span>
               </span>
               <span className="ml-auto flex items-center gap-1">
+                <UseAsMenu app={a} />
                 <Button variant="ghost" size="icon" aria-label={`Edit ${a.name}`} onClick={() => setEditing(a)}>
                   <Pencil className="h-4 w-4" />
                 </Button>
@@ -93,6 +110,49 @@ export function AppsSection() {
         )}
       </Dialog>
     </section>
+  )
+}
+
+// The app → surface direction of ADR 0004's "any surface is one click from any app"
+// (autobrr/harbrr#300 — #296 already gave the create dialogs the surface → app
+// direction). Each item opens that surface's existing create dialog with this App
+// pre-picked via a search-param deep link — pure navigation, no new endpoints.
+// Kind-incompatible or already-unique-per-App surfaces are left off the menu instead
+// of shown disabled; download has no uniqueness rule (multiple clients per App are
+// legal), so it's never filtered by `used`.
+function UseAsMenu({ app }: { app: App }) {
+  const navigate = useNavigate()
+  const offerSync = SYNC_KINDS.includes(app.kind) && app.references.appConnections === 0
+  const offerAnnounce = ANNOUNCE_KINDS.includes(app.kind) && app.references.announce === 0
+  const offerDownload = DOWNLOAD_KINDS.includes(app.kind)
+
+  if (!offerSync && !offerAnnounce && !offerDownload) return null
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="sm" aria-label={`Use ${app.name} as…`}>
+          Use as… <ChevronDown className="h-3.5 w-3.5" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {offerSync && (
+          <DropdownMenuItem onClick={() => void navigate({ to: "/applications", search: { create: "sync", appId: app.id } })}>
+            Sync target
+          </DropdownMenuItem>
+        )}
+        {offerAnnounce && (
+          <DropdownMenuItem onClick={() => void navigate({ to: "/applications", search: { create: "announce", appId: app.id } })}>
+            Announce target
+          </DropdownMenuItem>
+        )}
+        {offerDownload && (
+          <DropdownMenuItem onClick={() => void navigate({ to: "/download-clients", search: { appId: app.id } })}>
+            Download client
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 

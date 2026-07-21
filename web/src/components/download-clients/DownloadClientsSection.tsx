@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Pencil, Plus, Trash2 } from "lucide-react"
 import { ConfiguredAppsBlock, ReusingAppHint } from "@/components/applications/ConfiguredApps"
 import { ManagedByAppHint } from "@/components/applications/ManagedByAppHint"
@@ -46,7 +46,8 @@ const HOST_PLACEHOLDER: Partial<Record<DownloadClientKind, string>> = {
 const NEW_APP = "new"
 
 // `null` = closed; `{ client: null }` = add; `{ client }` = edit that client.
-type Editing = { client: DownloadClient | null } | null
+// `initialAppId` (add-only) is the "Use as…" deep-link's pre-pick (autobrr/harbrr#300).
+type Editing = { client: DownloadClient | null, initialAppId?: number } | null
 
 // The form always produces a full CreateDownloadClient shape; kind is immutable
 // on edit so an update just drops it before the PATCH goes out (kind isn't even
@@ -56,7 +57,7 @@ type FormBody = CreateDownloadClient
 // Configured download clients harbrr can hand a grabbed release to. Host/username
 // are plain (visible on read); only the secret (password/API key, depending on
 // kind) is stored encrypted and rotates only when a new one is typed.
-export function DownloadClientsSection() {
+export function DownloadClientsSection({ initialCreate }: { initialCreate?: { appId: number } } = {}) {
   const clients = useDownloadClients()
   const create = useCreateDownloadClient()
   const update = useUpdateDownloadClient()
@@ -64,6 +65,13 @@ export function DownloadClientsSection() {
   const toggle = useSetDownloadClientEnabled()
   const test = useTestDownloadClient()
   const [editing, setEditing] = useState<Editing>(null)
+
+  // "Use as…" deep-link: the download-clients route owns the search params and hands
+  // the pick down as a prop — this section owns its own dialog state, so it opens
+  // itself the first time the prop shows up.
+  useEffect(() => {
+    if (initialCreate) setEditing({ client: null, initialAppId: initialCreate.appId })
+  }, [initialCreate])
 
   return (
     <section className="flex flex-col gap-3">
@@ -126,6 +134,7 @@ export function DownloadClientsSection() {
               // Remount (fresh state seeded from props) per target.
               key={editing.client?.id ?? "new"}
               client={editing.client}
+              initialAppId={editing.initialAppId}
               pending={create.isPending || update.isPending}
               onSubmit={(id, body) => {
                 const done = { onSuccess: () => setEditing(null), onError: (err: Error) => notifyError(`Save failed: ${err.message}`, err) }
@@ -145,12 +154,15 @@ export function DownloadClientsSection() {
   )
 }
 
-function DownloadClientForm({ client, pending, onSubmit }: {
+function DownloadClientForm({ client, initialAppId, pending, onSubmit }: {
   client: DownloadClient | null
+  initialAppId?: number
   pending: boolean
   onSubmit: (id: number | null, body: FormBody) => void
 }) {
   const isEdit = client !== null
+  const apps = useApps()
+
   const [name, setName] = useState(client?.name ?? "")
   const [kind, setKind] = useState<DownloadClientKind>(client?.kind ?? "qbittorrent")
   // Create-only: which qui App backs this client. `null` means the operator hasn't
@@ -179,8 +191,24 @@ function DownloadClientForm({ client, pending, onSubmit }: {
   const [nzbDir, setNzbDir] = useState(client?.settings.blackhole?.nzbDir ?? "")
   const [saveMagnetFiles, setSaveMagnetFiles] = useState(client?.settings.blackhole?.saveMagnetFiles ?? false)
 
-  const apps = useApps()
   const quiApps = (apps.data ?? []).filter((a) => a.kind === "qui")
+
+  // "Use as…" deep-link (autobrr/harbrr#300): pre-pick the App the same way
+  // ConfiguredAppsBlock's onPick below does — applied once, the first time the target
+  // App shows up in `quiApps`. Download's reuse path only exists for kind "qui"
+  // (AppsSection only offers this action for qui Apps), so kind is fixed here too.
+  const appliedInitialPick = useRef(false)
+  useEffect(() => {
+    if (initialAppId === undefined || appliedInitialPick.current) return
+    const app = quiApps.find((a) => a.id === initialAppId)
+    if (!app) return
+    appliedInitialPick.current = true
+    setKind("qui")
+    setAppSel(String(app.id))
+    setInstanceId("")
+    setName((prev) => (prev === "" ? app.name : prev))
+  }, [initialAppId, quiApps])
+
   // Defaults to the first qui App once apps arrive; NEW_APP outside kind "qui" (there's
   // no reuse path for the other kinds today).
   const effectiveAppSel = kind === "qui" ? (appSel ?? (quiApps[0] ? String(quiApps[0].id) : NEW_APP)) : NEW_APP
