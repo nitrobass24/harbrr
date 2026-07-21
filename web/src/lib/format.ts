@@ -35,6 +35,21 @@ export function hostname(url: string | undefined): string {
   }
 }
 
+// KIND_LABELS is display-only — the API/DB slugs (the map's keys) never change.
+const KIND_LABELS: Record<string, string> = {
+  sonarr: "Sonarr", radarr: "Radarr", lidarr: "Lidarr", readarr: "Readarr", whisparr: "Whisparr",
+  qui: "qui", "crossseed-v6": "cross-seed v6",
+  qbittorrent: "qBittorrent", blackhole: "Blackhole (watch folder)", sabnzbd: "SABnzbd",
+  nzbget: "NZBGet", flood: "Flood", "download-station": "Download Station",
+  transmission: "Transmission", deluge: "Deluge", rtorrent: "rTorrent",
+}
+
+// kindLabel renders a display name for an app/connection kind slug, falling back to the
+// slug itself for anything not in the map.
+export function kindLabel(kind: string): string {
+  return KIND_LABELS[kind] ?? kind
+}
+
 // syncStatusClass maps an app-sync status to its text color. Single source of
 // truth for the sync-status styling shared by the connection card, the sync
 // report, and the status drawer.

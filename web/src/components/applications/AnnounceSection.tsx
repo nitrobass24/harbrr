@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { Pencil, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
+import { ConfiguredAppsBlock, ReusingAppHint } from "@/components/applications/ConfiguredApps"
 import { ManagedByAppHint } from "@/components/applications/ManagedByAppHint"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -27,8 +28,8 @@ import {
 } from "@/hooks/useAppConnections"
 import { useApps } from "@/hooks/useApps"
 import { defaultHarbrrUrl, explicitUrlPort } from "@/lib/base-url"
-import { hostname } from "@/lib/format"
-import type { AnnounceConnection, AnnounceKind, CreateAnnounceConnection, UpdateAnnounceConnection } from "@/lib/api"
+import { hostname, kindLabel } from "@/lib/format"
+import type { AnnounceConnection, AnnounceKind, App, CreateAnnounceConnection, UpdateAnnounceConnection } from "@/lib/api"
 
 // Sentinel select value for "no existing App picked, use the inline fields below" —
 // mirrors ConnectionDialog's create-time App picker.
@@ -182,9 +183,11 @@ function AnnounceForm({ existing, pending, error, onCreate, onUpdate }: {
 }) {
   const [name, setName] = useState(existing?.name ?? "")
   const [kind, setKind] = useState<AnnounceKind>(existing?.kind ?? "qui")
-  // Create-only: which App backs this target. NEW_APP reveals the inline
-  // baseUrl/apiKey/harbrrUrl fields below; anything else reuses that App's identity.
-  const [appSel, setAppSel] = useState<string>(NEW_APP)
+  // Create-only: which App backs this target. `null` means the operator hasn't chosen
+  // yet, so the picker defaults to the first App of this kind once apps arrive
+  // (effectiveAppSel below). NEW_APP reveals the inline baseUrl/apiKey/harbrrUrl fields;
+  // anything else reuses that App's identity.
+  const [appSel, setAppSel] = useState<string | null>(null)
   const [baseUrl, setBaseUrl] = useState("")
   const [apiKey, setApiKey] = useState("")
   const [harbrrUrl, setHarbrrUrl] = useState(defaultHarbrrUrl())
@@ -193,7 +196,13 @@ function AnnounceForm({ existing, pending, error, onCreate, onUpdate }: {
   const mode = existing ? "edit" : "create"
   const message = error instanceof Error ? error.message : null
   const appsOfKind = (apps.data ?? []).filter((a) => a.kind === kind)
-  const usingNewApp = appSel === NEW_APP
+  // Announce is one-row-per-App, so a used app is not offerable: the default skips it
+  // and its picker option is disabled — otherwise it pre-selects a guaranteed 409.
+  const isUsed = (a: App) => a.references.announce > 0
+  const firstFree = appsOfKind.find((a) => !isUsed(a))
+  const effectiveAppSel = appSel ?? (firstFree ? String(firstFree.id) : NEW_APP)
+  const usingNewApp = effectiveAppSel === NEW_APP
+  const configuredApps = (apps.data ?? []).filter((a) => a.kind === "qui" || a.kind === "crossseed-v6")
 
   return (
     <form
@@ -205,7 +214,7 @@ function AnnounceForm({ existing, pending, error, onCreate, onUpdate }: {
         } else {
           onCreate({
             name, kind,
-            ...(usingNewApp ? { baseUrl, apiKey, harbrrUrl } : { appId: Number(appSel) }),
+            ...(usingNewApp ? { baseUrl, apiKey, harbrrUrl } : { appId: Number(effectiveAppSel) }),
           })
         }
       }}
@@ -217,6 +226,19 @@ function AnnounceForm({ existing, pending, error, onCreate, onUpdate }: {
       {message && (
         <p className="rounded-md border border-bad/40 bg-bad/10 px-3 py-2 text-[13px] text-bad">{message}</p>
       )}
+
+      {mode === "create" && (
+        <ConfiguredAppsBlock
+          apps={configuredApps}
+          isUsed={isUsed}
+          onPick={(a: App) => {
+            setKind(a.kind as AnnounceKind)
+            setAppSel(String(a.id))
+            if (name === "") setName(a.name)
+          }}
+        />
+      )}
+
       <div className="grid grid-cols-2 gap-3">
         <span className="flex flex-col gap-1.5">
           <Label htmlFor="ann-name">Name</Label>
@@ -230,11 +252,11 @@ function AnnounceForm({ existing, pending, error, onCreate, onUpdate }: {
             disabled={mode === "edit"}
             onChange={(e) => {
               setKind(e.target.value as AnnounceKind)
-              setAppSel(NEW_APP) // the app list for the new kind is different; re-pick.
+              setAppSel(null) // the app list for the new kind is different; re-default.
             }}
           >
-            <option value="qui">qui</option>
-            <option value="crossseed-v6">cross-seed v6</option>
+            <option value="qui">{kindLabel("qui")}</option>
+            <option value="crossseed-v6">{kindLabel("crossseed-v6")}</option>
           </NativeSelect>
         </span>
       </div>
@@ -242,11 +264,19 @@ function AnnounceForm({ existing, pending, error, onCreate, onUpdate }: {
       {mode === "create" && (
         <span className="flex flex-col gap-1.5">
           <Label htmlFor="ann-app">App</Label>
-          <NativeSelect id="ann-app" value={appSel} onChange={(e) => setAppSel(e.target.value)}>
+          <NativeSelect id="ann-app" value={effectiveAppSel} onChange={(e) => setAppSel(e.target.value)}>
+            {appsOfKind.map((a) => (
+              <option key={a.id} value={a.id} disabled={isUsed(a)}>
+                {a.name} ({hostname(a.baseUrl)}){isUsed(a) ? " — already added" : ""}
+              </option>
+            ))}
             <option value={NEW_APP}>New app…</option>
-            {appsOfKind.map((a) => <option key={a.id} value={a.id}>{a.name} ({hostname(a.baseUrl)})</option>)}
           </NativeSelect>
         </span>
+      )}
+
+      {mode === "create" && !usingNewApp && (
+        <ReusingAppHint app={appsOfKind.find((a) => String(a.id) === effectiveAppSel)} />
       )}
 
       {mode === "edit" && <ManagedByAppHint appId={existing?.appId} />}

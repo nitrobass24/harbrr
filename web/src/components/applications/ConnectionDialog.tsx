@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { ConfiguredAppsBlock, ReusingAppHint } from "@/components/applications/ConfiguredApps"
 import { ManagedByAppHint } from "@/components/applications/ManagedByAppHint"
 import { Button } from "@/components/ui/button"
 import {
@@ -15,8 +16,8 @@ import { NativeSelect } from "@/components/ui/native-select"
 import { useSyncProfiles } from "@/hooks/useAppConnections"
 import { useApps } from "@/hooks/useApps"
 import { defaultHarbrrUrl } from "@/lib/base-url"
-import { hostname } from "@/lib/format"
-import type { AppConnection, ConnectionKind, CreateConnection, UpdateConnection } from "@/lib/api"
+import { hostname, kindLabel } from "@/lib/format"
+import type { App, AppConnection, ConnectionKind, CreateConnection, UpdateConnection } from "@/lib/api"
 
 // Sentinel select value for "no existing App picked, use the inline fields below" — the
 // create-time fallback when no App of this kind exists yet, or the operator wants a
@@ -75,9 +76,12 @@ function ConnectionForm({ existing, pending, error, onCreate, onUpdate }: {
 }) {
   const [name, setName] = useState(existing?.name ?? "")
   const [kind, setKind] = useState<ConnectionKind>(existing?.kind ?? "sonarr")
-  // Create-only: which App backs this connection. NEW_APP reveals the inline
-  // baseUrl/apiKey/harbrrUrl fields below; anything else reuses that App's identity.
-  const [appSel, setAppSel] = useState<string>(NEW_APP)
+  // Create-only: which App backs this connection. `null` means the operator hasn't
+  // chosen yet, so the picker defaults to the first App of this kind once apps arrive
+  // (effectiveAppSel below) rather than forcing "New app…" while the list is still
+  // loading. NEW_APP reveals the inline baseUrl/apiKey/harbrrUrl fields; anything else
+  // reuses that App's identity.
+  const [appSel, setAppSel] = useState<string | null>(null)
   const [baseUrl, setBaseUrl] = useState("")
   const [apiKey, setApiKey] = useState("")
   const [harbrrUrl, setHarbrrUrl] = useState(defaultHarbrrUrl())
@@ -93,7 +97,13 @@ function ConnectionForm({ existing, pending, error, onCreate, onUpdate }: {
   // Profiles never apply to qui — it has no per-content-type category concept.
   const showProfilePicker = kind !== "qui"
   const appsOfKind = (apps.data ?? []).filter((a) => a.kind === kind)
-  const usingNewApp = appSel === NEW_APP
+  // App-sync is one-row-per-App, so a used app is not offerable: the default skips it
+  // and its picker option is disabled — otherwise it pre-selects a guaranteed 409.
+  const isUsed = (a: App) => a.references.appConnections > 0
+  const firstFree = appsOfKind.find((a) => !isUsed(a))
+  const effectiveAppSel = appSel ?? (firstFree ? String(firstFree.id) : NEW_APP)
+  const usingNewApp = effectiveAppSel === NEW_APP
+  const configuredApps = (apps.data ?? []).filter((a) => (KINDS as string[]).includes(a.kind))
 
   return (
     <form
@@ -116,7 +126,7 @@ function ConnectionForm({ existing, pending, error, onCreate, onUpdate }: {
             name, kind, syncLevel, indexScope,
             freeleechMode: freeleechMode || undefined,
             ...(showProfilePicker && syncProfileId !== null ? { syncProfileId } : {}),
-            ...(usingNewApp ? { baseUrl, apiKey, harbrrUrl } : { appId: Number(appSel) }),
+            ...(usingNewApp ? { baseUrl, apiKey, harbrrUrl } : { appId: Number(effectiveAppSel) }),
           })
         }
       }}
@@ -132,6 +142,18 @@ function ConnectionForm({ existing, pending, error, onCreate, onUpdate }: {
         <p className="rounded-md border border-bad/40 bg-bad/10 px-3 py-2 text-[13px] text-bad">{message}</p>
       )}
 
+      {mode === "create" && (
+        <ConfiguredAppsBlock
+          apps={configuredApps}
+          isUsed={isUsed}
+          onPick={(a: App) => {
+            setKind(a.kind as ConnectionKind)
+            setAppSel(String(a.id))
+            if (name === "") setName(a.name)
+          }}
+        />
+      )}
+
       <div className="grid grid-cols-2 gap-3">
         <FieldWrap id="conn-name" label="Name">
           <Input id="conn-name" value={name} onChange={(e) => setName(e.target.value)} />
@@ -143,21 +165,29 @@ function ConnectionForm({ existing, pending, error, onCreate, onUpdate }: {
             disabled={mode === "edit"}
             onChange={(e) => {
               setKind(e.target.value as ConnectionKind)
-              setAppSel(NEW_APP) // the app list for the new kind is different; re-pick.
+              setAppSel(null) // the app list for the new kind is different; re-default.
             }}
           >
-            {KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
+            {KINDS.map((k) => <option key={k} value={k}>{kindLabel(k)}</option>)}
           </NativeSelect>
         </FieldWrap>
       </div>
 
       {mode === "create" && (
         <FieldWrap id="conn-app" label="App">
-          <NativeSelect id="conn-app" value={appSel} onChange={(e) => setAppSel(e.target.value)}>
+          <NativeSelect id="conn-app" value={effectiveAppSel} onChange={(e) => setAppSel(e.target.value)}>
+            {appsOfKind.map((a) => (
+              <option key={a.id} value={a.id} disabled={isUsed(a)}>
+                {a.name} ({hostname(a.baseUrl)}){isUsed(a) ? " — already added" : ""}
+              </option>
+            ))}
             <option value={NEW_APP}>New app…</option>
-            {appsOfKind.map((a) => <option key={a.id} value={a.id}>{a.name} ({hostname(a.baseUrl)})</option>)}
           </NativeSelect>
         </FieldWrap>
+      )}
+
+      {mode === "create" && !usingNewApp && (
+        <ReusingAppHint app={appsOfKind.find((a) => String(a.id) === effectiveAppSel)} />
       )}
 
       {mode === "edit" && <ManagedByAppHint appId={existing?.appId} />}
