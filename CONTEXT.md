@@ -93,3 +93,10 @@ stays the term for appsync/announce/notify specifically; **encrypted-secret reso
 the broader umbrella covering all five.
 _Avoid_: entity (too generic), integration (a different word already used for the app-sync
 targets themselves)
+
+**Bind**:
+Resolving a surface row's App into usable form — the App plus its decrypted credential —
+for driver construction (`apps.Service.Bind`). The display half of the same App-identity
+projection is Enrich (`apps.EnrichList`/`apps.EnrichOne`): list tolerates a dangling App
+reference (keeps the row's stored fields), get errors.
+_Avoid_: hydrate, resolve (that is Ref → App adoption, `apps.Service.Resolve`)

@@ -320,6 +320,15 @@ func (s *Service) SetEnabled(ctx context.Context, id int64, enabled bool) error 
 	return nil
 }
 
+// connAppID and connApplyApp are the App-projection accessors apps.EnrichList/EnrichOne
+// need: which field on the row holds the App reference, and which fields the App
+// projects onto it.
+func connAppID(c *domain.AppConnection) *int64 { return c.AppID }
+
+func connApplyApp(c *domain.AppConnection, a domain.App) {
+	c.BaseURL, c.HarbrrURL = a.BaseURL, a.HarbrrURL
+}
+
 // ListConnections / GetConnection / ConnectionIndexers expose the persisted state for
 // the API layer, each connection's base URL + harbrr URL enriched from its App (the
 // single read path — the App is the sole store for these fields).
@@ -328,16 +337,8 @@ func (s *Service) ListConnections(ctx context.Context) ([]domain.AppConnection, 
 	if err != nil {
 		return nil, fmt.Errorf("appsync: list connections: %w", err)
 	}
-	index, err := s.apps.Index(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("appsync: list apps: %w", err)
-	}
-	for i := range list {
-		if list[i].AppID != nil {
-			if app, ok := index[*list[i].AppID]; ok {
-				list[i].BaseURL, list[i].HarbrrURL = app.BaseURL, app.HarbrrURL
-			}
-		}
+	if err := apps.EnrichList(ctx, s.apps, list, connAppID, connApplyApp); err != nil {
+		return nil, fmt.Errorf("appsync: enrich connections: %w", err)
 	}
 	return list, nil
 }
@@ -347,12 +348,8 @@ func (s *Service) GetConnection(ctx context.Context, id int64) (domain.AppConnec
 	if err != nil {
 		return domain.AppConnection{}, fmt.Errorf("appsync: get connection: %w", err)
 	}
-	if conn.AppID != nil {
-		app, err := s.apps.Get(ctx, *conn.AppID)
-		if err != nil {
-			return domain.AppConnection{}, fmt.Errorf("appsync: get app: %w", err)
-		}
-		conn.BaseURL, conn.HarbrrURL = app.BaseURL, app.HarbrrURL
+	if err := apps.EnrichOne(ctx, s.apps, &conn, connAppID, connApplyApp); err != nil {
+		return domain.AppConnection{}, fmt.Errorf("appsync: enrich connection: %w", err)
 	}
 	return conn, nil
 }
@@ -382,28 +379,15 @@ func (s *Service) TestConnection(ctx context.Context, id int64) error {
 	return nil
 }
 
-// appFor loads the App a connection references (the sole identity/credential source).
-// AppID is never nil here: migration 0021 refuses to apply while any non-hostless row
-// still has a NULL app_id, so every app-sync connection this service can read is folded.
-func (s *Service) appFor(ctx context.Context, conn domain.AppConnection) (domain.App, error) {
-	app, err := s.apps.Get(ctx, *conn.AppID)
-	if err != nil {
-		return domain.App{}, fmt.Errorf("appsync: get app: %w", err)
-	}
-	return app, nil
-}
-
 // driver loads the connection's App for the base URL + decrypted app credential and
 // builds its Target, returning the harbrr feed key separately (it is pushed into each
-// indexer body, not used to call the app).
+// indexer body, not used to call the app). AppID is never nil here: migration 0021
+// refuses to apply while any non-hostless row still has a NULL app_id, so every
+// app-sync connection this service can read is folded.
 func (s *Service) driver(ctx context.Context, conn domain.AppConnection) (Target, string, error) {
-	app, err := s.appFor(ctx, conn)
+	app, appKey, err := s.apps.Bind(ctx, *conn.AppID)
 	if err != nil {
-		return nil, "", err
-	}
-	appKey, err := s.apps.DecryptKey(app)
-	if err != nil {
-		return nil, "", fmt.Errorf("appsync: decrypt app key: %w", err)
+		return nil, "", fmt.Errorf("appsync: bind app: %w", err)
 	}
 	harbrrKey, err := s.keyring.Decrypt(conn.ID, secretHarbrr, conn.HarbrrAPIKeyEncrypted)
 	if err != nil {

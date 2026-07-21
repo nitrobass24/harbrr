@@ -158,6 +158,13 @@ func (s *Service) Update(ctx context.Context, id int64, p UpdateParams) error {
 	})
 }
 
+// dcAppID and dcApplyApp are the App-projection accessors apps.EnrichList/EnrichOne
+// need: which field on the row holds the App reference, and which fields the App
+// projects onto it.
+func dcAppID(c *domain.DownloadClient) *int64 { return c.AppID }
+
+func dcApplyApp(c *domain.DownloadClient, a domain.App) { c.Host, c.Username = a.BaseURL, a.Username }
+
 // List returns all clients, each networked one's host/username enriched from its App
 // (a single App lookup shared across the list). Blackhole rows keep blank host.
 func (s *Service) List(ctx context.Context) ([]domain.DownloadClient, error) {
@@ -165,16 +172,8 @@ func (s *Service) List(ctx context.Context) ([]domain.DownloadClient, error) {
 	if err != nil {
 		return nil, fmt.Errorf("download: list: %w", err)
 	}
-	index, err := s.apps.Index(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("download: list apps: %w", err)
-	}
-	for i := range list {
-		if list[i].AppID != nil {
-			if app, ok := index[*list[i].AppID]; ok {
-				list[i].Host, list[i].Username = app.BaseURL, app.Username
-			}
-		}
+	if err := apps.EnrichList(ctx, s.apps, list, dcAppID, dcApplyApp); err != nil {
+		return nil, fmt.Errorf("download: enrich clients: %w", err)
 	}
 	return list, nil
 }
@@ -185,12 +184,8 @@ func (s *Service) Get(ctx context.Context, id int64) (domain.DownloadClient, err
 	if err != nil {
 		return domain.DownloadClient{}, fmt.Errorf("download: get: %w", err)
 	}
-	if c.AppID != nil {
-		app, err := s.apps.Get(ctx, *c.AppID)
-		if err != nil {
-			return domain.DownloadClient{}, fmt.Errorf("download: get app: %w", err)
-		}
-		c.Host, c.Username = app.BaseURL, app.Username
+	if err := apps.EnrichOne(ctx, s.apps, &c, dcAppID, dcApplyApp); err != nil {
+		return domain.DownloadClient{}, fmt.Errorf("download: enrich client: %w", err)
 	}
 	return c, nil
 }
@@ -241,13 +236,9 @@ func (s *Service) buildDriver(ctx context.Context, c domain.DownloadClient) (Dri
 	if hostless(c.Kind) {
 		return newDriver(c, "", s.client)
 	}
-	app, err := s.apps.Get(ctx, *c.AppID)
+	app, secret, err := s.apps.Bind(ctx, *c.AppID)
 	if err != nil {
-		return nil, fmt.Errorf("download: get app: %w", err)
-	}
-	secret, err := s.apps.DecryptKey(app)
-	if err != nil {
-		return nil, fmt.Errorf("download: decrypt credential: %w", err)
+		return nil, fmt.Errorf("download: bind app: %w", err)
 	}
 	c.Host, c.Username = app.BaseURL, app.Username
 	return newDriver(c, secret, s.client)
