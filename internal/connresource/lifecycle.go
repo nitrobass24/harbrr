@@ -142,15 +142,7 @@ func (l *Lifecycle[T]) insertSealed(ctx context.Context, spec CreateSpec[T], ent
 
 // sealSecrets encrypts each secret under id, in order.
 func (l *Lifecycle[T]) sealSecrets(id int64, plain []Secret) ([]string, string, error) {
-	encrypted := make([]string, len(plain))
-	for i, sec := range plain {
-		enc, err := l.keyring.Encrypt(id, sec.Discriminator, sec.Plaintext)
-		if err != nil {
-			return nil, "", fmt.Errorf("connresource: encrypt %s: %w", sec.Discriminator, err)
-		}
-		encrypted[i] = enc
-	}
-	return encrypted, l.keyring.KeyID(), nil
+	return Seal(l.keyring, id, plain)
 }
 
 // revokeOrphan revokes a just-minted key after a failed create, fail-closed: a

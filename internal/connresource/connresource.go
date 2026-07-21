@@ -31,8 +31,10 @@ package connresource
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/autobrr/harbrr/internal/domain"
+	"github.com/autobrr/harbrr/internal/secrets"
 )
 
 // KeyMinter mints a dedicated harbrr API key for a connection resource and
@@ -51,4 +53,19 @@ type KeyMinter interface {
 type Secret struct {
 	Discriminator string
 	Plaintext     string
+}
+
+// Seal encrypts each secret under (id, discriminator) in order and returns the
+// ciphertexts (in plain's order) plus the keyring's key id — the one home for
+// the per-secret seal loop that Lifecycle.Create and backup/restore both run.
+func Seal(kr *secrets.Keyring, id int64, plain []Secret) ([]string, string, error) {
+	encrypted := make([]string, len(plain))
+	for i, sec := range plain {
+		enc, err := kr.Encrypt(id, sec.Discriminator, sec.Plaintext)
+		if err != nil {
+			return nil, "", fmt.Errorf("connresource: encrypt %s: %w", sec.Discriminator, err)
+		}
+		encrypted[i] = enc
+	}
+	return encrypted, kr.KeyID(), nil
 }
