@@ -13,6 +13,7 @@ import (
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/core"
 	"github.com/autobrr/harbrr/internal/secrets"
 	tzn "github.com/autobrr/harbrr/internal/torznab"
@@ -241,7 +242,7 @@ func ServeGrab(w http.ResponseWriter, r *http.Request, idx core.Indexer, dlToken
 	result, err := idx.Grab(r.Context(), link)
 	if err != nil {
 		logInternalError(log, "grab", idx.Info().ID, err)
-		errw(w, http.StatusInternalServerError, internalErrorMsg)
+		errw(w, http.StatusInternalServerError, internalErrorDescription(err))
 		return
 	}
 	if result.Redirect != "" {
@@ -540,12 +541,25 @@ func (h *handler) writeInternalError(w http.ResponseWriter, stage, indexerID str
 // writeInternalErrorLog is the logger-explicit form of writeInternalError.
 func writeInternalErrorLog(w http.ResponseWriter, log zerolog.Logger, stage, indexerID string, err error) {
 	logInternalError(log, stage, indexerID, err)
-	writeError(w, http.StatusInternalServerError, codeUnknownError, internalErrorMsg)
+	writeError(w, http.StatusInternalServerError, codeUnknownError, internalErrorDescription(err))
 }
 
 // internalErrorMsg is the fixed client-facing text for any internal failure; the raw
 // error only ever reaches the (redacted) log.
 const internalErrorMsg = "internal error processing the request"
+
+// internalErrorDescription is the 900/500 document's description: search.ErrGatewayStatus's
+// fixed, secret-free sentinel text when a reverse proxy/CDN reported the tracker's origin
+// unreachable (autobrr/harbrr#307 — the Torznab-feed sibling of the management API's 502
+// upstream_unreachable, api/encode.go), so a Torznab consumer's log can act on the failure
+// without querying the management API; otherwise the generic internalErrorMsg. The status
+// (500) and code (900) never change — only this description does.
+func internalErrorDescription(err error) string {
+	if errors.Is(err, search.ErrGatewayStatus) {
+		return search.ErrGatewayStatus.Error()
+	}
+	return internalErrorMsg
+}
 
 // logInternalError records a failed request with the error redacted, response-free —
 // ServeGrab logs here and answers through its caller-supplied ErrorWriter.

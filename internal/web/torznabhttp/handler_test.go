@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -783,21 +784,50 @@ func TestHandlerNoResultsEmptyFeed(t *testing.T) {
 	}
 }
 
+// TestHandlerInternalErrorIsRedacted covers the search error path's 900/500
+// document: status and code never change, but a wrapped search.ErrGatewayStatus
+// surfaces its fixed, secret-free sentinel text as the description instead of the
+// generic internalErrorMsg (autobrr/harbrr#307), so a Torznab consumer's log can
+// act on a gateway-reported outage without querying the management API.
 func TestHandlerInternalErrorIsRedacted(t *testing.T) {
 	t.Parallel()
-	idx := demoIndexer(t)
-	idx.searchErr = errors.New("cardigann: search failed for tracker with passkey=topsecret12345")
-	rec := do(t, newTestHandler(t, idx), "t=search&q=x")
-	if rec.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want 500", rec.Code)
+	tests := []struct {
+		name    string
+		err     error
+		wantMsg string
+	}{
+		{
+			name:    "unrelated error stays generic",
+			err:     errors.New("cardigann: search failed for tracker with passkey=topsecret12345"),
+			wantMsg: internalErrorMsg,
+		},
+		{
+			name:    "wrapped gateway status surfaces the sentinel",
+			err:     fmt.Errorf("tracker.test GET: %w", search.ErrGatewayStatus),
+			wantMsg: search.ErrGatewayStatus.Error(),
+		},
 	}
-	body := rec.Body.String()
-	if !strings.Contains(body, `<error code="900"`) {
-		t.Errorf("want error 900, got:\n%s", body)
-	}
-	// The served body must never echo the raw error (which could embed a secret).
-	if strings.Contains(body, "topsecret12345") || strings.Contains(body, "passkey") {
-		t.Errorf("error body leaked the underlying error:\n%s", body)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			idx := demoIndexer(t)
+			idx.searchErr = tt.err
+			rec := do(t, newTestHandler(t, idx), "t=search&q=x")
+			if rec.Code != http.StatusInternalServerError {
+				t.Errorf("status = %d, want 500", rec.Code)
+			}
+			body := rec.Body.String()
+			if !strings.Contains(body, `<error code="900"`) {
+				t.Errorf("want error 900, got:\n%s", body)
+			}
+			if !strings.Contains(body, tt.wantMsg) {
+				t.Errorf("want description %q in:\n%s", tt.wantMsg, body)
+			}
+			// The served body must never echo the raw error (which could embed a secret).
+			if strings.Contains(body, "topsecret12345") || strings.Contains(body, "passkey") {
+				t.Errorf("error body leaked the underlying error:\n%s", body)
+			}
+		})
 	}
 }
 
@@ -929,6 +959,39 @@ func TestServeGrab(t *testing.T) {
 		// demo's ID is "demo"; a token bound to "other" fails the AAD check, not replayable.
 		if rec := serve(t, demo, kr, tokenFor(t, "other", "https://demo.test/x")); rec.Code != http.StatusBadRequest {
 			t.Errorf("cross-indexer token: status = %d, want 400", rec.Code)
+		}
+	})
+
+	// A Grab failure is the same 900/500 shape as the search path (#307): status and
+	// message-passing to the caller's ErrorWriter never change, but a wrapped
+	// search.ErrGatewayStatus surfaces its sentinel text instead of the generic
+	// internalErrorMsg.
+	t.Run("grab failure surfaces the gateway sentinel", func(t *testing.T) {
+		t.Parallel()
+		tests := []struct {
+			name    string
+			err     error
+			wantMsg string
+		}{
+			{"unrelated error stays generic", errors.New("grab failed: passkey=topsecret12345"), internalErrorMsg},
+			{"wrapped gateway status surfaces the sentinel", fmt.Errorf("tracker.test GET: %w", search.ErrGatewayStatus), search.ErrGatewayStatus.Error()},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+				idx := &fakeIndexer{info: core.IndexerInfo{ID: "demo"}, grabErr: tt.err}
+				req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/download/tok", nil)
+				rec := httptest.NewRecorder()
+				var gotStatus int
+				var gotMsg string
+				ServeGrab(rec, req, idx, kr, zerolog.Nop(), tokenFor(t, "demo", "https://demo.test/x"), func(w http.ResponseWriter, status int, msg string) {
+					gotStatus, gotMsg = status, msg
+					w.WriteHeader(status)
+				})
+				if gotStatus != http.StatusInternalServerError || gotMsg != tt.wantMsg {
+					t.Errorf("ErrorWriter got (%d, %q), want (500, %q)", gotStatus, gotMsg, tt.wantMsg)
+				}
+			})
 		}
 	})
 
