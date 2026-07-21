@@ -117,6 +117,16 @@ Common doc updates:
 
 Docs must not advertise planned work as shipped.
 
+## Rule 8: legacy-data removal ships a refusing guard
+
+Removing a fold window's legacy storage (columns, tables, boot backfills) requires
+that the drop migration **refuses to apply** (whole-transaction rollback) while any
+row the fold never processed still exists — never assume every deployment folded.
+
+The refusal message is part of the design, not an afterthought: it must name the
+release to boot first so an operator who version-skips lands on instructions, never
+on data loss. Precedents: migrations `0021` (#269) and `0022` (#294).
+
 ## Review checklist
 
 Use this checklist before approving a structural PR:
