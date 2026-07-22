@@ -244,3 +244,40 @@ func TestNewSenderUnknownType(t *testing.T) {
 		t.Fatal("newSender with an unknown type returned nil error")
 	}
 }
+
+// TestSendersMessageSync asserts validateType's human-facing rejection message names
+// every senders key, so adding a type to the map without updating the message fails
+// the build instead of silently drifting.
+func TestSendersMessageSync(t *testing.T) {
+	t.Parallel()
+	err := validateType("carrier-pigeon")
+	if err == nil {
+		t.Fatal("validateType with an unknown type returned nil error")
+	}
+	for typ := range senders {
+		if !strings.Contains(err.Error(), typ) {
+			t.Errorf("rejection message %q does not name registered type %q", err.Error(), typ)
+		}
+	}
+}
+
+// TestSendersRegisteredTypesValidateAndConstruct proves every senders key both passes
+// validateType and constructs a non-nil Sender via newSender.
+func TestSendersRegisteredTypesValidateAndConstruct(t *testing.T) {
+	t.Parallel()
+	for typ := range senders {
+		t.Run(typ, func(t *testing.T) {
+			t.Parallel()
+			if err := validateType(typ); err != nil {
+				t.Errorf("validateType(%q) = %v, want nil", typ, err)
+			}
+			s, err := newSender(typ, "http://x.invalid", nil)
+			if err != nil {
+				t.Fatalf("newSender(%q): %v", typ, err)
+			}
+			if s == nil {
+				t.Errorf("newSender(%q) returned a nil Sender", typ)
+			}
+		})
+	}
+}

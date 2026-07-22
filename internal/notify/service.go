@@ -351,14 +351,13 @@ func validateCreate(p CreateNotificationParams) error {
 	return validateURL(p.URL)
 }
 
-// validateType rejects an unknown sender type up front (the same set newSender builds).
+// validateType rejects an unknown sender type up front — a key-existence check against
+// senders, the same map newSender builds from.
 func validateType(typ string) error {
-	switch typ {
-	case domain.NotifyTypeWebhook, domain.NotifyTypeDiscord:
+	if _, ok := senders[typ]; ok {
 		return nil
-	default:
-		return fmt.Errorf("%w: type must be webhook or discord (got %q)", domain.ErrInvalid, typ)
 	}
+	return fmt.Errorf("%w: type must be webhook or discord (got %q)", domain.ErrInvalid, typ)
 }
 
 // validateURL requires an absolute http(s) URL with a host, so a malformed/relative

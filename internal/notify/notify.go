@@ -54,18 +54,23 @@ type Sender interface {
 	Send(ctx context.Context, e Event) error
 }
 
+// senders is the single authority for the notification type set: construction AND
+// validity both read it. validateType's human-facing message must name every key —
+// TestSendersMessageSync enforces that.
+var senders = map[string]func(url string, client *http.Client) Sender{
+	domain.NotifyTypeWebhook: func(u string, c *http.Client) Sender { return newWebhook(u, c) },
+	domain.NotifyTypeDiscord: func(u string, c *http.Client) Sender { return newDiscord(u, c) },
+}
+
 // newSender builds the per-type Sender for a decrypted destination URL. It is the
 // single factory both dispatch and the test action route through.
 func newSender(typ, url string, client *http.Client) (Sender, error) {
 	if client == nil {
 		client = defaultHTTPClient()
 	}
-	switch typ {
-	case domain.NotifyTypeWebhook:
-		return newWebhook(url, client), nil
-	case domain.NotifyTypeDiscord:
-		return newDiscord(url, client), nil
-	default:
+	build, ok := senders[typ]
+	if !ok {
 		return nil, fmt.Errorf("%w: unknown notification type %q", domain.ErrInvalid, typ)
 	}
+	return build(url, client), nil
 }
