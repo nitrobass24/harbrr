@@ -10,7 +10,7 @@ Cardigann can't express — and how far each is validated.
   account on that tracker). See **[Test status](test-status.md)** for the evidence behind this
   column and the auth/fetch patterns proven live.
 
-**597 trackers** total: 554 Cardigann corpus (all built) · 25 native drivers built · 18 native
+**599 trackers** total: 556 Cardigann corpus (all built) · 25 native drivers built · 18 native
 drivers planned. To configure one, see **[Adding an indexer](guides/add-indexer.md)**.
 
 ## Native drivers
@@ -74,7 +74,7 @@ Native drivers we have issues for but haven't built. 👍 or comment on the issu
 
 Served through the shared engine from the vendored Jackett snapshot — all built. Live-tested where an operator instance covers them.
 
-### Private (407)
+### Private (409)
 
 | Tracker | Built | Live-tested |
 |---|:--:|:--:|
@@ -166,6 +166,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Das Unerwartete | ✅ | ⬜ |
 | Das Unerwartete (API) | ✅ | ⬜ |
 | DataScene (API) | ✅ | ⬜ |
+| DaXiangJiao (大香蕉) | ✅ | ⬜ |
 | Depth Studio | ✅ | ⬜ |
 | DesiTorrents (API) | ✅ | ⬜ |
 | Diablo Torrent | ✅ | ⬜ |
@@ -193,7 +194,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | FinElite | ✅ | ⬜ |
 | Flood | ✅ | ⬜ |
 | Free Farm (自由农场) | ✅ | ⬜ |
-| FunkyTorrents | ✅ | ⬜ |
 | funZone (API) | ✅ | ⬜ |
 | FutureTorrent | ✅ | ⬜ |
 | Fuzer | ✅ | ⬜ |
@@ -337,7 +337,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Podzemlje | ✅ | ⬜ |
 | Polish Torrent (API) | ✅ | ⬜ |
 | PolishTracker (API) | ✅ | ⬜ |
-| Pornbay | ✅ | ⬜ |
 | Portugas (API) | ✅ | ⬜ |
 | ProAudioTorrents | ✅ | ⬜ |
 | PT GTK | ✅ | ⬜ |
@@ -361,6 +360,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | PuntoTorrent | ✅ | ⬜ |
 | PuTao (葡萄) | ✅ | ⬜ |
 | PWTorrents | ✅ | ⬜ |
+| PWTorrents2FA | ✅ | ⬜ |
 | Qingwa (青蛙) | ✅ | ⬜ |
 | R3V WTF! | ✅ | ⬜ |
 | Racing4Everyone (API) | ✅ | ✅ |
@@ -478,7 +478,9 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | xTorrenty | ✅ | ⬜ |
 | Xtreme Bytes | ✅ | ⬜ |
 | XWT-Classics | ✅ | ⬜ |
+| XWT-Classics2FA | ✅ | ⬜ |
 | XWtorrents | ✅ | ⬜ |
+| XWtorrents2FA | ✅ | ⬜ |
 | YggReborn (API) | ✅ | ⬜ |
 | YUSCENE (API) | ✅ | ✅ |
 | Zappateers | ✅ | ⬜ |
@@ -486,7 +488,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | ZmPT (织梦) | ✅ | ⬜ |
 | ZRPT (自然) | ✅ | ⬜ |
 
-### Semi-private (62)
+### Semi-private (61)
 
 | Tracker | Built | Live-tested |
 |---|:--:|:--:|
@@ -512,7 +514,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | HDGalaKtik | ✅ | ⬜ |
 | HellTorrents | ✅ | ⬜ |
 | HunTorrent | ✅ | ⬜ |
-| Hydracker (API) | ✅ | ⬜ |
 | Il Corsaro Blu | ✅ | ⬜ |
 | ilDraGoNeRo | ✅ | ⬜ |
 | Kinorun | ✅ | ⬜ |
@@ -553,7 +554,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | UzTracker | ✅ | ⬜ |
 | Ztracker | ✅ | ⬜ |
 
-### Public (85)
+### Public (86)
 
 | Tracker | Built | Live-tested |
 |---|:--:|:--:|
@@ -561,6 +562,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | 1337x | ✅ | ⬜ |
 | 52BT | ✅ | ⬜ |
 | ACG.RIP | ✅ | ⬜ |
+| Anibt | ✅ | ⬜ |
 | AniRena | ✅ | ⬜ |
 | AniSource | ✅ | ⬜ |
 | Bangumi Moe | ✅ | ⬜ |
