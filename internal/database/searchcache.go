@@ -117,6 +117,17 @@ func (SearchCacheStore) Store(ctx context.Context, q dbinterface.Execer, e Searc
 	return nil
 }
 
+// Delete removes one entry by key, if present. Backs storeBestEffort's compensating
+// delete when a write-back loses the race with InvalidateByInstance (the post-store
+// epoch re-check); deleting an absent key is not an error.
+func (SearchCacheStore) Delete(ctx context.Context, q dbinterface.Execer, cacheKey string) error {
+	_, err := q.ExecContext(ctx, q.Rebind(`DELETE FROM search_cache WHERE cache_key = ?`), cacheKey)
+	if err != nil {
+		return fmt.Errorf("database: delete search cache %q: %w", cacheKey, err)
+	}
+	return nil
+}
+
 // Touch records a served hit: it bumps last_used_at and increments hit_count. It
 // is the sole writer of hit_count, so the counter survives refresh write-backs.
 func (SearchCacheStore) Touch(ctx context.Context, q dbinterface.Execer, cacheKey string, now time.Time) error {

@@ -332,19 +332,15 @@ func (r *Resolver) build(ctx context.Context, slug string) (core.Indexer, error)
 	}
 	if r.searchCache != nil {
 		a.cache = r.searchCache
-		// Snapshot the instance's invalidation generation now, at build time — the same
-		// capture wrap() used to take. storeBestEffort drops any write-back from a
-		// superseded generation, and capturing here (not per fetch) also catches a purge
-		// that lands between this resolve and a later SWR trigger (U8R-F4).
-		a.builtEpoch = r.searchCache.instanceEpoch(a.instanceID)
 	}
 	return a, nil
 }
 
-// buildAdapter loads the instance + definition, decrypts its settings, and
-// constructs the engine-shaped core (Cardigann engine OR native family driver)
-// wrapped in the shared adapter. It returns the adapter with cache left nil — Test
-// uses it so a credential probe never consults or warms the cache.
+// buildAdapter snapshots the instance's invalidation epoch, loads the instance +
+// definition, decrypts its settings, and constructs the engine-shaped core
+// (Cardigann engine OR native family driver) wrapped in the shared adapter. It
+// returns the adapter with cache left nil — Test uses it so a credential probe
+// never consults or warms the cache (the epoch snapshot rides along unused).
 func (r *Resolver) buildAdapter(ctx context.Context, slug string) (*indexerAdapter, error) {
 	inst, err := r.instances.GetBySlug(ctx, r.db, slug)
 	if err != nil {
@@ -352,6 +348,24 @@ func (r *Resolver) buildAdapter(ctx context.Context, slug string) (*indexerAdapt
 	}
 	if !inst.Enabled {
 		return nil, errDisabled
+	}
+	// Snapshot the instance's invalidation epoch NOW — before the settings read below —
+	// not after the whole build completes (the prior ordering). invalidate's INVARIANT
+	// (below) guarantees a commit happens-before its epoch bump, so capturing here means
+	// the epoch can never look newer than what the settings read below is entitled to
+	// see: an invalidate landing after this snapshot leaves builtEpoch stale, so
+	// storeBestEffort correctly drops every write-back from this adapter (conservative —
+	// the next resolve rebuilds fresh per U8R-F3); an invalidate landing before it
+	// already committed its settings, so the read below sees them fresh. The old
+	// ordering (snapshot after the settings read, and after the rest of the build) let
+	// an invalidate land in between and capture a BUMPED epoch over STALE settings — a
+	// write-back from that adapter would then wrongly pass storeBestEffort's gate and
+	// resurrect the pre-invalidation config's results.
+	// Zero when caching is off; Test's buildAdapter path leaves a.cache nil, so an
+	// unused epoch there is harmless.
+	var builtEpoch uint64
+	if r.searchCache != nil {
+		builtEpoch = r.searchCache.instanceEpoch(inst.ID)
 	}
 	def, factory, err := resolveDefinition(r.native, r.loader, inst.DefinitionID)
 	if err != nil {
@@ -411,6 +425,7 @@ func (r *Resolver) buildAdapter(ctx context.Context, slug string) (*indexerAdapt
 		inner:         inner,
 		instanceID:    inst.ID,
 		cfg:           cfg,
+		builtEpoch:    builtEpoch,
 		freeleechOnly: freeleechOnly,
 		db:            r.db,
 		health:        r.health,

@@ -103,11 +103,13 @@ type SearchCache struct {
 
 	// epochMu guards instanceEpochs, the per-instance invalidation generation. A
 	// config-mutation purge (InvalidateByInstance) bumps the instance's epoch under this
-	// lock; Registry.build snapshots the current value into the adapter's builtEpoch at
-	// engine-build time, and storeBestEffort drops any write-back whose captured epoch is
-	// stale. This closes the window where a store from an OLD engine/config (a detached
-	// SWR refresh or an in-flight miss holding an old adapter) lands AFTER the purge
-	// and resurrects a stale-config entry served until TTL (U8R-F4).
+	// lock; buildAdapter snapshots the current value into the adapter's builtEpoch
+	// before it reads the instance's settings, and storeBestEffort drops any write-back
+	// whose captured epoch is stale — re-checked once more right after a successful
+	// Store to catch a bump that lands inside the check-then-store window itself. This
+	// closes the window where a store from an OLD engine/config (a detached SWR refresh
+	// or an in-flight miss holding an old adapter) lands AFTER the purge and resurrects
+	// a stale-config entry served until TTL (U8R-F4).
 	epochMu        sync.Mutex
 	instanceEpochs map[int64]uint64
 }
@@ -519,8 +521,39 @@ func (c *SearchCache) storeBestEffort(ctx context.Context, instanceID int64, cfg
 	if err := c.store.Store(ctx, c.db, entry); err != nil {
 		c.log.Warn().Str("cache_key", key).Str("error", apphttp.RedactError(err)).
 			Msg("registry: search cache store failed")
+		return true, entry.ExpiresAt
+	}
+	// The initial epoch gate above and the Store call just made are not atomic: a purge
+	// can bump the epoch and delete nothing (because our row didn't exist yet) in the
+	// gap between them, then our Store lands after it and resurrects the row it just
+	// purged. Re-reading the epoch here catches that: see compensateStaleStore for why
+	// re-checking (rather than, say, a DB-side conditional write) is sufficient.
+	if c.instanceEpoch(instanceID) != builtEpoch {
+		c.compensateStaleStore(ctx, key)
+		return false, time.Time{}
 	}
 	return true, entry.ExpiresAt
+}
+
+// compensateStaleStore deletes the row storeBestEffort just wrote, after the
+// post-store epoch re-check found the epoch had moved during the check-then-store
+// window — the TOCTOU gap the initial epoch gate alone cannot close.
+//
+// Soundness: InvalidateByInstance always bumps the epoch BEFORE it purges. If the
+// re-check still observes the epoch the initial gate saw, the purge's bump had not
+// happened yet, so its DELETE — which strictly follows its own bump — necessarily
+// runs after our Store and removes the row itself; no action needed (and none was
+// taken, this function isn't called on that path). If the re-check instead observes
+// a moved epoch, the purge's DELETE may already have run before our Store committed,
+// in which case our write resurrected a row the purge had just removed — deleting it
+// here undoes that. Either way no row written under a superseded config generation
+// survives; a redundant delete (if the purge's own DELETE gets there first or second)
+// is a harmless no-op.
+func (c *SearchCache) compensateStaleStore(ctx context.Context, key string) {
+	if err := c.store.Delete(ctx, c.db, key); err != nil {
+		c.log.Warn().Str("cache_key", key).Str("error", apphttp.RedactError(err)).
+			Msg("registry: search cache compensating delete failed")
+	}
 }
 
 // recordCacheInfo surfaces whether this response came from — or was freshly stored
