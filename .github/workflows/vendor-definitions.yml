@@ -1,8 +1,12 @@
 name: vendor-definitions
 
 # Refresh the embedded Jackett definition snapshot on a schedule and open a PR
-# when upstream changes. Pin JACKETT_REF below to a commit for reproducible
-# release builds; this job tracks the moving tip for visibility.
+# when upstream changes. The commit is typed from the def diff — feat(defs) when
+# new indexers arrive, fix(defs) when existing defs change — so goreleaser's
+# release notes pick the refresh up by name (chore commits are filtered out of
+# the changelog). website/docs/coverage.md is regenerated in the same PR so the
+# corpus table tracks the snapshot. Pin JACKETT_REF below to a commit for
+# reproducible release builds; this job tracks the moving tip for visibility.
 on:
   schedule:
     - cron: "0 6 * * 1" # Mondays 06:00 UTC
@@ -17,17 +21,55 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
       - name: Refresh Jackett definitions
         env:
           JACKETT_REF: master
         run: ./scripts/vendor-definitions.sh
+      - name: Regenerate coverage table
+        run: go run ./scripts/gencoverage > website/docs/coverage.md
+      # Type the commit from the def diff so the release changelog captures it:
+      # goreleaser groups feat(defs)/fix(defs) into the notes and drops chore
+      # (the no-def-change fallback, e.g. a .jackett-ref-only bump).
+      - name: Summarize definition changes
+        id: summary
+        run: |
+          git add -A internal/indexer/definitions/vendor website/docs/coverage.md
+          diff="$(git diff --cached --name-status -- internal/indexer/definitions/vendor)"
+          names() { awk -v s="$1" '$1 == s && $2 ~ /\.ya?ml$/ {print $2}' <<<"$diff" | xargs -rn1 basename | sed -E 's/\.ya?ml$//' | paste -sd ', ' -; }
+          added="$(names A)"
+          removed="$(names D)"
+          updated="$(awk '$1 == "M" && $2 ~ /\.ya?ml$/' <<<"$diff" | grep -c . || true)"
+          if [ -n "$added" ]; then
+            title="feat(defs): vendor refresh — add ${added}"
+            if [ "$updated" -gt 0 ]; then title="${title} (+${updated} updated)"; fi
+          elif [ -n "$removed" ]; then
+            title="fix(defs): vendor refresh — remove ${removed}"
+          elif [ "$updated" -gt 0 ]; then
+            title="fix(defs): vendor refresh — ${updated} indexer definitions updated"
+          else
+            title="chore(defs): refresh vendored Jackett definitions"
+          fi
+          {
+            echo "title=${title}"
+            echo "body<<HARBRR_VENDOR_EOF"
+            echo "Automated refresh of the embedded Jackett definition snapshot;"
+            echo "\`website/docs/coverage.md\` is regenerated from the refreshed corpus."
+            echo ""
+            if [ -n "$added" ]; then echo "- **Added:** ${added}"; fi
+            if [ -n "$removed" ]; then echo "- **Removed:** ${removed}"; fi
+            echo "- **Updated:** ${updated} definitions"
+            echo ""
+            echo "Review the diff and the new \`.jackett-ref\` before merging."
+            echo "HARBRR_VENDOR_EOF"
+          } >> "$GITHUB_OUTPUT"
       - name: Open PR on change
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8
         with:
-          commit-message: "chore(defs): refresh vendored Jackett definitions"
-          title: "chore(defs): refresh vendored Jackett definitions"
-          body: |
-            Automated refresh of the embedded Jackett definition snapshot.
-            Review the diff and the new `.jackett-ref` before merging.
+          commit-message: ${{ steps.summary.outputs.title }}
+          title: ${{ steps.summary.outputs.title }}
+          body: ${{ steps.summary.outputs.body }}
           branch: chore/vendor-definitions
           delete-branch: true
