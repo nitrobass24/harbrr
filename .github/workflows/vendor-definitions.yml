@@ -65,9 +65,16 @@ jobs:
             echo "Review the diff and the new \`.jackett-ref\` before merging."
             echo "HARBRR_VENDOR_EOF"
           } >> "$GITHUB_OUTPUT"
+      # PRs created with the workflow's own GITHUB_TOKEN never trigger other
+      # workflows (GitHub recursion guard), so CI would not run on the refresh
+      # PR. VENDOR_DEFS_TOKEN is a fine-grained PAT (Contents + Pull requests:
+      # read/write on this repo) that makes the PR trigger CI like a human's
+      # would; without the secret this falls back to github.token — the PR still
+      # opens, but CI must be started by closing/reopening it.
       - name: Open PR on change
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8
         with:
+          token: ${{ secrets.VENDOR_DEFS_TOKEN || github.token }}
           commit-message: ${{ steps.summary.outputs.title }}
           title: ${{ steps.summary.outputs.title }}
           body: ${{ steps.summary.outputs.body }}
