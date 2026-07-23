@@ -434,7 +434,7 @@ func (h *handler) writeResults(w http.ResponseWriter, r *http.Request, idx core.
 	// payload) and folds in both the freeleech-bypass variant and this page's window, so
 	// the honor feed and the /full bypass feed sharing one cached entry can never
 	// cross-match. fresh (header or query) forces a live body even on a match.
-	sp := servedPage{releases: res.Releases, offset: res.Offset, limit: res.Limit}
+	sp := servedPage{releases: res.Releases, offset: res.Offset, limit: res.Limit, total: res.Total}
 	fresh := headerFresh || core.WantsNoCache(q)
 	if h.revalidate(w, r.Header, *ci, sp, core.FreeleechBypass(ctx), fresh) {
 		return

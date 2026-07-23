@@ -57,16 +57,22 @@ func ifNoneMatchMatches(header, etag string) bool {
 	return false
 }
 
-// pagedETag folds this page's window into the cache layer's payload ETag so two feed
-// requests that share a cached result set but render different pages get distinct
-// validators. The payload ETag (registry.payloadETag) hashes the full pre-page
-// result set and the cache key excludes limit/offset — one engine fetch serves every
-// page — so without this fold a client revalidating page N with page M's ETag would be
-// answered 304 and reuse the wrong page. It hashes the page-independent payload ETag,
-// NOT the rendered body: the /dl-rewritten body varies by host/apikey, so hashing it
-// would leak request identity into the validator and never match across clients.
-func pagedETag(payloadETag string, offset, limit int) string {
-	sum := sha256.Sum256([]byte(payloadETag + "|" + strconv.Itoa(offset) + "|" + strconv.Itoa(limit)))
+// pagedETag folds this page's window AND its reported total into the cache layer's
+// payload ETag so two feed requests that share a cached result set but render
+// different pages, or the same page with a different <newznab:response total>, get
+// distinct validators. The payload ETag (registry.payloadETag) hashes the full
+// pre-page result set and the cache key excludes limit/offset — one engine fetch
+// serves every page — so without the offset/limit fold a client revalidating page N
+// with page M's ETag would be answered 304 and reuse the wrong page. The total is
+// folded too because it is part of the served body (handler.go writes res.Total into
+// the response) but is NOT derived from the page's releases — a catalog change beyond
+// the served window (see pagedResult's has-more floor) can change it while the page
+// bytes stay identical, and a 304 would then pin a stale total/has-more signal the
+// *arrs use for paging decisions. It hashes the page-independent payload ETag, NOT the
+// rendered body: the /dl-rewritten body varies by host/apikey, so hashing it would
+// leak request identity into the validator and never match across clients.
+func pagedETag(payloadETag string, offset, limit, total int) string {
+	sum := sha256.Sum256([]byte(payloadETag + "|" + strconv.Itoa(offset) + "|" + strconv.Itoa(limit) + "|" + strconv.Itoa(total)))
 	return `"` + hex.EncodeToString(sum[:]) + `"`
 }
 
@@ -104,11 +110,14 @@ func setCacheValidators(w http.ResponseWriter, etag string, expiresAt, now time.
 
 // servedPage is the page of releases the handler is about to serialize — the content
 // the revalidator's served ETag needs to track (servedPayloadETag+pagedETag), not the
-// cache layer's pre-page, pre-filter payload.
+// cache layer's pre-page, pre-filter payload. total is the <newznab:response total>
+// the body will carry (res.Total): it is served content, not derived from releases
+// (see pagedETag), so it must be part of the validator too.
 type servedPage struct {
 	releases []*normalizer.Release
 	offset   int
 	limit    int
+	total    int
 }
 
 // revalidate is the conditional-GET 304 protocol for a cache-backed feed response — the
@@ -132,7 +141,7 @@ func (h *handler) revalidate(w http.ResponseWriter, requestHeaders http.Header, 
 	if !ok {
 		return false
 	}
-	etag := pagedETag(view, page.offset, page.limit)
+	etag := pagedETag(view, page.offset, page.limit, page.total)
 	setCacheValidators(w, etag, ci.ExpiresAt, h.clock())
 	if fresh || !ifNoneMatchMatches(requestHeaders.Get("If-None-Match"), etag) {
 		return false
