@@ -11,7 +11,7 @@ require (
 	github.com/autobrr/go-rtorrent v1.12.0
 	github.com/coreos/go-oidc/v3 v3.20.0
 	github.com/dlclark/regexp2 v1.12.0
-	github.com/getkin/kin-openapi v0.142.0
+	github.com/getkin/kin-openapi v0.143.0
 	github.com/go-chi/chi/v5 v5.3.1
 	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/hekmon/transmissionrpc/v3 v3.0.0

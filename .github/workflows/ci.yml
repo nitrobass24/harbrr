@@ -45,7 +45,7 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Guard vendored definitions
@@ -100,7 +100,7 @@ jobs:
           adduser -D ci
       # No git ops after checkout, and the tests below run as the less-trusted `ci`
       # user — don't leave the GITHUB_TOKEN readable in .git/config.
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       # The module cache key MUST include the shard: each shard only downloads the
@@ -165,7 +165,7 @@ jobs:
     steps:
       - name: install container prerequisites
         run: apk add --no-cache gcompat git libatomic
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
@@ -189,7 +189,7 @@ jobs:
     steps:
       - name: install container prerequisites
         run: apk add --no-cache gcompat git libatomic
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
@@ -213,7 +213,7 @@ jobs:
     steps:
       - name: install container prerequisites
         run: apk add --no-cache gcompat git libatomic
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
@@ -239,7 +239,7 @@ jobs:
       - name: install container prerequisites
         run: apk add --no-cache bash gcompat git libatomic
       # read-only git ops (the route-tree drift check) after checkout, so don't persist the token in .git/config.
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
@@ -294,7 +294,7 @@ jobs:
     steps:
       - name: install container prerequisites (gcompat for GHA's Node runtime, git for checkout/go mod, tar for golangci-lint-action's cache)
         run: apk add --no-cache gcompat git tar
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
@@ -311,7 +311,7 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # gitleaks scans full commit history
       - name: install gitleaks
@@ -337,7 +337,7 @@ jobs:
     env:
       GOVULNCHECK_VERSION: v1.5.0
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
@@ -382,7 +382,7 @@ jobs:
       # Full history so `git describe --tags` can stamp the binary version (matches the
       # Makefile's ldflags), the same way `make build` does locally. The job only runs
       # read-only git ops after checkout, so don't persist the token in .git/config.
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -450,7 +450,7 @@ jobs:
     steps:
       # The job pushes to a registry (packages: write) and runs no git operations after
       # checkout, so don't persist the token in the git config (smaller blast radius).
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # git describe for the version stamp
           persist-credentials: false
@@ -646,7 +646,7 @@ jobs:
     permissions:
       contents: write # create the GitHub Release (tag runs only)
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # full history so the changelog can diff against the previous tag
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
