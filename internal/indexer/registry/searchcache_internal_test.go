@@ -412,6 +412,138 @@ func TestCacheInfoRecordedForCoalescedMisses(t *testing.T) {
 	}
 }
 
+// TestFetchLiveGatesAndTrips is the deterministic unit test for the funnel itself
+// (autobrr/harbrr#342): fetchLive is the single outbound seam every caller (miss
+// flight, SWR refresh, follower retry, nocache bypass, degrade-open) drives the
+// tracker through, so its gate/trip/no-self-extension behavior is proven once, here,
+// directly — independent of which caller reaches it.
+func TestFetchLiveGatesAndTrips(t *testing.T) {
+	t.Parallel()
+
+	t.Run("breaker open skips live and counts one suppression", func(t *testing.T) {
+		t.Parallel()
+		sc, instID, _ := testCache(t, breakerTTL, 0)
+		sc.breaker.trip(instID, sc.clock().Add(time.Minute), errors.New("already tripped"))
+		calls := 0
+		live := func(context.Context, search.Query) ([]*normalizer.Release, error) {
+			calls++
+			return relSet("unreachable"), nil
+		}
+		if _, err := sc.fetchLive(context.Background(), instID, live, search.Query{}); err == nil {
+			t.Fatal("want the replayed breaker error")
+		}
+		if calls != 0 {
+			t.Fatalf("live called %d times, want 0 (breaker open)", calls)
+		}
+		if sup := sc.counters(instID).suppressed.Load(); sup != 1 {
+			t.Fatalf("suppressed = %d, want 1", sup)
+		}
+	})
+
+	t.Run("a live error trips the breaker", func(t *testing.T) {
+		t.Parallel()
+		sc, instID, _ := testCache(t, breakerTTL, 0)
+		sentinel := errors.New("tracker down")
+		live := func(context.Context, search.Query) ([]*normalizer.Release, error) {
+			return nil, sentinel
+		}
+		if _, err := sc.fetchLive(context.Background(), instID, live, search.Query{}); !errors.Is(err, sentinel) {
+			t.Fatalf("err = %v, want sentinel", err)
+		}
+		if until := sc.breaker.openUntil(instID, sc.clock()); until.IsZero() {
+			t.Fatal("breaker was not tripped by the live error")
+		}
+	})
+
+	t.Run("a replayed error never re-trips or extends the window", func(t *testing.T) {
+		t.Parallel()
+		sc, instID, clk := testCache(t, breakerTTL, 0)
+		sentinel := errors.New("tracker down")
+		live := func(context.Context, search.Query) ([]*normalizer.Release, error) {
+			return nil, sentinel
+		}
+		if _, err := sc.fetchLive(context.Background(), instID, live, search.Query{}); !errors.Is(err, sentinel) {
+			t.Fatalf("first err = %v, want sentinel", err)
+		}
+		until1 := sc.breaker.openUntil(instID, sc.clock())
+		if until1.IsZero() {
+			t.Fatal("breaker was not tripped by the first live error")
+		}
+
+		advance(clk, time.Second)
+		calls := 0
+		live2 := func(context.Context, search.Query) ([]*normalizer.Release, error) {
+			calls++
+			return nil, sentinel
+		}
+		if _, err := sc.fetchLive(context.Background(), instID, live2, search.Query{}); err == nil {
+			t.Fatal("want the replayed breaker error")
+		}
+		if calls != 0 {
+			t.Fatalf("live called %d times on the gated call, want 0 (replay must return before live)", calls)
+		}
+		until2 := sc.breaker.openUntil(instID, sc.clock())
+		if !until2.Equal(until1) {
+			t.Fatalf("openUntil moved from %v to %v; a replayed error must never re-trip/extend the window", until1, until2)
+		}
+	})
+}
+
+// TestDegradeOpenCoalesces proves the degrade-open path (a cache read failure) routes
+// through missPath rather than fetchLive directly (autobrr/harbrr#342), so concurrent
+// identical searches racing the same broken read still coalesce onto a single live
+// search instead of each independently hitting the tracker.
+func TestDegradeOpenCoalesces(t *testing.T) {
+	t.Parallel()
+	db, err := database.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.Migrate(context.Background()); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	instID := insertTestInstance(t, db)
+	// Close the DB so every store.Fetch/Store call errors — the degrade-open trigger.
+	if err := db.Close(); err != nil {
+		t.Fatalf("close db: %v", err)
+	}
+
+	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	sc := newSearchCache(db, cacheTuning{enabled: true, ttl: keywordTTL, cleanup: time.Hour}, func() time.Time { return now }, zerolog.Nop())
+
+	gate := make(chan struct{})
+	inner := &fakeInner{releases: relSet("Degraded"), gate: gate, firstSeen: make(chan struct{})}
+	idx := sc.probe(inner, instID, nil)
+	q := search.Query{Keywords: "degrade"}
+
+	const n = 3
+	var wg sync.WaitGroup
+	wg.Add(n)
+	results := make([][]*normalizer.Release, n)
+	errs := make([]error, n)
+	for i := range n {
+		go func(i int) {
+			defer wg.Done()
+			results[i], errs[i] = idx.Search(context.Background(), q)
+		}(i)
+	}
+	<-inner.firstSeen // the flight is in progress; the rest coalesce onto it
+	close(gate)
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("search %d: %v", i, err)
+		}
+		if len(results[i]) != 1 || results[i][0].Title != "Degraded" {
+			t.Fatalf("search %d released %+v, want Degraded", i, results[i])
+		}
+	}
+	if got := inner.callCount(); got != 1 {
+		t.Fatalf("inner called %d times, want 1 (coalesced despite the broken read path)", got)
+	}
+}
+
 // advance moves the test clock forward by d.
 func advance(clk *atomic.Pointer[time.Time], d time.Duration) {
 	cur := *clk.Load()
