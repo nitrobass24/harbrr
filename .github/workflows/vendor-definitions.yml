@@ -19,11 +19,22 @@ permissions:
 jobs:
   vendor:
     runs-on: self-hosted
+    # Bare-host `go` gets SIGKILLed on the self-hosted runners, so run in the
+    # same golang:1.26-alpine image the CI Go jobs use — its own musl Go with
+    # GOTOOLCHAIN=local replaces actions/setup-go (see backend-test in ci.yml
+    # for the full rationale, incl. why gcompat must be installed first).
+    container:
+      image: golang:1.26-alpine
+    timeout-minutes: 15
+    env:
+      GOTOOLCHAIN: local
+      # The workspace bind-mount can be owned by a different uid than the step
+      # user, which breaks go's VCS stamping — gencoverage doesn't need stamps.
+      GOFLAGS: -buildvcs=false
     steps:
+      - name: install container prerequisites (gcompat for GHA's Node runtime, git for checkout and the PR action, bash for the refresh script)
+        run: apk add --no-cache gcompat git bash
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
       - name: Refresh Jackett definitions
         env:
           JACKETT_REF: master
@@ -36,9 +47,10 @@ jobs:
       - name: Summarize definition changes
         id: summary
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git add -A internal/indexer/definitions/vendor website/docs/coverage.md
           diff="$(git diff --cached --name-status -- internal/indexer/definitions/vendor)"
-          names() { awk -v s="$1" '$1 == s && $2 ~ /\.ya?ml$/ {print $2}' <<<"$diff" | xargs -rn1 basename | sed -E 's/\.ya?ml$//' | paste -sd ', ' -; }
+          names() { awk -v s="$1" '$1 == s && $2 ~ /\.ya?ml$/ { n = split($2, p, "/"); f = p[n]; sub(/\.ya?ml$/, "", f); out = out (out ? ", " : "") f } END { printf "%s", out }' <<<"$diff"; }
           added="$(names A)"
           removed="$(names D)"
           updated="$(awk '$1 == "M" && $2 ~ /\.ya?ml$/' <<<"$diff" | grep -c . || true)"
