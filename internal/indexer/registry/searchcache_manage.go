@@ -9,7 +9,9 @@ import (
 
 // SearchCacheStats is the management view of the cache: the durable row-derived
 // figures plus the hit-ratio counters. Hits/Misses/HitRatio/BreakerSuppressed survive
-// a restart (persisted via counterStore); the rest are read from the store.
+// a restart (persisted via counterStore); the rest are read from the store — notably
+// TotalHits is a live SUM over rows CURRENTLY cached, so it is NOT cumulative and
+// falls (including to 0) whenever those rows are reaped.
 type SearchCacheStats struct {
 	Entries         int64
 	TotalHits       int64
@@ -29,8 +31,11 @@ type SearchCacheStats struct {
 
 // InstanceCacheStats is one instance's merged cache observability: the durable
 // row-derived figures (HitsSaved/Entries/ApproxSizeBytes) plus the in-memory counters
-// (persisted across restarts) and the live breaker state. HitsSaved is the headline
-// "tracker requests this indexer served from cache" figure.
+// (persisted across restarts) and the live breaker state. HitsSaved is a live SUM of
+// per-entry hit counts over rows CURRENTLY cached for this instance — it is NOT
+// cumulative and falls (including to 0) whenever those rows are reaped (cleanup,
+// flush, or an invalidation). The headline "tracker requests this indexer served
+// from cache" figure is Hits (the cumulative, restart-persisted counter below).
 type InstanceCacheStats struct {
 	InstanceID        int64
 	Entries           int64

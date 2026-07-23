@@ -197,8 +197,11 @@ func (SearchCacheStore) Stats(ctx context.Context, q dbinterface.Execer) (Search
 }
 
 // SearchCacheInstanceStat is one instance's durable cache figures for the per-indexer
-// observability surface. HitsSaved is the instance's cumulative served-from-cache
-// count (each hit is one tracker request the cache avoided).
+// observability surface. HitsSaved is a live SUM of hit_count over rows CURRENTLY
+// cached for this instance (each hit is one tracker request the cache avoided) — it
+// is NOT cumulative and falls (including to 0) once those rows are reaped; the
+// caller's cumulative, restart-persisted figure lives in registry's in-memory
+// counters, not here.
 type SearchCacheInstanceStat struct {
 	InstanceID      int64
 	Entries         int64

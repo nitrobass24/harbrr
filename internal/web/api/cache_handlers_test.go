@@ -254,9 +254,9 @@ func TestCacheStatsHappyPath(t *testing.T) {
 	if idx.BreakerOpenUntil != nil {
 		t.Errorf("byIndexer[0].breakerOpenUntil = %v, want null", idx.BreakerOpenUntil)
 	}
-	// trackerHitsSaved mirrors the durable totalHits (no hits served yet -> 0).
-	if stats.TrackerHitsSaved != stats.TotalHits {
-		t.Errorf("trackerHitsSaved = %d, want == totalHits %d", stats.TrackerHitsSaved, stats.TotalHits)
+	// trackerHitsSaved mirrors the cumulative hits counter (no hits served yet -> 0).
+	if stats.TrackerHitsSaved != stats.Hits {
+		t.Errorf("trackerHitsSaved = %d, want == hits %d", stats.TrackerHitsSaved, stats.Hits)
 	}
 	// The global hits/misses are the aggregate of the per-indexer rows (the global view
 	// the per-tracker breakdown was missing): summing byIndexer must reproduce them.

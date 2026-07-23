@@ -11,12 +11,18 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 )
 
-// cacheStatsResponse is the management view of the search-results cache. The
-// durable figures come from the store; hitRatio (and its underlying hits/misses) is
-// a cumulative counter persisted across restarts (see registry/searchcache_counters.go).
+// cacheStatsResponse is the management view of the search-results cache. hitRatio
+// (and its underlying hits/misses/trackerHitsSaved) is a cumulative counter
+// persisted across restarts (see registry/searchcache_counters.go); totalHits is
+// the durable row-derived figure and — unlike the cumulative counters — SHRINKS
+// whenever its backing rows are reaped (cleanup, flush, or an instance
+// invalidation), since it is a live SUM over rows currently in the store.
 type cacheStatsResponse struct {
-	Enabled   bool  `json:"enabled"`
-	Entries   int64 `json:"entries"`
+	Enabled bool  `json:"enabled"`
+	Entries int64 `json:"entries"`
+	// TotalHits is the durable SUM of per-entry hit counts over rows CURRENTLY in the
+	// cache — it falls (including to 0) whenever those rows are reaped. It is not the
+	// headline metric; see trackerHitsSaved below.
 	TotalHits int64 `json:"totalHits"`
 	// Hits/Misses are the global counters (the sum across all indexers, the aggregate
 	// of the per-indexer byIndexer rows). hitRatio is hits / (hits + misses) over the
@@ -28,8 +34,10 @@ type cacheStatsResponse struct {
 	OldestCachedAt  *int64  `json:"oldestCachedAt"`
 	NewestCachedAt  *int64  `json:"newestCachedAt"`
 	LastUsedAt      *int64  `json:"lastUsedAt"`
-	// TrackerHitsSaved is the cumulative count of tracker requests served from cache
-	// (the durable SUM of per-entry hit counts) — the headline kind-to-trackers metric.
+	// TrackerHitsSaved is the cumulative count of tracker requests served from cache —
+	// the headline kind-to-trackers metric. It mirrors Hits (same cumulative,
+	// restart-persisted counter) and, unlike totalHits, never drops when cached
+	// entries are reaped.
 	TrackerHitsSaved int64 `json:"trackerHitsSaved"`
 	// BreakerSuppressed is the cumulative count of misses short-circuited by the
 	// negative-result breaker (extra tracker requests spared a failing tracker).
@@ -40,10 +48,12 @@ type cacheStatsResponse struct {
 
 // cacheIndexerStats is one indexer's cache observability row in the stats response.
 type cacheIndexerStats struct {
-	InstanceID        int64   `json:"instanceId"`
-	Slug              string  `json:"slug"`
-	Name              string  `json:"name"`
-	Entries           int64   `json:"entries"`
+	InstanceID int64  `json:"instanceId"`
+	Slug       string `json:"slug"`
+	Name       string `json:"name"`
+	Entries    int64  `json:"entries"`
+	// HitsSaved is this indexer's cumulative tracker requests served from cache (mirrors
+	// Hits below) — never drops when this indexer's cached entries are reaped.
 	HitsSaved         int64   `json:"hitsSaved"`
 	Hits              int64   `json:"hits"`
 	Misses            int64   `json:"misses"`
@@ -90,7 +100,7 @@ func (rt *router) cacheStats(w http.ResponseWriter, r *http.Request) {
 		OldestCachedAt:    stats.OldestUnixSec,
 		NewestCachedAt:    stats.NewestUnixSec,
 		LastUsedAt:        stats.LastUsedUnixSec,
-		TrackerHitsSaved:  stats.TotalHits,
+		TrackerHitsSaved:  stats.Hits,
 		BreakerSuppressed: stats.BreakerSuppressed,
 		ByIndexer:         byIndexer,
 	})
@@ -112,7 +122,7 @@ func (rt *router) cacheStatsByIndexer(ctx context.Context) ([]cacheIndexerStats,
 			Slug:              slugs[s.InstanceID],
 			Name:              names[s.InstanceID],
 			Entries:           s.Entries,
-			HitsSaved:         s.HitsSaved,
+			HitsSaved:         s.Hits,
 			Hits:              s.Hits,
 			Misses:            s.Misses,
 			HitRatio:          s.HitRatio,
