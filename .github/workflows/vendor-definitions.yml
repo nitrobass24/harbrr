@@ -46,6 +46,7 @@ jobs:
       # (the no-def-change fallback, e.g. a .jackett-ref-only bump).
       - name: Summarize definition changes
         id: summary
+        shell: bash # GHA defaults container steps to sh; the herestrings need bash
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git add -A internal/indexer/definitions/vendor website/docs/coverage.md
