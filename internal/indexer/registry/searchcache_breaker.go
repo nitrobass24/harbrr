@@ -60,6 +60,14 @@ func (b *negativeBreaker) trip(instanceID int64, until time.Time, err error) {
 	b.entries[instanceID] = breakerEntry{until: until, err: err}
 }
 
+// forget drops instanceID's breaker entry so a config change or delete never
+// replays a pre-change error. Called from InvalidateByInstance and ForgetInstance.
+func (b *negativeBreaker) forget(instanceID int64) {
+	b.mu.Lock()
+	delete(b.entries, instanceID)
+	b.mu.Unlock()
+}
+
 // openUntil returns instanceID's open-until time (zero when closed) for the stats
 // surface. It is read-only — it never evicts — so a concurrent stats read does not
 // race the lazy drop in replay.

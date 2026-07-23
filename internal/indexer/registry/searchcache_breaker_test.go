@@ -321,6 +321,82 @@ func TestClassifyBreakerError(t *testing.T) {
 	}
 }
 
+// TestInvalidateByInstanceClearsBreaker proves a config-change invalidation drops the
+// instance's negative-breaker entry: after invalidation the next miss must probe the
+// tracker live instead of replaying the pre-invalidation error (autobrr/harbrr#345).
+func TestInvalidateByInstanceClearsBreaker(t *testing.T) {
+	t.Parallel()
+	sc, instID, _ := testCache(t, breakerTTL, 0)
+	inner := &fakeInner{err: errors.New("tracker down")}
+	idx := sc.probe(inner, instID, nil)
+	q := search.Query{Keywords: "x"}
+
+	// Trip the breaker.
+	if _, err := idx.Search(context.Background(), q); err == nil {
+		t.Fatal("want trip error")
+	}
+
+	if _, err := sc.InvalidateByInstance(context.Background(), instID); err != nil {
+		t.Fatalf("InvalidateByInstance: %v", err)
+	}
+
+	inner.mu.Lock()
+	inner.err = nil
+	inner.releases = relSet("Live")
+	inner.mu.Unlock()
+
+	// The breaker consult in missPath is keyed purely on instanceID, not builtEpoch
+	// (that only gates the cache write-back), so the original probe is still valid
+	// for reading the breaker-forget effect.
+	got, err := idx.Search(context.Background(), q)
+	if err != nil {
+		t.Fatalf("post-invalidate search: %v", err)
+	}
+	if len(got) != 1 || got[0].Title != "Live" {
+		t.Fatalf("post-invalidate = %+v, want live", got)
+	}
+	if c := inner.callCount(); c != 2 {
+		t.Fatalf("inner called %d times, want 2 (trip + live re-probe, not replayed)", c)
+	}
+}
+
+// TestForgetInstanceClearsBreaker proves a deleted instance's negative-breaker entry
+// does not survive ForgetInstance (autobrr/harbrr#345).
+func TestForgetInstanceClearsBreaker(t *testing.T) {
+	t.Parallel()
+	sc, instID, clk := testCache(t, breakerTTL, 0)
+	inner := &fakeInner{err: errors.New("tracker down")}
+	idx := sc.probe(inner, instID, nil)
+	q := search.Query{Keywords: "x"}
+
+	// Trip the breaker.
+	if _, err := idx.Search(context.Background(), q); err == nil {
+		t.Fatal("want trip error")
+	}
+
+	sc.ForgetInstance(instID)
+
+	if until := sc.breaker.openUntil(instID, *clk.Load()); !until.IsZero() {
+		t.Fatalf("breaker openUntil = %v after ForgetInstance, want zero", until)
+	}
+
+	inner.mu.Lock()
+	inner.err = nil
+	inner.releases = relSet("Live")
+	inner.mu.Unlock()
+
+	got, err := idx.Search(context.Background(), q)
+	if err != nil {
+		t.Fatalf("post-forget search: %v", err)
+	}
+	if len(got) != 1 || got[0].Title != "Live" {
+		t.Fatalf("post-forget = %+v, want live", got)
+	}
+	if c := inner.callCount(); c != 2 {
+		t.Fatalf("inner called %d times, want 2 (trip + live re-probe, not replayed)", c)
+	}
+}
+
 // TestPerInstanceCountersIsolate proves hits/misses are tracked per instance.
 func TestPerInstanceCountersIsolate(t *testing.T) {
 	t.Parallel()
