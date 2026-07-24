@@ -2206,7 +2206,7 @@ export interface components {
             entries?: number;
             /**
              * Format: int64
-             * @description durable sum of per-entry hit counts
+             * @description Live sum of per-entry hit counts over rows currently cached — NOT cumulative, falls (including to 0) whenever those rows are reaped. See trackerHitsSaved for the cumulative headline figure.
              */
             totalHits?: number;
             /**
@@ -2246,7 +2246,7 @@ export interface components {
             lastUsedAt?: number | null;
             /**
              * Format: int64
-             * @description Cumulative tracker requests served from cache (durable sum of per-entry hit counts) — the headline kind-to-trackers metric. Equal to totalHits.
+             * @description Cumulative tracker requests served from cache, persisted across restarts — the headline kind-to-trackers metric. Mirrors hits; unlike totalHits it never drops when cached entries are reaped.
              */
             trackerHitsSaved?: number;
             /**
@@ -2272,7 +2272,7 @@ export interface components {
             entries: number;
             /**
              * Format: int64
-             * @description durable tracker requests this indexer served from cache
+             * @description Cumulative tracker requests this indexer served from cache, persisted across restarts. Mirrors hits; never drops when this indexer's cached entries are reaped.
              */
             hitsSaved: number;
             /**
