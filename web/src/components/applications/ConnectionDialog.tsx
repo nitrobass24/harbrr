@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { useInitialAppPick } from "@/hooks/useInitialAppPick"
 import { ConfiguredAppsBlock, ReusingAppHint } from "@/components/applications/ConfiguredApps"
+import { HostPortFields } from "@/components/forms/HostPortFields"
 import { ManagedByAppHint } from "@/components/applications/ManagedByAppHint"
 import { Button } from "@/components/ui/button"
 import {
@@ -18,6 +19,7 @@ import { useSyncProfiles } from "@/hooks/useAppConnections"
 import { useApps } from "@/hooks/useApps"
 import { defaultHarbrrUrl } from "@/lib/base-url"
 import { hostname, kindLabel } from "@/lib/format"
+import { composeHostURL, DEFAULT_PORTS } from "@/lib/hosturl"
 import type { App, AppConnection, ConnectionKind, CreateConnection, UpdateConnection } from "@/lib/api"
 
 // Sentinel select value for "no existing App picked, use the inline fields below" — the
@@ -87,7 +89,9 @@ function ConnectionForm({ existing, initialAppId, pending, error, onCreate, onUp
   // loading. NEW_APP reveals the inline baseUrl/apiKey/harbrrUrl fields; anything else
   // reuses that App's identity.
   const [appSel, setAppSel] = useState<string | null>(null)
-  const [baseUrl, setBaseUrl] = useState("")
+  const [scheme, setScheme] = useState<"http" | "https">("http")
+  const [host, setHost] = useState("")
+  const [port, setPort] = useState(String(DEFAULT_PORTS[kind] ?? ""))
   const [apiKey, setApiKey] = useState("")
   const [harbrrUrl, setHarbrrUrl] = useState(defaultHarbrrUrl())
   const [syncLevel, setSyncLevel] = useState(existing?.syncLevel ?? "full")
@@ -102,6 +106,7 @@ function ConnectionForm({ existing, initialAppId, pending, error, onCreate, onUp
     setKind(app.kind as ConnectionKind)
     setAppSel(String(app.id))
     setName((prev) => (prev === "" ? app.name : prev))
+    setPort(String(DEFAULT_PORTS[app.kind] ?? ""))
   })
 
   const profiles = useSyncProfiles()
@@ -139,7 +144,7 @@ function ConnectionForm({ existing, initialAppId, pending, error, onCreate, onUp
             name, kind, syncLevel, indexScope,
             freeleechMode: freeleechMode || undefined,
             ...(showProfilePicker && syncProfileId !== null ? { syncProfileId } : {}),
-            ...(usingNewApp ? { baseUrl, apiKey, harbrrUrl } : { appId: Number(effectiveAppSel) }),
+            ...(usingNewApp ? { baseUrl: composeHostURL(scheme, host, port), apiKey, harbrrUrl } : { appId: Number(effectiveAppSel) }),
           })
         }
       }}
@@ -177,8 +182,11 @@ function ConnectionForm({ existing, initialAppId, pending, error, onCreate, onUp
             value={kind}
             disabled={mode === "edit"}
             onChange={(e) => {
-              setKind(e.target.value as ConnectionKind)
+              const next = e.target.value as ConnectionKind
+              setKind(next)
               setAppSel(null) // the app list for the new kind is different; re-default.
+              // A typed port for the OLD kind isn't meaningful for the new one.
+              setPort(String(DEFAULT_PORTS[next] ?? ""))
             }}
           >
             {KINDS.map((k) => <option key={k} value={k}>{kindLabel(k)}</option>)}
@@ -207,9 +215,7 @@ function ConnectionForm({ existing, initialAppId, pending, error, onCreate, onUp
 
       {mode === "create" && usingNewApp && (
         <>
-          <FieldWrap id="conn-baseurl" label="App base URL">
-            <Input id="conn-baseurl" placeholder="http://sonarr:8989" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
-          </FieldWrap>
+          <HostPortFields idPrefix="conn" scheme={scheme} host={host} port={port} onScheme={setScheme} onHost={setHost} onPort={setPort} />
 
           <FieldWrap id="conn-apikey" label="App API key">
             <Input id="conn-apikey" type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
@@ -261,7 +267,7 @@ function ConnectionForm({ existing, initialAppId, pending, error, onCreate, onUp
           type="submit"
           disabled={
             pending || name === "" ||
-            (mode === "create" && usingNewApp && (baseUrl === "" || harbrrUrl === "" || apiKey === ""))
+            (mode === "create" && usingNewApp && (host === "" || harbrrUrl === "" || apiKey === ""))
           }
         >
           {pending ? "Saving…" : mode === "edit" ? "Save changes" : "Add application"}
