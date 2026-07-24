@@ -106,7 +106,7 @@ describe("Applications route — stale create error", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Add application" })[0])
     let dialog = await screen.findByRole("dialog")
     fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "sonarr-new" } })
-    fireEvent.change(within(dialog).getByLabelText("App base URL"), { target: { value: "http://sonarr:8989" } })
+    fireEvent.change(within(dialog).getByLabelText("Host"), { target: { value: "http://sonarr:8989" } })
     fireEvent.change(within(dialog).getByLabelText("App API key"), { target: { value: "app-key" } })
     fireEvent.click(within(dialog).getByRole("button", { name: "Add application" }))
 
@@ -142,7 +142,7 @@ describe("Applications route — 'Use as…' search params", () => {
     expect(within(dialog).getByLabelText<HTMLSelectElement>("App").value).toBe("7")
 
     // The pick reuses the app: the "New app…" fields don't show.
-    expect(within(dialog).queryByLabelText("App base URL")).toBeNull()
+    expect(within(dialog).queryByLabelText("Host")).toBeNull()
 
     await waitFor(() => expect(router.state.location.search).toEqual({}))
   })
