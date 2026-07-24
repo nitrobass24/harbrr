@@ -1991,9 +1991,9 @@ paths:
     post:
       summary: Flush the search-results cache
       description: >
-        Deletes every cache entry and returns the count purged. The cumulative
-        hit/miss counters are not reset. When caching is disabled the response is
-        {"flushed": 0}.
+        Deletes every cache entry and returns the count purged, and resets the
+        cumulative hit/miss/suppressed counters and the 24h window. When caching is
+        disabled the response is {"flushed": 0}.
       operationId: cacheFlush
       tags: [Cache]
       security: [{ session: [] }, { apiKey: [] }]
@@ -3131,13 +3131,30 @@ components:
           format: int64
           description: >
             Global cumulative cache misses (the aggregate of the per-indexer byIndexer
-            rows). Persisted across restarts.
+            rows). Persisted across restarts. A live search that fails counts as
+            neither hit nor miss; a cache flush resets the counters.
         hitRatio:
           type: number
           format: double
           description: >
             hits / (hits + misses), cumulative. The underlying hit/miss counters are
             persisted across restarts.
+        hits24h:
+          type: integer
+          format: int64
+          description: >
+            Cache hits over a rolling 24h window. In-memory only — the window
+            restarts empty after a reboot.
+        misses24h:
+          type: integer
+          format: int64
+          description: >
+            Cache misses over a rolling 24h window. In-memory only — the window
+            restarts empty after a reboot.
+        hitRatio24h:
+          type: number
+          format: double
+          description: hits24h / (hits24h + misses24h), or 0 with no traffic in the window.
         approxSizeBytes: { type: integer, format: int64, description: approximate total size of cached payloads }
         oldestCachedAt:
           type: integer
@@ -3160,7 +3177,8 @@ components:
           description: >
             Cumulative tracker requests served from cache, persisted across restarts —
             the headline kind-to-trackers metric. Mirrors hits; unlike totalHits it
-            never drops when cached entries are reaped.
+            never drops when cached entries are reaped — only an explicit cache
+            flush resets it.
         breakerSuppressed:
           type: integer
           format: int64
