@@ -31,7 +31,9 @@ type ttlConfig struct {
 // positive, else the rss tier for an empty query or the keyword tier otherwise.
 // When the result count is at or below thinThreshold the TTL is clamped to
 // min(base, thin) — the thin clamp can only SHORTEN, never lengthen, and it
-// applies even over an explicit cache_ttl override on a thin result.
+// applies even over an explicit cache_ttl override on a thin result. Finally, an
+// empty query's TTL is floored to the instance's clamped "rss_warm_interval" — see
+// warmFloor.
 func (c ttlConfig) resolveTTL(cfg map[string]string, q search.Query, count int) time.Duration {
 	base := c.keyword
 	if isEmptyQuery(q) {
@@ -43,9 +45,33 @@ func (c ttlConfig) resolveTTL(cfg map[string]string, q search.Query, count int) 
 		}
 	}
 	if count <= c.thinThreshold && c.thin < base {
-		return c.thin
+		base = c.thin
 	}
-	return base
+	return warmFloor(cfg, q, base)
+}
+
+// warmFloor raises ttl to the instance's clamped "rss_warm_interval" when q is an
+// empty/RSS poll and the setting is valid — never lowers it. The warm interval
+// setting itself declares "keep this instance's RSS at least this fresh," so the
+// same floor applies to a consumer-driven RSS write-back, not just the warmer's own
+// writes: without it, a keyword-tier-shorter rss/thin TTL could expire a warmed
+// entry before the next scheduled warm refreshes it, defeating the warm entirely on
+// the next consumer poll in between. A keyword query is never floored — the warm
+// interval only ever primes the RSS entry.
+//
+// No capability check runs here: stripInertWarmInterval (warmer.go) already deleted
+// the setting from cfg at build time for a paging/Mode-consuming instance (no warmer
+// ever refreshes those, so the floor's justification does not hold), so cfg simply
+// carries no valid warmIntervalSetting for one — this stays a pure "is the setting
+// present and valid" check.
+func warmFloor(cfg map[string]string, q search.Query, ttl time.Duration) time.Duration {
+	if !isEmptyQuery(q) {
+		return ttl
+	}
+	if wi, ok := warmIntervalFromValue(cfg[warmIntervalSetting]); ok && wi > ttl {
+		return wi
+	}
+	return ttl
 }
 
 // isEmptyQuery reports whether a query is an empty/RSS poll: no free-text Keywords

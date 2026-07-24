@@ -57,6 +57,7 @@ func (f *fakeIndexer) Search(ctx context.Context, q search.Query) ([]*normalizer
 func (f *fakeIndexer) NeedsResolver() bool        { return f.needsResolver }
 func (f *fakeIndexer) DownloadNeedsAuth() bool    { return f.downloadNeedsAuth }
 func (f *fakeIndexer) SupportsOffsetPaging() bool { return false }
+func (f *fakeIndexer) ConsumesSearchMode() bool   { return false }
 
 func (f *fakeIndexer) Grab(_ context.Context, link string) (*search.GrabResult, error) {
 	f.gotGrabLink = link

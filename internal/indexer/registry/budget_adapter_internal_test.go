@@ -33,6 +33,7 @@ func (d *budgetFakeDriver) Capabilities() *mapper.Capabilities { return &mapper.
 func (d *budgetFakeDriver) NeedsResolver() bool                { return false }
 func (d *budgetFakeDriver) DownloadNeedsAuth() bool            { return false }
 func (d *budgetFakeDriver) SupportsOffsetPaging() bool         { return false }
+func (d *budgetFakeDriver) ConsumesSearchMode() bool           { return false }
 func (d *budgetFakeDriver) Test(context.Context) error         { return nil }
 
 func (d *budgetFakeDriver) Search(context.Context, search.Query) ([]*normalizer.Release, error) {

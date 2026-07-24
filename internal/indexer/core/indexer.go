@@ -51,6 +51,15 @@ type Indexer interface {
 	// every other implementer (every Cardigann def, every other native driver, and the
 	// test fakes) answers false.
 	SupportsOffsetPaging() bool
+	// ConsumesSearchMode reports whether this Indexer routes search.Query.Mode to a
+	// different upstream search namespace (newznab/torznab/animebytes, via the
+	// flattened registry adapter). The registry's empty-query RSS canonicalization
+	// (#341) clears Mode before caching for every non-consuming Indexer — collapsing
+	// every RSS consumer's poll onto one cache key regardless of its t= — and leaves
+	// it untouched for a consuming Indexer, which needs a per-mode key. Every
+	// Cardigann def and every native driver but the three that read Mode answers
+	// false.
+	ConsumesSearchMode() bool
 }
 
 // Provider resolves the indexer id from the request path to its Indexer.

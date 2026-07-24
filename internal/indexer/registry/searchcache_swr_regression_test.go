@@ -33,6 +33,7 @@ func (g *gatedInner) Capabilities() *mapper.Capabilities { return &mapper.Capabi
 func (g *gatedInner) NeedsResolver() bool                { return false }
 func (g *gatedInner) DownloadNeedsAuth() bool            { return false }
 func (g *gatedInner) SupportsOffsetPaging() bool         { return false }
+func (g *gatedInner) ConsumesSearchMode() bool           { return false }
 
 func (g *gatedInner) Grab(context.Context, string) (*search.GrabResult, error) {
 	return nil, errors.New("not implemented")

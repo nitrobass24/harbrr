@@ -94,14 +94,21 @@ func (a *indexerAdapter) Capabilities() *mapper.Capabilities { return a.inner.Ca
 // bypass feed (full catalog, for qui/cross-seed) from a SINGLE tracker fetch — so a later
 // bypass poll never re-hits the tracker just because an *arr polled FL-only first.
 func (a *indexerAdapter) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
-	// RSS/empty polls only: canonicalize categories to the def's default set so every RSS
-	// consumer (Sonarr/Radarr/qui, each narrowing with a different cat=) collapses onto ONE
-	// cache key and drives ONE outbound fetch, instead of forking a cache entry per category
-	// set (#249). This is safe because core.filterResults ALREADY re-narrows the returned
-	// catalog to each consumer's actually-requested categories on every call, cache hit or
-	// miss alike — so this changes nothing about what a consumer is served, only how often
-	// the tracker is hit for the shared "browse latest" case. Keyword searches are untouched:
-	// there Categories drives real server-side narrowing and must stay as requested.
+	// RSS/empty polls only: canonicalize categories to the def's default set AND clear
+	// Mode (for a driver that never reads it) so every RSS consumer (Sonarr/Radarr/qui,
+	// each narrowing with a different cat= and each arriving under a different t=)
+	// collapses onto ONE cache key and drives ONE outbound fetch, instead of forking a
+	// cache entry per category set or per mode (#249, #341). This is safe because
+	// core.filterResults ALREADY re-narrows the returned catalog to each consumer's
+	// actually-requested categories on every call, cache hit or miss alike — so this
+	// changes nothing about what a consumer is served, only how often the tracker is hit
+	// for the shared "browse latest" case; likewise the wrapped driver's own request
+	// generator never reads Mode when ConsumesSearchMode is false, so clearing it changes
+	// nothing about the outbound request either. A Mode-consuming driver (newznab,
+	// torznab, animebytes) keeps its per-mode key — routing the request to a different
+	// upstream namespace is real, not cosmetic, so accuracy wins over the collapse there.
+	// Keyword searches are untouched: there Categories/Mode drive real server-side
+	// narrowing and must stay as requested.
 	//
 	// ponytail: DefaultCategories, not the full advertised set. For newznab (the dognzb
 	// target) DefaultCategories is empty → the fetch goes out unfiltered = broadest, correct.
@@ -112,6 +119,9 @@ func (a *indexerAdapter) Search(ctx context.Context, q search.Query) ([]*normali
 	// observed on such a def.
 	if isEmptyQuery(q) {
 		q.Categories = a.inner.Capabilities().DefaultCategories
+		if !a.inner.ConsumesSearchMode() {
+			q.Mode = ""
+		}
 	}
 
 	// (1) Cache-aside over the full catalog. The two-level enabled distinction lives
@@ -235,6 +245,15 @@ func (a *indexerAdapter) DownloadNeedsAuth() bool { return a.inner.DownloadNeeds
 // handler read the SAME capability.
 func (a *indexerAdapter) SupportsOffsetPaging() bool {
 	return a.inner.SupportsOffsetPaging()
+}
+
+// ConsumesSearchMode delegates to the wrapped driver's ConsumesSearchMode, part of
+// the native.Driver contract: false for every Cardigann def and every native driver
+// except the newznab/torznab/animebytes trio that route Mode to a different upstream
+// namespace. Search reads it directly (above) to decide whether an RSS/empty poll's
+// Mode can be cleared before it reaches the cache key.
+func (a *indexerAdapter) ConsumesSearchMode() bool {
+	return a.inner.ConsumesSearchMode()
 }
 
 // Grab performs the grab-time download for a release link (resolve + fetch the

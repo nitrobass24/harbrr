@@ -40,6 +40,7 @@ func (f fakeSearchIndexer) Search(context.Context, search.Query) ([]*normalizer.
 func (f fakeSearchIndexer) NeedsResolver() bool        { return f.needsResolver }
 func (f fakeSearchIndexer) DownloadNeedsAuth() bool    { return f.downloadNeedsAuth }
 func (f fakeSearchIndexer) SupportsOffsetPaging() bool { return false }
+func (f fakeSearchIndexer) ConsumesSearchMode() bool   { return false }
 
 func (f fakeSearchIndexer) Grab(context.Context, string) (*search.GrabResult, error) {
 	return &search.GrabResult{}, nil // unused by the link-resolution tests
@@ -161,6 +162,7 @@ func (p *pagedAPIIndexer) Search(context.Context, search.Query) ([]*normalizer.R
 func (p *pagedAPIIndexer) NeedsResolver() bool        { return false }
 func (p *pagedAPIIndexer) DownloadNeedsAuth() bool    { return false }
 func (p *pagedAPIIndexer) SupportsOffsetPaging() bool { return false }
+func (p *pagedAPIIndexer) ConsumesSearchMode() bool   { return false }
 
 func (p *pagedAPIIndexer) Grab(context.Context, string) (*search.GrabResult, error) {
 	return &search.GrabResult{}, nil

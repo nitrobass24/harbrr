@@ -379,6 +379,15 @@ func (e *Engine) SupportsOffsetPaging() bool {
 	return false
 }
 
+// ConsumesSearchMode is always false: the declarative Cardigann engine never
+// templates search.Query.Mode into a request — every def's search block is driven
+// by keywords/categories/ids, not by a Torznab t= namespace switch — so an RSS poll
+// under a different Mode is byte-identical outbound and safe to collapse onto one
+// cache key (#341).
+func (e *Engine) ConsumesSearchMode() bool {
+	return false
+}
+
 // ResolveDownload turns a release's download link into the real torrent URL when
 // the definition declares a download block (the full Jackett download algorithm:
 // before pre-request, infohash->magnet, selectors). A def with no download block

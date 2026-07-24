@@ -34,6 +34,7 @@ func (f *fakeIndexer) Search(ctx context.Context, q search.Query) ([]*normalizer
 func (f *fakeIndexer) NeedsResolver() bool        { return false }
 func (f *fakeIndexer) DownloadNeedsAuth() bool    { return false }
 func (f *fakeIndexer) SupportsOffsetPaging() bool { return false }
+func (f *fakeIndexer) ConsumesSearchMode() bool   { return false }
 
 func (f *fakeIndexer) Grab(_ context.Context, _ string) (*search.GrabResult, error) {
 	return &search.GrabResult{Body: []byte("d0:e"), ContentType: "application/x-bittorrent"}, nil
