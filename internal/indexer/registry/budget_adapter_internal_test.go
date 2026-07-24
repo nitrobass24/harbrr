@@ -136,6 +136,44 @@ func TestAdapterSearch_ExhaustedQueryServesStale(t *testing.T) {
 	}
 }
 
+// TestAdapterSearch_ExhaustedQueryDisabledCacheRefusesStale proves the runtime
+// cache-enabled toggle wins over the budget's prefer-stale preference: once caching
+// is disabled via UpdateConfig, a budget-exhausted search must surface the error
+// rather than serving a pre-disable cached entry (a disabled cache serving stale
+// results — and emitting HTTP validators for a "cache" the operator turned off — is
+// exactly the bug this gates against).
+func TestAdapterSearch_ExhaustedQueryDisabledCacheRefusesStale(t *testing.T) {
+	t.Parallel()
+	inner := &budgetFakeDriver{releases: []*normalizer.Release{{Title: "cached-release"}}}
+	a, clk := newBudgetTestAdapter(t, inner, map[string]string{"query_limit": "1"})
+	q := search.Query{Keywords: "x"}
+
+	// First search: within budget, drives the tracker once and populates the cache.
+	if _, err := a.Search(context.Background(), q); err != nil {
+		t.Fatalf("first Search: %v", err)
+	}
+	if got := inner.searchCalls.Load(); got != 1 {
+		t.Fatalf("tracker hit %d times after first search, want 1", got)
+	}
+
+	// Disable caching at runtime through the real config path.
+	disabled := false
+	if _, err := a.cache.UpdateConfig(context.Background(), CacheConfigPatch{Enabled: &disabled}); err != nil {
+		t.Fatalf("UpdateConfig: %v", err)
+	}
+
+	// Advance well past the cache TTL, mirroring ExhaustedQueryServesStale.
+	future := clk.Load().Add(2 * time.Hour)
+	clk.Store(&future)
+
+	if _, err := a.Search(context.Background(), q); !errors.Is(err, errBudgetExhausted) {
+		t.Fatalf("second Search err = %v, want errBudgetExhausted (disabled cache must not serve stale)", err)
+	}
+	if got := inner.searchCalls.Load(); got != 1 {
+		t.Fatalf("tracker hit %d times after second search, want still 1 (disabled cache must not re-hit the tracker either)", got)
+	}
+}
+
 // TestAdapterSearch_ExhaustedQueryBypassRefusesStale proves a nocache (cache-bypass)
 // request never gets the prefer-stale serve: the caller explicitly opted out of
 // cached results, so an exhausted budget surfaces the error instead of an expired

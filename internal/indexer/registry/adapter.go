@@ -118,23 +118,28 @@ func (a *indexerAdapter) Search(ctx context.Context, q search.Query) ([]*normali
 	// here: cache nil (never configured) OR the runtime toggle off ⇒ run liveSearch
 	// directly; otherwise the cache drives liveSearch on a miss so the tracker is hit
 	// exactly once. SupportsOffsetPaging is the SAME signal the handler reads, so a paging
-	// driver keys per-page in the cache and is not re-offset downstream.
+	// driver keys per-page in the cache and is not re-offset downstream. cacheEnabled is
+	// snapshotted once and reused below so the read path and the stale fallback can never
+	// disagree about the toggle within a single request.
 	var (
 		releases []*normalizer.Release
 		err      error
 	)
-	if a.cache != nil && a.cache.tuning.Load().enabled {
+	cacheEnabled := a.cache != nil && a.cache.tuning.Load().enabled
+	if cacheEnabled {
 		releases, err = a.cache.search(ctx, a.instanceID, a.cfg, a.builtEpoch, a.budgetedLiveSearch, a.SupportsOffsetPaging(), q)
 	} else {
 		releases, err = a.budgetedLiveSearch(ctx, q)
 	}
-	if errors.Is(err, errBudgetExhausted) && a.cache != nil && !core.CacheBypass(ctx) {
+	if errors.Is(err, errBudgetExhausted) && cacheEnabled && !core.CacheBypass(ctx) {
 		// The query budget has no capacity left for this period: prefer serving
 		// whatever was last cached, even expired, over refusing the request outright
 		// (autobrr/harbrr#251). A cache miss here (nothing ever cached, or the stale
 		// row itself failed to decode) falls through and surfaces the original
 		// budget-exhausted error. A nocache request opted out of cached results
-		// entirely, so it gets the error, never a stale serve.
+		// entirely, so it gets the error, never a stale serve. A runtime-disabled cache
+		// must not serve stale entries either — the operator's "caching off" wins over
+		// the prefer-stale preference (#251).
 		if stale, ok, serr := a.cache.fetchStale(ctx, a.instanceID, a.SupportsOffsetPaging(), q); serr == nil && ok {
 			releases, err = stale, nil
 		}
