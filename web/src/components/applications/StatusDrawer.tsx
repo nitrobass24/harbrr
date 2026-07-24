@@ -26,7 +26,6 @@ export function StatusDrawer({ connectionId, onClose }: { connectionId: number |
               <div key={row.instanceId} className="flex flex-col gap-1 border-b border-border/60 pb-2">
                 <div className="flex items-baseline gap-2">
                   <span className="font-medium">{ix?.name ?? `#${row.instanceId}`}</span>
-                  {!row.selected && <span className="text-[11px] text-faint">not selected</span>}
                   {row.lastPushStatus && (
                     <span className={cn("text-[12px]", syncStatusClass(row.lastPushStatus))}>
                       {row.lastPushStatus}

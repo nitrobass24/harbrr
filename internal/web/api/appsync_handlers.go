@@ -22,9 +22,7 @@ type appConnectionResponse struct {
 	APIKey         string     `json:"apiKey"`
 	Enabled        bool       `json:"enabled"`
 	SyncLevel      string     `json:"syncLevel"`
-	IndexScope     string     `json:"indexScope"`
 	FreeleechMode  string     `json:"freeleechMode"`
-	Priority       int        `json:"priority"`
 	SyncProfileID  *int64     `json:"syncProfileId,omitempty"`
 	LastSyncAt     *time.Time `json:"lastSyncAt,omitempty"`
 	LastSyncStatus string     `json:"lastSyncStatus,omitempty"`
@@ -37,7 +35,6 @@ type appConnectionResponse struct {
 type connectionIndexerResponse struct {
 	InstanceID     int64      `json:"instanceId"`
 	RemoteID       string     `json:"remoteId,omitempty"`
-	Selected       bool       `json:"selected"`
 	LastPushedAt   *time.Time `json:"lastPushedAt,omitempty"`
 	LastPushStatus string     `json:"lastPushStatus,omitempty"`
 	LastPushError  string     `json:"lastPushError,omitempty"`
@@ -95,9 +92,7 @@ func (rt *router) createConnection(w http.ResponseWriter, r *http.Request) {
 		Username      string `json:"username"`
 		HarbrrURL     string `json:"harbrrUrl"`
 		SyncLevel     string `json:"syncLevel"`
-		IndexScope    string `json:"indexScope"`
 		FreeleechMode string `json:"freeleechMode"`
-		Priority      int    `json:"priority"`
 		SyncProfileID *int64 `json:"syncProfileId"`
 	}
 	if !decodeJSON(w, r, &req) {
@@ -105,8 +100,8 @@ func (rt *router) createConnection(w http.ResponseWriter, r *http.Request) {
 	}
 	conn, err := rt.appsync.CreateConnection(r.Context(), appsync.CreateConnectionParams{
 		Name: req.Name, Kind: req.Kind, AppID: req.AppID, BaseURL: req.BaseURL, APIKey: req.APIKey,
-		Username: req.Username, HarbrrURL: req.HarbrrURL, SyncLevel: req.SyncLevel, IndexScope: req.IndexScope,
-		FreeleechMode: req.FreeleechMode, Priority: req.Priority, SyncProfileID: req.SyncProfileID,
+		Username: req.Username, HarbrrURL: req.HarbrrURL, SyncLevel: req.SyncLevel,
+		FreeleechMode: req.FreeleechMode, SyncProfileID: req.SyncProfileID,
 	})
 	if err != nil {
 		rt.writeServiceError(w, "create connection", err)
@@ -138,9 +133,7 @@ func (rt *router) updateConnection(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name          *string     `json:"name"`
 		SyncLevel     *string     `json:"syncLevel"`
-		IndexScope    *string     `json:"indexScope"`
 		FreeleechMode *string     `json:"freeleechMode"`
-		Priority      *int        `json:"priority"`
 		SyncProfileID optionalRef `json:"syncProfileId"`
 	}
 	if !decodeJSON(w, r, &req) {
@@ -148,8 +141,8 @@ func (rt *router) updateConnection(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := rt.appsync.UpdateConnection(r.Context(), id, appsync.UpdateConnectionParams{
 		Name:      req.Name,
-		SyncLevel: req.SyncLevel, IndexScope: req.IndexScope, FreeleechMode: req.FreeleechMode,
-		Priority: req.Priority, SyncProfileID: req.SyncProfileID.toAppSync(),
+		SyncLevel: req.SyncLevel, FreeleechMode: req.FreeleechMode,
+		SyncProfileID: req.SyncProfileID.toAppSync(),
 	}); err != nil {
 		rt.writeServiceError(w, "update connection", err)
 		return
@@ -223,27 +216,6 @@ func (rt *router) syncAllConnections(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// setConnectionIndexers replaces a connection's selected-indexer set (used by
-// index_scope=selected). The body is the instance ids to select; all others are
-// cleared.
-func (rt *router) setConnectionIndexers(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r, "connection")
-	if !ok {
-		return
-	}
-	var req struct {
-		InstanceIDs []int64 `json:"instanceIds"`
-	}
-	if !decodeJSON(w, r, &req) {
-		return
-	}
-	if err := rt.appsync.SetSelectedIndexers(r.Context(), id, req.InstanceIDs); err != nil {
-		rt.writeServiceError(w, "set connection indexers", err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
 // connectionStatus returns a connection plus its per-indexer ledger.
 func (rt *router) connectionStatus(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "connection")
@@ -271,7 +243,7 @@ func toConnectionResponse(c domain.AppConnection) appConnectionResponse {
 	return appConnectionResponse{
 		ID: c.ID, Name: c.Name, Kind: c.Kind, AppID: c.AppID, BaseURL: c.BaseURL, HarbrrURL: c.HarbrrURL,
 		APIKey: secrets.Redacted, Enabled: c.Enabled, SyncLevel: c.SyncLevel,
-		IndexScope: c.IndexScope, FreeleechMode: c.FreeleechMode, Priority: c.Priority,
+		FreeleechMode: c.FreeleechMode,
 		SyncProfileID: c.SyncProfileID, LastSyncAt: c.LastSyncAt,
 		LastSyncStatus: c.LastSyncStatus, LastSyncError: c.LastSyncError,
 		CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
@@ -282,7 +254,7 @@ func toLedgerResponse(ledger []domain.AppConnectionIndexer) []connectionIndexerR
 	out := make([]connectionIndexerResponse, 0, len(ledger))
 	for _, l := range ledger {
 		out = append(out, connectionIndexerResponse{
-			InstanceID: l.InstanceID, RemoteID: l.RemoteID, Selected: l.Selected,
+			InstanceID: l.InstanceID, RemoteID: l.RemoteID,
 			LastPushedAt: l.LastPushedAt, LastPushStatus: l.LastPushStatus, LastPushError: l.LastPushError,
 		})
 	}

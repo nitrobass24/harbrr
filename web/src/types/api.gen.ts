@@ -612,26 +612,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/app-connections/{id}/indexers": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Set the selected-indexer set (for index_scope=selected)
-         * @description Replaces the connection's selected indexers: the given instance ids become selected, every other currently-selected one is cleared. Only meaningful when the connection's index_scope is "selected".
-         */
-        put: operations["setConnectionIndexers"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/apps": {
         parameters: {
             query?: never;
@@ -1168,7 +1148,7 @@ export interface paths {
         put?: never;
         /**
          * Add a sync profile
-         * @description Names a reusable set of app-sync overrides (category subset, min seeders, RSS/automatic/interactive toggles). A duplicate name is a 409.
+         * @description Names a reusable indexer routing set (which indexers a connection syncs to); empty/omitted indexerIds means every compatible indexer. A duplicate name is a 409.
          */
         post: operations["createSyncProfile"];
         delete?: never;
@@ -1188,13 +1168,13 @@ export interface paths {
         get: operations["getSyncProfile"];
         put?: never;
         post?: never;
-        /** Delete a sync profile (referencing connections revert to default behavior) */
+        /** Delete a sync profile (refused while any connection references it) */
         delete: operations["deleteSyncProfile"];
         options?: never;
         head?: never;
         /**
          * Update a sync profile
-         * @description A partial update; omitted fields are unchanged. A present-but-empty categories array clears the category set (full-category behavior). A duplicate name is a 409.
+         * @description A partial update; omitted fields are unchanged. A present-but-empty indexerIds array clears the selection (every compatible indexer). A duplicate name is a 409.
          */
         patch: operations["updateSyncProfile"];
         trace?: never;
@@ -1423,6 +1403,15 @@ export interface components {
             flaresolverr_url?: string;
             /** @description FlareSolverr maxTimeout in seconds (optional) */
             flaresolverr_max_timeout?: string;
+            /** @description per-indexer search request cap for the rolling period (limits_unit); a non-positive integer string or empty/unset means no cap (autobrr/harbrr#251). The registry also learns a cap reactively from a tracker's own quota error, independent of this setting. */
+            query_limit?: string;
+            /** @description per-indexer grab (download) request cap for the rolling period (limits_unit); same semantics as query_limit but counted separately (mirrors Prowlarr's separate queryLimit/grabLimit fields). */
+            grab_limit?: string;
+            /**
+             * @description the rolling period query_limit/grab_limit reset on: day (default, UTC midnight) or hour (opt-in, top of the UTC hour).
+             * @enum {string}
+             */
+            limits_unit?: "day" | "hour";
         };
         Credentials: {
             username: string;
@@ -1491,7 +1480,7 @@ export interface components {
             /**
              * Format: int64
              * @description the numeric instance id — the handle the app-sync ledger
-             *     (ConnectionIndexer.instanceId) and SelectIndexers.instanceIds speak
+             *     (ConnectionIndexer.instanceId) and a sync profile's indexerIds speak
              */
             id: number;
             slug: string;
@@ -1516,6 +1505,30 @@ export interface components {
             solverId?: number | null;
             /** @description the freeleech-only checkbox's canonical state */
             freeleech: boolean;
+            /**
+             * @description Servarr indexer priority (1-50, 1 = highest), pushed per indexer by appsync
+             * @default 25
+             */
+            priority: number;
+            /** @description per-indexer minimum-seeders floor; 0 = unset, not pushed */
+            minSeeders: number;
+            /** @description Newznab category ids this indexer narrows its push to, within the consuming app's own content type (never beyond it); empty means no narrowing (deduped and sorted). */
+            syncCategories: number[];
+            /**
+             * @description pushed RSS search-mode flag (ANDed with enabled)
+             * @default true
+             */
+            enableRss: boolean;
+            /**
+             * @description pushed automatic-search-mode flag (ANDed with enabled)
+             * @default true
+             */
+            enableAutomaticSearch: boolean;
+            /**
+             * @description pushed interactive-search-mode flag (ANDed with enabled)
+             * @default true
+             */
+            enableInteractiveSearch: boolean;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -1592,6 +1605,18 @@ export interface components {
              * @description reference a global solver resource (nil = none)
              */
             solverId?: number | null;
+            /** @description Servarr indexer priority (1-50, 1 = highest); omitted or 0 defaults to 25 */
+            priority?: number;
+            /** @description per-indexer minimum-seeders floor; 0 = unset, not pushed */
+            minSeeders?: number;
+            /** @description Newznab category ids to narrow this indexer's push to; empty means no narrowing */
+            syncCategories?: number[];
+            /** @default true */
+            enableRss?: boolean;
+            /** @default true */
+            enableAutomaticSearch?: boolean;
+            /** @default true */
+            enableInteractiveSearch?: boolean;
         };
         UpdateIndexer: {
             name?: string;
@@ -1610,6 +1635,18 @@ export interface components {
              * @description the global solver reference; applied verbatim (null clears it)
              */
             solverId?: number | null;
+            /** @description Servarr indexer priority (1-50, 1 = highest); omitted leaves it unchanged */
+            priority?: number;
+            /** @description per-indexer minimum-seeders floor; omitted leaves it unchanged */
+            minSeeders?: number;
+            /** @description present-but-empty clears the narrowing; omitted leaves it unchanged */
+            syncCategories?: number[];
+            /** @description omitted leaves it unchanged */
+            enableRss?: boolean;
+            /** @description omitted leaves it unchanged */
+            enableAutomaticSearch?: boolean;
+            /** @description omitted leaves it unchanged */
+            enableInteractiveSearch?: boolean;
         };
         Capabilities: {
             /** @description search mode -> supported query params */
@@ -1751,19 +1788,13 @@ export interface components {
              */
             syncLevel: "full" | "add_update";
             /**
-             * @description which harbrr indexers this connection mirrors
-             * @enum {string}
-             */
-            indexScope: "all" | "selected";
-            /**
              * @description which feed variant is pushed: honor = the standard feed (the indexer's freeleech setting is respected); bypass = the /full variant (full catalog, for cross-seed). Defaults by kind (qui = bypass; *arrs = honor).
              * @enum {string}
              */
             freeleechMode: "honor" | "bypass";
-            priority: number;
             /**
              * Format: int64
-             * @description the sync profile this connection uses, or null for none (default behavior). ON DELETE SET NULL — deleting the profile drops the reference. Never set for qui (sync profiles do not apply to it); a profile with a non-empty category set must overlap the app's content range (the attach-time overlap guard).
+             * @description the sync profile (routing set) this connection uses, or null for none — nil, or a profile with an empty selection, means every compatible indexer. ON DELETE SET NULL — deleting the profile drops the reference, but the appsync service refuses the delete while any connection still references it (409). Meaningful for every kind, including qui.
              */
             syncProfileId?: number | null;
             /** Format: date-time */
@@ -1800,20 +1831,13 @@ export interface components {
              */
             syncLevel?: "full" | "add_update";
             /**
-             * @default all
-             * @enum {string}
-             */
-            indexScope?: "all" | "selected";
-            /**
              * @description defaults by kind (qui = bypass; *arrs = honor)
              * @enum {string}
              */
             freeleechMode?: "honor" | "bypass";
-            /** @default 25 */
-            priority?: number;
             /**
              * Format: int64
-             * @description optional sync profile reference; must exist, must not be set for qui, and a non-empty category set must overlap the app's content range (else 400)
+             * @description optional sync profile (routing set) reference; must exist (else 400). Meaningful for every kind, including qui.
              */
             syncProfileId?: number | null;
         };
@@ -1823,10 +1847,7 @@ export interface components {
             /** @enum {string} */
             syncLevel?: "full" | "add_update";
             /** @enum {string} */
-            indexScope?: "all" | "selected";
-            /** @enum {string} */
             freeleechMode?: "honor" | "bypass";
-            priority?: number;
             /**
              * Format: int64
              * @description tri-state: omit to leave unchanged, null to clear, an id to set it (validated as on create). Applied verbatim once validated.
@@ -2106,18 +2127,13 @@ export interface components {
             url?: string;
             maxTimeout?: number;
         };
-        /** @description A named, reusable set of app-sync overrides a connection references by id (the Prowlarr AppProfile equivalent). Holds no secrets. */
+        /** @description A named, reusable indexer ROUTING SET a connection references by id (#365 — the Prowlarr AppProfile equivalent, narrowed to pure routing; all sync behavior now lives per-indexer, see Indexer). Holds no secrets. */
         SyncProfile: {
             /** Format: int64 */
             id: number;
             name: string;
-            /** @description Newznab category ids this profile narrows a connection to (deduped and sorted). Empty means no narrowing (the full category set is pushed). A profile only narrows within the app's own content type, never beyond it. */
-            categories: number[];
-            /** @description pushed Torznab minimum-seeders floor (0 = the app default, not pushed) */
-            minSeeders: number;
-            enableRss: boolean;
-            enableAutomaticSearch: boolean;
-            enableInteractiveSearch: boolean;
+            /** @description The indexer instances this profile routes a connection to. Empty means every compatible indexer (mirrors the empty-categories convention and avoids a profile edit silently narrowing a connection to nothing). */
+            indexerIds: number[];
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -2125,25 +2141,13 @@ export interface components {
         };
         CreateSyncProfile: {
             name: string;
-            /** @description Newznab category ids to narrow to (0 < id < 1000000); empty means no narrowing */
-            categories?: number[];
-            /** @description minimum-seeders floor (>= 0); 0 = the app default */
-            minSeeders?: number;
-            /** @default true */
-            enableRss?: boolean;
-            /** @default true */
-            enableAutomaticSearch?: boolean;
-            /** @default true */
-            enableInteractiveSearch?: boolean;
+            /** @description the indexer instances to route to; empty (or omitted) means every compatible indexer */
+            indexerIds?: number[];
         };
-        /** @description A partial update; omitted fields are left unchanged. A present-but-empty categories array clears the category set (revert to full-category behavior). */
+        /** @description A partial update; omitted fields are left unchanged. A present-but-empty indexerIds array clears the selection (revert to every compatible indexer). */
         UpdateSyncProfile: {
             name?: string;
-            categories?: number[];
-            minSeeders?: number;
-            enableRss?: boolean;
-            enableAutomaticSearch?: boolean;
-            enableInteractiveSearch?: boolean;
+            indexerIds?: number[];
         };
         /** @description a copy-paste cross-seed v6 config.js torznab entry for one indexer */
         CrossSeedSnippet: {
@@ -2154,13 +2158,12 @@ export interface components {
             /** @description the torznab array entry for config.js, with an apikey placeholder */
             configJs: string;
         };
-        /** @description one row of a connection's per-indexer sync ledger */
+        /** @description one row of a connection's per-indexer sync ledger (a pure reconcile record) */
         ConnectionIndexer: {
             /** Format: int64 */
             instanceId: number;
             /** @description the id the app assigned the pushed indexer */
             remoteId?: string;
-            selected: boolean;
             /** Format: date-time */
             lastPushedAt?: string;
             /** @description ok | error */
@@ -2190,10 +2193,6 @@ export interface components {
             report: components["schemas"]["SyncReport"];
             /** @description scrubbed error when this connection failed to sync */
             error?: string;
-        };
-        SelectIndexers: {
-            /** @description the indexer instance ids to select; all others are cleared */
-            instanceIds: number[];
         };
         /** @description Search-results cache statistics. When enabled is false, caching is off and the remaining figures are absent/zero. */
         CacheStats: {
@@ -3484,33 +3483,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ConnectionStatus"];
                 };
-            };
-            400: components["responses"]["BadRequest"];
-            401: components["responses"]["Unauthorized"];
-            404: components["responses"]["NotFound"];
-        };
-    };
-    setConnectionIndexers: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SelectIndexers"];
-            };
-        };
-        responses: {
-            /** @description selection updated */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
@@ -4950,6 +4922,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     updateSyncProfile: {
