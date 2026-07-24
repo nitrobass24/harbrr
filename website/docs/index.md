@@ -21,6 +21,9 @@ For the alpha, harbrr is operated entirely over its HTTP API; the interactive
 
 ## Features
 
+**[All features](features/overview.md)** — the complete list of what harbrr does today, what's
+still coming, and how it compares to Prowlarr and Jackett.
+
 - **[Search-results cache](features/search-results-cache.md)** — how harbrr spares your
   trackers from repeated, identical searches, and the knobs you can use to tune it.
 - **[Failing-tracker circuit breaker](features/circuit-breaker.md)** — how harbrr backs off

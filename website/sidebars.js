@@ -23,7 +23,9 @@ const sidebars = {
     {
       type: 'category',
       label: 'Features',
+      link: {type: 'doc', id: 'features/overview'},
       items: [
+        {type: 'doc', id: 'features/overview', label: 'All features'},
         {
           type: 'doc',
           id: 'features/search-results-cache',
