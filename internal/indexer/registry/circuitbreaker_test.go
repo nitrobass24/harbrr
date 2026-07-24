@@ -1,10 +1,14 @@
 package registry
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"testing"
 	"time"
+
+	"github.com/rs/zerolog"
 
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/domain"
@@ -63,6 +67,74 @@ func TestEscalateGatewayOutageClimbs(t *testing.T) {
 			t.Fatalf("after %d gateway failures, level = %d, want %d", level, state.EscalationLevel, level)
 		}
 	}
+}
+
+// newCircuitTestAdapter builds the minimal adapter recordHealth needs — the health
+// and circuit repositories over a real SQLite db plus the clock/boot-time fields the
+// escalation ladder reads. Booted long ago, so the startup grace never caps.
+func newCircuitTestAdapter(t *testing.T) (*indexerAdapter, *database.DB) {
+	t.Helper()
+	db, err := database.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Migrate(context.Background()); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	return &indexerAdapter{
+		instanceID:   insertTestInstance(t, db),
+		db:           db,
+		health:       database.Health{},
+		circuit:      database.Circuit{},
+		circuitLocks: &circuitLocks{},
+		startedAt:    circuitNow.Add(-2 * time.Hour),
+		clock:        func() time.Time { return circuitNow },
+		log:          zerolog.Nop(),
+	}, db
+}
+
+// TestRecordHealthEscalation exercises the adapter-level derivation in
+// escalateCircuit: production failures arrive %w-wrapped, so errors.Is must see
+// search.ErrGatewayStatus through the wrapping for a gateway outage to climb,
+// while an ordinary wrapped transport failure stays pinned at level 1.
+func TestRecordHealthEscalation(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	t.Run("wrapped gateway status climbs", func(t *testing.T) {
+		t.Parallel()
+		a, db := newCircuitTestAdapter(t)
+		gateway := fmt.Errorf("registry: search %q: %w", "ptp",
+			fmt.Errorf("passthepopcorn: search returned HTTP 502: %w", search.ErrGatewayStatus))
+		for range 3 {
+			a.recordHealth(ctx, gateway)
+		}
+		state, err := a.circuit.Get(ctx, db, a.instanceID)
+		if err != nil {
+			t.Fatalf("get circuit: %v", err)
+		}
+		if state.EscalationLevel != 3 {
+			t.Errorf("level after 3 wrapped gateway failures = %d, want 3", state.EscalationLevel)
+		}
+	})
+
+	t.Run("wrapped ordinary transport stays pinned", func(t *testing.T) {
+		t.Parallel()
+		a, db := newCircuitTestAdapter(t)
+		transport := fmt.Errorf("registry: search %q: %w", "x",
+			&url.Error{Op: "Get", URL: "https://tracker.example", Err: errors.New("connection reset by peer")})
+		for range 3 {
+			a.recordHealth(ctx, transport)
+		}
+		state, err := a.circuit.Get(ctx, db, a.instanceID)
+		if err != nil {
+			t.Fatalf("get circuit: %v", err)
+		}
+		if state.EscalationLevel != 1 {
+			t.Errorf("level after 3 wrapped transport failures = %d, want pinned at 1", state.EscalationLevel)
+		}
+	})
 }
 
 func TestEscalateStartupGraceCapsWindow(t *testing.T) {
