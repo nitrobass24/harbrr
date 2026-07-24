@@ -58,6 +58,12 @@ func (c ttlConfig) resolveTTL(cfg map[string]string, q search.Query, count int) 
 // entry before the next scheduled warm refreshes it, defeating the warm entirely on
 // the next consumer poll in between. A keyword query is never floored — the warm
 // interval only ever primes the RSS entry.
+//
+// No capability check runs here: stripInertWarmInterval (warmer.go) already deleted
+// the setting from cfg at build time for a paging/Mode-consuming instance (no warmer
+// ever refreshes those, so the floor's justification does not hold), so cfg simply
+// carries no valid warmIntervalSetting for one — this stays a pure "is the setting
+// present and valid" check.
 func warmFloor(cfg map[string]string, q search.Query, ttl time.Duration) time.Duration {
 	if !isEmptyQuery(q) {
 		return ttl

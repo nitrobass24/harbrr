@@ -47,7 +47,12 @@ func (c *SearchCache) RehydrateCounters(ctx context.Context) error {
 // would keep over-reporting in the globals, keep appearing in StatsByInstance, and
 // make FlushCounters re-attempt a doomed Upsert against its cascade-deleted row every
 // cleanup tick. The durable cache_counters row is already gone via ON DELETE CASCADE.
+// It also drops the instance's negative-breaker entry (an instance can have a breaker
+// entry regardless of whether it has a counters entry, so this runs unconditionally,
+// before the counters early-return) so a re-added instance that reuses the row id never
+// replays the deleted instance's pre-delete error.
 func (c *SearchCache) ForgetInstance(instanceID int64) {
+	c.breaker.forget(instanceID)
 	v, ok := c.instCounters.LoadAndDelete(instanceID)
 	if !ok {
 		return
