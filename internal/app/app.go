@@ -324,6 +324,11 @@ func buildSearchCache(ctx context.Context, db *database.DB, cfg *config.Config, 
 	if err := sc.RehydrateCounters(ctx); err != nil {
 		log.Warn().Err(err).Msg("loading cache stat counters failed; counters start at zero this session")
 	}
+	if fp, err := defsFingerprint(dropinDir(cfg)); err != nil {
+		log.Warn().Err(err).Msg("computing definitions fingerprint failed; skipping def-change cache expiry")
+	} else if err := sc.EnsureDefsFingerprint(ctx, fp); err != nil {
+		log.Warn().Err(err).Msg("checking definitions fingerprint failed; cache may serve stale-shape results after a def update")
+	}
 	return sc
 }
 

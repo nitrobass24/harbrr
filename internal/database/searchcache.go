@@ -168,6 +168,26 @@ func (SearchCacheStore) CleanupExpired(ctx context.Context, q dbinterface.Execer
 	return rowsAffected(res)
 }
 
+// ExpireAll sets expires_at to now for every currently-live (unexpired) entry,
+// WITHOUT deleting any row, and returns the count affected. It backs boot-time
+// def-content-change detection (autobrr/harbrr#347): a definitions upgrade or
+// dropin edit must stop old-shape rows from serving immediately (Fetch filters on
+// expires_at), but the rows themselves must survive so the announce-source diff
+// (FetchAny) and the #251 budget-exhausted stale serve keep reading them — exactly
+// as an ordinary TTL expiry does. CleanupExpired's reap grace applies on top, same
+// as any other expiry. Already-expired rows are left untouched: the expires_at > ?
+// filter both skips re-touching them and preserves their existing (older)
+// expires_at, so their reap-grace clock is not pushed forward.
+func (SearchCacheStore) ExpireAll(ctx context.Context, q dbinterface.Execer, now time.Time) (int64, error) {
+	res, err := q.ExecContext(ctx,
+		q.Rebind(`UPDATE search_cache SET expires_at = ? WHERE expires_at > ?`),
+		now.UTC().Format(timeLayout), now.UTC().Format(timeLayout))
+	if err != nil {
+		return 0, fmt.Errorf("database: expire all search cache: %w", err)
+	}
+	return rowsAffected(res)
+}
+
 // Flush deletes all entries, returning the number purged. Backs the management
 // flush endpoint.
 func (SearchCacheStore) Flush(ctx context.Context, q dbinterface.Execer) (int64, error) {

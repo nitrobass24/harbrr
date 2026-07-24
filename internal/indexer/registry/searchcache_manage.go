@@ -136,6 +136,22 @@ func (c *SearchCache) Flush(ctx context.Context) (int64, error) {
 	return n, nil
 }
 
+// ExpireAll marks every currently-live cache entry expired — WITHOUT deleting it —
+// and returns the count affected. It backs boot-time def-content-change detection
+// (EnsureDefsFingerprint in searchcache_config.go, autobrr/harbrr#347): a
+// definitions upgrade or dropin edit must stop old-shape entries from serving
+// immediately, but — unlike Flush — the rows must survive so the announce-source
+// diff (priorGUIDs, via FetchAny) and the #251 budget-exhausted stale serve
+// (fetchStale) keep reading them. cacheReapGrace still reaps them, just later than
+// an ordinary TTL expiry would.
+func (c *SearchCache) ExpireAll(ctx context.Context) (int64, error) {
+	n, err := c.store.ExpireAll(ctx, c.db, c.clock())
+	if err != nil {
+		return 0, err //nolint:wrapcheck // store wraps with context; nothing secret to add.
+	}
+	return n, nil
+}
+
 // cacheReapGrace is how long an EXPIRED row is retained before the cleanup tick
 // deletes it. Two features read expired rows by design and break when the reaper
 // removes them too early: the announce-source diff (priorGUIDs reads the row a
