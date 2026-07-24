@@ -31,7 +31,10 @@ var _ core.Indexer = (*cacheProbe)(nil)
 
 // probe builds a cacheProbe over inner, snapshotting the instance's invalidation epoch at
 // construction — the same capture Registry.build performs into indexerAdapter.builtEpoch.
+// It applies stripInertWarmInterval to cfg, matching buildAdapter (registry.go), so a
+// probe-driven test exercises the same warmer-skip TTL semantics production does.
 func (c *SearchCache) probe(inner core.Indexer, instanceID int64, cfg map[string]string) *cacheProbe {
+	stripInertWarmInterval(cfg, inner)
 	return &cacheProbe{inner: inner, cache: c, instanceID: instanceID, cfg: cfg, builtEpoch: c.instanceEpoch(instanceID)}
 }
 

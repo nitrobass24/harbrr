@@ -420,6 +420,10 @@ func (r *Resolver) buildAdapter(ctx context.Context, slug string) (*indexerAdapt
 	if err != nil {
 		return nil, err
 	}
+	// A paging or Mode-consuming driver has no single canonical RSS cache key for the
+	// warmer to ever keep hot (warmOne skips it outright), so its rss_warm_interval
+	// setting must not floor its RSS TTL either — see stripInertWarmInterval.
+	stripInertWarmInterval(cfg, inner)
 	return &indexerAdapter{
 		info:          indexerInfo(inst, def),
 		inner:         inner,

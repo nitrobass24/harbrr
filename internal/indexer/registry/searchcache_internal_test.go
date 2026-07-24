@@ -31,14 +31,21 @@ type fakeInner struct {
 	// flight to be in progress instead of sleeping a fixed duration.
 	firstSeen chan struct{}
 	firstOnce sync.Once
+
+	// pages/consumesMode drive SupportsOffsetPaging/ConsumesSearchMode (both default
+	// false, matching every existing fakeInner literal) — the warmer-skip regression
+	// in searchcache_ttl_test.go configures one true to prove stripInertWarmInterval
+	// (warmer.go) strips a probe-supplied cfg's rss_warm_interval for such a driver.
+	pages        bool
+	consumesMode bool
 }
 
 func (f *fakeInner) Info() core.IndexerInfo             { return core.IndexerInfo{ID: "fake"} }
 func (f *fakeInner) Capabilities() *mapper.Capabilities { return &mapper.Capabilities{} }
 func (f *fakeInner) NeedsResolver() bool                { return false }
 func (f *fakeInner) DownloadNeedsAuth() bool            { return false }
-func (f *fakeInner) SupportsOffsetPaging() bool         { return false }
-func (f *fakeInner) ConsumesSearchMode() bool           { return false }
+func (f *fakeInner) SupportsOffsetPaging() bool         { return f.pages }
+func (f *fakeInner) ConsumesSearchMode() bool           { return f.consumesMode }
 
 func (f *fakeInner) Grab(context.Context, string) (*search.GrabResult, error) {
 	return nil, errors.New("not implemented")
@@ -399,7 +406,12 @@ func TestCacheInfoRecordedForCoalescedMisses(t *testing.T) {
 			_, _ = idx.Search(ctx, q)
 		}()
 	}
-	<-inner.firstSeen // the flight is in progress; the rest coalesce onto it
+	<-inner.firstSeen // the flight leader is inside the inner search, held at the gate
+	// Deterministic barrier before releasing the leader: all n requests must have
+	// reached serveMiss (its miss-counter bump immediately precedes the singleflight),
+	// or a slow-scheduled follower could arrive after the flight completed and start a
+	// second one — the firstSeen+waitForMisses pattern the follower tests use.
+	waitForMisses(t, sc, n)
 	close(gate)
 	wg.Wait()
 
@@ -528,7 +540,12 @@ func TestDegradeOpenCoalesces(t *testing.T) {
 			results[i], errs[i] = idx.Search(context.Background(), q)
 		}(i)
 	}
-	<-inner.firstSeen // the flight is in progress; the rest coalesce onto it
+	<-inner.firstSeen // the flight leader is inside the inner search, held at the gate
+	// Deterministic barrier before releasing the leader: all n requests must have
+	// reached serveMiss (its miss-counter bump immediately precedes the singleflight),
+	// or a slow-scheduled follower could arrive after the flight completed and start a
+	// second one — the firstSeen+waitForMisses pattern the follower tests use.
+	waitForMisses(t, sc, n)
 	close(gate)
 	wg.Wait()
 
