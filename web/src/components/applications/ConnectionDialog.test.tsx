@@ -12,6 +12,8 @@ const SONARR_APP: App = {
   createdAt: "2026-07-01T00:00:00Z", updatedAt: "2026-07-01T00:00:00Z",
 }
 
+const RADARR_APP: App = { ...SONARR_APP, id: 4, kind: "radarr", name: "radarr-app", baseUrl: "http://radarr:7878" }
+
 const PROFILES: SyncProfile[] = [
   {
     id: 4,
@@ -108,7 +110,7 @@ describe("ConnectionDialog sync profile picker", () => {
 
     // Fill the required create fields (kind defaults to sonarr, so the picker shows).
     fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "sonarr-new" } })
-    fireEvent.change(screen.getByLabelText("App base URL"), { target: { value: "http://sonarr:8989" } })
+    fireEvent.change(screen.getByLabelText("Host"), { target: { value: "http://sonarr:8989" } })
     fireEvent.change(screen.getByLabelText("App API key"), { target: { value: "app-key" } })
 
     const select = await screen.findByLabelText("Sync profile")
@@ -216,13 +218,13 @@ describe("ConnectionDialog create — App picker", () => {
     await screen.findByRole("option", { name: "sonarr-app (sonarr)" })
     // No interaction — the picker itself defaults to the existing app.
     expect(appSelect.value).toBe(String(SONARR_APP.id))
-    expect(screen.queryByLabelText("App base URL")).toBeNull()
+    expect(screen.queryByLabelText("Host")).toBeNull()
 
     // "New app…" is the last option and, once chosen, brings the inline fields back.
     const options = Array.from(appSelect.options)
     expect(options[options.length - 1].textContent).toBe("New app…")
     fireEvent.change(appSelect, { target: { value: "new" } })
-    expect(screen.getByLabelText("App base URL")).toBeTruthy()
+    expect(screen.getByLabelText("Host")).toBeTruthy()
   })
 
   it("picking an existing app hides the inline fields and submits appId", async () => {
@@ -236,7 +238,7 @@ describe("ConnectionDialog create — App picker", () => {
     await screen.findByRole("option", { name: "sonarr-app (sonarr)" })
     fireEvent.change(appSelect, { target: { value: String(SONARR_APP.id) } })
 
-    expect(screen.queryByLabelText("App base URL")).toBeNull()
+    expect(screen.queryByLabelText("Host")).toBeNull()
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "sonarr-new" } })
     fireEvent.click(screen.getByRole("button", { name: "Add application" }))
 
@@ -254,10 +256,12 @@ describe("ConnectionDialog create — App picker", () => {
     const appSelect = await screen.findByLabelText("App")
     await screen.findByRole("option", { name: "sonarr-app (sonarr)" })
     fireEvent.change(appSelect, { target: { value: "new" } })
-    expect(screen.getByLabelText("App base URL")).toBeTruthy()
+    expect(screen.getByLabelText("Host")).toBeTruthy()
 
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "sonarr-new" } })
-    fireEvent.change(screen.getByLabelText("App base URL"), { target: { value: "http://sonarr:8989" } })
+    // Realistic typed flow: just the hostname, relying on the port already seeded for
+    // the (default) sonarr kind — typing doesn't fan out a pasted URL (that's onPaste-only).
+    fireEvent.change(screen.getByLabelText("Host"), { target: { value: "sonarr" } })
     fireEvent.change(screen.getByLabelText("App API key"), { target: { value: "app-key" } })
     fireEvent.click(screen.getByRole("button", { name: "Add application" }))
 
@@ -265,6 +269,25 @@ describe("ConnectionDialog create — App picker", () => {
       name: "sonarr-new", kind: "sonarr", baseUrl: "http://sonarr:8989", apiKey: "app-key",
     }))
     expect(onCreate.mock.calls[0][0]).not.toHaveProperty("appId")
+  })
+
+  it("deep-link pre-pick re-defaults the port for the picked App's kind, not the form's initial kind", async () => {
+    vi.stubGlobal("fetch", vi.fn((request: Request) => {
+      if (request.url.includes("/apps")) return Promise.resolve(jsonResponse([RADARR_APP]))
+      return Promise.resolve(jsonResponse(PROFILES))
+    }))
+    render(wrap(
+      <ConnectionDialog state={{ open: true, initialAppId: RADARR_APP.id }} pending={false} error={null} onClose={vi.fn()} onCreate={vi.fn()} onUpdate={vi.fn()} />
+    ))
+
+    // The deep-link pre-picks the radarr App (kind flips from the default "sonarr"); once
+    // the operator flips back to "New app…" the port must reflect radarr (7878), not a
+    // leftover default from before the pick.
+    const appSelect = await screen.findByLabelText<HTMLSelectElement>("App")
+    await screen.findByRole("option", { name: "radarr-app (radarr)" })
+    fireEvent.change(appSelect, { target: { value: "new" } })
+
+    expect(screen.getByLabelText<HTMLInputElement>("Port").value).toBe("7878")
   })
 })
 
@@ -307,7 +330,7 @@ describe("ConnectionDialog create — Already configured block", () => {
     fireEvent.click(await screen.findByRole("button", { name: /radarr-app/ }))
 
     expect((screen.getByLabelText<HTMLSelectElement>("Kind")).value).toBe("radarr")
-    expect(screen.queryByLabelText("App base URL")).toBeNull()
+    expect(screen.queryByLabelText("Host")).toBeNull()
     expect(await screen.findByText(/Reusing/)).toBeTruthy()
     expect(screen.getByLabelText<HTMLInputElement>("Name").value).toBe("radarr-app")
   })
@@ -337,7 +360,7 @@ describe("ConnectionDialog create — Already configured block", () => {
     const option = await screen.findByRole<HTMLOptionElement>("option", { name: /sonarr-app \(sonarr\) — already added/ })
     expect(option.disabled).toBe(true)
     expect(appSelect.value).toBe("new")
-    expect(screen.getByLabelText("App base URL")).toBeTruthy()
+    expect(screen.getByLabelText("Host")).toBeTruthy()
   })
 
   it("disables a row already used by app-sync, with an 'already added' note", async () => {
