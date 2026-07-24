@@ -117,6 +117,47 @@ func TestSearchCacheCascadeDelete(t *testing.T) {
 	}
 }
 
+func TestSearchCacheDelete(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		seed  bool // whether to Store a row at "key-1" before deleting it
+		key   string
+		after bool // whether "key-1" should still be found after Delete
+	}{
+		{name: "existing row is removed", seed: true, key: "key-1", after: false},
+		{name: "absent key is a no-op, not an error", seed: false, key: "missing", after: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			db := openMigrated(t, ":memory:")
+			store := database.SearchCacheStore{}
+			instID := insertInstance(t, db, "tracker-a")
+			now := time.Now().UTC().Truncate(time.Second)
+
+			if tt.seed {
+				if err := store.Store(ctx, db, sampleEntry("key-1", instID, now, time.Hour)); err != nil {
+					t.Fatalf("Store: %v", err)
+				}
+			}
+
+			if err := store.Delete(ctx, db, tt.key); err != nil {
+				t.Fatalf("Delete: %v", err)
+			}
+
+			_, found, err := store.Fetch(ctx, db, "key-1", now)
+			if err != nil {
+				t.Fatalf("Fetch: %v", err)
+			}
+			if found != tt.after {
+				t.Errorf("Fetch found=%v after Delete(%q), want %v", found, tt.key, tt.after)
+			}
+		})
+	}
+}
+
 func TestSearchCacheTouchIncrements(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

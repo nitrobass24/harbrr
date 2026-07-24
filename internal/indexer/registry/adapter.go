@@ -36,12 +36,13 @@ type indexerAdapter struct {
 	// cfg is the decrypted per-instance settings map. Search's cache-aside stage reads
 	// its "cache_ttl" override; it carries secrets, so it is never logged.
 	cfg map[string]string
-	// cache is the registry-wide search cache, wired at build time when caching is
+	// cache is the registry-wide search cache, wired in build() when caching is
 	// configured (nil ⇒ caching not configured, so Search runs live). builtEpoch is the
-	// instance's invalidation generation snapshotted at that same build time (see
-	// Registry.build); storeBestEffort drops any write-back from a superseded generation
-	// (U8R-F4). Snapshotting at build — not per fetch — also catches a purge that lands
-	// between the resolve and a later SWR trigger.
+	// instance's invalidation generation, snapshotted earlier in buildAdapter — before
+	// the settings read, not just before build's cache wiring (see buildAdapter's doc);
+	// storeBestEffort drops any write-back from a superseded generation (U8R-F4).
+	// Snapshotting at build — not per fetch — also catches a purge that lands between
+	// the resolve and a later SWR trigger.
 	cache      *SearchCache
 	builtEpoch uint64
 	// freeleechOnly is the instance's stored `freeleech` setting. The engine is built

@@ -2,10 +2,17 @@ package registry
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
+
+	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbinterface"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -161,6 +168,87 @@ func TestStoreProceedsWhenEpochUnchanged(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("epoch unchanged: store should have written back, but no entry present")
+	}
+}
+
+// bumpOnFirstInsertQuerier wraps a dbinterface.Querier and, on the FIRST ExecContext
+// whose query text contains "INSERT INTO search_cache", bumps sc's instanceID epoch
+// BEFORE forwarding the exec — landing the bump exactly inside storeBestEffort's
+// check-then-store window (the TOCTOU gap the post-store re-check closes). sc is set
+// AFTER construction (newSearchCache needs the wrapper as its db, and the wrapper
+// needs the cache it bumps — the two are tied together by the caller once both
+// exist). Only the first matching insert fires; the compensating DELETE the fix
+// issues afterward never matches "INSERT" and passes through untouched.
+type bumpOnFirstInsertQuerier struct {
+	dbinterface.Querier
+	sc     *SearchCache
+	instID int64
+	fired  atomic.Bool
+}
+
+func (w *bumpOnFirstInsertQuerier) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	if strings.Contains(query, "INSERT INTO search_cache") && w.fired.CompareAndSwap(false, true) {
+		w.sc.bumpInstanceEpoch(w.instID)
+	}
+	return w.Querier.ExecContext(ctx, query, args...)
+}
+
+// TestStoreCompensatingDeleteClosesCheckThenStoreWindow is the TOCTOU regression for
+// storeBestEffort's epoch gate: the gate's read and the Store call are not atomic, so
+// a purge landing in that exact gap (after the gate passes, DURING the Store) would
+// otherwise resurrect a row the purge just removed. The wrapped Querier lands the
+// bump precisely inside that window — deterministically, no goroutine race needed.
+//
+// FAIL-BEFORE (no post-store re-check): the row is left behind, stale-config data
+// served until TTL. PASS-AFTER: the post-store re-check sees the moved epoch and the
+// compensating delete removes it.
+func TestStoreCompensatingDeleteClosesCheckThenStoreWindow(t *testing.T) {
+	t.Parallel()
+	rawDB, err := database.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = rawDB.Close() })
+	if err := rawDB.Migrate(context.Background()); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	instID := insertTestInstance(t, rawDB)
+
+	wrapped := &bumpOnFirstInsertQuerier{Querier: rawDB, instID: instID}
+	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	sc := newSearchCache(wrapped, cacheTuning{enabled: true, ttl: keywordTTL, cleanup: time.Hour},
+		func() time.Time { return now }, zerolog.Nop())
+	wrapped.sc = sc
+
+	inner := &fakeInner{releases: relSet("a1", "a2", "a3", "a4", "a5", "a6")}
+	idx := sc.probe(inner, instID, nil)
+	q := search.Query{Keywords: "toctou"}
+
+	// The user's search still succeeds with the live result — degrade-open is intact
+	// even though the write-back behind it gets unwound.
+	got, err := idx.Search(context.Background(), q)
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(got) != 6 || got[0].Title != "a1" {
+		t.Fatalf("live search served %+v, want the 6 live releases", got)
+	}
+
+	// The bump must actually have landed (sanity: proves the hook fired at all).
+	if epoch := sc.instanceEpoch(instID); epoch != 1 {
+		t.Fatalf("instanceEpoch = %d, want 1 (the mid-store bump should have landed)", epoch)
+	}
+
+	// Fetch on a clean, unwrapped handle: the compensating delete must have run, so no
+	// row survives — proving the check-then-store window is closed, not just the
+	// wider pre-Store gate the earlier epoch tests cover.
+	key := buildSearchCacheKey(instID, q, false)
+	_, found, err := sc.store.Fetch(context.Background(), rawDB, key, sc.clock())
+	if err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	if found {
+		t.Fatal("BUG: a row written under a superseded epoch survived a store that raced InvalidateByInstance")
 	}
 }
 
