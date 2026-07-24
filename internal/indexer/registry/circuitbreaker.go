@@ -59,25 +59,24 @@ var errCircuitOpen = errors.New("registry: circuit open")
 
 // escalate advances state one rung for a qualifying failure of kind, applying
 // Prowlarr's rules sourced from ProviderStatusServiceBase/EscalationBackOff:
-//   - a transport failure (connection refused/reset, DNS, TLS, EOF, gateway status —
-//     see isTransportError) sets level 1 once and never climbs further: don't punish
-//     an indexer for the operator's dead network or a gateway hiccup.
-//     ponytail: harbrr's transport kind lumps connection/DNS/EOF/gateway together
-//     (#223, #247) rather than Prowlarr's separate connection-failure category, so
-//     the whole kind is treated as non-escalating here. Split it if gateway-vs-DNS
-//     ever needs different backoff.
+//   - a transport failure (connection refused/reset, DNS, TLS, EOF — see
+//     isTransportError) sets level 1 once and never climbs further: don't punish
+//     an indexer for the operator's dead network. Exception: gatewayOutage — a
+//     CDN answering 502/504/522 is the indexer's own origin being down, not the
+//     operator's network, so it climbs like every other kind; a tracker down for
+//     days must not be re-polled every 60 seconds.
 //   - every other classified kind (auth, anti-bot, rate-limited, parse) climbs one
 //     rung, capped at maxCircuitLevel.
 //   - retryAfter (non-zero only for a rate-limited failure carrying Retry-After) is a
 //     hard floor on the resulting disable window.
 //   - a failure landing within startupGrace of the registry's boot is capped to
 //     startupGraceCap regardless of rung.
-func escalate(cur database.CircuitState, kind string, retryAfter time.Duration, now, startedAt time.Time) database.CircuitState {
+func escalate(cur database.CircuitState, kind string, gatewayOutage bool, retryAfter time.Duration, now, startedAt time.Time) database.CircuitState {
 	next := cur
 	if next.InitialFailure.IsZero() {
 		next.InitialFailure = now
 	}
-	if kind == domain.HealthTransport {
+	if kind == domain.HealthTransport && !gatewayOutage {
 		if next.EscalationLevel < 1 {
 			next.EscalationLevel = 1
 		}
