@@ -28,7 +28,6 @@ func sampleConnection(appID *int64, harbrrKeyID int64, now time.Time) domain.App
 		SyncLevel:             domain.SyncLevelFull,
 		IndexScope:            domain.IndexScopeAll,
 		FreeleechMode:         domain.FreeleechModeHonor,
-		Priority:              25,
 		CreatedAt:             now,
 		UpdatedAt:             now,
 	}
@@ -202,7 +201,6 @@ func TestAppConnectionUpdateAndEnable(t *testing.T) {
 	updated.Name = "Sonarr 4K"
 	updated.SyncLevel = domain.SyncLevelAddUpdate
 	updated.IndexScope = domain.IndexScopeSelected
-	updated.Priority = 10
 	updated.UpdatedAt = now.Add(time.Minute)
 	if err := repo.UpdateConnection(ctx, db, updated); err != nil {
 		t.Fatalf("UpdateConnection: %v", err)
@@ -210,7 +208,7 @@ func TestAppConnectionUpdateAndEnable(t *testing.T) {
 
 	got, _ := repo.GetConnection(ctx, db, id)
 	if got.Name != "Sonarr 4K" || got.SyncLevel != domain.SyncLevelAddUpdate ||
-		got.IndexScope != domain.IndexScopeSelected || got.Priority != 10 {
+		got.IndexScope != domain.IndexScopeSelected {
 		t.Errorf("update not applied: %+v", got)
 	}
 

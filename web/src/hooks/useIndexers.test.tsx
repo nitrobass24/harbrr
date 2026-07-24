@@ -95,6 +95,8 @@ function makeIndexer(overrides: Partial<Instance> = {}): Instance {
     proxyId: null,
     solverId: null,
     freeleech: false,
+    priority: 25,
+    minSeeders: 0,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
     ...overrides,

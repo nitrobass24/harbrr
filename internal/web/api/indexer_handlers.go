@@ -128,6 +128,8 @@ type instanceResponse struct {
 	ProxyID      *int64    `json:"proxyId"`
 	SolverID     *int64    `json:"solverId"`
 	Freeleech    bool      `json:"freeleech"`
+	Priority     int       `json:"priority"`
+	MinSeeders   int       `json:"minSeeders"`
 	CreatedAt    time.Time `json:"createdAt"`
 	UpdatedAt    time.Time `json:"updatedAt"`
 }
@@ -176,6 +178,8 @@ func (rt *router) addIndexer(w http.ResponseWriter, r *http.Request) {
 		Settings     map[string]string `json:"settings"`
 		ProxyID      *int64            `json:"proxyId"`
 		SolverID     *int64            `json:"solverId"`
+		Priority     int               `json:"priority"`
+		MinSeeders   int               `json:"minSeeders"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -183,6 +187,7 @@ func (rt *router) addIndexer(w http.ResponseWriter, r *http.Request) {
 	inst, err := rt.registry.Add(r.Context(), registry.AddParams{
 		Slug: req.Slug, DefinitionID: req.DefinitionID, Name: req.Name,
 		BaseURL: req.BaseURL, Settings: req.Settings, ProxyID: req.ProxyID, SolverID: req.SolverID,
+		Priority: req.Priority, MinSeeders: req.MinSeeders,
 	})
 	if err != nil {
 		rt.writeServiceError(w, "add indexer", err)
@@ -213,11 +218,13 @@ func (rt *router) getIndexer(w http.ResponseWriter, r *http.Request) {
 func (rt *router) updateIndexer(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 	var req struct {
-		Name     *string           `json:"name"`
-		BaseURL  *string           `json:"baseUrl"`
-		Settings map[string]string `json:"settings"`
-		ProxyID  optionalRef       `json:"proxyId"`
-		SolverID optionalRef       `json:"solverId"`
+		Name       *string           `json:"name"`
+		BaseURL    *string           `json:"baseUrl"`
+		Settings   map[string]string `json:"settings"`
+		ProxyID    optionalRef       `json:"proxyId"`
+		SolverID   optionalRef       `json:"solverId"`
+		Priority   *int              `json:"priority"`
+		MinSeeders *int              `json:"minSeeders"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -225,6 +232,7 @@ func (rt *router) updateIndexer(w http.ResponseWriter, r *http.Request) {
 	if err := rt.registry.Update(r.Context(), slug, registry.UpdateParams{
 		Name: req.Name, BaseURL: req.BaseURL, Settings: req.Settings,
 		ProxyID: req.ProxyID.toRegistry(), SolverID: req.SolverID.toRegistry(),
+		Priority: req.Priority, MinSeeders: req.MinSeeders,
 	}); err != nil {
 		rt.writeServiceError(w, "update indexer", err)
 		return
@@ -375,6 +383,7 @@ func toInstanceResponse(inst domain.IndexerInstance) instanceResponse {
 		ID: inst.ID, Slug: inst.Slug, DefinitionID: inst.DefinitionID, Name: inst.Name,
 		BaseURL: inst.BaseURL, Enabled: inst.Enabled, Protocol: inst.Protocol,
 		ProxyID: inst.ProxyID, SolverID: inst.SolverID,
+		Priority: inst.Priority, MinSeeders: inst.MinSeeders,
 		CreatedAt: inst.CreatedAt, UpdatedAt: inst.UpdatedAt,
 	}
 }

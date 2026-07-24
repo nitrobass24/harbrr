@@ -139,7 +139,7 @@ func seedInstance(t *testing.T, db *database.DB, kr *secrets.Keyring, proxyID, s
 	repo := database.Instances{}
 	id, err := repo.Insert(ctx, db, domain.IndexerInstance{
 		Slug: "tt", DefinitionID: "tt", Name: "TT", Enabled: true, Protocol: "torrent",
-		ProxyID: &proxyID, SolverID: &solverID,
+		ProxyID: &proxyID, SolverID: &solverID, Priority: 10, MinSeeders: 5,
 	})
 	if err != nil {
 		t.Fatalf("seed instance: %v", err)
@@ -184,7 +184,7 @@ func seedAppConn(t *testing.T, db *database.DB, kr *secrets.Keyring, kind string
 	id, err := repo.InsertConnection(ctx, db, domain.AppConnection{
 		Name: kind, Kind: kind, AppID: &appID,
 		HarbrrAPIKeyID: apiKeyID, KeyID: kr.KeyID(), Enabled: true, SyncLevel: "full",
-		IndexScope: "all", FreeleechMode: "honor", Priority: 25, SyncProfileID: profileID,
+		IndexScope: "all", FreeleechMode: "honor", SyncProfileID: profileID,
 	})
 	if err != nil {
 		t.Fatalf("seed app conn: %v", err)
@@ -298,6 +298,9 @@ func assertInstanceRestored(t *testing.T, dstDB *database.DB, dstKR *secrets.Key
 	}
 	if _, err := (database.Proxies{}).GetProxy(ctx, dstDB, *inst.ProxyID); err != nil {
 		t.Errorf("instance.proxy_id dangling: %v", err)
+	}
+	if inst.Priority != 10 || inst.MinSeeders != 5 {
+		t.Errorf("instance priority/minSeeders = %d/%d, want 10/5", inst.Priority, inst.MinSeeders)
 	}
 	settings, _ := repo.Settings(ctx, dstDB, inst.ID)
 	got := map[string]string{}

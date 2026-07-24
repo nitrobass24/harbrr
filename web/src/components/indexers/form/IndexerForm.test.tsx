@@ -56,6 +56,8 @@ const EXISTING: InstanceDetail = {
   proxyId: null,
   solverId: null,
   freeleech: false,
+  priority: 30,
+  minSeeders: 4,
   createdAt: "2026-07-01T00:00:00Z",
   updatedAt: "2026-07-01T00:00:00Z",
   settings: [
@@ -107,7 +109,50 @@ describe("IndexerForm", () => {
       expect(submit.body.definitionId).toBe("testtracker")
       expect(submit.body.slug).toBe("testtracker")
       expect(submit.body.settings).toEqual({ apikey: "k123" })
+      expect(submit.body.priority).toBe(25)
+      expect(submit.body.minSeeders).toBe(0)
     }
+  })
+
+  it("edit: priority/minSeeders prefill from the instance and submit as numbers", () => {
+    const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+    renderForm(<IndexerForm definition={DEFINITION} existing={EXISTING} pending={false} error={null} onSubmit={onSubmit} />)
+
+    fireEvent.click(screen.getByRole("button", { name: /Advanced/ }))
+    expect(screen.getByLabelText<HTMLInputElement>(/Priority/).value).toBe("30")
+    expect(screen.getByLabelText<HTMLInputElement>(/Minimum seeders/).value).toBe("4")
+
+    fireEvent.change(screen.getByLabelText(/Priority/), { target: { value: "12" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+
+    const body = onSubmit.mock.calls[0][0].body
+    expect(body.priority).toBe(12)
+    expect(body.minSeeders).toBe(4)
+  })
+
+  it("edit: request-limit settings (query_limit/grab_limit/limits_unit) round-trip", () => {
+    const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+    const existing: InstanceDetail = {
+      ...EXISTING,
+      settings: [
+        ...EXISTING.settings,
+        { name: "query_limit", value: "100", secret: false },
+        { name: "grab_limit", value: "20", secret: false },
+        { name: "limits_unit", value: "hour", secret: false },
+      ],
+    }
+    renderForm(<IndexerForm definition={DEFINITION} existing={existing} pending={false} error={null} onSubmit={onSubmit} />)
+
+    fireEvent.click(screen.getByRole("button", { name: /Advanced/ }))
+    expect(screen.getByLabelText<HTMLInputElement>(/Search request cap/).value).toBe("100")
+    expect(screen.getByLabelText<HTMLInputElement>(/Grab request cap/).value).toBe("20")
+    expect(screen.getByLabelText<HTMLSelectElement>(/Limits reset every/).value).toBe("hour")
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+    const body = onSubmit.mock.calls[0][0].body
+    expect(body.settings?.query_limit).toBe("100")
+    expect(body.settings?.grab_limit).toBe("20")
+    expect(body.settings?.limits_unit).toBe("hour")
   })
 
   it("slug is locked in edit mode", () => {

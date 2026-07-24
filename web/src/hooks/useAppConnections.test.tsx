@@ -27,7 +27,6 @@ function makeConnection(overrides: Partial<AppConnection> = {}): AppConnection {
     syncLevel: "full",
     indexScope: "all",
     freeleechMode: "honor",
-    priority: 0,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
     ...overrides,

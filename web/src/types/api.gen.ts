@@ -1423,6 +1423,15 @@ export interface components {
             flaresolverr_url?: string;
             /** @description FlareSolverr maxTimeout in seconds (optional) */
             flaresolverr_max_timeout?: string;
+            /** @description per-indexer search request cap for the rolling period (limits_unit); a non-positive integer string or empty/unset means no cap (autobrr/harbrr#251). The registry also learns a cap reactively from a tracker's own quota error, independent of this setting. */
+            query_limit?: string;
+            /** @description per-indexer grab (download) request cap for the rolling period (limits_unit); same semantics as query_limit but counted separately (mirrors Prowlarr's separate queryLimit/grabLimit fields). */
+            grab_limit?: string;
+            /**
+             * @description the rolling period query_limit/grab_limit reset on: day (default, UTC midnight) or hour (opt-in, top of the UTC hour).
+             * @enum {string}
+             */
+            limits_unit?: "day" | "hour";
         };
         Credentials: {
             username: string;
@@ -1516,6 +1525,13 @@ export interface components {
             solverId?: number | null;
             /** @description the freeleech-only checkbox's canonical state */
             freeleech: boolean;
+            /**
+             * @description Servarr indexer priority (1-50, 1 = highest), pushed per indexer by appsync
+             * @default 25
+             */
+            priority: number;
+            /** @description per-indexer minimum-seeders floor; 0 = unset, falls back to the sync profile's value */
+            minSeeders: number;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -1592,6 +1608,10 @@ export interface components {
              * @description reference a global solver resource (nil = none)
              */
             solverId?: number | null;
+            /** @description Servarr indexer priority (1-50, 1 = highest); omitted or 0 defaults to 25 */
+            priority?: number;
+            /** @description per-indexer minimum-seeders floor; 0 = unset (falls back to the sync profile's value) */
+            minSeeders?: number;
         };
         UpdateIndexer: {
             name?: string;
@@ -1610,6 +1630,10 @@ export interface components {
              * @description the global solver reference; applied verbatim (null clears it)
              */
             solverId?: number | null;
+            /** @description Servarr indexer priority (1-50, 1 = highest); omitted leaves it unchanged */
+            priority?: number;
+            /** @description per-indexer minimum-seeders floor; omitted leaves it unchanged */
+            minSeeders?: number;
         };
         Capabilities: {
             /** @description search mode -> supported query params */
@@ -1760,7 +1784,6 @@ export interface components {
              * @enum {string}
              */
             freeleechMode: "honor" | "bypass";
-            priority: number;
             /**
              * Format: int64
              * @description the sync profile this connection uses, or null for none (default behavior). ON DELETE SET NULL — deleting the profile drops the reference. Never set for qui (sync profiles do not apply to it); a profile with a non-empty category set must overlap the app's content range (the attach-time overlap guard).
@@ -1809,8 +1832,6 @@ export interface components {
              * @enum {string}
              */
             freeleechMode?: "honor" | "bypass";
-            /** @default 25 */
-            priority?: number;
             /**
              * Format: int64
              * @description optional sync profile reference; must exist, must not be set for qui, and a non-empty category set must overlap the app's content range (else 400)
@@ -1826,7 +1847,6 @@ export interface components {
             indexScope?: "all" | "selected";
             /** @enum {string} */
             freeleechMode?: "honor" | "bypass";
-            priority?: number;
             /**
              * Format: int64
              * @description tri-state: omit to leave unchanged, null to clear, an id to set it (validated as on create). Applied verbatim once validated.

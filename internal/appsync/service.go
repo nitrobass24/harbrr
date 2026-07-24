@@ -27,8 +27,7 @@ func defaultHTTPClient() *http.Client { return &http.Client{Timeout: httpClientT
 // secretHarbrr is the AAD discriminator for the harbrr key minted per connection (the
 // app's own credential lives on the App now, decrypted via s.apps, not on the row).
 const (
-	secretHarbrr    = "harbrr"
-	defaultPriority = 25
+	secretHarbrr = "harbrr"
 	// StatusSkipped is the sync status for a disabled connection (no remote calls).
 	StatusSkipped = "skipped"
 )
@@ -83,7 +82,7 @@ func NewService(db dbinterface.Querier, source IndexerSource, appsSvc *apps.Serv
 // CreateConnectionParams is the input to CreateConnection. It references the App
 // holding the app's identity + credential either by AppID (reuse) or inline
 // (BaseURL/APIKey/Username get-or-create by identity); HarbrrURL, when set, backfills
-// the App's harbrr feed URL. SyncLevel/IndexScope/Priority default when empty.
+// the App's harbrr feed URL. SyncLevel/IndexScope default when empty.
 type CreateConnectionParams struct {
 	Name          string
 	Kind          string
@@ -95,7 +94,6 @@ type CreateConnectionParams struct {
 	SyncLevel     string
 	IndexScope    string
 	FreeleechMode string
-	Priority      int
 	// SyncProfileID references a sync profile, or nil for none. Validated by
 	// validateProfileRef (must exist, kind != qui, category overlap).
 	SyncProfileID *int64
@@ -133,7 +131,7 @@ func (s *Service) CreateConnection(ctx context.Context, p CreateConnectionParams
 			return domain.AppConnection{
 				Name: p.Name, Kind: p.Kind, AppID: &app.ID, BaseURL: app.BaseURL, HarbrrURL: app.HarbrrURL,
 				HarbrrAPIKeyID: mintedKeyID, Enabled: true, SyncLevel: p.SyncLevel,
-				IndexScope: p.IndexScope, FreeleechMode: p.FreeleechMode, Priority: p.Priority,
+				IndexScope: p.IndexScope, FreeleechMode: p.FreeleechMode,
 				SyncProfileID: p.SyncProfileID, CreatedAt: now, UpdatedAt: now,
 			}
 		},
@@ -186,7 +184,6 @@ type UpdateConnectionParams struct {
 	SyncLevel     *string
 	IndexScope    *string
 	FreeleechMode *string
-	Priority      *int
 	SyncProfileID RefUpdate
 }
 

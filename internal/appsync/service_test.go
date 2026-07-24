@@ -417,6 +417,69 @@ func TestBuildDesiredProfileTogglesAndMinSeeders(t *testing.T) {
 	}
 }
 
+// TestBuildDesiredUsesInstancePriority proves each pushed DesiredIndexer carries its own
+// instance's priority (Prowlarr semantics: set per indexer, not per connection) — the
+// connection no longer has a priority field to stamp onto every row.
+func TestBuildDesiredUsesInstancePriority(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	src := &fakeSource{
+		instances: []domain.IndexerInstance{
+			{ID: 1, Slug: "high", Name: "High", Enabled: true, Protocol: "torrent", Priority: 1},
+			{ID: 2, Slug: "low", Name: "Low", Enabled: true, Protocol: "torrent", Priority: 50},
+		},
+		cats: map[string][]Category{"high": {{5000, "TV"}}, "low": {{5000, "TV"}}},
+	}
+	svc := &Service{source: src}
+	conn := domain.AppConnection{Kind: domain.AppKindSonarr, IndexScope: domain.IndexScopeAll, HarbrrURL: "http://harbrr"}
+	got, err := svc.buildDesired(ctx, src.instances, conn, "k", nil, nil)
+	if err != nil {
+		t.Fatalf("buildDesired: %v", err)
+	}
+	byslug := map[string]DesiredIndexer{}
+	for _, d := range got {
+		byslug[d.Slug] = d
+	}
+	if byslug["high"].Priority != 1 {
+		t.Errorf("high priority = %d, want 1", byslug["high"].Priority)
+	}
+	if byslug["low"].Priority != 50 {
+		t.Errorf("low priority = %d, want 50", byslug["low"].Priority)
+	}
+}
+
+// TestBuildDesiredInstanceMinSeedersOverridesProfile proves instMinSeeders: an instance's
+// own min-seeders floor (when set) wins over the sync profile's; an unset (0) instance
+// value falls back to the profile.
+func TestBuildDesiredInstanceMinSeedersOverridesProfile(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	src := &fakeSource{
+		instances: []domain.IndexerInstance{
+			{ID: 1, Slug: "override", Name: "Override", Enabled: true, Protocol: "torrent", MinSeeders: 10},
+			{ID: 2, Slug: "fallback", Name: "Fallback", Enabled: true, Protocol: "torrent"},
+		},
+		cats: map[string][]Category{"override": {{5000, "TV"}}, "fallback": {{5000, "TV"}}},
+	}
+	svc := &Service{source: src}
+	profile := &domain.SyncProfile{MinSeeders: 4}
+	conn := domain.AppConnection{Kind: domain.AppKindSonarr, IndexScope: domain.IndexScopeAll, HarbrrURL: "http://harbrr"}
+	got, err := svc.buildDesired(ctx, src.instances, conn, "k", nil, profile)
+	if err != nil {
+		t.Fatalf("buildDesired: %v", err)
+	}
+	byslug := map[string]DesiredIndexer{}
+	for _, d := range got {
+		byslug[d.Slug] = d
+	}
+	if byslug["override"].MinSeeders != 10 {
+		t.Errorf("override minSeeders = %d, want 10 (instance value wins)", byslug["override"].MinSeeders)
+	}
+	if byslug["fallback"].MinSeeders != 4 {
+		t.Errorf("fallback minSeeders = %d, want 4 (profile value)", byslug["fallback"].MinSeeders)
+	}
+}
+
 // TestServiceSyncWithProfile is the end-to-end proof: create a profile, assign it to the
 // fixture connection, sync, and read the stub-captured bodies for the pushed overrides.
 func TestServiceSyncWithProfile(t *testing.T) {

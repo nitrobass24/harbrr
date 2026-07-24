@@ -24,7 +24,6 @@ type appConnectionResponse struct {
 	SyncLevel      string     `json:"syncLevel"`
 	IndexScope     string     `json:"indexScope"`
 	FreeleechMode  string     `json:"freeleechMode"`
-	Priority       int        `json:"priority"`
 	SyncProfileID  *int64     `json:"syncProfileId,omitempty"`
 	LastSyncAt     *time.Time `json:"lastSyncAt,omitempty"`
 	LastSyncStatus string     `json:"lastSyncStatus,omitempty"`
@@ -97,7 +96,6 @@ func (rt *router) createConnection(w http.ResponseWriter, r *http.Request) {
 		SyncLevel     string `json:"syncLevel"`
 		IndexScope    string `json:"indexScope"`
 		FreeleechMode string `json:"freeleechMode"`
-		Priority      int    `json:"priority"`
 		SyncProfileID *int64 `json:"syncProfileId"`
 	}
 	if !decodeJSON(w, r, &req) {
@@ -106,7 +104,7 @@ func (rt *router) createConnection(w http.ResponseWriter, r *http.Request) {
 	conn, err := rt.appsync.CreateConnection(r.Context(), appsync.CreateConnectionParams{
 		Name: req.Name, Kind: req.Kind, AppID: req.AppID, BaseURL: req.BaseURL, APIKey: req.APIKey,
 		Username: req.Username, HarbrrURL: req.HarbrrURL, SyncLevel: req.SyncLevel, IndexScope: req.IndexScope,
-		FreeleechMode: req.FreeleechMode, Priority: req.Priority, SyncProfileID: req.SyncProfileID,
+		FreeleechMode: req.FreeleechMode, SyncProfileID: req.SyncProfileID,
 	})
 	if err != nil {
 		rt.writeServiceError(w, "create connection", err)
@@ -140,7 +138,6 @@ func (rt *router) updateConnection(w http.ResponseWriter, r *http.Request) {
 		SyncLevel     *string     `json:"syncLevel"`
 		IndexScope    *string     `json:"indexScope"`
 		FreeleechMode *string     `json:"freeleechMode"`
-		Priority      *int        `json:"priority"`
 		SyncProfileID optionalRef `json:"syncProfileId"`
 	}
 	if !decodeJSON(w, r, &req) {
@@ -149,7 +146,7 @@ func (rt *router) updateConnection(w http.ResponseWriter, r *http.Request) {
 	if err := rt.appsync.UpdateConnection(r.Context(), id, appsync.UpdateConnectionParams{
 		Name:      req.Name,
 		SyncLevel: req.SyncLevel, IndexScope: req.IndexScope, FreeleechMode: req.FreeleechMode,
-		Priority: req.Priority, SyncProfileID: req.SyncProfileID.toAppSync(),
+		SyncProfileID: req.SyncProfileID.toAppSync(),
 	}); err != nil {
 		rt.writeServiceError(w, "update connection", err)
 		return
@@ -271,7 +268,7 @@ func toConnectionResponse(c domain.AppConnection) appConnectionResponse {
 	return appConnectionResponse{
 		ID: c.ID, Name: c.Name, Kind: c.Kind, AppID: c.AppID, BaseURL: c.BaseURL, HarbrrURL: c.HarbrrURL,
 		APIKey: secrets.Redacted, Enabled: c.Enabled, SyncLevel: c.SyncLevel,
-		IndexScope: c.IndexScope, FreeleechMode: c.FreeleechMode, Priority: c.Priority,
+		IndexScope: c.IndexScope, FreeleechMode: c.FreeleechMode,
 		SyncProfileID: c.SyncProfileID, LastSyncAt: c.LastSyncAt,
 		LastSyncStatus: c.LastSyncStatus, LastSyncError: c.LastSyncError,
 		CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,

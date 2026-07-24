@@ -2277,6 +2277,25 @@ components:
           description: anti-bot solver (manual_cookie replays the encrypted cookie setting)
         flaresolverr_url: { type: string, description: "FlareSolverr base URL (when solver_type=flaresolverr)" }
         flaresolverr_max_timeout: { type: string, description: "FlareSolverr maxTimeout in seconds (optional)" }
+        query_limit:
+          type: string
+          description: >
+            per-indexer search request cap for the rolling period (limits_unit); a
+            non-positive integer string or empty/unset means no cap (autobrr/harbrr#251).
+            The registry also learns a cap reactively from a tracker's own quota error,
+            independent of this setting.
+        grab_limit:
+          type: string
+          description: >
+            per-indexer grab (download) request cap for the rolling period
+            (limits_unit); same semantics as query_limit but counted separately
+            (mirrors Prowlarr's separate queryLimit/grabLimit fields).
+        limits_unit:
+          type: string
+          enum: [day, hour]
+          description: >
+            the rolling period query_limit/grab_limit reset on: day (default, UTC
+            midnight) or hour (opt-in, top of the UTC hour).
     Credentials:
       type: object
       properties:
@@ -2376,9 +2395,11 @@ components:
         proxyId: { type: integer, format: int64, nullable: true, description: "referenced global proxy resource, or null" }
         solverId: { type: integer, format: int64, nullable: true, description: "referenced global solver resource, or null" }
         freeleech: { type: boolean, description: "the freeleech-only checkbox's canonical state" }
+        priority: { type: integer, minimum: 1, maximum: 50, default: 25, description: "Servarr indexer priority (1-50, 1 = highest), pushed per indexer by appsync" }
+        minSeeders: { type: integer, minimum: 0, description: "per-indexer minimum-seeders floor; 0 = unset, falls back to the sync profile's value" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
-      required: [id, slug, definitionId, name, enabled, protocol, freeleech, createdAt, updatedAt]
+      required: [id, slug, definitionId, name, enabled, protocol, freeleech, priority, minSeeders, createdAt, updatedAt]
     IndexerStats:
       type: object
       description: >
@@ -2462,6 +2483,8 @@ components:
             solver_type/flaresolverr_url. Secret values are stored encrypted.
         proxyId: { type: integer, format: int64, nullable: true, description: reference a global proxy resource (nil = none) }
         solverId: { type: integer, format: int64, nullable: true, description: reference a global solver resource (nil = none) }
+        priority: { type: integer, minimum: 1, maximum: 50, description: "Servarr indexer priority (1-50, 1 = highest); omitted or 0 defaults to 25" }
+        minSeeders: { type: integer, minimum: 0, description: "per-indexer minimum-seeders floor; 0 = unset (falls back to the sync profile's value)" }
       required: [definitionId]
     UpdateIndexer:
       type: object
@@ -2477,6 +2500,8 @@ components:
             send new plaintext to rotate it.
         proxyId: { type: integer, format: int64, nullable: true, description: "the global proxy reference; applied verbatim (null clears it)" }
         solverId: { type: integer, format: int64, nullable: true, description: "the global solver reference; applied verbatim (null clears it)" }
+        priority: { type: integer, minimum: 1, maximum: 50, description: "Servarr indexer priority (1-50, 1 = highest); omitted leaves it unchanged" }
+        minSeeders: { type: integer, minimum: 0, description: "per-indexer minimum-seeders floor; omitted leaves it unchanged" }
     Capabilities:
       type: object
       properties:
@@ -2661,7 +2686,6 @@ components:
             which feed variant is pushed: honor = the standard feed (the indexer's
             freeleech setting is respected); bypass = the /full variant (full catalog,
             for cross-seed). Defaults by kind (qui = bypass; *arrs = honor).
-        priority: { type: integer }
         syncProfileId:
           type: integer
           format: int64
@@ -2676,7 +2700,7 @@ components:
         lastSyncError: { type: string, description: scrubbed summary of the last failure }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
-      required: [id, name, kind, baseUrl, harbrrUrl, enabled, syncLevel, indexScope, freeleechMode, priority, createdAt, updatedAt]
+      required: [id, name, kind, baseUrl, harbrrUrl, enabled, syncLevel, indexScope, freeleechMode, createdAt, updatedAt]
     CreateConnection:
       type: object
       description: >
@@ -2695,7 +2719,6 @@ components:
         syncLevel: { type: string, enum: [full, add_update], default: full }
         indexScope: { type: string, enum: [all, selected], default: all }
         freeleechMode: { type: string, enum: [honor, bypass], description: "defaults by kind (qui = bypass; *arrs = honor)" }
-        priority: { type: integer, default: 25 }
         syncProfileId:
           type: integer
           format: int64
@@ -2713,7 +2736,6 @@ components:
         syncLevel: { type: string, enum: [full, add_update] }
         indexScope: { type: string, enum: [all, selected] }
         freeleechMode: { type: string, enum: [honor, bypass] }
-        priority: { type: integer }
         syncProfileId:
           type: integer
           format: int64

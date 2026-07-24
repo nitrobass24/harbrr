@@ -15,9 +15,6 @@ func (p CreateConnectionParams) withDefaults() CreateConnectionParams {
 	if p.IndexScope == "" {
 		p.IndexScope = domain.IndexScopeAll
 	}
-	if p.Priority == 0 {
-		p.Priority = defaultPriority
-	}
 	if p.FreeleechMode == "" {
 		p.FreeleechMode = defaultFreeleechMode(p.Kind)
 	}
@@ -82,9 +79,6 @@ func applyUpdate(conn *domain.AppConnection, p UpdateConnectionParams) error {
 			return err
 		}
 		conn.Name = *p.Name
-	}
-	if p.Priority != nil {
-		conn.Priority = *p.Priority
 	}
 	if p.SyncLevel != nil {
 		if err := validateSyncLevel(*p.SyncLevel); err != nil {

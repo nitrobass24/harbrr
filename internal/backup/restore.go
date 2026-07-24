@@ -299,14 +299,26 @@ func loadAPIKeys(ctx context.Context, q dbinterface.Execer, rows []APIKeyRow) (i
 	return m, nil
 }
 
+// restoreDefaultPriority is the Servarr indexer priority (Prowlarr semantics) a
+// restored instance gets when its bundle predates the priority field (#364):
+// a bundle written before then carries the JSON zero value (0), which must not
+// restore as priority 0 (the fleet would then re-push every indexer to the apps at
+// an invalid priority) — it defaults to the same value a live Add without one gets.
+const restoreDefaultPriority = 25
+
 func (s *Service) loadInstances(ctx context.Context, q dbinterface.Execer, rows []InstanceRow, proxyIDs, solverIDs idMap) (idMap, error) {
 	repo := database.Instances{}
 	m := make(idMap, len(rows))
 	for _, r := range rows {
+		priority := r.Priority
+		if priority == 0 {
+			priority = restoreDefaultPriority
+		}
 		newID, err := repo.Insert(ctx, q, domain.IndexerInstance{
 			Slug: r.Slug, DefinitionID: r.DefinitionID, Name: r.Name, BaseURL: r.BaseURL,
 			Enabled: r.Enabled, Protocol: r.Protocol,
 			ProxyID: proxyIDs.remap(r.ProxyID), SolverID: solverIDs.remap(r.SolverID),
+			Priority: priority, MinSeeders: r.MinSeeders,
 			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		})
 		if err != nil {
@@ -363,7 +375,7 @@ func (s *Service) loadAppConnections(ctx context.Context, q dbinterface.Execer, 
 			Name: r.Name, Kind: r.Kind, AppID: &appID,
 			HarbrrAPIKeyID: zeroIfNil(apiKeyIDs.remap(r.HarbrrAPIKeyID)), HarbrrAPIKeyEncrypted: "",
 			KeyID: s.keyring.KeyID(), Enabled: r.Enabled, SyncLevel: r.SyncLevel, IndexScope: r.IndexScope,
-			FreeleechMode: r.FreeleechMode, Priority: r.Priority, SyncProfileID: profileIDs.remap(r.SyncProfileID),
+			FreeleechMode: r.FreeleechMode, SyncProfileID: profileIDs.remap(r.SyncProfileID),
 			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		})
 		if err != nil {

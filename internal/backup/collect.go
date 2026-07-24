@@ -168,6 +168,7 @@ func (s *Service) collectInstances(ctx context.Context, q dbinterface.Execer) ([
 			ID: inst.ID, Slug: inst.Slug, DefinitionID: inst.DefinitionID, Name: inst.Name,
 			BaseURL: inst.BaseURL, Enabled: inst.Enabled, Protocol: inst.Protocol,
 			ProxyID: inst.ProxyID, SolverID: inst.SolverID,
+			Priority: inst.Priority, MinSeeders: inst.MinSeeders,
 			CreatedAt: inst.CreatedAt, UpdatedAt: inst.UpdatedAt, Settings: settings,
 		})
 	}
@@ -235,7 +236,7 @@ func (s *Service) collectAppConnections(ctx context.Context, q dbinterface.Exece
 			ID: c.ID, Name: c.Name, Kind: c.Kind, BaseURL: app.BaseURL, APIKey: appKey,
 			HarbrrURL: app.HarbrrURL, HarbrrAPIKeyID: nilIfZero(c.HarbrrAPIKeyID), HarbrrAPIKey: harbrrKey,
 			Enabled: c.Enabled, SyncLevel: c.SyncLevel, IndexScope: c.IndexScope,
-			FreeleechMode: c.FreeleechMode, Priority: c.Priority, SyncProfileID: c.SyncProfileID,
+			FreeleechMode: c.FreeleechMode, SyncProfileID: c.SyncProfileID,
 			SelectedInstanceIDs: selected, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
 		})
 	}

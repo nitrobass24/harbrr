@@ -123,9 +123,11 @@ func (s *Service) SyncAll(ctx context.Context) ([]ConnectionSyncResult, error) {
 
 // buildDesired projects every in-scope indexer into a DesiredIndexer: the per-app feed
 // URL, the connection's harbrr key, and the (gated) categories. Scope "selected" keeps
-// only indexers flagged in the ledger. A non-nil profile narrows the pushed categories
-// (within the app's content type) and overrides the min-seeders floor and search-mode
-// toggles; nil profile is exactly today's behavior.
+// only indexers flagged in the ledger. Priority is the instance's own value (Prowlarr
+// semantics: set per indexer, not per connection). A non-nil profile narrows the pushed
+// categories (within the app's content type) and overrides the search-mode toggles; nil
+// profile is exactly today's behavior. The min-seeders floor is the instance's own value
+// when set, else the profile's (see instMinSeeders).
 func (s *Service) buildDesired(ctx context.Context, instances []domain.IndexerInstance, conn domain.AppConnection, harbrrKey string, selected map[int64]bool, profile *domain.SyncProfile) ([]DesiredIndexer, error) {
 	out := make([]DesiredIndexer, 0, len(instances))
 	for _, inst := range instances {
@@ -155,9 +157,9 @@ func (s *Service) buildDesired(ctx context.Context, instances []domain.IndexerIn
 		out = append(out, DesiredIndexer{
 			Slug: inst.Slug, Name: inst.Name, FeedURL: FeedURL(conn.HarbrrURL, inst.Slug, conn.FreeleechMode),
 			APIKey: harbrrKey, Categories: gated, Capabilities: caps,
-			Priority: conn.Priority, Enabled: inst.Enabled, Protocol: inst.Protocol,
+			Priority: inst.Priority, Enabled: inst.Enabled, Protocol: inst.Protocol,
 			EnableRss: rss, EnableAutomaticSearch: auto, EnableInteractiveSearch: interactive,
-			MinSeeders: profileMinSeeders(profile),
+			MinSeeders: instMinSeeders(inst, profile),
 		})
 	}
 	return out, nil
@@ -238,6 +240,15 @@ func profileMinSeeders(p *domain.SyncProfile) int {
 		return 0
 	}
 	return p.MinSeeders
+}
+
+// instMinSeeders resolves the pushed floor: the instance's own value wins; 0 falls
+// back to the profile's (which is itself 0 = unset → app default).
+func instMinSeeders(inst domain.IndexerInstance, p *domain.SyncProfile) int {
+	if inst.MinSeeders > 0 {
+		return inst.MinSeeders
+	}
+	return profileMinSeeders(p)
 }
 
 // persistOutcomes writes the outcomes back to the ledger in one transaction so a

@@ -181,7 +181,10 @@ func TestUpdateConnectionNoLostUpdate(t *testing.T) {
 
 	for i := range 40 {
 		wantName := fmt.Sprintf("renamed-%d", i)
-		wantPriority := i + 1
+		wantSyncLevel := domain.SyncLevelFull
+		if i%2 == 0 {
+			wantSyncLevel = domain.SyncLevelAddUpdate
+		}
 
 		var wg sync.WaitGroup
 		wg.Add(2)
@@ -193,8 +196,8 @@ func TestUpdateConnectionNoLostUpdate(t *testing.T) {
 		}()
 		go func() {
 			defer wg.Done()
-			if err := f.svc.UpdateConnection(ctx, f.conn.ID, UpdateConnectionParams{Priority: &wantPriority}); err != nil {
-				t.Errorf("iter %d: set priority: %v", i, err)
+			if err := f.svc.UpdateConnection(ctx, f.conn.ID, UpdateConnectionParams{SyncLevel: &wantSyncLevel}); err != nil {
+				t.Errorf("iter %d: set sync level: %v", i, err)
 			}
 		}()
 		wg.Wait()
@@ -203,8 +206,8 @@ func TestUpdateConnectionNoLostUpdate(t *testing.T) {
 		if err != nil {
 			t.Fatalf("iter %d: GetConnection: %v", i, err)
 		}
-		if conn.Priority != wantPriority {
-			t.Fatalf("iter %d: priority = %d, want %d (priority write lost)", i, conn.Priority, wantPriority)
+		if conn.SyncLevel != wantSyncLevel {
+			t.Fatalf("iter %d: sync level = %q, want %q (write lost)", i, conn.SyncLevel, wantSyncLevel)
 		}
 		if conn.Name != wantName {
 			t.Fatalf("iter %d: name = %q, want %q (name write lost)", i, conn.Name, wantName)

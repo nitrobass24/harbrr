@@ -19,6 +19,21 @@ const TIMEOUT_FIELD: SettingField = {
   name: "timeout", label: "Request timeout (Go duration, e.g. 30s)", type: "text", secret: false,
 }
 
+// Reserved request-limit settings (autobrr/harbrr#251): already enforced by the
+// registry, exposed here for the first time. They ride the same free-form
+// settings map as TIMEOUT_FIELD — no dedicated body fields.
+const QUERY_LIMIT_FIELD: SettingField = {
+  name: "query_limit", label: "Search request cap per period (empty = no cap)", type: "text", secret: false,
+}
+const GRAB_LIMIT_FIELD: SettingField = {
+  name: "grab_limit", label: "Grab request cap per period (empty = no cap)", type: "text", secret: false,
+}
+const LIMITS_UNIT_FIELD: SettingField = {
+  name: "limits_unit", label: "Limits reset every (empty = day)", type: "select", secret: false,
+  options: { day: "Day", hour: "Hour" },
+}
+const LIMIT_FIELDS = [TIMEOUT_FIELD, QUERY_LIMIT_FIELD, GRAB_LIMIT_FIELD, LIMITS_UNIT_FIELD]
+
 // Inline settings the proxy/solver controls own — stripped from the schema-driven
 // map so they are never double-submitted (proxy rides proxyId, FlareSolverr rides
 // solverId, solver_type is set explicitly on submit). NOTE: `cookie` is NOT here —
@@ -58,7 +73,7 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
   const [slug, setSlug] = useState(existing?.slug ?? definition.id)
   const [baseUrl, setBaseUrl] = useState(existing?.baseUrl ?? "")
   const [values, setValues] = useState<Record<string, string>>(() => {
-    const seeded = { ...defaultValues([TIMEOUT_FIELD]), ...defaultValues(definition.settings, existing?.settings) }
+    const seeded = { ...defaultValues(LIMIT_FIELDS), ...defaultValues(definition.settings, existing?.settings) }
     for (const k of MANAGED_KEYS) delete seeded[k]
     if (!definesCookie) delete seeded.cookie // solver-managed manual cookie, controlled below
     return seeded
@@ -66,6 +81,8 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
   const [proxyId, setProxyId] = useState<number | null>(existing?.proxyId ?? null)
   const [solver, setSolver] = useState<SolverChoice>(() => initialSolver(existing))
   const [cookie, setCookie] = useState(definesCookie ? "" : (existing?.settings.find((s) => s.name === "cookie")?.value ?? ""))
+  const [priority, setPriority] = useState(String(existing?.priority ?? 25))
+  const [minSeeders, setMinSeeders] = useState(String(existing?.minSeeders ?? 0))
   const [showAdvanced, setShowAdvanced] = useState(false)
 
   const setValue = (fieldName: string) => (value: string) =>
@@ -99,11 +116,13 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
           }
         }
         const solverId = typeof solver === "number" ? solver : null
+        const priorityNum = Number(priority)
+        const minSeedersNum = Number(minSeeders)
         if (mode === "edit") {
           // baseUrl verbatim so clearing it ("") clears the stored override.
-          onSubmit({ mode, body: { name, baseUrl, settings, proxyId, solverId } })
+          onSubmit({ mode, body: { name, baseUrl, settings, proxyId, solverId, priority: priorityNum, minSeeders: minSeedersNum } })
         } else {
-          onSubmit({ mode, body: { slug, definitionId: definition.id, name, baseUrl: baseUrl || undefined, settings, proxyId, solverId } })
+          onSubmit({ mode, body: { slug, definitionId: definition.id, name, baseUrl: baseUrl || undefined, settings, proxyId, solverId, priority: priorityNum, minSeeders: minSeedersNum } })
         }
       }}
     >
@@ -151,7 +170,7 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
         onClick={() => setShowAdvanced((v) => !v)}
       >
         <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", showAdvanced && "rotate-90")} />
-        Advanced (proxy, timeout, anti-bot solver)
+        Advanced (proxy, timeout, anti-bot solver, priority, request limits)
       </button>
       {showAdvanced && (
         <div className="flex flex-col gap-4 rounded-md border border-border p-3">
@@ -181,6 +200,20 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
               <Input id="ix-cookie" type="password" autoComplete="off" placeholder="cf_clearance=…; other=…" value={cookie} onChange={(e) => setCookie(e.target.value)} />
             </span>
           )}
+
+          <span className="flex flex-col gap-1.5">
+            <Label htmlFor="ix-priority">Priority (1–50, 1 = highest — synced to apps)</Label>
+            <Input id="ix-priority" type="number" min={1} max={50} value={priority} onChange={(e) => setPriority(e.target.value)} />
+          </span>
+
+          <span className="flex flex-col gap-1.5">
+            <Label htmlFor="ix-min-seeders">Minimum seeders (0 = sync profile default)</Label>
+            <Input id="ix-min-seeders" type="number" min={0} value={minSeeders} onChange={(e) => setMinSeeders(e.target.value)} />
+          </span>
+
+          <SettingFieldInput field={QUERY_LIMIT_FIELD} value={values.query_limit ?? ""} onChange={setValue("query_limit")} />
+          <SettingFieldInput field={GRAB_LIMIT_FIELD} value={values.grab_limit ?? ""} onChange={setValue("grab_limit")} />
+          <SettingFieldInput field={LIMITS_UNIT_FIELD} value={values.limits_unit ?? ""} onChange={setValue("limits_unit")} />
         </div>
       )}
 

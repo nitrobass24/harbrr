@@ -27,10 +27,16 @@ type IndexerInstance struct {
 	// this instance uses, or nil for none. The engine resolves them into the
 	// per-request config at build time (registry.buildAdapter); ON DELETE SET NULL
 	// means deleting a resource just drops the reference.
-	ProxyID   *int64
-	SolverID  *int64
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ProxyID  *int64
+	SolverID *int64
+	// Priority is the Servarr indexer priority (1-50, 1 = highest, default 25),
+	// pushed per indexer by appsync (Prowlarr semantics).
+	Priority int
+	// MinSeeders is the per-indexer minimum-seeders floor; 0 = unset, falling back
+	// to the sync profile's value (torrent-only, pushed as minimumSeeders).
+	MinSeeders int
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 // User is harbrr's admin account. First-run setup creates exactly one. The
@@ -208,7 +214,6 @@ type AppConnection struct {
 	SyncLevel             string
 	IndexScope            string
 	FreeleechMode         string
-	Priority              int
 	// SyncProfileID references the sync profile this connection uses, or nil for
 	// none (today's default behavior). ON DELETE SET NULL means deleting a profile
 	// just drops the reference — the next sync reverts to the defaults.

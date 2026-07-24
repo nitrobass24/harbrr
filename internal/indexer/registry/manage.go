@@ -87,6 +87,30 @@ var reservedSlugs = map[string]struct{}{
 	"status": {},
 }
 
+// defaultPriority is the Servarr indexer priority (Prowlarr semantics: 1-50, 1 =
+// highest) an indexer gets when none is given.
+const defaultPriority = 25
+
+// normalizePriority defaults an unset (0) priority to defaultPriority and rejects
+// anything outside the valid 1-50 range.
+func normalizePriority(priority int) (int, error) {
+	if priority == 0 {
+		return defaultPriority, nil
+	}
+	if priority < 1 || priority > 50 {
+		return 0, fmt.Errorf("%w: priority must be 1-50 (0 for the default)", ErrInvalid)
+	}
+	return priority, nil
+}
+
+// validateMinSeeders rejects a negative minimum-seeders floor.
+func validateMinSeeders(minSeeders int) error {
+	if minSeeders < 0 {
+		return fmt.Errorf("%w: minSeeders must be >= 0", ErrInvalid)
+	}
+	return nil
+}
+
 // AddParams is the input to Add. Slug defaults to DefinitionID when empty; Name
 // defaults to the definition's name; Settings is the user's setting values keyed
 // by setting name (secrets are encrypted on write).
@@ -100,6 +124,12 @@ type AddParams struct {
 	// uses (nil = none). The foreign key rejects a non-existent id.
 	ProxyID  *int64
 	SolverID *int64
+	// Priority is the Servarr indexer priority (1-50, 1 = highest); 0 defaults to
+	// defaultPriority.
+	Priority int
+	// MinSeeders is the per-indexer minimum-seeders floor; 0 = unset (falls back to
+	// the sync profile's value at push time).
+	MinSeeders int
 }
 
 // RefUpdate is a tri-state PATCH field for a nullable resource reference: Present
@@ -114,13 +144,16 @@ type RefUpdate struct {
 // UpdateParams is the input to Update. Nil Name/BaseURL leave those unchanged;
 // Settings is merged into the existing set (a value of secrets.Redacted keeps the
 // stored value; omitted settings are kept). ProxyID/SolverID are tri-state
-// (RefUpdate): only an explicitly-present field changes the reference.
+// (RefUpdate): only an explicitly-present field changes the reference. Nil
+// Priority/MinSeeders leave those unchanged.
 type UpdateParams struct {
-	Name     *string
-	BaseURL  *string
-	Settings map[string]string
-	ProxyID  RefUpdate
-	SolverID RefUpdate
+	Name       *string
+	BaseURL    *string
+	Settings   map[string]string
+	ProxyID    RefUpdate
+	SolverID   RefUpdate
+	Priority   *int
+	MinSeeders *int
 }
 
 // SettingView is the API-safe representation of a stored setting: a secret's value
@@ -150,6 +183,13 @@ func (r *Manager) Add(ctx context.Context, p AddParams) (domain.IndexerInstance,
 	if err := validateRequiredSettings(fields, p.Settings); err != nil {
 		return domain.IndexerInstance{}, err
 	}
+	priority, err := normalizePriority(p.Priority)
+	if err != nil {
+		return domain.IndexerInstance{}, err
+	}
+	if err := validateMinSeeders(p.MinSeeders); err != nil {
+		return domain.IndexerInstance{}, err
+	}
 	if err := r.ensureSlugFree(ctx, slug); err != nil {
 		return domain.IndexerInstance{}, err
 	}
@@ -159,6 +199,7 @@ func (r *Manager) Add(ctx context.Context, p AddParams) (domain.IndexerInstance,
 		Slug: slug, DefinitionID: p.DefinitionID, Name: orDefault(p.Name, def.Name),
 		BaseURL: p.BaseURL, Enabled: true, Protocol: def.EffectiveProtocol(),
 		ProxyID: p.ProxyID, SolverID: p.SolverID,
+		Priority: priority, MinSeeders: p.MinSeeders,
 		CreatedAt: now, UpdatedAt: now,
 	}
 
@@ -304,8 +345,16 @@ func (r *Manager) updateInTx(ctx context.Context, tx dbinterface.TxQuerier, inst
 		return err
 	}
 
+	priority, err := resolvePriority(p.Priority, inst.Priority)
+	if err != nil {
+		return err
+	}
+	minSeeders, err := resolveMinSeeders(p.MinSeeders, inst.MinSeeders)
+	if err != nil {
+		return err
+	}
 	name, baseURL := applyMeta(inst, p)
-	if err := r.instances.UpdateMeta(ctx, tx, inst.ID, name, baseURL, r.clock()); err != nil {
+	if err := r.instances.UpdateMeta(ctx, tx, inst.ID, name, baseURL, priority, minSeeders, r.clock()); err != nil {
 		return fmt.Errorf("registry: update meta: %w", err)
 	}
 	// Only a present ref field changes the stored reference; an absent one keeps
@@ -747,4 +796,26 @@ func resolveRef(update RefUpdate, current *int64) *int64 {
 		return update.Value
 	}
 	return current
+}
+
+// resolvePriority applies an optional priority patch: a present update is
+// validated/defaulted (normalizePriority); a nil one keeps the instance's current
+// value.
+func resolvePriority(update *int, current int) (int, error) {
+	if update == nil {
+		return current, nil
+	}
+	return normalizePriority(*update)
+}
+
+// resolveMinSeeders applies an optional min-seeders patch: a present update is
+// validated; a nil one keeps the instance's current value.
+func resolveMinSeeders(update *int, current int) (int, error) {
+	if update == nil {
+		return current, nil
+	}
+	if err := validateMinSeeders(*update); err != nil {
+		return 0, err
+	}
+	return *update, nil
 }

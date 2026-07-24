@@ -16,7 +16,6 @@ const CONN: AppConnection = {
   syncLevel: "full",
   indexScope: "all",
   freeleechMode: "honor",
-  priority: 0,
   syncProfileId: null,
   createdAt: "2026-07-01T00:00:00Z",
   updatedAt: "2026-07-01T00:00:00Z",

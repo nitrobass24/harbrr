@@ -125,6 +125,8 @@ type InstanceRow struct {
 	Protocol     string       `json:"protocol"`
 	ProxyID      *int64       `json:"proxyId,omitempty"`
 	SolverID     *int64       `json:"solverId,omitempty"`
+	Priority     int          `json:"priority"`
+	MinSeeders   int          `json:"minSeeders"`
 	CreatedAt    time.Time    `json:"createdAt"`
 	UpdatedAt    time.Time    `json:"updatedAt"`
 	Settings     []SettingRow `json:"settings"`
@@ -150,7 +152,6 @@ type AppConnRow struct {
 	SyncLevel           string    `json:"syncLevel"`
 	IndexScope          string    `json:"indexScope"`
 	FreeleechMode       string    `json:"freeleechMode"`
-	Priority            int       `json:"priority"`
 	SyncProfileID       *int64    `json:"syncProfileId,omitempty"`
 	SelectedInstanceIDs []int64   `json:"selectedInstanceIds,omitempty"`
 	CreatedAt           time.Time `json:"createdAt"`

@@ -57,12 +57,11 @@ func TestAppConnectionCRUD(t *testing.T) {
 		ID         int64  `json:"id"`
 		SyncLevel  string `json:"syncLevel"`
 		IndexScope string `json:"indexScope"`
-		Priority   int    `json:"priority"`
 	}
 	if err := json.Unmarshal(body, &created); err != nil {
 		t.Fatalf("decode create: %v", err)
 	}
-	if created.SyncLevel != "full" || created.IndexScope != "all" || created.Priority != 25 {
+	if created.SyncLevel != "full" || created.IndexScope != "all" {
 		t.Errorf("defaults not applied: %+v", created)
 	}
 	id := itoa(created.ID)

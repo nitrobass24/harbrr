@@ -36,7 +36,6 @@ const SONARR_CONN: AppConnection = {
   syncLevel: "full",
   indexScope: "all",
   freeleechMode: "honor",
-  priority: 0,
   syncProfileId: 4,
   createdAt: "2026-07-01T00:00:00Z",
   updatedAt: "2026-07-01T00:00:00Z",
