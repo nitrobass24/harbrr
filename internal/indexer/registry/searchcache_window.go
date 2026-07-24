@@ -48,11 +48,15 @@ func (w *hourWindow) slot(now time.Time) *struct{ hits, misses int64 } {
 	return &w.buckets[i]
 }
 
-// totals sums the buckets stamped within the last windowHours hours.
+// totals sums the buckets covering the trailing windowHours hours. The oldest
+// bucket overlaps the window boundary only partially, but it is INCLUDED: at hour
+// granularity the view must never undercount a mid-hour event that is still inside
+// the trailing 24h, so it spans up to one extra partial hour instead (the ring's
+// +1 slot exists precisely so this boundary bucket is still resident).
 func (w *hourWindow) totals(now time.Time) (hits, misses int64) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	oldest := now.Unix()/3600 - windowHours + 1
+	oldest := now.Unix()/3600 - windowHours
 	for i, stamp := range w.stamps {
 		if stamp >= oldest {
 			hits += w.buckets[i].hits

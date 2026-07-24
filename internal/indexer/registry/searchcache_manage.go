@@ -153,6 +153,13 @@ func (c *SearchCache) Flush(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, err //nolint:wrapcheck // store wraps with context; nothing secret to add.
 	}
+	// The persist mutex keeps a concurrent FlushCounters (cleanup tick/shutdown)
+	// from writing pre-flush snapshots back after the DeleteAll — a restart would
+	// rehydrate them. The epoch bump comes FIRST so an in-flight serveMiss whose
+	// increment this reset sweeps away skips its own rollback (see serveMiss).
+	c.counterPersistMu.Lock()
+	defer c.counterPersistMu.Unlock()
+	c.flushEpoch.Add(1)
 	// Subtract each instance's swapped counts from the globals (mirrors
 	// ForgetInstance) so a concurrent in-flight increment is never lost twice.
 	c.instCounters.Range(func(_, v any) bool {

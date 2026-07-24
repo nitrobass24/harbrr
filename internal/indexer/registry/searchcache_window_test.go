@@ -42,6 +42,63 @@ func TestHourWindowRolls(t *testing.T) {
 	}
 }
 
+// TestHourWindowKeepsPartialBoundaryBucket pins the window's boundary rule: an
+// event still inside the trailing 24h must be counted even though its bucket only
+// partially overlaps the window (hour granularity never undercounts — the view
+// spans up to one extra partial hour instead).
+func TestHourWindowKeepsPartialBoundaryBucket(t *testing.T) {
+	t.Parallel()
+	var w hourWindow
+	event := time.Date(2026, 7, 24, 12, 59, 0, 0, time.UTC)
+	w.hit(event)
+	// 23h31m later (12:30 next day): the event is 23.5h old — inside the trailing
+	// 24h — but its 12:00 bucket only partially overlaps the window.
+	if h, _ := w.totals(event.Add(23*time.Hour + 31*time.Minute)); h != 1 {
+		t.Errorf("hits 23.5h after a mid-hour event = %d, want 1", h)
+	}
+	// 24h31m later the whole bucket is outside the window.
+	if h, _ := w.totals(event.Add(24*time.Hour + 31*time.Minute)); h != 0 {
+		t.Errorf("hits 24.5h after a mid-hour event = %d, want 0", h)
+	}
+}
+
+// TestFlushDuringInFlightMissNeverGoesNegative pins the serveMiss/Flush race: a
+// flush landing while a miss is in flight sweeps the up-front miss increment to
+// zero, so the request's own error rollback must be skipped — without the
+// flush-epoch guard the counters would go negative.
+func TestFlushDuringInFlightMissNeverGoesNegative(t *testing.T) {
+	t.Parallel()
+	sc, instID, _ := testCache(t, keywordTTL, 0)
+	gate := make(chan struct{})
+	firstSeen := make(chan struct{})
+	inner := &fakeInner{err: errors.New("down"), gate: gate, firstSeen: firstSeen}
+	idx := sc.probe(inner, instID, nil)
+	ctx := context.Background()
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := idx.Search(ctx, search.Query{Keywords: "a"})
+		done <- err
+	}()
+	<-firstSeen // the miss increment has landed; the live search is blocked
+	if _, err := sc.Flush(ctx); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+	close(gate) // release the live search to fail
+	if err := <-done; err == nil {
+		t.Fatal("want search error")
+	}
+
+	stats, err := sc.Stats(ctx)
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if stats.Hits != 0 || stats.Misses != 0 {
+		t.Errorf("counters after flush swept an in-flight miss = %d/%d, want 0/0 (never negative)",
+			stats.Hits, stats.Misses)
+	}
+}
+
 // TestFailedSearchCountsAsNeitherHitNorMiss proves a live search that errors leaves
 // the hit/miss counters untouched: the ratio measures cache effectiveness, and a
 // dead tracker (e.g. days of gateway 502s) must not drag it toward zero.

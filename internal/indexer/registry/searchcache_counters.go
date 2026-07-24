@@ -88,6 +88,11 @@ func (c *SearchCache) ForgetInstance(instanceID int64) {
 // counts. RehydrateCounters is additive and gated, so the retry folds the session's own
 // increments onto the restored totals exactly once.
 func (c *SearchCache) FlushCounters(ctx context.Context) {
+	// Serialized against Flush's counter reset (counterPersistMu): without this, a
+	// snapshot loaded here just before a flush could be upserted just after its
+	// DeleteAll, resurrecting pre-flush totals on the next restart.
+	c.counterPersistMu.Lock()
+	defer c.counterPersistMu.Unlock()
 	if !c.countersRehydrated.Load() {
 		if err := c.RehydrateCounters(ctx); err != nil {
 			c.log.Warn().Str("error", apphttp.RedactError(err)).

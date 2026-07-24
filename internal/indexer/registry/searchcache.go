@@ -73,6 +73,17 @@ type SearchCache struct {
 	// in-memory — see searchcache_window.go).
 	window hourWindow
 
+	// flushEpoch advances on every Flush counter reset. serveMiss snapshots it
+	// around its up-front miss increment: if a flush landed mid-request, the
+	// increment was already swept to zero, so neither the error rollback (which
+	// would drive the counters negative) nor the success-path window bump applies.
+	flushEpoch atomic.Int64
+
+	// counterPersistMu serializes FlushCounters' snapshot+upsert loop against
+	// Flush's reset+DeleteAll, so a cleanup-tick persistence pass can never write
+	// pre-flush totals back after the reset (which a restart would then rehydrate).
+	counterPersistMu sync.Mutex
+
 	// countersRehydrated gates FlushCounters: it is set once RehydrateCounters has
 	// loaded the persisted counts at boot, so a failed/early flush can never overwrite
 	// the stored totals with zeroes.
@@ -396,9 +407,17 @@ func (c *SearchCache) effectiveExpiry(entry database.SearchCacheEntry, cfg map[s
 // The miss is still recorded up front (so an in-flight miss is observable — the
 // follower tests synchronize on it) and rolled back on the error paths.
 func (c *SearchCache) serveMiss(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, live liveSearchFn, q search.Query, key string) ([]*normalizer.Release, error) {
+	epoch := c.flushEpoch.Load()
 	c.misses.Add(1)
 	c.counters(instanceID).misses.Add(1)
 	releases, err := c.runMiss(ctx, instanceID, cfg, builtEpoch, live, q, key)
+	if c.flushEpoch.Load() != epoch {
+		// A Flush reset the counters while this miss was in flight: the up-front
+		// increment has already been swept to zero, so there is nothing to roll
+		// back (doing so would drive the counters negative) and the pre-flush
+		// request must not seed the freshly-reset window either.
+		return releases, err
+	}
 	if err != nil {
 		c.misses.Add(-1)
 		c.counters(instanceID).misses.Add(-1)
