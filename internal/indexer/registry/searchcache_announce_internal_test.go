@@ -100,6 +100,112 @@ func TestAnnounceTap_DiffsAcrossExpiry(t *testing.T) {
 	}
 }
 
+// TestAnnounceTap_SurvivesCleanupTickWithinGrace proves the prior-row diff still
+// suppresses already-seen releases after a cleanup tick has run: an expired-but-
+// within-grace row is retained by CleanupExpired (cacheReapGrace), so the next
+// write-back's diff still reads it and only genuinely-new GUIDs announce.
+func TestAnnounceTap_SurvivesCleanupTickWithinGrace(t *testing.T) {
+	t.Parallel()
+	sc, instID, clk := testCache(t, keywordTTL, 0) // rss TTL = 5m
+
+	var got [][]string
+	sc.SetAnnounceSink(func(_ context.Context, _ int64, fresh []*normalizer.Release) {
+		guids := make([]string, 0, len(fresh))
+		for _, r := range fresh {
+			guids = append(guids, tzn.GUIDFor(r))
+		}
+		got = append(got, guids)
+	})
+
+	ctx := context.Background()
+	cfg := map[string]string{}
+	empty := search.Query{}
+
+	sc.storeBestEffort(ctx, instID, cfg, 0, empty, "k", []*normalizer.Release{relWithGUID("A"), relWithGUID("B")})
+
+	// Expire the entry (past the 5m rss TTL) but stay well inside the 24h reap grace,
+	// then run a cleanup tick: the row must survive, so priorGUIDs can still read it.
+	future := clk.Load().Add(10 * time.Minute)
+	clk.Store(&future)
+	if n, err := sc.CleanupExpired(ctx); err != nil {
+		t.Fatalf("CleanupExpired: %v", err)
+	} else if n != 0 {
+		t.Fatalf("CleanupExpired purged %d, want 0 (still within grace)", n)
+	}
+
+	sc.storeBestEffort(ctx, instID, cfg, 0, empty, "k", []*normalizer.Release{relWithGUID("A"), relWithGUID("B"), relWithGUID("C")})
+
+	if len(got) != 2 {
+		t.Fatalf("announce calls = %d, want 2: %v", len(got), got)
+	}
+	if !slices.Equal(got[1], []string{"C"}) {
+		t.Errorf("post-tick announce = %v, want [C] (A,B suppressed by the grace-retained prior row)", got[1])
+	}
+}
+
+// TestAnnounceWindow_SlidesAcrossRepeatedPriorSuppression proves the sliding-window
+// mark: a GUID repeatedly suppressed via the prior-row diff (observed on every poll)
+// keeps its window mark fresh, so suppression survives even after the prior row is
+// lost entirely (a reap past grace, a restart, or a cache-key rotation) — while a GUID
+// left unobserved for a full window still re-announces.
+func TestAnnounceWindow_SlidesAcrossRepeatedPriorSuppression(t *testing.T) {
+	t.Parallel()
+	sc, instID, clk := testCache(t, keywordTTL, 0) // rss TTL = 5m
+
+	var got [][]string
+	sc.SetAnnounceSink(func(_ context.Context, _ int64, fresh []*normalizer.Release) {
+		guids := make([]string, 0, len(fresh))
+		for _, r := range fresh {
+			guids = append(guids, tzn.GUIDFor(r))
+		}
+		got = append(got, guids)
+	})
+
+	ctx := context.Background()
+	cfg := map[string]string{}
+	empty := search.Query{}
+
+	// Initial fill: A is new.
+	sc.storeBestEffort(ctx, instID, cfg, 0, empty, "k", []*normalizer.Release{relWithGUID("A")})
+	if len(got) != 1 {
+		t.Fatalf("announce calls after initial fill = %d, want 1: %v", len(got), got)
+	}
+
+	// Observe A via the prior-row diff repeatedly, each step advancing the clock past
+	// the 6h dedup window — proving the mark is refreshed on every prior-suppressed
+	// observation (not just on a fresh announce).
+	for range 3 {
+		future := clk.Load().Add(7 * time.Hour)
+		clk.Store(&future)
+		sc.storeBestEffort(ctx, instID, cfg, 0, empty, "k", []*normalizer.Release{relWithGUID("A")})
+	}
+	if len(got) != 1 {
+		t.Fatalf("announce calls after repeated observation = %d, want still 1 (A never re-announced): %v", len(got), got)
+	}
+
+	// Lose the prior row entirely (simulating a reap past grace, a restart, or a
+	// cache-key schema rotation): only the window's refreshed mark can still suppress
+	// A, since the diff against a never-seen key finds nothing.
+	if _, err := sc.Flush(ctx); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+	sc.storeBestEffort(ctx, instID, cfg, 0, empty, "k2", []*normalizer.Release{relWithGUID("A")})
+	if len(got) != 1 {
+		t.Fatalf("announce calls after losing the prior row = %d, want still 1 (window mark carries suppression): %v", len(got), got)
+	}
+
+	// Let a full window pass with no further observation of A: it must re-announce.
+	future := clk.Load().Add(7 * time.Hour)
+	clk.Store(&future)
+	sc.storeBestEffort(ctx, instID, cfg, 0, empty, "k3", []*normalizer.Release{relWithGUID("A")})
+	if len(got) != 2 {
+		t.Fatalf("announce calls after a full silent window = %d, want 2 (A re-announced): %v", len(got), got)
+	}
+	if !slices.Equal(got[1], []string{"A"}) {
+		t.Errorf("re-announce = %v, want [A]", got[1])
+	}
+}
+
 // TestAnnounceWindow_NamespacedByInstance proves the same GUID on two indexers is tracked
 // independently (no cross-indexer suppression).
 func TestAnnounceWindow_NamespacedByInstance(t *testing.T) {

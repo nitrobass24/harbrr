@@ -43,6 +43,14 @@ func (c *SearchCache) tapAnnounce(ctx context.Context, instanceID int64, q searc
 	for _, r := range fresh {
 		guid := tzn.GUIDFor(r)
 		if _, seen := prior[guid]; seen {
+			// Keep this GUID's window mark fresh even though the prior-row diff (not the
+			// window) is what suppressed it here — the release is still being observed
+			// every poll, so its "last observed" record must not go stale. This is what
+			// lets the window carry suppression across a lost/rotated prior row (reaped
+			// past grace, a restart, a cache-key schema rotation) without a full-page
+			// re-announce burst. Result deliberately ignored: only priorGUIDs' verdict
+			// governs whether this GUID announces.
+			c.announced.seenAndMark(instanceID, guid, now)
 			continue
 		}
 		// seenAndMark is one atomic check-and-record, so two concurrent taps for the same
@@ -92,20 +100,21 @@ func newAnnounceWindow() *announceWindow {
 }
 
 // seenAndMark atomically reports whether (instanceID, guid) was announced within the dedup
-// window and, when it was not, records it as announced now. The check and the record are
-// one critical section, so concurrent taps for the same release (a request miss racing the
-// SWR refresh) can never both treat it as new. The key is namespaced by instanceID so the
-// same GUID on two indexers is tracked independently.
+// window and, in every case, refreshes its "last observed" timestamp to now. The window is
+// thus a SLIDING record: a release continuously observed (marked every poll, e.g. via
+// tapAnnounce's prior-diff suppression) never re-announces, while one absent for a full
+// window re-announces. The check and the record are one critical section, so concurrent
+// taps for the same release (a request miss racing the SWR refresh) can never both treat
+// it as new. The key is namespaced by instanceID so the same GUID on two indexers is
+// tracked independently.
 func (w *announceWindow) seenAndMark(instanceID int64, guid string, now time.Time) bool {
 	key := strconv.FormatInt(instanceID, 10) + "\x00" + guid
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if at, ok := w.seenAt[key]; ok && now.Sub(at) < announceDedupWindow {
-		return true
-	}
+	at, ok := w.seenAt[key]
 	w.seenAt[key] = now
 	w.pruneLocked(now)
-	return false
+	return ok && now.Sub(at) < announceDedupWindow
 }
 
 // pruneLocked enforces a HARD bound on the window: it first drops entries older than the
