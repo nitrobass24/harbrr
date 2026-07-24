@@ -27,10 +27,29 @@ type IndexerInstance struct {
 	// this instance uses, or nil for none. The engine resolves them into the
 	// per-request config at build time (registry.buildAdapter); ON DELETE SET NULL
 	// means deleting a resource just drops the reference.
-	ProxyID   *int64
-	SolverID  *int64
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ProxyID  *int64
+	SolverID *int64
+	// Priority is the Servarr indexer priority (1-50, 1 = highest, default 25),
+	// pushed per indexer by appsync (Prowlarr semantics).
+	Priority int
+	// MinSeeders is the per-indexer minimum-seeders floor (torrent-only, pushed as
+	// minimumSeeders); 0 = unset, not pushed. The sole source since #365 — a sync
+	// profile no longer carries a fallback value.
+	MinSeeders int
+	// EnableRss / EnableAutomaticSearch / EnableInteractiveSearch are the per-search-mode
+	// flags pushed into a Servarr indexer registration (#365 moved these off the sync
+	// profile onto the instance so behavior can differ per indexer); each is ANDed with
+	// Enabled at push time (a disabled instance forces every flag false). Default true.
+	EnableRss               bool
+	EnableAutomaticSearch   bool
+	EnableInteractiveSearch bool
+	// SyncCategories narrows the Newznab categories this indexer pushes, within the
+	// consuming app's own content type (never beyond it); empty means no narrowing (the
+	// full app-gated set is pushed) — the same parent-block convention the old profile
+	// category picker used.
+	SyncCategories []int
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 // User is harbrr's admin account. First-run setup creates exactly one. The
@@ -139,13 +158,6 @@ const (
 	SyncLevelAddUpdate = "add_update"
 )
 
-// Index scopes — which harbrr indexers a connection mirrors. All = every enabled
-// instance; Selected = only the instances flagged in app_connection_indexers.
-const (
-	IndexScopeAll      = "all"
-	IndexScopeSelected = "selected"
-)
-
 // Freeleech modes — which feed variant a connection is pushed, set per connection and
 // defaulted by app kind (qui → bypass; *arrs → honor). Honor pushes the standard feed
 // URL (the indexer's freeleech setting is respected); Bypass pushes the /full variant
@@ -162,23 +174,18 @@ const (
 	SyncStatusError   = "error"
 )
 
-// SyncProfile is a named, reusable set of app-sync overrides a connection references
-// by id (the Prowlarr "Sync Profile" equivalent). Categories narrows which Newznab
-// categories a connection pushes — within the app's own content type, never beyond it
-// (an empty set keeps today's full-category behavior); MinSeeders is the pushed Torznab
-// minimum-seeders floor (0 = the app default, not pushed); the three Enable toggles gate
-// the pushed RSS/automatic/interactive-search flags (each ANDed with the instance's own
-// enabled state). No secrets live here.
+// SyncProfile is a named, reusable ROUTING set (#365) a connection references by id (the
+// Prowlarr "Sync Profile" equivalent, narrowed to just routing — all sync behavior now
+// lives per-indexer on IndexerInstance). IndexerIDs names the indexer instances this
+// profile routes a connection to; empty means every compatible indexer (mirrors the
+// empty-categories convention and avoids a profile edit silently narrowing a connection
+// to nothing). No secrets live here.
 type SyncProfile struct {
-	ID                      int64
-	Name                    string
-	Categories              []int
-	MinSeeders              int
-	EnableRss               bool
-	EnableAutomaticSearch   bool
-	EnableInteractiveSearch bool
-	CreatedAt               time.Time
-	UpdatedAt               time.Time
+	ID         int64
+	Name       string
+	IndexerIDs []int64
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 // AppConnection is a configured Sonarr/Radarr/qui app harbrr syncs its indexers into.
@@ -206,12 +213,12 @@ type AppConnection struct {
 	KeyID                 string
 	Enabled               bool
 	SyncLevel             string
-	IndexScope            string
 	FreeleechMode         string
-	Priority              int
-	// SyncProfileID references the sync profile this connection uses, or nil for
-	// none (today's default behavior). ON DELETE SET NULL means deleting a profile
-	// just drops the reference — the next sync reverts to the defaults.
+	// SyncProfileID references the sync profile (routing set) this connection uses, or
+	// nil for none — nil, or a profile with an empty selection, means every compatible
+	// indexer. ON DELETE SET NULL means deleting a profile just drops the reference, but
+	// the appsync service refuses the delete while any connection still references it
+	// (see appsync.DeleteProfile) — the FK is a defensive backstop, not the guard.
 	SyncProfileID  *int64
 	LastSyncAt     *time.Time
 	LastSyncStatus string
@@ -345,14 +352,14 @@ type AnnounceConnection struct {
 // AppConnectionIndexer is the per-(connection, instance) sync ledger row — the
 // authoritative reconciliation state. RemoteID is the id the target app assigned
 // the pushed indexer (empty until the first successful push); PayloadHash is the
-// hash of the last-pushed intent, so an unchanged indexer skips its update.
-// Selected applies only when the connection's IndexScope is "selected".
+// hash of the last-pushed intent, so an unchanged indexer skips its update. It is a
+// pure reconcile ledger (#365 removed Selected — which indexers a connection syncs is
+// now the referenced sync profile's IndexerIDs, not a per-row flag here).
 type AppConnectionIndexer struct {
 	ID             int64
 	ConnectionID   int64
 	InstanceID     int64
 	RemoteID       string
-	Selected       bool
 	PayloadHash    string
 	LastPushedAt   *time.Time
 	LastPushStatus string

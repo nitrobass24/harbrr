@@ -176,15 +176,17 @@ func (s *Service) load(ctx context.Context, q dbinterface.Execer, t *Tables, app
 	if err != nil {
 		return err
 	}
-	profileIDs, err := loadSyncProfiles(ctx, q, t.SyncProfiles)
-	if err != nil {
-		return err
-	}
 	apiKeyIDs, err := loadAPIKeys(ctx, q, t.APIKeys)
 	if err != nil {
 		return err
 	}
+	// Instances load before sync profiles: a profile's IndexerIDs (#365) remap through
+	// the instance idMap, so the map must already exist.
 	instanceIDs, err := s.loadInstances(ctx, q, t.IndexerInstances, proxyIDs, solverIDs)
+	if err != nil {
+		return err
+	}
+	profileIDs, err := loadSyncProfiles(ctx, q, t.SyncProfiles, instanceIDs)
 	if err != nil {
 		return err
 	}
@@ -261,22 +263,37 @@ func (s *Service) loadSolvers(ctx context.Context, q dbinterface.Execer, rows []
 	return m, nil
 }
 
-func loadSyncProfiles(ctx context.Context, q dbinterface.Execer, rows []SyncProfileRow) (idMap, error) {
+// loadSyncProfiles re-inserts every sync profile (a pure routing set since #365),
+// remapping its ORIGINAL selected instance ids through instanceIDs; an id whose
+// instance didn't restore is skipped (ReplaceProfileIndexers, via remapInstanceIDs).
+func loadSyncProfiles(ctx context.Context, q dbinterface.Execer, rows []SyncProfileRow, instanceIDs idMap) (idMap, error) {
 	repo := database.SyncProfiles{}
 	m := make(idMap, len(rows))
 	for _, r := range rows {
 		newID, err := repo.InsertProfile(ctx, q, domain.SyncProfile{
-			Name: r.Name, Categories: r.Categories, MinSeeders: r.MinSeeders,
-			EnableRss: r.EnableRss, EnableAutomaticSearch: r.EnableAutomaticSearch,
-			EnableInteractiveSearch: r.EnableInteractiveSearch,
-			CreatedAt:               r.CreatedAt, UpdatedAt: r.UpdatedAt,
+			Name: r.Name, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("backup: insert sync profile %q: %w", r.Name, err)
 		}
+		if err := repo.ReplaceProfileIndexers(ctx, q, newID, remapInstanceIDs(r.IndexerIDs, instanceIDs)); err != nil {
+			return nil, fmt.Errorf("backup: restore sync profile %q indexers: %w", r.Name, err)
+		}
 		m[r.ID] = newID
 	}
 	return m, nil
+}
+
+// remapInstanceIDs maps a set of ORIGINAL instance ids to the target's new ids,
+// dropping any whose instance did not restore (a dangling reference, not a fault).
+func remapInstanceIDs(oldIDs []int64, instanceIDs idMap) []int64 {
+	out := make([]int64, 0, len(oldIDs))
+	for _, old := range oldIDs {
+		if newID, ok := instanceIDs[old]; ok {
+			out = append(out, newID)
+		}
+	}
+	return out
 }
 
 // loadAPIKeys re-inserts via raw SQL to preserve created_at + last_used_at (the repo's
@@ -299,15 +316,70 @@ func loadAPIKeys(ctx context.Context, q dbinterface.Execer, rows []APIKeyRow) (i
 	return m, nil
 }
 
+// restoreDefaultPriority is the Servarr indexer priority (Prowlarr semantics) a
+// restored instance gets when its bundle predates the priority field (#364):
+// a bundle written before then carries the JSON zero value (0), which must not
+// restore as priority 0 (the fleet would then re-push every indexer to the apps at
+// an invalid priority) — it defaults to the same value a live Add without one gets.
+const restoreDefaultPriority = 25
+
+// resolveRestoredPriority defaults a bundled instance's zero-value Priority (a pre-#364
+// bundle never carried one) to restoreDefaultPriority, then validates the result against
+// the same 1-50 range the live API enforces (registry.normalizePriority): this restore
+// path has no DB CHECK and no registry-side guard behind it, so a malformed or
+// hand-edited bundle value (e.g. 999) must be rejected here rather than silently
+// persisted.
+func resolveRestoredPriority(slug string, priority int) (int, error) {
+	if priority == 0 {
+		priority = restoreDefaultPriority
+	}
+	if priority < 1 || priority > 50 {
+		return 0, fmt.Errorf("backup: indexer %q has an out-of-range priority %d (want 1-50)", slug, priority)
+	}
+	return priority, nil
+}
+
+// validateRestoredMinSeeders rejects a bundled instance's negative MinSeeders — the same
+// invariant registry.validateMinSeeders enforces on a live write, applied here since this
+// restore path has no such guard behind it.
+func validateRestoredMinSeeders(slug string, minSeeders int) error {
+	if minSeeders < 0 {
+		return fmt.Errorf("backup: indexer %q has a negative minSeeders %d", slug, minSeeders)
+	}
+	return nil
+}
+
+// restoreDefaultToggle resolves an InstanceRow's optional search-mode toggle: a bundle
+// written before #365 carries none of enableRss/enableAutomaticSearch/
+// enableInteractiveSearch, decoding as nil — which must default to true (every mode
+// on), not false. A plain bool field would instead silently restore every toggle OFF
+// and stop all syncing (the same hazard class as restoreDefaultPriority above).
+func restoreDefaultToggle(v *bool) bool {
+	if v == nil {
+		return true
+	}
+	return *v
+}
+
 func (s *Service) loadInstances(ctx context.Context, q dbinterface.Execer, rows []InstanceRow, proxyIDs, solverIDs idMap) (idMap, error) {
 	repo := database.Instances{}
 	m := make(idMap, len(rows))
 	for _, r := range rows {
+		priority, err := resolveRestoredPriority(r.Slug, r.Priority)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateRestoredMinSeeders(r.Slug, r.MinSeeders); err != nil {
+			return nil, err
+		}
 		newID, err := repo.Insert(ctx, q, domain.IndexerInstance{
 			Slug: r.Slug, DefinitionID: r.DefinitionID, Name: r.Name, BaseURL: r.BaseURL,
 			Enabled: r.Enabled, Protocol: r.Protocol,
 			ProxyID: proxyIDs.remap(r.ProxyID), SolverID: solverIDs.remap(r.SolverID),
-			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+			Priority: priority, MinSeeders: r.MinSeeders, SyncCategories: r.SyncCategories,
+			EnableRss: restoreDefaultToggle(r.EnableRss), EnableAutomaticSearch: restoreDefaultToggle(r.EnableAutomaticSearch),
+			EnableInteractiveSearch: restoreDefaultToggle(r.EnableInteractiveSearch),
+			CreatedAt:               r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("backup: insert indexer %q: %w", r.Slug, err)
@@ -359,11 +431,15 @@ func (s *Service) loadAppConnections(ctx context.Context, q dbinterface.Execer, 
 	repo := database.AppConnections{}
 	for _, r := range rows {
 		appID := appConnApps[r.ID]
+		syncProfileID, err := resolveConnSyncProfile(ctx, q, r, profileIDs, instanceIDs)
+		if err != nil {
+			return err
+		}
 		newID, err := repo.InsertConnection(ctx, q, domain.AppConnection{
 			Name: r.Name, Kind: r.Kind, AppID: &appID,
 			HarbrrAPIKeyID: zeroIfNil(apiKeyIDs.remap(r.HarbrrAPIKeyID)), HarbrrAPIKeyEncrypted: "",
-			KeyID: s.keyring.KeyID(), Enabled: r.Enabled, SyncLevel: r.SyncLevel, IndexScope: r.IndexScope,
-			FreeleechMode: r.FreeleechMode, Priority: r.Priority, SyncProfileID: profileIDs.remap(r.SyncProfileID),
+			KeyID: s.keyring.KeyID(), Enabled: r.Enabled, SyncLevel: r.SyncLevel,
+			FreeleechMode: r.FreeleechMode, SyncProfileID: syncProfileID,
 			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		})
 		if err != nil {
@@ -376,28 +452,54 @@ func (s *Service) loadAppConnections(ctx context.Context, q dbinterface.Execer, 
 		if err := repo.SetConnectionSecrets(ctx, q, newID, harbrrEnc, s.keyring.KeyID()); err != nil {
 			return fmt.Errorf("backup: set app connection secrets: %w", err)
 		}
-		if err := loadIndexerSelection(ctx, q, repo, newID, r.SelectedInstanceIDs, instanceIDs); err != nil {
-			return err
-		}
 	}
 	return nil
 }
 
-// loadIndexerSelection recreates a connection's scope="selected" set, remapping each
-// original instance id to the target's new id. An id with no mapping (its instance was
-// dropped from the bundle) is skipped rather than faulting. An older bundle carries no
-// ids (nil slice), so no selection is restored — the pre-fix behaviour.
-func loadIndexerSelection(ctx context.Context, q dbinterface.Execer, repo database.AppConnections, connID int64, oldIDs []int64, instanceIDs idMap) error {
-	for _, oldID := range oldIDs {
-		newInstID, ok := instanceIDs[oldID]
-		if !ok {
-			continue
-		}
-		if err := repo.SetIndexerSelection(ctx, q, connID, newInstID, true); err != nil {
-			return fmt.Errorf("backup: restore indexer selection for connection %d: %w", connID, err)
-		}
+// resolveConnSyncProfile resolves the sync profile a restored connection references. A
+// legacy (pre-#365) row with index_scope="selected" and a non-empty ledger selection
+// mints a routing profile from that selection and points the connection at it instead —
+// once index_scope stops being read, leaving the old (behavior-only) SyncProfileID
+// reference in place would silently widen the connection to every indexer on its next
+// sync. A current-shape row (IndexScope == "") just remaps its existing reference.
+func resolveConnSyncProfile(ctx context.Context, q dbinterface.Execer, r AppConnRow, profileIDs, instanceIDs idMap) (*int64, error) {
+	if r.IndexScope != "selected" || len(r.SelectedInstanceIDs) == 0 {
+		return profileIDs.remap(r.SyncProfileID), nil
 	}
-	return nil
+	profileID, err := mintUniqueProfile(ctx, q, r.Name+" indexers (restored)",
+		remapInstanceIDs(r.SelectedInstanceIDs, instanceIDs), r.CreatedAt, r.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("backup: mint routing profile for connection %q: %w", r.Name, err)
+	}
+	return &profileID, nil
+}
+
+// mintNameAttempts bounds mintUniqueProfile's collision-retry loop — far more than any
+// real name-collision run could need, just a backstop against looping forever.
+const mintNameAttempts = 1000
+
+// mintUniqueProfile inserts a new routing-only sync profile under baseName, appending a
+// numeric suffix ("name (2)", "name (3)", ...) on a UNIQUE(name) collision — unlike the
+// migration-minted names in 0024 (which embed the connection's id and so can't collide),
+// this name is derived from user data (the connection's name) and a restore can run
+// against an already-populated instance, so a collision is plausible.
+func mintUniqueProfile(ctx context.Context, q dbinterface.Execer, baseName string, indexerIDs []int64, createdAt, updatedAt time.Time) (int64, error) {
+	repo := database.SyncProfiles{}
+	name := baseName
+	for attempt := 2; attempt < mintNameAttempts; attempt++ {
+		id, err := repo.InsertProfile(ctx, q, domain.SyncProfile{Name: name, CreatedAt: createdAt, UpdatedAt: updatedAt})
+		if err == nil {
+			if err := repo.ReplaceProfileIndexers(ctx, q, id, indexerIDs); err != nil {
+				return 0, fmt.Errorf("backup: write routing profile %q indexers: %w", name, err)
+			}
+			return id, nil
+		}
+		if !database.IsUniqueViolation(err) {
+			return 0, fmt.Errorf("backup: insert routing profile %q: %w", name, err)
+		}
+		name = fmt.Sprintf("%s (%d)", baseName, attempt)
+	}
+	return 0, fmt.Errorf("backup: could not find a free name for routing profile %q after %d attempts", baseName, mintNameAttempts)
 }
 
 func (s *Service) loadAnnounceConnections(ctx context.Context, q dbinterface.Execer, rows []AnnounceConnRow, announceConnApps, apiKeyIDs idMap) error {

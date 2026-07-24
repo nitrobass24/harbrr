@@ -26,9 +26,7 @@ func sampleConnection(appID *int64, harbrrKeyID int64, now time.Time) domain.App
 		KeyID:                 "key-1",
 		Enabled:               true,
 		SyncLevel:             domain.SyncLevelFull,
-		IndexScope:            domain.IndexScopeAll,
 		FreeleechMode:         domain.FreeleechModeHonor,
-		Priority:              25,
 		CreatedAt:             now,
 		UpdatedAt:             now,
 	}
@@ -129,7 +127,7 @@ func TestAppConnectionInsertGetList(t *testing.T) {
 		t.Errorf("secret round-trip mismatch: %+v", got)
 	case got.HarbrrAPIKeyID != keyID || got.KeyID != "key-1":
 		t.Errorf("key linkage mismatch: %+v", got)
-	case !got.Enabled || got.SyncLevel != domain.SyncLevelFull || got.IndexScope != domain.IndexScopeAll:
+	case !got.Enabled || got.SyncLevel != domain.SyncLevelFull:
 		t.Errorf("flags round-trip mismatch: %+v", got)
 	case got.LastSyncAt != nil:
 		t.Errorf("last_sync_at should be nil on a fresh row, got %v", got.LastSyncAt)
@@ -201,16 +199,13 @@ func TestAppConnectionUpdateAndEnable(t *testing.T) {
 	updated.ID = id
 	updated.Name = "Sonarr 4K"
 	updated.SyncLevel = domain.SyncLevelAddUpdate
-	updated.IndexScope = domain.IndexScopeSelected
-	updated.Priority = 10
 	updated.UpdatedAt = now.Add(time.Minute)
 	if err := repo.UpdateConnection(ctx, db, updated); err != nil {
 		t.Fatalf("UpdateConnection: %v", err)
 	}
 
 	got, _ := repo.GetConnection(ctx, db, id)
-	if got.Name != "Sonarr 4K" || got.SyncLevel != domain.SyncLevelAddUpdate ||
-		got.IndexScope != domain.IndexScopeSelected || got.Priority != 10 {
+	if got.Name != "Sonarr 4K" || got.SyncLevel != domain.SyncLevelAddUpdate {
 		t.Errorf("update not applied: %+v", got)
 	}
 
@@ -259,7 +254,7 @@ func TestAppConnectionIndexerLedger(t *testing.T) {
 
 	pushed := now.Add(time.Minute)
 	row := domain.AppConnectionIndexer{
-		ConnectionID: connID, InstanceID: instID, RemoteID: "7", Selected: true,
+		ConnectionID: connID, InstanceID: instID, RemoteID: "7",
 		PayloadHash: "h1", LastPushedAt: &pushed, LastPushStatus: domain.SyncStatusOK,
 	}
 	if err := repo.UpsertConnectionIndexer(ctx, db, row); err != nil {
@@ -300,7 +295,7 @@ func TestAppConnectionDeleteCascadesLedger(t *testing.T) {
 	connID, _ := repo.InsertConnection(ctx, db, sampleConnection(nil, mintKey(t, db, "k"), now))
 	instID := insertInstance(t, db, "show-tracker")
 	_ = repo.UpsertConnectionIndexer(ctx, db, domain.AppConnectionIndexer{
-		ConnectionID: connID, InstanceID: instID, Selected: true,
+		ConnectionID: connID, InstanceID: instID,
 	})
 
 	if err := repo.DeleteConnection(ctx, db, connID); err != nil {

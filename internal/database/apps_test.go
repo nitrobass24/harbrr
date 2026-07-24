@@ -246,7 +246,7 @@ func TestAppCountReferences(t *testing.T) {
 
 	if _, err := (database.AppConnections{}).InsertConnection(ctx, db, domain.AppConnection{
 		Name: "sonarr-1", Kind: domain.AppKindSonarr, AppID: &app.ID,
-		SyncLevel: domain.SyncLevelFull, IndexScope: domain.IndexScopeAll, FreeleechMode: domain.FreeleechModeHonor,
+		SyncLevel: domain.SyncLevelFull, FreeleechMode: domain.FreeleechModeHonor,
 		CreatedAt: now, UpdatedAt: now,
 	}); err != nil {
 		t.Fatalf("insert app_connections: %v", err)

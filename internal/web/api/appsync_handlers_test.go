@@ -54,15 +54,13 @@ func TestAppConnectionCRUD(t *testing.T) {
 		t.Fatalf("create response leaked or did not redact the app key: %s", body)
 	}
 	var created struct {
-		ID         int64  `json:"id"`
-		SyncLevel  string `json:"syncLevel"`
-		IndexScope string `json:"indexScope"`
-		Priority   int    `json:"priority"`
+		ID        int64  `json:"id"`
+		SyncLevel string `json:"syncLevel"`
 	}
 	if err := json.Unmarshal(body, &created); err != nil {
 		t.Fatalf("decode create: %v", err)
 	}
-	if created.SyncLevel != "full" || created.IndexScope != "all" || created.Priority != 25 {
+	if created.SyncLevel != "full" {
 		t.Errorf("defaults not applied: %+v", created)
 	}
 	id := itoa(created.ID)
@@ -132,7 +130,7 @@ func TestAppConnectionErrors(t *testing.T) {
 	mustStatus(t, resp, body, http.StatusBadRequest)
 }
 
-func TestAppConnectionUpdateConflictAndSelect(t *testing.T) {
+func TestAppConnectionUpdateConflict(t *testing.T) {
 	t.Parallel()
 	base, c := serve(t, newEnv(t, api.Config{}))
 	setupAndLogin(t, base, c)
@@ -154,10 +152,6 @@ func TestAppConnectionUpdateConflictAndSelect(t *testing.T) {
 	// A name patch succeeds (204); the create path still enforces (kind, base_url)
 	// uniqueness (covered separately by the duplicate-create test).
 	resp, body = do(t, c, http.MethodPatch, url+"/"+itoa(a.ID), map[string]any{"name": "A-renamed"}, nil)
-	mustStatus(t, resp, body, http.StatusNoContent)
-
-	// Selecting indexers returns 204 (empty set is valid).
-	resp, body = do(t, c, http.MethodPut, url+"/"+itoa(a.ID)+"/indexers", map[string]any{"instanceIds": []int64{}}, nil)
 	mustStatus(t, resp, body, http.StatusNoContent)
 }
 

@@ -559,13 +559,6 @@ export class ApiClient {
     return this.unwrap(this.http.GET("/api/app-connections/{id}/status", { params: { path: { id } } }), "/api/app-connections/{id}/status")
   }
 
-  setSelectedIndexers(id: number, instanceIds: number[]): Promise<void> {
-    return this.unwrap(
-      this.http.PUT("/api/app-connections/{id}/indexers", { params: { path: { id } }, body: { instanceIds } }),
-      "/api/app-connections/{id}/indexers"
-    )
-  }
-
   // --- apps (first-class (kind, base_url) identities, ADR 0004) ---
 
   listApps(): Promise<App[]> {
@@ -593,7 +586,7 @@ export class ApiClient {
     )
   }
 
-  // --- sync profiles (per-connection category/toggle overrides) ---
+  // --- sync profiles (indexer routing sets) ---
 
   listSyncProfiles(): Promise<SyncProfile[]> {
     return this.unwrap(this.http.GET("/api/sync-profiles"), "/api/sync-profiles")

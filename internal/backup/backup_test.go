@@ -69,18 +69,19 @@ func seed(t *testing.T, db *database.DB, kr *secrets.Keyring) {
 
 	proxyID := seedProxy(t, db, kr)
 	solverID := seedSolver(t, db, kr)
-	profileID, err := (database.SyncProfiles{}).InsertProfile(ctx, db, domain.SyncProfile{
-		Name: "tv", Categories: []int{5000}, EnableRss: true,
-	})
+	instID := seedInstance(t, db, kr, proxyID, solverID)
+	profileID, err := (database.SyncProfiles{}).InsertProfile(ctx, db, domain.SyncProfile{Name: "tv"})
 	if err != nil {
 		t.Fatalf("seed profile: %v", err)
+	}
+	if err := (database.SyncProfiles{}).ReplaceProfileIndexers(ctx, db, profileID, []int64{instID}); err != nil {
+		t.Fatalf("seed profile indexers: %v", err)
 	}
 	apiKeyID, err := (database.APIKeys{}).Create(ctx, db, domain.APIKey{Name: "feed", KeyHash: "hash-abc"})
 	if err != nil {
 		t.Fatalf("seed api key: %v", err)
 	}
 
-	seedInstance(t, db, kr, proxyID, solverID)
 	sonarrAppID := seedApp(t, db, kr, "sonarr", "http://sonarr:8989", "http://h:7478", appKey)
 	seedAppConn(t, db, kr, "sonarr", sonarrAppID, apiKeyID, &profileID)
 	quiAppID := seedApp(t, db, kr, "qui", "http://qui:7476", "http://h:7478", annKey)
@@ -133,13 +134,14 @@ func seedSolver(t *testing.T, db *database.DB, kr *secrets.Keyring) int64 {
 	return id
 }
 
-func seedInstance(t *testing.T, db *database.DB, kr *secrets.Keyring, proxyID, solverID int64) {
+func seedInstance(t *testing.T, db *database.DB, kr *secrets.Keyring, proxyID, solverID int64) int64 {
 	t.Helper()
 	ctx := context.Background()
 	repo := database.Instances{}
 	id, err := repo.Insert(ctx, db, domain.IndexerInstance{
 		Slug: "tt", DefinitionID: "tt", Name: "TT", Enabled: true, Protocol: "torrent",
-		ProxyID: &proxyID, SolverID: &solverID,
+		ProxyID: &proxyID, SolverID: &solverID, Priority: 10, MinSeeders: 5,
+		SyncCategories: []int{5000}, EnableRss: true, EnableAutomaticSearch: false, EnableInteractiveSearch: true,
 	})
 	if err != nil {
 		t.Fatalf("seed instance: %v", err)
@@ -154,6 +156,7 @@ func seedInstance(t *testing.T, db *database.DB, kr *secrets.Keyring, proxyID, s
 	if err := repo.InsertSetting(ctx, db, id, domain.IndexerSetting{Name: "foo", Value: "bar"}); err != nil {
 		t.Fatalf("seed plain setting: %v", err)
 	}
+	return id
 }
 
 // seedApp inserts an App row directly (mirrors how the fold/apps.Service would seal it)
@@ -184,7 +187,7 @@ func seedAppConn(t *testing.T, db *database.DB, kr *secrets.Keyring, kind string
 	id, err := repo.InsertConnection(ctx, db, domain.AppConnection{
 		Name: kind, Kind: kind, AppID: &appID,
 		HarbrrAPIKeyID: apiKeyID, KeyID: kr.KeyID(), Enabled: true, SyncLevel: "full",
-		IndexScope: "all", FreeleechMode: "honor", Priority: 25, SyncProfileID: profileID,
+		FreeleechMode: "honor", SyncProfileID: profileID,
 	})
 	if err != nil {
 		t.Fatalf("seed app conn: %v", err)
@@ -299,6 +302,16 @@ func assertInstanceRestored(t *testing.T, dstDB *database.DB, dstKR *secrets.Key
 	if _, err := (database.Proxies{}).GetProxy(ctx, dstDB, *inst.ProxyID); err != nil {
 		t.Errorf("instance.proxy_id dangling: %v", err)
 	}
+	if inst.Priority != 10 || inst.MinSeeders != 5 {
+		t.Errorf("instance priority/minSeeders = %d/%d, want 10/5", inst.Priority, inst.MinSeeders)
+	}
+	if !inst.EnableRss || inst.EnableAutomaticSearch || !inst.EnableInteractiveSearch {
+		t.Errorf("instance toggles = rss=%v auto=%v interactive=%v, want true/false/true",
+			inst.EnableRss, inst.EnableAutomaticSearch, inst.EnableInteractiveSearch)
+	}
+	if len(inst.SyncCategories) != 1 || inst.SyncCategories[0] != 5000 {
+		t.Errorf("instance syncCategories = %v, want [5000]", inst.SyncCategories)
+	}
 	settings, _ := repo.Settings(ctx, dstDB, inst.ID)
 	got := map[string]string{}
 	for _, s := range settings {
@@ -336,6 +349,18 @@ func assertConnectionsRestored(t *testing.T, dstDB *database.DB, dstKR *secrets.
 	}
 	if ac.SyncProfileID == nil {
 		t.Error("app conn sync_profile_id lost")
+	} else {
+		profile, err := (database.SyncProfiles{}).GetProfile(ctx, dstDB, *ac.SyncProfileID)
+		if err != nil {
+			t.Fatalf("get restored sync profile: %v", err)
+		}
+		instances, _ := (database.Instances{}).List(ctx, dstDB)
+		if len(instances) != 1 {
+			t.Fatalf("restored instances = %d, want 1", len(instances))
+		}
+		if len(profile.IndexerIDs) != 1 || profile.IndexerIDs[0] != instances[0].ID {
+			t.Errorf("restored profile.IndexerIDs = %v, want [%d] (remapped to the restored instance)", profile.IndexerIDs, instances[0].ID)
+		}
 	}
 	if ac.AppID == nil {
 		t.Fatal("app conn AppID = nil, want set (restore is App-aware post-#269)")
@@ -396,66 +421,62 @@ func assertAdminAndSettingsRestored(t *testing.T, dstDB *database.DB) {
 	}
 }
 
-// seedSelectedConn builds a scope="selected" connection over four indexers, deletes one so
-// the survivors' ids are non-contiguous (an id-preserving restore would misfire), and
-// selects a proper subset. It returns the slugs that must survive as the selection.
-func seedSelectedConn(t *testing.T, db *database.DB, kr *secrets.Keyring) []string {
+// seedProfileConn builds a connection referencing a routing profile over four
+// indexers, deletes one so the survivors' ids are non-contiguous (an id-preserving
+// restore would misfire), and selects a proper subset. It returns the slugs that must
+// survive as the profile's selection.
+func seedProfileConn(t *testing.T, db *database.DB, kr *secrets.Keyring) []string {
 	t.Helper()
 	ctx := context.Background()
-	repo := database.Instances{}
+	instRepo := database.Instances{}
 	for _, slug := range []string{"alpha", "beta", "gamma", "delta"} {
-		if _, err := repo.Insert(ctx, db, domain.IndexerInstance{
+		if _, err := instRepo.Insert(ctx, db, domain.IndexerInstance{
 			Slug: slug, DefinitionID: slug, Name: slug, Enabled: true, Protocol: "torrent",
 		}); err != nil {
 			t.Fatalf("seed instance %q: %v", slug, err)
 		}
 	}
 	// Drop the second instance so the survivors' ids are sparse and shift on re-insert.
-	if err := repo.Delete(ctx, db, "beta"); err != nil {
+	if err := instRepo.Delete(ctx, db, "beta"); err != nil {
 		t.Fatalf("delete instance: %v", err)
 	}
 
-	appID := seedApp(t, db, kr, "radarr", "http://radarr:7878", "http://h:7478", appKey)
-	conns := database.AppConnections{}
-	connID := seedAppConn(t, db, kr, "radarr", appID, 0, nil)
-
-	// Selected connection needs scope="selected" — the shared seedAppConn helper defaults
-	// to IndexScope "all", so patch it directly.
-	got, err := conns.GetConnection(ctx, db, connID)
-	if err != nil {
-		t.Fatalf("get selected conn: %v", err)
-	}
-	got.IndexScope = "selected"
-	got.UpdatedAt = time.Now().UTC()
-	if err := conns.UpdateConnection(ctx, db, got); err != nil {
-		t.Fatalf("set index scope selected: %v", err)
-	}
-
-	// Select a subset (gamma + delta, not alpha) — the ledger `selected` flags are the
-	// only record of a scope="selected" connection's set.
+	// Select a subset (gamma + delta, not alpha) — the profile's own set is the only
+	// record of which indexers a connection routes to (#365).
 	want := []string{"gamma", "delta"}
 	bySlug := map[string]int64{}
-	list, _ := repo.List(ctx, db)
+	list, _ := instRepo.List(ctx, db)
 	for _, inst := range list {
 		bySlug[inst.Slug] = inst.ID
 	}
+	selected := make([]int64, 0, len(want))
 	for _, slug := range want {
-		if err := conns.SetIndexerSelection(ctx, db, connID, bySlug[slug], true); err != nil {
-			t.Fatalf("select %q: %v", slug, err)
-		}
+		selected = append(selected, bySlug[slug])
 	}
+
+	profiles := database.SyncProfiles{}
+	profileID, err := profiles.InsertProfile(ctx, db, domain.SyncProfile{Name: "selected"})
+	if err != nil {
+		t.Fatalf("seed profile: %v", err)
+	}
+	if err := profiles.ReplaceProfileIndexers(ctx, db, profileID, selected); err != nil {
+		t.Fatalf("seed profile indexers: %v", err)
+	}
+
+	appID := seedApp(t, db, kr, "radarr", "http://radarr:7878", "http://h:7478", appKey)
+	seedAppConn(t, db, kr, "radarr", appID, 0, &profileID)
 	return want
 }
 
-// TestExportImportPreservesIndexerSelection proves a scope="selected" connection's chosen
+// TestExportImportPreservesProfileSelection proves a routing profile's selected
 // indexers survive a round-trip and are remapped to the target's new instance ids. The
 // selection is checked by slug (stable identity) because the ids shift across the restore.
-func TestExportImportPreservesIndexerSelection(t *testing.T) {
+func TestExportImportPreservesProfileSelection(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
 	srcDB, srcKR := openDB(t), openKeyring(t, keyA)
-	wantSlugs := seedSelectedConn(t, srcDB, srcKR)
+	wantSlugs := seedProfileConn(t, srcDB, srcKR)
 
 	bundle, err := newBackupService(srcDB, srcKR).Export(ctx, backup.ExportParams{Passphrase: "pw"})
 	if err != nil {
@@ -479,18 +500,18 @@ func TestExportImportPreservesIndexerSelection(t *testing.T) {
 	if len(conns) != 1 {
 		t.Fatalf("restored connections = %d, want 1", len(conns))
 	}
-	ledger, err := (database.AppConnections{}).ListConnectionIndexers(ctx, dstDB, conns[0].ID)
+	if conns[0].SyncProfileID == nil {
+		t.Fatalf("restored connection lost its sync profile reference")
+	}
+	profile, err := (database.SyncProfiles{}).GetProfile(ctx, dstDB, *conns[0].SyncProfileID)
 	if err != nil {
-		t.Fatalf("list restored ledger: %v", err)
+		t.Fatalf("get restored profile: %v", err)
 	}
 	gotSelected := map[string]bool{}
-	for _, l := range ledger {
-		if !l.Selected {
-			continue
-		}
-		slug, ok := slugByID[l.InstanceID]
+	for _, instID := range profile.IndexerIDs {
+		slug, ok := slugByID[instID]
 		if !ok {
-			t.Fatalf("selection points at unknown instance id %d (not remapped)", l.InstanceID)
+			t.Fatalf("selection points at unknown instance id %d (not remapped)", instID)
 		}
 		gotSelected[slug] = true
 	}

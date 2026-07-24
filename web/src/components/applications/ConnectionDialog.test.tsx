@@ -18,11 +18,7 @@ const PROFILES: SyncProfile[] = [
   {
     id: 4,
     name: "tv-profile",
-    categories: [5000],
-    minSeeders: 0,
-    enableRss: true,
-    enableAutomaticSearch: true,
-    enableInteractiveSearch: true,
+    indexerIds: [1],
     createdAt: "2026-07-01T00:00:00Z",
     updatedAt: "2026-07-01T00:00:00Z",
   },
@@ -36,9 +32,7 @@ const SONARR_CONN: AppConnection = {
   harbrrUrl: "http://harbrr:7478",
   enabled: true,
   syncLevel: "full",
-  indexScope: "all",
   freeleechMode: "honor",
-  priority: 0,
   syncProfileId: 4,
   createdAt: "2026-07-01T00:00:00Z",
   updatedAt: "2026-07-01T00:00:00Z",
@@ -68,7 +62,7 @@ function stubFetch() {
 describe("ConnectionDialog sync profile picker", () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it("hides the picker for a qui connection", async () => {
+  it("shows the picker for a qui connection too (#365 dropped the qui rejection)", async () => {
     stubFetch()
     render(wrap(
       <ConnectionDialog
@@ -81,8 +75,7 @@ describe("ConnectionDialog sync profile picker", () => {
       />
     ))
 
-    await screen.findByRole("dialog")
-    expect(screen.queryByLabelText("Sync profile")).toBeNull()
+    expect(await screen.findByLabelText("Sync profile")).toBeTruthy()
   })
 
   it("shows the picker for a sonarr connection", async () => {

@@ -95,7 +95,6 @@ function ConnectionForm({ existing, initialAppId, pending, error, onCreate, onUp
   const [apiKey, setApiKey] = useState("")
   const [harbrrUrl, setHarbrrUrl] = useState(defaultHarbrrUrl())
   const [syncLevel, setSyncLevel] = useState(existing?.syncLevel ?? "full")
-  const [indexScope, setIndexScope] = useState(existing?.indexScope ?? "all")
   const [freeleechMode, setFreeleechMode] = useState<"" | "honor" | "bypass">(existing?.freeleechMode ?? "")
   const [syncProfileId, setSyncProfileId] = useState<number | null>(existing?.syncProfileId ?? null)
 
@@ -112,8 +111,6 @@ function ConnectionForm({ existing, initialAppId, pending, error, onCreate, onUp
   const profiles = useSyncProfiles()
   const mode = existing ? "edit" : "create"
   const message = error instanceof Error ? error.message : null
-  // Profiles never apply to qui — it has no per-content-type category concept.
-  const showProfilePicker = kind !== "qui"
   const appsOfKind = (apps.data ?? []).filter((a) => a.kind === kind)
   // App-sync is one-row-per-App, so a used app is not offerable: the default skips it
   // and its picker option is disabled — otherwise it pre-selects a guaranteed 409.
@@ -134,16 +131,15 @@ function ConnectionForm({ existing, initialAppId, pending, error, onCreate, onUp
         const resolvedFreeleechMode = freeleechMode || defaultFreeleechMode(kind)
         if (mode === "edit" && existing) {
           onUpdate(existing.id, {
-            name, syncLevel, indexScope,
+            name, syncLevel,
             freeleechMode: resolvedFreeleechMode,
-            // Always send for non-qui edits (number or null) so clearing works; omit entirely for qui.
-            ...(showProfilePicker ? { syncProfileId } : {}),
+            syncProfileId,
           })
         } else {
           onCreate({
-            name, kind, syncLevel, indexScope,
+            name, kind, syncLevel,
             freeleechMode: freeleechMode || undefined,
-            ...(showProfilePicker && syncProfileId !== null ? { syncProfileId } : {}),
+            ...(syncProfileId !== null ? { syncProfileId } : {}),
             ...(usingNewApp ? { baseUrl: composeHostURL(scheme, host, port), apiKey, harbrrUrl } : { appId: Number(effectiveAppSel) }),
           })
         }
@@ -227,17 +223,11 @@ function ConnectionForm({ existing, initialAppId, pending, error, onCreate, onUp
         </>
       )}
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3">
         <FieldWrap id="conn-level" label="Sync level">
           <NativeSelect id="conn-level" value={syncLevel} onChange={(e) => setSyncLevel(e.target.value as "full" | "add_update")}>
             <option value="full">full</option>
             <option value="add_update">add/update</option>
-          </NativeSelect>
-        </FieldWrap>
-        <FieldWrap id="conn-scope" label="Indexers">
-          <NativeSelect id="conn-scope" value={indexScope} onChange={(e) => setIndexScope(e.target.value as "all" | "selected")}>
-            <option value="all">all</option>
-            <option value="selected">selected</option>
           </NativeSelect>
         </FieldWrap>
         <FieldWrap id="conn-fl" label="Freeleech feed">
@@ -249,18 +239,16 @@ function ConnectionForm({ existing, initialAppId, pending, error, onCreate, onUp
         </FieldWrap>
       </div>
 
-      {showProfilePicker && (
-        <FieldWrap id="conn-profile" label="Sync profile">
-          <NativeSelect
-            id="conn-profile"
-            value={syncProfileId === null ? "" : String(syncProfileId)}
-            onChange={(e) => setSyncProfileId(e.target.value === "" ? null : Number(e.target.value))}
-          >
-            <option value="">None</option>
-            {(profiles.data ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </NativeSelect>
-        </FieldWrap>
-      )}
+      <FieldWrap id="conn-profile" label="Sync profile">
+        <NativeSelect
+          id="conn-profile"
+          value={syncProfileId === null ? "" : String(syncProfileId)}
+          onChange={(e) => setSyncProfileId(e.target.value === "" ? null : Number(e.target.value))}
+        >
+          <option value="">None (all compatible indexers)</option>
+          {(profiles.data ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </NativeSelect>
+      </FieldWrap>
 
       <DialogFooter>
         <Button

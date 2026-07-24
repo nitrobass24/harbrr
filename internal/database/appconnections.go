@@ -21,9 +21,11 @@ type AppConnections struct{}
 // connectionColumns is the full select list, in scan order. app_id is the App
 // reference (ADR 0004) — the sole identity source; base_url/api_key_encrypted/
 // harbrr_url were dropped by #269 once every row was guaranteed a non-NULL app_id.
+// index_scope is no longer read (#365 dropped the per-connection selected-scope
+// machinery in code; the column itself stays until a later cleanup migration).
 const connectionColumns = `id, name, kind, app_id,
 	harbrr_api_key_id, harbrr_api_key_encrypted, key_id, enabled, sync_level,
-	index_scope, freeleech_mode, priority, sync_profile_id, last_sync_at, last_sync_status, last_sync_error,
+	freeleech_mode, sync_profile_id, last_sync_at, last_sync_status, last_sync_error,
 	created_at, updated_at`
 
 // InsertConnection writes a connection row and returns its new id.
@@ -31,12 +33,12 @@ func (AppConnections) InsertConnection(ctx context.Context, q dbinterface.Execer
 	res, err := q.ExecContext(ctx,
 		q.Rebind(`INSERT INTO app_connections
 			(name, kind, app_id, harbrr_api_key_id,
-			 harbrr_api_key_encrypted, key_id, enabled, sync_level, index_scope,
-			 freeleech_mode, priority, sync_profile_id, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+			 harbrr_api_key_encrypted, key_id, enabled, sync_level,
+			 freeleech_mode, sync_profile_id, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		c.Name, c.Kind, nullInt64(c.AppID), nullIfZero(c.HarbrrAPIKeyID),
-		c.HarbrrAPIKeyEncrypted, c.KeyID, boolToInt(c.Enabled), c.SyncLevel, c.IndexScope,
-		c.FreeleechMode, c.Priority, nullInt64(c.SyncProfileID), c.CreatedAt.UTC().Format(timeLayout), c.UpdatedAt.UTC().Format(timeLayout))
+		c.HarbrrAPIKeyEncrypted, c.KeyID, boolToInt(c.Enabled), c.SyncLevel,
+		c.FreeleechMode, nullInt64(c.SyncProfileID), c.CreatedAt.UTC().Format(timeLayout), c.UpdatedAt.UTC().Format(timeLayout))
 	if err != nil {
 		return 0, fmt.Errorf("database: insert app connection: %w", err)
 	}
@@ -90,10 +92,10 @@ func (AppConnections) UpdateConnection(ctx context.Context, q dbinterface.Execer
 	res, err := q.ExecContext(ctx,
 		q.Rebind(`UPDATE app_connections SET
 			name = ?, key_id = ?,
-			sync_level = ?, index_scope = ?, freeleech_mode = ?, priority = ?, sync_profile_id = ?, updated_at = ?
+			sync_level = ?, freeleech_mode = ?, sync_profile_id = ?, updated_at = ?
 			WHERE id = ?`),
 		c.Name, c.KeyID,
-		c.SyncLevel, c.IndexScope, c.FreeleechMode, c.Priority, nullInt64(c.SyncProfileID), c.UpdatedAt.UTC().Format(timeLayout), c.ID)
+		c.SyncLevel, c.FreeleechMode, nullInt64(c.SyncProfileID), c.UpdatedAt.UTC().Format(timeLayout), c.ID)
 	if err != nil {
 		return fmt.Errorf("database: update app connection: %w", err)
 	}
@@ -149,20 +151,18 @@ func (AppConnections) DeleteConnection(ctx context.Context, q dbinterface.Execer
 
 // UpsertConnectionIndexer inserts or updates one ledger row, keyed on
 // (connection_id, instance_id) — the reconcile path calls it after each push. The
-// DO UPDATE deliberately does NOT touch `selected`: that column is user intent owned
-// by SetIndexerSelection, so a re-sync never re-selects a deselected indexer. (On a
-// fresh INSERT the provided selected value applies; it is ignored under scope "all".)
+// ledger is a pure reconcile record since #365 (no `selected` user-intent flag).
 func (AppConnections) UpsertConnectionIndexer(ctx context.Context, q dbinterface.Execer, l domain.AppConnectionIndexer) error {
 	_, err := q.ExecContext(ctx,
 		q.Rebind(`INSERT INTO app_connection_indexers
-			(connection_id, instance_id, remote_id, selected, payload_hash,
+			(connection_id, instance_id, remote_id, payload_hash,
 			 last_pushed_at, last_push_status, last_push_error)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(connection_id, instance_id) DO UPDATE SET
 			  remote_id = excluded.remote_id,
 			  payload_hash = excluded.payload_hash, last_pushed_at = excluded.last_pushed_at,
 			  last_push_status = excluded.last_push_status, last_push_error = excluded.last_push_error`),
-		l.ConnectionID, l.InstanceID, nullIfEmpty(l.RemoteID), boolToInt(l.Selected),
+		l.ConnectionID, l.InstanceID, nullIfEmpty(l.RemoteID),
 		nullIfEmpty(l.PayloadHash), nullTime(l.LastPushedAt), nullIfEmpty(l.LastPushStatus),
 		nullIfEmpty(l.LastPushError))
 	if err != nil {
@@ -171,25 +171,10 @@ func (AppConnections) UpsertConnectionIndexer(ctx context.Context, q dbinterface
 	return nil
 }
 
-// SetIndexerSelection sets a ledger row's selected flag, creating a placeholder row
-// (no remote id) when none exists yet. This is the only writer of `selected` — the
-// reconcile upsert leaves it alone — so it owns the scope="selected" set.
-func (AppConnections) SetIndexerSelection(ctx context.Context, q dbinterface.Execer, connectionID, instanceID int64, selected bool) error {
-	_, err := q.ExecContext(ctx,
-		q.Rebind(`INSERT INTO app_connection_indexers (connection_id, instance_id, selected)
-			VALUES (?, ?, ?)
-			ON CONFLICT(connection_id, instance_id) DO UPDATE SET selected = excluded.selected`),
-		connectionID, instanceID, boolToInt(selected))
-	if err != nil {
-		return fmt.Errorf("database: set indexer selection: %w", err)
-	}
-	return nil
-}
-
 // ListConnectionIndexers returns a connection's ledger rows ordered by instance id.
 func (AppConnections) ListConnectionIndexers(ctx context.Context, q dbinterface.Execer, connectionID int64) ([]domain.AppConnectionIndexer, error) {
 	rows, err := q.QueryContext(ctx,
-		q.Rebind(`SELECT id, connection_id, instance_id, remote_id, selected, payload_hash,
+		q.Rebind(`SELECT id, connection_id, instance_id, remote_id, payload_hash,
 			last_pushed_at, last_push_status, last_push_error
 			FROM app_connection_indexers WHERE connection_id = ? ORDER BY instance_id`), connectionID)
 	if err != nil {
@@ -233,7 +218,7 @@ func scanConnection(s interface{ Scan(...any) error }) (domain.AppConnection, er
 	)
 	if err := s.Scan(&c.ID, &c.Name, &c.Kind, &appID,
 		&harbrrKeyID, &c.HarbrrAPIKeyEncrypted, &c.KeyID, &enabled, &c.SyncLevel,
-		&c.IndexScope, &c.FreeleechMode, &c.Priority, &syncProfileID, &lastSyncAt, &lastSyncStatus, &lastSyncEr,
+		&c.FreeleechMode, &syncProfileID, &lastSyncAt, &lastSyncStatus, &lastSyncEr,
 		&createdAt, &updatedAt); err != nil {
 		return domain.AppConnection{}, err //nolint:wrapcheck // sql.ErrNoRows matched by caller; others wrapped there.
 	}
@@ -253,14 +238,12 @@ func scanConnectionIndexer(s interface{ Scan(...any) error }) (domain.AppConnect
 		l                          domain.AppConnectionIndexer
 		remoteID, hash, status, er sql.NullString
 		lastPushedAt               sql.NullString
-		selected                   int
 	)
-	if err := s.Scan(&l.ID, &l.ConnectionID, &l.InstanceID, &remoteID, &selected, &hash,
+	if err := s.Scan(&l.ID, &l.ConnectionID, &l.InstanceID, &remoteID, &hash,
 		&lastPushedAt, &status, &er); err != nil {
 		return domain.AppConnectionIndexer{}, err //nolint:wrapcheck // wrapped by the caller.
 	}
 	l.RemoteID, l.PayloadHash = remoteID.String, hash.String
-	l.Selected = selected != 0
 	l.LastPushedAt = timePtr(lastPushedAt)
 	l.LastPushStatus, l.LastPushError = status.String, er.String
 	return l, nil

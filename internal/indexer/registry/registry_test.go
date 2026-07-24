@@ -289,6 +289,86 @@ func TestUpdateRedactedPreservesSecret(t *testing.T) {
 	}
 }
 
+// TestAddDefaultsPriorityAndPersistsMinSeeders proves Add defaults an unset (0) priority
+// to 25 and persists an explicit priority/minSeeders through to the returned instance.
+func TestAddDefaultsPriorityAndPersistsMinSeeders(t *testing.T) {
+	t.Parallel()
+
+	reg, _ := newRegistry(t, nil)
+	ctx := context.Background()
+
+	def, err := reg.Add(ctx, registry.AddParams{Slug: "tt-default", DefinitionID: "testtracker"})
+	if err != nil {
+		t.Fatalf("Add (default priority): %v", err)
+	}
+	if def.Priority != 25 || def.MinSeeders != 0 {
+		t.Errorf("default add priority/minSeeders = %d/%d, want 25/0", def.Priority, def.MinSeeders)
+	}
+
+	explicit, err := reg.Add(ctx, registry.AddParams{
+		Slug: "tt-explicit", DefinitionID: "testtracker", Priority: 5, MinSeeders: 3,
+	})
+	if err != nil {
+		t.Fatalf("Add (explicit priority): %v", err)
+	}
+	if explicit.Priority != 5 || explicit.MinSeeders != 3 {
+		t.Errorf("explicit add priority/minSeeders = %d/%d, want 5/3", explicit.Priority, explicit.MinSeeders)
+	}
+}
+
+// TestAddRejectsInvalidPriorityAndMinSeeders proves the registry rejects an out-of-range
+// priority or a negative minSeeders as ErrInvalid, never silently clamping or storing them.
+func TestAddRejectsInvalidPriorityAndMinSeeders(t *testing.T) {
+	t.Parallel()
+
+	reg, _ := newRegistry(t, nil)
+	ctx := context.Background()
+
+	if _, err := reg.Add(ctx, registry.AddParams{Slug: "tt-badprio", DefinitionID: "testtracker", Priority: 51}); !errors.Is(err, registry.ErrInvalid) {
+		t.Errorf("Add(priority=51) err = %v, want ErrInvalid", err)
+	}
+	if _, err := reg.Add(ctx, registry.AddParams{Slug: "tt-badseed", DefinitionID: "testtracker", MinSeeders: -1}); !errors.Is(err, registry.ErrInvalid) {
+		t.Errorf("Add(minSeeders=-1) err = %v, want ErrInvalid", err)
+	}
+}
+
+// TestUpdatePriorityAndMinSeeders proves Update's tri-state pointer semantics: a nil field
+// leaves the instance's current priority/minSeeders untouched; a present field replaces it.
+func TestUpdatePriorityAndMinSeeders(t *testing.T) {
+	t.Parallel()
+
+	reg, _ := newRegistry(t, nil)
+	ctx := context.Background()
+	if _, err := reg.Add(ctx, registry.AddParams{Slug: "tt", DefinitionID: "testtracker", Priority: 20, MinSeeders: 2}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	// A metadata-only patch (nil Priority/MinSeeders) must not disturb either value.
+	newName := "Renamed"
+	if err := reg.Update(ctx, "tt", registry.UpdateParams{Name: &newName}); err != nil {
+		t.Fatalf("Update (name only): %v", err)
+	}
+	got, _, err := reg.Get(ctx, "tt")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Priority != 20 || got.MinSeeders != 2 {
+		t.Errorf("after name-only update priority/minSeeders = %d/%d, want 20/2 (unchanged)", got.Priority, got.MinSeeders)
+	}
+
+	newPriority, newMinSeeders := 8, 6
+	if err := reg.Update(ctx, "tt", registry.UpdateParams{Priority: &newPriority, MinSeeders: &newMinSeeders}); err != nil {
+		t.Fatalf("Update (priority+minSeeders): %v", err)
+	}
+	got, _, err = reg.Get(ctx, "tt")
+	if err != nil {
+		t.Fatalf("Get after update: %v", err)
+	}
+	if got.Priority != 8 || got.MinSeeders != 6 {
+		t.Errorf("after update priority/minSeeders = %d/%d, want 8/6", got.Priority, got.MinSeeders)
+	}
+}
+
 func TestResolveAndSearch(t *testing.T) {
 	t.Parallel()
 

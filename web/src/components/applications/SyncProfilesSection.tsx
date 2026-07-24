@@ -12,41 +12,23 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
 import { useSyncProfileMutations, useSyncProfiles } from "@/hooks/useAppConnections"
+import { useIndexers } from "@/hooks/useIndexers"
 import { notifyError, notifySuccess } from "@/lib/notify"
 import type { CreateSyncProfile, SyncProfile } from "@/lib/api"
-
-const NEWZNAB_PARENTS = [
-  { id: 2000, label: "Movies" },
-  { id: 3000, label: "Audio" },
-  { id: 4000, label: "PC" },
-  { id: 5000, label: "TV" },
-  { id: 6000, label: "XXX" },
-  { id: 7000, label: "Books" },
-  { id: 8000, label: "Other" },
-]
-const PARENT_IDS = new Set(NEWZNAB_PARENTS.map((p) => p.id))
 
 // `null` = closed; `{ profile: null }` = add; `{ profile }` = edit that profile.
 type Editing = { profile: SyncProfile | null } | null
 
 function summarize(p: SyncProfile): string {
-  const parts = [p.categories.length > 0 ? `${p.categories.length} categories` : "all categories"]
-  if (p.minSeeders > 0) parts.push(`min ${p.minSeeders} seeders`)
-  const off = [
-    !p.enableRss && "RSS off",
-    !p.enableAutomaticSearch && "automatic search off",
-    !p.enableInteractiveSearch && "interactive search off",
-  ].filter((s) => s !== false)
-  if (off.length > 0) parts.push(off.join(", "))
-  return parts.join(" · ")
+  return p.indexerIds.length > 0 ? `${p.indexerIds.length} indexer${p.indexerIds.length === 1 ? "" : "s"}` : "all indexers"
 }
 
-// Sync profiles narrow which categories/toggles apply to a connection, on top
-// of the app's own content type — a profile never extends beyond that type,
-// and never applies to kind "qui". Deleting one FK-nulls its connections'
-// references, reverting them to default sync behavior.
+// A sync profile is a pure indexer ROUTING SET (#365): name + a selected set of indexer
+// instances. A connection with no profile, or a profile with an empty selection, syncs
+// every compatible indexer — all sync behavior (categories, search toggles, min seeders)
+// now lives per-indexer (see IndexerForm's Advanced section). Deleting a profile is
+// refused while any connection still references it.
 export function SyncProfilesSection() {
   const profiles = useSyncProfiles()
   const { create, update, remove } = useSyncProfileMutations()
@@ -87,10 +69,10 @@ export function SyncProfilesSection() {
           </div>
         ))}
         {profiles.data?.length === 0 && (
-          <p className="py-3 text-muted-foreground">No sync profiles. Add one to narrow which categories sync into an app.</p>
+          <p className="py-3 text-muted-foreground">No sync profiles. Add one to route a connection to only some indexers.</p>
         )}
       </div>
-      <p className="text-[12px] text-faint">Deleting a profile reverts its connections to default sync behavior.</p>
+      <p className="text-[12px] text-faint">Deleting a profile is refused while any connection still references it.</p>
 
       <Dialog open={editing !== null} onOpenChange={(open) => { if (!open) setEditing(null) }}>
         {editing !== null && (
@@ -119,38 +101,21 @@ function ProfileForm({ profile, pending, onSubmit }: {
   onSubmit: (id: number | null, body: CreateSyncProfile) => void
 }) {
   const isEdit = profile !== null
+  const indexers = useIndexers()
   const [name, setName] = useState(profile?.name ?? "")
-  const [checkedParents, setCheckedParents] = useState<Set<number>>(
-    new Set((profile?.categories ?? []).filter((c) => PARENT_IDS.has(c))))
-  const [extras, setExtras] = useState((profile?.categories ?? []).filter((c) => !PARENT_IDS.has(c)).join(", "))
-  const [minSeeders, setMinSeeders] = useState(String(profile?.minSeeders ?? 0))
-  const [enableRss, setEnableRss] = useState(profile?.enableRss ?? true)
-  const [enableAutomaticSearch, setEnableAutomaticSearch] = useState(profile?.enableAutomaticSearch ?? true)
-  const [enableInteractiveSearch, setEnableInteractiveSearch] = useState(profile?.enableInteractiveSearch ?? true)
+  const [selected, setSelected] = useState<Set<number>>(new Set(profile?.indexerIds ?? []))
 
   return (
     <form
       className="flex flex-col gap-4"
       onSubmit={(e) => {
         e.preventDefault()
-        // Positive integers only — a stray decimal or sign would otherwise ride into
-        // the []int JSON body and fail the whole request with an opaque decode error.
-        const extraIds = extras.split(",").map((s) => s.trim()).filter((s) => s !== "").map((s) => Number(s)).filter((n) => Number.isInteger(n) && n > 0)
-        const categories = [...new Set([...checkedParents, ...extraIds])].sort((a, b) => a - b)
-        const seeders = Number(minSeeders)
-        onSubmit(profile?.id ?? null, {
-          name,
-          categories,
-          minSeeders: Number.isNaN(seeders) ? 0 : Math.max(0, seeders),
-          enableRss,
-          enableAutomaticSearch,
-          enableInteractiveSearch,
-        })
+        onSubmit(profile?.id ?? null, { name, indexerIds: [...selected].sort((a, b) => a - b) })
       }}
     >
       <DialogHeader>
         <DialogTitle>{isEdit ? "Edit sync profile" : "Add sync profile"}</DialogTitle>
-        <DialogDescription>Attach it to a connection to narrow what syncs into that app.</DialogDescription>
+        <DialogDescription>Attach it to a connection to route it to only the checked indexers.</DialogDescription>
       </DialogHeader>
 
       <span className="flex flex-col gap-1.5">
@@ -159,47 +124,25 @@ function ProfileForm({ profile, pending, onSubmit }: {
       </span>
 
       <span className="flex flex-col gap-1.5">
-        <Label>Categories</Label>
-        <div className="grid grid-cols-4 gap-2">
-          {NEWZNAB_PARENTS.map((c) => (
-            <span key={c.id} className="flex items-center gap-2">
+        <Label>Indexers</Label>
+        <div className="flex max-h-72 flex-col gap-2 overflow-auto py-1">
+          {(indexers.data ?? []).map((ix) => (
+            <span key={ix.id} className="flex items-center gap-2">
               <Checkbox
-                id={`profile-cat-${c.id}`}
-                checked={checkedParents.has(c.id)}
+                id={`profile-ix-${ix.id}`}
+                checked={selected.has(ix.id)}
                 onCheckedChange={(checked) => {
-                  const next = new Set(checkedParents)
-                  if (checked === true) next.add(c.id)
-                  else next.delete(c.id)
-                  setCheckedParents(next)
+                  const next = new Set(selected)
+                  if (checked === true) next.add(ix.id)
+                  else next.delete(ix.id)
+                  setSelected(next)
                 }}
               />
-              <Label htmlFor={`profile-cat-${c.id}`} className="font-normal">{c.label}</Label>
+              <Label htmlFor={`profile-ix-${ix.id}`} className="font-normal">{ix.name}</Label>
             </span>
           ))}
         </div>
-        <Input placeholder="Extra category IDs, e.g. 3030" value={extras} onChange={(e) => setExtras(e.target.value)} />
-        <p className="text-[12px] text-faint">
-          Leave empty to sync all of the app&apos;s content categories. A profile only narrows within
-          the app&apos;s content type.
-        </p>
-      </span>
-
-      <span className="flex flex-col gap-1.5">
-        <Label htmlFor="profile-min-seeders">Minimum seeders</Label>
-        <Input id="profile-min-seeders" type="number" min={0} value={minSeeders} onChange={(e) => setMinSeeders(e.target.value)} />
-      </span>
-
-      <span className="flex items-center justify-between">
-        <Label htmlFor="profile-rss" className="font-normal">RSS</Label>
-        <Switch id="profile-rss" checked={enableRss} onCheckedChange={setEnableRss} />
-      </span>
-      <span className="flex items-center justify-between">
-        <Label htmlFor="profile-auto" className="font-normal">Automatic search</Label>
-        <Switch id="profile-auto" checked={enableAutomaticSearch} onCheckedChange={setEnableAutomaticSearch} />
-      </span>
-      <span className="flex items-center justify-between">
-        <Label htmlFor="profile-interactive" className="font-normal">Interactive search</Label>
-        <Switch id="profile-interactive" checked={enableInteractiveSearch} onCheckedChange={setEnableInteractiveSearch} />
+        <p className="text-[12px] text-faint">No selection = all indexers.</p>
       </span>
 
       <DialogFooter>

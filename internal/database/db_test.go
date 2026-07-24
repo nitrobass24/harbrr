@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
@@ -88,8 +89,9 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	// 0016_indexer_health_transport.sql, 0017_download_clients.sql,
 	// 0018_indexer_circuit_state.sql, 0019_indexer_budget_counters.sql,
 	// 0020_apps.sql, 0021_drop_legacy_app_columns.sql,
-	// 0022_drop_proxy_url_encrypted.sql), not duplicated by the second apply.
-	const wantMigrations = 22
+	// 0022_drop_proxy_url_encrypted.sql, 0023_indexer_sync_fields.sql), not
+	// duplicated by the second apply.
+	const wantMigrations = 24
 	var applied int
 	if err := db.QueryRowContext(context.Background(),
 		"SELECT count(*) FROM schema_migrations").Scan(&applied); err != nil {
@@ -357,5 +359,79 @@ func TestProtocolColumnDefaultsToTorrent(t *testing.T) {
 	}
 	if inst.Protocol != "torrent" {
 		t.Errorf("GetBySlug protocol = %q, want torrent", inst.Protocol)
+	}
+}
+
+// TestPriorityAndMinSeedersRoundTrip proves the priority/min_seeders columns (#364)
+// default correctly for a bare-SQL insert, round-trip through Insert/GetBySlug/
+// GetByID/List, and are mutated by UpdateMeta — the full surface UpdateMeta's new
+// signature exercises.
+func TestPriorityAndMinSeedersRoundTrip(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db := openMigrated(t, filepath.Join(t.TempDir(), "harbrr.db"))
+	instances := database.Instances{}
+	now := time.Now().UTC().Truncate(time.Second)
+
+	// A row written without the columns (e.g. by a raw migration-era insert) gets
+	// the schema's own defaults.
+	if _, err := db.ExecContext(ctx,
+		"INSERT INTO indexer_instances (slug, definition_id, name, created_at, updated_at) VALUES (?,?,?,?,?)",
+		"bare", "def", "Bare", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"); err != nil {
+		t.Fatalf("insert instance without priority/min_seeders: %v", err)
+	}
+	bare, err := instances.GetBySlug(ctx, db, "bare")
+	if err != nil {
+		t.Fatalf("GetBySlug(bare): %v", err)
+	}
+	if bare.Priority != 25 || bare.MinSeeders != 0 {
+		t.Errorf("defaults = priority %d, minSeeders %d, want 25, 0", bare.Priority, bare.MinSeeders)
+	}
+
+	id, err := instances.Insert(ctx, db, domain.IndexerInstance{
+		Slug: "ix", DefinitionID: "def", Name: "IX", Enabled: true, Protocol: "torrent",
+		Priority: 10, MinSeeders: 5, CreatedAt: now, UpdatedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	byID, err := instances.GetByID(ctx, db, id)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if byID.Priority != 10 || byID.MinSeeders != 5 {
+		t.Errorf("GetByID = priority %d, minSeeders %d, want 10, 5", byID.Priority, byID.MinSeeders)
+	}
+
+	list, err := instances.List(ctx, db)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	var found bool
+	for _, inst := range list {
+		if inst.ID == id {
+			found = true
+			if inst.Priority != 10 || inst.MinSeeders != 5 {
+				t.Errorf("List entry = priority %d, minSeeders %d, want 10, 5", inst.Priority, inst.MinSeeders)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("List did not return inserted instance %d", id)
+	}
+
+	meta := database.InstanceMeta{
+		Name: "IX renamed", BaseURL: "https://example.test", Priority: 30, MinSeeders: 15,
+		EnableRss: true, EnableAutomaticSearch: true, EnableInteractiveSearch: true,
+	}
+	if err := instances.UpdateMeta(ctx, db, id, meta, now.Add(time.Minute)); err != nil {
+		t.Fatalf("UpdateMeta: %v", err)
+	}
+	updated, err := instances.GetByID(ctx, db, id)
+	if err != nil {
+		t.Fatalf("GetByID after UpdateMeta: %v", err)
+	}
+	if updated.Priority != 30 || updated.MinSeeders != 15 {
+		t.Errorf("after UpdateMeta = priority %d, minSeeders %d, want 30, 15", updated.Priority, updated.MinSeeders)
 	}
 }

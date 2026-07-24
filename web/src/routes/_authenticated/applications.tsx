@@ -4,7 +4,6 @@ import { Plus, RefreshCw } from "lucide-react"
 import { AnnounceSection } from "@/components/applications/AnnounceSection"
 import { ConnectionCard } from "@/components/applications/ConnectionCard"
 import { ConnectionDialog, type ConnectionDialogState } from "@/components/applications/ConnectionDialog"
-import { SelectIndexersDialog } from "@/components/applications/SelectIndexersDialog"
 import { StatusDrawer } from "@/components/applications/StatusDrawer"
 import { SyncProfilesSection } from "@/components/applications/SyncProfilesSection"
 import { SyncReportView } from "@/components/applications/SyncReportView"
@@ -24,7 +23,6 @@ import {
   useCreateConnection,
   useDeleteConnection,
   useSetConnectionEnabled,
-  useSetSelectedIndexers,
   useSyncAll,
   useSyncConnection,
   useTestConnection,
@@ -64,7 +62,6 @@ function ApplicationsPage() {
 
   const [dialog, setDialog] = useState<ConnectionDialogState>({ open: false })
   const [statusFor, setStatusFor] = useState<number | null>(null)
-  const [selectFor, setSelectFor] = useState<AppConnection | null>(null)
   const [report, setReport] = useState<{ title: string, report: SyncReport } | null>(null)
   const [allReports, setAllReports] = useState<ConnectionSyncResult[] | null>(null)
   // A pending stale-port rewrite awaiting the user's confirmation: an explicit
@@ -86,7 +83,6 @@ function ApplicationsPage() {
   const editing = dialog.open ? dialog.existing : undefined
   const create = useCreateConnection()
   const update = useUpdateConnection()
-  const select = useSetSelectedIndexers(selectFor?.id ?? 0)
 
   const total = connections.data?.length ?? 0
 
@@ -136,7 +132,6 @@ function ApplicationsPage() {
                   onError: (err) => notifyError(`Deleting ${conn.name} failed`, err),
                 }),
                 onStatus: setStatusFor,
-                onSelectIndexers: setSelectFor,
                 onFixPort: (conn, harbrrUrl) => setFixPortReq({ conn, url: harbrrUrl }),
               }}
             />
@@ -223,19 +218,6 @@ function ApplicationsPage() {
       </Dialog>
 
       <StatusDrawer connectionId={statusFor} onClose={() => setStatusFor(null)} />
-
-      <SelectIndexersDialog
-        conn={selectFor}
-        pending={select.isPending}
-        onClose={() => setSelectFor(null)}
-        onSave={(_id, instanceIds) => select.mutate(instanceIds, {
-          onSuccess: () => {
-            notifySuccess("Selection saved")
-            setSelectFor(null)
-          },
-          onError: (err) => notifyError("Saving the selection failed", err),
-        })}
-      />
 
       <Dialog open={report !== null} onOpenChange={(open) => { if (!open) setReport(null) }}>
         <DialogContent>

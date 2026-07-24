@@ -14,9 +14,7 @@ const CONN: AppConnection = {
   harbrrUrl: "http://harbrr:7478",
   enabled: true,
   syncLevel: "full",
-  indexScope: "all",
   freeleechMode: "honor",
-  priority: 0,
   syncProfileId: null,
   createdAt: "2026-07-01T00:00:00Z",
   updatedAt: "2026-07-01T00:00:00Z",
@@ -46,7 +44,6 @@ function actions(overrides: Partial<ConnectionActions> = {}): ConnectionActions 
     onEdit: vi.fn(),
     onDelete: vi.fn(),
     onStatus: vi.fn(),
-    onSelectIndexers: vi.fn(),
     onFixPort: vi.fn(),
     ...overrides,
   }
