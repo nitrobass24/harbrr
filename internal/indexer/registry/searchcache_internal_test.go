@@ -31,14 +31,21 @@ type fakeInner struct {
 	// flight to be in progress instead of sleeping a fixed duration.
 	firstSeen chan struct{}
 	firstOnce sync.Once
+
+	// pages/consumesMode drive SupportsOffsetPaging/ConsumesSearchMode (both default
+	// false, matching every existing fakeInner literal) — the warmer-skip regression
+	// in searchcache_ttl_test.go configures one true to prove stripInertWarmInterval
+	// (warmer.go) strips a probe-supplied cfg's rss_warm_interval for such a driver.
+	pages        bool
+	consumesMode bool
 }
 
 func (f *fakeInner) Info() core.IndexerInfo             { return core.IndexerInfo{ID: "fake"} }
 func (f *fakeInner) Capabilities() *mapper.Capabilities { return &mapper.Capabilities{} }
 func (f *fakeInner) NeedsResolver() bool                { return false }
 func (f *fakeInner) DownloadNeedsAuth() bool            { return false }
-func (f *fakeInner) SupportsOffsetPaging() bool         { return false }
-func (f *fakeInner) ConsumesSearchMode() bool           { return false }
+func (f *fakeInner) SupportsOffsetPaging() bool         { return f.pages }
+func (f *fakeInner) ConsumesSearchMode() bool           { return f.consumesMode }
 
 func (f *fakeInner) Grab(context.Context, string) (*search.GrabResult, error) {
 	return nil, errors.New("not implemented")

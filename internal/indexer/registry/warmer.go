@@ -24,9 +24,10 @@ const (
 	// string like "15m", read exactly like "rate_interval"/"cache_ttl". It also floors
 	// resolveTTL's rss/thin TTL (searchcache_ttl.go) so a warmed entry survives to the
 	// next warm. It has no effect on a paging or Mode-consuming instance: warmOne skips
-	// warming those outright (no single canonical RSS cache key exists to warm), so the
-	// setting only ever primes/floors an entry for a non-paging, non-Mode-consuming
-	// instance.
+	// warming those outright (no single canonical RSS cache key exists to warm), and
+	// stripInertWarmInterval deletes the key from such an instance's cfg at build time,
+	// so the setting only ever primes/floors an entry for a non-paging,
+	// non-Mode-consuming instance.
 	warmIntervalSetting = "rss_warm_interval"
 )
 
@@ -241,5 +242,32 @@ func warmIntervalFromValue(raw string) (time.Duration, bool) {
 		return warmMaxInterval, true
 	default:
 		return d, true
+	}
+}
+
+// warmCapable is the two-method capability surface stripInertWarmInterval needs —
+// satisfied structurally by both native.Driver (buildAdapter's production path) and
+// core.Indexer (the cacheprobe_test.go harness), so one helper serves both build
+// paths without a duplicate.
+type warmCapable interface {
+	SupportsOffsetPaging() bool
+	ConsumesSearchMode() bool
+}
+
+// stripInertWarmInterval deletes the reserved "rss_warm_interval" key from cfg when d
+// is a driver warmOne always skips (paging or Mode-consuming, per its skip check
+// above): such a driver has no single canonical RSS cache key for the warmer to ever
+// keep hot, so the setting's TTL-floor effect (searchcache_ttl.go's warmFloor) would
+// otherwise pin a consumer-driven RSS write-back to >=warmMinInterval with NO warmer
+// EVER refreshing it — strictly staler data for zero freshness benefit, contradicting
+// warmIntervalSetting's documented "no effect for these instances" contract. Deleting
+// the key once at build time (buildAdapter, and the cacheprobe_test.go harness for
+// parity) makes that contract true at a single choke point rather than re-deriving
+// the capability check at every TTL resolution. Callers must pass a cfg map nothing
+// else holds a live reference to yet (buildAdapter's decryptConfig result is fresh
+// per build) — deleting from a shared map after handoff would race.
+func stripInertWarmInterval(cfg map[string]string, d warmCapable) {
+	if d.SupportsOffsetPaging() || d.ConsumesSearchMode() {
+		delete(cfg, warmIntervalSetting)
 	}
 }
