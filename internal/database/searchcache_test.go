@@ -299,6 +299,62 @@ func TestSearchCacheInvalidateByInstance(t *testing.T) {
 	}
 }
 
+// TestSearchCacheExpireAll proves ExpireAll marks every currently-live entry
+// expired WITHOUT deleting it — Fetch stops serving it but FetchAny still finds
+// it — while leaving an already-expired row's expires_at (and thus its reap-grace
+// clock) untouched.
+func TestSearchCacheExpireAll(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db := openMigrated(t, ":memory:")
+	store := database.SearchCacheStore{}
+	instID := insertInstance(t, db, "tracker-a")
+	now := time.Now().UTC().Truncate(time.Second)
+
+	if err := store.Store(ctx, db, sampleEntry("live", instID, now, time.Hour)); err != nil {
+		t.Fatalf("Store live: %v", err)
+	}
+	staleExpiresAt := now.Add(-time.Hour) // cachedAt now-2h + 1h ttl
+	if err := store.Store(ctx, db, sampleEntry("stale", instID, now.Add(-2*time.Hour), time.Hour)); err != nil {
+		t.Fatalf("Store stale: %v", err)
+	}
+
+	n, err := store.ExpireAll(ctx, db, now)
+	if err != nil {
+		t.Fatalf("ExpireAll: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("ExpireAll affected %d rows, want 1 (only the live entry)", n)
+	}
+
+	if _, found, err := store.Fetch(ctx, db, "live", now); err != nil {
+		t.Fatalf("Fetch live: %v", err)
+	} else if found {
+		t.Error("live entry should be expired (Fetch) after ExpireAll")
+	}
+	got, found, err := store.FetchAny(ctx, db, "live")
+	if err != nil {
+		t.Fatalf("FetchAny live: %v", err)
+	}
+	if !found {
+		t.Fatal("live entry should still be readable via FetchAny after ExpireAll (expire, not delete)")
+	}
+	if !got.ExpiresAt.Equal(now) {
+		t.Errorf("live entry expires_at = %v, want %v (set to now)", got.ExpiresAt, now)
+	}
+
+	gotStale, found, err := store.FetchAny(ctx, db, "stale")
+	if err != nil {
+		t.Fatalf("FetchAny stale: %v", err)
+	}
+	if !found {
+		t.Fatal("already-expired entry should survive ExpireAll (it must not delete)")
+	}
+	if !gotStale.ExpiresAt.Equal(staleExpiresAt) {
+		t.Errorf("already-expired entry's expires_at = %v, want unchanged %v", gotStale.ExpiresAt, staleExpiresAt)
+	}
+}
+
 func TestSearchCacheStats(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
