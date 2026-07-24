@@ -3,7 +3,11 @@ import { describe, expect, it, vi } from "vitest"
 import { IndexerCardsMobile } from "./IndexerCardsMobile"
 import type { IndexerRowActions, IndexerRowData } from "./IndexersTable"
 
-const BASE = { proxyId: null, solverId: null, protocol: "torrent" as const, freeleech: false, priority: 25, minSeeders: 0, createdAt: "2026-07-01T00:00:00Z", updatedAt: "2026-07-01T00:00:00Z" }
+const BASE = {
+  proxyId: null, solverId: null, protocol: "torrent" as const, freeleech: false, priority: 25, minSeeders: 0,
+  syncCategories: [], enableRss: true, enableAutomaticSearch: true, enableInteractiveSearch: true,
+  createdAt: "2026-07-01T00:00:00Z", updatedAt: "2026-07-01T00:00:00Z",
+}
 
 const ROWS: IndexerRowData[] = [
   {

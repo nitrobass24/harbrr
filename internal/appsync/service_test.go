@@ -2,8 +2,13 @@ package appsync
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http/httptest"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -69,8 +74,14 @@ func newSyncFixture(t *testing.T) *syncFixture {
 	idB := seedInstance(t, db, "tracker-b", "Tracker B", false)
 	source := &fakeSource{
 		instances: []domain.IndexerInstance{
-			{ID: idA, Slug: "tracker-a", Name: "Tracker A", Enabled: true},
-			{ID: idB, Slug: "tracker-b", Name: "Tracker B", Enabled: false},
+			{
+				ID: idA, Slug: "tracker-a", Name: "Tracker A", Enabled: true,
+				EnableRss: true, EnableAutomaticSearch: true, EnableInteractiveSearch: true,
+			},
+			{
+				ID: idB, Slug: "tracker-b", Name: "Tracker B", Enabled: false,
+				EnableRss: true, EnableAutomaticSearch: true, EnableInteractiveSearch: true,
+			},
 		},
 		// Both carry a TV category so the Sonarr fixture connection accepts them (the
 		// content-category filter would otherwise exclude a movie-only indexer).
@@ -115,8 +126,8 @@ func TestBuildDesiredQuiSkipsUsenet(t *testing.T) {
 	svc := &Service{source: src}
 
 	// qui is torrent-only: the usenet instance must be filtered out of the desired set.
-	qui := domain.AppConnection{Kind: domain.AppKindQui, IndexScope: domain.IndexScopeAll, HarbrrURL: "http://harbrr"}
-	got, err := svc.buildDesired(ctx, src.instances, qui, "k", nil, nil)
+	qui := domain.AppConnection{Kind: domain.AppKindQui, HarbrrURL: "http://harbrr"}
+	got, err := svc.buildDesired(ctx, src.instances, qui, "k", nil)
 	if err != nil {
 		t.Fatalf("buildDesired qui: %v", err)
 	}
@@ -125,8 +136,8 @@ func TestBuildDesiredQuiSkipsUsenet(t *testing.T) {
 	}
 
 	// Sonarr keeps both and carries each instance's protocol through to DesiredIndexer.
-	sonarr := domain.AppConnection{Kind: domain.AppKindSonarr, IndexScope: domain.IndexScopeAll, HarbrrURL: "http://harbrr"}
-	got, err = svc.buildDesired(ctx, src.instances, sonarr, "k", nil, nil)
+	sonarr := domain.AppConnection{Kind: domain.AppKindSonarr, HarbrrURL: "http://harbrr"}
+	got, err = svc.buildDesired(ctx, src.instances, sonarr, "k", nil)
 	if err != nil {
 		t.Fatalf("buildDesired sonarr: %v", err)
 	}
@@ -136,6 +147,51 @@ func TestBuildDesiredQuiSkipsUsenet(t *testing.T) {
 	}
 	if byProto["torrent-tracker"] != "torrent" || byProto["usenet-tracker"] != "usenet" {
 		t.Fatalf("sonarr desired protocols = %+v, want torrent/usenet preserved", byProto)
+	}
+}
+
+// TestBuildDesiredNoRePushOnUpgrade is the upgrade-safety proof for #365's reshape: a
+// profile-less connection over a DEFAULT-shaped instance (toggles on, no sync
+// categories, no min-seeders floor — exactly what a pre-365 row's migrated/defaulted
+// shape looks like) must produce a DesiredIndexer whose hash() is bit-for-bit the
+// PayloadHash a pre-365 build would have produced for the same instance with no
+// profile. hash() itself is untouched by #365 (see target.go); this test proves the new
+// per-instance default resolution path (buildDesired → resolveToggles/gateCategories
+// reading the instance instead of a profile) still lands on that exact fingerprint, so
+// upgrading harbrr never triggers a fleet-wide re-push.
+func TestBuildDesiredNoRePushOnUpgrade(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	src := &fakeSource{
+		instances: []domain.IndexerInstance{{
+			ID: 1, Slug: "trk", Name: "Trk", Enabled: true, Protocol: "torrent", Priority: 25,
+			// The post-migration defaults for a row that never had a profile: toggles on,
+			// no sync-category narrowing, no min-seeders floor.
+			EnableRss: true, EnableAutomaticSearch: true, EnableInteractiveSearch: true,
+		}},
+		cats: map[string][]Category{"trk": {{ID: 5000, Name: "TV"}, {ID: 2000, Name: "Movies"}}},
+	}
+	svc := &Service{source: src}
+	conn := domain.AppConnection{Kind: domain.AppKindQui, HarbrrURL: "http://h"}
+	got, err := svc.buildDesired(ctx, src.instances, conn, "k", nil)
+	if err != nil {
+		t.Fatalf("buildDesired: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("buildDesired = %d results, want 1", len(got))
+	}
+	d := got[0]
+	d.FeedURL = "http://h/api/indexers/trk/results/torznab" // pin the feed URL for the hand-built comparison below
+
+	// The pre-#365 fingerprint formula (mirrors TestHashProfileFieldsBackwardCompat),
+	// hand-built from the same field values a pre-365 profile-less DesiredIndexer had.
+	cats := d.CategoryIDs()
+	sort.Ints(cats)
+	h := sha256.New()
+	fmt.Fprintf(h, "%s\x00%s\x00%v\x00%v\x00%d\x00%t", d.Name, d.FeedURL, cats, []string{}, d.Priority, d.Enabled)
+	want := hex.EncodeToString(h.Sum(nil))
+	if got := d.hash(); got != want {
+		t.Errorf("buildDesired's profile-less/default-instance hash diverged from the pre-#365 fingerprint:\n got %s\nwant %s", got, want)
 	}
 }
 
@@ -262,8 +318,8 @@ func TestBuildDesiredContentCategoryFilter(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.kind, func(t *testing.T) {
 			t.Parallel()
-			conn := domain.AppConnection{Kind: tt.kind, IndexScope: domain.IndexScopeAll, HarbrrURL: "http://harbrr"}
-			got, err := svc.buildDesired(ctx, src.instances, conn, "k", nil, nil)
+			conn := domain.AppConnection{Kind: tt.kind, HarbrrURL: "http://harbrr"}
+			got, err := svc.buildDesired(ctx, src.instances, conn, "k", nil)
 			if err != nil {
 				t.Fatalf("buildDesired %s: %v", tt.kind, err)
 			}
@@ -294,70 +350,71 @@ func equalStringSet(got, want []string) bool {
 	return true
 }
 
-// TestBuildDesiredWithProfile covers the narrow-only category gate: a profile narrows
-// within the app's content type (block-parent and exact matches), the intersection is
-// what gets pushed (names preserved), an empty intersection skips the indexer, a profile
-// can never cross content types, and an empty-category profile falls back to the kind gate.
-func TestBuildDesiredWithProfile(t *testing.T) {
+// TestBuildDesiredSyncCategoriesGate covers the narrow-only category gate: an
+// instance's own sync categories narrow within the app's content type (block-parent and
+// exact matches), the intersection is what gets pushed (names preserved), an empty
+// intersection skips the indexer, sync categories can never cross content types, and an
+// empty sync-categories set falls back to the plain kind gate.
+func TestBuildDesiredSyncCategoriesGate(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	build := func(kind string, cats []Category, profile *domain.SyncProfile) ([]DesiredIndexer, error) {
+	build := func(kind string, cats []Category, syncCats []int) ([]DesiredIndexer, error) {
 		src := &fakeSource{
-			instances: []domain.IndexerInstance{{ID: 1, Slug: "trk", Name: "Trk", Enabled: true, Protocol: "torrent"}},
-			cats:      map[string][]Category{"trk": cats},
+			instances: []domain.IndexerInstance{{
+				ID: 1, Slug: "trk", Name: "Trk", Enabled: true, Protocol: "torrent",
+				SyncCategories: syncCats, EnableRss: true, EnableAutomaticSearch: true, EnableInteractiveSearch: true,
+			}},
+			cats: map[string][]Category{"trk": cats},
 		}
 		svc := &Service{source: src}
-		conn := domain.AppConnection{Kind: kind, IndexScope: domain.IndexScopeAll, HarbrrURL: "http://harbrr"}
-		return svc.buildDesired(ctx, src.instances, conn, "k", nil, profile)
-	}
-	prof := func(cats ...int) *domain.SyncProfile {
-		return &domain.SyncProfile{Categories: cats, EnableRss: true, EnableAutomaticSearch: true, EnableInteractiveSearch: true}
+		conn := domain.AppConnection{Kind: kind, HarbrrURL: "http://harbrr"}
+		return svc.buildDesired(ctx, src.instances, conn, "k", nil)
 	}
 
 	tests := []struct {
 		name       string
 		kind       string
 		cats       []Category
-		profile    *domain.SyncProfile
+		syncCats   []int
 		wantPushed bool
 		wantCatIDs []int
 	}{
 		{
-			name: "narrow-only: books tracker + books profile on sonarr still skipped",
-			kind: domain.AppKindSonarr, cats: []Category{{7000, "Books"}}, profile: prof(7000),
+			name: "narrow-only: books tracker + books sync-categories on sonarr still skipped",
+			kind: domain.AppKindSonarr, cats: []Category{{7000, "Books"}}, syncCats: []int{7000},
 			wantPushed: false,
 		},
 		{
-			name: "music profile excludes audiobook-only lidarr tracker",
-			kind: domain.AppKindLidarr, cats: []Category{{3030, "Audiobook"}}, profile: prof(3010, 3040),
+			name: "music sync-categories excludes audiobook-only lidarr tracker",
+			kind: domain.AppKindLidarr, cats: []Category{{3030, "Audiobook"}}, syncCats: []int{3010, 3040},
 			wantPushed: false,
 		},
 		{
 			name: "block parent 2000 covers child 2040 on radarr",
-			kind: domain.AppKindRadarr, cats: []Category{{2040, "Movies/HD"}}, profile: prof(2000),
+			kind: domain.AppKindRadarr, cats: []Category{{2040, "Movies/HD"}}, syncCats: []int{2000},
 			wantPushed: true, wantCatIDs: []int{2040},
 		},
 		{
 			name: "exact 3030 matches only 3030 on lidarr",
-			kind: domain.AppKindLidarr, cats: []Category{{3030, "Audiobook"}, {3010, "MP3"}}, profile: prof(3030),
+			kind: domain.AppKindLidarr, cats: []Category{{3030, "Audiobook"}, {3010, "MP3"}}, syncCats: []int{3030},
 			wantPushed: true, wantCatIDs: []int{3030},
 		},
 		{
 			name: "intersection pushes only matched cats",
-			kind: domain.AppKindSonarr, cats: []Category{{5000, "TV"}, {5040, "TV/HD"}, {5070, "TV/Anime"}}, profile: prof(5070),
+			kind: domain.AppKindSonarr, cats: []Category{{5000, "TV"}, {5040, "TV/HD"}, {5070, "TV/Anime"}}, syncCats: []int{5070},
 			wantPushed: true, wantCatIDs: []int{5070},
 		},
 		{
-			name: "empty-category profile falls back to kind gate (readarr audiobook 3030)",
-			kind: domain.AppKindReadarr, cats: []Category{{3030, "Audiobook"}}, profile: prof(),
+			name: "empty sync categories falls back to kind gate (readarr audiobook 3030)",
+			kind: domain.AppKindReadarr, cats: []Category{{3030, "Audiobook"}}, syncCats: nil,
 			wantPushed: true, wantCatIDs: []int{3030},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := build(tt.kind, tt.cats, tt.profile)
+			got, err := build(tt.kind, tt.cats, tt.syncCats)
 			if err != nil {
 				t.Fatalf("buildDesired: %v", err)
 			}
@@ -370,7 +427,7 @@ func TestBuildDesiredWithProfile(t *testing.T) {
 			if len(got) != 1 {
 				t.Fatalf("want one desired, got %d: %+v", len(got), got)
 			}
-			if !equalIntSlice(got[0].CategoryIDs(), tt.wantCatIDs) {
+			if !slices.Equal(got[0].CategoryIDs(), tt.wantCatIDs) {
 				t.Errorf("pushed cats = %v, want %v", got[0].CategoryIDs(), tt.wantCatIDs)
 			}
 			for _, c := range got[0].Categories {
@@ -382,24 +439,28 @@ func TestBuildDesiredWithProfile(t *testing.T) {
 	}
 }
 
-// TestBuildDesiredProfileTogglesAndMinSeeders proves resolveToggles (enabled AND profile
-// toggle, instance-disabled forcing all false) and that MinSeeders is carried.
-func TestBuildDesiredProfileTogglesAndMinSeeders(t *testing.T) {
+// TestBuildDesiredInstanceTogglesAndMinSeeders proves resolveToggles (Enabled AND the
+// instance's own toggle, instance-disabled forcing all false) and that MinSeeders is
+// carried straight from the instance (#365 moved both per-indexer).
+func TestBuildDesiredInstanceTogglesAndMinSeeders(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	src := &fakeSource{
 		instances: []domain.IndexerInstance{
-			{ID: 1, Slug: "on", Name: "On", Enabled: true, Protocol: "torrent"},
-			{ID: 2, Slug: "off", Name: "Off", Enabled: false, Protocol: "torrent"},
+			{
+				ID: 1, Slug: "on", Name: "On", Enabled: true, Protocol: "torrent", MinSeeders: 4,
+				EnableRss: false, EnableAutomaticSearch: true, EnableInteractiveSearch: false,
+			},
+			{
+				ID: 2, Slug: "off", Name: "Off", Enabled: false, Protocol: "torrent",
+				EnableRss: true, EnableAutomaticSearch: true, EnableInteractiveSearch: true,
+			},
 		},
 		cats: map[string][]Category{"on": {{5000, "TV"}}, "off": {{5000, "TV"}}},
 	}
 	svc := &Service{source: src}
-	profile := &domain.SyncProfile{
-		MinSeeders: 4, EnableRss: false, EnableAutomaticSearch: true, EnableInteractiveSearch: false,
-	}
-	conn := domain.AppConnection{Kind: domain.AppKindSonarr, IndexScope: domain.IndexScopeAll, HarbrrURL: "http://harbrr"}
-	got, err := svc.buildDesired(ctx, src.instances, conn, "k", nil, profile)
+	conn := domain.AppConnection{Kind: domain.AppKindSonarr, HarbrrURL: "http://harbrr"}
+	got, err := svc.buildDesired(ctx, src.instances, conn, "k", nil)
 	if err != nil {
 		t.Fatalf("buildDesired: %v", err)
 	}
@@ -411,9 +472,54 @@ func TestBuildDesiredProfileTogglesAndMinSeeders(t *testing.T) {
 		t.Errorf("enabled instance = rss %v auto %v interactive %v minSeeders %d, want false/true/false/4",
 			on.EnableRss, on.EnableAutomaticSearch, on.EnableInteractiveSearch, on.MinSeeders)
 	}
+	// Disabled instance: even with every toggle on, Enabled forces the pushed flags false.
 	if off := byslug["off"]; off.EnableRss || off.EnableAutomaticSearch || off.EnableInteractiveSearch {
 		t.Errorf("disabled instance toggles must all be false, got rss %v auto %v interactive %v",
 			off.EnableRss, off.EnableAutomaticSearch, off.EnableInteractiveSearch)
+	}
+}
+
+// TestBuildDesiredProfileSelectionFilters proves buildDesired's routing gate: a nil
+// profile keeps every instance; a profile with an empty IndexerIDs set ALSO keeps every
+// instance (mirrors the empty-categories convention); a non-empty set keeps only the
+// selected subset.
+func TestBuildDesiredProfileSelectionFilters(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	src := &fakeSource{
+		instances: []domain.IndexerInstance{
+			{ID: 1, Slug: "a", Name: "A", Enabled: true, Protocol: "torrent"},
+			{ID: 2, Slug: "b", Name: "B", Enabled: true, Protocol: "torrent"},
+		},
+		cats: map[string][]Category{"a": {{5000, "TV"}}, "b": {{5000, "TV"}}},
+	}
+	svc := &Service{source: src}
+	conn := domain.AppConnection{Kind: domain.AppKindSonarr, HarbrrURL: "http://harbrr"}
+
+	tests := []struct {
+		name    string
+		profile *domain.SyncProfile
+		want    []string
+	}{
+		{"nil profile keeps all", nil, []string{"a", "b"}},
+		{"empty selection keeps all", &domain.SyncProfile{IndexerIDs: nil}, []string{"a", "b"}},
+		{"subset keeps only selected", &domain.SyncProfile{IndexerIDs: []int64{1}}, []string{"a"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := svc.buildDesired(ctx, src.instances, conn, "k", tt.profile)
+			if err != nil {
+				t.Fatalf("buildDesired: %v", err)
+			}
+			slugs := make([]string, 0, len(got))
+			for _, d := range got {
+				slugs = append(slugs, d.Slug)
+			}
+			if !equalStringSet(slugs, tt.want) {
+				t.Errorf("desired = %v, want %v", slugs, tt.want)
+			}
+		})
 	}
 }
 
@@ -431,8 +537,8 @@ func TestBuildDesiredUsesInstancePriority(t *testing.T) {
 		cats: map[string][]Category{"high": {{5000, "TV"}}, "low": {{5000, "TV"}}},
 	}
 	svc := &Service{source: src}
-	conn := domain.AppConnection{Kind: domain.AppKindSonarr, IndexScope: domain.IndexScopeAll, HarbrrURL: "http://harbrr"}
-	got, err := svc.buildDesired(ctx, src.instances, conn, "k", nil, nil)
+	conn := domain.AppConnection{Kind: domain.AppKindSonarr, HarbrrURL: "http://harbrr"}
+	got, err := svc.buildDesired(ctx, src.instances, conn, "k", nil)
 	if err != nil {
 		t.Fatalf("buildDesired: %v", err)
 	}
@@ -448,50 +554,17 @@ func TestBuildDesiredUsesInstancePriority(t *testing.T) {
 	}
 }
 
-// TestBuildDesiredInstanceMinSeedersOverridesProfile proves instMinSeeders: an instance's
-// own min-seeders floor (when set) wins over the sync profile's; an unset (0) instance
-// value falls back to the profile.
-func TestBuildDesiredInstanceMinSeedersOverridesProfile(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	src := &fakeSource{
-		instances: []domain.IndexerInstance{
-			{ID: 1, Slug: "override", Name: "Override", Enabled: true, Protocol: "torrent", MinSeeders: 10},
-			{ID: 2, Slug: "fallback", Name: "Fallback", Enabled: true, Protocol: "torrent"},
-		},
-		cats: map[string][]Category{"override": {{5000, "TV"}}, "fallback": {{5000, "TV"}}},
-	}
-	svc := &Service{source: src}
-	profile := &domain.SyncProfile{MinSeeders: 4}
-	conn := domain.AppConnection{Kind: domain.AppKindSonarr, IndexScope: domain.IndexScopeAll, HarbrrURL: "http://harbrr"}
-	got, err := svc.buildDesired(ctx, src.instances, conn, "k", nil, profile)
-	if err != nil {
-		t.Fatalf("buildDesired: %v", err)
-	}
-	byslug := map[string]DesiredIndexer{}
-	for _, d := range got {
-		byslug[d.Slug] = d
-	}
-	if byslug["override"].MinSeeders != 10 {
-		t.Errorf("override minSeeders = %d, want 10 (instance value wins)", byslug["override"].MinSeeders)
-	}
-	if byslug["fallback"].MinSeeders != 4 {
-		t.Errorf("fallback minSeeders = %d, want 4 (profile value)", byslug["fallback"].MinSeeders)
-	}
-}
-
-// TestServiceSyncWithProfile is the end-to-end proof: create a profile, assign it to the
-// fixture connection, sync, and read the stub-captured bodies for the pushed overrides.
+// TestServiceSyncWithProfile is the end-to-end proof of the routing-set model (#365):
+// creating a profile that selects only tracker-a, assigning it to the fixture
+// connection, and syncing pushes exactly that one instance — tracker-b (excluded by
+// the profile's selection) is never pushed at all, not merely toggled off.
 func TestServiceSyncWithProfile(t *testing.T) {
 	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
 
-	// TV parent 5000 covers both trackers (5000 and 5030); mixed toggles + a seeders floor.
-	prof, err := f.svc.CreateProfile(ctx, CreateProfileParams{
-		Name: "tv", Categories: []int{5000}, MinSeeders: 2,
-		EnableRss: ptr(true), EnableAutomaticSearch: ptr(false), EnableInteractiveSearch: ptr(true),
-	})
+	instA := f.source.instances[0].ID
+	prof, err := f.svc.CreateProfile(ctx, CreateProfileParams{Name: "just-a", IndexerIDs: []int64{instA}})
 	if err != nil {
 		t.Fatalf("CreateProfile: %v", err)
 	}
@@ -500,29 +573,60 @@ func TestServiceSyncWithProfile(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("assign profile: %v", err)
 	}
-	if _, err := f.svc.Sync(ctx, f.conn.ID); err != nil {
+	rep, err := f.svc.Sync(ctx, f.conn.ID)
+	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
-
-	a := f.stub.byName("Tracker A")
-	if a == nil {
+	if len(rep.Results) != 1 || rep.Results[0].Slug != "tracker-a" {
+		t.Fatalf("sync results = %+v, want exactly tracker-a", rep.Results)
+	}
+	if f.stub.byName("Tracker A") == nil {
 		t.Fatal("Tracker A not pushed")
 	}
-	if got := fieldInt(a.Fields, "minimumSeeders"); got != 2 {
-		t.Errorf("Tracker A minimumSeeders = %d, want 2", got)
+	if f.stub.byName("Tracker B") != nil {
+		t.Fatal("Tracker B pushed despite being excluded by the profile's selection")
 	}
-	if !a.EnableRss || a.EnableAutomaticSearch || !a.EnableInteractiveSearch {
-		t.Errorf("Tracker A toggles = rss %v auto %v interactive %v, want true/false/true",
-			a.EnableRss, a.EnableAutomaticSearch, a.EnableInteractiveSearch)
+
+	// Clearing the selection (present-empty) reverts to every compatible indexer.
+	empty := []int64{}
+	if err := f.svc.UpdateProfile(ctx, prof.ID, UpdateProfileParams{IndexerIDs: &empty}); err != nil {
+		t.Fatalf("clear profile selection: %v", err)
 	}
-	// The disabled instance is still pushed, but every toggle is forced false.
-	b := f.stub.byName("Tracker B")
-	if b == nil {
-		t.Fatal("Tracker B not pushed")
+	rep, err = f.svc.Sync(ctx, f.conn.ID)
+	if err != nil {
+		t.Fatalf("second Sync: %v", err)
 	}
-	if b.EnableRss || b.EnableAutomaticSearch || b.EnableInteractiveSearch {
-		t.Errorf("disabled Tracker B toggles must all be false, got rss %v auto %v interactive %v",
-			b.EnableRss, b.EnableAutomaticSearch, b.EnableInteractiveSearch)
+	if len(rep.Results) != 2 {
+		t.Fatalf("sync results after clearing selection = %+v, want both trackers", rep.Results)
+	}
+}
+
+// TestServiceSyncQuiWithProfile proves a qui connection may reference a routing
+// profile (#365 dropped the pre-existing hard rejection of profiles for qui).
+func TestServiceSyncQuiWithProfile(t *testing.T) {
+	t.Parallel()
+	f := newSyncFixture(t)
+	ctx := context.Background()
+
+	instA := f.source.instances[0].ID
+	prof, err := f.svc.CreateProfile(ctx, CreateProfileParams{Name: "qui-set", IndexerIDs: []int64{instA}})
+	if err != nil {
+		t.Fatalf("CreateProfile: %v", err)
+	}
+	quiSrv := httptest.NewServer(newQuiStub().handler())
+	t.Cleanup(quiSrv.Close)
+	conn, err := f.svc.CreateConnection(ctx, CreateConnectionParams{
+		Name: "qui", Kind: domain.AppKindQui, BaseURL: quiSrv.URL, APIKey: "k",
+		HarbrrURL: "http://harbrr:8787", SyncProfileID: &prof.ID,
+	})
+	if err != nil {
+		t.Fatalf("CreateConnection (qui with profile): %v", err)
+	}
+	if conn.SyncProfileID == nil || *conn.SyncProfileID != prof.ID {
+		t.Fatalf("qui connection SyncProfileID = %v, want %d", conn.SyncProfileID, prof.ID)
+	}
+	if _, err := f.svc.Sync(ctx, conn.ID); err != nil {
+		t.Fatalf("Sync qui with profile: %v", err)
 	}
 }
 
@@ -550,7 +654,7 @@ func TestServiceCreateMintsKeyAndEncrypts(t *testing.T) {
 	if f.conn.HarbrrAPIKeyID != keys[0].ID {
 		t.Errorf("connection key id = %d, want %d", f.conn.HarbrrAPIKeyID, keys[0].ID)
 	}
-	if f.conn.SyncLevel != domain.SyncLevelFull || f.conn.IndexScope != domain.IndexScopeAll {
+	if f.conn.SyncLevel != domain.SyncLevelFull {
 		t.Errorf("defaults not applied: %+v", f.conn)
 	}
 }
@@ -810,60 +914,53 @@ func TestServiceCreatePersistsTrimmedURL(t *testing.T) {
 	}
 }
 
-func TestServiceSelectedScopeFunctional(t *testing.T) {
+// TestServiceProfileRoutingFunctional proves a routing profile end to end through
+// Service.Sync: an empty selection pushes every compatible indexer, a subset pushes
+// only its members, and re-syncing after widening the selection back to empty pushes
+// everything again — the routing decision is recomputed from the profile every sync,
+// not sticky ledger state (#365 dropped the old scope="selected" ledger flag entirely).
+func TestServiceProfileRoutingFunctional(t *testing.T) {
 	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
-	if err := f.svc.UpdateConnection(ctx, f.conn.ID, UpdateConnectionParams{IndexScope: ptr(domain.IndexScopeSelected)}); err != nil {
-		t.Fatalf("switch to selected scope: %v", err)
+
+	prof, err := f.svc.CreateProfile(ctx, CreateProfileParams{Name: "routing"})
+	if err != nil {
+		t.Fatalf("CreateProfile: %v", err)
+	}
+	if err := f.svc.UpdateConnection(ctx, f.conn.ID, UpdateConnectionParams{
+		SyncProfileID: RefUpdate{Present: true, Value: &prof.ID},
+	}); err != nil {
+		t.Fatalf("assign profile: %v", err)
 	}
 
-	// With nothing selected, a selected-scope sync pushes nothing (no deadlock-as-error).
+	// An empty selection (the profile's default) pushes every compatible indexer.
 	rep, err := f.svc.Sync(ctx, f.conn.ID)
 	if err != nil {
-		t.Fatalf("empty selected Sync: %v", err)
+		t.Fatalf("empty-selection Sync: %v", err)
 	}
-	if len(rep.Results) != 0 || f.stub.created() != 0 {
-		t.Fatalf("empty selection pushed something: results=%v created=%d", rep.Results, f.stub.created())
+	if len(rep.Results) != 2 || f.stub.created() != 2 {
+		t.Fatalf("empty-selection sync = results %v created %d, want both trackers", rep.Results, f.stub.created())
 	}
 
-	// Select tracker-a only; sync now pushes exactly that one.
+	// Narrow to tracker-a only; sync now keeps tracker-a and prunes tracker-b (the
+	// default sync level is "full", so a no-longer-desired indexer is an orphan).
 	instA := f.source.instances[0].ID
-	if err := f.svc.SetSelectedIndexers(ctx, f.conn.ID, []int64{instA}); err != nil {
-		t.Fatalf("SetSelectedIndexers: %v", err)
+	if err := f.svc.UpdateProfile(ctx, prof.ID, UpdateProfileParams{IndexerIDs: &[]int64{instA}}); err != nil {
+		t.Fatalf("narrow profile: %v", err)
 	}
 	rep, err = f.svc.Sync(ctx, f.conn.ID)
 	if err != nil {
-		t.Fatalf("selected Sync: %v", err)
+		t.Fatalf("narrowed Sync: %v", err)
 	}
-	if !hasAction(rep.Results, "tracker-a", ActionCreated) || f.stub.created() != 1 {
-		t.Fatalf("selected sync should push only tracker-a: results=%v created=%d", rep.Results, f.stub.created())
+	if !hasAction(rep.Results, "tracker-a", ActionNoop) {
+		t.Fatalf("narrowed sync should keep tracker-a: results=%v", rep.Results)
 	}
-}
-
-func TestServiceSyncNeverClobbersSelection(t *testing.T) {
-	t.Parallel()
-	f := newSyncFixture(t)
-	ctx := context.Background()
-
-	// scope=all: first sync creates both ledger rows.
-	if _, err := f.svc.Sync(ctx, f.conn.ID); err != nil {
-		t.Fatalf("initial Sync: %v", err)
+	if !hasAction(rep.Results, "tracker-b", ActionDeleted) {
+		t.Fatalf("narrowed sync should prune tracker-b (no longer routed): results=%v", rep.Results)
 	}
-	// Deselect tracker-a (keep tracker-b).
-	instA, instB := f.source.instances[0].ID, f.source.instances[1].ID
-	if err := f.svc.SetSelectedIndexers(ctx, f.conn.ID, []int64{instB}); err != nil {
-		t.Fatalf("SetSelectedIndexers: %v", err)
-	}
-	if selectedOf(t, f, instA) {
-		t.Fatalf("tracker-a should be deselected")
-	}
-	// A re-sync must NOT flip the deselected flag back to true.
-	if _, err := f.svc.Sync(ctx, f.conn.ID); err != nil {
-		t.Fatalf("re-Sync: %v", err)
-	}
-	if selectedOf(t, f, instA) {
-		t.Errorf("re-sync clobbered the deselected flag back to true")
+	if f.stub.created() != 1 {
+		t.Errorf("stub has %d indexers after narrowing, want 1 (tracker-b pruned)", f.stub.created())
 	}
 }
 
@@ -944,20 +1041,6 @@ func TestServiceSyncAllPartialFailureContinues(t *testing.T) {
 	}
 }
 
-func selectedOf(t *testing.T, f *syncFixture, instID int64) bool {
-	t.Helper()
-	ledger, err := f.svc.ConnectionIndexers(context.Background(), f.conn.ID)
-	if err != nil {
-		t.Fatalf("ConnectionIndexers: %v", err)
-	}
-	for _, l := range ledger {
-		if l.InstanceID == instID {
-			return l.Selected
-		}
-	}
-	return false
-}
-
 func TestServiceCreateValidation(t *testing.T) {
 	t.Parallel()
 	f := newSyncFixture(t)
@@ -997,16 +1080,23 @@ func TestServiceUpdateRejectsBlankFields(t *testing.T) {
 	}
 }
 
-func TestServiceSetSelectedRejectsUnknownID(t *testing.T) {
+// TestProfileIndexerIDsRejectsUnknownID proves CreateProfile/UpdateProfile route their
+// IndexerIDs through validateInstanceIDs — the same guard SetSelectedIndexers used to
+// own — turning an unknown instance id into a 400 rather than a repository FK error.
+func TestProfileIndexerIDsRejectsUnknownID(t *testing.T) {
 	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
-	if err := f.svc.SetSelectedIndexers(ctx, f.conn.ID, []int64{99999}); !errors.Is(err, domain.ErrInvalid) {
+	if _, err := f.svc.CreateProfile(ctx, CreateProfileParams{Name: "bad", IndexerIDs: []int64{99999}}); !errors.Is(err, domain.ErrInvalid) {
 		t.Errorf("unknown instance id err = %v, want domain.ErrInvalid", err)
 	}
 	// A known id is accepted.
-	if err := f.svc.SetSelectedIndexers(ctx, f.conn.ID, []int64{f.source.instances[0].ID}); err != nil {
+	p, err := f.svc.CreateProfile(ctx, CreateProfileParams{Name: "good", IndexerIDs: []int64{f.source.instances[0].ID}})
+	if err != nil {
 		t.Errorf("known id rejected: %v", err)
+	}
+	if err := f.svc.UpdateProfile(ctx, p.ID, UpdateProfileParams{IndexerIDs: &[]int64{99999}}); !errors.Is(err, domain.ErrInvalid) {
+		t.Errorf("update to unknown instance id err = %v, want domain.ErrInvalid", err)
 	}
 }
 

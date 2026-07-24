@@ -78,7 +78,7 @@ func (s *Service) Sync(ctx context.Context, id int64) (SyncReport, error) {
 	if err != nil {
 		return SyncReport{}, err
 	}
-	desired, err := s.buildDesired(ctx, instances, conn, harbrrKey, selectedByID(ledger), profile)
+	desired, err := s.buildDesired(ctx, instances, conn, harbrrKey, profile)
 	if err != nil {
 		return SyncReport{}, err
 	}
@@ -122,16 +122,16 @@ func (s *Service) SyncAll(ctx context.Context) ([]ConnectionSyncResult, error) {
 }
 
 // buildDesired projects every in-scope indexer into a DesiredIndexer: the per-app feed
-// URL, the connection's harbrr key, and the (gated) categories. Scope "selected" keeps
-// only indexers flagged in the ledger. Priority is the instance's own value (Prowlarr
-// semantics: set per indexer, not per connection). A non-nil profile narrows the pushed
-// categories (within the app's content type) and overrides the search-mode toggles; nil
-// profile is exactly today's behavior. The min-seeders floor is the instance's own value
-// when set, else the profile's (see instMinSeeders).
-func (s *Service) buildDesired(ctx context.Context, instances []domain.IndexerInstance, conn domain.AppConnection, harbrrKey string, selected map[int64]bool, profile *domain.SyncProfile) ([]DesiredIndexer, error) {
+// URL, the connection's harbrr key, and the (gated) categories. A non-nil, non-empty
+// profile keeps only the indexers it selects (the routing set); nil, or an empty
+// selection, means every compatible indexer. Priority, the search-mode toggles, sync
+// categories, and the min-seeders floor are each the instance's own value (#365 moved
+// all sync behavior per-indexer).
+func (s *Service) buildDesired(ctx context.Context, instances []domain.IndexerInstance, conn domain.AppConnection, harbrrKey string, profile *domain.SyncProfile) ([]DesiredIndexer, error) {
+	routed := profileMembers(profile)
 	out := make([]DesiredIndexer, 0, len(instances))
 	for _, inst := range instances {
-		if conn.IndexScope == domain.IndexScopeSelected && !selected[inst.ID] {
+		if routed != nil && !routed[inst.ID] {
 			continue
 		}
 		// qui is a torrent-only Torznab consumer (POST /api/torznab/indexers); it has no
@@ -143,9 +143,10 @@ func (s *Service) buildDesired(ctx context.Context, instances []domain.IndexerIn
 		if err != nil {
 			return nil, fmt.Errorf("appsync: categories for %q: %w", inst.Slug, err)
 		}
-		// The content gate (kind range, optionally narrowed by the profile) both decides
-		// whether the indexer qualifies and produces the exact category set to push.
-		gated, ok := gateCategories(conn.Kind, profile, cats)
+		// The content gate (kind range, optionally narrowed by the instance's own sync
+		// categories) both decides whether the indexer qualifies and produces the exact
+		// category set to push.
+		gated, ok := gateCategories(conn.Kind, inst.SyncCategories, cats)
 		if !ok {
 			continue
 		}
@@ -153,24 +154,37 @@ func (s *Service) buildDesired(ctx context.Context, instances []domain.IndexerIn
 		if err != nil {
 			return nil, fmt.Errorf("appsync: capabilities for %q: %w", inst.Slug, err)
 		}
-		rss, auto, interactive := resolveToggles(inst.Enabled, profile)
+		rss, auto, interactive := resolveToggles(inst)
 		out = append(out, DesiredIndexer{
 			Slug: inst.Slug, Name: inst.Name, FeedURL: FeedURL(conn.HarbrrURL, inst.Slug, conn.FreeleechMode),
 			APIKey: harbrrKey, Categories: gated, Capabilities: caps,
 			Priority: inst.Priority, Enabled: inst.Enabled, Protocol: inst.Protocol,
 			EnableRss: rss, EnableAutomaticSearch: auto, EnableInteractiveSearch: interactive,
-			MinSeeders: instMinSeeders(inst, profile),
+			MinSeeders: inst.MinSeeders,
 		})
 	}
 	return out, nil
 }
 
-// connProfile loads the sync profile a connection references, or nil when it has none or
-// is a qui connection (profiles never apply to qui — validation blocks the assignment, so
-// the kind check here is defensive). Loaded once per Sync and threaded into buildDesired.
+// profileMembers returns the profile's selected-instance set, or nil when the profile is
+// absent or selects nothing (both mean "every compatible indexer" — buildDesired's routed
+// == nil skips the membership check entirely).
+func profileMembers(profile *domain.SyncProfile) map[int64]bool {
+	if profile == nil || len(profile.IndexerIDs) == 0 {
+		return nil
+	}
+	m := make(map[int64]bool, len(profile.IndexerIDs))
+	for _, id := range profile.IndexerIDs {
+		m[id] = true
+	}
+	return m
+}
+
+// connProfile loads the sync profile a connection references, or nil when it has none.
+// Loaded once per Sync and threaded into buildDesired.
 func (s *Service) connProfile(ctx context.Context, conn domain.AppConnection) (*domain.SyncProfile, error) {
-	if conn.SyncProfileID == nil || conn.Kind == domain.AppKindQui {
-		return nil, nil //nolint:nilnil // "no profile" is a valid, non-error outcome (today's default behavior).
+	if conn.SyncProfileID == nil {
+		return nil, nil //nolint:nilnil // "no profile" is a valid, non-error outcome (every compatible indexer).
 	}
 	profile, err := s.profiles.GetProfile(ctx, s.db, *conn.SyncProfileID)
 	if err != nil {
@@ -180,15 +194,15 @@ func (s *Service) connProfile(ctx context.Context, conn domain.AppConnection) (*
 }
 
 // gateCategories applies the connection's content gate to an indexer's categories and
-// returns the exact set to push. With no profile (or an empty profile category set) it is
-// the existing kind gate: keep the full set iff IndexerServesApp is true (today's
-// behavior). A non-empty profile set narrows to the intersection of categories the app
-// serves AND the profile selects; the indexer qualifies only if that intersection is
-// non-empty. This is narrow-only — a profile can exclude categories but never cross the
-// app's content type (a books tracker never reaches Sonarr). The returned slice preserves
-// Category.Name so Sonarr's animeCategories still resolve.
-func gateCategories(kind string, profile *domain.SyncProfile, cats []Category) ([]Category, bool) {
-	if profile == nil || len(profile.Categories) == 0 {
+// returns the exact set to push. With no sync categories set on the instance, it is the
+// plain kind gate: keep the full set iff IndexerServesApp is true. A non-empty
+// syncCats narrows to the intersection of categories the app serves AND the instance
+// selects; the indexer qualifies only if that intersection is non-empty. This is
+// narrow-only — an instance can exclude categories but never cross the app's content type
+// (a books tracker never reaches Sonarr). The returned slice preserves Category.Name so
+// Sonarr's animeCategories still resolve.
+func gateCategories(kind string, syncCats []int, cats []Category) ([]Category, bool) {
+	if len(syncCats) == 0 {
 		if !IndexerServesApp(kind, cats) {
 			return nil, false
 		}
@@ -196,7 +210,7 @@ func gateCategories(kind string, profile *domain.SyncProfile, cats []Category) (
 	}
 	filtered := make([]Category, 0, len(cats))
 	for _, c := range cats {
-		if categoryServesApp(kind, c.ID) && profileMatch(profile.Categories, c.ID) {
+		if categoryServesApp(kind, c.ID) && categorySetMatch(syncCats, c.ID) {
 			filtered = append(filtered, c)
 		}
 	}
@@ -206,11 +220,11 @@ func gateCategories(kind string, profile *domain.SyncProfile, cats []Category) (
 	return filtered, true
 }
 
-// profileMatch reports whether a profile's category-id set covers catID. A value that is
-// a multiple of 1000 is a parent covering the whole [v, v+999] block (e.g. 2000 covers
+// categorySetMatch reports whether a category-id set covers catID. A value that is a
+// multiple of 1000 is a parent covering the whole [v, v+999] block (e.g. 2000 covers
 // 2040); any other value matches exactly (e.g. 3030 matches only 3030). This mirrors the
 // Newznab parent/child convention the category-picker UI produces.
-func profileMatch(ids []int, catID int) bool {
+func categorySetMatch(ids []int, catID int) bool {
 	for _, v := range ids {
 		if v == catID {
 			return true
@@ -222,40 +236,18 @@ func profileMatch(ids []int, catID int) bool {
 	return false
 }
 
-// resolveToggles combines an instance's enabled state with a profile's per-mode toggles:
-// each pushed flag is enabled AND the profile's matching toggle (no profile → all three
-// equal enabled). A disabled instance therefore forces every flag false regardless of the
-// profile — the instance's own state always wins.
-func resolveToggles(enabled bool, p *domain.SyncProfile) (rss, auto, interactive bool) {
-	if p == nil {
-		return enabled, enabled, enabled
-	}
-	return enabled && p.EnableRss, enabled && p.EnableAutomaticSearch, enabled && p.EnableInteractiveSearch
-}
-
-// profileMinSeeders is the connection's pushed minimum-seeders floor: the profile's value,
-// or 0 (unset → the app default) when there is no profile.
-func profileMinSeeders(p *domain.SyncProfile) int {
-	if p == nil {
-		return 0
-	}
-	return p.MinSeeders
-}
-
-// instMinSeeders resolves the pushed floor: the instance's own value wins; 0 falls
-// back to the profile's (which is itself 0 = unset → app default).
-func instMinSeeders(inst domain.IndexerInstance, p *domain.SyncProfile) int {
-	if inst.MinSeeders > 0 {
-		return inst.MinSeeders
-	}
-	return profileMinSeeders(p)
+// resolveToggles combines an instance's enabled state with its own per-mode toggles:
+// each pushed flag is Enabled AND the instance's matching toggle. A disabled instance
+// therefore forces every flag false regardless of the toggle values.
+func resolveToggles(inst domain.IndexerInstance) (rss, auto, interactive bool) {
+	return inst.Enabled && inst.EnableRss, inst.Enabled && inst.EnableAutomaticSearch, inst.Enabled && inst.EnableInteractiveSearch
 }
 
 // persistOutcomes writes the outcomes back to the ledger in one transaction so a
 // mid-loop failure never leaves the ledger half-written: a deleted orphan drops its
 // row; everything else upserts the remote id, payload hash, and scrubbed status. The
-// selected flag is user intent (owned by SetSelectedIndexers) — reconcile never
-// authors it, so a re-sync can't silently re-select a deselected indexer.
+// ledger is a pure reconcile record (#365) — which indexers a connection syncs lives on
+// the referenced sync profile, not here.
 func (s *Service) persistOutcomes(ctx context.Context, connID int64, outcomes []IndexerOutcome, idBySlug map[string]int64) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -288,7 +280,7 @@ func (s *Service) persistOne(ctx context.Context, tx dbinterface.Execer, connID,
 		return nil
 	}
 	row := domain.AppConnectionIndexer{
-		ConnectionID: connID, InstanceID: instID, RemoteID: o.RemoteID, Selected: true,
+		ConnectionID: connID, InstanceID: instID, RemoteID: o.RemoteID,
 		PayloadHash: o.Hash, LastPushedAt: &now,
 		LastPushStatus: pushStatus(o.Action), LastPushError: apphttp.RedactError(o.Err),
 	}
@@ -411,8 +403,8 @@ func toResults(outcomes []IndexerOutcome) []SyncResult {
 	return out
 }
 
-// slugByID / idBySlug / selectedByID / priorBySlug are the lookup helpers reconcile and
-// persistence need from the instance list and ledger.
+// slugByID / idBySlug / priorBySlug are the lookup helpers reconcile and persistence
+// need from the instance list and ledger.
 func slugByID(instances []domain.IndexerInstance) map[int64]string {
 	m := make(map[int64]string, len(instances))
 	for _, inst := range instances {
@@ -425,14 +417,6 @@ func idBySlug(instances []domain.IndexerInstance) map[string]int64 {
 	m := make(map[string]int64, len(instances))
 	for _, inst := range instances {
 		m[inst.Slug] = inst.ID
-	}
-	return m
-}
-
-func selectedByID(ledger []domain.AppConnectionIndexer) map[int64]bool {
-	m := make(map[int64]bool, len(ledger))
-	for _, l := range ledger {
-		m[l.InstanceID] = l.Selected
 	}
 	return m
 }

@@ -1,15 +1,30 @@
 import { useState } from "react"
 import { ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
+import { Switch } from "@/components/ui/switch"
 import { SettingFieldInput } from "@/components/indexers/form/SettingFieldInput"
 import { defaultValues, isInfoField, settingsPayload } from "@/components/indexers/form/settings-payload"
 import { useProxies, useSolvers } from "@/hooks/useResources"
 import { APIError } from "@/lib/api"
 import type { AddIndexer, DefinitionDetail, InstanceDetail, SettingField, UpdateIndexer } from "@/lib/api"
 import { cn } from "@/lib/utils"
+
+// The 7 Newznab parent categories (#365 — moved here from the old sync-profile form now
+// that category narrowing is per-indexer, not per-profile).
+const NEWZNAB_PARENTS = [
+  { id: 2000, label: "Movies" },
+  { id: 3000, label: "Audio" },
+  { id: 4000, label: "PC" },
+  { id: 5000, label: "TV" },
+  { id: 6000, label: "XXX" },
+  { id: 7000, label: "Books" },
+  { id: 8000, label: "Other" },
+]
+const PARENT_IDS = new Set(NEWZNAB_PARENTS.map((p) => p.id))
 
 // The one reserved engine setting still entered inline. Proxy + FlareSolverr are
 // now global resources referenced by id (proxy_type/proxy_url, solver_type=
@@ -83,6 +98,12 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
   const [cookie, setCookie] = useState(definesCookie ? "" : (existing?.settings.find((s) => s.name === "cookie")?.value ?? ""))
   const [priority, setPriority] = useState(String(existing?.priority ?? 25))
   const [minSeeders, setMinSeeders] = useState(String(existing?.minSeeders ?? 0))
+  const [enableRss, setEnableRss] = useState(existing?.enableRss ?? true)
+  const [enableAutomaticSearch, setEnableAutomaticSearch] = useState(existing?.enableAutomaticSearch ?? true)
+  const [enableInteractiveSearch, setEnableInteractiveSearch] = useState(existing?.enableInteractiveSearch ?? true)
+  const [checkedParents, setCheckedParents] = useState<Set<number>>(
+    new Set((existing?.syncCategories ?? []).filter((c) => PARENT_IDS.has(c))))
+  const [extraCategories, setExtraCategories] = useState((existing?.syncCategories ?? []).filter((c) => !PARENT_IDS.has(c)).join(", "))
   const [showAdvanced, setShowAdvanced] = useState(false)
 
   const setValue = (fieldName: string) => (value: string) =>
@@ -118,11 +139,16 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
         const solverId = typeof solver === "number" ? solver : null
         const priorityNum = Number(priority)
         const minSeedersNum = Number(minSeeders)
+        // Positive integers only — a stray decimal or sign would otherwise ride into
+        // the []int JSON body and fail the whole request with an opaque decode error.
+        const extraIds = extraCategories.split(",").map((s) => s.trim()).filter((s) => s !== "").map((s) => Number(s)).filter((n) => Number.isInteger(n) && n > 0)
+        const syncCategories = [...new Set([...checkedParents, ...extraIds])].sort((a, b) => a - b)
+        const toggles = { enableRss, enableAutomaticSearch, enableInteractiveSearch }
         if (mode === "edit") {
           // baseUrl verbatim so clearing it ("") clears the stored override.
-          onSubmit({ mode, body: { name, baseUrl, settings, proxyId, solverId, priority: priorityNum, minSeeders: minSeedersNum } })
+          onSubmit({ mode, body: { name, baseUrl, settings, proxyId, solverId, priority: priorityNum, minSeeders: minSeedersNum, syncCategories, ...toggles } })
         } else {
-          onSubmit({ mode, body: { slug, definitionId: definition.id, name, baseUrl: baseUrl || undefined, settings, proxyId, solverId, priority: priorityNum, minSeeders: minSeedersNum } })
+          onSubmit({ mode, body: { slug, definitionId: definition.id, name, baseUrl: baseUrl || undefined, settings, proxyId, solverId, priority: priorityNum, minSeeders: minSeedersNum, syncCategories, ...toggles } })
         }
       }}
     >
@@ -170,7 +196,7 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
         onClick={() => setShowAdvanced((v) => !v)}
       >
         <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", showAdvanced && "rotate-90")} />
-        Advanced (proxy, timeout, anti-bot solver, priority, request limits)
+        Advanced (proxy, timeout, anti-bot solver, priority, request limits, sync behavior)
       </button>
       {showAdvanced && (
         <div className="flex flex-col gap-4 rounded-md border border-border p-3">
@@ -207,13 +233,51 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
           </span>
 
           <span className="flex flex-col gap-1.5">
-            <Label htmlFor="ix-min-seeders">Minimum seeders (0 = sync profile default)</Label>
+            <Label htmlFor="ix-min-seeders">Minimum seeders (0 = unset, not pushed)</Label>
             <Input id="ix-min-seeders" type="number" min={0} value={minSeeders} onChange={(e) => setMinSeeders(e.target.value)} />
           </span>
 
           <SettingFieldInput field={QUERY_LIMIT_FIELD} value={values.query_limit ?? ""} onChange={setValue("query_limit")} />
           <SettingFieldInput field={GRAB_LIMIT_FIELD} value={values.grab_limit ?? ""} onChange={setValue("grab_limit")} />
           <SettingFieldInput field={LIMITS_UNIT_FIELD} value={values.limits_unit ?? ""} onChange={setValue("limits_unit")} />
+
+          <span className="flex items-center justify-between">
+            <Label htmlFor="ix-rss" className="font-normal">Enable RSS</Label>
+            <Switch id="ix-rss" checked={enableRss} onCheckedChange={setEnableRss} />
+          </span>
+          <span className="flex items-center justify-between">
+            <Label htmlFor="ix-auto-search" className="font-normal">Enable automatic search</Label>
+            <Switch id="ix-auto-search" checked={enableAutomaticSearch} onCheckedChange={setEnableAutomaticSearch} />
+          </span>
+          <span className="flex items-center justify-between">
+            <Label htmlFor="ix-interactive-search" className="font-normal">Enable interactive search</Label>
+            <Switch id="ix-interactive-search" checked={enableInteractiveSearch} onCheckedChange={setEnableInteractiveSearch} />
+          </span>
+
+          <span className="flex flex-col gap-1.5">
+            <Label>Sync categories</Label>
+            <div className="grid grid-cols-4 gap-2">
+              {NEWZNAB_PARENTS.map((c) => (
+                <span key={c.id} className="flex items-center gap-2">
+                  <Checkbox
+                    id={`ix-cat-${c.id}`}
+                    checked={checkedParents.has(c.id)}
+                    onCheckedChange={(checked) => {
+                      const next = new Set(checkedParents)
+                      if (checked === true) next.add(c.id)
+                      else next.delete(c.id)
+                      setCheckedParents(next)
+                    }}
+                  />
+                  <Label htmlFor={`ix-cat-${c.id}`} className="font-normal">{c.label}</Label>
+                </span>
+              ))}
+            </div>
+            <Input placeholder="Extra category IDs, e.g. 3030" value={extraCategories} onChange={(e) => setExtraCategories(e.target.value)} />
+            <p className="text-[12px] text-faint">
+              Leave empty to push all of this indexer&apos;s categories (within each app&apos;s own content type).
+            </p>
+          </span>
         </div>
       )}
 

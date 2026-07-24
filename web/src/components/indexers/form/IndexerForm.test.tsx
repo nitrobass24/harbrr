@@ -58,6 +58,10 @@ const EXISTING: InstanceDetail = {
   freeleech: false,
   priority: 30,
   minSeeders: 4,
+  syncCategories: [],
+  enableRss: true,
+  enableAutomaticSearch: true,
+  enableInteractiveSearch: true,
   createdAt: "2026-07-01T00:00:00Z",
   updatedAt: "2026-07-01T00:00:00Z",
   settings: [
@@ -153,6 +157,38 @@ describe("IndexerForm", () => {
     expect(body.settings?.query_limit).toBe("100")
     expect(body.settings?.grab_limit).toBe("20")
     expect(body.settings?.limits_unit).toBe("hour")
+  })
+
+  it("edit: sync-categories/toggles prefill from the instance and submit on save", () => {
+    const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+    const existing: InstanceDetail = { ...EXISTING, syncCategories: [5000, 3030], enableAutomaticSearch: false }
+    renderForm(<IndexerForm definition={DEFINITION} existing={existing} pending={false} error={null} onSubmit={onSubmit} />)
+
+    fireEvent.click(screen.getByRole("button", { name: /Advanced/ }))
+    expect(screen.getByLabelText("TV")).toHaveProperty("dataset.state", "checked")
+    expect(screen.getByPlaceholderText(/Extra category IDs/)).toHaveProperty("value", "3030")
+    expect(screen.getByLabelText("Enable automatic search")).toHaveProperty("dataset.state", "unchecked")
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+    const body = onSubmit.mock.calls[0][0].body
+    expect(body.syncCategories).toEqual([3030, 5000])
+    expect(body.enableRss).toBe(true)
+    expect(body.enableAutomaticSearch).toBe(false)
+    expect(body.enableInteractiveSearch).toBe(true)
+  })
+
+  it("create: defaults to every toggle on and no category narrowing", () => {
+    const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+    renderForm(<IndexerForm definition={DEFINITION} pending={false} error={null} onSubmit={onSubmit} />)
+
+    fireEvent.change(screen.getByLabelText("API Key"), { target: { value: "k123" } })
+    fireEvent.click(screen.getByRole("button", { name: "Add indexer" }))
+
+    const body = onSubmit.mock.calls[0][0].body
+    expect(body.syncCategories).toEqual([])
+    expect(body.enableRss).toBe(true)
+    expect(body.enableAutomaticSearch).toBe(true)
+    expect(body.enableInteractiveSearch).toBe(true)
   })
 
   it("slug is locked in edit mode", () => {

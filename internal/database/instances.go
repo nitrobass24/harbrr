@@ -27,10 +27,14 @@ const timeLayout = time.RFC3339
 func (Instances) Insert(ctx context.Context, q dbinterface.Execer, inst domain.IndexerInstance) (int64, error) {
 	res, err := q.ExecContext(
 		ctx,
-		q.Rebind(`INSERT INTO indexer_instances (slug, definition_id, name, base_url, enabled, protocol, proxy_id, solver_id, priority, min_seeders, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+		q.Rebind(`INSERT INTO indexer_instances
+		 (slug, definition_id, name, base_url, enabled, protocol, proxy_id, solver_id, priority, min_seeders,
+		  enable_rss, enable_automatic_search, enable_interactive_search, sync_categories, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		inst.Slug, inst.DefinitionID, inst.Name, inst.BaseURL, boolToInt(inst.Enabled), inst.Protocol,
 		nullInt64(inst.ProxyID), nullInt64(inst.SolverID), inst.Priority, inst.MinSeeders,
+		boolToInt(inst.EnableRss), boolToInt(inst.EnableAutomaticSearch), boolToInt(inst.EnableInteractiveSearch),
+		encodeCategoryIDs(inst.SyncCategories),
 		inst.CreatedAt.UTC().Format(timeLayout), inst.UpdatedAt.UTC().Format(timeLayout),
 	)
 	if err != nil {
@@ -85,11 +89,14 @@ func (Instances) UpsertSetting(ctx context.Context, q dbinterface.Execer, instan
 	return nil
 }
 
+// instanceColumns is the full select list, in scan order.
+const instanceColumns = `id, slug, definition_id, name, base_url, enabled, protocol, proxy_id, solver_id, priority, min_seeders,
+	enable_rss, enable_automatic_search, enable_interactive_search, sync_categories, created_at, updated_at`
+
 // GetBySlug returns the instance with the given slug, or ErrNotFound.
 func (Instances) GetBySlug(ctx context.Context, q dbinterface.Execer, slug string) (domain.IndexerInstance, error) {
 	row := q.QueryRowContext(ctx,
-		q.Rebind(`SELECT id, slug, definition_id, name, base_url, enabled, protocol, proxy_id, solver_id, priority, min_seeders, created_at, updated_at
-		 FROM indexer_instances WHERE slug = ?`), slug)
+		q.Rebind(`SELECT `+instanceColumns+` FROM indexer_instances WHERE slug = ?`), slug)
 	inst, err := scanInstance(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.IndexerInstance{}, fmt.Errorf("instance %q: %w", slug, ErrNotFound)
@@ -104,8 +111,7 @@ func (Instances) GetBySlug(ctx context.Context, q dbinterface.Execer, slug strin
 // source to resolve a cache write-back's instance id back to its slug.
 func (Instances) GetByID(ctx context.Context, q dbinterface.Execer, id int64) (domain.IndexerInstance, error) {
 	row := q.QueryRowContext(ctx,
-		q.Rebind(`SELECT id, slug, definition_id, name, base_url, enabled, protocol, proxy_id, solver_id, priority, min_seeders, created_at, updated_at
-		 FROM indexer_instances WHERE id = ?`), id)
+		q.Rebind(`SELECT `+instanceColumns+` FROM indexer_instances WHERE id = ?`), id)
 	inst, err := scanInstance(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.IndexerInstance{}, fmt.Errorf("instance %d: %w", id, ErrNotFound)
@@ -149,7 +155,7 @@ func (Instances) Settings(ctx context.Context, q dbinterface.Execer, instanceID 
 // List returns all instances ordered by slug.
 func (Instances) List(ctx context.Context, q dbinterface.Execer) ([]domain.IndexerInstance, error) {
 	rows, err := q.QueryContext(ctx,
-		`SELECT id, slug, definition_id, name, base_url, enabled, protocol, proxy_id, solver_id, priority, min_seeders, created_at, updated_at
+		`SELECT `+instanceColumns+`
 		 FROM indexer_instances ORDER BY slug`)
 	if err != nil {
 		return nil, fmt.Errorf("database: list instances: %w", err)
@@ -170,12 +176,31 @@ func (Instances) List(ctx context.Context, q dbinterface.Execer) ([]domain.Index
 	return out, nil
 }
 
-// UpdateMeta updates an instance's name, base URL, priority, min seeders, and
-// updated_at by id.
-func (Instances) UpdateMeta(ctx context.Context, q dbinterface.Execer, id int64, name, baseURL string, priority, minSeeders int, updatedAt time.Time) error {
+// InstanceMeta is the set of instance-level fields UpdateMeta writes together — a value
+// struct rather than a growing positional-parameter list (the #364 shape already needed
+// name/baseURL/priority/minSeeders; #365 added the search toggles and sync categories).
+type InstanceMeta struct {
+	Name                    string
+	BaseURL                 string
+	Priority                int
+	MinSeeders              int
+	EnableRss               bool
+	EnableAutomaticSearch   bool
+	EnableInteractiveSearch bool
+	SyncCategories          []int
+}
+
+// UpdateMeta updates an instance's metadata fields and updated_at by id.
+func (Instances) UpdateMeta(ctx context.Context, q dbinterface.Execer, id int64, m InstanceMeta, updatedAt time.Time) error {
 	_, err := q.ExecContext(ctx,
-		q.Rebind(`UPDATE indexer_instances SET name = ?, base_url = ?, priority = ?, min_seeders = ?, updated_at = ? WHERE id = ?`),
-		name, baseURL, priority, minSeeders, updatedAt.UTC().Format(timeLayout), id)
+		q.Rebind(`UPDATE indexer_instances SET
+			name = ?, base_url = ?, priority = ?, min_seeders = ?,
+			enable_rss = ?, enable_automatic_search = ?, enable_interactive_search = ?, sync_categories = ?,
+			updated_at = ?
+			WHERE id = ?`),
+		m.Name, m.BaseURL, m.Priority, m.MinSeeders,
+		boolToInt(m.EnableRss), boolToInt(m.EnableAutomaticSearch), boolToInt(m.EnableInteractiveSearch),
+		encodeCategoryIDs(m.SyncCategories), updatedAt.UTC().Format(timeLayout), id)
 	if err != nil {
 		return fmt.Errorf("database: update instance meta: %w", err)
 	}
@@ -227,20 +252,25 @@ func (Instances) Delete(ctx context.Context, q dbinterface.Execer, slug string) 
 // scanInstance reads one instance row from a *sql.Row or *sql.Rows.
 func scanInstance(s interface{ Scan(...any) error }) (domain.IndexerInstance, error) {
 	var (
-		inst                 domain.IndexerInstance
-		baseURL              sql.NullString
-		enabled              int
-		proxyID, solverID    sql.NullInt64
-		createdAt, updatedAt string
+		inst                         domain.IndexerInstance
+		baseURL                      sql.NullString
+		enabled                      int
+		proxyID, solverID            sql.NullInt64
+		rss, autoSearch, interactive int
+		syncCategories               string
+		createdAt, updatedAt         string
 	)
 	if err := s.Scan(&inst.ID, &inst.Slug, &inst.DefinitionID, &inst.Name, &baseURL, &enabled, &inst.Protocol,
-		&proxyID, &solverID, &inst.Priority, &inst.MinSeeders, &createdAt, &updatedAt); err != nil {
+		&proxyID, &solverID, &inst.Priority, &inst.MinSeeders,
+		&rss, &autoSearch, &interactive, &syncCategories, &createdAt, &updatedAt); err != nil {
 		return domain.IndexerInstance{}, err //nolint:wrapcheck // sql.ErrNoRows is matched by the caller; other errors wrap there.
 	}
 	inst.BaseURL = baseURL.String
 	inst.Enabled = enabled != 0
 	inst.ProxyID = nullableToPtr(proxyID)
 	inst.SolverID = nullableToPtr(solverID)
+	inst.EnableRss, inst.EnableAutomaticSearch, inst.EnableInteractiveSearch = rss != 0, autoSearch != 0, interactive != 0
+	inst.SyncCategories = decodeCategoryIDs(syncCategories)
 	inst.CreatedAt = parseTime(createdAt)
 	inst.UpdatedAt = parseTime(updatedAt)
 	return inst, nil

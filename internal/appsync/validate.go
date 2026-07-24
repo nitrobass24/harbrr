@@ -12,9 +12,6 @@ func (p CreateConnectionParams) withDefaults() CreateConnectionParams {
 	if p.SyncLevel == "" {
 		p.SyncLevel = domain.SyncLevelFull
 	}
-	if p.IndexScope == "" {
-		p.IndexScope = domain.IndexScopeAll
-	}
 	if p.FreeleechMode == "" {
 		p.FreeleechMode = defaultFreeleechMode(p.Kind)
 	}
@@ -64,9 +61,6 @@ func validateCreate(p *CreateConnectionParams) error {
 	if err := validateSyncLevel(p.SyncLevel); err != nil {
 		return err
 	}
-	if err := validateIndexScope(p.IndexScope); err != nil {
-		return err
-	}
 	return validateFreeleechMode(p.FreeleechMode)
 }
 
@@ -85,12 +79,6 @@ func applyUpdate(conn *domain.AppConnection, p UpdateConnectionParams) error {
 			return err
 		}
 		conn.SyncLevel = *p.SyncLevel
-	}
-	if p.IndexScope != nil {
-		if err := validateIndexScope(*p.IndexScope); err != nil {
-			return err
-		}
-		conn.IndexScope = *p.IndexScope
 	}
 	if p.FreeleechMode != nil {
 		if err := validateFreeleechMode(*p.FreeleechMode); err != nil {
@@ -130,15 +118,6 @@ func validateSyncLevel(level string) error {
 		return nil
 	default:
 		return fmt.Errorf("%w: sync_level must be full or add_update (got %q)", domain.ErrInvalid, level)
-	}
-}
-
-func validateIndexScope(scope string) error {
-	switch scope {
-	case domain.IndexScopeAll, domain.IndexScopeSelected:
-		return nil
-	default:
-		return fmt.Errorf("%w: index_scope must be all or selected (got %q)", domain.ErrInvalid, scope)
 	}
 }
 

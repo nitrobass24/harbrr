@@ -111,6 +111,57 @@ func validateMinSeeders(minSeeders int) error {
 	return nil
 }
 
+// validateAddSync validates AddParams' sync-tuning fields together (priority,
+// min-seeders, sync categories), returning the normalized priority and category set —
+// split out of Add so it stays within the function-length limit.
+func validateAddSync(p AddParams) (priority int, syncCats []int, err error) {
+	priority, err = normalizePriority(p.Priority)
+	if err != nil {
+		return 0, nil, err
+	}
+	if err := validateMinSeeders(p.MinSeeders); err != nil {
+		return 0, nil, err
+	}
+	syncCats, err = normalizeCategoryIDs(p.SyncCategories)
+	if err != nil {
+		return 0, nil, err
+	}
+	return priority, syncCats, nil
+}
+
+// maxCategoryID bounds a sync-category id: Newznab ids and harbrr's custom range
+// (>=100000) all sit well under this, so an id outside (0, maxCategoryID) is a client
+// mistake rejected at the boundary.
+const maxCategoryID = 1_000_000
+
+// normalizeCategoryIDs bounds-checks, dedupes, and sorts an indexer's sync-category ids
+// so the stored set is deterministic. An empty input yields an empty (non-nil) slice.
+func normalizeCategoryIDs(ids []int) ([]int, error) {
+	seen := make(map[int]bool, len(ids))
+	out := make([]int, 0, len(ids))
+	for _, id := range ids {
+		if id <= 0 || id >= maxCategoryID {
+			return nil, fmt.Errorf("%w: category id %d out of range (0 < id < %d)", ErrInvalid, id, maxCategoryID)
+		}
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	sort.Ints(out)
+	return out, nil
+}
+
+// boolOrTrue resolves an optional toggle: nil defaults to true (every search mode is on
+// by default, matching the pre-#365 sync-profile default).
+func boolOrTrue(v *bool) bool {
+	if v == nil {
+		return true
+	}
+	return *v
+}
+
 // AddParams is the input to Add. Slug defaults to DefinitionID when empty; Name
 // defaults to the definition's name; Settings is the user's setting values keyed
 // by setting name (secrets are encrypted on write).
@@ -127,9 +178,16 @@ type AddParams struct {
 	// Priority is the Servarr indexer priority (1-50, 1 = highest); 0 defaults to
 	// defaultPriority.
 	Priority int
-	// MinSeeders is the per-indexer minimum-seeders floor; 0 = unset (falls back to
-	// the sync profile's value at push time).
+	// MinSeeders is the per-indexer minimum-seeders floor; 0 = unset, not pushed.
 	MinSeeders int
+	// SyncCategories narrows the Newznab categories this indexer pushes (empty = no
+	// narrowing).
+	SyncCategories []int
+	// EnableRss / EnableAutomaticSearch / EnableInteractiveSearch are the per-search-mode
+	// push flags; nil defaults to true (matching the pre-#365 sync-profile default).
+	EnableRss               *bool
+	EnableAutomaticSearch   *bool
+	EnableInteractiveSearch *bool
 }
 
 // RefUpdate is a tri-state PATCH field for a nullable resource reference: Present
@@ -145,15 +203,20 @@ type RefUpdate struct {
 // Settings is merged into the existing set (a value of secrets.Redacted keeps the
 // stored value; omitted settings are kept). ProxyID/SolverID are tri-state
 // (RefUpdate): only an explicitly-present field changes the reference. Nil
-// Priority/MinSeeders leave those unchanged.
+// Priority/MinSeeders/toggle fields leave those unchanged; SyncCategories is a
+// *[]int so a present-but-empty slice clears the narrowing (distinct from omitted).
 type UpdateParams struct {
-	Name       *string
-	BaseURL    *string
-	Settings   map[string]string
-	ProxyID    RefUpdate
-	SolverID   RefUpdate
-	Priority   *int
-	MinSeeders *int
+	Name                    *string
+	BaseURL                 *string
+	Settings                map[string]string
+	ProxyID                 RefUpdate
+	SolverID                RefUpdate
+	Priority                *int
+	MinSeeders              *int
+	SyncCategories          *[]int
+	EnableRss               *bool
+	EnableAutomaticSearch   *bool
+	EnableInteractiveSearch *bool
 }
 
 // SettingView is the API-safe representation of a stored setting: a secret's value
@@ -183,11 +246,8 @@ func (r *Manager) Add(ctx context.Context, p AddParams) (domain.IndexerInstance,
 	if err := validateRequiredSettings(fields, p.Settings); err != nil {
 		return domain.IndexerInstance{}, err
 	}
-	priority, err := normalizePriority(p.Priority)
+	priority, syncCats, err := validateAddSync(p)
 	if err != nil {
-		return domain.IndexerInstance{}, err
-	}
-	if err := validateMinSeeders(p.MinSeeders); err != nil {
 		return domain.IndexerInstance{}, err
 	}
 	if err := r.ensureSlugFree(ctx, slug); err != nil {
@@ -199,8 +259,10 @@ func (r *Manager) Add(ctx context.Context, p AddParams) (domain.IndexerInstance,
 		Slug: slug, DefinitionID: p.DefinitionID, Name: orDefault(p.Name, def.Name),
 		BaseURL: p.BaseURL, Enabled: true, Protocol: def.EffectiveProtocol(),
 		ProxyID: p.ProxyID, SolverID: p.SolverID,
-		Priority: priority, MinSeeders: p.MinSeeders,
-		CreatedAt: now, UpdatedAt: now,
+		Priority: priority, MinSeeders: p.MinSeeders, SyncCategories: syncCats,
+		EnableRss: boolOrTrue(p.EnableRss), EnableAutomaticSearch: boolOrTrue(p.EnableAutomaticSearch),
+		EnableInteractiveSearch: boolOrTrue(p.EnableInteractiveSearch),
+		CreatedAt:               now, UpdatedAt: now,
 	}
 
 	err = r.inTx(ctx, func(tx dbinterface.TxQuerier) error {
@@ -345,16 +407,11 @@ func (r *Manager) updateInTx(ctx context.Context, tx dbinterface.TxQuerier, inst
 		return err
 	}
 
-	priority, err := resolvePriority(p.Priority, inst.Priority)
+	meta, err := resolveMeta(inst, p)
 	if err != nil {
 		return err
 	}
-	minSeeders, err := resolveMinSeeders(p.MinSeeders, inst.MinSeeders)
-	if err != nil {
-		return err
-	}
-	name, baseURL := applyMeta(inst, p)
-	if err := r.instances.UpdateMeta(ctx, tx, inst.ID, name, baseURL, priority, minSeeders, r.clock()); err != nil {
+	if err := r.instances.UpdateMeta(ctx, tx, inst.ID, meta, r.clock()); err != nil {
 		return fmt.Errorf("registry: update meta: %w", err)
 	}
 	// Only a present ref field changes the stored reference; an absent one keeps
@@ -777,6 +834,32 @@ func validateRequiredSettings(fields map[string]loader.SettingsField, settings m
 	return nil
 }
 
+// resolveMeta resolves the full post-update InstanceMeta from the optional patch
+// fields, validating priority/min-seeders/sync-categories where present. Split out of
+// updateInTx so that function stays within the length limit.
+func resolveMeta(inst domain.IndexerInstance, p UpdateParams) (database.InstanceMeta, error) {
+	priority, err := resolvePriority(p.Priority, inst.Priority)
+	if err != nil {
+		return database.InstanceMeta{}, err
+	}
+	minSeeders, err := resolveMinSeeders(p.MinSeeders, inst.MinSeeders)
+	if err != nil {
+		return database.InstanceMeta{}, err
+	}
+	syncCats, err := resolveSyncCategories(p.SyncCategories, inst.SyncCategories)
+	if err != nil {
+		return database.InstanceMeta{}, err
+	}
+	name, baseURL := applyMeta(inst, p)
+	return database.InstanceMeta{
+		Name: name, BaseURL: baseURL, Priority: priority, MinSeeders: minSeeders,
+		EnableRss:               resolveToggle(p.EnableRss, inst.EnableRss),
+		EnableAutomaticSearch:   resolveToggle(p.EnableAutomaticSearch, inst.EnableAutomaticSearch),
+		EnableInteractiveSearch: resolveToggle(p.EnableInteractiveSearch, inst.EnableInteractiveSearch),
+		SyncCategories:          syncCats,
+	}, nil
+}
+
 // applyMeta resolves the post-update name and base URL from the optional params.
 func applyMeta(inst domain.IndexerInstance, p UpdateParams) (name, baseURL string) {
 	name, baseURL = inst.Name, inst.BaseURL
@@ -787,6 +870,25 @@ func applyMeta(inst domain.IndexerInstance, p UpdateParams) (name, baseURL strin
 		baseURL = *p.BaseURL
 	}
 	return name, baseURL
+}
+
+// resolveToggle applies an optional toggle patch: a present update wins; a nil one
+// keeps the instance's current value.
+func resolveToggle(update *bool, current bool) bool {
+	if update == nil {
+		return current
+	}
+	return *update
+}
+
+// resolveSyncCategories applies an optional sync-categories patch: a present update
+// (including an empty slice, which clears the narrowing) is validated; a nil one keeps
+// the instance's current value.
+func resolveSyncCategories(update *[]int, current []int) ([]int, error) {
+	if update == nil {
+		return current, nil
+	}
+	return normalizeCategoryIDs(*update)
 }
 
 // resolveRef applies a tri-state reference update: a present update wins (its

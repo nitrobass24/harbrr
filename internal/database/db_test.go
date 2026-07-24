@@ -91,7 +91,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	// 0020_apps.sql, 0021_drop_legacy_app_columns.sql,
 	// 0022_drop_proxy_url_encrypted.sql, 0023_indexer_sync_fields.sql), not
 	// duplicated by the second apply.
-	const wantMigrations = 23
+	const wantMigrations = 24
 	var applied int
 	if err := db.QueryRowContext(context.Background(),
 		"SELECT count(*) FROM schema_migrations").Scan(&applied); err != nil {
@@ -420,7 +420,11 @@ func TestPriorityAndMinSeedersRoundTrip(t *testing.T) {
 		t.Fatalf("List did not return inserted instance %d", id)
 	}
 
-	if err := instances.UpdateMeta(ctx, db, id, "IX renamed", "https://example.test", 30, 15, now.Add(time.Minute)); err != nil {
+	meta := database.InstanceMeta{
+		Name: "IX renamed", BaseURL: "https://example.test", Priority: 30, MinSeeders: 15,
+		EnableRss: true, EnableAutomaticSearch: true, EnableInteractiveSearch: true,
+	}
+	if err := instances.UpdateMeta(ctx, db, id, meta, now.Add(time.Minute)); err != nil {
 		t.Fatalf("UpdateMeta: %v", err)
 	}
 	updated, err := instances.GetByID(ctx, db, id)

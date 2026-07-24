@@ -2,6 +2,7 @@ package backup
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/autobrr/harbrr/internal/database"
@@ -64,5 +65,70 @@ func TestRestorePriorityDefaultsOldShapeBundle(t *testing.T) {
 	}
 	if byslug["tt"] != 1 || byslug["tt2"] != 1 {
 		t.Fatalf("restored instances = %+v, want exactly one each of tt, tt2", byslug)
+	}
+}
+
+// TestRestorePriorityOutOfRangeRejected proves a malformed/hand-edited bundle's
+// out-of-range Priority (not the pre-#364 zero value, which defaults instead) is
+// rejected rather than silently persisted — this restore path has no DB CHECK or
+// registry-side guard behind it.
+func TestRestorePriorityOutOfRangeRejected(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	for name, priority := range map[string]int{"too low": -1, "too high": 999} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			db, err := database.Open(":memory:")
+			if err != nil {
+				t.Fatalf("open db: %v", err)
+			}
+			t.Cleanup(func() { _ = db.Close() })
+			if err := db.Migrate(ctx); err != nil {
+				t.Fatalf("migrate: %v", err)
+			}
+
+			svc := &Service{db: db}
+			tables := &Tables{
+				IndexerInstances: []InstanceRow{
+					{ID: 1, Slug: "bad-priority", DefinitionID: "bad-priority", Name: "Bad", Enabled: true, Protocol: "torrent", Priority: priority},
+				},
+			}
+			err = svc.restore(ctx, tables, true)
+			if err == nil {
+				t.Fatal("restore with an out-of-range priority succeeded, want an error")
+			}
+			if !strings.Contains(err.Error(), "bad-priority") {
+				t.Errorf("error = %v, want it to name the offending slug", err)
+			}
+		})
+	}
+}
+
+// TestRestoreMinSeedersNegativeRejected proves a malformed/hand-edited bundle's
+// negative MinSeeders is rejected rather than silently persisted.
+func TestRestoreMinSeedersNegativeRejected(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	db, err := database.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	svc := &Service{db: db}
+	tables := &Tables{
+		IndexerInstances: []InstanceRow{
+			{ID: 1, Slug: "bad-minseeders", DefinitionID: "bad-minseeders", Name: "Bad", Enabled: true, Protocol: "torrent", MinSeeders: -3},
+		},
+	}
+	if err := svc.restore(ctx, tables, true); err == nil {
+		t.Fatal("restore with a negative minSeeders succeeded, want an error")
+	} else if !strings.Contains(err.Error(), "bad-minseeders") {
+		t.Errorf("error = %v, want it to name the offending slug", err)
 	}
 }

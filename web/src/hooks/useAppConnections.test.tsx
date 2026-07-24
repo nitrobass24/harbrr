@@ -25,7 +25,6 @@ function makeConnection(overrides: Partial<AppConnection> = {}): AppConnection {
     harbrrUrl: "http://harbrr:7478",
     enabled: true,
     syncLevel: "full",
-    indexScope: "all",
     freeleechMode: "honor",
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",

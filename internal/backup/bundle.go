@@ -82,17 +82,20 @@ type SolverRow struct {
 	UpdatedAt  time.Time `json:"updatedAt"`
 }
 
-// SyncProfileRow has no secrets.
+// SyncProfileRow has no secrets. IndexerIDs carries the profile's ORIGINAL selected
+// instance ids (#365 — a profile is now a pure routing set), remapped to the target's
+// new instance ids on import; an id that didn't restore is skipped. A legacy bundle
+// (pre-#365) carries no indexerIds — it decodes as nil, restoring an empty selection
+// (every compatible indexer), which is a safe default for what was previously a
+// behavior-only profile. The pre-#365 behavioral fields (categories, minSeeders, the
+// three enable toggles) are gone from this struct; an old bundle's matching JSON keys
+// are simply ignored on decode.
 type SyncProfileRow struct {
-	ID                      int64     `json:"id"`
-	Name                    string    `json:"name"`
-	Categories              []int     `json:"categories"`
-	MinSeeders              int       `json:"minSeeders"`
-	EnableRss               bool      `json:"enableRss"`
-	EnableAutomaticSearch   bool      `json:"enableAutomaticSearch"`
-	EnableInteractiveSearch bool      `json:"enableInteractiveSearch"`
-	CreatedAt               time.Time `json:"createdAt"`
-	UpdatedAt               time.Time `json:"updatedAt"`
+	ID         int64     `json:"id"`
+	Name       string    `json:"name"`
+	IndexerIDs []int64   `json:"indexerIds,omitempty"`
+	CreatedAt  time.Time `json:"createdAt"`
+	UpdatedAt  time.Time `json:"updatedAt"`
 }
 
 // APIKeyRow carries the one-way key hash verbatim (there is no plaintext to recover), so
@@ -114,31 +117,42 @@ type SettingRow struct {
 }
 
 // InstanceRow is an indexer instance plus its settings. ProxyID/SolverID are ORIGINAL ids
-// remapped to the target's new proxy/solver ids on import.
+// remapped to the target's new proxy/solver ids on import. EnableRss/EnableAutomaticSearch/
+// EnableInteractiveSearch are POINTERS (not plain bool): a bundle written before #365
+// carries none of these keys, decoding as nil — restore must default nil to true (see
+// restoreDefaultToggle next to restoreDefaultPriority), the same hazard class as the
+// priority-zero fix in #364. A plain bool would instead restore every toggle OFF and
+// silently stop all syncing.
 type InstanceRow struct {
-	ID           int64        `json:"id"`
-	Slug         string       `json:"slug"`
-	DefinitionID string       `json:"definitionId"`
-	Name         string       `json:"name"`
-	BaseURL      string       `json:"baseUrl"`
-	Enabled      bool         `json:"enabled"`
-	Protocol     string       `json:"protocol"`
-	ProxyID      *int64       `json:"proxyId,omitempty"`
-	SolverID     *int64       `json:"solverId,omitempty"`
-	Priority     int          `json:"priority"`
-	MinSeeders   int          `json:"minSeeders"`
-	CreatedAt    time.Time    `json:"createdAt"`
-	UpdatedAt    time.Time    `json:"updatedAt"`
-	Settings     []SettingRow `json:"settings"`
+	ID                      int64        `json:"id"`
+	Slug                    string       `json:"slug"`
+	DefinitionID            string       `json:"definitionId"`
+	Name                    string       `json:"name"`
+	BaseURL                 string       `json:"baseUrl"`
+	Enabled                 bool         `json:"enabled"`
+	Protocol                string       `json:"protocol"`
+	ProxyID                 *int64       `json:"proxyId,omitempty"`
+	SolverID                *int64       `json:"solverId,omitempty"`
+	Priority                int          `json:"priority"`
+	MinSeeders              int          `json:"minSeeders"`
+	SyncCategories          []int        `json:"syncCategories,omitempty"`
+	EnableRss               *bool        `json:"enableRss,omitempty"`
+	EnableAutomaticSearch   *bool        `json:"enableAutomaticSearch,omitempty"`
+	EnableInteractiveSearch *bool        `json:"enableInteractiveSearch,omitempty"`
+	CreatedAt               time.Time    `json:"createdAt"`
+	UpdatedAt               time.Time    `json:"updatedAt"`
+	Settings                []SettingRow `json:"settings"`
 }
 
 // AppConnRow carries both decrypted secrets (the app's own key + the minted harbrr key)
 // and the original api-key / sync-profile references, remapped on import. Transient sync
 // status (last_sync_*) and the reconciliation ledger are intentionally not carried — they
-// are derived state, rebuilt on the next sync. The one exception is SelectedInstanceIDs:
-// the ledger's `selected` flags are user intent (which indexers a scope="selected"
-// connection mirrors), not derived, so those original instance ids ride along and are
-// remapped to the target's new instance ids on import.
+// are derived state, rebuilt on the next sync. IndexScope / SelectedInstanceIDs are
+// DECODE-ONLY LEGACY (#365 removed the per-connection selected-scope machinery from
+// code): collect no longer writes them, but a pre-#365 bundle still carries them, and
+// restore uses a legacy "selected" row to mint a routing profile from the selection
+// (see loadAppConnections) so the operator's intent survives an old bundle. A
+// current-shape bundle always has IndexScope == "" and SelectedInstanceIDs == nil.
 type AppConnRow struct {
 	ID                  int64     `json:"id"`
 	Name                string    `json:"name"`
@@ -150,10 +164,10 @@ type AppConnRow struct {
 	HarbrrAPIKey        string    `json:"harbrrApiKey"`
 	Enabled             bool      `json:"enabled"`
 	SyncLevel           string    `json:"syncLevel"`
-	IndexScope          string    `json:"indexScope"`
+	IndexScope          string    `json:"indexScope,omitempty"`          // legacy, decode-only
+	SelectedInstanceIDs []int64   `json:"selectedInstanceIds,omitempty"` // legacy, decode-only
 	FreeleechMode       string    `json:"freeleechMode"`
 	SyncProfileID       *int64    `json:"syncProfileId,omitempty"`
-	SelectedInstanceIDs []int64   `json:"selectedInstanceIds,omitempty"`
 	CreatedAt           time.Time `json:"createdAt"`
 	UpdatedAt           time.Time `json:"updatedAt"`
 }
