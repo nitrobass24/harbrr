@@ -296,3 +296,49 @@ func TestWarmSkippedInstanceRSSTTLNotFloored(t *testing.T) {
 		})
 	}
 }
+
+// TestReadTimeTTLClampKeepsRefreshAhead proves the SWR refresh-ahead threshold is
+// measured against the CLAMPED (effective) lifetime, not the stored one: with a
+// lowered tier, the stored lifetime would push the trigger point to or past the
+// clamped miss boundary, so the async pre-refresh would never fire and every
+// consumer would take the synchronous miss latency the clamp introduces. At t=9m
+// the entry is 90% through its effective 10m lifetime (refresh_ahead_pct=80 ⇒ SWR
+// must fire) but only 30% through the stored 30m one (the old math would stay
+// silent).
+func TestReadTimeTTLClampKeepsRefreshAhead(t *testing.T) {
+	t.Parallel()
+	sc, instID, clk := testCache(t, keywordTTL, 80) // keyword tier = 30m, refresh at 80%
+	inner := &fakeInner{releases: clampFixtureReleases()}
+	idx := sc.probe(inner, instID, nil)
+	q := search.Query{Keywords: "clamp-swr"}
+
+	if _, err := idx.Search(context.Background(), q); err != nil {
+		t.Fatalf("prime: %v", err)
+	}
+
+	shorter := 10 * time.Minute
+	if _, err := sc.UpdateConfig(context.Background(), CacheConfigPatch{KeywordTTL: &shorter}); err != nil {
+		t.Fatalf("UpdateConfig: %v", err)
+	}
+
+	// 90% of the effective 10m lifetime, before its clamped expiry: still a HIT
+	// (served from cache), but the refresh-ahead must fire in the background.
+	advance(clk, 9*time.Minute)
+	got, err := idx.Search(context.Background(), q)
+	if err != nil {
+		t.Fatalf("clamped hit: %v", err)
+	}
+	if len(got) != len(clampFixtureReleases()) {
+		t.Fatalf("clamped hit served %d releases, want the cached %d", len(got), len(clampFixtureReleases()))
+	}
+
+	// Bounded positive wait for the async SWR fetch: the refresh fired iff the inner
+	// is driven a second time.
+	deadline := time.Now().Add(2 * time.Second)
+	for inner.callCount() < 2 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if c := inner.callCount(); c != 2 {
+		t.Fatalf("inner called %d times, want 2 (prime + refresh-ahead within the EFFECTIVE lifetime)", c)
+	}
+}

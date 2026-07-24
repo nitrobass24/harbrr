@@ -340,7 +340,7 @@ func (c *SearchCache) serveHit(ctx context.Context, instanceID int64, cfg map[st
 	c.counters(instanceID).hits.Add(1)
 	c.recordCacheInfo(ctx, core.CacheInfo{Cached: true, ExpiresAt: effective})
 	c.recordTouch(key)
-	if c.shouldRefreshAhead(entry) {
+	if c.shouldRefreshAhead(entry, effective) {
 		c.triggerSWR(ctx, instanceID, cfg, builtEpoch, live, q, key)
 	}
 	return releases, nil
@@ -655,14 +655,19 @@ func (c *SearchCache) FlushTouches(ctx context.Context) {
 
 // shouldRefreshAhead reports whether a hit is old enough to trigger a background
 // refresh: it is true once the fraction of the entry's lifetime that has elapsed
-// reaches refreshAt percent. It uses cached_at/expires_at (the entry's real
-// lifetime), never now+ttl. A non-positive percentage disables refresh-ahead.
-func (c *SearchCache) shouldRefreshAhead(entry database.SearchCacheEntry) bool {
+// reaches refreshAt percent. The lifetime is measured against effective — the same
+// clamped expiry serveHit's hit/miss decision uses — not the stored expires_at:
+// with a LOWERED tier, the stored lifetime would push the trigger point to or past
+// the clamped miss boundary, so the async pre-refresh would never fire and every
+// consumer would take the synchronous miss latency instead. For an unclamped entry
+// effective equals the stored expiry, so behavior is unchanged. A non-positive
+// percentage disables refresh-ahead.
+func (c *SearchCache) shouldRefreshAhead(entry database.SearchCacheEntry, effective time.Time) bool {
 	refreshAt := c.tuning.Load().refreshAt
 	if refreshAt <= 0 {
 		return false
 	}
-	lifetime := entry.ExpiresAt.Sub(entry.CachedAt)
+	lifetime := effective.Sub(entry.CachedAt)
 	if lifetime <= 0 {
 		return false
 	}
