@@ -137,6 +137,41 @@ func TestAdapterSearch_ExhaustedQueryServesStale(t *testing.T) {
 	}
 }
 
+// TestAdapterSearch_ExhaustedQueryServesStaleAfterCleanupTick extends the stale-serve
+// proof above across a cleanup tick: once the cached entry has expired, a
+// CleanupExpired tick within the reap grace must not purge it — the budget-exhausted
+// stale serve (#251) depends on FetchAny still finding the row, so a cleanup tick
+// firing in between must not break it.
+func TestAdapterSearch_ExhaustedQueryServesStaleAfterCleanupTick(t *testing.T) {
+	t.Parallel()
+	inner := &budgetFakeDriver{releases: []*normalizer.Release{{Title: "cached-release"}}}
+	a, clk := newBudgetTestAdapter(t, inner, map[string]string{"query_limit": "1"})
+	q := search.Query{Keywords: "x"}
+
+	if _, err := a.Search(context.Background(), q); err != nil {
+		t.Fatalf("first Search: %v", err)
+	}
+
+	// Expire the entry, then run a cleanup tick — still well inside the reap grace, so
+	// the row must survive it.
+	future := clk.Load().Add(2 * time.Hour)
+	clk.Store(&future)
+	if _, err := a.cache.CleanupExpired(context.Background()); err != nil {
+		t.Fatalf("CleanupExpired: %v", err)
+	}
+
+	rels, err := a.Search(context.Background(), q)
+	if err != nil {
+		t.Fatalf("second (post-cleanup-tick) Search: %v", err)
+	}
+	if len(rels) != 1 || rels[0].Title != "cached-release" {
+		t.Fatalf("second Search releases = %+v, want the stale entry to have survived the tick", rels)
+	}
+	if got := inner.searchCalls.Load(); got != 1 {
+		t.Fatalf("tracker hit %d times after second search, want still 1", got)
+	}
+}
+
 // TestAdapterSearch_ExhaustedQueryDisabledCacheRefusesStale proves the runtime
 // cache-enabled toggle wins over the budget's prefer-stale preference: once caching
 // is disabled via UpdateConfig, a budget-exhausted search must surface the error

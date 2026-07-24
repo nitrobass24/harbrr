@@ -50,6 +50,39 @@ func TestWarmInterval(t *testing.T) {
 	}
 }
 
+// TestStripInertWarmInterval covers the paging/Mode-consuming/eligible table: a
+// driver warmOne would skip has its cfg's rss_warm_interval deleted (the setting can
+// never do anything for it — no warmer ever refreshes its key); an eligible driver's
+// cfg is untouched. Reuses fakeWarmIndexer (warmCapable's pages/consumesMode fields)
+// rather than a bespoke double.
+func TestStripInertWarmInterval(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name         string
+		pages        bool
+		consumesMode bool
+		wantStripped bool
+	}{
+		{name: "paging driver stripped", pages: true, wantStripped: true},
+		{name: "mode-consuming driver stripped", consumesMode: true, wantStripped: true},
+		{name: "eligible driver kept", wantStripped: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := map[string]string{warmIntervalSetting: "15m"}
+			d := &fakeWarmIndexer{pages: tt.pages, consumesMode: tt.consumesMode}
+
+			stripInertWarmInterval(cfg, d)
+
+			_, present := cfg[warmIntervalSetting]
+			if present == tt.wantStripped {
+				t.Fatalf("cfg[%q] present = %v, want stripped = %v", warmIntervalSetting, present, tt.wantStripped)
+			}
+		})
+	}
+}
+
 // TestWarmerSchedule exercises the schedule-math table via a Warmer literal (no
 // clock injection needed — schedule takes now explicitly), all with an injected
 // clock via literal `now` values so nothing depends on wall time.

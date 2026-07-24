@@ -588,6 +588,11 @@ func (c *SearchCache) storeBestEffort(ctx context.Context, instanceID int64, cfg
 // survives; a redundant delete (if the purge's own DELETE gets there first or second)
 // is a harmless no-op.
 func (c *SearchCache) compensateStaleStore(ctx context.Context, key string) {
+	// Mirror the pre-store skip's trace so both halves of the epoch gate are visible
+	// when diagnosing an invalidation race — this one fires only in the rare
+	// check-then-store window.
+	c.log.Debug().Str("cache_key", key).
+		Msg("registry: search cache store compensated; instance config changed during store")
 	if err := c.store.Delete(ctx, c.db, key); err != nil {
 		c.log.Warn().Str("cache_key", key).Str("error", apphttp.RedactError(err)).
 			Msg("registry: search cache compensating delete failed")

@@ -344,7 +344,11 @@ func (r *Manager) SetEnabled(ctx context.Context, slug string, enabled bool) err
 
 // Delete removes an instance (settings cascade) and invalidates its cached engine. It
 // loads the instance first to obtain its id, so the in-memory cache counters can be
-// pruned to match the cache_counters row the FK cascade removes.
+// pruned to match the cache_counters row the FK cascade removes. It also routes through
+// invalidateSearchCache: the epoch bump is what rejects an in-flight write-back (a
+// detached SWR refresh or an in-flight miss still holding the deleted instance's
+// adapter) even when SQLite reuses the row id for a later re-add; the row purge itself
+// is a no-op here (ON DELETE CASCADE already removed the rows).
 func (r *Manager) Delete(ctx context.Context, slug string) error {
 	inst, err := r.instances.GetBySlug(ctx, r.db, slug)
 	if err != nil {
@@ -354,6 +358,7 @@ func (r *Manager) Delete(ctx context.Context, slug string) error {
 		return fmt.Errorf("registry: delete %q: %w", slug, err)
 	}
 	r.inv.invalidate(slug)
+	r.inv.invalidateSearchCache(ctx, inst.ID)
 	r.inv.forgetCacheCounters(inst.ID)
 	r.inv.forgetStats(inst.ID)
 	r.inv.forgetBudget(inst.ID)
