@@ -26,10 +26,16 @@ type cacheStatsResponse struct {
 	TotalHits int64 `json:"totalHits"`
 	// Hits/Misses are the global counters (the sum across all indexers, the aggregate
 	// of the per-indexer byIndexer rows). hitRatio is hits / (hits + misses) over the
-	// same window. All three are cumulative and survive a restart.
-	Hits            int64   `json:"hits"`
-	Misses          int64   `json:"misses"`
-	HitRatio        float64 `json:"hitRatio"`
+	// same window. All three are cumulative and survive a restart; a failed live
+	// search counts as neither hit nor miss, and a cache flush resets them.
+	Hits     int64   `json:"hits"`
+	Misses   int64   `json:"misses"`
+	HitRatio float64 `json:"hitRatio"`
+	// Hits24h/Misses24h/HitRatio24h are the same counters over a rolling 24h window
+	// (in-memory only: the window restarts empty after a reboot).
+	Hits24h         int64   `json:"hits24h"`
+	Misses24h       int64   `json:"misses24h"`
+	HitRatio24h     float64 `json:"hitRatio24h"`
 	ApproxSizeBytes int64   `json:"approxSizeBytes"`
 	OldestCachedAt  *int64  `json:"oldestCachedAt"`
 	NewestCachedAt  *int64  `json:"newestCachedAt"`
@@ -37,7 +43,7 @@ type cacheStatsResponse struct {
 	// TrackerHitsSaved is the cumulative count of tracker requests served from cache —
 	// the headline kind-to-trackers metric. It mirrors Hits (same cumulative,
 	// restart-persisted counter) and, unlike totalHits, never drops when cached
-	// entries are reaped.
+	// entries are reaped — only an explicit cache flush resets it.
 	TrackerHitsSaved int64 `json:"trackerHitsSaved"`
 	// BreakerSuppressed is the cumulative count of misses short-circuited by the
 	// negative-result breaker (extra tracker requests spared a failing tracker).
@@ -96,6 +102,9 @@ func (rt *router) cacheStats(w http.ResponseWriter, r *http.Request) {
 		Hits:              stats.Hits,
 		Misses:            stats.Misses,
 		HitRatio:          stats.HitRatio,
+		Hits24h:           stats.Hits24h,
+		Misses24h:         stats.Misses24h,
+		HitRatio24h:       stats.HitRatio24h,
 		ApproxSizeBytes:   stats.ApproxSizeBytes,
 		OldestCachedAt:    stats.OldestUnixSec,
 		NewestCachedAt:    stats.NewestUnixSec,

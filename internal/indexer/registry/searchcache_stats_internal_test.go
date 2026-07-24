@@ -71,30 +71,49 @@ func TestStatsByInstanceMergesDurableAndMemory(t *testing.T) {
 	}
 }
 
-// TestStatsByInstanceReportsFlushedInstance proves an instance with in-memory traffic
-// but no remaining durable entries (cache flushed) still appears, with Entries=0.
-func TestStatsByInstanceReportsFlushedInstance(t *testing.T) {
+// TestFlushResetsStats proves an operator flush starts the stats surface from a
+// clean slate: entries purged, the in-memory and persisted hit/miss counters
+// zeroed, and the 24h window emptied.
+func TestFlushResetsStats(t *testing.T) {
 	t.Parallel()
 	sc, instID, _ := testCache(t, breakerTTL, 0)
 	inner := &fakeInner{releases: relSet("A")}
 	idx := sc.probe(inner, instID, nil)
 	ctx := context.Background()
 
-	if _, err := idx.Search(ctx, search.Query{Keywords: "a"}); err != nil {
+	if _, err := idx.Search(ctx, search.Query{Keywords: "a"}); err != nil { // miss
 		t.Fatal(err)
 	}
+	if _, err := idx.Search(ctx, search.Query{Keywords: "a"}); err != nil { // hit
+		t.Fatal(err)
+	}
+	sc.FlushCounters(ctx) // persist non-zero rows so the reset provably clears them
 	if _, err := sc.Flush(ctx); err != nil {
 		t.Fatalf("Flush: %v", err)
+	}
+
+	stats, err := sc.Stats(ctx)
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if stats.Entries != 0 || stats.Hits != 0 || stats.Misses != 0 || stats.Hits24h != 0 || stats.Misses24h != 0 {
+		t.Errorf("after flush: %+v, want all-zero entries/hits/misses", stats)
 	}
 	rows, err := sc.StatsByInstance(ctx)
 	if err != nil {
 		t.Fatalf("StatsByInstance: %v", err)
 	}
-	if len(rows) != 1 || rows[0].InstanceID != instID {
-		t.Fatalf("rows = %+v, want the flushed instance from in-memory counters", rows)
+	for _, r := range rows {
+		if r.InstanceID == instID && (r.Hits != 0 || r.Misses != 0) {
+			t.Errorf("instance row after flush = %+v, want zeroed counters", r)
+		}
 	}
-	if rows[0].Entries != 0 || rows[0].Misses != 1 {
-		t.Errorf("flushed instance = %+v, want entries=0 misses=1", rows[0])
+	persisted, err := sc.counterStore.AllCounters(ctx, sc.db)
+	if err != nil {
+		t.Fatalf("AllCounters: %v", err)
+	}
+	if len(persisted) != 0 {
+		t.Errorf("persisted counter rows after flush = %+v, want none", persisted)
 	}
 }
 

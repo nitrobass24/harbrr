@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"time"
+
+	apphttp "github.com/autobrr/harbrr/internal/http"
 )
 
 // SearchCacheStats is the management view of the cache: the durable row-derived
@@ -21,9 +23,14 @@ type SearchCacheStats struct {
 	LastUsedUnixSec *int64
 
 	// Cumulative counters, persisted across restarts (see searchcache_counters.go).
+	// A failed live search counts as neither hit nor miss; Flush resets them.
 	Hits     int64
 	Misses   int64
 	HitRatio float64
+	// Rolling 24h view of the same counters (in-memory only — empty after a restart).
+	Hits24h     int64
+	Misses24h   int64
+	HitRatio24h float64
 	// BreakerSuppressed counts MISSes short-circuited by an open negative breaker —
 	// tracker requests the breaker spared.
 	BreakerSuppressed int64
@@ -61,6 +68,7 @@ func (c *SearchCache) Stats(ctx context.Context) (SearchCacheStats, error) {
 		return SearchCacheStats{}, err //nolint:wrapcheck // store already wraps with context; no key/payload to add.
 	}
 	hits, misses := c.hits.Load(), c.misses.Load()
+	hits24, misses24 := c.window.totals(c.clock())
 	out := SearchCacheStats{
 		Entries:           s.Entries,
 		TotalHits:         s.TotalHits,
@@ -71,6 +79,9 @@ func (c *SearchCache) Stats(ctx context.Context) (SearchCacheStats, error) {
 		Hits:              hits,
 		Misses:            misses,
 		HitRatio:          hitRatio(hits, misses),
+		Hits24h:           hits24,
+		Misses24h:         misses24,
+		HitRatio24h:       hitRatio(hits24, misses24),
 		BreakerSuppressed: c.breakerSuppressed.Load(),
 	}
 	return out, nil
@@ -131,12 +142,30 @@ func sortedInstanceStats(merged map[int64]*InstanceCacheStats) []InstanceCacheSt
 	return out
 }
 
-// Flush deletes every cache entry and returns the count purged. It does not reset
-// the hit/miss counters (they are cumulative and monotonic, with no reset path).
+// Flush deletes every cache entry and returns the count purged. It also resets the
+// hit/miss/suppressed counters — in-memory, persisted, and the 24h window — so an
+// operator flush starts the stats surface from a clean slate. The counters reset
+// even if deleting the persisted rows fails (the next FlushCounters upserts the
+// zeroed values anyway). Only Flush resets: the cleanup tick and per-instance
+// invalidation never touch the counters (see TestHitsMonotoneAcrossCleanup, #350).
 func (c *SearchCache) Flush(ctx context.Context) (int64, error) {
 	n, err := c.store.Flush(ctx, c.db)
 	if err != nil {
 		return 0, err //nolint:wrapcheck // store wraps with context; nothing secret to add.
+	}
+	// Subtract each instance's swapped counts from the globals (mirrors
+	// ForgetInstance) so a concurrent in-flight increment is never lost twice.
+	c.instCounters.Range(func(_, v any) bool {
+		ic, _ := v.(*instanceCounters)
+		c.hits.Add(-ic.hits.Swap(0))
+		c.misses.Add(-ic.misses.Swap(0))
+		c.breakerSuppressed.Add(-ic.suppressed.Swap(0))
+		return true
+	})
+	c.window.reset()
+	if derr := c.counterStore.DeleteAll(ctx, c.db); derr != nil {
+		c.log.Warn().Str("error", apphttp.RedactError(derr)).
+			Msg("registry: reset persisted cache counters failed")
 	}
 	return n, nil
 }

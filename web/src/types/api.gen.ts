@@ -1270,7 +1270,7 @@ export interface paths {
         put?: never;
         /**
          * Flush the search-results cache
-         * @description Deletes every cache entry and returns the count purged. The cumulative hit/miss counters are not reset. When caching is disabled the response is {"flushed": 0}.
+         * @description Deletes every cache entry and returns the count purged, and resets the cumulative hit/miss/suppressed counters and the 24h window. When caching is disabled the response is {"flushed": 0}.
          */
         post: operations["cacheFlush"];
         delete?: never;
@@ -2216,7 +2216,7 @@ export interface components {
             hits?: number;
             /**
              * Format: int64
-             * @description Global cumulative cache misses (the aggregate of the per-indexer byIndexer rows). Persisted across restarts.
+             * @description Global cumulative cache misses (the aggregate of the per-indexer byIndexer rows). Persisted across restarts. A live search that fails counts as neither hit nor miss; a cache flush resets the counters.
              */
             misses?: number;
             /**
@@ -2224,6 +2224,21 @@ export interface components {
              * @description hits / (hits + misses), cumulative. The underlying hit/miss counters are persisted across restarts.
              */
             hitRatio?: number;
+            /**
+             * Format: int64
+             * @description Cache hits over a rolling 24h window. In-memory only — the window restarts empty after a reboot.
+             */
+            hits24h?: number;
+            /**
+             * Format: int64
+             * @description Cache misses over a rolling 24h window. In-memory only — the window restarts empty after a reboot.
+             */
+            misses24h?: number;
+            /**
+             * Format: double
+             * @description hits24h / (hits24h + misses24h), or 0 with no traffic in the window.
+             */
+            hitRatio24h?: number;
             /**
              * Format: int64
              * @description approximate total size of cached payloads
@@ -2246,7 +2261,7 @@ export interface components {
             lastUsedAt?: number | null;
             /**
              * Format: int64
-             * @description Cumulative tracker requests served from cache, persisted across restarts — the headline kind-to-trackers metric. Mirrors hits; unlike totalHits it never drops when cached entries are reaped.
+             * @description Cumulative tracker requests served from cache, persisted across restarts — the headline kind-to-trackers metric. Mirrors hits; unlike totalHits it never drops when cached entries are reaped — only an explicit cache flush resets it.
              */
             trackerHitsSaved?: number;
             /**
