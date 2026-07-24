@@ -2,6 +2,7 @@ package app
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -43,9 +44,9 @@ func defsFingerprint(dropinDir string) (string, error) {
 }
 
 // hashFS walks root lexically, writing each regular file's path and content into
-// h (a NUL separator between the two avoids a path/content ambiguity, e.g. path
-// "ab"+content "c" vs path "a"+content "bc"). Directories are not hashed
-// themselves, so an empty tree contributes nothing.
+// h as length-prefixed records (see the framing comment below for why bare
+// separators are not enough). Directories are not hashed themselves, so an empty
+// tree contributes nothing.
 func hashFS(h hash.Hash, root fs.FS) error {
 	err := fs.WalkDir(root, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -58,10 +59,22 @@ func hashFS(h hash.Hash, root fs.FS) error {
 		if err != nil {
 			return fmt.Errorf("read %q: %w", path, err)
 		}
+		// Length-prefix BOTH fields (u64 big-endian) so every record boundary is
+		// unambiguous: a bare separator can be forged by content bytes (content is
+		// arbitrary and may itself contain NULs and path-like text), letting two
+		// different trees serialize identically — e.g. {a:"", b:"hello"} vs
+		// {a:"b\x00hello"} under a NUL-separated stream. Lengths make that impossible
+		// without breaking the hash itself.
+		var lenBuf [8]byte
+		binary.BigEndian.PutUint64(lenBuf[:], uint64(len(path)))
+		if _, err := h.Write(lenBuf[:]); err != nil {
+			return fmt.Errorf("hash %q: %w", path, err)
+		}
 		if _, err := io.WriteString(h, path); err != nil {
 			return fmt.Errorf("hash %q: %w", path, err)
 		}
-		if _, err := h.Write([]byte{0}); err != nil {
+		binary.BigEndian.PutUint64(lenBuf[:], uint64(len(data)))
+		if _, err := h.Write(lenBuf[:]); err != nil {
 			return fmt.Errorf("hash %q: %w", path, err)
 		}
 		if _, err := h.Write(data); err != nil {

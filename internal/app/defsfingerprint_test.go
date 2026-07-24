@@ -91,3 +91,37 @@ func TestDefsFingerprint_ChangesOnDropinAddEditRemove(t *testing.T) {
 		t.Errorf("removing the dropin file did not restore the base fingerprint: %q != %q", removed, base)
 	}
 }
+
+// TestDefsFingerprint_RecordFramingUnambiguous pins the length-prefixed record
+// framing: under a bare NUL-separated stream, the two-file tree {a:"", b:"hello"}
+// and the one-file tree {a:"b\x00hello"} serialize to the identical byte sequence
+// ("a\x00b\x00hello") and would collide without any hash break. Length prefixes
+// make the trees hash differently.
+func TestDefsFingerprint_RecordFramingUnambiguous(t *testing.T) {
+	t.Parallel()
+
+	two := t.TempDir()
+	if err := os.WriteFile(filepath.Join(two, "a"), nil, 0o600); err != nil {
+		t.Fatalf("write a: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(two, "b"), []byte("hello"), 0o600); err != nil {
+		t.Fatalf("write b: %v", err)
+	}
+
+	one := t.TempDir()
+	if err := os.WriteFile(filepath.Join(one, "a"), []byte("b\x00hello"), 0o600); err != nil {
+		t.Fatalf("write crafted a: %v", err)
+	}
+
+	fpTwo, err := defsFingerprint(two)
+	if err != nil {
+		t.Fatalf("fingerprint two-file tree: %v", err)
+	}
+	fpOne, err := defsFingerprint(one)
+	if err != nil {
+		t.Fatalf("fingerprint one-file tree: %v", err)
+	}
+	if fpTwo == fpOne {
+		t.Fatalf("fingerprints collide (%s): record framing is ambiguous", fpTwo)
+	}
+}
