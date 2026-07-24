@@ -254,6 +254,18 @@ func TestAdapterSearch_QuotaErrorLearnsSpent(t *testing.T) {
 		t.Fatalf("tracker hit %d times, want 1 (the call that surfaced the quota error)", got)
 	}
 
+	// QuotaExceededError also unwraps to search.ErrRateLimited, so recordHealth
+	// independently classifies it as rate-limited and escalates the circuit breaker
+	// (autobrr/harbrr#253) alongside the budget-learning latch under test here. Since
+	// autobrr/harbrr#342, budgetedLiveSearch checks the circuit BEFORE the budget, so a
+	// still-open circuit would otherwise surface errCircuitOpen instead of the
+	// budget-exhausted error this test is about. Reset the circuit to baseline so the
+	// two independent gates don't shadow one another and this test isolates the
+	// budget-learning behavior it exists to prove.
+	if err := (database.Circuit{}).Upsert(context.Background(), a.db, database.CircuitState{InstanceID: a.instanceID}); err != nil {
+		t.Fatalf("reset circuit: %v", err)
+	}
+
 	// The reactive-learning latch should now refuse further queries THIS period,
 	// without a second live hit — nothing was cached (the first call errored), so this
 	// surfaces errBudgetExhausted rather than serving stale.
@@ -263,6 +275,48 @@ func TestAdapterSearch_QuotaErrorLearnsSpent(t *testing.T) {
 	}
 	if got := inner.searchCalls.Load(); got != 1 {
 		t.Fatalf("tracker hit %d times after the learned mark, want still 1", got)
+	}
+}
+
+// TestAdapterSearch_CircuitOpenDoesNotConsumeBudget proves budgetedLiveSearch checks
+// the circuit BEFORE reserving budget (autobrr/harbrr#342): a circuit-open refusal
+// must never burn a budget unit for a call that was never going to reach the tracker.
+func TestAdapterSearch_CircuitOpenDoesNotConsumeBudget(t *testing.T) {
+	t.Parallel()
+	inner := &budgetFakeDriver{releases: []*normalizer.Release{{Title: "ok"}}}
+	a, clk := newBudgetTestAdapter(t, inner, map[string]string{"query_limit": "1"})
+	q := search.Query{Keywords: "x"}
+	circuit := database.Circuit{}
+
+	// Open the circuit for the instance.
+	future := clk.Load().Add(time.Hour)
+	if err := circuit.Upsert(context.Background(), a.db, database.CircuitState{
+		InstanceID: a.instanceID, EscalationLevel: 1, DisabledTill: future,
+	}); err != nil {
+		t.Fatalf("upsert open circuit: %v", err)
+	}
+
+	if _, err := a.Search(context.Background(), q); !errors.Is(err, errCircuitOpen) {
+		t.Fatalf("first Search err = %v, want errCircuitOpen", err)
+	}
+	if got := inner.searchCalls.Load(); got != 0 {
+		t.Fatalf("tracker hit %d times, want 0 (circuit open)", got)
+	}
+
+	// Close the circuit (baseline row).
+	if err := circuit.Upsert(context.Background(), a.db, database.CircuitState{InstanceID: a.instanceID}); err != nil {
+		t.Fatalf("upsert closed circuit: %v", err)
+	}
+
+	rels, err := a.Search(context.Background(), q)
+	if err != nil {
+		t.Fatalf("second Search: %v (the budget unit must not have been consumed by the refused first attempt)", err)
+	}
+	if len(rels) != 1 || rels[0].Title != "ok" {
+		t.Fatalf("second Search releases = %+v", rels)
+	}
+	if got := inner.searchCalls.Load(); got != 1 {
+		t.Fatalf("tracker hit %d times, want 1 (only the successful second search)", got)
 	}
 }
 

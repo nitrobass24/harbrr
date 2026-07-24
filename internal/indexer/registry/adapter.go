@@ -166,12 +166,19 @@ func (a *indexerAdapter) Search(ctx context.Context, q search.Query) ([]*normali
 }
 
 // budgetedLiveSearch is the liveSearchFn the cache drives on a miss or refresh (and
-// that Search calls directly when caching is off): it reserves one unit of the
-// query budget BEFORE the outbound hit and, when the budget has no capacity left for
-// this period, refuses without ever touching the tracker — errBudgetExhausted, which
-// Search catches to prefer a stale cache serve, and which the breaker explicitly
-// never trips on (searchcache.go's tripBreaker).
+// that Search calls directly when caching is off). The circuit-breaker gate
+// (autobrr/harbrr#253) is checked FIRST: a disabled instance is skipped before it
+// ever reaches the tracker — or spends a budget unit — the actual "nice to indexers"
+// win, a dead/angry tracker stops being polled at full rate until its ladder window
+// passes. Only then does it reserve one unit of the query budget BEFORE the outbound
+// hit; when the budget has no capacity left for this period, it refuses without ever
+// touching the tracker — errBudgetExhausted, which Search catches to prefer a stale
+// cache serve, and which the breaker explicitly never trips on (searchcache.go's
+// tripBreaker, which also never trips on a circuit-open refusal for the same reason).
 func (a *indexerAdapter) budgetedLiveSearch(ctx context.Context, query search.Query) ([]*normalizer.Release, error) {
+	if err := a.checkCircuit(ctx); err != nil {
+		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, err)
+	}
 	if !a.budget.ReserveQuery(ctx, a.instanceID, a.cfg, a.clock()) {
 		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, errBudgetExhausted)
 	}
@@ -183,15 +190,10 @@ func (a *indexerAdapter) budgetedLiveSearch(ctx context.Context, query search.Qu
 // health event before the error is wrapped with the indexer id (not a secret) and
 // returned; the caller redacts it. A tracker-declared quota error (search.
 // ErrQuotaExceeded) additionally marks the query budget spent until reset — the
-// reactive-learning path that discovers a cap harbrr was never configured with.
+// reactive-learning path that discovers a cap harbrr was never configured with. The
+// circuit-breaker gate lives in budgetedLiveSearch (its sole caller), checked before
+// the budget reservation.
 func (a *indexerAdapter) liveSearch(ctx context.Context, query search.Query) ([]*normalizer.Release, error) {
-	// The circuit-breaker gate (autobrr/harbrr#253): a disabled instance is skipped
-	// before it ever reaches the tracker, the actual "nice to indexers" win — a
-	// dead/angry tracker stops being polled at full rate until its ladder window
-	// passes. Checked first so a search bypasses the wasted round trip entirely.
-	if err := a.checkCircuit(ctx); err != nil {
-		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, err)
-	}
 	// Count every search that reaches the tracker (liveSearch is bypassed on a cache hit)
 	// and sample its latency around the inner call — a failed search is still a query
 	// attempt with a real latency sample.

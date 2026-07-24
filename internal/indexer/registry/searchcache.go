@@ -213,10 +213,15 @@ func (c *SearchCache) search(ctx context.Context, instanceID int64, cfg map[stri
 
 	entry, found, err := c.store.Fetch(ctx, c.db, key, c.clock())
 	if err != nil {
-		// Degrade open: a read failure must never fail the user's search.
+		// Degrade open: a read failure must never fail the user's search. Route through
+		// missPath (not fetchLive directly) so concurrent identical requests coalesce on
+		// the flight and the breaker fast-path applies — a degraded request now
+		// (accurately) counts as a miss. missPath's own store.Fetch double-check inside
+		// the flight will likely fail again too; that is harmless, it just falls through
+		// to a live search.
 		c.log.Warn().Str("cache_key", key).Str("error", apphttp.RedactError(err)).
 			Msg("registry: search cache fetch failed; serving live")
-		return c.fetchLive(ctx, live, q)
+		return c.missPath(ctx, instanceID, cfg, builtEpoch, live, q, key)
 	}
 	if found {
 		return c.serveHit(ctx, instanceID, cfg, builtEpoch, live, q, key, entry)
@@ -249,16 +254,18 @@ func (c *SearchCache) fetchStale(ctx context.Context, instanceID int64, paging b
 	return releases, true, nil
 }
 
-// missPath drives a cache miss with the negative-result circuit breaker around it.
-// If the breaker is open for the instance, it short-circuits to the recorded error
-// without touching the tracker (counting one suppression). Otherwise it runs the live
-// miss and, on a tracker failure, trips the breaker so the next consumer's miss is
-// spared. It is the single funnel for every miss (the read-path miss and serveHit's
-// corrupt-payload fallback) so both honor the breaker.
+// missPath is the fast-path breaker consult for a cache miss: if the breaker is open
+// for the instance, it short-circuits to the recorded error without touching the
+// tracker (counting one suppression), so a suppressed request never counts as a miss.
+// Otherwise it runs the live miss. Tripping the breaker on a live failure now happens
+// inside fetchLive (the single outbound funnel, driven from deep within serveMiss) —
+// missPath only ever gates here, it never trips. It is the single funnel for every
+// miss (the read-path miss, serveHit's corrupt-payload fallback, and the degrade-open
+// path) so all three honor the breaker.
 func (c *SearchCache) missPath(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, live liveSearchFn, q search.Query, key string) ([]*normalizer.Release, error) {
 	// Consult the breaker only while it is armed (negative window > 0); reading the
 	// live config means a runtime disable (negative_ttl -> 0) stops suppression at
-	// once, without waiting for already-open windows to lapse. tripBreaker self-gates
+	// once, without waiting for already-open windows to lapse. fetchLive self-gates
 	// the same way, so disabling also halts new trips.
 	if c.tuning.Load().ttl.negative > 0 {
 		if rerr := c.breaker.replay(instanceID, c.clock()); rerr != nil {
@@ -267,12 +274,7 @@ func (c *SearchCache) missPath(ctx context.Context, instanceID int64, cfg map[st
 			return nil, rerr
 		}
 	}
-	releases, err := c.serveMiss(ctx, instanceID, cfg, builtEpoch, live, q, key)
-	if err != nil {
-		c.tripBreaker(ctx, instanceID, err)
-		return nil, err
-	}
-	return releases, nil
+	return c.serveMiss(ctx, instanceID, cfg, builtEpoch, live, q, key)
 }
 
 // tripBreaker opens the breaker for instanceID when err is a tracker failure worth
@@ -294,6 +296,14 @@ func (c *SearchCache) tripBreaker(ctx context.Context, instanceID int64, err err
 	// is healthy. Composing budget-exhaustion with the breaker is explicitly a
 	// serve-stale concern, never a circuit trip.
 	if errors.Is(err, errBudgetExhausted) {
+		return
+	}
+	// A circuit-open refusal (autobrr/harbrr#253) is likewise a self-imposed gate, not
+	// a tracker failure — the request never left the process. Without this, funneling
+	// every liveSearchFn error (including the circuit's) through fetchLive would let
+	// the negative breaker replay a "disabled till T" error even after T has passed
+	// and the circuit itself has recovered.
+	if errors.Is(err, errCircuitOpen) {
 		return
 	}
 	until, ok := classifyBreakerError(err, c.tuning.Load().ttl.negative, c.clock())
@@ -331,12 +341,40 @@ func (c *SearchCache) serveHit(ctx context.Context, instanceID int64, cfg map[st
 // (and receives) that leader's stale-epoch result — it drives its own live search
 // instead. The double-check inside the flight lets a request that lost the race read
 // a freshly stored entry instead of re-searching.
+//
+// A singleflight FOLLOWER inherits the LEADER's flight result — including a context
+// error if the leader's client disconnected or its request deadline elapsed
+// mid-fetch. When our OWN context is still live, that cancellation is the LEADER's,
+// not ours: we are a healthy request and must not return an errored feed just because
+// the request we coalesced onto went away. retryMissFlight handles that recovery (see
+// its doc for why it re-enters the flight rather than searching independently). The
+// ctx.Err() == nil guard is load-bearing: a follower whose OWN ctx is cancelled must
+// still return the cancellation (never mask a real client-gone with a fresh search).
+// Both context.Canceled (client disconnect) and context.DeadlineExceeded (leader
+// request deadline) qualify — once our ctx is proven live, ANY context error in the
+// flight result can only be the leader's.
 func (c *SearchCache) serveMiss(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, live liveSearchFn, q search.Query, key string) ([]*normalizer.Release, error) {
 	c.misses.Add(1)
 	c.counters(instanceID).misses.Add(1)
-	// The flight returns ([]*normalizer.Release, error); the inner error is already
-	// wrapped by liveAndStore/the adapter, so it is returned unwrapped here.
-	v, err, _ := c.sf.Do(cacheFlightKey(key, builtEpoch), func() (any, error) {
+	flightKey := cacheFlightKey(key, builtEpoch)
+	v, err, _ := c.sf.Do(flightKey, c.missFlight(ctx, instanceID, cfg, builtEpoch, live, q, key))
+	if err != nil {
+		if ctx.Err() == nil && isContextError(err) {
+			return c.retryMissFlight(ctx, instanceID, cfg, builtEpoch, live, q, key, flightKey)
+		}
+		return nil, err //nolint:wrapcheck // already wrapped by liveAndStore/adapter; no key/payload to add.
+	}
+	return c.resolveMissFlightResult(ctx, instanceID, cfg, builtEpoch, live, q, key, v)
+}
+
+// missFlight returns the singleflight closure for one live-search attempt at key,
+// scoped to ctx: a caller that lost the coalescing race reads a freshly stored entry
+// (the double-check) instead of re-searching; otherwise it drives fetchLive — the
+// single outbound funnel, so this is also where the negative breaker gates and learns
+// — and stores a success best-effort. The returned error is already wrapped by
+// liveAndStore/the adapter, so it is passed through unwrapped.
+func (c *SearchCache) missFlight(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, live liveSearchFn, q search.Query, key string) func() (any, error) {
+	return func() (any, error) {
 		if entry, found, ferr := c.store.Fetch(ctx, c.db, key, c.clock()); ferr == nil && found {
 			if releases, derr := decodeReleases(entry.ResultsJSON, key); derr == nil {
 				info := core.CacheInfo{Cached: true, ExpiresAt: entry.ExpiresAt}
@@ -348,33 +386,40 @@ func (c *SearchCache) serveMiss(ctx context.Context, instanceID int64, cfg map[s
 			return nil, lerr
 		}
 		return missResult{releases: releases, info: info}, nil
-	})
+	}
+}
+
+// retryMissFlight re-runs the miss flight ONCE more at flightKey after the first
+// attempt inherited a dead flight leader's context error (the leader's own client
+// disconnected or its request deadline elapsed) while OUR ctx is still live.
+// Singleflight forgets a key once its flight completes, so this second Do starts a
+// genuinely fresh flight: every follower that reaches this branch around the same
+// time re-coalesces onto ONE retry leader, instead of each independently running its
+// own live search against the tracker (a follower stampede). If the retry ALSO
+// inherits a dead leader's context error — the retry leader died too — fall back to a
+// bounded, un-coalesced live search so a healthy follower is still guaranteed an
+// answer, mirroring the type-mismatch fallback below.
+func (c *SearchCache) retryMissFlight(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, live liveSearchFn, q search.Query, key, flightKey string) ([]*normalizer.Release, error) {
+	v, err, _ := c.sf.Do(flightKey, c.missFlight(ctx, instanceID, cfg, builtEpoch, live, q, key))
 	if err != nil {
-		// A singleflight FOLLOWER inherits the LEADER's flight result — including a
-		// context error if the leader's client disconnected or its request deadline
-		// elapsed mid-fetch. When our OWN context is still live, that cancellation is the
-		// LEADER's, not ours: we are a healthy request and must not return an errored feed
-		// just because the request we coalesced onto went away. Run our own live search
-		// instead (mirroring the type-mismatch fallback below) — the same reasoning
-		// tripBreaker uses to refuse poisoning the breaker on an inherited cancel. The
-		// ctx.Err() == nil guard is load-bearing: a follower whose OWN ctx is cancelled
-		// must still return the cancellation (never mask a real client-gone with a
-		// fresh search). Both context.Canceled (client disconnect) and
-		// context.DeadlineExceeded (leader request deadline) qualify — once our ctx is
-		// proven live, ANY context error in the flight result can only be the leader's.
 		if ctx.Err() == nil && isContextError(err) {
 			return c.liveAndStoreRecording(ctx, instanceID, cfg, builtEpoch, live, q, key)
 		}
 		return nil, err //nolint:wrapcheck // already wrapped by liveAndStore/adapter; no key/payload to add.
 	}
+	return c.resolveMissFlightResult(ctx, instanceID, cfg, builtEpoch, live, q, key, v)
+}
+
+// resolveMissFlightResult type-asserts a completed flight's value to missResult and
+// records its cache info per CALLER, outside the flight, so every coalesced miss
+// fills its own sink. A value of an unexpected type can only mean this caller
+// coalesced onto a flight that returned something else (defensive) — it never serves
+// an empty success on a type mismatch, it runs its own live search instead.
+func (c *SearchCache) resolveMissFlightResult(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, live liveSearchFn, q search.Query, key string, v any) ([]*normalizer.Release, error) {
 	res, ok := v.(missResult)
 	if !ok {
-		// Defensive: a value of an unexpected type can only mean this miss coalesced
-		// onto a flight that returned something else. Never serve an empty success on
-		// a type mismatch — run our own live search instead.
 		return c.liveAndStoreRecording(ctx, instanceID, cfg, builtEpoch, live, q, key)
 	}
-	// Record per CALLER, outside the flight, so every coalesced miss fills its own sink.
 	c.recordCacheInfo(ctx, res.info)
 	return res.releases, nil
 }
@@ -385,7 +430,7 @@ func (c *SearchCache) serveMiss(ctx context.Context, instanceID int64, cfg map[s
 // never cached. It does NOT record into the request sink — the caller does
 // (per-caller, so a singleflight follower also gets the cache info).
 func (c *SearchCache) liveAndStore(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, live liveSearchFn, q search.Query, key string) ([]*normalizer.Release, core.CacheInfo, error) {
-	releases, err := c.fetchLive(ctx, live, q)
+	releases, err := c.fetchLive(ctx, instanceID, live, q)
 	if err != nil {
 		return nil, core.CacheInfo{}, err
 	}
@@ -406,10 +451,27 @@ func (c *SearchCache) liveAndStoreRecording(ctx context.Context, instanceID int6
 	return releases, nil
 }
 
-// fetchLive drives the live-fetch seam. The error is already wrapped with the indexer id
-// by the adapter's liveSearch; the caller redacts it.
-func (c *SearchCache) fetchLive(ctx context.Context, live liveSearchFn, q search.Query) ([]*normalizer.Release, error) {
-	return live(ctx, q) //nolint:wrapcheck // the adapter already wraps with the indexer id; re-wrapping would double-wrap.
+// fetchLive is the single outbound funnel: the miss flight, the SWR refresh, the
+// follower retry, the nocache bypass, and the degrade-open path (via missPath) ALL
+// reach the tracker only through here, so the per-instance negative breaker gates and
+// learns from every attempt. Replay is checked BEFORE live runs, so a replayed
+// (suppressed) error can never re-trip the breaker and extend its window — only a
+// genuine live-call error trips. The error live returns is already wrapped with the
+// indexer id by the adapter's liveSearch; the caller redacts it.
+func (c *SearchCache) fetchLive(ctx context.Context, instanceID int64, live liveSearchFn, q search.Query) ([]*normalizer.Release, error) {
+	if c.tuning.Load().ttl.negative > 0 {
+		if rerr := c.breaker.replay(instanceID, c.clock()); rerr != nil {
+			c.breakerSuppressed.Add(1)
+			c.counters(instanceID).suppressed.Add(1)
+			return nil, rerr
+		}
+	}
+	releases, err := live(ctx, q)
+	if err != nil {
+		c.tripBreaker(ctx, instanceID, err)
+		return nil, err //nolint:wrapcheck // adapter already wraps with the indexer id.
+	}
+	return releases, nil
 }
 
 // storeBestEffort encodes and upserts the result. It resolves the TTL from the raw
@@ -542,14 +604,17 @@ func (c *SearchCache) shouldRefreshAhead(entry database.SearchCacheEntry) bool {
 // the flights separate avoids wasting the newer refresh's live fetch on a doomed
 // write). The goroutine detaches from the request (WithoutCancel) but is bounded by a
 // timeout. The write-back is success-only: an error leaves the existing entry intact
-// (never poisons the cache).
+// (never poisons the cache). The refresh runs through fetchLive (the outbound funnel),
+// so the negative breaker gates and learns from a refresh exactly as it does from a
+// miss — a stale-while-revalidate refresh against a tripped instance is spared, and a
+// refresh that fails trips the breaker for the next consumer.
 func (c *SearchCache) triggerSWR(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, live liveSearchFn, q search.Query, key string) {
 	bg := context.WithoutCancel(ctx)
 	go func() {
 		rctx, cancel := context.WithTimeout(bg, swrRefreshTimeout)
 		defer cancel()
 		_, _, _ = c.sf.Do(swrKey(cacheFlightKey(key, builtEpoch)), func() (any, error) {
-			releases, err := c.fetchLive(rctx, live, q)
+			releases, err := c.fetchLive(rctx, instanceID, live, q)
 			if err != nil {
 				// Success-only: leave the old entry; do not cache the error.
 				return struct{}{}, err
