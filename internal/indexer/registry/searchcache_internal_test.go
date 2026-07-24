@@ -406,7 +406,12 @@ func TestCacheInfoRecordedForCoalescedMisses(t *testing.T) {
 			_, _ = idx.Search(ctx, q)
 		}()
 	}
-	<-inner.firstSeen // the flight is in progress; the rest coalesce onto it
+	<-inner.firstSeen // the flight leader is inside the inner search, held at the gate
+	// Deterministic barrier before releasing the leader: all n requests must have
+	// reached serveMiss (its miss-counter bump immediately precedes the singleflight),
+	// or a slow-scheduled follower could arrive after the flight completed and start a
+	// second one — the firstSeen+waitForMisses pattern the follower tests use.
+	waitForMisses(t, sc, n)
 	close(gate)
 	wg.Wait()
 
@@ -535,7 +540,12 @@ func TestDegradeOpenCoalesces(t *testing.T) {
 			results[i], errs[i] = idx.Search(context.Background(), q)
 		}(i)
 	}
-	<-inner.firstSeen // the flight is in progress; the rest coalesce onto it
+	<-inner.firstSeen // the flight leader is inside the inner search, held at the gate
+	// Deterministic barrier before releasing the leader: all n requests must have
+	// reached serveMiss (its miss-counter bump immediately precedes the singleflight),
+	// or a slow-scheduled follower could arrive after the flight completed and start a
+	// second one — the firstSeen+waitForMisses pattern the follower tests use.
+	waitForMisses(t, sc, n)
 	close(gate)
 	wg.Wait()
 

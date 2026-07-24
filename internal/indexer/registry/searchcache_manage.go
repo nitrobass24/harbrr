@@ -152,9 +152,14 @@ func (c *SearchCache) CleanupExpired(ctx context.Context) (int64, error) {
 // call — a detached SWR refresh or an in-flight miss still holding the old adapter —
 // then sees the advanced epoch in storeBestEffort and drops its write-back instead of
 // resurrecting a stale-config entry. Bumping before the purge guarantees any store that
-// observes the completed purge also observes the new epoch (U8R-F4).
+// observes the completed purge also observes the new epoch (U8R-F4). It also drops the
+// instance's negative-breaker entry: the breaker is a negative-result cache, so the
+// "a config change must never serve stale results" invariant covers replayed errors
+// too — after a credential fix, the next miss must probe the tracker live, not replay
+// the pre-fix error for the remaining window.
 func (c *SearchCache) InvalidateByInstance(ctx context.Context, instanceID int64) (int64, error) {
 	c.bumpInstanceEpoch(instanceID)
+	c.breaker.forget(instanceID)
 	n, err := c.store.InvalidateByInstance(ctx, c.db, instanceID)
 	if err != nil {
 		return 0, err //nolint:wrapcheck // store wraps with the instance id; nothing secret to add.
