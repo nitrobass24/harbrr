@@ -46,6 +46,11 @@ func (d *driver) NeedsResolver() bool { return true }
 // (it mirrors FileList/BroadcastTheNet/AvistaZ).
 func (d *driver) DownloadNeedsAuth() bool { return false }
 
+// ConsumesSearchMode is true: buildQuery (search.go) routes music-search to
+// AnimeBytes' music corpus via q.Mode, so an RSS poll under a different mode is a
+// distinct outbound request and must keep its own cache key.
+func (d *driver) ConsumesSearchMode() bool { return true }
+
 // Test verifies the configured credentials authenticate (the management "test indexer"
 // action). It issues a cheap empty scrape query; a 401/403 or the JSON {"error":...}
 // envelope surfaces as a search error.

@@ -141,10 +141,24 @@ func (c *SearchCache) Flush(ctx context.Context) (int64, error) {
 	return n, nil
 }
 
-// CleanupExpired deletes every expired entry, returning the count purged. The
-// background ticker calls it.
+// cacheReapGrace is how long an EXPIRED row is retained before the cleanup tick
+// deletes it. Two features read expired rows by design and break when the reaper
+// removes them too early: the announce-source diff (priorGUIDs reads the row a
+// write-back overwrites — by definition expired on the miss path) and the
+// budget-exhausted stale serve (#251's fetchStale, which must keep serving until the
+// budget period resets — up to a full UTC day). 24h covers the longest budget period
+// and dwarfs the 6h announce window. Serving is unaffected: Fetch filters on the real
+// expires_at; retained rows are reachable only via FetchAny/fetchStale.
+const cacheReapGrace = 24 * time.Hour
+
+// CleanupExpired deletes every entry that has been expired for at least
+// cacheReapGrace, returning the count purged. The background ticker calls it. The
+// grace period means Stats().Entries/ApproxSizeBytes can include rows up to 24h past
+// their expires_at — for a cache key that keeps being re-queried this is invisible
+// (Store upserts the same PK row), so it only lingers rows for keys nobody re-queried
+// since they expired.
 func (c *SearchCache) CleanupExpired(ctx context.Context) (int64, error) {
-	n, err := c.store.CleanupExpired(ctx, c.db, c.clock())
+	n, err := c.store.CleanupExpired(ctx, c.db, c.clock().Add(-cacheReapGrace))
 	if err != nil {
 		return 0, err //nolint:wrapcheck // store wraps with context; nothing secret to add.
 	}

@@ -33,6 +33,7 @@ func (g *gatedInner) Capabilities() *mapper.Capabilities { return &mapper.Capabi
 func (g *gatedInner) NeedsResolver() bool                { return false }
 func (g *gatedInner) DownloadNeedsAuth() bool            { return false }
 func (g *gatedInner) SupportsOffsetPaging() bool         { return false }
+func (g *gatedInner) ConsumesSearchMode() bool           { return false }
 
 func (g *gatedInner) Grab(context.Context, string) (*search.GrabResult, error) {
 	return nil, errors.New("not implemented")
@@ -152,5 +153,151 @@ func TestSWRRefreshUsesSeparateSingleflightKey(t *testing.T) {
 	const key = "abc123"
 	if got := swrKey(key); got == key {
 		t.Fatalf("swrKey(%q) = %q, must differ from the bare cache key", key, got)
+	}
+}
+
+// swrBreakerTTL is keywordTTL with the negative-result breaker armed by an hour-long
+// window — long enough to still be open well past the refresh-ahead window this
+// file's breaker tests advance into (25m), unlike searchcache_breaker_test.go's
+// breakerTTL (a 1m window, chosen for its own tests' faster recovery timing).
+var swrBreakerTTL = ttlConfig{
+	rss: 5 * time.Minute, keyword: 30 * time.Minute, thin: 2 * time.Minute,
+	thinThreshold: 5, negative: time.Hour,
+}
+
+// TestSWRSkipsWhenBreakerOpen proves a stale-while-revalidate refresh is spared by an
+// already-open breaker (autobrr/harbrr#342): with the instance breaker tripped (by a
+// failing miss on a DIFFERENT key), a hit on the primed key past its refresh-ahead
+// threshold still serves the cached value immediately but must never re-drive the
+// tracker for the refresh — the funnel's breaker gate applies to triggerSWR exactly
+// as it does to a miss.
+func TestSWRSkipsWhenBreakerOpen(t *testing.T) {
+	t.Parallel()
+	sc, instID, clk := testCache(t, swrBreakerTTL, 80)
+
+	primeSet := relSet("p1", "p2", "p3", "p4", "p5", "p6")
+	inner := &fakeInner{releases: primeSet}
+	idx := sc.probe(inner, instID, nil)
+	primeQ := search.Query{Keywords: "primed"}
+
+	if _, err := idx.Search(context.Background(), primeQ); err != nil {
+		t.Fatalf("prime: %v", err)
+	}
+	if c := inner.callCount(); c != 1 {
+		t.Fatalf("prime call count = %d, want 1", c)
+	}
+
+	// Trip the breaker via a failing miss on a DIFFERENT key.
+	inner.mu.Lock()
+	inner.err = errors.New("down")
+	inner.mu.Unlock()
+	if _, err := idx.Search(context.Background(), search.Query{Keywords: "other"}); err == nil {
+		t.Fatal("want the tripping search to error")
+	}
+	if until := sc.breaker.openUntil(instID, sc.clock()); until.IsZero() {
+		t.Fatal("breaker was not tripped")
+	}
+
+	// Recover inner for what WOULD be a successful refresh, so a wrongly-fired refresh
+	// is unmistakable in the served/served-not assertion below.
+	inner.mu.Lock()
+	inner.err = nil
+	inner.releases = relSet("should-not-be-served")
+	inner.mu.Unlock()
+
+	// Advance into the primed key's refresh-ahead window (past 80% of 30m = 24m) but
+	// before expiry.
+	advance(clk, 25*time.Minute)
+
+	// Snapshot the per-instance suppressed count BEFORE the stale hit: neither the
+	// prime nor the tripping miss suppresses (the breaker was closed for both — the
+	// tripping miss TRIPS it, in fetchLive, after its own replay found it closed), so
+	// this is the baseline the SWR goroutine's suppression must move off of.
+	before := sc.counters(instID).suppressed.Load()
+
+	got, err := idx.Search(context.Background(), primeQ)
+	if err != nil {
+		t.Fatalf("stale hit while breaker open: %v", err)
+	}
+	if len(got) != 6 || got[0].Title != "p1" {
+		t.Fatalf("stale hit served %+v, want cached prime (SWR must not have run)", got)
+	}
+
+	// Bounded POSITIVE wait: poll for the suppressed counter to move off its baseline,
+	// proving the background SWR goroutine actually ran and was gated by the breaker
+	// (fetchLive -> breaker.replay -> breakerSuppressed/counters(instID).suppressed) —
+	// a fixed sleep here would be a toothless negative assertion, since a wrongly-fired
+	// SWR goroutine scheduled late on a loaded runner could still slip past it. If the
+	// counter never moves before the deadline, the refresh never even started and the
+	// call-count check below would be asserting nothing.
+	deadline := time.Now().Add(2 * time.Second)
+	for sc.counters(instID).suppressed.Load() == before {
+		if time.Now().After(deadline) {
+			t.Fatal("suppressed count never rose; the SWR refresh goroutine never ran")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if c := inner.callCount(); c != 2 {
+		t.Fatalf("inner called %d times, want 2 (prime + trip; the SWR refresh must have been spared)", c)
+	}
+}
+
+// TestFailedSWRTripsBreaker proves a background stale-while-revalidate refresh that
+// fails trips the breaker exactly as a foreground miss does (autobrr/harbrr#342): the
+// funnel gates AND learns from an SWR attempt, not just a miss.
+func TestFailedSWRTripsBreaker(t *testing.T) {
+	t.Parallel()
+	sc, instID, clk := testCache(t, swrBreakerTTL, 80)
+
+	primeSet := relSet("p1", "p2", "p3", "p4", "p5", "p6")
+	inner := &fakeInner{releases: primeSet}
+	idx := sc.probe(inner, instID, nil)
+	q := search.Query{Keywords: "swrtrip"}
+
+	if _, err := idx.Search(context.Background(), q); err != nil {
+		t.Fatalf("prime: %v", err)
+	}
+
+	// Flip inner to failing for the refresh.
+	inner.mu.Lock()
+	inner.err = errors.New("refresh failed")
+	inner.mu.Unlock()
+
+	advance(clk, 25*time.Minute) // past 80% of the 30m keyword TTL, before expiry
+
+	got, err := idx.Search(context.Background(), q)
+	if err != nil {
+		t.Fatalf("stale hit that fires the refresh: %v", err)
+	}
+	if len(got) != 6 || got[0].Title != "p1" {
+		t.Fatalf("stale hit served %+v, want cached prime", got)
+	}
+
+	// Wait deterministically for the (failing) background refresh to have actually run.
+	waitForCall(t, inner, 2)
+
+	// Bounded poll: the failed refresh's write-back happens after inner returns, so the
+	// breaker trip is not guaranteed visible the instant waitForCall returns.
+	deadline := time.Now().Add(2 * time.Second)
+	var until time.Time
+	for time.Now().Before(deadline) {
+		if until = sc.breaker.openUntil(instID, sc.clock()); !until.IsZero() {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if until.IsZero() {
+		t.Fatal("breaker openUntil is zero, want non-zero after the failed SWR refresh")
+	}
+
+	// Advance past the entry's own expiry so the next request is a genuine miss; with
+	// the breaker still open (1h window, well within it) it must be suppressed rather
+	// than re-driving the tracker.
+	advance(clk, 10*time.Minute) // now 35m > the 30m keyword TTL
+	if _, err := idx.Search(context.Background(), q); err == nil {
+		t.Fatal("want the suppressed breaker error on the next miss")
+	}
+	if c := inner.callCount(); c != 2 {
+		t.Fatalf("inner called %d times, want still 2 (prime + failed refresh; the miss must have been suppressed)", c)
 	}
 }

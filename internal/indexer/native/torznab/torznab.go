@@ -150,6 +150,11 @@ func (d *driver) NeedsResolver() bool { return d.needsResolver }
 // FileList and GazelleGames.
 func (d *driver) DownloadNeedsAuth() bool { return false }
 
+// ConsumesSearchMode is true: resolveMode routes q.Mode to a different t= function
+// upstream, so an RSS poll under a different mode is a distinct outbound request and
+// must keep its own cache key.
+func (d *driver) ConsumesSearchMode() bool { return true }
+
 // Test verifies the configured instance works (the management "test indexer" action)
 // via a cheap empty search; a non-XML body or a 401/403 both surface as
 // login.ErrLoginFailed so the registry records an auth_failure health event.

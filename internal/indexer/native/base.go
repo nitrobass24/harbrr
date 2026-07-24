@@ -112,6 +112,10 @@ func (b *Base) Capabilities() *mapper.Capabilities { return b.Caps }
 // offset/limit upstream. The usenet drivers (newznab, nzbindex) override it.
 func (b *Base) SupportsOffsetPaging() bool { return false }
 
+// ConsumesSearchMode is the Driver method's default: most families ignore
+// search.Query.Mode entirely. newznab, torznab, and animebytes override it.
+func (b *Base) ConsumesSearchMode() bool { return false }
+
 // Response is the owned result of a Do/DoDownload round-trip: the status, the
 // response headers (Set-Cookie for MyAnonamouse's rotation, Content-Type for a
 // grab), and the fully-read, capped, closed body. There is no live connection to

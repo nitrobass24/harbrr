@@ -45,6 +45,7 @@ func (d *fakeDriver) Capabilities() *mapper.Capabilities { return &mapper.Capabi
 func (d *fakeDriver) NeedsResolver() bool                { return false }
 func (d *fakeDriver) DownloadNeedsAuth() bool            { return false }
 func (d *fakeDriver) SupportsOffsetPaging() bool         { return false }
+func (d *fakeDriver) ConsumesSearchMode() bool           { return false }
 func (d *fakeDriver) Test(context.Context) error         { return nil }
 
 func (d *fakeDriver) Search(_ context.Context, _ search.Query) ([]*normalizer.Release, error) {

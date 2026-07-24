@@ -185,6 +185,7 @@ func (f *fixedReleasesIndexer) searchCount() int {
 func (f *fixedReleasesIndexer) NeedsResolver() bool        { return false }
 func (f *fixedReleasesIndexer) DownloadNeedsAuth() bool    { return false }
 func (f *fixedReleasesIndexer) SupportsOffsetPaging() bool { return false }
+func (f *fixedReleasesIndexer) ConsumesSearchMode() bool   { return false }
 func (f *fixedReleasesIndexer) Grab(_ context.Context, _ string) (*search.GrabResult, error) {
 	return &search.GrabResult{}, nil
 }

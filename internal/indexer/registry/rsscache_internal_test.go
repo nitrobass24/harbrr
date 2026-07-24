@@ -26,9 +26,14 @@ type countingDriver struct {
 	fakeDriver
 	caps  *mapper.Capabilities
 	calls atomic.Int64
+	// consumesMode overrides the embedded fakeDriver's always-false ConsumesSearchMode,
+	// for the #341 accuracy-guard case (a Mode-consuming driver keeps a per-mode key).
+	consumesMode bool
 }
 
 func (d *countingDriver) Capabilities() *mapper.Capabilities { return d.caps }
+
+func (d *countingDriver) ConsumesSearchMode() bool { return d.consumesMode }
 
 func (d *countingDriver) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
 	d.calls.Add(1)
@@ -157,5 +162,74 @@ func TestKeywordSearchStillKeysByCategory(t *testing.T) {
 	}
 	if got := inner.calls.Load(); got != 2 {
 		t.Fatalf("tracker called %d times for 2 differently-categorized keyword searches, want 2 (keyword path unchanged)", got)
+	}
+}
+
+// TestRSSEmptyQueryCollapsesAcrossMode is the #341 regression: an RSS/empty poll's
+// Mode (the Torznab t= a consumer arrives under — tv-search/movie-search/search/none)
+// collapses onto ONE cache key for a driver that never reads Mode, exactly like the
+// #249 category collapse above. A Mode-CONSUMING driver (newznab/torznab/animebytes'
+// shape) keeps a per-mode key instead — the accuracy guard proving the collapse is
+// scoped to drivers that actually ignore Mode.
+func TestRSSEmptyQueryCollapsesAcrossMode(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	modes := []string{"tv-search", "movie-search", "search", ""}
+
+	t.Run("non-consuming driver collapses every mode onto one key", func(t *testing.T) {
+		t.Parallel()
+		inner := &countingDriver{fakeDriver: fakeDriver{releases: rssCacheFixture()}, caps: rssCacheCaps(t)}
+		idx := newRSSCacheAdapter(t, inner)
+
+		for _, mode := range modes {
+			if _, err := idx.Search(ctx, search.Query{Mode: mode}); err != nil {
+				t.Fatalf("mode %q: Search: %v", mode, err)
+			}
+		}
+		if got := inner.calls.Load(); got != 1 {
+			t.Fatalf("tracker (inner) called %d times across %d differently-mode RSS polls on a non-consuming driver, want 1 (one canonical cache entry)", got, len(modes))
+		}
+	})
+
+	t.Run("mode-consuming driver keeps a per-mode key", func(t *testing.T) {
+		t.Parallel()
+		inner := &countingDriver{fakeDriver: fakeDriver{releases: rssCacheFixture()}, caps: rssCacheCaps(t), consumesMode: true}
+		idx := newRSSCacheAdapter(t, inner)
+
+		for _, mode := range modes {
+			if _, err := idx.Search(ctx, search.Query{Mode: mode}); err != nil {
+				t.Fatalf("mode %q: Search: %v", mode, err)
+			}
+		}
+		if got := inner.calls.Load(); got != int64(len(modes)) {
+			t.Fatalf("tracker (inner) called %d times across %d differently-mode RSS polls on a MODE-CONSUMING driver, want %d (per-mode keys preserved)", got, len(modes), len(modes))
+		}
+	})
+}
+
+// TestRSSWarmPrimesTheKeyAConsumerPollReads is the warm round-trip headline
+// regression (#341): the warmer's exact call shape — adapter.Search(core.
+// WithCacheBypass(ctx), search.Query{}) — must prime the SAME cache key a real
+// consumer's RSS poll (arriving under some Torznab Mode, e.g. tv-search) reads, on a
+// driver that does not consume Mode. Before this fix the warm's Mode ("") never
+// matched a consumer's Mode ("tv-search") in the cache key, so the warm was dead
+// weight: every consumer poll still missed and re-hit the tracker.
+func TestRSSWarmPrimesTheKeyAConsumerPollReads(t *testing.T) {
+	t.Parallel()
+	inner := &countingDriver{fakeDriver: fakeDriver{releases: rssCacheFixture()}, caps: rssCacheCaps(t)}
+	idx := newRSSCacheAdapter(t, inner)
+	ctx := context.Background()
+
+	// The warmer's exact call: cache-bypass forces a live fetch + store.
+	if _, err := idx.Search(core.WithCacheBypass(ctx), search.Query{}); err != nil {
+		t.Fatalf("warm: Search: %v", err)
+	}
+	// A real consumer poll, arriving under a Torznab mode, with no cache bypass.
+	if _, err := idx.Search(ctx, search.Query{Mode: "tv-search"}); err != nil {
+		t.Fatalf("consumer poll: Search: %v", err)
+	}
+
+	if got := inner.calls.Load(); got != 1 {
+		t.Fatalf("tracker (inner) called %d times across 1 warm + 1 consumer poll, want 1 (the warm must prime the key the poll reads)", got)
 	}
 }

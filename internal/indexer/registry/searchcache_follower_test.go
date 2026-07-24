@@ -32,6 +32,7 @@ func (s *seqInner) Capabilities() *mapper.Capabilities { return &mapper.Capabili
 func (s *seqInner) NeedsResolver() bool                { return false }
 func (s *seqInner) DownloadNeedsAuth() bool            { return false }
 func (s *seqInner) SupportsOffsetPaging() bool         { return false }
+func (s *seqInner) ConsumesSearchMode() bool           { return false }
 
 func (s *seqInner) Grab(context.Context, string) (*search.GrabResult, error) {
 	return nil, errors.New("not implemented")
@@ -143,6 +144,7 @@ func (c *cancelOnSearchInner) Capabilities() *mapper.Capabilities { return &mapp
 func (c *cancelOnSearchInner) NeedsResolver() bool                { return false }
 func (c *cancelOnSearchInner) DownloadNeedsAuth() bool            { return false }
 func (c *cancelOnSearchInner) SupportsOffsetPaging() bool         { return false }
+func (c *cancelOnSearchInner) ConsumesSearchMode() bool           { return false }
 
 func (c *cancelOnSearchInner) Grab(context.Context, string) (*search.GrabResult, error) {
 	return nil, errors.New("not implemented")
@@ -187,11 +189,21 @@ func TestServeMissReturnsOwnCancellation(t *testing.T) {
 // coalesceInner blocks its FIRST (leader) Search on leaderRelease and then returns the
 // leader ctx's error; every later (follower fallback) Search returns followerResults. It
 // drives the realistic end-to-end coalescing scenario in TestSingleflightFollower...
+//
+// The SECOND call (the follower retry flight — autobrr/harbrr#342) optionally blocks on
+// retryRelease too, signaling retrySeen on entry: this lets a test hold the retry flight
+// open long enough for a SECOND follower to coalesce onto it (proving retryMissFlight
+// re-coalesces surviving followers instead of each running its own independent live
+// search). Both fields are nil in the original single-follower test, where the second
+// call must return immediately — a nil retryRelease skips the gate entirely.
 type coalesceInner struct {
 	calls           int64
 	firstSeen       chan struct{}
 	firstOnce       sync.Once
 	leaderRelease   chan struct{}
+	retrySeen       chan struct{}
+	retryOnce       sync.Once
+	retryRelease    chan struct{}
 	followerResults []*normalizer.Release
 }
 
@@ -202,16 +214,24 @@ func (c *coalesceInner) Capabilities() *mapper.Capabilities { return &mapper.Cap
 func (c *coalesceInner) NeedsResolver() bool                { return false }
 func (c *coalesceInner) DownloadNeedsAuth() bool            { return false }
 func (c *coalesceInner) SupportsOffsetPaging() bool         { return false }
+func (c *coalesceInner) ConsumesSearchMode() bool           { return false }
 
 func (c *coalesceInner) Grab(context.Context, string) (*search.GrabResult, error) {
 	return nil, errors.New("not implemented")
 }
 
+func (c *coalesceInner) callCount() int64 { return atomic.LoadInt64(&c.calls) }
+
 func (c *coalesceInner) Search(ctx context.Context, _ search.Query) ([]*normalizer.Release, error) {
-	if atomic.AddInt64(&c.calls, 1) == 1 {
+	n := atomic.AddInt64(&c.calls, 1)
+	if n == 1 {
 		c.firstOnce.Do(func() { close(c.firstSeen) })
 		<-c.leaderRelease
 		return nil, ctx.Err() // the leader's context error (its client went away)
+	}
+	if n == 2 && c.retryRelease != nil {
+		c.retryOnce.Do(func() { close(c.retrySeen) })
+		<-c.retryRelease
 	}
 	return c.followerResults, nil
 }
@@ -292,6 +312,114 @@ func TestSingleflightFollowerSurvivesLeaderCancel(t *testing.T) {
 	}
 	if !errors.Is(leaderErr, context.Canceled) {
 		t.Fatalf("leader returned %v (releases %+v), want context.Canceled", leaderErr, leaderReleases)
+	}
+}
+
+// TestFollowersCoalesceOnLeaderCancel extends TestSingleflightFollowerSurvivesLeaderCancel
+// to TWO followers (autobrr/harbrr#342): the leader's client disconnects mid-fetch, and
+// BOTH followers inherit the cancellation while their own contexts stay live.
+// retryMissFlight's job is to re-coalesce every surviving follower onto ONE fresh flight
+// rather than each running its own independent live search — this proves that: the
+// tracker is hit exactly twice total (the leader's original attempt + ONE retry), never
+// three times (a follower stampede), and both followers still get fresh results.
+//
+// Determinism mirrors the single-follower test: the leader's live fetch parks on
+// leaderRelease so its flight stays open until released; the retry flight (inner's
+// second call) similarly parks on retryRelease so BOTH followers have time to coalesce
+// onto it before it completes.
+func TestFollowersCoalesceOnLeaderCancel(t *testing.T) {
+	t.Parallel()
+	sc, instID, _ := testCache(t, keywordTTL, 0)
+
+	inner := &coalesceInner{
+		firstSeen:       make(chan struct{}),
+		leaderRelease:   make(chan struct{}),
+		retrySeen:       make(chan struct{}),
+		retryRelease:    make(chan struct{}),
+		followerResults: relSet("f1", "f2"),
+	}
+	idx := sc.probe(inner, instID, nil)
+	q := search.Query{Keywords: "stampede"}
+
+	leaderCtx, cancelLeader := context.WithCancel(context.Background())
+	defer cancelLeader()
+
+	var (
+		leaderErr  error
+		leaderDone = make(chan struct{})
+	)
+	go func() {
+		defer close(leaderDone)
+		_, leaderErr = idx.Search(leaderCtx, q)
+	}()
+
+	select {
+	case <-inner.firstSeen:
+	case <-time.After(2 * time.Second):
+		t.Fatal("leader never entered the live search")
+	}
+
+	type followerOutcome struct {
+		releases []*normalizer.Release
+		err      error
+	}
+	const numFollowers = 2
+	followerDone := make([]chan followerOutcome, numFollowers)
+	for i := range followerDone {
+		ch := make(chan followerOutcome, 1)
+		followerDone[i] = ch
+		go func() {
+			r, e := idx.Search(context.Background(), q)
+			ch <- followerOutcome{releases: r, err: e}
+		}()
+	}
+
+	// Both followers have reached serveMiss (leader + 2 followers == 3 misses); yield so
+	// they enter the leader's still-open flight and coalesce before it is released.
+	waitForMisses(t, sc, 1+numFollowers)
+	for range 100 {
+		runtime.Gosched()
+	}
+
+	// The leader's client goes away: cancel its ctx, then release its blocked fetch so it
+	// returns context.Canceled into the shared flight, inherited by both followers.
+	cancelLeader()
+	close(inner.leaderRelease)
+	<-leaderDone
+	if !errors.Is(leaderErr, context.Canceled) {
+		t.Fatalf("leader returned %v, want context.Canceled", leaderErr)
+	}
+
+	// Both followers must now re-coalesce onto ONE fresh retry flight instead of each
+	// running an independent live search. Wait for the retry to actually start, yield so
+	// BOTH followers have a chance to reach the retry's sf.Do before it completes, then
+	// release it.
+	select {
+	case <-inner.retrySeen:
+	case <-time.After(2 * time.Second):
+		t.Fatal("retry flight never started")
+	}
+	for range 100 {
+		runtime.Gosched()
+	}
+	close(inner.retryRelease)
+
+	for i, ch := range followerDone {
+		select {
+		case res := <-ch:
+			if res.err != nil {
+				t.Fatalf("follower %d returned error %v, want its own fresh results", i, res.err)
+			}
+			if len(res.releases) != 2 || res.releases[0].Title != "f1" {
+				t.Fatalf("follower %d served %+v, want f1/f2", i, res.releases)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("follower %d never returned", i)
+		}
+	}
+
+	if c := inner.callCount(); c != 2 {
+		t.Fatalf("inner called %d times, want 2 (leader + ONE retry flight, not a follower stampede)", c)
 	}
 }
 

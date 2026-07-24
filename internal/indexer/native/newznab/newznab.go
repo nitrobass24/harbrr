@@ -119,6 +119,11 @@ func (d *driver) DownloadNeedsAuth() bool { return true }
 // native.Driver contract, which the registry adapter and search-cache layer read directly.
 func (d *driver) SupportsOffsetPaging() bool { return true }
 
+// ConsumesSearchMode is true: fillModeParams routes q.Mode to a different t=
+// function (tvsearch/movie/music/book), so an RSS poll under a different mode is a
+// distinct outbound request and must keep its own cache key.
+func (d *driver) ConsumesSearchMode() bool { return true }
+
 // Test verifies the instance is usable (the management "test indexer" action) and eagerly
 // primes the caps cache. The caps fetch both validates the apikey/baseUrl (a 401/403 or a
 // Newznab auth error envelope surfaces as login.ErrLoginFailed) and discovers the remote

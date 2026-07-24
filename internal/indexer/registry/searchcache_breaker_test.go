@@ -127,11 +127,16 @@ func TestBreakerServesFreshCacheWhileOpen(t *testing.T) {
 	}
 }
 
-// TestBreakerBypassForcesLive proves a CacheBypass request ignores an open breaker
-// and drives the tracker (operator override).
-func TestBreakerBypassForcesLive(t *testing.T) {
+// TestBreakerBypassSkipsCacheButRespectsBreaker proves a CacheBypass request skips the
+// CACHE read/write (so even a fresh entry would still route to a live attempt) but no
+// longer bypasses the negative breaker: since autobrr/harbrr#342, a bypass request
+// routes through liveAndStore -> fetchLive exactly like every other outbound attempt,
+// so the SAME still-open breaker window suppresses it too. nocache bypasses the
+// CACHE, not the whole outbound protection stack. This supersedes the previous
+// "bypass forces live regardless of the breaker" behavior.
+func TestBreakerBypassSkipsCacheButRespectsBreaker(t *testing.T) {
 	t.Parallel()
-	sc, instID, _ := testCache(t, breakerTTL, 0)
+	sc, instID, clk := testCache(t, breakerTTL, 0)
 	inner := &fakeInner{err: errors.New("down")}
 	idx := sc.probe(inner, instID, nil)
 	q := search.Query{Keywords: "x"}
@@ -140,20 +145,31 @@ func TestBreakerBypassForcesLive(t *testing.T) {
 	if _, err := idx.Search(context.Background(), q); err == nil {
 		t.Fatal("want trip error")
 	}
-	// Recover the tracker and force a live request despite the open breaker.
+
+	// Recover the tracker, but the breaker window (1m) is still open: a bypass request
+	// must be suppressed too, not force a live hit.
 	inner.mu.Lock()
 	inner.err = nil
 	inner.releases = relSet("Live")
 	inner.mu.Unlock()
+	if _, err := idx.Search(core.WithCacheBypass(context.Background()), q); err == nil {
+		t.Fatal("want the bypass request suppressed by the still-open breaker")
+	}
+	if c := inner.callCount(); c != 1 {
+		t.Fatalf("inner called %d times, want 1 (trip only; the open breaker suppressed the bypass)", c)
+	}
+
+	// Past the window, a bypass request forces a live hit again.
+	advance(clk, time.Minute+time.Second)
 	got, err := idx.Search(core.WithCacheBypass(context.Background()), q)
 	if err != nil {
-		t.Fatalf("bypass: %v", err)
+		t.Fatalf("bypass after the window lapsed: %v", err)
 	}
 	if len(got) != 1 || got[0].Title != "Live" {
 		t.Fatalf("bypass served %+v, want live", got)
 	}
 	if c := inner.callCount(); c != 2 {
-		t.Fatalf("inner called %d times, want 2 (trip + bypass)", c)
+		t.Fatalf("inner called %d times, want 2 (trip + recovered bypass)", c)
 	}
 }
 
@@ -251,9 +267,12 @@ func TestTripBreakerSkipsFollowerInheritedCancel(t *testing.T) {
 // instead of being suppressed.
 //
 // With U8R-F5 the live-ctx follower now also re-runs its OWN live search when the flight
-// returns an inherited context error, so the FIRST search calls inner twice (the coalesced
-// flight + the fallback) before surfacing the still-cancelling error; the recovery search
-// is the third call. The breaker staying closed — proven by the recover-and-serve — is the
+// returns an inherited context error. With autobrr/harbrr#342's retryMissFlight, that
+// recovery is itself ONE re-coalesced retry (not an immediate un-coalesced fallback), so
+// when even the retry inherits the same (synthetic, always-cancelling) error, the FIRST
+// search calls inner three times (the coalesced flight + the retry + the bounded
+// fallback) before surfacing the still-cancelling error; the recovery search is the
+// fourth call. The breaker staying closed — proven by the recover-and-serve — is the
 // invariant under test.
 func TestBreakerNotTrippedByInheritedCancelOnSearch(t *testing.T) {
 	t.Parallel()
@@ -277,8 +296,8 @@ func TestBreakerNotTrippedByInheritedCancelOnSearch(t *testing.T) {
 	if len(got) != 1 || got[0].Title != "OK" {
 		t.Fatalf("second search = %+v, want live OK (not suppressed)", got)
 	}
-	if c := inner.callCount(); c != 3 {
-		t.Fatalf("inner called %d times, want 3 (flight + U8R-F5 fallback, then recovery; cancel did not trip the breaker)", c)
+	if c := inner.callCount(); c != 4 {
+		t.Fatalf("inner called %d times, want 4 (flight + retry + fallback, then recovery; cancel did not trip the breaker)", c)
 	}
 }
 

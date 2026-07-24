@@ -44,6 +44,7 @@ func (f *resolverFakeIndexer) Capabilities() *mapper.Capabilities { return f.cap
 func (f *resolverFakeIndexer) NeedsResolver() bool                { return true }
 func (f *resolverFakeIndexer) DownloadNeedsAuth() bool            { return false }
 func (f *resolverFakeIndexer) SupportsOffsetPaging() bool         { return false }
+func (f *resolverFakeIndexer) ConsumesSearchMode() bool           { return false }
 
 func (f *resolverFakeIndexer) Search(context.Context, search.Query) ([]*normalizer.Release, error) {
 	f.calls++

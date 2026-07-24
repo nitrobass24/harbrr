@@ -52,11 +52,25 @@ func (rt *router) importBackup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "payload is not valid base64")
 		return
 	}
+	// Capture the pre-restore ids best-effort: a failed listing must not block the
+	// restore (the ids are only an eviction nicety — InvalidateAll below is the
+	// load-bearing part).
+	insts, _ := rt.registry.List(r.Context())
 	if err := rt.backup.Import(r.Context(), backup.ImportParams{
 		Payload: payload, Passphrase: req.Passphrase, Force: req.Force,
 	}); err != nil {
 		rt.writeServiceError(w, "import backup", err)
 		return
 	}
+	// A restore wipes and re-inserts every indexer instance under a NEW id, but the
+	// resolver still maps each slug to an adapter bound to the pre-restore config and
+	// a now-deleted id: without this, restored slugs keep serving stale engines and
+	// every write-back FK-fails until process restart.
+	rt.registry.InvalidateAll()
+	ids := make([]int64, 0, len(insts))
+	for _, inst := range insts {
+		ids = append(ids, inst.ID)
+	}
+	rt.registry.ForgetInstances(r.Context(), ids...)
 	w.WriteHeader(http.StatusNoContent)
 }

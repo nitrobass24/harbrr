@@ -42,6 +42,16 @@ type Searcher interface {
 	// answers false too (search.go / engine.go), so the registry adapter and the
 	// search-cache layer read one unconditional signal off the wrapped driver.
 	SupportsOffsetPaging() bool
+	// ConsumesSearchMode reports whether the driver reads search.Query.Mode to route
+	// the request to a different upstream search namespace (newznab/torznab forward
+	// t= upstream; AnimeBytes routes music-search to its music corpus). It is part of
+	// the core contract for the same reason SupportsOffsetPaging is: the registry's
+	// empty-query RSS canonicalization (#341) must know whether clearing Mode on an
+	// RSS/empty poll is safe. Base's default (false) covers every driver that ignores
+	// Mode, so those drivers' RSS polls collapse onto ONE cache key regardless of the
+	// requesting consumer's t=; a consuming driver keeps a per-mode key, trading a
+	// dead warmer write for per-mode accuracy.
+	ConsumesSearchMode() bool
 	Grab(ctx context.Context, link string) (*search.GrabResult, error)
 }
 
