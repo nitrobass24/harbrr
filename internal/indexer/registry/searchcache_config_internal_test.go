@@ -137,6 +137,92 @@ func TestUpdateConfigPersistsOnlyPatched(t *testing.T) {
 	}
 }
 
+// TestLoadOverridesCorruptionGuards proves LoadOverrides' per-key guards (the
+// production code already has them; this pins the behavior with tests -
+// autobrr/harbrr#351): a malformed or non-positive persisted TTL is ignored and the
+// config-file-seeded value stands; an out-of-range field fails Validate and the
+// WHOLE overlay is discarded (not just the bad field); the one field that
+// legitimately overlays zero (negative_ttl, breaker-disable) still applies; and a
+// fully valid overlay applies.
+func TestLoadOverridesCorruptionGuards(t *testing.T) {
+	t.Parallel()
+
+	// negSeed starts negative_ttl non-zero so a stored "0s" overlay is observably a
+	// change, not just the already-zero default.
+	negSeed := seedTTL()
+	negSeed.negative = 30 * time.Second
+
+	tests := []struct {
+		name string
+		ttl  ttlConfig
+		kv   map[string]string
+		want func(seed CacheConfigView) CacheConfigView
+	}{
+		{
+			name: "unparseable TTL duration ignored",
+			ttl:  seedTTL(),
+			kv:   map[string]string{keyCacheRSSTTL: "banana"},
+			want: func(v CacheConfigView) CacheConfigView { return v },
+		},
+		{
+			name: "zero TTL duration ignored",
+			ttl:  seedTTL(),
+			kv:   map[string]string{keyCacheKeywordTTL: "0s"},
+			want: func(v CacheConfigView) CacheConfigView { return v },
+		},
+		{
+			name: "negative TTL duration ignored",
+			ttl:  seedTTL(),
+			kv:   map[string]string{keyCacheThinTTL: "-5m"},
+			want: func(v CacheConfigView) CacheConfigView { return v },
+		},
+		{
+			name: "negative_ttl zero applies (breaker-disable roundtrip)",
+			ttl:  negSeed,
+			kv:   map[string]string{keyCacheNegativeTTL: "0s"},
+			want: func(v CacheConfigView) CacheConfigView { v.NegativeTTL = 0; return v },
+		},
+		{
+			name: "out-of-range refresh_ahead_pct rejects the entire overlay",
+			ttl:  seedTTL(),
+			// rss_ttl would apply cleanly on its own; it must be discarded too, since
+			// Validate rejects the WHOLE merged view, not field-by-field.
+			kv:   map[string]string{keyCacheRefreshAhead: "150", keyCacheRSSTTL: "9m"},
+			want: func(v CacheConfigView) CacheConfigView { return v },
+		},
+		{
+			name: "valid overlay applies",
+			ttl:  seedTTL(),
+			kv:   map[string]string{keyCacheRSSTTL: "9m", keyCacheRefreshAhead: "42"},
+			want: func(v CacheConfigView) CacheConfigView {
+				v.RSSTTL = 9 * time.Minute
+				v.RefreshAheadPct = 42
+				return v
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			sc, _, _ := testCache(t, tt.ttl, 80)
+			ctx := context.Background()
+			for k, v := range tt.kv {
+				if err := (database.AppSettings{}).Set(ctx, sc.db, k, v, sc.clock()); err != nil {
+					t.Fatalf("seed app_settings %s=%q: %v", k, v, err)
+				}
+			}
+			before := sc.Config()
+			if err := sc.LoadOverrides(ctx); err != nil {
+				t.Fatalf("LoadOverrides: %v", err)
+			}
+			if want := tt.want(before); sc.Config() != want {
+				t.Errorf("Config after LoadOverrides = %+v, want %+v", sc.Config(), want)
+			}
+		})
+	}
+}
+
 // TestSearchCacheEnabledGate proves the runtime enabled toggle: disabled bypasses
 // the cache entirely (every search hits the inner indexer), enabled caches.
 func TestSearchCacheEnabledGate(t *testing.T) {

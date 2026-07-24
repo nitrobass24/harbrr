@@ -317,8 +317,18 @@ func (c *SearchCache) tripBreaker(ctx context.Context, instanceID int64, err err
 
 // serveHit returns the decoded cached slice immediately, bumps the hit counters,
 // records a Touch (async, best-effort), and fires a single refresh-ahead when the
-// entry is past its refresh threshold.
+// entry is past its refresh threshold. Before any of that it clamps the entry to
+// effectiveExpiry: if the CURRENT tuning would no longer grant it a positive TTL
+// (e.g. an operator just lowered a tier), it is treated as a miss and routed
+// through the same missPath a stored-but-absent entry uses, so the fresh live
+// search overwrites the row instead of the response serving content that is stale
+// under today's config. Otherwise the effective (not stored) expiry is what gets
+// surfaced in the CacheInfo, so HTTP validators/max-age reflect the clamp.
 func (c *SearchCache) serveHit(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, live liveSearchFn, q search.Query, key string, entry database.SearchCacheEntry) ([]*normalizer.Release, error) {
+	effective := c.effectiveExpiry(entry, cfg, q)
+	if !effective.After(c.clock()) {
+		return c.missPath(ctx, instanceID, cfg, builtEpoch, live, q, key)
+	}
 	releases, err := decodeReleases(entry.ResultsJSON, key)
 	if err != nil {
 		// A corrupt payload is treated as a miss: never fail the search over it.
@@ -328,12 +338,30 @@ func (c *SearchCache) serveHit(ctx context.Context, instanceID int64, cfg map[st
 	}
 	c.hits.Add(1)
 	c.counters(instanceID).hits.Add(1)
-	c.recordCacheInfo(ctx, core.CacheInfo{Cached: true, ExpiresAt: entry.ExpiresAt})
+	c.recordCacheInfo(ctx, core.CacheInfo{Cached: true, ExpiresAt: effective})
 	c.recordTouch(key)
-	if c.shouldRefreshAhead(entry) {
+	if c.shouldRefreshAhead(entry, effective) {
 		c.triggerSWR(ctx, instanceID, cfg, builtEpoch, live, q, key)
 	}
 	return releases, nil
+}
+
+// effectiveExpiry returns the expiry entry would receive if it were freshly stored
+// right now, under the CURRENT tuning, clamped to never exceed its actual stored
+// ExpiresAt: min(entry.ExpiresAt, entry.CachedAt + resolveTTL(cfg, q,
+// entry.TotalResults)). This makes a TTL tier LOWERED via UpdateConfig take effect
+// on already-stored rows immediately, one read at a time, instead of only once
+// their original (now too generous) expiry lapses — the only other remedy being a
+// full cache flush. A RAISED tier deliberately does NOT extend a stored row past
+// its own ExpiresAt (the min never exceeds the stored value); that requires a fresh
+// live fetch. resolveTTL's own thin clamp and warm floor apply exactly as they
+// would to a fresh store of this same result, by construction.
+func (c *SearchCache) effectiveExpiry(entry database.SearchCacheEntry, cfg map[string]string, q search.Query) time.Time {
+	fresh := entry.CachedAt.Add(c.tuning.Load().ttl.resolveTTL(cfg, q, entry.TotalResults))
+	if fresh.Before(entry.ExpiresAt) {
+		return fresh
+	}
+	return entry.ExpiresAt
 }
 
 // serveMiss runs the live search under singleflight (so concurrent identical misses
@@ -375,12 +403,22 @@ func (c *SearchCache) serveMiss(ctx context.Context, instanceID int64, cfg map[s
 // single outbound funnel, so this is also where the negative breaker gates and learns
 // — and stores a success best-effort. The returned error is already wrapped by
 // liveAndStore/the adapter, so it is passed through unwrapped.
+//
+// The double-check is subject to the same effectiveExpiry clamp as serveHit: without
+// it, a request routed HERE precisely because serveHit judged the stored row too old
+// under the CURRENT tuning would immediately re-read that identical (DB-unexpired)
+// row and serve it straight back, silently undoing the clamp instead of driving a
+// fresh fetch. A row a genuine race-loser reads here was written moments ago under
+// the current tuning, so its effective expiry is its stored one — the clamp is a
+// no-op for the case the double-check exists for.
 func (c *SearchCache) missFlight(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, live liveSearchFn, q search.Query, key string) func() (any, error) {
 	return func() (any, error) {
 		if entry, found, ferr := c.store.Fetch(ctx, c.db, key, c.clock()); ferr == nil && found {
-			if releases, derr := decodeReleases(entry.ResultsJSON, key); derr == nil {
-				info := core.CacheInfo{Cached: true, ExpiresAt: entry.ExpiresAt}
-				return missResult{releases: releases, info: info}, nil
+			if effective := c.effectiveExpiry(entry, cfg, q); effective.After(c.clock()) {
+				if releases, derr := decodeReleases(entry.ResultsJSON, key); derr == nil {
+					info := core.CacheInfo{Cached: true, ExpiresAt: effective}
+					return missResult{releases: releases, info: info}, nil
+				}
 			}
 		}
 		releases, info, lerr := c.liveAndStore(ctx, instanceID, cfg, builtEpoch, live, q, key)
@@ -617,14 +655,19 @@ func (c *SearchCache) FlushTouches(ctx context.Context) {
 
 // shouldRefreshAhead reports whether a hit is old enough to trigger a background
 // refresh: it is true once the fraction of the entry's lifetime that has elapsed
-// reaches refreshAt percent. It uses cached_at/expires_at (the entry's real
-// lifetime), never now+ttl. A non-positive percentage disables refresh-ahead.
-func (c *SearchCache) shouldRefreshAhead(entry database.SearchCacheEntry) bool {
+// reaches refreshAt percent. The lifetime is measured against effective — the same
+// clamped expiry serveHit's hit/miss decision uses — not the stored expires_at:
+// with a LOWERED tier, the stored lifetime would push the trigger point to or past
+// the clamped miss boundary, so the async pre-refresh would never fire and every
+// consumer would take the synchronous miss latency instead. For an unclamped entry
+// effective equals the stored expiry, so behavior is unchanged. A non-positive
+// percentage disables refresh-ahead.
+func (c *SearchCache) shouldRefreshAhead(entry database.SearchCacheEntry, effective time.Time) bool {
 	refreshAt := c.tuning.Load().refreshAt
 	if refreshAt <= 0 {
 		return false
 	}
-	lifetime := entry.ExpiresAt.Sub(entry.CachedAt)
+	lifetime := effective.Sub(entry.CachedAt)
 	if lifetime <= 0 {
 		return false
 	}
