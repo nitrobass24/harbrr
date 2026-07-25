@@ -9,7 +9,9 @@ import (
 
 // SearchCacheStats is the management view of the cache: the durable row-derived
 // figures plus the hit-ratio counters. Hits/Misses/HitRatio/BreakerSuppressed survive
-// a restart (persisted via counterStore); the rest are read from the store.
+// a restart (persisted via counterStore); the rest are read from the store — notably
+// TotalHits is a live SUM over rows CURRENTLY cached, so it is NOT cumulative and
+// falls (including to 0) whenever those rows are reaped.
 type SearchCacheStats struct {
 	Entries         int64
 	TotalHits       int64
@@ -29,8 +31,11 @@ type SearchCacheStats struct {
 
 // InstanceCacheStats is one instance's merged cache observability: the durable
 // row-derived figures (HitsSaved/Entries/ApproxSizeBytes) plus the in-memory counters
-// (persisted across restarts) and the live breaker state. HitsSaved is the headline
-// "tracker requests this indexer served from cache" figure.
+// (persisted across restarts) and the live breaker state. HitsSaved is a live SUM of
+// per-entry hit counts over rows CURRENTLY cached for this instance — it is NOT
+// cumulative and falls (including to 0) whenever those rows are reaped (cleanup,
+// flush, or an invalidation). The headline "tracker requests this indexer served
+// from cache" figure is Hits (the cumulative, restart-persisted counter below).
 type InstanceCacheStats struct {
 	InstanceID        int64
 	Entries           int64
@@ -130,6 +135,22 @@ func sortedInstanceStats(merged map[int64]*InstanceCacheStats) []InstanceCacheSt
 // the hit/miss counters (they are cumulative and monotonic, with no reset path).
 func (c *SearchCache) Flush(ctx context.Context) (int64, error) {
 	n, err := c.store.Flush(ctx, c.db)
+	if err != nil {
+		return 0, err //nolint:wrapcheck // store wraps with context; nothing secret to add.
+	}
+	return n, nil
+}
+
+// ExpireAll marks every currently-live cache entry expired — WITHOUT deleting it —
+// and returns the count affected. It backs boot-time def-content-change detection
+// (EnsureDefsFingerprint in searchcache_config.go, autobrr/harbrr#347): a
+// definitions upgrade or dropin edit must stop old-shape entries from serving
+// immediately, but — unlike Flush — the rows must survive so the announce-source
+// diff (priorGUIDs, via FetchAny) and the #251 budget-exhausted stale serve
+// (fetchStale) keep reading them. cacheReapGrace still reaps them, just later than
+// an ordinary TTL expiry would.
+func (c *SearchCache) ExpireAll(ctx context.Context) (int64, error) {
+	n, err := c.store.ExpireAll(ctx, c.db, c.clock())
 	if err != nil {
 		return 0, err //nolint:wrapcheck // store wraps with context; nothing secret to add.
 	}

@@ -17,11 +17,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu"
+import { HostPortFields } from "@/components/forms/HostPortFields"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { useApps, useDeleteApp, useUpdateApp } from "@/hooks/useApps"
 import { hostname } from "@/lib/format"
+import { composeHostURL, decomposeHostURL } from "@/lib/hosturl"
 import { notifySuccess } from "@/lib/notify"
 import type { App, UpdateApp } from "@/lib/api"
 
@@ -165,8 +167,16 @@ function AppForm({ app, pending, error, onSubmit }: {
   error: unknown
   onSubmit: (body: UpdateApp) => void
 }) {
+  // Most Apps store an absolute http(s) URL, which splits cleanly into scheme/host/port
+  // for editing. A Deluge App's identity is a bare "host:port" daemon address — not a
+  // URL — so it falls back to the raw single field: guessing a scheme to force the
+  // split would corrupt the App identity on save (dedup is exact string equality).
+  const split = decomposeHostURL(app.baseUrl)
   const [name, setName] = useState(app.name)
-  const [baseUrl, setBaseUrl] = useState(app.baseUrl)
+  const [scheme, setScheme] = useState<"http" | "https">(split?.scheme ?? "http")
+  const [host, setHost] = useState(split?.host ?? "")
+  const [port, setPort] = useState(split?.port ?? "")
+  const [rawBaseUrl, setRawBaseUrl] = useState(app.baseUrl)
   const [username, setUsername] = useState(app.username)
   const [harbrrUrl, setHarbrrUrl] = useState(app.harbrrUrl)
   const [apiKey, setApiKey] = useState("")
@@ -179,7 +189,8 @@ function AppForm({ app, pending, error, onSubmit }: {
       onSubmit={(e) => {
         e.preventDefault()
         onSubmit({
-          name, baseUrl, username, harbrrUrl, enabled,
+          name, username, harbrrUrl, enabled,
+          baseUrl: split ? composeHostURL(scheme, host, port) : rawBaseUrl,
           ...(apiKey !== "" ? { apiKey } : {}), // omit = keep the stored credential
         })
       }}
@@ -195,16 +206,19 @@ function AppForm({ app, pending, error, onSubmit }: {
         <p className="rounded-md border border-bad/40 bg-bad/10 px-3 py-2 text-[13px] text-bad">{message}</p>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
-        <span className="flex flex-col gap-1.5">
-          <Label htmlFor="app-name">Name</Label>
-          <Input id="app-name" value={name} onChange={(e) => setName(e.target.value)} />
-        </span>
+      <span className="flex flex-col gap-1.5">
+        <Label htmlFor="app-name">Name</Label>
+        <Input id="app-name" value={name} onChange={(e) => setName(e.target.value)} />
+      </span>
+
+      {split ? (
+        <HostPortFields idPrefix="app" scheme={scheme} host={host} port={port} onScheme={setScheme} onHost={setHost} onPort={setPort} />
+      ) : (
         <span className="flex flex-col gap-1.5">
           <Label htmlFor="app-baseurl">Base URL</Label>
-          <Input id="app-baseurl" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
+          <Input id="app-baseurl" value={rawBaseUrl} onChange={(e) => setRawBaseUrl(e.target.value)} />
         </span>
-      </div>
+      )}
 
       <span className="flex flex-col gap-1.5">
         <Label htmlFor="app-username">Username <span className="text-faint">(only for user+password apps)</span></Label>
@@ -227,7 +241,7 @@ function AppForm({ app, pending, error, onSubmit }: {
       </label>
 
       <DialogFooter>
-        <Button type="submit" disabled={pending || name === "" || baseUrl === ""}>
+        <Button type="submit" disabled={pending || name === "" || (split ? host === "" : rawBaseUrl === "")}>
           {pending ? "Saving…" : "Save changes"}
         </Button>
       </DialogFooter>

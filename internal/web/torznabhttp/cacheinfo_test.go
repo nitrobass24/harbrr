@@ -105,8 +105,9 @@ func TestRevalidateWrongVariantOrPageGuard(t *testing.T) {
 		demoRelease("P0", "https://rich.test/dl/0.torrent", []int{2000}),
 		demoRelease("P1", "https://rich.test/dl/1.torrent", []int{2000}),
 	}
-	honorPage0 := servedPage{releases: releases, offset: 0, limit: 1}
-	honorPage1 := servedPage{releases: releases, offset: 1, limit: 1}
+	honorPage0 := servedPage{releases: releases, offset: 0, limit: 1, total: 2}
+	honorPage1 := servedPage{releases: releases, offset: 1, limit: 1, total: 2}
+	honorPage0DiffTotal := servedPage{releases: releases, offset: 0, limit: 1, total: 3}
 
 	// Capture the honor variant's page-0 served ETag (no If-None-Match yet, so this
 	// call only sets validators and reports handled=false).
@@ -147,9 +148,17 @@ func TestRevalidateWrongVariantOrPageGuard(t *testing.T) {
 			page: honorPage1,
 		},
 		{
-			// Sanity: the guard rejects only a cross-variant/cross-page match, not
-			// every match.
-			name:         "same variant and page with its own ETag is 304",
+			// The total fold: same releases/offset/limit but a changed reported total
+			// (e.g. the catalog grew beyond the served window, moving pagedResult's
+			// has-more floor) must not 304 — a stale total/has-more signal would pin
+			// the *arrs to a wrong page count even though the page bytes are identical.
+			name: "cross-total: changed total with the honor ETag is not 304",
+			page: honorPage0DiffTotal,
+		},
+		{
+			// Sanity: the guard rejects only a cross-variant/cross-page/cross-total
+			// match, not every match.
+			name:         "same variant, page, and total with its own ETag is 304",
 			page:         honorPage0,
 			wantHandled:  true,
 			wantSameETag: true,
@@ -212,7 +221,7 @@ func TestFeedEmitsValidators(t *testing.T) {
 	if !ok {
 		t.Fatal("servedPayloadETag failed to hash the served page")
 	}
-	want := pagedETag(view, 0, tzn.LimitsMax)
+	want := pagedETag(view, 0, tzn.LimitsMax, len(idx.releases))
 	if got := rec.Header().Get("ETag"); got != want {
 		t.Errorf("ETag = %q, want %q", got, want)
 	}

@@ -3,6 +3,7 @@ import { useInitialAppPick } from "@/hooks/useInitialAppPick"
 import { Pencil, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { ConfiguredAppsBlock, ReusingAppHint } from "@/components/applications/ConfiguredApps"
+import { HostPortFields } from "@/components/forms/HostPortFields"
 import { ManagedByAppHint } from "@/components/applications/ManagedByAppHint"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -30,6 +31,7 @@ import {
 import { useApps } from "@/hooks/useApps"
 import { defaultHarbrrUrl, explicitUrlPort } from "@/lib/base-url"
 import { hostname, kindLabel } from "@/lib/format"
+import { composeHostURL, DEFAULT_PORTS } from "@/lib/hosturl"
 import type { AnnounceConnection, AnnounceKind, App, CreateAnnounceConnection, UpdateAnnounceConnection } from "@/lib/api"
 
 // Sentinel select value for "no existing App picked, use the inline fields below" —
@@ -200,7 +202,9 @@ function AnnounceForm({ existing, initialAppId, pending, error, onCreate, onUpda
   // (effectiveAppSel below). NEW_APP reveals the inline baseUrl/apiKey/harbrrUrl fields;
   // anything else reuses that App's identity.
   const [appSel, setAppSel] = useState<string | null>(null)
-  const [baseUrl, setBaseUrl] = useState("")
+  const [scheme, setScheme] = useState<"http" | "https">("http")
+  const [host, setHost] = useState("")
+  const [port, setPort] = useState(String(DEFAULT_PORTS[kind] ?? ""))
   const [apiKey, setApiKey] = useState("")
   const [harbrrUrl, setHarbrrUrl] = useState(defaultHarbrrUrl())
 
@@ -210,6 +214,7 @@ function AnnounceForm({ existing, initialAppId, pending, error, onCreate, onUpda
     setKind(app.kind as AnnounceKind)
     setAppSel(String(app.id))
     setName((prev) => (prev === "" ? app.name : prev))
+    setPort(String(DEFAULT_PORTS[app.kind] ?? ""))
   })
 
   const mode = existing ? "edit" : "create"
@@ -233,7 +238,7 @@ function AnnounceForm({ existing, initialAppId, pending, error, onCreate, onUpda
         } else {
           onCreate({
             name, kind,
-            ...(usingNewApp ? { baseUrl, apiKey, harbrrUrl } : { appId: Number(effectiveAppSel) }),
+            ...(usingNewApp ? { baseUrl: composeHostURL(scheme, host, port), apiKey, harbrrUrl } : { appId: Number(effectiveAppSel) }),
           })
         }
       }}
@@ -270,8 +275,11 @@ function AnnounceForm({ existing, initialAppId, pending, error, onCreate, onUpda
             value={kind}
             disabled={mode === "edit"}
             onChange={(e) => {
-              setKind(e.target.value as AnnounceKind)
+              const next = e.target.value as AnnounceKind
+              setKind(next)
               setAppSel(null) // the app list for the new kind is different; re-default.
+              // A typed port for the OLD kind isn't meaningful for the new one.
+              setPort(String(DEFAULT_PORTS[next] ?? ""))
             }}
           >
             <option value="qui">{kindLabel("qui")}</option>
@@ -302,10 +310,7 @@ function AnnounceForm({ existing, initialAppId, pending, error, onCreate, onUpda
 
       {mode === "create" && usingNewApp && (
         <>
-          <span className="flex flex-col gap-1.5">
-            <Label htmlFor="ann-base">Tool base URL</Label>
-            <Input id="ann-base" placeholder="http://cross-seed:2468" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
-          </span>
+          <HostPortFields idPrefix="ann" scheme={scheme} host={host} port={port} onScheme={setScheme} onHost={setHost} onPort={setPort} />
           <span className="flex flex-col gap-1.5">
             <Label htmlFor="ann-key">Tool API key</Label>
             <Input id="ann-key" type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
@@ -322,7 +327,7 @@ function AnnounceForm({ existing, initialAppId, pending, error, onCreate, onUpda
           type="submit"
           disabled={
             pending || !name ||
-            (mode === "create" && usingNewApp && (!baseUrl || !harbrrUrl || !apiKey))
+            (mode === "create" && usingNewApp && (!host || !harbrrUrl || !apiKey))
           }
         >
           {pending ? "Saving…" : mode === "edit" ? "Save changes" : "Add target"}

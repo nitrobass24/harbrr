@@ -270,6 +270,63 @@ func TestIndexerCRUDViaAPIRedactsSecrets(t *testing.T) {
 	mustStatus(t, resp, body, http.StatusNotFound)
 }
 
+// TestIndexerPriorityAndMinSeedersViaAPI proves priority/minSeeders are exposed on the
+// indexer surface end to end: default on add, explicit value on add, and PATCH updates
+// one while leaving the other untouched (#364).
+func TestIndexerPriorityAndMinSeedersViaAPI(t *testing.T) {
+	t.Parallel()
+
+	e := newEnv(t, api.Config{})
+	base, c := serve(t, e)
+	setupAndLogin(t, base, c)
+
+	// Default add: no priority/minSeeders given -> priority defaults to 25, minSeeders 0.
+	resp, body := do(t, c, http.MethodPost, base+"/api/indexers", map[string]any{
+		"slug": "tt-default", "definitionId": "testtracker",
+	}, nil)
+	mustStatus(t, resp, body, http.StatusCreated)
+	var created struct {
+		Priority   int `json:"priority"`
+		MinSeeders int `json:"minSeeders"`
+	}
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatalf("decode create: %v", err)
+	}
+	if created.Priority != 25 || created.MinSeeders != 0 {
+		t.Errorf("default add priority/minSeeders = %d/%d, want 25/0", created.Priority, created.MinSeeders)
+	}
+
+	// Explicit add.
+	resp, body = do(t, c, http.MethodPost, base+"/api/indexers", map[string]any{
+		"slug": "tt-explicit", "definitionId": "testtracker", "priority": 5, "minSeeders": 3,
+	}, nil)
+	mustStatus(t, resp, body, http.StatusCreated)
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatalf("decode create (explicit): %v", err)
+	}
+	if created.Priority != 5 || created.MinSeeders != 3 {
+		t.Errorf("explicit add priority/minSeeders = %d/%d, want 5/3", created.Priority, created.MinSeeders)
+	}
+
+	// PATCH priority only: minSeeders must survive untouched.
+	resp, body = do(t, c, http.MethodPatch, base+"/api/indexers/tt-explicit", map[string]any{"priority": 40}, nil)
+	mustStatus(t, resp, body, http.StatusNoContent)
+	resp, body = do(t, c, http.MethodGet, base+"/api/indexers/tt-explicit", nil, nil)
+	mustStatus(t, resp, body, http.StatusOK)
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatalf("decode get after patch: %v", err)
+	}
+	if created.Priority != 40 || created.MinSeeders != 3 {
+		t.Errorf("after priority-only patch = %d/%d, want 40/3", created.Priority, created.MinSeeders)
+	}
+
+	// Invalid priority is rejected.
+	resp, body = do(t, c, http.MethodPost, base+"/api/indexers", map[string]any{
+		"slug": "tt-badprio", "definitionId": "testtracker", "priority": 999,
+	}, nil)
+	mustStatus(t, resp, body, http.StatusBadRequest)
+}
+
 // TestListIndexersReportsFreeleechState pins the list-time freeleech view
 // (autobrr/harbrr#188): GET /api/indexers surfaces each instance's freeleech-only
 // checkbox using the same canonical rule the engine applies at build time.

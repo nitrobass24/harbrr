@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
 import { Switch } from "@/components/ui/switch"
+import { HostPortFields } from "@/components/forms/HostPortFields"
 import {
   useCreateDownloadClient,
   useDeleteDownloadClient,
@@ -27,6 +28,7 @@ import {
 } from "@/hooks/useDownloadClients"
 import { useApps, useQuiInstances } from "@/hooks/useApps"
 import { hostname, kindLabel } from "@/lib/format"
+import { composeHostPort, composeHostURL, DEFAULT_PORTS } from "@/lib/hosturl"
 import { notifyError, notifySuccess } from "@/lib/notify"
 import type { App, CreateDownloadClient, DownloadClient, DownloadClientKind, DownloadClientSettings, UpdateDownloadClient } from "@/lib/api"
 
@@ -35,12 +37,6 @@ import type { App, CreateDownloadClient, DownloadClient, DownloadClientKind, Dow
 // until their own driver lands (autobrr/harbrr#8). Keep the picker limited to
 // what actually works.
 const DOWNLOAD_CLIENT_KINDS: DownloadClientKind[] = ["qbittorrent", "blackhole", "sabnzbd", "nzbget", "qui", "flood", "download-station", "transmission", "deluge", "rtorrent"]
-
-// HOST_PLACEHOLDER is per-kind: every kind but Deluge takes an absolute http(s)
-// URL; Deluge's daemon RPC is a raw "host:port" socket address, not a URL.
-const HOST_PLACEHOLDER: Partial<Record<DownloadClientKind, string>> = {
-  deluge: "localhost:58846",
-}
 
 // Sentinel select value for "no existing qui App picked, use the inline host/API key
 // fields below" — the create-time fallback for the very first qui app.
@@ -172,7 +168,9 @@ function DownloadClientForm({ client, initialAppId, pending, onSubmit }: {
   // fallback for the very first qui app); anything else reuses that App's identity and
   // drives the instance dropdown instead of a typed id.
   const [appSel, setAppSel] = useState<string | null>(null)
+  const [scheme, setScheme] = useState<"http" | "https">("http")
   const [host, setHost] = useState(client?.host ?? "")
+  const [port, setPort] = useState(String(DEFAULT_PORTS[kind] ?? ""))
   const [username, setUsername] = useState(client?.username ?? "")
   const [secret, setSecret] = useState("")
   // category/tags/startPaused are shared across kinds with identical concepts;
@@ -202,6 +200,7 @@ function DownloadClientForm({ client, initialAppId, pending, onSubmit }: {
     setAppSel(String(app.id))
     setInstanceId("")
     setName((prev) => (prev === "" ? app.name : prev))
+    setPort(String(DEFAULT_PORTS.qui ?? ""))
   })
 
   // Defaults to the first qui App once apps arrive; NEW_APP outside kind "qui" (there's
@@ -265,8 +264,11 @@ function DownloadClientForm({ client, initialAppId, pending, onSubmit }: {
         }
         // On edit, an empty secret keeps the stored one (only a typed value rotates).
         // blackhole has no network endpoint of its own — its host must always be empty.
-        // Picking an existing qui App reuses its identity — no host/username/secret.
-        const identity = usingQuiApp? { appId: Number(effectiveAppSel) }: { host: kind === "blackhole" ? "" : host, username: kind === "qui" ? "" : username, secret: isEdit ? (secret || undefined) : secret }
+        // Deluge's daemon RPC is a bare "host:port" address, not a URL; every other kind
+        // composes an absolute http(s) URL. Picking an existing qui App reuses its
+        // identity — no host/username/secret.
+        const composedHost = kind === "deluge" ? composeHostPort(host, port) : composeHostURL(scheme, host, port)
+        const identity = usingQuiApp? { appId: Number(effectiveAppSel) }: { host: kind === "blackhole" ? "" : composedHost, username: kind === "qui" ? "" : username, secret: isEdit ? (secret || undefined) : secret }
         onSubmit(client?.id ?? null, { name, kind, settings, ...identity })
       }}
     >
@@ -298,11 +300,14 @@ function DownloadClientForm({ client, initialAppId, pending, onSubmit }: {
             value={kind}
             disabled={isEdit}
             onChange={(e) => {
-              setKind(e.target.value as DownloadClientKind)
+              const next = e.target.value as DownloadClientKind
+              setKind(next)
               setAppSel(null) // the app list for the new kind is different; re-default.
               // The re-default can land on a different qui app, so a kept instance id
               // could pair with an app it doesn't belong to.
               setInstanceId("")
+              // A typed port for the OLD kind isn't meaningful for the new one.
+              setPort(String(DEFAULT_PORTS[next] ?? ""))
             }}
           >
             {DOWNLOAD_CLIENT_KINDS.map((k) => <option key={k} value={k}>{kindLabel(k)}</option>)}
@@ -327,10 +332,16 @@ function DownloadClientForm({ client, initialAppId, pending, onSubmit }: {
       {isEdit && kind !== "blackhole" && <ManagedByAppHint appId={client?.appId} />}
       {!isEdit && kind !== "blackhole" && !usingQuiApp && (
         <>
-          <span className="flex flex-col gap-1.5">
-            <Label htmlFor="dlc-host">Host</Label>
-            <Input id="dlc-host" placeholder={HOST_PLACEHOLDER[kind] ?? "http://localhost:8080"} value={host} onChange={(e) => setHost(e.target.value)} />
-          </span>
+          <HostPortFields
+            idPrefix="dlc"
+            scheme={scheme}
+            host={host}
+            port={port}
+            onScheme={setScheme}
+            onHost={setHost}
+            onPort={setPort}
+            showScheme={kind !== "deluge"}
+          />
           <div className="grid grid-cols-2 gap-3">
             {kind !== "qui" && kind !== "sabnzbd" && (
               <span className="flex flex-col gap-1.5">

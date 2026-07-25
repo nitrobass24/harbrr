@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
@@ -94,5 +95,74 @@ func TestStatsByInstanceReportsFlushedInstance(t *testing.T) {
 	}
 	if rows[0].Entries != 0 || rows[0].Misses != 1 {
 		t.Errorf("flushed instance = %+v, want entries=0 misses=1", rows[0])
+	}
+}
+
+// TestHitsMonotoneAcrossCleanup pins autobrr/harbrr#350: the cumulative,
+// restart-persisted Hits counters (global and per-instance — what the API reports as
+// trackerHitsSaved/hitsSaved) must NOT drop when a cleanup tick reaps the cache row
+// that earned them, even though the durable row-derived TotalHits/HitsSaved
+// legitimately falls to 0 once that row is gone.
+func TestHitsMonotoneAcrossCleanup(t *testing.T) {
+	t.Parallel()
+	sc, instID, clk := testCache(t, keywordTTL, 0)
+	inner := &fakeInner{releases: relSet("A")}
+	idx := sc.probe(inner, instID, nil)
+	ctx := context.Background()
+	q := search.Query{Keywords: "a"}
+
+	if _, err := idx.Search(ctx, q); err != nil { // miss -> stores entry
+		t.Fatalf("miss: %v", err)
+	}
+	if _, err := idx.Search(ctx, q); err != nil { // hit -> bumps hit_count + cumulative Hits
+		t.Fatalf("hit: %v", err)
+	}
+
+	before, err := sc.Stats(ctx)
+	if err != nil {
+		t.Fatalf("stats before cleanup: %v", err)
+	}
+	if before.Hits != 1 || before.TotalHits != 1 {
+		t.Fatalf("before cleanup: hits=%d totalHits=%d, want 1/1", before.Hits, before.TotalHits)
+	}
+	rowsBefore, err := sc.StatsByInstance(ctx)
+	if err != nil {
+		t.Fatalf("StatsByInstance before cleanup: %v", err)
+	}
+	if len(rowsBefore) != 1 || rowsBefore[0].Hits != 1 || rowsBefore[0].HitsSaved != 1 {
+		t.Fatalf("byInstance before cleanup = %+v, want hits=1 hitsSaved=1", rowsBefore)
+	}
+
+	// Advance past the full keyword TTL (a safe upper bound regardless of which tier
+	// applied) PLUS the cleanup tick's reap grace (#343 retains expired rows for
+	// cacheReapGrace before deleting them), so the tick genuinely reaps the row.
+	advance(clk, keywordTTL.keyword+cacheReapGrace+time.Minute)
+	if _, err := sc.CleanupExpired(ctx); err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+
+	after, err := sc.Stats(ctx)
+	if err != nil {
+		t.Fatalf("stats after cleanup: %v", err)
+	}
+	if after.Hits != 1 {
+		t.Errorf("Hits after cleanup = %d, want 1 (cumulative counter must survive the reap)", after.Hits)
+	}
+	if after.TotalHits != 0 {
+		t.Errorf("TotalHits after cleanup = %d, want 0 (row-derived; its row is gone)", after.TotalHits)
+	}
+
+	rowsAfter, err := sc.StatsByInstance(ctx)
+	if err != nil {
+		t.Fatalf("StatsByInstance after cleanup: %v", err)
+	}
+	if len(rowsAfter) != 1 {
+		t.Fatalf("byInstance after cleanup = %+v, want 1 row (in-memory counters keep it visible)", rowsAfter)
+	}
+	if rowsAfter[0].Hits != 1 {
+		t.Errorf("byInstance Hits after cleanup = %d, want 1 (cumulative counter must survive the reap)", rowsAfter[0].Hits)
+	}
+	if rowsAfter[0].HitsSaved != 0 {
+		t.Errorf("byInstance HitsSaved after cleanup = %d, want 0 (row-derived; its row is gone)", rowsAfter[0].HitsSaved)
 	}
 }

@@ -251,6 +251,56 @@ func TestRunFlushesCacheBeforeClose(t *testing.T) {
 	}
 }
 
+// TestNewExpiresCacheOnDefsFingerprintChange is the boot-path sibling of the
+// registry-level EnsureDefsFingerprint tests: it proves New's def-content check
+// (autobrr/harbrr#347) runs during a real boot. A stale stored fingerprint (one
+// that can never match the freshly computed embedded+dropin hash) makes New
+// expire — not delete — a pre-seeded live cache row: Fetch stops serving it, but
+// FetchAny (the announce diff / #251 stale-serve seam) still finds it.
+func TestNewExpiresCacheOnDefsFingerprintChange(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	cfg := testConfig(t)
+
+	db, err := database.Open(filepath.Join(t.TempDir(), "harbrr.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	instID := insertCleanupInstance(t, db)
+	now := time.Now().UTC().Truncate(time.Second)
+	cacheStore := database.SearchCacheStore{}
+	if err := cacheStore.Store(ctx, db, database.SearchCacheEntry{
+		CacheKey: "boot-key", InstanceID: instID, ResultsJSON: []byte(`[]`),
+		CachedAt: now, LastUsedAt: now, ExpiresAt: now.Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("seed cache row: %v", err)
+	}
+	// "cache.defs_fingerprint" mirrors registry.keyCacheDefsFingerprint (unexported
+	// across the package boundary); any value differs from the real sha256 hex
+	// digest New computes, so the boot check observes a mismatch.
+	if err := (database.AppSettings{}).Set(ctx, db, "cache.defs_fingerprint", "stale-fingerprint", now); err != nil {
+		t.Fatalf("seed stale fingerprint: %v", err)
+	}
+
+	if _, err := New(ctx, Deps{Config: cfg, Logger: zerolog.Nop()}, WithDatabase(db)); err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	if _, found, err := cacheStore.Fetch(ctx, db, "boot-key", now); err != nil {
+		t.Fatalf("Fetch: %v", err)
+	} else if found {
+		t.Error("cache row should be expired (Fetch) after a boot-time defs fingerprint mismatch")
+	}
+	if _, found, err := cacheStore.FetchAny(ctx, db, "boot-key"); err != nil || !found {
+		t.Errorf("cache row should still be readable via FetchAny (expire, not delete): found=%v err=%v", found, err)
+	}
+}
+
 // freeAppPort returns a currently-free TCP port.
 func freeAppPort(t *testing.T) int {
 	t.Helper()

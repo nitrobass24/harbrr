@@ -59,6 +59,9 @@ const (
 	keyCacheRefreshAhead  = "cache.refresh_ahead_pct"
 	keyCacheNegativeTTL   = "cache.negative_ttl"
 	keyCacheCleanup       = "cache.cleanup_interval"
+	// keyCacheDefsFingerprint holds the last-seen hash of the definition content
+	// (embedded vendor snapshot + dropin dir) — see EnsureDefsFingerprint.
+	keyCacheDefsFingerprint = "cache.defs_fingerprint"
 )
 
 // MinCleanupInterval is the smallest accepted cleanup_interval. It floors the reap
@@ -238,6 +241,50 @@ func (c *SearchCache) LoadOverrides(ctx context.Context) error {
 		c.tuning.Store(&t)
 	}
 	return nil
+}
+
+// EnsureDefsFingerprint compares fp — the caller's freshly computed hash of the
+// definition content (embedded vendor snapshot + dropin dir, see
+// internal/app/defsfingerprint.go) — against the value stored under
+// cache.defs_fingerprint. Absent (first boot with this feature) just stores fp:
+// there is nothing to compare against yet, so nothing is expired. A mismatch means
+// definition content changed since the last boot (a vendor refresh shipped in a
+// binary upgrade, or a dropin add/edit/remove) — every live cache entry may now be
+// shaped by stale definitions, so it is expired via SearchCache.ExpireAll (never
+// deleted — see that method's doc for why) before the new fingerprint is persisted.
+// Serialized under cfgMu, like the other config paths, so a concurrent UpdateConfig
+// cannot interleave with the read-compare-expire-persist sequence.
+func (c *SearchCache) EnsureDefsFingerprint(ctx context.Context, fp string) error {
+	c.cfgMu.Lock()
+	defer c.cfgMu.Unlock()
+
+	stored, found, err := database.AppSettings{}.Get(ctx, c.db, keyCacheDefsFingerprint)
+	if err != nil {
+		return fmt.Errorf("registry: read defs fingerprint: %w", err)
+	}
+	if found && stored != fp {
+		n, err := c.ExpireAll(ctx)
+		if err != nil {
+			return fmt.Errorf("registry: expire cache on defs fingerprint change: %w", err)
+		}
+		c.log.Info().Int64("expired", n).
+			Str("old_fingerprint", fingerprintPrefix(stored)).Str("new_fingerprint", fingerprintPrefix(fp)).
+			Msg("registry: definition content changed since last boot; expired cached search results")
+	}
+	if err := (database.AppSettings{}).Set(ctx, c.db, keyCacheDefsFingerprint, fp, c.clock()); err != nil {
+		return fmt.Errorf("registry: persist defs fingerprint: %w", err)
+	}
+	return nil
+}
+
+// fingerprintPrefix returns the first 12 hex chars of a sha256 fingerprint for
+// logging — the full 64-char digest pair is unreadable log noise; a prefix is
+// enough to tell "changed" from "same" at a glance.
+func fingerprintPrefix(fp string) string {
+	if len(fp) <= 12 {
+		return fp
+	}
+	return fp[:12]
 }
 
 func applyDur(all map[string]string, key string, dst *time.Duration) {

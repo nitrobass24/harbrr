@@ -53,7 +53,7 @@ describe("AnnounceSection edit", () => {
     // inputs are gone (those now rotate via the App, not this PATCH).
     const nameInput = await screen.findByLabelText<HTMLInputElement>("Name")
     expect(nameInput.value).toBe("qui-main")
-    expect(screen.queryByLabelText("Tool base URL")).toBeNull()
+    expect(screen.queryByLabelText("Host")).toBeNull()
     expect(screen.queryByLabelText("Tool API key")).toBeNull()
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
 
@@ -76,6 +76,8 @@ describe("AnnounceSection create — App picker", () => {
     createdAt: "2026-07-01T00:00:00Z", updatedAt: "2026-07-01T00:00:00Z",
   }
 
+  const CROSSSEED_APP = { ...APP, id: 9, kind: "crossseed-v6", name: "cs-app", baseUrl: "http://cross-seed:2468" }
+
   it("picking an existing app hides the inline fields and submits appId", async () => {
     const fetchMock = vi.fn((request: Request) => {
       if (request.method === "POST" && request.url.includes("/announce-connections")) {
@@ -94,7 +96,7 @@ describe("AnnounceSection create — App picker", () => {
     await screen.findByRole("option", { name: "qui-main-app (qui)" })
     fireEvent.change(appSelect, { target: { value: "7" } })
 
-    expect(screen.queryByLabelText("Tool base URL")).toBeNull()
+    expect(screen.queryByLabelText("Host")).toBeNull()
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "qui-target" } })
     fireEvent.click(submitButton())
 
@@ -124,11 +126,14 @@ describe("AnnounceSection create — App picker", () => {
     // An App of this kind exists, so the picker defaults to it; switch to "New app…"
     // to exercise the inline-fields fallback.
     fireEvent.change(appSelect, { target: { value: "new" } })
-    expect(screen.getByLabelText("Tool base URL")).toBeTruthy()
+    expect(screen.getByLabelText("Host")).toBeTruthy()
     expect(screen.getByLabelText("Tool API key")).toBeTruthy()
 
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "cs-target" } })
-    fireEvent.change(screen.getByLabelText("Tool base URL"), { target: { value: "http://cross-seed:2468" } })
+    // Kind stays "qui" (never switched) here, so its seeded port default (7476) doesn't
+    // match this URL's port (2468) — paste the full URL so it fans out for real, the
+    // way a real paste event does (typing doesn't fan out; that's onPaste-only).
+    fireEvent.paste(screen.getByLabelText("Host"), { clipboardData: { getData: () => "http://cross-seed:2468" } })
     fireEvent.change(screen.getByLabelText("Tool API key"), { target: { value: "cs-key" } })
     fireEvent.change(screen.getByLabelText("harbrr URL as the tool reaches it"), { target: { value: "http://harbrr:7478" } })
     fireEvent.click(submitButton())
@@ -142,6 +147,26 @@ describe("AnnounceSection create — App picker", () => {
         baseUrl: "http://cross-seed:2468", apiKey: "cs-key", harbrrUrl: "http://harbrr:7478",
       })
     })
+  })
+
+  it("deep-link pre-pick re-defaults the port for the picked App's kind, not the form's initial kind", async () => {
+    const fetchMock = vi.fn((request: Request) => {
+      if (request.url.includes("/apps")) return Promise.resolve(jsonResponse([CROSSSEED_APP]))
+      if (request.url.includes("/announce-connections")) return Promise.resolve(jsonResponse([]))
+      if (request.url.includes("/server-info")) return Promise.resolve(jsonResponse({ port: 7478 }))
+      return Promise.resolve(jsonResponse([]))
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    render(wrap(<AnnounceSection initialCreate={{ appId: CROSSSEED_APP.id }} />))
+
+    // The deep-link pre-picks the cross-seed-v6 App (kind flips from the default "qui");
+    // once the operator flips back to "New app…" the port must reflect cross-seed (2468),
+    // not a leftover default from before the pick.
+    const appSelect = await screen.findByLabelText<HTMLSelectElement>("App")
+    await screen.findByRole("option", { name: "cs-app (cross-seed)" })
+    fireEvent.change(appSelect, { target: { value: "new" } })
+
+    expect(screen.getByLabelText<HTMLInputElement>("Port").value).toBe("2468")
   })
 
   it("flipped default: the App picker defaults to the existing app without interaction", async () => {
@@ -158,7 +183,7 @@ describe("AnnounceSection create — App picker", () => {
     const appSelect = await screen.findByLabelText<HTMLSelectElement>("App")
     await screen.findByRole("option", { name: "qui-main-app (qui)" })
     expect(appSelect.value).toBe(String(APP.id))
-    expect(screen.queryByLabelText("Tool base URL")).toBeNull()
+    expect(screen.queryByLabelText("Host")).toBeNull()
   })
 })
 
@@ -210,7 +235,7 @@ describe("AnnounceSection create — Already configured block", () => {
     const option = await screen.findByRole<HTMLOptionElement>("option", { name: /qui-main-app \(qui\) — already added/ })
     expect(option.disabled).toBe(true)
     expect(appSelect.value).toBe("new")
-    expect(screen.getByLabelText("Tool base URL")).toBeTruthy()
+    expect(screen.getByLabelText("Host")).toBeTruthy()
   })
 
   it("disables a row already used by an announce target", async () => {

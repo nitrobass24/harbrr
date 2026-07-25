@@ -163,6 +163,24 @@ describe("DownloadClientsSection", () => {
     })
   })
 
+  it("deep-link pre-pick re-defaults the port for qui, not the form's initial qbittorrent default", async () => {
+    const fetchMock = vi.fn((req: Request) => {
+      if (req.url.includes("/apps")) return Promise.resolve(jsonResponse([QUI_APP]))
+      return Promise.resolve(jsonResponse([]))
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    render(wrap(<DownloadClientsSection initialCreate={{ appId: QUI_APP.id }} />))
+
+    // The deep-link pre-picks the qui App (kind flips from the default "qbittorrent");
+    // flipping the App picker back to "New app…" must show qui's port (7476), not a
+    // leftover qbittorrent default (8080).
+    const appSelect = await screen.findByLabelText<HTMLSelectElement>("qui app")
+    await waitFor(() => expect(appSelect.value).toBe(String(QUI_APP.id)))
+    fireEvent.change(appSelect, { target: { value: "new" } })
+
+    expect(screen.getByLabelText<HTMLInputElement>("Port").value).toBe("7476")
+  })
+
   it("add: Kind options use display names, not raw slugs", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse([])))
     render(wrap(<DownloadClientsSection />))
