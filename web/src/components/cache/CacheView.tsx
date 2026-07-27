@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
+import { breakerLabel, unixAgo } from "@/components/cache/cache-format"
 import { safeInt } from "@/components/cache/safe-int"
 import { LoadError, LoadingBlock } from "@/components/ui/load-error"
 import { useCacheConfig, useCacheStats, useFlushCache, useUpdateCacheConfig } from "@/hooks/useSettings"
@@ -38,6 +39,13 @@ export function CacheView() {
         </div>
       )}
 
+      {stats.data?.enabled && (
+        <p className="px-1 text-[12px] text-faint">
+          Oldest entry {unixAgo(stats.data.oldestCachedAt)} · newest {unixAgo(stats.data.newestCachedAt)}
+          {" · last served "}{unixAgo(stats.data.lastUsedAt)}
+        </p>
+      )}
+
       {stats.data?.byIndexer && stats.data.byIndexer.length > 0 && (
         <div className="overflow-hidden rounded-xl border border-border bg-card px-5 py-3 text-[13px]">
           <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-faint">By indexer</p>
@@ -51,7 +59,7 @@ export function CacheView() {
                 </span>
                 <span className="text-faint">{row.entries ?? 0} entries</span>
                 {row.breakerOpenUntil ? (
-                  <span className="ml-auto text-bad">breaker open</span>
+                  <span className="ml-auto text-bad">{breakerLabel(row.breakerOpenUntil)}</span>
                 ) : (
                   <span className="ml-auto text-ok">breaker closed</span>
                 )}
@@ -90,12 +98,14 @@ function StatTile({ label, value, sub, highlight }: { label: string, value: stri
   )
 }
 
-const DURATION_KNOBS: { key: keyof CacheConfig, label: string }[] = [
-  { key: "rssTtl", label: "RSS/empty-poll TTL" },
-  { key: "keywordTtl", label: "Keyword TTL" },
-  { key: "thinTtl", label: "Thin-result TTL" },
-  { key: "negativeTtl", label: "Breaker window (0s off)" },
-  { key: "cleanupInterval", label: "Cleanup interval" },
+// help is one plain-language line per knob, matching the tier semantics
+// documented in website/docs/features/search-results-cache.md.
+const DURATION_KNOBS: { key: keyof CacheConfig, label: string, help: string }[] = [
+  { key: "rssTtl", label: "RSS/empty-poll TTL", help: "How long an RSS poll — a what's-new request with no search terms — is remembered." },
+  { key: "keywordTtl", label: "Keyword TTL", help: "How long a real search — a title, or an IMDb/TVDB/TMDb ID — is remembered." },
+  { key: "thinTtl", label: "Thin-result TTL", help: "Replaces the tier above when a search came back thin. Only ever shortens a TTL." },
+  { key: "negativeTtl", label: "Breaker window (0s off)", help: "How long a tracker that just failed is left alone before harbrr retries it." },
+  { key: "cleanupInterval", label: "Cleanup interval", help: "How often expired entries are reaped. The cleanup loop re-reads this live." },
 ]
 
 // Every knob is runtime-tunable: PUT applies live, no restart.
@@ -133,37 +143,45 @@ function ConfigForm() {
         </span>
       </div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-        {DURATION_KNOBS.map(({ key, label }) => (
-          <span key={key} className="flex flex-col gap-1.5">
-            <Label htmlFor={`knob-${key}`} className="text-[12px]">{label}</Label>
+        {DURATION_KNOBS.map(({ key, label, help }) => (
+          <Knob key={key} name={key} label={label} help={help}>
             <Input
               id={`knob-${key}`}
+              aria-describedby={`knob-${key}-help`}
               className="h-8 font-mono text-[12px]"
               value={String(draft[key])}
               onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
             />
-          </span>
+          </Knob>
         ))}
-        <span className="flex flex-col gap-1.5">
-          <Label htmlFor="knob-thinThreshold" className="text-[12px]">Thin threshold (results)</Label>
+        <Knob
+          name="thinThreshold"
+          label="Thin threshold (results)"
+          help="How few results count as thin. Raise it if your trackers normally answer with small result sets."
+        >
           <Input
             id="knob-thinThreshold"
+            aria-describedby="knob-thinThreshold-help"
             className="h-8 font-mono text-[12px]"
             type="number"
             value={draft.thinThreshold}
             onChange={(e) => setDraft({ ...draft, thinThreshold: safeInt(e.target.value, draft.thinThreshold) })}
           />
-        </span>
-        <span className="flex flex-col gap-1.5">
-          <Label htmlFor="knob-refreshAheadPct" className="text-[12px]">Refresh-ahead % (0 off)</Label>
+        </Knob>
+        <Knob
+          name="refreshAheadPct"
+          label="Refresh-ahead % (0 off)"
+          help="Past this share of an entry's life, a hit is served instantly and refreshed in the background."
+        >
           <Input
             id="knob-refreshAheadPct"
+            aria-describedby="knob-refreshAheadPct-help"
             className="h-8 font-mono text-[12px]"
             type="number"
             value={draft.refreshAheadPct}
             onChange={(e) => setDraft({ ...draft, refreshAheadPct: safeInt(e.target.value, draft.refreshAheadPct) })}
           />
-        </span>
+        </Knob>
       </div>
       <div>
         <Button type="submit" size="sm" disabled={update.isPending}>
@@ -171,5 +189,18 @@ function ConfigForm() {
         </Button>
       </div>
     </form>
+  )
+}
+
+// Knob is one labelled config field plus its plain-language help line. The help
+// sits under the input (not the label) so the inputs stay on a shared baseline
+// across the grid however long the help runs.
+function Knob({ name, label, help, children }: { name: string, label: string, help: string, children: React.ReactNode }) {
+  return (
+    <span className="flex flex-col gap-1.5">
+      <Label htmlFor={`knob-${name}`} className="text-[12px]">{label}</Label>
+      {children}
+      <span id={`knob-${name}-help`} className="text-[11px] leading-snug text-faint">{help}</span>
+    </span>
   )
 }
