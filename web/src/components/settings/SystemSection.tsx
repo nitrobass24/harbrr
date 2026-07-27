@@ -3,8 +3,17 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
+import { Switch } from "@/components/ui/switch"
 import { useAuth } from "@/hooks/useAuth"
-import { useAllIndexerStats, useChangePassword, useHealth, useLogLevel, useSetLogLevel } from "@/hooks/useSettings"
+import {
+  useAdultCategories,
+  useAllIndexerStats,
+  useChangePassword,
+  useHealth,
+  useLogLevel,
+  useSetAdultCategories,
+  useSetLogLevel
+} from "@/hooks/useSettings"
 import { getBaseUrl } from "@/lib/base-url"
 import { relativeTime } from "@/lib/format"
 import { notifyError, notifySuccess } from "@/lib/notify"
@@ -12,15 +21,53 @@ import type { LogLevel } from "@/lib/api"
 
 const LEVELS: LogLevel[] = ["trace", "debug", "info", "warn", "error"]
 
-// Logging, account, and About stitched into one system block.
+// Categories, logging, account, and About stitched into one system block.
 export function SystemSection() {
   const { authDisabled } = useAuth()
   return (
     <>
+      <CategoriesBlock />
       <LoggingBlock />
       {!authDisabled && <AccountBlock />}
       <AboutBlock />
     </>
+  )
+}
+
+// CategoriesBlock is the global hide-adult-categories switch (autobrr/harbrr#383).
+// The copy under it states the limitation plainly: harbrr filters by the category
+// a tracker declares, so a miscategorised release still gets through. This is not
+// a content guarantee and must never be presented as one.
+function CategoriesBlock() {
+  const setting = useAdultCategories()
+  const setHidden = useSetAdultCategories()
+
+  return (
+    <section id="categories" className="flex flex-col gap-3">
+      <h2 className="text-[14px] font-semibold tracking-tight">Categories</h2>
+      <div className="flex flex-col gap-2 rounded-xl border border-border bg-card px-5 py-4 text-[13px]">
+        <div className="flex items-center gap-3">
+          <Switch
+            id="hide-adult-categories"
+            aria-label="Hide adult categories"
+            checked={setting.data?.hidden ?? false}
+            disabled={setting.isPending || setHidden.isPending}
+            onCheckedChange={(checked) => setHidden.mutate(checked, {
+              onSuccess: (r) => notifySuccess(r.hidden ? "Adult categories hidden" : "Adult categories shown"),
+              onError: (err) => notifyError("Changing the adult-category setting failed", err),
+            })}
+          />
+          <Label htmlFor="hide-adult-categories">Hide adult categories</Label>
+        </div>
+        <p className="text-[12px] text-faint">
+          Removes the XXX categories from category pickers and capability lists, and drops
+          adult-category results from searches that do not ask for a category. It filters by
+          the category a tracker declares, so a release the tracker filed under something else
+          can still appear — this hides a taxonomy, it is not a content filter. Torznab and
+          Newznab feeds are not affected: apps like Sonarr and Radarr send their own categories.
+        </p>
+      </div>
+    </section>
   )
 }
 

@@ -151,6 +151,9 @@ func newEnvFull(t *testing.T, cfg api.Config, buildCache func(db *database.DB) *
 	if err := os.WriteFile(filepath.Join(dropin, "testtracker.yml"), []byte(defYAML), 0o600); err != nil {
 		t.Fatalf("write def: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(dropin, "adulttracker.yml"), []byte(adultDefYAML), 0o600); err != nil {
+		t.Fatalf("write adult def: %v", err)
+	}
 	ldr := loader.New(dropin)
 
 	// Cookie hardening mirrors production (Box 5): SameSite=Lax + HttpOnly, plus a
@@ -185,6 +188,7 @@ func newEnvFull(t *testing.T, cfg api.Config, buildCache func(db *database.DB) *
 		Auth: authSvc, Registry: reg, Loader: ldr, Apps: appsSvc, AppSync: appSync, Announce: announceSvc,
 		Download: downloadSvc, Notify: notifySvc, Proxy: proxySvc, Solver: solverSvc, Backup: backupSvc, Sessions: sm,
 		Cache: cache, Logger: logger, LogLevel: api.NewLogLevelStore(db, nil),
+		AdultCategories: api.NewAdultCategoriesStore(db, nil),
 	}, cfg)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)

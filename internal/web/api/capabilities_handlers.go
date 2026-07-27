@@ -49,14 +49,26 @@ func (rt *router) indexerCapabilities(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, toCapabilitiesResponse(idx.Capabilities()))
+	writeJSON(w, http.StatusOK, toCapabilitiesResponse(idx.Capabilities(), rt.adultCats.Hidden()))
 }
 
 // toCapabilitiesResponse maps the engine capabilities to the API view, excluding
-// the internal CategoryMap lookup (it is not part of the public contract).
-func toCapabilitiesResponse(caps *mapper.Capabilities) capabilitiesResponse {
+// the internal CategoryMap lookup (it is not part of the public contract). When
+// hideAdult is set the XXX taxonomy is omitted from the category list, which is
+// how every current and future category picker inherits the operator's
+// hide-adult-categories choice without knowing about it (autobrr/harbrr#383).
+// Only this management view is filtered — the Torznab/Newznab caps document is
+// served unchanged.
+func toCapabilitiesResponse(caps *mapper.Capabilities, hideAdult bool) capabilitiesResponse {
+	var hidden map[int]struct{}
+	if hideAdult {
+		hidden = caps.AdultCategoryIDs()
+	}
 	cats := make([]categoryResponse, 0, len(caps.Categories))
 	for _, c := range caps.Categories {
+		if _, drop := hidden[c.ID]; drop {
+			continue
+		}
 		cr := categoryResponse{ID: c.ID, Name: c.Name, IsCustom: c.IsCustom(), IsParent: c.IsParent()}
 		if !cr.IsParent {
 			cr.Parent = c.Parent()
