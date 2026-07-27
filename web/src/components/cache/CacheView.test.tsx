@@ -87,7 +87,10 @@ const CONFIG = {
 function renderCacheView(stats: unknown) {
   vi.stubGlobal("fetch", vi.fn().mockImplementation((request: Request) => {
     if (request.url.endsWith("/api/cache/config")) return Promise.resolve(json(CONFIG))
-    return Promise.resolve(json(stats))
+    if (request.url.endsWith("/api/cache/stats")) return Promise.resolve(json(stats))
+    // Any other URL is a bug in the component, not a fixture gap — fail loudly
+    // rather than feeding stats to an endpoint this suite never meant to serve.
+    return Promise.reject(new Error(`unexpected fetch in CacheView test: ${request.url}`))
   }))
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
