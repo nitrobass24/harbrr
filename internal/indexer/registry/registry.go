@@ -277,6 +277,48 @@ func (r *Resolver) Indexer(ctx context.Context, slug string) (core.Indexer, bool
 	return idx, true
 }
 
+// Resolve returns the member set a feed slug covers, implementing core.Provider:
+// core.AggregateSlug fans out to every ENABLED instance, any other slug is the single
+// indexer Indexer would return (ok=false when it does not resolve). Note the capital:
+// the unexported resolve below is the single-slug build-or-cache step this is layered
+// over, not an alternative spelling of it.
+func (r *Resolver) Resolve(ctx context.Context, slug string) ([]core.Indexer, bool) {
+	if slug != core.AggregateSlug {
+		idx, ok := r.Indexer(ctx, slug)
+		if !ok {
+			return nil, false
+		}
+		return []core.Indexer{idx}, true
+	}
+	return r.enabledIndexers(ctx), true
+}
+
+// enabledIndexers resolves every enabled instance, in slug order (Instances.List is
+// ORDER BY slug), so an aggregate fan-out has a stable member order. An instance that
+// fails to build is dropped with a logged resolve error rather than failing the whole
+// set — the aggregate feed is partial by construction. A list failure yields no
+// members, which serves an empty feed instead of a 500.
+//
+// ponytail: N build-or-cache calls per aggregate request. Every one after the first
+// is a map hit (Resolver.cache), so at single-user scale this is not worth batching.
+func (r *Resolver) enabledIndexers(ctx context.Context) []core.Indexer {
+	list, err := r.instances.List(ctx, r.db)
+	if err != nil {
+		r.log.Warn().Str("error", apphttp.RedactError(err)).Msg("registry: aggregate: list instances failed")
+		return nil
+	}
+	out := make([]core.Indexer, 0, len(list))
+	for _, inst := range list {
+		if !inst.Enabled {
+			continue
+		}
+		if idx, ok := r.Indexer(ctx, inst.Slug); ok {
+			out = append(out, idx)
+		}
+	}
+	return out
+}
+
 // resolve returns the cached adapter for a slug or builds and caches it. Build
 // happens outside the lock (it does DB I/O + crypto); a double-check after build
 // means that if two goroutines race to build the same uncached slug, the first to

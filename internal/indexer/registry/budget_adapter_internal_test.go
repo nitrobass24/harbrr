@@ -202,8 +202,8 @@ func TestAdapterSearch_ExhaustedQueryDisabledCacheRefusesStale(t *testing.T) {
 	future := clk.Load().Add(2 * time.Hour)
 	clk.Store(&future)
 
-	if _, err := a.Search(context.Background(), q); !errors.Is(err, errBudgetExhausted) {
-		t.Fatalf("second Search err = %v, want errBudgetExhausted (disabled cache must not serve stale)", err)
+	if _, err := a.Search(context.Background(), q); !errors.Is(err, core.ErrBudgetExhausted) {
+		t.Fatalf("second Search err = %v, want core.ErrBudgetExhausted (disabled cache must not serve stale)", err)
 	}
 	if got := inner.searchCalls.Load(); got != 1 {
 		t.Fatalf("tracker hit %d times after second search, want still 1 (disabled cache must not re-hit the tracker either)", got)
@@ -226,8 +226,8 @@ func TestAdapterSearch_ExhaustedQueryBypassRefusesStale(t *testing.T) {
 	}
 
 	ctx := core.WithCacheBypass(context.Background())
-	if _, err := a.Search(ctx, q); !errors.Is(err, errBudgetExhausted) {
-		t.Fatalf("bypass Search err = %v, want errBudgetExhausted (never a stale serve)", err)
+	if _, err := a.Search(ctx, q); !errors.Is(err, core.ErrBudgetExhausted) {
+		t.Fatalf("bypass Search err = %v, want core.ErrBudgetExhausted (never a stale serve)", err)
 	}
 	if got := inner.searchCalls.Load(); got != 1 {
 		t.Fatalf("tracker hit %d times, want 1 (bypass must not buy an outbound hit past the budget)", got)
@@ -246,8 +246,8 @@ func TestAdapterSearch_ExhaustedQueryNoCacheRefuses(t *testing.T) {
 	// without relying on a configured cap.
 	a.budget.MarkQuotaSpent(context.Background(), a.instanceID, a.cfg, budgetKindQuery, a.clock())
 
-	if _, err := a.Search(context.Background(), search.Query{Keywords: "x"}); !errors.Is(err, errBudgetExhausted) {
-		t.Fatalf("err = %v, want errBudgetExhausted", err)
+	if _, err := a.Search(context.Background(), search.Query{Keywords: "x"}); !errors.Is(err, core.ErrBudgetExhausted) {
+		t.Fatalf("err = %v, want core.ErrBudgetExhausted", err)
 	}
 	if got := inner.searchCalls.Load(); got != 0 {
 		t.Fatalf("tracker hit %d times, want 0 (budget exhausted before any outbound hit)", got)
@@ -264,8 +264,8 @@ func TestAdapterGrab_ExhaustedRefuses(t *testing.T) {
 	if _, err := a.Grab(context.Background(), "https://tracker.example/dl"); err != nil {
 		t.Fatalf("first Grab: %v", err)
 	}
-	if _, err := a.Grab(context.Background(), "https://tracker.example/dl"); !errors.Is(err, errBudgetExhausted) {
-		t.Fatalf("second Grab err = %v, want errBudgetExhausted", err)
+	if _, err := a.Grab(context.Background(), "https://tracker.example/dl"); !errors.Is(err, core.ErrBudgetExhausted) {
+		t.Fatalf("second Grab err = %v, want core.ErrBudgetExhausted", err)
 	}
 	if got := inner.grabCalls.Load(); got != 1 {
 		t.Fatalf("tracker grabbed %d times, want 1 (second refused before reaching the driver)", got)
@@ -294,7 +294,7 @@ func TestAdapterSearch_QuotaErrorLearnsSpent(t *testing.T) {
 	// independently classifies it as rate-limited and escalates the circuit breaker
 	// (autobrr/harbrr#253) alongside the budget-learning latch under test here. Since
 	// autobrr/harbrr#342, budgetedLiveSearch checks the circuit BEFORE the budget, so a
-	// still-open circuit would otherwise surface errCircuitOpen instead of the
+	// still-open circuit would otherwise surface core.ErrCircuitOpen instead of the
 	// budget-exhausted error this test is about. Reset the circuit to baseline so the
 	// two independent gates don't shadow one another and this test isolates the
 	// budget-learning behavior it exists to prove.
@@ -304,10 +304,10 @@ func TestAdapterSearch_QuotaErrorLearnsSpent(t *testing.T) {
 
 	// The reactive-learning latch should now refuse further queries THIS period,
 	// without a second live hit — nothing was cached (the first call errored), so this
-	// surfaces errBudgetExhausted rather than serving stale.
+	// surfaces core.ErrBudgetExhausted rather than serving stale.
 	inner.searchErr = nil // if the guard failed, the tracker would now happily answer
-	if _, err := a.Search(context.Background(), search.Query{Keywords: "x"}); !errors.Is(err, errBudgetExhausted) {
-		t.Fatalf("second Search err = %v, want errBudgetExhausted (learned quota-spent)", err)
+	if _, err := a.Search(context.Background(), search.Query{Keywords: "x"}); !errors.Is(err, core.ErrBudgetExhausted) {
+		t.Fatalf("second Search err = %v, want core.ErrBudgetExhausted (learned quota-spent)", err)
 	}
 	if got := inner.searchCalls.Load(); got != 1 {
 		t.Fatalf("tracker hit %d times after the learned mark, want still 1", got)
@@ -332,8 +332,8 @@ func TestAdapterSearch_CircuitOpenDoesNotConsumeBudget(t *testing.T) {
 		t.Fatalf("upsert open circuit: %v", err)
 	}
 
-	if _, err := a.Search(context.Background(), q); !errors.Is(err, errCircuitOpen) {
-		t.Fatalf("first Search err = %v, want errCircuitOpen", err)
+	if _, err := a.Search(context.Background(), q); !errors.Is(err, core.ErrCircuitOpen) {
+		t.Fatalf("first Search err = %v, want core.ErrCircuitOpen", err)
 	}
 	if got := inner.searchCalls.Load(); got != 0 {
 		t.Fatalf("tracker hit %d times, want 0 (circuit open)", got)
@@ -358,7 +358,7 @@ func TestAdapterSearch_CircuitOpenDoesNotConsumeBudget(t *testing.T) {
 
 // TestAdapterSearch_BudgetExhaustionDoesNotTripBreaker proves budget-exhaustion
 // composes cleanly with the negative-result circuit breaker (#251 item 5): once the
-// budget has ALREADY been marked spent (so Search refuses via errBudgetExhausted
+// budget has ALREADY been marked spent (so Search refuses via core.ErrBudgetExhausted
 // without the tracker ever answering), that refusal must NOT open the breaker for
 // other consumers — a self-imposed guard is not a tracker failure worth suppressing
 // everyone else over. (A genuine tracker error observed while reserving still trips
@@ -371,8 +371,8 @@ func TestAdapterSearch_BudgetExhaustionDoesNotTripBreaker(t *testing.T) {
 	a.cache.tuning.Load().ttl.negative = time.Minute // arm the breaker
 	a.budget.MarkQuotaSpent(context.Background(), a.instanceID, a.cfg, budgetKindQuery, a.clock())
 
-	if _, err := a.Search(context.Background(), search.Query{Keywords: "x"}); !errors.Is(err, errBudgetExhausted) {
-		t.Fatalf("err = %v, want errBudgetExhausted", err)
+	if _, err := a.Search(context.Background(), search.Query{Keywords: "x"}); !errors.Is(err, core.ErrBudgetExhausted) {
+		t.Fatalf("err = %v, want core.ErrBudgetExhausted", err)
 	}
 	if got := inner.searchCalls.Load(); got != 0 {
 		t.Fatalf("tracker hit %d times, want 0", got)

@@ -52,11 +52,6 @@ const startupGrace = 15 * time.Minute
 // startupGraceCap is the disable-window ceiling applied inside startupGrace.
 const startupGraceCap = 5 * time.Minute
 
-// errCircuitOpen is returned by the dispatch gate in place of hitting the tracker.
-// It is deliberately outside classifyHealth's kinds: a skipped call is not a new
-// failure and must not feed back into the escalation it is itself enforcing.
-var errCircuitOpen = errors.New("registry: circuit open")
-
 // escalate advances state one rung for a qualifying failure of kind, applying
 // Prowlarr's rules sourced from ProviderStatusServiceBase/EscalationBackOff:
 //   - a transport failure (connection refused/reset, DNS, TLS, EOF — see

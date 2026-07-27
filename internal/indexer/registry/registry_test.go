@@ -7,6 +7,7 @@ import (
 	stdhttp "net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/core"
 	"github.com/autobrr/harbrr/internal/indexer/native/catalog"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 	"github.com/autobrr/harbrr/internal/secrets"
@@ -486,6 +488,12 @@ func TestAddRejectsReservedSlug(t *testing.T) {
 		wantErr error
 	}{
 		{name: "reserved stats", slug: "stats", wantErr: registry.ErrInvalid},
+		// "all" names the aggregate feed in the same {slug} position (#400): an indexer
+		// holding it would make the aggregate unreachable AND its grabs ambiguous.
+		{name: "reserved all", slug: core.AggregateSlug, wantErr: registry.ErrInvalid},
+		// Uppercase never reaches the reserved check — slugPattern rejects it first —
+		// which is how the reservation is case-insensitive for free.
+		{name: "reserved all uppercase", slug: "ALL", wantErr: registry.ErrInvalid},
 		{name: "normal slug", slug: "notstats", wantErr: nil},
 	}
 	for _, tt := range tests {
@@ -500,6 +508,60 @@ func TestAddRejectsReservedSlug(t *testing.T) {
 				t.Fatalf("Add(%q) err = %v, want %v", tt.slug, err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// TestResolveAggregateSlug: core.AggregateSlug fans out to every ENABLED instance in
+// slug order, a disabled one drops out, and a real slug still resolves to exactly
+// itself — the seam every per-indexer feed keeps going through unchanged (#400).
+func TestResolveAggregateSlug(t *testing.T) {
+	t.Parallel()
+
+	reg, _ := newRegistry(t, nil)
+	ctx := context.Background()
+	for _, slug := range []string{"beta", "alpha", "gamma"} {
+		if _, err := reg.Add(ctx, registry.AddParams{Slug: slug, DefinitionID: "testtracker"}); err != nil {
+			t.Fatalf("Add(%q): %v", slug, err)
+		}
+	}
+	if err := reg.SetEnabled(ctx, "gamma", false); err != nil {
+		t.Fatalf("SetEnabled: %v", err)
+	}
+
+	members, ok := reg.Resolve(ctx, core.AggregateSlug)
+	if !ok {
+		t.Fatal("Resolve(all) = !ok, want ok")
+	}
+	got := make([]string, 0, len(members))
+	for _, m := range members {
+		got = append(got, m.Info().ID)
+	}
+	if want := []string{"alpha", "beta"}; !slices.Equal(got, want) {
+		t.Errorf("Resolve(all) = %v, want %v (enabled only, slug order)", got, want)
+	}
+
+	single, ok := reg.Resolve(ctx, "beta")
+	if !ok || len(single) != 1 || single[0].Info().ID != "beta" {
+		t.Errorf("Resolve(beta) = %v, %v; want exactly [beta]", single, ok)
+	}
+	if _, ok := reg.Resolve(ctx, "nope"); ok {
+		t.Error("Resolve of an unknown slug must be !ok")
+	}
+	// The aggregate slug names no indexer, which is what makes all/dl unservable.
+	if _, ok := reg.Indexer(ctx, core.AggregateSlug); ok {
+		t.Error("Indexer(all) must be !ok")
+	}
+}
+
+// TestResolveAggregateEmpty: an aggregate over zero enabled instances resolves to an
+// empty set with ok=true — a valid empty feed, never an "indexer not supported" error.
+func TestResolveAggregateEmpty(t *testing.T) {
+	t.Parallel()
+
+	reg, _ := newRegistry(t, nil)
+	members, ok := reg.Resolve(context.Background(), core.AggregateSlug)
+	if !ok || len(members) != 0 {
+		t.Errorf("Resolve(all) = %v, %v; want empty and ok", members, ok)
 	}
 }
 

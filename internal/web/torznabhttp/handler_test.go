@@ -5,10 +5,12 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -75,6 +77,23 @@ type fakeProvider map[string]core.Indexer
 func (p fakeProvider) Indexer(_ context.Context, id string) (core.Indexer, bool) {
 	i, ok := p[id]
 	return i, ok
+}
+
+// Resolve mirrors registry.Resolver: the aggregate slug fans out to every member in
+// slug order (the registry lists ORDER BY slug), any other slug is the single indexer.
+func (p fakeProvider) Resolve(ctx context.Context, slug string) ([]core.Indexer, bool) {
+	if slug != core.AggregateSlug {
+		i, ok := p.Indexer(ctx, slug)
+		if !ok {
+			return nil, false
+		}
+		return []core.Indexer{i}, true
+	}
+	out := make([]core.Indexer, 0, len(p))
+	for _, id := range slices.Sorted(maps.Keys(p)) {
+		out = append(out, p[id])
+	}
+	return out, true
 }
 
 // testCaps builds capabilities for a demo indexer: categorymappings 1->Movies
