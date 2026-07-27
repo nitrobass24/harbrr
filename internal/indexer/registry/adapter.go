@@ -337,7 +337,34 @@ func (a *indexerAdapter) recordCircuitSuccess(ctx context.Context) {
 	if err := a.circuit.Upsert(ctx, a.db, recoverCircuit(state)); err != nil {
 		a.log.Warn().Str("indexer", a.info.ID).Str("error", apphttp.RedactError(err)).
 			Msg("registry: record circuit recovery failed")
+		return
 	}
+	a.notifyRecovery(ctx, state)
+}
+
+// notifyRecovery tells the sink an indexer is answering again, given the state as it
+// was BEFORE the recovery write. It fires on exactly one transition: clearing a disable
+// window that a failure actually set (DisabledTill non-zero — escalate always sets it,
+// and only this path clears it). So it is one message per outage episode: not on steady
+// healthy traffic (recordCircuitSuccess returns above at the baseline), not on a level-0
+// no-op, and not again on the further rung-by-rung descent that follows, whose windows
+// are already cleared.
+func (a *indexerAdapter) notifyRecovery(ctx context.Context, before database.CircuitState) {
+	if a.healthSink == nil || before.DisabledTill.IsZero() {
+		return
+	}
+	a.healthSink.OnRecoveryEvent(ctx, a.info.ID, recoveryDetail(before.InitialFailure, a.clock()))
+}
+
+// recoveryDetail writes the recovery message: how long the indexer was failing, so an
+// operator can tell a blip from a two-day outage without opening harbrr. A slug and two
+// timestamps — nothing secret to redact.
+func recoveryDetail(initialFailure, now time.Time) string {
+	if initialFailure.IsZero() || !now.After(initialFailure) {
+		return "Indexer is answering again; the circuit breaker's disable window is cleared."
+	}
+	return fmt.Sprintf("Indexer is answering again after %s of failures; the circuit breaker's disable window is cleared.",
+		now.Sub(initialFailure).Truncate(time.Second))
 }
 
 // escalateCircuit climbs the instance's escalation ladder one rung after a

@@ -154,12 +154,15 @@ func WithSearchCache(sc *SearchCache) Option {
 }
 
 // HealthSink receives a best-effort call after a classified health event is recorded,
-// with the indexer slug, event kind, and credential-scrubbed detail. Implementations
-// (the notify service) must not block or error back into the search path — they own
-// their own async dispatch. Declared here (structurally satisfied) so the registry
-// never imports the notification package.
+// with the indexer slug, event kind, and credential-scrubbed detail — and the matching
+// call in the other direction when the indexer recovers, so an operator learns it is
+// working again instead of only ever hearing that it broke. Implementations (the notify
+// service) must not block or error back into the search path — they own their own async
+// dispatch. Declared here (structurally satisfied) so the registry never imports the
+// notification package.
 type HealthSink interface {
 	OnHealthEvent(ctx context.Context, indexer, kind, detail string)
+	OnRecoveryEvent(ctx context.Context, indexer, detail string)
 }
 
 // WithHealthSink registers the sink notified after each recorded health event. Nil (the

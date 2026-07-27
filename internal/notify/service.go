@@ -31,8 +31,8 @@ const secretURL = "url"
 const healthNotifyCooldown = time.Hour
 
 // healthKey identifies a health-notification stream for cooldown accounting. The indexer
-// slug is stable and unique per indexer and Kind is one of the four classified health
-// kinds, so (indexer, kind) is a sufficient dedup key.
+// slug is stable and unique per indexer and kind is one of the classified health kinds
+// (or recoveryKind), so (indexer, kind) is a sufficient dedup key.
 type healthKey struct {
 	indexer string
 	kind    string
@@ -253,17 +253,50 @@ func (s *Service) OnHealthEvent(ctx context.Context, indexer, kind, detail strin
 	if s.healthSuppressed(indexer, kind, now) {
 		return
 	}
-	ev := Event{
+	s.dispatchHealthAsync(ctx, Event{
 		Event:     EventIndexerHealth,
 		Indexer:   indexer,
 		Kind:      kind,
 		Detail:    detail,
 		Timestamp: now,
+	})
+}
+
+// recoveryKind labels a recovery in the Kind field (and in the cooldown key). It is
+// deliberately NOT one of domain's health kinds: those name failures, and keying a
+// recovery under its own label is what stops a pending failure cooldown for the same
+// indexer from swallowing it.
+const recoveryKind = "recovered"
+
+// OnRecoveryEvent is the registry recovery sink: an indexer that had been disabled by
+// the circuit breaker answered successfully again. Same best-effort, non-blocking
+// contract as OnHealthEvent, and the same on_health_failure opt-in.
+//
+// It shares the cooldown gate on the (indexer, "recovered") key. The registry already
+// fires this once per outage episode, so the gate is not what makes it one-shot; it is
+// there for the flapping indexer that fails and recovers every poll cycle — whose
+// failures are debounced to one an hour, so its recoveries must be too, or muting the
+// channel becomes the rational response.
+func (s *Service) OnRecoveryEvent(ctx context.Context, indexer, detail string) {
+	now := s.clock()
+	if s.healthSuppressed(indexer, recoveryKind, now) {
+		return
 	}
-	// Detach from the caller's request context (which is cancelled the moment the search
-	// returns) so the send outlives it, but keep the process-wide cancellation absent —
-	// the sender's own HTTP timeout bounds it. Tracked on dispatchWG so shutdown (Drain)
-	// joins the goroutine before db.Close, since dispatch reads the DB.
+	s.dispatchHealthAsync(ctx, Event{
+		Event:     EventIndexerRecovery,
+		Indexer:   indexer,
+		Kind:      recoveryKind,
+		Detail:    detail,
+		Timestamp: now,
+	})
+}
+
+// dispatchHealthAsync fans an event out to the on_health_failure targets off the
+// caller's goroutine. It detaches from the caller's request context (which is cancelled
+// the moment the search returns) so the send outlives it, but keeps the process-wide
+// cancellation absent — the sender's own HTTP timeout bounds it. Tracked on dispatchWG
+// so shutdown (Drain) joins the goroutine before db.Close, since dispatch reads the DB.
+func (s *Service) dispatchHealthAsync(ctx context.Context, ev Event) {
 	s.dispatchWG.Add(1)
 	go func() {
 		defer s.dispatchWG.Done()
