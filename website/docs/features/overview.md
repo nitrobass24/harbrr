@@ -167,7 +167,7 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 | Search history and an event log | 🚧 [#103](https://github.com/autobrr/harbrr/issues/103) |
 | Grab success rate and per-category indexer stats | 🚧 [#403](https://github.com/autobrr/harbrr/issues/403) |
 | Indexer uniqueness scoring — which indexers surface releases nobody else has | 🚧 [#378](https://github.com/autobrr/harbrr/issues/378) |
-| VIP/membership expiry tracking with lead-time notifications | 🚧 [#399](https://github.com/autobrr/harbrr/issues/399) |
+| [VIP & membership expiry](vip-expiry.md) — per-indexer dates, lead-time warnings that fire exactly once, renewal re-arms by itself | ✅ |
 | Newznab API-limit auto-discovery | 🚧 [#377](https://github.com/autobrr/harbrr/issues/377) |
 | Per-tracker account state — ratio, buffer, hit-and-run, freeleech tokens | 🚧 deferred — [#393](https://github.com/autobrr/harbrr/issues/393) |
 | Parse-failure diagnostics — see which selector missed, without re-fetching | 🚧 [#390](https://github.com/autobrr/harbrr/issues/390) |

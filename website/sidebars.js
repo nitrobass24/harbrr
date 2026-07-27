@@ -47,6 +47,11 @@ const sidebars = {
           label: 'Cross-seed & freeleech',
         },
         {type: 'doc', id: 'features/pagination', label: 'Pagination'},
+        {
+          type: 'doc',
+          id: 'features/vip-expiry',
+          label: 'VIP & membership expiry',
+        },
       ],
     },
   ],
