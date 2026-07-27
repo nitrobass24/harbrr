@@ -28,7 +28,7 @@ import (
 // interface, never the concrete engine. It is the unit the registry caches per
 // slug. It also records per-indexer health events: a classified Search failure
 // appends one event (append-only) so the management status endpoint can surface why
-// an indexer is unhealthy.
+// an indexer is failing.
 type indexerAdapter struct {
 	info       core.IndexerInfo
 	inner      native.Driver

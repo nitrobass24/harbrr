@@ -269,7 +269,7 @@ export interface paths {
         };
         /**
          * Get fleet-wide indexer health status
-         * @description Returns healthy/unhealthy counts across every configured indexer, plus each indexer's derived status and most recent health event, sorted by slug.
+         * @description Returns healthy/failing/unknown counts across every configured indexer, plus each indexer's derived status and most recent health event, sorted by slug.
          */
         get: operations["allIndexerStatus"];
         put?: never;
@@ -362,7 +362,7 @@ export interface paths {
         };
         /**
          * Get an indexer's health status
-         * @description Returns the indexer's derived health (healthy/unhealthy) and its recent health events (auth_failure, rate_limited, parse_error, anti_bot, transport). Event details are credential-scrubbed before storage, so no secret is surfaced.
+         * @description Returns the indexer's derived health (healthy/failing/unknown) and its recent health events (auth_failure, rate_limited, parse_error, anti_bot, transport). Event details are credential-scrubbed before storage, so no secret is surfaced.
          */
         get: operations["indexerStatus"];
         put?: never;
@@ -1560,14 +1560,15 @@ export interface components {
             /** Format: date-time */
             lastFailureAt?: string;
         };
-        /** @description Fleet-wide indexer health roll-up: healthy/unhealthy counts plus each configured indexer's derived status and most recent health event, sorted by slug. */
+        /** @description Fleet-wide indexer health roll-up: healthy/failing/unknown counts plus each configured indexer's derived status and most recent health event, sorted by slug. */
         FleetStatus: {
             healthy: number;
-            unhealthy: number;
+            failing: number;
+            unknown: number;
             indexers: {
                 slug: string;
                 /** @enum {string} */
-                status: "healthy" | "unhealthy";
+                status: "healthy" | "failing" | "unknown";
                 lastEvent?: {
                     /** @enum {string} */
                     kind: "auth_failure" | "rate_limited" | "parse_error" | "anti_bot" | "transport";
@@ -3032,7 +3033,7 @@ export interface operations {
                     "application/json": {
                         slug: string;
                         /** @enum {string} */
-                        status: "healthy" | "unhealthy";
+                        status: "healthy" | "failing" | "unknown";
                         events: {
                             /** @enum {string} */
                             kind: "auth_failure" | "rate_limited" | "parse_error" | "anti_bot" | "transport";
