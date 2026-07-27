@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react"
+import { useDeferredValue, useMemo, useRef, useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
-import { ChevronDown, Search as SearchIcon } from "lucide-react"
+import { ChevronDown, Filter, Search as SearchIcon, X } from "lucide-react"
 import { PageHeader } from "@/components/layout/PageHeader"
+import { filterRows } from "@/components/search/search-filter"
 import { sortRows, type SearchRow, type Sort, type SortKey } from "@/components/search/search-sort"
 import { SearchResultsResponsive } from "@/components/search/SearchResultsResponsive"
 import { Button } from "@/components/ui/button"
@@ -69,6 +70,23 @@ function SearchPage() {
     return sortRows(merged, sort)
   }, [results, active, sort])
 
+  // Client-side only: filtering narrows the rows already in state (never the DOM,
+  // never a re-query). useDeferredValue keeps typing responsive when a heavy regex
+  // meets PAGE_SIZE x N-indexers rows, without a debounce timer to manage.
+  const [filter, setFilter] = useState("")
+  const deferredFilter = useDeferredValue(filter)
+  const lastValidFilter = useRef("")
+  const { shown, invalidFilter } = useMemo(() => {
+    const matched = filterRows(rows, deferredFilter, catNames)
+    if (matched !== null) {
+      lastValidFilter.current = deferredFilter
+      return { shown: matched, invalidFilter: false }
+    }
+    // Half-typed or uncompilable pattern: re-apply the last valid one to the current
+    // rows so the view stays put instead of blanking.
+    return { shown: filterRows(rows, lastValidFilter.current, catNames) ?? rows, invalidFilter: true }
+  }, [rows, deferredFilter, catNames])
+
   const failed = results.map((r, i) => (r.isError ? active[i] : null)).filter((s): s is string => s !== null)
   const searching = submitted !== null && results.some((r) => r.isLoading)
   const hasMore = results.some((r) => r.data?.hasMore)
@@ -89,6 +107,8 @@ function SearchPage() {
   }
 
   const setId = (key: keyof typeof ids) => (value: string) => setIds((prev) => ({ ...prev, [key]: value }))
+
+  const countLabel = shown.length === rows.length ? `${rows.length} results` : `${shown.length} of ${rows.length} results`
 
   return (
     <div className="flex h-full flex-col">
@@ -155,10 +175,17 @@ function SearchPage() {
         {submitted !== null && !searching && (
           rows.length > 0 ? (
             <>
-              <SearchResultsResponsive rows={rows} catNames={catNames} sort={sort} onSort={(key: SortKey) =>
-                setSort((prev) => prev.key === key ? { key, dir: prev.dir === "desc" ? "asc" : "desc" } : { key, dir: "desc" })} />
+              <ResultFilter value={filter} onChange={setFilter} invalid={invalidFilter} />
+              {shown.length > 0 ? (
+                <SearchResultsResponsive rows={shown} catNames={catNames} sort={sort} onSort={(key: SortKey) =>
+                  setSort((prev) => prev.key === key ? { key, dir: prev.dir === "desc" ? "asc" : "desc" } : { key, dir: "desc" })} />
+              ) : (
+                <div className="grid place-items-center rounded-xl border border-dashed border-border py-16 text-center">
+                  <p className="text-[13px] text-muted-foreground">No results match the filter.</p>
+                </div>
+              )}
               <div className="mt-3 flex items-center gap-3 px-1 text-[12px] text-faint">
-                <span>{rows.length} results · page {offset / PAGE_SIZE + 1}</span>
+                <span>{countLabel} · page {offset / PAGE_SIZE + 1}</span>
                 <span className="ml-auto flex gap-2">
                   {offset > 0 && (
                     <Button variant="outline" size="sm" onClick={() => search(offset - PAGE_SIZE)}>Previous</Button>
@@ -176,6 +203,44 @@ function SearchPage() {
           )
         )}
       </div>
+    </div>
+  )
+}
+
+// Narrows the results already on screen. Never re-queries — this is a view over
+// state the fan-out already returned.
+function ResultFilter({ value, onChange, invalid }: {
+  value: string
+  onChange: (v: string) => void
+  invalid: boolean
+}) {
+  return (
+    <div className="mb-3 flex items-center gap-2">
+      <div className="relative w-full max-w-md">
+        <Filter className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint" />
+        <Input
+          className="h-8 pl-8 pr-8 text-[13px]"
+          aria-label="Filter results"
+          aria-invalid={invalid}
+          placeholder="Filter results — text, /regex/, -exclude"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") onChange("")
+          }}
+        />
+        {value !== "" && (
+          <button
+            type="button"
+            aria-label="Clear filter"
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-faint hover:text-foreground"
+            onClick={() => onChange("")}
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+      {invalid && <span className="text-[12px] text-warn">Invalid pattern — showing the last valid filter</span>}
     </div>
   )
 }
