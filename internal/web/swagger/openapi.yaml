@@ -2449,7 +2449,8 @@ components:
         failure tally folded in from the health events. queries counts searches that
         reached the tracker (a cache hit bypasses the counted path), so avgResponseMs
         reflects real upstream latency. lastQueryAt/lastFailureAt are absent when never
-        observed.
+        observed. budget is present on GET /api/indexers/{slug}/stats only — the
+        all-indexers list omits it.
       properties:
         slug: { type: string }
         queries: { type: integer, format: int64 }
@@ -2466,7 +2467,40 @@ components:
           required: [authFailure, rateLimited, parseError, antiBot, transport]
         lastQueryAt: { type: string, format: date-time }
         lastFailureAt: { type: string, format: date-time }
+        budget: { $ref: "#/components/schemas/IndexerBudget" }
       required: [slug, queries, grabs, avgResponseMs, failures]
+    IndexerBudget:
+      type: object
+      description: >
+        The indexer's request-budget standing for the CURRENT rolling period
+        (autobrr/harbrr#251, surfaced by #402): what has been counted so far against
+        the operator-configured caps, and when the period rolls over. It reports the
+        counters the registry already keeps — reading it collects nothing and counts
+        nothing. limit is the OPERATOR-CONFIGURED cap (0 = none configured); learned
+        is the separate reactive latch harbrr set from the tracker's own quota error,
+        which carries no number because the tracker never declared one. A learned
+        latch or a used-at-limit kind is a self-imposed guard, not an indexer failure.
+      properties:
+        unit: { type: string, enum: [day, hour], description: the rolling period the counters reset on }
+        periodEnd:
+          type: string
+          format: date-time
+          description: when the current period rolls over (UTC) — used resets and any learned latch clears
+        query: { $ref: "#/components/schemas/IndexerBudgetKind" }
+        grab: { $ref: "#/components/schemas/IndexerBudgetKind" }
+      required: [unit, periodEnd, query, grab]
+    IndexerBudgetKind:
+      type: object
+      description: One kind's (search or grab) usage against its cap for the current period.
+      properties:
+        used: { type: integer, format: int64, description: requests of this kind counted in the current period }
+        limit: { type: integer, description: the operator-configured cap for the period; 0 means none configured }
+        learned:
+          type: boolean
+          description: >
+            the tracker declared its own quota spent for this kind in the current
+            period (the reactive latch) — a cap harbrr was never configured with
+      required: [used, limit, learned]
     FleetStatus:
       type: object
       description: >

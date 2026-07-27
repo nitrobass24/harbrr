@@ -1560,7 +1560,7 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
-        /** @description Per-indexer Prowlarr-style stats: durable query/grab/latency counters plus the failure tally folded in from the health events. queries counts searches that reached the tracker (a cache hit bypasses the counted path), so avgResponseMs reflects real upstream latency. lastQueryAt/lastFailureAt are absent when never observed. */
+        /** @description Per-indexer Prowlarr-style stats: durable query/grab/latency counters plus the failure tally folded in from the health events. queries counts searches that reached the tracker (a cache hit bypasses the counted path), so avgResponseMs reflects real upstream latency. lastQueryAt/lastFailureAt are absent when never observed. budget is present on GET /api/indexers/{slug}/stats only — the all-indexers list omits it. */
         IndexerStats: {
             slug: string;
             /** Format: int64 */
@@ -1585,6 +1585,34 @@ export interface components {
             lastQueryAt?: string;
             /** Format: date-time */
             lastFailureAt?: string;
+            budget?: components["schemas"]["IndexerBudget"];
+        };
+        /** @description The indexer's request-budget standing for the CURRENT rolling period (autobrr/harbrr#251, surfaced by #402): what has been counted so far against the operator-configured caps, and when the period rolls over. It reports the counters the registry already keeps — reading it collects nothing and counts nothing. limit is the OPERATOR-CONFIGURED cap (0 = none configured); learned is the separate reactive latch harbrr set from the tracker's own quota error, which carries no number because the tracker never declared one. A learned latch or a used-at-limit kind is a self-imposed guard, not an indexer failure. */
+        IndexerBudget: {
+            /**
+             * @description the rolling period the counters reset on
+             * @enum {string}
+             */
+            unit: "day" | "hour";
+            /**
+             * Format: date-time
+             * @description when the current period rolls over (UTC) — used resets and any learned latch clears
+             */
+            periodEnd: string;
+            query: components["schemas"]["IndexerBudgetKind"];
+            grab: components["schemas"]["IndexerBudgetKind"];
+        };
+        /** @description One kind's (search or grab) usage against its cap for the current period. */
+        IndexerBudgetKind: {
+            /**
+             * Format: int64
+             * @description requests of this kind counted in the current period
+             */
+            used: number;
+            /** @description the operator-configured cap for the period; 0 means none configured */
+            limit: number;
+            /** @description the tracker declared its own quota spent for this kind in the current period (the reactive latch) — a cap harbrr was never configured with */
+            learned: boolean;
         };
         /** @description Fleet-wide indexer health roll-up: healthy/failing/unknown counts plus each configured indexer's derived status and most recent health event, sorted by slug. */
         FleetStatus: {

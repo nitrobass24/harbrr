@@ -52,6 +52,7 @@ type invalidator interface {
 // lock and holds no CRUD/serve state.
 type StatsReporter struct {
 	stats     *IndexerStats
+	budget    *RequestBudget
 	instances database.Instances
 	health    database.Health
 	circuit   database.Circuit
@@ -820,6 +821,9 @@ type IndexerFailureCounts struct {
 // counters plus the failure aggregation and the last-query/last-failure times.
 // AvgResponseMs is derived (response-time total / queries), so it is 0 when the indexer
 // has never been queried. LastQueryAt/LastFailureAt are zero when never observed.
+// Budget is the current-period request-budget standing, filled by Stats (the
+// per-indexer read) and nil in AllStats — reading it costs one settings query per
+// instance, and the meter it feeds is a per-indexer surface (autobrr/harbrr#402).
 type IndexerStat struct {
 	Slug          string
 	Queries       int64
@@ -828,6 +832,7 @@ type IndexerStat struct {
 	Failures      IndexerFailureCounts
 	LastQueryAt   time.Time
 	LastFailureAt time.Time
+	Budget        *BudgetStatus
 }
 
 // Stats returns one indexer's per-indexer stats: its durable counters plus the failure
@@ -844,8 +849,33 @@ func (r *StatsReporter) Stats(ctx context.Context, slug string) (IndexerStat, er
 	if err != nil {
 		return IndexerStat{}, fmt.Errorf("registry: stats failures %q: %w", slug, err)
 	}
+	budget, err := r.budgetStatus(ctx, inst.ID)
+	if err != nil {
+		return IndexerStat{}, err
+	}
 	queries, grabs, respTotal, lastQuery, _ := r.stats.snapshot(inst.ID)
-	return buildIndexerStat(slug, queries, grabs, respTotal, lastQuery, counts), nil
+	stat := buildIndexerStat(slug, queries, grabs, respTotal, lastQuery, counts)
+	stat.Budget = &budget
+	return stat, nil
+}
+
+// budgetStatus reads the instance's budget knobs off its stored settings and returns
+// the current-period standing. The three keys are plain values (never secrets), so
+// this needs no keyring — and deliberately copies nothing else out of the settings
+// row. Read-only: it counts nothing and persists nothing.
+func (r *StatsReporter) budgetStatus(ctx context.Context, instanceID int64) (BudgetStatus, error) {
+	settings, err := r.instances.Settings(ctx, r.db, instanceID)
+	if err != nil {
+		return BudgetStatus{}, fmt.Errorf("registry: stats budget settings for instance %d: %w", instanceID, err)
+	}
+	cfg := make(map[string]string, 3)
+	for _, s := range settings {
+		switch s.Name {
+		case "query_limit", "grab_limit", "limits_unit":
+			cfg[s.Name] = s.Value
+		}
+	}
+	return r.budget.Status(ctx, instanceID, cfg, r.clock()), nil
 }
 
 // AllStats returns per-indexer stats for every configured instance. It reads the

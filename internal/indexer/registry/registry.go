@@ -256,6 +256,7 @@ func New(db dbinterface.Querier, ldr *loader.Loader, keyring secretsKeyring, fam
 	}
 	r.StatsReporter = &StatsReporter{
 		stats:     res.stats,
+		budget:    res.budget,
 		instances: res.instances,
 		health:    res.health,
 		circuit:   res.circuit,
