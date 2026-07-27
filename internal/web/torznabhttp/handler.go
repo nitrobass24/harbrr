@@ -338,17 +338,28 @@ func (h *handler) serve(w http.ResponseWriter, r *http.Request) {
 	h.serveAggregate(w, r, slug, members, q)
 }
 
-// writeResolveError answers a slug that produced no member set. Both cases render the
-// SAME document a per-indexer feed renders when ITS resolution fails, including when
-// the instance store is unreadable — error 201, which is a loud error document, never
-// the empty-200 feed a nil member set would otherwise serve (autobrr/harbrr#400: a
-// whole-list failure must be distinguishable from "you have no indexers"). Only a
-// genuine read failure is logged; an unknown slug is a client error, not an incident.
+// writeResolveError answers a slug that produced no member set, distinguishing the two
+// things that can mean (autobrr/harbrr#400, review decision):
+//
+//   - The slug names nothing (core.ErrNoSuchFeed) — a client error: the same 201
+//     "Indexer is not supported" document an unknown per-indexer slug has always
+//     rendered (Jackett parity), unlogged.
+//   - The member set could not be READ (the instance/profile store failed) — harbrr's
+//     problem, not the consumer's config: error 900, matching the 500→900 mapping the
+//     /dl proxy already uses for internal failures. Telling an *arr "your config is
+//     wrong" over a transient store failure sends its operator to the wrong ladder.
+//
+// Either way it is a loud error document, never the empty-200 feed a nil member set
+// would otherwise serve — a whole-list failure must be distinguishable from "you have
+// no indexers". Both the per-indexer and aggregate slug forms route through here, so
+// the two feed shapes cannot disagree.
 func (h *handler) writeResolveError(w http.ResponseWriter, slug string, err error) {
-	if !errors.Is(err, core.ErrNoSuchFeed) {
-		logInternalError(h.log, "resolve", slug, err)
+	if errors.Is(err, core.ErrNoSuchFeed) {
+		writeError(w, http.StatusOK, codeBadParameter, "Indexer is not supported")
+		return
 	}
-	writeError(w, http.StatusOK, codeBadParameter, "Indexer is not supported")
+	logInternalError(h.log, "resolve", slug, err)
+	writeError(w, http.StatusOK, codeUnknownError, "Internal server error")
 }
 
 // isAggregateSlug reports whether a feed slug names a member SET rather than one

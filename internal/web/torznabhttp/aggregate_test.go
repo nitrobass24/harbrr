@@ -96,10 +96,14 @@ func (p memberProvider) Resolve(ctx context.Context, slug string) ([]core.Member
 // profileFeed is the feed slug addressing the sync profile named name.
 func profileFeed(name string) string { return core.ProfileSlugPrefix + name }
 
-// notSupportedDoc is the error document a feed slug that resolves NO member set gets —
-// the same one a per-indexer feed serves when its own resolution fails, whether the slug
-// is unknown or the instance store could not be read.
+// notSupportedDoc is the error document an UNKNOWN feed slug gets — the client-error
+// case, same as a per-indexer unknown slug has always rendered (Jackett parity).
 var notSupportedDoc = string(tzn.MarshalError(codeBadParameter, "Indexer is not supported"))
+
+// internalErrorDoc is the document a whole-list READ failure gets (review decision on
+// autobrr/harbrr#414): the store failing is harbrr's problem, not the consumer's config,
+// so it is 900 — matching the /dl proxy's 500→900 mapping — never 201.
+var internalErrorDoc = string(tzn.MarshalError(codeUnknownError, "Internal server error"))
 
 // memberElem is the ledger line for id, e.g. `<harbrr:member id="a" ... />`.
 func memberElem(t *testing.T, body, id string) string {
@@ -586,7 +590,7 @@ func TestAggregateWholeListFailure(t *testing.T) {
 			if strings.Contains(body, "<rss") {
 				t.Fatalf("a whole-list failure must not serve a feed:\n%s", body)
 			}
-			if !strings.Contains(body, notSupportedDoc) {
+			if !strings.Contains(body, internalErrorDoc) {
 				t.Errorf("want the standard resolution-failure document:\n%s", body)
 			}
 			if strings.Contains(body, "harbrr.db") {
