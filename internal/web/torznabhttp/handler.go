@@ -175,6 +175,11 @@ func (h *handler) serveDL(w http.ResponseWriter, r *http.Request) {
 		// a disabled instance (registry errDisabled), collapsing both into 404. A benign
 		// divergence: both are 4xx failed grabs to *arr, neither leaks, and the disabled
 		// case is only reachable here with an already-minted token.
+		//
+		// This is also what keeps an AGGREGATE slug ("all", "profile:<name>") from ever
+		// serving a download: it names a member set, not an instance, so Indexer never
+		// resolves it and /dl on it 404s. An aggregate feed's enclosures point at the
+		// ORIGIN member's /dl (see aggregateItems), which is the whole binding.
 		writeError(w, http.StatusNotFound, codeBadParameter, "Indexer is not supported")
 		return
 	}
@@ -310,7 +315,8 @@ func isBencodeTorrent(body []byte) bool {
 // before aggregation existed. Everything else is the aggregate fan-out (#400), including
 // an aggregate slug that currently covers a single enabled indexer: it still renders the
 // aggregate envelope and ledger, so the feed's shape does not change under the consumer
-// when a second indexer is enabled.
+// when a second indexer is enabled. An unknown profile is not-found exactly as an
+// unknown indexer slug is.
 func (h *handler) serve(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	if !h.authorized(q) {
@@ -318,23 +324,39 @@ func (h *handler) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slug := r.PathValue("slug")
-	members, ok := h.provider.Resolve(r.Context(), slug)
-	if !ok {
-		writeError(w, http.StatusOK, codeBadParameter, "Indexer is not supported")
+	members, err := h.provider.Resolve(r.Context(), slug)
+	if err != nil {
+		h.writeResolveError(w, slug, err)
 		return
 	}
 	if !isAggregateSlug(slug) {
-		// Resolve's contract: a non-aggregate slug that resolves is exactly one indexer.
-		h.serveIndexer(w, r, members[0], q)
+		// Resolve's contract: a non-aggregate slug that resolves is exactly one LIVE
+		// indexer (a single slug that cannot be built does not resolve at all).
+		h.serveIndexer(w, r, members[0].Indexer, q)
 		return
 	}
 	h.serveAggregate(w, r, slug, members, q)
 }
 
+// writeResolveError answers a slug that produced no member set. Both cases render the
+// SAME document a per-indexer feed renders when ITS resolution fails, including when
+// the instance store is unreadable — error 201, which is a loud error document, never
+// the empty-200 feed a nil member set would otherwise serve (autobrr/harbrr#400: a
+// whole-list failure must be distinguishable from "you have no indexers"). Only a
+// genuine read failure is logged; an unknown slug is a client error, not an incident.
+func (h *handler) writeResolveError(w http.ResponseWriter, slug string, err error) {
+	if !errors.Is(err, core.ErrNoSuchFeed) {
+		logInternalError(h.log, "resolve", slug, err)
+	}
+	writeError(w, http.StatusOK, codeBadParameter, "Indexer is not supported")
+}
+
 // isAggregateSlug reports whether a feed slug names a member SET rather than one
-// indexer. Today that is only core.AggregateSlug; the profile: and status: forms
-// (autobrr/harbrr#400 PR 2/3) extend exactly here.
-func isAggregateSlug(slug string) bool { return slug == core.AggregateSlug }
+// indexer: core.AggregateSlug, or a core.ProfileSlugPrefix form. The status: form
+// (autobrr/harbrr#400 PR 3, behind the health selector) extends exactly here.
+func isAggregateSlug(slug string) bool {
+	return slug == core.AggregateSlug || strings.HasPrefix(slug, core.ProfileSlugPrefix)
+}
 
 // serveIndexer is the per-indexer feed: caps or results for one resolved indexer.
 func (h *handler) serveIndexer(w http.ResponseWriter, r *http.Request, idx core.Indexer, q url.Values) {

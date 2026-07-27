@@ -12,7 +12,9 @@ import (
 	"maps"
 	"net"
 	"net/url"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -42,6 +44,7 @@ var errDisabled = errors.New("registry: instance disabled")
 type Resolver struct {
 	db           dbinterface.Querier
 	instances    database.Instances
+	profiles     database.SyncProfiles
 	proxies      database.Proxies
 	solvers      database.Solvers
 	health       database.Health
@@ -278,45 +281,89 @@ func (r *Resolver) Indexer(ctx context.Context, slug string) (core.Indexer, bool
 }
 
 // Resolve returns the member set a feed slug covers, implementing core.Provider:
-// core.AggregateSlug fans out to every ENABLED instance, any other slug is the single
-// indexer Indexer would return (ok=false when it does not resolve). Note the capital:
-// the unexported resolve below is the single-slug build-or-cache step this is layered
-// over, not an alternative spelling of it.
-func (r *Resolver) Resolve(ctx context.Context, slug string) ([]core.Indexer, bool) {
-	if slug != core.AggregateSlug {
-		idx, ok := r.Indexer(ctx, slug)
-		if !ok {
-			return nil, false
-		}
-		return []core.Indexer{idx}, true
+// core.AggregateSlug selects every ENABLED instance, core.ProfileSlugPrefix selects a
+// sync profile's members, and any other slug is the single indexer Indexer would return
+// (core.ErrNoSuchFeed when it does not resolve). Note the capital: the unexported
+// resolve below is the single-slug build-or-cache step this is layered over, not an
+// alternative spelling of it.
+//
+// Every SELECTED instance comes back as a member — live, or skipped with a constant
+// reason — so nothing a slug covers can go missing from the served ledger. A failure to
+// READ the member set is returned as an error, never as an empty set, so the serving
+// layer can tell "no members" from "could not look".
+func (r *Resolver) Resolve(ctx context.Context, slug string) ([]core.MemberOutcome, error) {
+	switch {
+	case slug == core.AggregateSlug:
+		return r.selectedMembers(ctx, func(inst domain.IndexerInstance) bool { return inst.Enabled })
+	case strings.HasPrefix(slug, core.ProfileSlugPrefix):
+		return r.profileMembers(ctx, strings.TrimPrefix(slug, core.ProfileSlugPrefix))
 	}
-	return r.enabledIndexers(ctx), true
+	idx, ok := r.Indexer(ctx, slug)
+	if !ok {
+		return nil, core.ErrNoSuchFeed
+	}
+	return []core.MemberOutcome{core.LiveMember(idx)}, nil
 }
 
-// enabledIndexers resolves every enabled instance, in slug order (Instances.List is
-// ORDER BY slug), so an aggregate fan-out has a stable member order. An instance that
-// fails to build is dropped with a logged resolve error rather than failing the whole
-// set — the aggregate feed is partial by construction. A list failure yields no
-// members, which serves an empty feed instead of a 500.
+// profileMembers selects the members of the sync profile named name (matched exactly,
+// on the URL-decoded slug remainder). An unknown name is core.ErrNoSuchFeed — the same
+// not-found the serving layer gives an unknown indexer slug. A profile member that is
+// DISABLED is still selected, and ledgered as such: the operator put it in the profile,
+// so "it served nothing because you turned it off" is the answer they need.
+func (r *Resolver) profileMembers(ctx context.Context, name string) ([]core.MemberOutcome, error) {
+	// ponytail: list-and-scan rather than a SELECT ... WHERE name = ?. A self-hosted
+	// instance has a handful of profiles; add the query when that stops being true.
+	profiles, err := r.profiles.ListProfiles(ctx, r.db)
+	if err != nil {
+		return nil, fmt.Errorf("registry: profile feed: list profiles: %w", err)
+	}
+	i := slices.IndexFunc(profiles, func(p domain.SyncProfile) bool { return p.Name == name })
+	if i < 0 {
+		return nil, core.ErrNoSuchFeed
+	}
+	selected := profiles[i].IndexerIDs
+	return r.selectedMembers(ctx, func(inst domain.IndexerInstance) bool {
+		return slices.Contains(selected, inst.ID)
+	})
+}
+
+// selectedMembers resolves every instance select picks, in slug order (Instances.List is
+// ORDER BY slug), so a fan-out has a stable member order regardless of which slug form
+// selected it. An instance that fails to BUILD becomes a SkipUnavailable member rather
+// than vanishing — the redacted cause is logged by Indexer, and only the constant is
+// served. A list failure is an error, not an empty set: the aggregate feed is partial by
+// construction, but "I could not read your indexers" is not a partial answer.
 //
 // ponytail: N build-or-cache calls per aggregate request. Every one after the first
 // is a map hit (Resolver.cache), so at single-user scale this is not worth batching.
-func (r *Resolver) enabledIndexers(ctx context.Context) []core.Indexer {
+func (r *Resolver) selectedMembers(ctx context.Context, selects func(domain.IndexerInstance) bool) ([]core.MemberOutcome, error) {
 	list, err := r.instances.List(ctx, r.db)
 	if err != nil {
-		r.log.Warn().Str("error", apphttp.RedactError(err)).Msg("registry: aggregate: list instances failed")
-		return nil
+		return nil, fmt.Errorf("registry: aggregate feed: list instances: %w", err)
 	}
-	out := make([]core.Indexer, 0, len(list))
+	out := make([]core.MemberOutcome, 0, len(list))
 	for _, inst := range list {
-		if !inst.Enabled {
-			continue
-		}
-		if idx, ok := r.Indexer(ctx, inst.Slug); ok {
-			out = append(out, idx)
+		if selects(inst) {
+			out = append(out, r.member(ctx, inst))
 		}
 	}
-	return out
+	return out, nil
+}
+
+// member turns one selected instance into its ledger-bearing member. A live member takes
+// its ledger identity from the built engine (exactly as the per-indexer feed does); a
+// member that never builds falls back to the stored row, because there is no engine to
+// ask. The reason is always one of core's Skip* constants — never the raw error, which
+// routinely embeds a passkey.
+func (r *Resolver) member(ctx context.Context, inst domain.IndexerInstance) core.MemberOutcome {
+	if !inst.Enabled {
+		return core.SkippedMember(inst.Slug, inst.Name, core.SkipDisabled)
+	}
+	idx, ok := r.Indexer(ctx, inst.Slug)
+	if !ok {
+		return core.SkippedMember(inst.Slug, inst.Name, core.SkipUnavailable)
+	}
+	return core.LiveMember(idx)
 }
 
 // resolve returns the cached adapter for a slug or builds and caches it. Build

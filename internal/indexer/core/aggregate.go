@@ -37,13 +37,33 @@ const (
 	SkipTimeout = "timeout"
 	// SkipError: any other member failure (details are logged, redacted).
 	SkipError = "error"
+	// SkipDisabled: the member is a disabled instance. Only a profile can select one
+	// (AggregateSlug covers enabled instances only); it is ledgered rather than dropped
+	// so a profile feed explains why a member the operator put in it served nothing.
+	SkipDisabled = "disabled"
+	// SkipUnavailable: harbrr could not BUILD this member's engine (corrupt stored
+	// config, a definition that vanished under it), so it never reached the fan-out.
+	// The redacted cause is logged by the resolver; only this constant is served.
+	SkipUnavailable = "unavailable"
 )
 
-// MemberOutcome is one line of the aggregate feed's per-indexer status ledger: what
-// happened to this member on this request. Reason is "" when the member contributed
-// (Count says how many releases it put into the merged set, BEFORE the page slice);
-// otherwise it is one of the Skip* constants and Count is 0.
+// MemberOutcome is one member of an aggregate feed's member set, carried from
+// RESOLUTION through the fan-out into the served per-indexer status ledger. One exists
+// for every instance the slug SELECTS — including members that never ran — which is
+// what makes the ledger's "absence is visible" promise hold end to end.
+//
+// Reason is "" while the member is still live: Indexer is set and Count says how many
+// releases it put into the merged set (BEFORE the page slice). Otherwise Reason is one
+// of the Skip* constants and Count is 0 — set either at resolution (disabled,
+// unavailable), before the fan-out (an unsupported search mode) or by the fan-out
+// itself.
 type MemberOutcome struct {
+	// ID and Name identify the member in the ledger. They are fixed at RESOLUTION and
+	// are the only identity source the ledger has: a member skipped before it was built
+	// has no Indexer to ask.
+	ID   string
+	Name string
+	// Indexer is the live member, nil once the member is skipped.
 	Indexer Indexer
 	Reason  string
 	Count   int
@@ -54,8 +74,31 @@ type MemberOutcome struct {
 	Err error
 }
 
-// OK reports whether the member contributed to the merged set.
+// OK reports whether the member is still live — i.e. it has not been skipped, so it
+// is searched by the fan-out and (afterwards) contributed to the merged set.
 func (m MemberOutcome) OK() bool { return m.Reason == "" }
+
+// LiveMember builds the resolved-and-ready member for idx, taking its ledger identity
+// from the indexer itself. It is how every caller that already holds an Indexer enters
+// the member set.
+func LiveMember(idx Indexer) MemberOutcome {
+	info := idx.Info()
+	return MemberOutcome{ID: info.ID, Name: info.Name, Indexer: idx}
+}
+
+// SkippedMember builds a member that will never be searched, identified by the stored
+// instance row (slug + name) because there is no engine to ask. reason must be one of
+// the Skip* constants — never a raw error.
+func SkippedMember(id, name, reason string) MemberOutcome {
+	return MemberOutcome{ID: id, Name: name, Reason: reason}
+}
+
+// Skip returns a copy of m marked as skipped for reason, dropping the Indexer so a
+// later stage cannot search a member the ledger already reports as skipped.
+func (m MemberOutcome) Skip(reason string) MemberOutcome {
+	m.Indexer, m.Reason, m.Count = nil, reason, 0
+	return m
+}
 
 // AggregateRelease is a release plus the member it came from. The origin travels WITH
 // the release all the way to serialization: that is what makes an aggregate grab bind
@@ -79,12 +122,13 @@ type AggregateResult struct {
 
 // SearchAggregate fans one Torznab request out across members and merges the answers.
 //
-// It is partial by construction: every member runs through the SAME SearchReleases
+// It is partial by construction: every LIVE member runs through the SAME SearchReleases
 // pipeline a per-indexer feed uses — so its search cache, request budget, circuit
 // breaker, per-host pacing and freeleech view all apply unchanged — and a member that
 // errors, times out, is budget-exhausted or is breaker-open simply contributes nothing.
-// No member failure can fail the request. The returned Members ledger is in the caller's
-// member order and always has one entry per member.
+// No member failure can fail the request. A member that arrives already skipped is
+// passed through untouched, never searched. The returned Members ledger is in the
+// caller's member order and always has one entry per member.
 //
 // PAGING IS ONE WINDOW. Members are queried at offset 0 with the maximum page size and
 // the request's limit/offset are applied to the MERGED set, because per-indexer offsets
@@ -92,7 +136,7 @@ type AggregateResult struct {
 // aggregate is explicitly out of scope). Pinning the member window to offset 0 also
 // keeps the fan-out on the same cache key a plain per-indexer RSS poll uses, so an
 // aggregate poll costs the trackers nothing extra.
-func SearchAggregate(ctx context.Context, members []Indexer, q url.Values) AggregateResult {
+func SearchAggregate(ctx context.Context, members []MemberOutcome, q url.Values) AggregateResult {
 	pg := parsePaging(q)
 	fetched := fanOut(ctx, members, memberQuery(q))
 	merged := mergeByPublishDate(members, fetched)
@@ -112,17 +156,21 @@ type memberFetch struct {
 	err      error
 }
 
-// fanOut runs every member search concurrently (bounded by fanoutLimit) and returns one
-// slot per member, positionally. Each goroutine owns its own slot, so no lock is needed;
-// no goroutine ever returns an error, so one member's failure can neither cancel a
-// sibling nor abort the wait.
-func fanOut(ctx context.Context, members []Indexer, q url.Values) []memberFetch {
+// fanOut runs every LIVE member's search concurrently (bounded by fanoutLimit) and
+// returns one slot per member, positionally; an already-skipped member keeps a zero slot
+// and is never searched. Each goroutine owns its own slot, so no lock is needed; no
+// goroutine ever returns an error, so one member's failure can neither cancel a sibling
+// nor abort the wait.
+func fanOut(ctx context.Context, members []MemberOutcome, q url.Values) []memberFetch {
 	out := make([]memberFetch, len(members))
 	var g errgroup.Group
 	g.SetLimit(fanoutLimit)
 	for i, m := range members {
+		if !m.OK() {
+			continue
+		}
 		g.Go(func() error {
-			res, err := SearchReleases(ctx, m, q)
+			res, err := SearchReleases(ctx, m.Indexer, q)
 			if err != nil {
 				out[i] = memberFetch{reason: classifySkip(err), err: err}
 				return nil
@@ -135,16 +183,18 @@ func fanOut(ctx context.Context, members []Indexer, q url.Values) []memberFetch 
 	return out
 }
 
-// ledger turns the fan-out slots into the served status ledger.
-func ledger(members []Indexer, fetched []memberFetch) []MemberOutcome {
+// ledger folds the fan-out slots back onto the member set to produce the served status
+// ledger: one row per SELECTED member, in resolution order. A member skipped before the
+// fan-out keeps the reason it arrived with (its slot is empty, so reading it would
+// silently clear the skip).
+func ledger(members []MemberOutcome, fetched []memberFetch) []MemberOutcome {
 	out := make([]MemberOutcome, len(members))
 	for i, m := range members {
-		out[i] = MemberOutcome{
-			Indexer: m,
-			Reason:  fetched[i].reason,
-			Count:   len(fetched[i].releases),
-			Err:     fetched[i].err,
+		out[i] = m
+		if !m.OK() {
+			continue
 		}
+		out[i].Reason, out[i].Err, out[i].Count = fetched[i].reason, fetched[i].err, len(fetched[i].releases)
 	}
 	return out
 }
@@ -188,12 +238,12 @@ func memberQuery(q url.Values) url.Values {
 // RSS convention, and the only ordering that is meaningful across trackers. Ties and
 // undated releases keep member order (the sort is stable and an unparseable date sorts
 // to the zero time, i.e. last), so the merged feed is deterministic.
-func mergeByPublishDate(members []Indexer, fetched []memberFetch) []AggregateRelease {
+func mergeByPublishDate(members []MemberOutcome, fetched []memberFetch) []AggregateRelease {
 	var merged []AggregateRelease
 	for i, m := range members {
 		for _, rel := range fetched[i].releases {
 			if rel != nil {
-				merged = append(merged, AggregateRelease{Indexer: m, Release: rel})
+				merged = append(merged, AggregateRelease{Indexer: m.Indexer, Release: rel})
 			}
 		}
 	}
@@ -227,12 +277,17 @@ func (p paging) applyAggregate(releases []AggregateRelease) []AggregateRelease {
 // category list is the deduplicated union in the ascending-id order the serializer
 // expects. It carries no CategoryMap or DefaultCategories on purpose — category
 // mapping is per-tracker and each member does its own inside SearchReleases; the union
-// exists only to answer t=caps and to gate the requested search mode.
-func UnionCapabilities(members []Indexer) *mapper.Capabilities {
+// exists only to answer t=caps and to gate the requested search mode. A member already
+// skipped at resolution has no engine to ask and contributes nothing: an unbuildable or
+// disabled member must not narrow (or widen) what the feed advertises.
+func UnionCapabilities(members []MemberOutcome) *mapper.Capabilities {
 	union := &mapper.Capabilities{Modes: map[string][]string{}}
 	cats := map[int]mapper.Category{}
 	for _, m := range members {
-		caps := m.Capabilities()
+		if !m.OK() {
+			continue
+		}
+		caps := m.Indexer.Capabilities()
 		if caps == nil {
 			continue
 		}

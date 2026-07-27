@@ -19,6 +19,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/core"
 	"github.com/autobrr/harbrr/internal/secrets"
+	tzn "github.com/autobrr/harbrr/internal/torznab"
 )
 
 // aggIndexer builds a member for the aggregate tests: id/name, the modes it
@@ -49,7 +50,14 @@ func aggIndexer(t *testing.T, id string, modes loader.Modes, pubDate string) *fa
 var searchOnly = loader.Modes{Search: []string{"q"}}
 
 // doAll issues an aggregate-feed GET against the members in p.
-func doAll(t *testing.T, p fakeProvider, rawQuery string, opts ...Option) *httptest.ResponseRecorder {
+func doAll(t *testing.T, p core.Provider, rawQuery string, opts ...Option) *httptest.ResponseRecorder {
+	t.Helper()
+	return doFeed(t, p, core.AggregateSlug, rawQuery, opts...)
+}
+
+// doFeed issues a GET against any feed slug, so the profile forms exercise the same
+// routes and handler the 'all' form does.
+func doFeed(t *testing.T, p core.Provider, slug, rawQuery string, opts ...Option) *httptest.ResponseRecorder {
 	t.Helper()
 	opts = append([]Option{
 		WithAPIKey(testAPIKey),
@@ -57,11 +65,41 @@ func doAll(t *testing.T, p fakeProvider, rawQuery string, opts ...Option) *httpt
 	}, opts...)
 	h := NewHandler(p, opts...)
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
-		"/api/indexers/all/results/torznab?"+rawQuery+"&apikey="+testAPIKey, nil)
+		"/api/indexers/"+url.PathEscape(slug)+"/results/torznab?"+rawQuery+"&apikey="+testAPIKey, nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	return rec
 }
+
+// memberProvider is a core.Provider whose Resolve is scripted per feed slug, so the
+// resolution-seam tests can express what the map-shaped fakeProvider cannot: a member
+// skipped BEFORE the fan-out, and a whole-list read failure. Slugs it does not script
+// fall through to the embedded fakeProvider (so /dl still resolves real members).
+type memberProvider struct {
+	fakeProvider
+	feeds map[string][]core.MemberOutcome
+	// err, when set, fails every scripted feed — the store-unreadable state.
+	err error
+}
+
+func (p memberProvider) Resolve(ctx context.Context, slug string) ([]core.MemberOutcome, error) {
+	members, scripted := p.feeds[slug]
+	if !scripted {
+		return p.fakeProvider.Resolve(ctx, slug)
+	}
+	if p.err != nil {
+		return nil, p.err
+	}
+	return members, nil
+}
+
+// profileFeed is the feed slug addressing the sync profile named name.
+func profileFeed(name string) string { return core.ProfileSlugPrefix + name }
+
+// notSupportedDoc is the error document a feed slug that resolves NO member set gets —
+// the same one a per-indexer feed serves when its own resolution fails, whether the slug
+// is unknown or the instance store could not be read.
+var notSupportedDoc = string(tzn.MarshalError(codeBadParameter, "Indexer is not supported"))
 
 // memberElem is the ledger line for id, e.g. `<harbrr:member id="a" ... />`.
 func memberElem(t *testing.T, body, id string) string {
@@ -377,5 +415,206 @@ func TestAggregateEmptyMemberSet(t *testing.T) {
 	}
 	if body := rec.Body.String(); strings.Contains(body, "<item>") || !strings.Contains(body, `total="0"`) {
 		t.Errorf("want an empty feed:\n%s", body)
+	}
+}
+
+// TestProfileFeedServesItsMembers: a 'profile:<name>' feed inherits the whole aggregate
+// path — the same routes, the same partial fan-out, the same ledger — over the profile's
+// members only. A non-member indexer must not be searched or ledgered at all.
+func TestProfileFeedServesItsMembers(t *testing.T) {
+	t.Parallel()
+	inA := aggIndexer(t, "in-a", searchOnly, "2024-06-01T00:00:00Z")
+	inB := aggIndexer(t, "in-b", searchOnly, "2024-01-01T00:00:00Z")
+	out := aggIndexer(t, "out", searchOnly, "2024-12-01T00:00:00Z")
+	slug := profileFeed("my movies")
+	p := memberProvider{
+		fakeProvider: fakeProvider{"in-a": inA, "in-b": inB, "out": out},
+		feeds:        map[string][]core.MemberOutcome{slug: {core.LiveMember(inA), core.LiveMember(inB)}},
+	}
+
+	rec := doFeed(t, p, slug, "t=search&q=movie")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "in-a release") || !strings.Contains(body, "in-b release") {
+		t.Errorf("every profile member must contribute:\n%s", body)
+	}
+	if strings.Contains(body, "out release") || strings.Contains(body, `id="out"`) {
+		t.Errorf("a non-member must be neither searched nor ledgered:\n%s", body)
+	}
+	if out.gotQuery.Keywords != "" {
+		t.Error("a non-member indexer must never be searched by a profile feed")
+	}
+	// The merged window is the aggregate's, not each member's.
+	if i, j := strings.Index(body, "in-a release"), strings.Index(body, "in-b release"); i > j {
+		t.Errorf("profile feed must merge publish-date descending:\n%s", body)
+	}
+}
+
+// TestProfileFeedLedgersPreFanoutSkips is the ledger-completeness property (#400): a
+// member skipped BEFORE the fan-out — disabled, or one harbrr could not build — still
+// gets a row, with count=0 and a constant reason, and is never searched.
+func TestProfileFeedLedgersPreFanoutSkips(t *testing.T) {
+	t.Parallel()
+	live := aggIndexer(t, "live", searchOnly, "2024-06-01T00:00:00Z")
+	off := aggIndexer(t, "off", searchOnly, "2024-01-01T00:00:00Z")
+	slug := profileFeed("mixed")
+	p := memberProvider{
+		fakeProvider: fakeProvider{"live": live, "off": off},
+		feeds: map[string][]core.MemberOutcome{slug: {
+			core.LiveMember(live),
+			core.SkippedMember("off", "OFF", core.SkipDisabled),
+			core.SkippedMember("broken", "Broken", core.SkipUnavailable),
+		}},
+	}
+
+	rec := doFeed(t, p, slug, "t=search&q=movie")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, tc := range []struct{ id, reason string }{{"off", core.SkipDisabled}, {"broken", core.SkipUnavailable}} {
+		got := memberElem(t, body, tc.id)
+		for _, want := range []string{`status="skipped"`, `reason="` + tc.reason + `"`, `count="0"`} {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s ledger entry = %s, want %s", tc.id, got, want)
+			}
+		}
+	}
+	if off.gotQuery.Keywords != "" {
+		t.Error("a member skipped at resolution must never be searched")
+	}
+	if !strings.Contains(body, "live release") {
+		t.Errorf("the live member must still serve:\n%s", body)
+	}
+}
+
+// TestProfileCapsSkipUnbuiltMembers: t=caps is the union of the members that actually
+// have an engine — a skipped member has none to ask, and must neither widen nor narrow
+// what the feed advertises.
+func TestProfileCapsSkipUnbuiltMembers(t *testing.T) {
+	t.Parallel()
+	movies := aggIndexer(t, "movies", loader.Modes{Search: []string{"q"}, MovieSearch: []string{"q", "imdbid"}}, "2024-01-02T03:04:05Z")
+	music := aggIndexer(t, "music", loader.Modes{Search: []string{"q"}, MusicSearch: []string{"q", "artist"}}, "2024-01-02T03:04:05Z")
+	slug := profileFeed("caps")
+	p := memberProvider{
+		fakeProvider: fakeProvider{"movies": movies, "music": music},
+		feeds: map[string][]core.MemberOutcome{slug: {
+			core.LiveMember(movies), core.LiveMember(music),
+			core.SkippedMember("broken", "Broken", core.SkipUnavailable),
+		}},
+	}
+
+	body := doFeed(t, p, slug, "t=caps").Body.String()
+	for _, want := range []string{
+		`<movie-search available="yes" supportedParams="q,imdbid"`,
+		`<music-search available="yes" supportedParams="q,artist"`,
+		`<tv-search available="no"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("profile caps missing %q:\n%s", want, body)
+		}
+	}
+}
+
+// TestProfileFeedUnknownAndDownload: an unknown profile is the same not-found an unknown
+// indexer slug is, and a profile slug can never serve a download — the grab binds to the
+// ORIGIN member, whose own /dl resolves the token.
+func TestProfileFeedUnknownAndDownload(t *testing.T) {
+	t.Parallel()
+	kr, err := secrets.OpenKeyring(secrets.KeyringOptions{EncryptionKey: dlTestKey}, zerolog.Nop())
+	if err != nil {
+		t.Fatalf("keyring: %v", err)
+	}
+	member := aggIndexer(t, "member", searchOnly, "2024-06-01T00:00:00Z")
+	member.needsResolver = true
+	member.releases[0].Link = "https://member.test/download.php?id=1&passkey=" + dlTestPasskey
+	member.grabResult = &search.GrabResult{Body: []byte("d4:name6:memberе"), ContentType: "application/x-bittorrent"}
+	slug := profileFeed("grabs")
+	p := memberProvider{
+		fakeProvider: fakeProvider{"member": member},
+		feeds:        map[string][]core.MemberOutcome{slug: {core.LiveMember(member)}},
+	}
+
+	// An unknown profile: the standard "not supported" document, never an empty feed.
+	rec := doFeed(t, p, profileFeed("nope"), "t=search&q=x")
+	if body := rec.Body.String(); !strings.Contains(body, notSupportedDoc) {
+		t.Errorf("an unknown profile must be not-found:\n%s", body)
+	}
+
+	body := doFeed(t, p, slug, "t=search&q=x", WithDLToken(kr)).Body.String()
+	if strings.Contains(body, dlTestPasskey) {
+		t.Fatalf("the passkey must never reach the feed:\n%s", body)
+	}
+	if !strings.Contains(body, "/api/indexers/member/dl?") {
+		t.Fatalf("a profile feed's enclosure must carry the ORIGIN member's /dl base:\n%s", body)
+	}
+	if strings.Contains(body, "/api/indexers/"+slug+"/dl") {
+		t.Fatalf("no profile-slug /dl URL may ever be served:\n%s", body)
+	}
+	token := tokenOf(body)
+	if token == "" {
+		t.Fatal("no /dl token in the served feed")
+	}
+
+	h := NewHandler(p, WithAPIKey(testAPIKey), WithDLToken(kr),
+		WithClock(func() time.Time { return time.Date(2026, time.June, 13, 12, 0, 0, 0, time.UTC) }))
+	if rec := doDL(t, h, "member", "token="+url.QueryEscape(token)); rec.Code != http.StatusOK {
+		t.Fatalf("grab through the origin member: status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := doDL(t, h, slug, "token="+url.QueryEscape(token)); rec.Code != http.StatusNotFound {
+		t.Errorf("%s/dl status = %d, want 404 — a profile names no indexer", slug, rec.Code)
+	}
+}
+
+// TestAggregateWholeListFailure: when the member set cannot be READ, both aggregate slug
+// forms serve an error document. An empty-200 feed would tell the consumer "you have no
+// indexers" — the exact silent absence the ledger exists to prevent.
+func TestAggregateWholeListFailure(t *testing.T) {
+	t.Parallel()
+	slug := profileFeed("mine")
+	for _, feed := range []string{core.AggregateSlug, slug} {
+		t.Run(feed, func(t *testing.T) {
+			t.Parallel()
+			p := memberProvider{
+				feeds: map[string][]core.MemberOutcome{core.AggregateSlug: nil, slug: nil},
+				err:   errors.New("database is locked: /data/harbrr.db"),
+			}
+			rec := doFeed(t, p, feed, "t=search&q=x")
+			body := rec.Body.String()
+			if strings.Contains(body, "<rss") {
+				t.Fatalf("a whole-list failure must not serve a feed:\n%s", body)
+			}
+			if !strings.Contains(body, notSupportedDoc) {
+				t.Errorf("want the standard resolution-failure document:\n%s", body)
+			}
+			if strings.Contains(body, "harbrr.db") {
+				t.Errorf("the raw failure must never reach the served body:\n%s", body)
+			}
+		})
+	}
+}
+
+// TestProfileFeedEmptyMemberSet: a profile selecting nothing is a valid empty feed with
+// an empty — but present — ledger, exactly like an aggregate over zero indexers.
+func TestProfileFeedEmptyMemberSet(t *testing.T) {
+	t.Parallel()
+	slug := profileFeed("empty")
+	p := memberProvider{feeds: map[string][]core.MemberOutcome{slug: {}}}
+
+	rec := doFeed(t, p, slug, "t=search&q=x")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "<item>") || !strings.Contains(body, `total="0"`) {
+		t.Errorf("want an empty feed:\n%s", body)
+	}
+	if strings.Contains(body, "harbrr:member") {
+		t.Errorf("an empty member set has no ledger rows:\n%s", body)
+	}
+	if !strings.Contains(body, "xmlns:harbrr") {
+		t.Errorf("it is still an AGGREGATE envelope, so the ledger namespace stands:\n%s", body)
 	}
 }

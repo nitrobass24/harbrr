@@ -110,7 +110,8 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 | Punctuation-tolerant matching (opt-in, per indexer) — recovers releases that \*arr-stripped search terms would otherwise drop | ✅ |
 | Charset gating — skip searches that can't succeed | 🚧 [#394](https://github.com/autobrr/harbrr/issues/394) |
 | Aggregate `all` feed — one Torznab URL over every enabled indexer, partial-by-construction with a per-member status ledger; grabs resolve against the originating tracker | ✅ |
-| Profile-scoped and health-filtered aggregate feeds | 🚧 [#400](https://github.com/autobrr/harbrr/issues/400) |
+| Profile-scoped aggregate feeds — `profile:<name>` serves a sync profile's indexers over one URL | ✅ |
+| Health-filtered aggregate feeds | 🚧 [#400](https://github.com/autobrr/harbrr/issues/400) |
 
 ### Getting past the tracker's front door
 
