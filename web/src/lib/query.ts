@@ -61,6 +61,7 @@ export const keys = {
   },
   config: {
     logLevel: () => ["config", "log-level"] as const,
+    adultCategories: () => ["config", "adult-categories"] as const,
   },
   apiKeys: {
     all: ["apikeys"] as const,

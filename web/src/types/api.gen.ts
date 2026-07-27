@@ -1307,6 +1307,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/config/adult-categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the hide-adult-categories setting
+         * @description Returns whether the operator asked for adult (XXX, category 6000–6999) categories to be hidden (autobrr/harbrr#383). Off by default.
+         */
+        get: operations["getAdultCategories"];
+        /**
+         * Set the hide-adult-categories setting
+         * @description Persists the choice and applies it to subsequent requests (no restart). When on, the XXX taxonomy is omitted from this API's category lists (indexer capabilities, definition capabilities) and a search issued with no `cat` parameter drops XXX-category results. Searches that name categories are honored unchanged, and the Torznab/Newznab feed is not filtered — feed consumers carry their own category selection.
+         */
+        put: operations["putAdultCategories"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/config/rate-limit": {
         parameters: {
             query?: never;
@@ -2357,6 +2381,11 @@ export interface components {
              * @enum {string}
              */
             level: "trace" | "debug" | "info" | "warn" | "error";
+        };
+        /** @description The global hide-adult-categories setting (autobrr/harbrr#383): whether the XXX (6000–6999) taxonomy is omitted from this API's category lists and from searches that name no categories. Off by default. It filters by the category a tracker declares, so a miscategorised release can still appear — it is not a content guarantee. */
+        AdultCategories: {
+            /** @description true when adult categories are hidden */
+            hidden: boolean;
         };
         /** @description The live global rate-limit default (autobrr/harbrr#104): the minimum spacing between requests to any tracker host that has no per-indexer "rate_interval" override (get returns the effective value; put sets it). Always a Go duration string. Never undercuts a definition's own requestDelay. */
         RateLimitConfig: {
@@ -5159,6 +5188,62 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             /** @description log level control is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getAdultCategories: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description the current setting */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdultCategories"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    putAdultCategories: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdultCategories"];
+            };
+        };
+        responses: {
+            /** @description the applied setting */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdultCategories"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description adult-category filtering is unavailable */
             503: {
                 headers: {
                     [name: string]: unknown;

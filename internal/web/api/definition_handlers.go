@@ -49,7 +49,7 @@ func (rt *router) getDefinition(w http.ResponseWriter, r *http.Request) {
 		rt.writeServiceError(w, "definition capabilities", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toDefinitionDetail(def, caps))
+	writeJSON(w, http.StatusOK, toDefinitionDetail(def, caps, rt.adultCats.Hidden()))
 }
 
 // lookupDefinition resolves a definition id to a vendored (loader, which validates
@@ -68,7 +68,9 @@ func (rt *router) lookupDefinition(id string) *loader.Definition {
 }
 
 // toDefinitionDetail maps a definition + its built caps to the API view.
-func toDefinitionDetail(def *loader.Definition, caps *mapper.Capabilities) definitionDetailResponse {
+// hideAdult drops the XXX taxonomy from the caps block, so the add-indexer
+// form's category picker honors the global setting like every other picker.
+func toDefinitionDetail(def *loader.Definition, caps *mapper.Capabilities, hideAdult bool) definitionDetailResponse {
 	settings := make([]settingFieldResponse, 0, len(def.Settings))
 	for _, s := range def.Settings {
 		sf := settingFieldResponse{
@@ -85,6 +87,6 @@ func toDefinitionDetail(def *loader.Definition, caps *mapper.Capabilities) defin
 		// schema declares links required) and never aliases the native catalog's.
 		Links:    append([]string{}, def.Links...),
 		Settings: settings,
-		Caps:     toCapabilitiesResponse(caps),
+		Caps:     toCapabilitiesResponse(caps, hideAdult),
 	}
 }

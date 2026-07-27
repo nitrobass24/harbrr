@@ -499,6 +499,17 @@ export class ApiClient {
     return this.unwrap(this.http.PUT("/api/config/log-level", { body: { level } }), "/api/config/log-level")
   }
 
+  getAdultCategories(): Promise<components["schemas"]["AdultCategories"]> {
+    return this.unwrap(this.http.GET("/api/config/adult-categories"), "/api/config/adult-categories")
+  }
+
+  setAdultCategories(hidden: boolean): Promise<components["schemas"]["AdultCategories"]> {
+    return this.unwrap(
+      this.http.PUT("/api/config/adult-categories", { body: { hidden } }),
+      "/api/config/adult-categories"
+    )
+  }
+
   // postFrontendLog relays a toast into the daemon's own log (see lib/notify.ts, the
   // only caller — never call this directly from a component).
   postFrontendLog(level: FrontendLogLevel, message: string, context?: string): Promise<void> {

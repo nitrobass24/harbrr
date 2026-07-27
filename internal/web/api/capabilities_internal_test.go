@@ -24,7 +24,7 @@ func TestToCapabilitiesResponseExcludesCategoryMap(t *testing.T) {
 		DefaultCategories: []string{"1"},
 		CategoryMap:       &mapper.CategoryMap{}, // present, but must NOT appear in JSON
 	}
-	resp := toCapabilitiesResponse(caps)
+	resp := toCapabilitiesResponse(caps, false)
 	body, err := json.Marshal(resp)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
