@@ -1,10 +1,14 @@
 package registry
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"testing"
 	"time"
+
+	"github.com/rs/zerolog"
 
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/domain"
@@ -21,7 +25,7 @@ func TestEscalateClimbsLadder(t *testing.T) {
 	t.Parallel()
 	state := database.CircuitState{InstanceID: 1}
 	for level := 1; level <= maxCircuitLevel; level++ {
-		state = escalate(state, domain.HealthAuthFailure, 0, circuitNow, longAgoBoot)
+		state = escalate(state, domain.HealthAuthFailure, false, 0, circuitNow, longAgoBoot)
 		if state.EscalationLevel != level {
 			t.Fatalf("after %d failures, level = %d, want %d", level, state.EscalationLevel, level)
 		}
@@ -31,7 +35,7 @@ func TestEscalateClimbsLadder(t *testing.T) {
 		}
 	}
 	// One more qualifying failure must not climb past the top rung.
-	state = escalate(state, domain.HealthAuthFailure, 0, circuitNow, longAgoBoot)
+	state = escalate(state, domain.HealthAuthFailure, false, 0, circuitNow, longAgoBoot)
 	if state.EscalationLevel != maxCircuitLevel {
 		t.Errorf("level past top = %d, want capped at %d", state.EscalationLevel, maxCircuitLevel)
 	}
@@ -41,7 +45,7 @@ func TestEscalateTransportDoesNotClimb(t *testing.T) {
 	t.Parallel()
 	state := database.CircuitState{InstanceID: 1}
 	for i := 0; i < 5; i++ {
-		state = escalate(state, domain.HealthTransport, 0, circuitNow, longAgoBoot)
+		state = escalate(state, domain.HealthTransport, false, 0, circuitNow, longAgoBoot)
 		if state.EscalationLevel != 1 {
 			t.Fatalf("iteration %d: transport level = %d, want pinned at 1", i, state.EscalationLevel)
 		}
@@ -51,12 +55,94 @@ func TestEscalateTransportDoesNotClimb(t *testing.T) {
 	}
 }
 
+func TestEscalateGatewayOutageClimbs(t *testing.T) {
+	t.Parallel()
+	state := database.CircuitState{InstanceID: 1}
+	// A gateway status is still recorded under the transport kind, but it climbs the
+	// full ladder: the CDN answering 502 means the indexer's origin is down, and a
+	// week-long outage must not be re-polled every 60 seconds.
+	for level := 1; level <= maxCircuitLevel; level++ {
+		state = escalate(state, domain.HealthTransport, true, 0, circuitNow, longAgoBoot)
+		if state.EscalationLevel != level {
+			t.Fatalf("after %d gateway failures, level = %d, want %d", level, state.EscalationLevel, level)
+		}
+	}
+}
+
+// newCircuitTestAdapter builds the minimal adapter recordHealth needs — the health
+// and circuit repositories over a real SQLite db plus the clock/boot-time fields the
+// escalation ladder reads. Booted long ago, so the startup grace never caps.
+func newCircuitTestAdapter(t *testing.T) (*indexerAdapter, *database.DB) {
+	t.Helper()
+	db, err := database.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Migrate(context.Background()); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	return &indexerAdapter{
+		instanceID:   insertTestInstance(t, db),
+		db:           db,
+		health:       database.Health{},
+		circuit:      database.Circuit{},
+		circuitLocks: &circuitLocks{},
+		startedAt:    circuitNow.Add(-2 * time.Hour),
+		clock:        func() time.Time { return circuitNow },
+		log:          zerolog.Nop(),
+	}, db
+}
+
+// TestRecordHealthEscalation exercises the adapter-level derivation in
+// escalateCircuit: production failures arrive %w-wrapped, so errors.Is must see
+// search.ErrGatewayStatus through the wrapping for a gateway outage to climb,
+// while an ordinary wrapped transport failure stays pinned at level 1.
+func TestRecordHealthEscalation(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	t.Run("wrapped gateway status climbs", func(t *testing.T) {
+		t.Parallel()
+		a, db := newCircuitTestAdapter(t)
+		gateway := fmt.Errorf("registry: search %q: %w", "ptp",
+			fmt.Errorf("passthepopcorn: search returned HTTP 502: %w", search.ErrGatewayStatus))
+		for range 3 {
+			a.recordHealth(ctx, gateway)
+		}
+		state, err := a.circuit.Get(ctx, db, a.instanceID)
+		if err != nil {
+			t.Fatalf("get circuit: %v", err)
+		}
+		if state.EscalationLevel != 3 {
+			t.Errorf("level after 3 wrapped gateway failures = %d, want 3", state.EscalationLevel)
+		}
+	})
+
+	t.Run("wrapped ordinary transport stays pinned", func(t *testing.T) {
+		t.Parallel()
+		a, db := newCircuitTestAdapter(t)
+		transport := fmt.Errorf("registry: search %q: %w", "x",
+			&url.Error{Op: "Get", URL: "https://tracker.example", Err: errors.New("connection reset by peer")})
+		for range 3 {
+			a.recordHealth(ctx, transport)
+		}
+		state, err := a.circuit.Get(ctx, db, a.instanceID)
+		if err != nil {
+			t.Fatalf("get circuit: %v", err)
+		}
+		if state.EscalationLevel != 1 {
+			t.Errorf("level after 3 wrapped transport failures = %d, want pinned at 1", state.EscalationLevel)
+		}
+	})
+}
+
 func TestEscalateStartupGraceCapsWindow(t *testing.T) {
 	t.Parallel()
 	state := database.CircuitState{InstanceID: 1}
 	// Climb straight to the top rung (24h) while still inside the grace window.
 	for i := 0; i <= maxCircuitLevel; i++ {
-		state = escalate(state, domain.HealthAuthFailure, 0, circuitNow, freshlyBooted)
+		state = escalate(state, domain.HealthAuthFailure, false, 0, circuitNow, freshlyBooted)
 	}
 	if state.EscalationLevel != maxCircuitLevel {
 		t.Fatalf("level = %d, want %d", state.EscalationLevel, maxCircuitLevel)
@@ -71,13 +157,13 @@ func TestEscalateRetryAfterIsAFloor(t *testing.T) {
 	t.Parallel()
 	state := database.CircuitState{InstanceID: 1}
 	// Level 1's own window (60s) is shorter than a 10-minute Retry-After: the floor wins.
-	state = escalate(state, domain.HealthRateLimited, 10*time.Minute, circuitNow, longAgoBoot)
+	state = escalate(state, domain.HealthRateLimited, false, 10*time.Minute, circuitNow, longAgoBoot)
 	want := circuitNow.Add(10 * time.Minute)
 	if !state.DisabledTill.Equal(want) {
 		t.Errorf("DisabledTill = %v, want %v (Retry-After floor)", state.DisabledTill, want)
 	}
 	// A Retry-After shorter than the rung's own window never shortens it.
-	state2 := escalate(database.CircuitState{InstanceID: 1}, domain.HealthRateLimited, time.Second, circuitNow, longAgoBoot)
+	state2 := escalate(database.CircuitState{InstanceID: 1}, domain.HealthRateLimited, false, time.Second, circuitNow, longAgoBoot)
 	if want2 := circuitNow.Add(circuitPeriods[1]); !state2.DisabledTill.Equal(want2) {
 		t.Errorf("DisabledTill = %v, want %v (ladder window, not the shorter floor)", state2.DisabledTill, want2)
 	}

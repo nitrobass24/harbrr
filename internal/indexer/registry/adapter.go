@@ -355,7 +355,7 @@ func (a *indexerAdapter) escalateCircuit(ctx context.Context, kind string, err e
 			Msg("registry: read circuit state failed")
 		return
 	}
-	next := escalate(state, kind, retryAfterOf(err), a.clock(), a.startedAt)
+	next := escalate(state, kind, errors.Is(err, search.ErrGatewayStatus), retryAfterOf(err), a.clock(), a.startedAt)
 	if uerr := a.circuit.Upsert(ctx, a.db, next); uerr != nil {
 		a.log.Warn().Str("indexer", a.info.ID).Str("error", apphttp.RedactError(uerr)).
 			Msg("registry: record circuit escalation failed")
@@ -414,9 +414,11 @@ func classifyHealth(err error) (string, bool) {
 // implement), a *url.Error chain, an EOF mid-read (io.EOF / io.ErrUnexpectedEOF), or
 // a gateway status (502/504/522, search.ErrGatewayStatus) — as opposed to a
 // reachable-but-unhappy response. Kept coarse (#223): one kind, not a taxonomy; the
-// event detail string carries the specifics. A gateway status is treated the same as
-// a dropped connection (#247): the tracker itself never answered, the outage is just
-// observed one hop closer via the proxy/CDN in front of it. 429/503 are rate-limit
+// event detail string carries the specifics. A gateway status is classified the same
+// as a dropped connection (#247): the tracker itself never answered, the outage is
+// just observed one hop closer via the proxy/CDN in front of it — though for circuit
+// escalation it climbs the ladder where other transport failures stay pinned (see
+// escalate). 429/503 are rate-limit
 // codes (already classified separately, never reach here) and other non-2xx codes
 // (401/403 auth, 404/500...) are the tracker answering, not a gateway outage, so they
 // stay unclassified.
