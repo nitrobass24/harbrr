@@ -241,6 +241,23 @@ describe("IndexerForm", () => {
     expect(onSubmit.mock.calls[0][0].body.expiresAt).toBe("")
   })
 
+  it("edit: changing only the name preserves the stored expiry untouched", () => {
+    // The preservation class this form keeps getting bitten by: an unrelated edit must
+    // not reset or drop operator-entered expiry data on submit.
+    const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+    const existing: InstanceDetail = { ...EXISTING, expiresAt: "2027-03-01", expiryKind: "account", expiryLifetime: false }
+    renderForm(<IndexerForm definition={DEFINITION} existing={existing} pending={false} error={null} onSubmit={onSubmit} />)
+
+    fireEvent.change(screen.getByLabelText<HTMLInputElement>("Name"), { target: { value: "Renamed" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+
+    const body = onSubmit.mock.calls[0][0].body
+    expect(body.name).toBe("Renamed")
+    expect(body.expiresAt).toBe("2027-03-01")
+    expect(body.expiryKind).toBe("account")
+    expect(body.expiryLifetime).toBe(false)
+  })
+
   it("edit: ticking Lifetime disables the date field and submits the flag", () => {
     const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
     const existing: InstanceDetail = { ...EXISTING, expiresAt: "2027-03-01", expiryKind: "perk" }

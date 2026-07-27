@@ -171,22 +171,23 @@ func TestExpiryScanFiresEachThresholdExactlyOnce(t *testing.T) {
 		{name: "a day past — expired must not re-notify", date: "2026-08-02", wantSends: 5, wantDays: 0},
 		{name: "a month past — still silent", date: "2026-09-01", wantSends: 5, wantDays: 0},
 	}
+	// An explicit sequential walk, deliberately NOT t.Run subtests: every step mutates
+	// the same fixture, so a filtered subtest run (-run .../expiry_day) would skip the
+	// earlier transitions and assert against virgin state. Step names ride the errors.
 	for _, step := range steps {
-		t.Run(step.name, func(t *testing.T) {
-			f.at(step.date)
-			f.tick(step.wantSends)
-			f.tick(step.wantSends) // a second scan in the same day changes nothing
-			gotFor, gotDays := f.ledger(id)
-			if step.wantSends == 0 {
-				if gotFor != "" {
-					t.Errorf("ledger armed early: notified_for = %q", gotFor)
-				}
-				return
+		f.at(step.date)
+		f.tick(step.wantSends)
+		f.tick(step.wantSends) // a second scan in the same day changes nothing
+		gotFor, gotDays := f.ledger(id)
+		if step.wantSends == 0 {
+			if gotFor != "" {
+				t.Errorf("%s: ledger armed early: notified_for = %q", step.name, gotFor)
 			}
-			if gotFor != "2026-08-01" || gotDays != step.wantDays {
-				t.Errorf("ledger = (%q, %d), want (%q, %d)", gotFor, gotDays, "2026-08-01", step.wantDays)
-			}
-		})
+			continue
+		}
+		if gotFor != "2026-08-01" || gotDays != step.wantDays {
+			t.Errorf("%s: ledger = (%q, %d), want (%q, %d)", step.name, gotFor, gotDays, "2026-08-01", step.wantDays)
+		}
 	}
 }
 

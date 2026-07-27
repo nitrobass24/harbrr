@@ -24,7 +24,9 @@ const URGENT_DAYS = 7
 export function daysUntil(date: string, now: Date = new Date()): number | null {
   const target = Date.parse(`${date}T00:00:00Z`)
   if (Number.isNaN(target)) return null
-  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
+  // getUTC* — not getFullYear/getMonth/getDate — or an operator west of UTC reads one
+  // more day remaining all evening than the backend that sends the notification.
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
   return Math.round((target - today) / 86_400_000)
 }
 

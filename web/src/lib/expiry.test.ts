@@ -17,6 +17,13 @@ function instance(over: Partial<Instance> = {}): Instance {
 }
 
 describe("daysUntil", () => {
+  it("uses the UTC calendar date even when the local date differs", () => {
+    // 23:30 at UTC-6 is 05:30Z the NEXT day: the UTC basis must win, matching the
+    // backend that decides when the notification fires.
+    const eveningWestOfUTC = new Date("2026-07-31T23:30:00-06:00")
+    expect(daysUntil("2026-08-01", eveningWestOfUTC)).toBe(0)
+  })
+
   it.each([
     ["a week ahead", "2026-08-01", 7],
     ["today", "2026-07-25", 0],
