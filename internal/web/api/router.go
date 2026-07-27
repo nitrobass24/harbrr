@@ -269,6 +269,8 @@ func (rt *router) mountSystemRoutes(r chi.Router) {
 
 	r.Get("/api/config/adult-categories", rt.getAdultCategories)
 	r.Put("/api/config/adult-categories", rt.putAdultCategories)
+	r.Get("/api/config/expiry-thresholds", rt.getExpiryThresholds)
+	r.Put("/api/config/expiry-thresholds", rt.putExpiryThresholds)
 
 	r.Post("/api/logs/frontend", rt.postFrontendLog)
 

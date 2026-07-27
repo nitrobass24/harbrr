@@ -142,6 +142,7 @@ func seedInstance(t *testing.T, db *database.DB, kr *secrets.Keyring, proxyID, s
 		Slug: "tt", DefinitionID: "tt", Name: "TT", Enabled: true, Protocol: "torrent",
 		ProxyID: &proxyID, SolverID: &solverID, Priority: 10, MinSeeders: 5,
 		SyncCategories: []int{5000}, EnableRss: true, EnableAutomaticSearch: false, EnableInteractiveSearch: true,
+		ExpiresAt: "2027-03-01", ExpiryKind: domain.ExpiryKindPerk,
 	})
 	if err != nil {
 		t.Fatalf("seed instance: %v", err)
@@ -311,6 +312,12 @@ func assertInstanceRestored(t *testing.T, dstDB *database.DB, dstKR *secrets.Key
 	}
 	if len(inst.SyncCategories) != 1 || inst.SyncCategories[0] != 5000 {
 		t.Errorf("instance syncCategories = %v, want [5000]", inst.SyncCategories)
+	}
+	// The expiry is operator-entered and exists nowhere else — dropping it on restore
+	// would silently un-track the expiry without telling anyone (autobrr/harbrr#399).
+	if inst.ExpiresAt != "2027-03-01" || inst.ExpiryKind != domain.ExpiryKindPerk || inst.ExpiryLifetime {
+		t.Errorf("instance expiry = (%q, %q, %v), want (2027-03-01, perk, false)",
+			inst.ExpiresAt, inst.ExpiryKind, inst.ExpiryLifetime)
 	}
 	settings, _ := repo.Settings(ctx, dstDB, inst.ID)
 	got := map[string]string{}

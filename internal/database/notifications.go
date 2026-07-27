@@ -19,7 +19,7 @@ type Notifications struct{}
 
 // notificationColumns is the full select list, in scan order.
 const notificationColumns = `id, name, type, url_encrypted, key_id, enabled,
-	on_health_failure, created_at, updated_at`
+	on_health_failure, on_expiry, created_at, updated_at`
 
 // InsertNotification writes a notification row and returns its new id. The row is
 // inserted with an empty url_encrypted so its id can bind the encryption AAD; the
@@ -27,9 +27,9 @@ const notificationColumns = `id, name, type, url_encrypted, key_id, enabled,
 func (Notifications) InsertNotification(ctx context.Context, q dbinterface.Execer, n domain.Notification) (int64, error) {
 	res, err := q.ExecContext(ctx,
 		q.Rebind(`INSERT INTO notifications
-			(name, type, url_encrypted, key_id, enabled, on_health_failure, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
-		n.Name, n.Type, n.URLEncrypted, n.KeyID, boolToInt(n.Enabled), boolToInt(n.OnHealthFailure),
+			(name, type, url_encrypted, key_id, enabled, on_health_failure, on_expiry, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+		n.Name, n.Type, n.URLEncrypted, n.KeyID, boolToInt(n.Enabled), boolToInt(n.OnHealthFailure), boolToInt(n.OnExpiry),
 		n.CreatedAt.UTC().Format(timeLayout), n.UpdatedAt.UTC().Format(timeLayout))
 	if err != nil {
 		return 0, fmt.Errorf("database: insert notification: %w", err)
@@ -78,15 +78,15 @@ func (Notifications) ListNotifications(ctx context.Context, q dbinterface.Execer
 }
 
 // UpdateNotification writes a notification's mutable fields (name, the re-encrypted
-// URL, key_id, on_health_failure) by id, returning ErrNotFound when no row matches.
+// URL, key_id, on_health_failure, on_expiry) by id, returning ErrNotFound when no row matches.
 // The type is immutable (a different sender is a different target) and enabled is
 // owned by SetNotificationEnabled, so neither is touched here.
 func (Notifications) UpdateNotification(ctx context.Context, q dbinterface.Execer, n domain.Notification) error {
 	res, err := q.ExecContext(ctx,
 		q.Rebind(`UPDATE notifications SET
-			name = ?, url_encrypted = ?, key_id = ?, on_health_failure = ?, updated_at = ?
+			name = ?, url_encrypted = ?, key_id = ?, on_health_failure = ?, on_expiry = ?, updated_at = ?
 			WHERE id = ?`),
-		n.Name, n.URLEncrypted, n.KeyID, boolToInt(n.OnHealthFailure),
+		n.Name, n.URLEncrypted, n.KeyID, boolToInt(n.OnHealthFailure), boolToInt(n.OnExpiry),
 		n.UpdatedAt.UTC().Format(timeLayout), n.ID)
 	if err != nil {
 		return fmt.Errorf("database: update notification: %w", err)
@@ -131,16 +131,17 @@ func (Notifications) DeleteNotification(ctx context.Context, q dbinterface.Exece
 // scanNotification reads one notifications row from a *sql.Row or *sql.Rows.
 func scanNotification(s interface{ Scan(...any) error }) (domain.Notification, error) {
 	var (
-		n                     domain.Notification
-		enabled, onHealthFail int
-		createdAt, updatedAt  string
+		n                               domain.Notification
+		enabled, onHealthFail, onExpiry int
+		createdAt, updatedAt            string
 	)
 	if err := s.Scan(&n.ID, &n.Name, &n.Type, &n.URLEncrypted, &n.KeyID, &enabled,
-		&onHealthFail, &createdAt, &updatedAt); err != nil {
+		&onHealthFail, &onExpiry, &createdAt, &updatedAt); err != nil {
 		return domain.Notification{}, err //nolint:wrapcheck // sql.ErrNoRows matched by caller; others wrapped there.
 	}
 	n.Enabled = enabled != 0
 	n.OnHealthFailure = onHealthFail != 0
+	n.OnExpiry = onExpiry != 0
 	n.CreatedAt, n.UpdatedAt = parseTime(createdAt), parseTime(updatedAt)
 	return n, nil
 }

@@ -169,7 +169,8 @@ func (s *Service) collectInstances(ctx context.Context, q dbinterface.Execer) ([
 			Priority: inst.Priority, MinSeeders: inst.MinSeeders, SyncCategories: inst.SyncCategories,
 			EnableRss: &inst.EnableRss, EnableAutomaticSearch: &inst.EnableAutomaticSearch,
 			EnableInteractiveSearch: &inst.EnableInteractiveSearch,
-			CreatedAt:               inst.CreatedAt, UpdatedAt: inst.UpdatedAt, Settings: settings,
+			ExpiresAt:               inst.ExpiresAt, ExpiryKind: inst.ExpiryKind, ExpiryLifetime: inst.ExpiryLifetime,
+			CreatedAt: inst.CreatedAt, UpdatedAt: inst.UpdatedAt, Settings: settings,
 		})
 	}
 	return out, nil
@@ -276,7 +277,8 @@ func (s *Service) collectNotifications(ctx context.Context, q dbinterface.Execer
 		}
 		out = append(out, NotificationRow{
 			ID: n.ID, Name: n.Name, Type: n.Type, URL: url, Enabled: n.Enabled,
-			OnHealthFailure: n.OnHealthFailure, CreatedAt: n.CreatedAt, UpdatedAt: n.UpdatedAt,
+			OnHealthFailure: n.OnHealthFailure, OnExpiry: &n.OnExpiry,
+			CreatedAt: n.CreatedAt, UpdatedAt: n.UpdatedAt,
 		})
 	}
 	return out, nil

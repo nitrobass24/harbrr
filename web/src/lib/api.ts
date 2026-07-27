@@ -510,6 +510,17 @@ export class ApiClient {
     )
   }
 
+  getExpiryThresholds(): Promise<components["schemas"]["ExpiryThresholds"]> {
+    return this.unwrap(this.http.GET("/api/config/expiry-thresholds"), "/api/config/expiry-thresholds")
+  }
+
+  setExpiryThresholds(days: number[]): Promise<components["schemas"]["ExpiryThresholds"]> {
+    return this.unwrap(
+      this.http.PUT("/api/config/expiry-thresholds", { body: { days } }),
+      "/api/config/expiry-thresholds"
+    )
+  }
+
   // postFrontendLog relays a toast into the daemon's own log (see lib/notify.ts, the
   // only caller — never call this directly from a component).
   postFrontendLog(level: FrontendLogLevel, message: string, context?: string): Promise<void> {

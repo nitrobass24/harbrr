@@ -6,6 +6,7 @@ import { IndexersTable } from "./IndexersTable"
 const BASE = {
   proxyId: null, solverId: null, protocol: "torrent" as const, freeleech: false, priority: 25, minSeeders: 0,
   syncCategories: [], enableRss: true, enableAutomaticSearch: true, enableInteractiveSearch: true,
+  expiresAt: "", expiryKind: "" as const, expiryLifetime: false,
   createdAt: "2026-07-01T00:00:00Z", updatedAt: "2026-07-01T00:00:00Z",
 }
 
@@ -112,6 +113,30 @@ describe("IndexersTable", () => {
 
     fireEvent.click(disabled)
     expect(onToggle).toHaveBeenCalledWith("x1337", true)
+  })
+
+  it("shows an expiry per row, quiet when untracked and loud once expired", () => {
+    const rows: IndexerRowData[] = [
+      { instance: { ...ROWS[0].instance, expiresAt: "2020-01-01", expiryKind: "perk" } },
+      { instance: { ...ROWS[1].instance } },
+      { instance: { ...ROWS[2].instance, expiryLifetime: true } },
+    ]
+    render(<IndexersTable rows={rows} actions={noopActions()} />)
+
+    const row = (slug: string) => document.querySelector<HTMLElement>(`tr[data-slug="${slug}"]`)!
+    expect(within(row("torrentleech")).getByText("Expired")).toBeTruthy()
+    expect(within(row("rutor")).getByText("—")).toBeTruthy()
+    expect(within(row("x1337")).getByText("Lifetime")).toBeTruthy()
+  })
+
+  it("exposes the expiry sort as a pressable header", () => {
+    const onToggleExpirySort = vi.fn()
+    render(<IndexersTable rows={ROWS} actions={noopActions()} onToggleExpirySort={onToggleExpirySort} />)
+
+    const header = screen.getByRole("button", { name: /Expiry/ })
+    expect(header.getAttribute("aria-pressed")).toBe("false")
+    fireEvent.click(header)
+    expect(onToggleExpirySort).toHaveBeenCalled()
   })
 
   it("fires the test action and shows the in-flight state", () => {
