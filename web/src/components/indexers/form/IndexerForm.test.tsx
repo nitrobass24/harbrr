@@ -32,6 +32,7 @@ const DEFINITION: DefinitionDetail = {
   id: "testtracker",
   name: "Test Tracker",
   type: "private",
+  links: ["https://tt.example", "https://mirror.tt.example"],
   settings: [
     { name: "username", label: "Username", type: "text", secret: false },
     { name: "apikey", label: "API Key", type: "password", secret: true },
@@ -258,6 +259,117 @@ describe("IndexerForm", () => {
     // (omitting them would keep the stored values).
     expect(body.settings?.solver_type).toBe("")
     expect(body.settings?.cookie).toBe("")
+  })
+
+  // autobrr/harbrr#401 — the base-URL override is picked from the definition's
+  // known links, with a mandatory custom escape hatch.
+  describe("base URL picker", () => {
+    const pick = () => screen.getByLabelText<HTMLSelectElement>("Base URL (optional override)")
+    const withBaseUrl = (baseUrl: string): InstanceDetail => ({ ...EXISTING, baseUrl })
+
+    it("offers Default (labelled with the resolved host), every link, and Custom…", () => {
+      renderForm(<IndexerForm definition={DEFINITION} pending={false} error={null} onSubmit={vi.fn()} />)
+      expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual([
+        "Default (tt.example)", "tt.example", "mirror.tt.example", "Custom…",
+      ])
+      expect(pick().value).toBe("")
+    })
+
+    // Trailing-slash and host-case differences must not force a false Custom.
+    it.each([
+      ["", ""],
+      ["https://mirror.tt.example", "https://mirror.tt.example"],
+      ["https://tt.example/", "https://tt.example"],
+      ["https://TT.example", "https://tt.example"],
+      ["https://private.mirror.lan", "custom"],
+    ])("edit: stored %p preselects %p", (stored, want) => {
+      renderForm(<IndexerForm definition={DEFINITION} existing={withBaseUrl(stored)} pending={false} error={null} onSubmit={vi.fn()} />)
+      expect(pick().value).toBe(want)
+    })
+
+    it("edit: an off-list stored value stays intact through an unrelated edit", () => {
+      const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+      renderForm(<IndexerForm definition={DEFINITION} existing={withBaseUrl("https://private.mirror.lan")} pending={false} error={null} onSubmit={onSubmit} />)
+
+      expect(screen.getByLabelText<HTMLInputElement>("Custom base URL").value).toBe("https://private.mirror.lan")
+      fireEvent.change(screen.getByLabelText("Username"), { target: { value: "bob" } })
+      fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+
+      expect(onSubmit.mock.calls[0][0].body.baseUrl).toBe("https://private.mirror.lan")
+    })
+
+    it("edit: selecting Default submits \"\" so the stored override is cleared", () => {
+      const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+      renderForm(<IndexerForm definition={DEFINITION} existing={withBaseUrl("https://mirror.tt.example")} pending={false} error={null} onSubmit={onSubmit} />)
+
+      fireEvent.change(pick(), { target: { value: "" } })
+      fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+
+      expect(onSubmit.mock.calls[0][0].body.baseUrl).toBe("")
+    })
+
+    it("edit: picking a known link submits it verbatim", () => {
+      const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+      renderForm(<IndexerForm definition={DEFINITION} existing={EXISTING} pending={false} error={null} onSubmit={onSubmit} />)
+
+      fireEvent.change(pick(), { target: { value: "https://mirror.tt.example" } })
+      fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+
+      expect(onSubmit.mock.calls[0][0].body.baseUrl).toBe("https://mirror.tt.example")
+    })
+
+    it("create: an untouched picker omits baseUrl entirely", () => {
+      const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+      renderForm(<IndexerForm definition={DEFINITION} pending={false} error={null} onSubmit={onSubmit} />)
+
+      fireEvent.click(screen.getByRole("button", { name: "Add indexer" }))
+      const submit = onSubmit.mock.calls[0][0]
+      if (submit.mode === "create") expect(submit.body.baseUrl).toBeUndefined()
+    })
+
+    it("create: an off-list custom host warns but is accepted", () => {
+      const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+      renderForm(<IndexerForm definition={DEFINITION} pending={false} error={null} onSubmit={onSubmit} />)
+
+      fireEvent.change(pick(), { target: { value: "custom" } })
+      fireEvent.change(screen.getByLabelText("Custom base URL"), { target: { value: "https://private.mirror.lan" } })
+      expect(screen.getByText(/known hosts/)).toBeTruthy()
+
+      fireEvent.click(screen.getByRole("button", { name: "Add indexer" }))
+      const submit = onSubmit.mock.calls[0][0]
+      if (submit.mode === "create") expect(submit.body.baseUrl).toBe("https://private.mirror.lan")
+    })
+
+    it("create: a non-http scheme blocks submit", () => {
+      renderForm(<IndexerForm definition={DEFINITION} pending={false} error={null} onSubmit={vi.fn()} />)
+
+      fireEvent.change(pick(), { target: { value: "custom" } })
+      fireEvent.change(screen.getByLabelText("Custom base URL"), { target: { value: "ftp://nope.example" } })
+
+      expect(screen.getByText(/must start with http/)).toBeTruthy()
+      expect(screen.getByRole("button", { name: "Add indexer" })).toHaveProperty("disabled", true)
+    })
+
+    // Native drivers carry a single-entry links list; nothing special-cased.
+    it("a single-link definition still offers Default + the link + Custom…", () => {
+      const native: DefinitionDetail = { ...DEFINITION, links: ["https://avistaz.to/"] }
+      renderForm(<IndexerForm definition={native} pending={false} error={null} onSubmit={vi.fn()} />)
+      expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual([
+        "Default (avistaz.to)", "avistaz.to", "Custom…",
+      ])
+    })
+
+    // Shouldn't happen, but a linkless definition must not lose the override control.
+    it("a definition with no links falls back to free text", () => {
+      const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+      renderForm(<IndexerForm definition={{ ...DEFINITION, links: [] }} pending={false} error={null} onSubmit={onSubmit} />)
+
+      fireEvent.change(screen.getByLabelText("Base URL (optional override)"), { target: { value: "https://only.example" } })
+      fireEvent.click(screen.getByRole("button", { name: "Add indexer" }))
+
+      const submit = onSubmit.mock.calls[0][0]
+      if (submit.mode === "create") expect(submit.body.baseUrl).toBe("https://only.example")
+    })
   })
 
   it("edit: a definition's own cookie field renders normally and is preserved untouched", () => {
