@@ -145,20 +145,27 @@ func TestApplyRowFiltersFoldSeam(t *testing.T) {
 
 	filters := []loader.RowFilterBlock{{Name: "andmatch"}}
 	const title = "Venise n'est pas en Italie 2019"
-	query := Query{Keywords: "Venise nest pas en Italie"}
-
-	if skip := applyRowFilters(filters, title, query, Deps{}); !skip {
-		t.Error("default Deps must keep the Jackett behaviour (row skipped)")
-	}
-	if skip := applyRowFilters(filters, title, query, Deps{FoldAndMatchPunctuation: true}); skip {
-		t.Error("FoldAndMatchPunctuation must keep the row")
-	}
-
+	keywordQuery := Query{Keywords: "Venise nest pas en Italie"}
 	// An ID search skips andmatch entirely, folding or not.
 	idQuery := Query{Keywords: "nothing matching", IMDBID: "tt1234567"}
-	for _, fold := range []bool{false, true} {
-		if skip := applyRowFilters(filters, title, idQuery, Deps{FoldAndMatchPunctuation: fold}); skip {
-			t.Errorf("id search must skip andmatch (fold=%v)", fold)
-		}
+
+	cases := []struct {
+		name     string
+		query    Query
+		fold     bool
+		wantSkip bool
+	}{
+		{"default keeps the Jackett behaviour (row skipped)", keywordQuery, false, true},
+		{"folding keeps the row", keywordQuery, true, false},
+		{"id search bypasses andmatch, fold off", idQuery, false, false},
+		{"id search bypasses andmatch, fold on", idQuery, true, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if skip := applyRowFilters(filters, title, tc.query, Deps{FoldAndMatchPunctuation: tc.fold}); skip != tc.wantSkip {
+				t.Errorf("skip = %v, want %v", skip, tc.wantSkip)
+			}
+		})
 	}
 }

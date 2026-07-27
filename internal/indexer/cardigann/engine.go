@@ -176,6 +176,13 @@ func resolveOptions(def *loader.Definition, opts []Option) options {
 	// caller's explicit config so user-supplied values win — matching Jackett,
 	// where a request template reads the setting Default until the user sets it.
 	cfg := maps.Clone(DefaultConfig(def))
+	// Reserved per-instance keys are the OPERATOR's alone: a definition that
+	// declares a settings field with a reserved name (only reachable via a
+	// drop-in — vendored defs never do) must not be able to pre-seed it through
+	// its default, or an untouched instance would silently diverge from the
+	// Jackett-identical path. The caller overlay below still applies an
+	// explicitly supplied value.
+	delete(cfg, foldPunctuationSetting)
 	maps.Copy(cfg, o.config)
 	o.config = cfg
 	if o.baseURL == "" {
