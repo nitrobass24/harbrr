@@ -16,13 +16,15 @@ import (
 type IndexerStatCountersStore struct{}
 
 // IndexerStatCounter is one instance's cumulative query/grab counters plus the
-// running response-time total (avg is derived at read time). The counts are absolute
+// running response-time total (avg is derived at read time; so is the grab success
+// rate — Grabs/GrabAttempts — which is never stored). The counts are absolute
 // (not deltas): the registry rehydrates them into its in-memory atomics at boot and
 // writes the live absolute values back on flush, so the Upsert is idempotent.
 // LastQueryAt/LastGrabAt are zero when the indexer has never been searched/grabbed.
 type IndexerStatCounter struct {
 	InstanceID      int64
 	Queries         int64
+	GrabAttempts    int64
 	Grabs           int64
 	ResponseMsTotal int64
 	LastQueryAt     time.Time // zero = never
@@ -38,16 +40,17 @@ type IndexerStatCounter struct {
 func (IndexerStatCountersStore) Upsert(ctx context.Context, q dbinterface.Execer, c IndexerStatCounter) error {
 	_, err := q.ExecContext(ctx,
 		q.Rebind(`INSERT INTO indexer_stat_counters
-			(instance_id, queries, grabs, response_ms_total, last_query_at, last_grab_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?)
+			(instance_id, queries, grab_attempts, grabs, response_ms_total, last_query_at, last_grab_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(instance_id) DO UPDATE SET
 			  queries = excluded.queries,
+			  grab_attempts = excluded.grab_attempts,
 			  grabs = excluded.grabs,
 			  response_ms_total = excluded.response_ms_total,
 			  last_query_at = excluded.last_query_at,
 			  last_grab_at = excluded.last_grab_at,
 			  updated_at = excluded.updated_at`),
-		c.InstanceID, c.Queries, c.Grabs, c.ResponseMsTotal,
+		c.InstanceID, c.Queries, c.GrabAttempts, c.Grabs, c.ResponseMsTotal,
 		nullableTime(c.LastQueryAt), nullableTime(c.LastGrabAt), c.UpdatedAt.UTC().Format(timeLayout))
 	if err != nil {
 		return fmt.Errorf("database: upsert indexer stat counters for instance %d: %w", c.InstanceID, err)
@@ -59,7 +62,7 @@ func (IndexerStatCountersStore) Upsert(ctx context.Context, q dbinterface.Execer
 // registry loads these into its in-memory atomics at boot.
 func (IndexerStatCountersStore) AllCounters(ctx context.Context, q dbinterface.Execer) ([]IndexerStatCounter, error) {
 	rows, err := q.QueryContext(ctx,
-		`SELECT instance_id, queries, grabs, response_ms_total, last_query_at, last_grab_at, updated_at
+		`SELECT instance_id, queries, grab_attempts, grabs, response_ms_total, last_query_at, last_grab_at, updated_at
 			FROM indexer_stat_counters ORDER BY instance_id`)
 	if err != nil {
 		return nil, fmt.Errorf("database: list indexer stat counters: %w", err)
@@ -72,7 +75,7 @@ func (IndexerStatCountersStore) AllCounters(ctx context.Context, q dbinterface.E
 			lastQuery, lastGrab sql.NullString
 			updatedAt           string
 		)
-		if err := rows.Scan(&c.InstanceID, &c.Queries, &c.Grabs, &c.ResponseMsTotal,
+		if err := rows.Scan(&c.InstanceID, &c.Queries, &c.GrabAttempts, &c.Grabs, &c.ResponseMsTotal,
 			&lastQuery, &lastGrab, &updatedAt); err != nil {
 			return nil, fmt.Errorf("database: scan indexer stat counters: %w", err)
 		}

@@ -28,6 +28,7 @@ import (
 // crash-loss tolerance the cache counters accept.
 type IndexerStats struct {
 	store database.IndexerStatCountersStore
+	cats  database.IndexerCategoryStatsStore
 	db    dbinterface.Querier
 	clock func() time.Time
 	log   zerolog.Logger
@@ -48,10 +49,24 @@ type IndexerStats struct {
 // the DB or a lock.
 type instanceStat struct {
 	queries       atomic.Int64
+	grabAttempts  atomic.Int64
 	grabs         atomic.Int64
 	responseMs    atomic.Int64 // cumulative sum of per-query elapsed millis
 	lastQueryUnix atomic.Int64 // unix millis, 0 = never
 	lastGrabUnix  atomic.Int64 // unix millis, 0 = never
+
+	// cats holds the per-parent-category tallies NOT YET flushed, keyed by standard
+	// parent category id (map[int]*catDelta). Unlike the counters above these are
+	// DELTAS: the flush swaps them to zero and adds them to the current month's row,
+	// so nothing has to be rehydrated and no history is ever held in memory. The
+	// cardinality is ~10 parent families per instance.
+	cats sync.Map
+}
+
+// catDelta is one category's un-flushed increments for an instance.
+type catDelta struct {
+	queryResults atomic.Int64
+	grabs        atomic.Int64
 }
 
 // newIndexerStats builds the counter set over db with the given clock and logger.
@@ -83,23 +98,71 @@ func (s *IndexerStats) RecordQuery(instanceID int64, elapsed time.Duration) {
 	is.lastQueryUnix.Store(s.clock().UnixMilli())
 }
 
-// RecordGrab counts one successful grab (a download the /dl proxy actually produced).
-func (s *IndexerStats) RecordGrab(instanceID int64) {
+// RecordGrabAttempt counts one grab that reached the tracker, whether or not it
+// produced a download. Paired with RecordGrab it is what makes the success rate
+// ("grabbed 200, 40 failed") derivable at read time — the rate itself is never stored.
+// Recorded at the same seam as RecordQuery (after the circuit/budget gates, around the
+// inner call), so "attempts" means the same thing for grabs as for queries.
+func (s *IndexerStats) RecordGrabAttempt(instanceID int64) {
+	s.get(instanceID).grabAttempts.Add(1)
+}
+
+// RecordGrab counts one successful grab (a download the /dl proxy actually produced),
+// under the grabbed release's parent category (mapper.UncategorizedID when unknown).
+func (s *IndexerStats) RecordGrab(instanceID int64, categoryID int) {
 	is := s.get(instanceID)
 	is.grabs.Add(1)
 	is.lastGrabUnix.Store(s.clock().UnixMilli())
+	is.cat(categoryID).grabs.Add(1)
+}
+
+// RecordCategoryResults folds one search's result counts, already folded to parent
+// categories, into the pending per-category deltas. Lock-free like the counters: the
+// increments reach the DB on the same flush tick.
+func (s *IndexerStats) RecordCategoryResults(instanceID int64, counts map[int]int64) {
+	if len(counts) == 0 {
+		return
+	}
+	is := s.get(instanceID)
+	for catID, n := range counts {
+		is.cat(catID).queryResults.Add(n)
+	}
+}
+
+// cat returns (creating on first use) the pending delta for one parent category.
+func (is *instanceStat) cat(categoryID int) *catDelta {
+	v, _ := is.cats.LoadOrStore(categoryID, &catDelta{})
+	d, _ := v.(*catDelta)
+	return d
+}
+
+// statSnapshot is one instance's counter reading — the durable totals plus the derived
+// inputs the stats surface needs. Zero-valued for an instance with no recorded traffic.
+type statSnapshot struct {
+	queries      int64
+	grabAttempts int64
+	grabs        int64
+	respTotal    int64
+	lastQuery    time.Time // zero = never
+	lastGrab     time.Time // zero = never
 }
 
 // snapshot reads instanceID's current counters (zeroes for an instance with no
 // recorded traffic). The last-* unix-millis are converted to time.Time (zero = never).
-func (s *IndexerStats) snapshot(instanceID int64) (queries, grabs, respTotal int64, lastQuery, lastGrab time.Time) {
+func (s *IndexerStats) snapshot(instanceID int64) statSnapshot {
 	v, ok := s.inst.Load(instanceID)
 	if !ok {
-		return 0, 0, 0, time.Time{}, time.Time{}
+		return statSnapshot{}
 	}
 	is, _ := v.(*instanceStat)
-	return is.queries.Load(), is.grabs.Load(), is.responseMs.Load(),
-		unixMillisToTime(is.lastQueryUnix.Load()), unixMillisToTime(is.lastGrabUnix.Load())
+	return statSnapshot{
+		queries:      is.queries.Load(),
+		grabAttempts: is.grabAttempts.Load(),
+		grabs:        is.grabs.Load(),
+		respTotal:    is.responseMs.Load(),
+		lastQuery:    unixMillisToTime(is.lastQueryUnix.Load()),
+		lastGrab:     unixMillisToTime(is.lastGrabUnix.Load()),
+	}
 }
 
 // RehydrateCounters folds the persisted per-instance counters onto the in-memory
@@ -120,6 +183,7 @@ func (s *IndexerStats) RehydrateCounters(ctx context.Context) error {
 	for _, r := range rows {
 		is := s.get(r.InstanceID)
 		is.queries.Add(r.Queries)
+		is.grabAttempts.Add(r.GrabAttempts)
 		is.grabs.Add(r.Grabs)
 		is.responseMs.Add(r.ResponseMsTotal)
 		storeIfGreater(&is.lastQueryUnix, timeToUnixMillis(r.LastQueryAt))
@@ -149,12 +213,14 @@ func (s *IndexerStats) FlushCounters(ctx context.Context) {
 		}
 	}
 	now := s.clock()
+	var deltas []database.IndexerCategoryCount
 	s.inst.Range(func(k, v any) bool {
 		id, _ := k.(int64)
 		is, _ := v.(*instanceStat)
 		row := database.IndexerStatCounter{
 			InstanceID:      id,
 			Queries:         is.queries.Load(),
+			GrabAttempts:    is.grabAttempts.Load(),
 			Grabs:           is.grabs.Load(),
 			ResponseMsTotal: is.responseMs.Load(),
 			LastQueryAt:     unixMillisToTime(is.lastQueryUnix.Load()),
@@ -165,8 +231,49 @@ func (s *IndexerStats) FlushCounters(ctx context.Context) {
 			s.log.Warn().Int64("instance_id", id).Str("error", apphttp.RedactError(err)).
 				Msg("registry: indexer stat counter flush failed")
 		}
+		deltas = append(deltas, takeCategoryDeltas(id, is)...)
 		return true
 	})
+	s.flushCategories(ctx, deltas, now)
+}
+
+// takeCategoryDeltas drains one instance's pending per-category increments, leaving the
+// in-memory tallies at zero. Only non-empty pairs are returned, so an instance whose
+// categories have not moved since the last flush costs no write.
+func takeCategoryDeltas(instanceID int64, is *instanceStat) []database.IndexerCategoryCount {
+	var out []database.IndexerCategoryCount
+	is.cats.Range(func(k, v any) bool {
+		catID, _ := k.(int)
+		d, _ := v.(*catDelta)
+		results, grabs := d.queryResults.Swap(0), d.grabs.Swap(0)
+		if results != 0 || grabs != 0 {
+			out = append(out, database.IndexerCategoryCount{
+				InstanceID: instanceID, CategoryID: catID, QueryResults: results, Grabs: grabs,
+			})
+		}
+		return true
+	})
+	return out
+}
+
+// flushCategories adds the drained deltas to the current month's rows. Deltas that did
+// not land are folded BACK into the in-memory tallies so the next tick retries exactly
+// those: they are increments, not absolute values, so dropping them would lose the
+// counts outright and replaying a written one would double it.
+func (s *IndexerStats) flushCategories(ctx context.Context, deltas []database.IndexerCategoryCount, now time.Time) {
+	if len(deltas) == 0 {
+		return
+	}
+	failed, err := s.cats.AddDeltas(ctx, s.db, database.MonthBucket(now), deltas, now)
+	if err != nil {
+		s.log.Warn().Str("error", apphttp.RedactError(err)).
+			Msg("registry: indexer category stat flush failed; retrying on the next tick")
+	}
+	for _, d := range failed {
+		c := s.get(d.InstanceID).cat(d.CategoryID)
+		c.queryResults.Add(d.QueryResults)
+		c.grabs.Add(d.Grabs)
+	}
 }
 
 // ForgetInstance drops a deleted instance's in-memory counters. Unlike the cache there

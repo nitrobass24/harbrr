@@ -48,7 +48,7 @@ func TestForgetInstancesEvictsPerInstanceState(t *testing.T) {
 	// Prime stats + budget counters for the same instance.
 	stats.RecordQuery(instID, 5*time.Millisecond)
 	budget.ReserveQuery(ctx, instID, nil, *clk.Load())
-	if queries, _, _, _, _ := stats.snapshot(instID); queries != 1 {
+	if queries := stats.snapshot(instID).queries; queries != 1 {
 		t.Fatalf("prime stats queries = %d, want 1", queries)
 	}
 	if _, ok := budget.states.Load(instID); !ok {
@@ -62,7 +62,7 @@ func TestForgetInstancesEvictsPerInstanceState(t *testing.T) {
 		t.Errorf("cache counters survived Forget: hits=%d misses=%d suppressed=%d",
 			ic.hits.Load(), ic.misses.Load(), ic.suppressed.Load())
 	}
-	if queries, _, _, _, _ := stats.snapshot(instID); queries != 0 {
+	if queries := stats.snapshot(instID).queries; queries != 0 {
 		t.Errorf("stats snapshot survived Forget: queries = %d, want 0", queries)
 	}
 	if _, ok := budget.states.Load(instID); ok {

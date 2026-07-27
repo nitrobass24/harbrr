@@ -14,6 +14,7 @@ import (
 	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/core"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 	"github.com/autobrr/harbrr/internal/secrets"
@@ -717,13 +718,12 @@ func (r *StatsReporter) statusOf(ctx context.Context, instanceID int64, limit in
 		till := circuit.DisabledTill
 		disabledTill = &till
 	}
-	_, _, _, lastQuery, _ := r.stats.snapshot(instanceID)
 	signals := healthSignals{
 		events:    events,
 		recovery:  recovery,
 		disabled:  disabledTill != nil,
 		level:     circuit.EscalationLevel,
-		lastQuery: lastQuery,
+		lastQuery: r.stats.snapshot(instanceID).lastQuery,
 	}
 	return events, r.deriveStatus(signals), disabledTill, nil
 }
@@ -819,15 +819,31 @@ type IndexerFailureCounts struct {
 // IndexerStat is one indexer's Prowlarr-style stats: the durable query/grab/latency
 // counters plus the failure aggregation and the last-query/last-failure times.
 // AvgResponseMs is derived (response-time total / queries), so it is 0 when the indexer
-// has never been queried. LastQueryAt/LastFailureAt are zero when never observed.
+// has never been queried; GrabSuccessRate is derived the same way (grabs/attempts) and
+// is nil — not 0 — when nothing has been grabbed, so "no data" never reads as "0%".
+// LastQueryAt/LastFailureAt are zero when never observed.
 type IndexerStat struct {
-	Slug          string
-	Queries       int64
-	Grabs         int64
-	AvgResponseMs int64
-	Failures      IndexerFailureCounts
-	LastQueryAt   time.Time
-	LastFailureAt time.Time
+	Slug            string
+	Queries         int64
+	GrabAttempts    int64
+	Grabs           int64
+	GrabSuccessRate *float64
+	AvgResponseMs   int64
+	Failures        IndexerFailureCounts
+	Categories      []IndexerCategoryStat
+	LastQueryAt     time.Time
+	LastFailureAt   time.Time
+}
+
+// IndexerCategoryStat is one indexer's tally for a single standard PARENT category,
+// summed over the retained months: how many results it returned there and how many of
+// them were grabbed. Name is the standard category name ("Movies"), or "Uncategorized"
+// for the id-0 bucket (releases with no mappable standard category).
+type IndexerCategoryStat struct {
+	CategoryID int
+	Name       string
+	Results    int64
+	Grabs      int64
 }
 
 // Stats returns one indexer's per-indexer stats: its durable counters plus the failure
@@ -844,8 +860,11 @@ func (r *StatsReporter) Stats(ctx context.Context, slug string) (IndexerStat, er
 	if err != nil {
 		return IndexerStat{}, fmt.Errorf("registry: stats failures %q: %w", slug, err)
 	}
-	queries, grabs, respTotal, lastQuery, _ := r.stats.snapshot(inst.ID)
-	return buildIndexerStat(slug, queries, grabs, respTotal, lastQuery, counts), nil
+	cats, err := r.categoryTallies(ctx)
+	if err != nil {
+		return IndexerStat{}, fmt.Errorf("registry: stats categories %q: %w", slug, err)
+	}
+	return buildIndexerStat(slug, r.stats.snapshot(inst.ID), counts, cats[inst.ID]), nil
 }
 
 // AllStats returns per-indexer stats for every configured instance. It reads the
@@ -860,26 +879,69 @@ func (r *StatsReporter) AllStats(ctx context.Context) ([]IndexerStat, error) {
 	if err != nil {
 		return nil, fmt.Errorf("registry: all stats failures: %w", err)
 	}
+	cats, err := r.categoryTallies(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("registry: all stats categories: %w", err)
+	}
 	out := make([]IndexerStat, 0, len(list))
 	for _, inst := range list {
-		queries, grabs, respTotal, lastQuery, _ := r.stats.snapshot(inst.ID)
-		out = append(out, buildIndexerStat(inst.Slug, queries, grabs, respTotal, lastQuery, countsByInstance[inst.ID]))
+		out = append(out, buildIndexerStat(inst.Slug, r.stats.snapshot(inst.ID), countsByInstance[inst.ID], cats[inst.ID]))
 	}
 	return out, nil
 }
 
-// buildIndexerStat assembles the public stat from the durable counters and the health
-// aggregation, deriving the average response time (guarded against divide-by-zero).
-func buildIndexerStat(slug string, queries, grabs, respTotal int64, lastQuery time.Time, counts database.HealthCounts) IndexerStat {
+// categoryTallies reads every instance's per-category totals in ONE grouped query and
+// indexes them by instance. Cardinality is instances × ~10 parent families, so the
+// all-instances read serves the single-indexer view too rather than adding a query per
+// row of the list. The counts lag the live counters by up to one flush tick — they are
+// durable-only, unlike the in-memory query/grab totals.
+func (r *StatsReporter) categoryTallies(ctx context.Context) (map[int64][]IndexerCategoryStat, error) {
+	rows, err := (database.IndexerCategoryStatsStore{}).Tallies(ctx, r.db)
+	if err != nil {
+		return nil, fmt.Errorf("registry: category tallies: %w", err)
+	}
+	out := make(map[int64][]IndexerCategoryStat, len(rows))
+	for _, row := range rows {
+		out[row.InstanceID] = append(out[row.InstanceID], IndexerCategoryStat{
+			CategoryID: row.CategoryID,
+			Name:       categoryName(row.CategoryID),
+			Results:    row.QueryResults,
+			Grabs:      row.Grabs,
+		})
+	}
+	return out, nil
+}
+
+// categoryName resolves a parent category id to its standard name; the id-0 bucket
+// (nothing mappable) reads as "Uncategorized", never as the real "Other" family.
+func categoryName(id int) string {
+	if cat, ok := mapper.GetByID(id); ok {
+		return cat.Name
+	}
+	return "Uncategorized"
+}
+
+// buildIndexerStat assembles the public stat from the durable counters, the health
+// aggregation and the per-category tallies, deriving the average response time and the
+// grab success rate at READ time (both guarded against divide-by-zero — no derived
+// value is ever stored).
+func buildIndexerStat(slug string, s statSnapshot, counts database.HealthCounts, cats []IndexerCategoryStat) IndexerStat {
 	var avg int64
-	if queries > 0 {
-		avg = respTotal / queries
+	if s.queries > 0 {
+		avg = s.respTotal / s.queries
+	}
+	var rate *float64
+	if s.grabAttempts > 0 {
+		r := float64(s.grabs) / float64(s.grabAttempts)
+		rate = &r
 	}
 	return IndexerStat{
-		Slug:          slug,
-		Queries:       queries,
-		Grabs:         grabs,
-		AvgResponseMs: avg,
+		Slug:            slug,
+		Queries:         s.queries,
+		GrabAttempts:    s.grabAttempts,
+		Grabs:           s.grabs,
+		GrabSuccessRate: rate,
+		AvgResponseMs:   avg,
 		Failures: IndexerFailureCounts{
 			AuthFailure: counts.AuthFailure,
 			RateLimited: counts.RateLimited,
@@ -887,7 +949,8 @@ func buildIndexerStat(slug string, queries, grabs, respTotal int64, lastQuery ti
 			AntiBot:     counts.AntiBot,
 			Transport:   counts.Transport,
 		},
-		LastQueryAt:   lastQuery,
+		Categories:    cats,
+		LastQueryAt:   s.lastQuery,
 		LastFailureAt: counts.LastFailureAt,
 	}
 }
@@ -902,6 +965,45 @@ func (r *StatsReporter) RehydrateStats(ctx context.Context) error {
 // for the periodic + shutdown flush in cmd/harbrr).
 func (r *StatsReporter) FlushStats(ctx context.Context) {
 	r.stats.FlushCounters(ctx)
+}
+
+// CategoryStatsRetention returns the operator's retention window for the per-category
+// tallies, in months (the default when unset).
+func (r *StatsReporter) CategoryStatsRetention(ctx context.Context) (int, error) {
+	months, err := database.CategoryStatsRetentionMonths(ctx, r.db)
+	if err != nil {
+		return months, fmt.Errorf("registry: read stats retention: %w", err)
+	}
+	return months, nil
+}
+
+// SetCategoryStatsRetention persists the retention window in months. Out-of-range
+// values are rejected here, so every caller (API today) enforces the same bounds.
+func (r *StatsReporter) SetCategoryStatsRetention(ctx context.Context, months int) error {
+	if months < database.MinCategoryStatsRetentionMonths || months > database.MaxCategoryStatsRetentionMonths {
+		return fmt.Errorf("%w: stats retention must be %d-%d months", ErrInvalid,
+			database.MinCategoryStatsRetentionMonths, database.MaxCategoryStatsRetentionMonths)
+	}
+	if err := database.SetCategoryStatsRetentionMonths(ctx, r.db, months, r.clock()); err != nil {
+		return fmt.Errorf("registry: set stats retention: %w", err)
+	}
+	return nil
+}
+
+// ReapCategoryStats deletes every month bucket older than the retention window — a
+// range delete, not a rollup, so retention costs one statement regardless of history
+// size. Returns the number of rows removed.
+func (r *StatsReporter) ReapCategoryStats(ctx context.Context) (int64, error) {
+	months, err := r.CategoryStatsRetention(ctx)
+	if err != nil {
+		return 0, err
+	}
+	cutoff := database.MonthBucket(r.clock().AddDate(0, -months, 0))
+	deleted, err := (database.IndexerCategoryStatsStore{}).DeleteBefore(ctx, r.db, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("registry: reap category stats: %w", err)
+	}
+	return deleted, nil
 }
 
 // settingFields indexes a definition's settings by name.

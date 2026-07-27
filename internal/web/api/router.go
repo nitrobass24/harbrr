@@ -270,6 +270,9 @@ func (rt *router) mountSystemRoutes(r chi.Router) {
 	r.Get("/api/config/adult-categories", rt.getAdultCategories)
 	r.Put("/api/config/adult-categories", rt.putAdultCategories)
 
+	r.Get("/api/config/stats-retention", rt.getStatsRetention)
+	r.Put("/api/config/stats-retention", rt.putStatsRetention)
+
 	r.Post("/api/logs/frontend", rt.postFrontendLog)
 
 	r.Get("/api/server-info", rt.serverInfo)

@@ -1331,6 +1331,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/config/stats-retention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the per-category stats retention window
+         * @description Returns how many months of per-category indexer tallies are kept (autobrr/harbrr#403). Defaults to 12 when the operator never set it.
+         */
+        get: operations["getStatsRetention"];
+        /**
+         * Set the per-category stats retention window
+         * @description Persists the retention window (1-120 months). It applies on the next daily reap, so shortening it drops the now-expired month buckets then, not immediately.
+         */
+        put: operations["putStatsRetention"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/config/rate-limit": {
         parameters: {
             query?: never;
@@ -1565,8 +1589,18 @@ export interface components {
             slug: string;
             /** Format: int64 */
             queries: number;
+            /**
+             * Format: int64
+             * @description grabs that reached the tracker, successful or not
+             */
+            grabAttempts: number;
             /** Format: int64 */
             grabs: number;
+            /**
+             * Format: double
+             * @description grabs / grabAttempts, derived at read time and never stored. Absent until at least one grab has been attempted, so "no data" never reads as a 0% success rate.
+             */
+            grabSuccessRate?: number;
             /** Format: int64 */
             avgResponseMs: number;
             failures: {
@@ -1581,6 +1615,16 @@ export interface components {
                 /** Format: int64 */
                 transport: number;
             };
+            /** @description Per parent-category tallies (autobrr/harbrr#403), summed over the retained months: how many results the indexer returned in that family and how many of them were grabbed. Categories are folded to the ~10 standard family roots (2040 Movies/HD counts under 2000 Movies); id 0 ("Uncategorized") holds releases with no mappable standard category. */
+            categories: {
+                /** @description standard parent category id; 0 = uncategorized */
+                id: number;
+                name: string;
+                /** Format: int64 */
+                results: number;
+                /** Format: int64 */
+                grabs: number;
+            }[];
             /** Format: date-time */
             lastQueryAt?: string;
             /** Format: date-time */
@@ -2387,6 +2431,14 @@ export interface components {
         AdultCategories: {
             /** @description true when adult categories are hidden */
             hidden: boolean;
+        };
+        /** @description How long the per-category indexer tallies are kept (autobrr/harbrr#403). Old month buckets are dropped by a daily range delete, so a renewal decision months later still has the history it needs without an unbounded table. */
+        StatsRetention: {
+            /**
+             * @description retention window in whole months
+             * @default 12
+             */
+            months: number;
         };
         /** @description The live global rate-limit default (autobrr/harbrr#104): the minimum spacing between requests to any tracker host that has no per-indexer "rate_interval" override (get returns the effective value; put sets it). Always a Go duration string. Never undercuts a definition's own requestDelay. */
         RateLimitConfig: {
@@ -5253,6 +5305,53 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    getStatsRetention: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description the current retention window */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatsRetention"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    putStatsRetention: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StatsRetention"];
+            };
+        };
+        responses: {
+            /** @description the applied retention window */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatsRetention"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
         };
     };
     getRateLimitDefault: {

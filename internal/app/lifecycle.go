@@ -64,6 +64,7 @@ func startReapers(ctx context.Context, wg *sync.WaitGroup, db *database.DB,
 	startSearchCacheCleanup(ctx, wg, sc, log)
 	startIndexerStatsFlush(ctx, wg, reg)
 	startHealthEventCleanup(ctx, wg, db, log)
+	startCategoryStatsCleanup(ctx, wg, reg, log)
 	startAPIKeyTouchFlush(ctx, wg, authSvc, log)
 	startRSSWarmer(ctx, wg, reg, log)
 }
@@ -105,6 +106,19 @@ func startHealthEventCleanup(ctx context.Context, wg *sync.WaitGroup, db *databa
 		cutoff := time.Now().Add(-healthEventRetention)
 		if _, err := (database.Health{}).DeleteBefore(ctx, db, cutoff); err != nil && !errors.Is(err, context.Canceled) {
 			log.Warn().Err(err).Msg("health event cleanup failed")
+		}
+	}, nil)
+}
+
+// startCategoryStatsCleanup drops per-category stat buckets older than the operator's
+// retention window once a day, mirroring startHealthEventCleanup. The window is read
+// from app_settings inside the reap, so a change applies on the next cycle without a
+// restart. Monthly buckets means the delete is usually a no-op — it only has anything
+// to do when a month rolls out of the window.
+func startCategoryStatsCleanup(ctx context.Context, wg *sync.WaitGroup, reg *registry.Registry, log zerolog.Logger) {
+	reap(ctx, wg, fixedInterval(healthEventCleanupInterval), func(ctx context.Context) {
+		if _, err := reg.ReapCategoryStats(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			log.Warn().Err(err).Msg("indexer category stats cleanup failed")
 		}
 	}, nil)
 }
