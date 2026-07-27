@@ -86,36 +86,36 @@ func TestDeriveStatus(t *testing.T) {
 		want string
 	}{
 		// #389: no evidence of anything is "unknown", not the old asserted "healthy".
-		{name: "nothing ever observed", want: statusUnknown},
-		{name: "recent failure", s: healthSignals{events: recent}, want: statusFailing},
+		{name: "nothing ever observed", want: StatusUnknown},
+		{name: "recent failure", s: healthSignals{events: recent}, want: StatusFailing},
 		// Level 0 keeps the historical 1h window, so a 2h-old failure has expired —
 		// but with no success either, that expiry lands on unknown, not healthy.
-		{name: "failure past the level-0 window", s: healthSignals{events: old}, want: statusUnknown},
+		{name: "failure past the level-0 window", s: healthSignals{events: old}, want: StatusUnknown},
 		// The window doubles per escalation rung: the same 2h-old failure still stands
 		// at level 2 (4h).
-		{name: "failure inside the level-2 window", s: healthSignals{events: old, level: 2}, want: statusFailing},
+		{name: "failure inside the level-2 window", s: healthSignals{events: old, level: 2}, want: StatusFailing},
 		// ...and is capped at 24h, so a 30h-old failure has expired even at the top rung.
-		{name: "failure past the 24h cap", s: healthSignals{events: ancient, level: maxCircuitLevel}, want: statusUnknown},
+		{name: "failure past the 24h cap", s: healthSignals{events: ancient, level: maxCircuitLevel}, want: StatusUnknown},
 		// A passing explicit Test is a success (#116) and clears the failure it covers.
-		{name: "recovered failure", s: healthSignals{events: recent, recovery: recovered}, want: statusHealthy},
-		{name: "failure after recovery", s: healthSignals{events: later, recovery: recovered}, want: statusFailing},
+		{name: "recovered failure", s: healthSignals{events: recent, recovery: recovered}, want: StatusHealthy},
+		{name: "failure after recovery", s: healthSignals{events: later, recovery: recovered}, want: StatusFailing},
 		// ...but that success expires too: a test that passed yesterday proves nothing now.
 		{
 			name: "stale recovery, no traffic",
 			s:    healthSignals{recovery: database.HealthRecovery{ThroughEventID: 1, OccurredAt: ago(6 * time.Hour)}},
-			want: statusUnknown,
+			want: StatusUnknown,
 		},
 		// #253: an open circuit reads failing even with no recent triggering event (a
 		// high escalation rung can outlast the failing window).
-		{name: "circuit open, old failure", s: healthSignals{events: old, disabled: true}, want: statusFailing},
+		{name: "circuit open, old failure", s: healthSignals{events: old, disabled: true}, want: StatusFailing},
 		// A search that reached the tracker AFTER the newest failure is the newest
 		// evidence there is: it succeeded, so the failure no longer stands.
-		{name: "success after a recent failure", s: healthSignals{events: recent, lastQuery: now}, want: statusHealthy},
+		{name: "success after a recent failure", s: healthSignals{events: recent, lastQuery: now}, want: StatusHealthy},
 		// A failed search counts as a query too, timestamped just before its event — so a
 		// query that merely ties the newest failure is that failure, not a success.
-		{name: "query tied with the failure", s: healthSignals{events: recent, lastQuery: ago(1 * time.Minute)}, want: statusFailing},
-		{name: "recent success, no failures", s: healthSignals{lastQuery: ago(10 * time.Minute)}, want: statusHealthy},
-		{name: "success past the healthy window", s: healthSignals{lastQuery: ago(3 * time.Hour)}, want: statusUnknown},
+		{name: "query tied with the failure", s: healthSignals{events: recent, lastQuery: ago(1 * time.Minute)}, want: StatusFailing},
+		{name: "recent success, no failures", s: healthSignals{lastQuery: ago(10 * time.Minute)}, want: StatusHealthy},
+		{name: "success past the healthy window", s: healthSignals{lastQuery: ago(3 * time.Hour)}, want: StatusUnknown},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -375,9 +375,9 @@ func (rt *router) allIndexerStatus(w http.ResponseWriter, r *http.Request) {
 	out := fleetStatusResponse{Indexers: make([]fleetIndexerStatus, 0, len(statuses))}
 	for _, st := range statuses {
 		switch st.Status {
-		case "healthy":
+		case registry.StatusHealthy:
 			out.Healthy++
-		case "failing":
+		case registry.StatusFailing:
 			out.Failing++
 		default:
 			out.Unknown++

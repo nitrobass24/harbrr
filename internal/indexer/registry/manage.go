@@ -604,10 +604,12 @@ const healthEventLimit = 20
 // The three derived health states (autobrr/harbrr#389). "unknown" is the honest
 // answer when nothing recent is known — the state the old two-state model was missing,
 // which made a never-queried or long-idle indexer assert "healthy" forever.
+// Exported so API handlers tallying or switching on FleetStatus.Status share one
+// definition with the derivation instead of re-typing wire literals.
 const (
-	statusHealthy = "healthy"
-	statusFailing = "failing"
-	statusUnknown = "unknown"
+	StatusHealthy = "healthy"
+	StatusFailing = "failing"
+	StatusUnknown = "unknown"
 )
 
 // healthyWindow is how recently a successful attempt must have happened for the derived
@@ -750,17 +752,17 @@ type healthSignals struct {
 // no sweep and no probe: an idle indexer simply ages into unknown.
 func (r *StatsReporter) deriveStatus(s healthSignals) string {
 	if s.disabled {
-		return statusFailing
+		return StatusFailing
 	}
 	now := r.clock()
 	success := s.lastSuccess()
 	if s.failingNow(now, success) {
-		return statusFailing
+		return StatusFailing
 	}
 	if !success.IsZero() && now.Sub(success) <= healthyWindow {
-		return statusHealthy
+		return StatusHealthy
 	}
-	return statusUnknown
+	return StatusUnknown
 }
 
 // lastSuccess is the newest evidence that something actually WORKED: a counted query
