@@ -10,6 +10,7 @@ import { SettingFieldInput } from "@/components/indexers/form/SettingFieldInput"
 import { defaultValues, isInfoField, settingsPayload } from "@/components/indexers/form/settings-payload"
 import { useProxies, useSolvers } from "@/hooks/useResources"
 import { APIError } from "@/lib/api"
+import { hostname } from "@/lib/format"
 import type { AddIndexer, DefinitionDetail, InstanceDetail, SettingField, UpdateIndexer } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
@@ -56,6 +57,10 @@ const LIMIT_FIELDS = [TIMEOUT_FIELD, QUERY_LIMIT_FIELD, GRAB_LIMIT_FIELD, LIMITS
 // render/submit normally; the manual-cookie SOLVER only manages `cookie` for a
 // definition that does not (see managesCookie below).
 const MANAGED_KEYS = ["proxy_type", "proxy_url", "solver_type", "flaresolverr_url", "flaresolverr_max_timeout"]
+
+// Sentinel for the base-URL picker's "Custom…" option. Not a URL, so it can never
+// collide with a definition's links entry.
+const CUSTOM_BASE_URL = "custom"
 
 export type IndexerFormSubmit =
   | { mode: "create", body: AddIndexer }
@@ -176,10 +181,7 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
         )}
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="ix-baseurl">Base URL (optional override)</Label>
-        <Input id="ix-baseurl" placeholder="https://…" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
-      </div>
+      <BaseUrlField links={definition.links} value={baseUrl} onChange={setBaseUrl} />
 
       {definition.settings.map((field) => (
         <SettingFieldInput
@@ -281,11 +283,89 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
         </div>
       )}
 
-      <Button type="submit" disabled={pending || name === "" || (mode === "create" && slug === "")}>
+      <Button type="submit" disabled={pending || name === "" || badScheme(baseUrl) || (mode === "create" && slug === "")}>
         {pending ? "Saving…" : mode === "edit" ? "Save changes" : "Add indexer"}
       </Button>
     </form>
   )
+}
+
+// BaseUrlField picks the base-URL override from the definition's known hosts
+// (autobrr/harbrr#401). "" means "no override, follow the definition" — which
+// resolves to links[0] server-side, so the Default option is labelled with that
+// host rather than left opaque. Custom… keeps the free-text escape hatch for
+// private mirrors, onion addresses and LAN reverse proxies that no definition
+// lists. Purely local: the picker makes no network requests, and choosing a host
+// sets NO pin or failover-opt-out flag — that stays #375's separate control.
+function BaseUrlField({ links, value, onChange }: {
+  links: string[]
+  value: string
+  onChange: (v: string) => void
+}) {
+  const matched = links.find((l) => normBase(l) === normBase(value))
+  // An off-list stored override must land on Custom with the value intact —
+  // silently snapping it back to Default would change which host a working
+  // indexer talks to on an unrelated edit.
+  const [custom, setCustom] = useState(value !== "" && matched === undefined)
+  const showInput = custom || links.length === 0
+  const bad = badScheme(value)
+  // Warn, never block: a private mirror is a legitimate configuration.
+  const offList = showInput && links.length > 0 && value !== "" && !bad && matched === undefined
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor="ix-baseurl">Base URL (optional override)</Label>
+      {links.length > 0 ? (
+        <NativeSelect
+          id="ix-baseurl"
+          value={custom ? CUSTOM_BASE_URL : (matched ?? "")}
+          onChange={(e) => {
+            setCustom(e.target.value === CUSTOM_BASE_URL)
+            // Switching to Custom keeps whatever is there to edit; any other
+            // option submits its own value verbatim ("" = follow the definition).
+            if (e.target.value !== CUSTOM_BASE_URL) onChange(e.target.value)
+          }}
+        >
+          <option value="">Default ({hostname(links[0])})</option>
+          {links.map((l) => <option key={l} value={l} title={l}>{hostname(l)}</option>)}
+          <option value={CUSTOM_BASE_URL}>Custom…</option>
+        </NativeSelect>
+      ) : (
+        <Input id="ix-baseurl" placeholder="https://…" value={value} onChange={(e) => onChange(e.target.value)} />
+      )}
+      {showInput && links.length > 0 && (
+        <Input aria-label="Custom base URL" placeholder="https://…" value={value} onChange={(e) => onChange(e.target.value)} />
+      )}
+      {bad && <p className="text-[12px] text-bad">Base URL must start with http:// or https://.</p>}
+      {offList && <p className="text-[12px] text-faint">Not one of the definition&apos;s known hosts — saved as-is.</p>}
+    </div>
+  )
+}
+
+// normBase canonicalises a base URL for OPTION MATCHING ONLY — a picked host is
+// always submitted verbatim. Without it a stored "https://x.org/" would fail to
+// match a links entry of "https://x.org" and falsely show as Custom.
+function normBase(url: string): string {
+  const trimmed = url.trim().replace(/\/+$/, "")
+  try {
+    const u = new URL(trimmed)
+    // origin lowercases scheme + host; pathname keeps its case (paths can matter).
+    return u.origin + u.pathname.replace(/\/+$/, "")
+  } catch {
+    return trimmed.toLowerCase()
+  }
+}
+
+// badScheme blocks a base URL that isn't http/https. Empty is fine — that is the
+// "no override" case, not a typo.
+function badScheme(url: string): boolean {
+  if (url === "") return false
+  try {
+    const { protocol } = new URL(url)
+    return protocol !== "http:" && protocol !== "https:"
+  } catch {
+    return true
+  }
 }
 
 // initialSolver derives the solver control's value from the stored instance: a
