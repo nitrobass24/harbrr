@@ -62,7 +62,21 @@ type Indexer interface {
 	ConsumesSearchMode() bool
 }
 
-// Provider resolves the indexer id from the request path to its Indexer.
+// AggregateSlug is the reserved feed slug that resolves to every enabled indexer
+// (autobrr/harbrr#400). It occupies the same {slug} path position as a real indexer,
+// so the aggregate feed inherits every Torznab route for free; the registry rejects
+// it as an instance slug so the two can never collide.
+const AggregateSlug = "all"
+
+// Provider resolves a feed slug to the indexer(s) that serve it.
 type Provider interface {
+	// Indexer resolves a slug to the single indexer it names. A reserved aggregate
+	// slug is NOT an indexer and returns ok=false — which is what binds the /dl grab
+	// route to a real member: an aggregate slug can never resolve a download.
 	Indexer(ctx context.Context, id string) (Indexer, bool)
+	// Resolve returns the member set a feed slug covers: one element for a real
+	// indexer (same found-semantics as Indexer), every enabled indexer for
+	// AggregateSlug. An aggregate with no enabled members resolves to an empty set
+	// with ok=true — a valid, empty feed, not an error.
+	Resolve(ctx context.Context, slug string) ([]Indexer, bool)
 }

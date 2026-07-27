@@ -297,7 +297,7 @@ func (c *SearchCache) tripBreaker(ctx context.Context, instanceID int64, err err
 	// consumer's request for the negative-TTL window even though the tracker itself
 	// is healthy. Composing budget-exhaustion with the breaker is explicitly a
 	// serve-stale concern, never a circuit trip.
-	if errors.Is(err, errBudgetExhausted) {
+	if errors.Is(err, core.ErrBudgetExhausted) {
 		return
 	}
 	// A circuit-open refusal (autobrr/harbrr#253) is likewise a self-imposed gate, not
@@ -305,7 +305,7 @@ func (c *SearchCache) tripBreaker(ctx context.Context, instanceID int64, err err
 	// every liveSearchFn error (including the circuit's) through fetchLive would let
 	// the negative breaker replay a "disabled till T" error even after T has passed
 	// and the circuit itself has recovered.
-	if errors.Is(err, errCircuitOpen) {
+	if errors.Is(err, core.ErrCircuitOpen) {
 		return
 	}
 	until, ok := classifyBreakerError(err, c.tuning.Load().ttl.negative, c.clock())

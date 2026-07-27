@@ -14,6 +14,7 @@ import (
 	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
+	"github.com/autobrr/harbrr/internal/indexer/core"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 	"github.com/autobrr/harbrr/internal/secrets"
 )
@@ -75,16 +76,19 @@ var (
 // a clean Torznab path segment and management resource id.
 var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
-// reservedSlugs are slugs that must not name an indexer because they collide with
-// a static path segment registered as a sibling of /api/indexers/{slug} in
-// internal/web/api/router.go. chi prioritizes a static segment over the {slug}
-// param, so an indexer slugged "stats" or "status" would be shadowed by GET
-// /api/indexers/stats (allIndexerStats) or /api/indexers/status
-// (allIndexerStatus). Keep this in sync with the static segments registered
-// directly under /api/indexers/ in router.go.
+// reservedSlugs are slugs that must not name an indexer. Two reasons, both fatal:
+// "stats"/"status" collide with a static path segment registered as a sibling of
+// /api/indexers/{slug} in internal/web/api/router.go (chi prioritizes a static
+// segment over the {slug} param, so such an indexer would be shadowed by GET
+// /api/indexers/stats or /api/indexers/status); core.AggregateSlug names the
+// aggregate Torznab feed in the SAME {slug} position, so an indexer holding it would
+// make the aggregate feed unreachable and, worse, ambiguous at grab time. Keep this
+// in sync with the static segments registered directly under /api/indexers/ in
+// router.go. Case-insensitivity is free: slugPattern already rejects uppercase.
 var reservedSlugs = map[string]struct{}{
-	"stats":  {},
-	"status": {},
+	"stats":            {},
+	"status":           {},
+	core.AggregateSlug: {},
 }
 
 // defaultPriority is the Servarr indexer priority (Prowlarr semantics: 1-50, 1 =

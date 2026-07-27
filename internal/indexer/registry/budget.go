@@ -2,7 +2,6 @@ package registry
 
 import (
 	"context"
-	"errors"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,15 +13,6 @@ import (
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
 	apphttp "github.com/autobrr/harbrr/internal/http"
 )
-
-// errBudgetExhausted marks a Search/Grab refused because the indexer's request
-// budget (autobrr/harbrr#251) has no capacity left for the current period — either
-// an operator-configured cap was reached, or a tracker's own quota error was
-// observed (the reactive-learning path). It is a registry-internal signal, not an
-// engine error: Search catches it to prefer serving a stale cache entry; the breaker
-// (searchcache_breaker.go) explicitly excludes it from tripping, since a self-imposed
-// budget guard is not a tracker failure worth suppressing other consumers over.
-var errBudgetExhausted = errors.New("registry: indexer request budget exhausted for this period")
 
 // budgetKind distinguishes the query and grab counters, which are configured,
 // counted, and reactively learned independently (mirroring Prowlarr's separate

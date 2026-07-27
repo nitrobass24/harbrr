@@ -118,7 +118,8 @@ internal/
     api/                 # chi router + management-API handlers (indexers, appsync, announce, auth, stats, …)
     swagger/             # hand-authored openapi.yaml (//go:embed) + Swagger UI + drift test
     torznabhttp/         # HTTP/XML serving over core.Indexer: routing, request parsing, the 304
-                         #   revalidator, download-token, DL-proxy URL helpers
+                         #   revalidator, download-token, DL-proxy URL helpers, and the aggregate
+                         #   ('all') feed's partial fan-out with origin-bound grabs
   appsync/               # sync indexers into the *arr apps (sonarr/radarr/lidarr/readarr/whisparr) + qui
   announce/              # push newly-scraped releases to autobrr / cross-seed v6 / qui
   http/                  # HTTP seam: log/trace redaction, decode-error and transport-error shaping
