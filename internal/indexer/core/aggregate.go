@@ -75,8 +75,12 @@ type MemberOutcome struct {
 }
 
 // OK reports whether the member is still live — i.e. it has not been skipped, so it
-// is searched by the fan-out and (afterwards) contributed to the merged set.
-func (m MemberOutcome) OK() bool { return m.Reason == "" }
+// is searched by the fan-out and (afterwards) contributed to the merged set. It
+// requires the Indexer to actually be present: Provider is an exported interface, so
+// an implementer that hand-builds an outcome (bypassing LiveMember/SkippedMember) must
+// not be able to send the fan-out a nil Indexer that reads as searchable — a zero
+// MemberOutcome is a skip, never a panic on the serving path.
+func (m MemberOutcome) OK() bool { return m.Reason == "" && m.Indexer != nil }
 
 // LiveMember builds the resolved-and-ready member for idx, taking its ledger identity
 // from the indexer itself. It is how every caller that already holds an Indexer enters
