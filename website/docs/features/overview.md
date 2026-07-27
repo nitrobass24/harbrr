@@ -100,7 +100,7 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 | ID-based search (IMDb/TMDb/TVDB) and category mapping | ✅ |
 | Multi-select definition settings (checkbox / select / multi-select field types) | ✅ |
 | 18 further native drivers | 🚧 |
-| Per-indexer query timeout | 🚧 [#371](https://github.com/autobrr/harbrr/issues/371) |
+| Per-indexer request timeout — a reserved `timeout` duration setting on every indexer's advanced options | ✅ |
 | Automatic failover across a tracker's known base URLs | 🚧 [#375](https://github.com/autobrr/harbrr/issues/375) |
 | Per-indexer required release flags (freeleech, halfleech, …) | 🚧 [#385](https://github.com/autobrr/harbrr/issues/385) |
 | Per-release language and subtitle attributes from definitions | 🚧 [#379](https://github.com/autobrr/harbrr/issues/379) |
@@ -209,7 +209,7 @@ capabilities and will correct this page when it changes.
 | autobrr as a target | ✅ | — | — |
 | Cross-seed as a first-class consumer | ✅ | — [^2] | — |
 | Aggregate `all` feed that is safe to actually use | ✅ | — | ✅ [^4] |
-| Per-indexer timeout | 🚧 | — [^3] | — |
+| Per-indexer timeout | ✅ | — [^3] | — |
 | Automatic base-URL failover | 🚧 | — | — |
 | Instant regex result filter | 🚧 | — | ✅ |
 | Import from Prowlarr / Jackett / NZBHydra2 | 🚧 | — | — |

@@ -290,8 +290,15 @@ func TestNewExpiresCacheOnDefsFingerprintChange(t *testing.T) {
 	if _, err := New(ctx, Deps{Config: cfg, Logger: zerolog.Nop()}, WithDatabase(db)); err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	// Read the cache back at a clock strictly at-or-after the boot that expired it,
+	// never at the seed-time `now`: ExpireAll stamps expires_at with the clock when
+	// New ran, and Fetch's filter is `expires_at > ?` on second-granular RFC3339. On
+	// a fast boot the stamp lands in the same truncated second as `now` and reads
+	// expired by luck; when a loaded runner pushes New past the second boundary the
+	// stamp is newer than `now` and a correctly-expired row reads live (#406).
+	bootedAt := time.Now().UTC()
 
-	if _, found, err := cacheStore.Fetch(ctx, db, "boot-key", now); err != nil {
+	if _, found, err := cacheStore.Fetch(ctx, db, "boot-key", bootedAt); err != nil {
 		t.Fatalf("Fetch: %v", err)
 	} else if found {
 		t.Error("cache row should be expired (Fetch) after a boot-time defs fingerprint mismatch")
