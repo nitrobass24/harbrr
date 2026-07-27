@@ -605,9 +605,39 @@ func (r *Resolver) Test(ctx context.Context, slug string) error {
 // healthEventLimit caps how many recent events the status endpoint returns.
 const healthEventLimit = 20
 
-// healthRecencyWindow is how recently a failure must have occurred for the derived
-// status to read "unhealthy"; older failures are treated as past (status healthy).
-const healthRecencyWindow = 1 * time.Hour
+// The three derived health states (autobrr/harbrr#389). "unknown" is the honest
+// answer when nothing recent is known — the state the old two-state model was missing,
+// which made a never-queried or long-idle indexer assert "healthy" forever.
+// Exported so API handlers tallying or switching on FleetStatus.Status share one
+// definition with the derivation instead of re-typing wire literals.
+const (
+	StatusHealthy = "healthy"
+	StatusFailing = "failing"
+	StatusUnknown = "unknown"
+)
+
+// healthyWindow is how recently a successful attempt must have happened for the derived
+// status to read "healthy". Past it, with nothing newer, the status expires to
+// "unknown" rather than asserting a success that is hours or days old.
+const healthyWindow = 1 * time.Hour
+
+// failingWindowBase / failingWindowCap bound how long a failure holds the status at
+// "failing" before it too expires to "unknown": base at escalation level 0 (which is
+// exactly the old uniform recency window), doubling per rung, capped at 24h — the
+// ceiling the *arr apps settled on for indexer backoff, cited in #389. Per-KIND curves
+// (auth backing off harder than a transient 5xx) are #389's PR 2, not this one.
+const (
+	failingWindowBase = 1 * time.Hour
+	failingWindowCap  = 24 * time.Hour
+)
+
+// failingWindow is the failing-state lifetime for an indexer sitting on escalation
+// rung level. level is clamped to the ladder's range: it is read from the DB, and a
+// negative shift count panics.
+func failingWindow(level int) time.Duration {
+	window := failingWindowBase << min(max(level, 0), maxCircuitLevel)
+	return min(window, failingWindowCap)
+}
 
 // HealthStatus is one indexer's derived health plus the recent events behind it
 // (details already credential-scrubbed at write time). DisabledTill is non-nil
@@ -687,23 +717,84 @@ func (r *StatsReporter) statusOf(ctx context.Context, instanceID int64, limit in
 		till := circuit.DisabledTill
 		disabledTill = &till
 	}
-	return events, r.deriveStatus(events, recovery, disabledTill != nil), disabledTill, nil
+	_, _, _, lastQuery, _ := r.stats.snapshot(instanceID)
+	signals := healthSignals{
+		events:    events,
+		recovery:  recovery,
+		disabled:  disabledTill != nil,
+		level:     circuit.EscalationLevel,
+		lastQuery: lastQuery,
+	}
+	return events, r.deriveStatus(signals), disabledTill, nil
 }
 
-// deriveStatus reads "unhealthy" when either the circuit breaker currently excludes
-// the indexer from dispatch (disabled, #253 — this can outlast healthRecencyWindow
-// on a high escalation rung, e.g. a 24h disable well past its 1h-old triggering
-// event) or the most recent event is within the recency window and happened after
-// the last successful explicit test. Events are newest-first.
-func (r *StatsReporter) deriveStatus(events []domain.IndexerHealthEvent, recovery database.HealthRecovery, disabled bool) string {
-	if disabled {
-		return "unhealthy"
+// healthSignals is the evidence deriveStatus reads — all of it already fetched by
+// statusOf, so deriving a status costs no extra read and (like today) no write at all.
+type healthSignals struct {
+	// events are the instance's health events, newest first (only events[0] is read).
+	events []domain.IndexerHealthEvent
+	// recovery is the last passing explicit Test (zero when never tested).
+	recovery database.HealthRecovery
+	// disabled is true while the circuit breaker excludes the indexer from dispatch.
+	disabled bool
+	// level is the circuit's escalation rung, which scales the failing window.
+	level int
+	// lastQuery is the newest counted search ATTEMPT (IndexerStats counts failed
+	// attempts too, so on its own it is not evidence of success — see lastSuccess).
+	lastQuery time.Time
+}
+
+// deriveStatus resolves the tri-state derived health (#389), in order:
+//  1. the circuit breaker currently excludes the indexer from dispatch → failing
+//     (its own DisabledTill is the expiry, and it can outlast the failing window),
+//  2. the newest recorded failure is still the newest thing that happened and is
+//     recent enough for the current rung → failing,
+//  3. something succeeded within healthyWindow → healthy,
+//  4. otherwise → unknown: everything known has expired, or nothing was ever observed.
+//
+// Expiry is lazy — steps 2 and 3 are pure timestamp arithmetic at read time. There is
+// no sweep and no probe: an idle indexer simply ages into unknown.
+func (r *StatsReporter) deriveStatus(s healthSignals) string {
+	if s.disabled {
+		return StatusFailing
 	}
-	if len(events) > 0 && failureAfterRecovery(events[0], recovery) &&
-		r.clock().Sub(events[0].OccurredAt) <= healthRecencyWindow {
-		return "unhealthy"
+	now := r.clock()
+	success := s.lastSuccess()
+	if s.failingNow(now, success) {
+		return StatusFailing
 	}
-	return "healthy"
+	if !success.IsZero() && now.Sub(success) <= healthyWindow {
+		return StatusHealthy
+	}
+	return StatusUnknown
+}
+
+// lastSuccess is the newest evidence that something actually WORKED: a counted query
+// strictly newer than the newest recorded failure, or a passing explicit Test. The
+// strict comparison is what separates the two: a failed search is counted as a query
+// too, and it is counted just BEFORE its health event is written, so a query timestamp
+// that merely ties the newest failure is that failure's own attempt, not a success.
+func (s healthSignals) lastSuccess() time.Time {
+	if len(s.events) == 0 || s.lastQuery.After(s.events[0].OccurredAt) {
+		if s.lastQuery.After(s.recovery.OccurredAt) {
+			return s.lastQuery
+		}
+	}
+	return s.recovery.OccurredAt
+}
+
+// failingNow reports whether the newest recorded failure still stands: nothing has
+// succeeded since (neither traffic nor a passing test — failureAfterRecovery carries
+// the id-based tiebreak for a test that lands in the same clock instant), and it is
+// within the failing window for the indexer's current escalation rung.
+func (s healthSignals) failingNow(now, success time.Time) bool {
+	if len(s.events) == 0 {
+		return false
+	}
+	newest := s.events[0]
+	return failureAfterRecovery(newest, s.recovery) &&
+		!success.After(newest.OccurredAt) &&
+		now.Sub(newest.OccurredAt) <= failingWindow(s.level)
 }
 
 // failureAfterRecovery uses the monotonic event id in the normal case. OccurredAt

@@ -26,7 +26,7 @@ const ROWS: IndexerRowData[] = [
     categories: "Movies, TV",
     status: {
       slug: "rutor",
-      status: "unhealthy",
+      status: "failing",
       events: [{ kind: "auth_failure", detail: "login failed", occurred_at: new Date(Date.now() - 120_000).toISOString() }],
     },
   },
@@ -35,6 +35,18 @@ const ROWS: IndexerRowData[] = [
     type: "public",
     categories: "Movies, TV, Games",
     // status still loading for this row
+  },
+  {
+    instance: { id: 4, slug: "nyaa", definitionId: "nyaasi", name: "Nyaa", baseUrl: "https://nyaa.si/", enabled: true, ...BASE },
+    type: "public",
+    categories: "Anime",
+    // Nothing recent is known: the old failure has aged out and nothing has
+    // succeeded since (autobrr/harbrr#389).
+    status: {
+      slug: "nyaa",
+      status: "unknown",
+      events: [{ kind: "transport", detail: "connection refused", occurred_at: new Date(Date.now() - 7_200_000).toISOString() }],
+    },
   },
 ]
 
@@ -63,10 +75,15 @@ describe("IndexersTable", () => {
     expect(within(tl).getByText("Healthy")).toBeTruthy()
     expect(within(tl).queryByText(/parse error/)).toBeNull()
 
-    // Unhealthy row surfaces the failure kind + relative time.
+    // Failing row surfaces the failure kind + relative time.
     const ru = screen.getByText("rutor").closest("tr")!
-    expect(within(ru).getByText("Error")).toBeTruthy()
+    expect(within(ru).getByText("Failing")).toBeTruthy()
     expect(within(ru).getByText(/auth failed 2m ago/)).toBeTruthy()
+
+    // Expired row reads Unknown but still shows the last thing that happened.
+    const ny = screen.getByText("Nyaa").closest("tr")!
+    expect(within(ny).getByText("Unknown")).toBeTruthy()
+    expect(within(ny).getByText(/transport 2h ago/)).toBeTruthy()
 
     // Row with the status probe still in flight shows the pending marker
     // ("1337x" appears as both name and host fallback, hence getAllByText).
