@@ -184,6 +184,14 @@ func resolveOptions(def *loader.Definition, opts []Option) options {
 	return o
 }
 
+// foldPunctuationSetting is a RESERVED per-instance setting — not a definition
+// setting — that opts this indexer into punctuation-tolerant andmatch, so a
+// search term an *arr client stripped ("Venise nest pas en Italie") still matches
+// the tracker's unstripped title ("Venise n'est pas en Italie") instead of being
+// dropped by our own row filter (autobrr/harbrr#394). Absent/falsy leaves the
+// Jackett-identical behaviour.
+const foldPunctuationSetting = "andmatch_fold_punctuation"
+
 // buildDeps wires the extraction-half stages: the dateparse parser (def language
 // + injected clock) feeds the search filter registry's date seams; the registry's
 // language is the def language so regex filters route correctly; the normalizer
@@ -219,6 +227,9 @@ func buildDeps(def *loader.Definition, caps *mapper.Capabilities, o options) (se
 		BaseURL:    o.baseURL,
 		Clock:      o.clock,
 		Encoding:   enc,
+		// canonicalCheckbox is the strict read: only an explicit truthy value
+		// ("true"/"1"/"on"/"yes") opts in, so a persisted literal "false" is off.
+		FoldAndMatchPunctuation: canonicalCheckbox(o.config[foldPunctuationSetting]) == configTrue,
 	}, nil
 }
 

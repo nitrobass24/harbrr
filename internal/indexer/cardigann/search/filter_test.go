@@ -405,7 +405,9 @@ func TestRowFilters(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := andMatch(tc.title, tc.keywords); got != tc.want {
+			// fold=false: this whole table is the DEFAULT (Jackett-identical) path.
+			// The punctuation-folding opt-in has its own table in rowfilters_test.go.
+			if got := andMatch(tc.title, tc.keywords, false); got != tc.want {
 				t.Fatalf("andMatch(%q,%q) = %v, want %v", tc.title, tc.keywords, got, tc.want)
 			}
 		})

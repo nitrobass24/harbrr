@@ -42,7 +42,7 @@ func parseRow(def *loader.Definition, sel *selector.Engine, row selector.Row, qu
 		}
 	}
 
-	if skip := applyRowFilters(def.Search.Rows.Filters, state.base["title"], query); skip {
+	if skip := applyRowFilters(def.Search.Rows.Filters, state.base["title"], query, deps); skip {
 		return nil, false, nil
 	}
 
@@ -177,7 +177,7 @@ func storeField(state *rowState, name string, modifiers []string, value string) 
 // keywords are the keywordsfilters-FILTERED term (Jackett's andmatch reads the
 // .Keywords variable, set after Keywordsfilters ran). strdump and unknown names
 // never skip.
-func applyRowFilters(filters []loader.RowFilterBlock, title string, query Query) bool {
+func applyRowFilters(filters []loader.RowFilterBlock, title string, query Query, deps Deps) bool {
 	for i := range filters {
 		if filters[i].Name != "andmatch" {
 			continue
@@ -185,7 +185,7 @@ func applyRowFilters(filters []loader.RowFilterBlock, title string, query Query)
 		if query.isIDSearch() {
 			continue
 		}
-		if !andMatch(title, query.templateKeywords()) {
+		if !andMatch(title, query.templateKeywords(), deps.FoldAndMatchPunctuation) {
 			return true
 		}
 	}
