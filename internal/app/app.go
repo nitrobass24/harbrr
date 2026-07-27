@@ -74,6 +74,7 @@ type App struct {
 	registry    *registry.Registry
 
 	notify   *notify.Service
+	expiry   *notify.ExpiryScanner
 	apps     *apps.Service
 	appsync  *appsync.Service
 	announce *announce.Service
@@ -287,6 +288,19 @@ func cookiePath(baseURL string) string {
 	return baseURL
 }
 
+// expiryLink is the externally-visible URL of the indexers page, which an expiry
+// notification points at so the warning lands one click from the field that fixes it.
+// It needs server.external_url: without it harbrr only knows its own listen address,
+// and a link to that would be wrong for everyone reading the notification — so an
+// unconfigured instance sends the warning with no link rather than a misleading one.
+func expiryLink(cfg *config.Config) string {
+	origin := cfg.Server.ExternalOrigin()
+	if origin == "" {
+		return ""
+	}
+	return origin + cfg.Server.BaseURL + "/indexers"
+}
+
 // initRegistry builds the search cache and the registry. notify.Service is
 // constructed BEFORE the registry: it is passed in as registry.WithHealthSink,
 // so a recorded indexer failure can fan out (async, best-effort) to configured
@@ -294,6 +308,7 @@ func cookiePath(baseURL string) string {
 func (a *App) initRegistry(ctx context.Context, httpClient *http.Client) {
 	a.searchCache = buildSearchCache(ctx, a.db, a.cfg, a.log)
 	a.notify = notify.NewService(a.db, a.keyring, httpClient, a.log)
+	a.expiry = notify.NewExpiryScanner(a.notify, a.db, expiryLink(a.cfg), nil)
 	a.registry = registry.New(a.db, loader.New(dropinDir(a.cfg)), a.keyring, catalog.All(),
 		registry.WithLogger(a.log), registry.WithSearchCache(a.searchCache), registry.WithHealthSink(a.notify))
 	if err := a.registry.LoadRateDefaultOverride(ctx); err != nil {
@@ -475,7 +490,7 @@ func (a *App) Handler() http.Handler { return a.server.Handler() }
 func (a *App) Run(ctx context.Context) error {
 	bgCtx, bgCancel := context.WithCancel(ctx)
 	var bg sync.WaitGroup
-	startReapers(bgCtx, &bg, a.db, a.sessionStore, a.searchCache, a.registry, a.auth, a.log)
+	startReapers(bgCtx, &bg, a.db, a.sessionStore, a.searchCache, a.registry, a.auth, a.expiry, a.log)
 
 	runErr := a.serveUntilDone(ctx)
 

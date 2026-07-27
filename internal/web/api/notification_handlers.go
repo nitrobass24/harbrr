@@ -19,6 +19,7 @@ type notificationResponse struct {
 	URL             string    `json:"url"`
 	Enabled         bool      `json:"enabled"`
 	OnHealthFailure bool      `json:"onHealthFailure"`
+	OnExpiry        bool      `json:"onExpiry"`
 	CreatedAt       time.Time `json:"createdAt"`
 	UpdatedAt       time.Time `json:"updatedAt"`
 }
@@ -44,12 +45,14 @@ func (rt *router) createNotification(w http.ResponseWriter, r *http.Request) {
 		Type            string `json:"type"`
 		URL             string `json:"url"`
 		OnHealthFailure *bool  `json:"onHealthFailure"`
+		OnExpiry        *bool  `json:"onExpiry"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
 	n, err := rt.notify.CreateNotification(r.Context(), notify.CreateNotificationParams{
-		Name: req.Name, Type: req.Type, URL: req.URL, OnHealthFailure: req.OnHealthFailure,
+		Name: req.Name, Type: req.Type, URL: req.URL,
+		OnHealthFailure: req.OnHealthFailure, OnExpiry: req.OnExpiry,
 	})
 	if err != nil {
 		rt.writeServiceError(w, "create notification", err)
@@ -82,12 +85,13 @@ func (rt *router) updateNotification(w http.ResponseWriter, r *http.Request) {
 		Name            *string `json:"name"`
 		URL             *string `json:"url"`
 		OnHealthFailure *bool   `json:"onHealthFailure"`
+		OnExpiry        *bool   `json:"onExpiry"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
 	if err := rt.notify.UpdateNotification(r.Context(), id, notify.UpdateNotificationParams{
-		Name: req.Name, URL: req.URL, OnHealthFailure: req.OnHealthFailure,
+		Name: req.Name, URL: req.URL, OnHealthFailure: req.OnHealthFailure, OnExpiry: req.OnExpiry,
 	}); err != nil {
 		rt.writeServiceError(w, "update notification", err)
 		return
@@ -133,6 +137,7 @@ func (rt *router) testNotification(w http.ResponseWriter, r *http.Request) {
 func toNotificationResponse(n domain.Notification) notificationResponse {
 	return notificationResponse{
 		ID: n.ID, Name: n.Name, Type: n.Type, URL: secrets.Redacted, Enabled: n.Enabled,
-		OnHealthFailure: n.OnHealthFailure, CreatedAt: n.CreatedAt, UpdatedAt: n.UpdatedAt,
+		OnHealthFailure: n.OnHealthFailure, OnExpiry: n.OnExpiry,
+		CreatedAt: n.CreatedAt, UpdatedAt: n.UpdatedAt,
 	}
 }

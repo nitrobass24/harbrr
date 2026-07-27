@@ -118,19 +118,23 @@ func validateMinSeeders(minSeeders int) error {
 // validateAddSync validates AddParams' sync-tuning fields together (priority,
 // min-seeders, sync categories), returning the normalized priority and category set —
 // split out of Add so it stays within the function-length limit.
-func validateAddSync(p AddParams) (priority int, syncCats []int, err error) {
+func validateAddSync(p AddParams) (priority int, syncCats []int, exp expiry, err error) {
 	priority, err = normalizePriority(p.Priority)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, expiry{}, err
 	}
 	if err := validateMinSeeders(p.MinSeeders); err != nil {
-		return 0, nil, err
+		return 0, nil, expiry{}, err
 	}
 	syncCats, err = normalizeCategoryIDs(p.SyncCategories)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, expiry{}, err
 	}
-	return priority, syncCats, nil
+	exp, err = normalizeExpiry(p.ExpiresAt, p.ExpiryKind, p.ExpiryLifetime)
+	if err != nil {
+		return 0, nil, expiry{}, err
+	}
+	return priority, syncCats, exp, nil
 }
 
 // maxCategoryID bounds a sync-category id: Newznab ids and harbrr's custom range
@@ -192,6 +196,58 @@ type AddParams struct {
 	EnableRss               *bool
 	EnableAutomaticSearch   *bool
 	EnableInteractiveSearch *bool
+	// ExpiresAt / ExpiryKind / ExpiryLifetime are the #399 VIP/membership expiry
+	// (empty date = untracked, which behaves exactly as before the field existed).
+	ExpiresAt      string
+	ExpiryKind     string
+	ExpiryLifetime bool
+}
+
+// expiry is the validated expiry triple, so the Add and Update paths share one
+// normalization instead of each re-deriving the lifetime-wins rule.
+type expiry struct {
+	date     string
+	kind     string
+	lifetime bool
+}
+
+// normalizeExpiry validates and canonicalizes an expiry triple. Lifetime wins: it
+// clears the date outright rather than leaving a stale one that a later un-ticking
+// would silently resurrect. An unset date drops the kind with it, so "untracked" is
+// one state and not four. The date must be a real calendar day in domain's layout —
+// the scan does arithmetic on it, and a half-parsed date is a missed warning.
+func normalizeExpiry(date, kind string, lifetime bool) (expiry, error) {
+	date, kind = strings.TrimSpace(date), strings.TrimSpace(kind)
+	if kind != "" && kind != domain.ExpiryKindPerk && kind != domain.ExpiryKindAccount {
+		return expiry{}, fmt.Errorf("%w: expiryKind must be %q or %q (got %q)",
+			ErrInvalid, domain.ExpiryKindPerk, domain.ExpiryKindAccount, kind)
+	}
+	if lifetime {
+		return expiry{kind: kind, lifetime: true}, nil
+	}
+	if date == "" {
+		return expiry{}, nil
+	}
+	if _, err := time.Parse(domain.ExpiryDateLayout, date); err != nil {
+		return expiry{}, fmt.Errorf("%w: expiresAt must be a YYYY-MM-DD date (got %q)", ErrInvalid, date)
+	}
+	return expiry{date: date, kind: kind}, nil
+}
+
+// resolveExpiry applies the optional expiry patch fields — each nil field keeps the
+// instance's current value — and validates the resulting triple as a whole.
+func resolveExpiry(inst domain.IndexerInstance, p UpdateParams) (expiry, error) {
+	date, kind, lifetime := inst.ExpiresAt, inst.ExpiryKind, inst.ExpiryLifetime
+	if p.ExpiresAt != nil {
+		date = *p.ExpiresAt
+	}
+	if p.ExpiryKind != nil {
+		kind = *p.ExpiryKind
+	}
+	if p.ExpiryLifetime != nil {
+		lifetime = *p.ExpiryLifetime
+	}
+	return normalizeExpiry(date, kind, lifetime)
 }
 
 // RefUpdate is a tri-state PATCH field for a nullable resource reference: Present
@@ -221,6 +277,12 @@ type UpdateParams struct {
 	EnableRss               *bool
 	EnableAutomaticSearch   *bool
 	EnableInteractiveSearch *bool
+	// ExpiresAt / ExpiryKind / ExpiryLifetime patch the #399 expiry; nil leaves the
+	// stored value. A present-but-empty ExpiresAt clears the tracking (distinct from
+	// omitted), which is how the form's "no expiry" reaches the store.
+	ExpiresAt      *string
+	ExpiryKind     *string
+	ExpiryLifetime *bool
 }
 
 // SettingView is the API-safe representation of a stored setting: a secret's value
@@ -250,7 +312,7 @@ func (r *Manager) Add(ctx context.Context, p AddParams) (domain.IndexerInstance,
 	if err := validateRequiredSettings(fields, p.Settings); err != nil {
 		return domain.IndexerInstance{}, err
 	}
-	priority, syncCats, err := validateAddSync(p)
+	priority, syncCats, exp, err := validateAddSync(p)
 	if err != nil {
 		return domain.IndexerInstance{}, err
 	}
@@ -266,7 +328,8 @@ func (r *Manager) Add(ctx context.Context, p AddParams) (domain.IndexerInstance,
 		Priority: priority, MinSeeders: p.MinSeeders, SyncCategories: syncCats,
 		EnableRss: boolOrTrue(p.EnableRss), EnableAutomaticSearch: boolOrTrue(p.EnableAutomaticSearch),
 		EnableInteractiveSearch: boolOrTrue(p.EnableInteractiveSearch),
-		CreatedAt:               now, UpdatedAt: now,
+		ExpiresAt:               exp.date, ExpiryKind: exp.kind, ExpiryLifetime: exp.lifetime,
+		CreatedAt: now, UpdatedAt: now,
 	}
 
 	err = r.inTx(ctx, func(tx dbinterface.TxQuerier) error {
@@ -945,6 +1008,10 @@ func resolveMeta(inst domain.IndexerInstance, p UpdateParams) (database.Instance
 	if err != nil {
 		return database.InstanceMeta{}, err
 	}
+	exp, err := resolveExpiry(inst, p)
+	if err != nil {
+		return database.InstanceMeta{}, err
+	}
 	name, baseURL := applyMeta(inst, p)
 	return database.InstanceMeta{
 		Name: name, BaseURL: baseURL, Priority: priority, MinSeeders: minSeeders,
@@ -952,6 +1019,7 @@ func resolveMeta(inst domain.IndexerInstance, p UpdateParams) (database.Instance
 		EnableAutomaticSearch:   resolveToggle(p.EnableAutomaticSearch, inst.EnableAutomaticSearch),
 		EnableInteractiveSearch: resolveToggle(p.EnableInteractiveSearch, inst.EnableInteractiveSearch),
 		SyncCategories:          syncCats,
+		ExpiresAt:               exp.date, ExpiryKind: exp.kind, ExpiryLifetime: exp.lifetime,
 	}, nil
 }
 

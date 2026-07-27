@@ -17,7 +17,8 @@ import { Switch } from "@/components/ui/switch"
 import { useNotificationMutations, useNotifications } from "@/hooks/useSettings"
 import { notifyError, notifySuccess } from "@/lib/notify"
 
-// Webhook/Discord targets for operational events (indexer health failures).
+// Webhook/Discord targets for operational events (indexer health failures and
+// VIP/membership expiry warnings — a new target opts into both).
 // The destination URL is a secret (may embed tokens): stored encrypted, reads
 // back as the sentinel, and rotates only when a new URL is typed.
 export function NotificationsSection() {
@@ -42,7 +43,9 @@ export function NotificationsSection() {
           <div key={n.id} className="flex items-center gap-3 border-b border-border/60 py-2.5 last:border-b-0">
             <span className="font-medium">{n.name}</span>
             <Badge variant="secondary" className="px-1.5 py-0 text-[11px]">{n.type}</Badge>
-            {n.onHealthFailure && <span className="text-[12px] text-faint">on health failure</span>}
+            <span className="text-[12px] text-faint">
+              {[n.onHealthFailure && "health failure", n.onExpiry && "expiry"].filter(Boolean).join(" · ")}
+            </span>
             <span className="ml-auto flex items-center gap-2">
               <Button
                 variant="outline"

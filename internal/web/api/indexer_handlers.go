@@ -134,6 +134,9 @@ type instanceResponse struct {
 	EnableRss               bool      `json:"enableRss"`
 	EnableAutomaticSearch   bool      `json:"enableAutomaticSearch"`
 	EnableInteractiveSearch bool      `json:"enableInteractiveSearch"`
+	ExpiresAt               string    `json:"expiresAt"`
+	ExpiryKind              string    `json:"expiryKind"`
+	ExpiryLifetime          bool      `json:"expiryLifetime"`
 	CreatedAt               time.Time `json:"createdAt"`
 	UpdatedAt               time.Time `json:"updatedAt"`
 }
@@ -188,6 +191,9 @@ func (rt *router) addIndexer(w http.ResponseWriter, r *http.Request) {
 		EnableRss               *bool             `json:"enableRss"`
 		EnableAutomaticSearch   *bool             `json:"enableAutomaticSearch"`
 		EnableInteractiveSearch *bool             `json:"enableInteractiveSearch"`
+		ExpiresAt               string            `json:"expiresAt"`
+		ExpiryKind              string            `json:"expiryKind"`
+		ExpiryLifetime          bool              `json:"expiryLifetime"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -198,6 +204,7 @@ func (rt *router) addIndexer(w http.ResponseWriter, r *http.Request) {
 		Priority: req.Priority, MinSeeders: req.MinSeeders, SyncCategories: req.SyncCategories,
 		EnableRss: req.EnableRss, EnableAutomaticSearch: req.EnableAutomaticSearch,
 		EnableInteractiveSearch: req.EnableInteractiveSearch,
+		ExpiresAt:               req.ExpiresAt, ExpiryKind: req.ExpiryKind, ExpiryLifetime: req.ExpiryLifetime,
 	})
 	if err != nil {
 		rt.writeServiceError(w, "add indexer", err)
@@ -239,6 +246,9 @@ func (rt *router) updateIndexer(w http.ResponseWriter, r *http.Request) {
 		EnableRss               *bool             `json:"enableRss"`
 		EnableAutomaticSearch   *bool             `json:"enableAutomaticSearch"`
 		EnableInteractiveSearch *bool             `json:"enableInteractiveSearch"`
+		ExpiresAt               *string           `json:"expiresAt"`
+		ExpiryKind              *string           `json:"expiryKind"`
+		ExpiryLifetime          *bool             `json:"expiryLifetime"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -249,6 +259,7 @@ func (rt *router) updateIndexer(w http.ResponseWriter, r *http.Request) {
 		Priority: req.Priority, MinSeeders: req.MinSeeders, SyncCategories: req.SyncCategories,
 		EnableRss: req.EnableRss, EnableAutomaticSearch: req.EnableAutomaticSearch,
 		EnableInteractiveSearch: req.EnableInteractiveSearch,
+		ExpiresAt:               req.ExpiresAt, ExpiryKind: req.ExpiryKind, ExpiryLifetime: req.ExpiryLifetime,
 	}); err != nil {
 		rt.writeServiceError(w, "update indexer", err)
 		return
@@ -411,6 +422,7 @@ func toInstanceResponse(inst domain.IndexerInstance) instanceResponse {
 		Priority: inst.Priority, MinSeeders: inst.MinSeeders, SyncCategories: cats,
 		EnableRss: inst.EnableRss, EnableAutomaticSearch: inst.EnableAutomaticSearch,
 		EnableInteractiveSearch: inst.EnableInteractiveSearch,
-		CreatedAt:               inst.CreatedAt, UpdatedAt: inst.UpdatedAt,
+		ExpiresAt:               inst.ExpiresAt, ExpiryKind: inst.ExpiryKind, ExpiryLifetime: inst.ExpiryLifetime,
+		CreatedAt: inst.CreatedAt, UpdatedAt: inst.UpdatedAt,
 	}
 }
