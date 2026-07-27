@@ -95,15 +95,19 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 | Failing-tracker circuit breaker | ✅ |
 | Per-host rate limiting, honouring definition `requestDelay` and `Retry-After` | ✅ |
 | Per-indexer request + grab budgets with reactive learning | ✅ |
-| Correct pagination and result counts | ✅ |
+| Correct pagination and result counts on the feed | ✅ |
+| Partial results — a failing indexer degrades its own contribution, never the whole search | ✅ |
 | ID-based search (IMDb/TMDb/TVDB) and category mapping | ✅ |
+| Multi-select definition settings (checkbox / select / multi-select field types) | ✅ |
 | 18 further native drivers | 🚧 |
 | Per-indexer query timeout | 🚧 [#371](https://github.com/autobrr/harbrr/issues/371) |
-| Partial results — one failing indexer never voids a whole search | 🚧 [#372](https://github.com/autobrr/harbrr/issues/372) |
 | Automatic failover across a tracker's known base URLs | 🚧 [#375](https://github.com/autobrr/harbrr/issues/375) |
 | Per-indexer required release flags (freeleech, halfleech, …) | 🚧 [#385](https://github.com/autobrr/harbrr/issues/385) |
 | Per-release language and subtitle attributes from definitions | 🚧 [#379](https://github.com/autobrr/harbrr/issues/379) |
-| Definition format extensions (multi-select settings, ID-only search, category mapping gaps) | 🚧 [#380](https://github.com/autobrr/harbrr/issues/380) |
+| Out-of-band definition updates — tracker fixes arrive without waiting for a harbrr release | 🚧 [#388](https://github.com/autobrr/harbrr/issues/388) |
+| Indexer health quarantine — a broken tracker leaves rotation and costs nothing until it recovers | 🚧 [#389](https://github.com/autobrr/harbrr/issues/389) |
+| Per-indexer query normalization and charset gating — skip searches that can't succeed | 🚧 [#394](https://github.com/autobrr/harbrr/issues/394) |
+| Aggregate Torznab feed — one URL searching many indexers, partial-by-construction | 🚧 [#400](https://github.com/autobrr/harbrr/issues/400) |
 
 ### Getting past the tracker's front door
 
@@ -120,15 +124,15 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 |---|:--|
 | App Sync to Sonarr, Radarr, Lidarr, Readarr, Whisparr | ✅ |
 | App Sync to **qui** | ✅ |
+| Synced indexers keep the name you gave them — no forced suffix appended, and renames survive re-sync | ✅ |
 | Cross-seed configuration generation | ✅ |
+| Unfiltered `/full` feed variant — cross-seed sees the whole catalog while your \*arrs keep the freeleech-only view, no duplicate indexer config | ✅ |
 | Release push to autobrr | ✅ |
 | **10 download-client drivers** — qBittorrent, Deluge, Transmission, rTorrent, Flood, Synology Download Station, NZBGet, SABnzbd, qui, and blackhole | ✅ |
 | Interactive search in harbrr's own UI, with working downloads | ✅ |
 | Send a search result straight to a download client | 🚧 [#7](https://github.com/autobrr/harbrr/issues/7) |
 | Sync download clients to apps | 🚧 [#237](https://github.com/autobrr/harbrr/issues/237) |
 | Per-indexer reject-executable-payloads setting, synced to apps | 🚧 [#381](https://github.com/autobrr/harbrr/issues/381) |
-| Configurable synced-indexer name template | 🚧 [#384](https://github.com/autobrr/harbrr/issues/384) |
-| Per-request search-filter bypass for cross-seed callers | 🚧 [#376](https://github.com/autobrr/harbrr/issues/376) |
 | Credential sync to Upbrr | 🚧 [#101](https://github.com/autobrr/harbrr/issues/101) |
 
 ### Web UI
@@ -138,8 +142,13 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 | Indexer, application, and download-client management | ✅ |
 | Interactive search, with a responsive mobile layout | ✅ |
 | Instant substring / regex filter over search results | 🚧 [#374](https://github.com/autobrr/harbrr/issues/374) |
+| Results appear as each indexer answers, instead of waiting for the slowest | 🚧 [#372](https://github.com/autobrr/harbrr/issues/372) |
+| Per-indexer failure reasons — rate-limited vs login-failed vs timed out, and re-run just the failures | 🚧 [#372](https://github.com/autobrr/harbrr/issues/372) |
+| Global sort and paging across merged multi-indexer results (via the aggregate feed) | 🚧 [#400](https://github.com/autobrr/harbrr/issues/400) |
+| Group identical releases across indexers, with per-tracker sources attached | 🚧 [#398](https://github.com/autobrr/harbrr/issues/398) |
+| Base-URL picker offering the definition's known hosts | 🚧 [#401](https://github.com/autobrr/harbrr/issues/401) |
 | Search-cache dashboard — tracker requests saved, hit ratio, TTL tiers | 🚧 [#373](https://github.com/autobrr/harbrr/issues/373) |
-| Request-budget usage meters | 🚧 [#377](https://github.com/autobrr/harbrr/issues/377) |
+| Request-budget usage meters | 🚧 [#402](https://github.com/autobrr/harbrr/issues/402) |
 | Global setting to hide adult categories | 🚧 [#383](https://github.com/autobrr/harbrr/issues/383) |
 | Adjustable total cache size | 🚧 [#67](https://github.com/autobrr/harbrr/issues/67) |
 
@@ -152,8 +161,13 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 | Per-indexer cache stats, including tracker requests prevented | ✅ |
 | Discord and webhook notifications | ✅ |
 | Search history and an event log | 🚧 [#103](https://github.com/autobrr/harbrr/issues/103) |
-| Indexer value scoring — uniqueness, grab success rate, per-category breakdown | 🚧 [#378](https://github.com/autobrr/harbrr/issues/378) |
+| Grab success rate and per-category indexer stats | 🚧 [#403](https://github.com/autobrr/harbrr/issues/403) |
+| Indexer uniqueness scoring — which indexers surface releases nobody else has | 🚧 [#378](https://github.com/autobrr/harbrr/issues/378) |
+| VIP/membership expiry tracking with lead-time notifications | 🚧 [#399](https://github.com/autobrr/harbrr/issues/399) |
 | Newznab API-limit auto-discovery | 🚧 [#377](https://github.com/autobrr/harbrr/issues/377) |
+| Per-tracker account state — ratio, buffer, hit-and-run, freeleech tokens | 🚧 deferred — [#393](https://github.com/autobrr/harbrr/issues/393) |
+| Parse-failure diagnostics — see which selector missed, without re-fetching | 🚧 [#390](https://github.com/autobrr/harbrr/issues/390) |
+| Prometheus `/metrics` endpoint | 🚧 [#395](https://github.com/autobrr/harbrr/issues/395) |
 
 ### Operating it
 
@@ -169,7 +183,6 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 | Complete OpenAPI spec + Swagger UI at `/api/docs` | ✅ |
 | Import an existing Prowlarr or Jackett setup | 🚧 [#42](https://github.com/autobrr/harbrr/issues/42) |
 | Import an existing NZBHydra2 setup | 🚧 [#382](https://github.com/autobrr/harbrr/issues/382) |
-| Header-based forward auth behind a trusted proxy | 🚧 [#386](https://github.com/autobrr/harbrr/issues/386) |
 
 ---
 
