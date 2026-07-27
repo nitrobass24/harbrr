@@ -136,11 +136,23 @@ func TestReservedFoldSettingIgnoresDefinitionDefault(t *testing.T) {
 		{Name: "andmatch_fold_punctuation", Type: "checkbox", Default: &loader.Scalar{Value: "true", Set: true}},
 	}}
 
-	if got := resolveOptions(def, nil).config["andmatch_fold_punctuation"]; got != "" {
-		t.Errorf("untouched instance: reserved key seeded from definition default (%q), want unset", got)
+	cases := []struct {
+		name string
+		opts []Option
+		want string
+	}{
+		{"untouched instance ignores the definition default", nil, ""},
+		{"explicit caller true wins", []Option{WithConfig(map[string]string{"andmatch_fold_punctuation": "true"})}, "true"},
+		// Explicitly-false is not unset: the reserved-key delete strips the
+		// DEFINITION's default, never a value the caller supplied.
+		{"explicit caller false survives the overlay", []Option{WithConfig(map[string]string{"andmatch_fold_punctuation": "false"})}, "false"},
 	}
-	opts := []Option{WithConfig(map[string]string{"andmatch_fold_punctuation": "true"})}
-	if got := resolveOptions(def, opts).config["andmatch_fold_punctuation"]; got != "true" {
-		t.Errorf("explicit caller value = %q, want %q", got, "true")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := resolveOptions(def, tc.opts).config["andmatch_fold_punctuation"]; got != tc.want {
+				t.Errorf("config value = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

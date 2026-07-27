@@ -208,7 +208,7 @@ capabilities and will correct this page when it changes.
 | qui as a sync target | ✅ | — | — |
 | autobrr as a target | ✅ | — | — |
 | Cross-seed as a first-class consumer | ✅ | — [^2] | — |
-| Aggregate `all` feed that is safe to actually use | ✅ | ✅ [^4] | — |
+| Aggregate `all` feed that is safe to actually use | ✅ | — | ✅ [^4] |
 | Per-indexer timeout | 🚧 | — [^3] | — |
 | Automatic base-URL failover | 🚧 | — | — |
 | Instant regex result filter | 🚧 | — | ✅ |
@@ -222,10 +222,11 @@ general search-results cache has been requested repeatedly and declined as low-b
 [^2]: Prowlarr's cross-seed workaround is to configure the same tracker twice — once filtered,
 once not — which duplicates credentials, health state, and rate-limit pressure for one account.
 
-[^4]: Prowlarr ships an aggregate feed and its own documentation recommends against using it —
-one slow or dead indexer stalls or voids the whole search. harbrr's is partial by construction:
-a failing member contributes nothing, never fails the request, and is named in a per-member
-status ledger on the feed itself.
+[^4]: Jackett ships an aggregate feed (`/api/v2.0/indexers/all/results/torznab`) and its own
+documentation recommends against using it — one slow or dead indexer stalls or degrades the whole
+search. Prowlarr has no aggregate Torznab endpoint. harbrr's is partial by construction: a failing
+member contributes nothing, never fails the request, and is named in a per-member status ledger on
+the feed itself.
 
 [^3]: Prowlarr has a fixed 100-second global timeout. Making it configurable per indexer is its
 single most-upvoted open request.
