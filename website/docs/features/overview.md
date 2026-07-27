@@ -105,9 +105,12 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 | Per-indexer required release flags (freeleech, halfleech, …) | 🚧 [#385](https://github.com/autobrr/harbrr/issues/385) |
 | Per-release language and subtitle attributes from definitions | 🚧 [#379](https://github.com/autobrr/harbrr/issues/379) |
 | Out-of-band definition updates — tracker fixes arrive without waiting for a harbrr release | 🚧 [#388](https://github.com/autobrr/harbrr/issues/388) |
-| Indexer health quarantine — a broken tracker leaves rotation and costs nothing until it recovers | 🚧 [#389](https://github.com/autobrr/harbrr/issues/389) |
-| Per-indexer query normalization and charset gating — skip searches that can't succeed | 🚧 [#394](https://github.com/autobrr/harbrr/issues/394) |
-| Aggregate Torznab feed — one URL searching many indexers, partial-by-construction | 🚧 [#400](https://github.com/autobrr/harbrr/issues/400) |
+| Tri-state indexer health — healthy / failing / unknown with lazy expiry; a broken tracker leaves rotation and costs nothing until it recovers | ✅ |
+| Per-failure-kind backoff curves and health-filtered selection | 🚧 [#389](https://github.com/autobrr/harbrr/issues/389) |
+| Punctuation-tolerant matching (opt-in, per indexer) — recovers releases that \*arr-stripped search terms would otherwise drop | ✅ |
+| Charset gating — skip searches that can't succeed | 🚧 [#394](https://github.com/autobrr/harbrr/issues/394) |
+| Aggregate `all` feed — one Torznab URL over every enabled indexer, partial-by-construction with a per-member status ledger; grabs resolve against the originating tracker | ✅ |
+| Profile-scoped and health-filtered aggregate feeds | 🚧 [#400](https://github.com/autobrr/harbrr/issues/400) |
 
 ### Getting past the tracker's front door
 
@@ -146,10 +149,11 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 | Per-indexer failure reasons — rate-limited vs login-failed vs timed out, and re-run just the failures | 🚧 [#372](https://github.com/autobrr/harbrr/issues/372) |
 | Global sort and paging across merged multi-indexer results (via the aggregate feed) | 🚧 [#400](https://github.com/autobrr/harbrr/issues/400) |
 | Group identical releases across indexers, with per-tracker sources attached | 🚧 [#398](https://github.com/autobrr/harbrr/issues/398) |
-| Base-URL picker offering the definition's known hosts | 🚧 [#401](https://github.com/autobrr/harbrr/issues/401) |
-| Search-cache dashboard — tracker requests saved, hit ratio, TTL tiers | 🚧 [#373](https://github.com/autobrr/harbrr/issues/373) |
+| Base-URL picker — choose from the definition's known hosts, with a free-text escape hatch for private mirrors | ✅ |
+| Cache dashboard — tracker requests saved, hit ratio, entry ages, breaker countdowns, live-tunable TTL tiers | ✅ |
+| 24-hour window on the cache dashboard | 🚧 [#373](https://github.com/autobrr/harbrr/issues/373) |
 | Request-budget usage meters | 🚧 [#402](https://github.com/autobrr/harbrr/issues/402) |
-| Global setting to hide adult categories | 🚧 [#383](https://github.com/autobrr/harbrr/issues/383) |
+| Global setting to hide adult categories (pickers and uncategorised searches; filters by declared category) | ✅ |
 | Adjustable total cache size | 🚧 [#67](https://github.com/autobrr/harbrr/issues/67) |
 
 ### Visibility
@@ -204,6 +208,7 @@ capabilities and will correct this page when it changes.
 | qui as a sync target | ✅ | — | — |
 | autobrr as a target | ✅ | — | — |
 | Cross-seed as a first-class consumer | ✅ | — [^2] | — |
+| Aggregate `all` feed that is safe to actually use | ✅ | — | ✅ [^4] |
 | Per-indexer timeout | 🚧 | — [^3] | — |
 | Automatic base-URL failover | 🚧 | — | — |
 | Instant regex result filter | 🚧 | — | ✅ |
@@ -216,6 +221,12 @@ general search-results cache has been requested repeatedly and declined as low-b
 
 [^2]: Prowlarr's cross-seed workaround is to configure the same tracker twice — once filtered,
 once not — which duplicates credentials, health state, and rate-limit pressure for one account.
+
+[^4]: Jackett ships an aggregate feed (`/api/v2.0/indexers/all/results/torznab`) and its own
+documentation recommends against using it — one slow or dead indexer stalls or degrades the whole
+search. Prowlarr has no aggregate Torznab endpoint. harbrr's is partial by construction: a failing
+member contributes nothing, never fails the request, and is named in a per-member status ledger on
+the feed itself.
 
 [^3]: Prowlarr has a fixed 100-second global timeout. Making it configurable per indexer is its
 single most-upvoted open request.

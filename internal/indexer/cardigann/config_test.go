@@ -124,3 +124,35 @@ func TestMergeConfigOverrides(t *testing.T) {
 		t.Errorf("merge mutated base: apikey = %q", base["apikey"])
 	}
 }
+
+// TestReservedFoldSettingIgnoresDefinitionDefault pins the reserved-key contract
+// (autobrr/harbrr#394): andmatch_fold_punctuation is a per-instance setting, so a
+// definition (necessarily a drop-in) declaring a same-named checkbox defaulting
+// true must NOT opt an untouched instance into folding — the unconfigured path
+// stays Jackett-identical. An explicitly supplied caller value still wins.
+func TestReservedFoldSettingIgnoresDefinitionDefault(t *testing.T) {
+	t.Parallel()
+	def := &loader.Definition{Settings: []loader.SettingsField{
+		{Name: "andmatch_fold_punctuation", Type: "checkbox", Default: &loader.Scalar{Value: "true", Set: true}},
+	}}
+
+	cases := []struct {
+		name string
+		opts []Option
+		want string
+	}{
+		{"untouched instance ignores the definition default", nil, ""},
+		{"explicit caller true wins", []Option{WithConfig(map[string]string{"andmatch_fold_punctuation": "true"})}, "true"},
+		// Explicitly-false is not unset: the reserved-key delete strips the
+		// DEFINITION's default, never a value the caller supplied.
+		{"explicit caller false survives the overlay", []Option{WithConfig(map[string]string{"andmatch_fold_punctuation": "false"})}, "false"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := resolveOptions(def, tc.opts).config["andmatch_fold_punctuation"]; got != tc.want {
+				t.Errorf("config value = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

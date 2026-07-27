@@ -93,6 +93,12 @@ type Deps struct {
 	// UTF-8 before parsing and request query/body values are codepage-encoded,
 	// reproducing Jackett's Encoding.GetEncoding(Definition.Encoding).
 	Encoding encoding.Encoding
+	// FoldAndMatchPunctuation makes the andmatch row filter punctuation-tolerant
+	// (andMatchFold): an *arr-stripped term still matches an unstripped tracker
+	// title. Off by default — the default path is byte-identical to Jackett — and
+	// opted into per indexer instance via the reserved "andmatch_fold_punctuation"
+	// setting (see the engine's buildDeps). autobrr/harbrr#394.
+	FoldAndMatchPunctuation bool
 }
 
 // ParseResults is the offline extraction half: it parses body per respType

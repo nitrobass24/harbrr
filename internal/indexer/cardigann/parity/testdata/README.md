@@ -317,6 +317,40 @@ Entries:
   retains a stricter `401`→fail for credential-submitting `form`/`post` logins as a
   useful, result-neutral early bad-credentials signal. **`[Resolved]`**
 
+- **Punctuation-tolerant andmatch (opt-in)** — the \*arr clients DELETE
+  ``[`'.]`` from a search term (Sonarr/Radarr `SearchCriteriaBase`; every other
+  non-word character becomes a separator), so `Venise n'est pas en Italie` leaves
+  Radarr as `Venise nest pas en Italie`. The tracker searches correctly and
+  returns the `n'est` rows; Jackett's `MatchQueryStringAND` — which harbrr
+  reproduces exactly — then fails the token `nest` against the unstripped title
+  and discards a row that was already requested, fetched and paid for
+  (autobrr/harbrr#394). An indexer instance can opt into folding those characters
+  out of BOTH sides before the token compare via the reserved
+  `andmatch_fold_punctuation` setting (`search/rowfilters.go` `andMatchFold`,
+  wired in `engine.go` `buildDeps`). Scope of the divergence:
+  - **Opt-in, default off.** With the setting absent the compare is byte-identical
+    to Jackett — asserted by the whole unconfigured parity corpus, and by the
+    `stress-andmatch-punctuation-default` / `-optin` fixture pair, which differ
+    only by that setting (the default golden is Jackett's verdict, the opt-in
+    golden is this divergence).
+  - **Post-fetch row filter only.** Request construction, templating, login and
+    `keywordsfilters` are untouched; this changes which already-fetched rows
+    survive, never what harbrr sends, so tracker load is unchanged.
+  - **Enumerated fold table, not a Unicode class.** Exactly `` ` `` `'` `.`
+    plus the typographic apostrophes U+2018/U+2019/U+02BC — a `\p{P}` class would
+    also fold CJK punctuation and silently reshape non-Latin queries
+    (`rowfilters_test.go` pins that U+3002 is NOT folded). Separators such as the
+    hyphen are excluded: an \*arr client turns those into a space, so they cannot
+    produce the joined token this exists to match.
+  - **Monotone.** Character deletion applied to both sides preserves substring
+    containment, so the opt-in can only KEEP rows Jackett drops — it never drops
+    one Jackett keeps — and the zero-token keep-everything path is unchanged (the
+    .NET length and stopword drops still run on the raw token; a token that folds
+    to nothing is skipped rather than matched as an empty substring).
+
+  Definitions keep opting out of andmatch wholesale via `caps.allowrawsearch`,
+  unchanged. **`[Deliberate]`**
+
 ## Regenerating goldens
 
 ```bash
