@@ -21,12 +21,15 @@ type settingFieldResponse struct {
 	Secret  bool              `json:"secret"`
 }
 
-// definitionDetailResponse is a definition's full schema: the summary, its ordered
-// settings fields, and its capabilities. This is the DEFINITION schema (cleartext
-// labels/defaults + a secret flag), not a configured instance's stored settings, so
-// it carries no instance secret.
+// definitionDetailResponse is a definition's full schema: the summary, its known
+// host links, its ordered settings fields, and its capabilities. This is the
+// DEFINITION schema (cleartext labels/defaults + a secret flag), not a configured
+// instance's stored settings, so it carries no instance secret. links is the
+// candidate host list the base-URL override picks from (autobrr/harbrr#401); the
+// effective host is the override if set, else links[0].
 type definitionDetailResponse struct {
 	definitionSummary
+	Links    []string               `json:"links"`
 	Settings []settingFieldResponse `json:"settings"`
 	Caps     capabilitiesResponse   `json:"caps"`
 }
@@ -80,7 +83,10 @@ func toDefinitionDetail(def *loader.Definition, caps *mapper.Capabilities, hideA
 	}
 	return definitionDetailResponse{
 		definitionSummary: summaryOf(def),
-		Settings:          settings,
-		Caps:              toCapabilitiesResponse(caps, hideAdult),
+		// Copied into a fresh slice so the field is never null on the wire (the
+		// schema declares links required) and never aliases the native catalog's.
+		Links:    append([]string{}, def.Links...),
+		Settings: settings,
+		Caps:     toCapabilitiesResponse(caps, hideAdult),
 	}
 }

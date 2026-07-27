@@ -3,6 +3,7 @@ package api_test
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
 	"testing"
 
 	"github.com/autobrr/harbrr/internal/web/api"
@@ -23,7 +24,8 @@ func TestGetDefinitionDetail(t *testing.T) {
 		t.Fatalf("status = %d, want 200 (%s)", resp.StatusCode, body)
 	}
 	var dd struct {
-		ID       string `json:"id"`
+		ID       string   `json:"id"`
+		Links    []string `json:"links"`
 		Settings []struct {
 			Name   string `json:"name"`
 			Type   string `json:"type"`
@@ -38,6 +40,11 @@ func TestGetDefinitionDetail(t *testing.T) {
 	}
 	if dd.ID != "testtracker" {
 		t.Errorf("id = %q, want testtracker", dd.ID)
+	}
+	// links is the base-URL picker's candidate list (autobrr/harbrr#401) —
+	// always present, never null, so the client can render it unconditionally.
+	if !slices.Equal(dd.Links, []string{"https://html.invalid/"}) {
+		t.Errorf("links = %v, want the definition's links", dd.Links)
 	}
 	// The apikey field is a text-typed credential -> secret.
 	apikeySecret := false

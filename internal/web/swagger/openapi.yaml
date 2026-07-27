@@ -2374,11 +2374,18 @@ components:
         - { $ref: "#/components/schemas/DefinitionSummary" }
         - type: object
           properties:
+            links:
+              type: array
+              description: >
+                the definition's known host URLs — the candidate list the base-URL
+                override picks from. The effective host is the override if set, else
+                the first entry.
+              items: { type: string }
             settings:
               type: array
               items: { $ref: "#/components/schemas/SettingField" }
             caps: { $ref: "#/components/schemas/Capabilities" }
-          required: [settings, caps]
+          required: [links, settings, caps]
     ApiKey:
       type: object
       properties:

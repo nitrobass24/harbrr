@@ -1473,6 +1473,8 @@ export interface components {
             secret: boolean;
         };
         DefinitionDetail: components["schemas"]["DefinitionSummary"] & {
+            /** @description the definition's known host URLs — the candidate list the base-URL override picks from. The effective host is the override if set, else the first entry. */
+            links: string[];
             settings: components["schemas"]["SettingField"][];
             caps: components["schemas"]["Capabilities"];
         };
