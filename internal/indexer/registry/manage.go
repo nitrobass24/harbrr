@@ -947,18 +947,19 @@ func (r *StatsReporter) Stats(ctx context.Context, slug string) (IndexerStat, er
 }
 
 // budgetStatus reads the instance's budget knobs off its stored settings and returns
-// the current-period standing. The three keys are plain values (never secrets), so
-// this needs no keyring — and deliberately copies nothing else out of the settings
-// row. Read-only: it counts nothing and persists nothing.
+// the current-period standing. The keys are plain values (never secrets), so this
+// needs no keyring — and deliberately copies nothing else out of the settings row.
+// The two *_limit_source markers carry the cap's provenance (#377). Read-only: it
+// counts nothing and persists nothing.
 func (r *StatsReporter) budgetStatus(ctx context.Context, instanceID int64) (BudgetStatus, error) {
 	settings, err := r.instances.Settings(ctx, r.db, instanceID)
 	if err != nil {
 		return BudgetStatus{}, fmt.Errorf("registry: stats budget settings for instance %d: %w", instanceID, err)
 	}
-	cfg := make(map[string]string, 3)
+	cfg := make(map[string]string, 5)
 	for _, s := range settings {
 		switch s.Name {
-		case "query_limit", "grab_limit", "limits_unit":
+		case "query_limit", "grab_limit", "limits_unit", "query_limit_source", "grab_limit_source":
 			cfg[s.Name] = s.Value
 		}
 	}

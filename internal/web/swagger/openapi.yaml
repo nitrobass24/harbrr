@@ -2597,10 +2597,12 @@ components:
         (autobrr/harbrr#251, surfaced by #402): what has been counted so far against
         the operator-configured caps, and when the period rolls over. It reports the
         counters the registry already keeps — reading it collects nothing and counts
-        nothing. limit is the OPERATOR-CONFIGURED cap (0 = none configured); learned
-        is the separate reactive latch harbrr set from the tracker's own quota error,
-        which carries no number because the tracker never declared one. A learned
-        latch or a used-at-limit kind is a self-imposed guard, not an indexer failure.
+        nothing. limit is the configured cap (0 = none configured), flagged detected
+        when it was seeded from the indexer's own account limits rather than typed by
+        the operator; learned is the separate reactive latch harbrr set from the
+        tracker's own quota error, which carries no number because the tracker never
+        declared one. A learned latch or a used-at-limit kind is a self-imposed guard,
+        not an indexer failure.
       properties:
         unit: { type: string, enum: [day, hour], description: the rolling period the counters reset on }
         periodEnd:
@@ -2615,13 +2617,18 @@ components:
       description: One kind's (search or grab) usage against its cap for the current period.
       properties:
         used: { type: integer, format: int64, description: requests of this kind counted in the current period }
-        limit: { type: integer, description: the operator-configured cap for the period; 0 means none configured }
+        limit: { type: integer, description: the configured cap for the period; 0 means none configured }
+        detected:
+          type: boolean
+          description: >
+            the cap was seeded from the indexer's own advertised account limits
+            (Newznab t=user) rather than typed by the operator
         learned:
           type: boolean
           description: >
             the tracker declared its own quota spent for this kind in the current
             period (the reactive latch) — a cap harbrr was never configured with
-      required: [used, limit, learned]
+      required: [used, limit, detected, learned]
     FleetStatus:
       type: object
       description: >

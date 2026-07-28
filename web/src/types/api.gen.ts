@@ -1664,7 +1664,7 @@ export interface components {
             lastFailureAt?: string;
             budget?: components["schemas"]["IndexerBudget"];
         };
-        /** @description The indexer's request-budget standing for the CURRENT rolling period (autobrr/harbrr#251, surfaced by #402): what has been counted so far against the operator-configured caps, and when the period rolls over. It reports the counters the registry already keeps — reading it collects nothing and counts nothing. limit is the OPERATOR-CONFIGURED cap (0 = none configured); learned is the separate reactive latch harbrr set from the tracker's own quota error, which carries no number because the tracker never declared one. A learned latch or a used-at-limit kind is a self-imposed guard, not an indexer failure. */
+        /** @description The indexer's request-budget standing for the CURRENT rolling period (autobrr/harbrr#251, surfaced by #402): what has been counted so far against the operator-configured caps, and when the period rolls over. It reports the counters the registry already keeps — reading it collects nothing and counts nothing. limit is the configured cap (0 = none configured), flagged detected when it was seeded from the indexer's own account limits rather than typed by the operator; learned is the separate reactive latch harbrr set from the tracker's own quota error, which carries no number because the tracker never declared one. A learned latch or a used-at-limit kind is a self-imposed guard, not an indexer failure. */
         IndexerBudget: {
             /**
              * @description the rolling period the counters reset on
@@ -1686,8 +1686,10 @@ export interface components {
              * @description requests of this kind counted in the current period
              */
             used: number;
-            /** @description the operator-configured cap for the period; 0 means none configured */
+            /** @description the configured cap for the period; 0 means none configured */
             limit: number;
+            /** @description the cap was seeded from the indexer's own advertised account limits (Newznab t=user) rather than typed by the operator */
+            detected: boolean;
             /** @description the tracker declared its own quota spent for this kind in the current period (the reactive latch) — a cap harbrr was never configured with */
             learned: boolean;
         };
