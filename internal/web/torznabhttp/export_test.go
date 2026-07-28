@@ -84,7 +84,7 @@ func TestNewDLRewriterSealsLink(t *testing.T) {
 		t.Fatalf("decodeDLToken: %v", err)
 	}
 	if back != raw {
-		t.Errorf("token round-trip = %q, want %q", back, raw)
+		t.Error("token round-trip differs from the input (values withheld: link-shaped)")
 	}
 	if _, _, ok := rw("magnet:?xt=urn:btih:abc", nil); ok {
 		t.Error("expected a magnet to be served as-is (ok=false)")

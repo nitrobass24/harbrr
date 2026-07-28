@@ -1091,7 +1091,13 @@ func (r *StatsReporter) ReapCategoryStats(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	cutoff := database.MonthBucket(r.clock().AddDate(0, -months, 0))
+	// Normalize to the first of the CURRENT month before stepping back: AddDate from a
+	// month-end day overflows (May 31 minus 3 months is "Feb 31" = Mar 2/3), which
+	// would shift the cutoff a whole month and delete a bucket retention promised to
+	// keep. From day 1 the subtraction is exact for any month count.
+	now := r.clock().UTC()
+	first := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	cutoff := database.MonthBucket(first.AddDate(0, -months, 0))
 	deleted, err := (database.IndexerCategoryStatsStore{}).DeleteBefore(ctx, r.db, cutoff)
 	if err != nil {
 		return 0, fmt.Errorf("registry: reap category stats: %w", err)

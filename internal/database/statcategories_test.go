@@ -61,9 +61,10 @@ func TestIndexerCategoryStatsAddDeltas(t *testing.T) {
 	}
 }
 
-// TestIndexerCategoryStatsAddDeltasReportsFailures proves a row that cannot land (a
-// dangling instance id, i.e. an instance deleted between the record and the flush) is
-// returned for retry while its siblings still commit.
+// TestIndexerCategoryStatsAddDeltasReportsFailures proves a dangling instance id (an
+// instance deleted between the record and the flush) is DISCARDED — a foreign-key
+// violation is terminal, and retrying it would re-fail every flush forever — while
+// its siblings still commit, without raising an error for the expected case.
 func TestIndexerCategoryStatsAddDeltasReportsFailures(t *testing.T) {
 	t.Parallel()
 
@@ -77,11 +78,11 @@ func TestIndexerCategoryStatsAddDeltasReportsFailures(t *testing.T) {
 		{InstanceID: 9999, CategoryID: 2000, QueryResults: 3}, // no such instance: FK violation
 		{InstanceID: id, CategoryID: 5000, QueryResults: 4},
 	}, now)
-	if err == nil {
-		t.Fatal("AddDeltas with a dangling instance id returned no error")
+	if err != nil {
+		t.Fatalf("AddDeltas: a dangling instance is expected on deletion races, not an error: %v", err)
 	}
-	if len(failed) != 1 || failed[0].InstanceID != 9999 {
-		t.Errorf("failed = %+v, want only the dangling row", failed)
+	if len(failed) != 0 {
+		t.Errorf("failed = %+v, want none — an FK-terminal delta must be discarded, not retried", failed)
 	}
 	got, err := store.Tallies(ctx, db)
 	if err != nil {

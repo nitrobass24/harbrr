@@ -59,6 +59,14 @@ func (IndexerCategoryStatsStore) AddDeltas(ctx context.Context, q dbinterface.Ex
 				  updated_at = excluded.updated_at`),
 			d.InstanceID, d.CategoryID, bucket, d.QueryResults, d.Grabs, stamp)
 		if err != nil {
+			// A foreign-key violation is TERMINAL, not transient: the instance was
+			// deleted between accumulation and this flush, so its tallies can never
+			// land. Returning it for retry would re-fail on every flush tick forever;
+			// discard it instead (and raise no error — losing a deleted instance's
+			// counts is the intended outcome, not an incident).
+			if IsForeignKeyViolation(err) {
+				continue
+			}
 			failed = append(failed, d)
 			if firstErr == nil {
 				firstErr = fmt.Errorf("database: add indexer category stats for instance %d: %w", d.InstanceID, err)

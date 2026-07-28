@@ -48,8 +48,11 @@ func TestDLToken_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decodeDLToken: %v", err)
 	}
-	if got != dlTestLink || cat != 2000 {
-		t.Errorf("round trip = cat %d / %q, want 2000 / %q", cat, got, dlTestLink)
+	if cat != 2000 {
+		t.Errorf("round trip category = %d, want 2000", cat)
+	}
+	if got != dlTestLink {
+		t.Error("round trip link differs from the sealed link (values withheld: link-shaped)")
 	}
 }
 
@@ -144,8 +147,11 @@ func TestDLToken_PlaintextModeRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decodeDLToken: %v", err)
 	}
-	if got != dlTestLink || cat != 2000 {
-		t.Errorf("round trip = cat %d / %q, want 2000 / %q", cat, got, dlTestLink)
+	if cat != 2000 {
+		t.Errorf("round trip category = %d, want 2000", cat)
+	}
+	if got != dlTestLink {
+		t.Error("round trip link differs from the sealed link (values withheld: link-shaped)")
 	}
 }
 
