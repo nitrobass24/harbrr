@@ -124,24 +124,32 @@ type SettingRow struct {
 // priority-zero fix in #364. A plain bool would instead restore every toggle OFF and
 // silently stop all syncing.
 type InstanceRow struct {
-	ID                      int64        `json:"id"`
-	Slug                    string       `json:"slug"`
-	DefinitionID            string       `json:"definitionId"`
-	Name                    string       `json:"name"`
-	BaseURL                 string       `json:"baseUrl"`
-	Enabled                 bool         `json:"enabled"`
-	Protocol                string       `json:"protocol"`
-	ProxyID                 *int64       `json:"proxyId,omitempty"`
-	SolverID                *int64       `json:"solverId,omitempty"`
-	Priority                int          `json:"priority"`
-	MinSeeders              int          `json:"minSeeders"`
-	SyncCategories          []int        `json:"syncCategories,omitempty"`
-	EnableRss               *bool        `json:"enableRss,omitempty"`
-	EnableAutomaticSearch   *bool        `json:"enableAutomaticSearch,omitempty"`
-	EnableInteractiveSearch *bool        `json:"enableInteractiveSearch,omitempty"`
-	CreatedAt               time.Time    `json:"createdAt"`
-	UpdatedAt               time.Time    `json:"updatedAt"`
-	Settings                []SettingRow `json:"settings"`
+	ID                      int64  `json:"id"`
+	Slug                    string `json:"slug"`
+	DefinitionID            string `json:"definitionId"`
+	Name                    string `json:"name"`
+	BaseURL                 string `json:"baseUrl"`
+	Enabled                 bool   `json:"enabled"`
+	Protocol                string `json:"protocol"`
+	ProxyID                 *int64 `json:"proxyId,omitempty"`
+	SolverID                *int64 `json:"solverId,omitempty"`
+	Priority                int    `json:"priority"`
+	MinSeeders              int    `json:"minSeeders"`
+	SyncCategories          []int  `json:"syncCategories,omitempty"`
+	EnableRss               *bool  `json:"enableRss,omitempty"`
+	EnableAutomaticSearch   *bool  `json:"enableAutomaticSearch,omitempty"`
+	EnableInteractiveSearch *bool  `json:"enableInteractiveSearch,omitempty"`
+	// ExpiresAt / ExpiryKind / ExpiryLifetime carry the #399 VIP/membership expiry —
+	// operator-entered data that exists nowhere else, so losing it on a restore would
+	// silently un-track every expiry. The fired-threshold ledger is deliberately NOT
+	// carried: like last_sync_*, it is derived state, and a restored instance warning
+	// once more about a genuinely upcoming expiry is the safe direction to err.
+	ExpiresAt      string       `json:"expiresAt,omitempty"`
+	ExpiryKind     string       `json:"expiryKind,omitempty"`
+	ExpiryLifetime bool         `json:"expiryLifetime,omitempty"`
+	CreatedAt      time.Time    `json:"createdAt"`
+	UpdatedAt      time.Time    `json:"updatedAt"`
+	Settings       []SettingRow `json:"settings"`
 }
 
 // AppConnRow carries both decrypted secrets (the app's own key + the minted harbrr key)
@@ -190,14 +198,17 @@ type AnnounceConnRow struct {
 // NotificationRow carries the decrypted destination URL (webhook/Discord), re-sealed on
 // import.
 type NotificationRow struct {
-	ID              int64     `json:"id"`
-	Name            string    `json:"name"`
-	Type            string    `json:"type"`
-	URL             string    `json:"url"`
-	Enabled         bool      `json:"enabled"`
-	OnHealthFailure bool      `json:"onHealthFailure"`
-	CreatedAt       time.Time `json:"createdAt"`
-	UpdatedAt       time.Time `json:"updatedAt"`
+	ID              int64  `json:"id"`
+	Name            string `json:"name"`
+	Type            string `json:"type"`
+	URL             string `json:"url"`
+	Enabled         bool   `json:"enabled"`
+	OnHealthFailure bool   `json:"onHealthFailure"`
+	// OnExpiry is a pointer so a pre-#399 bundle (which has no such key) restores with
+	// the column default ON rather than silently opting the target out.
+	OnExpiry  *bool     `json:"onExpiry,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // AppSettingRow is one runtime config key/value (never holds a secret by design).

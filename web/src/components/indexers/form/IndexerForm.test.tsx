@@ -63,6 +63,9 @@ const EXISTING: InstanceDetail = {
   enableRss: true,
   enableAutomaticSearch: true,
   enableInteractiveSearch: true,
+  expiresAt: "",
+  expiryKind: "" as const,
+  expiryLifetime: false,
   createdAt: "2026-07-01T00:00:00Z",
   updatedAt: "2026-07-01T00:00:00Z",
   settings: [
@@ -190,6 +193,82 @@ describe("IndexerForm", () => {
     expect(body.enableRss).toBe(true)
     expect(body.enableAutomaticSearch).toBe(true)
     expect(body.enableInteractiveSearch).toBe(true)
+  })
+
+  it("create: an untouched expiry group submits as untracked", () => {
+    const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+    renderForm(<IndexerForm definition={DEFINITION} pending={false} error={null} onSubmit={onSubmit} />)
+
+    fireEvent.change(screen.getByLabelText("API Key"), { target: { value: "k123" } })
+    fireEvent.click(screen.getByRole("button", { name: /Advanced/ }))
+    expect(screen.getByLabelText<HTMLInputElement>(/^Expiry \(optional\)/).value).toBe("")
+    fireEvent.click(screen.getByRole("button", { name: "Add indexer" }))
+
+    const body = onSubmit.mock.calls[0][0].body
+    expect(body.expiresAt).toBe("")
+    expect(body.expiryLifetime).toBe(false)
+  })
+
+  it("create: a date and kind ride the create body", () => {
+    const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+    renderForm(<IndexerForm definition={DEFINITION} pending={false} error={null} onSubmit={onSubmit} />)
+
+    fireEvent.change(screen.getByLabelText("API Key"), { target: { value: "k123" } })
+    fireEvent.click(screen.getByRole("button", { name: /Advanced/ }))
+    fireEvent.change(screen.getByLabelText(/^Expiry \(optional\)/), { target: { value: "2027-03-01" } })
+    fireEvent.change(screen.getByLabelText("Expiry type"), { target: { value: "account" } })
+    fireEvent.click(screen.getByRole("button", { name: "Add indexer" }))
+
+    const body = onSubmit.mock.calls[0][0].body
+    expect(body.expiresAt).toBe("2027-03-01")
+    expect(body.expiryKind).toBe("account")
+  })
+
+  it("edit: the expiry prefills, and clearing the date submits an empty string", () => {
+    const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+    const existing: InstanceDetail = { ...EXISTING, expiresAt: "2027-03-01", expiryKind: "perk" }
+    renderForm(<IndexerForm definition={DEFINITION} existing={existing} pending={false} error={null} onSubmit={onSubmit} />)
+
+    fireEvent.click(screen.getByRole("button", { name: /Advanced/ }))
+    const date = screen.getByLabelText<HTMLInputElement>(/^Expiry \(optional\)/)
+    expect(date.value).toBe("2027-03-01")
+    expect(screen.getByLabelText<HTMLSelectElement>("Expiry type").value).toBe("perk")
+
+    // Clearing must reach the server as "" — an omitted field would leave the stored
+    // date in place and keep warning about an expiry the operator just removed.
+    fireEvent.change(date, { target: { value: "" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+    expect(onSubmit.mock.calls[0][0].body.expiresAt).toBe("")
+  })
+
+  it("edit: changing only the name preserves the stored expiry untouched", () => {
+    // The preservation class this form keeps getting bitten by: an unrelated edit must
+    // not reset or drop operator-entered expiry data on submit.
+    const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+    const existing: InstanceDetail = { ...EXISTING, expiresAt: "2027-03-01", expiryKind: "account", expiryLifetime: false }
+    renderForm(<IndexerForm definition={DEFINITION} existing={existing} pending={false} error={null} onSubmit={onSubmit} />)
+
+    fireEvent.change(screen.getByLabelText<HTMLInputElement>("Name"), { target: { value: "Renamed" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+
+    const body = onSubmit.mock.calls[0][0].body
+    expect(body.name).toBe("Renamed")
+    expect(body.expiresAt).toBe("2027-03-01")
+    expect(body.expiryKind).toBe("account")
+    expect(body.expiryLifetime).toBe(false)
+  })
+
+  it("edit: ticking Lifetime disables the date field and submits the flag", () => {
+    const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+    const existing: InstanceDetail = { ...EXISTING, expiresAt: "2027-03-01", expiryKind: "perk" }
+    renderForm(<IndexerForm definition={DEFINITION} existing={existing} pending={false} error={null} onSubmit={onSubmit} />)
+
+    fireEvent.click(screen.getByRole("button", { name: /Advanced/ }))
+    fireEvent.click(screen.getByLabelText("Lifetime (never expires)"))
+    expect(screen.getByLabelText<HTMLInputElement>(/^Expiry \(optional\)/).disabled).toBe(true)
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+    expect(onSubmit.mock.calls[0][0].body.expiryLifetime).toBe(true)
   })
 
   it("slug is locked in edit mode", () => {

@@ -349,11 +349,12 @@ func validateRestoredMinSeeders(slug string, minSeeders int) error {
 	return nil
 }
 
-// restoreDefaultToggle resolves an InstanceRow's optional search-mode toggle: a bundle
+// restoreDefaultToggle resolves an optional default-ON flag from a bundle: a bundle
 // written before #365 carries none of enableRss/enableAutomaticSearch/
-// enableInteractiveSearch, decoding as nil — which must default to true (every mode
-// on), not false. A plain bool field would instead silently restore every toggle OFF
-// and stop all syncing (the same hazard class as restoreDefaultPriority above).
+// enableInteractiveSearch, and one written before #399 carries no onExpiry — all
+// decoding as nil, which must default to true, not false. A plain bool field would
+// instead silently restore every toggle OFF, stopping all syncing (or all expiry
+// warnings) — the same hazard class as restoreDefaultPriority above.
 func restoreDefaultToggle(v *bool) bool {
 	if v == nil {
 		return true
@@ -379,7 +380,8 @@ func (s *Service) loadInstances(ctx context.Context, q dbinterface.Execer, rows 
 			Priority: priority, MinSeeders: r.MinSeeders, SyncCategories: r.SyncCategories,
 			EnableRss: restoreDefaultToggle(r.EnableRss), EnableAutomaticSearch: restoreDefaultToggle(r.EnableAutomaticSearch),
 			EnableInteractiveSearch: restoreDefaultToggle(r.EnableInteractiveSearch),
-			CreatedAt:               r.CreatedAt, UpdatedAt: r.UpdatedAt,
+			ExpiresAt:               r.ExpiresAt, ExpiryKind: r.ExpiryKind, ExpiryLifetime: r.ExpiryLifetime,
+			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("backup: insert indexer %q: %w", r.Slug, err)
@@ -541,7 +543,7 @@ func (s *Service) loadNotifications(ctx context.Context, q dbinterface.Execer, r
 	for _, r := range rows {
 		newID, err := repo.InsertNotification(ctx, q, domain.Notification{
 			Name: r.Name, Type: r.Type, URLEncrypted: "", KeyID: s.keyring.KeyID(),
-			Enabled: r.Enabled, OnHealthFailure: r.OnHealthFailure,
+			Enabled: r.Enabled, OnHealthFailure: r.OnHealthFailure, OnExpiry: restoreDefaultToggle(r.OnExpiry),
 			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		})
 		if err != nil {

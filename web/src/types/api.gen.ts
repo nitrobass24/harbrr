@@ -1331,6 +1331,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/config/expiry-thresholds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the indexer expiry lead times
+         * @description Returns the lead times (days before a tracked VIP/membership expiry) that the periodic expiry scan warns at (autobrr/harbrr#399), defaults included when the operator has set none. Always canonical: deduped, descending, and always containing the at-expiry warning (0), which cannot be switched off.
+         */
+        get: operations["getExpiryThresholds"];
+        /**
+         * Set the indexer expiry lead times
+         * @description Persists the lead times and echoes back the canonical list actually stored, so a read-back can never disagree with what the scan applies. The change takes effect on the next scan without a restart. An empty list leaves exactly the at-expiry warning.
+         */
+        put: operations["putExpiryThresholds"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/config/stats-retention": {
         parameters: {
             query?: never;
@@ -1579,12 +1603,21 @@ export interface components {
              * @default true
              */
             enableInteractiveSearch: boolean;
+            /** @description operator-entered VIP/membership expiry as a calendar date (YYYY-MM-DD); empty means untracked (autobrr/harbrr#399). Always empty when expiryLifetime is true. */
+            expiresAt: string;
+            /**
+             * @description what the date ends — perk (VIP/premium lapses, account survives) or account (access itself ends); empty reads as a generic membership expiry
+             * @enum {string}
+             */
+            expiryKind: "" | "perk" | "account";
+            /** @description never expires; wins over expiresAt and never notifies */
+            expiryLifetime: boolean;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
         };
-        /** @description Per-indexer Prowlarr-style stats: durable query/grab/latency counters plus the failure tally folded in from the health events. queries counts searches that reached the tracker (a cache hit bypasses the counted path), so avgResponseMs reflects real upstream latency. lastQueryAt/lastFailureAt are absent when never observed. */
+        /** @description Per-indexer Prowlarr-style stats: durable query/grab/latency counters plus the failure tally folded in from the health events. queries counts searches that reached the tracker (a cache hit bypasses the counted path), so avgResponseMs reflects real upstream latency. lastQueryAt/lastFailureAt are absent when never observed. budget is present on GET /api/indexers/{slug}/stats only — the all-indexers list omits it. */
         IndexerStats: {
             slug: string;
             /** Format: int64 */
@@ -1629,6 +1662,34 @@ export interface components {
             lastQueryAt?: string;
             /** Format: date-time */
             lastFailureAt?: string;
+            budget?: components["schemas"]["IndexerBudget"];
+        };
+        /** @description The indexer's request-budget standing for the CURRENT rolling period (autobrr/harbrr#251, surfaced by #402): what has been counted so far against the operator-configured caps, and when the period rolls over. It reports the counters the registry already keeps — reading it collects nothing and counts nothing. limit is the OPERATOR-CONFIGURED cap (0 = none configured); learned is the separate reactive latch harbrr set from the tracker's own quota error, which carries no number because the tracker never declared one. A learned latch or a used-at-limit kind is a self-imposed guard, not an indexer failure. */
+        IndexerBudget: {
+            /**
+             * @description the rolling period the counters reset on
+             * @enum {string}
+             */
+            unit: "day" | "hour";
+            /**
+             * Format: date-time
+             * @description when the current period rolls over (UTC) — used resets and any learned latch clears
+             */
+            periodEnd: string;
+            query: components["schemas"]["IndexerBudgetKind"];
+            grab: components["schemas"]["IndexerBudgetKind"];
+        };
+        /** @description One kind's (search or grab) usage against its cap for the current period. */
+        IndexerBudgetKind: {
+            /**
+             * Format: int64
+             * @description requests of this kind counted in the current period
+             */
+            used: number;
+            /** @description the operator-configured cap for the period; 0 means none configured */
+            limit: number;
+            /** @description the tracker declared its own quota spent for this kind in the current period (the reactive latch) — a cap harbrr was never configured with */
+            learned: boolean;
         };
         /** @description Fleet-wide indexer health roll-up: healthy/failing/unknown counts plus each configured indexer's derived status and most recent health event, sorted by slug. */
         FleetStatus: {
@@ -1688,6 +1749,15 @@ export interface components {
             enableAutomaticSearch?: boolean;
             /** @default true */
             enableInteractiveSearch?: boolean;
+            /** @description VIP/membership expiry date (YYYY-MM-DD); omitted or empty = untracked */
+            expiresAt?: string;
+            /**
+             * @description perk = VIP lapses, account = access ends
+             * @enum {string}
+             */
+            expiryKind?: "" | "perk" | "account";
+            /** @description never expires; clears expiresAt and never notifies */
+            expiryLifetime?: boolean;
         };
         UpdateIndexer: {
             name?: string;
@@ -1718,6 +1788,15 @@ export interface components {
             enableAutomaticSearch?: boolean;
             /** @description omitted leaves it unchanged */
             enableInteractiveSearch?: boolean;
+            /** @description present-but-empty clears the tracking; omitted leaves it unchanged */
+            expiresAt?: string;
+            /**
+             * @description omitted leaves it unchanged
+             * @enum {string}
+             */
+            expiryKind?: "" | "perk" | "account";
+            /** @description omitted leaves it unchanged */
+            expiryLifetime?: boolean;
         };
         Capabilities: {
             /** @description search mode -> supported query params */
@@ -1983,6 +2062,8 @@ export interface components {
             enabled: boolean;
             /** @description fire on a classified indexer health failure */
             onHealthFailure: boolean;
+            /** @description fire on an approaching or passed indexer VIP/membership expiry (autobrr/harbrr#399) */
+            onExpiry: boolean;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -1996,6 +2077,8 @@ export interface components {
             url: string;
             /** @description fire on an indexer health failure (default true) */
             onHealthFailure?: boolean;
+            /** @description fire on an indexer expiry warning (default true) */
+            onExpiry?: boolean;
         };
         /** @description a partial update; omitted fields are left unchanged */
         UpdateNotification: {
@@ -2003,6 +2086,7 @@ export interface components {
             /** @description rotates the destination (stored encrypted) */
             url?: string;
             onHealthFailure?: boolean;
+            onExpiry?: boolean;
         };
         /** @description A global, reusable proxy an indexer references by id. host/port/username are plain (never masked); the password is a write-only secret and is never echoed back in a response. */
         Proxy: {
@@ -2439,6 +2523,11 @@ export interface components {
              * @default 12
              */
             months: number;
+        };
+        /** @description The indexer VIP/membership expiry lead times (autobrr/harbrr#399): how many days before a tracked expiry date the periodic scan warns. Each threshold fires exactly once per indexer per expiry date and re-arms when the date changes, so a renewal restores the whole ladder. The at-expiry warning (0) is always present: an expiry passing unannounced is the failure this exists to prevent. */
+        ExpiryThresholds: {
+            /** @description lead times in days before expiry; the response is always canonical (deduped, descending, including 0) */
+            days: number[];
         };
         /** @description The live global rate-limit default (autobrr/harbrr#104): the minimum spacing between requests to any tracker host that has no per-indexer "rate_interval" override (get returns the effective value; put sets it). Always a Go duration string. Never undercuts a definition's own requestDelay. */
         RateLimitConfig: {
@@ -5305,6 +5394,53 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    getExpiryThresholds: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description the effective lead times */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpiryThresholds"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    putExpiryThresholds: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExpiryThresholds"];
+            };
+        };
+        responses: {
+            /** @description the stored lead times */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpiryThresholds"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
         };
     };
     getStatsRetention: {

@@ -1,4 +1,5 @@
 import { ArrowRight, Copy, MoreVertical, Pencil, Trash2 } from "lucide-react"
+import { ExpiryCell } from "@/components/indexers/ExpiryCell"
 import { FreeleechPill } from "@/components/indexers/FreeleechPill"
 import { HealthCell } from "@/components/indexers/HealthCell"
 import { IndexerAvatar } from "@/components/indexers/IndexerAvatar"
@@ -64,8 +65,9 @@ function IndexerCard({ row, actions }: { row: IndexerRowData, actions: IndexerRo
         <p className="mt-2 truncate text-[13px] text-muted-foreground">{row.categories}</p>
       )}
 
-      <div className="mt-2">
+      <div className="mt-2 flex items-center justify-between gap-3">
         <HealthCell status={row.status} />
+        <ExpiryCell instance={ix} />
       </div>
 
       <div className="mt-3 flex items-center justify-end gap-1 border-t border-border pt-3">

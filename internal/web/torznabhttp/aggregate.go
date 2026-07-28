@@ -21,11 +21,11 @@ const aggregateDescription = "harbrr aggregate feed"
 // members that do support the mode, which is the whole point of a partial aggregate.
 const skipUnsupportedMode = "unsupported-mode"
 
-// serveAggregate answers the aggregate ('all') feed: caps are the union of member
-// capabilities, results are a partial fan-out. It never fails on a member — the request
-// only fails if the request itself is invalid (a bad apikey, an unknown t=, a mode NO
-// member supports).
-func (h *handler) serveAggregate(w http.ResponseWriter, r *http.Request, slug string, members []core.Indexer, q url.Values) {
+// serveAggregate answers an aggregate feed ('all' or 'profile:<name>'): caps are the
+// union of member capabilities, results are a partial fan-out. It never fails on a
+// member — the request only fails if the request itself is invalid (a bad apikey, an
+// unknown t=, a mode NO member supports).
+func (h *handler) serveAggregate(w http.ResponseWriter, r *http.Request, slug string, members []core.MemberOutcome, q url.Values) {
 	caps := core.UnionCapabilities(members)
 	if strings.EqualFold(q.Get("t"), tzn.ReqCaps) {
 		h.writeCapsDoc(w, slug, caps)
@@ -36,12 +36,12 @@ func (h *handler) serveAggregate(w http.ResponseWriter, r *http.Request, slug st
 
 // writeAggregateResults gates the search mode against the union caps, fans out to the
 // members that can actually serve it, and renders the merged window plus the ledger.
-func (h *handler) writeAggregateResults(w http.ResponseWriter, r *http.Request, slug string, members []core.Indexer, caps *mapper.Capabilities, q url.Values) {
+func (h *handler) writeAggregateResults(w http.ResponseWriter, r *http.Request, slug string, members []core.MemberOutcome, caps *mapper.Capabilities, q url.Values) {
 	capsKey, ok := h.resolveMode(w, q, caps)
 	if !ok {
 		return
 	}
-	eligible, skipped := partitionByMode(members, capsKey, q)
+	members = skipUnsupportedModes(members, capsKey, q)
 	// No CacheInfo sink is attached: members run concurrently and would race on one
 	// sink, and a merged window has no single expiry to hang a validator off. The
 	// SEARCH cache still applies per member inside SearchReleases — the aggregate costs
@@ -51,12 +51,12 @@ func (h *handler) writeAggregateResults(w http.ResponseWriter, r *http.Request, 
 	if requestNoCache(r) {
 		ctx = core.WithCacheBypass(ctx)
 	}
-	res := core.SearchAggregate(ctx, eligible, q)
+	res := core.SearchAggregate(ctx, members, q)
 	h.logMemberFailures(res.Members)
 	body, err := tzn.MarshalAggregateResults(
 		h.aggregateFeedInfo(r, slug),
 		h.aggregateItems(r, res.Releases),
-		memberLedger(res.Members, skipped),
+		memberLedger(res.Members),
 		tzn.Page{Offset: res.Offset, Total: res.Total},
 		h.clock(),
 	)
@@ -67,43 +67,43 @@ func (h *handler) writeAggregateResults(w http.ResponseWriter, r *http.Request, 
 	writeXML(w, http.StatusOK, body)
 }
 
-// partitionByMode splits members into those that advertise the requested mode (and the
-// id params it was asked with) and those that do not. The latter are recorded as
-// capability skips rather than dropped silently, so the ledger explains a short answer.
-func partitionByMode(members []core.Indexer, capsKey string, q url.Values) (eligible []core.Indexer, skipped []core.MemberOutcome) {
-	for _, m := range members {
-		caps := m.Capabilities()
-		_, paramOK := unsupportedIDParam(caps, capsKey, q)
-		if tzn.ModeAvailable(caps, capsKey) && paramOK {
-			eligible = append(eligible, m)
+// skipUnsupportedModes marks every still-live member that does not advertise the
+// requested mode (or an id param it was asked with) as a capability skip, so the ledger
+// explains a short answer instead of the member being dropped silently. Members already
+// skipped at resolution pass through with the reason they arrived with.
+func skipUnsupportedModes(members []core.MemberOutcome, capsKey string, q url.Values) []core.MemberOutcome {
+	out := make([]core.MemberOutcome, len(members))
+	for i, m := range members {
+		out[i] = m
+		if !m.OK() {
 			continue
 		}
-		skipped = append(skipped, core.MemberOutcome{Indexer: m, Reason: skipUnsupportedMode})
-	}
-	return eligible, skipped
-}
-
-// memberLedger renders the served status ledger from the fan-out outcomes plus the
-// members skipped before it. Only the closed reason vocabulary crosses over —
-// MemberOutcome.Err is for the log, never the wire.
-func memberLedger(outcomes, skipped []core.MemberOutcome) []tzn.MemberStatus {
-	out := make([]tzn.MemberStatus, 0, len(outcomes)+len(skipped))
-	for _, o := range outcomes {
-		out = append(out, memberStatus(o))
-	}
-	for _, o := range skipped {
-		out = append(out, memberStatus(o))
+		caps := m.Indexer.Capabilities()
+		_, paramOK := unsupportedIDParam(caps, capsKey, q)
+		if !tzn.ModeAvailable(caps, capsKey) || !paramOK {
+			out[i] = m.Skip(skipUnsupportedMode)
+		}
 	}
 	return out
 }
 
-func memberStatus(o core.MemberOutcome) tzn.MemberStatus {
+// memberLedger renders the served status ledger: one line per member the slug selected,
+// in resolution order. Only the closed reason vocabulary crosses over —
+// MemberOutcome.Err is for the log, never the wire.
+func memberLedger(members []core.MemberOutcome) []tzn.MemberStatus {
+	out := make([]tzn.MemberStatus, 0, len(members))
+	for _, m := range members {
+		out = append(out, memberStatus(m))
+	}
+	return out
+}
+
+func memberStatus(m core.MemberOutcome) tzn.MemberStatus {
 	status := "skipped"
-	if o.OK() {
+	if m.OK() {
 		status = "ok"
 	}
-	info := o.Indexer.Info()
-	return tzn.MemberStatus{ID: info.ID, Name: info.Name, Status: status, Reason: o.Reason, Count: o.Count}
+	return tzn.MemberStatus{ID: m.ID, Name: m.Name, Status: status, Reason: m.Reason, Count: m.Count}
 }
 
 // logMemberFailures records each member failure with the error redacted. This is the
@@ -115,7 +115,7 @@ func (h *handler) logMemberFailures(outcomes []core.MemberOutcome) {
 		}
 		h.log.Warn().
 			Str("stage", "aggregate").
-			Str("indexer", o.Indexer.Info().ID).
+			Str("indexer", o.ID).
 			Str("reason", o.Reason).
 			Str("error", apphttp.RedactError(o.Err)).
 			Msg("aggregate feed: member contributed nothing")

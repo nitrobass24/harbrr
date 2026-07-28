@@ -106,6 +106,10 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
   const [enableRss, setEnableRss] = useState(existing?.enableRss ?? true)
   const [enableAutomaticSearch, setEnableAutomaticSearch] = useState(existing?.enableAutomaticSearch ?? true)
   const [enableInteractiveSearch, setEnableInteractiveSearch] = useState(existing?.enableInteractiveSearch ?? true)
+  const [expiresAt, setExpiresAt] = useState(existing?.expiresAt ?? "")
+  const [expiryKind, setExpiryKind] = useState<"perk" | "account">(
+    existing?.expiryKind === "account" ? "account" : "perk")
+  const [expiryLifetime, setExpiryLifetime] = useState(existing?.expiryLifetime ?? false)
   const [checkedParents, setCheckedParents] = useState<Set<number>>(
     new Set((existing?.syncCategories ?? []).filter((c) => PARENT_IDS.has(c))))
   const [extraCategories, setExtraCategories] = useState((existing?.syncCategories ?? []).filter((c) => !PARENT_IDS.has(c)).join(", "))
@@ -149,11 +153,15 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
         const extraIds = extraCategories.split(",").map((s) => s.trim()).filter((s) => s !== "").map((s) => Number(s)).filter((n) => Number.isInteger(n) && n > 0)
         const syncCategories = [...new Set([...checkedParents, ...extraIds])].sort((a, b) => a - b)
         const toggles = { enableRss, enableAutomaticSearch, enableInteractiveSearch }
+        // expiresAt goes verbatim on BOTH paths — unlike baseUrl this is not an
+        // edit-only clear: "" is how "no expiry" is expressed either way, and the
+        // server drops the kind along with the date. Lifetime clears it server-side.
+        const expiry = { expiresAt, expiryKind, expiryLifetime }
         if (mode === "edit") {
           // baseUrl verbatim so clearing it ("") clears the stored override.
-          onSubmit({ mode, body: { name, baseUrl, settings, proxyId, solverId, priority: priorityNum, minSeeders: minSeedersNum, syncCategories, ...toggles } })
+          onSubmit({ mode, body: { name, baseUrl, settings, proxyId, solverId, priority: priorityNum, minSeeders: minSeedersNum, syncCategories, ...toggles, ...expiry } })
         } else {
-          onSubmit({ mode, body: { slug, definitionId: definition.id, name, baseUrl: baseUrl || undefined, settings, proxyId, solverId, priority: priorityNum, minSeeders: minSeedersNum, syncCategories, ...toggles } })
+          onSubmit({ mode, body: { slug, definitionId: definition.id, name, baseUrl: baseUrl || undefined, settings, proxyId, solverId, priority: priorityNum, minSeeders: minSeedersNum, syncCategories, ...toggles, ...expiry } })
         }
       }}
     >
@@ -198,7 +206,7 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
         onClick={() => setShowAdvanced((v) => !v)}
       >
         <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", showAdvanced && "rotate-90")} />
-        Advanced (proxy, timeout, anti-bot solver, priority, request limits, sync behavior)
+        Advanced (proxy, timeout, anti-bot solver, priority, request limits, expiry, sync behavior)
       </button>
       {showAdvanced && (
         <div className="flex flex-col gap-4 rounded-md border border-border p-3">
@@ -238,6 +246,15 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
             <Label htmlFor="ix-min-seeders">Minimum seeders (0 = unset, not pushed)</Label>
             <Input id="ix-min-seeders" type="number" min={0} value={minSeeders} onChange={(e) => setMinSeeders(e.target.value)} />
           </span>
+
+          <ExpiryFields
+            date={expiresAt}
+            kind={expiryKind}
+            lifetime={expiryLifetime}
+            onDate={setExpiresAt}
+            onKind={setExpiryKind}
+            onLifetime={setExpiryLifetime}
+          />
 
           <SettingFieldInput field={QUERY_LIMIT_FIELD} value={values.query_limit ?? ""} onChange={setValue("query_limit")} />
           <SettingFieldInput field={GRAB_LIMIT_FIELD} value={values.grab_limit ?? ""} onChange={setValue("grab_limit")} />
@@ -287,6 +304,57 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
         {pending ? "Saving…" : mode === "edit" ? "Save changes" : "Add indexer"}
       </Button>
     </form>
+  )
+}
+
+// ExpiryFields is the VIP/membership expiry group (autobrr/harbrr#399). Native
+// <input type="date"> rather than a picker library: it already gives the exact
+// YYYY-MM-DD the API stores, plus the platform's own calendar and locale handling.
+// Leaving the date empty is "untracked" and behaves exactly as before the field
+// existed — this is opt-in bookkeeping, never a nag.
+function ExpiryFields({ date, kind, lifetime, onDate, onKind, onLifetime }: {
+  date: string
+  kind: "perk" | "account"
+  lifetime: boolean
+  onDate: (v: string) => void
+  onKind: (v: "perk" | "account") => void
+  onLifetime: (v: boolean) => void
+}) {
+  return (
+    <span className="flex flex-col gap-1.5">
+      <Label htmlFor="ix-expires-at">Expiry (optional)</Label>
+      <div className="flex gap-2">
+        <Input
+          id="ix-expires-at"
+          type="date"
+          className="flex-1"
+          disabled={lifetime}
+          value={lifetime ? "" : date}
+          onChange={(e) => onDate(e.target.value)}
+        />
+        <NativeSelect
+          aria-label="Expiry type"
+          className="flex-1"
+          value={kind}
+          onChange={(e) => onKind(e.target.value === "account" ? "account" : "perk")}
+        >
+          <option value="perk">VIP / perk</option>
+          <option value="account">Account</option>
+        </NativeSelect>
+      </div>
+      <span className="flex items-center gap-2">
+        <Checkbox
+          id="ix-expiry-lifetime"
+          checked={lifetime}
+          onCheckedChange={(checked) => onLifetime(checked === true)}
+        />
+        <Label htmlFor="ix-expiry-lifetime" className="font-normal">Lifetime (never expires)</Label>
+      </span>
+      <p className="text-[12px] text-faint">
+        Leave empty if you don&apos;t track this. harbrr warns before the date and never
+        contacts the tracker to check it &mdash; renew there, then update the date here.
+      </p>
+    </span>
   )
 }
 

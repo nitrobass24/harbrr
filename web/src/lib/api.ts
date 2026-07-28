@@ -59,6 +59,8 @@ export type ApiKey = components["schemas"]["ApiKey"]
 export type MintedApiKey = components["schemas"]["MintedApiKey"]
 export type IndexerStats = components["schemas"]["IndexerStats"]
 export type IndexerFailureCounts = components["schemas"]["IndexerStats"]["failures"]
+export type IndexerBudget = components["schemas"]["IndexerBudget"]
+export type IndexerBudgetKind = components["schemas"]["IndexerBudgetKind"]
 export type CacheStats = components["schemas"]["CacheStats"]
 export type CacheIndexerStats = components["schemas"]["CacheIndexerStats"]
 export type CacheConfig = components["schemas"]["CacheConfig"]
@@ -507,6 +509,17 @@ export class ApiClient {
     return this.unwrap(
       this.http.PUT("/api/config/adult-categories", { body: { hidden } }),
       "/api/config/adult-categories"
+    )
+  }
+
+  getExpiryThresholds(): Promise<components["schemas"]["ExpiryThresholds"]> {
+    return this.unwrap(this.http.GET("/api/config/expiry-thresholds"), "/api/config/expiry-thresholds")
+  }
+
+  setExpiryThresholds(days: number[]): Promise<components["schemas"]["ExpiryThresholds"]> {
+    return this.unwrap(
+      this.http.PUT("/api/config/expiry-thresholds", { body: { days } }),
+      "/api/config/expiry-thresholds"
     )
   }
 

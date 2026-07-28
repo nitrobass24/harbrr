@@ -68,6 +68,20 @@ export function useSetAdultCategories() {
   })
 }
 
+// The expiry lead-time dial (#399). Nothing else caches on it, so a plain
+// invalidate of its own key is the whole story.
+export function useExpiryThresholds() {
+  return useQuery({ queryKey: keys.config.expiryThresholds(), queryFn: () => api.getExpiryThresholds() })
+}
+
+export function useSetExpiryThresholds() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (days: number[]) => api.setExpiryThresholds(days),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.config.expiryThresholds() }),
+  })
+}
+
 export function useApiKeys() {
   return useQuery({ queryKey: keys.apiKeys.all, queryFn: () => api.listApiKeys() })
 }

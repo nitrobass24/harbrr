@@ -1,4 +1,4 @@
--- 0025_indexer_category_stats.sql — grab attempts + per-category indexer tallies.
+-- 0026_indexer_category_stats.sql — grab attempts + per-category indexer tallies.
 --
 -- Two additions for autobrr/harbrr#403:
 --

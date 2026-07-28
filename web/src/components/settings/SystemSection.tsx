@@ -9,9 +9,11 @@ import {
   useAdultCategories,
   useAllIndexerStats,
   useChangePassword,
+  useExpiryThresholds,
   useHealth,
   useLogLevel,
   useSetAdultCategories,
+  useSetExpiryThresholds,
   useSetLogLevel
 } from "@/hooks/useSettings"
 import { getBaseUrl } from "@/lib/base-url"
@@ -27,6 +29,7 @@ export function SystemSection() {
   return (
     <>
       <CategoriesBlock />
+      <ExpiryBlock />
       <LoggingBlock />
       {!authDisabled && <AccountBlock />}
       <AboutBlock />
@@ -69,6 +72,64 @@ function CategoriesBlock() {
       </div>
     </section>
   )
+}
+
+// ExpiryBlock is the indexer VIP/membership expiry lead-time dial (autobrr/harbrr#399):
+// how many days ahead harbrr warns about a tracked expiry date. Free text rather than a
+// set of switches because the useful values differ per operator, and the server is the
+// one authority on what is valid — it echoes back the canonical list it stored, which is
+// what gets rendered after a save.
+function ExpiryBlock() {
+  const thresholds = useExpiryThresholds()
+  const save = useSetExpiryThresholds()
+  const [draft, setDraft] = useState<string | null>(null)
+  const stored = (thresholds.data?.days ?? []).join(", ")
+  const value = draft ?? stored
+
+  return (
+    <section id="expiry" className="flex flex-col gap-3">
+      <h2 className="text-[14px] font-semibold tracking-tight">Expiry warnings</h2>
+      <div className="flex flex-col gap-2 rounded-xl border border-border bg-card px-5 py-4 text-[13px]">
+        <Label htmlFor="expiry-thresholds">Warn this many days before an expiry</Label>
+        <div className="flex gap-2">
+          <Input
+            id="expiry-thresholds"
+            className="max-w-64"
+            placeholder="30, 14, 7, 1"
+            value={value}
+            onChange={(e) => setDraft(e.target.value)}
+          />
+          <Button
+            variant="outline"
+            disabled={save.isPending || value === stored}
+            onClick={() => save.mutate(parseDays(value), {
+              onSuccess: () => {
+                setDraft(null)
+                notifySuccess("Expiry warning lead times saved")
+              },
+              onError: (err) => notifyError("Saving the lead times failed", err),
+            })}
+          >
+            {save.isPending ? "Saving…" : "Save"}
+          </Button>
+        </div>
+        <p className="text-[12px] text-faint">
+          Each lead time fires once per indexer per expiry date and re-arms when you change
+          the date, so renewing restores the whole set. The warning at 0 (the day it expires)
+          is always sent and cannot be removed. Set an expiry date on an indexer under
+          Advanced; indexers with no date are never checked.
+        </p>
+      </div>
+    </section>
+  )
+}
+
+// parseDays turns the free-text field into the numbers the API takes. Non-numeric
+// junk is dropped here rather than sent — the server would reject the request and the
+// operator would lose the rest of a good list to one stray character.
+function parseDays(raw: string): number[] {
+  return raw.split(",").map((s) => Number(s.trim()))
+    .filter((n) => Number.isInteger(n) && n >= 0)
 }
 
 function LoggingBlock() {
