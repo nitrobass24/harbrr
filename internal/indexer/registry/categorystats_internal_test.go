@@ -107,10 +107,12 @@ func TestCategoryStatsFlushRoundTrip(t *testing.T) {
 	}
 }
 
-// TestCategoryStatsFlushRetriesFailedDeltas proves an increment that could not land is
-// folded back into memory rather than lost: the row for a deleted instance fails, the
-// surviving instance's row commits, and the failed delta is written on a later flush.
-func TestCategoryStatsFlushRetriesFailedDeltas(t *testing.T) {
+// TestCategoryStatsFlushDiscardsTerminalDeltas proves the two flush outcomes: a
+// deleted instance's delta is TERMINAL (FK violation — the store discards it and the
+// flush must not fold it back, or it would re-fail every tick forever), while the
+// surviving instance's row commits and drains. Transient failures are still returned
+// by AddDeltas for fold-back; that contract lives on the store.
+func TestCategoryStatsFlushDiscardsTerminalDeltas(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -125,8 +127,8 @@ func TestCategoryStatsFlushRetriesFailedDeltas(t *testing.T) {
 	s.RecordCategoryResults(id, map[int]int64{2000: 4})
 	s.FlushCounters(ctx)
 
-	if got := s.get(9999).cat(2000).queryResults.Load(); got != 4 {
-		t.Errorf("failed delta = %d, want 4 held for retry", got)
+	if got := s.get(9999).cat(2000).queryResults.Load(); got != 0 {
+		t.Errorf("terminal delta = %d, want 0 (discarded, never retried)", got)
 	}
 	if got := s.get(id).cat(2000).queryResults.Load(); got != 0 {
 		t.Errorf("committed delta = %d, want 0 (drained)", got)
