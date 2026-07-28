@@ -57,6 +57,38 @@ func TestStatsCountsQueryAndFailure(t *testing.T) {
 	}
 }
 
+// TestStatsCountsFailedGrabAttempt proves the success-rate half of #403: a grab that
+// reached the tracker and failed counts as an ATTEMPT with no success, so the derived
+// rate is a real 0 — not the "no data" nil an untouched indexer reports.
+func TestStatsCountsFailedGrabAttempt(t *testing.T) {
+	t.Parallel()
+	reg, _ := newRegistry(t, statusDoer{status: stdhttp.StatusServiceUnavailable})
+	ctx := context.Background()
+	if _, err := reg.Add(ctx, registry.AddParams{
+		Slug: "tt", DefinitionID: "testtracker", Settings: map[string]string{"apikey": "x"},
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	idx, ok := reg.Indexer(ctx, "tt")
+	if !ok {
+		t.Fatal("Indexer(tt) not resolved")
+	}
+	if _, err := idx.Grab(ctx, "https://tracker.example/dl?id=1"); err == nil {
+		t.Fatal("Grab unexpectedly succeeded")
+	}
+
+	st, err := reg.Stats(ctx, "tt")
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if st.GrabAttempts != 1 || st.Grabs != 0 {
+		t.Errorf("attempts/grabs = %d/%d, want 1/0", st.GrabAttempts, st.Grabs)
+	}
+	if st.GrabSuccessRate == nil || *st.GrabSuccessRate != 0 {
+		t.Errorf("grabSuccessRate = %v, want a derived 0", st.GrabSuccessRate)
+	}
+}
+
 // TestStatsUnknownSlug: Stats for a missing indexer is ErrNotFound (404 at the API).
 func TestStatsUnknownSlug(t *testing.T) {
 	t.Parallel()

@@ -1,8 +1,42 @@
+import { Fragment } from "react"
+
 import { BudgetMeter } from "@/components/indexers/BudgetMeter"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { useIndexerCapabilities, useIndexerStats, useIndexerStatuses } from "@/hooks/useIndexers"
 import { relativeTime } from "@/lib/format"
-import type { Capabilities, IndexerFailureCounts } from "@/lib/api"
+import type { Capabilities, IndexerFailureCounts, IndexerStats } from "@/lib/api"
+
+// "200 · 40 failed (83%)": grabs alongside the failed attempts and the success rate, the
+// number that exposes a tracker which surfaces results reliably but fails on download.
+// Falls back to the bare count until something has been attempted, so an untouched
+// indexer never reads as 0% (autobrr/harbrr#403).
+function grabSummary(stats: IndexerStats | undefined): string {
+  if (!stats) return "—"
+  if (stats.grabSuccessRate === undefined || stats.grabAttempts === 0) return String(stats.grabs)
+  const failed = stats.grabAttempts - stats.grabs
+  return `${stats.grabs} · ${failed} failed (${Math.round(stats.grabSuccessRate * 100)}%)`
+}
+
+// Per-category tallies: which categories this indexer actually earns its place for.
+function CategoryTable({ rows }: { rows: NonNullable<IndexerStats["categories"]> }) {
+  return (
+    <section>
+      <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-faint">By category</h3>
+      <dl className="grid grid-cols-[1fr_auto_auto] gap-x-4 gap-y-1.5">
+        <dt className="text-[11px] uppercase tracking-wider text-faint">Category</dt>
+        <dd className="text-right text-[11px] uppercase tracking-wider text-faint">Results</dd>
+        <dd className="text-right text-[11px] uppercase tracking-wider text-faint">Grabs</dd>
+        {rows.map((c) => (
+          <Fragment key={c.id}>
+            <dt className="text-muted-foreground">{c.name}</dt>
+            <dd className="text-right tabular-nums">{c.results}</dd>
+            <dd className="text-right tabular-nums">{c.grabs}</dd>
+          </Fragment>
+        ))}
+      </dl>
+    </section>
+  )
+}
 
 // Sums the per-kind failure tally into the single count the details sheet displays.
 function totalFailures(failures: IndexerFailureCounts | undefined): number {
@@ -39,7 +73,7 @@ function Details({ slug }: { slug: string }) {
             <dt className="text-muted-foreground">Queries</dt>
             <dd>{stats.data?.queries ?? "—"}</dd>
             <dt className="text-muted-foreground">Grabs</dt>
-            <dd>{stats.data?.grabs ?? "—"}</dd>
+            <dd>{grabSummary(stats.data)}</dd>
             <dt className="text-muted-foreground">Avg response</dt>
             <dd>{stats.data?.avgResponseMs !== undefined ? `${stats.data.avgResponseMs} ms` : "—"}</dd>
             <dt className="text-muted-foreground">Failures</dt>
@@ -48,6 +82,8 @@ function Details({ slug }: { slug: string }) {
             <dd>{stats.data?.lastQueryAt ? relativeTime(stats.data.lastQueryAt) : "never"}</dd>
           </dl>
         </section>
+
+        {stats.data?.categories?.length ? <CategoryTable rows={stats.data.categories} /> : null}
 
         <section>
           <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-faint">Request budget</h3>

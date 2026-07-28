@@ -217,7 +217,28 @@ func (a *indexerAdapter) liveSearch(ctx context.Context, query search.Query) ([]
 		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, err)
 	}
 	a.recordCircuitSuccess(ctx)
+	a.stats.RecordCategoryResults(a.instanceID, parentCategoryCounts(releases))
 	return releases, nil
+}
+
+// parentCategoryCounts tallies how many of the returned releases fall in each standard
+// PARENT category (2040 Movies/HD -> 2000 Movies), the "which indexer is actually good
+// for music" dimension (#403). Folding to the ~10 families — instead of keeping the
+// tracker's own categories — is what keeps the durable table tiny. A release with no
+// mappable standard category counts under mapper.UncategorizedID rather than being
+// dropped.
+func parentCategoryCounts(releases []*normalizer.Release) map[int]int64 {
+	if len(releases) == 0 {
+		return nil
+	}
+	counts := make(map[int]int64, 8)
+	for _, r := range releases {
+		if r == nil {
+			continue
+		}
+		counts[mapper.PrimaryParentID(r.Categories)]++
+	}
+	return counts
 }
 
 // learnQuotaSpent marks kind's budget spent until reset when err is a tracker-declared
@@ -274,6 +295,10 @@ func (a *indexerAdapter) Grab(ctx context.Context, link string) (*search.GrabRes
 	if !a.budget.ReserveGrab(ctx, a.instanceID, a.cfg, a.clock()) {
 		return nil, fmt.Errorf("registry: grab %q: %w", a.info.ID, core.ErrBudgetExhausted)
 	}
+	// Counted here, not at the top of the method: "attempts" then means the same for
+	// grabs as for queries — it reached the tracker — so a breaker/budget refusal (which
+	// never touched it) cannot depress the indexer's success rate.
+	a.stats.RecordGrabAttempt(a.instanceID)
 	result, err := a.inner.Grab(ctx, link)
 	if err != nil {
 		// Classify grab-time failures too: a 429/503 rate-limit, a first-op login/
@@ -285,8 +310,10 @@ func (a *indexerAdapter) Grab(ctx context.Context, link string) (*search.GrabRes
 		return nil, fmt.Errorf("registry: grab %q: %w", a.info.ID, err)
 	}
 	a.recordCircuitSuccess(ctx)
-	// Count success only — a failed grab produced no download.
-	a.stats.RecordGrab(a.instanceID)
+	// Count the success (the attempt above already counted the failures), under the
+	// grabbed release's parent category — carried on the context by the /dl proxy,
+	// which sealed it into the download token when the feed was served.
+	a.stats.RecordGrab(a.instanceID, core.GrabCategory(ctx))
 	return result, nil
 }
 

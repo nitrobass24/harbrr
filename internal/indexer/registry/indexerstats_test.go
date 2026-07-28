@@ -31,23 +31,26 @@ func TestIndexerStatsRecord(t *testing.T) {
 	s.RecordQuery(id, 100*time.Millisecond)
 	s.RecordQuery(id, 300*time.Millisecond)
 	s.RecordQuery(id, -5*time.Millisecond) // a clock-skew sample clamps to 0
-	s.RecordGrab(id)
+	s.RecordGrabAttempt(id)
+	s.RecordGrabAttempt(id)
+	s.RecordGrab(id, 2000)
 
-	queries, grabs, respTotal, lastQuery, lastGrab := s.snapshot(id)
-	if queries != 3 || grabs != 1 || respTotal != 400 {
-		t.Errorf("snapshot = q %d / g %d / ms %d, want 3 / 1 / 400", queries, grabs, respTotal)
+	got := s.snapshot(id)
+	if got.queries != 3 || got.grabs != 1 || got.grabAttempts != 2 || got.respTotal != 400 {
+		t.Errorf("snapshot = q %d / ga %d / g %d / ms %d, want 3 / 2 / 1 / 400",
+			got.queries, got.grabAttempts, got.grabs, got.respTotal)
 	}
-	if !lastQuery.Equal(statsClock()) {
-		t.Errorf("lastQuery = %v, want %v", lastQuery, statsClock())
+	if !got.lastQuery.Equal(statsClock()) {
+		t.Errorf("lastQuery = %v, want %v", got.lastQuery, statsClock())
 	}
-	if !lastGrab.Equal(statsClock()) {
-		t.Errorf("lastGrab = %v, want %v", lastGrab, statsClock())
+	if !got.lastGrab.Equal(statsClock()) {
+		t.Errorf("lastGrab = %v, want %v", got.lastGrab, statsClock())
 	}
 
 	// An instance with no recorded traffic snapshots to zeroes / zero times.
-	q, g, ms, lq, lg := s.snapshot(99)
-	if q != 0 || g != 0 || ms != 0 || !lq.IsZero() || !lg.IsZero() {
-		t.Errorf("empty snapshot = %d/%d/%d/%v/%v, want all zero", q, g, ms, lq, lg)
+	empty := s.snapshot(99)
+	if empty != (statSnapshot{}) {
+		t.Errorf("empty snapshot = %+v, want the zero value", empty)
 	}
 }
 
@@ -68,7 +71,8 @@ func TestIndexerStatsSurviveRestart(t *testing.T) {
 	}
 	s1.RecordQuery(id, 200*time.Millisecond)
 	s1.RecordQuery(id, 200*time.Millisecond)
-	s1.RecordGrab(id)
+	s1.RecordGrabAttempt(id)
+	s1.RecordGrab(id, 2000)
 	s1.FlushCounters(ctx)
 	if err := db1.Close(); err != nil {
 		t.Fatalf("close db1: %v", err)
@@ -79,12 +83,13 @@ func TestIndexerStatsSurviveRestart(t *testing.T) {
 	if err := s2.RehydrateCounters(ctx); err != nil {
 		t.Fatalf("rehydrate #2: %v", err)
 	}
-	queries, grabs, respTotal, lastQuery, lastGrab := s2.snapshot(id)
-	if queries != 2 || grabs != 1 || respTotal != 400 {
-		t.Errorf("after restart = q %d / g %d / ms %d, want 2 / 1 / 400", queries, grabs, respTotal)
+	got := s2.snapshot(id)
+	if got.queries != 2 || got.grabAttempts != 1 || got.grabs != 1 || got.respTotal != 400 {
+		t.Errorf("after restart = q %d / ga %d / g %d / ms %d, want 2 / 1 / 1 / 400",
+			got.queries, got.grabAttempts, got.grabs, got.respTotal)
 	}
-	if !lastQuery.Equal(statsClock()) || !lastGrab.Equal(statsClock()) {
-		t.Errorf("timestamps after restart = %v / %v, want %v", lastQuery, lastGrab, statsClock())
+	if !got.lastQuery.Equal(statsClock()) || !got.lastGrab.Equal(statsClock()) {
+		t.Errorf("timestamps after restart = %v / %v, want %v", got.lastQuery, got.lastGrab, statsClock())
 	}
 }
 
@@ -162,7 +167,7 @@ func TestIndexerStatsForgetInstance(t *testing.T) {
 	s.RecordQuery(id2, time.Millisecond)
 
 	s.ForgetInstance(id2)
-	if q, _, _, _, _ := s.snapshot(id2); q != 0 {
+	if q := s.snapshot(id2).queries; q != 0 {
 		t.Errorf("forgotten instance still snapshots %d queries, want 0", q)
 	}
 
@@ -198,11 +203,11 @@ func TestIndexerStatsRehydrateMaxTimestamp(t *testing.T) {
 		t.Fatalf("rehydrate: %v", err)
 	}
 	// Counts add (1 stored + 1 session), last-query stays the newer session time.
-	queries, _, _, lastQuery, _ := s.snapshot(id)
-	if queries != 2 {
-		t.Errorf("queries = %d, want 2 (stored + session)", queries)
+	got := s.snapshot(id)
+	if got.queries != 2 {
+		t.Errorf("queries = %d, want 2 (stored + session)", got.queries)
 	}
-	if !lastQuery.Equal(statsClock()) {
-		t.Errorf("lastQuery = %v, want %v (newer session time not rewound)", lastQuery, statsClock())
+	if !got.lastQuery.Equal(statsClock()) {
+		t.Errorf("lastQuery = %v, want %v (newer session time not rewound)", got.lastQuery, statsClock())
 	}
 }

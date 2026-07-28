@@ -272,6 +272,9 @@ func (rt *router) mountSystemRoutes(r chi.Router) {
 	r.Get("/api/config/expiry-thresholds", rt.getExpiryThresholds)
 	r.Put("/api/config/expiry-thresholds", rt.putExpiryThresholds)
 
+	r.Get("/api/config/stats-retention", rt.getStatsRetention)
+	r.Put("/api/config/stats-retention", rt.putStatsRetention)
+
 	r.Post("/api/logs/frontend", rt.postFrontendLog)
 
 	r.Get("/api/server-info", rt.serverInfo)

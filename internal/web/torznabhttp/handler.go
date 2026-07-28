@@ -234,7 +234,7 @@ func ServeGrab(w http.ResponseWriter, r *http.Request, idx core.Indexer, dlToken
 		errw(w, http.StatusServiceUnavailable, "download proxy is not enabled")
 		return
 	}
-	link, err := decodeDLToken(dlToken, idx.Info().ID, token)
+	categoryID, link, err := decodeDLToken(dlToken, idx.Info().ID, token)
 	if err != nil {
 		// The error never carries the link; an invalid/forged token is a bad request.
 		errw(w, http.StatusBadRequest, "invalid download token")
@@ -244,7 +244,9 @@ func ServeGrab(w http.ResponseWriter, r *http.Request, idx core.Indexer, dlToken
 	// bound to this indexer, including when credential storage runs in plaintext mode.
 	// An apikey-holder therefore cannot forge an attacker-host link that makes Grab
 	// disclose the indexer's cookie/header credentials or act as an SSRF primitive.
-	result, err := idx.Grab(r.Context(), link)
+	// The sealed category rides through on the context so the stats layer can tally the
+	// grab under the release's family without widening the Indexer contract (#403).
+	result, err := idx.Grab(core.WithGrabCategory(r.Context(), categoryID), link)
 	if err != nil {
 		logInternalError(log, "grab", idx.Info().ID, err)
 		errw(w, http.StatusInternalServerError, internalErrorDescription(err))

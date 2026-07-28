@@ -154,11 +154,13 @@ type torznabAttr struct {
 
 // AcquisitionRewriter optionally replaces a release's served <link>/<enclosure>
 // URL and its <guid>. It receives the default acquisition link (the resolved link,
-// else the magnet) and returns the replacement link, a replacement guid, and
-// ok=true to apply them; ok=false keeps the defaults. The Torznab handler uses it to
-// route a resolver-needing indexer's links through the /dl proxy so a passkey-bearing
-// link never reaches the feed, while keeping a stable, passkey-free guid.
-type AcquisitionRewriter func(acquisitionLink string) (link, guid string, ok bool)
+// else the magnet) and the release's newznab categories, and returns the replacement
+// link, a replacement guid, and ok=true to apply them; ok=false keeps the defaults. The
+// Torznab handler uses it to route a resolver-needing indexer's links through the /dl
+// proxy so a passkey-bearing link never reaches the feed, while keeping a stable,
+// passkey-free guid. The categories ride along so the sealed token can carry the
+// release's family for the per-category grab tally (autobrr/harbrr#403).
+type AcquisitionRewriter func(acquisitionLink string, categories []int) (link, guid string, ok bool)
 
 // MarshalResultsRewritten renders the Torznab results feed (t=search and the typed
 // search modes) for an indexer's releases, with the resolved paging window (emitted as
@@ -272,7 +274,7 @@ func buildItem(feed FeedInfo, r *normalizer.Release, now time.Time, rewrite Acqu
 	link := acquisitionLink(r)
 	guid := GUIDFor(r)
 	if rewrite != nil {
-		if newLink, newGUID, ok := rewrite(link); ok {
+		if newLink, newGUID, ok := rewrite(link, r.Categories); ok {
 			// The rewriter always seals the credential-bearing link behind the /dl
 			// proxy. Its synthesized passkey-free guid is only needed when the release
 			// carries no upstream id; when it does, GUIDFor already chose that stable
