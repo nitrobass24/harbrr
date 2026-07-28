@@ -149,10 +149,19 @@ type settingResponse struct {
 	Secret bool   `json:"secret"`
 }
 
-// instanceDetailResponse is an instance plus its (redacted) settings.
+// instanceDetailResponse is an instance plus its (redacted) settings and its
+// base-URL failover standing (autobrr/harbrr#375).
 type instanceDetailResponse struct {
 	instanceResponse
 	Settings []settingResponse `json:"settings"`
+	// EffectiveBaseURL is the host this indexer actually talks to right now, which
+	// differs from baseUrl when a failover promoted another of the definition's links.
+	EffectiveBaseURL string `json:"effectiveBaseUrl"`
+	// FailoverBaseURL is non-empty only while a promotion is in effect — the "currently
+	// using B" the operator can revert by clearing the failover_base_url setting.
+	FailoverBaseURL string `json:"failoverBaseUrl,omitempty"`
+	// FailoverDisabled is the operator pin: automatic failover is off for this indexer.
+	FailoverDisabled bool `json:"failoverDisabled"`
 }
 
 // listIndexers returns all configured indexers.
@@ -225,9 +234,18 @@ func (rt *router) getIndexer(w http.ResponseWriter, r *http.Request) {
 	for _, v := range views {
 		settings = append(settings, settingResponse{Name: v.Name, Value: v.Value, Secret: v.Secret})
 	}
+	// Best-effort, like the list view's freeleech resolution: a definition that fails
+	// to load must not turn a readable indexer into a 500.
+	failover, err := rt.registry.FailoverState(r.Context(), inst)
+	if err != nil {
+		rt.log.Warn().Err(err).Str("slug", inst.Slug).Msg("resolve failover state")
+	}
 	writeJSON(w, http.StatusOK, instanceDetailResponse{
 		instanceResponse: toInstanceResponse(inst),
 		Settings:         settings,
+		EffectiveBaseURL: failover.EffectiveBaseURL,
+		FailoverBaseURL:  failover.PromotedBaseURL,
+		FailoverDisabled: failover.Disabled,
 	})
 }
 

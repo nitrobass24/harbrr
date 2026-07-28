@@ -72,6 +72,10 @@ const EXISTING: InstanceDetail = {
     { name: "username", value: "alice", secret: false },
     { name: "apikey", value: REDACTED, secret: true },
   ],
+  // The base-URL failover standing the detail endpoint always returns (#375): this
+  // indexer is on its configured host with no promotion in effect.
+  effectiveBaseUrl: "https://html.invalid/",
+  failoverDisabled: false,
 }
 
 describe("IndexerForm", () => {

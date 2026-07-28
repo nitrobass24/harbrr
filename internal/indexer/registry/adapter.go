@@ -77,8 +77,14 @@ type indexerAdapter struct {
 	// reserve capacity before an outbound hit, and a tracker-declared quota error marks
 	// the relevant kind spent until reset (the reactive-learning path).
 	budget *RequestBudget
-	clock  func() time.Time
-	log    zerolog.Logger
+	// failover probes the definition's other known links and promotes the first that
+	// works, returning the promoted host ("" when nothing was promoted). The resolver
+	// owns it because promoting means rebuilding the engine; the adapter owns only the
+	// decision to ask (autobrr/harbrr#375). Nil in the internal tests that hand-build a
+	// bare adapter.
+	failover func(ctx context.Context) (string, error)
+	clock    func() time.Time
+	log      zerolog.Logger
 }
 
 // Compile-time proof the adapter satisfies the handler's contract, including
@@ -413,10 +419,12 @@ func recoveryDetail(initialFailure, now time.Time) string {
 
 // escalateCircuit climbs the instance's escalation ladder one rung after a
 // classified failure, mirroring recordHealth's best-effort semantics: a failed
-// read/write is logged and never masks the original search/grab error.
-func (a *indexerAdapter) escalateCircuit(ctx context.Context, kind string, err error) {
+// read/write is logged and never masks the original search/grab error. It returns the
+// state it wrote (the zero value when it could not write one), which carries the
+// failure streak the base-URL failover reads.
+func (a *indexerAdapter) escalateCircuit(ctx context.Context, kind string, err error) database.CircuitState {
 	if a.db == nil {
-		return
+		return database.CircuitState{}
 	}
 	unlock := a.circuitLocks.lock(a.instanceID)
 	defer unlock()
@@ -424,13 +432,14 @@ func (a *indexerAdapter) escalateCircuit(ctx context.Context, kind string, err e
 	if gerr != nil {
 		a.log.Warn().Str("indexer", a.info.ID).Str("error", apphttp.RedactError(gerr)).
 			Msg("registry: read circuit state failed")
-		return
+		return database.CircuitState{}
 	}
 	next := escalate(state, kind, errors.Is(err, search.ErrGatewayStatus), retryAfterOf(err), a.clock(), a.startedAt)
 	if uerr := a.circuit.Upsert(ctx, a.db, next); uerr != nil {
 		a.log.Warn().Str("indexer", a.info.ID).Str("error", apphttp.RedactError(uerr)).
 			Msg("registry: record circuit escalation failed")
 	}
+	return next
 }
 
 // recordHealth classifies err and, when it is one of the health kinds,
@@ -451,13 +460,18 @@ func (a *indexerAdapter) recordHealth(ctx context.Context, err error) {
 		a.log.Warn().Str("indexer", a.info.ID).Str("error", apphttp.RedactError(rerr)).
 			Msg("registry: record health event failed")
 	}
-	a.escalateCircuit(ctx, kind, err)
+	state := a.escalateCircuit(ctx, kind, err)
 	// Notify the sink after recording, best-effort: it owns its own async dispatch and
 	// must never block or error back into the search path. The detail is already
 	// scrubbed (RedactError above).
 	if a.healthSink != nil {
 		a.healthSink.OnHealthEvent(ctx, a.info.ID, ev.Kind, ev.Detail)
 	}
+	// Last, and only for a host-shaped failure that has been repeating: try the other
+	// hosts this definition knows about (#375). Ordered after the event write because
+	// the trigger reads the recorded events, and after the sink because a failover is
+	// the slow step and must not delay the failure notification.
+	a.maybeFailover(ctx, kind, state)
 }
 
 // classifyHealth maps an engine error to a health-event kind. Returns ok=false

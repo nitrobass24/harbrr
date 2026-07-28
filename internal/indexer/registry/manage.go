@@ -409,6 +409,47 @@ func (r *Manager) Freeleech(ctx context.Context, inst domain.IndexerInstance) (b
 	return settingEnabled(cfg["freeleech"]) || settingEnabled(cfg["freeleech_only"]), nil
 }
 
+// FailoverState is one indexer's base-URL failover standing (autobrr/harbrr#375):
+// which host it ACTUALLY talks to, whether a failover put it there (empty when the
+// operator's own configuration did), and whether the operator pinned it. The pair is
+// the API's "configured A, currently using B" — clearing PromotedBaseURL (PATCH the
+// indexer with settings.failover_base_url = "") is the revert.
+type FailoverState struct {
+	EffectiveBaseURL string
+	PromotedBaseURL  string
+	Disabled         bool
+}
+
+// FailoverState resolves inst's failover standing the same way the engine build does,
+// so what the API reports is what the next search will actually use. Mirrors
+// Freeleech: it reads the definition and the instance's settings itself, and neither
+// setting is a secret, so no decryption pass is needed.
+func (r *Manager) FailoverState(ctx context.Context, inst domain.IndexerInstance) (FailoverState, error) {
+	def, _, err := resolveDefinition(r.native, r.loader, inst.DefinitionID)
+	if err != nil {
+		return FailoverState{}, fmt.Errorf("registry: load definition %q: %w", inst.DefinitionID, err)
+	}
+	settings, err := r.instances.Settings(ctx, r.db, inst.ID)
+	if err != nil {
+		return FailoverState{}, fmt.Errorf("registry: get settings for %q: %w", inst.Slug, err)
+	}
+	cfg := make(map[string]string, 2)
+	for _, s := range settings {
+		if s.Name == failoverBaseURLSetting || s.Name == failoverDisabledSetting {
+			cfg[s.Name] = s.Value
+		}
+	}
+	effective := effectiveBaseURL(inst, def, cfg)
+	state := FailoverState{EffectiveBaseURL: effective, Disabled: settingEnabled(cfg[failoverDisabledSetting])}
+	// Reported as promoted only when the promotion is the reason for the effective
+	// host: a stored value the definition no longer lists is already ignored by
+	// effectiveBaseURL, and reporting it here would offer a revert from nothing.
+	if effective == cfg[failoverBaseURLSetting] {
+		state.PromotedBaseURL = effective
+	}
+	return state, nil
+}
+
 // List returns all configured instances.
 func (r *Manager) List(ctx context.Context) ([]domain.IndexerInstance, error) {
 	list, err := r.instances.List(ctx, r.db)

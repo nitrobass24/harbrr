@@ -166,6 +166,13 @@ func (Health) AllCounts(ctx context.Context, q dbinterface.Execer) (map[int64]He
 // count to the matching field and advances LastFailureAt to the newest occurrence
 // across all kinds. An unrecognized kind contributes only to LastFailureAt.
 func applyHealthCount(hc *HealthCounts, kind string, count int64, maxOcc sql.NullString) {
+	// A base-URL promotion (#375) shares the event table but is not a failure, so it
+	// contributes to no tally AND must not advance LastFailureAt — an indexer that
+	// failed over and has worked ever since would otherwise report its recovery as
+	// its most recent failure.
+	if kind == domain.HealthBaseURLPromoted {
+		return
+	}
 	switch kind {
 	case domain.HealthAuthFailure:
 		hc.AuthFailure = count
