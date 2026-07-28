@@ -339,3 +339,44 @@ func TestAdultCategoriesFeedUntouched(t *testing.T) {
 		t.Errorf("the feed caps must still advertise the XXX family:\n%s", body)
 	}
 }
+
+// TestAdultHidingKeepsAggregateLedgerConsistent pins the invariant the aggregate search
+// surface exists for: when adult hiding drops releases from the merged window, each
+// member's ledger Count must still equal the releases actually served for it. A ledger
+// row claiming more than the page shows is the page disagreeing with itself — the exact
+// failure the server-merged design removes (review finding on autobrr/harbrr#372).
+func TestAdultHidingKeepsAggregateLedgerConsistent(t *testing.T) {
+	t.Parallel()
+	_, base, c := adultEnv(t)
+	setHidden(t, base, c, true)
+
+	resp, body := do(t, c, http.MethodGet, base+"/api/search?indexers=adult&q=release", nil, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (%s)", resp.StatusCode, body)
+	}
+	var got struct {
+		Results []struct {
+			Indexer string `json:"indexer"`
+		} `json:"results"`
+		Members []struct {
+			Slug  string `json:"slug"`
+			Count int    `json:"count"`
+		} `json:"members"`
+		Total int `json:"total"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("decode: %v (%s)", err, body)
+	}
+	served := map[string]int{}
+	for _, r := range got.Results {
+		served[r.Indexer]++
+	}
+	for _, m := range got.Members {
+		if m.Count != served[m.Slug] {
+			t.Errorf("member %q ledger Count = %d, but %d releases served for it", m.Slug, m.Count, served[m.Slug])
+		}
+	}
+	if got.Total != len(got.Results) {
+		t.Errorf("total = %d, want %d (the served window)", got.Total, len(got.Results))
+	}
+}

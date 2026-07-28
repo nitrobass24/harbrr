@@ -19,10 +19,13 @@ const CAPS = { categories: [{ id: 2000, name: "Movies" }, { id: 5000, name: "TV"
 // The server-merged window: releases in server order, each naming its origin, plus the
 // per-member ledger and the total the server stands behind (autobrr/harbrr#372).
 const RESULTS = {
+  // publishDate is deliberately NOT in array order: without dates the default age sort
+  // is a no-op and "renders server order" passes vacuously (review finding). Newest is
+  // Big Buck Bunny, and it is served LAST — so seeing it first proves the sort ran.
   results: [
-    { indexer: "demotracker", release: { title: "Big Buck Bunny 2160p x265", categories: [2000], seeders: 9, size: 100 } },
-    { indexer: "demotracker", release: { title: "Sintel S01E02 1080p x264", categories: [5000], seeders: 5, size: 100 } },
-    { indexer: "demotracker", release: { title: "Tears of Steel 1080p x265", categories: [2000], seeders: 1, size: 100 } },
+    { indexer: "demotracker", release: { title: "Sintel S01E02 1080p x264", categories: [5000], seeders: 5, size: 100, publishDate: "2026-07-01T00:00:00Z" } },
+    { indexer: "demotracker", release: { title: "Tears of Steel 1080p x265", categories: [2000], seeders: 1, size: 100, publishDate: "2026-07-10T00:00:00Z" } },
+    { indexer: "demotracker", release: { title: "Big Buck Bunny 2160p x265", categories: [2000], seeders: 9, size: 100, publishDate: "2026-07-20T00:00:00Z" } },
   ],
   members: [{ slug: "demotracker", name: "Demo", status: "ok", count: 3 }],
   total: 3,
@@ -196,13 +199,26 @@ describe("Search route — server-merged aggregate (autobrr/harbrr#372)", () => 
     await submitSearch(stubFetch())
     await screen.findByText("3 results")
 
-    // Server order is publish-date desc — the fixture's order — until a column is clicked.
+    // Default order is publish-date desc (newest first). The fixture serves the newest
+    // release LAST, so this only passes if the age sort actually ran over the window.
     const titles = () => screen.getAllByRole("row").slice(1).map((r) => r.textContent ?? "")
     expect(titles()[0]).toContain("Big Buck Bunny")
+    expect(titles()[2]).toContain("Sintel")
 
     fireEvent.click(screen.getByRole("button", { name: /Title/ }))
     await waitFor(() => expect(titles()[0]).toContain("Tears of Steel")) // title desc
     expect(titles()[2]).toContain("Big Buck Bunny")
+  })
+
+  it("does not hang on Searching when the subset is empty", async () => {
+    // A DISABLED react-query stays `pending` forever, so the searching flag must also
+    // require a non-empty subset — otherwise an operator with nothing selected sees
+    // "Searching 0 indexers…" indefinitely, with results and ledger unreachable
+    // (review finding). No enabled indexers is the same empty-subset condition.
+    stubFetch(() => Promise.resolve(json(RESULTS)), [])
+    renderSearch()
+    await screen.findByRole("button", { name: "Search" })
+    await waitFor(() => expect(screen.queryByText(/Searching/)).toBeNull())
   })
 
   it("surfaces a failed search instead of rendering an empty result set", async () => {

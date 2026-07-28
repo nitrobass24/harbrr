@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query"
+import { skipToken, useQuery } from "@tanstack/react-query"
 import { api } from "@/lib/api"
 import type { SearchParams } from "@/lib/api"
 import { keys } from "@/lib/query"
@@ -11,7 +11,9 @@ import { keys } from "@/lib/query"
 export function useSearchAggregate(slugs: string[], params: SearchParams | null) {
   return useQuery({
     queryKey: keys.search.aggregate(slugs, params),
-    queryFn: () => api.searchAggregate(slugs, params as SearchParams),
+    // Narrowed, not asserted: `enabled` already guarantees params is non-null, and a
+    // cast would keep compiling if that guard ever changed.
+    queryFn: params === null ? skipToken : () => api.searchAggregate(slugs, params),
     enabled: params !== null && slugs.length > 0,
     retry: false,
     staleTime: 60_000, // the server-side cache is authoritative; avoid re-fetch churn

@@ -92,7 +92,10 @@ function SearchPage() {
     if (!invalidFilter) lastValidFilter.current = deferredFilter
   }, [invalidFilter, deferredFilter])
 
-  const searching = submitted !== null && results.isPending
+  // Mirrors useSearchAggregate's enabled condition: a DISABLED query stays `pending`
+  // forever, so without the subset check an empty indexer selection would render
+  // "Searching 0 indexers…" indefinitely and hide the results/ledger (review finding).
+  const searching = submitted !== null && active.length > 0 && results.isPending
   const total = results.data?.total ?? rows.length
 
   const search = () => {

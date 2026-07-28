@@ -260,13 +260,22 @@ func (rt *router) dropAdultAggregateReleases(res core.AggregateResult, q url.Val
 		return res
 	}
 	kept := make([]core.AggregateRelease, 0, len(res.Releases))
+	dropped := make(map[string]int, len(res.Members))
 	for _, rel := range res.Releases {
-		if !isAdultRelease(rel.Release) {
-			kept = append(kept, rel)
+		if isAdultRelease(rel.Release) {
+			// Track the origin so the LEDGER stays consistent with what is served: a
+			// member row claiming 34 beside 30 rendered rows is the page disagreeing
+			// with itself, which is the whole failure this surface exists to avoid.
+			dropped[rel.Indexer.Info().ID]++
+			continue
 		}
+		kept = append(kept, rel)
 	}
 	res.Total -= len(res.Releases) - len(kept)
 	res.Releases = kept
+	for i := range res.Members {
+		res.Members[i].Count -= dropped[res.Members[i].ID]
+	}
 	return res
 }
 
