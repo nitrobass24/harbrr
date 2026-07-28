@@ -1712,6 +1712,11 @@ export interface components {
                  * @description Present only while the circuit breaker (autobrr/harbrr#253) currently excludes the indexer from search/grab dispatch.
                  */
                 disabledTill?: string;
+                /**
+                 * Format: date-time
+                 * @description When the current failure streak began — present only while the derived status is failing (autobrr/harbrr#389).
+                 */
+                failingSince?: string;
             }[];
         };
         InstanceDetail: components["schemas"]["Instance"] & {
@@ -3022,7 +3027,10 @@ export interface operations {
     };
     allIndexerStatus: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Narrow the indexers array to one derived state. The healthy/failing/unknown counts stay fleet-wide so a filtered caller still sees the whole picture. */
+                status?: "healthy" | "failing" | "unknown";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3038,6 +3046,7 @@ export interface operations {
                     "application/json": components["schemas"]["FleetStatus"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
         };
     };
@@ -3218,6 +3227,11 @@ export interface operations {
                          * @description Present only while the circuit breaker (autobrr/harbrr#253) currently excludes the indexer from search/grab dispatch.
                          */
                         disabledTill?: string;
+                        /**
+                         * Format: date-time
+                         * @description When the current failure streak began — present only while the derived status is failing (autobrr/harbrr#389).
+                         */
+                        failingSince?: string;
                     };
                 };
             };

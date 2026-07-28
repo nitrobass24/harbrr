@@ -25,6 +25,7 @@ type fleetStatusBody struct {
 			Detail     string    `json:"detail"`
 			OccurredAt time.Time `json:"occurred_at"`
 		} `json:"lastEvent"`
+		FailingSince *time.Time `json:"failingSince"`
 	} `json:"indexers"`
 }
 
@@ -50,18 +51,18 @@ func TestAllIndexerStatusEmptyFleet(t *testing.T) {
 	}
 }
 
-// TestAllIndexerStatus covers all three derived states (#389) in one roll-up: an
-// indexer that just passed a test (healthy), one with a recent failure (failing), one
-// that has never been heard from (unknown), and one whose failure has aged out of the
-// window (unknown, but lastEvent still reports the old failure). Sorted by slug.
-func TestAllIndexerStatus(t *testing.T) {
-	t.Parallel()
-	e := authDisabledEnv(t)
-	ctx := context.Background()
+// fleetSlugs is the seeded fleet, in the sorted order the roll-up returns.
+var fleetSlugs = []string{"failing-recent", "healthy-tested", "unknown-idle", "unknown-stale"}
 
-	slugs := []string{"failing-recent", "healthy-tested", "unknown-idle", "unknown-stale"}
+// seedHealthFleet configures four indexers covering all three derived states (#389):
+// one with a recent failure (failing), one that just passed a test (healthy), one never
+// heard from (unknown), and one whose failure has aged out of the window (unknown, but
+// its old event is still reported).
+func seedHealthFleet(t *testing.T, e *env) {
+	t.Helper()
+	ctx := context.Background()
 	instanceIDs := map[string]int64{}
-	for _, slug := range slugs {
+	for _, slug := range fleetSlugs {
 		inst, err := e.registry.Add(ctx, registry.AddParams{
 			Slug: slug, DefinitionID: "testtracker", Settings: map[string]string{"apikey": "x"},
 		})
@@ -97,6 +98,15 @@ func TestAllIndexerStatus(t *testing.T) {
 	if err := health.RecordRecovery(ctx, e.db, instanceIDs["healthy-tested"], time.Now()); err != nil {
 		t.Fatalf("record recovery: %v", err)
 	}
+}
+
+// TestAllIndexerStatus covers all three derived states (#389) in one roll-up, sorted
+// by slug.
+func TestAllIndexerStatus(t *testing.T) {
+	t.Parallel()
+	e := authDisabledEnv(t)
+	slugs := fleetSlugs
+	seedHealthFleet(t, e)
 
 	base, c := serve(t, e)
 	resp, body := do(t, c, http.MethodGet, base+"/api/indexers/status", nil, nil)
@@ -148,4 +158,58 @@ func TestAllIndexerStatus(t *testing.T) {
 	if lastEventKind["failing-recent"] != "auth_failure" {
 		t.Errorf("failing-recent lastEvent.kind = %q, want auth_failure (the newest of its two events)", lastEventKind["failing-recent"])
 	}
+}
+
+// TestAllIndexerStatusFilter: ?status= narrows the indexers array to exactly the
+// derived set (#389 PR 3) while the counts stay fleet-wide, and an unrecognized value
+// is a 400 rather than a silently empty list.
+func TestAllIndexerStatusFilter(t *testing.T) {
+	t.Parallel()
+	e := authDisabledEnv(t)
+	seedHealthFleet(t, e)
+	base, c := serve(t, e)
+
+	tests := []struct {
+		name  string
+		query string
+		want  []string
+	}{
+		{name: "healthy", query: "?status=healthy", want: []string{"healthy-tested"}},
+		{name: "failing", query: "?status=failing", want: []string{"failing-recent"}},
+		{name: "unknown", query: "?status=unknown", want: []string{"unknown-idle", "unknown-stale"}},
+		{name: "empty value is no filter", query: "?status=", want: fleetSlugs},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			resp, body := do(t, c, http.MethodGet, base+"/api/indexers/status"+tt.query, nil, nil)
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, body)
+			}
+			var out fleetStatusBody
+			if err := json.Unmarshal(body, &out); err != nil {
+				t.Fatalf("unmarshal: %v (body %s)", err, body)
+			}
+			if out.Healthy != 1 || out.Failing != 1 || out.Unknown != 2 {
+				t.Errorf("counts = healthy=%d failing=%d unknown=%d, want the fleet-wide 1/1/2",
+					out.Healthy, out.Failing, out.Unknown)
+			}
+			if len(out.Indexers) != len(tt.want) {
+				t.Fatalf("indexers = %+v, want %v", out.Indexers, tt.want)
+			}
+			for i, want := range tt.want {
+				if out.Indexers[i].Slug != want {
+					t.Errorf("indexers[%d].slug = %q, want %q", i, out.Indexers[i].Slug, want)
+				}
+			}
+		})
+	}
+
+	t.Run("unrecognized value is a 400", func(t *testing.T) {
+		t.Parallel()
+		resp, body := do(t, c, http.MethodGet, base+"/api/indexers/status?status=degraded", nil, nil)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400 (body %s)", resp.StatusCode, body)
+		}
+	})
 }

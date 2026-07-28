@@ -709,14 +709,24 @@ func failingWindow(level int) time.Duration {
 	return min(window, failingWindowCap)
 }
 
+// ValidStatus reports whether s is one of the three derived states. It is the one
+// place the wire vocabulary is checked, so a caller selecting by health (the API's
+// ?status= filter, later the status: feed slug in autobrr/harbrr#400) never re-types
+// the literals.
+func ValidStatus(s string) bool {
+	return s == StatusHealthy || s == StatusFailing || s == StatusUnknown
+}
+
 // HealthStatus is one indexer's derived health plus the recent events behind it
 // (details already credential-scrubbed at write time). DisabledTill is non-nil
-// while the circuit breaker (#253) currently excludes the indexer from dispatch.
+// while the circuit breaker (#253) currently excludes the indexer from dispatch;
+// FailingSince mirrors FleetStatus.
 type HealthStatus struct {
 	Slug         string
 	Status       string
 	Events       []domain.IndexerHealthEvent
 	DisabledTill *time.Time
+	FailingSince *time.Time
 }
 
 // Status returns the indexer's derived health and recent events. An unknown slug
@@ -726,21 +736,28 @@ func (r *StatsReporter) Status(ctx context.Context, slug string) (HealthStatus, 
 	if err != nil {
 		return HealthStatus{}, fmt.Errorf("registry: status %q: %w", slug, err)
 	}
-	events, status, disabledTill, err := r.statusOf(ctx, inst.ID, healthEventLimit)
+	snap, err := r.statusOf(ctx, inst.ID, healthEventLimit)
 	if err != nil {
 		return HealthStatus{}, fmt.Errorf("registry: status %q: %w", slug, err)
 	}
-	return HealthStatus{Slug: slug, Status: status, Events: events, DisabledTill: disabledTill}, nil
+	return HealthStatus{
+		Slug: slug, Status: snap.status, Events: snap.events,
+		DisabledTill: snap.disabledTill, FailingSince: snap.failingSince,
+	}, nil
 }
 
 // FleetStatus is one indexer's derived health for the fleet-wide roll-up: the
 // status plus its single most recent health event (Events is empty when it has
 // none, mirroring HealthStatus.Events). DisabledTill mirrors HealthStatus.
+// FailingSince is when the current failure streak began (the circuit's
+// InitialFailure) — non-nil only while the status is failing and the ladder has
+// actually been climbed, so it never claims a start time for a working indexer.
 type FleetStatus struct {
 	Slug         string
 	Status       string
 	Events       []domain.IndexerHealthEvent
 	DisabledTill *time.Time
+	FailingSince *time.Time
 }
 
 // AllStatuses returns every configured instance's derived health, sorted by slug.
@@ -755,31 +772,62 @@ func (r *StatsReporter) AllStatuses(ctx context.Context) ([]FleetStatus, error) 
 	sort.Slice(list, func(i, j int) bool { return list[i].Slug < list[j].Slug })
 	out := make([]FleetStatus, 0, len(list))
 	for _, inst := range list {
-		events, status, disabledTill, err := r.statusOf(ctx, inst.ID, 1)
+		snap, err := r.statusOf(ctx, inst.ID, 1)
 		if err != nil {
 			return nil, fmt.Errorf("registry: all statuses %q: %w", inst.Slug, err)
 		}
-		out = append(out, FleetStatus{Slug: inst.Slug, Status: status, Events: events, DisabledTill: disabledTill})
+		out = append(out, FleetStatus{
+			Slug: inst.Slug, Status: snap.status, Events: snap.events,
+			DisabledTill: snap.disabledTill, FailingSince: snap.failingSince,
+		})
 	}
 	return out, nil
+}
+
+// SlugsWithStatus returns the slugs of every configured indexer whose derived status
+// is want, sorted by slug. It is AllStatuses filtered — the same single derivation,
+// never a second copy — so a caller selecting members by health (the status: feed
+// slug, autobrr/harbrr#400) can do it without re-deriving anything.
+func (r *StatsReporter) SlugsWithStatus(ctx context.Context, want string) ([]string, error) {
+	all, err := r.AllStatuses(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(all))
+	for _, st := range all {
+		if st.Status == want {
+			out = append(out, st.Slug)
+		}
+	}
+	return out, nil
+}
+
+// healthSnapshot is statusOf's result: the derived status, the events it was derived
+// from, and the two operator-visible instants behind it (both nil unless they apply).
+type healthSnapshot struct {
+	events       []domain.IndexerHealthEvent
+	status       string
+	disabledTill *time.Time
+	failingSince *time.Time
 }
 
 // statusOf is the shared derivation core behind Status and AllStatuses: it fetches
 // the instance's most recent events (capped at limit), its recovery marker, and its
 // circuit-breaker state, and derives the status exactly the same way for both
-// callers. The returned *time.Time is non-nil only while the circuit is open.
-func (r *StatsReporter) statusOf(ctx context.Context, instanceID int64, limit int) ([]domain.IndexerHealthEvent, string, *time.Time, error) {
+// callers. disabledTill is non-nil only while the circuit is open; failingSince only
+// while the derived status is failing.
+func (r *StatsReporter) statusOf(ctx context.Context, instanceID int64, limit int) (healthSnapshot, error) {
 	events, err := r.health.Recent(ctx, r.db, instanceID, limit)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("events: %w", err)
+		return healthSnapshot{}, fmt.Errorf("events: %w", err)
 	}
 	recovery, err := r.health.Recovery(ctx, r.db, instanceID)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("recovery: %w", err)
+		return healthSnapshot{}, fmt.Errorf("recovery: %w", err)
 	}
 	circuit, err := r.circuit.Get(ctx, r.db, instanceID)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("circuit: %w", err)
+		return healthSnapshot{}, fmt.Errorf("circuit: %w", err)
 	}
 	now := r.clock()
 	var disabledTill *time.Time
@@ -794,7 +842,15 @@ func (r *StatsReporter) statusOf(ctx context.Context, instanceID int64, limit in
 		level:     circuit.EscalationLevel,
 		lastQuery: r.stats.snapshot(instanceID).lastQuery,
 	}
-	return events, r.deriveStatus(signals), disabledTill, nil
+	snap := healthSnapshot{events: events, status: r.deriveStatus(signals), disabledTill: disabledTill}
+	// InitialFailure survives a partial recovery (the ladder descends one rung at a
+	// time), so it is only the streak's start while the indexer actually reads failing
+	// — otherwise "failing since" would sit on an indexer that is working again.
+	if snap.status == StatusFailing && !circuit.InitialFailure.IsZero() {
+		since := circuit.InitialFailure
+		snap.failingSince = &since
+	}
+	return snap, nil
 }
 
 // healthSignals is the evidence deriveStatus reads — all of it already fetched by

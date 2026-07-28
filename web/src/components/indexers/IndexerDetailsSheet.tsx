@@ -1,10 +1,11 @@
 import { Fragment } from "react"
 
 import { BudgetMeter } from "@/components/indexers/BudgetMeter"
+import { HealthCell, healthDetail, reasonLabel } from "@/components/indexers/HealthCell"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { useIndexerCapabilities, useIndexerStats, useIndexerStatuses } from "@/hooks/useIndexers"
 import { relativeTime } from "@/lib/format"
-import type { Capabilities, IndexerFailureCounts, IndexerStats } from "@/lib/api"
+import type { Capabilities, IndexerFailureCounts, IndexerStats, IndexerStatus } from "@/lib/api"
 
 // "200 · 40 failed (83%)": grabs alongside the failed attempts and the success rate, the
 // number that exposes a tracker which surfaces results reliably but fails on download.
@@ -91,12 +92,17 @@ function Details({ slug }: { slug: string }) {
         </section>
 
         <section>
+          <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-faint">Health</h3>
+          <HealthDetail status={status?.data} />
+        </section>
+
+        <section>
           <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-faint">Recent events</h3>
           {status?.data?.events.length ? (
             <ul className="flex flex-col gap-1.5">
               {status.data.events.slice(0, 10).map((ev, i) => (
                 <li key={i} className="flex items-baseline gap-2">
-                  <span className="text-bad">{ev.kind}</span>
+                  <span className="text-bad">{reasonLabel(ev.kind)}</span>
                   <span className="truncate text-muted-foreground">{ev.detail}</span>
                   <span className="ml-auto shrink-0 text-[12px] text-faint">{relativeTime(ev.occurred_at)}</span>
                 </li>
@@ -113,6 +119,25 @@ function Details({ slug }: { slug: string }) {
         </section>
       </div>
     </>
+  )
+}
+
+// The state itself plus what an operator needs to act on it — why, since when, and when
+// harbrr tries again (autobrr/harbrr#389). Healthy contributes no rows: the dot is the
+// whole story.
+function HealthDetail({ status }: { status: IndexerStatus | undefined }) {
+  if (!status) return <p className="text-muted-foreground">Loading…</p>
+  return (
+    <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
+      <dt className="text-muted-foreground">State</dt>
+      <dd><HealthCell status={status} /></dd>
+      {healthDetail(status).map((row) => (
+        <Fragment key={row.label}>
+          <dt className="text-muted-foreground">{row.label}</dt>
+          <dd>{row.value}</dd>
+        </Fragment>
+      ))}
+    </dl>
   )
 }
 
