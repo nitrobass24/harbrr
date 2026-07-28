@@ -48,12 +48,16 @@ type Service struct {
 	// dispatchWG tracks in-flight detached dispatch goroutines so Drain can join them
 	// before the DB is torn down at shutdown (dispatch reads the DB).
 	dispatchWG sync.WaitGroup
-	db         dbinterface.Querier
-	repo       database.Notifications
-	keyring    *secrets.Keyring
-	client     *http.Client
-	clock      func() time.Time
-	life       *connresource.Lifecycle[domain.Notification]
+	// drainMu + draining order dispatch Adds strictly before Drain's Wait (see
+	// dispatchHealthAsync). Distinct from the suppression lock, like dispatchWG.
+	drainMu  sync.RWMutex
+	draining bool
+	db       dbinterface.Querier
+	repo     database.Notifications
+	keyring  *secrets.Keyring
+	client   *http.Client
+	clock    func() time.Time
+	life     *connresource.Lifecycle[domain.Notification]
 	// healthMu guards lastHealthNotify, the per-(indexer, kind) time of the last
 	// dispatched health notification. It debounces poll-spam (see healthNotifyCooldown)
 	// and must be a distinct lock from dispatchWG's accounting.
@@ -297,6 +301,16 @@ func (s *Service) OnRecoveryEvent(ctx context.Context, indexer, detail string) {
 // cancellation absent — the sender's own HTTP timeout bounds it. Tracked on dispatchWG
 // so shutdown (Drain) joins the goroutine before db.Close, since dispatch reads the DB.
 func (s *Service) dispatchHealthAsync(ctx context.Context, ev Event) {
+	// The drain gate orders Add strictly before Drain's Wait: a producer holding the
+	// read lock either sees draining (and drops the event — it is born during
+	// shutdown and has nowhere to go) or completes its Add before Drain, holding the
+	// write lock, can flip the flag and reach Wait. Without it, an event landing in
+	// the shutdown window is an Add racing Wait, which sync.WaitGroup forbids.
+	s.drainMu.RLock()
+	defer s.drainMu.RUnlock()
+	if s.draining {
+		return
+	}
 	s.dispatchWG.Add(1)
 	go func() {
 		defer s.dispatchWG.Done()
@@ -326,6 +340,20 @@ func (s *Service) healthSuppressed(indexer, kind string, now time.Time) bool {
 // ctx (a hanging webhook must not stall shutdown indefinitely). Call it during shutdown
 // after the server stops accepting requests and before the database is closed.
 func (s *Service) Drain(ctx context.Context) {
+	// Close the dispatch gate for the DURATION of the join — that is precisely the
+	// window where a producer's Add would race Wait (forbidden by sync.WaitGroup) —
+	// and reopen it after. Reopening keeps Drain usable as a flush/join (the test
+	// suite's idiom); in production it is the last call before db.Close, so nothing
+	// meaningful dispatches after it, and an event arriving DURING the join is
+	// dropped: it is exactly the racing event, and it has nowhere to go.
+	s.drainMu.Lock()
+	s.draining = true
+	s.drainMu.Unlock()
+	defer func() {
+		s.drainMu.Lock()
+		s.draining = false
+		s.drainMu.Unlock()
+	}()
 	done := make(chan struct{})
 	go func() {
 		s.dispatchWG.Wait()

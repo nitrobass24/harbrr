@@ -108,6 +108,11 @@ func escalate(cur database.CircuitState, kind string, gatewayOutage bool, retryA
 		next.InitialFailure = now
 	}
 	p := escalationPolicyFor(kind, gatewayOutage)
+	// max(cur+step, floor) deliberately NEVER lowers a level a harsher kind earned:
+	// a transport blip on an indexer sitting at the auth rungs must not collapse its
+	// backoff and resume presenting bad credentials on a 60s window. Levels descend
+	// only on success (recoverCircuit), one rung at a time. For the step-0 transport
+	// policy this is byte-identical to the old `if level < 1 { level = 1 }`.
 	next.EscalationLevel = min(max(next.EscalationLevel+p.step, p.floor), maxCircuitLevel)
 	// The startup grace caps only the LADDER-derived period — an explicit Retry-After
 	// is the tracker's own instruction and must remain the absolute floor, so it is

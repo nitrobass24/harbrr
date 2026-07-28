@@ -316,3 +316,22 @@ func TestRecoveryDetail(t *testing.T) {
 		t.Errorf("recoveryDetail with no InitialFailure = %q, want a duration-free message", got)
 	}
 }
+
+// TestEscalateNeverDescendsOnFailure pins the deliberate asymmetry (review-confirmed
+// on #419): a FAILURE never lowers a level a harsher kind earned — an indexer parked
+// at the auth rungs that starts throwing ordinary transport errors must NOT collapse
+// its backoff and resume presenting bad credentials on a 60s window. Levels descend
+// only on success (recoverCircuit), one rung at a time.
+func TestEscalateNeverDescendsOnFailure(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	started := now.Add(-2 * time.Hour) // past the startup grace
+	cur := database.CircuitState{EscalationLevel: 7, InitialFailure: now.Add(-time.Hour)}
+
+	for _, kind := range []string{domain.HealthTransport, domain.HealthParseError, domain.HealthRateLimited} {
+		next := escalate(cur, kind, false, 0, now, started)
+		if next.EscalationLevel < 7 {
+			t.Errorf("%s from level 7 descended to %d — failures must never lower a rung", kind, next.EscalationLevel)
+		}
+	}
+}
