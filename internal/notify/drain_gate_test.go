@@ -2,6 +2,7 @@ package notify
 
 import (
 	"context"
+	"fmt"
 	"testing"
 )
 
@@ -17,7 +18,11 @@ func TestDrainGateOrdersAddsBeforeWait(t *testing.T) {
 	go func() {
 		defer close(stop)
 		for i := 0; i < 200; i++ {
-			s.OnHealthEvent(context.Background(), "idx", "transport", "event racing drain")
+			// A distinct indexer per iteration: the health debounce keys on
+			// (indexer, kind), so a fixed key would suppress everything after the
+			// first event and the hammer would never actually reach the
+			// Add-during-Wait window it exists to exercise (review finding).
+			s.OnHealthEvent(context.Background(), fmt.Sprintf("idx-%d", i), "transport", "event racing drain")
 		}
 	}()
 	for i := 0; i < 50; i++ {
