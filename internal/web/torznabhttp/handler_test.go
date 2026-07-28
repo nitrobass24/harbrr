@@ -81,19 +81,19 @@ func (p fakeProvider) Indexer(_ context.Context, id string) (core.Indexer, bool)
 
 // Resolve mirrors registry.Resolver: the aggregate slug fans out to every member in
 // slug order (the registry lists ORDER BY slug), any other slug is the single indexer.
-func (p fakeProvider) Resolve(ctx context.Context, slug string) ([]core.Indexer, bool) {
+func (p fakeProvider) Resolve(ctx context.Context, slug string) ([]core.MemberOutcome, error) {
 	if slug != core.AggregateSlug {
 		i, ok := p.Indexer(ctx, slug)
 		if !ok {
-			return nil, false
+			return nil, core.ErrNoSuchFeed
 		}
-		return []core.Indexer{i}, true
+		return []core.MemberOutcome{core.LiveMember(i)}, nil
 	}
-	out := make([]core.Indexer, 0, len(p))
+	out := make([]core.MemberOutcome, 0, len(p))
 	for _, id := range slices.Sorted(maps.Keys(p)) {
-		out = append(out, p[id])
+		out = append(out, core.LiveMember(p[id]))
 	}
-	return out, true
+	return out, nil
 }
 
 // testCaps builds capabilities for a demo indexer: categorymappings 1->Movies
