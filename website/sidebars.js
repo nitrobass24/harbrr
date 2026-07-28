@@ -23,7 +23,9 @@ const sidebars = {
     {
       type: 'category',
       label: 'Features',
+      link: {type: 'doc', id: 'features/overview'},
       items: [
+        {type: 'doc', id: 'features/overview', label: 'All features'},
         {
           type: 'doc',
           id: 'features/search-results-cache',
@@ -45,6 +47,11 @@ const sidebars = {
           label: 'Cross-seed & freeleech',
         },
         {type: 'doc', id: 'features/pagination', label: 'Pagination'},
+        {
+          type: 'doc',
+          id: 'features/vip-expiry',
+          label: 'VIP & membership expiry',
+        },
       ],
     },
   ],

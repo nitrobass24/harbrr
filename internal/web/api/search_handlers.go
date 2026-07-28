@@ -1,10 +1,15 @@
 package api
 
 import (
+	"errors"
 	"net/http"
+	"net/url"
+	"slices"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/core"
 	"github.com/autobrr/harbrr/internal/web/torznabhttp"
@@ -54,11 +59,48 @@ func (rt *router) searchIndexer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := core.SearchReleases(r.Context(), idx, r.URL.Query())
+	// Same contract the feed follows: a degenerate-query skip (autobrr/harbrr#394) is
+	// this indexer declining to be asked, not a failure, so it answers with the empty
+	// page the pipeline hands back rather than a 500.
+	if errors.Is(err, core.ErrDegenerateQuery) {
+		err = nil
+	}
 	if err != nil {
 		rt.writeServiceError(w, "search indexer", err)
 		return
 	}
+	res = rt.dropAdultReleases(res, r.URL.Query())
 	writeJSON(w, http.StatusOK, newSearchResponse(res, rt.resolveSearchLinks(r, idx, res.Releases)))
+}
+
+// dropAdultReleases removes XXX-category results from a UI search when the
+// operator hid adult categories AND the request named no categories of its own
+// (autobrr/harbrr#383: "searches issued with no explicit category do not return
+// adult-category results"). A request that carries `cat` is the operator asking
+// for exactly those categories, so it is honored unchanged — including an
+// explicit XXX category.
+//
+// Total is reduced by what this page dropped: it stays an honest floor for the
+// remaining match count rather than promising results the filter removed. The
+// releases slice is rebuilt, never mutated in place, so the engine's (possibly
+// cached) result set is untouched.
+//
+// This runs on the management JSON search only. The Torznab/Newznab feed serves
+// the same query unfiltered — feed consumers are automation carrying their own
+// category selection, not an operator looking at a screen.
+func (rt *router) dropAdultReleases(res core.SearchResult, q url.Values) core.SearchResult {
+	if !rt.adultCats.Hidden() || strings.TrimSpace(q.Get("cat")) != "" {
+		return res
+	}
+	kept := make([]*normalizer.Release, 0, len(res.Releases))
+	for _, rel := range res.Releases {
+		if rel == nil || !slices.ContainsFunc(rel.Categories, mapper.IsAdultCategory) {
+			kept = append(kept, rel)
+		}
+	}
+	res.Total -= len(res.Releases) - len(kept)
+	res.Releases = kept
+	return res
 }
 
 // resolveSearchLinks returns copies of the releases with download links made safe to
@@ -87,7 +129,7 @@ func (rt *router) resolveSearchLinks(r *http.Request, idx core.Indexer, releases
 			if acq == "" {
 				acq = cp.Magnet
 			}
-			if link, _, ok := rw(acq); ok {
+			if link, _, ok := rw(acq, cp.Categories); ok {
 				cp.Link = link
 			}
 		case withhold:

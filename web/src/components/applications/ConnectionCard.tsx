@@ -23,7 +23,6 @@ export type ConnectionActions = {
   onEdit: (conn: AppConnection) => void
   onDelete: (conn: AppConnection) => void
   onStatus: (id: number) => void
-  onSelectIndexers: (conn: AppConnection) => void
   onFixPort: (conn: AppConnection, harbrrUrl: string) => void
 }
 
@@ -54,9 +53,6 @@ export function ConnectionCard({ conn, syncing, actions }: {
           </Badge>
           <Badge variant="outline" className={cn("px-1.5 py-0 text-[11px]", conn.syncLevel === "full" && "border-brand/40 bg-brand/10 text-brand")}>
             {conn.syncLevel === "full" ? "full sync" : "add/update"}
-          </Badge>
-          <Badge variant="outline" className={cn("px-1.5 py-0 text-[11px]", conn.indexScope === "all" && "border-brand/40 bg-brand/10 text-brand")}>
-            {conn.indexScope === "all" ? "all compatible" : "selected"}
           </Badge>
           {stalePort !== null && (
             <button
@@ -109,11 +105,6 @@ export function ConnectionCard({ conn, syncing, actions }: {
           <DropdownMenuItem onClick={() => actions.onStatus(conn.id)}>
             <ListChecks className="h-4 w-4" /> Sync ledger
           </DropdownMenuItem>
-          {conn.indexScope === "selected" && (
-            <DropdownMenuItem onClick={() => actions.onSelectIndexers(conn)}>
-              <ListChecks className="h-4 w-4" /> Select indexers
-            </DropdownMenuItem>
-          )}
           <DropdownMenuSeparator />
           <DropdownMenuItem variant="destructive" onClick={() => actions.onDelete(conn)}>
             <Trash2 className="h-4 w-4" /> Delete

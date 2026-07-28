@@ -336,8 +336,8 @@ func TestWarmerWarmOne(t *testing.T) {
 		{name: "disabled or unresolvable instance", resolveOK: false, wantCalled: false},
 		{name: "paging instance skipped", resolveOK: true, pages: true, wantCalled: false},
 		{name: "mode-consuming instance skipped", resolveOK: true, consumesMode: true, wantCalled: false},
-		{name: "budget exhausted", resolveOK: true, searchErr: errBudgetExhausted, wantCalled: true},
-		{name: "circuit open", resolveOK: true, searchErr: errCircuitOpen, wantCalled: true},
+		{name: "budget exhausted", resolveOK: true, searchErr: core.ErrBudgetExhausted, wantCalled: true},
+		{name: "circuit open", resolveOK: true, searchErr: core.ErrCircuitOpen, wantCalled: true},
 		{name: "transport error", resolveOK: true, searchErr: errors.New("registry: search \"fake\": connection refused"), wantCalled: true},
 		{name: "success", resolveOK: true, searchErr: nil, wantCalled: true},
 	}

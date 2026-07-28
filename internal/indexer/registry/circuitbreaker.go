@@ -52,38 +52,68 @@ const startupGrace = 15 * time.Minute
 // startupGraceCap is the disable-window ceiling applied inside startupGrace.
 const startupGraceCap = 5 * time.Minute
 
-// errCircuitOpen is returned by the dispatch gate in place of hitting the tracker.
-// It is deliberately outside classifyHealth's kinds: a skipped call is not a new
-// failure and must not feed back into the escalation it is itself enforcing.
-var errCircuitOpen = errors.New("registry: circuit open")
+// escalationPolicy is how one health kind moves on the ladder: floor is the lowest
+// rung a failure of that kind may land on (a first failure jumps straight there), step
+// is how many rungs each subsequent failure climbs. step 0 pins the level where it is.
+type escalationPolicy struct{ floor, step int }
 
-// escalate advances state one rung for a qualifying failure of kind, applying
-// Prowlarr's rules sourced from ProviderStatusServiceBase/EscalationBackOff:
-//   - a transport failure (connection refused/reset, DNS, TLS, EOF, gateway status —
-//     see isTransportError) sets level 1 once and never climbs further: don't punish
-//     an indexer for the operator's dead network or a gateway hiccup.
-//     ponytail: harbrr's transport kind lumps connection/DNS/EOF/gateway together
-//     (#223, #247) rather than Prowlarr's separate connection-failure category, so
-//     the whole kind is treated as non-escalating here. Split it if gateway-vs-DNS
-//     ever needs different backoff.
-//   - every other classified kind (auth, anti-bot, rate-limited, parse) climbs one
-//     rung, capped at maxCircuitLevel.
+// escalationPolicies is the per-kind curve (autobrr/harbrr#389). These are not the same
+// failure, so they must not share one uniform climb — indices are circuitPeriods':
+//   - auth_failure {5, 2} — 1h, then 6h, then the 24h top. Bad credentials do not fix
+//     themselves on a minutes-scale retry, and re-presenting them is what earns an
+//     account lock, so the first one already backs off for an hour.
+//   - rate_limited {2, 1} — never race a limiter: the shortest window is 5m (an
+//     explicit Retry-After still floors it higher below).
+//   - anti_bot {3, 1} — 15m minimum: retrying a challenge blind burns solver budget
+//     and reads as hostile to the tracker.
+//
+// Kinds absent from the table take defaultEscalation: parse_error (definition drift,
+// but often transient markup) and a gateway outage recorded under the transport kind.
+var escalationPolicies = map[string]escalationPolicy{
+	domain.HealthAuthFailure: {floor: 5, step: 2},
+	domain.HealthRateLimited: {floor: 2, step: 1},
+	domain.HealthAntiBot:     {floor: 3, step: 1},
+}
+
+// defaultEscalation is the forgiving curve: one rung per failure from the bottom.
+var defaultEscalation = escalationPolicy{floor: 0, step: 1}
+
+// transportEscalation pins a non-gateway transport failure at level 1 forever (step 0):
+// don't punish an indexer for the operator's dead network.
+var transportEscalation = escalationPolicy{floor: 1, step: 0}
+
+// escalationPolicyFor picks the curve for a failure. A gatewayOutage is recorded under
+// the transport kind but is the indexer's OWN origin being down (a CDN answering
+// 502/504/522), not the operator's network, so it climbs like everything else — a
+// tracker down for days must not be re-polled every 60 seconds.
+func escalationPolicyFor(kind string, gatewayOutage bool) escalationPolicy {
+	if kind == domain.HealthTransport && !gatewayOutage {
+		return transportEscalation
+	}
+	if p, ok := escalationPolicies[kind]; ok {
+		return p
+	}
+	return defaultEscalation
+}
+
+// escalate advances state for a qualifying failure of kind along that kind's curve
+// (see escalationPolicies), capped at maxCircuitLevel. On top of the rung:
 //   - retryAfter (non-zero only for a rate-limited failure carrying Retry-After) is a
 //     hard floor on the resulting disable window.
 //   - a failure landing within startupGrace of the registry's boot is capped to
 //     startupGraceCap regardless of rung.
-func escalate(cur database.CircuitState, kind string, retryAfter time.Duration, now, startedAt time.Time) database.CircuitState {
+func escalate(cur database.CircuitState, kind string, gatewayOutage bool, retryAfter time.Duration, now, startedAt time.Time) database.CircuitState {
 	next := cur
 	if next.InitialFailure.IsZero() {
 		next.InitialFailure = now
 	}
-	if kind == domain.HealthTransport {
-		if next.EscalationLevel < 1 {
-			next.EscalationLevel = 1
-		}
-	} else if next.EscalationLevel < maxCircuitLevel {
-		next.EscalationLevel++
-	}
+	p := escalationPolicyFor(kind, gatewayOutage)
+	// max(cur+step, floor) deliberately NEVER lowers a level a harsher kind earned:
+	// a transport blip on an indexer sitting at the auth rungs must not collapse its
+	// backoff and resume presenting bad credentials on a 60s window. Levels descend
+	// only on success (recoverCircuit), one rung at a time. For the step-0 transport
+	// policy this is byte-identical to the old `if level < 1 { level = 1 }`.
+	next.EscalationLevel = min(max(next.EscalationLevel+p.step, p.floor), maxCircuitLevel)
 	// The startup grace caps only the LADDER-derived period — an explicit Retry-After
 	// is the tracker's own instruction and must remain the absolute floor, so it is
 	// applied AFTER the cap. (Capping first, then honouring Retry-After, means a

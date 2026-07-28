@@ -47,6 +47,41 @@ export function useSetLogLevel() {
   })
 }
 
+export function useAdultCategories() {
+  return useQuery({ queryKey: keys.config.adultCategories(), queryFn: () => api.getAdultCategories() })
+}
+
+// useSetAdultCategories toggles the global hide-adult-categories setting. The
+// category lists themselves are filtered server-side, so every cached
+// capabilities/definition response is stale the moment the setting flips —
+// invalidate those roots too or a picker keeps showing the old taxonomy until
+// its next natural refetch.
+export function useSetAdultCategories() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (hidden: boolean) => api.setAdultCategories(hidden),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: keys.config.adultCategories() })
+      void qc.invalidateQueries({ queryKey: keys.indexers.all })
+      void qc.invalidateQueries({ queryKey: keys.definitions.all })
+    },
+  })
+}
+
+// The expiry lead-time dial (#399). Nothing else caches on it, so a plain
+// invalidate of its own key is the whole story.
+export function useExpiryThresholds() {
+  return useQuery({ queryKey: keys.config.expiryThresholds(), queryFn: () => api.getExpiryThresholds() })
+}
+
+export function useSetExpiryThresholds() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (days: number[]) => api.setExpiryThresholds(days),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.config.expiryThresholds() }),
+  })
+}
+
 export function useApiKeys() {
   return useQuery({ queryKey: keys.apiKeys.all, queryFn: () => api.listApiKeys() })
 }

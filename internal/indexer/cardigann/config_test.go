@@ -124,3 +124,60 @@ func TestMergeConfigOverrides(t *testing.T) {
 		t.Errorf("merge mutated base: apikey = %q", base["apikey"])
 	}
 }
+
+// TestReservedSettingsIgnoreDefinitionDefaults pins the reserved-key contract for
+// EVERY reserved engine setting (autobrr/harbrr#394): andmatch_fold_punctuation and
+// degenerate_query_gate are per-INSTANCE settings, so a definition (necessarily a
+// drop-in) declaring a same-named field with an opting-in default must NOT arm the
+// behaviour on an untouched instance — the unconfigured path stays Jackett-identical
+// and the parity corpus can never see the difference. An explicitly supplied caller
+// value still wins.
+func TestReservedSettingsIgnoreDefinitionDefaults(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		key     string
+		defType string
+		defVal  string
+		// optIn is the caller value that arms the behaviour; off is a stored value
+		// that must survive the overlay unchanged (unset and explicitly-off are
+		// different states).
+		optIn string
+		off   string
+	}{
+		{
+			name: "andmatch_fold_punctuation", key: "andmatch_fold_punctuation",
+			defType: "checkbox", defVal: "true", optIn: "true", off: "false",
+		},
+		{
+			name: "degenerate_query_gate", key: "degenerate_query_gate",
+			defType: "select", defVal: "auto", optIn: "auto", off: "off",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			def := &loader.Definition{Settings: []loader.SettingsField{
+				{Name: tc.key, Type: tc.defType, Default: &loader.Scalar{Value: tc.defVal, Set: true}},
+			}}
+			steps := []struct {
+				name string
+				opts []Option
+				want string
+			}{
+				{"untouched instance ignores the definition default", nil, ""},
+				{"explicit caller opt-in wins", []Option{WithConfig(map[string]string{tc.key: tc.optIn})}, tc.optIn},
+				{"explicit caller off survives the overlay", []Option{WithConfig(map[string]string{tc.key: tc.off})}, tc.off},
+			}
+			for _, step := range steps {
+				t.Run(step.name, func(t *testing.T) {
+					t.Parallel()
+					if got := resolveOptions(def, step.opts).config[tc.key]; got != step.want {
+						t.Errorf("config value = %q, want %q", got, step.want)
+					}
+				})
+			}
+		})
+	}
+}

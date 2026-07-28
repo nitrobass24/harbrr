@@ -3,42 +3,57 @@ package appsync
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/domain"
 )
 
-func TestCreateProfileDefaultsAndNormalize(t *testing.T) {
+func TestCreateProfileRoundTrip(t *testing.T) {
 	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
 
-	// Omitted toggles default to true; categories are deduped and sorted.
-	p, err := f.svc.CreateProfile(ctx, CreateProfileParams{
-		Name: "movies", Categories: []int{5000, 2000, 2000}, MinSeeders: 3,
-	})
+	instA, instB := f.source.instances[0].ID, f.source.instances[1].ID
+	p, err := f.svc.CreateProfile(ctx, CreateProfileParams{Name: "movies", IndexerIDs: []int64{instB, instA}})
 	if err != nil {
 		t.Fatalf("CreateProfile: %v", err)
 	}
-	if !p.EnableRss || !p.EnableAutomaticSearch || !p.EnableInteractiveSearch {
-		t.Errorf("omitted toggles should default to true: %+v", p)
+	if p.Name != "movies" {
+		t.Errorf("Name = %q, want movies", p.Name)
 	}
-	if !equalIntSlice(p.Categories, []int{2000, 5000}) {
-		t.Errorf("categories = %v, want [2000 5000] (deduped+sorted)", p.Categories)
-	}
-	if p.MinSeeders != 3 {
-		t.Errorf("minSeeders = %d, want 3", p.MinSeeders)
+	if !slices.Equal(p.IndexerIDs, []int64{instA, instB}) {
+		t.Errorf("IndexerIDs = %v, want [%d %d] (repo-ordered)", p.IndexerIDs, instA, instB)
 	}
 
-	// An explicit false toggle is preserved (distinct from the default).
-	no := false
-	quiet, err := f.svc.CreateProfile(ctx, CreateProfileParams{Name: "quiet", EnableRss: &no})
+	got, err := f.svc.GetProfile(ctx, p.ID)
 	if err != nil {
-		t.Fatalf("CreateProfile quiet: %v", err)
+		t.Fatalf("GetProfile: %v", err)
 	}
-	if quiet.EnableRss {
-		t.Errorf("explicit false enableRss not preserved: %+v", quiet)
+	if !slices.Equal(got.IndexerIDs, []int64{instA, instB}) {
+		t.Errorf("GetProfile.IndexerIDs = %v, want [%d %d]", got.IndexerIDs, instA, instB)
+	}
+
+	list, err := f.svc.ListProfiles(ctx)
+	if err != nil || len(list) != 1 {
+		t.Fatalf("ListProfiles = %v, %d rows", err, len(list))
+	}
+}
+
+// TestCreateProfileEmptySelectionMeansAll proves an omitted/empty IndexerIDs is valid
+// and round-trips as an empty (non-nil) slice — "every compatible indexer".
+func TestCreateProfileEmptySelectionMeansAll(t *testing.T) {
+	t.Parallel()
+	f := newSyncFixture(t)
+	ctx := context.Background()
+
+	p, err := f.svc.CreateProfile(ctx, CreateProfileParams{Name: "all"})
+	if err != nil {
+		t.Fatalf("CreateProfile: %v", err)
+	}
+	if p.IndexerIDs == nil || len(p.IndexerIDs) != 0 {
+		t.Errorf("IndexerIDs = %v, want empty slice", p.IndexerIDs)
 	}
 }
 
@@ -46,16 +61,8 @@ func TestCreateProfileValidation(t *testing.T) {
 	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
-	bad := map[string]CreateProfileParams{
-		"blank name":        {Name: "  "},
-		"category too low":  {Name: "a", Categories: []int{0}},
-		"category too high": {Name: "b", Categories: []int{1_000_000}},
-		"negative seeders":  {Name: "c", MinSeeders: -1},
-	}
-	for name, p := range bad {
-		if _, err := f.svc.CreateProfile(ctx, p); !errors.Is(err, domain.ErrInvalid) {
-			t.Errorf("%s: err = %v, want domain.ErrInvalid", name, err)
-		}
+	if _, err := f.svc.CreateProfile(ctx, CreateProfileParams{Name: "  "}); !errors.Is(err, domain.ErrInvalid) {
+		t.Errorf("blank name err = %v, want domain.ErrInvalid", err)
 	}
 }
 
@@ -71,32 +78,33 @@ func TestCreateProfileDuplicateName(t *testing.T) {
 	}
 }
 
-func TestUpdateProfileClearsAndValidates(t *testing.T) {
+func TestUpdateProfileClearsSelectionAndValidates(t *testing.T) {
 	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
-	p, err := f.svc.CreateProfile(ctx, CreateProfileParams{Name: "p", Categories: []int{5000}, MinSeeders: 2})
+	instA := f.source.instances[0].ID
+	p, err := f.svc.CreateProfile(ctx, CreateProfileParams{Name: "p", IndexerIDs: []int64{instA}})
 	if err != nil {
 		t.Fatalf("CreateProfile: %v", err)
 	}
 
-	// A present-but-empty categories slice clears the set.
-	empty := []int{}
-	if err := f.svc.UpdateProfile(ctx, p.ID, UpdateProfileParams{Categories: &empty}); err != nil {
-		t.Fatalf("clear categories: %v", err)
+	// A present-but-empty IndexerIDs slice clears the selection.
+	empty := []int64{}
+	if err := f.svc.UpdateProfile(ctx, p.ID, UpdateProfileParams{IndexerIDs: &empty}); err != nil {
+		t.Fatalf("clear selection: %v", err)
 	}
 	got, err := f.svc.GetProfile(ctx, p.ID)
 	if err != nil {
 		t.Fatalf("GetProfile: %v", err)
 	}
-	if len(got.Categories) != 0 {
-		t.Errorf("categories = %v, want cleared", got.Categories)
+	if len(got.IndexerIDs) != 0 {
+		t.Errorf("IndexerIDs = %v, want cleared", got.IndexerIDs)
 	}
 
-	// A negative minSeeders patch is rejected.
-	neg := -1
-	if err := f.svc.UpdateProfile(ctx, p.ID, UpdateProfileParams{MinSeeders: &neg}); !errors.Is(err, domain.ErrInvalid) {
-		t.Errorf("negative minSeeders update = %v, want domain.ErrInvalid", err)
+	// An unknown instance id patch is rejected.
+	bad := []int64{99999}
+	if err := f.svc.UpdateProfile(ctx, p.ID, UpdateProfileParams{IndexerIDs: &bad}); !errors.Is(err, domain.ErrInvalid) {
+		t.Errorf("update to unknown instance id = %v, want domain.ErrInvalid", err)
 	}
 
 	// An unknown id flows through as ErrNotFound.
@@ -143,47 +151,6 @@ func TestUpdateProfileNamePatch(t *testing.T) {
 	}
 }
 
-// TestUpdateProfileGuardsReferencingConnections pins the in-use overlap guard: once a
-// connection references a profile, narrowing the profile's categories to a set the
-// connection's kind cannot consume is rejected — otherwise a full-sync connection
-// would category-filter to zero indexers and delete everything it manages.
-func TestUpdateProfileGuardsReferencingConnections(t *testing.T) {
-	t.Parallel()
-	f := newSyncFixture(t)
-	ctx := context.Background()
-
-	tv, err := f.svc.CreateProfile(ctx, CreateProfileParams{Name: "tv", Categories: []int{5000}})
-	if err != nil {
-		t.Fatalf("CreateProfile: %v", err)
-	}
-	conn, err := f.svc.CreateConnection(ctx, connParams("s", domain.AppKindSonarr, "http://s5:8989", &tv.ID))
-	if err != nil {
-		t.Fatalf("CreateConnection: %v", err)
-	}
-
-	// Narrowing to books-only would empty the Sonarr connection's gate — rejected.
-	books := []int{7000}
-	if err := f.svc.UpdateProfile(ctx, tv.ID, UpdateProfileParams{Categories: &books}); !errors.Is(err, domain.ErrInvalid) {
-		t.Errorf("in-use narrowing to books = %v, want domain.ErrInvalid", err)
-	}
-
-	// Clearing to empty is always fine (empty = no filter).
-	empty := []int{}
-	if err := f.svc.UpdateProfile(ctx, tv.ID, UpdateProfileParams{Categories: &empty}); err != nil {
-		t.Fatalf("clear categories while referenced: %v", err)
-	}
-
-	// After detaching the connection, the same narrowing succeeds.
-	if err := f.svc.UpdateConnection(ctx, conn.ID, UpdateConnectionParams{
-		SyncProfileID: RefUpdate{Present: true, Value: nil},
-	}); err != nil {
-		t.Fatalf("detach: %v", err)
-	}
-	if err := f.svc.UpdateProfile(ctx, tv.ID, UpdateProfileParams{Categories: &books}); err != nil {
-		t.Errorf("narrowing after detach = %v, want nil", err)
-	}
-}
-
 func TestDeleteProfileNotFound(t *testing.T) {
 	t.Parallel()
 	f := newSyncFixture(t)
@@ -192,47 +159,74 @@ func TestDeleteProfileNotFound(t *testing.T) {
 	}
 }
 
+// TestDeleteProfileRefusedWhileInUse proves DeleteProfile is refused (domain.ErrConflict)
+// while any connection still references the profile — the FK's ON DELETE SET NULL would
+// otherwise silently widen a full-sync connection to every indexer on its next sync.
+// Detaching the connection first lets the delete through.
+func TestDeleteProfileRefusedWhileInUse(t *testing.T) {
+	t.Parallel()
+	f := newSyncFixture(t)
+	ctx := context.Background()
+
+	p, err := f.svc.CreateProfile(ctx, CreateProfileParams{Name: "in-use"})
+	if err != nil {
+		t.Fatalf("CreateProfile: %v", err)
+	}
+	if err := f.svc.UpdateConnection(ctx, f.conn.ID, UpdateConnectionParams{
+		SyncProfileID: RefUpdate{Present: true, Value: &p.ID},
+	}); err != nil {
+		t.Fatalf("assign profile: %v", err)
+	}
+
+	if err := f.svc.DeleteProfile(ctx, p.ID); !errors.Is(err, domain.ErrConflict) {
+		t.Errorf("delete in-use profile = %v, want domain.ErrConflict", err)
+	}
+
+	if err := f.svc.UpdateConnection(ctx, f.conn.ID, UpdateConnectionParams{
+		SyncProfileID: RefUpdate{Present: true, Value: nil},
+	}); err != nil {
+		t.Fatalf("detach: %v", err)
+	}
+	if err := f.svc.DeleteProfile(ctx, p.ID); err != nil {
+		t.Errorf("delete after detach = %v, want nil", err)
+	}
+}
+
 // TestConnectionProfileRefValidation exercises validateProfileRef through both the
-// create and update connection paths: unknown ref, qui ref, and zero-overlap ref all
-// 400; an overlapping ref persists; a present-nil clears it.
+// create and update connection paths: an unknown ref is a 400 for every kind, including
+// qui (#365 dropped the qui hard-rejection — a routing set is meaningful for it too); a
+// valid ref persists and a present-nil clears it.
 func TestConnectionProfileRefValidation(t *testing.T) {
 	t.Parallel()
 	f := newSyncFixture(t)
 	ctx := context.Background()
 
-	// A books-only profile (7000) never overlaps Sonarr's TV range; a TV profile does.
-	books, err := f.svc.CreateProfile(ctx, CreateProfileParams{Name: "books", Categories: []int{7000}})
+	prof, err := f.svc.CreateProfile(ctx, CreateProfileParams{Name: "p"})
 	if err != nil {
-		t.Fatalf("CreateProfile books: %v", err)
-	}
-	tv, err := f.svc.CreateProfile(ctx, CreateProfileParams{Name: "tv", Categories: []int{5000}})
-	if err != nil {
-		t.Fatalf("CreateProfile tv: %v", err)
+		t.Fatalf("CreateProfile: %v", err)
 	}
 	unknown := int64(999999)
 
 	refCases := map[string]struct {
 		kind    string
 		baseURL string
-		profile *int64
 	}{
-		"unknown ref":      {domain.AppKindSonarr, "http://s1:8989", &unknown},
-		"qui ref":          {domain.AppKindQui, "http://qui:7000", &tv.ID},
-		"zero-overlap ref": {domain.AppKindSonarr, "http://s3:8989", &books.ID},
+		"unknown ref sonarr": {domain.AppKindSonarr, "http://s1:8989"},
+		"unknown ref qui":    {domain.AppKindQui, "http://qui:7000"},
 	}
 	for name, tc := range refCases {
-		_, err := f.svc.CreateConnection(ctx, connParams(name, tc.kind, tc.baseURL, tc.profile))
+		_, err := f.svc.CreateConnection(ctx, connParams(name, tc.kind, tc.baseURL, &unknown))
 		if !errors.Is(err, domain.ErrInvalid) {
 			t.Errorf("%s: create err = %v, want domain.ErrInvalid", name, err)
 		}
 	}
 
-	// An overlapping profile ref is accepted and persisted.
-	conn, err := f.svc.CreateConnection(ctx, connParams("valid", domain.AppKindSonarr, "http://s4:8989", &tv.ID))
+	// A valid ref is accepted and persisted — including for qui.
+	conn, err := f.svc.CreateConnection(ctx, connParams("valid-qui", domain.AppKindQui, "http://qui2:7000", &prof.ID))
 	if err != nil {
-		t.Fatalf("CreateConnection with valid ref: %v", err)
+		t.Fatalf("CreateConnection qui with valid ref: %v", err)
 	}
-	if conn.SyncProfileID == nil || *conn.SyncProfileID != tv.ID {
+	if conn.SyncProfileID == nil || *conn.SyncProfileID != prof.ID {
 		t.Fatalf("profile id not persisted: %v", conn.SyncProfileID)
 	}
 
@@ -261,16 +255,4 @@ func connParams(name, kind, baseURL string, profileID *int64) CreateConnectionPa
 		Name: name, Kind: kind, BaseURL: baseURL, APIKey: "k",
 		HarbrrURL: "http://harbrr:8787", SyncProfileID: profileID,
 	}
-}
-
-func equalIntSlice(a, b []int) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }

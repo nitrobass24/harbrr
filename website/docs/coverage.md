@@ -10,7 +10,7 @@ Cardigann can't express — and how far each is validated.
   account on that tracker). See **[Test status](test-status.md)** for the evidence behind this
   column and the auth/fetch patterns proven live.
 
-**599 trackers** total: 556 Cardigann corpus (all built) · 25 native drivers built · 18 native
+**598 trackers** total: 555 Cardigann corpus (all built) · 25 native drivers built · 18 native
 drivers planned. To configure one, see **[Adding an indexer](guides/add-indexer.md)**.
 
 ## Native drivers
@@ -445,9 +445,9 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | TorrentHR (API) | ✅ | ⬜ |
 | Torrenting | ✅ | ⬜ |
 | TorrentLeech | ✅ | ✅ |
-| Torrentleech.pl | ✅ | ⬜ |
 | ToTheGlory | ✅ | ⬜ |
 | ToTheGlory2FA | ✅ | ⬜ |
+| TR4KER | ✅ | ⬜ |
 | TrackerMK | ✅ | ⬜ |
 | TrackerZero | ✅ | ⬜ |
 | TranceTraffic | ✅ | ⬜ |
@@ -488,7 +488,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | ZmPT (织梦) | ✅ | ⬜ |
 | ZRPT (自然) | ✅ | ⬜ |
 
-### Semi-private (61)
+### Semi-private (60)
 
 | Tracker | Built | Live-tested |
 |---|:--:|:--:|
@@ -547,7 +547,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | SkTorrent.org | ✅ | ⬜ |
 | themixingbowl | ✅ | ⬜ |
 | TorrentMasters | ✅ | ⬜ |
-| TR4KER | ✅ | ⬜ |
 | TrahT | ✅ | ⬜ |
 | TribalMixes | ✅ | ⬜ |
 | Union Fansub | ✅ | ⬜ |

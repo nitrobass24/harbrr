@@ -23,7 +23,7 @@ describe("DashboardTiles", () => {
         const slug = path.includes("/a/") ? "a" : "b"
         return Promise.resolve(json({
           slug,
-          status: slug === "a" ? "healthy" : "unhealthy",
+          status: slug === "a" ? "healthy" : "failing",
           events: [],
         }))
       }
@@ -48,6 +48,7 @@ describe("DashboardTiles", () => {
     )
 
     expect(await screen.findByText("1/2")).toBeTruthy() // healthy/total
+    expect(screen.getByText("1 failing")).toBeTruthy() // the tri-state remainder (#389)
     expect(await screen.findByText("128")).toBeTruthy() // trackerHitsSaved
     expect(screen.getByText("75% hit ratio · lifetime")).toBeTruthy()
     expect(await screen.findByText("Circuit breakers open")).toBeTruthy()

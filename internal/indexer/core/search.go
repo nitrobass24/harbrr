@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 
@@ -39,6 +40,11 @@ func SearchReleases(ctx context.Context, idx Indexer, q url.Values) (SearchResul
 // SearchReleasesWithCaps is SearchReleases for a caller that already resolved the
 // indexer's capabilities (e.g. for t= mode validation) so they are not recomputed —
 // the Torznab handler's writeResults uses this form.
+//
+// One error is special: ErrDegenerateQuery (the indexer declined to be asked) comes
+// back WITH an empty, correctly-paged SearchResult, so a caller that must serve a
+// document can ignore the error and serve that, while a caller that reports per-member
+// outcomes can classify it. Every other error returns the zero result.
 func SearchReleasesWithCaps(ctx context.Context, idx Indexer, caps *mapper.Capabilities, q url.Values) (SearchResult, error) {
 	query, requestedCats := buildQuery(q, caps)
 	// The bypass feed variant (set on ctx by the Torznab route) asks the registry's
@@ -55,6 +61,15 @@ func SearchReleasesWithCaps(ctx context.Context, idx Indexer, caps *mapper.Capab
 	query.Offset, query.Limit = pg.offset, pg.limit
 	releases, err := idx.Search(ctx, query)
 	if err != nil {
+		// A degenerate-query skip is the one error that carries a usable result: the
+		// indexer declined to be asked, and an empty page IS the honest answer for a
+		// surface that has to serve one. The paged-but-empty result rides along with the
+		// sentinel so a per-indexer feed can serve the standard empty document without
+		// re-deriving the page window, while the aggregate feed (which must say WHY a
+		// member contributed nothing) still sees the error and ledgers the skip.
+		if errors.Is(err, ErrDegenerateQuery) {
+			return SearchResult{Offset: pg.offset, Limit: pg.limit}, fmt.Errorf("torznab: search: %w", err)
+		}
 		return SearchResult{}, fmt.Errorf("torznab: search: %w", err)
 	}
 	// rawCount is the engine's pre-dedupe page size: a full upstream page (>= limit) means

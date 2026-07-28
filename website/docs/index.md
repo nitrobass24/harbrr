@@ -21,6 +21,9 @@ For the alpha, harbrr is operated entirely over its HTTP API; the interactive
 
 ## Features
 
+**[All features](features/overview.md)** — the complete list of what harbrr does today, what's
+still coming, and how it compares to Prowlarr and Jackett.
+
 - **[Search-results cache](features/search-results-cache.md)** — how harbrr spares your
   trackers from repeated, identical searches, and the knobs you can use to tune it.
 - **[Failing-tracker circuit breaker](features/circuit-breaker.md)** — how harbrr backs off
@@ -31,5 +34,7 @@ For the alpha, harbrr is operated entirely over its HTTP API; the interactive
   your \*arrs and cross-seed, with a per-indexer freeleech toggle and announce push.
 - **[Pagination](features/pagination.md)** — honest counts and stable, non-duplicating pages
   when something walks the feed page by page.
+- **[VIP & membership expiry](features/vip-expiry.md)** — enter each tracker's expiry date once
+  and never let it pass unannounced.
 
 For the internal design notes and build plan, see the `docs/` folder in the repository.

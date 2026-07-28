@@ -27,8 +27,7 @@ func defaultHTTPClient() *http.Client { return &http.Client{Timeout: httpClientT
 // secretHarbrr is the AAD discriminator for the harbrr key minted per connection (the
 // app's own credential lives on the App now, decrypted via s.apps, not on the row).
 const (
-	secretHarbrr    = "harbrr"
-	defaultPriority = 25
+	secretHarbrr = "harbrr"
 	// StatusSkipped is the sync status for a disabled connection (no remote calls).
 	StatusSkipped = "skipped"
 )
@@ -83,7 +82,7 @@ func NewService(db dbinterface.Querier, source IndexerSource, appsSvc *apps.Serv
 // CreateConnectionParams is the input to CreateConnection. It references the App
 // holding the app's identity + credential either by AppID (reuse) or inline
 // (BaseURL/APIKey/Username get-or-create by identity); HarbrrURL, when set, backfills
-// the App's harbrr feed URL. SyncLevel/IndexScope/Priority default when empty.
+// the App's harbrr feed URL. SyncLevel defaults when empty.
 type CreateConnectionParams struct {
 	Name          string
 	Kind          string
@@ -93,11 +92,10 @@ type CreateConnectionParams struct {
 	Username      string
 	HarbrrURL     string
 	SyncLevel     string
-	IndexScope    string
 	FreeleechMode string
-	Priority      int
-	// SyncProfileID references a sync profile, or nil for none. Validated by
-	// validateProfileRef (must exist, kind != qui, category overlap).
+	// SyncProfileID references a sync profile (routing set), or nil for none. Validated
+	// by validateProfileRef (must exist) — a profile is valid for every app kind,
+	// including qui.
 	SyncProfileID *int64
 }
 
@@ -114,7 +112,7 @@ func (s *Service) CreateConnection(ctx context.Context, p CreateConnectionParams
 	// Advisory pre-check so an ordinary invalid profile ref fails before the key
 	// mint has side effects; the authoritative, race-proof check runs again inside
 	// Lifecycle.Create's transaction (the Hook below).
-	if err := s.validateProfileRef(ctx, s.db, p.Kind, p.SyncProfileID); err != nil {
+	if err := s.validateProfileRef(ctx, s.db, p.SyncProfileID); err != nil {
 		return domain.AppConnection{}, err
 	}
 	app, err := s.apps.Resolve(ctx, apps.Ref{
@@ -133,15 +131,15 @@ func (s *Service) CreateConnection(ctx context.Context, p CreateConnectionParams
 			return domain.AppConnection{
 				Name: p.Name, Kind: p.Kind, AppID: &app.ID, BaseURL: app.BaseURL, HarbrrURL: app.HarbrrURL,
 				HarbrrAPIKeyID: mintedKeyID, Enabled: true, SyncLevel: p.SyncLevel,
-				IndexScope: p.IndexScope, FreeleechMode: p.FreeleechMode, Priority: p.Priority,
+				FreeleechMode: p.FreeleechMode,
 				SyncProfileID: p.SyncProfileID, CreatedAt: now, UpdatedAt: now,
 			}
 		},
 		Hook: func(ctx context.Context, q dbinterface.Execer, conn *domain.AppConnection) error {
 			// Re-validated against this same transaction (not the bare s.db handle
 			// used by the advisory pre-check above), so a concurrent profile delete
-			// or category-narrow can't slip between the check and the insert below.
-			return s.validateProfileRef(ctx, q, conn.Kind, conn.SyncProfileID)
+			// can't slip between the check and the insert below.
+			return s.validateProfileRef(ctx, q, conn.SyncProfileID)
 		},
 		Insert: func(ctx context.Context, q dbinterface.Execer, conn domain.AppConnection) (int64, error) {
 			return s.repo.InsertConnection(ctx, q, conn)
@@ -184,30 +182,25 @@ type RefUpdate struct {
 type UpdateConnectionParams struct {
 	Name          *string
 	SyncLevel     *string
-	IndexScope    *string
 	FreeleechMode *string
-	Priority      *int
 	SyncProfileID RefUpdate
 }
 
 // UpdateConnection applies a surface-field patch. The read, profile-ref-validate, and
-// write run in one Lifecycle.Update transaction, so a concurrent UpdateProfile can't
-// narrow the referenced profile's categories between validateProfileRef and the ref
-// write — which would leave a full-sync connection pointing at an empty gate that
-// deletes every indexer it manages.
+// write run in one Lifecycle.Update transaction, so a concurrent profile delete can't
+// slip between validateProfileRef and the ref write.
 func (s *Service) UpdateConnection(ctx context.Context, id int64, p UpdateConnectionParams) error {
 	return s.life.Update(ctx, id, connresource.UpdateSpec[domain.AppConnection]{
 		Get: func(ctx context.Context, q dbinterface.Execer, id int64) (domain.AppConnection, error) {
 			return s.repo.GetConnection(ctx, q, id)
 		},
-		Hook: func(ctx context.Context, q dbinterface.Execer, conn *domain.AppConnection) error {
-			// A new profile ref is validated against the connection's kind before it
-			// is applied (existence, non-qui, category overlap), so a bad ref is a
-			// 400, not a stored orphan.
+		Hook: func(ctx context.Context, q dbinterface.Execer, _ *domain.AppConnection) error {
+			// A new profile ref is validated for existence before it is applied, so a
+			// bad ref is a 400, not a stored orphan.
 			if !p.SyncProfileID.Present {
 				return nil
 			}
-			return s.validateProfileRef(ctx, q, conn.Kind, p.SyncProfileID.Value)
+			return s.validateProfileRef(ctx, q, p.SyncProfileID.Value)
 		},
 		Patch: func(conn *domain.AppConnection) error {
 			return applyUpdate(conn, p)
@@ -223,54 +216,9 @@ func (s *Service) UpdateConnection(ctx context.Context, id int64, p UpdateConnec
 	})
 }
 
-// SetSelectedIndexers replaces a connection's selected-indexer set (the scope
-// "selected" subset): the given instances become selected, every other currently
-// selected one is cleared. Applied in one transaction.
-func (s *Service) SetSelectedIndexers(ctx context.Context, id int64, instanceIDs []int64) error {
-	if err := s.validateInstanceIDs(ctx, instanceIDs); err != nil {
-		return err
-	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("appsync: begin tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	// Read the connection inside the writing transaction (the UpdateConnection
-	// precedent), so a concurrent delete can't slip between the existence check and
-	// the selection writes and surface as an FK fault instead of a clean not-found.
-	// The instance-ids check above stays advisory — the indexer source isn't
-	// tx-scoped — with the selection FKs as the authoritative guard.
-	if _, err := s.repo.GetConnection(ctx, tx, id); err != nil {
-		return fmt.Errorf("appsync: get connection: %w", err)
-	}
-
-	want := make(map[int64]bool, len(instanceIDs))
-	for _, instID := range instanceIDs {
-		want[instID] = true
-		if err := s.repo.SetIndexerSelection(ctx, tx, id, instID, true); err != nil {
-			return fmt.Errorf("appsync: select indexer: %w", err)
-		}
-	}
-	ledger, err := s.repo.ListConnectionIndexers(ctx, tx, id)
-	if err != nil {
-		return fmt.Errorf("appsync: list ledger: %w", err)
-	}
-	for _, l := range ledger {
-		if l.Selected && !want[l.InstanceID] {
-			if err := s.repo.SetIndexerSelection(ctx, tx, id, l.InstanceID, false); err != nil {
-				return fmt.Errorf("appsync: deselect indexer: %w", err)
-			}
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("appsync: commit selection: %w", err)
-	}
-	return nil
-}
-
 // validateInstanceIDs rejects a selection that names an indexer that does not exist,
-// turning a client mistake into a 400 rather than a repository FK error.
+// turning a client mistake into a 400 rather than a repository FK error. Shared by the
+// sync-profile CRUD (profiles.go), which is now the sole owner of an indexer selection.
 func (s *Service) validateInstanceIDs(ctx context.Context, instanceIDs []int64) error {
 	if len(instanceIDs) == 0 {
 		return nil

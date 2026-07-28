@@ -27,10 +27,71 @@ type IndexerInstance struct {
 	// this instance uses, or nil for none. The engine resolves them into the
 	// per-request config at build time (registry.buildAdapter); ON DELETE SET NULL
 	// means deleting a resource just drops the reference.
-	ProxyID   *int64
-	SolverID  *int64
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ProxyID  *int64
+	SolverID *int64
+	// Priority is the Servarr indexer priority (1-50, 1 = highest, default 25),
+	// pushed per indexer by appsync (Prowlarr semantics).
+	Priority int
+	// MinSeeders is the per-indexer minimum-seeders floor (torrent-only, pushed as
+	// minimumSeeders); 0 = unset, not pushed. The sole source since #365 — a sync
+	// profile no longer carries a fallback value.
+	MinSeeders int
+	// EnableRss / EnableAutomaticSearch / EnableInteractiveSearch are the per-search-mode
+	// flags pushed into a Servarr indexer registration (#365 moved these off the sync
+	// profile onto the instance so behavior can differ per indexer); each is ANDed with
+	// Enabled at push time (a disabled instance forces every flag false). Default true.
+	EnableRss               bool
+	EnableAutomaticSearch   bool
+	EnableInteractiveSearch bool
+	// SyncCategories narrows the Newznab categories this indexer pushes, within the
+	// consuming app's own content type (never beyond it); empty means no narrowing (the
+	// full app-gated set is pushed) — the same parent-block convention the old profile
+	// category picker used.
+	SyncCategories []int
+	// ExpiresAt is the operator-entered VIP/membership expiry as a calendar DATE
+	// ("YYYY-MM-DD"); empty means untracked. Deliberately a date string, not a
+	// time.Time: an expiry is a day on the tracker's calendar, not an instant, so
+	// keeping it out of the timezone domain keeps it from drifting a day either way.
+	ExpiresAt string
+	// ExpiryKind distinguishes ExpiryKindPerk (VIP lapses, account survives) from
+	// ExpiryKindAccount (access ends); empty reads as a generic membership expiry.
+	// Only meaningful alongside ExpiresAt or ExpiryLifetime.
+	ExpiryKind string
+	// ExpiryLifetime is the never-expires flag. It wins over ExpiresAt (which is
+	// cleared when it is set) and never produces a notification.
+	ExpiryLifetime bool
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+// Expiry kinds — what an indexer's expiry date ends. Stored verbatim in
+// indexer_instances.expiry_kind; validated in Go (no DB CHECK) so a further kind
+// needs no migration.
+const (
+	// ExpiryKindPerk is a VIP/premium lapse: freeleech, ratio exemption and pruning
+	// immunity stop, but the account survives.
+	ExpiryKindPerk = "perk"
+	// ExpiryKindAccount is the account or paid membership itself lapsing — on an
+	// invite-only tracker, effectively unrecoverable.
+	ExpiryKindAccount = "account"
+)
+
+// ExpiryDateLayout is the storage and wire form of an expiry date — the same
+// "YYYY-MM-DD" an <input type="date"> produces, so no conversion sits between the
+// form field and the column.
+const ExpiryDateLayout = "2006-01-02"
+
+// IndexerExpiry is one tracked indexer's expiry state plus its notification ledger
+// — the narrow row the expiry scan reads, so the scan never loads whole instances.
+// NotifiedFor is the expiry date the ledger belongs to (empty = nothing has fired);
+// NotifiedDays is the most urgent lead-time threshold already fired for that date.
+type IndexerExpiry struct {
+	InstanceID   int64
+	Slug         string
+	ExpiresAt    string
+	Kind         string
+	NotifiedFor  string
+	NotifiedDays int
 }
 
 // User is harbrr's admin account. First-run setup creates exactly one. The
@@ -139,13 +200,6 @@ const (
 	SyncLevelAddUpdate = "add_update"
 )
 
-// Index scopes — which harbrr indexers a connection mirrors. All = every enabled
-// instance; Selected = only the instances flagged in app_connection_indexers.
-const (
-	IndexScopeAll      = "all"
-	IndexScopeSelected = "selected"
-)
-
 // Freeleech modes — which feed variant a connection is pushed, set per connection and
 // defaulted by app kind (qui → bypass; *arrs → honor). Honor pushes the standard feed
 // URL (the indexer's freeleech setting is respected); Bypass pushes the /full variant
@@ -162,23 +216,18 @@ const (
 	SyncStatusError   = "error"
 )
 
-// SyncProfile is a named, reusable set of app-sync overrides a connection references
-// by id (the Prowlarr "Sync Profile" equivalent). Categories narrows which Newznab
-// categories a connection pushes — within the app's own content type, never beyond it
-// (an empty set keeps today's full-category behavior); MinSeeders is the pushed Torznab
-// minimum-seeders floor (0 = the app default, not pushed); the three Enable toggles gate
-// the pushed RSS/automatic/interactive-search flags (each ANDed with the instance's own
-// enabled state). No secrets live here.
+// SyncProfile is a named, reusable ROUTING set (#365) a connection references by id (the
+// Prowlarr "Sync Profile" equivalent, narrowed to just routing — all sync behavior now
+// lives per-indexer on IndexerInstance). IndexerIDs names the indexer instances this
+// profile routes a connection to; empty means every compatible indexer (mirrors the
+// empty-categories convention and avoids a profile edit silently narrowing a connection
+// to nothing). No secrets live here.
 type SyncProfile struct {
-	ID                      int64
-	Name                    string
-	Categories              []int
-	MinSeeders              int
-	EnableRss               bool
-	EnableAutomaticSearch   bool
-	EnableInteractiveSearch bool
-	CreatedAt               time.Time
-	UpdatedAt               time.Time
+	ID         int64
+	Name       string
+	IndexerIDs []int64
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 // AppConnection is a configured Sonarr/Radarr/qui app harbrr syncs its indexers into.
@@ -206,12 +255,12 @@ type AppConnection struct {
 	KeyID                 string
 	Enabled               bool
 	SyncLevel             string
-	IndexScope            string
 	FreeleechMode         string
-	Priority              int
-	// SyncProfileID references the sync profile this connection uses, or nil for
-	// none (today's default behavior). ON DELETE SET NULL means deleting a profile
-	// just drops the reference — the next sync reverts to the defaults.
+	// SyncProfileID references the sync profile (routing set) this connection uses, or
+	// nil for none — nil, or a profile with an empty selection, means every compatible
+	// indexer. ON DELETE SET NULL means deleting a profile just drops the reference, but
+	// the appsync service refuses the delete while any connection still references it
+	// (see appsync.DeleteProfile) — the FK is a defensive backstop, not the guard.
 	SyncProfileID  *int64
 	LastSyncAt     *time.Time
 	LastSyncStatus string
@@ -250,8 +299,10 @@ type Notification struct {
 	KeyID           string
 	Enabled         bool
 	OnHealthFailure bool
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// OnExpiry opts the target into indexer VIP/membership expiry events (#399).
+	OnExpiry  bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // Proxy scheme types — stored verbatim in proxies.type, validated in Go (no DB
@@ -345,14 +396,14 @@ type AnnounceConnection struct {
 // AppConnectionIndexer is the per-(connection, instance) sync ledger row — the
 // authoritative reconciliation state. RemoteID is the id the target app assigned
 // the pushed indexer (empty until the first successful push); PayloadHash is the
-// hash of the last-pushed intent, so an unchanged indexer skips its update.
-// Selected applies only when the connection's IndexScope is "selected".
+// hash of the last-pushed intent, so an unchanged indexer skips its update. It is a
+// pure reconcile ledger (#365 removed Selected — which indexers a connection syncs is
+// now the referenced sync profile's IndexerIDs, not a per-row flag here).
 type AppConnectionIndexer struct {
 	ID             int64
 	ConnectionID   int64
 	InstanceID     int64
 	RemoteID       string
-	Selected       bool
 	PayloadHash    string
 	LastPushedAt   *time.Time
 	LastPushStatus string

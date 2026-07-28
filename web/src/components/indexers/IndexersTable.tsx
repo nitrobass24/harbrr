@@ -1,4 +1,5 @@
-import { ArrowRight, Copy, MoreVertical, Pencil, Trash2 } from "lucide-react"
+import { ArrowRight, ArrowUpNarrowWide, Copy, MoreVertical, Pencil, Trash2 } from "lucide-react"
+import { ExpiryCell } from "@/components/indexers/ExpiryCell"
 import { FreeleechPill } from "@/components/indexers/FreeleechPill"
 import { HealthCell } from "@/components/indexers/HealthCell"
 import { IndexerAvatar } from "@/components/indexers/IndexerAvatar"
@@ -37,8 +38,14 @@ export type IndexerRowActions = {
 }
 
 // Presentational indexers table (mockup layout); the route composes the row
-// data from queries so tests can feed fixtures directly.
-export function IndexersTable({ rows, actions }: { rows: IndexerRowData[], actions: IndexerRowActions }) {
+// data from queries so tests can feed fixtures directly. sortByExpiry is owned by
+// the route (it reorders `rows`); this component only renders the header affordance.
+export function IndexersTable({ rows, actions, sortByExpiry = false, onToggleExpirySort }: {
+  rows: IndexerRowData[]
+  actions: IndexerRowActions
+  sortByExpiry?: boolean
+  onToggleExpirySort?: () => void
+}) {
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card">
       <Table className="text-[13px]">
@@ -49,6 +56,17 @@ export function IndexersTable({ rows, actions }: { rows: IndexerRowData[], actio
             <TableHead>Privacy</TableHead>
             <TableHead>Categories</TableHead>
             <TableHead>Health</TableHead>
+            <TableHead>
+              <button
+                type="button"
+                aria-pressed={sortByExpiry}
+                className="flex cursor-pointer items-center gap-1 uppercase tracking-wider transition hover:text-foreground"
+                onClick={onToggleExpirySort}
+              >
+                Expiry
+                <ArrowUpNarrowWide className={cn("h-3 w-3", sortByExpiry ? "text-foreground" : "text-faint")} />
+              </button>
+            </TableHead>
             <TableHead className="text-center">Enabled</TableHead>
             <TableHead className="pr-5 text-right">Actions</TableHead>
           </TableRow>
@@ -90,6 +108,7 @@ function IndexerRow({ row, actions }: { row: IndexerRowData, actions: IndexerRow
       </TableCell>
       <TableCell className="max-w-56 truncate text-muted-foreground">{row.categories ?? ""}</TableCell>
       <TableCell><HealthCell status={row.status} /></TableCell>
+      <TableCell><ExpiryCell instance={ix} /></TableCell>
       <TableCell className="text-center">
         <Switch
           aria-label={`${ix.enabled ? "Disable" : "Enable"} ${ix.name}`}

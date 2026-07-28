@@ -74,6 +74,7 @@ type App struct {
 	registry    *registry.Registry
 
 	notify   *notify.Service
+	expiry   *notify.ExpiryScanner
 	apps     *apps.Service
 	appsync  *appsync.Service
 	announce *announce.Service
@@ -83,7 +84,8 @@ type App struct {
 	solver   *solver.Service
 	backup   *backup.Service
 
-	logLevel *api.LogLevelStore
+	logLevel  *api.LogLevelStore
+	adultCats *api.AdultCategoriesStore
 
 	server *server.Server
 	lc     net.ListenConfig
@@ -140,6 +142,7 @@ func (a *App) build(ctx context.Context, httpClient *http.Client) error {
 	a.initRegistry(ctx, httpClient)
 	a.initSyncServices(httpClient)
 	a.initLogLevel(ctx)
+	a.initAdultCategories(ctx)
 	a.proxy = proxy.NewService(a.db, a.keyring)
 	a.download = download.NewService(a.db, a.apps, a.keyring, httpClient, a.log)
 	a.solver = solver.NewService(a.db, a.keyring)
@@ -285,6 +288,19 @@ func cookiePath(baseURL string) string {
 	return baseURL
 }
 
+// expiryLink is the externally-visible URL of the indexers page, which an expiry
+// notification points at so the warning lands one click from the field that fixes it.
+// It needs server.external_url: without it harbrr only knows its own listen address,
+// and a link to that would be wrong for everyone reading the notification — so an
+// unconfigured instance sends the warning with no link rather than a misleading one.
+func expiryLink(cfg *config.Config) string {
+	origin := cfg.Server.ExternalOrigin()
+	if origin == "" {
+		return ""
+	}
+	return origin + cfg.Server.BaseURL + "/indexers"
+}
+
 // initRegistry builds the search cache and the registry. notify.Service is
 // constructed BEFORE the registry: it is passed in as registry.WithHealthSink,
 // so a recorded indexer failure can fan out (async, best-effort) to configured
@@ -292,6 +308,7 @@ func cookiePath(baseURL string) string {
 func (a *App) initRegistry(ctx context.Context, httpClient *http.Client) {
 	a.searchCache = buildSearchCache(ctx, a.db, a.cfg, a.log)
 	a.notify = notify.NewService(a.db, a.keyring, httpClient, a.log)
+	a.expiry = notify.NewExpiryScanner(a.notify, a.db, expiryLink(a.cfg), nil)
 	a.registry = registry.New(a.db, loader.New(dropinDir(a.cfg)), a.keyring, catalog.All(),
 		registry.WithLogger(a.log), registry.WithSearchCache(a.searchCache), registry.WithHealthSink(a.notify))
 	if err := a.registry.LoadRateDefaultOverride(ctx); err != nil {
@@ -350,6 +367,16 @@ func (a *App) initLogLevel(ctx context.Context) {
 	applyPersistedLogLevel(ctx, a.logLevel, a.log)
 }
 
+// initAdultCategories builds the hide-adult-categories dial and loads the
+// operator's persisted choice. A read failure is non-fatal: the setting stays
+// off (adult categories visible), which is the default behaviour anyway.
+func (a *App) initAdultCategories(ctx context.Context) {
+	a.adultCats = api.NewAdultCategoriesStore(a.db, time.Now)
+	if err := a.adultCats.LoadPersisted(ctx); err != nil {
+		a.log.Warn().Err(err).Msg("serve: reading the hide-adult-categories setting failed; adult categories stay visible")
+	}
+}
+
 // applyPersistedLogLevel applies the DB log-level override (set via the management
 // API), which beats the config-file/env/flag seed. A read error or stale value is
 // non-fatal — the seed stays in effect.
@@ -373,6 +400,7 @@ func newServer(a *App) (*server.Server, error) {
 		Auth: a.auth, Registry: a.registry, Loader: loader.New(dropinDir(a.cfg)), Apps: a.apps, AppSync: a.appsync,
 		Announce: a.announce, Notify: a.notify, Proxy: a.proxy, Download: a.download, Solver: a.solver, Backup: a.backup, Sessions: a.sessions,
 		DLToken: a.keyring, URLConfig: urlCfg, Cache: a.searchCache, Logger: a.log, LogLevel: a.logLevel,
+		AdultCategories: a.adultCats,
 	}, api.Config{
 		AuthDisabled: a.cfg.Auth.AuthDisabled(), IPAllowlist: a.cfg.Auth.IPAllowlist, TrustedProxies: a.cfg.Auth.TrustedProxies,
 		Port: a.cfg.Server.Port, OIDC: oidcConfig(a.cfg.Auth.OIDC),
@@ -462,7 +490,7 @@ func (a *App) Handler() http.Handler { return a.server.Handler() }
 func (a *App) Run(ctx context.Context) error {
 	bgCtx, bgCancel := context.WithCancel(ctx)
 	var bg sync.WaitGroup
-	startReapers(bgCtx, &bg, a.db, a.sessionStore, a.searchCache, a.registry, a.auth, a.log)
+	startReapers(bgCtx, &bg, a.db, a.sessionStore, a.searchCache, a.registry, a.auth, a.expiry, a.log)
 
 	runErr := a.serveUntilDone(ctx)
 

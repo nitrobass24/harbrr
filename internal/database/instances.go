@@ -27,10 +27,16 @@ const timeLayout = time.RFC3339
 func (Instances) Insert(ctx context.Context, q dbinterface.Execer, inst domain.IndexerInstance) (int64, error) {
 	res, err := q.ExecContext(
 		ctx,
-		q.Rebind(`INSERT INTO indexer_instances (slug, definition_id, name, base_url, enabled, protocol, proxy_id, solver_id, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+		q.Rebind(`INSERT INTO indexer_instances
+		 (slug, definition_id, name, base_url, enabled, protocol, proxy_id, solver_id, priority, min_seeders,
+		  enable_rss, enable_automatic_search, enable_interactive_search, sync_categories,
+		  expires_at, expiry_kind, expiry_lifetime, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		inst.Slug, inst.DefinitionID, inst.Name, inst.BaseURL, boolToInt(inst.Enabled), inst.Protocol,
-		nullInt64(inst.ProxyID), nullInt64(inst.SolverID),
+		nullInt64(inst.ProxyID), nullInt64(inst.SolverID), inst.Priority, inst.MinSeeders,
+		boolToInt(inst.EnableRss), boolToInt(inst.EnableAutomaticSearch), boolToInt(inst.EnableInteractiveSearch),
+		encodeCategoryIDs(inst.SyncCategories),
+		inst.ExpiresAt, inst.ExpiryKind, boolToInt(inst.ExpiryLifetime),
 		inst.CreatedAt.UTC().Format(timeLayout), inst.UpdatedAt.UTC().Format(timeLayout),
 	)
 	if err != nil {
@@ -85,11 +91,15 @@ func (Instances) UpsertSetting(ctx context.Context, q dbinterface.Execer, instan
 	return nil
 }
 
+// instanceColumns is the full select list, in scan order.
+const instanceColumns = `id, slug, definition_id, name, base_url, enabled, protocol, proxy_id, solver_id, priority, min_seeders,
+	enable_rss, enable_automatic_search, enable_interactive_search, sync_categories,
+	expires_at, expiry_kind, expiry_lifetime, created_at, updated_at`
+
 // GetBySlug returns the instance with the given slug, or ErrNotFound.
 func (Instances) GetBySlug(ctx context.Context, q dbinterface.Execer, slug string) (domain.IndexerInstance, error) {
 	row := q.QueryRowContext(ctx,
-		q.Rebind(`SELECT id, slug, definition_id, name, base_url, enabled, protocol, proxy_id, solver_id, created_at, updated_at
-		 FROM indexer_instances WHERE slug = ?`), slug)
+		q.Rebind(`SELECT `+instanceColumns+` FROM indexer_instances WHERE slug = ?`), slug)
 	inst, err := scanInstance(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.IndexerInstance{}, fmt.Errorf("instance %q: %w", slug, ErrNotFound)
@@ -104,8 +114,7 @@ func (Instances) GetBySlug(ctx context.Context, q dbinterface.Execer, slug strin
 // source to resolve a cache write-back's instance id back to its slug.
 func (Instances) GetByID(ctx context.Context, q dbinterface.Execer, id int64) (domain.IndexerInstance, error) {
 	row := q.QueryRowContext(ctx,
-		q.Rebind(`SELECT id, slug, definition_id, name, base_url, enabled, protocol, proxy_id, solver_id, created_at, updated_at
-		 FROM indexer_instances WHERE id = ?`), id)
+		q.Rebind(`SELECT `+instanceColumns+` FROM indexer_instances WHERE id = ?`), id)
 	inst, err := scanInstance(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.IndexerInstance{}, fmt.Errorf("instance %d: %w", id, ErrNotFound)
@@ -149,7 +158,7 @@ func (Instances) Settings(ctx context.Context, q dbinterface.Execer, instanceID 
 // List returns all instances ordered by slug.
 func (Instances) List(ctx context.Context, q dbinterface.Execer) ([]domain.IndexerInstance, error) {
 	rows, err := q.QueryContext(ctx,
-		`SELECT id, slug, definition_id, name, base_url, enabled, protocol, proxy_id, solver_id, created_at, updated_at
+		`SELECT `+instanceColumns+`
 		 FROM indexer_instances ORDER BY slug`)
 	if err != nil {
 		return nil, fmt.Errorf("database: list instances: %w", err)
@@ -170,13 +179,85 @@ func (Instances) List(ctx context.Context, q dbinterface.Execer) ([]domain.Index
 	return out, nil
 }
 
-// UpdateMeta updates an instance's name, base URL, and updated_at by id.
-func (Instances) UpdateMeta(ctx context.Context, q dbinterface.Execer, id int64, name, baseURL string, updatedAt time.Time) error {
+// InstanceMeta is the set of instance-level fields UpdateMeta writes together — a value
+// struct rather than a growing positional-parameter list (the #364 shape already needed
+// name/baseURL/priority/minSeeders; #365 added the search toggles and sync categories).
+type InstanceMeta struct {
+	Name                    string
+	BaseURL                 string
+	Priority                int
+	MinSeeders              int
+	EnableRss               bool
+	EnableAutomaticSearch   bool
+	EnableInteractiveSearch bool
+	SyncCategories          []int
+	// ExpiresAt / ExpiryKind / ExpiryLifetime are the #399 expiry fields. The
+	// notification ledger columns are deliberately NOT here: they key on the expiry
+	// date, so changing the date re-arms every threshold without any reset write.
+	ExpiresAt      string
+	ExpiryKind     string
+	ExpiryLifetime bool
+}
+
+// UpdateMeta updates an instance's metadata fields and updated_at by id.
+func (Instances) UpdateMeta(ctx context.Context, q dbinterface.Execer, id int64, m InstanceMeta, updatedAt time.Time) error {
 	_, err := q.ExecContext(ctx,
-		q.Rebind(`UPDATE indexer_instances SET name = ?, base_url = ?, updated_at = ? WHERE id = ?`),
-		name, baseURL, updatedAt.UTC().Format(timeLayout), id)
+		q.Rebind(`UPDATE indexer_instances SET
+			name = ?, base_url = ?, priority = ?, min_seeders = ?,
+			enable_rss = ?, enable_automatic_search = ?, enable_interactive_search = ?, sync_categories = ?,
+			expires_at = ?, expiry_kind = ?, expiry_lifetime = ?,
+			updated_at = ?
+			WHERE id = ?`),
+		m.Name, m.BaseURL, m.Priority, m.MinSeeders,
+		boolToInt(m.EnableRss), boolToInt(m.EnableAutomaticSearch), boolToInt(m.EnableInteractiveSearch),
+		encodeCategoryIDs(m.SyncCategories),
+		m.ExpiresAt, m.ExpiryKind, boolToInt(m.ExpiryLifetime),
+		updatedAt.UTC().Format(timeLayout), id)
 	if err != nil {
 		return fmt.Errorf("database: update instance meta: %w", err)
+	}
+	return nil
+}
+
+// ListExpiryTracked returns the expiry state of every instance that HAS a tracked
+// expiry date — a lifetime or unset instance is filtered out in SQL, so the periodic
+// scan reads nothing at all on an installation that tracks no expiries. Ordered by
+// date so the soonest is handled first and the result is deterministic.
+func (Instances) ListExpiryTracked(ctx context.Context, q dbinterface.Execer) ([]domain.IndexerExpiry, error) {
+	rows, err := q.QueryContext(ctx, q.Rebind(
+		`SELECT id, slug, expires_at, expiry_kind, expiry_notified_for, expiry_notified_days
+		 FROM indexer_instances
+		 WHERE expiry_lifetime = 0 AND expires_at != '' ORDER BY expires_at, slug`,
+	))
+	if err != nil {
+		return nil, fmt.Errorf("database: list tracked expiries: %w", err)
+	}
+	defer rows.Close()
+
+	var out []domain.IndexerExpiry
+	for rows.Next() {
+		var e domain.IndexerExpiry
+		if err := rows.Scan(&e.InstanceID, &e.Slug, &e.ExpiresAt, &e.Kind, &e.NotifiedFor, &e.NotifiedDays); err != nil {
+			return nil, fmt.Errorf("database: scan tracked expiry: %w", err)
+		}
+		out = append(out, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("database: iterate tracked expiries: %w", err)
+	}
+	return out, nil
+}
+
+// MarkExpiryNotified records that the threshold days-before (0 = at/after expiry) has
+// fired for expiry date forDate on instance id. Writing the date alongside the
+// threshold is what makes the ledger self-invalidating: a renewal changes expires_at,
+// forDate no longer matches, and every threshold is armed again.
+func (Instances) MarkExpiryNotified(ctx context.Context, q dbinterface.Execer, id int64, forDate string, days int) error {
+	_, err := q.ExecContext(ctx,
+		q.Rebind(`UPDATE indexer_instances SET expiry_notified_for = ?, expiry_notified_days = ? WHERE id = ?`),
+		forDate, days, id)
+	if err != nil {
+		return fmt.Errorf("database: mark expiry notified: %w", err)
 	}
 	return nil
 }
@@ -226,20 +307,28 @@ func (Instances) Delete(ctx context.Context, q dbinterface.Execer, slug string) 
 // scanInstance reads one instance row from a *sql.Row or *sql.Rows.
 func scanInstance(s interface{ Scan(...any) error }) (domain.IndexerInstance, error) {
 	var (
-		inst                 domain.IndexerInstance
-		baseURL              sql.NullString
-		enabled              int
-		proxyID, solverID    sql.NullInt64
-		createdAt, updatedAt string
+		inst                         domain.IndexerInstance
+		baseURL                      sql.NullString
+		enabled                      int
+		proxyID, solverID            sql.NullInt64
+		rss, autoSearch, interactive int
+		syncCategories               string
+		lifetime                     int
+		createdAt, updatedAt         string
 	)
 	if err := s.Scan(&inst.ID, &inst.Slug, &inst.DefinitionID, &inst.Name, &baseURL, &enabled, &inst.Protocol,
-		&proxyID, &solverID, &createdAt, &updatedAt); err != nil {
+		&proxyID, &solverID, &inst.Priority, &inst.MinSeeders,
+		&rss, &autoSearch, &interactive, &syncCategories,
+		&inst.ExpiresAt, &inst.ExpiryKind, &lifetime, &createdAt, &updatedAt); err != nil {
 		return domain.IndexerInstance{}, err //nolint:wrapcheck // sql.ErrNoRows is matched by the caller; other errors wrap there.
 	}
 	inst.BaseURL = baseURL.String
 	inst.Enabled = enabled != 0
 	inst.ProxyID = nullableToPtr(proxyID)
 	inst.SolverID = nullableToPtr(solverID)
+	inst.EnableRss, inst.EnableAutomaticSearch, inst.EnableInteractiveSearch = rss != 0, autoSearch != 0, interactive != 0
+	inst.ExpiryLifetime = lifetime != 0
+	inst.SyncCategories = decodeCategoryIDs(syncCategories)
 	inst.CreatedAt = parseTime(createdAt)
 	inst.UpdatedAt = parseTime(updatedAt)
 	return inst, nil

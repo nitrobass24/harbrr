@@ -108,14 +108,6 @@ export function useSyncAll() {
   })
 }
 
-export function useSetSelectedIndexers(id: number) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (instanceIds: number[]) => api.setSelectedIndexers(id, instanceIds),
-    onSettled: () => qc.invalidateQueries({ queryKey: keys.appConnections.status(id) }),
-  })
-}
-
 // --- sync profiles ---
 
 export function useSyncProfiles() {
@@ -134,8 +126,9 @@ export function useSyncProfileMutations() {
       mutationFn: ({ id, body }: { id: number, body: UpdateSyncProfile }) => api.updateSyncProfile(id, body),
       onSettled: invalidate,
     }),
-    // Deleting a profile nulls any connection's reference (ON DELETE SET NULL), so
-    // refresh the connection list too.
+    // The delete is refused (409) while any connection still references the profile
+    // (the service-level guard), but refresh the connection list too in case one did
+    // just get detached right before this call.
     remove: useMutation({
       mutationFn: (id: number) => api.deleteSyncProfile(id),
       onSettled: () => {

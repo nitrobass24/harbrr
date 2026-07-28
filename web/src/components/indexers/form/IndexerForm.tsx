@@ -1,15 +1,31 @@
 import { useState } from "react"
 import { ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
+import { Switch } from "@/components/ui/switch"
 import { SettingFieldInput } from "@/components/indexers/form/SettingFieldInput"
 import { defaultValues, isInfoField, settingsPayload } from "@/components/indexers/form/settings-payload"
 import { useProxies, useSolvers } from "@/hooks/useResources"
 import { APIError } from "@/lib/api"
+import { hostname } from "@/lib/format"
 import type { AddIndexer, DefinitionDetail, InstanceDetail, SettingField, UpdateIndexer } from "@/lib/api"
 import { cn } from "@/lib/utils"
+
+// The 7 Newznab parent categories (#365 — moved here from the old sync-profile form now
+// that category narrowing is per-indexer, not per-profile).
+const NEWZNAB_PARENTS = [
+  { id: 2000, label: "Movies" },
+  { id: 3000, label: "Audio" },
+  { id: 4000, label: "PC" },
+  { id: 5000, label: "TV" },
+  { id: 6000, label: "XXX" },
+  { id: 7000, label: "Books" },
+  { id: 8000, label: "Other" },
+]
+const PARENT_IDS = new Set(NEWZNAB_PARENTS.map((p) => p.id))
 
 // The one reserved engine setting still entered inline. Proxy + FlareSolverr are
 // now global resources referenced by id (proxy_type/proxy_url, solver_type=
@@ -19,6 +35,33 @@ const TIMEOUT_FIELD: SettingField = {
   name: "timeout", label: "Request timeout (Go duration, e.g. 30s)", type: "text", secret: false,
 }
 
+// Reserved request-limit settings (autobrr/harbrr#251): already enforced by the
+// registry, exposed here for the first time. They ride the same free-form
+// settings map as TIMEOUT_FIELD — no dedicated body fields.
+const QUERY_LIMIT_FIELD: SettingField = {
+  name: "query_limit", label: "Search request cap per period (empty = no cap)", type: "text", secret: false,
+}
+const GRAB_LIMIT_FIELD: SettingField = {
+  name: "grab_limit", label: "Grab request cap per period (empty = no cap)", type: "text", secret: false,
+}
+const LIMITS_UNIT_FIELD: SettingField = {
+  name: "limits_unit", label: "Limits reset every (empty = day)", type: "select", secret: false,
+  options: { day: "Day", hour: "Hour" },
+}
+const LIMIT_FIELDS = [TIMEOUT_FIELD, QUERY_LIMIT_FIELD, GRAB_LIMIT_FIELD, LIMITS_UNIT_FIELD]
+
+// Reserved matching settings (autobrr/harbrr#394). Both default to today's engine
+// behaviour, so an untouched indexer searches and filters exactly as it always has;
+// they ride the same free-form settings map as the fields above.
+const FOLD_PUNCTUATION_FIELD: SettingField = {
+  name: "andmatch_fold_punctuation", label: "Ignore apostrophes and dots when matching results", type: "checkbox", secret: false,
+}
+const DEGENERATE_GATE_FIELD: SettingField = {
+  name: "degenerate_query_gate", label: "Skip searches this indexer can't answer", type: "select", secret: false,
+  default: "off", options: { off: "Off — always search", auto: "Auto — skip when nothing searchable is left" },
+}
+const MATCHING_FIELDS = [FOLD_PUNCTUATION_FIELD, DEGENERATE_GATE_FIELD]
+
 // Inline settings the proxy/solver controls own — stripped from the schema-driven
 // map so they are never double-submitted (proxy rides proxyId, FlareSolverr rides
 // solverId, solver_type is set explicitly on submit). NOTE: `cookie` is NOT here —
@@ -26,6 +69,10 @@ const TIMEOUT_FIELD: SettingField = {
 // render/submit normally; the manual-cookie SOLVER only manages `cookie` for a
 // definition that does not (see managesCookie below).
 const MANAGED_KEYS = ["proxy_type", "proxy_url", "solver_type", "flaresolverr_url", "flaresolverr_max_timeout"]
+
+// Sentinel for the base-URL picker's "Custom…" option. Not a URL, so it can never
+// collide with a definition's links entry.
+const CUSTOM_BASE_URL = "custom"
 
 export type IndexerFormSubmit =
   | { mode: "create", body: AddIndexer }
@@ -58,7 +105,7 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
   const [slug, setSlug] = useState(existing?.slug ?? definition.id)
   const [baseUrl, setBaseUrl] = useState(existing?.baseUrl ?? "")
   const [values, setValues] = useState<Record<string, string>>(() => {
-    const seeded = { ...defaultValues([TIMEOUT_FIELD]), ...defaultValues(definition.settings, existing?.settings) }
+    const seeded = { ...defaultValues([...LIMIT_FIELDS, ...MATCHING_FIELDS]), ...defaultValues(definition.settings, existing?.settings) }
     for (const k of MANAGED_KEYS) delete seeded[k]
     if (!definesCookie) delete seeded.cookie // solver-managed manual cookie, controlled below
     return seeded
@@ -66,6 +113,18 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
   const [proxyId, setProxyId] = useState<number | null>(existing?.proxyId ?? null)
   const [solver, setSolver] = useState<SolverChoice>(() => initialSolver(existing))
   const [cookie, setCookie] = useState(definesCookie ? "" : (existing?.settings.find((s) => s.name === "cookie")?.value ?? ""))
+  const [priority, setPriority] = useState(String(existing?.priority ?? 25))
+  const [minSeeders, setMinSeeders] = useState(String(existing?.minSeeders ?? 0))
+  const [enableRss, setEnableRss] = useState(existing?.enableRss ?? true)
+  const [enableAutomaticSearch, setEnableAutomaticSearch] = useState(existing?.enableAutomaticSearch ?? true)
+  const [enableInteractiveSearch, setEnableInteractiveSearch] = useState(existing?.enableInteractiveSearch ?? true)
+  const [expiresAt, setExpiresAt] = useState(existing?.expiresAt ?? "")
+  const [expiryKind, setExpiryKind] = useState<"perk" | "account">(
+    existing?.expiryKind === "account" ? "account" : "perk")
+  const [expiryLifetime, setExpiryLifetime] = useState(existing?.expiryLifetime ?? false)
+  const [checkedParents, setCheckedParents] = useState<Set<number>>(
+    new Set((existing?.syncCategories ?? []).filter((c) => PARENT_IDS.has(c))))
+  const [extraCategories, setExtraCategories] = useState((existing?.syncCategories ?? []).filter((c) => !PARENT_IDS.has(c)).join(", "))
   const [showAdvanced, setShowAdvanced] = useState(false)
 
   const setValue = (fieldName: string) => (value: string) =>
@@ -99,11 +158,22 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
           }
         }
         const solverId = typeof solver === "number" ? solver : null
+        const priorityNum = Number(priority)
+        const minSeedersNum = Number(minSeeders)
+        // Positive integers only — a stray decimal or sign would otherwise ride into
+        // the []int JSON body and fail the whole request with an opaque decode error.
+        const extraIds = extraCategories.split(",").map((s) => s.trim()).filter((s) => s !== "").map((s) => Number(s)).filter((n) => Number.isInteger(n) && n > 0)
+        const syncCategories = [...new Set([...checkedParents, ...extraIds])].sort((a, b) => a - b)
+        const toggles = { enableRss, enableAutomaticSearch, enableInteractiveSearch }
+        // expiresAt goes verbatim on BOTH paths — unlike baseUrl this is not an
+        // edit-only clear: "" is how "no expiry" is expressed either way, and the
+        // server drops the kind along with the date. Lifetime clears it server-side.
+        const expiry = { expiresAt, expiryKind, expiryLifetime }
         if (mode === "edit") {
           // baseUrl verbatim so clearing it ("") clears the stored override.
-          onSubmit({ mode, body: { name, baseUrl, settings, proxyId, solverId } })
+          onSubmit({ mode, body: { name, baseUrl, settings, proxyId, solverId, priority: priorityNum, minSeeders: minSeedersNum, syncCategories, ...toggles, ...expiry } })
         } else {
-          onSubmit({ mode, body: { slug, definitionId: definition.id, name, baseUrl: baseUrl || undefined, settings, proxyId, solverId } })
+          onSubmit({ mode, body: { slug, definitionId: definition.id, name, baseUrl: baseUrl || undefined, settings, proxyId, solverId, priority: priorityNum, minSeeders: minSeedersNum, syncCategories, ...toggles, ...expiry } })
         }
       }}
     >
@@ -131,10 +201,7 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
         )}
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="ix-baseurl">Base URL (optional override)</Label>
-        <Input id="ix-baseurl" placeholder="https://…" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
-      </div>
+      <BaseUrlField links={definition.links} value={baseUrl} onChange={setBaseUrl} />
 
       {definition.settings.map((field) => (
         <SettingFieldInput
@@ -151,7 +218,7 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
         onClick={() => setShowAdvanced((v) => !v)}
       >
         <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", showAdvanced && "rotate-90")} />
-        Advanced (proxy, timeout, anti-bot solver)
+        Advanced (proxy, timeout, anti-bot solver, priority, request limits, matching, expiry, sync behavior)
       </button>
       {showAdvanced && (
         <div className="flex flex-col gap-4 rounded-md border border-border p-3">
@@ -181,14 +248,219 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
               <Input id="ix-cookie" type="password" autoComplete="off" placeholder="cf_clearance=…; other=…" value={cookie} onChange={(e) => setCookie(e.target.value)} />
             </span>
           )}
+
+          <span className="flex flex-col gap-1.5">
+            <Label htmlFor="ix-priority">Priority (1–50, 1 = highest — synced to apps)</Label>
+            <Input id="ix-priority" type="number" min={1} max={50} value={priority} onChange={(e) => setPriority(e.target.value)} />
+          </span>
+
+          <span className="flex flex-col gap-1.5">
+            <Label htmlFor="ix-min-seeders">Minimum seeders (0 = unset, not pushed)</Label>
+            <Input id="ix-min-seeders" type="number" min={0} value={minSeeders} onChange={(e) => setMinSeeders(e.target.value)} />
+          </span>
+
+          <ExpiryFields
+            date={expiresAt}
+            kind={expiryKind}
+            lifetime={expiryLifetime}
+            onDate={setExpiresAt}
+            onKind={setExpiryKind}
+            onLifetime={setExpiryLifetime}
+          />
+
+          <SettingFieldInput field={QUERY_LIMIT_FIELD} value={values.query_limit ?? ""} onChange={setValue("query_limit")} />
+          <SettingFieldInput field={GRAB_LIMIT_FIELD} value={values.grab_limit ?? ""} onChange={setValue("grab_limit")} />
+          <SettingFieldInput field={LIMITS_UNIT_FIELD} value={values.limits_unit ?? ""} onChange={setValue("limits_unit")} />
+
+          <span className="flex flex-col gap-1.5">
+            <Label>Matching</Label>
+            <SettingFieldInput field={FOLD_PUNCTUATION_FIELD} value={values.andmatch_fold_punctuation ?? ""} onChange={setValue("andmatch_fold_punctuation")} />
+            <p className="text-[12px] text-faint">
+              Keeps results your app&apos;s search term lost the punctuation of &mdash; Sonarr and Radarr
+              strip apostrophes, so &ldquo;n&apos;est&rdquo; would otherwise never match.
+            </p>
+            <SettingFieldInput field={DEGENERATE_GATE_FIELD} value={values.degenerate_query_gate ?? ""} onChange={setValue("degenerate_query_gate")} />
+            <p className="text-[12px] text-faint">
+              Auto skips this indexer when its own filters reduce the search term to nothing
+              usable &mdash; a Japanese title left as just the year. The search is reported as
+              skipped, not failed.
+            </p>
+          </span>
+
+          <span className="flex items-center justify-between">
+            <Label htmlFor="ix-rss" className="font-normal">Enable RSS</Label>
+            <Switch id="ix-rss" checked={enableRss} onCheckedChange={setEnableRss} />
+          </span>
+          <span className="flex items-center justify-between">
+            <Label htmlFor="ix-auto-search" className="font-normal">Enable automatic search</Label>
+            <Switch id="ix-auto-search" checked={enableAutomaticSearch} onCheckedChange={setEnableAutomaticSearch} />
+          </span>
+          <span className="flex items-center justify-between">
+            <Label htmlFor="ix-interactive-search" className="font-normal">Enable interactive search</Label>
+            <Switch id="ix-interactive-search" checked={enableInteractiveSearch} onCheckedChange={setEnableInteractiveSearch} />
+          </span>
+
+          <span className="flex flex-col gap-1.5">
+            <Label>Sync categories</Label>
+            <div className="grid grid-cols-4 gap-2">
+              {NEWZNAB_PARENTS.map((c) => (
+                <span key={c.id} className="flex items-center gap-2">
+                  <Checkbox
+                    id={`ix-cat-${c.id}`}
+                    checked={checkedParents.has(c.id)}
+                    onCheckedChange={(checked) => {
+                      const next = new Set(checkedParents)
+                      if (checked === true) next.add(c.id)
+                      else next.delete(c.id)
+                      setCheckedParents(next)
+                    }}
+                  />
+                  <Label htmlFor={`ix-cat-${c.id}`} className="font-normal">{c.label}</Label>
+                </span>
+              ))}
+            </div>
+            <Input placeholder="Extra category IDs, e.g. 3030" value={extraCategories} onChange={(e) => setExtraCategories(e.target.value)} />
+            <p className="text-[12px] text-faint">
+              Leave empty to push all of this indexer&apos;s categories (within each app&apos;s own content type).
+            </p>
+          </span>
         </div>
       )}
 
-      <Button type="submit" disabled={pending || name === "" || (mode === "create" && slug === "")}>
+      <Button type="submit" disabled={pending || name === "" || badScheme(baseUrl) || (mode === "create" && slug === "")}>
         {pending ? "Saving…" : mode === "edit" ? "Save changes" : "Add indexer"}
       </Button>
     </form>
   )
+}
+
+// ExpiryFields is the VIP/membership expiry group (autobrr/harbrr#399). Native
+// <input type="date"> rather than a picker library: it already gives the exact
+// YYYY-MM-DD the API stores, plus the platform's own calendar and locale handling.
+// Leaving the date empty is "untracked" and behaves exactly as before the field
+// existed — this is opt-in bookkeeping, never a nag.
+function ExpiryFields({ date, kind, lifetime, onDate, onKind, onLifetime }: {
+  date: string
+  kind: "perk" | "account"
+  lifetime: boolean
+  onDate: (v: string) => void
+  onKind: (v: "perk" | "account") => void
+  onLifetime: (v: boolean) => void
+}) {
+  return (
+    <span className="flex flex-col gap-1.5">
+      <Label htmlFor="ix-expires-at">Expiry (optional)</Label>
+      <div className="flex gap-2">
+        <Input
+          id="ix-expires-at"
+          type="date"
+          className="flex-1"
+          disabled={lifetime}
+          value={lifetime ? "" : date}
+          onChange={(e) => onDate(e.target.value)}
+        />
+        <NativeSelect
+          aria-label="Expiry type"
+          className="flex-1"
+          value={kind}
+          onChange={(e) => onKind(e.target.value === "account" ? "account" : "perk")}
+        >
+          <option value="perk">VIP / perk</option>
+          <option value="account">Account</option>
+        </NativeSelect>
+      </div>
+      <span className="flex items-center gap-2">
+        <Checkbox
+          id="ix-expiry-lifetime"
+          checked={lifetime}
+          onCheckedChange={(checked) => onLifetime(checked === true)}
+        />
+        <Label htmlFor="ix-expiry-lifetime" className="font-normal">Lifetime (never expires)</Label>
+      </span>
+      <p className="text-[12px] text-faint">
+        Leave empty if you don&apos;t track this. harbrr warns before the date and never
+        contacts the tracker to check it &mdash; renew there, then update the date here.
+      </p>
+    </span>
+  )
+}
+
+// BaseUrlField picks the base-URL override from the definition's known hosts
+// (autobrr/harbrr#401). "" means "no override, follow the definition" — which
+// resolves to links[0] server-side, so the Default option is labelled with that
+// host rather than left opaque. Custom… keeps the free-text escape hatch for
+// private mirrors, onion addresses and LAN reverse proxies that no definition
+// lists. Purely local: the picker makes no network requests, and choosing a host
+// sets NO pin or failover-opt-out flag — that stays #375's separate control.
+function BaseUrlField({ links, value, onChange }: {
+  links: string[]
+  value: string
+  onChange: (v: string) => void
+}) {
+  const matched = links.find((l) => normBase(l) === normBase(value))
+  // An off-list stored override must land on Custom with the value intact —
+  // silently snapping it back to Default would change which host a working
+  // indexer talks to on an unrelated edit.
+  const [custom, setCustom] = useState(value !== "" && matched === undefined)
+  const showInput = custom || links.length === 0
+  const bad = badScheme(value)
+  // Warn, never block: a private mirror is a legitimate configuration.
+  const offList = showInput && links.length > 0 && value !== "" && !bad && matched === undefined
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor="ix-baseurl">Base URL (optional override)</Label>
+      {links.length > 0 ? (
+        <NativeSelect
+          id="ix-baseurl"
+          value={custom ? CUSTOM_BASE_URL : (matched ?? "")}
+          onChange={(e) => {
+            setCustom(e.target.value === CUSTOM_BASE_URL)
+            // Switching to Custom keeps whatever is there to edit; any other
+            // option submits its own value verbatim ("" = follow the definition).
+            if (e.target.value !== CUSTOM_BASE_URL) onChange(e.target.value)
+          }}
+        >
+          <option value="">Default ({hostname(links[0])})</option>
+          {links.map((l) => <option key={l} value={l} title={l}>{hostname(l)}</option>)}
+          <option value={CUSTOM_BASE_URL}>Custom…</option>
+        </NativeSelect>
+      ) : (
+        <Input id="ix-baseurl" placeholder="https://…" value={value} onChange={(e) => onChange(e.target.value)} />
+      )}
+      {showInput && links.length > 0 && (
+        <Input aria-label="Custom base URL" placeholder="https://…" value={value} onChange={(e) => onChange(e.target.value)} />
+      )}
+      {bad && <p className="text-[12px] text-bad">Base URL must start with http:// or https://.</p>}
+      {offList && <p className="text-[12px] text-faint">Not one of the definition&apos;s known hosts — saved as-is.</p>}
+    </div>
+  )
+}
+
+// normBase canonicalises a base URL for OPTION MATCHING ONLY — a picked host is
+// always submitted verbatim. Without it a stored "https://x.org/" would fail to
+// match a links entry of "https://x.org" and falsely show as Custom.
+function normBase(url: string): string {
+  const trimmed = url.trim().replace(/\/+$/, "")
+  try {
+    const u = new URL(trimmed)
+    // origin lowercases scheme + host; pathname keeps its case (paths can matter).
+    return u.origin + u.pathname.replace(/\/+$/, "")
+  } catch {
+    return trimmed.toLowerCase()
+  }
+}
+
+// badScheme blocks a base URL that isn't http/https. Empty is fine — that is the
+// "no override" case, not a typo.
+function badScheme(url: string): boolean {
+  if (url === "") return false
+  try {
+    const { protocol } = new URL(url)
+    return protocol !== "http:" && protocol !== "https:"
+  } catch {
+    return true
+  }
 }
 
 // initialSolver derives the solver control's value from the stored instance: a

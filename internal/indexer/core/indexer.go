@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
@@ -62,7 +63,46 @@ type Indexer interface {
 	ConsumesSearchMode() bool
 }
 
-// Provider resolves the indexer id from the request path to its Indexer.
+// AggregateSlug is the reserved feed slug that resolves to every enabled indexer
+// (autobrr/harbrr#400). It occupies the same {slug} path position as a real indexer,
+// so the aggregate feed inherits every Torznab route for free; the registry rejects
+// it as an instance slug so the two can never collide.
+const AggregateSlug = "all"
+
+// ProfileSlugPrefix marks a feed slug that names a sync profile — "profile:<name>",
+// where <name> matches domain.SyncProfile.Name EXACTLY once the path segment is
+// URL-decoded (profile names are operator-entered free text, so percent-encoding is
+// what carries awkward characters). Like AggregateSlug it sits in the same {slug}
+// position and inherits every Torznab route.
+//
+// It can never collide with an instance slug by construction: registry's slugPattern
+// forbids ':', so no instance can be named "profile:anything" (which is also why
+// reservedSlugs needs no entry for it). A "status:" form is autobrr/harbrr#400 PR 3,
+// behind the health-selector work — not implemented here.
+const ProfileSlugPrefix = "profile:"
+
+// ErrNoSuchFeed is Provider.Resolve's not-found sentinel: the slug names no indexer,
+// no profile, and no reserved aggregate. It is the ONLY error that means "this feed
+// does not exist" — any other error from Resolve is a failure to READ the member set
+// (the instance store is unreadable), which the serving layer must never render as a
+// successful empty feed.
+var ErrNoSuchFeed = errors.New("core: no such feed")
+
+// Provider resolves a feed slug to the indexer(s) that serve it.
 type Provider interface {
+	// Indexer resolves a slug to the single indexer it names. A reserved aggregate
+	// slug is NOT an indexer and returns ok=false — which is what binds the /dl grab
+	// route to a real member: an aggregate slug can never resolve a download.
 	Indexer(ctx context.Context, id string) (Indexer, bool)
+	// Resolve returns the member set a feed slug covers, one entry per SELECTED
+	// instance: a real indexer resolves to itself, AggregateSlug to every enabled
+	// instance, ProfileSlugPrefix to the profile's members (a disabled member
+	// included, as a skip). Every returned member is either live (Indexer != nil) or
+	// carries a constant skip Reason, so nothing a slug selects is ever silently
+	// absent from the served ledger.
+	//
+	// An aggregate or profile with no members resolves to an empty set and a nil error
+	// — a valid, empty feed. ErrNoSuchFeed means the slug names nothing; any other
+	// error means the member set could not be READ and must not be served as empty.
+	Resolve(ctx context.Context, slug string) ([]MemberOutcome, error)
 }

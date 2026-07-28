@@ -59,6 +59,8 @@ export type ApiKey = components["schemas"]["ApiKey"]
 export type MintedApiKey = components["schemas"]["MintedApiKey"]
 export type IndexerStats = components["schemas"]["IndexerStats"]
 export type IndexerFailureCounts = components["schemas"]["IndexerStats"]["failures"]
+export type IndexerBudget = components["schemas"]["IndexerBudget"]
+export type IndexerBudgetKind = components["schemas"]["IndexerBudgetKind"]
 export type CacheStats = components["schemas"]["CacheStats"]
 export type CacheIndexerStats = components["schemas"]["CacheIndexerStats"]
 export type CacheConfig = components["schemas"]["CacheConfig"]
@@ -499,6 +501,28 @@ export class ApiClient {
     return this.unwrap(this.http.PUT("/api/config/log-level", { body: { level } }), "/api/config/log-level")
   }
 
+  getAdultCategories(): Promise<components["schemas"]["AdultCategories"]> {
+    return this.unwrap(this.http.GET("/api/config/adult-categories"), "/api/config/adult-categories")
+  }
+
+  setAdultCategories(hidden: boolean): Promise<components["schemas"]["AdultCategories"]> {
+    return this.unwrap(
+      this.http.PUT("/api/config/adult-categories", { body: { hidden } }),
+      "/api/config/adult-categories"
+    )
+  }
+
+  getExpiryThresholds(): Promise<components["schemas"]["ExpiryThresholds"]> {
+    return this.unwrap(this.http.GET("/api/config/expiry-thresholds"), "/api/config/expiry-thresholds")
+  }
+
+  setExpiryThresholds(days: number[]): Promise<components["schemas"]["ExpiryThresholds"]> {
+    return this.unwrap(
+      this.http.PUT("/api/config/expiry-thresholds", { body: { days } }),
+      "/api/config/expiry-thresholds"
+    )
+  }
+
   // postFrontendLog relays a toast into the daemon's own log (see lib/notify.ts, the
   // only caller — never call this directly from a component).
   postFrontendLog(level: FrontendLogLevel, message: string, context?: string): Promise<void> {
@@ -559,13 +583,6 @@ export class ApiClient {
     return this.unwrap(this.http.GET("/api/app-connections/{id}/status", { params: { path: { id } } }), "/api/app-connections/{id}/status")
   }
 
-  setSelectedIndexers(id: number, instanceIds: number[]): Promise<void> {
-    return this.unwrap(
-      this.http.PUT("/api/app-connections/{id}/indexers", { params: { path: { id } }, body: { instanceIds } }),
-      "/api/app-connections/{id}/indexers"
-    )
-  }
-
   // --- apps (first-class (kind, base_url) identities, ADR 0004) ---
 
   listApps(): Promise<App[]> {
@@ -593,7 +610,7 @@ export class ApiClient {
     )
   }
 
-  // --- sync profiles (per-connection category/toggle overrides) ---
+  // --- sync profiles (indexer routing sets) ---
 
   listSyncProfiles(): Promise<SyncProfile[]> {
     return this.unwrap(this.http.GET("/api/sync-profiles"), "/api/sync-profiles")

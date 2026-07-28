@@ -28,7 +28,7 @@ import (
 // interface, never the concrete engine. It is the unit the registry caches per
 // slug. It also records per-indexer health events: a classified Search failure
 // appends one event (append-only) so the management status endpoint can surface why
-// an indexer is unhealthy.
+// an indexer is failing.
 type indexerAdapter struct {
 	info       core.IndexerInfo
 	inner      native.Driver
@@ -45,6 +45,11 @@ type indexerAdapter struct {
 	// the resolve and a later SWR trigger.
 	cache      *SearchCache
 	builtEpoch uint64
+	// skipQuery is the instance's degenerate-query gate (autobrr/harbrr#394): true when
+	// this query's term is one the definition's own keywordsfilters reduce to nothing
+	// usable. nil for a native driver — those have no keywordsfilters to degrade a term
+	// — and it answers false on a Cardigann instance that did not opt in.
+	skipQuery func(search.Query) bool
 	// freeleechOnly is the instance's stored `freeleech` setting. The engine is built
 	// with that key cleared (so it always fetches the full catalog); the value is
 	// carried here only to drive the serve-time freeleech view in Search.
@@ -95,6 +100,18 @@ func (a *indexerAdapter) Capabilities() *mapper.Capabilities { return a.inner.Ca
 // bypass feed (full catalog, for qui/cross-seed) from a SINGLE tracker fetch — so a later
 // bypass poll never re-hits the tracker just because an *arr polled FL-only first.
 func (a *indexerAdapter) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
+	// (0) The degenerate-query gate, FIRST — ahead of the cache read and the budget
+	// reservation alike (autobrr/harbrr#394). A query this indexer's own keywordsfilters
+	// strip down to nothing usable cannot be answered by it, so it must cost nothing at
+	// all: no outbound request, no cache entry keyed on a question we will never ask
+	// again, no budget unit that a query with a chance of succeeding could have used.
+	// Returning here also means the skip can never reach the health log, the circuit
+	// breaker or the query stats — they all live further down, in liveSearch — so
+	// "skipped, not failed" needs no exclusions to enforce.
+	if a.skipQuery != nil && a.skipQuery(q) {
+		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, core.ErrDegenerateQuery)
+	}
+
 	// RSS/empty polls only: canonicalize categories to the def's default set AND clear
 	// Mode (for a driver that never reads it) so every RSS consumer (Sonarr/Radarr/qui,
 	// each narrowing with a different cat= and each arriving under a different t=)
@@ -142,7 +159,7 @@ func (a *indexerAdapter) Search(ctx context.Context, q search.Query) ([]*normali
 	} else {
 		releases, err = a.budgetedLiveSearch(ctx, q)
 	}
-	if errors.Is(err, errBudgetExhausted) && cacheEnabled && !core.CacheBypass(ctx) {
+	if errors.Is(err, core.ErrBudgetExhausted) && cacheEnabled && !core.CacheBypass(ctx) {
 		// The query budget has no capacity left for this period: prefer serving
 		// whatever was last cached, even expired, over refusing the request outright
 		// (autobrr/harbrr#251). A cache miss here (nothing ever cached, or the stale
@@ -183,7 +200,7 @@ func (a *indexerAdapter) Search(ctx context.Context, q search.Query) ([]*normali
 // win, a dead/angry tracker stops being polled at full rate until its ladder window
 // passes. Only then does it reserve one unit of the query budget BEFORE the outbound
 // hit; when the budget has no capacity left for this period, it refuses without ever
-// touching the tracker — errBudgetExhausted, which Search catches to prefer a stale
+// touching the tracker — core.ErrBudgetExhausted, which Search catches to prefer a stale
 // cache serve, and which the breaker explicitly never trips on (searchcache.go's
 // tripBreaker, which also never trips on a circuit-open refusal for the same reason).
 func (a *indexerAdapter) budgetedLiveSearch(ctx context.Context, query search.Query) ([]*normalizer.Release, error) {
@@ -191,7 +208,7 @@ func (a *indexerAdapter) budgetedLiveSearch(ctx context.Context, query search.Qu
 		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, err)
 	}
 	if !a.budget.ReserveQuery(ctx, a.instanceID, a.cfg, a.clock()) {
-		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, errBudgetExhausted)
+		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, core.ErrBudgetExhausted)
 	}
 	return a.liveSearch(ctx, query)
 }
@@ -217,7 +234,28 @@ func (a *indexerAdapter) liveSearch(ctx context.Context, query search.Query) ([]
 		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, err)
 	}
 	a.recordCircuitSuccess(ctx)
+	a.stats.RecordCategoryResults(a.instanceID, parentCategoryCounts(releases))
 	return releases, nil
+}
+
+// parentCategoryCounts tallies how many of the returned releases fall in each standard
+// PARENT category (2040 Movies/HD -> 2000 Movies), the "which indexer is actually good
+// for music" dimension (#403). Folding to the ~10 families — instead of keeping the
+// tracker's own categories — is what keeps the durable table tiny. A release with no
+// mappable standard category counts under mapper.UncategorizedID rather than being
+// dropped.
+func parentCategoryCounts(releases []*normalizer.Release) map[int]int64 {
+	if len(releases) == 0 {
+		return nil
+	}
+	counts := make(map[int]int64, 8)
+	for _, r := range releases {
+		if r == nil {
+			continue
+		}
+		counts[mapper.PrimaryParentID(r.Categories)]++
+	}
+	return counts
 }
 
 // learnQuotaSpent marks kind's budget spent until reset when err is a tracker-declared
@@ -272,8 +310,12 @@ func (a *indexerAdapter) Grab(ctx context.Context, link string) (*search.GrabRes
 	// stale — the grab-path half of #251's enforcement. Gated after the breaker: a
 	// tripped instance must not consume budget.
 	if !a.budget.ReserveGrab(ctx, a.instanceID, a.cfg, a.clock()) {
-		return nil, fmt.Errorf("registry: grab %q: %w", a.info.ID, errBudgetExhausted)
+		return nil, fmt.Errorf("registry: grab %q: %w", a.info.ID, core.ErrBudgetExhausted)
 	}
+	// Counted here, not at the top of the method: "attempts" then means the same for
+	// grabs as for queries — it reached the tracker — so a breaker/budget refusal (which
+	// never touched it) cannot depress the indexer's success rate.
+	a.stats.RecordGrabAttempt(a.instanceID)
 	result, err := a.inner.Grab(ctx, link)
 	if err != nil {
 		// Classify grab-time failures too: a 429/503 rate-limit, a first-op login/
@@ -285,8 +327,10 @@ func (a *indexerAdapter) Grab(ctx context.Context, link string) (*search.GrabRes
 		return nil, fmt.Errorf("registry: grab %q: %w", a.info.ID, err)
 	}
 	a.recordCircuitSuccess(ctx)
-	// Count success only — a failed grab produced no download.
-	a.stats.RecordGrab(a.instanceID)
+	// Count the success (the attempt above already counted the failures), under the
+	// grabbed release's parent category — carried on the context by the /dl proxy,
+	// which sealed it into the download token when the feed was served.
+	a.stats.RecordGrab(a.instanceID, core.GrabCategory(ctx))
 	return result, nil
 }
 
@@ -309,7 +353,7 @@ func (a *indexerAdapter) checkCircuit(ctx context.Context) error {
 	}
 	now := a.clock()
 	if state.IsDisabled(now) {
-		return fmt.Errorf("%w until %s", errCircuitOpen, state.DisabledTill.UTC().Format(time.RFC3339))
+		return fmt.Errorf("%w until %s", core.ErrCircuitOpen, state.DisabledTill.UTC().Format(time.RFC3339))
 	}
 	return nil
 }
@@ -337,7 +381,34 @@ func (a *indexerAdapter) recordCircuitSuccess(ctx context.Context) {
 	if err := a.circuit.Upsert(ctx, a.db, recoverCircuit(state)); err != nil {
 		a.log.Warn().Str("indexer", a.info.ID).Str("error", apphttp.RedactError(err)).
 			Msg("registry: record circuit recovery failed")
+		return
 	}
+	a.notifyRecovery(ctx, state)
+}
+
+// notifyRecovery tells the sink an indexer is answering again, given the state as it
+// was BEFORE the recovery write. It fires on exactly one transition: clearing a disable
+// window that a failure actually set (DisabledTill non-zero — escalate always sets it,
+// and only this path clears it). So it is one message per outage episode: not on steady
+// healthy traffic (recordCircuitSuccess returns above at the baseline), not on a level-0
+// no-op, and not again on the further rung-by-rung descent that follows, whose windows
+// are already cleared.
+func (a *indexerAdapter) notifyRecovery(ctx context.Context, before database.CircuitState) {
+	if a.healthSink == nil || before.DisabledTill.IsZero() {
+		return
+	}
+	a.healthSink.OnRecoveryEvent(ctx, a.info.ID, recoveryDetail(before.InitialFailure, a.clock()))
+}
+
+// recoveryDetail writes the recovery message: how long the indexer was failing, so an
+// operator can tell a blip from a two-day outage without opening harbrr. A slug and two
+// timestamps — nothing secret to redact.
+func recoveryDetail(initialFailure, now time.Time) string {
+	if initialFailure.IsZero() || !now.After(initialFailure) {
+		return "Indexer is answering again; the circuit breaker's disable window is cleared."
+	}
+	return fmt.Sprintf("Indexer is answering again after %s of failures; the circuit breaker's disable window is cleared.",
+		now.Sub(initialFailure).Truncate(time.Second))
 }
 
 // escalateCircuit climbs the instance's escalation ladder one rung after a
@@ -355,7 +426,7 @@ func (a *indexerAdapter) escalateCircuit(ctx context.Context, kind string, err e
 			Msg("registry: read circuit state failed")
 		return
 	}
-	next := escalate(state, kind, retryAfterOf(err), a.clock(), a.startedAt)
+	next := escalate(state, kind, errors.Is(err, search.ErrGatewayStatus), retryAfterOf(err), a.clock(), a.startedAt)
 	if uerr := a.circuit.Upsert(ctx, a.db, next); uerr != nil {
 		a.log.Warn().Str("indexer", a.info.ID).Str("error", apphttp.RedactError(uerr)).
 			Msg("registry: record circuit escalation failed")
@@ -414,9 +485,11 @@ func classifyHealth(err error) (string, bool) {
 // implement), a *url.Error chain, an EOF mid-read (io.EOF / io.ErrUnexpectedEOF), or
 // a gateway status (502/504/522, search.ErrGatewayStatus) — as opposed to a
 // reachable-but-unhappy response. Kept coarse (#223): one kind, not a taxonomy; the
-// event detail string carries the specifics. A gateway status is treated the same as
-// a dropped connection (#247): the tracker itself never answered, the outage is just
-// observed one hop closer via the proxy/CDN in front of it. 429/503 are rate-limit
+// event detail string carries the specifics. A gateway status is classified the same
+// as a dropped connection (#247): the tracker itself never answered, the outage is
+// just observed one hop closer via the proxy/CDN in front of it — though for circuit
+// escalation it climbs the ladder where other transport failures stay pinned (see
+// escalate). 429/503 are rate-limit
 // codes (already classified separately, never reach here) and other non-2xx codes
 // (401/403 auth, 404/500...) are the tracker answering, not a gateway outage, so they
 // stay unclassified.

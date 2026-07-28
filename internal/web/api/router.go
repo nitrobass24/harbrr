@@ -61,6 +61,9 @@ type Deps struct {
 	// LogLevel backs the runtime log-level endpoints (get/set + persistence). Nil
 	// leaves those routes reporting an unavailable state rather than panicking.
 	LogLevel *LogLevelStore
+	// AdultCategories is the global hide-adult-categories dial (autobrr/harbrr#383).
+	// Nil reads as "not hidden", i.e. the pre-setting behaviour.
+	AdultCategories *AdultCategoriesStore
 }
 
 // Config is the API's auth posture (mapped from the app config by the server).
@@ -84,24 +87,25 @@ type Config struct {
 
 // router holds the management API's dependencies and resolved config.
 type router struct {
-	auth     *auth.Service
-	registry *registry.Registry
-	loader   *loader.Loader
-	apps     *apps.Service
-	appsync  *appsync.Service
-	announce *announce.Service
-	notify   *notify.Service
-	proxy    *proxy.Service
-	download *download.Service
-	solver   *solver.Service
-	backup   *backup.Service
-	sessions *scs.SessionManager
-	dlToken  *secrets.Keyring
-	urlCfg   torznabhttp.URLConfig
-	cache    *registry.SearchCache
-	cfg      Config
-	log      zerolog.Logger
-	logLevel *LogLevelStore
+	auth      *auth.Service
+	registry  *registry.Registry
+	loader    *loader.Loader
+	apps      *apps.Service
+	appsync   *appsync.Service
+	announce  *announce.Service
+	notify    *notify.Service
+	proxy     *proxy.Service
+	download  *download.Service
+	solver    *solver.Service
+	backup    *backup.Service
+	sessions  *scs.SessionManager
+	dlToken   *secrets.Keyring
+	urlCfg    torznabhttp.URLConfig
+	cache     *registry.SearchCache
+	cfg       Config
+	log       zerolog.Logger
+	logLevel  *LogLevelStore
+	adultCats *AdultCategoriesStore
 	// oidc is nil when OIDC is disabled or its provider discovery failed at
 	// startup; every OIDC handler treats a nil oidc as "answer as disabled".
 	oidc *oidcHandler
@@ -140,7 +144,7 @@ func NewRouter(deps Deps, cfg Config) (http.Handler, error) {
 		announce: deps.Announce, notify: deps.Notify, proxy: deps.Proxy, download: deps.Download, solver: deps.Solver,
 		backup:   deps.Backup,
 		sessions: deps.Sessions, dlToken: deps.DLToken, urlCfg: deps.URLConfig,
-		cache: deps.Cache, cfg: cfg, log: deps.Logger, logLevel: deps.LogLevel,
+		cache: deps.Cache, cfg: cfg, log: deps.Logger, logLevel: deps.LogLevel, adultCats: deps.AdultCategories,
 		allowlist: allow, trustedProxies: proxies,
 	}
 	rt.loadDefs = func() ([]definitionSummary, error) {
@@ -231,7 +235,6 @@ func (rt *router) routes() http.Handler {
 			r.Post("/api/app-connections/{id}/test", rt.testConnection)
 			r.Post("/api/app-connections/{id}/sync", rt.syncConnection)
 			r.Get("/api/app-connections/{id}/status", rt.connectionStatus)
-			r.Put("/api/app-connections/{id}/indexers", rt.setConnectionIndexers)
 
 			r.Get("/api/announce-connections", rt.listAnnounceConnections)
 			r.Post("/api/announce-connections", rt.createAnnounceConnection)
@@ -263,6 +266,14 @@ func (rt *router) mountSystemRoutes(r chi.Router) {
 
 	r.Get("/api/config/rate-limit", rt.rateLimitGet)
 	r.Put("/api/config/rate-limit", rt.rateLimitPut)
+
+	r.Get("/api/config/adult-categories", rt.getAdultCategories)
+	r.Put("/api/config/adult-categories", rt.putAdultCategories)
+	r.Get("/api/config/expiry-thresholds", rt.getExpiryThresholds)
+	r.Put("/api/config/expiry-thresholds", rt.putExpiryThresholds)
+
+	r.Get("/api/config/stats-retention", rt.getStatsRetention)
+	r.Put("/api/config/stats-retention", rt.putStatsRetention)
 
 	r.Post("/api/logs/frontend", rt.postFrontendLog)
 

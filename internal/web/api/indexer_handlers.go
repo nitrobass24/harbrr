@@ -118,18 +118,27 @@ func summaryOf(d *loader.Definition) definitionSummary {
 // (PUT /api/app-connections/{id}/indexers) speak, so clients can map it to a
 // slug without a second lookup.
 type instanceResponse struct {
-	ID           int64     `json:"id"`
-	Slug         string    `json:"slug"`
-	DefinitionID string    `json:"definitionId"`
-	Name         string    `json:"name"`
-	BaseURL      string    `json:"baseUrl,omitempty"`
-	Enabled      bool      `json:"enabled"`
-	Protocol     string    `json:"protocol"`
-	ProxyID      *int64    `json:"proxyId"`
-	SolverID     *int64    `json:"solverId"`
-	Freeleech    bool      `json:"freeleech"`
-	CreatedAt    time.Time `json:"createdAt"`
-	UpdatedAt    time.Time `json:"updatedAt"`
+	ID                      int64     `json:"id"`
+	Slug                    string    `json:"slug"`
+	DefinitionID            string    `json:"definitionId"`
+	Name                    string    `json:"name"`
+	BaseURL                 string    `json:"baseUrl,omitempty"`
+	Enabled                 bool      `json:"enabled"`
+	Protocol                string    `json:"protocol"`
+	ProxyID                 *int64    `json:"proxyId"`
+	SolverID                *int64    `json:"solverId"`
+	Freeleech               bool      `json:"freeleech"`
+	Priority                int       `json:"priority"`
+	MinSeeders              int       `json:"minSeeders"`
+	SyncCategories          []int     `json:"syncCategories"`
+	EnableRss               bool      `json:"enableRss"`
+	EnableAutomaticSearch   bool      `json:"enableAutomaticSearch"`
+	EnableInteractiveSearch bool      `json:"enableInteractiveSearch"`
+	ExpiresAt               string    `json:"expiresAt"`
+	ExpiryKind              string    `json:"expiryKind"`
+	ExpiryLifetime          bool      `json:"expiryLifetime"`
+	CreatedAt               time.Time `json:"createdAt"`
+	UpdatedAt               time.Time `json:"updatedAt"`
 }
 
 // settingResponse is one configured setting; a secret's value is the <redacted>
@@ -169,13 +178,22 @@ func (rt *router) listIndexers(w http.ResponseWriter, r *http.Request) {
 // addIndexer creates a configured indexer.
 func (rt *router) addIndexer(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Slug         string            `json:"slug"`
-		DefinitionID string            `json:"definitionId"`
-		Name         string            `json:"name"`
-		BaseURL      string            `json:"baseUrl"`
-		Settings     map[string]string `json:"settings"`
-		ProxyID      *int64            `json:"proxyId"`
-		SolverID     *int64            `json:"solverId"`
+		Slug                    string            `json:"slug"`
+		DefinitionID            string            `json:"definitionId"`
+		Name                    string            `json:"name"`
+		BaseURL                 string            `json:"baseUrl"`
+		Settings                map[string]string `json:"settings"`
+		ProxyID                 *int64            `json:"proxyId"`
+		SolverID                *int64            `json:"solverId"`
+		Priority                int               `json:"priority"`
+		MinSeeders              int               `json:"minSeeders"`
+		SyncCategories          []int             `json:"syncCategories"`
+		EnableRss               *bool             `json:"enableRss"`
+		EnableAutomaticSearch   *bool             `json:"enableAutomaticSearch"`
+		EnableInteractiveSearch *bool             `json:"enableInteractiveSearch"`
+		ExpiresAt               string            `json:"expiresAt"`
+		ExpiryKind              string            `json:"expiryKind"`
+		ExpiryLifetime          bool              `json:"expiryLifetime"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -183,6 +201,10 @@ func (rt *router) addIndexer(w http.ResponseWriter, r *http.Request) {
 	inst, err := rt.registry.Add(r.Context(), registry.AddParams{
 		Slug: req.Slug, DefinitionID: req.DefinitionID, Name: req.Name,
 		BaseURL: req.BaseURL, Settings: req.Settings, ProxyID: req.ProxyID, SolverID: req.SolverID,
+		Priority: req.Priority, MinSeeders: req.MinSeeders, SyncCategories: req.SyncCategories,
+		EnableRss: req.EnableRss, EnableAutomaticSearch: req.EnableAutomaticSearch,
+		EnableInteractiveSearch: req.EnableInteractiveSearch,
+		ExpiresAt:               req.ExpiresAt, ExpiryKind: req.ExpiryKind, ExpiryLifetime: req.ExpiryLifetime,
 	})
 	if err != nil {
 		rt.writeServiceError(w, "add indexer", err)
@@ -213,11 +235,20 @@ func (rt *router) getIndexer(w http.ResponseWriter, r *http.Request) {
 func (rt *router) updateIndexer(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 	var req struct {
-		Name     *string           `json:"name"`
-		BaseURL  *string           `json:"baseUrl"`
-		Settings map[string]string `json:"settings"`
-		ProxyID  optionalRef       `json:"proxyId"`
-		SolverID optionalRef       `json:"solverId"`
+		Name                    *string           `json:"name"`
+		BaseURL                 *string           `json:"baseUrl"`
+		Settings                map[string]string `json:"settings"`
+		ProxyID                 optionalRef       `json:"proxyId"`
+		SolverID                optionalRef       `json:"solverId"`
+		Priority                *int              `json:"priority"`
+		MinSeeders              *int              `json:"minSeeders"`
+		SyncCategories          *[]int            `json:"syncCategories"`
+		EnableRss               *bool             `json:"enableRss"`
+		EnableAutomaticSearch   *bool             `json:"enableAutomaticSearch"`
+		EnableInteractiveSearch *bool             `json:"enableInteractiveSearch"`
+		ExpiresAt               *string           `json:"expiresAt"`
+		ExpiryKind              *string           `json:"expiryKind"`
+		ExpiryLifetime          *bool             `json:"expiryLifetime"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -225,6 +256,10 @@ func (rt *router) updateIndexer(w http.ResponseWriter, r *http.Request) {
 	if err := rt.registry.Update(r.Context(), slug, registry.UpdateParams{
 		Name: req.Name, BaseURL: req.BaseURL, Settings: req.Settings,
 		ProxyID: req.ProxyID.toRegistry(), SolverID: req.SolverID.toRegistry(),
+		Priority: req.Priority, MinSeeders: req.MinSeeders, SyncCategories: req.SyncCategories,
+		EnableRss: req.EnableRss, EnableAutomaticSearch: req.EnableAutomaticSearch,
+		EnableInteractiveSearch: req.EnableInteractiveSearch,
+		ExpiresAt:               req.ExpiresAt, ExpiryKind: req.ExpiryKind, ExpiryLifetime: req.ExpiryLifetime,
 	}); err != nil {
 		rt.writeServiceError(w, "update indexer", err)
 		return
@@ -298,9 +333,9 @@ type statusResponse struct {
 	DisabledTill *time.Time    `json:"disabledTill,omitempty"`
 }
 
-// indexerStatus returns a configured indexer's derived health (healthy/unhealthy)
-// and its recent health events. An unknown slug is a 404. Details were scrubbed
-// before storage, so no credential is surfaced here.
+// indexerStatus returns a configured indexer's derived health
+// (healthy/failing/unknown) and its recent health events. An unknown slug is a 404.
+// Details were scrubbed before storage, so no credential is surfaced here.
 func (rt *router) indexerStatus(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 	st, err := rt.registry.Status(r.Context(), slug)
@@ -330,16 +365,18 @@ type fleetIndexerStatus struct {
 	DisabledTill *time.Time   `json:"disabledTill,omitempty"`
 }
 
-// fleetStatusResponse is the JSON body of GET /api/indexers/status: healthy/unhealthy
-// counts across the fleet plus each configured indexer's derived status, sorted by slug.
+// fleetStatusResponse is the JSON body of GET /api/indexers/status: the tri-state
+// healthy/failing/unknown tallies across the fleet plus each configured indexer's
+// derived status, sorted by slug.
 type fleetStatusResponse struct {
-	Healthy   int                  `json:"healthy"`
-	Unhealthy int                  `json:"unhealthy"`
-	Indexers  []fleetIndexerStatus `json:"indexers"`
+	Healthy  int                  `json:"healthy"`
+	Failing  int                  `json:"failing"`
+	Unknown  int                  `json:"unknown"`
+	Indexers []fleetIndexerStatus `json:"indexers"`
 }
 
-// allIndexerStatus returns the fleet-wide health roll-up: healthy/unhealthy counts
-// plus every configured indexer's derived status and most recent health event.
+// allIndexerStatus returns the fleet-wide health roll-up: healthy/failing/unknown
+// counts plus every configured indexer's derived status and most recent health event.
 func (rt *router) allIndexerStatus(w http.ResponseWriter, r *http.Request) {
 	statuses, err := rt.registry.AllStatuses(r.Context())
 	if err != nil {
@@ -348,10 +385,13 @@ func (rt *router) allIndexerStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	out := fleetStatusResponse{Indexers: make([]fleetIndexerStatus, 0, len(statuses))}
 	for _, st := range statuses {
-		if st.Status == "healthy" {
+		switch st.Status {
+		case registry.StatusHealthy:
 			out.Healthy++
-		} else {
-			out.Unhealthy++
+		case registry.StatusFailing:
+			out.Failing++
+		default:
+			out.Unknown++
 		}
 		out.Indexers = append(out.Indexers, toFleetIndexerStatus(st))
 	}
@@ -371,10 +411,18 @@ func toFleetIndexerStatus(st registry.FleetStatus) fleetIndexerStatus {
 
 // toInstanceResponse maps a domain instance to its API view.
 func toInstanceResponse(inst domain.IndexerInstance) instanceResponse {
+	cats := inst.SyncCategories
+	if cats == nil {
+		cats = []int{}
+	}
 	return instanceResponse{
 		ID: inst.ID, Slug: inst.Slug, DefinitionID: inst.DefinitionID, Name: inst.Name,
 		BaseURL: inst.BaseURL, Enabled: inst.Enabled, Protocol: inst.Protocol,
 		ProxyID: inst.ProxyID, SolverID: inst.SolverID,
+		Priority: inst.Priority, MinSeeders: inst.MinSeeders, SyncCategories: cats,
+		EnableRss: inst.EnableRss, EnableAutomaticSearch: inst.EnableAutomaticSearch,
+		EnableInteractiveSearch: inst.EnableInteractiveSearch,
+		ExpiresAt:               inst.ExpiresAt, ExpiryKind: inst.ExpiryKind, ExpiryLifetime: inst.ExpiryLifetime,
 		CreatedAt: inst.CreatedAt, UpdatedAt: inst.UpdatedAt,
 	}
 }

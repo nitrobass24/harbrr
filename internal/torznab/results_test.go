@@ -282,7 +282,7 @@ func TestResultsNewznabResponse(t *testing.T) {
 func TestRewrittenGuidPrefersUpstream(t *testing.T) {
 	t.Parallel()
 	// A rewriter that seals every link behind /dl and offers a synthesized guid.
-	rewrite := func(string) (link, guid string, ok bool) {
+	rewrite := func(string, []int) (link, guid string, ok bool) {
 		return "https://harbrr.test/dl/sealed", "harbrr-synth", true
 	}
 	withGUID := &normalizer.Release{Title: "A", Link: "https://idx.test/get?id=1&apikey=SECRET", GUID: "upstream-id-1", Size: 1}

@@ -31,8 +31,8 @@ const secretURL = "url"
 const healthNotifyCooldown = time.Hour
 
 // healthKey identifies a health-notification stream for cooldown accounting. The indexer
-// slug is stable and unique per indexer and Kind is one of the four classified health
-// kinds, so (indexer, kind) is a sufficient dedup key.
+// slug is stable and unique per indexer and kind is one of the classified health kinds
+// (or recoveryKind), so (indexer, kind) is a sufficient dedup key.
 type healthKey struct {
 	indexer string
 	kind    string
@@ -48,12 +48,16 @@ type Service struct {
 	// dispatchWG tracks in-flight detached dispatch goroutines so Drain can join them
 	// before the DB is torn down at shutdown (dispatch reads the DB).
 	dispatchWG sync.WaitGroup
-	db         dbinterface.Querier
-	repo       database.Notifications
-	keyring    *secrets.Keyring
-	client     *http.Client
-	clock      func() time.Time
-	life       *connresource.Lifecycle[domain.Notification]
+	// drainMu + draining order dispatch Adds strictly before Drain's Wait (see
+	// dispatchHealthAsync). Distinct from the suppression lock, like dispatchWG.
+	drainMu  sync.RWMutex
+	draining bool
+	db       dbinterface.Querier
+	repo     database.Notifications
+	keyring  *secrets.Keyring
+	client   *http.Client
+	clock    func() time.Time
+	life     *connresource.Lifecycle[domain.Notification]
 	// healthMu guards lastHealthNotify, the per-(indexer, kind) time of the last
 	// dispatched health notification. It debounces poll-spam (see healthNotifyCooldown)
 	// and must be a distinct lock from dispatchWG's accounting.
@@ -86,6 +90,8 @@ type CreateNotificationParams struct {
 	Type            string
 	URL             string
 	OnHealthFailure *bool
+	// OnExpiry opts into indexer expiry events; nil defaults ON, same reasoning.
+	OnExpiry *bool
 }
 
 // CreateNotification persists a target with its destination URL encrypted. The row is
@@ -102,6 +108,7 @@ func (s *Service) CreateNotification(ctx context.Context, p CreateNotificationPa
 			return domain.Notification{
 				Name: p.Name, Type: p.Type, Enabled: true,
 				OnHealthFailure: p.OnHealthFailure == nil || *p.OnHealthFailure,
+				OnExpiry:        p.OnExpiry == nil || *p.OnExpiry,
 				CreatedAt:       now, UpdatedAt: now,
 			}
 		},
@@ -127,6 +134,7 @@ type UpdateNotificationParams struct {
 	Name            *string
 	URL             *string
 	OnHealthFailure *bool
+	OnExpiry        *bool
 }
 
 // UpdateNotification applies a patch, re-encrypting the URL when rotated. The read and the
@@ -149,6 +157,9 @@ func (s *Service) UpdateNotification(ctx context.Context, id int64, p UpdateNoti
 			}
 			if p.OnHealthFailure != nil {
 				n.OnHealthFailure = *p.OnHealthFailure
+			}
+			if p.OnExpiry != nil {
+				n.OnExpiry = *p.OnExpiry
 			}
 			return nil
 		},
@@ -246,17 +257,60 @@ func (s *Service) OnHealthEvent(ctx context.Context, indexer, kind, detail strin
 	if s.healthSuppressed(indexer, kind, now) {
 		return
 	}
-	ev := Event{
+	s.dispatchHealthAsync(ctx, Event{
 		Event:     EventIndexerHealth,
 		Indexer:   indexer,
 		Kind:      kind,
 		Detail:    detail,
 		Timestamp: now,
+	})
+}
+
+// recoveryKind labels a recovery in the Kind field (and in the cooldown key). It is
+// deliberately NOT one of domain's health kinds: those name failures, and keying a
+// recovery under its own label is what stops a pending failure cooldown for the same
+// indexer from swallowing it.
+const recoveryKind = "recovered"
+
+// OnRecoveryEvent is the registry recovery sink: an indexer that had been disabled by
+// the circuit breaker answered successfully again. Same best-effort, non-blocking
+// contract as OnHealthEvent, and the same on_health_failure opt-in.
+//
+// It shares the cooldown gate on the (indexer, "recovered") key. The registry already
+// fires this once per outage episode, so the gate is not what makes it one-shot; it is
+// there for the flapping indexer that fails and recovers every poll cycle — whose
+// failures are debounced to one an hour, so its recoveries must be too, or muting the
+// channel becomes the rational response.
+func (s *Service) OnRecoveryEvent(ctx context.Context, indexer, detail string) {
+	now := s.clock()
+	if s.healthSuppressed(indexer, recoveryKind, now) {
+		return
 	}
-	// Detach from the caller's request context (which is cancelled the moment the search
-	// returns) so the send outlives it, but keep the process-wide cancellation absent —
-	// the sender's own HTTP timeout bounds it. Tracked on dispatchWG so shutdown (Drain)
-	// joins the goroutine before db.Close, since dispatch reads the DB.
+	s.dispatchHealthAsync(ctx, Event{
+		Event:     EventIndexerRecovery,
+		Indexer:   indexer,
+		Kind:      recoveryKind,
+		Detail:    detail,
+		Timestamp: now,
+	})
+}
+
+// dispatchHealthAsync fans an event out to the on_health_failure targets off the
+// caller's goroutine. It detaches from the caller's request context (which is cancelled
+// the moment the search returns) so the send outlives it, but keeps the process-wide
+// cancellation absent — the sender's own HTTP timeout bounds it. Tracked on dispatchWG
+// so shutdown (Drain) joins the goroutine before db.Close, since dispatch reads the DB.
+func (s *Service) dispatchHealthAsync(ctx context.Context, ev Event) {
+	// The drain gate orders Add strictly before Drain's Wait: a producer holding the
+	// read lock either sees draining (and drops the event — it is born during
+	// shutdown and has nowhere to go) or completes its Add before Drain, holding the
+	// write lock, can flip the flag and reach Wait. Without it, an event landing in
+	// the shutdown window is an Add racing Wait, which sync.WaitGroup forbids.
+	s.drainMu.RLock()
+	defer s.drainMu.RUnlock()
+	if s.draining {
+		return
+	}
 	s.dispatchWG.Add(1)
 	go func() {
 		defer s.dispatchWG.Done()
@@ -286,6 +340,20 @@ func (s *Service) healthSuppressed(indexer, kind string, now time.Time) bool {
 // ctx (a hanging webhook must not stall shutdown indefinitely). Call it during shutdown
 // after the server stops accepting requests and before the database is closed.
 func (s *Service) Drain(ctx context.Context) {
+	// Close the dispatch gate for the DURATION of the join — that is precisely the
+	// window where a producer's Add would race Wait (forbidden by sync.WaitGroup) —
+	// and reopen it after. Reopening keeps Drain usable as a flush/join (the test
+	// suite's idiom); in production it is the last call before db.Close, so nothing
+	// meaningful dispatches after it, and an event arriving DURING the join is
+	// dropped: it is exactly the racing event, and it has nowhere to go.
+	s.drainMu.Lock()
+	s.draining = true
+	s.drainMu.Unlock()
+	defer func() {
+		s.drainMu.Lock()
+		s.draining = false
+		s.drainMu.Unlock()
+	}()
 	done := make(chan struct{})
 	go func() {
 		s.dispatchWG.Wait()

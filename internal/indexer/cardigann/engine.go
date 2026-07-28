@@ -58,6 +58,10 @@ type Engine struct {
 	login    *login.Executor
 	doer     search.Doer
 	baseURL  string
+	// gateDegenerate is the instance's "degenerate_query_gate: auto" opt-in, read by
+	// SkipsQuery. Off by default, so an untouched instance sends every query it
+	// always did.
+	gateDegenerate bool
 
 	// loginMu guards the once-per-Engine login memoization (ensureSession).
 	loginMu  sync.Mutex
@@ -151,13 +155,14 @@ func NewEngine(def *loader.Definition, opts ...Option) (*Engine, error) {
 	}
 
 	return &Engine{
-		def:      def,
-		caps:     caps,
-		deps:     deps,
-		selector: selector.New(),
-		login:    buildLogin(o),
-		doer:     o.doer,
-		baseURL:  o.baseURL,
+		def:            def,
+		caps:           caps,
+		deps:           deps,
+		selector:       selector.New(),
+		login:          buildLogin(o),
+		doer:           o.doer,
+		baseURL:        o.baseURL,
+		gateDegenerate: o.config[degenerateGateSetting] == degenerateGateAuto,
 	}, nil
 }
 
@@ -176,6 +181,14 @@ func resolveOptions(def *loader.Definition, opts []Option) options {
 	// caller's explicit config so user-supplied values win — matching Jackett,
 	// where a request template reads the setting Default until the user sets it.
 	cfg := maps.Clone(DefaultConfig(def))
+	// Reserved per-instance keys are the OPERATOR's alone: a definition that
+	// declares a settings field with a reserved name (only reachable via a
+	// drop-in — vendored defs never do) must not be able to pre-seed it through
+	// its default, or an untouched instance would silently diverge from the
+	// Jackett-identical path. The caller overlay below still applies an
+	// explicitly supplied value.
+	delete(cfg, foldPunctuationSetting)
+	delete(cfg, degenerateGateSetting)
 	maps.Copy(cfg, o.config)
 	o.config = cfg
 	if o.baseURL == "" {
@@ -183,6 +196,24 @@ func resolveOptions(def *loader.Definition, opts []Option) options {
 	}
 	return o
 }
+
+// foldPunctuationSetting is a RESERVED per-instance setting — not a definition
+// setting — that opts this indexer into punctuation-tolerant andmatch, so a
+// search term an *arr client stripped ("Venise nest pas en Italie") still matches
+// the tracker's unstripped title ("Venise n'est pas en Italie") instead of being
+// dropped by our own row filter (autobrr/harbrr#394). Absent/falsy leaves the
+// Jackett-identical behaviour.
+const foldPunctuationSetting = "andmatch_fold_punctuation"
+
+// The degenerate-query gate's RESERVED per-instance setting and its one non-default
+// mode (autobrr/harbrr#394). "auto" lets SkipsQuery decline a search whose term the
+// definition's own keywordsfilters reduced to nothing usable; absent — or any other
+// value, including the explicit "off" the form writes — leaves every query being
+// sent exactly as before.
+const (
+	degenerateGateSetting = "degenerate_query_gate"
+	degenerateGateAuto    = "auto"
+)
 
 // buildDeps wires the extraction-half stages: the dateparse parser (def language
 // + injected clock) feeds the search filter registry's date seams; the registry's
@@ -219,6 +250,9 @@ func buildDeps(def *loader.Definition, caps *mapper.Capabilities, o options) (se
 		BaseURL:    o.baseURL,
 		Clock:      o.clock,
 		Encoding:   enc,
+		// canonicalCheckbox is the strict read: only an explicit truthy value
+		// ("true"/"1"/"on"/"yes") opts in, so a persisted literal "false" is off.
+		FoldAndMatchPunctuation: canonicalCheckbox(o.config[foldPunctuationSetting]) == configTrue,
 	}, nil
 }
 
@@ -270,6 +304,17 @@ func firstLink(def *loader.Definition) string {
 
 // Capabilities returns the typed capabilities model the mapper produced.
 func (e *Engine) Capabilities() *mapper.Capabilities { return e.caps }
+
+// SkipsQuery reports whether this instance declines to ASK the tracker about query
+// at all: the degenerate-query gate (autobrr/harbrr#394), opted into per instance
+// with "degenerate_query_gate: auto". It is a pure predicate over the definition's
+// own keywordsfilters — no session, no request, no state — so the caller runs it
+// BEFORE spending anything (the registry adapter gates ahead of the search cache and
+// the request budget; see indexerAdapter.Search). With the gate off, the default, it
+// is always false and the engine behaves exactly as it did before it existed.
+func (e *Engine) SkipsQuery(query Query) bool {
+	return e.gateDegenerate && search.DegenerateQuery(e.def, query, e.deps)
+}
 
 // Search runs the full online search: ensure the session is logged in (re-login
 // when the test page fails), then execute the search request(s) and parse the

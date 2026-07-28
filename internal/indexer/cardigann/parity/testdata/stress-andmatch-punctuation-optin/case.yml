@@ -1,0 +1,21 @@
+name: stress-andmatch-punctuation-optin
+archetype: stress-andmatch-punctuation
+golden_source: hand-derived
+mode: parse
+description: >
+  Stress: the punctuation-tolerant andmatch opt-in — a DELIBERATE divergence from
+  Jackett on identical input (see "Punctuation-tolerant andmatch (opt-in)" in
+  ../README.md, autobrr/harbrr#394). Same definition, response and query as the
+  -default twin; the only difference is the reserved per-instance setting
+  andmatch_fold_punctuation=true. Both sides of the compare then have the
+  *arr-stripped characters (` ' . and the typographic apostrophes) folded out, so
+  the token "nest" matches the title "Venise n'est pas en Italie" and the row we
+  already fetched is returned instead of discarded. Jackett would emit only the
+  second row (the -default golden). The Debian control row is still dropped:
+  folding widens the compare, it does not disable the filter.
+definition: definition.yml
+response: response.html
+config:
+  andmatch_fold_punctuation: "true"
+query:
+  keywords: Venise nest pas en Italie

@@ -269,7 +269,7 @@ export interface paths {
         };
         /**
          * Get fleet-wide indexer health status
-         * @description Returns healthy/unhealthy counts across every configured indexer, plus each indexer's derived status and most recent health event, sorted by slug.
+         * @description Returns healthy/failing/unknown counts across every configured indexer, plus each indexer's derived status and most recent health event, sorted by slug.
          */
         get: operations["allIndexerStatus"];
         put?: never;
@@ -362,7 +362,7 @@ export interface paths {
         };
         /**
          * Get an indexer's health status
-         * @description Returns the indexer's derived health (healthy/unhealthy) and its recent health events (auth_failure, rate_limited, parse_error, anti_bot, transport). Event details are credential-scrubbed before storage, so no secret is surfaced.
+         * @description Returns the indexer's derived health (healthy/failing/unknown) and its recent health events (auth_failure, rate_limited, parse_error, anti_bot, transport). Event details are credential-scrubbed before storage, so no secret is surfaced.
          */
         get: operations["indexerStatus"];
         put?: never;
@@ -605,26 +605,6 @@ export interface paths {
         /** Get a connection plus its per-indexer sync ledger */
         get: operations["connectionStatus"];
         put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/app-connections/{id}/indexers": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Set the selected-indexer set (for index_scope=selected)
-         * @description Replaces the connection's selected indexers: the given instance ids become selected, every other currently-selected one is cleared. Only meaningful when the connection's index_scope is "selected".
-         */
-        put: operations["setConnectionIndexers"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1168,7 +1148,7 @@ export interface paths {
         put?: never;
         /**
          * Add a sync profile
-         * @description Names a reusable set of app-sync overrides (category subset, min seeders, RSS/automatic/interactive toggles). A duplicate name is a 409.
+         * @description Names a reusable indexer routing set (which indexers a connection syncs to); empty/omitted indexerIds means every compatible indexer. A duplicate name is a 409.
          */
         post: operations["createSyncProfile"];
         delete?: never;
@@ -1188,13 +1168,13 @@ export interface paths {
         get: operations["getSyncProfile"];
         put?: never;
         post?: never;
-        /** Delete a sync profile (referencing connections revert to default behavior) */
+        /** Delete a sync profile (refused while any connection references it) */
         delete: operations["deleteSyncProfile"];
         options?: never;
         head?: never;
         /**
          * Update a sync profile
-         * @description A partial update; omitted fields are unchanged. A present-but-empty categories array clears the category set (full-category behavior). A duplicate name is a 409.
+         * @description A partial update; omitted fields are unchanged. A present-but-empty indexerIds array clears the selection (every compatible indexer). A duplicate name is a 409.
          */
         patch: operations["updateSyncProfile"];
         trace?: never;
@@ -1327,6 +1307,78 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/config/adult-categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the hide-adult-categories setting
+         * @description Returns whether the operator asked for adult (XXX, category 6000–6999) categories to be hidden (autobrr/harbrr#383). Off by default.
+         */
+        get: operations["getAdultCategories"];
+        /**
+         * Set the hide-adult-categories setting
+         * @description Persists the choice and applies it to subsequent requests (no restart). When on, the XXX taxonomy is omitted from this API's category lists (indexer capabilities, definition capabilities) and a search issued with no `cat` parameter drops XXX-category results. Searches that name categories are honored unchanged, and the Torznab/Newznab feed is not filtered — feed consumers carry their own category selection.
+         */
+        put: operations["putAdultCategories"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/config/expiry-thresholds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the indexer expiry lead times
+         * @description Returns the lead times (days before a tracked VIP/membership expiry) that the periodic expiry scan warns at (autobrr/harbrr#399), defaults included when the operator has set none. Always canonical: deduped, descending, and always containing the at-expiry warning (0), which cannot be switched off.
+         */
+        get: operations["getExpiryThresholds"];
+        /**
+         * Set the indexer expiry lead times
+         * @description Persists the lead times and echoes back the canonical list actually stored, so a read-back can never disagree with what the scan applies. The change takes effect on the next scan without a restart. An empty list leaves exactly the at-expiry warning.
+         */
+        put: operations["putExpiryThresholds"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/config/stats-retention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the per-category stats retention window
+         * @description Returns how many months of per-category indexer tallies are kept (autobrr/harbrr#403). Defaults to 12 when the operator never set it.
+         */
+        get: operations["getStatsRetention"];
+        /**
+         * Set the per-category stats retention window
+         * @description Persists the retention window (1-120 months). It applies on the next daily reap, so shortening it drops the now-expired month buckets then, not immediately.
+         */
+        put: operations["putStatsRetention"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/config/rate-limit": {
         parameters: {
             query?: never;
@@ -1423,6 +1475,15 @@ export interface components {
             flaresolverr_url?: string;
             /** @description FlareSolverr maxTimeout in seconds (optional) */
             flaresolverr_max_timeout?: string;
+            /** @description per-indexer search request cap for the rolling period (limits_unit); a non-positive integer string or empty/unset means no cap (autobrr/harbrr#251). The registry also learns a cap reactively from a tracker's own quota error, independent of this setting. */
+            query_limit?: string;
+            /** @description per-indexer grab (download) request cap for the rolling period (limits_unit); same semantics as query_limit but counted separately (mirrors Prowlarr's separate queryLimit/grabLimit fields). */
+            grab_limit?: string;
+            /**
+             * @description the rolling period query_limit/grab_limit reset on: day (default, UTC midnight) or hour (opt-in, top of the UTC hour).
+             * @enum {string}
+             */
+            limits_unit?: "day" | "hour";
         };
         Credentials: {
             username: string;
@@ -1460,6 +1521,8 @@ export interface components {
             secret: boolean;
         };
         DefinitionDetail: components["schemas"]["DefinitionSummary"] & {
+            /** @description the definition's known host URLs — the candidate list the base-URL override picks from. The effective host is the override if set, else the first entry. */
+            links: string[];
             settings: components["schemas"]["SettingField"][];
             caps: components["schemas"]["Capabilities"];
         };
@@ -1491,7 +1554,7 @@ export interface components {
             /**
              * Format: int64
              * @description the numeric instance id — the handle the app-sync ledger
-             *     (ConnectionIndexer.instanceId) and SelectIndexers.instanceIds speak
+             *     (ConnectionIndexer.instanceId) and a sync profile's indexerIds speak
              */
             id: number;
             slug: string;
@@ -1516,18 +1579,61 @@ export interface components {
             solverId?: number | null;
             /** @description the freeleech-only checkbox's canonical state */
             freeleech: boolean;
+            /**
+             * @description Servarr indexer priority (1-50, 1 = highest), pushed per indexer by appsync
+             * @default 25
+             */
+            priority: number;
+            /** @description per-indexer minimum-seeders floor; 0 = unset, not pushed */
+            minSeeders: number;
+            /** @description Newznab category ids this indexer narrows its push to, within the consuming app's own content type (never beyond it); empty means no narrowing (deduped and sorted). */
+            syncCategories: number[];
+            /**
+             * @description pushed RSS search-mode flag (ANDed with enabled)
+             * @default true
+             */
+            enableRss: boolean;
+            /**
+             * @description pushed automatic-search-mode flag (ANDed with enabled)
+             * @default true
+             */
+            enableAutomaticSearch: boolean;
+            /**
+             * @description pushed interactive-search-mode flag (ANDed with enabled)
+             * @default true
+             */
+            enableInteractiveSearch: boolean;
+            /** @description operator-entered VIP/membership expiry as a calendar date (YYYY-MM-DD); empty means untracked (autobrr/harbrr#399). Always empty when expiryLifetime is true. */
+            expiresAt: string;
+            /**
+             * @description what the date ends — perk (VIP/premium lapses, account survives) or account (access itself ends); empty reads as a generic membership expiry
+             * @enum {string}
+             */
+            expiryKind: "" | "perk" | "account";
+            /** @description never expires; wins over expiresAt and never notifies */
+            expiryLifetime: boolean;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
         };
-        /** @description Per-indexer Prowlarr-style stats: durable query/grab/latency counters plus the failure tally folded in from the health events. queries counts searches that reached the tracker (a cache hit bypasses the counted path), so avgResponseMs reflects real upstream latency. lastQueryAt/lastFailureAt are absent when never observed. */
+        /** @description Per-indexer Prowlarr-style stats: durable query/grab/latency counters plus the failure tally folded in from the health events. queries counts searches that reached the tracker (a cache hit bypasses the counted path), so avgResponseMs reflects real upstream latency. lastQueryAt/lastFailureAt are absent when never observed. budget is present on GET /api/indexers/{slug}/stats only — the all-indexers list omits it. */
         IndexerStats: {
             slug: string;
             /** Format: int64 */
             queries: number;
+            /**
+             * Format: int64
+             * @description grabs that reached the tracker, successful or not
+             */
+            grabAttempts: number;
             /** Format: int64 */
             grabs: number;
+            /**
+             * Format: double
+             * @description grabs / grabAttempts, derived at read time and never stored. Absent until at least one grab has been attempted, so "no data" never reads as a 0% success rate.
+             */
+            grabSuccessRate?: number;
             /** Format: int64 */
             avgResponseMs: number;
             failures: {
@@ -1542,19 +1648,58 @@ export interface components {
                 /** Format: int64 */
                 transport: number;
             };
+            /** @description Per parent-category tallies (autobrr/harbrr#403), summed over the retained months: how many results the indexer returned in that family and how many of them were grabbed. Categories are folded to the ~10 standard family roots (2040 Movies/HD counts under 2000 Movies); id 0 ("Uncategorized") holds releases with no mappable standard category. */
+            categories: {
+                /** @description standard parent category id; 0 = uncategorized */
+                id: number;
+                name: string;
+                /** Format: int64 */
+                results: number;
+                /** Format: int64 */
+                grabs: number;
+            }[];
             /** Format: date-time */
             lastQueryAt?: string;
             /** Format: date-time */
             lastFailureAt?: string;
+            budget?: components["schemas"]["IndexerBudget"];
         };
-        /** @description Fleet-wide indexer health roll-up: healthy/unhealthy counts plus each configured indexer's derived status and most recent health event, sorted by slug. */
+        /** @description The indexer's request-budget standing for the CURRENT rolling period (autobrr/harbrr#251, surfaced by #402): what has been counted so far against the operator-configured caps, and when the period rolls over. It reports the counters the registry already keeps — reading it collects nothing and counts nothing. limit is the OPERATOR-CONFIGURED cap (0 = none configured); learned is the separate reactive latch harbrr set from the tracker's own quota error, which carries no number because the tracker never declared one. A learned latch or a used-at-limit kind is a self-imposed guard, not an indexer failure. */
+        IndexerBudget: {
+            /**
+             * @description the rolling period the counters reset on
+             * @enum {string}
+             */
+            unit: "day" | "hour";
+            /**
+             * Format: date-time
+             * @description when the current period rolls over (UTC) — used resets and any learned latch clears
+             */
+            periodEnd: string;
+            query: components["schemas"]["IndexerBudgetKind"];
+            grab: components["schemas"]["IndexerBudgetKind"];
+        };
+        /** @description One kind's (search or grab) usage against its cap for the current period. */
+        IndexerBudgetKind: {
+            /**
+             * Format: int64
+             * @description requests of this kind counted in the current period
+             */
+            used: number;
+            /** @description the operator-configured cap for the period; 0 means none configured */
+            limit: number;
+            /** @description the tracker declared its own quota spent for this kind in the current period (the reactive latch) — a cap harbrr was never configured with */
+            learned: boolean;
+        };
+        /** @description Fleet-wide indexer health roll-up: healthy/failing/unknown counts plus each configured indexer's derived status and most recent health event, sorted by slug. */
         FleetStatus: {
             healthy: number;
-            unhealthy: number;
+            failing: number;
+            unknown: number;
             indexers: {
                 slug: string;
                 /** @enum {string} */
-                status: "healthy" | "unhealthy";
+                status: "healthy" | "failing" | "unknown";
                 lastEvent?: {
                     /** @enum {string} */
                     kind: "auth_failure" | "rate_limited" | "parse_error" | "anti_bot" | "transport";
@@ -1592,6 +1737,27 @@ export interface components {
              * @description reference a global solver resource (nil = none)
              */
             solverId?: number | null;
+            /** @description Servarr indexer priority (1-50, 1 = highest); omitted or 0 defaults to 25 */
+            priority?: number;
+            /** @description per-indexer minimum-seeders floor; 0 = unset, not pushed */
+            minSeeders?: number;
+            /** @description Newznab category ids to narrow this indexer's push to; empty means no narrowing */
+            syncCategories?: number[];
+            /** @default true */
+            enableRss?: boolean;
+            /** @default true */
+            enableAutomaticSearch?: boolean;
+            /** @default true */
+            enableInteractiveSearch?: boolean;
+            /** @description VIP/membership expiry date (YYYY-MM-DD); omitted or empty = untracked */
+            expiresAt?: string;
+            /**
+             * @description perk = VIP lapses, account = access ends
+             * @enum {string}
+             */
+            expiryKind?: "" | "perk" | "account";
+            /** @description never expires; clears expiresAt and never notifies */
+            expiryLifetime?: boolean;
         };
         UpdateIndexer: {
             name?: string;
@@ -1610,6 +1776,27 @@ export interface components {
              * @description the global solver reference; applied verbatim (null clears it)
              */
             solverId?: number | null;
+            /** @description Servarr indexer priority (1-50, 1 = highest); omitted leaves it unchanged */
+            priority?: number;
+            /** @description per-indexer minimum-seeders floor; omitted leaves it unchanged */
+            minSeeders?: number;
+            /** @description present-but-empty clears the narrowing; omitted leaves it unchanged */
+            syncCategories?: number[];
+            /** @description omitted leaves it unchanged */
+            enableRss?: boolean;
+            /** @description omitted leaves it unchanged */
+            enableAutomaticSearch?: boolean;
+            /** @description omitted leaves it unchanged */
+            enableInteractiveSearch?: boolean;
+            /** @description present-but-empty clears the tracking; omitted leaves it unchanged */
+            expiresAt?: string;
+            /**
+             * @description omitted leaves it unchanged
+             * @enum {string}
+             */
+            expiryKind?: "" | "perk" | "account";
+            /** @description omitted leaves it unchanged */
+            expiryLifetime?: boolean;
         };
         Capabilities: {
             /** @description search mode -> supported query params */
@@ -1751,19 +1938,13 @@ export interface components {
              */
             syncLevel: "full" | "add_update";
             /**
-             * @description which harbrr indexers this connection mirrors
-             * @enum {string}
-             */
-            indexScope: "all" | "selected";
-            /**
              * @description which feed variant is pushed: honor = the standard feed (the indexer's freeleech setting is respected); bypass = the /full variant (full catalog, for cross-seed). Defaults by kind (qui = bypass; *arrs = honor).
              * @enum {string}
              */
             freeleechMode: "honor" | "bypass";
-            priority: number;
             /**
              * Format: int64
-             * @description the sync profile this connection uses, or null for none (default behavior). ON DELETE SET NULL — deleting the profile drops the reference. Never set for qui (sync profiles do not apply to it); a profile with a non-empty category set must overlap the app's content range (the attach-time overlap guard).
+             * @description the sync profile (routing set) this connection uses, or null for none — nil, or a profile with an empty selection, means every compatible indexer. ON DELETE SET NULL — deleting the profile drops the reference, but the appsync service refuses the delete while any connection still references it (409). Meaningful for every kind, including qui.
              */
             syncProfileId?: number | null;
             /** Format: date-time */
@@ -1800,20 +1981,13 @@ export interface components {
              */
             syncLevel?: "full" | "add_update";
             /**
-             * @default all
-             * @enum {string}
-             */
-            indexScope?: "all" | "selected";
-            /**
              * @description defaults by kind (qui = bypass; *arrs = honor)
              * @enum {string}
              */
             freeleechMode?: "honor" | "bypass";
-            /** @default 25 */
-            priority?: number;
             /**
              * Format: int64
-             * @description optional sync profile reference; must exist, must not be set for qui, and a non-empty category set must overlap the app's content range (else 400)
+             * @description optional sync profile (routing set) reference; must exist (else 400). Meaningful for every kind, including qui.
              */
             syncProfileId?: number | null;
         };
@@ -1823,10 +1997,7 @@ export interface components {
             /** @enum {string} */
             syncLevel?: "full" | "add_update";
             /** @enum {string} */
-            indexScope?: "all" | "selected";
-            /** @enum {string} */
             freeleechMode?: "honor" | "bypass";
-            priority?: number;
             /**
              * Format: int64
              * @description tri-state: omit to leave unchanged, null to clear, an id to set it (validated as on create). Applied verbatim once validated.
@@ -1891,6 +2062,8 @@ export interface components {
             enabled: boolean;
             /** @description fire on a classified indexer health failure */
             onHealthFailure: boolean;
+            /** @description fire on an approaching or passed indexer VIP/membership expiry (autobrr/harbrr#399) */
+            onExpiry: boolean;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -1904,6 +2077,8 @@ export interface components {
             url: string;
             /** @description fire on an indexer health failure (default true) */
             onHealthFailure?: boolean;
+            /** @description fire on an indexer expiry warning (default true) */
+            onExpiry?: boolean;
         };
         /** @description a partial update; omitted fields are left unchanged */
         UpdateNotification: {
@@ -1911,6 +2086,7 @@ export interface components {
             /** @description rotates the destination (stored encrypted) */
             url?: string;
             onHealthFailure?: boolean;
+            onExpiry?: boolean;
         };
         /** @description A global, reusable proxy an indexer references by id. host/port/username are plain (never masked); the password is a write-only secret and is never echoed back in a response. */
         Proxy: {
@@ -2106,18 +2282,13 @@ export interface components {
             url?: string;
             maxTimeout?: number;
         };
-        /** @description A named, reusable set of app-sync overrides a connection references by id (the Prowlarr AppProfile equivalent). Holds no secrets. */
+        /** @description A named, reusable indexer ROUTING SET a connection references by id (#365 — the Prowlarr AppProfile equivalent, narrowed to pure routing; all sync behavior now lives per-indexer, see Indexer). Holds no secrets. */
         SyncProfile: {
             /** Format: int64 */
             id: number;
             name: string;
-            /** @description Newznab category ids this profile narrows a connection to (deduped and sorted). Empty means no narrowing (the full category set is pushed). A profile only narrows within the app's own content type, never beyond it. */
-            categories: number[];
-            /** @description pushed Torznab minimum-seeders floor (0 = the app default, not pushed) */
-            minSeeders: number;
-            enableRss: boolean;
-            enableAutomaticSearch: boolean;
-            enableInteractiveSearch: boolean;
+            /** @description The indexer instances this profile routes a connection to. Empty means every compatible indexer (mirrors the empty-categories convention and avoids a profile edit silently narrowing a connection to nothing). */
+            indexerIds: number[];
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -2125,25 +2296,13 @@ export interface components {
         };
         CreateSyncProfile: {
             name: string;
-            /** @description Newznab category ids to narrow to (0 < id < 1000000); empty means no narrowing */
-            categories?: number[];
-            /** @description minimum-seeders floor (>= 0); 0 = the app default */
-            minSeeders?: number;
-            /** @default true */
-            enableRss?: boolean;
-            /** @default true */
-            enableAutomaticSearch?: boolean;
-            /** @default true */
-            enableInteractiveSearch?: boolean;
+            /** @description the indexer instances to route to; empty (or omitted) means every compatible indexer */
+            indexerIds?: number[];
         };
-        /** @description A partial update; omitted fields are left unchanged. A present-but-empty categories array clears the category set (revert to full-category behavior). */
+        /** @description A partial update; omitted fields are left unchanged. A present-but-empty indexerIds array clears the selection (revert to every compatible indexer). */
         UpdateSyncProfile: {
             name?: string;
-            categories?: number[];
-            minSeeders?: number;
-            enableRss?: boolean;
-            enableAutomaticSearch?: boolean;
-            enableInteractiveSearch?: boolean;
+            indexerIds?: number[];
         };
         /** @description a copy-paste cross-seed v6 config.js torznab entry for one indexer */
         CrossSeedSnippet: {
@@ -2154,13 +2313,12 @@ export interface components {
             /** @description the torznab array entry for config.js, with an apikey placeholder */
             configJs: string;
         };
-        /** @description one row of a connection's per-indexer sync ledger */
+        /** @description one row of a connection's per-indexer sync ledger (a pure reconcile record) */
         ConnectionIndexer: {
             /** Format: int64 */
             instanceId: number;
             /** @description the id the app assigned the pushed indexer */
             remoteId?: string;
-            selected: boolean;
             /** Format: date-time */
             lastPushedAt?: string;
             /** @description ok | error */
@@ -2190,10 +2348,6 @@ export interface components {
             report: components["schemas"]["SyncReport"];
             /** @description scrubbed error when this connection failed to sync */
             error?: string;
-        };
-        SelectIndexers: {
-            /** @description the indexer instance ids to select; all others are cleared */
-            instanceIds: number[];
         };
         /** @description Search-results cache statistics. When enabled is false, caching is off and the remaining figures are absent/zero. */
         CacheStats: {
@@ -2371,6 +2525,24 @@ export interface components {
              * @enum {string}
              */
             level: "trace" | "debug" | "info" | "warn" | "error";
+        };
+        /** @description The global hide-adult-categories setting (autobrr/harbrr#383): whether the XXX (6000–6999) taxonomy is omitted from this API's category lists and from searches that name no categories. Off by default. It filters by the category a tracker declares, so a miscategorised release can still appear — it is not a content guarantee. */
+        AdultCategories: {
+            /** @description true when adult categories are hidden */
+            hidden: boolean;
+        };
+        /** @description How long the per-category indexer tallies are kept (autobrr/harbrr#403). Old month buckets are dropped by a daily range delete, so a renewal decision months later still has the history it needs without an unbounded table. */
+        StatsRetention: {
+            /**
+             * @description retention window in whole months
+             * @default 12
+             */
+            months: number;
+        };
+        /** @description The indexer VIP/membership expiry lead times (autobrr/harbrr#399): how many days before a tracked expiry date the periodic scan warns. Each threshold fires exactly once per indexer per expiry date and re-arms when the date changes, so a renewal restores the whole ladder. The at-expiry warning (0) is always present: an expiry passing unannounced is the failure this exists to prevent. */
+        ExpiryThresholds: {
+            /** @description lead times in days before expiry; the response is always canonical (deduped, descending, including 0) */
+            days: number[];
         };
         /** @description The live global rate-limit default (autobrr/harbrr#104): the minimum spacing between requests to any tracker host that has no per-indexer "rate_interval" override (get returns the effective value; put sets it). Always a Go duration string. Never undercuts a definition's own requestDelay. */
         RateLimitConfig: {
@@ -3048,7 +3220,7 @@ export interface operations {
                     "application/json": {
                         slug: string;
                         /** @enum {string} */
-                        status: "healthy" | "unhealthy";
+                        status: "healthy" | "failing" | "unknown";
                         events: {
                             /** @enum {string} */
                             kind: "auth_failure" | "rate_limited" | "parse_error" | "anti_bot" | "transport";
@@ -3499,33 +3671,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ConnectionStatus"];
                 };
-            };
-            400: components["responses"]["BadRequest"];
-            401: components["responses"]["Unauthorized"];
-            404: components["responses"]["NotFound"];
-        };
-    };
-    setConnectionIndexers: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SelectIndexers"];
-            };
-        };
-        responses: {
-            /** @description selection updated */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
@@ -4965,6 +5110,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     updateSyncProfile: {
@@ -5207,6 +5353,156 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    getAdultCategories: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description the current setting */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdultCategories"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    putAdultCategories: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdultCategories"];
+            };
+        };
+        responses: {
+            /** @description the applied setting */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdultCategories"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description adult-category filtering is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getExpiryThresholds: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description the effective lead times */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpiryThresholds"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    putExpiryThresholds: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExpiryThresholds"];
+            };
+        };
+        responses: {
+            /** @description the stored lead times */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpiryThresholds"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getStatsRetention: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description the current retention window */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatsRetention"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    putStatsRetention: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StatsRetention"];
+            };
+        };
+        responses: {
+            /** @description the applied retention window */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatsRetention"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
         };
     };
     getRateLimitDefault: {

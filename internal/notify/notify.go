@@ -29,6 +29,17 @@ const (
 	// EventIndexerHealth is a classified indexer failure (auth/anti-bot/rate-limited/
 	// parse) recorded by the registry — the MVP trigger.
 	EventIndexerHealth = "indexer_health"
+	// EventIndexerRecovery is the closing bracket on EventIndexerHealth: an indexer
+	// that had been escalated onto the circuit breaker's disable ladder is answering
+	// again (#389). It rides the same on_health_failure opt-in — a target that asked
+	// to hear that an indexer broke is the target that needs to hear it is fixed, and
+	// a separate switch would let an operator subscribe to bad news only.
+	EventIndexerRecovery = "indexer_recovery"
+	// EventIndexerExpiry is an approaching or passed VIP/membership expiry (#399),
+	// produced by the periodic expiry scan rather than by a request. Its Kind carries
+	// the expiry kind (domain.ExpiryKindPerk/Account) and its Detail the date, the
+	// threshold that fired and, when an external URL is configured, where to fix it.
+	EventIndexerExpiry = "indexer_expiry"
 )
 
 // Event is one operational occurrence dispatched to the matching targets. Detail is

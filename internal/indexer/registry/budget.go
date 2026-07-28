@@ -2,7 +2,6 @@ package registry
 
 import (
 	"context"
-	"errors"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,15 +13,6 @@ import (
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
 	apphttp "github.com/autobrr/harbrr/internal/http"
 )
-
-// errBudgetExhausted marks a Search/Grab refused because the indexer's request
-// budget (autobrr/harbrr#251) has no capacity left for the current period — either
-// an operator-configured cap was reached, or a tracker's own quota error was
-// observed (the reactive-learning path). It is a registry-internal signal, not an
-// engine error: Search catches it to prefer serving a stale cache entry; the breaker
-// (searchcache_breaker.go) explicitly excludes it from tripping, since a self-imposed
-// budget guard is not a tracker failure worth suppressing other consumers over.
-var errBudgetExhausted = errors.New("registry: indexer request budget exhausted for this period")
 
 // budgetKind distinguishes the query and grab counters, which are configured,
 // counted, and reactively learned independently (mirroring Prowlarr's separate
@@ -237,6 +227,67 @@ func (st *budgetState) row(instanceID int64, now time.Time) database.BudgetCount
 	}
 }
 
+// BudgetKindStatus is one kind's (query or grab) standing in the CURRENT period:
+// Used is what has been counted so far, Limit is the OPERATOR-CONFIGURED cap (0 =
+// none configured), and Learned reports the reactive latch — the tracker declared its
+// own quota spent, which carries no number because the cap was never declared. The
+// two cap sources stay separate fields on purpose: an operator must not mistake a
+// learned cap for one they set (autobrr/harbrr#402).
+type BudgetKindStatus struct {
+	Used    int64
+	Limit   int
+	Learned bool
+}
+
+// BudgetStatus is one instance's request-budget standing for the current rolling
+// period — the read-only view behind the usage meter. Unit is "day" or "hour";
+// PeriodEnd is when the current period rolls over (UTC), i.e. when Used resets and
+// any learned latch clears.
+type BudgetStatus struct {
+	Unit      string
+	PeriodEnd time.Time
+	Query     BudgetKindStatus
+	Grab      BudgetKindStatus
+}
+
+// Status reports instanceID's current-period budget standing WITHOUT counting
+// anything: it is the observability read behind the usage meter and never mutates or
+// persists. It does take the same lazy read-through any other first touch takes
+// (ensureLoaded), so a meter opened after a restart reports the durable counters
+// rather than a false zero. A stored period that is no longer current reads as a
+// fresh one (0 used, no latch) — exactly what reserve would roll it over to on the
+// next request, without writing that rollover here.
+func (b *RequestBudget) Status(ctx context.Context, instanceID int64, cfg map[string]string, now time.Time) BudgetStatus {
+	st := b.stateFor(instanceID)
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	b.ensureLoaded(ctx, instanceID, st)
+
+	unit := resolveLimitsUnit(cfg)
+	period := periodKey(now, unit)
+	return BudgetStatus{
+		Unit:      unit,
+		PeriodEnd: periodEnd(now, unit),
+		Query:     kindStatus(st, budgetKindQuery, cfg, period),
+		Grab:      kindStatus(st, budgetKindGrab, cfg, period),
+	}
+}
+
+// kindStatus reads one kind's live view: the stored count and learned latch while the
+// stored period is still current, zeroes once it has rolled over. Caller must hold
+// st.mu.
+func kindStatus(st *budgetState, kind budgetKind, cfg map[string]string, period string) BudgetKindStatus {
+	count, exhausted, curPeriod := st.snapshot(kind)
+	if curPeriod != period {
+		count, exhausted = 0, false
+	}
+	out := BudgetKindStatus{Used: count, Learned: exhausted}
+	if limit := parseLimit(cfg, kind); limit != nil {
+		out.Limit = *limit
+	}
+	return out
+}
+
 // ForgetInstance drops a deleted instance's in-memory budget state (mirrors
 // IndexerStats.ForgetInstance); the durable row is already gone via ON DELETE
 // CASCADE.
@@ -284,4 +335,16 @@ func periodKey(now time.Time, unit string) string {
 		return now.Format(budgetHourFormat)
 	}
 	return now.Format(budgetDayFormat)
+}
+
+// periodEnd is when the period CONTAINING now ends: the next UTC midnight for a day
+// unit, the top of the next UTC hour for an hour unit. Derived from now rather than
+// from a stored period key, so a state left behind in an old period still reports the
+// boundary the next request would actually roll over at.
+func periodEnd(now time.Time, unit string) time.Time {
+	now = now.UTC()
+	if unit == "hour" {
+		return now.Truncate(time.Hour).Add(time.Hour)
+	}
+	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, 1)
 }

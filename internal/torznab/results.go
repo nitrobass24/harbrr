@@ -47,12 +47,16 @@ type FeedInfo struct {
 }
 
 type rssFeed struct {
-	XMLName      xml.Name   `xml:"rss"`
-	Version      string     `xml:"version,attr"`
-	XMLNSAtom    string     `xml:"xmlns:atom,attr"`
-	XMLNSTorznab string     `xml:"xmlns:torznab,attr"`
-	XMLNSNewznab string     `xml:"xmlns:newznab,attr"`
-	Channel      rssChannel `xml:"channel"`
+	XMLName      xml.Name `xml:"rss"`
+	Version      string   `xml:"version,attr"`
+	XMLNSAtom    string   `xml:"xmlns:atom,attr"`
+	XMLNSTorznab string   `xml:"xmlns:torznab,attr"`
+	XMLNSNewznab string   `xml:"xmlns:newznab,attr"`
+	// XMLNSHarbrr is declared ONLY by the aggregate feed, which is the only feed that
+	// emits harbrr-namespaced elements. omitempty keeps every per-indexer feed
+	// byte-identical to what it served before the namespace existed.
+	XMLNSHarbrr string     `xml:"xmlns:harbrr,attr,omitempty"`
+	Channel     rssChannel `xml:"channel"`
 }
 
 type rssChannel struct {
@@ -63,7 +67,27 @@ type rssChannel struct {
 	Language    string          `xml:"language"`
 	Category    string          `xml:"category"`
 	Response    newznabResponse `xml:"newznab:response"`
-	Items       []rssItem       `xml:"item"`
+	// Members is the aggregate feed's per-indexer status ledger, emitted before the
+	// items so a consumer reading the stream knows what the window covers before it
+	// reads what is in it. It is nil on every per-indexer feed and encoding/xml emits
+	// nothing for a nil slice, so those bytes are unchanged.
+	Members []MemberStatus `xml:"harbrr:member"`
+	Items   []rssItem      `xml:"item"`
+}
+
+// MemberStatus is one entry in the aggregate feed's per-indexer status ledger: which
+// member this is, whether it contributed, and — when it did not — WHY, drawn from a
+// closed reason vocabulary. It never carries an error message: a member's failure
+// detail routinely embeds a passkey, and this element is served to the consumer.
+type MemberStatus struct {
+	ID   string `xml:"id,attr"`
+	Name string `xml:"name,attr"`
+	// Status is "ok" or "skipped".
+	Status string `xml:"status,attr"`
+	// Reason is the skip reason (core's Skip* vocabulary); empty on an ok member.
+	Reason string `xml:"reason,attr,omitempty"`
+	// Count is how many releases this member put into the merged set, before paging.
+	Count int `xml:"count,attr"`
 }
 
 // newznabResponse is the spec's <newznab:response offset total> paging element. harbrr
@@ -130,11 +154,13 @@ type torznabAttr struct {
 
 // AcquisitionRewriter optionally replaces a release's served <link>/<enclosure>
 // URL and its <guid>. It receives the default acquisition link (the resolved link,
-// else the magnet) and returns the replacement link, a replacement guid, and
-// ok=true to apply them; ok=false keeps the defaults. The Torznab handler uses it to
-// route a resolver-needing indexer's links through the /dl proxy so a passkey-bearing
-// link never reaches the feed, while keeping a stable, passkey-free guid.
-type AcquisitionRewriter func(acquisitionLink string) (link, guid string, ok bool)
+// else the magnet) and the release's newznab categories, and returns the replacement
+// link, a replacement guid, and ok=true to apply them; ok=false keeps the defaults. The
+// Torznab handler uses it to route a resolver-needing indexer's links through the /dl
+// proxy so a passkey-bearing link never reaches the feed, while keeping a stable,
+// passkey-free guid. The categories ride along so the sealed token can carry the
+// release's family for the per-category grab tally (autobrr/harbrr#403).
+type AcquisitionRewriter func(acquisitionLink string, categories []int) (link, guid string, ok bool)
 
 // MarshalResultsRewritten renders the Torznab results feed (t=search and the typed
 // search modes) for an indexer's releases, with the resolved paging window (emitted as
@@ -149,22 +175,66 @@ func MarshalResultsRewritten(feed FeedInfo, releases []*normalizer.Release, page
 		}
 		items = append(items, buildItem(feed, r, now, rewrite))
 	}
-	doc := rssFeed{
+	return marshalDocument("rss", newRSSFeed(feed, items, page))
+}
+
+// newRSSFeed assembles the results document from already-built items. Both the
+// per-indexer feed and the aggregate feed go through it, so the channel envelope
+// cannot drift between them; the aggregate's extras (xmlns:harbrr and the member
+// ledger) are added by the caller and are omitted — leaving the per-indexer bytes
+// untouched — when they are unset.
+func newRSSFeed(channel FeedInfo, items []rssItem, page Page) rssFeed {
+	return rssFeed{
 		Version:      "2.0",
 		XMLNSAtom:    atomNamespace,
 		XMLNSTorznab: torznabNamespace,
 		XMLNSNewznab: newznabNamespace,
 		Channel: rssChannel{
-			AtomLink:    atomLink{Href: feed.SelfURL, Rel: "self", Type: "application/rss+xml"},
-			Title:       sanitizeXMLText(feed.Name),
-			Description: sanitizeXMLText(feed.Description),
-			Link:        feed.SiteLink,
+			AtomLink:    atomLink{Href: channel.SelfURL, Rel: "self", Type: "application/rss+xml"},
+			Title:       sanitizeXMLText(channel.Name),
+			Description: sanitizeXMLText(channel.Description),
+			Link:        channel.SiteLink,
 			Language:    feedLanguage,
 			Category:    feedCategory,
 			Response:    newznabResponse{Offset: page.Offset, Total: page.Total},
 			Items:       items,
 		},
 	}
+}
+
+// harbrrNamespace scopes the elements harbrr adds beyond the Torznab/Newznab spec.
+// Only the aggregate feed declares it (see rssFeed.XMLNSHarbrr); *arr and every other
+// consumer ignores an unknown namespace, so the ledger is additive information rather
+// than a wire-format change.
+const harbrrNamespace = "https://harbrr.dev/schemas/2026/feed"
+
+// AggregateItem is one release rendered under the identity of the MEMBER it came from,
+// not the aggregate's. Feed supplies that member's indexer id, name, type and protocol
+// (so a mixed torrent/usenet aggregate still renders each item's enclosure correctly)
+// and Rewrite is that member's own /dl rewriter — which is what makes a grab from an
+// aggregate feed resolve against the originating tracker.
+type AggregateItem struct {
+	Feed    FeedInfo
+	Release *normalizer.Release
+	Rewrite AcquisitionRewriter
+}
+
+// MarshalAggregateResults renders the aggregate ('all') Torznab feed: one channel
+// envelope described by channel, each item rendered under its own member's identity,
+// and the per-indexer status ledger as harbrr-namespaced channel elements. page.Total
+// is the size of the merged set actually fetched — a floor, never a claim about pages
+// the aggregate cannot serve.
+func MarshalAggregateResults(channel FeedInfo, items []AggregateItem, members []MemberStatus, page Page, now time.Time) ([]byte, error) {
+	built := make([]rssItem, 0, len(items))
+	for _, it := range items {
+		if it.Release == nil { // boundary guard: the *arr feed must never panic on a stray nil
+			continue
+		}
+		built = append(built, buildItem(it.Feed, it.Release, now, it.Rewrite))
+	}
+	doc := newRSSFeed(channel, built, page)
+	doc.XMLNSHarbrr = harbrrNamespace
+	doc.Channel.Members = members
 	return marshalDocument("rss", doc)
 }
 
@@ -204,7 +274,7 @@ func buildItem(feed FeedInfo, r *normalizer.Release, now time.Time, rewrite Acqu
 	link := acquisitionLink(r)
 	guid := GUIDFor(r)
 	if rewrite != nil {
-		if newLink, newGUID, ok := rewrite(link); ok {
+		if newLink, newGUID, ok := rewrite(link, r.Categories); ok {
 			// The rewriter always seals the credential-bearing link behind the /dl
 			// proxy. Its synthesized passkey-free guid is only needed when the release
 			// carries no upstream id; when it does, GUIDFor already chose that stable

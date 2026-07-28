@@ -14,6 +14,8 @@ import (
 	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
+	"github.com/autobrr/harbrr/internal/indexer/core"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 	"github.com/autobrr/harbrr/internal/secrets"
 )
@@ -51,6 +53,7 @@ type invalidator interface {
 // lock and holds no CRUD/serve state.
 type StatsReporter struct {
 	stats     *IndexerStats
+	budget    *RequestBudget
 	instances database.Instances
 	health    database.Health
 	circuit   database.Circuit
@@ -75,16 +78,98 @@ var (
 // a clean Torznab path segment and management resource id.
 var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
-// reservedSlugs are slugs that must not name an indexer because they collide with
-// a static path segment registered as a sibling of /api/indexers/{slug} in
-// internal/web/api/router.go. chi prioritizes a static segment over the {slug}
-// param, so an indexer slugged "stats" or "status" would be shadowed by GET
-// /api/indexers/stats (allIndexerStats) or /api/indexers/status
-// (allIndexerStatus). Keep this in sync with the static segments registered
-// directly under /api/indexers/ in router.go.
+// reservedSlugs are slugs that must not name an indexer. Two reasons, both fatal:
+// "stats"/"status" collide with a static path segment registered as a sibling of
+// /api/indexers/{slug} in internal/web/api/router.go (chi prioritizes a static
+// segment over the {slug} param, so such an indexer would be shadowed by GET
+// /api/indexers/stats or /api/indexers/status); core.AggregateSlug names the
+// aggregate Torznab feed in the SAME {slug} position, so an indexer holding it would
+// make the aggregate feed unreachable and, worse, ambiguous at grab time. Keep this
+// in sync with the static segments registered directly under /api/indexers/ in
+// router.go. Case-insensitivity is free: slugPattern already rejects uppercase.
 var reservedSlugs = map[string]struct{}{
-	"stats":  {},
-	"status": {},
+	"stats":            {},
+	"status":           {},
+	core.AggregateSlug: {},
+}
+
+// defaultPriority is the Servarr indexer priority (Prowlarr semantics: 1-50, 1 =
+// highest) an indexer gets when none is given.
+const defaultPriority = 25
+
+// normalizePriority defaults an unset (0) priority to defaultPriority and rejects
+// anything outside the valid 1-50 range.
+func normalizePriority(priority int) (int, error) {
+	if priority == 0 {
+		return defaultPriority, nil
+	}
+	if priority < 1 || priority > 50 {
+		return 0, fmt.Errorf("%w: priority must be 1-50 (0 for the default)", ErrInvalid)
+	}
+	return priority, nil
+}
+
+// validateMinSeeders rejects a negative minimum-seeders floor.
+func validateMinSeeders(minSeeders int) error {
+	if minSeeders < 0 {
+		return fmt.Errorf("%w: minSeeders must be >= 0", ErrInvalid)
+	}
+	return nil
+}
+
+// validateAddSync validates AddParams' sync-tuning fields together (priority,
+// min-seeders, sync categories), returning the normalized priority and category set —
+// split out of Add so it stays within the function-length limit.
+func validateAddSync(p AddParams) (priority int, syncCats []int, exp expiry, err error) {
+	priority, err = normalizePriority(p.Priority)
+	if err != nil {
+		return 0, nil, expiry{}, err
+	}
+	if err := validateMinSeeders(p.MinSeeders); err != nil {
+		return 0, nil, expiry{}, err
+	}
+	syncCats, err = normalizeCategoryIDs(p.SyncCategories)
+	if err != nil {
+		return 0, nil, expiry{}, err
+	}
+	exp, err = normalizeExpiry(p.ExpiresAt, p.ExpiryKind, p.ExpiryLifetime)
+	if err != nil {
+		return 0, nil, expiry{}, err
+	}
+	return priority, syncCats, exp, nil
+}
+
+// maxCategoryID bounds a sync-category id: Newznab ids and harbrr's custom range
+// (>=100000) all sit well under this, so an id outside (0, maxCategoryID) is a client
+// mistake rejected at the boundary.
+const maxCategoryID = 1_000_000
+
+// normalizeCategoryIDs bounds-checks, dedupes, and sorts an indexer's sync-category ids
+// so the stored set is deterministic. An empty input yields an empty (non-nil) slice.
+func normalizeCategoryIDs(ids []int) ([]int, error) {
+	seen := make(map[int]bool, len(ids))
+	out := make([]int, 0, len(ids))
+	for _, id := range ids {
+		if id <= 0 || id >= maxCategoryID {
+			return nil, fmt.Errorf("%w: category id %d out of range (0 < id < %d)", ErrInvalid, id, maxCategoryID)
+		}
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	sort.Ints(out)
+	return out, nil
+}
+
+// boolOrTrue resolves an optional toggle: nil defaults to true (every search mode is on
+// by default, matching the pre-#365 sync-profile default).
+func boolOrTrue(v *bool) bool {
+	if v == nil {
+		return true
+	}
+	return *v
 }
 
 // AddParams is the input to Add. Slug defaults to DefinitionID when empty; Name
@@ -100,6 +185,71 @@ type AddParams struct {
 	// uses (nil = none). The foreign key rejects a non-existent id.
 	ProxyID  *int64
 	SolverID *int64
+	// Priority is the Servarr indexer priority (1-50, 1 = highest); 0 defaults to
+	// defaultPriority.
+	Priority int
+	// MinSeeders is the per-indexer minimum-seeders floor; 0 = unset, not pushed.
+	MinSeeders int
+	// SyncCategories narrows the Newznab categories this indexer pushes (empty = no
+	// narrowing).
+	SyncCategories []int
+	// EnableRss / EnableAutomaticSearch / EnableInteractiveSearch are the per-search-mode
+	// push flags; nil defaults to true (matching the pre-#365 sync-profile default).
+	EnableRss               *bool
+	EnableAutomaticSearch   *bool
+	EnableInteractiveSearch *bool
+	// ExpiresAt / ExpiryKind / ExpiryLifetime are the #399 VIP/membership expiry
+	// (empty date = untracked, which behaves exactly as before the field existed).
+	ExpiresAt      string
+	ExpiryKind     string
+	ExpiryLifetime bool
+}
+
+// expiry is the validated expiry triple, so the Add and Update paths share one
+// normalization instead of each re-deriving the lifetime-wins rule.
+type expiry struct {
+	date     string
+	kind     string
+	lifetime bool
+}
+
+// normalizeExpiry validates and canonicalizes an expiry triple. Lifetime wins: it
+// clears the date outright rather than leaving a stale one that a later un-ticking
+// would silently resurrect. An unset date drops the kind with it, so "untracked" is
+// one state and not four. The date must be a real calendar day in domain's layout —
+// the scan does arithmetic on it, and a half-parsed date is a missed warning.
+func normalizeExpiry(date, kind string, lifetime bool) (expiry, error) {
+	date, kind = strings.TrimSpace(date), strings.TrimSpace(kind)
+	if kind != "" && kind != domain.ExpiryKindPerk && kind != domain.ExpiryKindAccount {
+		return expiry{}, fmt.Errorf("%w: expiryKind must be %q or %q (got %q)",
+			ErrInvalid, domain.ExpiryKindPerk, domain.ExpiryKindAccount, kind)
+	}
+	if lifetime {
+		return expiry{kind: kind, lifetime: true}, nil
+	}
+	if date == "" {
+		return expiry{}, nil
+	}
+	if _, err := time.Parse(domain.ExpiryDateLayout, date); err != nil {
+		return expiry{}, fmt.Errorf("%w: expiresAt must be a YYYY-MM-DD date (got %q)", ErrInvalid, date)
+	}
+	return expiry{date: date, kind: kind}, nil
+}
+
+// resolveExpiry applies the optional expiry patch fields — each nil field keeps the
+// instance's current value — and validates the resulting triple as a whole.
+func resolveExpiry(inst domain.IndexerInstance, p UpdateParams) (expiry, error) {
+	date, kind, lifetime := inst.ExpiresAt, inst.ExpiryKind, inst.ExpiryLifetime
+	if p.ExpiresAt != nil {
+		date = *p.ExpiresAt
+	}
+	if p.ExpiryKind != nil {
+		kind = *p.ExpiryKind
+	}
+	if p.ExpiryLifetime != nil {
+		lifetime = *p.ExpiryLifetime
+	}
+	return normalizeExpiry(date, kind, lifetime)
 }
 
 // RefUpdate is a tri-state PATCH field for a nullable resource reference: Present
@@ -114,13 +264,27 @@ type RefUpdate struct {
 // UpdateParams is the input to Update. Nil Name/BaseURL leave those unchanged;
 // Settings is merged into the existing set (a value of secrets.Redacted keeps the
 // stored value; omitted settings are kept). ProxyID/SolverID are tri-state
-// (RefUpdate): only an explicitly-present field changes the reference.
+// (RefUpdate): only an explicitly-present field changes the reference. Nil
+// Priority/MinSeeders/toggle fields leave those unchanged; SyncCategories is a
+// *[]int so a present-but-empty slice clears the narrowing (distinct from omitted).
 type UpdateParams struct {
-	Name     *string
-	BaseURL  *string
-	Settings map[string]string
-	ProxyID  RefUpdate
-	SolverID RefUpdate
+	Name                    *string
+	BaseURL                 *string
+	Settings                map[string]string
+	ProxyID                 RefUpdate
+	SolverID                RefUpdate
+	Priority                *int
+	MinSeeders              *int
+	SyncCategories          *[]int
+	EnableRss               *bool
+	EnableAutomaticSearch   *bool
+	EnableInteractiveSearch *bool
+	// ExpiresAt / ExpiryKind / ExpiryLifetime patch the #399 expiry; nil leaves the
+	// stored value. A present-but-empty ExpiresAt clears the tracking (distinct from
+	// omitted), which is how the form's "no expiry" reaches the store.
+	ExpiresAt      *string
+	ExpiryKind     *string
+	ExpiryLifetime *bool
 }
 
 // SettingView is the API-safe representation of a stored setting: a secret's value
@@ -150,6 +314,10 @@ func (r *Manager) Add(ctx context.Context, p AddParams) (domain.IndexerInstance,
 	if err := validateRequiredSettings(fields, p.Settings); err != nil {
 		return domain.IndexerInstance{}, err
 	}
+	priority, syncCats, exp, err := validateAddSync(p)
+	if err != nil {
+		return domain.IndexerInstance{}, err
+	}
 	if err := r.ensureSlugFree(ctx, slug); err != nil {
 		return domain.IndexerInstance{}, err
 	}
@@ -159,6 +327,10 @@ func (r *Manager) Add(ctx context.Context, p AddParams) (domain.IndexerInstance,
 		Slug: slug, DefinitionID: p.DefinitionID, Name: orDefault(p.Name, def.Name),
 		BaseURL: p.BaseURL, Enabled: true, Protocol: def.EffectiveProtocol(),
 		ProxyID: p.ProxyID, SolverID: p.SolverID,
+		Priority: priority, MinSeeders: p.MinSeeders, SyncCategories: syncCats,
+		EnableRss: boolOrTrue(p.EnableRss), EnableAutomaticSearch: boolOrTrue(p.EnableAutomaticSearch),
+		EnableInteractiveSearch: boolOrTrue(p.EnableInteractiveSearch),
+		ExpiresAt:               exp.date, ExpiryKind: exp.kind, ExpiryLifetime: exp.lifetime,
 		CreatedAt: now, UpdatedAt: now,
 	}
 
@@ -304,8 +476,11 @@ func (r *Manager) updateInTx(ctx context.Context, tx dbinterface.TxQuerier, inst
 		return err
 	}
 
-	name, baseURL := applyMeta(inst, p)
-	if err := r.instances.UpdateMeta(ctx, tx, inst.ID, name, baseURL, r.clock()); err != nil {
+	meta, err := resolveMeta(inst, p)
+	if err != nil {
+		return err
+	}
+	if err := r.instances.UpdateMeta(ctx, tx, inst.ID, meta, r.clock()); err != nil {
 		return fmt.Errorf("registry: update meta: %w", err)
 	}
 	// Only a present ref field changes the stored reference; an absent one keeps
@@ -489,15 +664,50 @@ func (r *Resolver) Test(ctx context.Context, slug string) error {
 	if err := a.health.RecordRecovery(ctx, a.db, a.instanceID, a.clock()); err != nil {
 		return fmt.Errorf("registry: record successful test for %q: %w", slug, err)
 	}
+	// A passing test is proof the indexer works right now, so it descends the circuit
+	// and clears the disable window like any other success. Without this, fixing the
+	// credentials and testing them would leave searches gated for the full auth rung
+	// (an hour on the first failure, #389) with no way to say "it's fixed".
+	a.recordCircuitSuccess(ctx)
 	return nil
 }
 
 // healthEventLimit caps how many recent events the status endpoint returns.
 const healthEventLimit = 20
 
-// healthRecencyWindow is how recently a failure must have occurred for the derived
-// status to read "unhealthy"; older failures are treated as past (status healthy).
-const healthRecencyWindow = 1 * time.Hour
+// The three derived health states (autobrr/harbrr#389). "unknown" is the honest
+// answer when nothing recent is known — the state the old two-state model was missing,
+// which made a never-queried or long-idle indexer assert "healthy" forever.
+// Exported so API handlers tallying or switching on FleetStatus.Status share one
+// definition with the derivation instead of re-typing wire literals.
+const (
+	StatusHealthy = "healthy"
+	StatusFailing = "failing"
+	StatusUnknown = "unknown"
+)
+
+// healthyWindow is how recently a successful attempt must have happened for the derived
+// status to read "healthy". Past it, with nothing newer, the status expires to
+// "unknown" rather than asserting a success that is hours or days old.
+const healthyWindow = 1 * time.Hour
+
+// failingWindowBase / failingWindowCap bound how long a failure holds the status at
+// "failing" before it too expires to "unknown": base at escalation level 0 (which is
+// exactly the old uniform recency window), doubling per rung, capped at 24h — the
+// ceiling the *arr apps settled on for indexer backoff, cited in #389. Per-KIND curves
+// (auth backing off harder than a transient 5xx) are #389's PR 2, not this one.
+const (
+	failingWindowBase = 1 * time.Hour
+	failingWindowCap  = 24 * time.Hour
+)
+
+// failingWindow is the failing-state lifetime for an indexer sitting on escalation
+// rung level. level is clamped to the ladder's range: it is read from the DB, and a
+// negative shift count panics.
+func failingWindow(level int) time.Duration {
+	window := failingWindowBase << min(max(level, 0), maxCircuitLevel)
+	return min(window, failingWindowCap)
+}
 
 // HealthStatus is one indexer's derived health plus the recent events behind it
 // (details already credential-scrubbed at write time). DisabledTill is non-nil
@@ -577,23 +787,83 @@ func (r *StatsReporter) statusOf(ctx context.Context, instanceID int64, limit in
 		till := circuit.DisabledTill
 		disabledTill = &till
 	}
-	return events, r.deriveStatus(events, recovery, disabledTill != nil), disabledTill, nil
+	signals := healthSignals{
+		events:    events,
+		recovery:  recovery,
+		disabled:  disabledTill != nil,
+		level:     circuit.EscalationLevel,
+		lastQuery: r.stats.snapshot(instanceID).lastQuery,
+	}
+	return events, r.deriveStatus(signals), disabledTill, nil
 }
 
-// deriveStatus reads "unhealthy" when either the circuit breaker currently excludes
-// the indexer from dispatch (disabled, #253 — this can outlast healthRecencyWindow
-// on a high escalation rung, e.g. a 24h disable well past its 1h-old triggering
-// event) or the most recent event is within the recency window and happened after
-// the last successful explicit test. Events are newest-first.
-func (r *StatsReporter) deriveStatus(events []domain.IndexerHealthEvent, recovery database.HealthRecovery, disabled bool) string {
-	if disabled {
-		return "unhealthy"
+// healthSignals is the evidence deriveStatus reads — all of it already fetched by
+// statusOf, so deriving a status costs no extra read and (like today) no write at all.
+type healthSignals struct {
+	// events are the instance's health events, newest first (only events[0] is read).
+	events []domain.IndexerHealthEvent
+	// recovery is the last passing explicit Test (zero when never tested).
+	recovery database.HealthRecovery
+	// disabled is true while the circuit breaker excludes the indexer from dispatch.
+	disabled bool
+	// level is the circuit's escalation rung, which scales the failing window.
+	level int
+	// lastQuery is the newest counted search ATTEMPT (IndexerStats counts failed
+	// attempts too, so on its own it is not evidence of success — see lastSuccess).
+	lastQuery time.Time
+}
+
+// deriveStatus resolves the tri-state derived health (#389), in order:
+//  1. the circuit breaker currently excludes the indexer from dispatch → failing
+//     (its own DisabledTill is the expiry, and it can outlast the failing window),
+//  2. the newest recorded failure is still the newest thing that happened and is
+//     recent enough for the current rung → failing,
+//  3. something succeeded within healthyWindow → healthy,
+//  4. otherwise → unknown: everything known has expired, or nothing was ever observed.
+//
+// Expiry is lazy — steps 2 and 3 are pure timestamp arithmetic at read time. There is
+// no sweep and no probe: an idle indexer simply ages into unknown.
+func (r *StatsReporter) deriveStatus(s healthSignals) string {
+	if s.disabled {
+		return StatusFailing
 	}
-	if len(events) > 0 && failureAfterRecovery(events[0], recovery) &&
-		r.clock().Sub(events[0].OccurredAt) <= healthRecencyWindow {
-		return "unhealthy"
+	now := r.clock()
+	success := s.lastSuccess()
+	if s.failingNow(now, success) {
+		return StatusFailing
 	}
-	return "healthy"
+	if !success.IsZero() && now.Sub(success) <= healthyWindow {
+		return StatusHealthy
+	}
+	return StatusUnknown
+}
+
+// lastSuccess is the newest evidence that something actually WORKED: a counted query
+// strictly newer than the newest recorded failure, or a passing explicit Test. The
+// strict comparison is what separates the two: a failed search is counted as a query
+// too, and it is counted just BEFORE its health event is written, so a query timestamp
+// that merely ties the newest failure is that failure's own attempt, not a success.
+func (s healthSignals) lastSuccess() time.Time {
+	if len(s.events) == 0 || s.lastQuery.After(s.events[0].OccurredAt) {
+		if s.lastQuery.After(s.recovery.OccurredAt) {
+			return s.lastQuery
+		}
+	}
+	return s.recovery.OccurredAt
+}
+
+// failingNow reports whether the newest recorded failure still stands: nothing has
+// succeeded since (neither traffic nor a passing test — failureAfterRecovery carries
+// the id-based tiebreak for a test that lands in the same clock instant), and it is
+// within the failing window for the indexer's current escalation rung.
+func (s healthSignals) failingNow(now, success time.Time) bool {
+	if len(s.events) == 0 {
+		return false
+	}
+	newest := s.events[0]
+	return failureAfterRecovery(newest, s.recovery) &&
+		!success.After(newest.OccurredAt) &&
+		now.Sub(newest.OccurredAt) <= failingWindow(s.level)
 }
 
 // failureAfterRecovery uses the monotonic event id in the normal case. OccurredAt
@@ -618,15 +888,35 @@ type IndexerFailureCounts struct {
 // IndexerStat is one indexer's Prowlarr-style stats: the durable query/grab/latency
 // counters plus the failure aggregation and the last-query/last-failure times.
 // AvgResponseMs is derived (response-time total / queries), so it is 0 when the indexer
-// has never been queried. LastQueryAt/LastFailureAt are zero when never observed.
+// has never been queried; GrabSuccessRate is derived the same way (grabs/attempts) and
+// is nil — not 0 — when nothing has been grabbed, so "no data" never reads as "0%".
+// LastQueryAt/LastFailureAt are zero when never observed.
+// Budget is the current-period request-budget standing, filled by Stats (the
+// per-indexer read) and nil in AllStats — reading it costs one settings query per
+// instance, and the meter it feeds is a per-indexer surface (autobrr/harbrr#402).
 type IndexerStat struct {
-	Slug          string
-	Queries       int64
-	Grabs         int64
-	AvgResponseMs int64
-	Failures      IndexerFailureCounts
-	LastQueryAt   time.Time
-	LastFailureAt time.Time
+	Slug            string
+	Queries         int64
+	GrabAttempts    int64
+	Grabs           int64
+	GrabSuccessRate *float64
+	AvgResponseMs   int64
+	Failures        IndexerFailureCounts
+	Categories      []IndexerCategoryStat
+	LastQueryAt     time.Time
+	LastFailureAt   time.Time
+	Budget          *BudgetStatus
+}
+
+// IndexerCategoryStat is one indexer's tally for a single standard PARENT category,
+// summed over the retained months: how many results it returned there and how many of
+// them were grabbed. Name is the standard category name ("Movies"), or "Uncategorized"
+// for the id-0 bucket (releases with no mappable standard category).
+type IndexerCategoryStat struct {
+	CategoryID int
+	Name       string
+	Results    int64
+	Grabs      int64
 }
 
 // Stats returns one indexer's per-indexer stats: its durable counters plus the failure
@@ -643,8 +933,36 @@ func (r *StatsReporter) Stats(ctx context.Context, slug string) (IndexerStat, er
 	if err != nil {
 		return IndexerStat{}, fmt.Errorf("registry: stats failures %q: %w", slug, err)
 	}
-	queries, grabs, respTotal, lastQuery, _ := r.stats.snapshot(inst.ID)
-	return buildIndexerStat(slug, queries, grabs, respTotal, lastQuery, counts), nil
+	cats, err := r.categoryTallies(ctx)
+	if err != nil {
+		return IndexerStat{}, fmt.Errorf("registry: stats categories %q: %w", slug, err)
+	}
+	budget, err := r.budgetStatus(ctx, inst.ID)
+	if err != nil {
+		return IndexerStat{}, err
+	}
+	stat := buildIndexerStat(slug, r.stats.snapshot(inst.ID), counts, cats[inst.ID])
+	stat.Budget = &budget
+	return stat, nil
+}
+
+// budgetStatus reads the instance's budget knobs off its stored settings and returns
+// the current-period standing. The three keys are plain values (never secrets), so
+// this needs no keyring — and deliberately copies nothing else out of the settings
+// row. Read-only: it counts nothing and persists nothing.
+func (r *StatsReporter) budgetStatus(ctx context.Context, instanceID int64) (BudgetStatus, error) {
+	settings, err := r.instances.Settings(ctx, r.db, instanceID)
+	if err != nil {
+		return BudgetStatus{}, fmt.Errorf("registry: stats budget settings for instance %d: %w", instanceID, err)
+	}
+	cfg := make(map[string]string, 3)
+	for _, s := range settings {
+		switch s.Name {
+		case "query_limit", "grab_limit", "limits_unit":
+			cfg[s.Name] = s.Value
+		}
+	}
+	return r.budget.Status(ctx, instanceID, cfg, r.clock()), nil
 }
 
 // AllStats returns per-indexer stats for every configured instance. It reads the
@@ -659,26 +977,69 @@ func (r *StatsReporter) AllStats(ctx context.Context) ([]IndexerStat, error) {
 	if err != nil {
 		return nil, fmt.Errorf("registry: all stats failures: %w", err)
 	}
+	cats, err := r.categoryTallies(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("registry: all stats categories: %w", err)
+	}
 	out := make([]IndexerStat, 0, len(list))
 	for _, inst := range list {
-		queries, grabs, respTotal, lastQuery, _ := r.stats.snapshot(inst.ID)
-		out = append(out, buildIndexerStat(inst.Slug, queries, grabs, respTotal, lastQuery, countsByInstance[inst.ID]))
+		out = append(out, buildIndexerStat(inst.Slug, r.stats.snapshot(inst.ID), countsByInstance[inst.ID], cats[inst.ID]))
 	}
 	return out, nil
 }
 
-// buildIndexerStat assembles the public stat from the durable counters and the health
-// aggregation, deriving the average response time (guarded against divide-by-zero).
-func buildIndexerStat(slug string, queries, grabs, respTotal int64, lastQuery time.Time, counts database.HealthCounts) IndexerStat {
+// categoryTallies reads every instance's per-category totals in ONE grouped query and
+// indexes them by instance. Cardinality is instances × ~10 parent families, so the
+// all-instances read serves the single-indexer view too rather than adding a query per
+// row of the list. The counts lag the live counters by up to one flush tick — they are
+// durable-only, unlike the in-memory query/grab totals.
+func (r *StatsReporter) categoryTallies(ctx context.Context) (map[int64][]IndexerCategoryStat, error) {
+	rows, err := (database.IndexerCategoryStatsStore{}).Tallies(ctx, r.db)
+	if err != nil {
+		return nil, fmt.Errorf("registry: category tallies: %w", err)
+	}
+	out := make(map[int64][]IndexerCategoryStat, len(rows))
+	for _, row := range rows {
+		out[row.InstanceID] = append(out[row.InstanceID], IndexerCategoryStat{
+			CategoryID: row.CategoryID,
+			Name:       categoryName(row.CategoryID),
+			Results:    row.QueryResults,
+			Grabs:      row.Grabs,
+		})
+	}
+	return out, nil
+}
+
+// categoryName resolves a parent category id to its standard name; the id-0 bucket
+// (nothing mappable) reads as "Uncategorized", never as the real "Other" family.
+func categoryName(id int) string {
+	if cat, ok := mapper.GetByID(id); ok {
+		return cat.Name
+	}
+	return "Uncategorized"
+}
+
+// buildIndexerStat assembles the public stat from the durable counters, the health
+// aggregation and the per-category tallies, deriving the average response time and the
+// grab success rate at READ time (both guarded against divide-by-zero — no derived
+// value is ever stored).
+func buildIndexerStat(slug string, s statSnapshot, counts database.HealthCounts, cats []IndexerCategoryStat) IndexerStat {
 	var avg int64
-	if queries > 0 {
-		avg = respTotal / queries
+	if s.queries > 0 {
+		avg = s.respTotal / s.queries
+	}
+	var rate *float64
+	if s.grabAttempts > 0 {
+		r := float64(s.grabs) / float64(s.grabAttempts)
+		rate = &r
 	}
 	return IndexerStat{
-		Slug:          slug,
-		Queries:       queries,
-		Grabs:         grabs,
-		AvgResponseMs: avg,
+		Slug:            slug,
+		Queries:         s.queries,
+		GrabAttempts:    s.grabAttempts,
+		Grabs:           s.grabs,
+		GrabSuccessRate: rate,
+		AvgResponseMs:   avg,
 		Failures: IndexerFailureCounts{
 			AuthFailure: counts.AuthFailure,
 			RateLimited: counts.RateLimited,
@@ -686,7 +1047,8 @@ func buildIndexerStat(slug string, queries, grabs, respTotal int64, lastQuery ti
 			AntiBot:     counts.AntiBot,
 			Transport:   counts.Transport,
 		},
-		LastQueryAt:   lastQuery,
+		Categories:    cats,
+		LastQueryAt:   s.lastQuery,
 		LastFailureAt: counts.LastFailureAt,
 	}
 }
@@ -701,6 +1063,51 @@ func (r *StatsReporter) RehydrateStats(ctx context.Context) error {
 // for the periodic + shutdown flush in cmd/harbrr).
 func (r *StatsReporter) FlushStats(ctx context.Context) {
 	r.stats.FlushCounters(ctx)
+}
+
+// CategoryStatsRetention returns the operator's retention window for the per-category
+// tallies, in months (the default when unset).
+func (r *StatsReporter) CategoryStatsRetention(ctx context.Context) (int, error) {
+	months, err := database.CategoryStatsRetentionMonths(ctx, r.db)
+	if err != nil {
+		return months, fmt.Errorf("registry: read stats retention: %w", err)
+	}
+	return months, nil
+}
+
+// SetCategoryStatsRetention persists the retention window in months. Out-of-range
+// values are rejected here, so every caller (API today) enforces the same bounds.
+func (r *StatsReporter) SetCategoryStatsRetention(ctx context.Context, months int) error {
+	if months < database.MinCategoryStatsRetentionMonths || months > database.MaxCategoryStatsRetentionMonths {
+		return fmt.Errorf("%w: stats retention must be %d-%d months", ErrInvalid,
+			database.MinCategoryStatsRetentionMonths, database.MaxCategoryStatsRetentionMonths)
+	}
+	if err := database.SetCategoryStatsRetentionMonths(ctx, r.db, months, r.clock()); err != nil {
+		return fmt.Errorf("registry: set stats retention: %w", err)
+	}
+	return nil
+}
+
+// ReapCategoryStats deletes every month bucket older than the retention window — a
+// range delete, not a rollup, so retention costs one statement regardless of history
+// size. Returns the number of rows removed.
+func (r *StatsReporter) ReapCategoryStats(ctx context.Context) (int64, error) {
+	months, err := r.CategoryStatsRetention(ctx)
+	if err != nil {
+		return 0, err
+	}
+	// Normalize to the first of the CURRENT month before stepping back: AddDate from a
+	// month-end day overflows (May 31 minus 3 months is "Feb 31" = Mar 2/3), which
+	// would shift the cutoff a whole month and delete a bucket retention promised to
+	// keep. From day 1 the subtraction is exact for any month count.
+	now := r.clock().UTC()
+	first := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	cutoff := database.MonthBucket(first.AddDate(0, -months, 0))
+	deleted, err := (database.IndexerCategoryStatsStore{}).DeleteBefore(ctx, r.db, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("registry: reap category stats: %w", err)
+	}
+	return deleted, nil
 }
 
 // settingFields indexes a definition's settings by name.
@@ -728,6 +1135,37 @@ func validateRequiredSettings(fields map[string]loader.SettingsField, settings m
 	return nil
 }
 
+// resolveMeta resolves the full post-update InstanceMeta from the optional patch
+// fields, validating priority/min-seeders/sync-categories where present. Split out of
+// updateInTx so that function stays within the length limit.
+func resolveMeta(inst domain.IndexerInstance, p UpdateParams) (database.InstanceMeta, error) {
+	priority, err := resolvePriority(p.Priority, inst.Priority)
+	if err != nil {
+		return database.InstanceMeta{}, err
+	}
+	minSeeders, err := resolveMinSeeders(p.MinSeeders, inst.MinSeeders)
+	if err != nil {
+		return database.InstanceMeta{}, err
+	}
+	syncCats, err := resolveSyncCategories(p.SyncCategories, inst.SyncCategories)
+	if err != nil {
+		return database.InstanceMeta{}, err
+	}
+	exp, err := resolveExpiry(inst, p)
+	if err != nil {
+		return database.InstanceMeta{}, err
+	}
+	name, baseURL := applyMeta(inst, p)
+	return database.InstanceMeta{
+		Name: name, BaseURL: baseURL, Priority: priority, MinSeeders: minSeeders,
+		EnableRss:               resolveToggle(p.EnableRss, inst.EnableRss),
+		EnableAutomaticSearch:   resolveToggle(p.EnableAutomaticSearch, inst.EnableAutomaticSearch),
+		EnableInteractiveSearch: resolveToggle(p.EnableInteractiveSearch, inst.EnableInteractiveSearch),
+		SyncCategories:          syncCats,
+		ExpiresAt:               exp.date, ExpiryKind: exp.kind, ExpiryLifetime: exp.lifetime,
+	}, nil
+}
+
 // applyMeta resolves the post-update name and base URL from the optional params.
 func applyMeta(inst domain.IndexerInstance, p UpdateParams) (name, baseURL string) {
 	name, baseURL = inst.Name, inst.BaseURL
@@ -740,6 +1178,25 @@ func applyMeta(inst domain.IndexerInstance, p UpdateParams) (name, baseURL strin
 	return name, baseURL
 }
 
+// resolveToggle applies an optional toggle patch: a present update wins; a nil one
+// keeps the instance's current value.
+func resolveToggle(update *bool, current bool) bool {
+	if update == nil {
+		return current
+	}
+	return *update
+}
+
+// resolveSyncCategories applies an optional sync-categories patch: a present update
+// (including an empty slice, which clears the narrowing) is validated; a nil one keeps
+// the instance's current value.
+func resolveSyncCategories(update *[]int, current []int) ([]int, error) {
+	if update == nil {
+		return current, nil
+	}
+	return normalizeCategoryIDs(*update)
+}
+
 // resolveRef applies a tri-state reference update: a present update wins (its
 // value, nil to clear); an absent one keeps the instance's current reference.
 func resolveRef(update RefUpdate, current *int64) *int64 {
@@ -747,4 +1204,26 @@ func resolveRef(update RefUpdate, current *int64) *int64 {
 		return update.Value
 	}
 	return current
+}
+
+// resolvePriority applies an optional priority patch: a present update is
+// validated/defaulted (normalizePriority); a nil one keeps the instance's current
+// value.
+func resolvePriority(update *int, current int) (int, error) {
+	if update == nil {
+		return current, nil
+	}
+	return normalizePriority(*update)
+}
+
+// resolveMinSeeders applies an optional min-seeders patch: a present update is
+// validated; a nil one keeps the instance's current value.
+func resolveMinSeeders(update *int, current int) (int, error) {
+	if update == nil {
+		return current, nil
+	}
+	if err := validateMinSeeders(*update); err != nil {
+		return 0, err
+	}
+	return *update, nil
 }

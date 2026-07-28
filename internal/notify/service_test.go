@@ -275,6 +275,55 @@ func TestTestNotification(t *testing.T) {
 
 func strPtr(s string) *string { return &s }
 
+// TestOnRecoveryEventNotSwallowedByFailureCooldown proves the recovery direction rides
+// the health sink without the failure debounce eating it: a fresh auth failure arms the
+// (indexer, auth_failure) cooldown, and the recovery that follows inside the same window
+// still sends because it keys on its own "recovered" label. A repeat recovery inside the
+// window is then suppressed, which is what keeps a flapping indexer off the channel.
+func TestOnRecoveryEventNotSwallowedByFailureCooldown(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, _ := newService(t)
+	srv, hits := countingServer(t)
+	if _, err := svc.CreateNotification(ctx, CreateNotificationParams{
+		Name: "match", Type: domain.NotifyTypeWebhook, URL: srv.URL,
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	// newService fixes the clock, so all three calls fall inside one cooldown window.
+	svc.OnHealthEvent(ctx, "mytracker", domain.HealthAuthFailure, "bad creds")
+	svc.OnRecoveryEvent(ctx, "mytracker", "answering again")
+	svc.OnRecoveryEvent(ctx, "mytracker", "answering again")
+	svc.Drain(drainCtx(t))
+	if got := atomic.LoadInt64(hits); got != 2 {
+		t.Errorf("delivered %d, want 2 (the failure and one recovery)", got)
+	}
+}
+
+// TestRecoveryDispatchUsesHealthOptIn asserts a recovery goes to the on_health_failure
+// targets and skips a target that opted out of health notifications.
+func TestRecoveryDispatchUsesHealthOptIn(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, _ := newService(t)
+	srv, hits := countingServer(t)
+	if _, err := svc.CreateNotification(ctx, CreateNotificationParams{
+		Name: "match", Type: domain.NotifyTypeWebhook, URL: srv.URL,
+	}); err != nil {
+		t.Fatalf("create match: %v", err)
+	}
+	if _, err := svc.CreateNotification(ctx, CreateNotificationParams{
+		Name: "no-health", Type: domain.NotifyTypeWebhook, URL: srv.URL, OnHealthFailure: ptrBool(false),
+	}); err != nil {
+		t.Fatalf("create no-health: %v", err)
+	}
+	svc.OnRecoveryEvent(ctx, "mytracker", "answering again")
+	svc.Drain(drainCtx(t))
+	if got := atomic.LoadInt64(hits); got != 1 {
+		t.Errorf("delivered to %d targets, want 1", got)
+	}
+}
+
 // TestOnHealthEventCooldownSuppressesRepeat asserts a second failure of the same
 // (indexer, kind) inside the cooldown window is suppressed (one send), and a third
 // after the injected clock advances past the window re-alerts (a second send).

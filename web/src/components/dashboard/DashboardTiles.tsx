@@ -16,6 +16,8 @@ export function DashboardTiles() {
 
   const total = indexers.data?.length ?? 0
   const healthy = statuses.filter((s) => s.data?.status === "healthy").length
+  const failing = statuses.filter((s) => s.data?.status === "failing").length
+  const unknown = statuses.filter((s) => s.data?.status === "unknown").length
   const breakerOpen = (cache.data?.byIndexer ?? []).filter((r) => r.breakerOpenUntil).length
   const connected = connections.data?.length ?? 0
   const enabled = (connections.data ?? []).filter((c) => c.enabled).length
@@ -28,7 +30,8 @@ export function DashboardTiles() {
       <Tile
         label="Indexers healthy"
         value={`${healthy}/${total}`}
-        tone={total > 0 && healthy < total ? "warn" : "ok"}
+        sub={statusBreakdown(failing, unknown)}
+        tone={healthTone(total, healthy, failing)}
       />
       <Tile
         label={window24h ? "Tracker hits saved (24h)" : "Tracker hits saved"}
@@ -45,6 +48,21 @@ export function DashboardTiles() {
       />
     </div>
   )
+}
+
+// statusBreakdown spells out the non-healthy remainder of the healthy/total tile, so
+// "3/5" says whether the other two are actually broken or merely unheard-from (#389).
+function statusBreakdown(failing: number, unknown: number): string | undefined {
+  const parts = []
+  if (failing > 0) parts.push(`${failing} failing`)
+  if (unknown > 0) parts.push(`${unknown} unknown`)
+  return parts.length > 0 ? parts.join(" · ") : undefined
+}
+
+// healthTone: a known failure is bad, an expired/unheard-from indexer only warns.
+function healthTone(total: number, healthy: number, failing: number): "ok" | "warn" | "bad" {
+  if (failing > 0) return "bad"
+  return total > 0 && healthy < total ? "warn" : "ok"
 }
 
 function Tile({ label, value, sub, tone, onClick }: {
