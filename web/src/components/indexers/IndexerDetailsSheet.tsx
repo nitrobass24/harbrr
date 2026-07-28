@@ -1,3 +1,4 @@
+import { BudgetMeter } from "@/components/indexers/BudgetMeter"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { useIndexerCapabilities, useIndexerStats, useIndexerStatuses } from "@/hooks/useIndexers"
 import { relativeTime } from "@/lib/format"
@@ -46,6 +47,11 @@ function Details({ slug }: { slug: string }) {
             <dt className="text-muted-foreground">Last query</dt>
             <dd>{stats.data?.lastQueryAt ? relativeTime(stats.data.lastQueryAt) : "never"}</dd>
           </dl>
+        </section>
+
+        <section>
+          <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-faint">Request budget</h3>
+          <BudgetMeter budget={stats.data?.budget} />
         </section>
 
         <section>
