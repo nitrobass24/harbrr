@@ -284,6 +284,29 @@ describe("IndexerForm", () => {
     expect(onSubmit.mock.calls[0][0].body.expiresAt).toBe("")
   })
 
+  it("edit: stored matching settings survive an unrelated edit", () => {
+    // Kills the recurring seeded-values false positive for the two engine settings:
+    // defaultValues' stored loop applies EVERY stored setting over the reserved-field
+    // defaults (settings-payload.ts), so "true"/"auto" must round-trip a name-only edit.
+    const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+    const existing: InstanceDetail = {
+      ...EXISTING,
+      settings: [
+        ...EXISTING.settings,
+        { name: "andmatch_fold_punctuation", value: "true", secret: false },
+        { name: "degenerate_query_gate", value: "auto", secret: false },
+      ],
+    }
+    renderForm(<IndexerForm definition={DEFINITION} existing={existing} pending={false} error={null} onSubmit={onSubmit} />)
+
+    fireEvent.change(screen.getByLabelText<HTMLInputElement>("Name"), { target: { value: "Renamed" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+
+    const submit = onSubmit.mock.calls[0][0]
+    expect(submit.body.settings?.andmatch_fold_punctuation).toBe("true")
+    expect(submit.body.settings?.degenerate_query_gate).toBe("auto")
+  })
+
   it("edit: changing only the name preserves the stored expiry untouched", () => {
     // The preservation class this form keeps getting bitten by: an unrelated edit must
     // not reset or drop operator-entered expiry data on submit.

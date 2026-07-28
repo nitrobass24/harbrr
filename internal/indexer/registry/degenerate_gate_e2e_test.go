@@ -79,22 +79,52 @@ func TestDegenerateQueryGate(t *testing.T) {
 	// A CJK title plus the year Radarr appends: the filters leave "2016".
 	const cjk = "君の名は"
 
-	t.Run("default sends the query the filters degraded", func(t *testing.T) {
-		t.Parallel()
-		reg, doer := newDegenerateRegistry(t)
-		idx := addDegenerateIndexer(t, reg, "dg-off", nil)
+	// The three pass-through cases share one shape — a query that MUST reach the
+	// tracker exactly once — and differ only in why. The skip case stays a sequential
+	// lifecycle below: it asserts budget state ACROSS searches.
+	passthrough := []struct {
+		name     string
+		slug     string
+		settings map[string]string
+		query    search.Query
+		wantRels int
+	}{
+		{
+			"default sends the query the filters degraded", "dg-off", nil,
+			search.Query{Keywords: cjk, Year: "2016"},
+			1,
+		},
+		{
+			"auto leaves an answerable query alone", "dg-latin",
+			map[string]string{"degenerate_query_gate": "auto"},
+			search.Query{Keywords: "Some Unrelated Movie", Year: "2016"},
+			1,
+		},
+		{
+			"auto never gates an RSS poll", "dg-rss",
+			map[string]string{"degenerate_query_gate": "auto"},
+			search.Query{},
+			1,
+		},
+	}
+	for _, tc := range passthrough {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			reg, doer := newDegenerateRegistry(t)
+			idx := addDegenerateIndexer(t, reg, tc.slug, tc.settings)
 
-		rels, err := idx.Search(context.Background(), search.Query{Keywords: cjk, Year: "2016"})
-		if err != nil {
-			t.Fatalf("Search: %v", err)
-		}
-		if len(rels) != 1 {
-			t.Fatalf("releases = %d, want 1 (the unconfigured path is unchanged)", len(rels))
-		}
-		if got := len(doer.reqs); got != 1 {
-			t.Fatalf("requests = %d, want 1", got)
-		}
-	})
+			rels, err := idx.Search(context.Background(), tc.query)
+			if err != nil {
+				t.Fatalf("Search: %v", err)
+			}
+			if len(rels) != tc.wantRels {
+				t.Fatalf("releases = %d, want %d", len(rels), tc.wantRels)
+			}
+			if got := len(doer.reqs); got != 1 {
+				t.Fatalf("requests = %d, want 1 (this query must reach the tracker)", got)
+			}
+		})
+	}
 
 	t.Run("auto skips without asking the tracker", func(t *testing.T) {
 		t.Parallel()
@@ -132,33 +162,6 @@ func TestDegenerateQueryGate(t *testing.T) {
 		}
 		if got := len(doer.reqs); got != 1 {
 			t.Fatalf("requests = %d, want 1", got)
-		}
-	})
-
-	t.Run("auto leaves an answerable query alone", func(t *testing.T) {
-		t.Parallel()
-		reg, doer := newDegenerateRegistry(t)
-		idx := addDegenerateIndexer(t, reg, "dg-latin", map[string]string{"degenerate_query_gate": "auto"})
-
-		rels, err := idx.Search(context.Background(), search.Query{Keywords: "Some Unrelated Movie", Year: "2016"})
-		if err != nil {
-			t.Fatalf("Search: %v", err)
-		}
-		if len(rels) != 1 || len(doer.reqs) != 1 {
-			t.Fatalf("releases = %d, requests = %d, want 1 and 1", len(rels), len(doer.reqs))
-		}
-	})
-
-	t.Run("auto never gates an RSS poll", func(t *testing.T) {
-		t.Parallel()
-		reg, doer := newDegenerateRegistry(t)
-		idx := addDegenerateIndexer(t, reg, "dg-rss", map[string]string{"degenerate_query_gate": "auto"})
-
-		if _, err := idx.Search(context.Background(), search.Query{}); err != nil {
-			t.Fatalf("Search: %v", err)
-		}
-		if got := len(doer.reqs); got != 1 {
-			t.Fatalf("requests = %d, want 1 (an empty term is a browse, not a degraded query)", got)
 		}
 	})
 }
