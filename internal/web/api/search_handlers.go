@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 	"slices"
@@ -58,6 +59,12 @@ func (rt *router) searchIndexer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := core.SearchReleases(r.Context(), idx, r.URL.Query())
+	// Same contract the feed follows: a degenerate-query skip (autobrr/harbrr#394) is
+	// this indexer declining to be asked, not a failure, so it answers with the empty
+	// page the pipeline hands back rather than a 500.
+	if errors.Is(err, core.ErrDegenerateQuery) {
+		err = nil
+	}
 	if err != nil {
 		rt.writeServiceError(w, "search indexer", err)
 		return

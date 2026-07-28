@@ -45,6 +45,11 @@ type indexerAdapter struct {
 	// the resolve and a later SWR trigger.
 	cache      *SearchCache
 	builtEpoch uint64
+	// skipQuery is the instance's degenerate-query gate (autobrr/harbrr#394): true when
+	// this query's term is one the definition's own keywordsfilters reduce to nothing
+	// usable. nil for a native driver — those have no keywordsfilters to degrade a term
+	// — and it answers false on a Cardigann instance that did not opt in.
+	skipQuery func(search.Query) bool
 	// freeleechOnly is the instance's stored `freeleech` setting. The engine is built
 	// with that key cleared (so it always fetches the full catalog); the value is
 	// carried here only to drive the serve-time freeleech view in Search.
@@ -95,6 +100,18 @@ func (a *indexerAdapter) Capabilities() *mapper.Capabilities { return a.inner.Ca
 // bypass feed (full catalog, for qui/cross-seed) from a SINGLE tracker fetch — so a later
 // bypass poll never re-hits the tracker just because an *arr polled FL-only first.
 func (a *indexerAdapter) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
+	// (0) The degenerate-query gate, FIRST — ahead of the cache read and the budget
+	// reservation alike (autobrr/harbrr#394). A query this indexer's own keywordsfilters
+	// strip down to nothing usable cannot be answered by it, so it must cost nothing at
+	// all: no outbound request, no cache entry keyed on a question we will never ask
+	// again, no budget unit that a query with a chance of succeeding could have used.
+	// Returning here also means the skip can never reach the health log, the circuit
+	// breaker or the query stats — they all live further down, in liveSearch — so
+	// "skipped, not failed" needs no exclusions to enforce.
+	if a.skipQuery != nil && a.skipQuery(q) {
+		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, core.ErrDegenerateQuery)
+	}
+
 	// RSS/empty polls only: canonicalize categories to the def's default set AND clear
 	// Mode (for a driver that never reads it) so every RSS consumer (Sonarr/Radarr/qui,
 	// each narrowing with a different cat= and each arriving under a different t=)

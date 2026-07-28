@@ -108,7 +108,7 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 | Tri-state indexer health — healthy / failing / unknown with lazy expiry; a broken tracker leaves rotation and costs nothing until it recovers | ✅ |
 | Per-failure-kind backoff curves and health-filtered selection | 🚧 [#389](https://github.com/autobrr/harbrr/issues/389) |
 | Punctuation-tolerant matching (opt-in, per indexer) — recovers releases that \*arr-stripped search terms would otherwise drop | ✅ |
-| Charset gating — skip searches that can't succeed | 🚧 [#394](https://github.com/autobrr/harbrr/issues/394) |
+| Degenerate-query gating (opt-in, per indexer) — a search the indexer's own filters strip down to a bare year is skipped instead of sent, and reported as skipped rather than failed | ✅ |
 | Aggregate `all` feed — one Torznab URL over every enabled indexer, partial-by-construction with a per-member status ledger; grabs resolve against the originating tracker | ✅ |
 | Profile-scoped and health-filtered aggregate feeds | 🚧 [#400](https://github.com/autobrr/harbrr/issues/400) |
 

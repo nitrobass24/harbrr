@@ -146,6 +146,7 @@ func TestAggregateGateSkipReasons(t *testing.T) {
 	}{
 		{"budget", fmt.Errorf("registry: search %q: %w", "b", core.ErrBudgetExhausted), core.SkipBudget},
 		{"breaker", fmt.Errorf("wrapped: %w", core.ErrCircuitOpen), core.SkipCircuit},
+		{"degenerate query", fmt.Errorf("registry: search %q: %w", "b", core.ErrDegenerateQuery), core.SkipDegenerateQuery},
 		{"rate limited", fmt.Errorf("wrapped: %w", search.ErrRateLimited), core.SkipRateLimited},
 		{"gateway", fmt.Errorf("wrapped: %w", search.ErrGatewayStatus), core.SkipUnreachable},
 		{"timeout", fmt.Errorf("wrapped: %w", context.DeadlineExceeded), core.SkipTimeout},
