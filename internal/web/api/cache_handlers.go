@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
@@ -31,15 +32,19 @@ type cacheStatsResponse struct {
 	Hits     int64   `json:"hits"`
 	Misses   int64   `json:"misses"`
 	HitRatio float64 `json:"hitRatio"`
-	// Hits24h/Misses24h/HitRatio24h are the same counters over a rolling 24h window
-	// (in-memory only: the window restarts empty after a reboot).
-	Hits24h         int64   `json:"hits24h"`
-	Misses24h       int64   `json:"misses24h"`
-	HitRatio24h     float64 `json:"hitRatio24h"`
-	ApproxSizeBytes int64   `json:"approxSizeBytes"`
-	OldestCachedAt  *int64  `json:"oldestCachedAt"`
-	NewestCachedAt  *int64  `json:"newestCachedAt"`
-	LastUsedAt      *int64  `json:"lastUsedAt"`
+	// Windows carries the same counters over each selectable view — "1d", "7d",
+	// "30d", "all" — in that order, so a client can switch window with no refetch.
+	Windows []cacheStatsWindow `json:"windows"`
+	// WindowsSince is the Unix-seconds instant the in-memory buckets started
+	// accumulating (process start, or the last flush). The 1d/7d/30d figures
+	// reach back at most this far, so a client MUST NOT present a window longer than
+	// now - windowsSince as a full period of data. "all" is exempt: it reads the
+	// persisted cumulative counters.
+	WindowsSince    int64  `json:"windowsSince"`
+	ApproxSizeBytes int64  `json:"approxSizeBytes"`
+	OldestCachedAt  *int64 `json:"oldestCachedAt"`
+	NewestCachedAt  *int64 `json:"newestCachedAt"`
+	LastUsedAt      *int64 `json:"lastUsedAt"`
 	// TrackerHitsSaved is the cumulative count of tracker requests served from cache —
 	// the headline kind-to-trackers metric. It mirrors Hits (same cumulative,
 	// restart-persisted counter) and, unlike totalHits, never drops when cached
@@ -50,6 +55,34 @@ type cacheStatsResponse struct {
 	BreakerSuppressed int64 `json:"breakerSuppressed"`
 	// ByIndexer is the per-indexer breakdown (ordered by instance id).
 	ByIndexer []cacheIndexerStats `json:"byIndexer"`
+}
+
+// cacheStatsWindow is the hit/miss view over one window. Window is the client-facing
+// key: "1d", "7d", "30d", or "all" (the cumulative, restart-persisted counters).
+type cacheStatsWindow struct {
+	Window   string  `json:"window"`
+	Hits     int64   `json:"hits"`
+	Misses   int64   `json:"misses"`
+	HitRatio float64 `json:"hitRatio"`
+}
+
+// toCacheStatsWindows maps the registry's window views onto the response shape.
+func toCacheStatsWindows(in []registry.StatsWindow) []cacheStatsWindow {
+	out := make([]cacheStatsWindow, 0, len(in))
+	for _, w := range in {
+		out = append(out, cacheStatsWindow{
+			Window: windowKey(w.Hours), Hits: w.Hits, Misses: w.Misses, HitRatio: w.HitRatio,
+		})
+	}
+	return out
+}
+
+// windowKey renders a window length in days, or "all" for the all-time view (0 hours).
+func windowKey(hours int) string {
+	if hours == 0 {
+		return "all"
+	}
+	return strconv.Itoa(hours/24) + "d"
 }
 
 // cacheIndexerStats is one indexer's cache observability row in the stats response.
@@ -80,9 +113,11 @@ type cacheFlushResponse struct {
 // (no cache wired) it answers 200 with {"enabled":false} rather than 404.
 func (rt *router) cacheStats(w http.ResponseWriter, r *http.Request) {
 	if rt.cache == nil {
-		// Keep byIndexer a JSON array (never null) so the response always matches the
-		// CacheStats schema, even with caching off.
-		writeJSON(w, http.StatusOK, cacheStatsResponse{Enabled: false, ByIndexer: []cacheIndexerStats{}})
+		// Keep byIndexer/windows JSON arrays (never null) so the response always
+		// matches the CacheStats schema, even with caching off.
+		writeJSON(w, http.StatusOK, cacheStatsResponse{
+			Enabled: false, Windows: []cacheStatsWindow{}, ByIndexer: []cacheIndexerStats{},
+		})
 		return
 	}
 	stats, err := rt.cache.Stats(r.Context())
@@ -102,9 +137,8 @@ func (rt *router) cacheStats(w http.ResponseWriter, r *http.Request) {
 		Hits:              stats.Hits,
 		Misses:            stats.Misses,
 		HitRatio:          stats.HitRatio,
-		Hits24h:           stats.Hits24h,
-		Misses24h:         stats.Misses24h,
-		HitRatio24h:       stats.HitRatio24h,
+		Windows:           toCacheStatsWindows(stats.Windows),
+		WindowsSince:      stats.WindowsSince.Unix(),
 		ApproxSizeBytes:   stats.ApproxSizeBytes,
 		OldestCachedAt:    stats.OldestUnixSec,
 		NewestCachedAt:    stats.NewestUnixSec,

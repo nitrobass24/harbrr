@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { coverageNote, statsWindow } from "@/components/cache/cache-format"
 import { useAppConnections } from "@/hooks/useAppConnections"
 import { useIndexers, useIndexerStatuses } from "@/hooks/useIndexers"
 import { useCacheStats } from "@/hooks/useSettings"
@@ -22,8 +23,12 @@ export function DashboardTiles() {
   const connected = connections.data?.length ?? 0
   const enabled = (connections.data ?? []).filter((c) => c.enabled).length
 
-  const saved = window24h ? cache.data?.hits24h : cache.data?.trackerHitsSaved
-  const ratio = window24h ? cache.data?.hitRatio24h : cache.data?.hitRatio
+  const day = statsWindow(cache.data, "1d")
+  const saved = window24h ? day?.hits : cache.data?.trackerHitsSaved
+  const ratio = window24h ? day?.hitRatio : cache.data?.hitRatio
+  // The 24h view is an in-memory bucket ring, so on a young process it covers less
+  // than a day — say so on the tile rather than let "24h" imply a full day.
+  const partial = window24h ? coverageNote("1d", cache.data?.windowsSince) : null
 
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -36,7 +41,7 @@ export function DashboardTiles() {
       <Tile
         label={window24h ? "Tracker hits saved (24h)" : "Tracker hits saved"}
         value={String(saved ?? 0)}
-        sub={ratio !== undefined ? `${Math.round(ratio * 100)}% hit ratio · ${window24h ? "24h" : "lifetime"}` : undefined}
+        sub={cacheTileSub(ratio, window24h, partial)}
         tone="highlight"
         onClick={() => setWindow24h((v) => !v)}
       />
@@ -48,6 +53,14 @@ export function DashboardTiles() {
       />
     </div>
   )
+}
+
+// cacheTileSub is the hit-tile subtitle: the ratio and which window it covers, plus
+// the coverage caveat when the in-memory 24h ring has not been up a full day.
+function cacheTileSub(ratio: number | undefined, window24h: boolean, partial: string | null): string | undefined {
+  if (ratio === undefined) return undefined
+  const span = window24h ? (partial ? "24h so far" : "24h") : "lifetime"
+  return `${Math.round(ratio * 100)}% hit ratio · ${span}`
 }
 
 // statusBreakdown spells out the non-healthy remainder of the healthy/total tile, so

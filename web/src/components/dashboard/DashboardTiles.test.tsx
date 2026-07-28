@@ -32,8 +32,14 @@ describe("DashboardTiles", () => {
           enabled: true,
           trackerHitsSaved: 128,
           hitRatio: 0.75,
-          hits24h: 16,
-          hitRatio24h: 0.5,
+          windows: [
+            { window: "1d", hits: 16, misses: 16, hitRatio: 0.5 },
+            { window: "7d", hits: 40, misses: 20, hitRatio: 0.66 },
+            { window: "30d", hits: 90, misses: 30, hitRatio: 0.75 },
+            { window: "all", hits: 128, misses: 42, hitRatio: 0.75 },
+          ],
+          // A month of coverage: the 24h view is fully backed, so no caveat shows.
+          windowsSince: Math.floor(Date.now() / 1000) - 30 * 24 * 3600,
           byIndexer: [{ instanceId: 2, slug: "b", breakerOpenUntil: 1_900_000_000 }],
         }))
       }
@@ -57,7 +63,7 @@ describe("DashboardTiles", () => {
     // Clicking the cache tile switches to the rolling-24h window and back.
     fireEvent.click(screen.getByText("Tracker hits saved"))
     expect(screen.getByText("Tracker hits saved (24h)")).toBeTruthy()
-    expect(screen.getByText("16")).toBeTruthy() // hits24h
+    expect(screen.getByText("16")).toBeTruthy() // the 1d window's hits
     expect(screen.getByText("50% hit ratio · 24h")).toBeTruthy()
     fireEvent.click(screen.getByText("Tracker hits saved (24h)"))
     expect(screen.getByText("128")).toBeTruthy()

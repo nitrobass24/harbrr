@@ -1952,8 +1952,9 @@ paths:
         Returns the cache's durable figures (entry count, total hits, approximate
         size, and the oldest/newest/last-used timestamps) plus the cumulative hit
         ratio. hitRatio derives from hit/miss counters that are persisted across
-        restarts. When caching is disabled the response is
-        {"enabled": false} with no figures.
+        restarts. Every selectable window (1d/7d/30d/all) is returned in one
+        response, so a client switches view without refetching. When caching is
+        disabled the response is {"enabled": false} with no figures.
       operationId: cacheStats
       tags: [Cache]
       security: [{ session: [] }, { apiKey: [] }]
@@ -1970,8 +1971,8 @@ paths:
       summary: Flush the search-results cache
       description: >
         Deletes every cache entry and returns the count purged, and resets the
-        cumulative hit/miss/suppressed counters and the 24h window. When caching is
-        disabled the response is {"flushed": 0}.
+        cumulative hit/miss/suppressed counters and every rolling window. When
+        caching is disabled the response is {"flushed": 0}.
       operationId: cacheFlush
       tags: [Cache]
       security: [{ session: [] }, { apiKey: [] }]
@@ -3351,22 +3352,21 @@ components:
           description: >
             hits / (hits + misses), cumulative. The underlying hit/miss counters are
             persisted across restarts.
-        hits24h:
+        windows:
+          type: array
+          description: >
+            The same counters over each selectable view — "1d", "7d", "30d", "all" —
+            in that order, so a client switches window with no refetch.
+          items: { $ref: "#/components/schemas/CacheStatsWindow" }
+        windowsSince:
           type: integer
           format: int64
           description: >
-            Cache hits over a rolling 24h window. In-memory only — the window
-            restarts empty after a reboot.
-        misses24h:
-          type: integer
-          format: int64
-          description: >
-            Cache misses over a rolling 24h window. In-memory only — the window
-            restarts empty after a reboot.
-        hitRatio24h:
-          type: number
-          format: double
-          description: hits24h / (hits24h + misses24h), or 0 with no traffic in the window.
+            Unix seconds at which the in-memory hour buckets started accumulating —
+            process start, or the last flush. The 1d/7d/30d figures reach back
+            at most this far, so a client MUST NOT present a window longer than
+            now - windowsSince as a full period of data. The "all" window is exempt:
+            it reads the persisted cumulative counters.
         approxSizeBytes: { type: integer, format: int64, description: approximate total size of cached payloads }
         oldestCachedAt:
           type: integer
@@ -3403,6 +3403,21 @@ components:
           description: Per-indexer cache breakdown, ordered by instance id.
           items: { $ref: "#/components/schemas/CacheIndexerStats" }
       required: [enabled]
+    CacheStatsWindow:
+      type: object
+      description: >
+        The hit/miss counters over one window. "1d"/"7d"/"30d" are in-memory hour
+        buckets bounded by windowsSince; "all" is the cumulative, restart-persisted
+        pair, so it survives both bucket eviction and a reboot.
+      properties:
+        window: { type: string, description: '"1d" | "7d" | "30d" | "all"' }
+        hits: { type: integer, format: int64 }
+        misses: { type: integer, format: int64 }
+        hitRatio:
+          type: number
+          format: double
+          description: hits / (hits + misses) in this window, or 0 with no traffic.
+      required: [window, hits, misses, hitRatio]
     CacheIndexerStats:
       type: object
       description: One indexer's cache observability figures.

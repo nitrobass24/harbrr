@@ -27,13 +27,28 @@ type SearchCacheStats struct {
 	Hits     int64
 	Misses   int64
 	HitRatio float64
-	// Rolling 24h view of the same counters (in-memory only — empty after a restart).
-	Hits24h     int64
-	Misses24h   int64
-	HitRatio24h float64
+	// Windows is the same counters over each selectable view: 1d, 7d, 30d, then
+	// all-time, in that order.
+	Windows []StatsWindow
+	// WindowsSince is when the in-memory buckets started accumulating — process
+	// start, or the last flush. The bucketed windows reach back at most to this
+	// instant, so a 30d view on a process up for an hour holds an hour of data:
+	// callers must surface that rather than imply a full month. The all-time view is
+	// unaffected (it reads the persisted counters).
+	WindowsSince time.Time
 	// BreakerSuppressed counts MISSes short-circuited by an open negative breaker —
 	// tracker requests the breaker spared.
 	BreakerSuppressed int64
+}
+
+// StatsWindow is the hit/miss view over one window. Hours is the window length; 0
+// means all-time — that view is NOT a bucket sum but the cumulative counters, so it
+// survives both bucket eviction and a restart.
+type StatsWindow struct {
+	Hours    int
+	Hits     int64
+	Misses   int64
+	HitRatio float64
 }
 
 // InstanceCacheStats is one instance's merged cache observability: the durable
@@ -68,7 +83,6 @@ func (c *SearchCache) Stats(ctx context.Context) (SearchCacheStats, error) {
 		return SearchCacheStats{}, err //nolint:wrapcheck // store already wraps with context; no key/payload to add.
 	}
 	hits, misses := c.hits.Load(), c.misses.Load()
-	hits24, misses24 := c.window.totals(c.clock())
 	out := SearchCacheStats{
 		Entries:           s.Entries,
 		TotalHits:         s.TotalHits,
@@ -79,12 +93,23 @@ func (c *SearchCache) Stats(ctx context.Context) (SearchCacheStats, error) {
 		Hits:              hits,
 		Misses:            misses,
 		HitRatio:          hitRatio(hits, misses),
-		Hits24h:           hits24,
-		Misses24h:         misses24,
-		HitRatio24h:       hitRatio(hits24, misses24),
+		Windows:           c.statsWindows(c.clock(), hits, misses),
+		WindowsSince:      c.window.coverageSince(),
 		BreakerSuppressed: c.breakerSuppressed.Load(),
 	}
 	return out, nil
+}
+
+// statsWindows builds the four selectable views: 1d/7d/30d as suffix sums over the
+// one bucket ring, then all-time from the cumulative counters passed in. All-time is
+// deliberately NOT a bucket sum — it must survive bucket eviction and a restart.
+func (c *SearchCache) statsWindows(now time.Time, hits, misses int64) []StatsWindow {
+	out := make([]StatsWindow, 0, 4)
+	for _, hours := range []int{dayHours, weekHours, monthHours} {
+		h, m := c.window.totals(now, hours)
+		out = append(out, StatsWindow{Hours: hours, Hits: h, Misses: m, HitRatio: hitRatio(h, m)})
+	}
+	return append(out, StatsWindow{Hits: hits, Misses: misses, HitRatio: hitRatio(hits, misses)})
 }
 
 // StatsByInstance returns one merged stats row per instance that has either durable
@@ -143,8 +168,8 @@ func sortedInstanceStats(merged map[int64]*InstanceCacheStats) []InstanceCacheSt
 }
 
 // Flush deletes every cache entry and returns the count purged. It also resets the
-// hit/miss/suppressed counters — in-memory, persisted, and the 24h window — so an
-// operator flush starts the stats surface from a clean slate. The counters reset
+// hit/miss/suppressed counters — in-memory, persisted, and the rolling windows — so
+// an operator flush starts the stats surface from a clean slate. The counters reset
 // even if deleting the persisted rows fails (the next FlushCounters upserts the
 // zeroed values anyway). Only Flush resets: the cleanup tick and per-instance
 // invalidation never touch the counters (see TestHitsMonotoneAcrossCleanup, #350).
@@ -169,7 +194,7 @@ func (c *SearchCache) Flush(ctx context.Context) (int64, error) {
 		c.breakerSuppressed.Add(-ic.suppressed.Swap(0))
 		return true
 	})
-	c.window.reset()
+	c.window.reset(c.clock())
 	if derr := c.counterStore.DeleteAll(ctx, c.db); derr != nil {
 		c.log.Warn().Str("error", apphttp.RedactError(derr)).
 			Msg("registry: reset persisted cache counters failed")

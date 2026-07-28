@@ -69,8 +69,8 @@ type SearchCache struct {
 	misses            atomic.Int64
 	breakerSuppressed atomic.Int64
 
-	// window is the rolling 24h hit/miss view for the dashboard tile (global only,
-	// in-memory — see searchcache_window.go).
+	// window is the rolling hit/miss bucket ring backing the selectable 1d/7d/30d
+	// stats views (global only, in-memory — see searchcache_window.go).
 	window hourWindow
 
 	// flushEpoch advances on every Flush counter reset. serveMiss snapshots it
@@ -188,6 +188,9 @@ func newSearchCache(db dbinterface.Querier, t cacheTuning, clock func() time.Tim
 		instanceEpochs: make(map[int64]uint64),
 	}
 	c.tuning.Store(&t)
+	// Start the rolling-window coverage clock now: the buckets are in-memory, so
+	// "since" is what keeps a 30d view of a one-hour-old process honest.
+	c.window.reset(clock())
 	return c
 }
 

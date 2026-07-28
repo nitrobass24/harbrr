@@ -1228,7 +1228,7 @@ export interface paths {
         };
         /**
          * Search-results cache statistics
-         * @description Returns the cache's durable figures (entry count, total hits, approximate size, and the oldest/newest/last-used timestamps) plus the cumulative hit ratio. hitRatio derives from hit/miss counters that are persisted across restarts. When caching is disabled the response is {"enabled": false} with no figures.
+         * @description Returns the cache's durable figures (entry count, total hits, approximate size, and the oldest/newest/last-used timestamps) plus the cumulative hit ratio. hitRatio derives from hit/miss counters that are persisted across restarts. Every selectable window (1d/7d/30d/all) is returned in one response, so a client switches view without refetching. When caching is disabled the response is {"enabled": false} with no figures.
          */
         get: operations["cacheStats"];
         put?: never;
@@ -1250,7 +1250,7 @@ export interface paths {
         put?: never;
         /**
          * Flush the search-results cache
-         * @description Deletes every cache entry and returns the count purged, and resets the cumulative hit/miss/suppressed counters and the 24h window. When caching is disabled the response is {"flushed": 0}.
+         * @description Deletes every cache entry and returns the count purged, and resets the cumulative hit/miss/suppressed counters and every rolling window. When caching is disabled the response is {"flushed": 0}.
          */
         post: operations["cacheFlush"];
         delete?: never;
@@ -2378,21 +2378,13 @@ export interface components {
              * @description hits / (hits + misses), cumulative. The underlying hit/miss counters are persisted across restarts.
              */
             hitRatio?: number;
+            /** @description The same counters over each selectable view — "1d", "7d", "30d", "all" — in that order, so a client switches window with no refetch. */
+            windows?: components["schemas"]["CacheStatsWindow"][];
             /**
              * Format: int64
-             * @description Cache hits over a rolling 24h window. In-memory only — the window restarts empty after a reboot.
+             * @description Unix seconds at which the in-memory hour buckets started accumulating — process start, or the last flush. The 1d/7d/30d figures reach back at most this far, so a client MUST NOT present a window longer than now - windowsSince as a full period of data. The "all" window is exempt: it reads the persisted cumulative counters.
              */
-            hits24h?: number;
-            /**
-             * Format: int64
-             * @description Cache misses over a rolling 24h window. In-memory only — the window restarts empty after a reboot.
-             */
-            misses24h?: number;
-            /**
-             * Format: double
-             * @description hits24h / (hits24h + misses24h), or 0 with no traffic in the window.
-             */
-            hitRatio24h?: number;
+            windowsSince?: number;
             /**
              * Format: int64
              * @description approximate total size of cached payloads
@@ -2425,6 +2417,20 @@ export interface components {
             breakerSuppressed?: number;
             /** @description Per-indexer cache breakdown, ordered by instance id. */
             byIndexer?: components["schemas"]["CacheIndexerStats"][];
+        };
+        /** @description The hit/miss counters over one window. "1d"/"7d"/"30d" are in-memory hour buckets bounded by windowsSince; "all" is the cumulative, restart-persisted pair, so it survives both bucket eviction and a reboot. */
+        CacheStatsWindow: {
+            /** @description "1d" | "7d" | "30d" | "all" */
+            window: string;
+            /** Format: int64 */
+            hits: number;
+            /** Format: int64 */
+            misses: number;
+            /**
+             * Format: double
+             * @description hits / (hits + misses) in this window, or 0 with no traffic.
+             */
+            hitRatio: number;
         };
         /** @description One indexer's cache observability figures. */
         CacheIndexerStats: {

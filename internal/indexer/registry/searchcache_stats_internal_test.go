@@ -72,8 +72,8 @@ func TestStatsByInstanceMergesDurableAndMemory(t *testing.T) {
 }
 
 // TestFlushResetsStats proves an operator flush starts the stats surface from a
-// clean slate: entries purged, the in-memory and persisted hit/miss counters
-// zeroed, and the 24h window emptied.
+// clean slate: entries purged, the in-memory and persisted hit/miss counters zeroed,
+// and every rolling window emptied.
 func TestFlushResetsStats(t *testing.T) {
 	t.Parallel()
 	sc, instID, _ := testCache(t, breakerTTL, 0)
@@ -96,8 +96,13 @@ func TestFlushResetsStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stats: %v", err)
 	}
-	if stats.Entries != 0 || stats.Hits != 0 || stats.Misses != 0 || stats.Hits24h != 0 || stats.Misses24h != 0 {
+	if stats.Entries != 0 || stats.Hits != 0 || stats.Misses != 0 {
 		t.Errorf("after flush: %+v, want all-zero entries/hits/misses", stats)
+	}
+	for _, w := range stats.Windows {
+		if w.Hits != 0 || w.Misses != 0 {
+			t.Errorf("after flush: window %+v, want zeroed", w)
+		}
 	}
 	rows, err := sc.StatsByInstance(ctx)
 	if err != nil {
