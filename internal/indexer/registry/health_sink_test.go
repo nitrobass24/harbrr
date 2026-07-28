@@ -37,6 +37,14 @@ func (s *recordingSink) OnHealthEvent(_ context.Context, indexer, kind, detail s
 	s.seen = append(s.seen, healthArgs{indexer: indexer, kind: kind, detail: detail})
 }
 
+// OnRecoveryEvent captures the recovery direction under a synthetic "recovered" kind so
+// one recorder covers both halves of the sink.
+func (s *recordingSink) OnRecoveryEvent(_ context.Context, indexer, detail string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.seen = append(s.seen, healthArgs{indexer: indexer, kind: "recovered", detail: detail})
+}
+
 func (s *recordingSink) events() []healthArgs {
 	s.mu.Lock()
 	defer s.mu.Unlock()

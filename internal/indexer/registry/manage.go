@@ -664,6 +664,11 @@ func (r *Resolver) Test(ctx context.Context, slug string) error {
 	if err := a.health.RecordRecovery(ctx, a.db, a.instanceID, a.clock()); err != nil {
 		return fmt.Errorf("registry: record successful test for %q: %w", slug, err)
 	}
+	// A passing test is proof the indexer works right now, so it descends the circuit
+	// and clears the disable window like any other success. Without this, fixing the
+	// credentials and testing them would leave searches gated for the full auth rung
+	// (an hour on the first failure, #389) with no way to say "it's fixed".
+	a.recordCircuitSuccess(ctx)
 	return nil
 }
 
