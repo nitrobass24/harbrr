@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/core"
@@ -89,12 +90,178 @@ func (rt *router) searchIndexer(w http.ResponseWriter, r *http.Request) {
 // the same query unfiltered — feed consumers are automation carrying their own
 // category selection, not an operator looking at a screen.
 func (rt *router) dropAdultReleases(res core.SearchResult, q url.Values) core.SearchResult {
-	if !rt.adultCats.Hidden() || strings.TrimSpace(q.Get("cat")) != "" {
+	if !rt.hidesAdult(q) {
 		return res
 	}
 	kept := make([]*normalizer.Release, 0, len(res.Releases))
 	for _, rel := range res.Releases {
-		if rel == nil || !slices.ContainsFunc(rel.Categories, mapper.IsAdultCategory) {
+		if !isAdultRelease(rel) {
+			kept = append(kept, rel)
+		}
+	}
+	res.Total -= len(res.Releases) - len(kept)
+	res.Releases = kept
+	return res
+}
+
+// hidesAdult reports whether this management search must drop adult-category
+// results: the operator hid them and the request named no categories of its own.
+func (rt *router) hidesAdult(q url.Values) bool {
+	return rt.adultCats.Hidden() && strings.TrimSpace(q.Get("cat")) == ""
+}
+
+// isAdultRelease reports whether rel declares an adult category. A nil release is
+// not adult — it is dropped by the serializer, not by this filter.
+func isAdultRelease(rel *normalizer.Release) bool {
+	return rel != nil && slices.ContainsFunc(rel.Categories, mapper.IsAdultCategory)
+}
+
+// aggregateSearchResponse is the JSON body of GET /api/search — the management-API
+// sibling of the `all`/`profile:` Torznab feeds, and the only search shape the web UI
+// runs on. Results are ONE merged window in server order (publish-date desc), Members is
+// the per-member ledger behind it, and Total is the merged set this request actually
+// fetched: a floor the server stands behind, never a sum of member claims and never a
+// promise that a deeper page exists (autobrr/harbrr#372 / #396).
+type aggregateSearchResponse struct {
+	Results []aggregateSearchResult `json:"results"`
+	Members []searchMemberStatus    `json:"members"`
+	Total   int                     `json:"total"`
+	Limit   int                     `json:"limit"`
+	Offset  int                     `json:"offset"`
+}
+
+// aggregateSearchResult is a release plus the slug of the member it came from. The
+// origin travels with the release because it is what the link is sealed against and
+// what the UI's indexer column names — an aggregate response has no single indexer.
+type aggregateSearchResult struct {
+	Indexer string              `json:"indexer"`
+	Release *normalizer.Release `json:"release"`
+}
+
+// searchMemberStatus is one ledger row: what harbrr asked, and what it got back. Reason
+// is one of core's closed Skip* constants — a member's raw error routinely embeds a
+// passkey-bearing URL and never crosses the wire (it goes to the log, redacted).
+type searchMemberStatus struct {
+	Slug   string `json:"slug"`
+	Name   string `json:"name"`
+	Status string `json:"status"` // "ok" | "skipped"
+	Reason string `json:"reason,omitempty"`
+	Count  int    `json:"count"`
+}
+
+// searchAggregate runs one search across an EXPLICIT indexer subset and serves the
+// server-merged window plus the ledger — the same core.SearchAggregate the aggregate
+// feed fans out with, so the page and the feed can never disagree about sort or counts.
+// `indexers` is a required comma-separated slug list (the UI's picker); a slug that
+// names no configured indexer is a 400 (a client bug), while a configured member that
+// is disabled, unbuildable or skipped by its own gates becomes a ledger row and the
+// request still succeeds. No member failure can fail the request.
+func (rt *router) searchAggregate(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	slugs := splitSlugs(q.Get("indexers"))
+	if len(slugs) == 0 {
+		writeError(w, http.StatusBadRequest, "indexers is required")
+		return
+	}
+	members, err := rt.registry.Members(r.Context(), slugs)
+	if errors.Is(err, core.ErrNoSuchFeed) {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err != nil {
+		rt.writeServiceError(w, "search indexers", err)
+		return
+	}
+	res := rt.dropAdultAggregateReleases(core.SearchAggregate(r.Context(), members, q), q)
+	rt.logMemberFailures(res.Members)
+	writeJSON(w, http.StatusOK, aggregateSearchResponse{
+		Results: rt.sealByOrigin(r, res.Releases),
+		Members: memberLedger(res.Members),
+		Total:   res.Total,
+		Limit:   res.Limit,
+		Offset:  res.Offset,
+	})
+}
+
+// splitSlugs parses the comma-separated `indexers` list, dropping blanks so a trailing
+// comma or an empty value is not a phantom slug.
+func splitSlugs(list string) []string {
+	out := make([]string, 0, strings.Count(list, ",")+1)
+	for _, s := range strings.Split(list, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// sealByOrigin seals every release's download link against the member it actually came
+// from and returns the window in SERVER ORDER. Grouping by origin is the point: a
+// release's link is passkey-bearing, and sealing it against the wrong indexer would mint
+// a token that grabs from a tracker that never served it. resolveSearchLinks is called
+// once per origin (it builds one rewriter per call), and each sealed copy is written
+// back to the index it came from.
+func (rt *router) sealByOrigin(r *http.Request, releases []core.AggregateRelease) []aggregateSearchResult {
+	byOrigin := map[string][]int{}
+	for i, rel := range releases {
+		id := rel.Indexer.Info().ID
+		byOrigin[id] = append(byOrigin[id], i)
+	}
+	out := make([]aggregateSearchResult, len(releases))
+	for id, idxs := range byOrigin {
+		batch := make([]*normalizer.Release, len(idxs))
+		for j, i := range idxs {
+			batch[j] = releases[i].Release
+		}
+		sealed := rt.resolveSearchLinks(r, releases[idxs[0]].Indexer, batch)
+		for j, i := range idxs {
+			out[i] = aggregateSearchResult{Indexer: id, Release: sealed[j]}
+		}
+	}
+	return out
+}
+
+// memberLedger renders the served status ledger: one row per member the request
+// selected, in resolution order. Only the closed reason vocabulary crosses over.
+func memberLedger(members []core.MemberOutcome) []searchMemberStatus {
+	out := make([]searchMemberStatus, 0, len(members))
+	for _, m := range members {
+		status := "skipped"
+		if m.OK() {
+			status = "ok"
+		}
+		out = append(out, searchMemberStatus{Slug: m.ID, Name: m.Name, Status: status, Reason: m.Reason, Count: m.Count})
+	}
+	return out
+}
+
+// logMemberFailures records each member failure with the error redacted — the only
+// place a member's raw failure is reported, and it goes to the log, never the response.
+func (rt *router) logMemberFailures(members []core.MemberOutcome) {
+	for _, m := range members {
+		if m.Err == nil {
+			continue
+		}
+		rt.log.Warn().
+			Str("stage", "search").
+			Str("indexer", m.ID).
+			Str("reason", m.Reason).
+			Str("error", apphttp.RedactError(m.Err)).
+			Msg("api: aggregate search: member contributed nothing")
+	}
+}
+
+// dropAdultAggregateReleases is dropAdultReleases for the merged window: the
+// hide-adult-categories setting is a property of the management search surface, so the
+// aggregate endpoint honors it exactly as the per-indexer one does (autobrr/harbrr#383).
+// Total is reduced by what the window dropped, keeping it an honest floor.
+func (rt *router) dropAdultAggregateReleases(res core.AggregateResult, q url.Values) core.AggregateResult {
+	if !rt.hidesAdult(q) {
+		return res
+	}
+	kept := make([]core.AggregateRelease, 0, len(res.Releases))
+	for _, rel := range res.Releases {
+		if !isAdultRelease(rel.Release) {
 			kept = append(kept, rel)
 		}
 	}

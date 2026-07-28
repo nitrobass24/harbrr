@@ -393,6 +393,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search an indexer subset as one server-merged window (JSON)
+         * @description Fans one search out across the explicitly named indexers and returns the MERGED window (publish-date descending) plus a per-member ledger — the management-API sibling of the `all`/`profile:` aggregate feeds, running the same merge, so the web UI and the feeds can never disagree about sort or counts. Paging is one window: members are queried at offset 0 and the request's limit/offset apply to the merged set, so `total` is the size of the set this request fetched, not a promise that a deeper page exists. No member failure fails the request — a member that is disabled, unbuildable, circuit-open, budget-exhausted, rate-limited, timed out or otherwise skipped becomes a ledger row with a reason from the closed vocabulary (its raw error is logged, redacted, and never served). Each release's download link is sealed against the member it came from.
+         */
+        get: operations["searchAggregate"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/indexers/{slug}/search": {
         parameters: {
             query?: never;
@@ -1835,6 +1855,38 @@ export interface components {
             /** @description resolved page offset */
             offset: number;
         };
+        /** @description One server-merged search window (publish-date descending) plus the per-member ledger behind it. `total` is the size of the merged set this request fetched — a floor the server stands behind, never a sum of member claims and never a promise that a deeper page exists; `limit`/`offset` are the resolved window over that merged set. */
+        AggregateSearchResults: {
+            results: components["schemas"]["AggregateSearchResult"][];
+            /** @description one row per indexer the request selected, in resolution order */
+            members: components["schemas"]["SearchMember"][];
+            /** @description size of the merged set this request fetched, before the window slice */
+            total: number;
+            /** @description resolved window size (clamped to [1,100]) */
+            limit: number;
+            /** @description resolved window offset into the merged set */
+            offset: number;
+        };
+        /** @description A merged release plus the slug of the indexer it came from. The origin is what the download link is sealed against — an aggregate response has no single indexer. */
+        AggregateSearchResult: {
+            /** @description slug of the indexer that returned the release */
+            indexer: string;
+            release: components["schemas"]["Release"];
+        };
+        /** @description One ledger row: what harbrr asked of an indexer and what came back. `reason` is present only when status is `skipped`, and is drawn from a closed vocabulary (the underlying error routinely embeds a passkey and is never served). */
+        SearchMember: {
+            slug: string;
+            name: string;
+            /** @enum {string} */
+            status: "ok" | "skipped";
+            /**
+             * @description why the member contributed nothing
+             * @enum {string}
+             */
+            reason?: "budget-exhausted" | "circuit-open" | "degenerate-query" | "rate-limited" | "unreachable" | "timeout" | "error" | "disabled" | "unavailable";
+            /** @description releases this member put into the merged set, before the window slice */
+            count: number;
+        };
         /** @description A normalized release — the same shape the Torznab feed serializes. For a resolver-needing indexer, `link` is the opaque /dl proxy URL (the passkey is sealed inside, never exposed here). Zero values for size/seeders/leechers/ peers and the volume factors are meaningful and always present. */
         Release: {
             title: string;
@@ -3247,6 +3299,53 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    searchAggregate: {
+        parameters: {
+            query: {
+                /** @description comma-separated slugs of the configured indexers to search; a slug that names no configured indexer is a 400 */
+                indexers: string;
+                /** @description free-text query */
+                q?: string;
+                /** @description comma-separated newznab category ids */
+                cat?: string;
+                imdbid?: string;
+                tmdbid?: string;
+                tvdbid?: string;
+                season?: string;
+                ep?: string;
+                /** @description merged window size, clamped to [1,100] */
+                limit?: number;
+                /** @description offset into the merged set */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description the merged window and the per-member ledger */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AggregateSearchResults"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description the member set could not be read (a sanitized, secret-free error) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     searchIndexer: {

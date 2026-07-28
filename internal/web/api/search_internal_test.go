@@ -341,6 +341,98 @@ func TestResolveSearchLinksMagnetAsIs(t *testing.T) {
 	}
 }
 
+// TestSealByOriginSealsEachReleaseToItsOwnMember is the aggregate response's central
+// safety property: a merged window interleaves members, and each release's
+// passkey-bearing link must be sealed against the member it ACTUALLY came from — a
+// token minted against the wrong indexer would grab from a tracker that never served
+// the release. It also pins that the window keeps SERVER ORDER (the merge's) even
+// though sealing runs per origin group.
+func TestSealByOriginSealsEachReleaseToItsOwnMember(t *testing.T) {
+	t.Parallel()
+	rt := &router{dlToken: testKeyring(t)}
+	alpha := fakeSearchIndexer{id: "alpha", needsResolver: true}
+	beta := fakeSearchIndexer{id: "beta", needsResolver: true}
+	const magnet = "magnet:?xt=urn:btih:abc"
+
+	window := []core.AggregateRelease{
+		{Indexer: alpha, Release: &normalizer.Release{Title: "A1", Link: keyLink}},
+		{Indexer: beta, Release: &normalizer.Release{Title: "B1", Link: keyLink}},
+		{Indexer: alpha, Release: &normalizer.Release{Title: "A2", Link: keyLink}},
+		{Indexer: beta, Release: &normalizer.Release{Title: "B2", Magnet: magnet}},
+	}
+	out := rt.sealByOrigin(searchReq(t), window)
+
+	if len(out) != len(window) {
+		t.Fatalf("got %d results, want %d", len(out), len(window))
+	}
+	wantOrigin := []string{"alpha", "beta", "alpha", "beta"}
+	wantTitle := []string{"A1", "B1", "A2", "B2"}
+	for i, r := range out {
+		if r.Indexer != wantOrigin[i] || r.Release.Title != wantTitle[i] {
+			t.Fatalf("result[%d] = {%s %s}, want {%s %s} (server order must survive per-origin sealing)",
+				i, r.Indexer, r.Release.Title, wantOrigin[i], wantTitle[i])
+		}
+		if strings.Contains(r.Release.Link, "SECRETPASSKEY777") {
+			t.Fatalf("result[%d] leaked the passkey: %q", i, r.Release.Link)
+		}
+	}
+	for i, r := range out[:3] {
+		if want := "/api/indexers/" + wantOrigin[i] + "/download/"; !strings.Contains(r.Release.Link, want) {
+			t.Errorf("result[%d] sealed to %q, want a link through %q", i, r.Release.Link, want)
+		}
+	}
+	// A magnet is public: it passes through untouched even for a resolver-needing member.
+	if out[3].Release.Magnet != magnet {
+		t.Errorf("magnet altered: %q", out[3].Release.Magnet)
+	}
+	if window[0].Release.Link != keyLink {
+		t.Error("source release was mutated (expected a copy)")
+	}
+}
+
+// TestMemberLedgerServesReasonsNotErrors: the ledger carries one row per SELECTED
+// member with the closed Skip* vocabulary, and a member's raw error — which routinely
+// embeds a passkey — never reaches the response.
+func TestMemberLedgerServesReasonsNotErrors(t *testing.T) {
+	t.Parallel()
+	live := core.LiveMember(fakeSearchIndexer{id: "alpha"})
+	live.Name, live.Count = "Alpha", 7
+	failed := core.SkippedMember("beta", "Beta", core.SkipError)
+	failed.Err = fmt.Errorf("get %s: boom", keyLink)
+
+	got := memberLedger([]core.MemberOutcome{
+		live,
+		core.SkippedMember("ptp", "PTP", core.SkipCircuit),
+		core.SkippedMember("dognzb", "DOGnzb", core.SkipBudget),
+		core.SkippedMember("old", "Old", core.SkipDisabled),
+		failed,
+	})
+
+	want := []searchMemberStatus{
+		{Slug: "alpha", Name: "Alpha", Status: "ok", Count: 7},
+		{Slug: "ptp", Name: "PTP", Status: "skipped", Reason: "circuit-open"},
+		{Slug: "dognzb", Name: "DOGnzb", Status: "skipped", Reason: "budget-exhausted"},
+		{Slug: "old", Name: "Old", Status: "skipped", Reason: "disabled"},
+		{Slug: "beta", Name: "Beta", Status: "skipped", Reason: "error"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("ledger has %d rows, want %d", len(got), len(want))
+	}
+	for i, row := range got {
+		if row != want[i] {
+			t.Errorf("ledger[%d] = %+v, want %+v", i, row, want[i])
+		}
+	}
+
+	body, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("marshal ledger: %v", err)
+	}
+	if strings.Contains(string(body), "SECRETPASSKEY777") || strings.Contains(string(body), "boom") {
+		t.Errorf("member error crossed the wire: %s", body)
+	}
+}
+
 // TestWriteServiceErrorGatewayStatus proves a wrapped search.ErrGatewayStatus (a
 // reverse-proxy/CDN reporting the tracker origin unreachable) maps to 502
 // upstream_unreachable instead of falling into the generic 500 default arm, and that

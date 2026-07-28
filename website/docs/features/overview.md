@@ -146,9 +146,8 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 | Indexer, application, and download-client management | ✅ |
 | Interactive search, with a responsive mobile layout | ✅ |
 | Instant substring / regex filter over search results | 🚧 [#374](https://github.com/autobrr/harbrr/issues/374) |
-| Results appear as each indexer answers, instead of waiting for the slowest | 🚧 [#372](https://github.com/autobrr/harbrr/issues/372) |
-| Per-indexer failure reasons — rate-limited vs login-failed vs timed out, and re-run just the failures | 🚧 [#372](https://github.com/autobrr/harbrr/issues/372) |
-| Global sort and paging across merged multi-indexer results (via the aggregate feed) | 🚧 [#400](https://github.com/autobrr/harbrr/issues/400) |
+| Search runs on the same merged window and per-member ledger the feeds serve — sort and counts can never disagree with your \*arrs, and an indexer that sat one out says why (circuit open, budget exhausted, rate limited, timed out) | ✅ |
+| Global sort across merged multi-indexer results (via the aggregate feed) | ✅ |
 | Group identical releases across indexers, with per-tracker sources attached | 🚧 [#398](https://github.com/autobrr/harbrr/issues/398) |
 | Base-URL picker — choose from the definition's known hosts, with a free-text escape hatch for private mirrors | ✅ |
 | Cache dashboard — tracker requests saved, hit ratio, entry ages, breaker countdowns, live-tunable TTL tiers | ✅ |
