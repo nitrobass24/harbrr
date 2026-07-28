@@ -804,6 +804,32 @@ func TestHandlerNoResultsEmptyFeed(t *testing.T) {
 	}
 }
 
+// TestHandlerDegenerateQueryServesTheEmptyFeed pins the per-indexer half of the
+// degenerate-query gate (autobrr/harbrr#394): an indexer that declined to be asked
+// answers with the STANDARD empty-result document — the same bytes a search that ran
+// and matched nothing produces — never a 900/500. The aggregate feed is the only
+// surface that distinguishes the two (its per-member ledger).
+func TestHandlerDegenerateQueryServesTheEmptyFeed(t *testing.T) {
+	t.Parallel()
+	empty := do(t, newTestHandler(t, func() *fakeIndexer {
+		idx := demoIndexer(t)
+		idx.releases = nil
+		return idx
+	}()), "t=search&q=nothing")
+
+	idx := demoIndexer(t)
+	idx.releases = nil
+	idx.searchErr = fmt.Errorf("registry: search %q: %w", "demo", core.ErrDegenerateQuery)
+	gated := do(t, newTestHandler(t, idx), "t=search&q=nothing")
+
+	if gated.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", gated.Code)
+	}
+	if gated.Body.String() != empty.Body.String() {
+		t.Errorf("gated feed differs from the standard empty feed:\ngated: %s\nempty: %s", gated.Body.String(), empty.Body.String())
+	}
+}
+
 // TestHandlerInternalErrorIsRedacted covers the search error path's 900/500
 // document: status and code never change, but a wrapped search.ErrGatewayStatus
 // surfaces its fixed, secret-free sentinel text as the description instead of the

@@ -351,6 +351,14 @@ Entries:
   Definitions keep opting out of andmatch wholesale via `caps.allowrawsearch`,
   unchanged. **`[Deliberate]`**
 
+  Its sibling from the same issue — the **degenerate-query gate**, which declines to
+  send a search whose term the definition's own `keywordsfilters` reduced to a bare
+  year — is NOT an engine divergence and has no entry here: it runs in the registry
+  adapter, ahead of the search cache and the request budget, and leaves the engine
+  byte-identical (which is exactly what the unconfigured corpus asserts). Its record
+  lives with the tests that pin it, in
+  [`internal/indexer/registry/testdata/README.md`](../../../registry/testdata/README.md).
+
 ## Regenerating goldens
 
 ```bash

@@ -489,6 +489,16 @@ func (h *handler) writeResults(w http.ResponseWriter, r *http.Request, idx core.
 	// SearchReleasesWithCaps is the shared read pipeline (map -> search -> dedupe ->
 	// filter -> page); the management API's JSON search runs the same code for parity.
 	res, err := core.SearchReleasesWithCaps(ctx, idx, caps, q)
+	// A degenerate-query skip is not a failure: this indexer's own keywords filters
+	// leave nothing of the question to search on (autobrr/harbrr#394), so it was never
+	// asked. The honest Torznab answer on a per-indexer feed is the STANDARD empty
+	// result document — identical bytes to a search that ran and matched nothing —
+	// which is exactly what the empty, correctly-paged result the pipeline hands back
+	// with the sentinel serializes to below. Only the aggregate feed distinguishes the
+	// two, in its per-member ledger.
+	if errors.Is(err, core.ErrDegenerateQuery) {
+		err = nil
+	}
 	if err != nil {
 		h.writeInternalError(w, "search", idx.Info().ID, err)
 		return

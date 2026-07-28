@@ -93,6 +93,45 @@ These behaviours are pinned by tests in `internal/indexer/registry`
   runtime-tunable (DB-backed app-settings; `0s` disables, taking effect immediately).
   `[Deliberate]` (`searchcache_breaker.go`, `searchcache.go`; pinned by
   `searchcache_breaker_test.go`).
+- **Degenerate-query gate: harbrr declines a search Jackett would send.** Many
+  definitions strip `[^a-zA-Z0-9 ]+` in `search.keywordsfilters`, so a CJK, Cyrillic or
+  Thai query reduces to whatever Latin survived — frequently just the year a Radarr
+  query appended. Jackett sends that anyway: the tracker matches *everything*, and the
+  operator pays a full request and a full response for a set that is discarded
+  downstream. An indexer instance can opt into declining it instead, via the reserved
+  `degenerate_query_gate: auto` setting (autobrr/harbrr#394). This is a **deliberate
+  behavioural difference from the incumbent on the same input** — harbrr makes fewer
+  requests than Jackett does — so it is recorded here rather than absorbed silently.
+  Scope choices:
+  - **Opt-in, default off.** Absent (or `off`, which the form writes) the query is sent
+    exactly as before. The reserved key is deleted from the definition-default clone
+    (`cardigann.resolveOptions`), so no drop-in def can arm it behind the operator's
+    back — pinned by `cardigann/config_test.go`.
+  - **The test is RELATIVE, not absolute** (`search.DegenerateQuery`): the raw term must
+    carry signal and the *filtered residual* must not. So an RSS/browse poll (no term)
+    is never gated, a genuine year-only search (`1917`) is still sent — that is the
+    operator's own query, not our filters' doing — a definition with no keywordsfilters
+    can never gate anything, and an id search is never gated because the imdbid drives
+    the request (the same carve-out Jackett's andmatch makes).
+  - **Degenerate = every alphanumeric token is a bare four-digit year, or there are
+    none.** Tokens split on non-alphanumerics Unicode-wide, so CJK/Cyrillic/Thai text
+    counts as signal — noticing that the filters threw it away is the whole point.
+  - **The gate runs FIRST in `indexerAdapter.Search`** — ahead of the search cache and
+    the request budget — so a gated search costs nothing at all: no request, no cache
+    entry keyed on a question we will never ask, no budget unit a viable query could
+    have used. It is therefore invisible to the engine: the parity corpus runs the
+    engine unconfigured and is untouched by this feature.
+  - **Skipped, not failed.** Because the gate returns before `liveSearch`, no health
+    event, no circuit-breaker movement and no failure stat is even reachable — nothing
+    needed excluding. The shared read pipeline returns `core.ErrDegenerateQuery`
+    together with an empty, correctly-paged result: a per-indexer feed (and the
+    management JSON search) serves the **standard empty-result document**, byte-identical
+    to a search that ran and matched nothing, while the aggregate feed's ledger names it
+    `degenerate-query`. `[Deliberate]` (`registry/adapter.go`, `registry/registry.go`,
+    `cardigann/engine.go` `SkipsQuery`, `cardigann/search/degenerate.go`,
+    `core/gates.go`; pinned by `registry/degenerate_gate_e2e_test.go`,
+    `cardigann/search/degenerate_test.go`, `web/torznabhttp/handler_test.go`,
+    `web/torznabhttp/aggregate_test.go`).
 - **Per-indexer cache observability.** `GET /api/cache/stats` exposes `trackerHitsSaved`
   (durable tracker requests served from cache), `breakerSuppressed`, and a `byIndexer[]`
   breakdown (hit ratio, hits saved, breaker open-state) — harbrr-additive metrics with no

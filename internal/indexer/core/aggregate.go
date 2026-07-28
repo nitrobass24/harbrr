@@ -29,6 +29,9 @@ const (
 	SkipBudget = "budget-exhausted"
 	// SkipCircuit: the member's circuit breaker is open, so harbrr did not call it.
 	SkipCircuit = "circuit-open"
+	// SkipDegenerateQuery: the member's own keywordsfilters leave nothing of this
+	// query to search on, so harbrr did not ask it (autobrr/harbrr#394).
+	SkipDegenerateQuery = "degenerate-query"
 	// SkipRateLimited: the tracker rate-limited us or reported its quota exceeded.
 	SkipRateLimited = "rate-limited"
 	// SkipUnreachable: a gateway/CDN reported the tracker's origin unreachable.
@@ -213,6 +216,8 @@ func classifySkip(err error) string {
 		return SkipBudget
 	case errors.Is(err, ErrCircuitOpen):
 		return SkipCircuit
+	case errors.Is(err, ErrDegenerateQuery):
+		return SkipDegenerateQuery
 	case errors.Is(err, search.ErrRateLimited), errors.Is(err, search.ErrQuotaExceeded):
 		return SkipRateLimited
 	case errors.Is(err, search.ErrGatewayStatus):
