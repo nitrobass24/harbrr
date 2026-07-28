@@ -157,12 +157,15 @@ func WithSearchCache(sc *SearchCache) Option {
 }
 
 // HealthSink receives a best-effort call after a classified health event is recorded,
-// with the indexer slug, event kind, and credential-scrubbed detail. Implementations
-// (the notify service) must not block or error back into the search path — they own
-// their own async dispatch. Declared here (structurally satisfied) so the registry
-// never imports the notification package.
+// with the indexer slug, event kind, and credential-scrubbed detail — and the matching
+// call in the other direction when the indexer recovers, so an operator learns it is
+// working again instead of only ever hearing that it broke. Implementations (the notify
+// service) must not block or error back into the search path — they own their own async
+// dispatch. Declared here (structurally satisfied) so the registry never imports the
+// notification package.
 type HealthSink interface {
 	OnHealthEvent(ctx context.Context, indexer, kind, detail string)
+	OnRecoveryEvent(ctx context.Context, indexer, detail string)
 }
 
 // WithHealthSink registers the sink notified after each recorded health event. Nil (the
@@ -506,7 +509,7 @@ func (r *Resolver) buildAdapter(ctx context.Context, slug string) (*indexerAdapt
 	if err != nil {
 		return nil, err
 	}
-	inner, err := r.buildInner(inst, def, factory, engineCfg, doer)
+	inner, skipQuery, err := r.buildInner(inst, def, factory, engineCfg, doer)
 	if err != nil {
 		return nil, err
 	}
@@ -517,6 +520,7 @@ func (r *Resolver) buildAdapter(ctx context.Context, slug string) (*indexerAdapt
 	return &indexerAdapter{
 		info:          indexerInfo(inst, def),
 		inner:         inner,
+		skipQuery:     skipQuery,
 		instanceID:    inst.ID,
 		cfg:           cfg,
 		builtEpoch:    builtEpoch,
@@ -593,7 +597,13 @@ func composeProxyURL(p domain.Proxy, password string) string {
 
 // buildInner constructs the engine-shaped core: a native family driver when a
 // factory is present, otherwise the Cardigann engine. Both satisfy native.Driver.
-func (r *Resolver) buildInner(inst domain.IndexerInstance, def *loader.Definition, factory native.Factory, cfg map[string]string, doer search.Doer) (native.Driver, error) {
+//
+// It also returns the adapter's degenerate-query gate (autobrr/harbrr#394) — the
+// Cardigann engine's own SkipsQuery, nil for a native driver, which has no
+// keywordsfilters that could reduce a term to nothing. It is returned here rather
+// than type-asserted at the call site because this is where the engine is built, so
+// the concrete type is already in hand.
+func (r *Resolver) buildInner(inst domain.IndexerInstance, def *loader.Definition, factory native.Factory, cfg map[string]string, doer search.Doer) (native.Driver, func(search.Query) bool, error) {
 	if factory != nil {
 		d, err := factory(native.Params{
 			Def:     def,
@@ -607,9 +617,9 @@ func (r *Resolver) buildInner(inst domain.IndexerInstance, def *loader.Definitio
 			},
 		})
 		if err != nil {
-			return nil, fmt.Errorf("registry: build native driver %q: %w", def.ID, err)
+			return nil, nil, fmt.Errorf("registry: build native driver %q: %w", def.ID, err)
 		}
-		return d, nil
+		return d, nil, nil
 	}
 	opts := []cardigann.Option{
 		cardigann.WithDoer(doer),
@@ -624,9 +634,9 @@ func (r *Resolver) buildInner(inst domain.IndexerInstance, def *loader.Definitio
 	}
 	eng, err := cardigann.NewEngine(def, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("registry: build engine %q: %w", def.ID, err)
+		return nil, nil, fmt.Errorf("registry: build engine %q: %w", def.ID, err)
 	}
-	return eng, nil
+	return eng, eng.SkipsQuery, nil
 }
 
 // resolveDefinition resolves a definition id to its definition and, for a native family,

@@ -398,7 +398,7 @@ func TestServeDL_StreamsTorrent(t *testing.T) {
 	idx.grabResult = &search.GrabResult{Body: []byte("d4:name4:dataee"), ContentType: "application/x-bittorrent"}
 	h, kr := newProxyHandler(t, idx)
 	link := "https://demo.test/download.php?id=1&passkey=" + dlTestPasskey
-	token, err := encodeDLToken(kr, "demo", link)
+	token, err := encodeDLToken(kr, "demo", 0, link)
 	if err != nil {
 		t.Fatalf("encodeDLToken: %v", err)
 	}
@@ -423,7 +423,7 @@ func TestServeDL_RedirectsMagnet(t *testing.T) {
 	idx := resolverDemoIndexer(t)
 	idx.grabResult = &search.GrabResult{Redirect: "magnet:?xt=urn:btih:abcdef"}
 	h, kr := newProxyHandler(t, idx)
-	token, err := encodeDLToken(kr, "demo", "https://demo.test/info/1")
+	token, err := encodeDLToken(kr, "demo", 0, "https://demo.test/info/1")
 	if err != nil {
 		t.Fatalf("encodeDLToken: %v", err)
 	}
@@ -446,7 +446,7 @@ func TestServeDL_RejectsNonTorrentBody(t *testing.T) {
 	idx := resolverDemoIndexer(t)
 	idx.grabResult = &search.GrabResult{Body: loginHTML, ContentType: "application/x-bittorrent"}
 	h, kr := newProxyHandler(t, idx)
-	token, err := encodeDLToken(kr, "demo", "https://demo.test/download.php?id=1")
+	token, err := encodeDLToken(kr, "demo", 0, "https://demo.test/download.php?id=1")
 	if err != nil {
 		t.Fatalf("encodeDLToken: %v", err)
 	}
@@ -469,7 +469,7 @@ func TestServeDL_RejectsEmptyBody(t *testing.T) {
 	idx := resolverDemoIndexer(t)
 	idx.grabResult = &search.GrabResult{Body: []byte{}, ContentType: "application/x-bittorrent"}
 	h, kr := newProxyHandler(t, idx)
-	token, err := encodeDLToken(kr, "demo", "https://demo.test/download.php?id=1")
+	token, err := encodeDLToken(kr, "demo", 0, "https://demo.test/download.php?id=1")
 	if err != nil {
 		t.Fatalf("encodeDLToken: %v", err)
 	}
@@ -487,7 +487,7 @@ func TestServeDL_ServesNZBUnvalidated(t *testing.T) {
 	idx := resolverDemoIndexer(t)
 	idx.grabResult = &search.GrabResult{Body: nzb, ContentType: "application/x-nzb"}
 	h, kr := newProxyHandler(t, idx)
-	token, err := encodeDLToken(kr, "demo", "https://demo.test/getnzb?id=1")
+	token, err := encodeDLToken(kr, "demo", 0, "https://demo.test/getnzb?id=1")
 	if err != nil {
 		t.Fatalf("encodeDLToken: %v", err)
 	}
@@ -549,7 +549,7 @@ func TestServeDL_RequiresAPIKey(t *testing.T) {
 	t.Parallel()
 	idx := resolverDemoIndexer(t)
 	h, kr := newProxyHandler(t, idx)
-	token, err := encodeDLToken(kr, "demo", "https://demo.test/download.php?id=1")
+	token, err := encodeDLToken(kr, "demo", 0, "https://demo.test/download.php?id=1")
 	if err != nil {
 		t.Fatalf("encodeDLToken: %v", err)
 	}
@@ -577,7 +577,7 @@ func TestServeDL_UnknownIndexer(t *testing.T) {
 	t.Parallel()
 	idx := resolverDemoIndexer(t)
 	h, kr := newProxyHandler(t, idx)
-	token, err := encodeDLToken(kr, "demo", "https://demo.test/download.php?id=1")
+	token, err := encodeDLToken(kr, "demo", 0, "https://demo.test/download.php?id=1")
 	if err != nil {
 		t.Fatalf("encodeDLToken: %v", err)
 	}
@@ -804,6 +804,32 @@ func TestHandlerNoResultsEmptyFeed(t *testing.T) {
 	}
 }
 
+// TestHandlerDegenerateQueryServesTheEmptyFeed pins the per-indexer half of the
+// degenerate-query gate (autobrr/harbrr#394): an indexer that declined to be asked
+// answers with the STANDARD empty-result document — the same bytes a search that ran
+// and matched nothing produces — never a 900/500. The aggregate feed is the only
+// surface that distinguishes the two (its per-member ledger).
+func TestHandlerDegenerateQueryServesTheEmptyFeed(t *testing.T) {
+	t.Parallel()
+	empty := do(t, newTestHandler(t, func() *fakeIndexer {
+		idx := demoIndexer(t)
+		idx.releases = nil
+		return idx
+	}()), "t=search&q=nothing")
+
+	idx := demoIndexer(t)
+	idx.releases = nil
+	idx.searchErr = fmt.Errorf("registry: search %q: %w", "demo", core.ErrDegenerateQuery)
+	gated := do(t, newTestHandler(t, idx), "t=search&q=nothing")
+
+	if gated.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", gated.Code)
+	}
+	if gated.Body.String() != empty.Body.String() {
+		t.Errorf("gated feed differs from the standard empty feed:\ngated: %s\nempty: %s", gated.Body.String(), empty.Body.String())
+	}
+}
+
 // TestHandlerInternalErrorIsRedacted covers the search error path's 900/500
 // document: status and code never change, but a wrapped search.ErrGatewayStatus
 // surfaces its fixed, secret-free sentinel text as the description instead of the
@@ -908,7 +934,7 @@ func TestServeGrab(t *testing.T) {
 	}
 	tokenFor := func(t *testing.T, indexerID, link string) string {
 		t.Helper()
-		tok, err := encodeDLToken(kr, indexerID, link)
+		tok, err := encodeDLToken(kr, indexerID, 0, link)
 		if err != nil {
 			t.Fatalf("encode token: %v", err)
 		}

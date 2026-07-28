@@ -2169,6 +2169,45 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /api/config/stats-retention:
+    get:
+      summary: Get the per-category stats retention window
+      description: >
+        Returns how many months of per-category indexer tallies are kept
+        (autobrr/harbrr#403). Defaults to 12 when the operator never set it.
+      operationId: getStatsRetention
+      tags: [System]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the current retention window
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatsRetention" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      summary: Set the per-category stats retention window
+      description: >
+        Persists the retention window (1-120 months). It applies on the next
+        daily reap, so shortening it drops the now-expired month buckets then,
+        not immediately.
+      operationId: putStatsRetention
+      tags: [System]
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StatsRetention" }
+      responses:
+        "200":
+          description: the applied retention window
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatsRetention" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /api/config/rate-limit:
     get:
       summary: Get the global rate-limit default
@@ -2509,7 +2548,18 @@ components:
       properties:
         slug: { type: string }
         queries: { type: integer, format: int64 }
+        grabAttempts:
+          type: integer
+          format: int64
+          description: grabs that reached the tracker, successful or not
         grabs: { type: integer, format: int64 }
+        grabSuccessRate:
+          type: number
+          format: double
+          description: >
+            grabs / grabAttempts, derived at read time and never stored. Absent
+            until at least one grab has been attempted, so "no data" never reads
+            as a 0% success rate.
         avgResponseMs: { type: integer, format: int64 }
         failures:
           type: object
@@ -2520,10 +2570,26 @@ components:
             antiBot: { type: integer, format: int64 }
             transport: { type: integer, format: int64 }
           required: [authFailure, rateLimited, parseError, antiBot, transport]
+        categories:
+          type: array
+          description: >
+            Per parent-category tallies (autobrr/harbrr#403), summed over the
+            retained months: how many results the indexer returned in that family
+            and how many of them were grabbed. Categories are folded to the ~10
+            standard family roots (2040 Movies/HD counts under 2000 Movies); id 0
+            ("Uncategorized") holds releases with no mappable standard category.
+          items:
+            type: object
+            properties:
+              id: { type: integer, description: "standard parent category id; 0 = uncategorized" }
+              name: { type: string }
+              results: { type: integer, format: int64 }
+              grabs: { type: integer, format: int64 }
+            required: [id, name, results, grabs]
         lastQueryAt: { type: string, format: date-time }
         lastFailureAt: { type: string, format: date-time }
         budget: { $ref: "#/components/schemas/IndexerBudget" }
-      required: [slug, queries, grabs, avgResponseMs, failures]
+      required: [slug, queries, grabAttempts, grabs, avgResponseMs, failures, categories]
     IndexerBudget:
       type: object
       description: >
@@ -3409,6 +3475,21 @@ components:
           type: boolean
           description: true when adult categories are hidden
       required: [hidden]
+    StatsRetention:
+      type: object
+      description: >
+        How long the per-category indexer tallies are kept (autobrr/harbrr#403).
+        Old month buckets are dropped by a daily range delete, so a renewal
+        decision months later still has the history it needs without an
+        unbounded table.
+      properties:
+        months:
+          type: integer
+          minimum: 1
+          maximum: 120
+          default: 12
+          description: retention window in whole months
+      required: [months]
 
     ExpiryThresholds:
       type: object

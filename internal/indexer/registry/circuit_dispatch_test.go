@@ -32,7 +32,8 @@ func TestCircuitOpensAfterFailureAndGatesDispatch(t *testing.T) {
 	}
 
 	// First search reaches the tracker, fails (503 -> rate_limited), and escalates
-	// the circuit to level 1 (a 60s window, per the ladder).
+	// the circuit to that kind's floor rung, level 2 (a 5m window: #389's policy never
+	// races a limiter on a 60-second retry).
 	if _, err := idx.Search(ctx, search.Query{Keywords: "bunny"}); err == nil {
 		t.Fatal("first Search returned nil error, want a classified failure")
 	}
@@ -48,8 +49,8 @@ func TestCircuitOpensAfterFailureAndGatesDispatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get circuit: %v", err)
 	}
-	if circuit.EscalationLevel != 1 {
-		t.Fatalf("EscalationLevel = %d, want 1", circuit.EscalationLevel)
+	if circuit.EscalationLevel != 2 {
+		t.Fatalf("EscalationLevel = %d, want 2", circuit.EscalationLevel)
 	}
 	if !circuit.IsDisabled(fixedClock()) {
 		t.Fatal("circuit must be open (disabled) right after the escalating failure")

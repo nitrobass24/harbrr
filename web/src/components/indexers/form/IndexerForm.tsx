@@ -50,6 +50,18 @@ const LIMITS_UNIT_FIELD: SettingField = {
 }
 const LIMIT_FIELDS = [TIMEOUT_FIELD, QUERY_LIMIT_FIELD, GRAB_LIMIT_FIELD, LIMITS_UNIT_FIELD]
 
+// Reserved matching settings (autobrr/harbrr#394). Both default to today's engine
+// behaviour, so an untouched indexer searches and filters exactly as it always has;
+// they ride the same free-form settings map as the fields above.
+const FOLD_PUNCTUATION_FIELD: SettingField = {
+  name: "andmatch_fold_punctuation", label: "Ignore apostrophes and dots when matching results", type: "checkbox", secret: false,
+}
+const DEGENERATE_GATE_FIELD: SettingField = {
+  name: "degenerate_query_gate", label: "Skip searches this indexer can't answer", type: "select", secret: false,
+  default: "off", options: { off: "Off — always search", auto: "Auto — skip when nothing searchable is left" },
+}
+const MATCHING_FIELDS = [FOLD_PUNCTUATION_FIELD, DEGENERATE_GATE_FIELD]
+
 // Inline settings the proxy/solver controls own — stripped from the schema-driven
 // map so they are never double-submitted (proxy rides proxyId, FlareSolverr rides
 // solverId, solver_type is set explicitly on submit). NOTE: `cookie` is NOT here —
@@ -93,7 +105,7 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
   const [slug, setSlug] = useState(existing?.slug ?? definition.id)
   const [baseUrl, setBaseUrl] = useState(existing?.baseUrl ?? "")
   const [values, setValues] = useState<Record<string, string>>(() => {
-    const seeded = { ...defaultValues(LIMIT_FIELDS), ...defaultValues(definition.settings, existing?.settings) }
+    const seeded = { ...defaultValues([...LIMIT_FIELDS, ...MATCHING_FIELDS]), ...defaultValues(definition.settings, existing?.settings) }
     for (const k of MANAGED_KEYS) delete seeded[k]
     if (!definesCookie) delete seeded.cookie // solver-managed manual cookie, controlled below
     return seeded
@@ -206,7 +218,7 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
         onClick={() => setShowAdvanced((v) => !v)}
       >
         <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", showAdvanced && "rotate-90")} />
-        Advanced (proxy, timeout, anti-bot solver, priority, request limits, expiry, sync behavior)
+        Advanced (proxy, timeout, anti-bot solver, priority, request limits, matching, expiry, sync behavior)
       </button>
       {showAdvanced && (
         <div className="flex flex-col gap-4 rounded-md border border-border p-3">
@@ -259,6 +271,21 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
           <SettingFieldInput field={QUERY_LIMIT_FIELD} value={values.query_limit ?? ""} onChange={setValue("query_limit")} />
           <SettingFieldInput field={GRAB_LIMIT_FIELD} value={values.grab_limit ?? ""} onChange={setValue("grab_limit")} />
           <SettingFieldInput field={LIMITS_UNIT_FIELD} value={values.limits_unit ?? ""} onChange={setValue("limits_unit")} />
+
+          <span className="flex flex-col gap-1.5">
+            <Label>Matching</Label>
+            <SettingFieldInput field={FOLD_PUNCTUATION_FIELD} value={values.andmatch_fold_punctuation ?? ""} onChange={setValue("andmatch_fold_punctuation")} />
+            <p className="text-[12px] text-faint">
+              Keeps results your app&apos;s search term lost the punctuation of &mdash; Sonarr and Radarr
+              strip apostrophes, so &ldquo;n&apos;est&rdquo; would otherwise never match.
+            </p>
+            <SettingFieldInput field={DEGENERATE_GATE_FIELD} value={values.degenerate_query_gate ?? ""} onChange={setValue("degenerate_query_gate")} />
+            <p className="text-[12px] text-faint">
+              Auto skips this indexer when its own filters reduce the search term to nothing
+              usable &mdash; a Japanese title left as just the year. The search is reported as
+              skipped, not failed.
+            </p>
+          </span>
 
           <span className="flex items-center justify-between">
             <Label htmlFor="ix-rss" className="font-normal">Enable RSS</Label>

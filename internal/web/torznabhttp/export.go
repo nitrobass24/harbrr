@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/core"
 	"github.com/autobrr/harbrr/internal/secrets"
 	tzn "github.com/autobrr/harbrr/internal/torznab"
@@ -66,7 +67,9 @@ func FeedURL(r *http.Request, cfg URLConfig, indexerID string, bypass bool) stri
 // /api/indexers/<id>/dl). Used by the cross-seed announce source to hand a cross-seed
 // tool a link it can fetch without seeing the passkey. The error never carries the link.
 func SealedDLURL(kr *secrets.Keyring, indexerID, dlBase, apiKey, originalLink string) (string, error) {
-	token, err := encodeDLToken(kr, indexerID, originalLink)
+	// No release in hand here (the announce source carries a bare link), so the grab is
+	// tallied as uncategorised.
+	token, err := encodeDLToken(kr, indexerID, mapper.UncategorizedID, originalLink)
 	if err != nil {
 		return "", err
 	}
@@ -114,11 +117,11 @@ func NewDLRewriter(kr *secrets.Keyring, idx core.Indexer, dlBase, apiKey string)
 		return nil
 	}
 	indexerID := idx.Info().ID
-	return func(original string) (link, guid string, ok bool) {
+	return func(original string, categories []int) (link, guid string, ok bool) {
 		if original == "" || strings.HasPrefix(original, "magnet:") {
 			return "", "", false
 		}
-		token, err := encodeDLToken(kr, indexerID, original)
+		token, err := encodeDLToken(kr, indexerID, mapper.PrimaryParentID(categories), original)
 		if err != nil {
 			return dlURLWithToken(dlBase, apiKey, ""), stableGUID(indexerID, original), true
 		}
@@ -140,12 +143,12 @@ func NewManagementDLRewriter(kr *secrets.Keyring, idx core.Indexer, downloadBase
 		return nil
 	}
 	indexerID := idx.Info().ID
-	return func(original string) (link, guid string, ok bool) {
+	return func(original string, categories []int) (link, guid string, ok bool) {
 		if original == "" || strings.HasPrefix(original, "magnet:") {
 			return "", "", false
 		}
 		g := stableGUID(indexerID, original)
-		token, err := encodeDLToken(kr, indexerID, original)
+		token, err := encodeDLToken(kr, indexerID, mapper.PrimaryParentID(categories), original)
 		if err != nil {
 			return downloadBase + "/", g, true
 		}

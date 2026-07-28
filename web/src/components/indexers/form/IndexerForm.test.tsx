@@ -116,7 +116,11 @@ describe("IndexerForm", () => {
     if (submit.mode === "create") {
       expect(submit.body.definitionId).toBe("testtracker")
       expect(submit.body.slug).toBe("testtracker")
-      expect(submit.body.settings).toEqual({ apikey: "k123" })
+      // The matching settings ride along with their explicit defaults (both = today's
+      // engine behaviour); every other untouched field is stripped.
+      expect(submit.body.settings).toEqual({
+        apikey: "k123", andmatch_fold_punctuation: "false", degenerate_query_gate: "off",
+      })
       expect(submit.body.priority).toBe(25)
       expect(submit.body.minSeeders).toBe(0)
     }
@@ -161,6 +165,45 @@ describe("IndexerForm", () => {
     expect(body.settings?.query_limit).toBe("100")
     expect(body.settings?.grab_limit).toBe("20")
     expect(body.settings?.limits_unit).toBe("hour")
+  })
+
+  // autobrr/harbrr#394: both matching settings are reserved per-instance keys, so the
+  // form is the only place they can be set. Default off on create; stored values
+  // prefill and round-trip on edit.
+  it("create: the matching settings default to today's behaviour", () => {
+    const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+    renderForm(<IndexerForm definition={DEFINITION} pending={false} error={null} onSubmit={onSubmit} />)
+
+    fireEvent.click(screen.getByRole("button", { name: /Advanced/ }))
+    expect(screen.getByLabelText(/Ignore apostrophes/).getAttribute("data-state")).toBe("unchecked")
+    expect(screen.getByLabelText<HTMLSelectElement>(/Skip searches/).value).toBe("off")
+
+    fireEvent.click(screen.getByRole("button", { name: "Add indexer" }))
+    const body = onSubmit.mock.calls[0][0].body
+    expect(body.settings?.andmatch_fold_punctuation).toBe("false")
+    expect(body.settings?.degenerate_query_gate).toBe("off")
+  })
+
+  it("edit: matching settings prefill from the instance and submit on save", () => {
+    const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+    const existing: InstanceDetail = {
+      ...EXISTING,
+      settings: [
+        ...EXISTING.settings,
+        { name: "andmatch_fold_punctuation", value: "true", secret: false },
+        { name: "degenerate_query_gate", value: "auto", secret: false },
+      ],
+    }
+    renderForm(<IndexerForm definition={DEFINITION} existing={existing} pending={false} error={null} onSubmit={onSubmit} />)
+
+    fireEvent.click(screen.getByRole("button", { name: /Advanced/ }))
+    expect(screen.getByLabelText(/Ignore apostrophes/).getAttribute("data-state")).toBe("checked")
+    expect(screen.getByLabelText<HTMLSelectElement>(/Skip searches/).value).toBe("auto")
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+    const body = onSubmit.mock.calls[0][0].body
+    expect(body.settings?.andmatch_fold_punctuation).toBe("true")
+    expect(body.settings?.degenerate_query_gate).toBe("auto")
   })
 
   it("edit: sync-categories/toggles prefill from the instance and submit on save", () => {
@@ -239,6 +282,29 @@ describe("IndexerForm", () => {
     fireEvent.change(date, { target: { value: "" } })
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
     expect(onSubmit.mock.calls[0][0].body.expiresAt).toBe("")
+  })
+
+  it("edit: stored matching settings survive an unrelated edit", () => {
+    // Kills the recurring seeded-values false positive for the two engine settings:
+    // defaultValues' stored loop applies EVERY stored setting over the reserved-field
+    // defaults (settings-payload.ts), so "true"/"auto" must round-trip a name-only edit.
+    const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+    const existing: InstanceDetail = {
+      ...EXISTING,
+      settings: [
+        ...EXISTING.settings,
+        { name: "andmatch_fold_punctuation", value: "true", secret: false },
+        { name: "degenerate_query_gate", value: "auto", secret: false },
+      ],
+    }
+    renderForm(<IndexerForm definition={DEFINITION} existing={existing} pending={false} error={null} onSubmit={onSubmit} />)
+
+    fireEvent.change(screen.getByLabelText<HTMLInputElement>("Name"), { target: { value: "Renamed" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+
+    const submit = onSubmit.mock.calls[0][0]
+    expect(submit.body.settings?.andmatch_fold_punctuation).toBe("true")
+    expect(submit.body.settings?.degenerate_query_gate).toBe("auto")
   })
 
   it("edit: changing only the name preserves the stored expiry untouched", () => {

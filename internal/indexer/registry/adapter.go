@@ -45,6 +45,11 @@ type indexerAdapter struct {
 	// the resolve and a later SWR trigger.
 	cache      *SearchCache
 	builtEpoch uint64
+	// skipQuery is the instance's degenerate-query gate (autobrr/harbrr#394): true when
+	// this query's term is one the definition's own keywordsfilters reduce to nothing
+	// usable. nil for a native driver — those have no keywordsfilters to degrade a term
+	// — and it answers false on a Cardigann instance that did not opt in.
+	skipQuery func(search.Query) bool
 	// freeleechOnly is the instance's stored `freeleech` setting. The engine is built
 	// with that key cleared (so it always fetches the full catalog); the value is
 	// carried here only to drive the serve-time freeleech view in Search.
@@ -95,6 +100,18 @@ func (a *indexerAdapter) Capabilities() *mapper.Capabilities { return a.inner.Ca
 // bypass feed (full catalog, for qui/cross-seed) from a SINGLE tracker fetch — so a later
 // bypass poll never re-hits the tracker just because an *arr polled FL-only first.
 func (a *indexerAdapter) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
+	// (0) The degenerate-query gate, FIRST — ahead of the cache read and the budget
+	// reservation alike (autobrr/harbrr#394). A query this indexer's own keywordsfilters
+	// strip down to nothing usable cannot be answered by it, so it must cost nothing at
+	// all: no outbound request, no cache entry keyed on a question we will never ask
+	// again, no budget unit that a query with a chance of succeeding could have used.
+	// Returning here also means the skip can never reach the health log, the circuit
+	// breaker or the query stats — they all live further down, in liveSearch — so
+	// "skipped, not failed" needs no exclusions to enforce.
+	if a.skipQuery != nil && a.skipQuery(q) {
+		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, core.ErrDegenerateQuery)
+	}
+
 	// RSS/empty polls only: canonicalize categories to the def's default set AND clear
 	// Mode (for a driver that never reads it) so every RSS consumer (Sonarr/Radarr/qui,
 	// each narrowing with a different cat= and each arriving under a different t=)
@@ -217,7 +234,28 @@ func (a *indexerAdapter) liveSearch(ctx context.Context, query search.Query) ([]
 		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, err)
 	}
 	a.recordCircuitSuccess(ctx)
+	a.stats.RecordCategoryResults(a.instanceID, parentCategoryCounts(releases))
 	return releases, nil
+}
+
+// parentCategoryCounts tallies how many of the returned releases fall in each standard
+// PARENT category (2040 Movies/HD -> 2000 Movies), the "which indexer is actually good
+// for music" dimension (#403). Folding to the ~10 families — instead of keeping the
+// tracker's own categories — is what keeps the durable table tiny. A release with no
+// mappable standard category counts under mapper.UncategorizedID rather than being
+// dropped.
+func parentCategoryCounts(releases []*normalizer.Release) map[int]int64 {
+	if len(releases) == 0 {
+		return nil
+	}
+	counts := make(map[int]int64, 8)
+	for _, r := range releases {
+		if r == nil {
+			continue
+		}
+		counts[mapper.PrimaryParentID(r.Categories)]++
+	}
+	return counts
 }
 
 // learnQuotaSpent marks kind's budget spent until reset when err is a tracker-declared
@@ -274,6 +312,10 @@ func (a *indexerAdapter) Grab(ctx context.Context, link string) (*search.GrabRes
 	if !a.budget.ReserveGrab(ctx, a.instanceID, a.cfg, a.clock()) {
 		return nil, fmt.Errorf("registry: grab %q: %w", a.info.ID, core.ErrBudgetExhausted)
 	}
+	// Counted here, not at the top of the method: "attempts" then means the same for
+	// grabs as for queries — it reached the tracker — so a breaker/budget refusal (which
+	// never touched it) cannot depress the indexer's success rate.
+	a.stats.RecordGrabAttempt(a.instanceID)
 	result, err := a.inner.Grab(ctx, link)
 	if err != nil {
 		// Classify grab-time failures too: a 429/503 rate-limit, a first-op login/
@@ -285,8 +327,10 @@ func (a *indexerAdapter) Grab(ctx context.Context, link string) (*search.GrabRes
 		return nil, fmt.Errorf("registry: grab %q: %w", a.info.ID, err)
 	}
 	a.recordCircuitSuccess(ctx)
-	// Count success only — a failed grab produced no download.
-	a.stats.RecordGrab(a.instanceID)
+	// Count the success (the attempt above already counted the failures), under the
+	// grabbed release's parent category — carried on the context by the /dl proxy,
+	// which sealed it into the download token when the feed was served.
+	a.stats.RecordGrab(a.instanceID, core.GrabCategory(ctx))
 	return result, nil
 }
 
@@ -337,7 +381,34 @@ func (a *indexerAdapter) recordCircuitSuccess(ctx context.Context) {
 	if err := a.circuit.Upsert(ctx, a.db, recoverCircuit(state)); err != nil {
 		a.log.Warn().Str("indexer", a.info.ID).Str("error", apphttp.RedactError(err)).
 			Msg("registry: record circuit recovery failed")
+		return
 	}
+	a.notifyRecovery(ctx, state)
+}
+
+// notifyRecovery tells the sink an indexer is answering again, given the state as it
+// was BEFORE the recovery write. It fires on exactly one transition: clearing a disable
+// window that a failure actually set (DisabledTill non-zero — escalate always sets it,
+// and only this path clears it). So it is one message per outage episode: not on steady
+// healthy traffic (recordCircuitSuccess returns above at the baseline), not on a level-0
+// no-op, and not again on the further rung-by-rung descent that follows, whose windows
+// are already cleared.
+func (a *indexerAdapter) notifyRecovery(ctx context.Context, before database.CircuitState) {
+	if a.healthSink == nil || before.DisabledTill.IsZero() {
+		return
+	}
+	a.healthSink.OnRecoveryEvent(ctx, a.info.ID, recoveryDetail(before.InitialFailure, a.clock()))
+}
+
+// recoveryDetail writes the recovery message: how long the indexer was failing, so an
+// operator can tell a blip from a two-day outage without opening harbrr. A slug and two
+// timestamps — nothing secret to redact.
+func recoveryDetail(initialFailure, now time.Time) string {
+	if initialFailure.IsZero() || !now.After(initialFailure) {
+		return "Indexer is answering again; the circuit breaker's disable window is cleared."
+	}
+	return fmt.Sprintf("Indexer is answering again after %s of failures; the circuit breaker's disable window is cleared.",
+		now.Sub(initialFailure).Truncate(time.Second))
 }
 
 // escalateCircuit climbs the instance's escalation ladder one rung after a

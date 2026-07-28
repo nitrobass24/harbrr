@@ -151,6 +151,40 @@ func (c Category) Parent() string {
 	return c.Name
 }
 
+// UncategorizedID is the bucket for a release that carries no mappable standard
+// category (only synthesised custom ids, or none at all). It is deliberately NOT 8000
+// ("Other", a real standard family a release can genuinely be in) so per-category stats
+// keep "we could not classify this" distinct from "the tracker said Other".
+const UncategorizedID = 0
+
+// ParentID folds a standard category id onto its family root (2040 -> 2000). A custom
+// (1:1) id or an id outside the standard table has no family, so it folds to
+// UncategorizedID.
+func ParentID(id int) int {
+	cat, ok := GetByID(id)
+	if !ok {
+		return UncategorizedID
+	}
+	parent, ok := GetByName(cat.Parent())
+	if !ok {
+		return UncategorizedID
+	}
+	return parent.ID
+}
+
+// PrimaryParentID picks the family a release is counted under: the parent of its
+// lowest-numbered mappable standard category (Categories is sorted ascending, and a
+// release's standard ids sort ahead of its synthesised custom ones). A release with no
+// mappable standard category counts as UncategorizedID — never dropped.
+func PrimaryParentID(categories []int) int {
+	for _, id := range categories {
+		if parent := ParentID(id); parent != UncategorizedID {
+			return parent
+		}
+	}
+	return UncategorizedID
+}
+
 // adultCategoryFloor/adultCategoryCeil bound the XXX family in the standard
 // table ({6000 "XXX"} and its 60xx children). 7000 is Books, so the family is
 // the half-open [6000, 7000).

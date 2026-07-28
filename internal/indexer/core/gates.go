@@ -17,6 +17,17 @@ var (
 	// other consumers over.
 	ErrBudgetExhausted = errors.New("registry: indexer request budget exhausted for this period")
 
+	// ErrDegenerateQuery marks a Search the registry declined to send because the
+	// indexer's own keywordsfilters reduced the term to nothing that could answer the
+	// question — a CJK/Cyrillic/Thai query stripped down to a bare year, say
+	// (autobrr/harbrr#394, opted into per indexer). It is raised BEFORE the search
+	// cache and the request budget, so a gated search costs nothing: no request, no
+	// cache entry, no budget unit, no health event, no breaker movement, no failure
+	// stat. A per-indexer feed turns it into the standard empty-result document (an
+	// empty page is the honest Torznab answer to a question this indexer cannot be
+	// asked); the aggregate feed reports it as SkipDegenerateQuery.
+	ErrDegenerateQuery = errors.New("registry: query has no usable search term for this indexer")
+
 	// ErrCircuitOpen is returned by the registry's dispatch gate in place of hitting the
 	// tracker. It is deliberately outside the health classification: a skipped call is
 	// not a new failure and must not feed back into the escalation it is itself

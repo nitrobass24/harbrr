@@ -234,7 +234,7 @@ func ServeGrab(w http.ResponseWriter, r *http.Request, idx core.Indexer, dlToken
 		errw(w, http.StatusServiceUnavailable, "download proxy is not enabled")
 		return
 	}
-	link, err := decodeDLToken(dlToken, idx.Info().ID, token)
+	categoryID, link, err := decodeDLToken(dlToken, idx.Info().ID, token)
 	if err != nil {
 		// The error never carries the link; an invalid/forged token is a bad request.
 		errw(w, http.StatusBadRequest, "invalid download token")
@@ -244,7 +244,9 @@ func ServeGrab(w http.ResponseWriter, r *http.Request, idx core.Indexer, dlToken
 	// bound to this indexer, including when credential storage runs in plaintext mode.
 	// An apikey-holder therefore cannot forge an attacker-host link that makes Grab
 	// disclose the indexer's cookie/header credentials or act as an SSRF primitive.
-	result, err := idx.Grab(r.Context(), link)
+	// The sealed category rides through on the context so the stats layer can tally the
+	// grab under the release's family without widening the Indexer contract (#403).
+	result, err := idx.Grab(core.WithGrabCategory(r.Context(), categoryID), link)
 	if err != nil {
 		logInternalError(log, "grab", idx.Info().ID, err)
 		errw(w, http.StatusInternalServerError, internalErrorDescription(err))
@@ -487,6 +489,16 @@ func (h *handler) writeResults(w http.ResponseWriter, r *http.Request, idx core.
 	// SearchReleasesWithCaps is the shared read pipeline (map -> search -> dedupe ->
 	// filter -> page); the management API's JSON search runs the same code for parity.
 	res, err := core.SearchReleasesWithCaps(ctx, idx, caps, q)
+	// A degenerate-query skip is not a failure: this indexer's own keywords filters
+	// leave nothing of the question to search on (autobrr/harbrr#394), so it was never
+	// asked. The honest Torznab answer on a per-indexer feed is the STANDARD empty
+	// result document — identical bytes to a search that ran and matched nothing —
+	// which is exactly what the empty, correctly-paged result the pipeline hands back
+	// with the sentinel serializes to below. Only the aggregate feed distinguishes the
+	// two, in its per-member ledger.
+	if errors.Is(err, core.ErrDegenerateQuery) {
+		err = nil
+	}
 	if err != nil {
 		h.writeInternalError(w, "search", idx.Info().ID, err)
 		return

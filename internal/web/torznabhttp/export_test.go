@@ -62,7 +62,7 @@ func TestNewDLRewriterSealsLink(t *testing.T) {
 		t.Fatal("expected a rewriter")
 	}
 	const raw = "https://demo.test/download?passkey=SECRETPASSKEY123" //nolint:gosec // G101: synthetic test passkey
-	link, guid, ok := rw(raw)
+	link, guid, ok := rw(raw, nil)
 	if !ok {
 		t.Fatal("expected the link to be rewritten")
 	}
@@ -79,14 +79,14 @@ func TestNewDLRewriterSealsLink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse /dl link: %v", err)
 	}
-	back, err := decodeDLToken(kr, "demo", u.Query().Get("token"))
+	_, back, err := decodeDLToken(kr, "demo", u.Query().Get("token"))
 	if err != nil {
 		t.Fatalf("decodeDLToken: %v", err)
 	}
 	if back != raw {
-		t.Errorf("token round-trip = %q, want %q", back, raw)
+		t.Error("token round-trip differs from the input (values withheld: link-shaped)")
 	}
-	if _, _, ok := rw("magnet:?xt=urn:btih:abc"); ok {
+	if _, _, ok := rw("magnet:?xt=urn:btih:abc", nil); ok {
 		t.Error("expected a magnet to be served as-is (ok=false)")
 	}
 }
@@ -104,7 +104,7 @@ func TestNewDLRewriterSealsLoginAuthLink(t *testing.T) {
 		t.Fatal("expected a rewriter for a login-auth indexer")
 	}
 	const raw = "https://demo.test/download/9/Release.torrent"
-	link, _, ok := rw(raw)
+	link, _, ok := rw(raw, nil)
 	if !ok || !strings.HasPrefix(link, "http://h.test/api/indexers/demo/dl?") {
 		t.Fatalf("expected the login-auth link sealed behind /dl, got ok=%v link=%q", ok, link)
 	}
