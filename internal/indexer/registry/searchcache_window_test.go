@@ -182,10 +182,10 @@ func TestAllTimeWindowSurvivesBucketEviction(t *testing.T) {
 	}
 }
 
-// TestFlushRestartsWindowCoverage proves a counter reset restarts the coverage
-// clock: after it, the bucketed views legitimately hold nothing and must not claim
-// to reach back before the reset.
-func TestFlushRestartsWindowCoverage(t *testing.T) {
+// TestResetRestartsWindowCoverage proves a stats reset restarts the coverage clock:
+// after it, the bucketed views legitimately hold nothing and must not claim to reach
+// back before the reset.
+func TestResetRestartsWindowCoverage(t *testing.T) {
 	t.Parallel()
 	sc, instID, clk := testCache(t, keywordTTL, 0)
 	inner := &fakeInner{releases: relSet("A")}
@@ -197,9 +197,7 @@ func TestFlushRestartsWindowCoverage(t *testing.T) {
 	}
 	advance(clk, 3*time.Hour)
 	resetAt := sc.clock()
-	if _, err := sc.Flush(ctx); err != nil {
-		t.Fatalf("Flush: %v", err)
-	}
+	sc.ResetCounters(ctx)
 
 	stats, err := sc.Stats(ctx)
 	if err != nil {
@@ -210,11 +208,12 @@ func TestFlushRestartsWindowCoverage(t *testing.T) {
 	}
 }
 
-// TestFlushDuringInFlightMissNeverGoesNegative pins the serveMiss/Flush race: a
-// flush landing while a miss is in flight sweeps the up-front miss increment to
-// zero, so the request's own error rollback must be skipped — without the
-// flush-epoch guard the counters would go negative.
-func TestFlushDuringInFlightMissNeverGoesNegative(t *testing.T) {
+// TestResetDuringInFlightMissNeverGoesNegative pins the serveMiss/ResetCounters
+// race: a reset landing while a miss is in flight sweeps the up-front miss increment
+// to zero, so the request's own error rollback must be skipped — without the epoch
+// guard the counters would go negative. (The reset moved off Flush in the #369
+// follow-up; this test follows it to the new entry point.)
+func TestResetDuringInFlightMissNeverGoesNegative(t *testing.T) {
 	t.Parallel()
 	sc, instID, _ := testCache(t, keywordTTL, 0)
 	gate := make(chan struct{})
@@ -229,9 +228,7 @@ func TestFlushDuringInFlightMissNeverGoesNegative(t *testing.T) {
 		done <- err
 	}()
 	<-firstSeen // the miss increment has landed; the live search is blocked
-	if _, err := sc.Flush(ctx); err != nil {
-		t.Fatalf("Flush: %v", err)
-	}
+	sc.ResetCounters(ctx)
 	close(gate) // release the live search to fail
 	if err := <-done; err == nil {
 		t.Fatal("want search error")
@@ -242,7 +239,7 @@ func TestFlushDuringInFlightMissNeverGoesNegative(t *testing.T) {
 		t.Fatalf("Stats: %v", err)
 	}
 	if stats.Hits != 0 || stats.Misses != 0 {
-		t.Errorf("counters after flush swept an in-flight miss = %d/%d, want 0/0 (never negative)",
+		t.Errorf("counters after a reset swept an in-flight miss = %d/%d, want 0/0 (never negative)",
 			stats.Hits, stats.Misses)
 	}
 }

@@ -1239,6 +1239,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/cache/stats/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset the search-results cache statistics
+         * @description Zeroes the hit/miss/suppressed counters fleet-wide — in-memory, persisted, and every rolling window — and reports the totals it discarded. Cached ENTRIES are untouched; discarding those is /api/cache/flush. The cleared history is not recoverable. When caching is disabled the response is zeroes.
+         */
+        post: operations["cacheStatsReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/cache/flush": {
         parameters: {
             query?: never;
@@ -1250,7 +1270,7 @@ export interface paths {
         put?: never;
         /**
          * Flush the search-results cache
-         * @description Deletes every cache entry and returns the count purged, and resets the cumulative hit/miss/suppressed counters and every rolling window. When caching is disabled the response is {"flushed": 0}.
+         * @description Deletes every cache entry and returns the count purged. The hit/miss/ suppressed counters are cumulative and monotonic across a flush — see /api/cache/stats/reset to zero those. When caching is disabled the response is {"flushed": 0}.
          */
         post: operations["cacheFlush"];
         delete?: never;
@@ -2370,7 +2390,7 @@ export interface components {
             hits?: number;
             /**
              * Format: int64
-             * @description Global cumulative cache misses (the aggregate of the per-indexer byIndexer rows). Persisted across restarts. A live search that fails counts as neither hit nor miss; a cache flush resets the counters.
+             * @description Global cumulative cache misses (the aggregate of the per-indexer byIndexer rows). Persisted across restarts. A live search that fails counts as neither hit nor miss; only POST /api/cache/stats/reset zeroes the counters — a cache flush does not.
              */
             misses?: number;
             /**
@@ -2382,7 +2402,7 @@ export interface components {
             windows?: components["schemas"]["CacheStatsWindow"][];
             /**
              * Format: int64
-             * @description Unix seconds at which the in-memory hour buckets started accumulating — process start, or the last flush. The 1d/7d/30d figures reach back at most this far, so a client MUST NOT present a window longer than now - windowsSince as a full period of data. The "all" window is exempt: it reads the persisted cumulative counters.
+             * @description Unix seconds at which the in-memory hour buckets started accumulating — process start, or the last stats reset. The 1d/7d/30d figures reach back at most this far, so a client MUST NOT present a window longer than now - windowsSince as a full period of data. The "all" window is exempt: it reads the persisted cumulative counters.
              */
             windowsSince?: number;
             /**
@@ -2407,7 +2427,7 @@ export interface components {
             lastUsedAt?: number | null;
             /**
              * Format: int64
-             * @description Cumulative tracker requests served from cache, persisted across restarts — the headline kind-to-trackers metric. Mirrors hits; unlike totalHits it never drops when cached entries are reaped — only an explicit cache flush resets it.
+             * @description Cumulative tracker requests served from cache, persisted across restarts — the headline kind-to-trackers metric. Mirrors hits; unlike totalHits it never drops when cached entries are reaped — only an explicit stats reset zeroes it.
              */
             trackerHitsSaved?: number;
             /**
@@ -2431,6 +2451,15 @@ export interface components {
              * @description hits / (hits + misses) in this window, or 0 with no traffic.
              */
             hitRatio: number;
+        };
+        /** @description The counter totals a stats reset discarded (not recoverable). */
+        CacheStatsResetResult: {
+            /** Format: int64 */
+            clearedHits: number;
+            /** Format: int64 */
+            clearedMisses: number;
+            /** Format: int64 */
+            clearedBreakerSuppressed: number;
         };
         /** @description One indexer's cache observability figures. */
         CacheIndexerStats: {
@@ -5214,6 +5243,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CacheStats"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    cacheStatsReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description the counter totals the reset discarded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CacheStatsResetResult"];
                 };
             };
             401: components["responses"]["Unauthorized"];

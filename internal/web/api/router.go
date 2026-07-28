@@ -257,6 +257,7 @@ func (rt *router) routes() http.Handler {
 // mountResourceRoutes split.
 func (rt *router) mountSystemRoutes(r chi.Router) {
 	r.Get("/api/cache/stats", rt.cacheStats)
+	r.Post("/api/cache/stats/reset", rt.cacheStatsReset)
 	r.Post("/api/cache/flush", rt.cacheFlush)
 	r.Get("/api/cache/config", rt.cacheConfigGet)
 	r.Put("/api/cache/config", rt.cacheConfigPut)

@@ -41,6 +41,13 @@ type cacheStatsWindowB struct {
 	HitRatio float64 `json:"hitRatio"`
 }
 
+// cacheStatsResetBody is the decoded /api/cache/stats/reset response.
+type cacheStatsResetBody struct {
+	ClearedHits              int64 `json:"clearedHits"`
+	ClearedMisses            int64 `json:"clearedMisses"`
+	ClearedBreakerSuppressed int64 `json:"clearedBreakerSuppressed"`
+}
+
 // cacheIndexerStatsB is the decoded per-indexer stats row.
 type cacheIndexerStatsB struct {
 	InstanceID        int64   `json:"instanceId"`
@@ -403,6 +410,70 @@ func TestCacheFlushHappyPath(t *testing.T) {
 	}
 	if flush.Flushed != 0 {
 		t.Errorf("second flush.flushed = %d, want 0", flush.Flushed)
+	}
+}
+
+// TestCacheStatsResetKeepsEntries pins the split the #369 follow-up introduced: the
+// reset endpoint discards STATISTICS, the flush endpoint discards RESULTS. Resetting
+// must leave the cached rows exactly where they were.
+func TestCacheStatsResetKeepsEntries(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 23, 12, 0, 0, 0, time.UTC)
+	e := newEnvWithCache(t, api.Config{}, cacheBuilder(now))
+	base, c := serve(t, e)
+	setupAndLogin(t, base, c)
+
+	instanceID := addTestIndexer(t, e, base, c, "tt")
+	seedCacheEntry(t, e.db, instanceID, now)
+
+	resp, body := do(t, c, http.MethodPost, base+"/api/cache/stats/reset", nil, nil)
+	mustStatus(t, resp, body, http.StatusOK)
+	var reset cacheStatsResetBody
+	if err := json.Unmarshal(body, &reset); err != nil {
+		t.Fatalf("decode reset: %v", err)
+	}
+	// No traffic was served through the cache, so there was nothing to clear — the
+	// keys must still be present (a dropped key would decode to 0 and pass silently).
+	var resetTop map[string]json.RawMessage
+	if err := json.Unmarshal(body, &resetTop); err != nil {
+		t.Fatalf("decode reset object: %v", err)
+	}
+	for _, key := range []string{"clearedHits", "clearedMisses", "clearedBreakerSuppressed"} {
+		if _, ok := resetTop[key]; !ok {
+			t.Errorf("reset JSON missing %q key: %s", key, body)
+		}
+	}
+	if reset.ClearedHits != 0 || reset.ClearedMisses != 0 {
+		t.Errorf("cleared = %+v, want zeroes (no traffic was served)", reset)
+	}
+
+	resp, body = do(t, c, http.MethodGet, base+"/api/cache/stats", nil, nil)
+	mustStatus(t, resp, body, http.StatusOK)
+	var stats cacheStatsBody
+	if err := json.Unmarshal(body, &stats); err != nil {
+		t.Fatalf("decode stats: %v", err)
+	}
+	if stats.Entries != 1 {
+		t.Errorf("entries after a stats reset = %d, want 1 (reset must not purge cached rows)", stats.Entries)
+	}
+}
+
+func TestCacheStatsResetDisabled(t *testing.T) {
+	t.Parallel()
+
+	e := newEnv(t, api.Config{}) // no cache wired
+	base, c := serve(t, e)
+	setupAndLogin(t, base, c)
+
+	resp, body := do(t, c, http.MethodPost, base+"/api/cache/stats/reset", nil, nil)
+	mustStatus(t, resp, body, http.StatusOK)
+	var reset cacheStatsResetBody
+	if err := json.Unmarshal(body, &reset); err != nil {
+		t.Fatalf("decode reset: %v", err)
+	}
+	if reset.ClearedHits != 0 || reset.ClearedMisses != 0 || reset.ClearedBreakerSuppressed != 0 {
+		t.Errorf("cleared = %+v, want zeroes with caching off", reset)
 	}
 }
 

@@ -28,7 +28,8 @@ type cacheStatsResponse struct {
 	// Hits/Misses are the global counters (the sum across all indexers, the aggregate
 	// of the per-indexer byIndexer rows). hitRatio is hits / (hits + misses) over the
 	// same window. All three are cumulative and survive a restart; a failed live
-	// search counts as neither hit nor miss, and a cache flush resets them.
+	// search counts as neither hit nor miss, and only an explicit stats reset
+	// (POST /api/cache/stats/reset) zeroes them — a cache flush does not.
 	Hits     int64   `json:"hits"`
 	Misses   int64   `json:"misses"`
 	HitRatio float64 `json:"hitRatio"`
@@ -36,7 +37,7 @@ type cacheStatsResponse struct {
 	// "30d", "all" — in that order, so a client can switch window with no refetch.
 	Windows []cacheStatsWindow `json:"windows"`
 	// WindowsSince is the Unix-seconds instant the in-memory buckets started
-	// accumulating (process start, or the last flush). The 1d/7d/30d figures
+	// accumulating (process start, or the last stats reset). The 1d/7d/30d figures
 	// reach back at most this far, so a client MUST NOT present a window longer than
 	// now - windowsSince as a full period of data. "all" is exempt: it reads the
 	// persisted cumulative counters.
@@ -48,7 +49,7 @@ type cacheStatsResponse struct {
 	// TrackerHitsSaved is the cumulative count of tracker requests served from cache —
 	// the headline kind-to-trackers metric. It mirrors Hits (same cumulative,
 	// restart-persisted counter) and, unlike totalHits, never drops when cached
-	// entries are reaped — only an explicit cache flush resets it.
+	// entries are reaped — only an explicit stats reset does.
 	TrackerHitsSaved int64 `json:"trackerHitsSaved"`
 	// BreakerSuppressed is the cumulative count of misses short-circuited by the
 	// negative-result breaker (extra tracker requests spared a failing tracker).
@@ -206,6 +207,31 @@ func (rt *router) cacheFlush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, cacheFlushResponse{Flushed: n})
+}
+
+// cacheStatsResetResponse reports the counter totals the reset discarded, so the
+// caller can show what was thrown away (it is not recoverable).
+type cacheStatsResetResponse struct {
+	ClearedHits              int64 `json:"clearedHits"`
+	ClearedMisses            int64 `json:"clearedMisses"`
+	ClearedBreakerSuppressed int64 `json:"clearedBreakerSuppressed"`
+}
+
+// cacheStatsReset zeroes the cache hit/miss/suppressed counters fleet-wide —
+// in-memory, persisted, and every rolling window — and reports what it cleared.
+// Cached ENTRIES are untouched: discarding those is /api/cache/flush. With caching
+// disabled it answers 200 with zeroes rather than 404.
+func (rt *router) cacheStatsReset(w http.ResponseWriter, r *http.Request) {
+	if rt.cache == nil {
+		writeJSON(w, http.StatusOK, cacheStatsResetResponse{})
+		return
+	}
+	cleared := rt.cache.ResetCounters(r.Context())
+	writeJSON(w, http.StatusOK, cacheStatsResetResponse{
+		ClearedHits:              cleared.Hits,
+		ClearedMisses:            cleared.Misses,
+		ClearedBreakerSuppressed: cleared.Suppressed,
+	})
 }
 
 // cacheConfigResponse is the management view of the runtime-tunable cache config.

@@ -88,7 +88,7 @@ func (w *hourWindow) coverageSince() time.Time {
 	return w.since
 }
 
-// reset zeroes the window and restarts its coverage clock at now (a cache flush, and
+// reset zeroes the window and restarts its coverage clock at now (a stats reset, and
 // the cache's own construction).
 func (w *hourWindow) reset(now time.Time) {
 	w.mu.Lock()

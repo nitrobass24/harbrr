@@ -7,7 +7,7 @@ import { STATS_WINDOWS, breakerLabel, coverageNote, statsWindow, unixAgo } from 
 import type { StatsWindowKey } from "@/components/cache/cache-format"
 import { safeInt } from "@/components/cache/safe-int"
 import { LoadError, LoadingBlock } from "@/components/ui/load-error"
-import { useCacheConfig, useCacheStats, useFlushCache, useUpdateCacheConfig } from "@/hooks/useSettings"
+import { useCacheConfig, useCacheStats, useFlushCache, useResetCacheStats, useUpdateCacheConfig } from "@/hooks/useSettings"
 import { formatSize } from "@/lib/format"
 import { notifyError, notifySuccess } from "@/lib/notify"
 import { cn } from "@/lib/utils"
@@ -19,6 +19,7 @@ import type { CacheConfig } from "@/lib/api"
 export function CacheView() {
   const stats = useCacheStats()
   const flush = useFlushCache()
+  const reset = useResetCacheStats()
   // Which window the hit tiles read. Every window ships in the one stats GET, so
   // switching is instant — no refetch, no server-side ?window= parameter.
   const [windowKey, setWindowKey] = useState<StatsWindowKey>("all")
@@ -80,7 +81,10 @@ export function CacheView() {
         </div>
       )}
 
-      <div>
+      {/* Two destructive actions that must never be confused: flush discards cached
+          RESULTS (they refill on the next poll), reset discards the STATISTICS (gone
+          for good) — hence the confirm on reset only. */}
+      <div className="flex flex-wrap items-center gap-2">
         <Button
           variant="outline"
           size="sm"
@@ -90,8 +94,25 @@ export function CacheView() {
             onError: (err) => notifyError("Flush failed", err),
           })}
         >
-          {flush.isPending ? "Flushing…" : "Flush cache"}
+          {flush.isPending ? "Flushing…" : "Flush cached results"}
         </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={reset.isPending}
+          onClick={() => {
+            if (!globalThis.confirm("Reset cache statistics? Hit/miss history is discarded for every indexer and cannot be recovered. Cached results are kept.")) return
+            reset.mutate(undefined, {
+              onSuccess: (r) => notifySuccess(`Statistics reset — discarded ${r.clearedHits} hits and ${r.clearedMisses} misses`),
+              onError: (err) => notifyError("Stats reset failed", err),
+            })
+          }}
+        >
+          {reset.isPending ? "Resetting…" : "Reset statistics"}
+        </Button>
+        <span className="text-[12px] text-faint">
+          Flush drops cached results (they refill); reset only clears the counters.
+        </span>
       </div>
 
       <ConfigForm />
