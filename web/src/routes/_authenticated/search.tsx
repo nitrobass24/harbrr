@@ -1,4 +1,4 @@
-import { useDeferredValue, useMemo, useRef, useState } from "react"
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { ChevronDown, Filter, Search as SearchIcon, X } from "lucide-react"
 import { PageHeader } from "@/components/layout/PageHeader"
@@ -79,13 +79,18 @@ function SearchPage() {
   const { shown, invalidFilter } = useMemo(() => {
     const matched = filterRows(rows, deferredFilter, catNames)
     if (matched !== null) {
-      lastValidFilter.current = deferredFilter
       return { shown: matched, invalidFilter: false }
     }
     // Half-typed or uncompilable pattern: re-apply the last valid one to the current
     // rows so the view stays put instead of blanking.
     return { shown: filterRows(rows, lastValidFilter.current, catNames) ?? rows, invalidFilter: true }
   }, [rows, deferredFilter, catNames])
+  // The last-valid ledger updates POST-COMMIT, never during render: an abandoned
+  // deferred pass must not be able to write a filter string no committed view showed
+  // (review finding — render-phase ref mutation is unsafe under concurrent rendering).
+  useEffect(() => {
+    if (!invalidFilter) lastValidFilter.current = deferredFilter
+  }, [invalidFilter, deferredFilter])
 
   const failed = results.map((r, i) => (r.isError ? active[i] : null)).filter((s): s is string => s !== null)
   const searching = submitted !== null && results.some((r) => r.isLoading)
