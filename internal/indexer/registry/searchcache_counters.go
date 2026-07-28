@@ -100,7 +100,7 @@ func (c *SearchCache) ResetCounters(ctx context.Context) ClearedCounters {
 		Misses:     c.misses.Load(),
 		Suppressed: c.breakerSuppressed.Load(),
 	}
-	c.flushEpoch.Add(1)
+	c.resetEpoch.Add(1)
 	// Subtract each instance's swapped counts from the globals (mirrors
 	// ForgetInstance) so a concurrent in-flight increment is never lost twice.
 	c.instCounters.Range(func(_, v any) bool {

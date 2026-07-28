@@ -73,11 +73,11 @@ type SearchCache struct {
 	// stats views (global only, in-memory — see searchcache_window.go).
 	window hourWindow
 
-	// flushEpoch advances on every ResetCounters sweep. serveMiss snapshots it
+	// resetEpoch advances on every ResetCounters sweep. serveMiss snapshots it
 	// around its up-front miss increment: if a reset landed mid-request, the
 	// increment was already swept to zero, so neither the error rollback (which
 	// would drive the counters negative) nor the success-path window bump applies.
-	flushEpoch atomic.Int64
+	resetEpoch atomic.Int64
 
 	// counterPersistMu serializes FlushCounters' snapshot+upsert loop against
 	// ResetCounters' sweep+DeleteAll, so a cleanup-tick persistence pass can never
@@ -410,11 +410,11 @@ func (c *SearchCache) effectiveExpiry(entry database.SearchCacheEntry, cfg map[s
 // The miss is still recorded up front (so an in-flight miss is observable — the
 // follower tests synchronize on it) and rolled back on the error paths.
 func (c *SearchCache) serveMiss(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, live liveSearchFn, q search.Query, key string) ([]*normalizer.Release, error) {
-	epoch := c.flushEpoch.Load()
+	epoch := c.resetEpoch.Load()
 	c.misses.Add(1)
 	c.counters(instanceID).misses.Add(1)
 	releases, err := c.runMiss(ctx, instanceID, cfg, builtEpoch, live, q, key)
-	if c.flushEpoch.Load() != epoch {
+	if c.resetEpoch.Load() != epoch {
 		// A ResetCounters swept the counters while this miss was in flight: the
 		// up-front increment has already been zeroed, so there is nothing to roll
 		// back (doing so would drive the counters negative) and the pre-reset
