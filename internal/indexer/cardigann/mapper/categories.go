@@ -151,6 +151,56 @@ func (c Category) Parent() string {
 	return c.Name
 }
 
+// adultCategoryFloor/adultCategoryCeil bound the XXX family in the standard
+// table ({6000 "XXX"} and its 60xx children). 7000 is Books, so the family is
+// the half-open [6000, 7000).
+const (
+	adultCategoryFloor = 6000
+	adultCategoryCeil  = 7000
+)
+
+// IsAdultCategory reports whether id is a standard XXX-family category id. It is
+// the single definition of "adult" behind the operator's hide-adult-categories
+// setting; a synthesised custom (1:1) id is never adult by this test (its id is
+// derived from the tracker's own id), so category-list consumers use
+// Capabilities.AdultCategoryIDs instead.
+func IsAdultCategory(id int) bool {
+	return id >= adultCategoryFloor && id < adultCategoryCeil
+}
+
+// AdultCategoryIDs returns the advertised category ids to hide when the operator
+// asked for the XXX taxonomy to be out of sight: every standard XXX-family id,
+// plus every synthesised custom (1:1) category whose tracker category also maps
+// into that family. The custom entries matter because they carry the tracker's
+// own adult label ("desc"), so dropping only the standard ids would leave those
+// labels on screen — the exact thing the setting exists to prevent.
+func (c *Capabilities) AdultCategoryIDs() map[int]struct{} {
+	hide := make(map[int]struct{})
+	for _, cat := range c.Categories {
+		if IsAdultCategory(cat.ID) {
+			hide[cat.ID] = struct{}{}
+		}
+	}
+	if c.CategoryMap == nil {
+		return hide
+	}
+	adultTrackerCats := make(map[string]struct{})
+	for _, e := range c.CategoryMap.entries {
+		if IsAdultCategory(e.newznabID) {
+			adultTrackerCats[strings.ToLower(e.trackerCategory)] = struct{}{}
+		}
+	}
+	for _, e := range c.CategoryMap.entries {
+		if e.newznabID < CustomCategoryOffset {
+			continue
+		}
+		if _, adult := adultTrackerCats[strings.ToLower(e.trackerCategory)]; adult {
+			hide[e.newznabID] = struct{}{}
+		}
+	}
+	return hide
+}
+
 // StandardCategories returns a copy of the full canonical table in id order.
 func StandardCategories() []Category {
 	out := make([]Category, len(standardCategories))

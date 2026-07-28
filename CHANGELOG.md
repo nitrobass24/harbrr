@@ -8,6 +8,15 @@ For each release, the section between its heading and the `release-header-end`
 marker is published verbatim as the GitHub Release's highlights; goreleaser appends
 the grouped feature/fix commit list beneath it.
 
+## [Unreleased]
+
+### Changed
+
+- **Breaking (management API):** the derived indexer health status is now tri-state.
+  `unhealthy` is renamed `failing`, a new `unknown` state appears when nothing recent is
+  known, and the fleet-status tally replaces `unhealthy` with `failing` + `unknown`
+  fields. Pre-1.0 change, no compatibility shim.
+
 ## [0.1.0-alpha] - 2026-07-12
 
 The first public cut of harbrr — the tracker and indexer fabric for the autobrr

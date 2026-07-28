@@ -11,6 +11,7 @@ import (
 	"github.com/autobrr/harbrr/internal/auth"
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
+	"github.com/autobrr/harbrr/internal/notify"
 )
 
 // reap is the single skeleton behind every maintenance goroutine (session and
@@ -58,7 +59,7 @@ func fixedInterval(d time.Duration) func() time.Duration {
 // shared shutdown WaitGroup, so App.Run joins them all before closing the database.
 func startReapers(ctx context.Context, wg *sync.WaitGroup, db *database.DB,
 	store *database.SessionStore, sc *registry.SearchCache, reg *registry.Registry,
-	authSvc *auth.Service, log zerolog.Logger,
+	authSvc *auth.Service, expiry *notify.ExpiryScanner, log zerolog.Logger,
 ) {
 	startSessionCleanup(ctx, wg, store, log)
 	startSearchCacheCleanup(ctx, wg, sc, log)
@@ -66,6 +67,15 @@ func startReapers(ctx context.Context, wg *sync.WaitGroup, db *database.DB,
 	startHealthEventCleanup(ctx, wg, db, log)
 	startAPIKeyTouchFlush(ctx, wg, authSvc, log)
 	startRSSWarmer(ctx, wg, reg, log)
+	startExpiryScan(ctx, wg, expiry)
+}
+
+// startExpiryScan runs the per-indexer VIP/membership expiry scan (#399) on the same
+// reap skeleton as everything else. No final flush: the scan's only write is the
+// fired-threshold ledger, committed inline as each event is dispatched, so there is
+// never anything buffered at shutdown.
+func startExpiryScan(ctx context.Context, wg *sync.WaitGroup, expiry *notify.ExpiryScanner) {
+	reap(ctx, wg, fixedInterval(notify.ExpiryScanInterval), expiry.TickOnce, nil)
 }
 
 // startRSSWarmer runs the RSS warm-cache poller (autobrr/harbrr#252; ADR 0005)

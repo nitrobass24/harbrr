@@ -21,12 +21,15 @@ type settingFieldResponse struct {
 	Secret  bool              `json:"secret"`
 }
 
-// definitionDetailResponse is a definition's full schema: the summary, its ordered
-// settings fields, and its capabilities. This is the DEFINITION schema (cleartext
-// labels/defaults + a secret flag), not a configured instance's stored settings, so
-// it carries no instance secret.
+// definitionDetailResponse is a definition's full schema: the summary, its known
+// host links, its ordered settings fields, and its capabilities. This is the
+// DEFINITION schema (cleartext labels/defaults + a secret flag), not a configured
+// instance's stored settings, so it carries no instance secret. links is the
+// candidate host list the base-URL override picks from (autobrr/harbrr#401); the
+// effective host is the override if set, else links[0].
 type definitionDetailResponse struct {
 	definitionSummary
+	Links    []string               `json:"links"`
 	Settings []settingFieldResponse `json:"settings"`
 	Caps     capabilitiesResponse   `json:"caps"`
 }
@@ -46,7 +49,7 @@ func (rt *router) getDefinition(w http.ResponseWriter, r *http.Request) {
 		rt.writeServiceError(w, "definition capabilities", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toDefinitionDetail(def, caps))
+	writeJSON(w, http.StatusOK, toDefinitionDetail(def, caps, rt.adultCats.Hidden()))
 }
 
 // lookupDefinition resolves a definition id to a vendored (loader, which validates
@@ -65,7 +68,9 @@ func (rt *router) lookupDefinition(id string) *loader.Definition {
 }
 
 // toDefinitionDetail maps a definition + its built caps to the API view.
-func toDefinitionDetail(def *loader.Definition, caps *mapper.Capabilities) definitionDetailResponse {
+// hideAdult drops the XXX taxonomy from the caps block, so the add-indexer
+// form's category picker honors the global setting like every other picker.
+func toDefinitionDetail(def *loader.Definition, caps *mapper.Capabilities, hideAdult bool) definitionDetailResponse {
 	settings := make([]settingFieldResponse, 0, len(def.Settings))
 	for _, s := range def.Settings {
 		sf := settingFieldResponse{
@@ -78,7 +83,10 @@ func toDefinitionDetail(def *loader.Definition, caps *mapper.Capabilities) defin
 	}
 	return definitionDetailResponse{
 		definitionSummary: summaryOf(def),
-		Settings:          settings,
-		Caps:              toCapabilitiesResponse(caps),
+		// Copied into a fresh slice so the field is never null on the wire (the
+		// schema declares links required) and never aliases the native catalog's.
+		Links:    append([]string{}, def.Links...),
+		Settings: settings,
+		Caps:     toCapabilitiesResponse(caps, hideAdult),
 	}
 }

@@ -49,8 +49,8 @@ func TestSearchRecordsHealthEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Status: %v", err)
 	}
-	if st.Status != "unhealthy" {
-		t.Errorf("status = %q, want unhealthy", st.Status)
+	if st.Status != "failing" {
+		t.Errorf("status = %q, want failing", st.Status)
 	}
 	if len(st.Events) != 1 || st.Events[0].Kind != domain.HealthRateLimited {
 		t.Fatalf("events = %+v, want exactly one rate_limited", st.Events)
@@ -107,8 +107,8 @@ func TestSuccessfulTestClearsCurrentHealth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Status before Test: %v", err)
 	}
-	if before.Status != "unhealthy" {
-		t.Fatalf("status before Test = %q, want unhealthy", before.Status)
+	if before.Status != "failing" {
+		t.Fatalf("status before Test = %q, want failing", before.Status)
 	}
 	if err := reg.Test(ctx, "tt"); err != nil {
 		t.Fatalf("Test: %v", err)

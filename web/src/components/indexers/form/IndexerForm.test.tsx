@@ -32,6 +32,7 @@ const DEFINITION: DefinitionDetail = {
   id: "testtracker",
   name: "Test Tracker",
   type: "private",
+  links: ["https://tt.example", "https://mirror.tt.example"],
   settings: [
     { name: "username", label: "Username", type: "text", secret: false },
     { name: "apikey", label: "API Key", type: "password", secret: true },
@@ -62,6 +63,9 @@ const EXISTING: InstanceDetail = {
   enableRss: true,
   enableAutomaticSearch: true,
   enableInteractiveSearch: true,
+  expiresAt: "",
+  expiryKind: "" as const,
+  expiryLifetime: false,
   createdAt: "2026-07-01T00:00:00Z",
   updatedAt: "2026-07-01T00:00:00Z",
   settings: [
@@ -191,6 +195,82 @@ describe("IndexerForm", () => {
     expect(body.enableInteractiveSearch).toBe(true)
   })
 
+  it("create: an untouched expiry group submits as untracked", () => {
+    const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+    renderForm(<IndexerForm definition={DEFINITION} pending={false} error={null} onSubmit={onSubmit} />)
+
+    fireEvent.change(screen.getByLabelText("API Key"), { target: { value: "k123" } })
+    fireEvent.click(screen.getByRole("button", { name: /Advanced/ }))
+    expect(screen.getByLabelText<HTMLInputElement>(/^Expiry \(optional\)/).value).toBe("")
+    fireEvent.click(screen.getByRole("button", { name: "Add indexer" }))
+
+    const body = onSubmit.mock.calls[0][0].body
+    expect(body.expiresAt).toBe("")
+    expect(body.expiryLifetime).toBe(false)
+  })
+
+  it("create: a date and kind ride the create body", () => {
+    const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+    renderForm(<IndexerForm definition={DEFINITION} pending={false} error={null} onSubmit={onSubmit} />)
+
+    fireEvent.change(screen.getByLabelText("API Key"), { target: { value: "k123" } })
+    fireEvent.click(screen.getByRole("button", { name: /Advanced/ }))
+    fireEvent.change(screen.getByLabelText(/^Expiry \(optional\)/), { target: { value: "2027-03-01" } })
+    fireEvent.change(screen.getByLabelText("Expiry type"), { target: { value: "account" } })
+    fireEvent.click(screen.getByRole("button", { name: "Add indexer" }))
+
+    const body = onSubmit.mock.calls[0][0].body
+    expect(body.expiresAt).toBe("2027-03-01")
+    expect(body.expiryKind).toBe("account")
+  })
+
+  it("edit: the expiry prefills, and clearing the date submits an empty string", () => {
+    const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+    const existing: InstanceDetail = { ...EXISTING, expiresAt: "2027-03-01", expiryKind: "perk" }
+    renderForm(<IndexerForm definition={DEFINITION} existing={existing} pending={false} error={null} onSubmit={onSubmit} />)
+
+    fireEvent.click(screen.getByRole("button", { name: /Advanced/ }))
+    const date = screen.getByLabelText<HTMLInputElement>(/^Expiry \(optional\)/)
+    expect(date.value).toBe("2027-03-01")
+    expect(screen.getByLabelText<HTMLSelectElement>("Expiry type").value).toBe("perk")
+
+    // Clearing must reach the server as "" — an omitted field would leave the stored
+    // date in place and keep warning about an expiry the operator just removed.
+    fireEvent.change(date, { target: { value: "" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+    expect(onSubmit.mock.calls[0][0].body.expiresAt).toBe("")
+  })
+
+  it("edit: changing only the name preserves the stored expiry untouched", () => {
+    // The preservation class this form keeps getting bitten by: an unrelated edit must
+    // not reset or drop operator-entered expiry data on submit.
+    const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+    const existing: InstanceDetail = { ...EXISTING, expiresAt: "2027-03-01", expiryKind: "account", expiryLifetime: false }
+    renderForm(<IndexerForm definition={DEFINITION} existing={existing} pending={false} error={null} onSubmit={onSubmit} />)
+
+    fireEvent.change(screen.getByLabelText<HTMLInputElement>("Name"), { target: { value: "Renamed" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+
+    const body = onSubmit.mock.calls[0][0].body
+    expect(body.name).toBe("Renamed")
+    expect(body.expiresAt).toBe("2027-03-01")
+    expect(body.expiryKind).toBe("account")
+    expect(body.expiryLifetime).toBe(false)
+  })
+
+  it("edit: ticking Lifetime disables the date field and submits the flag", () => {
+    const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+    const existing: InstanceDetail = { ...EXISTING, expiresAt: "2027-03-01", expiryKind: "perk" }
+    renderForm(<IndexerForm definition={DEFINITION} existing={existing} pending={false} error={null} onSubmit={onSubmit} />)
+
+    fireEvent.click(screen.getByRole("button", { name: /Advanced/ }))
+    fireEvent.click(screen.getByLabelText("Lifetime (never expires)"))
+    expect(screen.getByLabelText<HTMLInputElement>(/^Expiry \(optional\)/).disabled).toBe(true)
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+    expect(onSubmit.mock.calls[0][0].body.expiryLifetime).toBe(true)
+  })
+
   it("slug is locked in edit mode", () => {
     renderForm(<IndexerForm definition={DEFINITION} existing={EXISTING} pending={false} error={null} onSubmit={vi.fn()} />)
     expect(screen.getByLabelText<HTMLInputElement>("Slug").disabled).toBe(true)
@@ -258,6 +338,117 @@ describe("IndexerForm", () => {
     // (omitting them would keep the stored values).
     expect(body.settings?.solver_type).toBe("")
     expect(body.settings?.cookie).toBe("")
+  })
+
+  // autobrr/harbrr#401 — the base-URL override is picked from the definition's
+  // known links, with a mandatory custom escape hatch.
+  describe("base URL picker", () => {
+    const pick = () => screen.getByLabelText<HTMLSelectElement>("Base URL (optional override)")
+    const withBaseUrl = (baseUrl: string): InstanceDetail => ({ ...EXISTING, baseUrl })
+
+    it("offers Default (labelled with the resolved host), every link, and Custom…", () => {
+      renderForm(<IndexerForm definition={DEFINITION} pending={false} error={null} onSubmit={vi.fn()} />)
+      expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual([
+        "Default (tt.example)", "tt.example", "mirror.tt.example", "Custom…",
+      ])
+      expect(pick().value).toBe("")
+    })
+
+    // Trailing-slash and host-case differences must not force a false Custom.
+    it.each([
+      ["", ""],
+      ["https://mirror.tt.example", "https://mirror.tt.example"],
+      ["https://tt.example/", "https://tt.example"],
+      ["https://TT.example", "https://tt.example"],
+      ["https://private.mirror.lan", "custom"],
+    ])("edit: stored %p preselects %p", (stored, want) => {
+      renderForm(<IndexerForm definition={DEFINITION} existing={withBaseUrl(stored)} pending={false} error={null} onSubmit={vi.fn()} />)
+      expect(pick().value).toBe(want)
+    })
+
+    it("edit: an off-list stored value stays intact through an unrelated edit", () => {
+      const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+      renderForm(<IndexerForm definition={DEFINITION} existing={withBaseUrl("https://private.mirror.lan")} pending={false} error={null} onSubmit={onSubmit} />)
+
+      expect(screen.getByLabelText<HTMLInputElement>("Custom base URL").value).toBe("https://private.mirror.lan")
+      fireEvent.change(screen.getByLabelText("Username"), { target: { value: "bob" } })
+      fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+
+      expect(onSubmit.mock.calls[0][0].body.baseUrl).toBe("https://private.mirror.lan")
+    })
+
+    it("edit: selecting Default submits \"\" so the stored override is cleared", () => {
+      const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+      renderForm(<IndexerForm definition={DEFINITION} existing={withBaseUrl("https://mirror.tt.example")} pending={false} error={null} onSubmit={onSubmit} />)
+
+      fireEvent.change(pick(), { target: { value: "" } })
+      fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+
+      expect(onSubmit.mock.calls[0][0].body.baseUrl).toBe("")
+    })
+
+    it("edit: picking a known link submits it verbatim", () => {
+      const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+      renderForm(<IndexerForm definition={DEFINITION} existing={EXISTING} pending={false} error={null} onSubmit={onSubmit} />)
+
+      fireEvent.change(pick(), { target: { value: "https://mirror.tt.example" } })
+      fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+
+      expect(onSubmit.mock.calls[0][0].body.baseUrl).toBe("https://mirror.tt.example")
+    })
+
+    it("create: an untouched picker omits baseUrl entirely", () => {
+      const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+      renderForm(<IndexerForm definition={DEFINITION} pending={false} error={null} onSubmit={onSubmit} />)
+
+      fireEvent.click(screen.getByRole("button", { name: "Add indexer" }))
+      const submit = onSubmit.mock.calls[0][0]
+      if (submit.mode === "create") expect(submit.body.baseUrl).toBeUndefined()
+    })
+
+    it("create: an off-list custom host warns but is accepted", () => {
+      const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+      renderForm(<IndexerForm definition={DEFINITION} pending={false} error={null} onSubmit={onSubmit} />)
+
+      fireEvent.change(pick(), { target: { value: "custom" } })
+      fireEvent.change(screen.getByLabelText("Custom base URL"), { target: { value: "https://private.mirror.lan" } })
+      expect(screen.getByText(/known hosts/)).toBeTruthy()
+
+      fireEvent.click(screen.getByRole("button", { name: "Add indexer" }))
+      const submit = onSubmit.mock.calls[0][0]
+      if (submit.mode === "create") expect(submit.body.baseUrl).toBe("https://private.mirror.lan")
+    })
+
+    it("create: a non-http scheme blocks submit", () => {
+      renderForm(<IndexerForm definition={DEFINITION} pending={false} error={null} onSubmit={vi.fn()} />)
+
+      fireEvent.change(pick(), { target: { value: "custom" } })
+      fireEvent.change(screen.getByLabelText("Custom base URL"), { target: { value: "ftp://nope.example" } })
+
+      expect(screen.getByText(/must start with http/)).toBeTruthy()
+      expect(screen.getByRole("button", { name: "Add indexer" })).toHaveProperty("disabled", true)
+    })
+
+    // Native drivers carry a single-entry links list; nothing special-cased.
+    it("a single-link definition still offers Default + the link + Custom…", () => {
+      const native: DefinitionDetail = { ...DEFINITION, links: ["https://avistaz.to/"] }
+      renderForm(<IndexerForm definition={native} pending={false} error={null} onSubmit={vi.fn()} />)
+      expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual([
+        "Default (avistaz.to)", "avistaz.to", "Custom…",
+      ])
+    })
+
+    // Shouldn't happen, but a linkless definition must not lose the override control.
+    it("a definition with no links falls back to free text", () => {
+      const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+      renderForm(<IndexerForm definition={{ ...DEFINITION, links: [] }} pending={false} error={null} onSubmit={onSubmit} />)
+
+      fireEvent.change(screen.getByLabelText("Base URL (optional override)"), { target: { value: "https://only.example" } })
+      fireEvent.click(screen.getByRole("button", { name: "Add indexer" }))
+
+      const submit = onSubmit.mock.calls[0][0]
+      if (submit.mode === "create") expect(submit.body.baseUrl).toBe("https://only.example")
+    })
   })
 
   it("edit: a definition's own cookie field renders normally and is preserved untouched", () => {

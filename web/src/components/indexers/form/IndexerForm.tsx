@@ -10,6 +10,7 @@ import { SettingFieldInput } from "@/components/indexers/form/SettingFieldInput"
 import { defaultValues, isInfoField, settingsPayload } from "@/components/indexers/form/settings-payload"
 import { useProxies, useSolvers } from "@/hooks/useResources"
 import { APIError } from "@/lib/api"
+import { hostname } from "@/lib/format"
 import type { AddIndexer, DefinitionDetail, InstanceDetail, SettingField, UpdateIndexer } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
@@ -57,6 +58,10 @@ const LIMIT_FIELDS = [TIMEOUT_FIELD, QUERY_LIMIT_FIELD, GRAB_LIMIT_FIELD, LIMITS
 // definition that does not (see managesCookie below).
 const MANAGED_KEYS = ["proxy_type", "proxy_url", "solver_type", "flaresolverr_url", "flaresolverr_max_timeout"]
 
+// Sentinel for the base-URL picker's "Custom…" option. Not a URL, so it can never
+// collide with a definition's links entry.
+const CUSTOM_BASE_URL = "custom"
+
 export type IndexerFormSubmit =
   | { mode: "create", body: AddIndexer }
   | { mode: "edit", body: UpdateIndexer }
@@ -101,6 +106,10 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
   const [enableRss, setEnableRss] = useState(existing?.enableRss ?? true)
   const [enableAutomaticSearch, setEnableAutomaticSearch] = useState(existing?.enableAutomaticSearch ?? true)
   const [enableInteractiveSearch, setEnableInteractiveSearch] = useState(existing?.enableInteractiveSearch ?? true)
+  const [expiresAt, setExpiresAt] = useState(existing?.expiresAt ?? "")
+  const [expiryKind, setExpiryKind] = useState<"perk" | "account">(
+    existing?.expiryKind === "account" ? "account" : "perk")
+  const [expiryLifetime, setExpiryLifetime] = useState(existing?.expiryLifetime ?? false)
   const [checkedParents, setCheckedParents] = useState<Set<number>>(
     new Set((existing?.syncCategories ?? []).filter((c) => PARENT_IDS.has(c))))
   const [extraCategories, setExtraCategories] = useState((existing?.syncCategories ?? []).filter((c) => !PARENT_IDS.has(c)).join(", "))
@@ -144,11 +153,15 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
         const extraIds = extraCategories.split(",").map((s) => s.trim()).filter((s) => s !== "").map((s) => Number(s)).filter((n) => Number.isInteger(n) && n > 0)
         const syncCategories = [...new Set([...checkedParents, ...extraIds])].sort((a, b) => a - b)
         const toggles = { enableRss, enableAutomaticSearch, enableInteractiveSearch }
+        // expiresAt goes verbatim on BOTH paths — unlike baseUrl this is not an
+        // edit-only clear: "" is how "no expiry" is expressed either way, and the
+        // server drops the kind along with the date. Lifetime clears it server-side.
+        const expiry = { expiresAt, expiryKind, expiryLifetime }
         if (mode === "edit") {
           // baseUrl verbatim so clearing it ("") clears the stored override.
-          onSubmit({ mode, body: { name, baseUrl, settings, proxyId, solverId, priority: priorityNum, minSeeders: minSeedersNum, syncCategories, ...toggles } })
+          onSubmit({ mode, body: { name, baseUrl, settings, proxyId, solverId, priority: priorityNum, minSeeders: minSeedersNum, syncCategories, ...toggles, ...expiry } })
         } else {
-          onSubmit({ mode, body: { slug, definitionId: definition.id, name, baseUrl: baseUrl || undefined, settings, proxyId, solverId, priority: priorityNum, minSeeders: minSeedersNum, syncCategories, ...toggles } })
+          onSubmit({ mode, body: { slug, definitionId: definition.id, name, baseUrl: baseUrl || undefined, settings, proxyId, solverId, priority: priorityNum, minSeeders: minSeedersNum, syncCategories, ...toggles, ...expiry } })
         }
       }}
     >
@@ -176,10 +189,7 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
         )}
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="ix-baseurl">Base URL (optional override)</Label>
-        <Input id="ix-baseurl" placeholder="https://…" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
-      </div>
+      <BaseUrlField links={definition.links} value={baseUrl} onChange={setBaseUrl} />
 
       {definition.settings.map((field) => (
         <SettingFieldInput
@@ -196,7 +206,7 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
         onClick={() => setShowAdvanced((v) => !v)}
       >
         <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", showAdvanced && "rotate-90")} />
-        Advanced (proxy, timeout, anti-bot solver, priority, request limits, sync behavior)
+        Advanced (proxy, timeout, anti-bot solver, priority, request limits, expiry, sync behavior)
       </button>
       {showAdvanced && (
         <div className="flex flex-col gap-4 rounded-md border border-border p-3">
@@ -236,6 +246,15 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
             <Label htmlFor="ix-min-seeders">Minimum seeders (0 = unset, not pushed)</Label>
             <Input id="ix-min-seeders" type="number" min={0} value={minSeeders} onChange={(e) => setMinSeeders(e.target.value)} />
           </span>
+
+          <ExpiryFields
+            date={expiresAt}
+            kind={expiryKind}
+            lifetime={expiryLifetime}
+            onDate={setExpiresAt}
+            onKind={setExpiryKind}
+            onLifetime={setExpiryLifetime}
+          />
 
           <SettingFieldInput field={QUERY_LIMIT_FIELD} value={values.query_limit ?? ""} onChange={setValue("query_limit")} />
           <SettingFieldInput field={GRAB_LIMIT_FIELD} value={values.grab_limit ?? ""} onChange={setValue("grab_limit")} />
@@ -281,11 +300,140 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
         </div>
       )}
 
-      <Button type="submit" disabled={pending || name === "" || (mode === "create" && slug === "")}>
+      <Button type="submit" disabled={pending || name === "" || badScheme(baseUrl) || (mode === "create" && slug === "")}>
         {pending ? "Saving…" : mode === "edit" ? "Save changes" : "Add indexer"}
       </Button>
     </form>
   )
+}
+
+// ExpiryFields is the VIP/membership expiry group (autobrr/harbrr#399). Native
+// <input type="date"> rather than a picker library: it already gives the exact
+// YYYY-MM-DD the API stores, plus the platform's own calendar and locale handling.
+// Leaving the date empty is "untracked" and behaves exactly as before the field
+// existed — this is opt-in bookkeeping, never a nag.
+function ExpiryFields({ date, kind, lifetime, onDate, onKind, onLifetime }: {
+  date: string
+  kind: "perk" | "account"
+  lifetime: boolean
+  onDate: (v: string) => void
+  onKind: (v: "perk" | "account") => void
+  onLifetime: (v: boolean) => void
+}) {
+  return (
+    <span className="flex flex-col gap-1.5">
+      <Label htmlFor="ix-expires-at">Expiry (optional)</Label>
+      <div className="flex gap-2">
+        <Input
+          id="ix-expires-at"
+          type="date"
+          className="flex-1"
+          disabled={lifetime}
+          value={lifetime ? "" : date}
+          onChange={(e) => onDate(e.target.value)}
+        />
+        <NativeSelect
+          aria-label="Expiry type"
+          className="flex-1"
+          value={kind}
+          onChange={(e) => onKind(e.target.value === "account" ? "account" : "perk")}
+        >
+          <option value="perk">VIP / perk</option>
+          <option value="account">Account</option>
+        </NativeSelect>
+      </div>
+      <span className="flex items-center gap-2">
+        <Checkbox
+          id="ix-expiry-lifetime"
+          checked={lifetime}
+          onCheckedChange={(checked) => onLifetime(checked === true)}
+        />
+        <Label htmlFor="ix-expiry-lifetime" className="font-normal">Lifetime (never expires)</Label>
+      </span>
+      <p className="text-[12px] text-faint">
+        Leave empty if you don&apos;t track this. harbrr warns before the date and never
+        contacts the tracker to check it &mdash; renew there, then update the date here.
+      </p>
+    </span>
+  )
+}
+
+// BaseUrlField picks the base-URL override from the definition's known hosts
+// (autobrr/harbrr#401). "" means "no override, follow the definition" — which
+// resolves to links[0] server-side, so the Default option is labelled with that
+// host rather than left opaque. Custom… keeps the free-text escape hatch for
+// private mirrors, onion addresses and LAN reverse proxies that no definition
+// lists. Purely local: the picker makes no network requests, and choosing a host
+// sets NO pin or failover-opt-out flag — that stays #375's separate control.
+function BaseUrlField({ links, value, onChange }: {
+  links: string[]
+  value: string
+  onChange: (v: string) => void
+}) {
+  const matched = links.find((l) => normBase(l) === normBase(value))
+  // An off-list stored override must land on Custom with the value intact —
+  // silently snapping it back to Default would change which host a working
+  // indexer talks to on an unrelated edit.
+  const [custom, setCustom] = useState(value !== "" && matched === undefined)
+  const showInput = custom || links.length === 0
+  const bad = badScheme(value)
+  // Warn, never block: a private mirror is a legitimate configuration.
+  const offList = showInput && links.length > 0 && value !== "" && !bad && matched === undefined
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor="ix-baseurl">Base URL (optional override)</Label>
+      {links.length > 0 ? (
+        <NativeSelect
+          id="ix-baseurl"
+          value={custom ? CUSTOM_BASE_URL : (matched ?? "")}
+          onChange={(e) => {
+            setCustom(e.target.value === CUSTOM_BASE_URL)
+            // Switching to Custom keeps whatever is there to edit; any other
+            // option submits its own value verbatim ("" = follow the definition).
+            if (e.target.value !== CUSTOM_BASE_URL) onChange(e.target.value)
+          }}
+        >
+          <option value="">Default ({hostname(links[0])})</option>
+          {links.map((l) => <option key={l} value={l} title={l}>{hostname(l)}</option>)}
+          <option value={CUSTOM_BASE_URL}>Custom…</option>
+        </NativeSelect>
+      ) : (
+        <Input id="ix-baseurl" placeholder="https://…" value={value} onChange={(e) => onChange(e.target.value)} />
+      )}
+      {showInput && links.length > 0 && (
+        <Input aria-label="Custom base URL" placeholder="https://…" value={value} onChange={(e) => onChange(e.target.value)} />
+      )}
+      {bad && <p className="text-[12px] text-bad">Base URL must start with http:// or https://.</p>}
+      {offList && <p className="text-[12px] text-faint">Not one of the definition&apos;s known hosts — saved as-is.</p>}
+    </div>
+  )
+}
+
+// normBase canonicalises a base URL for OPTION MATCHING ONLY — a picked host is
+// always submitted verbatim. Without it a stored "https://x.org/" would fail to
+// match a links entry of "https://x.org" and falsely show as Custom.
+function normBase(url: string): string {
+  const trimmed = url.trim().replace(/\/+$/, "")
+  try {
+    const u = new URL(trimmed)
+    // origin lowercases scheme + host; pathname keeps its case (paths can matter).
+    return u.origin + u.pathname.replace(/\/+$/, "")
+  } catch {
+    return trimmed.toLowerCase()
+  }
+}
+
+// badScheme blocks a base URL that isn't http/https. Empty is fine — that is the
+// "no override" case, not a typo.
+function badScheme(url: string): boolean {
+  if (url === "") return false
+  try {
+    const { protocol } = new URL(url)
+    return protocol !== "http:" && protocol !== "https:"
+  } catch {
+    return true
+  }
 }
 
 // initialSolver derives the solver control's value from the stored instance: a

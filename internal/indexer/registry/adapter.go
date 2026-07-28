@@ -28,7 +28,7 @@ import (
 // interface, never the concrete engine. It is the unit the registry caches per
 // slug. It also records per-indexer health events: a classified Search failure
 // appends one event (append-only) so the management status endpoint can surface why
-// an indexer is unhealthy.
+// an indexer is failing.
 type indexerAdapter struct {
 	info       core.IndexerInfo
 	inner      native.Driver
@@ -142,7 +142,7 @@ func (a *indexerAdapter) Search(ctx context.Context, q search.Query) ([]*normali
 	} else {
 		releases, err = a.budgetedLiveSearch(ctx, q)
 	}
-	if errors.Is(err, errBudgetExhausted) && cacheEnabled && !core.CacheBypass(ctx) {
+	if errors.Is(err, core.ErrBudgetExhausted) && cacheEnabled && !core.CacheBypass(ctx) {
 		// The query budget has no capacity left for this period: prefer serving
 		// whatever was last cached, even expired, over refusing the request outright
 		// (autobrr/harbrr#251). A cache miss here (nothing ever cached, or the stale
@@ -183,7 +183,7 @@ func (a *indexerAdapter) Search(ctx context.Context, q search.Query) ([]*normali
 // win, a dead/angry tracker stops being polled at full rate until its ladder window
 // passes. Only then does it reserve one unit of the query budget BEFORE the outbound
 // hit; when the budget has no capacity left for this period, it refuses without ever
-// touching the tracker — errBudgetExhausted, which Search catches to prefer a stale
+// touching the tracker — core.ErrBudgetExhausted, which Search catches to prefer a stale
 // cache serve, and which the breaker explicitly never trips on (searchcache.go's
 // tripBreaker, which also never trips on a circuit-open refusal for the same reason).
 func (a *indexerAdapter) budgetedLiveSearch(ctx context.Context, query search.Query) ([]*normalizer.Release, error) {
@@ -191,7 +191,7 @@ func (a *indexerAdapter) budgetedLiveSearch(ctx context.Context, query search.Qu
 		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, err)
 	}
 	if !a.budget.ReserveQuery(ctx, a.instanceID, a.cfg, a.clock()) {
-		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, errBudgetExhausted)
+		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, core.ErrBudgetExhausted)
 	}
 	return a.liveSearch(ctx, query)
 }
@@ -272,7 +272,7 @@ func (a *indexerAdapter) Grab(ctx context.Context, link string) (*search.GrabRes
 	// stale — the grab-path half of #251's enforcement. Gated after the breaker: a
 	// tripped instance must not consume budget.
 	if !a.budget.ReserveGrab(ctx, a.instanceID, a.cfg, a.clock()) {
-		return nil, fmt.Errorf("registry: grab %q: %w", a.info.ID, errBudgetExhausted)
+		return nil, fmt.Errorf("registry: grab %q: %w", a.info.ID, core.ErrBudgetExhausted)
 	}
 	result, err := a.inner.Grab(ctx, link)
 	if err != nil {
@@ -309,7 +309,7 @@ func (a *indexerAdapter) checkCircuit(ctx context.Context) error {
 	}
 	now := a.clock()
 	if state.IsDisabled(now) {
-		return fmt.Errorf("%w until %s", errCircuitOpen, state.DisabledTill.UTC().Format(time.RFC3339))
+		return fmt.Errorf("%w until %s", core.ErrCircuitOpen, state.DisabledTill.UTC().Format(time.RFC3339))
 	}
 	return nil
 }

@@ -14,9 +14,10 @@ import (
 
 // fleetStatusBody mirrors the fleetStatusResponse JSON shape for assertions.
 type fleetStatusBody struct {
-	Healthy   int `json:"healthy"`
-	Unhealthy int `json:"unhealthy"`
-	Indexers  []struct {
+	Healthy  int `json:"healthy"`
+	Failing  int `json:"failing"`
+	Unknown  int `json:"unknown"`
+	Indexers []struct {
 		Slug      string `json:"slug"`
 		Status    string `json:"status"`
 		LastEvent *struct {
@@ -41,24 +42,24 @@ func TestAllIndexerStatusEmptyFleet(t *testing.T) {
 	if err := json.Unmarshal(body, &out); err != nil {
 		t.Fatalf("unmarshal: %v (body %s)", err, body)
 	}
-	if out.Healthy != 0 || out.Unhealthy != 0 {
-		t.Errorf("counts = healthy=%d unhealthy=%d, want 0/0", out.Healthy, out.Unhealthy)
+	if out.Healthy != 0 || out.Failing != 0 || out.Unknown != 0 {
+		t.Errorf("counts = healthy=%d failing=%d unknown=%d, want 0/0/0", out.Healthy, out.Failing, out.Unknown)
 	}
 	if out.Indexers == nil || len(out.Indexers) != 0 {
 		t.Errorf("indexers = %v, want empty array", out.Indexers)
 	}
 }
 
-// TestAllIndexerStatus: a healthy never-queried indexer, an unhealthy one with a recent
-// failure, and one whose failure is outside the recency window (status healthy, but
-// lastEvent still reports the old failure) roll up into the fleet counts and per-indexer
-// entries, sorted by slug.
+// TestAllIndexerStatus covers all three derived states (#389) in one roll-up: an
+// indexer that just passed a test (healthy), one with a recent failure (failing), one
+// that has never been heard from (unknown), and one whose failure has aged out of the
+// window (unknown, but lastEvent still reports the old failure). Sorted by slug.
 func TestAllIndexerStatus(t *testing.T) {
 	t.Parallel()
 	e := authDisabledEnv(t)
 	ctx := context.Background()
 
-	slugs := []string{"healthy-none", "healthy-old", "unhealthy-recent"}
+	slugs := []string{"failing-recent", "healthy-tested", "unknown-idle", "unknown-stale"}
 	instanceIDs := map[string]int64{}
 	for _, slug := range slugs {
 		inst, err := e.registry.Add(ctx, registry.AddParams{
@@ -71,25 +72,30 @@ func TestAllIndexerStatus(t *testing.T) {
 	}
 
 	var health database.Health
-	// unhealthy-recent gets two events; lastEvent must pick the newer auth_failure,
+	// failing-recent gets two events; lastEvent must pick the newer auth_failure,
 	// not this older parse_error.
 	if err := health.Record(ctx, e.db, domain.IndexerHealthEvent{
-		InstanceID: instanceIDs["unhealthy-recent"], Kind: "parse_error", Detail: "bad page",
+		InstanceID: instanceIDs["failing-recent"], Kind: "parse_error", Detail: "bad page",
 		OccurredAt: time.Now().Add(-30 * time.Minute),
 	}); err != nil {
 		t.Fatalf("record older failure: %v", err)
 	}
 	if err := health.Record(ctx, e.db, domain.IndexerHealthEvent{
-		InstanceID: instanceIDs["unhealthy-recent"], Kind: "auth_failure", Detail: "login failed",
+		InstanceID: instanceIDs["failing-recent"], Kind: "auth_failure", Detail: "login failed",
 		OccurredAt: time.Now().Add(-1 * time.Minute),
 	}); err != nil {
 		t.Fatalf("record recent failure: %v", err)
 	}
 	if err := health.Record(ctx, e.db, domain.IndexerHealthEvent{
-		InstanceID: instanceIDs["healthy-old"], Kind: "rate_limited", Detail: "429",
+		InstanceID: instanceIDs["unknown-stale"], Kind: "rate_limited", Detail: "429",
 		OccurredAt: time.Now().Add(-2 * time.Hour),
 	}); err != nil {
 		t.Fatalf("record old failure: %v", err)
+	}
+	// A passing explicit test is the recovery watermark, and it is a success — so this
+	// indexer reads healthy without any search traffic.
+	if err := health.RecordRecovery(ctx, e.db, instanceIDs["healthy-tested"], time.Now()); err != nil {
+		t.Fatalf("record recovery: %v", err)
 	}
 
 	base, c := serve(t, e)
@@ -102,15 +108,13 @@ func TestAllIndexerStatus(t *testing.T) {
 		t.Fatalf("unmarshal: %v (body %s)", err, body)
 	}
 
-	if out.Healthy != 2 || out.Unhealthy != 1 {
-		t.Errorf("counts = healthy=%d unhealthy=%d, want 2/1", out.Healthy, out.Unhealthy)
+	if out.Healthy != 1 || out.Failing != 1 || out.Unknown != 2 {
+		t.Errorf("counts = healthy=%d failing=%d unknown=%d, want 1/1/2", out.Healthy, out.Failing, out.Unknown)
 	}
-	if len(out.Indexers) != 3 {
-		t.Fatalf("indexers rows = %d, want 3", len(out.Indexers))
+	if len(out.Indexers) != len(slugs) {
+		t.Fatalf("indexers rows = %d, want %d", len(out.Indexers), len(slugs))
 	}
-	// Sorted by slug: healthy-none, healthy-old, unhealthy-recent.
-	wantOrder := []string{"healthy-none", "healthy-old", "unhealthy-recent"}
-	for i, want := range wantOrder {
+	for i, want := range slugs { // slugs is already in sorted order
 		if out.Indexers[i].Slug != want {
 			t.Errorf("indexers[%d].slug = %q, want %q", i, out.Indexers[i].Slug, want)
 		}
@@ -124,22 +128,24 @@ func TestAllIndexerStatus(t *testing.T) {
 			lastEventKind[ind.Slug] = ind.LastEvent.Kind
 		}
 	}
-	if byStatus["healthy-none"] != "healthy" {
-		t.Errorf("healthy-none status = %q, want healthy", byStatus["healthy-none"])
+	wantStatus := map[string]string{
+		"failing-recent": "failing",
+		"healthy-tested": "healthy",
+		"unknown-idle":   "unknown",
+		"unknown-stale":  "unknown",
 	}
-	if _, has := lastEventKind["healthy-none"]; has {
-		t.Errorf("healthy-none lastEvent = %v, want omitted (no events)", lastEventKind["healthy-none"])
+	for slug, want := range wantStatus {
+		if byStatus[slug] != want {
+			t.Errorf("%s status = %q, want %q", slug, byStatus[slug], want)
+		}
 	}
-	if byStatus["healthy-old"] != "healthy" {
-		t.Errorf("healthy-old status = %q, want healthy", byStatus["healthy-old"])
+	if _, has := lastEventKind["unknown-idle"]; has {
+		t.Errorf("unknown-idle lastEvent = %v, want omitted (no events)", lastEventKind["unknown-idle"])
 	}
-	if lastEventKind["healthy-old"] != "rate_limited" {
-		t.Errorf("healthy-old lastEvent.kind = %q, want rate_limited", lastEventKind["healthy-old"])
+	if lastEventKind["unknown-stale"] != "rate_limited" {
+		t.Errorf("unknown-stale lastEvent.kind = %q, want rate_limited (expired, still reported)", lastEventKind["unknown-stale"])
 	}
-	if byStatus["unhealthy-recent"] != "unhealthy" {
-		t.Errorf("unhealthy-recent status = %q, want unhealthy", byStatus["unhealthy-recent"])
-	}
-	if lastEventKind["unhealthy-recent"] != "auth_failure" {
-		t.Errorf("unhealthy-recent lastEvent.kind = %q, want auth_failure (the newest of its two events)", lastEventKind["unhealthy-recent"])
+	if lastEventKind["failing-recent"] != "auth_failure" {
+		t.Errorf("failing-recent lastEvent.kind = %q, want auth_failure (the newest of its two events)", lastEventKind["failing-recent"])
 	}
 }

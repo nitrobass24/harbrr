@@ -86,6 +86,8 @@ type CreateNotificationParams struct {
 	Type            string
 	URL             string
 	OnHealthFailure *bool
+	// OnExpiry opts into indexer expiry events; nil defaults ON, same reasoning.
+	OnExpiry *bool
 }
 
 // CreateNotification persists a target with its destination URL encrypted. The row is
@@ -102,6 +104,7 @@ func (s *Service) CreateNotification(ctx context.Context, p CreateNotificationPa
 			return domain.Notification{
 				Name: p.Name, Type: p.Type, Enabled: true,
 				OnHealthFailure: p.OnHealthFailure == nil || *p.OnHealthFailure,
+				OnExpiry:        p.OnExpiry == nil || *p.OnExpiry,
 				CreatedAt:       now, UpdatedAt: now,
 			}
 		},
@@ -127,6 +130,7 @@ type UpdateNotificationParams struct {
 	Name            *string
 	URL             *string
 	OnHealthFailure *bool
+	OnExpiry        *bool
 }
 
 // UpdateNotification applies a patch, re-encrypting the URL when rotated. The read and the
@@ -149,6 +153,9 @@ func (s *Service) UpdateNotification(ctx context.Context, id int64, p UpdateNoti
 			}
 			if p.OnHealthFailure != nil {
 				n.OnHealthFailure = *p.OnHealthFailure
+			}
+			if p.OnExpiry != nil {
+				n.OnExpiry = *p.OnExpiry
 			}
 			return nil
 		},

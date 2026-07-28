@@ -14,6 +14,7 @@ import (
 	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
+	"github.com/autobrr/harbrr/internal/indexer/core"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 	"github.com/autobrr/harbrr/internal/secrets"
 )
@@ -51,6 +52,7 @@ type invalidator interface {
 // lock and holds no CRUD/serve state.
 type StatsReporter struct {
 	stats     *IndexerStats
+	budget    *RequestBudget
 	instances database.Instances
 	health    database.Health
 	circuit   database.Circuit
@@ -75,16 +77,19 @@ var (
 // a clean Torznab path segment and management resource id.
 var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
-// reservedSlugs are slugs that must not name an indexer because they collide with
-// a static path segment registered as a sibling of /api/indexers/{slug} in
-// internal/web/api/router.go. chi prioritizes a static segment over the {slug}
-// param, so an indexer slugged "stats" or "status" would be shadowed by GET
-// /api/indexers/stats (allIndexerStats) or /api/indexers/status
-// (allIndexerStatus). Keep this in sync with the static segments registered
-// directly under /api/indexers/ in router.go.
+// reservedSlugs are slugs that must not name an indexer. Two reasons, both fatal:
+// "stats"/"status" collide with a static path segment registered as a sibling of
+// /api/indexers/{slug} in internal/web/api/router.go (chi prioritizes a static
+// segment over the {slug} param, so such an indexer would be shadowed by GET
+// /api/indexers/stats or /api/indexers/status); core.AggregateSlug names the
+// aggregate Torznab feed in the SAME {slug} position, so an indexer holding it would
+// make the aggregate feed unreachable and, worse, ambiguous at grab time. Keep this
+// in sync with the static segments registered directly under /api/indexers/ in
+// router.go. Case-insensitivity is free: slugPattern already rejects uppercase.
 var reservedSlugs = map[string]struct{}{
-	"stats":  {},
-	"status": {},
+	"stats":            {},
+	"status":           {},
+	core.AggregateSlug: {},
 }
 
 // defaultPriority is the Servarr indexer priority (Prowlarr semantics: 1-50, 1 =
@@ -114,19 +119,23 @@ func validateMinSeeders(minSeeders int) error {
 // validateAddSync validates AddParams' sync-tuning fields together (priority,
 // min-seeders, sync categories), returning the normalized priority and category set —
 // split out of Add so it stays within the function-length limit.
-func validateAddSync(p AddParams) (priority int, syncCats []int, err error) {
+func validateAddSync(p AddParams) (priority int, syncCats []int, exp expiry, err error) {
 	priority, err = normalizePriority(p.Priority)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, expiry{}, err
 	}
 	if err := validateMinSeeders(p.MinSeeders); err != nil {
-		return 0, nil, err
+		return 0, nil, expiry{}, err
 	}
 	syncCats, err = normalizeCategoryIDs(p.SyncCategories)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, expiry{}, err
 	}
-	return priority, syncCats, nil
+	exp, err = normalizeExpiry(p.ExpiresAt, p.ExpiryKind, p.ExpiryLifetime)
+	if err != nil {
+		return 0, nil, expiry{}, err
+	}
+	return priority, syncCats, exp, nil
 }
 
 // maxCategoryID bounds a sync-category id: Newznab ids and harbrr's custom range
@@ -188,6 +197,58 @@ type AddParams struct {
 	EnableRss               *bool
 	EnableAutomaticSearch   *bool
 	EnableInteractiveSearch *bool
+	// ExpiresAt / ExpiryKind / ExpiryLifetime are the #399 VIP/membership expiry
+	// (empty date = untracked, which behaves exactly as before the field existed).
+	ExpiresAt      string
+	ExpiryKind     string
+	ExpiryLifetime bool
+}
+
+// expiry is the validated expiry triple, so the Add and Update paths share one
+// normalization instead of each re-deriving the lifetime-wins rule.
+type expiry struct {
+	date     string
+	kind     string
+	lifetime bool
+}
+
+// normalizeExpiry validates and canonicalizes an expiry triple. Lifetime wins: it
+// clears the date outright rather than leaving a stale one that a later un-ticking
+// would silently resurrect. An unset date drops the kind with it, so "untracked" is
+// one state and not four. The date must be a real calendar day in domain's layout —
+// the scan does arithmetic on it, and a half-parsed date is a missed warning.
+func normalizeExpiry(date, kind string, lifetime bool) (expiry, error) {
+	date, kind = strings.TrimSpace(date), strings.TrimSpace(kind)
+	if kind != "" && kind != domain.ExpiryKindPerk && kind != domain.ExpiryKindAccount {
+		return expiry{}, fmt.Errorf("%w: expiryKind must be %q or %q (got %q)",
+			ErrInvalid, domain.ExpiryKindPerk, domain.ExpiryKindAccount, kind)
+	}
+	if lifetime {
+		return expiry{kind: kind, lifetime: true}, nil
+	}
+	if date == "" {
+		return expiry{}, nil
+	}
+	if _, err := time.Parse(domain.ExpiryDateLayout, date); err != nil {
+		return expiry{}, fmt.Errorf("%w: expiresAt must be a YYYY-MM-DD date (got %q)", ErrInvalid, date)
+	}
+	return expiry{date: date, kind: kind}, nil
+}
+
+// resolveExpiry applies the optional expiry patch fields — each nil field keeps the
+// instance's current value — and validates the resulting triple as a whole.
+func resolveExpiry(inst domain.IndexerInstance, p UpdateParams) (expiry, error) {
+	date, kind, lifetime := inst.ExpiresAt, inst.ExpiryKind, inst.ExpiryLifetime
+	if p.ExpiresAt != nil {
+		date = *p.ExpiresAt
+	}
+	if p.ExpiryKind != nil {
+		kind = *p.ExpiryKind
+	}
+	if p.ExpiryLifetime != nil {
+		lifetime = *p.ExpiryLifetime
+	}
+	return normalizeExpiry(date, kind, lifetime)
 }
 
 // RefUpdate is a tri-state PATCH field for a nullable resource reference: Present
@@ -217,6 +278,12 @@ type UpdateParams struct {
 	EnableRss               *bool
 	EnableAutomaticSearch   *bool
 	EnableInteractiveSearch *bool
+	// ExpiresAt / ExpiryKind / ExpiryLifetime patch the #399 expiry; nil leaves the
+	// stored value. A present-but-empty ExpiresAt clears the tracking (distinct from
+	// omitted), which is how the form's "no expiry" reaches the store.
+	ExpiresAt      *string
+	ExpiryKind     *string
+	ExpiryLifetime *bool
 }
 
 // SettingView is the API-safe representation of a stored setting: a secret's value
@@ -246,7 +313,7 @@ func (r *Manager) Add(ctx context.Context, p AddParams) (domain.IndexerInstance,
 	if err := validateRequiredSettings(fields, p.Settings); err != nil {
 		return domain.IndexerInstance{}, err
 	}
-	priority, syncCats, err := validateAddSync(p)
+	priority, syncCats, exp, err := validateAddSync(p)
 	if err != nil {
 		return domain.IndexerInstance{}, err
 	}
@@ -262,7 +329,8 @@ func (r *Manager) Add(ctx context.Context, p AddParams) (domain.IndexerInstance,
 		Priority: priority, MinSeeders: p.MinSeeders, SyncCategories: syncCats,
 		EnableRss: boolOrTrue(p.EnableRss), EnableAutomaticSearch: boolOrTrue(p.EnableAutomaticSearch),
 		EnableInteractiveSearch: boolOrTrue(p.EnableInteractiveSearch),
-		CreatedAt:               now, UpdatedAt: now,
+		ExpiresAt:               exp.date, ExpiryKind: exp.kind, ExpiryLifetime: exp.lifetime,
+		CreatedAt: now, UpdatedAt: now,
 	}
 
 	err = r.inTx(ctx, func(tx dbinterface.TxQuerier) error {
@@ -601,9 +669,39 @@ func (r *Resolver) Test(ctx context.Context, slug string) error {
 // healthEventLimit caps how many recent events the status endpoint returns.
 const healthEventLimit = 20
 
-// healthRecencyWindow is how recently a failure must have occurred for the derived
-// status to read "unhealthy"; older failures are treated as past (status healthy).
-const healthRecencyWindow = 1 * time.Hour
+// The three derived health states (autobrr/harbrr#389). "unknown" is the honest
+// answer when nothing recent is known — the state the old two-state model was missing,
+// which made a never-queried or long-idle indexer assert "healthy" forever.
+// Exported so API handlers tallying or switching on FleetStatus.Status share one
+// definition with the derivation instead of re-typing wire literals.
+const (
+	StatusHealthy = "healthy"
+	StatusFailing = "failing"
+	StatusUnknown = "unknown"
+)
+
+// healthyWindow is how recently a successful attempt must have happened for the derived
+// status to read "healthy". Past it, with nothing newer, the status expires to
+// "unknown" rather than asserting a success that is hours or days old.
+const healthyWindow = 1 * time.Hour
+
+// failingWindowBase / failingWindowCap bound how long a failure holds the status at
+// "failing" before it too expires to "unknown": base at escalation level 0 (which is
+// exactly the old uniform recency window), doubling per rung, capped at 24h — the
+// ceiling the *arr apps settled on for indexer backoff, cited in #389. Per-KIND curves
+// (auth backing off harder than a transient 5xx) are #389's PR 2, not this one.
+const (
+	failingWindowBase = 1 * time.Hour
+	failingWindowCap  = 24 * time.Hour
+)
+
+// failingWindow is the failing-state lifetime for an indexer sitting on escalation
+// rung level. level is clamped to the ladder's range: it is read from the DB, and a
+// negative shift count panics.
+func failingWindow(level int) time.Duration {
+	window := failingWindowBase << min(max(level, 0), maxCircuitLevel)
+	return min(window, failingWindowCap)
+}
 
 // HealthStatus is one indexer's derived health plus the recent events behind it
 // (details already credential-scrubbed at write time). DisabledTill is non-nil
@@ -683,23 +781,84 @@ func (r *StatsReporter) statusOf(ctx context.Context, instanceID int64, limit in
 		till := circuit.DisabledTill
 		disabledTill = &till
 	}
-	return events, r.deriveStatus(events, recovery, disabledTill != nil), disabledTill, nil
+	_, _, _, lastQuery, _ := r.stats.snapshot(instanceID)
+	signals := healthSignals{
+		events:    events,
+		recovery:  recovery,
+		disabled:  disabledTill != nil,
+		level:     circuit.EscalationLevel,
+		lastQuery: lastQuery,
+	}
+	return events, r.deriveStatus(signals), disabledTill, nil
 }
 
-// deriveStatus reads "unhealthy" when either the circuit breaker currently excludes
-// the indexer from dispatch (disabled, #253 — this can outlast healthRecencyWindow
-// on a high escalation rung, e.g. a 24h disable well past its 1h-old triggering
-// event) or the most recent event is within the recency window and happened after
-// the last successful explicit test. Events are newest-first.
-func (r *StatsReporter) deriveStatus(events []domain.IndexerHealthEvent, recovery database.HealthRecovery, disabled bool) string {
-	if disabled {
-		return "unhealthy"
+// healthSignals is the evidence deriveStatus reads — all of it already fetched by
+// statusOf, so deriving a status costs no extra read and (like today) no write at all.
+type healthSignals struct {
+	// events are the instance's health events, newest first (only events[0] is read).
+	events []domain.IndexerHealthEvent
+	// recovery is the last passing explicit Test (zero when never tested).
+	recovery database.HealthRecovery
+	// disabled is true while the circuit breaker excludes the indexer from dispatch.
+	disabled bool
+	// level is the circuit's escalation rung, which scales the failing window.
+	level int
+	// lastQuery is the newest counted search ATTEMPT (IndexerStats counts failed
+	// attempts too, so on its own it is not evidence of success — see lastSuccess).
+	lastQuery time.Time
+}
+
+// deriveStatus resolves the tri-state derived health (#389), in order:
+//  1. the circuit breaker currently excludes the indexer from dispatch → failing
+//     (its own DisabledTill is the expiry, and it can outlast the failing window),
+//  2. the newest recorded failure is still the newest thing that happened and is
+//     recent enough for the current rung → failing,
+//  3. something succeeded within healthyWindow → healthy,
+//  4. otherwise → unknown: everything known has expired, or nothing was ever observed.
+//
+// Expiry is lazy — steps 2 and 3 are pure timestamp arithmetic at read time. There is
+// no sweep and no probe: an idle indexer simply ages into unknown.
+func (r *StatsReporter) deriveStatus(s healthSignals) string {
+	if s.disabled {
+		return StatusFailing
 	}
-	if len(events) > 0 && failureAfterRecovery(events[0], recovery) &&
-		r.clock().Sub(events[0].OccurredAt) <= healthRecencyWindow {
-		return "unhealthy"
+	now := r.clock()
+	success := s.lastSuccess()
+	if s.failingNow(now, success) {
+		return StatusFailing
 	}
-	return "healthy"
+	if !success.IsZero() && now.Sub(success) <= healthyWindow {
+		return StatusHealthy
+	}
+	return StatusUnknown
+}
+
+// lastSuccess is the newest evidence that something actually WORKED: a counted query
+// strictly newer than the newest recorded failure, or a passing explicit Test. The
+// strict comparison is what separates the two: a failed search is counted as a query
+// too, and it is counted just BEFORE its health event is written, so a query timestamp
+// that merely ties the newest failure is that failure's own attempt, not a success.
+func (s healthSignals) lastSuccess() time.Time {
+	if len(s.events) == 0 || s.lastQuery.After(s.events[0].OccurredAt) {
+		if s.lastQuery.After(s.recovery.OccurredAt) {
+			return s.lastQuery
+		}
+	}
+	return s.recovery.OccurredAt
+}
+
+// failingNow reports whether the newest recorded failure still stands: nothing has
+// succeeded since (neither traffic nor a passing test — failureAfterRecovery carries
+// the id-based tiebreak for a test that lands in the same clock instant), and it is
+// within the failing window for the indexer's current escalation rung.
+func (s healthSignals) failingNow(now, success time.Time) bool {
+	if len(s.events) == 0 {
+		return false
+	}
+	newest := s.events[0]
+	return failureAfterRecovery(newest, s.recovery) &&
+		!success.After(newest.OccurredAt) &&
+		now.Sub(newest.OccurredAt) <= failingWindow(s.level)
 }
 
 // failureAfterRecovery uses the monotonic event id in the normal case. OccurredAt
@@ -725,6 +884,9 @@ type IndexerFailureCounts struct {
 // counters plus the failure aggregation and the last-query/last-failure times.
 // AvgResponseMs is derived (response-time total / queries), so it is 0 when the indexer
 // has never been queried. LastQueryAt/LastFailureAt are zero when never observed.
+// Budget is the current-period request-budget standing, filled by Stats (the
+// per-indexer read) and nil in AllStats — reading it costs one settings query per
+// instance, and the meter it feeds is a per-indexer surface (autobrr/harbrr#402).
 type IndexerStat struct {
 	Slug          string
 	Queries       int64
@@ -733,6 +895,7 @@ type IndexerStat struct {
 	Failures      IndexerFailureCounts
 	LastQueryAt   time.Time
 	LastFailureAt time.Time
+	Budget        *BudgetStatus
 }
 
 // Stats returns one indexer's per-indexer stats: its durable counters plus the failure
@@ -749,8 +912,33 @@ func (r *StatsReporter) Stats(ctx context.Context, slug string) (IndexerStat, er
 	if err != nil {
 		return IndexerStat{}, fmt.Errorf("registry: stats failures %q: %w", slug, err)
 	}
+	budget, err := r.budgetStatus(ctx, inst.ID)
+	if err != nil {
+		return IndexerStat{}, err
+	}
 	queries, grabs, respTotal, lastQuery, _ := r.stats.snapshot(inst.ID)
-	return buildIndexerStat(slug, queries, grabs, respTotal, lastQuery, counts), nil
+	stat := buildIndexerStat(slug, queries, grabs, respTotal, lastQuery, counts)
+	stat.Budget = &budget
+	return stat, nil
+}
+
+// budgetStatus reads the instance's budget knobs off its stored settings and returns
+// the current-period standing. The three keys are plain values (never secrets), so
+// this needs no keyring — and deliberately copies nothing else out of the settings
+// row. Read-only: it counts nothing and persists nothing.
+func (r *StatsReporter) budgetStatus(ctx context.Context, instanceID int64) (BudgetStatus, error) {
+	settings, err := r.instances.Settings(ctx, r.db, instanceID)
+	if err != nil {
+		return BudgetStatus{}, fmt.Errorf("registry: stats budget settings for instance %d: %w", instanceID, err)
+	}
+	cfg := make(map[string]string, 3)
+	for _, s := range settings {
+		switch s.Name {
+		case "query_limit", "grab_limit", "limits_unit":
+			cfg[s.Name] = s.Value
+		}
+	}
+	return r.budget.Status(ctx, instanceID, cfg, r.clock()), nil
 }
 
 // AllStats returns per-indexer stats for every configured instance. It reads the
@@ -850,6 +1038,10 @@ func resolveMeta(inst domain.IndexerInstance, p UpdateParams) (database.Instance
 	if err != nil {
 		return database.InstanceMeta{}, err
 	}
+	exp, err := resolveExpiry(inst, p)
+	if err != nil {
+		return database.InstanceMeta{}, err
+	}
 	name, baseURL := applyMeta(inst, p)
 	return database.InstanceMeta{
 		Name: name, BaseURL: baseURL, Priority: priority, MinSeeders: minSeeders,
@@ -857,6 +1049,7 @@ func resolveMeta(inst domain.IndexerInstance, p UpdateParams) (database.Instance
 		EnableAutomaticSearch:   resolveToggle(p.EnableAutomaticSearch, inst.EnableAutomaticSearch),
 		EnableInteractiveSearch: resolveToggle(p.EnableInteractiveSearch, inst.EnableInteractiveSearch),
 		SyncCategories:          syncCats,
+		ExpiresAt:               exp.date, ExpiryKind: exp.kind, ExpiryLifetime: exp.lifetime,
 	}, nil
 }
 

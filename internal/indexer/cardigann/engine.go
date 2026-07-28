@@ -176,6 +176,13 @@ func resolveOptions(def *loader.Definition, opts []Option) options {
 	// caller's explicit config so user-supplied values win — matching Jackett,
 	// where a request template reads the setting Default until the user sets it.
 	cfg := maps.Clone(DefaultConfig(def))
+	// Reserved per-instance keys are the OPERATOR's alone: a definition that
+	// declares a settings field with a reserved name (only reachable via a
+	// drop-in — vendored defs never do) must not be able to pre-seed it through
+	// its default, or an untouched instance would silently diverge from the
+	// Jackett-identical path. The caller overlay below still applies an
+	// explicitly supplied value.
+	delete(cfg, foldPunctuationSetting)
 	maps.Copy(cfg, o.config)
 	o.config = cfg
 	if o.baseURL == "" {
@@ -183,6 +190,14 @@ func resolveOptions(def *loader.Definition, opts []Option) options {
 	}
 	return o
 }
+
+// foldPunctuationSetting is a RESERVED per-instance setting — not a definition
+// setting — that opts this indexer into punctuation-tolerant andmatch, so a
+// search term an *arr client stripped ("Venise nest pas en Italie") still matches
+// the tracker's unstripped title ("Venise n'est pas en Italie") instead of being
+// dropped by our own row filter (autobrr/harbrr#394). Absent/falsy leaves the
+// Jackett-identical behaviour.
+const foldPunctuationSetting = "andmatch_fold_punctuation"
 
 // buildDeps wires the extraction-half stages: the dateparse parser (def language
 // + injected clock) feeds the search filter registry's date seams; the registry's
@@ -219,6 +234,9 @@ func buildDeps(def *loader.Definition, caps *mapper.Capabilities, o options) (se
 		BaseURL:    o.baseURL,
 		Clock:      o.clock,
 		Encoding:   enc,
+		// canonicalCheckbox is the strict read: only an explicit truthy value
+		// ("true"/"1"/"on"/"yes") opts in, so a persisted literal "false" is off.
+		FoldAndMatchPunctuation: canonicalCheckbox(o.config[foldPunctuationSetting]) == configTrue,
 	}, nil
 }
 

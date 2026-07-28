@@ -175,6 +175,11 @@ func (h *handler) serveDL(w http.ResponseWriter, r *http.Request) {
 		// a disabled instance (registry errDisabled), collapsing both into 404. A benign
 		// divergence: both are 4xx failed grabs to *arr, neither leaks, and the disabled
 		// case is only reachable here with an already-minted token.
+		//
+		// This is also what keeps an AGGREGATE slug ("all", "profile:<name>") from ever
+		// serving a download: it names a member set, not an instance, so Indexer never
+		// resolves it and /dl on it 404s. An aggregate feed's enclosures point at the
+		// ORIGIN member's /dl (see aggregateItems), which is the whole binding.
 		writeError(w, http.StatusNotFound, codeBadParameter, "Indexer is not supported")
 		return
 	}
@@ -300,21 +305,72 @@ func isBencodeTorrent(body []byte) bool {
 	return len(body) > 0 && body[0] == 'd'
 }
 
-// serve is the request entry point: authenticate, resolve the indexer, then
-// dispatch on t=. Credential and indexer-resolution failures return HTTP 200
+// serve is the request entry point: authenticate, resolve the slug to its member set,
+// then dispatch on t=. Credential and indexer-resolution failures return HTTP 200
 // with an <error> body (Jackett's torznab behavior) so *arr surfaces the error
 // code rather than treating it as a transport failure.
+//
+// A slug naming a real indexer resolves to exactly one member and takes the untouched
+// per-indexer path — that feed is byte-identical, by construction, to what it served
+// before aggregation existed. Everything else is the aggregate fan-out (#400), including
+// an aggregate slug that currently covers a single enabled indexer: it still renders the
+// aggregate envelope and ledger, so the feed's shape does not change under the consumer
+// when a second indexer is enabled. An unknown profile is not-found exactly as an
+// unknown indexer slug is.
 func (h *handler) serve(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	if !h.authorized(q) {
 		writeError(w, http.StatusOK, codeInvalidAPIKey, "Invalid API Key")
 		return
 	}
-	idx, ok := h.provider.Indexer(r.Context(), r.PathValue("slug"))
-	if !ok {
+	slug := r.PathValue("slug")
+	members, err := h.provider.Resolve(r.Context(), slug)
+	if err != nil {
+		h.writeResolveError(w, slug, err)
+		return
+	}
+	if !isAggregateSlug(slug) {
+		// Resolve's contract: a non-aggregate slug that resolves is exactly one LIVE
+		// indexer (a single slug that cannot be built does not resolve at all).
+		h.serveIndexer(w, r, members[0].Indexer, q)
+		return
+	}
+	h.serveAggregate(w, r, slug, members, q)
+}
+
+// writeResolveError answers a slug that produced no member set, distinguishing the two
+// things that can mean (autobrr/harbrr#400, review decision):
+//
+//   - The slug names nothing (core.ErrNoSuchFeed) — a client error: the same 201
+//     "Indexer is not supported" document an unknown per-indexer slug has always
+//     rendered (Jackett parity), unlogged.
+//   - The member set could not be READ (the instance/profile store failed) — harbrr's
+//     problem, not the consumer's config: error 900, matching the 500→900 mapping the
+//     /dl proxy already uses for internal failures. Telling an *arr "your config is
+//     wrong" over a transient store failure sends its operator to the wrong ladder.
+//
+// Either way it is a loud error document, never the empty-200 feed a nil member set
+// would otherwise serve — a whole-list failure must be distinguishable from "you have
+// no indexers". Both the per-indexer and aggregate slug forms route through here, so
+// the two feed shapes cannot disagree.
+func (h *handler) writeResolveError(w http.ResponseWriter, slug string, err error) {
+	if errors.Is(err, core.ErrNoSuchFeed) {
 		writeError(w, http.StatusOK, codeBadParameter, "Indexer is not supported")
 		return
 	}
+	logInternalError(h.log, "resolve", slug, err)
+	writeError(w, http.StatusOK, codeUnknownError, "Internal server error")
+}
+
+// isAggregateSlug reports whether a feed slug names a member SET rather than one
+// indexer: core.AggregateSlug, or a core.ProfileSlugPrefix form. The status: form
+// (autobrr/harbrr#400 PR 3, behind the health selector) extends exactly here.
+func isAggregateSlug(slug string) bool {
+	return slug == core.AggregateSlug || strings.HasPrefix(slug, core.ProfileSlugPrefix)
+}
+
+// serveIndexer is the per-indexer feed: caps or results for one resolved indexer.
+func (h *handler) serveIndexer(w http.ResponseWriter, r *http.Request, idx core.Indexer, q url.Values) {
 	if t := q.Get("t"); strings.EqualFold(t, tzn.ReqCaps) {
 		h.writeCaps(w, idx)
 		return
@@ -339,11 +395,18 @@ func (h *handler) authorized(q url.Values) bool {
 	return key == h.apiKey
 }
 
-// writeCaps serializes and writes the capabilities document (t=caps).
+// writeCaps serializes and writes an indexer's capabilities document (t=caps).
 func (h *handler) writeCaps(w http.ResponseWriter, idx core.Indexer) {
-	body, err := tzn.MarshalCaps(idx.Capabilities())
+	h.writeCapsDoc(w, idx.Info().ID, idx.Capabilities())
+}
+
+// writeCapsDoc serializes a capabilities document under an explicit feed id, so the
+// aggregate feed can serve the union of its members' caps and still log a failure
+// against the feed the caller asked for.
+func (h *handler) writeCapsDoc(w http.ResponseWriter, id string, caps *mapper.Capabilities) {
+	body, err := tzn.MarshalCaps(caps)
 	if err != nil {
-		h.writeInternalError(w, "caps", idx.Info().ID, err)
+		h.writeInternalError(w, "caps", id, err)
 		return
 	}
 	writeXML(w, http.StatusOK, body)
@@ -408,7 +471,7 @@ func stableGUID(indexerID, original string) string {
 // happens here — the grab resolves server-side).
 func (h *handler) writeResults(w http.ResponseWriter, r *http.Request, idx core.Indexer, q url.Values) {
 	caps := idx.Capabilities()
-	if !h.resolveMode(w, q, caps) {
+	if _, ok := h.resolveMode(w, q, caps); !ok {
 		return
 	}
 	// A CacheInfo sink lets the cache decorator surface whether this response came
@@ -448,27 +511,30 @@ func (h *handler) writeResults(w http.ResponseWriter, r *http.Request, idx core.
 	writeXML(w, http.StatusOK, body)
 }
 
-// resolveMode validates the t= search mode against the indexer's capabilities,
-// writing the appropriate error and returning false on failure. A missing t
-// defaults to the general search mode (Jackett's TorznabRequest default).
-func (h *handler) resolveMode(w http.ResponseWriter, q url.Values, caps *mapper.Capabilities) bool {
+// resolveMode validates the t= search mode against the given capabilities, writing the
+// appropriate error and returning ok=false on failure; on success it returns the
+// resolved caps.modes key. A missing t defaults to the general search mode (Jackett's
+// TorznabRequest default). The aggregate feed runs it against the UNION of member caps,
+// so a mode no member supports is rejected exactly as an unsupported mode is on a
+// per-indexer feed, and the key it returns is what selects the members that can serve it.
+func (h *handler) resolveMode(w http.ResponseWriter, q url.Values, caps *mapper.Capabilities) (string, bool) {
 	capsKey := mapper.ModeSearch
 	if t := q.Get("t"); t != "" {
 		var known bool
 		if capsKey, known = tzn.ModeForRequest(t); !known {
 			writeError(w, http.StatusBadRequest, codeNoSuchFunction, "No such function")
-			return false
+			return "", false
 		}
 	}
 	if !tzn.ModeAvailable(caps, capsKey) {
 		writeError(w, http.StatusBadRequest, codeNotAvailable, "Function Not Available: this indexer does not support that search mode")
-		return false
+		return "", false
 	}
 	if param, ok := unsupportedIDParam(caps, capsKey, q); !ok {
 		writeError(w, http.StatusBadRequest, codeNotAvailable, "Function Not Available: "+param+" is not supported for this search mode")
-		return false
+		return "", false
 	}
-	return true
+	return capsKey, true
 }
 
 // gatedIDParams are the id search params Jackett rejects (error 203) when the

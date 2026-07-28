@@ -158,6 +158,14 @@ func (p regProvider) Indexer(_ context.Context, id string) (core.Indexer, bool) 
 	return i, ok
 }
 
+func (p regProvider) Resolve(ctx context.Context, slug string) ([]core.MemberOutcome, error) {
+	i, ok := p.Indexer(ctx, slug)
+	if !ok {
+		return nil, core.ErrNoSuchFeed
+	}
+	return []core.MemberOutcome{core.LiveMember(i)}, nil
+}
+
 func regDo(t *testing.T, h http.Handler) string {
 	t.Helper()
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,

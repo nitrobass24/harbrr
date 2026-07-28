@@ -142,8 +142,8 @@ func warmPhase(instanceID int64, interval time.Duration) time.Duration {
 
 // warmOne drives the served path for slug under cache bypass, keeping its
 // canonical RSS cache entry hot. Any error — a disabled/unresolvable instance, an
-// exhausted request budget (errBudgetExhausted), an open circuit breaker
-// (errCircuitOpen), or a transport failure — is a logged skip: the warmer never
+// exhausted request budget (core.ErrBudgetExhausted), an open circuit breaker
+// (core.ErrCircuitOpen), or a transport failure — is a logged skip: the warmer never
 // retries within a tick, it just waits for the target's next scheduled warm. The
 // error is redacted before logging since a native driver's transport error can
 // embed a tracker URL (passkey included).

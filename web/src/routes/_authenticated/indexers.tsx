@@ -25,6 +25,7 @@ import { PageHeader } from "@/components/layout/PageHeader"
 import { APIError } from "@/lib/api"
 import type { Capabilities } from "@/lib/api"
 import { getBaseUrl } from "@/lib/base-url"
+import { expirySortKey } from "@/lib/expiry"
 import { copyText } from "@/lib/clipboard"
 import { notifyError, notifySuccess, notifyWarn } from "@/lib/notify"
 
@@ -60,6 +61,10 @@ function IndexersPage() {
   const [deleting, setDeleting] = useState<string | null>(null)
   const [snippetFor, setSnippetFor] = useState<string | null>(null)
   const [detailsFor, setDetailsFor] = useState<string | null>(null)
+  // Expiry sorting is opt-in, not the default order: most indexers track no expiry,
+  // and reordering the whole list for a feature nobody has filled in yet would be
+  // noise. Toggling the Expiry header answers "what needs attention" in one click.
+  const [sortByExpiry, setSortByExpiry] = useState(false)
 
   const defTypes = new Map((definitions.data ?? []).map((d) => [d.id, d.type]))
   const needle = filter.toLowerCase()
@@ -75,6 +80,12 @@ function IndexersPage() {
     .filter((row) => row.instance.name.toLowerCase().includes(needle) ||
       row.instance.slug.includes(needle) ||
       (row.instance.baseUrl ?? "").includes(needle))
+
+  if (sortByExpiry) {
+    // Soonest first, expired at the top; untracked and lifetime sink to the bottom
+    // (Infinity), where ties fall back to the server's slug order.
+    rows.sort((a, b) => expirySortKey(a.instance) - expirySortKey(b.instance))
+  }
 
   const healthy = statuses.filter((s) => s.data?.status === "healthy").length
   const total = indexers.data?.length ?? 0
@@ -147,7 +158,14 @@ function IndexersPage() {
           </div>
         ) : indexers.isSuccess ? (
           <>
-            {isMobile ? <IndexerCardsMobile rows={rows} actions={rowActions} /> : <IndexersTable rows={rows} actions={rowActions} />}
+            {isMobile ? <IndexerCardsMobile rows={rows} actions={rowActions} /> : (
+              <IndexersTable
+                rows={rows}
+                actions={rowActions}
+                sortByExpiry={sortByExpiry}
+                onToggleExpirySort={() => setSortByExpiry((v) => !v)}
+              />
+            )}
             <p className="mt-3 px-1 text-[12px] text-faint">Showing {rows.length} of {total} indexers</p>
           </>
         ) : null}

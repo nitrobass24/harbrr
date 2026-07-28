@@ -48,8 +48,50 @@ type IndexerInstance struct {
 	// full app-gated set is pushed) — the same parent-block convention the old profile
 	// category picker used.
 	SyncCategories []int
+	// ExpiresAt is the operator-entered VIP/membership expiry as a calendar DATE
+	// ("YYYY-MM-DD"); empty means untracked. Deliberately a date string, not a
+	// time.Time: an expiry is a day on the tracker's calendar, not an instant, so
+	// keeping it out of the timezone domain keeps it from drifting a day either way.
+	ExpiresAt string
+	// ExpiryKind distinguishes ExpiryKindPerk (VIP lapses, account survives) from
+	// ExpiryKindAccount (access ends); empty reads as a generic membership expiry.
+	// Only meaningful alongside ExpiresAt or ExpiryLifetime.
+	ExpiryKind string
+	// ExpiryLifetime is the never-expires flag. It wins over ExpiresAt (which is
+	// cleared when it is set) and never produces a notification.
+	ExpiryLifetime bool
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+}
+
+// Expiry kinds — what an indexer's expiry date ends. Stored verbatim in
+// indexer_instances.expiry_kind; validated in Go (no DB CHECK) so a further kind
+// needs no migration.
+const (
+	// ExpiryKindPerk is a VIP/premium lapse: freeleech, ratio exemption and pruning
+	// immunity stop, but the account survives.
+	ExpiryKindPerk = "perk"
+	// ExpiryKindAccount is the account or paid membership itself lapsing — on an
+	// invite-only tracker, effectively unrecoverable.
+	ExpiryKindAccount = "account"
+)
+
+// ExpiryDateLayout is the storage and wire form of an expiry date — the same
+// "YYYY-MM-DD" an <input type="date"> produces, so no conversion sits between the
+// form field and the column.
+const ExpiryDateLayout = "2006-01-02"
+
+// IndexerExpiry is one tracked indexer's expiry state plus its notification ledger
+// — the narrow row the expiry scan reads, so the scan never loads whole instances.
+// NotifiedFor is the expiry date the ledger belongs to (empty = nothing has fired);
+// NotifiedDays is the most urgent lead-time threshold already fired for that date.
+type IndexerExpiry struct {
+	InstanceID   int64
+	Slug         string
+	ExpiresAt    string
+	Kind         string
+	NotifiedFor  string
+	NotifiedDays int
 }
 
 // User is harbrr's admin account. First-run setup creates exactly one. The
@@ -257,8 +299,10 @@ type Notification struct {
 	KeyID           string
 	Enabled         bool
 	OnHealthFailure bool
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// OnExpiry opts the target into indexer VIP/membership expiry events (#399).
+	OnExpiry  bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // Proxy scheme types — stored verbatim in proxies.type, validated in Go (no DB

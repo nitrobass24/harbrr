@@ -104,6 +104,79 @@ func TestParentAndCustom(t *testing.T) {
 	}
 }
 
+// TestIsAdultCategory pins the XXX-family bounds behind the operator's
+// hide-adult-categories setting: 6000 and its children in, the neighbouring
+// families and a synthesised custom id out.
+func TestIsAdultCategory(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		id   int
+		want bool
+	}{
+		{5080, false}, // TV/Documentary — the family below
+		{6000, true},  // XXX (family root)
+		{6045, true},  // XXX/UHD
+		{6090, true},  // XXX/WEB-DL (highest in the table)
+		{6999, true},  // upper bound of the half-open range
+		{7000, false}, // Books — the family above
+		{100006, false},
+	}
+	for _, tt := range tests {
+		if got := IsAdultCategory(tt.id); got != tt.want {
+			t.Errorf("IsAdultCategory(%d) = %v, want %v", tt.id, got, tt.want)
+		}
+	}
+}
+
+// TestAdultCategoryIDs proves the hide set covers both halves of the taxonomy:
+// the standard XXX ids AND the synthesised custom (1:1) category whose tracker
+// category maps into the XXX family (it carries the tracker's own adult label,
+// so leaving it advertised would defeat the setting). Non-adult standard and
+// custom categories are untouched.
+func TestAdultCategoryIDs(t *testing.T) {
+	t.Parallel()
+
+	caps := &Capabilities{
+		Categories: []Category{
+			{ID: 2000, Name: "Movies"},
+			{ID: 6000, Name: "XXX"},
+			{ID: 6010, Name: "XXX/DVD"},
+			{ID: 100001, Name: "Films"},
+			{ID: 100006, Name: "Adult Films"},
+		},
+		CategoryMap: &CategoryMap{},
+	}
+	caps.CategoryMap.add("1", "Films", 2000)
+	caps.CategoryMap.add("1", "Films", 100001)
+	caps.CategoryMap.add("6", "Adult Films", 6000)
+	caps.CategoryMap.add("6", "Adult Films", 100006)
+
+	got := caps.AdultCategoryIDs()
+	want := map[int]struct{}{6000: {}, 6010: {}, 100006: {}}
+	if len(got) != len(want) {
+		t.Fatalf("AdultCategoryIDs() = %v, want %v", got, want)
+	}
+	for id := range want {
+		if _, ok := got[id]; !ok {
+			t.Errorf("AdultCategoryIDs() is missing %d: %v", id, got)
+		}
+	}
+}
+
+// TestAdultCategoryIDsWithoutCategoryMap covers a capabilities value with no
+// mapping table (a native driver): the standard XXX ids are still hidden and
+// nothing panics.
+func TestAdultCategoryIDsWithoutCategoryMap(t *testing.T) {
+	t.Parallel()
+
+	caps := &Capabilities{Categories: []Category{{ID: 2000, Name: "Movies"}, {ID: 6000, Name: "XXX"}}}
+	got := caps.AdultCategoryIDs()
+	if _, ok := got[6000]; !ok || len(got) != 1 {
+		t.Errorf("AdultCategoryIDs() = %v, want just 6000", got)
+	}
+}
+
 // schemaEnumDoc is the minimal shape needed to extract the IndexerCategories
 // enum from the JSON-Schema document.
 type schemaEnumDoc struct {

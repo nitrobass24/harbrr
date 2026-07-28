@@ -385,8 +385,8 @@ paths:
     get:
       summary: Get fleet-wide indexer health status
       description: >
-        Returns healthy/unhealthy counts across every configured indexer, plus each
-        indexer's derived status and most recent health event, sorted by slug.
+        Returns healthy/failing/unknown counts across every configured indexer, plus
+        each indexer's derived status and most recent health event, sorted by slug.
       operationId: allIndexerStatus
       tags: [Indexers]
       security: [{ session: [] }, { apiKey: [] }]
@@ -499,7 +499,7 @@ paths:
     get:
       summary: Get an indexer's health status
       description: >
-        Returns the indexer's derived health (healthy/unhealthy) and its recent
+        Returns the indexer's derived health (healthy/failing/unknown) and its recent
         health events (auth_failure, rate_limited, parse_error, anti_bot, transport). Event
         details are credential-scrubbed before storage, so no secret is surfaced.
       operationId: indexerStatus
@@ -517,7 +517,7 @@ paths:
                 required: [slug, status, events]
                 properties:
                   slug: { type: string }
-                  status: { type: string, enum: [healthy, unhealthy] }
+                  status: { type: string, enum: [healthy, failing, unknown] }
                   events:
                     type: array
                     items:
@@ -2080,6 +2080,95 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /api/config/adult-categories:
+    get:
+      summary: Get the hide-adult-categories setting
+      description: >
+        Returns whether the operator asked for adult (XXX, category 6000–6999)
+        categories to be hidden (autobrr/harbrr#383). Off by default.
+      operationId: getAdultCategories
+      tags: [System]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the current setting
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdultCategories" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      summary: Set the hide-adult-categories setting
+      description: >
+        Persists the choice and applies it to subsequent requests (no restart).
+        When on, the XXX taxonomy is omitted from this API's category lists
+        (indexer capabilities, definition capabilities) and a search issued with
+        no `cat` parameter drops XXX-category results. Searches that name
+        categories are honored unchanged, and the Torznab/Newznab feed is not
+        filtered — feed consumers carry their own category selection.
+      operationId: putAdultCategories
+      tags: [System]
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdultCategories" }
+      responses:
+        "200":
+          description: the applied setting
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdultCategories" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503":
+          description: adult-category filtering is unavailable
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/config/expiry-thresholds:
+    get:
+      summary: Get the indexer expiry lead times
+      description: >
+        Returns the lead times (days before a tracked VIP/membership expiry) that the
+        periodic expiry scan warns at (autobrr/harbrr#399), defaults included when the
+        operator has set none. Always canonical: deduped, descending, and always
+        containing the at-expiry warning (0), which cannot be switched off.
+      operationId: getExpiryThresholds
+      tags: [System]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the effective lead times
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExpiryThresholds" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      summary: Set the indexer expiry lead times
+      description: >
+        Persists the lead times and echoes back the canonical list actually stored, so
+        a read-back can never disagree with what the scan applies. The change takes
+        effect on the next scan without a restart. An empty list leaves exactly the
+        at-expiry warning.
+      operationId: putExpiryThresholds
+      tags: [System]
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExpiryThresholds" }
+      responses:
+        "200":
+          description: the stored lead times
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExpiryThresholds" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /api/config/rate-limit:
     get:
       summary: Get the global rate-limit default
@@ -2327,11 +2416,18 @@ components:
         - { $ref: "#/components/schemas/DefinitionSummary" }
         - type: object
           properties:
+            links:
+              type: array
+              description: >
+                the definition's known host URLs — the candidate list the base-URL
+                override picks from. The effective host is the override if set, else
+                the first entry.
+              items: { type: string }
             settings:
               type: array
               items: { $ref: "#/components/schemas/SettingField" }
             caps: { $ref: "#/components/schemas/Capabilities" }
-          required: [settings, caps]
+          required: [links, settings, caps]
     ApiKey:
       type: object
       properties:
@@ -2385,9 +2481,22 @@ components:
         enableRss: { type: boolean, default: true, description: pushed RSS search-mode flag (ANDed with enabled) }
         enableAutomaticSearch: { type: boolean, default: true, description: pushed automatic-search-mode flag (ANDed with enabled) }
         enableInteractiveSearch: { type: boolean, default: true, description: pushed interactive-search-mode flag (ANDed with enabled) }
+        expiresAt:
+          type: string
+          description: >
+            operator-entered VIP/membership expiry as a calendar date (YYYY-MM-DD);
+            empty means untracked (autobrr/harbrr#399). Always empty when
+            expiryLifetime is true.
+        expiryKind:
+          type: string
+          enum: ["", perk, account]
+          description: >
+            what the date ends — perk (VIP/premium lapses, account survives) or
+            account (access itself ends); empty reads as a generic membership expiry
+        expiryLifetime: { type: boolean, description: "never expires; wins over expiresAt and never notifies" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
-      required: [id, slug, definitionId, name, enabled, protocol, freeleech, priority, minSeeders, syncCategories, enableRss, enableAutomaticSearch, enableInteractiveSearch, createdAt, updatedAt]
+      required: [id, slug, definitionId, name, enabled, protocol, freeleech, priority, minSeeders, syncCategories, enableRss, enableAutomaticSearch, enableInteractiveSearch, expiresAt, expiryKind, expiryLifetime, createdAt, updatedAt]
     IndexerStats:
       type: object
       description: >
@@ -2395,7 +2504,8 @@ components:
         failure tally folded in from the health events. queries counts searches that
         reached the tracker (a cache hit bypasses the counted path), so avgResponseMs
         reflects real upstream latency. lastQueryAt/lastFailureAt are absent when never
-        observed.
+        observed. budget is present on GET /api/indexers/{slug}/stats only — the
+        all-indexers list omits it.
       properties:
         slug: { type: string }
         queries: { type: integer, format: int64 }
@@ -2412,16 +2522,50 @@ components:
           required: [authFailure, rateLimited, parseError, antiBot, transport]
         lastQueryAt: { type: string, format: date-time }
         lastFailureAt: { type: string, format: date-time }
+        budget: { $ref: "#/components/schemas/IndexerBudget" }
       required: [slug, queries, grabs, avgResponseMs, failures]
+    IndexerBudget:
+      type: object
+      description: >
+        The indexer's request-budget standing for the CURRENT rolling period
+        (autobrr/harbrr#251, surfaced by #402): what has been counted so far against
+        the operator-configured caps, and when the period rolls over. It reports the
+        counters the registry already keeps — reading it collects nothing and counts
+        nothing. limit is the OPERATOR-CONFIGURED cap (0 = none configured); learned
+        is the separate reactive latch harbrr set from the tracker's own quota error,
+        which carries no number because the tracker never declared one. A learned
+        latch or a used-at-limit kind is a self-imposed guard, not an indexer failure.
+      properties:
+        unit: { type: string, enum: [day, hour], description: the rolling period the counters reset on }
+        periodEnd:
+          type: string
+          format: date-time
+          description: when the current period rolls over (UTC) — used resets and any learned latch clears
+        query: { $ref: "#/components/schemas/IndexerBudgetKind" }
+        grab: { $ref: "#/components/schemas/IndexerBudgetKind" }
+      required: [unit, periodEnd, query, grab]
+    IndexerBudgetKind:
+      type: object
+      description: One kind's (search or grab) usage against its cap for the current period.
+      properties:
+        used: { type: integer, format: int64, description: requests of this kind counted in the current period }
+        limit: { type: integer, description: the operator-configured cap for the period; 0 means none configured }
+        learned:
+          type: boolean
+          description: >
+            the tracker declared its own quota spent for this kind in the current
+            period (the reactive latch) — a cap harbrr was never configured with
+      required: [used, limit, learned]
     FleetStatus:
       type: object
       description: >
-        Fleet-wide indexer health roll-up: healthy/unhealthy counts plus each
+        Fleet-wide indexer health roll-up: healthy/failing/unknown counts plus each
         configured indexer's derived status and most recent health event, sorted
         by slug.
       properties:
         healthy: { type: integer }
-        unhealthy: { type: integer }
+        failing: { type: integer }
+        unknown: { type: integer }
         indexers:
           type: array
           items:
@@ -2429,7 +2573,7 @@ components:
             required: [slug, status]
             properties:
               slug: { type: string }
-              status: { type: string, enum: [healthy, unhealthy] }
+              status: { type: string, enum: [healthy, failing, unknown] }
               lastEvent:
                 type: object
                 required: [kind, occurred_at]
@@ -2445,7 +2589,7 @@ components:
                 description: >
                   Present only while the circuit breaker (autobrr/harbrr#253) currently
                   excludes the indexer from search/grab dispatch.
-      required: [healthy, unhealthy, indexers]
+      required: [healthy, failing, unknown, indexers]
     InstanceDetail:
       allOf:
         - { $ref: "#/components/schemas/Instance" }
@@ -2477,6 +2621,9 @@ components:
         enableRss: { type: boolean, default: true }
         enableAutomaticSearch: { type: boolean, default: true }
         enableInteractiveSearch: { type: boolean, default: true }
+        expiresAt: { type: string, description: "VIP/membership expiry date (YYYY-MM-DD); omitted or empty = untracked" }
+        expiryKind: { type: string, enum: ["", perk, account], description: "perk = VIP lapses, account = access ends" }
+        expiryLifetime: { type: boolean, description: "never expires; clears expiresAt and never notifies" }
       required: [definitionId]
     UpdateIndexer:
       type: object
@@ -2498,6 +2645,9 @@ components:
         enableRss: { type: boolean, description: omitted leaves it unchanged }
         enableAutomaticSearch: { type: boolean, description: omitted leaves it unchanged }
         enableInteractiveSearch: { type: boolean, description: omitted leaves it unchanged }
+        expiresAt: { type: string, description: "present-but-empty clears the tracking; omitted leaves it unchanged" }
+        expiryKind: { type: string, enum: ["", perk, account], description: omitted leaves it unchanged }
+        expiryLifetime: { type: boolean, description: omitted leaves it unchanged }
     Capabilities:
       type: object
       properties:
@@ -2784,9 +2934,10 @@ components:
         url: { type: string, description: "the destination URL, redacted (<redacted>)" }
         enabled: { type: boolean }
         onHealthFailure: { type: boolean, description: fire on a classified indexer health failure }
+        onExpiry: { type: boolean, description: "fire on an approaching or passed indexer VIP/membership expiry (autobrr/harbrr#399)" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
-      required: [id, name, type, url, enabled, onHealthFailure, createdAt, updatedAt]
+      required: [id, name, type, url, enabled, onHealthFailure, onExpiry, createdAt, updatedAt]
     CreateNotification:
       type: object
       properties:
@@ -2794,6 +2945,7 @@ components:
         type: { type: string, enum: [webhook, discord] }
         url: { type: string, description: the destination URL (stored encrypted) }
         onHealthFailure: { type: boolean, description: "fire on an indexer health failure (default true)" }
+        onExpiry: { type: boolean, description: "fire on an indexer expiry warning (default true)" }
       required: [name, type, url]
     UpdateNotification:
       type: object
@@ -2802,6 +2954,7 @@ components:
         name: { type: string }
         url: { type: string, description: rotates the destination (stored encrypted) }
         onHealthFailure: { type: boolean }
+        onExpiry: { type: boolean }
     Proxy:
       type: object
       description: >
@@ -3242,6 +3395,38 @@ components:
           enum: [trace, debug, info, warn, error]
           description: the log level applied across every subsystem
       required: [level]
+
+    AdultCategories:
+      type: object
+      description: >
+        The global hide-adult-categories setting (autobrr/harbrr#383): whether the
+        XXX (6000–6999) taxonomy is omitted from this API's category lists and
+        from searches that name no categories. Off by default. It filters by the
+        category a tracker declares, so a miscategorised release can still appear
+        — it is not a content guarantee.
+      properties:
+        hidden:
+          type: boolean
+          description: true when adult categories are hidden
+      required: [hidden]
+
+    ExpiryThresholds:
+      type: object
+      description: >
+        The indexer VIP/membership expiry lead times (autobrr/harbrr#399): how many
+        days before a tracked expiry date the periodic scan warns. Each threshold
+        fires exactly once per indexer per expiry date and re-arms when the date
+        changes, so a renewal restores the whole ladder. The at-expiry warning (0) is
+        always present: an expiry passing unannounced is the failure this exists to
+        prevent.
+      properties:
+        days:
+          type: array
+          items: { type: integer, minimum: 0, maximum: 3650 }
+          description: >
+            lead times in days before expiry; the response is always canonical
+            (deduped, descending, including 0)
+      required: [days]
 
     RateLimitConfig:
       type: object

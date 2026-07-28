@@ -7,6 +7,7 @@ import (
 	stdhttp "net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -15,8 +16,10 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/core"
 	"github.com/autobrr/harbrr/internal/indexer/native/catalog"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 	"github.com/autobrr/harbrr/internal/secrets"
@@ -486,6 +489,12 @@ func TestAddRejectsReservedSlug(t *testing.T) {
 		wantErr error
 	}{
 		{name: "reserved stats", slug: "stats", wantErr: registry.ErrInvalid},
+		// "all" names the aggregate feed in the same {slug} position (#400): an indexer
+		// holding it would make the aggregate unreachable AND its grabs ambiguous.
+		{name: "reserved all", slug: core.AggregateSlug, wantErr: registry.ErrInvalid},
+		// Uppercase never reaches the reserved check — slugPattern rejects it first —
+		// which is how the reservation is case-insensitive for free.
+		{name: "reserved all uppercase", slug: "ALL", wantErr: registry.ErrInvalid},
 		{name: "normal slug", slug: "notstats", wantErr: nil},
 	}
 	for _, tt := range tests {
@@ -500,6 +509,221 @@ func TestAddRejectsReservedSlug(t *testing.T) {
 				t.Fatalf("Add(%q) err = %v, want %v", tt.slug, err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// TestResolveAggregateSlug: core.AggregateSlug fans out to every ENABLED instance in
+// slug order, a disabled one drops out, and a real slug still resolves to exactly
+// itself — the seam every per-indexer feed keeps going through unchanged (#400).
+func TestResolveAggregateSlug(t *testing.T) {
+	t.Parallel()
+
+	reg, _ := newRegistry(t, nil)
+	ctx := context.Background()
+	for _, slug := range []string{"beta", "alpha", "gamma"} {
+		if _, err := reg.Add(ctx, registry.AddParams{Slug: slug, DefinitionID: "testtracker"}); err != nil {
+			t.Fatalf("Add(%q): %v", slug, err)
+		}
+	}
+	if err := reg.SetEnabled(ctx, "gamma", false); err != nil {
+		t.Fatalf("SetEnabled: %v", err)
+	}
+
+	members, err := reg.Resolve(ctx, core.AggregateSlug)
+	if err != nil {
+		t.Fatalf("Resolve(all): %v", err)
+	}
+	if want := []string{"alpha", "beta"}; !slices.Equal(memberIDs(members), want) {
+		t.Errorf("Resolve(all) = %v, want %v (enabled only, slug order)", memberIDs(members), want)
+	}
+
+	single, err := reg.Resolve(ctx, "beta")
+	if err != nil || len(single) != 1 || single[0].ID != "beta" || single[0].Indexer == nil {
+		t.Errorf("Resolve(beta) = %v, %v; want exactly one live [beta]", single, err)
+	}
+	if _, err := reg.Resolve(ctx, "nope"); !errors.Is(err, core.ErrNoSuchFeed) {
+		t.Errorf("Resolve of an unknown slug = %v, want ErrNoSuchFeed", err)
+	}
+	// The aggregate slug names no indexer, which is what makes all/dl unservable.
+	if _, ok := reg.Indexer(ctx, core.AggregateSlug); ok {
+		t.Error("Indexer(all) must be !ok")
+	}
+}
+
+// memberIDs is the resolved member set as a slug list, for order assertions.
+func memberIDs(members []core.MemberOutcome) []string {
+	out := make([]string, 0, len(members))
+	for _, m := range members {
+		out = append(out, m.ID)
+	}
+	return out
+}
+
+// TestResolveAggregateEmpty: an aggregate over zero enabled instances resolves to an
+// empty set with no error — a valid empty feed, never an "indexer not supported" error.
+func TestResolveAggregateEmpty(t *testing.T) {
+	t.Parallel()
+
+	reg, _ := newRegistry(t, nil)
+	members, err := reg.Resolve(context.Background(), core.AggregateSlug)
+	if err != nil || len(members) != 0 {
+		t.Errorf("Resolve(all) = %v, %v; want empty and no error", members, err)
+	}
+}
+
+// newProfile creates a sync profile named name selecting the given instance slugs, and
+// returns the feed slug that addresses it.
+func newProfile(t *testing.T, db *database.DB, name string, slugs ...string) string {
+	t.Helper()
+	ctx := context.Background()
+	id, err := database.SyncProfiles{}.InsertProfile(ctx, db, domain.SyncProfile{Name: name})
+	if err != nil {
+		t.Fatalf("insert profile %q: %v", name, err)
+	}
+	ids := make([]int64, 0, len(slugs))
+	for _, slug := range slugs {
+		inst, err := database.Instances{}.GetBySlug(ctx, db, slug)
+		if err != nil {
+			t.Fatalf("get instance %q: %v", slug, err)
+		}
+		ids = append(ids, inst.ID)
+	}
+	if err := (database.SyncProfiles{}).ReplaceProfileIndexers(ctx, db, id, ids); err != nil {
+		t.Fatalf("replace profile indexers: %v", err)
+	}
+	return core.ProfileSlugPrefix + name
+}
+
+// TestResolveProfileSlug: 'profile:<name>' resolves to exactly that profile's members,
+// in the same slug order the aggregate uses — and a DISABLED member is still selected,
+// ledgered as such, because the operator put it in the profile.
+func TestResolveProfileSlug(t *testing.T) {
+	t.Parallel()
+
+	reg, db := newRegistry(t, nil)
+	ctx := context.Background()
+	for _, slug := range []string{"beta", "alpha", "gamma", "delta"} {
+		if _, err := reg.Add(ctx, registry.AddParams{Slug: slug, DefinitionID: "testtracker"}); err != nil {
+			t.Fatalf("Add(%q): %v", slug, err)
+		}
+	}
+	if err := reg.SetEnabled(ctx, "gamma", false); err != nil {
+		t.Fatalf("SetEnabled: %v", err)
+	}
+	slug := newProfile(t, db, "my movies", "gamma", "beta", "alpha")
+
+	members, err := reg.Resolve(ctx, slug)
+	if err != nil {
+		t.Fatalf("Resolve(%q): %v", slug, err)
+	}
+	if want := []string{"alpha", "beta", "gamma"}; !slices.Equal(memberIDs(members), want) {
+		t.Errorf("Resolve(%q) = %v, want %v (profile members only, slug order)", slug, memberIDs(members), want)
+	}
+	for _, m := range members {
+		switch m.ID {
+		case "gamma":
+			if m.Reason != core.SkipDisabled || m.Indexer != nil {
+				t.Errorf("disabled member = %+v, want a %q skip with no engine", m, core.SkipDisabled)
+			}
+		default:
+			if !m.OK() || m.Indexer == nil {
+				t.Errorf("member %q = %+v, want live", m.ID, m)
+			}
+		}
+	}
+}
+
+// TestResolveProfileNotFound: an unknown profile is the same not-found an unknown
+// indexer slug is, and a profile feed slug resolves no INDEXER, so profile:x/dl 404s.
+func TestResolveProfileNotFound(t *testing.T) {
+	t.Parallel()
+
+	reg, _ := newRegistry(t, nil)
+	ctx := context.Background()
+	if _, err := reg.Resolve(ctx, core.ProfileSlugPrefix+"nope"); !errors.Is(err, core.ErrNoSuchFeed) {
+		t.Errorf("Resolve of an unknown profile = %v, want ErrNoSuchFeed", err)
+	}
+	if _, ok := reg.Indexer(ctx, core.ProfileSlugPrefix+"nope"); ok {
+		t.Error("Indexer(profile:...) must be !ok, so profile:x/dl can never serve a download")
+	}
+}
+
+// TestResolveProfileEmpty: a profile selecting nothing is an empty member set with no
+// error — an empty feed with an empty (but present) ledger, not a not-found.
+func TestResolveProfileEmpty(t *testing.T) {
+	t.Parallel()
+
+	reg, db := newRegistry(t, nil)
+	slug := newProfile(t, db, "empty")
+	members, err := reg.Resolve(context.Background(), slug)
+	if err != nil || len(members) != 0 {
+		t.Errorf("Resolve(%q) = %v, %v; want empty and no error", slug, members, err)
+	}
+}
+
+// TestResolveUnbuildableMemberIsLedgered is the ledger-completeness gate (#400): an
+// enabled instance whose adapter cannot BUILD must still come back as a member — with a
+// constant reason and no engine — on BOTH aggregate slug forms. Dropping it silently is
+// what broke the ledger's "absence is visible" promise.
+func TestResolveUnbuildableMemberIsLedgered(t *testing.T) {
+	t.Parallel()
+
+	reg, db := newRegistry(t, nil)
+	ctx := context.Background()
+	if _, err := reg.Add(ctx, registry.AddParams{Slug: "alpha", DefinitionID: "testtracker"}); err != nil {
+		t.Fatalf("Add(alpha): %v", err)
+	}
+	// Inserted straight through the store: Add validates the definition exists, and
+	// "the definition vanished under a stored instance" is exactly the state under test.
+	if _, err := (database.Instances{}).Insert(ctx, db, domain.IndexerInstance{
+		Slug: "broken", DefinitionID: "gone-from-disk", Name: "Broken", Enabled: true, Protocol: "torrent", Priority: 25,
+	}); err != nil {
+		t.Fatalf("insert broken instance: %v", err)
+	}
+	profile := newProfile(t, db, "both", "alpha", "broken")
+
+	for _, slug := range []string{core.AggregateSlug, profile} {
+		members, err := reg.Resolve(ctx, slug)
+		if err != nil {
+			t.Fatalf("Resolve(%q): %v", slug, err)
+		}
+		if want := []string{"alpha", "broken"}; !slices.Equal(memberIDs(members), want) {
+			t.Fatalf("Resolve(%q) = %v, want %v", slug, memberIDs(members), want)
+		}
+		broken := members[1]
+		if broken.Reason != core.SkipUnavailable || broken.Indexer != nil {
+			t.Errorf("Resolve(%q) broken member = %+v, want a %q skip with no engine", slug, broken, core.SkipUnavailable)
+		}
+		if broken.Name != "Broken" {
+			t.Errorf("a member that never built must take its ledger name from the stored row, got %q", broken.Name)
+		}
+	}
+}
+
+// TestResolveWholeListFailure: when the instance store cannot be read, Resolve must
+// FAIL rather than answer "no members" — an empty feed would report every configured
+// indexer as absent without saying so.
+func TestResolveWholeListFailure(t *testing.T) {
+	t.Parallel()
+
+	reg, db := newRegistry(t, nil)
+	ctx := context.Background()
+	if _, err := reg.Add(ctx, registry.AddParams{Slug: "alpha", DefinitionID: "testtracker"}); err != nil {
+		t.Fatalf("Add(alpha): %v", err)
+	}
+	slug := newProfile(t, db, "mine", "alpha")
+	if err := db.Close(); err != nil {
+		t.Fatalf("close db: %v", err)
+	}
+
+	for _, feed := range []string{core.AggregateSlug, slug} {
+		members, err := reg.Resolve(ctx, feed)
+		if err == nil {
+			t.Errorf("Resolve(%q) = %v, nil; want an error when the store is unreadable", feed, members)
+		}
+		if errors.Is(err, core.ErrNoSuchFeed) {
+			t.Errorf("Resolve(%q) = %v; a read failure must not masquerade as not-found", feed, err)
+		}
 	}
 }
 

@@ -204,6 +204,136 @@ func TestRequestBudget_PersistsAcrossRestart(t *testing.T) {
 	}
 }
 
+// TestRequestBudget_StatusReportsCurrentPeriod proves the read accessor behind the
+// usage meter (autobrr/harbrr#402) reports the live count, the configured cap, the
+// learned latch (kept separate from the configured cap), the unit, and the period
+// boundary — for both the day and the hour unit.
+func TestRequestBudget_StatusReportsCurrentPeriod(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 7, 17, 12, 30, 0, 0, time.UTC)
+	tests := []struct {
+		name          string
+		cfg           map[string]string
+		reserveQuery  int
+		markGrabSpent bool
+		want          BudgetStatus
+	}{
+		{
+			name:         "configured day cap counts up",
+			cfg:          map[string]string{"query_limit": "2000"},
+			reserveQuery: 3,
+			want: BudgetStatus{
+				Unit:      "day",
+				PeriodEnd: time.Date(2026, 7, 18, 0, 0, 0, 0, time.UTC),
+				Query:     BudgetKindStatus{Used: 3, Limit: 2000},
+			},
+		},
+		{
+			name: "hour unit ends at the top of the next hour",
+			cfg:  map[string]string{"query_limit": "150", "limits_unit": "hour"},
+			want: BudgetStatus{
+				Unit:      "hour",
+				PeriodEnd: time.Date(2026, 7, 17, 13, 0, 0, 0, time.UTC),
+				Query:     BudgetKindStatus{Limit: 150},
+			},
+		},
+		{
+			name:          "learned latch is reported without a configured cap",
+			cfg:           nil,
+			markGrabSpent: true,
+			want: BudgetStatus{
+				Unit:      "day",
+				PeriodEnd: time.Date(2026, 7, 18, 0, 0, 0, 0, time.UTC),
+				Grab:      BudgetKindStatus{Learned: true},
+			},
+		},
+		{
+			name: "untracked indexer reads all zeroes",
+			cfg:  nil,
+			want: BudgetStatus{
+				Unit:      "day",
+				PeriodEnd: time.Date(2026, 7, 18, 0, 0, 0, 0, time.UTC),
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			db := openBudgetDB(t, filepath.Join(t.TempDir(), "harbrr.db"))
+			b := newRequestBudget(db, time.Now, zerolog.Nop())
+			instID := insertTestInstance(t, db)
+			for i := 0; i < tt.reserveQuery; i++ {
+				b.ReserveQuery(context.Background(), instID, tt.cfg, now)
+			}
+			if tt.markGrabSpent {
+				b.MarkQuotaSpent(context.Background(), instID, tt.cfg, budgetKindGrab, now)
+			}
+			if got := b.Status(context.Background(), instID, tt.cfg, now); got != tt.want {
+				t.Errorf("Status = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestRequestBudget_StatusIsReadOnly proves the meter's read neither counts a request
+// nor writes a row: an untouched instance stays absent from the store, and the budget
+// it reported on is still fully available afterwards.
+func TestRequestBudget_StatusIsReadOnly(t *testing.T) {
+	t.Parallel()
+	db := openBudgetDB(t, filepath.Join(t.TempDir(), "harbrr.db"))
+	b := newRequestBudget(db, time.Now, zerolog.Nop())
+	instID := insertTestInstance(t, db)
+	cfg := map[string]string{"query_limit": "1"}
+	now := time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)
+
+	for i := 0; i < 3; i++ {
+		b.Status(context.Background(), instID, cfg, now)
+	}
+	if _, found, err := (database.BudgetCountersStore{}).Get(context.Background(), db, instID); err != nil || found {
+		t.Fatalf("Status persisted a row for an untouched instance: found=%v err=%v", found, err)
+	}
+	if !b.ReserveQuery(context.Background(), instID, cfg, now) {
+		t.Fatal("Status consumed budget: the single configured query was already spent")
+	}
+}
+
+// TestRequestBudget_StatusRollsOverAndReloads proves two reads the meter depends on: a
+// state left behind in an expired period reports a fresh period (not yesterday's
+// count), and a fresh process reports the DURABLE counters rather than a false zero.
+func TestRequestBudget_StatusRollsOverAndReloads(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "harbrr.db")
+	cfg := map[string]string{"query_limit": "2000"}
+	now := time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)
+
+	db1 := openBudgetDB(t, path)
+	b1 := newRequestBudget(db1, time.Now, zerolog.Nop())
+	instID := insertTestInstance(t, db1)
+	b1.ReserveQuery(context.Background(), instID, cfg, now)
+	b1.MarkQuotaSpent(context.Background(), instID, cfg, budgetKindQuery, now)
+
+	nextDay := now.Add(24 * time.Hour)
+	if got := b1.Status(context.Background(), instID, cfg, nextDay); got.Query.Used != 0 || got.Query.Learned {
+		t.Errorf("Status after rollover = %+v, want a fresh period (0 used, no latch)", got.Query)
+	}
+	// The rollover read must not have written it back — the OLD period is still what is
+	// stored, so a same-period reader still sees the real count.
+	if got := b1.Status(context.Background(), instID, cfg, now); got.Query.Used != 1 || !got.Query.Learned {
+		t.Errorf("Status in the original period = %+v, want used=1 with the learned latch", got.Query)
+	}
+	_ = db1.Close()
+
+	db2, err := database.Open(path)
+	if err != nil {
+		t.Fatalf("reopen db: %v", err)
+	}
+	t.Cleanup(func() { _ = db2.Close() })
+	b2 := newRequestBudget(db2, time.Now, zerolog.Nop())
+	if got := b2.Status(context.Background(), instID, cfg, now); got.Query.Used != 1 || !got.Query.Learned {
+		t.Errorf("Status after restart = %+v, want the durable used=1 + learned latch", got.Query)
+	}
+}
+
 // TestRequestBudget_PersistOrderUnderConcurrency proves the store snapshot is written
 // under the same per-instance lock as the in-memory mutation: after concurrent
 // reserves the persisted row carries the FINAL count and the exhausted latch, never a

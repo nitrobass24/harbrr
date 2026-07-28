@@ -1,0 +1,17 @@
+name: stress-andmatch-punctuation-default
+archetype: stress-andmatch-punctuation
+golden_source: hand-derived
+mode: parse
+description: >
+  Stress: the DEFAULT (Jackett-identical) andmatch verdict when an *arr client
+  stripped the apostrophe out of the query. Keywords "Venise nest pas en Italie"
+  tokenize to [venise, nest, pas, en, italie]; the tracker's apostrophe title
+  ("Venise n'est pas en Italie") does not contain "nest", so Jackett — and
+  harbrr with no opt-in — drops that row even though it was fetched. Only the
+  already-stripped row survives; the Debian control row is dropped for the
+  obvious reason. Nothing here is configured, so this case is the assertion that
+  the punctuation opt-in (its -optin twin) left the default path untouched.
+definition: definition.yml
+response: response.html
+query:
+  keywords: Venise nest pas en Italie
