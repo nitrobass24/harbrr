@@ -250,6 +250,29 @@ func TestDownloadLinkUsetoken(t *testing.T) {
 	}
 }
 
+// TestDownloadPathPerSite sweeps EVERY siteConfigs entry so a site added later cannot
+// silently inherit the wrong download surface (#424). Upstream's rule is structural, not
+// per-site: GazelleParser.GetDownloadUrl (protected virtual) is torrents.php, and only
+// Redacted.cs / Orpheus.cs override it privately to ajax.php because ajax.php is the
+// API-key surface. The expectation is therefore derived from the auth strategy rather
+// than hardcoded per id — a new site whose flag disagrees with its auth fails here.
+func TestDownloadPathPerSite(t *testing.T) {
+	t.Parallel()
+	for id, site := range siteConfigs {
+		t.Run(id, func(t *testing.T) {
+			t.Parallel()
+			want := "torrents.php"
+			if _, apiKey := site.strategy.(apiKeyAuth); apiKey {
+				want = "ajax.php"
+			}
+			d := parseDriver(t, id, nil)
+			if got := d.downloadLink(42, false); got != d.BaseURL+want+"?action=download&id=42" {
+				t.Errorf("downloadLink = %q, want %s (strategy %T)", got, want, site.strategy)
+			}
+		})
+	}
+}
+
 // TestParseBrowseFailure proves a status:"failure" body with a non-auth error is a parse
 // error, while an auth-flavoured error maps to login.ErrLoginFailed.
 func TestParseBrowseFailure(t *testing.T) {

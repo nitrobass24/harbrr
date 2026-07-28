@@ -116,8 +116,12 @@ func TestBrokenStonesSearchAndParse(t *testing.T) {
 	if release.Title != "Example.App.1.2.3.macOS-GROUP" || release.Size != 987654321 {
 		t.Errorf("release core fields = %+v", release)
 	}
-	if release.Link != "https://brokenstones.is/ajax.php?action=download&id=200" {
-		t.Errorf("Link = %q, want ajax.php download (no downloadViaTorrents override)", release.Link)
+	// #424: this assertion used to pin the ajax.php URL, which is why the bug shipped
+	// green — BrokenStones has no download-URL override upstream, so it inherits
+	// torrents.php. Its ajax.php answers 500 for a cookie session. Do not "fix" this
+	// back to ajax.php.
+	if release.Link != "https://brokenstones.is/torrents.php?action=download&id=200" {
+		t.Errorf("Link = %q, want the inherited torrents.php download (no downloadViaAjax override)", release.Link)
 	}
 	if release.Details != "" {
 		t.Errorf("Details = %q, want empty (no parseProfile override for BrokenStones)", release.Details)
