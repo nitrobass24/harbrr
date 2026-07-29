@@ -326,11 +326,14 @@ type statusEvent struct {
 // overall status plus the recent health events behind it. DisabledTill is present
 // only while the circuit breaker (#253) currently excludes the indexer from
 // dispatch — the UI can diff it against now for a short-term/long-term read.
+// FailingSince is when the current failure streak began, present only while the
+// status is failing — the "how long has this been dead" an operator asks first.
 type statusResponse struct {
 	Slug         string        `json:"slug"`
 	Status       string        `json:"status"`
 	Events       []statusEvent `json:"events"`
 	DisabledTill *time.Time    `json:"disabledTill,omitempty"`
+	FailingSince *time.Time    `json:"failingSince,omitempty"`
 }
 
 // indexerStatus returns a configured indexer's derived health
@@ -352,17 +355,22 @@ func toStatusResponse(st registry.HealthStatus) statusResponse {
 	for _, e := range st.Events {
 		events = append(events, statusEvent{Kind: e.Kind, Detail: e.Detail, OccurredAt: e.OccurredAt})
 	}
-	return statusResponse{Slug: st.Slug, Status: st.Status, Events: events, DisabledTill: st.DisabledTill}
+	return statusResponse{
+		Slug: st.Slug, Status: st.Status, Events: events,
+		DisabledTill: st.DisabledTill, FailingSince: st.FailingSince,
+	}
 }
 
 // fleetIndexerStatus is one indexer's entry in the fleet-wide status roll-up: its
 // derived status plus the most recent health event (reusing statusEvent's shape),
 // omitted when the indexer has no events. DisabledTill mirrors statusResponse.
+// FailingSince mirrors statusResponse.
 type fleetIndexerStatus struct {
 	Slug         string       `json:"slug"`
 	Status       string       `json:"status"`
 	LastEvent    *statusEvent `json:"lastEvent,omitempty"`
 	DisabledTill *time.Time   `json:"disabledTill,omitempty"`
+	FailingSince *time.Time   `json:"failingSince,omitempty"`
 }
 
 // fleetStatusResponse is the JSON body of GET /api/indexers/status: the tri-state
@@ -377,7 +385,15 @@ type fleetStatusResponse struct {
 
 // allIndexerStatus returns the fleet-wide health roll-up: healthy/failing/unknown
 // counts plus every configured indexer's derived status and most recent health event.
+// ?status=healthy|failing|unknown narrows the indexers array to that derived state
+// (an unrecognized value is a 400). The counts stay fleet-wide either way — they are
+// the roll-up, and "2 of 11 healthy" is the number a filtered caller still wants.
 func (rt *router) allIndexerStatus(w http.ResponseWriter, r *http.Request) {
+	want := r.URL.Query().Get("status")
+	if want != "" && !registry.ValidStatus(want) {
+		writeError(w, http.StatusBadRequest, "status must be one of: healthy, failing, unknown")
+		return
+	}
 	statuses, err := rt.registry.AllStatuses(r.Context())
 	if err != nil {
 		rt.writeServiceError(w, "all indexer status", err)
@@ -393,7 +409,9 @@ func (rt *router) allIndexerStatus(w http.ResponseWriter, r *http.Request) {
 		default:
 			out.Unknown++
 		}
-		out.Indexers = append(out.Indexers, toFleetIndexerStatus(st))
+		if want == "" || st.Status == want {
+			out.Indexers = append(out.Indexers, toFleetIndexerStatus(st))
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -401,7 +419,10 @@ func (rt *router) allIndexerStatus(w http.ResponseWriter, r *http.Request) {
 // toFleetIndexerStatus maps a registry FleetStatus to its API view, reusing
 // statusEvent for the most recent event (nil when the indexer has none).
 func toFleetIndexerStatus(st registry.FleetStatus) fleetIndexerStatus {
-	fs := fleetIndexerStatus{Slug: st.Slug, Status: st.Status, DisabledTill: st.DisabledTill}
+	fs := fleetIndexerStatus{
+		Slug: st.Slug, Status: st.Status,
+		DisabledTill: st.DisabledTill, FailingSince: st.FailingSince,
+	}
 	if len(st.Events) > 0 {
 		e := st.Events[0]
 		fs.LastEvent = &statusEvent{Kind: e.Kind, Detail: e.Detail, OccurredAt: e.OccurredAt}

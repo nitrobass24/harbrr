@@ -390,12 +390,21 @@ paths:
       operationId: allIndexerStatus
       tags: [Indexers]
       security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [healthy, failing, unknown] }
+          description: >
+            Narrow the indexers array to one derived state. The healthy/failing/unknown
+            counts stay fleet-wide so a filtered caller still sees the whole picture.
       responses:
         "200":
           description: fleet-wide indexer status
           content:
             application/json:
               schema: { $ref: "#/components/schemas/FleetStatus" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
   /api/indexers/{slug}:
@@ -535,6 +544,12 @@ paths:
                     description: >
                       Present only while the circuit breaker (autobrr/harbrr#253)
                       currently excludes the indexer from search/grab dispatch.
+                  failingSince:
+                    type: string
+                    format: date-time
+                    description: >
+                      When the current failure streak began — present only while the
+                      derived status is failing (autobrr/harbrr#389).
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
@@ -2705,6 +2720,12 @@ components:
                 description: >
                   Present only while the circuit breaker (autobrr/harbrr#253) currently
                   excludes the indexer from search/grab dispatch.
+              failingSince:
+                type: string
+                format: date-time
+                description: >
+                  When the current failure streak began — present only while the
+                  derived status is failing (autobrr/harbrr#389).
       required: [healthy, failing, unknown, indexers]
     InstanceDetail:
       allOf:
