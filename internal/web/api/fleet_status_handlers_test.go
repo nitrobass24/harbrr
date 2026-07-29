@@ -54,6 +54,11 @@ func TestAllIndexerStatusEmptyFleet(t *testing.T) {
 // fleetSlugs is the seeded fleet, in the sorted order the roll-up returns.
 var fleetSlugs = []string{"failing-recent", "healthy-tested", "unknown-idle", "unknown-stale"}
 
+// failingSinceSeed is the streak start seeded onto failing-recent's circuit. Fixed
+// (not now-relative) so the endpoint's failingSince can be asserted by exact equality
+// rather than a tolerance — it is only ever reported back, never compared to a clock.
+var failingSinceSeed = time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
+
 // seedHealthFleet configures four indexers covering all three derived states (#389):
 // one with a recent failure (failing), one that just passed a test (healthy), one never
 // heard from (unknown), and one whose failure has aged out of the window (unknown, but
@@ -86,6 +91,16 @@ func seedHealthFleet(t *testing.T, e *env) {
 		OccurredAt: time.Now().Add(-1 * time.Minute),
 	}); err != nil {
 		t.Fatalf("record recent failure: %v", err)
+	}
+	// failing-recent also carries a circuit whose InitialFailure is the streak start the
+	// endpoint reports as failingSince. DisabledTill is deliberately left zero: the row
+	// already reads failing from its recent event, so this seeds the one new field
+	// without opening the breaker and changing anything else in the response.
+	if err := (database.Circuit{}).Upsert(ctx, e.db, database.CircuitState{
+		InstanceID: instanceIDs["failing-recent"], EscalationLevel: 1,
+		InitialFailure: failingSinceSeed,
+	}); err != nil {
+		t.Fatalf("upsert circuit: %v", err)
 	}
 	if err := health.Record(ctx, e.db, domain.IndexerHealthEvent{
 		InstanceID: instanceIDs["unknown-stale"], Kind: "rate_limited", Detail: "429",
@@ -157,6 +172,22 @@ func TestAllIndexerStatus(t *testing.T) {
 	}
 	if lastEventKind["failing-recent"] != "auth_failure" {
 		t.Errorf("failing-recent lastEvent.kind = %q, want auth_failure (the newest of its two events)", lastEventKind["failing-recent"])
+	}
+
+	// failingSince must survive the handler's mapping onto the wire, and must stay
+	// absent on every row that is not failing — dropping the field from
+	// toFleetIndexerStatus, or setting it unconditionally, has to fail here.
+	failingSince := map[string]*time.Time{}
+	for _, ind := range out.Indexers {
+		failingSince[ind.Slug] = ind.FailingSince
+	}
+	if got := failingSince["failing-recent"]; got == nil || !got.Equal(failingSinceSeed) {
+		t.Errorf("failing-recent failingSince = %v, want the seeded streak start %v", got, failingSinceSeed)
+	}
+	for _, slug := range []string{"healthy-tested", "unknown-idle", "unknown-stale"} {
+		if got := failingSince[slug]; got != nil {
+			t.Errorf("%s failingSince = %v, want omitted (only a failing row has a streak)", slug, got)
+		}
 	}
 }
 
