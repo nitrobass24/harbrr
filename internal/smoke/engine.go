@@ -12,6 +12,7 @@
 package smoke
 
 import (
+	"bytes"
 	"context"
 	"encoding/xml"
 	"fmt"
@@ -755,6 +756,44 @@ type EvidenceRecord struct {
 	Grab                 string   `json:"grab,omitempty"`
 	Pass                 bool     `json:"pass"`
 	Notes                string   `json:"notes"`
+}
+
+// GrabSucceeded reports whether an EvidenceRecord.Grab result means the grab path
+// actually resolved to something a download client could take. The empty string means
+// the grab was not attempted (SMOKE_GRAB unset) and is NOT a failure; every other
+// non-payload result ("no download link", "not a torrent/magnet", "download HTTP 500")
+// is. Lives here, untagged, so normal CI covers it — the //go:build smoke front-end
+// only calls it.
+func GrabSucceeded(result string) bool {
+	switch result {
+	case "", grabTorrent, grabMagnet, grabNZB:
+		return true
+	default:
+		return false
+	}
+}
+
+// Grab result vocabulary. The payload kinds are the passes; grabUnknown is the
+// catch-all failure for a body that is neither a torrent nor an NZB.
+const (
+	grabTorrent = "torrent"
+	grabMagnet  = "magnet"
+	grabNZB     = "nzb"
+	grabUnknown = "not a torrent/magnet"
+)
+
+// classifyGrabBody names the payload a downloaded grab body carries: a bencoded
+// .torrent starts with a dict ('d'), an .nzb is XML with an <nzb> root (its DOCTYPE
+// line reads "<!DOCTYPE nzb", which deliberately does not match).
+func classifyGrabBody(body []byte) string {
+	switch {
+	case len(body) > 0 && body[0] == 'd':
+		return grabTorrent
+	case bytes.Contains(body, []byte("<nzb")):
+		return grabNZB
+	default:
+		return grabUnknown
+	}
 }
 
 // secretTokens are the credential-shaped substrings that must never appear in

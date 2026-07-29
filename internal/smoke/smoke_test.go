@@ -135,6 +135,12 @@ func TestSmoke(t *testing.T) {
 			if len(fp.Divergences) > 0 {
 				t.Errorf("field parity FAILED for %s: %s", ix.Slug, scrubSecretValues(summarizeDivergences(fp.Divergences)))
 			}
+			// A recorded grab result is binding: a 100% search differential means nothing
+			// if the download link 500s (issue #429). rec.Grab is "" when SMOKE_GRAB is
+			// unset, which GrabSucceeded treats as "not attempted", not a failure.
+			if !GrabSucceeded(rec.Grab) {
+				t.Errorf("grab FAILED for %s: %s", ix.Slug, rec.Grab)
+			}
 			if i < len(enabled)-1 {
 				time.Sleep(betweenTrackerDelay)
 			}
@@ -180,8 +186,9 @@ func harbrrSearch(t *testing.T, c *http.Client, cfg Config, slug, query string) 
 	return res, false
 }
 
-// grabResolve fetches the first served release's download link and confirms a real
-// .torrent (bencode) or a magnet — proving the grab path resolves end to end. It does
+// grabResolve fetches the first served release's download link and names what it got:
+// a real .torrent (bencode), a magnet, or (usenet) a real .nzb — proving the grab path
+// resolves end to end. GrabSucceeded judges the result; the caller fails on a bad one. It does
 // NOT push to qBittorrent; the no-hit-and-run seeding step stays a manual confirmation
 // (see README). Gated by SMOKE_GRAB since it pulls a real .torrent from the tracker.
 func grabResolve(t *testing.T, c *http.Client, cfg Config, slug, query string) string {
@@ -191,7 +198,7 @@ func grabResolve(t *testing.T, c *http.Client, cfg Config, slug, query string) s
 	case link == "":
 		return "no download link"
 	case strings.HasPrefix(link, "magnet:"):
-		return "magnet"
+		return grabMagnet
 	}
 	body, status, err := httpGet(context.Background(), c, link, nil)
 	if err != nil {
@@ -200,10 +207,7 @@ func grabResolve(t *testing.T, c *http.Client, cfg Config, slug, query string) s
 	if status != http.StatusOK {
 		return fmt.Sprintf("download HTTP %d", status)
 	}
-	if len(body) > 0 && body[0] == 'd' { // a bencoded torrent dict starts with 'd'
-		return "torrent"
-	}
-	return "not a torrent/magnet"
+	return classifyGrabBody(body)
 }
 
 // firstDownloadLink returns the first feed item's link/enclosure URL.

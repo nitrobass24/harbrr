@@ -30,6 +30,10 @@ make smoke-test                                 # go test -tags smoke ./internal
   Set `SMOKE_QUERY` (and optionally `SMOKE_QUERY_FALLBACK`) to force one query for every tracker.
 - Optional knobs: `SMOKE_GRAB=1` (also resolve the first release's download link),
   `SMOKE_STRICT_FIELDS=1` (also fail on volatile field divergences — see below).
+- `SMOKE_GRAB` stays **opt-in and off by default** (a real `.torrent`/`.nzb` pull from every
+  enabled tracker is real tracker traffic). But when it IS set, the result is **binding**: a link
+  that does not resolve to a torrent, magnet, or `.nzb` now FAILS the tracker's subtest instead of
+  being recorded and ignored. A 100% search differential no longer covers for a grab that 500s.
 
 Per-tracker evidence is written to `testdata/smoke-<slug>.json` — **gitignored and
 secret-scrubbed** (counts and a few titles, never a passkey/apikey/cookie). It is scratch

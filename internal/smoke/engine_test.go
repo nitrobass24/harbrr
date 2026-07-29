@@ -261,6 +261,56 @@ func TestParseConfig(t *testing.T) {
 	})
 }
 
+func TestGrabSucceeded(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		result string
+		want   bool
+	}{
+		{"not attempted", "", true},
+		{"torrent", "torrent", true},
+		{"magnet", "magnet", true},
+		{"nzb", "nzb", true},
+		{"no download link", "no download link", false},
+		{"unrecognized body", "not a torrent/magnet", false},
+		{"download error", "download HTTP 500", false},
+		{"download not found", "download HTTP 404", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := GrabSucceeded(tt.result); got != tt.want {
+				t.Errorf("GrabSucceeded(%q) = %v, want %v", tt.result, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestClassifyGrabBody(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"bencoded torrent", "d8:announce30:http://tracker.example/announcee", "torrent"},
+		{"nzb", `<?xml version="1.0" encoding="iso-8859-1" ?>` + "\n" +
+			`<!DOCTYPE nzb PUBLIC "-//newzBin//DTD NZB 1.1//EN" "http://www.newzbin.com/DTD/nzb/nzb-1.1.dtd">` + "\n" +
+			`<nzb xmlns="http://www.newzbin.com/DTD/2003/nzb"><file subject="x"/></nzb>`, "nzb"},
+		{"html error page", "<!DOCTYPE html><html><body>login required</body></html>", "not a torrent/magnet"},
+		{"empty", "", "not a torrent/magnet"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := classifyGrabBody([]byte(tt.body)); got != tt.want {
+				t.Errorf("classifyGrabBody(%q) = %q, want %q", tt.body, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestValidateNoSecrets(t *testing.T) {
 	t.Parallel()
 	clean := EvidenceRecord{Tracker: "demo", Notes: "count ratio 0.80", HarbrrTitles: []string{"Ubuntu 24.04"}}
