@@ -63,9 +63,10 @@ func TestParseUser(t *testing.T) {
 	}
 }
 
-// TestShouldSeed pins the seeding rules independently of any transport: an unset cap is
-// seeded, an operator-typed cap is never widened, and a previously seeded cap is only
-// re-seeded when the new discovery is stricter.
+// TestShouldSeed pins the seeding rules independently of any transport: only an UNSET
+// cap is seeded, and a cap that already carries a value is never re-seeded — not even
+// when discovery is stricter, because the provenance marker cannot tell an
+// operator-edited value from a previously detected one.
 func TestShouldSeed(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -118,8 +119,9 @@ func TestSeedBudgetOnTest(t *testing.T) {
 }
 
 // TestSeedBudgetRespectsStoredSettings drives the seed through the full Test path for
-// every stored-settings shape that matters: operator-typed caps are untouched, a
-// previously seeded cap tightens but never widens, and limits_unit is never overwritten.
+// every stored-settings shape that matters: any cap that already has a value is left
+// alone whoever set it and whatever discovery reports, only unset caps are filled, and
+// limits_unit is never overwritten.
 func TestSeedBudgetRespectsStoredSettings(t *testing.T) {
 	t.Parallel()
 	const body = `<user apirequests="2000" downloadrequests="1000"/>`
@@ -241,6 +243,50 @@ func TestSeedBudgetSkippedWithoutPersist(t *testing.T) {
 	}
 	if userHits.Load() != 0 {
 		t.Errorf("t=user hits = %d, want 0 (nothing could be persisted)", userHits.Load())
+	}
+}
+
+// TestSeedLimitFailedCapWriteStaysRetryable proves a half-written seed does not strand
+// the cap. The provenance marker is written before the cap, so when the cap write fails
+// the cap stays UNSET — which is the only state shouldSeed will revisit, making the next
+// Test seed it again. Writing the cap first would leave a cap with no marker that is
+// never reconsidered.
+func TestSeedLimitFailedCapWriteStaysRetryable(t *testing.T) {
+	t.Parallel()
+	var userHits atomic.Int64
+	srv := userServer(t, &userHits, userResponse{body: `<user apirequests="2000" downloadrequests="1000"/>`})
+
+	stored := map[string]string{}
+	d, err := New(native.Params{
+		Def:     GenericDefinition(),
+		Cfg:     map[string]string{"apikey": testAPIKey, "apiPath": "/api"},
+		Doer:    srv.Client(),
+		BaseURL: srv.URL,
+		Clock:   fixedClock,
+		PersistSetting: func(_ context.Context, name, value string) error {
+			if name == settingQueryLimit {
+				return errors.New("store unavailable")
+			}
+			stored[name] = value
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := d.Test(context.Background()); err != nil {
+		t.Fatalf("Test: %v", err)
+	}
+	if got, ok := stored[settingQueryLimit]; ok {
+		t.Errorf("%s = %q, want unwritten so the next Test re-seeds it", settingQueryLimit, got)
+	}
+	if stored[settingQueryLimitSource] != limitSourceDetected {
+		t.Errorf("%s = %q, want the marker written first (harmless without its cap)",
+			settingQueryLimitSource, stored[settingQueryLimitSource])
+	}
+	// The grab cap is seeded independently and must be unaffected by the query failure.
+	if stored[settingGrabLimit] != "1000" {
+		t.Errorf("%s = %q, want 1000 (independent of the query cap's failure)", settingGrabLimit, stored[settingGrabLimit])
 	}
 }
 

@@ -101,14 +101,23 @@ func (d *driver) seedBudget(ctx context.Context) {
 // seedLimit writes discovered into key (plus its provenance marker) when shouldSeed
 // allows it, reporting whether it wrote. A persist failure is swallowed like the caps
 // cache's: the seed is an optimisation, and the next Test retries it.
+//
+// The provenance marker is written FIRST so that retry is real. shouldSeed only
+// revisits an UNSET cap, so writing the cap first would make a failed marker write
+// permanent — the cap would be set, the seed would never run again, and the meter
+// would show an operator-typed cap forever. In this order a half-written seed always
+// leaves the cap unset, so the next Test simply seeds again; the worst residue is a
+// marker with no cap yet, which the meter reads only alongside a cap.
 func (d *driver) seedLimit(ctx context.Context, key, sourceKey string, current, discovered int) bool {
 	if !shouldSeed(current, discovered) {
+		return false
+	}
+	if err := d.persist(ctx, sourceKey, limitSourceDetected); err != nil {
 		return false
 	}
 	if err := d.persist(ctx, key, itoa(discovered)); err != nil {
 		return false
 	}
-	_ = d.persist(ctx, sourceKey, limitSourceDetected)
 	return true
 }
 
