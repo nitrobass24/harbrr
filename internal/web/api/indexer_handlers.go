@@ -239,6 +239,13 @@ func (rt *router) getIndexer(w http.ResponseWriter, r *http.Request) {
 	failover, err := rt.registry.FailoverState(r.Context(), inst)
 	if err != nil {
 		rt.log.Warn().Err(err).Str("slug", inst.Slug).Msg("resolve failover state")
+		// FailoverState yields a zero struct on error, and effectiveBaseUrl is a
+		// REQUIRED field documented as the host this indexer talks to — reporting ""
+		// would say it talks to nothing. Without the definition or the settings we
+		// cannot know about a promotion, but the operator's configured host is still
+		// the best available truth. It stays empty only when there is no override
+		// either, where the answer is the definition's first link and unknowable here.
+		failover.EffectiveBaseURL = inst.BaseURL
 	}
 	writeJSON(w, http.StatusOK, instanceDetailResponse{
 		instanceResponse: toInstanceResponse(inst),
