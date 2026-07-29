@@ -126,6 +126,13 @@ const (
 	// unreachable rather than reachable-but-unhappy. One coarse kind; the event
 	// detail string carries the specifics (#223).
 	HealthTransport = "transport"
+	// HealthBaseURLPromoted is the one kind that is NOT a failure: the base-URL
+	// failover (autobrr/harbrr#375) moved this indexer onto another host the
+	// definition already lists, because the configured one stopped answering. It
+	// shares the append-only event table because that table IS the indexer's visible
+	// timeline — failover must never be silent — but everything that folds events as
+	// failures (the per-kind tally, the last-failure timestamp) skips it.
+	HealthBaseURLPromoted = "base_url_promoted"
 )
 
 // IndexerHealthEvent is one recorded health signal for an instance: a classified

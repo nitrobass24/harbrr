@@ -362,7 +362,7 @@ export interface paths {
         };
         /**
          * Get an indexer's health status
-         * @description Returns the indexer's derived health (healthy/failing/unknown) and its recent health events (auth_failure, rate_limited, parse_error, anti_bot, transport). Event details are credential-scrubbed before storage, so no secret is surfaced.
+         * @description Returns the indexer's derived health (healthy/failing/unknown) and its recent health events (auth_failure, rate_limited, parse_error, anti_bot, transport, plus base_url_promoted, which is not a failure but the base-URL failover moving the indexer onto another host the definition lists). Event details are credential-scrubbed before storage, so no secret is surfaced.
          */
         get: operations["indexerStatus"];
         put?: never;
@@ -1504,6 +1504,10 @@ export interface components {
              * @enum {string}
              */
             limits_unit?: "day" | "hour";
+            /** @description written by the automatic base-URL failover (autobrr/harbrr#375) when the configured host stops answering and another of the definition's links works. It is honoured only while the definition still lists that host. Setting it to "" reverts the indexer to its configured host; it is surfaced read-side as InstanceDetail.failoverBaseUrl. */
+            failover_base_url?: string;
+            /** @description the operator pin: any truthy value ("true") disables automatic base-URL failover for this indexer entirely, whatever the failure looks like. Selecting a host in the base-URL picker does NOT set this. */
+            failover_disabled?: string;
         };
         Credentials: {
             username: string;
@@ -1724,7 +1728,7 @@ export interface components {
                 status: "healthy" | "failing" | "unknown";
                 lastEvent?: {
                     /** @enum {string} */
-                    kind: "auth_failure" | "rate_limited" | "parse_error" | "anti_bot" | "transport";
+                    kind: "auth_failure" | "rate_limited" | "parse_error" | "anti_bot" | "transport" | "base_url_promoted";
                     detail?: string;
                     /** Format: date-time */
                     occurred_at: string;
@@ -1743,6 +1747,12 @@ export interface components {
         };
         InstanceDetail: components["schemas"]["Instance"] & {
             settings: components["schemas"]["Setting"][];
+            /** @description the host this indexer actually talks to right now: the configured baseUrl (or the definition's first link when unset), unless the automatic base-URL failover promoted another of the definition's links (autobrr/harbrr#375). */
+            effectiveBaseUrl: string;
+            /** @description present only while a failover promotion is in effect — the host the indexer moved to after the configured one stopped answering. Revert by PATCHing the indexer with settings.failover_base_url = "". */
+            failoverBaseUrl?: string;
+            /** @description the operator pin (settings.failover_disabled): automatic failover is off for this indexer. Choosing a host in the base-URL picker does NOT set it. */
+            failoverDisabled: boolean;
         };
         AddIndexer: {
             /** @description defaults to definitionId when omitted */
@@ -3271,7 +3281,7 @@ export interface operations {
                         status: "healthy" | "failing" | "unknown";
                         events: {
                             /** @enum {string} */
-                            kind: "auth_failure" | "rate_limited" | "parse_error" | "anti_bot" | "transport";
+                            kind: "auth_failure" | "rate_limited" | "parse_error" | "anti_bot" | "transport" | "base_url_promoted";
                             detail?: string;
                             /** Format: date-time */
                             occurred_at: string;
