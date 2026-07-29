@@ -559,6 +559,56 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /api/search:
+    get:
+      summary: Search an indexer subset as one server-merged window (JSON)
+      description: >
+        Fans one search out across the explicitly named indexers and returns the
+        MERGED window (publish-date descending) plus a per-member ledger — the
+        management-API sibling of the `all`/`profile:` aggregate feeds, running the
+        same merge, so the web UI and the feeds can never disagree about sort or
+        counts. Paging is one window: members are queried at offset 0 and the
+        request's limit/offset apply to the merged set, so `total` is the size of the
+        set this request fetched, not a promise that a deeper page exists. No member
+        failure fails the request — a member that is disabled, unbuildable,
+        circuit-open, budget-exhausted, rate-limited, timed out or otherwise skipped
+        becomes a ledger row with a reason from the closed vocabulary (its raw error
+        is logged, redacted, and never served). Each release's download link is sealed
+        against the member it came from.
+      operationId: searchAggregate
+      tags: [Indexers]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - name: indexers
+          in: query
+          required: true
+          schema: { type: string }
+          description: >
+            comma-separated slugs of the configured indexers to search; a slug that
+            names no configured indexer is a 400
+        - { name: q, in: query, required: false, schema: { type: string }, description: free-text query }
+        - { name: cat, in: query, required: false, schema: { type: string }, description: comma-separated newznab category ids }
+        - { name: imdbid, in: query, required: false, schema: { type: string } }
+        - { name: tmdbid, in: query, required: false, schema: { type: string } }
+        - { name: tvdbid, in: query, required: false, schema: { type: string } }
+        - { name: season, in: query, required: false, schema: { type: string } }
+        - { name: ep, in: query, required: false, schema: { type: string } }
+        - { name: limit, in: query, required: false, schema: { type: integer }, description: "merged window size, clamped to [1,100]" }
+        - { name: offset, in: query, required: false, schema: { type: integer }, description: offset into the merged set }
+      responses:
+        "200":
+          description: the merged window and the per-member ledger
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AggregateSearchResults" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500":
+          description: the member set could not be read (a sanitized, secret-free error)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /api/indexers/{slug}/search:
     get:
       summary: Search a configured indexer (JSON)
@@ -2778,6 +2828,60 @@ components:
           type: integer
           description: resolved page offset
       required: [results, total, hasMore, limit, offset]
+    AggregateSearchResults:
+      type: object
+      description: >
+        One server-merged search window (publish-date descending) plus the per-member
+        ledger behind it. `total` is the size of the merged set this request fetched —
+        a floor the server stands behind, never a sum of member claims and never a
+        promise that a deeper page exists; `limit`/`offset` are the resolved window
+        over that merged set.
+      properties:
+        results:
+          type: array
+          items: { $ref: "#/components/schemas/AggregateSearchResult" }
+        members:
+          type: array
+          description: one row per indexer the request selected, in resolution order
+          items: { $ref: "#/components/schemas/SearchMember" }
+        total:
+          type: integer
+          description: size of the merged set this request fetched, before the window slice
+        limit:
+          type: integer
+          description: resolved window size (clamped to [1,100])
+        offset:
+          type: integer
+          description: resolved window offset into the merged set
+      required: [results, members, total, limit, offset]
+    AggregateSearchResult:
+      type: object
+      description: >
+        A merged release plus the slug of the indexer it came from. The origin is what
+        the download link is sealed against — an aggregate response has no single
+        indexer.
+      properties:
+        indexer: { type: string, description: slug of the indexer that returned the release }
+        release: { $ref: "#/components/schemas/Release" }
+      required: [indexer, release]
+    SearchMember:
+      type: object
+      description: >
+        One ledger row: what harbrr asked of an indexer and what came back. `reason` is
+        present only when status is `skipped`, and is drawn from a closed vocabulary
+        (the underlying error routinely embeds a passkey and is never served).
+      properties:
+        slug: { type: string }
+        name: { type: string }
+        status: { type: string, enum: [ok, skipped] }
+        reason:
+          type: string
+          enum: [budget-exhausted, circuit-open, degenerate-query, rate-limited, unreachable, timeout, error, disabled, unavailable]
+          description: why the member contributed nothing
+        count:
+          type: integer
+          description: releases this member put into the merged set, before the window slice
+      required: [slug, name, status, count]
     Release:
       type: object
       description: >

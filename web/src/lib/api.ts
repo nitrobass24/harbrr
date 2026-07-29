@@ -17,6 +17,8 @@ export type AddIndexer = components["schemas"]["AddIndexer"]
 export type UpdateIndexer = components["schemas"]["UpdateIndexer"]
 export type Capabilities = components["schemas"]["Capabilities"]
 export type SearchResults = components["schemas"]["SearchResults"]
+export type AggregateSearchResults = components["schemas"]["AggregateSearchResults"]
+export type SearchMember = components["schemas"]["SearchMember"]
 export type Release = components["schemas"]["Release"]
 export type TestResult = components["schemas"]["TestResult"]
 export type App = components["schemas"]["App"]
@@ -132,6 +134,16 @@ type ErrorBody = { error?: string, code?: string }
 function filenameFromContentDisposition(header: string | null): string {
   const match = header?.match(/filename="?([^"; ]+)"?/)
   return match?.[1] ?? `harbrr-backup-${new Date().toISOString().slice(0, 10)}.json`
+}
+
+// setParams drops undefined/empty-string values so an unset search field is omitted
+// from the querystring entirely rather than sent as an empty filter.
+function setParams(params: SearchParams): SearchParams {
+  const query: SearchParams = {}
+  for (const [key, value] of Object.entries(params) as [keyof SearchParams, unknown][]) {
+    if (value !== undefined && value !== "") (query as Record<string, unknown>)[key] = value
+  }
+  return query
 }
 
 // ApiClient is the single choke point every management call goes through:
@@ -679,15 +691,18 @@ export class ApiClient {
   // --- search ---
 
   searchIndexer(slug: string, params: SearchParams): Promise<SearchResults> {
-    // Drop undefined/empty-string values so an unset filter is omitted from the
-    // querystring entirely, matching the previous hand-rolled URLSearchParams pass.
-    const query: SearchParams = {}
-    for (const [key, value] of Object.entries(params) as [keyof SearchParams, unknown][]) {
-      if (value !== undefined && value !== "") (query as Record<string, unknown>)[key] = value
-    }
     return this.unwrap(
-      this.http.GET("/api/indexers/{slug}/search", { params: { path: { slug }, query } }),
+      this.http.GET("/api/indexers/{slug}/search", { params: { path: { slug }, query: setParams(params) } }),
       "/api/indexers/{slug}/search"
+    )
+  }
+
+  // One search across a subset, merged and sorted by the server (autobrr/harbrr#372):
+  // one request, one window, one ledger — no client-side fan-out.
+  searchAggregate(slugs: string[], params: SearchParams): Promise<AggregateSearchResults> {
+    return this.unwrap(
+      this.http.GET("/api/search", { params: { query: { ...setParams(params), indexers: slugs.join(",") } } }),
+      "/api/search"
     )
   }
 }

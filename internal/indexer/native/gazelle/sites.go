@@ -26,9 +26,14 @@ type siteConfig struct {
 	// form-login session's redirect-to-login-page surfaces as a classified status
 	// instead of being silently followed.
 	disableRedirects bool
-	// downloadViaTorrents routes the download link through torrents.php instead of
-	// ajax.php (AlphaRatio).
-	downloadViaTorrents bool
+	// downloadViaAjax routes the download link through ajax.php instead of the
+	// inherited torrents.php. It mirrors Prowlarr's base/override relationship:
+	// GazelleParser.GetDownloadUrl (protected virtual — what every plain Gazelle
+	// indexer inherits) builds torrents.php?action=download, and only Redacted.cs and
+	// Orpheus.cs override it with a private GetDownloadUrl on ajax.php, because
+	// ajax.php is the API-key surface. So this flag pairs with apiKeyAuth; a
+	// form-login/session site must leave it false or its download 500s (#424).
+	downloadViaAjax bool
 	// pageSize is the site's fixed upstream page size; 0 means the site has no
 	// upstream paging (RED/OPS return everything matching in one browse call).
 	pageSize        int
@@ -62,18 +67,19 @@ var siteConfigs = map[string]siteConfig{
 	"redacted": {
 		strategy:             apiKeyAuth{},
 		classify:             native.ClassifyAuth403,
+		downloadViaAjax:      true,
 		countsFreeloadAsFree: true,
 	},
 	"orpheus": {
-		strategy: apiKeyAuth{prefix: "token "},
-		classify: native.ClassifyAuth403,
+		strategy:        apiKeyAuth{prefix: "token "},
+		classify:        native.ClassifyAuth403,
+		downloadViaAjax: true,
 	},
 	"alpharatio": {
 		strategy:             formLoginAuth{},
 		sessionCookieSetting: alphaRatioCookieSetting,
 		classify:             classifyFormLogin,
 		disableRedirects:     true,
-		downloadViaTorrents:  true,
 		pageSize:             50,
 		minimumRatio:         1,
 		minimumSeedTime:      259200,
@@ -83,8 +89,9 @@ var siteConfigs = map[string]siteConfig{
 	// brokenstones (#31) is a plain GazelleBase<GazelleSettings> in Prowlarr — no
 	// AlphaRatio-only settings (FreeleechOnly/ExcludeScene), no pagination override, and
 	// no download-URL override — so it reuses formLoginAuth for username/password login
-	// plus the shared RED/OPS browse/download path unchanged (buildQuery/parseProfile
-	// nil, pageSize/downloadViaTorrents at their RED/OPS defaults).
+	// plus the shared browse path, and inherits the base torrents.php download URL
+	// (buildQuery/parseProfile nil, pageSize/downloadViaAjax at their zero values). Its
+	// ajax.php answers 500 for a cookie session, which is what #424 was.
 	"brokenstones": {
 		strategy:             formLoginAuth{},
 		sessionCookieSetting: brokenStonesCookieSetting,

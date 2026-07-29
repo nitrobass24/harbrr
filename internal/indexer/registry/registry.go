@@ -309,6 +309,33 @@ func (r *Resolver) Resolve(ctx context.Context, slug string) ([]core.MemberOutco
 	return []core.MemberOutcome{core.LiveMember(idx)}, nil
 }
 
+// Members resolves an EXPLICIT slug list into the member set an arbitrary-subset
+// fan-out runs over — the UI search picker's semantics, sibling to Resolve's `all` and
+// `profile:` slugs. Every named instance comes back as a member in the same
+// (slug-ordered) shape a feed gets: configured-but-disabled is a SkipDisabled row and
+// unbuildable a SkipUnavailable row, so a subset explains itself exactly as a profile
+// feed does.
+//
+// A slug naming NO configured instance is core.ErrNoSuchFeed, not a ledger row: an
+// explicit list is the caller asserting these exist, so a name that does not is a client
+// bug rather than a member that served nothing. Duplicate slugs collapse to one member.
+func (r *Resolver) Members(ctx context.Context, slugs []string) ([]core.MemberOutcome, error) {
+	want := make(map[string]bool, len(slugs))
+	for _, s := range slugs {
+		want[s] = true
+	}
+	members, err := r.selectedMembers(ctx, func(inst domain.IndexerInstance) bool { return want[inst.Slug] })
+	if err != nil {
+		return nil, err
+	}
+	for _, s := range slugs {
+		if !slices.ContainsFunc(members, func(m core.MemberOutcome) bool { return m.ID == s }) {
+			return nil, fmt.Errorf("registry: no such indexer %q: %w", s, core.ErrNoSuchFeed)
+		}
+	}
+	return members, nil
+}
+
 // profileMembers selects the members of the sync profile named name (matched exactly,
 // on the URL-decoded slug remainder). An unknown name is core.ErrNoSuchFeed — the same
 // not-found the serving layer gives an unknown indexer slug. A profile member that is

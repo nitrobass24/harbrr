@@ -325,13 +325,15 @@ func (d *driver) useFreeleechToken() bool {
 	}
 }
 
-// downloadLink builds the header-authenticated download URL. usetoken=1 is appended only
-// when withToken is true; it is NEVER sent as usetoken=0 (the OPS quirk — and harmless
-// for RED), so the param is simply omitted when off.
+// downloadLink builds the download URL. The default is Prowlarr's inherited
+// GazelleParser.GetDownloadUrl surface, torrents.php; only the API-key sites override it
+// to ajax.php (see siteConfig.downloadViaAjax). usetoken=1 is appended only when
+// withToken is true; it is NEVER sent as usetoken=0 (the OPS quirk — and harmless for
+// RED), so the param is simply omitted when off.
 func (d *driver) downloadLink(torrentID int64, withToken bool) string {
-	path := "ajax.php"
-	if d.site.downloadViaTorrents {
-		path = "torrents.php"
+	path := "torrents.php"
+	if d.site.downloadViaAjax {
+		path = "ajax.php"
 	}
 	link := fmt.Sprintf("%s%s?action=download&id=%d", d.BaseURL, path, torrentID)
 	if withToken {

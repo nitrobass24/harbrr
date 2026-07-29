@@ -89,7 +89,7 @@ export const keys = {
     all: ["indexer-stats"] as const,
   },
   search: {
-    fanout: (slug: string, params: SearchParams | null) => ["search", slug, params] as const,
+    aggregate: (slugs: string[], params: SearchParams | null) => ["search", slugs, params] as const,
   },
   proxies: {
     all: ["proxies"] as const,
