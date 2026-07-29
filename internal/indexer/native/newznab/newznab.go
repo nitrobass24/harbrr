@@ -34,8 +34,12 @@ type driver struct {
 	apikey    string
 	apiPath   string // normalised, no trailing slash (e.g. "/api")
 	// persist durably writes the fetched caps XML + fetched-at back to the encrypted
-	// store (nil when not wired), so the caps cache survives a restart.
+	// store (nil when not wired), so the caps cache survives a restart. It also carries
+	// the ?t=user budget seed (#377).
 	persist func(ctx context.Context, name, value string) error
+	// limits is the instance's stored request-budget knobs at build time, the baseline
+	// the ?t=user seed is measured against.
+	limits budgetLimits
 }
 
 var _ native.Driver = (*driver)(nil)
@@ -69,6 +73,7 @@ func New(p native.Params) (native.Driver, error) {
 		apikey:  strings.TrimSpace(p.Cfg["apikey"]),
 		apiPath: normalizeAPIPath(p.Cfg["apiPath"]),
 		persist: p.PersistSetting,
+		limits:  readBudgetLimits(p.Cfg),
 	}
 	d.capsCache.rehydrate(p.Cfg)
 	return d, nil
@@ -129,9 +134,16 @@ func (d *driver) ConsumesSearchMode() bool { return true }
 // Newznab auth error envelope surfaces as login.ErrLoginFailed) and discovers the remote
 // category tree + search modes, so a successful add starts with live caps cached (and
 // persisted, when wired) rather than the placeholder.
+//
+// A passing caps fetch then opportunistically seeds the request-budget caps from the
+// account's own ?t=user limits (#377) — silent on every failure, and never counted
+// against the test's own verdict: a server without t=user is not a broken indexer.
 func (d *driver) Test(ctx context.Context) error {
-	_, err := d.fetchCaps(ctx)
-	return err
+	if _, err := d.fetchCaps(ctx); err != nil {
+		return err
+	}
+	d.seedBudget(ctx)
+	return nil
 }
 
 // itoa is a tiny strconv.Itoa alias used by the caps builder.

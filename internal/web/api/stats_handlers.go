@@ -30,13 +30,16 @@ type indexerCategoryStat struct {
 }
 
 // indexerBudgetKind is one kind's (query/grab) request-budget standing for the current
-// period. limit is the OPERATOR-CONFIGURED cap (0 = none configured); learned is the
-// reactive latch harbrr set from the tracker's own quota error, which carries no number.
-// Both are reported so the UI can keep a configured cap and a learned one distinct.
+// period. limit is the configured cap (0 = none configured); detected says that cap was
+// read from the indexer's own account limits rather than typed by the operator (#377);
+// learned is the reactive latch harbrr set from the tracker's own quota error, which
+// carries no number. All three are reported so the UI can keep an operator-configured
+// cap, a detected one, and a learned one distinct.
 type indexerBudgetKind struct {
-	Used    int64 `json:"used"`
-	Limit   int   `json:"limit"`
-	Learned bool  `json:"learned"`
+	Used     int64 `json:"used"`
+	Limit    int   `json:"limit"`
+	Detected bool  `json:"detected"`
+	Learned  bool  `json:"learned"`
 }
 
 // indexerBudget is the per-indexer request-budget block: the current period's counters
@@ -135,9 +138,14 @@ func toBudgetResponse(b *registry.BudgetStatus) *indexerBudget {
 	return &indexerBudget{
 		Unit:      b.Unit,
 		PeriodEnd: b.PeriodEnd,
-		Query:     indexerBudgetKind{Used: b.Query.Used, Limit: b.Query.Limit, Learned: b.Query.Learned},
-		Grab:      indexerBudgetKind{Used: b.Grab.Used, Limit: b.Grab.Limit, Learned: b.Grab.Learned},
+		Query:     toBudgetKind(b.Query),
+		Grab:      toBudgetKind(b.Grab),
 	}
+}
+
+// toBudgetKind maps one kind's registry standing to its API view.
+func toBudgetKind(k registry.BudgetKindStatus) indexerBudgetKind {
+	return indexerBudgetKind{Used: k.Used, Limit: k.Limit, Detected: k.Detected, Learned: k.Learned}
 }
 
 // zeroToNil returns nil for the zero time (never observed) so the JSON field is omitted

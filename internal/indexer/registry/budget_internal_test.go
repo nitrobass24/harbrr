@@ -248,6 +248,27 @@ func TestRequestBudget_StatusReportsCurrentPeriod(t *testing.T) {
 			},
 		},
 		{
+			name: "a seeded cap reports its detected provenance per kind",
+			cfg: map[string]string{
+				"query_limit": "2000", "query_limit_source": "detected",
+				"grab_limit": "10",
+			},
+			want: BudgetStatus{
+				Unit:      "day",
+				PeriodEnd: time.Date(2026, 7, 18, 0, 0, 0, 0, time.UTC),
+				Query:     BudgetKindStatus{Limit: 2000, Detected: true},
+				Grab:      BudgetKindStatus{Limit: 10},
+			},
+		},
+		{
+			name: "a detected marker without a cap reports nothing",
+			cfg:  map[string]string{"query_limit_source": "detected"},
+			want: BudgetStatus{
+				Unit:      "day",
+				PeriodEnd: time.Date(2026, 7, 18, 0, 0, 0, 0, time.UTC),
+			},
+		},
+		{
 			name: "untracked indexer reads all zeroes",
 			cfg:  nil,
 			want: BudgetStatus{
