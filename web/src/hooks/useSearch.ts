@@ -1,19 +1,21 @@
-import { useQueries } from "@tanstack/react-query"
+import { skipToken, useQuery } from "@tanstack/react-query"
 import { api } from "@/lib/api"
 import type { SearchParams } from "@/lib/api"
 import { keys } from "@/lib/query"
 
-// Fan-out: one query per selected indexer, merged by the page. Keys carry the
-// full param set so paging/re-querying caches independently. Queries only run
-// once a search is submitted (params !== null).
-export function useSearchFanout(slugs: string[], params: SearchParams | null) {
-  return useQueries({
-    queries: slugs.map((slug) => ({
-      queryKey: keys.search.fanout(slug, params),
-      queryFn: () => api.searchIndexer(slug, params as SearchParams),
-      enabled: params !== null,
-      retry: false,
-      staleTime: 60_000, // the server-side cache is authoritative; avoid re-fetch churn
-    })),
+// ONE request for the whole subset: the server merges, sorts and windows the results
+// and hands back the per-member ledger (autobrr/harbrr#372). There is deliberately no
+// client-side fan-out — a second merge implementation is the thing the page and the
+// aggregate feed must never disagree over. The query runs once a search is submitted
+// (params !== null); the key carries the subset so changing it re-queries.
+export function useSearchAggregate(slugs: string[], params: SearchParams | null) {
+  return useQuery({
+    queryKey: keys.search.aggregate(slugs, params),
+    // Narrowed, not asserted: `enabled` already guarantees params is non-null, and a
+    // cast would keep compiling if that guard ever changed.
+    queryFn: params === null ? skipToken : () => api.searchAggregate(slugs, params),
+    enabled: params !== null && slugs.length > 0,
+    retry: false,
+    staleTime: 60_000, // the server-side cache is authoritative; avoid re-fetch churn
   })
 }

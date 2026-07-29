@@ -16,13 +16,15 @@ import {
 import { Input } from "@/components/ui/input"
 import { NativeSelect } from "@/components/ui/native-select"
 import { useIndexerCapabilitiesMany, useIndexers } from "@/hooks/useIndexers"
-import { useSearchFanout } from "@/hooks/useSearch"
-import type { SearchParams } from "@/lib/api"
+import { useSearchAggregate } from "@/hooks/useSearch"
+import type { SearchMember, SearchParams } from "@/lib/api"
 
 export const Route = createFileRoute("/_authenticated/search")({
   component: SearchPage,
 })
 
+// The window the server is asked for. It clamps to its own advertised maximum, so this
+// is a ceiling, not a promise — `total` says how big the merged set behind it was.
 const PAGE_SIZE = 100
 
 function SearchPage() {
@@ -54,21 +56,19 @@ function SearchPage() {
   const [q, setQ] = useState("")
   const [cat, setCat] = useState("")
   const [ids, setIds] = useState({ imdbid: "", tmdbid: "", tvdbid: "", season: "", ep: "" })
-  const [offset, setOffset] = useState(0)
   const [submitted, setSubmitted] = useState<SearchParams | null>(null)
-  const [sort, setSort] = useState<Sort>({ key: "seeders", dir: "desc" })
+  // "age asc" is newest-first — the order the server merged in — so an untouched table
+  // renders the server's window as served, and a column click takes over from there.
+  const [sort, setSort] = useState<Sort>({ key: "age", dir: "asc" })
 
-  const results = useSearchFanout(active, submitted)
+  const results = useSearchAggregate(active, submitted)
 
-  const rows: SearchRow[] = useMemo(() => {
-    const merged: SearchRow[] = []
-    results.forEach((res, i) => {
-      for (const release of res.data?.results ?? []) {
-        merged.push({ release, indexer: active[i] })
-      }
-    })
-    return sortRows(merged, sort)
-  }, [results, active, sort])
+  // The whole window is in state, so sorting a column covers everything the server
+  // served — there is no second page hiding rows from the sort (autobrr/harbrr#396).
+  const rows: SearchRow[] = useMemo(
+    () => sortRows((results.data?.results ?? []).map((r) => ({ release: r.release, indexer: r.indexer })), sort),
+    [results.data, sort]
+  )
 
   // Client-side only: filtering narrows the rows already in state (never the DOM,
   // never a re-query). useDeferredValue keeps typing responsive when a heavy regex
@@ -92,12 +92,13 @@ function SearchPage() {
     if (!invalidFilter) lastValidFilter.current = deferredFilter
   }, [invalidFilter, deferredFilter])
 
-  const failed = results.map((r, i) => (r.isError ? active[i] : null)).filter((s): s is string => s !== null)
-  const searching = submitted !== null && results.some((r) => r.isLoading)
-  const hasMore = results.some((r) => r.data?.hasMore)
+  // Mirrors useSearchAggregate's enabled condition: a DISABLED query stays `pending`
+  // forever, so without the subset check an empty indexer selection would render
+  // "Searching 0 indexers…" indefinitely and hide the results/ledger (review finding).
+  const searching = submitted !== null && active.length > 0 && results.isPending
+  const total = results.data?.total ?? rows.length
 
-  const search = (nextOffset: number) => {
-    setOffset(nextOffset)
+  const search = () => {
     setSubmitted({
       q: q || undefined,
       cat: cat || undefined,
@@ -107,7 +108,6 @@ function SearchPage() {
       season: ids.season || undefined,
       ep: ids.ep || undefined,
       limit: PAGE_SIZE,
-      offset: nextOffset,
     })
   }
 
@@ -124,7 +124,7 @@ function SearchPage() {
           className="mb-5 flex flex-col gap-3"
           onSubmit={(e) => {
             e.preventDefault()
-            search(0)
+            search()
           }}
         >
           <div className="flex flex-wrap items-end gap-2.5">
@@ -171,49 +171,88 @@ function SearchPage() {
           />
         </form>
 
-        {failed.length > 0 && (
+        {searching && (
+          <p className="mb-3 px-1 text-[12px] text-faint">Searching {active.length} {active.length === 1 ? "indexer" : "indexers"}…</p>
+        )}
+
+        {results.isError && (
           <p className="mb-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-[13px] text-warn">
-            No response from: {failed.join(", ")}
+            Search failed — {results.error.message}
           </p>
         )}
 
-        {submitted !== null && !searching && (
-          rows.length > 0 ? (
-            <>
-              <ResultFilter value={filter} onChange={setFilter} invalid={invalidFilter} />
-              {shown.length > 0 ? (
-                <SearchResultsResponsive rows={shown} catNames={catNames} sort={sort} onSort={(key: SortKey) =>
-                  setSort((prev) => prev.key === key ? { key, dir: prev.dir === "desc" ? "asc" : "desc" } : { key, dir: "desc" })} />
-              ) : (
-                <div className="grid place-items-center rounded-xl border border-dashed border-border py-16 text-center">
-                  <p className="text-[13px] text-muted-foreground">No results match the filter.</p>
+        {submitted !== null && !searching && results.data && (
+          <>
+            <SearchLedger members={results.data.members} />
+            {rows.length > 0 ? (
+              <>
+                <ResultFilter value={filter} onChange={setFilter} invalid={invalidFilter} />
+                {shown.length > 0 ? (
+                  <SearchResultsResponsive rows={shown} catNames={catNames} sort={sort} onSort={(key: SortKey) =>
+                    setSort((prev) => prev.key === key ? { key, dir: prev.dir === "desc" ? "asc" : "desc" } : { key, dir: "desc" })} />
+                ) : (
+                  <div className="grid place-items-center rounded-xl border border-dashed border-border py-16 text-center">
+                    <p className="text-[13px] text-muted-foreground">No results match the filter.</p>
+                  </div>
+                )}
+                <div className="mt-3 flex items-center gap-3 px-1 text-[12px] text-faint">
+                  <span>{countLabel}</span>
+                  {/* The server merged and windowed this set, so the count it stands behind
+                      is stated whenever it is larger than what fits in one window. */}
+                  {total > rows.length && <span>· newest {rows.length} of {total} fetched</span>}
                 </div>
-              )}
-              <div className="mt-3 flex items-center gap-3 px-1 text-[12px] text-faint">
-                <span>{countLabel} · page {offset / PAGE_SIZE + 1}</span>
-                <span className="ml-auto flex gap-2">
-                  {offset > 0 && (
-                    <Button variant="outline" size="sm" onClick={() => search(offset - PAGE_SIZE)}>Previous</Button>
-                  )}
-                  {hasMore && (
-                    <Button variant="outline" size="sm" onClick={() => search(offset + PAGE_SIZE)}>Next</Button>
-                  )}
-                </span>
+              </>
+            ) : (
+              <div className="grid place-items-center rounded-xl border border-dashed border-border py-16 text-center">
+                <p className="text-[13px] text-muted-foreground">No results.</p>
               </div>
-            </>
-          ) : (
-            <div className="grid place-items-center rounded-xl border border-dashed border-border py-16 text-center">
-              <p className="text-[13px] text-muted-foreground">No results.</p>
-            </div>
-          )
+            )}
+          </>
         )}
       </div>
     </div>
   )
 }
 
+// The closed skip vocabulary the server serves (core's Skip* constants), in operator
+// words. An unmapped value renders raw — the vocabulary is closed, so it is readable
+// as-is and a new one must never render as a blank.
+const SKIP_LABEL: Record<string, string> = {
+  "budget-exhausted": "budget exhausted",
+  "circuit-open": "circuit open",
+  "degenerate-query": "nothing left of the query to search",
+  "rate-limited": "rate limited",
+  unreachable: "unreachable",
+  timeout: "timed out",
+  error: "failed",
+  disabled: "disabled",
+  unavailable: "unavailable",
+}
+
+// The per-member ledger behind the merged window: answering indexers fold into one
+// line, and each skipped one names itself and why it contributed nothing. Skips are
+// information, not alarms — they get the flat, quiet treatment (the tone an unknown
+// health state gets), never a warning banner.
+function SearchLedger({ members }: { members: SearchMember[] }) {
+  const ok = members.filter((m) => m.status === "ok")
+  const skipped = members.filter((m) => m.status !== "ok")
+  const answered = ok.reduce((n, m) => n + m.count, 0)
+
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[12px] text-faint">
+      <span>{ok.length} {ok.length === 1 ? "indexer" : "indexers"} · {answered} results</span>
+      {skipped.map((m) => (
+        <span key={m.slug} className="flex items-center gap-1.5">
+          <span className="inline-flex h-1.5 w-1.5 rounded-full bg-faint" />
+          {m.name} — {m.reason ? SKIP_LABEL[m.reason] ?? m.reason : "no answer"}
+        </span>
+      ))}
+    </div>
+  )
+}
+
 // Narrows the results already on screen. Never re-queries — this is a view over
-// state the fan-out already returned.
+// state the server already returned.
 function ResultFilter({ value, onChange, invalid }: {
   value: string
   onChange: (v: string) => void

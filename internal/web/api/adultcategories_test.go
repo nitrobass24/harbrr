@@ -339,3 +339,79 @@ func TestAdultCategoriesFeedUntouched(t *testing.T) {
 		t.Errorf("the feed caps must still advertise the XXX family:\n%s", body)
 	}
 }
+
+// TestAdultHidingKeepsAggregateLedgerConsistent pins the invariant the aggregate search
+// surface exists for: when adult hiding drops releases from the merged window, each
+// member's ledger Count must still equal the releases actually served for it. A ledger
+// row claiming more than the page shows is the page disagreeing with itself — the exact
+// failure the server-merged design removes (review finding on autobrr/harbrr#372).
+func TestAdultHidingKeepsAggregateLedgerConsistent(t *testing.T) {
+	t.Parallel()
+	_, base, c := adultEnv(t)
+
+	// Baseline FIRST: prove the adult release IS in this window with hiding off, so the
+	// absence asserted after is the setting working — not an empty or adult-free fixture
+	// making every assertion below trivially true (review finding).
+	before := aggregateSearch(t, base, c)
+	if !containsTitle(before.titles(), "Adult Release") {
+		t.Fatalf("baseline: no adult release in the unhidden window %v — the rest would pass vacuously", before.titles())
+	}
+
+	setHidden(t, base, c, true)
+	after := aggregateSearch(t, base, c)
+
+	if containsTitle(after.titles(), "Adult Release") {
+		t.Errorf("adult release still served with hiding on: %v", after.titles())
+	}
+	// The ledger must agree with what was actually served: a member row claiming more
+	// than the page renders is the surface disagreeing with itself.
+	served := map[string]int{}
+	for _, r := range after.Results {
+		served[r.Indexer]++
+	}
+	for _, m := range after.Members {
+		if m.Count != served[m.Slug] {
+			t.Errorf("member %q ledger Count = %d, but %d releases served for it", m.Slug, m.Count, served[m.Slug])
+		}
+	}
+	if after.Total != len(after.Results) {
+		t.Errorf("total = %d, want %d (the served window)", after.Total, len(after.Results))
+	}
+}
+
+// aggregateResponse is the decoded shape the aggregate-search assertions read.
+type aggregateResponse struct {
+	Results []struct {
+		Indexer string `json:"indexer"`
+		Release struct {
+			Title string `json:"title"`
+		} `json:"release"`
+	} `json:"results"`
+	Members []struct {
+		Slug  string `json:"slug"`
+		Count int    `json:"count"`
+	} `json:"members"`
+	Total int `json:"total"`
+}
+
+func (a aggregateResponse) titles() []string {
+	out := make([]string, 0, len(a.Results))
+	for _, r := range a.Results {
+		out = append(out, r.Release.Title)
+	}
+	return out
+}
+
+// aggregateSearch runs the merged-window search over the adult env's one indexer.
+func aggregateSearch(t *testing.T, base string, c *http.Client) aggregateResponse {
+	t.Helper()
+	resp, body := do(t, c, http.MethodGet, base+"/api/search?indexers=adult&q=release", nil, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("aggregate search: status = %d, want 200 (%s)", resp.StatusCode, body)
+	}
+	var got aggregateResponse
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("decode: %v (%s)", err, body)
+	}
+	return got
+}

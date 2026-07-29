@@ -224,6 +224,10 @@ func (rt *router) routes() http.Handler {
 			r.Get("/api/indexers/{slug}/capabilities", rt.indexerCapabilities)
 			r.Get("/api/indexers/{slug}/crossseed-snippet", rt.crossSeedSnippet)
 
+			// Cross-indexer search: ONE server-merged window over an explicit subset,
+			// with the per-member ledger. The web UI's search surface.
+			r.Get("/api/search", rt.searchAggregate)
+
 			r.Get("/api/app-connections", rt.listConnections)
 			r.Post("/api/app-connections", rt.createConnection)
 			r.Post("/api/app-connections/sync", rt.syncAllConnections)
