@@ -70,6 +70,54 @@ func (c *SearchCache) ForgetInstance(instanceID int64) {
 	c.breakerSuppressed.Add(-ic.suppressed.Swap(0))
 }
 
+// ClearedCounters reports the totals a ResetCounters call discarded, so the caller
+// can say what was thrown away rather than just that something was.
+type ClearedCounters struct {
+	Hits       int64
+	Misses     int64
+	Suppressed int64
+}
+
+// ResetCounters zeroes the hit/miss/suppressed counters — in-memory, per-instance,
+// persisted, and every rolling window — and reports what it cleared. It is the ONLY
+// reset path: Flush discards cached RESULTS and leaves these monotone, as do the
+// cleanup tick and per-instance invalidation (TestHitsMonotoneAcrossCleanup, #350).
+// Cached rows are left alone. The counters reset even if deleting the persisted rows
+// fails (the next FlushCounters upserts the zeroed values anyway).
+//
+// The body below is the reset half that used to live in Flush, moved unchanged: every
+// line of it guards a specific race (see the inline notes).
+func (c *SearchCache) ResetCounters(ctx context.Context) ClearedCounters {
+	// The persist mutex keeps a concurrent FlushCounters (cleanup tick/shutdown)
+	// from writing pre-reset snapshots back after the DeleteAll — a restart would
+	// rehydrate them. The epoch bump comes FIRST so an in-flight serveMiss whose
+	// increment this reset sweeps away skips its own rollback (see serveMiss).
+	c.counterPersistMu.Lock()
+	defer c.counterPersistMu.Unlock()
+	// Read the globals before the sweep: this is what the reset is about to discard.
+	cleared := ClearedCounters{
+		Hits:       c.hits.Load(),
+		Misses:     c.misses.Load(),
+		Suppressed: c.breakerSuppressed.Load(),
+	}
+	c.resetEpoch.Add(1)
+	// Subtract each instance's swapped counts from the globals (mirrors
+	// ForgetInstance) so a concurrent in-flight increment is never lost twice.
+	c.instCounters.Range(func(_, v any) bool {
+		ic, _ := v.(*instanceCounters)
+		c.hits.Add(-ic.hits.Swap(0))
+		c.misses.Add(-ic.misses.Swap(0))
+		c.breakerSuppressed.Add(-ic.suppressed.Swap(0))
+		return true
+	})
+	c.window.reset(c.clock())
+	if derr := c.counterStore.DeleteAll(ctx, c.db); derr != nil {
+		c.log.Warn().Str("error", apphttp.RedactError(derr)).
+			Msg("registry: reset persisted cache counters failed")
+	}
+	return cleared
+}
+
 // FlushCounters writes the live per-instance counters to the store so they survive a
 // restart. It writes ABSOLUTE cumulative values (the atomics already hold the
 // rehydrated total), so the UPSERT is idempotent — no delta tracking, no reset.
@@ -88,6 +136,11 @@ func (c *SearchCache) ForgetInstance(instanceID int64) {
 // counts. RehydrateCounters is additive and gated, so the retry folds the session's own
 // increments onto the restored totals exactly once.
 func (c *SearchCache) FlushCounters(ctx context.Context) {
+	// Serialized against ResetCounters (counterPersistMu): without this, a snapshot
+	// loaded here just before a reset could be upserted just after its DeleteAll,
+	// resurrecting pre-reset totals on the next restart.
+	c.counterPersistMu.Lock()
+	defer c.counterPersistMu.Unlock()
 	if !c.countersRehydrated.Load() {
 		if err := c.RehydrateCounters(ctx); err != nil {
 			c.log.Warn().Str("error", apphttp.RedactError(err)).

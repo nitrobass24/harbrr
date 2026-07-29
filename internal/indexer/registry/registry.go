@@ -112,6 +112,10 @@ type Resolver struct {
 	// StatsReporter. See statusSource — the Resolver never holds a *StatsReporter.
 	statuses statusSource
 
+	// failoverGate rate-limits the base-URL failover's candidate probing to one cycle
+	// per instance per failoverRetry (autobrr/harbrr#375).
+	failoverGate failoverGate
+
 	mu sync.Mutex
 	// cache holds the per-slug served indexer — the flattened adapter (cache-wired when
 	// searchCache != nil, else running live), served as a core.Indexer.
@@ -509,12 +513,21 @@ func (r *Resolver) build(ctx context.Context, slug string) (core.Indexer, error)
 	return a, nil
 }
 
-// buildAdapter snapshots the instance's invalidation epoch, loads the instance +
+// buildAdapter builds the adapter for a slug at the base URL it is configured to use.
+func (r *Resolver) buildAdapter(ctx context.Context, slug string) (*indexerAdapter, error) {
+	return r.buildAdapterAt(ctx, slug, "")
+}
+
+// buildAdapterAt snapshots the instance's invalidation epoch, loads the instance +
 // definition, decrypts its settings, and constructs the engine-shaped core
 // (Cardigann engine OR native family driver) wrapped in the shared adapter. It
 // returns the adapter with cache left nil — Test uses it so a credential probe
 // never consults or warms the cache (the epoch snapshot rides along unused).
-func (r *Resolver) buildAdapter(ctx context.Context, slug string) (*indexerAdapter, error) {
+//
+// probeHost, when non-empty, pins the built driver to that host instead of the
+// instance's own effective base URL: the failover's candidate probe (#375), and the
+// only caller that passes one. It is always a link the definition itself lists.
+func (r *Resolver) buildAdapterAt(ctx context.Context, slug, probeHost string) (*indexerAdapter, error) {
 	inst, err := r.instances.GetBySlug(ctx, r.db, slug)
 	if err != nil {
 		return nil, fmt.Errorf("registry: load instance %q: %w", slug, err)
@@ -589,7 +602,11 @@ func (r *Resolver) buildAdapter(ctx context.Context, slug string) (*indexerAdapt
 	if err != nil {
 		return nil, err
 	}
-	inner, skipQuery, err := r.buildInner(inst, def, factory, engineCfg, doer)
+	baseURL := effectiveBaseURL(inst, def, cfg)
+	if probeHost != "" {
+		baseURL = probeHost
+	}
+	inner, skipQuery, err := r.buildInner(inst, def, factory, engineCfg, doer, baseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -613,8 +630,11 @@ func (r *Resolver) buildAdapter(ctx context.Context, slug string) (*indexerAdapt
 		healthSink:    r.healthSink,
 		stats:         r.stats,
 		budget:        r.budget,
-		clock:         r.clock,
-		log:           r.log,
+		failover: func(ctx context.Context) (string, error) {
+			return r.failover(ctx, inst, def, baseURL)
+		},
+		clock: r.clock,
+		log:   r.log,
 	}, nil
 }
 
@@ -683,13 +703,13 @@ func composeProxyURL(p domain.Proxy, password string) string {
 // keywordsfilters that could reduce a term to nothing. It is returned here rather
 // than type-asserted at the call site because this is where the engine is built, so
 // the concrete type is already in hand.
-func (r *Resolver) buildInner(inst domain.IndexerInstance, def *loader.Definition, factory native.Factory, cfg map[string]string, doer search.Doer) (native.Driver, func(search.Query) bool, error) {
+func (r *Resolver) buildInner(inst domain.IndexerInstance, def *loader.Definition, factory native.Factory, cfg map[string]string, doer search.Doer, baseURL string) (native.Driver, func(search.Query) bool, error) {
 	if factory != nil {
 		d, err := factory(native.Params{
 			Def:     def,
 			Cfg:     cfg,
 			Doer:    doer,
-			BaseURL: baseURLOf(inst, def),
+			BaseURL: baseURL,
 			Clock:   r.clock,
 			Logger:  r.log,
 			PersistSetting: func(ctx context.Context, name, value string) error {
@@ -708,9 +728,9 @@ func (r *Resolver) buildInner(inst domain.IndexerInstance, def *loader.Definitio
 		// Wire an anti-bot solver from the instance settings ("solver_type" + the
 		// encrypted "cookie"); a no-op when unset.
 		cardigann.SolverOption(cfg),
-	}
-	if inst.BaseURL != "" {
-		opts = append(opts, cardigann.WithBaseURL(inst.BaseURL))
+		// Always explicit. An unoverridden instance resolves to the definition's first
+		// link, which is exactly what the engine would have defaulted to on its own.
+		cardigann.WithBaseURL(baseURL),
 	}
 	eng, err := cardigann.NewEngine(def, opts...)
 	if err != nil {
@@ -744,8 +764,21 @@ func (r *Resolver) NativeDefinitions() []*loader.Definition {
 	return out
 }
 
-// baseURLOf is an instance's effective base URL: its override, else the
-// definition's first link.
+// effectiveBaseURL is the host an instance actually talks to: a base URL the failover
+// promoted (#375) if one is in effect, else the configured one. A promotion only
+// counts while the definition still lists that host — a definition update that drops a
+// dead mirror thereby un-promotes every instance sitting on it, and the stored value
+// can never route credentials somewhere the definition does not vouch for.
+func effectiveBaseURL(inst domain.IndexerInstance, def *loader.Definition, cfg map[string]string) string {
+	if promoted := cfg[failoverBaseURLSetting]; promoted != "" && linked(def, promoted) {
+		return promoted
+	}
+	return baseURLOf(inst, def)
+}
+
+// baseURLOf is an instance's CONFIGURED base URL: its operator override, else the
+// definition's first link. This is the "configured A" half of the failover's
+// "configured A, currently using B" — see effectiveBaseURL for the other.
 func baseURLOf(inst domain.IndexerInstance, def *loader.Definition) string {
 	if inst.BaseURL != "" {
 		return inst.BaseURL

@@ -35,6 +35,16 @@ export function useFlushCache() {
   })
 }
 
+// Resetting the STATISTICS is a separate action from flushing the cached RESULTS
+// (see CacheView) — it destroys history that cannot be recovered.
+export function useResetCacheStats() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.resetCacheStats(),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.cache.stats() }),
+  })
+}
+
 export function useLogLevel() {
   return useQuery({ queryKey: keys.config.logLevel(), queryFn: () => api.getLogLevel() })
 }

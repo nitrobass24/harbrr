@@ -22,6 +22,8 @@ type cacheStatsBody struct {
 	Hits              int64                `json:"hits"`
 	Misses            int64                `json:"misses"`
 	HitRatio          float64              `json:"hitRatio"`
+	Windows           []cacheStatsWindowB  `json:"windows"`
+	WindowsSince      int64                `json:"windowsSince"`
 	ApproxSizeBytes   int64                `json:"approxSizeBytes"`
 	OldestCachedAt    *int64               `json:"oldestCachedAt"`
 	NewestCachedAt    *int64               `json:"newestCachedAt"`
@@ -29,6 +31,21 @@ type cacheStatsBody struct {
 	TrackerHitsSaved  int64                `json:"trackerHitsSaved"`
 	BreakerSuppressed int64                `json:"breakerSuppressed"`
 	ByIndexer         []cacheIndexerStatsB `json:"byIndexer"`
+}
+
+// cacheStatsWindowB is one decoded selectable-window row.
+type cacheStatsWindowB struct {
+	Window   string  `json:"window"`
+	Hits     int64   `json:"hits"`
+	Misses   int64   `json:"misses"`
+	HitRatio float64 `json:"hitRatio"`
+}
+
+// cacheStatsResetBody is the decoded /api/cache/stats/reset response.
+type cacheStatsResetBody struct {
+	ClearedHits              int64 `json:"clearedHits"`
+	ClearedMisses            int64 `json:"clearedMisses"`
+	ClearedBreakerSuppressed int64 `json:"clearedBreakerSuppressed"`
 }
 
 // cacheIndexerStatsB is the decoded per-indexer stats row.
@@ -261,6 +278,21 @@ func TestCacheStatsHappyPath(t *testing.T) {
 	if idx.BreakerOpenUntil != nil {
 		t.Errorf("byIndexer[0].breakerOpenUntil = %v, want null", idx.BreakerOpenUntil)
 	}
+	// All four selectable windows ship in one response (no ?window= refetch), in a
+	// fixed order, and windowsSince bounds how far the bucketed three actually reach.
+	wantWindows := []string{"1d", "7d", "30d", "all"}
+	if len(stats.Windows) != len(wantWindows) {
+		t.Fatalf("windows = %+v, want %v", stats.Windows, wantWindows)
+	}
+	for i, want := range wantWindows {
+		if stats.Windows[i].Window != want {
+			t.Errorf("windows[%d].window = %q, want %q", i, stats.Windows[i].Window, want)
+		}
+	}
+	if stats.WindowsSince != now.Unix() {
+		t.Errorf("windowsSince = %d, want the cache's start %d (the coverage bound)",
+			stats.WindowsSince, now.Unix())
+	}
 	// The seeded row carries hit_count=5 while no hit was ever served through the
 	// cache, so the row-derived and cumulative figures DIFFER here — these assertions
 	// distinguish the cumulative mapping from the old row-derived one (which would
@@ -296,7 +328,7 @@ func TestCacheStatsHappyPath(t *testing.T) {
 	if err := json.Unmarshal(body, &top); err != nil {
 		t.Fatalf("decode stats object: %v", err)
 	}
-	for _, key := range []string{"hits", "misses", "trackerHitsSaved"} {
+	for _, key := range []string{"hits", "misses", "trackerHitsSaved", "windows", "windowsSince"} {
 		if _, ok := top[key]; !ok {
 			t.Errorf("stats JSON missing top-level %q key: %s", key, body)
 		}
@@ -381,6 +413,70 @@ func TestCacheFlushHappyPath(t *testing.T) {
 	}
 }
 
+// TestCacheStatsResetKeepsEntries pins the split the #369 follow-up introduced: the
+// reset endpoint discards STATISTICS, the flush endpoint discards RESULTS. Resetting
+// must leave the cached rows exactly where they were.
+func TestCacheStatsResetKeepsEntries(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 23, 12, 0, 0, 0, time.UTC)
+	e := newEnvWithCache(t, api.Config{}, cacheBuilder(now))
+	base, c := serve(t, e)
+	setupAndLogin(t, base, c)
+
+	instanceID := addTestIndexer(t, e, base, c, "tt")
+	seedCacheEntry(t, e.db, instanceID, now)
+
+	resp, body := do(t, c, http.MethodPost, base+"/api/cache/stats/reset", nil, nil)
+	mustStatus(t, resp, body, http.StatusOK)
+	var reset cacheStatsResetBody
+	if err := json.Unmarshal(body, &reset); err != nil {
+		t.Fatalf("decode reset: %v", err)
+	}
+	// No traffic was served through the cache, so there was nothing to clear — the
+	// keys must still be present (a dropped key would decode to 0 and pass silently).
+	var resetTop map[string]json.RawMessage
+	if err := json.Unmarshal(body, &resetTop); err != nil {
+		t.Fatalf("decode reset object: %v", err)
+	}
+	for _, key := range []string{"clearedHits", "clearedMisses", "clearedBreakerSuppressed"} {
+		if _, ok := resetTop[key]; !ok {
+			t.Errorf("reset JSON missing %q key: %s", key, body)
+		}
+	}
+	if reset.ClearedHits != 0 || reset.ClearedMisses != 0 {
+		t.Errorf("cleared = %+v, want zeroes (no traffic was served)", reset)
+	}
+
+	resp, body = do(t, c, http.MethodGet, base+"/api/cache/stats", nil, nil)
+	mustStatus(t, resp, body, http.StatusOK)
+	var stats cacheStatsBody
+	if err := json.Unmarshal(body, &stats); err != nil {
+		t.Fatalf("decode stats: %v", err)
+	}
+	if stats.Entries != 1 {
+		t.Errorf("entries after a stats reset = %d, want 1 (reset must not purge cached rows)", stats.Entries)
+	}
+}
+
+func TestCacheStatsResetDisabled(t *testing.T) {
+	t.Parallel()
+
+	e := newEnv(t, api.Config{}) // no cache wired
+	base, c := serve(t, e)
+	setupAndLogin(t, base, c)
+
+	resp, body := do(t, c, http.MethodPost, base+"/api/cache/stats/reset", nil, nil)
+	mustStatus(t, resp, body, http.StatusOK)
+	var reset cacheStatsResetBody
+	if err := json.Unmarshal(body, &reset); err != nil {
+		t.Fatalf("decode reset: %v", err)
+	}
+	if reset.ClearedHits != 0 || reset.ClearedMisses != 0 || reset.ClearedBreakerSuppressed != 0 {
+		t.Errorf("cleared = %+v, want zeroes with caching off", reset)
+	}
+}
+
 func TestCacheStatsDisabled(t *testing.T) {
 	t.Parallel()
 
@@ -397,9 +493,12 @@ func TestCacheStatsDisabled(t *testing.T) {
 	if stats.Enabled {
 		t.Error("stats.enabled = true, want false with caching off")
 	}
-	// byIndexer is always a JSON array, never null — even with caching disabled.
+	// byIndexer/windows are always JSON arrays, never null — even with caching off.
 	if stats.ByIndexer == nil {
 		t.Error("byIndexer = null with caching off, want []")
+	}
+	if stats.Windows == nil {
+		t.Error("windows = null with caching off, want []")
 	}
 }
 

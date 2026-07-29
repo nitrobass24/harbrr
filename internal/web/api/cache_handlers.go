@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
@@ -26,24 +27,63 @@ type cacheStatsResponse struct {
 	TotalHits int64 `json:"totalHits"`
 	// Hits/Misses are the global counters (the sum across all indexers, the aggregate
 	// of the per-indexer byIndexer rows). hitRatio is hits / (hits + misses) over the
-	// same window. All three are cumulative and survive a restart.
-	Hits            int64   `json:"hits"`
-	Misses          int64   `json:"misses"`
-	HitRatio        float64 `json:"hitRatio"`
-	ApproxSizeBytes int64   `json:"approxSizeBytes"`
-	OldestCachedAt  *int64  `json:"oldestCachedAt"`
-	NewestCachedAt  *int64  `json:"newestCachedAt"`
-	LastUsedAt      *int64  `json:"lastUsedAt"`
+	// same window. All three are cumulative and survive a restart; a failed live
+	// search counts as neither hit nor miss, and only an explicit stats reset
+	// (POST /api/cache/stats/reset) zeroes them — a cache flush does not.
+	Hits     int64   `json:"hits"`
+	Misses   int64   `json:"misses"`
+	HitRatio float64 `json:"hitRatio"`
+	// Windows carries the same counters over each selectable view — "1d", "7d",
+	// "30d", "all" — in that order, so a client can switch window with no refetch.
+	Windows []cacheStatsWindow `json:"windows"`
+	// WindowsSince is the Unix-seconds instant the in-memory buckets started
+	// accumulating (process start, or the last stats reset). The 1d/7d/30d figures
+	// reach back at most this far, so a client MUST NOT present a window longer than
+	// now - windowsSince as a full period of data. "all" is exempt: it reads the
+	// persisted cumulative counters.
+	WindowsSince    int64  `json:"windowsSince"`
+	ApproxSizeBytes int64  `json:"approxSizeBytes"`
+	OldestCachedAt  *int64 `json:"oldestCachedAt"`
+	NewestCachedAt  *int64 `json:"newestCachedAt"`
+	LastUsedAt      *int64 `json:"lastUsedAt"`
 	// TrackerHitsSaved is the cumulative count of tracker requests served from cache —
 	// the headline kind-to-trackers metric. It mirrors Hits (same cumulative,
 	// restart-persisted counter) and, unlike totalHits, never drops when cached
-	// entries are reaped.
+	// entries are reaped — only an explicit stats reset does.
 	TrackerHitsSaved int64 `json:"trackerHitsSaved"`
 	// BreakerSuppressed is the cumulative count of misses short-circuited by the
 	// negative-result breaker (extra tracker requests spared a failing tracker).
 	BreakerSuppressed int64 `json:"breakerSuppressed"`
 	// ByIndexer is the per-indexer breakdown (ordered by instance id).
 	ByIndexer []cacheIndexerStats `json:"byIndexer"`
+}
+
+// cacheStatsWindow is the hit/miss view over one window. Window is the client-facing
+// key: "1d", "7d", "30d", or "all" (the cumulative, restart-persisted counters).
+type cacheStatsWindow struct {
+	Window   string  `json:"window"`
+	Hits     int64   `json:"hits"`
+	Misses   int64   `json:"misses"`
+	HitRatio float64 `json:"hitRatio"`
+}
+
+// toCacheStatsWindows maps the registry's window views onto the response shape.
+func toCacheStatsWindows(in []registry.StatsWindow) []cacheStatsWindow {
+	out := make([]cacheStatsWindow, 0, len(in))
+	for _, w := range in {
+		out = append(out, cacheStatsWindow{
+			Window: windowKey(w.Hours), Hits: w.Hits, Misses: w.Misses, HitRatio: w.HitRatio,
+		})
+	}
+	return out
+}
+
+// windowKey renders a window length in days, or "all" for the all-time view (0 hours).
+func windowKey(hours int) string {
+	if hours == 0 {
+		return "all"
+	}
+	return strconv.Itoa(hours/24) + "d"
 }
 
 // cacheIndexerStats is one indexer's cache observability row in the stats response.
@@ -74,9 +114,11 @@ type cacheFlushResponse struct {
 // (no cache wired) it answers 200 with {"enabled":false} rather than 404.
 func (rt *router) cacheStats(w http.ResponseWriter, r *http.Request) {
 	if rt.cache == nil {
-		// Keep byIndexer a JSON array (never null) so the response always matches the
-		// CacheStats schema, even with caching off.
-		writeJSON(w, http.StatusOK, cacheStatsResponse{Enabled: false, ByIndexer: []cacheIndexerStats{}})
+		// Keep byIndexer/windows JSON arrays (never null) so the response always
+		// matches the CacheStats schema, even with caching off.
+		writeJSON(w, http.StatusOK, cacheStatsResponse{
+			Enabled: false, Windows: []cacheStatsWindow{}, ByIndexer: []cacheIndexerStats{},
+		})
 		return
 	}
 	stats, err := rt.cache.Stats(r.Context())
@@ -96,6 +138,8 @@ func (rt *router) cacheStats(w http.ResponseWriter, r *http.Request) {
 		Hits:              stats.Hits,
 		Misses:            stats.Misses,
 		HitRatio:          stats.HitRatio,
+		Windows:           toCacheStatsWindows(stats.Windows),
+		WindowsSince:      stats.WindowsSince.Unix(),
 		ApproxSizeBytes:   stats.ApproxSizeBytes,
 		OldestCachedAt:    stats.OldestUnixSec,
 		NewestCachedAt:    stats.NewestUnixSec,
@@ -163,6 +207,31 @@ func (rt *router) cacheFlush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, cacheFlushResponse{Flushed: n})
+}
+
+// cacheStatsResetResponse reports the counter totals the reset discarded, so the
+// caller can show what was thrown away (it is not recoverable).
+type cacheStatsResetResponse struct {
+	ClearedHits              int64 `json:"clearedHits"`
+	ClearedMisses            int64 `json:"clearedMisses"`
+	ClearedBreakerSuppressed int64 `json:"clearedBreakerSuppressed"`
+}
+
+// cacheStatsReset zeroes the cache hit/miss/suppressed counters fleet-wide —
+// in-memory, persisted, and every rolling window — and reports what it cleared.
+// Cached ENTRIES are untouched: discarding those is /api/cache/flush. With caching
+// disabled it answers 200 with zeroes rather than 404.
+func (rt *router) cacheStatsReset(w http.ResponseWriter, r *http.Request) {
+	if rt.cache == nil {
+		writeJSON(w, http.StatusOK, cacheStatsResetResponse{})
+		return
+	}
+	cleared := rt.cache.ResetCounters(r.Context())
+	writeJSON(w, http.StatusOK, cacheStatsResetResponse{
+		ClearedHits:              cleared.Hits,
+		ClearedMisses:            cleared.Misses,
+		ClearedBreakerSuppressed: cleared.Suppressed,
+	})
 }
 
 // cacheConfigResponse is the management view of the runtime-tunable cache config.
