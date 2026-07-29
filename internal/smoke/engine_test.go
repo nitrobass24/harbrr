@@ -294,12 +294,19 @@ func TestClassifyGrabBody(t *testing.T) {
 		body string
 		want string
 	}{
-		{"bencoded torrent", "d8:announce30:http://tracker.example/announcee", "torrent"},
+		{"bencoded torrent", "d8:announce31:http://tracker.example/announcee4:infod4:name4:testee", "torrent"},
 		{"nzb", `<?xml version="1.0" encoding="iso-8859-1" ?>` + "\n" +
 			`<!DOCTYPE nzb PUBLIC "-//newzBin//DTD NZB 1.1//EN" "http://www.newzbin.com/DTD/nzb/nzb-1.1.dtd">` + "\n" +
 			`<nzb xmlns="http://www.newzbin.com/DTD/2003/nzb"><file subject="x"/></nzb>`, "nzb"},
 		{"html error page", "<!DOCTYPE html><html><body>login required</body></html>", "not a torrent/magnet"},
 		{"empty", "", "not a torrent/magnet"},
+		// The two shapes a marker-byte sniff waved through. A tracker answering 200
+		// with prose starting with 'd' is the dangerous one: it would have passed the
+		// grab assertion as a torrent.
+		{"plain-text error starting with d", "download unavailable", "not a torrent/magnet"},
+		{"bencoded but no info dict", "d8:announce31:http://tracker.example/announcee", "not a torrent/magnet"},
+		{"html carrying a literal nzb tag", "<html><body>see <nzb> docs</body></html>", "not a torrent/magnet"},
+		{"newznab error document", `<?xml version="1.0"?><error code="101" description="no such item"/>`, "not a torrent/magnet"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

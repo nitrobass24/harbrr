@@ -782,17 +782,50 @@ const (
 	grabUnknown = "not a torrent/magnet"
 )
 
-// classifyGrabBody names the payload a downloaded grab body carries: a bencoded
-// .torrent starts with a dict ('d'), an .nzb is XML with an <nzb> root (its DOCTYPE
-// line reads "<!DOCTYPE nzb", which deliberately does not match).
+// classifyGrabBody names the payload a downloaded grab body carries. Both checks are
+// deliberately structural rather than marker-byte sniffs, because this classifier is
+// what decides whether a smoke run passes: a tracker that answers 200 with the plain
+// text "download unavailable" starts with 'd', and an HTML page that merely mentions
+// "<nzb" contains that string — both would otherwise be waved through as a payload,
+// which is the exact failure #429 exists to catch.
+//
+// It identifies, it does not validate: enough structure to tell a real payload from an
+// error page, no more. A full bencode decode would mean a new dependency to answer a
+// question the info-dict key already answers.
 func classifyGrabBody(body []byte) string {
 	switch {
-	case len(body) > 0 && body[0] == 'd':
+	// Every .torrent is a bencoded dict carrying an "info" dictionary (BEP 3), so the
+	// mandatory 4:info key separates a real torrent from any prose starting with 'd'.
+	case len(body) > 0 && body[0] == 'd' && bytes.Contains(body, []byte("4:info")):
 		return grabTorrent
-	case bytes.Contains(body, []byte("<nzb")):
+	case xmlRootIs(body, "nzb"):
 		return grabNZB
 	default:
 		return grabUnknown
+	}
+}
+
+// xmlRootIs reports whether body is XML whose ROOT element is name — the same
+// root-element check the newznab driver's parseUser makes, and for the same reason: an
+// error document ("<error …/>", an HTML page) must not pass as the payload. It reads
+// only as far as the first element, so a DOCTYPE or comment ahead of the root is
+// skipped and a multi-megabyte NZB is never fully parsed.
+func xmlRootIs(body []byte, name string) bool {
+	dec := xml.NewDecoder(bytes.NewReader(body))
+	// Real NZBs still declare the newzbin-era encoding="iso-8859-1", which the stdlib
+	// decoder refuses outright without a CharsetReader — without this a genuine usenet
+	// grab would be classified as an error and fail the run. Passing the bytes through
+	// undecoded is safe here: this reads only the root element's ASCII name and never
+	// its content.
+	dec.CharsetReader = func(_ string, input io.Reader) (io.Reader, error) { return input, nil }
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			return false
+		}
+		if start, ok := tok.(xml.StartElement); ok {
+			return start.Name.Local == name
+		}
 	}
 }
 
