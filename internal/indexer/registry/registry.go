@@ -36,6 +36,17 @@ import (
 // outcome (the indexer is not served), logged quietly, not as a failure.
 var errDisabled = errors.New("registry: instance disabled")
 
+// statusSource is how the Resolver reads DERIVED health for the "status:" feed slug:
+// one method, satisfied by *StatsReporter, assigned in New once the StatsReporter
+// exists. It mirrors the invalidator seam in the other direction — Manager reaches the
+// Resolver through inv and never holds a *Resolver; the Resolver reaches health
+// through this and never holds a *StatsReporter. Keeping it to the one method also
+// keeps the derivation single: the resolver can only ASK for the health the roll-up
+// already derives, never re-derive it and drift from the UI's badge.
+type statusSource interface {
+	SlugsWithStatus(ctx context.Context, want string) ([]string, error)
+}
+
 // Resolver resolves configured indexer slugs to engines and is the invalidation
 // authority: built engines are cached per slug (guarded by mu) and invalidated on
 // mutation. It is the serve/resolve half of the registry — the latency-sensitive,
@@ -96,6 +107,10 @@ type Resolver struct {
 	// present (built in New, like stats), instrumented by the per-instance
 	// indexerAdapter's Search/Grab before an outbound hit.
 	budget *RequestBudget
+
+	// health-status source for the "status:" feed slug, wired in New to the
+	// StatsReporter. See statusSource — the Resolver never holds a *StatsReporter.
+	statuses statusSource
 
 	mu sync.Mutex
 	// cache holds the per-slug served indexer — the flattened adapter (cache-wired when
@@ -269,6 +284,9 @@ func New(db dbinterface.Querier, ldr *loader.Loader, keyring secretsKeyring, fam
 		db:        res.db,
 		clock:     res.clock,
 	}
+	// The status: feed reads derived health back through the narrow statusSource seam,
+	// so the resolver never holds the StatsReporter itself.
+	res.statuses = r.StatsReporter
 	return r
 }
 
@@ -286,7 +304,8 @@ func (r *Resolver) Indexer(ctx context.Context, slug string) (core.Indexer, bool
 
 // Resolve returns the member set a feed slug covers, implementing core.Provider:
 // core.AggregateSlug selects every ENABLED instance, core.ProfileSlugPrefix selects a
-// sync profile's members, and any other slug is the single indexer Indexer would return
+// sync profile's members, core.StatusSlugPrefix selects the enabled instances that are
+// not failing, and any other slug is the single indexer Indexer would return
 // (core.ErrNoSuchFeed when it does not resolve). Note the capital: the unexported
 // resolve below is the single-slug build-or-cache step this is layered over, not an
 // alternative spelling of it.
@@ -301,6 +320,8 @@ func (r *Resolver) Resolve(ctx context.Context, slug string) ([]core.MemberOutco
 		return r.selectedMembers(ctx, func(inst domain.IndexerInstance) bool { return inst.Enabled })
 	case strings.HasPrefix(slug, core.ProfileSlugPrefix):
 		return r.profileMembers(ctx, strings.TrimPrefix(slug, core.ProfileSlugPrefix))
+	case strings.HasPrefix(slug, core.StatusSlugPrefix):
+		return r.statusMembers(ctx, strings.TrimPrefix(slug, core.StatusSlugPrefix))
 	}
 	idx, ok := r.Indexer(ctx, slug)
 	if !ok {
@@ -355,6 +376,32 @@ func (r *Resolver) profileMembers(ctx context.Context, name string) ([]core.Memb
 	selected := profiles[i].IndexerIDs
 	return r.selectedMembers(ctx, func(inst domain.IndexerInstance) bool {
 		return slices.Contains(selected, inst.ID)
+	})
+}
+
+// statusMembers selects the members of the health-filtered aggregate feed. See
+// core.StatusSlugPrefix for the vocabulary: StatusHealthy is the only accepted word,
+// and it means NOT FAILING — healthy and unknown alike — over the ENABLED instances,
+// so the feed is `all` minus what harbrr currently believes is broken. Anything else
+// is core.ErrNoSuchFeed rather than an empty feed, because a misspelled status is a
+// client bug and answering it with 0 results looks like "nothing qualifies".
+//
+// The status word is interpreted here rather than in core because the three derived
+// states are registry constants and core cannot import registry.
+//
+// ponytail: one SlugsWithStatus call per resolve, which is O(N) status derivations
+// (that is AllStatuses' cost, unchanged). Never move it inside the predicate — that
+// would make it O(N²). No caching: at self-hosted poll cadences it does not need any.
+func (r *Resolver) statusMembers(ctx context.Context, want string) ([]core.MemberOutcome, error) {
+	if want != StatusHealthy {
+		return nil, core.ErrNoSuchFeed
+	}
+	failing, err := r.statuses.SlugsWithStatus(ctx, StatusFailing)
+	if err != nil {
+		return nil, fmt.Errorf("registry: status feed: derive health: %w", err)
+	}
+	return r.selectedMembers(ctx, func(inst domain.IndexerInstance) bool {
+		return inst.Enabled && !slices.Contains(failing, inst.Slug)
 	})
 }
 

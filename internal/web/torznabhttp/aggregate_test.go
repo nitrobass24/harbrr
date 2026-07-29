@@ -573,6 +573,38 @@ func TestProfileFeedUnknownAndDownload(t *testing.T) {
 	}
 }
 
+// TestStatusFeedTakesTheAggregatePath proves the health-filtered slug (#400) is an
+// aggregate slug at the serving layer, not a per-indexer one: it renders the aggregate
+// envelope and ledger over exactly the members Resolve selected. The filtering itself
+// is the resolver's job and is tested there; the handler must only agree about which
+// path the slug takes.
+func TestStatusFeedTakesTheAggregatePath(t *testing.T) {
+	t.Parallel()
+	fit := aggIndexer(t, "fit", searchOnly, "2024-06-01T00:00:00Z")
+	unfit := aggIndexer(t, "unfit", searchOnly, "2024-01-01T00:00:00Z")
+	slug := core.StatusSlugPrefix + "healthy"
+	p := memberProvider{
+		fakeProvider: fakeProvider{"fit": fit, "unfit": unfit},
+		feeds:        map[string][]core.MemberOutcome{slug: {core.LiveMember(fit)}},
+	}
+
+	body := doFeed(t, p, slug, "t=search&q=movie").Body.String()
+	if !strings.Contains(body, "fit release") {
+		t.Errorf("a status feed's member must contribute its rows:\n%s", body)
+	}
+	// The ledger element is the aggregate path's signature — a per-indexer feed carries
+	// no harbrr:member at all, so this is what pins the slug to the aggregate route.
+	if got := memberElem(t, body, "fit"); !strings.Contains(got, `status="ok"`) || !strings.Contains(got, `count="1"`) {
+		t.Errorf("fit ledger entry = %s", got)
+	}
+	if strings.Contains(body, "unfit release") || strings.Contains(body, `<harbrr:member id="unfit"`) {
+		t.Errorf("a member the status feed did not select must be neither searched nor ledgered:\n%s", body)
+	}
+	if unfit.gotQuery.Keywords != "" {
+		t.Error("a member the status feed did not select must never be searched")
+	}
+}
+
 // TestAggregateWholeListFailure: when the member set cannot be READ, both aggregate slug
 // forms serve an error document. An empty-200 feed would tell the consumer "you have no
 // indexers" — the exact silent absence the ledger exists to prevent.
