@@ -1,9 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { CacheView } from "./CacheView"
-import { breakerLabel, unixAgo } from "./cache-format"
+import { breakerLabel, coverageNote, unixAgo } from "./cache-format"
 import { safeInt } from "./safe-int"
 
 // safeInt backs the numeric knob inputs (thinThreshold, refreshAheadPct). The
@@ -69,6 +69,28 @@ describe("breakerLabel", () => {
   })
 })
 
+// The 1d/7d/30d views are IN-MEMORY hour buckets, so a freshly restarted process
+// backs a "30d" tile with minutes of data. Without this caveat the UI would claim a
+// month it does not have — the one way this feature can mislead.
+describe("coverageNote", () => {
+  const nowMs = 1_800_000_000_000
+  const nowSec = nowMs / 1000
+
+  it("warns when the window outruns how long the buckets have been collecting", () => {
+    expect(coverageNote("30d", nowSec - 7200, nowMs)).toBe("in-memory window — only collecting since 2h ago")
+    expect(coverageNote("7d", nowSec - 2 * 86_400, nowMs)).toContain("2d ago")
+  })
+
+  it("stays quiet once the window is genuinely covered", () => {
+    expect(coverageNote("1d", nowSec - 2 * 86_400, nowMs)).toBeNull()
+    expect(coverageNote("7d", nowSec - 8 * 86_400, nowMs)).toBeNull()
+  })
+
+  it("never caveats all-time — it reads the restart-persisted counters", () => {
+    expect(coverageNote("all", nowSec - 60, nowMs)).toBeNull()
+  })
+})
+
 function json(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } })
 }
@@ -129,6 +151,40 @@ describe("CacheView", () => {
     expect(screen.getByLabelText("Keyword TTL").getAttribute("aria-describedby")).toBe(help.id)
     expect(screen.getByText(/How few results count as thin/)).toBeTruthy()
     expect(screen.getByText(/served instantly and refreshed in the background/)).toBeTruthy()
+  })
+
+  it("switches the tiles between windows with no refetch, and admits short coverage", async () => {
+    const now = Math.floor(Date.now() / 1000)
+    renderCacheView({
+      enabled: true,
+      trackerHitsSaved: 128,
+      hitRatio: 0.75,
+      entries: 12,
+      windows: [
+        { window: "1d", hits: 16, misses: 16, hitRatio: 0.5 },
+        { window: "7d", hits: 40, misses: 20, hitRatio: 0.6 },
+        { window: "30d", hits: 90, misses: 30, hitRatio: 0.7 },
+        { window: "all", hits: 128, misses: 42, hitRatio: 0.75 },
+      ],
+      windowsSince: now - 7200, // two hours of buckets only
+      byIndexer: [],
+    })
+
+    // Defaults to All: the tiles read exactly as they did before the picker landed.
+    expect(await screen.findByText("128")).toBeTruthy()
+    expect(screen.getByText("75%")).toBeTruthy()
+    // All-time is persisted, so it carries no coverage caveat.
+    expect(screen.queryByText(/only collecting since/)).toBeNull()
+
+    fireEvent.click(screen.getByText("7d"))
+    expect(screen.getByText("40")).toBeTruthy()
+    expect(screen.getByText("60%")).toBeTruthy()
+    // Two hours of buckets cannot back a 7d view — say so rather than imply a week.
+    expect(screen.getByText("in-memory window — only collecting since 2h ago")).toBeTruthy()
+
+    fireEvent.click(screen.getByText("24h"))
+    expect(screen.getByText("16")).toBeTruthy()
+    expect(screen.getByText("50%")).toBeTruthy()
   })
 
   it("renders an em dash for every age when the cache is empty", async () => {

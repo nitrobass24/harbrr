@@ -151,7 +151,7 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 | Group identical releases across indexers, with per-tracker sources attached | 🚧 [#398](https://github.com/autobrr/harbrr/issues/398) |
 | Base-URL picker — choose from the definition's known hosts, with a free-text escape hatch for private mirrors | ✅ |
 | Cache dashboard — tracker requests saved, hit ratio, entry ages, breaker countdowns, live-tunable TTL tiers | ✅ |
-| 24-hour window on the cache dashboard | 🚧 [#373](https://github.com/autobrr/harbrr/issues/373) |
+| Selectable stats window on the cache dashboard — 24h / 7d / 30d / all-time, with a reset that clears the statistics without discarding cached results | ✅ |
 | Request-budget usage meters | 🚧 [#402](https://github.com/autobrr/harbrr/issues/402) |
 | Global setting to hide adult categories (pickers and uncategorised searches; filters by declared category) | ✅ |
 | Adjustable total cache size | 🚧 [#67](https://github.com/autobrr/harbrr/issues/67) |

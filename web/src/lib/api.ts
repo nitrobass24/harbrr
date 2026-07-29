@@ -497,6 +497,10 @@ export class ApiClient {
     return this.unwrap(this.http.POST("/api/cache/flush"), "/api/cache/flush")
   }
 
+  resetCacheStats(): Promise<components["schemas"]["CacheStatsResetResult"]> {
+    return this.unwrap(this.http.POST("/api/cache/stats/reset"), "/api/cache/stats/reset")
+  }
+
   getCacheConfig(): Promise<CacheConfig> {
     return this.unwrap(this.http.GET("/api/cache/config"), "/api/cache/config")
   }

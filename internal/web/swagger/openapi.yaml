@@ -2019,8 +2019,9 @@ paths:
         Returns the cache's durable figures (entry count, total hits, approximate
         size, and the oldest/newest/last-used timestamps) plus the cumulative hit
         ratio. hitRatio derives from hit/miss counters that are persisted across
-        restarts. When caching is disabled the response is
-        {"enabled": false} with no figures.
+        restarts. Every selectable window (1d/7d/30d/all) is returned in one
+        response, so a client switches view without refetching. When caching is
+        disabled the response is {"enabled": false} with no figures.
       operationId: cacheStats
       tags: [Cache]
       security: [{ session: [] }, { apiKey: [] }]
@@ -2032,13 +2033,33 @@ paths:
               schema: { $ref: "#/components/schemas/CacheStats" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /api/cache/stats/reset:
+    post:
+      summary: Reset the search-results cache statistics
+      description: >
+        Zeroes the hit/miss/suppressed counters fleet-wide — in-memory, persisted,
+        and every rolling window — and reports the totals it discarded. Cached
+        ENTRIES are untouched; discarding those is /api/cache/flush. The cleared
+        history is not recoverable. When caching is disabled the response is zeroes.
+      operationId: cacheStatsReset
+      tags: [Cache]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the counter totals the reset discarded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CacheStatsResetResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /api/cache/flush:
     post:
       summary: Flush the search-results cache
       description: >
-        Deletes every cache entry and returns the count purged. The cumulative
-        hit/miss counters are not reset. When caching is disabled the response is
-        {"flushed": 0}.
+        Deletes every cache entry and returns the count purged. The hit/miss/
+        suppressed counters are cumulative and monotonic across a flush — see
+        /api/cache/stats/reset to zero those. When caching is disabled the response
+        is {"flushed": 0}.
       operationId: cacheFlush
       tags: [Cache]
       security: [{ session: [] }, { apiKey: [] }]
@@ -3509,13 +3530,30 @@ components:
           format: int64
           description: >
             Global cumulative cache misses (the aggregate of the per-indexer byIndexer
-            rows). Persisted across restarts.
+            rows). Persisted across restarts. A live search that fails counts as
+            neither hit nor miss; only POST /api/cache/stats/reset zeroes the
+            counters — a cache flush does not.
         hitRatio:
           type: number
           format: double
           description: >
             hits / (hits + misses), cumulative. The underlying hit/miss counters are
             persisted across restarts.
+        windows:
+          type: array
+          description: >
+            The same counters over each selectable view — "1d", "7d", "30d", "all" —
+            in that order, so a client switches window with no refetch.
+          items: { $ref: "#/components/schemas/CacheStatsWindow" }
+        windowsSince:
+          type: integer
+          format: int64
+          description: >
+            Unix seconds at which the in-memory hour buckets started accumulating —
+            process start, or the last stats reset. The 1d/7d/30d figures reach back
+            at most this far, so a client MUST NOT present a window longer than
+            now - windowsSince as a full period of data. The "all" window is exempt:
+            it reads the persisted cumulative counters.
         approxSizeBytes: { type: integer, format: int64, description: approximate total size of cached payloads }
         oldestCachedAt:
           type: integer
@@ -3538,7 +3576,8 @@ components:
           description: >
             Cumulative tracker requests served from cache, persisted across restarts —
             the headline kind-to-trackers metric. Mirrors hits; unlike totalHits it
-            never drops when cached entries are reaped.
+            never drops when cached entries are reaped — only an explicit stats
+            reset zeroes it.
         breakerSuppressed:
           type: integer
           format: int64
@@ -3551,6 +3590,29 @@ components:
           description: Per-indexer cache breakdown, ordered by instance id.
           items: { $ref: "#/components/schemas/CacheIndexerStats" }
       required: [enabled]
+    CacheStatsWindow:
+      type: object
+      description: >
+        The hit/miss counters over one window. "1d"/"7d"/"30d" are in-memory hour
+        buckets bounded by windowsSince; "all" is the cumulative, restart-persisted
+        pair, so it survives both bucket eviction and a reboot.
+      properties:
+        window: { type: string, description: '"1d" | "7d" | "30d" | "all"' }
+        hits: { type: integer, format: int64 }
+        misses: { type: integer, format: int64 }
+        hitRatio:
+          type: number
+          format: double
+          description: hits / (hits + misses) in this window, or 0 with no traffic.
+      required: [window, hits, misses, hitRatio]
+    CacheStatsResetResult:
+      type: object
+      description: The counter totals a stats reset discarded (not recoverable).
+      properties:
+        clearedHits: { type: integer, format: int64 }
+        clearedMisses: { type: integer, format: int64 }
+        clearedBreakerSuppressed: { type: integer, format: int64 }
+      required: [clearedHits, clearedMisses, clearedBreakerSuppressed]
     CacheIndexerStats:
       type: object
       description: One indexer's cache observability figures.
