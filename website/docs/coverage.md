@@ -31,8 +31,8 @@ Bespoke code in Jackett/Prowlarr (no Cardigann definition); harbrr ships native 
 | MyAnonamouse | Session cookie (rotating, JSON) | ✅ | ✅ |
 | Redacted | Gazelle (cookie/key → ajax.php) | ✅ | ⬜ |
 | Orpheus | Gazelle (cookie/key → ajax.php) | ✅ | ⬜ |
-| AlphaRatio | Gazelle (session cookie → ajax.php) | ✅ | ⬜ |
-| BrokenStones | Gazelle (session cookie → ajax.php) | ✅ | ✅ |
+| AlphaRatio | Gazelle (session cookie → torrents.php) | ✅ | ⬜ |
+| BrokenStones | Gazelle (session cookie → torrents.php) | ✅ | ⬜ |
 | BroadcastTheNet | Bespoke API | ✅ | ✅ |
 | PassThePopcorn | Bespoke API | ✅ | ✅ |
 | GazelleGames | Bespoke API | ✅ | ⬜ |
