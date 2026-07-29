@@ -400,8 +400,14 @@ func (r *Resolver) statusMembers(ctx context.Context, want string) ([]core.Membe
 	if err != nil {
 		return nil, fmt.Errorf("registry: status feed: derive health: %w", err)
 	}
+	// Set, not a scan: the predicate runs once per configured instance, so a
+	// slices.Contains over the failing slugs inside it would be quadratic.
+	broken := make(map[string]bool, len(failing))
+	for _, slug := range failing {
+		broken[slug] = true
+	}
 	return r.selectedMembers(ctx, func(inst domain.IndexerInstance) bool {
-		return inst.Enabled && !slices.Contains(failing, inst.Slug)
+		return inst.Enabled && !broken[inst.Slug]
 	})
 }
 
