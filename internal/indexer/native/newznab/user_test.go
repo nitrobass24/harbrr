@@ -246,47 +246,84 @@ func TestSeedBudgetSkippedWithoutPersist(t *testing.T) {
 	}
 }
 
-// TestSeedLimitFailedCapWriteStaysRetryable proves a half-written seed does not strand
-// the cap. The provenance marker is written before the cap, so when the cap write fails
-// the cap stays UNSET — which is the only state shouldSeed will revisit, making the next
-// Test seed it again. Writing the cap first would leave a cap with no marker that is
-// never reconsidered.
-func TestSeedLimitFailedCapWriteStaysRetryable(t *testing.T) {
+// TestSeedLimitHalfWrittenSeedStaysRetryable proves a seed interrupted at EITHER of its
+// two writes leaves the cap unset — the only state shouldSeed revisits — so the next
+// Test probes again and completes it.
+//
+// The marker case is the one the write order exists for. With the cap written first, a
+// failed marker write leaves the cap SET: shouldSeed never revisits it, no further probe
+// is made, and the meter reports a detected cap as operator-typed forever. The cap case
+// was already retryable in either order and is here to pin that it stays that way.
+func TestSeedLimitHalfWrittenSeedStaysRetryable(t *testing.T) {
 	t.Parallel()
-	var userHits atomic.Int64
-	srv := userServer(t, &userHits, userResponse{body: `<user apirequests="2000" downloadrequests="1000"/>`})
+	tests := []struct {
+		name    string
+		failKey string
+	}{
+		{name: "marker write fails", failKey: settingQueryLimitSource},
+		{name: "cap write fails", failKey: settingQueryLimit},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var userHits atomic.Int64
+			srv := userServer(t, &userHits, userResponse{body: `<user apirequests="2000" downloadrequests="1000"/>`})
 
-	stored := map[string]string{}
-	d, err := New(native.Params{
-		Def:     GenericDefinition(),
-		Cfg:     map[string]string{"apikey": testAPIKey, "apiPath": "/api"},
-		Doer:    srv.Client(),
-		BaseURL: srv.URL,
-		Clock:   fixedClock,
-		PersistSetting: func(_ context.Context, name, value string) error {
-			if name == settingQueryLimit {
-				return errors.New("store unavailable")
+			stored := map[string]string{}
+			var writes int
+			d, err := New(native.Params{
+				Def:     GenericDefinition(),
+				Cfg:     map[string]string{"apikey": testAPIKey, "apiPath": "/api"},
+				Doer:    srv.Client(),
+				BaseURL: srv.URL,
+				Clock:   fixedClock,
+				PersistSetting: func(_ context.Context, name, value string) error {
+					// Only the FIRST attempt fails, so the second Test can prove the
+					// retry completes rather than merely being possible.
+					if name == tt.failKey {
+						writes++
+						if writes == 1 {
+							return errors.New("store unavailable")
+						}
+					}
+					stored[name] = value
+					return nil
+				},
+			})
+			if err != nil {
+				t.Fatalf("New: %v", err)
 			}
-			stored[name] = value
-			return nil
-		},
-	})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	if err := d.Test(context.Background()); err != nil {
-		t.Fatalf("Test: %v", err)
-	}
-	if got, ok := stored[settingQueryLimit]; ok {
-		t.Errorf("%s = %q, want unwritten so the next Test re-seeds it", settingQueryLimit, got)
-	}
-	if stored[settingQueryLimitSource] != limitSourceDetected {
-		t.Errorf("%s = %q, want the marker written first (harmless without its cap)",
-			settingQueryLimitSource, stored[settingQueryLimitSource])
-	}
-	// The grab cap is seeded independently and must be unaffected by the query failure.
-	if stored[settingGrabLimit] != "1000" {
-		t.Errorf("%s = %q, want 1000 (independent of the query cap's failure)", settingGrabLimit, stored[settingGrabLimit])
+
+			if err := d.Test(context.Background()); err != nil {
+				t.Fatalf("Test: %v", err)
+			}
+			if got, ok := stored[settingQueryLimit]; ok {
+				t.Errorf("%s = %q after the interrupted seed, want unset so the next Test re-seeds it",
+					settingQueryLimit, got)
+			}
+			// The grab cap is seeded independently and must survive the query failure.
+			if stored[settingGrabLimit] != "1000" {
+				t.Errorf("%s = %q, want 1000 (independent of the query cap's failure)",
+					settingGrabLimit, stored[settingGrabLimit])
+			}
+
+			// The retry: the cap is still unset, so the next Test probes again and both
+			// writes land.
+			if err := d.Test(context.Background()); err != nil {
+				t.Fatalf("second Test: %v", err)
+			}
+			if stored[settingQueryLimit] != "2000" {
+				t.Errorf("%s after retry = %q, want 2000", settingQueryLimit, stored[settingQueryLimit])
+			}
+			if stored[settingQueryLimitSource] != limitSourceDetected {
+				t.Errorf("%s after retry = %q, want %q", settingQueryLimitSource,
+					stored[settingQueryLimitSource], limitSourceDetected)
+			}
+			if userHits.Load() != 2 {
+				t.Errorf("t=user hits = %d, want 2 (the unset cap makes the next Test probe again)",
+					userHits.Load())
+			}
+		})
 	}
 }
 
