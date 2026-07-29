@@ -353,8 +353,14 @@ func (r *Resolver) Members(ctx context.Context, slugs []string) ([]core.MemberOu
 	if err != nil {
 		return nil, err
 	}
+	// Set, not a scan per slug: this loop already runs once per requested slug, so a
+	// ContainsFunc over the resolved members inside it would be quadratic.
+	got := make(map[string]bool, len(members))
+	for _, m := range members {
+		got[m.ID] = true
+	}
 	for _, s := range slugs {
-		if !slices.ContainsFunc(members, func(m core.MemberOutcome) bool { return m.ID == s }) {
+		if !got[s] {
 			return nil, fmt.Errorf("registry: no such indexer %q: %w", s, core.ErrNoSuchFeed)
 		}
 	}
@@ -377,9 +383,14 @@ func (r *Resolver) profileMembers(ctx context.Context, name string) ([]core.Memb
 	if i < 0 {
 		return nil, core.ErrNoSuchFeed
 	}
-	selected := profiles[i].IndexerIDs
+	// Set, not a scan: the predicate runs once per configured instance, so a
+	// slices.Contains over the profile's ids inside it would be quadratic.
+	selected := make(map[int64]bool, len(profiles[i].IndexerIDs))
+	for _, id := range profiles[i].IndexerIDs {
+		selected[id] = true
+	}
 	return r.selectedMembers(ctx, func(inst domain.IndexerInstance) bool {
-		return slices.Contains(selected, inst.ID)
+		return selected[inst.ID]
 	})
 }
 
