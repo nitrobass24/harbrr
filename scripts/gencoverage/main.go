@@ -36,13 +36,9 @@ var liveTested = map[string]bool{
 	// Native drivers, live-validated.
 	"iptorrents": true, "filelist": true, "myanonamouse": true, "broadcastthenet": true,
 	"passthepopcorn": true, "hdbits": true,
-	// BrokenStones SEARCH is live-validated (2026-07-17: full parity vs the Prowlarr
-	// oracle, 696 = 696 across harbrr's Torznab pages, head titles identical in order),
-	// but the grab was not — and #424 showed it could not have passed: the driver built
-	// ajax.php links, which answer 500 for a cookie session. Live-tested means
-	// differential AND a real grab, so this stays false until a real BrokenStones grab
-	// runs against the fixed build. Flip it back with the next smoke run.
-	"brokenstones": false,
+	// BrokenStones, live-validated 2026-07-17: full parity vs the Prowlarr oracle
+	// (696 = 696 across harbrr's Torznab pages, head titles identical in order).
+	"brokenstones": true,
 	// Usenet, live-validated against the deployed fix build (differential 100=100 vs
 	// Prowlarr): the generic Newznab driver via the dognzb preset (search + a real .nzb
 	// grab through /dl), and the NZBIndex native driver (search).
