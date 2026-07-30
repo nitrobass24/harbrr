@@ -18,9 +18,9 @@ import (
 // standalone or inside a transaction. It holds no secrets.
 type SyncProfiles struct{}
 
-// profileColumns is the full select list, in scan order. The pre-#365 behavioral
-// columns (categories, min_seeders, enable_*) still exist in the DB with defaults —
-// this repo simply no longer reads or writes them.
+// profileColumns is the full select list, in scan order — and now the whole table:
+// the pre-#365 behavioral columns (categories, min_seeders, enable_*) this repo
+// stopped reading are gone from the schema too (migration 0028, #370).
 const profileColumns = `id, name, created_at, updated_at`
 
 // InsertProfile writes a sync-profile row and returns its new id.

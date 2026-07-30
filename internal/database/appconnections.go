@@ -21,8 +21,8 @@ type AppConnections struct{}
 // connectionColumns is the full select list, in scan order. app_id is the App
 // reference (ADR 0004) — the sole identity source; base_url/api_key_encrypted/
 // harbrr_url were dropped by #269 once every row was guaranteed a non-NULL app_id.
-// index_scope is no longer read (#365 dropped the per-connection selected-scope
-// machinery in code; the column itself stays until a later cleanup migration).
+// index_scope is gone: #365 dropped the per-connection selected-scope machinery in
+// code and migration 0028 (#370) then dropped the column itself.
 const connectionColumns = `id, name, kind, app_id,
 	harbrr_api_key_id, harbrr_api_key_encrypted, key_id, enabled, sync_level,
 	freeleech_mode, sync_profile_id, last_sync_at, last_sync_status, last_sync_error,
