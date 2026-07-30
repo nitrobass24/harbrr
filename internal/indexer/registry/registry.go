@@ -36,6 +36,17 @@ import (
 // outcome (the indexer is not served), logged quietly, not as a failure.
 var errDisabled = errors.New("registry: instance disabled")
 
+// statusSource is how the Resolver reads DERIVED health for the "status:" feed slug:
+// one method, satisfied by *StatsReporter, assigned in New once the StatsReporter
+// exists. It mirrors the invalidator seam in the other direction — Manager reaches the
+// Resolver through inv and never holds a *Resolver; the Resolver reaches health
+// through this and never holds a *StatsReporter. Keeping it to the one method also
+// keeps the derivation single: the resolver can only ASK for the health the roll-up
+// already derives, never re-derive it and drift from the UI's badge.
+type statusSource interface {
+	SlugsWithStatus(ctx context.Context, want string) ([]string, error)
+}
+
 // Resolver resolves configured indexer slugs to engines and is the invalidation
 // authority: built engines are cached per slug (guarded by mu) and invalidated on
 // mutation. It is the serve/resolve half of the registry — the latency-sensitive,
@@ -96,6 +107,14 @@ type Resolver struct {
 	// present (built in New, like stats), instrumented by the per-instance
 	// indexerAdapter's Search/Grab before an outbound hit.
 	budget *RequestBudget
+
+	// health-status source for the "status:" feed slug, wired in New to the
+	// StatsReporter. See statusSource — the Resolver never holds a *StatsReporter.
+	statuses statusSource
+
+	// failoverGate rate-limits the base-URL failover's candidate probing to one cycle
+	// per instance per failoverRetry (autobrr/harbrr#375).
+	failoverGate failoverGate
 
 	mu sync.Mutex
 	// cache holds the per-slug served indexer — the flattened adapter (cache-wired when
@@ -269,6 +288,9 @@ func New(db dbinterface.Querier, ldr *loader.Loader, keyring secretsKeyring, fam
 		db:        res.db,
 		clock:     res.clock,
 	}
+	// The status: feed reads derived health back through the narrow statusSource seam,
+	// so the resolver never holds the StatsReporter itself.
+	res.statuses = r.StatsReporter
 	return r
 }
 
@@ -286,7 +308,8 @@ func (r *Resolver) Indexer(ctx context.Context, slug string) (core.Indexer, bool
 
 // Resolve returns the member set a feed slug covers, implementing core.Provider:
 // core.AggregateSlug selects every ENABLED instance, core.ProfileSlugPrefix selects a
-// sync profile's members, and any other slug is the single indexer Indexer would return
+// sync profile's members, core.StatusSlugPrefix selects the enabled instances that are
+// not failing, and any other slug is the single indexer Indexer would return
 // (core.ErrNoSuchFeed when it does not resolve). Note the capital: the unexported
 // resolve below is the single-slug build-or-cache step this is layered over, not an
 // alternative spelling of it.
@@ -301,6 +324,8 @@ func (r *Resolver) Resolve(ctx context.Context, slug string) ([]core.MemberOutco
 		return r.selectedMembers(ctx, func(inst domain.IndexerInstance) bool { return inst.Enabled })
 	case strings.HasPrefix(slug, core.ProfileSlugPrefix):
 		return r.profileMembers(ctx, strings.TrimPrefix(slug, core.ProfileSlugPrefix))
+	case strings.HasPrefix(slug, core.StatusSlugPrefix):
+		return r.statusMembers(ctx, strings.TrimPrefix(slug, core.StatusSlugPrefix))
 	}
 	idx, ok := r.Indexer(ctx, slug)
 	if !ok {
@@ -328,8 +353,14 @@ func (r *Resolver) Members(ctx context.Context, slugs []string) ([]core.MemberOu
 	if err != nil {
 		return nil, err
 	}
+	// Set, not a scan per slug: this loop already runs once per requested slug, so a
+	// ContainsFunc over the resolved members inside it would be quadratic.
+	got := make(map[string]bool, len(members))
+	for _, m := range members {
+		got[m.ID] = true
+	}
 	for _, s := range slugs {
-		if !slices.ContainsFunc(members, func(m core.MemberOutcome) bool { return m.ID == s }) {
+		if !got[s] {
 			return nil, fmt.Errorf("registry: no such indexer %q: %w", s, core.ErrNoSuchFeed)
 		}
 	}
@@ -352,9 +383,46 @@ func (r *Resolver) profileMembers(ctx context.Context, name string) ([]core.Memb
 	if i < 0 {
 		return nil, core.ErrNoSuchFeed
 	}
-	selected := profiles[i].IndexerIDs
+	// Set, not a scan: the predicate runs once per configured instance, so a
+	// slices.Contains over the profile's ids inside it would be quadratic.
+	selected := make(map[int64]bool, len(profiles[i].IndexerIDs))
+	for _, id := range profiles[i].IndexerIDs {
+		selected[id] = true
+	}
 	return r.selectedMembers(ctx, func(inst domain.IndexerInstance) bool {
-		return slices.Contains(selected, inst.ID)
+		return selected[inst.ID]
+	})
+}
+
+// statusMembers selects the members of the health-filtered aggregate feed. See
+// core.StatusSlugPrefix for the vocabulary: StatusHealthy is the only accepted word,
+// and it means NOT FAILING — healthy and unknown alike — over the ENABLED instances,
+// so the feed is `all` minus what harbrr currently believes is broken. Anything else
+// is core.ErrNoSuchFeed rather than an empty feed, because a misspelled status is a
+// client bug and answering it with 0 results looks like "nothing qualifies".
+//
+// The status word is interpreted here rather than in core because the three derived
+// states are registry constants and core cannot import registry.
+//
+// ponytail: one SlugsWithStatus call per resolve, which is O(N) status derivations
+// (that is AllStatuses' cost, unchanged). Never move it inside the predicate — that
+// would make it O(N²). No caching: at self-hosted poll cadences it does not need any.
+func (r *Resolver) statusMembers(ctx context.Context, want string) ([]core.MemberOutcome, error) {
+	if want != StatusHealthy {
+		return nil, core.ErrNoSuchFeed
+	}
+	failing, err := r.statuses.SlugsWithStatus(ctx, StatusFailing)
+	if err != nil {
+		return nil, fmt.Errorf("registry: status feed: derive health: %w", err)
+	}
+	// Set, not a scan: the predicate runs once per configured instance, so a
+	// slices.Contains over the failing slugs inside it would be quadratic.
+	broken := make(map[string]bool, len(failing))
+	for _, slug := range failing {
+		broken[slug] = true
+	}
+	return r.selectedMembers(ctx, func(inst domain.IndexerInstance) bool {
+		return inst.Enabled && !broken[inst.Slug]
 	})
 }
 
@@ -456,12 +524,21 @@ func (r *Resolver) build(ctx context.Context, slug string) (core.Indexer, error)
 	return a, nil
 }
 
-// buildAdapter snapshots the instance's invalidation epoch, loads the instance +
+// buildAdapter builds the adapter for a slug at the base URL it is configured to use.
+func (r *Resolver) buildAdapter(ctx context.Context, slug string) (*indexerAdapter, error) {
+	return r.buildAdapterAt(ctx, slug, "")
+}
+
+// buildAdapterAt snapshots the instance's invalidation epoch, loads the instance +
 // definition, decrypts its settings, and constructs the engine-shaped core
 // (Cardigann engine OR native family driver) wrapped in the shared adapter. It
 // returns the adapter with cache left nil — Test uses it so a credential probe
 // never consults or warms the cache (the epoch snapshot rides along unused).
-func (r *Resolver) buildAdapter(ctx context.Context, slug string) (*indexerAdapter, error) {
+//
+// probeHost, when non-empty, pins the built driver to that host instead of the
+// instance's own effective base URL: the failover's candidate probe (#375), and the
+// only caller that passes one. It is always a link the definition itself lists.
+func (r *Resolver) buildAdapterAt(ctx context.Context, slug, probeHost string) (*indexerAdapter, error) {
 	inst, err := r.instances.GetBySlug(ctx, r.db, slug)
 	if err != nil {
 		return nil, fmt.Errorf("registry: load instance %q: %w", slug, err)
@@ -536,7 +613,11 @@ func (r *Resolver) buildAdapter(ctx context.Context, slug string) (*indexerAdapt
 	if err != nil {
 		return nil, err
 	}
-	inner, skipQuery, err := r.buildInner(inst, def, factory, engineCfg, doer)
+	baseURL := effectiveBaseURL(inst, def, cfg)
+	if probeHost != "" {
+		baseURL = probeHost
+	}
+	inner, skipQuery, err := r.buildInner(inst, def, factory, engineCfg, doer, baseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -560,8 +641,11 @@ func (r *Resolver) buildAdapter(ctx context.Context, slug string) (*indexerAdapt
 		healthSink:    r.healthSink,
 		stats:         r.stats,
 		budget:        r.budget,
-		clock:         r.clock,
-		log:           r.log,
+		failover: func(ctx context.Context) (string, error) {
+			return r.failover(ctx, inst, def, baseURL)
+		},
+		clock: r.clock,
+		log:   r.log,
 	}, nil
 }
 
@@ -630,13 +714,13 @@ func composeProxyURL(p domain.Proxy, password string) string {
 // keywordsfilters that could reduce a term to nothing. It is returned here rather
 // than type-asserted at the call site because this is where the engine is built, so
 // the concrete type is already in hand.
-func (r *Resolver) buildInner(inst domain.IndexerInstance, def *loader.Definition, factory native.Factory, cfg map[string]string, doer search.Doer) (native.Driver, func(search.Query) bool, error) {
+func (r *Resolver) buildInner(inst domain.IndexerInstance, def *loader.Definition, factory native.Factory, cfg map[string]string, doer search.Doer, baseURL string) (native.Driver, func(search.Query) bool, error) {
 	if factory != nil {
 		d, err := factory(native.Params{
 			Def:     def,
 			Cfg:     cfg,
 			Doer:    doer,
-			BaseURL: baseURLOf(inst, def),
+			BaseURL: baseURL,
 			Clock:   r.clock,
 			Logger:  r.log,
 			PersistSetting: func(ctx context.Context, name, value string) error {
@@ -655,9 +739,9 @@ func (r *Resolver) buildInner(inst domain.IndexerInstance, def *loader.Definitio
 		// Wire an anti-bot solver from the instance settings ("solver_type" + the
 		// encrypted "cookie"); a no-op when unset.
 		cardigann.SolverOption(cfg),
-	}
-	if inst.BaseURL != "" {
-		opts = append(opts, cardigann.WithBaseURL(inst.BaseURL))
+		// Always explicit. An unoverridden instance resolves to the definition's first
+		// link, which is exactly what the engine would have defaulted to on its own.
+		cardigann.WithBaseURL(baseURL),
 	}
 	eng, err := cardigann.NewEngine(def, opts...)
 	if err != nil {
@@ -691,8 +775,21 @@ func (r *Resolver) NativeDefinitions() []*loader.Definition {
 	return out
 }
 
-// baseURLOf is an instance's effective base URL: its override, else the
-// definition's first link.
+// effectiveBaseURL is the host an instance actually talks to: a base URL the failover
+// promoted (#375) if one is in effect, else the configured one. A promotion only
+// counts while the definition still lists that host — a definition update that drops a
+// dead mirror thereby un-promotes every instance sitting on it, and the stored value
+// can never route credentials somewhere the definition does not vouch for.
+func effectiveBaseURL(inst domain.IndexerInstance, def *loader.Definition, cfg map[string]string) string {
+	if promoted := cfg[failoverBaseURLSetting]; promoted != "" && linked(def, promoted) {
+		return promoted
+	}
+	return baseURLOf(inst, def)
+}
+
+// baseURLOf is an instance's CONFIGURED base URL: its operator override, else the
+// definition's first link. This is the "configured A" half of the failover's
+// "configured A, currently using B" — see effectiveBaseURL for the other.
 func baseURLOf(inst domain.IndexerInstance, def *loader.Definition) string {
 	if inst.BaseURL != "" {
 		return inst.BaseURL

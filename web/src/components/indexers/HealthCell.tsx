@@ -2,11 +2,19 @@ import { cn } from "@/lib/utils"
 import { relativeTime } from "@/lib/format"
 import type { IndexerStatus } from "@/lib/api"
 
+// Operator language for the classified failure kinds, never the raw constant: the
+// question a red row has to answer is "what do I go fix", and "auth_failure" is not
+// that answer.
 const EVENT_LABEL: Record<string, string> = {
-  auth_failure: "auth failed",
+  auth_failure: "login failed",
   rate_limited: "rate limited",
-  parse_error: "parse error",
-  anti_bot: "anti-bot challenge",
+  parse_error: "response didn't parse",
+  anti_bot: "blocked by anti-bot",
+  transport: "couldn't reach the tracker",
+}
+
+export function reasonLabel(kind: string): string {
+  return EVENT_LABEL[kind] ?? kind
 }
 
 // Per-state dot/label treatment. "unknown" (autobrr/harbrr#389) is the expired or
@@ -18,8 +26,31 @@ const TONE: Record<IndexerStatus["status"], { dot: string; text: string; label: 
   unknown: { dot: "bg-faint", text: "text-faint", label: "Unknown" },
 }
 
-// Health column cell: status dot + label + the latest event, per the mockup. status is
-// undefined while the per-slug probe is in flight.
+// healthDetail is the operator-visible read of a status: why it is in this state, when
+// the streak started, and when harbrr will try again — all of it already recorded, this
+// only surfaces it (autobrr/harbrr#389). Healthy returns nothing: a working indexer
+// needs no explanation. Unknown returns the honest-absence line, never an error.
+export function healthDetail(status: IndexerStatus): { label: string; value: string }[] {
+  if (status.status === "healthy") return []
+  if (status.status === "unknown") {
+    return [{ label: "Why", value: "Nothing recent to go on — no traffic and no failures lately. Not an error." }]
+  }
+  const rows: { label: string; value: string }[] = []
+  const latest = status.events[0]
+  if (latest) rows.push({ label: "Why", value: reasonLabel(latest.kind) })
+  // The circuit's streak start when the ladder has been climbed, else the failure the
+  // state was derived from — either way, "how long has this been broken".
+  const since = status.failingSince ?? latest?.occurred_at
+  if (since) rows.push({ label: "Failing since", value: relativeTime(since) })
+  if (status.disabledTill) {
+    rows.push({ label: "Next attempt", value: new Date(status.disabledTill).toLocaleString() })
+  }
+  return rows
+}
+
+// Health column cell: status dot + label + the latest event, per the mockup. The same
+// detail the sheet expands is the cell's hover title, so the table answers "why" without
+// a click. status is undefined while the per-slug probe is in flight.
 export function HealthCell({ status }: { status?: IndexerStatus }) {
   if (!status) {
     return <span className="text-[13px] text-faint">…</span>
@@ -27,9 +58,10 @@ export function HealthCell({ status }: { status?: IndexerStatus }) {
 
   const tone = TONE[status.status]
   const latest = status.status === "healthy" ? undefined : status.events[0]
+  const detail = healthDetail(status).map((d) => `${d.label}: ${d.value}`).join(" · ")
 
   return (
-    <div className="flex items-center gap-2 text-[13px]">
+    <div className="flex items-center gap-2 text-[13px]" title={detail || undefined}>
       <span className="relative flex h-2 w-2">
         {status.status !== "unknown" && (
           <span className={cn("absolute inline-flex h-full w-full rounded-full opacity-60", tone.dot)} />
@@ -39,7 +71,7 @@ export function HealthCell({ status }: { status?: IndexerStatus }) {
       <span className={tone.text}>{tone.label}</span>
       {latest && (
         <span className="truncate text-[12px] text-faint">
-          · {EVENT_LABEL[latest.kind] ?? latest.kind} {relativeTime(latest.occurred_at)}
+          · {reasonLabel(latest.kind)} {relativeTime(latest.occurred_at)}
         </span>
       )}
     </div>

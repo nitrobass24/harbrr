@@ -101,17 +101,17 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 | Multi-select definition settings (checkbox / select / multi-select field types) | ✅ |
 | 18 further native drivers | 🚧 |
 | Per-indexer request timeout — a reserved `timeout` duration setting on every indexer's advanced options | ✅ |
-| Automatic failover across a tracker's known base URLs | 🚧 [#375](https://github.com/autobrr/harbrr/issues/375) |
+| Automatic failover across a tracker's known base URLs — only on host-shaped failure, never on an auth or rate-limit error, and a candidate must pass a real search before it is promoted; the configured host is never overwritten | ✅ |
 | Per-indexer required release flags (freeleech, halfleech, …) | 🚧 [#385](https://github.com/autobrr/harbrr/issues/385) |
 | Per-release language and subtitle attributes from definitions | 🚧 [#379](https://github.com/autobrr/harbrr/issues/379) |
 | Out-of-band definition updates — tracker fixes arrive without waiting for a harbrr release | 🚧 [#388](https://github.com/autobrr/harbrr/issues/388) |
 | Tri-state indexer health — healthy / failing / unknown with lazy expiry; a broken tracker leaves rotation and costs nothing until it recovers | ✅ |
-| Per-failure-kind backoff curves and health-filtered selection | 🚧 [#389](https://github.com/autobrr/harbrr/issues/389) |
+| Per-failure-kind backoff curves — a dead network is not punished like a dead tracker — plus `status:healthy` aggregate feeds that skip indexers known to be broken | ✅ |
 | Punctuation-tolerant matching (opt-in, per indexer) — recovers releases that \*arr-stripped search terms would otherwise drop | ✅ |
 | Degenerate-query gating (opt-in, per indexer) — a search the indexer's own filters strip down to a bare year is skipped instead of sent, and reported as skipped rather than failed | ✅ |
 | Aggregate `all` feed — one Torznab URL over every enabled indexer, partial-by-construction with a per-member status ledger; grabs resolve against the originating tracker | ✅ |
 | Profile-scoped aggregate feeds — `profile:<name>` serves a sync profile's indexers over one URL | ✅ |
-| Health-filtered aggregate feeds | 🚧 [#400](https://github.com/autobrr/harbrr/issues/400) |
+| Health-filtered aggregate feeds — `status:healthy` serves every enabled indexer that isn't currently failing (healthy *and* not-yet-known, so a brand-new indexer is searched rather than hidden) over one URL | ✅ |
 
 ### Getting past the tracker's front door
 
@@ -145,16 +145,16 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 |---|:--|
 | Indexer, application, and download-client management | ✅ |
 | Interactive search, with a responsive mobile layout | ✅ |
-| Instant substring / regex filter over search results | 🚧 [#374](https://github.com/autobrr/harbrr/issues/374) |
+| Instant substring / regex filter over search results | ✅ |
 | Search runs on the same merged window and per-member ledger the feeds serve — sort and counts can never disagree with your \*arrs, and an indexer that sat one out says why (circuit open, budget exhausted, rate limited, timed out) | ✅ |
 | Global sort across merged multi-indexer results (via the aggregate feed) | ✅ |
 | Group identical releases across indexers, with per-tracker sources attached | 🚧 [#398](https://github.com/autobrr/harbrr/issues/398) |
 | Base-URL picker — choose from the definition's known hosts, with a free-text escape hatch for private mirrors | ✅ |
 | Cache dashboard — tracker requests saved, hit ratio, entry ages, breaker countdowns, live-tunable TTL tiers | ✅ |
-| 24-hour window on the cache dashboard | 🚧 [#373](https://github.com/autobrr/harbrr/issues/373) |
-| Request-budget usage meters | 🚧 [#402](https://github.com/autobrr/harbrr/issues/402) |
+| Selectable stats window on the cache dashboard — 24h / 7d / 30d / all-time, with a reset that clears the statistics without discarding cached results | ✅ |
+| Request-budget usage meters — per-indexer queries and grabs against the account's cap, with the detected-vs-operator-set provenance shown | ✅ |
 | Global setting to hide adult categories (pickers and uncategorised searches; filters by declared category) | ✅ |
-| Adjustable total cache size | 🚧 [#67](https://github.com/autobrr/harbrr/issues/67) |
+| Adjustable total cache size | ✅ |
 
 ### Visibility
 
@@ -165,10 +165,10 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 | Per-indexer cache stats, including tracker requests prevented | ✅ |
 | Discord and webhook notifications | ✅ |
 | Search history and an event log | 🚧 [#103](https://github.com/autobrr/harbrr/issues/103) |
-| Grab success rate and per-category indexer stats | 🚧 [#403](https://github.com/autobrr/harbrr/issues/403) |
+| Grab success rate and per-category indexer stats | ✅ |
 | Indexer uniqueness scoring — which indexers surface releases nobody else has | 🚧 [#378](https://github.com/autobrr/harbrr/issues/378) |
 | [VIP & membership expiry](vip-expiry.md) — per-indexer dates, lead-time warnings that fire exactly once, renewal re-arms by itself | ✅ |
-| Newznab API-limit auto-discovery | 🚧 [#377](https://github.com/autobrr/harbrr/issues/377) |
+| Newznab API-limit auto-discovery — an unset cap is seeded from the account's own advertised daily limits, and a value you typed is never overwritten | ✅ |
 | Per-tracker account state — ratio, buffer, hit-and-run, freeleech tokens | 🚧 deferred — [#393](https://github.com/autobrr/harbrr/issues/393) |
 | Parse-failure diagnostics — see which selector missed, without re-fetching | 🚧 [#390](https://github.com/autobrr/harbrr/issues/390) |
 | Prometheus `/metrics` endpoint | 🚧 [#395](https://github.com/autobrr/harbrr/issues/395) |

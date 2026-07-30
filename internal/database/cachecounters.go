@@ -46,6 +46,14 @@ func (CacheCountersStore) Upsert(ctx context.Context, q dbinterface.Execer, c Ca
 	return nil
 }
 
+// DeleteAll removes every persisted counter row (the cache-flush stats reset).
+func (CacheCountersStore) DeleteAll(ctx context.Context, q dbinterface.Execer) error {
+	if _, err := q.ExecContext(ctx, `DELETE FROM cache_counters`); err != nil {
+		return fmt.Errorf("database: delete cache counters: %w", err)
+	}
+	return nil
+}
+
 // AllCounters returns every persisted counter row, ordered by instance_id. The
 // registry loads these into its in-memory atomics at boot.
 func (CacheCountersStore) AllCounters(ctx context.Context, q dbinterface.Execer) ([]CacheCounter, error) {

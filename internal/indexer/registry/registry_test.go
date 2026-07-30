@@ -661,6 +661,128 @@ func TestResolveProfileEmpty(t *testing.T) {
 	}
 }
 
+// healthyFeed is the health-filtered aggregate feed slug.
+const healthyFeed = core.StatusSlugPrefix + "healthy"
+
+// addWithStatus adds an instance and drives its DERIVED health to want by writing the
+// same signals production writes: a failure event for failing, a recovery marker for
+// healthy, nothing at all for unknown (the fresh-install state).
+func addWithStatus(t *testing.T, reg *registry.Registry, db *database.DB, slug, want string) {
+	t.Helper()
+	ctx := context.Background()
+	inst, err := reg.Add(ctx, registry.AddParams{Slug: slug, DefinitionID: "testtracker"})
+	if err != nil {
+		t.Fatalf("Add(%q): %v", slug, err)
+	}
+	switch want {
+	case registry.StatusFailing:
+		err = (database.Health{}).Record(ctx, db, domain.IndexerHealthEvent{
+			InstanceID: inst.ID, Kind: domain.HealthAuthFailure, Detail: "login failed",
+			OccurredAt: fixedClock(),
+		})
+	case registry.StatusHealthy:
+		err = (database.Health{}).RecordRecovery(ctx, db, inst.ID, fixedClock())
+	}
+	if err != nil {
+		t.Fatalf("seed %s health for %q: %v", want, slug, err)
+	}
+}
+
+// TestResolveStatusSlug is the defining property of the health-filtered feed (#400):
+// 'status:healthy' is `all` minus the FAILING indexers — so an unknown one is served
+// (it is not known-broken) and a failing one is not. A DISABLED instance is excluded
+// outright even when its derived status reads healthy: the derivation never consults
+// Enabled, and this feed is `all` filtered, so it must produce no row at all — not
+// even a SkipDisabled one, since nobody named it.
+func TestResolveStatusSlug(t *testing.T) {
+	t.Parallel()
+
+	reg, db := newRegistry(t, nil)
+	ctx := context.Background()
+	addWithStatus(t, reg, db, "b-healthy", registry.StatusHealthy)
+	addWithStatus(t, reg, db, "a-failing", registry.StatusFailing)
+	addWithStatus(t, reg, db, "c-unknown", registry.StatusUnknown)
+	addWithStatus(t, reg, db, "d-off", registry.StatusHealthy)
+	if err := reg.SetEnabled(ctx, "d-off", false); err != nil {
+		t.Fatalf("SetEnabled(d-off): %v", err)
+	}
+
+	members, err := reg.Resolve(ctx, healthyFeed)
+	if err != nil {
+		t.Fatalf("Resolve(%q): %v", healthyFeed, err)
+	}
+	want := []string{"b-healthy", "c-unknown"}
+	if !slices.Equal(memberIDs(members), want) {
+		t.Fatalf("Resolve(%q) = %v, want %v (not-failing, enabled only, slug order)",
+			healthyFeed, memberIDs(members), want)
+	}
+	for _, m := range members {
+		if !m.OK() || m.Indexer == nil {
+			t.Errorf("member %q = %+v, want live", m.ID, m)
+		}
+	}
+	// The status feed names no indexer, so status:healthy/dl can never serve a download.
+	if _, ok := reg.Indexer(ctx, healthyFeed); ok {
+		t.Error("Indexer(status:healthy) must be !ok")
+	}
+}
+
+// TestResolveStatusFreshFleet is the regression the literal healthy-only reading would
+// cause: on a fresh install nothing has been searched or tested, so every indexer
+// derives "unknown" — and the feed must still serve all of them, not an empty set.
+func TestResolveStatusFreshFleet(t *testing.T) {
+	t.Parallel()
+
+	reg, db := newRegistry(t, nil)
+	for _, slug := range []string{"beta", "alpha"} {
+		addWithStatus(t, reg, db, slug, registry.StatusUnknown)
+	}
+
+	members, err := reg.Resolve(context.Background(), healthyFeed)
+	if err != nil {
+		t.Fatalf("Resolve(%q): %v", healthyFeed, err)
+	}
+	if want := []string{"alpha", "beta"}; !slices.Equal(memberIDs(members), want) {
+		t.Errorf("Resolve(%q) = %v, want %v (an all-unknown fleet is not a broken fleet)",
+			healthyFeed, memberIDs(members), want)
+	}
+}
+
+// TestResolveStatusEmpty: a fleet where nothing qualifies is an empty member set with
+// NO error — a valid empty feed, distinguishable from a member set that could not be
+// read (which TestResolveWholeListFailure covers for this slug too).
+func TestResolveStatusEmpty(t *testing.T) {
+	t.Parallel()
+
+	reg, db := newRegistry(t, nil)
+	addWithStatus(t, reg, db, "broken", registry.StatusFailing)
+	members, err := reg.Resolve(context.Background(), healthyFeed)
+	if err != nil || len(members) != 0 {
+		t.Errorf("Resolve(%q) = %v, %v; want empty and no error", healthyFeed, members, err)
+	}
+}
+
+// TestResolveStatusUnknownWord: 'healthy' is the only status word the feed accepts.
+// Every other remainder — including the two other real derived states and a typo — is
+// not-found, so a misspelled feed URL 404s instead of quietly serving an empty feed.
+func TestResolveStatusUnknownWord(t *testing.T) {
+	t.Parallel()
+
+	reg, db := newRegistry(t, nil)
+	ctx := context.Background()
+	addWithStatus(t, reg, db, "alpha", registry.StatusUnknown)
+
+	for _, word := range []string{"failing", "unknown", "helthy", "", "HEALTHY", "healthy "} {
+		slug := core.StatusSlugPrefix + word
+		if _, err := reg.Resolve(ctx, slug); !errors.Is(err, core.ErrNoSuchFeed) {
+			t.Errorf("Resolve(%q) = %v, want ErrNoSuchFeed", slug, err)
+		}
+		if _, ok := reg.Indexer(ctx, slug); ok {
+			t.Errorf("Indexer(%q) must be !ok", slug)
+		}
+	}
+}
+
 // TestResolveUnbuildableMemberIsLedgered is the ledger-completeness gate (#400): an
 // enabled instance whose adapter cannot BUILD must still come back as a member — with a
 // constant reason and no engine — on BOTH aggregate slug forms. Dropping it silently is
@@ -716,7 +838,7 @@ func TestResolveWholeListFailure(t *testing.T) {
 		t.Fatalf("close db: %v", err)
 	}
 
-	for _, feed := range []string{core.AggregateSlug, slug} {
+	for _, feed := range []string{core.AggregateSlug, slug, healthyFeed} {
 		members, err := reg.Resolve(ctx, feed)
 		if err == nil {
 			t.Errorf("Resolve(%q) = %v, nil; want an error when the store is unreadable", feed, members)

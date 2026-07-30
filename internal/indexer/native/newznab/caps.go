@@ -155,11 +155,15 @@ func (d *driver) getCaps(ctx context.Context, rawurl string) ([]byte, error) {
 	return resp.Body, nil
 }
 
-// buildCapsURL builds {baseUrl}{apiPath}?t=caps[&apikey=...]. apikey is appended only when
-// set (some servers serve caps without a key). It is secret-bearing — redact before logging.
-func (d *driver) buildCapsURL() string {
+// buildCapsURL builds {baseUrl}{apiPath}?t=caps[&apikey=...].
+func (d *driver) buildCapsURL() string { return d.buildAPIURL("caps") }
+
+// buildAPIURL builds {baseUrl}{apiPath}?t={fn}[&apikey=...] for a parameterless API
+// function (t=caps, t=user). apikey is appended only when set (some servers serve caps
+// without a key). It is secret-bearing — redact before logging.
+func (d *driver) buildAPIURL(fn string) string {
 	params := url.Values{}
-	params.Set("t", "caps")
+	params.Set("t", fn)
 	if d.apikey != "" {
 		params.Set("apikey", d.apikey)
 	}

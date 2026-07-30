@@ -21,12 +21,33 @@ type SearchCacheStats struct {
 	LastUsedUnixSec *int64
 
 	// Cumulative counters, persisted across restarts (see searchcache_counters.go).
+	// A failed live search counts as neither hit nor miss; only ResetCounters
+	// zeroes them (a cache flush does not).
 	Hits     int64
 	Misses   int64
 	HitRatio float64
+	// Windows is the same counters over each selectable view: 1d, 7d, 30d, then
+	// all-time, in that order.
+	Windows []StatsWindow
+	// WindowsSince is when the in-memory buckets started accumulating — process
+	// start, or the last ResetCounters. The bucketed windows reach back at most to
+	// this instant, so a 30d view on a process up for an hour holds an hour of data:
+	// callers must surface that rather than imply a full month. The all-time view is
+	// unaffected (it reads the persisted counters).
+	WindowsSince time.Time
 	// BreakerSuppressed counts MISSes short-circuited by an open negative breaker —
 	// tracker requests the breaker spared.
 	BreakerSuppressed int64
+}
+
+// StatsWindow is the hit/miss view over one window. Hours is the window length; 0
+// means all-time — that view is NOT a bucket sum but the cumulative counters, so it
+// survives both bucket eviction and a restart.
+type StatsWindow struct {
+	Hours    int
+	Hits     int64
+	Misses   int64
+	HitRatio float64
 }
 
 // InstanceCacheStats is one instance's merged cache observability: the durable
@@ -71,9 +92,23 @@ func (c *SearchCache) Stats(ctx context.Context) (SearchCacheStats, error) {
 		Hits:              hits,
 		Misses:            misses,
 		HitRatio:          hitRatio(hits, misses),
+		Windows:           c.statsWindows(c.clock(), hits, misses),
+		WindowsSince:      c.window.coverageSince(),
 		BreakerSuppressed: c.breakerSuppressed.Load(),
 	}
 	return out, nil
+}
+
+// statsWindows builds the four selectable views: 1d/7d/30d as suffix sums over the
+// one bucket ring, then all-time from the cumulative counters passed in. All-time is
+// deliberately NOT a bucket sum — it must survive bucket eviction and a restart.
+func (c *SearchCache) statsWindows(now time.Time, hits, misses int64) []StatsWindow {
+	out := make([]StatsWindow, 0, 4)
+	for _, hours := range []int{dayHours, weekHours, monthHours} {
+		h, m := c.window.totals(now, hours)
+		out = append(out, StatsWindow{Hours: hours, Hits: h, Misses: m, HitRatio: hitRatio(h, m)})
+	}
+	return append(out, StatsWindow{Hits: hits, Misses: misses, HitRatio: hitRatio(hits, misses)})
 }
 
 // StatsByInstance returns one merged stats row per instance that has either durable
@@ -131,8 +166,10 @@ func sortedInstanceStats(merged map[int64]*InstanceCacheStats) []InstanceCacheSt
 	return out
 }
 
-// Flush deletes every cache entry and returns the count purged. It does not reset
-// the hit/miss counters (they are cumulative and monotonic, with no reset path).
+// Flush deletes every cache entry and returns the count purged. It discards cached
+// RESULTS only: the hit/miss/suppressed counters are cumulative and monotonic across
+// it, as they are across the cleanup tick and per-instance invalidation (see
+// TestHitsMonotoneAcrossCleanup, #350). ResetCounters is the one reset path.
 func (c *SearchCache) Flush(ctx context.Context) (int64, error) {
 	n, err := c.store.Flush(ctx, c.db)
 	if err != nil {

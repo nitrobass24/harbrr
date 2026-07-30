@@ -76,15 +76,16 @@ describe("IndexersTable", () => {
     expect(within(tl).getByText("Healthy")).toBeTruthy()
     expect(within(tl).queryByText(/parse error/)).toBeNull()
 
-    // Failing row surfaces the failure kind + relative time.
+    // Failing row surfaces the failure kind + relative time, in operator language
+    // rather than the raw kind constant (autobrr/harbrr#389).
     const ru = screen.getByText("rutor").closest("tr")!
     expect(within(ru).getByText("Failing")).toBeTruthy()
-    expect(within(ru).getByText(/auth failed 2m ago/)).toBeTruthy()
+    expect(within(ru).getByText(/login failed 2m ago/)).toBeTruthy()
 
     // Expired row reads Unknown but still shows the last thing that happened.
     const ny = screen.getByText("Nyaa").closest("tr")!
     expect(within(ny).getByText("Unknown")).toBeTruthy()
-    expect(within(ny).getByText(/transport 2h ago/)).toBeTruthy()
+    expect(within(ny).getByText(/couldn't reach the tracker 2h ago/)).toBeTruthy()
 
     // Row with the status probe still in flight shows the pending marker
     // ("1337x" appears as both name and host fallback, hence getAllByText).

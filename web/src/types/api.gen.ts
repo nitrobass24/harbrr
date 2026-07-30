@@ -362,7 +362,7 @@ export interface paths {
         };
         /**
          * Get an indexer's health status
-         * @description Returns the indexer's derived health (healthy/failing/unknown) and its recent health events (auth_failure, rate_limited, parse_error, anti_bot, transport). Event details are credential-scrubbed before storage, so no secret is surfaced.
+         * @description Returns the indexer's derived health (healthy/failing/unknown) and its recent health events (auth_failure, rate_limited, parse_error, anti_bot, transport, plus base_url_promoted, which is not a failure but the base-URL failover moving the indexer onto another host the definition lists). Event details are credential-scrubbed before storage, so no secret is surfaced.
          */
         get: operations["indexerStatus"];
         put?: never;
@@ -402,7 +402,7 @@ export interface paths {
         };
         /**
          * Search an indexer subset as one server-merged window (JSON)
-         * @description Fans one search out across the explicitly named indexers and returns the MERGED window (publish-date descending) plus a per-member ledger — the management-API sibling of the `all`/`profile:` aggregate feeds, running the same merge, so the web UI and the feeds can never disagree about sort or counts. Paging is one window: members are queried at offset 0 and the request's limit/offset apply to the merged set, so `total` is the size of the set this request fetched, not a promise that a deeper page exists. No member failure fails the request — a member that is disabled, unbuildable, circuit-open, budget-exhausted, rate-limited, timed out or otherwise skipped becomes a ledger row with a reason from the closed vocabulary (its raw error is logged, redacted, and never served). Each release's download link is sealed against the member it came from.
+         * @description Fans one search out across the explicitly named indexers and returns the MERGED window (publish-date descending) plus a per-member ledger — the management-API sibling of the `all`/`profile:<name>`/`status:healthy` aggregate feeds, running the same merge, so the web UI and the feeds can never disagree about sort or counts. (`status:healthy` selects every ENABLED indexer that is not currently FAILING — healthy AND unknown, looser than the UI's healthy badge, so a never-yet-searched indexer is served rather than hidden. It is the only accepted status word; any other is not-found.) Paging is one window: members are queried at offset 0 and the request's limit/offset apply to the merged set, so `total` is the size of the set this request fetched, not a promise that a deeper page exists. No member failure fails the request — a member that is disabled, unbuildable, circuit-open, budget-exhausted, rate-limited, timed out or otherwise skipped becomes a ledger row with a reason from the closed vocabulary (its raw error is logged, redacted, and never served). Each release's download link is sealed against the member it came from.
          */
         get: operations["searchAggregate"];
         put?: never;
@@ -1248,11 +1248,31 @@ export interface paths {
         };
         /**
          * Search-results cache statistics
-         * @description Returns the cache's durable figures (entry count, total hits, approximate size, and the oldest/newest/last-used timestamps) plus the cumulative hit ratio. hitRatio derives from hit/miss counters that are persisted across restarts. When caching is disabled the response is {"enabled": false} with no figures.
+         * @description Returns the cache's durable figures (entry count, total hits, approximate size, and the oldest/newest/last-used timestamps) plus the cumulative hit ratio. hitRatio derives from hit/miss counters that are persisted across restarts. Every selectable window (1d/7d/30d/all) is returned in one response, so a client switches view without refetching. When caching is disabled the response is {"enabled": false} with no figures.
          */
         get: operations["cacheStats"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cache/stats/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset the search-results cache statistics
+         * @description Zeroes the hit/miss/suppressed counters fleet-wide — in-memory, persisted, and every rolling window — and reports the totals it discarded. Cached ENTRIES are untouched; discarding those is /api/cache/flush. The cleared history is not recoverable. When caching is disabled the response is zeroes.
+         */
+        post: operations["cacheStatsReset"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1270,7 +1290,7 @@ export interface paths {
         put?: never;
         /**
          * Flush the search-results cache
-         * @description Deletes every cache entry and returns the count purged. The cumulative hit/miss counters are not reset. When caching is disabled the response is {"flushed": 0}.
+         * @description Deletes every cache entry and returns the count purged. The hit/miss/ suppressed counters are cumulative and monotonic across a flush — see /api/cache/stats/reset to zero those. When caching is disabled the response is {"flushed": 0}.
          */
         post: operations["cacheFlush"];
         delete?: never;
@@ -1504,6 +1524,10 @@ export interface components {
              * @enum {string}
              */
             limits_unit?: "day" | "hour";
+            /** @description written by the automatic base-URL failover (autobrr/harbrr#375) when the configured host stops answering and another of the definition's links works. It is honoured only while the definition still lists that host. Setting it to "" reverts the indexer to its configured host; it is surfaced read-side as InstanceDetail.failoverBaseUrl. */
+            failover_base_url?: string;
+            /** @description the operator pin: any truthy value ("true") disables automatic base-URL failover for this indexer entirely, whatever the failure looks like. Selecting a host in the base-URL picker does NOT set this. */
+            failover_disabled?: string;
         };
         Credentials: {
             username: string;
@@ -1684,7 +1708,7 @@ export interface components {
             lastFailureAt?: string;
             budget?: components["schemas"]["IndexerBudget"];
         };
-        /** @description The indexer's request-budget standing for the CURRENT rolling period (autobrr/harbrr#251, surfaced by #402): what has been counted so far against the operator-configured caps, and when the period rolls over. It reports the counters the registry already keeps — reading it collects nothing and counts nothing. limit is the OPERATOR-CONFIGURED cap (0 = none configured); learned is the separate reactive latch harbrr set from the tracker's own quota error, which carries no number because the tracker never declared one. A learned latch or a used-at-limit kind is a self-imposed guard, not an indexer failure. */
+        /** @description The indexer's request-budget standing for the CURRENT rolling period (autobrr/harbrr#251, surfaced by #402): what has been counted so far against the operator-configured caps, and when the period rolls over. It reports the counters the registry already keeps — reading it collects nothing and counts nothing. limit is the configured cap (0 = none configured), flagged detected when it was seeded from the indexer's own account limits rather than typed by the operator; learned is the separate reactive latch harbrr set from the tracker's own quota error, which carries no number because the tracker never declared one. A learned latch or a used-at-limit kind is a self-imposed guard, not an indexer failure. */
         IndexerBudget: {
             /**
              * @description the rolling period the counters reset on
@@ -1706,8 +1730,10 @@ export interface components {
              * @description requests of this kind counted in the current period
              */
             used: number;
-            /** @description the operator-configured cap for the period; 0 means none configured */
+            /** @description the configured cap for the period; 0 means none configured */
             limit: number;
+            /** @description the cap was seeded from the indexer's own advertised account limits (Newznab t=user) rather than typed by the operator */
+            detected: boolean;
             /** @description the tracker declared its own quota spent for this kind in the current period (the reactive latch) — a cap harbrr was never configured with */
             learned: boolean;
         };
@@ -1722,7 +1748,7 @@ export interface components {
                 status: "healthy" | "failing" | "unknown";
                 lastEvent?: {
                     /** @enum {string} */
-                    kind: "auth_failure" | "rate_limited" | "parse_error" | "anti_bot" | "transport";
+                    kind: "auth_failure" | "rate_limited" | "parse_error" | "anti_bot" | "transport" | "base_url_promoted";
                     detail?: string;
                     /** Format: date-time */
                     occurred_at: string;
@@ -1732,10 +1758,21 @@ export interface components {
                  * @description Present only while the circuit breaker (autobrr/harbrr#253) currently excludes the indexer from search/grab dispatch.
                  */
                 disabledTill?: string;
+                /**
+                 * Format: date-time
+                 * @description When the current failure streak began — present only while the derived status is failing (autobrr/harbrr#389).
+                 */
+                failingSince?: string;
             }[];
         };
         InstanceDetail: components["schemas"]["Instance"] & {
             settings: components["schemas"]["Setting"][];
+            /** @description the host this indexer actually talks to right now: the configured baseUrl (or the definition's first link when unset), unless the automatic base-URL failover promoted another of the definition's links (autobrr/harbrr#375). */
+            effectiveBaseUrl: string;
+            /** @description present only while a failover promotion is in effect — the host the indexer moved to after the configured one stopped answering. Revert by PATCHing the indexer with settings.failover_base_url = "". */
+            failoverBaseUrl?: string;
+            /** @description the operator pin (settings.failover_disabled): automatic failover is off for this indexer. Choosing a host in the base-URL picker does NOT set it. */
+            failoverDisabled: boolean;
         };
         AddIndexer: {
             /** @description defaults to definitionId when omitted */
@@ -2422,7 +2459,7 @@ export interface components {
             hits?: number;
             /**
              * Format: int64
-             * @description Global cumulative cache misses (the aggregate of the per-indexer byIndexer rows). Persisted across restarts.
+             * @description Global cumulative cache misses (the aggregate of the per-indexer byIndexer rows). Persisted across restarts. A live search that fails counts as neither hit nor miss; only POST /api/cache/stats/reset zeroes the counters — a cache flush does not.
              */
             misses?: number;
             /**
@@ -2430,6 +2467,13 @@ export interface components {
              * @description hits / (hits + misses), cumulative. The underlying hit/miss counters are persisted across restarts.
              */
             hitRatio?: number;
+            /** @description The same counters over each selectable view — "1d", "7d", "30d", "all" — in that order, so a client switches window with no refetch. */
+            windows?: components["schemas"]["CacheStatsWindow"][];
+            /**
+             * Format: int64
+             * @description Unix seconds at which the in-memory hour buckets started accumulating — process start, or the last stats reset. The 1d/7d/30d figures reach back at most this far, so a client MUST NOT present a window longer than now - windowsSince as a full period of data. The "all" window is exempt: it reads the persisted cumulative counters.
+             */
+            windowsSince?: number;
             /**
              * Format: int64
              * @description approximate total size of cached payloads
@@ -2452,7 +2496,7 @@ export interface components {
             lastUsedAt?: number | null;
             /**
              * Format: int64
-             * @description Cumulative tracker requests served from cache, persisted across restarts — the headline kind-to-trackers metric. Mirrors hits; unlike totalHits it never drops when cached entries are reaped.
+             * @description Cumulative tracker requests served from cache, persisted across restarts — the headline kind-to-trackers metric. Mirrors hits; unlike totalHits it never drops when cached entries are reaped — only an explicit stats reset zeroes it.
              */
             trackerHitsSaved?: number;
             /**
@@ -2462,6 +2506,29 @@ export interface components {
             breakerSuppressed?: number;
             /** @description Per-indexer cache breakdown, ordered by instance id. */
             byIndexer?: components["schemas"]["CacheIndexerStats"][];
+        };
+        /** @description The hit/miss counters over one window. "1d"/"7d"/"30d" are in-memory hour buckets bounded by windowsSince; "all" is the cumulative, restart-persisted pair, so it survives both bucket eviction and a reboot. */
+        CacheStatsWindow: {
+            /** @description "1d" | "7d" | "30d" | "all" */
+            window: string;
+            /** Format: int64 */
+            hits: number;
+            /** Format: int64 */
+            misses: number;
+            /**
+             * Format: double
+             * @description hits / (hits + misses) in this window, or 0 with no traffic.
+             */
+            hitRatio: number;
+        };
+        /** @description The counter totals a stats reset discarded (not recoverable). */
+        CacheStatsResetResult: {
+            /** Format: int64 */
+            clearedHits: number;
+            /** Format: int64 */
+            clearedMisses: number;
+            /** Format: int64 */
+            clearedBreakerSuppressed: number;
         };
         /** @description One indexer's cache observability figures. */
         CacheIndexerStats: {
@@ -3074,7 +3141,10 @@ export interface operations {
     };
     allIndexerStatus: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Narrow the indexers array to one derived state. The healthy/failing/unknown counts stay fleet-wide so a filtered caller still sees the whole picture. */
+                status?: "healthy" | "failing" | "unknown";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3090,6 +3160,7 @@ export interface operations {
                     "application/json": components["schemas"]["FleetStatus"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
         };
     };
@@ -3260,7 +3331,7 @@ export interface operations {
                         status: "healthy" | "failing" | "unknown";
                         events: {
                             /** @enum {string} */
-                            kind: "auth_failure" | "rate_limited" | "parse_error" | "anti_bot" | "transport";
+                            kind: "auth_failure" | "rate_limited" | "parse_error" | "anti_bot" | "transport" | "base_url_promoted";
                             detail?: string;
                             /** Format: date-time */
                             occurred_at: string;
@@ -3270,6 +3341,11 @@ export interface operations {
                          * @description Present only while the circuit breaker (autobrr/harbrr#253) currently excludes the indexer from search/grab dispatch.
                          */
                         disabledTill?: string;
+                        /**
+                         * Format: date-time
+                         * @description When the current failure streak began — present only while the derived status is failing (autobrr/harbrr#389).
+                         */
+                        failingSince?: string;
                     };
                 };
             };
@@ -5292,6 +5368,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CacheStats"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    cacheStatsReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description the counter totals the reset discarded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CacheStatsResetResult"];
                 };
             };
             401: components["responses"]["Unauthorized"];

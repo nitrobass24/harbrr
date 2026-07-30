@@ -18,6 +18,10 @@ export function countdown(iso: string, now: Date = new Date()): string {
 // indexer with no cap of any kind gets a single line instead of an empty gauge. A spent
 // budget is styled as a self-imposed guard (warn, not bad): harbrr held the request
 // back, the tracker did not fail.
+//
+// A cap carries its origin: "learned" (the tracker's own quota error) and "detected"
+// (seeded from the indexer's advertised account limits, autobrr/harbrr#377) both read
+// as not-yours, so an operator never mistakes either for a number they typed.
 export function BudgetMeter({ budget }: { budget?: IndexerBudget }) {
   if (!budget) return null
   const metered = [
@@ -53,6 +57,14 @@ function KindRow({ label, kind }: { label: string, kind: IndexerBudgetKind }) {
             title="harbrr learned this cap from the tracker's own quota error — you did not configure it"
           >
             learned cap
+          </span>
+        )}
+        {kind.detected && (
+          <span
+            className="inline-flex items-center rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+            title="harbrr read this cap from the indexer's own account limits when you added or tested it — you did not configure it"
+          >
+            detected cap
           </span>
         )}
         <span className="ml-auto tabular-nums">

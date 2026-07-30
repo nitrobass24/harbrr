@@ -149,10 +149,19 @@ type settingResponse struct {
 	Secret bool   `json:"secret"`
 }
 
-// instanceDetailResponse is an instance plus its (redacted) settings.
+// instanceDetailResponse is an instance plus its (redacted) settings and its
+// base-URL failover standing (autobrr/harbrr#375).
 type instanceDetailResponse struct {
 	instanceResponse
 	Settings []settingResponse `json:"settings"`
+	// EffectiveBaseURL is the host this indexer actually talks to right now, which
+	// differs from baseUrl when a failover promoted another of the definition's links.
+	EffectiveBaseURL string `json:"effectiveBaseUrl"`
+	// FailoverBaseURL is non-empty only while a promotion is in effect — the "currently
+	// using B" the operator can revert by clearing the failover_base_url setting.
+	FailoverBaseURL string `json:"failoverBaseUrl,omitempty"`
+	// FailoverDisabled is the operator pin: automatic failover is off for this indexer.
+	FailoverDisabled bool `json:"failoverDisabled"`
 }
 
 // listIndexers returns all configured indexers.
@@ -225,9 +234,25 @@ func (rt *router) getIndexer(w http.ResponseWriter, r *http.Request) {
 	for _, v := range views {
 		settings = append(settings, settingResponse{Name: v.Name, Value: v.Value, Secret: v.Secret})
 	}
+	// Best-effort, like the list view's freeleech resolution: a definition that fails
+	// to load must not turn a readable indexer into a 500.
+	failover, err := rt.registry.FailoverState(r.Context(), inst)
+	if err != nil {
+		rt.log.Warn().Err(err).Str("slug", inst.Slug).Msg("resolve failover state")
+		// FailoverState yields a zero struct on error, and effectiveBaseUrl is a
+		// REQUIRED field documented as the host this indexer talks to — reporting ""
+		// would say it talks to nothing. Without the definition or the settings we
+		// cannot know about a promotion, but the operator's configured host is still
+		// the best available truth. It stays empty only when there is no override
+		// either, where the answer is the definition's first link and unknowable here.
+		failover.EffectiveBaseURL = inst.BaseURL
+	}
 	writeJSON(w, http.StatusOK, instanceDetailResponse{
 		instanceResponse: toInstanceResponse(inst),
 		Settings:         settings,
+		EffectiveBaseURL: failover.EffectiveBaseURL,
+		FailoverBaseURL:  failover.PromotedBaseURL,
+		FailoverDisabled: failover.Disabled,
 	})
 }
 
@@ -326,11 +351,14 @@ type statusEvent struct {
 // overall status plus the recent health events behind it. DisabledTill is present
 // only while the circuit breaker (#253) currently excludes the indexer from
 // dispatch — the UI can diff it against now for a short-term/long-term read.
+// FailingSince is when the current failure streak began, present only while the
+// status is failing — the "how long has this been dead" an operator asks first.
 type statusResponse struct {
 	Slug         string        `json:"slug"`
 	Status       string        `json:"status"`
 	Events       []statusEvent `json:"events"`
 	DisabledTill *time.Time    `json:"disabledTill,omitempty"`
+	FailingSince *time.Time    `json:"failingSince,omitempty"`
 }
 
 // indexerStatus returns a configured indexer's derived health
@@ -352,17 +380,22 @@ func toStatusResponse(st registry.HealthStatus) statusResponse {
 	for _, e := range st.Events {
 		events = append(events, statusEvent{Kind: e.Kind, Detail: e.Detail, OccurredAt: e.OccurredAt})
 	}
-	return statusResponse{Slug: st.Slug, Status: st.Status, Events: events, DisabledTill: st.DisabledTill}
+	return statusResponse{
+		Slug: st.Slug, Status: st.Status, Events: events,
+		DisabledTill: st.DisabledTill, FailingSince: st.FailingSince,
+	}
 }
 
 // fleetIndexerStatus is one indexer's entry in the fleet-wide status roll-up: its
 // derived status plus the most recent health event (reusing statusEvent's shape),
 // omitted when the indexer has no events. DisabledTill mirrors statusResponse.
+// FailingSince mirrors statusResponse.
 type fleetIndexerStatus struct {
 	Slug         string       `json:"slug"`
 	Status       string       `json:"status"`
 	LastEvent    *statusEvent `json:"lastEvent,omitempty"`
 	DisabledTill *time.Time   `json:"disabledTill,omitempty"`
+	FailingSince *time.Time   `json:"failingSince,omitempty"`
 }
 
 // fleetStatusResponse is the JSON body of GET /api/indexers/status: the tri-state
@@ -377,7 +410,15 @@ type fleetStatusResponse struct {
 
 // allIndexerStatus returns the fleet-wide health roll-up: healthy/failing/unknown
 // counts plus every configured indexer's derived status and most recent health event.
+// ?status=healthy|failing|unknown narrows the indexers array to that derived state
+// (an unrecognized value is a 400). The counts stay fleet-wide either way — they are
+// the roll-up, and "2 of 11 healthy" is the number a filtered caller still wants.
 func (rt *router) allIndexerStatus(w http.ResponseWriter, r *http.Request) {
+	want := r.URL.Query().Get("status")
+	if want != "" && !registry.ValidStatus(want) {
+		writeError(w, http.StatusBadRequest, "status must be one of: healthy, failing, unknown")
+		return
+	}
 	statuses, err := rt.registry.AllStatuses(r.Context())
 	if err != nil {
 		rt.writeServiceError(w, "all indexer status", err)
@@ -393,7 +434,9 @@ func (rt *router) allIndexerStatus(w http.ResponseWriter, r *http.Request) {
 		default:
 			out.Unknown++
 		}
-		out.Indexers = append(out.Indexers, toFleetIndexerStatus(st))
+		if want == "" || st.Status == want {
+			out.Indexers = append(out.Indexers, toFleetIndexerStatus(st))
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -401,7 +444,10 @@ func (rt *router) allIndexerStatus(w http.ResponseWriter, r *http.Request) {
 // toFleetIndexerStatus maps a registry FleetStatus to its API view, reusing
 // statusEvent for the most recent event (nil when the indexer has none).
 func toFleetIndexerStatus(st registry.FleetStatus) fleetIndexerStatus {
-	fs := fleetIndexerStatus{Slug: st.Slug, Status: st.Status, DisabledTill: st.DisabledTill}
+	fs := fleetIndexerStatus{
+		Slug: st.Slug, Status: st.Status,
+		DisabledTill: st.DisabledTill, FailingSince: st.FailingSince,
+	}
 	if len(st.Events) > 0 {
 		e := st.Events[0]
 		fs.LastEvent = &statusEvent{Kind: e.Kind, Detail: e.Detail, OccurredAt: e.OccurredAt}

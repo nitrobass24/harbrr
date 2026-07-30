@@ -69,6 +69,21 @@ type SearchCache struct {
 	misses            atomic.Int64
 	breakerSuppressed atomic.Int64
 
+	// window is the rolling hit/miss bucket ring backing the selectable 1d/7d/30d
+	// stats views (global only, in-memory — see searchcache_window.go).
+	window hourWindow
+
+	// resetEpoch advances on every ResetCounters sweep. serveMiss snapshots it
+	// around its up-front miss increment: if a reset landed mid-request, the
+	// increment was already swept to zero, so neither the error rollback (which
+	// would drive the counters negative) nor the success-path window bump applies.
+	resetEpoch atomic.Int64
+
+	// counterPersistMu serializes FlushCounters' snapshot+upsert loop against
+	// ResetCounters' sweep+DeleteAll, so a cleanup-tick persistence pass can never
+	// write pre-reset totals back after the reset (which a restart would rehydrate).
+	counterPersistMu sync.Mutex
+
 	// countersRehydrated gates FlushCounters: it is set once RehydrateCounters has
 	// loaded the persisted counts at boot, so a failed/early flush can never overwrite
 	// the stored totals with zeroes.
@@ -173,6 +188,9 @@ func newSearchCache(db dbinterface.Querier, t cacheTuning, clock func() time.Tim
 		instanceEpochs: make(map[int64]uint64),
 	}
 	c.tuning.Store(&t)
+	// Start the rolling-window coverage clock now: the buckets are in-memory, so
+	// "since" is what keeps a 30d view of a one-hour-old process honest.
+	c.window.reset(clock())
 	return c
 }
 
@@ -338,6 +356,7 @@ func (c *SearchCache) serveHit(ctx context.Context, instanceID int64, cfg map[st
 	}
 	c.hits.Add(1)
 	c.counters(instanceID).hits.Add(1)
+	c.window.hit(c.clock())
 	c.recordCacheInfo(ctx, core.CacheInfo{Cached: true, ExpiresAt: effective})
 	c.recordTouch(key)
 	if c.shouldRefreshAhead(entry, effective) {
@@ -383,9 +402,37 @@ func (c *SearchCache) effectiveExpiry(entry database.SearchCacheEntry, cfg map[s
 // Both context.Canceled (client disconnect) and context.DeadlineExceeded (leader
 // request deadline) qualify — once our ctx is proven live, ANY context error in the
 // flight result can only be the leader's.
+//
+// A request that ends in an error counts as NEITHER hit nor miss: the hit/miss
+// counters feed the hit-ratio metric, and a failed live search (dead tracker,
+// cancelled client) says nothing about cache effectiveness — without this, a
+// tracker down for days drags the ratio toward zero one failed poll at a time.
+// The miss is still recorded up front (so an in-flight miss is observable — the
+// follower tests synchronize on it) and rolled back on the error paths.
 func (c *SearchCache) serveMiss(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, live liveSearchFn, q search.Query, key string) ([]*normalizer.Release, error) {
+	epoch := c.resetEpoch.Load()
 	c.misses.Add(1)
 	c.counters(instanceID).misses.Add(1)
+	releases, err := c.runMiss(ctx, instanceID, cfg, builtEpoch, live, q, key)
+	if c.resetEpoch.Load() != epoch {
+		// A ResetCounters swept the counters while this miss was in flight: the
+		// up-front increment has already been zeroed, so there is nothing to roll
+		// back (doing so would drive the counters negative) and the pre-reset
+		// request must not seed the freshly-reset window either.
+		return releases, err
+	}
+	if err != nil {
+		c.misses.Add(-1)
+		c.counters(instanceID).misses.Add(-1)
+		return releases, err
+	}
+	c.window.miss(c.clock())
+	return releases, nil
+}
+
+// runMiss is serveMiss's flight body: coalesce onto the singleflight, recover from
+// an inherited dead-leader cancellation, resolve the flight value.
+func (c *SearchCache) runMiss(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, live liveSearchFn, q search.Query, key string) ([]*normalizer.Release, error) {
 	flightKey := cacheFlightKey(key, builtEpoch)
 	v, err, _ := c.sf.Do(flightKey, c.missFlight(ctx, instanceID, cfg, builtEpoch, live, q, key))
 	if err != nil {

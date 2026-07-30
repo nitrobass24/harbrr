@@ -3,10 +3,11 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
-import { breakerLabel, unixAgo } from "@/components/cache/cache-format"
+import { STATS_WINDOWS, breakerLabel, coverageNote, statsWindow, unixAgo } from "@/components/cache/cache-format"
+import type { StatsWindowKey } from "@/components/cache/cache-format"
 import { safeInt } from "@/components/cache/safe-int"
 import { LoadError, LoadingBlock } from "@/components/ui/load-error"
-import { useCacheConfig, useCacheStats, useFlushCache, useUpdateCacheConfig } from "@/hooks/useSettings"
+import { useCacheConfig, useCacheStats, useFlushCache, useResetCacheStats, useUpdateCacheConfig } from "@/hooks/useSettings"
 import { formatSize } from "@/lib/format"
 import { notifyError, notifySuccess } from "@/lib/notify"
 import { cn } from "@/lib/utils"
@@ -18,9 +19,16 @@ import type { CacheConfig } from "@/lib/api"
 export function CacheView() {
   const stats = useCacheStats()
   const flush = useFlushCache()
+  const reset = useResetCacheStats()
+  // Which window the hit tiles read. Every window ships in the one stats GET, so
+  // switching is instant — no refetch, no server-side ?window= parameter.
+  const [windowKey, setWindowKey] = useState<StatsWindowKey>("all")
 
   if (stats.isError) return <LoadError what="cache stats" />
   if (stats.isLoading) return <LoadingBlock />
+
+  const view = statsWindow(stats.data, windowKey)
+  const coverage = coverageNote(windowKey, stats.data?.windowsSince)
 
   return (
     <section className="flex flex-col gap-4">
@@ -30,14 +38,18 @@ export function CacheView() {
         </p>
       )}
 
+      {stats.data?.enabled && <WindowPicker value={windowKey} onChange={setWindowKey} />}
+
       {stats.data?.enabled && (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <StatTile label="Tracker hits saved" value={String(stats.data.trackerHitsSaved ?? 0)} highlight />
-          <StatTile label="Hit ratio" value={stats.data.hitRatio !== undefined ? `${Math.round(stats.data.hitRatio * 100)}%` : "—"} />
+          <StatTile label="Tracker hits saved" value={String(view?.hits ?? 0)} highlight />
+          <StatTile label="Hit ratio" value={view ? `${Math.round((view.hitRatio ?? 0) * 100)}%` : "—"} />
           <StatTile label="Cached entries" value={String(stats.data.entries ?? 0)} sub={formatSize(stats.data.approxSizeBytes)} />
           <StatTile label="Breaker suppressed" value={String(stats.data.breakerSuppressed ?? 0)} />
         </div>
       )}
+
+      {coverage && <p className="px-1 text-[12px] text-warn">{coverage}</p>}
 
       {stats.data?.enabled && (
         <p className="px-1 text-[12px] text-faint">
@@ -69,7 +81,10 @@ export function CacheView() {
         </div>
       )}
 
-      <div>
+      {/* Two destructive actions that must never be confused: flush discards cached
+          RESULTS (they refill on the next poll), reset discards the STATISTICS (gone
+          for good) — hence the confirm on reset only. */}
+      <div className="flex flex-wrap items-center gap-2">
         <Button
           variant="outline"
           size="sm"
@@ -79,12 +94,52 @@ export function CacheView() {
             onError: (err) => notifyError("Flush failed", err),
           })}
         >
-          {flush.isPending ? "Flushing…" : "Flush cache"}
+          {flush.isPending ? "Flushing…" : "Flush cached results"}
         </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={reset.isPending}
+          onClick={() => {
+            if (!globalThis.confirm("Reset cache statistics? Hit/miss history is discarded for every indexer and cannot be recovered. Cached results are kept.")) return
+            reset.mutate(undefined, {
+              onSuccess: (r) => notifySuccess(`Statistics reset — discarded ${r.clearedHits} hits and ${r.clearedMisses} misses`),
+              onError: (err) => notifyError("Stats reset failed", err),
+            })
+          }}
+        >
+          {reset.isPending ? "Resetting…" : "Reset statistics"}
+        </Button>
+        <span className="text-[12px] text-faint">
+          Flush drops cached results (they refill); reset only clears the counters.
+        </span>
       </div>
 
       <ConfigForm />
     </section>
+  )
+}
+
+// WindowPicker is the 24h/7d/30d/All segmented control over the stats tiles. It
+// switches locally — every window is already in the response.
+function WindowPicker({ value, onChange }: { value: StatsWindowKey, onChange: (k: StatsWindowKey) => void }) {
+  return (
+    <div className="flex w-fit items-center gap-0.5 rounded-lg border border-border bg-card p-0.5" role="group" aria-label="Stats window">
+      {STATS_WINDOWS.map(({ key, label }) => (
+        <button
+          key={key}
+          type="button"
+          aria-pressed={value === key}
+          onClick={() => onChange(key)}
+          className={cn(
+            "rounded-md px-2.5 py-1 text-[12px] font-medium text-muted-foreground hover:text-foreground",
+            value === key && "bg-accent text-foreground"
+          )}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
   )
 }
 

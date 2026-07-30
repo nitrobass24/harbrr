@@ -228,15 +228,18 @@ func (st *budgetState) row(instanceID int64, now time.Time) database.BudgetCount
 }
 
 // BudgetKindStatus is one kind's (query or grab) standing in the CURRENT period:
-// Used is what has been counted so far, Limit is the OPERATOR-CONFIGURED cap (0 =
-// none configured), and Learned reports the reactive latch — the tracker declared its
-// own quota spent, which carries no number because the cap was never declared. The
-// two cap sources stay separate fields on purpose: an operator must not mistake a
-// learned cap for one they set (autobrr/harbrr#402).
+// Used is what has been counted so far, Limit is the configured cap (0 = none
+// configured), Detected says that cap was read from the indexer's own account limits
+// rather than typed by the operator (autobrr/harbrr#377), and Learned reports the
+// reactive latch — the tracker declared its own quota spent, which carries no number
+// because the cap was never declared. The three cap origins stay separate fields on
+// purpose: an operator must not mistake a learned or detected cap for one they set
+// (autobrr/harbrr#402).
 type BudgetKindStatus struct {
-	Used    int64
-	Limit   int
-	Learned bool
+	Used     int64
+	Limit    int
+	Detected bool
+	Learned  bool
 }
 
 // BudgetStatus is one instance's request-budget standing for the current rolling
@@ -284,8 +287,23 @@ func kindStatus(st *budgetState, kind budgetKind, cfg map[string]string, period 
 	out := BudgetKindStatus{Used: count, Learned: exhausted}
 	if limit := parseLimit(cfg, kind); limit != nil {
 		out.Limit = *limit
+		out.Detected = cfg[limitSourceKey(kind)] == limitSourceDetected
 	}
 	return out
+}
+
+// limitSourceKey / limitSourceDetected are the provenance marker a driver writes
+// beside a cap it discovered from the indexer itself (the Newznab driver's ?t=user
+// seed, autobrr/harbrr#377) — a plain reserved instance setting, the same generic
+// mechanism the caps themselves ride, so no parallel store is needed to tell a
+// detected cap from an operator-typed one.
+const limitSourceDetected = "detected"
+
+func limitSourceKey(kind budgetKind) string {
+	if kind == budgetKindGrab {
+		return "grab_limit_source"
+	}
+	return "query_limit_source"
 }
 
 // ForgetInstance drops a deleted instance's in-memory budget state (mirrors

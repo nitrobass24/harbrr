@@ -409,6 +409,47 @@ func (r *Manager) Freeleech(ctx context.Context, inst domain.IndexerInstance) (b
 	return settingEnabled(cfg["freeleech"]) || settingEnabled(cfg["freeleech_only"]), nil
 }
 
+// FailoverState is one indexer's base-URL failover standing (autobrr/harbrr#375):
+// which host it ACTUALLY talks to, whether a failover put it there (empty when the
+// operator's own configuration did), and whether the operator pinned it. The pair is
+// the API's "configured A, currently using B" — clearing PromotedBaseURL (PATCH the
+// indexer with settings.failover_base_url = "") is the revert.
+type FailoverState struct {
+	EffectiveBaseURL string
+	PromotedBaseURL  string
+	Disabled         bool
+}
+
+// FailoverState resolves inst's failover standing the same way the engine build does,
+// so what the API reports is what the next search will actually use. Mirrors
+// Freeleech: it reads the definition and the instance's settings itself, and neither
+// setting is a secret, so no decryption pass is needed.
+func (r *Manager) FailoverState(ctx context.Context, inst domain.IndexerInstance) (FailoverState, error) {
+	def, _, err := resolveDefinition(r.native, r.loader, inst.DefinitionID)
+	if err != nil {
+		return FailoverState{}, fmt.Errorf("registry: load definition %q: %w", inst.DefinitionID, err)
+	}
+	settings, err := r.instances.Settings(ctx, r.db, inst.ID)
+	if err != nil {
+		return FailoverState{}, fmt.Errorf("registry: get settings for %q: %w", inst.Slug, err)
+	}
+	cfg := make(map[string]string, 2)
+	for _, s := range settings {
+		if s.Name == failoverBaseURLSetting || s.Name == failoverDisabledSetting {
+			cfg[s.Name] = s.Value
+		}
+	}
+	effective := effectiveBaseURL(inst, def, cfg)
+	state := FailoverState{EffectiveBaseURL: effective, Disabled: settingEnabled(cfg[failoverDisabledSetting])}
+	// Reported as promoted only when the promotion is the reason for the effective
+	// host: a stored value the definition no longer lists is already ignored by
+	// effectiveBaseURL, and reporting it here would offer a revert from nothing.
+	if effective == cfg[failoverBaseURLSetting] {
+		state.PromotedBaseURL = effective
+	}
+	return state, nil
+}
+
 // List returns all configured instances.
 func (r *Manager) List(ctx context.Context) ([]domain.IndexerInstance, error) {
 	list, err := r.instances.List(ctx, r.db)
@@ -709,14 +750,24 @@ func failingWindow(level int) time.Duration {
 	return min(window, failingWindowCap)
 }
 
+// ValidStatus reports whether s is one of the three derived states. It is the one
+// place the wire vocabulary is checked, so a caller selecting by health (the API's
+// ?status= filter, later the status: feed slug in autobrr/harbrr#400) never re-types
+// the literals.
+func ValidStatus(s string) bool {
+	return s == StatusHealthy || s == StatusFailing || s == StatusUnknown
+}
+
 // HealthStatus is one indexer's derived health plus the recent events behind it
 // (details already credential-scrubbed at write time). DisabledTill is non-nil
-// while the circuit breaker (#253) currently excludes the indexer from dispatch.
+// while the circuit breaker (#253) currently excludes the indexer from dispatch;
+// FailingSince mirrors FleetStatus.
 type HealthStatus struct {
 	Slug         string
 	Status       string
 	Events       []domain.IndexerHealthEvent
 	DisabledTill *time.Time
+	FailingSince *time.Time
 }
 
 // Status returns the indexer's derived health and recent events. An unknown slug
@@ -726,21 +777,28 @@ func (r *StatsReporter) Status(ctx context.Context, slug string) (HealthStatus, 
 	if err != nil {
 		return HealthStatus{}, fmt.Errorf("registry: status %q: %w", slug, err)
 	}
-	events, status, disabledTill, err := r.statusOf(ctx, inst.ID, healthEventLimit)
+	snap, err := r.statusOf(ctx, inst.ID, healthEventLimit)
 	if err != nil {
 		return HealthStatus{}, fmt.Errorf("registry: status %q: %w", slug, err)
 	}
-	return HealthStatus{Slug: slug, Status: status, Events: events, DisabledTill: disabledTill}, nil
+	return HealthStatus{
+		Slug: slug, Status: snap.status, Events: snap.events,
+		DisabledTill: snap.disabledTill, FailingSince: snap.failingSince,
+	}, nil
 }
 
 // FleetStatus is one indexer's derived health for the fleet-wide roll-up: the
 // status plus its single most recent health event (Events is empty when it has
 // none, mirroring HealthStatus.Events). DisabledTill mirrors HealthStatus.
+// FailingSince is when the current failure streak began (the circuit's
+// InitialFailure) — non-nil only while the status is failing and the ladder has
+// actually been climbed, so it never claims a start time for a working indexer.
 type FleetStatus struct {
 	Slug         string
 	Status       string
 	Events       []domain.IndexerHealthEvent
 	DisabledTill *time.Time
+	FailingSince *time.Time
 }
 
 // AllStatuses returns every configured instance's derived health, sorted by slug.
@@ -755,31 +813,62 @@ func (r *StatsReporter) AllStatuses(ctx context.Context) ([]FleetStatus, error) 
 	sort.Slice(list, func(i, j int) bool { return list[i].Slug < list[j].Slug })
 	out := make([]FleetStatus, 0, len(list))
 	for _, inst := range list {
-		events, status, disabledTill, err := r.statusOf(ctx, inst.ID, 1)
+		snap, err := r.statusOf(ctx, inst.ID, 1)
 		if err != nil {
 			return nil, fmt.Errorf("registry: all statuses %q: %w", inst.Slug, err)
 		}
-		out = append(out, FleetStatus{Slug: inst.Slug, Status: status, Events: events, DisabledTill: disabledTill})
+		out = append(out, FleetStatus{
+			Slug: inst.Slug, Status: snap.status, Events: snap.events,
+			DisabledTill: snap.disabledTill, FailingSince: snap.failingSince,
+		})
 	}
 	return out, nil
+}
+
+// SlugsWithStatus returns the slugs of every configured indexer whose derived status
+// is want, sorted by slug. It is AllStatuses filtered — the same single derivation,
+// never a second copy — so a caller selecting members by health (the status: feed
+// slug, autobrr/harbrr#400) can do it without re-deriving anything.
+func (r *StatsReporter) SlugsWithStatus(ctx context.Context, want string) ([]string, error) {
+	all, err := r.AllStatuses(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(all))
+	for _, st := range all {
+		if st.Status == want {
+			out = append(out, st.Slug)
+		}
+	}
+	return out, nil
+}
+
+// healthSnapshot is statusOf's result: the derived status, the events it was derived
+// from, and the two operator-visible instants behind it (both nil unless they apply).
+type healthSnapshot struct {
+	events       []domain.IndexerHealthEvent
+	status       string
+	disabledTill *time.Time
+	failingSince *time.Time
 }
 
 // statusOf is the shared derivation core behind Status and AllStatuses: it fetches
 // the instance's most recent events (capped at limit), its recovery marker, and its
 // circuit-breaker state, and derives the status exactly the same way for both
-// callers. The returned *time.Time is non-nil only while the circuit is open.
-func (r *StatsReporter) statusOf(ctx context.Context, instanceID int64, limit int) ([]domain.IndexerHealthEvent, string, *time.Time, error) {
+// callers. disabledTill is non-nil only while the circuit is open; failingSince only
+// while the derived status is failing.
+func (r *StatsReporter) statusOf(ctx context.Context, instanceID int64, limit int) (healthSnapshot, error) {
 	events, err := r.health.Recent(ctx, r.db, instanceID, limit)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("events: %w", err)
+		return healthSnapshot{}, fmt.Errorf("events: %w", err)
 	}
 	recovery, err := r.health.Recovery(ctx, r.db, instanceID)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("recovery: %w", err)
+		return healthSnapshot{}, fmt.Errorf("recovery: %w", err)
 	}
 	circuit, err := r.circuit.Get(ctx, r.db, instanceID)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("circuit: %w", err)
+		return healthSnapshot{}, fmt.Errorf("circuit: %w", err)
 	}
 	now := r.clock()
 	var disabledTill *time.Time
@@ -794,7 +883,15 @@ func (r *StatsReporter) statusOf(ctx context.Context, instanceID int64, limit in
 		level:     circuit.EscalationLevel,
 		lastQuery: r.stats.snapshot(instanceID).lastQuery,
 	}
-	return events, r.deriveStatus(signals), disabledTill, nil
+	snap := healthSnapshot{events: events, status: r.deriveStatus(signals), disabledTill: disabledTill}
+	// InitialFailure survives a partial recovery (the ladder descends one rung at a
+	// time), so it is only the streak's start while the indexer actually reads failing
+	// — otherwise "failing since" would sit on an indexer that is working again.
+	if snap.status == StatusFailing && !circuit.InitialFailure.IsZero() {
+		since := circuit.InitialFailure
+		snap.failingSince = &since
+	}
+	return snap, nil
 }
 
 // healthSignals is the evidence deriveStatus reads — all of it already fetched by
@@ -947,18 +1044,19 @@ func (r *StatsReporter) Stats(ctx context.Context, slug string) (IndexerStat, er
 }
 
 // budgetStatus reads the instance's budget knobs off its stored settings and returns
-// the current-period standing. The three keys are plain values (never secrets), so
-// this needs no keyring — and deliberately copies nothing else out of the settings
-// row. Read-only: it counts nothing and persists nothing.
+// the current-period standing. The keys are plain values (never secrets), so this
+// needs no keyring — and deliberately copies nothing else out of the settings row.
+// The two *_limit_source markers carry the cap's provenance (#377). Read-only: it
+// counts nothing and persists nothing.
 func (r *StatsReporter) budgetStatus(ctx context.Context, instanceID int64) (BudgetStatus, error) {
 	settings, err := r.instances.Settings(ctx, r.db, instanceID)
 	if err != nil {
 		return BudgetStatus{}, fmt.Errorf("registry: stats budget settings for instance %d: %w", instanceID, err)
 	}
-	cfg := make(map[string]string, 3)
+	cfg := make(map[string]string, 5)
 	for _, s := range settings {
 		switch s.Name {
-		case "query_limit", "grab_limit", "limits_unit":
+		case "query_limit", "grab_limit", "limits_unit", "query_limit_source", "grab_limit_source":
 			cfg[s.Name] = s.Value
 		}
 	}

@@ -390,12 +390,21 @@ paths:
       operationId: allIndexerStatus
       tags: [Indexers]
       security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [healthy, failing, unknown] }
+          description: >
+            Narrow the indexers array to one derived state. The healthy/failing/unknown
+            counts stay fleet-wide so a filtered caller still sees the whole picture.
       responses:
         "200":
           description: fleet-wide indexer status
           content:
             application/json:
               schema: { $ref: "#/components/schemas/FleetStatus" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
   /api/indexers/{slug}:
@@ -500,8 +509,10 @@ paths:
       summary: Get an indexer's health status
       description: >
         Returns the indexer's derived health (healthy/failing/unknown) and its recent
-        health events (auth_failure, rate_limited, parse_error, anti_bot, transport). Event
-        details are credential-scrubbed before storage, so no secret is surfaced.
+        health events (auth_failure, rate_limited, parse_error, anti_bot, transport,
+        plus base_url_promoted, which is not a failure but the base-URL failover moving
+        the indexer onto another host the definition lists). Event details are
+        credential-scrubbed before storage, so no secret is surfaced.
       operationId: indexerStatus
       tags: [Indexers]
       security: [{ session: [] }, { apiKey: [] }]
@@ -526,7 +537,7 @@ paths:
                       properties:
                         kind:
                           type: string
-                          enum: [auth_failure, rate_limited, parse_error, anti_bot, transport]
+                          enum: [auth_failure, rate_limited, parse_error, anti_bot, transport, base_url_promoted]
                         detail: { type: string }
                         occurred_at: { type: string, format: date-time }
                   disabledTill:
@@ -535,6 +546,12 @@ paths:
                     description: >
                       Present only while the circuit breaker (autobrr/harbrr#253)
                       currently excludes the indexer from search/grab dispatch.
+                  failingSince:
+                    type: string
+                    format: date-time
+                    description: >
+                      When the current failure streak began — present only while the
+                      derived status is failing (autobrr/harbrr#389).
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
@@ -565,9 +582,13 @@ paths:
       description: >
         Fans one search out across the explicitly named indexers and returns the
         MERGED window (publish-date descending) plus a per-member ledger — the
-        management-API sibling of the `all`/`profile:` aggregate feeds, running the
-        same merge, so the web UI and the feeds can never disagree about sort or
-        counts. Paging is one window: members are queried at offset 0 and the
+        management-API sibling of the `all`/`profile:<name>`/`status:healthy`
+        aggregate feeds, running the same merge, so the web UI and the feeds can never
+        disagree about sort or counts. (`status:healthy` selects every ENABLED indexer
+        that is not currently FAILING — healthy AND unknown, looser than the UI's
+        healthy badge, so a never-yet-searched indexer is served rather than hidden. It
+        is the only accepted status word; any other is not-found.)
+        Paging is one window: members are queried at offset 0 and the
         request's limit/offset apply to the merged set, so `total` is the size of the
         set this request fetched, not a promise that a deeper page exists. No member
         failure fails the request — a member that is disabled, unbuildable,
@@ -2002,8 +2023,9 @@ paths:
         Returns the cache's durable figures (entry count, total hits, approximate
         size, and the oldest/newest/last-used timestamps) plus the cumulative hit
         ratio. hitRatio derives from hit/miss counters that are persisted across
-        restarts. When caching is disabled the response is
-        {"enabled": false} with no figures.
+        restarts. Every selectable window (1d/7d/30d/all) is returned in one
+        response, so a client switches view without refetching. When caching is
+        disabled the response is {"enabled": false} with no figures.
       operationId: cacheStats
       tags: [Cache]
       security: [{ session: [] }, { apiKey: [] }]
@@ -2015,13 +2037,33 @@ paths:
               schema: { $ref: "#/components/schemas/CacheStats" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /api/cache/stats/reset:
+    post:
+      summary: Reset the search-results cache statistics
+      description: >
+        Zeroes the hit/miss/suppressed counters fleet-wide — in-memory, persisted,
+        and every rolling window — and reports the totals it discarded. Cached
+        ENTRIES are untouched; discarding those is /api/cache/flush. The cleared
+        history is not recoverable. When caching is disabled the response is zeroes.
+      operationId: cacheStatsReset
+      tags: [Cache]
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: the counter totals the reset discarded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CacheStatsResetResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /api/cache/flush:
     post:
       summary: Flush the search-results cache
       description: >
-        Deletes every cache entry and returns the count purged. The cumulative
-        hit/miss counters are not reset. When caching is disabled the response is
-        {"flushed": 0}.
+        Deletes every cache entry and returns the count purged. The hit/miss/
+        suppressed counters are cumulative and monotonic across a flush — see
+        /api/cache/stats/reset to zero those. When caching is disabled the response
+        is {"flushed": 0}.
       operationId: cacheFlush
       tags: [Cache]
       security: [{ session: [] }, { apiKey: [] }]
@@ -2452,6 +2494,20 @@ components:
           description: >
             the rolling period query_limit/grab_limit reset on: day (default, UTC
             midnight) or hour (opt-in, top of the UTC hour).
+        failover_base_url:
+          type: string
+          description: >
+            written by the automatic base-URL failover (autobrr/harbrr#375) when the
+            configured host stops answering and another of the definition's links
+            works. It is honoured only while the definition still lists that host.
+            Setting it to "" reverts the indexer to its configured host; it is surfaced
+            read-side as InstanceDetail.failoverBaseUrl.
+        failover_disabled:
+          type: string
+          description: >
+            the operator pin: any truthy value ("true") disables automatic base-URL
+            failover for this indexer entirely, whatever the failure looks like.
+            Selecting a host in the base-URL picker does NOT set this.
     Credentials:
       type: object
       properties:
@@ -2647,10 +2703,12 @@ components:
         (autobrr/harbrr#251, surfaced by #402): what has been counted so far against
         the operator-configured caps, and when the period rolls over. It reports the
         counters the registry already keeps — reading it collects nothing and counts
-        nothing. limit is the OPERATOR-CONFIGURED cap (0 = none configured); learned
-        is the separate reactive latch harbrr set from the tracker's own quota error,
-        which carries no number because the tracker never declared one. A learned
-        latch or a used-at-limit kind is a self-imposed guard, not an indexer failure.
+        nothing. limit is the configured cap (0 = none configured), flagged detected
+        when it was seeded from the indexer's own account limits rather than typed by
+        the operator; learned is the separate reactive latch harbrr set from the
+        tracker's own quota error, which carries no number because the tracker never
+        declared one. A learned latch or a used-at-limit kind is a self-imposed guard,
+        not an indexer failure.
       properties:
         unit: { type: string, enum: [day, hour], description: the rolling period the counters reset on }
         periodEnd:
@@ -2665,13 +2723,18 @@ components:
       description: One kind's (search or grab) usage against its cap for the current period.
       properties:
         used: { type: integer, format: int64, description: requests of this kind counted in the current period }
-        limit: { type: integer, description: the operator-configured cap for the period; 0 means none configured }
+        limit: { type: integer, description: the configured cap for the period; 0 means none configured }
+        detected:
+          type: boolean
+          description: >
+            the cap was seeded from the indexer's own advertised account limits
+            (Newznab t=user) rather than typed by the operator
         learned:
           type: boolean
           description: >
             the tracker declared its own quota spent for this kind in the current
             period (the reactive latch) — a cap harbrr was never configured with
-      required: [used, limit, learned]
+      required: [used, limit, detected, learned]
     FleetStatus:
       type: object
       description: >
@@ -2696,7 +2759,7 @@ components:
                 properties:
                   kind:
                     type: string
-                    enum: [auth_failure, rate_limited, parse_error, anti_bot, transport]
+                    enum: [auth_failure, rate_limited, parse_error, anti_bot, transport, base_url_promoted]
                   detail: { type: string }
                   occurred_at: { type: string, format: date-time }
               disabledTill:
@@ -2705,6 +2768,12 @@ components:
                 description: >
                   Present only while the circuit breaker (autobrr/harbrr#253) currently
                   excludes the indexer from search/grab dispatch.
+              failingSince:
+                type: string
+                format: date-time
+                description: >
+                  When the current failure streak began — present only while the
+                  derived status is failing (autobrr/harbrr#389).
       required: [healthy, failing, unknown, indexers]
     InstanceDetail:
       allOf:
@@ -2714,7 +2783,25 @@ components:
             settings:
               type: array
               items: { $ref: "#/components/schemas/Setting" }
-          required: [settings]
+            effectiveBaseUrl:
+              type: string
+              description: >
+                the host this indexer actually talks to right now: the configured
+                baseUrl (or the definition's first link when unset), unless the
+                automatic base-URL failover promoted another of the definition's links
+                (autobrr/harbrr#375).
+            failoverBaseUrl:
+              type: string
+              description: >
+                present only while a failover promotion is in effect — the host the
+                indexer moved to after the configured one stopped answering. Revert by
+                PATCHing the indexer with settings.failover_base_url = "".
+            failoverDisabled:
+              type: boolean
+              description: >
+                the operator pin (settings.failover_disabled): automatic failover is off
+                for this indexer. Choosing a host in the base-URL picker does NOT set it.
+          required: [settings, effectiveBaseUrl, failoverDisabled]
     AddIndexer:
       type: object
       properties:
@@ -3447,13 +3534,30 @@ components:
           format: int64
           description: >
             Global cumulative cache misses (the aggregate of the per-indexer byIndexer
-            rows). Persisted across restarts.
+            rows). Persisted across restarts. A live search that fails counts as
+            neither hit nor miss; only POST /api/cache/stats/reset zeroes the
+            counters — a cache flush does not.
         hitRatio:
           type: number
           format: double
           description: >
             hits / (hits + misses), cumulative. The underlying hit/miss counters are
             persisted across restarts.
+        windows:
+          type: array
+          description: >
+            The same counters over each selectable view — "1d", "7d", "30d", "all" —
+            in that order, so a client switches window with no refetch.
+          items: { $ref: "#/components/schemas/CacheStatsWindow" }
+        windowsSince:
+          type: integer
+          format: int64
+          description: >
+            Unix seconds at which the in-memory hour buckets started accumulating —
+            process start, or the last stats reset. The 1d/7d/30d figures reach back
+            at most this far, so a client MUST NOT present a window longer than
+            now - windowsSince as a full period of data. The "all" window is exempt:
+            it reads the persisted cumulative counters.
         approxSizeBytes: { type: integer, format: int64, description: approximate total size of cached payloads }
         oldestCachedAt:
           type: integer
@@ -3476,7 +3580,8 @@ components:
           description: >
             Cumulative tracker requests served from cache, persisted across restarts —
             the headline kind-to-trackers metric. Mirrors hits; unlike totalHits it
-            never drops when cached entries are reaped.
+            never drops when cached entries are reaped — only an explicit stats
+            reset zeroes it.
         breakerSuppressed:
           type: integer
           format: int64
@@ -3489,6 +3594,29 @@ components:
           description: Per-indexer cache breakdown, ordered by instance id.
           items: { $ref: "#/components/schemas/CacheIndexerStats" }
       required: [enabled]
+    CacheStatsWindow:
+      type: object
+      description: >
+        The hit/miss counters over one window. "1d"/"7d"/"30d" are in-memory hour
+        buckets bounded by windowsSince; "all" is the cumulative, restart-persisted
+        pair, so it survives both bucket eviction and a reboot.
+      properties:
+        window: { type: string, description: '"1d" | "7d" | "30d" | "all"' }
+        hits: { type: integer, format: int64 }
+        misses: { type: integer, format: int64 }
+        hitRatio:
+          type: number
+          format: double
+          description: hits / (hits + misses) in this window, or 0 with no traffic.
+      required: [window, hits, misses, hitRatio]
+    CacheStatsResetResult:
+      type: object
+      description: The counter totals a stats reset discarded (not recoverable).
+      properties:
+        clearedHits: { type: integer, format: int64 }
+        clearedMisses: { type: integer, format: int64 }
+        clearedBreakerSuppressed: { type: integer, format: int64 }
+      required: [clearedHits, clearedMisses, clearedBreakerSuppressed]
     CacheIndexerStats:
       type: object
       description: One indexer's cache observability figures.
