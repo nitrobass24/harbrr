@@ -5,6 +5,7 @@ import (
 	"errors"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/domain"
@@ -110,6 +111,54 @@ func TestUpdateProfileClearsSelectionAndValidates(t *testing.T) {
 	// An unknown id flows through as ErrNotFound.
 	if err := f.svc.UpdateProfile(ctx, 99999, UpdateProfileParams{}); !errors.Is(err, database.ErrNotFound) {
 		t.Errorf("update unknown id = %v, want ErrNotFound", err)
+	}
+}
+
+// dbBackedSource is an IndexerSource whose List actually queries the database, the way
+// the production adapter does (registrySource.List → registry.Manager.List →
+// instances.List(ctx, r.db), the pooled handle — never a caller's transaction). The rest
+// of this package injects fakeSource, whose List touches no database at all, which is why
+// no existing test could reproduce #438.
+type dbBackedSource struct {
+	*fakeSource
+	db *database.DB
+}
+
+func (s dbBackedSource) List(ctx context.Context) ([]domain.IndexerInstance, error) {
+	return database.Instances{}.List(ctx, s.db) //nolint:wrapcheck // test adapter
+}
+
+// TestUpdateProfileMembersDoesNotDeadlock is the #438 regression. UpdateProfile used to
+// call validateInstanceIDs from inside its own transaction; because database.Open pins
+// SetMaxOpenConns(1), that pooled read waits for the single connection the transaction
+// holds and neither ever proceeds. The deadline is load-bearing: the pre-fix failure is
+// an unbounded block (a database/sql pool wait, not a SQLite lock, so busy_timeout does
+// not end it), so without a context deadline this test would hang the suite instead of
+// failing.
+func TestUpdateProfileMembersDoesNotDeadlock(t *testing.T) {
+	t.Parallel()
+	f := newSyncFixture(t)
+	f.svc.source = dbBackedSource{fakeSource: f.source, db: f.db}
+
+	instA, instB := f.source.instances[0].ID, f.source.instances[1].ID
+	p, err := f.svc.CreateProfile(context.Background(), CreateProfileParams{Name: "p", IndexerIDs: []int64{instA}})
+	if err != nil {
+		t.Fatalf("CreateProfile: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	members := []int64{instA, instB}
+	if err := f.svc.UpdateProfile(ctx, p.ID, UpdateProfileParams{IndexerIDs: &members}); err != nil {
+		t.Fatalf("UpdateProfile: %v", err)
+	}
+
+	got, err := f.svc.GetProfile(context.Background(), p.ID)
+	if err != nil {
+		t.Fatalf("GetProfile: %v", err)
+	}
+	if !slices.Equal(got.IndexerIDs, []int64{instA, instB}) {
+		t.Errorf("IndexerIDs = %v, want [%d %d]", got.IndexerIDs, instA, instB)
 	}
 }
 

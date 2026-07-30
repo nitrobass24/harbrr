@@ -88,8 +88,18 @@ func (s *Service) CreateProfile(ctx context.Context, p CreateProfileParams) (dom
 }
 
 // UpdateProfile applies a patch to an existing profile: the row and (when present) its
-// indexer selection are written in one transaction.
+// indexer selection are written in one transaction. The member existence check runs
+// BEFORE the transaction (as in CreateProfile) — it reads a different table through the
+// registry's own pooled handle, and with SetMaxOpenConns(1) a pooled read issued while
+// this transaction holds the only connection deadlocks. A member deleted between the
+// check and the write is caught by the sync_profile_indexers FK.
 func (s *Service) UpdateProfile(ctx context.Context, id int64, p UpdateProfileParams) error {
+	if p.IndexerIDs != nil {
+		if err := s.validateInstanceIDs(ctx, *p.IndexerIDs); err != nil {
+			return err
+		}
+	}
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("appsync: begin tx: %w", err)
@@ -108,9 +118,6 @@ func (s *Service) UpdateProfile(ctx context.Context, id int64, p UpdateProfilePa
 		profile.Name = name
 	}
 	if p.IndexerIDs != nil {
-		if err := s.validateInstanceIDs(ctx, *p.IndexerIDs); err != nil {
-			return err
-		}
 		profile.IndexerIDs = *p.IndexerIDs
 	}
 	profile.UpdatedAt = s.clock()
