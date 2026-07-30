@@ -15,7 +15,8 @@
 -- This migration only ADDS schema and transforms data in place. It does NOT drop
 -- app_connections.index_scope (its CHECK constraint means dropping it needs a full table
 -- rebuild, like #269/0021) or sync_profiles' now-dead behavioral columns — both are left
--- for a later cleanup migration once the code is proven to no longer read them. Running
+-- for a later cleanup migration once the code is proven to no longer read them (that
+-- cleanup is 0028_drop_dead_sync_columns.sql, #370). Running
 -- the transform inside this migration (rather than as a one-time boot-time Go pass) means
 -- a failure aborts boot outright — there is no window where new code reads old-shape data.
 ALTER TABLE indexer_instances ADD COLUMN enable_rss INTEGER NOT NULL DEFAULT 1;
