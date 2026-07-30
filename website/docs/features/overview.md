@@ -111,7 +111,7 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 | Degenerate-query gating (opt-in, per indexer) — a search the indexer's own filters strip down to a bare year is skipped instead of sent, and reported as skipped rather than failed | ✅ |
 | Aggregate `all` feed — one Torznab URL over every enabled indexer, partial-by-construction with a per-member status ledger; grabs resolve against the originating tracker | ✅ |
 | Profile-scoped aggregate feeds — `profile:<name>` serves a sync profile's indexers over one URL | ✅ |
-| Health-filtered aggregate feeds | 🚧 [#400](https://github.com/autobrr/harbrr/issues/400) |
+| Health-filtered aggregate feeds — `status:healthy` serves every enabled indexer that isn't currently failing (healthy *and* not-yet-known, so a brand-new indexer is searched rather than hidden) over one URL | ✅ |
 
 ### Getting past the tracker's front door
 

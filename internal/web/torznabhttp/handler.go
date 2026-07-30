@@ -365,10 +365,12 @@ func (h *handler) writeResolveError(w http.ResponseWriter, slug string, err erro
 }
 
 // isAggregateSlug reports whether a feed slug names a member SET rather than one
-// indexer: core.AggregateSlug, or a core.ProfileSlugPrefix form. The status: form
-// (autobrr/harbrr#400 PR 3, behind the health selector) extends exactly here.
+// indexer: core.AggregateSlug, or a core.ProfileSlugPrefix / core.StatusSlugPrefix
+// form. All three share the aggregate envelope, ledger and fan-out.
 func isAggregateSlug(slug string) bool {
-	return slug == core.AggregateSlug || strings.HasPrefix(slug, core.ProfileSlugPrefix)
+	return slug == core.AggregateSlug ||
+		strings.HasPrefix(slug, core.ProfileSlugPrefix) ||
+		strings.HasPrefix(slug, core.StatusSlugPrefix)
 }
 
 // serveIndexer is the per-indexer feed: caps or results for one resolved indexer.

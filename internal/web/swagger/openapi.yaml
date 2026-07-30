@@ -582,9 +582,13 @@ paths:
       description: >
         Fans one search out across the explicitly named indexers and returns the
         MERGED window (publish-date descending) plus a per-member ledger — the
-        management-API sibling of the `all`/`profile:` aggregate feeds, running the
-        same merge, so the web UI and the feeds can never disagree about sort or
-        counts. Paging is one window: members are queried at offset 0 and the
+        management-API sibling of the `all`/`profile:<name>`/`status:healthy`
+        aggregate feeds, running the same merge, so the web UI and the feeds can never
+        disagree about sort or counts. (`status:healthy` selects every ENABLED indexer
+        that is not currently FAILING — healthy AND unknown, looser than the UI's
+        healthy badge, so a never-yet-searched indexer is served rather than hidden. It
+        is the only accepted status word; any other is not-found.)
+        Paging is one window: members are queried at offset 0 and the
         request's limit/offset apply to the merged set, so `total` is the size of the
         set this request fetched, not a promise that a deeper page exists. No member
         failure fails the request — a member that is disabled, unbuildable,

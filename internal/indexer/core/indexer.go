@@ -77,9 +77,25 @@ const AggregateSlug = "all"
 //
 // It can never collide with an instance slug by construction: registry's slugPattern
 // forbids ':', so no instance can be named "profile:anything" (which is also why
-// reservedSlugs needs no entry for it). A "status:" form is autobrr/harbrr#400 PR 3,
-// behind the health-selector work — not implemented here.
+// reservedSlugs needs no entry for it). StatusSlugPrefix is the sibling health form.
 const ProfileSlugPrefix = "profile:"
+
+// StatusSlugPrefix marks the health-filtered aggregate feed (autobrr/harbrr#400).
+// "status:healthy" is the ONLY accepted form: it is `all` minus the indexers harbrr
+// currently believes are broken. Any other remainder — "status:failing",
+// "status:unknown", a misspelling — is ErrNoSuchFeed, so a typo 404s instead of
+// quietly serving an empty feed. Like the other two forms it sits in the same {slug}
+// position (inheriting every Torznab route) and cannot collide with an instance slug,
+// because registry's slugPattern forbids ':'.
+//
+// NOTE the semantics, which are LOOSER than the UI's healthy badge: "status:healthy"
+// selects every enabled indexer that is NOT failing — healthy AND unknown. The feed's
+// job is to skip known-broken indexers, and on a fresh install every indexer derives
+// "unknown" until it has been searched or tested, so a literal healthy-only reading
+// would serve a brand-new operator an empty feed and permanently exclude
+// working-but-never-searched indexers. Disabled instances are excluded, exactly as
+// AggregateSlug excludes them.
+const StatusSlugPrefix = "status:"
 
 // ErrNoSuchFeed is Provider.Resolve's not-found sentinel: the slug names no indexer,
 // no profile, and no reserved aggregate. It is the ONLY error that means "this feed
@@ -97,7 +113,8 @@ type Provider interface {
 	// Resolve returns the member set a feed slug covers, one entry per SELECTED
 	// instance: a real indexer resolves to itself, AggregateSlug to every enabled
 	// instance, ProfileSlugPrefix to the profile's members (a disabled member
-	// included, as a skip). Every returned member is either live (Indexer != nil) or
+	// included, as a skip), StatusSlugPrefix to the enabled instances that are not
+	// failing. Every returned member is either live (Indexer != nil) or
 	// carries a constant skip Reason, so nothing a slug selects is ever silently
 	// absent from the served ledger.
 	//
