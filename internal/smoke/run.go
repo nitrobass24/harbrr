@@ -19,10 +19,11 @@ type harbrrIndexer struct {
 }
 
 // RunSuite runs the full operator smoke suite against a live harbrr stack: for every
-// enabled harbrr indexer it runs the Prowlarr parity differential and the app-sync
-// assertions (Sonarr/Radarr/qui, when configured), then a single cache-hit check on
-// the first enabled indexer. It reaches real trackers via harbrr and the *arr/qui/
-// Prowlarr APIs — operator-run only, never CI.
+// enabled harbrr indexer it runs the Prowlarr parity differential, the app-sync
+// assertions (Sonarr/Radarr/qui, when configured) and — under SMOKE_GRAB — the
+// download-path grab check, then a single cache-hit check on the first enabled
+// indexer. It reaches real trackers via harbrr and the *arr/qui/Prowlarr APIs —
+// operator-run only, never CI.
 func RunSuite(ctx context.Context, cfg Config) (Report, error) {
 	c := &http.Client{Timeout: httpTimeout}
 	indexers, err := listHarbrrIndexers(ctx, c, cfg)
@@ -47,6 +48,7 @@ func RunSuite(ctx context.Context, cfg Config) (Report, error) {
 		}
 		rep.Findings = append(rep.Findings, parityCheck(ctx, c, cfg, ix, catIDs)...)
 		rep.Findings = append(rep.Findings, appSyncChecks(ctx, c, cfg, apps, ix, cats, capsErr)...)
+		rep.Findings = append(rep.Findings, grabCheck(ctx, c, cfg, ix.Slug, catIDs)...)
 		time.Sleep(betweenTrackerDelay)
 	}
 	if firstEnabled != "" {

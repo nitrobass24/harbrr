@@ -33,7 +33,7 @@ secret-scrubbed before writing.
 | `SMOKE_PROWLARR_APIKEY` | Prowlarr API key |
 | `SMOKE_QUERY` | optional — force one query for every tracker; unset = **category-aware default** (see below) |
 | `SMOKE_QUERY_FALLBACK` | optional — secondary query when the primary returns 0 (only used alongside an explicit `SMOKE_QUERY`) |
-| `SMOKE_GRAB=1` | optional — also resolve the first release's download link |
+| `SMOKE_GRAB=1` | optional — also resolve and fetch the first release's download link (both runners: the `grab` check in `harbrr smoke`, the recorded grab result in `make smoke-test`) |
 | `SMOKE_STRICT_FIELDS=1` | optional — also fail the run on volatile field divergences (`seeders`, `publishDate`); the stable field checks always run |
 
 Example:
