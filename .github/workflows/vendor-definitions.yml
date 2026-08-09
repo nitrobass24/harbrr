@@ -41,6 +41,11 @@ jobs:
         run: ./scripts/vendor-definitions.sh
       - name: Regenerate coverage table
         run: go run ./scripts/gencoverage > website/docs/coverage.md
+      # The secret-audit golden is a review gate over the classifier's verdicts on
+      # the corpus, so a refresh must regenerate it here — the classification diff
+      # then arrives inside this PR for review instead of failing CI after merge.
+      - name: Regenerate secret-audit golden
+        run: UPDATE_GOLDEN=1 go test -count=1 -run TestSecretClassifierCorpusAudit ./internal/indexer/cardigann/loader/
       # Type the commit from the def diff so the release changelog captures it:
       # goreleaser groups feat(defs)/fix(defs) into the notes and drops chore
       # (the no-def-change fallback, e.g. a .jackett-ref-only bump).
@@ -49,7 +54,7 @@ jobs:
         shell: bash # GHA defaults container steps to sh; the herestrings need bash
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          git add -A internal/indexer/definitions/vendor website/docs/coverage.md
+          git add -A internal/indexer/definitions/vendor website/docs/coverage.md internal/indexer/cardigann/loader/testdata/secret_audit.txt
           diff="$(git diff --cached --name-status -- internal/indexer/definitions/vendor)"
           names() { awk -v s="$1" '$1 == s && $2 ~ /\.ya?ml$/ { n = split($2, p, "/"); f = p[n]; sub(/\.ya?ml$/, "", f); out = out (out ? ", " : "") f } END { printf "%s", out }' <<<"$diff"; }
           added="$(names A)"

@@ -10,7 +10,7 @@ Cardigann can't express — and how far each is validated.
   account on that tracker). See **[Test status](test-status.md)** for the evidence behind this
   column and the auth/fetch patterns proven live.
 
-**598 trackers** total: 555 Cardigann corpus (all built) · 25 native drivers built · 18 native
+**593 trackers** total: 550 Cardigann corpus (all built) · 25 native drivers built · 18 native
 drivers planned. To configure one, see **[Adding an indexer](guides/add-indexer.md)**.
 
 ## Native drivers
@@ -74,7 +74,7 @@ Native drivers we have issues for but haven't built. 👍 or comment on the issu
 
 Served through the shared engine from the vendored Jackett snapshot — all built. Live-tested where an operator instance covers them.
 
-### Private (409)
+### Private (405)
 
 | Tracker | Built | Live-tested |
 |---|:--:|:--:|
@@ -366,7 +366,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Racing4Everyone (API) | ✅ | ✅ |
 | RacingForMe | ✅ | ✅ |
 | RailgunPT | ✅ | ⬜ |
-| Rain (雨) | ✅ | ⬜ |
 | Rastastugan (API) | ✅ | ⬜ |
 | Red Star Torrent | ✅ | ⬜ |
 | ReelFLiX (API) | ✅ | ✅ |
@@ -375,7 +374,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | RocketHD (API) | ✅ | ⬜ |
 | Romanian Metal Torrents | ✅ | ⬜ |
 | Rousi.pro | ✅ | ⬜ |
-| RunTheFrames (API) | ✅ | ⬜ |
 | SAMARITANO (API) | ✅ | ⬜ |
 | SBPT | ✅ | ⬜ |
 | SceneRush | ✅ | ⬜ |
@@ -431,7 +429,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Toca Share (API) | ✅ | ⬜ |
 | Tormac | ✅ | ⬜ |
 | Tornado | ✅ | ⬜ |
-| Torr9 | ✅ | ⬜ |
 | Torrent Heaven | ✅ | ⬜ |
 | Torrent Trader | ✅ | ⬜ |
 | TOrrent-tuRK | ✅ | ⬜ |
@@ -447,7 +444,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | TorrentLeech | ✅ | ✅ |
 | ToTheGlory | ✅ | ⬜ |
 | ToTheGlory2FA | ✅ | ⬜ |
-| TR4KER | ✅ | ⬜ |
 | TrackerMK | ✅ | ⬜ |
 | TrackerZero | ✅ | ⬜ |
 | TranceTraffic | ✅ | ⬜ |
@@ -539,7 +535,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | RGFootball | ✅ | ⬜ |
 | RinTor | ✅ | ⬜ |
 | RiperAM | ✅ | ⬜ |
-| RockBox | ✅ | ⬜ |
 | RUDUB | ✅ | ⬜ |
 | Rustorka | ✅ | ⬜ |
 | seleZen | ✅ | ⬜ |
@@ -547,13 +542,14 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | SkTorrent.org | ✅ | ⬜ |
 | themixingbowl | ✅ | ⬜ |
 | TorrentMasters | ✅ | ⬜ |
+| TR4KER | ✅ | ⬜ |
 | TrahT | ✅ | ⬜ |
 | TribalMixes | ✅ | ⬜ |
 | Union Fansub | ✅ | ⬜ |
 | UzTracker | ✅ | ⬜ |
 | Ztracker | ✅ | ⬜ |
 
-### Public (86)
+### Public (85)
 
 | Tracker | Built | Live-tested |
 |---|:--:|:--:|
@@ -576,7 +572,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | dmhy | ✅ | ⬜ |
 | E-Hentai | ✅ | ⬜ |
 | EBookBay | ✅ | ⬜ |
-| Elitetorrent-wf | ✅ | ⬜ |
 | ExtraTorrent.st | ✅ | ⬜ |
 | EZTV | ✅ | ⬜ |
 | FileMood | ✅ | ⬜ |
