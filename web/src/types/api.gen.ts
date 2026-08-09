@@ -157,7 +157,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List available tracker definitions */
+        /**
+         * List available tracker definitions
+         * @description Returns every addable definition plus every definition that FAILED to load, the latter marked with error (and origin) so a broken drop-in is visibly broken instead of silently missing from the catalog.
+         */
         get: operations["listDefinitions"];
         put?: never;
         post?: never;
@@ -1551,6 +1554,16 @@ export interface components {
             description?: string;
             type?: string;
             language?: string;
+        };
+        /** @description One row of the definitions list: an addable definition, or one that failed to load. A failed entry carries error (and origin) and is NOT addable; its name falls back to its id, since a definition that never parsed has no name. Failures ride the same list so a broken definition stays visible where its id used to be — drop-in definitions take precedence over the vendored snapshot and never fall back to it, so a typo'd drop-in otherwise removes the working vendored tracker with no trace. */
+        DefinitionEntry: components["schemas"]["DefinitionSummary"] & {
+            /**
+             * @description where the failed definition was resolved from (failed entries only)
+             * @enum {string}
+             */
+            origin?: "dropin" | "vendored";
+            /** @description the load failure reason; present only on a failed entry, and its presence is what marks the entry as failed. For a schema violation it names the offending instance location (e.g. /search/fields/title). */
+            error?: string;
         };
         /** @description One configurable field in a definition's settings schema. secret marks a credential supplied by the operator, stored encrypted and never echoed back. */
         SettingField: {
@@ -2962,13 +2975,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description the available definitions */
+            /** @description the available definitions, plus any that failed to load */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DefinitionSummary"][];
+                    "application/json": components["schemas"]["DefinitionEntry"][];
                 };
             };
             401: components["responses"]["Unauthorized"];

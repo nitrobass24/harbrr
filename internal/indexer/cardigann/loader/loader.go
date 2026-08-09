@@ -184,10 +184,24 @@ func (l *Loader) readVendored(id string) ([]byte, error) {
 	return data, nil
 }
 
+// Origin says where a definition was resolved from. It matters on a failure:
+// precedence is dropin > vendored and a failing drop-in never falls back, so a
+// broken drop-in for an existing id removes the working vendored definition —
+// and the operator needs to be told which file to go fix.
+type Origin string
+
+const (
+	OriginDropin   Origin = "dropin"
+	OriginVendored Origin = "vendored"
+)
+
 // SkipEntry records a definition that could not be loaded, so failures are
-// surfaced explicitly rather than silently dropped.
+// surfaced explicitly rather than silently dropped. Reason is the load error
+// text, which for a schema violation carries the validator's instance pointer
+// (e.g. /search/fields/title) and never the offending value (see schema.go).
 type SkipEntry struct {
 	ID     string
+	Origin Origin
 	Reason string
 }
 
@@ -211,12 +225,26 @@ func (l *Loader) LoadAll() (defs []*Definition, skipped []SkipEntry, err error) 
 	for _, id := range ids {
 		def, loadErr := l.Load(id)
 		if loadErr != nil {
-			skipped = append(skipped, SkipEntry{ID: id, Reason: loadErr.Error()})
+			skipped = append(skipped, SkipEntry{ID: id, Origin: l.originOf(id), Reason: loadErr.Error()})
 			continue
 		}
 		defs = append(defs, def)
 	}
 	return defs, skipped, nil
+}
+
+// originOf reports where Load resolved (or tried to resolve) id from, applying
+// the same dropin > vendored precedence Load does: a drop-in file wins whenever
+// it exists, including when it exists but cannot be read. Only the failure path
+// calls it, so the extra read never costs the common case.
+func (l *Loader) originOf(id string) Origin {
+	if l.dropinDir == "" {
+		return OriginVendored
+	}
+	if _, ok, err := l.readDropin(id); ok || err != nil {
+		return OriginDropin
+	}
+	return OriginVendored
 }
 
 // allIDs returns the sorted union of vendored ids and drop-in ids.

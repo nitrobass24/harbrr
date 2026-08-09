@@ -4,7 +4,7 @@ import type { ReactElement } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { REDACTED } from "@/lib/api"
 import type { DefinitionDetail, InstanceDetail, Proxy, Solver } from "@/lib/api"
-import { IndexerForm, type IndexerFormSubmit } from "./IndexerForm"
+import { DefinitionOption, IndexerForm, type IndexerFormSubmit } from "./IndexerForm"
 
 // The form fetches the global proxy/solver resources for its Advanced dropdowns.
 const PROXIES: Proxy[] = [{ id: 7, name: "home", type: "socks5", host: "10.0.0.9", port: 1080, username: "", createdAt: "", updatedAt: "" }]
@@ -544,5 +544,37 @@ describe("IndexerForm", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
     // Untouched -> the sentinel rides back and the server keeps the stored cookie.
     expect(onSubmit.mock.calls[0][0].body.settings?.cookie).toBe(REDACTED)
+  })
+})
+
+describe("DefinitionOption", () => {
+  it("renders a loadable definition as a pickable row", () => {
+    const onPick = vi.fn<(id: string) => void>()
+    render(<DefinitionOption id="testtracker" name="Test Tracker" type="private" onPick={onPick} />)
+
+    fireEvent.click(screen.getByRole("button", { name: /Test Tracker/ }))
+    expect(onPick).toHaveBeenCalledWith("testtracker")
+  })
+
+  // A drop-in overrides the vendored definition of the same id and never falls back
+  // to it, so a typo'd drop-in used to make a working tracker vanish from this list
+  // with no explanation anywhere (autobrr/harbrr#390). It must stay visible, say it
+  // came from a drop-in, say why it failed, and not be pickable.
+  it("renders a failed definition with its origin and reason, and offers nothing to pick", () => {
+    const onPick = vi.fn<(id: string) => void>()
+    render(
+      <DefinitionOption
+        id="filelist"
+        name="filelist"
+        origin="dropin"
+        error="loading drop-in definition filelist: schema validation failed at: /search/fields/title"
+        onPick={onPick}
+      />
+    )
+
+    expect(screen.getByText("filelist")).toBeTruthy()
+    expect(screen.getByText("dropin")).toBeTruthy()
+    expect(screen.getByText(/\/search\/fields\/title/)).toBeTruthy()
+    expect(screen.queryByRole("button")).toBeNull()
   })
 })

@@ -11,6 +11,9 @@ export type Instance = components["schemas"]["Instance"]
 export type Setting = components["schemas"]["Setting"]
 export type InstanceDetail = components["schemas"]["InstanceDetail"]
 export type DefinitionSummary = components["schemas"]["DefinitionSummary"]
+// A definitions-list row: a summary, plus the failure fields set on a definition
+// that could not be loaded (see /api/definitions).
+export type DefinitionEntry = components["schemas"]["DefinitionEntry"]
 export type SettingField = components["schemas"]["SettingField"]
 export type DefinitionDetail = components["schemas"]["DefinitionDetail"]
 export type AddIndexer = components["schemas"]["AddIndexer"]
@@ -279,7 +282,7 @@ export class ApiClient {
 
   // --- definitions ---
 
-  listDefinitions(): Promise<DefinitionSummary[]> {
+  listDefinitions(): Promise<DefinitionEntry[]> {
     return this.unwrap(this.http.GET("/api/definitions"), "/api/definitions")
   }
 

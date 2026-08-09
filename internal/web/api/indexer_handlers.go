@@ -57,6 +57,20 @@ type definitionSummary struct {
 	Language    string `json:"language,omitempty"`
 }
 
+// definitionEntry is one row of the definitions list: an addable definition, or
+// one that FAILED to load (error set, and never addable). Failures ride the same
+// list rather than a separate envelope so a broken definition stays visible in the
+// place its id used to be — a drop-in typo must not make a tracker vanish. The
+// added fields are optional, so a client that only reads the summary is unaffected.
+type definitionEntry struct {
+	definitionSummary
+	// Origin is set only on a failure: "dropin" or "vendored" — which file to go fix.
+	Origin string `json:"origin,omitempty"`
+	// Error is the load failure reason (for a schema violation, the validator's
+	// instance pointer). Its presence is what marks this entry as failed.
+	Error string `json:"error,omitempty"`
+}
+
 // listDefinitions returns the available tracker definitions (memoized on success).
 // A first-call failure is surfaced but NOT cached, so the next call retries — a
 // transient load blip never wedges the add-indexer UI at 500 until restart. The
@@ -75,7 +89,7 @@ func (rt *router) listDefinitions(w http.ResponseWriter, _ *http.Request) {
 // success. The lock is released via defer so a panic in the load can't leave the
 // mutex held (which would wedge every future call — worse than the bug this
 // fixes). A failed load leaves defsLoaded false, so the next call retries.
-func (rt *router) cachedDefinitions() ([]definitionSummary, error) {
+func (rt *router) cachedDefinitions() ([]definitionEntry, error) {
 	rt.defsMu.Lock()
 	defer rt.defsMu.Unlock()
 	if !rt.defsLoaded {
@@ -90,18 +104,31 @@ func (rt *router) cachedDefinitions() ([]definitionSummary, error) {
 }
 
 // loadDefinitionSummaries summarizes all addable definitions — the vendored
-// Cardigann corpus plus the native families (AvistaZ, …) — sorted by id.
-func loadDefinitionSummaries(l *loader.Loader, nativeDefs []*loader.Definition) ([]definitionSummary, error) {
-	defs, _, err := l.LoadAll()
+// Cardigann corpus plus the native families (AvistaZ, …) — plus the ones that
+// failed to load, all sorted by id. A skipped definition is reported, never
+// dropped: precedence is dropin > vendored with no fallback, so a broken drop-in
+// takes its vendored namesake out of the catalog, and silently omitting the id is
+// exactly the disappearance this reports (autobrr/harbrr#390).
+func loadDefinitionSummaries(l *loader.Loader, nativeDefs []*loader.Definition) ([]definitionEntry, error) {
+	defs, skipped, err := l.LoadAll()
 	if err != nil {
 		return nil, fmt.Errorf("api: load definitions: %w", err)
 	}
-	out := make([]definitionSummary, 0, len(defs)+len(nativeDefs))
+	out := make([]definitionEntry, 0, len(defs)+len(nativeDefs)+len(skipped))
 	for _, d := range defs {
-		out = append(out, summaryOf(d))
+		out = append(out, definitionEntry{definitionSummary: summaryOf(d)})
 	}
 	for _, d := range nativeDefs {
-		out = append(out, summaryOf(d))
+		out = append(out, definitionEntry{definitionSummary: summaryOf(d)})
+	}
+	for _, s := range skipped {
+		// Name falls back to the id: a definition that never parsed has no name, and
+		// the id is what the operator searches the list for.
+		out = append(out, definitionEntry{
+			definitionSummary: definitionSummary{ID: s.ID, Name: s.ID},
+			Origin:            string(s.Origin),
+			Error:             s.Reason,
+		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
