@@ -92,14 +92,23 @@ func (d *driver) seedBudget(ctx context.Context) {
 			Msg("newznab: budget seed probe failed")
 		return
 	}
-	var seededKeys []string
-	if d.seedLimit(ctx, settingQueryLimit, settingQueryLimitSource, d.limits.query, user.queryCap()) {
-		seededKeys = append(seededKeys, settingQueryLimit)
+	// seeded vs failed keeps the log honest about persistence: a discovered cap whose
+	// write failed is a failed seed, not "nothing discovered" — the retry semantics
+	// (seedLimit's write order) already guarantee the next Test completes it.
+	var seededKeys, failedKeys []string
+	seedOne := func(key, sourceKey string, current, discovered int) {
+		if !shouldSeed(current, discovered) {
+			return
+		}
+		if d.seedLimit(ctx, key, sourceKey, current, discovered) {
+			seededKeys = append(seededKeys, key)
+		} else {
+			failedKeys = append(failedKeys, key)
+		}
 	}
-	if d.seedLimit(ctx, settingGrabLimit, settingGrabLimitSource, d.limits.grab, user.grabCap()) {
-		seededKeys = append(seededKeys, settingGrabLimit)
-	}
-	if len(seededKeys) == 0 {
+	seedOne(settingQueryLimit, settingQueryLimitSource, d.limits.query, user.queryCap())
+	seedOne(settingGrabLimit, settingGrabLimitSource, d.limits.grab, user.grabCap())
+	if len(seededKeys) == 0 && len(failedKeys) == 0 {
 		d.Log.Debug().Str("driver", d.Def.ID).
 			Msg("newznab: budget seed probed, nothing discovered")
 		return
@@ -107,8 +116,13 @@ func (d *driver) seedBudget(ctx context.Context) {
 	// apirequests/downloadrequests are DAILY caps, so the unit that makes them true is
 	// day — written only when the operator has not chosen one (and only when a cap was
 	// actually seeded, so a probe that discovered nothing writes nothing).
-	if !d.limits.unitSet {
+	if len(seededKeys) > 0 && !d.limits.unitSet {
 		_ = d.persist(ctx, settingLimitsUnit, "day")
+	}
+	if len(failedKeys) > 0 {
+		d.Log.Debug().Str("driver", d.Def.ID).Strs("seeded", seededKeys).Strs("failed", failedKeys).
+			Msg("newznab: budget seed persist failed, the next Test retries")
+		return
 	}
 	d.Log.Debug().Str("driver", d.Def.ID).Strs("seeded", seededKeys).
 		Msg("newznab: budget seeded")

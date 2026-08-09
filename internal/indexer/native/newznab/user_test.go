@@ -372,24 +372,34 @@ func TestUserTransportErrorRedactsApikey(t *testing.T) {
 	assertNoApikey(t, "user transport error", probeErr.Error())
 }
 
-// TestSeedBudgetLogsOutcome proves the probe's four outcomes — not attempted, probe
-// failed, nothing discovered, seeded — each leave a distinguishable debug line
+// TestSeedBudgetLogsOutcome proves the probe's outcomes — not attempted, probe failed,
+// nothing discovered, persist failed, seeded — each leave a distinguishable debug line
 // (autobrr/harbrr#440), and that no line ever carries the apikey or the raw upstream
 // body: the probe URL is secret-bearing by construction, so the log is a redaction
 // surface like any other.
 func TestSeedBudgetLogsOutcome(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name    string
-		cfg     map[string]string
-		resp    userResponse
-		want    string
-		notWant string
+		name        string
+		cfg         map[string]string
+		resp        userResponse
+		persistFail bool
+		want        string
+		notWant     string
 	}{
 		{
 			name: "seeded",
 			resp: userResponse{body: `<user apirequests="2000" downloadrequests="1000"/>`},
 			want: "budget seeded",
+		},
+		{
+			// A discovered cap whose write failed is a failed seed, not "nothing
+			// discovered" — the log must not misdirect the diagnosis it exists for.
+			name:        "persist failed",
+			resp:        userResponse{body: `<user apirequests="2000" downloadrequests="1000"/>`},
+			persistFail: true,
+			want:        "budget seed persist failed",
+			notWant:     "nothing discovered",
 		},
 		{
 			name: "probe failed",
@@ -423,13 +433,18 @@ func TestSeedBudgetLogsOutcome(t *testing.T) {
 			maps.Copy(settings, tt.cfg)
 			var buf bytes.Buffer
 			d, err := New(native.Params{
-				Def:            GenericDefinition(),
-				Cfg:            settings,
-				Doer:           srv.Client(),
-				BaseURL:        srv.URL,
-				Clock:          fixedClock,
-				Logger:         zerolog.New(&buf),
-				PersistSetting: func(context.Context, string, string) error { return nil },
+				Def:     GenericDefinition(),
+				Cfg:     settings,
+				Doer:    srv.Client(),
+				BaseURL: srv.URL,
+				Clock:   fixedClock,
+				Logger:  zerolog.New(&buf),
+				PersistSetting: func(context.Context, string, string) error {
+					if tt.persistFail {
+						return errors.New("store unavailable")
+					}
+					return nil
+				},
 			})
 			if err != nil {
 				t.Fatalf("New: %v", err)
@@ -442,7 +457,7 @@ func TestSeedBudgetLogsOutcome(t *testing.T) {
 				t.Errorf("log = %q, want it to contain %q", logged, tt.want)
 			}
 			if tt.notWant != "" && strings.Contains(logged, tt.notWant) {
-				t.Errorf("log leaked the upstream body: %q", logged)
+				t.Errorf("log contains %q, want it absent: %q", tt.notWant, logged)
 			}
 			assertNoApikey(t, "seed outcome log", logged)
 		})
