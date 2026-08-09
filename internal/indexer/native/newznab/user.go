@@ -73,29 +73,45 @@ func (u *userRoot) grabCap() int  { return positiveIntOr(u.DownloadRequests, 0) 
 // account's own advertised limits (autobrr/harbrr#377). It is OPPORTUNISTIC, not a
 // capability: t=user is optional in the wild, so anything other than a well-formed
 // <user> with positive caps — an error, a 404, an HTML page, a missing attribute — is
-// swallowed and leaves exactly today's behaviour. Nothing is logged, no health event is
-// recorded and nothing is retried. It runs only from Test (the operator-initiated add /
-// test action), never on a schedule and never on the search or grab path, so it costs at
+// swallowed and leaves exactly today's behaviour. No health event is recorded, nothing
+// is retried and no error reaches the caller; the outcome is recorded at debug only
+// (autobrr/harbrr#440), with the cause routed through RedactError because the probe
+// URL embeds the apikey. It runs only from Test (the operator-initiated add / test
+// action), never on a schedule and never on the search or grab path, so it costs at
 // most one extra request per test — and none at all when there is no way to persist the
 // result or nothing left to seed.
 func (d *driver) seedBudget(ctx context.Context) {
 	if d.persist == nil || !d.limits.seedable() {
+		d.Log.Debug().Str("driver", d.Def.ID).
+			Msg("newznab: budget seed not attempted (caps already set or nowhere to persist)")
 		return
 	}
 	user, err := d.fetchUser(ctx)
 	if err != nil {
+		d.Log.Debug().Str("driver", d.Def.ID).Str("cause", apphttp.RedactError(err)).
+			Msg("newznab: budget seed probe failed")
 		return
 	}
-	seeded := d.seedLimit(ctx, settingQueryLimit, settingQueryLimitSource, d.limits.query, user.queryCap())
+	var seededKeys []string
+	if d.seedLimit(ctx, settingQueryLimit, settingQueryLimitSource, d.limits.query, user.queryCap()) {
+		seededKeys = append(seededKeys, settingQueryLimit)
+	}
 	if d.seedLimit(ctx, settingGrabLimit, settingGrabLimitSource, d.limits.grab, user.grabCap()) {
-		seeded = true
+		seededKeys = append(seededKeys, settingGrabLimit)
+	}
+	if len(seededKeys) == 0 {
+		d.Log.Debug().Str("driver", d.Def.ID).
+			Msg("newznab: budget seed probed, nothing discovered")
+		return
 	}
 	// apirequests/downloadrequests are DAILY caps, so the unit that makes them true is
 	// day — written only when the operator has not chosen one (and only when a cap was
 	// actually seeded, so a probe that discovered nothing writes nothing).
-	if seeded && !d.limits.unitSet {
+	if !d.limits.unitSet {
 		_ = d.persist(ctx, settingLimitsUnit, "day")
 	}
+	d.Log.Debug().Str("driver", d.Def.ID).Strs("seeded", seededKeys).
+		Msg("newznab: budget seeded")
 }
 
 // seedLimit writes discovered into key (plus its provenance marker) when shouldSeed
