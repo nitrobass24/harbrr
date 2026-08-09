@@ -1801,7 +1801,18 @@ paths:
         "204": { description: handed to the download client }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/NotFound" }
+        "404":
+          description: >
+            unknown download client or indexer, or the sealed link resolved to a
+            non-torrent body (typically an expired indexer session)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: the resolve or the client add failed (a sanitized, secret-free error)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         "503":
           description: the download proxy is disabled, so a sealed link cannot be resolved
           content:
@@ -2474,8 +2485,9 @@ components:
           description: >
             machine-readable code clients can branch on — one of: bad_request,
             invalid, unauthorized, invalid_credentials, invalid_api_key, forbidden,
-            not_found, conflict, already_setup, not_implemented, internal. An OIDC
-            ID-token verification failure also uses invalid_credentials.
+            not_found, conflict, already_setup, request_too_large, not_implemented,
+            unavailable, upstream_unreachable, internal. An OIDC ID-token
+            verification failure also uses invalid_credentials.
       required: [error, code]
     ReservedSettings:
       type: object

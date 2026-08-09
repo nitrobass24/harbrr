@@ -117,7 +117,10 @@ describe("SearchResultsTable", () => {
 })
 
 describe("SearchResultsTable — send to download client (autobrr/harbrr#7)", () => {
-  afterEach(() => vi.unstubAllGlobals())
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
 
   it("renders no control when no download client is configured", () => {
     renderTable()
@@ -168,7 +171,6 @@ describe("SearchResultsTable — send to download client (autobrr/harbrr#7)", ()
     fireEvent.click(await screen.findByRole("menuitem", { name: "seedbox" }))
 
     await waitFor(() => expect(toasted).toContain("Sending to seedbox failed"))
-    vi.restoreAllMocks()
   })
 })
 

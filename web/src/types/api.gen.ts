@@ -1510,7 +1510,7 @@ export interface components {
         Error: {
             /** @description human-readable message */
             error: string;
-            /** @description machine-readable code clients can branch on — one of: bad_request, invalid, unauthorized, invalid_credentials, invalid_api_key, forbidden, not_found, conflict, already_setup, not_implemented, internal. An OIDC ID-token verification failure also uses invalid_credentials. */
+            /** @description machine-readable code clients can branch on — one of: bad_request, invalid, unauthorized, invalid_credentials, invalid_api_key, forbidden, not_found, conflict, already_setup, request_too_large, not_implemented, unavailable, upstream_unreachable, internal. An OIDC ID-token verification failure also uses invalid_credentials. */
             code: string;
         };
         /** @description Optional reserved keys the engine understands when present in an indexer's free-form settings map (alongside the definition's own settings). All are optional; documented here because they are not part of any single definition's schema. proxy_url and cookie are secrets (stored encrypted, never echoed — they read back as the <redacted> sentinel). */
@@ -5063,7 +5063,24 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
-            404: components["responses"]["NotFound"];
+            /** @description unknown download client or indexer, or the sealed link resolved to a non-torrent body (typically an expired indexer session) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description the resolve or the client add failed (a sanitized, secret-free error) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description the download proxy is disabled, so a sealed link cannot be resolved */
             503: {
                 headers: {
