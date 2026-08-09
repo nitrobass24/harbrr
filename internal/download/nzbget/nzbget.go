@@ -6,6 +6,7 @@ package nzbget
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -150,12 +151,35 @@ type AddNzbResponse struct {
 }
 
 func (c *Client) AddFromURL(ctx context.Context, r AddNzbRequest) (*AddNzbResponse, error) {
-	// NZBGet append params: Filename, URL, Category, Priority, AddToTop,
+	return c.appendNzb(ctx, "", r.URL, r.Category)
+}
+
+// AddNzbContentRequest is AddFromContent's input: the nzb bytes plus the filename
+// NZBGet names the job after. Not part of the upstream autobrr port (which is
+// add-by-URL only): harbrr needs it because a sealed harbrr download link is only
+// fetchable by harbrr itself, so the .nzb has to be uploaded.
+type AddNzbContentRequest struct {
+	Filename string
+	Content  []byte
+	Category string
+}
+
+// AddFromContent adds an nzb by its BYTES. NZBGet's append takes the nzb content
+// base64-encoded in the very slot a URL otherwise rides in, so this is AddFromURL with
+// the content encoded and a filename naming the job.
+func (c *Client) AddFromContent(ctx context.Context, r AddNzbContentRequest) (*AddNzbResponse, error) {
+	return c.appendNzb(ctx, r.Filename, base64.StdEncoding.EncodeToString(r.Content), r.Category)
+}
+
+// appendNzb is the shared "append" RPC. content is either a URL NZBGet fetches itself
+// or the base64-encoded nzb file — NZBGet reads both from the same parameter.
+func (c *Client) appendNzb(ctx context.Context, filename, content, category string) (*AddNzbResponse, error) {
+	// NZBGet append params: Filename, Content, Category, Priority, AddToTop,
 	// AddPaused, DupeKey, DupeScore, DupeMode, PPParameters
 	params := []interface{}{
-		"",         // Filename
-		r.URL,      // URL
-		r.Category, // Category
+		filename,   // Filename
+		content,    // Content (a URL, or the base64-encoded nzb)
+		category,   // Category
 		0,          // Priority
 		false,      // AddToTop
 		false,      // AddPaused

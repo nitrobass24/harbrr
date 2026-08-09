@@ -1,5 +1,6 @@
-import { render, screen, within } from "@testing-library/react"
-import { describe, expect, it, vi } from "vitest"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { afterEach, describe, expect, it, vi } from "vitest"
+import type { DownloadClient } from "@/lib/api"
 import type { SearchRow } from "./search-sort"
 import { sortRows } from "./search-sort"
 import { SearchResultsTable } from "./SearchResultsTable"
@@ -37,10 +38,26 @@ const ROWS: SearchRow[] = [
 
 const CATS = new Map([[2000, "Movies"], [5000, "TV"]])
 
-function renderTable(rows = ROWS) {
+const CLIENT: DownloadClient = {
+  id: 5, name: "seedbox", kind: "qbittorrent", enabled: true, host: "http://localhost:8080",
+  username: "admin", secret: "<redacted>", settings: {},
+  createdAt: "2026-07-01T00:00:00Z", updatedAt: "2026-07-01T00:00:00Z",
+}
+
+function renderTable(rows = ROWS, clients: DownloadClient[] = []) {
   const onSort = vi.fn()
-  render(<SearchResultsTable rows={rows} catNames={CATS} sort={{ key: "seeders", dir: "desc" }} onSort={onSort} />)
+  render(
+    <SearchResultsTable rows={rows} catNames={CATS} sort={{ key: "seeders", dir: "desc" }} onSort={onSort} clients={clients} />
+  )
   return onSort
+}
+
+// Radix's DropdownMenuTrigger opens on pointerdown, not click — jsdom has no
+// PointerEvent, so a plain fireEvent.click leaves it closed. Fire both.
+function openSendMenu(title: string) {
+  const trigger = screen.getByRole("button", { name: `Send ${title} to a download client` })
+  fireEvent.pointerDown(trigger, { button: 0, pointerId: 1 })
+  fireEvent.click(trigger)
 }
 
 describe("SearchResultsTable", () => {
@@ -96,6 +113,62 @@ describe("SearchResultsTable", () => {
     expect(within(sintel).getByText("FL")).toBeTruthy()
     const bunny = screen.getByText("Big Buck Bunny 1080p").closest("tr")!
     expect(within(bunny).queryByText("FL")).toBeNull()
+  })
+})
+
+describe("SearchResultsTable — send to download client (autobrr/harbrr#7)", () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it("renders no control when no download client is configured", () => {
+    renderTable()
+    expect(screen.queryByRole("button", { name: /Send .* to a download client/ })).toBeNull()
+  })
+
+  it("renders no control for a release whose link was withheld", () => {
+    renderTable([{ indexer: "demotracker", release: { title: "Withheld", size: 1 } }], [CLIENT])
+    expect(screen.queryByRole("button", { name: /Send .* to a download client/ })).toBeNull()
+  })
+
+  it("posts the release's indexer, verbatim link, and title to the picked client", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+    vi.stubGlobal("fetch", fetchMock)
+    renderTable(ROWS, [CLIENT])
+
+    openSendMenu("Big Buck Bunny 1080p")
+    fireEvent.click(await screen.findByRole("menuitem", { name: "seedbox" }))
+
+    const req = await waitFor(() => {
+      const call = fetchMock.mock.calls.at(0)
+      if (!call) throw new Error("no fetch yet")
+      return call[0] as Request
+    })
+    expect(req.url).toContain("/api/download-clients/5/grab")
+    expect(await req.json()).toEqual({
+      indexer: "demotracker",
+      link: "http://tracker.example/dl?id=1&passkey=NOTREAL",
+      name: "Big Buck Bunny 1080p",
+    })
+  })
+
+  it("shows the server's error on a rejected send", async () => {
+    const toasted: string[] = []
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: "client does not support payload protocol", code: "invalid" }), {
+        status: 400, headers: { "Content-Type": "application/json" },
+      })
+    ))
+    const { toast } = await import("sonner")
+    vi.spyOn(toast, "error").mockImplementation((msg) => {
+      if (typeof msg === "string") toasted.push(msg)
+      return ""
+    })
+    renderTable(ROWS, [CLIENT])
+
+    openSendMenu("Big Buck Bunny 1080p")
+    fireEvent.click(await screen.findByRole("menuitem", { name: "seedbox" }))
+
+    await waitFor(() => expect(toasted).toContain("Sending to seedbox failed"))
+    vi.restoreAllMocks()
   })
 })
 

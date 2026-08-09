@@ -11,8 +11,8 @@ import (
 	apphttp "github.com/autobrr/harbrr/internal/http"
 )
 
-// sabnzbdDriver wraps the ported sabnzbd.Client (autobrr's pkg/sabnzbd — add-by-URL
-// only, no bytes upload; see internal/download/sabnzbd's package doc).
+// sabnzbdDriver wraps the ported sabnzbd.Client (autobrr's pkg/sabnzbd, plus harbrr's
+// own AddFile bytes upload; see internal/download/sabnzbd's package doc).
 type sabnzbdDriver struct {
 	client          *sabnzbd.Client
 	defaultCategory string
@@ -51,20 +51,25 @@ func (d *sabnzbdDriver) Test(ctx context.Context) error {
 	return nil
 }
 
-// Add hands SABnzbd an nzb by URL — SABnzbd fetches it itself; the ported client
-// has no bytes-upload path. Deliberately never sets a share-limit or
+// Add hands SABnzbd an nzb: the fetched bytes (mode=addfile upload) when harbrr
+// resolved them itself — a sealed harbrr download link is only fetchable by harbrr —
+// otherwise a URL SABnzbd fetches on its own. Deliberately never sets a share-limit or
 // auto-removal option (harbrr does not hit-and-run a client-managed download).
 func (d *sabnzbdDriver) Add(ctx context.Context, p Payload, opts AddOptions) error {
 	if p.Protocol != ProtocolUsenet {
 		return fmt.Errorf("download: sabnzbd: %w: %s", ErrUnsupportedProtocol, p.Protocol)
 	}
-	if p.URL == "" {
-		return fmt.Errorf("download: sabnzbd: %w", ErrURLRequired)
-	}
 
 	category := opts.Category
 	if category == "" {
 		category = d.defaultCategory
+	}
+
+	if len(p.Bytes) > 0 {
+		return d.addFile(ctx, p, category)
+	}
+	if p.URL == "" {
+		return fmt.Errorf("download: sabnzbd: %w", ErrURLRequired)
 	}
 
 	resp, err := d.client.AddFromUrl(ctx, sabnzbd.AddNzbRequest{Url: p.URL, Category: category})
@@ -81,6 +86,25 @@ func (d *sabnzbdDriver) Add(ctx context.Context, p Payload, opts AddOptions) err
 	}
 	if resp.ErrorMsg != "" {
 		return fmt.Errorf("download: sabnzbd: add nzb: %s", resp.ErrorMsg)
+	}
+	return nil
+}
+
+// addFile uploads the resolved .nzb bytes. Unlike the URL path there is no
+// passkey-bearing link in the request, so only the configured SABnzbd apikey (a query
+// param on the /api endpoint, hence inside a transport error's *url.Error) needs
+// scrubbing.
+func (d *sabnzbdDriver) addFile(ctx context.Context, p Payload, category string) error {
+	resp, err := d.client.AddFile(ctx, sabnzbd.AddNzbFileRequest{
+		Filename: releaseFilename(p.Name, ".nzb"),
+		Nzb:      p.Bytes,
+		Category: category,
+	})
+	if err != nil {
+		return fmt.Errorf("download: sabnzbd: upload nzb: %w", scrubURLError(err))
+	}
+	if resp.ErrorMsg != "" {
+		return fmt.Errorf("download: sabnzbd: upload nzb: %s", resp.ErrorMsg)
 	}
 	return nil
 }

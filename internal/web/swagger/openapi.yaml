@@ -1777,6 +1777,37 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /api/download-clients/{id}/grab:
+    post:
+      summary: Send a search result to this download client
+      description: >
+        Hands one search result to the client. A harbrr-sealed download link
+        (…/api/indexers/{slug}/download/{token}) is resolved server-side so the
+        indexer's passkey never leaves harbrr — the client receives the .torrent/.nzb
+        bytes, or the magnet the link resolves to. Any other link is passed through for
+        the client to fetch itself. A client that cannot handle the release's protocol
+        (an nzb-only client sent a torrent, or the reverse) is a 400.
+      operationId: grabToDownloadClient
+      tags: [Download Clients]
+      security: [{ session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GrabRelease" }
+      responses:
+        "204": { description: handed to the download client }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503":
+          description: the download proxy is disabled, so a sealed link cannot be resolved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /api/download-clients/{id}/enable:
     post:
       summary: Enable a download client
@@ -3392,6 +3423,17 @@ components:
       properties:
         name: { type: string }
         settings: { $ref: "#/components/schemas/DownloadClientSettings" }
+    GrabRelease:
+      type: object
+      description: >
+        One search result to send to a download client. link is the release's `link`
+        (or `magnet`) from the search response, sent back VERBATIM — the client never
+        rebuilds it.
+      properties:
+        indexer: { type: string, description: the slug of the indexer the result came from }
+        link: { type: string, description: "the search response's link for this release, verbatim" }
+        name: { type: string, description: "optional release title; names the job on clients that take an uploaded file" }
+      required: [indexer, link]
     Solver:
       type: object
       description: >

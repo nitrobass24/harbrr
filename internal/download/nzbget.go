@@ -11,8 +11,8 @@ import (
 	apphttp "github.com/autobrr/harbrr/internal/http"
 )
 
-// nzbgetDriver wraps the ported nzbget.Client (autobrr's pkg/nzbget — JSON-RPC,
-// add-by-URL only; see internal/download/nzbget's package doc).
+// nzbgetDriver wraps the ported nzbget.Client (autobrr's pkg/nzbget — JSON-RPC, plus
+// harbrr's own base64-content append; see internal/download/nzbget's package doc).
 type nzbgetDriver struct {
 	client          *nzbget.Client
 	defaultCategory string
@@ -46,21 +46,26 @@ func (d *nzbgetDriver) Test(ctx context.Context) error {
 	return nil
 }
 
-// Add hands NZBGet an nzb by URL via the JSON-RPC "append" method — NZBGet
-// fetches it itself; the ported client has no base64-content path. Priority/
-// AddPaused/dupe fields are hardcoded upstream (0/false/SCORE); deliberately
+// Add hands NZBGet an nzb via the JSON-RPC "append" method: the fetched bytes
+// (base64-encoded content) when harbrr resolved them itself — a sealed harbrr download
+// link is only fetchable by harbrr — otherwise a URL NZBGet fetches on its own.
+// Priority/AddPaused/dupe fields are hardcoded upstream (0/false/SCORE); deliberately
 // never sets a share-limit or auto-removal option.
 func (d *nzbgetDriver) Add(ctx context.Context, p Payload, opts AddOptions) error {
 	if p.Protocol != ProtocolUsenet {
 		return fmt.Errorf("download: nzbget: %w: %s", ErrUnsupportedProtocol, p.Protocol)
 	}
-	if p.URL == "" {
-		return fmt.Errorf("download: nzbget: %w", ErrURLRequired)
-	}
 
 	category := opts.Category
 	if category == "" {
 		category = d.defaultCategory
+	}
+
+	if len(p.Bytes) > 0 {
+		return d.appendContent(ctx, p, category)
+	}
+	if p.URL == "" {
+		return fmt.Errorf("download: nzbget: %w", ErrURLRequired)
 	}
 
 	if _, err := d.client.AddFromURL(ctx, nzbget.AddNzbRequest{URL: p.URL, Category: category}); err != nil {
@@ -72,6 +77,22 @@ func (d *nzbgetDriver) Add(ctx context.Context, p Payload, opts AddOptions) erro
 		err = scrubURLError(err)
 		scrubbed := strings.ReplaceAll(err.Error(), p.URL, apphttp.RedactURL(p.URL))
 		return fmt.Errorf("download: nzbget: add nzb from %s: %s", apphttp.RedactURL(p.URL), scrubbed)
+	}
+	return nil
+}
+
+// appendContent uploads the resolved .nzb bytes as base64 append content. No
+// passkey-bearing link rides in this request, so only the *url.Error's own endpoint
+// (which carries NZBGet's Basic credentials in neither URL nor body) is scrubbed, for
+// the same defense-in-depth reason as the URL path.
+func (d *nzbgetDriver) appendContent(ctx context.Context, p Payload, category string) error {
+	_, err := d.client.AddFromContent(ctx, nzbget.AddNzbContentRequest{
+		Filename: releaseFilename(p.Name, ".nzb"),
+		Content:  p.Bytes,
+		Category: category,
+	})
+	if err != nil {
+		return fmt.Errorf("download: nzbget: upload nzb: %w", scrubURLError(err))
 	}
 	return nil
 }

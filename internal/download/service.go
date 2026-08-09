@@ -228,6 +228,29 @@ func (s *Service) TestConnection(ctx context.Context, id int64) error {
 	return nil
 }
 
+// Grab hands an already-resolved release to a configured client. It resolves nothing
+// itself — the caller (the management API) has already turned the search result's link
+// into a Payload, so no passkey-bearing link is ever handled here. A disabled client is
+// refused rather than silently used, and the payload goes to the driver with empty
+// AddOptions: each driver folds its own per-client category/tags/paused defaults.
+func (s *Service) Grab(ctx context.Context, id int64, p Payload) error {
+	c, err := s.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !c.Enabled {
+		return fmt.Errorf("%w: download client is disabled", domain.ErrInvalid)
+	}
+	driver, err := s.buildDriver(ctx, c)
+	if err != nil {
+		return err
+	}
+	if err := driver.Add(ctx, p, AddOptions{}); err != nil {
+		return fmt.Errorf("download: grab: %w", err)
+	}
+	return nil
+}
+
 // buildDriver resolves a client's driver: a host-less kind uses its Settings only; a
 // networked kind loads its App for the host + decrypted credential. AppID is never nil
 // on a networked row here: migration 0021 refuses to apply while one still is, so this

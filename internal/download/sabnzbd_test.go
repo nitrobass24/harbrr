@@ -3,6 +3,7 @@ package download
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -34,6 +35,10 @@ type sabnzbdStub struct {
 	// ApiError-shaped response (AddFileResponse embeds it) the driver reads.
 	wantAPIError bool
 	lastQuery    url.Values
+	// lastUpload / lastUploadName record the mode=addfile multipart file part, so a
+	// test can prove the nzb BYTES (not a URL) reached SABnzbd.
+	lastUpload     string
+	lastUploadName string
 }
 
 func newSabnzbdStub(t *testing.T, s *sabnzbdStub) *httptest.Server {
@@ -41,6 +46,9 @@ func newSabnzbdStub(t *testing.T, s *sabnzbdStub) *httptest.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api", func(w http.ResponseWriter, r *http.Request) {
 		s.lastQuery = r.URL.Query()
+		if s.lastQuery.Get("mode") == "addfile" {
+			s.readUpload(t, r)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		if s.wantInvalidBody {
 			w.WriteHeader(http.StatusForbidden)
@@ -54,7 +62,7 @@ func newSabnzbdStub(t *testing.T, s *sabnzbdStub) *httptest.Server {
 		switch s.lastQuery.Get("mode") {
 		case "version":
 			_, _ = w.Write([]byte(`{"version":"4.3.0"}`))
-		case "addurl":
+		case "addurl", "addfile":
 			_, _ = w.Write([]byte(`{"nzo_ids":["SABnzbd_nzo_abc"]}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -63,6 +71,22 @@ func newSabnzbdStub(t *testing.T, s *sabnzbdStub) *httptest.Server {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+// readUpload records the multipart "name" file part SABnzbd reads an addfile upload
+// from.
+func (s *sabnzbdStub) readUpload(t *testing.T, r *http.Request) {
+	t.Helper()
+	f, hdr, err := r.FormFile("name")
+	if err != nil {
+		t.Fatalf("addfile: read the nzb file part: %v", err)
+	}
+	defer f.Close()
+	nzb, err := io.ReadAll(f)
+	if err != nil {
+		t.Fatalf("addfile: read the nzb bytes: %v", err)
+	}
+	s.lastUpload, s.lastUploadName = string(nzb), hdr.Filename
 }
 
 func newTestSabnzbdDriver(host, apikey, category string) *sabnzbdDriver {
@@ -164,15 +188,46 @@ func TestSabnzbdAdd_TorrentUnsupported(t *testing.T) {
 	}
 }
 
-func TestSabnzbdAdd_BytesOnlyUnsupported(t *testing.T) {
+// TestSabnzbdAdd_ViaBytes: a payload harbrr resolved itself (a sealed download link is
+// only fetchable by harbrr) is UPLOADED with mode=addfile, carrying the exact nzb bytes
+// and the category — never degraded to a URL add and never rejected.
+func TestSabnzbdAdd_ViaBytes(t *testing.T) {
+	t.Parallel()
+	stub := &sabnzbdStub{}
+	srv := newSabnzbdStub(t, stub)
+	drv := newTestSabnzbdDriver(srv.URL, "goodkey", "default-cat")
+
+	const nzb = `<?xml version="1.0"?><nzb><file/></nzb>`
+	err := drv.Add(context.Background(), Payload{
+		Protocol: ProtocolUsenet, Bytes: []byte(nzb), Name: "Example.Movie.2023.1080p",
+	}, AddOptions{})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if got := stub.lastQuery.Get("mode"); got != "addfile" {
+		t.Errorf("mode = %q, want addfile", got)
+	}
+	if got := stub.lastQuery.Get("cat"); got != "default-cat" {
+		t.Errorf("cat = %q, want the settings default", got)
+	}
+	if stub.lastUpload != nzb {
+		t.Errorf("uploaded nzb = %q, want the payload bytes", stub.lastUpload)
+	}
+	if stub.lastUploadName != "Example.Movie.2023.1080p.nzb" {
+		t.Errorf("upload filename = %q, want the release title + .nzb", stub.lastUploadName)
+	}
+}
+
+// TestSabnzbdAdd_EmptyPayloadRejected: neither URL nor bytes is nothing to add.
+func TestSabnzbdAdd_EmptyPayloadRejected(t *testing.T) {
 	t.Parallel()
 	stub := &sabnzbdStub{}
 	srv := newSabnzbdStub(t, stub)
 	drv := newTestSabnzbdDriver(srv.URL, "goodkey", "")
 
-	err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, Bytes: []byte("nzb bytes")}, AddOptions{})
+	err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet}, AddOptions{})
 	if !errors.Is(err, ErrURLRequired) {
-		t.Fatalf("Add(bytes-only) error = %v, want ErrURLRequired", err)
+		t.Fatalf("Add(empty) error = %v, want ErrURLRequired", err)
 	}
 }
 

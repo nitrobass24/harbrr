@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { NativeSelect } from "@/components/ui/native-select"
+import { useDownloadClients } from "@/hooks/useDownloadClients"
 import { useIndexerCapabilitiesMany, useIndexers } from "@/hooks/useIndexers"
 import { useSearchAggregate } from "@/hooks/useSearch"
 import type { SearchMember, SearchParams } from "@/lib/api"
@@ -35,6 +36,14 @@ function SearchPage() {
   const active = selected === null ? slugs : slugs.filter((s) => selected.has(s))
 
   const caps = useIndexerCapabilitiesMany(active)
+
+  // Only ENABLED clients can be sent to; with none configured the control disappears
+  // entirely rather than offering an action that cannot succeed.
+  const downloadClients = useDownloadClients()
+  const sendTargets = useMemo(
+    () => (downloadClients.data ?? []).filter((c) => c.enabled),
+    [downloadClients.data]
+  )
 
   // Union of the selected indexers' capability trees drives the pickers.
   const { catNames, parentCats, modeParams } = useMemo(() => {
@@ -188,7 +197,7 @@ function SearchPage() {
               <>
                 <ResultFilter value={filter} onChange={setFilter} invalid={invalidFilter} />
                 {shown.length > 0 ? (
-                  <SearchResultsResponsive rows={shown} catNames={catNames} sort={sort} onSort={(key: SortKey) =>
+                  <SearchResultsResponsive rows={shown} catNames={catNames} clients={sendTargets} sort={sort} onSort={(key: SortKey) =>
                     setSort((prev) => prev.key === key ? { key, dir: prev.dir === "desc" ? "asc" : "desc" } : { key, dir: "desc" })} />
                 ) : (
                   <div className="grid place-items-center rounded-xl border border-dashed border-border py-16 text-center">

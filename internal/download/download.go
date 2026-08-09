@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/autobrr/harbrr/internal/domain"
 )
@@ -143,6 +144,30 @@ func mergeTags(base, extra []string) []string {
 	}
 	return out
 }
+
+// releaseFilename derives the upload filename for a bytes payload from the release
+// title. The title is untrusted tracker data and the download client names its job (and
+// possibly a file on disk) after it, so path separators and control characters are
+// dropped and an empty result falls back to a fixed name.
+func releaseFilename(name, ext string) string {
+	cleaned := strings.TrimSpace(strings.Map(func(r rune) rune {
+		if r < ' ' || strings.ContainsRune(`/\:*?"<>|`, r) {
+			return -1
+		}
+		return r
+	}, name))
+	if cleaned == "" {
+		cleaned = "release"
+	}
+	if runes := []rune(cleaned); len(runes) > maxReleaseFilenameRunes {
+		cleaned = string(runes[:maxReleaseFilenameRunes])
+	}
+	return cleaned + ext
+}
+
+// maxReleaseFilenameRunes keeps the derived name well inside the 255-byte filename
+// limit every mainstream filesystem enforces, even at 4 bytes per rune.
+const maxReleaseFilenameRunes = 60
 
 // scrubURLError strips the request URL from a *url.Error — the shape net/http
 // returns for a failed request, whose .URL field is the full (percent-encoded)

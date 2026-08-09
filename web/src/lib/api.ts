@@ -44,6 +44,7 @@ export type DownloadClient = components["schemas"]["DownloadClient"]
 export type CreateDownloadClient = components["schemas"]["CreateDownloadClient"]
 export type UpdateDownloadClient = components["schemas"]["UpdateDownloadClient"]
 export type DownloadClientSettings = components["schemas"]["DownloadClientSettings"]
+export type GrabRelease = components["schemas"]["GrabRelease"]
 export type QBittorrentSettings = components["schemas"]["QBittorrentSettings"]
 export type TransmissionSettings = components["schemas"]["TransmissionSettings"]
 export type DelugeSettings = components["schemas"]["DelugeSettings"]
@@ -483,6 +484,13 @@ export class ApiClient {
 
   setDownloadClientEnabled(id: number, enabled: boolean): Promise<void> {
     return enabled ? this.unwrap(this.http.POST("/api/download-clients/{id}/enable", { params: { path: { id } } }), "/api/download-clients/{id}/enable") : this.unwrap(this.http.POST("/api/download-clients/{id}/disable", { params: { path: { id } } }), "/api/download-clients/{id}/disable")
+  }
+
+  grabToDownloadClient(id: number, body: GrabRelease): Promise<void> {
+    return this.unwrap(
+      this.http.POST("/api/download-clients/{id}/grab", { params: { path: { id } }, body }),
+      "/api/download-clients/{id}/grab"
+    )
   }
 
   testDownloadClient(id: number): Promise<TestResult> {
