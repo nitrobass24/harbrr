@@ -10,10 +10,11 @@
 // the wire format would parse.
 //
 // The family carries a generic user-supplied-URL entry plus the presets Prowlarr's
-// Torznab.cs ships as DefaultDefinitions: MoreThanTV (whose Jackett MoreThanTVAPI.cs
-// is the parser/request reference — the x-bittorrent enclosure beats <link>, and
-// seeders/peers/DVF/UVF get default values when the feed omits them), AnimeTosho
-// (public, keyless), and Torrent Network. This driver reproduces that contract and
+// Torznab.cs ships as DefaultDefinitions: AnimeTosho (public, keyless) and Torrent
+// Network. Jackett's MoreThanTVAPI.cs remains the parser/request reference — the
+// x-bittorrent enclosure beats <link>, and seeders/peers/DVF/UVF get default values
+// when the feed omits them — though MoreThanTV itself was retired from the preset
+// table when the site shut down (2026-08). This driver reproduces that contract and
 // reuses every harbrr seam (paced HTTP doer, the secret store, the normalized
 // release, the caps mapper, the /dl grab proxy, URL redaction).
 package torznab
@@ -26,14 +27,6 @@ import (
 
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
-
-// apikeyLength is the fixed API key length MoreThanTV issues. Jackett's
-// MoreThanTVAPI.ApplyConfiguration rejects any other length at add-time ("Invalid API
-// Key configured. Expected length: 32"); harbrr enforces the same check at driver
-// construction (keyRequired32) so a misconfigured key fails loudly and early rather
-// than as an opaque 401 on the first search. It is MoreThanTV-specific — the other
-// presets and the generic entry do not length-validate (Prowlarr's posture).
-const apikeyLength = 32
 
 // driver is one configured torznab-family instance. It is built once per instance and
 // cached by the registry. There is no login round-trip: every request carries the
@@ -106,15 +99,11 @@ func New(p native.Params) (native.Driver, error) {
 
 // validateAPIKey enforces a site's key policy at construction: keyRequired is
 // non-empty (length undocumented — Prowlarr validates nothing, so neither does
-// harbrr); keyRequired32 is MoreThanTV's exact-32 Jackett rule; keyOptional and
-// keyNone accept anything. Errors are clear and secret-free (a length, never a
-// value).
+// harbrr); keyOptional and keyNone accept anything. Errors are clear and
+// secret-free.
 func validateAPIKey(policy keyPolicy, defID, apikey string) error {
 	if policy == keyRequired && apikey == "" {
 		return fmt.Errorf("torznab: %q requires an API key and none is configured", defID)
-	}
-	if policy == keyRequired32 && len(apikey) != apikeyLength {
-		return fmt.Errorf("torznab: invalid API key configured for %q: expected length %d, got %d", defID, apikeyLength, len(apikey))
 	}
 	return nil
 }
@@ -136,9 +125,10 @@ func normalizeAPIPath(raw string) string {
 }
 
 // NeedsResolver is per-site: true when the site's download links carry URL
-// credentials, or are not known not to (MoreThanTV: authkey+torrent_pass in the query
-// per the real capture; Torrent Network and the generic entry: unknown, sealed as the
-// safe default) — *arr must not see such a link, so the served feed routes through
+// credentials, or are not known not to (Torrent Network and the generic entry:
+// unknown, sealed as the safe default; the retired MoreThanTV preset — whose real
+// capture embedded authkey+torrent_pass in the query — set the pattern) — *arr must
+// not see such a link, so the served feed routes through
 // the /dl proxy and the driver's Grab fetches the torrent server-side. AnimeTosho is
 // the false case: its real capture serves plain uncredentialed storage URLs and
 // public magnets, so its links are served bare.

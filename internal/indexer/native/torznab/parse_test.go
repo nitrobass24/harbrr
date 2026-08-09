@@ -15,7 +15,7 @@ import (
 func parseDriver(t *testing.T) *driver {
 	t.Helper()
 	d, err := New(native.Params{
-		Def:     presetDefinition(presets[0]),
+		Def:     presetDefinition(fixturePreset),
 		Cfg:     map[string]string{"apikey": testAPIKey},
 		BaseURL: "https://www.morethantv.me",
 		Clock:   fixedClock,

@@ -14,7 +14,7 @@ import (
 func urlDriver(t *testing.T) *driver {
 	t.Helper()
 	d, err := New(native.Params{
-		Def:     presetDefinition(presets[0]),
+		Def:     presetDefinition(fixturePreset),
 		Cfg:     map[string]string{"apikey": testAPIKey},
 		BaseURL: "https://news.example.test",
 	})

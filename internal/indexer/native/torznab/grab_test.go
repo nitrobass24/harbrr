@@ -22,7 +22,7 @@ const grabURL = "https://torznab.example.test/torrents.php?action=download&id=1&
 func grabDriver(t *testing.T, doer search.Doer) *driver {
 	t.Helper()
 	d, err := New(native.Params{
-		Def:     presetDefinition(presets[0]),
+		Def:     presetDefinition(fixturePreset),
 		Cfg:     map[string]string{"apikey": testAPIKey},
 		Doer:    doer,
 		BaseURL: "https://torznab.example.test",

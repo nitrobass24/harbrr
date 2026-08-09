@@ -3,9 +3,10 @@
 The native driver for the torrent-protocol twin of the Newznab API: a tracker that
 exposes its own Torznab RSS/XML search endpoint. The family carries a generic
 user-supplied-URL entry plus the presets Prowlarr's `Torznab.cs` ships as
-DefaultDefinitions (MoreThanTV, AnimeTosho, Torrent Network). None has a Cardigann
-definition; Jackett's `MoreThanTVAPI.cs` and Prowlarr's `Torznab.cs` /
-`TorznabRssParser.cs` are the parity references. Indexed by
+DefaultDefinitions (AnimeTosho, Torrent Network; MoreThanTV was retired from the
+table when the site shut down, 2026-08). None has a Cardigann definition; Jackett's
+`MoreThanTVAPI.cs` and Prowlarr's `Torznab.cs` / `TorznabRssParser.cs` remain the
+parity references, and the real MoreThanTV captures here remain the offline goldens. Indexed by
 [`docs/divergences.md`](../../../../../docs/divergences.md) via the
 `*/testdata/README.md` glob.
 
@@ -47,19 +48,21 @@ it can never ride a request), and the generic entry's key is optional. Exercised
 
 ## `[Deliberate]` — apikey validation is per-preset, not a family rule
 
-The 32-char length check is Jackett's **MoreThanTV-specific** add-time validation
-(`MoreThanTVAPI.ApplyConfiguration`: "Expected length: 32") — Prowlarr's
-`TorznabSettingsValidator` validates nothing for these sites (its `ApiKeyAllowList` is
-empty). So each preset carries its own `keyPolicy`: MoreThanTV requires exactly 32
-chars; Torrent Network requires a non-empty key of any length (its length is
-undocumented); AnimeTosho has no key setting at all (public feed); the generic entry's
-key is optional and unvalidated (an unknown server may or may not require one).
-Exercised by `torznab_test.go` (`TestNewValidatesAPIKeyPerPolicy`).
+Prowlarr's `TorznabSettingsValidator` validates nothing for these sites (its
+`ApiKeyAllowList` is empty), so nothing beyond presence is validated. Each preset
+carries its own `keyPolicy`: Torrent Network requires a non-empty key of any length
+(its length is undocumented); AnimeTosho has no key setting at all (public feed); the
+generic entry's key is optional and unvalidated (an unknown server may or may not
+require one). The exact-32 length rule (Jackett's `MoreThanTVAPI.ApplyConfiguration`:
+"Expected length: 32") was MoreThanTV-specific and was removed with that preset's
+retirement — no surviving preset length-validates. Exercised by `torznab_test.go`
+(`TestNewValidatesAPIKeyPerPolicy`).
 
 ## `[Deliberate]` — NeedsResolver is per-preset, evidence-driven, sealed by default
 
-MoreThanTV: **true** — the real capture's `<link>`/enclosure both embed
-`authkey`+`torrent_pass`. AnimeTosho: **false** — the real capture
+The retired MoreThanTV preset set the pattern: **true** — the real capture's
+`<link>`/enclosure both embed `authkey`+`torrent_pass` (the test fixture preset
+keeps this posture exercised). AnimeTosho: **false** — the real capture
 (`torznab_animetosho.xml`) serves plain uncredentialed storage URLs
 (`…/torrents/<id>.torrent`) plus public magnets, so there is nothing to seal.
 Torrent Network and the generic entry: **true** — their link shapes are unknown, and
