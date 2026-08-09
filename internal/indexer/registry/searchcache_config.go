@@ -2,8 +2,10 @@ package registry
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"time"
 
@@ -59,9 +61,13 @@ const (
 	keyCacheRefreshAhead  = "cache.refresh_ahead_pct"
 	keyCacheNegativeTTL   = "cache.negative_ttl"
 	keyCacheCleanup       = "cache.cleanup_interval"
-	// keyCacheDefsFingerprint holds the last-seen hash of the definition content
-	// (embedded vendor snapshot + dropin dir) — see EnsureDefsFingerprint.
+	// keyCacheDefsFingerprint is the LEGACY corpus-wide hash of the definition
+	// content (one hash for the whole corpus). It is only READ now, to drive the
+	// one-time upgrade in EnsureDefsFingerprints.
 	keyCacheDefsFingerprint = "cache.defs_fingerprint"
+	// keyCacheDefsFingerprints holds the last-seen PER-DEFINITION hashes as a JSON
+	// {id: hash} object — see EnsureDefsFingerprints.
+	keyCacheDefsFingerprints = "cache.defs_fingerprints"
 )
 
 // MinCleanupInterval is the smallest accepted cleanup_interval. It floors the reap
@@ -243,45 +249,160 @@ func (c *SearchCache) LoadOverrides(ctx context.Context) error {
 	return nil
 }
 
-// EnsureDefsFingerprint compares fp — the caller's freshly computed hash of the
-// definition content (embedded vendor snapshot + dropin dir, see
-// internal/app/defsfingerprint.go) — against the value stored under
-// cache.defs_fingerprint. Absent (first boot with this feature) just stores fp:
-// there is nothing to compare against yet, so nothing is expired. A mismatch means
-// definition content changed since the last boot (a vendor refresh shipped in a
-// binary upgrade, or a dropin add/edit/remove) — every live cache entry may now be
-// shaped by stale definitions, so it is expired via SearchCache.ExpireAll (never
-// deleted — see that method's doc for why) before the new fingerprint is persisted.
+// EnsureDefsFingerprints compares fps — the caller's freshly computed PER-DEFINITION
+// hashes, keyed by definition id (see internal/app/defsfingerprint.go) — against the
+// map stored under cache.defs_fingerprints, and expires the cached rows of ONLY the
+// instances backed by a definition that changed, appeared or disappeared
+// (autobrr/harbrr#388). Absent (a true first boot, and no legacy key either) just
+// stores fps: there is nothing to compare against, so nothing is expired.
 // Serialized under cfgMu, like the other config paths, so a concurrent UpdateConfig
 // cannot interleave with the read-compare-expire-persist sequence.
-func (c *SearchCache) EnsureDefsFingerprint(ctx context.Context, fp string) error {
+func (c *SearchCache) EnsureDefsFingerprints(ctx context.Context, fps map[string]string) error {
 	c.cfgMu.Lock()
 	defer c.cfgMu.Unlock()
 
-	stored, found, err := database.AppSettings{}.Get(ctx, c.db, keyCacheDefsFingerprint)
+	prev, found, err := c.storedDefsFingerprints(ctx)
 	if err != nil {
-		return fmt.Errorf("registry: read defs fingerprint: %w", err)
+		return err
 	}
-	if found && stored != fp {
-		n, err := c.ExpireAll(ctx)
-		if err != nil {
-			return fmt.Errorf("registry: expire cache on defs fingerprint change: %w", err)
-		}
-		c.log.Info().Int64("expired", n).
-			Str("old_fingerprint", fingerprintPrefix(stored)).Str("new_fingerprint", fingerprintPrefix(fp)).
-			Msg("registry: definition content changed since last boot; expired cached search results")
+	if found {
+		err = c.expireChangedDefs(ctx, prev, fps)
+	} else {
+		err = c.expireAllOnLegacyFingerprint(ctx)
 	}
-	if err := (database.AppSettings{}).Set(ctx, c.db, keyCacheDefsFingerprint, fp, c.clock()); err != nil {
-		return fmt.Errorf("registry: persist defs fingerprint: %w", err)
+	if err != nil {
+		return err
+	}
+
+	blob, err := json.Marshal(fps)
+	if err != nil {
+		return fmt.Errorf("registry: encode defs fingerprints: %w", err)
+	}
+	if err := (database.AppSettings{}).Set(ctx, c.db, keyCacheDefsFingerprints, string(blob), c.clock()); err != nil {
+		return fmt.Errorf("registry: persist defs fingerprints: %w", err)
 	}
 	return nil
 }
 
+// storedDefsFingerprints reads the persisted per-definition map. A value that will
+// not decode (only reachable by hand-editing the DB) is reported as absent and
+// logged: the fresh map is then simply persisted over it, so the next boot compares
+// normally instead of the corrupt value wedging the check forever.
+func (c *SearchCache) storedDefsFingerprints(ctx context.Context) (map[string]string, bool, error) {
+	stored, found, err := database.AppSettings{}.Get(ctx, c.db, keyCacheDefsFingerprints)
+	if err != nil {
+		return nil, false, fmt.Errorf("registry: read defs fingerprints: %w", err)
+	}
+	if !found {
+		return nil, false, nil
+	}
+	var prev map[string]string
+	if err := json.Unmarshal([]byte(stored), &prev); err != nil {
+		c.log.Warn().Err(err).Msg("registry: stored definition fingerprints are unreadable; recording the current ones instead")
+		return nil, false, nil
+	}
+	return prev, true, nil
+}
+
+// expireAllOnLegacyFingerprint handles the first boot after the per-definition map
+// replaced the corpus-wide hash: the old single hash cannot be diffed per definition,
+// so the safe one-time answer is the full expire the corpus-wide check would have
+// done. Nothing to do when the legacy key is absent too (a true first boot).
+func (c *SearchCache) expireAllOnLegacyFingerprint(ctx context.Context) error {
+	legacy, found, err := database.AppSettings{}.Get(ctx, c.db, keyCacheDefsFingerprint)
+	if err != nil {
+		return fmt.Errorf("registry: read legacy defs fingerprint: %w", err)
+	}
+	if !found {
+		return nil
+	}
+	n, err := c.ExpireAll(ctx)
+	if err != nil {
+		return fmt.Errorf("registry: expire cache on defs fingerprint upgrade: %w", err)
+	}
+	c.log.Info().Int64("expired", n).Str("old_fingerprint", fingerprintPrefix(legacy)).
+		Msg("registry: upgrading to per-definition fingerprints; expired cached search results once")
+	return nil
+}
+
+// expireChangedDefs expires the cached rows of every instance backed by a definition
+// whose content changed, appeared or disappeared since the last boot — and only
+// those. Instances on an unchanged definition (and native drivers, which have no
+// definition file and are out of scope) keep serving their cache.
+func (c *SearchCache) expireChangedDefs(ctx context.Context, prev, next map[string]string) error {
+	changed := changedDefs(prev, next)
+	if len(changed) == 0 {
+		return nil
+	}
+	instances, err := database.Instances{}.List(ctx, c.db)
+	if err != nil {
+		return fmt.Errorf("registry: list instances on defs fingerprint change: %w", err)
+	}
+	changedIDs := make(map[string]struct{}, len(changed))
+	for _, ch := range changed {
+		changedIDs[ch.id] = struct{}{}
+	}
+	var expired int64
+	for _, inst := range instances {
+		if _, ok := changedIDs[inst.DefinitionID]; !ok {
+			continue
+		}
+		n, err := c.ExpireByInstance(ctx, inst.ID)
+		if err != nil {
+			return fmt.Errorf("registry: expire cache on defs fingerprint change: %w", err)
+		}
+		expired += n
+	}
+	c.log.Info().Int64("expired", expired).Strs("defs", changedLog(changed)).
+		Msg("registry: definition content changed since last boot; expired cached search results for the affected indexers")
+	return nil
+}
+
+// defChange is one definition whose hash differs from the last boot's: before is
+// empty when the definition appeared, after is empty when it disappeared.
+type defChange struct {
+	id     string
+	before string
+	after  string
+}
+
+// changedDefs returns, ordered by id, every definition added, removed or edited
+// between the stored (prev) and freshly computed (next) fingerprint maps.
+func changedDefs(prev, next map[string]string) []defChange {
+	var out []defChange
+	for id, after := range next {
+		if before, ok := prev[id]; !ok || before != after {
+			out = append(out, defChange{id: id, before: prev[id], after: after})
+		}
+	}
+	for id, before := range prev {
+		if _, ok := next[id]; !ok {
+			out = append(out, defChange{id: id, before: before})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].id < out[j].id })
+	return out
+}
+
+// changedLog renders the changed definitions for one log field, as
+// "<id> <old>-><new>" with both fingerprints prefix-truncated.
+func changedLog(changed []defChange) []string {
+	out := make([]string, 0, len(changed))
+	for _, ch := range changed {
+		out = append(out, fmt.Sprintf("%s %s->%s", ch.id, fingerprintPrefix(ch.before), fingerprintPrefix(ch.after)))
+	}
+	return out
+}
+
 // fingerprintPrefix returns the first 12 hex chars of a sha256 fingerprint for
 // logging — the full 64-char digest pair is unreadable log noise; a prefix is
-// enough to tell "changed" from "same" at a glance.
+// enough to tell "changed" from "same" at a glance. An absent fingerprint (a
+// definition that appeared or disappeared) renders as "none".
 func fingerprintPrefix(fp string) string {
-	if len(fp) <= 12 {
+	switch {
+	case fp == "":
+		return "none"
+	case len(fp) <= 12:
 		return fp
 	}
 	return fp[:12]

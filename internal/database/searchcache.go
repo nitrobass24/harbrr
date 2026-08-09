@@ -188,6 +188,22 @@ func (SearchCacheStore) ExpireAll(ctx context.Context, q dbinterface.Execer, now
 	return rowsAffected(res)
 }
 
+// ExpireByInstance is ExpireAll narrowed to ONE instance: it sets expires_at to
+// now for that instance's currently-live entries, WITHOUT deleting any row, and
+// returns the count affected. It backs the per-definition fingerprint check
+// (autobrr/harbrr#388), where only the indexers backed by a CHANGED definition
+// must stop serving old-shape rows. The expire-not-delete rationale and the
+// "already-expired rows are left untouched" filter are ExpireAll's — see there.
+func (SearchCacheStore) ExpireByInstance(ctx context.Context, q dbinterface.Execer, instanceID int64, now time.Time) (int64, error) {
+	res, err := q.ExecContext(ctx,
+		q.Rebind(`UPDATE search_cache SET expires_at = ? WHERE instance_id = ? AND expires_at > ?`),
+		now.UTC().Format(timeLayout), instanceID, now.UTC().Format(timeLayout))
+	if err != nil {
+		return 0, fmt.Errorf("database: expire search cache for instance %d: %w", instanceID, err)
+	}
+	return rowsAffected(res)
+}
+
 // Flush deletes all entries, returning the number purged. Backs the management
 // flush endpoint.
 func (SearchCacheStore) Flush(ctx context.Context, q dbinterface.Execer) (int64, error) {
