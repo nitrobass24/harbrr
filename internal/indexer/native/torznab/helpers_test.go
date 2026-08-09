@@ -11,9 +11,34 @@ import (
 	apphttp "github.com/autobrr/harbrr/internal/http"
 )
 
-// testAPIKey is a synthetic, correctly-sized (32-char) apikey that exists only to
-// prove redaction — it never reaches a real server.
+// testAPIKey is a synthetic apikey that exists only to prove redaction — it never
+// reaches a real server.
 const testAPIKey = "SECRETtorznabapikey1234567890ABC"
+
+// fixturePreset preserves the shape of MoreThanTV — the site whose Jackett driver
+// (MoreThanTVAPI.cs) is this family's parser/request reference, and the source of
+// the real captures in testdata/. The site shut down in 2026-08 and its user-facing
+// preset was retired, but the captures still gate the driver's behavior for the
+// generic entry and the surviving presets, so its shape lives on here: the fixed
+// apiPath, a required key, an eight-category pass-through table, the keyInfo hint
+// field, and sealed (URL-credentialed) download links.
+var fixturePreset = preset{
+	id:         "morethantv",
+	name:       "MoreThanTV",
+	baseURL:    "https://www.morethantv.me/",
+	apiPath:    "/api/torznab",
+	keyPolicy:  keyRequired,
+	keyInfoURL: "https://www.morethantv.me/user/security",
+	categories: []int{5030, 5040, 5045, 5060, 2030, 2040, 2045, 2050},
+	// The real capture's <link>/enclosure both embed authkey+torrent_pass.
+	needsResolver: true,
+}
+
+// The driver resolves preset facts (fixed apiPath, key policy, sealing) from the
+// package-level table by definition id, so the fixture preset is registered there —
+// in this test binary only — to keep exercising the preset-profile path the live
+// table no longer covers with its shape.
+func init() { presets = append(presets, fixturePreset) }
 
 func fixedClock() time.Time { return time.Unix(1_700_000_000, 0).UTC() }
 

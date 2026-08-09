@@ -12,9 +12,6 @@ import (
 // validCfg returns a Cfg satisfying a preset's key policy, so a table-driven test can
 // build every family through its own validation gate.
 func validCfg(policy keyPolicy) map[string]string {
-	if policy == keyRequired32 {
-		return map[string]string{"apikey": testAPIKey}
-	}
 	if policy == keyRequired {
 		return map[string]string{"apikey": "any-length-key"}
 	}
@@ -24,9 +21,9 @@ func validCfg(policy keyPolicy) map[string]string {
 // TestFamilies proves Families() returns the generic entry plus every preset, that
 // each is a distinct, torrent-protocol family whose Factory builds a working driver,
 // that every preset carries a default base-URL link the generic deliberately omits,
-// and that each site's NeedsResolver posture matches its table row (per-preset — MTV
-// credentialed=true, AnimeTosho public storage links=false, TN unknown=safe true,
-// generic unknown=safe true).
+// and that each site's NeedsResolver posture matches its table row (per-preset —
+// AnimeTosho public storage links=false, TN unknown=safe true, generic unknown=safe
+// true).
 func TestFamilies(t *testing.T) {
 	t.Parallel()
 	fams := Families()
@@ -102,7 +99,8 @@ func famID(f native.Family) string {
 
 // TestPresetDefinitionOverrides proves the per-preset definition facts: AnimeTosho is
 // public and keyless (no settings at all); Torrent Network is German (de-DE) and
-// private; MoreThanTV is private with the apikey + keyInfo settings pair.
+// private; the fixture preset is private with the apikey + keyInfo settings pair
+// (the keyInfoURL-carrying shape no live preset currently exercises).
 func TestPresetDefinitionOverrides(t *testing.T) {
 	t.Parallel()
 	defs := map[string]*loader.Definition{}
@@ -110,12 +108,12 @@ func TestPresetDefinitionOverrides(t *testing.T) {
 		defs[p.id] = presetDefinition(p)
 	}
 
-	mtv := defs["morethantv"]
-	if mtv.Type != "private" || mtv.Language != "en-US" {
-		t.Errorf("morethantv type/language = %q/%q, want private/en-US", mtv.Type, mtv.Language)
+	fixture := presetDefinition(fixturePreset)
+	if fixture.Type != "private" || fixture.Language != "en-US" {
+		t.Errorf("fixture preset type/language = %q/%q, want private/en-US", fixture.Type, fixture.Language)
 	}
-	if len(mtv.Settings) != 2 {
-		t.Errorf("morethantv settings = %d fields, want 2 (apikey + keyInfo)", len(mtv.Settings))
+	if len(fixture.Settings) != 2 {
+		t.Errorf("fixture preset settings = %d fields, want 2 (apikey + keyInfo)", len(fixture.Settings))
 	}
 
 	at := defs["animetosho"]
@@ -137,8 +135,8 @@ func TestPresetDefinitionOverrides(t *testing.T) {
 
 // TestSettingsAPIKeyIsSecret proves the apikey field is classified as a secret
 // (encrypted at rest, redacted by the API) on every definition that carries one, that
-// MTV's keyInfo field is a never-secret info display field, and that the generic
-// entry's apiPath setting defaults to /api.
+// the keyInfo hint field (the fixture preset's shape) is a never-secret info display
+// field, and that the generic entry's apiPath setting defaults to /api.
 func TestSettingsAPIKeyIsSecret(t *testing.T) {
 	t.Parallel()
 	check := func(def *loader.Definition, wantKeyInfo bool) {
@@ -159,9 +157,8 @@ func TestSettingsAPIKeyIsSecret(t *testing.T) {
 			}
 		}
 	}
-	mtv, _ := presetByID("morethantv")
 	tn, _ := presetByID("torrentnetwork")
-	check(presetDefinition(mtv), true)
+	check(presetDefinition(fixturePreset), true)
 	check(presetDefinition(tn), false)
 
 	generic := GenericDefinition()
@@ -180,10 +177,10 @@ func TestSettingsAPIKeyIsSecret(t *testing.T) {
 	}
 }
 
-// TestPresetCaps proves the per-preset advertised categories: MoreThanTV's eight
-// pass-through ids (Jackett's SetCapabilities), AnimeTosho's {2020, 5070} (Prowlarr's
-// preset seed), and the TN/generic full standard parent table (no seed — the remote
-// tree is unknown). All advertise exactly search/tv-search/movie-search.
+// TestPresetCaps proves the per-preset advertised categories: the fixture preset's
+// eight pass-through ids (an explicit multi-category seed), AnimeTosho's {2020, 5070}
+// (Prowlarr's preset seed), and the TN/generic full standard parent table (no seed —
+// the remote tree is unknown). All advertise exactly search/tv-search/movie-search.
 func TestPresetCaps(t *testing.T) {
 	t.Parallel()
 	capsFor := func(def *loader.Definition, cfg map[string]string) *mapper.Capabilities {
@@ -213,10 +210,9 @@ func TestPresetCaps(t *testing.T) {
 		}
 	}
 
-	mtv, _ := presetByID("morethantv")
-	mtvCaps := capsFor(presetDefinition(mtv), map[string]string{"apikey": testAPIKey})
-	assertPassThrough(mtvCaps, []int{5030, 5040, 5045, 5060, 2030, 2040, 2045, 2050}, "morethantv")
-	assertModes(mtvCaps, "morethantv")
+	fixtureCaps := capsFor(presetDefinition(fixturePreset), map[string]string{"apikey": testAPIKey})
+	assertPassThrough(fixtureCaps, []int{5030, 5040, 5045, 5060, 2030, 2040, 2045, 2050}, "fixture preset")
+	assertModes(fixtureCaps, "fixture preset")
 
 	at, _ := presetByID("animetosho")
 	atCaps := capsFor(presetDefinition(at), nil)
@@ -237,13 +233,12 @@ func TestPresetCaps(t *testing.T) {
 }
 
 // TestNewValidatesAPIKeyPerPolicy proves each site's construction-time key rule:
-// MoreThanTV requires exactly 32 chars (Jackett's MTV-specific rule); Torrent Network
-// requires a non-empty key of any length (Prowlarr validates nothing); AnimeTosho has
-// no key (and any stray configured value is dropped, never sent); the generic entry's
-// key is optional and unvalidated. All rejections are clear and secret-free.
+// Torrent Network (and the fixture preset) require a non-empty key of any length
+// (Prowlarr validates nothing); AnimeTosho has no key (and any stray configured value
+// is dropped, never sent); the generic entry's key is optional and unvalidated. All
+// rejections are clear and secret-free.
 func TestNewValidatesAPIKeyPerPolicy(t *testing.T) {
 	t.Parallel()
-	mtv, _ := presetByID("morethantv")
 	at, _ := presetByID("animetosho")
 	tn, _ := presetByID("torrentnetwork")
 	cases := []struct {
@@ -252,10 +247,8 @@ func TestNewValidatesAPIKeyPerPolicy(t *testing.T) {
 		apikey string
 		wantOK bool
 	}{
-		{"mtv missing", presetDefinition(mtv), "", false},
-		{"mtv too short", presetDefinition(mtv), "short", false},
-		{"mtv too long", presetDefinition(mtv), testAPIKey + "extra", false},
-		{"mtv exactly 32", presetDefinition(mtv), testAPIKey, true},
+		{"fixture missing", presetDefinition(fixturePreset), "", false},
+		{"fixture any key ok", presetDefinition(fixturePreset), testAPIKey, true},
 		{"tn missing", presetDefinition(tn), "", false},
 		{"tn short key ok (no length rule)", presetDefinition(tn), "k", true},
 		{"tn long key ok (no length rule)", presetDefinition(tn), testAPIKey + "-and-more", true},

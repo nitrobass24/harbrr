@@ -30,7 +30,7 @@ func stubServerDriver(t *testing.T, status int, body string, sawURL *string) (*d
 	}))
 	t.Cleanup(srv.Close)
 	d, err := New(native.Params{
-		Def:     presetDefinition(presets[0]),
+		Def:     presetDefinition(fixturePreset),
 		Cfg:     map[string]string{"apikey": testAPIKey},
 		Doer:    srv.Client(),
 		BaseURL: srv.URL,
@@ -164,7 +164,7 @@ func TestSearchTransportErrorRedactsAPIKey(t *testing.T) {
 		Err: errors.New("dial tcp: connection refused"),
 	}
 	d, err := New(native.Params{
-		Def:     presetDefinition(presets[0]),
+		Def:     presetDefinition(fixturePreset),
 		Cfg:     map[string]string{"apikey": testAPIKey},
 		Doer:    &errorDoer{err: uerr},
 		BaseURL: baseURL,
