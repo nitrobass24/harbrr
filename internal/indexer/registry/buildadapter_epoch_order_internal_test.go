@@ -12,8 +12,8 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/secrets"
@@ -61,14 +61,7 @@ func TestBuildAdapterSnapshotsEpochBeforeSettingsRead(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	rawDB, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = rawDB.Close() })
-	if err := rawDB.Migrate(ctx); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	rawDB := dbtest.OpenMigrated(t)
 	dropin := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dropin, "mamtest.yml"), []byte(mamDefYAML), 0o600); err != nil {
 		t.Fatalf("write def: %v", err)

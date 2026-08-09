@@ -9,7 +9,7 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/core"
@@ -186,14 +186,7 @@ func addDegenerateIndexer(t *testing.T, reg *registry.Registry, slug string, set
 // degenerate def, returning the doer so a test can count what actually went out.
 func newDegenerateRegistry(t *testing.T) (*registry.Registry, *replayDoer) {
 	t.Helper()
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := db.Migrate(context.Background()); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := dbtest.OpenMigrated(t)
 	dropin := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dropin, "degeneratetracker.yml"), []byte(degenerateDefYAML), 0o600); err != nil {
 		t.Fatalf("write def: %v", err)

@@ -10,6 +10,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -60,14 +61,7 @@ var _ native.Driver = (*budgetFakeDriver)(nil)
 // enforcement seam (indexerAdapter.Search/Grab) rather than the cache-aside probe.
 func newBudgetTestAdapter(t *testing.T, inner *budgetFakeDriver, cfg map[string]string) (*indexerAdapter, *atomic.Pointer[time.Time]) {
 	t.Helper()
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := db.Migrate(context.Background()); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := dbtest.OpenMigrated(t)
 	instID := insertTestInstance(t, db)
 
 	var clk atomic.Pointer[time.Time]

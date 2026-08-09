@@ -9,6 +9,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/native/catalog"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
@@ -26,14 +27,7 @@ import (
 func TestBackgroundCleanupFlushesBeforeClose(t *testing.T) {
 	t.Parallel()
 
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := db.Migrate(context.Background()); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := dbtest.OpenMigrated(t)
 
 	instID := insertCleanupInstance(t, db)
 	old := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -84,14 +78,7 @@ func TestBackgroundCleanupFlushesBeforeClose(t *testing.T) {
 func TestStartRSSWarmerJoinsOnShutdown(t *testing.T) {
 	t.Parallel()
 
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := db.Migrate(context.Background()); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := dbtest.OpenMigrated(t)
 
 	reg := registry.New(db, loader.New(""), nil, catalog.All(), registry.WithLogger(zerolog.Nop()))
 

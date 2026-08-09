@@ -11,8 +11,8 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -204,14 +204,7 @@ func (w *bumpOnFirstInsertQuerier) ExecContext(ctx context.Context, query string
 // compensating delete removes it.
 func TestStoreCompensatingDeleteClosesCheckThenStoreWindow(t *testing.T) {
 	t.Parallel()
-	rawDB, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = rawDB.Close() })
-	if err := rawDB.Migrate(context.Background()); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	rawDB := dbtest.OpenMigrated(t)
 	instID := insertTestInstance(t, rawDB)
 
 	wrapped := &bumpOnFirstInsertQuerier{Querier: rawDB, instID: instID}

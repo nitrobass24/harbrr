@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 )
 
 // TestRestorePriorityDefaultsOldShapeBundle proves loadInstances normalizes a bundled
@@ -16,14 +17,7 @@ func TestRestorePriorityDefaultsOldShapeBundle(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := db.Migrate(ctx); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := dbtest.OpenMigrated(t)
 
 	svc := &Service{db: db}
 	tables := &Tables{
@@ -79,14 +73,7 @@ func TestRestorePriorityOutOfRangeRejected(t *testing.T) {
 	for name, priority := range map[string]int{"too low": -1, "too high": 999} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			db, err := database.Open(":memory:")
-			if err != nil {
-				t.Fatalf("open db: %v", err)
-			}
-			t.Cleanup(func() { _ = db.Close() })
-			if err := db.Migrate(ctx); err != nil {
-				t.Fatalf("migrate: %v", err)
-			}
+			db := dbtest.OpenMigrated(t)
 
 			svc := &Service{db: db}
 			tables := &Tables{
@@ -94,7 +81,7 @@ func TestRestorePriorityOutOfRangeRejected(t *testing.T) {
 					{ID: 1, Slug: "bad-priority", DefinitionID: "bad-priority", Name: "Bad", Enabled: true, Protocol: "torrent", Priority: priority},
 				},
 			}
-			err = svc.restore(ctx, tables, true)
+			err := svc.restore(ctx, tables, true)
 			if err == nil {
 				t.Fatal("restore with an out-of-range priority succeeded, want an error")
 			}
@@ -111,14 +98,7 @@ func TestRestoreMinSeedersNegativeRejected(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := db.Migrate(ctx); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := dbtest.OpenMigrated(t)
 
 	svc := &Service{db: db}
 	tables := &Tables{
