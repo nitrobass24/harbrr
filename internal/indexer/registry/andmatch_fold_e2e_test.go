@@ -8,7 +8,7 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
@@ -136,14 +136,7 @@ func TestAndMatchFoldPunctuationSetting(t *testing.T) {
 // andmatch def.
 func newAndMatchRegistry(t *testing.T, doer search.Doer) *registry.Registry {
 	t.Helper()
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := db.Migrate(context.Background()); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := dbtest.OpenMigrated(t)
 	dropin := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dropin, "andmatchtracker.yml"), []byte(andMatchDefYAML), 0o600); err != nil {
 		t.Fatalf("write def: %v", err)

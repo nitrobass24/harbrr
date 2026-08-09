@@ -18,6 +18,7 @@ import (
 	"github.com/autobrr/harbrr/internal/apps"
 	"github.com/autobrr/harbrr/internal/auth"
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/secrets"
 )
@@ -56,14 +57,7 @@ func (f *fakeSource) Capabilities(_ context.Context, slug string) ([]string, err
 func newSyncFixture(t *testing.T) *syncFixture {
 	t.Helper()
 	ctx := context.Background()
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := db.Migrate(ctx); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := dbtest.OpenMigrated(t)
 	kr, err := secrets.OpenKeyring(secrets.KeyringOptions{DataDir: t.TempDir(), AllowPlaintext: true}, zerolog.Nop())
 	if err != nil {
 		t.Fatalf("keyring: %v", err)

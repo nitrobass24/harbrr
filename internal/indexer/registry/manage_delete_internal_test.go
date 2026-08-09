@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 )
 
 // fakeInvalidator is a test double for the invalidator seam that records every call
@@ -55,14 +56,7 @@ func (f *fakeInvalidator) forgetBudget(id int64) {
 // rowid-reuse write-back poisoning gap (autobrr/harbrr#345).
 func TestDeleteInvalidatesSearchCache(t *testing.T) {
 	t.Parallel()
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := db.Migrate(context.Background()); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := dbtest.OpenMigrated(t)
 	instID := insertTestInstance(t, db)
 	inv := &fakeInvalidator{}
 	mgr := &Manager{db: db, instances: database.Instances{}, inv: inv}
