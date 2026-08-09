@@ -1,6 +1,7 @@
 package newznab
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"maps"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/rs/zerolog"
 
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
@@ -367,6 +370,98 @@ func TestUserTransportErrorRedactsApikey(t *testing.T) {
 		t.Errorf("error dropped the endpoint host: %q", probeErr.Error())
 	}
 	assertNoApikey(t, "user transport error", probeErr.Error())
+}
+
+// TestSeedBudgetLogsOutcome proves the probe's outcomes — not attempted, probe failed,
+// nothing discovered, persist failed, seeded — each leave a distinguishable debug line
+// (autobrr/harbrr#440), and that no line ever carries the apikey or the raw upstream
+// body: the probe URL is secret-bearing by construction, so the log is a redaction
+// surface like any other.
+func TestSeedBudgetLogsOutcome(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		cfg         map[string]string
+		resp        userResponse
+		persistFail bool
+		want        string
+		notWant     string
+	}{
+		{
+			name: "seeded",
+			resp: userResponse{body: `<user apirequests="2000" downloadrequests="1000"/>`},
+			want: "budget seeded",
+		},
+		{
+			// A discovered cap whose write failed is a failed seed, not "nothing
+			// discovered" — the log must not misdirect the diagnosis it exists for.
+			name:        "persist failed",
+			resp:        userResponse{body: `<user apirequests="2000" downloadrequests="1000"/>`},
+			persistFail: true,
+			want:        "budget seed persist failed",
+			notWant:     "nothing discovered",
+		},
+		{
+			name: "probe failed",
+			resp: userResponse{status: stdhttp.StatusInternalServerError, body: "boom"},
+			want: "budget seed probe failed",
+		},
+		{
+			name:    "parse failure leaks no body",
+			resp:    userResponse{body: "BODY-MARKER not xml at all"},
+			want:    "budget seed probe failed",
+			notWant: "BODY-MARKER",
+		},
+		{
+			name: "nothing discovered",
+			resp: userResponse{body: `<user apirequests="0" downloadrequests="0"/>`},
+			want: "nothing discovered",
+		},
+		{
+			name: "not attempted",
+			cfg:  map[string]string{settingQueryLimit: "100", settingGrabLimit: "10"},
+			resp: userResponse{body: "unused"},
+			want: "budget seed not attempted",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var userHits atomic.Int64
+			srv := userServer(t, &userHits, tt.resp)
+			settings := map[string]string{"apikey": testAPIKey, "apiPath": "/api"}
+			maps.Copy(settings, tt.cfg)
+			var buf bytes.Buffer
+			d, err := New(native.Params{
+				Def:     GenericDefinition(),
+				Cfg:     settings,
+				Doer:    srv.Client(),
+				BaseURL: srv.URL,
+				Clock:   fixedClock,
+				Logger:  zerolog.New(&buf),
+				PersistSetting: func(context.Context, string, string) error {
+					if tt.persistFail {
+						return errors.New("store unavailable")
+					}
+					return nil
+				},
+			})
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			if err := d.Test(context.Background()); err != nil {
+				t.Fatalf("Test: %v", err)
+			}
+			logged := buf.String()
+			if !strings.Contains(logged, tt.want) {
+				t.Errorf("log = %q, want it to contain %q", logged, tt.want)
+			}
+			if tt.notWant != "" && strings.Contains(logged, tt.notWant) {
+				t.Errorf("log contains %q, want it absent: %q", tt.notWant, logged)
+			}
+			assertNoApikey(t, "seed outcome log", logged)
+		})
+	}
 }
 
 // userResponse scripts what the offline server answers ?t=user with (status 0 means 200).
