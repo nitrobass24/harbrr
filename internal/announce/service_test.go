@@ -16,6 +16,7 @@ import (
 	"github.com/autobrr/harbrr/internal/apps"
 	"github.com/autobrr/harbrr/internal/auth"
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/secrets"
 )
@@ -44,14 +45,7 @@ func (f *fakeTarget) Probe(context.Context) error { return f.probeErr }
 
 func newService(t *testing.T, factory announce.TargetFactory) (*announce.Service, *database.DB, *apps.Service) {
 	t.Helper()
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := db.Migrate(context.Background()); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := dbtest.OpenMigrated(t)
 	kr, err := secrets.OpenKeyring(secrets.KeyringOptions{EncryptionKey: testKey}, zerolog.Nop())
 	if err != nil {
 		t.Fatalf("keyring: %v", err)
@@ -454,14 +448,7 @@ func TestServicePushSwallowsErrors(t *testing.T) {
 func TestServicePushFailureRedactsGUID(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := db.Migrate(ctx); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := dbtest.OpenMigrated(t)
 	kr, err := secrets.OpenKeyring(secrets.KeyringOptions{EncryptionKey: testKey}, zerolog.Nop())
 	if err != nil {
 		t.Fatalf("keyring: %v", err)
@@ -542,14 +529,7 @@ func TestServicePushBatchSummaryLogsOnce(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	var buf bytes.Buffer
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := db.Migrate(ctx); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := dbtest.OpenMigrated(t)
 	kr, err := secrets.OpenKeyring(secrets.KeyringOptions{EncryptionKey: testKey}, zerolog.Nop())
 	if err != nil {
 		t.Fatalf("keyring: %v", err)

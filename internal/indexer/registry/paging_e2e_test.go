@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
@@ -199,14 +199,7 @@ func (f *fixedReleasesIndexer) Grab(_ context.Context, _ string) (*search.GrabRe
 // unchanged behavior.
 func TestNonPagingControlLocalSlices(t *testing.T) {
 	t.Parallel()
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := db.Migrate(context.Background()); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := dbtest.OpenMigrated(t)
 
 	const total = 150
 	rels := make([]*normalizer.Release, total)
@@ -280,14 +273,7 @@ func TestPagingFetchPerPageVsNonPagingShared(t *testing.T) {
 	}
 
 	// Non-paging: two pages share one cache key => one fetch (superset reused, local-sliced).
-	db2, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db2.Close() })
-	if err := db2.Migrate(ctx); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db2 := dbtest.OpenMigrated(t)
 	rels := make([]*normalizer.Release, 150)
 	for i := range rels {
 		rels[i] = &normalizer.Release{GUID: fmt.Sprintf("fx-%03d", i), Link: fmt.Sprintf("https://fixed.test/%d", i)}

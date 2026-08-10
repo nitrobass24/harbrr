@@ -10,6 +10,7 @@ import (
 	"github.com/autobrr/harbrr/internal/auth"
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 	"github.com/autobrr/harbrr/internal/domain"
 )
 
@@ -29,14 +30,7 @@ func fastPasswordHash(password string) string {
 
 func newService(t *testing.T) *auth.Service {
 	t.Helper()
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := db.Migrate(context.Background()); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := dbtest.OpenMigrated(t)
 
 	// Construct over a dbinterface.Querier-typed variable (not the concrete
 	// *database.DB) so this seam can't silently regress to requiring the

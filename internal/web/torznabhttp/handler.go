@@ -1,6 +1,7 @@
 package torznabhttp
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -215,7 +216,91 @@ func torznabGrabError(w http.ResponseWriter, status int, msg string) {
 // management route by session cookie or X-API-Key) and supplies the ErrorWriter that
 // renders failures in its own contract (Torznab XML vs JSON). Every failure is
 // generic; the link/passkey never reaches a log, error body, or redirect. A nil
-// keyring means the proxy is disabled -> 503.
+// keyring means the proxy is disabled -> 503. The resolve itself is ResolveGrab, which
+// the management "send to download client" route calls without an http.ResponseWriter.
+func ServeGrab(w http.ResponseWriter, r *http.Request, idx core.Indexer, dlToken *secrets.Keyring, log zerolog.Logger, token string, errw ErrorWriter) {
+	p, err := ResolveGrab(r.Context(), idx, dlToken, token)
+	if err != nil {
+		writeGrabError(w, log, idx.Info().ID, p, err, errw)
+		return
+	}
+	if p.Magnet != "" {
+		http.Redirect(w, r, p.Magnet, http.StatusFound) //nolint:gosec // G710: ResolveGrab validated the magnet: URI, not a web open-redirect
+		return
+	}
+	w.Header().Set("Content-Type", p.ContentType)
+	// Give the browser a sensible download filename. The web UI navigates to this route
+	// directly, and the URL's last segment is an opaque token, so without this the file
+	// would save under the token with no .torrent/.nzb extension. *arr ignores it (it
+	// parses the body), so sharing this with the feed /dl proxy is harmless.
+	ext := ".torrent"
+	if p.ContentType != torrentContentType {
+		ext = ".nzb"
+	}
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+idx.Info().ID+ext+"\"")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(p.Body) //nolint:gosec // G705: torrent file served as application/x-bittorrent, fixed non-HTML content type
+}
+
+// writeGrabError renders a ResolveGrab failure through the caller's ErrorWriter and
+// logs whatever the operator needs to act on. The served message is always generic;
+// the link/passkey never reaches a log, error body, or redirect.
+func writeGrabError(w http.ResponseWriter, log zerolog.Logger, indexerID string, p GrabPayload, err error, errw ErrorWriter) {
+	switch {
+	case errors.Is(err, ErrProxyDisabled):
+		// No direct Jackett equivalent (Jackett always has download): the proxy feature
+		// is unavailable, so 503 Service Unavailable.
+		errw(w, http.StatusServiceUnavailable, "download proxy is not enabled")
+	case errors.Is(err, ErrInvalidToken):
+		// The error never carries the link; an invalid/forged token is a bad request.
+		errw(w, http.StatusBadRequest, "invalid download token")
+	case errors.Is(err, ErrNotTorrent):
+		log.Warn().
+			Str("stage", "grab").
+			Str("indexer", indexerID).
+			Int("bytes", len(p.Body)).
+			Msg("grab produced a non-torrent body (likely an expired session); refusing to serve it as a .torrent")
+		errw(w, http.StatusNotFound, "requested torrent is not available")
+	default:
+		logInternalError(log, "grab", indexerID, err)
+		errw(w, http.StatusInternalServerError, internalErrorDescription(err))
+	}
+}
+
+// GrabPayload is a resolved grab: either the fetched .torrent/.nzb Body (with the
+// ContentType it must be served/uploaded under) or a Magnet URI — never both.
+type GrabPayload struct {
+	Body        []byte
+	ContentType string
+	Magnet      string
+}
+
+// The closed set of ResolveGrab failures a caller maps to its own status codes.
+// Anything else is an internal failure (the grab itself, or a resolved link that is
+// neither servable bytes nor a magnet) and must be reported generically.
+var (
+	// ErrProxyDisabled means no keyring is configured, so no token can be opened.
+	ErrProxyDisabled = errors.New("torznabhttp: download proxy is not enabled")
+	// ErrInvalidToken means the token was malformed, forged, or minted for another indexer.
+	ErrInvalidToken = errors.New("torznabhttp: invalid download token")
+	// ErrNotTorrent means the grab produced bytes that are not a bencoded torrent
+	// (typically a login page after an expired session). The returned GrabPayload still
+	// carries those bytes so the caller can report their size.
+	ErrNotTorrent = errors.New("torznabhttp: grab produced a non-torrent body")
+)
+
+// errNonMagnetRedirect is the resolved-link guard: only a magnet (public, no secret)
+// may be handed back as a redirect, so a resolved http(s) link can never become an open
+// redirect or leak a passkey in Location. It is an internal failure, not a caller-mapped
+// one.
+var errNonMagnetRedirect = errors.New("grab returned a non-magnet redirect")
+
+// ResolveGrab is the HTTP-free core behind both the feed /dl proxy and the management
+// download route: it decodes the opaque token into the pre-resolution link (bound to
+// idx — a token minted for another indexer fails the AAD check) and grabs the release
+// through harbrr's own session, so a passkey-bearing link is never exposed. The CALLER
+// authorizes before calling and maps the returned error to its own contract; no error
+// ever carries the link.
 //
 // The decoded link is trusted because the token is AEAD-authenticated under the keyring
 // (only harbrr could mint it) and the endpoint is auth-gated. In plaintext mode (no key,
@@ -227,46 +312,31 @@ func torznabGrabError(w http.ResponseWriter, status int, msg string) {
 // default) forecloses it — a token cannot be forged. We do not host-filter the link: a
 // self-hosted operator may run a private/LAN tracker, so a filter would break legitimate
 // setups for little gain.
-func ServeGrab(w http.ResponseWriter, r *http.Request, idx core.Indexer, dlToken *secrets.Keyring, log zerolog.Logger, token string, errw ErrorWriter) {
+func ResolveGrab(ctx context.Context, idx core.Indexer, dlToken *secrets.Keyring, token string) (GrabPayload, error) {
 	if dlToken == nil {
-		// No direct Jackett equivalent (Jackett always has download): the proxy feature
-		// is unavailable, so 503 Service Unavailable.
-		errw(w, http.StatusServiceUnavailable, "download proxy is not enabled")
-		return
+		return GrabPayload{}, ErrProxyDisabled
 	}
 	categoryID, link, err := decodeDLToken(dlToken, idx.Info().ID, token)
 	if err != nil {
-		// The error never carries the link; an invalid/forged token is a bad request.
-		errw(w, http.StatusBadRequest, "invalid download token")
-		return
+		return GrabPayload{}, ErrInvalidToken
 	}
-	// The decoded link is trusted because tokens are always AEAD-authenticated and
-	// bound to this indexer, including when credential storage runs in plaintext mode.
-	// An apikey-holder therefore cannot forge an attacker-host link that makes Grab
-	// disclose the indexer's cookie/header credentials or act as an SSRF primitive.
 	// The sealed category rides through on the context so the stats layer can tally the
 	// grab under the release's family without widening the Indexer contract (#403).
-	result, err := idx.Grab(core.WithGrabCategory(r.Context(), categoryID), link)
+	result, err := idx.Grab(core.WithGrabCategory(ctx, categoryID), link)
 	if err != nil {
-		logInternalError(log, "grab", idx.Info().ID, err)
-		errw(w, http.StatusInternalServerError, internalErrorDescription(err))
-		return
+		return GrabPayload{}, err //nolint:wrapcheck // the caller renders this generically; wrapping would add link-adjacent context.
 	}
 	if result.Redirect != "" {
-		// Only a magnet (public, no secret) is ever redirected. Guard so a resolved
-		// http(s) link can never become an open redirect or leak a passkey in Location.
 		if !strings.HasPrefix(result.Redirect, "magnet:") {
-			logInternalError(log, "grab", idx.Info().ID, errors.New("grab returned a non-magnet redirect"))
-			errw(w, http.StatusInternalServerError, internalErrorMsg)
-			return
+			return GrabPayload{}, errNonMagnetRedirect
 		}
-		http.Redirect(w, r, result.Redirect, http.StatusFound) //nolint:gosec // G710: validated magnet: URI above, not a web open-redirect
-		return
+		return GrabPayload{Magnet: result.Redirect}, nil
 	}
 	ct := result.ContentType
 	if ct == "" {
 		ct = torrentContentType
 	}
+	p := GrabPayload{Body: result.Body, ContentType: ct}
 	// Serve boundary (Jackett's DownloadController analogue): a torrent body must be a
 	// bencoded dictionary before it is served as a .torrent. When the session has
 	// expired, the .torrent fetch 302s to the login page and the client follows it
@@ -277,26 +347,9 @@ func ServeGrab(w http.ResponseWriter, r *http.Request, idx core.Indexer, dlToken
 	// a usenet .nzb (served as application/x-nzb) is XML, not bencode — neither is
 	// bencode-checked.
 	if ct == torrentContentType && !isBencodeTorrent(result.Body) {
-		log.Warn().
-			Str("stage", "grab").
-			Str("indexer", idx.Info().ID).
-			Int("bytes", len(result.Body)).
-			Msg("grab produced a non-torrent body (likely an expired session); refusing to serve it as a .torrent")
-		errw(w, http.StatusNotFound, "requested torrent is not available")
-		return
+		return p, ErrNotTorrent
 	}
-	w.Header().Set("Content-Type", ct)
-	// Give the browser a sensible download filename. The web UI navigates to this route
-	// directly, and the URL's last segment is an opaque token, so without this the file
-	// would save under the token with no .torrent/.nzb extension. *arr ignores it (it
-	// parses the body), so sharing this with the feed /dl proxy is harmless.
-	ext := ".torrent"
-	if ct != torrentContentType {
-		ext = ".nzb"
-	}
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+idx.Info().ID+ext+"\"")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(result.Body) //nolint:gosec // G705: torrent file served as application/x-bittorrent, fixed non-HTML content type
+	return p, nil
 }
 
 // isBencodeTorrent reports whether body is a bencoded torrent: a top-level bencoded

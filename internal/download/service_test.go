@@ -12,6 +12,7 @@ import (
 
 	"github.com/autobrr/harbrr/internal/apps"
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/secrets"
 )
@@ -25,14 +26,7 @@ const testKey = "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2
 // round trips (and is not stored in the clear on either the App or the row).
 func newService(t *testing.T) (*Service, *apps.Service) {
 	t.Helper()
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := db.Migrate(context.Background()); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := dbtest.OpenMigrated(t)
 	kr, err := secrets.OpenKeyring(secrets.KeyringOptions{EncryptionKey: testKey}, zerolog.Nop())
 	if err != nil {
 		t.Fatalf("keyring: %v", err)
@@ -376,6 +370,69 @@ func TestTestConnectionUnknownID(t *testing.T) {
 	svc, _ := newService(t)
 	if err := svc.TestConnection(context.Background(), 999); !errors.Is(err, database.ErrNotFound) {
 		t.Errorf("err = %v, want database.ErrNotFound", err)
+	}
+}
+
+// TestGrabEndToEnd: Grab loads the client, builds its driver, and hands the payload
+// over — with the per-client settings folded in by the driver, since Grab itself passes
+// empty AddOptions.
+func TestGrabEndToEnd(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	stub := &qbitStub{}
+	srv := newQbitStub(t, stub)
+
+	svc, _ := newService(t)
+	c, err := svc.Create(ctx, CreateParams{
+		Name: "seedbox", Kind: domain.DownloadClientKindQBittorrent, Host: srv.URL,
+		Username: "admin", Secret: "adminadmin",
+		Settings: domain.DownloadClientSettings{QBittorrent: &domain.QBittorrentSettings{Category: "harbrr"}},
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	const magnet = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"
+	if err := svc.Grab(ctx, c.ID, Payload{Protocol: ProtocolTorrent, URL: magnet}); err != nil {
+		t.Fatalf("Grab: %v", err)
+	}
+	if got := first(stub.addForm["urls"]); got != magnet {
+		t.Errorf("urls form field = %q, want the magnet", got)
+	}
+	if got := first(stub.addForm["category"]); got != "harbrr" {
+		t.Errorf("category = %q, want the client's configured default", got)
+	}
+}
+
+func TestGrabUnknownID(t *testing.T) {
+	t.Parallel()
+	svc, _ := newService(t)
+	err := svc.Grab(context.Background(), 999, Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"})
+	if !errors.Is(err, database.ErrNotFound) {
+		t.Errorf("err = %v, want database.ErrNotFound", err)
+	}
+}
+
+// TestGrabDisabledClient: a disabled client is refused rather than quietly used — the
+// UI only offers enabled clients, so reaching here means the state changed under the
+// caller.
+func TestGrabDisabledClient(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, _ := newService(t)
+	c, err := svc.Create(ctx, CreateParams{
+		Name: "seedbox", Kind: domain.DownloadClientKindQBittorrent, Host: "http://localhost:8080",
+		Username: "admin", Secret: "adminadmin",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := svc.SetEnabled(ctx, c.ID, false); err != nil {
+		t.Fatalf("SetEnabled: %v", err)
+	}
+	err = svc.Grab(ctx, c.ID, Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"})
+	if !errors.Is(err, domain.ErrInvalid) {
+		t.Errorf("err = %v, want domain.ErrInvalid", err)
 	}
 }
 

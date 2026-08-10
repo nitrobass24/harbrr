@@ -9,6 +9,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 	"github.com/autobrr/harbrr/internal/logger"
 )
 
@@ -105,13 +106,6 @@ func (failingExecer) Rebind(q string) string                                   {
 
 func openLogLevelDB(t *testing.T) *database.DB {
 	t.Helper()
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := db.Migrate(context.Background()); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := dbtest.OpenMigrated(t)
 	return db
 }

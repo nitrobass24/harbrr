@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -67,14 +68,7 @@ func TestResolveRejectsStaleEngineOnConcurrentInvalidation(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
 
-			db, err := database.Open(":memory:")
-			if err != nil {
-				t.Fatalf("open db: %v", err)
-			}
-			t.Cleanup(func() { _ = db.Close() })
-			if err := db.Migrate(ctx); err != nil {
-				t.Fatalf("migrate: %v", err)
-			}
+			db := dbtest.OpenMigrated(t)
 			dropin := t.TempDir()
 			if err := os.WriteFile(filepath.Join(dropin, "mamtest.yml"), []byte(mamDefYAML), 0o600); err != nil {
 				t.Fatalf("write def: %v", err)

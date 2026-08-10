@@ -8,10 +8,9 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
-// keyPolicy is a preset's apikey rule. The 32-char rule is Jackett's
-// MoreThanTV-SPECIFIC add-time validation (MoreThanTVAPI.ApplyConfiguration), not a
-// family rule: Prowlarr's TorznabSettingsValidator validates nothing for these sites
-// (its ApiKeyAllowList is empty), and AnimeTosho is a public feed with no key at all.
+// keyPolicy is a preset's apikey rule. Nothing beyond presence is validated:
+// Prowlarr's TorznabSettingsValidator validates nothing for these sites (its
+// ApiKeyAllowList is empty), and AnimeTosho is a public feed with no key at all.
 type keyPolicy int
 
 const (
@@ -24,8 +23,6 @@ const (
 	// keyRequired is a private tracker whose key length is not documented: non-empty,
 	// no length rule (Prowlarr's posture).
 	keyRequired
-	// keyRequired32 is MoreThanTV's Jackett rule: non-empty and exactly 32 chars.
-	keyRequired32
 )
 
 // preset is one named torznab-family indexer: a distinct id+name, a default base URL
@@ -55,22 +52,12 @@ type preset struct {
 }
 
 // presets is the torznab-family preset table, mirroring Prowlarr Torznab.cs
-// DefaultDefinitions site-for-site (the generic entry lives in sites.go, matching the
-// newznab sibling's presets.go/sites.go split).
+// DefaultDefinitions (the generic entry lives in sites.go, matching the newznab
+// sibling's presets.go/sites.go split). MoreThanTV — the site this driver was
+// originally ported against, and the source of the real captures in testdata/ —
+// was retired from the table when it shut down (2026-08); its shape lives on as
+// the test fixture preset.
 var presets = []preset{
-	{
-		id:         "morethantv",
-		name:       "MoreThanTV",
-		baseURL:    "https://www.morethantv.me/",
-		apiPath:    "/api/torznab",
-		keyPolicy:  keyRequired32, // Jackett MoreThanTVAPI.ApplyConfiguration: "Expected length: 32"
-		keyInfoURL: "https://www.morethantv.me/user/security",
-		// TVSD, TVHD, TVUHD, TVSport, MoviesSD, MoviesHD, MoviesUHD, MoviesBluRay —
-		// Jackett's MoreThanTVAPI.SetCapabilities category-mapping list, id-for-id.
-		categories: []int{5030, 5040, 5045, 5060, 2030, 2040, 2045, 2050},
-		// Evidence: the real capture's <link>/enclosure both embed authkey+torrent_pass.
-		needsResolver: true,
-	},
 	{
 		id:      "animetosho",
 		name:    "AnimeTosho",

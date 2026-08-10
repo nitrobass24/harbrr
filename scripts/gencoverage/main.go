@@ -43,10 +43,9 @@ var liveTested = map[string]bool{
 	// Prowlarr): the generic Newznab driver via the dognzb preset (search + a real .nzb
 	// grab through /dl), and the NZBIndex native driver (search).
 	"newznab": true, "nzbindex": true,
-	// Torznab family, live-validated 2026-07-14 (differential 14=14, Jaccard 1.00, vs
-	// the operator's Prowlarr Torznab-preset oracle, with SMOKE_GRAB link resolution):
-	// the MoreThanTV preset. The sibling presets and the generic entry are offline-only.
-	"morethantv": true,
+	// The torznab family's live validation ran against the MoreThanTV preset
+	// (differential 14=14, Jaccard 1.00, 2026-07-14), retired with the site's
+	// 2026-08 shutdown. The surviving presets and the generic entry are offline-only.
 }
 
 type nativeRow struct {
@@ -79,7 +78,6 @@ var nativeBuilt = []nativeRow{
 	{name: "Nebulance", pattern: "Bespoke JSON API", id: "nebulance"},
 	{name: "Usenet (Newznab)", pattern: "Generic Newznab", id: "newznab"},
 	{name: "NZBIndex", pattern: "Bespoke JSON API (public)", id: "nzbindex"},
-	{name: "MoreThanTV", pattern: "Torznab API (native)", id: "morethantv"},
 	{name: "AnimeTosho", pattern: "Torznab API (native)", id: "animetosho"},
 	{name: "Torrent Network", pattern: "Torznab API (native)", id: "torrentnetwork"},
 	{name: "Torznab (generic)", pattern: "Generic Torznab", id: "torznab"},

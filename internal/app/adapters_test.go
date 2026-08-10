@@ -17,6 +17,7 @@ import (
 	"github.com/autobrr/harbrr/internal/apps"
 	"github.com/autobrr/harbrr/internal/auth"
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
@@ -65,14 +66,7 @@ func (c countingTarget) Probe(context.Context) error { return nil }
 func TestAnnounceSinkSkipsUsenet(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := db.Migrate(ctx); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := dbtest.OpenMigrated(t)
 	kr, err := secrets.OpenKeyring(secrets.KeyringOptions{EncryptionKey: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}, zerolog.Nop())
 	if err != nil {
 		t.Fatalf("keyring: %v", err)
@@ -169,14 +163,7 @@ type sinkTestEnv struct {
 func newSinkTestEnv(t *testing.T, log zerolog.Logger, factory announce.TargetFactory) sinkTestEnv {
 	t.Helper()
 	ctx := context.Background()
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := db.Migrate(ctx); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := dbtest.OpenMigrated(t)
 	kr, err := secrets.OpenKeyring(secrets.KeyringOptions{EncryptionKey: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}, zerolog.Nop())
 	if err != nil {
 		t.Fatalf("keyring: %v", err)

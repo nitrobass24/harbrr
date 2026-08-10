@@ -171,6 +171,53 @@ func TestQBittorrentAdd_OptionMapping(t *testing.T) {
 // TestQBittorrentAdd_NoHitAndRun is the standing assertion that harbrr never asks
 // qBittorrent to share-limit or auto-remove a torrent it adds: the emitted form
 // must never carry a ratio/seed-time limit field, whatever AddOptions says.
+// TestQBittorrentAdd_FoldsClientSettings: the per-client category/tags/start-paused
+// settings are the driver's own defaults, folded into every Add the way every other
+// driver folds its settings — so a caller that passes empty AddOptions (the search-result
+// grab) still lands the torrent where the operator configured it. An explicit
+// AddOptions.Category overrides; tags union.
+func TestQBittorrentAdd_FoldsClientSettings(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name         string
+		opts         AddOptions
+		wantCategory string
+		wantTags     string
+		wantPaused   string
+	}{
+		{"settings only", AddOptions{}, "harbrr", "seeded", "true"},
+		{"caller overrides category, tags union", AddOptions{Category: "tv-sonarr", Tags: []string{"auto"}}, "tv-sonarr", "seeded,auto", "true"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			stub := &qbitStub{}
+			srv := newQbitStub(t, stub)
+			drv, err := newQBittorrent(domain.DownloadClient{
+				Host: srv.URL, Username: "admin",
+				Settings: domain.DownloadClientSettings{QBittorrent: &domain.QBittorrentSettings{
+					Category: "harbrr", Tags: []string{"seeded"}, StartPaused: true,
+				}},
+			}, "adminadmin", nil)
+			if err != nil {
+				t.Fatalf("newQBittorrent: %v", err)
+			}
+			if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}, tt.opts); err != nil {
+				t.Fatalf("Add: %v", err)
+			}
+			if got := first(stub.addForm["category"]); got != tt.wantCategory {
+				t.Errorf("category = %q, want %q", got, tt.wantCategory)
+			}
+			if got := first(stub.addForm["tags"]); got != tt.wantTags {
+				t.Errorf("tags = %q, want %q", got, tt.wantTags)
+			}
+			if got := first(stub.addForm["paused"]); got != tt.wantPaused {
+				t.Errorf("paused = %q, want %q", got, tt.wantPaused)
+			}
+		})
+	}
+}
+
 func TestQBittorrentAdd_NoHitAndRun(t *testing.T) {
 	t.Parallel()
 	stub := &qbitStub{}

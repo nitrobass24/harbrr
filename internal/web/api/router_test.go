@@ -1,7 +1,6 @@
 package api_test
 
 import (
-	"context"
 	"crypto/sha256"
 	"fmt"
 	"net/http"
@@ -22,6 +21,7 @@ import (
 	"github.com/autobrr/harbrr/internal/auth"
 	"github.com/autobrr/harbrr/internal/backup"
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 	"github.com/autobrr/harbrr/internal/download"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/native/catalog"
@@ -106,6 +106,9 @@ type env struct {
 	sessions *scs.SessionManager
 	db       *database.DB
 	source   *fakeAppSource
+	// keyring is the same one wired as Deps.DLToken, so a test can mint the sealed
+	// download token a real search response would have served.
+	keyring *secrets.Keyring
 }
 
 // newEnv builds the management API over an in-memory database with a fixed clock,
@@ -133,14 +136,7 @@ func newEnvWithLogger(t *testing.T, cfg api.Config, logger zerolog.Logger) *env 
 func newEnvFull(t *testing.T, cfg api.Config, buildCache func(db *database.DB) *registry.SearchCache, logger zerolog.Logger, registryOpts ...registry.Option) *env {
 	t.Helper()
 
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := db.Migrate(context.Background()); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := dbtest.OpenMigrated(t)
 
 	keyring, err := secrets.OpenKeyring(secrets.KeyringOptions{EncryptionKey: testKey}, zerolog.Nop())
 	if err != nil {
@@ -187,13 +183,16 @@ func newEnvFull(t *testing.T, cfg api.Config, buildCache func(db *database.DB) *
 	handler, err := api.NewRouter(api.Deps{
 		Auth: authSvc, Registry: reg, Loader: ldr, Apps: appsSvc, AppSync: appSync, Announce: announceSvc,
 		Download: downloadSvc, Notify: notifySvc, Proxy: proxySvc, Solver: solverSvc, Backup: backupSvc, Sessions: sm,
-		Cache: cache, Logger: logger, LogLevel: api.NewLogLevelStore(db, nil),
+		// Production always wires the /dl keyring; the tests do too, so a sealed
+		// management download link behaves here exactly as it does live.
+		DLToken: keyring,
+		Cache:   cache, Logger: logger, LogLevel: api.NewLogLevelStore(db, nil),
 		AdultCategories: api.NewAdultCategoriesStore(db, nil),
 	}, cfg)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
-	return &env{handler: handler, auth: authSvc, registry: reg, sessions: sm, db: db, source: source}
+	return &env{handler: handler, auth: authSvc, registry: reg, sessions: sm, db: db, source: source, keyring: keyring}
 }
 
 // TestOpenAPIDriftRoutesMatchSpec asserts the mounted routes and the embedded

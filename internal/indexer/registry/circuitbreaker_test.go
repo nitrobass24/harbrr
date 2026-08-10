@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/core"
@@ -93,14 +94,7 @@ func TestAuthCurveHoldsFailingStatus(t *testing.T) {
 // escalation ladder reads. Booted long ago, so the startup grace never caps.
 func newCircuitTestAdapter(t *testing.T) (*indexerAdapter, *database.DB) {
 	t.Helper()
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := db.Migrate(context.Background()); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := dbtest.OpenMigrated(t)
 	return &indexerAdapter{
 		instanceID:   insertTestInstance(t, db),
 		db:           db,
