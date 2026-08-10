@@ -3,6 +3,7 @@ package loader
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -92,6 +93,91 @@ func TestLoadAllSkipsBrokenDropin(t *testing.T) {
 	}
 	if entry.Reason == "" {
 		t.Errorf("skip entry for %q has empty Reason; want the Load error text", brokenID)
+	}
+}
+
+// schemaInvalidDropinDef is valid YAML that violates the Cardigann schema
+// (links must be a sequence), so the skip reason carries the validator's
+// instance pointer rather than a YAML syntax message.
+const schemaInvalidDropinDef = "id: zzz-u1f5-schema\nname: U1F5 Schema\nlinks: 5\n"
+
+// TestLoadAllSkipEntryOrigin proves a skipped definition says WHERE it came
+// from, which is the whole diagnosis for the disappearing-tracker case: a
+// drop-in shadows the vendored definition of the same id and never falls back
+// to it, so a typo'd drop-in silently removes a working tracker. The skip must
+// name the drop-in as the culprit and keep the schema validator's instance
+// pointer in the reason.
+func TestLoadAllSkipEntryOrigin(t *testing.T) {
+	t.Parallel()
+
+	// A vendored id, deliberately shadowed by a broken drop-in below.
+	const vendoredID = "torrentleech"
+
+	tests := []struct {
+		name         string
+		id           string
+		body         string
+		wantOrigin   Origin
+		reasonSubstr string
+	}{
+		{
+			name:         "broken yaml drop-in",
+			id:           "zzz-u1f5-broken",
+			body:         brokenDropinDef,
+			wantOrigin:   OriginDropin,
+			reasonSubstr: "drop-in",
+		},
+		{
+			name:         "schema-invalid drop-in keeps the instance pointer",
+			id:           "zzz-u1f5-schema",
+			body:         schemaInvalidDropinDef,
+			wantOrigin:   OriginDropin,
+			reasonSubstr: "/links",
+		},
+		{
+			name:         "broken drop-in shadowing a vendored id",
+			id:           vendoredID,
+			body:         brokenDropinDef,
+			wantOrigin:   OriginDropin,
+			reasonSubstr: "drop-in",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			writeDropin(t, dir, tt.id, tt.body)
+
+			defs, skipped, err := New(dir).LoadAll()
+			if err != nil {
+				t.Fatalf("LoadAll error = %v, want nil", err)
+			}
+			if containsDefID(defs, tt.id) {
+				t.Errorf("%q loaded; a failing drop-in must NOT fall back to the vendored definition", tt.id)
+			}
+			entry, ok := findSkip(skipped, tt.id)
+			if !ok {
+				t.Fatalf("LoadAll skipped-list missing %q", tt.id)
+			}
+			if entry.Origin != tt.wantOrigin {
+				t.Errorf("skip origin = %q, want %q", entry.Origin, tt.wantOrigin)
+			}
+			if !strings.Contains(entry.Reason, tt.reasonSubstr) {
+				t.Errorf("skip reason = %q, want it to contain %q", entry.Reason, tt.reasonSubstr)
+			}
+		})
+	}
+
+	// The vendored id really exists (and reports the vendored origin without a
+	// drop-in), so the case above is a shadowing failure and not a typo'd
+	// fixture id that was never in the catalog.
+	_, origin, err := New("").load(vendoredID)
+	if err != nil {
+		t.Fatalf("load(%q) without drop-ins = %v, want nil (fixture id must be a real vendored definition)", vendoredID, err)
+	}
+	if origin != OriginVendored {
+		t.Errorf("load(%q) origin without a drop-in dir = %q, want %q", vendoredID, origin, OriginVendored)
 	}
 }
 

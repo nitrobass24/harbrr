@@ -119,37 +119,48 @@ func New(dropinDir string) *Loader {
 // vendor/<id>.yml, then by content id:). If neither exists it returns an error
 // wrapping ErrNotFound.
 func (l *Loader) Load(id string) (*Definition, error) {
+	def, _, err := l.load(id)
+	return def, err
+}
+
+// load is Load plus the origin the attempt actually selected, reported on the
+// failure path too so a caller can name the file the operator must go fix. A
+// drop-in that exists wins outright — unreadable or unparseable it still
+// reports OriginDropin and never falls back to the vendored copy, which is the
+// behaviour that makes a typo'd drop-in remove a working tracker. Origin is
+// empty only when no source was reached at all (a rejected id).
+func (l *Loader) load(id string) (*Definition, Origin, error) {
 	if err := validateID(id); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	if l.dropinDir != "" {
 		data, ok, err := l.readDropin(id)
 		if err != nil {
-			return nil, err
+			return nil, OriginDropin, err
 		}
 		if ok {
 			def, err := Parse(data)
 			if err != nil {
-				return nil, fmt.Errorf("loading drop-in definition %q: %w", id, err)
+				return nil, OriginDropin, fmt.Errorf("loading drop-in definition %q: %w", id, err)
 			}
-			return def, nil
+			return def, OriginDropin, nil
 		}
 	}
 
 	data, err := l.readVendored(id)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, fmt.Errorf("%q: %w", id, ErrNotFound)
+			return nil, OriginVendored, fmt.Errorf("%q: %w", id, ErrNotFound)
 		}
-		return nil, err
+		return nil, OriginVendored, err
 	}
 
 	def, err := Parse(data)
 	if err != nil {
-		return nil, fmt.Errorf("loading vendored definition %q: %w", id, err)
+		return nil, OriginVendored, fmt.Errorf("loading vendored definition %q: %w", id, err)
 	}
-	return def, nil
+	return def, OriginVendored, nil
 }
 
 // readVendored returns the raw bytes of the vendored definition for id. It
@@ -184,10 +195,24 @@ func (l *Loader) readVendored(id string) ([]byte, error) {
 	return data, nil
 }
 
+// Origin says where a definition was resolved from. It matters on a failure:
+// precedence is dropin > vendored and a failing drop-in never falls back, so a
+// broken drop-in for an existing id removes the working vendored definition —
+// and the operator needs to be told which file to go fix.
+type Origin string
+
+const (
+	OriginDropin   Origin = "dropin"
+	OriginVendored Origin = "vendored"
+)
+
 // SkipEntry records a definition that could not be loaded, so failures are
-// surfaced explicitly rather than silently dropped.
+// surfaced explicitly rather than silently dropped. Reason is the load error
+// text, which for a schema violation carries the validator's instance pointer
+// (e.g. /search/fields/title) and never the offending value (see schema.go).
 type SkipEntry struct {
 	ID     string
+	Origin Origin
 	Reason string
 }
 
@@ -209,9 +234,9 @@ func (l *Loader) LoadAll() (defs []*Definition, skipped []SkipEntry, err error) 
 	}
 
 	for _, id := range ids {
-		def, loadErr := l.Load(id)
+		def, origin, loadErr := l.load(id)
 		if loadErr != nil {
-			skipped = append(skipped, SkipEntry{ID: id, Reason: loadErr.Error()})
+			skipped = append(skipped, SkipEntry{ID: id, Origin: origin, Reason: loadErr.Error()})
 			continue
 		}
 		defs = append(defs, def)

@@ -239,17 +239,21 @@ paths:
   /api/definitions:
     get:
       summary: List available tracker definitions
+      description: >
+        Returns every addable definition plus every definition that FAILED to load,
+        the latter marked with error (and origin) so a broken drop-in is visibly
+        broken instead of silently missing from the catalog.
       operationId: listDefinitions
       tags: [Indexer Definitions]
       security: [{ session: [] }, { apiKey: [] }]
       responses:
         "200":
-          description: the available definitions
+          description: the available definitions, plus any that failed to load
           content:
             application/json:
               schema:
                 type: array
-                items: { $ref: "#/components/schemas/DefinitionSummary" }
+                items: { $ref: "#/components/schemas/DefinitionEntry" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
   /api/definitions/{id}:
@@ -2584,6 +2588,29 @@ components:
         type: { type: string }
         language: { type: string }
       required: [id, name]
+    DefinitionEntry:
+      description: >
+        One row of the definitions list: an addable definition, or one that failed to
+        load. A failed entry carries error (and origin) and is NOT addable; its name
+        falls back to its id, since a definition that never parsed has no name.
+        Failures ride the same list so a broken definition stays visible where its id
+        used to be — drop-in definitions take precedence over the vendored snapshot
+        and never fall back to it, so a typo'd drop-in otherwise removes the working
+        vendored tracker with no trace.
+      allOf:
+        - { $ref: "#/components/schemas/DefinitionSummary" }
+        - type: object
+          properties:
+            origin:
+              type: string
+              description: where the failed definition was resolved from (failed entries only)
+              enum: [dropin, vendored]
+            error:
+              type: string
+              description: >
+                the load failure reason; present only on a failed entry, and its
+                presence is what marks the entry as failed. For a schema violation it
+                names the offending instance location (e.g. /search/fields/title).
     SettingField:
       type: object
       description: >
