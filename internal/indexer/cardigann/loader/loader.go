@@ -23,6 +23,24 @@ const vendorDir = "vendor"
 // exists in either the drop-in directory or the vendored snapshot.
 var ErrNotFound = errors.New("definition not found")
 
+// ProbeID returns a definition's declared id: without schema-validating or
+// decoding the rest of the document — the cheap read for callers that only need
+// to key a definition the way harbrr does (by content id, which for a handful of
+// Jackett files differs from the filename: darkpeers.yml carries darkpeers-api).
+// It returns "" when the document will not decode or declares no id:, leaving the
+// caller to fall back; it deliberately does not error, since a broken definition
+// is Parse's problem to report, not this probe's. The same YamlDotNet escape
+// compatibility Parse applies is applied here.
+func ProbeID(data []byte) string {
+	var probe struct {
+		ID string `yaml:"id"`
+	}
+	if err := unmarshalYAML(data, &probe); err != nil {
+		return ""
+	}
+	return probe.ID
+}
+
 // Parse decodes a single Cardigann definition from its YAML bytes. It
 // schema-validates the document before decoding into the typed model, so an
 // invalid definition fails fast with a readable, secret-free error.

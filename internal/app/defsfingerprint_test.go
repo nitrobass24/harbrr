@@ -5,9 +5,11 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/definitions"
 )
 
@@ -110,11 +112,11 @@ func TestDefsFingerprints_DropinShadowsVendored(t *testing.T) {
 	if err != nil {
 		t.Fatalf("defsFingerprints base: %v", err)
 	}
-	id, vendored := anyVendoredDefinition(t)
+	name, id, vendored := anyVendoredDefinition(t)
 	if _, ok := base[id]; !ok {
 		t.Fatalf("vendored definition %q missing from the base map", id)
 	}
-	if err := os.WriteFile(filepath.Join(dir, id+".yml"), vendored, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, name), vendored, 0o600); err != nil {
 		t.Fatalf("write identical dropin: %v", err)
 	}
 	identical, err := defsFingerprints(dir)
@@ -125,7 +127,7 @@ func TestDefsFingerprints_DropinShadowsVendored(t *testing.T) {
 		t.Error("a dropin byte-identical to the definition it shadows must not read as a change")
 	}
 
-	if err := os.WriteFile(filepath.Join(dir, id+".yml"), append(vendored, '\n'), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, name), append(vendored, '\n'), 0o600); err != nil {
 		t.Fatalf("write differing dropin: %v", err)
 	}
 	shadowed, err := defsFingerprints(dir)
@@ -156,10 +158,73 @@ func assertOnlyChanged(t *testing.T, before, after map[string]string, id string)
 	}
 }
 
-// anyVendoredDefinition returns the id and bytes of the first vendored definition
-// in the embedded snapshot — the test needs a real vendored file to shadow, and
-// naming a specific tracker would break whenever that one is retired.
-func anyVendoredDefinition(t *testing.T) (id string, data []byte) {
+// TestHashDefs_KeysByContentID pins the key the map is built on: the definition's
+// declared id:, NOT the filename. Instances store the content id in definition_id
+// (that is what the catalog offers), and a handful of Jackett files are named
+// differently from their id — darkpeers.yml carries darkpeers-api — so a
+// filename-keyed map would never match those instances and would leave them
+// serving stale-shape rows after a change. The fallback cases (unparseable YAML,
+// no id:) must still produce a stable basename key rather than dropping the file.
+func TestHashDefs_KeysByContentID(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		file    string
+		content string
+		wantKey string
+	}{
+		{name: "filename matches id", file: "plain.yml", content: "---\nid: plain\nname: Plain\n", wantKey: "plain"},
+		{name: "id differs from filename", file: "darkpeers.yml", content: "---\nid: darkpeers-api\nname: DarkPeers\n", wantKey: "darkpeers-api"},
+		{
+			name: "dotnet slash escape still resolves the id",
+			file: "escaped.yml", wantKey: "escaped-api",
+			content: "---\nid: escaped-api\nname: Escaped\nfilters:\n  - name: re_replace\n    args: [\"cat-(\\\\d+)\\/\", \"$1\"]\n",
+		},
+		{name: "unparseable falls back to the basename", file: "broken.yml", content: "\tid: [unclosed\n", wantKey: "broken"},
+		{name: "missing id falls back to the basename", file: "noid.yml", content: "---\nname: No Id\n", wantKey: "noid"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, tt.file), []byte(tt.content), 0o600); err != nil {
+				t.Fatalf("write %s: %v", tt.file, err)
+			}
+			got := map[string]string{}
+			if err := hashDefs(got, os.DirFS(dir), "."); err != nil {
+				t.Fatalf("hashDefs: %v", err)
+			}
+			if len(got) != 1 || got[tt.wantKey] == "" {
+				t.Errorf("hashDefs keys = %v, want exactly %q", slices.Sorted(maps.Keys(got)), tt.wantKey)
+			}
+		})
+	}
+}
+
+// TestDefsFingerprints_VendoredIDsAreLoadable proves every key the map produces
+// over the real embedded snapshot is a definition id the loader can actually
+// resolve — i.e. the same id an instance's definition_id holds. A filename-keyed
+// map would fail this for the id-differs-from-filename files.
+func TestDefsFingerprints_VendoredIDsAreLoadable(t *testing.T) {
+	t.Parallel()
+	fps, err := defsFingerprints(t.TempDir())
+	if err != nil {
+		t.Fatalf("defsFingerprints: %v", err)
+	}
+	l := loader.New("")
+	for id := range fps {
+		if _, err := l.Load(id); err != nil {
+			t.Errorf("fingerprint key %q is not loadable as a definition id: %v", id, err)
+		}
+	}
+}
+
+// anyVendoredDefinition returns the filename, content id and bytes of the first
+// vendored definition in the embedded snapshot — the test needs a real vendored
+// file to shadow, and naming a specific tracker would break whenever that one is
+// retired. Filename and id are returned separately because they differ for a
+// handful of Jackett files.
+func anyVendoredDefinition(t *testing.T) (name, id string, data []byte) {
 	t.Helper()
 	entries, err := definitions.Vendored.ReadDir(vendorDefsDir)
 	if err != nil {
@@ -173,8 +238,12 @@ func anyVendoredDefinition(t *testing.T) (id string, data []byte) {
 		if err != nil {
 			t.Fatalf("read vendored definition %q: %v", e.Name(), err)
 		}
-		return strings.TrimSuffix(e.Name(), ".yml"), data
+		id := loader.ProbeID(data)
+		if id == "" {
+			id = strings.TrimSuffix(e.Name(), ".yml")
+		}
+		return e.Name(), id, data
 	}
 	t.Fatal("no vendored definitions embedded")
-	return "", nil
+	return "", "", nil
 }

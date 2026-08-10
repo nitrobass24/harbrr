@@ -146,6 +146,42 @@ func TestEnsureDefsFingerprints_LegacyStringUpgradesWithOneFullExpire(t *testing
 	assertServes(t, sc, "after-upgrade", true, "the legacy upgrade must be one-time, not every boot")
 }
 
+// TestEnsureDefsFingerprints_UnreadableStoredMapRecovers proves a stored value
+// that is not a fingerprint map — hand-edited garbage, or a JSON "null" that
+// unmarshals cleanly into a NIL map — is logged and replaced rather than compared
+// against: comparing would read every definition as newly added and expire every
+// indexer's cache. Nothing is expired, and the next boot compares normally.
+func TestEnsureDefsFingerprints_UnreadableStoredMapRecovers(t *testing.T) {
+	t.Parallel()
+	for _, stored := range []string{"not json at all", "null"} {
+		t.Run(stored, func(t *testing.T) {
+			t.Parallel()
+			sc, fakedefInst, otherdefInst := twoInstanceCache(t)
+			ctx := context.Background()
+			if err := (database.AppSettings{}).Set(ctx, sc.db, keyCacheDefsFingerprints, stored, sc.clock()); err != nil {
+				t.Fatalf("seed stored value: %v", err)
+			}
+			sc.storeBestEffort(ctx, fakedefInst, map[string]string{}, 0, search.Query{Keywords: "x"}, "fakedef-row", relSet("A"))
+			sc.storeBestEffort(ctx, otherdefInst, map[string]string{}, 0, search.Query{Keywords: "y"}, "otherdef-row", relSet("B"))
+
+			fps := map[string]string{"fakedef": fpA, "otherdef": fpA}
+			if err := sc.EnsureDefsFingerprints(ctx, fps); err != nil {
+				t.Fatalf("EnsureDefsFingerprints: %v", err)
+			}
+
+			assertServes(t, sc, "fakedef-row", true, "an unreadable stored map must not trigger an expiry storm")
+			assertServes(t, sc, "otherdef-row", true, "an unreadable stored map must not trigger an expiry storm")
+
+			// Next boot: the map is stored properly now, so a real change is detected.
+			if err := sc.EnsureDefsFingerprints(ctx, map[string]string{"fakedef": fpB, "otherdef": fpA}); err != nil {
+				t.Fatalf("second EnsureDefsFingerprints: %v", err)
+			}
+			assertServes(t, sc, "fakedef-row", false, "after recovery the next change must expire the changed def's rows")
+			assertServes(t, sc, "otherdef-row", true, "after recovery an unchanged def's rows must survive")
+		})
+	}
+}
+
 // TestChangedDefs covers the add/remove/edit/unchanged diff in one table.
 func TestChangedDefs(t *testing.T) {
 	t.Parallel()

@@ -285,9 +285,12 @@ func (c *SearchCache) EnsureDefsFingerprints(ctx context.Context, fps map[string
 }
 
 // storedDefsFingerprints reads the persisted per-definition map. A value that will
-// not decode (only reachable by hand-editing the DB) is reported as absent and
-// logged: the fresh map is then simply persisted over it, so the next boot compares
-// normally instead of the corrupt value wedging the check forever.
+// not decode, or decodes to no map at all (JSON "null" unmarshals cleanly into a
+// nil map — both only reachable by hand-editing the DB), is reported as absent and
+// logged: comparing against a nil map would read EVERY definition as newly added
+// and expire the whole cache, and a corrupt value would wedge the check forever.
+// Reporting it absent instead persists the fresh map over it, so the next boot
+// compares normally.
 func (c *SearchCache) storedDefsFingerprints(ctx context.Context) (map[string]string, bool, error) {
 	stored, found, err := database.AppSettings{}.Get(ctx, c.db, keyCacheDefsFingerprints)
 	if err != nil {
@@ -297,7 +300,7 @@ func (c *SearchCache) storedDefsFingerprints(ctx context.Context) (map[string]st
 		return nil, false, nil
 	}
 	var prev map[string]string
-	if err := json.Unmarshal([]byte(stored), &prev); err != nil {
+	if err := json.Unmarshal([]byte(stored), &prev); err != nil || prev == nil {
 		c.log.Warn().Err(err).Msg("registry: stored definition fingerprints are unreadable; recording the current ones instead")
 		return nil, false, nil
 	}
