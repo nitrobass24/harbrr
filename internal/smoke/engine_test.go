@@ -451,28 +451,40 @@ func TestGrabCheck(t *testing.T) {
 	}
 }
 
+// deadServer returns a stopped httptest server — a guaranteed-refused address for the
+// unreachable-host cases, and its client.
+func deadServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	srv.Close()
+	return srv
+}
+
 // TestHarbrrHasDownloadLinks pins the evidence probe the //go:build smoke front-end
 // records as downloadLinksPresent: a feed item with a link is grabbable, an item without
 // one is not, and a feed that cannot be fetched reports an error (and not-grabbable).
 func TestHarbrrHasDownloadLinks(t *testing.T) {
 	t.Parallel()
-	srv := grabStubServer(t, "", 200, "")
-	cfg := Config{HarbrrURL: srv.URL, HarbrrKey: "k"}
-	if ok, err := harbrrHasDownloadLinks(context.Background(), srv.Client(), cfg, "tracker", "q"); err != nil || !ok {
-		t.Errorf("feed with a link: got (%v, %v), want (true, nil)", ok, err)
+	tests := []struct {
+		name    string
+		server  func(t *testing.T) *httptest.Server
+		wantOK  bool
+		wantErr bool
+	}{
+		{"feed with links", func(t *testing.T) *httptest.Server { return grabStubServer(t, "", 200, "") }, true, false},
+		{"feed without links", func(t *testing.T) *httptest.Server { return grabStubServer(t, noLinkSentinel, 200, "") }, false, false},
+		{"unreachable feed", deadServer, false, true},
 	}
-
-	bare := grabStubServer(t, noLinkSentinel, 200, "")
-	cfg.HarbrrURL = bare.URL
-	if ok, err := harbrrHasDownloadLinks(context.Background(), bare.Client(), cfg, "tracker", "q"); err != nil || ok {
-		t.Errorf("feed without a link: got (%v, %v), want (false, nil)", ok, err)
-	}
-
-	dead := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-	cfg.HarbrrURL = dead.URL
-	dead.Close()
-	if ok, err := harbrrHasDownloadLinks(context.Background(), dead.Client(), cfg, "tracker", "q"); err == nil || ok {
-		t.Errorf("unreachable feed: got (%v, %v), want (false, an error)", ok, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			srv := tt.server(t)
+			cfg := Config{HarbrrURL: srv.URL, HarbrrKey: "k"}
+			ok, err := harbrrHasDownloadLinks(context.Background(), srv.Client(), cfg, "tracker", "q")
+			if ok != tt.wantOK || (err != nil) != tt.wantErr {
+				t.Errorf("harbrrHasDownloadLinks = (%v, %v), want (%v, err!=nil=%v)", ok, err, tt.wantOK, tt.wantErr)
+			}
+		})
 	}
 }
 
@@ -493,10 +505,8 @@ func TestGrabCheckGatedOff(t *testing.T) {
 // error — the detail must name neither the credential nor any secret token.
 func TestGrabCheckFindingCarriesNoSecret(t *testing.T) {
 	t.Parallel()
-	dead := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-	deadURL := dead.URL
-	dead.Close() // the download host now refuses the connection
-	srv := grabStubServer(t, deadURL+"/download/SUPERSECRETPASSKEY?passkey=SUPERSECRETPASSKEY&apikey=hk", 200, "")
+	dead := deadServer(t) // the download host refuses the connection
+	srv := grabStubServer(t, dead.URL+"/download/SUPERSECRETPASSKEY?passkey=SUPERSECRETPASSKEY&apikey=hk", 200, "")
 	cfg := Config{HarbrrURL: srv.URL, HarbrrKey: "hk", Query: "q", Grab: true}
 
 	got := grabCheck(context.Background(), srv.Client(), cfg, "tracker", nil)

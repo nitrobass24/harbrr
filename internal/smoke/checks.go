@@ -309,9 +309,9 @@ func findManaged(remotes []appsync.RemoteIndexer, slug string) (appsync.RemoteIn
 // degrades to a FAIL finding rather than aborting the suite (the CLI has no t.Fatalf).
 // It fetches only; nothing is pushed to a download client here.
 //
-// Query selection mirrors the differential's (chooseQueries + the fallback when the
-// primary returns nothing), so a bounded default query that happens to be empty on this
-// tracker does not read as a broken download path.
+// Query selection mirrors the differential's (chooseQueries + a distinct fallback when
+// the primary returns nothing), so a bounded default query that happens to be empty on
+// this tracker does not read as a broken download path.
 func grabCheck(ctx context.Context, c *http.Client, cfg Config, slug string, catIDs []int) []Finding {
 	if !cfg.Grab {
 		return nil
@@ -319,12 +319,16 @@ func grabCheck(ctx context.Context, c *http.Client, cfg Config, slug string, cat
 	f := Finding{Indexer: slug, Check: CheckGrab}
 	primary, fallback := chooseQueries(catIDs, cfg)
 	result, err := grabResolve(ctx, c, cfg, slug, primary)
-	if err == nil && result == grabNoLink {
+	// Only retry a DIFFERENT fallback: chooseQueries hands back the primary itself when
+	// the operator sets SMOKE_QUERY_FALLBACK equal to SMOKE_QUERY, and a duplicate hit on
+	// a real tracker buys nothing. The spacing matches the differential's.
+	if err == nil && result == grabNoLink && fallback != "" && fallback != primary {
+		time.Sleep(betweenCallsDelay)
 		result, err = grabResolve(ctx, c, cfg, slug, fallback)
 	}
 	switch {
 	case err != nil:
-		f.Status, f.Detail = StatusFail, "grab failed: "+err.Error()
+		f.Status, f.Detail = StatusFail, "grab failed: "+apphttp.RedactError(err)
 	case GrabSucceeded(result):
 		f.Status, f.Detail = StatusPass, "download link resolved to a "+result
 	default:
