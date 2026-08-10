@@ -194,6 +194,22 @@ func (c *SearchCache) ExpireAll(ctx context.Context) (int64, error) {
 	return n, nil
 }
 
+// ExpireByInstance marks ONE instance's currently-live cache entries expired —
+// WITHOUT deleting them — and returns the count affected. It is ExpireAll narrowed
+// to the indexers a definition change actually affects (autobrr/harbrr#388, see
+// EnsureDefsFingerprints). Deliberately NOT InvalidateByInstance: that is the
+// config-mutation path, which DELETES the rows, whereas a def change must keep them
+// readable for exactly ExpireAll's reasons (the announce-source diff via FetchAny and
+// the #251 budget-exhausted stale serve). Like ExpireAll it does not bump the
+// instance epoch: it runs at boot, before any search is in flight to resurrect a row.
+func (c *SearchCache) ExpireByInstance(ctx context.Context, instanceID int64) (int64, error) {
+	n, err := c.store.ExpireByInstance(ctx, c.db, instanceID, c.clock())
+	if err != nil {
+		return 0, err //nolint:wrapcheck // store wraps with the instance id; nothing secret to add.
+	}
+	return n, nil
+}
+
 // cacheReapGrace is how long an EXPIRED row is retained before the cleanup tick
 // deletes it. Two features read expired rows by design and break when the reaper
 // removes them too early: the announce-source diff (priorGUIDs reads the row a

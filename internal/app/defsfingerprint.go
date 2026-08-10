@@ -2,88 +2,87 @@ package app
 
 import (
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"hash"
-	"io"
 	"io/fs"
 	"os"
+	"path"
+	"strings"
 
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/definitions"
 )
 
-// defsFingerprint hashes the definition content that shapes cached search
-// results: the embedded Jackett vendor snapshot plus the on-disk dropin overrides
-// at dropinDir (a missing or empty dropin dir contributes nothing). It is used at
-// boot (buildSearchCache -> SearchCache.EnsureDefsFingerprint) to detect a
-// def-content change across a restart — a vendor refresh shipped in a binary
-// upgrade, or a dropin add/edit/remove — so already-cached rows shaped by the old
-// definitions can be expired. It deliberately does NOT cover native-driver code
-// changes (out of scope for autobrr/harbrr#347).
+// vendorDefsDir is the subdirectory of the embedded definitions FS that holds the
+// vendored Jackett snapshot.
+const vendorDefsDir = "vendor"
+
+// defsFingerprints hashes the definition content that shapes cached search
+// results — the embedded Jackett vendor snapshot plus the on-disk dropin
+// overrides at dropinDir — into ONE HASH PER DEFINITION, keyed by the
+// definition's CONTENT id: (loader.ProbeID). That is the id an indexer instance
+// stores in definition_id and the catalog offers, and for a handful of Jackett
+// files it differs from the filename (darkpeers.yml carries darkpeers-api), so
+// keying by filename would leave those indexers unmatched — and serving
+// stale-shape rows — after a change. Dropin precedence is applied, so only the
+// EFFECTIVE definition of each id is hashed: a dropin file byte-identical to the
+// vendored one it shadows is not a change.
 //
-// The walk is lexical (fs.WalkDir's own guarantee) and every file's slash-
-// separated relative path is hashed alongside its content, so a rename changes the
-// fingerprint even when no file's bytes did. Only content is hashed — never
-// mtimes — so touching a file without changing it never triggers an expiry.
-func defsFingerprint(dropinDir string) (string, error) {
-	h := sha256.New()
-	if err := hashFS(h, definitions.Vendored); err != nil {
-		return "", fmt.Errorf("hash vendored definitions: %w", err)
+// It is used at boot (buildSearchCache -> SearchCache.EnsureDefsFingerprints) to
+// detect def-content changes across a restart — a vendor refresh shipped in a
+// binary upgrade, or a dropin add/edit/remove — so already-cached rows shaped by
+// a CHANGED definition can be expired, and only those (autobrr/harbrr#388; the
+// corpus-wide hash this replaced expired every indexer's rows on any change). It
+// deliberately does NOT cover native-driver code changes (out of scope for
+// autobrr/harbrr#347).
+//
+// Only content is hashed — never mtimes — so touching a file without changing it
+// never triggers an expiry. Changing a definition's id is still a change: the id
+// is the map key, so the old id disappears and the new one appears.
+func defsFingerprints(dropinDir string) (map[string]string, error) {
+	out := map[string]string{}
+	if err := hashDefs(out, definitions.Vendored, vendorDefsDir); err != nil {
+		return nil, fmt.Errorf("hash vendored definitions: %w", err)
 	}
-	switch _, err := os.Stat(dropinDir); {
-	case err == nil:
-		if err := hashFS(h, os.DirFS(dropinDir)); err != nil {
-			return "", fmt.Errorf("hash dropin definitions: %w", err)
+	if dropinDir != "" {
+		if err := hashDefs(out, os.DirFS(dropinDir), "."); err != nil {
+			return nil, fmt.Errorf("hash dropin definitions: %w", err)
 		}
-	case !errors.Is(err, os.ErrNotExist):
-		return "", fmt.Errorf("stat dropin dir: %w", err)
 	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+	return out, nil
 }
 
-// hashFS walks root lexically, writing each regular file's path and content into
-// h as length-prefixed records (see the framing comment below for why bare
-// separators are not enough). Directories are not hashed themselves, so an empty
-// tree contributes nothing.
-func hashFS(h hash.Hash, root fs.FS) error {
-	err := fs.WalkDir(root, ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return fmt.Errorf("walk %q: %w", path, err)
-		}
-		if d.IsDir() {
+// hashDefs writes the sha256 of every .yml file in dir into out, keyed by its
+// content id: — falling back to the basename minus ".yml" when the document will
+// not decode or declares no id:, so a broken definition still gets a stable key
+// instead of vanishing from the map (and reading as a removal on every boot).
+// Entries are OVERWRITTEN, which is how dropin precedence is applied (dropins are
+// hashed after the vendored snapshot). A missing dir contributes nothing; non-.yml
+// files (schema.json, .jackett-ref) are ignored — they are not definitions and
+// shape no cached row.
+func hashDefs(out map[string]string, fsys fs.FS, dir string) error {
+	entries, err := fs.ReadDir(fsys, dir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil
 		}
-		data, err := fs.ReadFile(root, path)
+		return fmt.Errorf("read definitions dir %q: %w", dir, err)
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yml") {
+			continue
+		}
+		data, err := fs.ReadFile(fsys, path.Join(dir, e.Name()))
 		if err != nil {
-			return fmt.Errorf("read %q: %w", path, err)
+			return fmt.Errorf("read definition %q: %w", e.Name(), err)
 		}
-		// Length-prefix BOTH fields (u64 big-endian) so every record boundary is
-		// unambiguous: a bare separator can be forged by content bytes (content is
-		// arbitrary and may itself contain NULs and path-like text), letting two
-		// different trees serialize identically — e.g. {a:"", b:"hello"} vs
-		// {a:"b\x00hello"} under a NUL-separated stream. Lengths make that impossible
-		// without breaking the hash itself.
-		var lenBuf [8]byte
-		binary.BigEndian.PutUint64(lenBuf[:], uint64(len(path)))
-		if _, err := h.Write(lenBuf[:]); err != nil {
-			return fmt.Errorf("hash %q: %w", path, err)
+		id := loader.ProbeID(data)
+		if id == "" {
+			id = strings.TrimSuffix(e.Name(), ".yml")
 		}
-		if _, err := io.WriteString(h, path); err != nil {
-			return fmt.Errorf("hash %q: %w", path, err)
-		}
-		binary.BigEndian.PutUint64(lenBuf[:], uint64(len(data)))
-		if _, err := h.Write(lenBuf[:]); err != nil {
-			return fmt.Errorf("hash %q: %w", path, err)
-		}
-		if _, err := h.Write(data); err != nil {
-			return fmt.Errorf("hash %q: %w", path, err)
-		}
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("walk fs: %w", err)
+		sum := sha256.Sum256(data)
+		out[id] = hex.EncodeToString(sum[:])
 	}
 	return nil
 }

@@ -251,13 +251,13 @@ func TestRunFlushesCacheBeforeClose(t *testing.T) {
 	}
 }
 
-// TestNewExpiresCacheOnDefsFingerprintChange is the boot-path sibling of the
-// registry-level EnsureDefsFingerprint tests: it proves New's def-content check
-// (autobrr/harbrr#347) runs during a real boot. A stale stored fingerprint (one
-// that can never match the freshly computed embedded+dropin hash) makes New
-// expire — not delete — a pre-seeded live cache row: Fetch stops serving it, but
-// FetchAny (the announce diff / #251 stale-serve seam) still finds it.
-func TestNewExpiresCacheOnDefsFingerprintChange(t *testing.T) {
+// TestNewExpiresCacheOnLegacyDefsFingerprintUpgrade is the boot-path sibling of
+// the registry-level EnsureDefsFingerprints tests: it proves New's def-content
+// check (autobrr/harbrr#347, #388) runs during a real boot. A stored LEGACY
+// corpus-wide fingerprint with no per-definition map yet cannot be diffed, so New
+// expires — not deletes — a pre-seeded live cache row once: Fetch stops serving
+// it, but FetchAny (the announce diff / #251 stale-serve seam) still finds it.
+func TestNewExpiresCacheOnLegacyDefsFingerprintUpgrade(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	cfg := testConfig(t)
@@ -281,10 +281,11 @@ func TestNewExpiresCacheOnDefsFingerprintChange(t *testing.T) {
 		t.Fatalf("seed cache row: %v", err)
 	}
 	// "cache.defs_fingerprint" mirrors registry.keyCacheDefsFingerprint (unexported
-	// across the package boundary); any value differs from the real sha256 hex
-	// digest New computes, so the boot check observes a mismatch.
-	if err := (database.AppSettings{}).Set(ctx, db, "cache.defs_fingerprint", "stale-fingerprint", now); err != nil {
-		t.Fatalf("seed stale fingerprint: %v", err)
+	// across the package boundary) — the legacy corpus-wide key. Its presence
+	// without "cache.defs_fingerprints" is exactly the upgrade case, whatever the
+	// value is.
+	if err := (database.AppSettings{}).Set(ctx, db, "cache.defs_fingerprint", "legacy-fingerprint", now); err != nil {
+		t.Fatalf("seed legacy fingerprint: %v", err)
 	}
 
 	if _, err := New(ctx, Deps{Config: cfg, Logger: zerolog.Nop()}, WithDatabase(db)); err != nil {
