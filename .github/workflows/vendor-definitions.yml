@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   vendor:
-    runs-on: self-hosted
+    runs-on: ubuntu-24.04
     # Bare-host `go` gets SIGKILLed on the self-hosted runners, so run in the
     # same golang:1.26-alpine image the CI Go jobs use — its own musl Go with
     # GOTOOLCHAIN=local replaces actions/setup-go (see backend-test in ci.yml
