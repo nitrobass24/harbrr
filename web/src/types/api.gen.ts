@@ -1082,6 +1082,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/download-clients/{id}/grab": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a search result to this download client
+         * @description Hands one search result to the client. A harbrr-sealed download link (…/api/indexers/{slug}/download/{token}) is resolved server-side so the indexer's passkey never leaves harbrr — the client receives the .torrent/.nzb bytes, or the magnet the link resolves to. Any other link is passed through for the client to fetch itself. A client that cannot handle the release's protocol (an nzb-only client sent a torrent, or the reverse) is a 400.
+         */
+        post: operations["grabToDownloadClient"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/download-clients/{id}/enable": {
         parameters: {
             query?: never;
@@ -1490,7 +1510,7 @@ export interface components {
         Error: {
             /** @description human-readable message */
             error: string;
-            /** @description machine-readable code clients can branch on — one of: bad_request, invalid, unauthorized, invalid_credentials, invalid_api_key, forbidden, not_found, conflict, already_setup, not_implemented, internal. An OIDC ID-token verification failure also uses invalid_credentials. */
+            /** @description machine-readable code clients can branch on — one of: bad_request, invalid, unauthorized, invalid_credentials, invalid_api_key, forbidden, not_found, conflict, already_setup, request_too_large, not_implemented, unavailable, upstream_unreachable, internal. An OIDC ID-token verification failure also uses invalid_credentials. */
             code: string;
         };
         /** @description Optional reserved keys the engine understands when present in an indexer's free-form settings map (alongside the definition's own settings). All are optional; documented here because they are not part of any single definition's schema. proxy_url and cookie are secrets (stored encrypted, never echoed — they read back as the <redacted> sentinel). */
@@ -2333,6 +2353,15 @@ export interface components {
         UpdateDownloadClient: {
             name?: string;
             settings?: components["schemas"]["DownloadClientSettings"];
+        };
+        /** @description One search result to send to a download client. link is the release's `link` (or `magnet`) from the search response, sent back VERBATIM — the client never rebuilds it. */
+        GrabRelease: {
+            /** @description the slug of the indexer the result came from */
+            indexer: string;
+            /** @description the search response's link for this release, verbatim */
+            link: string;
+            /** @description optional release title; names the job on clients that take an uploaded file */
+            name?: string;
         };
         /** @description A global, reusable anti-bot solver (FlareSolverr) an indexer references by id. The endpoint URL (url) is never echoed — it reads back as the <redacted> sentinel. */
         Solver: {
@@ -5008,6 +5037,59 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    grabToDownloadClient: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GrabRelease"];
+            };
+        };
+        responses: {
+            /** @description handed to the download client */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description unknown download client or indexer, or the sealed link resolved to a non-torrent body (typically an expired indexer session) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description the resolve or the client add failed (a sanitized, secret-free error) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description the download proxy is disabled, so a sealed link cannot be resolved */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     enableDownloadClient: {

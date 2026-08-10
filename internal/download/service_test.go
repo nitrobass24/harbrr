@@ -373,4 +373,67 @@ func TestTestConnectionUnknownID(t *testing.T) {
 	}
 }
 
+// TestGrabEndToEnd: Grab loads the client, builds its driver, and hands the payload
+// over — with the per-client settings folded in by the driver, since Grab itself passes
+// empty AddOptions.
+func TestGrabEndToEnd(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	stub := &qbitStub{}
+	srv := newQbitStub(t, stub)
+
+	svc, _ := newService(t)
+	c, err := svc.Create(ctx, CreateParams{
+		Name: "seedbox", Kind: domain.DownloadClientKindQBittorrent, Host: srv.URL,
+		Username: "admin", Secret: "adminadmin",
+		Settings: domain.DownloadClientSettings{QBittorrent: &domain.QBittorrentSettings{Category: "harbrr"}},
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	const magnet = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"
+	if err := svc.Grab(ctx, c.ID, Payload{Protocol: ProtocolTorrent, URL: magnet}); err != nil {
+		t.Fatalf("Grab: %v", err)
+	}
+	if got := first(stub.addForm["urls"]); got != magnet {
+		t.Errorf("urls form field = %q, want the magnet", got)
+	}
+	if got := first(stub.addForm["category"]); got != "harbrr" {
+		t.Errorf("category = %q, want the client's configured default", got)
+	}
+}
+
+func TestGrabUnknownID(t *testing.T) {
+	t.Parallel()
+	svc, _ := newService(t)
+	err := svc.Grab(context.Background(), 999, Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"})
+	if !errors.Is(err, database.ErrNotFound) {
+		t.Errorf("err = %v, want database.ErrNotFound", err)
+	}
+}
+
+// TestGrabDisabledClient: a disabled client is refused rather than quietly used — the
+// UI only offers enabled clients, so reaching here means the state changed under the
+// caller.
+func TestGrabDisabledClient(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, _ := newService(t)
+	c, err := svc.Create(ctx, CreateParams{
+		Name: "seedbox", Kind: domain.DownloadClientKindQBittorrent, Host: "http://localhost:8080",
+		Username: "admin", Secret: "adminadmin",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := svc.SetEnabled(ctx, c.ID, false); err != nil {
+		t.Fatalf("SetEnabled: %v", err)
+	}
+	err = svc.Grab(ctx, c.ID, Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"})
+	if !errors.Is(err, domain.ErrInvalid) {
+		t.Errorf("err = %v, want domain.ErrInvalid", err)
+	}
+}
+
 func ptrInt64(i int64) *int64 { return &i }

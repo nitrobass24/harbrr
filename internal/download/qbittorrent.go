@@ -22,12 +22,16 @@ var errAddReportedFailure = errors.New("download: qbittorrent: add torrent: qBit
 // token), so the factory's shared *http.Client goes unused here — it exists for
 // #242's thin HTTP drivers, not this one.
 type qbittorrentDriver struct {
-	client *qbittorrent.Client
+	client   *qbittorrent.Client
+	category string
+	tags     []string
+	paused   bool
 }
 
 // newQBittorrent builds the qBittorrent driver from a configured client row and
 // its decrypted secret (the account password; empty for the credential-free
-// localhost-bypass case).
+// localhost-bypass case). The per-client category/tags/start-paused settings are held
+// here and folded in by Add, the way every other driver folds its own defaults.
 func newQBittorrent(c domain.DownloadClient, secret string, _ *http.Client) (Driver, error) {
 	var settings domain.QBittorrentSettings
 	if c.Settings.QBittorrent != nil {
@@ -40,6 +44,9 @@ func newQBittorrent(c domain.DownloadClient, secret string, _ *http.Client) (Dri
 			Password:      secret,
 			TLSSkipVerify: settings.TLSSkipVerify,
 		}),
+		category: settings.Category,
+		tags:     settings.Tags,
+		paused:   settings.StartPaused,
 	}, nil
 }
 
@@ -64,10 +71,14 @@ func (d *qbittorrentDriver) Add(ctx context.Context, p Payload, opts AddOptions)
 		return fmt.Errorf("download: qbittorrent: login: %w", err)
 	}
 
+	category := d.category
+	if opts.Category != "" {
+		category = opts.Category
+	}
 	form := (&qbittorrent.TorrentAddOptions{
-		Paused:   opts.Paused,
-		Category: opts.Category,
-		Tags:     strings.Join(opts.Tags, ","),
+		Paused:   d.paused || opts.Paused,
+		Category: category,
+		Tags:     strings.Join(mergeTags(d.tags, opts.Tags), ","),
 	}).Prepare()
 
 	var (

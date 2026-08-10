@@ -2,6 +2,7 @@ package download
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -164,15 +165,50 @@ func TestNZBGetAdd_TorrentUnsupported(t *testing.T) {
 	}
 }
 
-func TestNZBGetAdd_BytesOnlyUnsupported(t *testing.T) {
+// TestNZBGetAdd_ViaBytes: a payload harbrr resolved itself (a sealed download link is
+// only fetchable by harbrr) rides in the append Content slot base64-encoded, with the
+// release title as the job filename — never degraded to a URL add and never rejected.
+func TestNZBGetAdd_ViaBytes(t *testing.T) {
+	t.Parallel()
+	stub := &nzbgetStub{}
+	srv := newNZBGetStub(t, stub)
+	drv := newTestNZBGetDriver(srv.URL, "nzbget", "tegbzn6789", "default-cat")
+
+	const nzb = `<?xml version="1.0"?><nzb><file/></nzb>`
+	err := drv.Add(context.Background(), Payload{
+		Protocol: ProtocolUsenet, Bytes: []byte(nzb), Name: "Example.Movie.2023.1080p",
+	}, AddOptions{})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if stub.lastMethod != "append" {
+		t.Fatalf("method = %q, want append", stub.lastMethod)
+	}
+	if got, want := stub.lastParams[0], "Example.Movie.2023.1080p.nzb"; got != want {
+		t.Errorf("filename param = %v, want %q", got, want)
+	}
+	content, err := base64.StdEncoding.DecodeString(stub.lastParams[1].(string))
+	if err != nil {
+		t.Fatalf("content param is not base64: %v", err)
+	}
+	if string(content) != nzb {
+		t.Errorf("content param = %q, want the payload bytes", content)
+	}
+	if got := stub.lastParams[2]; got != "default-cat" {
+		t.Errorf("category param = %v, want the settings default", got)
+	}
+}
+
+// TestNZBGetAdd_EmptyPayloadRejected: neither URL nor bytes is nothing to add.
+func TestNZBGetAdd_EmptyPayloadRejected(t *testing.T) {
 	t.Parallel()
 	stub := &nzbgetStub{}
 	srv := newNZBGetStub(t, stub)
 	drv := newTestNZBGetDriver(srv.URL, "nzbget", "tegbzn6789", "")
 
-	err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, Bytes: []byte("nzb bytes")}, AddOptions{})
+	err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet}, AddOptions{})
 	if !errors.Is(err, ErrURLRequired) {
-		t.Fatalf("Add(bytes-only) error = %v, want ErrURLRequired", err)
+		t.Fatalf("Add(empty) error = %v, want ErrURLRequired", err)
 	}
 }
 

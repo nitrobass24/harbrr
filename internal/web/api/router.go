@@ -320,6 +320,8 @@ func (rt *router) mountResourceRoutes(r chi.Router) {
 	r.Patch("/api/download-clients/{id}", rt.updateDownloadClient)
 	r.Delete("/api/download-clients/{id}", rt.deleteDownloadClient)
 	r.Post("/api/download-clients/{id}/test", rt.testDownloadClient)
+	// Send one search result to this client (autobrr/harbrr#7 Part B).
+	r.Post("/api/download-clients/{id}/grab", rt.grabToDownloadClient)
 	r.Post("/api/download-clients/{id}/enable", rt.enableDownloadClient)
 	r.Post("/api/download-clients/{id}/disable", rt.disableDownloadClient)
 

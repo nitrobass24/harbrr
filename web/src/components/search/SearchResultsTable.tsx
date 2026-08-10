@@ -1,6 +1,8 @@
 import { ArrowDown, ArrowUp, Download, Magnet } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { acquisitionLink, SendToClientMenu } from "@/components/search/SendToClientMenu"
+import type { DownloadClient } from "@/lib/api"
 import { formatSize, relativeTime } from "@/lib/format"
 import { isSafeHref } from "@/lib/safe-href"
 import { cn } from "@/lib/utils"
@@ -11,11 +13,12 @@ import type { SearchRow, Sort, SortKey } from "@/components/search/search-sort"
 // (magnets may carry passkeys by design). Trackers are untrusted, so the scheme
 // is allowlisted (http/https for `link`, magnet: for `magnet`) before a link is
 // rendered at all; anything else (javascript:, data:, etc.) is dropped silently.
-export function SearchResultsTable({ rows, catNames, sort, onSort }: {
+export function SearchResultsTable({ rows, catNames, sort, onSort, clients = [] }: {
   rows: SearchRow[]
   catNames: Map<number, string>
   sort: Sort
   onSort: (key: SortKey) => void
+  clients?: DownloadClient[]
 }) {
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card">
@@ -38,6 +41,7 @@ export function SearchResultsTable({ rows, catNames, sort, onSort }: {
               key={`${row.indexer}::${row.release.link ?? row.release.magnet ?? row.release.infohash ?? row.release.title}`}
               row={row}
               catNames={catNames}
+              clients={clients}
             />
           ))}
         </TableBody>
@@ -68,7 +72,7 @@ function SortableHead({ label, k, sort, onSort, className }: {
   )
 }
 
-function ResultRow({ row, catNames }: { row: SearchRow, catNames: Map<number, string> }) {
+function ResultRow({ row, catNames, clients }: { row: SearchRow, catNames: Map<number, string>, clients: DownloadClient[] }) {
   const r = row.release
   const freeleech = r.downloadVolumeFactor === 0
   const category = (r.categories ?? [])
@@ -115,6 +119,13 @@ function ResultRow({ row, catNames }: { row: SearchRow, catNames: Map<number, st
               <Magnet className="h-4 w-4" />
             </a>
           )}
+          <SendToClientMenu
+            clients={clients}
+            indexer={row.indexer}
+            link={acquisitionLink(r)}
+            title={r.title}
+            className="h-7 w-7"
+          />
         </span>
       </TableCell>
     </TableRow>

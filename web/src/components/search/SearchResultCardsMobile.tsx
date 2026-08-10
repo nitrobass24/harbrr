@@ -5,6 +5,8 @@
 
 import { Download, Magnet } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { acquisitionLink, SendToClientMenu } from "@/components/search/SendToClientMenu"
+import type { DownloadClient } from "@/lib/api"
 import { formatSize, relativeTime } from "@/lib/format"
 import { isSafeHref } from "@/lib/safe-href"
 import { cn } from "@/lib/utils"
@@ -12,9 +14,10 @@ import type { SearchRow } from "@/components/search/search-sort"
 
 // Mobile card list, mirroring SearchResultsTable's ResultRow content (title, indexer,
 // category, size/seeders/leechers, Grab) in a stacked card instead of table columns.
-export function SearchResultCardsMobile({ rows, catNames }: {
+export function SearchResultCardsMobile({ rows, catNames, clients = [] }: {
   rows: SearchRow[]
   catNames: Map<number, string>
+  clients?: DownloadClient[]
 }) {
   return (
     <div className="flex flex-col gap-2">
@@ -23,13 +26,14 @@ export function SearchResultCardsMobile({ rows, catNames }: {
           key={`${row.indexer}::${row.release.link ?? row.release.magnet ?? row.release.infohash ?? row.release.title}`}
           row={row}
           catNames={catNames}
+          clients={clients}
         />
       ))}
     </div>
   )
 }
 
-function ResultCard({ row, catNames }: { row: SearchRow, catNames: Map<number, string> }) {
+function ResultCard({ row, catNames, clients }: { row: SearchRow, catNames: Map<number, string>, clients: DownloadClient[] }) {
   const r = row.release
   const freeleech = r.downloadVolumeFactor === 0
   const category = (r.categories ?? [])
@@ -83,6 +87,13 @@ function ResultCard({ row, catNames }: { row: SearchRow, catNames: Map<number, s
               <Magnet className="h-4 w-4" />
             </a>
           )}
+          <SendToClientMenu
+            clients={clients}
+            indexer={row.indexer}
+            link={acquisitionLink(r)}
+            title={r.title}
+            className="h-8 w-8"
+          />
         </span>
       </div>
     </div>
