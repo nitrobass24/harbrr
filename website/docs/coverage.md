@@ -73,7 +73,7 @@ Native drivers we have issues for but haven't built. 👍 or comment on the issu
 
 Served through the shared engine from the vendored Jackett snapshot — all built. Live-tested where an operator instance covers them.
 
-### Private (405)
+### Private (404)
 
 | Tracker | Built | Live-tested |
 |---|:--:|:--:|
@@ -145,7 +145,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | CeskeForum | ✅ | ⬜ |
 | CGPeers | ✅ | ⬜ |
 | CHDBits | ✅ | ⬜ |
-| ChileBT (API) | ✅ | ⬜ |
 | Cinemageddon | ✅ | ⬜ |
 | CinemaMovieS_ZT | ✅ | ⬜ |
 | Cinematik (API) | ✅ | ⬜ |
@@ -432,12 +431,12 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Torrent Trader | ✅ | ⬜ |
 | TOrrent-tuRK | ✅ | ⬜ |
 | Torrent.LT | ✅ | ⬜ |
-| TorrentAvenue (API) | ✅ | ⬜ |
 | TorrentBD | ✅ | ⬜ |
 | TorrentCCF | ✅ | ⬜ |
 | TorrentClaw | ✅ | ⬜ |
 | TorrentDD | ✅ | ⬜ |
 | Torrenteros (API) | ✅ | ⬜ |
+| TorrentHaven (API) | ✅ | ⬜ |
 | TorrentHR (API) | ✅ | ⬜ |
 | Torrenting | ✅ | ⬜ |
 | TorrentLeech | ✅ | ✅ |
@@ -548,7 +547,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | UzTracker | ✅ | ⬜ |
 | Ztracker | ✅ | ⬜ |
 
-### Public (85)
+### Public (86)
 
 | Tracker | Built | Live-tested |
 |---|:--:|:--:|
@@ -620,6 +619,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | torrent.by | ✅ | ⬜ |
 | Torrent9 | ✅ | ⬜ |
 | Torrent[CORE] | ✅ | ⬜ |
+| TorrentByte | ✅ | ⬜ |
 | TorrentDownload | ✅ | ⬜ |
 | TorrentGalaxyClone | ✅ | ⬜ |
 | TorrentKitty | ✅ | ⬜ |
