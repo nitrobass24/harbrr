@@ -169,13 +169,15 @@ func TestLoadAllSkipEntryOrigin(t *testing.T) {
 		})
 	}
 
-	// The vendored id really exists, so the case above is a shadowing failure
-	// and not a typo'd fixture id that was never in the catalog.
-	if _, err := New("").Load(vendoredID); err != nil {
-		t.Fatalf("Load(%q) without drop-ins = %v, want nil (fixture id must be a real vendored definition)", vendoredID, err)
+	// The vendored id really exists (and reports the vendored origin without a
+	// drop-in), so the case above is a shadowing failure and not a typo'd
+	// fixture id that was never in the catalog.
+	_, origin, err := New("").load(vendoredID)
+	if err != nil {
+		t.Fatalf("load(%q) without drop-ins = %v, want nil (fixture id must be a real vendored definition)", vendoredID, err)
 	}
-	if got := New("").originOf(vendoredID); got != OriginVendored {
-		t.Errorf("originOf(%q) with no drop-in dir = %q, want %q", vendoredID, got, OriginVendored)
+	if origin != OriginVendored {
+		t.Errorf("load(%q) origin without a drop-in dir = %q, want %q", vendoredID, origin, OriginVendored)
 	}
 }
 

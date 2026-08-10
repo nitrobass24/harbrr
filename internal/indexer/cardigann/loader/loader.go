@@ -119,37 +119,48 @@ func New(dropinDir string) *Loader {
 // vendor/<id>.yml, then by content id:). If neither exists it returns an error
 // wrapping ErrNotFound.
 func (l *Loader) Load(id string) (*Definition, error) {
+	def, _, err := l.load(id)
+	return def, err
+}
+
+// load is Load plus the origin the attempt actually selected, reported on the
+// failure path too so a caller can name the file the operator must go fix. A
+// drop-in that exists wins outright — unreadable or unparseable it still
+// reports OriginDropin and never falls back to the vendored copy, which is the
+// behaviour that makes a typo'd drop-in remove a working tracker. Origin is
+// empty only when no source was reached at all (a rejected id).
+func (l *Loader) load(id string) (*Definition, Origin, error) {
 	if err := validateID(id); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	if l.dropinDir != "" {
 		data, ok, err := l.readDropin(id)
 		if err != nil {
-			return nil, err
+			return nil, OriginDropin, err
 		}
 		if ok {
 			def, err := Parse(data)
 			if err != nil {
-				return nil, fmt.Errorf("loading drop-in definition %q: %w", id, err)
+				return nil, OriginDropin, fmt.Errorf("loading drop-in definition %q: %w", id, err)
 			}
-			return def, nil
+			return def, OriginDropin, nil
 		}
 	}
 
 	data, err := l.readVendored(id)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, fmt.Errorf("%q: %w", id, ErrNotFound)
+			return nil, OriginVendored, fmt.Errorf("%q: %w", id, ErrNotFound)
 		}
-		return nil, err
+		return nil, OriginVendored, err
 	}
 
 	def, err := Parse(data)
 	if err != nil {
-		return nil, fmt.Errorf("loading vendored definition %q: %w", id, err)
+		return nil, OriginVendored, fmt.Errorf("loading vendored definition %q: %w", id, err)
 	}
-	return def, nil
+	return def, OriginVendored, nil
 }
 
 // readVendored returns the raw bytes of the vendored definition for id. It
@@ -223,28 +234,14 @@ func (l *Loader) LoadAll() (defs []*Definition, skipped []SkipEntry, err error) 
 	}
 
 	for _, id := range ids {
-		def, loadErr := l.Load(id)
+		def, origin, loadErr := l.load(id)
 		if loadErr != nil {
-			skipped = append(skipped, SkipEntry{ID: id, Origin: l.originOf(id), Reason: loadErr.Error()})
+			skipped = append(skipped, SkipEntry{ID: id, Origin: origin, Reason: loadErr.Error()})
 			continue
 		}
 		defs = append(defs, def)
 	}
 	return defs, skipped, nil
-}
-
-// originOf reports where Load resolved (or tried to resolve) id from, applying
-// the same dropin > vendored precedence Load does: a drop-in file wins whenever
-// it exists, including when it exists but cannot be read. Only the failure path
-// calls it, so the extra read never costs the common case.
-func (l *Loader) originOf(id string) Origin {
-	if l.dropinDir == "" {
-		return OriginVendored
-	}
-	if _, ok, err := l.readDropin(id); ok || err != nil {
-		return OriginDropin
-	}
-	return OriginVendored
 }
 
 // allIDs returns the sorted union of vendored ids and drop-in ids.
