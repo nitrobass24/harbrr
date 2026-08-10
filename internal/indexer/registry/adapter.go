@@ -364,12 +364,16 @@ func (a *indexerAdapter) checkCircuit(ctx context.Context) error {
 	return nil
 }
 
-// recordCircuitSuccess descends the instance's escalation ladder one rung after a
-// classified-error-free Search/Grab, clearing its current disable window. Skips the
-// write when the circuit is already at its baseline (closed, level 0) — the common
-// case — so a healthy indexer costs no extra write per search. Best-effort: a
-// failed read/write is logged and never masks the search/grab result.
+// recordCircuitSuccess stamps the durable last-success instant and descends the
+// instance's escalation ladder one rung after a classified-error-free Search/Grab,
+// clearing its current disable window. It is the single seam every real success routes
+// through, which is why the health derivation's only success signal is recorded here
+// (#457) — before the circuit work, which is skipped when the circuit is already at its
+// baseline (closed, level 0), the common case, so a healthy indexer still costs no extra
+// write per search. Best-effort: a failed read/write is logged and never masks the
+// search/grab result.
 func (a *indexerAdapter) recordCircuitSuccess(ctx context.Context) {
+	a.stats.RecordSuccess(a.instanceID)
 	if a.db == nil {
 		return
 	}
@@ -497,7 +501,7 @@ func classifyHealth(err error) (string, bool) {
 // refused/reset, TLS handshake failure, DNS failure, client timeout (all covered by
 // net.Error, which *net.OpError, *net.DNSError, and context.DeadlineExceeded all
 // implement), a *url.Error chain, an EOF mid-read (io.EOF / io.ErrUnexpectedEOF), or
-// a gateway status (502/504/522, search.ErrGatewayStatus) — as opposed to a
+// a gateway status (the search.ErrGatewayStatus family) — as opposed to a
 // reachable-but-unhappy response. Kept coarse (#223): one kind, not a taxonomy; the
 // event detail string carries the specifics. A gateway status is classified the same
 // as a dropped connection (#247): the tracker itself never answered, the outage is

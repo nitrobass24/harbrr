@@ -44,16 +44,17 @@ type IndexerStats struct {
 }
 
 // instanceStat holds one instance's cumulative query/grab counts, the running
-// response-time sum (millis), and the last-query/last-grab times (unix millis, 0 =
-// never). All lock-free atomics: the hot path (RecordQuery/RecordGrab) never touches
-// the DB or a lock.
+// response-time sum (millis), and the last-query/last-grab/last-success times (unix
+// millis, 0 = never). All lock-free atomics: the hot path (RecordQuery/RecordGrab)
+// never touches the DB or a lock.
 type instanceStat struct {
-	queries       atomic.Int64
-	grabAttempts  atomic.Int64
-	grabs         atomic.Int64
-	responseMs    atomic.Int64 // cumulative sum of per-query elapsed millis
-	lastQueryUnix atomic.Int64 // unix millis, 0 = never
-	lastGrabUnix  atomic.Int64 // unix millis, 0 = never
+	queries         atomic.Int64
+	grabAttempts    atomic.Int64
+	grabs           atomic.Int64
+	responseMs      atomic.Int64 // cumulative sum of per-query elapsed millis
+	lastQueryUnix   atomic.Int64 // unix millis, 0 = never
+	lastGrabUnix    atomic.Int64 // unix millis, 0 = never
+	lastSuccessUnix atomic.Int64 // unix millis, 0 = never
 
 	// cats holds the per-parent-category tallies NOT YET flushed, keyed by standard
 	// parent category id (map[int]*catDelta). Unlike the counters above these are
@@ -96,6 +97,14 @@ func (s *IndexerStats) RecordQuery(instanceID int64, elapsed time.Duration) {
 	}
 	is.responseMs.Add(ms)
 	is.lastQueryUnix.Store(s.clock().UnixMilli())
+}
+
+// RecordSuccess stamps the instant a search or grab actually SUCCEEDED. It is the only
+// real success signal the derived health status has (#457): RecordQuery counts failed
+// attempts too, so a query timestamp proves the tracker was reached, never that it
+// answered. Same lock-free, flush-durable path as the counters.
+func (s *IndexerStats) RecordSuccess(instanceID int64) {
+	s.get(instanceID).lastSuccessUnix.Store(s.clock().UnixMilli())
 }
 
 // RecordGrabAttempt counts one grab that reached the tracker, whether or not it
@@ -145,6 +154,7 @@ type statSnapshot struct {
 	respTotal    int64
 	lastQuery    time.Time // zero = never
 	lastGrab     time.Time // zero = never
+	lastSuccess  time.Time // zero = never
 }
 
 // snapshot reads instanceID's current counters (zeroes for an instance with no
@@ -162,6 +172,7 @@ func (s *IndexerStats) snapshot(instanceID int64) statSnapshot {
 		respTotal:    is.responseMs.Load(),
 		lastQuery:    unixMillisToTime(is.lastQueryUnix.Load()),
 		lastGrab:     unixMillisToTime(is.lastGrabUnix.Load()),
+		lastSuccess:  unixMillisToTime(is.lastSuccessUnix.Load()),
 	}
 }
 
@@ -188,6 +199,7 @@ func (s *IndexerStats) RehydrateCounters(ctx context.Context) error {
 		is.responseMs.Add(r.ResponseMsTotal)
 		storeIfGreater(&is.lastQueryUnix, timeToUnixMillis(r.LastQueryAt))
 		storeIfGreater(&is.lastGrabUnix, timeToUnixMillis(r.LastGrabAt))
+		storeIfGreater(&is.lastSuccessUnix, timeToUnixMillis(r.LastSuccessAt))
 	}
 	s.rehydrated.Store(true)
 	return nil
@@ -225,6 +237,7 @@ func (s *IndexerStats) FlushCounters(ctx context.Context) {
 			ResponseMsTotal: is.responseMs.Load(),
 			LastQueryAt:     unixMillisToTime(is.lastQueryUnix.Load()),
 			LastGrabAt:      unixMillisToTime(is.lastGrabUnix.Load()),
+			LastSuccessAt:   unixMillisToTime(is.lastSuccessUnix.Load()),
 			UpdatedAt:       now,
 		}
 		if err := s.store.Upsert(ctx, s.db, row); err != nil {

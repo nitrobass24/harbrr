@@ -26,9 +26,13 @@ func TestIndexerStatCountersUpsertAndAll(t *testing.T) {
 	id2 := insertInstance(t, db, "two")
 
 	for _, c := range []database.IndexerStatCounter{
-		// id1 has both timestamps set.
-		{InstanceID: id1, Queries: 5, Grabs: 2, ResponseMsTotal: 500, LastQueryAt: lastQuery, LastGrabAt: lastGrab, UpdatedAt: now},
-		// id2 was queried but never grabbed (last_grab_at stays NULL).
+		// id1 has every timestamp set.
+		{
+			InstanceID: id1, Queries: 5, Grabs: 2, ResponseMsTotal: 500,
+			LastQueryAt: lastQuery, LastGrabAt: lastGrab, LastSuccessAt: lastQuery, UpdatedAt: now,
+		},
+		// id2 was queried but never grabbed and never SUCCEEDED (both stay NULL) — the
+		// #457 shape: a tracker answering every search with an error.
 		{InstanceID: id2, Queries: 3, Grabs: 0, ResponseMsTotal: 90, LastQueryAt: lastQuery, UpdatedAt: now},
 	} {
 		if err := store.Upsert(ctx, db, c); err != nil {
@@ -40,7 +44,8 @@ func TestIndexerStatCountersUpsertAndAll(t *testing.T) {
 	newLastQuery := now.Add(time.Minute)
 	if err := store.Upsert(ctx, db, database.IndexerStatCounter{
 		InstanceID: id1, Queries: 11, Grabs: 4, ResponseMsTotal: 1100,
-		LastQueryAt: newLastQuery, LastGrabAt: lastGrab, UpdatedAt: now.Add(time.Minute),
+		LastQueryAt: newLastQuery, LastGrabAt: lastGrab, LastSuccessAt: newLastQuery,
+		UpdatedAt: now.Add(time.Minute),
 	}); err != nil {
 		t.Fatalf("Upsert update: %v", err)
 	}
@@ -63,6 +68,9 @@ func TestIndexerStatCountersUpsertAndAll(t *testing.T) {
 	if !got[0].LastGrabAt.Equal(lastGrab) {
 		t.Errorf("id1 lastGrabAt = %v, want %v", got[0].LastGrabAt, lastGrab)
 	}
+	if !got[0].LastSuccessAt.Equal(newLastQuery) {
+		t.Errorf("id1 lastSuccessAt = %v, want %v", got[0].LastSuccessAt, newLastQuery)
+	}
 	// id2: never grabbed -> zero (NULL) last_grab_at.
 	if r := got[1]; r.InstanceID != id2 || r.Queries != 3 || r.Grabs != 0 || r.ResponseMsTotal != 90 {
 		t.Errorf("row1 = %+v, want id2 3/0/90", r)
@@ -72,6 +80,9 @@ func TestIndexerStatCountersUpsertAndAll(t *testing.T) {
 	}
 	if got[1].LastQueryAt.IsZero() {
 		t.Error("id2 lastQueryAt is zero, want the set timestamp")
+	}
+	if !got[1].LastSuccessAt.IsZero() {
+		t.Errorf("id2 lastSuccessAt = %v, want zero (never succeeded)", got[1].LastSuccessAt)
 	}
 }
 
