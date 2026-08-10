@@ -129,13 +129,14 @@ func (e *Executor) CheckTest(ctx context.Context, def *loader.Definition) (bool,
 	if err != nil {
 		return false, err
 	}
-	body, status, location, err := e.getNoFollow(ctx, testURL, def.Login.Headers)
+	hdrs := loginHeaders(def)
+	body, status, location, err := e.getNoFollow(ctx, testURL, hdrs)
 	if err != nil {
 		return false, err
 	}
 	// Jackett follows a same-domain redirect once, then re-evaluates.
 	if httpx.IsRedirectStatus(status) && location != "" && !e.crossDomainRedirect(testURL, location) {
-		body, status, _, err = e.getNoFollow(ctx, location, def.Login.Headers)
+		body, status, _, err = e.getNoFollow(ctx, location, hdrs)
 		if err != nil {
 			return false, err
 		}
