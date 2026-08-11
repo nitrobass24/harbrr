@@ -111,8 +111,11 @@ func (s *IndexerStats) RecordQuery(instanceID int64, elapsed time.Duration) {
 // record time keeps the in-memory, flushed and rehydrated values identical (the DB
 // round-trip truncates anyway) and makes a same-second tie resolve to the failure, which
 // is what deriveStatus already treats as "not a success" (see failingNow).
+// Stored if-greater, like the rehydrate fold: two concurrent successes can reach here
+// with different clock reads, and the one holding the older value must not land last and
+// rewind the instant out of the healthy window.
 func (s *IndexerStats) RecordSuccess(instanceID int64) {
-	s.get(instanceID).lastSuccessUnix.Store(s.clock().Truncate(time.Second).UnixMilli())
+	storeIfGreater(&s.get(instanceID).lastSuccessUnix, s.clock().Truncate(time.Second).UnixMilli())
 }
 
 // RecordGrabAttempt counts one grab that reached the tracker, whether or not it
