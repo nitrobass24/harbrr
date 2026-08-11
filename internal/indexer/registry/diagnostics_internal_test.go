@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"reflect"
 	"testing"
 	"time"
 
@@ -111,16 +112,23 @@ func TestRecordHealthFilesCapture(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
+	// wantCapture is compared WHOLE rather than field by field: the ring stores the
+	// engine's capture verbatim, so the method, the redacted URL, the status and the
+	// body all have to survive the trip — a request-summary entry is only useful if
+	// its method and URL come back out.
 	tests := []struct {
-		name     string
-		err      error
-		wantKind string // "" = nothing filed
-		wantBody string
+		name        string
+		err         error
+		wantKind    string // "" = nothing filed
+		wantCapture search.Capture
 	}{
 		{
 			name:     "classified failure with a capture is filed",
 			err:      parseFailure("<html>drifted</html>"),
-			wantKind: domain.HealthParseError, wantBody: "<html>drifted</html>",
+			wantKind: domain.HealthParseError,
+			wantCapture: search.Capture{
+				Method: "GET", URL: "https://cap.invalid/api", Status: 200, Body: "<html>drifted</html>",
+			},
 		},
 		{
 			name: "transport failure with a request-summary capture is filed",
@@ -129,6 +137,8 @@ func TestRecordHealthFilesCapture(t *testing.T) {
 				Err:     &url.Error{Op: "Get", URL: "https://cap.invalid", Err: errors.New("connection refused")},
 			},
 			wantKind: domain.HealthTransport,
+			// No response was received, so only the request summary is retained.
+			wantCapture: search.Capture{Method: "GET", URL: "https://cap.invalid/api"},
 		},
 		{
 			name: "classified failure without a capture files nothing",
@@ -161,8 +171,8 @@ func TestRecordHealthFilesCapture(t *testing.T) {
 			if !got[0].OccurredAt.Equal(diagNow) {
 				t.Errorf("occurredAt = %v, want %v", got[0].OccurredAt, diagNow)
 			}
-			if got[0].Capture.Body != tt.wantBody {
-				t.Errorf("body = %q, want %q", got[0].Capture.Body, tt.wantBody)
+			if !reflect.DeepEqual(got[0].Capture, tt.wantCapture) {
+				t.Errorf("capture = %+v, want %+v", got[0].Capture, tt.wantCapture)
 			}
 		})
 	}
