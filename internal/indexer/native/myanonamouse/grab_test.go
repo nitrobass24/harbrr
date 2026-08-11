@@ -29,7 +29,7 @@ func TestGrab(t *testing.T) {
 	}}
 	d := newDriver(doer)
 
-	res, err := d.Grab(context.Background(), "https://mam.test/tor/download.php/DLHASH-AAAA?tid=101")
+	res, err := d.Grab(context.Background(), "https://mam.test/tor/download.php?tid=101")
 	if err != nil {
 		t.Fatalf("Grab: %v", err)
 	}
