@@ -49,6 +49,9 @@ func TestGrab(t *testing.T) {
 	if dl.method != stdhttp.MethodGet || dl.cookie != "mam_id="+mamSecret {
 		t.Errorf("download request = %s cookie=%q, want GET with the mam_id", dl.method, dl.cookie)
 	}
+	if want := "https://mam.test/tor/download.php?tid=101"; dl.url != want {
+		t.Errorf("download URL = %q, want %q (fetched verbatim, not rewritten)", dl.url, want)
+	}
 	if dl.accept != "" {
 		t.Errorf("download Accept = %q, want empty (do not force JSON on a .torrent)", dl.accept)
 	}
