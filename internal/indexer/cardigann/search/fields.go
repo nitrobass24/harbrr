@@ -38,7 +38,14 @@ func parseRow(def *loader.Definition, sel *selector.Engine, row selector.Row, qu
 
 	for _, fe := range def.Search.Fields.Ordered() {
 		if err := parseField(fe, sel, row, query, deps, &state); err != nil {
-			return nil, false, err
+			// The row matched but this field did not resolve — the other half of
+			// the "no rows" / "rows but no fields" split a capture reports. The
+			// FIRST failing field wins (withMiss never overwrites).
+			return nil, false, withMiss(err, SelectorMiss{
+				Kind:     MissFields,
+				Selector: fe.Block.Selector,
+				Path:     "/search/fields/" + fe.Key,
+			})
 		}
 	}
 

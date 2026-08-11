@@ -46,19 +46,21 @@ type invalidator interface {
 	forgetCacheCounters(id int64)
 	forgetStats(id int64)
 	forgetBudget(id int64)
+	forgetDiagnostics(id int64)
 }
 
 // StatsReporter is the health/stats reporting + lifecycle half of the registry: a read and
 // flush view over the already-safe IndexerStats and the health store. It touches no resolve
 // lock and holds no CRUD/serve state.
 type StatsReporter struct {
-	stats     *IndexerStats
-	budget    *RequestBudget
-	instances database.Instances
-	health    database.Health
-	circuit   database.Circuit
-	db        dbinterface.Querier
-	clock     func() time.Time
+	stats       *IndexerStats
+	budget      *RequestBudget
+	diagnostics *diagnostics
+	instances   database.Instances
+	health      database.Health
+	circuit     database.Circuit
+	db          dbinterface.Querier
+	clock       func() time.Time
 }
 
 // Management-layer sentinels the API maps to HTTP status codes (400/409/404). Both
@@ -578,6 +580,7 @@ func (r *Manager) Delete(ctx context.Context, slug string) error {
 	r.inv.forgetCacheCounters(inst.ID)
 	r.inv.forgetStats(inst.ID)
 	r.inv.forgetBudget(inst.ID)
+	r.inv.forgetDiagnostics(inst.ID)
 	return nil
 }
 
@@ -785,6 +788,18 @@ func (r *StatsReporter) Status(ctx context.Context, slug string) (HealthStatus, 
 		Slug: slug, Status: snap.status, Events: snap.events,
 		DisabledTill: snap.disabledTill, FailingSince: snap.failingSince,
 	}, nil
+}
+
+// Diagnostics returns the indexer's recent captured failed fetches, newest-first
+// (empty when nothing has failed since boot). An unknown slug is
+// database.ErrNotFound (the handler maps it to 404). Every capture was redacted
+// by the engine before it was stored, so no credential is surfaced here.
+func (r *StatsReporter) Diagnostics(ctx context.Context, slug string) ([]FailureCapture, error) {
+	inst, err := r.instances.GetBySlug(ctx, r.db, slug)
+	if err != nil {
+		return nil, fmt.Errorf("registry: diagnostics %q: %w", slug, err)
+	}
+	return r.diagnostics.list(inst.ID), nil
 }
 
 // FleetStatus is one indexer's derived health for the fleet-wide roll-up: the

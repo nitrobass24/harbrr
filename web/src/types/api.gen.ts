@@ -376,6 +376,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/indexers/{slug}/diagnostics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get an indexer's recent failed fetches
+         * @description Returns the bounded, memory-only ring of recent failed tracker fetches for this indexer, newest first (autobrr/harbrr#390). Each capture is a response harbrr had already fetched when the failure was classified — retaining it issues no additional tracker request. Everything is redacted before it is retained: secret query params and path tokens are masked, Authorization/Cookie/Set-Cookie are dropped, the body is scrubbed of the configured credentials and of credential-shaped key/value pairs, and capped at 64 KiB. Captures are never persisted: they are dropped on restart and when the indexer is deleted. A parse failure also carries which selector missed — `no_rows` (the rows selector matched nothing) versus `fields` (a row matched but a field selector did not) — with the definition path that declared it.
+         */
+        get: operations["indexerDiagnostics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/indexers/{slug}/stats": {
         parameters: {
             query?: never;
@@ -1693,6 +1713,37 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+        };
+        /** @description One recent failed tracker fetch, retained in memory only. kind is the health classification the failure was given. method/url are always present; status, headers and body are present only when a response was actually received (a transport failure captures the request summary alone). Every value is redacted. */
+        DiagnosticCapture: {
+            /** @enum {string} */
+            kind: "auth_failure" | "rate_limited" | "parse_error" | "anti_bot" | "transport";
+            /** Format: date-time */
+            occurred_at: string;
+            method?: string;
+            /** @description request URL with secret query params and path tokens masked */
+            url?: string;
+            /** @description response status; absent when no response was received */
+            status?: number;
+            /** @description Response headers, with Authorization/Cookie/Set-Cookie (and the proxy/auth challenge headers) replaced wholesale and every remaining value scrubbed. */
+            headers?: {
+                [key: string]: string;
+            };
+            /** @description redacted response body, capped at 64 KiB */
+            body?: string;
+            /** @description the body was cut at the 64 KiB cap */
+            bodyTruncated?: boolean;
+            /** @description Which definition node missed. Absent when the failure could not be attributed to one (e.g. the document itself would not parse). */
+            selectorMiss?: {
+                /**
+                 * @description no_rows — the rows selector resolved to nothing, so the page shape drifted; fields — a row matched but a field selector inside it did not.
+                 * @enum {string}
+                 */
+                kind: "no_rows" | "fields";
+                selector?: string;
+                /** @description definition location, e.g. /search/rows or /search/fields/title */
+                path?: string;
+            };
         };
         /** @description Per-indexer Prowlarr-style stats: durable query/grab/latency counters plus the failure tally folded in from the health events. queries counts searches that reached the tracker (a cache hit bypasses the counted path), so avgResponseMs reflects real upstream latency. lastQueryAt/lastFailureAt are absent when never observed. budget is present on GET /api/indexers/{slug}/stats only — the all-indexers list omits it. */
         IndexerStats: {
@@ -3388,6 +3439,33 @@ export interface operations {
                          * @description When the current failure streak began — present only while the derived status is failing (autobrr/harbrr#389).
                          */
                         failingSince?: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    indexerDiagnostics: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description recent captured failures, newest first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        slug: string;
+                        captures: components["schemas"]["DiagnosticCapture"][];
                     };
                 };
             };

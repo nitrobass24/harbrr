@@ -18,6 +18,7 @@ type fakeInvalidator struct {
 	forgotCacheCounterIDs []int64
 	forgotStatsIDs        []int64
 	forgotBudgetIDs       []int64
+	forgotDiagnosticsIDs  []int64
 }
 
 func (f *fakeInvalidator) invalidate(slug string) {
@@ -50,6 +51,12 @@ func (f *fakeInvalidator) forgetBudget(id int64) {
 	f.forgotBudgetIDs = append(f.forgotBudgetIDs, id)
 }
 
+func (f *fakeInvalidator) forgetDiagnostics(id int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.forgotDiagnosticsIDs = append(f.forgotDiagnosticsIDs, id)
+}
+
 // TestDeleteInvalidatesSearchCache proves Manager.Delete routes through
 // invalidateSearchCache (in addition to the pre-existing invalidate/forget* calls) so a
 // deleted instance's search-cache epoch is bumped and its rows purged — closing the
@@ -79,5 +86,9 @@ func TestDeleteInvalidatesSearchCache(t *testing.T) {
 	}
 	if got := inv.forgotBudgetIDs; len(got) != 1 || got[0] != instID {
 		t.Fatalf("forgetBudget calls = %v, want [%d]", got, instID)
+	}
+	// A deleted indexer's captured failed fetches go with it (autobrr/harbrr#390).
+	if got := inv.forgotDiagnosticsIDs; len(got) != 1 || got[0] != instID {
+		t.Fatalf("forgetDiagnostics calls = %v, want [%d]", got, instID)
 	}
 }

@@ -108,6 +108,11 @@ type Resolver struct {
 	// indexerAdapter's Search/Grab before an outbound hit.
 	budget *RequestBudget
 
+	// diagnostics holds the per-instance ring of recent failed fetches
+	// (autobrr/harbrr#390), written by the adapter's recordHealth and read back by
+	// the StatsReporter. Memory-only — see the type's doc.
+	diagnostics *diagnostics
+
 	// health-status source for the "status:" feed slug, wired in New to the
 	// StatsReporter. See statusSource — the Resolver never holds a *StatsReporter.
 	statuses statusSource
@@ -263,6 +268,7 @@ func New(db dbinterface.Querier, ldr *loader.Loader, keyring secretsKeyring, fam
 	if res.budget == nil {
 		res.budget = newRequestBudget(db, res.clock, res.log)
 	}
+	res.diagnostics = newDiagnostics()
 	// Captured last (after the options loop finalizes clock) so an injected test clock
 	// establishes the startup-grace reference point instead of the wall clock.
 	res.startedAt = res.clock()
@@ -280,13 +286,14 @@ func New(db dbinterface.Querier, ldr *loader.Loader, keyring secretsKeyring, fam
 		inv:       res,
 	}
 	r.StatsReporter = &StatsReporter{
-		stats:     res.stats,
-		budget:    res.budget,
-		instances: res.instances,
-		health:    res.health,
-		circuit:   res.circuit,
-		db:        res.db,
-		clock:     res.clock,
+		stats:       res.stats,
+		budget:      res.budget,
+		diagnostics: res.diagnostics,
+		instances:   res.instances,
+		health:      res.health,
+		circuit:     res.circuit,
+		db:          res.db,
+		clock:       res.clock,
 	}
 	// The status: feed reads derived health back through the narrow statusSource seam,
 	// so the resolver never holds the StatsReporter itself.
@@ -641,6 +648,7 @@ func (r *Resolver) buildAdapterAt(ctx context.Context, slug, probeHost string) (
 		healthSink:    r.healthSink,
 		stats:         r.stats,
 		budget:        r.budget,
+		diagnostics:   r.diagnostics,
 		failover: func(ctx context.Context) (string, error) {
 			return r.failover(ctx, inst, def, baseURL)
 		},
@@ -937,6 +945,12 @@ func (r *Resolver) forgetStats(instanceID int64) {
 // forgetStats for the request-budget tracker.
 func (r *Resolver) forgetBudget(instanceID int64) {
 	r.budget.ForgetInstance(instanceID)
+}
+
+// forgetDiagnostics drops a deleted instance's captured failed fetches, mirroring
+// forgetBudget for the memory-only diagnostics ring.
+func (r *Resolver) forgetDiagnostics(instanceID int64) {
+	r.diagnostics.ForgetInstance(instanceID)
 }
 
 // indexerInfo assembles the public indexer identity from the instance + def (no
