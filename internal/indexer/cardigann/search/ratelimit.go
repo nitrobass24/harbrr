@@ -66,8 +66,8 @@ func IsRateLimitStatus(code int) bool {
 }
 
 // ErrGatewayStatus is the sentinel for a reverse-proxy/CDN reporting the origin
-// unreachable (502 Bad Gateway, 504 Gateway Timeout, 522 Connection Timed Out —
-// the last a Cloudflare-specific extension many trackers sit behind). The
+// unreachable (502 Bad Gateway, 504 Gateway Timeout, plus the Cloudflare-specific
+// origin-down extensions many trackers sit behind — see IsGatewayStatus). The
 // registry classifies it as a TRANSPORT health event (autobrr/harbrr#247): the
 // tracker itself never answered, which is the same "down" signal as a refused
 // connection, just observed one hop closer via the gateway's own error page.
@@ -76,10 +76,23 @@ func IsRateLimitStatus(code int) bool {
 // tracker itself answering, not a gateway outage, so they stay unclassified.
 var ErrGatewayStatus = errors.New("gateway reported the origin unreachable")
 
-// IsGatewayStatus reports whether code is one of the gateway/bad-upstream
-// statuses ErrGatewayStatus covers.
+// IsGatewayStatus reports whether code is one of the gateway/bad-upstream statuses
+// ErrGatewayStatus covers: 502 Bad Gateway and 504 Gateway Timeout, plus Cloudflare's
+// origin-down family — 521 (web server is down), 522 (connection timed out), 523
+// (origin is unreachable), 524 (a timeout occurred) and 530 (origin DNS error). Every
+// one of those means the CDN never got an answer out of the tracker.
+//
+// Deliberately excluded (autobrr/harbrr#457): 520, whose "unknown error" is ambiguous —
+// the origin may well have answered, just with something Cloudflare could not use; and
+// 525/526, TLS negotiation failures, where the origin is up but misconfigured rather
+// than down.
 func IsGatewayStatus(code int) bool {
-	return code == stdhttp.StatusBadGateway || code == stdhttp.StatusGatewayTimeout || code == 522
+	switch code {
+	case stdhttp.StatusBadGateway, stdhttp.StatusGatewayTimeout, 521, 522, 523, 524, 530:
+		return true
+	default:
+		return false
+	}
 }
 
 // maxRetryAfter caps how long a Retry-After can hold a request, so a hostile or

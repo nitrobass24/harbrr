@@ -9,6 +9,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/domain"
 )
 
 // statsClock returns a fixed clock so RecordQuery's last-query timestamp is deterministic.
@@ -178,6 +179,35 @@ func TestIndexerStatsForgetInstance(t *testing.T) {
 	}
 	if len(rows) != 1 || rows[0].InstanceID != id1 {
 		t.Errorf("rows = %+v, want only the kept instance %d", rows, id1)
+	}
+}
+
+// TestIndexerStatsRecordSuccessNeverRewinds proves the success stamp is monotonic: two
+// concurrent successful searches can reach RecordSuccess holding different clock reads,
+// and the one carrying the OLDER value landing last must not rewind the instant — which
+// across a second boundary would age the success out of the healthy window and weaken the
+// very evidence the derivation runs on.
+func TestIndexerStatsRecordSuccessNeverRewinds(t *testing.T) {
+	t.Parallel()
+
+	now := statsClock()
+	s := newIndexerStats(nil, func() time.Time { return now }, zerolog.Nop())
+	const id = int64(1)
+
+	s.RecordSuccess(id)
+	now = now.Add(-2 * time.Second) // the slower goroutine's older read, landing last
+	s.RecordSuccess(id)
+
+	got := s.snapshot(id).lastSuccess
+	if !got.Equal(statsClock()) {
+		t.Fatalf("lastSuccess = %v, want %v (the newer instant, not rewound)", got, statsClock())
+	}
+	// ...and the derivation still reads that newer instant: a failure recorded between the
+	// two stamps must not resurface as the newest thing that happened.
+	r := &StatsReporter{clock: func() time.Time { return statsClock().Add(time.Minute) }}
+	events := []domain.IndexerHealthEvent{{ID: 1, OccurredAt: statsClock().Add(-time.Second)}}
+	if status := r.deriveStatus(healthSignals{events: events, lastSuccess: got}); status != StatusHealthy {
+		t.Errorf("deriveStatus() = %q, want healthy (success newer than the failure)", status)
 	}
 }
 

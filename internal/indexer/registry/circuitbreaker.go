@@ -84,8 +84,9 @@ var transportEscalation = escalationPolicy{floor: 1, step: 0}
 
 // escalationPolicyFor picks the curve for a failure. A gatewayOutage is recorded under
 // the transport kind but is the indexer's OWN origin being down (a CDN answering
-// 502/504/522), not the operator's network, so it climbs like everything else — a
-// tracker down for days must not be re-polled every 60 seconds.
+// an origin-down status — see search.IsGatewayStatus), not the operator's network, so it
+// climbs like everything else — a tracker down for days must not be re-polled every 60
+// seconds.
 func escalationPolicyFor(kind string, gatewayOutage bool) escalationPolicy {
 	if kind == domain.HealthTransport && !gatewayOutage {
 		return transportEscalation

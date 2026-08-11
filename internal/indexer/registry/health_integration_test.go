@@ -5,13 +5,16 @@ import (
 	"errors"
 	"io"
 	stdhttp "net/http"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native/catalog"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 )
 
@@ -132,6 +135,167 @@ func TestSuccessfulTestClearsCurrentHealth(t *testing.T) {
 	if stats.Failures.ParseError != 1 {
 		t.Errorf("parse failure count after Test = %d, want 1", stats.Failures.ParseError)
 	}
+}
+
+// TestSearchGatewayOutageRecordsTransportEvent proves the widened origin-down family
+// (#457): every Cloudflare code that means "the origin never answered" — 521 web server
+// down, 523 origin unreachable, 524 origin timed out, 530 origin DNS error — used to fall
+// through as a plain "returned HTTP 5xx" and record NOTHING. Each now classifies as
+// transport and derives failing.
+func TestSearchGatewayOutageRecordsTransportEvent(t *testing.T) {
+	t.Parallel()
+	for _, status := range []int{521, 523, 524, 530} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			t.Parallel()
+			reg, _ := newRegistry(t, statusDoer{status: status})
+			ctx := context.Background()
+			if _, err := reg.Add(ctx, registry.AddParams{
+				Slug: "tt", DefinitionID: "testtracker", Settings: map[string]string{"apikey": "x"},
+			}); err != nil {
+				t.Fatalf("Add: %v", err)
+			}
+			idx, ok := reg.Indexer(ctx, "tt")
+			if !ok {
+				t.Fatal("Indexer(tt) not resolved")
+			}
+			if _, err := idx.Search(ctx, search.Query{Keywords: "bunny"}); !errors.Is(err, search.ErrGatewayStatus) {
+				t.Fatalf("Search err = %v, want ErrGatewayStatus", err)
+			}
+
+			st, err := reg.Status(ctx, "tt")
+			if err != nil {
+				t.Fatalf("Status: %v", err)
+			}
+			if st.Status != registry.StatusFailing {
+				t.Errorf("status = %q, want failing", st.Status)
+			}
+			if len(st.Events) != 1 || st.Events[0].Kind != domain.HealthTransport {
+				t.Fatalf("events = %+v, want exactly one transport", st.Events)
+			}
+		})
+	}
+}
+
+// TestFailingSearchesNeverDeriveHealthy is the #457 regression: an indexer whose every
+// search fails with an UNCLASSIFIED error (a plain 500 — the tracker answered, so no
+// health event is written and the breaker never trips) must not keep reading healthy off
+// the failing traffic itself. Once the last REAL success ages past the healthy window,
+// the honest answer is unknown.
+func TestFailingSearchesNeverDeriveHealthy(t *testing.T) {
+	t.Parallel()
+	doer := &swapDoer{body: bodyHTML}
+	clk := &movableClock{t: fixedClock()}
+	reg, _ := newClockedRegistry(t, doer, clk.now)
+	ctx := context.Background()
+	if _, err := reg.Add(ctx, registry.AddParams{
+		Slug: "tt", DefinitionID: "testtracker", Settings: map[string]string{"apikey": "x"},
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	idx, ok := reg.Indexer(ctx, "tt")
+	if !ok {
+		t.Fatal("Indexer(tt) not resolved")
+	}
+	if _, err := idx.Search(ctx, search.Query{Keywords: "bunny"}); err != nil {
+		t.Fatalf("Search (working): %v", err)
+	}
+	if st, err := reg.Status(ctx, "tt"); err != nil || st.Status != registry.StatusHealthy {
+		t.Fatalf("status after a real success = %q (err %v), want healthy", st.Status, err)
+	}
+
+	// The tracker goes down in a shape nothing classifies, and the consumer keeps polling
+	// well past the healthy window.
+	doer.fail.Store(stdhttp.StatusInternalServerError)
+	for range 3 {
+		clk.advance(30 * time.Minute)
+		if _, err := idx.Search(ctx, search.Query{Keywords: "bunny"}); err == nil {
+			t.Fatal("Search (down) = nil error, want the tracker's 500")
+		}
+	}
+
+	st, err := reg.Status(ctx, "tt")
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if len(st.Events) != 0 {
+		t.Fatalf("events = %+v, want none (an unclassified failure records nothing)", st.Events)
+	}
+	if st.Status != registry.StatusUnknown {
+		t.Errorf("status after 90m of failing searches = %q, want unknown", st.Status)
+	}
+}
+
+// TestLastSuccessSurvivesRestart proves the success signal is durable: a real success is
+// flushed with the stat counters and rehydrated by a fresh registry over the same DB, so
+// a restart inside the healthy window does not blank the fleet to unknown.
+func TestLastSuccessSurvivesRestart(t *testing.T) {
+	t.Parallel()
+	db, ldr, keyring := newRegistryDeps(t)
+	clk := &movableClock{t: fixedClock()}
+	newReg := func() *registry.Registry {
+		return registry.New(db, ldr, keyring, catalog.All(),
+			registry.WithClock(clk.now),
+			registry.WithDoerFactory(func(registry.ClientParams) (search.Doer, error) {
+				return &replayDoer{body: bodyHTML}, nil
+			}))
+	}
+	reg := newReg()
+	ctx := context.Background()
+	if _, err := reg.Add(ctx, registry.AddParams{
+		Slug: "tt", DefinitionID: "testtracker", Settings: map[string]string{"apikey": "x"},
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	idx, ok := reg.Indexer(ctx, "tt")
+	if !ok {
+		t.Fatal("Indexer(tt) not resolved")
+	}
+	if _, err := idx.Search(ctx, search.Query{Keywords: "bunny"}); err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	reg.FlushStats(ctx)
+
+	restarted := newReg()
+	if err := restarted.RehydrateStats(ctx); err != nil {
+		t.Fatalf("RehydrateStats: %v", err)
+	}
+	clk.advance(30 * time.Minute)
+	st, err := restarted.Status(ctx, "tt")
+	if err != nil {
+		t.Fatalf("Status after restart: %v", err)
+	}
+	if st.Status != registry.StatusHealthy {
+		t.Errorf("status after restart = %q, want healthy (rehydrated last success)", st.Status)
+	}
+}
+
+// swapDoer serves a saved 200 body until fail holds a status code, then answers with
+// that status instead — one indexer whose searches work and then stop.
+type swapDoer struct {
+	body string
+	fail atomic.Int64
+}
+
+func (d *swapDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
+	if code := d.fail.Load(); code != 0 {
+		return statusDoer{status: int(code)}.Do(req)
+	}
+	return &stdhttp.Response{
+		StatusCode: stdhttp.StatusOK,
+		Header:     stdhttp.Header{},
+		Body:       io.NopCloser(strings.NewReader(d.body)),
+		Request:    req,
+	}, nil
+}
+
+// newClockedRegistry is newRegistry with a caller-supplied clock, so a test can age an
+// indexer past the derivation's healthy/failing windows without sleeping.
+func newClockedRegistry(t *testing.T, doer search.Doer, clock func() time.Time) (*registry.Registry, *database.DB) {
+	t.Helper()
+	db, ldr, keyring := newRegistryDeps(t)
+	return registry.New(db, ldr, keyring, catalog.All(),
+		registry.WithClock(clock),
+		registry.WithDoerFactory(func(registry.ClientParams) (search.Doer, error) { return doer, nil })), db
 }
 
 // TestStatusUnknownSlug: Status for a missing indexer is ErrNotFound (404 at the API).
