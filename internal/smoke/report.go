@@ -16,6 +16,7 @@ const (
 	CheckFieldParity = "field-parity"
 	CheckAppSync     = "app-sync"
 	CheckCache       = "cache"
+	CheckGrab        = "grab"
 	CheckFLBypass    = "fl-bypass"
 
 	StatusPass = "PASS"

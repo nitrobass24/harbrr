@@ -34,6 +34,9 @@ make smoke-test                                 # go test -tags smoke ./internal
   enabled tracker is real tracker traffic). But when it IS set, the result is **binding**: a link
   that does not resolve to a torrent, magnet, or `.nzb` now FAILS the tracker's subtest instead of
   being recorded and ignored. A 100% search differential no longer covers for a grab that 500s.
+  The knob gates **both** runners: `harbrr smoke` adds a per-tracker `grab` check whose FAIL exits
+  non-zero (a transport error is reported as a FAIL, never aborts the run), and neither runner
+  pushes the payload to a download client — the no-hit-and-run seeding step stays manual.
 
 Per-tracker evidence is written to `testdata/smoke-<slug>.json` — **gitignored and
 secret-scrubbed** (counts and a few titles, never a passkey/apikey/cookie). It is scratch

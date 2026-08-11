@@ -115,12 +115,12 @@ type router struct {
 
 	// loadDefs summarizes the addable definitions; injectable so a test can drive a
 	// fail-then-succeed load. Defaults (in NewRouter) to the real loader closure.
-	loadDefs func() ([]definitionSummary, error)
+	loadDefs func() ([]definitionEntry, error)
 	// The definition summary list is memoized on SUCCESS ONLY: defsLoaded gates the
 	// cache and is set solely after a nil-error load, so a transient first-call
 	// failure lets the next call retry rather than wedging the endpoint at 500.
 	defsMu     sync.Mutex
-	defs       []definitionSummary
+	defs       []definitionEntry
 	defsLoaded bool
 }
 
@@ -147,7 +147,7 @@ func NewRouter(deps Deps, cfg Config) (http.Handler, error) {
 		cache: deps.Cache, cfg: cfg, log: deps.Logger, logLevel: deps.LogLevel, adultCats: deps.AdultCategories,
 		allowlist: allow, trustedProxies: proxies,
 	}
-	rt.loadDefs = func() ([]definitionSummary, error) {
+	rt.loadDefs = func() ([]definitionEntry, error) {
 		return loadDefinitionSummaries(rt.loader, rt.registry.NativeDefinitions())
 	}
 	rt.initOIDC()

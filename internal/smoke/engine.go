@@ -77,6 +77,10 @@ type Config struct {
 	// publishDate). Off by default so routine live runs stay green; the stable
 	// field checks (size, category, download-url shape) always run.
 	StrictFields bool
+	// Grab turns on the download-path check (SMOKE_GRAB). Off by default: it pulls a
+	// real .torrent/.nzb from every enabled tracker. Both runners read it, so the CLI
+	// suite and the //go:build smoke front-end are gated by the same knob.
+	Grab bool
 }
 
 // ParseConfig reads the SMOKE_* environment (via the injected getenv, so tests can
@@ -101,6 +105,7 @@ func ParseConfig(getenv func(string) string) (Config, error) {
 		Query:         get("SMOKE_QUERY"),
 		FallbackQuery: get("SMOKE_QUERY_FALLBACK"),
 		StrictFields:  truthy(get("SMOKE_STRICT_FIELDS")),
+		Grab:          truthy(get("SMOKE_GRAB")),
 	}
 	for _, req := range []struct{ name, val string }{
 		{"SMOKE_HARBRR_URL", cfg.HarbrrURL},
@@ -780,6 +785,7 @@ const (
 	grabMagnet  = "magnet"
 	grabNZB     = "nzb"
 	grabUnknown = "not a torrent/magnet"
+	grabNoLink  = "no download link"
 )
 
 // classifyGrabBody names the payload a downloaded grab body carries. Both checks are
@@ -827,6 +833,82 @@ func xmlRootIs(body []byte, name string) bool {
 			return start.Name.Local == name
 		}
 	}
+}
+
+// --- grab path --------------------------------------------------------------
+
+// grabResolve fetches the first served release's download link and names what it got:
+// a real .torrent (bencode), a magnet, or (usenet) a real .nzb — proving the grab path
+// resolves end to end. GrabSucceeded judges the returned result; a transport/feed error
+// is returned separately so each front-end decides (the Go-test path fatals, the CLI
+// reports a FAIL finding). It does NOT push to a download client; the no-hit-and-run
+// seeding step stays a manual confirmation (see README).
+//
+// The returned error never carries the download URL: httpGet's message embeds the
+// link with only its QUERY scrubbed, and a tracker can hide a passkey in a PATH
+// segment (animebytes, beyond-hd). Only the host — which is not a secret — is named.
+func grabResolve(ctx context.Context, c *http.Client, cfg Config, slug, query string) (string, error) {
+	link, err := firstDownloadLink(ctx, c, cfg, slug, query)
+	if err != nil {
+		return "", err
+	}
+	switch {
+	case link == "":
+		return grabNoLink, nil
+	case strings.HasPrefix(link, "magnet:"):
+		return grabMagnet, nil
+	}
+	body, status, err := httpGet(ctx, c, link, nil)
+	if err != nil {
+		return "", fmt.Errorf("download from %s unreachable", apphttp.SchemeHost(link))
+	}
+	if status != http.StatusOK {
+		return fmt.Sprintf("download HTTP %d", status), nil
+	}
+	return classifyGrabBody(body), nil
+}
+
+// firstDownloadLink returns the first feed item's link/enclosure URL, "" when the feed
+// carries no grabbable item.
+func firstDownloadLink(ctx context.Context, c *http.Client, cfg Config, slug, query string) (string, error) {
+	feed, err := harbrrFeed(ctx, c, cfg, slug, query)
+	if err != nil {
+		return "", err
+	}
+	for _, it := range feed.Channel.Items {
+		if l := strings.TrimSpace(it.Link); l != "" {
+			return l, nil
+		}
+		if l := strings.TrimSpace(it.Enclosure.URL); l != "" {
+			return l, nil
+		}
+	}
+	return "", nil
+}
+
+// harbrrHasDownloadLinks reports whether the harbrr feed carries a non-empty
+// <link>/<enclosure> for at least one item (confirms a grabbable release).
+func harbrrHasDownloadLinks(ctx context.Context, c *http.Client, cfg Config, slug, query string) (bool, error) {
+	link, err := firstDownloadLink(ctx, c, cfg, slug, query)
+	return link != "", err
+}
+
+// harbrrFeed fetches and decodes the raw Torznab feed for a slug+query — the
+// download-link probes need the item <link>/<enclosure> the parsed Result set discards.
+func harbrrFeed(ctx context.Context, c *http.Client, cfg Config, slug, query string) (torznabFeed, error) {
+	var feed torznabFeed
+	u := harbrrSearchURL(cfg.HarbrrURL, cfg.HarbrrKey, slug, query, false)
+	body, status, err := httpGet(ctx, c, u, nil)
+	if err != nil {
+		return feed, fmt.Errorf("harbrr feed for %q unreachable", slug)
+	}
+	if status != http.StatusOK {
+		return feed, fmt.Errorf("harbrr feed for %q: HTTP %d", slug, status)
+	}
+	if err := xml.Unmarshal(body, &feed); err != nil {
+		return feed, fmt.Errorf("parse harbrr feed for %q: %w", slug, err)
+	}
+	return feed, nil
 }
 
 // secretTokens are the credential-shaped substrings that must never appear in

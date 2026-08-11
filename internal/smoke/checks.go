@@ -296,6 +296,50 @@ func findManaged(remotes []appsync.RemoteIndexer, slug string) (appsync.RemoteIn
 	return appsync.RemoteIndexer{}, false
 }
 
+// --- grab ---------------------------------------------------------------------
+
+// grabCheck is the CLI suite's download-path coverage: it resolves the first served
+// release's download link and fetches it, so a tracker whose grabs are broken can no
+// longer hide behind a clean search differential (issue #424). The verdict is
+// GrabSucceeded — the same classifier the //go:build smoke front-end uses — so both
+// runners agree on what a passing grab is.
+//
+// Gated by cfg.Grab (SMOKE_GRAB), the same knob the Go-test path honours, and off by
+// default: it pulls a real .torrent/.nzb from every enabled tracker. A transport error
+// degrades to a FAIL finding rather than aborting the suite (the CLI has no t.Fatalf).
+// It fetches only; nothing is pushed to a download client here.
+//
+// Query selection mirrors the differential's (chooseQueries + a distinct fallback when
+// the primary returns nothing), so a bounded default query that happens to be empty on
+// this tracker does not read as a broken download path.
+func grabCheck(ctx context.Context, c *http.Client, cfg Config, slug string, catIDs []int) []Finding {
+	if !cfg.Grab {
+		return nil
+	}
+	f := Finding{Indexer: slug, Check: CheckGrab}
+	primary, fallback := chooseQueries(catIDs, cfg)
+	result, err := grabResolve(ctx, c, cfg, slug, primary)
+	// Only retry a DIFFERENT fallback: chooseQueries hands back the primary itself when
+	// the operator sets SMOKE_QUERY_FALLBACK equal to SMOKE_QUERY, and a duplicate hit on
+	// a real tracker buys nothing. The spacing matches the differential's.
+	if err == nil && result == grabNoLink && fallback != "" && fallback != primary {
+		time.Sleep(betweenCallsDelay)
+		result, err = grabResolve(ctx, c, cfg, slug, fallback)
+	}
+	switch {
+	case err != nil:
+		f.Status, f.Detail = StatusFail, "grab failed: "+apphttp.RedactError(err)
+	case GrabSucceeded(result):
+		f.Status, f.Detail = StatusPass, "download link resolved to a "+result
+	default:
+		f.Status, f.Detail = StatusFail, "download link did not resolve to a payload: "+result
+	}
+	// The detail is a closed vocabulary plus an HTTP status by construction; the scrub is
+	// defense in depth so no download URL can ever reach the rendered report.
+	f.Detail = scrubSecretValues(f.Detail)
+	return []Finding{f}
+}
+
 // --- cache ------------------------------------------------------------------
 
 // cacheCheck is the dedicated cached-path check: the differential (harbrrParity) now

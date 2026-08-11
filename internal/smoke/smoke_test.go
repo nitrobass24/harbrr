@@ -23,12 +23,9 @@ package smoke
 import (
 	"context"
 	"encoding/json"
-	"encoding/xml"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -115,12 +112,12 @@ func TestSmoke(t *testing.T) {
 				ProwlarrCount:        len(prowlarr),
 				HarbrrTitles:         firstTitles(harbrr, 5),
 				ProwlarrTitles:       firstTitles(prowlarr, 5),
-				DownloadLinksPresent: harbrrHasDownloadLinks(t, c, cfg, ix.Slug, q),
+				DownloadLinksPresent: hasDownloadLinks(t, c, cfg, ix.Slug, q),
 				Pass:                 pass,
 				Notes:                notes,
 			}
-			if os.Getenv("SMOKE_GRAB") == "1" {
-				rec.Grab = grabResolve(t, c, cfg, ix.Slug, q)
+			if cfg.Grab {
+				rec.Grab = grabResolveOrFatal(t, c, cfg, ix.Slug, q)
 			}
 			writeEvidence(t, rec)
 			t.Logf("%s: harbrr=%d prowlarr=%d pass=%v (%s)", ix.Slug, len(harbrr), len(prowlarr), pass, notes)
@@ -186,79 +183,30 @@ func harbrrSearch(t *testing.T, c *http.Client, cfg Config, slug, query string) 
 	return res, false
 }
 
-// grabResolve fetches the first served release's download link and names what it got:
-// a real .torrent (bencode), a magnet, or (usenet) a real .nzb — proving the grab path
-// resolves end to end. GrabSucceeded judges the result; the caller fails on a bad one. It does
-// NOT push to qBittorrent; the no-hit-and-run seeding step stays a manual confirmation
-// (see README). Gated by SMOKE_GRAB since it pulls a real .torrent from the tracker.
-func grabResolve(t *testing.T, c *http.Client, cfg Config, slug, query string) string {
+// grabResolveOrFatal is the *testing.T front-end for the engine's grabResolve (engine.go,
+// untagged and shared with the CLI's grabCheck): it resolves the first served release's
+// download link and names the payload, fatalling on the transport/feed error the engine
+// now returns instead of swallowing. It does NOT push to qBittorrent; the no-hit-and-run
+// seeding step stays a manual confirmation (see README).
+func grabResolveOrFatal(t *testing.T, c *http.Client, cfg Config, slug, query string) string {
 	t.Helper()
-	link := firstDownloadLink(t, c, cfg, slug, query)
-	switch {
-	case link == "":
-		return "no download link"
-	case strings.HasPrefix(link, "magnet:"):
-		return grabMagnet
-	}
-	body, status, err := httpGet(context.Background(), c, link, nil)
+	res, err := grabResolve(context.Background(), c, cfg, slug, query)
 	if err != nil {
 		t.Fatalf("grab %s: %s", slug, apphttp.RedactError(err))
 	}
-	if status != http.StatusOK {
-		return fmt.Sprintf("download HTTP %d", status)
-	}
-	return classifyGrabBody(body)
+	return res
 }
 
-// firstDownloadLink returns the first feed item's link/enclosure URL.
-func firstDownloadLink(t *testing.T, c *http.Client, cfg Config, slug, query string) string {
+// hasDownloadLinks is the *testing.T front-end for harbrrHasDownloadLinks: a feed error
+// is not a failure of this probe (it records "no grabbable link" as before), only a log
+// line so the operator sees why.
+func hasDownloadLinks(t *testing.T, c *http.Client, cfg Config, slug, query string) bool {
 	t.Helper()
-	body := harbrrFeedBody(t, c, cfg, slug, query)
-	var feed torznabFeed
-	if err := xml.Unmarshal(body, &feed); err != nil {
-		return ""
+	ok, err := harbrrHasDownloadLinks(context.Background(), c, cfg, slug, query)
+	if err != nil {
+		t.Logf("%s: download-link probe: %s", slug, apphttp.RedactError(err))
 	}
-	for _, it := range feed.Channel.Items {
-		if l := strings.TrimSpace(it.Link); l != "" {
-			return l
-		}
-		if l := strings.TrimSpace(it.Enclosure.URL); l != "" {
-			return l
-		}
-	}
-	return ""
-}
-
-// harbrrHasDownloadLinks reports whether the harbrr feed carries a non-empty
-// <link>/<enclosure> for at least one item (confirms a grabbable release).
-func harbrrHasDownloadLinks(t *testing.T, c *http.Client, cfg Config, slug, query string) bool {
-	t.Helper()
-	body := harbrrFeedBody(t, c, cfg, slug, query)
-	var feed torznabFeed
-	if err := xml.Unmarshal(body, &feed); err != nil {
-		return false
-	}
-	for _, it := range feed.Channel.Items {
-		if strings.TrimSpace(it.Link) != "" || strings.TrimSpace(it.Enclosure.URL) != "" {
-			return true
-		}
-	}
-	return false
-}
-
-// harbrrFeedBody fetches the raw Torznab feed body for a slug+query (used by the
-// download-link probes, which need the item <link>/<enclosure> the parsed Result set
-// discards). A non-200 or transport error yields an empty body (the probes then
-// report "no link").
-func harbrrFeedBody(t *testing.T, c *http.Client, cfg Config, slug, query string) []byte {
-	t.Helper()
-	u := fmt.Sprintf("%s/api/indexers/%s/results/torznab/api?t=search&q=%s&apikey=%s",
-		cfg.HarbrrURL, url.PathEscape(slug), url.QueryEscape(query), url.QueryEscape(cfg.HarbrrKey))
-	body, status, err := httpGet(context.Background(), c, u, nil)
-	if err != nil || status != http.StatusOK {
-		return nil
-	}
-	return body
+	return ok
 }
 
 // writeEvidence validates the record carries no secret, then writes it under the

@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { ChevronRight } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
@@ -481,13 +482,33 @@ function parseSolver(value: string): SolverChoice {
 }
 
 // exported for the picker step
-export function DefinitionOption({ id, name, type, description, onPick }: {
+export function DefinitionOption({ id, name, type, description, origin, error, onPick }: {
   id: string
   name: string
   type?: string
   description?: string
+  origin?: string
+  error?: string
   onPick: (id: string) => void
 }) {
+  // A definition that failed to load is not addable, so it renders as a plain
+  // row rather than a button — but it still renders. Drop-ins take precedence
+  // over the vendored snapshot and never fall back, so a typo'd drop-in would
+  // otherwise make a working tracker disappear from this list with no
+  // explanation anywhere (autobrr/harbrr#390).
+  if (error) {
+    return (
+      <div className="flex w-full flex-col gap-0.5 rounded-md px-3 py-2 text-left">
+        <span className="flex items-center gap-2 text-[13px] font-medium text-muted-foreground">
+          {id}
+          <Badge variant="destructive">failed to load</Badge>
+          {origin && <Badge variant="outline">{origin}</Badge>}
+        </span>
+        <span className="text-[12px] break-words text-destructive">{error}</span>
+      </div>
+    )
+  }
+
   return (
     <button
       type="button"

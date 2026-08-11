@@ -15,7 +15,7 @@ import (
 // newDefsRouter builds a bare router carrying only the fields listDefinitions
 // touches, with an injected load func. It bypasses NewRouter so the memoize
 // behavior can be exercised without wiring the full dependency graph.
-func newDefsRouter(load func() ([]definitionSummary, error)) *router {
+func newDefsRouter(load func() ([]definitionEntry, error)) *router {
 	return &router{log: zerolog.Nop(), loadDefs: load}
 }
 
@@ -35,12 +35,12 @@ func callListDefinitions(t *testing.T, rt *router) *httptest.ResponseRecorder {
 func TestListDefinitionsRetriesAfterTransientError(t *testing.T) {
 	t.Parallel()
 	var calls int
-	rt := newDefsRouter(func() ([]definitionSummary, error) {
+	rt := newDefsRouter(func() ([]definitionEntry, error) {
 		calls++
 		if calls == 1 {
 			return nil, errors.New("transient load failure")
 		}
-		return []definitionSummary{{ID: "acme", Name: "Acme"}}, nil
+		return []definitionEntry{{definitionSummary: definitionSummary{ID: "acme", Name: "Acme"}}}, nil
 	})
 
 	if got := callListDefinitions(t, rt).Code; got != http.StatusInternalServerError {
@@ -60,9 +60,9 @@ func TestListDefinitionsRetriesAfterTransientError(t *testing.T) {
 func TestListDefinitionsMemoizesSuccess(t *testing.T) {
 	t.Parallel()
 	var calls int
-	rt := newDefsRouter(func() ([]definitionSummary, error) {
+	rt := newDefsRouter(func() ([]definitionEntry, error) {
 		calls++
-		return []definitionSummary{{ID: "acme", Name: "Acme"}}, nil
+		return []definitionEntry{{definitionSummary: definitionSummary{ID: "acme", Name: "Acme"}}}, nil
 	})
 
 	for i := range 2 {
@@ -90,10 +90,10 @@ func TestListDefinitionsConcurrentFirstCallLoadsOnce(t *testing.T) {
 	t.Parallel()
 	var calls atomic.Int64
 	gate := make(chan struct{})
-	rt := newDefsRouter(func() ([]definitionSummary, error) {
+	rt := newDefsRouter(func() ([]definitionEntry, error) {
 		calls.Add(1)
 		<-gate // hold the lock here until every goroutine is confirmed running
-		return []definitionSummary{{ID: "acme", Name: "Acme"}}, nil
+		return []definitionEntry{{definitionSummary: definitionSummary{ID: "acme", Name: "Acme"}}}, nil
 	})
 
 	const n = 16

@@ -46,14 +46,18 @@ function CreateFlow({ onClose }: { onClose: () => void }) {
 
   if (definitionId === null) {
     const needle = filter.toLowerCase()
-    const matches = (definitions.data ?? [])
+    const hits = (definitions.data ?? [])
       .filter((d) => d.name.toLowerCase().includes(needle) || d.id.includes(needle))
-      .slice(0, 50)
+    // Failures first: the list is capped at 50 rows, and a definition that broke
+    // is the one thing here the operator has to act on — it must not fall off the
+    // bottom of an unfiltered catalog of hundreds.
+    const matches = [...hits.filter((d) => d.error), ...hits.filter((d) => !d.error)].slice(0, 50)
+    const available = (definitions.data ?? []).filter((d) => !d.error).length
     return (
       <>
         <SheetHeader>
           <SheetTitle>Add indexer</SheetTitle>
-          <SheetDescription>Pick a tracker definition ({definitions.data?.length ?? "…"} available).</SheetDescription>
+          <SheetDescription>Pick a tracker definition ({definitions.data ? available : "…"} available).</SheetDescription>
         </SheetHeader>
         <div className="flex min-h-0 flex-1 flex-col gap-2 px-4 pb-6">
           <Input

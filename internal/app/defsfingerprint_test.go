@@ -1,127 +1,249 @@
 package app
 
 import (
+	"maps"
 	"os"
+	"path"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
+
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
+	"github.com/autobrr/harbrr/internal/indexer/definitions"
 )
 
-// TestDefsFingerprint_Deterministic proves the same inputs (the fixed embedded
-// vendor snapshot + an unchanged dropin dir) hash to the same fingerprint across
-// two computations.
-func TestDefsFingerprint_Deterministic(t *testing.T) {
+// TestDefsFingerprints_Deterministic proves the same inputs (the fixed embedded
+// vendor snapshot + an unchanged dropin dir) hash to the same per-definition map
+// across two computations.
+func TestDefsFingerprints_Deterministic(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	fp1, err := defsFingerprint(dir)
+	fp1, err := defsFingerprints(dir)
 	if err != nil {
-		t.Fatalf("defsFingerprint: %v", err)
+		t.Fatalf("defsFingerprints: %v", err)
 	}
-	fp2, err := defsFingerprint(dir)
+	fp2, err := defsFingerprints(dir)
 	if err != nil {
-		t.Fatalf("defsFingerprint: %v", err)
+		t.Fatalf("defsFingerprints: %v", err)
 	}
-	if fp1 != fp2 {
-		t.Errorf("fingerprint not deterministic: %q != %q", fp1, fp2)
+	if len(fp1) == 0 {
+		t.Fatal("no vendored definitions hashed")
+	}
+	if !maps.Equal(fp1, fp2) {
+		t.Error("fingerprints not deterministic across two computations")
 	}
 }
 
-// TestDefsFingerprint_MissingDropinDirContributesNothing proves a nonexistent
-// dropin dir hashes identically to an existing-but-empty one — both contribute
+// TestDefsFingerprints_MissingDropinDirContributesNothing proves a nonexistent
+// dropin dir yields the same map as an existing-but-empty one — both contribute
 // nothing beyond the embedded vendor snapshot.
-func TestDefsFingerprint_MissingDropinDirContributesNothing(t *testing.T) {
+func TestDefsFingerprints_MissingDropinDirContributesNothing(t *testing.T) {
 	t.Parallel()
-	present := t.TempDir()
-	missing := filepath.Join(t.TempDir(), "does-not-exist")
-
-	fpPresent, err := defsFingerprint(present)
+	present, err := defsFingerprints(t.TempDir())
 	if err != nil {
-		t.Fatalf("defsFingerprint(present empty dir): %v", err)
+		t.Fatalf("defsFingerprints(present empty dir): %v", err)
 	}
-	fpMissing, err := defsFingerprint(missing)
+	missing, err := defsFingerprints(filepath.Join(t.TempDir(), "does-not-exist"))
 	if err != nil {
-		t.Fatalf("defsFingerprint(missing dir): %v", err)
+		t.Fatalf("defsFingerprints(missing dir): %v", err)
 	}
-	if fpPresent != fpMissing {
-		t.Errorf("missing dropin dir fp %q != empty dropin dir fp %q, want equal (both contribute nothing)", fpMissing, fpPresent)
+	if !maps.Equal(present, missing) {
+		t.Error("missing dropin dir hashed differently from an empty one; both must contribute nothing")
 	}
 }
 
-// TestDefsFingerprint_ChangesOnDropinAddEditRemove proves each of a dropin file
-// add, content edit, and remove changes the fingerprint, and removing it restores
-// the original (empty-dir) baseline.
-func TestDefsFingerprint_ChangesOnDropinAddEditRemove(t *testing.T) {
+// TestDefsFingerprints_OnlyTheTouchedDefinitionChanges is the whole point of the
+// per-definition map (autobrr/harbrr#388): a dropin add, content edit and remove
+// each move ONLY that definition's entry, leaving every other id byte-identical.
+func TestDefsFingerprints_OnlyTheTouchedDefinitionChanges(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	base, err := defsFingerprint(dir)
+	base, err := defsFingerprints(dir)
 	if err != nil {
-		t.Fatalf("defsFingerprint base: %v", err)
+		t.Fatalf("defsFingerprints base: %v", err)
 	}
 
-	path := filepath.Join(dir, "custom.yml")
-	if err := os.WriteFile(path, []byte("id: custom\n"), 0o600); err != nil {
+	file := filepath.Join(dir, "custom.yml")
+	if err := os.WriteFile(file, []byte("id: custom\n"), 0o600); err != nil {
 		t.Fatalf("write dropin file: %v", err)
 	}
-	added, err := defsFingerprint(dir)
+	added, err := defsFingerprints(dir)
 	if err != nil {
-		t.Fatalf("defsFingerprint added: %v", err)
+		t.Fatalf("defsFingerprints added: %v", err)
 	}
-	if added == base {
-		t.Error("adding a dropin file did not change the fingerprint")
+	if _, ok := added["custom"]; !ok {
+		t.Error("adding a dropin definition did not add its fingerprint")
 	}
+	assertOnlyChanged(t, base, added, "custom")
 
-	if err := os.WriteFile(path, []byte("id: custom\nname: edited\n"), 0o600); err != nil {
+	if err := os.WriteFile(file, []byte("id: custom\nname: edited\n"), 0o600); err != nil {
 		t.Fatalf("edit dropin file: %v", err)
 	}
-	edited, err := defsFingerprint(dir)
+	edited, err := defsFingerprints(dir)
 	if err != nil {
-		t.Fatalf("defsFingerprint edited: %v", err)
+		t.Fatalf("defsFingerprints edited: %v", err)
 	}
-	if edited == added {
-		t.Error("editing a dropin file's content did not change the fingerprint")
+	if edited["custom"] == added["custom"] {
+		t.Error("editing a dropin definition's content did not change its fingerprint")
 	}
+	assertOnlyChanged(t, added, edited, "custom")
 
-	if err := os.Remove(path); err != nil {
+	if err := os.Remove(file); err != nil {
 		t.Fatalf("remove dropin file: %v", err)
 	}
-	removed, err := defsFingerprint(dir)
+	removed, err := defsFingerprints(dir)
 	if err != nil {
-		t.Fatalf("defsFingerprint removed: %v", err)
+		t.Fatalf("defsFingerprints removed: %v", err)
 	}
-	if removed != base {
-		t.Errorf("removing the dropin file did not restore the base fingerprint: %q != %q", removed, base)
+	if !maps.Equal(removed, base) {
+		t.Error("removing the dropin definition did not restore the base map")
 	}
 }
 
-// TestDefsFingerprint_RecordFramingUnambiguous pins the length-prefixed record
-// framing: under a bare NUL-separated stream, the two-file tree {a:"", b:"hello"}
-// and the one-file tree {a:"b\x00hello"} serialize to the identical byte sequence
-// ("a\x00b\x00hello") and would collide without any hash break. Length prefixes
-// make the trees hash differently.
-func TestDefsFingerprint_RecordFramingUnambiguous(t *testing.T) {
+// TestDefsFingerprints_DropinShadowsVendored proves dropin precedence: a dropin
+// file replaces the vendored definition of the same id (one entry, the dropin's
+// hash), and a dropin byte-identical to the vendored file it shadows is not a
+// change at all.
+func TestDefsFingerprints_DropinShadowsVendored(t *testing.T) {
 	t.Parallel()
-
-	two := t.TempDir()
-	if err := os.WriteFile(filepath.Join(two, "a"), nil, 0o600); err != nil {
-		t.Fatalf("write a: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(two, "b"), []byte("hello"), 0o600); err != nil {
-		t.Fatalf("write b: %v", err)
-	}
-
-	one := t.TempDir()
-	if err := os.WriteFile(filepath.Join(one, "a"), []byte("b\x00hello"), 0o600); err != nil {
-		t.Fatalf("write crafted a: %v", err)
-	}
-
-	fpTwo, err := defsFingerprint(two)
+	dir := t.TempDir()
+	base, err := defsFingerprints(dir)
 	if err != nil {
-		t.Fatalf("fingerprint two-file tree: %v", err)
+		t.Fatalf("defsFingerprints base: %v", err)
 	}
-	fpOne, err := defsFingerprint(one)
+	name, id, vendored := anyVendoredDefinition(t)
+	if _, ok := base[id]; !ok {
+		t.Fatalf("vendored definition %q missing from the base map", id)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), vendored, 0o600); err != nil {
+		t.Fatalf("write identical dropin: %v", err)
+	}
+	identical, err := defsFingerprints(dir)
 	if err != nil {
-		t.Fatalf("fingerprint one-file tree: %v", err)
+		t.Fatalf("defsFingerprints identical dropin: %v", err)
 	}
-	if fpTwo == fpOne {
-		t.Fatalf("fingerprints collide (%s): record framing is ambiguous", fpTwo)
+	if !maps.Equal(identical, base) {
+		t.Error("a dropin byte-identical to the definition it shadows must not read as a change")
 	}
+
+	if err := os.WriteFile(filepath.Join(dir, name), append(vendored, '\n'), 0o600); err != nil {
+		t.Fatalf("write differing dropin: %v", err)
+	}
+	shadowed, err := defsFingerprints(dir)
+	if err != nil {
+		t.Fatalf("defsFingerprints differing dropin: %v", err)
+	}
+	if shadowed[id] == base[id] {
+		t.Error("a dropin overriding a vendored definition must change that definition's fingerprint")
+	}
+	assertOnlyChanged(t, base, shadowed, id)
+}
+
+// assertOnlyChanged fails unless before and after differ in exactly the given id.
+func assertOnlyChanged(t *testing.T, before, after map[string]string, id string) {
+	t.Helper()
+	for k, v := range after {
+		if k != id && before[k] != v {
+			t.Errorf("definition %q changed, want only %q to change", k, id)
+		}
+	}
+	for k := range before {
+		if k == id {
+			continue
+		}
+		if _, ok := after[k]; !ok {
+			t.Errorf("definition %q disappeared, want only %q to change", k, id)
+		}
+	}
+}
+
+// TestHashDefs_KeysByContentID pins the key the map is built on: the definition's
+// declared id:, NOT the filename. Instances store the content id in definition_id
+// (that is what the catalog offers), and a handful of Jackett files are named
+// differently from their id — darkpeers.yml carries darkpeers-api — so a
+// filename-keyed map would never match those instances and would leave them
+// serving stale-shape rows after a change. The fallback cases (unparseable YAML,
+// no id:) must still produce a stable basename key rather than dropping the file.
+func TestHashDefs_KeysByContentID(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		file    string
+		content string
+		wantKey string
+	}{
+		{name: "filename matches id", file: "plain.yml", content: "---\nid: plain\nname: Plain\n", wantKey: "plain"},
+		{name: "id differs from filename", file: "darkpeers.yml", content: "---\nid: darkpeers-api\nname: DarkPeers\n", wantKey: "darkpeers-api"},
+		{
+			name: "dotnet slash escape still resolves the id",
+			file: "escaped.yml", wantKey: "escaped-api",
+			content: "---\nid: escaped-api\nname: Escaped\nfilters:\n  - name: re_replace\n    args: [\"cat-(\\\\d+)\\/\", \"$1\"]\n",
+		},
+		{name: "unparseable falls back to the basename", file: "broken.yml", content: "\tid: [unclosed\n", wantKey: "broken"},
+		{name: "missing id falls back to the basename", file: "noid.yml", content: "---\nname: No Id\n", wantKey: "noid"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, tt.file), []byte(tt.content), 0o600); err != nil {
+				t.Fatalf("write %s: %v", tt.file, err)
+			}
+			got := map[string]string{}
+			if err := hashDefs(got, os.DirFS(dir), "."); err != nil {
+				t.Fatalf("hashDefs: %v", err)
+			}
+			if len(got) != 1 || got[tt.wantKey] == "" {
+				t.Errorf("hashDefs keys = %v, want exactly %q", slices.Sorted(maps.Keys(got)), tt.wantKey)
+			}
+		})
+	}
+}
+
+// TestDefsFingerprints_VendoredIDsAreLoadable proves every key the map produces
+// over the real embedded snapshot is a definition id the loader can actually
+// resolve — i.e. the same id an instance's definition_id holds. A filename-keyed
+// map would fail this for the id-differs-from-filename files.
+func TestDefsFingerprints_VendoredIDsAreLoadable(t *testing.T) {
+	t.Parallel()
+	fps, err := defsFingerprints(t.TempDir())
+	if err != nil {
+		t.Fatalf("defsFingerprints: %v", err)
+	}
+	l := loader.New("")
+	for id := range fps {
+		if _, err := l.Load(id); err != nil {
+			t.Errorf("fingerprint key %q is not loadable as a definition id: %v", id, err)
+		}
+	}
+}
+
+// anyVendoredDefinition returns the filename, content id and bytes of the first
+// vendored definition in the embedded snapshot — the test needs a real vendored
+// file to shadow, and naming a specific tracker would break whenever that one is
+// retired. Filename and id are returned separately because they differ for a
+// handful of Jackett files.
+func anyVendoredDefinition(t *testing.T) (name, id string, data []byte) {
+	t.Helper()
+	entries, err := definitions.Vendored.ReadDir(vendorDefsDir)
+	if err != nil {
+		t.Fatalf("read vendored definitions: %v", err)
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yml") {
+			continue
+		}
+		data, err := definitions.Vendored.ReadFile(path.Join(vendorDefsDir, e.Name()))
+		if err != nil {
+			t.Fatalf("read vendored definition %q: %v", e.Name(), err)
+		}
+		id := loader.ProbeID(data)
+		if id == "" {
+			id = strings.TrimSuffix(e.Name(), ".yml")
+		}
+		return e.Name(), id, data
+	}
+	t.Fatal("no vendored definitions embedded")
+	return "", "", nil
 }
