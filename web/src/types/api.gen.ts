@@ -385,7 +385,7 @@ export interface paths {
         };
         /**
          * Get an indexer's recent failed fetches
-         * @description Returns the bounded, memory-only ring of recent failed tracker fetches for this indexer, newest first (autobrr/harbrr#390). Each capture is a response harbrr had already fetched when the failure was classified — retaining it issues no additional tracker request. Everything is redacted before it is retained: secret query params and path tokens are masked, Authorization/Cookie/Set-Cookie are dropped, the body is scrubbed of the configured credentials and of credential-shaped key/value pairs, and capped at 64 KiB. Captures are never persisted: they are dropped on restart and when the indexer is deleted. A parse failure also carries which selector missed — `no_rows` (the rows selector matched nothing) versus `fields` (a row matched but a field selector did not) — with the definition path that declared it.
+         * @description Returns the bounded, memory-only ring of recent failed tracker fetches for this indexer, newest first (autobrr/harbrr#390). Each capture is a response harbrr had already fetched when the failure was classified — retaining it issues no additional tracker request. Everything is redacted before it is retained: secret query params and path tokens are masked, Authorization/Cookie/Set-Cookie are kept as header NAMES with their values replaced by a redaction placeholder (so the capture still shows which headers were present), the body is scrubbed of the configured credentials and of credential-shaped key/value pairs, and capped at 64 KiB. Captures are never persisted: they are dropped on restart and when the indexer is deleted. A parse failure also carries which selector missed — `no_rows` (the rows selector matched nothing) versus `fields` (a row matched but a field selector did not) — with the definition path that declared it.
          */
         get: operations["indexerDiagnostics"];
         put?: never;
@@ -1725,7 +1725,7 @@ export interface components {
             url?: string;
             /** @description response status; absent when no response was received */
             status?: number;
-            /** @description Response headers, with Authorization/Cookie/Set-Cookie (and the proxy/auth challenge headers) replaced wholesale and every remaining value scrubbed. */
+            /** @description Response headers. Authorization/Cookie/Set-Cookie (and the proxy/auth challenge headers) keep their NAME but carry the literal "REDACTED" as their value; every other value is scrubbed of credentials and kept. */
             headers?: {
                 [key: string]: string;
             };

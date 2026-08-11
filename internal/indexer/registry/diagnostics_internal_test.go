@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"testing"
 	"time"
 
@@ -79,61 +80,90 @@ func TestDiagnosticsRing(t *testing.T) {
 	}
 }
 
-// TestRecordHealthFilesCapture: a classified failure that CARRIES a capture is
-// filed with its kind and timestamp; a classified failure without one (a native
-// driver) adds nothing, because the health event already records it; and an
-// unclassified error adds nothing at all.
+// TestDiagnosticsLifecycle walks one instance's ring in order — nothing retained
+// until something fails, then the failure, then gone with the instance. Sequential
+// on purpose: the steps share the ring and only mean anything in this order.
+func TestDiagnosticsLifecycle(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	a, ring := newDiagTestAdapter(t)
+
+	// A search that parsed never calls recordHealth, so the ring stays empty.
+	if got := ring.list(a.instanceID); got != nil {
+		t.Fatalf("ring before any failure = %v, want none", got)
+	}
+	a.recordHealth(ctx, parseFailure("<html>drifted</html>"))
+	if got := ring.list(a.instanceID); len(got) != 1 {
+		t.Fatalf("entries after a failure = %d, want 1", len(got))
+	}
+	// Deleting the instance takes its captures with it.
+	ring.ForgetInstance(a.instanceID)
+	if got := ring.list(a.instanceID); got != nil {
+		t.Errorf("ring after the instance is forgotten = %v, want none", got)
+	}
+}
+
+// TestRecordHealthFilesCapture: only a failure that CARRIES a capture is filed. A
+// classified failure without one (a native driver) adds nothing — the health event
+// already records it and a bare kind+time entry would just duplicate the events
+// list — and an unclassified error adds nothing at all.
 func TestRecordHealthFilesCapture(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	t.Run("classified failure with a capture is filed", func(t *testing.T) {
-		t.Parallel()
-		a, ring := newDiagTestAdapter(t)
-		a.recordHealth(ctx, parseFailure("<html>drifted</html>"))
+	tests := []struct {
+		name     string
+		err      error
+		wantKind string // "" = nothing filed
+		wantBody string
+	}{
+		{
+			name:     "classified failure with a capture is filed",
+			err:      parseFailure("<html>drifted</html>"),
+			wantKind: domain.HealthParseError, wantBody: "<html>drifted</html>",
+		},
+		{
+			name: "transport failure with a request-summary capture is filed",
+			err: &search.CaptureError{
+				Capture: search.Capture{Method: "GET", URL: "https://cap.invalid/api"},
+				Err:     &url.Error{Op: "Get", URL: "https://cap.invalid", Err: errors.New("connection refused")},
+			},
+			wantKind: domain.HealthTransport,
+		},
+		{
+			name: "classified failure without a capture files nothing",
+			err:  fmt.Errorf("native: %w", search.ErrParseError),
+		},
+		{
+			name: "unclassified error files nothing",
+			err:  errors.New("boom"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			a, ring := newDiagTestAdapter(t)
+			a.recordHealth(ctx, tt.err)
+			got := ring.list(a.instanceID)
 
-		got := ring.list(a.instanceID)
-		if len(got) != 1 {
-			t.Fatalf("entries = %d, want 1", len(got))
-		}
-		if got[0].Kind != domain.HealthParseError {
-			t.Errorf("kind = %q, want %q", got[0].Kind, domain.HealthParseError)
-		}
-		if !got[0].OccurredAt.Equal(diagNow) {
-			t.Errorf("occurredAt = %v, want %v", got[0].OccurredAt, diagNow)
-		}
-		if got[0].Capture.Body != "<html>drifted</html>" {
-			t.Errorf("body = %q, want the captured page", got[0].Capture.Body)
-		}
-	})
-
-	t.Run("classified failure without a capture files nothing", func(t *testing.T) {
-		t.Parallel()
-		a, ring := newDiagTestAdapter(t)
-		a.recordHealth(ctx, fmt.Errorf("native: %w", search.ErrParseError))
-
-		if got := ring.list(a.instanceID); got != nil {
-			t.Errorf("entries = %v, want none", got)
-		}
-	})
-
-	t.Run("unclassified error files nothing", func(t *testing.T) {
-		t.Parallel()
-		a, ring := newDiagTestAdapter(t)
-		a.recordHealth(ctx, errors.New("boom"))
-
-		if got := ring.list(a.instanceID); got != nil {
-			t.Errorf("entries = %v, want none", got)
-		}
-	})
-
-	t.Run("a successful search retains nothing", func(t *testing.T) {
-		t.Parallel()
-		a, ring := newDiagTestAdapter(t)
-		// The serve path calls recordHealth only on a failure; nothing ever reaches
-		// the ring for a search that parsed.
-		if got := ring.list(a.instanceID); got != nil {
-			t.Errorf("entries = %v, want none", got)
-		}
-	})
+			if tt.wantKind == "" {
+				if got != nil {
+					t.Fatalf("entries = %v, want none", got)
+				}
+				return
+			}
+			if len(got) != 1 {
+				t.Fatalf("entries = %d, want 1", len(got))
+			}
+			if got[0].Kind != tt.wantKind {
+				t.Errorf("kind = %q, want %q", got[0].Kind, tt.wantKind)
+			}
+			if !got[0].OccurredAt.Equal(diagNow) {
+				t.Errorf("occurredAt = %v, want %v", got[0].OccurredAt, diagNow)
+			}
+			if got[0].Capture.Body != tt.wantBody {
+				t.Errorf("body = %q, want %q", got[0].Capture.Body, tt.wantBody)
+			}
+		})
+	}
 }

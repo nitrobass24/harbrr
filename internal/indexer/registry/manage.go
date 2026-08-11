@@ -22,8 +22,9 @@ import (
 
 // Manager is the transactional CRUD half of the registry: Add/Update/Delete plus the read
 // accessors. Its consistency comes from the DB transaction (inTx), not an in-memory lock;
-// after a committed mutation it evicts the serve path through the invalidator seam. It
-// holds only the handles its methods use — no resolve cache, no *IndexerStats.
+// after a committed mutation it evicts the serve path and, on a delete, forgets the gone
+// instance's leftovers. It holds only the handles its methods use — no resolve cache, no
+// *IndexerStats.
 type Manager struct {
 	db        dbinterface.Querier
 	instances database.Instances
@@ -31,18 +32,27 @@ type Manager struct {
 	clock     func() time.Time
 	loader    *loader.Loader
 	native    map[string]native.Family
-	inv       invalidator
+	evicter   serveEvicter
+	forgetter instanceForgetter
 }
 
-// invalidator is the eviction surface the Manager depends on: after a committed mutation it
-// drops the resolver's cached engine and purges the affected instance's derived state
-// (search-cache entries + cache counters + query/grab stats). Satisfied structurally by
-// *Resolver; declared here (consumer-side, UNEXPORTED) so the Manager depends only on
-// eviction — never on the resolve/build engine — and the eviction methods stay off the
-// public API (only InvalidateAll is exported).
-type invalidator interface {
+// serveEvicter drops what the SERVE path is holding for an indexer whose row just
+// changed: the resolver's built engine (wrong settings now) and its cached search
+// results (answered under those settings). Every committed mutation evicts.
+//
+// Both seams are consumer-side and UNEXPORTED, satisfied structurally by *Resolver, so
+// the Manager depends on eviction/cleanup alone — never on the resolve/build engine —
+// and neither reaches the public API (only InvalidateAll is exported).
+type serveEvicter interface {
 	invalidate(slug string)
 	invalidateSearchCache(ctx context.Context, id int64)
+}
+
+// instanceForgetter drops the in-memory per-instance state that would otherwise
+// OUTLIVE the deleted row — cache counters, query/grab stats, request budget, and the
+// diagnostics ring. Delete only: for an update the instance still exists and its
+// counters are still its own.
+type instanceForgetter interface {
 	forgetCacheCounters(id int64)
 	forgetStats(id int64)
 	forgetBudget(id int64)
@@ -359,7 +369,7 @@ func (r *Manager) Add(ctx context.Context, p AddParams) (domain.IndexerInstance,
 		}
 		return domain.IndexerInstance{}, err
 	}
-	r.inv.invalidate(slug)
+	r.evicter.invalidate(slug)
 	return inst, nil
 }
 
@@ -488,8 +498,8 @@ func (r *Manager) Update(ctx context.Context, slug string, p UpdateParams) error
 		}
 		return err
 	}
-	r.inv.invalidate(slug)
-	r.inv.invalidateSearchCache(ctx, instID)
+	r.evicter.invalidate(slug)
+	r.evicter.invalidateSearchCache(ctx, instID)
 	return nil
 }
 
@@ -555,8 +565,8 @@ func (r *Manager) SetEnabled(ctx context.Context, slug string, enabled bool) err
 	if err := r.instances.SetEnabled(ctx, r.db, slug, enabled, r.clock()); err != nil {
 		return fmt.Errorf("registry: set enabled %q: %w", slug, err)
 	}
-	r.inv.invalidate(slug)
-	r.inv.invalidateSearchCache(ctx, inst.ID)
+	r.evicter.invalidate(slug)
+	r.evicter.invalidateSearchCache(ctx, inst.ID)
 	return nil
 }
 
@@ -575,12 +585,12 @@ func (r *Manager) Delete(ctx context.Context, slug string) error {
 	if err := r.instances.Delete(ctx, r.db, slug); err != nil {
 		return fmt.Errorf("registry: delete %q: %w", slug, err)
 	}
-	r.inv.invalidate(slug)
-	r.inv.invalidateSearchCache(ctx, inst.ID)
-	r.inv.forgetCacheCounters(inst.ID)
-	r.inv.forgetStats(inst.ID)
-	r.inv.forgetBudget(inst.ID)
-	r.inv.forgetDiagnostics(inst.ID)
+	r.evicter.invalidate(slug)
+	r.evicter.invalidateSearchCache(ctx, inst.ID)
+	r.forgetter.forgetCacheCounters(inst.ID)
+	r.forgetter.forgetStats(inst.ID)
+	r.forgetter.forgetBudget(inst.ID)
+	r.forgetter.forgetDiagnostics(inst.ID)
 	return nil
 }
 

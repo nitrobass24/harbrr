@@ -9,9 +9,10 @@ import (
 	"github.com/autobrr/harbrr/internal/database/dbtest"
 )
 
-// fakeInvalidator is a test double for the invalidator seam that records every call
-// so Delete's eviction fan-out (autobrr/harbrr#345) can be asserted directly.
-type fakeInvalidator struct {
+// fakeCleanup is a test double satisfying BOTH post-mutation seams (serveEvicter and
+// instanceForgetter), recording every call so Delete's cleanup fan-out
+// (autobrr/harbrr#345) can be asserted directly.
+type fakeCleanup struct {
 	mu                    sync.Mutex
 	invalidated           []string
 	invalidatedSearchIDs  []int64
@@ -21,37 +22,37 @@ type fakeInvalidator struct {
 	forgotDiagnosticsIDs  []int64
 }
 
-func (f *fakeInvalidator) invalidate(slug string) {
+func (f *fakeCleanup) invalidate(slug string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.invalidated = append(f.invalidated, slug)
 }
 
-func (f *fakeInvalidator) invalidateSearchCache(_ context.Context, id int64) {
+func (f *fakeCleanup) invalidateSearchCache(_ context.Context, id int64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.invalidatedSearchIDs = append(f.invalidatedSearchIDs, id)
 }
 
-func (f *fakeInvalidator) forgetCacheCounters(id int64) {
+func (f *fakeCleanup) forgetCacheCounters(id int64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.forgotCacheCounterIDs = append(f.forgotCacheCounterIDs, id)
 }
 
-func (f *fakeInvalidator) forgetStats(id int64) {
+func (f *fakeCleanup) forgetStats(id int64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.forgotStatsIDs = append(f.forgotStatsIDs, id)
 }
 
-func (f *fakeInvalidator) forgetBudget(id int64) {
+func (f *fakeCleanup) forgetBudget(id int64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.forgotBudgetIDs = append(f.forgotBudgetIDs, id)
 }
 
-func (f *fakeInvalidator) forgetDiagnostics(id int64) {
+func (f *fakeCleanup) forgetDiagnostics(id int64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.forgotDiagnosticsIDs = append(f.forgotDiagnosticsIDs, id)
@@ -65,8 +66,8 @@ func TestDeleteInvalidatesSearchCache(t *testing.T) {
 	t.Parallel()
 	db := dbtest.OpenMigrated(t)
 	instID := insertTestInstance(t, db)
-	inv := &fakeInvalidator{}
-	mgr := &Manager{db: db, instances: database.Instances{}, inv: inv}
+	inv := &fakeCleanup{}
+	mgr := &Manager{db: db, instances: database.Instances{}, evicter: inv, forgetter: inv}
 
 	if err := mgr.Delete(context.Background(), "fake"); err != nil {
 		t.Fatalf("Delete: %v", err)

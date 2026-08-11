@@ -40,9 +40,9 @@ type SelectorMiss struct {
 // never issues an HTTP request.
 //
 // Every field is redacted at construction: URL through apphttp.RedactURL,
-// credential headers dropped wholesale, and body/header text run through the
-// definition's configured secret values and the shared credential-name scrub. A
-// consumer may surface a Capture as-is.
+// credential headers kept by NAME with their value replaced by a placeholder, and
+// body/header text run through the definition's configured secret values and the
+// shared credential-name scrub. A consumer may surface a Capture as-is.
 type Capture struct {
 	Method string
 	URL    string
@@ -193,10 +193,11 @@ var droppedHeaders = map[string]struct{}{
 	"proxy-authenticate":  {},
 }
 
-// redactHeaders renders the response headers safe to retain: credential headers
-// are dropped to a placeholder, a URL-valued header (Location, Refresh) goes
-// through RedactURL, and every value is then run through the configured secret
-// values and the shared credential-name scrub.
+// redactHeaders renders the response headers safe to retain: a credential header
+// keeps its NAME (which header was present is itself the diagnostic) but its whole
+// value becomes a placeholder, a URL-valued header (Location, Refresh) goes through
+// RedactURL, and every other value is run through the configured secret values and
+// the shared credential-name scrub.
 func redactHeaders(h stdhttp.Header, secrets []string) map[string]string {
 	if len(h) == 0 {
 		return nil

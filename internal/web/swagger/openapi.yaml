@@ -567,8 +567,10 @@ paths:
         indexer, newest first (autobrr/harbrr#390). Each capture is a response harbrr had
         already fetched when the failure was classified — retaining it issues no additional
         tracker request. Everything is redacted before it is retained: secret query params
-        and path tokens are masked, Authorization/Cookie/Set-Cookie are dropped, the body is
-        scrubbed of the configured credentials and of credential-shaped key/value pairs, and
+        and path tokens are masked, Authorization/Cookie/Set-Cookie are kept as header NAMES
+        with their values replaced by a redaction placeholder (so the capture still shows
+        which headers were present), the body is scrubbed of the configured credentials and
+        of credential-shaped key/value pairs, and
         capped at 64 KiB. Captures are never persisted: they are dropped on restart and when
         the indexer is deleted. A parse failure also carries which selector missed —
         `no_rows` (the rows selector matched nothing) versus `fields` (a row matched but a
@@ -2766,8 +2768,9 @@ components:
           type: object
           additionalProperties: { type: string }
           description: >
-            Response headers, with Authorization/Cookie/Set-Cookie (and the proxy/auth
-            challenge headers) replaced wholesale and every remaining value scrubbed.
+            Response headers. Authorization/Cookie/Set-Cookie (and the proxy/auth challenge
+            headers) keep their NAME but carry the literal "REDACTED" as their value; every
+            other value is scrubbed of credentials and kept.
         body: { type: string, description: "redacted response body, capped at 64 KiB" }
         bodyTruncated: { type: boolean, description: "the body was cut at the 64 KiB cap" }
         selectorMiss:

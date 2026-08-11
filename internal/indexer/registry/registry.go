@@ -38,8 +38,8 @@ var errDisabled = errors.New("registry: instance disabled")
 
 // statusSource is how the Resolver reads DERIVED health for the "status:" feed slug:
 // one method, satisfied by *StatsReporter, assigned in New once the StatsReporter
-// exists. It mirrors the invalidator seam in the other direction — Manager reaches the
-// Resolver through inv and never holds a *Resolver; the Resolver reaches health
+// exists. It mirrors the cleanup seams in the other direction — Manager reaches the
+// Resolver through those and never holds a *Resolver; the Resolver reaches health
 // through this and never holds a *StatsReporter. Keeping it to the one method also
 // keeps the derivation single: the resolver can only ASK for the health the roll-up
 // already derives, never re-derive it and drift from the UI's badge.
@@ -274,8 +274,9 @@ func New(db dbinterface.Querier, ldr *loader.Loader, keyring secretsKeyring, fam
 	res.startedAt = res.clock()
 	res.circuitLocks = &circuitLocks{}
 	// Manager and StatsReporter are built last, from the resolver's finalized handles: the
-	// same clock and the same *IndexerStats pointer. Manager evicts the serve path through
-	// the resolver via the invalidator seam (inv: res); it never holds a *Resolver.
+	// same clock and the same *IndexerStats pointer. Manager reaches the resolver only
+	// through the two narrow cleanup seams (serveEvicter / instanceForgetter), both
+	// satisfied by res; it never holds a *Resolver.
 	r.Manager = &Manager{
 		db:        res.db,
 		instances: res.instances,
@@ -283,7 +284,8 @@ func New(db dbinterface.Querier, ldr *loader.Loader, keyring secretsKeyring, fam
 		clock:     res.clock,
 		loader:    res.loader,
 		native:    res.native,
-		inv:       res,
+		evicter:   res,
+		forgetter: res,
 	}
 	r.StatsReporter = &StatsReporter{
 		stats:       res.stats,
@@ -935,7 +937,7 @@ func (r *Resolver) forgetCacheCounters(instanceID int64) {
 }
 
 // forgetStats drops a deleted instance's in-memory query/grab/latency counters, mirroring
-// forgetCacheCounters for the durable stats layer. It is the fourth invalidator seam method
+// forgetCacheCounters for the durable stats layer — one of the instanceForgetter methods
 // the Manager calls after a committed Delete, keeping the Manager ignorant of *IndexerStats.
 func (r *Resolver) forgetStats(instanceID int64) {
 	r.stats.ForgetInstance(instanceID)
