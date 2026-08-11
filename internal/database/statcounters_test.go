@@ -40,6 +40,27 @@ func TestIndexerStatCountersUpsertAndAll(t *testing.T) {
 		}
 	}
 
+	// Read back BEFORE the conflict update: the INSERT path has to persist every field
+	// itself, not just the DO UPDATE branch the assertions below exercise.
+	inserted, err := store.AllCounters(ctx, db)
+	if err != nil {
+		t.Fatalf("AllCounters after insert: %v", err)
+	}
+	if len(inserted) != 2 {
+		t.Fatalf("AllCounters after insert len = %d, want 2", len(inserted))
+	}
+	if r := inserted[0]; r.InstanceID != id1 || r.Queries != 5 || r.Grabs != 2 || r.ResponseMsTotal != 500 {
+		t.Errorf("inserted row0 = %+v, want id1 5/2/500", r)
+	}
+	if !inserted[0].LastQueryAt.Equal(lastQuery) || !inserted[0].LastGrabAt.Equal(lastGrab) ||
+		!inserted[0].LastSuccessAt.Equal(lastQuery) {
+		t.Errorf("inserted id1 timestamps = %v/%v/%v, want %v/%v/%v",
+			inserted[0].LastQueryAt, inserted[0].LastGrabAt, inserted[0].LastSuccessAt, lastQuery, lastGrab, lastQuery)
+	}
+	if r := inserted[1]; r.InstanceID != id2 || r.Queries != 3 || !r.LastGrabAt.IsZero() || !r.LastSuccessAt.IsZero() {
+		t.Errorf("inserted row1 = %+v, want id2 3 queries with NULL last grab/success", r)
+	}
+
 	// Re-upsert id1 with larger absolute values: overwritten, not accumulated.
 	newLastQuery := now.Add(time.Minute)
 	if err := store.Upsert(ctx, db, database.IndexerStatCounter{

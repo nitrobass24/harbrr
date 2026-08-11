@@ -103,8 +103,16 @@ func (s *IndexerStats) RecordQuery(instanceID int64, elapsed time.Duration) {
 // real success signal the derived health status has (#457): RecordQuery counts failed
 // attempts too, so a query timestamp proves the tracker was reached, never that it
 // answered. Same lock-free, flush-durable path as the counters.
+//
+// TRUNCATED TO THE SECOND, deliberately: the derivation compares this instant against
+// health-event times, which persist at RFC3339 second granularity (database.timeLayout),
+// and a sub-second success would then order itself AFTER a failure recorded later in the
+// same second — declaring healthy off the very failure it lost a race with. Truncating at
+// record time keeps the in-memory, flushed and rehydrated values identical (the DB
+// round-trip truncates anyway) and makes a same-second tie resolve to the failure, which
+// is what deriveStatus already treats as "not a success" (see failingNow).
 func (s *IndexerStats) RecordSuccess(instanceID int64) {
-	s.get(instanceID).lastSuccessUnix.Store(s.clock().UnixMilli())
+	s.get(instanceID).lastSuccessUnix.Store(s.clock().Truncate(time.Second).UnixMilli())
 }
 
 // RecordGrabAttempt counts one grab that reached the tracker, whether or not it

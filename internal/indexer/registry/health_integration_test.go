@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	stdhttp "net/http"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -137,35 +138,41 @@ func TestSuccessfulTestClearsCurrentHealth(t *testing.T) {
 }
 
 // TestSearchGatewayOutageRecordsTransportEvent proves the widened origin-down family
-// (#457): an HTTP 530 (Cloudflare "origin DNS error") — which used to fall through as a
-// plain "returned HTTP 5xx" and record NOTHING — is a gateway status, so the search
-// failure classifies as transport and the indexer derives failing.
+// (#457): every Cloudflare code that means "the origin never answered" — 521 web server
+// down, 523 origin unreachable, 524 origin timed out, 530 origin DNS error — used to fall
+// through as a plain "returned HTTP 5xx" and record NOTHING. Each now classifies as
+// transport and derives failing.
 func TestSearchGatewayOutageRecordsTransportEvent(t *testing.T) {
 	t.Parallel()
-	reg, _ := newRegistry(t, statusDoer{status: 530})
-	ctx := context.Background()
-	if _, err := reg.Add(ctx, registry.AddParams{
-		Slug: "tt", DefinitionID: "testtracker", Settings: map[string]string{"apikey": "x"},
-	}); err != nil {
-		t.Fatalf("Add: %v", err)
-	}
-	idx, ok := reg.Indexer(ctx, "tt")
-	if !ok {
-		t.Fatal("Indexer(tt) not resolved")
-	}
-	if _, err := idx.Search(ctx, search.Query{Keywords: "bunny"}); !errors.Is(err, search.ErrGatewayStatus) {
-		t.Fatalf("Search err = %v, want ErrGatewayStatus", err)
-	}
+	for _, status := range []int{521, 523, 524, 530} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			t.Parallel()
+			reg, _ := newRegistry(t, statusDoer{status: status})
+			ctx := context.Background()
+			if _, err := reg.Add(ctx, registry.AddParams{
+				Slug: "tt", DefinitionID: "testtracker", Settings: map[string]string{"apikey": "x"},
+			}); err != nil {
+				t.Fatalf("Add: %v", err)
+			}
+			idx, ok := reg.Indexer(ctx, "tt")
+			if !ok {
+				t.Fatal("Indexer(tt) not resolved")
+			}
+			if _, err := idx.Search(ctx, search.Query{Keywords: "bunny"}); !errors.Is(err, search.ErrGatewayStatus) {
+				t.Fatalf("Search err = %v, want ErrGatewayStatus", err)
+			}
 
-	st, err := reg.Status(ctx, "tt")
-	if err != nil {
-		t.Fatalf("Status: %v", err)
-	}
-	if st.Status != registry.StatusFailing {
-		t.Errorf("status = %q, want failing", st.Status)
-	}
-	if len(st.Events) != 1 || st.Events[0].Kind != domain.HealthTransport {
-		t.Fatalf("events = %+v, want exactly one transport", st.Events)
+			st, err := reg.Status(ctx, "tt")
+			if err != nil {
+				t.Fatalf("Status: %v", err)
+			}
+			if st.Status != registry.StatusFailing {
+				t.Errorf("status = %q, want failing", st.Status)
+			}
+			if len(st.Events) != 1 || st.Events[0].Kind != domain.HealthTransport {
+				t.Fatalf("events = %+v, want exactly one transport", st.Events)
+			}
+		})
 	}
 }
 

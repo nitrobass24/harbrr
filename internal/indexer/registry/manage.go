@@ -940,6 +940,11 @@ func (r *StatsReporter) deriveStatus(s healthSignals) string {
 // successAt is the newest evidence that something actually WORKED: a search/grab that
 // returned, or a passing explicit Test — whichever is newer. Both are recorded only on a
 // real success, so no comparison against the failure events is needed to tell them apart.
+//
+// Every instant compared here is second-granular (health events and the recovery marker
+// persist as RFC3339; IndexerStats.RecordSuccess truncates to match), so a success and a
+// failure inside the same second are a TIE — which failingNow resolves in the failure's
+// favour, the conservative direction this derivation has always taken.
 func (s healthSignals) successAt() time.Time {
 	if s.lastSuccess.After(s.recovery.OccurredAt) {
 		return s.lastSuccess
@@ -951,6 +956,10 @@ func (s healthSignals) successAt() time.Time {
 // succeeded since (neither a search/grab nor a passing test — failureAfterRecovery carries
 // the id-based tiebreak for a test that lands in the same clock instant), and it is
 // within the failing window for the indexer's current escalation rung.
+//
+// The success comparison is deliberately NOT strict (`!success.After(...)`): at the shared
+// second granularity a success in the same second as the failure proves nothing about
+// which came first, so the tie reads as still failing rather than as a recovery.
 func (s healthSignals) failingNow(now, success time.Time) bool {
 	if len(s.events) == 0 {
 		return false
