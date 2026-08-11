@@ -147,6 +147,24 @@ func TestDoRequest_OtherNon2xxNotRateLimited(t *testing.T) {
 	}
 }
 
+// TestIsGatewayStatus pins the origin-down family (#457): every code where the CDN
+// says the origin never answered is a gateway status, while the deliberately excluded
+// neighbours — 520 (ambiguous "unknown error") and 525/526 (TLS misconfiguration: the
+// origin is up) — and the ordinary "the tracker answered" codes are not.
+func TestIsGatewayStatus(t *testing.T) {
+	t.Parallel()
+	for _, code := range []int{502, 504, 521, 522, 523, 524, 530} {
+		if !IsGatewayStatus(code) {
+			t.Errorf("IsGatewayStatus(%d) = false, want true", code)
+		}
+	}
+	for _, code := range []int{200, 401, 403, 404, 429, 500, 503, 520, 525, 526} {
+		if IsGatewayStatus(code) {
+			t.Errorf("IsGatewayStatus(%d) = true, want false", code)
+		}
+	}
+}
+
 // TestDoSearchRequest_Non2xxFailsFast pins harbrr's DELIBERATE divergence from
 // Jackett on the search path: a non-redirect non-2xx response (403/404/500) fails
 // fast — the body never reaches the executor — even when that body would parse

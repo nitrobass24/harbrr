@@ -877,11 +877,11 @@ func (r *StatsReporter) statusOf(ctx context.Context, instanceID int64, limit in
 		disabledTill = &till
 	}
 	signals := healthSignals{
-		events:    events,
-		recovery:  recovery,
-		disabled:  disabledTill != nil,
-		level:     circuit.EscalationLevel,
-		lastQuery: r.stats.snapshot(instanceID).lastQuery,
+		events:      events,
+		recovery:    recovery,
+		disabled:    disabledTill != nil,
+		level:       circuit.EscalationLevel,
+		lastSuccess: r.stats.snapshot(instanceID).lastSuccess,
 	}
 	snap := healthSnapshot{events: events, status: r.deriveStatus(signals), disabledTill: disabledTill}
 	// InitialFailure survives a partial recovery (the ladder descends one rung at a
@@ -905,9 +905,11 @@ type healthSignals struct {
 	disabled bool
 	// level is the circuit's escalation rung, which scales the failing window.
 	level int
-	// lastQuery is the newest counted search ATTEMPT (IndexerStats counts failed
-	// attempts too, so on its own it is not evidence of success — see lastSuccess).
-	lastQuery time.Time
+	// lastSuccess is the newest search/grab that actually SUCCEEDED (zero = none this
+	// process has seen or rehydrated). Never an attempt: a failed search is a counted
+	// query too, and taking that as success is what let a hard-down tracker read healthy
+	// forever (#457).
+	lastSuccess time.Time
 }
 
 // deriveStatus resolves the tri-state derived health (#389), in order:
@@ -925,7 +927,7 @@ func (r *StatsReporter) deriveStatus(s healthSignals) string {
 		return StatusFailing
 	}
 	now := r.clock()
-	success := s.lastSuccess()
+	success := s.successAt()
 	if s.failingNow(now, success) {
 		return StatusFailing
 	}
@@ -935,24 +937,29 @@ func (r *StatsReporter) deriveStatus(s healthSignals) string {
 	return StatusUnknown
 }
 
-// lastSuccess is the newest evidence that something actually WORKED: a counted query
-// strictly newer than the newest recorded failure, or a passing explicit Test. The
-// strict comparison is what separates the two: a failed search is counted as a query
-// too, and it is counted just BEFORE its health event is written, so a query timestamp
-// that merely ties the newest failure is that failure's own attempt, not a success.
-func (s healthSignals) lastSuccess() time.Time {
-	if len(s.events) == 0 || s.lastQuery.After(s.events[0].OccurredAt) {
-		if s.lastQuery.After(s.recovery.OccurredAt) {
-			return s.lastQuery
-		}
+// successAt is the newest evidence that something actually WORKED: a search/grab that
+// returned, or a passing explicit Test — whichever is newer. Both are recorded only on a
+// real success, so no comparison against the failure events is needed to tell them apart.
+//
+// Every instant compared here is second-granular (health events and the recovery marker
+// persist as RFC3339; IndexerStats.RecordSuccess truncates to match), so a success and a
+// failure inside the same second are a TIE — which failingNow resolves in the failure's
+// favour, the conservative direction this derivation has always taken.
+func (s healthSignals) successAt() time.Time {
+	if s.lastSuccess.After(s.recovery.OccurredAt) {
+		return s.lastSuccess
 	}
 	return s.recovery.OccurredAt
 }
 
 // failingNow reports whether the newest recorded failure still stands: nothing has
-// succeeded since (neither traffic nor a passing test — failureAfterRecovery carries
+// succeeded since (neither a search/grab nor a passing test — failureAfterRecovery carries
 // the id-based tiebreak for a test that lands in the same clock instant), and it is
 // within the failing window for the indexer's current escalation rung.
+//
+// The success comparison is deliberately NOT strict (`!success.After(...)`): at the shared
+// second granularity a success in the same second as the failure proves nothing about
+// which came first, so the tie reads as still failing rather than as a recovery.
 func (s healthSignals) failingNow(now, success time.Time) bool {
 	if len(s.events) == 0 {
 		return false

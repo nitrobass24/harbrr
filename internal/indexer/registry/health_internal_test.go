@@ -7,8 +7,11 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/rs/zerolog"
 
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/domain"
@@ -43,13 +46,17 @@ func TestClassifyHealth(t *testing.T) {
 		{"wrapped net error", fmt.Errorf("GET https://tracker.example: %w", timeoutErr), domain.HealthTransport, true},
 		{"unexpected EOF read", fmt.Errorf("reading response from https://tracker.example: %w", io.ErrUnexpectedEOF), domain.HealthTransport, true},
 		{"plain EOF read", fmt.Errorf("reading response from https://tracker.example: %w", io.EOF), domain.HealthTransport, true},
-		// Gateway statuses (#247): the request-path builders wrap search.ErrGatewayStatus
-		// for 502/504/522 only, so these now classify as transport — a reachable-but-
-		// unhappy tracker answering with a plain 404/500 stays unclassified (the tracker
-		// itself answered; that's not a gateway outage).
+		// Gateway statuses (#247, widened in #457): the request-path builders wrap
+		// search.ErrGatewayStatus for the origin-down family only, so these classify as
+		// transport — a reachable-but-unhappy tracker answering with a plain 404/500 stays
+		// unclassified (the tracker itself answered; that's not a gateway outage).
 		{"gateway 502", fmt.Errorf("GET https://tracker.example: tracker returned HTTP 502: %w", search.ErrGatewayStatus), domain.HealthTransport, true},
 		{"gateway 504", fmt.Errorf("GET https://tracker.example: tracker returned HTTP 504: %w", search.ErrGatewayStatus), domain.HealthTransport, true},
+		{"gateway 521", fmt.Errorf("GET https://tracker.example: tracker returned HTTP 521: %w", search.ErrGatewayStatus), domain.HealthTransport, true},
 		{"gateway 522", fmt.Errorf("GET https://tracker.example: tracker returned HTTP 522: %w", search.ErrGatewayStatus), domain.HealthTransport, true},
+		{"gateway 523", fmt.Errorf("GET https://tracker.example: tracker returned HTTP 523: %w", search.ErrGatewayStatus), domain.HealthTransport, true},
+		{"gateway 524", fmt.Errorf("GET https://tracker.example: tracker returned HTTP 524: %w", search.ErrGatewayStatus), domain.HealthTransport, true},
+		{"gateway 530", fmt.Errorf("GET https://tracker.example: tracker returned HTTP 530: %w", search.ErrGatewayStatus), domain.HealthTransport, true},
 		{"not-found status stays unclassified", errors.New("GET https://tracker.example: tracker returned HTTP 404"), "", false},
 		{"server error status stays unclassified", errors.New("GET https://tracker.example: tracker returned HTTP 500"), "", false},
 		// A mid-body read failure carries the native ErrBodyRead marker: transport,
@@ -108,20 +115,81 @@ func TestDeriveStatus(t *testing.T) {
 		// #253: an open circuit reads failing even with no recent triggering event (a
 		// high escalation rung can outlast the failing window).
 		{name: "circuit open, old failure", s: healthSignals{events: old, disabled: true}, want: StatusFailing},
-		// A search that reached the tracker AFTER the newest failure is the newest
-		// evidence there is: it succeeded, so the failure no longer stands.
-		{name: "success after a recent failure", s: healthSignals{events: recent, lastQuery: now}, want: StatusHealthy},
-		// A failed search counts as a query too, timestamped just before its event — so a
-		// query that merely ties the newest failure is that failure, not a success.
-		{name: "query tied with the failure", s: healthSignals{events: recent, lastQuery: ago(1 * time.Minute)}, want: StatusFailing},
-		{name: "recent success, no failures", s: healthSignals{lastQuery: ago(10 * time.Minute)}, want: StatusHealthy},
-		{name: "success past the healthy window", s: healthSignals{lastQuery: ago(3 * time.Hour)}, want: StatusUnknown},
+		// A search that actually SUCCEEDED after the newest failure is the newest evidence
+		// there is, so the failure no longer stands.
+		{name: "success after a recent failure", s: healthSignals{events: recent, lastSuccess: now}, want: StatusHealthy},
+		// A success in the same instant as the failure is not evidence the failure is over.
+		{name: "success tied with the failure", s: healthSignals{events: recent, lastSuccess: ago(1 * time.Minute)}, want: StatusFailing},
+		{name: "recent success, no failures", s: healthSignals{lastSuccess: ago(10 * time.Minute)}, want: StatusHealthy},
+		{name: "success past the healthy window", s: healthSignals{lastSuccess: ago(3 * time.Hour)}, want: StatusUnknown},
+		// #457: attempts are not successes — a stale success cannot be refreshed by the
+		// failing traffic itself, so classified failures still read failing.
+		{name: "stale success, classified failures", s: healthSignals{events: recent, lastSuccess: ago(3 * time.Hour)}, want: StatusFailing},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := r.deriveStatus(tt.s); got != tt.want {
 				t.Errorf("deriveStatus() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestSuccessSecondGranularityTiesToTheFailure pins the precision contract behind the
+// #457 derivation: health events persist as RFC3339 SECONDS, so a millisecond-precise
+// success stamp could otherwise order itself after a failure recorded later in the same
+// second and declare healthy off the very failure it lost the race with. RecordSuccess
+// truncates to the second, which makes any same-second pair a tie — resolved in the
+// failure's favour — while a success in a later second still recovers. Each case is also
+// re-derived after a flush/rehydrate round trip, so a restart cannot change the answer.
+func TestSuccessSecondGranularityTiesToTheFailure(t *testing.T) {
+	t.Parallel()
+	// The failure event as the store reads it back: whole seconds, sub-second part lost.
+	failAt := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	events := []domain.IndexerHealthEvent{{ID: 1, OccurredAt: failAt}}
+	r := &StatsReporter{clock: func() time.Time { return failAt.Add(time.Minute) }}
+
+	tests := []struct {
+		name      string
+		successAt time.Time
+		want      string
+	}{
+		// The dangerous direction: the success genuinely came first, and the failure that
+		// followed it 600ms later stored as failAt. Without truncation this read healthy.
+		{name: "success before a same-second failure", successAt: failAt.Add(200 * time.Millisecond), want: StatusFailing},
+		// The benign direction, conservative by construction: at second granularity there
+		// is no evidence the success came after, so the failure keeps standing.
+		{name: "success after a same-second failure", successAt: failAt.Add(800 * time.Millisecond), want: StatusFailing},
+		{name: "success in a later second", successAt: failAt.Add(time.Second), want: StatusHealthy},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			db := openCacheDB(t, filepath.Join(t.TempDir(), "harbrr.db"))
+			id := insertInstanceSlug(t, db, "tt")
+			stats := newIndexerStats(db, func() time.Time { return tt.successAt }, zerolog.Nop())
+			stats.RecordSuccess(id)
+
+			recorded := stats.snapshot(id).lastSuccess
+			if got := r.deriveStatus(healthSignals{events: events, lastSuccess: recorded}); got != tt.want {
+				t.Errorf("deriveStatus() = %q, want %q (success %s vs failure %s)", got, tt.want, recorded, failAt)
+			}
+
+			// Restart: the flushed instant rehydrates unchanged, so the derivation is
+			// identical on the other side of a reboot.
+			stats.FlushCounters(ctx)
+			restarted := newIndexerStats(db, func() time.Time { return tt.successAt }, zerolog.Nop())
+			if err := restarted.RehydrateCounters(ctx); err != nil {
+				t.Fatalf("RehydrateCounters: %v", err)
+			}
+			rehydrated := restarted.snapshot(id).lastSuccess
+			if !rehydrated.Equal(recorded) {
+				t.Fatalf("rehydrated lastSuccess = %s, want %s", rehydrated, recorded)
+			}
+			if got := r.deriveStatus(healthSignals{events: events, lastSuccess: rehydrated}); got != tt.want {
+				t.Errorf("deriveStatus() after restart = %q, want %q", got, tt.want)
 			}
 		})
 	}

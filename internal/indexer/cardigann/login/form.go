@@ -41,7 +41,7 @@ func (e *Executor) loginForm(ctx context.Context, def *loader.Definition) error 
 	}
 	// Fetch the landing page, routing an anti-bot interstitial through the
 	// configured solver (NoopSolver by default => fail loud, unchanged behaviour).
-	body, err := e.fetchLandingPastAntiBot(ctx, landingURL, def.Login.Headers)
+	body, err := e.fetchLandingPastAntiBot(ctx, landingURL, loginHeaders(def))
 	if err != nil {
 		return err
 	}
@@ -71,7 +71,7 @@ func (e *Executor) loginForm(ctx context.Context, def *loader.Definition) error 
 			return err
 		}
 	}
-	return e.postFormAbsolute(ctx, def.Login, target, pairs, e.loginSecrets(def))
+	return e.postFormAbsolute(ctx, def, target, pairs, e.loginSecrets(def))
 }
 
 // assembleFormPairs builds the POST body in Jackett's exact precedence order:
@@ -234,10 +234,10 @@ func (e *Executor) resolveFormTarget(l *loader.Login, form *goquery.Selection, l
 //
 // Form body uses url.Values.Encode — see postForm (methods.go) for the deliberate
 // login form-encoding divergence note.
-func (e *Executor) postFormAbsolute(ctx context.Context, l *loader.Login, target string, pairs url.Values, secrets []string) error {
-	headers := mergeFormHeaders(l.Headers)
+func (e *Executor) postFormAbsolute(ctx context.Context, def *loader.Definition, target string, pairs url.Values, secrets []string) error {
+	headers := mergeFormHeaders(loginHeaders(def))
 	encoded := pairs.Encode()
-	return e.submitLoginPost(ctx, l, target, encoded, headers, secrets)
+	return e.submitLoginPost(ctx, def.Login, target, encoded, headers, secrets)
 }
 
 // selectorMatches reports whether sel matches at least one element in body. Used

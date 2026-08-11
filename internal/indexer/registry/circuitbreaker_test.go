@@ -103,7 +103,10 @@ func newCircuitTestAdapter(t *testing.T) (*indexerAdapter, *database.DB) {
 		circuitLocks: &circuitLocks{},
 		startedAt:    circuitNow.Add(-2 * time.Hour),
 		clock:        func() time.Time { return circuitNow },
-		log:          zerolog.Nop(),
+		// recordCircuitSuccess stamps the durable last-success instant before it touches
+		// the circuit, so the stats layer has to be wired even for a circuit-only fixture.
+		stats: newIndexerStats(db, func() time.Time { return circuitNow }, zerolog.Nop()),
+		log:   zerolog.Nop(),
 	}, db
 }
 

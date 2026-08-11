@@ -1,0 +1,12 @@
+-- 0029_indexer_last_success.sql — a durable last-SUCCESS instant per indexer (#457).
+--
+-- The derived health status used to have no real success signal: it read the newest
+-- counted query ATTEMPT (last_query_at) as a success whenever it was newer than the
+-- newest recorded failure EVENT. An unclassified failure writes no event, so every
+-- failing attempt refreshed "healthy" — a hard-down tracker reading green forever.
+--
+-- last_success_at is written only where a search/grab actually returned (the adapter's
+-- recordCircuitSuccess seam), and is flushed/rehydrated by the same absolute-value
+-- machinery as the counters beside it, so a restart does not blank the fleet to
+-- "unknown" for an hour. NULL = nothing has ever succeeded.
+ALTER TABLE indexer_stat_counters ADD COLUMN last_success_at TEXT;
