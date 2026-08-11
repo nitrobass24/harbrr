@@ -1,7 +1,10 @@
 package smoke
 
 import (
+	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -364,5 +367,162 @@ func TestReportHasFailures(t *testing.T) {
 	dirty := Report{Findings: []Finding{{Status: StatusPass}, {Status: StatusFail}}}
 	if !dirty.HasFailures() {
 		t.Error("a FAIL finding should report failures")
+	}
+}
+
+// noLinkSentinel makes grabStubServer serve an item with an EMPTY <link> (the
+// "nothing grabbable in the feed" case), which a plain empty override cannot express.
+const noLinkSentinel = "-"
+
+// grabFeed renders a Torznab feed carrying one item whose <link> is the given URL.
+func grabFeed(link string) string {
+	return `<?xml version="1.0" encoding="UTF-8"?><rss><channel><item><title>Release</title>` +
+		`<link>` + strings.ReplaceAll(link, "&", "&amp;") + `</link></item></channel></rss>`
+}
+
+// grabStubServer serves both halves of the grab path: the harbrr Torznab feed (whose
+// item link is the server's own /dl unless linkOverride names another) and the download
+// endpoint, which answers with dlStatus/dlBody.
+func grabStubServer(t *testing.T, linkOverride string, dlStatus int, dlBody string) *httptest.Server {
+	t.Helper()
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/results/torznab/api") {
+			link := srv.URL + "/dl?apikey=k"
+			switch linkOverride {
+			case noLinkSentinel:
+				link = ""
+			case "":
+			default:
+				link = linkOverride
+			}
+			w.Header().Set("Content-Type", "application/xml")
+			fmt.Fprint(w, grabFeed(link))
+			return
+		}
+		w.WriteHeader(dlStatus)
+		fmt.Fprint(w, dlBody)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// TestGrabCheck pins the CLI download-path check against stubbed responses: a real
+// payload passes, and every non-payload outcome (500, an HTML error page, no link at
+// all) is a FAIL finding — the coverage gap issue #435 closes, where a broken download
+// path hid behind a clean search differential.
+func TestGrabCheck(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name         string
+		link         string // "" = the stub's own /dl, "-" = an item with no link
+		dlStatus     int
+		dlBody       string
+		wantStatus   string
+		wantContains string
+	}{
+		{"bencoded torrent passes", "", 200, "d4:infod6:lengthi1eee", StatusPass, grabTorrent},
+		{"nzb passes", "", 200, `<?xml version="1.0" encoding="iso-8859-1"?><nzb><file/></nzb>`, StatusPass, grabNZB},
+		{"magnet link passes without a fetch", "magnet:?xt=urn:btih:abc", 200, "", StatusPass, grabMagnet},
+		{"download 500 fails", "", 500, "boom", StatusFail, "download HTTP 500"},
+		{"html error page fails", "", 200, "<html><body>login required</body></html>", StatusFail, grabUnknown},
+		{"plain text starting with d fails", "", 200, "download unavailable", StatusFail, grabUnknown},
+		{"feed item without a link fails", noLinkSentinel, 200, "", StatusFail, grabNoLink},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			srv := grabStubServer(t, tt.link, tt.dlStatus, tt.dlBody)
+			cfg := Config{HarbrrURL: srv.URL, HarbrrKey: "k", Query: "q", Grab: true}
+			got := grabCheck(context.Background(), srv.Client(), cfg, "tracker", nil)
+			if len(got) != 1 {
+				t.Fatalf("grabCheck returned %d findings, want 1", len(got))
+			}
+			if got[0].Status != tt.wantStatus {
+				t.Errorf("status = %q, want %q (detail %q)", got[0].Status, tt.wantStatus, got[0].Detail)
+			}
+			if !strings.Contains(got[0].Detail, tt.wantContains) {
+				t.Errorf("detail = %q, want it to mention %q", got[0].Detail, tt.wantContains)
+			}
+			if got[0].Check != CheckGrab || got[0].Indexer != "tracker" {
+				t.Errorf("finding not addressed to the tracker's grab check: %+v", got[0])
+			}
+		})
+	}
+}
+
+// deadServer returns a stopped httptest server — a guaranteed-refused address for the
+// unreachable-host cases, and its client.
+func deadServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	srv.Close()
+	return srv
+}
+
+// TestHarbrrHasDownloadLinks pins the evidence probe the //go:build smoke front-end
+// records as downloadLinksPresent: a feed item with a link is grabbable, an item without
+// one is not, and a feed that cannot be fetched reports an error (and not-grabbable).
+func TestHarbrrHasDownloadLinks(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		server  func(t *testing.T) *httptest.Server
+		wantOK  bool
+		wantErr bool
+	}{
+		{"feed with links", func(t *testing.T) *httptest.Server { return grabStubServer(t, "", 200, "") }, true, false},
+		{"feed without links", func(t *testing.T) *httptest.Server { return grabStubServer(t, noLinkSentinel, 200, "") }, false, false},
+		{"unreachable feed", deadServer, false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			srv := tt.server(t)
+			cfg := Config{HarbrrURL: srv.URL, HarbrrKey: "k"}
+			ok, err := harbrrHasDownloadLinks(context.Background(), srv.Client(), cfg, "tracker", "q")
+			if ok != tt.wantOK || (err != nil) != tt.wantErr {
+				t.Errorf("harbrrHasDownloadLinks = (%v, %v), want (%v, err!=nil=%v)", ok, err, tt.wantOK, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestGrabCheckGatedOff pins the opt-in gate: with SMOKE_GRAB unset (cfg.Grab false) the
+// CLI suite runs no grab at all, so a routine run never pulls a real payload.
+func TestGrabCheckGatedOff(t *testing.T) {
+	t.Parallel()
+	srv := grabStubServer(t, "", 500, "boom")
+	cfg := Config{HarbrrURL: srv.URL, HarbrrKey: "k", Query: "q"}
+	if got := grabCheck(context.Background(), srv.Client(), cfg, "tracker", nil); len(got) != 0 {
+		t.Errorf("grabCheck with Grab unset returned %+v, want no findings", got)
+	}
+}
+
+// TestGrabCheckFindingCarriesNoSecret pins the redaction contract: the resolved download
+// URL never reaches a Finding. The stub serves a link carrying a passkey (in the path AND
+// the query) and points at a closed port, so the failure is the URL-bearing transport
+// error — the detail must name neither the credential nor any secret token.
+func TestGrabCheckFindingCarriesNoSecret(t *testing.T) {
+	t.Parallel()
+	dead := deadServer(t) // the download host refuses the connection
+	srv := grabStubServer(t, dead.URL+"/download/SUPERSECRETPASSKEY?passkey=SUPERSECRETPASSKEY&apikey=hk", 200, "")
+	cfg := Config{HarbrrURL: srv.URL, HarbrrKey: "hk", Query: "q", Grab: true}
+
+	got := grabCheck(context.Background(), srv.Client(), cfg, "tracker", nil)
+	if len(got) != 1 || got[0].Status != StatusFail {
+		t.Fatalf("a transport error should degrade to one FAIL finding, got %+v", got)
+	}
+	if strings.Contains(got[0].Detail, "SUPERSECRETPASSKEY") {
+		t.Errorf("finding detail leaked the download credential: %q", got[0].Detail)
+	}
+	low := strings.ToLower(got[0].Detail)
+	for _, tok := range secretTokens {
+		if strings.Contains(low, tok) {
+			t.Errorf("finding detail carries the secret token %q: %q", tok, got[0].Detail)
+		}
+	}
+	if md := (Report{Findings: got}).Markdown(); strings.Contains(md, "SUPERSECRETPASSKEY") {
+		t.Errorf("rendered report leaked the download credential:\n%s", md)
 	}
 }
