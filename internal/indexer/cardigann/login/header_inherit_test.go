@@ -82,11 +82,17 @@ func TestLoginGetInheritsSearchHeaders(t *testing.T) {
 }
 
 // TestCheckTestInheritsSearchHeaders covers the login.test probe, which is the
-// request an already-authenticated session actually repeats.
+// request an already-authenticated session actually repeats — including the
+// single same-domain redirect follow, which re-sends the same inherited headers
+// on the second hop.
 func TestCheckTestInheritsSearchHeaders(t *testing.T) {
 	t.Parallel()
 
-	rt := newReplay(t, step{wantMethod: stdhttp.MethodGet, wantPath: "/index.php", bodyFile: "logged_in.html"})
+	rt := newReplay(
+		t,
+		step{wantMethod: stdhttp.MethodGet, wantPath: "/index.php", status: stdhttp.StatusFound, respHeader: locationHeader("/home.php")},
+		step{wantMethod: stdhttp.MethodGet, wantPath: "/home.php", bodyFile: "logged_in.html"},
+	)
 	e := newExec(t, rt, map[string]string{"apikey": inheritKey})
 
 	def := inheritDef(&loader.PageTestBlock{Path: "index.php", Selector: "a[href^=\"/logout.php\"]"})
@@ -94,8 +100,28 @@ func TestCheckTestInheritsSearchHeaders(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("CheckTest = (%v, %v), want (true, nil)", ok, err)
 	}
+	for i := range 2 {
+		if got := rt.capture(i).headers.Get("Authorization"); got != "Bearer "+inheritKey {
+			t.Errorf("login.test request %d Authorization = %q, want the rendered inherited header", i, got)
+		}
+	}
+}
+
+// TestLoginOneURLInheritsSearchHeaders covers the remaining GET-shaped method:
+// the oneurl probe must carry the rendered inherited header too.
+func TestLoginOneURLInheritsSearchHeaders(t *testing.T) {
+	t.Parallel()
+
+	rt := newReplay(t, step{wantMethod: stdhttp.MethodGet, wantPath: "/api/torrents", bodyFile: "api_ok.html"})
+	e := newExec(t, rt, map[string]string{"apikey": inheritKey})
+
+	def := inheritDef(nil)
+	def.Login.Method = "oneurl"
+	if err := e.Login(t.Context(), def); err != nil {
+		t.Fatalf("Login: %v", err)
+	}
 	if got := rt.capture(0).headers.Get("Authorization"); got != "Bearer "+inheritKey {
-		t.Errorf("login.test GET Authorization = %q, want the rendered inherited header", got)
+		t.Errorf("oneurl GET Authorization = %q, want the rendered inherited header", got)
 	}
 }
 
