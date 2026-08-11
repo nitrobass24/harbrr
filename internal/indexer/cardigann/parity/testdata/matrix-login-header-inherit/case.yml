@@ -1,0 +1,31 @@
+name: matrix-login-header-inherit
+archetype: login-header-inherit
+golden_source: hand-derived
+mode: search
+description: >
+  Login-request parity for the Login.Headers ?? Search.Headers fallback: the def
+  declares a GET login probe with NO login.headers, so both the login probe AND
+  the search must carry the config-templated Authorization header declared under
+  search.headers (expect_header asserts it on both steps). Jackett resolves the
+  login headers as ParseCustomHeaders(Login?.Headers ?? Search?.Headers); without
+  the fallback the probe goes out anonymous. Hand-derived golden: same synthetic
+  row as matrix-search-headers — size 3 GB = 3221225472 (1024-based), peers =
+  42 + 3 = 45, category "1" -> Movies (2000).
+definition: definition.yml
+config:
+  apikey: synthetic-apikey-value
+query:
+  keywords: ubuntu
+steps:
+  - method: GET
+    url: https://loginhdr.test/api/torrents
+    response: login.html
+    note: GET login probe — inherits search.headers (no login.headers declared)
+    expect_header:
+      Authorization: Bearer synthetic-apikey-value
+  - method: GET
+    url: https://loginhdr.test/api/torrents?q=ubuntu
+    response: search.html
+    note: search request carrying its own search.headers
+    expect_header:
+      Authorization: Bearer synthetic-apikey-value

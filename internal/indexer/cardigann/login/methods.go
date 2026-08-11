@@ -50,7 +50,7 @@ func (e *Executor) loginGet(ctx context.Context, def *loader.Definition) error {
 	if err != nil {
 		return err
 	}
-	body, status, err := e.get(ctx, full, def.Login.Headers)
+	body, status, err := e.get(ctx, full, loginHeaders(def))
 	if err != nil {
 		return err
 	}
@@ -92,7 +92,7 @@ func (e *Executor) loginOneURL(ctx context.Context, def *loader.Definition) erro
 	if err != nil {
 		return err
 	}
-	body, status, err := e.get(ctx, rawURL+one, def.Login.Headers)
+	body, status, err := e.get(ctx, rawURL+one, loginHeaders(def))
 	if err != nil {
 		return err
 	}
@@ -117,7 +117,7 @@ func (e *Executor) postForm(ctx context.Context, def *loader.Definition, target 
 	if err != nil {
 		return err
 	}
-	headers := mergeFormHeaders(def.Login.Headers)
+	headers := mergeFormHeaders(loginHeaders(def))
 	encoded := pairs.Encode()
 	return e.submitLoginPost(ctx, def.Login, rawURL, encoded, headers, e.loginSecrets(def))
 }
@@ -232,6 +232,20 @@ func (e *Executor) checkErrors(l *loader.Login, rawURL string, body []byte, stat
 // is preserved (a legitimate "no such user 'dave'" survives). See loader.SecretValues.
 func (e *Executor) loginSecrets(def *loader.Definition) []string {
 	return loader.SecretValues(def.Settings, e.config)
+}
+
+// loginHeaders returns Login.Headers when the definition declares them — any
+// non-nil map, including an explicitly empty one — else Search.Headers,
+// mirroring Jackett's ParseCustomHeaders(Login?.Headers ?? Search?.Headers)
+// null-coalescing (renderDownloadHeaders is the download-side twin). The
+// nil-vs-empty distinction is load-bearing: yaml unmarshals `headers: {}` to a
+// non-nil empty map, which — like C#'s non-null empty dict — suppresses the
+// fallback. Every caller runs under a non-nil def.Login.
+func loginHeaders(def *loader.Definition) map[string][]string {
+	if def.Login.Headers != nil {
+		return def.Login.Headers
+	}
+	return def.Search.Headers
 }
 
 // mergeFormHeaders returns the login headers with a form-urlencoded Content-Type
