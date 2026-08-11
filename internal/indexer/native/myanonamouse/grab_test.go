@@ -29,7 +29,7 @@ func TestGrab(t *testing.T) {
 	}}
 	d := newDriver(doer)
 
-	res, err := d.Grab(context.Background(), "https://mam.test/tor/download.php/DLHASH-AAAA?tid=101")
+	res, err := d.Grab(context.Background(), "https://mam.test/tor/download.php?tid=101")
 	if err != nil {
 		t.Fatalf("Grab: %v", err)
 	}
@@ -48,6 +48,9 @@ func TestGrab(t *testing.T) {
 	dl := doer.reqs[0]
 	if dl.method != stdhttp.MethodGet || dl.cookie != "mam_id="+mamSecret {
 		t.Errorf("download request = %s cookie=%q, want GET with the mam_id", dl.method, dl.cookie)
+	}
+	if want := "https://mam.test/tor/download.php?tid=101"; dl.url != want {
+		t.Errorf("download URL = %q, want %q (fetched verbatim, not rewritten)", dl.url, want)
 	}
 	if dl.accept != "" {
 		t.Errorf("download Accept = %q, want empty (do not force JSON on a .torrent)", dl.accept)

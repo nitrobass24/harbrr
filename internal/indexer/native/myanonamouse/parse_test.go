@@ -49,7 +49,7 @@ func TestParseReleasesGolden(t *testing.T) {
 	want := []*normalizer.Release{
 		{
 			Title: "Project Hail Mary by Andy Weir, Ray Porter", Author: "Andy Weir, Ray Porter",
-			Link:    "https://www.myanonamouse.net/tor/download.php/DLHASH-BBBB?tid=202",
+			Link:    "https://www.myanonamouse.net/tor/download.php?tid=202",
 			Details: "https://www.myanonamouse.net/t/202",
 			// cat 47 -> Audio/Audiobook (3030) + custom 1:1 (100047).
 			Categories: []int{3030, 100047}, Size: 1385126953, Files: 1, Grabs: 8,
@@ -58,7 +58,7 @@ func TestParseReleasesGolden(t *testing.T) {
 		},
 		{
 			Title: "The Silent Patient by Alex Michaelides", Author: "Alex Michaelides",
-			Link:    "https://www.myanonamouse.net/tor/download.php/DLHASH-AAAA?tid=101",
+			Link:    "https://www.myanonamouse.net/tor/download.php?tid=101",
 			Details: "https://www.myanonamouse.net/t/101",
 			// cat 13 -> Audio/Audiobook (3030) + custom 1:1 (100013).
 			Categories: []int{3030, 100013}, Size: 268959744, Files: 2, Grabs: 120,

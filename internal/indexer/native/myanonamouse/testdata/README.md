@@ -92,8 +92,11 @@ captured from a live MAM. The live Prowlarr differential and a real search/grab 
   matching that prefix is treated as zero results (matching Prowlarr); any *other*
   non-empty `Error`, a missing `data` array, or a malformed body is a parse error.
 - **Explicit download URL** — `[Deliberate]`. The `.torrent` URL is built explicitly as
-  `{base}tor/download.php/{dl}?tid={id}` (Prowlarr's approach) rather than trusting an
-  API-returned link — deterministic and immune to a redacted field. (Prowlarr appends
+  `{base}tor/download.php?tid={id}` rather than trusting an API-returned link —
+  deterministic and immune to a redacted field. Prowlarr's personalized hash-in-path
+  form (`{base}tor/download.php/{dl}?tid={id}`) is **not** used: MAM answers it with a
+  406 (2026-08-10). The query form is authenticated by the `mam_id` cookie the grab
+  always sends, so the row's `dl` hash is unused. (Prowlarr appends
   `&fl=1` when the UseFreeleechWedge setting is on and the row is not already freeleech;
   harbrr does not expose that setting, so it is omitted.)
 - **No infohash** — `[Accepted]`. MAM returns no infohash (the download is always an
