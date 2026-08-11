@@ -149,18 +149,37 @@ func captureResponse(def *loader.Definition, deps Deps, br builtRequest, sr sear
 // redactBody caps the body at maxCaptureBodyBytes and scrubs it twice: first the
 // definition's own configured credential VALUES (a page that echoes the submitted
 // passkey), then the shared credential-NAME vocabulary (an apikey the tracker
-// itself put in the markup). Truncating before the scrub is safe — dropping bytes
-// can only remove secrets — and keeps the regex passes off a 32 MiB body.
+// itself put in the markup). Truncating first keeps the regex passes off a 32 MiB
+// body.
+//
+// Truncating does NOT merely remove secrets, it can SPLIT one: ScrubValues matches
+// a configured value in full, so a passkey straddling the cut would leave its
+// unmatched prefix behind. Any such prefix begins within the last
+// (longest secret - 1) bytes of the cut, so that window is dropped too — after
+// which every surviving occurrence is whole and scrubbable.
 func redactBody(raw []byte, secrets []string) (string, bool) {
 	truncated := len(raw) > maxCaptureBodyBytes
 	if truncated {
-		raw = raw[:maxCaptureBodyBytes]
+		raw = raw[:maxCaptureBodyBytes-min(longestLen(secrets), maxCaptureBodyBytes)]
 	}
 	out := apphttp.RedactSecretsInText(apphttp.ScrubValues(string(raw), secrets))
 	if len(out) > maxCaptureBodyBytes {
 		out, truncated = out[:maxCaptureBodyBytes], true
 	}
 	return out, truncated
+}
+
+// longestLen is the straddle window: one less than the longest value, and 0 when
+// there are no configured secrets (nothing can straddle, so nothing is dropped).
+func longestLen(secrets []string) int {
+	n := 0
+	for _, s := range secrets {
+		n = max(n, len(s))
+	}
+	if n == 0 {
+		return 0
+	}
+	return n - 1
 }
 
 // droppedHeaders are response headers whose VALUE is a credential in its

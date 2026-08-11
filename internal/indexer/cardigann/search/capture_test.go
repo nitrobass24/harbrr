@@ -238,6 +238,30 @@ func TestCapture_BodyCap(t *testing.T) {
 	}
 }
 
+// TestCapture_BodyCapDoesNotSplitASecret is the nasty edge of the cap: truncation
+// does not only DROP bytes, it can SPLIT a configured credential across the cut,
+// leaving a prefix that ScrubValues (which matches the value in full) no longer
+// recognizes. The passkey here straddles the 64 KiB boundary exactly.
+func TestCapture_BodyCapDoesNotSplitASecret(t *testing.T) {
+	t.Parallel()
+
+	// Place the passkey so 20 of its 40 bytes fall inside the cap and 20 outside.
+	pad := strings.Repeat("x", maxCaptureBodyBytes-20)
+	doer := &captureDoer{body: pad + capturePasskey + strings.Repeat("y", 1024)}
+	capture := runCapture(t, doer)
+
+	if !capture.BodyTruncated {
+		t.Error("BodyTruncated = false, want true for an oversized body")
+	}
+	// No fragment of the credential survives: every 8-byte window of it must be
+	// absent, which catches a straddling prefix as well as the whole value.
+	for i := 0; i+8 <= len(capturePasskey); i++ {
+		if frag := capturePasskey[i : i+8]; strings.Contains(capture.Body, frag) {
+			t.Fatalf("captured body retained credential fragment %q at offset %d", frag, i)
+		}
+	}
+}
+
 // TestCapture_SelectorMiss is the acceptance point the issue names: "no rows
 // matched" and "rows matched but the fields didn't" are DIFFERENT problems and
 // must be reported as such, each naming the definition node that missed.
