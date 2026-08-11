@@ -38,8 +38,8 @@ var errDisabled = errors.New("registry: instance disabled")
 
 // statusSource is how the Resolver reads DERIVED health for the "status:" feed slug:
 // one method, satisfied by *StatsReporter, assigned in New once the StatsReporter
-// exists. It mirrors the invalidator seam in the other direction — Manager reaches the
-// Resolver through inv and never holds a *Resolver; the Resolver reaches health
+// exists. It mirrors the cleanup seams in the other direction — Manager reaches the
+// Resolver through those and never holds a *Resolver; the Resolver reaches health
 // through this and never holds a *StatsReporter. Keeping it to the one method also
 // keeps the derivation single: the resolver can only ASK for the health the roll-up
 // already derives, never re-derive it and drift from the UI's badge.
@@ -107,6 +107,11 @@ type Resolver struct {
 	// present (built in New, like stats), instrumented by the per-instance
 	// indexerAdapter's Search/Grab before an outbound hit.
 	budget *RequestBudget
+
+	// diagnostics holds the per-instance ring of recent failed fetches
+	// (autobrr/harbrr#390), written by the adapter's recordHealth and read back by
+	// the StatsReporter. Memory-only — see the type's doc.
+	diagnostics *diagnostics
 
 	// health-status source for the "status:" feed slug, wired in New to the
 	// StatsReporter. See statusSource — the Resolver never holds a *StatsReporter.
@@ -263,13 +268,15 @@ func New(db dbinterface.Querier, ldr *loader.Loader, keyring secretsKeyring, fam
 	if res.budget == nil {
 		res.budget = newRequestBudget(db, res.clock, res.log)
 	}
+	res.diagnostics = newDiagnostics()
 	// Captured last (after the options loop finalizes clock) so an injected test clock
 	// establishes the startup-grace reference point instead of the wall clock.
 	res.startedAt = res.clock()
 	res.circuitLocks = &circuitLocks{}
 	// Manager and StatsReporter are built last, from the resolver's finalized handles: the
-	// same clock and the same *IndexerStats pointer. Manager evicts the serve path through
-	// the resolver via the invalidator seam (inv: res); it never holds a *Resolver.
+	// same clock and the same *IndexerStats pointer. Manager reaches the resolver only
+	// through the two narrow cleanup seams (serveEvicter / instanceForgetter), both
+	// satisfied by res; it never holds a *Resolver.
 	r.Manager = &Manager{
 		db:        res.db,
 		instances: res.instances,
@@ -277,16 +284,18 @@ func New(db dbinterface.Querier, ldr *loader.Loader, keyring secretsKeyring, fam
 		clock:     res.clock,
 		loader:    res.loader,
 		native:    res.native,
-		inv:       res,
+		evicter:   res,
+		forgetter: res,
 	}
 	r.StatsReporter = &StatsReporter{
-		stats:     res.stats,
-		budget:    res.budget,
-		instances: res.instances,
-		health:    res.health,
-		circuit:   res.circuit,
-		db:        res.db,
-		clock:     res.clock,
+		stats:       res.stats,
+		budget:      res.budget,
+		diagnostics: res.diagnostics,
+		instances:   res.instances,
+		health:      res.health,
+		circuit:     res.circuit,
+		db:          res.db,
+		clock:       res.clock,
 	}
 	// The status: feed reads derived health back through the narrow statusSource seam,
 	// so the resolver never holds the StatsReporter itself.
@@ -641,6 +650,7 @@ func (r *Resolver) buildAdapterAt(ctx context.Context, slug, probeHost string) (
 		healthSink:    r.healthSink,
 		stats:         r.stats,
 		budget:        r.budget,
+		diagnostics:   r.diagnostics,
 		failover: func(ctx context.Context) (string, error) {
 			return r.failover(ctx, inst, def, baseURL)
 		},
@@ -927,7 +937,7 @@ func (r *Resolver) forgetCacheCounters(instanceID int64) {
 }
 
 // forgetStats drops a deleted instance's in-memory query/grab/latency counters, mirroring
-// forgetCacheCounters for the durable stats layer. It is the fourth invalidator seam method
+// forgetCacheCounters for the durable stats layer — one of the instanceForgetter methods
 // the Manager calls after a committed Delete, keeping the Manager ignorant of *IndexerStats.
 func (r *Resolver) forgetStats(instanceID int64) {
 	r.stats.ForgetInstance(instanceID)
@@ -937,6 +947,12 @@ func (r *Resolver) forgetStats(instanceID int64) {
 // forgetStats for the request-budget tracker.
 func (r *Resolver) forgetBudget(instanceID int64) {
 	r.budget.ForgetInstance(instanceID)
+}
+
+// forgetDiagnostics drops a deleted instance's captured failed fetches, mirroring
+// forgetBudget for the memory-only diagnostics ring.
+func (r *Resolver) forgetDiagnostics(instanceID int64) {
+	r.diagnostics.ForgetInstance(instanceID)
 }
 
 // indexerInfo assembles the public indexer identity from the instance + def (no

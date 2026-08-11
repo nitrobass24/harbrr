@@ -69,6 +69,7 @@ export type IndexerBudget = components["schemas"]["IndexerBudget"]
 export type IndexerBudgetKind = components["schemas"]["IndexerBudgetKind"]
 export type CacheStats = components["schemas"]["CacheStats"]
 export type CacheIndexerStats = components["schemas"]["CacheIndexerStats"]
+export type DiagnosticCapture = components["schemas"]["DiagnosticCapture"]
 export type CacheConfig = components["schemas"]["CacheConfig"]
 export type CacheConfigUpdate = components["schemas"]["CacheConfigUpdate"]
 export type ConnectionKind = components["schemas"]["AppConnection"]["kind"]
@@ -91,6 +92,7 @@ export type Me = operations["me"]["responses"]["200"]["content"]["application/js
 export type SetupState = operations["getSetupStatus"]["responses"]["200"]["content"]["application/json"]
 export type Health = operations["getHealthz"]["responses"]["200"]["content"]["application/json"]
 export type IndexerStatus = operations["indexerStatus"]["responses"]["200"]["content"]["application/json"]
+export type IndexerDiagnostics = operations["indexerDiagnostics"]["responses"]["200"]["content"]["application/json"]
 export type SearchParams = NonNullable<operations["searchIndexer"]["parameters"]["query"]>
 
 export type Credentials = components["schemas"]["Credentials"]
@@ -333,6 +335,10 @@ export class ApiClient {
 
   getIndexerStatus(slug: string): Promise<IndexerStatus> {
     return this.unwrap(this.http.GET("/api/indexers/{slug}/status", { params: { path: { slug } } }), "/api/indexers/{slug}/status")
+  }
+
+  getIndexerDiagnostics(slug: string): Promise<IndexerDiagnostics> {
+    return this.unwrap(this.http.GET("/api/indexers/{slug}/diagnostics", { params: { path: { slug } } }), "/api/indexers/{slug}/diagnostics")
   }
 
   getIndexerStats(slug: string): Promise<IndexerStats> {

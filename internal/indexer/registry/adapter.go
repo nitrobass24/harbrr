@@ -73,6 +73,10 @@ type indexerAdapter struct {
 	// stats records the durable per-indexer query/grab/latency counters. Increments are
 	// in-memory atomics (no hot-path DB write); the registry flushes them periodically.
 	stats *IndexerStats
+	// diagnostics is the registry-wide, memory-only ring of recent failed fetches
+	// (autobrr/harbrr#390). recordHealth files this instance's classified failures
+	// into it when the error chain carries a redacted capture.
+	diagnostics *diagnostics
 	// budget enforces the per-indexer request budget (autobrr/harbrr#251): Search/Grab
 	// reserve capacity before an outbound hit, and a tracker-declared quota error marks
 	// the relevant kind spent until reset (the reactive-learning path).
@@ -459,6 +463,14 @@ func (a *indexerAdapter) recordHealth(ctx context.Context, err error) {
 		Kind:       kind,
 		Detail:     apphttp.RedactError(err),
 		OccurredAt: a.clock(),
+	}
+	// File the engine's redacted snapshot of the failed exchange, when it carries
+	// one, BEFORE the (fallible) event write — it is the evidence the operator
+	// needs and it costs nothing but memory. Errors with no capture (a native
+	// driver, a failure raised before any request) add no entry: the health event
+	// above already records those.
+	if capture, ok := search.CaptureOf(err); ok && a.diagnostics != nil {
+		a.diagnostics.record(a.instanceID, FailureCapture{Kind: kind, OccurredAt: ev.OccurredAt, Capture: capture})
 	}
 	if rerr := a.health.Record(ctx, a.db, ev); rerr != nil {
 		a.log.Warn().Str("indexer", a.info.ID).Str("error", apphttp.RedactError(rerr)).

@@ -28,6 +28,9 @@ describe("IndexerDetailsSheet", () => {
       if (path.includes("/capabilities")) {
         return Promise.resolve(json({ modes: { search: ["q"] } }))
       }
+      if (path.includes("/diagnostics")) {
+        return Promise.resolve(json({ slug: "torrentleech", captures: [] }))
+      }
       return Promise.resolve(json({}))
     }))
 
@@ -68,6 +71,9 @@ describe("IndexerDetailsSheet", () => {
       }
       if (path.includes("/capabilities")) {
         return Promise.resolve(json({ modes: { search: ["q"] } }))
+      }
+      if (path.includes("/diagnostics")) {
+        return Promise.resolve(json({ slug: "torrentleech", captures: [] }))
       }
       return Promise.resolve(json({}))
     }))
@@ -119,6 +125,46 @@ describe("IndexerDetailsSheet", () => {
     expect(screen.queryByText("Next attempt")).toBeNull()
   })
 
+  // #390 PR 2: the diagnostics section has to separate the two failures operators
+  // conflate — nothing matched the rows selector vs a row matched but a field did
+  // not — and expand to the redacted evidence harbrr already held.
+  it("renders both capture kinds with their selector and definition path", async () => {
+    const at = new Date(Date.now() - 5 * 60_000).toISOString()
+    stubStatus({ slug: "torrentleech", status: "failing", events: [] }, [
+      {
+        kind: "parse_error", occurred_at: at, method: "GET", status: 200,
+        url: "https://cap.invalid/api/REDACTED?passkey=REDACTED",
+        headers: { "Content-Type": "text/html", "Set-Cookie": "REDACTED" },
+        body: "<html>drifted</html>",
+        selectorMiss: { kind: "no_rows", selector: "tr.torrent", path: "/search/rows" },
+      },
+      {
+        kind: "parse_error", occurred_at: at, method: "GET", status: 200,
+        url: "https://cap.invalid/browse",
+        selectorMiss: { kind: "fields", selector: "a.title", path: "/search/fields/title" },
+      },
+    ])
+
+    renderSheet()
+
+    expect(await screen.findByText(/No rows matched — tr\.torrent at \/search\/rows/)).toBeTruthy()
+    expect(screen.getByText(/Rows matched, field missed — a\.title at \/search\/fields\/title/)).toBeTruthy()
+    // The redacted evidence is present, and the raw kind constant never is.
+    expect(screen.getByText("GET https://cap.invalid/api/REDACTED?passkey=REDACTED")).toBeTruthy()
+    expect(screen.getByText("<html>drifted</html>")).toBeTruthy()
+    expect(screen.queryByText("parse_error")).toBeNull()
+    expect(screen.queryByText("No captured failures.")).toBeNull()
+  })
+
+  // Nothing captured is the normal state and must read as such, not as an error.
+  it("says so when nothing has been captured", async () => {
+    stubStatus({ slug: "torrentleech", status: "healthy", events: [] })
+
+    renderSheet()
+
+    expect(await screen.findByText("No captured failures.")).toBeTruthy()
+  })
+
   // Healthy stays quiet: the dot is the whole story, no detail rows.
   it("adds no detail rows for a healthy indexer", async () => {
     stubStatus({ slug: "torrentleech", status: "healthy", events: [] })
@@ -132,14 +178,16 @@ describe("IndexerDetailsSheet", () => {
 })
 
 // stubStatus serves the given /status body and empty stats/capabilities, so a health
-// test only states the health fixture it cares about.
-function stubStatus(status: unknown) {
+// test only states the health fixture it cares about. captures (optional) is the
+// /diagnostics body's ring.
+function stubStatus(status: unknown, captures: unknown[] = []) {
   vi.stubGlobal("fetch", vi.fn().mockImplementation((request: Request) => {
     if (request.url.includes("/status")) return Promise.resolve(json(status))
     if (request.url.includes("/stats")) {
       return Promise.resolve(json({ slug: "torrentleech", queries: 0, grabs: 0 }))
     }
     if (request.url.includes("/capabilities")) return Promise.resolve(json({ modes: { search: ["q"] } }))
+    if (request.url.includes("/diagnostics")) return Promise.resolve(json({ slug: "torrentleech", captures }))
     return Promise.resolve(json({}))
   }))
 }

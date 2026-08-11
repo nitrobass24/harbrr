@@ -147,7 +147,10 @@ func ParseResults(def *loader.Definition, body []byte, respType string, query Qu
 	}
 	rows, err := doc.Rows(rowsBlock)
 	if err != nil {
-		return nil, fmt.Errorf("splitting rows: %w", err)
+		// The rows selector itself did not resolve, so nothing downstream ever ran:
+		// attribute the failure to the rows node (see SelectorMiss).
+		return nil, withMiss(fmt.Errorf("splitting rows: %w", err),
+			SelectorMiss{Kind: MissNoRows, Selector: rowsBlock.Selector, Path: "/search/rows"})
 	}
 
 	// Jackett's row loops are asymmetric: the HTML loop wraps each row in a
@@ -266,7 +269,9 @@ func Execute(ctx context.Context, def *loader.Definition, query Query, session *
 	for i := range reqs {
 		sr, err := doSearchRequest(ctx, doer, reqs[i], session)
 		if err != nil {
-			return nil, err
+			// No response in hand (transport failure, or a status the executor
+			// refuses): the capture carries the redacted request summary only.
+			return nil, captureRequest(reqs[i], err)
 		}
 		// Search requests are never auto-followed (Jackett's WebClient semantics):
 		// a 3xx is followed manually only when the path opts in via followredirect,
@@ -275,7 +280,7 @@ func Execute(ctx context.Context, def *loader.Definition, query Query, session *
 		if httpx.IsRedirectStatus(sr.status) {
 			sr, err = resolveRedirect(ctx, doer, reqs[i], sr, def, session)
 			if err != nil {
-				return nil, err
+				return nil, captureRequest(reqs[i], err)
 			}
 		}
 		body := sr.body
@@ -311,8 +316,11 @@ func Execute(ctx context.Context, def *loader.Definition, query Query, session *
 				return nil, err
 			}
 			// Mark the parse boundary so the registry classifies it as parse_error
-			// (multiple %w keeps both the sentinel and the underlying cause).
-			return nil, fmt.Errorf("%w: %w", ErrParseError, err)
+			// (multiple %w keeps both the sentinel and the underlying cause), then
+			// attach the redacted snapshot of the exchange that produced it — bytes
+			// already in hand, so the capture costs no extra tracker request.
+			return nil, captureResponse(def, deps, reqs[i], sr,
+				fmt.Errorf("%w: %w", ErrParseError, err))
 		}
 		out = append(out, rels...)
 	}

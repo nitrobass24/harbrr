@@ -251,8 +251,18 @@ func RedactError(err error) string {
 	if err == nil {
 		return ""
 	}
-	msg := authHeaderRe.ReplaceAllString(err.Error(), "${1}${2}<redacted>")
-	msg = cookieHeaderRe.ReplaceAllString(msg, "${1}${2}<redacted>")
-	msg = jsonSecretRe.ReplaceAllString(msg, `${1}"<redacted>"`)
-	return secretTokenRe.ReplaceAllString(msg, "${1}${2}<redacted>")
+	return RedactSecretsInText(err.Error())
+}
+
+// RedactSecretsInText is RedactError's scrub applied to a bare string: the full
+// Cookie/Set-Cookie/Authorization header value, and every credential-shaped
+// key=value / "key":value pair, replaced with <redacted>. It exists so surfaces
+// that hold server-controlled TEXT rather than an error — a captured response
+// body or header value (internal/indexer/registry diagnostics) — share the one
+// credential vocabulary above instead of growing a second, drifting scrub.
+func RedactSecretsInText(s string) string {
+	s = authHeaderRe.ReplaceAllString(s, "${1}${2}<redacted>")
+	s = cookieHeaderRe.ReplaceAllString(s, "${1}${2}<redacted>")
+	s = jsonSecretRe.ReplaceAllString(s, `${1}"<redacted>"`)
+	return secretTokenRe.ReplaceAllString(s, "${1}${2}<redacted>")
 }
