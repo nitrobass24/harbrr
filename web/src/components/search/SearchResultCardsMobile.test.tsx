@@ -177,6 +177,9 @@ const GROUPED: SearchRow[] = [
       size: 4_294_967_296,
       categories: [2000],
       seeders: 3,
+      leechers: 6,
+      publishDate: "2026-07-20T00:00:00Z",
+      downloadVolumeFactor: 0, // freeleech, but NOT the collapsed row's representative
     },
   },
   {
@@ -203,6 +206,8 @@ describe("SearchResultCardsMobile — grouped view (autobrr/harbrr#398)", () => 
     expect(within(card).getByText("(2)")).toBeTruthy()
     expect(within(card).getByText("91 seeds")).toBeTruthy()
     expect(screen.queryByRole("link")).toBeNull()
+    // The representative is not the freeleech one, so nothing claims FL while collapsed.
+    expect(within(card).queryByText("FL")).toBeNull()
   })
 
   it("expands to each tracker's own entry, each individually grabbable", () => {
@@ -214,10 +219,19 @@ describe("SearchResultCardsMobile — grouped view (autobrr/harbrr#398)", () => 
       .toBe("http://tracker.example/dl?id=9&passkey=NOTREAL")
     expect(screen.getByLabelText("Magnet for tears.of.steel.1080p from demopublic").getAttribute("href"))
       .toBe("magnet:?xt=urn:btih:abcdef")
+
+    // Each member states the same facts a card of its own would — a freeleech member
+    // the operator cannot see is a member they cannot pick on.
+    expect(screen.getByText("FL")).toBeTruthy()
+    expect(screen.getAllByText("Movies")).toHaveLength(3) // the summary plus both members
     expect(screen.getByText("3 seeds")).toBeTruthy()
+    expect(screen.getByText("6 leech")).toBeTruthy()
+    expect(screen.getAllByText("4.0 GiB")).toHaveLength(3) // the summary plus both members
+    expect(screen.getByText(/\d+d ago/)).toBeTruthy() // only that member carries a date
 
     fireEvent.click(screen.getByRole("button", { name: /Collapse .* 2 sources/ }))
     expect(screen.queryByLabelText("Download Tears of Steel 1080p from demotracker")).toBeNull()
+    expect(screen.queryByText("FL")).toBeNull()
   })
 
   it("renders exactly the flat list when nothing groups — same cards, same order", () => {

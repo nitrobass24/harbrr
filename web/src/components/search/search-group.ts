@@ -30,21 +30,25 @@ function normalizeTitle(title: string): string {
  * alone. Throughout, a false SPLIT is an annoyance and a false MERGE hides a release,
  * so every uncertain case splits.
  *
- *  1. **infohash** — authoritative for torrents, and torrent-only, so an infohash match
- *     needs no protocol check of its own.
- *  2. **normalized title + EXACT size in bytes, within one protocol.** Size equality is
- *     exact: both sides describe the same file set, and nothing in this codebase shows
- *     the same release's byte count legitimately jittering between trackers. A tolerance
- *     window is what would merge a 1080p encode with a slightly larger sibling, which is
- *     the failure mode that hides a release. A row with no size (absent or 0 — trackers
- *     serve 0 for "unknown") groups only via infohash, and so does a row whose indexer
- *     protocol is unresolved, since usenet and torrent entries must never merge.
+ *  0. **A resolved protocol is required for any grouping at all**, and is part of every
+ *     key. An infohash is not the torrent-only tell it looks like — a newznab feed can
+ *     carry one, and hybrid indexers publish it — so without this a usenet row could
+ *     merge with its torrent twin, which have no shared identity and different grab
+ *     semantics. An unresolved protocol could be either, so it never merges.
+ *  1. **infohash** — authoritative within a protocol.
+ *  2. **normalized title + EXACT size in bytes.** Size equality is exact: both sides
+ *     describe the same file set, and nothing in this codebase shows the same release's
+ *     byte count legitimately jittering between trackers. A tolerance window is what
+ *     would merge a 1080p encode with a slightly larger sibling, which is the failure
+ *     mode that hides a release. A row with no size (absent or 0 — trackers serve 0 for
+ *     "unknown") groups only via infohash.
  *  3. **Never title alone.**
  */
 function groupKey(row: SearchRow): string | null {
   const r = row.release
-  if (r.infohash) return `h:${r.infohash.toLowerCase()}`
-  if (!r.size || row.protocol === undefined) return null
+  if (row.protocol === undefined) return null
+  if (r.infohash) return `h:${row.protocol}:${r.infohash.toLowerCase()}`
+  if (!r.size) return null
   return `t:${row.protocol}:${r.size}:${normalizeTitle(r.title)}`
 }
 

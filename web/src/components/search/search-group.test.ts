@@ -62,6 +62,21 @@ describe("groupRows — the matcher", () => {
       ],
     },
     {
+      // A newznab feed can carry an infohash, so it is not a torrent-only tell.
+      name: "a usenet and a torrent entry sharing an infohash",
+      rows: [
+        row("alpha", { title: "Sintel 1080p", infohash: "abc" }, "torrent"),
+        row("beta", { title: "Sintel 1080p", infohash: "abc" }, "usenet"),
+      ],
+    },
+    {
+      name: "a shared infohash where one side's protocol is unresolved",
+      rows: [
+        row("alpha", { title: "Sintel 1080p", infohash: "abc" }, "torrent"),
+        { indexer: "beta", release: { title: "Sintel 1080p", infohash: "abc", size: GIB } },
+      ],
+    },
+    {
       name: "a usenet and a torrent entry, identical title and size",
       rows: [
         row("alpha", { title: "Sintel 1080p" }, "torrent"),

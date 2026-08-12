@@ -71,17 +71,22 @@ function GroupCard({ group, sort, catNames, clients }: {
       <CardStats row={rep} />
 
       {/* Grabbing is per tracker — which one matters — so the actions live on the
-          expanded per-tracker entries, never on the collapsed summary. */}
+          expanded per-tracker entries, never on the collapsed summary. Each entry
+          carries the SAME facts as a card of its own: a member the operator cannot see
+          is freeleech, or newer, is a member they cannot pick on. */}
       {open && (
-        <div className="mt-2 flex flex-col gap-2 border-t border-border pt-2">
+        <div className="mt-2 flex flex-col gap-3 border-t border-border pt-2">
           {group.members.map((m) => (
-            <div key={rowKey(m)} className="flex items-center justify-between gap-2">
-              <IndexerBadge slug={m.indexer} />
-              <div className="flex items-center gap-x-3 text-[12px]">
-                <span className="text-muted-foreground">{formatSize(m.release.size)}</span>
-                <span className={cn((m.release.seeders ?? 0) > 0 ? "text-ok" : "text-faint")}>{m.release.seeders ?? 0} seeds</span>
+            <div key={rowKey(m)} className="flex flex-col gap-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted-foreground">
+                  <IndexerBadge slug={m.indexer} />
+                  <CategorySuffix row={m} catNames={catNames} />
+                  {m.release.downloadVolumeFactor === 0 && <FreeleechBadge />}
+                </span>
                 <GrabActions row={m} clients={clients} nested />
               </div>
+              <CardStats row={m} />
             </div>
           ))}
         </div>
@@ -90,14 +95,16 @@ function GroupCard({ group, sort, catNames, clients }: {
   )
 }
 
+function FreeleechBadge() {
+  return <Badge className="shrink-0 border-ok/40 bg-ok/10 px-1.5 py-0 text-[10px] text-ok" variant="outline">FL</Badge>
+}
+
 function CardHeading({ row }: { row: SearchRow }) {
   const r = row.release
   return (
     <div className="mb-2 flex items-start justify-between gap-2">
       <h3 className="line-clamp-2 break-all text-[13px] font-medium" title={r.title}>{r.title}</h3>
-      {r.downloadVolumeFactor === 0 && (
-        <Badge className="shrink-0 border-ok/40 bg-ok/10 px-1.5 py-0 text-[10px] text-ok" variant="outline">FL</Badge>
-      )}
+      {r.downloadVolumeFactor === 0 && <FreeleechBadge />}
     </div>
   )
 }
