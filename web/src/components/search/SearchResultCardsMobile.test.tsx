@@ -210,6 +210,11 @@ describe("SearchResultCardsMobile — grouped view (autobrr/harbrr#398)", () => 
     expect(within(card).queryByText("FL")).toBeNull()
   })
 
+  // A member entry is scoped by its own grab action, whose label names the tracker —
+  // so each assertion below is about THAT member's row, not about the card at large.
+  const memberRow = (indexer: string) =>
+    screen.getByLabelText(new RegExp(`from ${indexer}$`)).closest<HTMLElement>("div.flex-col")!
+
   it("expands to each tracker's own entry, each individually grabbable", () => {
     render(<SearchResultCardsMobile groups={groupRows(GROUPED)} catNames={CATS} sort={SORT} />)
 
@@ -220,18 +225,37 @@ describe("SearchResultCardsMobile — grouped view (autobrr/harbrr#398)", () => 
     expect(screen.getByLabelText("Magnet for tears.of.steel.1080p from demopublic").getAttribute("href"))
       .toBe("magnet:?xt=urn:btih:abcdef")
 
-    // Each member states the same facts a card of its own would — a freeleech member
-    // the operator cannot see is a member they cannot pick on.
-    expect(screen.getByText("FL")).toBeTruthy()
-    expect(screen.getAllByText("Movies")).toHaveLength(3) // the summary plus both members
-    expect(screen.getByText("3 seeds")).toBeTruthy()
-    expect(screen.getByText("6 leech")).toBeTruthy()
-    expect(screen.getAllByText("4.0 GiB")).toHaveLength(3) // the summary plus both members
-    expect(screen.getByText(/\d+d ago/)).toBeTruthy() // only that member carries a date
+    // Each member states the same facts a card of its own would, on its OWN row — a
+    // freeleech member the operator cannot see is a member they cannot pick on.
+    const freeleech = within(memberRow("demotracker"))
+    expect(freeleech.getByText("FL")).toBeTruthy()
+    expect(freeleech.getByText("Movies")).toBeTruthy()
+    expect(freeleech.getByText("4.0 GiB")).toBeTruthy()
+    expect(freeleech.getByText("3 seeds")).toBeTruthy()
+    expect(freeleech.getByText("6 leech")).toBeTruthy()
+    expect(freeleech.getByText(/\d+d ago/)).toBeTruthy()
+
+    const paid = within(memberRow("demopublic"))
+    expect(paid.queryByText("FL")).toBeNull() // its own FL state, not the group's
+    expect(paid.getByText("Movies")).toBeTruthy()
+    expect(paid.getByText("4.0 GiB")).toBeTruthy()
+    expect(paid.getByText("91 seeds")).toBeTruthy()
+    expect(paid.getByText("0 leech")).toBeTruthy()
+    expect(paid.queryByText(/\d+d ago/)).toBeNull() // it carries no publish date
 
     fireEvent.click(screen.getByRole("button", { name: /Collapse .* 2 sources/ }))
-    expect(screen.queryByLabelText("Download Tears of Steel 1080p from demotracker")).toBeNull()
+
+    // Collapsed, only the representative's own facts remain: everything the members
+    // alone contributed is gone.
+    expect(screen.queryByLabelText(/from demotracker$/)).toBeNull()
+    expect(screen.queryByLabelText(/from demopublic$/)).toBeNull()
     expect(screen.queryByText("FL")).toBeNull()
+    expect(screen.queryByText("3 seeds")).toBeNull()
+    expect(screen.queryByText("6 leech")).toBeNull()
+    expect(screen.queryByText(/\d+d ago/)).toBeNull()
+    expect(screen.getAllByText("Movies")).toHaveLength(1)
+    expect(screen.getAllByText("4.0 GiB")).toHaveLength(1)
+    expect(screen.getByText("91 seeds")).toBeTruthy() // the representative's own
   })
 
   it("renders exactly the flat list when nothing groups — same cards, same order", () => {
