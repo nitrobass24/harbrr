@@ -49,7 +49,13 @@ const LIMITS_UNIT_FIELD: SettingField = {
   name: "limits_unit", label: "Limits reset every (empty = day)", type: "select", secret: false,
   options: { day: "Day", hour: "Hour" },
 }
-const LIMIT_FIELDS = [TIMEOUT_FIELD, QUERY_LIMIT_FIELD, GRAB_LIMIT_FIELD, LIMITS_UNIT_FIELD]
+// RSS cache warming (autobrr/harbrr#473, ADR 0005): opt-in, same free-form settings
+// map again. Empty = no warming; the registry clamps and ignores it for instances it
+// never warms, so the form needs no gating of its own.
+const WARM_INTERVAL_FIELD: SettingField = {
+  name: "rss_warm_interval", label: "RSS cache warming (Go duration, e.g. 30m)", type: "text", secret: false,
+}
+const LIMIT_FIELDS = [TIMEOUT_FIELD, QUERY_LIMIT_FIELD, GRAB_LIMIT_FIELD, LIMITS_UNIT_FIELD, WARM_INTERVAL_FIELD]
 
 // Reserved matching settings (autobrr/harbrr#394). Both default to today's engine
 // behaviour, so an untouched indexer searches and filters exactly as it always has;
@@ -219,7 +225,7 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
         onClick={() => setShowAdvanced((v) => !v)}
       >
         <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", showAdvanced && "rotate-90")} />
-        Advanced (proxy, timeout, anti-bot solver, priority, request limits, matching, expiry, sync behavior)
+        Advanced (proxy, timeout, anti-bot solver, priority, request limits, RSS warming, matching, expiry, sync behavior)
       </button>
       {showAdvanced && (
         <div className="flex flex-col gap-4 rounded-md border border-border p-3">
@@ -272,6 +278,12 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
           <SettingFieldInput field={QUERY_LIMIT_FIELD} value={values.query_limit ?? ""} onChange={setValue("query_limit")} />
           <SettingFieldInput field={GRAB_LIMIT_FIELD} value={values.grab_limit ?? ""} onChange={setValue("grab_limit")} />
           <SettingFieldInput field={LIMITS_UNIT_FIELD} value={values.limits_unit ?? ""} onChange={setValue("limits_unit")} />
+
+          <SettingFieldInput field={WARM_INTERVAL_FIELD} value={values.rss_warm_interval ?? ""} onChange={setValue("rss_warm_interval")} />
+          <p className="text-[12px] text-faint">
+            Refreshes this indexer&apos;s RSS feed in the background so app syncs hit a warm
+            cache. Empty = no warming; anything set is clamped to 10m&ndash;120m.
+          </p>
 
           <span className="flex flex-col gap-1.5">
             <Label>Matching</Label>
