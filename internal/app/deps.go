@@ -1,8 +1,6 @@
 package app
 
 import (
-	"net/http"
-
 	"github.com/rs/zerolog"
 
 	"github.com/autobrr/harbrr/internal/config"
@@ -17,14 +15,12 @@ type Deps struct {
 	Logger zerolog.Logger
 }
 
-// Option widens New for tests: inject an already-open database or a non-default
-// outbound HTTP client instead of letting New build its own. Production callers
-// (cmd/harbrr) pass none.
+// Option widens New for tests: inject an already-open database instead of letting
+// New open its own. Production callers (cmd/harbrr) pass none.
 type Option func(*options)
 
 type options struct {
-	db         *database.DB
-	httpClient *http.Client
+	db *database.DB
 }
 
 // WithDatabase injects an already-open, migrated database instead of letting
@@ -34,11 +30,4 @@ type options struct {
 // ownership and must close it itself — New only closes a database it opened.
 func WithDatabase(db *database.DB) Option {
 	return func(o *options) { o.db = db }
-}
-
-// WithHTTPClient overrides the outbound HTTP client shared by app-sync,
-// announce targets, and the notification sink (default: appSyncClient, a
-// bounded 30s client).
-func WithHTTPClient(c *http.Client) Option {
-	return func(o *options) { o.httpClient = c }
 }

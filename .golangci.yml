@@ -103,7 +103,7 @@ linters:
     interfacebloat:
       # Guardrail against future god-interfaces (default 10). AGENTS.md's "interfaces
       # ≤5 methods" stays a review norm, not a hard gate — torznabhttp.Indexer
-      # legitimately sits at 6, and native.Driver composes the Searcher (5) + Tester roles.
+      # legitimately sits at 6, and native.Driver sits at 8 — the Searcher (7) + Tester roles.
       max: 10
     exhaustive:
       default-signifies-exhaustive: false
