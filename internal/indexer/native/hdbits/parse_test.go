@@ -41,8 +41,9 @@ func creds() map[string]string {
 
 // TestParseReleasesGolden parses the synthetic multi-result fixture and asserts the full
 // row->Release mapping: the filename/name title rules, the single newznab category, size/
-// seeders/peers/grabs/files, the ISO `added`->UTC publish date, imdb/tvdb ids, and the
-// freeleech/XXX/half-leech volume factors. The goldens are derived from Prowlarr's HDBits
+// seeders/peers/grabs/files, the ISO `added`->UTC publish date, imdb/tvdb ids, the
+// freeleech/XXX/half-leech volume factors, and the always-populated ReleaseName/Filename
+// evidence pair (distinct on row 1, title-equal on rows 2 and 3). The goldens are derived from Prowlarr's HDBits
 // parse contract, not a live capture.
 func TestParseReleasesGolden(t *testing.T) {
 	t.Parallel()
@@ -64,6 +65,8 @@ func TestParseReleasesGolden(t *testing.T) {
 	want := []*normalizer.Release{
 		{
 			Title:                "The Matrix 1999 1080p BluRay REMUX", // full disc (medium 1) -> name
+			ReleaseName:          "The Matrix 1999 1080p BluRay REMUX",
+			Filename:             "the.matrix.1999.1080p.bluray.remux", // distinct from the title
 			InfoHash:             "ABC123DEF456",
 			Link:                 dl("100001"),
 			Details:              details("100001"),
@@ -82,6 +85,8 @@ func TestParseReleasesGolden(t *testing.T) {
 		},
 		{
 			Title:                "Some.Show.S01E01.1080p.WEB-DL", // filename, .torrent stripped
+			ReleaseName:          "Some Show S01E01",
+			Filename:             "Some.Show.S01E01.1080p.WEB-DL", // equals the title -> no feed attr
 			InfoHash:             "FFEE0011",
 			Link:                 dl("100002"),
 			Details:              details("100002"),
@@ -99,6 +104,8 @@ func TestParseReleasesGolden(t *testing.T) {
 		},
 		{
 			Title:                "XXX Release Name", // cat 7 forces name
+			ReleaseName:          "XXX Release Name", // equals the title -> no feed attr
+			Filename:             "xxx.scene.release",
 			InfoHash:             "99AA77",
 			Link:                 dl("100003"),
 			Details:              details("100003"),

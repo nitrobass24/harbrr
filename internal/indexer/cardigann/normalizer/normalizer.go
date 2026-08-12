@@ -19,7 +19,16 @@ import (
 // meaningful value (a freeleech downloadvolumefactor of 0.0, a zero-byte
 // release) and omitempty would silently drop it, corrupting parity.
 type Release struct {
-	Title       string `json:"title"`
+	Title string `json:"title"`
+
+	// ReleaseName and Filename are harbrr-only additive evidence: the tracker's
+	// display/release name and the torrent's content filename, when the source
+	// exposes BOTH separately from the chosen Title. They never affect Title (or
+	// any Jackett-compared field) — they are extra values that would otherwise be
+	// discarded when a definition picks one of the two as the title.
+	ReleaseName string `json:"releaseName,omitempty"`
+	Filename    string `json:"filename,omitempty"`
+
 	Description string `json:"description,omitempty"`
 	Details     string `json:"details,omitempty"`
 	Comments    string `json:"comments,omitempty"`
@@ -115,9 +124,16 @@ func (n *Normalizer) Release(fields map[string]string) (*Release, error) {
 	return r, nil
 }
 
-// applyCore fills the plain string identity fields.
+// applyCore fills the plain string identity fields. title_optional and
+// title_filename are the two Cardigann conventions for "the other name": a
+// definition extracts both and its title template picks one (Aither's
+// single_file_release_use_filename is the worked example). Jackett drops the
+// unpicked one — harbrr keeps it as additive evidence; the serializer suppresses
+// it again when it is empty or equal to the title.
 func (n *Normalizer) applyCore(r *Release, f map[string]string) {
 	r.Title = f["title"]
+	r.ReleaseName = f["title_optional"]
+	r.Filename = f["title_filename"]
 	r.Description = f["description"]
 	r.InfoHash = f["infohash"]
 	r.PublishDate = f["date"]
