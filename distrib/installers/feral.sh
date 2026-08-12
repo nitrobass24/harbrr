@@ -11,7 +11,7 @@ nginxconf="$HOME/.nginx/conf.d/000-default-server.d/harbrr.conf"
 function port() {
   LOW_BOUND=$1
   UPPER_BOUND=$2
-  comm -23 <(seq "${LOW_BOUND}" "${UPPER_BOUND}" | sort) <(ss -Htan | awk '{print $4}' | cut -d':' -f2 | sort -u) | shuf | head -n 1
+  comm -23 <(seq "${LOW_BOUND}" "${UPPER_BOUND}" | sort) <(ss -Htan | awk '{print $4}' | cut -d':' -f2 | sort -u) | shuf -n 1
 }
 
 function _download() {
@@ -19,6 +19,11 @@ function _download() {
     echo "Failed to query GitHub for latest version"
     exit 1
   }
+
+  if [ -z "$latest" ]; then
+    echo "No linux_x86_64 .tar.gz asset in the latest release of autobrr/harbrr"
+    exit 1
+  fi
 
   if ! curl "$latest" -L -o "$HOME/harbrr.tar.gz"; then
     echo "Download failed, exiting"
@@ -82,7 +87,7 @@ function _start() {
 
 function _install() {
   # set PATH so it includes user's private bin if it exists
-  if ! grep -q "$HOME/bin" "$HOME/.profile"; then
+  if ! grep -qs "$HOME/bin" "$HOME/.profile"; then
     cat <<EOF >>"$HOME/.profile"
 if [ -d "$HOME/bin" ] ; then
     PATH="$HOME/bin:\$PATH"
@@ -132,9 +137,9 @@ CRONC
   echo ""
   echo "Adding to crontab"
   (
-    crontab -l -u "${user}" 2>/dev/null
+    crontab -l 2>/dev/null
     echo "*/5 * * * * $HOME/.harbrr.cron >/dev/null 2>&1"
-  ) | crontab -u "${user}" -
+  ) | crontab -
 
   echo ""
   echo "Installation complete!"
@@ -204,7 +209,7 @@ function _remove() {
 
   _nginx_remove
 
-  crontab -l | sed -e "/harbrr/d" | crontab -u "${user}" -
+  crontab -l 2>/dev/null | sed -e "/harbrr/d" | crontab -
   echo "Removed crontab entry"
 
   rm -rf "$datadir"

@@ -5,7 +5,6 @@
 
 set -euo pipefail
 
-user=$(whoami)
 bin="$HOME/bin/harbrr"
 datadir="$HOME/.config/harbrr"
 mkdir -p "$HOME/.logs/"
@@ -15,7 +14,7 @@ touch "$log"
 function port() {
   LOW_BOUND=$1
   UPPER_BOUND=$2
-  comm -23 <(seq "${LOW_BOUND}" "${UPPER_BOUND}" | sort) <(ss -Htan | awk '{print $4}' | cut -d':' -f2 | sort -u) | shuf | head -n 1
+  comm -23 <(seq "${LOW_BOUND}" "${UPPER_BOUND}" | sort) <(ss -Htan | awk '{print $4}' | cut -d':' -f2 | sort -u) | shuf -n 1
 }
 
 function harbrr_download_latest() {
@@ -25,6 +24,11 @@ function harbrr_download_latest() {
     echo "Failed to query GitHub for latest version"
     exit 1
   }
+
+  if [ -z "$latest" ]; then
+    echo "No linux_x86_64 .tar.gz asset in the latest release of autobrr/harbrr"
+    exit 1
+  fi
 
   if ! curl "$latest" -L -o "$HOME/harbrr.tar.gz" >>"$log" 2>&1; then
     echo "Download failed, exiting"
@@ -87,9 +91,9 @@ CRONC
   echo ""
   echo "Adding to crontab"
   (
-    crontab -l -u "${user}" 2>/dev/null
+    crontab -l 2>/dev/null
     echo "*/5 * * * * $HOME/software/cron/harbrr.cron >/dev/null 2>&1"
-  ) | crontab -u "${user}" -
+  ) | crontab -
 
   echo ""
   echo "harbrr is now installed and running at http://$(hostname -f):${port}/harbrr/" | tee -a "${log}"
@@ -107,7 +111,8 @@ function _remove() {
   # backup
   _backup_install
 
-  crontab -l | sed -e "/harbrr/d" | crontab -u "${user}" -
+  # Tolerate "no crontab for <user>" so the cleanup below always runs.
+  crontab -l 2>/dev/null | sed -e "/harbrr/d" | crontab - || true
   echo "Removed crontab entry"
 
   rm -rf "$datadir"

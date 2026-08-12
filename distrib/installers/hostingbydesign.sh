@@ -12,7 +12,7 @@ touch "$log"
 function port() {
   LOW_BOUND=$1
   UPPER_BOUND=$2
-  comm -23 <(seq "${LOW_BOUND}" "${UPPER_BOUND}" | sort) <(ss -Htan | awk '{print $4}' | cut -d':' -f2 | sort -u) | shuf | head -n 1
+  comm -23 <(seq "${LOW_BOUND}" "${UPPER_BOUND}" | sort) <(ss -Htan | awk '{print $4}' | cut -d':' -f2 | sort -u) | shuf -n 1
 }
 
 function harbrr_download_latest() {
@@ -22,6 +22,11 @@ function harbrr_download_latest() {
     echo "Failed to query GitHub for latest version"
     exit 1
   }
+
+  if [ -z "$latest" ]; then
+    echo "No linux_x86_64 .tar.gz asset in the latest release of autobrr/harbrr"
+    exit 1
+  fi
 
   if ! curl "$latest" -L -o "$HOME/harbrr.tar.gz" >>"$log" 2>&1; then
     echo "Download failed, exiting"
@@ -42,7 +47,10 @@ function harbrr_download_latest() {
 _systemd() {
   type="simple"
 
-  if [[ $(systemctl --version | awk 'NR==1 {print $2}') -ge 240 ]]; then
+  # "systemd 250 (250.3-2)" / "systemd 247.3" — keep the bare integer major.
+  sysver=$(systemctl --version | awk 'NR==1 {print $2}')
+  sysver=${sysver%%[!0-9]*}
+  if [ -n "$sysver" ] && [ "$sysver" -ge 240 ]; then
     type="exec"
   fi
   echo "Installing Systemd service"
@@ -55,7 +63,7 @@ After=syslog.target network-online.target
 Type=${type}
 ExecStart=$bin serve --data-dir=$datadir
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
 EOF
   echo "Service installed"
 }

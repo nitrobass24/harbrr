@@ -15,7 +15,7 @@ datadir="$HOME/.config/harbrr"
 function port() {
   LOW_BOUND=$1
   UPPER_BOUND=$2
-  comm -23 <(seq "${LOW_BOUND}" "${UPPER_BOUND}" | sort) <(ss -Htan | awk '{print $4}' | cut -d':' -f2 | sort -u) | shuf | head -n 1
+  comm -23 <(seq "${LOW_BOUND}" "${UPPER_BOUND}" | sort) <(ss -Htan | awk '{print $4}' | cut -d':' -f2 | sort -u) | shuf -n 1
 }
 
 # Download binaries
@@ -28,6 +28,11 @@ function _download_latest_release() {
     echo "Failed to query GitHub for latest version"
     exit 1
   }
+
+  if [ -z "$latest" ]; then
+    echo "No linux_x86_64 .tar.gz asset in the latest release of autobrr/harbrr"
+    exit 1
+  fi
 
   # Download release to archive
   if ! curl "$latest" -L -o "$HOME/tmp/harbrr.tar.gz"; then

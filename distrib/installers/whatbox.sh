@@ -9,7 +9,7 @@ datadir="$HOME/.config/harbrr"
 function port() {
   LOW_BOUND=$1
   UPPER_BOUND=$2
-  comm -23 <(seq "${LOW_BOUND}" "${UPPER_BOUND}" | sort) <(ss -Htan | awk '{print $4}' | cut -d':' -f2 | sort -u) | shuf | head -n 1
+  comm -23 <(seq "${LOW_BOUND}" "${UPPER_BOUND}" | sort) <(ss -Htan | awk '{print $4}' | cut -d':' -f2 | sort -u) | shuf -n 1
 }
 
 function _download() {
@@ -17,6 +17,11 @@ function _download() {
     echo "Failed to query GitHub for latest version"
     exit 1
   }
+
+  if [ -z "$latest" ]; then
+    echo "No linux_x86_64 .tar.gz asset in the latest release of autobrr/harbrr"
+    exit 1
+  fi
 
   if ! curl "$latest" -L -o "$HOME/harbrr.tar.gz"; then
     echo "Download failed, exiting"
@@ -41,7 +46,7 @@ function _start() {
 
 function _install() {
   # set PATH so it includes user's private bin if it exists
-  if ! grep -q ".local/bin" "$HOME/.profile"; then
+  if ! grep -qs ".local/bin" "$HOME/.profile"; then
     cat <<EOF >>"$HOME/.profile"
 if [ -d "$HOME/.local/bin" ] ; then
     PATH="$HOME/.local/bin:\$PATH"
@@ -110,14 +115,14 @@ function _update() {
 }
 
 function _remove() {
-  # TODO: cleanup crontab automagically rather than having the user do it.
   pkill -f "$bin serve" || true
 
   _backup_install
 
-  echo "Please remove the crontab entry"
-  sleep 3
-  crontab -e
+  # Tolerate "no crontab for <user>" so the cleanup below always runs.
+  crontab -l 2>/dev/null | sed -e "/harbrr/d" | crontab - || true
+  echo "Removed crontab entry"
+
   rm -rf "$datadir"
   rm -f "$bin"
   rm -f "$HOME/.harbrr_restart.cron"

@@ -26,8 +26,9 @@ The scripts resolve the download from
 `https://api.github.com/repos/autobrr/harbrr/releases/latest` **unauthenticated**, and
 grep the release assets for the `linux_x86_64` `.tar.gz` archive
 (`harbrr_<version>_linux_x86_64.tar.gz`, per `.goreleaser.yml`). They therefore only
-work once the repository is public and has a published release — before that they
-exit with "Failed to query GitHub for latest version".
+work once the repository is public and has a published release — before that they exit
+with "Failed to query GitHub for latest version" (request failed) or "No linux_x86_64
+.tar.gz asset in the latest release of autobrr/harbrr" (no matching asset).
 
 ## What every script does
 
@@ -58,6 +59,12 @@ at-rest encryption key inside the data directory.
 | whatbox | `~/.local/bin` | `~/.config/harbrr` | Whatbox subdomain (`harbrr.<host>`), so harbrr stays at the **root** (no `base_url`); you add the port + app name in the Whatbox panel | `screen` + user-managed crontab entries |
 | hostingbydesign | `~/bin` | `~/.config/harbrr` | direct `host:port`, `base_url = "/harbrr"` | systemd user unit (`Type=exec` on systemd >= 240) |
 | bytesized | `~/apps/harbrr` | `~/.config/harbrr` | direct `host:port`, `base_url = "/harbrr"` | `~/.startup` / `~/.shutdown` scripts driving `start-stop-daemon` |
+
+The two systemd providers install a **user** unit (`WantedBy=default.target`). A user
+manager only survives logout — and therefore only starts the unit at boot — when
+lingering is enabled for the account. Ultra enables it for you; on Hosting by Design, if
+harbrr does not come back after a reboot, run `loginctl enable-linger "$USER"` (or ask
+support to).
 
 ## Caveats
 

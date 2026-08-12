@@ -46,6 +46,11 @@ function _download_latest_release() {
     exit 1
   }
 
+  if [ -z "$latest" ]; then
+    echo "No linux_x86_64 .tar.gz asset in the latest release of autobrr/harbrr"
+    exit 1
+  fi
+
   # Download release to archive
   if ! curl "$latest" -L -o "$HOME/tmp/harbrr.tar.gz"; then
     echo "Download failed, exiting"
@@ -104,7 +109,7 @@ After=syslog.target network-online.target
 Type=simple
 ExecStart=%h/bin/harbrr serve --data-dir=%h/.apps/harbrr
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
 EOF
 
   echo "Service created"
@@ -158,12 +163,13 @@ function _install() {
     exit 0
   fi
 
-  mkdir -p "${HOME}/tmp" "${HOME}/bin" "$datadir"
+  mkdir -p "${HOME}/tmp" "${HOME}/bin"
 
   # download binaries
   _download_latest_release
 
-  # get port
+  # get port — before the data dir exists, so declining the prompt doesn't
+  # leave an install marker that blocks a retry
   _port_picker
 
   echo "Selected port $port"
@@ -171,6 +177,7 @@ function _install() {
   # create systemd service
   _systemd_create_service
 
+  mkdir -p "$datadir"
   cat <<EOF | tee "$datadir/config.toml" >/dev/null
 # config.toml — written by the harbrr Ultra.cc installer.
 # Full reference: https://github.com/autobrr/harbrr
