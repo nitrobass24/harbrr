@@ -1,3 +1,4 @@
+import type { ResultGroup } from "@/components/search/search-group"
 import type { SearchRow } from "@/components/search/search-sort"
 
 // One filter term: a case-insensitive substring or a /regex/, optionally negated.
@@ -33,6 +34,25 @@ function parseTerm(token: string): Term | null {
   }
 }
 
+// null = at least one term is a half-typed or invalid regex; an empty array = no terms.
+function parseTerms(input: string): Term[] | null {
+  const tokens = input.trim().match(TOKEN)
+  if (!tokens) return []
+
+  const terms: Term[] = []
+  for (const token of tokens) {
+    const term = parseTerm(token)
+    if (term === null) return null
+    terms.push(term)
+  }
+  return terms
+}
+
+function matches(row: SearchRow, terms: Term[], catNames: Map<number, string>): boolean {
+  const hay = haystack(row, catNames)
+  return terms.every((t) => t.match(hay) !== t.negate)
+}
+
 /**
  * filterRows narrows rows to those matching every term in `input`: case-insensitive
  * substring by default, `/pattern/` for a regex, a leading `-` or `!` to exclude.
@@ -42,18 +62,22 @@ function parseTerm(token: string): Term | null {
  * last valid view instead of blanking the results over a character in flight.
  */
 export function filterRows(rows: SearchRow[], input: string, catNames: Map<number, string>): SearchRow[] | null {
-  const tokens = input.trim().match(TOKEN)
-  if (!tokens) return rows
+  const terms = parseTerms(input)
+  if (terms === null) return null
+  if (terms.length === 0) return rows
 
-  const terms: Term[] = []
-  for (const token of tokens) {
-    const term = parseTerm(token)
-    if (term === null) return null
-    terms.push(term)
-  }
+  return rows.filter((row) => matches(row, terms, catNames))
+}
 
-  return rows.filter((row) => {
-    const hay = haystack(row, catNames)
-    return terms.every((t) => t.match(hay) !== t.negate)
-  })
+/**
+ * filterGroups is filterRows over grouped results: a group is kept when ANY of its
+ * members matches, so a filter never half-collapses a group into a partial source list
+ * (autobrr/harbrr#398). Same null-on-invalid contract as filterRows.
+ */
+export function filterGroups(groups: ResultGroup[], input: string, catNames: Map<number, string>): ResultGroup[] | null {
+  const terms = parseTerms(input)
+  if (terms === null) return null
+  if (terms.length === 0) return groups
+
+  return groups.filter((group) => group.members.some((row) => matches(row, terms, catNames)))
 }

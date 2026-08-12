@@ -1,8 +1,9 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
-import { ChevronDown, Filter, Search as SearchIcon, X } from "lucide-react"
+import { ChevronDown, Filter, Layers, Search as SearchIcon, X } from "lucide-react"
 import { PageHeader } from "@/components/layout/PageHeader"
-import { filterRows } from "@/components/search/search-filter"
+import { filterGroups } from "@/components/search/search-filter"
+import { groupRows, soloGroups, sortGroups } from "@/components/search/search-group"
 import { sortRows, type SearchRow, type Sort, type SortKey } from "@/components/search/search-sort"
 import { SearchResultsResponsive } from "@/components/search/SearchResultsResponsive"
 import { Button } from "@/components/ui/button"
@@ -19,6 +20,7 @@ import { useDownloadClients } from "@/hooks/useDownloadClients"
 import { useIndexerCapabilitiesMany, useIndexers } from "@/hooks/useIndexers"
 import { useSearchAggregate } from "@/hooks/useSearch"
 import type { SearchMember, SearchParams } from "@/lib/api"
+import { cn } from "@/lib/utils"
 
 export const Route = createFileRoute("/_authenticated/search")({
   component: SearchPage,
@@ -72,11 +74,28 @@ function SearchPage() {
 
   const results = useSearchAggregate(active, submitted)
 
+  // The search response carries no per-release protocol, so it comes from the indexer
+  // list — grouping needs it to keep usenet and torrent entries apart.
+  const protocols = useMemo(() => new Map(enabled.map((ix) => [ix.slug, ix.protocol])), [enabled])
+
   // The whole window is in state, so sorting a column covers everything the server
   // served — there is no second page hiding rows from the sort (autobrr/harbrr#396).
   const rows: SearchRow[] = useMemo(
-    () => sortRows((results.data?.results ?? []).map((r) => ({ release: r.release, indexer: r.indexer })), sort),
-    [results.data, sort]
+    () => sortRows(
+      (results.data?.results ?? []).map((r) => ({ release: r.release, indexer: r.indexer, protocol: protocols.get(r.indexer) })),
+      sort
+    ),
+    [results.data, sort, protocols]
+  )
+
+  // Grouping is a VIEW MODE over the rows already in state (autobrr/harbrr#398): it
+  // never re-queries, and off every row is its own group, which renders exactly the flat
+  // list above. The choice is component state — the web tree has no UI-preference store,
+  // and next-themes' own localStorage is the only persisted setting in it.
+  const [grouped, setGrouped] = useState(true)
+  const groups = useMemo(
+    () => grouped ? sortGroups(groupRows(rows), sort) : soloGroups(rows),
+    [rows, grouped, sort]
   )
 
   // Client-side only: filtering narrows the rows already in state (never the DOM,
@@ -86,14 +105,14 @@ function SearchPage() {
   const deferredFilter = useDeferredValue(filter)
   const lastValidFilter = useRef("")
   const { shown, invalidFilter } = useMemo(() => {
-    const matched = filterRows(rows, deferredFilter, catNames)
+    const matched = filterGroups(groups, deferredFilter, catNames)
     if (matched !== null) {
       return { shown: matched, invalidFilter: false }
     }
     // Half-typed or uncompilable pattern: re-apply the last valid one to the current
     // rows so the view stays put instead of blanking.
-    return { shown: filterRows(rows, lastValidFilter.current, catNames) ?? rows, invalidFilter: true }
-  }, [rows, deferredFilter, catNames])
+    return { shown: filterGroups(groups, lastValidFilter.current, catNames) ?? groups, invalidFilter: true }
+  }, [groups, deferredFilter, catNames])
   // The last-valid ledger updates POST-COMMIT, never during render: an abandoned
   // deferred pass must not be able to write a filter string no committed view showed
   // (review finding — render-phase ref mutation is unsafe under concurrent rendering).
@@ -122,7 +141,10 @@ function SearchPage() {
 
   const setId = (key: keyof typeof ids) => (value: string) => setIds((prev) => ({ ...prev, [key]: value }))
 
-  const countLabel = shown.length === rows.length ? `${rows.length} results` : `${shown.length} of ${rows.length} results`
+  // Counted in RESULTS, not groups — grouping folds rows together, it never drops one.
+  const shownCount = shown.reduce((n, g) => n + g.members.length, 0)
+  const countLabel = shownCount === rows.length ? `${rows.length} results` : `${shownCount} of ${rows.length} results`
+  const groupLabel = grouped && shown.length !== shownCount ? `${shown.length} releases` : ""
 
   return (
     <div className="flex h-full flex-col">
@@ -195,9 +217,15 @@ function SearchPage() {
             <SearchLedger members={results.data.members} />
             {rows.length > 0 ? (
               <>
-                <ResultFilter value={filter} onChange={setFilter} invalid={invalidFilter} />
+                <ResultFilter
+                  value={filter}
+                  onChange={setFilter}
+                  invalid={invalidFilter}
+                  grouped={grouped}
+                  onGroupedChange={setGrouped}
+                />
                 {shown.length > 0 ? (
-                  <SearchResultsResponsive rows={shown} catNames={catNames} clients={sendTargets} sort={sort} onSort={(key: SortKey) =>
+                  <SearchResultsResponsive groups={shown} catNames={catNames} clients={sendTargets} sort={sort} onSort={(key: SortKey) =>
                     setSort((prev) => prev.key === key ? { key, dir: prev.dir === "desc" ? "asc" : "desc" } : { key, dir: "desc" })} />
                 ) : (
                   <div className="grid place-items-center rounded-xl border border-dashed border-border py-16 text-center">
@@ -206,6 +234,7 @@ function SearchPage() {
                 )}
                 <div className="mt-3 flex items-center gap-3 px-1 text-[12px] text-faint">
                   <span>{countLabel}</span>
+                  {groupLabel && <span>· {groupLabel}</span>}
                   {/* The server merged and windowed this set, so the count it stands behind
                       is stated whenever it is larger than what fits in one window. */}
                   {total > rows.length && <span>· newest {rows.length} of {total} fetched</span>}
@@ -260,15 +289,30 @@ function SearchLedger({ members }: { members: SearchMember[] }) {
   )
 }
 
-// Narrows the results already on screen. Never re-queries — this is a view over
-// state the server already returned.
-function ResultFilter({ value, onChange, invalid }: {
+// The view controls over the results already on screen — narrowing them, and folding
+// the same release from several trackers into one row. Neither re-queries: both are
+// views over state the server already returned.
+function ResultFilter({ value, onChange, invalid, grouped, onGroupedChange }: {
   value: string
   onChange: (v: string) => void
   invalid: boolean
+  grouped: boolean
+  onGroupedChange: (v: boolean) => void
 }) {
   return (
     <div className="mb-3 flex items-center gap-2">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        aria-pressed={grouped}
+        title="Fold the same release from several trackers into one row"
+        className={cn("h-8 shrink-0 gap-1.5", grouped && "bg-accent text-foreground")}
+        onClick={() => onGroupedChange(!grouped)}
+      >
+        <Layers className="size-3.5" />
+        Group
+      </Button>
       <div className="relative w-full max-w-md">
         <Filter className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint" />
         <Input

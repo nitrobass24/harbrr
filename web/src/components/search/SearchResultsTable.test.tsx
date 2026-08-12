@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { DownloadClient } from "@/lib/api"
+import { groupRows, soloGroups } from "./search-group"
 import type { SearchRow } from "./search-sort"
 import { sortRows } from "./search-sort"
 import { SearchResultsTable } from "./SearchResultsTable"
@@ -44,10 +45,12 @@ const CLIENT: DownloadClient = {
   createdAt: "2026-07-01T00:00:00Z", updatedAt: "2026-07-01T00:00:00Z",
 }
 
+// Grouping OFF: every row is its own group, which is the flat list this suite has
+// always asserted (autobrr/harbrr#398 — the toggle must not change it).
 function renderTable(rows = ROWS, clients: DownloadClient[] = []) {
   const onSort = vi.fn()
   render(
-    <SearchResultsTable rows={rows} catNames={CATS} sort={{ key: "seeders", dir: "desc" }} onSort={onSort} clients={clients} />
+    <SearchResultsTable groups={soloGroups(rows)} catNames={CATS} sort={{ key: "seeders", dir: "desc" }} onSort={onSort} clients={clients} />
   )
   return onSort
 }
@@ -188,5 +191,88 @@ describe("sortRows", () => {
   it("age desc puts the oldest release first", () => {
     const sorted = sortRows(ROWS, { key: "age", dir: "desc" })
     expect(sorted[0].release.title).toBe("Sintel 720p FL")
+  })
+})
+
+// The same release on two trackers: one shared infohash, so the matcher merges it
+// regardless of the cosmetic title difference.
+const GROUPED: SearchRow[] = [
+  {
+    indexer: "demotracker",
+    protocol: "torrent",
+    release: {
+      title: "Tears of Steel 1080p",
+      link: "http://tracker.example/dl?id=9&passkey=NOTREAL",
+      infohash: "ABCDEF",
+      size: 4_294_967_296,
+      categories: [2000],
+      seeders: 3,
+      leechers: 1,
+    },
+  },
+  {
+    indexer: "demopublic",
+    protocol: "torrent",
+    release: {
+      title: "tears.of.steel.1080p",
+      magnet: "magnet:?xt=urn:btih:abcdef",
+      infohash: "abcdef",
+      size: 4_294_967_296,
+      categories: [2000],
+      seeders: 91,
+      leechers: 4,
+      downloadVolumeFactor: 0,
+    },
+  },
+]
+
+function renderGroups(rows: SearchRow[]) {
+  render(
+    <SearchResultsTable groups={groupRows(rows)} catNames={CATS} sort={{ key: "seeders", dir: "desc" }} onSort={vi.fn()} clients={[]} />
+  )
+}
+
+describe("SearchResultsTable — grouped view (autobrr/harbrr#398)", () => {
+  it("renders one row per release, badged with every tracker and its source count", () => {
+    renderGroups(GROUPED)
+
+    expect(screen.getAllByRole("row")).toHaveLength(2) // header + one group
+    // The collapsed row shows the best member under the current sort (91 seeders).
+    const group = screen.getByText("tears.of.steel.1080p").closest("tr")!
+    expect(within(group).getByText("91")).toBeTruthy()
+    expect(within(group).getByText("demotracker")).toBeTruthy()
+    expect(within(group).getByText("demopublic")).toBeTruthy()
+    expect(within(group).getByText("(2)")).toBeTruthy()
+    // Grabbing is per tracker, so the collapsed summary offers no grab action.
+    expect(screen.queryByRole("link")).toBeNull()
+  })
+
+  it("expands to each tracker's own entry, each individually grabbable", () => {
+    renderGroups(GROUPED)
+
+    fireEvent.click(screen.getByRole("button", { name: /Expand .* 2 sources/ }))
+
+    expect(screen.getAllByRole("row")).toHaveLength(4) // header + group + 2 members
+    expect(screen.getByLabelText("Download Tears of Steel 1080p from demotracker").getAttribute("href"))
+      .toBe("http://tracker.example/dl?id=9&passkey=NOTREAL")
+    expect(screen.getByLabelText("Magnet for tears.of.steel.1080p from demopublic").getAttribute("href"))
+      .toBe("magnet:?xt=urn:btih:abcdef")
+    // Per-tracker seeders are what the pick turns on, so both are on screen.
+    expect(screen.getAllByText("3").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("91")).toHaveLength(2)
+
+    fireEvent.click(screen.getByRole("button", { name: /Collapse .* 2 sources/ }))
+    expect(screen.getAllByRole("row")).toHaveLength(2)
+  })
+
+  it("renders exactly the flat list when nothing groups — same rows, same order", () => {
+    const { unmount } = render(
+      <SearchResultsTable groups={groupRows(ROWS)} catNames={CATS} sort={{ key: "seeders", dir: "desc" }} onSort={vi.fn()} clients={[]} />
+    )
+    const grouped = screen.getAllByRole("row").map((tr) => tr.textContent)
+    unmount()
+
+    renderTable(ROWS)
+    expect(screen.getAllByRole("row").map((tr) => tr.textContent)).toEqual(grouped)
   })
 })

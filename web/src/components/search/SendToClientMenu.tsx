@@ -30,11 +30,14 @@ export function acquisitionLink(r: Release): string | undefined {
 // The link is posted back VERBATIM: it is whatever the search response served (a sealed
 // harbrr link, a magnet, or a direct URL), and the server classifies it. The UI never
 // rebuilds it and never logs it — a link may carry a passkey by design.
-export function SendToClientMenu({ clients, indexer, link, title, className }: {
+export function SendToClientMenu({ clients, indexer, link, title, source, className }: {
   clients: DownloadClient[]
   indexer: string
   link: string | undefined
   title: string
+  // Names the tracker in the accessible label only, so the several entries of an
+  // expanded result group stay tellable apart when their titles are identical.
+  source?: string
   className?: string
 }) {
   const [sending, setSending] = useState(false)
@@ -57,7 +60,7 @@ export function SendToClientMenu({ clients, indexer, link, title, className }: {
     <DropdownMenu>
       <DropdownMenuTrigger
         disabled={sending}
-        aria-label={`Send ${title} to a download client`}
+        aria-label={`Send ${title}${source ? ` from ${source}` : ""} to a download client`}
         className={cn(
           "grid place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:opacity-50",
           className

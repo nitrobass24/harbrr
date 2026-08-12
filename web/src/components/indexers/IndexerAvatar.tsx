@@ -1,9 +1,14 @@
-// Colored-initial avatar: a deterministic OKLCH hue from the slug so every
-// indexer keeps a stable color without any stored asset (mockup pattern).
-export function IndexerAvatar({ slug, name }: { slug: string, name: string }) {
+// A deterministic OKLCH hue from the slug, so an indexer keeps one stable color across
+// every surface that attributes a result to it, without any stored asset.
+export function indexerHue(slug: string): number {
   let hash = 0
   for (const ch of slug) hash = (hash * 31 + ch.codePointAt(0)!) >>> 0
-  const hue = hash % 360
+  return hash % 360
+}
+
+// Colored-initial avatar (mockup pattern).
+export function IndexerAvatar({ slug, name }: { slug: string, name: string }) {
+  const hue = indexerHue(slug)
 
   return (
     <div
