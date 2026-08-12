@@ -12,7 +12,21 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
+	"github.com/autobrr/harbrr/internal/version"
 )
+
+// TestUserAgentEmptyVersionFallback: an explicitly emptied build version must not
+// yield a trailing-slash "harbrr/" identity. NOT parallel — it mutates the package
+// version var that every other test in this package reads.
+func TestUserAgentEmptyVersionFallback(t *testing.T) {
+	original := version.Version
+	defer func() { version.Version = original }()
+
+	version.Version = ""
+	if got := userAgent(); got != "harbrr" {
+		t.Errorf("userAgent() with an empty version = %q, want %q", got, "harbrr")
+	}
+}
 
 // fakeTorrent is a minimal bencode-shaped body (content is irrelevant to the driver;
 // it is returned verbatim to the /dl proxy).
@@ -57,8 +71,8 @@ func TestGrab(t *testing.T) {
 	if dl.accept != "*/*" {
 		t.Errorf("download Accept = %q, want */*", dl.accept)
 	}
-	if !strings.HasPrefix(dl.userAgent, "harbrr") {
-		t.Errorf("download User-Agent = %q, want a harbrr… identity", dl.userAgent)
+	if want := "harbrr/" + version.Version; dl.userAgent != want {
+		t.Errorf("download User-Agent = %q, want %q", dl.userAgent, want)
 	}
 	assertNoSecret(t, dl.url)
 	assertNoSecret(t, string(res.Body))

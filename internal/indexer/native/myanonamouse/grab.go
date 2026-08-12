@@ -12,8 +12,10 @@ import (
 // differs is the client: a search declares Accept, a download declared neither Accept
 // nor a User-Agent (so it rode Go's default "Go-http-client/1.1"), which a
 // path-scoped content-negotiation filter fits exactly (autobrr/harbrr#465). Naming
-// harbrr honestly beats impersonating a browser. An unset build version (a bare
-// `go build`, never a release) degrades to the plain product name.
+// harbrr honestly beats impersonating a browser. A bare `go build` carries the
+// package's build default ("harbrr/0.0.0-dev"); the plain product name is the
+// fallback for a version explicitly emptied via ldflags, so the header can never
+// degrade to a trailing slash.
 func userAgent() string {
 	if version.Version == "" {
 		return "harbrr"
