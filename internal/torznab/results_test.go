@@ -545,6 +545,10 @@ func TestResultsTagAttrs(t *testing.T) {
 		{"duplicates collapse", []string{"scene", "internal", "scene", "scene"}, []string{"internal", "scene"}},
 		{"nil tags emit nothing", nil, nil},
 		{"empty slice emits nothing", []string{}, nil},
+		// The wire vocabulary is closed: a value outside it is dropped rather than
+		// served, so a future driver cannot widen the contract consumers read.
+		{"unknown tags are filtered out", []string{"internal", "made-up", "scene"}, []string{"internal", "scene"}},
+		{"only unknown tags emit nothing", []string{"made-up"}, nil},
 	}
 	for _, tt := range tests {
 		for _, protocol := range []string{"", "usenet"} {

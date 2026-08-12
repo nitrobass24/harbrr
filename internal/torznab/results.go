@@ -368,15 +368,29 @@ func appendNameAttrs(attrs []torznabAttr, r *normalizer.Release) []torznabAttr {
 	return attrs
 }
 
+// wireTags is the closed set of tag values the feed will serialize. Release.Tags
+// is an open []string, so this allowlist — not the drivers — is what consumers
+// actually get: a value only reaches the wire if it is in the shared vocabulary
+// every consumer can read the same way. Growing that vocabulary is therefore a
+// deliberate two-part act (add the normalizer const AND an entry here), which is
+// the point: a new driver cannot widen the wire contract on its own.
+var wireTags = map[string]struct{}{
+	normalizer.TagInternal: {},
+	normalizer.TagScene:    {},
+}
+
 // appendTagAttrs emits Torznab's repeated tag attr, one per tracker-supplied
-// flag. The values are sorted and de-duplicated so the same release always
-// serializes identically. Only tags a driver positively read off the source ever
-// reach here, so an absent tag is silence, not a false — nothing is synthesized
-// for a release that carries none.
+// flag in wireTags. The values are sorted and de-duplicated so the same release
+// always serializes identically. Only tags a driver positively read off the
+// source ever reach here, so an absent tag is silence, not a false — nothing is
+// synthesized for a release that carries none.
 func appendTagAttrs(attrs []torznabAttr, r *normalizer.Release) []torznabAttr {
 	tags := slices.Clone(r.Tags)
 	slices.Sort(tags)
 	for _, tag := range slices.Compact(tags) {
+		if _, ok := wireTags[tag]; !ok {
+			continue
+		}
 		attrs = appendStringAttr(attrs, "tag", sanitizeXMLText(tag))
 	}
 	return attrs
