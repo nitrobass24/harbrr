@@ -15,6 +15,11 @@ import (
 // actually served, and the ring is held in memory for the process's lifetime.
 const maxCaptureBodyBytes = 64 << 10
 
+// CaptureReadLimit is how many response bytes a caller OUTSIDE this package should
+// read before handing them to NewCapture: one past the retained cap, so a body that
+// exactly fills the cap is still distinguishable from one that was cut.
+const CaptureReadLimit = maxCaptureBodyBytes + 1
+
 // Selector-miss kinds. MissNoRows and MissFields are the two the issue exists to
 // separate: a rows selector that matched nothing is markup drift at the page
 // level, a field that missed inside a matched row is drift at the column level.
@@ -69,8 +74,8 @@ func (e *CaptureError) Error() string { return e.Err.Error() }
 func (e *CaptureError) Unwrap() error { return e.Err }
 
 // CaptureOf extracts the diagnostic capture from an error chain, reporting
-// ok=false when the failure carries none (a native driver, or a failure raised
-// before any request was built).
+// ok=false when the failure carries none (a native driver's search path, or a
+// failure raised before any request was built).
 func CaptureOf(err error) (Capture, bool) {
 	var ce *CaptureError
 	if errors.As(err, &ce) {
@@ -130,19 +135,27 @@ func captureRequest(br builtRequest, err error) error {
 // request summary, the response status and headers, the (capped) body, and the
 // selector attribution carried up from the parse internals.
 func captureResponse(def *loader.Definition, deps Deps, br builtRequest, sr searchResponse, err error) error {
-	secrets := loader.SecretValues(def.Settings, deps.Config)
-	body, truncated := redactBody(sr.body, secrets)
-	return &CaptureError{
-		Capture: Capture{
-			Method:        br.method,
-			URL:           apphttp.RedactURL(br.url),
-			Status:        sr.status,
-			Headers:       redactHeaders(sr.header, secrets),
-			Body:          body,
-			BodyTruncated: truncated,
-			Miss:          missOf(err),
-		},
-		Err: err,
+	capture := NewCapture(br.method, br.url, sr.status, sr.header, sr.body,
+		loader.SecretValues(def.Settings, deps.Config))
+	capture.Miss = missOf(err)
+	return &CaptureError{Capture: capture, Err: err}
+}
+
+// NewCapture builds the redacted exchange snapshot from bytes ALREADY fetched —
+// constructing one never issues a request. secrets are the caller's configured
+// credential VALUES; the shared credential-NAME vocabulary is applied on top
+// regardless, so a caller with none still gets a scrubbed capture. It is exported so
+// the native drivers' Base can capture a refused grab (autobrr/harbrr#465) through
+// this same redaction rather than growing a second, drifting scrub.
+func NewCapture(method, rawURL string, status int, header stdhttp.Header, body []byte, secrets []string) Capture {
+	redacted, truncated := redactBody(body, secrets)
+	return Capture{
+		Method:        method,
+		URL:           apphttp.RedactURL(rawURL),
+		Status:        status,
+		Headers:       redactHeaders(header, secrets),
+		Body:          redacted,
+		BodyTruncated: truncated,
 	}
 }
 

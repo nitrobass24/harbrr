@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/database/dbtest"
 	"github.com/autobrr/harbrr/internal/domain"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
 
@@ -45,6 +47,72 @@ func parseFailure(body string) error {
 	return &search.CaptureError{
 		Capture: search.Capture{Method: "GET", URL: "https://cap.invalid/api", Status: 200, Body: body},
 		Err:     fmt.Errorf("%w: splitting rows", search.ErrParseError),
+	}
+}
+
+// grabRefusal is the shape native.Base hands recordHealth for a refused download: the
+// redacted exchange wrapping whatever the status classification produced.
+func grabRefusal(status int, err error) error {
+	return &search.CaptureError{
+		Capture: search.Capture{
+			Method: "GET", URL: "https://cap.invalid/download.php?tid=1", Status: status,
+			Headers: map[string]string{"Content-Type": "text/html", "Set-Cookie": "REDACTED"},
+			Body:    "<h1>refused</h1>",
+		},
+		Err: err,
+	}
+}
+
+// TestRecordHealthFilesUnclassifiedCapture is the #465 crux: a tracker refusing every
+// grab with a status harbrr does not classify (MAM's 406) still leaves its evidence in
+// the ring — filed under the plain HTTP status — while the health derivation is
+// untouched (no event written, since nothing was classified). A classified refusal
+// keeps filing under its health kind AND writing its event.
+func TestRecordHealthFilesUnclassifiedCapture(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	tests := []struct {
+		name       string
+		err        error
+		wantKind   string
+		wantEvents int
+	}{
+		{
+			name:     "unclassified refusal files under the http status, writes no event",
+			err:      grabRefusal(406, errors.New("myanonamouse: download returned HTTP 406")),
+			wantKind: "http_406",
+		},
+		{
+			name:       "classified refusal files under its health kind and writes its event",
+			err:        grabRefusal(403, fmt.Errorf("myanonamouse: mam_id expired: %w", login.ErrLoginFailed)),
+			wantKind:   domain.HealthAuthFailure,
+			wantEvents: 1,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			a, ring := newDiagTestAdapter(t)
+			a.recordHealth(ctx, tt.err)
+
+			got := ring.list(a.instanceID)
+			if len(got) != 1 {
+				t.Fatalf("ring entries = %d, want 1", len(got))
+			}
+			if got[0].Kind != tt.wantKind {
+				t.Errorf("kind = %q, want %q", got[0].Kind, tt.wantKind)
+			}
+			if !strings.Contains(got[0].Capture.Body, "refused") {
+				t.Errorf("capture body lost the evidence: %q", got[0].Capture.Body)
+			}
+			events, err := database.Health{}.Recent(ctx, a.db, a.instanceID, 5)
+			if err != nil {
+				t.Fatalf("read health events: %v", err)
+			}
+			if len(events) != tt.wantEvents {
+				t.Fatalf("health events = %d, want %d (derivation must not change)", len(events), tt.wantEvents)
+			}
+		})
 	}
 }
 
@@ -105,9 +173,9 @@ func TestDiagnosticsLifecycle(t *testing.T) {
 }
 
 // TestRecordHealthFilesCapture: only a failure that CARRIES a capture is filed. A
-// classified failure without one (a native driver) adds nothing — the health event
-// already records it and a bare kind+time entry would just duplicate the events
-// list — and an unclassified error adds nothing at all.
+// classified failure without one (a native driver's search path) adds nothing — the
+// health event already records it and a bare kind+time entry would just duplicate the
+// events list — and an unclassified error without one adds nothing at all.
 func TestRecordHealthFilesCapture(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

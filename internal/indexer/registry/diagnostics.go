@@ -12,9 +12,10 @@ import (
 // not history — the durable health events already carry the timeline.
 const diagnosticsRingSize = 5
 
-// FailureCapture is one diagnostics ring entry: the health classification the
-// registry assigned and when it happened, over the engine's already-redacted
-// snapshot of the exchange (see search.Capture).
+// FailureCapture is one diagnostics ring entry: the classification the registry
+// assigned — a health kind, or "http_<status>" for a refusal it does not classify
+// (autobrr/harbrr#465) — and when it happened, over the already-redacted snapshot
+// of the exchange (see search.Capture).
 type FailureCapture struct {
 	Kind       string
 	OccurredAt time.Time

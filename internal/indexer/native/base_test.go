@@ -3,6 +3,7 @@ package native
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -19,15 +20,18 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
 
-// fakeDoer returns a canned response or error and records the request it saw.
+// fakeDoer returns a canned response or error and records the request it saw (and
+// how many it saw, so a capture can be proved to cost no extra round-trip).
 type fakeDoer struct {
-	resp *stdhttp.Response
-	err  error
-	got  *stdhttp.Request
+	resp  *stdhttp.Response
+	err   error
+	got   *stdhttp.Request
+	calls int
 }
 
 func (f *fakeDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
 	f.got = req
+	f.calls++
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -283,6 +287,118 @@ func TestDoDownloadCapErrors(t *testing.T) {
 			t.Fatalf("cap error lost the family prefix: %v", err)
 		}
 	})
+}
+
+// refusalTestBase wires a Base whose configured apikey is a secret value the capture
+// must scrub, over a doer serving one canned response.
+func refusalTestBase(t *testing.T, doer *fakeDoer, apikey string) Base {
+	t.Helper()
+	b, err := NewBase("testfam", Params{Def: scrubTestDef(), Cfg: map[string]string{"apikey": apikey}, Doer: doer})
+	if err != nil {
+		t.Fatalf("NewBase: %v", err)
+	}
+	return b
+}
+
+// TestDownloadRefusalCapture: a refused grab carries the redacted exchange
+// (autobrr/harbrr#465). Without it, an unclassified refusal — MAM's 406 — discards
+// the one thing that says why, because the body dies with the closed response.
+func TestDownloadRefusalCapture(t *testing.T) {
+	t.Parallel()
+	const (
+		// pathSecret is passkey-shaped (a long hex run) because that is the shape
+		// path redaction is built for; queryKey is caught by its parameter NAME.
+		pathSecret  = "0123456789abcdef0123456789abcdef0123456789abcdef"
+		queryKey    = "QUERY-APIKEY-2b7f"
+		cookieValue = "SESSIONCOOKIE-9d41"
+	)
+	header := stdhttp.Header{}
+	header.Set("Content-Type", "text/html")
+	header.Set("Set-Cookie", "session="+cookieValue)
+	body := "<h1>Not Acceptable</h1><p>rejected for apikey=" + queryKey + "</p>"
+
+	doer := &fakeDoer{resp: respWith(stdhttp.StatusNotAcceptable, body, header)}
+	b := refusalTestBase(t, doer, queryKey)
+	req := mustRequest(t, "https://tracker.example/download.php/"+pathSecret+"?tid=1&apikey="+queryKey)
+	req.Header.Set("Cookie", "session="+cookieValue)
+
+	resp, err := b.DoDownload(context.Background(), req, ClassifyAuth403)
+	if err == nil {
+		t.Fatal("want the 406 status error")
+	}
+	if resp == nil || resp.StatusCode != stdhttp.StatusNotAcceptable {
+		t.Fatalf("response shell lost: %+v", resp)
+	}
+	// The capture wraps, never replaces: an unclassified 406 stays unclassified and a
+	// classified status stays classifiable (asserted below for 403).
+	if !strings.Contains(err.Error(), "testfam: download returned HTTP 406") {
+		t.Fatalf("status error reworded: %v", err)
+	}
+	capture, ok := search.CaptureOf(err)
+	if !ok {
+		t.Fatal("refused download carries no capture")
+	}
+	if capture.Status != stdhttp.StatusNotAcceptable || capture.Method != stdhttp.MethodGet {
+		t.Errorf("capture = %s %d, want GET 406", capture.Method, capture.Status)
+	}
+	if !strings.Contains(capture.Body, "Not Acceptable") {
+		t.Errorf("capture body lost the diagnostic: %q", capture.Body)
+	}
+	if capture.Headers["Content-Type"] != "text/html" {
+		t.Errorf("capture headers = %v, want the Content-Type", capture.Headers)
+	}
+	// Rendered as the diagnostics API serves it: no synthetic secret from the path,
+	// the query, the cookie, or the body survives anywhere in the entry.
+	rendered, merr := json.Marshal(capture)
+	if merr != nil {
+		t.Fatalf("marshal capture: %v", merr)
+	}
+	for _, secret := range []string{pathSecret, queryKey, cookieValue} {
+		if strings.Contains(string(rendered), secret) {
+			t.Errorf("capture leaked %q: %s", secret, rendered)
+		}
+	}
+	// The capture is built from bytes the grab already fetched — never a second fetch.
+	if doer.calls != 1 {
+		t.Errorf("requests = %d, want exactly 1 (the capture costs no round-trip)", doer.calls)
+	}
+}
+
+// TestCaptureScope pins where the capture applies: the download path on any non-2xx
+// (classified or not), and nowhere else — a successful grab and the API request path
+// are untouched.
+func TestCaptureScope(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		status      int
+		download    bool
+		wantCapture bool
+	}{
+		{name: "classified download refusal captures too", status: stdhttp.StatusForbidden, download: true, wantCapture: true},
+		{name: "successful download captures nothing", status: stdhttp.StatusOK, download: true},
+		{name: "api request refusal captures nothing", status: stdhttp.StatusNotAcceptable},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			b := newTestBase(t, &fakeDoer{resp: respWith(tt.status, "<html>refused</html>", nil)})
+			req := mustRequest(t, "https://tracker.example/dl")
+			var err error
+			if tt.download {
+				_, err = b.DoDownload(context.Background(), req, ClassifyAuth403)
+			} else {
+				_, err = b.Do(context.Background(), req, ClassifyAuth403)
+			}
+			if _, ok := search.CaptureOf(err); ok != tt.wantCapture {
+				t.Fatalf("capture present = %t, want %t (err = %v)", ok, tt.wantCapture, err)
+			}
+			// A captured 403 is still an auth failure: wrapping preserves the chain.
+			if tt.status == stdhttp.StatusForbidden && !errors.Is(err, login.ErrLoginFailed) {
+				t.Errorf("captured 403 lost login.ErrLoginFailed: %v", err)
+			}
+		})
+	}
 }
 
 // neverEnding is an infinite reader of one byte, so the over-cap test needs no

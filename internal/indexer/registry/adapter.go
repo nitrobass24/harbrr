@@ -453,9 +453,17 @@ func (a *indexerAdapter) escalateCircuit(ctx context.Context, kind string, err e
 // recordHealth classifies err and, when it is one of the health kinds,
 // appends a health event with a credential-scrubbed detail. It is best-effort:
 // a failed write is logged (redacted) and never masks the original search error.
+//
+// An UNCLASSIFIED failure still writes no health event — the derivation is
+// unchanged — but if it carries a capture it is filed into the diagnostics ring
+// under the plain HTTP status (autobrr/harbrr#465): a tracker refusing every grab
+// with a status harbrr does not classify (MAM's 406) otherwise leaves no trace of
+// the response body that names the reason. This changes what is RETAINED, never
+// what is classified.
 func (a *indexerAdapter) recordHealth(ctx context.Context, err error) {
 	kind, ok := classifyHealth(err)
 	if !ok {
+		a.fileCapture(err, "")
 		return
 	}
 	ev := domain.IndexerHealthEvent{
@@ -464,14 +472,11 @@ func (a *indexerAdapter) recordHealth(ctx context.Context, err error) {
 		Detail:     apphttp.RedactError(err),
 		OccurredAt: a.clock(),
 	}
-	// File the engine's redacted snapshot of the failed exchange, when it carries
-	// one, BEFORE the (fallible) event write — it is the evidence the operator
-	// needs and it costs nothing but memory. Errors with no capture (a native
-	// driver, a failure raised before any request) add no entry: the health event
-	// above already records those.
-	if capture, ok := search.CaptureOf(err); ok && a.diagnostics != nil {
-		a.diagnostics.record(a.instanceID, FailureCapture{Kind: kind, OccurredAt: ev.OccurredAt, Capture: capture})
-	}
+	// File the redacted snapshot of the failed exchange, when it carries one,
+	// BEFORE the (fallible) event write — it is the evidence the operator needs and
+	// it costs nothing but memory. Errors with no capture (a failure raised before
+	// any request) add no entry: the health event above already records those.
+	a.fileCapture(err, kind)
 	if rerr := a.health.Record(ctx, a.db, ev); rerr != nil {
 		a.log.Warn().Str("indexer", a.info.ID).Str("error", apphttp.RedactError(rerr)).
 			Msg("registry: record health event failed")
@@ -488,6 +493,21 @@ func (a *indexerAdapter) recordHealth(ctx context.Context, err error) {
 	// the trigger reads the recorded events, and after the sink because a failover is
 	// the slow step and must not delay the failure notification.
 	a.maybeFailover(ctx, kind, state)
+}
+
+// fileCapture files err's redacted exchange into the diagnostics ring, if it carries
+// one. kind is the health classification the failure was given, or "" for an
+// unclassified failure — which is filed under the plain HTTP status the capture
+// records ("http_406"), the only classification such a refusal has.
+func (a *indexerAdapter) fileCapture(err error, kind string) {
+	capture, ok := search.CaptureOf(err)
+	if !ok || a.diagnostics == nil {
+		return
+	}
+	if kind == "" {
+		kind = fmt.Sprintf("http_%d", capture.Status)
+	}
+	a.diagnostics.record(a.instanceID, FailureCapture{Kind: kind, OccurredAt: a.clock(), Capture: capture})
 }
 
 // classifyHealth maps an engine error to a health-event kind. Returns ok=false

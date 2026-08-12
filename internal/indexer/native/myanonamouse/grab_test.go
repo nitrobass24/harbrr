@@ -12,7 +12,33 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
+	"github.com/autobrr/harbrr/internal/version"
 )
+
+// TestUserAgent covers both build shapes: a real version is appended, and an
+// explicitly emptied one falls back to the plain product name rather than a
+// degenerate trailing-slash "harbrr/". Sequential throughout — it assigns the
+// package version var that every other test in this package reads, so neither the
+// test nor its cases may run in parallel.
+func TestUserAgent(t *testing.T) {
+	original := version.Version
+	defer func() { version.Version = original }()
+
+	tests := []struct {
+		name, version, want string
+	}{
+		{name: "a build version is appended", version: "1.2.3", want: "harbrr/1.2.3"},
+		{name: "an empty version falls back to the product name", version: "", want: "harbrr"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			version.Version = tt.version
+			if got := userAgent(); got != tt.want {
+				t.Errorf("userAgent() with version %q = %q, want %q", tt.version, got, tt.want)
+			}
+		})
+	}
+}
 
 // fakeTorrent is a minimal bencode-shaped body (content is irrelevant to the driver;
 // it is returned verbatim to the /dl proxy).
@@ -52,8 +78,19 @@ func TestGrab(t *testing.T) {
 	if want := "https://mam.test/tor/download.php?tid=101"; dl.url != want {
 		t.Errorf("download URL = %q, want %q (fetched verbatim, not rewritten)", dl.url, want)
 	}
-	if dl.accept != "" {
-		t.Errorf("download Accept = %q, want empty (do not force JSON on a .torrent)", dl.accept)
+	// The download identifies its client (#465): Accept anything (a .torrent is not
+	// JSON) and name harbrr instead of riding Go's default library User-Agent.
+	if dl.accept != "*/*" {
+		t.Errorf("download Accept = %q, want */*", dl.accept)
+	}
+	// Expected under the SAME rule the helper applies, so the assertion holds under
+	// any build flags rather than demanding a degenerate "harbrr/".
+	want := "harbrr/" + version.Version
+	if version.Version == "" {
+		want = "harbrr"
+	}
+	if dl.userAgent != want {
+		t.Errorf("download User-Agent = %q, want %q", dl.userAgent, want)
 	}
 	assertNoSecret(t, dl.url)
 	assertNoSecret(t, string(res.Body))
