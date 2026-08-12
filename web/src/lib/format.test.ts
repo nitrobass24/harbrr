@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { formatSize, hostname, relativeTime } from "./format"
+import { formatSize, hostname, relativeTime, syncStatusClass } from "./format"
 
 describe("formatSize", () => {
   const cases: { bytes: number | undefined, want: string }[] = [
@@ -26,6 +26,20 @@ describe("relativeTime", () => {
   ]
   for (const c of cases) {
     it(`${c.iso} -> "${c.want}"`, () => expect(relativeTime(c.iso, now)).toBe(c.want))
+  }
+})
+
+describe("syncStatusClass", () => {
+  const cases: { status: string | undefined, want: string }[] = [
+    { status: "ok", want: "text-ok" },
+    { status: "partial", want: "text-warn" },
+    { status: "error", want: "text-bad" },
+    { status: "skipped", want: "text-faint" },
+    { status: undefined, want: "text-faint" },
+    { status: "nonsense", want: "text-faint" },
+  ]
+  for (const c of cases) {
+    it(`${c.status} -> ${c.want}`, () => expect(syncStatusClass(c.status)).toBe(c.want))
   }
 })
 
