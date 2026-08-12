@@ -15,16 +15,28 @@ import (
 	"github.com/autobrr/harbrr/internal/version"
 )
 
-// TestUserAgentEmptyVersionFallback: an explicitly emptied build version must not
-// yield a trailing-slash "harbrr/" identity. NOT parallel — it mutates the package
-// version var that every other test in this package reads.
-func TestUserAgentEmptyVersionFallback(t *testing.T) {
+// TestUserAgent covers both build shapes: a real version is appended, and an
+// explicitly emptied one falls back to the plain product name rather than a
+// degenerate trailing-slash "harbrr/". Sequential throughout — it assigns the
+// package version var that every other test in this package reads, so neither the
+// test nor its cases may run in parallel.
+func TestUserAgent(t *testing.T) {
 	original := version.Version
 	defer func() { version.Version = original }()
 
-	version.Version = ""
-	if got := userAgent(); got != "harbrr" {
-		t.Errorf("userAgent() with an empty version = %q, want %q", got, "harbrr")
+	tests := []struct {
+		name, version, want string
+	}{
+		{name: "a build version is appended", version: "1.2.3", want: "harbrr/1.2.3"},
+		{name: "an empty version falls back to the product name", version: "", want: "harbrr"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			version.Version = tt.version
+			if got := userAgent(); got != tt.want {
+				t.Errorf("userAgent() with version %q = %q, want %q", tt.version, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -71,7 +83,13 @@ func TestGrab(t *testing.T) {
 	if dl.accept != "*/*" {
 		t.Errorf("download Accept = %q, want */*", dl.accept)
 	}
-	if want := "harbrr/" + version.Version; dl.userAgent != want {
+	// Expected under the SAME rule the helper applies, so the assertion holds under
+	// any build flags rather than demanding a degenerate "harbrr/".
+	want := "harbrr/" + version.Version
+	if version.Version == "" {
+		want = "harbrr"
+	}
+	if dl.userAgent != want {
 		t.Errorf("download User-Agent = %q, want %q", dl.userAgent, want)
 	}
 	assertNoSecret(t, dl.url)
