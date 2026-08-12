@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // Grab fetches the rebuilt download.php URL with the Basic header and returns the
@@ -18,8 +19,5 @@ func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, err
 	if err != nil {
 		return nil, err
 	}
-	return &search.GrabResult{
-		Body:        resp.Body,
-		ContentType: resp.Header.Get("Content-Type"),
-	}, nil
+	return native.GrabResultFrom(resp), nil
 }

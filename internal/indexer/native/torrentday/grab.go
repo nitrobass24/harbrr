@@ -7,6 +7,7 @@ import (
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // Grab fetches the resolved TorrentDay download URL (download.php/<id>/<id>.torrent) with
@@ -26,8 +27,5 @@ func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, err
 		}
 		return nil, err
 	}
-	return &search.GrabResult{
-		Body:        resp.Body,
-		ContentType: resp.Header.Get("Content-Type"),
-	}, nil
+	return native.GrabResultFrom(resp), nil
 }

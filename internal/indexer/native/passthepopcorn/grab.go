@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // errNotTorrent flags a 2xx response whose body is not bencode (a .torrent always begins
@@ -35,10 +36,7 @@ func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, err
 	if len(resp.Body) == 0 || resp.Body[0] != 'd' {
 		return nil, errNotTorrent
 	}
-	return &search.GrabResult{
-		Body:        resp.Body,
-		ContentType: resp.Header.Get("Content-Type"),
-	}, nil
+	return native.GrabResultFrom(resp), nil
 }
 
 // Test exercises the credentials with an empty browse query: a 401 surfaces as

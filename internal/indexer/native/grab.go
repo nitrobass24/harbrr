@@ -36,10 +36,19 @@ func (b *Base) GrabDirect(ctx context.Context, link string, classify Classify) (
 	if err != nil {
 		return nil, err
 	}
-	return &search.GrabResult{
-		Body:        resp.Body,
-		ContentType: resp.Header.Get("Content-Type"),
-	}, nil
+	return GrabResultFrom(resp), nil
+}
+
+// GrabResultFrom builds the standard grab result from a driver response: the body plus
+// the response's Content-Type. Every torrent driver's grab tail is this shape, so it is
+// written once here rather than ten times. It is exported because the drivers live in
+// sub-packages of native.
+//
+// This shares only the tail: a driver still runs its own d.get, which is where its
+// per-driver auth headers (Bearer, session cookie, Basic, X-API-Key) are applied.
+// Routing those drivers through GrabDirect instead would drop the headers.
+func GrabResultFrom(resp *Response) *search.GrabResult {
+	return &search.GrabResult{Body: resp.Body, ContentType: resp.Header.Get("Content-Type")}
 }
 
 // GrabNZB is the shared usenet grab path for newznab and nzbindex: a plain GET for a

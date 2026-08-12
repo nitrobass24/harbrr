@@ -28,10 +28,7 @@ func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, err
 		}
 		return nil, sanitizeGrabError(err)
 	}
-	return &search.GrabResult{
-		Body:        resp.Body,
-		ContentType: resp.Header.Get("Content-Type"),
-	}, nil
+	return native.GrabResultFrom(resp), nil
 }
 
 // sanitizeGrabError classifies a grab error. The auth (for health) and rate-limit
