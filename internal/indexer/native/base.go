@@ -65,6 +65,14 @@ type Base struct {
 	// MaxBodyBytes caps a Do response body, silently truncating past the cap
 	// (matching the pre-Base drivers). Defaults to defaultMaxBodyBytes.
 	MaxBodyBytes int64
+	// captureSecrets are the configured credential VALUES a refused grab's capture is
+	// scrubbed with, snapshotted once at construction. It is a snapshot rather than a
+	// live loader.SecretValues(Def.Settings, Cfg) read because the transport runs
+	// concurrently with a driver that rotates its own credential into Cfg under its
+	// own mutex (gazellegames' on-demand passkey) — see Scrub's precondition. The
+	// values that snapshot misses (a rotated token) are exactly the ones unsafe to
+	// read here, and the shared credential-NAME scrub still covers them in the body.
+	captureSecrets []string
 }
 
 // NewBase wires the scaffold every native driver constructor repeated: nil-def
@@ -93,15 +101,16 @@ func NewBase(family string, p Params) (Base, error) {
 		clock = time.Now
 	}
 	return Base{
-		Family:       family,
-		Def:          p.Def,
-		Caps:         caps,
-		Cfg:          p.Cfg,
-		Doer:         p.Doer,
-		BaseURL:      strings.TrimRight(base, "/") + "/",
-		Clock:        clock,
-		Log:          p.Logger,
-		MaxBodyBytes: defaultMaxBodyBytes,
+		Family:         family,
+		Def:            p.Def,
+		Caps:           caps,
+		Cfg:            p.Cfg,
+		Doer:           p.Doer,
+		BaseURL:        strings.TrimRight(base, "/") + "/",
+		Clock:          clock,
+		Log:            p.Logger,
+		MaxBodyBytes:   defaultMaxBodyBytes,
+		captureSecrets: loader.SecretValues(p.Def.Settings, p.Cfg),
 	}, nil
 }
 
@@ -247,6 +256,9 @@ func (b *Base) roundTrip(ctx context.Context, req *stdhttp.Request, c Classify, 
 
 	out := &Response{StatusCode: resp.StatusCode, Header: resp.Header}
 	if serr := c.statusError(b.Family, op, resp, b.Clock); serr != nil {
+		if op == "download" {
+			serr = b.captureRefusal(req, resp, serr)
+		}
 		return out, serr
 	}
 	if op == "download" {
@@ -265,6 +277,25 @@ func (b *Base) roundTrip(ctx context.Context, req *stdhttp.Request, c Classify, 
 		return nil, fmt.Errorf("%s: %w: %w", b.Family, ErrBodyRead, err)
 	}
 	return out, nil
+}
+
+// captureRefusal attaches the refused grab's redacted exchange to err, so the
+// response body that names WHY a tracker rejected a download reaches the diagnostics
+// ring instead of being discarded with the closed body (autobrr/harbrr#465 — MAM's
+// 406 is not a classified status, so nothing else retains it). It wraps the status
+// error unchanged, leaving every errors.Is classification intact.
+//
+// Download path only: an API response's body is read and returned to the driver on
+// the "request" path, so nothing there is lost. The body read is bounded by
+// search.CaptureReadLimit and deliberately best-effort — a partial read still shows
+// what the tracker managed to send, and a read failure must never replace the status
+// error the caller is classifying.
+func (b *Base) captureRefusal(req *stdhttp.Request, resp *stdhttp.Response, err error) error {
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, search.CaptureReadLimit))
+	return &search.CaptureError{
+		Capture: search.NewCapture(req.Method, req.URL.String(), resp.StatusCode, resp.Header, body, b.captureSecrets),
+		Err:     err,
+	}
 }
 
 // readCapped reads up to limit bytes, returning ErrDownloadTooLarge when the

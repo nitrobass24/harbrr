@@ -149,6 +149,11 @@ func TestSearchIssuesCookieRequest(t *testing.T) {
 	if got.accept != "application/json" {
 		t.Errorf("Accept = %q, want application/json", got.accept)
 	}
+	// The download's client-identifying User-Agent (#465) is grab-only: search works
+	// as-is and stays byte-for-byte what it was.
+	if got.userAgent != "" {
+		t.Errorf("search User-Agent = %q, want none (the grab sets one, search does not)", got.userAgent)
+	}
 	u, _ := url.Parse(got.url)
 	if u.Query().Get("tor[text]") != "dune" || u.Query().Get("tor[cat][0]") != "13" {
 		t.Errorf("recorded query = %v", u.Query())

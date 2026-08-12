@@ -52,8 +52,13 @@ func TestGrab(t *testing.T) {
 	if want := "https://mam.test/tor/download.php?tid=101"; dl.url != want {
 		t.Errorf("download URL = %q, want %q (fetched verbatim, not rewritten)", dl.url, want)
 	}
-	if dl.accept != "" {
-		t.Errorf("download Accept = %q, want empty (do not force JSON on a .torrent)", dl.accept)
+	// The download identifies its client (#465): Accept anything (a .torrent is not
+	// JSON) and name harbrr instead of riding Go's default library User-Agent.
+	if dl.accept != "*/*" {
+		t.Errorf("download Accept = %q, want */*", dl.accept)
+	}
+	if !strings.HasPrefix(dl.userAgent, "harbrr") {
+		t.Errorf("download User-Agent = %q, want a harbrr… identity", dl.userAgent)
 	}
 	assertNoSecret(t, dl.url)
 	assertNoSecret(t, string(res.Body))

@@ -23,9 +23,9 @@ const mamSecret = "MAMID-SECRET-9f8e"
 func fixedClock() time.Time { return time.Unix(1_700_000_000, 0).UTC() }
 
 // recordedReq captures one issued request for assertions a black-box transport cannot
-// make (the request path/query, the Cookie + Accept headers).
+// make (the request path/query, the Cookie + Accept + User-Agent headers).
 type recordedReq struct {
-	method, url, cookie, accept string
+	method, url, cookie, accept, userAgent string
 }
 
 // scriptDoer records every request and serves a scripted response. setCookie, when
@@ -46,6 +46,9 @@ func (s *scriptDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
 		url:    req.URL.String(),
 		cookie: req.Header.Get("Cookie"),
 		accept: req.Header.Get("Accept"),
+		// Go's transport supplies its own default UA at send time, so an empty value
+		// here means the driver set none — exactly what the download must not do.
+		userAgent: req.Header.Get("User-Agent"),
 	})
 	r := s.handler(req)
 	if s.setCookie != "" {
