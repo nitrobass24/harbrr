@@ -88,6 +88,7 @@ func TestParseSearchGolden(t *testing.T) {
 		},
 		{
 			Title:                "Cool Game (2018) [ISO Clone / Some Studio / English / Region Free]",
+			Tags:                 []string{normalizer.TagScene}, // "Scene": "1" (torrent 70002 is "0" -> no Tags)
 			Link:                 "https://gazellegames.net/torrents.php?action=download&authkey=prowlarr&id=70001&torrent_pass=SYNTHETICPASSKEY",
 			Details:              "https://gazellegames.net/torrents.php?id=1001&torrentid=70001",
 			Categories:           []int{4050},

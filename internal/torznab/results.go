@@ -2,6 +2,7 @@ package torznab
 
 import (
 	"encoding/xml"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -315,11 +316,11 @@ func enclosureTypeFor(feed FeedInfo) string {
 }
 
 // buildAttrs builds the torznab:attr block in Jackett's exact order: category
-// attrs, then external ids, then the additive name attrs, then media fields,
-// then (torrent only) torrent stats/factors. A usenet feed suppresses the
-// torrent block: seeders/peers and
+// attrs, then external ids, then the additive name and tag attrs, then media
+// fields, then (torrent only) torrent stats/factors. A usenet feed suppresses
+// the torrent block: seeders/peers and
 // the volume factors are meaningless there and *arr reads their presence as a
-// torrent signal. Category/external-id/name/media attrs are protocol-agnostic.
+// torrent signal. Category/external-id/name/tag/media attrs are protocol-agnostic.
 func buildAttrs(feed FeedInfo, r *normalizer.Release) []torznabAttr {
 	attrs := make([]torznabAttr, 0, 16)
 	for _, c := range r.Categories {
@@ -327,6 +328,7 @@ func buildAttrs(feed FeedInfo, r *normalizer.Release) []torznabAttr {
 	}
 	attrs = appendExternalIDAttrs(attrs, r)
 	attrs = appendNameAttrs(attrs, r)
+	attrs = appendTagAttrs(attrs, r)
 	attrs = appendMediaAttrs(attrs, r)
 	if feed.Protocol != ProtocolUsenet {
 		attrs = appendTorrentAttrs(attrs, r)
@@ -362,6 +364,20 @@ func appendNameAttrs(attrs []torznabAttr, r *normalizer.Release) []torznabAttr {
 		if a.value != "" && a.value != r.Title {
 			attrs = appendAttr(attrs, a.name, sanitizeXMLText(a.value))
 		}
+	}
+	return attrs
+}
+
+// appendTagAttrs emits Torznab's repeated tag attr, one per tracker-supplied
+// flag. The values are sorted and de-duplicated so the same release always
+// serializes identically. Only tags a driver positively read off the source ever
+// reach here, so an absent tag is silence, not a false — nothing is synthesized
+// for a release that carries none.
+func appendTagAttrs(attrs []torznabAttr, r *normalizer.Release) []torznabAttr {
+	tags := slices.Clone(r.Tags)
+	slices.Sort(tags)
+	for _, tag := range slices.Compact(tags) {
+		attrs = appendStringAttr(attrs, "tag", sanitizeXMLText(tag))
 	}
 	return attrs
 }

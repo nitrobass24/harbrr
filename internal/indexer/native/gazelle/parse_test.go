@@ -67,6 +67,7 @@ func TestParseBrowseMusicGolden(t *testing.T) {
 		},
 		{
 			Title:      "Logistics - Fear Not (2012) [Album] [MP3 320 / WEB]",
+			Tags:       []string{normalizer.TagScene}, // "scene": true (the other two are false -> no Tags)
 			Link:       "https://redacted.sh/ajax.php?action=download&id=29991963",
 			Artist:     "Logistics",
 			Album:      "Fear Not",
@@ -150,7 +151,8 @@ func TestParseBrowseNonMusic(t *testing.T) {
 	}
 
 	// Releases are sorted by PublishDate descending, so the 2024 "Fresh Upload" sorts
-	// before the 2019 audiobook.
+	// before the 2019 audiobook. Neither carries Tags: a NON-MUSIC group row has no
+	// scene field at all, so its silence is "unknown", never "not scene".
 	want := []*normalizer.Release{
 		{
 			Title:      "Fresh Upload",

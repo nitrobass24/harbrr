@@ -129,7 +129,7 @@ func (d *driver) flattenMovie(m *ptpMovie) []*normalizer.Release {
 func (d *driver) toRelease(m *ptpMovie, t *ptpTorrent) *normalizer.Release {
 	seeders := t.Seeders.Int64()
 	leechers := t.Leechers.Int64()
-	return &normalizer.Release{
+	rel := &normalizer.Release{
 		Title:                t.ReleaseName,
 		Link:                 d.downloadLink(t.ID.Int64()),
 		Details:              d.infoURL(m.GroupID, t.ID.Int64()),
@@ -149,6 +149,13 @@ func (d *driver) toRelease(m *ptpMovie, t *ptpTorrent) *normalizer.Release {
 		MinimumRatio:         minimumRatio,
 		MinimumSeedTime:      minSeedTime,
 	}
+	// Only Scene ships: PTP's Checked/GoldenPopcorn flags are site-specific quality
+	// badges with no equivalent anywhere else, so they would need a namespaced
+	// vocabulary rather than a bare tag.
+	if t.Scene {
+		rel.Tags = []string{normalizer.TagScene}
+	}
+	return rel
 }
 
 // downloadLink builds the secret-free PTP download URL. The torrent id is the only

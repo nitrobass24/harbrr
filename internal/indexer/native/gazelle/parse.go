@@ -193,6 +193,11 @@ func (d *driver) musicRelease(g *group, t *torrent) *normalizer.Release {
 		DownloadVolumeFactor: volumeFactor(free),
 		UploadVolumeFactor:   d.uploadVolumeFactor(t.IsNeutralLeech, t.IsFreeload),
 	}
+	// Only music torrents carry a scene flag — nonMusicRelease has no equivalent
+	// field, so a non-music release stays untagged rather than tagged "not scene".
+	if t.Scene {
+		release.Tags = []string{normalizer.TagScene}
+	}
 	d.applyProfile(release, g.GroupID.Int64(), t.TorrentID.Int64(), 0, g.Tags)
 	return release
 }
