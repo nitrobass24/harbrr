@@ -92,10 +92,20 @@ captured from a live MAM. The live Prowlarr differential and a real search/grab 
   matching that prefix is treated as zero results (matching Prowlarr); any *other*
   non-empty `Error`, a missing `data` array, or a malformed body is a parse error.
 - **Explicit download URL** — `[Deliberate]`. The `.torrent` URL is built explicitly as
-  `{base}tor/download.php/{dl}?tid={id}` (Prowlarr's approach) rather than trusting an
-  API-returned link — deterministic and immune to a redacted field. (Prowlarr appends
+  `{base}tor/download.php?tid={id}` rather than trusting an API-returned link —
+  deterministic and immune to a redacted field. Prowlarr's personalized hash-in-path
+  form (`{base}tor/download.php/{dl}?tid={id}`) is **not** used: the query form is
+  authenticated by the `mam_id` cookie the grab always sends, so the row's `dl` hash is
+  unused, and MAM serves this form to a browser session (operator-verified 2026-08-11 —
+  the 406 refusals were not the URL form). (Prowlarr appends
   `&fl=1` when the UseFreeleechWedge setting is on and the row is not already freeleech;
   harbrr does not expose that setting, so it is omitted.)
+- **Download client identity** — `[Deliberate]`. The download request (and only it —
+  search works untouched) sends `Accept: */*` and `User-Agent: harbrr/<version>`.
+  Both URL forms 406'd while the same session's searches succeeded, and the one thing
+  that differed was the client shape: the download declared no `Accept` and rode Go's
+  default `Go-http-client/1.1`, which a path-scoped content-negotiation filter fits.
+  harbrr identifies itself honestly rather than impersonating a browser.
 - **No infohash** — `[Accepted]`. MAM returns no infohash (the download is always an
   authenticated `.torrent` URL), so `InfoHash` is empty and the served feed routes the
   download through `/dl` (`NeedsResolver=true`).

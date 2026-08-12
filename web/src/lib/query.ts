@@ -79,6 +79,7 @@ export const keys = {
     list: () => ["indexers"] as const,
     detail: (slug: string) => ["indexers", slug] as const,
     status: (slug: string) => ["indexers", slug, "status"] as const,
+    diagnostics: (slug: string) => ["indexers", slug, "diagnostics"] as const,
     capabilities: (slug: string) => ["indexers", slug, "capabilities"] as const,
     stats: (slug: string) => ["indexers", slug, "stats"] as const,
     crossseedSnippet: (slug: string | null) => ["indexers", slug, "crossseed-snippet"] as const,

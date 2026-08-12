@@ -66,7 +66,7 @@ const (
 //
 // ponytail: no eviction on instance delete. An entry is one int64 + one time.Time and
 // the only consequence of a stale one is that an instance re-added onto a recycled row
-// id waits out the backoff once. Add a forget() to the invalidator seam if that ever
+// id waits out the backoff once. Add a forget() to the instanceForgetter seam if that ever
 // matters.
 type failoverGate struct {
 	mu   sync.Mutex

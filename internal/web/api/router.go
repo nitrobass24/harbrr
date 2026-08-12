@@ -215,6 +215,7 @@ func (rt *router) routes() http.Handler {
 			r.Post("/api/indexers/{slug}/disable", rt.disableIndexer)
 			r.Post("/api/indexers/{slug}/test", rt.testIndexer)
 			r.Get("/api/indexers/{slug}/status", rt.indexerStatus)
+			r.Get("/api/indexers/{slug}/diagnostics", rt.indexerDiagnostics)
 			r.Get("/api/indexers/{slug}/stats", rt.indexerStats)
 			r.Get("/api/indexers/{slug}/search", rt.searchIndexer)
 			// Session-authed download of a search result (the web UI's cookie-auth sibling

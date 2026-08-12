@@ -401,6 +401,68 @@ func (rt *router) indexerStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toStatusResponse(st))
 }
 
+// diagnosticSelectorMiss names the definition node a parse failure was pinned to:
+// the rows selector that matched nothing, or the first field selector that missed
+// inside a row that did match. Omitted when the failure could not be attributed.
+type diagnosticSelectorMiss struct {
+	Kind     string `json:"kind"`
+	Selector string `json:"selector,omitempty"`
+	Path     string `json:"path,omitempty"`
+}
+
+// diagnosticCapture is one entry of GET /api/indexers/{slug}/diagnostics: a
+// recent failed fetch, already redacted by the engine before it was retained
+// (secret query params and path tokens masked, credential headers dropped,
+// body scrubbed and capped).
+type diagnosticCapture struct {
+	Kind          string                  `json:"kind"`
+	OccurredAt    time.Time               `json:"occurred_at"`
+	Method        string                  `json:"method,omitempty"`
+	URL           string                  `json:"url,omitempty"`
+	Status        int                     `json:"status,omitempty"`
+	Headers       map[string]string       `json:"headers,omitempty"`
+	Body          string                  `json:"body,omitempty"`
+	BodyTruncated bool                    `json:"bodyTruncated,omitempty"`
+	SelectorMiss  *diagnosticSelectorMiss `json:"selectorMiss,omitempty"`
+}
+
+// diagnosticsResponse is the JSON body of GET /api/indexers/{slug}/diagnostics:
+// the memory-only ring of recent failed fetches, newest first.
+type diagnosticsResponse struct {
+	Slug     string              `json:"slug"`
+	Captures []diagnosticCapture `json:"captures"`
+}
+
+// indexerDiagnostics returns the indexer's recent captured failed fetches. An
+// unknown slug is a 404. The captures are memory-only and were redacted at
+// capture time, so nothing here is persisted and no credential is surfaced.
+func (rt *router) indexerDiagnostics(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+	captures, err := rt.registry.Diagnostics(r.Context(), slug)
+	if err != nil {
+		rt.writeServiceError(w, "indexer diagnostics", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toDiagnosticsResponse(slug, captures))
+}
+
+// toDiagnosticsResponse maps the registry's captures to their API view.
+func toDiagnosticsResponse(slug string, captures []registry.FailureCapture) diagnosticsResponse {
+	out := diagnosticsResponse{Slug: slug, Captures: make([]diagnosticCapture, 0, len(captures))}
+	for _, c := range captures {
+		entry := diagnosticCapture{
+			Kind: c.Kind, OccurredAt: c.OccurredAt,
+			Method: c.Capture.Method, URL: c.Capture.URL, Status: c.Capture.Status,
+			Headers: c.Capture.Headers, Body: c.Capture.Body, BodyTruncated: c.Capture.BodyTruncated,
+		}
+		if m := c.Capture.Miss; m.Kind != "" {
+			entry.SelectorMiss = &diagnosticSelectorMiss{Kind: m.Kind, Selector: m.Selector, Path: m.Path}
+		}
+		out.Captures = append(out.Captures, entry)
+	}
+	return out
+}
+
 // toStatusResponse maps the registry's health status to its API view.
 func toStatusResponse(st registry.HealthStatus) statusResponse {
 	events := make([]statusEvent, 0, len(st.Events))

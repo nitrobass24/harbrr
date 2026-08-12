@@ -3,9 +3,9 @@ import { Fragment } from "react"
 import { BudgetMeter } from "@/components/indexers/BudgetMeter"
 import { HealthCell, healthDetail, reasonLabel } from "@/components/indexers/HealthCell"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
-import { useIndexerCapabilities, useIndexerStats, useIndexerStatuses } from "@/hooks/useIndexers"
+import { useIndexerCapabilities, useIndexerDiagnostics, useIndexerStats, useIndexerStatuses } from "@/hooks/useIndexers"
 import { relativeTime } from "@/lib/format"
-import type { Capabilities, IndexerFailureCounts, IndexerStats, IndexerStatus } from "@/lib/api"
+import type { Capabilities, DiagnosticCapture, IndexerFailureCounts, IndexerStats, IndexerStatus } from "@/lib/api"
 
 // "200 · 40 failed (83%)": grabs alongside the failed attempts and the success rate, the
 // number that exposes a tracker which surfaces results reliably but fails on download.
@@ -60,6 +60,7 @@ function Details({ slug }: { slug: string }) {
   const [status] = useIndexerStatuses([slug])
   const stats = useIndexerStats(slug)
   const caps = useIndexerCapabilities(slug)
+  const diagnostics = useIndexerDiagnostics(slug)
 
   return (
     <>
@@ -114,6 +115,17 @@ function Details({ slug }: { slug: string }) {
         </section>
 
         <section>
+          <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-faint">Diagnostics</h3>
+          {diagnostics.data?.captures.length ? (
+            <ul className="flex flex-col gap-1.5">
+              {diagnostics.data.captures.map((c, i) => <CaptureEntry key={i} capture={c} />)}
+            </ul>
+          ) : (
+            <p className="text-muted-foreground">No captured failures.</p>
+          )}
+        </section>
+
+        <section>
           <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-faint">Capabilities</h3>
           {caps.data ? <CapsSummary caps={caps.data} /> : <p className="text-muted-foreground">Loading…</p>}
         </section>
@@ -138,6 +150,54 @@ function HealthDetail({ status }: { status: IndexerStatus | undefined }) {
         </Fragment>
       ))}
     </dl>
+  )
+}
+
+// The one line that separates the two failures operators keep conflating: the page
+// shape drifted (nothing matched the rows selector) versus a column drifted (a row
+// matched but a field inside it did not). Both name the definition node to fix.
+function missLine(miss: DiagnosticCapture["selectorMiss"]): string | null {
+  if (!miss) return null
+  const what = miss.kind === "no_rows" ? "No rows matched" : "Rows matched, field missed"
+  return `${what} — ${miss.selector || "(no selector)"} at ${miss.path ?? "?"}`
+}
+
+// One captured failed fetch: the headline an operator scans, expandable to the
+// redacted request/response harbrr already held. Native <details> — the disclosure
+// widget the platform ships, no state and no dependency.
+function CaptureEntry({ capture }: { capture: DiagnosticCapture }) {
+  const miss = missLine(capture.selectorMiss)
+  return (
+    <li>
+      <details className="rounded border border-border/60 px-2 py-1.5">
+        <summary className="cursor-pointer">
+          <span className="text-bad">{reasonLabel(capture.kind)}</span>
+          {capture.status ? <span className="ml-2 text-muted-foreground">HTTP {capture.status}</span> : null}
+          <span className="ml-2 text-[12px] text-faint">{relativeTime(capture.occurred_at)}</span>
+        </summary>
+        <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
+          <dt className="text-muted-foreground">Request</dt>
+          <dd className="break-all">{capture.method} {capture.url}</dd>
+          {miss ? (
+            <>
+              <dt className="text-muted-foreground">Selector</dt>
+              <dd className="break-all">{miss}</dd>
+            </>
+          ) : null}
+          {Object.entries(capture.headers ?? {}).sort(([a], [b]) => a.localeCompare(b)).map(([name, value]) => (
+            <Fragment key={name}>
+              <dt className="text-muted-foreground">{name}</dt>
+              <dd className="break-all">{value}</dd>
+            </Fragment>
+          ))}
+        </dl>
+        {capture.body ? (
+          <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded bg-muted/40 p-2 text-[12px]">
+            {capture.body}{capture.bodyTruncated ? "\n… truncated at 64 KiB" : ""}
+          </pre>
+        ) : null}
+      </details>
+    </li>
   )
 }
 

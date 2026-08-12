@@ -46,7 +46,6 @@ type mamRelease struct {
 	Free              mamFlexBool   `json:"free"`
 	PersonalFreeleech mamFlexBool   `json:"personal_freeleech"`
 	FlVIP             mamFlexBool   `json:"fl_vip"`
-	DL                string        `json:"dl"`
 }
 
 // mamFlexString unmarshals a JSON string OR number into a string. MAM's category
@@ -163,12 +162,13 @@ func (d *driver) toRelease(row *mamRelease) (*normalizer.Release, error) {
 	return rel, nil
 }
 
-// downloadURL builds the .torrent URL explicitly (Prowlarr's approach) from the dl
-// hash and the row id: {base}tor/download.php/{dl}?tid={id}. Building it explicitly
-// (rather than trusting an API link) keeps it deterministic and immune to a redacted
-// field.
+// downloadURL builds the .torrent URL explicitly from the row id:
+// {base}tor/download.php?tid={id}. MAM rejects the personalized hash-in-path form
+// ({base}tor/download.php/{dl}?tid={id}) with a 406; the query form is authenticated
+// by the mam_id cookie, which the grab always sends (newRequest), so the row's `dl`
+// hash — which only exists to make a link fetchable without the cookie — is unused.
 func (d *driver) downloadURL(row *mamRelease) string {
-	return d.BaseURL + "tor/download.php/" + row.DL + "?tid=" + strconv.FormatInt(row.ID, 10)
+	return d.BaseURL + "tor/download.php?tid=" + strconv.FormatInt(row.ID, 10)
 }
 
 // detailsURL is the torrent info page: {base}t/{id}.

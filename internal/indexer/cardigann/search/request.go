@@ -558,6 +558,10 @@ type searchResponse struct {
 	// selector check on it exactly as Jackett does — only a text/html response
 	// runs the check — so it must be the WIRE header, not the def's declared type.
 	contentType string
+	// header is the response's full header set, retained ONLY so a classified
+	// parse failure can carry a REDACTED copy into its diagnostic capture (see
+	// capture.go). Nothing in the parse path reads it.
+	header stdhttp.Header
 }
 
 // doSearchRequest issues one search-path request. It stamps the context so the
@@ -589,6 +593,7 @@ func doSearchRequest(ctx context.Context, doer Doer, br builtRequest, session *l
 		location:    redirectTarget(resp, br.url),
 		body:        data,
 		contentType: resp.Header.Get("Content-Type"),
+		header:      resp.Header,
 	}, nil
 }
 

@@ -31,6 +31,16 @@ export function useIndexerStatuses(slugs: string[]) {
   })
 }
 
+// Recent captured failed fetches for one indexer (autobrr/harbrr#390). Memory-only
+// server-side, so it is refetched on the same cadence as the status it explains.
+export function useIndexerDiagnostics(slug: string) {
+  return useQuery({
+    queryKey: keys.indexers.diagnostics(slug),
+    queryFn: () => api.getIndexerDiagnostics(slug),
+    refetchInterval: 30_000,
+  })
+}
+
 export function useIndexerCapabilities(slug: string) {
   return useQuery({
     queryKey: keys.indexers.capabilities(slug),
