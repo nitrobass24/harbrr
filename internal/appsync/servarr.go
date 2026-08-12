@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/autobrr/harbrr/internal/domain"
 	apphttp "github.com/autobrr/harbrr/internal/http"
 )
 
@@ -79,16 +80,38 @@ type servarrDriver struct {
 
 var _ Target = (*servarrDriver)(nil)
 
-// newServarr builds a Servarr driver. apiKey is the *app's* key (to authenticate to
-// it); the harbrr feed key travels inside each pushed indexer body. indexerPath is the
-// app's indexer REST path (servarrIndexerPathV3 or servarrIndexerPathV1).
-func newServarr(kind, baseURL, apiKey string, client *http.Client, anime bool, indexerPath string) *servarrDriver {
+// servarrSpecs is the Servarr family. All five apps drive the same REST contract and
+// the same buildIndexer; they differ only in whether they carry anime categories and
+// which API version serves the indexer path. That is two bits per app, so it is a
+// table rather than five one-function constructors behind a five-arm switch.
+var servarrSpecs = map[string]struct {
+	anime bool
+	path  string
+}{
+	domain.AppKindSonarr:   {true, servarrIndexerPathV3},
+	domain.AppKindRadarr:   {false, servarrIndexerPathV3},
+	domain.AppKindWhisparr: {false, servarrIndexerPathV3},
+	domain.AppKindLidarr:   {false, servarrIndexerPathV1},
+	domain.AppKindReadarr:  {false, servarrIndexerPathV1},
+}
+
+// NewServarr builds a Target for one of the Servarr-family apps (Sonarr, Radarr,
+// Lidarr, Readarr, Whisparr). baseURL is the app's own origin (e.g. http://sonarr:8989)
+// and apiKey is the *app's* key, used to authenticate to it; the harbrr feed key
+// travels inside each pushed indexer body, not here. It returns nil for any kind
+// outside the family — the only caller that can pass one is newDriver, which turns
+// that into domain.ErrInvalid.
+func NewServarr(kind, baseURL, apiKey string, client *http.Client) Target {
+	spec, ok := servarrSpecs[kind]
+	if !ok {
+		return nil
+	}
 	if client == nil {
 		client = defaultHTTPClient()
 	}
 	return &servarrDriver{
 		kind: kind, baseURL: strings.TrimRight(baseURL, "/"),
-		apiKey: apiKey, client: client, anime: anime, indexerPath: indexerPath,
+		apiKey: apiKey, client: client, anime: spec.anime, indexerPath: spec.path,
 	}
 }
 

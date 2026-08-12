@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/autobrr/harbrr/internal/domain"
 )
 
 var update = flag.Bool("update", false, "regenerate golden files")
@@ -116,7 +118,7 @@ func TestServarrLifecycle(t *testing.T) {
 	t.Cleanup(srv.Close)
 	ctx := context.Background()
 
-	drv := NewSonarr(srv.URL, "app-key-123", srv.Client())
+	drv := NewServarr(domain.AppKindSonarr, srv.URL, "app-key-123", srv.Client())
 
 	// Create.
 	id, err := drv.Create(ctx, desired("show-tracker", true))
@@ -181,7 +183,7 @@ func TestServarrForceSave(t *testing.T) {
 	srv := httptest.NewServer(stub.handler("/api/v3/indexer"))
 	t.Cleanup(srv.Close)
 	ctx := context.Background()
-	drv := NewSonarr(srv.URL, "app-key-123", srv.Client())
+	drv := NewServarr(domain.AppKindSonarr, srv.URL, "app-key-123", srv.Client())
 
 	id, err := drv.Create(ctx, desired("show-tracker", true))
 	if err != nil {
@@ -212,7 +214,7 @@ func TestServarrSurfacesRedactedReason(t *testing.T) {
 	}}
 	srv := httptest.NewServer(stub.handler("/api/v3/indexer"))
 	t.Cleanup(srv.Close)
-	drv := NewSonarr(srv.URL, "app-key-123", srv.Client())
+	drv := NewServarr(domain.AppKindSonarr, srv.URL, "app-key-123", srv.Client())
 
 	_, err := drv.Create(context.Background(), desired("show-tracker", true))
 	if err == nil {
@@ -230,43 +232,81 @@ func TestServarrSurfacesRedactedReason(t *testing.T) {
 	}
 }
 
-func TestSonarrBuildIndexerGolden(t *testing.T) {
+// TestServarrBuildIndexerGolden freezes each family member's create body, the usenet
+// (Newznab) variant where one is frozen, and whether the app carries animeCategories —
+// the family's only behavioral difference. One table in place of the four per-kind test
+// files it folded in.
+func TestServarrBuildIndexerGolden(t *testing.T) {
 	t.Parallel()
-	drv := asServarr(t, NewSonarr("http://sonarr:8989", "app-key", nil))
-	d := DesiredIndexer{
-		Slug: "anime-tracker", Name: "Anime Tracker", Priority: 25, Enabled: true,
-		EnableRss: true, EnableAutomaticSearch: true, EnableInteractiveSearch: true,
-		FeedURL:    "http://harbrr:8787/api/indexers/anime-tracker/results/torznab",
-		APIKey:     "harbrr-feed-key",
-		Categories: []Category{{5000, "TV"}, {5040, "TV/HD"}, {5070, "TV/Anime"}, {2000, "Movies"}},
+	tests := []struct {
+		kind   string
+		slug   string
+		name   string
+		cats   []Category
+		anime  bool
+		usenet bool // the kind also has a frozen usenet golden
+	}{
+		{
+			kind: domain.AppKindSonarr, slug: "anime-tracker", name: "Anime Tracker",
+			cats:  []Category{{5000, "TV"}, {5040, "TV/HD"}, {5070, "TV/Anime"}, {2000, "Movies"}},
+			anime: true, usenet: true,
+		},
+		{
+			kind: domain.AppKindRadarr, slug: "movie-tracker", name: "Movie Tracker",
+			cats: []Category{{2000, "Movies"}, {2040, "Movies/HD"}, {2060, "Movies/3D"}},
+		},
+		{
+			kind: domain.AppKindLidarr, slug: "music-tracker", name: "Music Tracker",
+			cats:   []Category{{3000, "Audio"}, {3010, "Audio/MP3"}, {3040, "Audio/Lossless"}},
+			usenet: true,
+		},
+		{
+			kind: domain.AppKindReadarr, slug: "book-tracker", name: "Book Tracker",
+			cats:   []Category{{7000, "Books"}, {7020, "Books/EBook"}, {8010, "Books/Comics"}},
+			usenet: true,
+		},
+		{
+			kind: domain.AppKindWhisparr, slug: "xxx-tracker", name: "XXX Tracker",
+			cats:   []Category{{6000, "XXX"}, {6010, "XXX/DVD"}, {6040, "XXX/x264"}},
+			usenet: true,
+		},
 	}
-	assertGolden(t, "sonarr_create.golden.json", drv.buildIndexer(d))
-}
 
-func TestSonarrBuildIndexerUsenetGolden(t *testing.T) {
-	t.Parallel()
-	drv := asServarr(t, NewSonarr("http://sonarr:8989", "app-key", nil))
-	d := DesiredIndexer{
-		Slug: "anime-tracker", Name: "Anime Tracker", Priority: 25, Enabled: true,
-		EnableRss: true, EnableAutomaticSearch: true, EnableInteractiveSearch: true,
-		FeedURL:    "http://harbrr:8787/api/indexers/anime-tracker/results/torznab",
-		APIKey:     "harbrr-feed-key",
-		Categories: []Category{{5000, "TV"}, {5040, "TV/HD"}, {5070, "TV/Anime"}, {2000, "Movies"}},
-		Protocol:   "usenet",
+	for _, tt := range tests {
+		t.Run(tt.kind, func(t *testing.T) {
+			t.Parallel()
+			drv := asServarr(t, NewServarr(tt.kind, "http://"+tt.kind+":8989", "app-key", nil))
+			d := DesiredIndexer{
+				Slug: tt.slug, Name: tt.name, Priority: 25, Enabled: true,
+				EnableRss: true, EnableAutomaticSearch: true, EnableInteractiveSearch: true,
+				FeedURL:    "http://harbrr:8787/api/indexers/" + tt.slug + "/results/torznab",
+				APIKey:     "harbrr-feed-key",
+				Categories: tt.cats,
+			}
+			assertGolden(t, tt.kind+"_create.golden.json", drv.buildIndexer(d))
+
+			if got := hasField(drv.buildIndexer(desired("a", true)).Fields, "animeCategories"); got != tt.anime {
+				t.Errorf("animeCategories present = %v, want %v", got, tt.anime)
+			}
+			if !tt.usenet {
+				return
+			}
+			// Only the four header fields flip for usenet; fields[] stays identical to torrent.
+			d.Protocol = "usenet"
+			got := drv.buildIndexer(d)
+			if got.Implementation != "Newznab" || got.ImplementationName != "Newznab" ||
+				got.ConfigContract != "NewznabSettings" || got.Protocol != "usenet" {
+				t.Errorf("usenet header wrong: impl=%q implName=%q cfg=%q proto=%q",
+					got.Implementation, got.ImplementationName, got.ConfigContract, got.Protocol)
+			}
+			assertGolden(t, tt.kind+"_create_usenet.golden.json", got)
+		})
 	}
-	got := drv.buildIndexer(d)
-	// Only the four header fields flip for usenet; fields[] stays identical to torrent.
-	if got.Implementation != "Newznab" || got.ImplementationName != "Newznab" ||
-		got.ConfigContract != "NewznabSettings" || got.Protocol != "usenet" {
-		t.Errorf("usenet header wrong: impl=%q implName=%q cfg=%q proto=%q",
-			got.Implementation, got.ImplementationName, got.ConfigContract, got.Protocol)
-	}
-	assertGolden(t, "sonarr_create_usenet.golden.json", got)
 }
 
 func TestServarrBuildIndexerTorrentUnchanged(t *testing.T) {
 	t.Parallel()
-	drv := asServarr(t, NewRadarr("http://radarr:7878", "app-key", nil))
+	drv := asServarr(t, NewServarr(domain.AppKindRadarr, "http://radarr:7878", "app-key", nil))
 	// Empty Protocol and explicit "torrent" both yield the unchanged Torznab body.
 	for _, proto := range []string{"", "torrent"} {
 		got := drv.buildIndexer(DesiredIndexer{Slug: "s", Name: "s", Protocol: proto})
@@ -282,7 +322,7 @@ func TestServarrBuildIndexerTorrentUnchanged(t *testing.T) {
 // torrent indexer.
 func TestSonarrBuildIndexerProfileGolden(t *testing.T) {
 	t.Parallel()
-	drv := asServarr(t, NewSonarr("http://sonarr:8989", "app-key", nil))
+	drv := asServarr(t, NewServarr(domain.AppKindSonarr, "http://sonarr:8989", "app-key", nil))
 	d := DesiredIndexer{
 		Slug: "anime-tracker", Name: "Anime Tracker", Priority: 25, Enabled: true,
 		EnableRss: false, EnableAutomaticSearch: true, EnableInteractiveSearch: false,
@@ -299,7 +339,7 @@ func TestSonarrBuildIndexerProfileGolden(t *testing.T) {
 // when unset (0 = the app default).
 func TestServarrMinSeedersTorrentOnly(t *testing.T) {
 	t.Parallel()
-	drv := asServarr(t, NewRadarr("http://radarr:7878", "k", nil))
+	drv := asServarr(t, NewServarr(domain.AppKindRadarr, "http://radarr:7878", "k", nil))
 	base := DesiredIndexer{Slug: "s", Name: "s", MinSeeders: 7, Categories: []Category{{2000, "Movies"}}}
 
 	if got := fieldInt(drv.buildIndexer(base).Fields, "minimumSeeders"); got != 7 {
@@ -348,7 +388,7 @@ func TestServarrListRecognizesNewznab(t *testing.T) {
 	t.Cleanup(srv.Close)
 	ctx := context.Background()
 
-	drv := NewSonarr(srv.URL, "app-key", srv.Client())
+	drv := NewServarr(domain.AppKindSonarr, srv.URL, "app-key", srv.Client())
 	// Push a usenet (Newznab) indexer, then confirm List tags it harbrr-managed — a
 	// missing Newznab case here would orphan it on the next full sync.
 	if _, err := drv.Create(ctx, DesiredIndexer{
@@ -364,6 +404,64 @@ func TestServarrListRecognizesNewznab(t *testing.T) {
 	}
 	if len(remote) != 1 || remote[0].ManagedBySlug != "usenet-tracker" {
 		t.Fatalf("List = %+v, want one managed Newznab row slug=usenet-tracker", remote)
+	}
+}
+
+// TestServarrLifecycleV1 is the only test that proves the /api/v1 path wiring: a Lidarr
+// driver must drive Create/List/Update/Test/Delete against the v1 stub routes (the v3
+// half is covered by the Sonarr lifecycle test above).
+func TestServarrLifecycleV1(t *testing.T) {
+	t.Parallel()
+	stub := newServarrStub(t)
+	srv := httptest.NewServer(stub.handler("/api/v1/indexer"))
+	t.Cleanup(srv.Close)
+	ctx := context.Background()
+
+	drv := NewServarr(domain.AppKindLidarr, srv.URL, "app-key-123", srv.Client())
+
+	id, err := drv.Create(ctx, desired("music-tracker", true))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if id != "1" {
+		t.Fatalf("Create id = %q, want 1", id)
+	}
+	if stub.lastAuth != "app-key-123" {
+		t.Errorf("X-Api-Key = %q, want app-key-123", stub.lastAuth)
+	}
+
+	remote, err := drv.List(ctx)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(remote) != 1 || remote[0].ManagedBySlug != "music-tracker" || remote[0].RemoteID != "1" {
+		t.Fatalf("List = %+v, want one managed row slug=music-tracker id=1", remote)
+	}
+
+	if err := drv.Update(ctx, "1", desired("music-tracker", false)); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	var sent servarrIndexer
+	if err := json.Unmarshal(stub.lastBody, &sent); err != nil {
+		t.Fatalf("decode update body: %v", err)
+	}
+	if sent.ID != 1 || sent.EnableRss {
+		t.Errorf("Update body id=%d enableRss=%v, want id=1 disabled", sent.ID, sent.EnableRss)
+	}
+
+	if err := drv.Test(ctx, desired("music-tracker", true)); err != nil {
+		t.Fatalf("Test: %v", err)
+	}
+
+	if err := drv.Delete(ctx, "1"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	remote, err = drv.List(ctx)
+	if err != nil {
+		t.Fatalf("List after Delete: %v", err)
+	}
+	if len(remote) != 0 {
+		t.Errorf("indexer survived Delete: %+v", remote)
 	}
 }
 

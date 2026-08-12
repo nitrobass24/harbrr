@@ -171,10 +171,10 @@ func configuredApps(cfg Config) []appTarget {
 	client := &http.Client{Timeout: httpTimeout}
 	var apps []appTarget
 	if cfg.SonarrURL != "" && cfg.SonarrKey != "" {
-		apps = append(apps, appTarget{kind: domain.AppKindSonarr, label: "sonarr", target: appsync.NewSonarr(cfg.SonarrURL, cfg.SonarrKey, client)})
+		apps = append(apps, appTarget{kind: domain.AppKindSonarr, label: "sonarr", target: appsync.NewServarr(domain.AppKindSonarr, cfg.SonarrURL, cfg.SonarrKey, client)})
 	}
 	if cfg.RadarrURL != "" && cfg.RadarrKey != "" {
-		apps = append(apps, appTarget{kind: domain.AppKindRadarr, label: "radarr", target: appsync.NewRadarr(cfg.RadarrURL, cfg.RadarrKey, client)})
+		apps = append(apps, appTarget{kind: domain.AppKindRadarr, label: "radarr", target: appsync.NewServarr(domain.AppKindRadarr, cfg.RadarrURL, cfg.RadarrKey, client)})
 	}
 	if cfg.QuiURL != "" && cfg.QuiKey != "" {
 		apps = append(apps, appTarget{kind: domain.AppKindQui, label: "qui", target: appsync.NewQui(cfg.QuiURL, cfg.QuiKey, client)})
