@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/autobrr/harbrr/internal/domain"
+	apphttp "github.com/autobrr/harbrr/internal/http"
 )
 
 // maxTorrentBytes caps a fetched .torrent so a hostile/oversized /dl response can't exhaust
@@ -45,11 +46,11 @@ func HTTPTorrentFetcher(client *http.Client) TorrentFetcher {
 	return func(ctx context.Context, downloadURL string) ([]byte, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
 		if err != nil {
-			return nil, fmt.Errorf("build /dl request: %w", scrubURLError(err))
+			return nil, fmt.Errorf("build /dl request: %w", apphttp.ScrubURLError(err))
 		}
 		resp, err := client.Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("fetch /dl: %w", scrubURLError(err))
+			return nil, fmt.Errorf("fetch /dl: %w", apphttp.ScrubURLError(err))
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {

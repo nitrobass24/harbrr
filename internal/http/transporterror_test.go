@@ -77,6 +77,67 @@ func TestSafeTransportDetail(t *testing.T) {
 	}
 }
 
+// TestScrubURLError proves a *url.Error's URL — which can carry an apikey/passkey in
+// the query or userinfo credentials from a user-supplied base URL — never survives
+// into the scrubbed error, while the operation and underlying cause remain; a non-URL
+// error passes through unchanged. Consolidated from the announce and appsync copies.
+func TestScrubURLError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		err        error
+		wantHas    []string
+		wantNoLeak []string
+	}{
+		{
+			name: "query apikey and passkey are dropped with the whole URL",
+			err: &url.Error{
+				Op:  "Post",
+				URL: "http://harbrr:8787/api/indexers/tt/dl?apikey=feedsecret&passkey=NOTREALSECRET",
+				Err: errors.New("dial tcp: connection refused"),
+			},
+			wantHas:    []string{"Post", "connection refused"},
+			wantNoLeak: []string{"feedsecret", "NOTREALSECRET", "harbrr:8787"},
+		},
+		{
+			name: "userinfo credentials in an app base URL are dropped",
+			err: &url.Error{
+				Op:  "Get",
+				URL: "http://admin:sup3rsecret@sonarr:8989/api/v3/indexer",
+				Err: errors.New("dial tcp: connection refused"),
+			},
+			wantHas:    []string{"Get", "connection refused"},
+			wantNoLeak: []string{"sup3rsecret", "admin", "sonarr:8989"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := ScrubURLError(tt.err).Error()
+			for _, want := range tt.wantHas {
+				if !strings.Contains(got, want) {
+					t.Errorf("scrubbed error %q missing %q", got, want)
+				}
+			}
+			for _, leak := range tt.wantNoLeak {
+				if strings.Contains(got, leak) {
+					t.Errorf("scrubbed error %q leaked %q", got, leak)
+				}
+			}
+		})
+	}
+
+	t.Run("non-url error passes through unchanged", func(t *testing.T) {
+		t.Parallel()
+		plain := errors.New("boom")
+		if got := ScrubURLError(plain); !errors.Is(got, plain) {
+			t.Errorf("ScrubURLError altered a non-URL error: %v", got)
+		}
+	})
+}
+
 func TestRedactURLError(t *testing.T) {
 	t.Parallel()
 

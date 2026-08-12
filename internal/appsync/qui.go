@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	apphttp "github.com/autobrr/harbrr/internal/http"
 )
 
 // autobrr/qui registers Torznab endpoints as "native" indexers it searches. Its
@@ -140,7 +142,7 @@ func (q *quiDriver) do(ctx context.Context, method, path string, body, out any) 
 	}
 	req, err := http.NewRequestWithContext(ctx, method, q.baseURL+path, reader)
 	if err != nil {
-		return 0, fmt.Errorf("appsync: qui: build request: %w", scrubURLError(err))
+		return 0, fmt.Errorf("appsync: qui: build request: %w", apphttp.ScrubURLError(err))
 	}
 	req.Header.Set("X-API-Key", q.apiKey)
 	if body != nil {
@@ -148,7 +150,7 @@ func (q *quiDriver) do(ctx context.Context, method, path string, body, out any) 
 	}
 	resp, err := q.client.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("appsync: qui: %s %s: %w", method, path, scrubURLError(err))
+		return 0, fmt.Errorf("appsync: qui: %s %s: %w", method, path, apphttp.ScrubURLError(err))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

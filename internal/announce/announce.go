@@ -11,12 +11,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"time"
+
+	apphttp "github.com/autobrr/harbrr/internal/http"
 )
 
 // httpClientTimeout bounds a single push so an unresponsive cross-seed tool cannot hang
@@ -99,7 +99,7 @@ func (p *poster) post(ctx context.Context, path string, body, out any) (int, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+path, bytes.NewReader(payload))
 	if err != nil {
-		return 0, fmt.Errorf("announce: %s: build request: %w", p.kind, scrubURLError(err))
+		return 0, fmt.Errorf("announce: %s: build request: %w", p.kind, apphttp.ScrubURLError(err))
 	}
 	req.Header.Set("Content-Type", "application/json")
 	return p.do(req, path, out)
@@ -111,7 +111,7 @@ func (p *poster) post(ctx context.Context, path string, body, out any) (int, err
 func (p *poster) get(ctx context.Context, path string, out any) (int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.baseURL+path, nil)
 	if err != nil {
-		return 0, fmt.Errorf("announce: %s: build request: %w", p.kind, scrubURLError(err))
+		return 0, fmt.Errorf("announce: %s: build request: %w", p.kind, apphttp.ScrubURLError(err))
 	}
 	return p.do(req, path, out)
 }
@@ -128,7 +128,7 @@ func (p *poster) do(req *http.Request, path string, out any) (int, error) {
 	// input. Reaching that address is the whole point, so this is not attacker SSRF.
 	resp, err := p.client.Do(req) //nolint:gosec // G704: operator-configured tool URL, not user input.
 	if err != nil {
-		return 0, fmt.Errorf("announce: %s: %s: %w", p.kind, path, scrubURLError(err))
+		return 0, fmt.Errorf("announce: %s: %s: %w", p.kind, path, apphttp.ScrubURLError(err))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -142,13 +142,4 @@ func (p *poster) do(req *http.Request, path string, out any) (int, error) {
 	}
 	_, _ = io.Copy(io.Discard, resp.Body)
 	return resp.StatusCode, nil
-}
-
-// scrubURLError strips the request URL (which may carry an api key) from a *url.Error.
-func scrubURLError(err error) error {
-	var ue *url.Error
-	if errors.As(err, &ue) {
-		return fmt.Errorf("%s: %w", ue.Op, ue.Err)
-	}
-	return err
 }

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	apphttp "github.com/autobrr/harbrr/internal/http"
 )
 
 // qui's cross-seed is a two-step push: a webhook check decides whether the release is
@@ -111,7 +113,7 @@ func (q *quiAnnouncer) apply(ctx context.Context, rel Release) (Result, error) {
 	data, err := q.fetch(ctx, rel.DownloadURL)
 	if err != nil {
 		// The fetcher error may carry the /dl URL (apikey-bearing); scrub it.
-		return Result{}, fmt.Errorf("announce: qui: fetch torrent: %w", scrubURLError(err))
+		return Result{}, fmt.Errorf("announce: qui: fetch torrent: %w", apphttp.ScrubURLError(err))
 	}
 	if len(data) == 0 {
 		// An empty /dl body would POST torrentData:"" — garbage to qui; treat as a failure.

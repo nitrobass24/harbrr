@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 
@@ -202,7 +201,7 @@ func (s *servarrDriver) do(ctx context.Context, method, path string, body, out a
 	}
 	req, err := http.NewRequestWithContext(ctx, method, s.baseURL+path, reader)
 	if err != nil {
-		return 0, fmt.Errorf("appsync: %s: build request: %w", s.kind, scrubURLError(err))
+		return 0, fmt.Errorf("appsync: %s: build request: %w", s.kind, apphttp.ScrubURLError(err))
 	}
 	req.Header.Set("X-Api-Key", s.apiKey)
 	if body != nil {
@@ -210,7 +209,7 @@ func (s *servarrDriver) do(ctx context.Context, method, path string, body, out a
 	}
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("appsync: %s: %s %s: %w", s.kind, method, path, scrubURLError(err))
+		return 0, fmt.Errorf("appsync: %s: %s %s: %w", s.kind, method, path, apphttp.ScrubURLError(err))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -286,19 +285,6 @@ func parseServarrReason(resp *http.Response) string {
 // secret tokens — the forms the echoed harbrr feed key takes).
 func scrubReason(text string) string {
 	return apphttp.RedactError(errors.New(text))
-}
-
-// scrubURLError strips the request URL from a *url.Error so a credential a user may
-// have embedded in an app's base URL (userinfo) can never reach an error surface
-// (last_sync_error, an API response) — RedactError does not scrub URL userinfo. The Op
-// and underlying cause are kept (host:port in a dial error is not a secret); any other
-// error passes through unchanged. Shared by both drivers' do().
-func scrubURLError(err error) error {
-	var ue *url.Error
-	if errors.As(err, &ue) {
-		return fmt.Errorf("%s: %w", ue.Op, ue.Err)
-	}
-	return err
 }
 
 // field builds a typed field entry; the value marshals cleanly (string/int slice/bool

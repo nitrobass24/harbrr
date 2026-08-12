@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
+
+	apphttp "github.com/autobrr/harbrr/internal/http"
 )
 
 // poster carries the shared HTTP machinery both senders reuse: a JSON POST to the
@@ -32,13 +32,13 @@ func (p *poster) post(ctx context.Context, body any) error {
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.url, bytes.NewReader(payload))
 	if err != nil {
-		return fmt.Errorf("notify: %s: build request: %w", p.kind, scrubURLError(err))
+		return fmt.Errorf("notify: %s: build request: %w", p.kind, apphttp.ScrubURLError(err))
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("notify: %s: send: %w", p.kind, scrubURLError(err))
+		return fmt.Errorf("notify: %s: send: %w", p.kind, apphttp.ScrubURLError(err))
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, resp.Body)
@@ -47,14 +47,4 @@ func (p *poster) post(ctx context.Context, body any) error {
 		return fmt.Errorf("notify: %s: unexpected status %d", p.kind, resp.StatusCode)
 	}
 	return nil
-}
-
-// scrubURLError strips the request URL (which may carry a bearer token) from a
-// *url.Error so a transport failure never leaks the destination.
-func scrubURLError(err error) error {
-	var ue *url.Error
-	if errors.As(err, &ue) {
-		return fmt.Errorf("%s: %w", ue.Op, ue.Err)
-	}
-	return err
 }
