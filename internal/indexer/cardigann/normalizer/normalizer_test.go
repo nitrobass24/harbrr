@@ -160,6 +160,70 @@ func baseRow() map[string]string {
 	}
 }
 
+// TestReleaseNameEvidence proves the Aither-style title_optional/title_filename
+// pair survives normalization as additive evidence without touching Title, and
+// that both stay absent from the JSON when the definition extracts neither.
+func TestReleaseNameEvidence(t *testing.T) {
+	t.Parallel()
+	cm := fakeCategoryMap(t, [][2]string{{"1", "Movies/HD"}})
+	n := &Normalizer{Categories: cm}
+
+	tests := []struct {
+		name            string
+		optional        string
+		filename        string
+		wantTitle       string
+		wantReleaseName string
+		wantFilename    string
+	}{
+		{
+			name:            "filename chosen as title keeps the display name",
+			optional:        "Some Movie 2024 1080p BluRay x264-GRP",
+			filename:        "Some Release 1080p",
+			wantTitle:       "Some Release 1080p",
+			wantReleaseName: "Some Movie 2024 1080p BluRay x264-GRP",
+			wantFilename:    "Some Release 1080p",
+		},
+		{
+			name:      "neither extracted leaves both empty",
+			wantTitle: "Some Release 1080p",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			row := baseRow()
+			if tt.optional != "" {
+				row["title_optional"] = tt.optional
+			}
+			if tt.filename != "" {
+				row["title_filename"] = tt.filename
+			}
+			r, err := n.Release(row)
+			if err != nil {
+				t.Fatalf("Release: %v", err)
+			}
+			if r.Title != tt.wantTitle {
+				t.Errorf("Title = %q, want %q", r.Title, tt.wantTitle)
+			}
+			if r.ReleaseName != tt.wantReleaseName {
+				t.Errorf("ReleaseName = %q, want %q", r.ReleaseName, tt.wantReleaseName)
+			}
+			if r.Filename != tt.wantFilename {
+				t.Errorf("Filename = %q, want %q", r.Filename, tt.wantFilename)
+			}
+			b, err := Marshal([]*Release{r})
+			if err != nil {
+				t.Fatalf("Marshal: %v", err)
+			}
+			hasKeys := strings.Contains(string(b), `"releaseName"`) || strings.Contains(string(b), `"filename"`)
+			if want := tt.wantReleaseName != ""; hasKeys != want {
+				t.Errorf("marshaled name-evidence keys present=%v, want %v\n got: %s", hasKeys, want, b)
+			}
+		})
+	}
+}
+
 func TestReleaseFreeleechVolumeFactors(t *testing.T) {
 	t.Parallel()
 	cm := fakeCategoryMap(t, [][2]string{{"1", "Movies/HD"}})
