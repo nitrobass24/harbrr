@@ -5,6 +5,10 @@ version: "2"
 
 issues:
   max-same-issues: 0
+  # Report every finding. Both caps must be lifted: max-same-issues alone still
+  # leaves max-issues-per-linter at its default of 50, which silently truncates a
+  # linter's output and makes repeated runs disagree about what exists.
+  max-issues-per-linter: 0
 
 formatters:
   enable:
