@@ -61,7 +61,7 @@ func GrabResultFrom(resp *Response) *search.GrabResult {
 //
 // A classified-status error (login.ErrLoginFailed, *search.RateLimitedError) is returned
 // as-is so health classification survives; a context cancellation/deadline is preserved;
-// anything else collapses through sanitizeGrabError so a URL can never leak through an
+// anything else collapses through SanitizeGrabError so a URL can never leak through an
 // unanticipated error shape.
 func (b *Base) GrabNZB(ctx context.Context, link, contentType string, classify Classify, errDownloadRequestFailed error) (*search.GrabResult, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, link, nil)
@@ -80,19 +80,22 @@ func (b *Base) GrabNZB(ctx context.Context, link, contentType string, classify C
 			// pass through unsanitized so callers keep their classification.
 			return nil, err
 		}
-		return nil, sanitizeGrabError(err, errDownloadRequestFailed)
+		return nil, SanitizeGrabError(err, errDownloadRequestFailed)
 	}
 	return &search.GrabResult{Body: resp.Body, ContentType: contentType}, nil
 }
 
-// sanitizeGrabError classifies GrabNZB's RAW DoDownload error for surfacing. Sentinels
+// SanitizeGrabError classifies a RAW DoDownload error for surfacing. Sentinels
 // that carry no URL and that callers need to classify are passed through: auth and
 // rate-limit (for health), context cancellation/deadline, and the size-cap error. A
 // transport failure roundTrip marked host-redacted (its cause is PROVABLY scrubbed to
 // scheme://host) keeps its detail, wrapped as errDownloadRequestFailed. Anything else is
 // flattened to the bare errDownloadRequestFailed sentinel: an unmarked error may embed a
 // secret-bearing URL in free text that no scrubber can safely rewrite.
-func sanitizeGrabError(err, errDownloadRequestFailed error) error {
+//
+// errDownloadRequestFailed is the caller's own family-prefixed sentinel, so this is
+// shared by GrabNZB and by any driver (avistaz) whose Grab sanitizes its own error.
+func SanitizeGrabError(err, errDownloadRequestFailed error) error {
 	switch {
 	case errors.Is(err, login.ErrLoginFailed),
 		errors.Is(err, context.Canceled),

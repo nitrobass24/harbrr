@@ -99,7 +99,7 @@ the **live-validation** gate.
   do carry a per-user rsskey **in the path** (`…/rss/download/{id}/{rsskey}.torrent`, see
   the recorded fixture), and harbrr's `RedactURL` is query-scoped — it would *not* scrub
   that path segment. The safeguard here is therefore driver discipline, not the redactor:
-  the download URL never enters any error (`sanitizeGrabError` replaces link-bearing
+  the download URL never enters any error (`native.SanitizeGrabError` replaces link-bearing
   transport errors with a fixed string) and only ever flows through the `/dl` proxy (kept
   out of the served feed), so the path key never reaches a log/trace/feed in the first
   place. We have never observed the redactor handed this URL — it isn't on any logging

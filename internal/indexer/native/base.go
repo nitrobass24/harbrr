@@ -244,7 +244,7 @@ func (b *Base) roundTrip(ctx context.Context, req *stdhttp.Request, c Classify, 
 			b.Family, op, apphttp.SchemeHost(req.URL.String()), apphttp.RedactURLError(err))
 		// Mark the wrap host-redacted only when the cause is PROVABLY scrubbed —
 		// a *url.Error just rebuilt host-only, or a paced-client error that arrived
-		// pre-redacted — so sanitizeGrabError can tell it apart from free text that
+		// pre-redacted — so SanitizeGrabError can tell it apart from free text that
 		// may embed a secret-bearing URL and must be flattened.
 		var uerr *url.Error
 		if errors.As(err, &uerr) || apphttp.IsHostRedacted(err) {
