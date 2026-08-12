@@ -3,7 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"io"
 	"net"
+	"net/http"
 	"strconv"
 	"strings"
 	"testing"
@@ -36,8 +39,8 @@ func TestVersionCommand(t *testing.T) {
 }
 
 // TestServeBootsAndShutsDown drives the full serve command (config -> internal/app.New
-// -> internal/app.Run): it starts serve in a goroutine, waits until the port is
-// listening, cancels the context, and asserts serve returns nil (graceful shutdown).
+// -> internal/app.Run): it starts serve in a goroutine, waits until harbrr itself
+// answers /healthz, cancels the context, and asserts serve returns nil (graceful shutdown).
 // A regression that broke boot would surface an error; one that broke shutdown would
 // time out. The composition root's own wiring (database, canary, registry, reapers,
 // shutdown ordering) is covered directly in internal/app's tests.
@@ -59,7 +62,7 @@ func TestServeBootsAndShutsDown(t *testing.T) {
 		done <- root.ExecuteContext(ctx)
 	}()
 
-	waitForListen(t, addr, done)
+	waitForReady(t, addr, done)
 	cancel()
 
 	select {
@@ -84,31 +87,65 @@ func freePort(t *testing.T) string {
 	return strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)
 }
 
-// waitForListen blocks until addr accepts connections (the server is up), up to a
-// 30s budget to absorb contention on shared/loaded CI runners — the loop still
-// returns the moment the port is up, so the happy path pays nothing. If serve
-// exits before the port comes up (e.g. a boot failure), it fails immediately
-// with the returned error instead of burning the full wait budget.
-func waitForListen(t *testing.T, addr string, done <-chan error) {
+// waitForReady blocks until harbrr's own /healthz answers on addr, up to one
+// generous 60s budget — it returns the moment harbrr is up, so the happy path pays
+// nothing and slow runner I/O only costs time. If serve exits before then (e.g. a
+// boot failure), it fails immediately with the returned error instead of burning
+// the budget.
+//
+// The readiness check is identity-checked on purpose (autobrr/harbrr#469): a bare
+// TCP connect to addr does NOT prove harbrr is up. The port comes from the ephemeral
+// range, so a loopback dial can succeed while harbrr is still migrating — either via
+// a TCP self-connect (the kernel hands the dialer the destination port as its source
+// port) or because another process on a busy shared runner grabbed the port after
+// freePort released it. The old dial-based probe took that for readiness and
+// cancelled the boot context mid-migration. Only harbrr's own liveness payload
+// proves boot finished.
+func waitForReady(t *testing.T, addr string, done <-chan error) {
 	t.Helper()
-	var dialer net.Dialer
-	deadline := time.Now().Add(30 * time.Second)
+	client := &http.Client{Timeout: 2 * time.Second}
+	url := "http://" + addr + "/healthz"
+	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
 		select {
 		case err := <-done:
 			t.Fatalf("serve exited early: %v", err)
 		default:
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-		conn, err := dialer.DialContext(ctx, "tcp", addr)
-		cancel()
-		if err == nil {
-			_ = conn.Close()
+		if healthy(client, url) {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("server did not start listening on %s within 30s", addr)
+	t.Fatalf("harbrr did not answer /healthz on %s within 60s", addr)
+}
+
+// healthy reports whether url answers with harbrr's liveness payload — status "ok"
+// and this build's version. Anything else (connection refused, a foreign listener,
+// a self-connected socket echoing the request back) is not ready.
+func healthy(client *http.Client, url string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return false
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+	var health struct {
+		Status  string `json:"status"`
+		Version string `json:"version"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<12)).Decode(&health); err != nil {
+		return false
+	}
+	return health.Status == "ok" && health.Version == version.Version
 }
 
 func TestServeRejectsBadLogLevel(t *testing.T) {
