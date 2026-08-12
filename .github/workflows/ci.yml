@@ -283,12 +283,13 @@ jobs:
   # boots it against a fresh data dir, and drives the first-run auth flow in a
   # real browser (web/e2e/). The Playwright image ships the matching browsers —
   # keep its tag in sync with web/package.json's @playwright/test version, or
-  # playwright aborts with "Executable doesn't exist".
+  # playwright aborts with "Executable doesn't exist". The tag is pinned to the
+  # multi-arch index digest — re-resolve the digest whenever the tag moves.
   web-e2e:
     name: web-e2e
     runs-on: self-hosted
     container:
-      image: mcr.microsoft.com/playwright:v1.62.1-noble
+      image: mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e
     timeout-minutes: 15
     needs: [web]
     env:

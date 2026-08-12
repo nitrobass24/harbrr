@@ -8,6 +8,9 @@ export default defineConfig({
   testDir: "./e2e",
   workers: 1, // one shared server + one admin account: tests are stateful
   retries: process.env.CI ? 2 : 0,
+  // list keeps failures visible in the live CI log; html writes the directory
+  // the workflow uploads on failure (never auto-serving it).
+  reporter: [["list"], ["html", { outputFolder: "playwright-report", open: "never" }]],
   use: {
     baseURL: "http://127.0.0.1:7479",
     trace: "on-first-retry",
