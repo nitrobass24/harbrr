@@ -228,3 +228,74 @@ describe("Search route — server-merged aggregate (autobrr/harbrr#372)", () => 
     expect(screen.queryByText("No results.")).toBeNull()
   })
 })
+
+// The same Sintel release on both indexers (one infohash), plus two releases carried by
+// one indexer each — so grouping folds 4 rows into 3 releases.
+const CROSS_SEEDED = {
+  ...RESULTS,
+  results: [
+    { indexer: "demotracker", release: { title: "Sintel S01E02 1080p x264", infohash: "ABCDEF", categories: [5000], seeders: 5, size: 100, publishDate: "2026-07-01T00:00:00Z" } },
+    { indexer: "ptp", release: { title: "sintel.s01e02.1080p.x264", infohash: "abcdef", categories: [5000], seeders: 40, size: 100, publishDate: "2026-07-02T00:00:00Z" } },
+    { indexer: "demotracker", release: { title: "Tears of Steel 1080p x265", categories: [2000], seeders: 1, size: 100, publishDate: "2026-07-10T00:00:00Z" } },
+    { indexer: "ptp", release: { title: "Big Buck Bunny 2160p x265", categories: [2000], seeders: 9, size: 100, publishDate: "2026-07-20T00:00:00Z" } },
+  ],
+  members: [{ slug: "demotracker", name: "Demo", status: "ok", count: 2 }, { slug: "ptp", name: "PTP", status: "ok", count: 2 }],
+  total: 4,
+}
+
+const rowText = () => screen.getAllByRole("row").slice(1).map((r) => r.textContent ?? "")
+
+describe("Search route — result grouping (autobrr/harbrr#398)", () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it("folds the same release from two trackers into one row, and toggles back to the flat list without re-querying", async () => {
+    const fetchMock = await submitSearch(stubFetch(() => Promise.resolve(json(CROSS_SEEDED)), [INDEXER, OTHER]))
+    await screen.findByText("4 results")
+
+    // Grouped: 3 rows, the cross-seeded one badged with both trackers and its count.
+    expect(rowText()).toHaveLength(3)
+    expect(screen.getByText("· 3 releases")).toBeTruthy()
+    const group = screen.getByRole("button", { name: /Expand .* 2 sources/ }).closest("tr")!
+    expect(group.textContent).toContain("demotracker")
+    expect(group.textContent).toContain("ptp")
+
+    const fetchesAfterSearch = fetchMock.mock.calls.length
+    fireEvent.click(screen.getByRole("button", { name: "Group" }))
+
+    // Off: today's flat list — every row back, in the sorted order, nothing merged.
+    await waitFor(() => expect(rowText()).toHaveLength(4))
+    expect(rowText().map((t) => t.slice(0, 30))).toEqual([
+      expect.stringContaining("Big Buck Bunny"),
+      expect.stringContaining("Tears of Steel"),
+      expect.stringContaining("sintel.s01e02"),
+      expect.stringContaining("Sintel S01E02"),
+    ])
+    expect(screen.queryByRole("button", { name: /2 sources/ })).toBeNull()
+    expect(screen.getByText("4 results")).toBeTruthy()
+    // A view mode, not a query: toggling either way never hits the network.
+    expect(fetchMock.mock.calls.length).toBe(fetchesAfterSearch)
+  })
+
+  it("expands a group to each tracker's own grabbable entry", async () => {
+    await submitSearch(stubFetch(() => Promise.resolve(json(CROSS_SEEDED)), [INDEXER, OTHER]))
+    await screen.findByText("4 results")
+
+    fireEvent.click(screen.getByRole("button", { name: /Expand .* 2 sources/ }))
+
+    await waitFor(() => expect(rowText()).toHaveLength(5))
+    expect(screen.getByText("Sintel S01E02 1080p x264")).toBeTruthy()
+    // The ptp member is the newest, so it is also the collapsed row's representative.
+    expect(screen.getAllByText("sintel.s01e02.1080p.x264")).toHaveLength(2)
+  })
+
+  it("keeps a group whole when the filter matches only one of its members", async () => {
+    await submitSearch(stubFetch(() => Promise.resolve(json(CROSS_SEEDED)), [INDEXER, OTHER]))
+    await screen.findByText("4 results")
+
+    type(screen.getByLabelText("Filter results"), "ptp")
+
+    // Both of the cross-seeded rows count, though only the ptp one matched.
+    await screen.findByText("3 of 4 results")
+    expect(screen.getByRole("button", { name: /Expand .* 2 sources/ })).toBeTruthy()
+  })
+})
