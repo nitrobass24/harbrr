@@ -52,6 +52,12 @@ web-dev:
 web-test:
 	cd web && pnpm test
 
+## web-e2e: Playwright e2e against the real binary (rebuilds frontend + binary
+## so the embedded bundle is current, then drives it with a fresh data dir)
+.PHONY: web-e2e
+web-e2e: web-build build
+	cd web && pnpm exec playwright test
+
 ## web-lint: lint the frontend
 .PHONY: web-lint
 web-lint:
