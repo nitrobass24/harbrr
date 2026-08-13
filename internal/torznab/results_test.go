@@ -528,6 +528,59 @@ func TestResultsUsenetProtocol(t *testing.T) {
 	}
 }
 
+// TestResultsNameEvidenceAttrs covers the additive release_name/filename attrs:
+// emitted only when supplied AND different from the title, never as a redundant
+// echo of it — and <title> is byte-identical in every case.
+func TestResultsNameEvidenceAttrs(t *testing.T) {
+	t.Parallel()
+	const title = "Some Movie 2024 1080p BluRay x264-GRP"
+
+	tests := []struct {
+		name        string
+		releaseName string
+		filename    string
+		want        map[string]string
+	}{
+		{"both distinct", "Some Movie 2024 1080p BluRay x264-GRP (Remux)", "Some.Movie.2024.1080p.BluRay.x264-GRP", map[string]string{
+			"release_name": "Some Movie 2024 1080p BluRay x264-GRP (Remux)",
+			"filename":     "Some.Movie.2024.1080p.BluRay.x264-GRP",
+		}},
+		{"absent emits neither", "", "", nil},
+		{"equal to title emits neither", title, title, nil},
+		{"only the distinct one is emitted", title, "Some.Movie.2024.1080p.BluRay.x264-GRP", map[string]string{
+			"filename": "Some.Movie.2024.1080p.BluRay.x264-GRP",
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			r := &normalizer.Release{
+				Title: title, ReleaseName: tt.releaseName, Filename: tt.filename,
+				Link: "https://demo.test/x.torrent", Size: 1, Categories: []int{2000},
+				Seeders: 1, Peers: 1, DownloadVolumeFactor: 1, UploadVolumeFactor: 1,
+			}
+			got, err := marshalResults(demoFeed(), []*normalizer.Release{r}, fixedNow())
+			if err != nil {
+				t.Fatalf("MarshalResults: %v", err)
+			}
+			s := string(got)
+			if !strings.Contains(s, "<title>"+title+"</title>") {
+				t.Errorf("<title> changed:\n%s", s)
+			}
+			for _, name := range []string{"release_name", "filename"} {
+				want, wanted := tt.want[name]
+				attr := `name="` + name + `" value="` + want + `"`
+				if wanted && !strings.Contains(s, attr) {
+					t.Errorf("missing attr %s:\n%s", attr, s)
+				}
+				if !wanted && strings.Contains(s, `name="`+name+`"`) {
+					t.Errorf("unexpected %q attr:\n%s", name, s)
+				}
+			}
+		})
+	}
+}
+
 // assertWellFormed confirms the bytes parse as XML (no malformed output).
 func assertWellFormed(t *testing.T, b []byte) {
 	t.Helper()

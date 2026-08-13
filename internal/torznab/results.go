@@ -315,16 +315,18 @@ func enclosureTypeFor(feed FeedInfo) string {
 }
 
 // buildAttrs builds the torznab:attr block in Jackett's exact order: category
-// attrs, then external ids, then media fields, then (torrent only) torrent
-// stats/factors. A usenet feed suppresses the torrent block: seeders/peers and
+// attrs, then external ids, then the additive name attrs, then media fields,
+// then (torrent only) torrent stats/factors. A usenet feed suppresses the
+// torrent block: seeders/peers and
 // the volume factors are meaningless there and *arr reads their presence as a
-// torrent signal. Category/external-id/media attrs are protocol-agnostic.
+// torrent signal. Category/external-id/name/media attrs are protocol-agnostic.
 func buildAttrs(feed FeedInfo, r *normalizer.Release) []torznabAttr {
 	attrs := make([]torznabAttr, 0, 16)
 	for _, c := range r.Categories {
 		attrs = appendAttr(attrs, "category", strconv.Itoa(c))
 	}
 	attrs = appendExternalIDAttrs(attrs, r)
+	attrs = appendNameAttrs(attrs, r)
 	attrs = appendMediaAttrs(attrs, r)
 	if feed.Protocol != ProtocolUsenet {
 		attrs = appendTorrentAttrs(attrs, r)
@@ -345,6 +347,22 @@ func appendExternalIDAttrs(attrs []torznabAttr, r *normalizer.Release) []torznab
 	attrs = appendIntAttr(attrs, "tvmazeid", r.TVMazeID)
 	attrs = appendIntAttr(attrs, "traktid", r.TraktID)
 	attrs = appendIntAttr(attrs, "doubanid", r.DoubanID)
+	return attrs
+}
+
+// appendNameAttrs emits the additive release_name/filename evidence attrs — the
+// tracker's display name and the content filename — each only when the source
+// supplied it AND it differs from <title>, so a consumer never gets a redundant
+// copy of the title back. <title> itself is untouched by this block.
+func appendNameAttrs(attrs []torznabAttr, r *normalizer.Release) []torznabAttr {
+	for _, a := range []struct{ name, value string }{
+		{"release_name", r.ReleaseName},
+		{"filename", r.Filename},
+	} {
+		if a.value != "" && a.value != r.Title {
+			attrs = appendAttr(attrs, a.name, sanitizeXMLText(a.value))
+		}
+	}
 	return attrs
 }
 

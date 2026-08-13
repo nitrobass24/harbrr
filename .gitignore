@@ -44,3 +44,8 @@ LIVE_TEST_FINDINGS.md
 /website/node_modules/
 /website/build/
 /website/.docusaurus/
+
+# Playwright e2e artifacts (web/)
+/web/.e2e-data/
+/web/test-results/
+/web/playwright-report/

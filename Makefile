@@ -52,6 +52,16 @@ web-dev:
 web-test:
 	cd web && pnpm test
 
+## web-e2e: Playwright e2e against the real binary (rebuilds the frontend, then
+## the binary that embeds it, then drives it with a fresh data dir)
+.PHONY: web-e2e
+# `build` is a recipe line, not a prerequisite: under `make -j` a sibling
+# prerequisite could compile the binary while web-build is still writing
+# web/dist, embedding a stale or half-written bundle.
+web-e2e: web-build
+	$(MAKE) build
+	cd web && pnpm exec playwright test
+
 ## web-lint: lint the frontend
 .PHONY: web-lint
 web-lint:
