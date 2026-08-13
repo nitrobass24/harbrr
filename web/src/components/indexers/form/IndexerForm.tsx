@@ -50,8 +50,9 @@ const LIMITS_UNIT_FIELD: SettingField = {
   options: { day: "Day", hour: "Hour" },
 }
 // RSS cache warming (autobrr/harbrr#473, ADR 0005): opt-in, same free-form settings
-// map again. Empty = no warming; the registry clamps and ignores it for instances it
-// never warms, so the form needs no gating of its own.
+// map again. Empty, unparseable or non-positive is off (warmIntervalFromValue); the
+// registry clamps a valid value and ignores the key for instances it never warms, so
+// the form needs no gating of its own.
 const WARM_INTERVAL_FIELD: SettingField = {
   name: "rss_warm_interval", label: "RSS cache warming (Go duration, e.g. 30m)", type: "text", secret: false,
 }
@@ -282,7 +283,8 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
           <SettingFieldInput field={WARM_INTERVAL_FIELD} value={values.rss_warm_interval ?? ""} onChange={setValue("rss_warm_interval")} />
           <p className="text-[12px] text-faint">
             Refreshes this indexer&apos;s RSS feed in the background so app syncs hit a warm
-            cache. Empty = no warming; anything set is clamped to 10m&ndash;120m.
+            cache. A valid positive duration is clamped to 10m&ndash;120m; empty, unparseable
+            or zero/negative leaves warming off.
           </p>
 
           <span className="flex flex-col gap-1.5">
