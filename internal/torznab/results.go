@@ -2,6 +2,7 @@ package torznab
 
 import (
 	"encoding/xml"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -315,11 +316,11 @@ func enclosureTypeFor(feed FeedInfo) string {
 }
 
 // buildAttrs builds the torznab:attr block in Jackett's exact order: category
-// attrs, then external ids, then the additive name attrs, then media fields,
-// then (torrent only) torrent stats/factors. A usenet feed suppresses the
-// torrent block: seeders/peers and
+// attrs, then external ids, then the additive name and tag attrs, then media
+// fields, then (torrent only) torrent stats/factors. A usenet feed suppresses
+// the torrent block: seeders/peers and
 // the volume factors are meaningless there and *arr reads their presence as a
-// torrent signal. Category/external-id/name/media attrs are protocol-agnostic.
+// torrent signal. Category/external-id/name/tag/media attrs are protocol-agnostic.
 func buildAttrs(feed FeedInfo, r *normalizer.Release) []torznabAttr {
 	attrs := make([]torznabAttr, 0, 16)
 	for _, c := range r.Categories {
@@ -327,6 +328,7 @@ func buildAttrs(feed FeedInfo, r *normalizer.Release) []torznabAttr {
 	}
 	attrs = appendExternalIDAttrs(attrs, r)
 	attrs = appendNameAttrs(attrs, r)
+	attrs = appendTagAttrs(attrs, r)
 	attrs = appendMediaAttrs(attrs, r)
 	if feed.Protocol != ProtocolUsenet {
 		attrs = appendTorrentAttrs(attrs, r)
@@ -362,6 +364,34 @@ func appendNameAttrs(attrs []torznabAttr, r *normalizer.Release) []torznabAttr {
 		if a.value != "" && a.value != r.Title {
 			attrs = appendAttr(attrs, a.name, sanitizeXMLText(a.value))
 		}
+	}
+	return attrs
+}
+
+// wireTags is the closed set of tag values the feed will serialize. Release.Tags
+// is an open []string, so this allowlist — not the drivers — is what consumers
+// actually get: a value only reaches the wire if it is in the shared vocabulary
+// every consumer can read the same way. Growing that vocabulary is therefore a
+// deliberate two-part act (add the normalizer const AND an entry here), which is
+// the point: a new driver cannot widen the wire contract on its own.
+var wireTags = map[string]struct{}{
+	normalizer.TagInternal: {},
+	normalizer.TagScene:    {},
+}
+
+// appendTagAttrs emits Torznab's repeated tag attr, one per tracker-supplied
+// flag in wireTags. The values are sorted and de-duplicated so the same release
+// always serializes identically. Only tags a driver positively read off the
+// source ever reach here, so an absent tag is silence, not a false — nothing is
+// synthesized for a release that carries none.
+func appendTagAttrs(attrs []torznabAttr, r *normalizer.Release) []torznabAttr {
+	tags := slices.Clone(r.Tags)
+	slices.Sort(tags)
+	for _, tag := range slices.Compact(tags) {
+		if _, ok := wireTags[tag]; !ok {
+			continue
+		}
+		attrs = appendStringAttr(attrs, "tag", sanitizeXMLText(tag))
 	}
 	return attrs
 }

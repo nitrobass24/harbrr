@@ -192,6 +192,12 @@ func (d *driver) toRelease(row *hdbitsTorrent, useFilenames bool) *normalizer.Re
 	if row.Tvdb != nil {
 		rel.TVDBID = row.Tvdb.ID.Int64()
 	}
+	// Read the origin bit itself. The 0.5 volume factor is NOT a substitute: the
+	// half-leech mediums produce it too, so inverting the factor would tag rows
+	// the tracker never called internal.
+	if row.TypeOrigin.Int64() == internalOrigin {
+		rel.Tags = []string{normalizer.TagInternal}
+	}
 	return rel
 }
 

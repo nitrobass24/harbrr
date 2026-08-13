@@ -124,6 +124,9 @@ func (d *driver) toRelease(row *filelistTorrent) (*normalizer.Release, error) {
 		MinimumSeedTime:      minimumSeedTimeSeconds,
 		IMDBID:               normalizeIMDBID(row.ImdbID),
 	}
+	if row.Internal != 0 {
+		rel.Tags = []string{normalizer.TagInternal}
+	}
 	return rel, nil
 }
 
