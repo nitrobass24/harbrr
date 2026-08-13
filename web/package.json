@@ -18,7 +18,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "generate:routes": "tsr generate",
-    "generate:api": "openapi-typescript ../internal/web/swagger/openapi.yaml -o src/types/api.gen.ts --default-non-nullable=false"
+    "generate:api": "openapi-typescript ../internal/web/swagger/openapi.yaml -o src/types/api.gen.ts --default-non-nullable=false",
+    "test:e2e": "playwright test"
   },
   "pnpm": {
     "overrides": {
@@ -47,6 +48,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.62.1",
     "@stylistic/eslint-plugin": "^5.10.0",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/router-cli": "^1.167.21",
