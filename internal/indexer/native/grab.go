@@ -95,6 +95,12 @@ func (b *Base) GrabNZB(ctx context.Context, link, contentType string, classify C
 // around the error when host-redacted, bare otherwise, because an unmarked error may
 // embed a secret-bearing URL in free text that no scrubber can safely rewrite.
 //
+// roundTrip marks TWO paths, both provably URL-free: a transport failure (its cause
+// scrubbed to scheme://host) and a download body-read failure (readCapped only ever sees
+// an io.Reader, never the request URL). The latter carries ErrBodyRead, and the marker is
+// what lets that sentinel survive to the registry's health classifier rather than being
+// flattened into the bare sentinel with everything else (#479).
+//
 // errDownloadRequestFailed is the caller's own family-prefixed sentinel, so this is
 // shared by GrabNZB and by any driver (avistaz) whose Grab sanitizes its own error.
 func SanitizeGrabError(err, errDownloadRequestFailed error) error {
