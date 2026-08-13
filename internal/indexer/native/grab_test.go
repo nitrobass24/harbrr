@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	stdhttp "net/http"
 	"net/url"
 	"strings"
@@ -236,6 +237,42 @@ func TestSanitizeGrabErrorKeepsRetryAfter(t *testing.T) {
 	}
 	if out.StatusCode != 429 || out.RetryAfter != 90*time.Second {
 		t.Errorf("classification lost: %+v", out)
+	}
+}
+
+// droppingBody stands in for a connection reset after the 200: the status is already
+// read, then the body read fails.
+type droppingBody struct{ err error }
+
+func (d droppingBody) Read([]byte) (int, error) { return 0, d.err }
+func (d droppingBody) Close() error             { return nil }
+
+// TestGrabNZBMidBodyDropStaysTransportClassifiable proves a grab whose connection dies
+// while the download body is being read stays classifiable as a transport failure
+// (#479): it used to reach sanitizeGrabError unmarked and unsentinelled, get flattened
+// to the bare caller sentinel, and so record NO health event at all. Both the
+// ErrBodyRead sentinel (registry isTransportError matches it directly) and the
+// net.Error cause must survive — and the surfaced error must still leak no URL.
+func TestGrabNZBMidBodyDropStaysTransportClassifiable(t *testing.T) {
+	sentinel := errors.New("fam: download request failed")
+	const secret = "APIKEY0123456789"
+	reset := &net.OpError{Op: "read", Net: "tcp", Err: errors.New("connection reset by peer")}
+	dropped := &stdhttp.Response{StatusCode: 200, Header: stdhttp.Header{}, Body: droppingBody{err: reset}}
+	b := newTestBase(t, &fakeDoer{resp: dropped})
+
+	_, err := b.GrabNZB(context.Background(), "https://tracker.example/getnzb?r="+secret, "application/x-nzb", ClassifyRateLimit403, sentinel)
+	if !errors.Is(err, ErrBodyRead) {
+		t.Fatalf("err = %v, want errors.Is(ErrBodyRead) so the registry classifies it as transport", err)
+	}
+	if !errors.Is(err, sentinel) {
+		t.Errorf("err = %v, want errors.Is(sentinel)", err)
+	}
+	var netErr net.Error
+	if !errors.As(err, &netErr) {
+		t.Errorf("err = %v, want the net.Error cause preserved", err)
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Errorf("err = %q leaks the apikey", err)
 	}
 }
 
