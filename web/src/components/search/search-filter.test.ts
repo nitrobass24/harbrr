@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { filterRows } from "./search-filter"
+import { filterGroups, filterRows } from "./search-filter"
+import type { ResultGroup } from "./search-group"
 import type { SearchRow } from "./search-sort"
 
 const row = (indexer: string, title: string, categories: number[]): SearchRow => ({
@@ -73,5 +74,41 @@ describe("filterRows", () => {
 
   it("falls back to the raw category id when the name is unknown", () => {
     expect(titles(filterRows(ROWS, "5000", new Map()))).toEqual(["Sintel S01E02 1080p x264"])
+  })
+})
+
+// One release carried by two trackers plus one carried by a third.
+const GROUPS: ResultGroup[] = [
+  { key: "h:abc", members: [row("demotracker", "Tears of Steel 1080p", [2000]), row("demopublic", "Tears of Steel 1080p", [2000])] },
+  { key: "h:def", members: [row("demopublic", "Sintel S01E02 1080p x264", [5000])] },
+]
+
+const keys = (groups: ResultGroup[] | null) => (groups ?? []).map((g) => g.key)
+
+describe("filterGroups (autobrr/harbrr#398)", () => {
+  it("returns the identical array for empty input", () => {
+    expect(filterGroups(GROUPS, "", CATS)).toBe(GROUPS)
+  })
+
+  it("keeps a group whole when ANY member matches — never half-collapsing its sources", () => {
+    const matched = filterGroups(GROUPS, "demotracker", CATS)
+    expect(keys(matched)).toEqual(["h:abc"])
+    // The non-matching member of a matching group stays: which trackers carry the
+    // release is the point of the group.
+    expect(matched![0].members.map((m) => m.indexer)).toEqual(["demotracker", "demopublic"])
+  })
+
+  it("drops a group only when no member matches", () => {
+    expect(keys(filterGroups(GROUPS, "sintel", CATS))).toEqual(["h:def"])
+    expect(keys(filterGroups(GROUPS, "nothingmatchesthis", CATS))).toEqual([])
+  })
+
+  it("applies negation and regex terms the same way filterRows does", () => {
+    expect(keys(filterGroups(GROUPS, "-tears", CATS))).toEqual(["h:def"])
+    expect(keys(filterGroups(GROUPS, String.raw`/S\d\dE\d\d/`, CATS))).toEqual(["h:def"])
+  })
+
+  it("signals invalid (null) rather than blanking results", () => {
+    expect(filterGroups(GROUPS, "/unterminated", CATS)).toBeNull()
   })
 })

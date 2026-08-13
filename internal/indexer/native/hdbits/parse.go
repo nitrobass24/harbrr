@@ -158,7 +158,9 @@ func (d *driver) statusError(status int, message string) error {
 }
 
 // toRelease maps one row to a normalized release. Title follows Prowlarr (filename sans
-// .torrent unless XXX, full disc, or use_filenames is off); the category is the single
+// .torrent unless XXX, full disc, or use_filenames is off); the API supplies both names,
+// so ReleaseName/Filename carry them verbatim (the feed drops whichever equals the title);
+// the category is the single
 // canonical newznab id for type_category; the link is the rebuilt download.php URL (routed
 // through /dl by NeedsResolver, so its passkey never reaches the feed); the volume factors
 // follow the freeleech/XXX/half-leech rules.
@@ -167,6 +169,8 @@ func (d *driver) toRelease(row *hdbitsTorrent, useFilenames bool) *normalizer.Re
 	leechers := row.Leechers.Int64()
 	rel := &normalizer.Release{
 		Title:                title(row, useFilenames),
+		ReleaseName:          strings.TrimSpace(row.Name),
+		Filename:             stripTorrentExt(strings.TrimSpace(row.Filename)),
 		InfoHash:             row.Hash,
 		Link:                 d.downloadURL(row.ID.str()),
 		Details:              d.detailsURL(row.ID.str()),
