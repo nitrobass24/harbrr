@@ -57,7 +57,10 @@ export function HealthCell({ status }: { status?: IndexerStatus }) {
   }
 
   const tone = TONE[status.status]
-  const latest = status.status === "healthy" ? undefined : status.events[0]
+  // Only a failing row captions its newest event (autobrr/harbrr#473). Unknown asserts
+  // nothing, so an undated caption there would read "broken now" for a failure that may
+  // be a month old; the dated history stays in the expanded detail, where age is visible.
+  const latest = status.status === "failing" ? status.events[0] : undefined
   const detail = healthDetail(status).map((d) => `${d.label}: ${d.value}`).join(" · ")
 
   return (

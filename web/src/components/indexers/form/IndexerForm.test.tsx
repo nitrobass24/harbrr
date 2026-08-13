@@ -171,6 +171,32 @@ describe("IndexerForm", () => {
     expect(body.settings?.limits_unit).toBe("hour")
   })
 
+  // autobrr/harbrr#473: RSS warming is opt-in via the same reserved settings map, and
+  // the form is the only place to set it.
+  it("edit: rss_warm_interval submits what was typed and prefills on the next render", () => {
+    const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+    const { unmount } = renderForm(<IndexerForm definition={DEFINITION} existing={EXISTING} pending={false} error={null} onSubmit={onSubmit} />)
+
+    fireEvent.click(screen.getByRole("button", { name: /Advanced/ }))
+    const field = screen.getByLabelText<HTMLInputElement>(/RSS cache warming/)
+    expect(field.value).toBe("")
+    fireEvent.change(field, { target: { value: "30m" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+
+    const body = onSubmit.mock.calls[0][0].body
+    expect(body.settings?.rss_warm_interval).toBe("30m")
+
+    // Re-render with the PATCHed value stored: it comes back in the field.
+    unmount()
+    const stored: InstanceDetail = {
+      ...EXISTING,
+      settings: [...EXISTING.settings, { name: "rss_warm_interval", value: "30m", secret: false }],
+    }
+    renderForm(<IndexerForm definition={DEFINITION} existing={stored} pending={false} error={null} onSubmit={onSubmit} />)
+    fireEvent.click(screen.getByRole("button", { name: /Advanced/ }))
+    expect(screen.getByLabelText<HTMLInputElement>(/RSS cache warming/).value).toBe("30m")
+  })
+
   // autobrr/harbrr#394: both matching settings are reserved per-instance keys, so the
   // form is the only place they can be set. Default off on create; stored values
   // prefill and round-trip on edit.
