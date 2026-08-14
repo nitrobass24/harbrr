@@ -8,7 +8,7 @@ const MONTH_AGO = new Date(Date.now() - 31 * 86_400_000).toISOString()
 // autobrr/harbrr#473: the cell captions only what it can assert is current. One fix in
 // HealthCell covers every render site (table, mobile cards, dashboard strip).
 describe("HealthCell", () => {
-  it("shows no event caption for an unknown status carrying a stale failure", () => {
+  it("shows no event caption for a never-tested status carrying a stale failure", () => {
     const status: IndexerStatus = {
       slug: "nzbindex",
       status: "unknown",
@@ -16,11 +16,11 @@ describe("HealthCell", () => {
     }
     render(<HealthCell status={status} />)
 
-    expect(screen.getByText("Unknown")).toBeTruthy()
+    expect(screen.getByText("Never tested")).toBeTruthy()
     expect(screen.queryByText(/response didn't parse/)).toBeNull()
     // The expanded detail is untouched: still the honest-absence line, never an error.
     expect(healthDetail(status)).toEqual([
-      { label: "Why", value: "Nothing recent to go on — no traffic and no failures lately. Not an error." },
+      { label: "Why", value: "Nothing has queried or tested it yet. Not an error." },
     ])
   })
 

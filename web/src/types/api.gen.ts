@@ -272,7 +272,7 @@ export interface paths {
         };
         /**
          * Get fleet-wide indexer health status
-         * @description Returns healthy/failing/unknown counts across every configured indexer, plus each indexer's derived status and most recent health event, sorted by slug.
+         * @description Returns healthy/failing/unknown counts across every configured indexer, plus each indexer's derived status and most recent health event, sorted by slug. Derived health is STICKY: the last thing observed stands until something new is observed, with no time-based expiry, so `unknown` means the indexer has never been queried or tested at all — not that what was known has aged out.
          */
         get: operations["allIndexerStatus"];
         put?: never;
@@ -365,7 +365,7 @@ export interface paths {
         };
         /**
          * Get an indexer's health status
-         * @description Returns the indexer's derived health (healthy/failing/unknown) and its recent health events (auth_failure, rate_limited, parse_error, anti_bot, transport, plus base_url_promoted, which is not a failure but the base-URL failover moving the indexer onto another host the definition lists). Event details are credential-scrubbed before storage, so no secret is surfaced.
+         * @description Returns the indexer's derived health (healthy = a search/grab/test succeeded and nothing has failed since; failing = the newest failure, or a query with no success after it, still stands; unknown = never queried or tested) and its recent health events (auth_failure, rate_limited, parse_error, anti_bot, transport, plus base_url_promoted, which is not a failure but the base-URL failover moving the indexer onto another host the definition lists). Event details are credential-scrubbed before storage, so no secret is surfaced.
          */
         get: operations["indexerStatus"];
         put?: never;
