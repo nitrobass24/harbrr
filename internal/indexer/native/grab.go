@@ -85,29 +85,36 @@ func (b *Base) GrabNZB(ctx context.Context, link, contentType string, classify C
 	return &search.GrabResult{Body: resp.Body, ContentType: contentType}, nil
 }
 
-// SanitizeGrabError classifies a RAW DoDownload error for surfacing. Sentinels
-// that carry no URL and that callers need to classify are passed through: auth and
-// rate-limit (for health), context cancellation/deadline, and the size-cap error. A
-// transport failure roundTrip marked host-redacted (its cause is PROVABLY scrubbed to
-// scheme://host) keeps its detail, wrapped as errDownloadRequestFailed. Anything else is
-// flattened to the bare errDownloadRequestFailed sentinel: an unmarked error may embed a
-// secret-bearing URL in free text that no scrubber can safely rewrite.
+// SanitizeGrabError classifies a RAW DoDownload error for surfacing. The
+// classification callers need always survives — auth and rate-limit (for health),
+// context cancellation/deadline, and the size-cap error — but only BARE: the wrapper's
+// free text is dropped unless roundTrip marked the error host-redacted (its cause is
+// PROVABLY scrubbed to scheme://host), in which case the full detail is kept. The
+// rate-limit case returns the typed *search.RateLimitedError, so RetryAfter survives the
+// collapse. Anything not classified is the errDownloadRequestFailed sentinel — wrapped
+// around the error when host-redacted, bare otherwise, because an unmarked error may
+// embed a secret-bearing URL in free text that no scrubber can safely rewrite.
 //
 // errDownloadRequestFailed is the caller's own family-prefixed sentinel, so this is
 // shared by GrabNZB and by any driver (avistaz) whose Grab sanitizes its own error.
 func SanitizeGrabError(err, errDownloadRequestFailed error) error {
-	switch {
-	case errors.Is(err, login.ErrLoginFailed),
-		errors.Is(err, context.Canceled),
-		errors.Is(err, context.DeadlineExceeded),
-		errors.Is(err, ErrDownloadTooLarge):
-		return err
+	redacted := apphttp.IsHostRedacted(err)
+	for _, sentinel := range []error{login.ErrLoginFailed, context.Canceled, context.DeadlineExceeded, ErrDownloadTooLarge} {
+		if errors.Is(err, sentinel) {
+			if redacted {
+				return err
+			}
+			return sentinel
+		}
 	}
 	var rl *search.RateLimitedError
 	if errors.As(err, &rl) {
-		return err
+		if redacted {
+			return err
+		}
+		return rl
 	}
-	if apphttp.IsHostRedacted(err) {
+	if redacted {
 		return fmt.Errorf("%w: %w", errDownloadRequestFailed, err)
 	}
 	return errDownloadRequestFailed

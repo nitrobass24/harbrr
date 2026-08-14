@@ -57,8 +57,9 @@ func RedactURLError(err error) error {
 // request URL, so it can carry an apikey/passkey in the query, an rsskey in a path
 // segment, or userinfo credentials from a user-supplied base URL — and
 // (*url.Error).Error() quotes all of it into the message, one layer below whatever
-// redaction a wrap site applies to its own format args. Any other error passes
-// through unchanged.
+// redaction a wrap site applies to its own format args. It recurses into the cause,
+// so a nested *url.Error (each level quoting its own URL) is scrubbed at every
+// layer. Any other error passes through unchanged.
 //
 // This is deliberately NOT the same function as RedactURLError above, and the two
 // must not be merged: RedactURLError keeps "scheme://host" (useful when the caller
@@ -68,7 +69,7 @@ func RedactURLError(err error) error {
 func ScrubURLError(err error) error {
 	var uerr *url.Error
 	if errors.As(err, &uerr) {
-		return fmt.Errorf("%s: %w", uerr.Op, uerr.Err)
+		return fmt.Errorf("%s: %w", uerr.Op, ScrubURLError(uerr.Err))
 	}
 	return err
 }

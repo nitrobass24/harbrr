@@ -47,7 +47,7 @@ const KIND_LABELS: Record<string, string> = {
 // kindLabel renders a display name for an app/connection kind slug, falling back to the
 // slug itself for anything not in the map.
 export function kindLabel(kind: string): string {
-  return KIND_LABELS[kind] ?? kind
+  return Object.hasOwn(KIND_LABELS, kind) ? KIND_LABELS[kind] : kind
 }
 
 // SYNC_STATUS_CLASSES holds only the statuses that get their own color. "skipped",
@@ -60,5 +60,6 @@ const SYNC_STATUS_CLASSES: Record<string, string> = {
 // truth for the sync-status styling shared by the connection card, the sync
 // report, and the status drawer.
 export function syncStatusClass(status: string | undefined): string {
-  return SYNC_STATUS_CLASSES[status ?? ""] ?? "text-faint"
+  const key = status ?? ""
+  return Object.hasOwn(SYNC_STATUS_CLASSES, key) ? SYNC_STATUS_CLASSES[key] : "text-faint"
 }

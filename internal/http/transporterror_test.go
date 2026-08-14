@@ -110,6 +110,20 @@ func TestScrubURLError(t *testing.T) {
 			wantHas:    []string{"Get", "connection refused"},
 			wantNoLeak: []string{"sup3rsecret", "admin", "sonarr:8989"},
 		},
+		{
+			name: "nested url.Error is scrubbed at every layer",
+			err: &url.Error{
+				Op:  "Get",
+				URL: "https://outer.test/dl?apikey=OUTER-SECRET",
+				Err: &url.Error{
+					Op:  "parse",
+					URL: "https://inner.test/rss/INNER-SECRET/feed",
+					Err: errors.New("boom"),
+				},
+			},
+			wantHas:    []string{"Get", "parse", "boom"},
+			wantNoLeak: []string{"OUTER-SECRET", "INNER-SECRET", "outer.test", "inner.test"},
+		},
 	}
 
 	for _, tt := range tests {

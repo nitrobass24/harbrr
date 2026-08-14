@@ -3,13 +3,17 @@ package native
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	stdhttp "net/http"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
 
 // TestGrabDirectReturnsResult proves the shared direct-GET grab path (beyondhd,
@@ -139,6 +143,99 @@ func TestGrabNZBPreservesOversizedSentinel(t *testing.T) {
 	_, err := b.GrabNZB(context.Background(), "https://tracker.example/getnzb", "application/x-nzb", ClassifyRateLimit403, sentinel)
 	if !errors.Is(err, ErrDownloadTooLarge) {
 		t.Fatalf("err = %v, want ErrDownloadTooLarge", err)
+	}
+}
+
+// TestSanitizeGrabErrorCollapsesUnmarkedWrappers proves the classification always
+// survives while the WRAPPER's free text — which may embed a secret-bearing URL — is
+// dropped unless the error is provably host-redacted.
+func TestSanitizeGrabErrorCollapsesUnmarkedWrappers(t *testing.T) {
+	t.Parallel()
+
+	const secret = "PASSKEY0123456789"
+	sentinel := errors.New("fam: download request failed")
+	rl := &search.RateLimitedError{StatusCode: 429, RetryAfter: 90 * time.Second}
+
+	tests := []struct {
+		name       string
+		err        error
+		wantIs     error
+		wantHas    []string
+		wantNoLeak []string
+	}{
+		{
+			name:       "unmarked login-failure wrapper collapses to the bare sentinel",
+			err:        fmt.Errorf("leak https://t.test/dl/%s: %w", secret, login.ErrLoginFailed),
+			wantIs:     login.ErrLoginFailed,
+			wantNoLeak: []string{secret, "t.test"},
+		},
+		{
+			name:       "unmarked context cancellation collapses to context.Canceled",
+			err:        fmt.Errorf("leak https://t.test/dl/%s: %w", secret, context.Canceled),
+			wantIs:     context.Canceled,
+			wantNoLeak: []string{secret, "t.test"},
+		},
+		{
+			name:    "marked context cancellation keeps its detail",
+			err:     apphttp.MarkHostRedacted(fmt.Errorf("fam: download to https://t.test failed: %w", context.Canceled)),
+			wantIs:  context.Canceled,
+			wantHas: []string{"https://t.test", "download"},
+		},
+		{
+			name:       "unmarked rate-limit wrapper keeps the typed classification only",
+			err:        fmt.Errorf("leak https://t.test/dl/%s: %w", secret, rl),
+			wantIs:     search.ErrRateLimited,
+			wantHas:    []string{"retry after 1m30s"},
+			wantNoLeak: []string{secret, "t.test"},
+		},
+		{
+			name:    "marked transport error is wrapped as the caller sentinel",
+			err:     apphttp.MarkHostRedacted(errors.New("fam: download to https://t.test failed: dial tcp")),
+			wantIs:  sentinel,
+			wantHas: []string{"fam: download request failed", "https://t.test", "dial tcp"},
+		},
+		{
+			name:       "unmarked free text collapses to the bare caller sentinel",
+			err:        errors.New("proxy said: https://t.test/dl?r=" + secret),
+			wantIs:     sentinel,
+			wantNoLeak: []string{secret, "t.test"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := SanitizeGrabError(tt.err, sentinel)
+			if !errors.Is(got, tt.wantIs) {
+				t.Fatalf("SanitizeGrabError = %v, want errors.Is(%v)", got, tt.wantIs)
+			}
+			msg := got.Error()
+			for _, want := range tt.wantHas {
+				if !strings.Contains(msg, want) {
+					t.Errorf("sanitized error %q missing %q", msg, want)
+				}
+			}
+			for _, leak := range tt.wantNoLeak {
+				if strings.Contains(msg, leak) {
+					t.Errorf("sanitized error %q leaked %q", msg, leak)
+				}
+			}
+		})
+	}
+}
+
+// TestSanitizeGrabErrorKeepsRetryAfter proves the rate-limit collapse returns the TYPED
+// error, so a caller's errors.As still sees RetryAfter for health backoff.
+func TestSanitizeGrabErrorKeepsRetryAfter(t *testing.T) {
+	t.Parallel()
+	rl := &search.RateLimitedError{StatusCode: 429, RetryAfter: 90 * time.Second}
+	got := SanitizeGrabError(fmt.Errorf("leak https://t.test/dl/SECRET: %w", rl), errors.New("fam: download request failed"))
+	var out *search.RateLimitedError
+	if !errors.As(got, &out) {
+		t.Fatalf("SanitizeGrabError = %v, want a *search.RateLimitedError", got)
+	}
+	if out.StatusCode != 429 || out.RetryAfter != 90*time.Second {
+		t.Errorf("classification lost: %+v", out)
 	}
 }
 
