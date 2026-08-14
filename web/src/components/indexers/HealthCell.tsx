@@ -17,23 +17,24 @@ export function reasonLabel(kind: string): string {
   return EVENT_LABEL[kind] ?? kind
 }
 
-// Per-state dot/label treatment. "unknown" (autobrr/harbrr#389) is the expired or
-// never-observed state — it asserts nothing, so it gets the flat neutral colour and
-// no halo, leaving the eye-catching ones to the states that mean something.
+// Per-state dot/label treatment. "unknown" (autobrr/harbrr#389, #484) is the
+// never-observed state — nothing has ever queried or tested this indexer, so it asserts
+// nothing and gets the flat neutral colour and no halo, leaving the eye-catching ones to
+// the states that mean something.
 const TONE: Record<IndexerStatus["status"], { dot: string; text: string; label: string }> = {
   healthy: { dot: "bg-ok", text: "text-muted-foreground", label: "Healthy" },
   failing: { dot: "bg-bad", text: "text-bad", label: "Failing" },
-  unknown: { dot: "bg-faint", text: "text-faint", label: "Unknown" },
+  unknown: { dot: "bg-faint", text: "text-faint", label: "Never tested" },
 }
 
 // healthDetail is the operator-visible read of a status: why it is in this state, when
 // the streak started, and when harbrr will try again — all of it already recorded, this
 // only surfaces it (autobrr/harbrr#389). Healthy returns nothing: a working indexer
-// needs no explanation. Unknown returns the honest-absence line, never an error.
+// needs no explanation. Never-tested returns the honest-absence line, never an error.
 export function healthDetail(status: IndexerStatus): { label: string; value: string }[] {
   if (status.status === "healthy") return []
   if (status.status === "unknown") {
-    return [{ label: "Why", value: "Nothing recent to go on — no traffic and no failures lately. Not an error." }]
+    return [{ label: "Why", value: "Nothing has queried or tested it yet. Not an error." }]
   }
   const rows: { label: string; value: string }[] = []
   const latest = status.events[0]
@@ -57,9 +58,9 @@ export function HealthCell({ status }: { status?: IndexerStatus }) {
   }
 
   const tone = TONE[status.status]
-  // Only a failing row captions its newest event (autobrr/harbrr#473). Unknown asserts
-  // nothing, so an undated caption there would read "broken now" for a failure that may
-  // be a month old; the dated history stays in the expanded detail, where age is visible.
+  // Only a failing row captions its newest event (autobrr/harbrr#473). Never-tested
+  // asserts nothing, so an undated caption there would read "broken now" for a failure
+  // that may be a month old; the dated history stays in the expanded detail.
   const latest = status.status === "failing" ? status.events[0] : undefined
   const detail = healthDetail(status).map((d) => `${d.label}: ${d.value}`).join(" · ")
 

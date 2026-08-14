@@ -112,15 +112,15 @@ describe("IndexerDetailsSheet", () => {
     expect(screen.getByText("Next attempt")).toBeTruthy()
   })
 
-  // "unknown" is honest absence, not an error: it must read as nothing-to-go-on and
-  // must not offer a reason, a streak start, or a retry time.
-  it("renders the nothing-recent copy for unknown", async () => {
+  // "unknown" is honest absence, not an error: it must read as never-tested and must
+  // not offer a reason, a streak start, or a retry time.
+  it("renders the never-tested copy for unknown", async () => {
     stubStatus({ slug: "torrentleech", status: "unknown", events: [] })
 
     renderSheet()
 
-    expect(await screen.findByText("Unknown")).toBeTruthy()
-    expect(screen.getByText(/Nothing recent to go on/)).toBeTruthy()
+    expect(await screen.findByText("Never tested")).toBeTruthy()
+    expect(screen.getByText(/Nothing has queried or tested it yet/)).toBeTruthy()
     expect(screen.queryByText("Failing since")).toBeNull()
     expect(screen.queryByText("Next attempt")).toBeNull()
   })

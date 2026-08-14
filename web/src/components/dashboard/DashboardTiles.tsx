@@ -64,15 +64,15 @@ function cacheTileSub(ratio: number | undefined, window24h: boolean, partial: st
 }
 
 // statusBreakdown spells out the non-healthy remainder of the healthy/total tile, so
-// "3/5" says whether the other two are actually broken or merely unheard-from (#389).
+// "3/5" says whether the other two are actually broken or simply never tested (#484).
 function statusBreakdown(failing: number, unknown: number): string | undefined {
   const parts = []
   if (failing > 0) parts.push(`${failing} failing`)
-  if (unknown > 0) parts.push(`${unknown} unknown`)
+  if (unknown > 0) parts.push(`${unknown} never tested`)
   return parts.length > 0 ? parts.join(" · ") : undefined
 }
 
-// healthTone: a known failure is bad, an expired/unheard-from indexer only warns.
+// healthTone: a known failure is bad, a never-tested indexer only warns.
 function healthTone(total: number, healthy: number, failing: number): "ok" | "warn" | "bad" {
   if (failing > 0) return "bad"
   return total > 0 && healthy < total ? "warn" : "ok"
