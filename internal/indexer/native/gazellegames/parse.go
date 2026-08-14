@@ -243,7 +243,7 @@ func sortedTorrentIDs(torrents map[int64]gazelleGamesTorrent) []int64 {
 // (artist-derived, or the group-sticky CategoryId fallback) passed in by flattenGroup.
 func (d *driver) toRelease(groupID, torrentID int64, g *gazelleGamesGroup, t *gazelleGamesTorrent, cats []int) *normalizer.Release {
 	free := freeleech(t)
-	return &normalizer.Release{
+	rel := &normalizer.Release{
 		Title:                composeTitle(g, t),
 		Link:                 d.downloadURL(torrentID),
 		Details:              d.detailsURL(groupID, torrentID),
@@ -259,6 +259,11 @@ func (d *driver) toRelease(groupID, torrentID int64, g *gazelleGamesGroup, t *ga
 		UploadVolumeFactor:   uploadVolumeFactor(t),
 		MinimumSeedTime:      minimumSeedTimeSeconds,
 	}
+	// Scene arrives as the string "1"/"0"; only the affirmative form tags.
+	if t.Scene.Int64() == 1 {
+		rel.Tags = []string{normalizer.TagScene}
+	}
+	return rel
 }
 
 // groupCategories maps a group's artist names through the description-keyed category map,

@@ -29,6 +29,14 @@ type Release struct {
 	ReleaseName string `json:"releaseName,omitempty"`
 	Filename    string `json:"filename,omitempty"`
 
+	// Tags are tracker-native flags the source positively supplied (TagInternal,
+	// TagScene). They are PRESENCE-ONLY: an absent tag asserts nothing — it may
+	// mean "false" or "this source has no such field for this row" (a Gazelle
+	// non-music group carries no scene field at all). Never populate one by
+	// inference — no title/description matching, no deriving internal from a
+	// volume factor. Empty means "no evidence", which is why it is omitempty.
+	Tags []string `json:"tags,omitempty"`
+
 	Description string `json:"description,omitempty"`
 	Details     string `json:"details,omitempty"`
 	Comments    string `json:"comments,omitempty"`
@@ -79,6 +87,18 @@ type Release struct {
 	Label     string `json:"label,omitempty"`
 	Track     string `json:"track,omitempty"`
 }
+
+// The Release.Tags vocabulary. It is deliberately tiny: a tag earns a place only
+// when several independent sources supply it as a first-class typed field, so a
+// consumer can read it the same way everywhere. Single-source or badge-text
+// flags stay out rather than shipping a value that means something different per
+// tracker.
+const (
+	// TagInternal — the tracker marks the release as an internal (in-house) encode.
+	TagInternal = "internal"
+	// TagScene — the tracker marks the release as a scene release.
+	TagScene = "scene"
+)
 
 // Normalizer turns extracted+filtered field rows into canonical Release
 // objects. BaseURL resolves relative links/details/comments/posters (Jackett

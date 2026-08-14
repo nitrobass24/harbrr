@@ -51,6 +51,7 @@ func TestParseReleasesGolden(t *testing.T) {
 	want := []*normalizer.Release{
 		{
 			Title:      "Old.Show.S01E01.SDTV.XviD-GRP",
+			Tags:       []string{normalizer.TagScene}, // "Origin": "Scene"
 			Link:       "https://broadcasthe.net/torrents.php?action=download&id=1555000&authkey=SYNTHETICKEY2&torrent_pass=SYNTHETICPASS2",
 			InfoHash:   "AAAA1111BBBB2222CCCC3333DDDD4444EEEE5555",
 			Categories: []int{5030},
@@ -62,6 +63,7 @@ func TestParseReleasesGolden(t *testing.T) {
 		},
 		{
 			Title:      "That.Show.S05E04.1080p.WEB-DL.H.264-NOGRP",
+			Tags:       []string{normalizer.TagInternal}, // "Origin": "Internal"
 			Link:       "https://broadcasthe.net/torrents.php?action=download&id=1555073&authkey=SYNTHETICKEY1&torrent_pass=SYNTHETICPASS1",
 			InfoHash:   "56CD94119F6BF7FC294A92D7A4099C3D1815C907",
 			Categories: []int{5040},
@@ -73,6 +75,7 @@ func TestParseReleasesGolden(t *testing.T) {
 			DownloadVolumeFactor: 1, UploadVolumeFactor: 1,
 		},
 		{
+			// "Origin": "None" — an Origin outside the two known values contributes no tag.
 			Title:      "New.Show.S02.2160p.BluRay.x265-GRP",
 			Link:       "https://broadcasthe.net/torrents.php?action=download&id=1555200&authkey=SYNTHETICKEY3&torrent_pass=SYNTHETICPASS3",
 			InfoHash:   "FFFF6666AAAA7777BBBB8888CCCC9999DDDD0000",

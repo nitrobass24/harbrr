@@ -56,6 +56,7 @@ func TestParseReleasesGolden(t *testing.T) {
 	want := []*normalizer.Release{
 		{
 			Title:                "Some Movie 2021 1080p BluRay DD5.1 x264-GRP",
+			Tags:                 []string{normalizer.TagInternal}, // "internal": true
 			InfoHash:             "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
 			Link:                 "https://beyond-hd.me/torrent/download/auto.12345.RSSKEY00000000000000000000000000",
 			Details:              "https://beyond-hd.me/details/12345",
@@ -85,11 +86,12 @@ func TestParseReleasesGolden(t *testing.T) {
 			Leechers:             2,
 			Peers:                12,
 			PublishDate:          "2024-03-10T08:00:00Z",
-			DownloadVolumeFactor: 0.5, // promo50
+			DownloadVolumeFactor: 0.5, // promo50 — a 0.5 factor is NOT internal evidence
 			UploadVolumeFactor:   1,
 			MinimumRatio:         1,
 			MinimumSeedTime:      172800,
 			IMDBID:               "tt7654321",
+			// "internal": false -> no Tags at all (never inferred-false).
 		},
 	}
 	if len(got) != len(want) {

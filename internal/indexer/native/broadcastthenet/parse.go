@@ -182,6 +182,15 @@ func (d *driver) toRelease(mapKey string, t *btnTorrent) *sortableRelease {
 		DownloadVolumeFactor: 1,
 		UploadVolumeFactor:   1,
 	}
+	// Origin is BTN's provenance enum; only its two known values become tags, so
+	// any other value ("User", a future addition) contributes nothing rather than
+	// leaking raw enum text onto the wire.
+	switch t.Origin {
+	case "Internal":
+		rel.Tags = []string{normalizer.TagInternal}
+	case "Scene":
+		rel.Tags = []string{normalizer.TagScene}
+	}
 	return &sortableRelease{Release: rel, torrentIDSortKey: t.TorrentID.Int64(), mapKey: mapKey}
 }
 

@@ -46,6 +46,7 @@ func TestParseReleasesGolden(t *testing.T) {
 	want := []*normalizer.Release{
 		{
 			Title:       "The Matrix 1999 1080p BluRay x264",
+			Tags:        []string{normalizer.TagInternal}, // "internal": 1
 			Description: "Action, Sci-Fi",
 			Link:        "https://filelist.test/download.php?id=12345&passkey=" + credPass,
 			Details:     "https://filelist.test/details.php?id=12345",
@@ -57,6 +58,7 @@ func TestParseReleasesGolden(t *testing.T) {
 			IMDBID: "tt0133093",
 		},
 		{
+			// "internal": 0 -> no Tags at all (never inferred-false).
 			Title:       "Some Show S01E02 1080p WEB-DL",
 			Description: "Drama",
 			Link:        "https://filelist.test/download.php?id=67890&passkey=" + credPass,

@@ -74,6 +74,7 @@ func TestParseReleasesGolden(t *testing.T) {
 		},
 		{
 			Title:      "The Matrix 1999 DVDRip XviD-GROUP",
+			Tags:       []string{normalizer.TagScene}, // "Scene": true (the other two are false -> no Tags)
 			Link:       base + "torrents.php?action=download&id=1101",
 			Details:    base + "torrents.php?id=84813&torrentid=1101",
 			Categories: []int{2000},

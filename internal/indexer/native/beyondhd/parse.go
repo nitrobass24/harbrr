@@ -169,6 +169,11 @@ func (d *driver) toRelease(row *bhdTorrent) *normalizer.Release {
 		IMDBID:               canonicalIMDB(row.ImdbID),
 		TMDBID:               tmdbID(row.TmdbID),
 	}
+	// The API states internal as its own flag; it is NOT the DVF 0.5 that other
+	// BeyondHD promos also produce.
+	if row.Internal {
+		rel.Tags = []string{normalizer.TagInternal}
+	}
 	return rel
 }
 

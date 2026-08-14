@@ -78,13 +78,15 @@ func TestParseReleasesGolden(t *testing.T) {
 			Leechers:             2,
 			Peers:                52,
 			PublishDate:          "2023-11-14T22:13:20Z",
-			DownloadVolumeFactor: 0.5, // medium 1 (Bluray) is half-leech
+			DownloadVolumeFactor: 0.5, // medium 1 (Bluray) is half-leech...
 			UploadVolumeFactor:   1,
-			IMDBID:               "tt0133093",
-			Year:                 1999,
+			// ...but "type_origin": 0, so NO internal tag: the 0.5 factor is not the signal.
+			IMDBID: "tt0133093",
+			Year:   1999,
 		},
 		{
-			Title:                "Some.Show.S01E01.1080p.WEB-DL", // filename, .torrent stripped
+			Title:                "Some.Show.S01E01.1080p.WEB-DL",  // filename, .torrent stripped
+			Tags:                 []string{normalizer.TagInternal}, // "type_origin": 1
 			ReleaseName:          "Some Show S01E01",
 			Filename:             "Some.Show.S01E01.1080p.WEB-DL", // equals the title -> no feed attr
 			InfoHash:             "FFEE0011",

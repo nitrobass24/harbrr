@@ -2,6 +2,7 @@ package torznab
 
 import (
 	"encoding/xml"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -526,6 +527,77 @@ func TestResultsUsenetProtocol(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestResultsTagAttrs covers the repeated tag attr: one entry per tracker-supplied
+// flag, sorted and de-duplicated, nothing at all when the release carries none, and
+// identical treatment on both protocols (a tag is tracker evidence, not a torrent
+// stat, so the usenet feed keeps it).
+func TestResultsTagAttrs(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		tags []string
+		want []string // expected tag attr values, in emission order
+	}{
+		{"single tag", []string{"internal"}, []string{"internal"}},
+		{"multiple tags are sorted", []string{"scene", "internal"}, []string{"internal", "scene"}},
+		{"duplicates collapse", []string{"scene", "internal", "scene", "scene"}, []string{"internal", "scene"}},
+		{"nil tags emit nothing", nil, nil},
+		{"empty slice emits nothing", []string{}, nil},
+		// The wire vocabulary is closed: a value outside it is dropped rather than
+		// served, so a future driver cannot widen the contract consumers read.
+		{"unknown tags are filtered out", []string{"internal", "made-up", "scene"}, []string{"internal", "scene"}},
+		{"only unknown tags emit nothing", []string{"made-up"}, nil},
+	}
+	for _, tt := range tests {
+		for _, protocol := range []string{"", "usenet"} {
+			t.Run(tt.name+"/"+protocol, func(t *testing.T) {
+				t.Parallel()
+				feed := demoFeed()
+				feed.Protocol = protocol
+				r := &normalizer.Release{
+					Title: "Tagged.Release.2024.1080p", Tags: tt.tags,
+					Link: "https://demo.test/t.torrent", Size: 1, Categories: []int{2000},
+					Seeders: 1, Peers: 1, DownloadVolumeFactor: 1, UploadVolumeFactor: 1,
+				}
+				got, err := marshalResults(feed, []*normalizer.Release{r}, fixedNow())
+				if err != nil {
+					t.Fatalf("MarshalResults: %v", err)
+				}
+				if diff := tagValues(t, got); !slices.Equal(diff, tt.want) {
+					t.Errorf("tag attrs = %v, want %v\n%s", diff, tt.want, got)
+				}
+			})
+		}
+	}
+}
+
+// tagValues namespace-parses the feed and returns every tag attr value on the
+// single item, in document order — so a duplicate or a stray extra attr fails.
+func tagValues(t *testing.T, feed []byte) []string {
+	t.Helper()
+	var parsed struct {
+		Items []struct {
+			Attrs []struct {
+				Name  string `xml:"name,attr"`
+				Value string `xml:"value,attr"`
+			} `xml:"http://torznab.com/schemas/2015/feed attr"`
+		} `xml:"channel>item"`
+	}
+	if err := xml.Unmarshal(feed, &parsed); err != nil {
+		t.Fatalf("unmarshal feed: %v", err)
+	}
+	if len(parsed.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(parsed.Items))
+	}
+	var out []string
+	for _, a := range parsed.Items[0].Attrs {
+		if a.Name == "tag" {
+			out = append(out, a.Value)
+		}
+	}
+	return out
 }
 
 // TestResultsNameEvidenceAttrs covers the additive release_name/filename attrs:
