@@ -119,17 +119,6 @@ func TestNewWithOptions(t *testing.T) {
 		}
 		assertHealthy(t, a)
 	})
-
-	t.Run("WithHTTPClient", func(t *testing.T) {
-		t.Parallel()
-		cfg := testConfig(t)
-		a, err := New(context.Background(), Deps{Config: cfg, Logger: zerolog.Nop()},
-			WithHTTPClient(&http.Client{Timeout: 5 * time.Second}))
-		if err != nil {
-			t.Fatalf("New with WithHTTPClient: %v", err)
-		}
-		assertHealthy(t, a)
-	})
 }
 
 func assertHealthy(t *testing.T, a *App) {

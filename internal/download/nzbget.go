@@ -71,10 +71,10 @@ func (d *nzbgetDriver) Add(ctx context.Context, p Payload, opts AddOptions) erro
 	if _, err := d.client.AddFromURL(ctx, nzbget.AddNzbRequest{URL: p.URL, Category: category}); err != nil {
 		// The nzb URL carries a harbrr API key (a sealed /dl link) and rides in the
 		// RPC request body (not the request URL), but a transport failure still
-		// surfaces as a *url.Error whose .URL is the jsonrpc endpoint — scrubURLError
+		// surfaces as a *url.Error whose .URL is the jsonrpc endpoint — ScrubURLError
 		// drops it; the ReplaceAll is defense-in-depth for any literal-URL error
 		// text, mirroring qbittorrent.go's Add treatment.
-		err = scrubURLError(err)
+		err = apphttp.ScrubURLError(err)
 		scrubbed := strings.ReplaceAll(err.Error(), p.URL, apphttp.RedactURL(p.URL))
 		return fmt.Errorf("download: nzbget: add nzb from %s: %s", apphttp.RedactURL(p.URL), scrubbed)
 	}
@@ -92,7 +92,7 @@ func (d *nzbgetDriver) appendContent(ctx context.Context, p Payload, category st
 		Category: category,
 	})
 	if err != nil {
-		return fmt.Errorf("download: nzbget: upload nzb: %w", scrubURLError(err))
+		return fmt.Errorf("download: nzbget: upload nzb: %w", apphttp.ScrubURLError(err))
 	}
 	return nil
 }

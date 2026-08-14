@@ -52,6 +52,28 @@ func RedactURLError(err error) error {
 	return fmt.Errorf("%s %s: %w", uerr.Op, SchemeHost(uerr.URL), RedactURLError(uerr.Err))
 }
 
+// ScrubURLError strips the request URL entirely from any *url.Error in err's chain,
+// keeping only the Op and the underlying cause. A *url.Error's .URL is the full
+// request URL, so it can carry an apikey/passkey in the query, an rsskey in a path
+// segment, or userinfo credentials from a user-supplied base URL — and
+// (*url.Error).Error() quotes all of it into the message, one layer below whatever
+// redaction a wrap site applies to its own format args. It recurses into the cause,
+// so a nested *url.Error (each level quoting its own URL) is scrubbed at every
+// layer. Any other error passes through unchanged.
+//
+// This is deliberately NOT the same function as RedactURLError above, and the two
+// must not be merged: RedactURLError keeps "scheme://host" (useful when the caller
+// wants to say which endpoint failed), while ScrubURLError drops the host too. Use
+// this one where the host itself is user-configured and may be sensitive, or where
+// the surrounding message already names the target.
+func ScrubURLError(err error) error {
+	var uerr *url.Error
+	if errors.As(err, &uerr) {
+		return fmt.Errorf("%s: %w", uerr.Op, ScrubURLError(uerr.Err))
+	}
+	return err
+}
+
 // SchemeHost returns "<scheme>://<host>" for a raw URL, dropping the path, query, and
 // userinfo. It is the safe way to surface "which endpoint" in a log or error without
 // risking a path/query-embedded secret: RedactURL only scrubs secret query params by name

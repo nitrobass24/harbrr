@@ -36,10 +36,19 @@ func (b *Base) GrabDirect(ctx context.Context, link string, classify Classify) (
 	if err != nil {
 		return nil, err
 	}
-	return &search.GrabResult{
-		Body:        resp.Body,
-		ContentType: resp.Header.Get("Content-Type"),
-	}, nil
+	return GrabResultFrom(resp), nil
+}
+
+// GrabResultFrom builds the standard grab result from a driver response: the body plus
+// the response's Content-Type. Every torrent driver's grab tail is this shape, so it is
+// written once here rather than ten times. It is exported because the drivers live in
+// sub-packages of native.
+//
+// This shares only the tail: a driver still runs its own d.get, which is where its
+// per-driver auth headers (Bearer, session cookie, Basic, X-API-Key) are applied.
+// Routing those drivers through GrabDirect instead would drop the headers.
+func GrabResultFrom(resp *Response) *search.GrabResult {
+	return &search.GrabResult{Body: resp.Body, ContentType: resp.Header.Get("Content-Type")}
 }
 
 // GrabNZB is the shared usenet grab path for newznab and nzbindex: a plain GET for a
@@ -52,7 +61,7 @@ func (b *Base) GrabDirect(ctx context.Context, link string, classify Classify) (
 //
 // A classified-status error (login.ErrLoginFailed, *search.RateLimitedError) is returned
 // as-is so health classification survives; a context cancellation/deadline is preserved;
-// anything else collapses through sanitizeGrabError so a URL can never leak through an
+// anything else collapses through SanitizeGrabError so a URL can never leak through an
 // unanticipated error shape.
 func (b *Base) GrabNZB(ctx context.Context, link, contentType string, classify Classify, errDownloadRequestFailed error) (*search.GrabResult, error) {
 	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, link, nil)
@@ -71,31 +80,41 @@ func (b *Base) GrabNZB(ctx context.Context, link, contentType string, classify C
 			// pass through unsanitized so callers keep their classification.
 			return nil, err
 		}
-		return nil, sanitizeGrabError(err, errDownloadRequestFailed)
+		return nil, SanitizeGrabError(err, errDownloadRequestFailed)
 	}
 	return &search.GrabResult{Body: resp.Body, ContentType: contentType}, nil
 }
 
-// sanitizeGrabError classifies GrabNZB's RAW DoDownload error for surfacing. Sentinels
-// that carry no URL and that callers need to classify are passed through: auth and
-// rate-limit (for health), context cancellation/deadline, and the size-cap error. A
-// transport failure roundTrip marked host-redacted (its cause is PROVABLY scrubbed to
-// scheme://host) keeps its detail, wrapped as errDownloadRequestFailed. Anything else is
-// flattened to the bare errDownloadRequestFailed sentinel: an unmarked error may embed a
-// secret-bearing URL in free text that no scrubber can safely rewrite.
-func sanitizeGrabError(err, errDownloadRequestFailed error) error {
-	switch {
-	case errors.Is(err, login.ErrLoginFailed),
-		errors.Is(err, context.Canceled),
-		errors.Is(err, context.DeadlineExceeded),
-		errors.Is(err, ErrDownloadTooLarge):
-		return err
+// SanitizeGrabError classifies a RAW DoDownload error for surfacing. The
+// classification callers need always survives — auth and rate-limit (for health),
+// context cancellation/deadline, and the size-cap error — but only BARE: the wrapper's
+// free text is dropped unless roundTrip marked the error host-redacted (its cause is
+// PROVABLY scrubbed to scheme://host), in which case the full detail is kept. The
+// rate-limit case returns the typed *search.RateLimitedError, so RetryAfter survives the
+// collapse. Anything not classified is the errDownloadRequestFailed sentinel — wrapped
+// around the error when host-redacted, bare otherwise, because an unmarked error may
+// embed a secret-bearing URL in free text that no scrubber can safely rewrite.
+//
+// errDownloadRequestFailed is the caller's own family-prefixed sentinel, so this is
+// shared by GrabNZB and by any driver (avistaz) whose Grab sanitizes its own error.
+func SanitizeGrabError(err, errDownloadRequestFailed error) error {
+	redacted := apphttp.IsHostRedacted(err)
+	for _, sentinel := range []error{login.ErrLoginFailed, context.Canceled, context.DeadlineExceeded, ErrDownloadTooLarge} {
+		if errors.Is(err, sentinel) {
+			if redacted {
+				return err
+			}
+			return sentinel
+		}
 	}
 	var rl *search.RateLimitedError
 	if errors.As(err, &rl) {
-		return err
+		if redacted {
+			return err
+		}
+		return rl
 	}
-	if apphttp.IsHostRedacted(err) {
+	if redacted {
 		return fmt.Errorf("%w: %w", errDownloadRequestFailed, err)
 	}
 	return errDownloadRequestFailed

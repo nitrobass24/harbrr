@@ -102,10 +102,7 @@ func New(ctx context.Context, deps Deps, opts ...Option) (*App, error) {
 	for _, opt := range opts {
 		opt(o)
 	}
-	httpClient := o.httpClient
-	if httpClient == nil {
-		httpClient = appSyncClient()
-	}
+	httpClient := appSyncClient()
 
 	a := &App{cfg: deps.Config, log: deps.Logger}
 

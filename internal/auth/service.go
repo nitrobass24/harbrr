@@ -82,9 +82,6 @@ func NewService(db dbinterface.Querier) *Service {
 // hasher. Production callers should use NewService; tests can provide a cheaper
 // deterministic hasher while keeping API behavior unchanged.
 func NewServiceWithPasswordHasher(db dbinterface.Querier, hasher PasswordHasher) *Service {
-	if hasher == nil {
-		hasher = secretsPasswordHasher{}
-	}
 	return &Service{db: db, hasher: hasher, touchPending: make(map[int64]time.Time)}
 }
 

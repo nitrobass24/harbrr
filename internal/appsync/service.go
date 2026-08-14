@@ -347,20 +347,11 @@ func (s *Service) driver(ctx context.Context, conn domain.AppConnection) (Target
 
 // newDriver builds the per-kind Target.
 func newDriver(kind, baseURL, apiKey string, client *http.Client) (Target, error) {
-	switch kind {
-	case domain.AppKindSonarr:
-		return NewSonarr(baseURL, apiKey, client), nil
-	case domain.AppKindRadarr:
-		return NewRadarr(baseURL, apiKey, client), nil
-	case domain.AppKindLidarr:
-		return NewLidarr(baseURL, apiKey, client), nil
-	case domain.AppKindReadarr:
-		return NewReadarr(baseURL, apiKey, client), nil
-	case domain.AppKindWhisparr:
-		return NewWhisparr(baseURL, apiKey, client), nil
-	case domain.AppKindQui:
-		return NewQui(baseURL, apiKey, client), nil
-	default:
-		return nil, fmt.Errorf("%w: unknown kind %q", domain.ErrInvalid, kind)
+	if t := NewServarr(kind, baseURL, apiKey, client); t != nil {
+		return t, nil
 	}
+	if kind == domain.AppKindQui {
+		return NewQui(baseURL, apiKey, client), nil
+	}
+	return nil, fmt.Errorf("%w: unknown kind %q", domain.ErrInvalid, kind)
 }

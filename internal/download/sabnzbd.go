@@ -45,8 +45,8 @@ func (d *sabnzbdDriver) Test(ctx context.Context) error {
 	if _, err := d.client.Version(ctx); err != nil {
 		// The version request URL itself carries the configured apikey (as a query
 		// param); a transport failure surfaces as a *url.Error whose text embeds
-		// that full URL — scrubURLError drops it, same treatment as Add.
-		return fmt.Errorf("download: sabnzbd: version: %w", scrubURLError(err))
+		// that full URL — ScrubURLError drops it, same treatment as Add.
+		return fmt.Errorf("download: sabnzbd: version: %w", apphttp.ScrubURLError(err))
 	}
 	return nil
 }
@@ -77,10 +77,10 @@ func (d *sabnzbdDriver) Add(ctx context.Context, p Payload, opts AddOptions) err
 		// The nzb URL carries a harbrr API key (a sealed /dl link) and is embedded
 		// in SABnzbd's own request (as the "name" query param). A transport
 		// failure surfaces as a *url.Error whose .URL is the (percent-encoded)
-		// request URL — scrubURLError drops it entirely; the ReplaceAll is
+		// request URL — ScrubURLError drops it entirely; the ReplaceAll is
 		// defense-in-depth for any literal-URL error text, mirroring
 		// qbittorrent.go's Add treatment.
-		err = scrubURLError(err)
+		err = apphttp.ScrubURLError(err)
 		scrubbed := strings.ReplaceAll(err.Error(), p.URL, apphttp.RedactURL(p.URL))
 		return fmt.Errorf("download: sabnzbd: add nzb from %s: %s", apphttp.RedactURL(p.URL), scrubbed)
 	}
@@ -101,7 +101,7 @@ func (d *sabnzbdDriver) addFile(ctx context.Context, p Payload, category string)
 		Category: category,
 	})
 	if err != nil {
-		return fmt.Errorf("download: sabnzbd: upload nzb: %w", scrubURLError(err))
+		return fmt.Errorf("download: sabnzbd: upload nzb: %w", apphttp.ScrubURLError(err))
 	}
 	if resp.ErrorMsg != "" {
 		return fmt.Errorf("download: sabnzbd: upload nzb: %s", resp.ErrorMsg)

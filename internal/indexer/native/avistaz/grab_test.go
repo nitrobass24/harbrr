@@ -158,10 +158,21 @@ func TestGrabTransportErrorSanitized(t *testing.T) {
 	}
 }
 
-func TestGrabPreservesOversizedSentinel(t *testing.T) {
+// TestGrabPreservesSentinels proves every sentinel a caller has to classify survives
+// the sanitizer unwrapped. context.Canceled and context.DeadlineExceeded are the two
+// the local copy of this sanitizer used to flatten — routing avistaz through the shared
+// native.SanitizeGrabError is what fixed them.
+func TestGrabPreservesSentinels(t *testing.T) {
 	t.Parallel()
-	err := sanitizeGrabError(native.ErrDownloadTooLarge)
-	if !errors.Is(err, native.ErrDownloadTooLarge) {
-		t.Fatalf("err = %v, want native.ErrDownloadTooLarge", err)
+	for _, sentinel := range []error{
+		native.ErrDownloadTooLarge,
+		context.Canceled,
+		context.DeadlineExceeded,
+		login.ErrLoginFailed,
+	} {
+		err := native.SanitizeGrabError(sentinel, errDownloadRequestFailed)
+		if !errors.Is(err, sentinel) {
+			t.Errorf("SanitizeGrabError(%v) = %v, want the sentinel unwrapped", sentinel, err)
+		}
 	}
 }

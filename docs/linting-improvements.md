@@ -45,7 +45,7 @@ Each line: the trial count, why it isn't in, and what enabling it would take.
   fresh `context.WithTimeout`) plus test helpers (`mintKey`). *Enable by:* `//nolint` the shutdown
   site and thread context through the test helpers.
 - **`interfacebloat` at ≤5** — `torznabhttp.Indexer` legitimately has 6 methods; `native.Driver`
-  is split into the `Searcher` (5) + `Tester` roles. Shipped at 10; to tighten to the documented
+  has 8, split into the `Searcher` (7) + `Tester` roles. Shipped at 10; to tighten to the documented
   ≤5 you'd split the remaining `Indexer` seam (or accept it). Review norm for now.
 - **`usestdlibvars`** *(6, all tests)* — magic HTTP status numbers (`429`/`200`/`503`) →
   `http.StatusXxx` in `ratelimit_test.go` / `pacedclient_test.go`. Cosmetic, test-only.

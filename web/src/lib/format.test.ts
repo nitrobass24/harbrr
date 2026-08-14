@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { formatSize, hostname, relativeTime } from "./format"
+import { formatSize, hostname, kindLabel, relativeTime, syncStatusClass } from "./format"
 
 describe("formatSize", () => {
   const cases: { bytes: number | undefined, want: string }[] = [
@@ -27,6 +27,32 @@ describe("relativeTime", () => {
   for (const c of cases) {
     it(`${c.iso} -> "${c.want}"`, () => expect(relativeTime(c.iso, now)).toBe(c.want))
   }
+})
+
+describe("syncStatusClass", () => {
+  const cases: { status: string | undefined, want: string }[] = [
+    { status: "ok", want: "text-ok" },
+    { status: "partial", want: "text-warn" },
+    { status: "error", want: "text-bad" },
+    { status: "skipped", want: "text-faint" },
+    { status: undefined, want: "text-faint" },
+    { status: "nonsense", want: "text-faint" },
+    // Object.prototype keys must not resolve to an inherited member.
+    { status: "toString", want: "text-faint" },
+    { status: "constructor", want: "text-faint" },
+    { status: "__proto__", want: "text-faint" },
+  ]
+  for (const c of cases) {
+    it(`${c.status} -> ${c.want}`, () => expect(syncStatusClass(c.status)).toBe(c.want))
+  }
+})
+
+describe("kindLabel", () => {
+  it("maps known slugs and echoes anything else, including prototype keys", () => {
+    expect(kindLabel("qbittorrent")).toBe("qBittorrent")
+    expect(kindLabel("unknown-kind")).toBe("unknown-kind")
+    expect(kindLabel("toString")).toBe("toString")
+  })
 })
 
 describe("hostname", () => {

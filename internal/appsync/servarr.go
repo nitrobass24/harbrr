@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 
+	"github.com/autobrr/harbrr/internal/domain"
 	apphttp "github.com/autobrr/harbrr/internal/http"
 )
 
@@ -80,16 +80,38 @@ type servarrDriver struct {
 
 var _ Target = (*servarrDriver)(nil)
 
-// newServarr builds a Servarr driver. apiKey is the *app's* key (to authenticate to
-// it); the harbrr feed key travels inside each pushed indexer body. indexerPath is the
-// app's indexer REST path (servarrIndexerPathV3 or servarrIndexerPathV1).
-func newServarr(kind, baseURL, apiKey string, client *http.Client, anime bool, indexerPath string) *servarrDriver {
+// servarrSpecs is the Servarr family. All five apps drive the same REST contract and
+// the same buildIndexer; they differ only in whether they carry anime categories and
+// which API version serves the indexer path. That is two bits per app, so it is a
+// table rather than five one-function constructors behind a five-arm switch.
+var servarrSpecs = map[string]struct {
+	anime bool
+	path  string
+}{
+	domain.AppKindSonarr:   {true, servarrIndexerPathV3},
+	domain.AppKindRadarr:   {false, servarrIndexerPathV3},
+	domain.AppKindWhisparr: {false, servarrIndexerPathV3},
+	domain.AppKindLidarr:   {false, servarrIndexerPathV1},
+	domain.AppKindReadarr:  {false, servarrIndexerPathV1},
+}
+
+// NewServarr builds a Target for one of the Servarr-family apps (Sonarr, Radarr,
+// Lidarr, Readarr, Whisparr). baseURL is the app's own origin (e.g. http://sonarr:8989)
+// and apiKey is the *app's* key, used to authenticate to it; the harbrr feed key
+// travels inside each pushed indexer body, not here. It returns nil for any kind
+// outside the family — the only caller that can pass one is newDriver, which turns
+// that into domain.ErrInvalid.
+func NewServarr(kind, baseURL, apiKey string, client *http.Client) Target {
+	spec, ok := servarrSpecs[kind]
+	if !ok {
+		return nil
+	}
 	if client == nil {
 		client = defaultHTTPClient()
 	}
 	return &servarrDriver{
 		kind: kind, baseURL: strings.TrimRight(baseURL, "/"),
-		apiKey: apiKey, client: client, anime: anime, indexerPath: indexerPath,
+		apiKey: apiKey, client: client, anime: spec.anime, indexerPath: spec.path,
 	}
 }
 
@@ -202,7 +224,7 @@ func (s *servarrDriver) do(ctx context.Context, method, path string, body, out a
 	}
 	req, err := http.NewRequestWithContext(ctx, method, s.baseURL+path, reader)
 	if err != nil {
-		return 0, fmt.Errorf("appsync: %s: build request: %w", s.kind, scrubURLError(err))
+		return 0, fmt.Errorf("appsync: %s: build request: %w", s.kind, apphttp.ScrubURLError(err))
 	}
 	req.Header.Set("X-Api-Key", s.apiKey)
 	if body != nil {
@@ -210,7 +232,7 @@ func (s *servarrDriver) do(ctx context.Context, method, path string, body, out a
 	}
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("appsync: %s: %s %s: %w", s.kind, method, path, scrubURLError(err))
+		return 0, fmt.Errorf("appsync: %s: %s %s: %w", s.kind, method, path, apphttp.ScrubURLError(err))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -286,19 +308,6 @@ func parseServarrReason(resp *http.Response) string {
 // secret tokens — the forms the echoed harbrr feed key takes).
 func scrubReason(text string) string {
 	return apphttp.RedactError(errors.New(text))
-}
-
-// scrubURLError strips the request URL from a *url.Error so a credential a user may
-// have embedded in an app's base URL (userinfo) can never reach an error surface
-// (last_sync_error, an API response) — RedactError does not scrub URL userinfo. The Op
-// and underlying cause are kept (host:port in a dial error is not a secret); any other
-// error passes through unchanged. Shared by both drivers' do().
-func scrubURLError(err error) error {
-	var ue *url.Error
-	if errors.As(err, &ue) {
-		return fmt.Errorf("%s: %w", ue.Op, ue.Err)
-	}
-	return err
 }
 
 // field builds a typed field entry; the value marshals cleanly (string/int slice/bool

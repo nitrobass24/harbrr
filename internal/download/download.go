@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/autobrr/harbrr/internal/domain"
@@ -168,17 +167,3 @@ func releaseFilename(name, ext string) string {
 // maxReleaseFilenameRunes keeps the derived name well inside the 255-byte filename
 // limit every mainstream filesystem enforces, even at 4 bytes per rune.
 const maxReleaseFilenameRunes = 60
-
-// scrubURLError strips the request URL from a *url.Error — the shape net/http
-// returns for a failed request, whose .URL field is the full (percent-encoded)
-// request URL and so can carry a client's own apikey/password plus, embedded in
-// it, harbrr's own sealed-nzb-URL apikey. Same treatment as announce's
-// scrubURLError (internal/announce/announce.go); reimplemented here rather than
-// imported so package download stays independent of internal/announce.
-func scrubURLError(err error) error {
-	var ue *url.Error
-	if errors.As(err, &ue) {
-		return fmt.Errorf("%s: %w", ue.Op, ue.Err)
-	}
-	return err
-}
