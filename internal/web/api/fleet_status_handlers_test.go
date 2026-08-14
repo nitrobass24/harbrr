@@ -52,17 +52,18 @@ func TestAllIndexerStatusEmptyFleet(t *testing.T) {
 }
 
 // fleetSlugs is the seeded fleet, in the sorted order the roll-up returns.
-var fleetSlugs = []string{"failing-recent", "healthy-tested", "unknown-idle", "unknown-stale"}
+var fleetSlugs = []string{"failing-old", "failing-recent", "healthy-tested", "unknown-idle"}
 
 // failingSinceSeed is the streak start seeded onto failing-recent's circuit. Fixed
 // (not now-relative) so the endpoint's failingSince can be asserted by exact equality
 // rather than a tolerance — it is only ever reported back, never compared to a clock.
 var failingSinceSeed = time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
 
-// seedHealthFleet configures four indexers covering all three derived states (#389):
-// one with a recent failure (failing), one that just passed a test (healthy), one never
-// heard from (unknown), and one whose failure has aged out of the window (unknown, but
-// its old event is still reported).
+// seedHealthFleet configures four indexers covering all three derived states (#389,
+// remodelled by #484): one with a recent failure (failing), one whose failure is two
+// hours old and which nothing has succeeded past since — still failing, because health is
+// sticky and nothing expires — one that just passed a test (healthy), and one never heard
+// from at all (unknown, meaning never tested).
 func seedHealthFleet(t *testing.T, e *env) {
 	t.Helper()
 	ctx := context.Background()
@@ -103,7 +104,7 @@ func seedHealthFleet(t *testing.T, e *env) {
 		t.Fatalf("upsert circuit: %v", err)
 	}
 	if err := health.Record(ctx, e.db, domain.IndexerHealthEvent{
-		InstanceID: instanceIDs["unknown-stale"], Kind: "rate_limited", Detail: "429",
+		InstanceID: instanceIDs["failing-old"], Kind: "rate_limited", Detail: "429",
 		OccurredAt: time.Now().Add(-2 * time.Hour),
 	}); err != nil {
 		t.Fatalf("record old failure: %v", err)
@@ -133,8 +134,8 @@ func TestAllIndexerStatus(t *testing.T) {
 		t.Fatalf("unmarshal: %v (body %s)", err, body)
 	}
 
-	if out.Healthy != 1 || out.Failing != 1 || out.Unknown != 2 {
-		t.Errorf("counts = healthy=%d failing=%d unknown=%d, want 1/1/2", out.Healthy, out.Failing, out.Unknown)
+	if out.Healthy != 1 || out.Failing != 2 || out.Unknown != 1 {
+		t.Errorf("counts = healthy=%d failing=%d unknown=%d, want 1/2/1", out.Healthy, out.Failing, out.Unknown)
 	}
 	if len(out.Indexers) != len(slugs) {
 		t.Fatalf("indexers rows = %d, want %d", len(out.Indexers), len(slugs))
@@ -155,9 +156,9 @@ func TestAllIndexerStatus(t *testing.T) {
 	}
 	wantStatus := map[string]string{
 		"failing-recent": "failing",
+		"failing-old":    "failing",
 		"healthy-tested": "healthy",
 		"unknown-idle":   "unknown",
-		"unknown-stale":  "unknown",
 	}
 	for slug, want := range wantStatus {
 		if byStatus[slug] != want {
@@ -167,8 +168,8 @@ func TestAllIndexerStatus(t *testing.T) {
 	if _, has := lastEventKind["unknown-idle"]; has {
 		t.Errorf("unknown-idle lastEvent = %v, want omitted (no events)", lastEventKind["unknown-idle"])
 	}
-	if lastEventKind["unknown-stale"] != "rate_limited" {
-		t.Errorf("unknown-stale lastEvent.kind = %q, want rate_limited (expired, still reported)", lastEventKind["unknown-stale"])
+	if lastEventKind["failing-old"] != "rate_limited" {
+		t.Errorf("failing-old lastEvent.kind = %q, want rate_limited", lastEventKind["failing-old"])
 	}
 	if lastEventKind["failing-recent"] != "auth_failure" {
 		t.Errorf("failing-recent lastEvent.kind = %q, want auth_failure (the newest of its two events)", lastEventKind["failing-recent"])
@@ -184,7 +185,7 @@ func TestAllIndexerStatus(t *testing.T) {
 	if got := failingSince["failing-recent"]; got == nil || !got.Equal(failingSinceSeed) {
 		t.Errorf("failing-recent failingSince = %v, want the seeded streak start %v", got, failingSinceSeed)
 	}
-	for _, slug := range []string{"healthy-tested", "unknown-idle", "unknown-stale"} {
+	for _, slug := range []string{"healthy-tested", "unknown-idle"} {
 		if got := failingSince[slug]; got != nil {
 			t.Errorf("%s failingSince = %v, want omitted (only a failing row has a streak)", slug, got)
 		}
@@ -206,8 +207,8 @@ func TestAllIndexerStatusFilter(t *testing.T) {
 		want  []string
 	}{
 		{name: "healthy", query: "?status=healthy", want: []string{"healthy-tested"}},
-		{name: "failing", query: "?status=failing", want: []string{"failing-recent"}},
-		{name: "unknown", query: "?status=unknown", want: []string{"unknown-idle", "unknown-stale"}},
+		{name: "failing", query: "?status=failing", want: []string{"failing-old", "failing-recent"}},
+		{name: "unknown", query: "?status=unknown", want: []string{"unknown-idle"}},
 		{name: "empty value is no filter", query: "?status=", want: fleetSlugs},
 	}
 	for _, tt := range tests {
@@ -221,8 +222,8 @@ func TestAllIndexerStatusFilter(t *testing.T) {
 			if err := json.Unmarshal(body, &out); err != nil {
 				t.Fatalf("unmarshal: %v (body %s)", err, body)
 			}
-			if out.Healthy != 1 || out.Failing != 1 || out.Unknown != 2 {
-				t.Errorf("counts = healthy=%d failing=%d unknown=%d, want the fleet-wide 1/1/2",
+			if out.Healthy != 1 || out.Failing != 2 || out.Unknown != 1 {
+				t.Errorf("counts = healthy=%d failing=%d unknown=%d, want the fleet-wide 1/2/1",
 					out.Healthy, out.Failing, out.Unknown)
 			}
 			if len(out.Indexers) != len(tt.want) {

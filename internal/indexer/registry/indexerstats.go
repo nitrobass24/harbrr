@@ -88,12 +88,18 @@ func (s *IndexerStats) get(instanceID int64) *instanceStat {
 // RecordQuery counts one search that reached the tracker and folds in its elapsed
 // latency. Lock-free hot path (no DB write): the increments are flushed durably on the
 // periodic tick and at shutdown. A negative elapsed (a clock skew) is clamped to zero.
+//
+// The instant is TRUNCATED TO THE SECOND for the same reason RecordSuccess is: the
+// derivation compares the two against each other (#484's "queried since the last
+// success" rule) and they persist at RFC3339 second granularity, so an untruncated
+// query stamp would sit microseconds AFTER the success of the very search that set it
+// and read every successful search as a query nothing succeeded on.
 func (s *IndexerStats) RecordQuery(instanceID int64, elapsed time.Duration) {
 	is := s.get(instanceID)
 	is.queries.Add(1)
 	ms := max(elapsed.Milliseconds(), 0)
 	is.responseMs.Add(ms)
-	is.lastQueryUnix.Store(s.clock().UnixMilli())
+	is.lastQueryUnix.Store(s.clock().Truncate(time.Second).UnixMilli())
 }
 
 // RecordSuccess stamps the instant a search or grab actually SUCCEEDED. It is the only
@@ -110,7 +116,7 @@ func (s *IndexerStats) RecordQuery(instanceID int64, elapsed time.Duration) {
 // is what deriveStatus already treats as "not a success" (see failingNow).
 // Stored if-greater, like the rehydrate fold: two concurrent successes can reach here
 // with different clock reads, and the one holding the older value must not land last and
-// rewind the instant out of the healthy window.
+// rewind the instant behind a failure or a query it actually came after.
 func (s *IndexerStats) RecordSuccess(instanceID int64) {
 	storeIfGreater(&s.get(instanceID).lastSuccessUnix, s.clock().Truncate(time.Second).UnixMilli())
 }
