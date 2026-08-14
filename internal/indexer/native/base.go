@@ -36,11 +36,11 @@ const (
 // corrupt. Drivers and tests classify with errors.Is.
 var ErrDownloadTooLarge = errors.New("download exceeds the size cap")
 
-// ErrBodyRead is returned by roundTrip's API-response path when io.ReadAll fails
-// mid-body (status already read, body truncated/dropped). The registry's health
-// classifier matches it via errors.Is as a TRANSPORT failure (#234) — a connection
-// dying mid-read is not a parse problem — so rewording the message below can't
-// silently break that classification.
+// ErrBodyRead is returned by BOTH of roundTrip's body-read paths — the API response
+// and the download — when the read fails mid-body (status already read, body
+// truncated/dropped). The registry's health classifier matches it via errors.Is as a
+// TRANSPORT failure (#234) — a connection dying mid-read is not a parse problem — so
+// rewording the message below can't silently break that classification.
 var ErrBodyRead = errors.New("read response body")
 
 // Base is the shared implementation core a native driver embeds: the per-instance
@@ -264,7 +264,11 @@ func (b *Base) roundTrip(ctx context.Context, req *stdhttp.Request, c Classify, 
 	if op == "download" {
 		out.Body, err = readCapped(resp.Body, maxTorrentBytes)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", b.Family, err)
+			// readCapped's errors are URL-free by construction (it reads an io.Reader
+			// and never sees the request URL), so the marker is truthful here and it
+			// is what stops sanitizeGrabError flattening the wrap — which would drop
+			// the ErrBodyRead a mid-body drop needs to classify as transport (#479).
+			return nil, apphttp.MarkHostRedacted(fmt.Errorf("%s: %w", b.Family, err)) //nolint:wrapcheck // the wrap IS the shaped error; the marker is a transparent Error()/Unwrap() passthrough
 		}
 		return out, nil
 	}
@@ -299,11 +303,13 @@ func (b *Base) captureRefusal(req *stdhttp.Request, resp *stdhttp.Response, err 
 }
 
 // readCapped reads up to limit bytes, returning ErrDownloadTooLarge when the
-// source exceeds the cap. The returned errors never carry the source URL.
+// source exceeds the cap and ErrBodyRead when the connection dies mid-body. The
+// returned errors never carry the source URL: readCapped only ever sees an
+// io.Reader.
 func readCapped(r io.Reader, limit int64) ([]byte, error) {
 	body, err := io.ReadAll(io.LimitReader(r, limit+1))
 	if err != nil {
-		return nil, fmt.Errorf("read download response: %w", err)
+		return nil, fmt.Errorf("%w: download: %w", ErrBodyRead, err)
 	}
 	if int64(len(body)) > limit {
 		return nil, ErrDownloadTooLarge
