@@ -84,11 +84,20 @@ func TestSafeTransportDetail(t *testing.T) {
 func TestScrubURLError(t *testing.T) {
 	t.Parallel()
 
+	// A sentinel leaf cause, so the nested case can assert the ORIGINAL error survives in
+	// the returned chain and not merely in the message text. Callers errors.Is/As through
+	// a scrubbed error (the registry classifies a transport failure by its net.Error
+	// cause), so swapping the %w wrap for %v would break them while leaving every
+	// message assertion below green.
+	errNestedCause := errors.New("boom")
+
 	tests := []struct {
 		name       string
 		err        error
 		wantHas    []string
 		wantNoLeak []string
+		// wantIs, when set, must remain reachable via errors.Is on the scrubbed result.
+		wantIs error
 	}{
 		{
 			name: "query apikey and passkey are dropped with the whole URL",
@@ -118,18 +127,23 @@ func TestScrubURLError(t *testing.T) {
 				Err: &url.Error{
 					Op:  "parse",
 					URL: "https://inner.test/rss/INNER-SECRET/feed",
-					Err: errors.New("boom"),
+					Err: errNestedCause,
 				},
 			},
 			wantHas:    []string{"Get", "parse", "boom"},
 			wantNoLeak: []string{"OUTER-SECRET", "INNER-SECRET", "outer.test", "inner.test"},
+			wantIs:     errNestedCause,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := ScrubURLError(tt.err).Error()
+			scrubbed := ScrubURLError(tt.err)
+			if tt.wantIs != nil && !errors.Is(scrubbed, tt.wantIs) {
+				t.Errorf("scrubbed error %v dropped the original cause from its chain", scrubbed)
+			}
+			got := scrubbed.Error()
 			for _, want := range tt.wantHas {
 				if !strings.Contains(got, want) {
 					t.Errorf("scrubbed error %q missing %q", got, want)
@@ -146,7 +160,11 @@ func TestScrubURLError(t *testing.T) {
 	t.Run("non-url error passes through unchanged", func(t *testing.T) {
 		t.Parallel()
 		plain := errors.New("boom")
-		if got := ScrubURLError(plain); !errors.Is(got, plain) {
+		// Identity, not errors.Is: the contract is "returned unchanged", and a
+		// fmt.Errorf("...: %w", plain) wrap would satisfy errors.Is while violating it.
+		// errorlint's "use errors.Is" rule is the right default everywhere else, but
+		// here the pointer comparison IS the assertion.
+		if got := ScrubURLError(plain); got != plain { //nolint:errorlint // identity is the contract under test; errors.Is would pass on a wrap
 			t.Errorf("ScrubURLError altered a non-URL error: %v", got)
 		}
 	})
