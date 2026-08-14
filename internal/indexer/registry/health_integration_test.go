@@ -176,11 +176,12 @@ func TestSearchGatewayOutageRecordsTransportEvent(t *testing.T) {
 	}
 }
 
-// TestFailingSearchesNeverDeriveHealthy is the #457 regression: an indexer whose every
-// search fails with an UNCLASSIFIED error (a plain 500 — the tracker answered, so no
-// health event is written and the breaker never trips) must not keep reading healthy off
-// the failing traffic itself. Once the last REAL success ages past the healthy window,
-// the honest answer is unknown.
+// TestFailingSearchesNeverDeriveHealthy is the #457 regression, sharpened by #484: an
+// indexer whose every search fails with an UNCLASSIFIED error (a plain 500 — the tracker
+// answered, so no health event is written and the breaker never trips) must not keep
+// reading healthy off the failing traffic itself. #457 could only demote it to unknown
+// once the success aged out; #484's "queried since the last success" rule calls it
+// failing outright — immediately, with nothing classified and no window to wait out.
 func TestFailingSearchesNeverDeriveHealthy(t *testing.T) {
 	t.Parallel()
 	doer := &swapDoer{body: bodyHTML}
@@ -203,8 +204,7 @@ func TestFailingSearchesNeverDeriveHealthy(t *testing.T) {
 		t.Fatalf("status after a real success = %q (err %v), want healthy", st.Status, err)
 	}
 
-	// The tracker goes down in a shape nothing classifies, and the consumer keeps polling
-	// well past the healthy window.
+	// The tracker goes down in a shape nothing classifies, and the consumer keeps polling.
 	doer.fail.Store(stdhttp.StatusInternalServerError)
 	for range 3 {
 		clk.advance(30 * time.Minute)
@@ -220,14 +220,66 @@ func TestFailingSearchesNeverDeriveHealthy(t *testing.T) {
 	if len(st.Events) != 0 {
 		t.Fatalf("events = %+v, want none (an unclassified failure records nothing)", st.Events)
 	}
-	if st.Status != registry.StatusUnknown {
-		t.Errorf("status after 90m of failing searches = %q, want unknown", st.Status)
+	if st.Status != registry.StatusFailing {
+		t.Errorf("status after 90m of failing searches = %q, want failing", st.Status)
+	}
+
+	// And it self-heals on the next success, with nothing to wait out.
+	doer.fail.Store(0)
+	clk.advance(time.Minute)
+	if _, err := idx.Search(ctx, search.Query{Keywords: "bunny"}); err != nil {
+		t.Fatalf("Search (recovered): %v", err)
+	}
+	if st, err := reg.Status(ctx, "tt"); err != nil || st.Status != registry.StatusHealthy {
+		t.Errorf("status after the tracker recovers = %q (err %v), want healthy", st.Status, err)
+	}
+}
+
+// TestCachedSearchKeepsHealthy is #484's highest-risk regression: the "queried since the
+// last success" rule reads a query counter, and a search served from the cache must not
+// touch it. If it did, an indexer answering every poll from cache — the whole point of
+// the cache — would flip to failing without a single thing going wrong. The counter is
+// stamped in liveSearch, below the cache read, which is what makes this hold.
+func TestCachedSearchKeepsHealthy(t *testing.T) {
+	t.Parallel()
+	db, ldr, keyring := newRegistryDeps(t)
+	clk := &movableClock{t: fixedClock()}
+	doer := &replayDoer{body: bodyHTML}
+	reg := registry.New(db, ldr, keyring, catalog.All(),
+		registry.WithClock(clk.now),
+		registry.WithSearchCache(registry.NewSearchCacheForTest(db, clk.now)),
+		registry.WithDoerFactory(func(registry.ClientParams) (search.Doer, error) { return doer, nil }))
+	ctx := context.Background()
+	if _, err := reg.Add(ctx, registry.AddParams{
+		Slug: "tt", DefinitionID: "testtracker", Settings: map[string]string{"apikey": "x"},
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	idx, ok := reg.Indexer(ctx, "tt")
+	if !ok {
+		t.Fatal("Indexer(tt) not resolved")
+	}
+	if _, err := idx.Search(ctx, search.Query{Keywords: "bunny"}); err != nil {
+		t.Fatalf("Search (live): %v", err)
+	}
+	served := len(doer.reqs)
+
+	// Later — but inside the entry's TTL — the same query is served from the cache.
+	clk.advance(time.Minute)
+	if _, err := idx.Search(ctx, search.Query{Keywords: "bunny"}); err != nil {
+		t.Fatalf("Search (cached): %v", err)
+	}
+	if got := len(doer.reqs); got != served {
+		t.Fatalf("outbound requests = %d, want %d (the second search must be a cache hit)", got, served)
+	}
+	if st, err := reg.Status(ctx, "tt"); err != nil || st.Status != registry.StatusHealthy {
+		t.Errorf("status after a cache-served search = %q (err %v), want healthy", st.Status, err)
 	}
 }
 
 // TestLastSuccessSurvivesRestart proves the success signal is durable: a real success is
 // flushed with the stat counters and rehydrated by a fresh registry over the same DB, so
-// a restart inside the healthy window does not blank the fleet to unknown.
+// a restart does not blank the fleet to unknown.
 func TestLastSuccessSurvivesRestart(t *testing.T) {
 	t.Parallel()
 	db, ldr, keyring := newRegistryDeps(t)
@@ -289,7 +341,7 @@ func (d *swapDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
 }
 
 // newClockedRegistry is newRegistry with a caller-supplied clock, so a test can age an
-// indexer past the derivation's healthy/failing windows without sleeping.
+// indexer's traffic and cache entries without sleeping.
 func newClockedRegistry(t *testing.T, doer search.Doer, clock func() time.Time) (*registry.Registry, *database.DB) {
 	t.Helper()
 	db, ldr, keyring := newRegistryDeps(t)
