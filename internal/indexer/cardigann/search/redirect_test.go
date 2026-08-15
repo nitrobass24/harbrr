@@ -86,30 +86,60 @@ func TestDoSearchRequest_RedirectSurfacedAsData(t *testing.T) {
 	}
 }
 
-// TestDoSearchRequest_AbsoluteLocationCanonicalized pins the parity fix from
+// TestDoSearchRequest_LocationCanonicalized pins the parity fix from
 // autobrr/harbrr#329. Search used to return an ABSOLUTE Location verbatim, so a
-// dot-segment path was followed raw — while login, on the same header, resolved and
-// canonicalized it. Jackett has no such split: it resolves every Location against the
+// dot-segment path was followed raw, while a RELATIVE one went through
+// url.ResolveReference and had its dot segments removed — two shapes, two answers, on
+// the same header. Jackett has no such split: it resolves every Location against the
 // request URI unconditionally, and .NET removes the dot segments while building that
-// Uri, so the canonicalized form is what Jackett follows. Both stages now share
+// Uri, so the canonicalized form is what Jackett follows in both cases.
+//
+// Both rows below are therefore the point of the fix: the absolute case is what
+// changed, and the relative case is what it now agrees with. Both stages share
 // httpx.ResolveLocation.
 //
 // No corpus definition emits a dot-segment Location, which is why the offline parity
-// gate could not answer this and why the fixture is synthetic.
-func TestDoSearchRequest_AbsoluteLocationCanonicalized(t *testing.T) {
+// gate could not answer this and why the fixtures are synthetic.
+func TestDoSearchRequest_LocationCanonicalized(t *testing.T) {
 	t.Parallel()
-	doer := &redirectDoer{t: t, steps: []redirectStep{
+	tests := []struct {
+		name     string
+		location string
+		want     string
+	}{
 		{
-			wantMethod: "GET", wantURL: "https://r.test/browse",
-			status: stdhttp.StatusFound, location: "https://r.test/a/./b/../c",
+			name:     "absolute location is canonicalized, not passed through",
+			location: "https://r.test/a/./b/../c",
+			want:     "https://r.test/a/c",
 		},
-	}}
-	sr, err := doSearchRequest(t.Context(), doer, builtRequest{method: stdhttp.MethodGet, url: "https://r.test/browse"}, nil)
-	if err != nil {
-		t.Fatalf("doSearchRequest: %v", err)
+		{
+			name:     "relative location canonicalizes to the same target",
+			location: "/a/./b/../c",
+			want:     "https://r.test/a/c",
+		},
+		{
+			name:     "absolute location onto another host is canonicalized too",
+			location: "https://mirror.test/x/../y",
+			want:     "https://mirror.test/y",
+		},
 	}
-	if want := "https://r.test/a/c"; sr.location != want {
-		t.Errorf("location = %q, want %q — an absolute Location must be canonicalized, not passed through", sr.location, want)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			doer := &redirectDoer{t: t, steps: []redirectStep{
+				{
+					wantMethod: "GET", wantURL: "https://r.test/browse",
+					status: stdhttp.StatusFound, location: tt.location,
+				},
+			}}
+			sr, err := doSearchRequest(t.Context(), doer, builtRequest{method: stdhttp.MethodGet, url: "https://r.test/browse"}, nil)
+			if err != nil {
+				t.Fatalf("doSearchRequest: %v", err)
+			}
+			if sr.location != tt.want {
+				t.Errorf("location = %q, want %q", sr.location, tt.want)
+			}
+		})
 	}
 }
 
