@@ -1,20 +1,21 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { renderHook, waitFor } from "@testing-library/react"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { ReactNode } from "react"
-import { useSetIndexerEnabled } from "./useIndexers"
-import type { Instance } from "@/lib/api"
+import { useProbeVerdict, useSetIndexerEnabled } from "./useIndexers"
+import type { IndexerStatus, Instance } from "@/lib/api"
 
-const { toastSuccess, toastError, setIndexerEnabledMock } = vi.hoisted(() => ({
+const { toastSuccess, toastError, setIndexerEnabledMock, getIndexerStatusMock } = vi.hoisted(() => ({
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
   setIndexerEnabledMock: vi.fn(),
+  getIndexerStatusMock: vi.fn(),
 }))
 vi.mock("sonner", () => ({
   toast: { success: toastSuccess, error: toastError },
 }))
 vi.mock("@/lib/api", () => ({
-  api: { setIndexerEnabled: setIndexerEnabledMock },
+  api: { setIndexerEnabled: setIndexerEnabledMock, getIndexerStatus: getIndexerStatusMock },
 }))
 
 function makeIndexer(overrides: Partial<Instance> = {}): Instance {
@@ -90,5 +91,74 @@ describe("useSetIndexerEnabled optimistic rollback", () => {
     // Success path never rolls back: the flip stays applied.
     expect(enabledOf()).toBe(false)
     expect(toastError).not.toHaveBeenCalled()
+  })
+})
+
+// makeStatus builds a status payload for the probe-verdict tests.
+function makeStatus(overrides: Partial<IndexerStatus> = {}): IndexerStatus {
+  return { slug: "mam", status: "unknown", events: [], probing: false, ...overrides }
+}
+
+// Render useProbeVerdict against a shared client so the test can inspect the status
+// cache the hook seeds (that seeding is what turns the row's badge red).
+function renderProbeVerdict() {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+  )
+  const { result } = renderHook(() => useProbeVerdict(), { wrapper })
+  return { verdict: result.current, statusOf: () => qc.getQueryData<IndexerStatus>(["indexers", "mam", "status"]) }
+}
+
+// The save flow's instant verdict (autobrr/harbrr#484): the sheet fires no test of its
+// own, so a wrong passkey has to reach the operator through the SERVER's probe. Fake
+// timers drive the poll — no wall-clock waiting.
+describe("useProbeVerdict", () => {
+  beforeEach(() => {
+    toastError.mockClear()
+    getIndexerStatusMock.mockReset()
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it("waits out the probe and toasts the failure it found", async () => {
+    getIndexerStatusMock
+      .mockResolvedValueOnce(makeStatus({ probing: true }))
+      .mockResolvedValueOnce(makeStatus({
+        status: "failing",
+        events: [{ kind: "auth_failure", detail: "login refused", occurred_at: "2026-06-01T00:00:00Z" }],
+      }))
+
+    const { verdict, statusOf } = renderProbeVerdict()
+    const done = verdict("mam")
+    await vi.advanceTimersByTimeAsync(600)
+    await done
+
+    expect(toastError).toHaveBeenCalledWith("mam: login refused")
+    // The badge reads the same key, so it goes red with the toast.
+    expect(statusOf()?.status).toBe("failing")
+  })
+
+  it("says nothing when the probe passes", async () => {
+    getIndexerStatusMock.mockResolvedValue(makeStatus({ status: "healthy" }))
+
+    const { verdict } = renderProbeVerdict()
+    await verdict("mam")
+
+    expect(toastError).not.toHaveBeenCalled()
+    expect(getIndexerStatusMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("falls back to an honest generic when the failure carries no event", async () => {
+    // Rule 3's failing: queried, never succeeded — nothing classified it, so there is no
+    // event and no failing-since to quote.
+    getIndexerStatusMock.mockResolvedValue(makeStatus({ status: "failing" }))
+
+    const { verdict } = renderProbeVerdict()
+    await verdict("mam")
+
+    expect(toastError).toHaveBeenCalledWith("mam: health check failed")
   })
 })

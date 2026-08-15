@@ -15,7 +15,7 @@ const ROWS: IndexerRowData[] = [
     instance: { id: 1, slug: "torrentleech", definitionId: "torrentleech", name: "TorrentLeech", baseUrl: "https://www.torrentleech.org/", enabled: true, ...BASE },
     type: "private",
     categories: "Movies, TV, Apps",
-    status: { slug: "torrentleech", status: "healthy", events: [] },
+    status: { slug: "torrentleech", status: "healthy", events: [], probing: false },
   },
   {
     instance: { id: 3, slug: "x1337", definitionId: "1337x", name: "1337x", enabled: false, ...BASE },

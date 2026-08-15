@@ -580,10 +580,18 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [slug, status, events]
+                required: [slug, status, events, probing]
                 properties:
                   slug: { type: string }
                   status: { type: string, enum: [healthy, failing, unknown] }
+                  probing:
+                    type: boolean
+                    description: >
+                      True while a background credential probe for this indexer is queued
+                      or running (autobrr/harbrr#484). It goes false once the probe's
+                      health write has committed, so a client that has just created or
+                      re-credentialed an indexer can wait for it and then read the
+                      resulting status as that probe's verdict.
                   events:
                     type: array
                     items:

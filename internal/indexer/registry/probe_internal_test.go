@@ -3,6 +3,7 @@ package registry
 import (
 	"context"
 	"errors"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -25,6 +26,7 @@ func newTestQueue(t *testing.T, probe func(context.Context, string) error, targe
 		log:     zerolog.Nop(),
 		jobs:    make(chan probeJob, probeQueueDepth),
 		seed:    make(chan struct{}, 1),
+		pending: make(map[string]int),
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
@@ -176,6 +178,48 @@ func TestProbeQueueShutdownCancelsAndJoins(t *testing.T) {
 	q.Enqueue("after-shutdown")
 	if got := ran.Load(); got != 1 {
 		t.Fatalf("probes run = %d, want 1 (nothing may run after shutdown)", got)
+	}
+}
+
+// TestProbeQueueProbing pins the signal the save flow reads: a slug is "probing" from
+// the moment it is queued until its probe's health write has committed, and not a moment
+// longer. Without it, an edit whose probe has not started yet looks exactly like one whose
+// probe passed and left the indexer as healthy as it already was.
+func TestProbeQueueProbing(t *testing.T) {
+	t.Parallel()
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	finished := make(chan struct{})
+	q, _ := newTestQueue(t, func(context.Context, string) error {
+		close(entered)
+		<-release
+		return nil
+	}, nil)
+
+	if q.Probing("ix") {
+		t.Fatal("Probing before anything was queued")
+	}
+	q.Enqueue("ix")
+	<-entered
+	if !q.Probing("ix") {
+		t.Fatal("Probing = false while the probe is running")
+	}
+	if q.Probing("other") {
+		t.Fatal("Probing = true for a slug nothing was queued for")
+	}
+
+	close(release)
+	go func() {
+		for q.Probing("ix") {
+			runtime.Gosched()
+		}
+		close(finished)
+	}()
+	select {
+	case <-finished:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Probing stayed true after the probe returned")
 	}
 }
 

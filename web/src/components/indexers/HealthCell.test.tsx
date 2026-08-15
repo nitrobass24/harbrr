@@ -12,6 +12,7 @@ describe("HealthCell", () => {
     const status: IndexerStatus = {
       slug: "nzbindex",
       status: "unknown",
+      probing: false,
       events: [{ kind: "parse_error", detail: "boom", occurred_at: MONTH_AGO }],
     }
     render(<HealthCell status={status} />)
@@ -30,6 +31,7 @@ describe("HealthCell", () => {
         status={{
           slug: "tt",
           status: "failing",
+          probing: false,
           events: [{ kind: "auth_failure", detail: "401", occurred_at: new Date(Date.now() - 120_000).toISOString() }],
         }}
       />
@@ -37,5 +39,17 @@ describe("HealthCell", () => {
 
     expect(screen.getByText("Failing")).toBeTruthy()
     expect(screen.getByText(/login failed 2m ago/)).toBeTruthy()
+  })
+
+  // A failure nothing classified (#484's rule 3) records no event, so there is no kind
+  // and no failing-since — the detail must still say something true rather than nothing.
+  it("explains a failing status that carries no event", () => {
+    const status: IndexerStatus = { slug: "tt", status: "failing", events: [], probing: false }
+    render(<HealthCell status={status} />)
+
+    expect(screen.getByText("Failing")).toBeTruthy()
+    expect(healthDetail(status)).toEqual([
+      { label: "Why", value: "Searches reach it but none succeed. Nothing classified the failure." },
+    ])
   })
 })

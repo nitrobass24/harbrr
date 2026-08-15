@@ -1,6 +1,6 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
-import type { AddIndexer, Instance, TestAllResults, UpdateIndexer } from "@/lib/api"
+import type { AddIndexer, IndexerStatus, Instance, TestAllResults, UpdateIndexer } from "@/lib/api"
 import { notifyError } from "@/lib/notify"
 import { keys } from "@/lib/query"
 
@@ -121,6 +121,59 @@ export function useSetIndexerEnabled() {
     },
     onSettled: () => qc.invalidateQueries({ queryKey: keys.indexers.all }),
   })
+}
+
+// probePollMs / probeWaitMs bound the wait for a save's background probe: poll twice a
+// second, give up after 30s. The queue normally turns a probe around in well under a
+// second; past the ceiling the row's health badge is the honest place to look, and a
+// saturated queue may have dropped the probe entirely.
+const probePollMs = 500
+const probeWaitMs = 30_000
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// useProbeVerdict reports the outcome of the background credential probe the SERVER runs
+// after a create, or after an update that changed a credential or the base URL
+// (autobrr/harbrr#484). The sheet no longer fires its own follow-up test — that meant two
+// logins back-to-back on a brand-new indexer, and it only ever worked for the browser
+// (the API and a future importer got no health evidence at all) — so this waits out the
+// one probe the save already triggered and surfaces its verdict.
+//
+// `probing` on the status payload is what makes that possible: without it, an edit whose
+// probe has not started yet is indistinguishable from one whose probe passed and left the
+// indexer exactly as healthy as it was.
+//
+// Only a FAILING verdict toasts. The save itself already said "saved", a passing probe
+// simply leaves the badge green, and an edit that changed nothing the login depends on
+// runs no probe at all — so silence here always means "nothing new is wrong".
+export function useProbeVerdict() {
+  const qc = useQueryClient()
+  return async (slug: string) => {
+    try {
+      const deadline = Date.now() + probeWaitMs
+      let status = await api.getIndexerStatus(slug)
+      while (status.probing && Date.now() < deadline) {
+        await sleep(probePollMs)
+        status = await api.getIndexerStatus(slug)
+      }
+      // The badge reads the same query key, so seeding it here is also what makes the
+      // row turn red at the same moment as the toast.
+      qc.setQueryData(keys.indexers.status(slug), status)
+      if (status.status === "failing") notifyError(`${slug}: ${probeFailureReason(status)}`)
+    } catch (err) {
+      // Reporting the verdict is best-effort: the badge still carries it.
+      notifyError(`${slug}: reading the health check failed`, err)
+    }
+  }
+}
+
+// probeFailureReason is the operator-facing "why": the newest health event's detail (an
+// auth failure quotes the tracker's own refusal), else its kind, else the honest generic
+// — a failure nothing classified records no event at all, it is simply "queried, never
+// succeeded".
+function probeFailureReason(status: IndexerStatus): string {
+  const event = status.events[0]
+  return event?.detail ?? event?.kind ?? "health check failed"
 }
 
 // The explicit per-row test. Its only caller (the Indexers table) stays mounted for

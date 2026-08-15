@@ -455,12 +455,17 @@ type statusEvent struct {
 // dispatch — the UI can diff it against now for a short-term/long-term read.
 // FailingSince is when the current failure streak began, present only while the
 // status is failing — the "how long has this been dead" an operator asks first.
+// Probing is true while a background credential probe for this indexer is queued or
+// running (autobrr/harbrr#484), which is what lets the add/edit sheet wait for the
+// verdict of the probe its own save triggered instead of re-reading the status the
+// indexer already had.
 type statusResponse struct {
 	Slug         string        `json:"slug"`
 	Status       string        `json:"status"`
 	Events       []statusEvent `json:"events"`
 	DisabledTill *time.Time    `json:"disabledTill,omitempty"`
 	FailingSince *time.Time    `json:"failingSince,omitempty"`
+	Probing      bool          `json:"probing"`
 }
 
 // indexerStatus returns a configured indexer's derived health
@@ -473,7 +478,10 @@ func (rt *router) indexerStatus(w http.ResponseWriter, r *http.Request) {
 		rt.writeServiceError(w, "indexer status", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toStatusResponse(st))
+	out := toStatusResponse(st)
+	// A handler-only harness has no queue (see Deps.Probes); nothing is probing then.
+	out.Probing = rt.probes != nil && rt.probes.Probing(slug)
+	writeJSON(w, http.StatusOK, out)
 }
 
 // diagnosticSelectorMiss names the definition node a parse failure was pinned to:

@@ -18,6 +18,7 @@ const ROWS: IndexerRowData[] = [
     status: {
       slug: "torrentleech",
       status: "healthy",
+      probing: false,
       events: [{ kind: "parse_error", detail: "old failure", occurred_at: new Date(Date.now() - 3_600_000).toISOString() }],
     },
   },
@@ -28,6 +29,7 @@ const ROWS: IndexerRowData[] = [
     status: {
       slug: "rutor",
       status: "failing",
+      probing: false,
       events: [{ kind: "auth_failure", detail: "login failed", occurred_at: new Date(Date.now() - 120_000).toISOString() }],
     },
   },
@@ -46,6 +48,7 @@ const ROWS: IndexerRowData[] = [
     status: {
       slug: "nyaa",
       status: "unknown",
+      probing: false,
       events: [{ kind: "transport", detail: "connection refused", occurred_at: new Date(Date.now() - 7_200_000).toISOString() }],
     },
   },

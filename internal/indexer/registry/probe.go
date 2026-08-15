@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/rs/zerolog"
 	"golang.org/x/sync/errgroup"
@@ -61,6 +62,12 @@ type ProbeQueue struct {
 	log     zerolog.Logger
 	jobs    chan probeJob
 	seed    chan struct{}
+	// mu guards pending, which counts the probes queued or in flight per slug. It is
+	// what lets a caller tell "not probed yet" from "probed, and this is the verdict":
+	// the save flow polls the indexer's status and only believes it once the probe its
+	// write triggered has settled (Probing).
+	mu      sync.Mutex
+	pending map[string]int
 }
 
 // NewProbeQueue builds the queue over reg's Test and boot-target seams. It does not
@@ -72,6 +79,7 @@ func NewProbeQueue(reg *Registry, log zerolog.Logger) *ProbeQueue {
 		log:     log,
 		jobs:    make(chan probeJob, probeQueueDepth),
 		seed:    make(chan struct{}, 1),
+		pending: make(map[string]int),
 	}
 }
 
@@ -159,13 +167,38 @@ func (q *ProbeQueue) TestAll(ctx context.Context, slugs []string) ([]ProbeResult
 // non-blocking: an Add/Update must return to its caller without waiting on a login, so
 // a saturated queue drops the probe (loudly) rather than stalling a write.
 func (q *ProbeQueue) submit(job probeJob) bool {
+	q.track(job.slug, 1)
 	select {
 	case q.jobs <- job:
 		return true
 	default:
+		q.track(job.slug, -1)
 		q.log.Warn().Str("indexer", job.slug).Msg("registry: probe queue full; probe dropped")
 		return false
 	}
+}
+
+// track adjusts slug's queued-or-running probe count, dropping the key at zero so the
+// map stays the size of the work in flight rather than of the fleet.
+func (q *ProbeQueue) track(slug string, delta int) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.pending[slug] += delta; q.pending[slug] <= 0 {
+		delete(q.pending, slug)
+	}
+}
+
+// Probing reports whether a probe for slug is queued or running. The save flow uses it
+// to wait out the probe its own write triggered before reading the verdict off the
+// indexer's health — the alternative being a status that is simply "whatever it was
+// before", indistinguishable from a verdict.
+//
+// It answers false once the probe's health write has committed, because runJob decrements
+// only after Test returns.
+func (q *ProbeQueue) Probing(slug string) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.pending[slug] > 0
 }
 
 // runJob probes one indexer and reports its verdict. A failure is logged (redacted — a
@@ -173,6 +206,7 @@ func (q *ProbeQueue) submit(job probeJob) bool {
 // job's done callback if it has one; Test has already recorded the health event, which
 // is the durable half.
 func (q *ProbeQueue) runJob(ctx context.Context, job probeJob) {
+	defer q.track(job.slug, -1)
 	err := q.probe(ctx, job.slug)
 	if err != nil {
 		q.log.Debug().Str("indexer", job.slug).Str("error", apphttp.RedactError(err)).

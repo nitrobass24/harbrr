@@ -3483,6 +3483,8 @@ export interface operations {
                         slug: string;
                         /** @enum {string} */
                         status: "healthy" | "failing" | "unknown";
+                        /** @description True while a background credential probe for this indexer is queued or running (autobrr/harbrr#484). It goes false once the probe's health write has committed, so a client that has just created or re-credentialed an indexer can wait for it and then read the resulting status as that probe's verdict. */
+                        probing: boolean;
                         events: {
                             /** @enum {string} */
                             kind: "auth_failure" | "rate_limited" | "parse_error" | "anti_bot" | "transport" | "base_url_promoted";

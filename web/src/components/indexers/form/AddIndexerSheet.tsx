@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { DefinitionOption, IndexerForm, type IndexerFormSubmit } from "@/components/indexers/form/IndexerForm"
 import { useDefinition, useDefinitions } from "@/hooks/useDefinitions"
-import { useAddIndexer, useIndexer, useUpdateIndexer } from "@/hooks/useIndexers"
+import { useAddIndexer, useIndexer, useProbeVerdict, useUpdateIndexer } from "@/hooks/useIndexers"
 
 export type IndexerSheetState =
   | { open: false }
@@ -24,16 +24,21 @@ export function IndexerSheet({ state, onClose }: { state: IndexerSheetState, onC
   )
 }
 
-// The sheet no longer fires its own follow-up test: the server probes an indexer's
-// credentials itself after a create, and after an update that actually changed them
-// (autobrr/harbrr#484). Testing here too would mean two logins back-to-back on a
-// brand-new indexer, and it only ever worked for the browser — the API and a future
-// importer got no health evidence at all. The verdict lands on the row's health badge
-// shortly after, which is how every other health signal in the UI already arrives.
+// The sheet no longer fires its own follow-up test — that was two logins back-to-back on
+// a brand-new indexer, and it only ever worked for the browser (the API and a future
+// importer got no health evidence at all). The SERVER probes the credentials after a
+// create, and after an update that changed them or the base URL (autobrr/harbrr#484);
+// useProbeVerdict waits out that one probe and toasts it if it failed, so the operator
+// still learns immediately that their passkey is wrong.
+//
+// The verdict is awaited at hook level, not in the sheet: the sheet unmounts the moment
+// it closes, and the toast has to outlive it.
 function useSaved(onClose: () => void) {
+  const verdict = useProbeVerdict()
   return (slug: string, verb: string) => {
     notifySuccess(`${slug} ${verb} — checking health…`)
     onClose()
+    void verdict(slug)
   }
 }
 
