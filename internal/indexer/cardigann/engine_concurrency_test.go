@@ -39,7 +39,7 @@ func TestSearch_ConcurrentQueriesDoNotRace(t *testing.T) {
 	const iterations = 25
 	var wg sync.WaitGroup
 	errCh := make(chan error, iterations*len(cases))
-	for i := 0; i < iterations; i++ {
+	for range iterations {
 		for _, tc := range cases {
 			wg.Add(1)
 			go func(keywords, wantTitle string) {

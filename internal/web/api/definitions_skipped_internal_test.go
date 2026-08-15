@@ -43,7 +43,7 @@ func TestLoadDefinitionSummariesSurfacesSkips(t *testing.T) {
 
 			dir := t.TempDir()
 			path := filepath.Join(dir, tt.id+".yml")
-			if err := os.WriteFile(path, []byte(fmt.Sprintf(brokenDropin, tt.id)), 0o600); err != nil {
+			if err := os.WriteFile(path, fmt.Appendf(nil, brokenDropin, tt.id), 0o600); err != nil {
 				t.Fatalf("writing drop-in: %v", err)
 			}
 

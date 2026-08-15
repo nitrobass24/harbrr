@@ -3,6 +3,7 @@ package smoke
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -21,7 +22,7 @@ func results(titles ...string) []Result {
 // nResults builds n results with distinct prefixed titles.
 func nResults(prefix string, n int) []Result {
 	out := make([]Result, 0, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		out = append(out, Result{Title: fmt.Sprintf("%s-%d", prefix, i)})
 	}
 	return out
@@ -225,9 +226,7 @@ func TestParseConfig(t *testing.T) {
 	t.Run("optional apps and query overrides", func(t *testing.T) {
 		t.Parallel()
 		m := map[string]string{}
-		for k, v := range base {
-			m[k] = v
-		}
+		maps.Copy(m, base)
 		m["SMOKE_SONARR_URL"] = "http://sonarr:8989/"
 		m["SMOKE_SONARR_APIKEY"] = "sk"
 		m["SMOKE_QUI_URL"] = "http://qui:7476"
@@ -253,9 +252,7 @@ func TestParseConfig(t *testing.T) {
 		t.Parallel()
 		for _, drop := range []string{"SMOKE_HARBRR_URL", "SMOKE_HARBRR_APIKEY", "SMOKE_PROWLARR_URL", "SMOKE_PROWLARR_APIKEY"} {
 			m := map[string]string{}
-			for k, v := range base {
-				m[k] = v
-			}
+			maps.Copy(m, base)
 			delete(m, drop)
 			if _, err := ParseConfig(fake(m)); err == nil {
 				t.Errorf("dropping %s should error", drop)

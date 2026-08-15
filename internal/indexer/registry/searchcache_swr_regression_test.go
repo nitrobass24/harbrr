@@ -20,7 +20,7 @@ import (
 // window where a cache miss coalesces against an in-flight SWR refresh on the same
 // cache key.
 type gatedInner struct {
-	calls     int64
+	calls     atomic.Int64
 	gate      chan struct{} // the first call blocks on this
 	firstSet  []*normalizer.Release
 	laterSet  []*normalizer.Release
@@ -40,7 +40,7 @@ func (g *gatedInner) Grab(context.Context, string) (*search.GrabResult, error) {
 }
 
 func (g *gatedInner) Search(_ context.Context, _ search.Query) ([]*normalizer.Release, error) {
-	n := atomic.AddInt64(&g.calls, 1)
+	n := g.calls.Add(1)
 	if n == 1 {
 		g.once.Do(func() { close(g.firstSeen) })
 		<-g.gate // the SWR refresh blocks here until released

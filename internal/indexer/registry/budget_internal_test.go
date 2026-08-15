@@ -39,7 +39,7 @@ func TestRequestBudget_UnsetIsUnlimited(t *testing.T) {
 	instID := insertTestInstance(t, db)
 	now := time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)
 
-	for i := 0; i < 5000; i++ {
+	for i := range 5000 {
 		if !b.ReserveQuery(context.Background(), instID, nil, now) {
 			t.Fatalf("ReserveQuery refused on call %d with no configured limit", i)
 		}
@@ -58,7 +58,7 @@ func TestRequestBudget_ConfiguredLimitRefusesOverCap(t *testing.T) {
 	now := time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)
 
 	allowed := 0
-	for i := 0; i < 2005; i++ {
+	for range 2005 {
 		if b.ReserveQuery(context.Background(), instID, cfg, now) {
 			allowed++
 		}
@@ -307,7 +307,7 @@ func TestRequestBudget_StatusIsReadOnly(t *testing.T) {
 	cfg := map[string]string{"query_limit": "1"}
 	now := time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		b.Status(context.Background(), instID, cfg, now)
 	}
 	if _, found, err := (database.BudgetCountersStore{}).Get(context.Background(), db, instID); err != nil || found {
@@ -370,14 +370,12 @@ func TestRequestBudget_PersistOrderUnderConcurrency(t *testing.T) {
 
 	var wg sync.WaitGroup
 	var allows atomic.Int64
-	for i := 0; i < 128; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 128 {
+		wg.Go(func() {
 			if b.ReserveQuery(context.Background(), instID, cfg, now) {
 				allows.Add(1)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 

@@ -22,7 +22,7 @@ import (
 // a gate (to exercise singleflight), and can return a fixed error or release set.
 type fakeInner struct {
 	mu       sync.Mutex
-	calls    int64
+	calls    atomic.Int64
 	releases []*normalizer.Release
 	err      error
 	gate     chan struct{} // when non-nil, Search blocks until it is closed
@@ -53,7 +53,7 @@ func (f *fakeInner) Grab(context.Context, string) (*search.GrabResult, error) {
 }
 
 func (f *fakeInner) Search(_ context.Context, _ search.Query) ([]*normalizer.Release, error) {
-	atomic.AddInt64(&f.calls, 1)
+	f.calls.Add(1)
 	f.mu.Lock()
 	gate := f.gate
 	firstSeen := f.firstSeen
@@ -72,7 +72,7 @@ func (f *fakeInner) Search(_ context.Context, _ search.Query) ([]*normalizer.Rel
 	return f.releases, nil
 }
 
-func (f *fakeInner) callCount() int64 { return atomic.LoadInt64(&f.calls) }
+func (f *fakeInner) callCount() int64 { return f.calls.Load() }
 
 // testCache builds a SearchCache over a migrated in-memory DB with an instance row,
 // returning the cache, the instance id, and a settable clock pointer.

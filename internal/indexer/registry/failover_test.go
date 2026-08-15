@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"maps"
 	"net"
 	stdhttp "net/http"
 	"net/url"
@@ -204,9 +205,7 @@ func newFailoverRegistry(t *testing.T, doer search.Doer, clk *movableClock, sink
 func addFailtracker(t *testing.T, reg *registry.Registry, extra map[string]string) {
 	t.Helper()
 	settings := map[string]string{"username": "u", "password": "NOTREALSECRET00"}
-	for k, v := range extra {
-		settings[k] = v
-	}
+	maps.Copy(settings, extra)
 	if _, err := reg.Add(context.Background(), registry.AddParams{
 		Slug: "ft", DefinitionID: "failtracker", Settings: settings,
 	}); err != nil {

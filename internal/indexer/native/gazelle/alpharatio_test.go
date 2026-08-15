@@ -622,12 +622,10 @@ func TestAlphaRatioConcurrentExpiryCoalescesLogin(t *testing.T) {
 	errs := make(chan error, 2)
 	var wg sync.WaitGroup
 	for range 2 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, searchErr := d.Search(context.Background(), search.Query{})
 			errs <- searchErr
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)

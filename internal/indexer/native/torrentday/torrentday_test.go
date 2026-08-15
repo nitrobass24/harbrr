@@ -1,6 +1,7 @@
 package torrentday
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
@@ -114,10 +115,5 @@ func TestCategoryCount(t *testing.T) {
 }
 
 func containsInt(xs []int, want int) bool {
-	for _, x := range xs {
-		if x == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(xs, want)
 }

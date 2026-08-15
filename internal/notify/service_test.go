@@ -393,11 +393,9 @@ func TestOnHealthEventCooldownConcurrent(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 50 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			svc.OnHealthEvent(ctx, "mytracker", domain.HealthRateLimited, "slow down")
-		}()
+		})
 	}
 	wg.Wait()
 	svc.Drain(drainCtx(t))

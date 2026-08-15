@@ -30,8 +30,8 @@ func TestNoTorznabHTTPImport(t *testing.T) {
 	}
 
 	const forbidden = "internal/web/torznabhttp"
-	deps := strings.Split(strings.TrimSpace(string(out)), "\n")
-	for _, dep := range deps {
+	deps := strings.SplitSeq(strings.TrimSpace(string(out)), "\n")
+	for dep := range deps {
 		if strings.HasSuffix(dep, forbidden) {
 			t.Errorf("internal/indexer/registry (production) depends on %q; the indexer serving contract lives in internal/indexer/core, which registry must depend on instead — see ADR-0002", dep)
 		}

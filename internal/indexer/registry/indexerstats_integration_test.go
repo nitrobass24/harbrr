@@ -30,7 +30,7 @@ func TestStatsCountsQueryAndFailure(t *testing.T) {
 	// classified 503 -> rate_limited failure). The second is gated by the #253
 	// circuit breaker, which the first failure just escalated — it must NOT reach
 	// the tracker again, so both counters stay at exactly one.
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if _, err := idx.Search(ctx, search.Query{Keywords: "bunny"}); err == nil {
 			t.Fatal("Search unexpectedly succeeded")
 		}

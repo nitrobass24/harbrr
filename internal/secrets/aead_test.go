@@ -121,7 +121,7 @@ func TestSealNonceUnique(t *testing.T) {
 	)
 	ad := aad(1, "passkey")
 	seen := make(map[string]struct{}, iters)
-	for i := 0; i < iters; i++ {
+	for i := range iters {
 		blob, err := seal(testKey, ad, []byte("same-plaintext-every-time"))
 		if err != nil {
 			t.Fatalf("seal[%d]: %v", i, err)

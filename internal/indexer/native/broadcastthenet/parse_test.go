@@ -153,7 +153,7 @@ func TestParseReleasesStableSortOnTies(t *testing.T) {
 		`"zzz":{"TorrentID":"zzz","ReleaseName":"Zee"},` +
 		`"aaa":{"TorrentID":"aaa","ReleaseName":"Aye"}}}}`)
 	d := parseDriver(t, nil)
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		got, err := d.parseReleases(body)
 		if err != nil {
 			t.Fatalf("parseReleases: %v", err)
