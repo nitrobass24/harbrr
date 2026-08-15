@@ -100,6 +100,36 @@ func TestStartRSSWarmerJoinsOnShutdown(t *testing.T) {
 	}
 }
 
+// TestStartProbeQueueJoinsOnShutdown proves the probe queue is wired onto the same
+// shutdown WaitGroup as the reapers: App.Run cancels and JOINS it before closing the
+// database, so a probe's health write can never land after Close. The queue is left
+// empty — this is about the goroutine's shutdown contract, and registry.Test is never
+// reached, so nothing goes near a tracker.
+func TestStartProbeQueueJoinsOnShutdown(t *testing.T) {
+	t.Parallel()
+
+	db := dbtest.OpenMigrated(t)
+	reg := registry.New(db, loader.New(""), nil, catalog.All(), registry.WithLogger(zerolog.Nop()))
+	probes := registry.NewProbeQueue(reg, zerolog.Nop())
+
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+	var bg sync.WaitGroup
+	startProbeQueue(bgCtx, &bg, probes)
+
+	done := make(chan struct{})
+	go func() {
+		bg.Wait()
+		close(done)
+	}()
+	bgCancel()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("probe queue goroutine did not join within 5s of ctx cancellation")
+	}
+}
+
 // insertCleanupInstance inserts a minimal enabled instance so a cache_counters row
 // satisfies its FK, returning the instance id.
 func insertCleanupInstance(t *testing.T, db *database.DB) int64 {

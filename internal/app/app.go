@@ -72,6 +72,7 @@ type App struct {
 
 	searchCache *registry.SearchCache
 	registry    *registry.Registry
+	probes      *registry.ProbeQueue
 
 	notify   *notify.Service
 	expiry   *notify.ExpiryScanner
@@ -307,12 +308,26 @@ func (a *App) initRegistry(ctx context.Context, httpClient *http.Client) {
 	a.notify = notify.NewService(a.db, a.keyring, httpClient, a.log)
 	a.expiry = notify.NewExpiryScanner(a.notify, a.db, expiryLink(a.cfg), nil)
 	a.registry = registry.New(a.db, loader.New(dropinDir(a.cfg)), a.keyring, catalog.All(),
-		registry.WithLogger(a.log), registry.WithSearchCache(a.searchCache), registry.WithHealthSink(a.notify))
+		registry.WithLogger(a.log), registry.WithSearchCache(a.searchCache), registry.WithHealthSink(a.notify),
+		registry.WithProbeSink(a.enqueueProbe))
+	a.probes = registry.NewProbeQueue(a.registry, a.log)
 	if err := a.registry.LoadRateDefaultOverride(ctx); err != nil {
 		a.log.Warn().Err(err).Msg("loading rate-limit default override failed; using hardcoded default")
 	}
 	if err := a.registry.RehydrateStats(ctx); err != nil {
 		a.log.Warn().Err(err).Msg("loading indexer stat counters failed; counters start at zero this session")
+	}
+}
+
+// enqueueProbe is the registry's probe sink (autobrr/harbrr#484). It is a method
+// value rather than a direct a.probes.Enqueue because the two are a construction
+// cycle — the queue probes THROUGH the registry, so it can only be built after it —
+// and reading the field at CALL time closes that loop without a partially-wired
+// queue ever being reachable. The nil guard covers the same window the cache/announce
+// pair handles in initSyncServices.
+func (a *App) enqueueProbe(slug string) {
+	if a.probes != nil {
+		a.probes.Enqueue(slug)
 	}
 }
 
@@ -487,7 +502,7 @@ func (a *App) Handler() http.Handler { return a.server.Handler() }
 func (a *App) Run(ctx context.Context) error {
 	bgCtx, bgCancel := context.WithCancel(ctx)
 	var bg sync.WaitGroup
-	startReapers(bgCtx, &bg, a.db, a.sessionStore, a.searchCache, a.registry, a.auth, a.expiry, a.log)
+	startReapers(bgCtx, &bg, a.db, a.sessionStore, a.searchCache, a.registry, a.probes, a.auth, a.expiry, a.log)
 
 	runErr := a.serveUntilDone(ctx)
 
@@ -511,6 +526,11 @@ func (a *App) serveUntilDone(ctx context.Context) error {
 		return fmt.Errorf("serve: %w", err)
 	}
 	logStartup(a.log, a.cfg, a.keyring)
+	// Boot health reconciliation (autobrr/harbrr#484), fired once the port is proven
+	// bindable so a fatal listen error never spends a round of logins. Seed returns
+	// immediately — the enumeration and the probes both run on the queue — so this
+	// cannot delay serving.
+	a.probes.Seed()
 	if err := a.server.Run(ctx); err != nil {
 		return fmt.Errorf("serve: %w", err)
 	}

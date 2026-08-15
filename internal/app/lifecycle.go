@@ -57,8 +57,9 @@ func fixedInterval(d time.Duration) func() time.Duration {
 // shared shutdown WaitGroup, so App.Run joins them all before closing the database.
 func startReapers(ctx context.Context, wg *sync.WaitGroup, db *database.DB,
 	store *database.SessionStore, sc *registry.SearchCache, reg *registry.Registry,
-	authSvc *auth.Service, expiry *notify.ExpiryScanner, log zerolog.Logger,
+	probes *registry.ProbeQueue, authSvc *auth.Service, expiry *notify.ExpiryScanner, log zerolog.Logger,
 ) {
+	startProbeQueue(ctx, wg, probes)
 	startSessionCleanup(ctx, wg, store, log)
 	startSearchCacheCleanup(ctx, wg, sc, log)
 	startIndexerStatsFlush(ctx, wg, reg)
@@ -67,6 +68,20 @@ func startReapers(ctx context.Context, wg *sync.WaitGroup, db *database.DB,
 	startAPIKeyTouchFlush(ctx, wg, authSvc, log)
 	startRSSWarmer(ctx, wg, reg, log)
 	startExpiryScan(ctx, wg, expiry)
+}
+
+// startProbeQueue runs the indexer probe queue (autobrr/harbrr#484) on the shared
+// shutdown WaitGroup. It is NOT a reaper — it has no tick and no schedule, it just
+// drains whatever the boot seed, a create, a credential change, or a Test all put on
+// it — but it belongs here for the one property that matters: App.Run cancels and
+// joins this goroutine before closing the database, so no probe's health write can
+// land after Close.
+func startProbeQueue(ctx context.Context, wg *sync.WaitGroup, probes *registry.ProbeQueue) {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		probes.Run(ctx)
+	}()
 }
 
 // startExpiryScan runs the per-indexer VIP/membership expiry scan (#399) on the same
