@@ -256,28 +256,35 @@ func TestFailedProbeLeavesTheRowIntact(t *testing.T) {
 	}
 }
 
-// TestTestReservesQueryBudget pins the budget accounting added to the probe path: a
-// login is a real outbound request, and with the probe queue driving Test automatically
-// it must count against the indexer's configured quota like any other query.
-func TestTestReservesQueryBudget(t *testing.T) {
+// TestTestIgnoresAnExhaustedBudget is the other half of Test's deliberate asymmetry: a
+// diagnostic that can refuse you is worse than the one request it saves. Searching an
+// indexer whose query budget is spent is refused (that is #251 working), but asking
+// "does this passkey still work" — by hand or from the probe queue — always goes ahead.
+func TestTestIgnoresAnExhaustedBudget(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	reg, _, _ := newProbedRegistry(t, &replayDoer{body: "<html><body></body></html>"})
 	if _, err := reg.Add(ctx, registry.AddParams{
 		Slug: "tt", DefinitionID: "testtracker",
-		Settings: map[string]string{"apikey": "k1", "query_limit": "2"},
+		Settings: map[string]string{"apikey": "k1", "query_limit": "1"},
 	}); err != nil {
 		t.Fatalf("Add: %v", err)
+	}
+	idx, ok := reg.Indexer(ctx, "tt")
+	if !ok {
+		t.Fatal("Indexer(tt) not resolved")
+	}
+	if _, err := idx.Search(ctx, search.Query{Keywords: "x"}); err != nil {
+		t.Fatalf("first Search: %v", err)
+	}
+	if _, err := idx.Search(ctx, search.Query{Keywords: "y"}); !errors.Is(err, core.ErrBudgetExhausted) {
+		t.Fatalf("Search past the budget = %v, want core.ErrBudgetExhausted (the fixture is not exhausting it)", err)
 	}
 
 	for i := range 2 {
 		if err := reg.Test(ctx, "tt"); err != nil {
-			t.Fatalf("Test %d refused while the budget still had room: %v", i, err)
+			t.Fatalf("Test %d refused on an exhausted budget: %v", i, err)
 		}
-	}
-	err := reg.Test(ctx, "tt")
-	if !errors.Is(err, core.ErrBudgetExhausted) {
-		t.Fatalf("Test past the budget = %v, want core.ErrBudgetExhausted", err)
 	}
 }
 

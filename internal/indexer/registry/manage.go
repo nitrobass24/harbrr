@@ -758,20 +758,16 @@ func classifySecret(name string, fields map[string]loader.SettingsField) bool {
 // Returns nil when the credentials authenticate; otherwise the engine's login
 // error (which the API layer sanitizes before returning to the client).
 //
-// It reserves one unit of the QUERY budget first (autobrr/harbrr#251): a login is a
-// real outbound request, and until now this path spent one off the books — which
-// only ever mattered while a human clicked Test, but the probe queue (#484) now
-// drives this same path automatically at boot, on create, and on a credential
-// change. The circuit breaker is deliberately NOT consulted here: re-checking
-// whether a breaker-disabled indexer has recovered is exactly what a probe is for,
-// and a passing Test is what clears the breaker (see recordCircuitSuccess below).
+// Neither self-imposed gate applies here. The circuit breaker is not consulted:
+// re-checking whether a breaker-disabled indexer has recovered is exactly what a probe
+// is for, and a passing Test is what clears the breaker (see recordCircuitSuccess
+// below). Nor is the request budget (autobrr/harbrr#251) — a diagnostic that can refuse
+// you is worse than the one request it saves, and refusing the probe queue would leave
+// a busy indexer stuck at whatever health it last had, unable to prove otherwise.
 func (r *Resolver) Test(ctx context.Context, slug string) error {
 	a, err := r.buildAdapter(ctx, slug)
 	if err != nil {
 		return err
-	}
-	if !a.budget.ReserveQuery(ctx, a.instanceID, a.cfg, a.clock()) {
-		return fmt.Errorf("registry: test %q: %w", slug, core.ErrBudgetExhausted)
 	}
 	if err := a.inner.Test(ctx); err != nil {
 		a.recordHealth(ctx, err)
