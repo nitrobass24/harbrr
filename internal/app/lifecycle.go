@@ -77,11 +77,7 @@ func startReapers(ctx context.Context, wg *sync.WaitGroup, db *database.DB,
 // joins this goroutine before closing the database, so no probe's health write can
 // land after Close.
 func startProbeQueue(ctx context.Context, wg *sync.WaitGroup, probes *registry.ProbeQueue) {
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		probes.Run(ctx)
-	}()
+	wg.Go(func() { probes.Run(ctx) })
 }
 
 // startExpiryScan runs the per-indexer VIP/membership expiry scan (#399) on the same
