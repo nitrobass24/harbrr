@@ -55,6 +55,25 @@ func TestResolveLocation(t *testing.T) {
 			want:   "https://tracker.example/c",
 		},
 		{
+			// An ABSOLUTE Location is resolved too, not returned verbatim, which is
+			// what strips its dot segments (autobrr/harbrr#329). Jackett resolves
+			// every Location against the request URI unconditionally and .NET
+			// canonicalizes the path building that Uri, so this is the shape it
+			// follows. No corpus definition emits one, hence the synthetic fixture.
+			name:   "absolute location with dot segments is canonicalized",
+			status: stdhttp.StatusFound,
+			reqURL: "https://tracker.example/login",
+			locHdr: "https://tracker.example/a/./b/../c",
+			want:   "https://tracker.example/a/c",
+		},
+		{
+			name:   "absolute location onto another host is canonicalized too",
+			status: stdhttp.StatusFound,
+			reqURL: "https://tracker.example/login",
+			locHdr: "https://mirror.example/x/../y",
+			want:   "https://mirror.example/y",
+		},
+		{
 			name:   "missing location on a redirect status",
 			status: stdhttp.StatusFound,
 			reqURL: "https://tracker.example/login",

@@ -1,10 +1,9 @@
 // Package httpx holds the transport primitives the login and search stages
 // previously kept in sync by hand. IsRedirectStatus and Doer were defined
 // byte-identically in both stages and are now shared here. ResolveLocation is
-// LOGIN's Location resolution only: search's redirectTarget deliberately stays
-// on its own resolveURL, which returns an absolute Location verbatim instead
-// of dot-segment-cleaning it — a real divergence confirmed by issue #324's
-// equivalence check (see the redirectTarget comment in search/request.go).
+// now BOTH stages' Location resolution: search used to keep its own copy that
+// returned an absolute Location verbatim, which turned out to diverge from
+// Jackett (autobrr/harbrr#329) — see the note on ResolveLocation itself.
 // The request-issuing LOOPS (send, do, doSearchRequest, newRequest,
 // followRedirects) stay per-stage — header templating, UA-replay source, body
 // caps, and error taxonomy genuinely diverge between login and search, so
@@ -46,8 +45,16 @@ func IsRedirectStatus(status int) bool {
 // a relative Location works regardless of whether the Doer set resp.Request.
 // Returns "" when the response is not a redirect or carries no usable
 // Location. The result is never logged raw — like the request URL, it can
-// embed a secret. Adopted by LOGIN only: search's redirectTarget stays on its
-// own resolveURL (absolute Locations verbatim; see search/request.go).
+// embed a secret.
+//
+// An ABSOLUTE Location is resolved too, not returned verbatim, which is what
+// removes its "." / ".." segments. That is the parity-relevant half
+// (autobrr/harbrr#329): Jackett resolves every Location against the request URI
+// unconditionally — one `new Uri(requestUri, location)` with no absolute/relative
+// branch — and .NET canonicalizes the path while constructing that Uri, so the
+// string Jackett follows has its dot segments already removed. Search kept a
+// second copy that skipped resolution for an absolute Location and so followed
+// the raw path; both stages now share this one.
 func ResolveLocation(resp *stdhttp.Response, reqURL string) string {
 	if !IsRedirectStatus(resp.StatusCode) {
 		return ""

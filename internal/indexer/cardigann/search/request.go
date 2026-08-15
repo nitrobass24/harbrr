@@ -590,37 +590,11 @@ func doSearchRequest(ctx context.Context, doer Doer, br builtRequest, session *l
 	}
 	return searchResponse{
 		status:      resp.StatusCode,
-		location:    redirectTarget(resp, br.url),
+		location:    httpx.ResolveLocation(resp, br.url),
 		body:        data,
 		contentType: resp.Header.Get("Content-Type"),
 		header:      resp.Header,
 	}, nil
-}
-
-// redirectTarget resolves a 3xx response's Location header against the request
-// URL, so a relative Location works regardless of the Doer setting
-// resp.Request. Returns "" when there is no Location or it cannot be resolved.
-//
-// This deliberately stays on resolveURL rather than httpx.ResolveLocation: for
-// an ABSOLUTE Location, resolveURL returns it verbatim (matching
-// buildOneRequest's path-resolution behavior, which this function shares
-// resolveURL with), while httpx.ResolveLocation always routes an absolute
-// Location through url.ResolveReference, which additionally cleans "." / ".."
-// path segments — a real, confirmed divergence (issue #324's Location-
-// equivalence check), not an oversight.
-func redirectTarget(resp *stdhttp.Response, reqURL string) string {
-	if !httpx.IsRedirectStatus(resp.StatusCode) {
-		return ""
-	}
-	loc := resp.Header.Get("Location")
-	if loc == "" {
-		return ""
-	}
-	abs, err := resolveURL(reqURL, loc)
-	if err != nil {
-		return ""
-	}
-	return abs
 }
 
 // maxSearchBodyBytes caps how much of a response the executor buffers, guarding

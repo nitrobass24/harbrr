@@ -86,6 +86,33 @@ func TestDoSearchRequest_RedirectSurfacedAsData(t *testing.T) {
 	}
 }
 
+// TestDoSearchRequest_AbsoluteLocationCanonicalized pins the parity fix from
+// autobrr/harbrr#329. Search used to return an ABSOLUTE Location verbatim, so a
+// dot-segment path was followed raw — while login, on the same header, resolved and
+// canonicalized it. Jackett has no such split: it resolves every Location against the
+// request URI unconditionally, and .NET removes the dot segments while building that
+// Uri, so the canonicalized form is what Jackett follows. Both stages now share
+// httpx.ResolveLocation.
+//
+// No corpus definition emits a dot-segment Location, which is why the offline parity
+// gate could not answer this and why the fixture is synthetic.
+func TestDoSearchRequest_AbsoluteLocationCanonicalized(t *testing.T) {
+	t.Parallel()
+	doer := &redirectDoer{t: t, steps: []redirectStep{
+		{
+			wantMethod: "GET", wantURL: "https://r.test/browse",
+			status: stdhttp.StatusFound, location: "https://r.test/a/./b/../c",
+		},
+	}}
+	sr, err := doSearchRequest(t.Context(), doer, builtRequest{method: stdhttp.MethodGet, url: "https://r.test/browse"}, nil)
+	if err != nil {
+		t.Fatalf("doSearchRequest: %v", err)
+	}
+	if want := "https://r.test/a/c"; sr.location != want {
+		t.Errorf("location = %q, want %q — an absolute Location must be canonicalized, not passed through", sr.location, want)
+	}
+}
+
 // TestDoSearchRequest_NeverAutoFollowed drives a REAL *http.Client carrying the
 // production RedirectPolicy: the no-follow stamp doSearchRequest applies must
 // stop the client from consuming the 302 itself. Exactly one request reaches
