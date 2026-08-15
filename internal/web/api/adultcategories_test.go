@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -152,12 +153,7 @@ func catIDs(t *testing.T, body []byte, path string) []int {
 }
 
 func hasCat(ids []int, want int) bool {
-	for _, id := range ids {
-		if id == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ids, want)
 }
 
 // TestAdultCategoriesSettingRoundTrip covers the knob itself: absent = off, PUT

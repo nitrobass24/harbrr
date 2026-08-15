@@ -17,7 +17,7 @@ func TestDrainGateOrdersAddsBeforeWait(t *testing.T) {
 	stop := make(chan struct{})
 	go func() {
 		defer close(stop)
-		for i := 0; i < 200; i++ {
+		for i := range 200 {
 			// A distinct indexer per iteration: the health debounce keys on
 			// (indexer, kind), so a fixed key would suppress everything after the
 			// first event and the hammer would never actually reach the
@@ -25,7 +25,7 @@ func TestDrainGateOrdersAddsBeforeWait(t *testing.T) {
 			s.OnHealthEvent(context.Background(), fmt.Sprintf("idx-%d", i), "transport", "event racing drain")
 		}
 	}()
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		s.Drain(context.Background())
 	}
 	<-stop

@@ -27,9 +27,7 @@ import (
 // root closes the database. wg lets the caller join every reaper before that
 // close (see App.Run).
 func reap(ctx context.Context, wg *sync.WaitGroup, interval func() time.Duration, tick, final func(ctx context.Context)) {
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		t := time.NewTimer(interval())
 		defer t.Stop()
 		for {
@@ -46,7 +44,7 @@ func reap(ctx context.Context, wg *sync.WaitGroup, interval func() time.Duration
 				t.Reset(interval())
 			}
 		}
-	}()
+	})
 }
 
 // fixedInterval adapts a constant duration to reap's re-read-each-cycle interval func.

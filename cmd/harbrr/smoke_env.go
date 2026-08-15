@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,12 +26,7 @@ var smokeEnvKeys = []string{
 // the reconfigure flow re-prompts for (and so may drop when an app is cleared/skipped).
 // Any other SMOKE_* key is hand-added and must survive a reconfigure untouched.
 func isSmokeAppEnvKey(k string) bool {
-	for _, kk := range smokeEnvKeys {
-		if kk == k {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(smokeEnvKeys, k)
 }
 
 // parseEnvFile reads a `smoke.env` style file into a map. Each non-blank, non-comment

@@ -100,7 +100,7 @@ func TestBuildSearchCacheKeyEqualNumericCategories(t *testing.T) {
 	if forward != reverse {
 		t.Fatalf("equal-numeric category order changed key: %q != %q", forward, reverse)
 	}
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		if got := buildSearchCacheKey(1, search.Query{Categories: []string{"1", "01"}}, false); got != forward {
 			t.Fatalf("key unstable across runs: %q != %q", got, forward)
 		}

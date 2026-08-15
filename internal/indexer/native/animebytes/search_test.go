@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"maps"
 	stdhttp "net/http"
 	"net/url"
 	"os"
@@ -55,9 +56,7 @@ func httpResp(status int, body string) *stdhttp.Response {
 // never issues a request).
 func builderDriver(cfg map[string]string) *driver {
 	base := map[string]string{"username": credUser, "passkey": credPass}
-	for k, v := range cfg {
-		base[k] = v
-	}
+	maps.Copy(base, cfg)
 	return &driver{Base: native.Base{Family: "animebytes", Cfg: base, BaseURL: "https://animebytes.tv/", Clock: fixedClock}}
 }
 

@@ -91,17 +91,13 @@ func (e *Executor) assembleFormPairs(l *loader.Login, form *goquery.Selection, d
 	if err != nil {
 		return nil, err
 	}
-	for k, vs := range rendered {
-		pairs[k] = vs
-	}
+	maps.Copy(pairs, rendered)
 
 	extracted, err := e.extractSelectorInputs(body, l.SelectorInputs)
 	if err != nil {
 		return nil, err
 	}
-	for k, vs := range extracted {
-		pairs[k] = vs
-	}
+	maps.Copy(pairs, extracted)
 	return pairs, nil
 }
 

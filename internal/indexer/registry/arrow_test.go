@@ -51,8 +51,8 @@ func TestNoConcreteNativeDriverImports(t *testing.T) {
 		"internal/indexer/native/catalog",
 	}
 
-	deps := strings.Split(strings.TrimSpace(string(out)), "\n")
-	for _, dep := range deps {
+	deps := strings.SplitSeq(strings.TrimSpace(string(out)), "\n")
+	for dep := range deps {
 		for _, f := range forbidden {
 			if strings.HasSuffix(dep, f) {
 				t.Errorf("internal/indexer/registry (production) depends on %q; native families must be injected via registry.New's families parameter, never imported directly (see internal/indexer/native/catalog and cmd/harbrr/serve.go)", dep)

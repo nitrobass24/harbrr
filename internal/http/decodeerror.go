@@ -71,8 +71,8 @@ func DecodeErrorDetail(err error, body []byte) string {
 // preserves the actionable kind while never echoing a data value. Non-numeric kinds
 // ("array", "object", "bool", "string") are single tokens and pass through unchanged.
 func jsonKind(value string) string {
-	if i := strings.IndexByte(value, ' '); i >= 0 {
-		return value[:i]
+	if before, _, ok := strings.Cut(value, " "); ok {
+		return before
 	}
 	return value
 }

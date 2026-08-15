@@ -206,7 +206,7 @@ func regexp2MatchView(input string, runes []rune, m *regexp2.Match) matchView {
 	count := m.GroupCount()
 	groups := make([]string, count)
 	names := make([]string, count)
-	for n := 0; n < count; n++ {
+	for n := range count {
 		g := m.GroupByNumber(n)
 		if g == nil {
 			continue // uncaptured group: leave groups[n] "" (the .NET $N value)

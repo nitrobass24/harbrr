@@ -349,7 +349,7 @@ func detectAntiBot(body []byte) error {
 // when no valid pair is present.
 func parseCookieHeader(raw string) []*stdhttp.Cookie {
 	var out []*stdhttp.Cookie
-	for _, part := range strings.Split(raw, ";") {
+	for part := range strings.SplitSeq(raw, ";") {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue

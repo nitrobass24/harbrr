@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"html"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -68,8 +69,7 @@ func infoString(props []string) string {
 // carries a parenthesised group name, e.g. "Softsubs (SubGroup)" -> "[SubGroup] ". When
 // none matches, the prefix is empty (Prowlarr releaseGroup).
 func releaseGroupPrefix(props []string) string {
-	for i := len(props) - 1; i >= 0; i-- {
-		p := props[i]
+	for _, p := range slices.Backward(props) {
 		if !hasReleaseGroupPrefix(p) {
 			continue
 		}

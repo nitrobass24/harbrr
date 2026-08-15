@@ -24,9 +24,9 @@ func TestNZBGetGPLHeaderPresent(t *testing.T) {
 // nzbgetRPCRequest mirrors the ported client's unexported rpcRequest shape, just
 // enough to decode what the stub receives.
 type nzbgetRPCRequest struct {
-	Method string        `json:"method"`
-	Params []interface{} `json:"params"`
-	ID     int           `json:"id"`
+	Method string `json:"method"`
+	Params []any  `json:"params"`
+	ID     int    `json:"id"`
 }
 
 // nzbgetStub is a minimal httptest stand-in for NZBGet's single JSON-RPC
@@ -35,7 +35,7 @@ type nzbgetRPCRequest struct {
 type nzbgetStub struct {
 	wantRPCError bool
 	lastMethod   string
-	lastParams   []interface{}
+	lastParams   []any
 	lastUser     string
 	lastPass     string
 	lastAuthOK   bool

@@ -1,6 +1,7 @@
 package iptorrents
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/autobrr/harbrr/internal/indexer/native"
@@ -84,10 +85,5 @@ func TestCaps(t *testing.T) {
 }
 
 func containsInt(xs []int, want int) bool {
-	for _, x := range xs {
-		if x == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(xs, want)
 }

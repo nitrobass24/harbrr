@@ -114,7 +114,7 @@ func CapabilityTokens(caps *mapper.Capabilities) []string {
 			continue
 		}
 		out = append(out, m.xmlElem)
-		for _, p := range strings.Split(m.supportedParams(caps), ",") {
+		for p := range strings.SplitSeq(m.supportedParams(caps), ",") {
 			out = append(out, m.xmlElem+"-"+p)
 		}
 	}

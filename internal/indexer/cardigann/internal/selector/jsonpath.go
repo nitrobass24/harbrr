@@ -105,7 +105,7 @@ type pathToken struct {
 // index when it parses as an int and otherwise as an object key.
 func tokenizePath(p string) []pathToken {
 	var tokens []pathToken
-	for _, seg := range strings.Split(p, ".") {
+	for seg := range strings.SplitSeq(p, ".") {
 		if seg == "" {
 			continue
 		}

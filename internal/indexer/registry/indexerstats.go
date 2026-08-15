@@ -91,10 +91,7 @@ func (s *IndexerStats) get(instanceID int64) *instanceStat {
 func (s *IndexerStats) RecordQuery(instanceID int64, elapsed time.Duration) {
 	is := s.get(instanceID)
 	is.queries.Add(1)
-	ms := elapsed.Milliseconds()
-	if ms < 0 {
-		ms = 0
-	}
+	ms := max(elapsed.Milliseconds(), 0)
 	is.responseMs.Add(ms)
 	is.lastQueryUnix.Store(s.clock().UnixMilli())
 }

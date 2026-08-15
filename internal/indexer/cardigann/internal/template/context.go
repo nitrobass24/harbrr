@@ -1,6 +1,7 @@
 package template
 
 import (
+	"maps"
 	"strconv"
 	"time"
 )
@@ -181,18 +182,12 @@ type Params struct {
 // normalization), so a cached or reused Context corrupts a later evaluation.
 func NewSeeded(p Params) *Context {
 	ctx := NewContext()
-	for k, v := range p.Config {
-		ctx.Config[k] = v
-	}
+	maps.Copy(ctx.Config, p.Config)
 	if _, ok := ctx.Config["sitelink"]; !ok {
 		ctx.Config["sitelink"] = p.BaseURL
 	}
-	for k, v := range p.Query {
-		ctx.Query[k] = v
-	}
-	for k, v := range p.Result {
-		ctx.Result[k] = v
-	}
+	maps.Copy(ctx.Query, p.Query)
+	maps.Copy(ctx.Result, p.Result)
 	ctx.Keywords = p.Keywords
 	ctx.Categories = p.Categories
 	if p.Clock != nil {

@@ -5,6 +5,7 @@ import (
 	stdhttp "net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"slices"
 	"testing"
 
 	"golang.org/x/net/publicsuffix"
@@ -488,12 +489,7 @@ func cookieNames(cs []*stdhttp.Cookie) []string {
 
 func jarHasCookie(t *testing.T, e *Executor, name string) bool {
 	t.Helper()
-	for _, n := range jarNames(t, e) {
-		if n == name {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(jarNames(t, e), name)
 }
 
 func jarNames(t *testing.T, e *Executor) []string {

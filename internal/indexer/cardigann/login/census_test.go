@@ -2,6 +2,7 @@ package login
 
 import (
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 	"testing"
@@ -91,9 +92,7 @@ type censusCounts struct {
 
 func planContext() *template.Context {
 	ctx := template.NewContext()
-	for k, v := range syntheticConfig() {
-		ctx.Config[k] = v
-	}
+	maps.Copy(ctx.Config, syntheticConfig())
 	return ctx
 }
 

@@ -357,7 +357,7 @@ func TestSearch_LoginMemoized(t *testing.T) {
 		t.Fatalf("NewEngine: %v", err)
 	}
 
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		if _, err := eng.Search(t.Context(), Query{Keywords: "memo"}); err != nil {
 			t.Fatalf("Search %d: %v", i, err)
 		}

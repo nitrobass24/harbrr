@@ -22,7 +22,7 @@ import (
 // follower's own fallback live search succeeds (call 2). Deterministic — no goroutines or
 // timing — so it is the authoritative FAIL-BEFORE / PASS-AFTER proof for U8R-F5.
 type seqInner struct {
-	calls    int64
+	calls    atomic.Int64
 	firstErr error
 	results  []*normalizer.Release
 }
@@ -39,13 +39,13 @@ func (s *seqInner) Grab(context.Context, string) (*search.GrabResult, error) {
 }
 
 func (s *seqInner) Search(_ context.Context, _ search.Query) ([]*normalizer.Release, error) {
-	if atomic.AddInt64(&s.calls, 1) == 1 {
+	if s.calls.Add(1) == 1 {
 		return nil, s.firstErr
 	}
 	return s.results, nil
 }
 
-func (s *seqInner) callCount() int64 { return atomic.LoadInt64(&s.calls) }
+func (s *seqInner) callCount() int64 { return s.calls.Load() }
 
 // TestServeMissFollowerRecoversFromInheritedLeaderError is the core U8R-F5 regression. A
 // coalesced follower whose OWN context is still live must not surface an error inherited
@@ -132,7 +132,7 @@ func TestServeMissFollowerRecoversFromInheritedLeaderError(t *testing.T) {
 // client-gone must never be masked with fresh results. Any second call (which the guard
 // must prevent) returns results so a regression that wrongly falls back leaks them.
 type cancelOnSearchInner struct {
-	calls   int64
+	calls   atomic.Int64
 	cancel  context.CancelFunc
 	results []*normalizer.Release
 }
@@ -151,14 +151,14 @@ func (c *cancelOnSearchInner) Grab(context.Context, string) (*search.GrabResult,
 }
 
 func (c *cancelOnSearchInner) Search(_ context.Context, _ search.Query) ([]*normalizer.Release, error) {
-	if atomic.AddInt64(&c.calls, 1) == 1 {
+	if c.calls.Add(1) == 1 {
 		c.cancel() // the follower's OWN request is aborted while the fetch is in flight
 		return nil, context.Canceled
 	}
 	return c.results, nil
 }
 
-func (c *cancelOnSearchInner) callCount() int64 { return atomic.LoadInt64(&c.calls) }
+func (c *cancelOnSearchInner) callCount() int64 { return c.calls.Load() }
 
 // TestServeMissReturnsOwnCancellation is the guard for U8R-F5: when the FOLLOWER's OWN
 // context is cancelled, serveMiss must return the cancellation rather than fall back to a
@@ -197,7 +197,7 @@ func TestServeMissReturnsOwnCancellation(t *testing.T) {
 // search). Both fields are nil in the original single-follower test, where the second
 // call must return immediately — a nil retryRelease skips the gate entirely.
 type coalesceInner struct {
-	calls           int64
+	calls           atomic.Int64
 	firstSeen       chan struct{}
 	firstOnce       sync.Once
 	leaderRelease   chan struct{}
@@ -220,10 +220,10 @@ func (c *coalesceInner) Grab(context.Context, string) (*search.GrabResult, error
 	return nil, errors.New("not implemented")
 }
 
-func (c *coalesceInner) callCount() int64 { return atomic.LoadInt64(&c.calls) }
+func (c *coalesceInner) callCount() int64 { return c.calls.Load() }
 
 func (c *coalesceInner) Search(ctx context.Context, _ search.Query) ([]*normalizer.Release, error) {
-	n := atomic.AddInt64(&c.calls, 1)
+	n := c.calls.Add(1)
 	if n == 1 {
 		c.firstOnce.Do(func() { close(c.firstSeen) })
 		<-c.leaderRelease

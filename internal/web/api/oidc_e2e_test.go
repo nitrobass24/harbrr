@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -97,9 +98,7 @@ func (p *fakeOIDCProvider) idToken(audience string) (string, error) {
 		"exp": now.Add(time.Hour).Unix(),
 		"iat": now.Unix(),
 	}
-	for k, v := range p.claims {
-		claims[k] = v
-	}
+	maps.Copy(claims, p.claims)
 	raw, err := josejwt.Signed(signer).Claims(claims).Serialize()
 	if err != nil {
 		return "", fmt.Errorf("sign id token: %w", err)

@@ -1,6 +1,9 @@
 package animebytes
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // categories maps a group to its newznab category ids inline, reproducing Prowlarr's
 // AnimeBytesParser category logic. AnimeBytes' scrape.php has no numeric tracker category,
@@ -117,12 +120,7 @@ func musicCategories(props []string) []int {
 // hasProperty reports whether any property equals name exactly (Prowlarr's
 // properties.Contains, ordinal).
 func hasProperty(props []string, name string) bool {
-	for _, p := range props {
-		if p == name {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(props, name)
 }
 
 // hasAnyProperty reports whether any property equals one of the names exactly.

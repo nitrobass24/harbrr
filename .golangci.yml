@@ -64,6 +64,7 @@ linters:
     - wastedassign       # no assignment whose value is never read
     - reassign           # no reassigning another package's exported vars
     - predeclared        # no shadowing predeclared identifiers (e.g. a var named `comparable`)
+    - modernize          # keep to modern Go constructs (see the newexpr exclusion below)
 
   settings:
     wrapcheck:
@@ -129,6 +130,21 @@ linters:
       - legacy
       - std-error-handling
     rules:
+      # modernize's newexpr rewrites boolPtr(true) -> new(true) at the call site but
+      # leaves the now-callerless helper behind as a //go:fix inline function, which
+      # nothing flags as dead. Applying it repo-wide would buy no behaviour or
+      # performance change in exchange for a manual dead-helper sweep. modernize
+      # exposes no per-analyzer settings in golangci-lint v2, so a text: match on the
+      # analyzer prefix is the only way to disable one of its sub-analyzers.
+      #
+      # Scoped to tests deliberately: all 43 findings are the *Ptr test-fixture helper
+      # idiom, and that dead-helper argument is what justifies skipping them. A newexpr
+      # in production code has no such helper behind it, so it is a clean fix and should
+      # be reported rather than silently swallowed by an unscoped rule.
+      - path: _test\.go
+        text: "^newexpr:"
+        linters:
+          - modernize
       # Tests get table-driven length and helper-assertion latitude.
       - path: _test\.go
         linters:
