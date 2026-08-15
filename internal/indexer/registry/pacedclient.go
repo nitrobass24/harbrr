@@ -267,6 +267,13 @@ func (d *pacedDoer) traceQuery(req *stdhttp.Request, status int, dur time.Durati
 	ev.Msg("registry: outbound request query")
 }
 
+// errPacingBudget marks a request the pacing budget refused: the cumulative
+// rate-limiter wait outlived the budget before a token was ever granted, so NOTHING was
+// sent. It is a sentinel rather than a bare message because the health path has to tell
+// it apart from the deadline it wraps — a client-side request timeout is the tracker
+// failing to answer, this is harbrr declining to ask (see reachedTracker).
+var errPacingBudget = errors.New("registry: pacing budget exhausted")
+
 // classifyWaitErr turns a pacing-wait failure into the surfaced error: a genuine caller
 // cancel/deadline is a "request aborted"; a budget expiry with a pending 429/503
 // surfaces the rate-limited error; a bare budget expiry is a pacing timeout.
@@ -277,7 +284,7 @@ func (d *pacedDoer) classifyWaitErr(ctx context.Context, err error, lastRL *rate
 	if lastRL != nil {
 		return &search.RateLimitedError{StatusCode: lastRL.status, RetryAfter: lastRL.after}
 	}
-	return fmt.Errorf("registry: pacing budget exhausted: %w", err)
+	return fmt.Errorf("%w: %w", errPacingBudget, err)
 }
 
 // backoffSleep waits out the retry backoff (Retry-After when present, else the base

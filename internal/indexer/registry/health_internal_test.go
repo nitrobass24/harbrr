@@ -75,6 +75,42 @@ func TestClassifyHealth(t *testing.T) {
 	}
 }
 
+// TestReachedTracker pins which failures count as evidence about a tracker. Everything
+// that never left the process must answer false — under the sticky derivation a query
+// stamp with no success after it reads failing forever — while a request the tracker
+// simply did not answer must stay true.
+func TestReachedTracker(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		// callerGone cancels the caller's context before the call, the shape a
+		// disconnected consumer leaves behind.
+		callerGone bool
+		err        error
+		want       bool
+	}{
+		{name: "tracker answered badly", err: errors.New("tracker returned HTTP 500"), want: true},
+		{name: "client timeout, caller still live", err: &url.Error{Op: "GET", Err: context.DeadlineExceeded}, want: true},
+		{name: "caller cancelled", callerGone: true, err: &url.Error{Op: "GET", Err: context.Canceled}},
+		{name: "caller deadline elapsed", callerGone: true, err: errors.New("whatever the engine surfaced")},
+		{name: "inherited cancellation, caller live", err: fmt.Errorf("registry: request aborted: %w", context.Canceled)},
+		{name: "pacing budget refused the request", err: fmt.Errorf("%w: %w", errPacingBudget, context.DeadlineExceeded)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			if tt.callerGone {
+				cancel()
+			}
+			if got := reachedTracker(ctx, tt.err); got != tt.want {
+				t.Errorf("reachedTracker = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDeriveStatus(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, time.June, 14, 12, 0, 0, 0, time.UTC)

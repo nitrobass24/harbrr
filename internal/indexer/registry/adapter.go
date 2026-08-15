@@ -231,12 +231,20 @@ func (a *indexerAdapter) budgetedLiveSearch(ctx context.Context, query search.Qu
 // reactive-learning path that discovers a cap harbrr was never configured with. The
 // circuit-breaker gate lives in budgetedLiveSearch (its sole caller), checked before
 // the budget reservation.
+//
+// A failure that never reached the tracker (reachedTracker) short-circuits ALL of the
+// recording: no query stamp, no health event, no breaker escalation. Nothing was asked
+// of the tracker, so nothing was learned about it — and under #484's sticky derivation
+// a query stamp with no success after it reads "failing" forever.
 func (a *indexerAdapter) liveSearch(ctx context.Context, query search.Query) ([]*normalizer.Release, error) {
 	// Count every search that reaches the tracker (liveSearch is bypassed on a cache hit)
 	// and sample its latency around the inner call — a failed search is still a query
 	// attempt with a real latency sample.
 	start := a.clock()
 	releases, err := a.inner.Search(ctx, query)
+	if err != nil && !reachedTracker(ctx, err) {
+		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, err)
+	}
 	a.stats.RecordQuery(a.instanceID, a.clock().Sub(start))
 	if err != nil {
 		a.recordHealth(ctx, err)
@@ -508,6 +516,26 @@ func (a *indexerAdapter) fileCapture(err error, kind string) {
 		kind = fmt.Sprintf("http_%d", capture.Status)
 	}
 	a.diagnostics.record(a.instanceID, FailureCapture{Kind: kind, OccurredAt: a.clock(), Capture: capture})
+}
+
+// reachedTracker reports whether a failed search actually put a request on the wire,
+// which is the precondition for it saying ANYTHING about the tracker's health. Three
+// shapes did not:
+//
+//   - the caller's own context is done (ctx.Err()) — a Sonarr/qui HTTP timeout or a
+//     dropped connection, mid-search;
+//   - the error carries context.Canceled while our ctx is still live — a singleflight
+//     FOLLOWER inheriting the leader's cancellation;
+//   - errPacingBudget — the paced doer's own wait budget elapsed before a token was
+//     ever granted, so no attempt was made.
+//
+// The first two are exactly searchcache.tripBreaker's filter, and the ledger reads the
+// same cancellation as core.SkipTimeout rather than a tracker fault: harbrr consistently
+// treats a consumer hanging up as a non-event. A CLIENT-side request timeout with a live
+// caller ctx is deliberately NOT in this set — the tracker was asked and did not answer,
+// which is a genuine transport failure.
+func reachedTracker(ctx context.Context, err error) bool {
+	return ctx.Err() == nil && !errors.Is(err, context.Canceled) && !errors.Is(err, errPacingBudget)
 }
 
 // classifyHealth maps an engine error to a health-event kind. Returns ok=false

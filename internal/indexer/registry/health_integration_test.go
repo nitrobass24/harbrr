@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	stdhttp "net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -232,6 +233,78 @@ func TestFailingSearchesNeverDeriveHealthy(t *testing.T) {
 	}
 	if st, err := reg.Status(ctx, "tt"); err != nil || st.Status != registry.StatusHealthy {
 		t.Errorf("status after the tracker recovers = %q (err %v), want healthy", st.Status, err)
+	}
+}
+
+// hangupDoer answers with body until cancel is set, after which it emulates the CONSUMER
+// hanging up mid-search: it cancels the caller's context and fails the way net/http does,
+// with a *url.Error carrying context.Canceled. Sequential use only (no locking).
+type hangupDoer struct {
+	body   string
+	cancel context.CancelFunc
+}
+
+func (d *hangupDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
+	if d.cancel != nil {
+		d.cancel()
+		return nil, &url.Error{Op: req.Method, URL: req.URL.String(), Err: context.Canceled}
+	}
+	return &stdhttp.Response{
+		StatusCode: stdhttp.StatusOK,
+		Header:     stdhttp.Header{},
+		Body:       io.NopCloser(strings.NewReader(d.body)),
+		Request:    req,
+	}, nil
+}
+
+// TestCancelledSearchDoesNotMoveHealth pins the seam #484's derivation made dangerous: a
+// Sonarr/qui HTTP timeout or a dropped connection aborts the search before anything is
+// learned about the tracker, so it must move NOTHING — no query stamp (the sticky "queried
+// since the last success" rule would otherwise read failing forever, with no reason to
+// show) and no health event (a cancelled request surfaces as a *url.Error, which the
+// transport classifier would otherwise happily record and escalate on). It is the same
+// call the cache's breaker and the aggregate ledger already refuse to blame a tracker for.
+func TestCancelledSearchDoesNotMoveHealth(t *testing.T) {
+	t.Parallel()
+	doer := &hangupDoer{body: bodyHTML}
+	clk := &movableClock{t: fixedClock()}
+	reg, _ := newClockedRegistry(t, doer, clk.now)
+	ctx := context.Background()
+	if _, err := reg.Add(ctx, registry.AddParams{
+		Slug: "tt", DefinitionID: "testtracker", Settings: map[string]string{"apikey": "x"},
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	idx, ok := reg.Indexer(ctx, "tt")
+	if !ok {
+		t.Fatal("Indexer(tt) not resolved")
+	}
+	if _, err := idx.Search(ctx, search.Query{Keywords: "bunny"}); err != nil {
+		t.Fatalf("Search (live): %v", err)
+	}
+	if st, err := reg.Status(ctx, "tt"); err != nil || st.Status != registry.StatusHealthy {
+		t.Fatalf("status after a real success = %q (err %v), want healthy", st.Status, err)
+	}
+
+	// The consumer hangs up mid-search, a minute later (so a query stamp would land
+	// strictly after the success and trip the sticky rule).
+	clk.advance(time.Minute)
+	cancelCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	doer.cancel = cancel
+	if _, err := idx.Search(cancelCtx, search.Query{Keywords: "bunny"}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Search (cancelled) err = %v, want context.Canceled", err)
+	}
+
+	st, err := reg.Status(ctx, "tt")
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if st.Status != registry.StatusHealthy {
+		t.Errorf("status after the consumer hung up = %q, want healthy (nothing reached the tracker)", st.Status)
+	}
+	if len(st.Events) != 0 {
+		t.Errorf("events = %+v, want none (a cancelled consumer is not a tracker failure)", st.Events)
 	}
 }
 
