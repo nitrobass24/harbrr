@@ -217,10 +217,11 @@ func (a *indexerAdapter) budgetedLiveSearch(ctx context.Context, query search.Qu
 	if err := a.checkCircuit(ctx); err != nil {
 		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, err)
 	}
-	if !a.budget.ReserveQuery(ctx, a.instanceID, a.cfg, a.clock()) {
+	reservedAt := a.clock()
+	if !a.budget.ReserveQuery(ctx, a.instanceID, a.cfg, reservedAt) {
 		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, core.ErrBudgetExhausted)
 	}
-	return a.liveSearch(ctx, query)
+	return a.liveSearch(ctx, query, reservedAt)
 }
 
 // liveSearch is the actual online search: it runs the engine's search and returns the
@@ -235,14 +236,18 @@ func (a *indexerAdapter) budgetedLiveSearch(ctx context.Context, query search.Qu
 // A failure that never reached the tracker (reachedTracker) short-circuits ALL of the
 // recording: no query stamp, no health event, no breaker escalation. Nothing was asked
 // of the tracker, so nothing was learned about it — and under #484's sticky derivation
-// a query stamp with no success after it reads "failing" forever.
-func (a *indexerAdapter) liveSearch(ctx context.Context, query search.Query) ([]*normalizer.Release, error) {
+// a query stamp with no success after it reads "failing" forever. It also REFUNDS the
+// query unit budgetedLiveSearch reserved (reservedAt is that reservation's timestamp):
+// the unit paid for an outbound request that was never sent, and against a cap like
+// dognzb's 2000/day those unsent reservations otherwise leak the budget away silently.
+func (a *indexerAdapter) liveSearch(ctx context.Context, query search.Query, reservedAt time.Time) ([]*normalizer.Release, error) {
 	// Count every search that reaches the tracker (liveSearch is bypassed on a cache hit)
 	// and sample its latency around the inner call — a failed search is still a query
 	// attempt with a real latency sample.
 	start := a.clock()
 	releases, err := a.inner.Search(ctx, query)
 	if err != nil && !reachedTracker(ctx, err) {
+		a.budget.ReleaseQuery(ctx, a.instanceID, a.cfg, reservedAt)
 		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, err)
 	}
 	a.stats.RecordQuery(a.instanceID, a.clock().Sub(start))
@@ -326,7 +331,8 @@ func (a *indexerAdapter) ConsumesSearchMode() bool {
 // isTransportError classifies, so without the guard enough of them file transport
 // events against the tracker, climb the ladder and set DisabledTill, taking a perfectly
 // healthy indexer out of dispatch. The attempt stamp sits below the guard for the same
-// reason: an aborted download must not depress the indexer's grab success rate.
+// reason: an aborted download must not depress the indexer's grab success rate — and the
+// reserved grab unit is handed back there too, since it bought no tracker traffic.
 func (a *indexerAdapter) Grab(ctx context.Context, link string) (*search.GrabResult, error) {
 	// Same circuit-breaker gate as liveSearch (#253): a disabled instance is skipped
 	// rather than hit.
@@ -337,11 +343,13 @@ func (a *indexerAdapter) Grab(ctx context.Context, link string) (*search.GrabRes
 	// never cached), so an exhausted budget refuses outright rather than serving
 	// stale — the grab-path half of #251's enforcement. Gated after the breaker: a
 	// tripped instance must not consume budget.
-	if !a.budget.ReserveGrab(ctx, a.instanceID, a.cfg, a.clock()) {
+	reservedAt := a.clock()
+	if !a.budget.ReserveGrab(ctx, a.instanceID, a.cfg, reservedAt) {
 		return nil, fmt.Errorf("registry: grab %q: %w", a.info.ID, core.ErrBudgetExhausted)
 	}
 	result, err := a.inner.Grab(ctx, link)
 	if err != nil && !reachedTracker(ctx, err) {
+		a.budget.ReleaseGrab(ctx, a.instanceID, a.cfg, reservedAt)
 		return nil, fmt.Errorf("registry: grab %q: %w", a.info.ID, err)
 	}
 	// Counted below the reachedTracker guard, not at the top of the method: "attempts"

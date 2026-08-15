@@ -124,6 +124,47 @@ func (b *RequestBudget) ReserveGrab(ctx context.Context, instanceID int64, cfg m
 	return b.reserve(ctx, instanceID, cfg, budgetKindGrab, now)
 }
 
+// ReleaseQuery gives back a unit reserved by ReserveQuery when the request never
+// reached the tracker (autobrr/harbrr#489's reachedTracker shapes: an *arr hanging up,
+// a user navigating away from a /dl link, the pacing budget never granting a token).
+// reservedAt MUST be the same timestamp the reservation was made with — it is what
+// pins the refund to the period the unit was counted under.
+func (b *RequestBudget) ReleaseQuery(ctx context.Context, instanceID int64, cfg map[string]string, reservedAt time.Time) {
+	b.release(ctx, instanceID, cfg, budgetKindQuery, reservedAt)
+}
+
+// ReleaseGrab is ReleaseQuery for the grab budget.
+func (b *RequestBudget) ReleaseGrab(ctx context.Context, instanceID int64, cfg map[string]string, reservedAt time.Time) {
+	b.release(ctx, instanceID, cfg, budgetKindGrab, reservedAt)
+}
+
+// release is the shared refund for both kinds: it decrements kind's counter ONLY while
+// the stored period is still the one reservedAt fell in. A period that has rolled over
+// (or been rolled forward by a concurrent reserve) already dropped the reservation, so
+// decrementing then would steal from the fresh period's allowance — the refund is
+// simply dropped instead. The exhausted latch is deliberately untouched: handing a unit
+// back is not evidence the tracker's own cap lifted.
+func (b *RequestBudget) release(ctx context.Context, instanceID int64, cfg map[string]string, kind budgetKind, reservedAt time.Time) {
+	// The canonical caller is a request whose context just died (a hung-up *arr), and
+	// the refund still has to reach the store — persisting it under that dead context
+	// would fail every time and leave the durable counter over-counted until restart.
+	ctx = context.WithoutCancel(ctx)
+
+	st := b.stateFor(instanceID)
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	b.ensureLoaded(ctx, instanceID, st)
+
+	period := periodKey(reservedAt, resolveLimitsUnit(cfg))
+	count, exhausted, curPeriod := st.snapshot(kind)
+	if curPeriod != period || count <= 0 {
+		return
+	}
+	st.set(kind, period, count-1, exhausted)
+	// Under st.mu for the same write-ordering reason as reserve.
+	b.persist(ctx, st.row(instanceID, b.clock()))
+}
+
 // reserve is the shared count-and-check for both kinds: it rolls the counter over to
 // a fresh period when the period key has changed (which also clears any
 // reactively-learned exhausted latch — a new day/hour is a clean slate even if the
