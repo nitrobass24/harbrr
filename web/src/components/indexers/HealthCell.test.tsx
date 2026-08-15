@@ -38,4 +38,17 @@ describe("HealthCell", () => {
     expect(screen.getByText("Failing")).toBeTruthy()
     expect(screen.getByText(/login failed 2m ago/)).toBeTruthy()
   })
+
+  // The parameter-free rule: searches reached the tracker and none succeeded, in a shape
+  // nothing classified (a plain 500, a 200 full of junk). There is no event to quote, so
+  // the detail must still say something rather than rendering an empty row.
+  it("explains a failing status that has no classified event", () => {
+    const status: IndexerStatus = { slug: "tt", status: "failing", events: [] }
+    render(<HealthCell status={status} />)
+
+    expect(screen.getByText("Failing")).toBeTruthy()
+    expect(healthDetail(status)).toEqual([
+      { label: "Why", value: "Searches reach it but none succeed. Nothing classified the failure." },
+    ])
+  })
 })

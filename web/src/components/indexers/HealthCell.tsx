@@ -38,7 +38,14 @@ export function healthDetail(status: IndexerStatus): { label: string; value: str
   }
   const rows: { label: string; value: string }[] = []
   const latest = status.events[0]
-  if (latest) rows.push({ label: "Why", value: reasonLabel(latest.kind) })
+  // Failing with no event at all is the derivation's parameter-free rule (#484): searches
+  // reached the tracker and none of them succeeded, in a shape nothing classified (a plain
+  // 500, or a 200 full of junk). There is no kind and no failing-since to quote, so say
+  // exactly that rather than leaving the row blank.
+  rows.push({
+    label: "Why",
+    value: latest ? reasonLabel(latest.kind) : "Searches reach it but none succeed. Nothing classified the failure.",
+  })
   // The circuit's streak start when the ladder has been climbed, else the failure the
   // state was derived from — either way, "how long has this been broken".
   const since = status.failingSince ?? latest?.occurred_at
