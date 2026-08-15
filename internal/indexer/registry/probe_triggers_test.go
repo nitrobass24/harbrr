@@ -3,6 +3,7 @@ package registry_test
 import (
 	"context"
 	"errors"
+	stdhttp "net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -146,6 +147,57 @@ func TestUpdateEnqueuesProbeOnlyOnCredentialChange(t *testing.T) {
 				t.Fatalf("probes enqueued = %v, want none (this change spends no login)", got)
 			}
 		})
+	}
+}
+
+// TestProbeRecoversARule3OnlyFailure walks the trapdoor end to end. An indexer whose
+// searches fail in a shape nothing classifies (a plain 500) derives failing on rule 3
+// alone: no health event, no failing-since, no breaker window — nothing that expires.
+// Feeds skip a failing indexer, so no traffic can ever produce the success that clears
+// it; the probe is the only way out, and it only works if ProbeTargets actually selects
+// it.
+func TestProbeRecoversARule3OnlyFailure(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	doer := &swapDoer{body: bodyHTML}
+	reg, _ := newRegistry(t, doer)
+	if _, err := reg.Add(ctx, registry.AddParams{
+		Slug: "tt", DefinitionID: "testtracker", Settings: map[string]string{"apikey": "x"},
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	idx, ok := reg.Indexer(ctx, "tt")
+	if !ok {
+		t.Fatal("Indexer(tt) not resolved")
+	}
+
+	doer.fail.Store(stdhttp.StatusInternalServerError)
+	if _, err := idx.Search(ctx, search.Query{Keywords: "bunny"}); err == nil {
+		t.Fatal("Search against a 500 succeeded; the fixture is not exercising the failure path")
+	}
+	st, err := reg.Status(ctx, "tt")
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if st.Status != registry.StatusFailing || len(st.Events) != 0 || st.FailingSince != nil || st.DisabledTill != nil {
+		t.Fatalf("status = %+v, want failing on rule 3 alone (no events, no failing-since, no disable window)", st)
+	}
+
+	targets, err := reg.ProbeTargets(ctx)
+	if err != nil {
+		t.Fatalf("ProbeTargets: %v", err)
+	}
+	if len(targets) != 1 || targets[0] != "tt" {
+		t.Fatalf("probe targets = %v, want [tt] — a rule-3 failure is unreachable by any other traffic", targets)
+	}
+
+	// The tracker recovers, and the probe is what finds out.
+	doer.fail.Store(0)
+	if err := reg.Test(ctx, "tt"); err != nil {
+		t.Fatalf("probe of a recovered tracker: %v", err)
+	}
+	if st, err := reg.Status(ctx, "tt"); err != nil || st.Status != registry.StatusHealthy {
+		t.Fatalf("status after a passing probe = %q (err %v), want healthy", st.Status, err)
 	}
 }
 

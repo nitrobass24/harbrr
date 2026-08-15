@@ -21,7 +21,7 @@ import (
 const probeConcurrency = 8
 
 // probeQueueDepth is how many probes may be waiting for a worker. A boot seed enqueues
-// one job per unknown enabled indexer and Test all one per configured indexer, so this
+// one job per unhealthy enabled indexer and Test all one per configured indexer, so this
 // is roughly an order of magnitude above the fleet size a single-user instance runs —
 // deep enough that the drop path below is unreachable in practice, shallow enough that a
 // runaway caller cannot pin unbounded memory.
@@ -42,7 +42,7 @@ type probeJob struct {
 }
 
 // ProbeQueue is the ONE bounded worker pool every automatic credential check runs
-// through: the boot reconciliation of unknown-health indexers, the probe after an
+// through: the boot reconciliation of every indexer that is not healthy, the probe after an
 // indexer is created, the probe after its credentials change, and the operator's
 // "Test all" (autobrr/harbrr#484, #485). Having one queue — rather than one mechanism
 // per trigger — is what makes probeConcurrency an instance-wide ceiling instead of a
@@ -93,15 +93,15 @@ func (q *ProbeQueue) Run(ctx context.Context) {
 			_ = g.Wait()
 			return
 		case <-q.seed:
-			g.Go(func() error { q.enqueueUnknown(ctx); return nil })
+			g.Go(func() error { q.enqueueTargets(ctx); return nil })
 		case job := <-q.jobs:
 			g.Go(func() error { q.runJob(ctx, job); return nil })
 		}
 	}
 }
 
-// Seed asks the queue to probe every enabled indexer whose health currently derives
-// unknown — the once-per-boot trigger, fired after HTTP readiness. It returns
+// Seed asks the queue to probe every enabled indexer that is not currently healthy —
+// the once-per-boot trigger, fired after HTTP readiness. It returns
 // immediately: even the enumeration (a DB read per indexer) runs on the queue's own
 // goroutines, so readiness never waits on it and shutdown still joins it.
 func (q *ProbeQueue) Seed() {
@@ -183,12 +183,14 @@ func (q *ProbeQueue) runJob(ctx context.Context, job probeJob) {
 	}
 }
 
-// enqueueUnknown is the boot reconciliation: probe every enabled indexer whose health
-// derives unknown, so an operator sees where the fleet stands instead of a wall of
-// question marks that only a manual Test can clear. It deliberately does NOT skip a
-// breaker-disabled indexer (Test bypasses the breaker for exactly this reason) — after
-// a restart, finding out whether a tracker recovered is the entire point.
-func (q *ProbeQueue) enqueueUnknown(ctx context.Context) {
+// enqueueTargets is the boot reconciliation: probe every enabled indexer that is not
+// healthy, so an operator sees where the fleet stands instead of a wall of question
+// marks that only a manual Test can clear. It deliberately does NOT skip a
+// breaker-disabled or failing indexer (Test bypasses the breaker for exactly this
+// reason) — after a restart, finding out whether a tracker recovered is the entire
+// point, and for an indexer no feed will query while it reads failing it is the only
+// way that can ever happen.
+func (q *ProbeQueue) enqueueTargets(ctx context.Context) {
 	slugs, err := q.targets(ctx)
 	if err != nil {
 		q.log.Warn().Str("error", apphttp.RedactError(err)).
@@ -198,25 +200,28 @@ func (q *ProbeQueue) enqueueUnknown(ctx context.Context) {
 	if len(slugs) == 0 {
 		return
 	}
-	q.log.Info().Int("indexers", len(slugs)).Msg("registry: probing indexers with unknown health")
+	q.log.Info().Int("indexers", len(slugs)).Msg("registry: probing indexers that are not healthy")
 	for _, slug := range slugs {
 		q.submit(probeJob{slug: slug})
 	}
 }
 
-// ProbeTargets is the boot probe's work list: every ENABLED indexer that either
-// derives unknown or is currently held open by its circuit breaker.
+// ProbeTargets is the boot probe's work list: every ENABLED indexer that does not
+// currently derive healthy.
+//
+// Selecting on "not healthy" rather than on unknown-or-breaker-open is what keeps the
+// failing states escapable. Health is sticky (#484), so a failing indexer stays failing
+// until something succeeds — and statusMembers excludes it from the status:healthy
+// feed, so nothing queries it to produce that success. A failure nothing classified
+// (rule 3: queried, never succeeded) has no health event and no breaker window either,
+// so the old selection skipped it as well: fail once, never recover. A probe is the
+// only traffic such an indexer can get.
 //
 // Disabled indexers are skipped outright — harbrr serves no search through them, so
-// spending a login to learn their health buys nothing. A breaker-disabled one is
-// deliberately KEPT even though it already derives failing: its breaker window
-// persists across a restart and Search refuses it until the window passes, so a probe
-// is the only way to find out it recovered while harbrr was down. Test bypasses the
-// breaker for exactly this reason, and a passing Test descends the ladder and clears
-// the window.
+// spending a login to learn their health buys nothing.
 //
 // It reuses AllStatuses rather than re-deriving, so the probe list and the dashboard
-// can never disagree about what "unknown" means.
+// can never disagree about which indexers are unhealthy.
 func (r *StatsReporter) ProbeTargets(ctx context.Context) ([]string, error) {
 	all, err := r.AllStatuses(ctx)
 	if err != nil {
@@ -224,7 +229,7 @@ func (r *StatsReporter) ProbeTargets(ctx context.Context) ([]string, error) {
 	}
 	var out []string
 	for _, st := range all {
-		if st.Enabled && (st.Status == StatusUnknown || st.DisabledTill != nil) {
+		if st.Enabled && st.Status != StatusHealthy {
 			out = append(out, st.Slug)
 		}
 	}

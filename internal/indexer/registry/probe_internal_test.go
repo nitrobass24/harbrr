@@ -347,12 +347,15 @@ func TestProbeQueueTestAllAbandonedMidRun(t *testing.T) {
 	<-finished
 }
 
-// TestProbeTargetsSelectsEnabledUnknownAndBreakerOpen pins the boot work list against
-// real derived health: an enabled indexer with no evidence is unknown and probed; a
-// disabled one is skipped whatever its health; and an indexer the circuit breaker is
-// currently holding open IS probed, even though it derives failing, because a probe is
-// the only way to learn it recovered while harbrr was down.
-func TestProbeTargetsSelectsEnabledUnknownAndBreakerOpen(t *testing.T) {
+// TestProbeTargetsSelectsEveryUnhealthyIndexer pins the boot work list against real
+// derived health: everything enabled that is not healthy is probed — an indexer with no
+// evidence (unknown), one the circuit breaker is holding open, and one that is failing
+// on rule 3 alone (queried, never succeeded: no event, no breaker window, nothing to
+// expire). That last one is the trapdoor the old unknown-or-breaker-open selection left
+// open: statusMembers keeps a failing indexer out of the status:healthy feed, so no
+// traffic can ever produce the success that would clear it, and no probe went near it
+// either. A disabled indexer is still skipped whatever its health.
+func TestProbeTargetsSelectsEveryUnhealthyIndexer(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	db := dbtest.OpenMigrated(t)
@@ -360,6 +363,7 @@ func TestProbeTargetsSelectsEnabledUnknownAndBreakerOpen(t *testing.T) {
 
 	seedProbeInstance(t, db, "unknown-ix", true)
 	brokenID := seedProbeInstance(t, db, "breaker-ix", true)
+	rule3ID := seedProbeInstance(t, db, "rule3-ix", true)
 	seedProbeInstance(t, db, "disabled-ix", false)
 	healthyID := seedProbeInstance(t, db, "healthy-ix", true)
 
@@ -375,11 +379,18 @@ func TestProbeTargetsSelectsEnabledUnknownAndBreakerOpen(t *testing.T) {
 	}
 
 	reg := New(db, nil, nil, nil, WithClock(func() time.Time { return now }))
+	// A query that reached the tracker with no success after it — rule 3's failing,
+	// carrying no event, no failing-since and no disable window.
+	reg.StatsReporter.stats.RecordQuery(rule3ID, time.Second)
+	if st, err := reg.Status(ctx, "rule3-ix"); err != nil || st.Status != StatusFailing || len(st.Events) != 0 {
+		t.Fatalf("rule3-ix status = %q with %d events (err %v), want failing with none", st.Status, len(st.Events), err)
+	}
+
 	got, err := reg.ProbeTargets(ctx)
 	if err != nil {
 		t.Fatalf("ProbeTargets: %v", err)
 	}
-	assertSameSlugs(t, got, []string{"breaker-ix", "unknown-ix"})
+	assertSameSlugs(t, got, []string{"breaker-ix", "rule3-ix", "unknown-ix"})
 }
 
 // seedProbeInstance inserts a bare instance row with the given enabled flag.
