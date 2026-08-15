@@ -89,6 +89,11 @@ type Resolver struct {
 	// default) means no notification — recording is unchanged.
 	healthSink HealthSink
 
+	// probeSink, when non-nil, enqueues a background credential probe for a slug
+	// (WithProbeSink). It lives here only because Options mutate the Resolver; New
+	// copies it into the Manager, which is the half that actually calls it.
+	probeSink func(slug string)
+
 	// stats holds the durable per-indexer query/grab/latency counters. Always present
 	// (built in New), instrumented by the per-instance indexerAdapter, rehydrated at
 	// boot and flushed periodically + at shutdown. Failure counts are folded in at read
@@ -198,6 +203,18 @@ func WithHealthSink(sink HealthSink) Option {
 	return func(r *Registry) { r.healthSink = sink }
 }
 
+// WithProbeSink registers where Add and a credential-changing Update send their
+// background health probe — in production, ProbeQueue.Enqueue (autobrr/harbrr#484).
+//
+// The DEFAULT IS NIL, and that is load-bearing rather than lazy: creating an indexer
+// is the single most common thing the registry's ~90 test call sites do, and a default
+// that probed would turn every one of them into an outbound login attempt. Probing is
+// therefore opt-in at the composition root, exactly like the doer factory, and a test
+// that wants to assert the trigger injects a recorder here.
+func WithProbeSink(fn func(slug string)) Option {
+	return func(r *Registry) { r.probeSink = fn }
+}
+
 // ClientParams carries the per-instance inputs the doer factory needs to vary the
 // HTTP client per indexer. The original seam was nullary (every engine shared one
 // client shape); this struct is the widening, so adding fields later (proxy, rate)
@@ -286,6 +303,7 @@ func New(db dbinterface.Querier, ldr *loader.Loader, keyring secretsKeyring, fam
 		native:    res.native,
 		evicter:   res,
 		forgetter: res,
+		probe:     res.probeSink,
 	}
 	r.StatsReporter = &StatsReporter{
 		stats:       res.stats,

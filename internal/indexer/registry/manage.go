@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"sort"
 	"strings"
@@ -34,6 +35,10 @@ type Manager struct {
 	native    map[string]native.Family
 	evicter   serveEvicter
 	forgetter instanceForgetter
+	// probe enqueues a background credential probe for a slug (WithProbeSink). Nil —
+	// the default — means no probing at all, which is what keeps Add offline in every
+	// test that has not opted in. See enqueueProbe.
+	probe func(slug string)
 }
 
 // serveEvicter drops what the SERVE path is holding for an indexer whose row just
@@ -309,7 +314,10 @@ type SettingView struct {
 
 // Add persists a new indexer instance and its settings atomically (the instance
 // is inserted first so its id can bind each secret's AAD), then invalidates any
-// cached engine for the slug.
+// cached engine for the slug and queues a background credential probe so the new
+// indexer has real health evidence without anyone clicking Test (#484). The probe
+// runs AFTER the commit and its verdict is not part of this call's result: a failed
+// probe records health, it never unwinds the create.
 func (r *Manager) Add(ctx context.Context, p AddParams) (domain.IndexerInstance, error) {
 	slug := orDefault(p.Slug, p.DefinitionID)
 	if !slugPattern.MatchString(slug) {
@@ -370,7 +378,18 @@ func (r *Manager) Add(ctx context.Context, p AddParams) (domain.IndexerInstance,
 		return domain.IndexerInstance{}, err
 	}
 	r.evicter.invalidate(slug)
+	r.enqueueProbe(slug)
 	return inst, nil
+}
+
+// enqueueProbe asks the probe queue to verify slug's credentials in the background.
+// Every caller is post-commit and none of them waits: a probe reports health, it is
+// never part of a write's success. Nil sink (the default — see WithProbeSink) is a
+// no-op.
+func (r *Manager) enqueueProbe(slug string) {
+	if r.probe != nil {
+		r.probe(slug)
+	}
 }
 
 // Get returns an instance and its settings with secret values redacted.
@@ -479,15 +498,23 @@ func (r *Manager) List(ctx context.Context) ([]domain.IndexerInstance, error) {
 // driver refreshing MyAnonamouse's mam_id) can't be clobbered by this write
 // reinserting a stale merged set. SetMaxOpenConns(1) means the tx holds the only
 // connection, serializing the RMW against that Upsert (mirrors appsync U10-F1).
+//
+// A credential change — and ONLY a credential change — queues a background probe
+// (#484): renaming an indexer or nudging its priority must not spend a login. As with
+// Add, the probe runs after the commit and a failing probe never unwinds the update.
 func (r *Manager) Update(ctx context.Context, slug string, p UpdateParams) error {
-	var instID int64
+	var (
+		instID       int64
+		credsChanged bool
+	)
 	err := r.inTx(ctx, func(tx dbinterface.TxQuerier) error {
 		inst, err := r.instances.GetBySlug(ctx, tx, slug)
 		if err != nil {
 			return fmt.Errorf("registry: update %q: %w", slug, err)
 		}
 		instID = inst.ID
-		return r.updateInTx(ctx, tx, inst, p)
+		credsChanged, err = r.updateInTx(ctx, tx, inst, p)
+		return err
 	})
 	if err != nil {
 		// A dangling proxy_id/solver_id trips the FK constraint on SetRefs
@@ -500,6 +527,9 @@ func (r *Manager) Update(ctx context.Context, slug string, p UpdateParams) error
 	}
 	r.evicter.invalidate(slug)
 	r.evicter.invalidateSearchCache(ctx, instID)
+	if credsChanged {
+		r.enqueueProbe(slug)
+	}
 	return nil
 }
 
@@ -507,51 +537,70 @@ func (r *Manager) Update(ctx context.Context, slug string, p UpdateParams) error
 // the caller's transaction. The current settings are read (via tx) and merged
 // here — inside the tx — so the read → merge → delete → reinsert is one atomic
 // unit that can't lose a concurrent single-setting Upsert. mergeSettings only
-// touches the keyring (no DB), so it is safe within the tx.
-func (r *Manager) updateInTx(ctx context.Context, tx dbinterface.TxQuerier, inst domain.IndexerInstance, p UpdateParams) error {
-	existing, err := r.instances.Settings(ctx, tx, inst.ID)
+// touches the keyring (no DB), so it is safe within the tx. It reports whether the
+// instance's effective credentials changed, which is Update's probe trigger.
+func (r *Manager) updateInTx(ctx context.Context, tx dbinterface.TxQuerier, inst domain.IndexerInstance, p UpdateParams) (bool, error) {
+	merged, credsChanged, err := r.mergeConfig(ctx, tx, inst, p)
 	if err != nil {
-		return fmt.Errorf("registry: update %q settings: %w", inst.Slug, err)
+		return false, err
 	}
-	def, _, err := resolveDefinition(r.native, r.loader, inst.DefinitionID)
-	if err != nil {
-		return err
-	}
-	merged, err := r.mergeSettings(inst.ID, settingFields(def), existing, p.Settings)
-	if err != nil {
-		return err
-	}
-	cfg, err := decryptConfig(r.keyring, inst.ID, merged)
-	if err != nil {
-		return err
-	}
-	if err := validateRequiredSettings(settingFields(def), cfg); err != nil {
-		return err
-	}
-
 	meta, err := resolveMeta(inst, p)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if err := r.instances.UpdateMeta(ctx, tx, inst.ID, meta, r.clock()); err != nil {
-		return fmt.Errorf("registry: update meta: %w", err)
+		return false, fmt.Errorf("registry: update meta: %w", err)
 	}
 	// Only a present ref field changes the stored reference; an absent one keeps
 	// the instance's current value (so a partial PATCH can't clear it).
 	proxyRef := resolveRef(p.ProxyID, inst.ProxyID)
 	solverRef := resolveRef(p.SolverID, inst.SolverID)
 	if err := r.instances.SetRefs(ctx, tx, inst.ID, proxyRef, solverRef, r.clock()); err != nil {
-		return fmt.Errorf("registry: update refs: %w", err)
+		return false, fmt.Errorf("registry: update refs: %w", err)
 	}
 	if err := r.instances.DeleteSettings(ctx, tx, inst.ID); err != nil {
-		return fmt.Errorf("registry: clear settings: %w", err)
+		return false, fmt.Errorf("registry: clear settings: %w", err)
 	}
 	for _, s := range merged {
 		if err := r.instances.InsertSetting(ctx, tx, inst.ID, s); err != nil {
-			return fmt.Errorf("registry: write setting %q: %w", s.Name, err)
+			return false, fmt.Errorf("registry: write setting %q: %w", s.Name, err)
 		}
 	}
-	return nil
+	return credsChanged, nil
+}
+
+// mergeConfig reads the instance's stored settings through the caller's tx, overlays
+// the patch, validates the result, and reports whether the DECRYPTED configuration
+// actually changed. Comparing the decrypted maps — not the patch's keys, and not the
+// stored blobs (encryption is nondeterministic, so identical plaintext yields
+// different ciphertext every write) — is what makes Update's probe trigger honest: a
+// PATCH that resubmits the same form, or leaves the password as the redacted
+// sentinel, changes nothing and must not spend a login.
+func (r *Manager) mergeConfig(ctx context.Context, tx dbinterface.TxQuerier, inst domain.IndexerInstance, p UpdateParams) ([]domain.IndexerSetting, bool, error) {
+	existing, err := r.instances.Settings(ctx, tx, inst.ID)
+	if err != nil {
+		return nil, false, fmt.Errorf("registry: update %q settings: %w", inst.Slug, err)
+	}
+	def, _, err := resolveDefinition(r.native, r.loader, inst.DefinitionID)
+	if err != nil {
+		return nil, false, err
+	}
+	before, err := decryptConfig(r.keyring, inst.ID, existing)
+	if err != nil {
+		return nil, false, err
+	}
+	merged, err := r.mergeSettings(inst.ID, settingFields(def), existing, p.Settings)
+	if err != nil {
+		return nil, false, err
+	}
+	cfg, err := decryptConfig(r.keyring, inst.ID, merged)
+	if err != nil {
+		return nil, false, err
+	}
+	if err := validateRequiredSettings(settingFields(def), cfg); err != nil {
+		return nil, false, err
+	}
+	return merged, !maps.Equal(before, cfg), nil
 }
 
 // SetEnabled enables/disables an instance and invalidates its cached engine. It
@@ -706,10 +755,21 @@ func classifySecret(name string, fields map[string]loader.SettingsField) bool {
 // discarded, so any cached production engine and its live session are untouched.
 // Returns nil when the credentials authenticate; otherwise the engine's login
 // error (which the API layer sanitizes before returning to the client).
+//
+// It reserves one unit of the QUERY budget first (autobrr/harbrr#251): a login is a
+// real outbound request, and until now this path spent one off the books — which
+// only ever mattered while a human clicked Test, but the probe queue (#484) now
+// drives this same path automatically at boot, on create, and on a credential
+// change. The circuit breaker is deliberately NOT consulted here: re-checking
+// whether a breaker-disabled indexer has recovered is exactly what a probe is for,
+// and a passing Test is what clears the breaker (see recordCircuitSuccess below).
 func (r *Resolver) Test(ctx context.Context, slug string) error {
 	a, err := r.buildAdapter(ctx, slug)
 	if err != nil {
 		return err
+	}
+	if !a.budget.ReserveQuery(ctx, a.instanceID, a.cfg, a.clock()) {
+		return fmt.Errorf("registry: test %q: %w", slug, core.ErrBudgetExhausted)
 	}
 	if err := a.inner.Test(ctx); err != nil {
 		a.recordHealth(ctx, err)
@@ -798,7 +858,12 @@ func (r *StatsReporter) Diagnostics(ctx context.Context, slug string) ([]Failure
 // InitialFailure) — non-nil only while the status is failing and the ladder has
 // actually been climbed, so it never claims a start time for a working indexer.
 type FleetStatus struct {
-	Slug         string
+	Slug string
+	// Enabled is the instance's own toggle, carried alongside the derived status so a
+	// caller selecting work by health (the boot probe queue, #484) can skip the
+	// indexers harbrr is not serving at all. Health derivation ignores it — a disabled
+	// indexer still derives whatever its recorded evidence says.
+	Enabled      bool
 	Status       string
 	Events       []domain.IndexerHealthEvent
 	DisabledTill *time.Time
@@ -822,7 +887,7 @@ func (r *StatsReporter) AllStatuses(ctx context.Context) ([]FleetStatus, error) 
 			return nil, fmt.Errorf("registry: all statuses %q: %w", inst.Slug, err)
 		}
 		out = append(out, FleetStatus{
-			Slug: inst.Slug, Status: snap.status, Events: snap.events,
+			Slug: inst.Slug, Enabled: inst.Enabled, Status: snap.status, Events: snap.events,
 			DisabledTill: snap.disabledTill, FailingSince: snap.failingSince,
 		})
 	}
