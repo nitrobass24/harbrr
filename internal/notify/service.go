@@ -311,13 +311,11 @@ func (s *Service) dispatchHealthAsync(ctx context.Context, ev Event) {
 	if s.draining {
 		return
 	}
-	s.dispatchWG.Add(1)
-	go func() {
-		defer s.dispatchWG.Done()
+	s.dispatchWG.Go(func() {
 		s.dispatch(context.WithoutCancel(ctx), ev, func(n domain.Notification) bool {
 			return n.OnHealthFailure
 		})
-	}()
+	})
 }
 
 // healthSuppressed reports whether a health notification for (indexer, kind) falls inside

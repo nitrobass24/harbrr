@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 )
 
@@ -106,8 +107,8 @@ func (rt *router) clientIP(r *http.Request) net.IP {
 		return peer
 	}
 	parts := strings.Split(xff, ",")
-	for i := len(parts) - 1; i >= 0; i-- {
-		hop := net.ParseIP(strings.TrimSpace(parts[i]))
+	for _, part := range slices.Backward(parts) {
+		hop := net.ParseIP(strings.TrimSpace(part))
 		if hop == nil || rt.trustedProxies(hop) {
 			continue
 		}

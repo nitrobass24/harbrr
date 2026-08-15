@@ -6,7 +6,7 @@ import (
 	"html"
 	"net/url"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -233,7 +233,7 @@ func sortedTorrentIDs(torrents map[int64]gazelleGamesTorrent) []int64 {
 	for id := range torrents {
 		ids = append(ids, id)
 	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	slices.Sort(ids)
 	return ids
 }
 

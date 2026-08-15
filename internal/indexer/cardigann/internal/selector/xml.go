@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 
 	"github.com/PuerkitoBio/goquery"
 	"golang.org/x/net/html"
@@ -146,8 +147,8 @@ func qualifyName(name xml.Name, scopes []map[string]string) string {
 	if name.Space == "" {
 		return name.Local
 	}
-	for i := len(scopes) - 1; i >= 0; i-- {
-		if prefix, ok := scopes[i][name.Space]; ok {
+	for _, scope := range slices.Backward(scopes) {
+		if prefix, ok := scope[name.Space]; ok {
 			if prefix == "" {
 				return name.Local
 			}

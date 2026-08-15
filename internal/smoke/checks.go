@@ -368,7 +368,7 @@ func cacheCheck(ctx context.Context, c *http.Client, cfg Config, slug string, ca
 	if !enabled {
 		return skipFinding(f, "cache disabled")
 	}
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if _, _, serr := HarbrrSearch(ctx, c, cfg.HarbrrURL, cfg.HarbrrKey, slug, query, false); serr != nil {
 			return skipFinding(f, apphttp.RedactError(serr))
 		}

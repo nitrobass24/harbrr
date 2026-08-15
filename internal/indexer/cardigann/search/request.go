@@ -295,7 +295,7 @@ func renderInputs(inputs loader.InputsBlock, ctx *template.Context, allowEmpty b
 // dropping empty keys, mirroring Jackett's $raw input handling.
 func splitRaw(raw string) []kv {
 	var out []kv
-	for _, part := range strings.Split(raw, "&") {
+	for part := range strings.SplitSeq(raw, "&") {
 		key, value, _ := strings.Cut(part, "=")
 		if key == "" {
 			continue

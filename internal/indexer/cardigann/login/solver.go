@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	stdhttp "net/http"
 	"net/url"
 )
@@ -112,9 +113,7 @@ func (e *Executor) fetchLandingPastAntiBot(ctx context.Context, rawURL string, h
 // Existing values are preserved (a definition's own headers win).
 func withSolverReplayHeaders(headers map[string][]string, ua string) map[string][]string {
 	out := make(map[string][]string, len(headers)+4)
-	for k, v := range headers {
-		out[k] = v
-	}
+	maps.Copy(out, headers)
 	if ua != "" {
 		out["User-Agent"] = []string{ua}
 	}

@@ -187,7 +187,7 @@ func (rt *router) searchAggregate(w http.ResponseWriter, r *http.Request) {
 // comma or an empty value is not a phantom slug.
 func splitSlugs(list string) []string {
 	out := make([]string, 0, strings.Count(list, ",")+1)
-	for _, s := range strings.Split(list, ",") {
+	for s := range strings.SplitSeq(list, ",") {
 		if s = strings.TrimSpace(s); s != "" {
 			out = append(out, s)
 		}

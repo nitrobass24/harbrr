@@ -53,7 +53,7 @@ func selectToken(root any, path string) (any, error) {
 	if p == "" {
 		return cur, nil
 	}
-	for _, key := range strings.Split(p, ".") {
+	for key := range strings.SplitSeq(p, ".") {
 		obj, ok := cur.(map[string]any)
 		if !ok {
 			return nil, fmt.Errorf("path segment %q: not an object", key)

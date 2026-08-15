@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"maps"
 	"net/url"
 	"slices"
 	"strconv"
@@ -235,9 +236,7 @@ func classifySkip(err error) string {
 // identical to its own RSS poll's.
 func memberQuery(q url.Values) url.Values {
 	mq := make(url.Values, len(q)+2)
-	for k, v := range q {
-		mq[k] = v
-	}
+	maps.Copy(mq, q)
 	mq.Set("offset", "0")
 	mq.Set("limit", strconv.Itoa(defaultLimit))
 	return mq

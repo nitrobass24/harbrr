@@ -94,7 +94,7 @@ func unmarshalYAML(data []byte, out any) error {
 func rewriteSlashEscapes(data []byte) []byte {
 	out := make([]byte, 0, len(data))
 	backslashRun := 0
-	for i := 0; i < len(data); i++ {
+	for i := range data {
 		c := data[i]
 		if c == '\\' {
 			backslashRun++

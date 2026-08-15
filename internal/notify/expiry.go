@@ -197,7 +197,7 @@ func formatThresholds(days []int) string {
 func ParseExpiryThresholds(raw string) []int {
 	seen := map[int]bool{}
 	out := []int{}
-	for _, field := range strings.Split(raw, ",") {
+	for field := range strings.SplitSeq(raw, ",") {
 		field = strings.TrimSpace(field)
 		if field == "" {
 			continue

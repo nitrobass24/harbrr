@@ -112,9 +112,6 @@ func (p paging) apply(releases []*normalizer.Release) []*normalizer.Release {
 	if p.offset >= len(releases) {
 		return nil
 	}
-	end := p.offset + p.limit
-	if end > len(releases) {
-		end = len(releases)
-	}
+	end := min(p.offset+p.limit, len(releases))
 	return releases[p.offset:end]
 }
