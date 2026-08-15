@@ -33,6 +33,11 @@ import (
 type Deps struct {
 	Auth     *auth.Service
 	Registry *registry.Registry
+	// Probes is the bounded indexer probe queue backing POST /api/indexers/test
+	// (autobrr/harbrr#485). Nil makes that one route answer 503 rather than panic —
+	// the queue is owned by the app lifecycle, so a handler-only harness may not have
+	// one running.
+	Probes   *registry.ProbeQueue
 	Loader   *loader.Loader
 	Apps     *apps.Service
 	AppSync  *appsync.Service
@@ -89,6 +94,7 @@ type Config struct {
 type router struct {
 	auth      *auth.Service
 	registry  *registry.Registry
+	probes    *registry.ProbeQueue
 	loader    *loader.Loader
 	apps      *apps.Service
 	appsync   *appsync.Service
@@ -140,7 +146,7 @@ func NewRouter(deps Deps, cfg Config) (http.Handler, error) {
 	}
 
 	rt := &router{
-		auth: deps.Auth, registry: deps.Registry, loader: deps.Loader, apps: deps.Apps, appsync: deps.AppSync,
+		auth: deps.Auth, registry: deps.Registry, probes: deps.Probes, loader: deps.Loader, apps: deps.Apps, appsync: deps.AppSync,
 		announce: deps.Announce, notify: deps.Notify, proxy: deps.Proxy, download: deps.Download, solver: deps.Solver,
 		backup:   deps.Backup,
 		sessions: deps.Sessions, dlToken: deps.DLToken, urlCfg: deps.URLConfig,
@@ -202,12 +208,15 @@ func (rt *router) routes() http.Handler {
 
 			r.Get("/api/indexers", rt.listIndexers)
 			r.Post("/api/indexers", rt.addIndexer)
-			// The static "stats"/"status" segments are registered so chi prioritizes
-			// them over the {slug} param at the same level: GET /api/indexers/stats and
-			// /api/indexers/status resolve to allIndexerStats/allIndexerStatus, not
-			// getIndexer.
+			// The static "stats"/"status"/"test" segments are registered so chi
+			// prioritizes them over the {slug} param at the same level: GET
+			// /api/indexers/stats and /api/indexers/status resolve to
+			// allIndexerStats/allIndexerStatus, not getIndexer, and POST
+			// /api/indexers/test is the batch probe, not an indexer named "test".
+			// All three are in registry's reservedSlugs for that reason.
 			r.Get("/api/indexers/stats", rt.allIndexerStats)
 			r.Get("/api/indexers/status", rt.allIndexerStatus)
+			r.Post("/api/indexers/test", rt.testAllIndexers)
 			r.Get("/api/indexers/{slug}", rt.getIndexer)
 			r.Patch("/api/indexers/{slug}", rt.updateIndexer)
 			r.Delete("/api/indexers/{slug}", rt.deleteIndexer)

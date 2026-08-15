@@ -1,7 +1,7 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query"
-import { api, APIError } from "@/lib/api"
-import type { AddIndexer, Instance, TestResult, UpdateIndexer } from "@/lib/api"
-import { notifyError, notifySuccess } from "@/lib/notify"
+import { api } from "@/lib/api"
+import type { AddIndexer, Instance, TestAllResults, UpdateIndexer } from "@/lib/api"
+import { notifyError } from "@/lib/notify"
 import { keys } from "@/lib/query"
 
 export function useIndexers() {
@@ -123,53 +123,35 @@ export function useSetIndexerEnabled() {
   })
 }
 
-function toastTestResult(result: TestResult, slug: string) {
-  if (result.ok) notifySuccess(`${slug}: test passed`)
-  else notifyError(`${slug}: test failed — ${result.error ?? "unknown error"}`)
-}
-
-function toastTestError(err: unknown, slug: string) {
-  notifyError(`${slug}: test request failed`, err)
-}
-
-// toastResult opts into hook-level pass/fail toasts. These are attached to the
-// mutation itself (not a mutate()-call callback), so they still fire even if
-// the component that triggered the test has since unmounted — e.g. the add/edit
-// sheet's save-and-test flow, which closes immediately after calling mutate().
-// Callers that stay mounted for the mutation's lifetime (the Indexers table's
-// per-row test / test-all) toast at the call site instead, so leave this off
-// there to avoid a double toast.
-export function useTestIndexer(options?: { toastResult?: boolean }) {
+// The explicit per-row test. Its only caller (the Indexers table) stays mounted for
+// the mutation's whole lifetime, so it toasts at the call site; the add/edit sheet no
+// longer tests at all, because the server now probes an indexer itself when it is
+// created or its credentials change (autobrr/harbrr#484).
+export function useTestIndexer() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (slug: string) => api.testIndexer(slug),
-    onSuccess: options?.toastResult ? toastTestResult : undefined,
-    onError: options?.toastResult ? toastTestError : undefined,
     onSettled: (_res, _err, slug) =>
       qc.invalidateQueries({ queryKey: keys.indexers.status(slug) }),
   })
 }
 
-// status carries the HTTP status when the test request itself failed (threw), so a
-// caller can tell an auth/session failure (401/403) from a genuine tracker failure.
-export type TestAllResult = { slug: string, ok: boolean, error?: string, status?: number }
+export type TestAllResult = TestAllResults["results"][number]
 
-// Test every configured indexer in parallel, resolving each result (never
-// rejecting) so one failing tracker cannot mask the rest. Statuses are
-// refreshed once the whole batch settles.
+// Test every configured indexer in ONE request. The server owns the fan-out now
+// (autobrr/harbrr#485): it runs the batch through the same bounded probe queue the
+// boot/create health probes use, so the burst is capped server-side instead of the
+// browser opening one unbounded request per indexer. It also means the probes finish
+// even if this page unmounts mid-run — only the reporting is lost, not the work.
+//
+// The server still resolves each indexer individually, so one failing tracker cannot
+// mask the rest; a rejection here is the request itself failing (auth/session), which
+// the call site distinguishes in onError.
 export function useTestAllIndexers() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (slugs: string[]): Promise<TestAllResult[]> =>
-      Promise.all(slugs.map(async (slug) => {
-        try {
-          const res = await api.testIndexer(slug)
-          return { slug, ok: res.ok, error: res.error }
-        } catch (err) {
-          if (err instanceof APIError) return { slug, ok: false, error: err.message, status: err.status }
-          return { slug, ok: false, error: "test request failed" }
-        }
-      })),
+    mutationFn: async (slugs: string[]): Promise<TestAllResult[]> =>
+      (await api.testAllIndexers(slugs)).results,
     onSettled: () => qc.invalidateQueries({ queryKey: keys.indexers.all }),
   })
 }

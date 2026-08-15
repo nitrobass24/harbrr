@@ -12,6 +12,7 @@ import (
 
 	"github.com/autobrr/harbrr/internal/appsync"
 	"github.com/autobrr/harbrr/internal/domain"
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 )
@@ -364,6 +365,80 @@ func (rt *router) testIndexer(w http.ResponseWriter, r *http.Request) {
 	rt.testEndpoint(w, r, "test indexer", func(ctx context.Context) error {
 		return rt.registry.Test(ctx, slug)
 	})
+}
+
+// testAllRequest is the batch-test body. An omitted or empty slugs list means every
+// configured indexer.
+type testAllRequest struct {
+	Slugs []string `json:"slugs"`
+}
+
+// testAllEntry is one indexer's verdict in the batch-test response. The error is
+// redacted exactly like the single-indexer test's.
+type testAllEntry struct {
+	Slug  string `json:"slug"`
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
+}
+
+// testAllResponse is the JSON body of POST /api/indexers/test.
+type testAllResponse struct {
+	Results []testAllEntry `json:"results"`
+}
+
+// testAllIndexers tests several indexers through the server-side probe queue
+// (autobrr/harbrr#485). The browser used to own this batch and fired one unbounded
+// request per enabled indexer; routing it through the queue caps the fleet-wide burst
+// at the queue's concurrency limit, keeps each indexer's own budget/health accounting,
+// and lets the probes finish even if the operator navigates away mid-run.
+//
+// Every requested slug appears in the response, pass or fail — one failing tracker
+// never truncates the batch.
+func (rt *router) testAllIndexers(w http.ResponseWriter, r *http.Request) {
+	if rt.probes == nil {
+		writeError(w, http.StatusServiceUnavailable, "probe queue is not running")
+		return
+	}
+	var req testAllRequest
+	if r.ContentLength != 0 && !decodeJSON(w, r, &req) {
+		return
+	}
+	slugs, ok := rt.resolveTestSlugs(w, r, req.Slugs)
+	if !ok {
+		return
+	}
+	results, err := rt.probes.TestAll(r.Context(), slugs)
+	if err != nil {
+		// Only a cancelled request gets here: the client is gone, the probes carry on.
+		rt.log.Debug().Err(err).Msg("api: test all abandoned by the client")
+		return
+	}
+	out := testAllResponse{Results: make([]testAllEntry, 0, len(results))}
+	for _, res := range results {
+		out.Results = append(out.Results, testAllEntry{
+			Slug: res.Slug, OK: res.Err == nil, Error: apphttp.RedactError(res.Err),
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// resolveTestSlugs returns the slugs the batch should probe: the caller's list when it
+// gave one, otherwise every configured indexer. It writes the error response and
+// reports false when the fallback listing fails.
+func (rt *router) resolveTestSlugs(w http.ResponseWriter, r *http.Request, want []string) ([]string, bool) {
+	if len(want) > 0 {
+		return want, true
+	}
+	list, err := rt.registry.List(r.Context())
+	if err != nil {
+		rt.writeServiceError(w, "test indexers", err)
+		return nil, false
+	}
+	slugs := make([]string, 0, len(list))
+	for _, inst := range list {
+		slugs = append(slugs, inst.Slug)
+	}
+	return slugs, true
 }
 
 // statusEvent is one health event in the status response (detail already scrubbed

@@ -92,6 +92,7 @@ export type Me = operations["me"]["responses"]["200"]["content"]["application/js
 export type SetupState = operations["getSetupStatus"]["responses"]["200"]["content"]["application/json"]
 export type Health = operations["getHealthz"]["responses"]["200"]["content"]["application/json"]
 export type IndexerStatus = operations["indexerStatus"]["responses"]["200"]["content"]["application/json"]
+export type TestAllResults = operations["testAllIndexers"]["responses"]["200"]["content"]["application/json"]
 export type IndexerDiagnostics = operations["indexerDiagnostics"]["responses"]["200"]["content"]["application/json"]
 export type SearchParams = NonNullable<operations["searchIndexer"]["parameters"]["query"]>
 
@@ -331,6 +332,12 @@ export class ApiClient {
 
   testIndexer(slug: string): Promise<TestResult> {
     return this.unwrap(this.http.POST("/api/indexers/{slug}/test", { params: { path: { slug } } }), "/api/indexers/{slug}/test")
+  }
+
+  // The server runs the batch through its bounded probe queue, so this is ONE
+  // request no matter how many indexers are configured — not one per indexer.
+  testAllIndexers(slugs: string[]): Promise<TestAllResults> {
+    return this.unwrap(this.http.POST("/api/indexers/test", { body: { slugs } }), "/api/indexers/test")
   }
 
   getIndexerStatus(slug: string): Promise<IndexerStatus> {

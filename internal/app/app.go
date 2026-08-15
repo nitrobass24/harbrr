@@ -409,7 +409,7 @@ func newServer(a *App) (*server.Server, error) {
 	}
 
 	mgmt, err := api.NewRouter(api.Deps{
-		Auth: a.auth, Registry: a.registry, Loader: loader.New(dropinDir(a.cfg)), Apps: a.apps, AppSync: a.appsync,
+		Auth: a.auth, Registry: a.registry, Probes: a.probes, Loader: loader.New(dropinDir(a.cfg)), Apps: a.apps, AppSync: a.appsync,
 		Announce: a.announce, Notify: a.notify, Proxy: a.proxy, Download: a.download, Solver: a.solver, Backup: a.backup, Sessions: a.sessions,
 		DLToken: a.keyring, URLConfig: urlCfg, Cache: a.searchCache, Logger: a.log, LogLevel: a.logLevel,
 		AdultCategories: a.adultCats,

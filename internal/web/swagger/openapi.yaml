@@ -485,6 +485,52 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /api/indexers/test:
+    post:
+      summary: Test several indexers through the server-side probe queue
+      description: >
+        Validates the credentials of every requested indexer (all configured
+        indexers when slugs is omitted or empty) through harbrr's bounded probe
+        queue, so a fleet-wide test can never open more concurrent tracker logins
+        than the queue's limit. Each indexer reports its own pass/fail; one failing
+        tracker never truncates the batch, and errors are sanitized exactly like the
+        single-indexer test's. Abandoning the request does not cancel the probes —
+        they finish and record their health regardless.
+      operationId: testAllIndexers
+      tags: [Indexers]
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                slugs:
+                  type: array
+                  items: { type: string }
+      responses:
+        "200":
+          description: per-indexer test results
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [results]
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      required: [slug, ok]
+                      properties:
+                        slug: { type: string }
+                        ok: { type: boolean }
+                        error: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { description: the probe queue is not running }
+
   /api/indexers/{slug}/test:
     post:
       summary: Test an indexer's credentials and connectivity

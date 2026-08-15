@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { DefinitionOption, IndexerForm, type IndexerFormSubmit } from "@/components/indexers/form/IndexerForm"
 import { useDefinition, useDefinitions } from "@/hooks/useDefinitions"
-import { useAddIndexer, useIndexer, useTestIndexer, useUpdateIndexer } from "@/hooks/useIndexers"
+import { useAddIndexer, useIndexer, useUpdateIndexer } from "@/hooks/useIndexers"
 
 export type IndexerSheetState =
   | { open: false }
@@ -13,7 +13,7 @@ export type IndexerSheetState =
 
 // Add flow: definition picker → schema-driven form. Edit flow: the stored
 // instance's definition drives the same form with stored settings prefilled.
-// A successful save immediately tests the indexer and toasts the outcome.
+// A successful save closes the sheet; the server probes the indexer's health.
 export function IndexerSheet({ state, onClose }: { state: IndexerSheetState, onClose: () => void }) {
   return (
     <Sheet open={state.open} onOpenChange={(open) => { if (!open) onClose() }}>
@@ -24,14 +24,15 @@ export function IndexerSheet({ state, onClose }: { state: IndexerSheetState, onC
   )
 }
 
-function useSaveAndTest(onClose: () => void) {
-  // toastResult: true — the sheet closes (unmounts) right after mutate() fires,
-  // so the pass/fail toast must be hook-level to survive that unmount (see
-  // useTestIndexer in useIndexers.ts).
-  const test = useTestIndexer({ toastResult: true })
+// The sheet no longer fires its own follow-up test: the server probes an indexer's
+// credentials itself after a create, and after an update that actually changed them
+// (autobrr/harbrr#484). Testing here too would mean two logins back-to-back on a
+// brand-new indexer, and it only ever worked for the browser — the API and a future
+// importer got no health evidence at all. The verdict lands on the row's health badge
+// shortly after, which is how every other health signal in the UI already arrives.
+function useSaved(onClose: () => void) {
   return (slug: string, verb: string) => {
-    notifySuccess(`${slug} ${verb} — testing…`)
-    test.mutate(slug)
+    notifySuccess(`${slug} ${verb} — checking health…`)
     onClose()
   }
 }
@@ -42,7 +43,7 @@ function CreateFlow({ onClose }: { onClose: () => void }) {
   const definitions = useDefinitions()
   const definition = useDefinition(definitionId)
   const add = useAddIndexer()
-  const saved = useSaveAndTest(onClose)
+  const saved = useSaved(onClose)
 
   if (definitionId === null) {
     const needle = filter.toLowerCase()
@@ -112,7 +113,7 @@ function EditFlow({ slug, onClose }: { slug: string, onClose: () => void }) {
   const instance = useIndexer(slug)
   const definition = useDefinition(instance.data?.definitionId ?? null)
   const update = useUpdateIndexer(slug)
-  const saved = useSaveAndTest(onClose)
+  const saved = useSaved(onClose)
 
   return (
     <>

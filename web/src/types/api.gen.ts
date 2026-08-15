@@ -336,6 +336,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/indexers/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test several indexers through the server-side probe queue
+         * @description Validates the credentials of every requested indexer (all configured indexers when slugs is omitted or empty) through harbrr's bounded probe queue, so a fleet-wide test can never open more concurrent tracker logins than the queue's limit. Each indexer reports its own pass/fail; one failing tracker never truncates the batch, and errors are sanitized exactly like the single-indexer test's. Abandoning the request does not cancel the probes — they finish and record their health regardless.
+         */
+        post: operations["testAllIndexers"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/indexers/{slug}/test": {
         parameters: {
             query?: never;
@@ -3372,6 +3392,47 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    testAllIndexers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    slugs?: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description per-indexer test results */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        results: {
+                            slug: string;
+                            ok: boolean;
+                            error?: string;
+                        }[];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description the probe queue is not running */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     testIndexer: {

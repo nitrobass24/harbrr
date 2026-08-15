@@ -125,15 +125,12 @@ function IndexersPage() {
             onSuccess: (results) => {
               const passed = results.filter((r) => r.ok).length
               const failed = results.length - passed
-              if (results.some((r) => isAuthStatus(r.status))) {
-                notifyError(AUTH_FAILED_MSG)
-              } else if (failed === 0) {
-                notifySuccess(`All ${results.length} indexers passed`)
-              } else {
-                notifyWarn(`${passed} passed, ${failed} failed`)
-              }
+              if (failed === 0) notifySuccess(`All ${results.length} indexers passed`)
+              else notifyWarn(`${passed} passed, ${failed} failed`)
             },
-            onError: (err) => notifyError("Test all failed", err),
+            // One request now, so an expired session fails the batch outright
+            // instead of surfacing as a 401 on each individual result.
+            onError: (err) => notifyError(err instanceof APIError && isAuthStatus(err.status) ? AUTH_FAILED_MSG : "Test all failed", err),
           })}
         >
           <FlaskConical className="h-4 w-4" /> {testAll.isPending ? "Testing…" : "Test all"}

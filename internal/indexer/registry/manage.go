@@ -96,10 +96,11 @@ var (
 var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
 // reservedSlugs are slugs that must not name an indexer. Two reasons, both fatal:
-// "stats"/"status" collide with a static path segment registered as a sibling of
-// /api/indexers/{slug} in internal/web/api/router.go (chi prioritizes a static
+// "stats"/"status"/"test" collide with a static path segment registered as a sibling
+// of /api/indexers/{slug} in internal/web/api/router.go (chi prioritizes a static
 // segment over the {slug} param, so such an indexer would be shadowed by GET
-// /api/indexers/stats or /api/indexers/status); core.AggregateSlug names the
+// /api/indexers/stats, /api/indexers/status, or POST /api/indexers/test);
+// core.AggregateSlug names the
 // aggregate Torznab feed in the SAME {slug} position, so an indexer holding it would
 // make the aggregate feed unreachable and, worse, ambiguous at grab time. Keep this
 // in sync with the static segments registered directly under /api/indexers/ in
@@ -107,6 +108,7 @@ var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 var reservedSlugs = map[string]struct{}{
 	"stats":            {},
 	"status":           {},
+	"test":             {},
 	core.AggregateSlug: {},
 }
 

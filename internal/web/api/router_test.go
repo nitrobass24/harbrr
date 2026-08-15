@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"net/http"
@@ -180,8 +181,23 @@ func newEnvFull(t *testing.T, cfg api.Config, buildCache func(db *database.DB) *
 		cache = buildCache(db)
 	}
 
+	// The probe queue is owned by the app lifecycle in production; the test harness
+	// runs one for the whole test so POST /api/indexers/test exercises the real
+	// bounded path instead of the nil-queue 503 fallback.
+	probes := registry.NewProbeQueue(reg, logger)
+	probeCtx, stopProbes := context.WithCancel(context.Background())
+	probesDone := make(chan struct{})
+	go func() {
+		defer close(probesDone)
+		probes.Run(probeCtx)
+	}()
+	t.Cleanup(func() {
+		stopProbes()
+		<-probesDone
+	})
+
 	handler, err := api.NewRouter(api.Deps{
-		Auth: authSvc, Registry: reg, Loader: ldr, Apps: appsSvc, AppSync: appSync, Announce: announceSvc,
+		Auth: authSvc, Registry: reg, Probes: probes, Loader: ldr, Apps: appsSvc, AppSync: appSync, Announce: announceSvc,
 		Download: downloadSvc, Notify: notifySvc, Proxy: proxySvc, Solver: solverSvc, Backup: backupSvc, Sessions: sm,
 		// Production always wires the /dl keyring; the tests do too, so a sealed
 		// management download link behaves here exactly as it does live.
