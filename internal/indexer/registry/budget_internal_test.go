@@ -171,6 +171,67 @@ func TestRequestBudget_MarkQuotaSpentLatchesEvenUnconfigured(t *testing.T) {
 	}
 }
 
+// TestRequestBudget_ReleaseRefundsWithinPeriod proves the refund's three guards in one
+// place: it gives a unit back inside the reservation's own period, it never drives the
+// counter below zero, and it leaves the reactively-learned exhausted latch alone — a
+// unit handed back is not evidence the tracker's cap lifted.
+func TestRequestBudget_ReleaseRefundsWithinPeriod(t *testing.T) {
+	t.Parallel()
+	db := openBudgetDB(t, filepath.Join(t.TempDir(), "harbrr.db"))
+	b := newRequestBudget(db, time.Now, zerolog.Nop())
+	instID := insertTestInstance(t, db)
+	ctx := context.Background()
+	now := time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)
+
+	if !b.ReserveQuery(ctx, instID, nil, now) {
+		t.Fatal("query should be allowed with no configured limit")
+	}
+	b.MarkQuotaSpent(ctx, instID, nil, budgetKindQuery, now)
+	b.ReleaseQuery(ctx, instID, nil, now)
+
+	st := b.Status(ctx, instID, nil, now)
+	if st.Query.Used != 0 {
+		t.Fatalf("query used = %d after the refund, want 0", st.Query.Used)
+	}
+	if !st.Query.Learned {
+		t.Fatal("the learned-exhausted latch must survive a refund")
+	}
+
+	// A refund with nothing outstanding must not push the counter negative.
+	b.ReleaseQuery(ctx, instID, nil, now)
+	b.ReleaseGrab(ctx, instID, nil, now)
+	st = b.Status(ctx, instID, nil, now)
+	if st.Query.Used != 0 || st.Grab.Used != 0 {
+		t.Fatalf("used = (query %d, grab %d) after refunding nothing, want 0/0", st.Query.Used, st.Grab.Used)
+	}
+}
+
+// TestRequestBudget_ReleaseAfterRolloverKeepsNewPeriod proves a refund arriving after
+// the period rolled over is dropped rather than applied: the reservation it refers to
+// died with its period, so decrementing would steal from the fresh period's allowance.
+func TestRequestBudget_ReleaseAfterRolloverKeepsNewPeriod(t *testing.T) {
+	t.Parallel()
+	db := openBudgetDB(t, filepath.Join(t.TempDir(), "harbrr.db"))
+	b := newRequestBudget(db, time.Now, zerolog.Nop())
+	instID := insertTestInstance(t, db)
+	ctx := context.Background()
+	beforeMidnight := time.Date(2026, 7, 17, 23, 59, 59, 0, time.UTC)
+	afterMidnight := time.Date(2026, 7, 18, 0, 0, 1, 0, time.UTC)
+
+	if !b.ReserveQuery(ctx, instID, nil, beforeMidnight) {
+		t.Fatal("reserve before midnight should be allowed")
+	}
+	// The new day's first query rolls the counter; the old reservation is already gone.
+	if !b.ReserveQuery(ctx, instID, nil, afterMidnight) {
+		t.Fatal("reserve after midnight should be allowed")
+	}
+	b.ReleaseQuery(ctx, instID, nil, beforeMidnight)
+
+	if got := b.Status(ctx, instID, nil, afterMidnight).Query.Used; got != 1 {
+		t.Fatalf("new-period query used = %d after a stale refund, want 1", got)
+	}
+}
+
 // TestRequestBudget_PersistsAcrossRestart proves the counter and the reactive-learned
 // latch both survive a process restart (a fresh RequestBudget over the same DB file),
 // the durability half of the DB round-trip.

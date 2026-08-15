@@ -266,6 +266,93 @@ func TestAdapterGrab_ExhaustedRefuses(t *testing.T) {
 	}
 }
 
+// TestAdapterSearch_UnsentFailureRefundsBudget proves the reserved query unit is handed
+// back exactly when the request never reached the tracker (reachedTracker), and is NOT
+// handed back when it did. The over-reach half is the point: a genuine tracker-side
+// failure cost a real outbound request and must stay counted.
+func TestAdapterSearch_UnsentFailureRefundsBudget(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		searchErr error
+		wantUsed  int64
+	}{
+		{name: "pacing budget never asked", searchErr: errPacingBudget, wantUsed: 0},
+		{name: "follower inherits cancellation", searchErr: context.Canceled, wantUsed: 0},
+		{name: "tracker answered with a failure", searchErr: errors.New("tracker: 500"), wantUsed: 1},
+		{name: "success", searchErr: nil, wantUsed: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			inner := &budgetFakeDriver{releases: []*normalizer.Release{{Title: "ok"}}, searchErr: tt.searchErr}
+			a, _ := newBudgetTestAdapter(t, inner, map[string]string{"query_limit": "10"})
+
+			_, err := a.budgetedLiveSearch(context.Background(), search.Query{Keywords: "x"})
+			if (err != nil) != (tt.searchErr != nil) {
+				t.Fatalf("budgetedLiveSearch err = %v, want error presence %v", err, tt.searchErr != nil)
+			}
+			if got := inner.searchCalls.Load(); got != 1 {
+				t.Fatalf("driver called %d times, want 1", got)
+			}
+			if got := a.budget.Status(context.Background(), a.instanceID, a.cfg, a.clock()).Query.Used; got != tt.wantUsed {
+				t.Fatalf("query budget used = %d, want %d", got, tt.wantUsed)
+			}
+		})
+	}
+}
+
+// TestAdapterGrab_UnsentFailureRefundsBudget is the grab-path half of the refund proof:
+// an aborted /dl download gives its unit back, a tracker-side grab failure does not.
+func TestAdapterGrab_UnsentFailureRefundsBudget(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		grabErr  error
+		wantUsed int64
+	}{
+		{name: "pacing budget never asked", grabErr: errPacingBudget, wantUsed: 0},
+		{name: "caller hung up mid-download", grabErr: context.Canceled, wantUsed: 0},
+		{name: "tracker answered with a failure", grabErr: errors.New("tracker: 500"), wantUsed: 1},
+		{name: "success", grabErr: nil, wantUsed: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			inner := &budgetFakeDriver{grabErr: tt.grabErr}
+			a, _ := newBudgetTestAdapter(t, inner, map[string]string{"grab_limit": "10"})
+
+			_, err := a.Grab(context.Background(), "https://tracker.example/dl")
+			if (err != nil) != (tt.grabErr != nil) {
+				t.Fatalf("Grab err = %v, want error presence %v", err, tt.grabErr != nil)
+			}
+			if got := inner.grabCalls.Load(); got != 1 {
+				t.Fatalf("driver grabbed %d times, want 1", got)
+			}
+			if got := a.budget.Status(context.Background(), a.instanceID, a.cfg, a.clock()).Grab.Used; got != tt.wantUsed {
+				t.Fatalf("grab budget used = %d, want %d", got, tt.wantUsed)
+			}
+		})
+	}
+}
+
+// TestAdapterGrab_RefundedUnitIsSpendableAgain proves the refund is real enforcement,
+// not just a cosmetic counter: with grab_limit=1, an aborted grab leaves the single unit
+// available for a later grab that actually reaches the tracker.
+func TestAdapterGrab_RefundedUnitIsSpendableAgain(t *testing.T) {
+	t.Parallel()
+	inner := &budgetFakeDriver{grabErr: errPacingBudget}
+	a, _ := newBudgetTestAdapter(t, inner, map[string]string{"grab_limit": "1"})
+
+	if _, err := a.Grab(context.Background(), "https://tracker.example/dl"); !errors.Is(err, errPacingBudget) {
+		t.Fatalf("aborted Grab err = %v, want errPacingBudget", err)
+	}
+	inner.grabErr = nil
+	if _, err := a.Grab(context.Background(), "https://tracker.example/dl"); err != nil {
+		t.Fatalf("second Grab: %v (the aborted grab must not have spent the only unit)", err)
+	}
+}
+
 // TestAdapterSearch_QuotaErrorLearnsSpent proves the reactive-learning path end to
 // end: a tracker error that unwraps to search.ErrQuotaExceeded (as newznab's code 910
 // classification does) marks the query budget spent, so the VERY NEXT search — even
