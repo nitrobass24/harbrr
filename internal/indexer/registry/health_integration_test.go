@@ -64,14 +64,17 @@ func TestSearchRecordsHealthEvent(t *testing.T) {
 
 // TestGrabRecordsHealthEvent proves a classified GRAB failure is health-recorded too
 // (not just search): a 503 at grab time -> rate_limited, surfaced by Status. Before the
-// fix, Grab never classified its errors, so this event was dropped.
+// fix, Grab never classified its errors, so this event was dropped. It is also the
+// over-reach check on #489's reachedTracker guard: a failure the tracker DID answer must
+// still count as an attempt and still climb the breaker's ladder.
 func TestGrabRecordsHealthEvent(t *testing.T) {
 	t.Parallel()
-	reg, _ := newRegistry(t, statusDoer{status: stdhttp.StatusServiceUnavailable})
+	reg, db := newRegistry(t, statusDoer{status: stdhttp.StatusServiceUnavailable})
 	ctx := context.Background()
-	if _, err := reg.Add(ctx, registry.AddParams{
+	inst, err := reg.Add(ctx, registry.AddParams{
 		Slug: "tt", DefinitionID: "testtracker", Settings: map[string]string{"apikey": "x"},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	idx, ok := reg.Indexer(ctx, "tt")
@@ -88,6 +91,114 @@ func TestGrabRecordsHealthEvent(t *testing.T) {
 	}
 	if len(st.Events) != 1 || st.Events[0].Kind != domain.HealthRateLimited {
 		t.Fatalf("events = %+v, want exactly one rate_limited from the grab", st.Events)
+	}
+	circuit, err := database.Circuit{}.Get(ctx, db, inst.ID)
+	if err != nil {
+		t.Fatalf("get circuit: %v", err)
+	}
+	if circuit.EscalationLevel == 0 || circuit.DisabledTill.IsZero() {
+		t.Errorf("circuit = level %d till %v, want an escalated, disabled instance",
+			circuit.EscalationLevel, circuit.DisabledTill)
+	}
+	stats, err := reg.Stats(ctx, "tt")
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if stats.GrabAttempts != 1 {
+		t.Errorf("grabAttempts = %d, want 1 (the tracker answered, so it was an attempt)", stats.GrabAttempts)
+	}
+}
+
+// TestCancelledGrabDoesNotMoveHealth is the grab-path half of the cancelled-consumer
+// seam (autobrr/harbrr#489), end to end through the engine: an *arr timing out
+// mid-download, or a user navigating away from a /dl link, must move NOTHING — no
+// attempt stamp, no health event, no escalation. Both cancellation shapes reachedTracker
+// knows are covered.
+//
+// What actually lands here without the guard is the inflated attempt count, which
+// depresses the indexer's grab success rate for a download the tracker never saw. The
+// health/breaker damage does not reproduce on THIS path: the fetch layer rebuilds a
+// transport error host-only (redactDoErr/RedactURLError), so the *url.Error is gone by
+// the time classifyHealth sees it and a bare context.Canceled is no net.Error. A
+// not-reached failure that DOES classify — the pacing-budget refusal, which wraps
+// context.DeadlineExceeded — reaches the same guard, and
+// TestGrabRecordsOnlyWhatReachedTheTracker pins that one against a live caller.
+func TestCancelledGrabDoesNotMoveHealth(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		// hangup is the doer's abort hook, given the caller's cancel: the consumer-hangup
+		// shape cancels the caller, the inherited shape leaves it live.
+		hangup func(cancel context.CancelFunc) context.CancelFunc
+	}{
+		{
+			name:   "consumer hung up, caller context done",
+			hangup: func(cancel context.CancelFunc) context.CancelFunc { return cancel },
+		},
+		{
+			name:   "cancellation inherited, caller still live",
+			hangup: func(context.CancelFunc) context.CancelFunc { return func() {} },
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			doer := &hangupDoer{body: bodyHTML}
+			clk := &movableClock{t: fixedClock()}
+			reg, db := newClockedRegistry(t, doer, clk.now)
+			ctx := context.Background()
+			inst, err := reg.Add(ctx, registry.AddParams{
+				Slug: "tt", DefinitionID: "testtracker", Settings: map[string]string{"apikey": "x"},
+			})
+			if err != nil {
+				t.Fatalf("Add: %v", err)
+			}
+			idx, ok := reg.Indexer(ctx, "tt")
+			if !ok {
+				t.Fatal("Indexer(tt) not resolved")
+			}
+			if _, err := idx.Search(ctx, search.Query{Keywords: "bunny"}); err != nil {
+				t.Fatalf("Search (live): %v", err)
+			}
+			if st, err := reg.Status(ctx, "tt"); err != nil || st.Status != registry.StatusHealthy {
+				t.Fatalf("status after a real success = %q (err %v), want healthy", st.Status, err)
+			}
+
+			// The download aborts a minute later.
+			clk.advance(time.Minute)
+			grabCtx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			doer.cancel = tt.hangup(cancel)
+			if _, err := idx.Grab(grabCtx, "https://testtracker.example/download/1"); !errors.Is(err, context.Canceled) {
+				t.Fatalf("Grab (aborted) err = %v, want context.Canceled", err)
+			}
+
+			st, err := reg.Status(ctx, "tt")
+			if err != nil {
+				t.Fatalf("Status: %v", err)
+			}
+			if st.Status != registry.StatusHealthy {
+				t.Errorf("status after the aborted download = %q, want healthy (nothing reached the tracker)", st.Status)
+			}
+			if len(st.Events) != 0 {
+				t.Errorf("events = %+v, want none (an aborted download is not a tracker failure)", st.Events)
+			}
+			circuit, err := database.Circuit{}.Get(ctx, db, inst.ID)
+			if err != nil {
+				t.Fatalf("get circuit: %v", err)
+			}
+			if circuit.EscalationLevel != 0 || !circuit.DisabledTill.IsZero() {
+				t.Errorf("circuit = level %d till %v, want the untouched baseline",
+					circuit.EscalationLevel, circuit.DisabledTill)
+			}
+			stats, err := reg.Stats(ctx, "tt")
+			if err != nil {
+				t.Fatalf("Stats: %v", err)
+			}
+			if stats.GrabAttempts != 0 {
+				t.Errorf("grabAttempts = %d, want 0 (the tracker was never asked)", stats.GrabAttempts)
+			}
+		})
 	}
 }
 
