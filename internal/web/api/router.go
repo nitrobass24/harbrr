@@ -208,12 +208,16 @@ func (rt *router) routes() http.Handler {
 
 			r.Get("/api/indexers", rt.listIndexers)
 			r.Post("/api/indexers", rt.addIndexer)
-			// The static "stats"/"status"/"test" segments are registered so chi
-			// prioritizes them over the {slug} param at the same level: GET
-			// /api/indexers/stats and /api/indexers/status resolve to
-			// allIndexerStats/allIndexerStatus, not getIndexer, and POST
-			// /api/indexers/test is the batch probe, not an indexer named "test".
-			// All three are in registry's reservedSlugs for that reason.
+			// The static "stats"/"status" segments are registered so chi prioritizes
+			// them over the {slug} param at the same level: GET /api/indexers/stats
+			// and /api/indexers/status resolve to allIndexerStats/allIndexerStatus,
+			// not getIndexer. Both are in registry's reservedSlugs for that reason.
+			//
+			// POST /api/indexers/test (the batch probe) needs no such reservation: the
+			// shadowing is per METHOD, and nothing posts to /api/indexers/{slug}, so
+			// chi still resolves GET/PATCH/DELETE /api/indexers/test to the {slug}
+			// handlers. Adding a POST /api/indexers/{slug} route would change that —
+			// see TestIndexerNamedTest.
 			r.Get("/api/indexers/stats", rt.allIndexerStats)
 			r.Get("/api/indexers/status", rt.allIndexerStatus)
 			r.Post("/api/indexers/test", rt.testAllIndexers)

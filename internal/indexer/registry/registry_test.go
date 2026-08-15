@@ -489,6 +489,10 @@ func TestAddRejectsReservedSlug(t *testing.T) {
 		// Uppercase never reaches the reserved check — slugPattern rejects it first —
 		// which is how the reservation is case-insensitive for free.
 		{name: "reserved all uppercase", slug: "ALL", wantErr: registry.ErrInvalid},
+		// "test" is NOT reserved: POST /api/indexers/test is the batch probe, but chi's
+		// static-over-param preference is per method and no route posts to
+		// /api/indexers/{slug} (see TestIndexerNamedTest in internal/web/api).
+		{name: "test is allowed", slug: "test", wantErr: nil},
 		{name: "normal slug", slug: "notstats", wantErr: nil},
 	}
 	for _, tt := range tests {

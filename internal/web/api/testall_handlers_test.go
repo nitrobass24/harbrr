@@ -83,6 +83,50 @@ func TestTestAllIndexersDefaultsToEveryIndexer(t *testing.T) {
 	}
 }
 
+// TestIndexerNamedTest is why "test" is NOT in registry's reservedSlugs. POST
+// /api/indexers/test is the batch probe, but chi's static-over-param preference is per
+// METHOD: nothing posts to /api/indexers/{slug}, so every route an indexer named "test"
+// actually needs still resolves to it. This fails the day a POST /api/indexers/{slug}
+// route makes the collision real — at which point the slug has to be reserved after all.
+func TestIndexerNamedTest(t *testing.T) {
+	t.Parallel()
+	e := authDisabledEnv(t)
+	seedTestAllFleet(t, e, "test")
+	base, c := serve(t, e)
+
+	resp, body := do(t, c, http.MethodGet, base+"/api/indexers/test", nil, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET status = %d, want 200 (body %s)", resp.StatusCode, body)
+	}
+	var inst struct {
+		Slug string `json:"slug"`
+	}
+	if err := json.Unmarshal(body, &inst); err != nil {
+		t.Fatalf("unmarshal: %v (body %s)", err, body)
+	}
+	if inst.Slug != "test" {
+		t.Fatalf("GET /api/indexers/test returned %q, want the indexer named test (body %s)", inst.Slug, body)
+	}
+
+	// The batch probe still owns the POST, and it still sees the indexer.
+	resp, body = do(t, c, http.MethodPost, base+"/api/indexers/test", nil, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST status = %d, want 200 (body %s)", resp.StatusCode, body)
+	}
+	var out testAllBody
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("unmarshal: %v (body %s)", err, body)
+	}
+	if len(out.Results) != 1 || out.Results[0].Slug != "test" {
+		t.Fatalf("batch results = %+v, want one entry for test", out.Results)
+	}
+
+	// And it can be deleted by name.
+	if resp, body := do(t, c, http.MethodDelete, base+"/api/indexers/test", nil, nil); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("DELETE status = %d, want 204 (body %s)", resp.StatusCode, body)
+	}
+}
+
 // TestTestAllIndexersEmptyFleet: nothing configured is an empty result set, not an error.
 func TestTestAllIndexersEmptyFleet(t *testing.T) {
 	t.Parallel()

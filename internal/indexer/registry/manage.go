@@ -95,19 +95,26 @@ var (
 var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
 // reservedSlugs are slugs that must not name an indexer. Two reasons, both fatal:
-// "stats"/"status"/"test" collide with a static path segment registered as a sibling
-// of /api/indexers/{slug} in internal/web/api/router.go (chi prioritizes a static
-// segment over the {slug} param, so such an indexer would be shadowed by GET
-// /api/indexers/stats, /api/indexers/status, or POST /api/indexers/test);
-// core.AggregateSlug names the
-// aggregate Torznab feed in the SAME {slug} position, so an indexer holding it would
-// make the aggregate feed unreachable and, worse, ambiguous at grab time. Keep this
-// in sync with the static segments registered directly under /api/indexers/ in
-// router.go. Case-insensitivity is free: slugPattern already rejects uppercase.
+// "stats"/"status" collide with a static path segment registered as a sibling of
+// /api/indexers/{slug} in internal/web/api/router.go ON THE SAME METHOD (chi
+// prioritizes a static segment over the {slug} param, so such an indexer would be
+// shadowed by GET /api/indexers/stats or /api/indexers/status); core.AggregateSlug
+// names the aggregate Torznab feed in the SAME {slug} position, so an indexer holding
+// it would make the aggregate feed unreachable and, worse, ambiguous at grab time.
+//
+// POST /api/indexers/test (the batch probe, #485) deliberately does NOT reserve "test":
+// chi falls through to the {slug} param for methods the static node has no handler for,
+// and no route posts to /api/indexers/{slug}, so an indexer named "test" stays fully
+// reachable on GET/PATCH/DELETE. Reserving a word an operator might reasonably want to
+// name an indexer costs more than the collision it avoids. TestIndexerNamedTest in
+// internal/web/api pins that, and would fail the day a POST /api/indexers/{slug} route
+// makes the collision real.
+//
+// Keep this in sync with the static segments registered directly under /api/indexers/
+// in router.go. Case-insensitivity is free: slugPattern already rejects uppercase.
 var reservedSlugs = map[string]struct{}{
 	"stats":            {},
 	"status":           {},
-	"test":             {},
 	core.AggregateSlug: {},
 }
 
