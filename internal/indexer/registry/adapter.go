@@ -317,6 +317,16 @@ func (a *indexerAdapter) ConsumesSearchMode() bool {
 // torrent through the session). The error is wrapped with the indexer id (not a
 // secret); the caller redacts it. This is the /dl proxy's seam; feed serialization
 // only tokenizes the link, so no resolution runs per served release.
+//
+// As in liveSearch, a failure that never reached the tracker (reachedTracker) records
+// NOTHING: no attempt stamp, no health event, no breaker escalation, no quota learning
+// (autobrr/harbrr#489). An *arr timing out mid-download, a user navigating away from a
+// /dl link, and the pacing budget refusing to ask at all are all failures the tracker
+// never saw — and the last of those wraps context.DeadlineExceeded, which
+// isTransportError classifies, so without the guard enough of them file transport
+// events against the tracker, climb the ladder and set DisabledTill, taking a perfectly
+// healthy indexer out of dispatch. The attempt stamp sits below the guard for the same
+// reason: an aborted download must not depress the indexer's grab success rate.
 func (a *indexerAdapter) Grab(ctx context.Context, link string) (*search.GrabResult, error) {
 	// Same circuit-breaker gate as liveSearch (#253): a disabled instance is skipped
 	// rather than hit.
@@ -330,11 +340,15 @@ func (a *indexerAdapter) Grab(ctx context.Context, link string) (*search.GrabRes
 	if !a.budget.ReserveGrab(ctx, a.instanceID, a.cfg, a.clock()) {
 		return nil, fmt.Errorf("registry: grab %q: %w", a.info.ID, core.ErrBudgetExhausted)
 	}
-	// Counted here, not at the top of the method: "attempts" then means the same for
-	// grabs as for queries — it reached the tracker — so a breaker/budget refusal (which
-	// never touched it) cannot depress the indexer's success rate.
-	a.stats.RecordGrabAttempt(a.instanceID)
 	result, err := a.inner.Grab(ctx, link)
+	if err != nil && !reachedTracker(ctx, err) {
+		return nil, fmt.Errorf("registry: grab %q: %w", a.info.ID, err)
+	}
+	// Counted below the reachedTracker guard, not at the top of the method: "attempts"
+	// then means the same for grabs as for queries — it reached the tracker — so a
+	// breaker/budget refusal or an aborted download (neither of which the tracker ever
+	// saw) cannot depress the indexer's grab success rate.
+	a.stats.RecordGrabAttempt(a.instanceID)
 	if err != nil {
 		// Classify grab-time failures too: a 429/503 rate-limit, a first-op login/
 		// anti-bot failure on a fresh engine, and the native drivers' auth sentinels

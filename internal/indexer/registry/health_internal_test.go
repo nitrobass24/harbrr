@@ -111,6 +111,63 @@ func TestReachedTracker(t *testing.T) {
 	}
 }
 
+// TestGrabRecordsOnlyWhatReachedTheTracker is the escalation half of #489, at the seam
+// the integration test cannot reach: a grab that never left the process, with the
+// CALLER'S CONTEXT STILL LIVE, so every health/circuit write would happily succeed. The
+// pacing-budget refusal is exactly that shape in production — harbrr declining to ask —
+// and it wraps context.DeadlineExceeded, a net.Error, so without the guard it classifies
+// as transport, files an event against the tracker and climbs the breaker's ladder. The
+// paired connection-refused case proves the guard did not swallow a real failure.
+func TestGrabRecordsOnlyWhatReachedTheTracker(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name          string
+		grabErr       error
+		wantTransport int64
+		wantLevel     int
+		wantAttempts  int64
+	}{
+		{
+			name:    "pacing budget refused the request",
+			grabErr: fmt.Errorf("%w: %w", errPacingBudget, context.DeadlineExceeded),
+		},
+		{
+			name:          "tracker refused the connection",
+			grabErr:       &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connection refused")},
+			wantTransport: 1,
+			wantLevel:     1,
+			wantAttempts:  1,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			a, _ := newBudgetTestAdapter(t, &budgetFakeDriver{grabErr: tt.grabErr}, nil)
+			if _, err := a.Grab(ctx, "https://tracker.example/download/1"); err == nil {
+				t.Fatal("Grab returned nil error, want the injected failure")
+			}
+			counts, err := a.health.Counts(ctx, a.db, a.instanceID)
+			if err != nil {
+				t.Fatalf("health counts: %v", err)
+			}
+			if counts.Transport != tt.wantTransport {
+				t.Errorf("transport events = %d, want %d", counts.Transport, tt.wantTransport)
+			}
+			state, err := a.circuit.Get(ctx, a.db, a.instanceID)
+			if err != nil {
+				t.Fatalf("get circuit: %v", err)
+			}
+			if state.EscalationLevel != tt.wantLevel {
+				t.Errorf("escalation level = %d, want %d", state.EscalationLevel, tt.wantLevel)
+			}
+			if got := a.stats.snapshot(a.instanceID).grabAttempts; got != tt.wantAttempts {
+				t.Errorf("grabAttempts = %d, want %d", got, tt.wantAttempts)
+			}
+		})
+	}
+}
+
 func TestDeriveStatus(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, time.June, 14, 12, 0, 0, 0, time.UTC)
