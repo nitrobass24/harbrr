@@ -82,11 +82,11 @@ describe("IndexersTable", () => {
     expect(within(ru).getByText("Failing")).toBeTruthy()
     expect(within(ru).getByText(/login failed 2m ago/)).toBeTruthy()
 
-    // Expired row reads Unknown with NO event caption (autobrr/harbrr#473): the state
-    // asserts nothing, so captioning an aged-out failure would read as current. The
+    // A never-tested row reads "Never tested" with NO event caption (autobrr/harbrr#473):
+    // the state asserts nothing, so captioning an old failure would read as current. The
     // dated history stays in the expanded detail.
     const ny = screen.getByText("Nyaa").closest("tr")!
-    expect(within(ny).getByText("Unknown")).toBeTruthy()
+    expect(within(ny).getByText("Never tested")).toBeTruthy()
     expect(within(ny).queryByText(/couldn't reach the tracker/)).toBeNull()
 
     // Row with the status probe still in flight shows the pending marker

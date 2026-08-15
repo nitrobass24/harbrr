@@ -729,9 +729,11 @@ func (r *Resolver) Test(ctx context.Context, slug string) error {
 // healthEventLimit caps how many recent events the status endpoint returns.
 const healthEventLimit = 20
 
-// The three derived health states (autobrr/harbrr#389). "unknown" is the honest
-// answer when nothing recent is known — the state the old two-state model was missing,
-// which made a never-queried or long-idle indexer assert "healthy" forever.
+// The three derived health states (autobrr/harbrr#389, remodelled by #484). Health is
+// STICKY: whatever was last observed persists until something newer is observed, with no
+// time-based expiry at all. "unknown" therefore means NEVER TESTED — nothing has ever
+// been observed for this indexer — not "what we knew has expired". Idleness is not a
+// health signal: an indexer nobody queries keeps the last answer it gave.
 // Exported so API handlers tallying or switching on FleetStatus.Status share one
 // definition with the derivation instead of re-typing wire literals.
 const (
@@ -739,29 +741,6 @@ const (
 	StatusFailing = "failing"
 	StatusUnknown = "unknown"
 )
-
-// healthyWindow is how recently a successful attempt must have happened for the derived
-// status to read "healthy". Past it, with nothing newer, the status expires to
-// "unknown" rather than asserting a success that is hours or days old.
-const healthyWindow = 1 * time.Hour
-
-// failingWindowBase / failingWindowCap bound how long a failure holds the status at
-// "failing" before it too expires to "unknown": base at escalation level 0 (which is
-// exactly the old uniform recency window), doubling per rung, capped at 24h — the
-// ceiling the *arr apps settled on for indexer backoff, cited in #389. Per-KIND curves
-// (auth backing off harder than a transient 5xx) are #389's PR 2, not this one.
-const (
-	failingWindowBase = 1 * time.Hour
-	failingWindowCap  = 24 * time.Hour
-)
-
-// failingWindow is the failing-state lifetime for an indexer sitting on escalation
-// rung level. level is clamped to the ladder's range: it is read from the DB, and a
-// negative shift count panics.
-func failingWindow(level int) time.Duration {
-	window := failingWindowBase << min(max(level, 0), maxCircuitLevel)
-	return min(window, failingWindowCap)
-}
 
 // ValidStatus reports whether s is one of the three derived states. It is the one
 // place the wire vocabulary is checked, so a caller selecting by health (the API's
@@ -901,12 +880,13 @@ func (r *StatsReporter) statusOf(ctx context.Context, instanceID int64, limit in
 		till := circuit.DisabledTill
 		disabledTill = &till
 	}
+	counters := r.stats.snapshot(instanceID)
 	signals := healthSignals{
 		events:      events,
 		recovery:    recovery,
 		disabled:    disabledTill != nil,
-		level:       circuit.EscalationLevel,
-		lastSuccess: r.stats.snapshot(instanceID).lastSuccess,
+		lastSuccess: counters.lastSuccess,
+		lastQuery:   counters.lastQuery,
 	}
 	snap := healthSnapshot{events: events, status: r.deriveStatus(signals), disabledTill: disabledTill}
 	// InitialFailure survives a partial recovery (the ladder descends one rung at a
@@ -928,38 +908,55 @@ type healthSignals struct {
 	recovery database.HealthRecovery
 	// disabled is true while the circuit breaker excludes the indexer from dispatch.
 	disabled bool
-	// level is the circuit's escalation rung, which scales the failing window.
-	level int
 	// lastSuccess is the newest search/grab that actually SUCCEEDED (zero = none this
 	// process has seen or rehydrated). Never an attempt: a failed search is a counted
 	// query too, and taking that as success is what let a hard-down tracker read healthy
 	// forever (#457).
 	lastSuccess time.Time
+	// lastQuery is the newest search that reached the tracker, success or failure (zero =
+	// never queried). Counted in liveSearch, so a cache hit and a breaker/budget refusal —
+	// neither of which reached the tracker — leave it alone.
+	lastQuery time.Time
 }
 
-// deriveStatus resolves the tri-state derived health (#389), in order:
-//  1. the circuit breaker currently excludes the indexer from dispatch → failing
-//     (its own DisabledTill is the expiry, and it can outlast the failing window),
-//  2. the newest recorded failure is still the newest thing that happened and is
-//     recent enough for the current rung → failing,
-//  3. something succeeded within healthyWindow → healthy,
-//  4. otherwise → unknown: everything known has expired, or nothing was ever observed.
+// deriveStatus resolves the tri-state derived health (#389, remodelled by #484), in order:
+//  1. the circuit breaker currently excludes the indexer from dispatch → failing,
+//  2. the newest recorded failure is newer than the newest success → failing,
+//  3. queries have happened since the last success → failing,
+//  4. something succeeded, however long ago → healthy,
+//  5. nothing was ever observed → unknown (never tested).
 //
-// Expiry is lazy — steps 2 and 3 are pure timestamp arithmetic at read time. There is
-// no sweep and no probe: an idle indexer simply ages into unknown.
+// Steps 2 and 3 overlap: a classified failure bumps the query counter too, so step 3
+// alone would already catch it. Step 2 stays first so the caller still has events[0] as
+// the failure REASON to display; step 3 is the parameter-free catch-all for the failures
+// nothing classifies — a tracker answering persistent 500s, or 200s with junk.
+//
+// Nothing expires. There is no window, no sweep and no probe: an idle indexer keeps the
+// last answer it gave, and only new evidence moves it.
 func (r *StatsReporter) deriveStatus(s healthSignals) string {
 	if s.disabled {
 		return StatusFailing
 	}
-	now := r.clock()
 	success := s.successAt()
-	if s.failingNow(now, success) {
+	if s.failingNow(success) || s.queriedSince(success) {
 		return StatusFailing
 	}
-	if !success.IsZero() && now.Sub(success) <= healthyWindow {
+	if !success.IsZero() {
 		return StatusHealthy
 	}
 	return StatusUnknown
+}
+
+// queriedSince reports whether a search reached the tracker since the last success. It
+// needs no classification and no threshold, which is the point (#484): the most recent
+// query did not succeed, so the indexer reads failing until one does, and the next
+// success clears it on its own.
+//
+// Both instants are second-granular at record time (RecordQuery/RecordSuccess truncate,
+// matching how they persist), so a successful search — which stamps the query first and
+// the success microseconds later — is never mistaken for a query without a success.
+func (s healthSignals) queriedSince(success time.Time) bool {
+	return !s.lastQuery.IsZero() && s.lastQuery.After(success)
 }
 
 // successAt is the newest evidence that something actually WORKED: a search/grab that
@@ -979,20 +976,18 @@ func (s healthSignals) successAt() time.Time {
 
 // failingNow reports whether the newest recorded failure still stands: nothing has
 // succeeded since (neither a search/grab nor a passing test — failureAfterRecovery carries
-// the id-based tiebreak for a test that lands in the same clock instant), and it is
-// within the failing window for the indexer's current escalation rung.
+// the id-based tiebreak for a test that lands in the same clock instant). Age is not a
+// factor: a failure holds the status until something succeeds, however long that takes.
 //
 // The success comparison is deliberately NOT strict (`!success.After(...)`): at the shared
 // second granularity a success in the same second as the failure proves nothing about
 // which came first, so the tie reads as still failing rather than as a recovery.
-func (s healthSignals) failingNow(now, success time.Time) bool {
+func (s healthSignals) failingNow(success time.Time) bool {
 	if len(s.events) == 0 {
 		return false
 	}
 	newest := s.events[0]
-	return failureAfterRecovery(newest, s.recovery) &&
-		!success.After(newest.OccurredAt) &&
-		now.Sub(newest.OccurredAt) <= failingWindow(s.level)
+	return failureAfterRecovery(newest, s.recovery) && !success.After(newest.OccurredAt)
 }
 
 // failureAfterRecovery uses the monotonic event id in the normal case. OccurredAt

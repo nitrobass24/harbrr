@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	stdhttp "net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -176,11 +177,12 @@ func TestSearchGatewayOutageRecordsTransportEvent(t *testing.T) {
 	}
 }
 
-// TestFailingSearchesNeverDeriveHealthy is the #457 regression: an indexer whose every
-// search fails with an UNCLASSIFIED error (a plain 500 — the tracker answered, so no
-// health event is written and the breaker never trips) must not keep reading healthy off
-// the failing traffic itself. Once the last REAL success ages past the healthy window,
-// the honest answer is unknown.
+// TestFailingSearchesNeverDeriveHealthy is the #457 regression, sharpened by #484: an
+// indexer whose every search fails with an UNCLASSIFIED error (a plain 500 — the tracker
+// answered, so no health event is written and the breaker never trips) must not keep
+// reading healthy off the failing traffic itself. #457 could only demote it to unknown
+// once the success aged out; #484's "queried since the last success" rule calls it
+// failing outright — immediately, with nothing classified and no window to wait out.
 func TestFailingSearchesNeverDeriveHealthy(t *testing.T) {
 	t.Parallel()
 	doer := &swapDoer{body: bodyHTML}
@@ -203,8 +205,7 @@ func TestFailingSearchesNeverDeriveHealthy(t *testing.T) {
 		t.Fatalf("status after a real success = %q (err %v), want healthy", st.Status, err)
 	}
 
-	// The tracker goes down in a shape nothing classifies, and the consumer keeps polling
-	// well past the healthy window.
+	// The tracker goes down in a shape nothing classifies, and the consumer keeps polling.
 	doer.fail.Store(stdhttp.StatusInternalServerError)
 	for range 3 {
 		clk.advance(30 * time.Minute)
@@ -220,14 +221,138 @@ func TestFailingSearchesNeverDeriveHealthy(t *testing.T) {
 	if len(st.Events) != 0 {
 		t.Fatalf("events = %+v, want none (an unclassified failure records nothing)", st.Events)
 	}
-	if st.Status != registry.StatusUnknown {
-		t.Errorf("status after 90m of failing searches = %q, want unknown", st.Status)
+	if st.Status != registry.StatusFailing {
+		t.Errorf("status after 90m of failing searches = %q, want failing", st.Status)
+	}
+
+	// And it self-heals on the next success, with nothing to wait out.
+	doer.fail.Store(0)
+	clk.advance(time.Minute)
+	if _, err := idx.Search(ctx, search.Query{Keywords: "bunny"}); err != nil {
+		t.Fatalf("Search (recovered): %v", err)
+	}
+	if st, err := reg.Status(ctx, "tt"); err != nil || st.Status != registry.StatusHealthy {
+		t.Errorf("status after the tracker recovers = %q (err %v), want healthy", st.Status, err)
+	}
+}
+
+// hangupDoer answers with body until cancel is set, after which it emulates the CONSUMER
+// hanging up mid-search: it cancels the caller's context and fails the way net/http does,
+// with a *url.Error carrying context.Canceled. Sequential use only (no locking).
+type hangupDoer struct {
+	body   string
+	cancel context.CancelFunc
+}
+
+func (d *hangupDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
+	if d.cancel != nil {
+		d.cancel()
+		return nil, &url.Error{Op: req.Method, URL: req.URL.String(), Err: context.Canceled}
+	}
+	return &stdhttp.Response{
+		StatusCode: stdhttp.StatusOK,
+		Header:     stdhttp.Header{},
+		Body:       io.NopCloser(strings.NewReader(d.body)),
+		Request:    req,
+	}, nil
+}
+
+// TestCancelledSearchDoesNotMoveHealth pins the seam #484's derivation made dangerous: a
+// Sonarr/qui HTTP timeout or a dropped connection aborts the search before anything is
+// learned about the tracker, so it must move NOTHING — no query stamp (the sticky "queried
+// since the last success" rule would otherwise read failing forever, with no reason to
+// show) and no health event (a cancelled request surfaces as a *url.Error, which the
+// transport classifier would otherwise happily record and escalate on). It is the same
+// call the cache's breaker and the aggregate ledger already refuse to blame a tracker for.
+func TestCancelledSearchDoesNotMoveHealth(t *testing.T) {
+	t.Parallel()
+	doer := &hangupDoer{body: bodyHTML}
+	clk := &movableClock{t: fixedClock()}
+	reg, _ := newClockedRegistry(t, doer, clk.now)
+	ctx := context.Background()
+	if _, err := reg.Add(ctx, registry.AddParams{
+		Slug: "tt", DefinitionID: "testtracker", Settings: map[string]string{"apikey": "x"},
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	idx, ok := reg.Indexer(ctx, "tt")
+	if !ok {
+		t.Fatal("Indexer(tt) not resolved")
+	}
+	if _, err := idx.Search(ctx, search.Query{Keywords: "bunny"}); err != nil {
+		t.Fatalf("Search (live): %v", err)
+	}
+	if st, err := reg.Status(ctx, "tt"); err != nil || st.Status != registry.StatusHealthy {
+		t.Fatalf("status after a real success = %q (err %v), want healthy", st.Status, err)
+	}
+
+	// The consumer hangs up mid-search, a minute later (so a query stamp would land
+	// strictly after the success and trip the sticky rule).
+	clk.advance(time.Minute)
+	cancelCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	doer.cancel = cancel
+	if _, err := idx.Search(cancelCtx, search.Query{Keywords: "bunny"}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Search (cancelled) err = %v, want context.Canceled", err)
+	}
+
+	st, err := reg.Status(ctx, "tt")
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if st.Status != registry.StatusHealthy {
+		t.Errorf("status after the consumer hung up = %q, want healthy (nothing reached the tracker)", st.Status)
+	}
+	if len(st.Events) != 0 {
+		t.Errorf("events = %+v, want none (a cancelled consumer is not a tracker failure)", st.Events)
+	}
+}
+
+// TestCachedSearchKeepsHealthy is #484's highest-risk regression: the "queried since the
+// last success" rule reads a query counter, and a search served from the cache must not
+// touch it. If it did, an indexer answering every poll from cache — the whole point of
+// the cache — would flip to failing without a single thing going wrong. The counter is
+// stamped in liveSearch, below the cache read, which is what makes this hold.
+func TestCachedSearchKeepsHealthy(t *testing.T) {
+	t.Parallel()
+	db, ldr, keyring := newRegistryDeps(t)
+	clk := &movableClock{t: fixedClock()}
+	doer := &replayDoer{body: bodyHTML}
+	reg := registry.New(db, ldr, keyring, catalog.All(),
+		registry.WithClock(clk.now),
+		registry.WithSearchCache(registry.NewSearchCacheForTest(db, clk.now)),
+		registry.WithDoerFactory(func(registry.ClientParams) (search.Doer, error) { return doer, nil }))
+	ctx := context.Background()
+	if _, err := reg.Add(ctx, registry.AddParams{
+		Slug: "tt", DefinitionID: "testtracker", Settings: map[string]string{"apikey": "x"},
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	idx, ok := reg.Indexer(ctx, "tt")
+	if !ok {
+		t.Fatal("Indexer(tt) not resolved")
+	}
+	if _, err := idx.Search(ctx, search.Query{Keywords: "bunny"}); err != nil {
+		t.Fatalf("Search (live): %v", err)
+	}
+	served := len(doer.reqs)
+
+	// Later — but inside the entry's TTL — the same query is served from the cache.
+	clk.advance(time.Minute)
+	if _, err := idx.Search(ctx, search.Query{Keywords: "bunny"}); err != nil {
+		t.Fatalf("Search (cached): %v", err)
+	}
+	if got := len(doer.reqs); got != served {
+		t.Fatalf("outbound requests = %d, want %d (the second search must be a cache hit)", got, served)
+	}
+	if st, err := reg.Status(ctx, "tt"); err != nil || st.Status != registry.StatusHealthy {
+		t.Errorf("status after a cache-served search = %q (err %v), want healthy", st.Status, err)
 	}
 }
 
 // TestLastSuccessSurvivesRestart proves the success signal is durable: a real success is
 // flushed with the stat counters and rehydrated by a fresh registry over the same DB, so
-// a restart inside the healthy window does not blank the fleet to unknown.
+// a restart does not blank the fleet to unknown.
 func TestLastSuccessSurvivesRestart(t *testing.T) {
 	t.Parallel()
 	db, ldr, keyring := newRegistryDeps(t)
@@ -289,7 +414,7 @@ func (d *swapDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
 }
 
 // newClockedRegistry is newRegistry with a caller-supplied clock, so a test can age an
-// indexer past the derivation's healthy/failing windows without sleeping.
+// indexer's traffic and cache entries without sleeping.
 func newClockedRegistry(t *testing.T, doer search.Doer, clock func() time.Time) (*registry.Registry, *database.DB) {
 	t.Helper()
 	db, ldr, keyring := newRegistryDeps(t)

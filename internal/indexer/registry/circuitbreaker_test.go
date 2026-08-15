@@ -77,18 +77,6 @@ func TestEscalateNeverPassesTopRung(t *testing.T) {
 	}
 }
 
-// TestAuthCurveHoldsFailingStatus keeps the ladder and PR 1's tri-state derivation
-// coherent: the rung an auth failure jumps to is the same level failingWindow reads, so
-// the derived status stays "failing" for the full 24h ceiling rather than expiring to
-// "unknown" while the circuit is still disabled.
-func TestAuthCurveHoldsFailingStatus(t *testing.T) {
-	t.Parallel()
-	state := escalate(database.CircuitState{InstanceID: 1}, domain.HealthAuthFailure, false, 0, circuitNow, longAgoBoot)
-	if got := failingWindow(state.EscalationLevel); got != failingWindowCap {
-		t.Errorf("failingWindow(level %d) = %s, want the %s cap", state.EscalationLevel, got, failingWindowCap)
-	}
-}
-
 // newCircuitTestAdapter builds the minimal adapter recordHealth needs — the health
 // and circuit repositories over a real SQLite db plus the clock/boot-time fields the
 // escalation ladder reads. Booted long ago, so the startup grace never caps.

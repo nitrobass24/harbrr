@@ -75,6 +75,42 @@ func TestClassifyHealth(t *testing.T) {
 	}
 }
 
+// TestReachedTracker pins which failures count as evidence about a tracker. Everything
+// that never left the process must answer false — under the sticky derivation a query
+// stamp with no success after it reads failing forever — while a request the tracker
+// simply did not answer must stay true.
+func TestReachedTracker(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		// callerGone cancels the caller's context before the call, the shape a
+		// disconnected consumer leaves behind.
+		callerGone bool
+		err        error
+		want       bool
+	}{
+		{name: "tracker answered badly", err: errors.New("tracker returned HTTP 500"), want: true},
+		{name: "client timeout, caller still live", err: &url.Error{Op: "GET", Err: context.DeadlineExceeded}, want: true},
+		{name: "caller cancelled", callerGone: true, err: &url.Error{Op: "GET", Err: context.Canceled}},
+		{name: "caller deadline elapsed", callerGone: true, err: errors.New("whatever the engine surfaced")},
+		{name: "inherited cancellation, caller live", err: fmt.Errorf("registry: request aborted: %w", context.Canceled)},
+		{name: "pacing budget refused the request", err: fmt.Errorf("%w: %w", errPacingBudget, context.DeadlineExceeded)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			if tt.callerGone {
+				cancel()
+			}
+			if got := reachedTracker(ctx, tt.err); got != tt.want {
+				t.Errorf("reachedTracker = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDeriveStatus(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, time.June, 14, 12, 0, 0, 0, time.UTC)
@@ -92,28 +128,25 @@ func TestDeriveStatus(t *testing.T) {
 		s    healthSignals
 		want string
 	}{
-		// #389: no evidence of anything is "unknown", not the old asserted "healthy".
+		// #389/#484: no evidence of anything is "unknown" — now meaning never tested,
+		// never the old asserted "healthy".
 		{name: "nothing ever observed", want: StatusUnknown},
 		{name: "recent failure", s: healthSignals{events: recent}, want: StatusFailing},
-		// Level 0 keeps the historical 1h window, so a 2h-old failure has expired —
-		// but with no success either, that expiry lands on unknown, not healthy.
-		{name: "failure past the level-0 window", s: healthSignals{events: old}, want: StatusUnknown},
-		// The window doubles per escalation rung: the same 2h-old failure still stands
-		// at level 2 (4h).
-		{name: "failure inside the level-2 window", s: healthSignals{events: old, level: 2}, want: StatusFailing},
-		// ...and is capped at 24h, so a 30h-old failure has expired even at the top rung.
-		{name: "failure past the 24h cap", s: healthSignals{events: ancient, level: maxCircuitLevel}, want: StatusUnknown},
+		// #484: health is sticky, so age alone changes nothing. A failure nobody has
+		// succeeded past still stands hours later, and a day later.
+		{name: "old failure still stands", s: healthSignals{events: old}, want: StatusFailing},
+		{name: "ancient failure still stands", s: healthSignals{events: ancient}, want: StatusFailing},
 		// A passing explicit Test is a success (#116) and clears the failure it covers.
 		{name: "recovered failure", s: healthSignals{events: recent, recovery: recovered}, want: StatusHealthy},
 		{name: "failure after recovery", s: healthSignals{events: later, recovery: recovered}, want: StatusFailing},
-		// ...but that success expires too: a test that passed yesterday proves nothing now.
+		// ...and that success does not expire either: an idle indexer keeps the last
+		// answer it gave rather than aging back to unknown (#484).
 		{
-			name: "stale recovery, no traffic",
+			name: "old recovery, no traffic since",
 			s:    healthSignals{recovery: database.HealthRecovery{ThroughEventID: 1, OccurredAt: ago(6 * time.Hour)}},
-			want: StatusUnknown,
+			want: StatusHealthy,
 		},
-		// #253: an open circuit reads failing even with no recent triggering event (a
-		// high escalation rung can outlast the failing window).
+		// #253: an open circuit reads failing even with no recorded triggering event.
 		{name: "circuit open, old failure", s: healthSignals{events: old, disabled: true}, want: StatusFailing},
 		// A search that actually SUCCEEDED after the newest failure is the newest evidence
 		// there is, so the failure no longer stands.
@@ -121,10 +154,42 @@ func TestDeriveStatus(t *testing.T) {
 		// A success in the same instant as the failure is not evidence the failure is over.
 		{name: "success tied with the failure", s: healthSignals{events: recent, lastSuccess: ago(1 * time.Minute)}, want: StatusFailing},
 		{name: "recent success, no failures", s: healthSignals{lastSuccess: ago(10 * time.Minute)}, want: StatusHealthy},
-		{name: "success past the healthy window", s: healthSignals{lastSuccess: ago(3 * time.Hour)}, want: StatusUnknown},
+		// Idle-but-previously-healthy stays healthy indefinitely (#484): the success is
+		// three hours old and nothing has been observed since.
+		{name: "old success, no traffic since", s: healthSignals{lastSuccess: ago(3 * time.Hour)}, want: StatusHealthy},
 		// #457: attempts are not successes — a stale success cannot be refreshed by the
 		// failing traffic itself, so classified failures still read failing.
 		{name: "stale success, classified failures", s: healthSignals{events: recent, lastSuccess: ago(3 * time.Hour)}, want: StatusFailing},
+		// #484 rule 3, the parameter-free catch-all: queries since the last success read
+		// failing even though NOTHING was classified, so no health event exists at all.
+		{
+			name: "queries since the last success, nothing classified",
+			s:    healthSignals{lastSuccess: ago(3 * time.Hour), lastQuery: ago(1 * time.Minute)},
+			want: StatusFailing,
+		},
+		// Never succeeded, only queried: the same rule, from a cold start.
+		{name: "queried, never succeeded", s: healthSignals{lastQuery: ago(1 * time.Minute)}, want: StatusFailing},
+		// ...and it self-heals on the next success, with no window to wait out.
+		{
+			name: "success after the failing queries",
+			s:    healthSignals{lastSuccess: ago(1 * time.Minute), lastQuery: ago(2 * time.Minute)},
+			want: StatusHealthy,
+		},
+		// A search that succeeded stamps the query first and the success microseconds
+		// later; both are truncated to the second, so the pair is a tie, not a query
+		// nothing succeeded on.
+		{
+			name: "query and success in the same second",
+			s:    healthSignals{lastSuccess: now, lastQuery: now},
+			want: StatusHealthy,
+		},
+		// A passing Test counts as the success the queries are measured against, even
+		// though it is not itself a query.
+		{
+			name: "test passed after the failing queries",
+			s:    healthSignals{recovery: recovered, lastQuery: ago(1 * time.Minute)},
+			want: StatusHealthy,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -192,29 +257,5 @@ func TestSuccessSecondGranularityTiesToTheFailure(t *testing.T) {
 				t.Errorf("deriveStatus() after restart = %q, want %q", got, tt.want)
 			}
 		})
-	}
-}
-
-// TestFailingWindow pins the level-scaled failing window: level 0 is the historical
-// 1h recency window, each rung doubles it, and it never exceeds 24h. Out-of-range
-// levels clamp rather than panic on a negative shift.
-func TestFailingWindow(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		level int
-		want  time.Duration
-	}{
-		{level: -1, want: time.Hour},
-		{level: 0, want: time.Hour},
-		{level: 1, want: 2 * time.Hour},
-		{level: 4, want: 16 * time.Hour},
-		{level: 5, want: 24 * time.Hour},
-		{level: maxCircuitLevel, want: 24 * time.Hour},
-		{level: 999, want: 24 * time.Hour},
-	}
-	for _, tt := range tests {
-		if got := failingWindow(tt.level); got != tt.want {
-			t.Errorf("failingWindow(%d) = %s, want %s", tt.level, got, tt.want)
-		}
 	}
 }
