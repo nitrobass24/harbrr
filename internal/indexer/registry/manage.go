@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"regexp"
 	"sort"
 	"strings"
@@ -501,13 +500,14 @@ func (r *Manager) List(ctx context.Context) ([]domain.IndexerInstance, error) {
 // reinserting a stale merged set. SetMaxOpenConns(1) means the tx holds the only
 // connection, serializing the RMW against that Upsert (mirrors appsync U10-F1).
 //
-// A credential change — and ONLY a credential change — queues a background probe
-// (#484): renaming an indexer or nudging its priority must not spend a login. As with
-// Add, the probe runs after the commit and a failing probe never unwinds the update.
+// A change to what the LOGIN depends on — a credential setting or the base URL — and
+// only that, queues a background probe (#484): renaming an indexer, nudging its
+// priority or flipping freeleech must not spend a login. As with Add, the probe runs
+// after the commit and a failing probe never unwinds the update.
 func (r *Manager) Update(ctx context.Context, slug string, p UpdateParams) error {
 	var (
-		instID       int64
-		credsChanged bool
+		instID     int64
+		needsProbe bool
 	)
 	err := r.inTx(ctx, func(tx dbinterface.TxQuerier) error {
 		inst, err := r.instances.GetBySlug(ctx, tx, slug)
@@ -515,7 +515,7 @@ func (r *Manager) Update(ctx context.Context, slug string, p UpdateParams) error
 			return fmt.Errorf("registry: update %q: %w", slug, err)
 		}
 		instID = inst.ID
-		credsChanged, err = r.updateInTx(ctx, tx, inst, p)
+		needsProbe, err = r.updateInTx(ctx, tx, inst, p)
 		return err
 	})
 	if err != nil {
@@ -529,7 +529,7 @@ func (r *Manager) Update(ctx context.Context, slug string, p UpdateParams) error
 	}
 	r.evicter.invalidate(slug)
 	r.evicter.invalidateSearchCache(ctx, instID)
-	if credsChanged {
+	if needsProbe {
 		r.enqueueProbe(slug)
 	}
 	return nil
@@ -539,8 +539,8 @@ func (r *Manager) Update(ctx context.Context, slug string, p UpdateParams) error
 // the caller's transaction. The current settings are read (via tx) and merged
 // here — inside the tx — so the read → merge → delete → reinsert is one atomic
 // unit that can't lose a concurrent single-setting Upsert. mergeSettings only
-// touches the keyring (no DB), so it is safe within the tx. It reports whether the
-// instance's effective credentials changed, which is Update's probe trigger.
+// touches the keyring (no DB), so it is safe within the tx. It reports whether anything
+// the LOGIN depends on changed, which is Update's probe trigger.
 func (r *Manager) updateInTx(ctx context.Context, tx dbinterface.TxQuerier, inst domain.IndexerInstance, p UpdateParams) (bool, error) {
 	merged, credsChanged, err := r.mergeConfig(ctx, tx, inst, p)
 	if err != nil {
@@ -550,6 +550,10 @@ func (r *Manager) updateInTx(ctx context.Context, tx dbinterface.TxQuerier, inst
 	if err != nil {
 		return false, err
 	}
+	// The base URL joins the credentials as a probe trigger: it is the field most likely
+	// to break auth — a mirror that needs its own session, or a typo that reaches nothing
+	// at all — and an operator changes it precisely when a tracker has moved.
+	needsProbe := credsChanged || meta.BaseURL != inst.BaseURL
 	if err := r.instances.UpdateMeta(ctx, tx, inst.ID, meta, r.clock()); err != nil {
 		return false, fmt.Errorf("registry: update meta: %w", err)
 	}
@@ -568,12 +572,12 @@ func (r *Manager) updateInTx(ctx context.Context, tx dbinterface.TxQuerier, inst
 			return false, fmt.Errorf("registry: write setting %q: %w", s.Name, err)
 		}
 	}
-	return credsChanged, nil
+	return needsProbe, nil
 }
 
 // mergeConfig reads the instance's stored settings through the caller's tx, overlays
-// the patch, validates the result, and reports whether the DECRYPTED configuration
-// actually changed. Comparing the decrypted maps — not the patch's keys, and not the
+// the patch, validates the result, and reports whether the DECRYPTED credentials
+// actually changed. Comparing the decrypted values — not the patch's keys, and not the
 // stored blobs (encryption is nondeterministic, so identical plaintext yields
 // different ciphertext every write) — is what makes Update's probe trigger honest: a
 // PATCH that resubmits the same form, or leaves the password as the redacted
@@ -602,7 +606,39 @@ func (r *Manager) mergeConfig(ctx context.Context, tx dbinterface.TxQuerier, ins
 	if err := validateRequiredSettings(settingFields(def), cfg); err != nil {
 		return nil, false, err
 	}
-	return merged, !maps.Equal(before, cfg), nil
+	return merged, credentialChanged(settingFields(def), before, cfg), nil
+}
+
+// credentialChanged reports whether any setting the LOGIN depends on differs between
+// the two decrypted configs. Both sides are scanned, so a key only one of them holds
+// still counts.
+func credentialChanged(fields map[string]loader.SettingsField, before, after map[string]string) bool {
+	for _, cfg := range []map[string]string{before, after} {
+		for name := range cfg {
+			if isCredential(name, fields) && before[name] != after[name] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// isCredential reports whether a setting decides whether harbrr can AUTHENTICATE: every
+// value the at-rest classifier calls a secret (password/cookie/apikey/passkey/2fa/…,
+// plus proxy_url and flaresolverr_url, which decide whether the login can reach the
+// tracker at all), and the definition's other TEXT inputs — a username or an email is
+// not a secret but is certainly a credential.
+//
+// Everything else is deliberately excluded, which is the narrowing #484 needs: a
+// definition's toggles and enums (freeleech, sort order) and the daemon's undeclared
+// knobs (cache_ttl, the rate/budget keys) change how harbrr QUERIES an indexer, never
+// whether it can log in, so they must not spend a login.
+func isCredential(name string, fields map[string]loader.SettingsField) bool {
+	if classifySecret(name, fields) {
+		return true
+	}
+	f, ok := fields[name]
+	return ok && (f.Type == "" || f.Type == "text")
 }
 
 // SetEnabled enables/disables an instance and invalidates its cached engine. It

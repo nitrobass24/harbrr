@@ -63,12 +63,16 @@ func newProbedRegistry(t *testing.T, doer search.Doer) (*registry.Registry, *dat
 	return registry.New(db, loader.New(dropin), keyring, nil, opts...), db, rec
 }
 
+// fixtureBaseURL is the base URL addProbed creates the fixture indexer with, so a patch
+// can resubmit it unchanged or move it.
+const fixtureBaseURL = "https://html.invalid/"
+
 // addProbed creates the shared fixture indexer and returns the recorder's state reset
 // to empty, so a following Update assertion sees only its own enqueues.
 func addProbed(t *testing.T, reg *registry.Registry, rec *probeRecorder, settings map[string]string) {
 	t.Helper()
 	if _, err := reg.Add(context.Background(), registry.AddParams{
-		Slug: "tt", DefinitionID: "testtracker", Settings: settings,
+		Slug: "tt", DefinitionID: "testtracker", BaseURL: fixtureBaseURL, Settings: settings,
 	}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -95,13 +99,16 @@ func TestAddEnqueuesProbe(t *testing.T) {
 	}
 }
 
-// TestUpdateEnqueuesProbeOnlyOnCredentialChange is the trigger's whole point: a login
-// is spent when the credentials actually change, and never for a rename, a priority
-// nudge, or a form resubmit that left the secret as the redacted sentinel.
-func TestUpdateEnqueuesProbeOnlyOnCredentialChange(t *testing.T) {
+// TestUpdateEnqueuesProbeOnlyOnLoginChange is the trigger's whole point: a login is
+// spent when something the LOGIN depends on changes — a credential or the base URL —
+// and never for a rename, a priority nudge, a sort-order flip, or a form resubmit that
+// left the secret as the redacted sentinel.
+func TestUpdateEnqueuesProbeOnlyOnLoginChange(t *testing.T) {
 	t.Parallel()
 	name := "Renamed"
 	priority := 10
+	sameURL := fixtureBaseURL
+	movedURL := "https://mirror.invalid/"
 
 	tests := []struct {
 		name  string
@@ -119,13 +126,25 @@ func TestUpdateEnqueuesProbeOnlyOnCredentialChange(t *testing.T) {
 			patch: registry.UpdateParams{Settings: map[string]string{"apikey": "k1", "sort": "seeders"}},
 		},
 		{
+			// A daemon knob the definition never declares: it changes how harbrr QUERIES
+			// the indexer, not whether it can log in. (The fixture's own "sort" is
+			// declared type: text, and every text input a definition collects counts as a
+			// credential — that is where username lives.)
+			name:  "non-credential setting changed",
+			patch: registry.UpdateParams{Settings: map[string]string{"cache_ttl": "600"}},
+		},
+		{
+			name:  "base URL resubmitted unchanged",
+			patch: registry.UpdateParams{BaseURL: &sameURL},
+		},
+		{
 			name:  "credential changed",
 			patch: registry.UpdateParams{Settings: map[string]string{"apikey": "k2"}},
 			want:  true,
 		},
 		{
-			name:  "plain setting changed",
-			patch: registry.UpdateParams{Settings: map[string]string{"sort": "size"}},
+			name:  "base URL changed",
+			patch: registry.UpdateParams{BaseURL: &movedURL},
 			want:  true,
 		},
 	}
