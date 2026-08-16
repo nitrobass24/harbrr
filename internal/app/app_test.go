@@ -63,6 +63,7 @@ func TestNewBootsAndServesHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	t.Cleanup(func() { _ = a.db.Close() })
 
 	ts := httptest.NewServer(a.Handler())
 	t.Cleanup(ts.Close)
