@@ -204,6 +204,9 @@ func (rt *router) grabPayload(w http.ResponseWriter, r *http.Request, idx core.I
 		rt.writeResolveGrabError(w, info.ID, err)
 		return download.Payload{}, false
 	}
+	// A caller that sent no title still gets a named job: the sealed token carries the
+	// release title, so only a legacy token falls back to the indexer ID.
+	p.Name = cmp.Or(req.Name, grabbed.Name, info.ID)
 	if grabbed.Magnet != "" {
 		p.URL = grabbed.Magnet
 		return p, true
