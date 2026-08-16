@@ -28,8 +28,14 @@ func dlTokenPurpose(indexerID string) string {
 	return "dl-proxy:" + indexerID
 }
 
+// cleanedDefaultName is what pathologize.Clean substitutes when nothing usable
+// remains of the input — derived, not hard-coded, so a dep upgrade that renames
+// the sentinel can't silently break the emptiness check below.
+var cleanedDefaultName = pathologize.Clean("")
+
 // downloadName converts an untrusted release title into a cross-platform filename
-// stem. A blank title stays empty so callers can apply their explicit fallback.
+// stem. A title with no usable content — blank, or one Clean reduces to its default
+// sentinel (`???`, `..`) — stays empty so callers can apply their explicit fallback.
 //
 // pathologize.Clean caps a name at 255 bytes; we need room for the extension on top,
 // so a long title is cut further here. Every cut is re-cleaned: cutting can expose a
@@ -40,6 +46,9 @@ func downloadName(title string) string {
 		return ""
 	}
 	name := pathologize.Clean(title)
+	if name == cleanedDefaultName && !strings.EqualFold(strings.TrimSpace(title), cleanedDefaultName) {
+		return ""
+	}
 	for len(name) > maxDownloadNameBytes {
 		_, size := utf8.DecodeLastRuneInString(name)
 		name = pathologize.Clean(name[:len(name)-size])

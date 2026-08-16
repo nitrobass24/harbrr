@@ -186,7 +186,7 @@ func announceReleasesFor(conn domain.AnnounceConnection, svc *announce.Service, 
 	for _, s := range snap {
 		dl := s.magnet
 		if dl == "" && s.link != "" {
-			sealed, serr := torznabhttp.SealedDLURL(keyring, slug, dlBase, harbrrKey, s.link)
+			sealed, serr := torznabhttp.SealedDLURL(keyring, slug, dlBase, harbrrKey, s.name, s.link)
 			if serr != nil {
 				// The error never carries the link, and the guid is scrubbed: for
 				// passkey-in-GUID trackers (FileList-style) the guid IS the

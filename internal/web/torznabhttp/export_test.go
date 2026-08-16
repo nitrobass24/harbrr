@@ -125,23 +125,38 @@ func TestNewManagementDLRewriterSealsTitle(t *testing.T) {
 	}
 }
 
-func TestSealedDLURLHasEmptyNameMetadata(t *testing.T) {
+func TestSealedDLURLNameMetadata(t *testing.T) {
 	t.Parallel()
 	kr := encryptedKeyring(t)
-	link, err := SealedDLURL(kr, "demo", "http://h.test/api/indexers/demo/dl", "callerkey", "https://demo.test/download/1")
-	if err != nil {
-		t.Fatalf("SealedDLURL: %v", err)
+	tests := []struct {
+		name     string
+		title    string
+		wantName string
+	}{
+		// The announce path passes the release name it has in hand, so the
+		// eventual grab is named after the release, not the indexer.
+		{name: "release title seals its stem", title: "Release.Name.2026", wantName: "Release.Name.2026"},
+		{name: "titleless caller stays empty for the fallback", title: "", wantName: ""},
 	}
-	u, err := url.Parse(link)
-	if err != nil {
-		t.Fatalf("parse sealed URL: %v", err)
-	}
-	payload, err := decodeDLToken(kr, "demo", u.Query().Get("token"))
-	if err != nil {
-		t.Fatalf("decodeDLToken: %v", err)
-	}
-	if payload.name != "" {
-		t.Errorf("name metadata = %q, want empty", payload.name)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			link, err := SealedDLURL(kr, "demo", "http://h.test/api/indexers/demo/dl", "callerkey", tt.title, "https://demo.test/download/1")
+			if err != nil {
+				t.Fatalf("SealedDLURL: %v", err)
+			}
+			u, err := url.Parse(link)
+			if err != nil {
+				t.Fatalf("parse sealed URL: %v", err)
+			}
+			payload, err := decodeDLToken(kr, "demo", u.Query().Get("token"))
+			if err != nil {
+				t.Fatalf("decodeDLToken: %v", err)
+			}
+			if payload.name != tt.wantName {
+				t.Errorf("name metadata = %q, want %q", payload.name, tt.wantName)
+			}
+		})
 	}
 }
 

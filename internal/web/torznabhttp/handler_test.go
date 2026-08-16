@@ -963,7 +963,7 @@ func TestServeGrab(t *testing.T) {
 				title:       "Release.Name.2026",
 				contentType: torrentContentType,
 				body:        "d0:e",
-				wantCD:      "attachment; filename=Release.Name.2026.torrent",
+				wantCD:      `attachment; filename="Release.Name.2026.torrent"`,
 			},
 			{
 				name:        "NZB extension",
@@ -973,39 +973,46 @@ func TestServeGrab(t *testing.T) {
 				wantCD:      `attachment; filename="Usenet Release.nzb"`,
 			},
 			{
-				name:        "Unicode RFC filename",
+				// A plain-ASCII fallback rides along with the RFC 5987 form: a
+				// consumer that predates filename* would otherwise see no
+				// filename at all and save under the opaque token.
+				name:        "Unicode dual filename",
 				title:       "猫と犬",
 				contentType: torrentContentType,
 				body:        "d0:e",
-				wantCD:      "attachment; filename*=utf-8''%E7%8C%AB%E3%81%A8%E7%8A%AC.torrent",
+				wantCD:      `attachment; filename="___.torrent"; filename*=utf-8''%E7%8C%AB%E3%81%A8%E7%8A%AC.torrent`,
 			},
 			{
 				name:        "unsafe characters",
 				title:       "Bad/Name\\With:Chars*?\"<>|\x00",
 				contentType: torrentContentType,
 				body:        "d0:e",
-				wantCD:      "attachment; filename=BadNameWithChars.torrent",
+				wantCD:      `attachment; filename="BadNameWithChars.torrent"`,
 			},
 			{
 				name:        "reserved name",
 				title:       "CON",
 				contentType: torrentContentType,
 				body:        "d0:e",
-				wantCD:      "attachment; filename=CON_.torrent",
+				wantCD:      `attachment; filename="CON_.torrent"`,
 			},
 			{
-				name:        "traversal-like title",
+				// A title that sanitizes to nothing seals an empty stem, so the
+				// indexer-ID fallback names the download — never pathologize's
+				// generic "file" sentinel.
+				name:        "traversal-like title falls back to indexer ID",
 				title:       "..",
 				contentType: torrentContentType,
 				body:        "d0:e",
-				wantCD:      "attachment; filename=file.torrent",
+				wantCD:      `attachment; filename="demo.torrent"`,
 			},
 			{
 				name:        "long UTF-8 title",
 				title:       strings.Repeat("界", 100),
 				contentType: torrentContentType,
 				body:        "d0:e",
-				wantCD:      "attachment; filename*=utf-8''" + strings.Repeat("%E7%95%8C", 82) + ".torrent",
+				wantCD: `attachment; filename="` + strings.Repeat("_", 82) + `.torrent"` +
+					"; filename*=utf-8''" + strings.Repeat("%E7%95%8C", 82) + ".torrent",
 			},
 		}
 		for _, tt := range tests {
@@ -1050,7 +1057,7 @@ func TestServeGrab(t *testing.T) {
 				if rec.Code != http.StatusOK {
 					t.Fatalf("status = %d, want 200", rec.Code)
 				}
-				if got := rec.Header().Get("Content-Disposition"); got != "attachment; filename=demo.torrent" {
+				if got := rec.Header().Get("Content-Disposition"); got != `attachment; filename="demo.torrent"` {
 					t.Errorf("Content-Disposition = %q, want indexer fallback", got)
 				}
 			})

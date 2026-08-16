@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/rs/zerolog"
 
@@ -242,11 +243,55 @@ func ServeGrab(w http.ResponseWriter, r *http.Request, idx core.Indexer, dlToken
 		ext = ".nzb"
 	}
 	name := cmp.Or(p.Name, idx.Info().ID)
-	// FormatMediaType only fails on a non-token media type or attribute name, both
-	// literals here, so it always renders: it quotes or RFC 2231-encodes any stem.
-	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name + ext}))
+	w.Header().Set("Content-Disposition", contentDispositionAttachment(name+ext))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(p.Body) //nolint:gosec // G705: torrent file served as application/x-bittorrent, fixed non-HTML content type
+}
+
+// contentDispositionAttachment renders an attachment Content-Disposition carrying
+// BOTH a plain-ASCII filename and, when the name needs it, the RFC 5987 filename*
+// form. mime.FormatMediaType alone emits ONLY filename* for a non-ASCII name — a
+// consumer that predates RFC 5987 then sees no filename at all and falls back to
+// the URL's last path segment, which here is an opaque token (Jackett, the parity
+// target, always ships a plain filename). The name comes from pathologize.Clean or
+// an indexer ID, so it carries no quotes, backslashes, or control bytes and can be
+// quoted verbatim.
+func contentDispositionAttachment(filename string) string {
+	plain := `attachment; filename="` + asciiApprox(filename) + `"`
+	if isASCII(filename) {
+		return plain
+	}
+	// Reuse the stdlib's RFC 2231/5987 encoder for the extended form; it renders
+	// `attachment; filename*=utf-8''…` for any non-ASCII value.
+	extended := mime.FormatMediaType("attachment", map[string]string{"filename": filename})
+	return plain + strings.TrimPrefix(extended, "attachment")
+}
+
+func isASCII(s string) bool {
+	for i := range len(s) {
+		if s[i] >= utf8.RuneSelf {
+			return false
+		}
+	}
+	return true
+}
+
+// asciiApprox substitutes '_' for every non-ASCII rune — the legacy-consumer
+// fallback next to the exact filename* form.
+func asciiApprox(s string) string {
+	if isASCII(s) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if r < utf8.RuneSelf {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
 }
 
 // writeGrabError renders a ResolveGrab failure through the caller's ErrorWriter and

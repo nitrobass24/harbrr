@@ -63,13 +63,15 @@ func FeedURL(r *http.Request, cfg URLConfig, indexerID string, bypass bool) stri
 // SealedDLURL builds an absolute, fetchable /dl proxy URL for an original (passkey-bearing)
 // download link: it seals the link into an opaque token bound to indexerID under kr, then
 // appends the apikey. The URL resolves and fetches the torrent server-side, so the passkey
-// never leaves harbrr. dlBase is the absolute /dl endpoint (origin + base path +
-// /api/indexers/<id>/dl). Used by the cross-seed announce source to hand a cross-seed
-// tool a link it can fetch without seeing the passkey. The error never carries the link.
-func SealedDLURL(kr *secrets.Keyring, indexerID, dlBase, apiKey, originalLink string) (string, error) {
-	// No release in hand here (the announce source carries a bare link), so the grab is
-	// tallied as uncategorised.
-	token, err := encodeDLToken(kr, indexerID, mapper.UncategorizedID, "", originalLink)
+// never leaves harbrr. title is the release title (empty when the caller genuinely has
+// none), sealed so the eventual grab is named after the release. dlBase is the absolute
+// /dl endpoint (origin + base path + /api/indexers/<id>/dl). Used by the cross-seed
+// announce source to hand a cross-seed tool a link it can fetch without seeing the
+// passkey. The error never carries the link.
+func SealedDLURL(kr *secrets.Keyring, indexerID, dlBase, apiKey, title, originalLink string) (string, error) {
+	// The announce source carries no category metadata, so the grab is tallied as
+	// uncategorised.
+	token, err := encodeDLToken(kr, indexerID, mapper.UncategorizedID, title, originalLink)
 	if err != nil {
 		return "", err
 	}
