@@ -53,11 +53,26 @@ func downloadName(title string) string {
 	if name == cleanedDefaultName && !strings.EqualFold(strings.TrimSpace(title), cleanedDefaultName) {
 		return ""
 	}
-	for len(name) > maxDownloadNameBytes {
+	return truncateDownloadName(name, maxDownloadNameBytes)
+}
+
+func truncateDownloadName(name string, maxBytes int) string {
+	for len(name) > maxBytes {
 		_, size := utf8.DecodeLastRuneInString(name)
 		name = pathologize.Clean(name[:len(name)-size])
 	}
 	return name
+}
+
+// downloadAttachmentName adds the source indexer to a title-derived stem so
+// equal titles from different indexers do not collide. The title is trimmed
+// again to keep the suffix and extension inside the portable filename limit.
+func downloadAttachmentName(name, indexerID string) string {
+	if name == "" {
+		return indexerID
+	}
+	suffix := " [" + indexerID + "]"
+	return truncateDownloadName(name, maxDownloadNameBytes-len(suffix)) + suffix
 }
 
 // parseDLTokenPayload parses the JSON payload and accepts both unversioned legacy

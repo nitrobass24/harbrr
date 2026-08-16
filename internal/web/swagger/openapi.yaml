@@ -736,9 +736,9 @@ paths:
           headers:
             Content-Disposition:
               description: >
-                Attachment filename derived from the sanitized release title and
-                protocol extension; tokens without title metadata fall back to the
-                configured indexer ID plus .torrent or .nzb.
+                Attachment filename derived from the sanitized release title, suffixed
+                with the configured indexer ID, and protocol extension; tokens without
+                title metadata fall back to the indexer ID plus .torrent or .nzb.
               schema: { type: string }
           content:
             application/x-bittorrent:
@@ -1613,9 +1613,9 @@ paths:
           headers:
             Content-Disposition:
               description: >
-                Attachment filename derived from the sanitized release title and
-                protocol extension; tokens without title metadata fall back to the
-                configured indexer ID plus .torrent or .nzb.
+                Attachment filename derived from the sanitized release title, suffixed
+                with the configured indexer ID, and protocol extension; tokens without
+                title metadata fall back to the indexer ID plus .torrent or .nzb.
               schema: { type: string }
           content:
             application/x-bittorrent:

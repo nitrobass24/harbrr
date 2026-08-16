@@ -1,7 +1,6 @@
 package torznabhttp
 
 import (
-	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -221,8 +220,8 @@ func torznabGrabError(w http.ResponseWriter, status int, msg string) {
 // generic; the link/passkey never reaches a log, error body, or redirect. A nil
 // keyring means the proxy is disabled -> 503. The resolve itself is ResolveGrab, which
 // the management "send to download client" route calls without an http.ResponseWriter.
-// Byte responses use the token's safe title-derived filename, falling back to the
-// indexer ID when title metadata is absent.
+// Byte responses use the token's safe title-derived filename suffixed with the
+// indexer ID, falling back to the indexer ID when title metadata is absent.
 func ServeGrab(w http.ResponseWriter, r *http.Request, idx core.Indexer, dlToken *secrets.Keyring, log zerolog.Logger, token string, errw ErrorWriter) {
 	p, err := ResolveGrab(r.Context(), idx, dlToken, token)
 	if err != nil {
@@ -242,7 +241,7 @@ func ServeGrab(w http.ResponseWriter, r *http.Request, idx core.Indexer, dlToken
 	if p.ContentType != torrentContentType {
 		ext = ".nzb"
 	}
-	name := cmp.Or(p.Name, idx.Info().ID)
+	name := downloadAttachmentName(p.Name, idx.Info().ID)
 	w.Header().Set("Content-Disposition", contentDispositionAttachment(name+ext))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(p.Body) //nolint:gosec // G705: torrent file served as application/x-bittorrent, fixed non-HTML content type
