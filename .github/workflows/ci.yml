@@ -399,7 +399,13 @@ jobs:
     steps:
       - name: install container prerequisites (gcompat for GHA's Node runtime, git for checkout/go mod, tar for golangci-lint-action's cache)
         run: apk add --no-cache gcompat git tar
+      # Linting runs no git operations of its own after checkout, so don't leave the
+      # GITHUB_TOKEN readable in .git/config — same posture as every other job here.
+      # only-new-issues is unaffected: golangci-lint-action reads the base diff through
+      # the API with its own token, not through the persisted git credential.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # The container's Go must satisfy go.mod. It normally does — the image tag is
       # derived from go.mod — but a desync used to degrade silently rather than fail:
       # with GOTOOLCHAIN=local an older Go cannot load the packages, golangci-lint fell
