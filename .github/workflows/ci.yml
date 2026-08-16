@@ -22,10 +22,12 @@ permissions:
   contents: read
 
 env:
-  # Bumping Go means three places: this, `go 1.x.y` in go.mod, and the two
-  # golang:<version>-alpine container images below. The images cannot read this
-  # value (container.image has no env context), so each Go job asserts its
-  # toolchain against go.mod instead — a forgotten image bump fails loud there.
+  # go.mod is the source of truth for the Go version: every setup-go step reads it
+  # via go-version-file (autobrr/qui's pattern), so a bump there needs no CI edit.
+  # This value only salts the build/module cache keys below, and the two
+  # golang:<version>-alpine images — neither can read go.mod, since a container tag
+  # is resolved before any step runs. Both Go jobs therefore assert their toolchain
+  # against go.mod, so a stale image fails loud instead of degrading silently.
   GO_VERSION: 1.26.6
   # A stalled cache-blob download (0 MB/s mid-transfer, seen from the self-hosted
   # fleet) otherwise hangs for actions/cache's default 10-minute segment timeout
@@ -317,7 +319,9 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: ${{ env.GO_VERSION }}
+          # Single source of truth (autobrr/qui's pattern): setup-go reads the
+          # version straight from go.mod, so a bump there needs no CI edit.
+          go-version-file: go.mod
           # Container job: /root does not persist between runs — cache via
           # actions/cache below (setup-go's cache needs a writable hosttoolcache).
           cache: false
@@ -436,7 +440,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: ${{ env.GO_VERSION }}
+          # Single source of truth (autobrr/qui's pattern): setup-go reads the
+          # version straight from go.mod, so a bump there needs no CI edit.
+          go-version-file: go.mod
           # Host job on the shared persistent self-hosted fleet: GOMODCACHE/GOCACHE
           # already persist in /root between runs, so a GHA cache round-trip is pure
           # overhead. Container jobs that need caching (backend-test) use actions/cache.
@@ -484,7 +490,9 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: ${{ env.GO_VERSION }}
+          # Single source of truth (autobrr/qui's pattern): setup-go reads the
+          # version straight from go.mod, so a bump there needs no CI edit.
+          go-version-file: go.mod
           # Host job on the shared persistent self-hosted fleet: GOMODCACHE/GOCACHE
           # already persist in /root between runs, so a GHA cache round-trip is pure
           # overhead. Container jobs that need caching (backend-test) use actions/cache.
@@ -552,7 +560,9 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: ${{ env.GO_VERSION }}
+          # Single source of truth (autobrr/qui's pattern): setup-go reads the
+          # version straight from go.mod, so a bump there needs no CI edit.
+          go-version-file: go.mod
           # Host job on the shared persistent self-hosted fleet: GOMODCACHE/GOCACHE
           # already persist in /root between runs, so a GHA cache round-trip is pure
           # overhead. Container jobs that need caching (backend-test) use actions/cache.
@@ -747,7 +757,9 @@ jobs:
           fetch-depth: 0 # full history so the changelog can diff against the previous tag
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: ${{ env.GO_VERSION }}
+          # Single source of truth (autobrr/qui's pattern): setup-go reads the
+          # version straight from go.mod, so a bump there needs no CI edit.
+          go-version-file: go.mod
           # Host job on the shared persistent self-hosted fleet: GOMODCACHE/GOCACHE
           # already persist in /root between runs, so a GHA cache round-trip is pure
           # overhead. Container jobs that need caching (backend-test) use actions/cache.
