@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"mime"
 	"net/http"
 	"net/url"
 	"strings"
@@ -218,6 +219,8 @@ func torznabGrabError(w http.ResponseWriter, status int, msg string) {
 // generic; the link/passkey never reaches a log, error body, or redirect. A nil
 // keyring means the proxy is disabled -> 503. The resolve itself is ResolveGrab, which
 // the management "send to download client" route calls without an http.ResponseWriter.
+// Byte responses use the token's safe title-derived filename, falling back to the
+// indexer ID when title metadata is absent.
 func ServeGrab(w http.ResponseWriter, r *http.Request, idx core.Indexer, dlToken *secrets.Keyring, log zerolog.Logger, token string, errw ErrorWriter) {
 	p, err := ResolveGrab(r.Context(), idx, dlToken, token)
 	if err != nil {
@@ -237,7 +240,15 @@ func ServeGrab(w http.ResponseWriter, r *http.Request, idx core.Indexer, dlToken
 	if p.ContentType != torrentContentType {
 		ext = ".nzb"
 	}
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+idx.Info().ID+ext+"\"")
+	name := p.Name
+	if name == "" {
+		name = idx.Info().ID
+	}
+	disposition := mime.FormatMediaType("attachment", map[string]string{"filename": name + ext})
+	if disposition == "" {
+		disposition = mime.FormatMediaType("attachment", map[string]string{"filename": idx.Info().ID + ext})
+	}
+	w.Header().Set("Content-Disposition", disposition)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(p.Body) //nolint:gosec // G705: torrent file served as application/x-bittorrent, fixed non-HTML content type
 }
@@ -273,6 +284,9 @@ type GrabPayload struct {
 	Body        []byte
 	ContentType string
 	Magnet      string
+	// Name is the sanitized filename stem sealed with the token. It is empty for
+	// legacy tokens and callers that had no release title.
+	Name string
 }
 
 // The closed set of ResolveGrab failures a caller maps to its own status codes.
@@ -303,26 +317,21 @@ var errNonMagnetRedirect = errors.New("grab returned a non-magnet redirect")
 // ever carries the link.
 //
 // The decoded link is trusted because the token is AEAD-authenticated under the keyring
-// (only harbrr could mint it) and the endpoint is auth-gated. In plaintext mode (no key,
-// opt-in behind a loud startup warning) the token is not authenticated, so a forged
-// base64url(link) is accepted — a known SSRF already accepted by the plaintext threat
-// model (which also accepts recoverable-at-rest secrets). Note the management route is a
-// CSRF-exempt GET reached with a SameSite=Lax session cookie, so in plaintext mode that
-// SSRF is additionally reachable via an admin's ambient session; encrypted mode (the
-// default) forecloses it — a token cannot be forged. We do not host-filter the link: a
-// self-hosted operator may run a private/LAN tracker, so a filter would break legitimate
-// setups for little gain.
+// (only harbrr could mint it) and the endpoint is auth-gated. Plaintext credential mode
+// still authenticates download tokens with a process-local transient key, so its tokens
+// expire across restarts. We do not host-filter the link: a self-hosted operator may run
+// a private/LAN tracker, so a filter would break legitimate setups for little gain.
 func ResolveGrab(ctx context.Context, idx core.Indexer, dlToken *secrets.Keyring, token string) (GrabPayload, error) {
 	if dlToken == nil {
 		return GrabPayload{}, ErrProxyDisabled
 	}
-	categoryID, link, err := decodeDLToken(dlToken, idx.Info().ID, token)
+	payload, err := decodeDLToken(dlToken, idx.Info().ID, token)
 	if err != nil {
 		return GrabPayload{}, ErrInvalidToken
 	}
 	// The sealed category rides through on the context so the stats layer can tally the
 	// grab under the release's family without widening the Indexer contract (#403).
-	result, err := idx.Grab(core.WithGrabCategory(ctx, categoryID), link)
+	result, err := idx.Grab(core.WithGrabCategory(ctx, payload.categoryID), payload.link)
 	if err != nil {
 		return GrabPayload{}, err //nolint:wrapcheck // the caller renders this generically; wrapping would add link-adjacent context.
 	}
@@ -330,13 +339,13 @@ func ResolveGrab(ctx context.Context, idx core.Indexer, dlToken *secrets.Keyring
 		if !strings.HasPrefix(result.Redirect, "magnet:") {
 			return GrabPayload{}, errNonMagnetRedirect
 		}
-		return GrabPayload{Magnet: result.Redirect}, nil
+		return GrabPayload{Magnet: result.Redirect, Name: payload.name}, nil
 	}
 	ct := result.ContentType
 	if ct == "" {
 		ct = torrentContentType
 	}
-	p := GrabPayload{Body: result.Body, ContentType: ct}
+	p := GrabPayload{Body: result.Body, ContentType: ct, Name: payload.name}
 	// Serve boundary (Jackett's DownloadController analogue): a torrent body must be a
 	// bencoded dictionary before it is served as a .torrent. When the session has
 	// expired, the .torrent fetch 302s to the login page and the client follows it

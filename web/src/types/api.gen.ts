@@ -3606,6 +3606,8 @@ export interface operations {
             /** @description the torrent/nzb file bytes */
             200: {
                 headers: {
+                    /** @description Attachment filename derived from the sanitized release title and protocol extension; tokens without title metadata fall back to the configured indexer ID plus .torrent or .nzb. */
+                    "Content-Disposition"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -4801,6 +4803,8 @@ export interface operations {
             /** @description The torrent file (application/x-bittorrent) on success. Unlike the caps/search feed, the /dl route returns real HTTP status codes for gate failures (matching Jackett's DownloadController), so *arr surfaces them as transport errors rather than accepting a 200 that later fails as an invalid torrent file. */
             200: {
                 headers: {
+                    /** @description Attachment filename derived from the sanitized release title and protocol extension; tokens without title metadata fall back to the configured indexer ID plus .torrent or .nzb. */
+                    "Content-Disposition"?: string;
                     [name: string]: unknown;
                 };
                 content: {

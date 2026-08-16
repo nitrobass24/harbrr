@@ -19,6 +19,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/core"
 	"github.com/autobrr/harbrr/internal/secrets"
+	"github.com/autobrr/harbrr/internal/web/torznabhttp"
 )
 
 // keyLink is a synthetic passkey-bearing download link (test only).
@@ -29,6 +30,7 @@ type fakeSearchIndexer struct {
 	id                string
 	needsResolver     bool
 	downloadNeedsAuth bool
+	grabbedLink       *string
 }
 
 func (f fakeSearchIndexer) Info() core.IndexerInfo             { return core.IndexerInfo{ID: f.id} }
@@ -42,8 +44,11 @@ func (f fakeSearchIndexer) DownloadNeedsAuth() bool    { return f.downloadNeedsA
 func (f fakeSearchIndexer) SupportsOffsetPaging() bool { return false }
 func (f fakeSearchIndexer) ConsumesSearchMode() bool   { return false }
 
-func (f fakeSearchIndexer) Grab(context.Context, string) (*search.GrabResult, error) {
-	return &search.GrabResult{}, nil // unused by the link-resolution tests
+func (f fakeSearchIndexer) Grab(_ context.Context, link string) (*search.GrabResult, error) {
+	if f.grabbedLink != nil {
+		*f.grabbedLink = link
+	}
+	return &search.GrabResult{Body: []byte("d0:e"), ContentType: "application/x-bittorrent"}, nil
 }
 
 func testKeyring(t *testing.T) *secrets.Keyring {
@@ -262,26 +267,35 @@ func TestResolveSearchLinksSealsResolverLink(t *testing.T) {
 	} {
 		t.Run(src.name, func(t *testing.T) {
 			t.Parallel()
-			rels := []*normalizer.Release{{Title: "X", Link: keyLink}}
+			const title = "ReleaseTitleSentinel"
+			rels := []*normalizer.Release{{Title: title, Link: keyLink}}
 			out := rt.resolveSearchLinks(src.req(t), idx, rels)
 			if len(out) != 1 {
 				t.Fatalf("got %d releases", len(out))
 			}
-			if strings.Contains(out[0].Link, "SECRETPASSKEY777") {
-				t.Fatalf("passkey leaked into the JSON link: %q", out[0].Link)
+			if strings.Contains(out[0].Link, "SECRETPASSKEY777") || strings.Contains(out[0].Link, title) {
+				t.Fatalf("passkey or title leaked into the JSON link: %q", out[0].Link)
 			}
 			i := strings.Index(out[0].Link, dlBase)
 			if i < 0 {
 				t.Fatalf("link not routed through the management download route: %q", out[0].Link)
 			}
-			if token := out[0].Link[i+len(dlBase):]; token == "" {
+			token := out[0].Link[i+len(dlBase):]
+			if token == "" {
 				t.Errorf("sealed link missing the opaque token: %q", out[0].Link)
 			}
 			if strings.Contains(out[0].Link, "apikey=") {
 				t.Errorf("management link must carry no apikey: %q", out[0].Link)
 			}
-			if rels[0].Link != keyLink {
+			if rels[0].Link != keyLink || rels[0].Title != title {
 				t.Error("source release was mutated (expected a copy)")
+			}
+			payload, err := torznabhttp.ResolveGrab(t.Context(), idx, rt.dlToken, token)
+			if err != nil {
+				t.Fatalf("ResolveGrab: %v", err)
+			}
+			if payload.Name != title {
+				t.Errorf("sealed name = %q, want %q", payload.Name, title)
 			}
 		})
 	}
@@ -350,14 +364,16 @@ func TestResolveSearchLinksMagnetAsIs(t *testing.T) {
 func TestSealByOriginSealsEachReleaseToItsOwnMember(t *testing.T) {
 	t.Parallel()
 	rt := &router{dlToken: testKeyring(t)}
-	alpha := fakeSearchIndexer{id: "alpha", needsResolver: true}
-	beta := fakeSearchIndexer{id: "beta", needsResolver: true}
+	var alphaGrabbed, betaGrabbed string
+	alpha := fakeSearchIndexer{id: "alpha", needsResolver: true, grabbedLink: &alphaGrabbed}
+	beta := fakeSearchIndexer{id: "beta", needsResolver: true, grabbedLink: &betaGrabbed}
 	const magnet = "magnet:?xt=urn:btih:abc"
+	wantLink := []string{keyLink + "&release=A1", keyLink + "&release=B1", keyLink + "&release=A2"}
 
 	window := []core.AggregateRelease{
-		{Indexer: alpha, Release: &normalizer.Release{Title: "A1", Link: keyLink}},
-		{Indexer: beta, Release: &normalizer.Release{Title: "B1", Link: keyLink}},
-		{Indexer: alpha, Release: &normalizer.Release{Title: "A2", Link: keyLink}},
+		{Indexer: alpha, Release: &normalizer.Release{Title: "A1", Link: wantLink[0]}},
+		{Indexer: beta, Release: &normalizer.Release{Title: "B1", Link: wantLink[1]}},
+		{Indexer: alpha, Release: &normalizer.Release{Title: "A2", Link: wantLink[2]}},
 		{Indexer: beta, Release: &normalizer.Release{Title: "B2", Magnet: magnet}},
 	}
 	out := rt.sealByOrigin(searchReq(t), window)
@@ -377,15 +393,36 @@ func TestSealByOriginSealsEachReleaseToItsOwnMember(t *testing.T) {
 		}
 	}
 	for i, r := range out[:3] {
-		if want := "/api/indexers/" + wantOrigin[i] + "/download/"; !strings.Contains(r.Release.Link, want) {
+		want := "/api/indexers/" + wantOrigin[i] + "/download/"
+		pos := strings.Index(r.Release.Link, want)
+		if pos < 0 {
 			t.Errorf("result[%d] sealed to %q, want a link through %q", i, r.Release.Link, want)
+			continue
+		}
+		idx := core.Indexer(alpha)
+		if wantOrigin[i] == "beta" {
+			idx = beta
+		}
+		payload, err := torznabhttp.ResolveGrab(t.Context(), idx, rt.dlToken, r.Release.Link[pos+len(want):])
+		if err != nil {
+			t.Fatalf("result[%d] ResolveGrab: %v", i, err)
+		}
+		if payload.Name != wantTitle[i] {
+			t.Errorf("result[%d] sealed name = %q, want %q", i, payload.Name, wantTitle[i])
+		}
+		grabbed := alphaGrabbed
+		if wantOrigin[i] == "beta" {
+			grabbed = betaGrabbed
+		}
+		if grabbed != wantLink[i] {
+			t.Errorf("result[%d] resolved the wrong sealed link (link-shaped values withheld)", i)
 		}
 	}
 	// A magnet is public: it passes through untouched even for a resolver-needing member.
 	if out[3].Release.Magnet != magnet {
 		t.Errorf("magnet altered: %q", out[3].Release.Magnet)
 	}
-	if window[0].Release.Link != keyLink {
+	if window[0].Release.Link != wantLink[0] {
 		t.Error("source release was mutated (expected a copy)")
 	}
 }

@@ -733,6 +733,13 @@ paths:
       responses:
         "200":
           description: the torrent/nzb file bytes
+          headers:
+            Content-Disposition:
+              description: >
+                Attachment filename derived from the sanitized release title and
+                protocol extension; tokens without title metadata fall back to the
+                configured indexer ID plus .torrent or .nzb.
+              schema: { type: string }
           content:
             application/x-bittorrent:
               schema: { type: string, format: binary }
@@ -1602,6 +1609,13 @@ paths:
             failures (matching Jackett's DownloadController), so *arr surfaces them as
             transport errors rather than accepting a 200 that later fails as an invalid
             torrent file.
+          headers:
+            Content-Disposition:
+              description: >
+                Attachment filename derived from the sanitized release title and
+                protocol extension; tokens without title metadata fall back to the
+                configured indexer ID plus .torrent or .nzb.
+              schema: { type: string }
           content:
             application/x-bittorrent:
               schema: { type: string, format: binary }

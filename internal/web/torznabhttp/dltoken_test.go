@@ -37,22 +37,86 @@ func plaintextKeyringForTest(t *testing.T) *secrets.Keyring {
 	return kr
 }
 
+func sealedDLTestPayload(t *testing.T, kr *secrets.Keyring, indexerID, payload string) string {
+	t.Helper()
+	blob, err := kr.SealToken(dlTokenPurpose(indexerID), payload)
+	if err != nil {
+		t.Fatalf("SealToken: %v", err)
+	}
+	return base64.RawURLEncoding.EncodeToString([]byte(blob))
+}
+
 func TestDLToken_RoundTrip(t *testing.T) {
 	t.Parallel()
 	kr := encryptedKeyring(t)
-	token, err := encodeDLToken(kr, "mytracker", 2000, dlTestLink)
+	link := dlTestLink + ";part=2"
+	token, err := encodeDLToken(kr, "mytracker", 2000, "Release.Name.2026", link)
 	if err != nil {
 		t.Fatalf("encodeDLToken: %v", err)
 	}
-	cat, got, err := decodeDLToken(kr, "mytracker", token)
+	payload, err := decodeDLToken(kr, "mytracker", token)
 	if err != nil {
 		t.Fatalf("decodeDLToken: %v", err)
 	}
-	if cat != 2000 {
-		t.Errorf("round trip category = %d, want 2000", cat)
+	if payload.categoryID != 2000 {
+		t.Errorf("round trip category = %d, want 2000", payload.categoryID)
 	}
-	if got != dlTestLink {
+	if payload.name != "Release.Name.2026" {
+		t.Errorf("round trip name = %q, want %q", payload.name, "Release.Name.2026")
+	}
+	if payload.link != link {
 		t.Error("round trip link differs from the sealed link (values withheld: link-shaped)")
+	}
+}
+
+func TestDLToken_LegacyPayloads(t *testing.T) {
+	t.Parallel()
+	kr := encryptedKeyring(t)
+	tests := []struct {
+		name       string
+		payload    string
+		categoryID int
+		wantLink   string
+	}{
+		{name: "category and link", payload: "2000;" + dlTestLink, categoryID: 2000, wantLink: dlTestLink},
+		{name: "bare link", payload: dlTestLink, wantLink: dlTestLink},
+		{name: "bare link with semicolon", payload: dlTestLink + ";part=2", wantLink: dlTestLink + ";part=2"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := decodeDLToken(kr, "mytracker", sealedDLTestPayload(t, kr, "mytracker", tt.payload))
+			if err != nil {
+				t.Fatalf("decodeDLToken: %v", err)
+			}
+			if got.categoryID != tt.categoryID || got.name != "" || got.link != tt.wantLink {
+				t.Error("legacy payload decoded incorrectly (link-shaped value withheld)")
+			}
+		})
+	}
+}
+
+func TestDLToken_MalformedV2PayloadRejected(t *testing.T) {
+	t.Parallel()
+	kr := encryptedKeyring(t)
+	tests := []struct {
+		name    string
+		payload string
+	}{
+		{name: "unsupported version", payload: "v3;2000;;https://tracker.test/dl"},
+		{name: "invalid category", payload: "v2;invalid;;https://tracker.test/dl"},
+		{name: "invalid base64url name", payload: "v2;2000;***;https://tracker.test/dl"},
+		{name: "missing link", payload: "v2;2000;UmVsZWFzZQ;"},
+		{name: "missing fields", payload: "v2;2000"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			token := sealedDLTestPayload(t, kr, "mytracker", tt.payload)
+			if _, err := decodeDLToken(kr, "mytracker", token); err == nil {
+				t.Error("expected malformed payload to fail")
+			}
+		})
 	}
 }
 
@@ -61,7 +125,7 @@ func TestDLToken_RoundTrip(t *testing.T) {
 func TestDLToken_URLSafeAndOpaque(t *testing.T) {
 	t.Parallel()
 	kr := encryptedKeyring(t)
-	token, err := encodeDLToken(kr, "mytracker", 2000, dlTestLink)
+	token, err := encodeDLToken(kr, "mytracker", 2000, "Release.Name.2026", dlTestLink)
 	if err != nil {
 		t.Fatalf("encodeDLToken: %v", err)
 	}
@@ -89,11 +153,11 @@ func TestDLToken_CrossIndexerRejected(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			kr := test.keyring(t)
-			token, err := encodeDLToken(kr, "indexerA", 2000, dlTestLink)
+			token, err := encodeDLToken(kr, "indexerA", 2000, "Release.Name.2026", dlTestLink)
 			if err != nil {
 				t.Fatalf("encodeDLToken: %v", err)
 			}
-			if _, _, err := decodeDLToken(kr, "indexerB", token); err == nil {
+			if _, err := decodeDLToken(kr, "indexerB", token); err == nil {
 				t.Error("expected decode under a different indexer to fail")
 			}
 		})
@@ -107,7 +171,7 @@ func TestDLToken_CrossIndexerRejected(t *testing.T) {
 func TestDLToken_TamperRejected(t *testing.T) {
 	t.Parallel()
 	kr := encryptedKeyring(t)
-	token, err := encodeDLToken(kr, "mytracker", 2000, dlTestLink)
+	token, err := encodeDLToken(kr, "mytracker", 2000, "Release.Name.2026", dlTestLink)
 	if err != nil {
 		t.Fatalf("encodeDLToken: %v", err)
 	}
@@ -117,7 +181,7 @@ func TestDLToken_TamperRejected(t *testing.T) {
 	}
 	raw[len(raw)/2] ^= 0x01 // flip a bit in a ciphertext byte (past the GCM nonce)
 	tampered := base64.RawURLEncoding.EncodeToString(raw)
-	if _, _, err := decodeDLToken(kr, "mytracker", tampered); err == nil {
+	if _, err := decodeDLToken(kr, "mytracker", tampered); err == nil {
 		t.Error("expected decode of a tampered token to fail")
 	}
 }
@@ -126,7 +190,7 @@ func TestDLToken_TamperRejected(t *testing.T) {
 func TestDLToken_MalformedRejected(t *testing.T) {
 	t.Parallel()
 	kr := encryptedKeyring(t)
-	if _, _, err := decodeDLToken(kr, "mytracker", "not a token!!!"); err == nil {
+	if _, err := decodeDLToken(kr, "mytracker", "not a token!!!"); err == nil {
 		t.Error("expected decode of a malformed token to fail")
 	}
 }
@@ -136,21 +200,24 @@ func TestDLToken_MalformedRejected(t *testing.T) {
 func TestDLToken_PlaintextModeRoundTrips(t *testing.T) {
 	t.Parallel()
 	kr := plaintextKeyringForTest(t)
-	token, err := encodeDLToken(kr, "mytracker", 2000, dlTestLink)
+	token, err := encodeDLToken(kr, "mytracker", 2000, "Release.Name.2026", dlTestLink)
 	if err != nil {
 		t.Fatalf("encodeDLToken: %v", err)
 	}
 	if strings.Contains(token, "passkey") {
 		t.Errorf("plaintext-mode token shows the passkey literally: %q", token)
 	}
-	cat, got, err := decodeDLToken(kr, "mytracker", token)
+	payload, err := decodeDLToken(kr, "mytracker", token)
 	if err != nil {
 		t.Fatalf("decodeDLToken: %v", err)
 	}
-	if cat != 2000 {
-		t.Errorf("round trip category = %d, want 2000", cat)
+	if payload.categoryID != 2000 {
+		t.Errorf("round trip category = %d, want 2000", payload.categoryID)
 	}
-	if got != dlTestLink {
+	if payload.name != "Release.Name.2026" {
+		t.Errorf("round trip name = %q, want %q", payload.name, "Release.Name.2026")
+	}
+	if payload.link != dlTestLink {
 		t.Error("round trip link differs from the sealed link (values withheld: link-shaped)")
 	}
 }
@@ -163,36 +230,7 @@ func TestDLToken_PlaintextModeRejectsForgery(t *testing.T) {
 
 	kr := plaintextKeyringForTest(t)
 	forged := base64.RawURLEncoding.EncodeToString([]byte("http://127.0.0.1/private"))
-	if _, _, err := decodeDLToken(kr, "mytracker", forged); err == nil {
+	if _, err := decodeDLToken(kr, "mytracker", forged); err == nil {
 		t.Fatal("plaintext-mode forged token decoded successfully")
-	}
-}
-
-// TestDLTokenPayloadSplit covers the payload's parse rule directly: a category prefix
-// is stripped, and anything else — including a token minted before the category
-// existed, or a link that happens to contain a semicolon — is read as a bare link so
-// the grab still works (uncategorised).
-func TestDLTokenPayloadSplit(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name    string
-		payload string
-		wantCat int
-		wantURL string
-	}{
-		{name: "category prefix", payload: "2000;https://x.test/dl", wantCat: 2000, wantURL: "https://x.test/dl"},
-		{name: "uncategorized prefix", payload: "0;https://x.test/dl", wantURL: "https://x.test/dl"},
-		{name: "bare link (pre-category token)", payload: "https://x.test/dl", wantURL: "https://x.test/dl"},
-		{name: "link containing a semicolon", payload: "https://x.test/dl?a=1;b=2", wantURL: "https://x.test/dl?a=1;b=2"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			cat, link := splitDLTokenPayload(tt.payload)
-			if cat != tt.wantCat || link != tt.wantURL {
-				t.Errorf("split(%q) = %d / %q, want %d / %q", tt.payload, cat, link, tt.wantCat, tt.wantURL)
-			}
-		})
 	}
 }

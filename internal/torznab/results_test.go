@@ -283,7 +283,9 @@ func TestResultsNewznabResponse(t *testing.T) {
 func TestRewrittenGuidPrefersUpstream(t *testing.T) {
 	t.Parallel()
 	// A rewriter that seals every link behind /dl and offers a synthesized guid.
-	rewrite := func(string, []int) (link, guid string, ok bool) {
+	var rewrittenTitles []string
+	rewrite := func(_, title string, _ []int) (link, guid string, ok bool) {
+		rewrittenTitles = append(rewrittenTitles, title)
 		return "https://harbrr.test/dl/sealed", "harbrr-synth", true
 	}
 	withGUID := &normalizer.Release{Title: "A", Link: "https://idx.test/get?id=1&apikey=SECRET", GUID: "upstream-id-1", Size: 1}
@@ -303,6 +305,9 @@ func TestRewrittenGuidPrefersUpstream(t *testing.T) {
 	}
 	if strings.Contains(s, "apikey=SECRET") {
 		t.Errorf("passkey-bearing link leaked into the feed:\n%s", s)
+	}
+	if len(rewrittenTitles) != 2 || rewrittenTitles[0] != "A" || rewrittenTitles[1] != "B" {
+		t.Errorf("rewriter titles = %q, want [A B]", rewrittenTitles)
 	}
 }
 
