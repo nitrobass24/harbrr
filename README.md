@@ -199,7 +199,8 @@ trackers and a real \*arr stack is tracked separately:
 **Proven live:** API-key trackers (UNIT3D & friends), user/pass form login, Cloudflare via
 FlareSolverr, server-side grabs (`/dl`) for both cookie- and header-auth trackers, and the
 full **Sonarr → harbrr → qBittorrent** grab pipeline. BroadcastTheNet, IPTorrents, FileList,
-MyAnonamouse, NZBIndex and generic Newznab/Usenet are live-confirmed.
+MyAnonamouse, HDBits, PassThePopcorn, BrokenStones, NZBIndex and generic Newznab/Usenet are
+live-confirmed.
 
 **Not yet proven / not working:**
 
@@ -208,9 +209,10 @@ MyAnonamouse, NZBIndex and generic Newznab/Usenet are live-confirmed.
   and offline-gated but **not yet live-tested**.
 - Cookie/manual-cookie definitions, non-Latin / `regexp2` trackers, and per-indexer proxies are
   offline-gated but **not yet live-tested** (waiting on a qualifying account/environment).
-- Most native drivers (AvistaZ family, HDBits, BeyondHD, Redacted/Orpheus/AlphaRatio,
-  PassThePopcorn, …)
-  are built and offline-gated, **pending credentials** for a live pass.
+- Some native drivers (AvistaZ family, BeyondHD, Redacted/Orpheus/AlphaRatio, …) are built
+  and offline-gated, **pending credentials** for a live pass — though HDBits, PassThePopcorn,
+  BrokenStones and the other trackers in the [coverage matrix](website/docs/coverage.md) marked
+  live-tested have already had one.
 - **Postgres** is deferred — SQLite only for now.
 
 Running the live smoke harness yourself (build-tagged, env-credentialed, and **never run in CI**)

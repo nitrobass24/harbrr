@@ -38,11 +38,11 @@ The pages are plain Markdown. Admonitions use Docusaurus `:::note` / `:::tip` /
 ```bash
 cd website
 npm install
-npm start        # live preview at http://localhost:3000
+npm start        # live preview at http://localhost:3000/harbrr/
 ```
 
 Before committing, run a production build — it's the only mode that enforces broken
-links/anchors (`onBrokenLinks` / `onBrokenMarkdownLinks` are both `'throw'`):
+links/anchors (`onBrokenLinks` / `onBrokenMarkdownLinks` / `onBrokenAnchors` are all `'throw'`):
 
 ```bash
 npm run build

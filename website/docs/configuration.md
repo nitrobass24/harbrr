@@ -58,10 +58,17 @@ host = "127.0.0.1"       # listen host; use 0.0.0.0 in a container
 port = 7478
 base_url = ""            # serve under a subpath, e.g. "/harbrr" (no trailing slash)
 secure_cookie = false    # set true when reached over HTTPS (TLS-terminating proxy)
+external_url = ""        # e.g. "https://harbrr.example.com"
 ```
 
 Set `secure_cookie = true` whenever harbrr is reached over HTTPS (for example behind a
 TLS-terminating reverse proxy) so the session cookie carries the `Secure` attribute.
+
+Set `external_url` to the address people and apps actually reach harbrr at when that isn't
+the address it listens on — the usual reverse-proxy case. When set, it's authoritative for
+every absolute link harbrr serves (feed self-URLs, `/dl` download links); left empty, those
+are derived from the incoming request. An `https://` value also implies `secure_cookie`. If
+you include a path it must equal `base_url`, or harbrr refuses to start.
 
 :::tip[Changing the port]
 
@@ -80,6 +87,11 @@ level = "info"           # trace | debug | info | warn | error
 format = "console"       # console | json
 ```
 
+`level` here is the **boot seed**. The level is also runtime-tunable via
+`GET`/`PUT /api/config/log-level`, which applies to the whole running process without a
+restart *and* persists — so once you've set a level that way, it wins over this key on
+every subsequent start until you change it again.
+
 ## `data_dir` and `[database]`
 
 ```toml
@@ -89,8 +101,12 @@ path = ""                # SQLite path; defaults to <data_dir>/harbrr.db
 ```
 
 harbrr is SQLite-only. The data directory is created `0700`; the database and its
-`-wal`/`-journal` side files are `0600`. As noted above, these two keys only take effect
-from a file passed via `--config`.
+`-wal`/`-journal` side files are `0600`.
+
+These two keys are the exception to "any key works in the auto-generated file": the
+auto-discovered `config.toml` lives *inside* the data directory, so it can't relocate
+either one. Set them with the `--data-dir` / `--db-path` flags, the `HARBRR_DATA_DIR` /
+`HARBRR_DATABASE_PATH` environment variables, or a file passed explicitly via `--config`.
 
 ## `[secrets]`
 
@@ -128,6 +144,26 @@ trusted_proxies = []     # peers whose X-Forwarded-For is trusted, e.g. ["172.16
 Set `trusted_proxies` to the proxy peers whose `X-Forwarded-For` harbrr should trust when
 resolving the client IP.
 
+## `[auth.oidc]`
+
+OpenID Connect / SSO login, which coexists with the password login above. A verified OIDC
+identity gets an authenticated session — no local user row is created.
+
+```toml
+[auth.oidc]
+enabled = false
+issuer = ""                   # e.g. "https://idp.example.com/application/o/harbrr/"
+client_id = ""
+client_secret = ""            # or point HARBRR_AUTH_OIDC_CLIENT_SECRET_FILE at a file
+redirect_url = ""             # the absolute callback URL registered with your IdP, e.g.
+                              # "https://harbrr.example.com/api/auth/oidc/callback"
+disable_built_in_login = false
+```
+
+Set `disable_built_in_login = true` to hide the password form in the UI; the login API route
+itself stays registered either way. `HARBRR_AUTH_OIDC_CLIENT_SECRET_FILE` reads the secret
+from a file instead of putting it in the config (the Docker-secrets shape).
+
 ## `[cache]`
 
 ```toml
@@ -139,6 +175,8 @@ thin_ttl = "2m"          # shorter TTL when a search returns few results
 thin_threshold = 5       # result count at/below which thin_ttl applies (only shortens)
 refresh_ahead_pct = 80   # serve cached + refresh once past this % of the TTL
 cleanup_interval = "1h"  # how often expired entries are reaped
+negative_ttl = "1m"      # after a search fails, replay that error for this long instead of
+                         # re-driving the tracker ("0s" disables it)
 ```
 
 These are the boot defaults; all are runtime-tunable via `PUT /api/cache/config`. The
@@ -157,8 +195,13 @@ a host wins. This needs no configuration and pairs with the
 [search-results cache](features/search-results-cache.md) and
 [circuit breaker](features/circuit-breaker.md) as the third "kind to trackers" layer.
 
-A user-configurable global/per-indexer rate override is deferred (the per-host limiter is the
-v1 mechanism); per-indexer `timeout` and proxy settings are set when you
+You can override the pacing without a restart. `PUT /api/config/rate-limit` sets the **global
+default** minimum spacing between requests to any tracker host (the seed is 1s), applied to
+every configured indexer immediately. A single indexer overrides that default with its
+`rate_interval` reserved setting. Either way a definition's own `requestDelay` is a **floor**
+that always wins — you can slow harbrr down, never speed it past what the definition asks for.
+
+Per-indexer `timeout` and proxy settings are set when you
 [add an indexer](guides/add-indexer.md).
 
 ---

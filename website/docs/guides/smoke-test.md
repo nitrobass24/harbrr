@@ -21,10 +21,14 @@ For every indexer configured in harbrr, in one run:
   content-category filter holds (e.g. a books/audiobook tracker is **not** pushed to Radarr or
   Sonarr), each feed URL is the current `/api/indexers/{slug}/results/torznab` path (not the old
   `/api/v2.0/…`) and returns `200`, and qui uses the `/full` freeleech-bypass variant.
+- **Field parity** — `size`, `category` (the major Torznab bucket), and the download-link shape
+  are compared on every run. `seeders` and `publishDate` move between the two fetches, so they
+  are only compared under `SMOKE_STRICT_FIELDS=1`.
 - **Cache** — a repeated identical search is served from cache (the tracker isn't hit twice).
 - **FL-bypass** — qui receives the full-catalog `/full` feed.
 
-It **never grabs** (no hit-and-run) and never touches a download client.
+It **never grabs by default** (no hit-and-run). `SMOKE_GRAB=1` opts into a per-tracker real
+grab check, and even then nothing is pushed to a download client.
 
 ---
 
@@ -72,6 +76,10 @@ SMOKE_PROWLARR_URL, SMOKE_PROWLARR_APIKEY
 SMOKE_SONARR_URL, SMOKE_SONARR_APIKEY      # optional
 SMOKE_RADARR_URL, SMOKE_RADARR_APIKEY      # optional
 SMOKE_QUI_URL, SMOKE_QUI_APIKEY            # optional
+
+SMOKE_QUERY, SMOKE_QUERY_FALLBACK          # optional — force one query for every tracker
+SMOKE_GRAB=1                               # optional — add the per-tracker grab check
+SMOKE_STRICT_FIELDS=1                      # optional — also compare seeders and publishDate
 ```
 
 ---
@@ -93,8 +101,15 @@ feed secret ever lands in it. It's safe to attach to a public GitHub issue as-is
 | `--reconfigure` | | Re-prompt for every app URL/key and rewrite the env file |
 | `--env-file` | `./smoke.env` | Path to the `export SMOKE_*=…` env file |
 | `--report` | `./smoke-report.md` | Where to write the markdown report |
-| `--query` | `test` | Search query used for parity |
-| `--fallback-query` | `2024` | Query tried when the first returns nothing |
+| `--query` | *(category-derived)* | Force one search query for every tracker (overrides `SMOKE_QUERY`) |
+| `--fallback-query` | *(category-derived)* | Query tried when the first returns nothing (overrides `SMOKE_QUERY_FALLBACK`) |
+
+Left unset, the queries are **derived per indexer** from the categories it advertises, so each
+side returns a small, comparable set instead of slamming the 100-result page cap: Movies gets
+`Oppenheimer 2023` (fallback `Dune 2021`), TV `The Last of Us S01E01`, Audio `Radiohead In
+Rainbows`, Books `Project Hail Mary`, PC `Adobe Photoshop`, Console `God of War`. A general
+tracker takes the first of those its categories match; one with no recognized content category
+falls back to the Movies pair.
 
 ---
 

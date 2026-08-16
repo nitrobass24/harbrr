@@ -4,22 +4,22 @@
 # auto-generated encryption keyfile — BACK IT UP separately from the database
 # (losing the keyfile means re-entering every tracker credential).
 #
-# Getting a runnable image (no stable tag is published yet — main pushes do NOT
-# publish; only same-repo PRs and `v*` tags do). Pick ONE:
-#   a) Tag a release:  git tag v0.1.0-alpha && git push origin v0.1.0-alpha
-#      -> publishes ghcr.io/autobrr/harbrr:0.1.0-alpha + :latest; use :latest below.
-#   b) PR image (private): ghcr.io/autobrr/harbrr:pr-39
+# Which image: `:latest` (below) follows the most recent release. Alternatives:
+#   a) Pin a version: ghcr.io/autobrr/harbrr:0.1.0-alpha
+#   b) Track main:    ghcr.io/autobrr/harbrr:develop  (rebuilt on every push to main)
+#   c) PR image (private): ghcr.io/autobrr/harbrr:pr-39
 #      -> `docker login ghcr.io` first (a PAT with read:packages), or make the package public.
-#   c) Build from source: comment `image:` and uncomment `build: .` (run from the repo).
+#   d) Build from source: comment `image:` and uncomment `build: .` (run from the repo).
 #
-# First run (the API at /api/docs is the whole UI for now):
+# First run:
 #   1. docker compose -f docker-compose.example.yml up -d harbrr
-#   2. Browse http://<host>:7478/api/docs   (interactive Swagger UI)
+#   2. Browse http://<host>:7478/   (the web UI; the API reference is at /api/docs)
 #   3. Create the admin:   POST /api/auth/setup  {"username":"...","password":"..."}
 #   4. Mint a Torznab key: POST /api/apikeys     {"name":"sonarr"}   (shown ONCE)
 #   5. Add an indexer:     POST /api/indexers     (credentials encrypted at rest)
 #   6. Point Sonarr/Radarr at a Generic Torznab indexer:
 #        URL:    http://harbrr:7478/api/indexers/<slug>/results/torznab
+#                (or .../indexers/all/results/torznab for every enabled indexer at once)
 #        apikey: the key minted in step 4
 
 services:

@@ -6,8 +6,9 @@ Radarr, and friends at harbrr, and it searches your trackers and hands back resu
 a shared cache spares your trackers from the duplicate requests every app would otherwise
 make on its own.
 
-For the alpha, harbrr is operated entirely over its HTTP API; the interactive
-**[Swagger UI at `/api/docs`](api.md)** is the interface.
+harbrr ships with a built-in web UI at **`http://<host>:7478/`** — that's the interface.
+Everything it does is also scriptable: the interactive
+**[Swagger UI at `/api/docs`](api.md)** is the API reference for the same endpoints.
 
 ## Start here
 
@@ -36,5 +37,11 @@ still coming, and how it compares to Prowlarr and Jackett.
   when something walks the feed page by page.
 - **[VIP & membership expiry](features/vip-expiry.md)** — enter each tracker's expiry date once
   and never let it pass unannounced.
+- **Download clients** — search from harbrr and send a result straight to your client
+  (qBittorrent, Deluge, Transmission, rTorrent, Flood, Download Station, qui, SABnzbd,
+  NZBGet, or a blackhole directory) with `POST /api/download-clients/{id}/grab`. Sealed
+  download links resolve server-side, so a passkey never leaves harbrr.
+- **Notifications** — point a Discord or generic webhook at harbrr and it tells you when an
+  indexer starts failing, when it recovers, and when a VIP/membership expiry is coming up.
 
 For the internal design notes and build plan, see the `docs/` folder in the repository.
