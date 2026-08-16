@@ -116,20 +116,9 @@ func NeedsDLProxy(idx core.Indexer) bool {
 // empty token (rejected at grab time) rather than leaking the passkey. The rewriter
 // sanitizes and seals the supplied release title as filename metadata.
 func NewDLRewriter(kr *secrets.Keyring, idx core.Indexer, dlBase, apiKey string) tzn.AcquisitionRewriter {
-	if kr == nil || !NeedsDLProxy(idx) {
-		return nil
-	}
-	indexerID := idx.Info().ID
-	return func(original, title string, categories []int) (link, guid string, ok bool) {
-		if original == "" || strings.HasPrefix(original, "magnet:") {
-			return "", "", false
-		}
-		token, err := encodeDLToken(kr, indexerID, mapper.PrimaryParentID(categories), title, original)
-		if err != nil {
-			return dlURLWithToken(dlBase, apiKey, ""), stableGUID(indexerID, original), true
-		}
-		return dlURLWithToken(dlBase, apiKey, token), stableGUID(indexerID, original), true
-	}
+	return sealingRewriter(kr, idx, func(token string) string {
+		return dlURLWithToken(dlBase, apiKey, token)
+	})
 }
 
 // NewManagementDLRewriter is NewDLRewriter's sibling for the JSON search API the web UI
@@ -142,6 +131,16 @@ func NewDLRewriter(kr *secrets.Keyring, idx core.Indexer, dlBase, apiKey string)
 // as-is; a token-mint failure emits a tokenless URL (rejected at grab) rather than
 // leaking the passkey. The supplied release title becomes sanitized filename metadata.
 func NewManagementDLRewriter(kr *secrets.Keyring, idx core.Indexer, downloadBase string) tzn.AcquisitionRewriter {
+	return sealingRewriter(kr, idx, func(token string) string {
+		return downloadBase + "/" + token
+	})
+}
+
+// sealingRewriter is the shared body of the two rewriter constructors — everything
+// except how a token becomes a URL. A magnet (public) is kept as-is; a token-mint
+// failure emits the URL with an empty token (rejected at grab time) rather than
+// leaking the passkey.
+func sealingRewriter(kr *secrets.Keyring, idx core.Indexer, urlFor func(token string) string) tzn.AcquisitionRewriter {
 	if kr == nil || !NeedsDLProxy(idx) {
 		return nil
 	}
@@ -150,11 +149,10 @@ func NewManagementDLRewriter(kr *secrets.Keyring, idx core.Indexer, downloadBase
 		if original == "" || strings.HasPrefix(original, "magnet:") {
 			return "", "", false
 		}
-		g := stableGUID(indexerID, original)
 		token, err := encodeDLToken(kr, indexerID, mapper.PrimaryParentID(categories), title, original)
 		if err != nil {
-			return downloadBase + "/", g, true
+			token = ""
 		}
-		return downloadBase + "/" + token, g, true
+		return urlFor(token), stableGUID(indexerID, original), true
 	}
 }

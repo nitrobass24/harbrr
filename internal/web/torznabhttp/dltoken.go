@@ -2,6 +2,7 @@ package torznabhttp
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -13,15 +14,17 @@ import (
 	"github.com/autobrr/harbrr/internal/secrets"
 )
 
-const (
-	dlTokenV2Prefix      = "v2;"
-	maxDownloadNameBytes = 255 - len(".torrent")
-)
+const maxDownloadNameBytes = 255 - len(".torrent")
 
+// dlTokenPayload is the sealed grab metadata, marshalled as compact JSON. The
+// leading "{" doubles as the version marker: neither unversioned legacy layout
+// (categoryID;link, or a bare link) can start with it, and a future field is a
+// one-line struct addition instead of a new delimiter format. The payload is
+// AEAD-sealed and never user-visible, so the wire shape costs nothing.
 type dlTokenPayload struct {
-	categoryID int
-	name       string
-	link       string
+	CategoryID int    `json:"c"`
+	Name       string `json:"n,omitempty"`
+	Link       string `json:"l"`
 }
 
 func dlTokenPurpose(indexerID string) string {
@@ -56,73 +59,44 @@ func downloadName(title string) string {
 	return name
 }
 
-func marshalDLTokenPayload(categoryID int, name, link string) string {
-	return dlTokenV2Prefix + strconv.Itoa(categoryID) + ";" +
-		base64.RawURLEncoding.EncodeToString([]byte(name)) + ";" + link
-}
-
-// parseDLTokenPayload strictly parses versioned payloads and accepts both unversioned
-// legacy layouts. A version-looking payload never falls back to legacy parsing.
+// parseDLTokenPayload parses the JSON payload and accepts both unversioned legacy
+// layouts.
 func parseDLTokenPayload(payload string) (dlTokenPayload, error) {
-	if strings.HasPrefix(payload, dlTokenV2Prefix) {
-		return parseDLTokenV2Payload(payload)
+	if !strings.HasPrefix(payload, "{") {
+		return parseLegacyDLTokenPayload(payload), nil
 	}
-	if hasDLTokenVersionPrefix(payload) {
-		return dlTokenPayload{}, errors.New("dl token payload: unsupported version")
+	var p dlTokenPayload
+	if err := json.Unmarshal([]byte(payload), &p); err != nil {
+		return dlTokenPayload{}, errors.New("dl token payload: malformed")
 	}
-	return parseLegacyDLTokenPayload(payload), nil
-}
-
-func parseDLTokenV2Payload(payload string) (dlTokenPayload, error) {
-	parts := strings.SplitN(strings.TrimPrefix(payload, dlTokenV2Prefix), ";", 3)
-	if len(parts) != 3 {
-		return dlTokenPayload{}, errors.New("dl token payload: malformed v2")
-	}
-	categoryID, err := strconv.Atoi(parts[0])
-	if err != nil || categoryID < 0 {
+	if p.CategoryID < 0 {
 		return dlTokenPayload{}, errors.New("dl token payload: invalid category")
 	}
-	nameBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return dlTokenPayload{}, errors.New("dl token payload: invalid name")
-	}
-	// An unusable stem is dropped, never rejected: the payload is AEAD-authenticated
-	// under our own keyring, so an unclean name means harbrr minted it wrong, not that
-	// someone forged it. Failing the token here would turn a cosmetic filename problem
-	// into a dead download; the empty stem falls through to the caller's fallback.
-	name := string(nameBytes)
-	if !utf8.ValidString(name) || len(name) > maxDownloadNameBytes || !pathologize.IsClean(name) {
-		name = ""
-	}
-	if parts[2] == "" {
+	if p.Link == "" {
 		return dlTokenPayload{}, errors.New("dl token payload: missing link")
 	}
-	return dlTokenPayload{categoryID: categoryID, name: name, link: parts[2]}, nil
-}
-
-func hasDLTokenVersionPrefix(payload string) bool {
-	prefix, _, ok := strings.Cut(payload, ";")
-	if !ok || len(prefix) < 2 || prefix[0] != 'v' {
-		return false
+	// An unusable stem is dropped, never rejected: the payload is AEAD-authenticated
+	// under our own keyring, so an unclean name means harbrr minted it wrong (e.g. a
+	// pathologize skew across binary versions), not that someone forged it. Failing
+	// the token here would turn a cosmetic filename problem into a dead download; the
+	// empty stem falls through to the caller's fallback. IsClean also rejects invalid
+	// UTF-8 (Clean substitutes U+FFFD, so the round trip differs).
+	if len(p.Name) > maxDownloadNameBytes || !pathologize.IsClean(p.Name) {
+		p.Name = ""
 	}
-	for _, char := range prefix[1:] {
-		if char < '0' || char > '9' {
-			return false
-		}
-	}
-	return true
+	return p, nil
 }
 
 func parseLegacyDLTokenPayload(payload string) dlTokenPayload {
 	prefix, rest, ok := strings.Cut(payload, ";")
 	if !ok {
-		return dlTokenPayload{link: payload}
+		return dlTokenPayload{Link: payload}
 	}
 	id, err := strconv.Atoi(prefix)
 	if err != nil {
-		return dlTokenPayload{link: payload}
+		return dlTokenPayload{Link: payload}
 	}
-	return dlTokenPayload{categoryID: id, link: rest}
+	return dlTokenPayload{CategoryID: id, Link: rest}
 }
 
 // encodeDLToken seals the pre-resolution download link, release parent category, and a
@@ -138,7 +112,11 @@ func parseLegacyDLTokenPayload(payload string) dlTokenPayload {
 // The result is base64url so it drops straight into a query parameter without
 // escaping.
 func encodeDLToken(kr *secrets.Keyring, indexerID string, categoryID int, title, link string) (string, error) {
-	blob, err := kr.SealToken(dlTokenPurpose(indexerID), marshalDLTokenPayload(categoryID, downloadName(title), link))
+	payload, err := json.Marshal(dlTokenPayload{CategoryID: categoryID, Name: downloadName(title), Link: link})
+	if err != nil {
+		return "", fmt.Errorf("dl token: marshal: %w", err)
+	}
+	blob, err := kr.SealToken(dlTokenPurpose(indexerID), string(payload))
 	if err != nil {
 		return "", fmt.Errorf("dl token: encrypt: %w", err)
 	}

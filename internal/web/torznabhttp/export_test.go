@@ -84,13 +84,13 @@ func TestNewDLRewriterSealsLink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decodeDLToken: %v", err)
 	}
-	if payload.name != title {
-		t.Errorf("token name = %q, want %q", payload.name, title)
+	if payload.Name != title {
+		t.Errorf("token name = %q, want %q", payload.Name, title)
 	}
-	if payload.categoryID != 2000 {
-		t.Errorf("token category = %d, want 2000", payload.categoryID)
+	if payload.CategoryID != 2000 {
+		t.Errorf("token category = %d, want 2000", payload.CategoryID)
 	}
-	if payload.link != raw {
+	if payload.Link != raw {
 		t.Error("token round-trip differs from the input (values withheld: link-shaped)")
 	}
 	if _, _, ok := rw("magnet:?xt=urn:btih:abc", title, nil); ok {
@@ -120,7 +120,7 @@ func TestNewManagementDLRewriterSealsTitle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decodeDLToken: %v", err)
 	}
-	if payload.categoryID != 2000 || payload.name != title || payload.link != raw {
+	if payload.CategoryID != 2000 || payload.Name != title || payload.Link != raw {
 		t.Error("management token payload differs from its source metadata (link-shaped value withheld)")
 	}
 }
@@ -153,8 +153,8 @@ func TestSealedDLURLNameMetadata(t *testing.T) {
 			if err != nil {
 				t.Fatalf("decodeDLToken: %v", err)
 			}
-			if payload.name != tt.wantName {
-				t.Errorf("name metadata = %q, want %q", payload.name, tt.wantName)
+			if payload.Name != tt.wantName {
+				t.Errorf("name metadata = %q, want %q", payload.Name, tt.wantName)
 			}
 		})
 	}

@@ -372,7 +372,7 @@ func ResolveGrab(ctx context.Context, idx core.Indexer, dlToken *secrets.Keyring
 	}
 	// The sealed category rides through on the context so the stats layer can tally the
 	// grab under the release's family without widening the Indexer contract (#403).
-	result, err := idx.Grab(core.WithGrabCategory(ctx, payload.categoryID), payload.link)
+	result, err := idx.Grab(core.WithGrabCategory(ctx, payload.CategoryID), payload.Link)
 	if err != nil {
 		return GrabPayload{}, err //nolint:wrapcheck // the caller renders this generically; wrapping would add link-adjacent context.
 	}
@@ -380,13 +380,13 @@ func ResolveGrab(ctx context.Context, idx core.Indexer, dlToken *secrets.Keyring
 		if !strings.HasPrefix(result.Redirect, "magnet:") {
 			return GrabPayload{}, errNonMagnetRedirect
 		}
-		return GrabPayload{Magnet: result.Redirect, Name: payload.name}, nil
+		return GrabPayload{Magnet: result.Redirect, Name: payload.Name}, nil
 	}
 	ct := result.ContentType
 	if ct == "" {
 		ct = torrentContentType
 	}
-	p := GrabPayload{Body: result.Body, ContentType: ct, Name: payload.name}
+	p := GrabPayload{Body: result.Body, ContentType: ct, Name: payload.Name}
 	// Serve boundary (Jackett's DownloadController analogue): a torrent body must be a
 	// bencoded dictionary before it is served as a .torrent. When the session has
 	// expired, the .torrent fetch 302s to the login page and the client follows it

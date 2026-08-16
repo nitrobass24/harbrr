@@ -2,6 +2,7 @@ package torznabhttp
 
 import (
 	"encoding/base64"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -59,13 +60,13 @@ func TestDLToken_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decodeDLToken: %v", err)
 	}
-	if payload.categoryID != 2000 {
-		t.Errorf("round trip category = %d, want 2000", payload.categoryID)
+	if payload.CategoryID != 2000 {
+		t.Errorf("round trip category = %d, want 2000", payload.CategoryID)
 	}
-	if payload.name != "Release.Name.2026" {
-		t.Errorf("round trip name = %q, want %q", payload.name, "Release.Name.2026")
+	if payload.Name != "Release.Name.2026" {
+		t.Errorf("round trip name = %q, want %q", payload.Name, "Release.Name.2026")
 	}
-	if payload.link != link {
+	if payload.Link != link {
 		t.Error("round trip link differs from the sealed link (values withheld: link-shaped)")
 	}
 }
@@ -90,25 +91,25 @@ func TestDLToken_LegacyPayloads(t *testing.T) {
 			if err != nil {
 				t.Fatalf("decodeDLToken: %v", err)
 			}
-			if got.categoryID != tt.categoryID || got.name != "" || got.link != tt.wantLink {
+			if got.CategoryID != tt.categoryID || got.Name != "" || got.Link != tt.wantLink {
 				t.Error("legacy payload decoded incorrectly (link-shaped value withheld)")
 			}
 		})
 	}
 }
 
-func TestDLToken_MalformedV2PayloadRejected(t *testing.T) {
+func TestDLToken_MalformedPayloadRejected(t *testing.T) {
 	t.Parallel()
 	kr := encryptedKeyring(t)
 	tests := []struct {
 		name    string
 		payload string
 	}{
-		{name: "unsupported version", payload: "v3;2000;;https://tracker.test/dl"},
-		{name: "invalid category", payload: "v2;invalid;;https://tracker.test/dl"},
-		{name: "invalid base64url name", payload: "v2;2000;***;https://tracker.test/dl"},
-		{name: "missing link", payload: "v2;2000;UmVsZWFzZQ;"},
-		{name: "missing fields", payload: "v2;2000"},
+		{name: "truncated JSON", payload: `{"c":2000,"n":"Release`},
+		{name: "negative category", payload: `{"c":-1,"l":"https://tracker.test/dl"}`},
+		{name: "wrong field type", payload: `{"c":"2000","l":"https://tracker.test/dl"}`},
+		{name: "missing link", payload: `{"c":2000,"n":"Release"}`},
+		{name: "empty link", payload: `{"c":2000,"l":""}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -148,17 +149,17 @@ func TestDLToken_OverlongTitleStillGrabs(t *testing.T) {
 			if err != nil {
 				t.Fatalf("decodeDLToken rejected a token harbrr just minted: %v", err)
 			}
-			if got.link != dlTestLink {
+			if got.Link != dlTestLink {
 				t.Error("round trip link differs from the sealed link (values withheld: link-shaped)")
 			}
-			if got.name == "" {
+			if got.Name == "" {
 				t.Error("stem dropped entirely; a truncated title should still name the file")
 			}
-			if len(got.name) > maxDownloadNameBytes {
-				t.Errorf("stem is %d bytes, over the %d budget", len(got.name), maxDownloadNameBytes)
+			if len(got.Name) > maxDownloadNameBytes {
+				t.Errorf("stem is %d bytes, over the %d budget", len(got.Name), maxDownloadNameBytes)
 			}
-			if !pathologize.IsClean(got.name) {
-				t.Errorf("truncated stem is not a portable filename: %q", got.name)
+			if !pathologize.IsClean(got.Name) {
+				t.Errorf("truncated stem is not a portable filename: %q", got.Name)
 			}
 		})
 	}
@@ -173,15 +174,15 @@ func TestDLToken_UncleanSealedNameDrops(t *testing.T) {
 	for _, stem := range []string{"trailing dot.", "trailing space ", "CON", strings.Repeat("A", maxDownloadNameBytes+1)} {
 		t.Run(stem[:min(len(stem), 16)], func(t *testing.T) {
 			t.Parallel()
-			payload := "v2;2000;" + base64.RawURLEncoding.EncodeToString([]byte(stem)) + ";" + dlTestLink
+			payload := fmt.Sprintf(`{"c":2000,"n":%q,"l":%q}`, stem, dlTestLink)
 			got, err := decodeDLToken(kr, "mytracker", sealedDLTestPayload(t, kr, "mytracker", payload))
 			if err != nil {
 				t.Fatalf("decodeDLToken: %v", err)
 			}
-			if got.name != "" {
-				t.Errorf("unclean stem %q survived as %q, want it dropped", stem, got.name)
+			if got.Name != "" {
+				t.Errorf("unclean stem %q survived as %q, want it dropped", stem, got.Name)
 			}
-			if got.link != dlTestLink {
+			if got.Link != dlTestLink {
 				t.Error("round trip link differs from the sealed link (values withheld: link-shaped)")
 			}
 		})
@@ -279,13 +280,13 @@ func TestDLToken_PlaintextModeRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decodeDLToken: %v", err)
 	}
-	if payload.categoryID != 2000 {
-		t.Errorf("round trip category = %d, want 2000", payload.categoryID)
+	if payload.CategoryID != 2000 {
+		t.Errorf("round trip category = %d, want 2000", payload.CategoryID)
 	}
-	if payload.name != "Release.Name.2026" {
-		t.Errorf("round trip name = %q, want %q", payload.name, "Release.Name.2026")
+	if payload.Name != "Release.Name.2026" {
+		t.Errorf("round trip name = %q, want %q", payload.Name, "Release.Name.2026")
 	}
-	if payload.link != dlTestLink {
+	if payload.Link != dlTestLink {
 		t.Error("round trip link differs from the sealed link (values withheld: link-shaped)")
 	}
 }

@@ -193,9 +193,10 @@ func (rt *router) grabToDownloadClient(w http.ResponseWriter, r *http.Request) {
 // attach the indexer's session credentials to a caller-supplied URL.
 func (rt *router) grabPayload(w http.ResponseWriter, r *http.Request, idx core.Indexer, req grabRequest) (download.Payload, bool) {
 	info := idx.Info()
-	p := download.Payload{Protocol: download.Protocol(info.Protocol), Name: cmp.Or(req.Name, info.ID)}
+	p := download.Payload{Protocol: download.Protocol(info.Protocol)}
 	token, sealed := sealedDownloadToken(req.Link, req.Indexer)
 	if !sealed {
+		p.Name = cmp.Or(req.Name, info.ID)
 		p.URL = req.Link
 		return p, true
 	}
