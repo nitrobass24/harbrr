@@ -8,13 +8,14 @@ import (
 	"time"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 	"github.com/autobrr/harbrr/internal/domain"
 )
 
 func TestSyncProfileRoundTrip(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.SyncProfiles{}
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -81,7 +82,7 @@ func TestSyncProfileRoundTrip(t *testing.T) {
 func TestSyncProfileIndexersCascadeOnInstanceDelete(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.SyncProfiles{}
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -111,7 +112,7 @@ func TestSyncProfileIndexersCascadeOnInstanceDelete(t *testing.T) {
 func TestSyncProfileNameUnique(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.SyncProfiles{}
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -129,7 +130,7 @@ func TestSyncProfileNameUnique(t *testing.T) {
 func TestConnectionSyncProfileFKSetNull(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	profiles := database.SyncProfiles{}
 	conns := database.AppConnections{}
 	now := time.Now().UTC().Truncate(time.Second)

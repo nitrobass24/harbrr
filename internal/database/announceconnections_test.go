@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 	"github.com/autobrr/harbrr/internal/domain"
 )
 
@@ -24,7 +25,7 @@ func sampleAnnounceConnection(appID *int64, harbrrKeyID int64, kind string, now 
 func TestAnnounceConnectionRoundTrip(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.AnnounceConnections{}
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -56,7 +57,7 @@ func TestAnnounceConnectionRoundTrip(t *testing.T) {
 func TestAnnounceConnectionUniqueAppID(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.AnnounceConnections{}
 	now := time.Now().UTC()
 
@@ -74,7 +75,7 @@ func TestAnnounceConnectionUniqueAppID(t *testing.T) {
 func TestAnnounceConnectionEnableDelete(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.AnnounceConnections{}
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -103,7 +104,7 @@ func TestAnnounceConnectionEnableDelete(t *testing.T) {
 func TestAnnounceConnectionKeyRevocationSetsNull(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.AnnounceConnections{}
 	now := time.Now().UTC().Truncate(time.Second)
 

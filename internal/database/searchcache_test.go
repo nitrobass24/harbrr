@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 )
 
 // sampleEntry builds a fully-populated cache entry bound to instanceID, expiring
@@ -26,7 +27,7 @@ func sampleEntry(key string, instanceID int64, cachedAt time.Time, ttl time.Dura
 func TestSearchCacheStoreFetchRoundTrip(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	store := database.SearchCacheStore{}
 	instID := insertInstance(t, db, "tracker-a")
 	now := time.Now().UTC().Truncate(time.Second)
@@ -60,7 +61,7 @@ func TestSearchCacheStoreFetchRoundTrip(t *testing.T) {
 func TestSearchCacheFetchExpired(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	store := database.SearchCacheStore{}
 	instID := insertInstance(t, db, "tracker-a")
 	now := time.Now().UTC().Truncate(time.Second)
@@ -81,7 +82,7 @@ func TestSearchCacheFetchExpired(t *testing.T) {
 func TestSearchCacheStoreRejectsNonPositiveTTL(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	store := database.SearchCacheStore{}
 	instID := insertInstance(t, db, "tracker-a")
 	now := time.Now().UTC().Truncate(time.Second)
@@ -96,7 +97,7 @@ func TestSearchCacheStoreRejectsNonPositiveTTL(t *testing.T) {
 func TestSearchCacheCascadeDelete(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	store := database.SearchCacheStore{}
 	instID := insertInstance(t, db, "tracker-a")
 	now := time.Now().UTC().Truncate(time.Second)
@@ -132,7 +133,7 @@ func TestSearchCacheDelete(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
-			db := openMigrated(t, ":memory:")
+			db := dbtest.OpenMigrated(t)
 			store := database.SearchCacheStore{}
 			instID := insertInstance(t, db, "tracker-a")
 			now := time.Now().UTC().Truncate(time.Second)
@@ -161,7 +162,7 @@ func TestSearchCacheDelete(t *testing.T) {
 func TestSearchCacheTouchIncrements(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	store := database.SearchCacheStore{}
 	instID := insertInstance(t, db, "tracker-a")
 	now := time.Now().UTC().Truncate(time.Second)
@@ -187,7 +188,7 @@ func TestSearchCacheTouchIncrements(t *testing.T) {
 func TestSearchCacheReStorePreservesHitCount(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	store := database.SearchCacheStore{}
 	instID := insertInstance(t, db, "tracker-a")
 	now := time.Now().UTC().Truncate(time.Second)
@@ -221,7 +222,7 @@ func TestSearchCacheReStorePreservesHitCount(t *testing.T) {
 func TestSearchCacheCleanupExpired(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	store := database.SearchCacheStore{}
 	instID := insertInstance(t, db, "tracker-a")
 	now := time.Now().UTC().Truncate(time.Second)
@@ -248,7 +249,7 @@ func TestSearchCacheCleanupExpired(t *testing.T) {
 func TestSearchCacheFlush(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	store := database.SearchCacheStore{}
 	instID := insertInstance(t, db, "tracker-a")
 	now := time.Now().UTC().Truncate(time.Second)
@@ -271,7 +272,7 @@ func TestSearchCacheFlush(t *testing.T) {
 func TestSearchCacheInvalidateByInstance(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	store := database.SearchCacheStore{}
 	instA := insertInstance(t, db, "tracker-a")
 	instB := insertInstance(t, db, "tracker-b")
@@ -306,7 +307,7 @@ func TestSearchCacheInvalidateByInstance(t *testing.T) {
 func TestSearchCacheExpireAll(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	store := database.SearchCacheStore{}
 	instID := insertInstance(t, db, "tracker-a")
 	now := time.Now().UTC().Truncate(time.Second)
@@ -358,7 +359,7 @@ func TestSearchCacheExpireAll(t *testing.T) {
 func TestSearchCacheStats(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	store := database.SearchCacheStore{}
 	instID := insertInstance(t, db, "tracker-a")
 	now := time.Now().UTC().Truncate(time.Second)
@@ -412,7 +413,7 @@ func TestSearchCacheStats(t *testing.T) {
 func TestSearchCacheStatsByInstance(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	store := database.SearchCacheStore{}
 	instA := insertInstance(t, db, "tracker-a")
 	instB := insertInstance(t, db, "tracker-b")

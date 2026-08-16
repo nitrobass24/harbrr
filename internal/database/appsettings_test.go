@@ -2,17 +2,17 @@ package database_test
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 )
 
 func TestAppSettingsSetGet(t *testing.T) {
 	t.Parallel()
 
-	db := openMigrated(t, filepath.Join(t.TempDir(), "harbrr.db"))
+	db := dbtest.OpenMigrated(t)
 	ctx := context.Background()
 	store := database.AppSettings{}
 	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
@@ -42,7 +42,7 @@ func TestAppSettingsSetGet(t *testing.T) {
 func TestAppSettingsGetAll(t *testing.T) {
 	t.Parallel()
 
-	db := openMigrated(t, filepath.Join(t.TempDir(), "harbrr.db"))
+	db := dbtest.OpenMigrated(t)
 	ctx := context.Background()
 	store := database.AppSettings{}
 	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)

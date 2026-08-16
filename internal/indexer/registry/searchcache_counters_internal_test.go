@@ -9,22 +9,16 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 )
 
-// openCacheDB opens and migrates a DB at path. Unlike testCache's :memory: DB, a file
+// openCacheDB opens a migrated DB at path. Unlike testCache's throwaway DB, a file
 // path survives across two handles, so a test can close it and reopen to simulate a
-// restart. Closed via t.Cleanup (a manual Close before reopen is a harmless no-op).
+// restart (an existing file is reopened with its data intact). Closed via t.Cleanup
+// (a manual Close before reopen is a harmless no-op).
 func openCacheDB(t *testing.T, path string) *database.DB {
 	t.Helper()
-	db, err := database.Open(path)
-	if err != nil {
-		t.Fatalf("open db %q: %v", path, err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := db.Migrate(context.Background()); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	return db
+	return dbtest.OpenMigratedAt(t, path)
 }
 
 // newCacheOn builds a SearchCache over db with a fixed clock and caching enabled.

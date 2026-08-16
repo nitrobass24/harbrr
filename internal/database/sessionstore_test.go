@@ -6,12 +6,13 @@ import (
 	"time"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 )
 
 func TestSessionStoreRoundTrip(t *testing.T) {
 	t.Parallel()
 
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	store := database.NewSessionStore(db)
 
 	if err := store.Commit("tok", []byte("data"), time.Now().Add(time.Hour)); err != nil {
@@ -42,7 +43,7 @@ func TestSessionStoreRoundTrip(t *testing.T) {
 func TestSessionStoreExpiry(t *testing.T) {
 	t.Parallel()
 
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	store := database.NewSessionStore(db)
 
 	// An already-expired session is not found...

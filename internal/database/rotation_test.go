@@ -2,12 +2,12 @@ package database_test
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"github.com/rs/zerolog"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/secrets"
 )
@@ -26,7 +26,7 @@ const (
 // this proves the rotation round-trips end to end.
 func TestUpdateSecretRotationInvariant(t *testing.T) {
 	t.Parallel()
-	db := openMigrated(t, filepath.Join(t.TempDir(), "rotinv.db"))
+	db := dbtest.OpenMigrated(t)
 	ctx := context.Background()
 	instanceID := seedInstance(t, db, "tt")
 
@@ -112,7 +112,7 @@ func TestUpdateSecretRotationInvariant(t *testing.T) {
 
 func TestRotationAllSecretsAndUpdate(t *testing.T) {
 	t.Parallel()
-	db := openMigrated(t, filepath.Join(t.TempDir(), "rot.db"))
+	db := dbtest.OpenMigrated(t)
 	ctx := context.Background()
 	id := seedInstance(t, db, "tt")
 	ins := database.Instances{}

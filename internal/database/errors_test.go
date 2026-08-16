@@ -3,10 +3,10 @@ package database_test
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 )
 
 // TestIsUniqueViolation pins what IsUniqueViolation does — and, deliberately, what
@@ -18,7 +18,7 @@ import (
 func TestIsUniqueViolation(t *testing.T) {
 	t.Parallel()
 
-	db := openMigrated(t, filepath.Join(t.TempDir(), "harbrr.db"))
+	db := dbtest.OpenMigrated(t)
 	ctx := context.Background()
 
 	// A UNIQUE(slug) collision on indexer_instances → code 2067 → matched.
@@ -73,7 +73,7 @@ func TestIsUniqueViolation(t *testing.T) {
 func TestIsForeignKeyViolation(t *testing.T) {
 	t.Parallel()
 
-	db := openMigrated(t, filepath.Join(t.TempDir(), "harbrr.db"))
+	db := dbtest.OpenMigrated(t)
 	ctx := context.Background()
 
 	// A dangling instance_id on indexer_settings → FK violation (code 787).

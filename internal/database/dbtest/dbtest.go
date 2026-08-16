@@ -57,23 +57,33 @@ func buildTemplate() {
 // on are identical to production. The handle is closed via t.Cleanup.
 func OpenMigrated(t *testing.T) *database.DB {
 	t.Helper()
+	return OpenMigratedAt(t, filepath.Join(t.TempDir(), "harbrr.db"))
+}
+
+// OpenMigratedAt is OpenMigrated at a caller-chosen path: a fresh path gets a
+// clone of the migrated template, while an existing file is reopened as-is with
+// its data intact — so a test can Close and call this again on the same path to
+// simulate a restart. The handle is closed via t.Cleanup.
+func OpenMigratedAt(t *testing.T, path string) *database.DB {
+	t.Helper()
 
 	templateOnce.Do(buildTemplate)
 	if errTemplate != nil {
 		t.Fatalf("dbtest: build template: %v", errTemplate)
 	}
 
-	// The template is read-only after the sync.Once, so parallel clones are safe.
-	blob, err := os.ReadFile(templatePath)
-	if err != nil {
-		t.Fatalf("dbtest: read template: %v", err)
-	}
-	clonePath := filepath.Join(t.TempDir(), "harbrr.db")
-	if err := os.WriteFile(clonePath, blob, 0o600); err != nil { //nolint:gosec // G703: clonePath is t.TempDir() plus a literal, never user input.
-		t.Fatalf("dbtest: write clone: %v", err)
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		// The template is read-only after the sync.Once, so parallel clones are safe.
+		blob, err := os.ReadFile(templatePath)
+		if err != nil {
+			t.Fatalf("dbtest: read template: %v", err)
+		}
+		if err := os.WriteFile(path, blob, 0o600); err != nil { //nolint:gosec // G703: path is a test-owned temp location, never user input.
+			t.Fatalf("dbtest: write clone: %v", err)
+		}
 	}
 
-	db, err := database.Open(clonePath)
+	db, err := database.Open(path)
 	if err != nil {
 		t.Fatalf("dbtest: open clone: %v", err)
 	}

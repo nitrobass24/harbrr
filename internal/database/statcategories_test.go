@@ -2,11 +2,11 @@ package database_test
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 )
 
 // TestIndexerCategoryStatsAddDeltas proves the write is ADDITIVE per (instance,
@@ -15,7 +15,7 @@ import (
 func TestIndexerCategoryStatsAddDeltas(t *testing.T) {
 	t.Parallel()
 
-	db := openMigrated(t, filepath.Join(t.TempDir(), "harbrr.db"))
+	db := dbtest.OpenMigrated(t)
 	ctx := context.Background()
 	store := database.IndexerCategoryStatsStore{}
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -68,7 +68,7 @@ func TestIndexerCategoryStatsAddDeltas(t *testing.T) {
 func TestIndexerCategoryStatsAddDeltasReportsFailures(t *testing.T) {
 	t.Parallel()
 
-	db := openMigrated(t, filepath.Join(t.TempDir(), "harbrr.db"))
+	db := dbtest.OpenMigrated(t)
 	ctx := context.Background()
 	store := database.IndexerCategoryStatsStore{}
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -98,7 +98,7 @@ func TestIndexerCategoryStatsAddDeltasReportsFailures(t *testing.T) {
 func TestIndexerCategoryStatsDeleteBefore(t *testing.T) {
 	t.Parallel()
 
-	db := openMigrated(t, filepath.Join(t.TempDir(), "harbrr.db"))
+	db := dbtest.OpenMigrated(t)
 	ctx := context.Background()
 	store := database.IndexerCategoryStatsStore{}
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -136,7 +136,7 @@ func TestIndexerCategoryStatsDeleteBefore(t *testing.T) {
 func TestCategoryStatsRetentionMonths(t *testing.T) {
 	t.Parallel()
 
-	db := openMigrated(t, filepath.Join(t.TempDir(), "harbrr.db"))
+	db := dbtest.OpenMigrated(t)
 	ctx := context.Background()
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 

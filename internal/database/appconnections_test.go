@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 	"github.com/autobrr/harbrr/internal/domain"
 )
 
@@ -64,7 +65,7 @@ func mintApp(t *testing.T, db *database.DB, kind, baseURL string) int64 {
 func TestAppConnectionAllKindsRoundTrip(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.AppConnections{}
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -105,7 +106,7 @@ func TestAppConnectionAllKindsRoundTrip(t *testing.T) {
 func TestAppConnectionInsertGetList(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.AppConnections{}
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -144,7 +145,7 @@ func TestAppConnectionInsertGetList(t *testing.T) {
 
 func TestAppConnectionGetNotFound(t *testing.T) {
 	t.Parallel()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	_, err := (database.AppConnections{}).GetConnection(context.Background(), db, 999)
 	if !errors.Is(err, database.ErrNotFound) {
 		t.Fatalf("GetConnection(missing) error = %v, want ErrNotFound", err)
@@ -157,7 +158,7 @@ func TestAppConnectionGetNotFound(t *testing.T) {
 func TestAppConnectionUniqueAppID(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.AppConnections{}
 	now := time.Now().UTC()
 
@@ -186,7 +187,7 @@ func TestAppConnectionUniqueAppID(t *testing.T) {
 func TestAppConnectionUpdateAndEnable(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.AppConnections{}
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -224,7 +225,7 @@ func TestAppConnectionUpdateAndEnable(t *testing.T) {
 func TestAppConnectionRecordSyncResult(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.AppConnections{}
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -245,7 +246,7 @@ func TestAppConnectionRecordSyncResult(t *testing.T) {
 func TestAppConnectionIndexerLedger(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.AppConnections{}
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -288,7 +289,7 @@ func TestAppConnectionIndexerLedger(t *testing.T) {
 func TestAppConnectionDeleteCascadesLedger(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.AppConnections{}
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -312,7 +313,7 @@ func TestAppConnectionDeleteCascadesLedger(t *testing.T) {
 func TestAppConnectionKeyRevocationSetsNull(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.AppConnections{}
 	now := time.Now().UTC().Truncate(time.Second)
 

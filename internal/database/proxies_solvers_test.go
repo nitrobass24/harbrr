@@ -7,13 +7,14 @@ import (
 	"time"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 	"github.com/autobrr/harbrr/internal/domain"
 )
 
 func TestProxyRoundTrip(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.Proxies{}
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -62,7 +63,7 @@ func TestProxyRoundTrip(t *testing.T) {
 func TestSolverRoundTrip(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.Solvers{}
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -97,7 +98,7 @@ func TestSolverRoundTrip(t *testing.T) {
 func TestInstanceRefsSetAndCleared(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	instances := database.Instances{}
 	proxies := database.Proxies{}
 	now := time.Now().UTC().Truncate(time.Second)

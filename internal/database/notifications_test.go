@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 	"github.com/autobrr/harbrr/internal/domain"
 )
 
@@ -20,7 +21,7 @@ func sampleNotification(typ string, now time.Time) domain.Notification {
 func TestNotificationRoundTrip(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.Notifications{}
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -44,7 +45,7 @@ func TestNotificationRoundTrip(t *testing.T) {
 func TestNotificationSetSecretUpdateEnableDelete(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.Notifications{}
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -99,7 +100,7 @@ func TestNotificationSetSecretUpdateEnableDelete(t *testing.T) {
 func TestNotificationNotFound(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.Notifications{}
 	if err := repo.DeleteNotification(ctx, db, 404); !errors.Is(err, database.ErrNotFound) {
 		t.Errorf("delete missing err = %v, want ErrNotFound", err)

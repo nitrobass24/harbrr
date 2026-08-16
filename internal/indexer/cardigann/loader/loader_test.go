@@ -477,15 +477,20 @@ func TestEveryCatalogDefinitionIsLoadableByID(t *testing.T) {
 	if len(skipped) != 0 {
 		t.Fatalf("LoadAll skipped %d definitions; expected empty skip-list", len(skipped))
 	}
+	// One subtest per definition so the ~4k re-parses run in parallel — Load is
+	// concurrency-safe (its only lazy state is behind a sync.Once) and the serial
+	// sweep was this package's long pole.
 	for _, d := range defs {
-		got, err := l.Load(d.ID)
-		if err != nil {
-			t.Errorf("catalog offers %q but Load(%q) failed: %v", d.ID, d.ID, err)
-			continue
-		}
-		if got.ID != d.ID {
-			t.Errorf("Load(%q).ID = %q, want %q", d.ID, got.ID, d.ID)
-		}
+		t.Run(d.ID, func(t *testing.T) {
+			t.Parallel()
+			got, err := l.Load(d.ID)
+			if err != nil {
+				t.Fatalf("catalog offers %q but Load(%q) failed: %v", d.ID, d.ID, err)
+			}
+			if got.ID != d.ID {
+				t.Errorf("Load(%q).ID = %q, want %q", d.ID, got.ID, d.ID)
+			}
+		})
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 	"github.com/autobrr/harbrr/internal/domain"
 )
 
@@ -24,7 +25,7 @@ func seedInstance(t *testing.T, db *database.DB, slug string) int64 {
 
 func TestHealthRecordAndRecent(t *testing.T) {
 	t.Parallel()
-	db := openMigrated(t, filepath.Join(t.TempDir(), "health.db"))
+	db := dbtest.OpenMigrated(t)
 	ctx := context.Background()
 	id := seedInstance(t, db, "tt")
 	h := database.Health{}
@@ -69,7 +70,7 @@ func TestHealthRecordAndRecent(t *testing.T) {
 // constraint (#223).
 func TestHealthRecordTransportKind(t *testing.T) {
 	t.Parallel()
-	db := openMigrated(t, filepath.Join(t.TempDir(), "health.db"))
+	db := dbtest.OpenMigrated(t)
 	ctx := context.Background()
 	id := seedInstance(t, db, "tt")
 	h := database.Health{}
@@ -93,7 +94,7 @@ func TestHealthRecordTransportKind(t *testing.T) {
 
 func TestHealthRecovery(t *testing.T) {
 	t.Parallel()
-	db := openMigrated(t, filepath.Join(t.TempDir(), "health.db"))
+	db := dbtest.OpenMigrated(t)
 	ctx := context.Background()
 	id := seedInstance(t, db, "tt")
 	h := database.Health{}
@@ -125,7 +126,7 @@ func TestHealthRecovery(t *testing.T) {
 // struct.
 func TestHealthCounts(t *testing.T) {
 	t.Parallel()
-	db := openMigrated(t, filepath.Join(t.TempDir(), "health.db"))
+	db := dbtest.OpenMigrated(t)
 	ctx := context.Background()
 	id := seedInstance(t, db, "tt")
 	empty := seedInstance(t, db, "empty")
@@ -170,7 +171,7 @@ func TestHealthCounts(t *testing.T) {
 // instance id, and omits instances with no events.
 func TestHealthAllCounts(t *testing.T) {
 	t.Parallel()
-	db := openMigrated(t, filepath.Join(t.TempDir(), "health.db"))
+	db := dbtest.OpenMigrated(t)
 	ctx := context.Background()
 	id1 := seedInstance(t, db, "one")
 	id2 := seedInstance(t, db, "two")
@@ -208,7 +209,7 @@ func TestHealthAllCounts(t *testing.T) {
 // `<` semantics — keeps an event landing exactly on the cutoff boundary.
 func TestHealthDeleteBefore(t *testing.T) {
 	t.Parallel()
-	db := openMigrated(t, filepath.Join(t.TempDir(), "health.db"))
+	db := dbtest.OpenMigrated(t)
 	ctx := context.Background()
 	id := seedInstance(t, db, "tt")
 	h := database.Health{}
@@ -260,7 +261,7 @@ func TestHealthDeleteBefore(t *testing.T) {
 // (foreign_keys is ON): deleting the parent instance removes its health rows.
 func TestHealthCascadeOnInstanceDelete(t *testing.T) {
 	t.Parallel()
-	db := openMigrated(t, filepath.Join(t.TempDir(), "health.db"))
+	db := dbtest.OpenMigrated(t)
 	ctx := context.Background()
 	id := seedInstance(t, db, "tt")
 	h := database.Health{}

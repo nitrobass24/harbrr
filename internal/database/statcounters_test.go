@@ -2,11 +2,11 @@ package database_test
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 )
 
 // TestIndexerStatCountersUpsertAndAll proves Upsert inserts then overwrites a row in
@@ -15,7 +15,7 @@ import (
 func TestIndexerStatCountersUpsertAndAll(t *testing.T) {
 	t.Parallel()
 
-	db := openMigrated(t, filepath.Join(t.TempDir(), "harbrr.db"))
+	db := dbtest.OpenMigrated(t)
 	ctx := context.Background()
 	store := database.IndexerStatCountersStore{}
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -112,7 +112,7 @@ func TestIndexerStatCountersUpsertAndAll(t *testing.T) {
 func TestIndexerStatCountersCascadeDelete(t *testing.T) {
 	t.Parallel()
 
-	db := openMigrated(t, filepath.Join(t.TempDir(), "harbrr.db"))
+	db := dbtest.OpenMigrated(t)
 	ctx := context.Background()
 	store := database.IndexerStatCountersStore{}
 
@@ -139,7 +139,7 @@ func TestIndexerStatCountersCascadeDelete(t *testing.T) {
 func TestIndexerStatCountersUpsertDanglingInstance(t *testing.T) {
 	t.Parallel()
 
-	db := openMigrated(t, filepath.Join(t.TempDir(), "harbrr.db"))
+	db := dbtest.OpenMigrated(t)
 	ctx := context.Background()
 
 	err := database.IndexerStatCountersStore{}.Upsert(ctx, db,

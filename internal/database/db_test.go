@@ -11,6 +11,7 @@ import (
 
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 	"github.com/autobrr/harbrr/internal/domain"
 )
 
@@ -112,7 +113,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 func TestPragmasApplied(t *testing.T) {
 	t.Parallel()
 
-	db := openMigrated(t, filepath.Join(t.TempDir(), "harbrr.db"))
+	db := dbtest.OpenMigrated(t)
 	ctx := context.Background()
 
 	var journal string
@@ -143,7 +144,7 @@ func TestPragmasApplied(t *testing.T) {
 func TestForeignKeysEnforced(t *testing.T) {
 	t.Parallel()
 
-	db := openMigrated(t, filepath.Join(t.TempDir(), "harbrr.db"))
+	db := dbtest.OpenMigrated(t)
 	ctx := context.Background()
 
 	// A setting referencing a non-existent instance must be rejected (FK on).
@@ -158,7 +159,7 @@ func TestForeignKeysEnforced(t *testing.T) {
 func TestCascadeDeleteSettings(t *testing.T) {
 	t.Parallel()
 
-	db := openMigrated(t, filepath.Join(t.TempDir(), "harbrr.db"))
+	db := dbtest.OpenMigrated(t)
 	ctx := context.Background()
 
 	res, err := db.ExecContext(ctx,
@@ -193,7 +194,7 @@ func TestCascadeDeleteSettings(t *testing.T) {
 func TestUpsertSetting(t *testing.T) {
 	t.Parallel()
 
-	db := openMigrated(t, filepath.Join(t.TempDir(), "harbrr.db"))
+	db := dbtest.OpenMigrated(t)
 	ctx := context.Background()
 	insts := database.Instances{}
 
@@ -323,7 +324,7 @@ func statMode(t *testing.T, path string) os.FileMode {
 func TestQuerierInterface(t *testing.T) {
 	t.Parallel()
 
-	var q dbinterface.Querier = openMigrated(t, ":memory:")
+	var q dbinterface.Querier = dbtest.OpenMigrated(t)
 	tx, err := q.BeginTx(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("BeginTx: %v", err)
@@ -339,7 +340,7 @@ func TestQuerierInterface(t *testing.T) {
 func TestProtocolColumnDefaultsToTorrent(t *testing.T) {
 	t.Parallel()
 
-	db := openMigrated(t, filepath.Join(t.TempDir(), "harbrr.db"))
+	db := dbtest.OpenMigrated(t)
 	ctx := context.Background()
 
 	if _, err := db.ExecContext(ctx,
@@ -374,7 +375,7 @@ func TestProtocolColumnDefaultsToTorrent(t *testing.T) {
 func TestPriorityAndMinSeedersRoundTrip(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, filepath.Join(t.TempDir(), "harbrr.db"))
+	db := dbtest.OpenMigrated(t)
 	instances := database.Instances{}
 	now := time.Now().UTC().Truncate(time.Second)
 

@@ -11,22 +11,15 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 )
 
-// openBudgetDB opens and migrates a file-backed DB, mirroring openCacheDB — a file path
+// openBudgetDB opens a migrated file-backed DB, mirroring openCacheDB — a file path
 // (not :memory:) survives across two handles, letting the persistence tests reopen to
-// simulate a restart.
+// simulate a restart (an existing file is reopened with its data intact).
 func openBudgetDB(t *testing.T, path string) *database.DB {
 	t.Helper()
-	db, err := database.Open(path)
-	if err != nil {
-		t.Fatalf("open db %q: %v", path, err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := db.Migrate(context.Background()); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	return db
+	return dbtest.OpenMigratedAt(t, path)
 }
 
 // TestRequestBudget_UnsetIsUnlimited proves that with no query_limit/grab_limit

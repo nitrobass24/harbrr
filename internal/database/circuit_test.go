@@ -2,16 +2,16 @@ package database_test
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 )
 
 func TestCircuitGetMissingRowIsZeroState(t *testing.T) {
 	t.Parallel()
-	db := openMigrated(t, filepath.Join(t.TempDir(), "circuit.db"))
+	db := dbtest.OpenMigrated(t)
 	ctx := context.Background()
 	id := seedInstance(t, db, "tt")
 
@@ -30,7 +30,7 @@ func TestCircuitGetMissingRowIsZeroState(t *testing.T) {
 
 func TestCircuitUpsertRoundTrips(t *testing.T) {
 	t.Parallel()
-	db := openMigrated(t, filepath.Join(t.TempDir(), "circuit.db"))
+	db := dbtest.OpenMigrated(t)
 	ctx := context.Background()
 	id := seedInstance(t, db, "tt")
 	c := database.Circuit{}

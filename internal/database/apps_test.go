@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/autobrr/harbrr/internal/database"
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 	"github.com/autobrr/harbrr/internal/domain"
 )
 
@@ -40,7 +41,7 @@ func insertApp(t *testing.T, db *database.DB, a domain.App) domain.App {
 func TestAppInsertSetSecretRoundTrip(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.Apps{}
 	now := time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC)
 
@@ -75,7 +76,7 @@ func TestAppInsertSetSecretRoundTrip(t *testing.T) {
 
 func TestAppSetAppSecretNotFound(t *testing.T) {
 	t.Parallel()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.Apps{}
 	if err := repo.SetAppSecret(context.Background(), db, 999, "enc", "key"); !errors.Is(err, database.ErrNotFound) {
 		t.Errorf("err = %v, want database.ErrNotFound", err)
@@ -84,7 +85,7 @@ func TestAppSetAppSecretNotFound(t *testing.T) {
 
 func TestAppGetNotFound(t *testing.T) {
 	t.Parallel()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.Apps{}
 	if _, err := repo.GetApp(context.Background(), db, 999); !errors.Is(err, database.ErrNotFound) {
 		t.Errorf("err = %v, want database.ErrNotFound", err)
@@ -94,7 +95,7 @@ func TestAppGetNotFound(t *testing.T) {
 func TestAppGetByIdentity(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.Apps{}
 	now := time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC)
 	app := insertApp(t, db, sampleApp(now))
@@ -115,7 +116,7 @@ func TestAppGetByIdentity(t *testing.T) {
 func TestAppListOrdering(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.Apps{}
 	now := time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC)
 
@@ -141,7 +142,7 @@ func TestAppListOrdering(t *testing.T) {
 func TestAppUpdate(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.Apps{}
 	now := time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC)
 	app := insertApp(t, db, sampleApp(now))
@@ -174,7 +175,7 @@ func TestAppUpdate(t *testing.T) {
 
 func TestAppUpdateNotFound(t *testing.T) {
 	t.Parallel()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.Apps{}
 	err := repo.UpdateApp(context.Background(), db, domain.App{ID: 999, Kind: domain.AppKindQui, Name: "n", UpdatedAt: time.Now().UTC()})
 	if !errors.Is(err, database.ErrNotFound) {
@@ -185,7 +186,7 @@ func TestAppUpdateNotFound(t *testing.T) {
 func TestAppDelete(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.Apps{}
 	now := time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC)
 	app := insertApp(t, db, sampleApp(now))
@@ -200,7 +201,7 @@ func TestAppDelete(t *testing.T) {
 
 func TestAppDeleteNotFound(t *testing.T) {
 	t.Parallel()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.Apps{}
 	if err := repo.DeleteApp(context.Background(), db, 999); !errors.Is(err, database.ErrNotFound) {
 		t.Errorf("err = %v, want database.ErrNotFound", err)
@@ -210,7 +211,7 @@ func TestAppDeleteNotFound(t *testing.T) {
 func TestAppUniqueKindBaseURL(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.Apps{}
 	now := time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC)
 	insertApp(t, db, sampleApp(now))
@@ -231,7 +232,7 @@ func TestAppUniqueKindBaseURL(t *testing.T) {
 func TestAppCountReferences(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db := openMigrated(t, ":memory:")
+	db := dbtest.OpenMigrated(t)
 	repo := database.Apps{}
 	now := time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC)
 	app := insertApp(t, db, sampleApp(now))
