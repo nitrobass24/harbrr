@@ -277,8 +277,15 @@ func TestCreateBlackhole_Success(t *testing.T) {
 	if c.Host != "" {
 		t.Errorf("Host = %q, want empty", c.Host)
 	}
-	if c.Settings.Blackhole == nil || c.Settings.Blackhole.TorrentDir != torrentDir {
-		t.Errorf("Settings.Blackhole = %+v, want TorrentDir %q", c.Settings.Blackhole, torrentDir)
+	// Read back through the DB rather than asserting on Create's return value —
+	// Create echoes the caller's own Settings struct, so only a fresh Get proves
+	// the settings (including a native path) survived the persistence round trip.
+	got, err := svc.Get(context.Background(), c.ID)
+	if err != nil {
+		t.Fatalf("Get after Create: %v", err)
+	}
+	if got.Settings.Blackhole == nil || got.Settings.Blackhole.TorrentDir != torrentDir {
+		t.Errorf("persisted Settings.Blackhole = %+v, want TorrentDir %q", got.Settings.Blackhole, torrentDir)
 	}
 }
 

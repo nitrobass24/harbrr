@@ -188,6 +188,10 @@ func TestRunFlushesCacheBeforeClose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	// Run's return closes the db on the happy path; the Cleanup covers every
+	// t.Fatalf before/around Run, so a failure can't strand the file open and
+	// break TempDir removal on Windows (double Close is a nil no-op).
+	t.Cleanup(func() { _ = a.db.Close() })
 
 	instID := insertCleanupInstance(t, a.db)
 	old := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
