@@ -1,6 +1,7 @@
 package torznabhttp
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -240,15 +241,10 @@ func ServeGrab(w http.ResponseWriter, r *http.Request, idx core.Indexer, dlToken
 	if p.ContentType != torrentContentType {
 		ext = ".nzb"
 	}
-	name := p.Name
-	if name == "" {
-		name = idx.Info().ID
-	}
-	disposition := mime.FormatMediaType("attachment", map[string]string{"filename": name + ext})
-	if disposition == "" {
-		disposition = mime.FormatMediaType("attachment", map[string]string{"filename": idx.Info().ID + ext})
-	}
-	w.Header().Set("Content-Disposition", disposition)
+	name := cmp.Or(p.Name, idx.Info().ID)
+	// FormatMediaType only fails on a non-token media type or attribute name, both
+	// literals here, so it always renders: it quotes or RFC 2231-encodes any stem.
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name + ext}))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(p.Body) //nolint:gosec // G705: torrent file served as application/x-bittorrent, fixed non-HTML content type
 }
