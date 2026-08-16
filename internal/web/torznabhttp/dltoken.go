@@ -30,6 +30,11 @@ func dlTokenPurpose(indexerID string) string {
 
 // downloadName converts an untrusted release title into a cross-platform filename
 // stem. A blank title stays empty so callers can apply their explicit fallback.
+//
+// pathologize.Clean caps a name at 255 bytes; we need room for the extension on top,
+// so a long title is cut further here. Every cut is re-cleaned: cutting can expose a
+// trailing dot or space that Clean had already trimmed, and an unclean stem is a stem
+// the decoder drops.
 func downloadName(title string) string {
 	if strings.TrimSpace(title) == "" {
 		return ""
@@ -37,7 +42,7 @@ func downloadName(title string) string {
 	name := pathologize.Clean(title)
 	for len(name) > maxDownloadNameBytes {
 		_, size := utf8.DecodeLastRuneInString(name)
-		name = name[:len(name)-size]
+		name = pathologize.Clean(name[:len(name)-size])
 	}
 	return name
 }
@@ -72,9 +77,13 @@ func parseDLTokenV2Payload(payload string) (dlTokenPayload, error) {
 	if err != nil {
 		return dlTokenPayload{}, errors.New("dl token payload: invalid name")
 	}
+	// An unusable stem is dropped, never rejected: the payload is AEAD-authenticated
+	// under our own keyring, so an unclean name means harbrr minted it wrong, not that
+	// someone forged it. Failing the token here would turn a cosmetic filename problem
+	// into a dead download; the empty stem falls through to the caller's fallback.
 	name := string(nameBytes)
-	if !utf8.ValidString(name) || len(name) > maxDownloadNameBytes || (name != "" && !pathologize.IsClean(name)) {
-		return dlTokenPayload{}, errors.New("dl token payload: invalid name")
+	if !utf8.ValidString(name) || len(name) > maxDownloadNameBytes || !pathologize.IsClean(name) {
+		name = ""
 	}
 	if parts[2] == "" {
 		return dlTokenPayload{}, errors.New("dl token payload: missing link")

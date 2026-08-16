@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/rs/zerolog"
+	"github.com/spf13/pathologize"
 
 	"github.com/autobrr/harbrr/internal/secrets"
 )
@@ -115,6 +116,73 @@ func TestDLToken_MalformedV2PayloadRejected(t *testing.T) {
 			token := sealedDLTestPayload(t, kr, "mytracker", tt.payload)
 			if _, err := decodeDLToken(kr, "mytracker", token); err == nil {
 				t.Error("expected malformed payload to fail")
+			}
+		})
+	}
+}
+
+// TestDLToken_OverlongTitleStillGrabs pins the rule that a title too long for the
+// filename budget costs at most the filename, never the download. Cutting the stem to
+// fit can expose a trailing dot or space that pathologize.Clean had already trimmed,
+// and the decoder drops a stem it considers unclean — so a sloppy cut used to mint a
+// token harbrr itself refused to open.
+func TestDLToken_OverlongTitleStillGrabs(t *testing.T) {
+	t.Parallel()
+	kr := encryptedKeyring(t)
+	tests := []struct {
+		name  string
+		title string
+	}{
+		{name: "cut lands on a space", title: strings.Repeat("A", maxDownloadNameBytes-1) + " Extended.Cut.2160p"},
+		{name: "cut lands on a dot", title: strings.Repeat("A", maxDownloadNameBytes-1) + ".2160p.WEB-DL.HEVC"},
+		{name: "cut lands mid multi-byte rune", title: strings.Repeat("あ", maxDownloadNameBytes)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			token, err := encodeDLToken(kr, "mytracker", 2000, tt.title, dlTestLink)
+			if err != nil {
+				t.Fatalf("encodeDLToken: %v", err)
+			}
+			got, err := decodeDLToken(kr, "mytracker", token)
+			if err != nil {
+				t.Fatalf("decodeDLToken rejected a token harbrr just minted: %v", err)
+			}
+			if got.link != dlTestLink {
+				t.Error("round trip link differs from the sealed link (values withheld: link-shaped)")
+			}
+			if got.name == "" {
+				t.Error("stem dropped entirely; a truncated title should still name the file")
+			}
+			if len(got.name) > maxDownloadNameBytes {
+				t.Errorf("stem is %d bytes, over the %d budget", len(got.name), maxDownloadNameBytes)
+			}
+			if !pathologize.IsClean(got.name) {
+				t.Errorf("truncated stem is not a portable filename: %q", got.name)
+			}
+		})
+	}
+}
+
+// TestDLToken_UncleanSealedNameDrops proves an unclean stem costs the filename and
+// nothing else: the payload is AEAD-authenticated under our own keyring, so it can only
+// come from harbrr minting it wrong, and failing the token would kill a live download.
+func TestDLToken_UncleanSealedNameDrops(t *testing.T) {
+	t.Parallel()
+	kr := encryptedKeyring(t)
+	for _, stem := range []string{"trailing dot.", "trailing space ", "CON", strings.Repeat("A", maxDownloadNameBytes+1)} {
+		t.Run(stem[:min(len(stem), 16)], func(t *testing.T) {
+			t.Parallel()
+			payload := "v2;2000;" + base64.RawURLEncoding.EncodeToString([]byte(stem)) + ";" + dlTestLink
+			got, err := decodeDLToken(kr, "mytracker", sealedDLTestPayload(t, kr, "mytracker", payload))
+			if err != nil {
+				t.Fatalf("decodeDLToken: %v", err)
+			}
+			if got.name != "" {
+				t.Errorf("unclean stem %q survived as %q, want it dropped", stem, got.name)
+			}
+			if got.link != dlTestLink {
+				t.Error("round trip link differs from the sealed link (values withheld: link-shaped)")
 			}
 		})
 	}
