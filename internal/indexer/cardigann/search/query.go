@@ -137,6 +137,12 @@ func (q Query) episodeSearchString() string {
 	return fmt.Sprintf("S%02dE%s", season, ep)
 }
 
+// EpisodeSearchString returns the Prowlarr-compatible season/episode token used by
+// native request generators: Sxx, SxxExx, or yyyy.MM.dd for a daily episode.
+func (q Query) EpisodeSearchString() string {
+	return q.episodeSearchString()
+}
+
 // dailyEpisodePattern guards the daily-episode parse with ParseExact's fixed
 // digit widths ("yyyy MM/dd"), which Go's lenient time.Parse would otherwise
 // relax (e.g. accepting a single-digit month Jackett rejects).

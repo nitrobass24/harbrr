@@ -182,8 +182,8 @@ make build                                   # -> bin/harbrr (embeds web/dist)
 
 ## Status & testing
 
-harbrr is **alpha**, but the engine is heavily validated. It ships **579 trackers** — 554 from
-the embedded Cardigann corpus plus 25 native drivers (with **18 more native drivers planned**) —
+harbrr is **alpha**, but the engine is heavily validated. It ships **575 trackers** — 550 from
+the embedded Cardigann corpus plus 25 native drivers (with **17 more native drivers planned**) —
 and every shipped tracker passes its **offline golden tests**. Live validation against real
 trackers and a real \*arr stack is tracked separately:
 
@@ -202,7 +202,7 @@ live-confirmed.
   release to a client is planned ([#8](https://github.com/autobrr/harbrr/issues/8)).
 - Cookie/manual-cookie definitions, non-Latin / `regexp2` trackers, and per-indexer proxies are
   offline-gated but **not yet live-tested** (waiting on a qualifying account/environment).
-- Most native drivers (AvistaZ family, HDBits, BeyondHD, Redacted/Orpheus/AlphaRatio,
+- Most native drivers (AvistaZ family, HDBits, BeyondHD, Redacted/Orpheus/AlphaRatio, XSpeeds,
   PassThePopcorn, …)
   are built and offline-gated, **pending credentials** for a live pass.
 - **Postgres** is deferred — SQLite only for now.

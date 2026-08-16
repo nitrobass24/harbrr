@@ -10,7 +10,7 @@ Cardigann can't express — and how far each is validated.
   account on that tracker). See **[Test status](test-status.md)** for the evidence behind this
   column and the auth/fetch patterns proven live.
 
-**592 trackers** total: 550 Cardigann corpus (all built) · 24 native drivers built · 18 native
+**592 trackers** total: 550 Cardigann corpus (all built) · 25 native drivers built · 17 native
 drivers planned. To configure one, see **[Adding an indexer](guides/add-indexer.md)**.
 
 ## Native drivers
@@ -25,6 +25,7 @@ Bespoke code in Jackett/Prowlarr (no Cardigann definition); harbrr ships native 
 | ExoticaZ | Bearer (login → token) | ✅ | ⬜ |
 | IPTorrents | Session cookie (HTML scrape) | ✅ | ✅ |
 | TorrentDay | Session cookie (HTML scrape) | ✅ | ⬜ |
+| XSpeeds | Managed session cookie (HTML scrape) | ✅ | ⬜ |
 | FileList | Passkey / JSON API | ✅ | ✅ |
 | HDBits | Passkey / JSON API | ✅ | ✅ |
 | BeyondHD | Passkey / JSON API | ✅ | ⬜ |
@@ -54,7 +55,6 @@ Native drivers we have issues for but haven't built. 👍 or comment on the issu
 | [FunFile](https://github.com/autobrr/harbrr/issues/23) | Session cookie (HTML scrape) | ⬜ | ⬜ |
 | [BitHDTV](https://github.com/autobrr/harbrr/issues/24) | Session cookie (HTML scrape) | ⬜ | ⬜ |
 | [TorrentBytes](https://github.com/autobrr/harbrr/issues/33) | Session cookie (HTML scrape) | ⬜ | ⬜ |
-| [XSpeeds](https://github.com/autobrr/harbrr/issues/34) | Session cookie (HTML scrape) | ⬜ | ⬜ |
 | [PreToMe](https://github.com/autobrr/harbrr/issues/35) | Session cookie (HTML scrape) | ⬜ | ⬜ |
 | [RevolutionTT](https://github.com/autobrr/harbrr/issues/36) | Session cookie (HTML scrape) | ⬜ | ⬜ |
 | [MTeam](https://github.com/autobrr/harbrr/issues/25) | Passkey / JSON API | ⬜ | ⬜ |

@@ -8,9 +8,8 @@ pattern those drivers follow, derived from the Prowlarr/Jackett source. It feeds
 the native-driver work; per-tracker divergences live beside each
 driver's fixtures, not here.
 
-**IPTorrents**, **MyAnonamouse**, and **FileList** — the natives missing from the user's
-stack when this pattern was first written — are now **shipped**, and are the worked examples
-below. The remaining native-only trackers are tracked as demand-gated issues under the
+**IPTorrents**, **MyAnonamouse**, **FileList**, and **XSpeeds** are shipped and are the worked
+examples below. The remaining native-only trackers are tracked as demand-gated issues under the
 [`native-driver`](https://github.com/autobrr/harbrr/labels/native-driver) label.
 
 ## Hard rule: newznab is usenet-only — a torrent tracker never gets a newznab preset
@@ -106,7 +105,7 @@ flag; tracker categories map to Torznab/Newznab ids. Build the download URL
 **explicitly** (Prowlarr's approach) rather than trusting an API-returned link
 (Jackett's) — deterministic and immune to a redacted field.
 
-## Two auth shapes cover all three
+## Auth shapes
 
 The axis that matters for a Go driver is **how the download authenticates**,
 because that's the same axis as the grab-auth gap (`/dl`). Build the
@@ -117,6 +116,21 @@ authenticated-`/dl` grab path first; these drivers reuse it.
 |---|---|---|---|---|
 | **IPTorrents** | full `Cookie` string + User-Agent | `Cookie` + `User-Agent` headers | `GET /t` — `q=+(term)`, repeated `cat=`, `free=on`, `p=` page; **HTML scrape** (`table#torrents tr`, columns resolved by header text, relative "time ago" dates, `a[href^="/download.php/"]`) | scrape the href, fetch over the same cookie session |
 | **MyAnonamouse** | `mam_id` session value | `Cookie: mam_id=…` | `GET tor/js/loadSearchJSONbasic.php`, `Accept: application/json`, `tor[text]`, `tor[srchIn][…]`, `tor[cat][n]`, `tor[perpage]=100`, `tor[startNumber]` offset; **JSON** | `tor/download.php/{dl}?tid={id}` over the cookie |
+
+#### Managed form-login session — XSpeeds
+
+XSpeeds is the worked example for a tracker where harbrr owns the browser-style session instead
+of accepting a pasted cookie. The driver declares required username/password fields, performs the
+landing-page `GET` and login-form `POST`, stores the resulting cookie as a hidden encrypted
+setting, and seeds it into the per-instance jar after restart. Search and grab disable redirects so
+a login bounce, 401/403, or positively identified login page renews the session once and retries.
+
+The complete login/search/grab operation is serialized per instance. Persistence happens before a
+new cookie generation is published; failure restores the previous base-URL cookie view. Runtime,
+stored, and request-used cookie values must be supplied to both `Base.ScrubErr` and
+`Base.DoDownload` capture redaction. The parser remains tracker-specific: `GET browse.php`, HTML
+row selectors, mapped categories, UTC-normalized dates, and freeleech/upload factors. Exact oracle
+and divergence details stay in `internal/indexer/native/xspeeds/testdata/README.md`.
 
 **MAM gotcha — cookie rotation.** MAM rotates `mam_id` on *every* response. A
 correct driver must capture `Set-Cookie` and persist the new `mam_id` (Prowlarr:

@@ -88,8 +88,8 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 |---|:--|
 | Torznab + Newznab endpoints per indexer | ✅ |
 | Cardigann engine at parity with the upstream definition format | ✅ |
-| **598 trackers** — 556 Cardigann definitions + 24 native Go drivers | ✅ |
-| Native drivers for trackers Cardigann can't express (AvistaZ family, Gazelle, HDBits, PTP, BTN, MAM, FileList, IPTorrents, Nebulance, AnimeBytes, GazelleGames, BeyondHD, TorrentDay, NZBIndex, …) | ✅ |
+| **575 trackers** — 550 Cardigann definitions + 25 native Go drivers | ✅ |
+| Native drivers for trackers Cardigann can't express (AvistaZ family, Gazelle, HDBits, PTP, BTN, MAM, FileList, IPTorrents, XSpeeds, Nebulance, AnimeBytes, GazelleGames, BeyondHD, TorrentDay, NZBIndex, …) | ✅ |
 | Usenet (Newznab) indexers alongside torrents | ✅ |
 | Search-results cache with tiered TTLs, SWR, and negative caching | ✅ |
 | Failing-tracker circuit breaker | ✅ |
@@ -99,7 +99,7 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 | Partial results — a failing indexer degrades its own contribution, never the whole search | ✅ |
 | ID-based search (IMDb/TMDb/TVDB) and category mapping | ✅ |
 | Multi-select definition settings (checkbox / select / multi-select field types) | ✅ |
-| 18 further native drivers | 🚧 |
+| 17 further native drivers | 🚧 |
 | Per-indexer request timeout — a reserved `timeout` duration setting on every indexer's advanced options | ✅ |
 | Automatic failover across a tracker's known base URLs — only on host-shaped failure, never on an auth or rate-limit error, and a candidate must pass a real search before it is promoted; the configured host is never overwritten | ✅ |
 | Per-indexer required release flags (freeleech, halfleech, …) | 🚧 [#385](https://github.com/autobrr/harbrr/issues/385) |
@@ -241,5 +241,5 @@ goodwill — caching, budgets, and rate limiting — plus first-class support fo
 ## Next
 
 - **[Getting started](../getting-started.md)** — run harbrr and point an \*arr at it.
-- **[Tracker coverage](../coverage.md)** — all 599 trackers and how far each is validated.
+- **[Tracker coverage](../coverage.md)** — all 592 trackers and how far each is validated.
 - **[Configuration](../configuration.md)** — every key and environment variable.

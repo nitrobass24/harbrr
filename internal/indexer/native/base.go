@@ -228,12 +228,14 @@ func (b *Base) Do(ctx context.Context, req *stdhttp.Request, c Classify) (*Respo
 // DoDownload is Do for the grab path: same transport redaction and status
 // classification (op "download" in error text), but the body is read under the
 // torrent cap and a body past the cap is ErrDownloadTooLarge rather than a silent
-// truncation — a truncated .torrent is corrupt, not shorter.
-func (b *Base) DoDownload(ctx context.Context, req *stdhttp.Request, c Classify) (*Response, error) {
-	return b.roundTrip(ctx, req, c, "download")
+// truncation — a truncated .torrent is corrupt, not shorter. captureSecrets adds
+// request-scoped credentials held outside the static definition settings, such as a
+// rotated session cookie, to refusal-capture redaction.
+func (b *Base) DoDownload(ctx context.Context, req *stdhttp.Request, c Classify, captureSecrets ...string) (*Response, error) {
+	return b.roundTrip(ctx, req, c, "download", captureSecrets...)
 }
 
-func (b *Base) roundTrip(ctx context.Context, req *stdhttp.Request, c Classify, op string) (*Response, error) {
+func (b *Base) roundTrip(ctx context.Context, req *stdhttp.Request, c Classify, op string, captureSecrets ...string) (*Response, error) {
 	resp, err := b.Doer.Do(req.WithContext(ctx))
 	if err != nil {
 		// The transport error is a *url.Error whose Error() embeds the FULL
@@ -257,7 +259,7 @@ func (b *Base) roundTrip(ctx context.Context, req *stdhttp.Request, c Classify, 
 	out := &Response{StatusCode: resp.StatusCode, Header: resp.Header}
 	if serr := c.statusError(b.Family, op, resp, b.Clock); serr != nil {
 		if op == "download" {
-			serr = b.captureRefusal(req, resp, serr)
+			serr = b.captureRefusal(req, resp, serr, captureSecrets)
 		}
 		return out, serr
 	}
@@ -294,10 +296,11 @@ func (b *Base) roundTrip(ctx context.Context, req *stdhttp.Request, c Classify, 
 // search.CaptureReadLimit and deliberately best-effort — a partial read still shows
 // what the tracker managed to send, and a read failure must never replace the status
 // error the caller is classifying.
-func (b *Base) captureRefusal(req *stdhttp.Request, resp *stdhttp.Response, err error) error {
+func (b *Base) captureRefusal(req *stdhttp.Request, resp *stdhttp.Response, err error, extraSecrets []string) error {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, search.CaptureReadLimit))
+	secrets := append(append([]string(nil), b.captureSecrets...), extraSecrets...)
 	return &search.CaptureError{
-		Capture: search.NewCapture(req.Method, req.URL.String(), resp.StatusCode, resp.Header, body, b.captureSecrets),
+		Capture: search.NewCapture(req.Method, req.URL.String(), resp.StatusCode, resp.Header, body, secrets),
 		Err:     err,
 	}
 }
