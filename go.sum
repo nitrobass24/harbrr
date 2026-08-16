@@ -8,8 +8,8 @@ github.com/andybalholm/cascadia v1.3.4 h1:vM2lgh0Vru9Vwyfm4cQqWP2HHMW0u0+2PAW7Q3
 github.com/andybalholm/cascadia v1.3.4/go.mod h1:BLRmbRjpEtNKieZOCCvYj4RqN+KRA41GBe/5O+G93kM=
 github.com/autobrr/go-deluge v1.4.0 h1:IW3mX90YQjJri304/br3JT18WZmjiwP8AaXlVaGj3DM=
 github.com/autobrr/go-deluge v1.4.0/go.mod h1:ndiXT1eHWv/ATNk9TpE8GHIs8OSSUnsImt4Syk+y5LM=
-github.com/autobrr/go-qbittorrent v1.17.0 h1:GEIfzkdLKkRFkkxGhEnY+LS9dTlMKXE1ZBMOSDCjG3A=
-github.com/autobrr/go-qbittorrent v1.17.0/go.mod h1:9ujARiuSKZf8+NtApflTB69Wsptsp0Qk1mSVVC0tGzM=
+github.com/autobrr/go-qbittorrent v1.18.0 h1:iuVM9PAUfUPbkLvS/VcojEEKqxbzkJ3JlgDlLz3khVM=
+github.com/autobrr/go-qbittorrent v1.18.0/go.mod h1:spB3GP7xDu0btv59uUdxkLPEzoT+9xpx86QpJr4DUOw=
 github.com/autobrr/go-rtorrent v1.12.0 h1:9ErIBHFWHWG2HP17USfS+7SAhjwgdYeMQNNvsMCPmcw=
 github.com/autobrr/go-rtorrent v1.12.0/go.mod h1:xEJQEUNU2GfFk8mzIb02lxNgnIJ9SDOgqKVXA4tQqvw=
 github.com/avast/retry-go v3.0.0+incompatible h1:4SOWQ7Qs+oroOTQOYnAHqelpCO0biHSxpiH9JdtuBj0=
