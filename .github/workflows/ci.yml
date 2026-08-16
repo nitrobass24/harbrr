@@ -383,22 +383,15 @@ jobs:
 
   golangci-lint:
     name: golangci-lint
-    needs: go-version
     runs-on: self-hosted
-    # Alpine container matching the Dockerfile's build stage, lint run by the
-    # image's own Go — see backend-test above for the full gcompat / no-setup-go /
-    # GOTOOLCHAIN=local rationale. No non-root user here: linting has no
-    # permission-gated tests, and golangci-lint-action manages its own cache.
-    container:
-      # Derived from go.mod via the go-version job — NOT the floating 1.26-alpine,
-      # which lagged go.mod once already and silently poisoned the lint cache.
-      image: golang:${{ needs.go-version.outputs.version }}-alpine
+    # Host job, not a container: linting has no permission-gated tests (unlike
+    # backend-test, which needs a non-root user), and the product binary is
+    # CGO_ENABLED=0, so nothing it lints links libc — the musl toolchain the Alpine
+    # image provided bought nothing here. setup-go installs exactly what go.mod asks
+    # for, so the image-vs-go.mod desync that once poisoned this job's cache cannot
+    # recur: there is no image tag left to drift.
     timeout-minutes: 10
-    env:
-      GOTOOLCHAIN: local
     steps:
-      - name: install container prerequisites (gcompat for GHA's Node runtime, git for checkout/go mod, tar for golangci-lint-action's cache)
-        run: apk add --no-cache gcompat git tar
       # Linting runs no git operations of its own after checkout, so don't leave the
       # GITHUB_TOKEN readable in .git/config — same posture as every other job here.
       # only-new-issues is unaffected: golangci-lint-action reads the base diff through
@@ -406,16 +399,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # The container's Go must satisfy go.mod. It normally does — the image tag is
-      # derived from go.mod — but a desync used to degrade silently rather than fail:
-      # with GOTOOLCHAIN=local an older Go cannot load the packages, golangci-lint fell
-      # back to partial type information, and staticcheck emitted false SA5011 nil-deref
-      # findings which the action then SAVED to its cache. Every later run restored that
-      # poisoned cache, so main stayed red on findings the code never had. `go list -m`
-      # is the cheapest command that refuses outright on a too-old toolchain, so a future
-      # desync stops here with a clear message instead of poisoning the cache.
-      - name: assert the container Go satisfies go.mod
-        run: go version && go list -m
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          # Single source of truth (autobrr/qui's pattern): setup-go reads the
+          # version straight from go.mod, so a bump there needs no CI edit.
+          go-version-file: go.mod
+          # Host job on the shared persistent self-hosted fleet: GOMODCACHE/GOCACHE
+          # already persist in /root between runs, so a GHA cache round-trip is pure
+          # overhead. Container jobs that need caching (backend-test) use actions/cache.
+          cache: false
       - name: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
