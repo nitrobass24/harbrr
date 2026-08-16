@@ -1604,7 +1604,8 @@ paths:
       responses:
         "200":
           description: >
-            The torrent file (application/x-bittorrent) on success. Unlike the
+            The torrent (application/x-bittorrent) or NZB (application/x-nzb) file on
+            success. Unlike the
             caps/search feed, the /dl route returns real HTTP status codes for gate
             failures (matching Jackett's DownloadController), so *arr surfaces them as
             transport errors rather than accepting a 200 that later fails as an invalid
@@ -1618,6 +1619,8 @@ paths:
               schema: { type: string }
           content:
             application/x-bittorrent:
+              schema: { type: string, format: binary }
+            application/x-nzb:
               schema: { type: string, format: binary }
         "302":
           description: redirect to a resolved magnet URI (only ever a magnet, never an http link)

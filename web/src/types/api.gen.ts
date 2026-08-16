@@ -4800,7 +4800,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The torrent file (application/x-bittorrent) on success. Unlike the caps/search feed, the /dl route returns real HTTP status codes for gate failures (matching Jackett's DownloadController), so *arr surfaces them as transport errors rather than accepting a 200 that later fails as an invalid torrent file. */
+            /** @description The torrent (application/x-bittorrent) or NZB (application/x-nzb) file on success. Unlike the caps/search feed, the /dl route returns real HTTP status codes for gate failures (matching Jackett's DownloadController), so *arr surfaces them as transport errors rather than accepting a 200 that later fails as an invalid torrent file. */
             200: {
                 headers: {
                     /** @description Attachment filename derived from the sanitized release title and protocol extension; tokens without title metadata fall back to the configured indexer ID plus .torrent or .nzb. */
@@ -4809,6 +4809,7 @@ export interface operations {
                 };
                 content: {
                     "application/x-bittorrent": string;
+                    "application/x-nzb": string;
                 };
             };
             /** @description redirect to a resolved magnet URI (only ever a magnet, never an http link) */
