@@ -22,7 +22,6 @@ permissions:
   contents: read
 
 env:
-  GO_VERSION: 1.26.6
   # A stalled cache-blob download (0 MB/s mid-transfer, seen from the self-hosted
   # fleet) otherwise hangs for actions/cache's default 10-minute segment timeout
   # before falling back to a miss. Give up after 2 and take the miss.
@@ -34,6 +33,30 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # go.mod is the ONLY place the Go version is written. A container tag is resolved
+  # before any step runs, so it cannot read go.mod directly and cannot read `env`
+  # either (container.image's contexts are github/needs/strategy/matrix/vars/inputs).
+  # This job reads it once and publishes it, so the two container jobs below derive
+  # their image from the same line the toolchain check enforces.
+  go-version:
+    name: go-version
+    runs-on: self-hosted
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: read
+        # The `go` directive carries the full patch (go 1.26.6), which is exactly the
+        # golang:<version>-alpine tag we need.
+        run: |
+          v=$(awk '/^go /{print $2; exit}' go.mod)
+          case "$v" in
+            *.*.*) ;;
+            *) echo "go.mod's go directive ($v) has no patch version; the image tag needs one" >&2; exit 1 ;;
+          esac
+          echo "version=$v" >> "$GITHUB_OUTPUT"
   # Tool-agnostic guard: block hand-edits to the vendored Jackett snapshot
   # (internal/indexer/definitions/vendor/**), which is consumed byte-for-byte. This is
   # the authoritative, non-bypassable enforcement of AGENTS.md's #1 rule — a contributor
@@ -57,6 +80,7 @@ jobs:
   # Cross-build below covers other platforms and vet is covered by golangci-lint (govet).
   backend-test:
     name: backend-test (${{ matrix.shard.name }})
+    needs: go-version
     runs-on: self-hosted
     # Match the Dockerfile's build stage (golang:1.26-alpine) so the toolchain that
     # tests is the image's own musl Go — hence no actions/setup-go here (it would
@@ -70,7 +94,9 @@ jobs:
     # musl-dev) is required because `go test -race` always needs cgo, unlike the
     # Dockerfile's CGO_ENABLED=0 product build.
     container:
-      image: golang:1.26-alpine
+      # Derived from go.mod via the go-version job — NOT the floating 1.26-alpine,
+      # which lagged go.mod once already and silently poisoned the lint cache.
+      image: golang:${{ needs.go-version.outputs.version }}-alpine
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -114,18 +140,23 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /home/ci/go/pkg/mod
-          key: alpine-gomod-${{ matrix.shard.name }}-${{ env.GO_VERSION }}-${{ hashFiles('go.sum') }}
+          key: alpine-gomod-${{ matrix.shard.name }}-${{ hashFiles('go.mod') }}-${{ hashFiles('go.sum') }}
           restore-keys: |
-            alpine-gomod-${{ matrix.shard.name }}-${{ env.GO_VERSION }}-
+            alpine-gomod-${{ matrix.shard.name }}-${{ hashFiles('go.mod') }}-
             alpine-gomod-
       # Build cache is shard-specific (each shard compiles a different package set) — keep
       # it per-shard for a warm incremental compile.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /home/ci/.cache/go-build
-          key: alpine-gobuild-${{ matrix.shard.name }}-${{ env.GO_VERSION }}-${{ hashFiles('go.sum') }}
+          key: alpine-gobuild-${{ matrix.shard.name }}-${{ hashFiles('go.mod') }}-${{ hashFiles('go.sum') }}
           restore-keys: |
-            alpine-gobuild-${{ matrix.shard.name }}-${{ env.GO_VERSION }}-
+            alpine-gobuild-${{ matrix.shard.name }}-${{ hashFiles('go.mod') }}-
+      # Same toolchain assertion as the golangci-lint job: with GOTOOLCHAIN=local an
+      # image older than go.mod's requirement cannot load packages, and this fails loud
+      # here rather than surfacing as a confusing downstream error.
+      - name: assert the container Go satisfies go.mod
+        run: go version && go list -m
       - name: guard shard package coverage
         if: matrix.shard.name == 'rest'
         run: |
@@ -304,22 +335,24 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: ${{ env.GO_VERSION }}
+          # Single source of truth (autobrr/qui's pattern): setup-go reads the
+          # version straight from go.mod, so a bump there needs no CI edit.
+          go-version-file: go.mod
           # Container job: /root does not persist between runs — cache via
           # actions/cache below (setup-go's cache needs a writable hosttoolcache).
           cache: false
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /root/go/pkg/mod
-          key: e2e-gomod-${{ env.GO_VERSION }}-${{ hashFiles('go.sum') }}
+          key: e2e-gomod-${{ hashFiles('go.mod') }}-${{ hashFiles('go.sum') }}
           restore-keys: |
-            e2e-gomod-${{ env.GO_VERSION }}-
+            e2e-gomod-${{ hashFiles('go.mod') }}-
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /root/.cache/go-build
-          key: e2e-gobuild-${{ env.GO_VERSION }}-${{ hashFiles('go.sum') }}
+          key: e2e-gobuild-${{ hashFiles('go.mod') }}-${{ hashFiles('go.sum') }}
           restore-keys: |
-            e2e-gobuild-${{ env.GO_VERSION }}-
+            e2e-gobuild-${{ hashFiles('go.mod') }}-
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           package_json_file: web/package.json
@@ -350,20 +383,39 @@ jobs:
 
   golangci-lint:
     name: golangci-lint
+    needs: go-version
     runs-on: self-hosted
     # Alpine container matching the Dockerfile's build stage, lint run by the
     # image's own Go — see backend-test above for the full gcompat / no-setup-go /
     # GOTOOLCHAIN=local rationale. No non-root user here: linting has no
     # permission-gated tests, and golangci-lint-action manages its own cache.
     container:
-      image: golang:1.26-alpine
+      # Derived from go.mod via the go-version job — NOT the floating 1.26-alpine,
+      # which lagged go.mod once already and silently poisoned the lint cache.
+      image: golang:${{ needs.go-version.outputs.version }}-alpine
     timeout-minutes: 10
     env:
       GOTOOLCHAIN: local
     steps:
       - name: install container prerequisites (gcompat for GHA's Node runtime, git for checkout/go mod, tar for golangci-lint-action's cache)
         run: apk add --no-cache gcompat git tar
+      # Linting runs no git operations of its own after checkout, so don't leave the
+      # GITHUB_TOKEN readable in .git/config — same posture as every other job here.
+      # only-new-issues is unaffected: golangci-lint-action reads the base diff through
+      # the API with its own token, not through the persisted git credential.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The container's Go must satisfy go.mod. It normally does — the image tag is
+      # derived from go.mod — but a desync used to degrade silently rather than fail:
+      # with GOTOOLCHAIN=local an older Go cannot load the packages, golangci-lint fell
+      # back to partial type information, and staticcheck emitted false SA5011 nil-deref
+      # findings which the action then SAVED to its cache. Every later run restored that
+      # poisoned cache, so main stayed red on findings the code never had. `go list -m`
+      # is the cheapest command that refuses outright on a too-old toolchain, so a future
+      # desync stops here with a clear message instead of poisoning the cache.
+      - name: assert the container Go satisfies go.mod
+        run: go version && go list -m
       - name: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
@@ -409,7 +461,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: ${{ env.GO_VERSION }}
+          # Single source of truth (autobrr/qui's pattern): setup-go reads the
+          # version straight from go.mod, so a bump there needs no CI edit.
+          go-version-file: go.mod
           # Host job on the shared persistent self-hosted fleet: GOMODCACHE/GOCACHE
           # already persist in /root between runs, so a GHA cache round-trip is pure
           # overhead. Container jobs that need caching (backend-test) use actions/cache.
@@ -457,7 +511,9 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: ${{ env.GO_VERSION }}
+          # Single source of truth (autobrr/qui's pattern): setup-go reads the
+          # version straight from go.mod, so a bump there needs no CI edit.
+          go-version-file: go.mod
           # Host job on the shared persistent self-hosted fleet: GOMODCACHE/GOCACHE
           # already persist in /root between runs, so a GHA cache round-trip is pure
           # overhead. Container jobs that need caching (backend-test) use actions/cache.
@@ -525,7 +581,9 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: ${{ env.GO_VERSION }}
+          # Single source of truth (autobrr/qui's pattern): setup-go reads the
+          # version straight from go.mod, so a bump there needs no CI edit.
+          go-version-file: go.mod
           # Host job on the shared persistent self-hosted fleet: GOMODCACHE/GOCACHE
           # already persist in /root between runs, so a GHA cache round-trip is pure
           # overhead. Container jobs that need caching (backend-test) use actions/cache.
@@ -720,7 +778,9 @@ jobs:
           fetch-depth: 0 # full history so the changelog can diff against the previous tag
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: ${{ env.GO_VERSION }}
+          # Single source of truth (autobrr/qui's pattern): setup-go reads the
+          # version straight from go.mod, so a bump there needs no CI edit.
+          go-version-file: go.mod
           # Host job on the shared persistent self-hosted fleet: GOMODCACHE/GOCACHE
           # already persist in /root between runs, so a GHA cache round-trip is pure
           # overhead. Container jobs that need caching (backend-test) use actions/cache.
