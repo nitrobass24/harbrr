@@ -86,6 +86,12 @@ themes included.
     <td align="center"><em>Indexers — add, test, enable/disable, filter</em></td>
     <td align="center"><em>Applications — sync indexers into Sonarr/Radarr/qui</em></td>
   </tr>
+  <tr>
+    <td colspan="2"><img alt="Search — fleet-wide results with grouping, freeleech badges, and send-to-client" src=".github/assets/search-dark.png"></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><em>Search — one query across every indexer, grouped duplicates, freeleech badges, grab or send straight to a download client</em></td>
+  </tr>
 </table>
 
 ---
