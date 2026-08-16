@@ -51,6 +51,13 @@ with Sonarr, Radarr, Lidarr, Readarr, Mylar, Whisparr, and any Torznab/Newznab c
   modernized execution engine, plus **native drivers** for trackers Cardigann can't express.
 - **App-sync** — push your indexers into Sonarr/Radarr/qui automatically, with configurable
   sync profiles (category narrowing, min seeders, per-capability search toggles).
+- **Search & send-to-client** — search your indexers from the web UI and send a release
+  straight to qBittorrent, Deluge, Transmission, rTorrent, Flood, SABnzbd, NZBGet, Synology
+  Download Station, qui, or a blackhole folder. Passkey-bearing links resolve server-side, so
+  the client never sees tracker credentials.
+- **Health & notifications** — per-indexer health with failure classification and recovery
+  tracking, plus Discord/webhook notifications for indexer failures, recoveries, and
+  approaching VIP/membership expiries.
 - **Shared RSS + search-results cache** — many consumers, one upstream request; far fewer
   tracker queries, lower latency, better tracker citizenship. Circuit breakers keep a flaky
   tracker from taking down a search.
@@ -182,8 +189,8 @@ make build                                   # -> bin/harbrr (embeds web/dist)
 
 ## Status & testing
 
-harbrr is **alpha**, but the engine is heavily validated. It ships **579 trackers** — 554 from
-the embedded Cardigann corpus plus 25 native drivers (with **18 more native drivers planned**) —
+harbrr is **alpha**, but the engine is heavily validated. It ships **574 trackers** — 550 from
+the embedded Cardigann corpus plus 24 native drivers (with **18 more native drivers planned**) —
 and every shipped tracker passes its **offline golden tests**. Live validation against real
 trackers and a real \*arr stack is tracked separately:
 
@@ -192,14 +199,15 @@ trackers and a real \*arr stack is tracked separately:
   grabs, and which auth/fetch patterns are proven live.
 
 **Proven live:** API-key trackers (UNIT3D & friends), user/pass form login, Cloudflare via
-FlareSolverr, and server-side grabs (`/dl`) for both cookie- and header-auth trackers.
-BroadcastTheNet, IPTorrents, FileList, MyAnonamouse, NZBIndex and generic Newznab/Usenet are
-live-confirmed.
+FlareSolverr, server-side grabs (`/dl`) for both cookie- and header-auth trackers, and the
+full **Sonarr → harbrr → qBittorrent** grab pipeline. BroadcastTheNet, IPTorrents, FileList,
+MyAnonamouse, NZBIndex and generic Newznab/Usenet are live-confirmed.
 
 **Not yet proven / not working:**
 
-- **Send-to-download-client** is not implemented — harbrr resolves download links; handing a
-  release to a client is planned ([#8](https://github.com/autobrr/harbrr/issues/8)).
+- The in-UI **send-to-client** flow and the download clients beyond qBittorrent (Deluge,
+  Transmission, rTorrent, Flood, SABnzbd, NZBGet, Download Station, qui, blackhole) are built
+  and offline-gated but **not yet live-tested**.
 - Cookie/manual-cookie definitions, non-Latin / `regexp2` trackers, and per-indexer proxies are
   offline-gated but **not yet live-tested** (waiting on a qualifying account/environment).
 - Most native drivers (AvistaZ family, HDBits, BeyondHD, Redacted/Orpheus/AlphaRatio,
