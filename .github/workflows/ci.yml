@@ -22,6 +22,10 @@ permissions:
   contents: read
 
 env:
+  # Bumping Go means three places: this, `go 1.x.y` in go.mod, and the two
+  # golang:<version>-alpine container images below. The images cannot read this
+  # value (container.image has no env context), so each Go job asserts its
+  # toolchain against go.mod instead — a forgotten image bump fails loud there.
   GO_VERSION: 1.26.6
   # A stalled cache-blob download (0 MB/s mid-transfer, seen from the self-hosted
   # fleet) otherwise hangs for actions/cache's default 10-minute segment timeout
@@ -70,7 +74,11 @@ jobs:
     # musl-dev) is required because `go test -race` always needs cgo, unlike the
     # Dockerfile's CGO_ENABLED=0 product build.
     container:
-      image: golang:${{ env.GO_VERSION }}-alpine
+      # Exact patch, NOT the floating 1.26-alpine: that tag lagged go.mod's
+      # required Go once already and silently poisoned the lint cache. Keep in
+      # sync with GO_VERSION above — the assert step below fails loud if it drifts.
+      # (An expression cannot be used here: container.image has no env context.)
+      image: golang:1.26.6-alpine
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -361,7 +369,11 @@ jobs:
     # GOTOOLCHAIN=local rationale. No non-root user here: linting has no
     # permission-gated tests, and golangci-lint-action manages its own cache.
     container:
-      image: golang:${{ env.GO_VERSION }}-alpine
+      # Exact patch, NOT the floating 1.26-alpine: that tag lagged go.mod's
+      # required Go once already and silently poisoned the lint cache. Keep in
+      # sync with GO_VERSION above — the assert step below fails loud if it drifts.
+      # (An expression cannot be used here: container.image has no env context.)
+      image: golang:1.26.6-alpine
     timeout-minutes: 10
     env:
       GOTOOLCHAIN: local
