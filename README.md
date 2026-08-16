@@ -134,12 +134,9 @@ docker run -d \
 ```
 
 The image runs non-root, exposes port 7478, ships a `/healthz` check, and already invokes
-`harbrr serve --host 0.0.0.0 --data-dir /config`.
-
-> [!NOTE]
-> `:latest` is published only for **stable** releases. During alpha (pre-releases) it won't
-> exist — pull the version tag instead, e.g. `ghcr.io/autobrr/harbrr:0.1.0-alpha` (no `v`
-> prefix). This applies to both the compose and run examples above.
+`harbrr serve --host 0.0.0.0 --data-dir /config`. `:latest` follows the newest release; pin a
+version tag (e.g. `ghcr.io/autobrr/harbrr:0.1.0-alpha`, no `v` prefix) if you'd rather update
+deliberately.
 
 ### Linux / macOS / Windows / FreeBSD (prebuilt binary)
 
@@ -148,18 +145,13 @@ Grab the archive for your platform from
 amd64 / arm / arm64):
 
 ```bash
-# download + extract the newest linux x86_64 build (works for pre-releases too)
-wget $(curl -s https://api.github.com/repos/autobrr/harbrr/releases \
-  | grep browser_download_url | grep linux_x86_64 | head -n1 | cut -d\" -f4)
+# download + extract the newest linux x86_64 build
+wget $(curl -s https://api.github.com/repos/autobrr/harbrr/releases/latest \
+  | grep browser_download_url | grep linux_x86_64 | cut -d\" -f4)
 tar -C /usr/local/bin -xzf harbrr*.tar.gz
 
 harbrr serve --data-dir ~/.config/harbrr   # open http://localhost:7478
 ```
-
-> [!NOTE]
-> During alpha, releases are published as **pre-releases**, so `/releases/latest` (which only
-> returns stable releases) won't find them — the command above lists all releases and takes the
-> newest asset. You can also just download from the [Releases page](https://github.com/autobrr/harbrr/releases).
 
 ### Build from source
 

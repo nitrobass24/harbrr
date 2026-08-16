@@ -81,7 +81,12 @@ changelog:
       order: 1
 
 release:
-  prerelease: auto # a tag like v0.1.0-alpha is published as a pre-release
+  # Alpha releases publish as FULL releases, not GitHub pre-releases: the version
+  # string itself (0.1.0-alpha) carries the maturity signal, while the pre-release
+  # flag only breaks every `latest` lookup — /releases/latest (the seedbox
+  # installers' unauthenticated resolution path, #463), the README's install
+  # one-liner, and the "Latest" badge.
+  prerelease: false
   # Curated highlights for the tag, injected by CI from the CHANGELOG.md section
   # (scripts/changelog-extract.sh -> $RELEASE_HEADER). Empty when a tag has no
   # CHANGELOG entry, so the release still publishes with just the commit list.
