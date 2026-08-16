@@ -2,7 +2,7 @@ package torznabhttp
 
 import (
 	"encoding/base64"
-	"fmt"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -171,11 +171,14 @@ func TestDLToken_OverlongTitleStillGrabs(t *testing.T) {
 func TestDLToken_UncleanSealedNameDrops(t *testing.T) {
 	t.Parallel()
 	kr := encryptedKeyring(t)
-	for _, stem := range []string{"trailing dot.", "trailing space ", "CON", strings.Repeat("A", maxDownloadNameBytes+1)} {
+	for _, stem := range []string{"trailing dot.", "trailing space ", "CON", "delete\x7fcontrol", strings.Repeat("A", maxDownloadNameBytes+1)} {
 		t.Run(stem[:min(len(stem), 16)], func(t *testing.T) {
 			t.Parallel()
-			payload := fmt.Sprintf(`{"c":2000,"n":%q,"l":%q}`, stem, dlTestLink)
-			got, err := decodeDLToken(kr, "mytracker", sealedDLTestPayload(t, kr, "mytracker", payload))
+			payload, err := json.Marshal(dlTokenPayload{CategoryID: 2000, Name: stem, Link: dlTestLink})
+			if err != nil {
+				t.Fatalf("marshal payload: %v", err)
+			}
+			got, err := decodeDLToken(kr, "mytracker", sealedDLTestPayload(t, kr, "mytracker", string(payload)))
 			if err != nil {
 				t.Fatalf("decodeDLToken: %v", err)
 			}

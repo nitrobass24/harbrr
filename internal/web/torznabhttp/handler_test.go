@@ -1039,6 +1039,33 @@ func TestServeGrab(t *testing.T) {
 		}
 	})
 
+	t.Run("strips DEL before writing attachment headers", func(t *testing.T) {
+		t.Parallel()
+		idx := &fakeIndexer{
+			info:       core.IndexerInfo{ID: "demo"},
+			grabResult: &search.GrabResult{Body: []byte("d0:e"), ContentType: torrentContentType},
+		}
+		token := tokenFor(t, "demo", "Bad\x7fName", "https://demo.test/x")
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ServeGrab(w, r, idx, kr, zerolog.Nop(), token, torznabGrabError)
+		}))
+		t.Cleanup(server.Close)
+
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL, nil)
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		resp, err := server.Client().Do(req)
+		if err != nil {
+			t.Fatalf("download: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if got := resp.Header.Get("Content-Disposition"); got != `attachment; filename="BadName.torrent"` {
+			t.Errorf("Content-Disposition = %q, want DEL-free filename", got)
+		}
+	})
+
 	t.Run("falls back to the indexer for empty and legacy metadata", func(t *testing.T) {
 		t.Parallel()
 		tests := []struct {

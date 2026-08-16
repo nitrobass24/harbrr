@@ -45,6 +45,7 @@ var cleanedDefaultName = pathologize.Clean("")
 // trailing dot or space that Clean had already trimmed, and an unclean stem is a stem
 // the decoder drops.
 func downloadName(title string) string {
+	title = strings.ReplaceAll(title, "\x7f", "")
 	if strings.TrimSpace(title) == "" {
 		return ""
 	}
@@ -81,7 +82,7 @@ func parseDLTokenPayload(payload string) (dlTokenPayload, error) {
 	// the token here would turn a cosmetic filename problem into a dead download; the
 	// empty stem falls through to the caller's fallback. IsClean also rejects invalid
 	// UTF-8 (Clean substitutes U+FFFD, so the round trip differs).
-	if len(p.Name) > maxDownloadNameBytes || !pathologize.IsClean(p.Name) {
+	if len(p.Name) > maxDownloadNameBytes || strings.ContainsRune(p.Name, '\x7f') || !pathologize.IsClean(p.Name) {
 		p.Name = ""
 	}
 	return p, nil
