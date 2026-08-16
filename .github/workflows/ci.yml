@@ -97,6 +97,15 @@ jobs:
       # Derived from go.mod via the go-version job — NOT the floating 1.26-alpine,
       # which lagged go.mod once already and silently poisoned the lint cache.
       image: golang:${{ needs.go-version.outputs.version }}-alpine
+      # Persistent host-disk Go caches instead of actions/cache: the self-hosted
+      # fleet shares one host, so round-tripping ~2GB of cache blobs through GHA
+      # storage cost ~40s of restore per shard (plus the stalled-segment-download
+      # failure mode) to land bytes on a disk they never left. The module cache is
+      # shared across shards (content-addressed, concurrency-safe via its own lock
+      # files); the build cache stays per-shard, matching the old per-shard keys.
+      volumes:
+        - /mnt/optane/github-actions/harbrr-go-cache/mod:/home/ci/go/pkg/mod
+        - /mnt/optane/github-actions/harbrr-go-cache/build-${{ matrix.shard.name }}:/home/ci/.cache/go-build
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -120,54 +129,48 @@ jobs:
       GOMODCACHE: /home/ci/go/pkg/mod
       GOCACHE: /home/ci/.cache/go-build
     steps:
-      - name: install container prerequisites (gcompat for GHA's Node runtime, git for checkout/go mod, build-base for -race's cgo requirement, ruby for the shard-coverage guard, tar for actions/cache)
+      - name: install container prerequisites (gcompat for GHA's Node runtime, git for checkout/go mod, build-base for -race's cgo requirement, ruby for the shard-coverage guard)
         run: |
-          apk add --no-cache gcompat git build-base ruby tar
+          apk add --no-cache gcompat git build-base ruby
           adduser -D ci
+          # The shared caches must only ever be written by uid 1000 (`ci` is the
+          # first user every fresh container creates): the three shards mount the
+          # same module cache concurrently, so a root-owned file written by one
+          # job breaks another job's ci-user reads mid-run. chown the mounts up
+          # front and keep every go invocation that can write to them (the shard
+          # guard, the tests) on the ci user.
+          chown -R ci: /home/ci
       # No git ops after checkout, and the tests below run as the less-trusted `ci`
       # user — don't leave the GITHUB_TOKEN readable in .git/config.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # The module cache key MUST include the shard: each shard only downloads the
-      # modules its packages need, so with a shared key whichever shard saved first
-      # pinned a PARTIAL cache for that go.sum (same-key saves no-op), and the other
-      # shards re-downloaded their missing modules at test time on every run — one
-      # proxy.golang.org blip then fails the job ("kin-openapi: TLS handshake
-      # timeout", re-run passes). Per-shard entries are ~17MB each — noise against
-      # the ~10GB per-repo LRU. restore-keys still seeds a new go.sum's entry from
-      # any older/sibling entry, so each shard converges to complete in one run.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: /home/ci/go/pkg/mod
-          key: alpine-gomod-${{ matrix.shard.name }}-${{ hashFiles('go.mod') }}-${{ hashFiles('go.sum') }}
-          restore-keys: |
-            alpine-gomod-${{ matrix.shard.name }}-${{ hashFiles('go.mod') }}-
-            alpine-gomod-
-      # Build cache is shard-specific (each shard compiles a different package set) — keep
-      # it per-shard for a warm incremental compile.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: /home/ci/.cache/go-build
-          key: alpine-gobuild-${{ matrix.shard.name }}-${{ hashFiles('go.mod') }}-${{ hashFiles('go.sum') }}
-          restore-keys: |
-            alpine-gobuild-${{ matrix.shard.name }}-${{ hashFiles('go.mod') }}-
       # Same toolchain assertion as the golangci-lint job: with GOTOOLCHAIN=local an
       # image older than go.mod's requirement cannot load packages, and this fails loud
-      # here rather than surfacing as a confusing downstream error.
+      # here rather than surfacing as a confusing downstream error. As ci for the same
+      # single-writer-uid reason as the guard: even a read-mostly go command may
+      # initialize cache directories.
       - name: assert the container Go satisfies go.mod
-        run: go version && go list -m
+        run: su ci -s /bin/sh -c "PATH='$PATH' HOME=/home/ci GOTOOLCHAIN=local GOFLAGS=-buildvcs=false GOMODCACHE=/home/ci/go/pkg/mod GOCACHE=/home/ci/.cache/go-build sh -c 'cd $PWD && go version && go list -m'"
+      # Runs as ci (not root): its `go list` downloads modules into the shared
+      # mounted cache, and only uid 1000 may ever write there (see prerequisites).
       - name: guard shard package coverage
         if: matrix.shard.name == 'rest'
         run: |
+          cat > /tmp/shard-guard.sh <<'SCRIPT'
+          set -eu
+          export HOME=/home/ci GOTOOLCHAIN=local GOFLAGS=-buildvcs=false GOMODCACHE=/home/ci/go/pkg/mod GOCACHE=/home/ci/.cache/go-build
+          cd "$1"
           ruby -ryaml -e 'YAML.load_file(".github/workflows/ci.yml").fetch("jobs").fetch("backend-test").fetch("strategy").fetch("matrix").fetch("shard").each { |s| puts "#{s.fetch("name")}\t#{s.fetch("packages")}" }' |
-            while IFS=$'\t' read -r shard packages; do
+            while IFS="$(printf '\t')" read -r shard packages; do
               echo "expanding ${shard}" >&2
               eval "go list ${packages}"
             done |
             sort -u > /tmp/backend-shard-packages.txt
           go list ./... | sort -u > /tmp/backend-all-packages.txt
           diff -u /tmp/backend-all-packages.txt /tmp/backend-shard-packages.txt
+          SCRIPT
+          su ci -s /bin/sh -c "PATH='$PATH' /bin/sh /tmp/shard-guard.sh '$PWD'"
       # Run as a non-root user: container jobs default to root, and root bypasses
       # file permissions — internal/secrets' fail-closed keyring test (unreadable
       # key_file must be fatal, never a plaintext fallback) t.Skips as root, which
@@ -177,7 +180,6 @@ jobs:
       # so PATH is handed through explicitly).
       - name: test (race, non-root)
         run: |
-          chown -R ci: /home/ci
           cat > /tmp/shard-test.sh <<'SCRIPT'
           set -eu
           export HOME=/home/ci CGO_ENABLED=1 GOTOOLCHAIN=local GOFLAGS=-buildvcs=false GOMODCACHE=/home/ci/go/pkg/mod GOCACHE=/home/ci/.cache/go-build
