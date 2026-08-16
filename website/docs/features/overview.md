@@ -134,7 +134,7 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 | Release push to autobrr | ✅ |
 | **10 download-client drivers** — qBittorrent, Deluge, Transmission, rTorrent, Flood, Synology Download Station, NZBGet, SABnzbd, qui, and blackhole | ✅ |
 | Interactive search in harbrr's own UI, with working downloads | ✅ |
-| Send a search result straight to a download client | ✅ |
+| [Send a search result straight to a download client](download-clients.md) | ✅ |
 | Sync download clients to apps | 🚧 [#237](https://github.com/autobrr/harbrr/issues/237) |
 | Per-indexer reject-executable-payloads setting, synced to apps | 🚧 [#381](https://github.com/autobrr/harbrr/issues/381) |
 | Credential sync to Upbrr | 🚧 [#101](https://github.com/autobrr/harbrr/issues/101) |

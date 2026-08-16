@@ -193,10 +193,12 @@ func (a *indexerAdapter) Search(ctx context.Context, q search.Query) ([]*normali
 	//
 	// Paging note: this filter runs INSIDE the Search the handler's pager measures, so on
 	// a deep-paging driver the honor feed's has-more floor is computed on the post-filter
-	// page and can stop early (the documented pagination-dilution divergence). This is
-	// unreachable for the shipped paging drivers — only usenet drivers (newznab, nzbindex)
-	// forward offset upstream, and usenet has no freeleech setting, so freeleechOnly is
-	// always false there.
+	// page and can stop early (the documented pagination-dilution divergence). In practice
+	// unreachable for the shipped paging drivers: none of them defines the serve-time
+	// `freeleech` setting this flag reads — usenet (newznab, nzbindex) and nebulance have
+	// no freeleech concept, and AlphaRatio filters upstream via its own freeleech_only
+	// fetch param instead — so freeleechOnly is false there unless an operator sets the
+	// reserved key by hand.
 	if a.freeleechOnly && !q.FreeleechBypass {
 		releases = filterFreeleechOnly(releases)
 	}

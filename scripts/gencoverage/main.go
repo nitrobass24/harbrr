@@ -114,13 +114,9 @@ func check(b bool) string {
 
 func esc(s string) string { return strings.ReplaceAll(s, "|", `\|`) }
 
-func main() {
-	defs, skipped, err := loader.New("").LoadAll()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "load:", err)
-		os.Exit(1)
-	}
-
+// generate renders the full coverage page. Split from main so the drift test can
+// compare it against the committed website/docs/coverage.md.
+func generate(defs []*loader.Definition, skipped []loader.SkipEntry) string {
 	byType := map[string][]*loader.Definition{}
 	for _, d := range defs {
 		byType[d.Type] = append(byType[d.Type], d)
@@ -137,8 +133,17 @@ func main() {
 	writePlanned(&b)
 	writeCorpus(&b, byType)
 	writeFooter(&b)
+	return b.String()
+}
 
-	fmt.Print(b.String())
+func main() {
+	defs, skipped, err := loader.New("").LoadAll()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "load:", err)
+		os.Exit(1)
+	}
+
+	fmt.Print(generate(defs, skipped))
 	fmt.Fprintf(os.Stderr, "corpus=%d skipped=%d nativeBuilt=%d nativePlanned=%d\n",
 		len(defs), len(skipped), len(nativeBuilt), len(nativePlanned))
 	for _, s := range skipped {

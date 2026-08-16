@@ -37,10 +37,10 @@ still coming, and how it compares to Prowlarr and Jackett.
   when something walks the feed page by page.
 - **[VIP & membership expiry](features/vip-expiry.md)** — enter each tracker's expiry date once
   and never let it pass unannounced.
-- **Download clients** — search from harbrr and send a result straight to your client
-  (qBittorrent, Deluge, Transmission, rTorrent, Flood, Download Station, qui, SABnzbd,
-  NZBGet, or a blackhole directory) with `POST /api/download-clients/{id}/grab`. Sealed
-  download links resolve server-side, so a passkey never leaves harbrr.
+- **[Download clients](features/download-clients.md)** — search from harbrr and send a result
+  straight to your client (qBittorrent, Deluge, Transmission, rTorrent, Flood, Download
+  Station, qui, SABnzbd, NZBGet, or a blackhole directory). Sealed download links resolve
+  server-side, so a passkey never leaves harbrr.
 - **Notifications** — point a Discord or generic webhook at harbrr and it tells you when an
   indexer starts failing, when it recovers, and when a VIP/membership expiry is coming up.
 

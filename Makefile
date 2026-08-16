@@ -97,6 +97,11 @@ test-short:
 test-openapi:
 	go test -race -count=1 ./internal/web/swagger/... ./internal/web/api/...
 
+## coverage-docs: regenerate website/docs/coverage.md from the corpus + curated lists
+.PHONY: coverage-docs
+coverage-docs:
+	go run ./scripts/gencoverage > website/docs/coverage.md
+
 ## vet: go vet
 .PHONY: vet
 vet:
