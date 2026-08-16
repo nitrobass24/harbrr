@@ -70,7 +70,7 @@ jobs:
     # musl-dev) is required because `go test -race` always needs cgo, unlike the
     # Dockerfile's CGO_ENABLED=0 product build.
     container:
-      image: golang:1.26-alpine
+      image: golang:${{ env.GO_VERSION }}-alpine
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -126,6 +126,11 @@ jobs:
           key: alpine-gobuild-${{ matrix.shard.name }}-${{ env.GO_VERSION }}-${{ hashFiles('go.sum') }}
           restore-keys: |
             alpine-gobuild-${{ matrix.shard.name }}-${{ env.GO_VERSION }}-
+      # Same toolchain assertion as the golangci-lint job: with GOTOOLCHAIN=local an
+      # image older than go.mod's requirement cannot load packages, and this fails loud
+      # here rather than surfacing as a confusing downstream error.
+      - name: assert the container Go satisfies go.mod
+        run: go version && go list -m
       - name: guard shard package coverage
         if: matrix.shard.name == 'rest'
         run: |
@@ -356,7 +361,7 @@ jobs:
     # GOTOOLCHAIN=local rationale. No non-root user here: linting has no
     # permission-gated tests, and golangci-lint-action manages its own cache.
     container:
-      image: golang:1.26-alpine
+      image: golang:${{ env.GO_VERSION }}-alpine
     timeout-minutes: 10
     env:
       GOTOOLCHAIN: local
@@ -364,6 +369,16 @@ jobs:
       - name: install container prerequisites (gcompat for GHA's Node runtime, git for checkout/go mod, tar for golangci-lint-action's cache)
         run: apk add --no-cache gcompat git tar
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The container's Go must satisfy go.mod. It normally does — the image tag is
+      # pinned to GO_VERSION — but a desync used to degrade silently rather than fail:
+      # with GOTOOLCHAIN=local an older Go cannot load the packages, golangci-lint fell
+      # back to partial type information, and staticcheck emitted false SA5011 nil-deref
+      # findings which the action then SAVED to its cache. Every later run restored that
+      # poisoned cache, so main stayed red on findings the code never had. `go list -m`
+      # is the cheapest command that refuses outright on a too-old toolchain, so a future
+      # desync stops here with a clear message instead of poisoning the cache.
+      - name: assert the container Go satisfies go.mod
+        run: go version && go list -m
       - name: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
