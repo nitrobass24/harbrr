@@ -88,8 +88,8 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 |---|:--|
 | Torznab + Newznab endpoints per indexer | ✅ |
 | Cardigann engine at parity with the upstream definition format | ✅ |
-| **575 trackers** — 550 Cardigann definitions + 25 native Go drivers | ✅ |
-| Native drivers for trackers Cardigann can't express (AvistaZ family, Gazelle, HDBits, PTP, BTN, MAM, FileList, IPTorrents, XSpeeds, Nebulance, AnimeBytes, GazelleGames, BeyondHD, TorrentDay, NZBIndex, …) | ✅ |
+| **592 trackers** — 550 Cardigann definitions + 25 native Go drivers | ✅ |
+| Native drivers for trackers Cardigann can't express (AvistaZ family, Gazelle, HDBits, PTP, BTN, MAM, FileList, IPTorrents, Nebulance, AnimeBytes, GazelleGames, BeyondHD, TorrentDay, NZBIndex, …) | ✅ |
 | Usenet (Newznab) indexers alongside torrents | ✅ |
 | Search-results cache with tiered TTLs, SWR, and negative caching | ✅ |
 | Failing-tracker circuit breaker | ✅ |
@@ -105,7 +105,7 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 | Per-indexer required release flags (freeleech, halfleech, …) | 🚧 [#385](https://github.com/autobrr/harbrr/issues/385) |
 | Per-release language and subtitle attributes from definitions | 🚧 [#379](https://github.com/autobrr/harbrr/issues/379) |
 | Out-of-band definition updates — tracker fixes arrive without waiting for a harbrr release | 🚧 [#388](https://github.com/autobrr/harbrr/issues/388) |
-| Tri-state indexer health — healthy / failing / unknown with lazy expiry; a broken tracker leaves rotation and costs nothing until it recovers | ✅ |
+| Tri-state indexer health — healthy / failing / unknown, where unknown means never tested; a broken tracker leaves rotation and costs nothing until it recovers | ✅ |
 | Per-failure-kind backoff curves — a dead network is not punished like a dead tracker — plus `status:healthy` aggregate feeds that skip indexers known to be broken | ✅ |
 | Punctuation-tolerant matching (opt-in, per indexer) — recovers releases that \*arr-stripped search terms would otherwise drop | ✅ |
 | Degenerate-query gating (opt-in, per indexer) — a search the indexer's own filters strip down to a bare year is skipped instead of sent, and reported as skipped rather than failed | ✅ |
@@ -134,7 +134,7 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 | Release push to autobrr | ✅ |
 | **10 download-client drivers** — qBittorrent, Deluge, Transmission, rTorrent, Flood, Synology Download Station, NZBGet, SABnzbd, qui, and blackhole | ✅ |
 | Interactive search in harbrr's own UI, with working downloads | ✅ |
-| Send a search result straight to a download client | 🚧 [#7](https://github.com/autobrr/harbrr/issues/7) |
+| [Send a search result straight to a download client](download-clients.md) | ✅ |
 | Sync download clients to apps | 🚧 [#237](https://github.com/autobrr/harbrr/issues/237) |
 | Per-indexer reject-executable-payloads setting, synced to apps | 🚧 [#381](https://github.com/autobrr/harbrr/issues/381) |
 | Credential sync to Upbrr | 🚧 [#101](https://github.com/autobrr/harbrr/issues/101) |
@@ -148,13 +148,12 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 | Instant substring / regex filter over search results | ✅ |
 | Search runs on the same merged window and per-member ledger the feeds serve — sort and counts can never disagree with your \*arrs, and an indexer that sat one out says why (circuit open, budget exhausted, rate limited, timed out) | ✅ |
 | Global sort across merged multi-indexer results (via the aggregate feed) | ✅ |
-| Group identical releases across indexers, with per-tracker sources attached | 🚧 [#398](https://github.com/autobrr/harbrr/issues/398) |
+| Group identical releases across indexers, with per-tracker sources attached | ✅ |
 | Base-URL picker — choose from the definition's known hosts, with a free-text escape hatch for private mirrors | ✅ |
-| Cache dashboard — tracker requests saved, hit ratio, entry ages, breaker countdowns, live-tunable TTL tiers | ✅ |
+| Cache dashboard — tracker requests saved, hit ratio, cache size, entry ages, breaker countdowns, live-tunable TTL tiers | ✅ |
 | Selectable stats window on the cache dashboard — 24h / 7d / 30d / all-time, with a reset that clears the statistics without discarding cached results | ✅ |
 | Request-budget usage meters — per-indexer queries and grabs against the account's cap, with the detected-vs-operator-set provenance shown | ✅ |
 | Global setting to hide adult categories (pickers and uncategorised searches; filters by declared category) | ✅ |
-| Adjustable total cache size | ✅ |
 
 ### Visibility
 
@@ -170,7 +169,7 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 | [VIP & membership expiry](vip-expiry.md) — per-indexer dates, lead-time warnings that fire exactly once, renewal re-arms by itself | ✅ |
 | Newznab API-limit auto-discovery — an unset cap is seeded from the account's own advertised daily limits, and a value you typed is never overwritten | ✅ |
 | Per-tracker account state — ratio, buffer, hit-and-run, freeleech tokens | 🚧 deferred — [#393](https://github.com/autobrr/harbrr/issues/393) |
-| Parse-failure diagnostics — see which selector missed, without re-fetching | 🚧 [#390](https://github.com/autobrr/harbrr/issues/390) |
+| Parse-failure diagnostics — the last five failed exchanges per indexer, kept in a ring so you can see which selector missed without re-fetching | ✅ |
 | Prometheus `/metrics` endpoint | 🚧 [#395](https://github.com/autobrr/harbrr/issues/395) |
 
 ### Operating it
@@ -185,14 +184,13 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 | Backup and restore | ✅ |
 | Reverse-proxy support | ✅ |
 | Complete OpenAPI spec + Swagger UI at `/api/docs` | ✅ |
-| Import an existing Prowlarr or Jackett setup | 🚧 [#42](https://github.com/autobrr/harbrr/issues/42) |
-| Import an existing NZBHydra2 setup | 🚧 [#382](https://github.com/autobrr/harbrr/issues/382) |
+| Import an existing Prowlarr, Jackett, or NZBHydra2 setup | 🚧 [#42](https://github.com/autobrr/harbrr/issues/42) |
 
 ---
 
 ## Side by side
 
-Accurate as of **July 2026**, against Prowlarr and Jackett as they ship today. We track their
+Accurate as of **August 2026**, against Prowlarr and Jackett as they ship today. We track their
 capabilities and will correct this page when it changes.
 
 | | harbrr | Prowlarr | Jackett |
@@ -210,8 +208,8 @@ capabilities and will correct this page when it changes.
 | Cross-seed as a first-class consumer | ✅ | — [^2] | — |
 | Aggregate `all` feed that is safe to actually use | ✅ | — | ✅ [^4] |
 | Per-indexer timeout | ✅ | — [^3] | — |
-| Automatic base-URL failover | 🚧 | — | — |
-| Instant regex result filter | 🚧 | — | ✅ |
+| Automatic base-URL failover | ✅ | — | — |
+| Instant regex result filter | ✅ | — | ✅ |
 | Import from Prowlarr / Jackett / NZBHydra2 | 🚧 | — | — |
 | Language / subtitle release attributes | 🚧 | — | — |
 | Single binary, no runtime dependency | ✅ | — | — |
@@ -222,14 +220,14 @@ general search-results cache has been requested repeatedly and declined as low-b
 [^2]: Prowlarr's cross-seed workaround is to configure the same tracker twice — once filtered,
 once not — which duplicates credentials, health state, and rate-limit pressure for one account.
 
+[^3]: Prowlarr has a fixed 100-second global timeout. Making it configurable per indexer is its
+single most-upvoted open request.
+
 [^4]: Jackett ships an aggregate feed (`/api/v2.0/indexers/all/results/torznab`) and its own
 documentation recommends against using it — one slow or dead indexer stalls or degrades the whole
 search. Prowlarr has no aggregate Torznab endpoint. harbrr's is partial by construction: a failing
 member contributes nothing, never fails the request, and is named in a per-member status ledger on
 the feed itself.
-
-[^3]: Prowlarr has a fixed 100-second global timeout. Making it configurable per indexer is its
-single most-upvoted open request.
 
 **Where Prowlarr is still ahead:** it is a mature project with years of production use, a large
 community, and integrations harbrr hasn't built yet. harbrr is younger and pre-1.0. What harbrr

@@ -173,6 +173,12 @@ Build order is **demand-gated**: the remaining native-only trackers are per-trac
 the [`native-driver`](https://github.com/autobrr/harbrr/labels/native-driver) label, prioritized
 by votes.
 
+**Shipping step:** when a driver lands, move (or add) its row in `scripts/gencoverage/main.go`
+— from `nativePlanned` to `nativeBuilt` — and run `make coverage-docs`. The tool regenerates
+`website/docs/coverage.md` and rewrites the tracker counts in the README and features overview;
+a completeness test fails the build if a catalog driver has no row, and drift tests fail it if
+the docs don't match the generator, so none of this can be skipped or done by hand.
+
 ## Why autobrr isn't in this picture
 
 autobrr covers a **different surface** of the same trackers — the IRC **announce**

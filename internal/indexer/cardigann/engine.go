@@ -418,8 +418,9 @@ func (e *Engine) DownloadNeedsAuth() bool {
 
 // SupportsOffsetPaging is always false: the declarative Cardigann engine has no
 // per-def offset/limit request shape, so every def's driver fetches the full result
-// set and the shared read pipeline slices the requested page locally. Only the two
-// native usenet drivers (newznab, nzbindex) forward offset/limit upstream.
+// set and the shared read pipeline slices the requested page locally. Upstream
+// paging is a native-driver capability (the SupportsOffsetPaging implementations
+// under internal/indexer/native report which drivers forward offset/limit).
 func (e *Engine) SupportsOffsetPaging() bool {
 	return false
 }

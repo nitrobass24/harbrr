@@ -305,7 +305,7 @@ func (rt *router) resolveSearchLinks(r *http.Request, idx core.Indexer, releases
 			if acq == "" {
 				acq = cp.Magnet
 			}
-			if link, _, ok := rw(acq, cp.Categories); ok {
+			if link, _, ok := rw(acq, cp.Title, cp.Categories); ok {
 				cp.Link = link
 			}
 		case withhold:

@@ -46,6 +46,11 @@ const sidebars = {
           id: 'features/cross-seed-freeleech',
           label: 'Cross-seed & freeleech',
         },
+        {
+          type: 'doc',
+          id: 'features/download-clients',
+          label: 'Download clients',
+        },
         {type: 'doc', id: 'features/pagination', label: 'Pagination'},
         {
           type: 'doc',

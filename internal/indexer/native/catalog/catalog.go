@@ -1,7 +1,7 @@
 // Package catalog aggregates every native family driver's exported Families()
 // into one map, so a caller (production wiring in cmd/harbrr, or a test that
 // needs real drivers) can obtain the full native catalog without importing each
-// of the 14 concrete driver packages itself. It cannot live in package native
+// concrete driver package itself. It cannot live in package native
 // (the drivers import native for the Family type — that would cycle), so it sits
 // one level up as the sole place that imports every driver.
 package catalog
