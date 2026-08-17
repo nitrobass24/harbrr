@@ -193,9 +193,10 @@ func (rt *router) grabToDownloadClient(w http.ResponseWriter, r *http.Request) {
 // attach the indexer's session credentials to a caller-supplied URL.
 func (rt *router) grabPayload(w http.ResponseWriter, r *http.Request, idx core.Indexer, req grabRequest) (download.Payload, bool) {
 	info := idx.Info()
-	p := download.Payload{Protocol: download.Protocol(info.Protocol), Name: cmp.Or(req.Name, info.ID)}
+	p := download.Payload{Protocol: download.Protocol(info.Protocol)}
 	token, sealed := sealedDownloadToken(req.Link, req.Indexer)
 	if !sealed {
+		p.Name = cmp.Or(req.Name, info.ID)
 		p.URL = req.Link
 		return p, true
 	}
@@ -204,6 +205,9 @@ func (rt *router) grabPayload(w http.ResponseWriter, r *http.Request, idx core.I
 		rt.writeResolveGrabError(w, info.ID, err)
 		return download.Payload{}, false
 	}
+	// A caller that sent no title still gets a named job: the sealed token carries the
+	// release title, so only a legacy token falls back to the indexer ID.
+	p.Name = cmp.Or(req.Name, grabbed.Name, info.ID)
 	if grabbed.Magnet != "" {
 		p.URL = grabbed.Magnet
 		return p, true

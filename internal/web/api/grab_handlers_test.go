@@ -155,7 +155,7 @@ func grabEnv(t *testing.T, trackerURL, newsURL string) (*env, string, *http.Clie
 // the handler must match on the path, since a configured external origin differs.
 func sealedLink(t *testing.T, kr *secrets.Keyring, slug, original string) string {
 	t.Helper()
-	sealed, err := torznabhttp.SealedDLURL(kr, slug, "http://harbrr.invalid/dl", "", original)
+	sealed, err := torznabhttp.SealedDLURL(kr, slug, "http://harbrr.invalid/dl", "", "", original)
 	if err != nil {
 		t.Fatalf("seal %s: %v", slug, err)
 	}

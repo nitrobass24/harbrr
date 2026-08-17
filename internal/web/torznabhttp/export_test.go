@@ -62,12 +62,13 @@ func TestNewDLRewriterSealsLink(t *testing.T) {
 		t.Fatal("expected a rewriter")
 	}
 	const raw = "https://demo.test/download?passkey=SECRETPASSKEY123" //nolint:gosec // G101: synthetic test passkey
-	link, guid, ok := rw(raw, nil)
+	const title = "ReleaseTitleSentinel"
+	link, guid, ok := rw(raw, title, []int{2000})
 	if !ok {
 		t.Fatal("expected the link to be rewritten")
 	}
-	if strings.Contains(link, "SECRETPASSKEY123") {
-		t.Fatalf("passkey leaked into the /dl link: %q", link)
+	if strings.Contains(link, "SECRETPASSKEY123") || strings.Contains(link, title) {
+		t.Fatalf("secret or title leaked into the /dl link: %q", link)
 	}
 	if !strings.HasPrefix(link, "http://h.test/api/indexers/demo/dl?") {
 		t.Errorf("unexpected /dl base: %q", link)
@@ -79,15 +80,83 @@ func TestNewDLRewriterSealsLink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse /dl link: %v", err)
 	}
-	_, back, err := decodeDLToken(kr, "demo", u.Query().Get("token"))
+	payload, err := decodeDLToken(kr, "demo", u.Query().Get("token"))
 	if err != nil {
 		t.Fatalf("decodeDLToken: %v", err)
 	}
-	if back != raw {
+	if payload.Name != title {
+		t.Errorf("token name = %q, want %q", payload.Name, title)
+	}
+	if payload.CategoryID != 2000 {
+		t.Errorf("token category = %d, want 2000", payload.CategoryID)
+	}
+	if payload.Link != raw {
 		t.Error("token round-trip differs from the input (values withheld: link-shaped)")
 	}
-	if _, _, ok := rw("magnet:?xt=urn:btih:abc", nil); ok {
+	if _, _, ok := rw("magnet:?xt=urn:btih:abc", title, nil); ok {
 		t.Error("expected a magnet to be served as-is (ok=false)")
+	}
+}
+
+func TestNewManagementDLRewriterSealsTitle(t *testing.T) {
+	t.Parallel()
+	kr := encryptedKeyring(t)
+	idx := &fakeIndexer{info: core.IndexerInfo{ID: "demo"}, needsResolver: true}
+	rw := NewManagementDLRewriter(kr, idx, "http://h.test/api/indexers/demo/download")
+	if rw == nil {
+		t.Fatal("expected a rewriter")
+	}
+	const raw = "https://demo.test/download?passkey=SECRETPASSKEY456" //nolint:gosec // G101: synthetic test passkey
+	const title = "ManagementReleaseSentinel"
+	link, _, ok := rw(raw, title, []int{2000})
+	if !ok {
+		t.Fatal("expected the link to be rewritten")
+	}
+	if strings.Contains(link, "SECRETPASSKEY456") || strings.Contains(link, title) || strings.Contains(link, "apikey=") {
+		t.Fatalf("management link exposed sealed metadata: %q", link)
+	}
+	token := strings.TrimPrefix(link, "http://h.test/api/indexers/demo/download/")
+	payload, err := decodeDLToken(kr, "demo", token)
+	if err != nil {
+		t.Fatalf("decodeDLToken: %v", err)
+	}
+	if payload.CategoryID != 2000 || payload.Name != title || payload.Link != raw {
+		t.Error("management token payload differs from its source metadata (link-shaped value withheld)")
+	}
+}
+
+func TestSealedDLURLNameMetadata(t *testing.T) {
+	t.Parallel()
+	kr := encryptedKeyring(t)
+	tests := []struct {
+		name     string
+		title    string
+		wantName string
+	}{
+		// The announce path passes the release name it has in hand, so the
+		// eventual grab is named after the release, not the indexer.
+		{name: "release title seals its stem", title: "Release.Name.2026", wantName: "Release.Name.2026"},
+		{name: "titleless caller stays empty for the fallback", title: "", wantName: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			link, err := SealedDLURL(kr, "demo", "http://h.test/api/indexers/demo/dl", "callerkey", tt.title, "https://demo.test/download/1")
+			if err != nil {
+				t.Fatalf("SealedDLURL: %v", err)
+			}
+			u, err := url.Parse(link)
+			if err != nil {
+				t.Fatalf("parse sealed URL: %v", err)
+			}
+			payload, err := decodeDLToken(kr, "demo", u.Query().Get("token"))
+			if err != nil {
+				t.Fatalf("decodeDLToken: %v", err)
+			}
+			if payload.Name != tt.wantName {
+				t.Errorf("name metadata = %q, want %q", payload.Name, tt.wantName)
+			}
+		})
 	}
 }
 
@@ -104,7 +173,7 @@ func TestNewDLRewriterSealsLoginAuthLink(t *testing.T) {
 		t.Fatal("expected a rewriter for a login-auth indexer")
 	}
 	const raw = "https://demo.test/download/9/Release.torrent"
-	link, _, ok := rw(raw, nil)
+	link, _, ok := rw(raw, "Release.Name.2026", nil)
 	if !ok || !strings.HasPrefix(link, "http://h.test/api/indexers/demo/dl?") {
 		t.Fatalf("expected the login-auth link sealed behind /dl, got ok=%v link=%q", ok, link)
 	}
