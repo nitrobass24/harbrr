@@ -71,7 +71,7 @@ type Base struct {
 	// concurrently with a driver that rotates its own credential into Cfg under its
 	// own mutex (gazellegames' on-demand passkey) — see Scrub's precondition. The
 	// values that snapshot misses (a rotated token) are exactly the ones unsafe to
-	// read here, and the shared credential-NAME scrub still covers them in the body.
+	// read here; their driver supplies them through DoDownload's runtimeSecrets.
 	captureSecrets []string
 }
 
@@ -228,12 +228,13 @@ func (b *Base) Do(ctx context.Context, req *stdhttp.Request, c Classify) (*Respo
 // DoDownload is Do for the grab path: same transport redaction and status
 // classification (op "download" in error text), but the body is read under the
 // torrent cap and a body past the cap is ErrDownloadTooLarge rather than a silent
-// truncation — a truncated .torrent is corrupt, not shorter.
-func (b *Base) DoDownload(ctx context.Context, req *stdhttp.Request, c Classify) (*Response, error) {
-	return b.roundTrip(ctx, req, c, "download")
+// truncation — a truncated .torrent is corrupt, not shorter. runtimeSecrets adds
+// per-request values, such as a rotated Bearer token, to refusal-capture scrubbing.
+func (b *Base) DoDownload(ctx context.Context, req *stdhttp.Request, c Classify, runtimeSecrets ...string) (*Response, error) {
+	return b.roundTrip(ctx, req, c, "download", runtimeSecrets...)
 }
 
-func (b *Base) roundTrip(ctx context.Context, req *stdhttp.Request, c Classify, op string) (*Response, error) {
+func (b *Base) roundTrip(ctx context.Context, req *stdhttp.Request, c Classify, op string, runtimeSecrets ...string) (*Response, error) {
 	resp, err := b.Doer.Do(req.WithContext(ctx))
 	if err != nil {
 		// The transport error is a *url.Error whose Error() embeds the FULL
@@ -257,7 +258,7 @@ func (b *Base) roundTrip(ctx context.Context, req *stdhttp.Request, c Classify, 
 	out := &Response{StatusCode: resp.StatusCode, Header: resp.Header}
 	if serr := c.statusError(b.Family, op, resp, b.Clock); serr != nil {
 		if op == "download" {
-			serr = b.captureRefusal(req, resp, serr)
+			serr = b.captureRefusal(req, resp, serr, runtimeSecrets...)
 		}
 		return out, serr
 	}
@@ -294,10 +295,11 @@ func (b *Base) roundTrip(ctx context.Context, req *stdhttp.Request, c Classify, 
 // search.CaptureReadLimit and deliberately best-effort — a partial read still shows
 // what the tracker managed to send, and a read failure must never replace the status
 // error the caller is classifying.
-func (b *Base) captureRefusal(req *stdhttp.Request, resp *stdhttp.Response, err error) error {
+func (b *Base) captureRefusal(req *stdhttp.Request, resp *stdhttp.Response, err error, runtimeSecrets ...string) error {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, search.CaptureReadLimit))
+	secrets := append(append([]string(nil), b.captureSecrets...), runtimeSecrets...)
 	return &search.CaptureError{
-		Capture: search.NewCapture(req.Method, req.URL.String(), resp.StatusCode, resp.Header, body, b.captureSecrets),
+		Capture: search.NewCapture(req.Method, req.URL.String(), resp.StatusCode, resp.Header, body, secrets),
 		Err:     err,
 	}
 }

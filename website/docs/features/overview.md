@@ -88,7 +88,7 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 |---|:--|
 | Torznab + Newznab endpoints per indexer | ✅ |
 | Cardigann engine at parity with the upstream definition format | ✅ |
-| **592 trackers** — 550 Cardigann definitions + 24 native Go drivers | ✅ |
+| **593 trackers** — 550 Cardigann definitions + 25 native Go drivers | ✅ |
 | Native drivers for trackers Cardigann can't express (AvistaZ family, Gazelle, HDBits, PTP, BTN, MAM, FileList, IPTorrents, Nebulance, AnimeBytes, GazelleGames, BeyondHD, TorrentDay, NZBIndex, …) | ✅ |
 | Usenet (Newznab) indexers alongside torrents | ✅ |
 | Search-results cache with tiered TTLs, SWR, and negative caching | ✅ |
@@ -239,5 +239,5 @@ goodwill — caching, budgets, and rate limiting — plus first-class support fo
 ## Next
 
 - **[Getting started](../getting-started.md)** — run harbrr and point an \*arr at it.
-- **[Tracker coverage](../coverage.md)** — all 592 trackers and how far each is validated.
+- **[Tracker coverage](../coverage.md)** — all 593 trackers and how far each is validated.
 - **[Configuration](../configuration.md)** — every key and environment variable.

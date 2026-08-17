@@ -10,7 +10,7 @@ Cardigann can't express — and how far each is validated.
   account on that tracker). See **[Test status](test-status.md)** for the evidence behind this
   column and the auth/fetch patterns proven live.
 
-**592 trackers** total: 550 Cardigann corpus (all built) · 24 native drivers built · 18 native
+**593 trackers** total: 550 Cardigann corpus (all built) · 25 native drivers built · 18 native
 drivers planned. To configure one, see **[Adding an indexer](guides/add-indexer.md)**.
 
 ## Native drivers
@@ -38,6 +38,7 @@ Bespoke code in Jackett/Prowlarr (no Cardigann definition); harbrr ships native 
 | GazelleGames | Bespoke API | ✅ | ⬜ |
 | AnimeBytes | Bespoke API | ✅ | ⬜ |
 | Nebulance | Bespoke JSON API | ✅ | ⬜ |
+| RetroFlix | Bearer (login -> token) | ✅ | ⬜ |
 | Usenet (Newznab) | Generic Newznab | ✅ | ✅ |
 | NZBIndex | Bespoke JSON API (public) | ✅ | ✅ |
 | AnimeTosho | Torznab API (native) | ✅ | ⬜ |

@@ -30,7 +30,7 @@ func TestNoConcreteNativeDriverImports(t *testing.T) {
 		t.Skipf("go list -deps failed (%v); skipping import-arrow check", err)
 	}
 
-	// The 14 concrete native driver packages, plus the catalog package that
+	// The 15 concrete native driver packages, plus the catalog package that
 	// aggregates them: none may appear in the PRODUCTION (non-test) dependency
 	// graph of this package.
 	forbidden := []string{
@@ -47,6 +47,7 @@ func TestNoConcreteNativeDriverImports(t *testing.T) {
 		"internal/indexer/native/newznab",
 		"internal/indexer/native/nzbindex",
 		"internal/indexer/native/passthepopcorn",
+		"internal/indexer/native/speedapp",
 		"internal/indexer/native/torrentday",
 		"internal/indexer/native/catalog",
 	}

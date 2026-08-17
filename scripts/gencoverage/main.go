@@ -82,6 +82,7 @@ var nativeBuilt = []nativeRow{
 	{name: "GazelleGames", pattern: "Bespoke API", id: "gazellegames"},
 	{name: "AnimeBytes", pattern: "Bespoke API", id: "animebytes"},
 	{name: "Nebulance", pattern: "Bespoke JSON API", id: "nebulance"},
+	{name: "RetroFlix", pattern: "Bearer (login -> token)", id: "retroflix"},
 	{name: "Usenet (Newznab)", pattern: "Generic Newznab", id: "newznab"},
 	{name: "NZBIndex", pattern: "Bespoke JSON API (public)", id: "nzbindex"},
 	{name: "AnimeTosho", pattern: "Torznab API (native)", id: "animetosho"},
