@@ -1,0 +1,4 @@
+# Go tooling (gofumpt, and byte-exact header checks like the GPL-attribution
+# tests in internal/download) requires LF; a default Git-for-Windows install
+# (core.autocrlf=true) would otherwise check *.go out with CRLF.
+*.go text eol=lf

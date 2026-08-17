@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -55,7 +56,8 @@ func TestBlackholeAdd_TorrentBytes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stat: %v", err)
 	}
-	if info.Mode().Perm() != 0o600 {
+	// Windows does not expose POSIX permission bits through os.FileMode.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Errorf("perm = %v, want 0600", info.Mode().Perm())
 	}
 	got, err := os.ReadFile(filepath.Join(dir, names[0])) //nolint:gosec // test-owned tempdir path.
