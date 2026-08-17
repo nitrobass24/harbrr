@@ -67,12 +67,22 @@ func truncateDownloadName(name string, maxBytes int) string {
 // downloadAttachmentName adds the source indexer to a title-derived stem so
 // equal titles from different indexers do not collide. The title is trimmed
 // again to keep the suffix and extension inside the portable filename limit.
+//
+// indexerID is usually a registry slug (≤64 bytes, already portable), but the
+// aggregate feeds serve grabs under ids like `profile:<name>` whose profile name
+// has no length cap and whose ':' is not filename-safe — so the id is cleaned on
+// the titleless path and the suffix is dropped outright when it alone would blow
+// the byte budget (truncateDownloadName must never see a limit below Clean's
+// non-empty floor, or it cannot terminate).
 func downloadAttachmentName(name, indexerID string) string {
 	if name == "" {
-		return indexerID
+		return truncateDownloadName(pathologize.Clean(indexerID), maxDownloadNameBytes)
 	}
 	suffix := " [" + indexerID + "]"
-	return truncateDownloadName(name, maxDownloadNameBytes-len(suffix)) + suffix
+	if limit := maxDownloadNameBytes - len(suffix); limit >= len(cleanedDefaultName) {
+		return truncateDownloadName(name, limit) + suffix
+	}
+	return truncateDownloadName(name, maxDownloadNameBytes)
 }
 
 // parseDLTokenPayload parses the JSON payload and accepts both unversioned legacy

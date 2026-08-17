@@ -306,3 +306,54 @@ func TestDLToken_PlaintextModeRejectsForgery(t *testing.T) {
 		t.Fatal("plaintext-mode forged token decoded successfully")
 	}
 }
+
+// TestDownloadAttachmentName_OversizedIndexerID pins the aggregate-feed edge:
+// `profile:<name>` ids have no length cap, so an id whose suffix alone would
+// exceed the filename budget must drop the suffix (never hand
+// truncateDownloadName a limit below Clean's non-empty floor, where the trim
+// loop cannot terminate), and the titleless fallback must come back cleaned and
+// bounded rather than as the raw id.
+func TestDownloadAttachmentName_OversizedIndexerID(t *testing.T) {
+	t.Parallel()
+	longID := "profile:" + strings.Repeat("p", 300)
+	tests := []struct {
+		name string
+		stem string
+		id   string
+		want func(t *testing.T, got string)
+	}{
+		{name: "normal slug keeps the suffix", stem: "Release.Name.2026", id: "demo", want: func(t *testing.T, got string) {
+			if got != "Release.Name.2026 [demo]" {
+				t.Errorf("got %q, want the suffixed stem", got)
+			}
+		}},
+		{name: "oversized id drops the suffix", stem: "Release.Name.2026", id: longID, want: func(t *testing.T, got string) {
+			if got != "Release.Name.2026" {
+				t.Errorf("got %q, want the bare stem (suffix dropped)", got)
+			}
+		}},
+		{name: "titleless oversized id is cleaned and bounded", stem: "", id: longID, want: func(t *testing.T, got string) {
+			if len(got) > maxDownloadNameBytes {
+				t.Errorf("len = %d, over the %d budget", len(got), maxDownloadNameBytes)
+			}
+			if !pathologize.IsClean(got) {
+				t.Errorf("titleless fallback %q is not a portable filename", got)
+			}
+		}},
+		{name: "titleless slug is unchanged", stem: "", id: "demo", want: func(t *testing.T, got string) {
+			if got != "demo" {
+				t.Errorf("got %q, want the bare slug", got)
+			}
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := downloadAttachmentName(tt.stem, tt.id)
+			if len(got) > maxDownloadNameBytes {
+				t.Errorf("len = %d, over the %d budget", len(got), maxDownloadNameBytes)
+			}
+			tt.want(t, got)
+		})
+	}
+}
