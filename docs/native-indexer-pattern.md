@@ -125,9 +125,11 @@ landing-page `GET` and login-form `POST`, stores the resulting cookie as a hidde
 setting, and seeds it into the per-instance jar after restart. Search and grab disable redirects so
 a login bounce, 401/403, or positively identified login page renews the session once and retries.
 
-The complete login/search/grab operation is serialized per instance. Persistence happens before a
-new cookie generation is published; failure restores the previous base-URL cookie view. Runtime,
-stored, and request-used cookie values must be supplied to both `Base.ScrubErr` and
+Login and renewal are serialized per instance and coalesced by cookie generation; authenticated
+searches and grabs remain concurrent. A rejected login is remembered until settings change and the
+registry rebuilds the driver, avoiding repeated attempts that can lock the account. Persistence
+happens before a new cookie generation is published; failure restores the previous base-URL cookie
+view. Runtime, stored, and request-used cookie values must be supplied to both `Base.ScrubErr` and
 `Base.DoDownload` capture redaction. The parser remains tracker-specific: `GET browse.php`, HTML
 row selectors, mapped categories, UTC-normalized dates, and freeleech/upload factors. Exact oracle
 and divergence details stay in `internal/indexer/native/xspeeds/testdata/README.md`.

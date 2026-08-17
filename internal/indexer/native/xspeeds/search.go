@@ -16,8 +16,8 @@ import (
 
 var searchSeparators = regexp.MustCompile(`[ -._]+`)
 
-// Search performs one serialized, authenticated browse and renews the session once
-// when XSpeeds reports that the request is logged out.
+// Search performs an authenticated browse and renews the session once when XSpeeds
+// reports that the request is logged out. Login is serialized; browse requests are not.
 func (d *driver) Search(ctx context.Context, query search.Query) ([]*normalizer.Release, error) {
 	return runOperation(ctx, d, "search", func(ctx context.Context, _ sessionState) ([]*normalizer.Release, error) {
 		request, err := d.newBrowseRequest(ctx, query)
@@ -28,7 +28,7 @@ func (d *driver) Search(ctx context.Context, query search.Query) ([]*normalizer.
 		if err != nil {
 			return nil, err
 		}
-		if isLoginPage(response.Body) {
+		if d.isLoginPage(response.Body) {
 			return nil, fmt.Errorf("xspeeds: search returned the login page: %w", login.ErrLoginFailed)
 		}
 		return d.parseReleases(response.Body)

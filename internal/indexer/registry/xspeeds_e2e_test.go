@@ -163,7 +163,7 @@ func TestXSpeedsEndToEnd(t *testing.T) {
 		t.Fatalf("OpenKeyring: %v", err)
 	}
 	rewrite := torznabhttp.NewDLRewriter(keyring, indexer, "http://harbrr.test/api/indexers/xs/dl", "synthetic-api-key")
-	sealed, _, ok := rewrite(releases[0].Link, releases[0].Categories)
+	sealed, _, ok := rewrite(releases[0].Link, releases[0].Title, releases[0].Categories)
 	if !ok || !strings.HasPrefix(sealed, "http://harbrr.test/api/indexers/xs/dl?") || strings.Contains(sealed, "download.php") {
 		t.Errorf("sealed link = %q, ok=%v", sealed, ok)
 	}

@@ -27,37 +27,14 @@ var classifySession = native.ClassifyAuth403.AlsoAuth(
 	stdhttp.StatusPermanentRedirect,
 )
 
-type operationObservation struct {
-	loginAttempt uint64
-}
-
 func runOperation[T any](ctx context.Context, d *driver, op string, attempt func(context.Context, sessionState) (T, error)) (T, error) {
-	var zero T
-	_, last := d.snapshot()
-	observed := operationObservation{loginAttempt: last.number}
-	if err := d.gate.Acquire(ctx, 1); err != nil {
-		return zero, d.scrubErr(fmt.Errorf("xspeeds: wait for %s operation: %w", op, err))
-	}
-	defer d.gate.Release(1)
-
-	if err := d.sharedLoginError(observed); err != nil {
-		return zero, err
-	}
-	result, err := retryLocked(ctx, d, op, attempt)
+	result, err := retrySession(ctx, d, op, attempt)
 	return result, d.scrubErr(err)
 }
 
-func (d *driver) sharedLoginError(observed operationObservation) error {
-	session, last := d.snapshot()
-	if last.number > observed.loginAttempt && last.err != nil && session.generation == last.failedGeneration {
-		return last.err
-	}
-	return nil
-}
-
-func retryLocked[T any](ctx context.Context, d *driver, op string, attempt func(context.Context, sessionState) (T, error)) (T, error) {
+func retrySession[T any](ctx context.Context, d *driver, op string, attempt func(context.Context, sessionState) (T, error)) (T, error) {
 	var zero T
-	session, err := d.ensureSessionLocked(ctx)
+	session, err := d.ensureSession(ctx)
 	if err != nil {
 		return zero, err
 	}
@@ -65,7 +42,7 @@ func retryLocked[T any](ctx context.Context, d *driver, op string, attempt func(
 	if err == nil || !errors.Is(err, login.ErrLoginFailed) {
 		return result, d.scrubErr(err, session.cookie)
 	}
-	if err := d.loginLocked(ctx, session.generation); err != nil {
+	if err := d.renewSession(ctx, session.generation); err != nil {
 		return zero, err
 	}
 	renewed := d.sessionSnapshot()
@@ -73,17 +50,69 @@ func retryLocked[T any](ctx context.Context, d *driver, op string, attempt func(
 	if err != nil && errors.Is(err, login.ErrLoginFailed) {
 		err = fmt.Errorf("xspeeds: automatic session renewal did not authenticate %s: %w", op, err)
 	}
-	return result, d.scrubErr(err, session.cookie, renewed.cookie)
+	err = d.scrubErr(err, session.cookie, renewed.cookie)
+	d.rememberLoginError(renewed.generation, err)
+	return result, err
 }
 
-func (d *driver) ensureSessionLocked(ctx context.Context) (sessionState, error) {
-	if session := d.sessionSnapshot(); session.cookie != "" {
+func (d *driver) ensureSession(ctx context.Context) (sessionState, error) {
+	session, last := d.snapshot()
+	if err := rememberedLoginError(session, last); err != nil {
+		return sessionState{}, err
+	}
+	if session.cookie != "" {
 		return session, nil
 	}
-	if err := d.loginLocked(ctx, 0); err != nil {
+	if err := d.loginGate.Acquire(ctx, 1); err != nil {
+		return sessionState{}, fmt.Errorf("xspeeds: wait for automatic login: %w", err)
+	}
+	defer d.loginGate.Release(1)
+
+	session, last = d.snapshot()
+	if err := rememberedLoginError(session, last); err != nil {
+		return sessionState{}, err
+	}
+	if session.cookie != "" {
+		return session, nil
+	}
+	if err := d.loginLocked(ctx, session.generation); err != nil {
 		return sessionState{}, err
 	}
 	return d.sessionSnapshot(), nil
+}
+
+func (d *driver) renewSession(ctx context.Context, failedGeneration uint64) error {
+	if err := d.loginGate.Acquire(ctx, 1); err != nil {
+		return fmt.Errorf("xspeeds: wait for automatic session renewal: %w", err)
+	}
+	defer d.loginGate.Release(1)
+
+	session, last := d.snapshot()
+	if session.cookie != "" && session.generation != failedGeneration {
+		return nil
+	}
+	if err := rememberedLoginError(session, last); err != nil {
+		return err
+	}
+	return d.loginLocked(ctx, failedGeneration)
+}
+
+func rememberedLoginError(session sessionState, last loginResult) error {
+	if last.err != nil && session.generation == last.failedGeneration {
+		return last.err
+	}
+	return nil
+}
+
+func (d *driver) rememberLoginError(failedGeneration uint64, err error) {
+	if !errors.Is(err, login.ErrLoginFailed) {
+		return
+	}
+	d.stateMu.Lock()
+	if d.session.generation == failedGeneration {
+		d.lastLogin = loginResult{failedGeneration: failedGeneration, err: err}
+	}
+	d.stateMu.Unlock()
 }
 
 func (d *driver) loginLocked(ctx context.Context, failedGeneration uint64) error {
@@ -117,10 +146,12 @@ func (d *driver) loginLocked(ctx context.Context, failedGeneration uint64) error
 func (d *driver) completeLogin(failedGeneration uint64, session sessionState, err error) {
 	d.stateMu.Lock()
 	d.session = session
-	d.lastLogin = loginResult{
-		number:           d.lastLogin.number + 1,
-		failedGeneration: failedGeneration,
-		err:              err,
+	d.lastLogin = loginResult{}
+	if errors.Is(err, login.ErrLoginFailed) {
+		d.lastLogin = loginResult{
+			failedGeneration: failedGeneration,
+			err:              err,
+		}
 	}
 	d.stateMu.Unlock()
 }
@@ -179,23 +210,43 @@ func loginFailed(reason string, cause error) error {
 	return errors.Join(err, cause)
 }
 
-func isLoginPage(body []byte) bool {
-	if bytes.Contains(body, []byte("logout.php")) {
+func (d *driver) isLoginPage(body []byte) bool {
+	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
+	if err != nil {
 		return false
 	}
-	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
-	return err == nil && doc.Find(`form[action*="takelogin.php"]`).Length() > 0
+	logoutPath := strings.TrimRight(d.cookieURL.Path, "/") + "/logout.php"
+	authenticated := false
+	doc.Find("a[href]").EachWithBreak(func(_ int, link *goquery.Selection) bool {
+		href, exists := link.Attr("href")
+		if !exists {
+			return true
+		}
+		parsed, parseErr := url.Parse(strings.TrimSpace(href))
+		if parseErr != nil {
+			return true
+		}
+		resolved := d.cookieURL.ResolveReference(parsed)
+		authenticated = resolved.User == nil &&
+			strings.EqualFold(resolved.Scheme, d.cookieURL.Scheme) &&
+			strings.EqualFold(resolved.Host, d.cookieURL.Host) &&
+			(resolved.Path == "/logout.php" || resolved.Path == logoutPath)
+		return !authenticated
+	})
+	if authenticated {
+		return false
+	}
+	return doc.Find(`form[action*="takelogin.php"]`).Length() > 0 || bytes.Contains(body, []byte("logout.php"))
 }
 
 func (d *driver) replaceJarCookies(raw string) {
-	// ponytail: rollback covers cookies visible at BaseURL; add a replaceable jar only if XSpeeds starts using path-scoped session cookies.
 	current := d.jar.Cookies(d.cookieURL)
 	expired := make([]*stdhttp.Cookie, 0, len(current))
 	for _, cookie := range current {
 		//nolint:gosec // G124: deletion cookies stay inside the private per-instance jar.
 		expired = append(expired, &stdhttp.Cookie{
 			Name:    cookie.Name,
-			Path:    "/",
+			Value:   "",
 			MaxAge:  -1,
 			Expires: time.Unix(1, 0),
 		})
@@ -253,6 +304,10 @@ func (d *driver) captureSecrets(requestCookie string) []string {
 }
 
 func cookieScrubExtras(cookies ...string) []string {
+	// ponytail: XSpeeds exposes no stable session-cookie name; scrub values of
+	// credential-like length until sanitized live headers establish one.
+	const minCookieSecretLength = 8
+
 	var extra []string
 	for _, raw := range cookies {
 		raw = strings.TrimSpace(raw)
@@ -261,7 +316,7 @@ func cookieScrubExtras(cookies ...string) []string {
 		}
 		extra = append(extra, raw)
 		for _, cookie := range parseCookieHeader(raw) {
-			if value := strings.TrimSpace(cookie.Value); value != "" {
+			if value := strings.TrimSpace(cookie.Value); len(value) >= minCookieSecretLength {
 				extra = append(extra, value)
 			}
 		}

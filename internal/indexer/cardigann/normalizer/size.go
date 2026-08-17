@@ -14,7 +14,9 @@ import (
 // into the parity-comparison unit.
 const sizeStep float32 = 1024
 
-// ParseSize reproduces Jackett's ParseUtil.GetBytes byte-for-byte:
+// ParseSize is the Jackett-parity size parser shared by the Cardigann corpus and
+// native drivers. It reproduces ParseUtil.GetBytes byte-for-byte except for the
+// documented unitless-integer correction below:
 //
 //   - The numeric part keeps only digits, '.' and ','; ',' becomes '.'; when
 //     more than one '.' survives, all but the last are thousands separators and

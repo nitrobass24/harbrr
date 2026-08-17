@@ -10,10 +10,10 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
 
-// Grab fetches a torrent server-side with the current session and one renewal.
+// Grab fetches a same-origin torrent server-side with the current session and one renewal.
 func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, error) {
 	return runOperation(ctx, d, "download", func(ctx context.Context, session sessionState) (*search.GrabResult, error) {
-		resolved, err := resolveURL(d.cookieURL, link)
+		resolved, err := resolveSameOriginURL(d.cookieURL, link)
 		if err != nil {
 			return nil, errors.New("xspeeds: invalid download URL")
 		}
@@ -25,9 +25,13 @@ func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, err
 		if err != nil {
 			return nil, err
 		}
-		if isLoginPage(response.Body) {
+		if !isBencoded(response.Body) && d.isLoginPage(response.Body) {
 			return nil, fmt.Errorf("xspeeds: download returned the login page: %w", login.ErrLoginFailed)
 		}
 		return &search.GrabResult{Body: response.Body, ContentType: response.Header.Get("Content-Type")}, nil
 	})
+}
+
+func isBencoded(body []byte) bool {
+	return len(body) > 0 && body[0] == 'd'
 }

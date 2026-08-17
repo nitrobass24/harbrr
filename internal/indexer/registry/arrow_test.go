@@ -30,8 +30,9 @@ func TestNoConcreteNativeDriverImports(t *testing.T) {
 		t.Skipf("go list -deps failed (%v); skipping import-arrow check", err)
 	}
 
-	// Concrete native driver packages, plus the catalog package that aggregates
-	// them: none may appear in the PRODUCTION (non-test) dependency graph here.
+	// Keep these 17 concrete packages aligned with catalog.All's imports. The
+	// catalog package itself is the final forbidden entry.
+	const concreteDriverPackageCount = 17
 	forbidden := []string{
 		"internal/indexer/native/animebytes",
 		"internal/indexer/native/avistaz",
@@ -43,12 +44,17 @@ func TestNoConcreteNativeDriverImports(t *testing.T) {
 		"internal/indexer/native/hdbits",
 		"internal/indexer/native/iptorrents",
 		"internal/indexer/native/myanonamouse",
+		"internal/indexer/native/nebulance",
 		"internal/indexer/native/newznab",
 		"internal/indexer/native/nzbindex",
 		"internal/indexer/native/passthepopcorn",
 		"internal/indexer/native/torrentday",
+		"internal/indexer/native/torznab",
 		"internal/indexer/native/xspeeds",
 		"internal/indexer/native/catalog",
+	}
+	if len(forbidden) != concreteDriverPackageCount+1 {
+		t.Fatalf("forbidden package count = %d, want %d concrete drivers plus catalog", len(forbidden), concreteDriverPackageCount)
 	}
 
 	deps := strings.SplitSeq(strings.TrimSpace(string(out)), "\n")

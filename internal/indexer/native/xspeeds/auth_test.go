@@ -87,6 +87,92 @@ func TestLoginRequiresNonemptyCookie(t *testing.T) {
 	}
 }
 
+func TestReplaceJarCookiesPathPrefixed(t *testing.T) {
+	cfg := testConfig()
+	cfg["cookie"] = testOldCookie
+	driver := newTestDriver(t, "https://xspeeds.example/root/", cfg, nil, nil)
+
+	driver.replaceJarCookies("")
+	if got := serializeCookies(driver.jar.Cookies(driver.cookieURL)); got != "" {
+		t.Fatalf("jar after clear = %q, want empty", got)
+	}
+	driver.replaceJarCookies("session=synthetic-xspeeds-new-cookie")
+	if got := serializeCookies(driver.jar.Cookies(driver.cookieURL)); got != "session=synthetic-xspeeds-new-cookie" {
+		t.Errorf("jar after replacement = %q", got)
+	}
+}
+
+func TestLoginPageDetection(t *testing.T) {
+	driver := newTestDriver(t, "https://xspeeds.example/root/", testConfig(), nil, nil)
+	tests := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{name: "login form", body: `<form action="takelogin.php"></form>`, want: true},
+		{name: "plain logout mention", body: `<script>const path = "logout.php"</script>`, want: true},
+		{name: "cross-host logout link", body: `<a href="https://evil.example/logout.php">Logout</a>`, want: true},
+		{name: "relative same-host logout link", body: `<a href="logout.php">Logout</a>`},
+		{name: "prefixed same-host logout link", body: `<a href="https://xspeeds.example/root/logout.php">Logout</a>`},
+		{name: "root same-host logout link", body: `<a href="/logout.php">Logout</a>`},
+		{name: "ordinary empty browse", body: `<table id="sortabletable"><tbody></tbody></table>`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := driver.isLoginPage([]byte(test.body)); got != test.want {
+				t.Errorf("isLoginPage() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestAuthenticatedOperationsRunConcurrently(t *testing.T) {
+	entered := make(chan struct{}, 2)
+	release := make(chan struct{})
+	handler := stdhttp.HandlerFunc(func(writer stdhttp.ResponseWriter, request *stdhttp.Request) {
+		if request.URL.Path != "/browse.php" {
+			stdhttp.NotFound(writer, request)
+			return
+		}
+		entered <- struct{}{}
+		<-release
+		_, _ = writer.Write(readFixture(t, "browse_empty.html"))
+	})
+	cfg := testConfig()
+	cfg["cookie"] = testOldCookie
+	driver, _ := newTestServerDriver(t, handler, cfg, nil)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	errs := make([]error, 2)
+	var wait sync.WaitGroup
+	for index := range errs {
+		wait.Go(func() {
+			_, errs[index] = driver.Search(ctx, search.Query{})
+		})
+	}
+	concurrent := true
+waitForBrowses:
+	for range errs {
+		select {
+		case <-entered:
+		case <-ctx.Done():
+			concurrent = false
+			break waitForBrowses
+		}
+	}
+	close(release)
+	wait.Wait()
+	if !concurrent {
+		t.Fatal("authenticated browse operations were serialized")
+	}
+	for _, err := range errs {
+		if err != nil {
+			t.Errorf("Search error = %v", err)
+		}
+	}
+}
+
 func TestConcurrentInitialLogin(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -113,6 +199,14 @@ func TestConcurrentInitialLogin(t *testing.T) {
 			if logins.Load() != 1 || browses.Load() != test.wantBrowses {
 				t.Errorf("requests = %d logins, %d browses; want 1, %d", logins.Load(), browses.Load(), test.wantBrowses)
 			}
+			if !test.loginOK {
+				if _, err := driver.Search(t.Context(), search.Query{}); !errors.Is(err, login.ErrLoginFailed) {
+					t.Errorf("remembered Search error = %v, want login failure", err)
+				}
+				if logins.Load() != 1 {
+					t.Errorf("remembered failure retried login: requests = %d, want 1", logins.Load())
+				}
+			}
 		})
 	}
 }
@@ -123,8 +217,8 @@ func TestConcurrentStaleSessionRenewal(t *testing.T) {
 		loginOK     bool
 		wantBrowses int64
 	}{
-		{name: "success", loginOK: true, wantBrowses: 9},
-		{name: "failure shared", loginOK: false, wantBrowses: 1},
+		{name: "success", loginOK: true, wantBrowses: 16},
+		{name: "failure shared", loginOK: false, wantBrowses: 8},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -145,16 +239,24 @@ func TestConcurrentStaleSessionRenewal(t *testing.T) {
 			if logins.Load() != 1 || browses.Load() != test.wantBrowses {
 				t.Errorf("requests = %d logins, %d browses; want 1, %d", logins.Load(), browses.Load(), test.wantBrowses)
 			}
+			if !test.loginOK {
+				if _, err := driver.Search(t.Context(), search.Query{}); !errors.Is(err, login.ErrLoginFailed) {
+					t.Errorf("remembered Search error = %v, want login failure", err)
+				}
+				if logins.Load() != 1 {
+					t.Errorf("remembered renewal failure retried login: requests = %d, want 1", logins.Load())
+				}
+			}
 		})
 	}
 }
 
-func TestCanceledOperationGateWait(t *testing.T) {
+func TestCanceledLoginGateWait(t *testing.T) {
 	driver := newTestDriver(t, "https://xspeeds.example/", testConfig(), nil, nil)
-	if err := driver.gate.Acquire(t.Context(), 1); err != nil {
+	if err := driver.loginGate.Acquire(t.Context(), 1); err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
-	defer driver.gate.Release(1)
+	defer driver.loginGate.Release(1)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	_, err := driver.Search(ctx, search.Query{})
@@ -261,7 +363,7 @@ func concurrentHandler(t *testing.T, logins, browses *atomic.Int64, stale, login
 
 func runConcurrentSearches(t *testing.T, driver *driver, count int) []error {
 	t.Helper()
-	if err := driver.gate.Acquire(t.Context(), 1); err != nil {
+	if err := driver.loginGate.Acquire(t.Context(), 1); err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
 	entered := make(chan struct{}, count)
@@ -276,7 +378,7 @@ func runConcurrentSearches(t *testing.T, driver *driver, count int) []error {
 	for range count {
 		<-entered
 	}
-	driver.gate.Release(1)
+	driver.loginGate.Release(1)
 	wait.Wait()
 	return errs
 }

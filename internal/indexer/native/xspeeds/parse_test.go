@@ -1,6 +1,7 @@
 package xspeeds
 
 import (
+	"net/url"
 	"os"
 	"slices"
 	"testing"
@@ -39,7 +40,7 @@ func TestParseReleases(t *testing.T) {
 	}
 
 	sitewide := releases[1]
-	if sitewide.Link != "https://cdn.xspeeds.eu/download.php?id=2" || sitewide.DownloadVolumeFactor != 0 || sitewide.UploadVolumeFactor != 2 {
+	if sitewide.Link != "https://www.xspeeds.eu/download.php?id=2" || sitewide.DownloadVolumeFactor != 0 || sitewide.UploadVolumeFactor != 2 {
 		t.Errorf("sitewide = %+v", sitewide)
 	}
 	if !slices.Contains(sitewide.Categories, 2000) || !slices.Contains(sitewide.Categories, 5000) {
@@ -57,6 +58,38 @@ func TestParseReleases(t *testing.T) {
 	uncategorized := releases[3]
 	if uncategorized.DownloadVolumeFactor != 1 || len(uncategorized.Categories) != 0 {
 		t.Errorf("uncategorized normal release = %+v", uncategorized)
+	}
+}
+
+func TestResolveSameOriginURL(t *testing.T) {
+	base, err := url.Parse("https://xspeeds.example/root/")
+	if err != nil {
+		t.Fatalf("url.Parse: %v", err)
+	}
+	tests := []struct {
+		name    string
+		raw     string
+		want    string
+		wantErr bool
+	}{
+		{name: "relative", raw: "download.php?id=1", want: "https://xspeeds.example/root/download.php?id=1"},
+		{name: "absolute same origin", raw: "https://xspeeds.example/root/download.php?id=1", want: "https://xspeeds.example/root/download.php?id=1"},
+		{name: "cross host", raw: "https://evil.example/download.php?id=1", wantErr: true},
+		{name: "scheme relative cross host", raw: "//evil.example/download.php?id=1", wantErr: true},
+		{name: "userinfo", raw: "https://user@xspeeds.example/root/download.php?id=1", wantErr: true},
+		{name: "scheme downgrade", raw: "http://xspeeds.example/root/download.php?id=1", wantErr: true},
+		{name: "non HTTP", raw: "file://xspeeds.example/root/download.php?id=1", wantErr: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := resolveSameOriginURL(base, test.raw)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("resolveSameOriginURL() error = %v, wantErr %v", err, test.wantErr)
+			}
+			if got != test.want {
+				t.Errorf("resolveSameOriginURL() = %q, want %q", got, test.want)
+			}
+		})
 	}
 }
 

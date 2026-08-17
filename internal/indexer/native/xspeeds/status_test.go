@@ -108,4 +108,8 @@ func TestSearchRetriesAuthExactlyOnce(t *testing.T) {
 	if !errors.Is(err, login.ErrLoginFailed) || logins.Load() != 1 || browses.Load() != 2 {
 		t.Fatalf("error/requests = %v, %d logins, %d browses; want login failure, 1, 2", err, logins.Load(), browses.Load())
 	}
+	_, err = driver.Search(t.Context(), search.Query{})
+	if !errors.Is(err, login.ErrLoginFailed) || logins.Load() != 1 || browses.Load() != 2 {
+		t.Fatalf("remembered error/requests = %v, %d logins, %d browses; want login failure, 1, 2", err, logins.Load(), browses.Load())
+	}
 }

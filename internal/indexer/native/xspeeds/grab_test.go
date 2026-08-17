@@ -39,6 +39,51 @@ func TestGrabTorrent(t *testing.T) {
 	}
 }
 
+func TestGrabBencodedBodySkipsLoginPageParsing(t *testing.T) {
+	var logins atomic.Int64
+	body := []byte(`d1:x36:<form action="takelogin.php"></form>e`)
+	handler := stdhttp.HandlerFunc(func(writer stdhttp.ResponseWriter, request *stdhttp.Request) {
+		switch request.URL.Path {
+		case "/login.php":
+		case "/takelogin.php":
+			logins.Add(1)
+			setTestCookie(writer, "session", "synthetic-fresh-cookie")
+			_, _ = writer.Write(readFixture(t, "login_success.html"))
+		case "/download.php":
+			writer.Header().Set("Content-Type", "application/x-bittorrent")
+			_, _ = writer.Write(body)
+		default:
+			stdhttp.NotFound(writer, request)
+		}
+	})
+	cfg := testConfig()
+	cfg["cookie"] = testOldCookie
+	driver, _ := newTestServerDriver(t, handler, cfg, nil)
+
+	result, err := driver.Grab(t.Context(), "/download.php?id=1")
+	if err != nil {
+		t.Fatalf("Grab: %v", err)
+	}
+	if string(result.Body) != string(body) || logins.Load() != 0 {
+		t.Errorf("result/login count = %q/%d, want original body and no login", result.Body, logins.Load())
+	}
+}
+
+func TestGrabRejectsCrossOriginURL(t *testing.T) {
+	var requests atomic.Int64
+	cfg := testConfig()
+	cfg["cookie"] = testOldCookie
+	driver := newTestDriver(t, "https://xspeeds.example/", cfg, roundTripDoer(func(*stdhttp.Request) (*stdhttp.Response, error) {
+		requests.Add(1)
+		return nil, errors.New("unexpected request")
+	}), nil)
+
+	_, err := driver.Grab(t.Context(), "https://evil.example/download.php?id=1")
+	if err == nil || requests.Load() != 0 {
+		t.Fatalf("Grab error/requests = %v/%d, want local rejection", err, requests.Load())
+	}
+}
+
 func TestGrabRenewsLoginPage(t *testing.T) {
 	var logins, downloads atomic.Int64
 	handler := stdhttp.HandlerFunc(func(writer stdhttp.ResponseWriter, request *stdhttp.Request) {
@@ -110,12 +155,12 @@ func TestGrabRefusalCaptureScrubsSessionSecrets(t *testing.T) {
 			writer.Header().Set("X-Debug", testUsername+" "+freshCookie)
 			writer.WriteHeader(stdhttp.StatusForbidden)
 			_, _ = writer.Write([]byte(strings.Join([]string{
-				testUsername, testPassword, "synthetic-xspeeds-old-cookie", freshCookie,
+				testUsername, testPassword, "synthetic-xspeeds-old-cookie", freshCookie, "diagnostic marker 1",
 			}, " ")))
 		}
 	})
 	cfg := testConfig()
-	cfg["cookie"] = testOldCookie
+	cfg["cookie"] = testOldCookie + "; hide_ads=1"
 	driver, _ := newTestServerDriver(t, handler, cfg, nil)
 	_, err := driver.Grab(t.Context(), "/download.php?id=1")
 	if err == nil || downloads.Load() != 2 {
@@ -130,6 +175,9 @@ func TestGrabRefusalCaptureScrubsSessionSecrets(t *testing.T) {
 		if strings.Contains(retained, secret) {
 			t.Errorf("capture/error leaked %q: %+v / %v", secret, capture, err)
 		}
+	}
+	if !strings.Contains(retained, "diagnostic marker 1") {
+		t.Errorf("capture over-scrubbed preference value: %+v", capture)
 	}
 }
 

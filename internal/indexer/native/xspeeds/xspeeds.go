@@ -21,7 +21,7 @@ type driver struct {
 	persist   func(context.Context, string, string) error
 	jar       stdhttp.CookieJar
 	cookieURL *url.URL
-	gate      *semaphore.Weighted
+	loginGate *semaphore.Weighted
 
 	stateMu   sync.RWMutex
 	session   sessionState
@@ -34,7 +34,6 @@ type sessionState struct {
 }
 
 type loginResult struct {
-	number           uint64
 	failedGeneration uint64
 	err              error
 }
@@ -72,7 +71,7 @@ func New(p native.Params) (native.Driver, error) {
 		persist:   p.PersistSetting,
 		jar:       jar,
 		cookieURL: cookieURL,
-		gate:      semaphore.NewWeighted(1),
+		loginGate: semaphore.NewWeighted(1),
 		session:   session,
 	}, nil
 }

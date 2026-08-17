@@ -137,8 +137,10 @@ func (q Query) episodeSearchString() string {
 	return fmt.Sprintf("S%02dE%s", season, ep)
 }
 
-// EpisodeSearchString returns the Prowlarr-compatible season/episode token used by
-// native request generators: Sxx, SxxExx, or yyyy.MM.dd for a daily episode.
+// EpisodeSearchString exposes the Jackett-parity season/episode token used by the
+// Cardigann engine to native request generators: Sxx, SxxExx, or yyyy.MM.dd for a
+// daily episode. Its documented non-numeric-episode exception must remain aligned
+// with episodeSearchString rather than being changed toward Prowlarr.
 func (q Query) EpisodeSearchString() string {
 	return q.episodeSearchString()
 }

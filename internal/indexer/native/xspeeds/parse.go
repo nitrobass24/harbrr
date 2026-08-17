@@ -40,7 +40,7 @@ func (d *driver) parseRow(row *goquery.Selection) (*normalizer.Release, bool) {
 	detailsNode := row.Find(`div > a[href*="details.php?id="]`).First()
 	title := strings.TrimSpace(detailsNode.Text())
 	details, detailsOK := d.nodeURL(detailsNode)
-	download, downloadOK := d.nodeURL(row.Find(`a[href*="download.php"]`).First())
+	download, downloadOK := d.downloadURL(row.Find(`a[href*="download.php"]`).First())
 	if title == "" || !detailsOK || !downloadOK {
 		return nil, false
 	}
@@ -78,6 +78,29 @@ func (d *driver) nodeURL(node *goquery.Selection) (string, bool) {
 	return resolved, true
 }
 
+// downloadURL trusts only the scraped torrent id and rebuilds the full URL against
+// the configured base, so a row cannot redirect the authenticated grab to another host.
+func (d *driver) downloadURL(node *goquery.Selection) (string, bool) {
+	href, exists := node.Attr("href")
+	if !exists {
+		return "", false
+	}
+	parsed, err := url.Parse(strings.TrimSpace(href))
+	if err != nil {
+		return "", false
+	}
+	id := strings.TrimSpace(parsed.Query().Get("id"))
+	if id == "" {
+		return "", false
+	}
+	target := *d.cookieURL
+	target.Path = strings.TrimRight(target.Path, "/") + "/download.php"
+	target.RawPath = ""
+	target.RawQuery = url.Values{"id": {id}}.Encode()
+	target.Fragment = ""
+	return target.String(), true
+}
+
 func resolveURL(base *url.URL, raw string) (string, error) {
 	reference, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
@@ -87,7 +110,24 @@ func resolveURL(base *url.URL, raw string) (string, error) {
 	if (resolved.Scheme != "http" && resolved.Scheme != "https") || resolved.Host == "" {
 		return "", errors.New("URL is not HTTP(S)")
 	}
+	if resolved.User != nil {
+		return "", errors.New("URL contains userinfo")
+	}
 	return resolved.String(), nil
+}
+
+func resolveSameOriginURL(base *url.URL, raw string) (string, error) {
+	resolved, err := resolveURL(base, raw)
+	if err != nil {
+		return "", err
+	}
+	parsed, err := url.Parse(resolved)
+	if err != nil ||
+		!strings.EqualFold(parsed.Scheme, base.Scheme) ||
+		!strings.EqualFold(parsed.Host, base.Host) {
+		return "", errors.New("URL is not on the configured tracker origin")
+	}
+	return resolved, nil
 }
 
 func (d *driver) rowCategories(row *goquery.Selection) []int {
