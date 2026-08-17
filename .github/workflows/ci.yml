@@ -201,18 +201,25 @@ jobs:
       # All node jobs run as root, so the store has a single writer uid.
       volumes:
         - /mnt/optane/github-actions/harbrr-pnpm-store:/pnpm-store
+        - /mnt/optane/github-actions/harbrr-corepack:/corepack
     timeout-minutes: 10
     env:
       npm_config_store_dir: /pnpm-store
+      COREPACK_HOME: /corepack
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
     steps:
       - name: install container prerequisites
         run: apk add --no-cache gcompat git libatomic
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
-        with:
-          package_json_file: web/package.json
+      # corepack instead of pnpm/action-setup: the action re-downloaded pnpm on
+      # every run (~7s per node job); corepack resolves the packageManager pin from
+      # web/package.json and caches the dist in the host-mounted COREPACK_HOME, so
+      # a warm run activates it in ~1s.
+      - name: activate pnpm (corepack, host-cached)
+        working-directory: web
+        run: corepack enable && corepack install
       - name: install
         working-directory: web
         run: pnpm install --frozen-lockfile
@@ -230,18 +237,25 @@ jobs:
       # Host-disk pnpm store — see web-test.
       volumes:
         - /mnt/optane/github-actions/harbrr-pnpm-store:/pnpm-store
+        - /mnt/optane/github-actions/harbrr-corepack:/corepack
     timeout-minutes: 10
     env:
       npm_config_store_dir: /pnpm-store
+      COREPACK_HOME: /corepack
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
     steps:
       - name: install container prerequisites
         run: apk add --no-cache gcompat git libatomic
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
-        with:
-          package_json_file: web/package.json
+      # corepack instead of pnpm/action-setup: the action re-downloaded pnpm on
+      # every run (~7s per node job); corepack resolves the packageManager pin from
+      # web/package.json and caches the dist in the host-mounted COREPACK_HOME, so
+      # a warm run activates it in ~1s.
+      - name: activate pnpm (corepack, host-cached)
+        working-directory: web
+        run: corepack enable && corepack install
       - name: install
         working-directory: web
         run: pnpm install --frozen-lockfile
@@ -259,18 +273,25 @@ jobs:
       # Host-disk pnpm store — see web-test.
       volumes:
         - /mnt/optane/github-actions/harbrr-pnpm-store:/pnpm-store
+        - /mnt/optane/github-actions/harbrr-corepack:/corepack
     timeout-minutes: 10
     env:
       npm_config_store_dir: /pnpm-store
+      COREPACK_HOME: /corepack
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
     steps:
       - name: install container prerequisites
         run: apk add --no-cache gcompat git libatomic
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
-        with:
-          package_json_file: web/package.json
+      # corepack instead of pnpm/action-setup: the action re-downloaded pnpm on
+      # every run (~7s per node job); corepack resolves the packageManager pin from
+      # web/package.json and caches the dist in the host-mounted COREPACK_HOME, so
+      # a warm run activates it in ~1s.
+      - name: activate pnpm (corepack, host-cached)
+        working-directory: web
+        run: corepack enable && corepack install
       - name: install
         working-directory: web
         run: pnpm install --frozen-lockfile
@@ -291,9 +312,12 @@ jobs:
       # wall-clock for the whole run.
       volumes:
         - /mnt/optane/github-actions/harbrr-pnpm-store:/pnpm-store
+        - /mnt/optane/github-actions/harbrr-corepack:/corepack
     timeout-minutes: 10
     env:
       npm_config_store_dir: /pnpm-store
+      COREPACK_HOME: /corepack
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
     steps:
       - name: install container prerequisites
         run: apk add --no-cache bash gcompat git libatomic
@@ -301,9 +325,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
-        with:
-          package_json_file: web/package.json
+      # corepack instead of pnpm/action-setup: the action re-downloaded pnpm on
+      # every run (~7s per node job); corepack resolves the packageManager pin from
+      # web/package.json and caches the dist in the host-mounted COREPACK_HOME, so
+      # a warm run activates it in ~1s.
+      - name: activate pnpm (corepack, host-cached)
+        working-directory: web
+        run: corepack enable && corepack install
       - name: install
         working-directory: web
         run: pnpm install --frozen-lockfile
@@ -359,6 +387,7 @@ jobs:
         - /mnt/optane/github-actions/harbrr-go-cache/e2e-mod:/root/go/pkg/mod
         - /mnt/optane/github-actions/harbrr-go-cache/e2e-build:/root/.cache/go-build
         - /mnt/optane/github-actions/harbrr-pnpm-store:/pnpm-store
+        - /mnt/optane/github-actions/harbrr-corepack:/corepack
     timeout-minutes: 15
     needs: [web]
     env:
@@ -369,6 +398,8 @@ jobs:
       GOCACHE: /root/.cache/go-build
       # Host-disk pnpm store (shared by every node job; see web-test).
       npm_config_store_dir: /pnpm-store
+      COREPACK_HOME: /corepack
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -380,9 +411,13 @@ jobs:
           go-version-file: go.mod
           # Go caches are host bind-mounts (see the container block).
           cache: false
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
-        with:
-          package_json_file: web/package.json
+      # corepack instead of pnpm/action-setup: the action re-downloaded pnpm on
+      # every run (~7s per node job); corepack resolves the packageManager pin from
+      # web/package.json and caches the dist in the host-mounted COREPACK_HOME, so
+      # a warm run activates it in ~1s.
+      - name: activate pnpm (corepack, host-cached)
+        working-directory: web
+        run: corepack enable && corepack install
       - name: install
         working-directory: web
         run: pnpm install --frozen-lockfile
