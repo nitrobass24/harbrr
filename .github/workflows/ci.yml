@@ -619,29 +619,9 @@ jobs:
             -X github.com/autobrr/harbrr/internal/version.Date=${date}" \
             -o "$BINCTX/out/harbrr" ./cmd/harbrr
 
-      # Always build this arch (validates the Dockerfile). amd64 loads it for the smoke
-      # run; arm64 builds to cache without loading (it can't run on an amd64 host).
-      - name: build image (${{ matrix.arch }})
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: .
-          build-contexts: |
-            build=${{ runner.temp }}/binctx-${{ matrix.arch }}
-          push: false
-          load: ${{ matrix.load }}
-          platforms: linux/${{ matrix.arch }}
-          tags: ${{ env.IMAGE_TAG }}
-          # No buildx GHA cache: in CI the compile runs in the prior `go build` step and is
-          # injected via build-contexts, so buildx only COPYs the binary and rebuilds the tiny
-          # native certs stage (seconds). type=gha,mode=max re-uploaded those layers for no
-          # reuse and was the biggest consumer of the ~10GB repo cache budget.
-          provenance: false
-      - name: validate image runs
-        if: ${{ matrix.arch == 'amd64' }}
-        run: docker run --rm --entrypoint harbrr "$IMAGE_TAG" version
-
-      # When publishing: log in, then push this arch by digest (a cache hit on the build
-      # above) and record the digest for the merge job.
+      # Login/metadata come BEFORE the build so the single buildx invocation below can
+      # push directly. Metadata runs unconditionally (it needs no registry access) so
+      # the labels expression is always defined.
       - name: log in to GHCR
         if: ${{ env.PUSH == 'true' }}
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -651,23 +631,49 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: registry metadata
         id: meta
-        if: ${{ env.PUSH == 'true' }}
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.IMAGE }}
-      - name: push by digest (${{ matrix.arch }})
-        id: push
-        if: ${{ env.PUSH == 'true' }}
+
+      # ONE buildx invocation per arch (this job sits on the run's critical path, and
+      # the old build-for-smoke + rebuild-for-push pair cost ~15s of duplicate drive):
+      # on a publishing run it builds and pushes by digest — anonymous, untagged, and
+      # harmless until docker-merge's fully-gated manifest references it — and the
+      # smoke run validates the PUSHED digest afterwards, still inside this job, so
+      # docker-merge's gate on it is unchanged. On a non-publishing run (fork PR /
+      # dependabot) amd64 loads for the local smoke run and arm64 builds to cache,
+      # exactly as before.
+      - name: build image (${{ matrix.arch }})
+        id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           build-contexts: |
             build=${{ runner.temp }}/binctx-${{ matrix.arch }}
+          load: ${{ matrix.load && env.PUSH != 'true' }}
           platforms: linux/${{ matrix.arch }}
+          tags: ${{ env.PUSH != 'true' && env.IMAGE_TAG || '' }}
           labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
-          # No buildx GHA cache — see the build-image step above.
+          outputs: ${{ env.PUSH == 'true' && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', env.IMAGE) || '' }}
+          # No buildx GHA cache: in CI the compile runs in the prior `go build` step and is
+          # injected via build-contexts, so buildx only COPYs the binary and rebuilds the tiny
+          # native certs stage (seconds). type=gha,mode=max re-uploaded those layers for no
+          # reuse and was the biggest consumer of the ~10GB repo cache budget.
           provenance: false
+      # The smoke gate: prove the image actually starts. On a publishing run this
+      # pulls the digest just pushed (the image is a few MB; the pull doubles as
+      # proof the push produced a fetchable image); otherwise it runs the loaded
+      # local tag. amd64 only — an arm64 image cannot execute on this host.
+      - name: validate image runs
+        if: ${{ matrix.arch == 'amd64' }}
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          if [ "$PUSH" = "true" ]; then
+            docker run --rm --entrypoint harbrr "$IMAGE@$DIGEST" version
+          else
+            docker run --rm --entrypoint harbrr "$IMAGE_TAG" version
+          fi
       - name: export digest
         if: ${{ env.PUSH == 'true' }}
         env:
@@ -675,7 +681,7 @@ jobs:
         run: |
           rm -rf "$DIGEST_DIR"
           mkdir -p "$DIGEST_DIR"
-          digest="${{ steps.push.outputs.digest }}"
+          digest="${{ steps.build.outputs.digest }}"
           touch "$DIGEST_DIR/${digest#sha256:}"
       - name: upload digest
         if: ${{ env.PUSH == 'true' }}
@@ -687,7 +693,11 @@ jobs:
           retention-days: 1
       - name: cleanup local smoke image
         if: ${{ always() && matrix.arch == 'amd64' }}
-        run: docker rmi "$IMAGE_TAG" || true
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          docker rmi "$IMAGE_TAG" 2>/dev/null || true
+          [ -n "$DIGEST" ] && docker rmi "$IMAGE@$DIGEST" 2>/dev/null || true
 
   # Assemble the multi-arch manifest from the per-arch digests — the pullable publish
   # step. Only runs when the docker job pushed (same-repo PR or tag); it builds nothing,
