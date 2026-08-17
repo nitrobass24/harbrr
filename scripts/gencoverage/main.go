@@ -3,19 +3,25 @@
 // the embedded Cardigann corpus plus the native (non-vendored) drivers, built
 // and planned.
 //
-// Run from the repo root:
+// Run from the repo root (or via `make coverage-docs`):
 //
-//	go run ./scripts/gencoverage > website/docs/coverage.md
+//	go run ./scripts/gencoverage -write
 //
-// The corpus rows come straight from the loader's embedded snapshot, so the
-// list stays in sync with the vendored defs. The native lists and the
+// -write regenerates website/docs/coverage.md AND patches the tracker-count
+// phrases in README.md and website/docs/features/overview.md, so every
+// count-bearing doc updates in one command; without it the page is printed to
+// stdout. The corpus rows come straight from the loader's embedded snapshot,
+// so the list stays in sync with the vendored defs. The native lists and the
 // live-tested set are curated below and updated by hand as drivers ship and
-// trackers are validated.
+// trackers are validated; main_test.go fails when any of the three docs is
+// stale.
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -114,13 +120,9 @@ func check(b bool) string {
 
 func esc(s string) string { return strings.ReplaceAll(s, "|", `\|`) }
 
-func main() {
-	defs, skipped, err := loader.New("").LoadAll()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "load:", err)
-		os.Exit(1)
-	}
-
+// generate renders the full coverage page. Split from main so the drift test can
+// compare it against the committed website/docs/coverage.md.
+func generate(defs []*loader.Definition, skipped []loader.SkipEntry) string {
 	byType := map[string][]*loader.Definition{}
 	for _, d := range defs {
 		byType[d.Type] = append(byType[d.Type], d)
@@ -137,8 +139,101 @@ func main() {
 	writePlanned(&b)
 	writeCorpus(&b, byType)
 	writeFooter(&b)
+	return b.String()
+}
 
-	fmt.Print(b.String())
+// proseCountSites are the hand-written docs that quote tracker counts. Each
+// pattern captures the count digits (and any interior line-wrap whitespace) so
+// updateProseCounts can rewrite the numbers in place without reflowing the
+// text; a doc rewording that breaks a pattern fails the regen loudly instead
+// of silently drifting. The drift tests in main_test.go pin the same phrases.
+var proseCountSites = []struct {
+	path    string
+	pattern *regexp.Regexp
+	// replace renders the phrase with current counts, preserving the captured
+	// whitespace groups so the file's existing line wrapping survives.
+	replace func(m []string, corpus, built, planned int) string
+}{
+	{
+		path: "README.md",
+		pattern: regexp.MustCompile(
+			`\*\*\d+ trackers\*\* — \d+ from(\s+)the embedded Cardigann corpus plus \d+ native drivers \(with \*\*\d+ more native(\s+)drivers planned\*\*\)`,
+		),
+		replace: func(m []string, corpus, built, planned int) string {
+			return fmt.Sprintf("**%d trackers** — %d from%sthe embedded Cardigann corpus plus %d native drivers (with **%d more native%sdrivers planned**)",
+				corpus+built, corpus, m[1], built, planned, m[2])
+		},
+	},
+	{
+		path: "website/docs/features/overview.md",
+		pattern: regexp.MustCompile(
+			`\*\*\d+ trackers\*\* — \d+ Cardigann definitions \+ \d+ native Go drivers`,
+		),
+		replace: func(_ []string, corpus, built, planned int) string {
+			return fmt.Sprintf("**%d trackers** — %d Cardigann definitions + %d native Go drivers",
+				corpus+built+planned, corpus, built)
+		},
+	},
+	{
+		path:    "website/docs/features/overview.md",
+		pattern: regexp.MustCompile(`all \d+ trackers`),
+		replace: func(_ []string, corpus, built, planned int) string {
+			return fmt.Sprintf("all %d trackers", corpus+built+planned)
+		},
+	},
+}
+
+// updateProseCounts rewrites the tracker-count phrases in the count-bearing
+// docs. Exactly one match per pattern is required: zero means the doc was
+// reworded out from under the pattern, more than one means the pattern went
+// ambiguous — both are regen failures, never silent skips.
+func updateProseCounts(corpus, built, planned int) error {
+	for _, site := range proseCountSites {
+		raw, err := os.ReadFile(site.path)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", site.path, err)
+		}
+		matches := site.pattern.FindAllStringSubmatchIndex(string(raw), -1)
+		if len(matches) != 1 {
+			return fmt.Errorf("%s: count phrase /%s/ matched %d times, want exactly 1 — the doc and this pattern must change together",
+				site.path, site.pattern, len(matches))
+		}
+		m := site.pattern.FindStringSubmatch(string(raw))
+		updated := site.pattern.ReplaceAllLiteralString(string(raw), site.replace(m, corpus, built, planned))
+		if updated == string(raw) {
+			continue
+		}
+		if err := os.WriteFile(site.path, []byte(updated), 0o644); err != nil { //nolint:gosec // committed doc, not sensitive
+			return fmt.Errorf("write %s: %w", site.path, err)
+		}
+		fmt.Fprintf(os.Stderr, "updated counts in %s\n", site.path)
+	}
+	return nil
+}
+
+func main() {
+	write := flag.Bool("write", false,
+		"write website/docs/coverage.md and patch the README/overview tracker counts in place (instead of printing the page to stdout)")
+	flag.Parse()
+
+	defs, skipped, err := loader.New("").LoadAll()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "load:", err)
+		os.Exit(1)
+	}
+
+	if *write {
+		if err := os.WriteFile("website/docs/coverage.md", []byte(generate(defs, skipped)), 0o644); err != nil { //nolint:gosec // committed doc, not sensitive
+			fmt.Fprintln(os.Stderr, "write coverage.md:", err)
+			os.Exit(1)
+		}
+		if err := updateProseCounts(len(defs), len(nativeBuilt), len(nativePlanned)); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	} else {
+		fmt.Print(generate(defs, skipped))
+	}
 	fmt.Fprintf(os.Stderr, "corpus=%d skipped=%d nativeBuilt=%d nativePlanned=%d\n",
 		len(defs), len(skipped), len(nativeBuilt), len(nativePlanned))
 	for _, s := range skipped {

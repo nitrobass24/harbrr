@@ -89,16 +89,16 @@ restarts. `GET /api/cache/config` shows the live configuration.
 
 :::
 
-```yaml
-cache:
-  enabled: true          # master switch; set false to turn caching off entirely
-  rss_ttl: 5m            # how long an RSS / "what's new?" poll is remembered
-  keyword_ttl: 30m       # how long a real keyword/ID search is remembered
-  thin_ttl: 2m           # shorter memory when a search returns only a few results
-  thin_threshold: 5      # "a few" = this many results or fewer
-  refresh_ahead_pct: 80  # refresh-in-background once this % of the TTL has elapsed
-  cleanup_interval: 1h   # how often expired entries are tidied up
-  negative_ttl: 1m       # how long a FAILED tracker is left alone (the circuit breaker); "0s" disables
+```toml
+[cache]
+enabled = true            # master switch; set false to turn caching off entirely
+rss_ttl = "5m"            # how long an RSS / "what's new?" poll is remembered
+keyword_ttl = "30m"       # how long a real keyword/ID search is remembered
+thin_ttl = "2m"           # shorter memory when a search returns only a few results
+thin_threshold = 5        # "a few" = this many results or fewer
+refresh_ahead_pct = 80    # refresh-in-background once this % of the TTL has elapsed
+cleanup_interval = "1h"   # how often expired entries are tidied up
+negative_ttl = "1m"       # how long a FAILED tracker is left alone (the circuit breaker); "0s" disables
 ```
 
 What each one is for:
@@ -207,10 +207,19 @@ harbrr exposes the cache through its management API.
 {
   "enabled": true,
   "entries": 1423,
-  "totalHits": 50211,
-  "trackerHitsSaved": 50211,
-  "breakerSuppressed": 37,
+  "totalHits": 18240,
+  "hits": 43210,
+  "misses": 7001,
   "hitRatio": 0.86,
+  "windows": [
+    { "window": "1d",  "hits": 1902,  "misses": 288,  "hitRatio": 0.87 },
+    { "window": "7d",  "hits": 13740, "misses": 2130, "hitRatio": 0.87 },
+    { "window": "30d", "hits": 41100, "misses": 6600, "hitRatio": 0.86 },
+    { "window": "all", "hits": 43210, "misses": 7001, "hitRatio": 0.86 }
+  ],
+  "windowsSince": 1750593600,
+  "trackerHitsSaved": 43210,
+  "breakerSuppressed": 37,
   "approxSizeBytes": 9123840,
   "oldestCachedAt": 1750680000,
   "newestCachedAt": 1750683600,
@@ -222,9 +231,9 @@ harbrr exposes the cache through its management API.
       "name": "My Tracker",
       "entries": 612,
       "hitsSaved": 21984,
-      "hits": 1840,
-      "misses": 210,
-      "hitRatio": 0.9,
+      "hits": 21984,
+      "misses": 2610,
+      "hitRatio": 0.89,
       "approxSizeBytes": 4011200,
       "breakerSuppressed": 12,
       "breakerOpenUntil": null
@@ -235,21 +244,26 @@ harbrr exposes the cache through its management API.
 
 | Field | Meaning |
 |---|---|
-| `enabled` | Whether caching is on. If `false`, the rest is omitted. |
+| `enabled` | Whether caching is on. If `false`, the other fields still appear but hold zero values and empty arrays. |
 | `entries` | How many distinct cached answers are currently stored. |
-| `totalHits` | How many searches have been served from cache. **This is your tracker-load saved.** |
-| `trackerHitsSaved` | The same number, named for the value story: tracker requests harbrr answered from cache instead of going out. Survives restarts. |
+| `trackerHitsSaved` | **This is your tracker-load saved** — the running count of tracker requests harbrr answered from cache instead of going out. Reaping/flushing entries never touches it; only an explicit [`POST /api/cache/stats/reset`](#post-apicachestatsreset) zeroes it. |
+| `totalHits` | A *different* number: the hits accumulated by the entries **currently in the store**. It falls (even to zero) when those rows are reaped by cleanup, a flush, or an indexer invalidation. Useful for "how hard is what I'm holding working"; not the headline. |
+| `hits` / `misses` | The counters behind `hitRatio` — the fleet-wide totals, and the sum of the `byIndexer` rows. A failed live search counts as neither. |
+| `hitRatio` | `hits / (hits + misses)` — "86% of searches never touched a tracker." |
+| `windows` | The same hits/misses/ratio over each selectable view — `1d`, `7d`, `30d`, `all` — in that order, so the dashboard can switch window without refetching. `all` reads the persisted totals; the rest come from in-memory buckets. |
+| `windowsSince` | Unix time (seconds) the in-memory buckets started filling — process start, or the last stats reset. A window longer than `now - windowsSince` isn't a full period of data yet. |
 | `breakerSuppressed` | How many searches were short-circuited by the [failing-tracker circuit breaker](circuit-breaker.md) — extra requests a struggling tracker was spared. |
-| `hitRatio` | Fraction of searches served from cache since harbrr last started. The headline number — "86% of searches never touched a tracker." |
 | `approxSizeBytes` | Roughly how much space the cache occupies. |
 | `oldestCachedAt` / `newestCachedAt` / `lastUsedAt` | Unix timestamps (seconds) for the oldest/newest stored entry and the most recent hit. |
 | `byIndexer` | The same figures broken down **per indexer**, plus `breakerOpenUntil` (the Unix time the breaker reopens that tracker, or `null` when it's healthy). |
 
-:::info[`hitRatio` resets on restart]
+:::info[The counters survive a restart]
 
-The ratio (and the hits/misses behind it) is counted in memory for the life of the
-process, so it starts fresh each time harbrr restarts. The stored entries themselves
-survive a restart — harbrr won't re-poll every tracker just because it was bounced.
+`hits`, `misses`, `hitRatio`, and `trackerHitsSaved` are persisted, so a bounce doesn't
+reset your numbers — only [`POST /api/cache/stats/reset`](#post-apicachestatsreset) does. The
+`1d`/`7d`/`30d` windows are the exception: those buckets live in memory and start filling
+again at `windowsSince`. The stored entries themselves survive a restart too, so harbrr won't
+re-poll every tracker just because it was bounced.
 
 :::
 
@@ -263,7 +277,21 @@ Empties the cache and tells you how many entries it removed:
 
 Useful if you've changed something and want a clean slate. You rarely need it — entries
 expire on their own, and harbrr already clears a tracker's cached answers automatically
-when you edit, disable, or delete that indexer.
+when you edit, disable, or delete that indexer. A flush discards *results*; it leaves the
+hit/miss counters alone.
+
+### `POST /api/cache/stats/reset`
+
+The mirror image: zeroes the hit, miss, and breaker-suppressed counters — and with them
+`hitRatio` and `trackerHitsSaved`, which are derived from `hits` — plus every rolling
+window, fleet-wide, and reports what it threw away:
+
+```json
+{ "clearedHits": 43210, "clearedMisses": 7001, "clearedBreakerSuppressed": 37 }
+```
+
+Cached results are untouched — this is "start the scoreboard over", not "empty the cache".
+The cleared totals aren't recoverable.
 
 ---
 
@@ -275,47 +303,50 @@ You don't have to manage this; harbrr handles it:
 - **Indexer changed** — editing or disabling an indexer drops its cached answers (its
   settings may change what gets searched).
 - **Indexer deleted** — its cached answers go with it.
+- **Definition changed** — on start-up harbrr compares each tracker definition against the
+  one it saw last boot, and expires the cached answers of any indexer whose definition
+  changed. A definition update fixes parsing straight away instead of after the TTL.
 - **Housekeeping** — expired rows are tidied up on the `cleanup_interval`.
 
 ---
 
 ## Tuning recipes
 
-=== "I rely on RSS to catch releases"
+### I rely on RSS to catch releases
 
-    You don't run autobrr/announce for some trackers, so RSS *is* how you grab things.
-    Keep RSS fresh:
+You don't run autobrr/announce for some trackers, so RSS *is* how you grab things.
+Keep RSS fresh:
 
-    ```yaml
-    cache:
-      rss_ttl: 2m
-      thin_ttl: 1m
-    ```
+```toml
+[cache]
+rss_ttl = "2m"
+thin_ttl = "1m"
+```
 
-    Or, if it's only certain trackers, leave the globals alone and set `cache_ttl: 2m`
-    on just those indexers.
+Or, if it's only certain trackers, leave the globals alone and set `cache_ttl: 2m`
+on just those indexers.
 
-=== "autobrr does the fast grabbing"
+### autobrr does the fast grabbing
 
-    Announce handles timeliness; RSS is just a backstop. You can cache harder to spare
-    trackers:
+Announce handles timeliness; RSS is just a backstop. You can cache harder to spare
+trackers:
 
-    ```yaml
-    cache:
-      rss_ttl: 15m
-      keyword_ttl: 1h
-    ```
+```toml
+[cache]
+rss_ttl = "15m"
+keyword_ttl = "1h"
+```
 
-=== "I run 1080p + 4K instances"
+### I run 1080p + 4K instances
 
-    Nothing to do — this is handled automatically. Both instances issue identical
-    requests, so they share one cached answer and one tracker request. Check
-    `GET /api/cache/stats` and watch `hitRatio` climb.
+Nothing to do — this is handled automatically. Both instances issue identical
+requests, so they share one cached answer and one tracker request. Check
+`GET /api/cache/stats` and watch `hitRatio` climb.
 
-=== "A tracker keeps timing out"
+### A tracker keeps timing out
 
-    Protect it by caching it harder, without affecting your other trackers — set
-    `cache_ttl: 1h` (or higher) on that one indexer.
+Protect it by caching it harder, without affecting your other trackers — set
+`cache_ttl: 1h` (or higher) on that one indexer.
 
 ---
 
@@ -341,7 +372,8 @@ database file permissions, the same posture harbrr uses for session cookies.)
 
 **Does a restart re-poll all my trackers?**
 No. Cached answers are stored on disk and survive restarts, so harbrr doesn't stampede
-your trackers when it comes back up. (Only the in-memory `hitRatio` counter resets.)
+your trackers when it comes back up. Your hit/miss totals persist too — only the rolling
+`1d`/`7d`/`30d` windows start over.
 
 **How do I turn it off?**
 Set `enabled = false` under `[cache]` in `config.toml`. harbrr then behaves exactly as it did before

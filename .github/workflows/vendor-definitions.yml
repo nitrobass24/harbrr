@@ -39,8 +39,8 @@ jobs:
         env:
           JACKETT_REF: master
         run: ./scripts/vendor-definitions.sh
-      - name: Regenerate coverage table
-        run: go run ./scripts/gencoverage > website/docs/coverage.md
+      - name: Regenerate coverage table + doc tracker counts
+        run: go run ./scripts/gencoverage -write
       # The secret-audit golden is a review gate over the classifier's verdicts on
       # the corpus, so a refresh must regenerate it here — the classification diff
       # then arrives inside this PR for review instead of failing CI after merge.

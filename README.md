@@ -51,6 +51,13 @@ with Sonarr, Radarr, Lidarr, Readarr, Mylar, Whisparr, and any Torznab/Newznab c
   modernized execution engine, plus **native drivers** for trackers Cardigann can't express.
 - **App-sync** — push your indexers into Sonarr/Radarr/qui automatically, with configurable
   sync profiles (category narrowing, min seeders, per-capability search toggles).
+- **Search & send-to-client** — search your indexers from the web UI and send a release
+  straight to qBittorrent, Deluge, Transmission, rTorrent, Flood, SABnzbd, NZBGet, Synology
+  Download Station, qui, or a blackhole folder. Passkey-bearing links resolve server-side, so
+  the client never sees tracker credentials.
+- **Health & notifications** — per-indexer health with failure classification and recovery
+  tracking, plus Discord/webhook notifications for indexer failures, recoveries, and
+  approaching VIP/membership expiries.
 - **Shared RSS + search-results cache** — many consumers, one upstream request; far fewer
   tracker queries, lower latency, better tracker citizenship. Circuit breakers keep a flaky
   tracker from taking down a search.
@@ -78,6 +85,12 @@ themes included.
   <tr>
     <td align="center"><em>Indexers — add, test, enable/disable, filter</em></td>
     <td align="center"><em>Applications — sync indexers into Sonarr/Radarr/qui</em></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img alt="Search — fleet-wide results with grouping, freeleech badges, and send-to-client" src=".github/assets/search-dark.png"></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><em>Search — one query across every indexer, grouped duplicates, freeleech badges, grab or send straight to a download client</em></td>
   </tr>
 </table>
 
@@ -127,12 +140,9 @@ docker run -d \
 ```
 
 The image runs non-root, exposes port 7478, ships a `/healthz` check, and already invokes
-`harbrr serve --host 0.0.0.0 --data-dir /config`.
-
-> [!NOTE]
-> `:latest` is published only for **stable** releases. During alpha (pre-releases) it won't
-> exist — pull the version tag instead, e.g. `ghcr.io/autobrr/harbrr:0.1.0-alpha` (no `v`
-> prefix). This applies to both the compose and run examples above.
+`harbrr serve --host 0.0.0.0 --data-dir /config`. `:latest` follows the newest release; pin a
+version tag (e.g. `ghcr.io/autobrr/harbrr:0.1.0-alpha`, no `v` prefix) if you'd rather update
+deliberately.
 
 ### Linux / macOS / Windows / FreeBSD (prebuilt binary)
 
@@ -141,18 +151,13 @@ Grab the archive for your platform from
 amd64 / arm / arm64):
 
 ```bash
-# download + extract the newest linux x86_64 build (works for pre-releases too)
-wget $(curl -s https://api.github.com/repos/autobrr/harbrr/releases \
-  | grep browser_download_url | grep linux_x86_64 | head -n1 | cut -d\" -f4)
+# download + extract the newest linux x86_64 build
+wget $(curl -s https://api.github.com/repos/autobrr/harbrr/releases/latest \
+  | grep browser_download_url | grep linux_x86_64 | cut -d\" -f4)
 tar -C /usr/local/bin -xzf harbrr*.tar.gz
 
 harbrr serve --data-dir ~/.config/harbrr   # open http://localhost:7478
 ```
-
-> [!NOTE]
-> During alpha, releases are published as **pre-releases**, so `/releases/latest` (which only
-> returns stable releases) won't find them — the command above lists all releases and takes the
-> newest asset. You can also just download from the [Releases page](https://github.com/autobrr/harbrr/releases).
 
 ### Build from source
 
@@ -182,8 +187,8 @@ make build                                   # -> bin/harbrr (embeds web/dist)
 
 ## Status & testing
 
-harbrr is **alpha**, but the engine is heavily validated. It ships **579 trackers** — 554 from
-the embedded Cardigann corpus plus 25 native drivers (with **18 more native drivers planned**) —
+harbrr is **alpha**, but the engine is heavily validated. It ships **574 trackers** — 550 from
+the embedded Cardigann corpus plus 24 native drivers (with **18 more native drivers planned**) —
 and every shipped tracker passes its **offline golden tests**. Live validation against real
 trackers and a real \*arr stack is tracked separately:
 
@@ -192,19 +197,22 @@ trackers and a real \*arr stack is tracked separately:
   grabs, and which auth/fetch patterns are proven live.
 
 **Proven live:** API-key trackers (UNIT3D & friends), user/pass form login, Cloudflare via
-FlareSolverr, and server-side grabs (`/dl`) for both cookie- and header-auth trackers.
-BroadcastTheNet, IPTorrents, FileList, MyAnonamouse, NZBIndex and generic Newznab/Usenet are
+FlareSolverr, server-side grabs (`/dl`) for both cookie- and header-auth trackers, and the
+full **Sonarr → harbrr → qBittorrent** grab pipeline. BroadcastTheNet, IPTorrents, FileList,
+MyAnonamouse, HDBits, PassThePopcorn, BrokenStones, NZBIndex and generic Newznab/Usenet are
 live-confirmed.
 
 **Not yet proven / not working:**
 
-- **Send-to-download-client** is not implemented — harbrr resolves download links; handing a
-  release to a client is planned ([#8](https://github.com/autobrr/harbrr/issues/8)).
+- The in-UI **send-to-client** flow and the download clients beyond qBittorrent (Deluge,
+  Transmission, rTorrent, Flood, SABnzbd, NZBGet, Download Station, qui, blackhole) are built
+  and offline-gated but **not yet live-tested**.
 - Cookie/manual-cookie definitions, non-Latin / `regexp2` trackers, and per-indexer proxies are
   offline-gated but **not yet live-tested** (waiting on a qualifying account/environment).
-- Most native drivers (AvistaZ family, HDBits, BeyondHD, Redacted/Orpheus/AlphaRatio,
-  PassThePopcorn, …)
-  are built and offline-gated, **pending credentials** for a live pass.
+- Some native drivers (AvistaZ family, BeyondHD, Redacted/Orpheus/AlphaRatio, …) are built
+  and offline-gated, **pending credentials** for a live pass — though HDBits, PassThePopcorn,
+  BrokenStones and the other trackers in the [coverage matrix](website/docs/coverage.md) marked
+  live-tested have already had one.
 - **Postgres** is deferred — SQLite only for now.
 
 Running the live smoke harness yourself (build-tagged, env-credentialed, and **never run in CI**)

@@ -739,6 +739,14 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,format=short
+          # Pre-release versions (0.1.0-alpha) skip `latest` under semver rules, but
+          # alpha tags are the only releases harbrr ships — force `latest` on every
+          # release-tag publish so `docker pull ghcr.io/autobrr/harbrr:latest` works.
+          # Never on PR/main pushes, and pinned to the v* release convention: push
+          # events are already tag-filtered to v*, but a workflow_dispatch can aim at
+          # ANY tag, and a stray non-release tag must not overwrite `latest`.
+          flavor: |
+            latest=${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/tags/v') }}
       - name: create manifest list and push
         env:
           DIGEST_DIR: ${{ runner.temp }}/digests

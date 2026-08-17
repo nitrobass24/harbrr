@@ -14,6 +14,16 @@ when they're already struggling.
 
 The breaker is **on by default** (a 1-minute window). Most people never need to touch it.
 
+:::note[Two things get called "circuit breaker"]
+
+This page is about the cache's short **negative-TTL** window, which suppresses repeat searches
+for a minute or so after a failure. Separately, harbrr tracks **per-indexer health** and takes a
+persistently failing indexer out of rotation on a per-failure-kind backoff curve — a longer-lived
+mechanism with its own state, surfaced as `disabledTill` on
+`GET /api/indexers/{slug}/status`. Different mechanisms, same nickname.
+
+:::
+
 ---
 
 ## Why you want this
@@ -48,9 +58,11 @@ tracker asked — across *all* your apps, not just the one that got the 429.
 - **It heals itself.** The first search after the window expires goes out live. If the
   tracker has recovered, everything resumes; if not, that one failure re-opens the breaker.
   There's nothing to reset.
-- **You can force a live retry** any time with `nocache=1` on a search (the same
-  [bypass](search-results-cache.md#per-request-bypass-nocache1) the cache honors), or by
-  hitting the indexer's **Test** action — neither is blocked by an open breaker.
+- **You can force a live retry** any time by hitting the indexer's **Test** action, which
+  goes straight to the tracker regardless of the breaker. Note that `nocache=1` on a search
+  (the [bypass](search-results-cache.md#per-request-bypass-nocache1) the cache honors) skips
+  the *cache*, not the breaker: while the window is open, a `nocache=1` search is
+  short-circuited like any other. Use **Test** to probe a suppressed tracker immediately.
 
 :::note[Per tracker, not per query]
 
@@ -81,9 +93,9 @@ The breaker has one knob, `negative_ttl`, alongside the other
 [cache settings](search-results-cache.md#the-tuning-knobs). It's a Go duration string and
 is **runtime-tunable** through the management API — no restart.
 
-```yaml
-cache:
-  negative_ttl: "1m"   # default; how long a failed tracker is left alone. "0s" disables.
+```toml
+[cache]
+negative_ttl = "1m"   # default; how long a failed tracker is left alone. "0s" disables.
 ```
 
 Change it live:
@@ -113,8 +125,9 @@ tracker live.
 
 **A tracker I just fixed is still erroring for a minute — why?**
 The breaker is riding out its window from the last failure. Either wait it out (≤ the
-`negative_ttl`, default 1 minute), hit the indexer's **Test** action, or send one search
-with `nocache=1` to probe immediately.
+`negative_ttl`, default 1 minute) or hit the indexer's **Test** action to probe the tracker
+immediately. `nocache=1` won't do it: that bypasses the *cache*, and the request still meets
+the open breaker.
 
 **Is the backoff fleet-wide, or per app?**
 Fleet-wide. Because harbrr is the search *server* for your whole fleet, it holds one

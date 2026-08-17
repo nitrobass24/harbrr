@@ -73,6 +73,10 @@ These are enforced by CI and hooks — please don't work around them:
    land with tests (table-driven, beside the code as `*_test.go`, reusing fixtures).
 5. If your change adds or moves an HTTP route, update the OpenAPI spec under
    `internal/web/swagger` and run the drift test (`make test-openapi`).
+6. If your change ships a **new native driver**, add its row (display name + auth pattern)
+   to `nativeBuilt` in `scripts/gencoverage/main.go` — a completeness test fails until you
+   do — then run **`make coverage-docs`**: it regenerates the coverage matrix and rewrites
+   every tracker count in the README and docs for you. Never edit those counts by hand.
 
 ## Reporting a security vulnerability
 
