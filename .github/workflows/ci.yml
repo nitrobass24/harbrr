@@ -194,7 +194,16 @@ jobs:
     runs-on: self-hosted
     container:
       image: node:22-alpine
+      # Host-disk pnpm content store, shared by every node job (concurrent
+      # installs are safe — the store is content-addressed and lock-protected).
+      # The store sits on a different filesystem than the overlayfs workspace, so
+      # pnpm copies instead of hardlinking — still far cheaper than fetching.
+      # All node jobs run as root, so the store has a single writer uid.
+      volumes:
+        - /mnt/optane/github-actions/harbrr-pnpm-store:/pnpm-store
     timeout-minutes: 10
+    env:
+      npm_config_store_dir: /pnpm-store
     steps:
       - name: install container prerequisites
         run: apk add --no-cache gcompat git libatomic
@@ -218,7 +227,12 @@ jobs:
     runs-on: self-hosted
     container:
       image: node:22-alpine
+      # Host-disk pnpm store — see web-test.
+      volumes:
+        - /mnt/optane/github-actions/harbrr-pnpm-store:/pnpm-store
     timeout-minutes: 10
+    env:
+      npm_config_store_dir: /pnpm-store
     steps:
       - name: install container prerequisites
         run: apk add --no-cache gcompat git libatomic
@@ -242,7 +256,12 @@ jobs:
     runs-on: self-hosted
     container:
       image: node:22-alpine
+      # Host-disk pnpm store — see web-test.
+      volumes:
+        - /mnt/optane/github-actions/harbrr-pnpm-store:/pnpm-store
     timeout-minutes: 10
+    env:
+      npm_config_store_dir: /pnpm-store
     steps:
       - name: install container prerequisites
         run: apk add --no-cache gcompat git libatomic
@@ -267,7 +286,14 @@ jobs:
     runs-on: self-hosted
     container:
       image: node:22-alpine
+      # Host-disk pnpm store — see web-test. This job heads the run's critical
+      # path (web -> web-e2e / docker -> docker-merge), so its install time is
+      # wall-clock for the whole run.
+      volumes:
+        - /mnt/optane/github-actions/harbrr-pnpm-store:/pnpm-store
     timeout-minutes: 10
+    env:
+      npm_config_store_dir: /pnpm-store
     steps:
       - name: install container prerequisites
         run: apk add --no-cache bash gcompat git libatomic
@@ -323,6 +349,16 @@ jobs:
     runs-on: self-hosted
     container:
       image: mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e
+      # Host-disk Go caches, same rationale as backend-test: this job sits on the
+      # run's critical path (web -> web-e2e -> docker-merge), and the actions/cache
+      # pair it replaced spent ~30s SAVING at job end plus a cold `go build` (~28s)
+      # on every miss. Kept separate from backend-test's dirs: this container runs
+      # as root, backend-test's caches are uid-1000, and mixing writer uids in one
+      # cache is the exact breakage the single-writer rule exists to prevent.
+      volumes:
+        - /mnt/optane/github-actions/harbrr-go-cache/e2e-mod:/root/go/pkg/mod
+        - /mnt/optane/github-actions/harbrr-go-cache/e2e-build:/root/.cache/go-build
+        - /mnt/optane/github-actions/harbrr-pnpm-store:/pnpm-store
     timeout-minutes: 15
     needs: [web]
     env:
@@ -331,6 +367,8 @@ jobs:
       GOFLAGS: -buildvcs=false
       GOMODCACHE: /root/go/pkg/mod
       GOCACHE: /root/.cache/go-build
+      # Host-disk pnpm store (shared by every node job; see web-test).
+      npm_config_store_dir: /pnpm-store
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -340,21 +378,8 @@ jobs:
           # Single source of truth (autobrr/qui's pattern): setup-go reads the
           # version straight from go.mod, so a bump there needs no CI edit.
           go-version-file: go.mod
-          # Container job: /root does not persist between runs — cache via
-          # actions/cache below (setup-go's cache needs a writable hosttoolcache).
+          # Go caches are host bind-mounts (see the container block).
           cache: false
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: /root/go/pkg/mod
-          key: e2e-gomod-${{ hashFiles('go.mod') }}-${{ hashFiles('go.sum') }}
-          restore-keys: |
-            e2e-gomod-${{ hashFiles('go.mod') }}-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: /root/.cache/go-build
-          key: e2e-gobuild-${{ hashFiles('go.mod') }}-${{ hashFiles('go.sum') }}
-          restore-keys: |
-            e2e-gobuild-${{ hashFiles('go.mod') }}-
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           package_json_file: web/package.json
