@@ -4,10 +4,13 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
+	"github.com/autobrr/harbrr/internal/indexer/native/catalog"
+	"github.com/autobrr/harbrr/internal/indexer/native/newznab"
 )
 
 // TestCoverageDocIsCurrent is the drift gate for website/docs/coverage.md: the
@@ -30,6 +33,40 @@ func TestCoverageDocIsCurrent(t *testing.T) {
 	}
 	if string(got) != want {
 		t.Fatal("website/docs/coverage.md is stale — regenerate it with `make coverage-docs` (go run ./scripts/gencoverage > website/docs/coverage.md)")
+	}
+}
+
+// TestNativeCatalogHasCoverageRows fails when a native driver ships without a
+// coverage row: every definition id the catalog exposes must appear in the
+// curated nativeBuilt/nativePlanned lists. Newznab presets are the one
+// exception — the standing convention folds the whole family into the single
+// "Usenet (Newznab)" row, so any id from newznab.Families() counts as covered
+// (a new preset needs no row). Writing a new site driver therefore fails
+// `go test` until its row exists, and `make coverage-docs` propagates the row
+// into every count-bearing doc.
+func TestNativeCatalogHasCoverageRows(t *testing.T) {
+	t.Parallel()
+
+	covered := map[string]bool{}
+	for _, n := range nativeBuilt {
+		covered[n.id] = true
+	}
+	for _, n := range nativePlanned {
+		covered[n.id] = true
+	}
+	for _, f := range newznab.Families() {
+		covered[f.Definition.ID] = true
+	}
+
+	var missing []string
+	for id := range catalog.All() {
+		if !covered[id] {
+			missing = append(missing, id)
+		}
+	}
+	sort.Strings(missing)
+	if len(missing) > 0 {
+		t.Fatalf("native drivers with no coverage row: %v — add each to nativeBuilt in scripts/gencoverage/main.go, then run `make coverage-docs`", missing)
 	}
 }
 
@@ -71,7 +108,7 @@ func TestProseTrackerCountsAreCurrent(t *testing.T) {
 		content := collapse.ReplaceAllString(string(raw), " ")
 		for _, phrase := range tt.phrases {
 			if !strings.Contains(content, phrase) {
-				t.Errorf("%s tracker counts are stale — it must contain (modulo line wrapping):\n  %s", tt.file, phrase)
+				t.Errorf("%s tracker counts are stale — run `make coverage-docs`; expected (modulo line wrapping):\n  %s", tt.file, phrase)
 			}
 		}
 	}
