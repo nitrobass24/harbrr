@@ -91,6 +91,15 @@ func TestReplaceJarCookiesPathPrefixed(t *testing.T) {
 	cfg := testConfig()
 	cfg["cookie"] = testOldCookie
 	driver := newTestDriver(t, "https://xspeeds.example/root/", cfg, nil, nil)
+	//nolint:gosec // G124: synthetic jar state must exercise a root-scoped non-Secure cookie.
+	driver.jar.SetCookies(driver.cookieURL, []*stdhttp.Cookie{{
+		Name:  "session",
+		Value: "synthetic-xspeeds-root-cookie",
+		Path:  "/",
+	}})
+	if got := len(driver.jar.Cookies(driver.cookieURL)); got != 2 {
+		t.Fatalf("visible cookies before clear = %d, want root and path-prefixed entries", got)
+	}
 
 	driver.replaceJarCookies("")
 	if got := serializeCookies(driver.jar.Cookies(driver.cookieURL)); got != "" {

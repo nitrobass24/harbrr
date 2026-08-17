@@ -241,10 +241,16 @@ func (d *driver) isLoginPage(body []byte) bool {
 
 func (d *driver) replaceJarCookies(raw string) {
 	current := d.jar.Cookies(d.cookieURL)
-	expired := make([]*stdhttp.Cookie, 0, len(current))
+	expired := make([]*stdhttp.Cookie, 0, len(current)*2)
 	for _, cookie := range current {
 		//nolint:gosec // G124: deletion cookies stay inside the private per-instance jar.
 		expired = append(expired, &stdhttp.Cookie{
+			Name:    cookie.Name,
+			Value:   "",
+			Path:    "/",
+			MaxAge:  -1,
+			Expires: time.Unix(1, 0),
+		}, &stdhttp.Cookie{
 			Name:    cookie.Name,
 			Value:   "",
 			MaxAge:  -1,
