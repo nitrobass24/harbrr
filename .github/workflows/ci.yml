@@ -586,7 +586,6 @@ jobs:
           - { arch: arm64, load: false }
     env:
       IMAGE: ghcr.io/${{ github.repository }}
-      IMAGE_TAG: harbrr:ci-${{ github.run_id }}-${{ matrix.arch }}
       # Push to GHCR on a same-repo PR (testable before merge), main (develop tag),
       # or a version tag (release, whether that tag arrived via push or a manual
       # dispatch aimed at the tag).
@@ -661,13 +660,15 @@ jobs:
           images: ${{ env.IMAGE }}
 
       # ONE buildx invocation per arch (this job sits on the run's critical path, and
-      # the old build-for-smoke + rebuild-for-push pair cost ~15s of duplicate drive):
-      # on a publishing run it builds and pushes by digest — anonymous, untagged, and
-      # harmless until docker-merge's fully-gated manifest references it — and the
-      # smoke run validates the PUSHED digest afterwards, still inside this job, so
-      # docker-merge's gate on it is unchanged. On a non-publishing run (fork PR /
-      # dependabot) amd64 loads for the local smoke run and arm64 builds to cache,
-      # exactly as before.
+      # the old build-for-smoke + rebuild-for-push pair cost ~15s of duplicate drive)
+      # with up to two exporters: push-by-digest on a publishing run — anonymous,
+      # untagged, and harmless until docker-merge's fully-gated manifest references
+      # it — plus a local `type=docker` export on amd64 so the smoke run can execute
+      # the exact image without pulling it back (the workflow GITHUB_TOKEN is refused
+      # on untagged-digest pulls by GHCR, even though it just pushed the blob; a PAT
+      # pulls the same digest fine). arm64 builds to cache (or pushes) without a
+      # local export — it cannot execute on this host anyway. Empty output lines are
+      # filtered by the action, so each exporter line degrades to nothing cleanly.
       - name: build image (${{ matrix.arch }})
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
@@ -675,30 +676,24 @@ jobs:
           context: .
           build-contexts: |
             build=${{ runner.temp }}/binctx-${{ matrix.arch }}
-          load: ${{ matrix.load && env.PUSH != 'true' }}
           platforms: linux/${{ matrix.arch }}
-          tags: ${{ env.PUSH != 'true' && env.IMAGE_TAG || '' }}
           labels: ${{ steps.meta.outputs.labels }}
-          outputs: ${{ env.PUSH == 'true' && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', env.IMAGE) || '' }}
+          outputs: |
+            ${{ env.PUSH == 'true' && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', env.IMAGE) || '' }}
+            ${{ matrix.load && 'type=docker' || '' }}
           # No buildx GHA cache: in CI the compile runs in the prior `go build` step and is
           # injected via build-contexts, so buildx only COPYs the binary and rebuilds the tiny
           # native certs stage (seconds). type=gha,mode=max re-uploaded those layers for no
           # reuse and was the biggest consumer of the ~10GB repo cache budget.
           provenance: false
-      # The smoke gate: prove the image actually starts. On a publishing run this
-      # pulls the digest just pushed (the image is a few MB; the pull doubles as
-      # proof the push produced a fetchable image); otherwise it runs the loaded
-      # local tag. amd64 only — an arm64 image cannot execute on this host.
+      # The smoke gate: prove the image actually starts, by the image ID the local
+      # docker export just produced — no tag, no registry round-trip. amd64 only —
+      # an arm64 image cannot execute on this host.
       - name: validate image runs
         if: ${{ matrix.arch == 'amd64' }}
         env:
-          DIGEST: ${{ steps.build.outputs.digest }}
-        run: |
-          if [ "$PUSH" = "true" ]; then
-            docker run --rm --entrypoint harbrr "$IMAGE@$DIGEST" version
-          else
-            docker run --rm --entrypoint harbrr "$IMAGE_TAG" version
-          fi
+          IMAGEID: ${{ steps.build.outputs.imageid }}
+        run: docker run --rm --entrypoint harbrr "$IMAGEID" version
       - name: export digest
         if: ${{ env.PUSH == 'true' }}
         env:
@@ -719,10 +714,9 @@ jobs:
       - name: cleanup local smoke image
         if: ${{ always() && matrix.arch == 'amd64' }}
         env:
-          DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGEID: ${{ steps.build.outputs.imageid }}
         run: |
-          docker rmi "$IMAGE_TAG" 2>/dev/null || true
-          [ -n "$DIGEST" ] && docker rmi "$IMAGE@$DIGEST" 2>/dev/null || true
+          [ -n "$IMAGEID" ] && docker rmi -f "$IMAGEID" 2>/dev/null || true
 
   # Assemble the multi-arch manifest from the per-arch digests — the pullable publish
   # step. Only runs when the docker job pushed (same-repo PR or tag); it builds nothing,
