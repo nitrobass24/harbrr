@@ -32,7 +32,7 @@ func TestCoverageDocIsCurrent(t *testing.T) {
 		t.Fatalf("read committed coverage.md: %v", err)
 	}
 	if string(got) != want {
-		t.Fatal("website/docs/coverage.md is stale — regenerate it with `make coverage-docs` (go run ./scripts/gencoverage > website/docs/coverage.md)")
+		t.Fatal("website/docs/coverage.md is stale — regenerate it with `make coverage-docs` (go run ./scripts/gencoverage -write), which also updates the README/overview tracker counts")
 	}
 }
 

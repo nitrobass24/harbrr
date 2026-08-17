@@ -246,7 +246,7 @@ harbrr exposes the cache through its management API.
 |---|---|
 | `enabled` | Whether caching is on. If `false`, the other fields still appear but hold zero values and empty arrays. |
 | `entries` | How many distinct cached answers are currently stored. |
-| `trackerHitsSaved` | **This is your tracker-load saved** — the running count of tracker requests harbrr answered from cache instead of going out. It only ever goes up; reaping entries doesn't touch it. |
+| `trackerHitsSaved` | **This is your tracker-load saved** — the running count of tracker requests harbrr answered from cache instead of going out. Reaping/flushing entries never touches it; only an explicit [`POST /api/cache/stats/reset`](#post-apicachestatsreset) zeroes it. |
 | `totalHits` | A *different* number: the hits accumulated by the entries **currently in the store**. It falls (even to zero) when those rows are reaped by cleanup, a flush, or an indexer invalidation. Useful for "how hard is what I'm holding working"; not the headline. |
 | `hits` / `misses` | The counters behind `hitRatio` — the fleet-wide totals, and the sum of the `byIndexer` rows. A failed live search counts as neither. |
 | `hitRatio` | `hits / (hits + misses)` — "86% of searches never touched a tracker." |
@@ -282,8 +282,9 @@ hit/miss counters alone.
 
 ### `POST /api/cache/stats/reset`
 
-The mirror image: zeroes the hit, miss, and breaker-suppressed counters (and every rolling
-window) fleet-wide, and reports what it threw away:
+The mirror image: zeroes the hit, miss, and breaker-suppressed counters — and with them
+`hitRatio` and `trackerHitsSaved`, which are derived from `hits` — plus every rolling
+window, fleet-wide, and reports what it threw away:
 
 ```json
 { "clearedHits": 43210, "clearedMisses": 7001, "clearedBreakerSuppressed": 37 }

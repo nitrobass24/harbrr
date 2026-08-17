@@ -59,8 +59,9 @@ for apps that expect one of those spellings.
 
 `{slug}` isn't limited to a single indexer. Three aggregate selectors sit in the same
 position: `all` (every enabled indexer), `profile:<name>` (a [sync profile](guides/app-sync.md)'s
-members), and `status:healthy` (`all` minus the indexers harbrr currently believes are broken)
-— so one Sonarr/Radarr entry can cover your whole set.
+members), and `status:healthy` (every enabled indexer that is not currently `failing` —
+`healthy` and `unknown` alike, so a never-tested indexer still serves) — so one Sonarr/Radarr
+entry can cover your whole set.
 
 :::note[OIDC / SSO]
 

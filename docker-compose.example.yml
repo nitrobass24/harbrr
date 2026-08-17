@@ -17,6 +17,9 @@
 #   3. Create the admin:   POST /api/auth/setup  {"username":"...","password":"..."}
 #   4. Mint a Torznab key: POST /api/apikeys     {"name":"sonarr"}   (shown ONCE)
 #   5. Add an indexer:     POST /api/indexers     (credentials encrypted at rest)
+#      Steps 4-5 need auth: a login session cookie + X-CSRF-Token (or an X-API-Key
+#      header). The UI does all of this for you; for the full authenticated curl
+#      sequence see website/docs/getting-started.md.
 #   6. Point Sonarr/Radarr at a Generic Torznab indexer:
 #        URL:    http://harbrr:7478/api/indexers/<slug>/results/torznab
 #                (or .../indexers/all/results/torznab for every enabled indexer at once)
