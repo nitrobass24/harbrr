@@ -81,6 +81,7 @@ func TestCreateSealsSecretOnApp(t *testing.T) {
 func TestCreateValidation(t *testing.T) {
 	t.Parallel()
 	svc, _ := newService(t)
+	absoluteDir := t.TempDir()
 	tests := []struct {
 		name string
 		p    CreateParams
@@ -96,7 +97,7 @@ func TestCreateValidation(t *testing.T) {
 		{"hostPort zero port", CreateParams{Name: "n", Kind: domain.DownloadClientKindDeluge, Host: "localhost:0"}},
 		{"blackhole host must be empty", CreateParams{
 			Name: "bh", Kind: domain.DownloadClientKindBlackhole, Host: "http://x.invalid",
-			Settings: domain.DownloadClientSettings{Blackhole: &domain.BlackholeSettings{TorrentDir: "/watch"}},
+			Settings: domain.DownloadClientSettings{Blackhole: &domain.BlackholeSettings{TorrentDir: absoluteDir}},
 		}},
 		{"blackhole requires a dir", CreateParams{
 			Name: "bh", Kind: domain.DownloadClientKindBlackhole,
@@ -108,7 +109,7 @@ func TestCreateValidation(t *testing.T) {
 		}},
 		{"blackhole app id given", CreateParams{
 			Name: "bh", Kind: domain.DownloadClientKindBlackhole, AppID: ptrInt64(1),
-			Settings: domain.DownloadClientSettings{Blackhole: &domain.BlackholeSettings{TorrentDir: "/watch"}},
+			Settings: domain.DownloadClientSettings{Blackhole: &domain.BlackholeSettings{TorrentDir: absoluteDir}},
 		}},
 	}
 	for _, tt := range tests {
@@ -262,9 +263,10 @@ func TestUpdateSettingsKindMismatch(t *testing.T) {
 func TestCreateBlackhole_Success(t *testing.T) {
 	t.Parallel()
 	svc, _ := newService(t)
+	torrentDir := t.TempDir()
 	c, err := svc.Create(context.Background(), CreateParams{
 		Name: "bh", Kind: domain.DownloadClientKindBlackhole,
-		Settings: domain.DownloadClientSettings{Blackhole: &domain.BlackholeSettings{TorrentDir: "/watch/torrents"}},
+		Settings: domain.DownloadClientSettings{Blackhole: &domain.BlackholeSettings{TorrentDir: torrentDir}},
 	})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -275,8 +277,15 @@ func TestCreateBlackhole_Success(t *testing.T) {
 	if c.Host != "" {
 		t.Errorf("Host = %q, want empty", c.Host)
 	}
-	if c.Settings.Blackhole == nil || c.Settings.Blackhole.TorrentDir != "/watch/torrents" {
-		t.Errorf("Settings.Blackhole = %+v, want TorrentDir /watch/torrents", c.Settings.Blackhole)
+	// Read back through the DB rather than asserting on Create's return value —
+	// Create echoes the caller's own Settings struct, so only a fresh Get proves
+	// the settings (including a native path) survived the persistence round trip.
+	got, err := svc.Get(context.Background(), c.ID)
+	if err != nil {
+		t.Fatalf("Get after Create: %v", err)
+	}
+	if got.Settings.Blackhole == nil || got.Settings.Blackhole.TorrentDir != torrentDir {
+		t.Errorf("persisted Settings.Blackhole = %+v, want TorrentDir %q", got.Settings.Blackhole, torrentDir)
 	}
 }
 

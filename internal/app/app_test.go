@@ -63,6 +63,7 @@ func TestNewBootsAndServesHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	t.Cleanup(func() { _ = a.db.Close() })
 
 	ts := httptest.NewServer(a.Handler())
 	t.Cleanup(ts.Close)
@@ -187,6 +188,24 @@ func TestRunFlushesCacheBeforeClose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	// Run's return closes the db on the happy path; the Cleanup covers every
+	// t.Fatalf before/around Run, so a failure can't strand the file open and
+	// break TempDir removal on Windows (double Close is a nil no-op). If the Run
+	// goroutine was started, the Cleanup first waits for it — the deferred cancel
+	// has already fired by cleanup time, so Run is exiting, and closing the db
+	// underneath it would trade one Windows failure for a use-after-close race.
+	// The wait is bounded so a wedged Run can't hang the whole test binary.
+	runStarted := false
+	runDone := make(chan struct{})
+	t.Cleanup(func() {
+		if runStarted {
+			select {
+			case <-runDone:
+			case <-time.After(15 * time.Second):
+			}
+		}
+		_ = a.db.Close()
+	})
 
 	instID := insertCleanupInstance(t, a.db)
 	old := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -205,7 +224,11 @@ func TestRunFlushesCacheBeforeClose(t *testing.T) {
 	runCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { done <- a.Run(runCtx) }()
+	runStarted = true
+	go func() {
+		done <- a.Run(runCtx)
+		close(runDone)
+	}()
 
 	addr := net.JoinHostPort(cfg.Server.Host, strconv.Itoa(cfg.Server.Port))
 	waitForAppListen(t, addr)
