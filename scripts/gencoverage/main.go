@@ -38,10 +38,14 @@ var liveTested = map[string]bool{
 	"aura4k-api": true, "digitalcore-api": true, "hdspace": true, "lst": true,
 	"luminarr-api": true, "onlyencodes-api": true, "racing4everyone-api": true, "reelflix-api": true,
 	"retromoviesclub-api": true, "torrentleech": true, "yuscene-api": true, "racingforme": true,
-	"seedpool-api": true, "uploadcx": true, "darkpeers-api": true,
+	"seedpool-api": true, "uploadcx": true, "darkpeers-api": true, "cinemageddon": true,
+	"czteam-api": true, "f1carreras-api": true, "hhd-api": true, "lastdigitalunderground": true,
+	"milkie": true, "oldtoonsworld": true, "rastastugan-api": true,
 	// Native drivers, live-validated.
 	"iptorrents": true, "filelist": true, "myanonamouse": true, "broadcastthenet": true,
-	"passthepopcorn": true, "hdbits": true,
+	"passthepopcorn": true, "hdbits": true, "alpharatio": true, "avistaz": true,
+	"beyondhd": true, "cinemaz": true, "gazellegames": true, "nebulance": true,
+	"orpheus": true, "redacted": true,
 	// BrokenStones, live-validated 2026-07-17: full parity vs the Prowlarr oracle
 	// (696 = 696 across harbrr's Torznab pages, head titles identical in order).
 	"brokenstones": true,

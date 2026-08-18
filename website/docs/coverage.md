@@ -19,25 +19,25 @@ Bespoke code in Jackett/Prowlarr (no Cardigann definition); harbrr ships native 
 
 | Tracker | Pattern | Built | Live-tested |
 |---|---|:--:|:--:|
-| AvistaZ | Bearer (login → token) | ✅ | ⬜ |
-| CinemaZ | Bearer (login → token) | ✅ | ⬜ |
+| AvistaZ | Bearer (login → token) | ✅ | ✅ |
+| CinemaZ | Bearer (login → token) | ✅ | ✅ |
 | PrivateHD | Bearer (login → token) | ✅ | ⬜ |
 | ExoticaZ | Bearer (login → token) | ✅ | ⬜ |
 | IPTorrents | Session cookie (HTML scrape) | ✅ | ✅ |
 | TorrentDay | Session cookie (HTML scrape) | ✅ | ⬜ |
 | FileList | Passkey / JSON API | ✅ | ✅ |
 | HDBits | Passkey / JSON API | ✅ | ✅ |
-| BeyondHD | Passkey / JSON API | ✅ | ⬜ |
+| BeyondHD | Passkey / JSON API | ✅ | ✅ |
 | MyAnonamouse | Session cookie (rotating, JSON) | ✅ | ✅ |
-| Redacted | Gazelle (cookie/key → ajax.php) | ✅ | ⬜ |
-| Orpheus | Gazelle (cookie/key → ajax.php) | ✅ | ⬜ |
-| AlphaRatio | Gazelle (session cookie → torrents.php) | ✅ | ⬜ |
+| Redacted | Gazelle (cookie/key → ajax.php) | ✅ | ✅ |
+| Orpheus | Gazelle (cookie/key → ajax.php) | ✅ | ✅ |
+| AlphaRatio | Gazelle (session cookie → torrents.php) | ✅ | ✅ |
 | BrokenStones | Gazelle (session cookie → torrents.php) | ✅ | ✅ |
 | BroadcastTheNet | Bespoke API | ✅ | ✅ |
 | PassThePopcorn | Bespoke API | ✅ | ✅ |
-| GazelleGames | Bespoke API | ✅ | ⬜ |
+| GazelleGames | Bespoke API | ✅ | ✅ |
 | AnimeBytes | Bespoke API | ✅ | ⬜ |
-| Nebulance | Bespoke JSON API | ✅ | ⬜ |
+| Nebulance | Bespoke JSON API | ✅ | ✅ |
 | Usenet (Newznab) | Generic Newznab | ✅ | ✅ |
 | NZBIndex | Bespoke JSON API (public) | ✅ | ✅ |
 | AnimeTosho | Torznab API (native) | ✅ | ⬜ |
@@ -145,7 +145,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | CeskeForum | ✅ | ⬜ |
 | CGPeers | ✅ | ⬜ |
 | CHDBits | ✅ | ⬜ |
-| Cinemageddon | ✅ | ⬜ |
+| Cinemageddon | ✅ | ✅ |
 | CinemaMovieS_ZT | ✅ | ⬜ |
 | Cinematik (API) | ✅ | ⬜ |
 | ClearJAV (API) | ✅ | ⬜ |
@@ -159,7 +159,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | CRT2FA | ✅ | ⬜ |
 | cyanbug (大青虫) | ✅ | ⬜ |
 | CyclingArchiveClub | ✅ | ⬜ |
-| CZTeam (API) | ✅ | ⬜ |
+| CZTeam (API) | ✅ | ✅ |
 | Darkpeers (API) | ✅ | ✅ |
 | Das Unerwartete | ✅ | ⬜ |
 | Das Unerwartete (API) | ✅ | ⬜ |
@@ -183,7 +183,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | exitorrent.org | ✅ | ⬜ |
 | Explosiv-World | ✅ | ⬜ |
 | ExtremeBits | ✅ | ⬜ |
-| F1Carreras (API) | ✅ | ⬜ |
+| F1Carreras (API) | ✅ | ✅ |
 | F1GP | ✅ | ⬜ |
 | FANO.IN | ✅ | ⬜ |
 | Fappaizuri | ✅ | ⬜ |
@@ -235,7 +235,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | HELLENIC-HD (API) | ✅ | ⬜ |
 | HeroBit | ✅ | ⬜ |
 | HHanClub | ✅ | ⬜ |
-| HHD (API) | ✅ | ⬜ |
+| HHD (API) | ✅ | ✅ |
 | House of Devil | ✅ | ⬜ |
 | HQMusic | ✅ | ⬜ |
 | HUDBT (蝴蝶) | ✅ | ⬜ |
@@ -261,7 +261,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Kufirc2FA | ✅ | ⬜ |
 | Kunlun (昆仑) | ✅ | ⬜ |
 | lajidui | ✅ | ⬜ |
-| Last Digital Underground | ✅ | ⬜ |
+| Last Digital Underground | ✅ | ✅ |
 | LastFiles | ✅ | ⬜ |
 | Lat-Team (API) | ✅ | ⬜ |
 | LearnFlakes | ✅ | ⬜ |
@@ -290,7 +290,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | MeseVilág | ✅ | ⬜ |
 | MetalGuru | ✅ | ⬜ |
 | MidnightScene | ✅ | ⬜ |
-| Milkie | ✅ | ⬜ |
+| Milkie | ✅ | ✅ |
 | Milnueve (API) | ✅ | ⬜ |
 | MMA-torrents | ✅ | ⬜ |
 | MNV | ✅ | ⬜ |
@@ -314,7 +314,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | NovaHD | ✅ | ⬜ |
 | OKPT | ✅ | ⬜ |
 | Old Greek Tracker (OGT) | ✅ | ⬜ |
-| OldToonsWorld (API) | ✅ | ⬜ |
+| OldToonsWorld (API) | ✅ | ✅ |
 | OnlyEncodes+ (API) | ✅ | ✅ |
 | OpenCD | ✅ | ⬜ |
 | Order66 | ✅ | ⬜ |
@@ -364,7 +364,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Racing4Everyone (API) | ✅ | ✅ |
 | RacingForMe | ✅ | ✅ |
 | RailgunPT | ✅ | ⬜ |
-| Rastastugan (API) | ✅ | ⬜ |
+| Rastastugan (API) | ✅ | ✅ |
 | Red Star Torrent | ✅ | ⬜ |
 | ReelFLiX (API) | ✅ | ✅ |
 | RetroMoviesClub (API) | ✅ | ✅ |
