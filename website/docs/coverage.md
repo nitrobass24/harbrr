@@ -38,7 +38,7 @@ Bespoke code in Jackett/Prowlarr (no Cardigann definition); harbrr ships native 
 | GazelleGames | Bespoke API | ✅ | ⬜ |
 | AnimeBytes | Bespoke API | ✅ | ⬜ |
 | Nebulance | Bespoke JSON API | ✅ | ⬜ |
-| RetroFlix | Bearer (login -> token) | ✅ | ⬜ |
+| RetroFlix | Bearer (login -> token) | ✅ | ✅ |
 | Usenet (Newznab) | Generic Newznab | ✅ | ✅ |
 | NZBIndex | Bespoke JSON API (public) | ✅ | ✅ |
 | AnimeTosho | Torznab API (native) | ✅ | ⬜ |
