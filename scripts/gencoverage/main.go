@@ -40,7 +40,7 @@ var liveTested = map[string]bool{
 	"retromoviesclub-api": true, "torrentleech": true, "yuscene-api": true, "racingforme": true,
 	"seedpool-api": true, "uploadcx": true, "darkpeers-api": true,
 	// Native drivers, live-validated.
-	"iptorrents": true, "filelist": true, "myanonamouse": true, "broadcastthenet": true,
+	"iptorrents": true, "xspeeds": true, "filelist": true, "myanonamouse": true, "broadcastthenet": true,
 	"passthepopcorn": true, "hdbits": true,
 	// BrokenStones, live-validated 2026-07-17: full parity vs the Prowlarr oracle
 	// (696 = 696 across harbrr's Torznab pages, head titles identical in order).

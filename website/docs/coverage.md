@@ -25,7 +25,7 @@ Bespoke code in Jackett/Prowlarr (no Cardigann definition); harbrr ships native 
 | ExoticaZ | Bearer (login → token) | ✅ | ⬜ |
 | IPTorrents | Session cookie (HTML scrape) | ✅ | ✅ |
 | TorrentDay | Session cookie (HTML scrape) | ✅ | ⬜ |
-| XSpeeds | Managed session cookie (HTML scrape) | ✅ | ⬜ |
+| XSpeeds | Managed session cookie (HTML scrape) | ✅ | ✅ |
 | FileList | Passkey / JSON API | ✅ | ✅ |
 | HDBits | Passkey / JSON API | ✅ | ✅ |
 | BeyondHD | Passkey / JSON API | ✅ | ⬜ |
