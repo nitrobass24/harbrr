@@ -64,7 +64,7 @@ func newQuiStub(t *testing.T, instanceID int, s *quiStub) *httptest.Server {
 
 func newTestQui(host string, instanceID int, apiKey string, settings domain.QuiSettings) *quiDriver {
 	settings.InstanceID = instanceID
-	drv, _ := newQui(domain.DownloadClient{Host: host, Settings: domain.DownloadClientSettings{Qui: &settings}}, apiKey, &http.Client{})
+	drv, _ := newQui(domain.DownloadClient{Host: host, Settings: domain.DownloadClientSettings{Qui: &settings}}, apiKey, newTestHTTPClient())
 	return drv.(*quiDriver)
 }
 

@@ -86,7 +86,7 @@ func newTransmissionStub(t *testing.T, s *transmissionStub) *httptest.Server {
 func newTestTransmission(host, username, secret string, settings domain.TransmissionSettings) *transmissionDriver {
 	drv, err := newTransmission(domain.DownloadClient{
 		Host: host, Username: username, Settings: domain.DownloadClientSettings{Transmission: &settings},
-	}, secret, &http.Client{})
+	}, secret, newTestHTTPClient())
 	if err != nil {
 		panic(err)
 	}

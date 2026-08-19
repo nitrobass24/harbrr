@@ -90,7 +90,7 @@ func newFloodStub(t *testing.T, s *floodStub) *httptest.Server {
 }
 
 func newTestFlood(host, username, password string, settings domain.FloodSettings) *floodDriver {
-	drv, _ := newFlood(domain.DownloadClient{Host: host, Username: username, Settings: domain.DownloadClientSettings{Flood: &settings}}, password, &http.Client{})
+	drv, _ := newFlood(domain.DownloadClient{Host: host, Username: username, Settings: domain.DownloadClientSettings{Flood: &settings}}, password, newTestHTTPClient())
 	return drv.(*floodDriver)
 }
 

@@ -279,9 +279,10 @@ func TestSabnzbdOptionsHTTPClientInjected(t *testing.T) {
 	stub := &sabnzbdStub{}
 	srv := newSabnzbdStub(t, stub)
 	var used bool
+	base := newTestHTTPClient().Transport
 	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		used = true
-		return http.DefaultTransport.RoundTrip(r)
+		return base.RoundTrip(r)
 	})}
 	drv, err := newSabnzbd(domain.DownloadClient{Host: srv.URL}, "k", client)
 	if err != nil {

@@ -97,7 +97,7 @@ func newDSStub(t *testing.T, s *dsStub) *httptest.Server {
 }
 
 func newTestDS(host, username, password string, settings domain.DownloadStationSettings) *downloadStationDriver {
-	drv, _ := newDownloadStation(domain.DownloadClient{Host: host, Username: username, Settings: domain.DownloadClientSettings{DownloadStation: &settings}}, password, &http.Client{})
+	drv, _ := newDownloadStation(domain.DownloadClient{Host: host, Username: username, Settings: domain.DownloadClientSettings{DownloadStation: &settings}}, password, newTestHTTPClient())
 	return drv.(*downloadStationDriver)
 }
 
