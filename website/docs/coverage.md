@@ -73,7 +73,7 @@ Native drivers we have issues for but haven't built. 👍 or comment on the issu
 
 Served through the shared engine from the vendored Jackett snapshot — all built. Live-tested where an operator instance covers them.
 
-### Private (404)
+### Private (403)
 
 | Tracker | Built | Live-tested |
 |---|:--:|:--:|
@@ -259,7 +259,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Kufei (库非) | ✅ | ⬜ |
 | Kufirc | ✅ | ⬜ |
 | Kufirc2FA | ✅ | ⬜ |
-| Kunlun (昆仑) | ✅ | ⬜ |
 | lajidui | ✅ | ⬜ |
 | Last Digital Underground | ✅ | ✅ |
 | LastFiles | ✅ | ⬜ |
@@ -547,7 +546,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | UzTracker | ✅ | ⬜ |
 | Ztracker | ✅ | ⬜ |
 
-### Public (86)
+### Public (87)
 
 | Tracker | Built | Live-tested |
 |---|:--:|:--:|
@@ -600,6 +599,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | plugintorrent | ✅ | ⬜ |
 | PornoTorrent | ✅ | ⬜ |
 | PornRips | ✅ | ⬜ |
+| PornXLab | ✅ | ⬜ |
 | Postman | ✅ | ⬜ |
 | RinTor.NeT | ✅ | ⬜ |
 | RuTor | ✅ | ⬜ |
