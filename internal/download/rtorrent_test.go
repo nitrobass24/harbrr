@@ -69,7 +69,7 @@ func newRTorrentStub(t *testing.T, s *rtorrentStub) *httptest.Server {
 func newTestRTorrent(host, username, secret string, settings domain.RTorrentSettings) *rtorrentDriver {
 	drv, err := newRTorrent(domain.DownloadClient{
 		Host: host, Username: username, Settings: domain.DownloadClientSettings{RTorrent: &settings},
-	}, secret, http.DefaultClient)
+	}, secret, newTestHTTPClient())
 	if err != nil {
 		panic(err)
 	}
@@ -302,7 +302,7 @@ func TestNewRTorrent_TLSSkipVerify(t *testing.T) {
 	srv := httptest.NewTLSServer(mux)
 	t.Cleanup(srv.Close)
 
-	strict, err := newRTorrent(domain.DownloadClient{Host: srv.URL + "/RPC2"}, "", http.DefaultClient)
+	strict, err := newRTorrent(domain.DownloadClient{Host: srv.URL + "/RPC2"}, "", newTestHTTPClient())
 	if err != nil {
 		t.Fatalf("newRTorrent (strict): %v", err)
 	}
@@ -313,7 +313,7 @@ func TestNewRTorrent_TLSSkipVerify(t *testing.T) {
 	lenient, err := newRTorrent(domain.DownloadClient{
 		Host:     srv.URL + "/RPC2",
 		Settings: domain.DownloadClientSettings{RTorrent: &domain.RTorrentSettings{TLSSkipVerify: true}},
-	}, "", http.DefaultClient)
+	}, "", newTestHTTPClient())
 	if err != nil {
 		t.Fatalf("newRTorrent (lenient): %v", err)
 	}
