@@ -174,14 +174,20 @@ var proseCountSites = []struct {
 		pattern: regexp.MustCompile(
 			`\*\*\d+ trackers\*\* — \d+ Cardigann definitions \+ \d+ native Go drivers`,
 		),
-		replace: func(_ []string, corpus, built, planned int) string {
+		// Shipped count only: this row sits in a Feature/Status table marked
+		// ✅, so the planned drivers must stay out of the total — they are not
+		// shipped, and the printed corpus + built has to equal the total in
+		// front of it.
+		replace: func(_ []string, corpus, built, _ int) string {
 			return fmt.Sprintf("**%d trackers** — %d Cardigann definitions + %d native Go drivers",
-				corpus+built+planned, corpus, built)
+				corpus+built, corpus, built)
 		},
 	},
 	{
 		path:    "website/docs/features/overview.md",
 		pattern: regexp.MustCompile(`all \d+ trackers`),
+		// Row count of coverage.md, which lists the planned drivers too, so this
+		// total legitimately differs from the shipped count above.
 		replace: func(_ []string, corpus, built, planned int) string {
 			return fmt.Sprintf("all %d trackers", corpus+built+planned)
 		},
