@@ -313,6 +313,9 @@ jobs:
       volumes:
         - /mnt/optane/github-actions/harbrr-pnpm-store:/pnpm-store
         - /mnt/optane/github-actions/harbrr-corepack:/corepack
+        # Built bundles, keyed by the hash of everything that can change one. Most
+        # PRs here are backend-only, and this job heads the critical path.
+        - /mnt/optane/github-actions/harbrr-web-dist:/web-dist-cache
     timeout-minutes: 10
     env:
       npm_config_store_dir: /pnpm-store
@@ -329,16 +332,44 @@ jobs:
       # every run (~7s per node job); corepack resolves the packageManager pin from
       # web/package.json and caches the dist in the host-mounted COREPACK_HOME, so
       # a warm run activates it in ~1s.
+      # The bundle is a pure function of the tracked web sources plus the OpenAPI
+      # spec the api-types drift check regenerates from — so hash exactly those and
+      # nothing else. `git ls-files -s` prints each path's blob hash, so the key is
+      # content-addressed without reading a single file.
+      - name: compute bundle cache key
+        id: bundle
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          key=$(git -C "$GITHUB_WORKSPACE" ls-files -s web internal/web/swagger/openapi.yaml | sha256sum | cut -d' ' -f1)
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+          echo "bundle cache key: $key"
+      # Exact match only — no restore-keys fallback. A near-miss here would ship a
+      # stale UI inside the release image, which is far worse than rebuilding.
+      - name: restore cached bundle
+        id: restore
+        run: |
+          src="/web-dist-cache/${{ steps.bundle.outputs.key }}"
+          if [ -d "$src" ]; then
+            mkdir -p web/dist && cp -a "$src/." web/dist/
+            echo "hit=true" >> "$GITHUB_OUTPUT"
+            echo "bundle cache HIT"
+          else
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+            echo "bundle cache MISS"
+          fi
       - name: activate pnpm (corepack, host-cached)
+        if: steps.restore.outputs.hit != 'true'
         working-directory: web
         run: corepack enable && corepack install
       - name: install
+        if: steps.restore.outputs.hit != 'true'
         working-directory: web
         run: pnpm install --frozen-lockfile
       # The route tree is generated from src/routes and committed; a contributor
       # who adds a route but forgets `pnpm generate:routes` fails here, not in a
       # teammate's surprise diff later.
       - name: route-tree drift check
+        if: steps.restore.outputs.hit != 'true'
         working-directory: web
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -348,16 +379,29 @@ jobs:
       # committed; a contributor who changes the spec but forgets `pnpm generate:api`
       # fails here, not in a teammate's surprise diff later.
       - name: api-types drift check
+        if: steps.restore.outputs.hit != 'true'
         working-directory: web
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           pnpm generate:api
           git -C "$GITHUB_WORKSPACE" diff --exit-code -- web/src/types/api.gen.ts
       - name: build
+        if: steps.restore.outputs.hit != 'true'
         working-directory: web
         run: pnpm build:bundle
+      # Guard runs on both paths: a cache hit must clear the same bar as a fresh
+      # build, or a bad bundle would be cached once and served forever.
       - name: guard the bundle
         run: scripts/check-web-dist.sh
+      - name: save bundle to cache
+        if: steps.restore.outputs.hit != 'true'
+        run: |
+          dst="/web-dist-cache/${{ steps.bundle.outputs.key }}"
+          rm -rf "$dst.tmp" && mkdir -p "$dst.tmp"
+          cp -a web/dist/. "$dst.tmp/"
+          # Rename is atomic on the same filesystem, so a concurrent job never sees
+          # a half-copied bundle under the real key.
+          rm -rf "$dst" && mv "$dst.tmp" "$dst"
       - name: upload dist artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -831,13 +875,45 @@ jobs:
   # Release. On any other run (PR / main push) `goreleaser check` just validates
   # .goreleaser.yml — fast, so it doesn't slow PRs. The container image is published by
   # the docker jobs above; GoReleaser builds no image.
+  # `goreleaser check` only validates .goreleaser.yml — it compiles nothing and
+  # reads no build output, so gating it behind the test suite bought nothing and
+  # put a config check on the critical path (it ended the run at t+138s while
+  # waiting on golangci-lint). Split out with no `needs` so it starts immediately.
+  # The release job below keeps the full gate, which is where it actually matters.
+  goreleaser-check:
+    name: goreleaser check
+    runs-on: self-hosted
+    timeout-minutes: 10
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      # `check` renders the config's templates, so RELEASE_HEADER must be defined
+      # even though nothing is released here.
+      - name: define an empty release header
+        run: echo "RELEASE_HEADER=" >> "$GITHUB_ENV"
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: check
+
+  # Tag runs only. Every step below was previously guarded by its own
+  # `startsWith(github.ref, 'refs/tags/')`; the job-level `if` now carries that
+  # once, so the conditionals inside are gone.
   goreleaser:
     name: goreleaser
     runs-on: self-hosted
     timeout-minutes: 20
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
     needs: [backend-test, web-test, web-e2e, golangci-lint, web-lint, web-typecheck, web]
     permissions:
-      contents: write # create the GitHub Release (tag runs only)
+      contents: write # create the GitHub Release
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -856,13 +932,11 @@ jobs:
       # empty. Tag runs only — PR/main runs execute `goreleaser check`, which builds
       # nothing.
       - name: download web dist (built once by the web job)
-        if: startsWith(github.ref, 'refs/tags/')
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: web-dist
           path: web/dist
       - name: guard the bundle
-        if: startsWith(github.ref, 'refs/tags/')
         run: scripts/check-web-dist.sh
       # Curated highlights for the GitHub Release header: pull the tag's section
       # from CHANGELOG.md into $RELEASE_HEADER, which goreleaser renders via
@@ -870,10 +944,7 @@ jobs:
       # events (empty on non-tag) so `goreleaser check` always has the var defined.
       - name: assemble release header from CHANGELOG
         run: |
-          header=""
-          case "$GITHUB_REF" in
-            refs/tags/*) header="$(scripts/changelog-extract.sh "${GITHUB_REF#refs/tags/}" || true)" ;;
-          esac
+          header="$(scripts/changelog-extract.sh "${GITHUB_REF#refs/tags/}" || true)"
           {
             echo "RELEASE_HEADER<<HARBRR_NOTES_EOF"
             printf '%s\n' "$header"
@@ -884,6 +955,6 @@ jobs:
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: ${{ startsWith(github.ref, 'refs/tags/') && 'release --clean' || 'check' }}
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
