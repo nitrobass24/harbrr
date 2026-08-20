@@ -68,7 +68,7 @@ or composition/lifecycle wiring, read `docs/architecture.md`, `docs/autobrr-app-
 
 ## Go / backend conventions (aligned with autobrr/qui)
 
-- Go **1.26**. Keep `gofumpt`-clean (a strict superset of gofmt).
+- Go **1.27**. Keep `gofumpt`-clean (a strict superset of gofmt).
 - Exports PascalCase; locals camelCase. Group interfaces by domain under `internal/<area>`.
 - Prefer **explicit error handling**; wrap with context. Keep **interfaces small (≤5 methods)**.
 - **Avoid `map[string]interface{}` / bare `any` for structured data — use typed structs.**

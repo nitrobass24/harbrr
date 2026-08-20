@@ -71,7 +71,7 @@ func liveDriver(t *testing.T, doer *scriptDoer) *driver {
 // category int array).
 func TestBuildRequest(t *testing.T) {
 	t.Parallel()
-	d := &driver{Base: native.Base{Cfg: creds()}}
+	d := &driver{Cfg: creds()}
 	cred := `"username":"` + credUser + `","passkey":"` + credPass + `"`
 	cases := []struct {
 		name  string

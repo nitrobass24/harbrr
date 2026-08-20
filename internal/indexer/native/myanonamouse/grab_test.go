@@ -11,7 +11,6 @@ import (
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
-	"github.com/autobrr/harbrr/internal/indexer/native"
 	"github.com/autobrr/harbrr/internal/version"
 )
 
@@ -140,13 +139,11 @@ func TestGrabTransportErrorSanitized(t *testing.T) {
 	const base = "https://www.myanonamouse.net"
 	link := base + "/dl/" + secret + "?passkey=" + secret
 	d := &driver{
-		Base: native.Base{
-			Family:  "myanonamouse",
-			Cfg:     map[string]string{"mam_id": mamSecret},
-			Doer:    &errorDoer{err: &url.Error{Op: "Get", URL: link, Err: errors.New("dial tcp: connection refused")}},
-			BaseURL: base + "/",
-			Clock:   fixedClock,
-		},
+		Family:       "myanonamouse",
+		Cfg:          map[string]string{"mam_id": mamSecret},
+		Doer:         &errorDoer{err: &url.Error{Op: "Get", URL: link, Err: errors.New("dial tcp: connection refused")}},
+		BaseURL:      base + "/",
+		Clock:        fixedClock,
 		currentMamID: mamSecret,
 	}
 	_, err := d.Grab(context.Background(), link)

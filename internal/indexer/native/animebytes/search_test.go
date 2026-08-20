@@ -57,7 +57,7 @@ func httpResp(status int, body string) *stdhttp.Response {
 func builderDriver(cfg map[string]string) *driver {
 	base := map[string]string{"username": credUser, "passkey": credPass}
 	maps.Copy(base, cfg)
-	return &driver{Base: native.Base{Family: "animebytes", Cfg: base, BaseURL: "https://animebytes.tv/", Clock: fixedClock}}
+	return &driver{Family: "animebytes", Cfg: base, BaseURL: "https://animebytes.tv/", Clock: fixedClock}
 }
 
 // liveDriver wires a driver to a scriptDoer with the secret credentials, for the

@@ -54,15 +54,13 @@ func testDriver(doer *scriptDoer, cfg map[string]string) *driver {
 		cfg = map[string]string{"cookie": credCookie, "user_agent": credUA}
 	}
 	return &driver{
-		Base: native.Base{
-			Family:  "iptorrents",
-			Def:     Families()[0].Definition,
-			Caps:    iptCapabilities(),
-			Cfg:     cfg,
-			Doer:    doer,
-			BaseURL: "https://iptorrents.com/",
-			Clock:   fixedClock,
-		},
+		Family:  "iptorrents",
+		Def:     Families()[0].Definition,
+		Caps:    iptCapabilities(),
+		Cfg:     cfg,
+		Doer:    doer,
+		BaseURL: "https://iptorrents.com/",
+		Clock:   fixedClock,
 	}
 }
 

@@ -125,9 +125,9 @@ func loadDefinitionSummaries(l *loader.Loader, nativeDefs []*loader.Definition) 
 		// Name falls back to the id: a definition that never parsed has no name, and
 		// the id is what the operator searches the list for.
 		out = append(out, definitionEntry{
-			definitionSummary: definitionSummary{ID: s.ID, Name: s.ID},
-			Origin:            string(s.Origin),
-			Error:             s.Reason,
+			ID: s.ID, Name: s.ID,
+			Origin: string(s.Origin),
+			Error:  s.Reason,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
