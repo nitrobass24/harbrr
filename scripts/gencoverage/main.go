@@ -184,6 +184,13 @@ var proseCountSites = []struct {
 	},
 	{
 		path:    "website/docs/features/overview.md",
+		pattern: regexp.MustCompile(`\d+ further native drivers`),
+		replace: func(_ []string, _, _, planned int) string {
+			return fmt.Sprintf("%d further native drivers", planned)
+		},
+	},
+	{
+		path:    "website/docs/features/overview.md",
 		pattern: regexp.MustCompile(`all \d+ trackers`),
 		// Row count of coverage.md, which lists the planned drivers too, so this
 		// total legitimately differs from the shipped count above.

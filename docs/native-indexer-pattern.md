@@ -150,11 +150,11 @@ defensively.
 
 - **Offline-gated like AvistaZ**: stub auth/search server + synthetic goldens
   derived from the documented contract (never a live capture).
-- **Live gate**: the Prowlarr differential — the stack runs all three live, so
+- **Live gate**: the Prowlarr differential — each worked example runs live, so
   the live Prowlarr feed is the oracle (same query → Prowlarr vs harbrr → diff),
   exactly as the live differential does for the Cardigann corpus.
-- **Redaction (non-negotiable)**: `mam_id`, `passkey`, `Cookie`, `Authorization`
-  redacted in every log/trace.
+- **Redaction (non-negotiable)**: `username`, `password`, `mam_id`, `passkey`, `Cookie`,
+  and `Authorization` are redacted in every log/trace.
 
 ## Leverage & effort (how the backlog is sized)
 

@@ -99,7 +99,7 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 | Partial results — a failing indexer degrades its own contribution, never the whole search | ✅ |
 | ID-based search (IMDb/TMDb/TVDB) and category mapping | ✅ |
 | Multi-select definition settings (checkbox / select / multi-select field types) | ✅ |
-| 18 further native drivers | 🚧 |
+| 17 further native drivers | 🚧 |
 | Per-indexer request timeout — a reserved `timeout` duration setting on every indexer's advanced options | ✅ |
 | Automatic failover across a tracker's known base URLs — only on host-shaped failure, never on an auth or rate-limit error, and a candidate must pass a real search before it is promoted; the configured host is never overwritten | ✅ |
 | Per-indexer required release flags (freeleech, halfleech, …) | 🚧 [#385](https://github.com/autobrr/harbrr/issues/385) |

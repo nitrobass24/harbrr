@@ -95,6 +95,7 @@ func TestProseTrackerCountsAreCurrent(t *testing.T) {
 		{file: "../../website/docs/features/overview.md", phrases: []string{
 			fmt.Sprintf("**%d trackers** — %d Cardigann definitions + %d native Go drivers",
 				corpus+built, corpus, built),
+			fmt.Sprintf("%d further native drivers", planned),
 			fmt.Sprintf("all %d trackers", corpus+built+planned),
 		}},
 	}
