@@ -31,13 +31,33 @@ func newService(t *testing.T) (*Service, *apps.Service) {
 	if err != nil {
 		t.Fatalf("keyring: %v", err)
 	}
-	appsSvc := apps.NewService(db, kr, http.DefaultClient, zerolog.Nop())
-	svc := NewService(db, appsSvc, kr, http.DefaultClient, zerolog.Nop())
+	appsSvc := apps.NewService(db, kr, newTestHTTPClient(), zerolog.Nop())
+	svc := NewService(db, appsSvc, kr, newTestHTTPClient(), zerolog.Nop())
 	svc.clock = func() time.Time { return time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC) }
 	return svc, appsSvc
 }
 
+// newTestHTTPClient returns a client with its own Transport. Tests in this
+// package must never share http.DefaultTransport: httptest.Server.Close calls
+// CloseIdleConnections on it, so any parallel test's server teardown kills an
+// in-flight POST reusing an idle connection (net/http never auto-retries a
+// non-idempotent request).
+func newTestHTTPClient() *http.Client {
+	return &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone()}
+}
+
 func ptrString(s string) *string { return &s }
+
+// TestTestHTTPClientIsolatesTransport guards the helper above: a client with a
+// nil Transport silently falls back to http.DefaultTransport, which is exactly
+// the sharing that flaked TestFloodJWTReusedAcrossCalls.
+func TestTestHTTPClientIsolatesTransport(t *testing.T) {
+	t.Parallel()
+	// A nil Transport is the fallback, not an absence of one.
+	if tr := newTestHTTPClient().Transport; tr == nil || tr == http.DefaultTransport {
+		t.Fatal("test clients must not share http.DefaultTransport: httptest.Server.Close closes its idle connections")
+	}
+}
 
 func TestCreateSealsSecretOnApp(t *testing.T) {
 	t.Parallel()
