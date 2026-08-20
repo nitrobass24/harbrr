@@ -63,8 +63,7 @@ func withGeneration(err error, generation uint64) error {
 }
 
 func generationFrom(err error) uint64 {
-	var wrapped generationError
-	if errors.As(err, &wrapped) {
+	if wrapped, ok := errors.AsType[generationError](err); ok {
 		return wrapped.generation
 	}
 	return 0

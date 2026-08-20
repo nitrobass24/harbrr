@@ -48,7 +48,7 @@ jobs:
         with:
           persist-credentials: false
       - id: read
-        # The `go` directive carries the full patch (go 1.26.6), which is exactly the
+        # The `go` directive carries the full patch (go 1.27.0), which is exactly the
         # golang:<version>-alpine tag we need.
         run: |
           v=$(awk '/^go /{print $2; exit}' go.mod)
@@ -82,7 +82,7 @@ jobs:
     name: backend-test (${{ matrix.shard.name }})
     needs: go-version
     runs-on: self-hosted
-    # Match the Dockerfile's build stage (golang:1.26-alpine) so the toolchain that
+    # Match the Dockerfile's build stage (golang:1.27-alpine) so the toolchain that
     # tests is the image's own musl Go — hence no actions/setup-go here (it would
     # download a glibc Go and shadow the image's on PATH, silently defeating the
     # point) and GOTOOLCHAIN=local (so a go.mod toolchain bump fails loud instead of
@@ -94,7 +94,7 @@ jobs:
     # musl-dev) is required because `go test -race` always needs cgo, unlike the
     # Dockerfile's CGO_ENABLED=0 product build.
     container:
-      # Derived from go.mod via the go-version job — NOT the floating 1.26-alpine,
+      # Derived from go.mod via the go-version job — NOT the floating 1.27-alpine,
       # which lagged go.mod once already and silently poisoned the lint cache.
       image: golang:${{ needs.go-version.outputs.version }}-alpine
       # Persistent host-disk Go caches instead of actions/cache: the self-hosted
@@ -475,7 +475,7 @@ jobs:
         with:
           # Pin the version so the action's cache key is stable run-to-run
           # (keep in sync with the version in `make tools`).
-          version: v2.12.2
+          version: v2.13.0
           only-new-issues: ${{ github.event_name == 'pull_request' }}
 
   # gitleaks is the source-of-truth secret scanner; the CLI binary is run directly
@@ -510,7 +510,7 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 10
     env:
-      GOVULNCHECK_VERSION: v1.5.0
+      GOVULNCHECK_VERSION: v1.7.0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0

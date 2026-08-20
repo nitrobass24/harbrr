@@ -41,7 +41,7 @@ func NewCrossSeedV6(baseURL, apiKey string, client *http.Client) Target {
 		client = defaultHTTPClient()
 	}
 	return &csv6Announcer{
-		poster: poster{kind: "cross-seed", baseURL: strings.TrimRight(baseURL, "/"), apiKey: apiKey, client: client},
+		kind: "cross-seed", baseURL: strings.TrimRight(baseURL, "/"), apiKey: apiKey, client: client,
 	}
 }
 

@@ -105,7 +105,7 @@ func newRSSCacheAdapter(t *testing.T, inner native.Driver) *indexerAdapter {
 // client-side filter on serve, without changing what any consumer is served.
 func TestRSSEmptyQueryCollapsesCacheKeyAndFiltersOnServe(t *testing.T) {
 	t.Parallel()
-	inner := &countingDriver{fakeDriver: fakeDriver{releases: rssCacheFixture()}, caps: rssCacheCaps(t)}
+	inner := &countingDriver{releases: rssCacheFixture(), caps: rssCacheCaps(t)}
 	idx := newRSSCacheAdapter(t, inner)
 	ctx := context.Background()
 
@@ -148,7 +148,7 @@ func TestRSSEmptyQueryCollapsesCacheKeyAndFiltersOnServe(t *testing.T) {
 // isEmptyQuery and so its categories are never canonicalized away.
 func TestKeywordSearchStillKeysByCategory(t *testing.T) {
 	t.Parallel()
-	inner := &countingDriver{fakeDriver: fakeDriver{releases: rssCacheFixture()}, caps: rssCacheCaps(t)}
+	inner := &countingDriver{releases: rssCacheFixture(), caps: rssCacheCaps(t)}
 	idx := newRSSCacheAdapter(t, inner)
 	ctx := context.Background()
 
@@ -178,7 +178,7 @@ func TestRSSEmptyQueryCollapsesAcrossMode(t *testing.T) {
 
 	t.Run("non-consuming driver collapses every mode onto one key", func(t *testing.T) {
 		t.Parallel()
-		inner := &countingDriver{fakeDriver: fakeDriver{releases: rssCacheFixture()}, caps: rssCacheCaps(t)}
+		inner := &countingDriver{releases: rssCacheFixture(), caps: rssCacheCaps(t)}
 		idx := newRSSCacheAdapter(t, inner)
 
 		for _, mode := range modes {
@@ -193,7 +193,7 @@ func TestRSSEmptyQueryCollapsesAcrossMode(t *testing.T) {
 
 	t.Run("mode-consuming driver keeps a per-mode key", func(t *testing.T) {
 		t.Parallel()
-		inner := &countingDriver{fakeDriver: fakeDriver{releases: rssCacheFixture()}, caps: rssCacheCaps(t), consumesMode: true}
+		inner := &countingDriver{releases: rssCacheFixture(), caps: rssCacheCaps(t), consumesMode: true}
 		idx := newRSSCacheAdapter(t, inner)
 
 		for _, mode := range modes {
@@ -216,7 +216,7 @@ func TestRSSEmptyQueryCollapsesAcrossMode(t *testing.T) {
 // weight: every consumer poll still missed and re-hit the tracker.
 func TestRSSWarmPrimesTheKeyAConsumerPollReads(t *testing.T) {
 	t.Parallel()
-	inner := &countingDriver{fakeDriver: fakeDriver{releases: rssCacheFixture()}, caps: rssCacheCaps(t)}
+	inner := &countingDriver{releases: rssCacheFixture(), caps: rssCacheCaps(t)}
 	idx := newRSSCacheAdapter(t, inner)
 	ctx := context.Background()
 

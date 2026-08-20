@@ -13,7 +13,6 @@ import (
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
-	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 func fixedClock() time.Time { return time.Unix(1_700_000_000, 0).UTC() }
@@ -24,11 +23,9 @@ func builderDriver(site string, cfg map[string]string) *driver {
 		cfg = map[string]string{}
 	}
 	return &driver{
-		Base: native.Base{
-			Cfg:     cfg,
-			BaseURL: testBaseURL,
-			Clock:   fixedClock,
-		},
+		Cfg:     cfg,
+		BaseURL: testBaseURL,
+		Clock:   fixedClock,
 		profile: profileFor(site),
 	}
 }
@@ -172,8 +169,7 @@ func TestSearchStatusDispatch(t *testing.T) {
 	}
 
 	_, err = mk(stdhttp.StatusTooManyRequests, `{}`).Search(context.Background(), search.Query{Keywords: "x"})
-	var rl *search.RateLimitedError
-	if !errors.As(err, &rl) {
+	if _, ok := errors.AsType[*search.RateLimitedError](err); !ok {
 		t.Errorf("429: err=%v, want *search.RateLimitedError", err)
 	}
 

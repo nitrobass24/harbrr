@@ -8,7 +8,7 @@
 # so a multi-arch build never pays for an emulated Go toolchain. CGO is off, so this
 # is a pure cross-compile. For a plain `docker build` the target args are empty and
 # Go builds for the host.
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 WORKDIR /src
 
 # Cache module downloads separately from the source.

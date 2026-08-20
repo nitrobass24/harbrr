@@ -65,9 +65,9 @@ func NewQui(baseURL, apiKey string, client *http.Client, fetch TorrentFetcher, t
 		client = defaultHTTPClient()
 	}
 	return &quiAnnouncer{
-		poster: poster{kind: "qui", baseURL: strings.TrimRight(baseURL, "/"), apiKey: apiKey, client: client},
-		fetch:  fetch,
-		tags:   tags,
+		kind: "qui", baseURL: strings.TrimRight(baseURL, "/"), apiKey: apiKey, client: client,
+		fetch: fetch,
+		tags:  tags,
 	}
 }
 

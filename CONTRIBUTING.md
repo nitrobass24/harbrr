@@ -18,7 +18,7 @@ non-trivial change.
 
 ## Development setup
 
-- **Go 1.26** and `make`. No cgo — harbrr is pure Go (`CGO_ENABLED=0`), including the SQLite
+- **Go 1.27** and `make`. No cgo — harbrr is pure Go (`CGO_ENABLED=0`), including the SQLite
   driver, so it cross-compiles cleanly.
 - Common commands:
 

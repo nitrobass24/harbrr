@@ -20,11 +20,11 @@ jobs:
   vendor:
     runs-on: self-hosted
     # Bare-host `go` gets SIGKILLed on the self-hosted runners, so run in the
-    # same golang:1.26-alpine image the CI Go jobs use — its own musl Go with
+    # same golang:1.27-alpine image the CI Go jobs use — its own musl Go with
     # GOTOOLCHAIN=local replaces actions/setup-go (see backend-test in ci.yml
     # for the full rationale, incl. why gcompat must be installed first).
     container:
-      image: golang:1.26-alpine
+      image: golang:1.27-alpine
     timeout-minutes: 15
     env:
       GOTOOLCHAIN: local

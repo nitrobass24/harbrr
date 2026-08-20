@@ -63,7 +63,7 @@ func builderDriver(cfg map[string]string) *driver {
 	if cfg == nil {
 		cfg = map[string]string{}
 	}
-	return &driver{Base: native.Base{Cfg: cfg, BaseURL: "https://filelist.test/", Clock: fixedClock}}
+	return &driver{Cfg: cfg, BaseURL: "https://filelist.test/", Clock: fixedClock}
 }
 
 // liveDriver is a driver wired to a scriptDoer with the secret credentials, for the
@@ -226,8 +226,7 @@ func TestSearchStatusDispatch(t *testing.T) {
 	}
 
 	_, err = mk(stdhttp.StatusTooManyRequests, "nope").Search(context.Background(), search.Query{Keywords: "x"})
-	var rl *search.RateLimitedError
-	if !errors.As(err, &rl) {
+	if _, ok := errors.AsType[*search.RateLimitedError](err); !ok {
 		t.Errorf("429: err = %v, want *search.RateLimitedError", err)
 	}
 }
