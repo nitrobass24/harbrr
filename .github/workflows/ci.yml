@@ -475,7 +475,7 @@ jobs:
         with:
           # Pin the version so the action's cache key is stable run-to-run
           # (keep in sync with the version in `make tools`).
-          version: v2.12.2
+          version: v2.13.0
           only-new-issues: ${{ github.event_name == 'pull_request' }}
 
   # gitleaks is the source-of-truth secret scanner; the CLI binary is run directly
