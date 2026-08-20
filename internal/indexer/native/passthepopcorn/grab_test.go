@@ -166,8 +166,7 @@ func TestGrabStatusDispatch(t *testing.T) {
 	for _, status := range []int{stdhttp.StatusForbidden, stdhttp.StatusTooManyRequests, stdhttp.StatusServiceUnavailable} {
 		d := searchDriver(t, &scriptDoer{resp: rawResp(status, "text/html", "slow down")})
 		_, err := d.Grab(context.Background(), "https://passthepopcorn.me/torrents.php?action=download&id=1")
-		var rl *search.RateLimitedError
-		if !errors.As(err, &rl) {
+		if _, ok := errors.AsType[*search.RateLimitedError](err); !ok {
 			t.Errorf("HTTP %d: err = %v, want *search.RateLimitedError", status, err)
 		}
 	}

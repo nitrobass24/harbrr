@@ -89,8 +89,7 @@ func TestGrabStatusErrors(t *testing.T) {
 	}
 
 	_, err := mk(stdhttp.StatusTooManyRequests).Grab(context.Background(), "https://az.test/dl/1")
-	var rl *search.RateLimitedError
-	if !errors.As(err, &rl) {
+	if _, ok := errors.AsType[*search.RateLimitedError](err); !ok {
 		t.Errorf("429: err = %v, want *search.RateLimitedError", err)
 	}
 

@@ -252,8 +252,7 @@ func TestSearchStatusDispatch(t *testing.T) {
 	}
 
 	_, err := mk(stdhttp.StatusTooManyRequests).Search(context.Background(), search.Query{Keywords: "x"})
-	var rl *search.RateLimitedError
-	if !errors.As(err, &rl) {
+	if _, ok := errors.AsType[*search.RateLimitedError](err); !ok {
 		t.Errorf("429: err = %v, want *search.RateLimitedError", err)
 	}
 }
@@ -302,8 +301,7 @@ func TestSearchCallLimitExceeded(t *testing.T) {
 			return mkResp(stdhttp.StatusOK, body)
 		}})
 		_, err := d.Search(context.Background(), search.Query{Keywords: "x"})
-		var rl *search.RateLimitedError
-		if !errors.As(err, &rl) {
+		if _, ok := errors.AsType[*search.RateLimitedError](err); !ok {
 			t.Errorf("body %q: err = %v, want *search.RateLimitedError", body, err)
 		}
 	}

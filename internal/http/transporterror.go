@@ -67,8 +67,7 @@ func RedactURLError(err error) error {
 // this one where the host itself is user-configured and may be sensitive, or where
 // the surrounding message already names the target.
 func ScrubURLError(err error) error {
-	var uerr *url.Error
-	if errors.As(err, &uerr) {
+	if uerr, ok := errors.AsType[*url.Error](err); ok {
 		return fmt.Errorf("%s: %w", uerr.Op, ScrubURLError(uerr.Err))
 	}
 	return err

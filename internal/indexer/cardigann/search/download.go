@@ -287,8 +287,7 @@ func passesTorrentTest(ctx context.Context, def *loader.Definition, resolved str
 		// A rate-limit propagates so the registry backs off; any other fetch failure
 		// (unreachable, 4xx/5xx) means this link is not a usable torrent, so advance to
 		// the next selector — Jackett's per-selector try/catch continue.
-		var rle *RateLimitedError
-		if errors.As(err, &rle) {
+		if _, ok := errors.AsType[*RateLimitedError](err); ok {
 			return false, err
 		}
 		return false, nil

@@ -208,8 +208,7 @@ func TestSearchStatusDispatch(t *testing.T) {
 
 	for _, status := range []int{stdhttp.StatusTooManyRequests, stdhttp.StatusServiceUnavailable} {
 		_, err := mk(status).Search(context.Background(), search.Query{Keywords: "x"})
-		var rl *search.RateLimitedError
-		if !errors.As(err, &rl) {
+		if _, ok := errors.AsType[*search.RateLimitedError](err); !ok {
 			t.Errorf("HTTP %d: err = %v, want *search.RateLimitedError", status, err)
 		}
 	}

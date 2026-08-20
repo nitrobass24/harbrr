@@ -267,8 +267,7 @@ func TestGrabNZBMidBodyDropStaysTransportClassifiable(t *testing.T) {
 	if !errors.Is(err, sentinel) {
 		t.Errorf("err = %v, want errors.Is(sentinel)", err)
 	}
-	var netErr net.Error
-	if !errors.As(err, &netErr) {
+	if _, ok := errors.AsType[net.Error](err); !ok {
 		t.Errorf("err = %v, want the net.Error cause preserved", err)
 	}
 	if strings.Contains(err.Error(), secret) {

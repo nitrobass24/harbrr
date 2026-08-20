@@ -108,8 +108,7 @@ func decodeJSONLimit(w http.ResponseWriter, r *http.Request, dst any, limit int6
 // oversize body (MaxBytesReader tripped) is a 413; everything else uses badMsg with
 // a 400.
 func failDecode(w http.ResponseWriter, err error, badMsg string) bool {
-	var maxErr *http.MaxBytesError
-	if errors.As(err, &maxErr) {
+	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 		writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
 		return false
 	}

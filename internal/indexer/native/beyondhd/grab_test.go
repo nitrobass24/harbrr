@@ -76,8 +76,7 @@ func TestGrabStatusDispatch(t *testing.T) {
 
 	for _, status := range []int{stdhttp.StatusTooManyRequests, stdhttp.StatusServiceUnavailable} {
 		_, err := mk(status).Grab(context.Background(), downloadURL)
-		var rl *search.RateLimitedError
-		if !errors.As(err, &rl) {
+		if _, ok := errors.AsType[*search.RateLimitedError](err); !ok {
 			t.Errorf("HTTP %d: err = %v, want *search.RateLimitedError", status, err)
 		}
 	}

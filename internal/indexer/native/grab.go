@@ -113,8 +113,7 @@ func SanitizeGrabError(err, errDownloadRequestFailed error) error {
 			return sentinel
 		}
 	}
-	var rl *search.RateLimitedError
-	if errors.As(err, &rl) {
+	if rl, ok := errors.AsType[*search.RateLimitedError](err); ok {
 		if redacted {
 			return err
 		}

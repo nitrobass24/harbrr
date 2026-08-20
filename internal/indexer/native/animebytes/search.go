@@ -33,8 +33,7 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 	resp, err := d.get(ctx, d.buildSearchURL(q), "application/json", false)
 	if err != nil {
 		if resp != nil && resp.StatusCode != stdhttp.StatusUnauthorized && resp.StatusCode != stdhttp.StatusForbidden {
-			var rl *search.RateLimitedError
-			if !errors.As(err, &rl) {
+			if _, ok := errors.AsType[*search.RateLimitedError](err); !ok {
 				return nil, search.ErrParseError
 			}
 		}

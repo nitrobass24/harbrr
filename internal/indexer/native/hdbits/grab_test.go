@@ -128,8 +128,7 @@ func TestGrabStatusDispatch(t *testing.T) {
 			return mkResp(status, "slow down")
 		}})
 		_, err := d.Grab(context.Background(), grabURL)
-		var rl *search.RateLimitedError
-		if !errors.As(err, &rl) {
+		if _, ok := errors.AsType[*search.RateLimitedError](err); !ok {
 			t.Errorf("HTTP %d: err = %v, want *search.RateLimitedError", status, err)
 		}
 		if errors.Is(err, login.ErrLoginFailed) {
