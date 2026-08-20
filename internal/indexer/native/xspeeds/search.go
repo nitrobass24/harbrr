@@ -14,6 +14,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
 
+// Prowlarr parity: space-through-period range plus underscore.
 var searchSeparators = regexp.MustCompile(`[ -._]+`)
 
 // Search performs an authenticated browse and renews the session once when XSpeeds

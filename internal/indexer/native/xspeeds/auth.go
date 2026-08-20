@@ -126,7 +126,7 @@ func (d *driver) loginLocked(ctx context.Context, failedGeneration uint64) error
 	}
 	if err == nil && d.persist != nil {
 		if persistErr := d.persist(ctx, "cookie", replacement); persistErr != nil {
-			err = loginFailed("persist replacement session", persistErr)
+			err = fmt.Errorf("xspeeds: persist replacement session: %w", persistErr)
 		}
 	}
 	if err != nil {
@@ -236,7 +236,7 @@ func (d *driver) isLoginPage(body []byte) bool {
 	if authenticated {
 		return false
 	}
-	return doc.Find(`form[action*="takelogin.php"]`).Length() > 0 || bytes.Contains(body, []byte("logout.php"))
+	return doc.Find(`form[action*="takelogin.php"]`).Length() > 0
 }
 
 func (d *driver) replaceJarCookies(raw string) {

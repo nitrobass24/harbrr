@@ -119,8 +119,8 @@ func TestLoginPageDetection(t *testing.T) {
 		want bool
 	}{
 		{name: "login form", body: `<form action="takelogin.php"></form>`, want: true},
-		{name: "plain logout mention", body: `<script>const path = "logout.php"</script>`, want: true},
-		{name: "cross-host logout link", body: `<a href="https://evil.example/logout.php">Logout</a>`, want: true},
+		{name: "plain logout mention", body: `<script>const path = "logout.php"</script>`},
+		{name: "cross-host logout link", body: `<a href="https://evil.example/logout.php">Logout</a>`},
 		{name: "relative same-host logout link", body: `<a href="logout.php">Logout</a>`},
 		{name: "prefixed same-host logout link", body: `<a href="https://xspeeds.example/root/logout.php">Logout</a>`},
 		{name: "root same-host logout link", body: `<a href="/logout.php">Logout</a>`},
@@ -275,15 +275,20 @@ func TestCanceledLoginGateWait(t *testing.T) {
 }
 
 func TestPersistenceFailureRollsBack(t *testing.T) {
-	var browseCount atomic.Int64
+	var browseCount, loginCount, persistCount atomic.Int64
 	handler := stdhttp.HandlerFunc(func(writer stdhttp.ResponseWriter, request *stdhttp.Request) {
 		switch request.URL.Path {
 		case "/browse.php":
 			browseCount.Add(1)
+			if cookie, err := request.Cookie("session"); err == nil && cookie.Value == "synthetic-new-cookie" {
+				_, _ = writer.Write(readFixture(t, "browse_empty.html"))
+				return
+			}
 			writer.WriteHeader(stdhttp.StatusForbidden)
 		case "/login.php":
 			setTestCookie(writer, "landing", "synthetic-new-landing")
 		case "/takelogin.php":
+			loginCount.Add(1)
 			setTestCookie(writer, "session", "synthetic-new-cookie")
 			_, _ = writer.Write(readFixture(t, "login_success.html"))
 		}
@@ -291,12 +296,15 @@ func TestPersistenceFailureRollsBack(t *testing.T) {
 	cfg := testConfig()
 	cfg["cookie"] = testOldCookie
 	driver, _ := newTestServerDriver(t, handler, cfg, func(_ context.Context, _, value string) error {
-		return fmt.Errorf("failed to persist %s for %s", value, testUsername)
+		if persistCount.Add(1) == 1 {
+			return fmt.Errorf("failed to persist %s for %s", value, testUsername)
+		}
+		return nil
 	})
 	before := driver.sessionSnapshot()
 	_, err := driver.Search(t.Context(), search.Query{})
-	if !errors.Is(err, login.ErrLoginFailed) {
-		t.Fatalf("Search error = %v, want login failure", err)
+	if err == nil || errors.Is(err, login.ErrLoginFailed) {
+		t.Fatalf("Search error = %v, want non-login persistence failure", err)
 	}
 	for _, secret := range []string{testUsername, "synthetic-new-cookie", "synthetic-new-landing", "synthetic-xspeeds-old-cookie"} {
 		if strings.Contains(err.Error(), secret) {
@@ -311,6 +319,12 @@ func TestPersistenceFailureRollsBack(t *testing.T) {
 	}
 	if browseCount.Load() != 1 {
 		t.Errorf("browse count = %d, want 1", browseCount.Load())
+	}
+	if _, err := driver.Search(t.Context(), search.Query{}); err != nil {
+		t.Fatalf("Search retry: %v", err)
+	}
+	if loginCount.Load() != 2 || persistCount.Load() != 2 || browseCount.Load() != 3 {
+		t.Errorf("retry requests = %d logins, %d persists, %d browses; want 2, 2, 3", loginCount.Load(), persistCount.Load(), browseCount.Load())
 	}
 }
 
