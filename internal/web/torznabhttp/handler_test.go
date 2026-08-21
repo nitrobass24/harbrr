@@ -1214,7 +1214,8 @@ func TestLogInternalErrorLevel(t *testing.T) {
 		want string
 	}{
 		{
-			name: "circuit open is debug",
+			// The exact shape adapter.go returns when the gate refuses a dispatch.
+			name: "circuit open in the adapter's until form is debug",
 			err:  fmt.Errorf("%w until 2026-08-21T04:19:00Z", core.ErrCircuitOpen),
 			want: "debug",
 		},
