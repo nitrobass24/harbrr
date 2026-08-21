@@ -29,7 +29,12 @@ const (
 )
 
 // quiAnnounceTimeout is the ceiling on ONE qui Announce (check + torrent fetch + apply).
-// It is deliberately long, and waiting is the SAFE choice here: qui runs the apply under
+// It bounds all three steps, but only the two qui calls actually have the full window: the
+// torrent-fetch step keeps a tighter wall of its own, because DefaultTargetFactory builds
+// the TorrentFetcher from the un-widened client (see widenTimeout), so a /dl fetch still
+// aborts at that client's Timeout. That is deliberate — 30s is plenty to fetch a .torrent,
+// and #527's failures are all on apply, which does get the full window.
+// The length is the SAFE choice here: qui runs the apply under
 // context.WithoutCancel, so hanging up early does not cancel the injection — it only
 // throws away the verdict, making harbrr report a failure that never happened (#527).
 // For the same reason no retry may be layered on top: qui already did the work, so a
@@ -92,7 +97,8 @@ func NewQui(baseURL, apiKey string, client *http.Client, fetch TorrentFetcher, t
 // is a hard wall that a longer request context cannot lift, so the shared 30s client
 // would abort a slow qui apply long before quiAnnounceTimeout — the fix would be inert
 // past 30s. The copy is shallow, so the Transport (and its connection pool) is shared; a
-// zero Timeout already means "no wall" and is left alone.
+// zero Timeout already means "no wall" and is left alone. Only the announce poster is
+// widened: Probe and the TorrentFetcher keep the client they were handed.
 func widenTimeout(client *http.Client, d time.Duration) *http.Client {
 	if client.Timeout == 0 || client.Timeout >= d {
 		return client
