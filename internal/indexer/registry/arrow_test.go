@@ -2,6 +2,7 @@ package registry_test
 
 import (
 	"context"
+	"errors"
 	"iter"
 	"os/exec"
 	"strings"
@@ -56,14 +57,20 @@ func TestNoConcreteNativeDriverImports(t *testing.T) {
 }
 
 // listDeps returns pkg's production (non-test) dependency graph, pkg itself
-// included. A toolchain failure skips rather than fails: this is a structural
-// guard, not a build check.
+// included. A failure here is fatal rather than a skip: the caller already
+// skipped if the go toolchain is absent, so anything reaching this point is
+// genuinely broken, and skipping would silently stop enforcing the arrow.
 func listDeps(t *testing.T, pkg string) iter.Seq[string] {
 	t.Helper()
 
+	// Output, not CombinedOutput: stderr must never contaminate the dependency
+	// list parsed below. It surfaces on ExitError.Stderr instead.
 	out, err := exec.CommandContext(context.Background(), "go", "list", "-deps", pkg).Output()
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+		t.Fatalf("go list -deps %s failed (%v): %s", pkg, err, exitErr.Stderr)
+	}
 	if err != nil {
-		t.Skipf("go list -deps %s failed (%v); skipping import-arrow check", pkg, err)
+		t.Fatalf("go list -deps %s failed: %v", pkg, err)
 	}
 	return strings.SplitSeq(strings.TrimSpace(string(out)), "\n")
 }
