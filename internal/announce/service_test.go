@@ -43,6 +43,10 @@ func (f *fakeTarget) Announce(_ context.Context, rel announce.Release) (announce
 
 func (f *fakeTarget) Probe(context.Context) error { return f.probeErr }
 
+// AnnounceTimeout: 10s is what the whole announce path shared before it became per-target,
+// so tests that are not about the ceiling keep behaving exactly as they did.
+func (f *fakeTarget) AnnounceTimeout() time.Duration { return 10 * time.Second }
+
 func newService(t *testing.T, factory announce.TargetFactory) (*announce.Service, *database.DB, *apps.Service) {
 	t.Helper()
 	db := dbtest.OpenMigrated(t)
@@ -477,11 +481,15 @@ func TestServicePushFailureRedactsGUID(t *testing.T) {
 }
 
 // hangTarget hangs on ctx.Done() for exactly one call (simulating a stuck request against a
-// dead-but-not-erroring target) and returns immediately for every other call.
+// dead-but-not-erroring target) and returns immediately for every other call. timeout is
+// the ceiling it declares, so the test can pin the behaviour without waiting seconds.
 type hangTarget struct {
-	hangAt int
-	calls  int
+	hangAt  int
+	calls   int
+	timeout time.Duration
 }
+
+func (h *hangTarget) AnnounceTimeout() time.Duration { return h.timeout }
 
 func (h *hangTarget) Announce(ctx context.Context, _ announce.Release) (announce.Result, error) {
 	idx := h.calls
@@ -500,8 +508,9 @@ func (h *hangTarget) Probe(context.Context) error { return nil }
 // in the loop starves too. Each release must get its own bounded window instead.
 func TestServicePushOneCapsPerReleaseTimeout(t *testing.T) {
 	t.Parallel()
+	const ceiling = 200 * time.Millisecond
 	ctx := context.Background()
-	tgt := &hangTarget{hangAt: 0}
+	tgt := &hangTarget{hangAt: 0, timeout: ceiling}
 	svc, _, _ := newService(t, func(domain.AnnounceConnection, string) (announce.Target, error) { return tgt, nil })
 	if _, err := svc.CreateConnection(ctx, announce.CreateConnectionParams{
 		Name: "qui", Kind: domain.AnnounceKindQui, BaseURL: "http://qui:7476", APIKey: "k", HarbrrURL: "http://h:8787",
@@ -517,8 +526,8 @@ func TestServicePushOneCapsPerReleaseTimeout(t *testing.T) {
 	if tgt.calls != len(rels) {
 		t.Fatalf("calls = %d, want %d (the stuck release must not starve the rest of the batch)", tgt.calls, len(rels))
 	}
-	if elapsed >= 2*announce.PerReleaseTimeout {
-		t.Errorf("elapsed %v for %d releases (1 stuck), want close to PerReleaseTimeout (%v) — the stuck call must not compound", elapsed, len(rels), announce.PerReleaseTimeout)
+	if elapsed >= 2*ceiling {
+		t.Errorf("elapsed %v for %d releases (1 stuck), want close to the target's own ceiling (%v) — the stuck call must not compound", elapsed, len(rels), ceiling)
 	}
 }
 

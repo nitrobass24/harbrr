@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // cross-seed v6 is a one-step push: harbrr POSTs the release metadata plus a link, and
@@ -17,6 +18,15 @@ const (
 	// reachability with it but cannot validate the API key (ping ignores it).
 	csv6PingPath = "/api/ping"
 )
+
+// csv6AnnounceTimeout is the ceiling on one /api/announce. It keeps the short bound the
+// whole announce path used to share: cross-seed v6 gives no promise that it finishes the
+// work after harbrr hangs up (the promise that lets qui wait much longer), so waiting
+// past this buys nothing.
+const csv6AnnounceTimeout = 10 * time.Second
+
+// AnnounceTimeout returns cross-seed v6's ceiling.
+func (c *csv6Announcer) AnnounceTimeout() time.Duration { return csv6AnnounceTimeout }
 
 // csv6Request is the /api/announce contract. Link is harbrr's /dl?apikey=… proxy URL —
 // cross-seed fetches it, so harbrr holds the tracker creds and the passkey never leaves

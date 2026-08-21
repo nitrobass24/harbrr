@@ -50,6 +50,11 @@ func TestAnnounceOrigin(t *testing.T) {
 	}
 }
 
+// fakeAnnounceTimeout is the per-release ceiling every fake target in this file declares.
+// The sink tests are about the worker pool and the queue, not the ceiling, so they keep
+// the value the whole announce path shared before it became per-target.
+const fakeAnnounceTimeout = 10 * time.Second
+
 // countingTarget counts announces across goroutines for the sink test.
 type countingTarget struct{ n *atomic.Int64 }
 
@@ -59,6 +64,8 @@ func (c countingTarget) Announce(context.Context, announce.Release) (announce.Re
 }
 
 func (c countingTarget) Probe(context.Context) error { return nil }
+
+func (c countingTarget) AnnounceTimeout() time.Duration { return fakeAnnounceTimeout }
 
 // TestAnnounceSinkSkipsUsenet pins #231: every announce target today (qui cross-seed,
 // cross-seed v6) is torrent-only, so a usenet instance's RSS fill must not fan out a
@@ -133,6 +140,8 @@ func (s slowTarget) Announce(context.Context, announce.Release) (announce.Result
 }
 
 func (s slowTarget) Probe(context.Context) error { return nil }
+
+func (s slowTarget) AnnounceTimeout() time.Duration { return fakeAnnounceTimeout }
 
 // syncBuffer is a mutex-guarded bytes.Buffer: the sink's worker pool logs from multiple
 // goroutines concurrently, and bytes.Buffer alone isn't safe for that.
@@ -304,3 +313,5 @@ func (g gatedTarget) Announce(ctx context.Context, _ announce.Release) (announce
 }
 
 func (g gatedTarget) Probe(context.Context) error { return nil }
+
+func (g gatedTarget) AnnounceTimeout() time.Duration { return fakeAnnounceTimeout }

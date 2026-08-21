@@ -269,40 +269,39 @@ func (s *Service) Push(ctx context.Context, build func(conn domain.AnnounceConne
 			s.log.Warn().Int64("connection_id", conn.ID).Str("error", apphttp.RedactError(err)).Msg("announce: skip connection for push")
 			continue
 		}
-		rels := build(conn)
-		// Per-connection budget: Push repeats delivery per connection, so a batch
-		// deadline scaled only by release count starves the SECOND connection's tail
-		// behind a slow first one. Each connection gets its own release-scaled budget;
-		// the caller's ctx stays the overall hard cap.
-		connCtx, cancel := context.WithTimeout(ctx, connPushBudget(len(rels)))
-		matched += s.pushOne(connCtx, conn, rels)
-		cancel()
+		// pushOne applies the per-connection budget itself — sizing it needs the
+		// target's own announce ceiling, and the target is only built in there.
+		matched += s.pushOne(ctx, conn, build(conn))
 	}
 	return matched
 }
 
 // pushBudgetBase is the floor of one connection's push budget — enough for a
-// handful of releases against a live target even with PerReleaseTimeout applied
-// per release inside pushOne.
+// handful of releases against a live target.
 const pushBudgetBase = 30 * time.Second
 
-// connPushBudget scales one connection's push deadline with its release count:
-// pushOne announces sequentially at up to PerReleaseTimeout each, so a fixed
-// budget that fits a small batch fails a large one's tail. The caller's context
-// carries the overall hard cap, so no cap is applied here.
-func connPushBudget(releases int) time.Duration {
-	return pushBudgetBase + time.Duration(releases)*PerReleaseTimeout
+// perReleasePacing is what one release is EXPECTED to cost, and is used only to pace a
+// sequential batch. It is deliberately NOT a ceiling: what a single release is ALLOWED to
+// cost is the target's own Target.AnnounceTimeout, which differs per tool and can be much
+// larger (#527). Conflating the two is what left a small batch with a budget too short
+// for its own per-release ceiling.
+const perReleasePacing = 10 * time.Second
+
+// connPushBudget sizes one connection's push deadline from the expected cost of the whole
+// batch and the worst case of a single release. pushOne announces sequentially, so
+// releases*perReleasePacing paces the batch; the budget must additionally fit at least one
+// worst-case release, or a tiny batch would cancel the very slow announce the target's
+// ceiling exists to permit. The caller's context carries the overall hard cap, so no cap
+// is applied here.
+func connPushBudget(releases int, ceiling time.Duration) time.Duration {
+	return pushBudgetBase + max(time.Duration(releases)*perReleasePacing, ceiling)
 }
 
-// PerReleaseTimeout bounds a single release's announce POST. A batch shares one caller-
-// supplied context, but pushOne announces releases sequentially — without a per-release
-// deadline, one slow/stuck release stalls the shared context until every release after it
-// in the batch fails "context deadline exceeded" too (#232). newAnnounceSink sizes its batch
-// context off this constant so a big batch gets a proportionally bigger budget.
-const PerReleaseTimeout = 10 * time.Second
-
 // pushOne binds the connection's App for its decrypted tool key, builds the driver, and
-// announces each release (each capped at PerReleaseTimeout), returning the match count.
+// announces each release (each capped at the TARGET's own AnnounceTimeout), returning the
+// match count. Push repeats delivery per connection, so a deadline shared across them
+// would starve the second connection's tail behind a slow first one; the per-connection
+// budget is applied here instead, and the caller's ctx stays the overall hard cap.
 // Bind runs after the empty-rels short-circuit, so a connection with nothing to push
 // never decrypts its App's key at all (Push already Get-enriched it once, for the /dl
 // links; Bind here is a second, independent App lookup for the credential). Per-release
@@ -324,11 +323,15 @@ func (s *Service) pushOne(ctx context.Context, conn domain.AnnounceConnection, r
 		return 0
 	}
 
+	ceiling := target.AnnounceTimeout()
+	ctx, cancelConn := context.WithTimeout(ctx, connPushBudget(len(rels), ceiling))
+	defer cancelConn()
+
 	start := time.Now()
 	matched, failed := 0, 0
 	var firstFailGUID, firstFailErr string
 	for _, rel := range rels {
-		relCtx, cancel := context.WithTimeout(ctx, PerReleaseTimeout)
+		relCtx, cancel := context.WithTimeout(ctx, ceiling)
 		res, err := target.Announce(relCtx, rel)
 		cancel()
 		if err != nil {
