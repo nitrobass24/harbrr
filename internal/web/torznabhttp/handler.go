@@ -750,7 +750,20 @@ func logInternalError(log zerolog.Logger, stage, indexerID string, err error) {
 	// protocols over the torznab-shaped feed API, and naming the API surface here reads
 	// as a protocol mismatch when the indexer is usenet (a newznab driver error inside
 	// a "torznab" failure).
-	log.Error().
+	//
+	// An open circuit is debug, not error: it is a self-imposed gate, the same fact
+	// aggregate.go's classifySkip reports as SkipCircuit and searchcache.go declines to
+	// feed to the negative breaker — "harbrr chose not to ask", with no request made and
+	// nothing for an operator to act on. The failure that opened the circuit was already
+	// logged at error when it happened, and the current state is served by the health
+	// API; repeating it per request only buries live errors. A dead tracker on a 30
+	// minute poll emits 48 of these a day, for days, until the circuit's daily probe
+	// finally succeeds.
+	event := log.Error()
+	if errors.Is(err, core.ErrCircuitOpen) {
+		event = log.Debug()
+	}
+	event.
 		Str("stage", stage).
 		Str("indexer", indexerID).
 		Str("error", apphttp.RedactError(err)).
