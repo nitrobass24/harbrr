@@ -67,8 +67,11 @@ func TestServicePushOneUsesTargetAnnounceTimeout(t *testing.T) {
 			if len(tgt.remaining) != len(rels) {
 				t.Fatalf("announced %d releases, want %d", len(tgt.remaining), len(rels))
 			}
-			// Generous slack: this asserts WHICH timeout was applied, not scheduler precision.
-			const slack = 2 * time.Second
+			// Generous slack: this asserts WHICH timeout was applied, not scheduler
+			// precision. The only values in play are 10s and 120s, so 5s of slop still
+			// tells them apart decisively while leaving room for a contended runner to
+			// deschedule us between WithTimeout and the deadline read.
+			const slack = 5 * time.Second
 			for i, remaining := range tgt.remaining {
 				if remaining > tt.timeout || remaining < tt.timeout-slack {
 					t.Errorf("release %d got a %v window, want ~%v (the target's own ceiling)", i, remaining, tt.timeout)

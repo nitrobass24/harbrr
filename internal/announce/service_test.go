@@ -526,8 +526,16 @@ func TestServicePushOneCapsPerReleaseTimeout(t *testing.T) {
 	if tgt.calls != len(rels) {
 		t.Fatalf("calls = %d, want %d (the stuck release must not starve the rest of the batch)", tgt.calls, len(rels))
 	}
-	if elapsed >= 2*ceiling {
-		t.Errorf("elapsed %v for %d releases (1 stuck), want close to the target's own ceiling (%v) — the stuck call must not compound", elapsed, len(rels), ceiling)
+	// Deliberately loose, and DO NOT TIGHTEN IT: the two outcomes this discriminates are
+	// two orders of magnitude apart, so headroom costs nothing. Correct behaviour is one
+	// stuck release (~200ms) plus two instant ones; the #232 regression lets the stuck call
+	// swallow the whole CONNECTION budget instead — connPushBudget(3, ceiling) = 30s base +
+	// 3*10s pacing = ~60s. Anything between is noise. A 2*ceiling (400ms) bound was tried
+	// and flaked at 453ms on a contended race-enabled CI runner without catching anything a
+	// 3s bound misses.
+	const compoundedFloor = 3 * time.Second
+	if elapsed >= compoundedFloor {
+		t.Errorf("elapsed %v for %d releases (1 stuck), want near the target's own ceiling (%v), not the ~60s connection budget — the stuck call must not compound", elapsed, len(rels), ceiling)
 	}
 }
 
