@@ -1,5 +1,17 @@
 version: "2"
 
+run:
+  # golangci-lint locks $TMPDIR/golangci-lint.lock for the duration of a run
+  # (pkg/commands/run.go, acquireFileLock). The lock is keyed on the temp dir, not
+  # the cache dir or the working tree — and every runner on the self-hosted fleet
+  # shares the host's /tmp, so two lint jobs on two different runners contend for
+  # one lock. The default is to wait 5s and then fail with "parallel golangci-lint
+  # is running", which is a flake, not a real finding.
+  #
+  # The cache is content-addressed like GOCACHE, which parallel `go build`s already
+  # share safely, so let the runs proceed concurrently rather than serialising them.
+  allow-parallel-runners: true
+
 # Base: autobrr/qui's config (family consistency), extended for harbrr with
 # gofumpt formatting, no-god-function complexity gates, and extra type-safety.
 

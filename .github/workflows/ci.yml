@@ -516,11 +516,29 @@ jobs:
           cache: false
       - name: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
+        env:
+          # Same reasoning as setup-go's `cache: false` directly above, applied to
+          # the analysis cache the action manages for itself. Measured on
+          # dba00e5: restoring it took 44.5s and saving it 10.1s, wrapping a lint
+          # that itself ran in 24.5s — the payload is only ~20MB but tens of
+          # thousands of tiny files, so `tar -x` is syscall-bound, and `-P` unpacks
+          # them onto the runner's root filesystem rather than the optane volume
+          # every other cache here lives on.
+          #
+          # Point the cache at that volume instead and let it persist. It is shared
+          # by the whole fleet, so it stays warm no matter which runner picks the
+          # job up — strictly better than a per-run tarball, which is cold whenever
+          # the key moves (a version bump cost 144s and 164s on the two runs after
+          # it).
+          GOLANGCI_LINT_CACHE: /mnt/optane/github-actions/harbrr-golangci-cache
         with:
-          # Pin the version so the action's cache key is stable run-to-run
-          # (keep in sync with the version in `make tools`).
+          # Pin the version so it matches the version in `make tools`.
           version: v2.13.0
           only-new-issues: ${{ github.event_name == 'pull_request' }}
+          # The cache lives on host disk now; the action's own save/restore would
+          # both miss the path above and re-add the tar cost it is meant to avoid.
+          skip-cache: true
+          skip-save-cache: true
 
   # gitleaks is the source-of-truth secret scanner; the CLI binary is run directly
   # (pinned by version + SHA-256) because gitleaks/gitleaks-action needs a paid license
