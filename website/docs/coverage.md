@@ -212,7 +212,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | HD-Olimpo (API) | ✅ | ⬜ |
 | HD-Only (API) | ✅ | ⬜ |
 | HD-Space | ✅ | ✅ |
-| HD-Torrents | ✅ | ⬜ |
+| HD-Torrents | ✅ | ✅ |
 | HD-UNiT3D (API) | ✅ | ⬜ |
 | HDArea | ✅ | ⬜ |
 | HDBao | ✅ | ⬜ |
