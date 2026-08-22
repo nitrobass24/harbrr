@@ -43,12 +43,16 @@ func (d *deadlineTarget) AnnounceTimeout() time.Duration { return d.timeout }
 // actually gets it while one declaring a short ceiling is unaffected.
 func TestServicePushOneUsesTargetAnnounceTimeout(t *testing.T) {
 	t.Parallel()
+	// Named by magnitude, not by tool: the injected factory below ignores the connection's
+	// Kind and returns the fake regardless, so nothing here exercises a real driver. Which
+	// kind declares which ceiling is pinned separately by TestTargetAnnounceTimeouts, which
+	// builds the actual drivers.
 	tests := []struct {
 		name    string
 		timeout time.Duration
 	}{
-		{"qui's long ceiling", 120 * time.Second},
-		{"cross-seed v6's short ceiling", 10 * time.Second},
+		{"a long ceiling is granted in full", 120 * time.Second},
+		{"a short ceiling is left alone", 10 * time.Second},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
