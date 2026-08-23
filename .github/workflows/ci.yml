@@ -193,39 +193,27 @@ jobs:
     name: web-test
     runs-on: self-hosted
     container:
-      image: node:22-alpine
-      # Host-disk pnpm content store, shared by every node job (concurrent
-      # installs are safe — the store is content-addressed and lock-protected).
-      # The store sits on a different filesystem than the overlayfs workspace, so
-      # pnpm copies instead of hardlinking — still far cheaper than fetching.
-      # All node jobs run as root, so the store has a single writer uid.
+      image: oven/bun:1.4.0-alpine
+      # Host-disk bun package cache, shared by every frontend job (concurrent
+      # installs are safe — the cache is content-addressed and lock-protected).
+      # All frontend jobs run as root, so the cache has a single writer uid.
       volumes:
-        - /mnt/optane/github-actions/harbrr-pnpm-store:/pnpm-store
-        - /mnt/optane/github-actions/harbrr-corepack:/corepack
+        - /mnt/optane/github-actions/harbrr-bun-cache:/bun-cache
     timeout-minutes: 10
     env:
-      npm_config_store_dir: /pnpm-store
-      COREPACK_HOME: /corepack
-      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      BUN_INSTALL_CACHE_DIR: /bun-cache
     steps:
       - name: install container prerequisites
         run: apk add --no-cache gcompat git libatomic
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # corepack instead of pnpm/action-setup: the action re-downloaded pnpm on
-      # every run (~7s per node job); corepack resolves the packageManager pin from
-      # web/package.json and caches the dist in the host-mounted COREPACK_HOME, so
-      # a warm run activates it in ~1s.
-      - name: activate pnpm (corepack, host-cached)
-        working-directory: web
-        run: corepack enable && corepack install
       - name: install
         working-directory: web
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
       - name: test
         working-directory: web
-        run: pnpm test
+        run: bun run test
 
   # Frontend ESLint (type-aware rules via typescript-eslint recommendedTypeChecked) —
   # mirrors golangci-lint and runs in parallel with it.
@@ -233,35 +221,31 @@ jobs:
     name: web-lint
     runs-on: self-hosted
     container:
-      image: node:22-alpine
-      # Host-disk pnpm store — see web-test.
+      image: oven/bun:1.4.0-alpine
+      # Host-disk bun cache — see web-test.
       volumes:
-        - /mnt/optane/github-actions/harbrr-pnpm-store:/pnpm-store
-        - /mnt/optane/github-actions/harbrr-corepack:/corepack
+        - /mnt/optane/github-actions/harbrr-bun-cache:/bun-cache
+        # ESLint result cache. Type-aware rules build the whole TS program, which is
+        # most of this job; caching it skips every file whose contents are unchanged.
+        - /mnt/optane/github-actions/harbrr-eslint-cache:/eslint-cache
     timeout-minutes: 10
     env:
-      npm_config_store_dir: /pnpm-store
-      COREPACK_HOME: /corepack
-      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      BUN_INSTALL_CACHE_DIR: /bun-cache
     steps:
       - name: install container prerequisites
         run: apk add --no-cache gcompat git libatomic
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # corepack instead of pnpm/action-setup: the action re-downloaded pnpm on
-      # every run (~7s per node job); corepack resolves the packageManager pin from
-      # web/package.json and caches the dist in the host-mounted COREPACK_HOME, so
-      # a warm run activates it in ~1s.
-      - name: activate pnpm (corepack, host-cached)
-        working-directory: web
-        run: corepack enable && corepack install
       - name: install
         working-directory: web
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
+      # One cache file per branch: .eslintcache is a single unlocked JSON blob, so a
+      # shared path would let concurrent branches clobber each other's. Slashes in the
+      # branch name become underscores so the result is a valid filename.
       - name: lint
         working-directory: web
-        run: pnpm lint
+        run: bun run lint -- --cache-location "/eslint-cache/$(echo "$GITHUB_REF_NAME" | tr / _).json"
 
   # Frontend tsc type-check — independent of ESLint, mirrors golangci-lint tier.
   # Uses `tsc -b` (project references; noEmit already set in tsconfig.app.json).
@@ -269,35 +253,25 @@ jobs:
     name: web-typecheck
     runs-on: self-hosted
     container:
-      image: node:22-alpine
-      # Host-disk pnpm store — see web-test.
+      image: oven/bun:1.4.0-alpine
+      # Host-disk bun cache — see web-test.
       volumes:
-        - /mnt/optane/github-actions/harbrr-pnpm-store:/pnpm-store
-        - /mnt/optane/github-actions/harbrr-corepack:/corepack
+        - /mnt/optane/github-actions/harbrr-bun-cache:/bun-cache
     timeout-minutes: 10
     env:
-      npm_config_store_dir: /pnpm-store
-      COREPACK_HOME: /corepack
-      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      BUN_INSTALL_CACHE_DIR: /bun-cache
     steps:
       - name: install container prerequisites
         run: apk add --no-cache gcompat git libatomic
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # corepack instead of pnpm/action-setup: the action re-downloaded pnpm on
-      # every run (~7s per node job); corepack resolves the packageManager pin from
-      # web/package.json and caches the dist in the host-mounted COREPACK_HOME, so
-      # a warm run activates it in ~1s.
-      - name: activate pnpm (corepack, host-cached)
-        working-directory: web
-        run: corepack enable && corepack install
       - name: install
         working-directory: web
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
       - name: typecheck
         working-directory: web
-        run: pnpm typecheck
+        run: bun run typecheck
 
   # Production build of the SPA (web/). The dist bundle is uploaded as an artifact and
   # every binary-producing job (cross-build, docker, goreleaser) downloads it instead of
@@ -306,21 +280,18 @@ jobs:
     name: web
     runs-on: self-hosted
     container:
-      image: node:22-alpine
-      # Host-disk pnpm store — see web-test. This job heads the run's critical
+      image: oven/bun:1.4.0-alpine
+      # Host-disk bun cache — see web-test. This job heads the run's critical
       # path (web -> web-e2e / docker -> docker-merge), so its install time is
       # wall-clock for the whole run.
       volumes:
-        - /mnt/optane/github-actions/harbrr-pnpm-store:/pnpm-store
-        - /mnt/optane/github-actions/harbrr-corepack:/corepack
+        - /mnt/optane/github-actions/harbrr-bun-cache:/bun-cache
         # Built bundles, keyed by the hash of everything that can change one. Most
         # PRs here are backend-only, and this job heads the critical path.
         - /mnt/optane/github-actions/harbrr-web-dist:/web-dist-cache
     timeout-minutes: 10
     env:
-      npm_config_store_dir: /pnpm-store
-      COREPACK_HOME: /corepack
-      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      BUN_INSTALL_CACHE_DIR: /bun-cache
     steps:
       - name: install container prerequisites
         run: apk add --no-cache bash gcompat git libatomic
@@ -328,10 +299,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # corepack instead of pnpm/action-setup: the action re-downloaded pnpm on
-      # every run (~7s per node job); corepack resolves the packageManager pin from
-      # web/package.json and caches the dist in the host-mounted COREPACK_HOME, so
-      # a warm run activates it in ~1s.
       # The bundle is a pure function of the tracked web sources plus the OpenAPI
       # spec the api-types drift check regenerates from — so hash exactly those and
       # nothing else. `git ls-files -s` prints each path's blob hash, so the key is
@@ -357,38 +324,34 @@ jobs:
             echo "hit=false" >> "$GITHUB_OUTPUT"
             echo "bundle cache MISS"
           fi
-      - name: activate pnpm (corepack, host-cached)
-        if: steps.restore.outputs.hit != 'true'
-        working-directory: web
-        run: corepack enable && corepack install
       - name: install
         if: steps.restore.outputs.hit != 'true'
         working-directory: web
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
       # The route tree is generated from src/routes and committed; a contributor
-      # who adds a route but forgets `pnpm generate:routes` fails here, not in a
+      # who adds a route but forgets `bun run generate:routes` fails here, not in a
       # teammate's surprise diff later.
       - name: route-tree drift check
         if: steps.restore.outputs.hit != 'true'
         working-directory: web
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          pnpm exec tsr generate
+          bun run generate:routes
           git -C "$GITHUB_WORKSPACE" diff --exit-code -- web/src/routeTree.gen.ts
       # The API types are generated from internal/web/swagger/openapi.yaml and
-      # committed; a contributor who changes the spec but forgets `pnpm generate:api`
+      # committed; a contributor who changes the spec but forgets `bun run generate:api`
       # fails here, not in a teammate's surprise diff later.
       - name: api-types drift check
         if: steps.restore.outputs.hit != 'true'
         working-directory: web
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          pnpm generate:api
+          bun run generate:api
           git -C "$GITHUB_WORKSPACE" diff --exit-code -- web/src/types/api.gen.ts
       - name: build
         if: steps.restore.outputs.hit != 'true'
         working-directory: web
-        run: pnpm build:bundle
+        run: bun run build:bundle
       # Guard runs on both paths: a cache hit must clear the same bar as a fresh
       # build, or a bad bundle would be cached once and served forever.
       - name: guard the bundle
@@ -430,8 +393,7 @@ jobs:
       volumes:
         - /mnt/optane/github-actions/harbrr-go-cache/e2e-mod:/root/go/pkg/mod
         - /mnt/optane/github-actions/harbrr-go-cache/e2e-build:/root/.cache/go-build
-        - /mnt/optane/github-actions/harbrr-pnpm-store:/pnpm-store
-        - /mnt/optane/github-actions/harbrr-corepack:/corepack
+        - /mnt/optane/github-actions/harbrr-bun-cache:/bun-cache
     timeout-minutes: 15
     needs: [web]
     env:
@@ -440,10 +402,8 @@ jobs:
       GOFLAGS: -buildvcs=false
       GOMODCACHE: /root/go/pkg/mod
       GOCACHE: /root/.cache/go-build
-      # Host-disk pnpm store (shared by every node job; see web-test).
-      npm_config_store_dir: /pnpm-store
-      COREPACK_HOME: /corepack
-      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      # Host-disk bun cache (shared by every frontend job; see web-test).
+      BUN_INSTALL_CACHE_DIR: /bun-cache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -455,16 +415,13 @@ jobs:
           go-version-file: go.mod
           # Go caches are host bind-mounts (see the container block).
           cache: false
-      # corepack instead of pnpm/action-setup: the action re-downloaded pnpm on
-      # every run (~7s per node job); corepack resolves the packageManager pin from
-      # web/package.json and caches the dist in the host-mounted COREPACK_HOME, so
-      # a warm run activates it in ~1s.
-      - name: activate pnpm (corepack, host-cached)
-        working-directory: web
-        run: corepack enable && corepack install
+      # The Playwright image ships node, not bun. The npm wrapper package is the
+      # cheapest way in — it just fetches the pinned bun binary (no build step).
+      - name: install bun
+        run: npm install -g bun@1.4.0
       - name: install
         working-directory: web
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
       - name: download web dist (built once by the web job)
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -478,7 +435,7 @@ jobs:
         run: go build -trimpath -o bin/harbrr ./cmd/harbrr
       - name: e2e
         working-directory: web
-        run: pnpm exec playwright test
+        run: bun run test:e2e
       - name: upload playwright report
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

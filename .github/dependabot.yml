@@ -23,7 +23,7 @@ updates:
     groups:
       actions:
         patterns: ["*"]
-  - package-ecosystem: "npm" # pnpm lockfile in web/
+  - package-ecosystem: "npm" # bun lockfile in web/
     directory: "/web"
     schedule:
       interval: "weekly"

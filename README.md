@@ -163,7 +163,7 @@ harbrr serve --data-dir ~/.config/harbrr   # open http://localhost:7478
 
 ```bash
 git clone https://github.com/autobrr/harbrr && cd harbrr
-make web-build                               # builds the SPA (needs Node + pnpm)
+make web-build                               # builds the SPA (needs bun)
 make build                                   # -> bin/harbrr (embeds web/dist)
 ./bin/harbrr serve --data-dir ./data         # open http://localhost:7478
 ```

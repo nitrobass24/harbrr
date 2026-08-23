@@ -1,5 +1,5 @@
 // The server injects window.__HARBRR_BASE_URL__ (and __HARBRR_VERSION__) into
-// index.html at serve time; under `pnpm dev` neither is set and the base is "".
+// index.html at serve time; under `bun run dev` neither is set and the base is "".
 
 // getBaseUrl returns the base path with no trailing slash ("" at root), so the
 // router basepath and API prefixes compose by simple concatenation.

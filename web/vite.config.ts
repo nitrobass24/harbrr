@@ -73,7 +73,7 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
-    // e2e/ holds Playwright specs (own runner via `pnpm test:e2e`); vitest's
+    // e2e/ holds Playwright specs (own runner via `bun run test:e2e`); vitest's
     // default include would otherwise pick up their *.spec.ts and crash.
     exclude: ["node_modules/**", "e2e/**"],
     // globals gives @testing-library/react its afterEach auto-cleanup hook.

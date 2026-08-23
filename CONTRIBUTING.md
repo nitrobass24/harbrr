@@ -36,8 +36,8 @@ non-trivial change.
 ## Frontend (web/)
 
 The management UI is a Vite + React + TypeScript SPA embedded into the binary; its stack and
-conventions mirror [qui](https://github.com/autobrr/qui). You need **Node ≥ 22.12** and
-**pnpm 10** (the exact version is pinned via `packageManager` in `web/package.json`).
+conventions mirror [qui](https://github.com/autobrr/qui). You need **bun 1.4** (the floor is
+pinned via `engines.bun` in `web/package.json`); nothing in `web/` runs on Node any more.
 
 | Command | What it does |
 |---|---|
@@ -47,7 +47,7 @@ conventions mirror [qui](https://github.com/autobrr/qui). You need **Node ≥ 22
 
 Run `make web-ci` before pushing any `web/` change. House rules that CI enforces: strict
 TypeScript with no `any`, type-aware lint (floating promises must be `void`ed or awaited),
-qui's formatting style, a committed `src/routeTree.gen.ts` after `pnpm generate:routes`, and
+qui's formatting style, a committed `src/routeTree.gen.ts` after `bun run generate:routes`, and
 all API calls through the `src/lib/api.ts` client. [`web/README.md`](web/README.md) has the
 full list — including the secret-handling contracts (`<redacted>` round-trip; never log or
 rebuild download URLs).

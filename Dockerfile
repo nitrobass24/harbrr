@@ -25,7 +25,7 @@ COPY . .
 # prebuilt-binary build-context, so this guard never runs there.
 RUN test -f web/dist/index.html || { \
       echo "ERROR: web/dist is empty — the management UI is not built."; \
-      echo "Run 'make web-build' (needs Node + pnpm) before 'docker build', or pull a published ghcr.io/autobrr/harbrr image."; \
+      echo "Run 'make web-build' (needs bun) before 'docker build', or pull a published ghcr.io/autobrr/harbrr image."; \
       exit 1; \
     }
 

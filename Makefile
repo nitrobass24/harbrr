@@ -32,25 +32,25 @@ build:
 .PHONY: backend
 backend: build
 
-## web-deps: install frontend dependencies (pnpm)
+## web-deps: install frontend dependencies (bun)
 .PHONY: web-deps
 web-deps:
-	cd web && pnpm install
+	cd web && bun install
 
 ## web-build: build the frontend bundle into web/dist (embedded by make build)
 .PHONY: web-build
 web-build: web-deps
-	cd web && pnpm build
+	cd web && bun run build
 
 ## web-dev: run the Vite dev server (proxies /api to a running ./bin/harbrr on :7478)
 .PHONY: web-dev
 web-dev:
-	cd web && pnpm dev
+	cd web && bun run dev
 
 ## web-test: run the frontend test suite (vitest)
 .PHONY: web-test
 web-test:
-	cd web && pnpm test
+	cd web && bun run test
 
 ## web-e2e: Playwright e2e against the real binary (rebuilds the frontend, then
 ## the binary that embeds it, then drives it with a fresh data dir)
@@ -60,12 +60,12 @@ web-test:
 # web/dist, embedding a stale or half-written bundle.
 web-e2e: web-build
 	$(MAKE) build
-	cd web && pnpm exec playwright test
+	cd web && bun run test:e2e
 
 ## web-lint: lint the frontend
 .PHONY: web-lint
 web-lint:
-	cd web && pnpm lint
+	cd web && bun run lint
 
 ## check-web-dist: fail unless web/dist holds a real frontend build (release guard —
 ## a gitkeep-only dist would ship a binary whose UI answers "frontend not built")
@@ -77,9 +77,9 @@ check-web-dist:
 ## route-tree drift check -> build -> bundle guard)
 .PHONY: web-ci
 web-ci:
-	cd web && pnpm install --frozen-lockfile && pnpm lint && pnpm test \
-		&& pnpm exec tsr generate && git diff --exit-code src/routeTree.gen.ts \
-		&& pnpm build
+	cd web && bun install --frozen-lockfile && bun run lint && bun run test \
+		&& bun run generate:routes && git diff --exit-code src/routeTree.gen.ts \
+		&& bun run build
 	$(MAKE) check-web-dist
 
 ## test: run the full suite with the race detector (always -race -count=1)
