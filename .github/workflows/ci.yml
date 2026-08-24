@@ -192,9 +192,13 @@ jobs:
           SCRIPT
           su ci -s /bin/sh -c "PATH='$PATH' /bin/sh /tmp/shard-test.sh '$PWD'"
 
-  # Frontend Vitest suite — mirrors the Go `test` job and gates docker-merge alongside it.
-  web-test:
-    name: web-test
+  # Frontend checks — tsc type-check, ESLint (type-aware rules via typescript-eslint
+  # recommendedTypeChecked), and the Vitest suite in one job. Each check was its own
+  # job, but the real work (~40s total) was dwarfed by tripling the container/checkout/
+  # install scaffolding (~20s per job), so one job is cheaper in machine time and no
+  # slower in wall time (this chain sits well off the run's critical path).
+  web-checks:
+    name: web-checks
     runs-on: self-hosted
     container:
       image: oven/bun:1.4.0-alpine
@@ -203,34 +207,8 @@ jobs:
       # All frontend jobs run as root, so the cache has a single writer uid.
       volumes:
         - /mnt/optane/github-actions/harbrr-bun-cache:/bun-cache
-    timeout-minutes: 10
-    env:
-      BUN_INSTALL_CACHE_DIR: /bun-cache
-    steps:
-      - name: install container prerequisites
-        run: apk add --no-cache gcompat git libatomic
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: install
-        working-directory: web
-        run: bun install --frozen-lockfile
-      - name: test
-        working-directory: web
-        run: bun run test
-
-  # Frontend ESLint (type-aware rules via typescript-eslint recommendedTypeChecked) —
-  # mirrors golangci-lint and runs in parallel with it.
-  web-lint:
-    name: web-lint
-    runs-on: self-hosted
-    container:
-      image: oven/bun:1.4.0-alpine
-      # Host-disk bun cache — see web-test.
-      volumes:
-        - /mnt/optane/github-actions/harbrr-bun-cache:/bun-cache
         # ESLint result cache. Type-aware rules build the whole TS program, which is
-        # most of this job; caching it skips every file whose contents are unchanged.
+        # most of that step; caching it skips every file whose contents are unchanged.
         - /mnt/optane/github-actions/harbrr-eslint-cache:/eslint-cache
     timeout-minutes: 10
     env:
@@ -244,38 +222,19 @@ jobs:
       - name: install
         working-directory: web
         run: bun install --frozen-lockfile
+      # `tsc -b` (project references; noEmit already set in tsconfig.app.json).
+      - name: typecheck
+        working-directory: web
+        run: bun run typecheck
       # One cache file per branch: .eslintcache is a single unlocked JSON blob, so a
       # shared path would let concurrent branches clobber each other's. Slashes in the
       # branch name become underscores so the result is a valid filename.
       - name: lint
         working-directory: web
         run: bun run lint -- --cache-location "/eslint-cache/$(echo "$GITHUB_REF_NAME" | tr / _).json"
-
-  # Frontend tsc type-check — independent of ESLint, mirrors golangci-lint tier.
-  # Uses `tsc -b` (project references; noEmit already set in tsconfig.app.json).
-  web-typecheck:
-    name: web-typecheck
-    runs-on: self-hosted
-    container:
-      image: oven/bun:1.4.0-alpine
-      # Host-disk bun cache — see web-test.
-      volumes:
-        - /mnt/optane/github-actions/harbrr-bun-cache:/bun-cache
-    timeout-minutes: 10
-    env:
-      BUN_INSTALL_CACHE_DIR: /bun-cache
-    steps:
-      - name: install container prerequisites
-        run: apk add --no-cache gcompat git libatomic
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: install
+      - name: test
         working-directory: web
-        run: bun install --frozen-lockfile
-      - name: typecheck
-        working-directory: web
-        run: bun run typecheck
+        run: bun run test
 
   # Production build of the SPA (web/). The dist bundle is uploaded as an artifact and
   # every binary-producing job (cross-build, docker, goreleaser) downloads it instead of
@@ -285,7 +244,7 @@ jobs:
     runs-on: self-hosted
     container:
       image: oven/bun:1.4.0-alpine
-      # Host-disk bun cache — see web-test. This job heads the run's critical
+      # Host-disk bun cache — see web-checks. This job heads the run's critical
       # path (web -> web-e2e / docker -> docker-merge), so its install time is
       # wall-clock for the whole run.
       volumes:
@@ -406,7 +365,7 @@ jobs:
       GOFLAGS: -buildvcs=false
       GOMODCACHE: /root/go/pkg/mod
       GOCACHE: /root/.cache/go-build
-      # Host-disk bun cache (shared by every frontend job; see web-test).
+      # Host-disk bun cache (shared by every frontend job; see web-checks).
       BUN_INSTALL_CACHE_DIR: /bun-cache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -783,7 +742,7 @@ jobs:
   docker-merge:
     name: docker-merge
     runs-on: self-hosted
-    needs: [docker, backend-test, web-test, web-e2e, golangci-lint, web-lint, web-typecheck]
+    needs: [docker, backend-test, web-checks, web-e2e, golangci-lint]
     if: >-
       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]') ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
@@ -888,7 +847,7 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 20
     if: ${{ startsWith(github.ref, 'refs/tags/') }}
-    needs: [backend-test, web-test, web-e2e, golangci-lint, web-lint, web-typecheck, web]
+    needs: [backend-test, web-checks, web-e2e, golangci-lint, web]
     permissions:
       contents: write # create the GitHub Release
     steps:
