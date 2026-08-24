@@ -133,8 +133,17 @@ type slowTarget struct {
 	sleep time.Duration
 }
 
-func (s slowTarget) Announce(context.Context, announce.Release) (announce.Result, error) {
-	time.Sleep(s.sleep)
+// Announce honours ctx deliberately. A bare time.Sleep here would make the whole
+// slowTarget fixture blind to the push deadline it exists to exercise: with the
+// context discarded, announcePushTimeoutMax could be set to any value -- including
+// far below the work this fixture generates -- and every test using it would still
+// pass. Selecting on ctx.Done() is what lets the deadline actually truncate a push.
+func (s slowTarget) Announce(ctx context.Context, _ announce.Release) (announce.Result, error) {
+	select {
+	case <-ctx.Done():
+		return announce.Result{}, ctx.Err()
+	case <-time.After(s.sleep):
+	}
 	s.n.Add(1)
 	return announce.Result{}, nil
 }
