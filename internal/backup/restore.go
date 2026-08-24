@@ -531,7 +531,7 @@ func (s *Service) loadAnnounceConnections(ctx context.Context, q dbinterface.Exe
 // (the app/tool credential is sealed separately, on the App, by apps.Service.Resolve —
 // see resolveConnAppForLoad).
 func (s *Service) sealHarbrrKey(connID int64, harbrrKey string) (string, error) {
-	encrypted, _, err := connresource.Seal(s.keyring, connID, []connresource.Secret{{Discriminator: discHarbrr, Plaintext: harbrrKey}})
+	encrypted, _, err := connresource.Seal(s.keyring, connID, []connresource.Secret{{Discriminator: domain.ConnectionSecretHarbrr, Plaintext: harbrrKey}})
 	if err != nil {
 		return "", fmt.Errorf("backup: seal harbrr key: %w", err)
 	}
@@ -549,7 +549,7 @@ func (s *Service) loadNotifications(ctx context.Context, q dbinterface.Execer, r
 		if err != nil {
 			return fmt.Errorf("backup: insert notification %q: %w", r.Name, err)
 		}
-		if err := s.sealSecret(ctx, q, newID, discURL, r.URL, "notification", repo.SetNotificationSecret); err != nil {
+		if err := s.sealSecret(ctx, q, newID, domain.NotificationSecretURL, r.URL, "notification", repo.SetNotificationSecret); err != nil {
 			return err
 		}
 	}

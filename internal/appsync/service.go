@@ -24,13 +24,8 @@ const httpClientTimeout = 30 * time.Second
 // defaultHTTPClient is the fallback client the drivers use when none is injected.
 func defaultHTTPClient() *http.Client { return &http.Client{Timeout: httpClientTimeout} }
 
-// secretHarbrr is the AAD discriminator for the harbrr key minted per connection (the
-// app's own credential lives on the App now, decrypted via s.apps, not on the row).
-const (
-	secretHarbrr = "harbrr"
-	// StatusSkipped is the sync status for a disabled connection (no remote calls).
-	StatusSkipped = "skipped"
-)
+// StatusSkipped is the sync status for a disabled connection (no remote calls).
+const StatusSkipped = "skipped"
 
 // IndexerSource is the slice of the registry app-sync needs: the configured indexers,
 // each one's Newznab categories, and its Torznab capability tokens. Implemented by a
@@ -147,7 +142,7 @@ func (s *Service) CreateConnection(ctx context.Context, p CreateConnectionParams
 		// Only the minted harbrr key is sealed on the connection; the app credential
 		// lives on the App (base_url is written for the (kind, base_url) unique index).
 		Secrets: func(_ domain.AppConnection, mintedPlain string) []connresource.Secret {
-			return []connresource.Secret{{Discriminator: secretHarbrr, Plaintext: mintedPlain}}
+			return []connresource.Secret{{Discriminator: domain.ConnectionSecretHarbrr, Plaintext: mintedPlain}}
 		},
 		SetSecrets: func(ctx context.Context, q dbinterface.Execer, id int64, encrypted []string, keyID string) error {
 			return s.repo.SetConnectionSecrets(ctx, q, id, encrypted[0], keyID)
@@ -337,7 +332,7 @@ func (s *Service) driver(ctx context.Context, conn domain.AppConnection) (Target
 	if err != nil {
 		return nil, "", fmt.Errorf("appsync: bind app: %w", err)
 	}
-	harbrrKey, err := s.keyring.Decrypt(conn.ID, secretHarbrr, conn.HarbrrAPIKeyEncrypted)
+	harbrrKey, err := s.keyring.Decrypt(conn.ID, domain.ConnectionSecretHarbrr, conn.HarbrrAPIKeyEncrypted)
 	if err != nil {
 		return nil, "", fmt.Errorf("appsync: decrypt harbrr key: %w", err)
 	}

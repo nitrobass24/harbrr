@@ -18,10 +18,6 @@ import (
 	"github.com/autobrr/harbrr/internal/secrets"
 )
 
-// secretURL is the AAD discriminator for a notification's single encrypted secret (its
-// destination URL), bound alongside the notification id — mirroring appsync/announce.
-const secretURL = "url"
-
 // healthNotifyCooldown debounces repeated health-failure notifications for the same
 // (indexer, kind): a persistently-broken indexer is polled every 15–60 min by each app,
 // and recordHealth fires on every failure with no recovery edge to reset on, so without
@@ -116,7 +112,7 @@ func (s *Service) CreateNotification(ctx context.Context, p CreateNotificationPa
 			return s.repo.InsertNotification(ctx, q, n)
 		},
 		Secrets: func(_ domain.Notification, _ string) []connresource.Secret {
-			return []connresource.Secret{{Discriminator: secretURL, Plaintext: p.URL}}
+			return []connresource.Secret{{Discriminator: domain.NotificationSecretURL, Plaintext: p.URL}}
 		},
 		SetSecrets: func(ctx context.Context, q dbinterface.Execer, id int64, encrypted []string, keyID string) error {
 			return s.repo.SetNotificationSecret(ctx, q, id, encrypted[0], keyID)
@@ -171,7 +167,7 @@ func (s *Service) UpdateNotification(ctx context.Context, id int64, p UpdateNoti
 			if err := validateURL(raw); err != nil {
 				return connresource.Secret{}, false, err
 			}
-			return connresource.Secret{Discriminator: secretURL, Plaintext: raw}, true, nil
+			return connresource.Secret{Discriminator: domain.NotificationSecretURL, Plaintext: raw}, true, nil
 		},
 		Apply: func(n *domain.Notification, encrypted, keyID string) { n.URLEncrypted, n.KeyID = encrypted, keyID },
 		Touch: func(n *domain.Notification, now time.Time) { n.UpdatedAt = now },
@@ -399,7 +395,7 @@ func (s *Service) dispatchOne(ctx context.Context, n domain.Notification, e Even
 
 // sender decrypts a target's destination URL and builds its Sender.
 func (s *Service) sender(n domain.Notification) (Sender, error) {
-	dest, err := s.keyring.Decrypt(n.ID, secretURL, n.URLEncrypted)
+	dest, err := s.keyring.Decrypt(n.ID, domain.NotificationSecretURL, n.URLEncrypted)
 	if err != nil {
 		return nil, fmt.Errorf("notify: decrypt url: %w", err)
 	}

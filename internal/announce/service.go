@@ -17,10 +17,6 @@ import (
 	"github.com/autobrr/harbrr/internal/secrets"
 )
 
-// secretHarbrr is the AAD discriminator for the minted harbrr key (the tool's own key
-// lives on the App now, decrypted via s.apps, not on the row).
-const secretHarbrr = "harbrr"
-
 // TargetFactory builds the per-kind announce driver for a connection, given the decrypted
 // tool API key. It is injected so Push is testable with a fake driver and so the live wiring
 // (the qui torrent fetcher) lives in cmd/harbrr, not here.
@@ -104,7 +100,7 @@ func (s *Service) CreateConnection(ctx context.Context, p CreateConnectionParams
 		// Only the minted harbrr key is sealed on the connection; the tool credential
 		// lives on the App (base_url is written for the (kind, base_url) unique index).
 		Secrets: func(_ domain.AnnounceConnection, mintedPlain string) []connresource.Secret {
-			return []connresource.Secret{{Discriminator: secretHarbrr, Plaintext: mintedPlain}}
+			return []connresource.Secret{{Discriminator: domain.ConnectionSecretHarbrr, Plaintext: mintedPlain}}
 		},
 		SetSecrets: func(ctx context.Context, q dbinterface.Execer, id int64, encrypted []string, keyID string) error {
 			return s.repo.SetAnnounceConnectionSecrets(ctx, q, id, encrypted[0], keyID)
@@ -368,7 +364,7 @@ func (s *Service) HarbrrKey(conn domain.AnnounceConnection) (string, error) {
 	if conn.HarbrrAPIKeyID == 0 {
 		return "", fmt.Errorf("%w: harbrr key revoked; recreate the connection to re-mint it", domain.ErrInvalid)
 	}
-	key, err := s.keyring.Decrypt(conn.ID, secretHarbrr, conn.HarbrrAPIKeyEncrypted)
+	key, err := s.keyring.Decrypt(conn.ID, domain.ConnectionSecretHarbrr, conn.HarbrrAPIKeyEncrypted)
 	if err != nil {
 		return "", fmt.Errorf("announce: decrypt harbrr key: %w", err)
 	}
