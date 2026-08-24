@@ -33,18 +33,19 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # go.mod is the ONLY place the Go version is written. A container tag is resolved
-  # before any step runs, so it cannot read go.mod directly and cannot read `env`
-  # either (container.image's contexts are github/needs/strategy/matrix/vars/inputs).
-  # This job reads it once and publishes it, so the two container jobs below derive
-  # their image from the same line the toolchain check enforces.
-  # Tool-agnostic guard: block hand-edits to the vendored Jackett snapshot
-  # (internal/indexer/definitions/vendor/**), which is consumed byte-for-byte. This is
-  # the authoritative, non-bypassable enforcement of AGENTS.md's #1 rule — a contributor
-  # using any editor/agent is caught here, unlike the local pre-commit / editor hooks.
-  # The scheduled refresh branch (chore/vendor-definitions) is exempt inside the script.
-  vendor-guard:
-    name: vendor-guard
+  # The repo's cheap PR-only tripwires, collected in one fast job off the critical
+  # path (was `vendor-guard`, renamed when it outgrew its founding check).
+  # First among them: block hand-edits to the vendored Jackett snapshot
+  # (internal/indexer/definitions/vendor/**), which is consumed byte-for-byte — the
+  # authoritative, non-bypassable enforcement of AGENTS.md's #1 rule; a contributor
+  # using any editor/agent is caught here, unlike the local pre-commit / editor
+  # hooks. The scheduled refresh branch (chore/vendor-definitions) is exempt inside
+  # the script. The remaining steps guard version-pin agreement: go.mod is the ONLY
+  # place the Go version is written, but a container image tag must be resolvable
+  # before any step runs and so cannot read it — pins are checked after the fact
+  # here instead.
+  guards:
+    name: guards
     if: github.event_name == 'pull_request'
     runs-on: self-hosted
     timeout-minutes: 5
@@ -93,6 +94,38 @@ jobs:
             exit 1
           fi
           echo "all workflow bun pins match web/package.json: bun@${want}"
+      # The Dockerfile's build stage and vendor-definitions.yml pin Go at the minor
+      # level, and Dependabot's docker ecosystem can bump the Dockerfile AHEAD of
+      # go.mod — the reverse drift direction from the check above, and invisible to
+      # CI because the docker job injects a host-built binary and never runs that
+      # stage. The Dockerfile also pins alpine twice (rootfs + final) and copies
+      # passwd/group between them, so those two must stay identical.
+      - name: Dockerfile / workflow Go and alpine pins agree
+        run: |
+          want=$(awk '/^go /{print $2; exit}' go.mod)
+          # FROM/image: anchors keep this from matching its own source (the same
+          # trick as the check above). A minor-level pin (1.27) is satisfied by a
+          # go.mod inside that minor (1.27.x); an exact pin must match exactly.
+          for got in $(grep -hE '^FROM .*golang:' Dockerfile \
+                       | sed -E 's/.*golang:([0-9.]+)-alpine.*/\1/') \
+                     $(grep -hE '^[[:space:]]*image: golang:' .github/workflows/*.yml \
+                       | sed -E 's/.*golang:([0-9.]+)-alpine.*/\1/'); do
+            case "$want" in
+              "$got"|"$got".*) ;;
+              *)
+                echo "go.mod requires go $want but a golang:$got-alpine pin exists in the Dockerfile or a workflow" >&2
+                exit 1
+                ;;
+            esac
+          done
+          alpines=$(grep -hE '^FROM .*alpine:[0-9]' Dockerfile \
+                    | sed -E 's/.*alpine:([0-9.]+).*/\1/' | sort -u)
+          if [ -z "$alpines" ] || [ "$(echo "$alpines" | wc -l)" -ne 1 ]; then
+            echo "Dockerfile alpine base pins are missing or disagree:" >&2
+            grep -nE '^FROM .*alpine:[0-9]' Dockerfile >&2 || true
+            exit 1
+          fi
+          echo "golang pins agree with go.mod ($want); Dockerfile alpine pins agree ($alpines)"
 
   # `go test` compiles every package (and test file) before running, so it doubles as
   # the compile check. The race suite is split into package shards because the full
@@ -119,7 +152,7 @@ jobs:
       # known before the job starts, so that job could only ever be a separate node in
       # the graph — and it put a dependency edge, and therefore a runner dispatch wait
       # (observed at up to 56s), in front of every shard. Drift is caught twice
-      # instead: `vendor-guard` compares this pin against go.mod off the critical path,
+      # instead: `guards` compares this pin against go.mod off the critical path,
       # and GOTOOLCHAIN=local below makes `go list -m` refuse to run at all if the
       # container's Go is older than go.mod asks for.
       image: golang:1.27.0-alpine
