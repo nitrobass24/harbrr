@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"strconv"
-	"strings"
 	"time"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
@@ -178,7 +176,7 @@ func (d *driver) toRelease(mapKey string, t *btnTorrent) *sortableRelease {
 		PublishDate:          time.Unix(t.Time.Int64(), 0).UTC().Format(time.RFC3339),
 		TVDBID:               t.TvdbID.Int64(),
 		RageID:               t.TvrageID.Int64(),
-		IMDBID:               formatIMDB(string(t.ImdbID)),
+		IMDBID:               native.CanonicalIMDBID(string(t.ImdbID)),
 		DownloadVolumeFactor: 1,
 		UploadVolumeFactor:   1,
 	}
@@ -192,17 +190,6 @@ func (d *driver) toRelease(mapKey string, t *btnTorrent) *sortableRelease {
 		rel.Tags = []string{normalizer.TagScene}
 	}
 	return &sortableRelease{Release: rel, torrentIDSortKey: t.TorrentID.Int64(), mapKey: mapKey}
-}
-
-// formatIMDB renders BTN's digits-only ImdbID ("7252812") as the canonical
-// "tt"+7-digit feed form (matching the normalizer and the PTP sibling's local
-// formatIMDB). A blank, non-numeric, or zero id yields "" (the field is omitted).
-func formatIMDB(imdbID string) string {
-	n, err := strconv.ParseInt(strings.TrimSpace(imdbID), 10, 64)
-	if err != nil || n == 0 {
-		return ""
-	}
-	return fmt.Sprintf("tt%07d", n)
 }
 
 // categories maps a torrent's Resolution string to its newznab category through the

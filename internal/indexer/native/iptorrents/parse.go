@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/PuerkitoBio/goquery"
 
@@ -75,9 +74,10 @@ func (d *driver) parseRow(row *goquery.Selection, layout columnLayout) (*normali
 		return nil, false, nil
 	}
 
-	published, err := d.parsePublishDate(rowPublishText(row))
+	text := rowPublishText(row)
+	published, err := native.PublishDate(text, d.Clock)
 	if err != nil {
-		return nil, false, err
+		return nil, false, fmt.Errorf("iptorrents: unparseable relative date %q: %w", text, search.ErrParseError)
 	}
 
 	seeders := cells(row).intAt(layout.seeders)
@@ -93,7 +93,7 @@ func (d *driver) parseRow(row *goquery.Selection, layout columnLayout) (*normali
 		Seeders:              seeders,
 		Leechers:             leechers,
 		Peers:                seeders + leechers,
-		PublishDate:          published.Format(time.RFC3339),
+		PublishDate:          published,
 		DownloadVolumeFactor: freeleechFactor(row),
 		UploadVolumeFactor:   1,
 		MinimumRatio:         1,

@@ -12,6 +12,7 @@ import (
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 const (
@@ -82,7 +83,7 @@ func (d *driver) addQueryParams(params url.Values, q search.Query, kind searchKi
 	case kindMovie:
 		switch {
 		case q.IMDBID != "":
-			params.Set("imdb", fullIMDBID(q.IMDBID))
+			params.Set("imdb", native.CanonicalIMDBID(q.IMDBID))
 		case q.TMDBID != "":
 			params.Set("tmdb", strings.TrimSpace(q.TMDBID))
 		default:
@@ -92,7 +93,7 @@ func (d *driver) addQueryParams(params url.Values, q search.Query, kind searchKi
 		ep := d.episodeSearchTerm(q)
 		switch {
 		case q.IMDBID != "":
-			params.Set("imdb", fullIMDBID(q.IMDBID))
+			params.Set("imdb", native.CanonicalIMDBID(q.IMDBID))
 			params.Set("search", strings.TrimSpace(ep))
 		case q.TVDBID != "":
 			params.Set("tvdb", strings.TrimSpace(q.TVDBID))
@@ -234,27 +235,7 @@ func isSafePunct(r rune) bool {
 	}
 }
 
-// fullIMDBID renders an imdb id as Prowlarr's FullImdbId ("tt" + the numeric id, a
-// minimum of seven digits): a leading "tt" is stripped, the rest parsed and
-// zero-padded. A non-numeric id yields "" (the param is then sent empty, as Prowlarr
-// would render a null FullImdbId).
-func fullIMDBID(raw string) string {
-	s := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(raw)), "tt")
-	n, err := strconv.Atoi(s)
-	if err != nil {
-		return ""
-	}
-	return fmt.Sprintf("tt%07d", n)
-}
-
-// freeleechOnly reports whether the freeleech_only checkbox is enabled. harbrr stores
-// a checked checkbox as Jackett's "True" sentinel; common truthy spellings are also
-// accepted so whatever the management API persists is interpreted consistently.
+// freeleechOnly reports whether the freeleech_only checkbox is enabled.
 func freeleechOnly(cfg map[string]string) bool {
-	switch strings.ToLower(strings.TrimSpace(cfg["freeleech_only"])) {
-	case "true", "1", "on", "yes":
-		return true
-	default:
-		return false
-	}
+	return native.CheckboxOn(cfg["freeleech_only"])
 }

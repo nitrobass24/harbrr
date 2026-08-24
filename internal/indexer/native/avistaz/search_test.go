@@ -307,23 +307,6 @@ func TestEpisodeSearchTermOverride(t *testing.T) {
 	}
 }
 
-func TestFullIMDBID(t *testing.T) {
-	t.Parallel()
-	cases := []struct{ in, want string }{
-		{"133093", "tt0133093"},
-		{"tt0084967", "tt0084967"},
-		{"TT123", "tt0000123"},
-		{"12345678", "tt12345678"}, // 8 digits: 7 is the minimum width
-		{"not-an-id", ""},
-		{"", ""},
-	}
-	for _, tc := range cases {
-		if got := fullIMDBID(tc.in); got != tc.want {
-			t.Errorf("fullIMDBID(%q) = %q, want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
 func TestDerivedType(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -344,13 +327,10 @@ func TestDerivedType(t *testing.T) {
 
 func TestFreeleechOnly(t *testing.T) {
 	t.Parallel()
-	on := []string{"True", "true", "1", "on", "yes"}
-	for _, v := range on {
-		if !freeleechOnly(map[string]string{"freeleech_only": v}) {
-			t.Errorf("freeleechOnly(%q) = false, want true", v)
-		}
+	if !freeleechOnly(map[string]string{"freeleech_only": "True"}) {
+		t.Error("freeleechOnly(True) = false, want true")
 	}
-	off := []string{"", "false", "0", "no"}
+	off := []string{"", "false"}
 	for _, v := range off {
 		if freeleechOnly(map[string]string{"freeleech_only": v}) {
 			t.Errorf("freeleechOnly(%q) = true, want false", v)

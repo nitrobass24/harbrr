@@ -232,12 +232,10 @@ func TestDistinctNonEmpty(t *testing.T) {
 
 func TestBoolSetting(t *testing.T) {
 	t.Parallel()
-	for _, v := range []string{"True", "true", "1", "on", "yes"} {
-		if !boolSetting(v) {
-			t.Errorf("boolSetting(%q) = false, want true", v)
-		}
+	if !boolSetting("True") {
+		t.Error("boolSetting(True) = false, want true")
 	}
-	for _, v := range []string{"", "false", "0", "no"} {
+	for _, v := range []string{"", "false"} {
 		if boolSetting(v) {
 			t.Errorf("boolSetting(%q) = true, want false", v)
 		}

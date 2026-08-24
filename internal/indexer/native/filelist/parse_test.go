@@ -199,18 +199,3 @@ func TestParsePublishDate(t *testing.T) {
 		t.Errorf("unparseable err = %v, want search.ErrParseError", err)
 	}
 }
-
-func TestNormalizeIMDBID(t *testing.T) {
-	t.Parallel()
-	cases := []struct{ in, want string }{
-		{"tt0133093", "tt0133093"},
-		{"133093", "tt0133093"},
-		{"", ""},
-		{"tt", ""}, // <= 2 chars -> empty (Prowlarr's Length > 2 guard)
-	}
-	for _, tc := range cases {
-		if got := normalizeIMDBID(tc.in); got != tc.want {
-			t.Errorf("normalizeIMDBID(%q) = %q, want %q", tc.in, got, tc.want)
-		}
-	}
-}

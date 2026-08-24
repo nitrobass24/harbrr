@@ -246,25 +246,6 @@ func TestFlexFloatDefault(t *testing.T) {
 	}
 }
 
-// TestNormalizeIMDBID proves the imdb id normalizes to the canonical "tt"+7-digit form
-// and rejects short/non-numeric values.
-func TestNormalizeIMDBID(t *testing.T) {
-	t.Parallel()
-	cases := []struct{ in, want string }{
-		{"tt1234567", "tt1234567"},
-		{"1234567", "tt1234567"},
-		{"133093", "tt0133093"},
-		{"", ""},
-		{"tt", ""},
-		{"notnum", ""},
-	}
-	for _, c := range cases {
-		if got := normalizeIMDBID(c.in); got != c.want {
-			t.Errorf("normalizeIMDBID(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}
-
 // errorsIsParse reports whether err wraps search.ErrParseError.
 func errorsIsParse(err error) bool {
 	return errors.Is(err, search.ErrParseError)

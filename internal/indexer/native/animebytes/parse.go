@@ -250,12 +250,7 @@ const minimumRatio = 1
 
 // freeleechOnly reports whether the freeleech_only toggle is enabled (parser-side filter).
 func freeleechOnly(cfg map[string]string) bool {
-	switch strings.ToLower(strings.TrimSpace(cfg["freeleech_only"])) {
-	case "true", "1", "on", "yes":
-		return true
-	default:
-		return false
-	}
+	return native.CheckboxOn(cfg["freeleech_only"])
 }
 
 // torrentProperties splits a torrent Property string into its ordered, de-duplicated

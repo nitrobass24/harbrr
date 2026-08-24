@@ -64,11 +64,12 @@ search/grab are the **live-validation** gate.
   the non-default order to prove this.
 - **Relative "time ago" publish dates** — `[Deliberate, matches Prowlarr]`. `div.sub` is
   split on `|`, the last segment split on `" by "`, and the leading "N units ago" string
-  is parsed by `parsePublishDate`, a Go port of `DateTimeUtil.FromTimeAgo`: units matched
-  by substring (`sec`/`min`/`hour`|`hr`/`day`/`week`|`wk`/`month`/`mo`/`year`) or single-
-  letter short form, fractional values supported, week=7d, month=30d, year=365d, "now" =>
-  the current time. The result is subtracted from the **driver clock** (injected, so tests
-  are deterministic). Prowlarr uses `DateTime.Now` (local); harbrr's clock is UTC in the
+  is parsed by the shared `native.PublishDate` (the engine's `dateparse.ParseRelTime`, a
+  port of `DateTimeUtil.FromTimeAgo`): units matched by substring
+  (`sec`/`min`/`hour`|`hr`/`day`/`week`|`wk`/`month`/`mo`/`year`) or single-letter short
+  form, fractional values supported, week=7d, month=30d, year=365d, "now" => the current
+  time. The result is subtracted from the **driver clock** (injected, so tests are
+  deterministic). Prowlarr uses `DateTime.Now` (local); harbrr's clock is UTC in the
   registry, a normalization, not a value divergence.
 - **Row with no `a.hv` or no download link skipped** — `[Deliberate]`. A row with no
   title link is Prowlarr's "no results" continue; a row with no `download.php` link is

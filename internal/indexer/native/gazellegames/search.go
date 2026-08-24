@@ -7,6 +7,7 @@ import (
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // searchPath is the api.php endpoint Prowlarr's GazelleGamesRequestGenerator hits; the
@@ -98,15 +99,8 @@ func (d *driver) addCategoryParams(params url.Values, q search.Query) {
 	}
 }
 
-// freeleechOnly reports whether the freeleech_only checkbox is enabled. harbrr stores a
-// checked checkbox as Jackett's "True" sentinel; common truthy spellings are accepted so
-// whatever the management API persists is interpreted consistently. cfg is read under the
-// mutex (cfgValue) since fetchPasskey mutates the shared map.
+// freeleechOnly reports whether the freeleech_only checkbox is enabled. cfg is read under
+// the mutex (cfgValue) since fetchPasskey mutates the shared map.
 func (d *driver) freeleechOnly() bool {
-	switch strings.ToLower(strings.TrimSpace(d.cfgValue("freeleech_only"))) {
-	case "true", "1", "on", "yes":
-		return true
-	default:
-		return false
-	}
+	return native.CheckboxOn(d.cfgValue("freeleech_only"))
 }
