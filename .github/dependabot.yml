@@ -39,6 +39,15 @@ updates:
       # and that PR's CI is the revisit gate — see autobrr/harbrr#213.
       - dependency-name: "typescript"
         versions: ["7.0.x"]
+  - package-ecosystem: "npm" # bun lockfile in website/ (the docs site)
+    directory: "/website"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "chore(website-deps)"
+    groups:
+      website:
+        patterns: ["*"]
   - package-ecosystem: "docker"
     directory: "/"
     schedule:

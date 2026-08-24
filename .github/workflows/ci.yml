@@ -71,6 +71,28 @@ jobs:
             exit 1
           fi
           echo "backend-test container pin matches go.mod: $want"
+      # Same idea for bun: web/package.json's packageManager field is the single
+      # source of truth, repeated as oven/bun container tags (ci.yml, docs.yml)
+      # and web-e2e's `npm install -g bun@...`. A bump that misses one reference
+      # would silently run CI on mismatched bun versions — catch it here instead.
+      - name: workflows' bun pins match web/package.json
+        run: |
+          want=$(sed -nE 's/.*"packageManager": *"bun@([^"]+)".*/\1/p' web/package.json)
+          if [ -z "$want" ]; then
+            echo 'web/package.json has no packageManager bun pin' >&2
+            exit 1
+          fi
+          # image: lines anchored at line start so this guard does not match its
+          # own source (the golang guard's trick); the install-line pattern only
+          # matches bun@<digit>, which this script never contains.
+          stale=$(grep -rnE '^[[:space:]]*image: oven/bun:|bun@[0-9][0-9.]*' .github/workflows/ \
+                  | grep -vE "oven/bun:${want}-alpine|bun@${want}") || true
+          if [ -n "$stale" ]; then
+            echo "bun references out of sync with web/package.json's bun@${want}:" >&2
+            echo "$stale" >&2
+            exit 1
+          fi
+          echo "all workflow bun pins match web/package.json: bun@${want}"
 
   # `go test` compiles every package (and test file) before running, so it doubles as
   # the compile check. The race suite is split into package shards because the full
