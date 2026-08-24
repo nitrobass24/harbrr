@@ -38,25 +38,6 @@ jobs:
   # either (container.image's contexts are github/needs/strategy/matrix/vars/inputs).
   # This job reads it once and publishes it, so the two container jobs below derive
   # their image from the same line the toolchain check enforces.
-  go-version:
-    name: go-version
-    runs-on: self-hosted
-    outputs:
-      version: ${{ steps.read.outputs.version }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - id: read
-        # The `go` directive carries the full patch (go 1.27.0), which is exactly the
-        # golang:<version>-alpine tag we need.
-        run: |
-          v=$(awk '/^go /{print $2; exit}' go.mod)
-          case "$v" in
-            *.*.*) ;;
-            *) echo "go.mod's go directive ($v) has no patch version; the image tag needs one" >&2; exit 1 ;;
-          esac
-          echo "version=$v" >> "$GITHUB_OUTPUT"
   # Tool-agnostic guard: block hand-edits to the vendored Jackett snapshot
   # (internal/indexer/definitions/vendor/**), which is consumed byte-for-byte. This is
   # the authoritative, non-bypassable enforcement of AGENTS.md's #1 rule — a contributor
@@ -73,6 +54,23 @@ jobs:
           fetch-depth: 0
       - name: Guard vendored definitions
         run: scripts/check-vendor-untouched.sh --ci
+      # backend-test's container tag is pinned (it must be resolvable before the job
+      # starts), so a go.mod bump that forgets it would otherwise surface as a
+      # confusing GOTOOLCHAIN failure inside every shard. Catch it here instead —
+      # this job runs in parallel and gates nothing.
+      - name: go.mod matches backend-test's pinned container
+        run: |
+          want=$(awk '/^go /{print $2; exit}' go.mod)
+          # Anchored at the start of the line so this guard does not match its own
+          # source, which necessarily contains the same literal text.
+          got=$(grep -E '^[[:space:]]*image: golang:' .github/workflows/ci.yml \
+                | head -1 | sed -E 's/.*golang:(.*)-alpine.*/\1/')
+          if [ "$want" != "$got" ]; then
+            echo "go.mod requires go $want but backend-test pins golang:$got-alpine" >&2
+            echo "Update the 'image:' line under jobs.backend-test.container in .github/workflows/ci.yml" >&2
+            exit 1
+          fi
+          echo "backend-test container pin matches go.mod: $want"
 
   # `go test` compiles every package (and test file) before running, so it doubles as
   # the compile check. The race suite is split into package shards because the full
@@ -80,7 +78,6 @@ jobs:
   # Cross-build below covers other platforms and vet is covered by golangci-lint (govet).
   backend-test:
     name: backend-test (${{ matrix.shard.name }})
-    needs: go-version
     runs-on: self-hosted
     # Match the Dockerfile's build stage (golang:1.27-alpine) so the toolchain that
     # tests is the image's own musl Go — hence no actions/setup-go here (it would
@@ -94,9 +91,16 @@ jobs:
     # musl-dev) is required because `go test -race` always needs cgo, unlike the
     # Dockerfile's CGO_ENABLED=0 product build.
     container:
-      # Derived from go.mod via the go-version job — NOT the floating 1.27-alpine,
-      # which lagged go.mod once already and silently poisoned the lint cache.
-      image: golang:${{ needs.go-version.outputs.version }}-alpine
+      # Pinned to go.mod's exact patch — NOT the floating 1.27-alpine, which lagged
+      # go.mod once already and silently poisoned the lint cache. This used to be
+      # derived at runtime by a `go-version` job, but a container image tag has to be
+      # known before the job starts, so that job could only ever be a separate node in
+      # the graph — and it put a dependency edge, and therefore a runner dispatch wait
+      # (observed at up to 56s), in front of every shard. Drift is caught twice
+      # instead: `vendor-guard` compares this pin against go.mod off the critical path,
+      # and GOTOOLCHAIN=local below makes `go list -m` refuse to run at all if the
+      # container's Go is older than go.mod asks for.
+      image: golang:1.27.0-alpine
       # Persistent host-disk Go caches instead of actions/cache: the self-hosted
       # fleet shares one host, so round-tripping ~2GB of cache blobs through GHA
       # storage cost ~40s of restore per shard (plus the stalled-segment-download
@@ -660,8 +664,6 @@ jobs:
           # already persist in /root between runs, so a GHA cache round-trip is pure
           # overhead. Container jobs that need caching (backend-test) use actions/cache.
           cache: false
-      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
-        if: matrix.arch == 'arm64'
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       # The image ships the UI: the web job built (and tested) the bundle once; download
