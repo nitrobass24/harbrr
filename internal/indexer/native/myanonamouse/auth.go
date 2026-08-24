@@ -2,7 +2,6 @@ package myanonamouse
 
 import (
 	"context"
-	"fmt"
 	stdhttp "net/http"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -70,9 +69,9 @@ func (d *driver) captureRotatedMamID(ctx context.Context, header stdhttp.Header)
 // newRequest builds an authenticated GET with the Cookie: mam_id=… header. The cookie
 // rides as a header, never the URL, so the URL carries no secret.
 func (d *driver) newRequest(ctx context.Context, rawurl, accept string) (*stdhttp.Request, error) {
-	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
+	req, err := d.NewRequest(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
-		return nil, fmt.Errorf("myanonamouse: build request: %w", err)
+		return nil, err
 	}
 	// Set the request Cookie header directly (not http.Cookie): the mam_id is an
 	// opaque session token, and Secure/HttpOnly/SameSite are response-only attributes

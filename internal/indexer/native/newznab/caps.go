@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/native"
@@ -143,9 +142,9 @@ func (d *driver) fetchCaps(ctx context.Context) (*mapper.Capabilities, error) {
 // non-2xx is an error. Every error surfaces only the endpoint's scheme://host (the
 // apikey-bearing query is dropped).
 func (d *driver) getCaps(ctx context.Context, rawurl string) ([]byte, error) {
-	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
+	req, err := d.NewRequest(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
-		return nil, fmt.Errorf("newznab: build caps request to %s: %w", apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
+		return nil, err
 	}
 	req.Header.Set("Accept", "application/rss+xml, application/xml, text/xml")
 	resp, err := d.Do(ctx, req, native.ClassifyRateLimit403)

@@ -63,6 +63,7 @@ linters:
     - gocognit
     - nestif
     # --- harbrr: extra type safety ---
+    - forbidigo          # native drivers build requests only via Base.NewRequest (see settings + exclusions)
     - forcetypeassert
     - nilnil
     - wrapcheck
@@ -114,6 +115,17 @@ linters:
         - authStrategy
         - delugeClient
         - delugeVendorClient
+    forbidigo:
+      # A native driver must build requests through native.Base.NewRequest, which owns
+      # build-error redaction (a *url.Error quotes the full passkey-bearing URL). Scoped
+      # to internal/indexer/native by the exclusion rules below; base.go is the one site.
+      # analyze-types resolves the import alias (stdhttp) to the package NAME, so the
+      # pattern is `http.`; pkg pins it to the stdlib net/http, not any other "http".
+      analyze-types: true
+      forbid:
+        - pattern: ^http\.NewRequest(WithContext)?$
+          pkg: ^net/http$
+          msg: build native requests via Base.NewRequest (owns build-error redaction)
     interfacebloat:
       # Guardrail against future god-interfaces (default 10). AGENTS.md's "interfaces
       # ≤5 methods" stays a review norm, not a hard gate — torznabhttp.Indexer
@@ -167,6 +179,14 @@ linters:
           - forcetypeassert
           - wrapcheck
           - bodyclose # short-lived test responses; leaks only matter in production code
+          - forbidigo # tests build httptest requests directly
+      # forbidigo exists only to guard native drivers' request construction.
+      - path-except: internal/indexer/native/
+        linters:
+          - forbidigo
+      - path: internal/indexer/native/base\.go
+        linters:
+          - forbidigo
       # Synthetic credentials live only in *_test.go (AGENTS.md "Security"), which
       # trips gosec's hardcoded-credentials check (G101). The same paths are
       # allowlisted for gitleaks/check-no-secrets; G101 stays fully active on

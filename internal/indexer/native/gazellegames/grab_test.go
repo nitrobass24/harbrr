@@ -128,6 +128,30 @@ func TestGrabTransportErrorSanitized(t *testing.T) {
 	}
 }
 
+// TestGrabBuildErrorNeverLeaksPasskey proves a download link that fails to even build a
+// request (a *url.Error quoting the full torrent_pass-bearing URL) surfaces only the
+// endpoint's scheme://host — the passkey and its query never reach the error.
+func TestGrabBuildErrorNeverLeaksPasskey(t *testing.T) {
+	t.Parallel()
+	d := searchDriver(t, &scriptDoer{resp: mkResp(stdhttp.StatusOK, fakeTorrent)})
+	malformed := "https://gazellegames.net/torrents.php\x7f?action=download&id=42&torrent_pass=" + credPasskey
+
+	_, err := d.Grab(context.Background(), malformed)
+	if err == nil {
+		t.Fatal("want a build error")
+	}
+	got := err.Error()
+	if strings.Contains(got, credPasskey) || strings.Contains(got, "torrents.php") {
+		t.Errorf("build error leaked the passkey-bearing path/query: %v", err)
+	}
+	if !strings.HasPrefix(got, "gazellegames: build request to ") {
+		t.Errorf("build error lost its family prefix: %v", err)
+	}
+	if !apphttp.IsHostRedacted(err) {
+		t.Errorf("build error not marked host-redacted: %v", err)
+	}
+}
+
 // TestGrabContextSentinelsPreserved proves cancellation/deadline sentinels survive so
 // normal cancellation is not misreported as a download failure.
 func TestGrabContextSentinelsPreserved(t *testing.T) {

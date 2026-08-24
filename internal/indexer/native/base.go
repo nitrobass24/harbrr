@@ -233,6 +233,21 @@ func (b *Base) DoDownload(ctx context.Context, req *stdhttp.Request, c Classify)
 	return b.roundTrip(ctx, req, c, "download")
 }
 
+// NewRequest builds a request for this driver's transport. It is the ONLY way a native
+// driver may construct an *http.Request (forbidigo enforces it): a build failure is a
+// *url.Error whose Error() quotes the FULL, possibly passkey-bearing URL, so it surfaces
+// only the endpoint's scheme://host — the same shape roundTrip emits for a transport
+// failure, so a driver's error reads the same whether the request failed to build or
+// to send. The returned request already carries ctx.
+func (b *Base) NewRequest(ctx context.Context, method, rawurl string, body io.Reader) (*stdhttp.Request, error) {
+	req, err := stdhttp.NewRequestWithContext(ctx, method, rawurl, body)
+	if err != nil {
+		werr := fmt.Errorf("%s: build request to %s: %w", b.Family, apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
+		return nil, apphttp.MarkHostRedacted(werr) //nolint:wrapcheck // werr IS the shaped error; the marker is a transparent Error()/Unwrap() passthrough (same posture as roundTrip)
+	}
+	return req, nil
+}
+
 func (b *Base) roundTrip(ctx context.Context, req *stdhttp.Request, c Classify, op string) (*Response, error) {
 	resp, err := b.Doer.Do(req.WithContext(ctx))
 	if err != nil {

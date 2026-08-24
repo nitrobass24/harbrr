@@ -10,7 +10,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
@@ -35,9 +34,9 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 }
 
 func (d *driver) searchPage(ctx context.Context, rawURL string) ([]*normalizer.Release, error) {
-	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawURL, nil)
+	req, err := d.NewRequest(ctx, stdhttp.MethodGet, rawURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("nebulance: build request: %w", apphttp.RedactURLError(err))
+		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
 	resp, err := d.Do(ctx, req, authClassify)
