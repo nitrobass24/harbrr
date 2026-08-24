@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -115,16 +116,20 @@ func rewriteSlashEscapes(data []byte) []byte {
 // precedence over the embedded vendored snapshot.
 type Loader struct {
 	dropinDir string
-
-	// vendorContentIdx maps a vendored definition's content id: to its embedded
-	// path, but ONLY for the handful of files whose name differs from their id
-	// (e.g. darkpeers.yml -> id darkpeers-api). It is built lazily on the first
-	// content-id fallback and cached, so the common filename==id path never pays
-	// for it. Guarded by vendorContentIdxOnce.
-	vendorContentIdxOnce sync.Once
-	vendorContentIdx     map[string]string
-	vendorContentIdxErr  error
 }
+
+// vendorContentIdx maps a vendored definition's content id: to its embedded path,
+// but ONLY for the handful of files whose name differs from their id (e.g.
+// darkpeers.yml -> id darkpeers-api). It is built lazily on the first content-id
+// fallback, so the common filename==id path never pays for it.
+//
+// Package scope, not per-Loader. It is derived entirely from definitions.Vendored,
+// an embed.FS fixed at compile time, and takes no drop-in input -- so every Loader
+// in a process would otherwise rebuild an identical 550-file index. Caching the
+// error alongside it is safe for the same reason: reading an embedded FS is
+// deterministic, so a failure here cannot be transient. (Contrast the drop-in
+// half of the loader, which reads a live directory and must never be cached.)
+var vendorContentIdx = sync.OnceValues(buildVendorContentIndex)
 
 // New constructs a Loader. dropinDir is the on-disk directory of user override
 // definitions; an empty string disables drop-ins (vendored-only).
@@ -251,13 +256,38 @@ func (l *Loader) LoadAll() (defs []*Definition, skipped []SkipEntry, err error) 
 		return nil, nil, err
 	}
 
-	for _, id := range ids {
-		def, origin, loadErr := l.load(id)
-		if loadErr != nil {
-			skipped = append(skipped, SkipEntry{ID: id, Origin: origin, Reason: loadErr.Error()})
+	// Indexed slots, not appends: results are written by position so `defs` stays
+	// sorted by id and `skipped` keeps ids' order, exactly as the serial loop left
+	// them. Each id's outcome is independent -- nothing short-circuits -- so there
+	// is no first-error semantic to preserve.
+	type slot struct {
+		def    *Definition
+		origin Origin
+		err    error
+	}
+	slots := make([]slot, len(ids))
+	workers := min(runtime.GOMAXPROCS(0), len(ids))
+	var wg sync.WaitGroup
+	next := make(chan int)
+	for range workers {
+		wg.Go(func() {
+			for i := range next {
+				slots[i].def, slots[i].origin, slots[i].err = l.load(ids[i])
+			}
+		})
+	}
+	for i := range ids {
+		next <- i
+	}
+	close(next)
+	wg.Wait()
+
+	for i, id := range ids {
+		if slots[i].err != nil {
+			skipped = append(skipped, SkipEntry{ID: id, Origin: slots[i].origin, Reason: slots[i].err.Error()})
 			continue
 		}
-		defs = append(defs, def)
+		defs = append(defs, slots[i].def)
 	}
 	return defs, skipped, nil
 }
@@ -372,13 +402,11 @@ func vendorPath(id string) string {
 // The index is built once and cached; ok is false when no such mismatched
 // definition exists (the common case, where the filename already matched).
 func (l *Loader) vendorPathByContentID(id string) (path string, ok bool, err error) {
-	l.vendorContentIdxOnce.Do(func() {
-		l.vendorContentIdx, l.vendorContentIdxErr = buildVendorContentIndex()
-	})
-	if l.vendorContentIdxErr != nil {
-		return "", false, l.vendorContentIdxErr
+	idx, err := vendorContentIdx()
+	if err != nil {
+		return "", false, err
 	}
-	path, ok = l.vendorContentIdx[id]
+	path, ok = idx[id]
 	return path, ok, nil
 }
 
