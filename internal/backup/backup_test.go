@@ -187,7 +187,7 @@ func seedAppConn(t *testing.T, db *database.DB, kr *secrets.Keyring, kind string
 	if err != nil {
 		t.Fatalf("seed app conn: %v", err)
 	}
-	harbrrEnc, _ := kr.Encrypt(id, "harbrr", appHarbrr)
+	harbrrEnc, _ := kr.Encrypt(id, domain.ConnectionSecretHarbrr, appHarbrr)
 	if err := repo.SetConnectionSecrets(ctx, db, id, harbrrEnc, kr.KeyID()); err != nil {
 		t.Fatalf("set app conn secrets: %v", err)
 	}
@@ -205,7 +205,7 @@ func seedAnnounceConn(t *testing.T, db *database.DB, kr *secrets.Keyring, kind s
 	if err != nil {
 		t.Fatalf("seed announce conn: %v", err)
 	}
-	harbrrEnc, _ := kr.Encrypt(id, "harbrr", annHarbrr)
+	harbrrEnc, _ := kr.Encrypt(id, domain.ConnectionSecretHarbrr, annHarbrr)
 	if err := repo.SetAnnounceConnectionSecrets(ctx, db, id, harbrrEnc, kr.KeyID()); err != nil {
 		t.Fatalf("set announce conn secrets: %v", err)
 	}
@@ -220,7 +220,7 @@ func seedNotification(t *testing.T, db *database.DB, kr *secrets.Keyring) {
 	if err != nil {
 		t.Fatalf("seed notification: %v", err)
 	}
-	enc, _ := kr.Encrypt(id, "url", notifySecret)
+	enc, _ := kr.Encrypt(id, domain.NotificationSecretURL, notifySecret)
 	if err := repo.SetNotificationSecret(ctx, db, id, enc, kr.KeyID()); err != nil {
 		t.Fatalf("set notification secret: %v", err)
 	}
@@ -373,7 +373,7 @@ func assertConnectionsRestored(t *testing.T, dstDB *database.DB, dstKR *secrets.
 	if v, err := dstKR.Decrypt(acApp.ID, domain.AppSecret, acApp.APIKeyEncrypted); err != nil || v != appKey {
 		t.Errorf("app conn's App key = %q, err %v; want %q", v, err, appKey)
 	}
-	if v, err := dstKR.Decrypt(ac.ID, "harbrr", ac.HarbrrAPIKeyEncrypted); err != nil || v != appHarbrr {
+	if v, err := dstKR.Decrypt(ac.ID, domain.ConnectionSecretHarbrr, ac.HarbrrAPIKeyEncrypted); err != nil || v != appHarbrr {
 		t.Errorf("app conn harbrr key = %q, err %v; want %q", v, err, appHarbrr)
 	}
 
@@ -404,7 +404,7 @@ func assertNotificationRestored(t *testing.T, dstDB *database.DB, dstKR *secrets
 	if len(list) != 1 {
 		t.Fatalf("restored notifications = %d, want 1", len(list))
 	}
-	if v, err := dstKR.Decrypt(list[0].ID, "url", list[0].URLEncrypted); err != nil || v != notifySecret {
+	if v, err := dstKR.Decrypt(list[0].ID, domain.NotificationSecretURL, list[0].URLEncrypted); err != nil || v != notifySecret {
 		t.Errorf("notification url = %q, err %v; want %q", v, err, notifySecret)
 	}
 }

@@ -176,6 +176,16 @@ const (
 // fold decrypts a legacy row under (rowID, "app") and re-seals under (appID, "app")).
 const AppSecret = "app"
 
+// ConnectionSecretHarbrr is the AAD discriminator for the harbrr API key minted per
+// app-sync / announce connection (harbrr_api_key_encrypted on app_connections and
+// announce_connections), sealed under the connection's own id. The tool's own
+// credential lives on the App (AppSecret).
+const ConnectionSecretHarbrr = "harbrr"
+
+// NotificationSecretURL is the AAD discriminator for a notification's single
+// encrypted secret (url_encrypted), sealed under the notification id.
+const NotificationSecretURL = "url"
+
 // App is a first-class external service harbrr connects to — a (kind, base_url)
 // identity plus one sealed credential and the app's vantage onto harbrr — stored
 // ONCE and referenced by the three surface tables (app_connections,
@@ -335,9 +345,9 @@ const SolverTypeFlaresolverr = "flaresolverr"
 const FlareMaxTimeoutCapSeconds = 180
 
 // ProxySecretPassword / SolverSecretURL are the AAD "setting" discriminators
-// binding each resource's encrypted secret to its own row id (mirroring notify's
-// secretURL). Shared so the management service encrypts and the engine decrypts
-// under the same name. ProxySecretPassword is only the proxy's password (#71 split
+// binding each resource's encrypted secret to its own row id (mirroring
+// NotificationSecretURL). Shared so the management service encrypts and the
+// engine decrypts under the same name. ProxySecretPassword is only the proxy's password (#71 split
 // the rest of the proxy — host/port/username — into plain structured fields);
 // SolverSecretURL is still the solver's full endpoint URL, its secret in whole.
 const (
@@ -438,7 +448,7 @@ const (
 
 // DownloadClientSecret is the AAD "setting" discriminator binding a download
 // client's encrypted secret (password/API key, meaning depends on kind) to its own
-// row id, mirroring notify's secretURL / proxy's ProxySecretPassword.
+// row id, mirroring NotificationSecretURL / ProxySecretPassword.
 const DownloadClientSecret = "download_client_secret" //nolint:gosec // G101: an AAD discriminator name, not a credential.
 
 // QBittorrentSettings holds the qBittorrent-specific per-client options. All

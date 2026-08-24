@@ -67,7 +67,7 @@ func TestCreateEncryptsURL(t *testing.T) {
 	if n.URLEncrypted == url || n.URLEncrypted == "" {
 		t.Errorf("URL stored in the clear (or empty): %q", n.URLEncrypted)
 	}
-	got, err := kr.Decrypt(n.ID, secretURL, n.URLEncrypted)
+	got, err := kr.Decrypt(n.ID, domain.NotificationSecretURL, n.URLEncrypted)
 	if err != nil {
 		t.Fatalf("decrypt: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestUpdateRotatesURL(t *testing.T) {
 	if got.Name != "renamed" || got.OnHealthFailure {
 		t.Errorf("patch not applied: name=%q onHealthFailure=%v", got.Name, got.OnHealthFailure)
 	}
-	dec, err := kr.Decrypt(got.ID, secretURL, got.URLEncrypted)
+	dec, err := kr.Decrypt(got.ID, domain.NotificationSecretURL, got.URLEncrypted)
 	if err != nil {
 		t.Fatalf("decrypt: %v", err)
 	}
