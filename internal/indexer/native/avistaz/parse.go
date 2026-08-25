@@ -219,7 +219,7 @@ func minimumSeedTime(fileSize int64) int64 {
 func (d *driver) parsePublishDate(s string) (string, error) {
 	out, err := native.PublishDate(s, d.Clock)
 	if err != nil {
-		return "", fmt.Errorf("avistaz: unparseable created_at_iso %q: %w", strings.TrimSpace(s), search.ErrParseError)
+		return "", fmt.Errorf("avistaz: unparseable created_at_iso %q: %w: %w", strings.TrimSpace(s), search.ErrParseError, err)
 	}
 	return out, nil
 }

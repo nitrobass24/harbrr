@@ -2,7 +2,6 @@ package nebulance
 
 import (
 	"context"
-	"fmt"
 	stdhttp "net/http"
 	"net/url"
 	"strconv"

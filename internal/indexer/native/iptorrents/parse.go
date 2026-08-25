@@ -77,7 +77,7 @@ func (d *driver) parseRow(row *goquery.Selection, layout columnLayout) (*normali
 	text := rowPublishText(row)
 	published, err := native.PublishDate(text, d.Clock)
 	if err != nil {
-		return nil, false, fmt.Errorf("iptorrents: unparseable relative date %q: %w", text, search.ErrParseError)
+		return nil, false, fmt.Errorf("iptorrents: unparseable relative date %q: %w: %w", text, search.ErrParseError, err)
 	}
 
 	seeders := cells(row).intAt(layout.seeders)
