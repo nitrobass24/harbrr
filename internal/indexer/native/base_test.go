@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
@@ -127,6 +128,55 @@ func TestNewBaseScaffold(t *testing.T) {
 			t.Fatal("SupportsOffsetPaging default must be false")
 		}
 	})
+}
+
+// TestBaseNewRequest proves NewRequest is the drivers' request primitive: a valid URL
+// yields a request carrying ctx/method/body, and a build failure surfaces only the
+// endpoint's scheme://host — never the passkey-bearing path/query the *url.Error quotes.
+func TestBaseNewRequest(t *testing.T) {
+	const secret = "SYNTHETIC-PASS"
+	type ctxKey struct{}
+	ctx := context.WithValue(context.Background(), ctxKey{}, "marker")
+	b := newTestBase(t, &fakeDoer{})
+
+	tests := []struct {
+		name    string
+		rawurl  string
+		wantErr bool
+	}{
+		{name: "valid URL", rawurl: "https://tracker.example/torrents.php?torrent_pass=" + secret},
+		{name: "control character", rawurl: "https://tracker.example/torrents.php\x7f?torrent_pass=" + secret, wantErr: true},
+		{name: "invalid percent escape", rawurl: "https://tracker.example/torrents.php%zz?torrent_pass=" + secret, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := b.NewRequest(ctx, stdhttp.MethodPost, tt.rawurl, strings.NewReader("body"))
+			if !tt.wantErr {
+				if err != nil {
+					t.Fatalf("NewRequest: %v", err)
+				}
+				if req.Context().Value(ctxKey{}) != "marker" || req.Method != stdhttp.MethodPost || req.Body == nil {
+					t.Fatalf("request not wired: ctx=%v method=%s body=%v", req.Context(), req.Method, req.Body)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("want a build error")
+			}
+			if !apphttp.IsHostRedacted(err) {
+				t.Fatalf("build error not marked host-redacted: %v", err)
+			}
+			got := err.Error()
+			if strings.Contains(got, secret) || strings.Contains(got, "torrents.php") {
+				t.Fatalf("build error leaked the path/query: %v", err)
+			}
+			// An unparseable URL has no extractable host, so SchemeHost yields its
+			// REDACTED placeholder; the family/op prefix is what must survive.
+			if !strings.HasPrefix(got, "testfam: build request to ") {
+				t.Fatalf("build error lost its family prefix: %v", err)
+			}
+		})
+	}
 }
 
 // TestDoTransportErrorRedaction is the structural secret-hygiene guarantee: a

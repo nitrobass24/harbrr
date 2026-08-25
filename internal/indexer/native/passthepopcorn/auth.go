@@ -2,7 +2,6 @@ package passthepopcorn
 
 import (
 	"context"
-	"fmt"
 	stdhttp "net/http"
 
 	"github.com/autobrr/harbrr/internal/indexer/native"
@@ -34,9 +33,9 @@ func (d *driver) setAuth(req *stdhttp.Request) {
 // transport error surfaces only the endpoint's scheme://host through native.Base. The
 // caller owns the returned body and interprets the status.
 func (d *driver) get(ctx context.Context, rawurl, accept string, download bool) (*native.Response, error) {
-	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
+	req, err := d.NewRequest(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
-		return nil, fmt.Errorf("passthepopcorn: build request: %w", err)
+		return nil, err
 	}
 	d.setAuth(req)
 	if accept != "" {

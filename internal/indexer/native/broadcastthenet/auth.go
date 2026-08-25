@@ -70,9 +70,9 @@ func (d *driver) buildRPCBody(params btnParameters, results, offset int) ([]byte
 // the endpoint's scheme://host (apphttp.SchemeHost) with the cause routed through
 // apphttp.RedactURLError.
 func (d *driver) post(ctx context.Context, body []byte) (*native.Response, error) {
-	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodPost, d.BaseURL, bytes.NewReader(body))
+	req, err := d.NewRequest(ctx, stdhttp.MethodPost, d.BaseURL, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("broadcastthenet: build request: %w", err)
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	return d.Do(ctx, req, native.ClassifyAuth403)

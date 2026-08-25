@@ -13,10 +13,11 @@ import (
 // driver sets its own.
 const nzbContentType = "application/x-nzb"
 
-// errDownloadRequestFailed is the transport-failure sentinel. A build-request failure
-// returns it bare (there is no URL to leak). A transport failure from Do wraps it with a
-// HOST-ONLY cause (apphttp.RedactURLError drops the apikey-bearing path/query), so the
-// scheme://host surfaces for diagnosis while the apikey cannot re-leak through %w.
+// errDownloadRequestFailed is the transport-failure sentinel. A build-request failure is
+// native.Base.NewRequest's own host-only error. A transport failure from Do wraps this
+// sentinel with a HOST-ONLY cause (apphttp.RedactURLError drops the apikey-bearing
+// path/query), so the scheme://host surfaces for diagnosis while the apikey cannot re-leak
+// through %w.
 var errDownloadRequestFailed = errors.New("newznab: download request failed")
 
 // Grab fetches the .nzb body server-side and returns it as a GrabResult. The download URL

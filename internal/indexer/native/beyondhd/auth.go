@@ -3,10 +3,8 @@ package beyondhd
 import (
 	"bytes"
 	"context"
-	"fmt"
 	stdhttp "net/http"
 
-	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
@@ -30,12 +28,9 @@ func (d *driver) searchURL() string {
 // which preserves any wrapped sentinel — e.g. login.ErrLoginFailed — through the scrub);
 // the raw URL is never placed in the error.
 func (d *driver) post(ctx context.Context, body []byte) (*native.Response, error) {
-	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodPost, d.searchURL(), bytes.NewReader(body))
+	req, err := d.NewRequest(ctx, stdhttp.MethodPost, d.searchURL(), bytes.NewReader(body))
 	if err != nil {
-		// A build failure is a *url.Error that quotes the full URL — including the
-		// path-embedded api_key — so route it through apphttp.RedactURLError, which
-		// rebuilds it host-only (mirrors the grab build-request path in grab.go).
-		return nil, fmt.Errorf("beyondhd: build request: %w", apphttp.RedactURLError(err))
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
