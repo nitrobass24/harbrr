@@ -45,9 +45,12 @@ func PublishDate(raw string, clock func() time.Time) (string, error) {
 	if err != nil {
 		return "", err //nolint:wrapcheck // the caller adds the family prefix; the dateparse sentinel must stay reachable
 	}
+	// ParseRelTime formats with the RFC3339 layout, but a year outside 0000–9999 — a
+	// 13-digit "millisecond" epoch read as seconds, per Jackett parity — is not RFC3339
+	// and fails to reparse. That is an unparseable timestamp, classified like any other.
 	t, err := time.Parse(time.RFC3339, s)
 	if err != nil {
-		return "", err //nolint:wrapcheck // unreachable: ParseRelTime emits RFC3339
+		return "", fmt.Errorf("%w: %q is outside the RFC3339 year range", dateparse.ErrUnparseable, s)
 	}
 	return t.UTC().Format(time.RFC3339), nil
 }

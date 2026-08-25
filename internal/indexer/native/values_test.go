@@ -84,7 +84,10 @@ func TestPublishDate(t *testing.T) {
 			t.Errorf("PublishDate(%q) = %q, want %q", c.in, got, c.want)
 		}
 	}
-	for _, in := range []string{"", "nope", "at some point", "3 fortnights ago"} {
+	// "1577880000000": a 13-digit epoch is seconds per Jackett parity → year 51971, which
+	// is outside RFC3339's four-digit year and must classify as unparseable, not panic
+	// or surface a raw time.Parse error.
+	for _, in := range []string{"", "nope", "at some point", "3 fortnights ago", "1577880000000"} {
 		if _, err := PublishDate(in, clock); !errors.Is(err, dateparse.ErrUnparseable) {
 			t.Errorf("PublishDate(%q) err = %v, want dateparse.ErrUnparseable", in, err)
 		}
