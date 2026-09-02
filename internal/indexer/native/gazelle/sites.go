@@ -148,75 +148,86 @@ const (
 // Families returns the Gazelle-family sites as native families. Each carries a
 // Go-built, caps-only definition and the shared New factory; per-site auth and parsing
 // behavior is keyed by definition id inside the driver.
+//
+// The RED/OPS settings: apikey is text-typed but its name carries the "apikey" token,
+// so harbrr's secret store auto-classifies it as a secret (encrypted at rest, redacted
+// by the API) — matching Prowlarr's PrivacyLevel.ApiKey. use_freeleech_token is a
+// checkbox toggle that adds &usetoken=1 to the download URL.
 func Families() []native.Family {
 	return []native.Family{
-		{Definition: siteDef("redacted", "Redacted", "https://redacted.sh/", redactedDelaySeconds), Factory: New},
-		{Definition: siteDef("orpheus", "Orpheus", "https://orpheus.network/", orpheusDelaySeconds), Factory: New},
+		{Definition: native.Site{
+			ID: "redacted", Name: "Redacted", Link: "https://redacted.sh/",
+			Driver: "Gazelle-family", DelaySeconds: redactedDelaySeconds,
+			Settings: []loader.SettingsField{native.FieldAPIKey, native.FieldUseFreeleechToken},
+			Caps:     gazelleCaps(),
+		}.Definition(), Factory: New},
+		{Definition: native.Site{
+			ID: "orpheus", Name: "Orpheus", Link: "https://orpheus.network/",
+			Driver: "Gazelle-family", DelaySeconds: orpheusDelaySeconds,
+			Settings: []loader.SettingsField{native.FieldAPIKey, native.FieldUseFreeleechToken},
+			Caps:     gazelleCaps(),
+		}.Definition(), Factory: New},
 		{Definition: alphaRatioDef(), Factory: New},
 		{Definition: brokenStonesDef(), Factory: New},
 	}
 }
 
 func alphaRatioDef() *loader.Definition {
-	delay := alphaRatioDelaySeconds
-	return &loader.Definition{
-		ID:           "alpharatio",
-		Name:         "AlphaRatio",
-		Description:  "AlphaRatio (native Gazelle-family driver)",
-		Language:     "en-US",
-		Type:         "private",
-		Encoding:     "UTF-8",
-		Links:        []string{"https://alpharatio.cc/"},
-		RequestDelay: &delay,
-		Settings:     alphaRatioSettings(),
-		Caps:         alphaRatioCaps(),
-	}
+	return native.Site{
+		ID: "alpharatio", Name: "AlphaRatio", Link: "https://alpharatio.cc/",
+		Driver: "Gazelle-family", DelaySeconds: alphaRatioDelaySeconds,
+		Settings: alphaRatioSettings(),
+		Caps:     alphaRatioCaps(),
+	}.Definition()
 }
 
+// alphaRatioSettings are the user-entered fields: required username/password for form
+// login (Required is an AlphaRatio spelling the kit fields don't carry, so those two
+// stay inline literals) plus the freeleech and scene toggles.
 func alphaRatioSettings() []loader.SettingsField {
 	return []loader.SettingsField{
 		{Name: "username", Label: "Username", Type: "text", Required: true},
 		{Name: "password", Label: "Password", Type: "password", Required: true},
-		{Name: "use_freeleech_token", Label: "Use freeleech token", Type: "checkbox"},
-		{Name: "freeleech_only", Label: "Only freeleech", Type: "checkbox"},
+		native.FieldUseFreeleechToken,
+		native.FieldFreeleechOnly,
 		{Name: "exclude_scene", Label: "Exclude scene releases", Type: "checkbox"},
 	}
 }
 
 func alphaRatioCaps() loader.Caps {
 	return loader.Caps{
-		CategoryMappings: []loader.CategoryMapping{
-			cat("1", "TV/SD", "TvSD"),
-			cat("2", "TV/HD", "TvHD"),
-			cat("3", "TV/UHD", "TvUHD"),
-			cat("4", "TV/SD", "TvDVDRip"),
-			cat("5", "TV/SD", "TvPackSD"),
-			cat("6", "TV/HD", "TvPackHD"),
-			cat("7", "TV/UHD", "TvPackUHD"),
-			cat("8", "Movies/SD", "MovieSD"),
-			cat("9", "Movies/HD", "MovieHD"),
-			cat("10", "Movies/UHD", "MovieUHD"),
-			cat("11", "Movies/SD", "MoviePackSD"),
-			cat("12", "Movies/HD", "MoviePackHD"),
-			cat("13", "Movies/UHD", "MoviePackUHD"),
-			cat("14", "XXX", "MovieXXX"),
-			cat("15", "Movies/BluRay", "Bluray"),
-			cat("16", "TV/Anime", "AnimeSD"),
-			cat("17", "TV/Anime", "AnimeHD"),
-			cat("18", "PC/Games", "GamesPC"),
-			cat("19", "Console/XBox", "GamesxBox"),
-			cat("20", "Console/PS4", "GamesPS"),
-			cat("21", "Console/Wii", "GamesNin"),
-			cat("22", "PC/0day", "AppsWindows"),
-			cat("23", "PC/Mac", "AppsMAC"),
-			cat("24", "PC/0day", "AppsLinux"),
-			cat("25", "PC/Mobile-Other", "AppsMobile"),
-			cat("26", "XXX", "0dayXXX"),
-			cat("27", "Books", "eBook"),
-			cat("28", "Audio/Audiobook", "AudioBook"),
-			cat("29", "Audio/Other", "Music"),
-			cat("30", "Other", "Misc"),
-		},
+		CategoryMappings: native.Cats(
+			native.Cat{ID: "1", Newznab: "TV/SD", Desc: "TvSD"},
+			native.Cat{ID: "2", Newznab: "TV/HD", Desc: "TvHD"},
+			native.Cat{ID: "3", Newznab: "TV/UHD", Desc: "TvUHD"},
+			native.Cat{ID: "4", Newznab: "TV/SD", Desc: "TvDVDRip"},
+			native.Cat{ID: "5", Newznab: "TV/SD", Desc: "TvPackSD"},
+			native.Cat{ID: "6", Newznab: "TV/HD", Desc: "TvPackHD"},
+			native.Cat{ID: "7", Newznab: "TV/UHD", Desc: "TvPackUHD"},
+			native.Cat{ID: "8", Newznab: "Movies/SD", Desc: "MovieSD"},
+			native.Cat{ID: "9", Newznab: "Movies/HD", Desc: "MovieHD"},
+			native.Cat{ID: "10", Newznab: "Movies/UHD", Desc: "MovieUHD"},
+			native.Cat{ID: "11", Newznab: "Movies/SD", Desc: "MoviePackSD"},
+			native.Cat{ID: "12", Newznab: "Movies/HD", Desc: "MoviePackHD"},
+			native.Cat{ID: "13", Newznab: "Movies/UHD", Desc: "MoviePackUHD"},
+			native.Cat{ID: "14", Newznab: "XXX", Desc: "MovieXXX"},
+			native.Cat{ID: "15", Newznab: "Movies/BluRay", Desc: "Bluray"},
+			native.Cat{ID: "16", Newznab: "TV/Anime", Desc: "AnimeSD"},
+			native.Cat{ID: "17", Newznab: "TV/Anime", Desc: "AnimeHD"},
+			native.Cat{ID: "18", Newznab: "PC/Games", Desc: "GamesPC"},
+			native.Cat{ID: "19", Newznab: "Console/XBox", Desc: "GamesxBox"},
+			native.Cat{ID: "20", Newznab: "Console/PS4", Desc: "GamesPS"},
+			native.Cat{ID: "21", Newznab: "Console/Wii", Desc: "GamesNin"},
+			native.Cat{ID: "22", Newznab: "PC/0day", Desc: "AppsWindows"},
+			native.Cat{ID: "23", Newznab: "PC/Mac", Desc: "AppsMAC"},
+			native.Cat{ID: "24", Newznab: "PC/0day", Desc: "AppsLinux"},
+			native.Cat{ID: "25", Newznab: "PC/Mobile-Other", Desc: "AppsMobile"},
+			native.Cat{ID: "26", Newznab: "XXX", Desc: "0dayXXX"},
+			native.Cat{ID: "27", Newznab: "Books", Desc: "eBook"},
+			native.Cat{ID: "28", Newznab: "Audio/Audiobook", Desc: "AudioBook"},
+			native.Cat{ID: "29", Newznab: "Audio/Other", Desc: "Music"},
+			native.Cat{ID: "30", Newznab: "Other", Desc: "Misc"},
+		),
 		Modes: loader.Modes{
 			Search:      []string{"q"},
 			MovieSearch: []string{"q", "imdbid"},
@@ -229,29 +240,23 @@ func alphaRatioCaps() loader.Caps {
 // src/NzbDrone.Core/Indexers/Definitions/BrokenStones.cs (GazelleBase<GazelleSettings>,
 // IndexerUrls: https://brokenstones.is/).
 func brokenStonesDef() *loader.Definition {
-	delay := brokenStonesDelaySeconds
-	return &loader.Definition{
-		ID:           "brokenstones",
-		Name:         "BrokenStones",
-		Description:  "BrokenStones (native Gazelle-family driver)",
-		Language:     "en-US",
-		Type:         "private",
-		Encoding:     "UTF-8",
-		Links:        []string{"https://brokenstones.is/"},
-		RequestDelay: &delay,
-		Settings:     brokenStonesSettings(),
-		Caps:         brokenStonesCaps(),
-	}
+	return native.Site{
+		ID: "brokenstones", Name: "BrokenStones", Link: "https://brokenstones.is/",
+		Driver: "Gazelle-family", DelaySeconds: brokenStonesDelaySeconds,
+		Settings: brokenStonesSettings(),
+		Caps:     brokenStonesCaps(),
+	}.Definition()
 }
 
 // brokenStonesSettings are the user-entered fields: username/password (form login, per
-// ADR 0003) plus the use_freeleech_token checkbox every GazelleSettings site carries.
+// ADR 0003; Required is a spelling the kit fields don't carry, so both stay inline
+// literals) plus the use_freeleech_token checkbox every GazelleSettings site carries.
 // Unlike AlphaRatio, Prowlarr's BrokenStones has no FreeleechOnly/ExcludeScene fields.
 func brokenStonesSettings() []loader.SettingsField {
 	return []loader.SettingsField{
 		{Name: "username", Label: "Username", Type: "text", Required: true},
 		{Name: "password", Label: "Password", Type: "password", Required: true},
-		{Name: "use_freeleech_token", Label: "Use freeleech token", Type: "checkbox"},
+		native.FieldUseFreeleechToken,
 	}
 }
 
@@ -260,50 +265,19 @@ func brokenStonesSettings() []loader.SettingsField {
 // sets no Tv/Movie/Music search params for this site, so only basic q search applies.
 func brokenStonesCaps() loader.Caps {
 	return loader.Caps{
-		CategoryMappings: []loader.CategoryMapping{
-			cat("1", "PC/Mac", "MacOS Apps"),
-			cat("2", "PC/Mac", "MacOS Games"),
-			cat("3", "PC/Mobile-iOS", "iOS Apps"),
-			cat("4", "PC/Mobile-iOS", "iOS Games"),
-			cat("5", "Other", "Graphics"),
-			cat("6", "Audio", "Audio"),
-			cat("7", "Other", "Tutorials"),
-			cat("8", "Other", "Other"),
-		},
+		CategoryMappings: native.Cats(
+			native.Cat{ID: "1", Newznab: "PC/Mac", Desc: "MacOS Apps"},
+			native.Cat{ID: "2", Newznab: "PC/Mac", Desc: "MacOS Games"},
+			native.Cat{ID: "3", Newznab: "PC/Mobile-iOS", Desc: "iOS Apps"},
+			native.Cat{ID: "4", Newznab: "PC/Mobile-iOS", Desc: "iOS Games"},
+			native.Cat{ID: "5", Newznab: "Other", Desc: "Graphics"},
+			native.Cat{ID: "6", Newznab: "Audio", Desc: "Audio"},
+			native.Cat{ID: "7", Newznab: "Other", Desc: "Tutorials"},
+			native.Cat{ID: "8", Newznab: "Other", Desc: "Other"},
+		),
 		Modes: loader.Modes{
 			Search: []string{"q"},
 		},
-	}
-}
-
-// siteDef builds one family's caps-only definition. It is never schema-validated (it
-// has no login/search/download block); it exists so mapper.Build, the credential store
-// (settingFields/IsSecret), indexerInfo, and the addable-indexer list all work for a
-// native family with no special case.
-func siteDef(id, name, link string, delaySeconds float64) *loader.Definition {
-	delay := delaySeconds
-	return &loader.Definition{
-		ID:           id,
-		Name:         name,
-		Description:  name + " (native Gazelle-family driver)",
-		Language:     "en-US",
-		Type:         "private",
-		Encoding:     "UTF-8",
-		Links:        []string{link},
-		RequestDelay: &delay,
-		Settings:     credentialSettings(),
-		Caps:         gazelleCaps(),
-	}
-}
-
-// credentialSettings are the user-entered fields. apikey is text-typed but its name
-// carries the "apikey" token, so harbrr's secret store auto-classifies it as a secret
-// (encrypted at rest, redacted by the API) — matching Prowlarr's PrivacyLevel.ApiKey.
-// use_freeleech_token is a checkbox toggle that adds &usetoken=1 to the download URL.
-func credentialSettings() []loader.SettingsField {
-	return []loader.SettingsField{
-		{Name: "apikey", Label: "API Key", Type: "text"},
-		{Name: "use_freeleech_token", Label: "Use freeleech token", Type: "checkbox"},
 	}
 }
 
@@ -317,23 +291,19 @@ func credentialSettings() []loader.SettingsField {
 // RED/OPS MusicSearchParams (q/artist/album/year — no label) plus basic q and book q.
 func gazelleCaps() loader.Caps {
 	return loader.Caps{
-		CategoryMappings: []loader.CategoryMapping{
-			cat("1", "Audio", "Music"),
-			cat("2", "PC", "Applications"),
-			cat("3", "Books/EBook", "E-Books"),
-			cat("4", "Audio/Audiobook", "Audiobooks"),
-			cat("5", "Other", "E-Learning Videos"),
-			cat("6", "Other", "Comedy"),
-			cat("7", "Books/Comics", "Comics"),
-		},
+		CategoryMappings: native.Cats(
+			native.Cat{ID: "1", Newznab: "Audio", Desc: "Music"},
+			native.Cat{ID: "2", Newznab: "PC", Desc: "Applications"},
+			native.Cat{ID: "3", Newznab: "Books/EBook", Desc: "E-Books"},
+			native.Cat{ID: "4", Newznab: "Audio/Audiobook", Desc: "Audiobooks"},
+			native.Cat{ID: "5", Newznab: "Other", Desc: "E-Learning Videos"},
+			native.Cat{ID: "6", Newznab: "Other", Desc: "Comedy"},
+			native.Cat{ID: "7", Newznab: "Books/Comics", Desc: "Comics"},
+		),
 		Modes: loader.Modes{
 			Search:      []string{"q"},
 			MusicSearch: []string{"q", "artist", "album", "year"},
 			BookSearch:  []string{"q"},
 		},
 	}
-}
-
-func cat(id, name, desc string) loader.CategoryMapping {
-	return loader.CategoryMapping{ID: loader.Scalar{Value: id, Set: true}, Cat: name, Desc: desc}
 }

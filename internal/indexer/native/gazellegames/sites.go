@@ -15,43 +15,21 @@ const requestDelaySeconds = 5.0
 // Families returns GazelleGames (GGn) as a single native family. It carries a Go-built,
 // caps-only definition (id/name/type/links/settings/caps) and the shared New factory; it
 // is registered with the registry, not the Cardigann loader.
+//
+// The settings: apikey is text-typed but its name carries the "apikey" token, so
+// harbrr's secret store auto-classifies it as a secret (encrypted at rest, redacted by
+// the API) — matching Prowlarr's PrivacyLevel.ApiKey. The download passkey is NOT a
+// user setting: GGn exposes it via request=quick_user, so a later leaf fetches it with
+// the apikey and persists it via PersistSetting. freeleech_only is a toggle that adds
+// freetorrent=1 to the search request (Prowlarr's GazelleGamesSettings.SearchFreeleech).
 func Families() []native.Family {
 	return []native.Family{
-		{Definition: siteDef("gazellegames", "GazelleGames", "https://gazellegames.net/"), Factory: New},
-	}
-}
-
-// siteDef builds the family's caps-only definition. It is never schema-validated (it has
-// no login/search/download block); it exists so mapper.Build, the credential store
-// (settingFields/IsSecret), indexerInfo, and the addable-indexer list all work for a
-// native family with no special case.
-func siteDef(id, name, link string) *loader.Definition {
-	delay := requestDelaySeconds
-	return &loader.Definition{
-		ID:           id,
-		Name:         name,
-		Description:  name + " (native Gazelle-family games driver)",
-		Language:     "en-US",
-		Type:         "private",
-		Encoding:     "UTF-8",
-		Links:        []string{link},
-		RequestDelay: &delay,
-		Settings:     credentialSettings(),
-		Caps:         gazellegamesCaps(),
-	}
-}
-
-// credentialSettings are the user-entered fields. apikey is text-typed but its name
-// carries the "apikey" token, so harbrr's secret store auto-classifies it as a secret
-// (encrypted at rest, redacted by the API) — matching Prowlarr's PrivacyLevel.ApiKey.
-// The download passkey is NOT a user setting: GGn exposes it via request=quick_user, so
-// a later leaf fetches it with the apikey and persists it via PersistSetting.
-// freeleech_only is a toggle that adds freetorrent=1 to the search request (Prowlarr's
-// GazelleGamesSettings.SearchFreeleech).
-func credentialSettings() []loader.SettingsField {
-	return []loader.SettingsField{
-		{Name: "apikey", Label: "API Key", Type: "text"},
-		{Name: "freeleech_only", Label: "Only freeleech", Type: "checkbox"},
+		{Definition: native.Site{
+			ID: "gazellegames", Name: "GazelleGames", Link: "https://gazellegames.net/",
+			Driver: "Gazelle-family games", DelaySeconds: requestDelaySeconds,
+			Settings: []loader.SettingsField{native.FieldAPIKey, native.FieldFreeleechOnly},
+			Caps:     gazellegamesCaps(),
+		}.Definition(), Factory: New},
 	}
 }
 
@@ -84,12 +62,12 @@ func gazellegamesCaps() loader.Caps {
 // numeric AddCategoryMapping calls). The parser consults these via
 // MapTrackerCatToNewznab(torrent.CategoryId) only when the artist-name path is empty.
 func numericCategoryMappings() []loader.CategoryMapping {
-	return []loader.CategoryMapping{
-		cat("1", "PC/Games", "Games"),
-		cat("2", "PC/0day", "Applications"),
-		cat("3", "Books/EBook", "E-Books"),
-		cat("4", "Audio/Other", "OST"),
-	}
+	return native.Cats(
+		native.Cat{ID: "1", Newznab: "PC/Games", Desc: "Games"},
+		native.Cat{ID: "2", Newznab: "PC/0day", Desc: "Applications"},
+		native.Cat{ID: "3", Newznab: "Books/EBook", Desc: "E-Books"},
+		native.Cat{ID: "4", Newznab: "Audio/Other", Desc: "OST"},
+	)
 }
 
 // platformCategoryMappings is the platform-NAME -> newznab map, the parser's primary
@@ -98,11 +76,11 @@ func numericCategoryMappings() []loader.CategoryMapping {
 // tracker key and the description, so a desc lookup on the artist name resolves it. Ported
 // in Prowlarr's order from GazelleGames.SetCapabilities.
 func platformCategoryMappings() []loader.CategoryMapping {
-	out := make([]loader.CategoryMapping, 0, len(platformCats))
+	rows := make([]native.Cat, 0, len(platformCats))
 	for _, p := range platformCats {
-		out = append(out, cat(p.name, p.newznab, p.name))
+		rows = append(rows, native.Cat{ID: p.name, Newznab: p.newznab, Desc: p.name})
 	}
-	return out
+	return native.Cats(rows...)
 }
 
 // platformCat is one platform-name category mapping (the Prowlarr platform name and the
@@ -235,11 +213,4 @@ var platformCats = []platformCat{
 	{"Thomson MO5", "Console/Other"},
 	{"Watara Supervision", "Console/Other"},
 	{"Retro - Other", "Console/Other"},
-}
-
-// cat builds a categorymapping with a tracker id, the newznab category name, and the
-// tracker's category description string (the value the response's textual category
-// carries, mapped via MapTrackerCatDescToNewznab).
-func cat(id, name, desc string) loader.CategoryMapping {
-	return loader.CategoryMapping{ID: loader.Scalar{Value: id, Set: true}, Cat: name, Desc: desc}
 }
