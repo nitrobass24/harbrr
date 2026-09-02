@@ -11,6 +11,7 @@ import {
   DialogTitle
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { LoadError, LoadingBlock } from "@/components/ui/load-error"
 import { useApiKeys, useMintApiKey, useRevokeApiKey } from "@/hooks/useSettings"
 import { copyText } from "@/lib/clipboard"
 import { relativeTime } from "@/lib/format"
@@ -54,31 +55,32 @@ export function ApiKeysSection() {
         </Button>
       </form>
 
-      <div className="flex flex-col rounded-xl border border-border bg-card px-5 py-2 text-[13px]">
-        {(keys.data ?? []).map((k) => (
-          <div key={k.id} className="flex items-center gap-3 border-b border-border/60 py-2.5 last:border-b-0">
-            <span className="font-medium">{k.name}</span>
-            <span className="text-[12px] text-faint">created {relativeTime(k.createdAt)}</span>
-            <span className="text-[12px] text-faint">
-              {k.lastUsedAt ? `last used ${relativeTime(k.lastUsedAt)}` : "never used"}
-            </span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="ml-auto"
-              aria-label={`Revoke ${k.name}`}
-              onClick={() => revoke.mutate(k.id, {
-                onSuccess: () => notifySuccess(`${k.name} revoked — consumers using it stop working now`),
-              })}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-        ))}
-        {keys.data?.length === 0 && (
-          <p className="py-3 text-muted-foreground">No keys yet — feeds need one for apps to authenticate.</p>
-        )}
-      </div>
+      {keys.isPending ? <LoadingBlock /> : keys.isError ? <LoadError what="API keys" /> : (
+        <div className="flex flex-col rounded-xl border border-border bg-card px-5 py-2 text-[13px]">
+          {keys.data.length === 0 ? (
+            <p className="py-3 text-muted-foreground">No keys yet — feeds need one for apps to authenticate.</p>
+          ) : keys.data.map((k) => (
+            <div key={k.id} className="flex items-center gap-3 border-b border-border/60 py-2.5 last:border-b-0">
+              <span className="font-medium">{k.name}</span>
+              <span className="text-[12px] text-faint">created {relativeTime(k.createdAt)}</span>
+              <span className="text-[12px] text-faint">
+                {k.lastUsedAt ? `last used ${relativeTime(k.lastUsedAt)}` : "never used"}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="ml-auto"
+                aria-label={`Revoke ${k.name}`}
+                onClick={() => revoke.mutate(k.id, {
+                  onSuccess: () => notifySuccess(`${k.name} revoked — consumers using it stop working now`),
+                })}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
 
       <Dialog open={minted !== null} onOpenChange={(open) => { if (!open) setMinted(null) }}>
         <DialogContent>
