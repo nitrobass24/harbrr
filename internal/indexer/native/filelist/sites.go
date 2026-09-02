@@ -15,42 +15,19 @@ const requestDelaySeconds = 24.0
 // Families returns FileList as a single native family. It carries a Go-built,
 // caps-only definition (id/name/type/links/settings/caps) and the New factory; it is
 // registered with the registry, not the Cardigann loader.
+//
+// The settings mirror FileListSettings. username is stored as-is. passkey is
+// text-typed but its name contains "passkey", so harbrr's secret store auto-classifies
+// it as a secret (encrypted at rest, redacted by the API) — matching Prowlarr's
+// PrivacyLevel.Password on the passkey. freeleech_only is a toggle.
 func Families() []native.Family {
 	return []native.Family{
-		{Definition: siteDef("filelist", "FileList", "https://filelist.io/", filelistCaps()), Factory: New},
-	}
-}
-
-// siteDef builds the family's caps-only definition. It is never schema-validated (it
-// has no login/search/download block); it exists so mapper.Build, the credential
-// store (settingFields/IsSecret), indexerInfo, and the addable-indexer list all work
-// for a native family with no special case.
-func siteDef(id, name, link string, caps loader.Caps) *loader.Definition {
-	delay := requestDelaySeconds
-	return &loader.Definition{
-		ID:           id,
-		Name:         name,
-		Description:  name + " (native FileList driver)",
-		Language:     "ro-RO",
-		Type:         "private",
-		Encoding:     "UTF-8",
-		Links:        []string{link},
-		RequestDelay: &delay,
-		Settings:     credentialSettings(),
-		Caps:         caps,
-	}
-}
-
-// credentialSettings are the user-entered fields, mirroring FileListSettings.
-// username is stored as-is. passkey is text-typed but its name contains "passkey",
-// so harbrr's secret store auto-classifies it as a secret (encrypted at rest, redacted
-// by the API) — matching Prowlarr's PrivacyLevel.Password on the passkey. freeleech_only
-// is a toggle.
-func credentialSettings() []loader.SettingsField {
-	return []loader.SettingsField{
-		{Name: "username", Label: "Username", Type: "text"},
-		{Name: "passkey", Label: "Passkey", Type: "text"},
-		{Name: "freeleech_only", Label: "Only freeleech", Type: "checkbox"},
+		{Definition: native.Site{
+			ID: "filelist", Name: "FileList", Link: "https://filelist.io/",
+			Driver: "FileList", DelaySeconds: requestDelaySeconds, Language: "ro-RO",
+			Settings: []loader.SettingsField{native.FieldUsername, native.FieldPasskey, native.FieldFreeleechOnly},
+			Caps:     filelistCaps(),
+		}.Definition(), Factory: New},
 	}
 }
 
@@ -64,37 +41,37 @@ func credentialSettings() []loader.SettingsField {
 func filelistCaps() loader.Caps {
 	allowIMDB := true
 	return loader.Caps{
-		CategoryMappings: []loader.CategoryMapping{
-			catDesc("1", "Filme SD", "Movies/SD"),
-			catDesc("2", "Filme DVD", "Movies/DVD"),
-			catDesc("3", "Filme DVD-RO", "Movies/Foreign"),
-			catDesc("4", "Filme HD", "Movies/HD"),
-			catDesc("5", "FLAC", "Audio/Lossless"),
-			catDesc("6", "Filme 4K", "Movies/UHD"),
-			catDesc("7", "XXX", "XXX"),
-			catDesc("8", "Programe", "PC"),
-			catDesc("9", "Jocuri PC", "PC/Games"),
-			catDesc("10", "Jocuri Console", "Console"),
-			catDesc("11", "Audio", "Audio"),
-			catDesc("12", "Videoclip", "Audio/Video"),
-			catDesc("13", "Sport", "TV/Sport"),
-			catDesc("15", "Desene", "TV"),
-			catDesc("16", "Docs", "Books"),
-			catDesc("17", "Linux", "PC"),
-			catDesc("18", "Diverse", "Other"),
-			catDesc("19", "Filme HD-RO", "Movies/Foreign"),
-			catDesc("20", "Filme Blu-Ray", "Movies/BluRay"),
-			catDesc("21", "Seriale HD", "TV/HD"),
-			catDesc("22", "Mobile", "PC/Mobile-Other"),
-			catDesc("23", "Seriale SD", "TV/SD"),
-			catDesc("24", "Anime", "TV/Anime"),
-			catDesc("25", "Filme 3D", "Movies/3D"),
-			catDesc("26", "Filme 4K Blu-Ray", "Movies/BluRay"),
-			catDesc("27", "Seriale 4K", "TV/UHD"),
-			catDesc("28", "RO Dubbed", "Movies/Foreign"),
-			catDesc("28", "RO Dubbed", "TV/Foreign"),
-			catDesc("31", "K-Drama", "TV/Foreign"),
-		},
+		CategoryMappings: native.Cats(
+			native.Cat{ID: "1", Newznab: "Movies/SD", Desc: "Filme SD"},
+			native.Cat{ID: "2", Newznab: "Movies/DVD", Desc: "Filme DVD"},
+			native.Cat{ID: "3", Newznab: "Movies/Foreign", Desc: "Filme DVD-RO"},
+			native.Cat{ID: "4", Newznab: "Movies/HD", Desc: "Filme HD"},
+			native.Cat{ID: "5", Newznab: "Audio/Lossless", Desc: "FLAC"},
+			native.Cat{ID: "6", Newznab: "Movies/UHD", Desc: "Filme 4K"},
+			native.Cat{ID: "7", Newznab: "XXX", Desc: "XXX"},
+			native.Cat{ID: "8", Newznab: "PC", Desc: "Programe"},
+			native.Cat{ID: "9", Newznab: "PC/Games", Desc: "Jocuri PC"},
+			native.Cat{ID: "10", Newznab: "Console", Desc: "Jocuri Console"},
+			native.Cat{ID: "11", Newznab: "Audio", Desc: "Audio"},
+			native.Cat{ID: "12", Newznab: "Audio/Video", Desc: "Videoclip"},
+			native.Cat{ID: "13", Newznab: "TV/Sport", Desc: "Sport"},
+			native.Cat{ID: "15", Newznab: "TV", Desc: "Desene"},
+			native.Cat{ID: "16", Newznab: "Books", Desc: "Docs"},
+			native.Cat{ID: "17", Newznab: "PC", Desc: "Linux"},
+			native.Cat{ID: "18", Newznab: "Other", Desc: "Diverse"},
+			native.Cat{ID: "19", Newznab: "Movies/Foreign", Desc: "Filme HD-RO"},
+			native.Cat{ID: "20", Newznab: "Movies/BluRay", Desc: "Filme Blu-Ray"},
+			native.Cat{ID: "21", Newznab: "TV/HD", Desc: "Seriale HD"},
+			native.Cat{ID: "22", Newznab: "PC/Mobile-Other", Desc: "Mobile"},
+			native.Cat{ID: "23", Newznab: "TV/SD", Desc: "Seriale SD"},
+			native.Cat{ID: "24", Newznab: "TV/Anime", Desc: "Anime"},
+			native.Cat{ID: "25", Newznab: "Movies/3D", Desc: "Filme 3D"},
+			native.Cat{ID: "26", Newznab: "Movies/BluRay", Desc: "Filme 4K Blu-Ray"},
+			native.Cat{ID: "27", Newznab: "TV/UHD", Desc: "Seriale 4K"},
+			native.Cat{ID: "28", Newznab: "Movies/Foreign", Desc: "RO Dubbed"},
+			native.Cat{ID: "28", Newznab: "TV/Foreign", Desc: "RO Dubbed"},
+			native.Cat{ID: "31", Newznab: "TV/Foreign", Desc: "K-Drama"},
+		),
 		Modes: loader.Modes{
 			Search:      []string{"q"},
 			MovieSearch: []string{"q", "imdbid"},
@@ -103,11 +80,4 @@ func filelistCaps() loader.Caps {
 		},
 		AllowTVSearchIMDB: &allowIMDB,
 	}
-}
-
-// catDesc builds a categorymapping with a tracker id, the newznab category name, and
-// the FileList description string (its `category` response value). A desc additionally
-// synthesises Jackett's custom 1:1 category (see mapper.mapCategoryMappings).
-func catDesc(id, desc, name string) loader.CategoryMapping {
-	return loader.CategoryMapping{ID: loader.Scalar{Value: id, Set: true}, Cat: name, Desc: desc}
 }

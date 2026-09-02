@@ -15,42 +15,19 @@ const requestDelaySeconds = 2.1
 // Families returns IPTorrents as a single native family. It carries a Go-built,
 // caps-only definition (id/name/type/links/settings/caps) and the New factory; it is
 // registered with the registry, not the Cardigann loader.
+//
+// The settings: cookie is the full pasted browser Cookie string — its name contains
+// "cookie", so loader.SettingsField.IsSecret() classifies the text field as a secret
+// (encrypted at rest, redacted by the API). user_agent is a plain text field (not
+// secret-classified) sent on every request. freeleech_only is a toggle.
 func Families() []native.Family {
 	return []native.Family{
-		{Definition: siteDef("iptorrents", "IPTorrents", "https://iptorrents.com/", iptCaps()), Factory: New},
-	}
-}
-
-// siteDef builds the IPTorrents caps-only definition. It is never schema-validated (it
-// has no login/search/download block); it exists so mapper.Build, the credential store
-// (settingFields/IsSecret), indexerInfo, and the addable-indexer list all work for a
-// native family with no special case.
-func siteDef(id, name, link string, caps loader.Caps) *loader.Definition {
-	delay := requestDelaySeconds
-	return &loader.Definition{
-		ID:           id,
-		Name:         name,
-		Description:  name + " (native HTML-scrape driver)",
-		Language:     "en-US",
-		Type:         "private",
-		Encoding:     "UTF-8",
-		Links:        []string{link},
-		RequestDelay: &delay,
-		Settings:     credentialSettings(),
-		Caps:         caps,
-	}
-}
-
-// credentialSettings are the user-entered fields. cookie is the full pasted browser
-// Cookie string — its name contains "cookie", so loader.SettingsField.IsSecret()
-// classifies the text field as a secret (encrypted at rest, redacted by the API).
-// user_agent is a plain text field (not secret-classified) sent on every request.
-// freeleech_only is a toggle.
-func credentialSettings() []loader.SettingsField {
-	return []loader.SettingsField{
-		{Name: "cookie", Label: "Cookie", Type: "text"},
-		{Name: "user_agent", Label: "User-Agent", Type: "text"},
-		{Name: "freeleech_only", Label: "Only freeleech", Type: "checkbox"},
+		{Definition: native.Site{
+			ID: "iptorrents", Name: "IPTorrents", Link: "https://iptorrents.com/",
+			Driver: "HTML-scrape", DelaySeconds: requestDelaySeconds,
+			Settings: []loader.SettingsField{native.FieldCookie, native.FieldUserAgent, native.FieldFreeleechOnly},
+			Caps:     iptCaps(),
+		}.Definition(), Factory: New},
 	}
 }
 
@@ -76,7 +53,7 @@ func iptCaps() loader.Caps {
 // iptCategoryMappings is Prowlarr's AddCategoryMapping list verbatim: the tracker
 // category id (the value the site's category-icon href carries) → the standard newznab
 // category name. The Desc is Prowlarr's human label, kept for parity in the addable
-// list; the Cat name is what mapper.GetByName resolves to a newznab id.
+// list; the Newznab name is what mapper.GetByName resolves to a newznab id.
 func iptCategoryMappings() []loader.CategoryMapping {
 	mappings := make([]loader.CategoryMapping, 0, 64)
 	mappings = append(mappings, iptMovieCats()...)
@@ -89,104 +66,97 @@ func iptCategoryMappings() []loader.CategoryMapping {
 }
 
 func iptMovieCats() []loader.CategoryMapping {
-	return []loader.CategoryMapping{
-		catDesc("72", "Movies", "Movies"),
-		catDesc("87", "Movies/3D", "Movie/3D"),
-		catDesc("77", "Movies/SD", "Movie/480p"),
-		catDesc("101", "Movies/UHD", "Movie/4K"),
-		catDesc("89", "Movies/HD", "Movie/BD-R"),
-		catDesc("90", "Movies/SD", "Movie/BD-Rip"),
-		catDesc("96", "Movies/SD", "Movie/Cam"),
-		catDesc("6", "Movies/DVD", "Movie/DVD-R"),
-		catDesc("48", "Movies/BluRay", "Movie/HD/Bluray"),
-		catDesc("54", "Movies", "Movie/Kids"),
-		catDesc("62", "Movies/SD", "Movie/MP4"),
-		catDesc("38", "Movies/Foreign", "Movie/Non-English"),
-		catDesc("68", "Movies", "Movie/Packs"),
-		catDesc("20", "Movies/WEB-DL", "Movie/Web-DL"),
-		catDesc("7", "Movies/SD", "Movie/Xvid"),
-		catDesc("100", "Movies", "Movie/x265"),
-	}
+	return native.Cats(
+		native.Cat{ID: "72", Newznab: "Movies", Desc: "Movies"},
+		native.Cat{ID: "87", Newznab: "Movies/3D", Desc: "Movie/3D"},
+		native.Cat{ID: "77", Newznab: "Movies/SD", Desc: "Movie/480p"},
+		native.Cat{ID: "101", Newznab: "Movies/UHD", Desc: "Movie/4K"},
+		native.Cat{ID: "89", Newznab: "Movies/HD", Desc: "Movie/BD-R"},
+		native.Cat{ID: "90", Newznab: "Movies/SD", Desc: "Movie/BD-Rip"},
+		native.Cat{ID: "96", Newznab: "Movies/SD", Desc: "Movie/Cam"},
+		native.Cat{ID: "6", Newznab: "Movies/DVD", Desc: "Movie/DVD-R"},
+		native.Cat{ID: "48", Newznab: "Movies/BluRay", Desc: "Movie/HD/Bluray"},
+		native.Cat{ID: "54", Newznab: "Movies", Desc: "Movie/Kids"},
+		native.Cat{ID: "62", Newznab: "Movies/SD", Desc: "Movie/MP4"},
+		native.Cat{ID: "38", Newznab: "Movies/Foreign", Desc: "Movie/Non-English"},
+		native.Cat{ID: "68", Newznab: "Movies", Desc: "Movie/Packs"},
+		native.Cat{ID: "20", Newznab: "Movies/WEB-DL", Desc: "Movie/Web-DL"},
+		native.Cat{ID: "7", Newznab: "Movies/SD", Desc: "Movie/Xvid"},
+		native.Cat{ID: "100", Newznab: "Movies", Desc: "Movie/x265"},
+	)
 }
 
 func iptTVCats() []loader.CategoryMapping {
-	return []loader.CategoryMapping{
-		catDesc("73", "TV", "TV"),
-		catDesc("26", "TV/Documentary", "TV/Documentaries"),
-		catDesc("55", "TV/Sport", "Sports"),
-		catDesc("78", "TV/SD", "TV/480p"),
-		catDesc("23", "TV/HD", "TV/BD"),
-		catDesc("24", "TV/SD", "TV/DVD-R"),
-		catDesc("25", "TV/SD", "TV/DVD-Rip"),
-		catDesc("66", "TV/SD", "TV/Mobile"),
-		catDesc("82", "TV/Foreign", "TV/Non-English"),
-		catDesc("65", "TV", "TV/Packs"),
-		catDesc("83", "TV/Foreign", "TV/Packs/Non-English"),
-		catDesc("79", "TV/SD", "TV/SD/x264"),
-		catDesc("22", "TV/WEB-DL", "TV/Web-DL"),
-		catDesc("5", "TV/HD", "TV/x264"),
-		catDesc("99", "TV/HD", "TV/x265"),
-		catDesc("4", "TV/SD", "TV/Xvid"),
-	}
+	return native.Cats(
+		native.Cat{ID: "73", Newznab: "TV", Desc: "TV"},
+		native.Cat{ID: "26", Newznab: "TV/Documentary", Desc: "TV/Documentaries"},
+		native.Cat{ID: "55", Newznab: "TV/Sport", Desc: "Sports"},
+		native.Cat{ID: "78", Newznab: "TV/SD", Desc: "TV/480p"},
+		native.Cat{ID: "23", Newznab: "TV/HD", Desc: "TV/BD"},
+		native.Cat{ID: "24", Newznab: "TV/SD", Desc: "TV/DVD-R"},
+		native.Cat{ID: "25", Newznab: "TV/SD", Desc: "TV/DVD-Rip"},
+		native.Cat{ID: "66", Newznab: "TV/SD", Desc: "TV/Mobile"},
+		native.Cat{ID: "82", Newznab: "TV/Foreign", Desc: "TV/Non-English"},
+		native.Cat{ID: "65", Newznab: "TV", Desc: "TV/Packs"},
+		native.Cat{ID: "83", Newznab: "TV/Foreign", Desc: "TV/Packs/Non-English"},
+		native.Cat{ID: "79", Newznab: "TV/SD", Desc: "TV/SD/x264"},
+		native.Cat{ID: "22", Newznab: "TV/WEB-DL", Desc: "TV/Web-DL"},
+		native.Cat{ID: "5", Newznab: "TV/HD", Desc: "TV/x264"},
+		native.Cat{ID: "99", Newznab: "TV/HD", Desc: "TV/x265"},
+		native.Cat{ID: "4", Newznab: "TV/SD", Desc: "TV/Xvid"},
+	)
 }
 
 func iptGameCats() []loader.CategoryMapping {
-	return []loader.CategoryMapping{
-		catDesc("74", "Console", "Games"),
-		catDesc("2", "Console/Other", "Games/Mixed"),
-		catDesc("47", "Console/NDS", "Games/Nintendo DS"),
-		catDesc("43", "PC/ISO", "Games/PC-ISO"),
-		catDesc("45", "PC/Games", "Games/PC-Rip"),
-		catDesc("71", "Console/PS3", "Games/PS3"),
-		catDesc("50", "Console/Wii", "Games/Wii"),
-		catDesc("44", "Console/XBox 360", "Games/Xbox-360"),
-	}
+	return native.Cats(
+		native.Cat{ID: "74", Newznab: "Console", Desc: "Games"},
+		native.Cat{ID: "2", Newznab: "Console/Other", Desc: "Games/Mixed"},
+		native.Cat{ID: "47", Newznab: "Console/NDS", Desc: "Games/Nintendo DS"},
+		native.Cat{ID: "43", Newznab: "PC/ISO", Desc: "Games/PC-ISO"},
+		native.Cat{ID: "45", Newznab: "PC/Games", Desc: "Games/PC-Rip"},
+		native.Cat{ID: "71", Newznab: "Console/PS3", Desc: "Games/PS3"},
+		native.Cat{ID: "50", Newznab: "Console/Wii", Desc: "Games/Wii"},
+		native.Cat{ID: "44", Newznab: "Console/XBox 360", Desc: "Games/Xbox-360"},
+	)
 }
 
 func iptMusicCats() []loader.CategoryMapping {
-	return []loader.CategoryMapping{
-		catDesc("75", "Audio", "Music"),
-		catDesc("3", "Audio/MP3", "Music/Audio"),
-		catDesc("80", "Audio/Lossless", "Music/Flac"),
-		catDesc("93", "Audio", "Music/Packs"),
-		catDesc("37", "Audio/Video", "Music/Video"),
-		catDesc("21", "Audio/Video", "Podcast"),
-	}
+	return native.Cats(
+		native.Cat{ID: "75", Newznab: "Audio", Desc: "Music"},
+		native.Cat{ID: "3", Newznab: "Audio/MP3", Desc: "Music/Audio"},
+		native.Cat{ID: "80", Newznab: "Audio/Lossless", Desc: "Music/Flac"},
+		native.Cat{ID: "93", Newznab: "Audio", Desc: "Music/Packs"},
+		native.Cat{ID: "37", Newznab: "Audio/Video", Desc: "Music/Video"},
+		native.Cat{ID: "21", Newznab: "Audio/Video", Desc: "Podcast"},
+	)
 }
 
 func iptOtherCats() []loader.CategoryMapping {
-	return []loader.CategoryMapping{
-		catDesc("76", "Other", "Other/Miscellaneous"),
-		catDesc("60", "TV/Anime", "Anime"),
-		catDesc("1", "PC/0day", "Appz"),
-		catDesc("86", "PC/0day", "Appz/Non-English"),
-		catDesc("64", "Audio/Audiobook", "AudioBook"),
-		catDesc("35", "Books", "Books"),
-		catDesc("102", "Books", "Books/Non-English"),
-		catDesc("94", "Books/Comics", "Books/Comics"),
-		catDesc("95", "Books/Other", "Books/Educational"),
-		catDesc("98", "Other", "Other/Fonts"),
-		catDesc("69", "PC/Mac", "Appz/Mac"),
-		catDesc("92", "Books/Mags", "Books/Magazines & Newspapers"),
-		catDesc("58", "PC/Mobile-Other", "Appz/Mobile"),
-		catDesc("36", "Other", "Other/Pics/Wallpapers"),
-	}
+	return native.Cats(
+		native.Cat{ID: "76", Newznab: "Other", Desc: "Other/Miscellaneous"},
+		native.Cat{ID: "60", Newznab: "TV/Anime", Desc: "Anime"},
+		native.Cat{ID: "1", Newznab: "PC/0day", Desc: "Appz"},
+		native.Cat{ID: "86", Newznab: "PC/0day", Desc: "Appz/Non-English"},
+		native.Cat{ID: "64", Newznab: "Audio/Audiobook", Desc: "AudioBook"},
+		native.Cat{ID: "35", Newznab: "Books", Desc: "Books"},
+		native.Cat{ID: "102", Newznab: "Books", Desc: "Books/Non-English"},
+		native.Cat{ID: "94", Newznab: "Books/Comics", Desc: "Books/Comics"},
+		native.Cat{ID: "95", Newznab: "Books/Other", Desc: "Books/Educational"},
+		native.Cat{ID: "98", Newznab: "Other", Desc: "Other/Fonts"},
+		native.Cat{ID: "69", Newznab: "PC/Mac", Desc: "Appz/Mac"},
+		native.Cat{ID: "92", Newznab: "Books/Mags", Desc: "Books/Magazines & Newspapers"},
+		native.Cat{ID: "58", Newznab: "PC/Mobile-Other", Desc: "Appz/Mobile"},
+		native.Cat{ID: "36", Newznab: "Other", Desc: "Other/Pics/Wallpapers"},
+	)
 }
 
 func iptXXXCats() []loader.CategoryMapping {
-	return []loader.CategoryMapping{
-		catDesc("88", "XXX", "XXX"),
-		catDesc("85", "XXX/Other", "XXX/Magazines"),
-		catDesc("8", "XXX", "XXX/Movie"),
-		catDesc("81", "XXX", "XXX/Movie/0Day"),
-		catDesc("91", "XXX/Pack", "XXX/Packs"),
-		catDesc("84", "XXX/ImageSet", "XXX/Pics/Wallpapers"),
-	}
-}
-
-// catDesc builds one mapping: id is the tracker category id, cat is the standard
-// newznab category name (resolved to a newznab id by mapper.GetByName), desc is the
-// site's human label.
-func catDesc(id, cat, desc string) loader.CategoryMapping {
-	return loader.CategoryMapping{ID: loader.Scalar{Value: id, Set: true}, Cat: cat, Desc: desc}
+	return native.Cats(
+		native.Cat{ID: "88", Newznab: "XXX", Desc: "XXX"},
+		native.Cat{ID: "85", Newznab: "XXX/Other", Desc: "XXX/Magazines"},
+		native.Cat{ID: "8", Newznab: "XXX", Desc: "XXX/Movie"},
+		native.Cat{ID: "81", Newznab: "XXX", Desc: "XXX/Movie/0Day"},
+		native.Cat{ID: "91", Newznab: "XXX/Pack", Desc: "XXX/Packs"},
+		native.Cat{ID: "84", Newznab: "XXX/ImageSet", Desc: "XXX/Pics/Wallpapers"},
+	)
 }
