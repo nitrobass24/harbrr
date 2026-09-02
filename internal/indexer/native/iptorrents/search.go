@@ -9,6 +9,7 @@ import (
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // searchPath is the IPTorrents torrent-list endpoint (relative to the base URL).
@@ -45,7 +46,7 @@ func (d *driver) buildSearchURL(q search.Query) string {
 	if freeleechOnly(d.Cfg) {
 		params.Set("free", "on")
 	}
-	imdb := fullIMDBID(q.IMDBID)
+	imdb := native.CanonicalIMDBID(q.IMDBID)
 	if imdb != "" {
 		params.Set("q", sphinx(imdb))
 		params.Set("qf", "all")
@@ -104,21 +105,6 @@ func episodeSearchString(season, episode string) string {
 // sphinx wraps a term in IPTorrents' Sphinx boolean grouping `+(term)`.
 func sphinx(term string) string { return "+(" + term + ")" }
 
-// fullIMDBID renders an imdb id as Prowlarr's FullImdbId ("tt" + the numeric id, a
-// minimum of seven digits). A leading "tt" is stripped, the rest parsed and
-// zero-padded. A non-numeric id yields "" (no imdb param is sent).
-func fullIMDBID(raw string) string {
-	s := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(raw)), "tt")
-	if s == "" {
-		return ""
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil {
-		return ""
-	}
-	return fmt.Sprintf("tt%07d", n)
-}
-
 // distinct returns the input with duplicate tracker categories removed, preserving
 // order (Prowlarr's MapTorznabCapsToTrackers(...).Distinct()).
 func distinct(cats []string) []string {
@@ -134,14 +120,7 @@ func distinct(cats []string) []string {
 	return out
 }
 
-// freeleechOnly reports whether the freeleech_only checkbox is enabled. harbrr stores a
-// checked checkbox as Jackett's "True" sentinel; common truthy spellings are accepted
-// so whatever the management API persists is interpreted consistently.
+// freeleechOnly reports whether the freeleech_only checkbox is enabled.
 func freeleechOnly(cfg map[string]string) bool {
-	switch strings.ToLower(strings.TrimSpace(cfg["freeleech_only"])) {
-	case "true", "1", "on", "yes":
-		return true
-	default:
-		return false
-	}
+	return native.CheckboxOn(cfg["freeleech_only"])
 }

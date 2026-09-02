@@ -111,7 +111,7 @@ func (d *driver) toRelease(row *torrentDayRow) *normalizer.Release {
 		UploadVolumeFactor:   1,
 		MinimumRatio:         minimumRatio,
 		MinimumSeedTime:      minimumSeedTimeSeconds,
-		IMDBID:               normalizeIMDBID(row.ImdbID),
+		IMDBID:               native.CanonicalIMDBID(row.ImdbID),
 	}
 }
 
@@ -143,42 +143,9 @@ func (d *driver) detailsURL(id int64) string {
 	return d.BaseURL + detailsPath + "?id=" + strconv.FormatInt(id, 10)
 }
 
-// normalizeIMDBID re-renders a row's imdb-id as harbrr's canonical "tt"+7-digit form
-// (matching filelist/iptorrents): "tt1234567" and "1234567" both normalize to
-// "tt1234567". A value of two characters or fewer, or a non-numeric one, yields "".
-func normalizeIMDBID(raw string) string {
-	if len(strings.TrimSpace(raw)) <= 2 {
-		return ""
-	}
-	return fullIMDBID(raw)
-}
-
-// fullIMDBID renders an imdb id as Prowlarr's FullImdbId ("tt" + the numeric id,
-// zero-padded to seven digits). A leading "tt" is stripped, the rest parsed; a
-// non-numeric or empty id yields "".
-func fullIMDBID(raw string) string {
-	s := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(raw)), "tt")
-	if s == "" {
-		return ""
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil {
-		return ""
-	}
-	return fmt.Sprintf("tt%07d", n)
-}
-
-// freeleechOnly reports whether the freeleech_only checkbox is enabled. harbrr stores a
-// checked checkbox as Jackett's "True" sentinel; common truthy spellings are accepted so
-// whatever the management API persists is interpreted consistently (mirrors iptorrents/
-// filelist).
+// freeleechOnly reports whether the freeleech_only checkbox is enabled.
 func freeleechOnly(cfg map[string]string) bool {
-	switch strings.ToLower(strings.TrimSpace(cfg["freeleech_only"])) {
-	case "true", "1", "on", "yes":
-		return true
-	default:
-		return false
-	}
+	return native.CheckboxOn(cfg["freeleech_only"])
 }
 
 // flexInt unmarshals a JSON number OR a JSON string into an int64-bearing value.

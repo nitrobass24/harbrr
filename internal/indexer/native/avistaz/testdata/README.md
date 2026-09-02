@@ -87,8 +87,9 @@ the **live-validation** gate.
 - **Live search/grab + the Prowlarr differential** — `[Tracked]`. The entire
   offline gate is synthetic; request/response/category parity against a live AvistaZ +
   live Prowlarr, and a real `.torrent` grab through `/dl`, are the live acceptance gate.
-- **`created_at_iso` shape** — `[Tracked]`. `parsePublishDate` tries four layouts
-  (`RFC3339Nano`, `RFC3339`, and the space/`T` forms *without* a zone) and normalizes to UTC,
+- **`created_at_iso` shape** — `[Tracked]`. `parsePublishDate` goes through the shared
+  `native.PublishDate` (the engine's `dateparse` ISO layouts: `RFC3339`, the no-colon
+  `+0000` offset, and the space/`T` forms *without* a zone) and normalizes to UTC,
   but **not** a space-separated datetime *with* a timezone offset (e.g.
   `2024-01-15 10:30:00+05:30`), which Prowlarr's `DateTime.Parse` accepts. If the live API uses
   that shape the bad-date path fails the **whole** search (see "bad-row handling"). Operator

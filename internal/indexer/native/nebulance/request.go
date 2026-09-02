@@ -2,7 +2,6 @@ package nebulance
 
 import (
 	"context"
-	"fmt"
 	stdhttp "net/http"
 	"net/url"
 	"strconv"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 const defaultLimit = 100
@@ -102,7 +102,7 @@ func searchParams(q search.Query) (url.Values, bool) {
 	params := url.Values{"action": {"search"}, "age": {">0"}}
 	if id := positiveID(q.TVMazeID); id != "" {
 		params.Set("tvmaze", id)
-	} else if id := normalizeIMDBID(q.IMDBID); id != "" {
+	} else if id := native.CanonicalIMDBID(q.IMDBID); id != "" {
 		params.Set("imdb", id)
 	}
 
@@ -178,14 +178,4 @@ func nonNegativeInt(raw string) (int, bool) {
 	}
 	value, err := strconv.Atoi(raw)
 	return value, err == nil && value >= 0
-}
-
-func normalizeIMDBID(raw string) string {
-	raw = strings.TrimSpace(raw)
-	digits := strings.TrimPrefix(strings.ToLower(raw), "tt")
-	value, err := strconv.ParseInt(digits, 10, 64)
-	if err != nil || value <= 0 {
-		return ""
-	}
-	return fmt.Sprintf("tt%07d", value)
 }

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
@@ -161,12 +160,12 @@ func (d *driver) toRelease(row *bhdTorrent) *normalizer.Release {
 		Seeders:              seeders,
 		Leechers:             leechers,
 		Peers:                seeders + leechers,
-		PublishDate:          publishDate(row.CreatedAt),
+		PublishDate:          d.publishDate(row.CreatedAt),
 		DownloadVolumeFactor: downloadVolumeFactor(row),
 		UploadVolumeFactor:   1,
 		MinimumRatio:         1,
 		MinimumSeedTime:      minimumSeedTime,
-		IMDBID:               canonicalIMDB(row.ImdbID),
+		IMDBID:               native.CanonicalIMDBID(row.ImdbID),
 		TMDBID:               tmdbID(row.TmdbID),
 	}
 	// The API states internal as its own flag; it is NOT the DVF 0.5 that other
@@ -208,47 +207,15 @@ func downloadVolumeFactor(row *bhdTorrent) float64 {
 	}
 }
 
-// publishDate parses created_at to UTC RFC3339 (Prowlarr parses it AssumeUniversal). The
-// observed wire form is "2006-01-02 15:04:05"; the RFC3339 variants are accepted too. An
+// publishDate parses created_at to UTC RFC3339 (Prowlarr parses it AssumeUniversal) via
+// the shared native.PublishDate; the observed wire form is "2006-01-02 15:04:05". An
 // unparseable/empty value yields "" rather than failing the whole page.
-func publishDate(created string) string {
-	created = strings.TrimSpace(created)
-	if created == "" {
+func (d *driver) publishDate(created string) string {
+	out, err := native.PublishDate(created, d.Clock)
+	if err != nil {
 		return ""
 	}
-	for _, layout := range createdLayouts {
-		if t, err := time.Parse(layout, created); err == nil {
-			return t.UTC().Format(time.RFC3339)
-		}
-	}
-	return ""
-}
-
-// createdLayouts are the created_at wire formats tried in order: the observed space form
-// (assumed UTC, matching Prowlarr's AssumeUniversal) plus the RFC3339 variants.
-var createdLayouts = []string{
-	"2006-01-02 15:04:05",
-	time.RFC3339Nano,
-	time.RFC3339,
-	"2006-01-02T15:04:05",
-}
-
-// canonicalIMDB normalizes BeyondHD's imdb_id to the canonical "tt"+7-digit form harbrr
-// stores (mirroring search.imdbID and hdbits.fullIMDBID; Prowlarr runs it through
-// ParseUtil.GetImdbId). The wire value is unreliable — a bare numeric ("0133093"), an
-// under-padded id, or even a junk URL can arrive — so a leading "tt" is stripped and the
-// remainder must parse as a positive int; anything else (non-numeric, zero, a URL) yields
-// "" rather than reaching the feed verbatim.
-func canonicalIMDB(raw string) string {
-	s := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(raw)), "tt")
-	if s == "" {
-		return ""
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil || n <= 0 {
-		return ""
-	}
-	return fmt.Sprintf("tt%07d", n)
+	return out
 }
 
 // tmdbID parses BeyondHD's tmdb_id (the string form "movie/<id>") into the bare numeric id

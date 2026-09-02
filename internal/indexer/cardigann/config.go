@@ -74,16 +74,13 @@ func CanonicalizeCheckboxes(def *loader.Definition, cfg map[string]string) map[s
 	return cfg
 }
 
-// canonicalCheckbox maps a stored checkbox value to configTrue (checked) or "" (unchecked).
-// Truthy is "true"/"1"/"on"/"yes" (case-insensitive); everything else — including "false",
-// "0", and "" — is unchecked, matching settingDefault's checkbox mapping.
+// canonicalCheckbox maps a stored checkbox value to configTrue (checked) or "" (unchecked),
+// per loader.CheckboxOn's truthy set — matching settingDefault's checkbox mapping.
 func canonicalCheckbox(v string) string {
-	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "true", "1", "on", "yes":
+	if loader.CheckboxOn(v) {
 		return configTrue
-	default:
-		return ""
 	}
+	return ""
 }
 
 // defaultString returns the setting's Default scalar as a string, or "" when

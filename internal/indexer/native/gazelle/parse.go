@@ -318,16 +318,9 @@ func (d *driver) wantToken(canUseToken, free bool) bool {
 	return d.useFreeleechToken() && canUseToken && !free
 }
 
-// useFreeleechToken reports whether the use_freeleech_token checkbox is enabled. harbrr
-// stores a checked checkbox as Jackett's "True" sentinel; common truthy spellings are
-// accepted too so whatever the management API persists is interpreted consistently.
+// useFreeleechToken reports whether the use_freeleech_token checkbox is enabled.
 func (d *driver) useFreeleechToken() bool {
-	switch strings.ToLower(strings.TrimSpace(d.Cfg["use_freeleech_token"])) {
-	case "true", "1", "on", "yes":
-		return true
-	default:
-		return false
-	}
+	return native.CheckboxOn(d.Cfg["use_freeleech_token"])
 }
 
 // downloadLink builds the download URL. The default is Prowlarr's inherited

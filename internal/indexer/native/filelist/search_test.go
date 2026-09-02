@@ -304,33 +304,19 @@ func TestSanitizeSearchTerm(t *testing.T) {
 	}
 }
 
-func TestFullIMDBID(t *testing.T) {
-	t.Parallel()
-	cases := []struct{ in, want string }{
-		{"133093", "tt0133093"},
-		{"tt0084967", "tt0084967"},
-		{"TT123", "tt0000123"},
-		{"12345678", "tt12345678"},
-		{"not-an-id", ""},
-		{"", ""},
-	}
-	for _, tc := range cases {
-		if got := fullIMDBID(tc.in); got != tc.want {
-			t.Errorf("fullIMDBID(%q) = %q, want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
 func TestFreeleechOnly(t *testing.T) {
 	t.Parallel()
-	for _, v := range []string{"True", "true", "1", "on", "yes"} {
-		if !freeleechOnly(map[string]string{"freeleech_only": v}) {
-			t.Errorf("freeleechOnly(%q) = false, want true", v)
-		}
+	tests := []struct {
+		value string
+		want  bool
+	}{
+		{"True", true},
+		{"", false},
+		{"false", false},
 	}
-	for _, v := range []string{"", "false", "0", "no"} {
-		if freeleechOnly(map[string]string{"freeleech_only": v}) {
-			t.Errorf("freeleechOnly(%q) = true, want false", v)
+	for _, tt := range tests {
+		if got := freeleechOnly(map[string]string{"freeleech_only": tt.value}); got != tt.want {
+			t.Errorf("freeleechOnly(%q) = %v, want %v", tt.value, got, tt.want)
 		}
 	}
 }

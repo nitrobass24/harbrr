@@ -108,13 +108,13 @@ func alphaRatioBuildQuery(d *driver, q search.Query, page int, params url.Values
 	// The torznab imdbid param arrives as bare digits, so it must be rendered as the
 	// full form — Jackett normalizes via GetFullImdbId before its GazelleTracker sets
 	// taglist — or the tag filter matches nothing.
-	if imdbID := fullIMDBID(q.IMDBID); imdbID != "" {
+	if imdbID := native.CanonicalIMDBID(q.IMDBID); imdbID != "" {
 		params.Set("taglist", imdbID)
 	}
-	if truthy(d.Cfg["freeleech_only"]) {
+	if native.CheckboxOn(d.Cfg["freeleech_only"]) {
 		params.Set("freetorrent", "1")
 	}
-	if truthy(d.Cfg["exclude_scene"]) {
+	if native.CheckboxOn(d.Cfg["exclude_scene"]) {
 		params.Set("scene", "0")
 	}
 	if page > 1 {

@@ -359,6 +359,7 @@ func TestParseRelTime(t *testing.T) {
 		// timestamp rather than a 2020 millisecond epoch.
 		{"unix-13digit-as-seconds", "1577880000000", "51971-01-11T00:00:00Z"},
 		{"iso-8601", "2023-01-02T15:04:05Z", "2023-01-02T15:04:05Z"},
+		{"iso-8601-no-colon-offset", "2021-10-01T10:05:54+0000", "2021-10-01T10:05:54Z"},
 		{"iso-space", "2023-01-02 15:04:05", "2023-01-02T15:04:05Z"},
 		{"iso-space-no-secs", "2023-01-02 15:04", "2023-01-02T15:04:00Z"},
 		// Human absolute formats Jackett reaches via DateTime.Parse(InvariantCulture).

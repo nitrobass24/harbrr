@@ -229,24 +229,6 @@ func TestParseReleasesMalformed(t *testing.T) {
 	}
 }
 
-// TestFormatIMDB proves the digits-only ImdbId -> "tt"+7-digit feed form, with blank/0/
-// non-numeric ids omitted.
-func TestFormatIMDB(t *testing.T) {
-	t.Parallel()
-	cases := []struct{ in, want string }{
-		{"0133093", "tt0133093"},
-		{"81229", "tt0081229"},
-		{"", ""},
-		{"0", ""},
-		{"abc", ""},
-	}
-	for _, c := range cases {
-		if got := formatIMDB(c.in); got != c.want {
-			t.Errorf("formatIMDB(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}
-
 // TestPosterURL proves only an absolute http(s) cover is kept (Prowlarr GetPosterUrl).
 func TestPosterURL(t *testing.T) {
 	t.Parallel()
