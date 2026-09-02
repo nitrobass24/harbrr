@@ -6,6 +6,7 @@ require (
 	github.com/PuerkitoBio/goquery v1.12.0
 	github.com/alexedwards/scs/v2 v2.9.0
 	github.com/andybalholm/cascadia v1.3.4
+	github.com/autobrr/go-cache v1.0.0-rc1
 	github.com/autobrr/go-deluge v1.4.0
 	github.com/autobrr/go-qbittorrent v1.18.0
 	github.com/autobrr/go-rtorrent v1.12.0
