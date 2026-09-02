@@ -83,14 +83,17 @@ the opposite of the property the codebase is built around.
 `go-cache` is same-org (go.mod already carries `go-deluge`, `go-qbittorrent`, `go-rtorrent`),
 MIT, Go 1.27, ~700 non-test lines, and has **zero transitive dependencies** — the module graph
 does not grow. It is pinned at `v1.0.0-rc1`, the only published version; a pre-1.0 pin is
-acceptable here because the surface used is four calls (`New`, `Get`, `Set`, `DefaultTTL`) behind
-harbrr's own `Compile`, so a breaking change is contained to one file.
+acceptable here because the surface used is six symbols — `New`, `SetDefaultTTL` and
+`SetTimerResolution` constructing the cache in `regexadapter/cache.go`, and `Get`, `Set` and
+`DefaultTTL` reading and writing it in `regexadapter/Compile` — all behind harbrr's own
+`Compile`, so a breaking change is contained to those two files and reaches no caller.
 
 ## Consequences
 
-- The dependency is load-bearing for exactly one file
-  (`cardigann/internal/regexadapter/cache.go`). If `go-cache` ever becomes unattractive, the
-  replacement is a `sync.Map` in that file and the loss is only the eviction policy.
+- The dependency is load-bearing for exactly one package
+  (`cardigann/internal/regexadapter`, across `cache.go` and `regexadapter.go`) and appears in no
+  exported signature. If `go-cache` ever becomes unattractive, the replacement is a `sync.Map`
+  in that package and the loss is only the eviction policy.
 - One package-level cache means one permanent background expiration goroutine, never `Close`d.
   It idles with its timer stopped while the cache is empty, harbrr runs no goroutine-leak
   detector, and the cache's lifetime is the process's — so there is nothing to wire into

@@ -75,3 +75,24 @@ func TestCompileCacheEntriesStillMatch(t *testing.T) {
 		})
 	}
 }
+
+// TestCompileCacheSkipsFailures pins the deliberate choice not to cache compile
+// failures: a pattern both engines reject must error every time and leave no
+// entry behind, so a later dropin fixing the pattern is not shadowed by a
+// cached miss. TestRouting_BothEnginesReject covers the error text itself.
+func TestCompileCacheSkipsFailures(t *testing.T) {
+	const bad = `(unclosed`
+
+	if _, err := Compile(bad, RouteOptions{}); err == nil {
+		t.Fatal("expected an error for a pattern neither engine accepts")
+	}
+	for _, want2 := range []bool{false, true} {
+		if _, ok := compileCache.Get(compileKey{pattern: bad, regexp2: want2}); ok {
+			t.Errorf("compileKey{regexp2: %v} was cached; failures must not be stored", want2)
+		}
+	}
+	// Still an error on the repeat call — not a cached nil sneaking through.
+	if _, err := Compile(bad, RouteOptions{}); err == nil {
+		t.Fatal("expected an error on the repeat compile too")
+	}
+}
