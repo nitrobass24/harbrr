@@ -122,7 +122,7 @@ func (a *indexerAdapter) failoverQualifies(ctx context.Context, kind string, sta
 	if kind != domain.HealthTransport {
 		return false
 	}
-	if settingEnabled(a.cfg[failoverDisabledSetting]) {
+	if settingEnabled(a.settings.engineCfg[failoverDisabledSetting]) {
 		return false
 	}
 	if state.InitialFailure.IsZero() || a.clock().Sub(state.InitialFailure) < failoverAfter {

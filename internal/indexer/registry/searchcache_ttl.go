@@ -25,51 +25,48 @@ type ttlConfig struct {
 	negative time.Duration
 }
 
-// resolveTTL picks the cache TTL for one search, mirroring registry/client.go
-// resolveTimeout's "cfg override else default" shape. The base TTL is the
-// instance's "cache_ttl" setting (a Go duration, e.g. "10m") when present and
-// positive, else the rss tier for an empty query or the keyword tier otherwise.
-// When the result count is at or below thinThreshold the TTL is clamped to
-// min(base, thin) — the thin clamp can only SHORTEN, never lengthen, and it
-// applies even over an explicit cache_ttl override on a thin result. Finally, an
-// empty query's TTL is floored to the instance's clamped "rss_warm_interval" — see
-// warmFloor.
-func (c ttlConfig) resolveTTL(cfg map[string]string, q search.Query, count int) time.Duration {
+// resolveTTL picks the cache TTL for one search. The base TTL is the instance's
+// resolved "cache_ttl" override (s.CacheTTL, non-zero when the setting was present
+// and positive — resolveCacheTTL), else the rss tier for an empty query or the
+// keyword tier otherwise. When the result count is at or below thinThreshold the
+// TTL is clamped to min(base, thin) — the thin clamp can only SHORTEN, never
+// lengthen, and it applies even over an explicit cache_ttl override on a thin
+// result. Finally, an empty query's TTL is floored to the instance's resolved
+// warm interval — see warmFloor.
+func (c ttlConfig) resolveTTL(s instanceSettings, q search.Query, count int) time.Duration {
 	base := c.keyword
 	if isEmptyQuery(q) {
 		base = c.rss
 	}
-	if v := cfg["cache_ttl"]; v != "" {
-		if d, err := time.ParseDuration(v); err == nil && d > 0 {
-			base = d
-		}
+	if s.CacheTTL > 0 {
+		base = s.CacheTTL
 	}
 	if count <= c.thinThreshold && c.thin < base {
 		base = c.thin
 	}
-	return warmFloor(cfg, q, base)
+	return warmFloor(s, q, base)
 }
 
-// warmFloor raises ttl to the instance's clamped "rss_warm_interval" when q is an
-// empty/RSS poll and the setting is valid — never lowers it. The warm interval
-// setting itself declares "keep this instance's RSS at least this fresh," so the
-// same floor applies to a consumer-driven RSS write-back, not just the warmer's own
-// writes: without it, a keyword-tier-shorter rss/thin TTL could expire a warmed
-// entry before the next scheduled warm refreshes it, defeating the warm entirely on
-// the next consumer poll in between. A keyword query is never floored — the warm
-// interval only ever primes the RSS entry.
+// warmFloor raises ttl to the instance's resolved warm interval (the clamped
+// "rss_warm_interval" setting) when q is an empty/RSS poll and the interval is set
+// — never lowers it. The warm interval setting itself declares "keep this
+// instance's RSS at least this fresh," so the same floor applies to a
+// consumer-driven RSS write-back, not just the warmer's own writes: without it, a
+// keyword-tier-shorter rss/thin TTL could expire a warmed entry before the next
+// scheduled warm refreshes it, defeating the warm entirely on the next consumer
+// poll in between. A keyword query is never floored — the warm interval only ever
+// primes the RSS entry.
 //
-// No capability check runs here: stripInertWarmInterval (warmer.go) already deleted
-// the setting from cfg at build time for a paging/Mode-consuming instance (no warmer
-// ever refreshes those, so the floor's justification does not hold), so cfg simply
-// carries no valid warmIntervalSetting for one — this stays a pure "is the setting
-// present and valid" check.
-func warmFloor(cfg map[string]string, q search.Query, ttl time.Duration) time.Duration {
+// No capability check runs here: resolveInstanceSettings already zeroed
+// WarmInterval at build time for a paging/Mode-consuming instance
+// (applyWarmCapability — no warmer ever refreshes those, so the floor's
+// justification does not hold), so this stays a pure "is the interval set" check.
+func warmFloor(s instanceSettings, q search.Query, ttl time.Duration) time.Duration {
 	if !isEmptyQuery(q) {
 		return ttl
 	}
-	if wi, ok := warmIntervalFromValue(cfg[warmIntervalSetting]); ok && wi > ttl {
-		return wi
+	if s.WarmInterval > ttl {
+		return s.WarmInterval
 	}
 	return ttl
 }

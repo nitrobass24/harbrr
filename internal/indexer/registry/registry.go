@@ -9,11 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
-	"net"
-	"net/url"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -585,135 +581,59 @@ func (r *Resolver) buildAdapterAt(ctx context.Context, slug, probeHost string) (
 	if err != nil {
 		return nil, err
 	}
-	// Resolve the instance's referenced global proxy / solver into cfg BEFORE the
-	// transport and solver are built, so buildTransport / SolverOption stay
-	// unchanged (they only read cfg keys). A reference wins over an inline setting;
-	// no reference leaves the inline value (the fallback) in place.
-	if err := r.resolveResourceRefs(ctx, inst, cfg); err != nil {
+	// Resolve every reserved key ONCE into the typed settings (proxy/solver refs,
+	// checkbox canonicalization, the operational keys, the freeleech engine view) —
+	// see resolveInstanceSettings for the sequence buildAdapterAt used to inline.
+	is, err := r.resolveInstanceSettings(ctx, inst, def, cfg)
+	if err != nil {
 		return nil, err
-	}
-
-	// Canonicalize checkbox settings ("True"/"") before anything reads them: a value
-	// persisted as the literal "false" is non-empty and would otherwise read as CHECKED
-	// under template truthiness (autobrr/harbrr#119).
-	cardigann.CanonicalizeCheckboxes(def, cfg)
-
-	// freeleech is consumed as a SERVE-TIME view, not a fetch-time filter: the engine is
-	// built with the key cleared so every fetch returns the full catalog (cached once and
-	// shared by the honor + bypass feeds). The stored value drives the serve-time freeleech
-	// view in indexerAdapter.Search. Go-template truthiness alone is "non-empty" (a checked
-	// box resolves to "True", config.go), so settingEnabled hardens the read against every
-	// writer: a value ParseBool recognizes as false (e.g. a persisted literal "false") reads
-	// as off even though it is non-empty (autobrr/harbrr#273).
-	freeleechOnly := settingEnabled(cfg["freeleech"])
-	engineCfg := cfg
-	if freeleechOnly {
-		engineCfg = maps.Clone(cfg)
-		delete(engineCfg, "freeleech")
 	}
 
 	doer, err := r.doerFactory(ClientParams{
 		Instance:     inst,
-		Cfg:          cfg,
-		Timeout:      resolveTimeout(cfg, r.timeout),
-		RateInterval: resolveRateInterval(def, cfg, r.RateDefault()), // a native def carries RequestDelay, so it is paced too
+		Cfg:          is.engineCfg,
+		Timeout:      is.Timeout,
+		RateInterval: is.RateInterval,
 		Logger:       r.log,
 	})
 	if err != nil {
 		return nil, err
 	}
-	baseURL := effectiveBaseURL(inst, def, cfg)
+	baseURL := effectiveBaseURL(inst, def, is.engineCfg)
 	if probeHost != "" {
 		baseURL = probeHost
 	}
-	inner, skipQuery, err := r.buildInner(inst, def, factory, engineCfg, doer, baseURL)
+	inner, skipQuery, err := r.buildInner(inst, def, factory, is.engineCfg, doer, baseURL)
 	if err != nil {
 		return nil, err
 	}
 	// A paging or Mode-consuming driver has no single canonical RSS cache key for the
 	// warmer to ever keep hot (warmOne skips it outright), so its rss_warm_interval
-	// setting must not floor its RSS TTL either — see stripInertWarmInterval.
-	stripInertWarmInterval(cfg, inner)
+	// setting must not floor its RSS TTL either. Applied here — the capabilities are
+	// only knowable once the inner is built — and before the adapter is published.
+	is.applyWarmCapability(inner.SupportsOffsetPaging(), inner.ConsumesSearchMode())
 	return &indexerAdapter{
-		info:          indexerInfo(inst, def),
-		inner:         inner,
-		skipQuery:     skipQuery,
-		instanceID:    inst.ID,
-		cfg:           cfg,
-		builtEpoch:    builtEpoch,
-		freeleechOnly: freeleechOnly,
-		db:            r.db,
-		health:        r.health,
-		circuit:       r.circuit,
-		circuitLocks:  r.circuitLocks,
-		startedAt:     r.startedAt,
-		healthSink:    r.healthSink,
-		stats:         r.stats,
-		budget:        r.budget,
-		diagnostics:   r.diagnostics,
+		info:         indexerInfo(inst, def),
+		inner:        inner,
+		skipQuery:    skipQuery,
+		instanceID:   inst.ID,
+		settings:     is,
+		builtEpoch:   builtEpoch,
+		db:           r.db,
+		health:       r.health,
+		circuit:      r.circuit,
+		circuitLocks: r.circuitLocks,
+		startedAt:    r.startedAt,
+		healthSink:   r.healthSink,
+		stats:        r.stats,
+		budget:       r.budget,
+		diagnostics:  r.diagnostics,
 		failover: func(ctx context.Context) (string, error) {
 			return r.failover(ctx, inst, def, baseURL)
 		},
 		clock: r.clock,
 		log:   r.log,
 	}, nil
-}
-
-// resolveResourceRefs merges an instance's referenced global proxy / solver into
-// cfg, writing the same keys the inline settings use (proxy_type/proxy_url;
-// solver_type/flaresolverr_url/flaresolverr_max_timeout) so buildTransport and
-// SolverOption need no change. A reference overrides an inline value; no reference
-// leaves the inline fallback in place. A dangling reference (the resource was
-// deleted mid-flight, before the ON DELETE SET NULL fired) is skipped, not fatal —
-// the indexer degrades to no proxy / no solver.
-func (r *Resolver) resolveResourceRefs(ctx context.Context, inst domain.IndexerInstance, cfg map[string]string) error {
-	if inst.ProxyID != nil {
-		p, err := r.proxies.GetProxy(ctx, r.db, *inst.ProxyID)
-		switch {
-		case err == nil:
-			password, derr := r.keyring.Decrypt(p.ID, domain.ProxySecretPassword, p.PasswordEncrypted)
-			if derr != nil {
-				return fmt.Errorf("registry: decrypt proxy %d password: %w", p.ID, derr)
-			}
-			cfg["proxy_type"], cfg["proxy_url"] = p.Type, composeProxyURL(p, password)
-		case !errors.Is(err, database.ErrNotFound):
-			return fmt.Errorf("registry: load proxy %d: %w", *inst.ProxyID, err)
-		}
-	}
-	if inst.SolverID != nil {
-		s, err := r.solvers.GetSolver(ctx, r.db, *inst.SolverID)
-		switch {
-		case err == nil:
-			flareURL, derr := r.keyring.Decrypt(s.ID, domain.SolverSecretURL, s.URLEncrypted)
-			if derr != nil {
-				return fmt.Errorf("registry: decrypt solver %d url: %w", s.ID, derr)
-			}
-			cfg["solver_type"], cfg["flaresolverr_url"] = s.Type, flareURL
-			if s.MaxTimeout > 0 {
-				cfg["flaresolverr_max_timeout"] = strconv.Itoa(s.MaxTimeout)
-			}
-		case !errors.Is(err, database.ErrNotFound):
-			return fmt.Errorf("registry: load solver %d: %w", *inst.SolverID, err)
-		}
-	}
-	return nil
-}
-
-// composeProxyURL builds the type://[user[:pass]@]host:port transport URL
-// buildTransport expects from a proxy's structured fields — only the password
-// needed decrypting; host/port/username are already plain. This string can embed
-// the password, so it lives only in cfg["proxy_url"] for buildTransport's
-// http.ProxyURL/proxy.FromURL call and is never logged, traced, or returned in an
-// error (registry's own errors above name the proxy by id, never its URL).
-func composeProxyURL(p domain.Proxy, password string) string {
-	u := &url.URL{Scheme: p.Type, Host: net.JoinHostPort(p.Host, strconv.Itoa(p.Port))}
-	switch {
-	case password != "":
-		u.User = url.UserPassword(p.Username, password)
-	case p.Username != "":
-		u.User = url.User(p.Username)
-	}
-	return u.String()
 }
 
 // buildInner constructs the engine-shaped core: a native family driver when a

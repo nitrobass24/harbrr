@@ -46,7 +46,7 @@ func TestNewCacheOpKeyMatchesBuildKey(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			op := newCacheOp(tt.instanceID, nil, 3, nil, tt.paging, tt.q)
+			op := newCacheOp(tt.instanceID, instanceSettings{}, 3, nil, tt.paging, tt.q)
 			if want := buildSearchCacheKey(tt.instanceID, tt.q, tt.paging); op.key != want {
 				t.Errorf("newCacheOp key = %q, want %q", op.key, want)
 			}

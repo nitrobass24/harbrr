@@ -13,7 +13,6 @@ import (
 	"golang.org/x/net/publicsuffix"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
 
@@ -113,46 +112,4 @@ func buildTransport(cfg map[string]string) (*http.Transport, error) {
 		return nil, fmt.Errorf("registry: unknown proxy_type %q (want http, https, socks5, socks5h)", proxyType)
 	}
 	return transport, nil
-}
-
-// resolveTimeout picks the per-instance request timeout: a "timeout" setting
-// (Go duration, e.g. "30s") when present and valid, else the registry default.
-func resolveTimeout(cfg map[string]string, fallback time.Duration) time.Duration {
-	if v := cfg["timeout"]; v != "" {
-		if d, err := time.ParseDuration(v); err == nil && d > 0 {
-			return d
-		}
-	}
-	return fallback
-}
-
-// defRequestDelay returns the definition's own requestDelay floor — a tracker
-// requirement resolveRateInterval must never undercut — or 0 when the def declares
-// none.
-func defRequestDelay(def *loader.Definition) time.Duration {
-	if def != nil && def.RequestDelay != nil && *def.RequestDelay > 0 {
-		return time.Duration(*def.RequestDelay * float64(time.Second))
-	}
-	return 0
-}
-
-// resolveRateInterval picks the effective per-host spacing (autobrr/harbrr#104): the
-// instance's "rate_interval" override (a reserved setting, like "timeout" — a Go
-// duration string; invalid/non-positive is ignored) REPLACES the live global default
-// when present — an operator setting one indexer faster than the global default is
-// preference layering, not a floor violation. Either way, the definition's own
-// requestDelay is a tracker-respect floor that always wins: the result is never
-// below it, so user config can only slow harbrr down relative to the def, never
-// speed it past what the tracker itself declared.
-func resolveRateInterval(def *loader.Definition, cfg map[string]string, globalDefault time.Duration) time.Duration {
-	user := globalDefault
-	if v := cfg["rate_interval"]; v != "" {
-		if d, err := time.ParseDuration(v); err == nil && d > 0 {
-			user = d
-		}
-	}
-	if floor := defRequestDelay(def); floor > user {
-		return floor
-	}
-	return user
 }
