@@ -42,13 +42,13 @@ func TestAnnounceTap(t *testing.T) {
 	keyword := search.Query{Keywords: "matrix"}
 
 	// 1. first empty-query fill: every release is new.
-	sc.storeBestEffort(ctx, instID, cfg, 0, empty, "k1", []*normalizer.Release{relWithGUID("A"), relWithGUID("B")})
+	sc.storeBestEffort(ctx, cacheOp{instanceID: instID, cfg: cfg, q: empty, key: "k1"}, []*normalizer.Release{relWithGUID("A"), relWithGUID("B")})
 	// 2. same key gains C: only C is new (A, B are in the prior entry + the dedup window).
-	sc.storeBestEffort(ctx, instID, cfg, 0, empty, "k1", []*normalizer.Release{relWithGUID("A"), relWithGUID("B"), relWithGUID("C")})
+	sc.storeBestEffort(ctx, cacheOp{instanceID: instID, cfg: cfg, q: empty, key: "k1"}, []*normalizer.Release{relWithGUID("A"), relWithGUID("B"), relWithGUID("C")})
 	// 3. a keyword search is never announced (only what a consumer already RSS-polls).
-	sc.storeBestEffort(ctx, instID, cfg, 0, keyword, "k2", []*normalizer.Release{relWithGUID("D")})
+	sc.storeBestEffort(ctx, cacheOp{instanceID: instID, cfg: cfg, q: keyword, key: "k2"}, []*normalizer.Release{relWithGUID("D")})
 	// 4. A reappears under a different RSS key: the dedup window suppresses the re-announce.
-	sc.storeBestEffort(ctx, instID, cfg, 0, empty, "k3", []*normalizer.Release{relWithGUID("A")})
+	sc.storeBestEffort(ctx, cacheOp{instanceID: instID, cfg: cfg, q: empty, key: "k3"}, []*normalizer.Release{relWithGUID("A")})
 
 	if len(got) != 2 {
 		t.Fatalf("announce calls = %d, want 2 (fills 1 and 2 only): %v", len(got), got)
@@ -83,14 +83,14 @@ func TestAnnounceTap_DiffsAcrossExpiry(t *testing.T) {
 	cfg := map[string]string{}
 	empty := search.Query{}
 
-	sc.storeBestEffort(ctx, instID, cfg, 0, empty, "k", []*normalizer.Release{relWithGUID("A"), relWithGUID("B")})
+	sc.storeBestEffort(ctx, cacheOp{instanceID: instID, cfg: cfg, q: empty, key: "k"}, []*normalizer.Release{relWithGUID("A"), relWithGUID("B")})
 
 	// Advance past the rss TTL so the stored entry is EXPIRED, and past the dedup window so
 	// the in-memory guard no longer suppresses A/B — only the FetchAny prior diff can.
 	future := clk.Load().Add(7 * time.Hour)
 	clk.Store(&future)
 
-	sc.storeBestEffort(ctx, instID, cfg, 0, empty, "k", []*normalizer.Release{relWithGUID("A"), relWithGUID("B"), relWithGUID("C")})
+	sc.storeBestEffort(ctx, cacheOp{instanceID: instID, cfg: cfg, q: empty, key: "k"}, []*normalizer.Release{relWithGUID("A"), relWithGUID("B"), relWithGUID("C")})
 
 	if len(got) != 2 {
 		t.Fatalf("announce calls = %d, want 2: %v", len(got), got)
@@ -121,7 +121,7 @@ func TestAnnounceTap_SurvivesCleanupTickWithinGrace(t *testing.T) {
 	cfg := map[string]string{}
 	empty := search.Query{}
 
-	sc.storeBestEffort(ctx, instID, cfg, 0, empty, "k", []*normalizer.Release{relWithGUID("A"), relWithGUID("B")})
+	sc.storeBestEffort(ctx, cacheOp{instanceID: instID, cfg: cfg, q: empty, key: "k"}, []*normalizer.Release{relWithGUID("A"), relWithGUID("B")})
 
 	// Expire the entry (past the 5m rss TTL) but stay well inside the 24h reap grace,
 	// then run a cleanup tick: the row must survive, so priorGUIDs can still read it.
@@ -133,7 +133,7 @@ func TestAnnounceTap_SurvivesCleanupTickWithinGrace(t *testing.T) {
 		t.Fatalf("CleanupExpired purged %d, want 0 (still within grace)", n)
 	}
 
-	sc.storeBestEffort(ctx, instID, cfg, 0, empty, "k", []*normalizer.Release{relWithGUID("A"), relWithGUID("B"), relWithGUID("C")})
+	sc.storeBestEffort(ctx, cacheOp{instanceID: instID, cfg: cfg, q: empty, key: "k"}, []*normalizer.Release{relWithGUID("A"), relWithGUID("B"), relWithGUID("C")})
 
 	if len(got) != 2 {
 		t.Fatalf("announce calls = %d, want 2: %v", len(got), got)
@@ -166,7 +166,7 @@ func TestAnnounceWindow_SlidesAcrossRepeatedPriorSuppression(t *testing.T) {
 	empty := search.Query{}
 
 	// Initial fill: A is new.
-	sc.storeBestEffort(ctx, instID, cfg, 0, empty, "k", []*normalizer.Release{relWithGUID("A")})
+	sc.storeBestEffort(ctx, cacheOp{instanceID: instID, cfg: cfg, q: empty, key: "k"}, []*normalizer.Release{relWithGUID("A")})
 	if len(got) != 1 {
 		t.Fatalf("announce calls after initial fill = %d, want 1: %v", len(got), got)
 	}
@@ -177,7 +177,7 @@ func TestAnnounceWindow_SlidesAcrossRepeatedPriorSuppression(t *testing.T) {
 	for range 3 {
 		future := clk.Load().Add(7 * time.Hour)
 		clk.Store(&future)
-		sc.storeBestEffort(ctx, instID, cfg, 0, empty, "k", []*normalizer.Release{relWithGUID("A")})
+		sc.storeBestEffort(ctx, cacheOp{instanceID: instID, cfg: cfg, q: empty, key: "k"}, []*normalizer.Release{relWithGUID("A")})
 	}
 	if len(got) != 1 {
 		t.Fatalf("announce calls after repeated observation = %d, want still 1 (A never re-announced): %v", len(got), got)
@@ -189,7 +189,7 @@ func TestAnnounceWindow_SlidesAcrossRepeatedPriorSuppression(t *testing.T) {
 	if _, err := sc.Flush(ctx); err != nil {
 		t.Fatalf("Flush: %v", err)
 	}
-	sc.storeBestEffort(ctx, instID, cfg, 0, empty, "k2", []*normalizer.Release{relWithGUID("A")})
+	sc.storeBestEffort(ctx, cacheOp{instanceID: instID, cfg: cfg, q: empty, key: "k2"}, []*normalizer.Release{relWithGUID("A")})
 	if len(got) != 1 {
 		t.Fatalf("announce calls after losing the prior row = %d, want still 1 (window mark carries suppression): %v", len(got), got)
 	}
@@ -197,7 +197,7 @@ func TestAnnounceWindow_SlidesAcrossRepeatedPriorSuppression(t *testing.T) {
 	// Let a full window pass with no further observation of A: it must re-announce.
 	future := clk.Load().Add(7 * time.Hour)
 	clk.Store(&future)
-	sc.storeBestEffort(ctx, instID, cfg, 0, empty, "k3", []*normalizer.Release{relWithGUID("A")})
+	sc.storeBestEffort(ctx, cacheOp{instanceID: instID, cfg: cfg, q: empty, key: "k3"}, []*normalizer.Release{relWithGUID("A")})
 	if len(got) != 2 {
 		t.Fatalf("announce calls after a full silent window = %d, want 2 (A re-announced): %v", len(got), got)
 	}
@@ -253,6 +253,5 @@ func TestAnnounceWindow_HardCap(t *testing.T) {
 func TestAnnounceTap_NilSinkNoPanic(t *testing.T) {
 	t.Parallel()
 	sc, instID, _ := testCache(t, keywordTTL, 0)
-	sc.storeBestEffort(context.Background(), instID, map[string]string{}, 0, search.Query{},
-		"k", []*normalizer.Release{relWithGUID("A")})
+	sc.storeBestEffort(context.Background(), cacheOp{instanceID: instID, cfg: map[string]string{}, q: search.Query{}, key: "k"}, []*normalizer.Release{relWithGUID("A")})
 }
