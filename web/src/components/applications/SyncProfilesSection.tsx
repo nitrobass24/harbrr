@@ -1,10 +1,8 @@
 import { useState } from "react"
-import { Pencil, Plus, Trash2 } from "lucide-react"
+import { Pencil, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
-  Dialog,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
@@ -12,13 +10,10 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { ResourceSection } from "@/components/ui/resource-section"
 import { useSyncProfileMutations, useSyncProfiles } from "@/hooks/useAppConnections"
 import { useIndexers } from "@/hooks/useIndexers"
-import { notifyError, notifySuccess } from "@/lib/notify"
 import type { CreateSyncProfile, SyncProfile } from "@/lib/api"
-
-// `null` = closed; `{ profile: null }` = add; `{ profile }` = edit that profile.
-type Editing = { profile: SyncProfile | null } | null
 
 function summarize(p: SyncProfile): string {
   return p.indexerIds.length > 0 ? `${p.indexerIds.length} indexer${p.indexerIds.length === 1 ? "" : "s"}` : "all indexers"
@@ -32,66 +27,42 @@ function summarize(p: SyncProfile): string {
 export function SyncProfilesSection() {
   const profiles = useSyncProfiles()
   const { create, update, remove } = useSyncProfileMutations()
-  const [editing, setEditing] = useState<Editing>(null)
 
   return (
-    <section className="flex flex-col gap-3">
-      <div className="flex items-center gap-3">
-        <h2 className="text-[14px] font-semibold tracking-tight">Sync profiles</h2>
-        <Button variant="outline" size="sm" className="ml-auto" onClick={() => setEditing({ profile: null })}>
-          <Plus className="h-3.5 w-3.5" /> Add profile
-        </Button>
-      </div>
-
-      <div className="flex flex-col rounded-xl border border-border bg-card px-5 py-2 text-[13px]">
-        {(profiles.data ?? []).map((p) => (
-          <div key={p.id} className="flex items-center gap-3 border-b border-border/60 py-2.5 last:border-b-0">
-            <span className="flex flex-col">
-              <span className="font-medium">{p.name}</span>
-              <span className="text-[12px] text-faint">{summarize(p)}</span>
-            </span>
-            <span className="ml-auto flex items-center gap-1">
-              <Button variant="ghost" size="icon" aria-label={`Edit ${p.name}`} onClick={() => setEditing({ profile: p })}>
-                <Pencil className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={`Delete ${p.name}`}
-                onClick={() => remove.mutate(p.id, {
-                  onSuccess: () => notifySuccess(`${p.name} deleted`),
-                  onError: (err) => notifyError(`Deleting ${p.name} failed`, err),
-                })}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </span>
-          </div>
-        ))}
-        {profiles.data?.length === 0 && (
-          <p className="py-3 text-muted-foreground">No sync profiles. Add one to route a connection to only some indexers.</p>
-        )}
-      </div>
-      <p className="text-[12px] text-faint">Deleting a profile is refused while any connection still references it.</p>
-
-      <Dialog open={editing !== null} onOpenChange={(open) => { if (!open) setEditing(null) }}>
-        {editing !== null && (
-          <DialogContent>
-            <ProfileForm
-              // Remount (fresh state seeded from props) per target.
-              key={editing.profile?.id ?? "new"}
-              profile={editing.profile}
-              pending={create.isPending || update.isPending}
-              onSubmit={(id, body) => {
-                const done = { onSuccess: () => setEditing(null), onError: (err: Error) => notifyError(`Save failed: ${err.message}`, err) }
-                if (id === null) create.mutate(body, done)
-                else update.mutate({ id, body }, done)
-              }}
-            />
-          </DialogContent>
-        )}
-      </Dialog>
-    </section>
+    <ResourceSection<SyncProfile>
+      title="Sync profiles"
+      addLabel="Add profile"
+      query={profiles}
+      empty="No sync profiles. Add one to route a connection to only some indexers."
+      footnote={<p className="text-[12px] text-faint">Deleting a profile is refused while any connection still references it.</p>}
+      row={(p, actions) => (
+        <>
+          <span className="flex flex-col">
+            <span className="font-medium">{p.name}</span>
+            <span className="text-[12px] text-faint">{summarize(p)}</span>
+          </span>
+          <span className="ml-auto flex items-center gap-1">
+            <Button variant="ghost" size="icon" aria-label={`Edit ${p.name}`} onClick={actions.edit}>
+              <Pencil className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" aria-label={`Delete ${p.name}`} onClick={actions.remove}>
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </span>
+        </>
+      )}
+      onDelete={(p) => remove.mutateAsync(p.id)}
+      form={(target, done) => (
+        <ProfileForm
+          profile={target}
+          pending={create.isPending || update.isPending}
+          onSubmit={(id, body) => {
+            if (id === null) create.mutate(body, done)
+            else update.mutate({ id, body }, done)
+          }}
+        />
+      )}
+    />
   )
 }
 

@@ -33,6 +33,16 @@ function stubFetch() {
 describe("ApiKeysSection mint dialog", () => {
   afterEach(() => vi.unstubAllGlobals())
 
+  it("a failed list query shows LoadError, not an empty card", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: "boom" }), { status: 500, headers: { "Content-Type": "application/json" } })
+    ))
+    render(wrap(<ApiKeysSection />))
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Loading API keys failed")
+    expect(screen.queryByText(/No keys yet/)).toBeNull()
+  })
+
   it("shows the plaintext key exactly once and never re-renders it after closing", async () => {
     stubFetch()
     render(wrap(<ApiKeysSection />))

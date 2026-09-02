@@ -49,6 +49,18 @@ function stubFetchAndCapturePatch(): { patchBody: () => Promise<PatchProxyBody> 
 describe("ProxiesSection", () => {
   afterEach(() => vi.unstubAllGlobals())
 
+  // Representative failed-list case for the six ResourceSection adopters — the
+  // pending/error/empty states themselves are covered by resource-section.test.tsx.
+  it("a failed list query shows LoadError, not an empty card", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: "boom" }), { status: 500, headers: { "Content-Type": "application/json" } })
+    ))
+    render(wrap(<ProxiesSection />))
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Loading proxies failed")
+    expect(screen.queryByText(/No proxies/)).toBeNull()
+  })
+
   it("lists a proxy's host:port plainly (no masking)", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse([PROXY])))
     render(wrap(<ProxiesSection />))

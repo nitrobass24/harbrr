@@ -1,13 +1,11 @@
 import { useEffect, useState } from "react"
 import { useInitialAppPick } from "@/hooks/useInitialAppPick"
-import { Pencil, Plus, Trash2 } from "lucide-react"
+import { Pencil, Trash2 } from "lucide-react"
 import { ConfiguredAppsBlock, ReusingAppHint } from "@/components/applications/ConfiguredApps"
 import { ManagedByAppHint } from "@/components/applications/ManagedByAppHint"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
-  Dialog,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
@@ -16,6 +14,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
+import { ResourceSection } from "@/components/ui/resource-section"
 import { Switch } from "@/components/ui/switch"
 import { HostPortFields } from "@/components/forms/HostPortFields"
 import {
@@ -42,10 +41,6 @@ const DOWNLOAD_CLIENT_KINDS: DownloadClientKind[] = ["qbittorrent", "blackhole",
 // fields below" — the create-time fallback for the very first qui app.
 const NEW_APP = "new"
 
-// `null` = closed; `{ client: null }` = add; `{ client }` = edit that client.
-// `initialAppId` (add-only) is the "Use as…" deep-link's pre-pick (autobrr/harbrr#300).
-type Editing = { client: DownloadClient | null, initialAppId?: number } | null
-
 // The form always produces a full CreateDownloadClient shape; kind is immutable
 // on edit so an update just drops it before the PATCH goes out (kind isn't even
 // a field UpdateDownloadClient accepts).
@@ -61,93 +56,71 @@ export function DownloadClientsSection({ initialCreate }: { initialCreate?: { ap
   const remove = useDeleteDownloadClient()
   const toggle = useSetDownloadClientEnabled()
   const test = useTestDownloadClient()
-  const [editing, setEditing] = useState<Editing>(null)
-
-  // "Use as…" deep-link: the download-clients route owns the search params and hands
-  // the pick down as a prop — this section owns its own dialog state, so it opens
-  // itself the first time the prop shows up.
+  // "Use as…" deep-link (autobrr/harbrr#300): the route hands the pick down as a prop;
+  // the shell opens the add dialog (addRequest) while this section remembers which App
+  // to pre-pick — cleared on any dialog close so a later manual add starts clean.
+  const [pendingAppId, setPendingAppId] = useState<number | undefined>()
   useEffect(() => {
-    if (initialCreate) setEditing({ client: null, initialAppId: initialCreate.appId })
+    if (initialCreate) setPendingAppId(initialCreate.appId)
   }, [initialCreate])
 
   return (
-    <section className="flex flex-col gap-3">
-      <div className="flex items-center gap-3">
-        <h2 className="text-[14px] font-semibold tracking-tight">Download clients</h2>
-        <Button variant="outline" size="sm" className="ml-auto" onClick={() => setEditing({ client: null })}>
-          <Plus className="h-3.5 w-3.5" /> Add download client
-        </Button>
-      </div>
-
-      <div className="flex flex-col rounded-xl border border-border bg-card px-5 py-2 text-[13px]">
-        {(clients.data ?? []).map((c) => (
-          <div key={c.id} className="flex items-center gap-3 border-b border-border/60 py-2.5 last:border-b-0">
-            <span className="font-medium">{c.name}</span>
-            <Badge variant="secondary" className="px-1.5 py-0 text-[11px]">{c.kind}</Badge>
-            <span className="text-muted-foreground">{c.host}</span>
-            <span className="ml-auto flex items-center gap-1">
-              <Switch
-                aria-label={`${c.enabled ? "Disable" : "Enable"} ${c.name}`}
-                checked={c.enabled}
-                onCheckedChange={(checked) => toggle.mutate({ id: c.id, enabled: checked })}
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={test.isPending && test.variables === c.id}
-                onClick={() => test.mutate(c.id, {
-                  onSuccess: (r) => r.ok ? notifySuccess("Connection OK") : notifyError(`Test failed — ${r.error ?? "unknown error"}`),
-                  onError: (err) => notifyError("Test request failed", err),
-                })}
-              >
-                Test
-              </Button>
-              <Button variant="ghost" size="icon" aria-label={`Edit ${c.name}`} onClick={() => setEditing({ client: c })}>
-                <Pencil className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={`Delete ${c.name}`}
-                onClick={() => remove.mutate(c.id, {
-                  onSuccess: () => notifySuccess(`${c.name} deleted`),
-                  onError: (err) => notifyError(`Deleting ${c.name} failed`, err),
-                })}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </span>
-          </div>
-        ))}
-        {clients.data?.length === 0 && (
-          <p className="py-3 text-muted-foreground">No download clients. Add one to hand off grabbed releases.</p>
-        )}
-      </div>
-
-      <Dialog open={editing !== null} onOpenChange={(open) => { if (!open) setEditing(null) }}>
-        {editing !== null && (
-          <DialogContent>
-            <DownloadClientForm
-              // Remount (fresh state seeded from props) per target.
-              key={editing.client?.id ?? "new"}
-              client={editing.client}
-              initialAppId={editing.initialAppId}
-              pending={create.isPending || update.isPending}
-              onSubmit={(id, body) => {
-                const done = { onSuccess: () => setEditing(null), onError: (err: Error) => notifyError(`Save failed: ${err.message}`, err) }
-                if (id === null) create.mutate(body, done)
-                else {
-                  // Identity/credential (host, username, secret) are App-level now
-                  // (ADR 0004) — the update surface is name + settings only.
-                  const patch: UpdateDownloadClient = { name: body.name, settings: body.settings }
-                  update.mutate({ id, body: patch }, done)
-                }
-              }}
+    <ResourceSection<DownloadClient>
+      title="Download clients"
+      addLabel="Add download client"
+      query={clients}
+      empty="No download clients. Add one to hand off grabbed releases."
+      addRequest={initialCreate}
+      onDialogClose={() => setPendingAppId(undefined)}
+      row={(c, actions) => (
+        <>
+          <span className="font-medium">{c.name}</span>
+          <Badge variant="secondary" className="px-1.5 py-0 text-[11px]">{c.kind}</Badge>
+          <span className="text-muted-foreground">{c.host}</span>
+          <span className="ml-auto flex items-center gap-1">
+            <Switch
+              aria-label={`${c.enabled ? "Disable" : "Enable"} ${c.name}`}
+              checked={c.enabled}
+              onCheckedChange={(checked) => toggle.mutate({ id: c.id, enabled: checked })}
             />
-          </DialogContent>
-        )}
-      </Dialog>
-    </section>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={test.isPending && test.variables === c.id}
+              onClick={() => test.mutate(c.id, {
+                onSuccess: (r) => r.ok ? notifySuccess("Connection OK") : notifyError(`Test failed — ${r.error ?? "unknown error"}`),
+                onError: (err) => notifyError("Test request failed", err),
+              })}
+            >
+              Test
+            </Button>
+            <Button variant="ghost" size="icon" aria-label={`Edit ${c.name}`} onClick={actions.edit}>
+              <Pencil className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" aria-label={`Delete ${c.name}`} onClick={actions.remove}>
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </span>
+        </>
+      )}
+      onDelete={(c) => remove.mutateAsync(c.id)}
+      form={(target, done) => (
+        <DownloadClientForm
+          client={target}
+          initialAppId={target === null ? pendingAppId : undefined}
+          pending={create.isPending || update.isPending}
+          onSubmit={(id, body) => {
+            if (id === null) create.mutate(body, done)
+            else {
+              // Identity/credential (host, username, secret) are App-level now
+              // (ADR 0004) — the update surface is name + settings only.
+              const patch: UpdateDownloadClient = { name: body.name, settings: body.settings }
+              update.mutate({ id, body: patch }, done)
+            }
+          }}
+        />
+      )}
+    />
   )
 }
 
