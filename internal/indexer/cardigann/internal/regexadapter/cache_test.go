@@ -77,22 +77,35 @@ func TestCompileCacheEntriesStillMatch(t *testing.T) {
 }
 
 // TestCompileCacheSkipsFailures pins the deliberate choice not to cache compile
-// failures: a pattern both engines reject must error every time and leave no
-// entry behind, so a later dropin fixing the pattern is not shadowed by a
-// cached miss. TestRouting_BothEnginesReject covers the error text itself.
+// failures, so a later dropin fixing the pattern is not shadowed by a cached
+// miss. Compile has TWO failure paths and they must both leave the cache clean:
+// an opted-in pattern fails inside the want2 branch and returns early, while a
+// non-opted-in one falls through RE2 to the both-engines-reject branch.
+// TestRouting_BothEnginesReject covers the error text itself.
 func TestCompileCacheSkipsFailures(t *testing.T) {
 	const bad = `(unclosed`
 
-	if _, err := Compile(bad, RouteOptions{}); err == nil {
-		t.Fatal("expected an error for a pattern neither engine accepts")
-	}
-	for _, want2 := range []bool{false, true} {
-		if _, ok := compileCache.Get(compileKey{pattern: bad, regexp2: want2}); ok {
-			t.Errorf("compileKey{regexp2: %v} was cached; failures must not be stored", want2)
-		}
-	}
-	// Still an error on the repeat call — not a cached nil sneaking through.
-	if _, err := Compile(bad, RouteOptions{}); err == nil {
-		t.Fatal("expected an error on the repeat compile too")
+	for _, tc := range []struct {
+		name string
+		opts RouteOptions
+	}{
+		{"re2 route falls through to both-engines-reject", RouteOptions{}},
+		{"opt-in route fails inside the regexp2 branch", RouteOptions{OptIn: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := Compile(bad, tc.opts); err == nil {
+				t.Fatal("expected an error for a pattern neither engine accepts")
+			}
+			// Ask the routing predicate for the key rather than hardcoding it,
+			// so the assertion follows Compile's own choice of cache slot.
+			key := compileKey{pattern: bad, regexp2: wantRegexp2(bad, tc.opts)}
+			if _, ok := compileCache.Get(key); ok {
+				t.Errorf("%+v was cached; failures must not be stored", key)
+			}
+			// Still an error on the repeat call — not a cached nil sneaking through.
+			if _, err := Compile(bad, tc.opts); err == nil {
+				t.Fatal("expected an error on the repeat compile too")
+			}
+		})
 	}
 }
