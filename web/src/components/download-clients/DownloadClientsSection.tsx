@@ -160,6 +160,11 @@ function DownloadClientForm({ client, initialAppId, pending, onSubmit }: {
   // table lookup, so widen the spec and narrow the two settings shapes the identity
   // logic reads (blackhole's dirs, qui's instance) once here.
   const spec = KIND_SPEC[kind] as unknown as AnyKindSpec
+  // qui and sabnzbd authenticate with a bare API key — no username. This drives the
+  // field's visibility, the secret's label/width, AND what submit sends: deriving them
+  // from one predicate is what keeps a username typed under another kind from riding
+  // along on a switch to sabnzbd (identity survives a kind change; only port resets).
+  const usesUsername = kind !== "qui" && kind !== "sabnzbd"
   const quiSettings = spec.hostMode === "app" ? (settings as SettingsForm<"qui">) : null
   const bhSettings = spec.hostMode === "none" ? (settings as SettingsForm<"blackhole">) : null
 
@@ -200,7 +205,7 @@ function DownloadClientForm({ client, initialAppId, pending, onSubmit }: {
         const composedHost = spec.hostMode === "hostport" ? composeHostPort(identity.host, identity.port) : composeHostURL(identity.scheme, identity.host, identity.port)
         const identityBody = usingQuiApp
           ? { appId: Number(effectiveAppSel) }
-          : { host: spec.hostMode === "none" ? "" : composedHost, username: spec.hostMode === "app" ? "" : identity.username, secret: isEdit ? (identity.secret || undefined) : identity.secret }
+          : { host: spec.hostMode === "none" ? "" : composedHost, username: usesUsername ? identity.username : "", secret: isEdit ? (identity.secret || undefined) : identity.secret }
         onSubmit(client?.id ?? null, { name, kind, settings: spec.encode(settings), ...identityBody })
       }}
     >
@@ -279,14 +284,14 @@ function DownloadClientForm({ client, initialAppId, pending, onSubmit }: {
             showScheme={spec.hostMode !== "hostport"}
           />
           <div className="grid grid-cols-2 gap-3">
-            {kind !== "qui" && kind !== "sabnzbd" && (
+            {usesUsername && (
               <span className="flex flex-col gap-1.5">
                 <Label htmlFor="dlc-username">Username <span className="text-faint">(optional)</span></Label>
                 <Input id="dlc-username" autoComplete="off" value={identity.username} onChange={(e) => setIdentity((i) => ({ ...i, username: e.target.value }))} />
               </span>
             )}
-            <span className={`flex flex-col gap-1.5 ${kind === "qui" || kind === "sabnzbd" ? "col-span-2" : ""}`}>
-              <Label htmlFor="dlc-secret">{kind === "qui" || kind === "sabnzbd" ? "API key" : "Password"}</Label>
+            <span className={`flex flex-col gap-1.5 ${usesUsername ? "" : "col-span-2"}`}>
+              <Label htmlFor="dlc-secret">{usesUsername ? "Password" : "API key"}</Label>
               <Input id="dlc-secret" type="password" autoComplete="off" value={identity.secret} onChange={(e) => setIdentity((i) => ({ ...i, secret: e.target.value }))} />
             </span>
           </div>
