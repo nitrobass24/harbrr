@@ -28,6 +28,7 @@ interface PatchDownloadClientBody {
 
 interface CreateDownloadClientBody {
   appId?: number
+  username?: string
   settings?: DownloadClientSettings
 }
 
@@ -160,6 +161,39 @@ describe("DownloadClientsSection", () => {
       expect(post).toBeTruthy()
       const body = JSON.parse(await post![0].clone().text()) as CreateDownloadClientBody
       expect(body).toEqual({ name: "main", kind: "qui", appId: QUI_APP.id, settings: { qui: { instanceId: 3 } } })
+    })
+  })
+
+  it("add: switching to sabnzbd after typing a username submits an empty username", async () => {
+    const fetchMock = vi.fn((req: Request) => {
+      if (req.url.includes("/apps")) return Promise.resolve(jsonResponse([]))
+      if (req.method === "POST" && req.url.includes("/download-clients")) {
+        return Promise.resolve(jsonResponse({ ...CLIENT, kind: "sabnzbd" }))
+      }
+      return Promise.resolve(jsonResponse([CLIENT]))
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    render(wrap(<DownloadClientsSection />))
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add download client" }))
+    // Type a username under the default (qbittorrent) kind, where the field exists...
+    fireEvent.change(await screen.findByLabelText(/Username/), { target: { value: "admin" } })
+    // ...then switch to sabnzbd, which authenticates by API key alone. A kind change
+    // resets only the port, so identity.username survives the switch — the field is
+    // hidden but the state is still there.
+    fireEvent.change(screen.getByLabelText("Kind"), { target: { value: "sabnzbd" } })
+    expect(screen.queryByLabelText(/Username/)).toBeNull()
+    expect(screen.getByLabelText("API key")).toBeTruthy()
+
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "sab" } })
+    fireEvent.change(screen.getByLabelText("Host"), { target: { value: "localhost" } })
+    fireEvent.click(addSubmitButton())
+
+    await waitFor(async () => {
+      const post = fetchMock.mock.calls.find(([req]) => req.method === "POST" && req.url.includes("/download-clients"))
+      expect(post).toBeTruthy()
+      const body = JSON.parse(await post![0].clone().text()) as CreateDownloadClientBody
+      expect(body.username).toBe("")
     })
   })
 
