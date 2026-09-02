@@ -29,7 +29,9 @@ import { useApps, useQuiInstances } from "@/hooks/useApps"
 import { hostname, kindLabel } from "@/lib/format"
 import { composeHostPort, composeHostURL, DEFAULT_PORTS } from "@/lib/hosturl"
 import { notifyError, notifySuccess } from "@/lib/notify"
-import type { App, CreateDownloadClient, DownloadClient, DownloadClientKind, DownloadClientSettings, UpdateDownloadClient } from "@/lib/api"
+import type { App, CreateDownloadClient, DownloadClient, DownloadClientKind, UpdateDownloadClient } from "@/lib/api"
+import { KIND_SPEC } from "./kind-spec"
+import type { AnyKindSpec, AnySettingsForm, SettingsForm } from "./kind-spec"
 
 // Only kinds with a registered driver work today (autobrr/harbrr#240, #241,
 // #242, #243, #244); the rest are seeded server-side but rejected on create
@@ -132,36 +134,34 @@ function DownloadClientForm({ client, initialAppId, pending, onSubmit }: {
 }) {
   const isEdit = client !== null
   const apps = useApps()
+  const initialKind = client?.kind ?? "qbittorrent"
 
   const [name, setName] = useState(client?.name ?? "")
-  const [kind, setKind] = useState<DownloadClientKind>(client?.kind ?? "qbittorrent")
+  const [kind, setKind] = useState<DownloadClientKind>(initialKind)
   // Create-only: which qui App backs this client. `null` means the operator hasn't
   // chosen yet, so the picker defaults to the first qui App once apps arrive
   // (effectiveAppSel below). NEW_APP reveals the inline host/API key fields (the
   // fallback for the very first qui app); anything else reuses that App's identity and
   // drives the instance dropdown instead of a typed id.
   const [appSel, setAppSel] = useState<string | null>(null)
-  const [scheme, setScheme] = useState<"http" | "https">("http")
-  const [host, setHost] = useState(client?.host ?? "")
-  const [port, setPort] = useState(String(DEFAULT_PORTS[kind] ?? ""))
-  const [username, setUsername] = useState(client?.username ?? "")
-  const [secret, setSecret] = useState("")
-  // category/tags/startPaused are shared across kinds with identical concepts;
-  // destination/directory/instanceId/tlsSkipVerify are single-kind.
-  const [category, setCategory] = useState(
-    client?.settings.qbittorrent?.category ?? client?.settings.qui?.category ?? client?.settings.sabnzbd?.category ?? client?.settings.nzbget?.category ?? ""
-  )
-  const [tags, setTags] = useState((client?.settings.qbittorrent?.tags ?? client?.settings.qui?.tags ?? client?.settings.flood?.tags ?? []).join(", "))
-  const [startPaused, setStartPaused] = useState(
-    client?.settings.qbittorrent?.startPaused ?? client?.settings.qui?.startPaused ?? client?.settings.flood?.startPaused ?? false
-  )
-  const [tlsSkipVerify, setTlsSkipVerify] = useState(client?.settings.qbittorrent?.tlsSkipVerify ?? false)
-  const [instanceId, setInstanceId] = useState(client?.settings.qui?.instanceId ? String(client.settings.qui.instanceId) : "")
-  const [destination, setDestination] = useState(client?.settings.flood?.destination ?? "")
-  const [directory, setDirectory] = useState(client?.settings.downloadStation?.directory ?? "")
-  const [torrentDir, setTorrentDir] = useState(client?.settings.blackhole?.torrentDir ?? "")
-  const [nzbDir, setNzbDir] = useState(client?.settings.blackhole?.nzbDir ?? "")
-  const [saveMagnetFiles, setSaveMagnetFiles] = useState(client?.settings.blackhole?.saveMagnetFiles ?? false)
+  // Where the client lives + its credential, one object per hostMode's needs.
+  const [identity, setIdentity] = useState({
+    scheme: "http" as "http" | "https",
+    host: client?.host ?? "",
+    port: String(DEFAULT_PORTS[initialKind] ?? ""),
+    username: client?.username ?? "",
+    secret: "",
+  })
+  // The current kind's settings in form shape (KIND_SPEC.decode), reset to the new
+  // kind's defaults on every kind switch so it always matches `kind`.
+  const [settings, setSettings] = useState<AnySettingsForm>(() => KIND_SPEC[initialKind].decode(client?.settings))
+
+  // `settings` tracks `kind` (see above) — a correlation TS can't carry through the
+  // table lookup, so widen the spec and narrow the two settings shapes the identity
+  // logic reads (blackhole's dirs, qui's instance) once here.
+  const spec = KIND_SPEC[kind] as unknown as AnyKindSpec
+  const quiSettings = spec.hostMode === "app" ? (settings as SettingsForm<"qui">) : null
+  const bhSettings = spec.hostMode === "none" ? (settings as SettingsForm<"blackhole">) : null
 
   const quiApps = (apps.data ?? []).filter((a) => a.kind === "qui")
 
@@ -171,78 +171,37 @@ function DownloadClientForm({ client, initialAppId, pending, onSubmit }: {
   useInitialAppPick(initialAppId, quiApps, (app) => {
     setKind("qui")
     setAppSel(String(app.id))
-    setInstanceId("")
+    setSettings(quiSettings ? { ...quiSettings, instanceId: "" } : KIND_SPEC.qui.decode(undefined))
     setName((prev) => (prev === "" ? app.name : prev))
-    setPort(String(DEFAULT_PORTS.qui ?? ""))
+    setIdentity((i) => ({ ...i, port: String(DEFAULT_PORTS.qui ?? "") }))
   })
 
   // Defaults to the first qui App once apps arrive; NEW_APP outside kind "qui" (there's
   // no reuse path for the other kinds today).
-  const effectiveAppSel = kind === "qui" ? (appSel ?? (quiApps[0] ? String(quiApps[0].id) : NEW_APP)) : NEW_APP
-  const usingQuiApp = kind === "qui" && !isEdit && effectiveAppSel !== NEW_APP
+  const effectiveAppSel = spec.hostMode === "app" ? (appSel ?? (quiApps[0] ? String(quiApps[0].id) : NEW_APP)) : NEW_APP
+  const usingQuiApp = spec.hostMode === "app" && !isEdit && effectiveAppSel !== NEW_APP
   const quiInstances = useQuiInstances(usingQuiApp ? Number(effectiveAppSel) : null)
   // Edit never touches identity (host/instance are fixed or App-level now); create
   // needs a watch folder (blackhole), a picked instance (qui via an App), or a host.
-  const identityValid = kind === "blackhole"? torrentDir !== "" || nzbDir !== "": isEdit || (usingQuiApp ? instanceId !== "" : host !== "")
-  const [transmissionDownloadDir, setTransmissionDownloadDir] = useState(client?.settings.transmission?.downloadDir ?? "")
-  const [transmissionStartPaused, setTransmissionStartPaused] = useState(client?.settings.transmission?.startPaused ?? false)
-
-  const [delugeV1, setDelugeV1] = useState(client?.settings.deluge?.v1 ?? false)
-  const [delugeLabel, setDelugeLabel] = useState(client?.settings.deluge?.label ?? "")
-  const [delugeDownloadDir, setDelugeDownloadDir] = useState(client?.settings.deluge?.downloadDir ?? "")
-  const [delugeStartPaused, setDelugeStartPaused] = useState(client?.settings.deluge?.startPaused ?? false)
-
-  const [rtorrentLabel, setRtorrentLabel] = useState(client?.settings.rtorrent?.label ?? "")
-  const [rtorrentDirectory, setRtorrentDirectory] = useState(client?.settings.rtorrent?.directory ?? "")
-  const [rtorrentStartPaused, setRtorrentStartPaused] = useState(client?.settings.rtorrent?.startPaused ?? false)
-  const [rtorrentTlsSkipVerify, setRtorrentTlsSkipVerify] = useState(client?.settings.rtorrent?.tlsSkipVerify ?? false)
+  const identityValid = bhSettings
+    ? bhSettings.torrentDir !== "" || bhSettings.nzbDir !== ""
+    : isEdit || (usingQuiApp && quiSettings ? quiSettings.instanceId !== "" : identity.host !== "")
 
   return (
     <form
       className="flex flex-col gap-4"
       onSubmit={(e) => {
         e.preventDefault()
-        const tagList = tags ? tags.split(",").map((t) => t.trim()).filter(Boolean) : undefined
-        let settings: DownloadClientSettings = {}
-        if (kind === "qbittorrent") {
-          settings = { qbittorrent: { category: category || undefined, tags: tagList, startPaused: startPaused || undefined, tlsSkipVerify: tlsSkipVerify || undefined } }
-        } else if (kind === "blackhole") {
-          settings = { blackhole: { torrentDir: torrentDir || undefined, nzbDir: nzbDir || undefined, saveMagnetFiles: saveMagnetFiles || undefined } }
-        } else if (kind === "sabnzbd") {
-          settings = { sabnzbd: { category: category || undefined } }
-        } else if (kind === "nzbget") {
-          settings = { nzbget: { category: category || undefined } }
-        } else if (kind === "qui") {
-          settings = { qui: { instanceId: Number(instanceId) || 0, category: category || undefined, tags: tagList, startPaused: startPaused || undefined } }
-        } else if (kind === "flood") {
-          settings = { flood: { destination: destination || undefined, tags: tagList, startPaused: startPaused || undefined } }
-        } else if (kind === "download-station") {
-          settings = { downloadStation: { directory: directory || undefined } }
-        } else if (kind === "transmission") {
-          settings = { transmission: { downloadDir: transmissionDownloadDir || undefined, startPaused: transmissionStartPaused || undefined } }
-        } else if (kind === "deluge") {
-          settings = { deluge: {
-            v1: delugeV1 || undefined,
-            label: delugeLabel || undefined,
-            downloadDir: delugeDownloadDir || undefined,
-            startPaused: delugeStartPaused || undefined,
-          } }
-        } else if (kind === "rtorrent") {
-          settings = { rtorrent: {
-            label: rtorrentLabel || undefined,
-            directory: rtorrentDirectory || undefined,
-            startPaused: rtorrentStartPaused || undefined,
-            tlsSkipVerify: rtorrentTlsSkipVerify || undefined,
-          } }
-        }
         // On edit, an empty secret keeps the stored one (only a typed value rotates).
-        // blackhole has no network endpoint of its own — its host must always be empty.
-        // Deluge's daemon RPC is a bare "host:port" address, not a URL; every other kind
-        // composes an absolute http(s) URL. Picking an existing qui App reuses its
-        // identity — no host/username/secret.
-        const composedHost = kind === "deluge" ? composeHostPort(host, port) : composeHostURL(scheme, host, port)
-        const identity = usingQuiApp? { appId: Number(effectiveAppSel) }: { host: kind === "blackhole" ? "" : composedHost, username: kind === "qui" ? "" : username, secret: isEdit ? (secret || undefined) : secret }
-        onSubmit(client?.id ?? null, { name, kind, settings, ...identity })
+        // A "none" host kind (blackhole) has no network endpoint of its own — its host
+        // must always be empty. "hostport" (Deluge's daemon RPC) is a bare "host:port"
+        // address, not a URL; every other kind composes an absolute http(s) URL.
+        // Picking an existing qui App reuses its identity — no host/username/secret.
+        const composedHost = spec.hostMode === "hostport" ? composeHostPort(identity.host, identity.port) : composeHostURL(identity.scheme, identity.host, identity.port)
+        const identityBody = usingQuiApp
+          ? { appId: Number(effectiveAppSel) }
+          : { host: spec.hostMode === "none" ? "" : composedHost, username: spec.hostMode === "app" ? "" : identity.username, secret: isEdit ? (identity.secret || undefined) : identity.secret }
+        onSubmit(client?.id ?? null, { name, kind, settings: spec.encode(settings), ...identityBody })
       }}
     >
       <DialogHeader>
@@ -256,7 +215,10 @@ function DownloadClientForm({ client, initialAppId, pending, onSubmit }: {
           onPick={(a: App) => {
             setKind("qui")
             setAppSel(String(a.id))
-            setInstanceId("")
+            // The re-default can land on a different qui app, so a kept instance id
+            // could pair with an app it doesn't belong to — clear it (keeping any
+            // typed qui settings; a pick from another kind starts at qui defaults).
+            setSettings(quiSettings ? { ...quiSettings, instanceId: "" } : KIND_SPEC.qui.decode(undefined))
           }}
         />
       )}
@@ -276,218 +238,87 @@ function DownloadClientForm({ client, initialAppId, pending, onSubmit }: {
               const next = e.target.value as DownloadClientKind
               setKind(next)
               setAppSel(null) // the app list for the new kind is different; re-default.
-              // The re-default can land on a different qui app, so a kept instance id
-              // could pair with an app it doesn't belong to.
-              setInstanceId("")
+              // Settings are per-kind: the new kind starts at its own defaults. This
+              // also clears a picked instance id, which could otherwise pair with a
+              // re-defaulted app it doesn't belong to.
+              setSettings(KIND_SPEC[next].decode(undefined))
               // A typed port for the OLD kind isn't meaningful for the new one.
-              setPort(String(DEFAULT_PORTS[next] ?? ""))
+              setIdentity((i) => ({ ...i, port: String(DEFAULT_PORTS[next] ?? "") }))
             }}
           >
             {DOWNLOAD_CLIENT_KINDS.map((k) => <option key={k} value={k}>{kindLabel(k)}</option>)}
           </NativeSelect>
         </span>
       </div>
-      {kind === "qui" && !isEdit && (
+      {spec.hostMode === "app" && !isEdit && (
         <span className="flex flex-col gap-1.5">
           <Label htmlFor="dlc-qui-app">qui app</Label>
-          <NativeSelect id="dlc-qui-app" value={effectiveAppSel} onChange={(e) => { setAppSel(e.target.value); setInstanceId("") }}>
+          <NativeSelect id="dlc-qui-app" value={effectiveAppSel} onChange={(e) => { setAppSel(e.target.value); setSettings(quiSettings ? { ...quiSettings, instanceId: "" } : KIND_SPEC.qui.decode(undefined)) }}>
             {quiApps.map((a) => <option key={a.id} value={a.id}>{a.name} ({hostname(a.baseUrl)})</option>)}
             <option value={NEW_APP}>New app…</option>
           </NativeSelect>
         </span>
       )}
-      {kind === "qui" && !isEdit && usingQuiApp && (
+      {usingQuiApp && (
         <ReusingAppHint
           app={quiApps.find((a) => String(a.id) === effectiveAppSel)}
           tail="pick an instance below"
         />
       )}
-      {isEdit && kind !== "blackhole" && <ManagedByAppHint appId={client?.appId} />}
-      {!isEdit && kind !== "blackhole" && !usingQuiApp && (
+      {isEdit && spec.hostMode !== "none" && <ManagedByAppHint appId={client?.appId} />}
+      {!isEdit && spec.hostMode !== "none" && !usingQuiApp && (
         <>
           <HostPortFields
             idPrefix="dlc"
-            scheme={scheme}
-            host={host}
-            port={port}
-            onScheme={setScheme}
-            onHost={setHost}
-            onPort={setPort}
-            showScheme={kind !== "deluge"}
+            scheme={identity.scheme}
+            host={identity.host}
+            port={identity.port}
+            onScheme={(scheme) => setIdentity((i) => ({ ...i, scheme }))}
+            onHost={(host) => setIdentity((i) => ({ ...i, host }))}
+            onPort={(port) => setIdentity((i) => ({ ...i, port }))}
+            showScheme={spec.hostMode !== "hostport"}
           />
           <div className="grid grid-cols-2 gap-3">
             {kind !== "qui" && kind !== "sabnzbd" && (
               <span className="flex flex-col gap-1.5">
                 <Label htmlFor="dlc-username">Username <span className="text-faint">(optional)</span></Label>
-                <Input id="dlc-username" autoComplete="off" value={username} onChange={(e) => setUsername(e.target.value)} />
+                <Input id="dlc-username" autoComplete="off" value={identity.username} onChange={(e) => setIdentity((i) => ({ ...i, username: e.target.value }))} />
               </span>
             )}
             <span className={`flex flex-col gap-1.5 ${kind === "qui" || kind === "sabnzbd" ? "col-span-2" : ""}`}>
               <Label htmlFor="dlc-secret">{kind === "qui" || kind === "sabnzbd" ? "API key" : "Password"}</Label>
-              <Input id="dlc-secret" type="password" autoComplete="off" value={secret} onChange={(e) => setSecret(e.target.value)} />
+              <Input id="dlc-secret" type="password" autoComplete="off" value={identity.secret} onChange={(e) => setIdentity((i) => ({ ...i, secret: e.target.value }))} />
             </span>
           </div>
         </>
       )}
-      {kind === "blackhole" && (
-        <div className="flex flex-col gap-3 rounded-lg border border-border/60 p-3">
-          <div className="grid grid-cols-2 gap-3">
-            <span className="flex flex-col gap-1.5">
-              <Label htmlFor="dlc-torrent-dir">Torrent watch folder <span className="text-faint">(optional)</span></Label>
-              <Input id="dlc-torrent-dir" placeholder="/watch/torrents" value={torrentDir} onChange={(e) => setTorrentDir(e.target.value)} />
-            </span>
-            <span className="flex flex-col gap-1.5">
-              <Label htmlFor="dlc-nzb-dir">NZB watch folder <span className="text-faint">(optional)</span></Label>
-              <Input id="dlc-nzb-dir" placeholder="/watch/nzbs" value={nzbDir} onChange={(e) => setNzbDir(e.target.value)} />
-            </span>
-          </div>
-          <label className="flex items-center gap-2 text-[13px]">
-            <Switch checked={saveMagnetFiles} onCheckedChange={setSaveMagnetFiles} />
-            Save magnet-only releases as .magnet files
-          </label>
-        </div>
-      )}
-      {(kind === "sabnzbd" || kind === "nzbget") && (
-        <div className="flex flex-col gap-3 rounded-lg border border-border/60 p-3">
+      <spec.Fields s={settings} set={setSettings}>
+        {quiSettings && (usingQuiApp ? (
           <span className="flex flex-col gap-1.5">
-            <Label htmlFor="dlc-category">Category <span className="text-faint">(optional)</span></Label>
-            <Input id="dlc-category" value={category} onChange={(e) => setCategory(e.target.value)} />
+            <Label htmlFor="dlc-instance-select">Instance</Label>
+            <NativeSelect
+              id="dlc-instance-select"
+              value={quiSettings.instanceId}
+              onChange={(e) => {
+                setSettings({ ...quiSettings, instanceId: e.target.value })
+                const picked = quiInstances.data?.instances?.find((i) => String(i.id) === e.target.value)
+                if (picked) setName(picked.name)
+              }}
+            >
+              <option value="">Select an instance…</option>
+              {(quiInstances.data?.instances ?? []).map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+            </NativeSelect>
+            {quiInstances.data && !quiInstances.data.ok && (
+              <p className="text-[12px] text-bad">{quiInstances.data.error ?? "Couldn't reach qui"}</p>
+            )}
           </span>
-        </div>
-      )}
-      {(kind === "qbittorrent" || kind === "qui") && (
-        <div className="flex flex-col gap-3 rounded-lg border border-border/60 p-3">
-          {kind === "qui" && usingQuiApp && (
-            <span className="flex flex-col gap-1.5">
-              <Label htmlFor="dlc-instance-select">Instance</Label>
-              <NativeSelect
-                id="dlc-instance-select"
-                value={instanceId}
-                onChange={(e) => {
-                  setInstanceId(e.target.value)
-                  const picked = quiInstances.data?.instances?.find((i) => String(i.id) === e.target.value)
-                  if (picked) setName(picked.name)
-                }}
-              >
-                <option value="">Select an instance…</option>
-                {(quiInstances.data?.instances ?? []).map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
-              </NativeSelect>
-              {quiInstances.data && !quiInstances.data.ok && (
-                <p className="text-[12px] text-bad">{quiInstances.data.error ?? "Couldn't reach qui"}</p>
-              )}
-            </span>
-          )}
-          {kind === "qui" && !usingQuiApp && (
-            <span className="flex flex-col gap-1.5">
-              <Label htmlFor="dlc-instance-id">Instance ID</Label>
-              <Input id="dlc-instance-id" type="number" min={1} value={instanceId} onChange={(e) => setInstanceId(e.target.value)} />
-            </span>
-          )}
-          <div className="grid grid-cols-2 gap-3">
-            <span className="flex flex-col gap-1.5">
-              <Label htmlFor="dlc-category">Category <span className="text-faint">(optional)</span></Label>
-              <Input id="dlc-category" value={category} onChange={(e) => setCategory(e.target.value)} />
-            </span>
-            <span className="flex flex-col gap-1.5">
-              <Label htmlFor="dlc-tags">Tags <span className="text-faint">(comma-separated, optional)</span></Label>
-              <Input id="dlc-tags" value={tags} onChange={(e) => setTags(e.target.value)} />
-            </span>
-          </div>
-          <label className="flex items-center gap-2 text-[13px]">
-            <Switch checked={startPaused} onCheckedChange={setStartPaused} />
-            Start paused
-          </label>
-          {kind === "qbittorrent" && (
-            <label className="flex items-center gap-2 text-[13px]">
-              <Switch checked={tlsSkipVerify} onCheckedChange={setTlsSkipVerify} />
-              Skip TLS certificate verification
-            </label>
-          )}
-        </div>
-      )}
-      {kind === "flood" && (
-        <div className="flex flex-col gap-3 rounded-lg border border-border/60 p-3">
-          <div className="grid grid-cols-2 gap-3">
-            <span className="flex flex-col gap-1.5">
-              <Label htmlFor="dlc-destination">Destination <span className="text-faint">(optional)</span></Label>
-              <Input id="dlc-destination" value={destination} onChange={(e) => setDestination(e.target.value)} />
-            </span>
-            <span className="flex flex-col gap-1.5">
-              <Label htmlFor="dlc-tags">Tags <span className="text-faint">(comma-separated, optional)</span></Label>
-              <Input id="dlc-tags" value={tags} onChange={(e) => setTags(e.target.value)} />
-            </span>
-          </div>
-          <label className="flex items-center gap-2 text-[13px]">
-            <Switch checked={startPaused} onCheckedChange={setStartPaused} />
-            Start paused
-          </label>
-        </div>
-      )}
-
-      {kind === "transmission" && (
-        <div className="flex flex-col gap-3 rounded-lg border border-border/60 p-3">
+        ) : (
           <span className="flex flex-col gap-1.5">
-            <Label htmlFor="dlc-transmission-dir">Download directory <span className="text-faint">(optional)</span></Label>
-            <Input id="dlc-transmission-dir" value={transmissionDownloadDir} onChange={(e) => setTransmissionDownloadDir(e.target.value)} />
+            <Label htmlFor="dlc-instance-id">Instance ID</Label>
+            <Input id="dlc-instance-id" type="number" min={1} value={quiSettings.instanceId} onChange={(e) => setSettings({ ...quiSettings, instanceId: e.target.value })} />
           </span>
-          <label className="flex items-center gap-2 text-[13px]">
-            <Switch checked={transmissionStartPaused} onCheckedChange={setTransmissionStartPaused} />
-            Start paused
-          </label>
-        </div>
-      )}
-      {kind === "deluge" && (
-        <div className="flex flex-col gap-3 rounded-lg border border-border/60 p-3">
-          <div className="grid grid-cols-2 gap-3">
-            <span className="flex flex-col gap-1.5">
-              <Label htmlFor="dlc-deluge-label">Label <span className="text-faint">(optional)</span></Label>
-              <Input id="dlc-deluge-label" value={delugeLabel} onChange={(e) => setDelugeLabel(e.target.value)} />
-            </span>
-            <span className="flex flex-col gap-1.5">
-              <Label htmlFor="dlc-deluge-dir">Download directory <span className="text-faint">(optional)</span></Label>
-              <Input id="dlc-deluge-dir" value={delugeDownloadDir} onChange={(e) => setDelugeDownloadDir(e.target.value)} />
-            </span>
-          </div>
-          <label className="flex items-center gap-2 text-[13px]">
-            <Switch checked={delugeV1} onCheckedChange={setDelugeV1} />
-            Deluge 1.3 daemon <span className="text-faint">(default is the v2 daemon)</span>
-          </label>
-          <label className="flex items-center gap-2 text-[13px]">
-            <Switch checked={delugeStartPaused} onCheckedChange={setDelugeStartPaused} />
-            Start paused
-          </label>
-        </div>
-      )}
-      {kind === "rtorrent" && (
-        <div className="flex flex-col gap-3 rounded-lg border border-border/60 p-3">
-          <div className="grid grid-cols-2 gap-3">
-            <span className="flex flex-col gap-1.5">
-              <Label htmlFor="dlc-rtorrent-label">Label <span className="text-faint">(optional)</span></Label>
-              <Input id="dlc-rtorrent-label" value={rtorrentLabel} onChange={(e) => setRtorrentLabel(e.target.value)} />
-            </span>
-            <span className="flex flex-col gap-1.5">
-              <Label htmlFor="dlc-rtorrent-dir">Directory <span className="text-faint">(optional)</span></Label>
-              <Input id="dlc-rtorrent-dir" value={rtorrentDirectory} onChange={(e) => setRtorrentDirectory(e.target.value)} />
-            </span>
-          </div>
-          <label className="flex items-center gap-2 text-[13px]">
-            <Switch checked={rtorrentStartPaused} onCheckedChange={setRtorrentStartPaused} />
-            Start paused
-          </label>
-          <label className="flex items-center gap-2 text-[13px]">
-            <Switch checked={rtorrentTlsSkipVerify} onCheckedChange={setRtorrentTlsSkipVerify} />
-            Skip TLS certificate verification
-          </label>
-        </div>
-      )}
-      {kind === "download-station" && (
-        <div className="flex flex-col gap-3 rounded-lg border border-border/60 p-3">
-          <span className="flex flex-col gap-1.5">
-            <Label htmlFor="dlc-directory">Directory <span className="text-faint">(optional, relative to a shared folder)</span></Label>
-            <Input id="dlc-directory" value={directory} onChange={(e) => setDirectory(e.target.value)} />
-          </span>
-        </div>
-      )}
+        ))}
+      </spec.Fields>
       <DialogFooter>
         <Button type="submit" disabled={pending || !name || !identityValid}>
           {pending ? "Saving…" : isEdit ? "Save changes" : "Add download client"}
