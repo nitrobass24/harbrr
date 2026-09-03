@@ -19,13 +19,14 @@ function setParams(params: SearchParams): SearchParams {
 // aggregate feed must never disagree over. The query runs once a search is submitted
 // (params !== null); the key carries the subset so changing it re-queries.
 export function useSearchAggregate(slugs: string[], params: SearchParams | null) {
+  const fetchAggregate = (p: SearchParams) =>
+    unwrap(api.http.GET("/api/search", { params: { query: { ...setParams(p), indexers: slugs.join(",") } } }))
   return useQuery({
     queryKey: keys.search.aggregate(slugs, params),
     // Narrowed, not asserted: `enabled` already guarantees params is non-null, and a
-    // cast would keep compiling if that guard ever changed.
-    queryFn: params === null
-      ? skipToken
-      : () => unwrap(api.http.GET("/api/search", { params: { query: { ...setParams(params), indexers: slugs.join(",") } } })),
+    // cast would keep compiling if that guard ever changed. The call is hoisted so the
+    // ternary fits one line (@stylistic/multiline-ternary is "never").
+    queryFn: params === null ? skipToken : () => fetchAggregate(params),
     enabled: params !== null && slugs.length > 0,
     retry: false,
     staleTime: 60_000, // the server-side cache is authoritative; avoid re-fetch churn
