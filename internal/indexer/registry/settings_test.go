@@ -181,45 +181,39 @@ func checkLimit(t *testing.T, kind string, got, want *int) {
 func TestResolveInstanceSettingsFreeleech(t *testing.T) {
 	t.Parallel()
 
-	t.Run("on: engine map is a clone without the key", func(t *testing.T) {
-		t.Parallel()
-		raw := map[string]string{"freeleech": "true", "apikey": "k"}
-		s, err := settingsResolver(time.Second).resolveInstanceSettings(
-			context.Background(), domain.IndexerInstance{}, &loader.Definition{}, raw,
-		)
-		if err != nil {
-			t.Fatalf("resolveInstanceSettings: %v", err)
-		}
-		if !s.Freeleech {
-			t.Fatal("Freeleech = false, want true")
-		}
-		if _, ok := s.engineCfg["freeleech"]; ok {
-			t.Error("engineCfg still carries the freeleech key; the engine must fetch the full catalog")
-		}
-		if s.engineCfg["apikey"] != "k" {
-			t.Error("engineCfg lost an unrelated key in the clone")
-		}
-		if raw["freeleech"] != "true" {
-			t.Error("the input map was mutated; the engine view must be a clone")
-		}
-	})
-
-	t.Run("off (persisted literal false): key stays, flag off", func(t *testing.T) {
-		t.Parallel()
-		raw := map[string]string{"freeleech": "false"}
-		s, err := settingsResolver(time.Second).resolveInstanceSettings(
-			context.Background(), domain.IndexerInstance{}, &loader.Definition{}, raw,
-		)
-		if err != nil {
-			t.Fatalf("resolveInstanceSettings: %v", err)
-		}
-		if s.Freeleech {
-			t.Fatal("Freeleech = true for a persisted literal \"false\" (autobrr/harbrr#273)")
-		}
-		if _, ok := s.engineCfg["freeleech"]; !ok {
-			t.Error("engineCfg dropped the key even though the view is off")
-		}
-	})
+	tests := []struct {
+		name  string
+		value string // the stored "freeleech" setting
+		want  bool   // the serve-time view flag
+	}{
+		{name: "on: engine map is a clone without the key", value: "true", want: true},
+		// A persisted literal "false" is non-empty but must read as off (autobrr/harbrr#273).
+		{name: "off (persisted literal false): key stays, flag off", value: "false", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			raw := map[string]string{"freeleech": tt.value, "apikey": "k"}
+			s, err := settingsResolver(time.Second).resolveInstanceSettings(
+				context.Background(), domain.IndexerInstance{}, &loader.Definition{}, raw,
+			)
+			if err != nil {
+				t.Fatalf("resolveInstanceSettings: %v", err)
+			}
+			if s.Freeleech != tt.want {
+				t.Fatalf("Freeleech = %v, want %v", s.Freeleech, tt.want)
+			}
+			if _, ok := s.engineCfg["freeleech"]; ok == tt.want {
+				t.Errorf("engineCfg freeleech key present = %v; the engine must see the key exactly when the view is off", ok)
+			}
+			if s.engineCfg["apikey"] != "k" {
+				t.Error("engineCfg lost an unrelated key")
+			}
+			if raw["freeleech"] != tt.value {
+				t.Error("the input map was mutated; the engine view must be a clone")
+			}
+		})
+	}
 }
 
 // TestResolveInstanceSettingsRefs pins the engineCfg-visibility decision: a
