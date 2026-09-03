@@ -3,7 +3,7 @@ module github.com/autobrr/harbrr
 go 1.27.0
 
 require (
-	github.com/PuerkitoBio/goquery v1.12.0
+	github.com/PuerkitoBio/goquery v1.13.0
 	github.com/alexedwards/scs/v2 v2.9.0
 	github.com/andybalholm/cascadia v1.3.4
 	github.com/autobrr/go-cache v1.0.0-rc1
@@ -12,7 +12,7 @@ require (
 	github.com/autobrr/go-rtorrent v1.12.0
 	github.com/coreos/go-oidc/v3 v3.20.0
 	github.com/dlclark/regexp2 v1.12.0
-	github.com/getkin/kin-openapi v0.147.0
+	github.com/getkin/kin-openapi v0.149.0
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/hekmon/transmissionrpc/v3 v3.0.0
