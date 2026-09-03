@@ -1,0 +1,71 @@
+import { describe, expect, it, vi } from "vitest"
+import { APIError } from "./api"
+import { stubApi, UnstubbedRequestError } from "@/test/stubApi"
+
+// The #557 PR1 acceptance suite: the middleware seam exercised end-to-end through
+// stubApi's injected transport, so what passes here is exactly what runs in
+// production — CSRF onRequest, the 401 onResponse hard-redirect with its
+// AUTH_BOOTSTRAP exemption, and the {error, code} envelope mapping.
+
+function errorResponse(status: number, code: string, error: string): Response {
+  return Response.json({ error, code }, { status })
+}
+
+describe("stubApi through the real middleware pipeline", () => {
+  it("injects the CSRF header on mutating verbs and not on reads", async () => {
+    const api = stubApi({
+      "GET /api/apps": [],
+      "POST /api/auth/logout": null,
+    })
+    api.setCsrfToken("tok-from-me")
+    await api.listApps()
+    await api.logout()
+    expect(api.calls("GET /api/apps")[0].headers.get("X-CSRF-Token")).toBeNull()
+    expect(api.calls("POST /api/auth/logout")[0].headers.get("X-CSRF-Token")).toBe("tok-from-me")
+  })
+
+  it("calls onUnauthorized on a 401 from a non-exempt path", async () => {
+    const api = stubApi({ "GET /api/apps": () => errorResponse(401, "unauthorized", "no session") })
+    const unauthorized = vi.fn()
+    api.onUnauthorized = unauthorized
+    await expect(api.listApps()).rejects.toBeInstanceOf(APIError)
+    expect(unauthorized).toHaveBeenCalledTimes(1)
+  })
+
+  it("throws APIError without bouncing on a 401 from each AUTH_BOOTSTRAP path", async () => {
+    const api = stubApi({
+      "GET /api/auth/me": () => errorResponse(401, "unauthorized", "no session"),
+      "POST /api/auth/login": () => errorResponse(401, "invalid_credentials", "wrong credentials"),
+      "POST /api/auth/setup": () => errorResponse(401, "unauthorized", "already set up"),
+      "POST /api/auth/logout": () => errorResponse(401, "unauthorized", "no session"),
+    })
+    const unauthorized = vi.fn()
+    api.onUnauthorized = unauthorized
+    await expect(api.getMe()).rejects.toBeInstanceOf(APIError)
+    await expect(api.login({ username: "a", password: "b" })).rejects.toBeInstanceOf(APIError)
+    await expect(api.setup({ username: "a", password: "b" })).rejects.toBeInstanceOf(APIError)
+    await expect(api.logout()).rejects.toBeInstanceOf(APIError)
+    expect(unauthorized).not.toHaveBeenCalled()
+  })
+
+  it("parses the error envelope into APIError, matching {param} path segments", async () => {
+    const api = stubApi({ "DELETE /api/apikeys/{id}": () => errorResponse(409, "conflict", "still in use") })
+    const err = await api.revokeApiKey(7).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(APIError)
+    expect((err as APIError).status).toBe(409)
+    expect((err as APIError).code).toBe("conflict")
+    expect((err as APIError).message).toBe("still in use")
+  })
+
+  it("records sent requests so tests can assert bodies", async () => {
+    const api = stubApi({ "POST /api/apikeys": { id: 1, name: "deploy", key: "k" } })
+    await api.mintApiKey("deploy")
+    expect(await api.calls("POST /api/apikeys")[0].json()).toEqual({ name: "deploy" })
+  })
+
+  it("fails loudly on a request nothing stubbed, naming the stubbed keys", async () => {
+    const api = stubApi({ "GET /api/apps": [] })
+    await expect(api.listIndexers()).rejects.toThrow(UnstubbedRequestError)
+    await expect(api.listIndexers()).rejects.toThrow("GET /api/apps")
+  })
+})
