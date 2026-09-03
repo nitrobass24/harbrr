@@ -1,15 +1,12 @@
 import { useEffect, useState } from "react"
 import { useInitialAppPick } from "@/hooks/useInitialAppPick"
-import { Pencil, Plus, Trash2 } from "lucide-react"
-import { toast } from "sonner"
+import { Pencil, Trash2 } from "lucide-react"
 import { ConfiguredAppsBlock, ReusingAppHint } from "@/components/applications/ConfiguredApps"
 import { HostPortFields } from "@/components/forms/HostPortFields"
 import { ManagedByAppHint } from "@/components/applications/ManagedByAppHint"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
-  Dialog,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
@@ -18,6 +15,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
+import { ResourceSection } from "@/components/ui/resource-section"
 import { Switch } from "@/components/ui/switch"
 import {
   useAnnounceConnections,
@@ -32,15 +30,12 @@ import { useApps } from "@/hooks/useApps"
 import { defaultHarbrrUrl, explicitUrlPort } from "@/lib/base-url"
 import { hostname, kindLabel } from "@/lib/format"
 import { composeHostURL, DEFAULT_PORTS } from "@/lib/hosturl"
+import { notifyError, notifySuccess } from "@/lib/notify"
 import type { AnnounceConnection, AnnounceKind, App, CreateAnnounceConnection, UpdateAnnounceConnection } from "@/lib/api"
 
 // Sentinel select value for "no existing App picked, use the inline fields below" —
 // mirrors ConnectionDialog's create-time App picker.
 const NEW_APP = "new"
-
-type DialogState =
-  | { open: false }
-  | { open: true, existing?: AnnounceConnection, initialAppId?: number }
 
 // Cross-seed push targets: harbrr announces newly-seen releases to qui's cross-seed
 // webhook or cross-seed v6's /api/announce. Each target can be edited in place and
@@ -53,16 +48,15 @@ export function AnnounceSection({ initialCreate }: { initialCreate?: { appId: nu
   const toggle = useSetAnnounceEnabled()
   const test = useTestAnnounce()
   const serverInfo = useServerInfo()
-  const [dialog, setDialog] = useState<DialogState>({ open: false })
 
   // "Use as…" deep-link (autobrr/harbrr#300): the applications route owns the search
-  // params and hands the pick down as a prop — this section owns its own dialog state,
-  // so it opens itself the first time the prop shows up.
+  // params and hands the pick down as a prop; the shell opens the add dialog
+  // (addRequest) while this section remembers which App to pre-pick — cleared on any
+  // dialog close so a later manual add starts clean.
+  const [pendingAppId, setPendingAppId] = useState<number | undefined>()
   useEffect(() => {
-    if (initialCreate) setDialog({ open: true, initialAppId: initialCreate.appId })
+    if (initialCreate) setPendingAppId(initialCreate.appId)
   }, [initialCreate])
-
-  const editing = dialog.open ? dialog.existing : undefined
 
   // Same stale-port advisory as ConnectionCard: only a harbrrUrl naming a port outright
   // is comparable to harbrr's listen port (a proxied URL has none). Badge-only — the
@@ -79,37 +73,32 @@ export function AnnounceSection({ initialCreate }: { initialCreate?: { appId: nu
   const runTest = (t: AnnounceConnection) => test.mutate(t.id, {
     onSuccess: (r) => {
       if (!r.ok) {
-        toast.error(`Test failed — ${r.error ?? "unknown error"}`)
+        notifyError(`Test failed — ${r.error ?? "unknown error"}`)
         return
       }
       const verified = t.kind === "qui" ? "qui accepted the API key" : "cross-seed v6 exposes no key check"
-      toast.success(`Reachable — ${verified}`)
+      notifySuccess(`Reachable — ${verified}`)
     },
-    onError: () => toast.error("Test request failed"),
+    onError: (err) => notifyError("Test request failed", err),
   })
 
-  const closeDialog = () => {
-    create.reset()
-    update.reset()
-    setDialog({ open: false })
-  }
-
   return (
-    <section className="flex flex-col gap-3">
-      <div className="flex items-center gap-3">
-        <div className="flex flex-col">
-          <h2 className="text-[14px] font-semibold tracking-tight">Announce targets</h2>
-          <p className="text-[12px] text-faint">
-            New releases seen on polled feeds are pushed to cross-seed tools.
-          </p>
-        </div>
-        <Button variant="outline" size="sm" className="ml-auto" onClick={() => setDialog({ open: true })}>
-          <Plus className="h-3.5 w-3.5" /> Add target
-        </Button>
-      </div>
-
-      {(targets.data ?? []).map((t) => (
-        <div key={t.id} className="flex items-center gap-4 rounded-xl border border-border bg-card px-5 py-3.5">
+    <ResourceSection<AnnounceConnection>
+      title="Announce targets"
+      subtitle="New releases seen on polled feeds are pushed to cross-seed tools."
+      addLabel="Add target"
+      query={targets}
+      empty="No announce targets. cross-seed v6 users can also grab a per-indexer config snippet from the Indexers table's kebab menu."
+      addRequest={initialCreate}
+      onDialogClose={() => {
+        // Clear any failed-mutation error so it can't resurface the next time the
+        // dialog opens (the form remounts, but the mutation error persists).
+        create.reset()
+        update.reset()
+        setPendingAppId(undefined)
+      }}
+      row={(t, { edit }) => (
+        <>
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
             <span className="flex items-center gap-2 text-[14px] font-medium">
               {t.name}
@@ -139,46 +128,37 @@ export function AnnounceSection({ initialCreate }: { initialCreate?: { appId: nu
           >
             {test.isPending && test.variables === t.id ? "Testing…" : "Test"}
           </Button>
-          <Button variant="ghost" size="icon" aria-label={`Edit ${t.name}`} onClick={() => setDialog({ open: true, existing: t })}>
+          <Button variant="ghost" size="icon" aria-label={`Edit ${t.name}`} onClick={edit}>
             <Pencil className="h-4 w-4" />
           </Button>
+          {/* Delete stays section-owned: announce delete has never toasted, and the
+              shell's onDelete would introduce new user-visible strings. */}
           <Button variant="ghost" size="icon" aria-label={`Delete ${t.name}`} onClick={() => remove.mutate(t.id)}>
             <Trash2 className="h-4 w-4" />
           </Button>
-        </div>
-      ))}
-      {targets.data?.length === 0 && (
-        <p className="rounded-xl border border-dashed border-border px-5 py-6 text-center text-[13px] text-muted-foreground">
-          No announce targets. cross-seed v6 users can also grab a per-indexer config snippet from
-          the Indexers table&apos;s kebab menu.
-        </p>
+        </>
       )}
-
-      <Dialog open={dialog.open} onOpenChange={(open) => { if (!open) closeDialog() }}>
-        <DialogContent>
-          {dialog.open && (
-            <AnnounceForm
-              existing={dialog.existing}
-              initialAppId={dialog.initialAppId}
-              pending={create.isPending || update.isPending}
-              error={editing ? update.error : create.error}
-              onCreate={(body) => create.mutate(body, {
-                onSuccess: () => {
-                  toast.success(`${body.name} added`)
-                  setDialog({ open: false })
-                },
-              })}
-              onUpdate={(id, body) => update.mutate({ id, body }, {
-                onSuccess: () => {
-                  toast.success("Target updated")
-                  setDialog({ open: false })
-                },
-              })}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
-    </section>
+      form={(target, done) => (
+        <AnnounceForm
+          existing={target ?? undefined}
+          initialAppId={target === null ? pendingAppId : undefined}
+          pending={create.isPending || update.isPending}
+          error={target ? update.error : create.error}
+          onCreate={(body) => create.mutate(body, {
+            onSuccess: () => {
+              notifySuccess(`${body.name} added`)
+              done.onSuccess()
+            },
+          })}
+          onUpdate={(id, body) => update.mutate({ id, body }, {
+            onSuccess: () => {
+              notifySuccess("Target updated")
+              done.onSuccess()
+            },
+          })}
+        />
+      )}
+    />
   )
 }
 

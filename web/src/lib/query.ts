@@ -118,4 +118,7 @@ export const keys = {
   announceConnections: {
     all: ["announce-connections"] as const,
   },
+  oidcConfig: {
+    all: ["oidc-config"] as const,
+  },
 } as const

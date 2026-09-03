@@ -44,7 +44,7 @@ export function ResourceSection<T extends { id: number | string, name?: string }
 }: {
   id?: string
   title: string
-  // Rendered under the title (Apps); a section with a subtitle has no add button row.
+  // Rendered under the title (Apps, Announce targets).
   subtitle?: string
   // Absent → no add button (Apps: one is created the first time a surface connects).
   addLabel?: string
@@ -85,9 +85,11 @@ export function ResourceSection<T extends { id: number | string, name?: string }
 
   return (
     <section id={id} className="flex flex-col gap-3">
-      <div className={addLabel ? "flex items-center gap-3" : "flex flex-col"}>
-        <h2 className="text-[14px] font-semibold tracking-tight">{title}</h2>
-        {subtitle && <p className="text-[12px] text-faint">{subtitle}</p>}
+      <div className="flex items-center gap-3">
+        <div className="flex flex-col">
+          <h2 className="text-[14px] font-semibold tracking-tight">{title}</h2>
+          {subtitle && <p className="text-[12px] text-faint">{subtitle}</p>}
+        </div>
         {addLabel && (
           <Button variant="outline" size="sm" className="ml-auto" onClick={() => setTarget("new")}>
             <Plus className="h-3.5 w-3.5" /> {addLabel}

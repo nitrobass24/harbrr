@@ -48,6 +48,19 @@ export default tseslint.config([
       "@typescript-eslint/no-unused-vars": ["warn"],
       "@typescript-eslint/no-explicit-any": "error",
       "linebreak-style": ["error", "unix"],
+      // Toasts go through lib/notify so error/warn toasts also relay to the daemon
+      // log (harbrr#112) — direct sonner imports silently skip that relay.
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "sonner",
+              message: "Use notify* from @/lib/notify — it is the one sanctioned sonner call site (error/warn toasts relay to the daemon log).",
+            },
+          ],
+        },
+      ],
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "warn",
@@ -60,6 +73,15 @@ export default tseslint.config([
     files: ["src/routes/**/*.tsx", "src/components/ui/**/*.tsx"],
     rules: {
       "react-refresh/only-export-components": "off",
+    },
+  },
+  {
+    // The two sanctioned sonner import sites: lib/notify.ts (the one toast() call
+    // site, which relays error/warn toasts to the daemon log) and ui/sonner.tsx
+    // (mounts sonner's <Toaster/>, never calls toast()).
+    files: ["src/lib/notify.ts", "src/components/ui/sonner.tsx"],
+    rules: {
+      "no-restricted-imports": "off",
     },
   },
 ])
