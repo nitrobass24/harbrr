@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { APIError } from "./api"
 import { stubApi, UnstubbedRequestError } from "@/test/stubApi"
 
@@ -12,6 +12,10 @@ function errorResponse(status: number, code: string, error: string): Response {
 }
 
 describe("stubApi through the real middleware pipeline", () => {
+  afterEach(() => {
+    document.cookie = "harbrr_csrf=; expires=Thu, 01 Jan 1970 00:00:00 GMT"
+  })
+
   it("injects the CSRF header on mutating verbs and not on reads", async () => {
     const api = stubApi({
       "GET /api/apps": [],
@@ -22,6 +26,30 @@ describe("stubApi through the real middleware pipeline", () => {
     await api.logout()
     expect(api.calls("GET /api/apps")[0].headers.get("X-CSRF-Token")).toBeNull()
     expect(api.calls("POST /api/auth/logout")[0].headers.get("X-CSRF-Token")).toBe("tok-from-me")
+  })
+
+  it("the companion cookie's CSRF token takes precedence over the me-payload token", async () => {
+    const api = stubApi({ "POST /api/auth/logout": null })
+    document.cookie = "harbrr_csrf=tok-from-cookie"
+    api.setCsrfToken("tok-from-me")
+    await api.logout()
+    expect(api.calls("POST /api/auth/logout")[0].headers.get("X-CSRF-Token")).toBe("tok-from-cookie")
+  })
+
+  it("omits the CSRF header entirely when no token exists (auth disabled)", async () => {
+    const api = stubApi({ "POST /api/auth/logout": null })
+    await api.logout()
+    expect(api.calls("POST /api/auth/logout")[0].headers.get("X-CSRF-Token")).toBeNull()
+  })
+
+  it("stores the CSRF token from the me payload", async () => {
+    const api = stubApi({
+      "GET /api/auth/me": { username: "admin", authMethod: "password", csrfToken: "tok-me" },
+      "POST /api/auth/logout": null,
+    })
+    await api.getMe()
+    await api.logout()
+    expect(api.calls("POST /api/auth/logout")[0].headers.get("X-CSRF-Token")).toBe("tok-me")
   })
 
   it("calls onUnauthorized on a 401 from a non-exempt path", async () => {

@@ -192,22 +192,25 @@ export class ApiClient {
   private csrfToken = ""
   private readonly http: Client<paths>
 
-  // fetchFn is the injection seam tests use (see src/test/stubApi.ts): a stub
-  // injected here still runs the whole middleware pipeline, so CSRF injection and
-  // the 401 redirect behave exactly as in production. The default keeps the
-  // late-binding indirection (dispatch through whatever globalThis.fetch is current
-  // at call time) so tests that stub the global after construction (vi.stubGlobal)
-  // still intercept it.
+  // fetchFn is the transport behind every request and the injection seam tests use
+  // (see src/test/stubApi.ts): a stub here still runs the whole middleware pipeline,
+  // so CSRF injection and the 401 redirect behave exactly as in production. It is a
+  // replaceable field rather than a constructor-only capture because component tests
+  // reach the module singleton through the hooks — stubApi swaps the singleton's
+  // transport for the duration of a test and restores it after.
+  fetchFn: (input: Request) => Promise<Response>
+
   // baseUrl is made absolute (origin + path prefix) because openapi-fetch constructs
   // a `Request` itself before dispatching — a plain browser `fetch("/api/...")` (the
   // old hand-rolled client's approach) resolves a relative URL against the document
   // implicitly, but `new Request("/api/...")` does not, so the origin is spelled out.
   // This is the same absolute URL the browser would have resolved either way.
   constructor(fetchFn?: (input: Request) => Promise<Response>) {
+    this.fetchFn = fetchFn ?? ((input) => globalThis.fetch(input))
     this.http = createClient<paths>({
       baseUrl: `${window.location.origin}${getBaseUrl()}`,
       credentials: "same-origin",
-      fetch: (input: Request) => (fetchFn ?? globalThis.fetch)(input),
+      fetch: (input: Request) => this.fetchFn(input),
     })
     this.http.use({
       onRequest: ({ request }) => {

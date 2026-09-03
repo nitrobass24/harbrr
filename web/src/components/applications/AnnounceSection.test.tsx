@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import type { ReactNode } from "react"
 import type { AnnounceConnection, App } from "@/lib/api"
+import { stubApi } from "@/test/stubApi"
 import { AnnounceSection } from "./AnnounceSection"
 
 const TARGET: AnnounceConnection = {
@@ -17,13 +18,6 @@ const TARGET: AnnounceConnection = {
   updatedAt: "2026-07-01T00:00:00Z",
 }
 
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(status === 204 ? null : JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  })
-}
-
 function wrap(children: ReactNode) {
   return (
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -33,18 +27,13 @@ function wrap(children: ReactNode) {
 }
 
 describe("AnnounceSection edit", () => {
-  afterEach(() => vi.unstubAllGlobals())
-
   it("edit is name-only: identity/credential are App-level now, not resubmitted", async () => {
-    const fetchMock = vi.fn((request: Request) => {
-      if (request.method === "PATCH" && request.url.includes("/announce-connections")) {
-        return Promise.resolve(jsonResponse(null, 204))
-      }
-      if (request.url.includes("/announce-connections")) return Promise.resolve(jsonResponse([TARGET]))
-      if (request.url.includes("/server-info")) return Promise.resolve(jsonResponse({ port: 7478 }))
-      return Promise.resolve(jsonResponse([]))
+    const api = stubApi({
+      "GET /api/announce-connections": [TARGET],
+      "PATCH /api/announce-connections/{id}": null,
+      "GET /api/server-info": { port: 7478 },
+      "GET /api/apps": [],
     })
-    vi.stubGlobal("fetch", fetchMock)
 
     render(wrap(<AnnounceSection />))
 
@@ -58,17 +47,15 @@ describe("AnnounceSection edit", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
 
     await waitFor(async () => {
-      const patch = fetchMock.mock.calls.find(([request]) => request.method === "PATCH")
+      const patch = api.calls("PATCH /api/announce-connections/{id}")[0]
       expect(patch).toBeTruthy()
-      const body = JSON.parse(await patch![0].clone().text()) as Record<string, unknown>
+      const body = JSON.parse(await patch.clone().text()) as Record<string, unknown>
       expect(body).toEqual({ name: "qui-main" })
     })
   })
 })
 
 describe("AnnounceSection create — App picker", () => {
-  afterEach(() => vi.unstubAllGlobals())
-
   const APP = {
     id: 7, kind: "qui", name: "qui-main-app", baseUrl: "http://qui:7476", username: "",
     apiKey: "<redacted>", harbrrUrl: "http://harbrr:7478", enabled: true,
@@ -79,16 +66,12 @@ describe("AnnounceSection create — App picker", () => {
   const CROSSSEED_APP = { ...APP, id: 9, kind: "crossseed-v6", name: "cs-app", baseUrl: "http://cross-seed:2468" }
 
   it("picking an existing app hides the inline fields and submits appId", async () => {
-    const fetchMock = vi.fn((request: Request) => {
-      if (request.method === "POST" && request.url.includes("/announce-connections")) {
-        return Promise.resolve(jsonResponse(TARGET, 201))
-      }
-      if (request.url.includes("/apps")) return Promise.resolve(jsonResponse([APP]))
-      if (request.url.includes("/announce-connections")) return Promise.resolve(jsonResponse([]))
-      if (request.url.includes("/server-info")) return Promise.resolve(jsonResponse({ port: 7478 }))
-      return Promise.resolve(jsonResponse([]))
+    const api = stubApi({
+      "POST /api/announce-connections": () => Response.json(TARGET, { status: 201 }),
+      "GET /api/apps": [APP],
+      "GET /api/announce-connections": [],
+      "GET /api/server-info": { port: 7478 },
     })
-    vi.stubGlobal("fetch", fetchMock)
     render(wrap(<AnnounceSection />))
 
     fireEvent.click(await screen.findByRole("button", { name: "Add target" }))
@@ -101,24 +84,20 @@ describe("AnnounceSection create — App picker", () => {
     fireEvent.click(submitButton())
 
     await waitFor(async () => {
-      const post = fetchMock.mock.calls.find(([request]) => request.method === "POST")
+      const post = api.calls("POST /api/announce-connections")[0]
       expect(post).toBeTruthy()
-      const body = JSON.parse(await post![0].clone().text()) as Record<string, unknown>
+      const body = JSON.parse(await post.clone().text()) as Record<string, unknown>
       expect(body).toEqual({ name: "qui-target", kind: "qui", appId: 7 })
     })
   })
 
   it("no app: switching to 'New app…' reveals inline fields and the create submits them", async () => {
-    const fetchMock = vi.fn((request: Request) => {
-      if (request.method === "POST" && request.url.includes("/announce-connections")) {
-        return Promise.resolve(jsonResponse(TARGET, 201))
-      }
-      if (request.url.includes("/apps")) return Promise.resolve(jsonResponse([APP]))
-      if (request.url.includes("/announce-connections")) return Promise.resolve(jsonResponse([]))
-      if (request.url.includes("/server-info")) return Promise.resolve(jsonResponse({ port: 7478 }))
-      return Promise.resolve(jsonResponse([]))
+    const api = stubApi({
+      "POST /api/announce-connections": () => Response.json(TARGET, { status: 201 }),
+      "GET /api/apps": [APP],
+      "GET /api/announce-connections": [],
+      "GET /api/server-info": { port: 7478 },
     })
-    vi.stubGlobal("fetch", fetchMock)
     render(wrap(<AnnounceSection />))
 
     fireEvent.click(await screen.findByRole("button", { name: "Add target" }))
@@ -139,9 +118,9 @@ describe("AnnounceSection create — App picker", () => {
     fireEvent.click(submitButton())
 
     await waitFor(async () => {
-      const post = fetchMock.mock.calls.find(([request]) => request.method === "POST")
+      const post = api.calls("POST /api/announce-connections")[0]
       expect(post).toBeTruthy()
-      const body = JSON.parse(await post![0].clone().text()) as Record<string, unknown>
+      const body = JSON.parse(await post.clone().text()) as Record<string, unknown>
       expect(body).toEqual({
         name: "cs-target", kind: "qui",
         baseUrl: "http://cross-seed:2468", apiKey: "cs-key", harbrrUrl: "http://harbrr:7478",
@@ -150,13 +129,11 @@ describe("AnnounceSection create — App picker", () => {
   })
 
   it("deep-link pre-pick re-defaults the port for the picked App's kind, not the form's initial kind", async () => {
-    const fetchMock = vi.fn((request: Request) => {
-      if (request.url.includes("/apps")) return Promise.resolve(jsonResponse([CROSSSEED_APP]))
-      if (request.url.includes("/announce-connections")) return Promise.resolve(jsonResponse([]))
-      if (request.url.includes("/server-info")) return Promise.resolve(jsonResponse({ port: 7478 }))
-      return Promise.resolve(jsonResponse([]))
+    stubApi({
+      "GET /api/apps": [CROSSSEED_APP],
+      "GET /api/announce-connections": [],
+      "GET /api/server-info": { port: 7478 },
     })
-    vi.stubGlobal("fetch", fetchMock)
     render(wrap(<AnnounceSection initialCreate={{ appId: CROSSSEED_APP.id }} />))
 
     // The deep-link pre-picks the cross-seed-v6 App (kind flips from the default "qui");
@@ -170,13 +147,11 @@ describe("AnnounceSection create — App picker", () => {
   })
 
   it("deep-link opens the add dialog with the App pre-picked", async () => {
-    const fetchMock = vi.fn((request: Request) => {
-      if (request.url.includes("/apps")) return Promise.resolve(jsonResponse([APP]))
-      if (request.url.includes("/announce-connections")) return Promise.resolve(jsonResponse([]))
-      if (request.url.includes("/server-info")) return Promise.resolve(jsonResponse({ port: 7478 }))
-      return Promise.resolve(jsonResponse([]))
+    stubApi({
+      "GET /api/apps": [APP],
+      "GET /api/announce-connections": [],
+      "GET /api/server-info": { port: 7478 },
     })
-    vi.stubGlobal("fetch", fetchMock)
     render(wrap(<AnnounceSection initialCreate={{ appId: APP.id }} />))
 
     // No click: the deep-link itself opens the add dialog…
@@ -189,13 +164,11 @@ describe("AnnounceSection create — App picker", () => {
   })
 
   it("flipped default: the App picker defaults to the existing app without interaction", async () => {
-    const fetchMock = vi.fn((request: Request) => {
-      if (request.url.includes("/apps")) return Promise.resolve(jsonResponse([APP]))
-      if (request.url.includes("/announce-connections")) return Promise.resolve(jsonResponse([]))
-      if (request.url.includes("/server-info")) return Promise.resolve(jsonResponse({ port: 7478 }))
-      return Promise.resolve(jsonResponse([]))
+    stubApi({
+      "GET /api/apps": [APP],
+      "GET /api/announce-connections": [],
+      "GET /api/server-info": { port: 7478 },
     })
-    vi.stubGlobal("fetch", fetchMock)
     render(wrap(<AnnounceSection />))
 
     fireEvent.click(await screen.findByRole("button", { name: "Add target" }))
@@ -207,8 +180,6 @@ describe("AnnounceSection create — App picker", () => {
 })
 
 describe("AnnounceSection create — Already configured block", () => {
-  afterEach(() => vi.unstubAllGlobals())
-
   const APP: App = {
     id: 7, kind: "qui", name: "qui-main-app", baseUrl: "http://qui:7476", username: "",
     apiKey: "<redacted>", harbrrUrl: "http://harbrr:7478", enabled: true,
@@ -217,12 +188,11 @@ describe("AnnounceSection create — Already configured block", () => {
   }
 
   function stubFetchWithApps(apps: App[]) {
-    vi.stubGlobal("fetch", vi.fn((request: Request) => {
-      if (request.url.includes("/apps")) return Promise.resolve(jsonResponse(apps))
-      if (request.url.includes("/announce-connections")) return Promise.resolve(jsonResponse([]))
-      if (request.url.includes("/server-info")) return Promise.resolve(jsonResponse({ port: 7478 }))
-      return Promise.resolve(jsonResponse([]))
-    }))
+    stubApi({
+      "GET /api/apps": apps,
+      "GET /api/announce-connections": [],
+      "GET /api/server-info": { port: 7478 },
+    })
   }
 
   it("renders only when compatible Apps exist", async () => {
@@ -270,14 +240,11 @@ describe("AnnounceSection create — Already configured block", () => {
 })
 
 describe("AnnounceSection list states", () => {
-  afterEach(() => vi.unstubAllGlobals())
-
   it("a failed targets query renders LoadError, not an empty card", async () => {
-    vi.stubGlobal("fetch", vi.fn((request: Request) => {
-      if (request.url.includes("/announce-connections")) return Promise.resolve(jsonResponse({ error: "boom" }, 500))
-      if (request.url.includes("/server-info")) return Promise.resolve(jsonResponse({ port: 7478 }))
-      return Promise.resolve(jsonResponse([]))
-    }))
+    stubApi({
+      "GET /api/announce-connections": () => Response.json({ error: "boom" }, { status: 500 }),
+      "GET /api/server-info": { port: 7478 },
+    })
     render(wrap(<AnnounceSection />))
 
     const alert = await screen.findByRole("alert")

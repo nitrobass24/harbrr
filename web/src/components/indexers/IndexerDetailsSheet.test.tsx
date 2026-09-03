@@ -1,38 +1,23 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { render, screen } from "@testing-library/react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it, vi } from "vitest"
+import { stubApi } from "@/test/stubApi"
 import { IndexerDetailsSheet } from "./IndexerDetailsSheet"
 
-function json(body: unknown): Response {
-  return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } })
-}
-
 describe("IndexerDetailsSheet", () => {
-  afterEach(() => vi.unstubAllGlobals())
-
   it("renders the summed failure count from the per-kind object without crashing", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockImplementation((request: Request) => {
-      const path = request.url
-      if (path.includes("/stats")) {
-        return Promise.resolve(json({
-          slug: "torrentleech",
-          queries: 10,
-          grabs: 2,
-          avgResponseMs: 120,
-          failures: { authFailure: 1, rateLimited: 2, parseError: 0, antiBot: 3 },
-        }))
-      }
-      if (path.includes("/status")) {
-        return Promise.resolve(json({ slug: "torrentleech", status: "healthy", events: [] }))
-      }
-      if (path.includes("/capabilities")) {
-        return Promise.resolve(json({ modes: { search: ["q"] } }))
-      }
-      if (path.includes("/diagnostics")) {
-        return Promise.resolve(json({ slug: "torrentleech", captures: [] }))
-      }
-      return Promise.resolve(json({}))
-    }))
+    stubApi({
+      "GET /api/indexers/{slug}/stats": {
+        slug: "torrentleech",
+        queries: 10,
+        grabs: 2,
+        avgResponseMs: 120,
+        failures: { authFailure: 1, rateLimited: 2, parseError: 0, antiBot: 3 },
+      },
+      "GET /api/indexers/{slug}/status": { slug: "torrentleech", status: "healthy", events: [] },
+      "GET /api/indexers/{slug}/capabilities": { modes: { search: ["q"] } },
+      "GET /api/indexers/{slug}/diagnostics": { slug: "torrentleech", captures: [] },
+    })
 
     render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -49,34 +34,24 @@ describe("IndexerDetailsSheet", () => {
   })
 
   it("renders the grab success rate and the per-category tallies", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockImplementation((request: Request) => {
-      const path = request.url
-      if (path.includes("/stats")) {
-        return Promise.resolve(json({
-          slug: "torrentleech",
-          queries: 10,
-          grabAttempts: 6,
-          grabs: 5,
-          grabSuccessRate: 5 / 6,
-          avgResponseMs: 120,
-          failures: { authFailure: 0, rateLimited: 0, parseError: 0, antiBot: 0 },
-          categories: [
-            { id: 2000, name: "Movies", results: 40, grabs: 4 },
-            { id: 0, name: "Uncategorized", results: 2, grabs: 1 },
-          ],
-        }))
-      }
-      if (path.includes("/status")) {
-        return Promise.resolve(json({ slug: "torrentleech", status: "healthy", events: [] }))
-      }
-      if (path.includes("/capabilities")) {
-        return Promise.resolve(json({ modes: { search: ["q"] } }))
-      }
-      if (path.includes("/diagnostics")) {
-        return Promise.resolve(json({ slug: "torrentleech", captures: [] }))
-      }
-      return Promise.resolve(json({}))
-    }))
+    stubApi({
+      "GET /api/indexers/{slug}/stats": {
+        slug: "torrentleech",
+        queries: 10,
+        grabAttempts: 6,
+        grabs: 5,
+        grabSuccessRate: 5 / 6,
+        avgResponseMs: 120,
+        failures: { authFailure: 0, rateLimited: 0, parseError: 0, antiBot: 0 },
+        categories: [
+          { id: 2000, name: "Movies", results: 40, grabs: 4 },
+          { id: 0, name: "Uncategorized", results: 2, grabs: 1 },
+        ],
+      },
+      "GET /api/indexers/{slug}/status": { slug: "torrentleech", status: "healthy", events: [] },
+      "GET /api/indexers/{slug}/capabilities": { modes: { search: ["q"] } },
+      "GET /api/indexers/{slug}/diagnostics": { slug: "torrentleech", captures: [] },
+    })
 
     render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -181,15 +156,12 @@ describe("IndexerDetailsSheet", () => {
 // test only states the health fixture it cares about. captures (optional) is the
 // /diagnostics body's ring.
 function stubStatus(status: unknown, captures: unknown[] = []) {
-  vi.stubGlobal("fetch", vi.fn().mockImplementation((request: Request) => {
-    if (request.url.includes("/status")) return Promise.resolve(json(status))
-    if (request.url.includes("/stats")) {
-      return Promise.resolve(json({ slug: "torrentleech", queries: 0, grabs: 0 }))
-    }
-    if (request.url.includes("/capabilities")) return Promise.resolve(json({ modes: { search: ["q"] } }))
-    if (request.url.includes("/diagnostics")) return Promise.resolve(json({ slug: "torrentleech", captures }))
-    return Promise.resolve(json({}))
-  }))
+  stubApi({
+    "GET /api/indexers/{slug}/status": status,
+    "GET /api/indexers/{slug}/stats": { slug: "torrentleech", queries: 0, grabs: 0 },
+    "GET /api/indexers/{slug}/capabilities": { modes: { search: ["q"] } },
+    "GET /api/indexers/{slug}/diagnostics": { slug: "torrentleech", captures },
+  })
 }
 
 function renderSheet() {

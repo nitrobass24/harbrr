@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen } from "@testing-library/react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import type { ReactNode } from "react"
 import type { AppConnection } from "@/lib/api"
+import { stubApi } from "@/test/stubApi"
 import { ConnectionCard } from "./ConnectionCard"
 import type { ConnectionActions } from "./ConnectionCard"
 
@@ -20,10 +21,6 @@ const CONN: AppConnection = {
   updatedAt: "2026-07-01T00:00:00Z",
 }
 
-function jsonResponse(body: unknown): Response {
-  return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } })
-}
-
 function wrap(children: ReactNode) {
   return (
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -32,8 +29,8 @@ function wrap(children: ReactNode) {
   )
 }
 
-function stubFetch(port: number) {
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ port })))
+function stubServerInfo(port: number) {
+  stubApi({ "GET /api/server-info": { port } })
 }
 
 function actions(overrides: Partial<ConnectionActions> = {}): ConnectionActions {
@@ -50,10 +47,8 @@ function actions(overrides: Partial<ConnectionActions> = {}): ConnectionActions 
 }
 
 describe("ConnectionCard stale-port indicator", () => {
-  afterEach(() => vi.unstubAllGlobals())
-
   it("shows no stale-port badge when the stored port matches the live port", async () => {
-    stubFetch(7478)
+    stubServerInfo(7478)
     render(wrap(<ConnectionCard conn={CONN} actions={actions()} />))
 
     // Let the server-info query settle before asserting its absence.
@@ -63,7 +58,7 @@ describe("ConnectionCard stale-port indicator", () => {
   })
 
   it("shows a stale-port badge when the stored port differs from the live port", async () => {
-    stubFetch(9999)
+    stubServerInfo(9999)
     render(wrap(<ConnectionCard conn={CONN} actions={actions()} />))
 
     expect(await screen.findByText("port may be outdated")).toBeTruthy()
@@ -73,7 +68,7 @@ describe("ConnectionCard stale-port indicator", () => {
     // Mirrors defaultHarbrrUrl()'s window.location.origin prefill behind a
     // TLS-terminating reverse proxy: no explicit port, so it is never
     // comparable to harbrr's internal listen port.
-    stubFetch(7478)
+    stubServerInfo(7478)
     render(wrap(
       <ConnectionCard conn={{ ...CONN, harbrrUrl: "https://harbrr.example.com" }} actions={actions()} />
     ))
@@ -84,7 +79,7 @@ describe("ConnectionCard stale-port indicator", () => {
   })
 
   it("clicking the fix action proposes the port-rewritten URL with scheme/host/path kept", async () => {
-    stubFetch(9999)
+    stubServerInfo(9999)
     const onFixPort = vi.fn()
     const conn = { ...CONN, harbrrUrl: "https://harbrr.example.com:7478/base" }
     render(wrap(<ConnectionCard conn={conn} actions={actions({ onFixPort })} />))

@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import { ThemeProvider } from "@/components/themes/theme-provider"
+import { stubApi } from "@/test/stubApi"
 import { routeTree } from "@/routeTree.gen"
 
 const ME = { username: "admin", authMethod: "password", csrfToken: "tok" }
@@ -26,24 +27,21 @@ const QUI_APP = {
   createdAt: "2026-07-01T00:00:00Z", updatedAt: "2026-07-01T00:00:00Z",
 }
 
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })
-}
-
 // stubFetch admits the _authenticated guard (me → 200) and answers every GET the
 // Applications route + its sections fire on mount (app-connections, announce-
-// connections, sync-profiles) with an empty list. The one mutation we exercise —
-// POST /app-connections (useCreateConnection) — fails 500 so create.error is set.
+// connections, sync-profiles, apps, server-info) with an inert body. The one
+// mutation we exercise — POST /app-connections (useCreateConnection) — fails 500
+// so create.error is set.
 function stubFetch() {
-  vi.stubGlobal("fetch", vi.fn((request: Request) => {
-    if (request.url.endsWith("/auth/me")) return Promise.resolve(json(ME))
-    if (request.url.endsWith("/app-connections") && request.method === "POST") {
-      return Promise.resolve(json({ error: CREATE_ERROR, code: "internal" }, 500))
-    }
-    // Every other GET (app-connections list, announce-connections, sync-profiles,
-    // and any incidental probe) is fine as an empty list.
-    return Promise.resolve(json([]))
-  }))
+  stubApi({
+    "GET /api/auth/me": ME,
+    "POST /api/app-connections": () => Response.json({ error: CREATE_ERROR, code: "internal" }, { status: 500 }),
+    "GET /api/app-connections": [],
+    "GET /api/announce-connections": [],
+    "GET /api/sync-profiles": [],
+    "GET /api/apps": [],
+    "GET /api/server-info": {},
+  })
 }
 
 function renderApplications() {
@@ -62,11 +60,14 @@ function renderApplications() {
 // instead of an empty one — needed for the "Use as…" pre-pick, which resolves the
 // deep-linked appId against the apps list.
 function stubFetchWithApps(apps: unknown[]) {
-  vi.stubGlobal("fetch", vi.fn((request: Request) => {
-    if (request.url.endsWith("/auth/me")) return Promise.resolve(json(ME))
-    if (request.url.endsWith("/api/apps") && request.method === "GET") return Promise.resolve(json(apps))
-    return Promise.resolve(json([]))
-  }))
+  stubApi({
+    "GET /api/auth/me": ME,
+    "GET /api/apps": apps,
+    "GET /api/app-connections": [],
+    "GET /api/announce-connections": [],
+    "GET /api/sync-profiles": [],
+    "GET /api/server-info": {},
+  })
 }
 
 // Renders at an arbitrary path (for exercising search-param handling) and returns the
@@ -86,8 +87,6 @@ function renderApplicationsAt(path: string) {
 }
 
 describe("Applications route — stale create error", () => {
-  afterEach(() => vi.unstubAllGlobals())
-
   // Gates the U16-F5 fix: applications.tsx's ConnectionDialog onClose must call
   // create.reset()/update.reset(). Without those, a failed create leaves the
   // mutation error object live, so reopening the Add dialog (fields remount, but
@@ -128,8 +127,6 @@ describe("Applications route — stale create error", () => {
 
 // autobrr/harbrr#300 — AppsSection's "Use as…" deep-links here via search params.
 describe("Applications route — 'Use as…' search params", () => {
-  afterEach(() => vi.unstubAllGlobals())
-
   it("?create=sync&appId opens the sync dialog pre-picked, then clears the search", async () => {
     stubFetchWithApps([SONARR_APP])
     const { router } = renderApplicationsAt("/applications?create=sync&appId=7")

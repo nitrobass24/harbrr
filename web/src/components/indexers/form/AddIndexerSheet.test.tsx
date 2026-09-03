@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { render, screen } from "@testing-library/react"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it } from "vitest"
 import type { DefinitionEntry } from "@/lib/api"
+import { stubApi } from "@/test/stubApi"
 import { IndexerSheet } from "./AddIndexerSheet"
 
 // More loadable definitions than the picker's 50-row cap, plus one that failed
@@ -21,17 +22,9 @@ const FAILED: DefinitionEntry = {
   error: "loading drop-in definition zzz-broken: schema validation failed at: /search/fields/title",
 }
 
-function json(body: unknown): Response {
-  return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } })
-}
-
 beforeEach(() => {
-  vi.stubGlobal("fetch", vi.fn((request: Request) => {
-    if (request.url.endsWith("/api/definitions")) return Promise.resolve(json([...LOADABLE, FAILED]))
-    return Promise.resolve(json([]))
-  }))
+  stubApi({ "GET /api/definitions": [...LOADABLE, FAILED] })
 })
-afterEach(() => vi.unstubAllGlobals())
 
 function renderCreateFlow() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
