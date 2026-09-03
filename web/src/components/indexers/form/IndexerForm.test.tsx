@@ -1,27 +1,19 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen } from "@testing-library/react"
 import type { ReactElement } from "react"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import { REDACTED } from "@/lib/api"
 import type { DefinitionDetail, InstanceDetail, Proxy, Solver } from "@/lib/api"
+import { stubApi } from "@/test/stubApi"
 import { DefinitionOption, IndexerForm, type IndexerFormSubmit } from "./IndexerForm"
 
 // The form fetches the global proxy/solver resources for its Advanced dropdowns.
 const PROXIES: Proxy[] = [{ id: 7, name: "home", type: "socks5", host: "10.0.0.9", port: 1080, username: "", createdAt: "", updatedAt: "" }]
 const SOLVERS: Solver[] = [{ id: 9, name: "fs", type: "flaresolverr", url: REDACTED, maxTimeout: 0, createdAt: "", updatedAt: "" }]
 
-function json(body: unknown): Response {
-  return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } })
-}
-
 beforeEach(() => {
-  vi.stubGlobal("fetch", vi.fn((request: Request) => {
-    if (request.url.endsWith("/api/proxies")) return Promise.resolve(json(PROXIES))
-    if (request.url.endsWith("/api/solvers")) return Promise.resolve(json(SOLVERS))
-    return Promise.resolve(json([]))
-  }))
+  stubApi({ "GET /api/proxies": PROXIES, "GET /api/solvers": SOLVERS })
 })
-afterEach(() => vi.unstubAllGlobals())
 
 function renderForm(ui: ReactElement) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })

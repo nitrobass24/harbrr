@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen } from "@testing-library/react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
+import { stubApi } from "@/test/stubApi"
 import { DashboardTiles } from "./DashboardTiles"
 
 const INDEXERS = [
@@ -8,44 +9,34 @@ const INDEXERS = [
   { id: 2, slug: "b", definitionId: "b", name: "B", enabled: true, createdAt: "2026-07-01T00:00:00Z", updatedAt: "2026-07-01T00:00:00Z" },
 ]
 
-function json(body: unknown): Response {
-  return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } })
-}
-
 describe("DashboardTiles", () => {
-  afterEach(() => vi.unstubAllGlobals())
-
   it("renders health, cache, connection, and breaker tiles from the APIs", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockImplementation((request: Request) => {
-      const path = request.url
-      if (path.endsWith("/api/indexers")) return Promise.resolve(json(INDEXERS))
-      if (path.includes("/status")) {
-        const slug = path.includes("/a/") ? "a" : "b"
-        return Promise.resolve(json({
+    stubApi({
+      "GET /api/indexers": INDEXERS,
+      "GET /api/indexers/{slug}/status": (request: Request) => {
+        const slug = request.url.endsWith("/a/status") ? "a" : "b"
+        return Response.json({
           slug,
           status: slug === "a" ? "healthy" : "failing",
           events: [],
-        }))
-      }
-      if (path.endsWith("/api/cache/stats")) {
-        return Promise.resolve(json({
-          enabled: true,
-          trackerHitsSaved: 128,
-          hitRatio: 0.75,
-          windows: [
-            { window: "1d", hits: 16, misses: 16, hitRatio: 0.5 },
-            { window: "7d", hits: 40, misses: 20, hitRatio: 0.66 },
-            { window: "30d", hits: 90, misses: 30, hitRatio: 0.75 },
-            { window: "all", hits: 128, misses: 42, hitRatio: 0.75 },
-          ],
-          // A month of coverage: the 24h view is fully backed, so no caveat shows.
-          windowsSince: Math.floor(Date.now() / 1000) - 30 * 24 * 3600,
-          byIndexer: [{ instanceId: 2, slug: "b", breakerOpenUntil: 1_900_000_000 }],
-        }))
-      }
-      if (path.endsWith("/api/app-connections")) return Promise.resolve(json([]))
-      return Promise.resolve(json({}))
-    }))
+        })
+      },
+      "GET /api/cache/stats": {
+        enabled: true,
+        trackerHitsSaved: 128,
+        hitRatio: 0.75,
+        windows: [
+          { window: "1d", hits: 16, misses: 16, hitRatio: 0.5 },
+          { window: "7d", hits: 40, misses: 20, hitRatio: 0.66 },
+          { window: "30d", hits: 90, misses: 30, hitRatio: 0.75 },
+          { window: "all", hits: 128, misses: 42, hitRatio: 0.75 },
+        ],
+        // A month of coverage: the 24h view is fully backed, so no caveat shows.
+        windowsSince: Math.floor(Date.now() / 1000) - 30 * 24 * 3600,
+        byIndexer: [{ instanceId: 2, slug: "b", breakerOpenUntil: 1_900_000_000 }],
+      },
+      "GET /api/app-connections": [],
+    })
 
     render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>

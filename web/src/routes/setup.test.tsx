@@ -1,14 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen } from "@testing-library/react"
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import { ThemeProvider } from "@/components/themes/theme-provider"
+import { stubApi } from "@/test/stubApi"
 import { routeTree } from "@/routeTree.gen"
-
-// json builds a stub Response with a JSON body.
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })
-}
 
 // stubAuthFetch answers the bootstrap probes for a first-run (no session) visitor:
 // /auth/me is 401 (unauthenticated), GET /auth/setup reports NOT complete, and
@@ -16,12 +12,12 @@ function json(body: unknown, status = 200): Response {
 // reporting {setupComplete:false} — so the only way the /login guard can learn setup
 // is done is the cache the setup mutation seeds on success (the U16-F1 fix).
 function stubAuthFetch() {
-  vi.stubGlobal("fetch", vi.fn((request: Request) => {
-    if (request.url.endsWith("/auth/me")) return Promise.resolve(json({ code: "unauthorized", error: "no session" }, 401))
-    if (request.url.endsWith("/auth/setup") && request.method === "POST") return Promise.resolve(json({ username: "admin" }, 201))
-    if (request.url.endsWith("/auth/setup")) return Promise.resolve(json({ setupComplete: false }))
-    return Promise.resolve(json({}))
-  }))
+  stubApi({
+    "GET /api/auth/me": () => Response.json({ code: "unauthorized", error: "no session" }, { status: 401 }),
+    "POST /api/auth/setup": () => Response.json({ username: "admin" }, { status: 201 }),
+    "GET /api/auth/setup": { setupComplete: false },
+    "GET /api/auth/oidc/config": {},
+  })
 }
 
 function renderAt(path: string) {
@@ -40,8 +36,6 @@ function renderAt(path: string) {
 }
 
 describe("Setup route", () => {
-  afterEach(() => vi.unstubAllGlobals())
-
   it("lands on the login screen after creating the admin, without bouncing back to setup", async () => {
     stubAuthFetch()
     renderAt("/setup")
@@ -65,13 +59,11 @@ describe("Setup route", () => {
     // NOT render — submitting it on a configured instance would just 409. Show a
     // retry instead; on recovery the real first-run form appears.
     let setupOk = false
-    vi.stubGlobal("fetch", vi.fn((request: Request) => {
-      if (request.url.endsWith("/auth/me")) return Promise.resolve(json({ code: "unauthorized" }, 401))
-      if (request.url.endsWith("/auth/setup")) {
-        return Promise.resolve(setupOk ? json({ setupComplete: false }) : json({ code: "internal" }, 500))
-      }
-      return Promise.resolve(json({}))
-    }))
+    stubApi({
+      "GET /api/auth/me": () => Response.json({ code: "unauthorized" }, { status: 401 }),
+      "GET /api/auth/setup": () =>
+        setupOk ? Response.json({ setupComplete: false }) : Response.json({ code: "internal" }, { status: 500 }),
+    })
 
     renderAt("/setup")
 

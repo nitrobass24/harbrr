@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react"
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { ThemeProvider } from "@/components/themes/theme-provider"
+import { stubApi } from "@/test/stubApi"
 import { routeTree } from "@/routeTree.gen"
 
 const ME = { username: "admin", authMethod: "password", csrfToken: "tok" }
@@ -22,21 +23,16 @@ const INDEXER = {
   updatedAt: "2026-07-01T00:00:00Z",
 }
 
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })
-}
-
 // Answers the _authenticated guard plus every GET the Indexers route fires on
 // mount: the indexers list, definitions, per-slug status and capabilities.
 function stubFetch() {
-  vi.stubGlobal("fetch", vi.fn((request: Request) => {
-    if (request.url.endsWith("/auth/me")) return Promise.resolve(json(ME))
-    if (request.url.endsWith("/api/indexers")) return Promise.resolve(json([INDEXER]))
-    if (request.url.endsWith("/api/definitions")) return Promise.resolve(json([]))
-    if (request.url.endsWith("/status")) return Promise.resolve(json({ slug: "torrentleech", status: "healthy", events: [] }))
-    if (request.url.endsWith("/capabilities")) return Promise.resolve(json({ categories: [] }))
-    return Promise.resolve(json([]))
-  }))
+  stubApi({
+    "GET /api/auth/me": ME,
+    "GET /api/indexers": [INDEXER],
+    "GET /api/definitions": [],
+    "GET /api/indexers/{slug}/status": { slug: "torrentleech", status: "healthy", events: [] },
+    "GET /api/indexers/{slug}/capabilities": { categories: [] },
+  })
 }
 
 // A fixed-answer MediaQueryList stub — the route test only cares about the

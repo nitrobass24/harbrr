@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import type { ReactNode } from "react"
 import { withMemoryRouter } from "@/test/router"
+import { stubApi } from "@/test/stubApi"
 import type { App, DownloadClient, DownloadClientSettings } from "@/lib/api"
 import { DownloadClientsSection } from "./DownloadClientsSection"
 
@@ -32,10 +33,6 @@ interface CreateDownloadClientBody {
   settings?: DownloadClientSettings
 }
 
-function jsonResponse(body: unknown): Response {
-  return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } })
-}
-
 function wrap(children: ReactNode) {
   return (
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -46,20 +43,19 @@ function wrap(children: ReactNode) {
 
 // Stubs GET /api/download-clients with CLIENT and captures the PATCH body sent on save.
 function stubFetchAndCapturePatch(): { patchBody: () => Promise<PatchDownloadClientBody> } {
-  const fetchMock = vi.fn((req: Request) => {
-    if (req.method === "PATCH") return Promise.resolve(jsonResponse({}))
-    if (req.url.includes("/apps")) return Promise.resolve(jsonResponse([]))
-    return Promise.resolve(jsonResponse([CLIENT]))
+  const api = stubApi({
+    "GET /api/download-clients": [CLIENT],
+    "GET /api/apps": [],
+    "PATCH /api/download-clients/{id}": {},
   })
-  vi.stubGlobal("fetch", fetchMock)
   return {
     patchBody: async () => {
       const call = await vi.waitFor(() => {
-        const found = fetchMock.mock.calls.find(([req]) => req.method === "PATCH")
+        const found = api.calls("PATCH /api/download-clients/{id}")[0]
         if (!found) throw new Error("no PATCH call yet")
         return found
       })
-      return JSON.parse(await call[0].text()) as PatchDownloadClientBody
+      return JSON.parse(await call.text()) as PatchDownloadClientBody
     },
   }
 }
@@ -73,10 +69,8 @@ function addSubmitButton(): HTMLButtonElement {
 }
 
 describe("DownloadClientsSection", () => {
-  afterEach(() => vi.unstubAllGlobals())
-
   it("lists a client's name, kind, and host", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse([CLIENT])))
+    stubApi({ "GET /api/download-clients": [CLIENT] })
     render(wrap(<DownloadClientsSection />))
 
     expect(await screen.findByText("seedbox")).toBeTruthy()
@@ -103,7 +97,7 @@ describe("DownloadClientsSection", () => {
   })
 
   it("add: selecting blackhole hides host/username/password and shows watch-folder fields", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse([CLIENT])))
+    stubApi({ "GET /api/download-clients": [CLIENT], "GET /api/apps": [] })
     render(wrap(<DownloadClientsSection />))
 
     fireEvent.click(await screen.findByRole("button", { name: "Add download client" }))
@@ -125,17 +119,12 @@ describe("DownloadClientsSection", () => {
   })
 
   it("add: a qui App picker submits appId + settings — no host/username/secret", async () => {
-    const fetchMock = vi.fn((req: Request) => {
-      if (req.url.includes("/qui-instances")) {
-        return Promise.resolve(jsonResponse({ ok: true, instances: [{ id: 3, name: "main" }] }))
-      }
-      if (req.url.includes("/apps")) return Promise.resolve(jsonResponse([QUI_APP]))
-      if (req.method === "POST" && req.url.includes("/download-clients")) {
-        return Promise.resolve(jsonResponse({ ...CLIENT, kind: "qui" }))
-      }
-      return Promise.resolve(jsonResponse([]))
+    const api = stubApi({
+      "GET /api/apps/{id}/qui-instances": { ok: true, instances: [{ id: 3, name: "main" }] },
+      "GET /api/apps": [QUI_APP],
+      "POST /api/download-clients": { ...CLIENT, kind: "qui" },
+      "GET /api/download-clients": [],
     })
-    vi.stubGlobal("fetch", fetchMock)
     render(wrap(<DownloadClientsSection />))
 
     fireEvent.click(await screen.findByRole("button", { name: "Add download client" }))
@@ -157,22 +146,19 @@ describe("DownloadClientsSection", () => {
     fireEvent.click(addSubmitButton())
 
     await waitFor(async () => {
-      const post = fetchMock.mock.calls.find(([req]) => req.method === "POST" && req.url.includes("/download-clients"))
+      const post = api.calls("POST /api/download-clients")[0]
       expect(post).toBeTruthy()
-      const body = JSON.parse(await post![0].clone().text()) as CreateDownloadClientBody
+      const body = JSON.parse(await post.clone().text()) as CreateDownloadClientBody
       expect(body).toEqual({ name: "main", kind: "qui", appId: QUI_APP.id, settings: { qui: { instanceId: 3 } } })
     })
   })
 
   it("add: switching to sabnzbd after typing a username submits an empty username", async () => {
-    const fetchMock = vi.fn((req: Request) => {
-      if (req.url.includes("/apps")) return Promise.resolve(jsonResponse([]))
-      if (req.method === "POST" && req.url.includes("/download-clients")) {
-        return Promise.resolve(jsonResponse({ ...CLIENT, kind: "sabnzbd" }))
-      }
-      return Promise.resolve(jsonResponse([CLIENT]))
+    const api = stubApi({
+      "GET /api/apps": [],
+      "POST /api/download-clients": { ...CLIENT, kind: "sabnzbd" },
+      "GET /api/download-clients": [CLIENT],
     })
-    vi.stubGlobal("fetch", fetchMock)
     render(wrap(<DownloadClientsSection />))
 
     fireEvent.click(await screen.findByRole("button", { name: "Add download client" }))
@@ -190,19 +176,19 @@ describe("DownloadClientsSection", () => {
     fireEvent.click(addSubmitButton())
 
     await waitFor(async () => {
-      const post = fetchMock.mock.calls.find(([req]) => req.method === "POST" && req.url.includes("/download-clients"))
+      const post = api.calls("POST /api/download-clients")[0]
       expect(post).toBeTruthy()
-      const body = JSON.parse(await post![0].clone().text()) as CreateDownloadClientBody
+      const body = JSON.parse(await post.clone().text()) as CreateDownloadClientBody
       expect(body.username).toBe("")
     })
   })
 
   it("deep-link pre-pick re-defaults the port for qui, not the form's initial qbittorrent default", async () => {
-    const fetchMock = vi.fn((req: Request) => {
-      if (req.url.includes("/apps")) return Promise.resolve(jsonResponse([QUI_APP]))
-      return Promise.resolve(jsonResponse([]))
+    stubApi({
+      "GET /api/apps": [QUI_APP],
+      "GET /api/apps/{id}/qui-instances": { ok: true, instances: [] },
+      "GET /api/download-clients": [],
     })
-    vi.stubGlobal("fetch", fetchMock)
     render(wrap(<DownloadClientsSection initialCreate={{ appId: QUI_APP.id }} />))
 
     // The deep-link pre-picks the qui App (kind flips from the default "qbittorrent");
@@ -216,7 +202,7 @@ describe("DownloadClientsSection", () => {
   })
 
   it("add: Kind options use display names, not raw slugs", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse([])))
+    stubApi({ "GET /api/download-clients": [], "GET /api/apps": [] })
     render(wrap(<DownloadClientsSection />))
 
     fireEvent.click(await screen.findByRole("button", { name: "Add download client" }))
@@ -226,14 +212,11 @@ describe("DownloadClientsSection", () => {
   })
 
   it("add: the Already configured block renders only when a qui App exists, and picking a row switches kind to qui", async () => {
-    const fetchMock = vi.fn((req: Request) => {
-      if (req.url.includes("/qui-instances")) {
-        return Promise.resolve(jsonResponse({ ok: true, instances: [{ id: 3, name: "main" }] }))
-      }
-      if (req.url.includes("/apps")) return Promise.resolve(jsonResponse([QUI_APP]))
-      return Promise.resolve(jsonResponse([]))
+    stubApi({
+      "GET /api/apps/{id}/qui-instances": { ok: true, instances: [{ id: 3, name: "main" }] },
+      "GET /api/apps": [QUI_APP],
+      "GET /api/download-clients": [],
     })
-    vi.stubGlobal("fetch", fetchMock)
     render(wrap(<DownloadClientsSection />))
 
     fireEvent.click(await screen.findByRole("button", { name: "Add download client" }))
@@ -247,14 +230,11 @@ describe("DownloadClientsSection", () => {
   })
 
   it("add: changing kind clears a picked instance, so it can't pair with a re-defaulted app", async () => {
-    const fetchMock = vi.fn((req: Request) => {
-      if (req.url.includes("/qui-instances")) {
-        return Promise.resolve(jsonResponse({ ok: true, instances: [{ id: 3, name: "main" }] }))
-      }
-      if (req.url.includes("/apps")) return Promise.resolve(jsonResponse([QUI_APP]))
-      return Promise.resolve(jsonResponse([]))
+    stubApi({
+      "GET /api/apps/{id}/qui-instances": { ok: true, instances: [{ id: 3, name: "main" }] },
+      "GET /api/apps": [QUI_APP],
+      "GET /api/download-clients": [],
     })
-    vi.stubGlobal("fetch", fetchMock)
     render(wrap(<DownloadClientsSection />))
 
     fireEvent.click(await screen.findByRole("button", { name: "Add download client" }))
@@ -272,7 +252,7 @@ describe("DownloadClientsSection", () => {
   })
 
   it("add: the block is absent when no qui App exists", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse([])))
+    stubApi({ "GET /api/download-clients": [], "GET /api/apps": [] })
     render(wrap(<DownloadClientsSection />))
 
     fireEvent.click(await screen.findByRole("button", { name: "Add download client" }))
@@ -281,18 +261,16 @@ describe("DownloadClientsSection", () => {
   })
 
   it("test: posts to the test endpoint and surfaces a toast", async () => {
-    const fetchMock = vi.fn((req: Request) => {
-      if (req.method === "POST" && req.url.includes("/test")) return Promise.resolve(jsonResponse({ ok: true }))
-      return Promise.resolve(jsonResponse([CLIENT]))
+    const api = stubApi({
+      "GET /api/download-clients": [CLIENT],
+      "POST /api/download-clients/{id}/test": { ok: true },
     })
-    vi.stubGlobal("fetch", fetchMock)
     render(wrap(<DownloadClientsSection />))
 
     fireEvent.click(await screen.findByRole("button", { name: "Test" }))
 
     await vi.waitFor(() => {
-      const found = fetchMock.mock.calls.find(([req]) => req.method === "POST" && req.url.includes("/test"))
-      if (!found) throw new Error("no test call yet")
+      if (!api.calls("POST /api/download-clients/{id}/test")[0]) throw new Error("no test call yet")
     })
   })
 })

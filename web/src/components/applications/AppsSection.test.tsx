@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import type { ReactNode } from "react"
 import { withMemoryRouter } from "@/test/router"
+import { stubApi } from "@/test/stubApi"
 import type { App } from "@/lib/api"
 import { AppsSection } from "./AppsSection"
 
@@ -33,13 +34,6 @@ const QUI_SYNCED: App = {
   createdAt: "2026-07-01T00:00:00Z", updatedAt: "2026-07-01T00:00:00Z",
 }
 
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(status === 204 ? null : JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  })
-}
-
 function wrap(children: ReactNode) {
   return (
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -64,10 +58,8 @@ function openUseAsMenu(appName: string) {
 }
 
 describe("AppsSection", () => {
-  afterEach(() => vi.unstubAllGlobals())
-
   it("lists an app's name, kind, and reference count", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse([APP])))
+    stubApi({ "GET /api/apps": [APP] })
     render(wrap(<AppsSection />))
 
     expect(await screen.findByText("sonarr-app")).toBeTruthy()
@@ -76,31 +68,23 @@ describe("AppsSection", () => {
   })
 
   it("edit: a typed credential rotates it; a blank one keeps the stored one", async () => {
-    const fetchMock = vi.fn((request: Request) => {
-      if (request.method === "PATCH") return Promise.resolve(jsonResponse(null, 204))
-      return Promise.resolve(jsonResponse([APP]))
-    })
-    vi.stubGlobal("fetch", fetchMock)
+    const api = stubApi({ "GET /api/apps": [APP], "PATCH /api/apps/{id}": null })
     render(wrap(<AppsSection />))
 
     fireEvent.click(await screen.findByLabelText("Edit sonarr-app"))
     fireEvent.click(await screen.findByRole("button", { name: "Save changes" }))
 
     await waitFor(async () => {
-      const patch = fetchMock.mock.calls.find(([request]) => request.method === "PATCH")
+      const patch = api.calls("PATCH /api/apps/{id}")[0]
       expect(patch).toBeTruthy()
-      const body = JSON.parse(await patch![0].clone().text()) as Record<string, unknown>
+      const body = JSON.parse(await patch.clone().text()) as Record<string, unknown>
       expect(body).not.toHaveProperty("apiKey")
       expect(body).toMatchObject({ name: "sonarr-app", baseUrl: "http://sonarr:8989" })
     })
   })
 
   it("edit: a typed credential is sent as apiKey", async () => {
-    const fetchMock = vi.fn((request: Request) => {
-      if (request.method === "PATCH") return Promise.resolve(jsonResponse(null, 204))
-      return Promise.resolve(jsonResponse([APP]))
-    })
-    vi.stubGlobal("fetch", fetchMock)
+    const api = stubApi({ "GET /api/apps": [APP], "PATCH /api/apps/{id}": null })
     render(wrap(<AppsSection />))
 
     fireEvent.click(await screen.findByLabelText("Edit sonarr-app"))
@@ -108,9 +92,9 @@ describe("AppsSection", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Save changes" }))
 
     await waitFor(async () => {
-      const patch = fetchMock.mock.calls.find(([request]) => request.method === "PATCH")
+      const patch = api.calls("PATCH /api/apps/{id}")[0]
       expect(patch).toBeTruthy()
-      const body = JSON.parse(await patch![0].clone().text()) as Record<string, unknown>
+      const body = JSON.parse(await patch.clone().text()) as Record<string, unknown>
       expect(body).toMatchObject({ apiKey: "new-key" })
     })
   })
@@ -118,20 +102,17 @@ describe("AppsSection", () => {
   // The 409 conflict message itself is covered by useApps.test.tsx (useDeleteApp
   // owns the toast); this just confirms the row wires the click through to DELETE.
   it("delete: posts to the delete endpoint", async () => {
-    const fetchMock = vi.fn((request: Request) => {
-      if (request.method === "DELETE") {
-        return Promise.resolve(jsonResponse({ error: "app is in use by 2 app-sync connections, 1 download client", code: "conflict" }, 409))
-      }
-      return Promise.resolve(jsonResponse([APP]))
+    const api = stubApi({
+      "GET /api/apps": [APP],
+      "DELETE /api/apps/{id}": () =>
+        Response.json({ error: "app is in use by 2 app-sync connections, 1 download client", code: "conflict" }, { status: 409 }),
     })
-    vi.stubGlobal("fetch", fetchMock)
     render(wrap(<AppsSection />))
 
     fireEvent.click(await screen.findByLabelText("Delete sonarr-app"))
 
     await waitFor(() => {
-      const del = fetchMock.mock.calls.find(([request]) => request.method === "DELETE")
-      expect(del).toBeTruthy()
+      expect(api.calls("DELETE /api/apps/{id}")[0]).toBeTruthy()
     })
   })
 
@@ -140,7 +121,7 @@ describe("AppsSection", () => {
     it("offers nothing for a kind/uniqueness-incompatible app (no dropdown at all)", async () => {
       // sonarr is not announce/download-compatible, and this app's sync row already
       // exists — every candidate surface is filtered out, so the menu doesn't render.
-      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse([APP])))
+      stubApi({ "GET /api/apps": [APP] })
       renderWithRouter(<AppsSection />)
 
       await screen.findByText("sonarr-app")
@@ -148,7 +129,7 @@ describe("AppsSection", () => {
     })
 
     it("hides an already-used surface but keeps offering the rest (download always offered)", async () => {
-      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse([QUI_SYNCED])))
+      stubApi({ "GET /api/apps": [QUI_SYNCED] })
       renderWithRouter(<AppsSection />)
 
       await screen.findByText("qui-synced")
@@ -161,7 +142,7 @@ describe("AppsSection", () => {
     })
 
     it("offers every compatible surface for a fresh app", async () => {
-      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse([QUI_FRESH])))
+      stubApi({ "GET /api/apps": [QUI_FRESH] })
       renderWithRouter(<AppsSection />)
 
       await screen.findByText("qui-fresh")
@@ -174,7 +155,7 @@ describe("AppsSection", () => {
     })
 
     it("Sync target navigates to /applications with create=sync and the app's id", async () => {
-      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse([QUI_FRESH])))
+      stubApi({ "GET /api/apps": [QUI_FRESH] })
       renderWithRouter(<AppsSection />)
 
       await screen.findByText("qui-fresh")
@@ -186,7 +167,7 @@ describe("AppsSection", () => {
     })
 
     it("Download client navigates to /download-clients with just the app's id (no `create`)", async () => {
-      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse([QUI_FRESH])))
+      stubApi({ "GET /api/apps": [QUI_FRESH] })
       renderWithRouter(<AppsSection />)
 
       await screen.findByText("qui-fresh")

@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import type { ReactNode } from "react"
+import { stubApi } from "@/test/stubApi"
 import { SyncProfilesSection } from "./SyncProfilesSection"
 
 const INDEXERS = [
@@ -17,10 +18,6 @@ const CREATED = {
   updatedAt: "2026-07-03T00:00:00Z",
 }
 
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })
-}
-
 function wrap(children: ReactNode) {
   return (
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -29,29 +26,9 @@ function wrap(children: ReactNode) {
   )
 }
 
-function stubFetch() {
-  const fetchMock = vi.fn().mockImplementation((request: Request) => {
-    if (request.method === "POST" && request.url.endsWith("/sync-profiles")) {
-      return Promise.resolve(jsonResponse(CREATED, 201))
-    }
-    if (request.url.endsWith("/indexers")) {
-      return Promise.resolve(jsonResponse(INDEXERS))
-    }
-    return Promise.resolve(jsonResponse([]))
-  })
-  vi.stubGlobal("fetch", fetchMock)
-  return fetchMock
-}
-
 describe("SyncProfilesSection", () => {
-  afterEach(() => vi.unstubAllGlobals())
-
   it("renders the stubbed list", async () => {
-    const fetchMock = vi.fn().mockImplementation((request: Request) => {
-      if (request.url.endsWith("/sync-profiles")) return Promise.resolve(jsonResponse([CREATED]))
-      return Promise.resolve(jsonResponse([]))
-    })
-    vi.stubGlobal("fetch", fetchMock)
+    stubApi({ "GET /api/sync-profiles": [CREATED] })
     render(wrap(<SyncProfilesSection />))
 
     expect(await screen.findByText("tv-only")).toBeTruthy()
@@ -59,18 +36,18 @@ describe("SyncProfilesSection", () => {
   })
 
   it("renders 'all indexers' for an empty selection", async () => {
-    const fetchMock = vi.fn().mockImplementation((request: Request) => {
-      if (request.url.endsWith("/sync-profiles")) return Promise.resolve(jsonResponse([{ ...CREATED, indexerIds: [] }]))
-      return Promise.resolve(jsonResponse([]))
-    })
-    vi.stubGlobal("fetch", fetchMock)
+    stubApi({ "GET /api/sync-profiles": [{ ...CREATED, indexerIds: [] }] })
     render(wrap(<SyncProfilesSection />))
 
     expect(await screen.findByText("all indexers")).toBeTruthy()
   })
 
   it("adding a profile: naming it and checking one indexer submits its id", async () => {
-    const fetchMock = stubFetch()
+    const api = stubApi({
+      "GET /api/sync-profiles": [],
+      "GET /api/indexers": INDEXERS,
+      "POST /api/sync-profiles": () => Response.json(CREATED, { status: 201 }),
+    })
     render(wrap(<SyncProfilesSection />))
 
     fireEvent.click(screen.getByRole("button", { name: /Add profile/ }))
@@ -84,9 +61,9 @@ describe("SyncProfilesSection", () => {
 
     // The dialog closes on a successful create — wait for that before inspecting the request.
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
-    const postCall = fetchMock.mock.calls.find(([request]) => (request as Request).method === "POST" && (request as Request).url.endsWith("/sync-profiles"))
-    expect(postCall).toBeTruthy()
-    const body: unknown = JSON.parse(await (postCall![0] as Request).text())
+    const post = api.calls("POST /api/sync-profiles")[0]
+    expect(post).toBeTruthy()
+    const body: unknown = JSON.parse(await post.text())
     expect(body).toEqual({ name: "tv-only", indexerIds: [1] })
   })
 })

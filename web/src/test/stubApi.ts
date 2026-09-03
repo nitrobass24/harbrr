@@ -1,4 +1,5 @@
-import { createApi, type ApiClient } from "@/lib/api"
+import { onTestFinished } from "vitest"
+import { api, createApi, type ApiClient } from "@/lib/api"
 import { getBaseUrl } from "@/lib/base-url"
 
 // A stub value is either the JSON body the endpoint answers with (as a 200), or a
@@ -35,6 +36,15 @@ export function stubApi(stubs: Record<string, unknown>): ApiClient & { calls: (k
     if (typeof route.value === "function") return (route.value as StubResponder)(request)
     return Response.json(route.value)
   }
+  // Component tests reach the API through the module singleton (the hooks import
+  // `api` directly), so the stub transport is swapped onto it for the duration of
+  // the current test and restored automatically. The returned fresh client shares
+  // the same transport, for tests that call methods directly.
+  const previous = api.fetchFn
+  api.fetchFn = fetchStub
+  onTestFinished(() => {
+    api.fetchFn = previous
+  })
   return Object.assign(createApi(fetchStub), {
     calls: (key: string) => recorded.filter((r) => r.key === key).map((r) => r.request),
   })
