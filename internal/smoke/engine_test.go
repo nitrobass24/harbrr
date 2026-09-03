@@ -276,12 +276,37 @@ func TestGrabSucceeded(t *testing.T) {
 		{"unrecognized body", "not a torrent/magnet", false},
 		{"download error", "download HTTP 500", false},
 		{"download not found", "download HTTP 404", false},
+		// Skipped is non-failing for the callers, but it is NOT a success either —
+		// GrabSkipped is the separate question, and skipped must never render as a pass.
+		{"skipped empty search", grabSkippedEmpty, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := GrabSucceeded(tt.result); got != tt.want {
 				t.Errorf("GrabSucceeded(%q) = %v, want %v", tt.result, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGrabSkipped(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		result string
+		want   bool
+	}{
+		{"skipped empty search", grabSkippedEmpty, true},
+		{"not attempted", "", false},
+		{"torrent", "torrent", false},
+		{"no download link", "no download link", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := GrabSkipped(tt.result); got != tt.want {
+				t.Errorf("GrabSkipped(%q) = %v, want %v", tt.result, got, tt.want)
 			}
 		})
 	}
@@ -369,7 +394,12 @@ func TestReportHasFailures(t *testing.T) {
 
 // noLinkSentinel makes grabStubServer serve an item with an EMPTY <link> (the
 // "nothing grabbable in the feed" case), which a plain empty override cannot express.
-const noLinkSentinel = "-"
+// emptyFeedSentinel makes it serve a feed with NO items at all (the "search matched
+// nothing" case, issue #566) — distinct: rows without a link still fail (#429).
+const (
+	noLinkSentinel    = "-"
+	emptyFeedSentinel = "--"
+)
 
 // grabFeed renders a Torznab feed carrying one item whose <link> is the given URL.
 func grabFeed(link string) string {
@@ -385,6 +415,11 @@ func grabStubServer(t *testing.T, linkOverride string, dlStatus int, dlBody stri
 	var srv *httptest.Server
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/results/torznab/api") {
+			w.Header().Set("Content-Type", "application/xml")
+			if linkOverride == emptyFeedSentinel {
+				fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?><rss><channel></channel></rss>`)
+				return
+			}
 			link := srv.URL + "/dl?apikey=k"
 			switch linkOverride {
 			case noLinkSentinel:
@@ -393,7 +428,6 @@ func grabStubServer(t *testing.T, linkOverride string, dlStatus int, dlBody stri
 			default:
 				link = linkOverride
 			}
-			w.Header().Set("Content-Type", "application/xml")
 			fmt.Fprint(w, grabFeed(link))
 			return
 		}
@@ -425,6 +459,7 @@ func TestGrabCheck(t *testing.T) {
 		{"html error page fails", "", 200, "<html><body>login required</body></html>", StatusFail, grabUnknown},
 		{"plain text starting with d fails", "", 200, "download unavailable", StatusFail, grabUnknown},
 		{"feed item without a link fails", noLinkSentinel, 200, "", StatusFail, grabNoLink},
+		{"empty search skips, never passes", emptyFeedSentinel, 200, "", StatusSkip, "search matched nothing to grab"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

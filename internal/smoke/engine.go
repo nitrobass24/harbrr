@@ -767,8 +767,9 @@ type EvidenceRecord struct {
 // actually resolved to something a download client could take. The empty string means
 // the grab was not attempted (SMOKE_GRAB unset) and is NOT a failure; every other
 // non-payload result ("no download link", "not a torrent/magnet", "download HTTP 500")
-// is. Lives here, untagged, so normal CI covers it — the //go:build smoke front-end
-// only calls it.
+// is. The skipped state (GrabSkipped) is deliberately NOT a success here — skipped must
+// never render as a pass; callers consult GrabSkipped separately. Lives here, untagged,
+// so normal CI covers it — the //go:build smoke front-end only calls it.
 func GrabSucceeded(result string) bool {
 	switch result {
 	case "", grabTorrent, grabMagnet, grabNZB:
@@ -778,14 +779,25 @@ func GrabSucceeded(result string) bool {
 	}
 }
 
+// GrabSkipped reports whether a Grab result means the grab was skipped because the
+// search matched nothing on this tracker — there was no release to grab, so the check
+// neither passed nor failed (issue #566). Distinct from "" (not attempted): the report
+// still shows the check ran. Both runners treat it as non-failing but NEVER render it
+// as a pass.
+func GrabSkipped(result string) bool {
+	return result == grabSkippedEmpty
+}
+
 // Grab result vocabulary. The payload kinds are the passes; grabUnknown is the
-// catch-all failure for a body that is neither a torrent nor an NZB.
+// catch-all failure for a body that is neither a torrent nor an NZB; grabSkippedEmpty
+// is the one non-pass, non-fail state (nothing existed to grab).
 const (
-	grabTorrent = "torrent"
-	grabMagnet  = "magnet"
-	grabNZB     = "nzb"
-	grabUnknown = "not a torrent/magnet"
-	grabNoLink  = "no download link"
+	grabTorrent      = "torrent"
+	grabMagnet       = "magnet"
+	grabNZB          = "nzb"
+	grabUnknown      = "not a torrent/magnet"
+	grabNoLink       = "no download link"
+	grabSkippedEmpty = "skipped: search matched nothing to grab"
 )
 
 // classifyGrabBody names the payload a downloaded grab body carries. Both checks are
@@ -848,11 +860,17 @@ func xmlRootIs(body []byte, name string) bool {
 // link with only its QUERY scrubbed, and a tracker can hide a passkey in a PATH
 // segment (animebytes, beyond-hd). Only the host — which is not a secret — is named.
 func grabResolve(ctx context.Context, c *http.Client, cfg Config, slug, query string) (string, error) {
-	link, err := firstDownloadLink(ctx, c, cfg, slug, query)
+	link, hasItems, err := firstDownloadLink(ctx, c, cfg, slug, query)
 	if err != nil {
 		return "", err
 	}
 	switch {
+	case !hasItems:
+		// An empty result set means nothing existed to grab — skipped, not broken
+		// (issue #566). Rows that yield no link stay the grabNoLink FAILURE below:
+		// a tracker that serves releases but no resolvable link is exactly what
+		// issue #429 exists to catch.
+		return grabSkippedEmpty, nil
 	case link == "":
 		return grabNoLink, nil
 	case strings.HasPrefix(link, "magnet:"):
@@ -868,28 +886,31 @@ func grabResolve(ctx context.Context, c *http.Client, cfg Config, slug, query st
 	return classifyGrabBody(body), nil
 }
 
-// firstDownloadLink returns the first feed item's link/enclosure URL, "" when the feed
-// carries no grabbable item.
-func firstDownloadLink(ctx context.Context, c *http.Client, cfg Config, slug, query string) (string, error) {
+// firstDownloadLink returns the first feed item's link/enclosure URL ("" when no item
+// carries one) and whether the feed had any items at all — the distinction between "the
+// search matched nothing" (grab skipped) and "rows exist but none is grabbable" (grab
+// failed).
+func firstDownloadLink(ctx context.Context, c *http.Client, cfg Config, slug, query string) (link string, hasItems bool, err error) {
 	feed, err := harbrrFeed(ctx, c, cfg, slug, query)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
+	hasItems = len(feed.Channel.Items) > 0
 	for _, it := range feed.Channel.Items {
 		if l := strings.TrimSpace(it.Link); l != "" {
-			return l, nil
+			return l, hasItems, nil
 		}
 		if l := strings.TrimSpace(it.Enclosure.URL); l != "" {
-			return l, nil
+			return l, hasItems, nil
 		}
 	}
-	return "", nil
+	return "", hasItems, nil
 }
 
 // harbrrHasDownloadLinks reports whether the harbrr feed carries a non-empty
 // <link>/<enclosure> for at least one item (confirms a grabbable release).
 func harbrrHasDownloadLinks(ctx context.Context, c *http.Client, cfg Config, slug, query string) (bool, error) {
-	link, err := firstDownloadLink(ctx, c, cfg, slug, query)
+	link, _, err := firstDownloadLink(ctx, c, cfg, slug, query)
 	return link != "", err
 }
 
