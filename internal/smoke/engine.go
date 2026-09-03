@@ -929,7 +929,26 @@ func harbrrFeed(ctx context.Context, c *http.Client, cfg Config, slug, query str
 	if err := xml.Unmarshal(body, &feed); err != nil {
 		return feed, fmt.Errorf("parse harbrr feed for %q: %w", slug, err)
 	}
-	return feed, nil
+	// harbrr serves credential/indexer-resolution gate failures as HTTP 200 with a
+	// Torznab <error> document (torznabhttp/errors.go, Jackett's convention), and any
+	// well-formed XML unmarshals into torznabFeed with zero items — so without a root
+	// check an API failure would masquerade as an empty feed and, since #566, be
+	// recorded as a grab SKIP instead of a failure. The description is secret-free by
+	// harbrr's own error-writing contract.
+	var root struct {
+		XMLName     xml.Name
+		Code        string `xml:"code,attr"`
+		Description string `xml:"description,attr"`
+	}
+	_ = xml.Unmarshal(body, &root)
+	switch root.XMLName.Local {
+	case "rss":
+		return feed, nil
+	case "error":
+		return torznabFeed{}, fmt.Errorf("harbrr feed for %q: torznab error %s: %s", slug, root.Code, root.Description)
+	default:
+		return torznabFeed{}, fmt.Errorf("harbrr feed for %q: unexpected root <%s>, not an RSS feed", slug, root.XMLName.Local)
+	}
 }
 
 // secretTokens are the credential-shaped substrings that must never appear in

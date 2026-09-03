@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -396,9 +397,14 @@ func TestReportHasFailures(t *testing.T) {
 // "nothing grabbable in the feed" case), which a plain empty override cannot express.
 // emptyFeedSentinel makes it serve a feed with NO items at all (the "search matched
 // nothing" case, issue #566) — distinct: rows without a link still fail (#429).
+// errorDocSentinel serves a Torznab <error> document with HTTP 200 (harbrr's gate-failure
+// convention) and badRootSentinel a well-formed non-RSS body — both must FAIL the grab,
+// never read as an empty feed (the masking the #566 review caught).
 const (
 	noLinkSentinel    = "-"
 	emptyFeedSentinel = "--"
+	errorDocSentinel  = "-e"
+	badRootSentinel   = "-x"
 )
 
 // grabFeed renders a Torznab feed carrying one item whose <link> is the given URL.
@@ -418,6 +424,14 @@ func grabStubServer(t *testing.T, linkOverride string, dlStatus int, dlBody stri
 			w.Header().Set("Content-Type", "application/xml")
 			if linkOverride == emptyFeedSentinel {
 				fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?><rss><channel></channel></rss>`)
+				return
+			}
+			if linkOverride == errorDocSentinel {
+				fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?><error code="100" description="Invalid API Key"/>`)
+				return
+			}
+			if linkOverride == badRootSentinel {
+				fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?><html><body>proxy page</body></html>`)
 				return
 			}
 			link := srv.URL + "/dl?apikey=k"
@@ -460,6 +474,8 @@ func TestGrabCheck(t *testing.T) {
 		{"plain text starting with d fails", "", 200, "download unavailable", StatusFail, grabUnknown},
 		{"feed item without a link fails", noLinkSentinel, 200, "", StatusFail, grabNoLink},
 		{"empty search skips, never passes", emptyFeedSentinel, 200, "", StatusSkip, "search matched nothing to grab"},
+		{"torznab error doc fails, never skips", errorDocSentinel, 200, "", StatusFail, "torznab error 100"},
+		{"non-RSS root fails, never skips", badRootSentinel, 200, "", StatusFail, "unexpected root"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -480,6 +496,44 @@ func TestGrabCheck(t *testing.T) {
 				t.Errorf("finding not addressed to the tracker's grab check: %+v", got[0])
 			}
 		})
+	}
+}
+
+// TestGrabCheckFallbackAfterEmpty pins the retry contract: an empty primary result
+// retries the fallback query (that is exactly when the fallback earns its keep), and a
+// grabbable fallback result is a PASS — with both queries actually sent.
+func TestGrabCheckFallbackAfterEmpty(t *testing.T) {
+	t.Parallel()
+	var mu sync.Mutex
+	queries := []string{}
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/results/torznab/api") {
+			q := r.URL.Query().Get("q")
+			mu.Lock()
+			queries = append(queries, q)
+			mu.Unlock()
+			w.Header().Set("Content-Type", "application/xml")
+			if q == "primary" {
+				fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?><rss><channel></channel></rss>`)
+				return
+			}
+			fmt.Fprint(w, grabFeed(srv.URL+"/dl?apikey=k"))
+			return
+		}
+		fmt.Fprint(w, "d4:infod6:lengthi1eee")
+	}))
+	t.Cleanup(srv.Close)
+
+	cfg := Config{HarbrrURL: srv.URL, HarbrrKey: "k", Query: "primary", FallbackQuery: "fallback", Grab: true}
+	got := grabCheck(context.Background(), srv.Client(), cfg, "tracker", nil)
+	if len(got) != 1 || got[0].Status != StatusPass {
+		t.Fatalf("grabCheck = %+v, want one PASS finding", got)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(queries) != 2 || queries[0] != "primary" || queries[1] != "fallback" {
+		t.Errorf("queries sent = %v, want [primary fallback]", queries)
 	}
 }
 
