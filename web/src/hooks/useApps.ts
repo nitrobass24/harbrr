@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { api } from "@/lib/api"
+import { api, unwrap } from "@/lib/api"
 import { notifyError } from "@/lib/notify"
 import { keys } from "@/lib/query"
 import type { UpdateApp } from "@/lib/api"
 
 export function useApps() {
-  return useQuery({ queryKey: keys.apps.all, queryFn: () => api.listApps() })
+  return useQuery({ queryKey: keys.apps.all, queryFn: () => unwrap(api.http.GET("/api/apps")) })
 }
 
 // An App's identity/credential (ADR 0004) is read by app-sync, announce, and download
@@ -25,7 +25,7 @@ function useInvalidateApps() {
 export function useUpdateApp() {
   const invalidate = useInvalidateApps()
   return useMutation({
-    mutationFn: ({ id, body }: { id: number, body: UpdateApp }) => api.updateApp(id, body),
+    mutationFn: ({ id, body }: { id: number, body: UpdateApp }) => unwrap(api.http.PATCH("/api/apps/{id}", { params: { path: { id } }, body })),
     onSettled: invalidate,
   })
 }
@@ -36,7 +36,7 @@ export function useUpdateApp() {
 export function useDeleteApp() {
   const invalidate = useInvalidateApps()
   return useMutation({
-    mutationFn: (id: number) => api.deleteApp(id),
+    mutationFn: (id: number) => unwrap(api.http.DELETE("/api/apps/{id}", { params: { path: { id } } })),
     onError: (err: Error) => notifyError(`Deleting the app failed: ${err.message}`, err),
     onSettled: invalidate,
   })
@@ -45,7 +45,7 @@ export function useDeleteApp() {
 export function useQuiInstances(appId: number | null) {
   return useQuery({
     queryKey: keys.apps.quiInstances(appId),
-    queryFn: () => api.getQuiInstances(appId as number),
+    queryFn: () => unwrap(api.http.GET("/api/apps/{id}/qui-instances", { params: { path: { id: appId as number } } })),
     enabled: appId !== null,
   })
 }

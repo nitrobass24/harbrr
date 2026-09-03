@@ -1,26 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { notifyError, notifyInfo, notifySuccess, notifyWarn } from "./notify"
-import { api } from "@/lib/api"
+import { api, type ApiClient } from "@/lib/api"
+import { stubApi } from "@/test/stubApi"
 
-// Mirrors the shape lib/api.ts declares for postFrontendLog, without importing the real
-// module (which is mocked below) — used only to type the "absent method" test's cast.
-type PostFrontendLogFn = (level: "error" | "warn", message: string, context?: string) => Promise<void>
-
-const { toastError, toastWarning, toastSuccess, toastInfo, postFrontendLog } = vi.hoisted(() => ({
+const { toastError, toastWarning, toastSuccess, toastInfo } = vi.hoisted(() => ({
   toastError: vi.fn(),
   toastWarning: vi.fn(),
   toastSuccess: vi.fn(),
   toastInfo: vi.fn(),
-  postFrontendLog: vi.fn(),
 }))
 
 vi.mock("sonner", () => ({
   toast: { error: toastError, warning: toastWarning, success: toastSuccess, info: toastInfo },
 }))
 
-vi.mock("@/lib/api", () => ({
-  api: { postFrontendLog },
-}))
+const SHIP = "POST /api/logs/frontend"
+
+// Shipping is fire-and-forget, so absence can only be asserted after giving a
+// (wrongly) fired request time to land.
+function settle(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 20))
+}
 
 describe("notify", () => {
   beforeEach(() => {
@@ -28,65 +28,73 @@ describe("notify", () => {
     toastWarning.mockClear()
     toastSuccess.mockClear()
     toastInfo.mockClear()
-    postFrontendLog.mockReset()
-    postFrontendLog.mockResolvedValue(undefined)
   })
 
   it("notifyError shows the toast and ships error level with the error's message as context", async () => {
+    const stub = stubApi({ [SHIP]: null })
     notifyError("Save failed", new Error("network down"))
     expect(toastError).toHaveBeenCalledWith("Save failed")
-    await vi.waitFor(() => expect(postFrontendLog).toHaveBeenCalledWith("error", "Save failed", "network down"))
+    await vi.waitFor(() => expect(stub.calls(SHIP)).toHaveLength(1))
+    expect(await stub.calls(SHIP)[0].json()).toEqual({ level: "error", message: "Save failed", context: "network down" })
   })
 
   it("notifyError ships without context when no error is passed", async () => {
+    const stub = stubApi({ [SHIP]: null })
     notifyError("Save failed")
     expect(toastError).toHaveBeenCalledWith("Save failed")
-    await vi.waitFor(() => expect(postFrontendLog).toHaveBeenCalledWith("error", "Save failed", undefined))
+    await vi.waitFor(() => expect(stub.calls(SHIP)).toHaveLength(1))
+    expect(await stub.calls(SHIP)[0].json()).toEqual({ level: "error", message: "Save failed" })
   })
 
   it("notifyError never stringifies a non-Error value into context", async () => {
+    const stub = stubApi({ [SHIP]: null })
     notifyError("Save failed", { status: 500, body: "sensitive response" })
-    await vi.waitFor(() => expect(postFrontendLog).toHaveBeenCalledWith("error", "Save failed", undefined))
+    await vi.waitFor(() => expect(stub.calls(SHIP)).toHaveLength(1))
+    expect(await stub.calls(SHIP)[0].json()).toEqual({ level: "error", message: "Save failed" })
   })
 
   it("notifyWarn shows the toast and ships warn level with context", async () => {
+    const stub = stubApi({ [SHIP]: null })
     notifyWarn("Slow response", new Error("timeout"))
     expect(toastWarning).toHaveBeenCalledWith("Slow response")
-    await vi.waitFor(() => expect(postFrontendLog).toHaveBeenCalledWith("warn", "Slow response", "timeout"))
+    await vi.waitFor(() => expect(stub.calls(SHIP)).toHaveLength(1))
+    expect(await stub.calls(SHIP)[0].json()).toEqual({ level: "warn", message: "Slow response", context: "timeout" })
   })
 
   it("notifySuccess shows the toast and never ships", async () => {
+    const stub = stubApi({ [SHIP]: null })
     notifySuccess("Indexer deleted")
     expect(toastSuccess).toHaveBeenCalledWith("Indexer deleted")
-    // Give any (wrongly) fired fire-and-forget call a turn to land before asserting absence.
-    await Promise.resolve()
-    expect(postFrontendLog).not.toHaveBeenCalled()
+    await settle()
+    expect(stub.calls(SHIP)).toHaveLength(0)
   })
 
   it("notifyInfo shows the toast and never ships", async () => {
+    const stub = stubApi({ [SHIP]: null })
     notifyInfo("Sync scheduled")
     expect(toastInfo).toHaveBeenCalledWith("Sync scheduled")
-    await Promise.resolve()
-    expect(postFrontendLog).not.toHaveBeenCalled()
+    await settle()
+    expect(stub.calls(SHIP)).toHaveLength(0)
   })
 
   it("swallows a shipping failure without throwing or surfacing a second toast", async () => {
-    postFrontendLog.mockRejectedValueOnce(new Error("logging endpoint unreachable"))
+    const stub = stubApi({ [SHIP]: () => Response.json({ error: "logging endpoint unreachable", code: "internal" }, { status: 500 }) })
     expect(() => notifyError("Save failed")).not.toThrow()
-    await vi.waitFor(() => expect(postFrontendLog).toHaveBeenCalled())
+    await vi.waitFor(() => expect(stub.calls(SHIP)).toHaveLength(1))
+    await settle()
     // No follow-up error toast from the failed shipment — exactly one toast.error call.
     expect(toastError).toHaveBeenCalledTimes(1)
   })
 
-  it("no-ops instead of throwing when the api client is missing postFrontendLog (partial test mock)", () => {
-    const mutableApi = api as unknown as { postFrontendLog?: PostFrontendLogFn }
-    const original = mutableApi.postFrontendLog
-    mutableApi.postFrontendLog = undefined
+  it("no-ops instead of throwing when the api client is missing http (partial test mock)", () => {
+    const mutableApi = api as unknown as { http?: ApiClient["http"] }
+    const original = mutableApi.http
+    mutableApi.http = undefined
     try {
       expect(() => notifyError("Save failed")).not.toThrow()
       expect(toastError).toHaveBeenCalledWith("Save failed")
     } finally {
-      mutableApi.postFrontendLog = original
+      mutableApi.http = original
     }
   })
 })

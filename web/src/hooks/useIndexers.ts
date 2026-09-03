@@ -1,5 +1,5 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query"
-import { api, APIError } from "@/lib/api"
+import { api, APIError, unwrap } from "@/lib/api"
 import type { AddIndexer, Instance, TestResult, UpdateIndexer } from "@/lib/api"
 import { notifyError, notifySuccess } from "@/lib/notify"
 import { keys } from "@/lib/query"
@@ -7,14 +7,14 @@ import { keys } from "@/lib/query"
 export function useIndexers() {
   return useQuery({
     queryKey: keys.indexers.list(),
-    queryFn: () => api.listIndexers(),
+    queryFn: () => unwrap(api.http.GET("/api/indexers")),
   })
 }
 
 export function useIndexer(slug: string, enabled = true) {
   return useQuery({
     queryKey: keys.indexers.detail(slug),
-    queryFn: () => api.getIndexer(slug),
+    queryFn: () => unwrap(api.http.GET("/api/indexers/{slug}", { params: { path: { slug } } })),
     enabled,
   })
 }
@@ -25,7 +25,7 @@ export function useIndexerStatuses(slugs: string[]) {
   return useQueries({
     queries: slugs.map((slug) => ({
       queryKey: keys.indexers.status(slug),
-      queryFn: () => api.getIndexerStatus(slug),
+      queryFn: () => unwrap(api.http.GET("/api/indexers/{slug}/status", { params: { path: { slug } } })),
       refetchInterval: 30_000,
     })),
   })
@@ -36,7 +36,7 @@ export function useIndexerStatuses(slugs: string[]) {
 export function useIndexerDiagnostics(slug: string) {
   return useQuery({
     queryKey: keys.indexers.diagnostics(slug),
-    queryFn: () => api.getIndexerDiagnostics(slug),
+    queryFn: () => unwrap(api.http.GET("/api/indexers/{slug}/diagnostics", { params: { path: { slug } } })),
     refetchInterval: 30_000,
   })
 }
@@ -44,7 +44,7 @@ export function useIndexerDiagnostics(slug: string) {
 export function useIndexerCapabilities(slug: string) {
   return useQuery({
     queryKey: keys.indexers.capabilities(slug),
-    queryFn: () => api.getIndexerCapabilities(slug),
+    queryFn: () => unwrap(api.http.GET("/api/indexers/{slug}/capabilities", { params: { path: { slug } } })),
     staleTime: 5 * 60_000, // caps only change on definition refresh
   })
 }
@@ -54,7 +54,7 @@ export function useIndexerCapabilitiesMany(slugs: string[]) {
   return useQueries({
     queries: slugs.map((slug) => ({
       queryKey: keys.indexers.capabilities(slug),
-      queryFn: () => api.getIndexerCapabilities(slug),
+      queryFn: () => unwrap(api.http.GET("/api/indexers/{slug}/capabilities", { params: { path: { slug } } })),
       staleTime: 5 * 60_000,
     })),
   })
@@ -63,7 +63,7 @@ export function useIndexerCapabilitiesMany(slugs: string[]) {
 export function useIndexerStats(slug: string, enabled = true) {
   return useQuery({
     queryKey: keys.indexers.stats(slug),
-    queryFn: () => api.getIndexerStats(slug),
+    queryFn: () => unwrap(api.http.GET("/api/indexers/{slug}/stats", { params: { path: { slug } } })),
     enabled,
   })
 }
@@ -71,7 +71,7 @@ export function useIndexerStats(slug: string, enabled = true) {
 export function useAddIndexer() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (body: AddIndexer) => api.addIndexer(body),
+    mutationFn: (body: AddIndexer) => unwrap(api.http.POST("/api/indexers", { body: body })),
     // Adding an indexer grows the aggregate stat set (useAllIndexerStats), which
     // lives under keys.indexerStats (its own root) and so is no longer caught by
     // an indexers.all prefix invalidation — refresh it explicitly.
@@ -85,7 +85,7 @@ export function useAddIndexer() {
 export function useUpdateIndexer(slug: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (body: UpdateIndexer) => api.updateIndexer(slug, body),
+    mutationFn: (body: UpdateIndexer) => unwrap(api.http.PATCH("/api/indexers/{slug}", { params: { path: { slug } }, body })),
     onSettled: () => qc.invalidateQueries({ queryKey: keys.indexers.all }),
   })
 }
@@ -93,7 +93,7 @@ export function useUpdateIndexer(slug: string) {
 export function useDeleteIndexer() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (slug: string) => api.deleteIndexer(slug),
+    mutationFn: (slug: string) => unwrap(api.http.DELETE("/api/indexers/{slug}", { params: { path: { slug } } })),
     // Deleting an indexer shrinks the aggregate stat set (see useAddIndexer note).
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: keys.indexers.all })
@@ -142,7 +142,7 @@ function toastTestError(err: unknown, slug: string) {
 export function useTestIndexer(options?: { toastResult?: boolean }) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (slug: string) => api.testIndexer(slug),
+    mutationFn: (slug: string) => unwrap(api.http.POST("/api/indexers/{slug}/test", { params: { path: { slug } } })),
     onSuccess: options?.toastResult ? toastTestResult : undefined,
     onError: options?.toastResult ? toastTestError : undefined,
     onSettled: (_res, _err, slug) =>
@@ -185,7 +185,7 @@ export function useTestAllIndexers() {
     mutationFn: (slugs: string[]): Promise<TestAllResult[]> =>
       mapBounded(slugs, TEST_ALL_CONCURRENCY, async (slug): Promise<TestAllResult> => {
         try {
-          const res = await api.testIndexer(slug)
+          const res = await unwrap(api.http.POST("/api/indexers/{slug}/test", { params: { path: { slug } } }))
           return { slug, ok: res.ok, error: res.error }
         } catch (err) {
           if (err instanceof APIError) return { slug, ok: false, error: err.message, status: err.status }

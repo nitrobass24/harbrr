@@ -4,16 +4,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { type ReactNode } from "react"
 import { useDeleteApp } from "./useApps"
 import { APIError } from "@/lib/api"
+import { stubApi } from "@/test/stubApi"
 
-const { notifyErrorMock, deleteAppMock } = vi.hoisted(() => ({
+const { notifyErrorMock } = vi.hoisted(() => ({
   notifyErrorMock: vi.fn(),
-  deleteAppMock: vi.fn(),
 }))
 vi.mock("@/lib/notify", () => ({ notifyError: notifyErrorMock }))
-vi.mock("@/lib/api", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/api")>()
-  return { ...actual, api: { deleteApp: deleteAppMock } }
-})
 
 function wrapper({ children }: { children: ReactNode }) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -23,11 +19,13 @@ function wrapper({ children }: { children: ReactNode }) {
 describe("useDeleteApp", () => {
   beforeEach(() => {
     notifyErrorMock.mockClear()
-    deleteAppMock.mockReset()
   })
 
   it("surfaces the server's 409 conflict message in the toast (not a generic string)", async () => {
-    deleteAppMock.mockRejectedValue(new APIError(409, "conflict", "app is in use by 2 app-sync connections"))
+    stubApi({
+      "DELETE /api/apps/{id}": () =>
+        Response.json({ error: "app is in use by 2 app-sync connections", code: "conflict" }, { status: 409 }),
+    })
 
     const { result } = renderHook(() => useDeleteApp(), { wrapper })
     result.current.mutate(1)
@@ -40,7 +38,7 @@ describe("useDeleteApp", () => {
   })
 
   it("does not toast on success", async () => {
-    deleteAppMock.mockResolvedValue(undefined)
+    stubApi({ "DELETE /api/apps/{id}": null })
 
     const { result } = renderHook(() => useDeleteApp(), { wrapper })
     result.current.mutate(1)
