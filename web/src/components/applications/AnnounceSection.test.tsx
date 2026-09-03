@@ -169,6 +169,25 @@ describe("AnnounceSection create — App picker", () => {
     expect(screen.getByLabelText<HTMLInputElement>("Port").value).toBe("2468")
   })
 
+  it("deep-link opens the add dialog with the App pre-picked", async () => {
+    const fetchMock = vi.fn((request: Request) => {
+      if (request.url.includes("/apps")) return Promise.resolve(jsonResponse([APP]))
+      if (request.url.includes("/announce-connections")) return Promise.resolve(jsonResponse([]))
+      if (request.url.includes("/server-info")) return Promise.resolve(jsonResponse({ port: 7478 }))
+      return Promise.resolve(jsonResponse([]))
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    render(wrap(<AnnounceSection initialCreate={{ appId: APP.id }} />))
+
+    // No click: the deep-link itself opens the add dialog…
+    const appSelect = await screen.findByLabelText<HTMLSelectElement>("App")
+    await screen.findByRole("option", { name: "qui-main-app (qui)" })
+    expect(appSelect.value).toBe(String(APP.id))
+    // …and the pre-pick (not just the first-free default) seeded the name.
+    const nameInput = await screen.findByLabelText<HTMLInputElement>("Name")
+    await waitFor(() => expect(nameInput.value).toBe(APP.name))
+  })
+
   it("flipped default: the App picker defaults to the existing app without interaction", async () => {
     const fetchMock = vi.fn((request: Request) => {
       if (request.url.includes("/apps")) return Promise.resolve(jsonResponse([APP]))
@@ -247,6 +266,23 @@ describe("AnnounceSection create — Already configured block", () => {
     const row = await screen.findByRole<HTMLButtonElement>("button", { name: /qui-main-app/ })
     expect(row.disabled).toBe(true)
     expect(await screen.findByText("already added")).toBeTruthy()
+  })
+})
+
+describe("AnnounceSection list states", () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it("a failed targets query renders LoadError, not an empty card", async () => {
+    vi.stubGlobal("fetch", vi.fn((request: Request) => {
+      if (request.url.includes("/announce-connections")) return Promise.resolve(jsonResponse({ error: "boom" }, 500))
+      if (request.url.includes("/server-info")) return Promise.resolve(jsonResponse({ port: 7478 }))
+      return Promise.resolve(jsonResponse([]))
+    }))
+    render(wrap(<AnnounceSection />))
+
+    const alert = await screen.findByRole("alert")
+    expect(alert.textContent).toContain("Loading announce targets failed")
+    expect(screen.queryByText(/No announce targets/)).toBeNull()
   })
 })
 

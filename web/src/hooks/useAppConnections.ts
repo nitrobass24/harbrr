@@ -162,7 +162,7 @@ export function useUpdateAnnounce() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ id, body }: { id: number, body: UpdateAnnounceConnection }) => api.updateAnnounceConnection(id, body),
-    onSettled: () => qc.invalidateQueries({ queryKey: ["announce-connections"] }),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.announceConnections.all }),
   })
 }
 
