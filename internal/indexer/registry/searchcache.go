@@ -222,7 +222,7 @@ type liveSearchFn func(ctx context.Context, q search.Query) ([]*normalizer.Relea
 // treated as immutable after construction.
 type cacheOp struct {
 	instanceID int64
-	cfg        map[string]string
+	settings   instanceSettings
 	builtEpoch uint64
 	live       liveSearchFn
 	paging     bool
@@ -236,10 +236,10 @@ type cacheOp struct {
 // fetch serves every locally-sliced page), preserving the pre-paging key. The
 // signal comes straight off the adapter (SupportsOffsetPaging) so the cache and
 // the handler can never disagree about how a driver pages.
-func newCacheOp(instanceID int64, cfg map[string]string, builtEpoch uint64, live liveSearchFn, paging bool, q search.Query) cacheOp {
+func newCacheOp(instanceID int64, settings instanceSettings, builtEpoch uint64, live liveSearchFn, paging bool, q search.Query) cacheOp {
 	return cacheOp{
 		instanceID: instanceID,
-		cfg:        cfg,
+		settings:   settings,
 		builtEpoch: builtEpoch,
 		live:       live,
 		paging:     paging,
@@ -253,8 +253,8 @@ func newCacheOp(instanceID int64, cfg map[string]string, builtEpoch uint64, live
 // immediately (Touch + optional refresh-ahead async); a miss runs the live search
 // under singleflight and stores the result best-effort. A Fetch error degrades open
 // (falls through to a live search) and never fails the user's search.
-func (c *SearchCache) search(ctx context.Context, instanceID int64, cfg map[string]string, builtEpoch uint64, live liveSearchFn, paging bool, q search.Query) ([]*normalizer.Release, error) {
-	op := newCacheOp(instanceID, cfg, builtEpoch, live, paging, q)
+func (c *SearchCache) search(ctx context.Context, instanceID int64, settings instanceSettings, builtEpoch uint64, live liveSearchFn, paging bool, q search.Query) ([]*normalizer.Release, error) {
+	op := newCacheOp(instanceID, settings, builtEpoch, live, paging, q)
 
 	if core.CacheBypass(ctx) {
 		return c.liveAndStoreRecording(ctx, op)
@@ -372,7 +372,7 @@ func (c *SearchCache) tripBreaker(ctx context.Context, instanceID int64, err err
 // under today's config. Otherwise the effective (not stored) expiry is what gets
 // surfaced in the CacheInfo, so HTTP validators/max-age reflect the clamp.
 func (c *SearchCache) serveHit(ctx context.Context, op cacheOp, entry database.SearchCacheEntry) ([]*normalizer.Release, error) {
-	effective := c.effectiveExpiry(entry, op.cfg, op.q)
+	effective := c.effectiveExpiry(entry, op.settings, op.q)
 	if !effective.After(c.clock()) {
 		return c.missPath(ctx, op)
 	}
@@ -396,7 +396,7 @@ func (c *SearchCache) serveHit(ctx context.Context, op cacheOp, entry database.S
 
 // effectiveExpiry returns the expiry entry would receive if it were freshly stored
 // right now, under the CURRENT tuning, clamped to never exceed its actual stored
-// ExpiresAt: min(entry.ExpiresAt, entry.CachedAt + resolveTTL(cfg, q,
+// ExpiresAt: min(entry.ExpiresAt, entry.CachedAt + resolveTTL(settings, q,
 // entry.TotalResults)). This makes a TTL tier LOWERED via UpdateConfig take effect
 // on already-stored rows immediately, one read at a time, instead of only once
 // their original (now too generous) expiry lapses — the only other remedy being a
@@ -404,8 +404,8 @@ func (c *SearchCache) serveHit(ctx context.Context, op cacheOp, entry database.S
 // its own ExpiresAt (the min never exceeds the stored value); that requires a fresh
 // live fetch. resolveTTL's own thin clamp and warm floor apply exactly as they
 // would to a fresh store of this same result, by construction.
-func (c *SearchCache) effectiveExpiry(entry database.SearchCacheEntry, cfg map[string]string, q search.Query) time.Time {
-	fresh := entry.CachedAt.Add(c.tuning.Load().ttl.resolveTTL(cfg, q, entry.TotalResults))
+func (c *SearchCache) effectiveExpiry(entry database.SearchCacheEntry, settings instanceSettings, q search.Query) time.Time {
+	fresh := entry.CachedAt.Add(c.tuning.Load().ttl.resolveTTL(settings, q, entry.TotalResults))
 	if fresh.Before(entry.ExpiresAt) {
 		return fresh
 	}
@@ -490,7 +490,7 @@ func (c *SearchCache) runMiss(ctx context.Context, op cacheOp) ([]*normalizer.Re
 func (c *SearchCache) missFlight(ctx context.Context, op cacheOp) func() (any, error) {
 	return func() (any, error) {
 		if entry, found, ferr := c.store.Fetch(ctx, c.db, op.key, c.clock()); ferr == nil && found {
-			if effective := c.effectiveExpiry(entry, op.cfg, op.q); effective.After(c.clock()) {
+			if effective := c.effectiveExpiry(entry, op.settings, op.q); effective.After(c.clock()) {
 				if releases, derr := decodeReleases(entry.ResultsJSON, op.key); derr == nil {
 					info := core.CacheInfo{Cached: true, ExpiresAt: effective}
 					return missResult{releases: releases, info: info}, nil
@@ -622,7 +622,7 @@ func (c *SearchCache) storeBestEffort(ctx context.Context, op cacheOp, releases 
 		return false, time.Time{}
 	}
 	now := c.clock()
-	ttl := c.tuning.Load().ttl.resolveTTL(op.cfg, op.q, len(releases))
+	ttl := c.tuning.Load().ttl.resolveTTL(op.settings, op.q, len(releases))
 	entry := database.SearchCacheEntry{
 		CacheKey:     op.key,
 		InstanceID:   op.instanceID,

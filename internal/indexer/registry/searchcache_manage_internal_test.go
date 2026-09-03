@@ -19,7 +19,7 @@ func TestCleanupExpired_GraceRetainsRecentlyExpired(t *testing.T) {
 	ctx := context.Background()
 	q := search.Query{Keywords: "x"}
 
-	sc.storeBestEffort(ctx, cacheOp{instanceID: instID, cfg: map[string]string{}, q: q, key: "k"}, relSet("A"))
+	sc.storeBestEffort(ctx, cacheOp{instanceID: instID, q: q, key: "k"}, relSet("A"))
 
 	// Just past the 1m TTL but well inside the 24h reap grace: a cleanup tick must not
 	// purge the row yet.

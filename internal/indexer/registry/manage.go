@@ -413,12 +413,12 @@ func (r *Manager) Freeleech(ctx context.Context, inst domain.IndexerInstance) (b
 	}
 	cfg := make(map[string]string, 2)
 	for _, s := range settings {
-		if s.Name == "freeleech" || s.Name == "freeleech_only" {
+		if s.Name == freeleechSetting || s.Name == freeleechOnlySetting {
 			cfg[s.Name] = s.Value
 		}
 	}
 	cardigann.CanonicalizeCheckboxes(def, cfg)
-	return settingEnabled(cfg["freeleech"]) || settingEnabled(cfg["freeleech_only"]), nil
+	return settingEnabled(cfg[freeleechSetting]) || settingEnabled(cfg[freeleechOnlySetting]), nil
 }
 
 // FailoverState is one indexer's base-URL failover standing (autobrr/harbrr#375):
@@ -1087,7 +1087,7 @@ func (r *StatsReporter) budgetStatus(ctx context.Context, instanceID int64) (Bud
 			cfg[s.Name] = s.Value
 		}
 	}
-	return r.budget.Status(ctx, instanceID, cfg, r.clock()), nil
+	return r.budget.Status(ctx, instanceID, resolveBudgetLimits(cfg), r.clock()), nil
 }
 
 // AllStats returns per-indexer stats for every configured instance. It reads the

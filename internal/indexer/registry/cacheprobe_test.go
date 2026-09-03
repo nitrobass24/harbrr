@@ -23,19 +23,32 @@ type cacheProbe struct {
 	inner      core.Indexer
 	cache      *SearchCache
 	instanceID int64
-	cfg        map[string]string
+	settings   instanceSettings
 	builtEpoch uint64
 }
 
 var _ core.Indexer = (*cacheProbe)(nil)
 
+// ttlSettingsFromCfg resolves the two TTL-relevant reserved keys off a raw settings
+// map with the SAME parse+clamp resolveInstanceSettings applies, so probe-driven
+// tests (and TestResolveTTL) keep their raw-string fixtures.
+func ttlSettingsFromCfg(cfg map[string]string) instanceSettings {
+	s := instanceSettings{CacheTTL: resolveCacheTTL(cfg["cache_ttl"])}
+	if wi, ok := warmIntervalFromValue(cfg[warmIntervalSetting]); ok {
+		s.WarmInterval = wi
+	}
+	return s
+}
+
 // probe builds a cacheProbe over inner, snapshotting the instance's invalidation epoch at
 // construction — the same capture Registry.build performs into indexerAdapter.builtEpoch.
-// It applies stripInertWarmInterval to cfg, matching buildAdapter (registry.go), so a
-// probe-driven test exercises the same warmer-skip TTL semantics production does.
+// It resolves cfg's TTL keys and applies the warm-capability zeroing off the inner's own
+// capabilities, matching buildAdapterAt (registry.go), so a probe-driven test exercises
+// the same warmer-skip TTL semantics production does.
 func (c *SearchCache) probe(inner core.Indexer, instanceID int64, cfg map[string]string) *cacheProbe {
-	stripInertWarmInterval(cfg, inner)
-	return &cacheProbe{inner: inner, cache: c, instanceID: instanceID, cfg: cfg, builtEpoch: c.instanceEpoch(instanceID)}
+	s := ttlSettingsFromCfg(cfg)
+	s.applyWarmCapability(inner.SupportsOffsetPaging(), inner.ConsumesSearchMode())
+	return &cacheProbe{inner: inner, cache: c, instanceID: instanceID, settings: s, builtEpoch: c.instanceEpoch(instanceID)}
 }
 
 // Search mirrors indexerAdapter.Search's cache-aside stage: the runtime enabled toggle off
@@ -45,7 +58,7 @@ func (p *cacheProbe) Search(ctx context.Context, q search.Query) ([]*normalizer.
 	if !p.cache.tuning.Load().enabled {
 		return p.cache.fetchLive(ctx, p.instanceID, p.inner.Search, q)
 	}
-	return p.cache.search(ctx, p.instanceID, p.cfg, p.builtEpoch, p.inner.Search, p.inner.SupportsOffsetPaging(), q)
+	return p.cache.search(ctx, p.instanceID, p.settings, p.builtEpoch, p.inner.Search, p.inner.SupportsOffsetPaging(), q)
 }
 
 func (p *cacheProbe) Info() core.IndexerInfo             { return p.inner.Info() }

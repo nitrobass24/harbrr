@@ -33,9 +33,11 @@ type indexerAdapter struct {
 	info       core.IndexerInfo
 	inner      native.Driver
 	instanceID int64
-	// cfg is the decrypted per-instance settings map. Search's cache-aside stage reads
-	// its "cache_ttl" override; it carries secrets, so it is never logged.
-	cfg map[string]string
+	// settings is the instance's typed reserved-key snapshot (resolveInstanceSettings):
+	// the cache TTL override + warm floor, the budget knobs, the freeleech view flag,
+	// and the engine's settings map. Its engineCfg carries secrets, so it is never
+	// logged. Immutable once the adapter is published.
+	settings instanceSettings
 	// cache is the registry-wide search cache, wired in build() when caching is
 	// configured (nil ⇒ caching not configured, so Search runs live). builtEpoch is the
 	// instance's invalidation generation, snapshotted earlier in buildAdapter — before
@@ -50,12 +52,8 @@ type indexerAdapter struct {
 	// usable. nil for a native driver — those have no keywordsfilters to degrade a term
 	// — and it answers false on a Cardigann instance that did not opt in.
 	skipQuery func(search.Query) bool
-	// freeleechOnly is the instance's stored `freeleech` setting. The engine is built
-	// with that key cleared (so it always fetches the full catalog); the value is
-	// carried here only to drive the serve-time freeleech view in Search.
-	freeleechOnly bool
-	db            dbinterface.Execer
-	health        database.Health
+	db        dbinterface.Execer
+	health    database.Health
 	// circuit is the per-instance circuit-breaker repository (autobrr/harbrr#253): a
 	// classified failure climbs its escalation ladder and sets DisabledTill; a success
 	// descends one rung. liveSearch/Grab consult it before hitting the tracker.
@@ -165,7 +163,7 @@ func (a *indexerAdapter) Search(ctx context.Context, q search.Query) ([]*normali
 	)
 	cacheEnabled := a.cache != nil && a.cache.tuning.Load().enabled
 	if cacheEnabled {
-		releases, err = a.cache.search(ctx, a.instanceID, a.cfg, a.builtEpoch, a.budgetedLiveSearch, a.SupportsOffsetPaging(), q)
+		releases, err = a.cache.search(ctx, a.instanceID, a.settings, a.builtEpoch, a.budgetedLiveSearch, a.SupportsOffsetPaging(), q)
 	} else {
 		releases, err = a.budgetedLiveSearch(ctx, q)
 	}
@@ -199,7 +197,7 @@ func (a *indexerAdapter) Search(ctx context.Context, q search.Query) ([]*normali
 	// no freeleech concept, and AlphaRatio filters upstream via its own freeleech_only
 	// fetch param instead — so freeleechOnly is false there unless an operator sets the
 	// reserved key by hand.
-	if a.freeleechOnly && !q.FreeleechBypass {
+	if a.settings.Freeleech && !q.FreeleechBypass {
 		releases = filterFreeleechOnly(releases)
 	}
 	return releases, nil
@@ -220,7 +218,7 @@ func (a *indexerAdapter) budgetedLiveSearch(ctx context.Context, query search.Qu
 		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, err)
 	}
 	reservedAt := a.clock()
-	if !a.budget.ReserveQuery(ctx, a.instanceID, a.cfg, reservedAt) {
+	if !a.budget.ReserveQuery(ctx, a.instanceID, a.settings.Budget, reservedAt) {
 		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, core.ErrBudgetExhausted)
 	}
 	return a.liveSearch(ctx, query, reservedAt)
@@ -249,7 +247,7 @@ func (a *indexerAdapter) liveSearch(ctx context.Context, query search.Query, res
 	start := a.clock()
 	releases, err := a.inner.Search(ctx, query)
 	if err != nil && !reachedTracker(ctx, err) {
-		a.budget.ReleaseQuery(ctx, a.instanceID, a.cfg, reservedAt)
+		a.budget.ReleaseQuery(ctx, a.instanceID, a.settings.Budget, reservedAt)
 		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, err)
 	}
 	a.stats.RecordQuery(a.instanceID, a.clock().Sub(start))
@@ -290,7 +288,7 @@ func (a *indexerAdapter) learnQuotaSpent(ctx context.Context, err error, kind bu
 	if !errors.Is(err, search.ErrQuotaExceeded) {
 		return
 	}
-	a.budget.MarkQuotaSpent(ctx, a.instanceID, a.cfg, kind, a.clock())
+	a.budget.MarkQuotaSpent(ctx, a.instanceID, a.settings.Budget, kind, a.clock())
 }
 
 // NeedsResolver reports whether the definition declares a download block.
@@ -346,12 +344,12 @@ func (a *indexerAdapter) Grab(ctx context.Context, link string) (*search.GrabRes
 	// stale — the grab-path half of #251's enforcement. Gated after the breaker: a
 	// tripped instance must not consume budget.
 	reservedAt := a.clock()
-	if !a.budget.ReserveGrab(ctx, a.instanceID, a.cfg, reservedAt) {
+	if !a.budget.ReserveGrab(ctx, a.instanceID, a.settings.Budget, reservedAt) {
 		return nil, fmt.Errorf("registry: grab %q: %w", a.info.ID, core.ErrBudgetExhausted)
 	}
 	result, err := a.inner.Grab(ctx, link)
 	if err != nil && !reachedTracker(ctx, err) {
-		a.budget.ReleaseGrab(ctx, a.instanceID, a.cfg, reservedAt)
+		a.budget.ReleaseGrab(ctx, a.instanceID, a.settings.Budget, reservedAt)
 		return nil, fmt.Errorf("registry: grab %q: %w", a.info.ID, err)
 	}
 	// Counted below the reachedTracker guard, not at the top of the method: "attempts"
