@@ -1,4 +1,4 @@
-import createClient from "openapi-fetch"
+import createClient, { type Client } from "openapi-fetch"
 import { getBaseUrl } from "@/lib/base-url"
 import type { components, operations, paths } from "@/types/api.gen"
 
@@ -152,36 +152,77 @@ function setParams(params: SearchParams): SearchParams {
   return query
 }
 
+// onAuthScreen reports whether the user is already on the login/setup screen,
+// where a 401 hard-redirect would loop or be meaningless (bootstrap probes,
+// failed logins).
+function onAuthScreen(): boolean {
+  return ["/login", "/setup"].includes(window.location.pathname.replace(getBaseUrl(), ""))
+}
+
+// toAPIError builds the thrown error for a non-ok response. Shared by unwrap and
+// exportBackup (which needs the raw Response for its headers, not a JSON-unwrapped
+// value). The 401 hard-redirect is the onResponse middleware's job, not this one's.
+function toAPIError(response: Response, error: unknown): APIError {
+  const body = (typeof error === "object" && error !== null ? error : undefined) as ErrorBody | undefined
+  let code = "internal"
+  let message = response.statusText
+  if (body?.code) code = body.code
+  if (body?.error) message = body.error
+  return new APIError(response.status, code, message)
+}
+
+// unwrap turns an openapi-fetch {data, error, response} result into the resolved
+// value or a thrown APIError. T is INFERRED from the typed client call's data
+// shape — never pass it explicitly — so each method's declared return type is
+// checked against what the generated types say the endpoint actually returns.
+async function unwrap<T>(call: Promise<{ data?: T, error?: unknown, response: Response }>): Promise<T> {
+  const { data, error, response } = await call
+  if (!response.ok) throw toAPIError(response, error)
+  return data as T
+}
+
 // ApiClient is the single choke point every management call goes through:
-// base-path prefixing, CSRF header injection on mutations, the {error, code}
-// envelope parsed into APIError, and the 401 hard-redirect to /login (skipped
-// for auth endpoints and on the login/setup screens, so bootstrap probes and
-// failed logins cannot loop). NEVER log request or response payloads here —
-// settings bodies carry tracker credentials.
+// base-path prefixing, CSRF header injection on mutations (onRequest middleware),
+// the {error, code} envelope parsed into APIError, and the 401 hard-redirect to
+// /login (onResponse middleware — skipped for auth endpoints and on the
+// login/setup screens, so bootstrap probes and failed logins cannot loop).
+// NEVER log request or response payloads here — settings bodies carry tracker
+// credentials.
 export class ApiClient {
   private csrfToken = ""
+  private readonly http: Client<paths>
 
-  // The fetch indirection (rather than passing globalThis.fetch directly) means the
-  // client always dispatches through whatever `fetch` is current at call time, so
-  // tests that stub the global after construction (vi.stubGlobal) still intercept it.
+  // fetchFn is the injection seam tests use (see src/test/stubApi.ts): a stub
+  // injected here still runs the whole middleware pipeline, so CSRF injection and
+  // the 401 redirect behave exactly as in production. The default keeps the
+  // late-binding indirection (dispatch through whatever globalThis.fetch is current
+  // at call time) so tests that stub the global after construction (vi.stubGlobal)
+  // still intercept it.
   // baseUrl is made absolute (origin + path prefix) because openapi-fetch constructs
   // a `Request` itself before dispatching — a plain browser `fetch("/api/...")` (the
   // old hand-rolled client's approach) resolves a relative URL against the document
   // implicitly, but `new Request("/api/...")` does not, so the origin is spelled out.
   // This is the same absolute URL the browser would have resolved either way.
-  private readonly http = createClient<paths>({
-    baseUrl: `${window.location.origin}${getBaseUrl()}`,
-    credentials: "same-origin",
-    fetch: (input: Request) => globalThis.fetch(input),
-  })
-
-  constructor() {
+  constructor(fetchFn?: (input: Request) => Promise<Response>) {
+    this.http = createClient<paths>({
+      baseUrl: `${window.location.origin}${getBaseUrl()}`,
+      credentials: "same-origin",
+      fetch: (input: Request) => (fetchFn ?? globalThis.fetch)(input),
+    })
     this.http.use({
       onRequest: ({ request }) => {
         if (MUTATING.has(request.method)) {
           const token = this.csrf()
           if (token !== "") request.headers.set("X-CSRF-Token", token)
         }
+      },
+      // schemaPath is the OpenAPI path including curly braces — the same spelling
+      // as AUTH_BOOTSTRAP's entries.
+      onResponse: ({ schemaPath, response }) => {
+        if (response.status !== 401) return
+        if (AUTH_BOOTSTRAP.has(schemaPath)) return
+        if (onAuthScreen()) return
+        this.onUnauthorized()
       },
     })
   }
@@ -210,65 +251,32 @@ export class ApiClient {
     return readCsrfCookie() || this.csrfToken
   }
 
-  // toAPIError builds the thrown error for a non-ok response, applying the same
-  // 401 hard-redirect exemptions the old hand-rolled request() used. Split out of
-  // unwrap so exportBackup (which needs the raw Response for its headers, not a
-  // JSON-unwrapped value) can share the same error mapping.
-  private toAPIError(response: Response, error: unknown, endpoint: string): APIError {
-    const body = (typeof error === "object" && error !== null ? error : undefined) as ErrorBody | undefined
-    let code = "internal"
-    let message = response.statusText
-    if (body?.code) code = body.code
-    if (body?.error) message = body.error
-    const onAuthScreen = ["/login", "/setup"].includes(window.location.pathname.replace(getBaseUrl(), ""))
-    if (response.status === 401 && !AUTH_BOOTSTRAP.has(endpoint) && !onAuthScreen) {
-      this.onUnauthorized()
-    }
-    return new APIError(response.status, code, message)
-  }
-
-  // unwrap turns an openapi-fetch {data, error, response} result into the resolved
-  // value or a thrown APIError. T is INFERRED from the typed client call's data
-  // shape — never pass it explicitly — so each method's declared return type is
-  // checked against what the generated types say the endpoint actually returns.
-  private async unwrap<T>(
-    call: Promise<{ data?: T, error?: unknown, response: Response }>,
-    endpoint: string
-  ): Promise<T> {
-    const { data, error, response } = await call
-    if (!response.ok) throw this.toAPIError(response, error, endpoint)
-    return data as T
-  }
-
   // --- auth ---
 
   async getMe(): Promise<Me> {
-    const me = await this.unwrap(this.http.GET("/api/auth/me"), "/api/auth/me")
+    const me = await unwrap(this.http.GET("/api/auth/me"))
     this.setCsrfToken(me.csrfToken)
     return me
   }
 
   getSetup(): Promise<SetupState> {
-    return this.unwrap(this.http.GET("/api/auth/setup"), "/api/auth/setup")
+    return unwrap(this.http.GET("/api/auth/setup"))
   }
 
   setup(creds: Credentials): Promise<operations["postSetup"]["responses"]["201"]["content"]["application/json"]> {
-    return this.unwrap(this.http.POST("/api/auth/setup", { body: creds }), "/api/auth/setup")
+    return unwrap(this.http.POST("/api/auth/setup", { body: creds }))
   }
 
   login(creds: Credentials): Promise<void> {
-    return this.unwrap(this.http.POST("/api/auth/login", { body: creds }), "/api/auth/login")
+    return unwrap(this.http.POST("/api/auth/login", { body: creds }))
   }
 
   logout(): Promise<void> {
-    return this.unwrap(this.http.POST("/api/auth/logout"), "/api/auth/logout")
+    return unwrap(this.http.POST("/api/auth/logout"))
   }
 
   changePassword(currentPassword: string, newPassword: string): Promise<void> {
-    return this.unwrap(
-      this.http.POST("/api/auth/change-password", { body: { currentPassword, newPassword } }),
-      "/api/auth/change-password"
-    )
+    return unwrap(this.http.POST("/api/auth/change-password", { body: { currentPassword, newPassword } }))
   }
 
   // getOIDCConfig probes the login screen's OIDC/SSO posture. The endpoint itself
@@ -277,7 +285,7 @@ export class ApiClient {
   // server down), so the login screen still renders the password form.
   async getOIDCConfig(): Promise<OIDCConfig> {
     try {
-      return await this.unwrap(this.http.GET("/api/auth/oidc/config"), "/api/auth/oidc/config")
+      return await unwrap(this.http.GET("/api/auth/oidc/config"))
     } catch {
       return { enabled: false, authorizationUrl: "", disableBuiltInLogin: false, issuerUrl: "" }
     }
@@ -286,28 +294,25 @@ export class ApiClient {
   // --- definitions ---
 
   listDefinitions(): Promise<DefinitionEntry[]> {
-    return this.unwrap(this.http.GET("/api/definitions"), "/api/definitions")
+    return unwrap(this.http.GET("/api/definitions"))
   }
 
   getDefinition(id: string): Promise<DefinitionDetail> {
-    return this.unwrap(this.http.GET("/api/definitions/{id}", { params: { path: { id } } }), "/api/definitions/{id}")
+    return unwrap(this.http.GET("/api/definitions/{id}", { params: { path: { id } } }))
   }
 
   // --- indexers ---
 
   listIndexers(): Promise<Instance[]> {
-    return this.unwrap(this.http.GET("/api/indexers"), "/api/indexers")
+    return unwrap(this.http.GET("/api/indexers"))
   }
 
   addIndexer(body: AddIndexer): Promise<Instance> {
-    return this.unwrap(this.http.POST("/api/indexers", { body }), "/api/indexers")
+    return unwrap(this.http.POST("/api/indexers", { body }))
   }
 
   getIndexer(slug: string): Promise<InstanceDetail> {
-    return this.unwrap(
-      this.http.GET("/api/indexers/{slug}", { params: { path: { slug } } }),
-      "/api/indexers/{slug}"
-    )
+    return unwrap(this.http.GET("/api/indexers/{slug}", { params: { path: { slug } } }))
   }
 
   // The server answers 204 (no body) on update, not the updated Instance — the old
@@ -315,48 +320,40 @@ export class ApiClient {
   // resolved value (useUpdateIndexer invalidates and refetches instead), so this
   // return type is a pure accuracy fix, not a behavior change.
   updateIndexer(slug: string, body: UpdateIndexer): Promise<void> {
-    return this.unwrap(
-      this.http.PATCH("/api/indexers/{slug}", { params: { path: { slug } }, body }),
-      "/api/indexers/{slug}"
-    )
+    return unwrap(this.http.PATCH("/api/indexers/{slug}", { params: { path: { slug } }, body }))
   }
 
   deleteIndexer(slug: string): Promise<void> {
-    return this.unwrap(this.http.DELETE("/api/indexers/{slug}", { params: { path: { slug } } }), "/api/indexers/{slug}")
+    return unwrap(this.http.DELETE("/api/indexers/{slug}", { params: { path: { slug } } }))
   }
 
   setIndexerEnabled(slug: string, enabled: boolean): Promise<void> {
-    return enabled? this.unwrap(this.http.POST("/api/indexers/{slug}/enable", { params: { path: { slug } } }), "/api/indexers/{slug}/enable"): this.unwrap(this.http.POST("/api/indexers/{slug}/disable", { params: { path: { slug } } }), "/api/indexers/{slug}/disable")
+    if (enabled) return unwrap(this.http.POST("/api/indexers/{slug}/enable", { params: { path: { slug } } }))
+    return unwrap(this.http.POST("/api/indexers/{slug}/disable", { params: { path: { slug } } }))
   }
 
   testIndexer(slug: string): Promise<TestResult> {
-    return this.unwrap(this.http.POST("/api/indexers/{slug}/test", { params: { path: { slug } } }), "/api/indexers/{slug}/test")
+    return unwrap(this.http.POST("/api/indexers/{slug}/test", { params: { path: { slug } } }))
   }
 
   getIndexerStatus(slug: string): Promise<IndexerStatus> {
-    return this.unwrap(this.http.GET("/api/indexers/{slug}/status", { params: { path: { slug } } }), "/api/indexers/{slug}/status")
+    return unwrap(this.http.GET("/api/indexers/{slug}/status", { params: { path: { slug } } }))
   }
 
   getIndexerDiagnostics(slug: string): Promise<IndexerDiagnostics> {
-    return this.unwrap(this.http.GET("/api/indexers/{slug}/diagnostics", { params: { path: { slug } } }), "/api/indexers/{slug}/diagnostics")
+    return unwrap(this.http.GET("/api/indexers/{slug}/diagnostics", { params: { path: { slug } } }))
   }
 
   getIndexerStats(slug: string): Promise<IndexerStats> {
-    return this.unwrap(this.http.GET("/api/indexers/{slug}/stats", { params: { path: { slug } } }), "/api/indexers/{slug}/stats")
+    return unwrap(this.http.GET("/api/indexers/{slug}/stats", { params: { path: { slug } } }))
   }
 
   getIndexerCapabilities(slug: string): Promise<Capabilities> {
-    return this.unwrap(
-      this.http.GET("/api/indexers/{slug}/capabilities", { params: { path: { slug } } }),
-      "/api/indexers/{slug}/capabilities"
-    )
+    return unwrap(this.http.GET("/api/indexers/{slug}/capabilities", { params: { path: { slug } } }))
   }
 
   getCrossseedSnippet(slug: string): Promise<CrossSeedSnippet> {
-    return this.unwrap(
-      this.http.GET("/api/indexers/{slug}/crossseed-snippet", { params: { path: { slug } } }),
-      "/api/indexers/{slug}/crossseed-snippet"
-    )
+    return unwrap(this.http.GET("/api/indexers/{slug}/crossseed-snippet", { params: { path: { slug } } }))
   }
 
   // --- backup export/import ---
@@ -368,7 +365,7 @@ export class ApiClient {
   // so the parsed `data` is re-serialized into the Blob.
   async exportBackup(passphrase: string): Promise<{ blob: Blob, filename: string }> {
     const { data, error, response } = await this.http.POST("/api/export", { body: { passphrase } })
-    if (!response.ok) throw this.toAPIError(response, error, "/api/export")
+    if (!response.ok) throw toAPIError(response, error)
     const filename = filenameFromContentDisposition(response.headers.get("Content-Disposition"))
     return { blob: new Blob([JSON.stringify(data)], { type: "application/json" }), filename }
   }
@@ -377,355 +374,318 @@ export class ApiClient {
   // force) and 400 (wrong passphrase / malformed payload) surface as APIError with
   // the matching `.status` for the caller to branch on.
   importBackup(payload: string, passphrase: string, force?: boolean): Promise<void> {
-    return this.unwrap(this.http.POST("/api/import", { body: { payload, passphrase, force } }), "/api/import")
+    return unwrap(this.http.POST("/api/import", { body: { payload, passphrase, force } }))
   }
 
   // --- settings surfaces ---
 
   getHealth(): Promise<Health> {
     // /healthz lives beside /api, not under it.
-    return this.unwrap(this.http.GET("/healthz"), "/healthz")
+    return unwrap(this.http.GET("/healthz"))
   }
 
   // getServerInfo reflects the live config.ServerConfig.Port, used to detect
   // app-sync connections whose stored harbrrUrl port has gone stale.
   getServerInfo(): Promise<components["schemas"]["ServerInfo"]> {
-    return this.unwrap(this.http.GET("/api/server-info"), "/api/server-info")
+    return unwrap(this.http.GET("/api/server-info"))
   }
 
   listApiKeys(): Promise<ApiKey[]> {
-    return this.unwrap(this.http.GET("/api/apikeys"), "/api/apikeys")
+    return unwrap(this.http.GET("/api/apikeys"))
   }
 
   mintApiKey(name: string): Promise<MintedApiKey> {
-    return this.unwrap(this.http.POST("/api/apikeys", { body: { name } }), "/api/apikeys")
+    return unwrap(this.http.POST("/api/apikeys", { body: { name } }))
   }
 
   revokeApiKey(id: number): Promise<void> {
-    return this.unwrap(this.http.DELETE("/api/apikeys/{id}", { params: { path: { id } } }), "/api/apikeys/{id}")
+    return unwrap(this.http.DELETE("/api/apikeys/{id}", { params: { path: { id } } }))
   }
 
   listNotifications(): Promise<Notification[]> {
-    return this.unwrap(this.http.GET("/api/notifications"), "/api/notifications")
+    return unwrap(this.http.GET("/api/notifications"))
   }
 
   createNotification(body: CreateNotification): Promise<Notification> {
-    return this.unwrap(this.http.POST("/api/notifications", { body }), "/api/notifications")
+    return unwrap(this.http.POST("/api/notifications", { body }))
   }
 
   // The server answers 204 on update; see the updateIndexer note (no caller reads
   // the resolved value — useUpdateNotification invalidates and refetches instead).
   updateNotification(id: number, body: UpdateNotification): Promise<void> {
-    return this.unwrap(
-      this.http.PATCH("/api/notifications/{id}", { params: { path: { id } }, body }),
-      "/api/notifications/{id}"
-    )
+    return unwrap(this.http.PATCH("/api/notifications/{id}", { params: { path: { id } }, body }))
   }
 
   deleteNotification(id: number): Promise<void> {
-    return this.unwrap(this.http.DELETE("/api/notifications/{id}", { params: { path: { id } } }), "/api/notifications/{id}")
+    return unwrap(this.http.DELETE("/api/notifications/{id}", { params: { path: { id } } }))
   }
 
   setNotificationEnabled(id: number, enabled: boolean): Promise<void> {
-    return enabled? this.unwrap(this.http.POST("/api/notifications/{id}/enable", { params: { path: { id } } }), "/api/notifications/{id}/enable"): this.unwrap(this.http.POST("/api/notifications/{id}/disable", { params: { path: { id } } }), "/api/notifications/{id}/disable")
+    if (enabled) return unwrap(this.http.POST("/api/notifications/{id}/enable", { params: { path: { id } } }))
+    return unwrap(this.http.POST("/api/notifications/{id}/disable", { params: { path: { id } } }))
   }
 
   testNotification(id: number): Promise<TestResult> {
-    return this.unwrap(this.http.POST("/api/notifications/{id}/test", { params: { path: { id } } }), "/api/notifications/{id}/test")
+    return unwrap(this.http.POST("/api/notifications/{id}/test", { params: { path: { id } } }))
   }
 
   // --- proxies ---
 
   listProxies(): Promise<Proxy[]> {
-    return this.unwrap(this.http.GET("/api/proxies"), "/api/proxies")
+    return unwrap(this.http.GET("/api/proxies"))
   }
 
   createProxy(body: CreateProxy): Promise<Proxy> {
-    return this.unwrap(this.http.POST("/api/proxies", { body }), "/api/proxies")
+    return unwrap(this.http.POST("/api/proxies", { body }))
   }
 
   updateProxy(id: number, body: UpdateProxy): Promise<void> {
-    return this.unwrap(this.http.PATCH("/api/proxies/{id}", { params: { path: { id } }, body }), "/api/proxies/{id}")
+    return unwrap(this.http.PATCH("/api/proxies/{id}", { params: { path: { id } }, body }))
   }
 
   deleteProxy(id: number): Promise<void> {
-    return this.unwrap(this.http.DELETE("/api/proxies/{id}", { params: { path: { id } } }), "/api/proxies/{id}")
+    return unwrap(this.http.DELETE("/api/proxies/{id}", { params: { path: { id } } }))
   }
 
   // --- solvers ---
 
   listSolvers(): Promise<Solver[]> {
-    return this.unwrap(this.http.GET("/api/solvers"), "/api/solvers")
+    return unwrap(this.http.GET("/api/solvers"))
   }
 
   createSolver(body: CreateSolver): Promise<Solver> {
-    return this.unwrap(this.http.POST("/api/solvers", { body }), "/api/solvers")
+    return unwrap(this.http.POST("/api/solvers", { body }))
   }
 
   updateSolver(id: number, body: UpdateSolver): Promise<void> {
-    return this.unwrap(this.http.PATCH("/api/solvers/{id}", { params: { path: { id } }, body }), "/api/solvers/{id}")
+    return unwrap(this.http.PATCH("/api/solvers/{id}", { params: { path: { id } }, body }))
   }
 
   deleteSolver(id: number): Promise<void> {
-    return this.unwrap(this.http.DELETE("/api/solvers/{id}", { params: { path: { id } } }), "/api/solvers/{id}")
+    return unwrap(this.http.DELETE("/api/solvers/{id}", { params: { path: { id } } }))
   }
 
   // --- download clients ---
 
   listDownloadClients(): Promise<DownloadClient[]> {
-    return this.unwrap(this.http.GET("/api/download-clients"), "/api/download-clients")
+    return unwrap(this.http.GET("/api/download-clients"))
   }
 
   createDownloadClient(body: CreateDownloadClient): Promise<DownloadClient> {
-    return this.unwrap(this.http.POST("/api/download-clients", { body }), "/api/download-clients")
+    return unwrap(this.http.POST("/api/download-clients", { body }))
   }
 
   updateDownloadClient(id: number, body: UpdateDownloadClient): Promise<void> {
-    return this.unwrap(
-      this.http.PATCH("/api/download-clients/{id}", { params: { path: { id } }, body }),
-      "/api/download-clients/{id}"
-    )
+    return unwrap(this.http.PATCH("/api/download-clients/{id}", { params: { path: { id } }, body }))
   }
 
   deleteDownloadClient(id: number): Promise<void> {
-    return this.unwrap(this.http.DELETE("/api/download-clients/{id}", { params: { path: { id } } }), "/api/download-clients/{id}")
+    return unwrap(this.http.DELETE("/api/download-clients/{id}", { params: { path: { id } } }))
   }
 
   setDownloadClientEnabled(id: number, enabled: boolean): Promise<void> {
-    return enabled ? this.unwrap(this.http.POST("/api/download-clients/{id}/enable", { params: { path: { id } } }), "/api/download-clients/{id}/enable") : this.unwrap(this.http.POST("/api/download-clients/{id}/disable", { params: { path: { id } } }), "/api/download-clients/{id}/disable")
+    if (enabled) return unwrap(this.http.POST("/api/download-clients/{id}/enable", { params: { path: { id } } }))
+    return unwrap(this.http.POST("/api/download-clients/{id}/disable", { params: { path: { id } } }))
   }
 
   grabToDownloadClient(id: number, body: GrabRelease): Promise<void> {
-    return this.unwrap(
-      this.http.POST("/api/download-clients/{id}/grab", { params: { path: { id } }, body }),
-      "/api/download-clients/{id}/grab"
-    )
+    return unwrap(this.http.POST("/api/download-clients/{id}/grab", { params: { path: { id } }, body }))
   }
 
   testDownloadClient(id: number): Promise<TestResult> {
-    return this.unwrap(this.http.POST("/api/download-clients/{id}/test", { params: { path: { id } } }), "/api/download-clients/{id}/test")
+    return unwrap(this.http.POST("/api/download-clients/{id}/test", { params: { path: { id } } }))
   }
 
   getCacheStats(): Promise<CacheStats> {
-    return this.unwrap(this.http.GET("/api/cache/stats"), "/api/cache/stats")
+    return unwrap(this.http.GET("/api/cache/stats"))
   }
 
   flushCache(): Promise<components["schemas"]["CacheFlushResult"]> {
-    return this.unwrap(this.http.POST("/api/cache/flush"), "/api/cache/flush")
+    return unwrap(this.http.POST("/api/cache/flush"))
   }
 
   resetCacheStats(): Promise<components["schemas"]["CacheStatsResetResult"]> {
-    return this.unwrap(this.http.POST("/api/cache/stats/reset"), "/api/cache/stats/reset")
+    return unwrap(this.http.POST("/api/cache/stats/reset"))
   }
 
   getCacheConfig(): Promise<CacheConfig> {
-    return this.unwrap(this.http.GET("/api/cache/config"), "/api/cache/config")
+    return unwrap(this.http.GET("/api/cache/config"))
   }
 
   updateCacheConfig(body: CacheConfigUpdate): Promise<CacheConfig> {
-    return this.unwrap(this.http.PUT("/api/cache/config", { body }), "/api/cache/config")
+    return unwrap(this.http.PUT("/api/cache/config", { body }))
   }
 
   getLogLevel(): Promise<components["schemas"]["LogLevel"]> {
-    return this.unwrap(this.http.GET("/api/config/log-level"), "/api/config/log-level")
+    return unwrap(this.http.GET("/api/config/log-level"))
   }
 
   setLogLevel(level: LogLevel): Promise<components["schemas"]["LogLevel"]> {
-    return this.unwrap(this.http.PUT("/api/config/log-level", { body: { level } }), "/api/config/log-level")
+    return unwrap(this.http.PUT("/api/config/log-level", { body: { level } }))
   }
 
   getAdultCategories(): Promise<components["schemas"]["AdultCategories"]> {
-    return this.unwrap(this.http.GET("/api/config/adult-categories"), "/api/config/adult-categories")
+    return unwrap(this.http.GET("/api/config/adult-categories"))
   }
 
   setAdultCategories(hidden: boolean): Promise<components["schemas"]["AdultCategories"]> {
-    return this.unwrap(
-      this.http.PUT("/api/config/adult-categories", { body: { hidden } }),
-      "/api/config/adult-categories"
-    )
+    return unwrap(this.http.PUT("/api/config/adult-categories", { body: { hidden } }))
   }
 
   getExpiryThresholds(): Promise<components["schemas"]["ExpiryThresholds"]> {
-    return this.unwrap(this.http.GET("/api/config/expiry-thresholds"), "/api/config/expiry-thresholds")
+    return unwrap(this.http.GET("/api/config/expiry-thresholds"))
   }
 
   setExpiryThresholds(days: number[]): Promise<components["schemas"]["ExpiryThresholds"]> {
-    return this.unwrap(
-      this.http.PUT("/api/config/expiry-thresholds", { body: { days } }),
-      "/api/config/expiry-thresholds"
-    )
+    return unwrap(this.http.PUT("/api/config/expiry-thresholds", { body: { days } }))
   }
 
   // postFrontendLog relays a toast into the daemon's own log (see lib/notify.ts, the
   // only caller — never call this directly from a component).
   postFrontendLog(level: FrontendLogLevel, message: string, context?: string): Promise<void> {
-    return this.unwrap(
-      this.http.POST("/api/logs/frontend", { body: { level, message, context } }),
-      "/api/logs/frontend"
-    )
+    return unwrap(this.http.POST("/api/logs/frontend", { body: { level, message, context } }))
   }
 
   listAllIndexerStats(): Promise<IndexerStats[]> {
-    return this.unwrap(this.http.GET("/api/indexers/stats"), "/api/indexers/stats")
+    return unwrap(this.http.GET("/api/indexers/stats"))
   }
 
   // --- app connections (sync targets) ---
 
   listConnections(): Promise<AppConnection[]> {
-    return this.unwrap(this.http.GET("/api/app-connections"), "/api/app-connections")
+    return unwrap(this.http.GET("/api/app-connections"))
   }
 
   createConnection(body: CreateConnection): Promise<AppConnection> {
-    return this.unwrap(this.http.POST("/api/app-connections", { body }), "/api/app-connections")
+    return unwrap(this.http.POST("/api/app-connections", { body }))
   }
 
   getConnection(id: number): Promise<AppConnection> {
-    return this.unwrap(this.http.GET("/api/app-connections/{id}", { params: { path: { id } } }), "/api/app-connections/{id}")
+    return unwrap(this.http.GET("/api/app-connections/{id}", { params: { path: { id } } }))
   }
 
   // The server answers 204 on update; see the updateIndexer note (no caller reads
   // the resolved value — useUpdateConnection invalidates and refetches instead).
   updateConnection(id: number, body: UpdateConnection): Promise<void> {
-    return this.unwrap(
-      this.http.PATCH("/api/app-connections/{id}", { params: { path: { id } }, body }),
-      "/api/app-connections/{id}"
-    )
+    return unwrap(this.http.PATCH("/api/app-connections/{id}", { params: { path: { id } }, body }))
   }
 
   deleteConnection(id: number): Promise<void> {
-    return this.unwrap(this.http.DELETE("/api/app-connections/{id}", { params: { path: { id } } }), "/api/app-connections/{id}")
+    return unwrap(this.http.DELETE("/api/app-connections/{id}", { params: { path: { id } } }))
   }
 
   setConnectionEnabled(id: number, enabled: boolean): Promise<void> {
-    return enabled? this.unwrap(this.http.POST("/api/app-connections/{id}/enable", { params: { path: { id } } }), "/api/app-connections/{id}/enable"): this.unwrap(this.http.POST("/api/app-connections/{id}/disable", { params: { path: { id } } }), "/api/app-connections/{id}/disable")
+    if (enabled) return unwrap(this.http.POST("/api/app-connections/{id}/enable", { params: { path: { id } } }))
+    return unwrap(this.http.POST("/api/app-connections/{id}/disable", { params: { path: { id } } }))
   }
 
   testConnection(id: number): Promise<TestResult> {
-    return this.unwrap(this.http.POST("/api/app-connections/{id}/test", { params: { path: { id } } }), "/api/app-connections/{id}/test")
+    return unwrap(this.http.POST("/api/app-connections/{id}/test", { params: { path: { id } } }))
   }
 
   syncConnection(id: number): Promise<SyncReport> {
-    return this.unwrap(this.http.POST("/api/app-connections/{id}/sync", { params: { path: { id } } }), "/api/app-connections/{id}/sync")
+    return unwrap(this.http.POST("/api/app-connections/{id}/sync", { params: { path: { id } } }))
   }
 
   syncAllConnections(): Promise<ConnectionSyncResult[]> {
-    return this.unwrap(this.http.POST("/api/app-connections/sync"), "/api/app-connections/sync")
+    return unwrap(this.http.POST("/api/app-connections/sync"))
   }
 
   getConnectionStatus(id: number): Promise<ConnectionStatus> {
-    return this.unwrap(this.http.GET("/api/app-connections/{id}/status", { params: { path: { id } } }), "/api/app-connections/{id}/status")
+    return unwrap(this.http.GET("/api/app-connections/{id}/status", { params: { path: { id } } }))
   }
 
   // --- apps (first-class (kind, base_url) identities, ADR 0004) ---
 
   listApps(): Promise<App[]> {
-    return this.unwrap(this.http.GET("/api/apps"), "/api/apps")
+    return unwrap(this.http.GET("/api/apps"))
   }
 
   getApp(id: number): Promise<App> {
-    return this.unwrap(this.http.GET("/api/apps/{id}", { params: { path: { id } } }), "/api/apps/{id}")
+    return unwrap(this.http.GET("/api/apps/{id}", { params: { path: { id } } }))
   }
 
   // The server answers 204 on update; see the updateIndexer note (no caller reads
   // the resolved value — useUpdateApp invalidates and refetches instead).
   updateApp(id: number, body: UpdateApp): Promise<void> {
-    return this.unwrap(this.http.PATCH("/api/apps/{id}", { params: { path: { id } }, body }), "/api/apps/{id}")
+    return unwrap(this.http.PATCH("/api/apps/{id}", { params: { path: { id } }, body }))
   }
 
   deleteApp(id: number): Promise<void> {
-    return this.unwrap(this.http.DELETE("/api/apps/{id}", { params: { path: { id } } }), "/api/apps/{id}")
+    return unwrap(this.http.DELETE("/api/apps/{id}", { params: { path: { id } } }))
   }
 
   getQuiInstances(id: number): Promise<QuiInstances> {
-    return this.unwrap(
-      this.http.GET("/api/apps/{id}/qui-instances", { params: { path: { id } } }),
-      "/api/apps/{id}/qui-instances"
-    )
+    return unwrap(this.http.GET("/api/apps/{id}/qui-instances", { params: { path: { id } } }))
   }
 
   // --- sync profiles (indexer routing sets) ---
 
   listSyncProfiles(): Promise<SyncProfile[]> {
-    return this.unwrap(this.http.GET("/api/sync-profiles"), "/api/sync-profiles")
+    return unwrap(this.http.GET("/api/sync-profiles"))
   }
 
   createSyncProfile(body: CreateSyncProfile): Promise<SyncProfile> {
-    return this.unwrap(this.http.POST("/api/sync-profiles", { body }), "/api/sync-profiles")
+    return unwrap(this.http.POST("/api/sync-profiles", { body }))
   }
 
   // The server answers 204 on update; see the updateIndexer note (no caller reads
   // the resolved value — useUpdateSyncProfile invalidates and refetches instead).
   updateSyncProfile(id: number, body: UpdateSyncProfile): Promise<void> {
-    return this.unwrap(
-      this.http.PATCH("/api/sync-profiles/{id}", { params: { path: { id } }, body }),
-      "/api/sync-profiles/{id}"
-    )
+    return unwrap(this.http.PATCH("/api/sync-profiles/{id}", { params: { path: { id } }, body }))
   }
 
   deleteSyncProfile(id: number): Promise<void> {
-    return this.unwrap(this.http.DELETE("/api/sync-profiles/{id}", { params: { path: { id } } }), "/api/sync-profiles/{id}")
+    return unwrap(this.http.DELETE("/api/sync-profiles/{id}", { params: { path: { id } } }))
   }
 
   // --- announce connections (cross-seed push targets) ---
 
   listAnnounceConnections(): Promise<AnnounceConnection[]> {
-    return this.unwrap(this.http.GET("/api/announce-connections"), "/api/announce-connections")
+    return unwrap(this.http.GET("/api/announce-connections"))
   }
 
   createAnnounceConnection(body: CreateAnnounceConnection): Promise<AnnounceConnection> {
-    return this.unwrap(this.http.POST("/api/announce-connections", { body }), "/api/announce-connections")
+    return unwrap(this.http.POST("/api/announce-connections", { body }))
   }
 
   // The server answers 204 on update; see the updateIndexer note (no caller reads
   // the resolved value — useUpdateAnnounce invalidates and refetches instead).
   updateAnnounceConnection(id: number, body: UpdateAnnounceConnection): Promise<void> {
-    return this.unwrap(
-      this.http.PATCH("/api/announce-connections/{id}", { params: { path: { id } }, body }),
-      "/api/announce-connections/{id}"
-    )
+    return unwrap(this.http.PATCH("/api/announce-connections/{id}", { params: { path: { id } }, body }))
   }
 
   deleteAnnounceConnection(id: number): Promise<void> {
-    return this.unwrap(
-      this.http.DELETE("/api/announce-connections/{id}", { params: { path: { id } } }),
-      "/api/announce-connections/{id}"
-    )
+    return unwrap(this.http.DELETE("/api/announce-connections/{id}", { params: { path: { id } } }))
   }
 
   setAnnounceEnabled(id: number, enabled: boolean): Promise<void> {
-    return enabled? this.unwrap(
-      this.http.POST("/api/announce-connections/{id}/enable", { params: { path: { id } } }),
-      "/api/announce-connections/{id}/enable"
-    ): this.unwrap(
-      this.http.POST("/api/announce-connections/{id}/disable", { params: { path: { id } } }),
-      "/api/announce-connections/{id}/disable"
-    )
+    if (enabled) return unwrap(this.http.POST("/api/announce-connections/{id}/enable", { params: { path: { id } } }))
+    return unwrap(this.http.POST("/api/announce-connections/{id}/disable", { params: { path: { id } } }))
   }
 
   testAnnounceConnection(id: number): Promise<TestResult> {
-    return this.unwrap(
-      this.http.POST("/api/announce-connections/{id}/test", { params: { path: { id } } }),
-      "/api/announce-connections/{id}/test"
-    )
+    return unwrap(this.http.POST("/api/announce-connections/{id}/test", { params: { path: { id } } }))
   }
 
   // --- search ---
 
   searchIndexer(slug: string, params: SearchParams): Promise<SearchResults> {
-    return this.unwrap(
-      this.http.GET("/api/indexers/{slug}/search", { params: { path: { slug }, query: setParams(params) } }),
-      "/api/indexers/{slug}/search"
-    )
+    return unwrap(this.http.GET("/api/indexers/{slug}/search", { params: { path: { slug }, query: setParams(params) } }))
   }
 
   // One search across a subset, merged and sorted by the server (autobrr/harbrr#372):
   // one request, one window, one ledger — no client-side fan-out.
   searchAggregate(slugs: string[], params: SearchParams): Promise<AggregateSearchResults> {
-    return this.unwrap(
-      this.http.GET("/api/search", { params: { query: { ...setParams(params), indexers: slugs.join(",") } } }),
-      "/api/search"
-    )
+    return unwrap(this.http.GET("/api/search", { params: { query: { ...setParams(params), indexers: slugs.join(",") } } }))
   }
 }
 
-export const api = new ApiClient()
+// createApi builds a fresh client — its own middleware stack and onUnauthorized —
+// so tests do not leak into each other. Pass a fetch to inject a transport
+// (src/test/stubApi.ts); omit it for the real network.
+export function createApi(fetchFn?: (input: Request) => Promise<Response>): ApiClient {
+  return new ApiClient(fetchFn)
+}
+
+export const api = createApi()
