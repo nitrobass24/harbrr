@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useAuth } from "@/hooks/useAuth"
-import { api, APIError, type SetupState } from "@/lib/api"
+import { api, APIError, unwrap, type SetupState } from "@/lib/api"
 import { keys } from "@/lib/query"
 
 export const Route = createFileRoute("/setup")({
@@ -35,7 +35,7 @@ function Setup() {
   const [confirm, setConfirm] = useState("")
 
   const create = useMutation({
-    mutationFn: () => api.setup({ username, password }),
+    mutationFn: () => unwrap(api.http.POST("/api/auth/setup", { body: { username, password } })),
     onSuccess: () => {
       // Seed the setup-status cache synchronously so the /login guard reads the
       // fresh {setupComplete:true} on arrival. Without this it reads the stale

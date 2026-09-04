@@ -142,16 +142,6 @@ function filenameFromContentDisposition(header: string | null): string {
   return match?.[1] ?? `harbrr-backup-${new Date().toISOString().slice(0, 10)}.json`
 }
 
-// setParams drops undefined/empty-string values so an unset search field is omitted
-// from the querystring entirely rather than sent as an empty filter.
-function setParams(params: SearchParams): SearchParams {
-  const query: SearchParams = {}
-  for (const [key, value] of Object.entries(params) as [keyof SearchParams, unknown][]) {
-    if (value !== undefined && value !== "") (query as Record<string, unknown>)[key] = value
-  }
-  return query
-}
-
 // onAuthScreen reports whether the user is already on the login/setup screen,
 // where a 401 hard-redirect would loop or be meaningless (bootstrap probes,
 // failed logins).
@@ -173,9 +163,10 @@ function toAPIError(response: Response, error: unknown): APIError {
 
 // unwrap turns an openapi-fetch {data, error, response} result into the resolved
 // value or a thrown APIError. T is INFERRED from the typed client call's data
-// shape — never pass it explicitly — so each method's declared return type is
-// checked against what the generated types say the endpoint actually returns.
-async function unwrap<T>(call: Promise<{ data?: T, error?: unknown, response: Response }>): Promise<T> {
+// shape — never pass it explicitly — so what a call site gets back is exactly
+// what the generated types say the endpoint returns. The standard call shape is
+// unwrap(api.http.<VERB>(path, args)).
+export async function unwrap<T>(call: Promise<{ data?: T, error?: unknown, response: Response }>): Promise<T> {
   const { data, error, response } = await call
   if (!response.ok) throw toAPIError(response, error)
   return data as T
@@ -190,7 +181,11 @@ async function unwrap<T>(call: Promise<{ data?: T, error?: unknown, response: Re
 // credentials.
 export class ApiClient {
   private csrfToken = ""
-  private readonly http: Client<paths>
+
+  // http is the typed openapi-fetch client. Call sites use it directly —
+  // unwrap(api.http.<VERB>(path, args)) — the few methods below exist only
+  // where a call needs more than that one-liner.
+  readonly http: Client<paths>
 
   // fetchFn is the transport behind every request and the injection seam tests use
   // (see src/test/stubApi.ts): a stub here still runs the whole middleware pipeline,
@@ -262,26 +257,6 @@ export class ApiClient {
     return me
   }
 
-  getSetup(): Promise<SetupState> {
-    return unwrap(this.http.GET("/api/auth/setup"))
-  }
-
-  setup(creds: Credentials): Promise<operations["postSetup"]["responses"]["201"]["content"]["application/json"]> {
-    return unwrap(this.http.POST("/api/auth/setup", { body: creds }))
-  }
-
-  login(creds: Credentials): Promise<void> {
-    return unwrap(this.http.POST("/api/auth/login", { body: creds }))
-  }
-
-  logout(): Promise<void> {
-    return unwrap(this.http.POST("/api/auth/logout"))
-  }
-
-  changePassword(currentPassword: string, newPassword: string): Promise<void> {
-    return unwrap(this.http.POST("/api/auth/change-password", { body: { currentPassword, newPassword } }))
-  }
-
   // getOIDCConfig probes the login screen's OIDC/SSO posture. The endpoint itself
   // always answers 200 (disabled default) even when OIDC isn't configured — the
   // catch here is a defensive fallback for the request failing outright (network,
@@ -294,72 +269,7 @@ export class ApiClient {
     }
   }
 
-  // --- definitions ---
-
-  listDefinitions(): Promise<DefinitionEntry[]> {
-    return unwrap(this.http.GET("/api/definitions"))
-  }
-
-  getDefinition(id: string): Promise<DefinitionDetail> {
-    return unwrap(this.http.GET("/api/definitions/{id}", { params: { path: { id } } }))
-  }
-
-  // --- indexers ---
-
-  listIndexers(): Promise<Instance[]> {
-    return unwrap(this.http.GET("/api/indexers"))
-  }
-
-  addIndexer(body: AddIndexer): Promise<Instance> {
-    return unwrap(this.http.POST("/api/indexers", { body }))
-  }
-
-  getIndexer(slug: string): Promise<InstanceDetail> {
-    return unwrap(this.http.GET("/api/indexers/{slug}", { params: { path: { slug } } }))
-  }
-
-  // The server answers 204 (no body) on update, not the updated Instance — the old
-  // hand-written type claimed `Promise<Instance>`, but no caller ever read the
-  // resolved value (useUpdateIndexer invalidates and refetches instead), so this
-  // return type is a pure accuracy fix, not a behavior change.
-  updateIndexer(slug: string, body: UpdateIndexer): Promise<void> {
-    return unwrap(this.http.PATCH("/api/indexers/{slug}", { params: { path: { slug } }, body }))
-  }
-
-  deleteIndexer(slug: string): Promise<void> {
-    return unwrap(this.http.DELETE("/api/indexers/{slug}", { params: { path: { slug } } }))
-  }
-
-  setIndexerEnabled(slug: string, enabled: boolean): Promise<void> {
-    if (enabled) return unwrap(this.http.POST("/api/indexers/{slug}/enable", { params: { path: { slug } } }))
-    return unwrap(this.http.POST("/api/indexers/{slug}/disable", { params: { path: { slug } } }))
-  }
-
-  testIndexer(slug: string): Promise<TestResult> {
-    return unwrap(this.http.POST("/api/indexers/{slug}/test", { params: { path: { slug } } }))
-  }
-
-  getIndexerStatus(slug: string): Promise<IndexerStatus> {
-    return unwrap(this.http.GET("/api/indexers/{slug}/status", { params: { path: { slug } } }))
-  }
-
-  getIndexerDiagnostics(slug: string): Promise<IndexerDiagnostics> {
-    return unwrap(this.http.GET("/api/indexers/{slug}/diagnostics", { params: { path: { slug } } }))
-  }
-
-  getIndexerStats(slug: string): Promise<IndexerStats> {
-    return unwrap(this.http.GET("/api/indexers/{slug}/stats", { params: { path: { slug } } }))
-  }
-
-  getIndexerCapabilities(slug: string): Promise<Capabilities> {
-    return unwrap(this.http.GET("/api/indexers/{slug}/capabilities", { params: { path: { slug } } }))
-  }
-
-  getCrossseedSnippet(slug: string): Promise<CrossSeedSnippet> {
-    return unwrap(this.http.GET("/api/indexers/{slug}/crossseed-snippet", { params: { path: { slug } } }))
-  }
-
-  // --- backup export/import ---
+  // --- backup export ---
 
   // exportBackup returns the encrypted bundle as a downloadable Blob rather than
   // going through unwrap: the response is offered as a file (Content-Disposition:
@@ -373,54 +283,11 @@ export class ApiClient {
     return { blob: new Blob([JSON.stringify(data)], { type: "application/json" }), filename }
   }
 
-  // importBackup restores a bundle (wipe-and-load). 409 (non-empty instance, no
-  // force) and 400 (wrong passphrase / malformed payload) surface as APIError with
-  // the matching `.status` for the caller to branch on.
-  importBackup(payload: string, passphrase: string, force?: boolean): Promise<void> {
-    return unwrap(this.http.POST("/api/import", { body: { payload, passphrase, force } }))
-  }
+  // --- enable/disable toggles (each picks the enable or disable path) ---
 
-  // --- settings surfaces ---
-
-  getHealth(): Promise<Health> {
-    // /healthz lives beside /api, not under it.
-    return unwrap(this.http.GET("/healthz"))
-  }
-
-  // getServerInfo reflects the live config.ServerConfig.Port, used to detect
-  // app-sync connections whose stored harbrrUrl port has gone stale.
-  getServerInfo(): Promise<components["schemas"]["ServerInfo"]> {
-    return unwrap(this.http.GET("/api/server-info"))
-  }
-
-  listApiKeys(): Promise<ApiKey[]> {
-    return unwrap(this.http.GET("/api/apikeys"))
-  }
-
-  mintApiKey(name: string): Promise<MintedApiKey> {
-    return unwrap(this.http.POST("/api/apikeys", { body: { name } }))
-  }
-
-  revokeApiKey(id: number): Promise<void> {
-    return unwrap(this.http.DELETE("/api/apikeys/{id}", { params: { path: { id } } }))
-  }
-
-  listNotifications(): Promise<Notification[]> {
-    return unwrap(this.http.GET("/api/notifications"))
-  }
-
-  createNotification(body: CreateNotification): Promise<Notification> {
-    return unwrap(this.http.POST("/api/notifications", { body }))
-  }
-
-  // The server answers 204 on update; see the updateIndexer note (no caller reads
-  // the resolved value — useUpdateNotification invalidates and refetches instead).
-  updateNotification(id: number, body: UpdateNotification): Promise<void> {
-    return unwrap(this.http.PATCH("/api/notifications/{id}", { params: { path: { id } }, body }))
-  }
-
-  deleteNotification(id: number): Promise<void> {
-    return unwrap(this.http.DELETE("/api/notifications/{id}", { params: { path: { id } } }))
+  setIndexerEnabled(slug: string, enabled: boolean): Promise<void> {
+    if (enabled) return unwrap(this.http.POST("/api/indexers/{slug}/enable", { params: { path: { slug } } }))
+    return unwrap(this.http.POST("/api/indexers/{slug}/disable", { params: { path: { slug } } }))
   }
 
   setNotificationEnabled(id: number, enabled: boolean): Promise<void> {
@@ -428,153 +295,9 @@ export class ApiClient {
     return unwrap(this.http.POST("/api/notifications/{id}/disable", { params: { path: { id } } }))
   }
 
-  testNotification(id: number): Promise<TestResult> {
-    return unwrap(this.http.POST("/api/notifications/{id}/test", { params: { path: { id } } }))
-  }
-
-  // --- proxies ---
-
-  listProxies(): Promise<Proxy[]> {
-    return unwrap(this.http.GET("/api/proxies"))
-  }
-
-  createProxy(body: CreateProxy): Promise<Proxy> {
-    return unwrap(this.http.POST("/api/proxies", { body }))
-  }
-
-  updateProxy(id: number, body: UpdateProxy): Promise<void> {
-    return unwrap(this.http.PATCH("/api/proxies/{id}", { params: { path: { id } }, body }))
-  }
-
-  deleteProxy(id: number): Promise<void> {
-    return unwrap(this.http.DELETE("/api/proxies/{id}", { params: { path: { id } } }))
-  }
-
-  // --- solvers ---
-
-  listSolvers(): Promise<Solver[]> {
-    return unwrap(this.http.GET("/api/solvers"))
-  }
-
-  createSolver(body: CreateSolver): Promise<Solver> {
-    return unwrap(this.http.POST("/api/solvers", { body }))
-  }
-
-  updateSolver(id: number, body: UpdateSolver): Promise<void> {
-    return unwrap(this.http.PATCH("/api/solvers/{id}", { params: { path: { id } }, body }))
-  }
-
-  deleteSolver(id: number): Promise<void> {
-    return unwrap(this.http.DELETE("/api/solvers/{id}", { params: { path: { id } } }))
-  }
-
-  // --- download clients ---
-
-  listDownloadClients(): Promise<DownloadClient[]> {
-    return unwrap(this.http.GET("/api/download-clients"))
-  }
-
-  createDownloadClient(body: CreateDownloadClient): Promise<DownloadClient> {
-    return unwrap(this.http.POST("/api/download-clients", { body }))
-  }
-
-  updateDownloadClient(id: number, body: UpdateDownloadClient): Promise<void> {
-    return unwrap(this.http.PATCH("/api/download-clients/{id}", { params: { path: { id } }, body }))
-  }
-
-  deleteDownloadClient(id: number): Promise<void> {
-    return unwrap(this.http.DELETE("/api/download-clients/{id}", { params: { path: { id } } }))
-  }
-
   setDownloadClientEnabled(id: number, enabled: boolean): Promise<void> {
     if (enabled) return unwrap(this.http.POST("/api/download-clients/{id}/enable", { params: { path: { id } } }))
     return unwrap(this.http.POST("/api/download-clients/{id}/disable", { params: { path: { id } } }))
-  }
-
-  grabToDownloadClient(id: number, body: GrabRelease): Promise<void> {
-    return unwrap(this.http.POST("/api/download-clients/{id}/grab", { params: { path: { id } }, body }))
-  }
-
-  testDownloadClient(id: number): Promise<TestResult> {
-    return unwrap(this.http.POST("/api/download-clients/{id}/test", { params: { path: { id } } }))
-  }
-
-  getCacheStats(): Promise<CacheStats> {
-    return unwrap(this.http.GET("/api/cache/stats"))
-  }
-
-  flushCache(): Promise<components["schemas"]["CacheFlushResult"]> {
-    return unwrap(this.http.POST("/api/cache/flush"))
-  }
-
-  resetCacheStats(): Promise<components["schemas"]["CacheStatsResetResult"]> {
-    return unwrap(this.http.POST("/api/cache/stats/reset"))
-  }
-
-  getCacheConfig(): Promise<CacheConfig> {
-    return unwrap(this.http.GET("/api/cache/config"))
-  }
-
-  updateCacheConfig(body: CacheConfigUpdate): Promise<CacheConfig> {
-    return unwrap(this.http.PUT("/api/cache/config", { body }))
-  }
-
-  getLogLevel(): Promise<components["schemas"]["LogLevel"]> {
-    return unwrap(this.http.GET("/api/config/log-level"))
-  }
-
-  setLogLevel(level: LogLevel): Promise<components["schemas"]["LogLevel"]> {
-    return unwrap(this.http.PUT("/api/config/log-level", { body: { level } }))
-  }
-
-  getAdultCategories(): Promise<components["schemas"]["AdultCategories"]> {
-    return unwrap(this.http.GET("/api/config/adult-categories"))
-  }
-
-  setAdultCategories(hidden: boolean): Promise<components["schemas"]["AdultCategories"]> {
-    return unwrap(this.http.PUT("/api/config/adult-categories", { body: { hidden } }))
-  }
-
-  getExpiryThresholds(): Promise<components["schemas"]["ExpiryThresholds"]> {
-    return unwrap(this.http.GET("/api/config/expiry-thresholds"))
-  }
-
-  setExpiryThresholds(days: number[]): Promise<components["schemas"]["ExpiryThresholds"]> {
-    return unwrap(this.http.PUT("/api/config/expiry-thresholds", { body: { days } }))
-  }
-
-  // postFrontendLog relays a toast into the daemon's own log (see lib/notify.ts, the
-  // only caller — never call this directly from a component).
-  postFrontendLog(level: FrontendLogLevel, message: string, context?: string): Promise<void> {
-    return unwrap(this.http.POST("/api/logs/frontend", { body: { level, message, context } }))
-  }
-
-  listAllIndexerStats(): Promise<IndexerStats[]> {
-    return unwrap(this.http.GET("/api/indexers/stats"))
-  }
-
-  // --- app connections (sync targets) ---
-
-  listConnections(): Promise<AppConnection[]> {
-    return unwrap(this.http.GET("/api/app-connections"))
-  }
-
-  createConnection(body: CreateConnection): Promise<AppConnection> {
-    return unwrap(this.http.POST("/api/app-connections", { body }))
-  }
-
-  getConnection(id: number): Promise<AppConnection> {
-    return unwrap(this.http.GET("/api/app-connections/{id}", { params: { path: { id } } }))
-  }
-
-  // The server answers 204 on update; see the updateIndexer note (no caller reads
-  // the resolved value — useUpdateConnection invalidates and refetches instead).
-  updateConnection(id: number, body: UpdateConnection): Promise<void> {
-    return unwrap(this.http.PATCH("/api/app-connections/{id}", { params: { path: { id } }, body }))
-  }
-
-  deleteConnection(id: number): Promise<void> {
-    return unwrap(this.http.DELETE("/api/app-connections/{id}", { params: { path: { id } } }))
   }
 
   setConnectionEnabled(id: number, enabled: boolean): Promise<void> {
@@ -582,105 +305,9 @@ export class ApiClient {
     return unwrap(this.http.POST("/api/app-connections/{id}/disable", { params: { path: { id } } }))
   }
 
-  testConnection(id: number): Promise<TestResult> {
-    return unwrap(this.http.POST("/api/app-connections/{id}/test", { params: { path: { id } } }))
-  }
-
-  syncConnection(id: number): Promise<SyncReport> {
-    return unwrap(this.http.POST("/api/app-connections/{id}/sync", { params: { path: { id } } }))
-  }
-
-  syncAllConnections(): Promise<ConnectionSyncResult[]> {
-    return unwrap(this.http.POST("/api/app-connections/sync"))
-  }
-
-  getConnectionStatus(id: number): Promise<ConnectionStatus> {
-    return unwrap(this.http.GET("/api/app-connections/{id}/status", { params: { path: { id } } }))
-  }
-
-  // --- apps (first-class (kind, base_url) identities, ADR 0004) ---
-
-  listApps(): Promise<App[]> {
-    return unwrap(this.http.GET("/api/apps"))
-  }
-
-  getApp(id: number): Promise<App> {
-    return unwrap(this.http.GET("/api/apps/{id}", { params: { path: { id } } }))
-  }
-
-  // The server answers 204 on update; see the updateIndexer note (no caller reads
-  // the resolved value — useUpdateApp invalidates and refetches instead).
-  updateApp(id: number, body: UpdateApp): Promise<void> {
-    return unwrap(this.http.PATCH("/api/apps/{id}", { params: { path: { id } }, body }))
-  }
-
-  deleteApp(id: number): Promise<void> {
-    return unwrap(this.http.DELETE("/api/apps/{id}", { params: { path: { id } } }))
-  }
-
-  getQuiInstances(id: number): Promise<QuiInstances> {
-    return unwrap(this.http.GET("/api/apps/{id}/qui-instances", { params: { path: { id } } }))
-  }
-
-  // --- sync profiles (indexer routing sets) ---
-
-  listSyncProfiles(): Promise<SyncProfile[]> {
-    return unwrap(this.http.GET("/api/sync-profiles"))
-  }
-
-  createSyncProfile(body: CreateSyncProfile): Promise<SyncProfile> {
-    return unwrap(this.http.POST("/api/sync-profiles", { body }))
-  }
-
-  // The server answers 204 on update; see the updateIndexer note (no caller reads
-  // the resolved value — useUpdateSyncProfile invalidates and refetches instead).
-  updateSyncProfile(id: number, body: UpdateSyncProfile): Promise<void> {
-    return unwrap(this.http.PATCH("/api/sync-profiles/{id}", { params: { path: { id } }, body }))
-  }
-
-  deleteSyncProfile(id: number): Promise<void> {
-    return unwrap(this.http.DELETE("/api/sync-profiles/{id}", { params: { path: { id } } }))
-  }
-
-  // --- announce connections (cross-seed push targets) ---
-
-  listAnnounceConnections(): Promise<AnnounceConnection[]> {
-    return unwrap(this.http.GET("/api/announce-connections"))
-  }
-
-  createAnnounceConnection(body: CreateAnnounceConnection): Promise<AnnounceConnection> {
-    return unwrap(this.http.POST("/api/announce-connections", { body }))
-  }
-
-  // The server answers 204 on update; see the updateIndexer note (no caller reads
-  // the resolved value — useUpdateAnnounce invalidates and refetches instead).
-  updateAnnounceConnection(id: number, body: UpdateAnnounceConnection): Promise<void> {
-    return unwrap(this.http.PATCH("/api/announce-connections/{id}", { params: { path: { id } }, body }))
-  }
-
-  deleteAnnounceConnection(id: number): Promise<void> {
-    return unwrap(this.http.DELETE("/api/announce-connections/{id}", { params: { path: { id } } }))
-  }
-
   setAnnounceEnabled(id: number, enabled: boolean): Promise<void> {
     if (enabled) return unwrap(this.http.POST("/api/announce-connections/{id}/enable", { params: { path: { id } } }))
     return unwrap(this.http.POST("/api/announce-connections/{id}/disable", { params: { path: { id } } }))
-  }
-
-  testAnnounceConnection(id: number): Promise<TestResult> {
-    return unwrap(this.http.POST("/api/announce-connections/{id}/test", { params: { path: { id } } }))
-  }
-
-  // --- search ---
-
-  searchIndexer(slug: string, params: SearchParams): Promise<SearchResults> {
-    return unwrap(this.http.GET("/api/indexers/{slug}/search", { params: { path: { slug }, query: setParams(params) } }))
-  }
-
-  // One search across a subset, merged and sorted by the server (autobrr/harbrr#372):
-  // one request, one window, one ledger — no client-side fan-out.
-  searchAggregate(slugs: string[], params: SearchParams): Promise<AggregateSearchResults> {
-    return unwrap(this.http.GET("/api/search", { params: { query: { ...setParams(params), indexers: slugs.join(",") } } }))
   }
 }
 

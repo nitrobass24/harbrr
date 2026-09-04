@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { APIError } from "./api"
+import { APIError, unwrap } from "./api"
 import { stubApi, UnstubbedRequestError } from "@/test/stubApi"
 
 // The #557 PR1 acceptance suite: the middleware seam exercised end-to-end through
@@ -22,8 +22,8 @@ describe("stubApi through the real middleware pipeline", () => {
       "POST /api/auth/logout": null,
     })
     api.setCsrfToken("tok-from-me")
-    await api.listApps()
-    await api.logout()
+    await unwrap(api.http.GET("/api/apps"))
+    await unwrap(api.http.POST("/api/auth/logout"))
     expect(api.calls("GET /api/apps")[0].headers.get("X-CSRF-Token")).toBeNull()
     expect(api.calls("POST /api/auth/logout")[0].headers.get("X-CSRF-Token")).toBe("tok-from-me")
   })
@@ -32,13 +32,13 @@ describe("stubApi through the real middleware pipeline", () => {
     const api = stubApi({ "POST /api/auth/logout": null })
     document.cookie = "harbrr_csrf=tok-from-cookie"
     api.setCsrfToken("tok-from-me")
-    await api.logout()
+    await unwrap(api.http.POST("/api/auth/logout"))
     expect(api.calls("POST /api/auth/logout")[0].headers.get("X-CSRF-Token")).toBe("tok-from-cookie")
   })
 
   it("omits the CSRF header entirely when no token exists (auth disabled)", async () => {
     const api = stubApi({ "POST /api/auth/logout": null })
-    await api.logout()
+    await unwrap(api.http.POST("/api/auth/logout"))
     expect(api.calls("POST /api/auth/logout")[0].headers.get("X-CSRF-Token")).toBeNull()
   })
 
@@ -48,7 +48,7 @@ describe("stubApi through the real middleware pipeline", () => {
       "POST /api/auth/logout": null,
     })
     await api.getMe()
-    await api.logout()
+    await unwrap(api.http.POST("/api/auth/logout"))
     expect(api.calls("POST /api/auth/logout")[0].headers.get("X-CSRF-Token")).toBe("tok-me")
   })
 
@@ -56,7 +56,7 @@ describe("stubApi through the real middleware pipeline", () => {
     const api = stubApi({ "GET /api/apps": () => errorResponse(401, "unauthorized", "no session") })
     const unauthorized = vi.fn()
     api.onUnauthorized = unauthorized
-    await expect(api.listApps()).rejects.toBeInstanceOf(APIError)
+    await expect(unwrap(api.http.GET("/api/apps"))).rejects.toBeInstanceOf(APIError)
     expect(unauthorized).toHaveBeenCalledTimes(1)
   })
 
@@ -70,15 +70,15 @@ describe("stubApi through the real middleware pipeline", () => {
     const unauthorized = vi.fn()
     api.onUnauthorized = unauthorized
     await expect(api.getMe()).rejects.toBeInstanceOf(APIError)
-    await expect(api.login({ username: "a", password: "b" })).rejects.toBeInstanceOf(APIError)
-    await expect(api.setup({ username: "a", password: "b" })).rejects.toBeInstanceOf(APIError)
-    await expect(api.logout()).rejects.toBeInstanceOf(APIError)
+    await expect(unwrap(api.http.POST("/api/auth/login", { body: { username: "a", password: "b" } }))).rejects.toBeInstanceOf(APIError)
+    await expect(unwrap(api.http.POST("/api/auth/setup", { body: { username: "a", password: "b" } }))).rejects.toBeInstanceOf(APIError)
+    await expect(unwrap(api.http.POST("/api/auth/logout"))).rejects.toBeInstanceOf(APIError)
     expect(unauthorized).not.toHaveBeenCalled()
   })
 
   it("parses the error envelope into APIError, matching {param} path segments", async () => {
     const api = stubApi({ "DELETE /api/apikeys/{id}": () => errorResponse(409, "conflict", "still in use") })
-    const err = await api.revokeApiKey(7).catch((e: unknown) => e)
+    const err = await unwrap(api.http.DELETE("/api/apikeys/{id}", { params: { path: { id: 7 } } })).catch((e: unknown) => e)
     expect(err).toBeInstanceOf(APIError)
     expect((err as APIError).status).toBe(409)
     expect((err as APIError).code).toBe("conflict")
@@ -87,13 +87,13 @@ describe("stubApi through the real middleware pipeline", () => {
 
   it("records sent requests so tests can assert bodies", async () => {
     const api = stubApi({ "POST /api/apikeys": { id: 1, name: "deploy", key: "k" } })
-    await api.mintApiKey("deploy")
+    await unwrap(api.http.POST("/api/apikeys", { body: { name: "deploy" } }))
     expect(await api.calls("POST /api/apikeys")[0].json()).toEqual({ name: "deploy" })
   })
 
   it("fails loudly on a request nothing stubbed, naming the stubbed keys", async () => {
     const api = stubApi({ "GET /api/apps": [] })
-    await expect(api.listIndexers()).rejects.toThrow(UnstubbedRequestError)
-    await expect(api.listIndexers()).rejects.toThrow("GET /api/apps")
+    await expect(unwrap(api.http.GET("/api/indexers"))).rejects.toThrow(UnstubbedRequestError)
+    await expect(unwrap(api.http.GET("/api/indexers"))).rejects.toThrow("GET /api/apps")
   })
 })

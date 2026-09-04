@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { api, APIError, type Credentials } from "@/lib/api"
+import { api, APIError, unwrap, type Credentials } from "@/lib/api"
 import { keys } from "@/lib/query"
 
 // useAuth is the bootstrap: one me-query drives the guard, the login/setup
@@ -25,18 +25,18 @@ export function useAuth() {
   // Only probed when unauthenticated: routes the visitor to /setup vs /login.
   const setup = useQuery({
     queryKey: keys.auth.setup(),
-    queryFn: () => api.getSetup(),
+    queryFn: () => unwrap(api.http.GET("/api/auth/setup")),
     enabled: me.data === null,
     retry: false,
   })
 
   const login = useMutation({
-    mutationFn: (creds: Credentials) => api.login(creds),
+    mutationFn: (creds: Credentials) => unwrap(api.http.POST("/api/auth/login", { body: creds })),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.auth.all }),
   })
 
   const logout = useMutation({
-    mutationFn: () => api.logout(),
+    mutationFn: () => unwrap(api.http.POST("/api/auth/logout")),
     onSettled: () => {
       api.setCsrfToken("")
       queryClient.clear()
