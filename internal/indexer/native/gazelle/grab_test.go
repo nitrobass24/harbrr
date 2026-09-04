@@ -273,3 +273,65 @@ func TestTestSucceedsOnEmptyBrowse(t *testing.T) {
 		t.Errorf("Test on empty browse = %v, want nil", err)
 	}
 }
+
+// TestGrabCaptureScrubsSessionCookie: a refused grab whose body echoes the live session
+// token persists a capture with the token redacted. The session cookie is not a declared
+// setting, so Base's construction-time secret snapshot structurally cannot cover it
+// (autobrr/harbrr#508) — only the per-call captureSecrets fetchTorrent now passes.
+//
+// The other half matters just as much: the short preference cookies (keeplogged=1,
+// lang=en) must NOT be scrubbed. ScrubValues is a literal substring replace, so handing
+// it "1" or "en" would rewrite the surrounding prose and destroy the diagnostic the
+// capture exists to preserve.
+//
+// HTTP 500 rather than 403 (BrokenStones' ajax.php answer to a cookie session, #424): an
+// auth-classified refusal is swallowed by sessionRetry, which returns the renewal's own
+// outcome and drops the CaptureError entirely, so no 401/403 on a form-login site can
+// reach a caller with its capture attached.
+func TestGrabCaptureScrubsSessionCookie(t *testing.T) {
+	t.Parallel()
+	const token = "AR-SYNTHETIC-SESSION-0000000000"
+	// "denied"/"open" carry the "en" of lang=en and "1471" the "1" of keeplogged=1.
+	body := "<h1>Access denied</h1><p>The session " + token + " was retired; open ticket 1471.</p>"
+	doer := &seqDoer{resps: []*stdhttp.Response{mkResp(stdhttp.StatusInternalServerError, body)}}
+	d := grabDriver(t, "alpharatio", map[string]string{
+		"cookie":   "session=" + token + "; keeplogged=1; lang=en",
+		"username": alphaRatioUsername,
+		"password": alphaRatioPassword,
+	}, doer)
+
+	_, err := d.Grab(context.Background(), d.downloadLink(5500, false))
+	capture, ok := search.CaptureOf(err)
+	if !ok {
+		t.Fatalf("refused grab carries no capture: %v", err)
+	}
+	if strings.Contains(capture.Body, token) {
+		t.Errorf("capture leaked the session token: %q", capture.Body)
+	}
+	if !strings.Contains(capture.Body, "<h1>Access denied</h1>") || !strings.Contains(capture.Body, "was retired; open ticket 1471.") {
+		t.Errorf("capture over-scrubbed the diagnostic: %q", capture.Body)
+	}
+}
+
+// TestGrabCaptureAPIKeyPathUnaffected: an apiKeyAuth site (redacted/orpheus) declares no
+// sessionCookieSetting, so the request's session snapshot is empty and SessionSecrets
+// contributes nothing — the capture is still redacted by the declared apikey alone and
+// the body is otherwise untouched.
+func TestGrabCaptureAPIKeyPathUnaffected(t *testing.T) {
+	t.Parallel()
+	body := "<h1>Access denied</h1><p>key " + credAPIKey + " lacks download rights; open ticket 1471.</p>"
+	doer := &seqDoer{resps: []*stdhttp.Response{mkResp(stdhttp.StatusForbidden, body)}}
+	d := grabDriver(t, "redacted", map[string]string{"apikey": credAPIKey}, doer)
+
+	_, err := d.Grab(context.Background(), "https://redacted.sh/ajax.php?action=download&id=1")
+	capture, ok := search.CaptureOf(err)
+	if !ok {
+		t.Fatalf("refused grab carries no capture: %v", err)
+	}
+	if strings.Contains(capture.Body, credAPIKey) {
+		t.Errorf("capture leaked the apikey: %q", capture.Body)
+	}
+	if !strings.Contains(capture.Body, "<h1>Access denied</h1>") || !strings.Contains(capture.Body, "lacks download rights; open ticket 1471.") {
+		t.Errorf("capture over-scrubbed the diagnostic: %q", capture.Body)
+	}
+}
