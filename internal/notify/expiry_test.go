@@ -322,11 +322,7 @@ func TestSetExpiryThresholdsCanonicalizes(t *testing.T) {
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("SetExpiryThresholds(%v) = %v, want %v", tt.in, got, tt.want)
 			}
-			readBack, err := svc.ExpiryThresholds(ctx)
-			if err != nil {
-				t.Fatalf("ExpiryThresholds: %v", err)
-			}
-			if !reflect.DeepEqual(readBack, tt.want) {
+			if readBack := svc.ExpiryThresholds(ctx); !reflect.DeepEqual(readBack, tt.want) {
 				t.Errorf("read back = %v, want %v", readBack, tt.want)
 			}
 		})
@@ -338,11 +334,7 @@ func TestExpiryThresholdsFallBackToDefaults(t *testing.T) {
 	svc, _ := newService(t)
 	ctx := context.Background()
 
-	got, err := svc.ExpiryThresholds(ctx)
-	if err != nil {
-		t.Fatalf("ExpiryThresholds: %v", err)
-	}
-	if !reflect.DeepEqual(got, defaultExpiryThresholds) {
+	if got := svc.ExpiryThresholds(ctx); !reflect.DeepEqual(got, defaultExpiryThresholds) {
 		t.Errorf("unset = %v, want the defaults %v", got, defaultExpiryThresholds)
 	}
 	// A junk row (hand-edited, or written by a future version) must not silence the
@@ -350,11 +342,7 @@ func TestExpiryThresholdsFallBackToDefaults(t *testing.T) {
 	if err := (database.AppSettings{}).Set(ctx, svc.db, ExpiryThresholdsKey, "nonsense", svc.clock()); err != nil {
 		t.Fatalf("seed junk: %v", err)
 	}
-	got, err = svc.ExpiryThresholds(ctx)
-	if err != nil {
-		t.Fatalf("ExpiryThresholds: %v", err)
-	}
-	if !reflect.DeepEqual(got, defaultExpiryThresholds) {
+	if got := svc.ExpiryThresholds(ctx); !reflect.DeepEqual(got, defaultExpiryThresholds) {
 		t.Errorf("junk row = %v, want the defaults %v", got, defaultExpiryThresholds)
 	}
 }

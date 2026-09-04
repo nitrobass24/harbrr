@@ -58,9 +58,11 @@ type Deps struct {
 	// rather than 404 (wired in a later leaf).
 	Cache  *registry.SearchCache
 	Logger zerolog.Logger
-	// LogLevel backs the runtime log-level endpoints (get/set + persistence). Nil
-	// leaves those routes reporting an unavailable state rather than panicking.
-	LogLevel *LogLevelStore
+	// SetLogLevel persists the operator's log level and applies it process-wide; the
+	// composition root owns both (internal/app/loglevel.go), the handler owns only
+	// the HTTP contract. Nil leaves PUT reporting an unavailable state; GET always
+	// answers from the process-global threshold.
+	SetLogLevel func(ctx context.Context, level string) error
 	// AdultCategories is the global hide-adult-categories dial (autobrr/harbrr#383).
 	// Nil reads as "not hidden", i.e. the pre-setting behaviour.
 	AdultCategories *AdultCategoriesStore
@@ -87,25 +89,25 @@ type Config struct {
 
 // router holds the management API's dependencies and resolved config.
 type router struct {
-	auth      *auth.Service
-	registry  *registry.Registry
-	loader    *loader.Loader
-	apps      *apps.Service
-	appsync   *appsync.Service
-	announce  *announce.Service
-	notify    *notify.Service
-	proxy     *proxy.Service
-	download  *download.Service
-	solver    *solver.Service
-	backup    *backup.Service
-	sessions  *scs.SessionManager
-	dlToken   *secrets.Keyring
-	urlCfg    torznabhttp.URLConfig
-	cache     *registry.SearchCache
-	cfg       Config
-	log       zerolog.Logger
-	logLevel  *LogLevelStore
-	adultCats *AdultCategoriesStore
+	auth        *auth.Service
+	registry    *registry.Registry
+	loader      *loader.Loader
+	apps        *apps.Service
+	appsync     *appsync.Service
+	announce    *announce.Service
+	notify      *notify.Service
+	proxy       *proxy.Service
+	download    *download.Service
+	solver      *solver.Service
+	backup      *backup.Service
+	sessions    *scs.SessionManager
+	dlToken     *secrets.Keyring
+	urlCfg      torznabhttp.URLConfig
+	cache       *registry.SearchCache
+	cfg         Config
+	log         zerolog.Logger
+	setLogLevel func(ctx context.Context, level string) error
+	adultCats   *AdultCategoriesStore
 	// oidc is nil when OIDC is disabled or its provider discovery failed at
 	// startup; every OIDC handler treats a nil oidc as "answer as disabled".
 	oidc *oidcHandler
@@ -144,7 +146,7 @@ func NewRouter(deps Deps, cfg Config) (http.Handler, error) {
 		announce: deps.Announce, notify: deps.Notify, proxy: deps.Proxy, download: deps.Download, solver: deps.Solver,
 		backup:   deps.Backup,
 		sessions: deps.Sessions, dlToken: deps.DLToken, urlCfg: deps.URLConfig,
-		cache: deps.Cache, cfg: cfg, log: deps.Logger, logLevel: deps.LogLevel, adultCats: deps.AdultCategories,
+		cache: deps.Cache, cfg: cfg, log: deps.Logger, setLogLevel: deps.SetLogLevel, adultCats: deps.AdultCategories,
 		allowlist: allow, trustedProxies: proxies,
 	}
 	rt.loadDefs = func() ([]definitionEntry, error) {

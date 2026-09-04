@@ -84,7 +84,6 @@ type App struct {
 	solver   *solver.Service
 	backup   *backup.Service
 
-	logLevel  *api.LogLevelStore
 	adultCats *api.AdultCategoriesStore
 
 	server *server.Server
@@ -95,8 +94,8 @@ type App struct {
 // database -> secrets/canary -> sessions/auth -> search cache -> notify
 // (built BEFORE the registry so it can be registered as the registry's health
 // sink) -> registry -> app-sync -> announce -> the search cache's announce
-// sink (wired back after announce exists — see initSyncServices) -> log-level
-// store -> proxy/solver -> the mounted HTTP handlers.
+// sink (wired back after announce exists — see initSyncServices) -> the
+// persisted log level -> proxy/solver -> the mounted HTTP handlers.
 func New(ctx context.Context, deps Deps, opts ...Option) (*App, error) {
 	o := &options{}
 	for _, opt := range opts {
@@ -128,7 +127,7 @@ func New(ctx context.Context, deps Deps, opts ...Option) (*App, error) {
 }
 
 // build wires everything after the database is open: secrets/canary, sessions/
-// auth, the registry graph, app-sync/announce, the log-level store, proxy/
+// auth, the registry graph, app-sync/announce, the persisted log level, proxy/
 // solver, and finally the mounted HTTP handlers.
 func (a *App) build(ctx context.Context, httpClient *http.Client) error {
 	if err := a.initSecrets(ctx); err != nil {
@@ -138,7 +137,7 @@ func (a *App) build(ctx context.Context, httpClient *http.Client) error {
 	a.apps = apps.NewService(a.db, a.keyring, httpClient, a.log)
 	a.initRegistry(ctx, httpClient)
 	a.initSyncServices(httpClient)
-	a.initLogLevel(ctx)
+	a.applyPersistedLogLevel(ctx)
 	a.initAdultCategories(ctx)
 	a.proxy = proxy.NewService(a.db, a.keyring)
 	a.download = download.NewService(a.db, a.apps, a.keyring, httpClient, a.log)
@@ -308,9 +307,7 @@ func (a *App) initRegistry(ctx context.Context, httpClient *http.Client) {
 	a.expiry = notify.NewExpiryScanner(a.notify, a.db, expiryLink(a.cfg), nil)
 	a.registry = registry.New(a.db, loader.New(dropinDir(a.cfg)), a.keyring, catalog.All(),
 		registry.WithLogger(a.log), registry.WithSearchCache(a.searchCache), registry.WithHealthSink(a.notify))
-	if err := a.registry.LoadRateDefaultOverride(ctx); err != nil {
-		a.log.Warn().Err(err).Msg("loading rate-limit default override failed; using hardcoded default")
-	}
+	a.registry.LoadRateDefaultOverride(ctx)
 	if err := a.registry.RehydrateStats(ctx); err != nil {
 		a.log.Warn().Err(err).Msg("loading indexer stat counters failed; counters start at zero this session")
 	}
@@ -358,31 +355,12 @@ func (a *App) initSyncServices(httpClient *http.Client) {
 	a.searchCache.SetAnnounceSink(newAnnounceSink(a.announce, a.db, a.keyring, a.cfg.Server.BaseURL, a.cfg.Server.ExternalOrigin(), a.log))
 }
 
-// initLogLevel builds the persisted log-level store and applies any override.
-func (a *App) initLogLevel(ctx context.Context) {
-	a.logLevel = api.NewLogLevelStore(a.db, time.Now)
-	applyPersistedLogLevel(ctx, a.logLevel, a.log)
-}
-
 // initAdultCategories builds the hide-adult-categories dial and loads the
-// operator's persisted choice. A read failure is non-fatal: the setting stays
+// operator's persisted choice. An unreadable row is non-fatal: the setting stays
 // off (adult categories visible), which is the default behaviour anyway.
 func (a *App) initAdultCategories(ctx context.Context) {
 	a.adultCats = api.NewAdultCategoriesStore(a.db, time.Now)
-	if err := a.adultCats.LoadPersisted(ctx); err != nil {
-		a.log.Warn().Err(err).Msg("serve: reading the hide-adult-categories setting failed; adult categories stay visible")
-	}
-}
-
-// applyPersistedLogLevel applies the DB log-level override (set via the management
-// API), which beats the config-file/env/flag seed. A read error or stale value is
-// non-fatal — the seed stays in effect.
-func applyPersistedLogLevel(ctx context.Context, logLevel *api.LogLevelStore, log zerolog.Logger) {
-	if applied, err := logLevel.ApplyPersisted(ctx); err != nil {
-		log.Warn().Err(err).Msg("serve: applying persisted log level failed; using configured level")
-	} else if applied {
-		log.Info().Str("level", logger.Level()).Msg("serve: applied persisted log-level override")
-	}
+	a.adultCats.LoadPersisted(ctx, a.log)
 }
 
 // newServer builds the management API router, the Torznab feed handler, and
@@ -396,7 +374,7 @@ func newServer(a *App) (*server.Server, error) {
 	mgmt, err := api.NewRouter(api.Deps{
 		Auth: a.auth, Registry: a.registry, Loader: loader.New(dropinDir(a.cfg)), Apps: a.apps, AppSync: a.appsync,
 		Announce: a.announce, Notify: a.notify, Proxy: a.proxy, Download: a.download, Solver: a.solver, Backup: a.backup, Sessions: a.sessions,
-		DLToken: a.keyring, URLConfig: urlCfg, Cache: a.searchCache, Logger: a.log, LogLevel: a.logLevel,
+		DLToken: a.keyring, URLConfig: urlCfg, Cache: a.searchCache, Logger: a.log, SetLogLevel: a.setLogLevel,
 		AdultCategories: a.adultCats,
 	}, api.Config{
 		AuthDisabled: a.cfg.Auth.AuthDisabled(), IPAllowlist: a.cfg.Auth.IPAllowlist, TrustedProxies: a.cfg.Auth.TrustedProxies,
