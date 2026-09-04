@@ -358,21 +358,23 @@ func TestDownloadRefusalCapture(t *testing.T) {
 	const (
 		// pathSecret is passkey-shaped (a long hex run) because that is the shape
 		// path redaction is built for; queryKey is caught by its parameter NAME.
-		pathSecret  = "0123456789abcdef0123456789abcdef0123456789abcdef"
-		queryKey    = "QUERY-APIKEY-2b7f"
-		cookieValue = "SESSIONCOOKIE-9d41"
+		pathSecret   = "0123456789abcdef0123456789abcdef0123456789abcdef"
+		queryKey     = "QUERY-APIKEY-2b7f"
+		cookieValue  = "SESSIONCOOKIE-9d41"
+		runtimeToken = "RUNTIME-BEARER-7e52"
 	)
 	header := stdhttp.Header{}
 	header.Set("Content-Type", "text/html")
 	header.Set("Set-Cookie", "session="+cookieValue)
-	body := "<h1>Not Acceptable</h1><p>rejected for apikey=" + queryKey + "</p>"
+	body := "<h1>Not Acceptable</h1><p>rejected for apikey=" + queryKey + " token=" + runtimeToken + "</p>"
 
 	doer := &fakeDoer{resp: respWith(stdhttp.StatusNotAcceptable, body, header)}
 	b := refusalTestBase(t, doer, queryKey)
 	req := mustRequest(t, "https://tracker.example/download.php/"+pathSecret+"?tid=1&apikey="+queryKey)
 	req.Header.Set("Cookie", "session="+cookieValue)
+	req.Header.Set("Authorization", "Bearer "+runtimeToken)
 
-	resp, err := b.DoDownload(context.Background(), req, ClassifyAuth403)
+	resp, err := b.DoDownload(context.Background(), req, ClassifyAuth403, runtimeToken)
 	if err == nil {
 		t.Fatal("want the 406 status error")
 	}
@@ -403,7 +405,7 @@ func TestDownloadRefusalCapture(t *testing.T) {
 	if merr != nil {
 		t.Fatalf("marshal capture: %v", merr)
 	}
-	for _, secret := range []string{pathSecret, queryKey, cookieValue} {
+	for _, secret := range []string{pathSecret, queryKey, cookieValue, runtimeToken} {
 		if strings.Contains(string(rendered), secret) {
 			t.Errorf("capture leaked %q: %s", secret, rendered)
 		}
@@ -449,6 +451,30 @@ func TestDownloadRefusalCaptureExtraSecrets(t *testing.T) {
 		if strings.Contains(string(rendered), secret) {
 			t.Errorf("capture leaked %q: %s", secret, rendered)
 		}
+	}
+}
+
+func TestRuntimeSecretCapturePreservesClassification(t *testing.T) {
+	t.Parallel()
+	const runtimeToken = "RUNTIME-BEARER-CLASSIFIED-4f83"
+	b := newTestBase(t, &fakeDoer{resp: respWith(stdhttp.StatusUnauthorized, "expired "+runtimeToken, nil)})
+	req := mustRequest(t, "https://tracker.example/download")
+	req.Header.Set("Authorization", "Bearer "+runtimeToken)
+
+	_, err := b.DoDownload(t.Context(), req, ClassifyAuth403, runtimeToken)
+	if !errors.Is(err, login.ErrLoginFailed) {
+		t.Fatalf("runtime-secret capture dropped login.ErrLoginFailed: %v", err)
+	}
+	capture, ok := search.CaptureOf(err)
+	if !ok {
+		t.Fatalf("classified refusal carries no capture: %v", err)
+	}
+	rendered, marshalErr := json.Marshal(capture)
+	if marshalErr != nil {
+		t.Fatalf("marshal capture: %v", marshalErr)
+	}
+	if strings.Contains(string(rendered), runtimeToken) {
+		t.Errorf("capture leaked runtime token: %s", rendered)
 	}
 }
 

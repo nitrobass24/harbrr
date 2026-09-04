@@ -47,7 +47,7 @@ var liveTested = map[string]bool{
 	"iptorrents": true, "filelist": true, "myanonamouse": true, "broadcastthenet": true,
 	"passthepopcorn": true, "hdbits": true, "alpharatio": true, "avistaz": true,
 	"beyondhd": true, "cinemaz": true, "gazellegames": true, "nebulance": true,
-	"orpheus": true, "redacted": true,
+	"orpheus": true, "redacted": true, "retroflix": true,
 	// BrokenStones, live-validated 2026-07-17: full parity vs the Prowlarr oracle
 	// (696 = 696 across harbrr's Torznab pages, head titles identical in order).
 	"brokenstones": true,
@@ -88,6 +88,7 @@ var nativeBuilt = []nativeRow{
 	{name: "GazelleGames", pattern: "Bespoke API", id: "gazellegames"},
 	{name: "AnimeBytes", pattern: "Bespoke API", id: "animebytes"},
 	{name: "Nebulance", pattern: "Bespoke JSON API", id: "nebulance"},
+	{name: "RetroFlix", pattern: "Bearer (login -> token)", id: "retroflix"},
 	{name: "Usenet (Newznab)", pattern: "Generic Newznab", id: "newznab"},
 	{name: "NZBIndex", pattern: "Bespoke JSON API (public)", id: "nzbindex"},
 	{name: "AnimeTosho", pattern: "Torznab API (native)", id: "animetosho"},
