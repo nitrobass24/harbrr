@@ -15,6 +15,11 @@ func Families() []native.Family {
 // Definition returns RetroFlix's static settings and capabilities definition.
 func Definition() *loader.Definition { return retroFlixDefinition() }
 
+// retroFlixDefinition is hand-built rather than native.Site{}.Definition(): Site
+// carries a single Link and RetroFlix serves two alternate domains, and the
+// credential fields carry Required, which the kit's Field* constants deliberately
+// do not (the alpharatio precedent). Everything Site would have supplied
+// identically — the category table — goes through the kit below.
 func retroFlixDefinition() *loader.Definition {
 	delay := requestDelaySeconds
 	allowIMDB := true
@@ -32,14 +37,14 @@ func retroFlixDefinition() *loader.Definition {
 			{Name: "password", Label: "Password", Type: "password", Required: true},
 		},
 		Caps: loader.Caps{
-			CategoryMappings: []loader.CategoryMapping{
-				category("401", "Movies", "Movies"),
-				category("402", "TV Series", "TV"),
-				category("406", "Music Videos", "Audio/Video"),
-				category("407", "Sports", "TV/Sport"),
-				category("408", "HQ Audio", "Audio"),
-				category("409", "Books", "Books"),
-			},
+			CategoryMappings: native.Cats(
+				native.Cat{ID: "401", Newznab: "Movies", Desc: "Movies"},
+				native.Cat{ID: "402", Newznab: "TV", Desc: "TV Series"},
+				native.Cat{ID: "406", Newznab: "Audio/Video", Desc: "Music Videos"},
+				native.Cat{ID: "407", Newznab: "TV/Sport", Desc: "Sports"},
+				native.Cat{ID: "408", Newznab: "Audio", Desc: "HQ Audio"},
+				native.Cat{ID: "409", Newznab: "Books", Desc: "Books"},
+			),
 			Modes: loader.Modes{
 				Search:      []string{"q"},
 				MovieSearch: []string{"q", "imdbid"},
@@ -49,13 +54,5 @@ func retroFlixDefinition() *loader.Definition {
 			},
 			AllowTVSearchIMDB: &allowIMDB,
 		},
-	}
-}
-
-func category(id, desc, name string) loader.CategoryMapping {
-	return loader.CategoryMapping{
-		ID:   loader.Scalar{Value: id, Set: true},
-		Cat:  name,
-		Desc: desc,
 	}
 }

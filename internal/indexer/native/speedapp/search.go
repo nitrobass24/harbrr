@@ -17,8 +17,6 @@ import (
 
 const maxItemsPerPage = 100
 
-var imdbPattern = regexp.MustCompile(`^(?:tt)?([0-9]{1,8})$`)
-
 // Search returns the requested post-cleanup result window. Keyword searches walk from
 // page one because filtering changes offsets; RSS and ID searches can start deep.
 func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
@@ -123,7 +121,7 @@ func (d *driver) buildSearchURL(q search.Query, page int, includePage bool, perP
 			params.Add("categories[]", category)
 		}
 	}
-	if imdb := fullIMDBID(q.IMDBID); imdb != "" {
+	if imdb := validIMDBID(q.IMDBID); imdb != "" {
 		params.Set("imdbId", imdb)
 	} else {
 		params.Set("search", strings.TrimSpace(q.Keywords))
@@ -154,7 +152,20 @@ func resultLimit(limit int) int {
 	return limit
 }
 
-func fullIMDBID(raw string) string {
+func shouldCleanup(q search.Query) bool {
+	return strings.TrimSpace(q.Keywords) != "" && !hasID(q)
+}
+
+var imdbPattern = regexp.MustCompile(`^(?:tt)?([0-9]{1,8})$`)
+
+// validIMDBID VALIDATES a caller-supplied id rather than canonicalising it, which is
+// why the query path does not use native.CanonicalIMDBID. The kit rescues malformed
+// input — "TT123" becomes "tt0000123", a 9-digit id is accepted — and this driver
+// depends on the opposite: an id it cannot trust must read as NO id, so the search
+// falls back to keyword cleanup instead of asking the tracker about a title the user
+// never named (TestInvalidIMDBFallsBackToCleanup). The response path, where the value
+// is the tracker's own, does use the kit.
+func validIMDBID(raw string) string {
 	match := imdbPattern.FindStringSubmatch(strings.TrimSpace(raw))
 	if len(match) != 2 {
 		return ""
@@ -166,12 +177,8 @@ func fullIMDBID(raw string) string {
 	return fmt.Sprintf("tt%07d", id)
 }
 
-func shouldCleanup(q search.Query) bool {
-	return strings.TrimSpace(q.Keywords) != "" && !hasID(q)
-}
-
 func hasID(q search.Query) bool {
-	return fullIMDBID(q.IMDBID) != "" || q.TMDBID != "" || q.TVDBID != "" || q.TVMazeID != "" ||
+	return validIMDBID(q.IMDBID) != "" || q.TMDBID != "" || q.TVDBID != "" || q.TVMazeID != "" ||
 		q.TraktID != "" || q.DoubanID != "" || q.RageID != ""
 }
 

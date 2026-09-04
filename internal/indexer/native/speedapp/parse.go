@@ -6,11 +6,11 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 const (
@@ -61,9 +61,9 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 }
 
 func (d *driver) toRelease(row *apiRow) (*normalizer.Release, error) {
-	published, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(row.CreatedAt))
+	published, err := native.PublishDate(row.CreatedAt, d.Clock)
 	if err != nil {
-		return nil, fmt.Errorf("speedapp: parse created_at %q: %w", row.CreatedAt, search.ErrParseError)
+		return nil, fmt.Errorf("speedapp: unparseable created_at %q: %w: %w", strings.TrimSpace(row.CreatedAt), search.ErrParseError, err)
 	}
 	return &normalizer.Release{
 		Title:                cleanTitle(row.Name),
@@ -73,7 +73,7 @@ func (d *driver) toRelease(row *apiRow) (*normalizer.Release, error) {
 		Link:                 d.BaseURL + "api/torrent/" + strconv.FormatInt(row.ID, 10) + "/download",
 		Categories:           d.categories(row.Category.ID),
 		Size:                 row.Size,
-		PublishDate:          published.UTC().Format(time.RFC3339),
+		PublishDate:          published,
 		Grabs:                row.TimesCompleted,
 		Seeders:              row.Seeders,
 		Leechers:             row.Leechers,
@@ -82,7 +82,7 @@ func (d *driver) toRelease(row *apiRow) (*normalizer.Release, error) {
 		UploadVolumeFactor:   row.UploadVolumeFactor,
 		MinimumRatio:         minimumRatio,
 		MinimumSeedTime:      minimumSeedTime,
-		IMDBID:               fullIMDBID(row.IMDBID),
+		IMDBID:               native.CanonicalIMDBID(row.IMDBID),
 		Poster:               row.Poster,
 	}, nil
 }

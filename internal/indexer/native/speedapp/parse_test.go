@@ -97,6 +97,9 @@ func TestTitleAndIMDBNormalization(t *testing.T) {
 			t.Errorf("cleanTitle(%q) = %q, want %q", tt.in, got, tt.want)
 		}
 	}
+	// Two implementations on purpose: the query path VALIDATES (a malformed id must
+	// read as no id, so the search falls back to keyword cleanup), while the response
+	// path canonicalises the tracker's own value through the shared native kit.
 	for _, tt := range []struct {
 		in   string
 		want string
@@ -109,8 +112,8 @@ func TestTitleAndIMDBNormalization(t *testing.T) {
 		{in: "123456789", want: ""},
 		{in: "bad", want: ""},
 	} {
-		if got := fullIMDBID(tt.in); got != tt.want {
-			t.Errorf("fullIMDBID(%q) = %q, want %q", tt.in, got, tt.want)
+		if got := validIMDBID(tt.in); got != tt.want {
+			t.Errorf("validIMDBID(%q) = %q, want %q", tt.in, got, tt.want)
 		}
 	}
 }
