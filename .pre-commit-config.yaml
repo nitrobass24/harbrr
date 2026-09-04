@@ -43,3 +43,12 @@ repos:
         entry: scripts/check-vendor-untouched.sh
         language: system
         pass_filenames: false
+
+      # An openapi.yaml edit is a WEB change: api.gen.ts is generated from it, and
+      # `make test-openapi` compares method/path sets only, so it passes on a stale
+      # one. Mirrors the web job's drift check locally.
+      - id: openapi-types-synced
+        name: openapi-types-synced
+        entry: scripts/check-openapi-types-synced.sh
+        language: system
+        pass_filenames: false

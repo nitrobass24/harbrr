@@ -365,7 +365,17 @@ jobs:
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           bun run generate:api
-          git -C "$GITHUB_WORKSPACE" diff --exit-code -- web/src/types/api.gen.ts
+          # A PR that DELETES api.gen.ts regenerates it as an untracked file, and
+          # `git diff --exit-code` ignores untracked paths — so the diff below would
+          # pass with no generated file committed at all. Assert it is tracked first.
+          if ! git -C "$GITHUB_WORKSPACE" ls-files --error-unmatch web/src/types/api.gen.ts >/dev/null 2>&1; then
+            echo "::error::web/src/types/api.gen.ts is not tracked. It is generated from internal/web/swagger/openapi.yaml and must be committed — run 'bun run generate:api' in web/ and commit it."
+            exit 1
+          fi
+          if ! git -C "$GITHUB_WORKSPACE" diff --exit-code -- web/src/types/api.gen.ts; then
+            echo "::error::web/src/types/api.gen.ts is stale. An internal/web/swagger/openapi.yaml edit is a WEB change: run 'bun run generate:api' in web/ and commit web/src/types/api.gen.ts. Note make test-openapi does NOT catch this — it compares method/path sets only. The pre-commit hook openapi-types-synced checks this locally."
+            exit 1
+          fi
       - name: build
         if: steps.restore.outputs.hit != 'true'
         working-directory: web
