@@ -35,8 +35,14 @@ describe("useAllIndexerStats query-key isolation (U14-F3)", () => {
   it("does not collide with the per-indexer detail key for slug 'stats'", async () => {
     const detail = { instance: { slug: "stats" }, settings: [] }
     const aggregate = [{ slug: "a", queries: 1, grabs: 0, avgResponseMs: 0 }]
-    getMock.mockImplementation((path: string) =>
-      Promise.resolve({ data: path === "/api/indexers/stats" ? aggregate : detail, response: Response.json(null) }))
+    // Both templates are named explicitly and anything else throws: a fallback
+    // response would let this test pass while matching nothing, which is exactly
+    // the failure mode the stubApi seam exists to remove.
+    getMock.mockImplementation((path: string) => {
+      if (path === "/api/indexers/stats") return Promise.resolve({ data: aggregate, response: Response.json(null) })
+      if (path === "/api/indexers/{slug}") return Promise.resolve({ data: detail, response: Response.json(null) })
+      throw new Error(`unstubbed GET ${path} — stubbed: /api/indexers/stats, /api/indexers/{slug}`)
+    })
 
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const detailHook = renderHook(() => useIndexer("stats"), { wrapper: wrapper(qc) })
