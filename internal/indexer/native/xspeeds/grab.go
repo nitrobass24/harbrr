@@ -17,9 +17,9 @@ func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, err
 		if err != nil {
 			return nil, errors.New("xspeeds: invalid download URL")
 		}
-		request, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, resolved, nil)
+		request, err := d.NewRequest(ctx, stdhttp.MethodGet, resolved, nil)
 		if err != nil {
-			return nil, fmt.Errorf("xspeeds: build download request: %w", err)
+			return nil, err
 		}
 		response, err := d.DoDownload(noRedirects(ctx), request, classifySession, d.captureSecrets(session.cookie)...)
 		if err != nil {

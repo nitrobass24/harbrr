@@ -158,9 +158,9 @@ func (d *driver) completeLogin(failedGeneration uint64, session sessionState, er
 
 func (d *driver) performLogin(ctx context.Context) error {
 	landingURL := d.BaseURL + "login.php"
-	landing, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, landingURL, nil)
+	landing, err := d.NewRequest(ctx, stdhttp.MethodGet, landingURL, nil)
 	if err != nil {
-		return fmt.Errorf("xspeeds: build login landing request: %w", err)
+		return err
 	}
 	if _, err := d.Do(ctx, landing, native.ClassifyAuth403); err != nil {
 		return fmt.Errorf("xspeeds: fetch login landing page: %w", err)
@@ -170,9 +170,9 @@ func (d *driver) performLogin(ctx context.Context) error {
 		"username": {d.Cfg["username"]},
 		"password": {d.Cfg["password"]},
 	}
-	request, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodPost, d.BaseURL+"takelogin.php", strings.NewReader(form.Encode()))
+	request, err := d.NewRequest(ctx, stdhttp.MethodPost, d.BaseURL+"takelogin.php", strings.NewReader(form.Encode()))
 	if err != nil {
-		return fmt.Errorf("xspeeds: build login request: %w", err)
+		return err
 	}
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Referer", landingURL)

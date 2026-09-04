@@ -8377,5 +8377,693 @@
       "AllowRawSearch": null,
       "AllowTVSearchIMDB": true
     }
+  },
+  {
+    "id": "xspeeds",
+    "name": "XSpeeds",
+    "description": "XSpeeds (XS) is a private torrent tracker for movies, TV, and general releases",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://www.xspeeds.eu/"
+    ],
+    "requestDelay": 2.1,
+    "settings": [
+      {
+        "Name": "username",
+        "Label": "Username",
+        "Type": "text",
+        "Required": true,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "password",
+        "Label": "Password",
+        "Type": "password",
+        "Required": true,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "freeleech_only",
+        "Label": "Only freeleech",
+        "Type": "checkbox",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "70",
+            "Set": true
+          },
+          "Cat": "TV/Anime",
+          "Desc": "Anime",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "113",
+            "Set": true
+          },
+          "Cat": "TV/Anime",
+          "Desc": "Anime Boxsets",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "112",
+            "Set": true
+          },
+          "Cat": "Movies/Other",
+          "Desc": "Anime Movies",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "111",
+            "Set": true
+          },
+          "Cat": "Movies/Other",
+          "Desc": "Anime TV",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "150",
+            "Set": true
+          },
+          "Cat": "PC",
+          "Desc": "Apps",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "153",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Books",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "154",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Books Audiobooks",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "155",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Books eBooks \u0026 Magazines",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "68",
+            "Set": true
+          },
+          "Cat": "Movies/Other",
+          "Desc": "Cams/TS",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "140",
+            "Set": true
+          },
+          "Cat": "TV/Documentary",
+          "Desc": "Documentary",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "10",
+            "Set": true
+          },
+          "Cat": "Movies/DVD",
+          "Desc": "DVDR",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "109",
+            "Set": true
+          },
+          "Cat": "Movies/BluRay",
+          "Desc": "DVDR Bluray Disc",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "131",
+            "Set": true
+          },
+          "Cat": "TV/Sport",
+          "Desc": "Fighting",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "134",
+            "Set": true
+          },
+          "Cat": "TV/Sport",
+          "Desc": "Fighting Boxing",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "133",
+            "Set": true
+          },
+          "Cat": "TV/Sport",
+          "Desc": "Fighting MMA",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "132",
+            "Set": true
+          },
+          "Cat": "TV/Sport",
+          "Desc": "Fighting Wrestling",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "72",
+            "Set": true
+          },
+          "Cat": "Movies/Foreign",
+          "Desc": "Foreign",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "116",
+            "Set": true
+          },
+          "Cat": "TV/Foreign",
+          "Desc": "Foreign Boxsets",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "114",
+            "Set": true
+          },
+          "Cat": "Movies/Foreign",
+          "Desc": "Foreign Movies",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "115",
+            "Set": true
+          },
+          "Cat": "TV/Foreign",
+          "Desc": "Foreign TV",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "103",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Games Console",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "105",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Games Console Nintendo",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "104",
+            "Set": true
+          },
+          "Cat": "Console/PS4",
+          "Desc": "Games Console Playstation",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "106",
+            "Set": true
+          },
+          "Cat": "Console/XBox",
+          "Desc": "Games Console XBOX",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6",
+            "Set": true
+          },
+          "Cat": "PC/Games",
+          "Desc": "Games PC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "108",
+            "Set": true
+          },
+          "Cat": "PC",
+          "Desc": "Games PC Linux",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "107",
+            "Set": true
+          },
+          "Cat": "PC/Mac",
+          "Desc": "Games PC Mac",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "11",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movie Boxsets",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "118",
+            "Set": true
+          },
+          "Cat": "Movies/UHD",
+          "Desc": "Movie Boxsets 4K",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "162",
+            "Set": true
+          },
+          "Cat": "Movies/HD",
+          "Desc": "Movie Boxsets AV1",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "143",
+            "Set": true
+          },
+          "Cat": "Movies/HD",
+          "Desc": "Movie Boxsets HD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "119",
+            "Set": true
+          },
+          "Cat": "Movies/HD",
+          "Desc": "Movie Boxsets HEVC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "144",
+            "Set": true
+          },
+          "Cat": "Movies/SD",
+          "Desc": "Movie Boxsets SD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "12",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movies",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "117",
+            "Set": true
+          },
+          "Cat": "Movies/UHD",
+          "Desc": "Movies 4K",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "163",
+            "Set": true
+          },
+          "Cat": "Movies/HD",
+          "Desc": "Movies AV1",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "145",
+            "Set": true
+          },
+          "Cat": "Movies/HD",
+          "Desc": "Movies HD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "100",
+            "Set": true
+          },
+          "Cat": "Movies/HD",
+          "Desc": "Movies HEVC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "146",
+            "Set": true
+          },
+          "Cat": "Movies/SD",
+          "Desc": "Movies SD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "13",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Music",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "135",
+            "Set": true
+          },
+          "Cat": "Audio/Lossless",
+          "Desc": "Music FLAC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "151",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Music Karaoke",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "136",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Music Boxset",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "148",
+            "Set": true
+          },
+          "Cat": "Audio/Video",
+          "Desc": "Music Videos",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "9",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Other",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "125",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Other Pictures",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "54",
+            "Set": true
+          },
+          "Cat": "TV/Other",
+          "Desc": "Other Soaps",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "83",
+            "Set": true
+          },
+          "Cat": "TV/Other",
+          "Desc": "Other Specials",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "139",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TOTM (Freeleech)",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "138",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TOTW (x2 upload)",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "139",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "TOTM (Freeleech)",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "138",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "TOTW (x2 upload)",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "20",
+            "Set": true
+          },
+          "Cat": "TV/Sport",
+          "Desc": "Sports",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "88",
+            "Set": true
+          },
+          "Cat": "TV/Sport",
+          "Desc": "Sports/Football",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "86",
+            "Set": true
+          },
+          "Cat": "TV/Sport",
+          "Desc": "Sports/MotorSports",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "89",
+            "Set": true
+          },
+          "Cat": "TV/Sport",
+          "Desc": "Sports/Olympics",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "126",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TV",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "127",
+            "Set": true
+          },
+          "Cat": "TV/UHD",
+          "Desc": "TV 4K",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "164",
+            "Set": true
+          },
+          "Cat": "TV/HD",
+          "Desc": "TV AV1",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "129",
+            "Set": true
+          },
+          "Cat": "TV/HD",
+          "Desc": "TV HD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "130",
+            "Set": true
+          },
+          "Cat": "TV/HD",
+          "Desc": "TV HEVC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "128",
+            "Set": true
+          },
+          "Cat": "TV/SD",
+          "Desc": "TV SD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "149",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TV Specials",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "21",
+            "Set": true
+          },
+          "Cat": "TV/SD",
+          "Desc": "TV Boxsets",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "120",
+            "Set": true
+          },
+          "Cat": "TV/UHD",
+          "Desc": "TV Boxset 4K",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "165",
+            "Set": true
+          },
+          "Cat": "TV/UHD",
+          "Desc": "TV Boxset AV1",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "76",
+            "Set": true
+          },
+          "Cat": "TV/HD",
+          "Desc": "TV Boxset HD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "97",
+            "Set": true
+          },
+          "Cat": "TV/HD",
+          "Desc": "TV Boxset HEVC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "147",
+            "Set": true
+          },
+          "Cat": "TV/SD",
+          "Desc": "TV Boxset SD",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep"
+        ],
+        "MovieSearch": [
+          "q"
+        ],
+        "MusicSearch": [
+          "q"
+        ],
+        "BookSearch": [
+          "q"
+        ]
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": null
+    }
   }
 ]

@@ -48,9 +48,9 @@ func (d *driver) newBrowseRequest(ctx context.Context, query search.Query) (*std
 		params.Set("keywords", term)
 		params.Set("search_type", "t_name")
 	}
-	request, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, d.BaseURL+"browse.php?"+params.Encode(), nil)
+	request, err := d.NewRequest(ctx, stdhttp.MethodGet, d.BaseURL+"browse.php?"+params.Encode(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("xspeeds: build browse request: %w", err)
+		return nil, err
 	}
 	request.Header.Set("Accept", "text/html")
 	return request, nil
