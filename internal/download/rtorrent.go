@@ -65,7 +65,7 @@ func newRTorrent(c domain.DownloadClient, secret string, client *http.Client) (D
 		if transport.TLSClientConfig == nil {
 			transport.TLSClientConfig = &tls.Config{}
 		}
-		transport.TLSClientConfig.InsecureSkipVerify = true //nolint:gosec // opt-in per client, mirrors qBittorrent's TLSSkipVerify.
+		transport.TLSClientConfig.InsecureSkipVerify = true
 		clone.Transport = transport
 		httpClient = &clone
 	}

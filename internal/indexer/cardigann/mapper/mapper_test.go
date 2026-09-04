@@ -12,7 +12,7 @@ import (
 
 func loadFixture(t *testing.T, name string) *loader.Definition {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("testdata", name)) //nolint:gosec // fixed test path.
+	data, err := os.ReadFile(filepath.Join("testdata", name))
 	if err != nil {
 		t.Fatalf("reading fixture %q: %v", name, err)
 	}

@@ -361,7 +361,7 @@ func (l *Loader) readDropin(id string) (data []byte, ok bool, err error) {
 	if !withinDir(l.dropinDir, path) {
 		return nil, false, nil
 	}
-	data, err = os.ReadFile(path) //nolint:gosec // path is confined to dropinDir by withinDir above.
+	data, err = os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, false, nil

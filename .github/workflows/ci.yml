@@ -94,6 +94,33 @@ jobs:
             exit 1
           fi
           echo "all workflow bun pins match web/package.json: bun@${want}"
+      # golangci-lint is pinned twice — `make tools` (local) and the
+      # golangci-lint-action's `version:` input below — with a "bump both
+      # together" comment. Enforce the agreement here so a one-sided bump fails
+      # loud instead of local and CI silently linting with different versions.
+      - name: golangci-lint pins match (Makefile vs golangci-lint-action)
+        run: |
+          mk=$(grep -oE 'golangci-lint@v[0-9][0-9.]*' Makefile | sed 's/.*@//')
+          # Anchored at line start so this does not match its own source; the
+          # goreleaser jobs' `version: "~> v2"` is quoted and cannot match.
+          wf=$(grep -E '^[[:space:]]*version: v2\.' .github/workflows/ci.yml | awk '{print $2}')
+          if [ -z "$mk" ] || [ "$mk" != "$wf" ]; then
+            echo "golangci-lint pins disagree: Makefile=$mk golangci-lint-action=$wf" >&2
+            exit 1
+          fi
+          echo "golangci-lint pins agree: $mk"
+      # Same idea for gitleaks: the pre-commit hook and the secret-scan job pin it
+      # independently, and they once drifted nine minor versions apart — a secret
+      # matched only by newer rules would pass the local hook and die in CI.
+      - name: gitleaks pins match (.pre-commit-config.yaml vs secret-scan)
+        run: |
+          pc=$(grep -A3 'gitleaks/gitleaks$' .pre-commit-config.yaml | sed -nE 's/.*rev: v([0-9.]+).*/\1/p')
+          wf=$(grep -oE 'GITLEAKS_VERSION: "[0-9][0-9.]*"' .github/workflows/ci.yml | tr -dc '0-9.')
+          if [ -z "$pc" ] || [ "$pc" != "$wf" ]; then
+            echo "gitleaks pins disagree: pre-commit=v$pc secret-scan=$wf" >&2
+            exit 1
+          fi
+          echo "gitleaks pins agree: $pc"
       # The Dockerfile's build stage and vendor-definitions.yml pin Go at the minor
       # level, and Dependabot's docker ecosystem can bump the Dockerfile AHEAD of
       # go.mod — the reverse drift direction from the check above, and invisible to

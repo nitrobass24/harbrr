@@ -11,8 +11,9 @@ Baseline it built on: golangci-lint **v2** on **Go 1.26** — good type-safety (
 
 To pick up any open item: `golangci-lint run --default=none --enable=<linter> ./...`, triage the
 hits, fix or allowlist them, then add the linter to `.golangci.yml` + `linting.md`. **Match the
-CI-pinned golangci-lint version** (currently `v2.12.2`, in `.github/workflows/lint.yml` / `make
-tools`) — an older local build silently misses newer checks (e.g. gosec G124).
+CI-pinned golangci-lint version** (pinned in the `golangci-lint` job of `.github/workflows/ci.yml`
+and `make tools`; the `guards` job enforces their agreement) — an older local build silently misses
+newer checks (e.g. gosec G124).
 
 ## Shipped (#45)
 
@@ -23,7 +24,7 @@ tools`) — an older local build silently misses newer checks (e.g. gosec G124).
   (god-interface guardrail; the "≤5" convention stays a review norm — torznabhttp.Indexer sits at 6).
 - **Footgun guards:** `wastedassign`, `reassign`, `predeclared` (fixed one real hit — a smoke
   variable named `comparable` shadowing the builtin).
-- **Dependency CVEs:** a **`govulncheck`** job in `security.yml`.
+- **Dependency CVEs:** a **`govulncheck`** job in `ci.yml`.
 
 ## Declined / deferred (open — with context)
 

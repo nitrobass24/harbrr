@@ -77,9 +77,9 @@ func insertResource(ctx context.Context, q dbinterface.Execer, r resource) (int6
 		(name, flag, secret_encrypted, key_id, minted_key_id, updated_at) VALUES (?, ?, ?, ?, ?, ?)`),
 		r.Name, boolToInt(r.Flag), r.SecretEncrypted, r.KeyID, r.MintedKeyID, r.UpdatedAt.Format(time.RFC3339))
 	if err != nil {
-		return 0, err //nolint:wrapcheck // test helper; Lifecycle wraps.
+		return 0, err
 	}
-	return res.LastInsertId() //nolint:wrapcheck // test helper.
+	return res.LastInsertId()
 }
 
 func getResource(ctx context.Context, q dbinterface.Execer, id int64) (resource, error) {
@@ -94,7 +94,7 @@ func getResource(ctx context.Context, q dbinterface.Execer, id int64) (resource,
 		if errors.Is(err, sql.ErrNoRows) {
 			return resource{}, fmt.Errorf("resource %d: %w", id, database.ErrNotFound)
 		}
-		return resource{}, err //nolint:wrapcheck // test helper.
+		return resource{}, err
 	}
 	r.Flag = flag != 0
 	r.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
@@ -106,11 +106,11 @@ func updateResource(ctx context.Context, q dbinterface.Execer, r resource) error
 		flag = ?, secret_encrypted = ?, key_id = ?, updated_at = ? WHERE id = ?`),
 		boolToInt(r.Flag), r.SecretEncrypted, r.KeyID, r.UpdatedAt.Format(time.RFC3339), r.ID)
 	if err != nil {
-		return err //nolint:wrapcheck // test helper.
+		return err
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
-		return err //nolint:wrapcheck // test helper.
+		return err
 	}
 	if n == 0 {
 		return fmt.Errorf("resource %d: %w", r.ID, database.ErrNotFound)
@@ -121,11 +121,11 @@ func updateResource(ctx context.Context, q dbinterface.Execer, r resource) error
 func deleteResource(ctx context.Context, q dbinterface.Execer, id int64) error {
 	res, err := q.ExecContext(ctx, q.Rebind(`DELETE FROM resources WHERE id = ?`), id)
 	if err != nil {
-		return err //nolint:wrapcheck // test helper.
+		return err
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
-		return err //nolint:wrapcheck // test helper.
+		return err
 	}
 	if n == 0 {
 		return fmt.Errorf("resource %d: %w", id, database.ErrNotFound)
@@ -136,7 +136,7 @@ func deleteResource(ctx context.Context, q dbinterface.Execer, id int64) error {
 func setResourceSecret(ctx context.Context, q dbinterface.Execer, id int64, encrypted []string, keyID string) error {
 	_, err := q.ExecContext(ctx, q.Rebind(`UPDATE resources SET secret_encrypted = ?, key_id = ? WHERE id = ?`),
 		encrypted[0], keyID, id)
-	return err //nolint:wrapcheck // test helper.
+	return err
 }
 
 func boolToInt(b bool) int {

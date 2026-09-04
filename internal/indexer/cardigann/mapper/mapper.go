@@ -268,7 +268,7 @@ func (b builder) sortedAdvertised() []Category {
 // BitConverter.ToUInt16(SHA1(id), 0) (little-endian, first two SHA1 bytes). The
 // result is offset by CustomCategoryOffset.
 //
-//nolint:gosec // SHA1 is required here for Jackett custom-category parity, not cryptography.
+
 func customCategoryID(trackerCategory string) int {
 	n, err := strconv.Atoi(trackerCategory)
 	if err != nil {

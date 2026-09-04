@@ -297,7 +297,7 @@ func (c *SearchCache) fetchStale(ctx context.Context, instanceID int64, paging b
 	}
 	releases, derr := decodeReleases(entry.ResultsJSON, key)
 	if derr != nil {
-		return nil, false, derr //nolint:wrapcheck // decodeReleases already wraps with the key only.
+		return nil, false, derr
 	}
 	c.recordCacheInfo(ctx, core.CacheInfo{Cached: true, ExpiresAt: entry.ExpiresAt})
 	return releases, true, nil
@@ -561,7 +561,7 @@ func (c *SearchCache) liveAndStore(ctx context.Context, op cacheOp) ([]*normaliz
 func (c *SearchCache) liveAndStoreRecording(ctx context.Context, op cacheOp) ([]*normalizer.Release, error) {
 	releases, info, err := c.liveAndStore(ctx, op)
 	if err != nil {
-		return nil, err //nolint:wrapcheck // already wrapped by the adapter; no key/payload to add.
+		return nil, err
 	}
 	c.recordCacheInfo(ctx, info)
 	return releases, nil
@@ -585,7 +585,7 @@ func (c *SearchCache) fetchLive(ctx context.Context, instanceID int64, live live
 	releases, err := live(ctx, q)
 	if err != nil {
 		c.tripBreaker(ctx, instanceID, err)
-		return nil, err //nolint:wrapcheck // adapter already wraps with the indexer id.
+		return nil, err
 	}
 	return releases, nil
 }

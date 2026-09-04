@@ -89,7 +89,7 @@ func (c *JSONClient) Do(ctx context.Context, method, path string, in, out any) (
 	// G704: the URL is c.Base (an operator-configured app address, validated at
 	// create/update time) plus a fixed path — never end-user input. Reaching that
 	// address is the whole point, so this is not attacker-controlled SSRF.
-	resp, err := c.Client.Do(req) //nolint:gosec // G704: operator-configured app URL, not user input.
+	resp, err := c.Client.Do(req)
 	if err != nil {
 		return 0, c.errorf("%s: %s %s: %w", c.Prefix, method, path, ScrubURLError(err))
 	}

@@ -46,7 +46,7 @@ func ServeGrab(w http.ResponseWriter, r *http.Request, idx core.Indexer, dlToken
 		return
 	}
 	if p.Magnet != "" {
-		http.Redirect(w, r, p.Magnet, http.StatusFound) //nolint:gosec // G710: ResolveGrab validated the magnet: URI, not a web open-redirect
+		http.Redirect(w, r, p.Magnet, http.StatusFound)
 		return
 	}
 	w.Header().Set("Content-Type", p.ContentType)
@@ -61,7 +61,7 @@ func ServeGrab(w http.ResponseWriter, r *http.Request, idx core.Indexer, dlToken
 	name := downloadAttachmentName(p.Name, idx.Info().ID)
 	w.Header().Set("Content-Disposition", contentDispositionAttachment(name+ext))
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(p.Body) //nolint:gosec // G705: torrent file served as application/x-bittorrent, fixed non-HTML content type
+	_, _ = w.Write(p.Body)
 }
 
 // contentDispositionAttachment renders an attachment Content-Disposition carrying

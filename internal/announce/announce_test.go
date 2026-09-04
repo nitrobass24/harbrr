@@ -66,7 +66,7 @@ func TestDefaultClientRedirectHostGuard(t *testing.T) {
 	}
 }
 
-const testAPIKey = "qui_secretkey" //nolint:gosec // synthetic test credential
+const testAPIKey = "qui_secretkey"
 
 func sampleRelease() Release {
 	return Release{

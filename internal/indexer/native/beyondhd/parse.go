@@ -29,7 +29,7 @@ const (
 	// invalidKeyMarker is the substring BeyondHD returns when the api_key is rejected; it
 	// maps to a login failure regardless of the status_code. It is a server message marker,
 	// not a credential value.
-	invalidKeyMarker = "Invalid API Key" //nolint:gosec // G101: response-message marker, not a credential
+	invalidKeyMarker = "Invalid API Key"
 )
 
 // promo download-volume factors, in descending discount order (Prowlarr

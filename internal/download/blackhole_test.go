@@ -60,7 +60,7 @@ func TestBlackholeAdd_TorrentBytes(t *testing.T) {
 	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Errorf("perm = %v, want 0600", info.Mode().Perm())
 	}
-	got, err := os.ReadFile(filepath.Join(dir, names[0])) //nolint:gosec // test-owned tempdir path.
+	got, err := os.ReadFile(filepath.Join(dir, names[0]))
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestBlackholeAdd_TorrentURLFetch(t *testing.T) {
 	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: srv.URL, Name: "fetched"}, AddOptions{}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-	got, err := os.ReadFile(filepath.Join(dir, "fetched.torrent")) //nolint:gosec // test-owned tempdir path.
+	got, err := os.ReadFile(filepath.Join(dir, "fetched.torrent"))
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestBlackholeAdd_NZBURLFetch(t *testing.T) {
 	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: srv.URL, Name: "fetched"}, AddOptions{}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-	got, err := os.ReadFile(filepath.Join(dir, "fetched.nzb")) //nolint:gosec // test-owned tempdir path.
+	got, err := os.ReadFile(filepath.Join(dir, "fetched.nzb"))
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestBlackholeAdd_MagnetSaved(t *testing.T) {
 	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: magnet, Name: "magnet-release"}, AddOptions{}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-	got, err := os.ReadFile(filepath.Join(dir, "magnet-release.magnet")) //nolint:gosec // test-owned tempdir path.
+	got, err := os.ReadFile(filepath.Join(dir, "magnet-release.magnet"))
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
@@ -230,7 +230,7 @@ func TestBlackholeAdd_ReAddOverwritesNoResidue(t *testing.T) {
 	if len(names) != 1 || names[0] != "dup.torrent" {
 		t.Fatalf("dir entries = %v, want exactly [dup.torrent]", names)
 	}
-	got, err := os.ReadFile(filepath.Join(dir, "dup.torrent")) //nolint:gosec // test-owned tempdir path.
+	got, err := os.ReadFile(filepath.Join(dir, "dup.torrent"))
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}

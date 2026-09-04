@@ -93,7 +93,7 @@ func (r *replay) RoundTrip(req *stdhttp.Request) (*stdhttp.Response, error) {
 func (r *replay) serve(req *stdhttp.Request, step CaseStep) (*stdhttp.Response, error) {
 	var body []byte
 	if step.Response != "" {
-		raw, err := os.ReadFile(filepath.Join(r.dir, step.Response)) //nolint:gosec // case-fixture path under testdata/.
+		raw, err := os.ReadFile(filepath.Join(r.dir, step.Response))
 		if err != nil {
 			return nil, fmt.Errorf("reading step response %q: %w", step.Response, err)
 		}

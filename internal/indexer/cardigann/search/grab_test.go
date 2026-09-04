@@ -19,7 +19,7 @@ func TestGrab_NoDownloadBlock_AppliesSearchHeader(t *testing.T) {
 	t.Parallel()
 	def := &loader.Definition{
 		Search: loader.Search{
-			Headers: map[string][]string{"X-Api-Key": {"secret-key-123"}}, //nolint:gosec // G101: synthetic test key
+			Headers: map[string][]string{"X-Api-Key": {"secret-key-123"}},
 		},
 	}
 	const link = "https://dl.test/api/v1/torrents/download/9"

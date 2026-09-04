@@ -33,7 +33,7 @@ correctness gate and must never regress.
 - **NEVER log, print, or commit secrets** — passkeys, cookies, API keys, download tokens. Definitions
   routinely put passkeys in URLs; redact secret query params and `Authorization`/`Cookie` headers in
   all logs and traces. (gitleaks + `scripts/check-no-secrets.sh` run in pre-commit and in CI via
-  `.github/workflows/security.yml`.)
+  the `secret-scan` job in `.github/workflows/ci.yml`.)
 - **NEVER add AI advertising/attribution/co-author lines** to commits or PRs.
 
 ## Repo map
@@ -117,7 +117,8 @@ or composition/lifecycle wiring, read `docs/architecture.md`, `docs/autobrr-app-
 - **Synthetic test-fixture secrets** (values that exist only to prove redaction) live exclusively in
   `*_test.go`, `testdata/**`, and the vendored Jackett snapshot. These paths are excluded from secret
   scanning in exactly two places that **must stay in sync**: `scripts/check-no-secrets.sh` and
-  `.gitleaks.toml`. Both run in pre-commit and in CI (`.github/workflows/security.yml`). This never
+  `.gitleaks.toml`. Both run in pre-commit and in CI (the `secret-scan` job in
+  `.github/workflows/ci.yml`). This never
   relaxes the "never commit real secrets" rule above.
 
 ## Commits / PRs

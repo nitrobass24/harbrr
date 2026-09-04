@@ -173,15 +173,15 @@ docker:
 vendor-defs:
 	./scripts/vendor-definitions.sh
 
-## tools: install dev tools (gofumpt, goimports, golangci-lint)
+## tools: install dev tools (golangci-lint bundles gofumpt+goimports for `make fmt`)
 .PHONY: tools
 tools:
-	go install mvdan.cc/gofumpt@latest
-	go install golang.org/x/tools/cmd/goimports@latest
 	# Pinned, not @latest: CI pins the same version in the golangci-lint-action
 	# (.github/workflows/ci.yml), and an unpinned install here silently drifts
 	# ahead of it — new linter releases add findings, so local would fail against
-	# a green CI. Bump both together.
+	# a green CI. Bump both together (the guards CI job enforces agreement).
+	# No standalone gofumpt/goimports: formatting always goes through
+	# `golangci-lint fmt`, so the formatter versions are pinned by this install.
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.0
 
 ## clean: remove build artifacts

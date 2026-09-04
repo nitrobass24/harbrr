@@ -23,7 +23,7 @@ import (
 )
 
 // keyLink is a synthetic passkey-bearing download link (test only).
-const keyLink = "https://demo.test/dl?passkey=SECRETPASSKEY777" //nolint:gosec // G101: synthetic test passkey
+const keyLink = "https://demo.test/dl?passkey=SECRETPASSKEY777"
 
 // fakeSearchIndexer is a core.Indexer for the link-resolution unit test.
 type fakeSearchIndexer struct {
