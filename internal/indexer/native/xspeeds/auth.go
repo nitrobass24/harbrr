@@ -295,8 +295,7 @@ func (d *driver) scrubErr(err error, requestCookies ...string) error {
 		return nil
 	}
 	current := d.sessionSnapshot().cookie
-	extra := make([]string, 0, 2)
-	extra = append(extra, d.Cfg["username"], d.Cfg["password"])
+	extra := credentialScrubExtras(d.Cfg["username"])
 	extra = append(extra, cookieScrubExtras(d.Cfg["cookie"], current)...)
 	extra = append(extra, cookieScrubExtras(requestCookies...)...)
 	return d.ScrubErr(err, extra...)
@@ -304,16 +303,26 @@ func (d *driver) scrubErr(err error, requestCookies ...string) error {
 
 func (d *driver) captureSecrets(requestCookie string) []string {
 	current := d.sessionSnapshot().cookie
-	extra := make([]string, 0, 2)
-	extra = append(extra, d.Cfg["username"], d.Cfg["password"])
+	extra := credentialScrubExtras(d.Cfg["username"])
 	return append(extra, cookieScrubExtras(d.Cfg["cookie"], current, requestCookie)...)
 }
 
-func cookieScrubExtras(cookies ...string) []string {
-	// ponytail: XSpeeds exposes no stable session-cookie name; scrub values of
-	// credential-like length until sanitized live headers establish one.
-	const minCookieSecretLength = 8
+// credentialScrubExtras is the length guard for values this driver adds to the scrub
+// set beyond the definition-derived ones. The password needs no entry: it is declared
+// Type "password", so loader.SecretValues already hands it to Base.Scrub on every
+// call. The username is NOT a declared secret (text-typed, no credential token in its
+// name), so scrubbing it is this driver's own choice — and an unguarded short one
+// would be the shredding hazard native.SessionSecrets exists to prevent, since
+// apphttp.ScrubValues is a literal ReplaceAll.
+func credentialScrubExtras(username string) []string {
+	return native.SessionSecrets(strings.TrimSpace(username))
+}
 
+// cookieScrubExtras expands a serialized Cookie header into the values worth scrubbing:
+// the header itself, plus each cookie value long enough to be a session token.
+// XSpeeds exposes no stable session-cookie name, so length is the only signal — the
+// same judgement, and now the same threshold, as native.SessionSecrets.
+func cookieScrubExtras(cookies ...string) []string {
 	var extra []string
 	for _, raw := range cookies {
 		raw = strings.TrimSpace(raw)
@@ -321,11 +330,11 @@ func cookieScrubExtras(cookies ...string) []string {
 			continue
 		}
 		extra = append(extra, raw)
+		values := make([]string, 0, 4)
 		for _, cookie := range parseCookieHeader(raw) {
-			if value := strings.TrimSpace(cookie.Value); len(value) >= minCookieSecretLength {
-				extra = append(extra, value)
-			}
+			values = append(values, strings.TrimSpace(cookie.Value))
 		}
+		extra = append(extra, native.SessionSecrets(values...)...)
 	}
 	return extra
 }

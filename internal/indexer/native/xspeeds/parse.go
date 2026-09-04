@@ -178,6 +178,11 @@ func parseInteger(raw string) int64 {
 	return value
 }
 
+// parseDate reads XSpeeds' "added" timestamp. It does NOT go through
+// native.PublishDate: the tracker emits a day-first "02-01-2006 15:04", which
+// dateparse rejects outright (it reads neither an absolute nor a relative form from
+// it), so the layout has to be named explicitly. An unparseable value yields "" —
+// the beyondhd/hdbits convention — rather than failing the row.
 func parseDate(row *goquery.Selection) string {
 	raw := strings.TrimSpace(row.Find("td:nth-of-type(2) > div:last-child").First().Text())
 	token := addedDate.FindString(raw)
