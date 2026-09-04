@@ -47,7 +47,7 @@ func TestForgetInstancesEvictsPerInstanceState(t *testing.T) {
 
 	// Prime stats + budget counters for the same instance.
 	stats.RecordQuery(instID, 5*time.Millisecond)
-	budget.ReserveQuery(ctx, instID, nil, *clk.Load())
+	budget.ReserveQuery(ctx, instID, resolveBudgetLimits(nil), *clk.Load())
 	if queries := stats.snapshot(instID).queries; queries != 1 {
 		t.Fatalf("prime stats queries = %d, want 1", queries)
 	}

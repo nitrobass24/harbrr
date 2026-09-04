@@ -228,11 +228,33 @@ func (b *Base) Do(ctx context.Context, req *stdhttp.Request, c Classify) (*Respo
 // DoDownload is Do for the grab path: same transport redaction and status
 // classification (op "download" in error text), but the body is read under the
 // torrent cap and a body past the cap is ErrDownloadTooLarge rather than a silent
-// truncation — a truncated .torrent is corrupt, not shorter. captureSecrets adds
-// request-scoped credentials held outside the static definition settings, such as a
-// rotated session cookie, to refusal-capture redaction.
+// truncation — a truncated .torrent is corrupt, not shorter.
+//
+// captureSecrets are extra credential VALUES this one call contributes to refusal-
+// capture redaction, on top of the definition-derived set snapshotted at construction
+// (Base.captureSecrets). It exists for the request-scoped credentials that snapshot
+// structurally cannot hold: a session token rotated at runtime, or a value held
+// outside Cfg entirely. Pass only values long enough to be a credential —
+// apphttp.ScrubValues replaces literal substrings with no minimum-length guard, so a
+// one- or two-character value would shred the capture body the mechanism exists to
+// preserve.
 func (b *Base) DoDownload(ctx context.Context, req *stdhttp.Request, c Classify, captureSecrets ...string) (*Response, error) {
 	return b.roundTrip(ctx, req, c, "download", captureSecrets...)
+}
+
+// NewRequest builds a request for this driver's transport. It is the ONLY way a native
+// driver may construct an *http.Request (forbidigo enforces it): a build failure is a
+// *url.Error whose Error() quotes the FULL, possibly passkey-bearing URL, so it surfaces
+// only the endpoint's scheme://host — the same shape roundTrip emits for a transport
+// failure, so a driver's error reads the same whether the request failed to build or
+// to send. The returned request already carries ctx.
+func (b *Base) NewRequest(ctx context.Context, method, rawurl string, body io.Reader) (*stdhttp.Request, error) {
+	req, err := stdhttp.NewRequestWithContext(ctx, method, rawurl, body)
+	if err != nil {
+		werr := fmt.Errorf("%s: build request to %s: %w", b.Family, apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
+		return nil, apphttp.MarkHostRedacted(werr) //nolint:wrapcheck // werr IS the shaped error; the marker is a transparent Error()/Unwrap() passthrough (same posture as roundTrip)
+	}
+	return req, nil
 }
 
 func (b *Base) roundTrip(ctx context.Context, req *stdhttp.Request, c Classify, op string, captureSecrets ...string) (*Response, error) {
@@ -296,11 +318,14 @@ func (b *Base) roundTrip(ctx context.Context, req *stdhttp.Request, c Classify, 
 // search.CaptureReadLimit and deliberately best-effort — a partial read still shows
 // what the tracker managed to send, and a read failure must never replace the status
 // error the caller is classifying.
+//
+// extraSecrets are the caller's request-scoped credential values (see DoDownload);
+// they are concatenated onto the construction-time snapshot for this capture only,
+// never merged back into it.
 func (b *Base) captureRefusal(req *stdhttp.Request, resp *stdhttp.Response, err error, extraSecrets []string) error {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, search.CaptureReadLimit))
-	secrets := append(append([]string(nil), b.captureSecrets...), extraSecrets...)
 	return &search.CaptureError{
-		Capture: search.NewCapture(req.Method, req.URL.String(), resp.StatusCode, resp.Header, body, secrets),
+		Capture: search.NewCapture(req.Method, req.URL.String(), resp.StatusCode, resp.Header, body, slices.Concat(b.captureSecrets, extraSecrets)),
 		Err:     err,
 	}
 }

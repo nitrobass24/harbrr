@@ -16,22 +16,29 @@ import (
 // TestDefsFingerprints_Deterministic proves the same inputs (the fixed embedded
 // vendor snapshot + an unchanged dropin dir) hash to the same per-definition map
 // across two computations.
-func TestDefsFingerprints_Deterministic(t *testing.T) {
+func TestDefsFingerprints_VendorWalkIsDeterministic(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	fp1, err := defsFingerprints(dir)
-	if err != nil {
-		t.Fatalf("defsFingerprints: %v", err)
+
+	// Deliberately calls hashDefs rather than defsFingerprints. The vendored half
+	// of defsFingerprints is memoized per process, so calling it twice compares one
+	// cached walk against a clone of itself and can only prove that copying a map
+	// preserves it. Dropping to the uncached layer keeps the original property under
+	// test: that walking the embedded snapshot twice yields identical hashes.
+	first := map[string]string{}
+	if err := hashDefs(first, definitions.Vendored, vendorDefsDir); err != nil {
+		t.Fatalf("hashDefs: %v", err)
 	}
-	fp2, err := defsFingerprints(dir)
-	if err != nil {
-		t.Fatalf("defsFingerprints: %v", err)
-	}
-	if len(fp1) == 0 {
+	if len(first) == 0 {
 		t.Fatal("no vendored definitions hashed")
 	}
-	if !maps.Equal(fp1, fp2) {
-		t.Error("fingerprints not deterministic across two computations")
+
+	second := map[string]string{}
+	if err := hashDefs(second, definitions.Vendored, vendorDefsDir); err != nil {
+		t.Fatalf("hashDefs (second walk): %v", err)
+	}
+
+	if !maps.Equal(first, second) {
+		t.Error("fingerprints not deterministic across two walks of the vendored snapshot")
 	}
 }
 

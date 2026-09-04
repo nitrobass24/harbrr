@@ -11,16 +11,6 @@ import (
 	"github.com/autobrr/harbrr/internal/domain"
 )
 
-// Secret AAD discriminators, byte-matching the sealing services (the single source of
-// truth is database.SecretSurfaces()). proxies/solvers use the exported domain consts.
-// The app-sync/announce connections' own app credential is no longer sealed on the row
-// at all (it lives on the App, decrypted via s.apps.DecryptKey — see resolveConnApp) —
-// discHarbrr is the only connection-row secret left.
-const (
-	discHarbrr = "harbrr" // *_connections harbrr_api_key_encrypted
-	discURL    = "url"    // notifications url_encrypted
-)
-
 // collect reads every backed-up table and decrypts each secret with the current keyring,
 // producing the cleartext-secrets payload the caller then seals under the passphrase.
 func (s *Service) collect(ctx context.Context, q dbinterface.Execer) (*Tables, error) {
@@ -225,7 +215,7 @@ func (s *Service) collectAppConnections(ctx context.Context, q dbinterface.Exece
 		if err != nil {
 			return nil, err
 		}
-		harbrrKey, err := s.decryptSecret(c.ID, discHarbrr, c.HarbrrAPIKeyEncrypted)
+		harbrrKey, err := s.decryptSecret(c.ID, domain.ConnectionSecretHarbrr, c.HarbrrAPIKeyEncrypted)
 		if err != nil {
 			return nil, err
 		}
@@ -251,7 +241,7 @@ func (s *Service) collectAnnounceConnections(ctx context.Context, q dbinterface.
 		if err != nil {
 			return nil, err
 		}
-		harbrrKey, err := s.decryptSecret(c.ID, discHarbrr, c.HarbrrAPIKeyEncrypted)
+		harbrrKey, err := s.decryptSecret(c.ID, domain.ConnectionSecretHarbrr, c.HarbrrAPIKeyEncrypted)
 		if err != nil {
 			return nil, err
 		}
@@ -271,7 +261,7 @@ func (s *Service) collectNotifications(ctx context.Context, q dbinterface.Execer
 	}
 	out := make([]NotificationRow, 0, len(list))
 	for _, n := range list {
-		url, err := s.decryptSecret(n.ID, discURL, n.URLEncrypted)
+		url, err := s.decryptSecret(n.ID, domain.NotificationSecretURL, n.URLEncrypted)
 		if err != nil {
 			return nil, err
 		}

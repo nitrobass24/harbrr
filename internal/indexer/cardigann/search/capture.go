@@ -77,8 +77,7 @@ func (e *CaptureError) Unwrap() error { return e.Err }
 // ok=false when the failure carries none (a native driver's search path, or a
 // failure raised before any request was built).
 func CaptureOf(err error) (Capture, bool) {
-	var ce *CaptureError
-	if errors.As(err, &ce) {
+	if ce, ok := errors.AsType[*CaptureError](err); ok {
 		return ce.Capture, true
 	}
 	return Capture{}, false
@@ -108,8 +107,7 @@ func withMiss(err error, miss SelectorMiss) error {
 // missOf reads the attribution off an error chain; the zero value means the
 // failure could not be pinned to a rows or field selector.
 func missOf(err error) SelectorMiss {
-	var sme *selectorMissError
-	if errors.As(err, &sme) {
+	if sme, ok := errors.AsType[*selectorMissError](err); ok {
 		return sme.miss
 	}
 	return SelectorMiss{}

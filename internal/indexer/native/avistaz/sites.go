@@ -15,44 +15,40 @@ const requestDelaySeconds = 6.0
 // shared New factory; the per-site behaviour (AvistaZ's seasonless episode term,
 // ExoticaZ's response-category parser) is keyed off the definition id inside the
 // driver. They are registered with the registry, not the Cardigann loader.
-func Families() []native.Family {
-	return []native.Family{
-		{Definition: siteDef("avistaz", "AvistaZ", "https://avistaz.to/", movieTVCaps(true)), Factory: New},
-		{Definition: siteDef("cinemaz", "CinemaZ", "https://cinemaz.to/", movieTVCaps(false)), Factory: New},
-		{Definition: siteDef("privatehd", "PrivateHD", "https://privatehd.to/", movieTVCaps(true)), Factory: New},
-		{Definition: siteDef("exoticaz", "ExoticaZ", "https://exoticaz.to/", exoticaCaps()), Factory: New},
-	}
-}
-
-// siteDef builds one family's caps-only definition. It is never schema-validated
-// (it has no login/search/download block); it exists so mapper.Build, the
-// credential store (settingFields/IsSecret), indexerInfo, and the addable-indexer
-// list all work for a native family with no special case.
-func siteDef(id, name, link string, caps loader.Caps) *loader.Definition {
-	delay := requestDelaySeconds
-	return &loader.Definition{
-		ID:           id,
-		Name:         name,
-		Description:  name + " (native AvistaZ-family driver)",
-		Language:     "en-US",
-		Type:         "private",
-		Encoding:     "UTF-8",
-		Links:        []string{link},
-		RequestDelay: &delay,
-		Settings:     credentialSettings(),
-		Caps:         caps,
-	}
-}
-
-// credentialSettings are the user-entered fields. username is stored as-is (not a
+//
+// The settings (identical for all four sites): username is stored as-is (not a
 // credential on its own); password and pid are password-typed, so the secret store
 // encrypts them at rest and the API redacts them. freeleech_only is a toggle.
-func credentialSettings() []loader.SettingsField {
+func Families() []native.Family {
+	return []native.Family{
+		{Definition: native.Site{
+			ID: "avistaz", Name: "AvistaZ", Link: "https://avistaz.to/",
+			Driver: "AvistaZ-family", DelaySeconds: requestDelaySeconds,
+			Settings: avistazSettings(), Caps: movieTVCaps(true),
+		}.Definition(), Factory: New},
+		{Definition: native.Site{
+			ID: "cinemaz", Name: "CinemaZ", Link: "https://cinemaz.to/",
+			Driver: "AvistaZ-family", DelaySeconds: requestDelaySeconds,
+			Settings: avistazSettings(), Caps: movieTVCaps(false),
+		}.Definition(), Factory: New},
+		{Definition: native.Site{
+			ID: "privatehd", Name: "PrivateHD", Link: "https://privatehd.to/",
+			Driver: "AvistaZ-family", DelaySeconds: requestDelaySeconds,
+			Settings: avistazSettings(), Caps: movieTVCaps(true),
+		}.Definition(), Factory: New},
+		{Definition: native.Site{
+			ID: "exoticaz", Name: "ExoticaZ", Link: "https://exoticaz.to/",
+			Driver: "AvistaZ-family", DelaySeconds: requestDelaySeconds,
+			Settings: avistazSettings(), Caps: exoticaCaps(),
+		}.Definition(), Factory: New},
+	}
+}
+
+// avistazSettings composes the network-wide credential fields (see the Families
+// doc comment), a fresh slice per site.
+func avistazSettings() []loader.SettingsField {
 	return []loader.SettingsField{
-		{Name: "username", Label: "Username", Type: "text"},
-		{Name: "password", Label: "Password", Type: "password"},
-		{Name: "pid", Label: "PID", Type: "password"},
-		{Name: "freeleech_only", Label: "Only freeleech", Type: "checkbox"},
+		native.FieldUsername, native.FieldPassword, native.FieldPID, native.FieldFreeleechOnly,
 	}
 }
 
@@ -74,10 +70,12 @@ func movieTVCaps(withTvdbTmdb bool) loader.Caps {
 	}
 	allowIMDB := true
 	return loader.Caps{
-		CategoryMappings: []loader.CategoryMapping{
-			cat("1", "Movies"), cat("1", "Movies/UHD"), cat("1", "Movies/HD"), cat("1", "Movies/SD"),
-			cat("2", "TV"), cat("2", "TV/UHD"), cat("2", "TV/HD"), cat("2", "TV/SD"),
-		},
+		CategoryMappings: native.Cats(
+			native.Cat{ID: "1", Newznab: "Movies"}, native.Cat{ID: "1", Newznab: "Movies/UHD"},
+			native.Cat{ID: "1", Newznab: "Movies/HD"}, native.Cat{ID: "1", Newznab: "Movies/SD"},
+			native.Cat{ID: "2", Newznab: "TV"}, native.Cat{ID: "2", Newznab: "TV/UHD"},
+			native.Cat{ID: "2", Newznab: "TV/HD"}, native.Cat{ID: "2", Newznab: "TV/SD"},
+		),
 		Modes:             loader.Modes{Search: []string{"q"}, MovieSearch: movie, TVSearch: tv},
 		AllowTVSearchIMDB: &allowIMDB,
 	}
@@ -88,24 +86,16 @@ func movieTVCaps(withTvdbTmdb bool) loader.Caps {
 // TV/movie id params), mirroring Prowlarr's ExoticaZ.
 func exoticaCaps() loader.Caps {
 	return loader.Caps{
-		CategoryMappings: []loader.CategoryMapping{
-			catDesc("1", "Video Clip", "XXX/x264"),
-			catDesc("2", "Video Pack", "XXX/Pack"),
-			catDesc("3", "Siterip Pack", "XXX/Pack"),
-			catDesc("4", "Pornstar Pack", "XXX/Pack"),
-			catDesc("5", "DVD", "XXX/DVD"),
-			catDesc("6", "BluRay", "XXX/x264"),
-			catDesc("7", "Photo Pack", "XXX/ImageSet"),
-			catDesc("8", "Books & Magazines", "XXX/ImageSet"),
-		},
+		CategoryMappings: native.Cats(
+			native.Cat{ID: "1", Newznab: "XXX/x264", Desc: "Video Clip"},
+			native.Cat{ID: "2", Newznab: "XXX/Pack", Desc: "Video Pack"},
+			native.Cat{ID: "3", Newznab: "XXX/Pack", Desc: "Siterip Pack"},
+			native.Cat{ID: "4", Newznab: "XXX/Pack", Desc: "Pornstar Pack"},
+			native.Cat{ID: "5", Newznab: "XXX/DVD", Desc: "DVD"},
+			native.Cat{ID: "6", Newznab: "XXX/x264", Desc: "BluRay"},
+			native.Cat{ID: "7", Newznab: "XXX/ImageSet", Desc: "Photo Pack"},
+			native.Cat{ID: "8", Newznab: "XXX/ImageSet", Desc: "Books & Magazines"},
+		),
 		Modes: loader.Modes{Search: []string{"q"}},
 	}
-}
-
-func cat(id, name string) loader.CategoryMapping {
-	return loader.CategoryMapping{ID: loader.Scalar{Value: id, Set: true}, Cat: name}
-}
-
-func catDesc(id, desc, name string) loader.CategoryMapping {
-	return loader.CategoryMapping{ID: loader.Scalar{Value: id, Set: true}, Cat: name, Desc: desc}
 }

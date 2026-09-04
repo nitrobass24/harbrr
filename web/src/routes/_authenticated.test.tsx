@@ -1,13 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen } from "@testing-library/react"
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import { ThemeProvider } from "@/components/themes/theme-provider"
+import { stubApi } from "@/test/stubApi"
 import { routeTree } from "@/routeTree.gen"
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })
-}
 
 const ME = { username: "admin", authMethod: "password", csrfToken: "tok" }
 
@@ -24,16 +21,18 @@ function renderAt(path: string) {
 }
 
 describe("_authenticated guard", () => {
-  afterEach(() => vi.unstubAllGlobals())
-
   it("shows a retry state (not a login redirect) when the me-probe fails with a non-401 error", async () => {
     // me is a transient 500 (server restart / network blip), not a 401. Everything
     // else answers empty so the shell would render if we got that far.
     let meOk = false
-    vi.stubGlobal("fetch", vi.fn((request: Request) => {
-      if (request.url.endsWith("/auth/me")) return Promise.resolve(meOk ? json(ME) : json({ code: "internal", error: "boom" }, 500))
-      return Promise.resolve(json([]))
-    }))
+    stubApi({
+      "GET /api/auth/me": () =>
+        meOk ? Response.json(ME) : Response.json({ code: "internal", error: "boom" }, { status: 500 }),
+      "GET /api/indexers": [],
+      "GET /api/indexers/stats": [],
+      "GET /api/cache/stats": [],
+      "GET /api/app-connections": [],
+    })
 
     renderAt("/")
 

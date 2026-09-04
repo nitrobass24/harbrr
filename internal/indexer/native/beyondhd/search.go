@@ -10,6 +10,7 @@ import (
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // searchAction is the only action the driver issues; BeyondHD's api/torrents body always
@@ -77,7 +78,7 @@ func (d *driver) buildRequest(q search.Query) ([]byte, error) {
 // TV search keeps its SxxExx and does not broaden to the whole series); a plain keyword is a
 // verbatim search term. imdb_id and tmdb_id are mutually exclusive.
 func setSearchCriteria(req *bhdRequest, q search.Query) {
-	if imdb := imdbID(q.IMDBID); imdb != "" {
+	if imdb := native.CanonicalIMDBID(q.IMDBID); imdb != "" {
 		req.ImdbID = imdb
 		req.Search = tvSearchTerm(q)
 		return
@@ -125,22 +126,6 @@ func (d *driver) categoryParam(q search.Query) []int {
 		return nil
 	}
 	return cats
-}
-
-// imdbID renders an imdb id as the FULL tt-prefixed form BeyondHD's imdb_id expects
-// (Prowlarr submits FullImdbId, "tt" + the numeric zero-padded to 7 digits, e.g.
-// "tt0133093"): both a bare numeric id and a tt-prefixed id normalise to the same padded
-// form. A blank or non-numeric id yields "" (no imdb search).
-func imdbID(raw string) string {
-	s := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(raw)), "tt")
-	if s == "" {
-		return ""
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil || n <= 0 {
-		return ""
-	}
-	return fmt.Sprintf("tt%07d", n)
 }
 
 // tmdbParam renders a tmdb id as the "movie/<id>" string BeyondHD's tmdb_id expects

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -140,7 +139,7 @@ func (d *driver) toRelease(m *ptpMovie, t *ptpTorrent) *normalizer.Release {
 		Leechers:             leechers,
 		Peers:                seeders + leechers,
 		PublishDate:          publishDate(t.UploadTime),
-		IMDBID:               formatIMDB(m.ImdbID.Str()),
+		IMDBID:               native.CanonicalIMDBID(m.ImdbID.Str()),
 		Year:                 m.Year.Int64(),
 		Genre:                strings.Join(m.Tags, ", "),
 		Poster:               posterURL(m.Cover),
@@ -240,19 +239,6 @@ func publishDate(uploadTime string) string {
 		return ""
 	}
 	return t.UTC().Format(time.RFC3339)
-}
-
-// formatIMDB renders PTP's digits-only ImdbId ("0081229") as the canonical "tt"+7-digit
-// feed form, matching the normalizer. A blank or non-numeric id yields "" (omitted).
-func formatIMDB(imdbID string) string {
-	if imdbID == "" {
-		return ""
-	}
-	n, err := strconv.ParseInt(imdbID, 10, 64)
-	if err != nil || n == 0 {
-		return ""
-	}
-	return fmt.Sprintf("tt%07d", n)
 }
 
 // posterURL returns the movie Cover only when it is an absolute http(s) URL, mirroring

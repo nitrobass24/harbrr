@@ -190,11 +190,12 @@ func joinCategories(cats []string) string {
 	return strings.Join(out, ",")
 }
 
-// imdbDigits renders an imdb id as the bare digits Newznab expects: a leading "tt" is
-// stripped (Prowlarr's NewznabController TrimStart('t')); a non-digit/empty value yields "".
+// imdbDigits renders an imdb id as the digits Newznab expects, exactly as supplied
+// (leading zeros kept): a leading "tt" is stripped (Prowlarr's NewznabController
+// TrimStart('t')); a non-digit/empty value yields "". A wire-param formatter, not an
+// id canonicaliser — native.CanonicalIMDBID is the feed-side form.
 func imdbDigits(raw string) string {
-	s := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(raw)), "tt")
-	return digits(s)
+	return digits(strings.TrimPrefix(strings.ToLower(strings.TrimSpace(raw)), "tt"))
 }
 
 // digits returns s when it is a non-empty run of decimal digits, else "". It guards the

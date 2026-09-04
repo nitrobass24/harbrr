@@ -199,6 +199,19 @@ func nameLooksSecret(name string) bool {
 	return false
 }
 
+// CheckboxOn reports whether a stored checkbox setting value is checked. Truthy is
+// "true"/"1"/"on"/"yes" (case-insensitive, trimmed); everything else — including
+// "false", "0", and "" — is unchecked. It is the ONE declaration of the truthy set,
+// shared by the cardigann engine's checkbox canonicalisation and the native drivers.
+func CheckboxOn(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "true", "1", "on", "yes":
+		return true
+	default:
+		return false
+	}
+}
+
 // SecretValues returns the non-empty, trimmed config VALUES of every setting the
 // authoritative IsSecret classifier marks a credential, so a server-echoed secret
 // can be value-scrubbed out of a diagnostic string (apphttp.ScrubValues). loader

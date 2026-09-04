@@ -744,7 +744,7 @@ func TestCorpusFieldCensus(t *testing.T) {
 // whose base begins with "_" are intermediate Result-context variables and
 // return "".
 func standardFieldBase(key string) string {
-	base := strings.SplitN(key, "|", 2)[0]
+	base, _, _ := strings.Cut(key, "|")
 	if strings.HasPrefix(base, "_") {
 		return ""
 	}

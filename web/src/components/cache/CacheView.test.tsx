@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen } from "@testing-library/react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 
+import { stubApi } from "@/test/stubApi"
 import { CacheView } from "./CacheView"
 import { breakerLabel, coverageNote, unixAgo } from "./cache-format"
 import { safeInt } from "./safe-int"
@@ -91,10 +92,6 @@ describe("coverageNote", () => {
   })
 })
 
-function json(body: unknown): Response {
-  return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } })
-}
-
 const CONFIG = {
   enabled: true,
   rssTtl: "5m0s",
@@ -107,13 +104,7 @@ const CONFIG = {
 }
 
 function renderCacheView(stats: unknown) {
-  vi.stubGlobal("fetch", vi.fn().mockImplementation((request: Request) => {
-    if (request.url.endsWith("/api/cache/config")) return Promise.resolve(json(CONFIG))
-    if (request.url.endsWith("/api/cache/stats")) return Promise.resolve(json(stats))
-    // Any other URL is a bug in the component, not a fixture gap — fail loudly
-    // rather than feeding stats to an endpoint this suite never meant to serve.
-    return Promise.reject(new Error(`unexpected fetch in CacheView test: ${request.url}`))
-  }))
+  stubApi({ "GET /api/cache/config": CONFIG, "GET /api/cache/stats": stats })
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <CacheView />
@@ -122,8 +113,6 @@ function renderCacheView(stats: unknown) {
 }
 
 describe("CacheView", () => {
-  afterEach(() => vi.unstubAllGlobals())
-
   it("renders entry ages, a breaker countdown, and knob help", async () => {
     const now = Math.floor(Date.now() / 1000)
     renderCacheView({

@@ -18,6 +18,8 @@ var isoLayouts = []string{
 	time.RFC3339,
 	time.RFC3339Nano,
 	"2006-01-02T15:04:05",
+	// No-colon offset ("+0000"): trackers emit it and .NET DateTime.Parse accepts it.
+	"2006-01-02T15:04:05-0700",
 	"2006-01-02 15:04:05",
 	"2006-01-02 15:04",
 	"2006-01-02",

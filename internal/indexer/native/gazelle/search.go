@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
@@ -127,31 +126,10 @@ func (d *driver) buildBrowseURL(q search.Query, requestedPage ...int) string {
 	return fmt.Sprintf("%sajax.php?%s", d.BaseURL, encoded)
 }
 
-func truthy(value string) bool {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "true", "1", "on", "yes":
-		return true
-	default:
-		return false
-	}
-}
-
 // sanitizeTerm trims the free-text term and replaces dots with spaces, matching
 // Prowlarr's GazelleRequestGenerator term handling (Trim + Replace(".", " ")).
 func sanitizeTerm(keywords string) string {
 	return strings.ReplaceAll(strings.TrimSpace(keywords), ".", " ")
-}
-
-// fullIMDBID renders an imdb id as Jackett's GetFullImdbId ("tt" + the numeric id, a
-// minimum of seven digits): a leading "tt" is stripped, the rest parsed and
-// zero-padded. A non-numeric id yields "" (the taglist param is then omitted).
-func fullIMDBID(raw string) string {
-	s := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(raw)), "tt")
-	n, err := strconv.Atoi(s)
-	if err != nil {
-		return ""
-	}
-	return fmt.Sprintf("tt%07d", n)
 }
 
 // filterCats renders the per-category filter_cat[<id>]=1 params Prowlarr emits, one per

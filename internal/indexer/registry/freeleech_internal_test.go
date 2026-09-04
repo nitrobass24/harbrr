@@ -68,13 +68,13 @@ func (p *pagingDriver) SupportsOffsetPaging() bool { return true }
 // error, which these fakes never return.
 func newFreeleechAdapter(inner native.Driver, freeleechOnly bool) *indexerAdapter {
 	return &indexerAdapter{
-		info:          core.IndexerInfo{ID: "fake"},
-		inner:         inner,
-		freeleechOnly: freeleechOnly,
-		stats:         newIndexerStats(nil, time.Now, zerolog.Nop()),
-		budget:        newRequestBudget(nil, time.Now, zerolog.Nop()),
-		clock:         time.Now,
-		log:           zerolog.Nop(),
+		info:     core.IndexerInfo{ID: "fake"},
+		inner:    inner,
+		settings: instanceSettings{Freeleech: freeleechOnly},
+		stats:    newIndexerStats(nil, time.Now, zerolog.Nop()),
+		budget:   newRequestBudget(nil, time.Now, zerolog.Nop()),
+		clock:    time.Now,
+		log:      zerolog.Nop(),
 	}
 }
 

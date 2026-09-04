@@ -10,7 +10,7 @@ Cardigann can't express — and how far each is validated.
   account on that tracker). See **[Test status](test-status.md)** for the evidence behind this
   column and the auth/fetch patterns proven live.
 
-**592 trackers** total: 550 Cardigann corpus (all built) · 25 native drivers built · 17 native
+**595 trackers** total: 553 Cardigann corpus (all built) · 25 native drivers built · 17 native
 drivers planned. To configure one, see **[Adding an indexer](guides/add-indexer.md)**.
 
 ## Native drivers
@@ -73,7 +73,7 @@ Native drivers we have issues for but haven't built. 👍 or comment on the issu
 
 Served through the shared engine from the vendored Jackett snapshot — all built. Live-tested where an operator instance covers them.
 
-### Private (403)
+### Private (405)
 
 | Tracker | Built | Live-tested |
 |---|:--:|:--:|
@@ -81,6 +81,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | 13City | ✅ | ⬜ |
 | 1ptbar | ✅ | ⬜ |
 | 3D Torrents | ✅ | ⬜ |
+| 3D Vault (API) | ✅ | ⬜ |
 | 4thD | ✅ | ⬜ |
 | 52PT | ✅ | ⬜ |
 | 720pier | ✅ | ⬜ |
@@ -105,7 +106,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | AsianDVDClub | ✅ | ⬜ |
 | Audiences | ✅ | ⬜ |
 | AudioNews | ✅ | ⬜ |
-| AURA4K (API) | ✅ | ✅ |
 | Aussierul.es | ✅ | ⬜ |
 | Azusa (梓喵) | ✅ | ⬜ |
 | Back-ups | ✅ | ⬜ |
@@ -172,6 +172,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | DimeADozen | ✅ | ⬜ |
 | DiscFan | ✅ | ⬜ |
 | DocsPedia | ✅ | ⬜ |
+| DreadVault (API) | ✅ | ⬜ |
 | Drugari | ✅ | ⬜ |
 | DS-Reloaded | ✅ | ⬜ |
 | dubhe (天枢) | ✅ | ⬜ |
@@ -192,6 +193,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | FinElite | ✅ | ⬜ |
 | Flood | ✅ | ⬜ |
 | Free Farm (自由农场) | ✅ | ⬜ |
+| FunFile | ✅ | ⬜ |
 | funZone (API) | ✅ | ⬜ |
 | FutureTorrent | ✅ | ⬜ |
 | Fuzer | ✅ | ⬜ |
@@ -212,7 +214,8 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | HD-Olimpo (API) | ✅ | ⬜ |
 | HD-Only (API) | ✅ | ⬜ |
 | HD-Space | ✅ | ✅ |
-| HD-Torrents | ✅ | ⬜ |
+| HD-SpaceCookie | ✅ | ⬜ |
+| HD-Torrents | ✅ | ✅ |
 | HD-UNiT3D (API) | ✅ | ⬜ |
 | HDArea | ✅ | ⬜ |
 | HDBao | ✅ | ⬜ |
@@ -339,7 +342,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | PT GTK | ✅ | ⬜ |
 | PTCafe (咖啡) | ✅ | ⬜ |
 | PTCC (我的PT) | ✅ | ⬜ |
-| PTCDY (传道院) | ✅ | ⬜ |
 | PTerClub (PT之友俱乐部) | ✅ | ⬜ |
 | PTFans | ✅ | ⬜ |
 | PTFiles | ✅ | ⬜ |
@@ -394,7 +396,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | SportsCora (API) | ✅ | ⬜ |
 | SportsCult | ✅ | ⬜ |
 | SpringSunday | ✅ | ⬜ |
-| SunnyPT | ✅ | ⬜ |
 | Superbits | ✅ | ⬜ |
 | Swarmazon (API) | ✅ | ⬜ |
 | TangPT (躺平) | ✅ | ⬜ |
@@ -404,7 +405,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | TeamFlix | ✅ | ⬜ |
 | TeamHD | ✅ | ⬜ |
 | TeamOS | ✅ | ⬜ |
-| TEKNO3D | ✅ | ⬜ |
 | The Brothers | ✅ | ⬜ |
 | The Crazy Ones | ✅ | ⬜ |
 | The Empire | ✅ | ⬜ |
@@ -457,6 +457,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | upload.cx (API) | ✅ | ✅ |
 | Upscale Vault (API) | ✅ | ⬜ |
 | UTOPIA (API) | ✅ | ⬜ |
+| V3X | ✅ | ⬜ |
 | Vault network | ✅ | ⬜ |
 | VC-Lib | ✅ | ⬜ |
 | VietMediaF | ✅ | ⬜ |
@@ -464,6 +465,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | WinterSakura | ✅ | ⬜ |
 | World-In-HD | ✅ | ⬜ |
 | World-of-Tomorrow | ✅ | ⬜ |
+| XDY (修道院) | ✅ | ⬜ |
 | Xingtan (杏坛) | ✅ | ⬜ |
 | Xingwan (星湾) | ✅ | ⬜ |
 | Xingyung (星陨阁) | ✅ | ⬜ |
@@ -481,7 +483,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | ZmPT (织梦) | ✅ | ⬜ |
 | ZRPT (自然) | ✅ | ⬜ |
 
-### Semi-private (60)
+### Semi-private (61)
 
 | Tracker | Built | Live-tested |
 |---|:--:|:--:|
@@ -544,6 +546,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | TribalMixes | ✅ | ⬜ |
 | Union Fansub | ✅ | ⬜ |
 | UzTracker | ✅ | ⬜ |
+| Yggrasil | ✅ | ⬜ |
 | Ztracker | ✅ | ⬜ |
 
 ### Public (87)

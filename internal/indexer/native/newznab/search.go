@@ -2,10 +2,8 @@ package newznab
 
 import (
 	"context"
-	"fmt"
 	stdhttp "net/http"
 
-	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -48,14 +46,14 @@ func (d *driver) activeCategoryMap(ctx context.Context) *mapper.CategoryMap {
 	return d.Caps.CategoryMap
 }
 
-// get issues the Newznab API GET. The URL embeds the apikey, so a transport error surfaces
-// only its scheme://host (apphttp.SchemeHost drops the apikey-bearing query) with the cause
-// routed through apphttp.RedactURLError; the apikey can never leak through the wrapped
-// *url.Error. The caller owns the returned body and interprets the status.
+// get issues the Newznab API GET. The URL embeds the apikey, so a build or transport error
+// surfaces only its scheme://host through native.Base (the apikey-bearing query is
+// dropped); the apikey can never leak through the wrapped *url.Error. The caller owns the
+// returned body and interprets the status.
 func (d *driver) get(ctx context.Context, rawurl string) (*native.Response, error) {
-	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
+	req, err := d.NewRequest(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
-		return nil, fmt.Errorf("newznab: build request to %s: %w", apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
+		return nil, err
 	}
 	req.Header.Set("Accept", "application/rss+xml, application/xml, text/xml")
 	resp, err := d.Do(ctx, req, native.ClassifyRateLimit403)

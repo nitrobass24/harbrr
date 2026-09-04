@@ -41,9 +41,9 @@ func (d *driver) authenticate(ctx context.Context) (string, error) {
 	form.Set("pid", strings.TrimSpace(d.Cfg["pid"]))
 
 	authURL := d.BaseURL + authPath
-	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodPost, authURL, strings.NewReader(form.Encode()))
+	req, err := d.NewRequest(ctx, stdhttp.MethodPost, authURL, strings.NewReader(form.Encode()))
 	if err != nil {
-		return "", fmt.Errorf("avistaz: build auth request: %w", err)
+		return "", err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
@@ -146,9 +146,9 @@ func isExpiredToken(resp *native.Response) bool {
 // Accept header when non-empty: the search expects JSON, but a torrent download must
 // not force JSON (a strict server could 406 or return JSON instead of the .torrent).
 func (d *driver) sendBearer(ctx context.Context, rawurl, token, accept string, download bool) (*native.Response, error) {
-	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
+	req, err := d.NewRequest(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
-		return nil, fmt.Errorf("avistaz: build request: %w", err)
+		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	if accept != "" {

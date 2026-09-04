@@ -80,8 +80,7 @@ func TestGrabStatusErrors(t *testing.T) {
 	const link = "https://filelist.test/download.php?id=1&passkey=" + credPass
 
 	_, err := mk(stdhttp.StatusTooManyRequests).Grab(context.Background(), link)
-	var rl *search.RateLimitedError
-	if !errors.As(err, &rl) {
+	if _, ok := errors.AsType[*search.RateLimitedError](err); !ok {
 		t.Errorf("429: err = %v, want *search.RateLimitedError", err)
 	}
 

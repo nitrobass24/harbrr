@@ -13,7 +13,6 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
-	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // distinctive synthetic mam_id so a redaction check can prove it never escapes into a
@@ -63,14 +62,12 @@ func resp(status int, body string) *stdhttp.Response {
 
 func newDriver(doer *scriptDoer) *driver {
 	return &driver{
-		Base: native.Base{
-			Family:  "myanonamouse",
-			Def:     &loader.Definition{ID: "myanonamouse"},
-			Cfg:     map[string]string{"mam_id": mamSecret},
-			Doer:    doer,
-			BaseURL: "https://mam.test/",
-			Clock:   fixedClock,
-		},
+		Family:       "myanonamouse",
+		Def:          &loader.Definition{ID: "myanonamouse"},
+		Cfg:          map[string]string{"mam_id": mamSecret},
+		Doer:         doer,
+		BaseURL:      "https://mam.test/",
+		Clock:        fixedClock,
 		currentMamID: mamSecret,
 	}
 }

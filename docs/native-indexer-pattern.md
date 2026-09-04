@@ -75,6 +75,16 @@ redaction, capped body reads — `DoDownload` errors with
 classification. A new driver writes only its request generator (which injects
 its own auth — header, cookie, or body-embedded) and its response parser.
 
+A driver builds **every** request with `Base.NewRequest(ctx, method, url, body)` —
+never `net/http.NewRequest[WithContext]` directly. `NewRequest` owns build-error
+redaction: a build failure is a `*url.Error` that quotes the full, possibly
+passkey-bearing URL, so it is rebuilt host-only in the same family-prefixed,
+`scheme://host` shape `Do`/`DoDownload` emit for a transport failure. A driver
+returns that error unchanged. `forbidigo` enforces this in `make lint` (the rule
+is scoped to `internal/indexer/native`, with `base.go` the only allowed site).
+Headers, the download-vs-API routing, and the classify dialect stay at the call
+site — they are the request generator, which is the driver's job.
+
 A server-controlled response can echo a submitted credential back into a status/error
 message (e.g. "invalid apikey ABCD1234"), which `Do`/`DoDownload`'s URL-only redaction
 cannot catch. Use `Base.Scrub(s, extra...)` / `Base.ScrubErr(err, extra...)` at that echo

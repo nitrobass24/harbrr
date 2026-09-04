@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { DownloadClient } from "@/lib/api"
+import { stubApi } from "@/test/stubApi"
 import { groupRows, soloGroups } from "./search-group"
 import type { SearchRow } from "./search-sort"
 import { sortRows } from "./search-sort"
@@ -120,10 +121,7 @@ describe("SearchResultsTable", () => {
 })
 
 describe("SearchResultsTable — send to download client (autobrr/harbrr#7)", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals()
-    vi.restoreAllMocks()
-  })
+  afterEach(() => vi.restoreAllMocks())
 
   it("renders no control when no download client is configured", () => {
     renderTable()
@@ -136,17 +134,16 @@ describe("SearchResultsTable — send to download client (autobrr/harbrr#7)", ()
   })
 
   it("posts the release's indexer, verbatim link, and title to the picked client", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
-    vi.stubGlobal("fetch", fetchMock)
+    const api = stubApi({ "POST /api/download-clients/{id}/grab": () => new Response(null, { status: 204 }) })
     renderTable(ROWS, [CLIENT])
 
     openSendMenu("Big Buck Bunny 1080p")
     fireEvent.click(await screen.findByRole("menuitem", { name: "seedbox" }))
 
     const req = await waitFor(() => {
-      const call = fetchMock.mock.calls.at(0)
+      const call = api.calls("POST /api/download-clients/{id}/grab").at(0)
       if (!call) throw new Error("no fetch yet")
-      return call[0] as Request
+      return call
     })
     expect(req.url).toContain("/api/download-clients/5/grab")
     expect(await req.json()).toEqual({
@@ -158,11 +155,10 @@ describe("SearchResultsTable — send to download client (autobrr/harbrr#7)", ()
 
   it("shows the server's error on a rejected send", async () => {
     const toasted: string[] = []
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ error: "client does not support payload protocol", code: "invalid" }), {
-        status: 400, headers: { "Content-Type": "application/json" },
-      })
-    ))
+    stubApi({
+      "POST /api/download-clients/{id}/grab": () =>
+        Response.json({ error: "client does not support payload protocol", code: "invalid" }, { status: 400 }),
+    })
     const { toast } = await import("sonner")
     vi.spyOn(toast, "error").mockImplementation((msg) => {
       if (typeof msg === "string") toasted.push(msg)

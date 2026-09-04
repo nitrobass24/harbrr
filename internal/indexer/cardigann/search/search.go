@@ -18,6 +18,8 @@ import (
 
 	"golang.org/x/text/encoding"
 
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/regexadapter"
+
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/httpx"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/selector"
@@ -169,7 +171,7 @@ func ParseResults(def *loader.Definition, body []byte, respType string, query Qu
 			err = backfillDateHeader(def, sel, rows[i], rel, query, deps, respType)
 		}
 		if err != nil {
-			if skipBadRow {
+			if skipBadRow && isSkippableRowError(err) {
 				continue
 			}
 			return nil, err
@@ -179,6 +181,26 @@ func ParseResults(def *loader.Definition, body []byte, respType string, query Qu
 		}
 	}
 	return releases, nil
+}
+
+// isSkippableRowError reports whether err is the kind of per-row failure Jackett's
+// HTML try/catch swallows -- a malformed row, a missing required field, an
+// unparseable date -- where dropping that row and carrying on is the correct,
+// parity-preserving behaviour.
+//
+// A ReDoS-guard timeout is NOT that. regexadapter.ErrMatchTimeout means the match
+// was abandoned on a clock, so we do not know what the row contained: the row may
+// have been perfectly well-formed. Swallowing it launders an infrastructure
+// failure into "this row did not parse" and returns a short result set with no
+// indication anything went wrong -- a search quietly missing releases, and, in the
+// parity suite, a mismatch whose cause is indistinguishable from a selector that
+// matched nothing.
+//
+// There is no parity cost to failing loudly here. Jackett has no equivalent guard;
+// matchTimeout is a harbrr-specific safety valve, so its firing has no Jackett
+// behaviour to mirror. Reporting it is strictly more informative than hiding it.
+func isSkippableRowError(err error) bool {
+	return !errors.Is(err, regexadapter.ErrMatchTimeout)
 }
 
 // parseDocument parses body with the response-type-appropriate backend: JSON,

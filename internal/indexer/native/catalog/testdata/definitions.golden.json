@@ -1,0 +1,8381 @@
+[
+  {
+    "id": "abnzb",
+    "name": "abNZB",
+    "description": "abNZB (native Newznab driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://abnzb.com"
+    ],
+    "requestDelay": 2,
+    "settings": [
+      {
+        "Name": "apikey",
+        "Label": "API Key",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "apiPath",
+        "Label": "API Path",
+        "Type": "text",
+        "Required": false,
+        "Default": {
+          "Value": "/api",
+          "Set": true
+        },
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1000",
+            "Set": true
+          },
+          "Cat": "Console",
+          "Desc": "Console",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2000",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movies",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3000",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Audio",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4000",
+            "Set": true
+          },
+          "Cat": "PC",
+          "Desc": "PC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5000",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TV",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6000",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "XXX",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7000",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Books",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "8000",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Other",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid",
+          "tvdbid",
+          "tvmazeid",
+          "rid",
+          "traktid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid",
+          "tmdbid",
+          "traktid"
+        ],
+        "MusicSearch": [
+          "q",
+          "artist",
+          "album"
+        ],
+        "BookSearch": [
+          "q",
+          "author",
+          "title"
+        ]
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "alpharatio",
+    "name": "AlphaRatio",
+    "description": "AlphaRatio (native Gazelle-family driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://alpharatio.cc/"
+    ],
+    "requestDelay": 3,
+    "settings": [
+      {
+        "Name": "username",
+        "Label": "Username",
+        "Type": "text",
+        "Required": true,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "password",
+        "Label": "Password",
+        "Type": "password",
+        "Required": true,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "use_freeleech_token",
+        "Label": "Use freeleech token",
+        "Type": "checkbox",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "freeleech_only",
+        "Label": "Only freeleech",
+        "Type": "checkbox",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "exclude_scene",
+        "Label": "Exclude scene releases",
+        "Type": "checkbox",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1",
+            "Set": true
+          },
+          "Cat": "TV/SD",
+          "Desc": "TvSD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2",
+            "Set": true
+          },
+          "Cat": "TV/HD",
+          "Desc": "TvHD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3",
+            "Set": true
+          },
+          "Cat": "TV/UHD",
+          "Desc": "TvUHD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4",
+            "Set": true
+          },
+          "Cat": "TV/SD",
+          "Desc": "TvDVDRip",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5",
+            "Set": true
+          },
+          "Cat": "TV/SD",
+          "Desc": "TvPackSD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6",
+            "Set": true
+          },
+          "Cat": "TV/HD",
+          "Desc": "TvPackHD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7",
+            "Set": true
+          },
+          "Cat": "TV/UHD",
+          "Desc": "TvPackUHD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "8",
+            "Set": true
+          },
+          "Cat": "Movies/SD",
+          "Desc": "MovieSD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "9",
+            "Set": true
+          },
+          "Cat": "Movies/HD",
+          "Desc": "MovieHD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "10",
+            "Set": true
+          },
+          "Cat": "Movies/UHD",
+          "Desc": "MovieUHD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "11",
+            "Set": true
+          },
+          "Cat": "Movies/SD",
+          "Desc": "MoviePackSD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "12",
+            "Set": true
+          },
+          "Cat": "Movies/HD",
+          "Desc": "MoviePackHD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "13",
+            "Set": true
+          },
+          "Cat": "Movies/UHD",
+          "Desc": "MoviePackUHD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "14",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "MovieXXX",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "15",
+            "Set": true
+          },
+          "Cat": "Movies/BluRay",
+          "Desc": "Bluray",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "16",
+            "Set": true
+          },
+          "Cat": "TV/Anime",
+          "Desc": "AnimeSD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "17",
+            "Set": true
+          },
+          "Cat": "TV/Anime",
+          "Desc": "AnimeHD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "18",
+            "Set": true
+          },
+          "Cat": "PC/Games",
+          "Desc": "GamesPC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "19",
+            "Set": true
+          },
+          "Cat": "Console/XBox",
+          "Desc": "GamesxBox",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "20",
+            "Set": true
+          },
+          "Cat": "Console/PS4",
+          "Desc": "GamesPS",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "21",
+            "Set": true
+          },
+          "Cat": "Console/Wii",
+          "Desc": "GamesNin",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "22",
+            "Set": true
+          },
+          "Cat": "PC/0day",
+          "Desc": "AppsWindows",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "23",
+            "Set": true
+          },
+          "Cat": "PC/Mac",
+          "Desc": "AppsMAC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "24",
+            "Set": true
+          },
+          "Cat": "PC/0day",
+          "Desc": "AppsLinux",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "25",
+            "Set": true
+          },
+          "Cat": "PC/Mobile-Other",
+          "Desc": "AppsMobile",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "26",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "0dayXXX",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "27",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "eBook",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "28",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "AudioBook",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "29",
+            "Set": true
+          },
+          "Cat": "Audio/Other",
+          "Desc": "Music",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "30",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Misc",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid"
+        ],
+        "MusicSearch": null,
+        "BookSearch": null
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": null
+    }
+  },
+  {
+    "id": "althub",
+    "name": "altHUB",
+    "description": "altHUB (native Newznab driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://api.althub.co.za"
+    ],
+    "requestDelay": 2,
+    "settings": [
+      {
+        "Name": "apikey",
+        "Label": "API Key",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "apiPath",
+        "Label": "API Path",
+        "Type": "text",
+        "Required": false,
+        "Default": {
+          "Value": "/api",
+          "Set": true
+        },
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1000",
+            "Set": true
+          },
+          "Cat": "Console",
+          "Desc": "Console",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2000",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movies",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3000",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Audio",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4000",
+            "Set": true
+          },
+          "Cat": "PC",
+          "Desc": "PC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5000",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TV",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6000",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "XXX",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7000",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Books",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "8000",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Other",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid",
+          "tvdbid",
+          "tvmazeid",
+          "rid",
+          "traktid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid",
+          "tmdbid",
+          "traktid"
+        ],
+        "MusicSearch": [
+          "q",
+          "artist",
+          "album"
+        ],
+        "BookSearch": [
+          "q",
+          "author",
+          "title"
+        ]
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "animebytes",
+    "name": "AnimeBytes",
+    "description": "AnimeBytes (native AnimeBytes driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://animebytes.tv/"
+    ],
+    "requestDelay": 4,
+    "settings": [
+      {
+        "Name": "username",
+        "Label": "Username",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "passkey",
+        "Label": "Passkey",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "anime[tv_series]",
+            "Set": true
+          },
+          "Cat": "TV/Anime",
+          "Desc": "TV Series",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "anime[tv_special]",
+            "Set": true
+          },
+          "Cat": "TV/Anime",
+          "Desc": "TV Special",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "anime[ova]",
+            "Set": true
+          },
+          "Cat": "TV/Anime",
+          "Desc": "OVA",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "anime[ona]",
+            "Set": true
+          },
+          "Cat": "TV/Anime",
+          "Desc": "ONA",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "anime[dvd_special]",
+            "Set": true
+          },
+          "Cat": "TV/Anime",
+          "Desc": "DVD Special",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "anime[bd_special]",
+            "Set": true
+          },
+          "Cat": "TV/Anime",
+          "Desc": "BD Special",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "anime[movie]",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movie",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "audio",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Music",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "gamec[game]",
+            "Set": true
+          },
+          "Cat": "Console",
+          "Desc": "Game",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "gamec[game]",
+            "Set": true
+          },
+          "Cat": "PC/Games",
+          "Desc": "Game",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "gamec[visual_novel]",
+            "Set": true
+          },
+          "Cat": "Console",
+          "Desc": "Game Visual Novel",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "gamec[visual_novel]",
+            "Set": true
+          },
+          "Cat": "PC/Games",
+          "Desc": "Game Visual Novel",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "printedtype[manga]",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Manga",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "printedtype[oneshot]",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Oneshot",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "printedtype[anthology]",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Anthology",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "printedtype[manhwa]",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Manhwa",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "printedtype[light_novel]",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Light Novel",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "printedtype[artbook]",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Artbook",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep"
+        ],
+        "MovieSearch": [
+          "q"
+        ],
+        "MusicSearch": [
+          "q",
+          "artist",
+          "album",
+          "year"
+        ],
+        "BookSearch": [
+          "q"
+        ]
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": null
+    }
+  },
+  {
+    "id": "animetosho",
+    "name": "AnimeTosho",
+    "description": "AnimeTosho (native Torznab driver)",
+    "language": "en-US",
+    "type": "public",
+    "encoding": "UTF-8",
+    "links": [
+      "https://feed.animetosho.org"
+    ],
+    "requestDelay": 2,
+    "settings": null,
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "2020",
+            "Set": true
+          },
+          "Cat": "Movies/Other",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5070",
+            "Set": true
+          },
+          "Cat": "TV/Anime",
+          "Desc": "",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid",
+          "tvdbid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid"
+        ],
+        "MusicSearch": null,
+        "BookSearch": null
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "avistaz",
+    "name": "AvistaZ",
+    "description": "AvistaZ (native AvistaZ-family driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://avistaz.to/"
+    ],
+    "requestDelay": 6,
+    "settings": [
+      {
+        "Name": "username",
+        "Label": "Username",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "password",
+        "Label": "Password",
+        "Type": "password",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "pid",
+        "Label": "PID",
+        "Type": "password",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "freeleech_only",
+        "Label": "Only freeleech",
+        "Type": "checkbox",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "1",
+            "Set": true
+          },
+          "Cat": "Movies/UHD",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "1",
+            "Set": true
+          },
+          "Cat": "Movies/HD",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "1",
+            "Set": true
+          },
+          "Cat": "Movies/SD",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2",
+            "Set": true
+          },
+          "Cat": "TV/UHD",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2",
+            "Set": true
+          },
+          "Cat": "TV/HD",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2",
+            "Set": true
+          },
+          "Cat": "TV/SD",
+          "Desc": "",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid",
+          "tvdbid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid",
+          "tmdbid"
+        ],
+        "MusicSearch": null,
+        "BookSearch": null
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "beyondhd",
+    "name": "BeyondHD",
+    "description": "BeyondHD (native BeyondHD driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://beyond-hd.me/"
+    ],
+    "requestDelay": 2,
+    "settings": [
+      {
+        "Name": "api_key",
+        "Label": "API Key",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "rsskey",
+        "Label": "RSS Key",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movies",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TV",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid",
+          "tmdbid"
+        ],
+        "MusicSearch": null,
+        "BookSearch": null
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "broadcastthenet",
+    "name": "BroadcastTheNet",
+    "description": "BroadcastTheNet (native BroadcastTheNet driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://api.broadcasthe.net/"
+    ],
+    "requestDelay": 5,
+    "settings": [
+      {
+        "Name": "apikey",
+        "Label": "API Key",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "SD",
+            "Set": true
+          },
+          "Cat": "TV/SD",
+          "Desc": "SD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Portable Device",
+            "Set": true
+          },
+          "Cat": "TV/SD",
+          "Desc": "Portable Device",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "720p",
+            "Set": true
+          },
+          "Cat": "TV/HD",
+          "Desc": "720p",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "1080p",
+            "Set": true
+          },
+          "Cat": "TV/HD",
+          "Desc": "1080p",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "1080i",
+            "Set": true
+          },
+          "Cat": "TV/HD",
+          "Desc": "1080i",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2160p",
+            "Set": true
+          },
+          "Cat": "TV/UHD",
+          "Desc": "2160p",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "tvdbid",
+          "rid"
+        ],
+        "MovieSearch": null,
+        "MusicSearch": null,
+        "BookSearch": null
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": null
+    }
+  },
+  {
+    "id": "brokenstones",
+    "name": "BrokenStones",
+    "description": "BrokenStones (native Gazelle-family driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://brokenstones.is/"
+    ],
+    "requestDelay": 2,
+    "settings": [
+      {
+        "Name": "username",
+        "Label": "Username",
+        "Type": "text",
+        "Required": true,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "password",
+        "Label": "Password",
+        "Type": "password",
+        "Required": true,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "use_freeleech_token",
+        "Label": "Use freeleech token",
+        "Type": "checkbox",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1",
+            "Set": true
+          },
+          "Cat": "PC/Mac",
+          "Desc": "MacOS Apps",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2",
+            "Set": true
+          },
+          "Cat": "PC/Mac",
+          "Desc": "MacOS Games",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3",
+            "Set": true
+          },
+          "Cat": "PC/Mobile-iOS",
+          "Desc": "iOS Apps",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4",
+            "Set": true
+          },
+          "Cat": "PC/Mobile-iOS",
+          "Desc": "iOS Games",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Graphics",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Audio",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Tutorials",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "8",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Other",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": null,
+        "MovieSearch": null,
+        "MusicSearch": null,
+        "BookSearch": null
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": null
+    }
+  },
+  {
+    "id": "cinemaz",
+    "name": "CinemaZ",
+    "description": "CinemaZ (native AvistaZ-family driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://cinemaz.to/"
+    ],
+    "requestDelay": 6,
+    "settings": [
+      {
+        "Name": "username",
+        "Label": "Username",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "password",
+        "Label": "Password",
+        "Type": "password",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "pid",
+        "Label": "PID",
+        "Type": "password",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "freeleech_only",
+        "Label": "Only freeleech",
+        "Type": "checkbox",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "1",
+            "Set": true
+          },
+          "Cat": "Movies/UHD",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "1",
+            "Set": true
+          },
+          "Cat": "Movies/HD",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "1",
+            "Set": true
+          },
+          "Cat": "Movies/SD",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2",
+            "Set": true
+          },
+          "Cat": "TV/UHD",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2",
+            "Set": true
+          },
+          "Cat": "TV/HD",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2",
+            "Set": true
+          },
+          "Cat": "TV/SD",
+          "Desc": "",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid"
+        ],
+        "MusicSearch": null,
+        "BookSearch": null
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "dognzb",
+    "name": "DOGnzb",
+    "description": "DOGnzb (native Newznab driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://api.dognzb.cr"
+    ],
+    "requestDelay": 2,
+    "settings": [
+      {
+        "Name": "apikey",
+        "Label": "API Key",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "apiPath",
+        "Label": "API Path",
+        "Type": "text",
+        "Required": false,
+        "Default": {
+          "Value": "/api",
+          "Set": true
+        },
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1000",
+            "Set": true
+          },
+          "Cat": "Console",
+          "Desc": "Console",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2000",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movies",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3000",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Audio",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4000",
+            "Set": true
+          },
+          "Cat": "PC",
+          "Desc": "PC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5000",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TV",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6000",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "XXX",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7000",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Books",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "8000",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Other",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid",
+          "tvdbid",
+          "tvmazeid",
+          "rid",
+          "traktid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid",
+          "tmdbid",
+          "traktid"
+        ],
+        "MusicSearch": [
+          "q",
+          "artist",
+          "album"
+        ],
+        "BookSearch": [
+          "q",
+          "author",
+          "title"
+        ]
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "drunkenslug",
+    "name": "DrunkenSlug",
+    "description": "DrunkenSlug (native Newznab driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://api.drunkenslug.com"
+    ],
+    "requestDelay": 2,
+    "settings": [
+      {
+        "Name": "apikey",
+        "Label": "API Key",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "apiPath",
+        "Label": "API Path",
+        "Type": "text",
+        "Required": false,
+        "Default": {
+          "Value": "/api",
+          "Set": true
+        },
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1000",
+            "Set": true
+          },
+          "Cat": "Console",
+          "Desc": "Console",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2000",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movies",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3000",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Audio",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4000",
+            "Set": true
+          },
+          "Cat": "PC",
+          "Desc": "PC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5000",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TV",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6000",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "XXX",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7000",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Books",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "8000",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Other",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid",
+          "tvdbid",
+          "tvmazeid",
+          "rid",
+          "traktid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid",
+          "tmdbid",
+          "traktid"
+        ],
+        "MusicSearch": [
+          "q",
+          "artist",
+          "album"
+        ],
+        "BookSearch": [
+          "q",
+          "author",
+          "title"
+        ]
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "exoticaz",
+    "name": "ExoticaZ",
+    "description": "ExoticaZ (native AvistaZ-family driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://exoticaz.to/"
+    ],
+    "requestDelay": 6,
+    "settings": [
+      {
+        "Name": "username",
+        "Label": "Username",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "password",
+        "Label": "Password",
+        "Type": "password",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "pid",
+        "Label": "PID",
+        "Type": "password",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "freeleech_only",
+        "Label": "Only freeleech",
+        "Type": "checkbox",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1",
+            "Set": true
+          },
+          "Cat": "XXX/x264",
+          "Desc": "Video Clip",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2",
+            "Set": true
+          },
+          "Cat": "XXX/Pack",
+          "Desc": "Video Pack",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3",
+            "Set": true
+          },
+          "Cat": "XXX/Pack",
+          "Desc": "Siterip Pack",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4",
+            "Set": true
+          },
+          "Cat": "XXX/Pack",
+          "Desc": "Pornstar Pack",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5",
+            "Set": true
+          },
+          "Cat": "XXX/DVD",
+          "Desc": "DVD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6",
+            "Set": true
+          },
+          "Cat": "XXX/x264",
+          "Desc": "BluRay",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7",
+            "Set": true
+          },
+          "Cat": "XXX/ImageSet",
+          "Desc": "Photo Pack",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "8",
+            "Set": true
+          },
+          "Cat": "XXX/ImageSet",
+          "Desc": "Books \u0026 Magazines",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": null,
+        "MovieSearch": null,
+        "MusicSearch": null,
+        "BookSearch": null
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": null
+    }
+  },
+  {
+    "id": "filelist",
+    "name": "FileList",
+    "description": "FileList (native FileList driver)",
+    "language": "ro-RO",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://filelist.io/"
+    ],
+    "requestDelay": 24,
+    "settings": [
+      {
+        "Name": "username",
+        "Label": "Username",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "passkey",
+        "Label": "Passkey",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "freeleech_only",
+        "Label": "Only freeleech",
+        "Type": "checkbox",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1",
+            "Set": true
+          },
+          "Cat": "Movies/SD",
+          "Desc": "Filme SD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2",
+            "Set": true
+          },
+          "Cat": "Movies/DVD",
+          "Desc": "Filme DVD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3",
+            "Set": true
+          },
+          "Cat": "Movies/Foreign",
+          "Desc": "Filme DVD-RO",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4",
+            "Set": true
+          },
+          "Cat": "Movies/HD",
+          "Desc": "Filme HD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5",
+            "Set": true
+          },
+          "Cat": "Audio/Lossless",
+          "Desc": "FLAC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6",
+            "Set": true
+          },
+          "Cat": "Movies/UHD",
+          "Desc": "Filme 4K",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "XXX",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "8",
+            "Set": true
+          },
+          "Cat": "PC",
+          "Desc": "Programe",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "9",
+            "Set": true
+          },
+          "Cat": "PC/Games",
+          "Desc": "Jocuri PC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "10",
+            "Set": true
+          },
+          "Cat": "Console",
+          "Desc": "Jocuri Console",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "11",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Audio",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "12",
+            "Set": true
+          },
+          "Cat": "Audio/Video",
+          "Desc": "Videoclip",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "13",
+            "Set": true
+          },
+          "Cat": "TV/Sport",
+          "Desc": "Sport",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "15",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "Desene",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "16",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Docs",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "17",
+            "Set": true
+          },
+          "Cat": "PC",
+          "Desc": "Linux",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "18",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Diverse",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "19",
+            "Set": true
+          },
+          "Cat": "Movies/Foreign",
+          "Desc": "Filme HD-RO",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "20",
+            "Set": true
+          },
+          "Cat": "Movies/BluRay",
+          "Desc": "Filme Blu-Ray",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "21",
+            "Set": true
+          },
+          "Cat": "TV/HD",
+          "Desc": "Seriale HD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "22",
+            "Set": true
+          },
+          "Cat": "PC/Mobile-Other",
+          "Desc": "Mobile",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "23",
+            "Set": true
+          },
+          "Cat": "TV/SD",
+          "Desc": "Seriale SD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "24",
+            "Set": true
+          },
+          "Cat": "TV/Anime",
+          "Desc": "Anime",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "25",
+            "Set": true
+          },
+          "Cat": "Movies/3D",
+          "Desc": "Filme 3D",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "26",
+            "Set": true
+          },
+          "Cat": "Movies/BluRay",
+          "Desc": "Filme 4K Blu-Ray",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "27",
+            "Set": true
+          },
+          "Cat": "TV/UHD",
+          "Desc": "Seriale 4K",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "28",
+            "Set": true
+          },
+          "Cat": "Movies/Foreign",
+          "Desc": "RO Dubbed",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "28",
+            "Set": true
+          },
+          "Cat": "TV/Foreign",
+          "Desc": "RO Dubbed",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "31",
+            "Set": true
+          },
+          "Cat": "TV/Foreign",
+          "Desc": "K-Drama",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid"
+        ],
+        "MusicSearch": [
+          "q"
+        ],
+        "BookSearch": null
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "gazellegames",
+    "name": "GazelleGames",
+    "description": "GazelleGames (native Gazelle-family games driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://gazellegames.net/"
+    ],
+    "requestDelay": 5,
+    "settings": [
+      {
+        "Name": "apikey",
+        "Label": "API Key",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "freeleech_only",
+        "Label": "Only freeleech",
+        "Type": "checkbox",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "Mac",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Mac",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "iOS",
+            "Set": true
+          },
+          "Cat": "PC/Mobile-iOS",
+          "Desc": "iOS",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Apple Bandai Pippin",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Apple Bandai Pippin",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Apple II",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Apple II",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Android",
+            "Set": true
+          },
+          "Cat": "PC/Mobile-Android",
+          "Desc": "Android",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "DOS",
+            "Set": true
+          },
+          "Cat": "PC/Games",
+          "Desc": "DOS",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Windows",
+            "Set": true
+          },
+          "Cat": "PC/Games",
+          "Desc": "Windows",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Xbox",
+            "Set": true
+          },
+          "Cat": "Console/XBox",
+          "Desc": "Xbox",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Xbox 360",
+            "Set": true
+          },
+          "Cat": "Console/XBox 360",
+          "Desc": "Xbox 360",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Game Boy",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Game Boy",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Game Boy Advance",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Game Boy Advance",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Game Boy Color",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Game Boy Color",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "NES",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "NES",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Nintendo 64",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Nintendo 64",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Nintendo 3DS",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Nintendo 3DS",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "New Nintendo 3DS",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "New Nintendo 3DS",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Nintendo DS",
+            "Set": true
+          },
+          "Cat": "Console/NDS",
+          "Desc": "Nintendo DS",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Nintendo GameCube",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Nintendo GameCube",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Pokemon Mini",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Pokemon Mini",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "SNES",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "SNES",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Switch",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Switch",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Virtual Boy",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Virtual Boy",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Wii",
+            "Set": true
+          },
+          "Cat": "Console/Wii",
+          "Desc": "Wii",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Wii U",
+            "Set": true
+          },
+          "Cat": "Console/WiiU",
+          "Desc": "Wii U",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "PlayStation 1",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "PlayStation 1",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "PlayStation 2",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "PlayStation 2",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "PlayStation 3",
+            "Set": true
+          },
+          "Cat": "Console/PS3",
+          "Desc": "PlayStation 3",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "PlayStation 4",
+            "Set": true
+          },
+          "Cat": "Console/PS4",
+          "Desc": "PlayStation 4",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "PlayStation Portable",
+            "Set": true
+          },
+          "Cat": "Console/PSP",
+          "Desc": "PlayStation Portable",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "PlayStation Vita",
+            "Set": true
+          },
+          "Cat": "Console/PS Vita",
+          "Desc": "PlayStation Vita",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Dreamcast",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Dreamcast",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Game Gear",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Game Gear",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Master System",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Master System",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Mega Drive",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Mega Drive",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Pico",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Pico",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Saturn",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Saturn",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "SG-1000",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "SG-1000",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Atari 2600",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Atari 2600",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Atari 5200",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Atari 5200",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Atari 7800",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Atari 7800",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Atari Jaguar",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Atari Jaguar",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Atari Lynx",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Atari Lynx",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Atari ST",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Atari ST",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Amstrad CPC",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Amstrad CPC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Bandai WonderSwan",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Bandai WonderSwan",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Bandai WonderSwan Color",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Bandai WonderSwan Color",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Commodore 64",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Commodore 64",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Commodore 128",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Commodore 128",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Commodore Amiga",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Commodore Amiga",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Amiga CD32",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Amiga CD32",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Commodore Plus-4",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Commodore Plus-4",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Commodore VIC-20",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Commodore VIC-20",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "NEC PC-98",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "NEC PC-98",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "NEC PC-FX",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "NEC PC-FX",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "NEC SuperGrafx",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "NEC SuperGrafx",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "NEC TurboGrafx-16",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "NEC TurboGrafx-16",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "ZX Spectrum",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "ZX Spectrum",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "MSX",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "MSX",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "MSX 2",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "MSX 2",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Game.com",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Game.com",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Gizmondo",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Gizmondo",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "V.Smile",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "V.Smile",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "CreatiVision",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "CreatiVision",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Board Game",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Board Game",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Card Game",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Card Game",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Miniature Wargames",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Miniature Wargames",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Pen and Paper RPG",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Pen and Paper RPG",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3DO",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "3DO",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Casio Loopy",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Casio Loopy",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Casio PV-1000",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Casio PV-1000",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Colecovision",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Colecovision",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Emerson Arcadia 2001",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Emerson Arcadia 2001",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Entex Adventure Vision",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Entex Adventure Vision",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Epoch Super Casette Vision",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Epoch Super Casette Vision",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Fairchild Channel F",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Fairchild Channel F",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Funtech Super Acan",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Funtech Super Acan",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "GamePark GP32",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "GamePark GP32",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "General Computer Vectrex",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "General Computer Vectrex",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Interactive DVD",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Interactive DVD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Linux",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Linux",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Hartung Game Master",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Hartung Game Master",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Magnavox-Phillips Odyssey",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Magnavox-Phillips Odyssey",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Mattel Intellivision",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Mattel Intellivision",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Memotech MTX",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Memotech MTX",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Miles Gordon Sam Coupe",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Miles Gordon Sam Coupe",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Nokia N-Gage",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Nokia N-Gage",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Oculus Quest",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Oculus Quest",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Ouya",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Ouya",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Philips Videopac+",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Philips Videopac+",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Philips CD-i",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Philips CD-i",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Phone/PDA",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Phone/PDA",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "RCA Studio II",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "RCA Studio II",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Sharp X1",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Sharp X1",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Sharp X68000",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Sharp X68000",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "SNK Neo Geo",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "SNK Neo Geo",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "SNK Neo Geo Pocket",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "SNK Neo Geo Pocket",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Taito Type X",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Taito Type X",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Tandy Color Computer",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Tandy Color Computer",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Tangerine Oric",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Tangerine Oric",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Thomson MO5",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Thomson MO5",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Watara Supervision",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Watara Supervision",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "Retro - Other",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Retro - Other",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "1",
+            "Set": true
+          },
+          "Cat": "PC/Games",
+          "Desc": "Games",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2",
+            "Set": true
+          },
+          "Cat": "PC/0day",
+          "Desc": "Applications",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "E-Books",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4",
+            "Set": true
+          },
+          "Cat": "Audio/Other",
+          "Desc": "OST",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": null,
+        "MovieSearch": null,
+        "MusicSearch": null,
+        "BookSearch": null
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": null
+    }
+  },
+  {
+    "id": "gingadaddy",
+    "name": "GingaDADDY",
+    "description": "GingaDADDY (native Newznab driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://www.gingadaddy.com"
+    ],
+    "requestDelay": 2,
+    "settings": [
+      {
+        "Name": "apikey",
+        "Label": "API Key",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "apiPath",
+        "Label": "API Path",
+        "Type": "text",
+        "Required": false,
+        "Default": {
+          "Value": "/api",
+          "Set": true
+        },
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1000",
+            "Set": true
+          },
+          "Cat": "Console",
+          "Desc": "Console",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2000",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movies",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3000",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Audio",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4000",
+            "Set": true
+          },
+          "Cat": "PC",
+          "Desc": "PC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5000",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TV",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6000",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "XXX",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7000",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Books",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "8000",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Other",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid",
+          "tvdbid",
+          "tvmazeid",
+          "rid",
+          "traktid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid",
+          "tmdbid",
+          "traktid"
+        ],
+        "MusicSearch": [
+          "q",
+          "artist",
+          "album"
+        ],
+        "BookSearch": [
+          "q",
+          "author",
+          "title"
+        ]
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "hdbits",
+    "name": "HDBits",
+    "description": "HDBits (native HDBits driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://hdbits.org/"
+    ],
+    "requestDelay": 2,
+    "settings": [
+      {
+        "Name": "username",
+        "Label": "Username",
+        "Type": "password",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "passkey",
+        "Label": "Passkey",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movie",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TV",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3",
+            "Set": true
+          },
+          "Cat": "TV/Documentary",
+          "Desc": "Documentary",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Music",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5",
+            "Set": true
+          },
+          "Cat": "TV/Sport",
+          "Desc": "Sport",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Audio Track",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "XXX",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "8",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Misc/Demo",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid"
+        ],
+        "MusicSearch": null,
+        "BookSearch": null
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "iptorrents",
+    "name": "IPTorrents",
+    "description": "IPTorrents (native HTML-scrape driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://iptorrents.com/"
+    ],
+    "requestDelay": 2.1,
+    "settings": [
+      {
+        "Name": "cookie",
+        "Label": "Cookie",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "user_agent",
+        "Label": "User-Agent",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "freeleech_only",
+        "Label": "Only freeleech",
+        "Type": "checkbox",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "72",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movies",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "87",
+            "Set": true
+          },
+          "Cat": "Movies/3D",
+          "Desc": "Movie/3D",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "77",
+            "Set": true
+          },
+          "Cat": "Movies/SD",
+          "Desc": "Movie/480p",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "101",
+            "Set": true
+          },
+          "Cat": "Movies/UHD",
+          "Desc": "Movie/4K",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "89",
+            "Set": true
+          },
+          "Cat": "Movies/HD",
+          "Desc": "Movie/BD-R",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "90",
+            "Set": true
+          },
+          "Cat": "Movies/SD",
+          "Desc": "Movie/BD-Rip",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "96",
+            "Set": true
+          },
+          "Cat": "Movies/SD",
+          "Desc": "Movie/Cam",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6",
+            "Set": true
+          },
+          "Cat": "Movies/DVD",
+          "Desc": "Movie/DVD-R",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "48",
+            "Set": true
+          },
+          "Cat": "Movies/BluRay",
+          "Desc": "Movie/HD/Bluray",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "54",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movie/Kids",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "62",
+            "Set": true
+          },
+          "Cat": "Movies/SD",
+          "Desc": "Movie/MP4",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "38",
+            "Set": true
+          },
+          "Cat": "Movies/Foreign",
+          "Desc": "Movie/Non-English",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "68",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movie/Packs",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "20",
+            "Set": true
+          },
+          "Cat": "Movies/WEB-DL",
+          "Desc": "Movie/Web-DL",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7",
+            "Set": true
+          },
+          "Cat": "Movies/SD",
+          "Desc": "Movie/Xvid",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "100",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movie/x265",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "73",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TV",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "26",
+            "Set": true
+          },
+          "Cat": "TV/Documentary",
+          "Desc": "TV/Documentaries",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "55",
+            "Set": true
+          },
+          "Cat": "TV/Sport",
+          "Desc": "Sports",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "78",
+            "Set": true
+          },
+          "Cat": "TV/SD",
+          "Desc": "TV/480p",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "23",
+            "Set": true
+          },
+          "Cat": "TV/HD",
+          "Desc": "TV/BD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "24",
+            "Set": true
+          },
+          "Cat": "TV/SD",
+          "Desc": "TV/DVD-R",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "25",
+            "Set": true
+          },
+          "Cat": "TV/SD",
+          "Desc": "TV/DVD-Rip",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "66",
+            "Set": true
+          },
+          "Cat": "TV/SD",
+          "Desc": "TV/Mobile",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "82",
+            "Set": true
+          },
+          "Cat": "TV/Foreign",
+          "Desc": "TV/Non-English",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "65",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TV/Packs",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "83",
+            "Set": true
+          },
+          "Cat": "TV/Foreign",
+          "Desc": "TV/Packs/Non-English",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "79",
+            "Set": true
+          },
+          "Cat": "TV/SD",
+          "Desc": "TV/SD/x264",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "22",
+            "Set": true
+          },
+          "Cat": "TV/WEB-DL",
+          "Desc": "TV/Web-DL",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5",
+            "Set": true
+          },
+          "Cat": "TV/HD",
+          "Desc": "TV/x264",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "99",
+            "Set": true
+          },
+          "Cat": "TV/HD",
+          "Desc": "TV/x265",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4",
+            "Set": true
+          },
+          "Cat": "TV/SD",
+          "Desc": "TV/Xvid",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "74",
+            "Set": true
+          },
+          "Cat": "Console",
+          "Desc": "Games",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2",
+            "Set": true
+          },
+          "Cat": "Console/Other",
+          "Desc": "Games/Mixed",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "47",
+            "Set": true
+          },
+          "Cat": "Console/NDS",
+          "Desc": "Games/Nintendo DS",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "43",
+            "Set": true
+          },
+          "Cat": "PC/ISO",
+          "Desc": "Games/PC-ISO",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "45",
+            "Set": true
+          },
+          "Cat": "PC/Games",
+          "Desc": "Games/PC-Rip",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "71",
+            "Set": true
+          },
+          "Cat": "Console/PS3",
+          "Desc": "Games/PS3",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "50",
+            "Set": true
+          },
+          "Cat": "Console/Wii",
+          "Desc": "Games/Wii",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "44",
+            "Set": true
+          },
+          "Cat": "Console/XBox 360",
+          "Desc": "Games/Xbox-360",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "75",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Music",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3",
+            "Set": true
+          },
+          "Cat": "Audio/MP3",
+          "Desc": "Music/Audio",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "80",
+            "Set": true
+          },
+          "Cat": "Audio/Lossless",
+          "Desc": "Music/Flac",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "93",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Music/Packs",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "37",
+            "Set": true
+          },
+          "Cat": "Audio/Video",
+          "Desc": "Music/Video",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "21",
+            "Set": true
+          },
+          "Cat": "Audio/Video",
+          "Desc": "Podcast",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "76",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Other/Miscellaneous",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "60",
+            "Set": true
+          },
+          "Cat": "TV/Anime",
+          "Desc": "Anime",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "1",
+            "Set": true
+          },
+          "Cat": "PC/0day",
+          "Desc": "Appz",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "86",
+            "Set": true
+          },
+          "Cat": "PC/0day",
+          "Desc": "Appz/Non-English",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "64",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "AudioBook",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "35",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Books",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "102",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Books/Non-English",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "94",
+            "Set": true
+          },
+          "Cat": "Books/Comics",
+          "Desc": "Books/Comics",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "95",
+            "Set": true
+          },
+          "Cat": "Books/Other",
+          "Desc": "Books/Educational",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "98",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Other/Fonts",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "69",
+            "Set": true
+          },
+          "Cat": "PC/Mac",
+          "Desc": "Appz/Mac",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "92",
+            "Set": true
+          },
+          "Cat": "Books/Mags",
+          "Desc": "Books/Magazines \u0026 Newspapers",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "58",
+            "Set": true
+          },
+          "Cat": "PC/Mobile-Other",
+          "Desc": "Appz/Mobile",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "36",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Other/Pics/Wallpapers",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "88",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "XXX",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "85",
+            "Set": true
+          },
+          "Cat": "XXX/Other",
+          "Desc": "XXX/Magazines",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "8",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "XXX/Movie",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "81",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "XXX/Movie/0Day",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "91",
+            "Set": true
+          },
+          "Cat": "XXX/Pack",
+          "Desc": "XXX/Packs",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "84",
+            "Set": true
+          },
+          "Cat": "XXX/ImageSet",
+          "Desc": "XXX/Pics/Wallpapers",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid"
+        ],
+        "MusicSearch": [
+          "q"
+        ],
+        "BookSearch": [
+          "q"
+        ]
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "miatrix",
+    "name": "Miatrix",
+    "description": "Miatrix (native Newznab driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://www.miatrix.com"
+    ],
+    "requestDelay": 2,
+    "settings": [
+      {
+        "Name": "apikey",
+        "Label": "API Key",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "apiPath",
+        "Label": "API Path",
+        "Type": "text",
+        "Required": false,
+        "Default": {
+          "Value": "/api",
+          "Set": true
+        },
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1000",
+            "Set": true
+          },
+          "Cat": "Console",
+          "Desc": "Console",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2000",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movies",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3000",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Audio",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4000",
+            "Set": true
+          },
+          "Cat": "PC",
+          "Desc": "PC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5000",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TV",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6000",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "XXX",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7000",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Books",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "8000",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Other",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid",
+          "tvdbid",
+          "tvmazeid",
+          "rid",
+          "traktid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid",
+          "tmdbid",
+          "traktid"
+        ],
+        "MusicSearch": [
+          "q",
+          "artist",
+          "album"
+        ],
+        "BookSearch": [
+          "q",
+          "author",
+          "title"
+        ]
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "myanonamouse",
+    "name": "MyAnonamouse",
+    "description": "MyAnonamouse (native MyAnonamouse driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://www.myanonamouse.net/"
+    ],
+    "requestDelay": 2.1,
+    "settings": [
+      {
+        "Name": "mam_id",
+        "Label": "Mam ID",
+        "Type": "password",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "search_in_description",
+        "Label": "Search in description",
+        "Type": "checkbox",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "search_in_series",
+        "Label": "Search in series",
+        "Type": "checkbox",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "search_in_filenames",
+        "Label": "Search in filenames",
+        "Type": "checkbox",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "13",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "AudioBooks",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "14",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "E-Books",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "15",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Musicology",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "16",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Radio",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "39",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Action/Adventure",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "49",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Art",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "50",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Biographical",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "83",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Business",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "51",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Computer/Internet",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "97",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Crafts",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "40",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Crime/Thriller",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "41",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Fantasy",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "106",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Food",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "42",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - General Fiction",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "52",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - General Non-Fic",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "98",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Historical Fiction",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "54",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - History",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "55",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Home/Garden",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "43",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Horror",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "99",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Humor",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "84",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Instructional",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "44",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Juvenile",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "56",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Language",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "45",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Literary Classics",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "57",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Math/Science/Tech",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "85",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Medical",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "87",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Mystery",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "119",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Nature",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "88",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Philosophy",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "58",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Pol/Soc/Relig",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "59",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Recreation",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "46",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Romance",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "47",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Science Fiction",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "53",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Self-Help",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "89",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Travel/Adventure",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "100",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - True Crime",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "108",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Urban Fantasy",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "48",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Western",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "111",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks - Young Adult",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "60",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Action/Adventure",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "71",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Art",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "72",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Biographical",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "90",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Business",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "61",
+            "Set": true
+          },
+          "Cat": "Books/Comics",
+          "Desc": "Ebooks - Comics/Graphic novels",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "73",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Computer/Internet",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "101",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Crafts",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "62",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Crime/Thriller",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "63",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Fantasy",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "107",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Food",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "64",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - General Fiction",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "74",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - General Non-Fiction",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "102",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Historical Fiction",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "76",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - History",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "77",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Home/Garden",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "65",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Horror",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "103",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Humor",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "115",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Illusion/Magic",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "91",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Instructional",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "66",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Juvenile",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "78",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Language",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "67",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Literary Classics",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "79",
+            "Set": true
+          },
+          "Cat": "Books/Mags",
+          "Desc": "Ebooks - Magazines/Newspapers",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "80",
+            "Set": true
+          },
+          "Cat": "Books/Technical",
+          "Desc": "Ebooks - Math/Science/Tech",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "92",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Medical",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "118",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Mixed Collections",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "94",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Mystery",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "120",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Nature",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "95",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Philosophy",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "81",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Pol/Soc/Relig",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "82",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Recreation",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "68",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Romance",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "69",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Science Fiction",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "75",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Self-Help",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "96",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Travel/Adventure",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "104",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - True Crime",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "109",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Urban Fantasy",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "70",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Western",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "112",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "Ebooks - Young Adult",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "19",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Guitar/Bass Tabs",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "20",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Individual Sheet",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "24",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Individual Sheet MP3",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "126",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Instructional Book with Video",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "22",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Instructional Media - Music",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "113",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Lick Library - LTP/Jam With",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "114",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Lick Library - Techniques/QL",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "17",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Music - Complete Editions",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "26",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Music Book",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "27",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Music Book MP3",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "30",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Sheet Collection",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "31",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Sheet Collection MP3",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "127",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Radio -  Comedy",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "130",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Radio - Drama",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "128",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Radio - Factual/Documentary",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "132",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Radio - Reading",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": null,
+        "MovieSearch": null,
+        "MusicSearch": null,
+        "BookSearch": [
+          "q"
+        ]
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": null
+    }
+  },
+  {
+    "id": "nebulance",
+    "name": "Nebulance",
+    "description": "Nebulance (NBL) — ratioless private TV tracker (native driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://nebulance.io/"
+    ],
+    "requestDelay": 2,
+    "settings": [
+      {
+        "Name": "apikey",
+        "Label": "API Key",
+        "Type": "text",
+        "Required": true,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TV",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2",
+            "Set": true
+          },
+          "Cat": "TV/SD",
+          "Desc": "SD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3",
+            "Set": true
+          },
+          "Cat": "TV/HD",
+          "Desc": "HD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4",
+            "Set": true
+          },
+          "Cat": "TV/UHD",
+          "Desc": "UHD",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid",
+          "tvmazeid"
+        ],
+        "MovieSearch": null,
+        "MusicSearch": null,
+        "BookSearch": null
+      },
+      "AllowRawSearch": true,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "newz69",
+    "name": "Newz69",
+    "description": "Newz69 (native Newznab driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://newz69.keagaming.com"
+    ],
+    "requestDelay": 2,
+    "settings": [
+      {
+        "Name": "apikey",
+        "Label": "API Key",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "apiPath",
+        "Label": "API Path",
+        "Type": "text",
+        "Required": false,
+        "Default": {
+          "Value": "/api",
+          "Set": true
+        },
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1000",
+            "Set": true
+          },
+          "Cat": "Console",
+          "Desc": "Console",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2000",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movies",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3000",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Audio",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4000",
+            "Set": true
+          },
+          "Cat": "PC",
+          "Desc": "PC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5000",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TV",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6000",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "XXX",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7000",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Books",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "8000",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Other",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid",
+          "tvdbid",
+          "tvmazeid",
+          "rid",
+          "traktid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid",
+          "tmdbid",
+          "traktid"
+        ],
+        "MusicSearch": [
+          "q",
+          "artist",
+          "album"
+        ],
+        "BookSearch": [
+          "q",
+          "author",
+          "title"
+        ]
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "newznab",
+    "name": "Generic Newznab",
+    "description": "Generic Newznab usenet indexer (native driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": null,
+    "requestDelay": 2,
+    "settings": [
+      {
+        "Name": "apikey",
+        "Label": "API Key",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "apiPath",
+        "Label": "API Path",
+        "Type": "text",
+        "Required": false,
+        "Default": {
+          "Value": "/api",
+          "Set": true
+        },
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1000",
+            "Set": true
+          },
+          "Cat": "Console",
+          "Desc": "Console",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2000",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movies",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3000",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Audio",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4000",
+            "Set": true
+          },
+          "Cat": "PC",
+          "Desc": "PC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5000",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TV",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6000",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "XXX",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7000",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Books",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "8000",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Other",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid",
+          "tvdbid",
+          "tvmazeid",
+          "rid",
+          "traktid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid",
+          "tmdbid",
+          "traktid"
+        ],
+        "MusicSearch": [
+          "q",
+          "artist",
+          "album"
+        ],
+        "BookSearch": [
+          "q",
+          "author",
+          "title"
+        ]
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "ninjacentral",
+    "name": "NinjaCentral",
+    "description": "NinjaCentral (native Newznab driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://ninjacentral.co.za"
+    ],
+    "requestDelay": 2,
+    "settings": [
+      {
+        "Name": "apikey",
+        "Label": "API Key",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "apiPath",
+        "Label": "API Path",
+        "Type": "text",
+        "Required": false,
+        "Default": {
+          "Value": "/api",
+          "Set": true
+        },
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1000",
+            "Set": true
+          },
+          "Cat": "Console",
+          "Desc": "Console",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2000",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movies",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3000",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Audio",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4000",
+            "Set": true
+          },
+          "Cat": "PC",
+          "Desc": "PC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5000",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TV",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6000",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "XXX",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7000",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Books",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "8000",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Other",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid",
+          "tvdbid",
+          "tvmazeid",
+          "rid",
+          "traktid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid",
+          "tmdbid",
+          "traktid"
+        ],
+        "MusicSearch": [
+          "q",
+          "artist",
+          "album"
+        ],
+        "BookSearch": [
+          "q",
+          "author",
+          "title"
+        ]
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "nzbcat",
+    "name": "NZBCat",
+    "description": "NZBCat (native Newznab driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://nzb.cat"
+    ],
+    "requestDelay": 2,
+    "settings": [
+      {
+        "Name": "apikey",
+        "Label": "API Key",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "apiPath",
+        "Label": "API Path",
+        "Type": "text",
+        "Required": false,
+        "Default": {
+          "Value": "/api",
+          "Set": true
+        },
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1000",
+            "Set": true
+          },
+          "Cat": "Console",
+          "Desc": "Console",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2000",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movies",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3000",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Audio",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4000",
+            "Set": true
+          },
+          "Cat": "PC",
+          "Desc": "PC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5000",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TV",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6000",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "XXX",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7000",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Books",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "8000",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Other",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid",
+          "tvdbid",
+          "tvmazeid",
+          "rid",
+          "traktid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid",
+          "tmdbid",
+          "traktid"
+        ],
+        "MusicSearch": [
+          "q",
+          "artist",
+          "album"
+        ],
+        "BookSearch": [
+          "q",
+          "author",
+          "title"
+        ]
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "nzbfinder",
+    "name": "NZBFinder",
+    "description": "NZBFinder (native Newznab driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://nzbfinder.ws"
+    ],
+    "requestDelay": 2,
+    "settings": [
+      {
+        "Name": "apikey",
+        "Label": "API Key",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "apiPath",
+        "Label": "API Path",
+        "Type": "text",
+        "Required": false,
+        "Default": {
+          "Value": "/api",
+          "Set": true
+        },
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1000",
+            "Set": true
+          },
+          "Cat": "Console",
+          "Desc": "Console",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2000",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movies",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3000",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Audio",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4000",
+            "Set": true
+          },
+          "Cat": "PC",
+          "Desc": "PC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5000",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TV",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6000",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "XXX",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7000",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Books",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "8000",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Other",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid",
+          "tvdbid",
+          "tvmazeid",
+          "rid",
+          "traktid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid",
+          "tmdbid",
+          "traktid"
+        ],
+        "MusicSearch": [
+          "q",
+          "artist",
+          "album"
+        ],
+        "BookSearch": [
+          "q",
+          "author",
+          "title"
+        ]
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "nzbgeek",
+    "name": "NZBgeek",
+    "description": "NZBgeek (native Newznab driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://api.nzbgeek.info"
+    ],
+    "requestDelay": 2,
+    "settings": [
+      {
+        "Name": "apikey",
+        "Label": "API Key",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "apiPath",
+        "Label": "API Path",
+        "Type": "text",
+        "Required": false,
+        "Default": {
+          "Value": "/api",
+          "Set": true
+        },
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1000",
+            "Set": true
+          },
+          "Cat": "Console",
+          "Desc": "Console",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2000",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movies",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3000",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Audio",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4000",
+            "Set": true
+          },
+          "Cat": "PC",
+          "Desc": "PC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5000",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TV",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6000",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "XXX",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7000",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Books",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "8000",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Other",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid",
+          "tvdbid",
+          "tvmazeid",
+          "rid",
+          "traktid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid",
+          "tmdbid",
+          "traktid"
+        ],
+        "MusicSearch": [
+          "q",
+          "artist",
+          "album"
+        ],
+        "BookSearch": [
+          "q",
+          "author",
+          "title"
+        ]
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "nzbindex",
+    "name": "NZBIndex",
+    "description": "NZBIndex — public Usenet indexer (native driver)",
+    "language": "en-US",
+    "type": "public",
+    "encoding": "UTF-8",
+    "links": [
+      "https://nzbindex.com"
+    ],
+    "requestDelay": 2,
+    "settings": [
+      {
+        "Name": "apikey",
+        "Label": "API Key (optional — omit for rate-limited public access)",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "8000",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Other",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep"
+        ],
+        "MovieSearch": [
+          "q"
+        ],
+        "MusicSearch": [
+          "q"
+        ],
+        "BookSearch": [
+          "q"
+        ]
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": null
+    }
+  },
+  {
+    "id": "nzblife",
+    "name": "Nzb.life",
+    "description": "Nzb.life (native Newznab driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://nzb.life"
+    ],
+    "requestDelay": 2,
+    "settings": [
+      {
+        "Name": "apikey",
+        "Label": "API Key",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "apiPath",
+        "Label": "API Path",
+        "Type": "text",
+        "Required": false,
+        "Default": {
+          "Value": "/api",
+          "Set": true
+        },
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1000",
+            "Set": true
+          },
+          "Cat": "Console",
+          "Desc": "Console",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2000",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movies",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3000",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Audio",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4000",
+            "Set": true
+          },
+          "Cat": "PC",
+          "Desc": "PC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5000",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TV",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6000",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "XXX",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7000",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Books",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "8000",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Other",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid",
+          "tvdbid",
+          "tvmazeid",
+          "rid",
+          "traktid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid",
+          "tmdbid",
+          "traktid"
+        ],
+        "MusicSearch": [
+          "q",
+          "artist",
+          "album"
+        ],
+        "BookSearch": [
+          "q",
+          "author",
+          "title"
+        ]
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "nzbndx",
+    "name": "NZBNDX",
+    "description": "NZBNDX (native Newznab driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://www.nzbndx.com"
+    ],
+    "requestDelay": 2,
+    "settings": [
+      {
+        "Name": "apikey",
+        "Label": "API Key",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "apiPath",
+        "Label": "API Path",
+        "Type": "text",
+        "Required": false,
+        "Default": {
+          "Value": "/api",
+          "Set": true
+        },
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1000",
+            "Set": true
+          },
+          "Cat": "Console",
+          "Desc": "Console",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2000",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movies",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3000",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Audio",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4000",
+            "Set": true
+          },
+          "Cat": "PC",
+          "Desc": "PC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5000",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TV",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6000",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "XXX",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7000",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Books",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "8000",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Other",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid",
+          "tvdbid",
+          "tvmazeid",
+          "rid",
+          "traktid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid",
+          "tmdbid",
+          "traktid"
+        ],
+        "MusicSearch": [
+          "q",
+          "artist",
+          "album"
+        ],
+        "BookSearch": [
+          "q",
+          "author",
+          "title"
+        ]
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "nzbnoob",
+    "name": "NzbNoob",
+    "description": "NzbNoob (native Newznab driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://www.nzbnoob.com"
+    ],
+    "requestDelay": 2,
+    "settings": [
+      {
+        "Name": "apikey",
+        "Label": "API Key",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "apiPath",
+        "Label": "API Path",
+        "Type": "text",
+        "Required": false,
+        "Default": {
+          "Value": "/api",
+          "Set": true
+        },
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1000",
+            "Set": true
+          },
+          "Cat": "Console",
+          "Desc": "Console",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2000",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movies",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3000",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Audio",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4000",
+            "Set": true
+          },
+          "Cat": "PC",
+          "Desc": "PC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5000",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TV",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6000",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "XXX",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7000",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Books",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "8000",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Other",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid",
+          "tvdbid",
+          "tvmazeid",
+          "rid",
+          "traktid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid",
+          "tmdbid",
+          "traktid"
+        ],
+        "MusicSearch": [
+          "q",
+          "artist",
+          "album"
+        ],
+        "BookSearch": [
+          "q",
+          "author",
+          "title"
+        ]
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "nzbplanet",
+    "name": "NZBPlanet",
+    "description": "NZBPlanet (native Newznab driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://api.nzbplanet.net"
+    ],
+    "requestDelay": 2,
+    "settings": [
+      {
+        "Name": "apikey",
+        "Label": "API Key",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "apiPath",
+        "Label": "API Path",
+        "Type": "text",
+        "Required": false,
+        "Default": {
+          "Value": "/api",
+          "Set": true
+        },
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1000",
+            "Set": true
+          },
+          "Cat": "Console",
+          "Desc": "Console",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2000",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movies",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3000",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Audio",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4000",
+            "Set": true
+          },
+          "Cat": "PC",
+          "Desc": "PC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5000",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TV",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6000",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "XXX",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7000",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Books",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "8000",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Other",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid",
+          "tvdbid",
+          "tvmazeid",
+          "rid",
+          "traktid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid",
+          "tmdbid",
+          "traktid"
+        ],
+        "MusicSearch": [
+          "q",
+          "artist",
+          "album"
+        ],
+        "BookSearch": [
+          "q",
+          "author",
+          "title"
+        ]
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "nzbstars",
+    "name": "NZBStars",
+    "description": "NZBStars (native Newznab driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://nzbstars.com"
+    ],
+    "requestDelay": 2,
+    "settings": [
+      {
+        "Name": "apikey",
+        "Label": "API Key",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "apiPath",
+        "Label": "API Path",
+        "Type": "text",
+        "Required": false,
+        "Default": {
+          "Value": "/api",
+          "Set": true
+        },
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1000",
+            "Set": true
+          },
+          "Cat": "Console",
+          "Desc": "Console",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2000",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movies",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3000",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Audio",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4000",
+            "Set": true
+          },
+          "Cat": "PC",
+          "Desc": "PC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5000",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TV",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6000",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "XXX",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7000",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Books",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "8000",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Other",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid",
+          "tvdbid",
+          "tvmazeid",
+          "rid",
+          "traktid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid",
+          "tmdbid",
+          "traktid"
+        ],
+        "MusicSearch": [
+          "q",
+          "artist",
+          "album"
+        ],
+        "BookSearch": [
+          "q",
+          "author",
+          "title"
+        ]
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "orpheus",
+    "name": "Orpheus",
+    "description": "Orpheus (native Gazelle-family driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://orpheus.network/"
+    ],
+    "requestDelay": 2,
+    "settings": [
+      {
+        "Name": "apikey",
+        "Label": "API Key",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "use_freeleech_token",
+        "Label": "Use freeleech token",
+        "Type": "checkbox",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Music",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2",
+            "Set": true
+          },
+          "Cat": "PC",
+          "Desc": "Applications",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "E-Books",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "E-Learning Videos",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Comedy",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7",
+            "Set": true
+          },
+          "Cat": "Books/Comics",
+          "Desc": "Comics",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": null,
+        "MovieSearch": null,
+        "MusicSearch": [
+          "q",
+          "artist",
+          "album",
+          "year"
+        ],
+        "BookSearch": [
+          "q"
+        ]
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": null
+    }
+  },
+  {
+    "id": "passthepopcorn",
+    "name": "PassThePopcorn",
+    "description": "PassThePopcorn (native PassThePopcorn driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://passthepopcorn.me/"
+    ],
+    "requestDelay": 4,
+    "settings": [
+      {
+        "Name": "apiuser",
+        "Label": "API User",
+        "Type": "password",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "apikey",
+        "Label": "API Key",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Feature Film",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Short Film",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Miniseries",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Stand-up Comedy",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Live Performance",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movie Collection",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": null,
+        "MovieSearch": [
+          "q",
+          "imdbid"
+        ],
+        "MusicSearch": null,
+        "BookSearch": null
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": null
+    }
+  },
+  {
+    "id": "privatehd",
+    "name": "PrivateHD",
+    "description": "PrivateHD (native AvistaZ-family driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://privatehd.to/"
+    ],
+    "requestDelay": 6,
+    "settings": [
+      {
+        "Name": "username",
+        "Label": "Username",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "password",
+        "Label": "Password",
+        "Type": "password",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "pid",
+        "Label": "PID",
+        "Type": "password",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "freeleech_only",
+        "Label": "Only freeleech",
+        "Type": "checkbox",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "1",
+            "Set": true
+          },
+          "Cat": "Movies/UHD",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "1",
+            "Set": true
+          },
+          "Cat": "Movies/HD",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "1",
+            "Set": true
+          },
+          "Cat": "Movies/SD",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2",
+            "Set": true
+          },
+          "Cat": "TV/UHD",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2",
+            "Set": true
+          },
+          "Cat": "TV/HD",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2",
+            "Set": true
+          },
+          "Cat": "TV/SD",
+          "Desc": "",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid",
+          "tvdbid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid",
+          "tmdbid"
+        ],
+        "MusicSearch": null,
+        "BookSearch": null
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "redacted",
+    "name": "Redacted",
+    "description": "Redacted (native Gazelle-family driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://redacted.sh/"
+    ],
+    "requestDelay": 1,
+    "settings": [
+      {
+        "Name": "apikey",
+        "Label": "API Key",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "use_freeleech_token",
+        "Label": "Use freeleech token",
+        "Type": "checkbox",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Music",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2",
+            "Set": true
+          },
+          "Cat": "PC",
+          "Desc": "Applications",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3",
+            "Set": true
+          },
+          "Cat": "Books/EBook",
+          "Desc": "E-Books",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audiobooks",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "E-Learning Videos",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Comedy",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7",
+            "Set": true
+          },
+          "Cat": "Books/Comics",
+          "Desc": "Comics",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": null,
+        "MovieSearch": null,
+        "MusicSearch": [
+          "q",
+          "artist",
+          "album",
+          "year"
+        ],
+        "BookSearch": [
+          "q"
+        ]
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": null
+    }
+  },
+  {
+    "id": "tabularasa",
+    "name": "Tabula Rasa",
+    "description": "Tabula Rasa (native Newznab driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://www.tabula-rasa.pw"
+    ],
+    "requestDelay": 2,
+    "settings": [
+      {
+        "Name": "apikey",
+        "Label": "API Key",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "apiPath",
+        "Label": "API Path",
+        "Type": "text",
+        "Required": false,
+        "Default": {
+          "Value": "/api",
+          "Set": true
+        },
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1000",
+            "Set": true
+          },
+          "Cat": "Console",
+          "Desc": "Console",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2000",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movies",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3000",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Audio",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4000",
+            "Set": true
+          },
+          "Cat": "PC",
+          "Desc": "PC",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5000",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TV",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6000",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "XXX",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7000",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Books",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "8000",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Other",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid",
+          "tvdbid",
+          "tvmazeid",
+          "rid",
+          "traktid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid",
+          "tmdbid",
+          "traktid"
+        ],
+        "MusicSearch": [
+          "q",
+          "artist",
+          "album"
+        ],
+        "BookSearch": [
+          "q",
+          "author",
+          "title"
+        ]
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "torrentday",
+    "name": "TorrentDay",
+    "description": "TorrentDay (native JSON-search driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://www.torrentday.com/"
+    ],
+    "requestDelay": 2.1,
+    "settings": [
+      {
+        "Name": "cookie",
+        "Label": "Cookie",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "freeleech_only",
+        "Label": "Only freeleech",
+        "Type": "checkbox",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "25",
+            "Set": true
+          },
+          "Cat": "Movies/SD",
+          "Desc": "Movies/480p",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "96",
+            "Set": true
+          },
+          "Cat": "Movies/UHD",
+          "Desc": "Movie/4K",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "11",
+            "Set": true
+          },
+          "Cat": "Movies/BluRay",
+          "Desc": "Movies/Bluray",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5",
+            "Set": true
+          },
+          "Cat": "Movies/BluRay",
+          "Desc": "Movies/Bluray-Full",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "103",
+            "Set": true
+          },
+          "Cat": "Movies/SD",
+          "Desc": "Movies/Cam",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3",
+            "Set": true
+          },
+          "Cat": "Movies/DVD",
+          "Desc": "Movies/DVD-R",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "21",
+            "Set": true
+          },
+          "Cat": "Movies/SD",
+          "Desc": "Movies/MP4",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "22",
+            "Set": true
+          },
+          "Cat": "Movies/Foreign",
+          "Desc": "Movies/Non-English",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "13",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movies/Packs",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "44",
+            "Set": true
+          },
+          "Cat": "Movies/SD",
+          "Desc": "Movies/SD/x264",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "48",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movies/x265",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "1",
+            "Set": true
+          },
+          "Cat": "Movies/SD",
+          "Desc": "Movies/XviD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "24",
+            "Set": true
+          },
+          "Cat": "TV/SD",
+          "Desc": "TV/480p",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "104",
+            "Set": true
+          },
+          "Cat": "TV/UHD",
+          "Desc": "TV/4K",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "32",
+            "Set": true
+          },
+          "Cat": "TV/HD",
+          "Desc": "TV/Bluray",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "31",
+            "Set": true
+          },
+          "Cat": "TV/SD",
+          "Desc": "TV/DVD-R",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "33",
+            "Set": true
+          },
+          "Cat": "TV/SD",
+          "Desc": "TV/DVD-Rip",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "46",
+            "Set": true
+          },
+          "Cat": "TV/SD",
+          "Desc": "TV/Mobile",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "82",
+            "Set": true
+          },
+          "Cat": "TV/Foreign",
+          "Desc": "TV/Non-English",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "14",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TV/Packs",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "26",
+            "Set": true
+          },
+          "Cat": "TV/SD",
+          "Desc": "TV/SD/x264",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7",
+            "Set": true
+          },
+          "Cat": "TV/HD",
+          "Desc": "TV/x264",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "34",
+            "Set": true
+          },
+          "Cat": "TV/HD",
+          "Desc": "TV/x265",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2",
+            "Set": true
+          },
+          "Cat": "TV/SD",
+          "Desc": "TV/XviD",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "10",
+            "Set": true
+          },
+          "Cat": "Console/NDS",
+          "Desc": "Nintendo",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4",
+            "Set": true
+          },
+          "Cat": "PC/Games",
+          "Desc": "PC/Games",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "18",
+            "Set": true
+          },
+          "Cat": "Console/PS3",
+          "Desc": "PS",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "8",
+            "Set": true
+          },
+          "Cat": "Console/PSP",
+          "Desc": "PSP",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "9",
+            "Set": true
+          },
+          "Cat": "Console/XBox",
+          "Desc": "Xbox",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "17",
+            "Set": true
+          },
+          "Cat": "Audio/MP3",
+          "Desc": "Music/Audio",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "27",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Music/Flac",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "23",
+            "Set": true
+          },
+          "Cat": "Audio/Foreign",
+          "Desc": "Music/Non-English",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "41",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "Music/Packs",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "16",
+            "Set": true
+          },
+          "Cat": "Audio/Video",
+          "Desc": "Music/Video",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "29",
+            "Set": true
+          },
+          "Cat": "TV/Anime",
+          "Desc": "Anime",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "42",
+            "Set": true
+          },
+          "Cat": "Audio/Audiobook",
+          "Desc": "Audio Books",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "20",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Books",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "102",
+            "Set": true
+          },
+          "Cat": "Books/Foreign",
+          "Desc": "Books/Non-English",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "30",
+            "Set": true
+          },
+          "Cat": "TV/Documentary",
+          "Desc": "Documentary",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "95",
+            "Set": true
+          },
+          "Cat": "TV/Documentary",
+          "Desc": "Educational",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "47",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "Fonts",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "43",
+            "Set": true
+          },
+          "Cat": "PC/Mac",
+          "Desc": "Mac",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "45",
+            "Set": true
+          },
+          "Cat": "Audio/Other",
+          "Desc": "Podcast",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "28",
+            "Set": true
+          },
+          "Cat": "PC",
+          "Desc": "Softwa/Packs",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "12",
+            "Set": true
+          },
+          "Cat": "PC",
+          "Desc": "Software",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "19",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "XXX/0Day",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "XXX/Movies",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "15",
+            "Set": true
+          },
+          "Cat": "XXX/Pack",
+          "Desc": "XXX/Packs",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid"
+        ],
+        "MusicSearch": [
+          "q"
+        ],
+        "BookSearch": [
+          "q"
+        ]
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "torrentnetwork",
+    "name": "Torrent Network",
+    "description": "Torrent Network (native Torznab driver)",
+    "language": "de-DE",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://tntracker.org"
+    ],
+    "requestDelay": 2,
+    "settings": [
+      {
+        "Name": "apikey",
+        "Label": "API Key",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1000",
+            "Set": true
+          },
+          "Cat": "Console",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2000",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3000",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4000",
+            "Set": true
+          },
+          "Cat": "PC",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5000",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6000",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7000",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "8000",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid",
+          "tvdbid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid"
+        ],
+        "MusicSearch": null,
+        "BookSearch": null
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "torznab",
+    "name": "Generic Torznab",
+    "description": "Generic Torznab torrent indexer (native driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": null,
+    "requestDelay": 2,
+    "settings": [
+      {
+        "Name": "apikey",
+        "Label": "API Key",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "apiPath",
+        "Label": "API Path",
+        "Type": "text",
+        "Required": false,
+        "Default": {
+          "Value": "/api",
+          "Set": true
+        },
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "1000",
+            "Set": true
+          },
+          "Cat": "Console",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2000",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "3000",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "4000",
+            "Set": true
+          },
+          "Cat": "PC",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5000",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "6000",
+            "Set": true
+          },
+          "Cat": "XXX",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "7000",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "8000",
+            "Set": true
+          },
+          "Cat": "Other",
+          "Desc": "",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid",
+          "tvdbid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid"
+        ],
+        "MusicSearch": null,
+        "BookSearch": null
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  }
+]

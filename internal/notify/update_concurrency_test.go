@@ -59,7 +59,7 @@ func TestUpdateNotificationNoLostUpdate(t *testing.T) {
 		if got.OnHealthFailure != wantHealth {
 			t.Fatalf("iter %d: on_health_failure = %v, want %v (flag write lost)", i, got.OnHealthFailure, wantHealth)
 		}
-		dec, err := kr.Decrypt(got.ID, secretURL, got.URLEncrypted)
+		dec, err := kr.Decrypt(got.ID, domain.NotificationSecretURL, got.URLEncrypted)
 		if err != nil {
 			t.Fatalf("iter %d: decrypt url: %v", i, err)
 		}

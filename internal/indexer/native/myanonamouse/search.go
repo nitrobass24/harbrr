@@ -8,6 +8,7 @@ import (
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 const (
@@ -112,14 +113,5 @@ func distinctNonEmpty(cats []string) []string {
 	return out
 }
 
-// boolSetting reports whether a checkbox setting is enabled. harbrr stores a checked
-// checkbox as Jackett's "True" sentinel; common truthy spellings are also accepted so
-// whatever the management API persists is interpreted consistently.
-func boolSetting(v string) bool {
-	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "true", "1", "on", "yes":
-		return true
-	default:
-		return false
-	}
-}
+// boolSetting reports whether a checkbox setting is enabled.
+func boolSetting(v string) bool { return native.CheckboxOn(v) }

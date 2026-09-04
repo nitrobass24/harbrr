@@ -90,9 +90,7 @@ type FixedAADSurface struct {
 // coverage: adding a new secret column WITHOUT listing it here silently drops it
 // from key rotation, stranding those credentials under the old key on the next
 // rotate (the U8-F1 bug). indexer_settings is the one exception — its AAD is column
-// -driven (instance_id + name), so it is rotated separately via AllSecrets. Each
-// Setting below is verified against the service's actual sealing call site; keep
-// them in sync with those constants.
+// -driven (instance_id + name), so it is rotated separately via AllSecrets.
 func SecretSurfaces() []FixedAADSurface {
 	return []FixedAADSurface{
 		{
@@ -105,20 +103,21 @@ func SecretSurfaces() []FixedAADSurface {
 		},
 		{
 			// internal/appsync/service.go seals only the minted harbrr key with the
-			// connection id as AAD; secretHarbrr="harbrr" (the app's own key lives on
-			// the App, above).
+			// connection id as AAD; domain.ConnectionSecretHarbrr (the app's own key
+			// lives on the App, above).
 			Table: "app_connections", KeyIDCol: "key_id",
-			Columns: []SecretColumn{{Cipher: "harbrr_api_key_encrypted", Setting: "harbrr"}},
+			Columns: []SecretColumn{{Cipher: "harbrr_api_key_encrypted", Setting: domain.ConnectionSecretHarbrr}},
 		},
 		{
 			// internal/announce/service.go: same shape (tool credential lives on the App).
 			Table: "announce_connections", KeyIDCol: "key_id",
-			Columns: []SecretColumn{{Cipher: "harbrr_api_key_encrypted", Setting: "harbrr"}},
+			Columns: []SecretColumn{{Cipher: "harbrr_api_key_encrypted", Setting: domain.ConnectionSecretHarbrr}},
 		},
 		{
-			// internal/notify/service.go seals with the notification id; secretURL="url".
+			// internal/notify/service.go seals with the notification id;
+			// domain.NotificationSecretURL.
 			Table: "notifications", KeyIDCol: "key_id",
-			Columns: []SecretColumn{{Cipher: "url_encrypted", Setting: "url"}},
+			Columns: []SecretColumn{{Cipher: "url_encrypted", Setting: domain.NotificationSecretURL}},
 		},
 		{
 			// internal/proxy/service.go seals the password with the proxy id;

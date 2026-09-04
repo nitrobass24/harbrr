@@ -20,13 +20,13 @@ const apiKeyHeader = "X-API-Key" //nolint:gosec // header NAME, not a credential
 // get issues an authenticated GET to a GGn endpoint (api.php search or a torrents.php
 // download). The API key rides in the X-API-Key header — never in the URL and never logged
 // — so the header is set but never recorded; Accept advertises JSON. The download URL
-// (torrents.php) carries the passkey in its torrent_pass query, so a transport error
-// surfaces only its scheme://host through native.Base, so a passkey-bearing download URL
-// can never leak.
+// (torrents.php) carries the passkey in its torrent_pass query; native.Base guarantees a
+// build (NewRequest) or transport (DoDownload) error surfaces only its scheme://host, so
+// a passkey-bearing download URL never leaks.
 func (d *driver) get(ctx context.Context, rawurl string, download bool) (*native.Response, error) {
-	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
+	req, err := d.NewRequest(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
-		return nil, fmt.Errorf("gazellegames: build request: %w", err)
+		return nil, err
 	}
 	req.Header.Set(apiKeyHeader, strings.TrimSpace(d.cfgValue("apikey")))
 	req.Header.Set("Accept", "application/json")

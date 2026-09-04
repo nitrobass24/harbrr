@@ -5,13 +5,16 @@ import type { ReactNode } from "react"
 import { useAllIndexerStats } from "./useSettings"
 import { useIndexer } from "./useIndexers"
 
-const { getIndexerMock, listAllIndexerStatsMock } = vi.hoisted(() => ({
-  getIndexerMock: vi.fn(),
-  listAllIndexerStatsMock: vi.fn(),
+// Both queries here resolve to the SAME URL (/api/indexers/stats — that collision is
+// the point of the test), so a fetch-level stub cannot tell them apart. Mock the typed
+// client's GET at the template-path seam instead, where "/api/indexers/{slug}" and
+// "/api/indexers/stats" are still distinct.
+const { getMock } = vi.hoisted(() => ({
+  getMock: vi.fn(),
 }))
-vi.mock("@/lib/api", () => ({
-  api: { getIndexer: getIndexerMock, listAllIndexerStats: listAllIndexerStatsMock },
-  APIError: class extends Error {},
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
+  api: { http: { GET: getMock } },
 }))
 
 function wrapper(qc: QueryClient) {
@@ -22,8 +25,7 @@ function wrapper(qc: QueryClient) {
 
 describe("useAllIndexerStats query-key isolation (U14-F3)", () => {
   beforeEach(() => {
-    getIndexerMock.mockReset()
-    listAllIndexerStatsMock.mockReset()
+    getMock.mockReset()
   })
 
   // An indexer slugged "stats" and the aggregate stats list must NOT share a
@@ -33,8 +35,14 @@ describe("useAllIndexerStats query-key isolation (U14-F3)", () => {
   it("does not collide with the per-indexer detail key for slug 'stats'", async () => {
     const detail = { instance: { slug: "stats" }, settings: [] }
     const aggregate = [{ slug: "a", queries: 1, grabs: 0, avgResponseMs: 0 }]
-    getIndexerMock.mockResolvedValue(detail)
-    listAllIndexerStatsMock.mockResolvedValue(aggregate)
+    // Both templates are named explicitly and anything else throws: a fallback
+    // response would let this test pass while matching nothing, which is exactly
+    // the failure mode the stubApi seam exists to remove.
+    getMock.mockImplementation((path: string) => {
+      if (path === "/api/indexers/stats") return Promise.resolve({ data: aggregate, response: Response.json(null) })
+      if (path === "/api/indexers/{slug}") return Promise.resolve({ data: detail, response: Response.json(null) })
+      throw new Error(`unstubbed GET ${path} — stubbed: /api/indexers/stats, /api/indexers/{slug}`)
+    })
 
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const detailHook = renderHook(() => useIndexer("stats"), { wrapper: wrapper(qc) })

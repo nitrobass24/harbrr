@@ -79,6 +79,12 @@ type Target interface {
 	// means unreachable/unauthorized. Reachability-vs-credentials coverage is per-kind
 	// (qui validates the key; cross-seed v6 checks reachability only).
 	Probe(ctx context.Context) error
+	// AnnounceTimeout is the CEILING on one Announce call for this target — how long
+	// harbrr is willing to wait for a verdict, not how long a push is expected to take.
+	// It is per-target because the tools differ in what hanging up early costs: qui
+	// finishes the work regardless (see quiAnnounceTimeout), cross-seed v6 makes no such
+	// promise. pushOne applies it to every release.
+	AnnounceTimeout() time.Duration
 }
 
 // poster carries the shared HTTP machinery both drivers reuse: an authenticated JSON POST

@@ -175,11 +175,11 @@ func seedAllSurfaces(t *testing.T, db *database.DB, kr *secrets.Keyring) []surfa
 	return []surfaceSecret{
 		{table: "proxies", col: "password_encrypted", setting: domain.ProxySecretPassword, id: px.ID, want: "pass"},
 		{table: "solvers", col: "url_encrypted", setting: domain.SolverSecretURL, id: sv.ID, want: "http://flare:8191"},
-		{table: "notifications", col: "url_encrypted", setting: "url", id: nt.ID, want: "http://hook/token-abc"},
+		{table: "notifications", col: "url_encrypted", setting: domain.NotificationSecretURL, id: nt.ID, want: "http://hook/token-abc"},
 		{table: "apps", col: "api_key_encrypted", setting: domain.AppSecret, id: appSonarrID, want: "APP-KEY-sonarr"},
-		{table: "app_connections", col: "harbrr_api_key_encrypted", setting: "harbrr", id: 1, want: "HARBRR-KEY-app_connections"},
+		{table: "app_connections", col: "harbrr_api_key_encrypted", setting: domain.ConnectionSecretHarbrr, id: 1, want: "HARBRR-KEY-app_connections"},
 		{table: "apps", col: "api_key_encrypted", setting: domain.AppSecret, id: appCrossSeedID, want: "APP-KEY-cross-seed"},
-		{table: "announce_connections", col: "harbrr_api_key_encrypted", setting: "harbrr", id: 1, want: "HARBRR-KEY-announce_connections"},
+		{table: "announce_connections", col: "harbrr_api_key_encrypted", setting: domain.ConnectionSecretHarbrr, id: 1, want: "HARBRR-KEY-announce_connections"},
 	}
 }
 
@@ -212,12 +212,12 @@ func seedAppRow(t *testing.T, db *database.DB, kr *secrets.Keyring, kind, baseUR
 }
 
 // seedConnRow inserts one connection row referencing appID, sealing only its minted
-// harbrr key under kr with the row id as AAD id and the "harbrr" discriminator (the
+// harbrr key under kr with the row id as AAD id and domain.ConnectionSecretHarbrr (the
 // app/tool credential lives on the App — see seedAppRow).
 func seedConnRow(t *testing.T, db *database.DB, kr *secrets.Keyring, table string, appID int64, insert string) {
 	t.Helper()
 	ctx := context.Background()
-	harbrrEnc, err := kr.Encrypt(1, "harbrr", "HARBRR-KEY-"+table)
+	harbrrEnc, err := kr.Encrypt(1, domain.ConnectionSecretHarbrr, "HARBRR-KEY-"+table)
 	if err != nil {
 		t.Fatalf("seed %s harbrr secret: %v", table, err)
 	}

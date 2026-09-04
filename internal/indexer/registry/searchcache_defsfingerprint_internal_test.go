@@ -23,7 +23,7 @@ func TestEnsureDefsFingerprints_FirstBootStoresWithoutExpiry(t *testing.T) {
 	t.Parallel()
 	sc, instID, _ := testCache(t, keywordTTL, 0)
 	ctx := context.Background()
-	sc.storeBestEffort(ctx, instID, map[string]string{}, 0, search.Query{Keywords: "x"}, "k", relSet("A"))
+	sc.storeBestEffort(ctx, cacheOp{instanceID: instID, q: search.Query{Keywords: "x"}, key: "k"}, relSet("A"))
 
 	if err := sc.EnsureDefsFingerprints(ctx, map[string]string{"fakedef": fpA}); err != nil {
 		t.Fatalf("EnsureDefsFingerprints: %v", err)
@@ -45,7 +45,7 @@ func TestEnsureDefsFingerprints_UnchangedIsNoOp(t *testing.T) {
 	t.Parallel()
 	sc, instID, _ := testCache(t, keywordTTL, 0)
 	ctx := context.Background()
-	sc.storeBestEffort(ctx, instID, map[string]string{}, 0, search.Query{Keywords: "x"}, "k", relSet("A"))
+	sc.storeBestEffort(ctx, cacheOp{instanceID: instID, q: search.Query{Keywords: "x"}, key: "k"}, relSet("A"))
 	fps := map[string]string{"fakedef": fpA, "otherdef": fpB}
 
 	if err := sc.EnsureDefsFingerprints(ctx, fps); err != nil {
@@ -66,8 +66,8 @@ func TestEnsureDefsFingerprints_ExpiresOnlyTheChangedDefsInstances(t *testing.T)
 	t.Parallel()
 	sc, changedInst, otherInst := twoInstanceCache(t)
 	ctx := context.Background()
-	sc.storeBestEffort(ctx, changedInst, map[string]string{}, 0, search.Query{Keywords: "x"}, "changed", relSet("A"))
-	sc.storeBestEffort(ctx, otherInst, map[string]string{}, 0, search.Query{Keywords: "y"}, "other", relSet("B"))
+	sc.storeBestEffort(ctx, cacheOp{instanceID: changedInst, q: search.Query{Keywords: "x"}, key: "changed"}, relSet("A"))
+	sc.storeBestEffort(ctx, cacheOp{instanceID: otherInst, q: search.Query{Keywords: "y"}, key: "other"}, relSet("B"))
 
 	if err := sc.EnsureDefsFingerprints(ctx, map[string]string{"fakedef": fpA, "otherdef": fpA}); err != nil {
 		t.Fatalf("seed fingerprints: %v", err)
@@ -98,8 +98,8 @@ func TestEnsureDefsFingerprints_AddedAndRemovedDefs(t *testing.T) {
 	t.Parallel()
 	sc, fakedefInst, otherdefInst := twoInstanceCache(t)
 	ctx := context.Background()
-	sc.storeBestEffort(ctx, fakedefInst, map[string]string{}, 0, search.Query{Keywords: "x"}, "fakedef-row", relSet("A"))
-	sc.storeBestEffort(ctx, otherdefInst, map[string]string{}, 0, search.Query{Keywords: "y"}, "otherdef-row", relSet("B"))
+	sc.storeBestEffort(ctx, cacheOp{instanceID: fakedefInst, q: search.Query{Keywords: "x"}, key: "fakedef-row"}, relSet("A"))
+	sc.storeBestEffort(ctx, cacheOp{instanceID: otherdefInst, q: search.Query{Keywords: "y"}, key: "otherdef-row"}, relSet("B"))
 
 	if err := sc.EnsureDefsFingerprints(ctx, map[string]string{"fakedef": fpA, "otherdef": fpA}); err != nil {
 		t.Fatalf("seed fingerprints: %v", err)
@@ -124,8 +124,8 @@ func TestEnsureDefsFingerprints_LegacyStringUpgradesWithOneFullExpire(t *testing
 	if err := (database.AppSettings{}).Set(ctx, sc.db, keyCacheDefsFingerprint, "legacy-corpus-hash", sc.clock()); err != nil {
 		t.Fatalf("seed legacy fingerprint: %v", err)
 	}
-	sc.storeBestEffort(ctx, fakedefInst, map[string]string{}, 0, search.Query{Keywords: "x"}, "fakedef-row", relSet("A"))
-	sc.storeBestEffort(ctx, otherdefInst, map[string]string{}, 0, search.Query{Keywords: "y"}, "otherdef-row", relSet("B"))
+	sc.storeBestEffort(ctx, cacheOp{instanceID: fakedefInst, q: search.Query{Keywords: "x"}, key: "fakedef-row"}, relSet("A"))
+	sc.storeBestEffort(ctx, cacheOp{instanceID: otherdefInst, q: search.Query{Keywords: "y"}, key: "otherdef-row"}, relSet("B"))
 
 	fps := map[string]string{"fakedef": fpA, "otherdef": fpA}
 	if err := sc.EnsureDefsFingerprints(ctx, fps); err != nil {
@@ -139,7 +139,7 @@ func TestEnsureDefsFingerprints_LegacyStringUpgradesWithOneFullExpire(t *testing
 	}
 
 	// Second boot, same defs: the map is now stored, so nothing is expired again.
-	sc.storeBestEffort(ctx, fakedefInst, map[string]string{}, 0, search.Query{Keywords: "z"}, "after-upgrade", relSet("C"))
+	sc.storeBestEffort(ctx, cacheOp{instanceID: fakedefInst, q: search.Query{Keywords: "z"}, key: "after-upgrade"}, relSet("C"))
 	if err := sc.EnsureDefsFingerprints(ctx, fps); err != nil {
 		t.Fatalf("second EnsureDefsFingerprints: %v", err)
 	}
@@ -161,8 +161,8 @@ func TestEnsureDefsFingerprints_UnreadableStoredMapRecovers(t *testing.T) {
 			if err := (database.AppSettings{}).Set(ctx, sc.db, keyCacheDefsFingerprints, stored, sc.clock()); err != nil {
 				t.Fatalf("seed stored value: %v", err)
 			}
-			sc.storeBestEffort(ctx, fakedefInst, map[string]string{}, 0, search.Query{Keywords: "x"}, "fakedef-row", relSet("A"))
-			sc.storeBestEffort(ctx, otherdefInst, map[string]string{}, 0, search.Query{Keywords: "y"}, "otherdef-row", relSet("B"))
+			sc.storeBestEffort(ctx, cacheOp{instanceID: fakedefInst, q: search.Query{Keywords: "x"}, key: "fakedef-row"}, relSet("A"))
+			sc.storeBestEffort(ctx, cacheOp{instanceID: otherdefInst, q: search.Query{Keywords: "y"}, key: "otherdef-row"}, relSet("B"))
 
 			fps := map[string]string{"fakedef": fpA, "otherdef": fpA}
 			if err := sc.EnsureDefsFingerprints(ctx, fps); err != nil {

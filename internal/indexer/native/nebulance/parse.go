@@ -6,7 +6,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
@@ -107,7 +106,7 @@ func looksLikeAuthError(message string) bool {
 }
 
 func (d *driver) toRelease(row *apiRow) (*normalizer.Release, error) {
-	publishDate, err := parsePublishDate(row.PublishUTC)
+	publishDate, err := native.PublishDate(row.PublishUTC, d.Clock)
 	if err != nil {
 		return nil, fmt.Errorf("nebulance: parse publish date: %w: %w", err, search.ErrParseError)
 	}
@@ -136,7 +135,7 @@ func (d *driver) toRelease(row *apiRow) (*normalizer.Release, error) {
 		MinimumSeedTime:      seedTime,
 		DownloadVolumeFactor: 0,
 		UploadVolumeFactor:   1,
-		IMDBID:               normalizeIMDBID(row.IMDBID),
+		IMDBID:               native.CanonicalIMDBID(row.IMDBID),
 		TVMazeID:             positiveInt64(row.TVMazeID),
 	}, nil
 }
@@ -210,24 +209,6 @@ func resolutionCategory(title string, include576p bool) string {
 	default:
 		return "1"
 	}
-}
-
-var publishDateLayouts = []string{
-	time.RFC3339Nano,
-	time.RFC3339,
-	"2006-01-02T15:04:05-0700",
-	"2006-01-02T15:04:05",
-	"2006-01-02 15:04:05",
-}
-
-func parsePublishDate(raw string) (string, error) {
-	raw = strings.TrimSpace(raw)
-	for _, layout := range publishDateLayouts {
-		if parsed, err := time.Parse(layout, raw); err == nil {
-			return parsed.UTC().Format(time.RFC3339), nil
-		}
-	}
-	return "", fmt.Errorf("unsupported date value %q", raw)
 }
 
 func positiveInt64(value int64) int64 {

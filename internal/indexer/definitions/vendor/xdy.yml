@@ -1,24 +1,25 @@
 ---
-id: ptcdy
-name: PTCDY (传道院)
-description: "PTCDY (传道院) is a CHINESE Private Torrent Tracker for MOVIES / TV / GENERAL"
+id: xdy
+name: XDY (修道院)
+description: "XDY (修道院) is a CHINESE Private Torrent Tracker for MOVIES / TV / GENERAL"
 language: zh-CN
 type: private
 encoding: UTF-8
 links:
-  - https://pt.cdy.skin/
+  - https://xdypt.vip/
 
 caps:
   categorymappings:
-    - {id: 401, cat: Movies, desc: "Movies(电影)"}
-    - {id: 402, cat: TV, desc: "TV Series(电视剧)"}
-    - {id: 403, cat: TV/Other, desc: "TV Shows(综艺)"}
-    - {id: 404, cat: TV/Documentary, desc: "Documentaries(记录片)"}
-    - {id: 405, cat: TV/Anime, desc: "Animations(动漫)"}
-    - {id: 406, cat: Audio/Video, desc: "Music Videos(MV)"}
-    - {id: 407, cat: TV/Sport, desc: "Sports(体育)"}
-    - {id: 408, cat: Audio/Lossless, desc: "HQ Audio(音乐)"}
-    - {id: 409, cat: Other, desc: "Misc(其他)"}
+    - {id: 401, cat: Movies, desc: "电影（Movies）"}
+    - {id: 402, cat: TV, desc: "电视剧（TV Series）"}
+    - {id: 403, cat: TV, desc: "综艺（TV Shows"}
+    - {id: 404, cat: TV/Documentary, desc: "纪录片（Documentaries）"}
+    - {id: 405, cat: TV/Anime, desc: "动漫（Animations）"}
+    - {id: 406, cat: Audio/Video, desc: "（MV）Music Videos"}
+    - {id: 407, cat: TV/Sport, desc: "体育（Sports）"}
+    - {id: 408, cat: Audio, desc: "音轨（HQ Audio）"}
+    - {id: 409, cat: Other/Misc, desc: "音乐（Misc)"}
+    - {id: 410, cat: Console, desc: "游戏（Games"}
 
   modes:
     search: [q]
@@ -60,7 +61,7 @@ settings:
   - name: info_activity
     type: info
     label: Account Inactivity
-    default: "Account retention rules:<ol><li>Veteran User or above would never be deleted</li><li>Elite User or above would never be deleted if parked (at User CP)</li><li>Parked accounts would be deleted if users have not logged in for more than 400 days in a row</li><li>Un-parked accounts would be deleted if users have not logged in for more than 150 days in a row</li><li>Accounts with both uploaded and downloaded amount being 0 would be deleted if users have not logged in for more than 100 days in a row.</li></ol>"
+    default: "Inactive accounts would be deleted based on the following rules:<ol><li>Veteran User or above would never be deleted.</li><li>Elite User or above would never be deleted if parked (at User CP).</li><li>Parked accounts would be deleted if users have not logged in for more than 400 days in a row.</li><li>Unparked accounts would be deleted if users have not logged in for more than 150 days in a row.</li><li>Accounts with both uploaded and downloaded amount being 0 would be deleted if users have not logged in for more than 100 days in a row.</li></ol>"
 
 login:
   # using cookie method because site does a JS call to API/Challenge via JQuery to load response parm required for takelogin.php
@@ -83,18 +84,18 @@ search:
     spstate: "{{ if .Config.freeleech }}2{{ else }}0{{ end }}"
     # 0 title, 1 descr, 3 uploader, 4 imdburl
     search_area: "{{ if .Query.IMDBID }}4{{ else }}{{ end }}{{ if and .Query.DoubanID (eq .Query.IMDBID .False) }}1{{ else }}{{ end }}{{ if and (eq .Query.IMDBID .False) (eq .Query.DoubanID .False) }}0{{ else }}{{ end }}"
-    # 0 AND, 2 exact
+    # 0 AND, 1 OR, 2 exact
     search_mode: 0
     sort: "{{ .Config.sort }}"
     type: "{{ .Config.type }}"
     notnewword: 1
 
   rows:
-    selector: table.torrents > tbody > tr:has(table.torrentname)
+    selector: table.torrents > tbody > tr:has(a[href^="download.php?id="])
 
   fields:
     category:
-      selector: a[href*="?cat="]
+      selector: a[href^="?cat="]
       attribute: href
       filters:
         - name: querystring
@@ -107,10 +108,10 @@ search:
       optional: true
       default: "{{ .Result.title_default }}"
     details:
-      selector: a[href*="details.php?id="]
+      selector: a[href^="details.php?id="]
       attribute: href
     download:
-      selector: a[href*="download.php?id="]
+      selector: a[href^="download.php?id="]
       attribute: href
     poster:
       selector: img[data-src]
@@ -123,9 +124,10 @@ search:
       # site currently only has a badge and rating, the id is not present. just in case a future update.
       selector: a[href*="movie.douban.com/subject/"]
       attribute: href
+    # Users can change the "Time display type" in their tracker preferences:
     date_elapsed:
       # time type: time elapsed (default)
-      selector: td.rowfollow:nth-child(4) > span[title]
+      selector: td:nth-child(4) > span[title]
       attribute: title
       optional: true
       filters:
@@ -135,7 +137,7 @@ search:
           args: "yyyy-MM-dd HH:mm:ss zzz"
     date_added:
       # time added
-      selector: td.rowfollow:nth-child(4):not(:has(span))
+      selector: td:nth-child(4):not(:has(span))
       optional: true
       filters:
         - name: append
@@ -145,19 +147,19 @@ search:
     date:
       text: "{{ if or .Result.date_elapsed .Result.date_added }}{{ or .Result.date_elapsed .Result.date_added }}{{ else }}now{{ end }}"
     size:
-      selector: td.rowfollow:nth-child(5)
+      selector: td:nth-child(5)
       optional: true
       default: 512MB
     seeders:
-      selector: td.rowfollow:nth-child(6)
+      selector: td:nth-child(6)
       optional: true
       default: 0
     leechers:
-      selector: td.rowfollow:nth-child(7)
+      selector: td:nth-child(7)
       optional: true
       default: 0
     grabs:
-      selector: td.rowfollow:nth-child(8)
+      selector: td:nth-child(8)
       optional: true
       default: 0
     downloadvolumefactor:
@@ -175,6 +177,12 @@ search:
         img.pro_2up: 2
         "*": 1
     description:
-      selector: td.rowfollow:nth-child(2)
+      selector: td:nth-child(2)
       remove: a, b, font, img, span
-# NexusPHP v1.10.1 2026-02-17
+# global MR is 0.8 but torrents must be seeded for 1 days regardless of ratio
+#    minimumratio:
+#      text: 0.8
+    minimumseedtime:
+      # 1 days (as seconds = 24 x 60 x 60)
+      text: 86400
+# NexusPHP v1.10.2 2026-04-11

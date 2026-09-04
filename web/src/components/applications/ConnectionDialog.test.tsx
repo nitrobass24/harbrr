@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen } from "@testing-library/react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import type { ReactNode } from "react"
 import type { App, AppConnection, SyncProfile } from "@/lib/api"
+import { stubApi } from "@/test/stubApi"
 import { ConnectionDialog } from "./ConnectionDialog"
 
 const SONARR_APP: App = {
@@ -40,10 +41,6 @@ const SONARR_CONN: AppConnection = {
 
 const QUI_CONN: AppConnection = { ...SONARR_CONN, id: 11, name: "qui-main", kind: "qui", syncProfileId: null }
 
-function jsonResponse(body: unknown): Response {
-  return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } })
-}
-
 function wrap(children: ReactNode) {
   return (
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -52,18 +49,15 @@ function wrap(children: ReactNode) {
   )
 }
 
-// A fresh Response per call: the form now fires two concurrent GETs (sync profiles +
-// apps), and a Response body can only be read once — mockResolvedValue would hand both
-// callers the same singleton Response, so the second .json() throws.
-function stubFetch() {
-  vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(jsonResponse(PROFILES))))
+// The form fires two concurrent GETs (sync profiles + apps); these picker tests
+// only care about profiles, so the apps list stays empty.
+function stubProfiles() {
+  stubApi({ "GET /api/sync-profiles": PROFILES, "GET /api/apps": [] })
 }
 
 describe("ConnectionDialog sync profile picker", () => {
-  afterEach(() => vi.unstubAllGlobals())
-
   it("shows the picker for a qui connection too (#365 dropped the qui rejection)", async () => {
-    stubFetch()
+    stubProfiles()
     render(wrap(
       <ConnectionDialog
         state={{ open: true, existing: QUI_CONN }}
@@ -79,7 +73,7 @@ describe("ConnectionDialog sync profile picker", () => {
   })
 
   it("shows the picker for a sonarr connection", async () => {
-    stubFetch()
+    stubProfiles()
     render(wrap(
       <ConnectionDialog
         state={{ open: true, existing: SONARR_CONN }}
@@ -95,7 +89,7 @@ describe("ConnectionDialog sync profile picker", () => {
   })
 
   it("create: a selected profile rides the create body as syncProfileId", async () => {
-    stubFetch()
+    stubProfiles()
     const onCreate = vi.fn()
     render(wrap(
       <ConnectionDialog
@@ -122,7 +116,7 @@ describe("ConnectionDialog sync profile picker", () => {
   })
 
   it("edit: selecting None for an existing profile submits syncProfileId: null", async () => {
-    stubFetch()
+    stubProfiles()
     const onUpdate = vi.fn()
     render(wrap(
       <ConnectionDialog
@@ -149,10 +143,8 @@ describe("ConnectionDialog sync profile picker", () => {
 })
 
 describe("ConnectionDialog freeleech mode", () => {
-  afterEach(() => vi.unstubAllGlobals())
-
   it("edit: selecting 'default by kind' for an *arr resolves to the concrete honor default, not undefined", async () => {
-    stubFetch()
+    stubProfiles()
     const onUpdate = vi.fn()
     render(wrap(
       <ConnectionDialog
@@ -177,7 +169,7 @@ describe("ConnectionDialog freeleech mode", () => {
   })
 
   it("edit: selecting 'default by kind' for a qui connection resolves to the bypass default", async () => {
-    stubFetch()
+    stubProfiles()
     const onUpdate = vi.fn()
     render(wrap(
       <ConnectionDialog
@@ -199,13 +191,8 @@ describe("ConnectionDialog freeleech mode", () => {
 })
 
 describe("ConnectionDialog create — App picker", () => {
-  afterEach(() => vi.unstubAllGlobals())
-
   function stubFetchWithApp() {
-    vi.stubGlobal("fetch", vi.fn((request: Request) => {
-      if (request.url.includes("/apps")) return Promise.resolve(jsonResponse([SONARR_APP]))
-      return Promise.resolve(jsonResponse(PROFILES))
-    }))
+    stubApi({ "GET /api/sync-profiles": PROFILES, "GET /api/apps": [SONARR_APP] })
   }
 
   it("flipped default: an existing app of the current kind pre-selects — inline fields start hidden", async () => {
@@ -272,10 +259,7 @@ describe("ConnectionDialog create — App picker", () => {
   })
 
   it("deep-link pre-pick re-defaults the port for the picked App's kind, not the form's initial kind", async () => {
-    vi.stubGlobal("fetch", vi.fn((request: Request) => {
-      if (request.url.includes("/apps")) return Promise.resolve(jsonResponse([RADARR_APP]))
-      return Promise.resolve(jsonResponse(PROFILES))
-    }))
+    stubApi({ "GET /api/sync-profiles": PROFILES, "GET /api/apps": [RADARR_APP] })
     render(wrap(
       <ConnectionDialog state={{ open: true, initialAppId: RADARR_APP.id }} pending={false} error={null} onClose={vi.fn()} onCreate={vi.fn()} onUpdate={vi.fn()} />
     ))
@@ -292,13 +276,8 @@ describe("ConnectionDialog create — App picker", () => {
 })
 
 describe("ConnectionDialog create — Already configured block", () => {
-  afterEach(() => vi.unstubAllGlobals())
-
   function stubFetchWithApps(apps: App[]) {
-    vi.stubGlobal("fetch", vi.fn((request: Request) => {
-      if (request.url.includes("/apps")) return Promise.resolve(jsonResponse(apps))
-      return Promise.resolve(jsonResponse(PROFILES))
-    }))
+    stubApi({ "GET /api/sync-profiles": PROFILES, "GET /api/apps": apps })
   }
 
   it("renders only when compatible Apps exist", async () => {

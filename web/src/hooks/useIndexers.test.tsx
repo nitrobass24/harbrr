@@ -3,19 +3,15 @@ import { render, renderHook, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { useEffect, type ReactNode } from "react"
 import { useSetIndexerEnabled, useTestIndexer } from "./useIndexers"
-import type { Instance } from "@/lib/api"
+import type { Instance, TestResult } from "@/lib/api"
+import { stubApi } from "@/test/stubApi"
 
-const { toastSuccess, toastError, testIndexerMock, setIndexerEnabledMock } = vi.hoisted(() => ({
+const { toastSuccess, toastError } = vi.hoisted(() => ({
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
-  testIndexerMock: vi.fn(),
-  setIndexerEnabledMock: vi.fn(),
 }))
 vi.mock("sonner", () => ({
   toast: { success: toastSuccess, error: toastError },
-}))
-vi.mock("@/lib/api", () => ({
-  api: { testIndexer: testIndexerMock, setIndexerEnabled: setIndexerEnabledMock },
 }))
 
 function wrap(children: ReactNode) {
@@ -37,47 +33,69 @@ function SaveAndTestProbe({ slug }: { slug: string }) {
   return null
 }
 
+// stubTest keeps the test request pending until the returned resolve/reject is
+// called, so each case controls when the in-flight mutation settles. Both wait
+// for the request to actually dispatch first — unlike the old method-level mock,
+// the fetch seam is only reached after the client's async middleware runs.
+function stubTest() {
+  let resolve: ((v: TestResult) => void) | undefined
+  let reject: ((e: Error) => void) | undefined
+  stubApi({
+    "POST /api/indexers/{slug}/test": () =>
+      new Promise<Response>((res, rej) => {
+        resolve = (v) => res(Response.json(v))
+        reject = rej
+      }),
+  })
+  return {
+    resolve: async (v: TestResult) => {
+      await waitFor(() => expect(resolve).toBeDefined())
+      resolve!(v)
+    },
+    reject: async (e: Error) => {
+      await waitFor(() => expect(reject).toBeDefined())
+      reject!(e)
+    },
+  }
+}
+
 describe("useTestIndexer toastResult", () => {
   beforeEach(() => {
     toastSuccess.mockClear()
     toastError.mockClear()
-    testIndexerMock.mockReset()
   })
 
   it("toasts a failed test even after the triggering component unmounts", async () => {
-    let resolve!: (v: { ok: boolean, error?: string }) => void
-    testIndexerMock.mockReturnValue(new Promise((r) => { resolve = r }))
+    const pending = stubTest()
 
     const { unmount } = render(wrap(<SaveAndTestProbe slug="mam" />))
     unmount()
 
-    resolve({ ok: false, error: "bad passkey" })
+    await pending.resolve({ ok: false, error: "bad passkey" })
 
     await waitFor(() => expect(toastError).toHaveBeenCalledWith("mam: test failed — bad passkey"))
     expect(toastSuccess).not.toHaveBeenCalled()
   })
 
   it("toasts a passed test even after the triggering component unmounts", async () => {
-    let resolve!: (v: { ok: boolean, error?: string }) => void
-    testIndexerMock.mockReturnValue(new Promise((r) => { resolve = r }))
+    const pending = stubTest()
 
     const { unmount } = render(wrap(<SaveAndTestProbe slug="mam" />))
     unmount()
 
-    resolve({ ok: true })
+    await pending.resolve({ ok: true })
 
     await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith("mam: test passed"))
     expect(toastError).not.toHaveBeenCalled()
   })
 
   it("toasts a transport failure even after the triggering component unmounts", async () => {
-    let reject!: (e: Error) => void
-    testIndexerMock.mockReturnValue(new Promise((_r, rj) => { reject = rj }))
+    const pending = stubTest()
 
     const { unmount } = render(wrap(<SaveAndTestProbe slug="mam" />))
     unmount()
 
-    reject(new Error("network down"))
+    await pending.reject(new Error("network down"))
 
     await waitFor(() => expect(toastError).toHaveBeenCalledWith("mam: test request failed"))
     expect(toastSuccess).not.toHaveBeenCalled()
@@ -126,13 +144,12 @@ function renderSetEnabled() {
 describe("useSetIndexerEnabled optimistic rollback", () => {
   beforeEach(() => {
     toastError.mockClear()
-    setIndexerEnabledMock.mockReset()
   })
 
   it("rolls back the optimistic flip when the request rejects", async () => {
     // Keep the request pending so the optimistic state is observable before we reject.
-    let reject!: (e: Error) => void
-    setIndexerEnabledMock.mockReturnValue(new Promise((_r, rj) => { reject = rj }))
+    let reject: ((e: Error) => void) | undefined
+    stubApi({ "POST /api/indexers/{slug}/disable": () => new Promise<Response>((_r, rj) => { reject = rj }) })
 
     const { result, enabledOf } = renderSetEnabled()
     result.current.mutate({ slug: "mam", enabled: false })
@@ -140,7 +157,8 @@ describe("useSetIndexerEnabled optimistic rollback", () => {
     // onMutate flips the cached switch off immediately (optimistic).
     await waitFor(() => expect(enabledOf()).toBe(false))
 
-    reject(new Error("nope"))
+    await waitFor(() => expect(reject).toBeDefined())
+    reject!(new Error("nope"))
 
     // onError restores the pre-mutation snapshot — the rollback.
     await waitFor(() => expect(enabledOf()).toBe(true))
@@ -148,7 +166,7 @@ describe("useSetIndexerEnabled optimistic rollback", () => {
   })
 
   it("keeps the optimistic flip when the request resolves", async () => {
-    setIndexerEnabledMock.mockResolvedValue(undefined)
+    stubApi({ "POST /api/indexers/{slug}/disable": null })
 
     const { result, enabledOf } = renderSetEnabled()
     result.current.mutate({ slug: "mam", enabled: false })

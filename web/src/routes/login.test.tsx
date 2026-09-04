@@ -1,13 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import { ThemeProvider } from "@/components/themes/theme-provider"
+import { stubApi } from "@/test/stubApi"
 import { routeTree } from "@/routeTree.gen"
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })
-}
 
 const ME = { username: "admin", authMethod: "password", csrfToken: "tok" }
 
@@ -15,22 +12,25 @@ const OIDC_DISABLED = { enabled: false, authorizationUrl: "", disableBuiltInLogi
 
 // stubAuthFetch answers a logged-out visitor: /auth/me is 401 until a successful
 // POST /auth/login flips the session on, setup is already complete (so /login does
-// not bounce to /setup), OIDC is disabled unless oidc overrides it, and every
-// other read answers with an empty list so the authenticated shell renders.
+// not bounce to /setup), OIDC is disabled unless oidc overrides it, and the reads
+// the post-login pages fire answer with an empty list so the shell renders.
 function stubAuthFetch(oidc: typeof OIDC_DISABLED = OIDC_DISABLED) {
   let loggedIn = false
-  vi.stubGlobal("fetch", vi.fn((request: Request) => {
-    if (request.url.endsWith("/auth/login") && request.method === "POST") {
+  stubApi({
+    "POST /api/auth/login": () => {
       loggedIn = true
-      return Promise.resolve(json({}))
-    }
-    if (request.url.endsWith("/auth/me")) {
-      return Promise.resolve(loggedIn ? json(ME) : json({ code: "unauthorized", error: "no session" }, 401))
-    }
-    if (request.url.endsWith("/auth/setup")) return Promise.resolve(json({ setupComplete: true }))
-    if (request.url.endsWith("/auth/oidc/config")) return Promise.resolve(json(oidc))
-    return Promise.resolve(json([]))
-  }))
+      return Response.json({})
+    },
+    "GET /api/auth/me": () =>
+      loggedIn ? Response.json(ME) : Response.json({ code: "unauthorized", error: "no session" }, { status: 401 }),
+    "GET /api/auth/setup": { setupComplete: true },
+    "GET /api/auth/oidc/config": oidc,
+    "GET /api/indexers": [],
+    "GET /api/indexers/stats": [],
+    "GET /api/definitions": [],
+    "GET /api/cache/stats": [],
+    "GET /api/app-connections": [],
+  })
 }
 
 function renderAt(path: string) {
@@ -53,8 +53,6 @@ async function signIn() {
 }
 
 describe("Login redirect", () => {
-  afterEach(() => vi.unstubAllGlobals())
-
   it("returns the user to ?redirect after a successful sign-in", async () => {
     stubAuthFetch()
     const router = renderAt("/login?redirect=%2Findexers")
@@ -89,8 +87,6 @@ describe("Login redirect", () => {
 })
 
 describe("Login OIDC/SSO (autobrr/harbrr#9)", () => {
-  afterEach(() => vi.unstubAllGlobals())
-
   it("shows both the password form and the SSO button when OIDC coexists with built-in login", async () => {
     stubAuthFetch({ enabled: true, authorizationUrl: "https://idp.example.com/authorize?state=x", disableBuiltInLogin: false, issuerUrl: "https://idp.example.com" })
     renderAt("/login")

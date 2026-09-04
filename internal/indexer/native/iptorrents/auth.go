@@ -22,9 +22,9 @@ const (
 // when non-empty (the search wants HTML; a torrent download must not force a content
 // type).
 func (d *driver) get(ctx context.Context, rawurl, accept string, download bool) (*native.Response, error) {
-	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
+	req, err := d.NewRequest(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
-		return nil, fmt.Errorf("iptorrents: build request: %w", err)
+		return nil, err
 	}
 	if cookie := strings.TrimSpace(d.Cfg["cookie"]); cookie != "" {
 		req.Header.Set("Cookie", cookie)

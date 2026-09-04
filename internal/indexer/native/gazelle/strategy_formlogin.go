@@ -187,7 +187,7 @@ func (d *driver) alphaRatioLoginForm() (url.Values, error) {
 // private cookie jar when present and wraps transport, response, and validation
 // failures with [login.ErrLoginFailed].
 func (d *driver) requestAlphaRatioLogin(ctx context.Context, form url.Values) (string, error) {
-	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodPost, d.BaseURL+"login.php", strings.NewReader(form.Encode()))
+	req, err := d.NewRequest(ctx, stdhttp.MethodPost, d.BaseURL+"login.php", strings.NewReader(form.Encode()))
 	if err != nil {
 		return "", alphaRatioLoginError("build login request", err)
 	}

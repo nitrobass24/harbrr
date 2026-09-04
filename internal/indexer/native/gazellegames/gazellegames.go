@@ -70,14 +70,14 @@ func (d *driver) cfgValue(name string) string {
 //     on-demand download passkey back into Cfg under d.mu, concurrently with a
 //     download-URL build reading it — so deriving the scrub set from Cfg must go
 //     through the same mutex fetchPasskey's writer uses, or the read races it.
-//   - The passkey is not a declared Settings field at all (see credentialSettings:
+//   - The passkey is not a declared Settings field at all (see sites.go's Families:
 //     "The download passkey is NOT a user setting"), so loader.SecretValues could
 //     never see it via Cfg/Settings regardless of locking — it must be passed
 //     explicitly.
 //
 // The derivation runs over the FULL Cfg under the mutex (loader.SecretValues only
 // reads it; the lock is released once every map read is done), so a future secret
-// setting added to credentialSettings is picked up automatically rather than
+// setting added to the declared Settings is picked up automatically rather than
 // silently missed by a hand-built key list.
 func (d *driver) scrub(s string) string {
 	d.mu.Lock()

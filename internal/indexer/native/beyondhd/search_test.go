@@ -70,7 +70,7 @@ func liveDriver(t *testing.T, doer *scriptDoer) *driver {
 // imdb_id, the "movie/<id>" tmdb_id, imdb winning over tmdb, and the categories int array).
 func TestBuildRequest(t *testing.T) {
 	t.Parallel()
-	d := &driver{Base: native.Base{Cfg: creds()}}
+	d := &driver{Cfg: creds()}
 	rss := `"action":"search","rsskey":"` + credRSSKey + `"`
 	cases := []struct {
 		name  string
@@ -208,8 +208,7 @@ func TestSearchStatusDispatch(t *testing.T) {
 
 	for _, status := range []int{stdhttp.StatusTooManyRequests, stdhttp.StatusServiceUnavailable} {
 		_, err := mk(status).Search(context.Background(), search.Query{Keywords: "x"})
-		var rl *search.RateLimitedError
-		if !errors.As(err, &rl) {
+		if _, ok := errors.AsType[*search.RateLimitedError](err); !ok {
 			t.Errorf("HTTP %d: err = %v, want *search.RateLimitedError", status, err)
 		}
 	}

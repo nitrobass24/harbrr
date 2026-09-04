@@ -25,6 +25,35 @@ func TestBuildSearchCacheKeyStability(t *testing.T) {
 	}
 }
 
+// TestNewCacheOpKeyMatchesBuildKey pins newCacheOp's single derivation point: the
+// op's key always equals buildSearchCacheKey over the same (instanceID, q, paging)
+// tuple, so the epoch gate and the flight key can never disagree with the request
+// they were built from.
+func TestNewCacheOpKeyMatchesBuildKey(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		instanceID int64
+		q          search.Query
+		paging     bool
+	}{
+		{name: "zero query", instanceID: 1},
+		{name: "keywords and categories", instanceID: 7, q: search.Query{Keywords: "The Matrix", Categories: []string{"5", "1", "21"}}},
+		{name: "paged keeps offset and limit", instanceID: 7, q: search.Query{Keywords: "x", Offset: 50, Limit: 25}, paging: true},
+		{name: "unpaged drops offset and limit", instanceID: 7, q: search.Query{Keywords: "x", Offset: 50, Limit: 25}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			op := newCacheOp(tt.instanceID, instanceSettings{}, 3, nil, tt.paging, tt.q)
+			if want := buildSearchCacheKey(tt.instanceID, tt.q, tt.paging); op.key != want {
+				t.Errorf("newCacheOp key = %q, want %q", op.key, want)
+			}
+		})
+	}
+}
+
 // TestBuildSearchCacheKeyIgnoresFreeleechBypass proves the honor and freeleech-bypass
 // feed variants share ONE cache entry: the bypass flag is request context for the
 // serve-time freeleech view, never part of the cache key, so a bypass poll reuses the

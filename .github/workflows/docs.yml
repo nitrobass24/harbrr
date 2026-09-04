@@ -35,22 +35,31 @@ jobs:
   build:
     name: build docs
     runs-on: self-hosted
+    # Same container pattern as ci.yml's web jobs: oven/bun + the shared host-disk
+    # bun cache, so install is seconds instead of the ~25s npm ci used to cost.
+    # The docusaurus bin runs under bun's Node-compat runtime (no node in this
+    # image); if that ever misbehaves, `apk add nodejs` and bun stays installer-only.
+    container:
+      image: oven/bun:1.4.0-alpine
+      volumes:
+        - /mnt/optane/github-actions/harbrr-bun-cache:/bun-cache
     timeout-minutes: 10
+    env:
+      BUN_INSTALL_CACHE_DIR: /bun-cache
     steps:
+      # tar: upload-pages-artifact archives with tar, and busybox tar has bitten
+      # this fleet before (actions/cache silently skipping saves) — use GNU tar.
+      - name: install container prerequisites
+        run: apk add --no-cache gcompat git libatomic tar
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: website/package-lock.json
-      - name: npm ci
+      - name: install
         working-directory: website
-        run: npm ci
+        run: bun install --frozen-lockfile
       - name: build (strict — broken links fail the build)
         working-directory: website
-        run: npm run build
+        run: bun run build
       - name: upload Pages artifact
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0

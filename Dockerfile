@@ -8,7 +8,7 @@
 # so a multi-arch build never pays for an emulated Go toolchain. CGO is off, so this
 # is a pure cross-compile. For a plain `docker build` the target args are empty and
 # Go builds for the host.
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 WORKDIR /src
 
 # Cache module downloads separately from the source.
@@ -25,7 +25,7 @@ COPY . .
 # prebuilt-binary build-context, so this guard never runs there.
 RUN test -f web/dist/index.html || { \
       echo "ERROR: web/dist is empty — the management UI is not built."; \
-      echo "Run 'make web-build' (needs Node + pnpm) before 'docker build', or pull a published ghcr.io/autobrr/harbrr image."; \
+      echo "Run 'make web-build' (needs bun) before 'docker build', or pull a published ghcr.io/autobrr/harbrr image."; \
       exit 1; \
     }
 
@@ -41,20 +41,35 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath \
       -X github.com/autobrr/harbrr/internal/version.Date=${DATE}" \
     -o /out/harbrr ./cmd/harbrr
 
-# Resolve ca-certificates + tzdata on the NATIVE build platform so the multi-arch image
-# never runs `apk add` under QEMU emulation (the slow part of an arm64 build). Both are
-# architecture-independent data — the cert bundle Go reads at
-# /etc/ssl/certs/ca-certificates.crt and the zoneinfo database — so they copy across.
-FROM --platform=$BUILDPLATFORM alpine:3.24 AS certs
-RUN apk add --no-cache ca-certificates tzdata
-
-FROM alpine:3.24
-COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-COPY --from=certs /usr/share/zoneinfo /usr/share/zoneinfo
-# addgroup/adduser/mkdir are busybox builtins in the base image (no package install), so
-# this stays cheap even under emulation; wget (busybox) remains for the healthcheck.
-RUN addgroup -S harbrr && adduser -S -G harbrr -H -u 1000 harbrr \
+# Everything the final image needs that would otherwise require running a shell in the
+# target architecture, assembled here on the NATIVE build platform. Same alpine version
+# as the final stage, so the artifacts copy across unchanged:
+#   - ca-certificates + tzdata: architecture-independent data (the cert bundle Go reads
+#     at /etc/ssl/certs/ca-certificates.crt, and the zoneinfo database)
+#   - the harbrr account and its /config dir: plain text in /etc/passwd + /etc/group and
+#     a directory with a mode, none of which care about architecture
+# Keeping this stage native is what lets the final stage hold zero RUN instructions, so a
+# multi-arch build needs no QEMU at all — see the note above the final stage.
+FROM --platform=$BUILDPLATFORM alpine:3.24 AS rootfs
+RUN apk add --no-cache ca-certificates tzdata \
+ && addgroup -S harbrr && adduser -S -G harbrr -H -u 1000 harbrr \
  && mkdir -p /config && chown harbrr:harbrr /config && chmod 700 /config
+
+# This stage has NO RUN instructions, only COPY — deliberately. A RUN here would need a
+# shell in the target architecture, which on an amd64 builder means emulating arm64, and
+# `docker/setup-qemu-action` cost ~17s per arm64 CI run to install those binfmt handlers.
+# Everything is prepared natively in `rootfs` above and copied in. wget (busybox) is in
+# the base image already for the healthcheck. Keep it RUN-free.
+FROM alpine:3.24
+COPY --from=rootfs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=rootfs /usr/share/zoneinfo /usr/share/zoneinfo
+# passwd/group carry the harbrr account. Both stages are the same alpine version, so these
+# are the base image's own files plus that one account.
+COPY --from=rootfs /etc/passwd /etc/passwd
+COPY --from=rootfs /etc/group /etc/group
+# Numeric owner: the USER name below resolves via the passwd copied above, but --chown
+# resolution during COPY should not depend on the order of preceding layers.
+COPY --from=rootfs --chown=1000:1000 --chmod=700 /config /config
 
 # --chmod guarantees the exec bit: in CI the `build` stage is replaced by a downloaded
 # artifact (build-contexts), and GitHub artifacts don't preserve the executable mode.

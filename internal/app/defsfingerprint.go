@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"strings"
+	"sync"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/definitions"
@@ -40,11 +42,24 @@ const vendorDefsDir = "vendor"
 // Only content is hashed — never mtimes — so touching a file without changing it
 // never triggers an expiry. Changing a definition's id is still a change: the id
 // is the map key, so the old id disappears and the new one appears.
-func defsFingerprints(dropinDir string) (map[string]string, error) {
+// vendoredFingerprints hashes the embedded snapshot once per process. It is an
+// embed.FS — 550 files that cannot change while we run — so re-walking, YAML-probing
+// and hashing it on every call is pure repetition.
+var vendoredFingerprints = sync.OnceValues(func() (map[string]string, error) {
 	out := map[string]string{}
 	if err := hashDefs(out, definitions.Vendored, vendorDefsDir); err != nil {
 		return nil, fmt.Errorf("hash vendored definitions: %w", err)
 	}
+	return out, nil
+})
+
+func defsFingerprints(dropinDir string) (map[string]string, error) {
+	base, err := vendoredFingerprints()
+	if err != nil {
+		return nil, err
+	}
+	// Clone: callers overlay dropins onto the result, which must not reach the cache.
+	out := maps.Clone(base)
 	if dropinDir != "" {
 		if err := hashDefs(out, os.DirFS(dropinDir), "."); err != nil {
 			return nil, fmt.Errorf("hash dropin definitions: %w", err)

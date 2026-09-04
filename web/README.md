@@ -23,11 +23,11 @@ install → type-aware ESLint → vitest → route-tree drift check → producti
 ## Conventions that will fail your PR if skipped
 
 - **Routes are file-based** (`src/routes/`, TanStack Router). After adding/renaming a
-  route file, run `pnpm generate:routes` and commit `src/routeTree.gen.ts` — CI diffs it.
+  route file, run `bun run generate:routes` and commit `src/routeTree.gen.ts` — CI diffs it.
 - **No `any`** (`@typescript-eslint/no-explicit-any` is an error) and the type-aware
   ESLint tier is on: floating promises must be `await`ed or explicitly `void`ed.
 - **Style mirrors qui** (enforced by `@stylistic`): double quotes, 2-space indent,
-  multiline trailing commas. `pnpm format` fixes most of it.
+  multiline trailing commas. `bun run format` fixes most of it.
 - **API calls go through `src/lib/api.ts`** — the single choke point for the base
   path, CSRF header, error envelope, and 401 handling. Never `fetch` directly.
 - **Secrets:** fields the server redacts arrive as the literal `<redacted>` sentinel.
@@ -40,6 +40,6 @@ install → type-aware ESLint → vitest → route-tree drift check → producti
 
 ## Tests
 
-vitest + Testing Library (`pnpm test`). jsdom shims live in `src/test/setup.ts`.
+vitest + Testing Library (`bun run test`). jsdom shims live in `src/test/setup.ts`.
 Presentational components take data via props so tests feed fixtures directly —
 see `IndexersTable.test.tsx` or `settings-payload.test.ts` for the house style.

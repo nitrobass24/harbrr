@@ -33,14 +33,20 @@ func TestGrabDirectReturnsResult(t *testing.T) {
 	}
 }
 
-// TestGrabDirectBuildErrorIsGeneric proves a request-build failure returns the generic
-// ErrGrabRequestFailed sentinel bare, never the (possibly credential-bearing) link that
-// failed to build.
-func TestGrabDirectBuildErrorIsGeneric(t *testing.T) {
+// TestGrabDirectBuildErrorIsHostOnly proves a request-build failure returns NewRequest's
+// host-redacted error, never the (possibly credential-bearing) path/query of the link
+// that failed to build.
+func TestGrabDirectBuildErrorIsHostOnly(t *testing.T) {
 	b := newTestBase(t, &fakeDoer{})
-	_, err := b.GrabDirect(context.Background(), "http://tracker.example/\x7f?passkey=secret", ClassifyAuth403)
-	if !errors.Is(err, ErrGrabRequestFailed) {
-		t.Fatalf("err = %v, want ErrGrabRequestFailed", err)
+	_, err := b.GrabDirect(context.Background(), "http://tracker.example/dl.php\x7f?passkey=SYNTHETIC-PASS", ClassifyAuth403)
+	if err == nil {
+		t.Fatal("want a build error")
+	}
+	if !apphttp.IsHostRedacted(err) {
+		t.Fatalf("build error not marked host-redacted: %v", err)
+	}
+	if got := err.Error(); strings.Contains(got, "SYNTHETIC-PASS") || strings.Contains(got, "dl.php") {
+		t.Fatalf("build error leaked the link's path/query: %v", err)
 	}
 }
 
@@ -68,14 +74,20 @@ func TestGrabNZBReturnsResult(t *testing.T) {
 	}
 }
 
-// TestGrabNZBBuildErrorIsCallerSentinel proves a request-build failure returns the
-// caller's OWN family-prefixed sentinel bare (never the credential-bearing link).
-func TestGrabNZBBuildErrorIsCallerSentinel(t *testing.T) {
+// TestGrabNZBBuildErrorIsHostOnly proves a request-build failure returns NewRequest's
+// host-redacted error (never the credential-bearing path/query of the link).
+func TestGrabNZBBuildErrorIsHostOnly(t *testing.T) {
 	sentinel := errors.New("fam: download request failed")
 	b := newTestBase(t, &fakeDoer{})
-	_, err := b.GrabNZB(context.Background(), "http://tracker.example/\x7f?r=apikey", "application/x-nzb", ClassifyRateLimit403, sentinel)
-	if !errors.Is(err, sentinel) {
-		t.Fatalf("err = %v, want the caller's sentinel", err)
+	_, err := b.GrabNZB(context.Background(), "http://tracker.example/getnzb\x7f?r=SYNTHETIC-APIKEY", "application/x-nzb", ClassifyRateLimit403, sentinel)
+	if err == nil {
+		t.Fatal("want a build error")
+	}
+	if !apphttp.IsHostRedacted(err) {
+		t.Fatalf("build error not marked host-redacted: %v", err)
+	}
+	if got := err.Error(); strings.Contains(got, "SYNTHETIC-APIKEY") || strings.Contains(got, "getnzb") {
+		t.Fatalf("build error leaked the link's path/query: %v", err)
 	}
 }
 
@@ -267,8 +279,7 @@ func TestGrabNZBMidBodyDropStaysTransportClassifiable(t *testing.T) {
 	if !errors.Is(err, sentinel) {
 		t.Errorf("err = %v, want errors.Is(sentinel)", err)
 	}
-	var netErr net.Error
-	if !errors.As(err, &netErr) {
+	if _, ok := errors.AsType[net.Error](err); !ok {
 		t.Errorf("err = %v, want the net.Error cause preserved", err)
 	}
 	if strings.Contains(err.Error(), secret) {

@@ -2,15 +2,14 @@ package filelist
 
 import (
 	"context"
-	"fmt"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 	"unicode"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // searchPath is the FileList JSON API endpoint (Prowlarr: "{BaseUrl}/api.php").
@@ -50,7 +49,7 @@ func (d *driver) buildSearchURL(q search.Query) string {
 // daily search appends the "yyyy.MM.dd" date to the term instead of sending
 // season/episode.
 func (d *driver) addSearchParams(params url.Values, q search.Query) {
-	imdb := fullIMDBID(q.IMDBID)
+	imdb := native.CanonicalIMDBID(q.IMDBID)
 	keywords := strings.TrimSpace(sanitizeSearchTerm(q.Keywords))
 	if imdb == "" && keywords == "" {
 		return // no criteria → latest-torrents (set by addCommonParams)
@@ -173,29 +172,7 @@ func isSafePunct(r rune) bool {
 	}
 }
 
-// fullIMDBID renders an imdb id as Prowlarr's FullImdbId ("tt" + the numeric id, a
-// minimum of seven digits): a leading "tt" is stripped, the rest parsed and
-// zero-padded. A non-numeric or empty id yields "" (no imdb search).
-func fullIMDBID(raw string) string {
-	s := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(raw)), "tt")
-	if s == "" {
-		return ""
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil {
-		return ""
-	}
-	return fmt.Sprintf("tt%07d", n)
-}
-
-// freeleechOnly reports whether the freeleech_only checkbox is enabled. harbrr stores
-// a checked checkbox as Jackett's "True" sentinel; common truthy spellings are also
-// accepted so whatever the management API persists is interpreted consistently.
+// freeleechOnly reports whether the freeleech_only checkbox is enabled.
 func freeleechOnly(cfg map[string]string) bool {
-	switch strings.ToLower(strings.TrimSpace(cfg["freeleech_only"])) {
-	case "true", "1", "on", "yes":
-		return true
-	default:
-		return false
-	}
+	return native.CheckboxOn(cfg["freeleech_only"])
 }

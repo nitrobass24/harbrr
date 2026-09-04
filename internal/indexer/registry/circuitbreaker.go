@@ -155,8 +155,7 @@ func recoverCircuit(cur database.CircuitState) database.CircuitState {
 // to the computed disable window, matching Prowlarr's TooManyRequestsException
 // handling.
 func retryAfterOf(err error) time.Duration {
-	var rle *search.RateLimitedError
-	if errors.As(err, &rle) {
+	if rle, ok := errors.AsType[*search.RateLimitedError](err); ok {
 		return rle.RetryAfter
 	}
 	return 0

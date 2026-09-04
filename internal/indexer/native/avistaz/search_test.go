@@ -13,7 +13,6 @@ import (
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
-	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 func fixedClock() time.Time { return time.Unix(1_700_000_000, 0).UTC() }
@@ -24,11 +23,9 @@ func builderDriver(site string, cfg map[string]string) *driver {
 		cfg = map[string]string{}
 	}
 	return &driver{
-		Base: native.Base{
-			Cfg:     cfg,
-			BaseURL: testBaseURL,
-			Clock:   fixedClock,
-		},
+		Cfg:     cfg,
+		BaseURL: testBaseURL,
+		Clock:   fixedClock,
 		profile: profileFor(site),
 	}
 }
@@ -172,8 +169,7 @@ func TestSearchStatusDispatch(t *testing.T) {
 	}
 
 	_, err = mk(stdhttp.StatusTooManyRequests, `{}`).Search(context.Background(), search.Query{Keywords: "x"})
-	var rl *search.RateLimitedError
-	if !errors.As(err, &rl) {
+	if _, ok := errors.AsType[*search.RateLimitedError](err); !ok {
 		t.Errorf("429: err=%v, want *search.RateLimitedError", err)
 	}
 
@@ -311,23 +307,6 @@ func TestEpisodeSearchTermOverride(t *testing.T) {
 	}
 }
 
-func TestFullIMDBID(t *testing.T) {
-	t.Parallel()
-	cases := []struct{ in, want string }{
-		{"133093", "tt0133093"},
-		{"tt0084967", "tt0084967"},
-		{"TT123", "tt0000123"},
-		{"12345678", "tt12345678"}, // 8 digits: 7 is the minimum width
-		{"not-an-id", ""},
-		{"", ""},
-	}
-	for _, tc := range cases {
-		if got := fullIMDBID(tc.in); got != tc.want {
-			t.Errorf("fullIMDBID(%q) = %q, want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
 func TestDerivedType(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -348,16 +327,17 @@ func TestDerivedType(t *testing.T) {
 
 func TestFreeleechOnly(t *testing.T) {
 	t.Parallel()
-	on := []string{"True", "true", "1", "on", "yes"}
-	for _, v := range on {
-		if !freeleechOnly(map[string]string{"freeleech_only": v}) {
-			t.Errorf("freeleechOnly(%q) = false, want true", v)
-		}
+	tests := []struct {
+		value string
+		want  bool
+	}{
+		{"True", true},
+		{"", false},
+		{"false", false},
 	}
-	off := []string{"", "false", "0", "no"}
-	for _, v := range off {
-		if freeleechOnly(map[string]string{"freeleech_only": v}) {
-			t.Errorf("freeleechOnly(%q) = true, want false", v)
+	for _, tt := range tests {
+		if got := freeleechOnly(map[string]string{"freeleech_only": tt.value}); got != tt.want {
+			t.Errorf("freeleechOnly(%q) = %v, want %v", tt.value, got, tt.want)
 		}
 	}
 }

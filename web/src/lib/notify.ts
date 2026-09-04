@@ -1,5 +1,5 @@
 import { toast } from "sonner"
-import { api } from "@/lib/api"
+import { api, unwrap } from "@/lib/api"
 
 // notify.ts is the ONE place the web UI is allowed to import "sonner" for toast.* calls
 // (components/ui/sonner.tsx, the <Toaster/> mount, is the only other exception — it
@@ -23,16 +23,16 @@ function contextFrom(err: unknown): string | undefined {
 // swallowed, because a logging failure must never itself toast — that would loop — or
 // block the UI.
 //
-// The typeof guard (rather than calling api.postFrontendLog directly) exists for
-// testability: several hook tests (useIndexers.test.tsx, useAppConnections.test.tsx)
-// mock "@/lib/api" with a partial object exposing only the methods that test exercises,
-// so api.postFrontendLog is undefined there. Calling it unconditionally would throw
-// "postFrontendLog is not a function" inside a fire-and-forget path with no test-visible
-// stack trace. Guarding degrades that case to a silent no-op instead, matching the "must
-// never break the UI" rule this function already has to uphold for its non-test callers.
+// The typeof guard (rather than dereferencing api.http directly) exists for
+// testability: some hook tests (useAppConnections.test.tsx) mock "@/lib/api" with a
+// partial object exposing only what that test exercises, so api.http is undefined
+// there. Dereferencing it unconditionally would throw inside a fire-and-forget path
+// with no test-visible stack trace. Guarding degrades that case to a silent no-op
+// instead, matching the "must never break the UI" rule this function already has to
+// uphold for its non-test callers.
 function shipToServer(level: "error" | "warn", message: string, context?: string): void {
-  if (typeof api.postFrontendLog !== "function") return
-  void api.postFrontendLog(level, message, context).catch(() => {})
+  if (typeof api.http?.POST !== "function") return
+  void unwrap(api.http.POST("/api/logs/frontend", { body: { level, message, context } })).catch(() => {})
 }
 
 // notifyError shows an error toast and relays it to the daemon log. err, when passed, is

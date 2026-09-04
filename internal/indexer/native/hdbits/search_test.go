@@ -71,7 +71,7 @@ func liveDriver(t *testing.T, doer *scriptDoer) *driver {
 // category int array).
 func TestBuildRequest(t *testing.T) {
 	t.Parallel()
-	d := &driver{Base: native.Base{Cfg: creds()}}
+	d := &driver{Cfg: creds()}
 	cred := `"username":"` + credUser + `","passkey":"` + credPass + `"`
 	cases := []struct {
 		name  string
@@ -207,8 +207,7 @@ func TestSearchStatusDispatch(t *testing.T) {
 	// failure, so working creds are not misreported when the per-query budget is exhausted.
 	for _, status := range []int{stdhttp.StatusForbidden, stdhttp.StatusTooManyRequests, stdhttp.StatusServiceUnavailable} {
 		_, err := mk(status).Search(context.Background(), search.Query{Keywords: "x"})
-		var rl *search.RateLimitedError
-		if !errors.As(err, &rl) {
+		if _, ok := errors.AsType[*search.RateLimitedError](err); !ok {
 			t.Errorf("HTTP %d: err = %v, want *search.RateLimitedError", status, err)
 		}
 		if errors.Is(err, login.ErrLoginFailed) {

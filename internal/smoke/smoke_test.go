@@ -134,8 +134,13 @@ func TestSmoke(t *testing.T) {
 			}
 			// A recorded grab result is binding: a 100% search differential means nothing
 			// if the download link 500s (issue #429). rec.Grab is "" when SMOKE_GRAB is
-			// unset, which GrabSucceeded treats as "not attempted", not a failure.
-			if !GrabSucceeded(rec.Grab) {
+			// unset, which GrabSucceeded treats as "not attempted", not a failure. A
+			// search that matched nothing leaves no release to grab — recorded and logged
+			// as skipped, never a failure and never a pass (issue #566).
+			switch {
+			case GrabSkipped(rec.Grab):
+				t.Logf("grab SKIPPED for %s: %s", ix.Slug, rec.Grab)
+			case !GrabSucceeded(rec.Grab):
 				t.Errorf("grab FAILED for %s: %s", ix.Slug, rec.Grab)
 			}
 			if i < len(enabled)-1 {

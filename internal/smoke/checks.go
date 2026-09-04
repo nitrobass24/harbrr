@@ -321,14 +321,22 @@ func grabCheck(ctx context.Context, c *http.Client, cfg Config, slug string, cat
 	result, err := grabResolve(ctx, c, cfg, slug, primary)
 	// Only retry a DIFFERENT fallback: chooseQueries hands back the primary itself when
 	// the operator sets SMOKE_QUERY_FALLBACK equal to SMOKE_QUERY, and a duplicate hit on
-	// a real tracker buys nothing. The spacing matches the differential's.
-	if err == nil && result == grabNoLink && fallback != "" && fallback != primary {
+	// a real tracker buys nothing. An empty primary result is exactly when the fallback
+	// earns its keep, so a skipped-empty resolve retries too. The spacing matches the
+	// differential's.
+	queries := fmt.Sprintf("%q", primary)
+	if err == nil && (result == grabNoLink || GrabSkipped(result)) && fallback != "" && fallback != primary {
 		time.Sleep(betweenCallsDelay)
 		result, err = grabResolve(ctx, c, cfg, slug, fallback)
+		queries += fmt.Sprintf(", %q", fallback)
 	}
 	switch {
 	case err != nil:
 		f.Status, f.Detail = StatusFail, "grab failed: "+apphttp.RedactError(err)
+	case GrabSkipped(result):
+		// Nothing existed to grab (issue #566) — a distinct SKIP, never a PASS. Rows
+		// that yield no resolvable link still take the FAIL branch below (#429).
+		f.Status, f.Detail = StatusSkip, "search matched nothing to grab (queries tried: "+queries+")"
 	case GrabSucceeded(result):
 		f.Status, f.Detail = StatusPass, "download link resolved to a "+result
 	default:

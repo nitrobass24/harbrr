@@ -33,37 +33,19 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # go.mod is the ONLY place the Go version is written. A container tag is resolved
-  # before any step runs, so it cannot read go.mod directly and cannot read `env`
-  # either (container.image's contexts are github/needs/strategy/matrix/vars/inputs).
-  # This job reads it once and publishes it, so the two container jobs below derive
-  # their image from the same line the toolchain check enforces.
-  go-version:
-    name: go-version
-    runs-on: self-hosted
-    outputs:
-      version: ${{ steps.read.outputs.version }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - id: read
-        # The `go` directive carries the full patch (go 1.26.6), which is exactly the
-        # golang:<version>-alpine tag we need.
-        run: |
-          v=$(awk '/^go /{print $2; exit}' go.mod)
-          case "$v" in
-            *.*.*) ;;
-            *) echo "go.mod's go directive ($v) has no patch version; the image tag needs one" >&2; exit 1 ;;
-          esac
-          echo "version=$v" >> "$GITHUB_OUTPUT"
-  # Tool-agnostic guard: block hand-edits to the vendored Jackett snapshot
-  # (internal/indexer/definitions/vendor/**), which is consumed byte-for-byte. This is
-  # the authoritative, non-bypassable enforcement of AGENTS.md's #1 rule — a contributor
-  # using any editor/agent is caught here, unlike the local pre-commit / editor hooks.
-  # The scheduled refresh branch (chore/vendor-definitions) is exempt inside the script.
-  vendor-guard:
-    name: vendor-guard
+  # The repo's cheap PR-only tripwires, collected in one fast job off the critical
+  # path (was `vendor-guard`, renamed when it outgrew its founding check).
+  # First among them: block hand-edits to the vendored Jackett snapshot
+  # (internal/indexer/definitions/vendor/**), which is consumed byte-for-byte — the
+  # authoritative, non-bypassable enforcement of AGENTS.md's #1 rule; a contributor
+  # using any editor/agent is caught here, unlike the local pre-commit / editor
+  # hooks. The scheduled refresh branch (chore/vendor-definitions) is exempt inside
+  # the script. The remaining steps guard version-pin agreement: go.mod is the ONLY
+  # place the Go version is written, but a container image tag must be resolvable
+  # before any step runs and so cannot read it — pins are checked after the fact
+  # here instead.
+  guards:
+    name: guards
     if: github.event_name == 'pull_request'
     runs-on: self-hosted
     timeout-minutes: 5
@@ -73,6 +55,77 @@ jobs:
           fetch-depth: 0
       - name: Guard vendored definitions
         run: scripts/check-vendor-untouched.sh --ci
+      # backend-test's container tag is pinned (it must be resolvable before the job
+      # starts), so a go.mod bump that forgets it would otherwise surface as a
+      # confusing GOTOOLCHAIN failure inside every shard. Catch it here instead —
+      # this job runs in parallel and gates nothing.
+      - name: go.mod matches backend-test's pinned container
+        run: |
+          want=$(awk '/^go /{print $2; exit}' go.mod)
+          # Anchored at the start of the line so this guard does not match its own
+          # source, which necessarily contains the same literal text.
+          got=$(grep -E '^[[:space:]]*image: golang:' .github/workflows/ci.yml \
+                | head -1 | sed -E 's/.*golang:(.*)-alpine.*/\1/')
+          if [ "$want" != "$got" ]; then
+            echo "go.mod requires go $want but backend-test pins golang:$got-alpine" >&2
+            echo "Update the 'image:' line under jobs.backend-test.container in .github/workflows/ci.yml" >&2
+            exit 1
+          fi
+          echo "backend-test container pin matches go.mod: $want"
+      # Same idea for bun: web/package.json's packageManager field is the single
+      # source of truth, repeated as oven/bun container tags (ci.yml, docs.yml)
+      # and web-e2e's `npm install -g bun@...`. A bump that misses one reference
+      # would silently run CI on mismatched bun versions — catch it here instead.
+      - name: workflows' bun pins match web/package.json
+        run: |
+          want=$(sed -nE 's/.*"packageManager": *"bun@([^"]+)".*/\1/p' web/package.json)
+          if [ -z "$want" ]; then
+            echo 'web/package.json has no packageManager bun pin' >&2
+            exit 1
+          fi
+          # image: lines anchored at line start so this guard does not match its
+          # own source (the golang guard's trick); the install-line pattern only
+          # matches bun@<digit>, which this script never contains.
+          stale=$(grep -rnE '^[[:space:]]*image: oven/bun:|bun@[0-9][0-9.]*' .github/workflows/ \
+                  | grep -vE "oven/bun:${want}-alpine|bun@${want}") || true
+          if [ -n "$stale" ]; then
+            echo "bun references out of sync with web/package.json's bun@${want}:" >&2
+            echo "$stale" >&2
+            exit 1
+          fi
+          echo "all workflow bun pins match web/package.json: bun@${want}"
+      # The Dockerfile's build stage and vendor-definitions.yml pin Go at the minor
+      # level, and Dependabot's docker ecosystem can bump the Dockerfile AHEAD of
+      # go.mod — the reverse drift direction from the check above, and invisible to
+      # CI because the docker job injects a host-built binary and never runs that
+      # stage. The Dockerfile also pins alpine twice (rootfs + final) and copies
+      # passwd/group between them, so those two must stay identical.
+      - name: Dockerfile / workflow Go and alpine pins agree
+        run: |
+          want=$(awk '/^go /{print $2; exit}' go.mod)
+          # FROM/image: anchors keep this from matching its own source (the same
+          # trick as the check above). A minor-level pin (1.27) is satisfied by a
+          # go.mod inside that minor (1.27.x); an exact pin must match exactly.
+          for got in $(grep -hE '^FROM .*golang:' Dockerfile \
+                       | sed -E 's/.*golang:([0-9.]+)-alpine.*/\1/') \
+                     $(grep -hE '^[[:space:]]*image: golang:' .github/workflows/*.yml \
+                       | sed -E 's/.*golang:([0-9.]+)-alpine.*/\1/'); do
+            case "$want" in
+              "$got"|"$got".*) ;;
+              *)
+                echo "go.mod requires go $want but a golang:$got-alpine pin exists in the Dockerfile or a workflow" >&2
+                exit 1
+                ;;
+            esac
+          done
+          alpines=$(grep -hE '^FROM .*alpine:[0-9]' Dockerfile \
+                    | sed -E 's/.*alpine:([0-9.]+).*/\1/' | sort -u)
+          if [ -z "$alpines" ] || [ "$(echo "$alpines" | wc -l)" -ne 1 ]; then
+            echo "Dockerfile alpine base pins are missing or disagree:" >&2
+            grep -nE '^FROM .*alpine:[0-9]' Dockerfile >&2 || true
+            exit 1
+          fi
+          echo "golang pins agree with go.mod ($want); Dockerfile alpine pins agree ($alpines)"
 
   # `go test` compiles every package (and test file) before running, so it doubles as
   # the compile check. The race suite is split into package shards because the full
@@ -80,9 +133,8 @@ jobs:
   # Cross-build below covers other platforms and vet is covered by golangci-lint (govet).
   backend-test:
     name: backend-test (${{ matrix.shard.name }})
-    needs: go-version
     runs-on: self-hosted
-    # Match the Dockerfile's build stage (golang:1.26-alpine) so the toolchain that
+    # Match the Dockerfile's build stage (golang:1.27-alpine) so the toolchain that
     # tests is the image's own musl Go — hence no actions/setup-go here (it would
     # download a glibc Go and shadow the image's on PATH, silently defeating the
     # point) and GOTOOLCHAIN=local (so a go.mod toolchain bump fails loud instead of
@@ -94,9 +146,16 @@ jobs:
     # musl-dev) is required because `go test -race` always needs cgo, unlike the
     # Dockerfile's CGO_ENABLED=0 product build.
     container:
-      # Derived from go.mod via the go-version job — NOT the floating 1.26-alpine,
-      # which lagged go.mod once already and silently poisoned the lint cache.
-      image: golang:${{ needs.go-version.outputs.version }}-alpine
+      # Pinned to go.mod's exact patch — NOT the floating 1.27-alpine, which lagged
+      # go.mod once already and silently poisoned the lint cache. This used to be
+      # derived at runtime by a `go-version` job, but a container image tag has to be
+      # known before the job starts, so that job could only ever be a separate node in
+      # the graph — and it put a dependency edge, and therefore a runner dispatch wait
+      # (observed at up to 56s), in front of every shard. Drift is caught twice
+      # instead: `guards` compares this pin against go.mod off the critical path,
+      # and GOTOOLCHAIN=local below makes `go list -m` refuse to run at all if the
+      # container's Go is older than go.mod asks for.
+      image: golang:1.27.0-alpine
       # Persistent host-disk Go caches instead of actions/cache: the self-hosted
       # fleet shares one host, so round-tripping ~2GB of cache blobs through GHA
       # storage cost ~40s of restore per shard (plus the stalled-segment-download
@@ -188,116 +247,49 @@ jobs:
           SCRIPT
           su ci -s /bin/sh -c "PATH='$PATH' /bin/sh /tmp/shard-test.sh '$PWD'"
 
-  # Frontend Vitest suite — mirrors the Go `test` job and gates docker-merge alongside it.
-  web-test:
-    name: web-test
+  # Frontend checks — tsc type-check, ESLint (type-aware rules via typescript-eslint
+  # recommendedTypeChecked), and the Vitest suite in one job. Each check was its own
+  # job, but the real work (~40s total) was dwarfed by tripling the container/checkout/
+  # install scaffolding (~20s per job), so one job is cheaper in machine time and no
+  # slower in wall time (this chain sits well off the run's critical path).
+  web-checks:
+    name: web-checks
     runs-on: self-hosted
     container:
-      image: node:22-alpine
-      # Host-disk pnpm content store, shared by every node job (concurrent
-      # installs are safe — the store is content-addressed and lock-protected).
-      # The store sits on a different filesystem than the overlayfs workspace, so
-      # pnpm copies instead of hardlinking — still far cheaper than fetching.
-      # All node jobs run as root, so the store has a single writer uid.
+      image: oven/bun:1.4.0-alpine
+      # Host-disk bun package cache, shared by every frontend job (concurrent
+      # installs are safe — the cache is content-addressed and lock-protected).
+      # All frontend jobs run as root, so the cache has a single writer uid.
       volumes:
-        - /mnt/optane/github-actions/harbrr-pnpm-store:/pnpm-store
-        - /mnt/optane/github-actions/harbrr-corepack:/corepack
+        - /mnt/optane/github-actions/harbrr-bun-cache:/bun-cache
+        # ESLint result cache. Type-aware rules build the whole TS program, which is
+        # most of that step; caching it skips every file whose contents are unchanged.
+        - /mnt/optane/github-actions/harbrr-eslint-cache:/eslint-cache
     timeout-minutes: 10
     env:
-      npm_config_store_dir: /pnpm-store
-      COREPACK_HOME: /corepack
-      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      BUN_INSTALL_CACHE_DIR: /bun-cache
     steps:
       - name: install container prerequisites
         run: apk add --no-cache gcompat git libatomic
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # corepack instead of pnpm/action-setup: the action re-downloaded pnpm on
-      # every run (~7s per node job); corepack resolves the packageManager pin from
-      # web/package.json and caches the dist in the host-mounted COREPACK_HOME, so
-      # a warm run activates it in ~1s.
-      - name: activate pnpm (corepack, host-cached)
-        working-directory: web
-        run: corepack enable && corepack install
       - name: install
         working-directory: web
-        run: pnpm install --frozen-lockfile
-      - name: test
-        working-directory: web
-        run: pnpm test
-
-  # Frontend ESLint (type-aware rules via typescript-eslint recommendedTypeChecked) —
-  # mirrors golangci-lint and runs in parallel with it.
-  web-lint:
-    name: web-lint
-    runs-on: self-hosted
-    container:
-      image: node:22-alpine
-      # Host-disk pnpm store — see web-test.
-      volumes:
-        - /mnt/optane/github-actions/harbrr-pnpm-store:/pnpm-store
-        - /mnt/optane/github-actions/harbrr-corepack:/corepack
-    timeout-minutes: 10
-    env:
-      npm_config_store_dir: /pnpm-store
-      COREPACK_HOME: /corepack
-      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
-    steps:
-      - name: install container prerequisites
-        run: apk add --no-cache gcompat git libatomic
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      # corepack instead of pnpm/action-setup: the action re-downloaded pnpm on
-      # every run (~7s per node job); corepack resolves the packageManager pin from
-      # web/package.json and caches the dist in the host-mounted COREPACK_HOME, so
-      # a warm run activates it in ~1s.
-      - name: activate pnpm (corepack, host-cached)
-        working-directory: web
-        run: corepack enable && corepack install
-      - name: install
-        working-directory: web
-        run: pnpm install --frozen-lockfile
-      - name: lint
-        working-directory: web
-        run: pnpm lint
-
-  # Frontend tsc type-check — independent of ESLint, mirrors golangci-lint tier.
-  # Uses `tsc -b` (project references; noEmit already set in tsconfig.app.json).
-  web-typecheck:
-    name: web-typecheck
-    runs-on: self-hosted
-    container:
-      image: node:22-alpine
-      # Host-disk pnpm store — see web-test.
-      volumes:
-        - /mnt/optane/github-actions/harbrr-pnpm-store:/pnpm-store
-        - /mnt/optane/github-actions/harbrr-corepack:/corepack
-    timeout-minutes: 10
-    env:
-      npm_config_store_dir: /pnpm-store
-      COREPACK_HOME: /corepack
-      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
-    steps:
-      - name: install container prerequisites
-        run: apk add --no-cache gcompat git libatomic
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      # corepack instead of pnpm/action-setup: the action re-downloaded pnpm on
-      # every run (~7s per node job); corepack resolves the packageManager pin from
-      # web/package.json and caches the dist in the host-mounted COREPACK_HOME, so
-      # a warm run activates it in ~1s.
-      - name: activate pnpm (corepack, host-cached)
-        working-directory: web
-        run: corepack enable && corepack install
-      - name: install
-        working-directory: web
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
+      # `tsc -b` (project references; noEmit already set in tsconfig.app.json).
       - name: typecheck
         working-directory: web
-        run: pnpm typecheck
+        run: bun run typecheck
+      # One cache file per branch: .eslintcache is a single unlocked JSON blob, so a
+      # shared path would let concurrent branches clobber each other's. Slashes in the
+      # branch name become underscores so the result is a valid filename.
+      - name: lint
+        working-directory: web
+        run: bun run lint -- --cache-location "/eslint-cache/$(echo "$GITHUB_REF_NAME" | tr / _).json"
+      - name: test
+        working-directory: web
+        run: bun run test
 
   # Production build of the SPA (web/). The dist bundle is uploaded as an artifact and
   # every binary-producing job (cross-build, docker, goreleaser) downloads it instead of
@@ -306,18 +298,18 @@ jobs:
     name: web
     runs-on: self-hosted
     container:
-      image: node:22-alpine
-      # Host-disk pnpm store — see web-test. This job heads the run's critical
+      image: oven/bun:1.4.0-alpine
+      # Host-disk bun cache — see web-checks. This job heads the run's critical
       # path (web -> web-e2e / docker -> docker-merge), so its install time is
       # wall-clock for the whole run.
       volumes:
-        - /mnt/optane/github-actions/harbrr-pnpm-store:/pnpm-store
-        - /mnt/optane/github-actions/harbrr-corepack:/corepack
+        - /mnt/optane/github-actions/harbrr-bun-cache:/bun-cache
+        # Built bundles, keyed by the hash of everything that can change one. Most
+        # PRs here are backend-only, and this job heads the critical path.
+        - /mnt/optane/github-actions/harbrr-web-dist:/web-dist-cache
     timeout-minutes: 10
     env:
-      npm_config_store_dir: /pnpm-store
-      COREPACK_HOME: /corepack
-      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      BUN_INSTALL_CACHE_DIR: /bun-cache
     steps:
       - name: install container prerequisites
         run: apk add --no-cache bash gcompat git libatomic
@@ -325,39 +317,72 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # corepack instead of pnpm/action-setup: the action re-downloaded pnpm on
-      # every run (~7s per node job); corepack resolves the packageManager pin from
-      # web/package.json and caches the dist in the host-mounted COREPACK_HOME, so
-      # a warm run activates it in ~1s.
-      - name: activate pnpm (corepack, host-cached)
-        working-directory: web
-        run: corepack enable && corepack install
+      # The bundle is a pure function of the tracked web sources plus the OpenAPI
+      # spec the api-types drift check regenerates from — so hash exactly those and
+      # nothing else. `git ls-files -s` prints each path's blob hash, so the key is
+      # content-addressed without reading a single file.
+      - name: compute bundle cache key
+        id: bundle
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          key=$(git -C "$GITHUB_WORKSPACE" ls-files -s web internal/web/swagger/openapi.yaml | sha256sum | cut -d' ' -f1)
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+          echo "bundle cache key: $key"
+      # Exact match only — no restore-keys fallback. A near-miss here would ship a
+      # stale UI inside the release image, which is far worse than rebuilding.
+      - name: restore cached bundle
+        id: restore
+        run: |
+          src="/web-dist-cache/${{ steps.bundle.outputs.key }}"
+          if [ -d "$src" ]; then
+            mkdir -p web/dist && cp -a "$src/." web/dist/
+            echo "hit=true" >> "$GITHUB_OUTPUT"
+            echo "bundle cache HIT"
+          else
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+            echo "bundle cache MISS"
+          fi
       - name: install
+        if: steps.restore.outputs.hit != 'true'
         working-directory: web
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
       # The route tree is generated from src/routes and committed; a contributor
-      # who adds a route but forgets `pnpm generate:routes` fails here, not in a
+      # who adds a route but forgets `bun run generate:routes` fails here, not in a
       # teammate's surprise diff later.
       - name: route-tree drift check
+        if: steps.restore.outputs.hit != 'true'
         working-directory: web
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          pnpm exec tsr generate
+          bun run generate:routes
           git -C "$GITHUB_WORKSPACE" diff --exit-code -- web/src/routeTree.gen.ts
       # The API types are generated from internal/web/swagger/openapi.yaml and
-      # committed; a contributor who changes the spec but forgets `pnpm generate:api`
+      # committed; a contributor who changes the spec but forgets `bun run generate:api`
       # fails here, not in a teammate's surprise diff later.
       - name: api-types drift check
+        if: steps.restore.outputs.hit != 'true'
         working-directory: web
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          pnpm generate:api
+          bun run generate:api
           git -C "$GITHUB_WORKSPACE" diff --exit-code -- web/src/types/api.gen.ts
       - name: build
+        if: steps.restore.outputs.hit != 'true'
         working-directory: web
-        run: pnpm build:bundle
+        run: bun run build:bundle
+      # Guard runs on both paths: a cache hit must clear the same bar as a fresh
+      # build, or a bad bundle would be cached once and served forever.
       - name: guard the bundle
         run: scripts/check-web-dist.sh
+      - name: save bundle to cache
+        if: steps.restore.outputs.hit != 'true'
+        run: |
+          dst="/web-dist-cache/${{ steps.bundle.outputs.key }}"
+          rm -rf "$dst.tmp" && mkdir -p "$dst.tmp"
+          cp -a web/dist/. "$dst.tmp/"
+          # Rename is atomic on the same filesystem, so a concurrent job never sees
+          # a half-copied bundle under the real key.
+          rm -rf "$dst" && mv "$dst.tmp" "$dst"
       - name: upload dist artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -386,8 +411,7 @@ jobs:
       volumes:
         - /mnt/optane/github-actions/harbrr-go-cache/e2e-mod:/root/go/pkg/mod
         - /mnt/optane/github-actions/harbrr-go-cache/e2e-build:/root/.cache/go-build
-        - /mnt/optane/github-actions/harbrr-pnpm-store:/pnpm-store
-        - /mnt/optane/github-actions/harbrr-corepack:/corepack
+        - /mnt/optane/github-actions/harbrr-bun-cache:/bun-cache
     timeout-minutes: 15
     needs: [web]
     env:
@@ -396,10 +420,8 @@ jobs:
       GOFLAGS: -buildvcs=false
       GOMODCACHE: /root/go/pkg/mod
       GOCACHE: /root/.cache/go-build
-      # Host-disk pnpm store (shared by every node job; see web-test).
-      npm_config_store_dir: /pnpm-store
-      COREPACK_HOME: /corepack
-      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      # Host-disk bun cache (shared by every frontend job; see web-checks).
+      BUN_INSTALL_CACHE_DIR: /bun-cache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -411,16 +433,13 @@ jobs:
           go-version-file: go.mod
           # Go caches are host bind-mounts (see the container block).
           cache: false
-      # corepack instead of pnpm/action-setup: the action re-downloaded pnpm on
-      # every run (~7s per node job); corepack resolves the packageManager pin from
-      # web/package.json and caches the dist in the host-mounted COREPACK_HOME, so
-      # a warm run activates it in ~1s.
-      - name: activate pnpm (corepack, host-cached)
-        working-directory: web
-        run: corepack enable && corepack install
+      # The Playwright image ships node, not bun. The npm wrapper package is the
+      # cheapest way in — it just fetches the pinned bun binary (no build step).
+      - name: install bun
+        run: npm install -g bun@1.4.0
       - name: install
         working-directory: web
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
       - name: download web dist (built once by the web job)
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -434,7 +453,7 @@ jobs:
         run: go build -trimpath -o bin/harbrr ./cmd/harbrr
       - name: e2e
         working-directory: web
-        run: pnpm exec playwright test
+        run: bun run test:e2e
       - name: upload playwright report
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -472,11 +491,29 @@ jobs:
           cache: false
       - name: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
+        env:
+          # Same reasoning as setup-go's `cache: false` directly above, applied to
+          # the analysis cache the action manages for itself. Measured on
+          # dba00e5: restoring it took 44.5s and saving it 10.1s, wrapping a lint
+          # that itself ran in 24.5s — the payload is only ~20MB but tens of
+          # thousands of tiny files, so `tar -x` is syscall-bound, and `-P` unpacks
+          # them onto the runner's root filesystem rather than the optane volume
+          # every other cache here lives on.
+          #
+          # Point the cache at that volume instead and let it persist. It is shared
+          # by the whole fleet, so it stays warm no matter which runner picks the
+          # job up — strictly better than a per-run tarball, which is cold whenever
+          # the key moves (a version bump cost 144s and 164s on the two runs after
+          # it).
+          GOLANGCI_LINT_CACHE: /mnt/optane/github-actions/harbrr-golangci-cache
         with:
-          # Pin the version so the action's cache key is stable run-to-run
-          # (keep in sync with the version in `make tools`).
-          version: v2.12.2
+          # Pin the version so it matches the version in `make tools`.
+          version: v2.13.0
           only-new-issues: ${{ github.event_name == 'pull_request' }}
+          # The cache lives on host disk now; the action's own save/restore would
+          # both miss the path above and re-add the tar cost it is meant to avoid.
+          skip-cache: true
+          skip-save-cache: true
 
   # gitleaks is the source-of-truth secret scanner; the CLI binary is run directly
   # (pinned by version + SHA-256) because gitleaks/gitleaks-action needs a paid license
@@ -510,7 +547,7 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 10
     env:
-      GOVULNCHECK_VERSION: v1.5.0
+      GOVULNCHECK_VERSION: v1.7.0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -641,9 +678,7 @@ jobs:
           # already persist in /root between runs, so a GHA cache round-trip is pure
           # overhead. Container jobs that need caching (backend-test) use actions/cache.
           cache: false
-      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
-        if: matrix.arch == 'arm64'
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       # The image ships the UI: the web job built (and tested) the bundle once; download
       # it so web/dist is embedded at the Go compile (a gitkeep-only dist would serve
@@ -762,7 +797,7 @@ jobs:
   docker-merge:
     name: docker-merge
     runs-on: self-hosted
-    needs: [docker, backend-test, web-test, web-e2e, golangci-lint, web-lint, web-typecheck]
+    needs: [docker, backend-test, web-checks, web-e2e, golangci-lint]
     if: >-
       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]') ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
@@ -785,7 +820,7 @@ jobs:
           path: ${{ runner.temp }}/digests
           pattern: digests-*
           merge-multiple: true
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
       - name: log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
@@ -831,13 +866,45 @@ jobs:
   # Release. On any other run (PR / main push) `goreleaser check` just validates
   # .goreleaser.yml — fast, so it doesn't slow PRs. The container image is published by
   # the docker jobs above; GoReleaser builds no image.
+  # `goreleaser check` only validates .goreleaser.yml — it compiles nothing and
+  # reads no build output, so gating it behind the test suite bought nothing and
+  # put a config check on the critical path (it ended the run at t+138s while
+  # waiting on golangci-lint). Split out with no `needs` so it starts immediately.
+  # The release job below keeps the full gate, which is where it actually matters.
+  goreleaser-check:
+    name: goreleaser check
+    runs-on: self-hosted
+    timeout-minutes: 10
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      # `check` renders the config's templates, so RELEASE_HEADER must be defined
+      # even though nothing is released here.
+      - name: define an empty release header
+        run: echo "RELEASE_HEADER=" >> "$GITHUB_ENV"
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: check
+
+  # Tag runs only. Every step below was previously guarded by its own
+  # `startsWith(github.ref, 'refs/tags/')`; the job-level `if` now carries that
+  # once, so the conditionals inside are gone.
   goreleaser:
     name: goreleaser
     runs-on: self-hosted
     timeout-minutes: 20
-    needs: [backend-test, web-test, web-e2e, golangci-lint, web-lint, web-typecheck, web]
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
+    needs: [backend-test, web-checks, web-e2e, golangci-lint, web]
     permissions:
-      contents: write # create the GitHub Release (tag runs only)
+      contents: write # create the GitHub Release
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -856,13 +923,11 @@ jobs:
       # empty. Tag runs only — PR/main runs execute `goreleaser check`, which builds
       # nothing.
       - name: download web dist (built once by the web job)
-        if: startsWith(github.ref, 'refs/tags/')
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: web-dist
           path: web/dist
       - name: guard the bundle
-        if: startsWith(github.ref, 'refs/tags/')
         run: scripts/check-web-dist.sh
       # Curated highlights for the GitHub Release header: pull the tag's section
       # from CHANGELOG.md into $RELEASE_HEADER, which goreleaser renders via
@@ -870,10 +935,7 @@ jobs:
       # events (empty on non-tag) so `goreleaser check` always has the var defined.
       - name: assemble release header from CHANGELOG
         run: |
-          header=""
-          case "$GITHUB_REF" in
-            refs/tags/*) header="$(scripts/changelog-extract.sh "${GITHUB_REF#refs/tags/}" || true)" ;;
-          esac
+          header="$(scripts/changelog-extract.sh "${GITHUB_REF#refs/tags/}" || true)"
           {
             echo "RELEASE_HEADER<<HARBRR_NOTES_EOF"
             printf '%s\n' "$header"
@@ -884,6 +946,6 @@ jobs:
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: ${{ startsWith(github.ref, 'refs/tags/') && 'release --clean' || 'check' }}
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
