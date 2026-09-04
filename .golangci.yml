@@ -80,8 +80,21 @@ linters:
     - predeclared        # no shadowing predeclared identifiers (e.g. a var named `comparable`)
     - modernize          # keep to modern Go constructs (see the newexpr exclusion below)
     - nolintlint         # every //nolint names its linter, carries a reason, and is still needed
+    - depguard           # import-boundary gates (regexp2 confined to regexadapter — see settings)
 
   settings:
+    depguard:
+      rules:
+        # The engine's RE2-first rule (AGENTS.md): .NET-semantics regex routes
+        # through the regexadapter stage, which owns the RE2-vs-regexp2 decision
+        # and the differential gate. A direct regexp2 import anywhere else would
+        # bypass that routing — enforce the boundary, not just review for it.
+        regexp2-confined-to-regexadapter:
+          files:
+            - "!**/internal/indexer/cardigann/internal/regexadapter/**"
+          deny:
+            - pkg: github.com/dlclark/regexp2
+              desc: import regexp2 only in cardigann/internal/regexadapter (RE2-first engine rule)
     wrapcheck:
       # native.Base errors (Do/DoDownload/NewBase/TestViaSearch) are caller-ready by
       # design: already family-prefixed, host-only-redacted, and sentinel-bearing.

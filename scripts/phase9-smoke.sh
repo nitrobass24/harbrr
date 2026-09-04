@@ -46,8 +46,12 @@ if [[ "${SMOKE_REUSE_ENV:-0}" == "1" ]]; then
   [[ -n "$ENV_FILE" ]] || { echo "phase9-smoke: SMOKE_REUSE_ENV=1 needs SMOKE_ENV_FILE=<saved file>" >&2; exit 1; }
   [[ -f "$ENV_FILE" ]] || { echo "phase9-smoke: SMOKE_ENV_FILE '$ENV_FILE' not found" >&2; exit 1; }
   echo "phase9-smoke: reusing saved env from $ENV_FILE (no extraction)" >&2
-  # shellcheck disable=SC1090 # ENV_FILE is an operator-supplied path, not a fixed source.
-  set -a; . "$ENV_FILE"; set +a
+  # ENV_FILE is an operator-supplied path, not a fixed source. The directive
+  # binds to the next command only, so the source sits on its own line.
+  set -a
+  # shellcheck disable=SC1090
+  . "$ENV_FILE"
+  set +a
 else
   # EXTRACT mode — pull creds from prowlarr.db.
   : "${PROWLARR_DB:?set PROWLARR_DB=/path/to/prowlarr.db}"
@@ -76,7 +80,8 @@ if [[ "$mode" == "extract" && -n "$ENV_FILE" ]]; then
     } > "$ENV_FILE" )
   chmod 600 "$ENV_FILE"
   case "$ENV_FILE" in
-    .env.phase9 | *.smoke.env | */.env.phase9 | */*.smoke.env) ;;
+    # case globs cross `/`, so *.smoke.env already covers any directory prefix.
+    .env.phase9 | */.env.phase9 | *.smoke.env) ;;
     *) echo "phase9-smoke: WARNING — $ENV_FILE may not be gitignored; verify with 'git check-ignore $ENV_FILE'" >&2 ;;
   esac
   echo "phase9-smoke: saved env bundle -> $ENV_FILE (mode 600, gitignored)" >&2

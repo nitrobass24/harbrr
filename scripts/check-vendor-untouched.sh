@@ -43,7 +43,7 @@ offenders="$(printf '%s\n' "${changed}" | grep -E "${vendor_re}" || true)"
 if [ -n "${offenders}" ]; then
   {
     echo "BLOCKED: this change modifies vendored Jackett definitions (consumed byte-for-byte):"
-    printf '  %s\n' ${offenders}
+    printf '%s\n' "${offenders}" | sed 's/^/  /'
     echo
     echo "Do not hand-edit these. Refresh the whole snapshot with 'make vendor-defs', or add an"
     echo "override under internal/indexer/definitions/dropin/. See AGENTS.md."
