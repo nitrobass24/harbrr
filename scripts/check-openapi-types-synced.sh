@@ -65,14 +65,22 @@ if ! git ls-files --error-unmatch "${generated}" >/dev/null 2>&1; then
   exit 1
 fi
 
-before="$(git hash-object "${generated}")"
+# Compare the regenerated file against the STAGED blob, not against the pre-regeneration
+# working tree. Hashing the working tree twice passes when a contributor regenerated but
+# forgot to `git add` — the hashes match while the commit still carries the old generated
+# file, which is exactly the mistake this guard exists to catch.
+staged="$(git rev-parse ":${generated}" 2>/dev/null)" || {
+  echo "openapi-types-guard: cannot read the staged ${generated}." >&2
+  exit 1
+}
+
 ( cd web && bun run generate:api >/dev/null 2>&1 ) || {
   echo "openapi-types-guard: 'bun run generate:api' failed — cannot verify ${generated}." >&2
   exit 1
 }
-after="$(git hash-object "${generated}")"
+regenerated="$(git hash-object "${generated}")"
 
-if [ "${before}" != "${after}" ]; then
+if [ "${staged}" != "${regenerated}" ]; then
   cat >&2 <<EOF
 openapi-types-guard: ${spec} changed but ${generated} is stale.
 
