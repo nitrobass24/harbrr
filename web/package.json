@@ -13,7 +13,7 @@
     "build:bundle": "vite build && mkdir -p dist && touch dist/.gitkeep",
     "preview": "vite preview",
     "typecheck": "tsc -b",
-    "lint": "eslint --cache --cache-strategy content \"src/**/*.{ts,tsx}\"",
+    "lint": "eslint --cache --cache-strategy content --max-warnings 0 \"src/**/*.{ts,tsx}\"",
     "format": "eslint --cache --cache-strategy content --fix \"src/**/*.{ts,tsx}\"",
     "test": "vitest run",
     "test:watch": "vitest",

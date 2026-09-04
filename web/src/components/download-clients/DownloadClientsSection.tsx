@@ -188,9 +188,7 @@ function DownloadClientForm({ client, initialAppId, pending, onSubmit }: {
   const quiInstances = useQuiInstances(usingQuiApp ? Number(effectiveAppSel) : null)
   // Edit never touches identity (host/instance are fixed or App-level now); create
   // needs a watch folder (blackhole), a picked instance (qui via an App), or a host.
-  const identityValid = bhSettings
-    ? bhSettings.torrentDir !== "" || bhSettings.nzbDir !== ""
-    : isEdit || (usingQuiApp && quiSettings ? quiSettings.instanceId !== "" : identity.host !== "")
+  const identityValid = bhSettings? bhSettings.torrentDir !== "" || bhSettings.nzbDir !== "": isEdit || (usingQuiApp && quiSettings ? quiSettings.instanceId !== "" : identity.host !== "")
 
   return (
     <form
@@ -203,9 +201,7 @@ function DownloadClientForm({ client, initialAppId, pending, onSubmit }: {
         // address, not a URL; every other kind composes an absolute http(s) URL.
         // Picking an existing qui App reuses its identity — no host/username/secret.
         const composedHost = spec.hostMode === "hostport" ? composeHostPort(identity.host, identity.port) : composeHostURL(identity.scheme, identity.host, identity.port)
-        const identityBody = usingQuiApp
-          ? { appId: Number(effectiveAppSel) }
-          : { host: spec.hostMode === "none" ? "" : composedHost, username: usesUsername ? identity.username : "", secret: isEdit ? (identity.secret || undefined) : identity.secret }
+        const identityBody = usingQuiApp? { appId: Number(effectiveAppSel) }: { host: spec.hostMode === "none" ? "" : composedHost, username: usesUsername ? identity.username : "", secret: isEdit ? (identity.secret || undefined) : identity.secret }
         onSubmit(client?.id ?? null, { name, kind, settings: spec.encode(settings), ...identityBody })
       }}
     >
