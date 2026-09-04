@@ -365,7 +365,10 @@ jobs:
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           bun run generate:api
-          git -C "$GITHUB_WORKSPACE" diff --exit-code -- web/src/types/api.gen.ts
+          if ! git -C "$GITHUB_WORKSPACE" diff --exit-code -- web/src/types/api.gen.ts; then
+            echo "::error::web/src/types/api.gen.ts is stale. An internal/web/swagger/openapi.yaml edit is a WEB change: run 'bun run generate:api' in web/ and commit web/src/types/api.gen.ts. Note make test-openapi does NOT catch this — it compares method/path sets only. The pre-commit hook openapi-types-synced checks this locally."
+            exit 1
+          fi
       - name: build
         if: steps.restore.outputs.hit != 'true'
         working-directory: web
