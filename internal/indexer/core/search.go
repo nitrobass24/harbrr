@@ -31,7 +31,7 @@ type SearchResult struct {
 // same params. The management API's JSON search calls this so its result set is the
 // same as the feed's (the parity guarantee); the only differences are the wire
 // format (JSON vs XML) and that the caller resolves resolver-needing links itself
-// via torznabhttp.NewDLRewriter. It does NOT validate the t= mode (the JSON endpoint
+// via grab.NewDLRewriter. It does NOT validate the t= mode (the JSON endpoint
 // is general search); a caller needing mode gating does it before calling.
 func SearchReleases(ctx context.Context, idx Indexer, q url.Values) (SearchResult, error) {
 	return SearchReleasesWithCaps(ctx, idx, idx.Capabilities(), q)

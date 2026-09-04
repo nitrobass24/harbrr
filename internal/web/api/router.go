@@ -20,13 +20,13 @@ import (
 	"github.com/autobrr/harbrr/internal/download"
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
+	"github.com/autobrr/harbrr/internal/indexer/grab"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 	"github.com/autobrr/harbrr/internal/notify"
 	"github.com/autobrr/harbrr/internal/proxy"
 	"github.com/autobrr/harbrr/internal/secrets"
 	"github.com/autobrr/harbrr/internal/solver"
 	"github.com/autobrr/harbrr/internal/version"
-	"github.com/autobrr/harbrr/internal/web/torznabhttp"
 )
 
 // Deps are the collaborators the management API drives.
@@ -52,7 +52,7 @@ type Deps struct {
 	// externally-visible base path (the server strips it before routing, so it must be
 	// re-added), the operator-configured external origin (authoritative when set), and
 	// the trusted-proxy check gating X-Forwarded-Proto in the request-derived fallback.
-	URLConfig torznabhttp.URLConfig
+	URLConfig grab.URLConfig
 	// Cache is the search-results cache backing the /api/cache stats/flush routes.
 	// Nil means caching is disabled; those routes then report a disabled state
 	// rather than 404 (wired in a later leaf).
@@ -100,7 +100,7 @@ type router struct {
 	backup    *backup.Service
 	sessions  *scs.SessionManager
 	dlToken   *secrets.Keyring
-	urlCfg    torznabhttp.URLConfig
+	urlCfg    grab.URLConfig
 	cache     *registry.SearchCache
 	cfg       Config
 	log       zerolog.Logger

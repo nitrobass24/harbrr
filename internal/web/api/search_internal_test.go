@@ -18,8 +18,8 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/core"
+	"github.com/autobrr/harbrr/internal/indexer/grab"
 	"github.com/autobrr/harbrr/internal/secrets"
-	"github.com/autobrr/harbrr/internal/web/torznabhttp"
 )
 
 // keyLink is a synthetic passkey-bearing download link (test only).
@@ -290,7 +290,7 @@ func TestResolveSearchLinksSealsResolverLink(t *testing.T) {
 			if rels[0].Link != keyLink || rels[0].Title != title {
 				t.Error("source release was mutated (expected a copy)")
 			}
-			payload, err := torznabhttp.ResolveGrab(t.Context(), idx, rt.dlToken, token)
+			payload, err := grab.ResolveGrab(t.Context(), idx, rt.dlToken, token)
 			if err != nil {
 				t.Fatalf("ResolveGrab: %v", err)
 			}
@@ -403,7 +403,7 @@ func TestSealByOriginSealsEachReleaseToItsOwnMember(t *testing.T) {
 		if wantOrigin[i] == "beta" {
 			idx = beta
 		}
-		payload, err := torznabhttp.ResolveGrab(t.Context(), idx, rt.dlToken, r.Release.Link[pos+len(want):])
+		payload, err := grab.ResolveGrab(t.Context(), idx, rt.dlToken, r.Release.Link[pos+len(want):])
 		if err != nil {
 			t.Fatalf("result[%d] ResolveGrab: %v", i, err)
 		}
