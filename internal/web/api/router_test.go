@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"net/http"
@@ -26,6 +27,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/native/catalog"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
+	applog "github.com/autobrr/harbrr/internal/logger"
 	"github.com/autobrr/harbrr/internal/notify"
 	"github.com/autobrr/harbrr/internal/proxy"
 	"github.com/autobrr/harbrr/internal/secrets"
@@ -186,7 +188,11 @@ func newEnvFull(t *testing.T, cfg api.Config, buildCache func(db *database.DB) *
 		// Production always wires the /dl keyring; the tests do too, so a sealed
 		// management download link behaves here exactly as it does live.
 		DLToken: keyring,
-		Cache:   cache, Logger: logger, LogLevel: api.NewLogLevelStore(db, nil),
+		// The composition root owns persistence (internal/app/loglevel.go); the API's
+		// contract is only "apply it and report it back", so applying is all the
+		// handler tests need.
+		Cache: cache, Logger: logger,
+		SetLogLevel:     func(_ context.Context, level string) error { return applog.SetLevel(level) },
 		AdultCategories: api.NewAdultCategoriesStore(db, nil),
 	}, cfg)
 	if err != nil {

@@ -11,12 +11,7 @@ type statsRetentionBody struct {
 // getStatsRetention returns the operator's retention window for the per-category
 // indexer tallies (the default when never set).
 func (rt *router) getStatsRetention(w http.ResponseWriter, r *http.Request) {
-	months, err := rt.registry.CategoryStatsRetention(r.Context())
-	if err != nil {
-		rt.writeServiceError(w, "stats retention", err)
-		return
-	}
-	writeJSON(w, http.StatusOK, statsRetentionBody{Months: months})
+	writeJSON(w, http.StatusOK, statsRetentionBody{Months: rt.registry.CategoryStatsRetention(r.Context())})
 }
 
 // putStatsRetention sets the retention window. It takes effect on the next daily reap;

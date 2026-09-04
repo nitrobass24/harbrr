@@ -167,7 +167,7 @@ func WithClock(fn func() time.Time) Option {
 }
 
 // WithLogger sets the logger used for resolve failures (errors are redacted).
-func WithLogger(l zerolog.Logger) Option { return func(r *Registry) { r.log = l } }
+func WithLogger(l zerolog.Logger) Option { return func(r *Registry) { r.Resolver.log = l } }
 
 // WithSearchCache enables the search-results cache: each resolved adapter is wired to it
 // and its Search runs cache-aside. Nil (the default, when this Option is not passed)
@@ -292,6 +292,7 @@ func New(db dbinterface.Querier, ldr *loader.Loader, keyring secretsKeyring, fam
 		circuit:     res.circuit,
 		db:          res.db,
 		clock:       res.clock,
+		log:         res.log,
 	}
 	// The status: feed reads derived health back through the narrow statusSource seam,
 	// so the resolver never holds the StatsReporter itself.

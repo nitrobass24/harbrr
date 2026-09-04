@@ -8,15 +8,22 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rs/zerolog"
+
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
 )
 
-// hideAdultCategoriesKey is the app_settings key holding the operator's
-// "hide adult categories" choice ("true"/"false"). Absent means false — the
-// setting is off by default and an instance that never touches it behaves
-// exactly as it did before the setting existed (autobrr/harbrr#383).
-const hideAdultCategoriesKey = "hide_adult_categories"
+// hideAdultCategories is the operator's "hide adult categories" choice. Absent or
+// unreadable means false — the setting is off by default and an instance that never
+// touches it behaves exactly as it did before the setting existed
+// (autobrr/harbrr#383).
+var hideAdultCategories = database.Setting[bool]{
+	Key:     "hide_adult_categories",
+	Default: false,
+	Parse:   strconv.ParseBool,
+	Format:  strconv.FormatBool,
+}
 
 // AdultCategoriesStore is the global hide-adult-categories dial: it holds the
 // live value in memory (every category-listing and search response consults it,
@@ -52,32 +59,19 @@ func (s *AdultCategoriesStore) Hidden() bool {
 
 // Set persists the choice and then applies it live. Persisting first means a
 // write failure leaves the running value untouched rather than desynchronizing
-// runtime and stored state (the log-level store's ordering).
+// runtime and stored state.
 func (s *AdultCategoriesStore) Set(ctx context.Context, hidden bool) error {
-	value := strconv.FormatBool(hidden)
-	if err := (database.AppSettings{}).Set(ctx, s.db, hideAdultCategoriesKey, value, s.now()); err != nil {
+	if err := hideAdultCategories.Write(ctx, s.db, hidden, s.now()); err != nil {
 		return fmt.Errorf("api: persist hide-adult-categories: %w", err)
 	}
 	s.hidden.Store(hidden)
 	return nil
 }
 
-// LoadPersisted applies the stored value at startup. A missing or unparseable
-// row leaves the default (false) in place, so a stale row can never wedge boot.
-func (s *AdultCategoriesStore) LoadPersisted(ctx context.Context) error {
-	stored, found, err := database.AppSettings{}.Get(ctx, s.db, hideAdultCategoriesKey)
-	if err != nil {
-		return fmt.Errorf("api: read hide-adult-categories: %w", err)
-	}
-	if !found {
-		return nil
-	}
-	hidden, err := strconv.ParseBool(stored)
-	if err != nil {
-		return nil
-	}
-	s.hidden.Store(hidden)
-	return nil
+// LoadPersisted applies the stored value at startup. A missing or unusable row
+// leaves the default (false) in place, so a stale row can never wedge boot.
+func (s *AdultCategoriesStore) LoadPersisted(ctx context.Context, log zerolog.Logger) {
+	s.hidden.Store(hideAdultCategories.Read(ctx, s.db, log))
 }
 
 // adultCategoriesBody is the shared request/response shape for the endpoints.
