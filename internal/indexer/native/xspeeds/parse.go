@@ -209,10 +209,5 @@ func uploadFactor(row *goquery.Selection) float64 {
 }
 
 func freeleechOnly(cfg map[string]string) bool {
-	switch strings.ToLower(strings.TrimSpace(cfg["freeleech_only"])) {
-	case "true", "1", "on", "yes":
-		return true
-	default:
-		return false
-	}
+	return native.CheckboxOn(cfg["freeleech_only"])
 }
