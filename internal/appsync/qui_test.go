@@ -135,7 +135,7 @@ func TestQuiLifecycle(t *testing.T) {
 
 func TestQuiBuildIndexerGolden(t *testing.T) {
 	t.Parallel()
-	drv := &quiDriver{baseURL: "http://qui:7476", apiKey: "k"}
+	drv := &quiDriver{}
 	d := DesiredIndexer{
 		Slug: "native-tracker", Name: "Native Tracker", Priority: 10, Enabled: true,
 		FeedURL:      "http://harbrr:8787/api/indexers/native-tracker/results/torznab",

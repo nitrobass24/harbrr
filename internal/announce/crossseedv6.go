@@ -3,7 +3,6 @@ package announce
 import (
 	"context"
 	"net/http"
-	"strings"
 	"time"
 )
 
@@ -50,9 +49,7 @@ func NewCrossSeedV6(baseURL, apiKey string, client *http.Client) Target {
 	if client == nil {
 		client = defaultHTTPClient()
 	}
-	return &csv6Announcer{
-		kind: "cross-seed", baseURL: strings.TrimRight(baseURL, "/"), apiKey: apiKey, client: client,
-	}
+	return &csv6Announcer{poster: newPoster("cross-seed", baseURL, apiKey, client)}
 }
 
 // Probe checks cross-seed v6 is reachable via its unauthenticated /api/ping health

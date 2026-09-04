@@ -4,10 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"mime/multipart"
 	"net/http"
 	"strconv"
@@ -23,13 +20,11 @@ import (
 // talks a different API surface (per-instance torrent add, not the webhook
 // check/apply pair) and stays self-contained (#8, #242).
 type quiDriver struct {
-	host       string
-	apiKey     string
+	jc         *apphttp.JSONClient
 	instanceID int
 	category   string
 	tags       []string
 	paused     bool
-	client     *http.Client
 }
 
 // newQui builds the qui driver from a configured client row and its decrypted
@@ -41,13 +36,17 @@ func newQui(c domain.DownloadClient, secret string, client *http.Client) (Driver
 		settings = *c.Settings.Qui
 	}
 	return &quiDriver{
-		host:       strings.TrimRight(c.Host, "/"),
-		apiKey:     secret,
+		jc: apphttp.NewJSONClient(apphttp.JSONClient{
+			Prefix: "download: qui",
+			Base:   c.Host,
+			Auth:   http.Header{"X-API-Key": {secret}},
+			Client: client,
+			Secret: secret,
+		}),
 		instanceID: settings.InstanceID,
 		category:   settings.Category,
 		tags:       settings.Tags,
 		paused:     settings.StartPaused,
-		client:     client,
 	}, nil
 }
 
@@ -58,24 +57,9 @@ type quiInstance struct {
 
 // Test confirms the API key is valid and the configured instance id exists.
 func (d *quiDriver) Test(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, d.host+"/api/instances", nil)
-	if err != nil {
-		return fmt.Errorf("download: qui: build request: %w", apphttp.RedactURLError(err))
-	}
-	req.Header.Set("X-API-Key", d.apiKey)
-
-	resp, err := d.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("download: qui: %w", apphttp.RedactURLError(err))
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download: qui: unexpected status %d", resp.StatusCode)
-	}
-
 	var instances []quiInstance
-	if err := json.NewDecoder(resp.Body).Decode(&instances); err != nil {
-		return fmt.Errorf("download: qui: decode instances: %w", err)
+	if _, err := d.jc.Do(ctx, http.MethodGet, "/api/instances", nil, &instances); err != nil {
+		return err
 	}
 	for _, inst := range instances {
 		if inst.ID == d.instanceID {
@@ -107,31 +91,16 @@ func (d *quiDriver) Add(ctx context.Context, p Payload, opts AddOptions) error {
 		return fmt.Errorf("download: qui: build request body: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/api/instances/%d/torrents", d.host, d.instanceID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
-	if err != nil {
-		return fmt.Errorf("download: qui: build request: %w", apphttp.RedactURLError(err))
-	}
-	req.Header.Set("Content-Type", contentType)
-	req.Header.Set("X-API-Key", d.apiKey)
-
-	resp, err := d.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("download: qui: %w", apphttp.RedactURLError(err))
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return fmt.Errorf("download: qui: add torrent: unexpected status %d: %s", resp.StatusCode, apphttp.RedactError(errors.New(string(msg))))
-	}
-	return nil
+	path := fmt.Sprintf("/api/instances/%d/torrents", d.instanceID)
+	_, err = d.jc.Do(ctx, http.MethodPost, path, apphttp.RawBody{ContentType: contentType, Data: body}, nil)
+	return err
 }
 
 // quiAddBody builds the multipart body for POST /api/instances/{id}/torrents: a
 // `torrent` file part for fetched bytes, or a `urls` field for a magnet/http link
 // the client fetches itself — plus category/tags/paused. Field names mirror
 // qBittorrent's own torrents/add (per #242's verified API surface).
-func quiAddBody(p Payload, category string, tags []string, paused bool) (*bytes.Buffer, string, error) {
+func quiAddBody(p Payload, category string, tags []string, paused bool) ([]byte, string, error) {
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 
@@ -164,5 +133,5 @@ func quiAddBody(p Payload, category string, tags []string, paused bool) (*bytes.
 	if err := mw.Close(); err != nil {
 		return nil, "", fmt.Errorf("close multipart writer: %w", err)
 	}
-	return &buf, mw.FormDataContentType(), nil
+	return buf.Bytes(), mw.FormDataContentType(), nil
 }

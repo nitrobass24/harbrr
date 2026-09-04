@@ -100,6 +100,13 @@ linters:
         - github.com/autobrr/harbrr/internal/indexer/native
         - github.com/autobrr/harbrr/internal/connresource
         - github.com/autobrr/harbrr/internal/domain
+      # apphttp.JSONClient.Do (#553) is native.Base's shape for the APP-facing packages:
+      # its errors are already prefixed with the caller's own family ("appsync: qui: ",
+      # "download: flood: "), carry the method/path and status, and are scrubbed of the
+      # configured credential. Re-wrapping at a call site would double that prefix. Only
+      # this one method is exempted, so the rest of internal/http stays checked.
+      ignore-sig-regexps:
+        - \(\*github\.com/autobrr/harbrr/internal/http\.JSONClient\)\.Do\(
       # gazelle's authStrategy (ADR 0003) is the same shape: Prepare/Recover already
       # return gazelle-prefixed, sentinel-bearing errors (login.ErrLoginFailed via
       # ensureSession/renewSession/loginLocked), so a caller re-wrapping them would only

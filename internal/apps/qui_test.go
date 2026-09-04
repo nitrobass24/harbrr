@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/autobrr/harbrr/internal/apps"
@@ -84,5 +85,40 @@ func TestQuiInstancesServerErrorNoSecretLeak(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), apiKey) {
 		t.Errorf("error leaks the credential: %v", err)
+	}
+}
+
+// TestQuiInstancesTrailingSlashBaseURL is the regression for the bug this proxy had
+// alone among the app-facing callers: it concatenated the stored base URL with the
+// path without trimming, so an app saved as "http://qui:7476/" asked qui for
+// "//api/instances". The shared JSON client normalises the base once.
+func TestQuiInstancesTrailingSlashBaseURL(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	var mu sync.Mutex
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode([]apps.QuiInstance{{ID: 1, Name: "a"}})
+	}))
+	t.Cleanup(srv.Close)
+
+	svc, _ := newService(t)
+	app, err := svc.Resolve(ctx, apps.Ref{Kind: domain.AppKindQui, BaseURL: srv.URL + "/", APIKey: "qui-secret-key"})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if _, err := svc.QuiInstances(ctx, app.ID); err != nil {
+		t.Fatalf("QuiInstances: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(paths) != 1 || paths[0] != "/api/instances" {
+		t.Errorf(`qui saw %q, want exactly ["/api/instances"] (no double slash, no redirect hop)`, paths)
 	}
 }

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
@@ -82,12 +81,9 @@ func NewQui(baseURL, apiKey string, client *http.Client, fetch TorrentFetcher, t
 	if client == nil {
 		client = defaultHTTPClient()
 	}
-	base := poster{kind: "qui", baseURL: strings.TrimRight(baseURL, "/"), apiKey: apiKey, client: client}
-	announcing := base
-	announcing.client = widenTimeout(client, quiAnnounceTimeout)
 	return &quiAnnouncer{
-		poster:      announcing,
-		probePoster: base,
+		poster:      newPoster("qui", baseURL, apiKey, widenTimeout(client, quiAnnounceTimeout)),
+		probePoster: newPoster("qui", baseURL, apiKey, client),
 		fetch:       fetch,
 		tags:        tags,
 	}
