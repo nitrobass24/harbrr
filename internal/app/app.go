@@ -28,6 +28,7 @@ import (
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/definitions"
+	"github.com/autobrr/harbrr/internal/indexer/grab"
 	"github.com/autobrr/harbrr/internal/indexer/native/catalog"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 	"github.com/autobrr/harbrr/internal/logger"
@@ -430,12 +431,12 @@ func newServer(a *App) (*server.Server, error) {
 // the operator-configured external origin (authoritative when set), and the
 // trusted-proxy check gating X-Forwarded-Proto in the request-derived fallback
 // (auth.trusted_proxies — the same peers already trusted for X-Forwarded-For).
-func feedURLConfig(cfg *config.Config) (torznabhttp.URLConfig, error) {
+func feedURLConfig(cfg *config.Config) (grab.URLConfig, error) {
 	trusted, err := apphttp.ParseTrustedProxies(cfg.Auth.TrustedProxies)
 	if err != nil {
-		return torznabhttp.URLConfig{}, fmt.Errorf("auth.trusted_proxies: %w", err)
+		return grab.URLConfig{}, fmt.Errorf("auth.trusted_proxies: %w", err)
 	}
-	return torznabhttp.URLConfig{
+	return grab.URLConfig{
 		BasePath:       cfg.Server.BaseURL,
 		ExternalOrigin: cfg.Server.ExternalOrigin(),
 		TrustedProxies: trusted,

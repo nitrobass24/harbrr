@@ -4,7 +4,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/autobrr/harbrr/internal/web/torznabhttp"
+	"github.com/autobrr/harbrr/internal/indexer/grab"
 )
 
 // TestGrabPayloadNamesTheJob pins where a download client's job name comes from: the
@@ -16,7 +16,7 @@ func TestGrabPayloadNamesTheJob(t *testing.T) {
 	const title = "Show.S01E01.2160p.WEB-DL.HEVC-GRP"
 	rt := &router{dlToken: testKeyring(t)}
 	idx := fakeSearchIndexer{id: "demo", needsResolver: true}
-	rw := torznabhttp.NewManagementDLRewriter(rt.dlToken, idx, "http://h.test/api/indexers/demo/download")
+	rw := grab.NewManagementDLRewriter(rt.dlToken, idx, "http://h.test/api/indexers/demo/download")
 	sealed, _, ok := rw(keyLink, title, []int{2000})
 	if !ok {
 		t.Fatal("expected the link to be sealed")

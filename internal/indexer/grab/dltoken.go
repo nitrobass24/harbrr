@@ -1,4 +1,4 @@
-package torznabhttp
+package grab
 
 import (
 	"encoding/base64"

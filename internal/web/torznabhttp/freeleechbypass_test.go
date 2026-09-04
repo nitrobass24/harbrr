@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/autobrr/harbrr/internal/indexer/core"
+	"github.com/autobrr/harbrr/internal/indexer/grab"
 )
 
 // TestFeedURL covers the externally-visible feed URL builder: scheme derivation
@@ -18,17 +19,17 @@ func TestFeedURL(t *testing.T) {
 	trustAll := func(net.IP) bool { return true }
 	tests := []struct {
 		name     string
-		cfg      URLConfig
+		cfg      grab.URLConfig
 		bypass   bool
 		fwdProto string
 		want     string
 	}{
-		{"honor", URLConfig{}, false, "", "http://h.test/api/indexers/tt/results/torznab"},
-		{"bypass appends /full", URLConfig{}, true, "", "http://h.test/api/indexers/tt/results/torznab/full"},
-		{"base path", URLConfig{BasePath: "/harbrr"}, false, "", "http://h.test/harbrr/api/indexers/tt/results/torznab"},
-		{"forwarded https from untrusted peer is ignored", URLConfig{}, true, "https", "http://h.test/api/indexers/tt/results/torznab/full"},
-		{"forwarded https from trusted peer", URLConfig{TrustedProxies: trustAll}, true, "https", "https://h.test/api/indexers/tt/results/torznab/full"},
-		{"external_url overrides the request-derived origin", URLConfig{ExternalOrigin: "https://ext.example.com", BasePath: "/harbrr"}, false, "", "https://ext.example.com/harbrr/api/indexers/tt/results/torznab"},
+		{"honor", grab.URLConfig{}, false, "", "http://h.test/api/indexers/tt/results/torznab"},
+		{"bypass appends /full", grab.URLConfig{}, true, "", "http://h.test/api/indexers/tt/results/torznab/full"},
+		{"base path", grab.URLConfig{BasePath: "/harbrr"}, false, "", "http://h.test/harbrr/api/indexers/tt/results/torznab"},
+		{"forwarded https from untrusted peer is ignored", grab.URLConfig{}, true, "https", "http://h.test/api/indexers/tt/results/torznab/full"},
+		{"forwarded https from trusted peer", grab.URLConfig{TrustedProxies: trustAll}, true, "https", "https://h.test/api/indexers/tt/results/torznab/full"},
+		{"external_url overrides the request-derived origin", grab.URLConfig{ExternalOrigin: "https://ext.example.com", BasePath: "/harbrr"}, false, "", "https://ext.example.com/harbrr/api/indexers/tt/results/torznab"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

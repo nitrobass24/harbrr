@@ -43,3 +43,23 @@ HTTP/XML serving over that contract.
 - The exact `core` boundary — whether `SearchReleases` moves wholesale — is settled
   in implementation, guided by "core = the indexer as consumed; torznabhttp = HTTP
   serving."
+
+## Amendment: the Grab seam moves out too (autobrr/harbrr#552)
+
+Moving the contract to `core` left `web/torznabhttp` smaller but not yet what this
+decision claimed it was. Sixteen of its twenty-two exported symbols had nothing to do
+with the Torznab feed: the `/dl` token codec, the link-sealing rewriters, the
+resolve-and-stream core, and the `/dl` URL derivation — the Grab seam, which is
+indexer domain wearing the feed's name. The tell was `internal/app/adapters.go`,
+where the announce background push — a code path with no `http.Request` anywhere in
+it — imported a package named for the *arr wire protocol purely to mint a download
+token. So `internal/indexer/grab` was extracted, at the same altitude and for the
+same reason `core` was: the Grab seam is a domain concept, not a web one, and the
+invariant it holds ("a passkey never leaves harbrr") deserves one module and one test
+suite rather than being spread across the feed handler and its callers. This
+**completes** the reduction this ADR set out to make — `web/torznabhttp` is now the
+pure HTTP/XML feed serving it was scoped to be, with `/dl` as a thin route adapter
+over `grab.ServeGrab` — rather than revising it. `FeedURL` stayed behind, since a
+Torznab results-feed URL is feed domain; it takes `grab.URLConfig` so the feed URL and
+the `/dl` URLs it emits cannot disagree about where harbrr is. "Grab" was already
+ubiquitous language in `CONTEXT.md`; it now names a package as well.
