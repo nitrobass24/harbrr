@@ -70,7 +70,7 @@ func TestMamIDIsSecret(t *testing.T) {
 		"search_in_filenames":   false,
 	}
 	seen := map[string]bool{}
-	for _, s := range credentialSettings() {
+	for _, s := range mamSettings {
 		seen[s.Name] = true
 		if got := s.IsSecret(); got != want[s.Name] {
 			t.Errorf("%s IsSecret = %v, want %v", s.Name, got, want[s.Name])

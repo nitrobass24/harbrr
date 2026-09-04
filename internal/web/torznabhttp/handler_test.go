@@ -1,8 +1,10 @@
 package torznabhttp
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -1198,4 +1200,54 @@ func TestServeGrab(t *testing.T) {
 			t.Errorf("status = %d, want 404", rec.Code)
 		}
 	})
+}
+
+// TestLogInternalErrorLevel pins the one thing that keeps a live error visible: an open
+// circuit is a self-imposed gate, so it must not be logged at error alongside genuine
+// tracker failures. A tracker that stays down for days would otherwise emit an error
+// every poll — 48 a day at a 30 minute interval — burying the failures worth acting on.
+func TestLogInternalErrorLevel(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{
+			// The exact shape adapter.go returns when the gate refuses a dispatch.
+			name: "circuit open in the adapter's until form is debug",
+			err:  fmt.Errorf("%w until 2026-08-21T04:19:00Z", core.ErrCircuitOpen),
+			want: "debug",
+		},
+		{
+			name: "circuit open stays debug when wrapped by the search stack",
+			err:  fmt.Errorf("torznab: search: registry: search %q: %w", "aura4k", core.ErrCircuitOpen),
+			want: "debug",
+		},
+		{
+			name: "a real tracker failure is still an error",
+			err:  errors.New("tracker returned HTTP 530: gateway reported the origin unreachable"),
+			want: "error",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+			logInternalError(zerolog.New(&buf).Level(zerolog.DebugLevel), "search", "aura4k", tt.err)
+			var rec struct {
+				Level   string `json:"level"`
+				Message string `json:"message"`
+			}
+			if err := json.Unmarshal(buf.Bytes(), &rec); err != nil {
+				t.Fatalf("unmarshal log line %q: %v", buf.String(), err)
+			}
+			if rec.Level != tt.want {
+				t.Errorf("level = %q, want %q (line: %s)", rec.Level, tt.want, buf.String())
+			}
+			if rec.Message != "indexer request failed" {
+				t.Errorf("message = %q, want %q", rec.Message, "indexer request failed")
+			}
+		})
+	}
 }

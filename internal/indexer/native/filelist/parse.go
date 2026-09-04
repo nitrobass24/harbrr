@@ -122,7 +122,7 @@ func (d *driver) toRelease(row *filelistTorrent) (*normalizer.Release, error) {
 		UploadVolumeFactor:   volumeFactor(row.DoubleUp, 2, 1),
 		MinimumRatio:         minimumRatio,
 		MinimumSeedTime:      minimumSeedTimeSeconds,
-		IMDBID:               normalizeIMDBID(row.ImdbID),
+		IMDBID:               native.CanonicalIMDBID(row.ImdbID),
 	}
 	if row.Internal != 0 {
 		rel.Tags = []string{normalizer.TagInternal}
@@ -157,18 +157,6 @@ func parsePublishDate(s string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("filelist: unparseable upload_date %q: %w", s, search.ErrParseError)
 	}
 	return t.UTC(), nil
-}
-
-// normalizeIMDBID reproduces Prowlarr's imdb handling — TrimStart('t') then parse to
-// an int — but re-renders it as the canonical "tt"+7-digit form harbrr stores (the
-// same FullImdbId shape used in the request), so a row's `imdb` of "tt0133093" or
-// "133093" both normalize to "tt0133093". A value of two characters or fewer (or a
-// non-numeric one) yields "" (Prowlarr leaves ImdbId 0).
-func normalizeIMDBID(raw string) string {
-	if len(strings.TrimSpace(raw)) <= 2 {
-		return ""
-	}
-	return fullIMDBID(raw)
 }
 
 // volumeFactor returns whenTrue when the integer flag is set (FileList sends 0/1),

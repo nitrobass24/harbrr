@@ -37,6 +37,9 @@ make smoke-test                                 # go test -tags smoke ./internal
   The knob gates **both** runners: `harbrr smoke` adds a per-tracker `grab` check whose FAIL exits
   non-zero (a transport error is reported as a FAIL, never aborts the run), and neither runner
   pushes the payload to a download client — the no-hit-and-run seeding step stays manual.
+  When the search (primary and fallback) matched nothing on the tracker, there is no release to
+  grab and both runners record the grab as **skipped** — a distinct state, never a pass and never
+  a failure; rows that yield no resolvable link still fail.
 
 Per-tracker evidence is written to `testdata/smoke-<slug>.json` — **gitignored and
 secret-scrubbed** (counts and a few titles, never a passkey/apikey/cookie). It is scratch

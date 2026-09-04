@@ -398,8 +398,7 @@ func transportErrText(err error) string {
 // logging it twice (autobrr/harbrr#181). The "request failed" fallback below adds no
 // host prefix of its own, so it is left unmarked.
 func redactDoErr(err error) error {
-	var uerr *url.Error
-	if errors.As(err, &uerr) {
+	if uerr, ok := errors.AsType[*url.Error](err); ok {
 		hostOnly := fmt.Errorf("%s %s: %w", uerr.Op, apphttp.SchemeHost(uerr.URL), uerr.Err)
 		return apphttp.MarkHostRedacted(hostOnly) //nolint:wrapcheck // hostOnly is already the fully-shaped, host-redacted transport error; the marker is a transparent Error()/Unwrap() passthrough, and re-wrapping would only add noise
 	}

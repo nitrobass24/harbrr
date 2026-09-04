@@ -1,24 +1,27 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import { ThemeProvider } from "@/components/themes/theme-provider"
+import { stubApi } from "@/test/stubApi"
 import { routeTree } from "@/routeTree.gen"
 
 const ME = { username: "admin", authMethod: "password", csrfToken: "tok" }
 
-function meResponse(): Response {
-  return new Response(JSON.stringify(ME), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
+// me answers with the fixture; the queries the routed pages fire (dashboard tiles,
+// indexer lists) get inert empty bodies.
+function stubShell() {
+  stubApi({
+    "GET /api/auth/me": ME,
+    "GET /api/indexers": [],
+    "GET /api/indexers/stats": [],
+    "GET /api/cache/stats": [],
+    "GET /api/app-connections": [],
   })
 }
 
 function renderApp(initialEntries: string[] = ["/"]) {
-  vi.stubGlobal("fetch", vi.fn().mockImplementation((url: unknown) => {
-    if (String(url).endsWith("/auth/me")) return Promise.resolve(meResponse())
-    return Promise.resolve(new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } }))
-  }))
+  stubShell()
 
   const router = createRouter({
     routeTree,
@@ -35,14 +38,8 @@ function renderApp(initialEntries: string[] = ["/"]) {
 }
 
 describe("AppLayout shell", () => {
-  afterEach(() => vi.unstubAllGlobals())
-
   it("renders the sidebar nav per the mockup for a signed-in user", async () => {
-    // me answers with the fixture; every other query (dashboard lists) gets [].
-    vi.stubGlobal("fetch", vi.fn().mockImplementation((url: unknown) => {
-      if (String(url).endsWith("/auth/me")) return Promise.resolve(meResponse())
-      return Promise.resolve(new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } }))
-    }))
+    stubShell()
 
     const router = createRouter({
       routeTree,
@@ -73,8 +70,6 @@ describe("AppLayout shell", () => {
 })
 
 describe("responsive shell", () => {
-  afterEach(() => vi.unstubAllGlobals())
-
   it("hides the sidebar and shows the mobile footer nav on small viewports (CSS breakpoint classes)", async () => {
     renderApp()
 

@@ -166,14 +166,13 @@ func shouldSeed(current, discovered int) bool {
 }
 
 // fetchUser GETs ?t=user and parses the account document. The URL embeds the apikey, so
-// (exactly like getCaps) a request-build failure surfaces only the endpoint's
-// scheme://host with the cause routed through apphttp.RedactURLError, and the transport
-// error from Do is already host-redacted structurally.
+// (exactly like getCaps) a request-build failure and a transport error both surface only
+// the endpoint's scheme://host — structurally, through native.Base's NewRequest and Do.
 func (d *driver) fetchUser(ctx context.Context) (*userRoot, error) {
 	rawurl := d.buildAPIURL("user")
-	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
+	req, err := d.NewRequest(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
-		return nil, fmt.Errorf("newznab: build user request to %s: %w", apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
+		return nil, err
 	}
 	req.Header.Set("Accept", "application/rss+xml, application/xml, text/xml")
 	resp, err := d.Do(ctx, req, native.ClassifyRateLimit403)

@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen } from "@testing-library/react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import type { ReactNode } from "react"
 import type { Proxy } from "@/lib/api"
+import { stubApi } from "@/test/stubApi"
 import { ProxiesSection } from "./ProxiesSection"
 
 const PROXY: Proxy = {
@@ -15,10 +16,6 @@ interface PatchProxyBody {
   password?: string
 }
 
-function jsonResponse(body: unknown): Response {
-  return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } })
-}
-
 function wrap(children: ReactNode) {
   return (
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -29,28 +26,35 @@ function wrap(children: ReactNode) {
 
 // Stubs GET /api/proxies with PROXY and captures the PATCH body sent on save.
 function stubFetchAndCapturePatch(): { patchBody: () => Promise<PatchProxyBody> } {
-  const fetchMock = vi.fn((req: Request) => {
-    if (req.method === "PATCH") return Promise.resolve(jsonResponse({}))
-    return Promise.resolve(jsonResponse([PROXY]))
+  const api = stubApi({
+    "GET /api/proxies": [PROXY],
+    "PATCH /api/proxies/{id}": {},
   })
-  vi.stubGlobal("fetch", fetchMock)
   return {
     patchBody: async () => {
       const call = await vi.waitFor(() => {
-        const found = fetchMock.mock.calls.find(([req]) => req.method === "PATCH")
+        const found = api.calls("PATCH /api/proxies/{id}")[0]
         if (!found) throw new Error("no PATCH call yet")
         return found
       })
-      return JSON.parse(await call[0].text()) as PatchProxyBody
+      return JSON.parse(await call.text()) as PatchProxyBody
     },
   }
 }
 
 describe("ProxiesSection", () => {
-  afterEach(() => vi.unstubAllGlobals())
+  // Representative failed-list case for the six ResourceSection adopters — the
+  // pending/error/empty states themselves are covered by resource-section.test.tsx.
+  it("a failed list query shows LoadError, not an empty card", async () => {
+    stubApi({ "GET /api/proxies": () => Response.json({ error: "boom" }, { status: 500 }) })
+    render(wrap(<ProxiesSection />))
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Loading proxies failed")
+    expect(screen.queryByText(/No proxies/)).toBeNull()
+  })
 
   it("lists a proxy's host:port plainly (no masking)", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse([PROXY])))
+    stubApi({ "GET /api/proxies": [PROXY] })
     render(wrap(<ProxiesSection />))
 
     expect(await screen.findByText("home")).toBeTruthy()

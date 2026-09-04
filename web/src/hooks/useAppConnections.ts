@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { api } from "@/lib/api"
+import { api, unwrap } from "@/lib/api"
 import { notifyError } from "@/lib/notify"
 import { keys } from "@/lib/query"
 import type {
@@ -15,7 +15,7 @@ import type {
 export function useAppConnections() {
   return useQuery({
     queryKey: keys.appConnections.all,
-    queryFn: () => api.listConnections(),
+    queryFn: () => unwrap(api.http.GET("/api/app-connections")),
   })
 }
 
@@ -24,14 +24,14 @@ export function useAppConnections() {
 export function useServerInfo() {
   return useQuery({
     queryKey: keys.serverInfo.all,
-    queryFn: () => api.getServerInfo(),
+    queryFn: () => unwrap(api.http.GET("/api/server-info")),
   })
 }
 
 export function useConnectionStatus(id: number | null) {
   return useQuery({
     queryKey: keys.appConnections.status(id),
-    queryFn: () => api.getConnectionStatus(id as number),
+    queryFn: () => unwrap(api.http.GET("/api/app-connections/{id}/status", { params: { path: { id: id as number } } })),
     enabled: id !== null,
   })
 }
@@ -44,7 +44,7 @@ function useInvalidateConnections() {
 export function useCreateConnection() {
   const invalidate = useInvalidateConnections()
   return useMutation({
-    mutationFn: (body: CreateConnection) => api.createConnection(body),
+    mutationFn: (body: CreateConnection) => unwrap(api.http.POST("/api/app-connections", { body: body })),
     onSettled: invalidate,
   })
 }
@@ -55,7 +55,7 @@ export function useCreateConnection() {
 export function useUpdateConnection() {
   const invalidate = useInvalidateConnections()
   return useMutation({
-    mutationFn: ({ id, body }: { id: number, body: UpdateConnection }) => api.updateConnection(id, body),
+    mutationFn: ({ id, body }: { id: number, body: UpdateConnection }) => unwrap(api.http.PATCH("/api/app-connections/{id}", { params: { path: { id } }, body })),
     onSettled: invalidate,
   })
 }
@@ -63,7 +63,7 @@ export function useUpdateConnection() {
 export function useDeleteConnection() {
   const invalidate = useInvalidateConnections()
   return useMutation({
-    mutationFn: (id: number) => api.deleteConnection(id),
+    mutationFn: (id: number) => unwrap(api.http.DELETE("/api/app-connections/{id}", { params: { path: { id } } })),
     onSettled: invalidate,
   })
 }
@@ -89,13 +89,13 @@ export function useSetConnectionEnabled() {
 }
 
 export function useTestConnection() {
-  return useMutation({ mutationFn: (id: number) => api.testConnection(id) })
+  return useMutation({ mutationFn: (id: number) => unwrap(api.http.POST("/api/app-connections/{id}/test", { params: { path: { id } } })) })
 }
 
 export function useSyncConnection() {
   const invalidate = useInvalidateConnections()
   return useMutation({
-    mutationFn: (id: number) => api.syncConnection(id),
+    mutationFn: (id: number) => unwrap(api.http.POST("/api/app-connections/{id}/sync", { params: { path: { id } } })),
     onSettled: invalidate,
   })
 }
@@ -103,7 +103,7 @@ export function useSyncConnection() {
 export function useSyncAll() {
   const invalidate = useInvalidateConnections()
   return useMutation({
-    mutationFn: () => api.syncAllConnections(),
+    mutationFn: () => unwrap(api.http.POST("/api/app-connections/sync")),
     onSettled: invalidate,
   })
 }
@@ -113,7 +113,7 @@ export function useSyncAll() {
 export function useSyncProfiles() {
   return useQuery({
     queryKey: keys.syncProfiles.all,
-    queryFn: () => api.listSyncProfiles(),
+    queryFn: () => unwrap(api.http.GET("/api/sync-profiles")),
   })
 }
 
@@ -121,16 +121,16 @@ export function useSyncProfileMutations() {
   const qc = useQueryClient()
   const invalidate = () => qc.invalidateQueries({ queryKey: keys.syncProfiles.all })
   return {
-    create: useMutation({ mutationFn: (body: CreateSyncProfile) => api.createSyncProfile(body), onSettled: invalidate }),
+    create: useMutation({ mutationFn: (body: CreateSyncProfile) => unwrap(api.http.POST("/api/sync-profiles", { body: body })), onSettled: invalidate }),
     update: useMutation({
-      mutationFn: ({ id, body }: { id: number, body: UpdateSyncProfile }) => api.updateSyncProfile(id, body),
+      mutationFn: ({ id, body }: { id: number, body: UpdateSyncProfile }) => unwrap(api.http.PATCH("/api/sync-profiles/{id}", { params: { path: { id } }, body })),
       onSettled: invalidate,
     }),
     // The delete is refused (409) while any connection still references the profile
     // (the service-level guard), but refresh the connection list too in case one did
     // just get detached right before this call.
     remove: useMutation({
-      mutationFn: (id: number) => api.deleteSyncProfile(id),
+      mutationFn: (id: number) => unwrap(api.http.DELETE("/api/sync-profiles/{id}", { params: { path: { id } } })),
       onSettled: () => {
         void invalidate()
         void qc.invalidateQueries({ queryKey: keys.appConnections.all })
@@ -144,14 +144,14 @@ export function useSyncProfileMutations() {
 export function useAnnounceConnections() {
   return useQuery({
     queryKey: keys.announceConnections.all,
-    queryFn: () => api.listAnnounceConnections(),
+    queryFn: () => unwrap(api.http.GET("/api/announce-connections")),
   })
 }
 
 export function useCreateAnnounce() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (body: CreateAnnounceConnection) => api.createAnnounceConnection(body),
+    mutationFn: (body: CreateAnnounceConnection) => unwrap(api.http.POST("/api/announce-connections", { body: body })),
     onSettled: () => qc.invalidateQueries({ queryKey: keys.announceConnections.all }),
   })
 }
@@ -161,21 +161,21 @@ export function useCreateAnnounce() {
 export function useUpdateAnnounce() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, body }: { id: number, body: UpdateAnnounceConnection }) => api.updateAnnounceConnection(id, body),
-    onSettled: () => qc.invalidateQueries({ queryKey: ["announce-connections"] }),
+    mutationFn: ({ id, body }: { id: number, body: UpdateAnnounceConnection }) => unwrap(api.http.PATCH("/api/announce-connections/{id}", { params: { path: { id } }, body })),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.announceConnections.all }),
   })
 }
 
 export function useDeleteAnnounce() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: number) => api.deleteAnnounceConnection(id),
+    mutationFn: (id: number) => unwrap(api.http.DELETE("/api/announce-connections/{id}", { params: { path: { id } } })),
     onSettled: () => qc.invalidateQueries({ queryKey: keys.announceConnections.all }),
   })
 }
 
 export function useTestAnnounce() {
-  return useMutation({ mutationFn: (id: number) => api.testAnnounceConnection(id) })
+  return useMutation({ mutationFn: (id: number) => unwrap(api.http.POST("/api/announce-connections/{id}/test", { params: { path: { id } } })) })
 }
 
 export function useSetAnnounceEnabled() {

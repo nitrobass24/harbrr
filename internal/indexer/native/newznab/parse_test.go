@@ -240,8 +240,7 @@ func TestParseErrorDailyQuota(t *testing.T) {
 	d := parseDriver(t)
 	body := []byte(`<?xml version="1.0"?><error code="910" description="Daily API limit reached" />`)
 	_, err := d.parseReleases(body, d.Caps.CategoryMap)
-	var qee *search.QuotaExceededError
-	if !errors.As(err, &qee) {
+	if _, ok := errors.AsType[*search.QuotaExceededError](err); !ok {
 		t.Fatalf("err = %v, want *search.QuotaExceededError", err)
 	}
 	if !errors.Is(err, search.ErrQuotaExceeded) {

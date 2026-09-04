@@ -9,7 +9,7 @@ import {
   DialogHeader,
   DialogTitle
 } from "@/components/ui/dialog"
-import { api } from "@/lib/api"
+import { api, unwrap } from "@/lib/api"
 import { copyText } from "@/lib/clipboard"
 import { keys } from "@/lib/query"
 
@@ -18,7 +18,7 @@ import { keys } from "@/lib/query"
 export function SnippetDialog({ slug, onClose }: { slug: string | null, onClose: () => void }) {
   const snippet = useQuery({
     queryKey: keys.indexers.crossseedSnippet(slug),
-    queryFn: () => api.getCrossseedSnippet(slug as string),
+    queryFn: () => unwrap(api.http.GET("/api/indexers/{slug}/crossseed-snippet", { params: { path: { slug: slug as string } } })),
     enabled: slug !== null,
   })
 

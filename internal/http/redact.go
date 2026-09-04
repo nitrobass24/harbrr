@@ -21,7 +21,15 @@ const redactedValue = "REDACTED"
 // shorter prefixes so the key-capturing regexes group the whole word (e.g.
 // "password" before "pass", "downloadtoken" before "token", "api[_-]?key"
 // before bare "key").
-const secretNameAlternation = `passphrase|passkey|passid|password|x[_-]?api[_-]?key|api[_-]?key|auth[_-]?key|rss[_-]?key|torrent[_-]?pass|downloadtoken|cf[_-]?clearance|secret|token|cookie|2fa|otp|auth|key|pass|pid`
+//
+// `pin` earns its place alongside `pid` despite the false positives a bare
+// three-letter substring invites (it also matches "mapping", "shipping"). The
+// trade is deliberate and one-directional: over-redacting a harmless parameter
+// costs a line of debug output, while under-redacting a tracker PIN leaks a
+// credential — and `pin` is classified secret=true on 8 vendored definitions.
+// TestRedactionCoversEverySecretClassifiedField holds this list against the
+// loader's classifier so the two cannot drift apart again.
+const secretNameAlternation = `passphrase|passkey|passid|password|x[_-]?api[_-]?key|api[_-]?key|auth[_-]?key|rss[_-]?key|torrent[_-]?pass|downloadtoken|cf[_-]?clearance|secret|token|cookie|2fa|otp|auth|key|pass|pid|pin`
 
 // secretNameRe matches (case-insensitively, anywhere in the name) any credential
 // name token. Used as the boolean "is this name a secret?" test for query

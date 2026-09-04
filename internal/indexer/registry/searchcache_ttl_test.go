@@ -85,7 +85,7 @@ func TestResolveTTL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := cfg.resolveTTL(tt.setting, tt.q, tt.count)
+			got := cfg.resolveTTL(ttlSettingsFromCfg(tt.setting), tt.q, tt.count)
 			if got != tt.want {
 				t.Fatalf("resolveTTL(%v, count=%d) = %s, want %s", tt.setting, tt.count, got, tt.want)
 			}
@@ -245,13 +245,13 @@ func TestReadTimeTTLClampDoesNotResurrectOnRaisedTier(t *testing.T) {
 	}
 }
 
-// TestWarmSkippedInstanceRSSTTLNotFloored is the stripInertWarmInterval regression
+// TestWarmSkippedInstanceRSSTTLNotFloored is the warm-inertness regression
 // (#341 follow-up finding): a driver warmOne would skip (paging or Mode-consuming)
 // must NOT have its RSS TTL floored by rss_warm_interval — no warmer ever refreshes
 // its cache key, so the floor would just pin stale data longer for zero freshness
 // benefit. An eligible driver (neither capability) keeps the floor. Drives the real
 // serve path (sc.probe + cache.search, not resolveTTL directly) so it proves
-// stripInertWarmInterval actually ran at probe/build time, not just that resolveTTL's
+// applyWarmCapability actually ran at probe/build time, not just that resolveTTL's
 // math is right in isolation.
 func TestWarmSkippedInstanceRSSTTLNotFloored(t *testing.T) {
 	t.Parallel()

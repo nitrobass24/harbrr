@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useAuth } from "@/hooks/useAuth"
 import { api, APIError } from "@/lib/api"
+import { keys } from "@/lib/query"
 import { safeRedirectPath } from "@/lib/safe-redirect"
 
 // The `redirect` search param carries the page a logged-out visitor was bounced
@@ -31,7 +32,7 @@ function Login() {
   // disabled default, so no retry/error state is needed here — staleTime:
   // Infinity because it never changes without a restart.
   const { data: oidc } = useQuery({
-    queryKey: ["oidc-config"],
+    queryKey: keys.oidcConfig.all,
     queryFn: () => api.getOIDCConfig(),
     staleTime: Infinity,
     retry: false,

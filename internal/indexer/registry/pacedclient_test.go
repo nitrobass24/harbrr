@@ -410,8 +410,7 @@ func TestPacedDoer_BudgetBoundsCumulativeWait(t *testing.T) {
 	_, err := d.Do(getReq(context.Background(), t))
 	elapsed := time.Since(start)
 
-	var rl *search.RateLimitedError
-	if !errors.As(err, &rl) {
+	if _, ok := errors.AsType[*search.RateLimitedError](err); !ok {
 		t.Fatalf("err = %v, want a RateLimitedError (budget capped the hostile backoff, not a caller abort)", err)
 	}
 	if errors.Is(err, context.DeadlineExceeded) {

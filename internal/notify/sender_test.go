@@ -223,9 +223,9 @@ func TestSenderNon2xxIsError(t *testing.T) {
 func TestSenderErrorDoesNotLeakURL(t *testing.T) {
 	t.Parallel()
 	// A URL that carries a secret token, pointed at a dead port so the transport fails.
-	const secretURL = "http://127.0.0.1:0/hook?token=SUPERSECRET"
+	const hookURL = "http://127.0.0.1:0/hook?token=SUPERSECRET"
 
-	s, err := newSender(domain.NotifyTypeWebhook, secretURL, defaultHTTPClient())
+	s, err := newSender(domain.NotifyTypeWebhook, hookURL, defaultHTTPClient())
 	if err != nil {
 		t.Fatalf("newSender: %v", err)
 	}

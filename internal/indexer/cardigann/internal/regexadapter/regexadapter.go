@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/autobrr/go-cache/ttlcache"
 	"github.com/dlclark/regexp2"
 )
 
@@ -84,18 +85,31 @@ func (r *Regexp) Engine() Engine { return r.engine }
 // Error strings reference the pattern text and engine only. Patterns are
 // definition-authored (not secret); the matched VALUE is never compiled in.
 func Compile(pattern string, opts RouteOptions) (*Regexp, error) {
+	want2 := wantRegexp2(pattern, opts)
+	key := compileKey{pattern: pattern, regexp2: want2}
+	if cached, ok := compileCache.Get(key); ok {
+		return cached, nil
+	}
+
 	// Translate .NET Unicode block names (\p{IsCyrillic}) to the Go script names
 	// both engines understand (\p{Cyrillic}). This is an engine-absorbed
 	// .NET-vs-Go difference; the def text is never modified on disk.
 	normalized := normalizePattern(pattern)
 
-	if wantRegexp2(pattern, opts) {
-		return compileRegexp2(normalized)
+	if want2 {
+		r, err := compileRegexp2(normalized)
+		if err != nil {
+			return nil, err
+		}
+		compileCache.Set(key, r, ttlcache.DefaultTTL)
+		return r, nil
 	}
 
 	re, err := regexp.Compile(normalized)
 	if err == nil {
-		return &Regexp{engine: EngineRE2, re: re}, nil
+		r := &Regexp{engine: EngineRE2, re: re}
+		compileCache.Set(key, r, ttlcache.DefaultTTL)
+		return r, nil
 	}
 
 	// RE2 rejected a pattern the caller did not flag for regexp2. This is the
@@ -104,8 +118,12 @@ func Compile(pattern string, opts RouteOptions) (*Regexp, error) {
 	// the ORIGINAL pattern (def-authored, not secret) for actionable context.
 	r, re2Err := compileRegexp2(normalized)
 	if re2Err != nil {
+		// A pattern both engines reject is a definition bug: it recurs on every
+		// row, but it is also about to be loud, and caching failures would mean
+		// keying on an error too. Left uncached deliberately.
 		return nil, fmt.Errorf("pattern %q compiles under neither engine: RE2: %w; regexp2: %w", pattern, err, re2Err)
 	}
+	compileCache.Set(key, r, ttlcache.DefaultTTL)
 	return r, nil
 }
 

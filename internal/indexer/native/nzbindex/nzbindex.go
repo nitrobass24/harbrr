@@ -17,7 +17,6 @@ import (
 	stdhttp "net/http"
 	"strings"
 
-	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
@@ -166,12 +165,13 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 }
 
 // get issues the search GET with an Accept: application/json header. The URL may embed the
-// apikey, so a transport error surfaces only its scheme://host (apphttp.RedactURLError drops
-// the key-bearing query). The caller owns the returned body and interprets the status.
+// apikey, so a build or transport error surfaces only its scheme://host through native.Base
+// (the key-bearing query is dropped). The caller owns the returned body and interprets the
+// status.
 func (d *driver) get(ctx context.Context, rawurl string) (*native.Response, error) {
-	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
+	req, err := d.NewRequest(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
-		return nil, fmt.Errorf("nzbindex: build request to %s: %w", apphttp.SchemeHost(rawurl), apphttp.RedactURLError(err))
+		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
 	resp, err := d.Do(ctx, req, native.ClassifyRateLimit403)

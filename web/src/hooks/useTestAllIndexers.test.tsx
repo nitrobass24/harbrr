@@ -1,21 +1,15 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { act, renderHook, waitFor } from "@testing-library/react"
 import type { ReactNode } from "react"
-import { beforeEach, describe, expect, it, vi } from "vitest"
-// The real class, so `err instanceof APIError` inside the hook matches — the mock below
-// spreads importOriginal, so both sides resolve to the same constructor.
+import { describe, expect, it } from "vitest"
 import { APIError } from "@/lib/api"
 import { useTestAllIndexers } from "./useIndexers"
+import { stubApi } from "@/test/stubApi"
 
 // Test all used to fire one request per enabled indexer through an unbounded Promise.all
 // (autobrr/harbrr#485): on a 22-indexer fleet that is 22 concurrent logins from one click,
 // and the test path deliberately bypasses the circuit breaker and the request budget, so
 // nothing else was throttling it.
-const { testIndexer } = vi.hoisted(() => ({ testIndexer: vi.fn() }))
-vi.mock("@/lib/api", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/api")>()),
-  api: { testIndexer },
-}))
 
 function wrapper({ children }: { children: ReactNode }) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -23,10 +17,6 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 describe("useTestAllIndexers", () => {
-  beforeEach(() => {
-    testIndexer.mockReset()
-  })
-
   it("never exceeds the concurrency cap, and still returns every result in order", async () => {
     const slugs = Array.from({ length: 22 }, (_, i) => `ix${i}`)
     const release: Array<() => void> = []
@@ -34,19 +24,23 @@ describe("useTestAllIndexers", () => {
     let peak = 0
 
     // Three shapes, because the pool handles them differently. A resolved failure is the
-    // response contract; a THROWN one has to be caught inside the worker or it rejects
-    // that worker, which rejects the whole batch and takes the other 21 results with it.
-    testIndexer.mockImplementation((slug: string) => {
-      inFlight++
-      peak = Math.max(peak, inFlight)
-      return new Promise((resolve, reject) => {
-        release.push(() => {
-          inFlight--
-          if (slug === "ix7") return reject(new APIError(401, "unauthorized", "session expired"))
-          if (slug === "ix11") return reject(new Error("network down"))
-          resolve({ ok: slug !== "ix3", error: slug === "ix3" ? "bad passkey" : undefined })
+    // response contract; a THROWN one (a rejected transport, here at the stubbed fetch
+    // seam) has to be caught inside the worker or it rejects that worker, which rejects
+    // the whole batch and takes the other 21 results with it.
+    stubApi({
+      "POST /api/indexers/{slug}/test": (request: Request) => {
+        const slug = new URL(request.url).pathname.split("/").at(-2) as string
+        inFlight++
+        peak = Math.max(peak, inFlight)
+        return new Promise<Response>((resolve, reject) => {
+          release.push(() => {
+            inFlight--
+            if (slug === "ix7") return reject(new APIError(401, "unauthorized", "session expired"))
+            if (slug === "ix11") return reject(new Error("network down"))
+            resolve(Response.json({ ok: slug !== "ix3", error: slug === "ix3" ? "bad passkey" : undefined }))
+          })
         })
-      })
+      },
     })
 
     const { result } = renderHook(() => useTestAllIndexers(), { wrapper })

@@ -163,7 +163,7 @@ harbrr serve --data-dir ~/.config/harbrr   # open http://localhost:7478
 
 ```bash
 git clone https://github.com/autobrr/harbrr && cd harbrr
-make web-build                               # builds the SPA (needs Node + pnpm)
+make web-build                               # builds the SPA (needs bun)
 make build                                   # -> bin/harbrr (embeds web/dist)
 ./bin/harbrr serve --data-dir ./data         # open http://localhost:7478
 ```
@@ -187,7 +187,7 @@ make build                                   # -> bin/harbrr (embeds web/dist)
 
 ## Status & testing
 
-harbrr is **alpha**, but the engine is heavily validated. It ships **575 trackers** — 550 from
+harbrr is **alpha**, but the engine is heavily validated. It ships **578 trackers** — 553 from
 the embedded Cardigann corpus plus 25 native drivers (with **18 more native drivers planned**) —
 and every shipped tracker passes its **offline golden tests**. Live validation against real
 trackers and a real \*arr stack is tracked separately:

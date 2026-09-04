@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import type { ReactNode } from "react"
+import { stubApi } from "@/test/stubApi"
 import { ApiKeysSection } from "./ApiKeysSection"
 
 const MINTED = {
@@ -19,22 +20,20 @@ function wrap(children: ReactNode) {
   )
 }
 
-function stubFetch() {
-  const fetchMock = vi.fn().mockImplementation((request: Request) => {
-    if (request.method === "POST") {
-      return Promise.resolve(new Response(JSON.stringify(MINTED), { status: 201, headers: { "Content-Type": "application/json" } }))
-    }
-    return Promise.resolve(new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }))
-  })
-  vi.stubGlobal("fetch", fetchMock)
-  return fetchMock
-}
-
 describe("ApiKeysSection mint dialog", () => {
-  afterEach(() => vi.unstubAllGlobals())
+  it("a failed list query shows LoadError, not an empty card", async () => {
+    stubApi({ "GET /api/apikeys": () => Response.json({ error: "boom" }, { status: 500 }) })
+    render(wrap(<ApiKeysSection />))
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Loading API keys failed")
+    expect(screen.queryByText(/No keys yet/)).toBeNull()
+  })
 
   it("shows the plaintext key exactly once and never re-renders it after closing", async () => {
-    stubFetch()
+    stubApi({
+      "GET /api/apikeys": [],
+      "POST /api/apikeys": () => Response.json(MINTED, { status: 201 }),
+    })
     render(wrap(<ApiKeysSection />))
 
     fireEvent.change(screen.getByPlaceholderText(/Key name/), { target: { value: "sonarr" } })

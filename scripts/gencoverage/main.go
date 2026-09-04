@@ -41,6 +41,8 @@ var liveTested = map[string]bool{
 	"seedpool-api": true, "uploadcx": true, "darkpeers-api": true, "cinemageddon": true,
 	"czteam-api": true, "f1carreras-api": true, "hhd-api": true, "lastdigitalunderground": true,
 	"milkie": true, "oldtoonsworld": true, "rastastugan-api": true,
+	// HD-Torrents, live-validated 2026-08-22 (differential 26=26, Jaccard 1.00).
+	"hdtorrents": true,
 	// Native drivers, live-validated.
 	"iptorrents": true, "filelist": true, "myanonamouse": true, "broadcastthenet": true,
 	"passthepopcorn": true, "hdbits": true, "alpharatio": true, "avistaz": true,

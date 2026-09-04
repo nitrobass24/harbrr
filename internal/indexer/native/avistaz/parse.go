@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
@@ -98,7 +97,7 @@ func (d *driver) toRelease(row *avistazRelease) (*normalizer.Release, error) {
 	if err != nil {
 		return nil, err
 	}
-	published, err := parsePublishDate(row.CreatedAtISO)
+	published, err := d.parsePublishDate(row.CreatedAtISO)
 	if err != nil {
 		return nil, err
 	}
@@ -114,14 +113,14 @@ func (d *driver) toRelease(row *avistazRelease) (*normalizer.Release, error) {
 		Seeders:              deref(row.Seed),
 		Leechers:             deref(row.Leech),
 		Peers:                deref(row.Leech) + deref(row.Seed),
-		PublishDate:          published.Format(time.RFC3339),
+		PublishDate:          published,
 		DownloadVolumeFactor: derefFloat(row.DownloadMul, 1),
 		UploadVolumeFactor:   derefFloat(row.UploadMul, 1),
 		MinimumRatio:         1,
 		MinimumSeedTime:      minimumSeedTime(deref(row.FileSize)),
 	}
 	if row.MovieTV != nil {
-		rel.IMDBID = fullIMDBID(row.MovieTV.Imdb)
+		rel.IMDBID = native.CanonicalIMDBID(row.MovieTV.Imdb)
 		rel.TMDBID = coerceInt(row.MovieTV.Tmdb)
 		rel.TVDBID = coerceInt(row.MovieTV.Tvdb)
 	}
@@ -214,17 +213,15 @@ func minimumSeedTime(fileSize int64) int64 {
 	return 259200 + int64(gib*7200)
 }
 
-// parsePublishDate parses the created_at_iso ISO-8601 string and normalizes it to UTC
-// (Prowlarr's DateTime.Parse with AdjustToUniversal). The common ISO layouts are
-// tried; an unparseable value is a parse error.
-func parsePublishDate(s string) (time.Time, error) {
-	s = strings.TrimSpace(s)
-	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02T15:04:05", "2006-01-02 15:04:05"} {
-		if t, err := time.Parse(layout, s); err == nil {
-			return t.UTC(), nil
-		}
+// parsePublishDate parses the created_at_iso ISO-8601 string to UTC RFC3339 (Prowlarr's
+// DateTime.Parse with AdjustToUniversal) via the shared native.PublishDate; an
+// unparseable value is a parse error.
+func (d *driver) parsePublishDate(s string) (string, error) {
+	out, err := native.PublishDate(s, d.Clock)
+	if err != nil {
+		return "", fmt.Errorf("avistaz: unparseable created_at_iso %q: %w: %w", strings.TrimSpace(s), search.ErrParseError, err)
 	}
-	return time.Time{}, fmt.Errorf("avistaz: unparseable created_at_iso %q: %w", s, search.ErrParseError)
+	return out, nil
 }
 
 // coerceInt parses a numeric string id to int64, returning 0 when empty or non-numeric

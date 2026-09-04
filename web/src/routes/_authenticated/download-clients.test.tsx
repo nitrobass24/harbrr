@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { render, screen, waitFor, within } from "@testing-library/react"
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import { ThemeProvider } from "@/components/themes/theme-provider"
+import { stubApi } from "@/test/stubApi"
 import { routeTree } from "@/routeTree.gen"
 
 const ME = { username: "admin", authMethod: "password", csrfToken: "tok" }
@@ -17,16 +18,13 @@ const QUI_APP = {
   createdAt: "2026-07-01T00:00:00Z", updatedAt: "2026-07-01T00:00:00Z",
 }
 
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })
-}
-
 function stubFetchWithApps(apps: unknown[]) {
-  vi.stubGlobal("fetch", vi.fn((request: Request) => {
-    if (request.url.endsWith("/auth/me")) return Promise.resolve(json(ME))
-    if (request.url.endsWith("/api/apps") && request.method === "GET") return Promise.resolve(json(apps))
-    return Promise.resolve(json([]))
-  }))
+  stubApi({
+    "GET /api/auth/me": ME,
+    "GET /api/apps": apps,
+    "GET /api/download-clients": [],
+    "GET /api/apps/{id}/qui-instances": { ok: true, instances: [] },
+  })
 }
 
 function renderDownloadClientsAt(path: string) {
@@ -46,8 +44,6 @@ function renderDownloadClientsAt(path: string) {
 // mechanism (autobrr/harbrr#300): DownloadClientsSection lives on its own page, not
 // on /applications, so its pre-pick has to arrive via this route's own search params.
 describe("Download-clients route — 'Use as…' search param", () => {
-  afterEach(() => vi.unstubAllGlobals())
-
   it("?appId opens the add dialog pre-picked to that qui app, then clears the search", async () => {
     stubFetchWithApps([QUI_APP])
     const { router } = renderDownloadClientsAt("/download-clients?appId=4")

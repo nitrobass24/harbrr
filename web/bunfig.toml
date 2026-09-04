@@ -1,0 +1,11 @@
+# Frontend package-manager settings (bun 1.4).
+
+[install]
+# Supply-chain cooldown: refuse to install package versions published less than
+# 3 days ago (seconds), so a compromised release is usually yanked before it can
+# reach this lockfile. Dependabot PRs bump versions on a weekly cadence anyway.
+minimumReleaseAge = 259200
+
+# Symlinked node_modules backed by a shared global store — the pnpm-shaped layout
+# this project already relied on, and what lets CI mount the store on host disk.
+linker = "isolated"

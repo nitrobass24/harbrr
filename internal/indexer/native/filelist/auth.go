@@ -3,11 +3,9 @@ package filelist
 import (
 	"context"
 	"encoding/base64"
-	"fmt"
 	stdhttp "net/http"
 	"strings"
 
-	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
@@ -31,9 +29,9 @@ func (d *driver) basicAuthHeader() string {
 // only its scheme://host (apphttp.SchemeHost drops the query); the raw passkey never
 // appears in a request the *search* issues (the passkey rides as a header there).
 func (d *driver) get(ctx context.Context, rawurl, accept string, download bool) (*native.Response, error) {
-	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawurl, nil)
+	req, err := d.NewRequest(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
-		return nil, fmt.Errorf("filelist: build request: %w", apphttp.RedactURLError(err))
+		return nil, err
 	}
 	req.Header.Set("Authorization", d.basicAuthHeader())
 	if accept != "" {

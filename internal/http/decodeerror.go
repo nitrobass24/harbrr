@@ -32,14 +32,12 @@ func DecodeErrorDetail(err error, body []byte) string {
 		return ""
 	}
 
-	var typeErr *json.UnmarshalTypeError
-	if errors.As(err, &typeErr) {
+	if typeErr, ok := errors.AsType[*json.UnmarshalTypeError](err); ok {
 		return fmt.Sprintf("field %q: expected %s, got %s at offset %d",
 			typeErr.Field, typeErr.Type, jsonKind(typeErr.Value), typeErr.Offset)
 	}
 
-	var jsonSyntax *json.SyntaxError
-	if errors.As(err, &jsonSyntax) {
+	if jsonSyntax, ok := errors.AsType[*json.SyntaxError](err); ok {
 		// An HTML login wall decoded as JSON fails at offset 1 with a cryptic
 		// "invalid character '<'"; prefer the shape/size summary so the operator
 		// sees "it returned HTML, not JSON" directly.
@@ -49,8 +47,7 @@ func DecodeErrorDetail(err error, body []byte) string {
 		return fmt.Sprintf("invalid JSON at offset %d: %s", jsonSyntax.Offset, jsonSyntax.Error())
 	}
 
-	var xmlSyntax *xml.SyntaxError
-	if errors.As(err, &xmlSyntax) {
+	if xmlSyntax, ok := errors.AsType[*xml.SyntaxError](err); ok {
 		return fmt.Sprintf("invalid XML at line %d: %s", xmlSyntax.Line, xmlSyntax.Msg)
 	}
 

@@ -274,7 +274,7 @@ func TestIsJSONContentType(t *testing.T) {
 // TestScrubSecrets proves both credentials are redacted from an arbitrary string (a
 // defensive scrub for any error a future leaf might wrap). Both apiuser and apikey are
 // IsSecret-classified (apiuser is force-typed "password" precisely so it is; see
-// sites.go's credentialSettings), so Base.Scrub's derived set catches both with no
+// sites.go's Families), so Base.Scrub's derived set catches both with no
 // extras. The overlapping case proves the longer credential is redacted first: when
 // one secret is a substring of the other, redacting the shorter first would mangle
 // the longer and leak a fragment — apphttp.ScrubValues (which Base.Scrub delegates

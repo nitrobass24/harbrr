@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import { ThemeProvider } from "@/components/themes/theme-provider"
+import { stubApi } from "@/test/stubApi"
 import { routeTree } from "@/routeTree.gen"
 
 const ME = { username: "admin", authMethod: "password", csrfToken: "tok" }
@@ -39,19 +40,24 @@ function json(body: unknown, status = 200): Response {
 
 // stubFetch serves the route's three reads: the auth probe, the indexer list (+ its
 // capabilities) and the aggregate search. search is a thunk so a test can hold the
-// search in flight; indexers sets how many the picker offers.
+// search in flight; indexers sets how many the picker offers. A per-indexer search
+// (/api/indexers/{slug}/search) is deliberately NOT stubbed: any client fan-out
+// would throw UnstubbedRequestError instead of passing silently.
 function stubFetch(search: () => Promise<Response> = () => Promise.resolve(json(RESULTS)), indexers: unknown[] = [INDEXER]) {
-  const fetchMock = vi.fn((request: Request) => {
-    const url = request.url
-    if (url.endsWith("/auth/me")) return Promise.resolve(json(ME))
-    if (url.includes("/capabilities")) return Promise.resolve(json(CAPS))
-    if (url.includes("/api/search")) return search()
-    if (url.includes("/api/indexers")) return Promise.resolve(json(indexers))
-    return Promise.resolve(json([]))
+  return stubApi({
+    "GET /api/auth/me": ME,
+    "GET /api/indexers/{slug}/capabilities": CAPS,
+    "GET /api/search": () => search(),
+    "GET /api/indexers": indexers,
   })
-  vi.stubGlobal("fetch", fetchMock)
-  return fetchMock
 }
+
+// Every key stubFetch stubs; anything else throws, so summing these IS the total
+// number of requests the page made — the no-refetch assertions count with this.
+const STUB_KEYS = ["GET /api/auth/me", "GET /api/indexers/{slug}/capabilities", "GET /api/search", "GET /api/indexers"]
+
+const totalFetches = (api: ReturnType<typeof stubFetch>) =>
+  STUB_KEYS.reduce((n, key) => n + api.calls(key).length, 0)
 
 function renderSearch() {
   const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: ["/search"] }) })
@@ -66,33 +72,28 @@ function renderSearch() {
 }
 
 // submitSearch renders the page and clicks Search once the indexer list has landed.
-async function submitSearch(fetchMock: ReturnType<typeof stubFetch>) {
+async function submitSearch(api: ReturnType<typeof stubFetch>) {
   renderSearch()
   const button = await screen.findByRole<HTMLButtonElement>("button", { name: "Search" })
   await waitFor(() => expect(button.disabled).toBe(false))
   fireEvent.click(button)
-  return fetchMock
+  return api
 }
 
 // Runs a search so the page holds the three RESULTS rows, then hands back the filter
 // input and how many fetches the search itself cost.
 async function searchAndFilter() {
-  const fetchMock = await submitSearch(stubFetch())
+  const api = await submitSearch(stubFetch())
   await screen.findByText("3 results")
 
-  return { filter: screen.getByLabelText("Filter results"), fetchesAfterSearch: fetchMock.mock.calls.length, fetchMock }
+  return { filter: screen.getByLabelText("Filter results"), fetchesAfterSearch: totalFetches(api), api }
 }
 
 const type = (input: HTMLElement, value: string) => fireEvent.change(input, { target: { value } })
 
-const searchURLs = (fetchMock: ReturnType<typeof stubFetch>) =>
-  fetchMock.mock.calls.map(([req]) => req.url).filter((u) => u.includes("search"))
-
 describe("Search route — result filter (autobrr/harbrr#374)", () => {
-  afterEach(() => vi.unstubAllGlobals())
-
   it("narrows rows to a substring match and shows N of M without re-querying", async () => {
-    const { filter, fetchesAfterSearch, fetchMock } = await searchAndFilter()
+    const { filter, fetchesAfterSearch, api } = await searchAndFilter()
 
     type(filter, "x265")
 
@@ -100,7 +101,7 @@ describe("Search route — result filter (autobrr/harbrr#374)", () => {
     expect(screen.queryByText("Sintel S01E02 1080p x264")).toBeNull()
     expect(screen.getByText("Big Buck Bunny 2160p x265")).toBeTruthy()
     // The whole point: typing filters state, it never hits the network.
-    expect(fetchMock.mock.calls.length).toBe(fetchesAfterSearch)
+    expect(totalFetches(api)).toBe(fetchesAfterSearch)
   })
 
   it("excludes with a leading - and matches a /regex/", async () => {
@@ -140,18 +141,16 @@ describe("Search route — result filter (autobrr/harbrr#374)", () => {
 })
 
 describe("Search route — server-merged aggregate (autobrr/harbrr#372)", () => {
-  afterEach(() => vi.unstubAllGlobals())
-
   it("issues ONE aggregate request naming the subset, and no per-indexer searches", async () => {
-    const fetchMock = await submitSearch(stubFetch(undefined, [INDEXER, OTHER]))
+    const api = await submitSearch(stubFetch(undefined, [INDEXER, OTHER]))
     await screen.findByText("3 results")
 
-    const urls = searchURLs(fetchMock)
-    expect(urls.length).toBe(1)
-    expect(urls[0]).toContain("/api/search?")
-    expect(decodeURIComponent(urls[0])).toContain("indexers=demotracker,ptp")
-    // The client fan-out is gone: nothing may hit the per-indexer search route.
-    expect(urls.some((u) => /\/api\/indexers\/[^/]+\/search/.test(u))).toBe(false)
+    const searches = api.calls("GET /api/search")
+    expect(searches.length).toBe(1)
+    expect(searches[0].url).toContain("/api/search?")
+    expect(decodeURIComponent(searches[0].url)).toContain("indexers=demotracker,ptp")
+    // The client fan-out is gone: the per-indexer search route is unstubbed, so any
+    // request to it would have thrown UnstubbedRequestError instead of resolving.
   })
 
   it("folds answering indexers into one line and names each skip with its reason", async () => {
@@ -246,10 +245,8 @@ const CROSS_SEEDED = {
 const rowText = () => screen.getAllByRole("row").slice(1).map((r) => r.textContent ?? "")
 
 describe("Search route — result grouping (autobrr/harbrr#398)", () => {
-  afterEach(() => vi.unstubAllGlobals())
-
   it("folds the same release from two trackers into one row, and toggles back to the flat list without re-querying", async () => {
-    const fetchMock = await submitSearch(stubFetch(() => Promise.resolve(json(CROSS_SEEDED)), [INDEXER, OTHER]))
+    const api = await submitSearch(stubFetch(() => Promise.resolve(json(CROSS_SEEDED)), [INDEXER, OTHER]))
     await screen.findByText("4 results")
 
     // Grouped: 3 rows, the cross-seeded one badged with both trackers and its count.
@@ -259,7 +256,7 @@ describe("Search route — result grouping (autobrr/harbrr#398)", () => {
     expect(group.textContent).toContain("demotracker")
     expect(group.textContent).toContain("ptp")
 
-    const fetchesAfterSearch = fetchMock.mock.calls.length
+    const fetchesAfterSearch = totalFetches(api)
     fireEvent.click(screen.getByRole("button", { name: "Group" }))
 
     // Off: today's flat list — every row back, in the sorted order, nothing merged.
@@ -273,7 +270,7 @@ describe("Search route — result grouping (autobrr/harbrr#398)", () => {
     expect(screen.queryByRole("button", { name: /2 sources/ })).toBeNull()
     expect(screen.getByText("4 results")).toBeTruthy()
     // A view mode, not a query: toggling either way never hits the network.
-    expect(fetchMock.mock.calls.length).toBe(fetchesAfterSearch)
+    expect(totalFetches(api)).toBe(fetchesAfterSearch)
   })
 
   it("expands a group to each tracker's own grabbable entry", async () => {

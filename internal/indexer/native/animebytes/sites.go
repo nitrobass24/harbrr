@@ -14,47 +14,25 @@ const requestDelaySeconds = 4.0
 // Families returns AnimeBytes as a single native family. It carries a Go-built,
 // caps-only definition (id/name/type/links/settings/caps) and the New factory; it is
 // registered with the registry, not the Cardigann loader.
+//
+// The settings mirror AnimeBytesSettings. username is the account identifier (stored
+// as-is). passkey is text-typed but its name carries the "passkey" token, so harbrr's
+// secret store auto-classifies it as a secret (encrypted at rest, redacted by the API)
+// — matching Prowlarr's PrivacyLevel.Password. Both ride in the search/download URL
+// query, so that URL is secret-bearing and must be redacted everywhere.
 func Families() []native.Family {
 	return []native.Family{
-		{Definition: siteDef("animebytes", "AnimeBytes", "https://animebytes.tv/", animebytesCaps()), Factory: New},
-	}
-}
-
-// siteDef builds the family's caps-only definition. It is never schema-validated (it
-// has no login/search/download block); it exists so mapper.Build, the credential store
-// (settingFields/IsSecret), indexerInfo, and the addable-indexer list all work for a
-// native family with no special case.
-func siteDef(id, name, link string, caps loader.Caps) *loader.Definition {
-	delay := requestDelaySeconds
-	return &loader.Definition{
-		ID:           id,
-		Name:         name,
-		Description:  name + " (native AnimeBytes driver)",
-		Language:     "en-US",
-		Type:         "private",
-		Encoding:     "UTF-8",
-		Links:        []string{link},
-		RequestDelay: &delay,
-		Settings:     credentialSettings(),
-		Caps:         caps,
-	}
-}
-
-// credentialSettings are the user-entered fields, mirroring AnimeBytesSettings.
-// username is the account identifier (stored as-is). passkey is text-typed but its name
-// carries the "passkey" token, so harbrr's secret store auto-classifies it as a secret
-// (encrypted at rest, redacted by the API) — matching Prowlarr's PrivacyLevel.Password.
-// Both ride in the search/download URL query, so that URL is secret-bearing and must be
-// redacted everywhere.
-func credentialSettings() []loader.SettingsField {
-	return []loader.SettingsField{
-		{Name: "username", Label: "Username", Type: "text"},
-		{Name: "passkey", Label: "Passkey", Type: "text"},
+		{Definition: native.Site{
+			ID: "animebytes", Name: "AnimeBytes", Link: "https://animebytes.tv/",
+			Driver: "AnimeBytes", DelaySeconds: requestDelaySeconds,
+			Settings: []loader.SettingsField{native.FieldUsername, native.FieldPasskey},
+			Caps:     animebytesCaps(),
+		}.Definition(), Factory: New},
 	}
 }
 
 // animebytesCaps is the AnimeBytes capability document, ported byte-for-byte from
-// Prowlarr's AnimeBytes.SetCapabilities (AnimeBytes.cs:124-141). The CategoryMapping ID is
+// Prowlarr's AnimeBytes.SetCapabilities (AnimeBytes.cs:124-141). The Cat row's ID is
 // the LITERAL scrape.php filter param key AnimeBytes recognises ("anime[tv_series]",
 // "audio", "gamec[game]", "printedtype[manga]", …) — NOT a synthetic id. That id is what
 // MapTorznabCapsToTrackers resolves a requested Newznab category to, and what the request
@@ -68,32 +46,32 @@ func credentialSettings() []loader.SettingsField {
 // via search.Query.Mode; see the Modes block).
 func animebytesCaps() loader.Caps {
 	return loader.Caps{
-		CategoryMappings: []loader.CategoryMapping{
+		CategoryMappings: native.Cats(
 			// Anime video groups -> TV/Anime.
-			catDesc("anime[tv_series]", "TV Series", "TV/Anime"),
-			catDesc("anime[tv_special]", "TV Special", "TV/Anime"),
-			catDesc("anime[ova]", "OVA", "TV/Anime"),
-			catDesc("anime[ona]", "ONA", "TV/Anime"),
-			catDesc("anime[dvd_special]", "DVD Special", "TV/Anime"),
-			catDesc("anime[bd_special]", "BD Special", "TV/Anime"),
+			native.Cat{ID: "anime[tv_series]", Newznab: "TV/Anime", Desc: "TV Series"},
+			native.Cat{ID: "anime[tv_special]", Newznab: "TV/Anime", Desc: "TV Special"},
+			native.Cat{ID: "anime[ova]", Newznab: "TV/Anime", Desc: "OVA"},
+			native.Cat{ID: "anime[ona]", Newznab: "TV/Anime", Desc: "ONA"},
+			native.Cat{ID: "anime[dvd_special]", Newznab: "TV/Anime", Desc: "DVD Special"},
+			native.Cat{ID: "anime[bd_special]", Newznab: "TV/Anime", Desc: "BD Special"},
 			// Movie groups -> Movies.
-			catDesc("anime[movie]", "Movie", "Movies"),
+			native.Cat{ID: "anime[movie]", Newznab: "Movies", Desc: "Movie"},
 			// Music groups -> Audio (single key for ALL music; the Lossless/MP3/Other
 			// refinement is applied parse-side).
-			catDesc("audio", "Music", "Audio"),
+			native.Cat{ID: "audio", Newznab: "Audio", Desc: "Music"},
 			// Games -> Console AND PC/Games (Prowlarr registers each game key twice).
-			catDesc("gamec[game]", "Game", "Console"),
-			catDesc("gamec[game]", "Game", "PC/Games"),
-			catDesc("gamec[visual_novel]", "Game Visual Novel", "Console"),
-			catDesc("gamec[visual_novel]", "Game Visual Novel", "PC/Games"),
+			native.Cat{ID: "gamec[game]", Newznab: "Console", Desc: "Game"},
+			native.Cat{ID: "gamec[game]", Newznab: "PC/Games", Desc: "Game"},
+			native.Cat{ID: "gamec[visual_novel]", Newznab: "Console", Desc: "Game Visual Novel"},
+			native.Cat{ID: "gamec[visual_novel]", Newznab: "PC/Games", Desc: "Game Visual Novel"},
 			// Printed media -> Books/Comics.
-			catDesc("printedtype[manga]", "Manga", "Books"),
-			catDesc("printedtype[oneshot]", "Oneshot", "Books"),
-			catDesc("printedtype[anthology]", "Anthology", "Books"),
-			catDesc("printedtype[manhwa]", "Manhwa", "Books"),
-			catDesc("printedtype[light_novel]", "Light Novel", "Books"),
-			catDesc("printedtype[artbook]", "Artbook", "Books"),
-		},
+			native.Cat{ID: "printedtype[manga]", Newznab: "Books", Desc: "Manga"},
+			native.Cat{ID: "printedtype[oneshot]", Newznab: "Books", Desc: "Oneshot"},
+			native.Cat{ID: "printedtype[anthology]", Newznab: "Books", Desc: "Anthology"},
+			native.Cat{ID: "printedtype[manhwa]", Newznab: "Books", Desc: "Manhwa"},
+			native.Cat{ID: "printedtype[light_novel]", Newznab: "Books", Desc: "Light Novel"},
+			native.Cat{ID: "printedtype[artbook]", Newznab: "Books", Desc: "Artbook"},
+		),
 		// MusicSearch is advertised: search.Query.Mode now carries the Torznab t= mode
 		// (set by the feed/JSON handler), so searchTypeFor routes a music-search query —
 		// including a keyword-only one with no artist/album — to AnimeBytes' music corpus.
@@ -105,12 +83,4 @@ func animebytesCaps() loader.Caps {
 			BookSearch:  []string{"q"},
 		},
 	}
-}
-
-// catDesc builds a categorymapping. id is the LITERAL scrape.php filter param key
-// AnimeBytes recognises (e.g. "anime[tv_series]"); it is what MapTorznabCapsToTrackers
-// resolves a Newznab category to and what the request builder emits as "<id>=1". name is
-// the newznab category; desc is the human-readable label (the AB category description).
-func catDesc(id, desc, name string) loader.CategoryMapping {
-	return loader.CategoryMapping{ID: loader.Scalar{Value: id, Set: true}, Cat: name, Desc: desc}
 }

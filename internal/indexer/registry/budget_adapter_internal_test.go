@@ -76,7 +76,7 @@ func newBudgetTestAdapter(t *testing.T, inner *budgetFakeDriver, cfg map[string]
 		info:         core.IndexerInfo{ID: "fake"},
 		inner:        inner,
 		instanceID:   instID,
-		cfg:          cfg,
+		settings:     instanceSettings{Budget: resolveBudgetLimits(cfg)},
 		cache:        sc,
 		db:           db,
 		health:       database.Health{},
@@ -238,7 +238,7 @@ func TestAdapterSearch_ExhaustedQueryNoCacheRefuses(t *testing.T) {
 	// query_limit=0 is treated as "invalid/non-positive -> no cap" by parseLimit, so
 	// use MarkQuotaSpent directly to force an exhausted-with-nothing-cached state
 	// without relying on a configured cap.
-	a.budget.MarkQuotaSpent(context.Background(), a.instanceID, a.cfg, budgetKindQuery, a.clock())
+	a.budget.MarkQuotaSpent(context.Background(), a.instanceID, a.settings.Budget, budgetKindQuery, a.clock())
 
 	if _, err := a.Search(context.Background(), search.Query{Keywords: "x"}); !errors.Is(err, core.ErrBudgetExhausted) {
 		t.Fatalf("err = %v, want core.ErrBudgetExhausted", err)
@@ -295,7 +295,7 @@ func TestAdapterSearch_UnsentFailureRefundsBudget(t *testing.T) {
 			if got := inner.searchCalls.Load(); got != 1 {
 				t.Fatalf("driver called %d times, want 1", got)
 			}
-			if got := a.budget.Status(context.Background(), a.instanceID, a.cfg, a.clock()).Query.Used; got != tt.wantUsed {
+			if got := a.budget.Status(context.Background(), a.instanceID, a.settings.Budget, a.clock()).Query.Used; got != tt.wantUsed {
 				t.Fatalf("query budget used = %d, want %d", got, tt.wantUsed)
 			}
 		})
@@ -329,7 +329,7 @@ func TestAdapterGrab_UnsentFailureRefundsBudget(t *testing.T) {
 			if got := inner.grabCalls.Load(); got != 1 {
 				t.Fatalf("driver grabbed %d times, want 1", got)
 			}
-			if got := a.budget.Status(context.Background(), a.instanceID, a.cfg, a.clock()).Grab.Used; got != tt.wantUsed {
+			if got := a.budget.Status(context.Background(), a.instanceID, a.settings.Budget, a.clock()).Grab.Used; got != tt.wantUsed {
 				t.Fatalf("grab budget used = %d, want %d", got, tt.wantUsed)
 			}
 		})
@@ -450,7 +450,7 @@ func TestAdapterSearch_BudgetExhaustionDoesNotTripBreaker(t *testing.T) {
 	inner := &budgetFakeDriver{}
 	a, _ := newBudgetTestAdapter(t, inner, nil)
 	a.cache.tuning.Load().ttl.negative = time.Minute // arm the breaker
-	a.budget.MarkQuotaSpent(context.Background(), a.instanceID, a.cfg, budgetKindQuery, a.clock())
+	a.budget.MarkQuotaSpent(context.Background(), a.instanceID, a.settings.Budget, budgetKindQuery, a.clock())
 
 	if _, err := a.Search(context.Background(), search.Query{Keywords: "x"}); !errors.Is(err, core.ErrBudgetExhausted) {
 		t.Fatalf("err = %v, want core.ErrBudgetExhausted", err)

@@ -2,8 +2,6 @@ package registry
 
 import (
 	"context"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -35,10 +33,11 @@ const (
 
 // RequestBudget enforces the per-indexer, cap-aware request budget: an operator can
 // set a queryLimit/grabLimit (+ limitsUnit day|hour) per instance via the existing
-// generic instance-settings mechanism (cfg["query_limit"], cfg["grab_limit"],
-// cfg["limits_unit"] — read exactly like the "freeleech"/"cache_ttl" settings), and
-// the registry additionally LEARNS a cap reactively when a tracker's own quota error
-// is observed, even with no operator config at all.
+// generic instance-settings mechanism (the reserved query_limit/grab_limit/
+// limits_unit settings, resolved into a budgetLimits at build time exactly like the
+// freeleech/cache_ttl settings), and the registry additionally LEARNS a cap
+// reactively when a tracker's own quota error is observed, even with no operator
+// config at all.
 //
 // Durability: unlike IndexerStats/SearchCache's counters (rehydrate-at-boot,
 // periodic-flush), this writes through to the store synchronously on every mutating
@@ -113,15 +112,16 @@ func (b *RequestBudget) ensureLoaded(ctx context.Context, instanceID int64, st *
 }
 
 // ReserveQuery reports whether a query is allowed to reach the tracker right now,
-// counting it against the budget if so. cfg is the instance's decrypted settings map
-// (read for query_limit/limits_unit, exactly like freeleech/cache_ttl).
-func (b *RequestBudget) ReserveQuery(ctx context.Context, instanceID int64, cfg map[string]string, now time.Time) bool {
-	return b.reserve(ctx, instanceID, cfg, budgetKindQuery, now)
+// counting it against the budget if so. limits is the instance's resolved budget
+// knobs (resolveBudgetLimits) — the adapter's build-time snapshot on the serve
+// path, a fresh per-read view on the stats path.
+func (b *RequestBudget) ReserveQuery(ctx context.Context, instanceID int64, limits budgetLimits, now time.Time) bool {
+	return b.reserve(ctx, instanceID, limits, budgetKindQuery, now)
 }
 
 // ReserveGrab is ReserveQuery for the grab budget (grab_limit).
-func (b *RequestBudget) ReserveGrab(ctx context.Context, instanceID int64, cfg map[string]string, now time.Time) bool {
-	return b.reserve(ctx, instanceID, cfg, budgetKindGrab, now)
+func (b *RequestBudget) ReserveGrab(ctx context.Context, instanceID int64, limits budgetLimits, now time.Time) bool {
+	return b.reserve(ctx, instanceID, limits, budgetKindGrab, now)
 }
 
 // ReleaseQuery gives back a unit reserved by ReserveQuery when the request never
@@ -129,13 +129,13 @@ func (b *RequestBudget) ReserveGrab(ctx context.Context, instanceID int64, cfg m
 // a user navigating away from a /dl link, the pacing budget never granting a token).
 // reservedAt MUST be the same timestamp the reservation was made with — it is what
 // pins the refund to the period the unit was counted under.
-func (b *RequestBudget) ReleaseQuery(ctx context.Context, instanceID int64, cfg map[string]string, reservedAt time.Time) {
-	b.release(ctx, instanceID, cfg, budgetKindQuery, reservedAt)
+func (b *RequestBudget) ReleaseQuery(ctx context.Context, instanceID int64, limits budgetLimits, reservedAt time.Time) {
+	b.release(ctx, instanceID, limits, budgetKindQuery, reservedAt)
 }
 
 // ReleaseGrab is ReleaseQuery for the grab budget.
-func (b *RequestBudget) ReleaseGrab(ctx context.Context, instanceID int64, cfg map[string]string, reservedAt time.Time) {
-	b.release(ctx, instanceID, cfg, budgetKindGrab, reservedAt)
+func (b *RequestBudget) ReleaseGrab(ctx context.Context, instanceID int64, limits budgetLimits, reservedAt time.Time) {
+	b.release(ctx, instanceID, limits, budgetKindGrab, reservedAt)
 }
 
 // release is the shared refund for both kinds: it decrements kind's counter ONLY while
@@ -144,7 +144,7 @@ func (b *RequestBudget) ReleaseGrab(ctx context.Context, instanceID int64, cfg m
 // decrementing then would steal from the fresh period's allowance — the refund is
 // simply dropped instead. The exhausted latch is deliberately untouched: handing a unit
 // back is not evidence the tracker's own cap lifted.
-func (b *RequestBudget) release(ctx context.Context, instanceID int64, cfg map[string]string, kind budgetKind, reservedAt time.Time) {
+func (b *RequestBudget) release(ctx context.Context, instanceID int64, limits budgetLimits, kind budgetKind, reservedAt time.Time) {
 	// The canonical caller is a request whose context just died (a hung-up *arr), and
 	// the refund still has to reach the store — persisting it under that dead context
 	// would fail every time and leave the durable counter over-counted until restart.
@@ -155,7 +155,7 @@ func (b *RequestBudget) release(ctx context.Context, instanceID int64, cfg map[s
 	defer st.mu.Unlock()
 	b.ensureLoaded(ctx, instanceID, st)
 
-	period := periodKey(reservedAt, resolveLimitsUnit(cfg))
+	period := periodKey(reservedAt, limits.unit)
 	count, exhausted, curPeriod := st.snapshot(kind)
 	if curPeriod != period || count <= 0 {
 		return
@@ -172,19 +172,18 @@ func (b *RequestBudget) release(ctx context.Context, instanceID int64, cfg map[s
 // latch nor a configured limit blocks it, incrementing the count on an allow. A nil
 // (unset) limit means the budget is disabled for that kind — only the reactive
 // learning latch can still block it.
-func (b *RequestBudget) reserve(ctx context.Context, instanceID int64, cfg map[string]string, kind budgetKind, now time.Time) bool {
+func (b *RequestBudget) reserve(ctx context.Context, instanceID int64, limits budgetLimits, kind budgetKind, now time.Time) bool {
 	st := b.stateFor(instanceID)
 	st.mu.Lock()
 	b.ensureLoaded(ctx, instanceID, st)
 
-	unit := resolveLimitsUnit(cfg)
-	period := periodKey(now, unit)
+	period := periodKey(now, limits.unit)
 	count, exhausted, curPeriod := st.snapshot(kind)
 	if curPeriod != period {
 		count, exhausted = 0, false
 	}
 
-	limit := parseLimit(cfg, kind)
+	limit := limits.limit(kind)
 	allow := !exhausted && (limit == nil || count < int64(*limit))
 	if allow {
 		count++
@@ -205,13 +204,12 @@ func (b *RequestBudget) reserve(ctx context.Context, instanceID int64, cfg map[s
 // for the CURRENT period regardless of any configured limit — so harbrr stops
 // issuing outbound requests of that kind against this indexer until the unit rolls
 // over, even though it was never told the tracker's exact numeric cap.
-func (b *RequestBudget) MarkQuotaSpent(ctx context.Context, instanceID int64, cfg map[string]string, kind budgetKind, now time.Time) {
+func (b *RequestBudget) MarkQuotaSpent(ctx context.Context, instanceID int64, limits budgetLimits, kind budgetKind, now time.Time) {
 	st := b.stateFor(instanceID)
 	st.mu.Lock()
 	b.ensureLoaded(ctx, instanceID, st)
 
-	unit := resolveLimitsUnit(cfg)
-	period := periodKey(now, unit)
+	period := periodKey(now, limits.unit)
 	count, _, curPeriod := st.snapshot(kind)
 	if curPeriod != period {
 		count = 0
@@ -301,50 +299,35 @@ type BudgetStatus struct {
 // rather than a false zero. A stored period that is no longer current reads as a
 // fresh one (0 used, no latch) — exactly what reserve would roll it over to on the
 // next request, without writing that rollover here.
-func (b *RequestBudget) Status(ctx context.Context, instanceID int64, cfg map[string]string, now time.Time) BudgetStatus {
+func (b *RequestBudget) Status(ctx context.Context, instanceID int64, limits budgetLimits, now time.Time) BudgetStatus {
 	st := b.stateFor(instanceID)
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	b.ensureLoaded(ctx, instanceID, st)
 
-	unit := resolveLimitsUnit(cfg)
-	period := periodKey(now, unit)
+	period := periodKey(now, limits.unit)
 	return BudgetStatus{
-		Unit:      unit,
-		PeriodEnd: periodEnd(now, unit),
-		Query:     kindStatus(st, budgetKindQuery, cfg, period),
-		Grab:      kindStatus(st, budgetKindGrab, cfg, period),
+		Unit:      limits.unit,
+		PeriodEnd: periodEnd(now, limits.unit),
+		Query:     kindStatus(st, budgetKindQuery, limits, period),
+		Grab:      kindStatus(st, budgetKindGrab, limits, period),
 	}
 }
 
 // kindStatus reads one kind's live view: the stored count and learned latch while the
 // stored period is still current, zeroes once it has rolled over. Caller must hold
 // st.mu.
-func kindStatus(st *budgetState, kind budgetKind, cfg map[string]string, period string) BudgetKindStatus {
+func kindStatus(st *budgetState, kind budgetKind, limits budgetLimits, period string) BudgetKindStatus {
 	count, exhausted, curPeriod := st.snapshot(kind)
 	if curPeriod != period {
 		count, exhausted = 0, false
 	}
 	out := BudgetKindStatus{Used: count, Learned: exhausted}
-	if limit := parseLimit(cfg, kind); limit != nil {
+	if limit := limits.limit(kind); limit != nil {
 		out.Limit = *limit
-		out.Detected = cfg[limitSourceKey(kind)] == limitSourceDetected
+		out.Detected = limits.detected(kind)
 	}
 	return out
-}
-
-// limitSourceKey / limitSourceDetected are the provenance marker a driver writes
-// beside a cap it discovered from the indexer itself (the Newznab driver's ?t=user
-// seed, autobrr/harbrr#377) — a plain reserved instance setting, the same generic
-// mechanism the caps themselves ride, so no parallel store is needed to tell a
-// detected cap from an operator-typed one.
-const limitSourceDetected = "detected"
-
-func limitSourceKey(kind budgetKind) string {
-	if kind == budgetKindGrab {
-		return "grab_limit_source"
-	}
-	return "query_limit_source"
 }
 
 // ForgetInstance drops a deleted instance's in-memory budget state (mirrors
@@ -352,35 +335,6 @@ func limitSourceKey(kind budgetKind) string {
 // CASCADE.
 func (b *RequestBudget) ForgetInstance(instanceID int64) {
 	b.states.LoadAndDelete(instanceID)
-}
-
-// resolveLimitsUnit reads the instance's limits_unit setting ("day" default, "hour"
-// opt-in), mirroring Prowlarr's field name/semantics.
-func resolveLimitsUnit(cfg map[string]string) string {
-	if strings.EqualFold(strings.TrimSpace(cfg["limits_unit"]), "hour") {
-		return "hour"
-	}
-	return "day"
-}
-
-// parseLimit reads kind's configured limit (query_limit/grab_limit) from cfg. An
-// unset, non-numeric, or non-positive value returns nil ("no cap configured" — the
-// safe/default posture per #251's corrected premise: unset means the budget is off
-// for that kind, never an invented default).
-func parseLimit(cfg map[string]string, kind budgetKind) *int {
-	key := "query_limit"
-	if kind == budgetKindGrab {
-		key = "grab_limit"
-	}
-	raw := strings.TrimSpace(cfg[key])
-	if raw == "" {
-		return nil
-	}
-	n, err := strconv.Atoi(raw)
-	if err != nil || n <= 0 {
-		return nil
-	}
-	return &n
 }
 
 // periodKey formats now (converted to UTC) as the rolling-period boundary key for

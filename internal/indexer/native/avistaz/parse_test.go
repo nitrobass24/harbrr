@@ -177,24 +177,23 @@ func TestMinimumSeedTime(t *testing.T) {
 
 func TestParsePublishDate(t *testing.T) {
 	t.Parallel()
+	d := builderDriver("avistaz", nil)
 	cases := []struct{ in, want string }{
-		{"2024-01-15T10:30:00+00:00", "2024-01-15T10:30:00Z"},
 		{"2024-01-15T10:30:00+02:00", "2024-01-15T08:30:00Z"}, // adjusted to UTC
-		{"2024-01-15T10:30:00Z", "2024-01-15T10:30:00Z"},
-		{"2024-01-15 10:30:00", "2024-01-15T10:30:00Z"}, // no zone -> UTC
-		{"2024-01-15T10:30:00.123456Z", "2024-01-15T10:30:00Z"},
+		{"2024-01-15T10:30:00+0000", "2024-01-15T10:30:00Z"},  // no-colon offset (was a drop)
+		{"2024-01-15 10:30:00", "2024-01-15T10:30:00Z"},       // no zone -> UTC
 	}
 	for _, tc := range cases {
-		got, err := parsePublishDate(tc.in)
+		got, err := d.parsePublishDate(tc.in)
 		if err != nil {
 			t.Errorf("parsePublishDate(%q): %v", tc.in, err)
 			continue
 		}
-		if got.Format("2006-01-02T15:04:05Z07:00") != tc.want {
-			t.Errorf("parsePublishDate(%q) = %s, want %s", tc.in, got.Format("2006-01-02T15:04:05Z07:00"), tc.want)
+		if got != tc.want {
+			t.Errorf("parsePublishDate(%q) = %s, want %s", tc.in, got, tc.want)
 		}
 	}
-	if _, err := parsePublishDate("nope"); !errors.Is(err, search.ErrParseError) {
+	if _, err := d.parsePublishDate("nope"); !errors.Is(err, search.ErrParseError) {
 		t.Errorf("unparseable err = %v, want search.ErrParseError", err)
 	}
 }

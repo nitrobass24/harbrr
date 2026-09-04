@@ -6,7 +6,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu"
-import { api } from "@/lib/api"
+import { api, unwrap } from "@/lib/api"
 import type { DownloadClient, Release } from "@/lib/api"
 import { notifyError, notifySuccess } from "@/lib/notify"
 import { isSafeHref } from "@/lib/safe-href"
@@ -47,7 +47,7 @@ export function SendToClientMenu({ clients, indexer, link, title, source, classN
   const send = async (client: DownloadClient) => {
     setSending(true)
     try {
-      await api.grabToDownloadClient(client.id, { indexer, link, name: title })
+      await unwrap(api.http.POST("/api/download-clients/{id}/grab", { params: { path: { id: client.id } }, body: { indexer, link, name: title } }))
       notifySuccess(`Sent to ${client.name}`)
     } catch (err) {
       notifyError(`Sending to ${client.name} failed`, err)

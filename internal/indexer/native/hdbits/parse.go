@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
@@ -181,12 +180,12 @@ func (d *driver) toRelease(row *hdbitsTorrent, useFilenames bool) *normalizer.Re
 		Seeders:              seeders,
 		Leechers:             leechers,
 		Peers:                seeders + leechers,
-		PublishDate:          publishDate(row.Added),
+		PublishDate:          d.publishDate(row.Added),
 		DownloadVolumeFactor: downloadVolumeFactor(row),
 		UploadVolumeFactor:   uploadVolumeFactor(row),
 	}
 	if row.Imdb != nil {
-		rel.IMDBID = fullIMDBID(row.Imdb.ID.Int64())
+		rel.IMDBID = native.CanonicalIMDBID(strconv.FormatInt(row.Imdb.ID.Int64(), 10))
 		rel.Year = row.Imdb.Year.Int64()
 	}
 	if row.Tvdb != nil {
@@ -271,34 +270,17 @@ func isFreeleech(s string) bool {
 	return strings.EqualFold(strings.TrimSpace(s), "yes")
 }
 
-// addedLayouts are the `added` wire formats tried in order. HDBits' captured feed sends an
-// offset WITHOUT a colon (e.g. "2015-04-04T20:30:46+0000"), which time.RFC3339 rejects, so
-// the no-colon offset form ("...-0700") must be tried too. The bare and space forms are
-// assumed UTC (mirrors avistaz/parsePublishDate); Prowlarr deserializes via the lenient
-// Newtonsoft DateTime, so harbrr must accept the same variants.
-var addedLayouts = []string{
-	time.RFC3339Nano,
-	time.RFC3339,
-	"2006-01-02T15:04:05-0700",
-	"2006-01-02T15:04:05",
-	"2006-01-02 15:04:05",
-}
-
 // publishDate parses the `added` field to UTC RFC3339 (Prowlarr's
-// result.Added.ToUniversalTime()). It tries each known layout in turn (HDBits actually sends
-// a no-colon offset, which RFC3339 alone rejects). An unparseable/empty value yields ""
-// rather than failing the whole page (a single bad date must not drop the result set).
-func publishDate(added string) string {
-	added = strings.TrimSpace(added)
-	if added == "" {
+// result.Added.ToUniversalTime()) via the shared native.PublishDate — HDBits' captured feed
+// sends a no-colon offset ("2015-04-04T20:30:46+0000"), which it accepts. An
+// unparseable/empty value yields "" rather than failing the whole page (a single bad date
+// must not drop the result set).
+func (d *driver) publishDate(added string) string {
+	out, err := native.PublishDate(added, d.Clock)
+	if err != nil {
 		return ""
 	}
-	for _, layout := range addedLayouts {
-		if t, err := time.Parse(layout, added); err == nil {
-			return t.UTC().Format(time.RFC3339)
-		}
-	}
-	return ""
+	return out
 }
 
 // downloadURL rebuilds the Prowlarr download URL: {base}download.php?id={id}&passkey=
@@ -318,26 +300,10 @@ func (d *driver) detailsURL(id string) string {
 	return d.BaseURL + detailsPath + "?" + params.Encode()
 }
 
-// fullIMDBID renders a bare imdb id as the canonical "tt"+7-digit form harbrr stores
-// (Prowlarr keeps the bare int; the normalizer's IMDBID is the tt-prefixed string). A
-// non-positive id (absent imdb) yields "".
-func fullIMDBID(id int64) string {
-	if id <= 0 {
-		return ""
-	}
-	return fmt.Sprintf("tt%07d", id)
-}
-
 // freeleechOnly reports whether the freeleech_only checkbox is enabled (Prowlarr's
-// FreeleechOnly, default false). harbrr stores a checked checkbox as Jackett's "True"
-// sentinel; common truthy spellings are also accepted.
+// FreeleechOnly, default false).
 func freeleechOnly(cfg map[string]string) bool {
-	switch strings.ToLower(strings.TrimSpace(cfg["freeleech_only"])) {
-	case "true", "1", "on", "yes":
-		return true
-	default:
-		return false
-	}
+	return native.CheckboxOn(cfg["freeleech_only"])
 }
 
 // useFilenames reports whether filename-derived titles are used (Prowlarr's UseFilenames,

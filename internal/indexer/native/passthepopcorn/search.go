@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"mime"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // fixed query params on every search request, confirmed in Prowlarr
@@ -67,25 +67,10 @@ func (d *driver) buildSearchURL(q search.Query) string {
 // trimmed free-text keyword. An imdb query has no separate param — the id goes in the same
 // searchstr slot. An empty result is a browse/RSS query (no searchstr).
 func searchTerm(q search.Query) string {
-	if imdb := fullIMDBID(q.IMDBID); imdb != "" {
+	if imdb := native.CanonicalIMDBID(q.IMDBID); imdb != "" {
 		return imdb
 	}
 	return strings.TrimSpace(q.Keywords)
-}
-
-// fullIMDBID renders an imdb id as Prowlarr's FullImdbId ("tt" + the numeric id, a minimum
-// of seven digits): a leading "tt" is stripped, the rest parsed and zero-padded. A
-// non-numeric or empty id yields "" (no imdb search). Mirrors filelist.fullIMDBID.
-func fullIMDBID(raw string) string {
-	s := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(raw)), "tt")
-	if s == "" {
-		return ""
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil {
-		return ""
-	}
-	return fmt.Sprintf("tt%07d", n)
 }
 
 // isJSONContentType reports whether a Content-Type names an application/json body

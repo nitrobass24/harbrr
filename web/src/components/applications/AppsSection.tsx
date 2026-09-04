@@ -4,8 +4,6 @@ import { ChevronDown, Pencil, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
-  Dialog,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
@@ -20,6 +18,7 @@ import {
 import { HostPortFields } from "@/components/forms/HostPortFields"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { ResourceSection } from "@/components/ui/resource-section"
 import { Switch } from "@/components/ui/switch"
 import { useApps, useDeleteApp, useUpdateApp } from "@/hooks/useApps"
 import { hostname } from "@/lib/format"
@@ -40,78 +39,64 @@ const DOWNLOAD_KINDS = ["qui"]
 // download-client surfaces (ADR 0004): one stored credential, referenced by id instead
 // of re-entered per surface. Editing one (especially rotating its credential) updates
 // every surface that references it; deleting one is blocked (409) while any surface
-// still does.
+// still does. There is no add flow here — an App is created the first time a surface
+// connects — and delete stays section-owned: useDeleteApp carries the error toast.
 export function AppsSection() {
   const apps = useApps()
   const update = useUpdateApp()
   const remove = useDeleteApp()
-  const [editing, setEditing] = useState<App | null>(null)
 
   return (
-    <section id="apps-section" className="flex flex-col gap-3">
-      <div className="flex flex-col">
-        <h2 className="text-[14px] font-semibold tracking-tight">Apps</h2>
-        <p className="text-[12px] text-faint">
-          One identity + credential per (kind, base URL), shared across every surface that connects to it.
-        </p>
-      </div>
-
-      <div className="flex flex-col rounded-xl border border-border bg-card px-5 py-2 text-[13px]">
-        {(apps.data ?? []).map((a) => {
-          const used = a.references.appConnections + a.references.announce + a.references.download
-          return (
-            <div key={a.id} className="flex items-center gap-3 border-b border-border/60 py-2.5 last:border-b-0">
-              <span className="flex flex-col">
-                <span className="flex items-center gap-2 font-medium">
-                  {a.name}
-                  <Badge variant="secondary" className="px-1.5 py-0 text-[11px]">{a.kind}</Badge>
-                </span>
-                <span className="text-[12px] text-faint">
-                  {hostname(a.baseUrl)} · used by {used} surface{used === 1 ? "" : "s"}
-                </span>
+    <ResourceSection<App>
+      id="apps-section"
+      title="Apps"
+      subtitle="One identity + credential per (kind, base URL), shared across every surface that connects to it."
+      query={apps}
+      empty="No apps yet — one is created the first time you connect a surface."
+      row={(a, actions) => {
+        const used = a.references.appConnections + a.references.announce + a.references.download
+        return (
+          <>
+            <span className="flex flex-col">
+              <span className="flex items-center gap-2 font-medium">
+                {a.name}
+                <Badge variant="secondary" className="px-1.5 py-0 text-[11px]">{a.kind}</Badge>
               </span>
-              <span className="ml-auto flex items-center gap-1">
-                <UseAsMenu app={a} />
-                <Button variant="ghost" size="icon" aria-label={`Edit ${a.name}`} onClick={() => setEditing(a)}>
-                  <Pencil className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={`Delete ${a.name}`}
-                  onClick={() => remove.mutate(a.id, { onSuccess: () => notifySuccess(`${a.name} deleted`) })}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+              <span className="text-[12px] text-faint">
+                {hostname(a.baseUrl)} · used by {used} surface{used === 1 ? "" : "s"}
               </span>
-            </div>
-          )
-        })}
-        {apps.data?.length === 0 && (
-          <p className="py-3 text-muted-foreground">No apps yet — one is created the first time you connect a surface.</p>
-        )}
-      </div>
-
-      <Dialog open={editing !== null} onOpenChange={(open) => { if (!open) setEditing(null) }}>
-        {editing !== null && (
-          <DialogContent>
-            <AppForm
-              // Remount (fresh state seeded from props) per target.
-              key={editing.id}
-              app={editing}
-              pending={update.isPending}
-              error={update.error}
-              onSubmit={(body) => update.mutate({ id: editing.id, body }, {
-                onSuccess: () => {
-                  notifySuccess("App updated")
-                  setEditing(null)
-                },
-              })}
-            />
-          </DialogContent>
-        )}
-      </Dialog>
-    </section>
+            </span>
+            <span className="ml-auto flex items-center gap-1">
+              <UseAsMenu app={a} />
+              <Button variant="ghost" size="icon" aria-label={`Edit ${a.name}`} onClick={actions.edit}>
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={`Delete ${a.name}`}
+                onClick={() => remove.mutate(a.id, { onSuccess: () => notifySuccess(`${a.name} deleted`) })}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </span>
+          </>
+        )
+      }}
+      form={(target, done) => target && (
+        <AppForm
+          app={target}
+          pending={update.isPending}
+          error={update.error}
+          onSubmit={(body) => update.mutate({ id: target.id, body }, {
+            onSuccess: () => {
+              notifySuccess("App updated")
+              done.onSuccess()
+            },
+          })}
+        />
+      )}
+    />
   )
 }
 

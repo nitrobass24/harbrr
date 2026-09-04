@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { ReactNode } from "react"
+import { stubApi } from "@/test/stubApi"
 import { BackupSection } from "./BackupSection"
 
 function wrap(children: ReactNode) {
@@ -34,10 +35,11 @@ function submitImport() {
 }
 
 describe("BackupSection", () => {
+  // The reload tests stub `location`; unstub so it never leaks between tests.
   afterEach(() => vi.unstubAllGlobals())
 
   it("renders export and import blocks", () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({}, 200)))
+    stubApi({})
     render(wrap(<BackupSection />))
     expect(screen.getByRole("button", { name: "Export backup" })).toBeTruthy()
     expect(screen.getByRole("button", { name: "Import backup" })).toBeTruthy()
@@ -45,10 +47,10 @@ describe("BackupSection", () => {
   })
 
   it("export posts the passphrase and triggers a download", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      json({ schemaVersion: 1, payload: "sealed" }, 200, { "Content-Disposition": "attachment; filename=\"harbrr-backup-2026-07-15.json\"" })
-    )
-    vi.stubGlobal("fetch", fetchMock)
+    const api = stubApi({
+      "POST /api/export": () =>
+        json({ schemaVersion: 1, payload: "sealed" }, 200, { "Content-Disposition": "attachment; filename=\"harbrr-backup-2026-07-15.json\"" }),
+    })
     URL.createObjectURL = vi.fn(() => "blob:mock")
     URL.revokeObjectURL = vi.fn()
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {})
@@ -60,22 +62,20 @@ describe("BackupSection", () => {
 
     await waitFor(() => expect(clickSpy).toHaveBeenCalled())
 
-    const call = fetchMock.mock.calls.find((args: unknown[]) => (args[0] as Request).url.endsWith("/api/export"))
+    const call = api.calls("POST /api/export")[0]
     expect(call).toBeTruthy()
-    const body: unknown = await (call![0] as Request).clone().json()
+    const body: unknown = await call.clone().json()
     expect(body).toEqual({ passphrase: "sekrit" })
   })
 
   it("409 opens the force-confirmation dialog, and confirming retries with force", async () => {
     let importCalls = 0
-    const fetchMock = vi.fn().mockImplementation((request: Request) => {
-      if (request.url.endsWith("/api/import")) {
+    stubApi({
+      "POST /api/import": () => {
         importCalls += 1
-        return Promise.resolve(importCalls === 1 ? json({ code: "conflict", error: "not empty" }, 409) : new Response(null, { status: 204 }))
-      }
-      return Promise.resolve(json({}, 200))
+        return importCalls === 1 ? json({ code: "conflict", error: "not empty" }, 409) : new Response(null, { status: 204 })
+      },
     })
-    vi.stubGlobal("fetch", fetchMock)
     const reload = vi.fn()
     vi.stubGlobal("location", { ...window.location, reload })
 
@@ -91,10 +91,9 @@ describe("BackupSection", () => {
   })
 
   it("400 (wrong passphrase) shows an inline error", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockImplementation((request: Request) => {
-      if (request.url.endsWith("/api/import")) return Promise.resolve(json({ code: "invalid_argument", error: "wrong passphrase or corrupted bundle" }, 400))
-      return Promise.resolve(json({}, 200))
-    }))
+    stubApi({
+      "POST /api/import": () => json({ code: "invalid_argument", error: "wrong passphrase or corrupted bundle" }, 400),
+    })
 
     render(wrap(<BackupSection />))
     setPassphraseFile("wrong")
@@ -104,10 +103,7 @@ describe("BackupSection", () => {
   })
 
   it("import success notifies and reloads", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockImplementation((request: Request) => {
-      if (request.url.endsWith("/api/import")) return Promise.resolve(new Response(null, { status: 204 }))
-      return Promise.resolve(json({}, 200))
-    }))
+    stubApi({ "POST /api/import": () => new Response(null, { status: 204 }) })
     const reload = vi.fn()
     vi.stubGlobal("location", { ...window.location, reload })
 

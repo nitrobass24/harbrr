@@ -11,6 +11,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 const (
@@ -61,7 +62,7 @@ func (d *driver) buildSearchURL(q search.Query) string {
 // search string: the keyword, an imdb id when present (no keyword in that case), or the
 // keyword plus the SxxExx episode string for a TV query. The result is trimmed.
 func (d *driver) searchTerm(q search.Query) string {
-	if imdb := fullIMDBID(q.IMDBID); imdb != "" {
+	if imdb := native.CanonicalIMDBID(q.IMDBID); imdb != "" {
 		return imdb
 	}
 	keyword := strings.TrimSpace(q.Keywords)

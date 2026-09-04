@@ -28,8 +28,7 @@ const sqliteConstraintForeignKey = 787
 // so a caller can map a lost insert race to a conflict even when a pre-check
 // passed (TOCTOU). It unwraps the error chain to the driver error.
 func IsUniqueViolation(err error) bool {
-	var sqliteErr *sqlite.Error
-	if errors.As(err, &sqliteErr) {
+	if sqliteErr, ok := errors.AsType[*sqlite.Error](err); ok {
 		return sqliteErr.Code() == sqliteConstraintUnique
 	}
 	return false
@@ -40,8 +39,7 @@ func IsUniqueViolation(err error) bool {
 // a dangling proxy_id/solver_id) to invalid input rather than an opaque 500. It
 // unwraps the error chain to the driver error.
 func IsForeignKeyViolation(err error) bool {
-	var sqliteErr *sqlite.Error
-	if errors.As(err, &sqliteErr) {
+	if sqliteErr, ok := errors.AsType[*sqlite.Error](err); ok {
 		return sqliteErr.Code() == sqliteConstraintForeignKey
 	}
 	return false

@@ -1,5 +1,12 @@
 {
+  // composite is what makes `tsc -b` actually incremental: without it, build mode
+  // decides staleness by looking for emitted .js files, which noEmit never writes,
+  // so every run rebuilds from scratch. It also means this project must own every
+  // file reachable from its include set — which is why the test files live here
+  // rather than in a separate tsconfig.test.json (a referenced project may not
+  // disable emit, TS6310).
   "compilerOptions": {
+    "composite": true,
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
     "target": "ES2022",
     "useDefineForClassFields": true,
@@ -26,6 +33,5 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src"],
-  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
+  "include": ["src"]
 }

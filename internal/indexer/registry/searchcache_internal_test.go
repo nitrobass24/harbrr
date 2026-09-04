@@ -35,8 +35,8 @@ type fakeInner struct {
 
 	// pages/consumesMode drive SupportsOffsetPaging/ConsumesSearchMode (both default
 	// false, matching every existing fakeInner literal) — the warmer-skip regression
-	// in searchcache_ttl_test.go configures one true to prove stripInertWarmInterval
-	// (warmer.go) strips a probe-supplied cfg's rss_warm_interval for such a driver.
+	// in searchcache_ttl_test.go configures one true to prove applyWarmCapability
+	// (settings.go) zeroes a probe-supplied rss_warm_interval for such a driver.
 	pages        bool
 	consumesMode bool
 }

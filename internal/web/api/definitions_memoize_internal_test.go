@@ -40,7 +40,7 @@ func TestListDefinitionsRetriesAfterTransientError(t *testing.T) {
 		if calls == 1 {
 			return nil, errors.New("transient load failure")
 		}
-		return []definitionEntry{{definitionSummary: definitionSummary{ID: "acme", Name: "Acme"}}}, nil
+		return []definitionEntry{{ID: "acme", Name: "Acme"}}, nil
 	})
 
 	if got := callListDefinitions(t, rt).Code; got != http.StatusInternalServerError {
@@ -62,7 +62,7 @@ func TestListDefinitionsMemoizesSuccess(t *testing.T) {
 	var calls int
 	rt := newDefsRouter(func() ([]definitionEntry, error) {
 		calls++
-		return []definitionEntry{{definitionSummary: definitionSummary{ID: "acme", Name: "Acme"}}}, nil
+		return []definitionEntry{{ID: "acme", Name: "Acme"}}, nil
 	})
 
 	for i := range 2 {
@@ -93,7 +93,7 @@ func TestListDefinitionsConcurrentFirstCallLoadsOnce(t *testing.T) {
 	rt := newDefsRouter(func() ([]definitionEntry, error) {
 		calls.Add(1)
 		<-gate // hold the lock here until every goroutine is confirmed running
-		return []definitionEntry{{definitionSummary: definitionSummary{ID: "acme", Name: "Acme"}}}, nil
+		return []definitionEntry{{ID: "acme", Name: "Acme"}}, nil
 	})
 
 	const n = 16

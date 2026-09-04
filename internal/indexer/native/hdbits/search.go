@@ -82,9 +82,9 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 	if err != nil {
 		return nil, err
 	}
-	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodPost, d.BaseURL+searchPath, bytes.NewReader(body))
+	req, err := d.NewRequest(ctx, stdhttp.MethodPost, d.BaseURL+searchPath, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("hdbits: build request: %w", err)
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
@@ -124,7 +124,7 @@ func (d *driver) buildRequest(q search.Query) ([]byte, error) {
 // [\W]+->' ') when no episode/tvdb signal is present, else a verbatim search term.
 func setSearchCriteria(tq *torrentQuery, q search.Query) {
 	keywords := strings.TrimSpace(q.Keywords)
-	if imdb := imdbID(q.IMDBID); imdb > 0 {
+	if imdb := int(native.IMDBNumber(q.IMDBID)); imdb > 0 {
 		tq.Imdb = &imdbQuery{ID: imdb}
 		tq.Search = keywords
 		return
@@ -197,21 +197,6 @@ func (d *driver) categoryParam(q search.Query) []int {
 // trimmed.
 func sanitizeMovieTerm(term string) string {
 	return strings.TrimSpace(nonWordRun.ReplaceAllString(term, " "))
-}
-
-// imdbID renders an imdb id as the bare numeric Prowlarr submits (ParseUtil.GetImdbId): a
-// leading "tt" is stripped and the rest parsed. A non-numeric or empty id yields 0 (no
-// imdb search).
-func imdbID(raw string) int {
-	s := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(raw)), "tt")
-	if s == "" {
-		return 0
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil || n <= 0 {
-		return 0
-	}
-	return n
 }
 
 // positiveInt parses raw as a non-negative base-10 int; a blank or unparseable value (or
