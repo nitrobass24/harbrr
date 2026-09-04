@@ -57,6 +57,14 @@ if ! command -v bun >/dev/null 2>&1; then
   exit 0
 fi
 
+# A commit that deletes the generated file would regenerate it as untracked, which a
+# content comparison cannot see (and git hash-object on a missing path fails opaquely
+# under set -e). Assert it is tracked before comparing.
+if ! git ls-files --error-unmatch "${generated}" >/dev/null 2>&1; then
+  echo "openapi-types-guard: ${generated} is not tracked. It is generated from ${spec} and must be committed." >&2
+  exit 1
+fi
+
 before="$(git hash-object "${generated}")"
 ( cd web && bun run generate:api >/dev/null 2>&1 ) || {
   echo "openapi-types-guard: 'bun run generate:api' failed — cannot verify ${generated}." >&2
