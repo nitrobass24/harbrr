@@ -8,11 +8,8 @@
 package announce
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
@@ -87,65 +84,36 @@ type Target interface {
 	AnnounceTimeout() time.Duration
 }
 
-// poster carries the shared HTTP machinery both drivers reuse: an authenticated JSON POST
-// that never echoes the request URL or body (both carry secrets) into an error.
+// poster is the announce package's view of the shared authenticated-JSON transport:
+// an api-keyed JSON call to the cross-seed tool that never echoes the request URL or
+// body (both carry secrets) into an error.
 type poster struct {
-	kind    string
-	baseURL string
-	apiKey  string
-	client  *http.Client
+	c *apphttp.JSONClient
 }
 
-// post sends body as JSON to baseURL+path with the api-key header, decoding a 2xx response
-// into out (when non-nil). See do for the return contract and redaction guarantees.
-func (p *poster) post(ctx context.Context, path string, body, out any) (int, error) {
-	payload, err := json.Marshal(body)
-	if err != nil {
-		return 0, fmt.Errorf("announce: %s: marshal request: %w", p.kind, err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+path, bytes.NewReader(payload))
-	if err != nil {
-		return 0, fmt.Errorf("announce: %s: build request: %w", p.kind, apphttp.ScrubURLError(err))
-	}
-	req.Header.Set("Content-Type", "application/json")
-	return p.do(req, path, out)
+// newPoster builds the transport for one cross-seed tool. kind labels it in every
+// error ("announce: qui: ..."); apiKey both authenticates the push and is scrubbed by
+// value from any error the tool's response can produce.
+func newPoster(kind, baseURL, apiKey string, client *http.Client) poster {
+	return poster{c: apphttp.NewJSONClient(apphttp.JSONClient{
+		Prefix: "announce: " + kind,
+		Base:   baseURL,
+		Auth:   http.Header{apiKeyHeader: {apiKey}},
+		Client: client,
+		Secret: apiKey,
+	})}
 }
 
-// get sends an authenticated GET to baseURL+path, decoding a 2xx response into out (when
-// non-nil). It is used by non-mutating reachability probes (cross-seed v6's /api/ping).
-// See do for the return contract and redaction guarantees.
-func (p *poster) get(ctx context.Context, path string, out any) (int, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.baseURL+path, nil)
-	if err != nil {
-		return 0, fmt.Errorf("announce: %s: build request: %w", p.kind, apphttp.ScrubURLError(err))
-	}
-	return p.do(req, path, out)
+// post sends body as JSON to baseURL+path, decoding a 2xx response into out (when
+// non-nil). It returns the HTTP status (set even on the error path so a caller can
+// branch on, e.g., 404) plus a scrubbed error.
+func (p poster) post(ctx context.Context, path string, body, out any) (int, error) {
+	return p.c.Do(ctx, http.MethodPost, path, body, out)
 }
 
-// do sets the api-key header, sends req, and decodes a 2xx response into out (when
-// non-nil). It returns the HTTP status (set even on the error path so a caller can branch
-// on, e.g., 404) plus a scrubbed error for any transport failure or non-2xx status. The
-// response body is never surfaced — it can reproduce the request, which carries the api
-// key and the /dl link.
-func (p *poster) do(req *http.Request, path string, out any) (int, error) {
-	req.Header.Set(apiKeyHeader, p.apiKey)
-	// G704: the URL is p.baseURL (the operator-configured cross-seed tool address,
-	// validated absolute http(s) at create/update) + a fixed path — never end-user
-	// input. Reaching that address is the whole point, so this is not attacker SSRF.
-	resp, err := p.client.Do(req) //nolint:gosec // G704: operator-configured tool URL, not user input.
-	if err != nil {
-		return 0, fmt.Errorf("announce: %s: %s: %w", p.kind, path, apphttp.ScrubURLError(err))
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		// Body not echoed (it can reproduce the secret-bearing request); only the status.
-		return resp.StatusCode, fmt.Errorf("announce: %s: %s: status %d", p.kind, path, resp.StatusCode)
-	}
-	if out != nil {
-		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-			return resp.StatusCode, fmt.Errorf("announce: %s: decode %s response: %w", p.kind, path, err)
-		}
-	}
-	_, _ = io.Copy(io.Discard, resp.Body)
-	return resp.StatusCode, nil
+// get sends an authenticated GET to baseURL+path, decoding a 2xx response into out
+// (when non-nil). It is used by non-mutating reachability probes (cross-seed v6's
+// /api/ping).
+func (p poster) get(ctx context.Context, path string, out any) (int, error) {
+	return p.c.Do(ctx, http.MethodGet, path, nil, out)
 }

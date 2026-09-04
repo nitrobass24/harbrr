@@ -1,12 +1,9 @@
 package appsync
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -71,9 +68,7 @@ type servarrIndexer struct {
 // Readarr/Whisparr). indexerPath carries the app's indexer REST path (v1 or v3).
 type servarrDriver struct {
 	kind        string
-	baseURL     string
-	apiKey      string
-	client      *http.Client
+	jc          *apphttp.JSONClient
 	anime       bool
 	indexerPath string
 }
@@ -110,8 +105,18 @@ func NewServarr(kind, baseURL, apiKey string, client *http.Client) Target {
 		client = defaultHTTPClient()
 	}
 	return &servarrDriver{
-		kind: kind, baseURL: strings.TrimRight(baseURL, "/"),
-		apiKey: apiKey, client: client, anime: spec.anime, indexerPath: spec.path,
+		kind: kind, anime: spec.anime, indexerPath: spec.path,
+		jc: apphttp.NewJSONClient(apphttp.JSONClient{
+			Prefix: "appsync: " + kind,
+			Base:   baseURL,
+			Auth:   http.Header{"X-Api-Key": {apiKey}},
+			Client: client,
+			Secret: apiKey,
+			// Servarr's non-2xx body carries the actual validation detail, but it also
+			// echoes the submitted config (which carries the harbrr feed key), so the
+			// reason is ALLOWLISTED out of known-safe fields rather than echoed raw.
+			Reason: parseServarrReason,
+		}),
 	}
 }
 
@@ -160,7 +165,7 @@ func (s *servarrDriver) buildIndexer(d DesiredIndexer) servarrIndexer {
 // row's feed URL so reconciliation can recognize its own.
 func (s *servarrDriver) List(ctx context.Context) ([]RemoteIndexer, error) {
 	var raw []servarrIndexer
-	if _, err := s.do(ctx, http.MethodGet, s.indexerPath, nil, &raw); err != nil {
+	if _, err := s.jc.Do(ctx, http.MethodGet, s.indexerPath, nil, &raw); err != nil {
 		return nil, err
 	}
 	out := make([]RemoteIndexer, 0, len(raw))
@@ -183,7 +188,7 @@ func (s *servarrDriver) List(ctx context.Context) ([]RemoteIndexer, error) {
 
 func (s *servarrDriver) Create(ctx context.Context, d DesiredIndexer) (string, error) {
 	var resp servarrIndexer
-	if _, err := s.do(ctx, http.MethodPost, s.indexerPath+forceSaveQuery, s.buildIndexer(d), &resp); err != nil {
+	if _, err := s.jc.Do(ctx, http.MethodPost, s.indexerPath+forceSaveQuery, s.buildIndexer(d), &resp); err != nil {
 		return "", err
 	}
 	return strconv.Itoa(resp.ID), nil
@@ -196,66 +201,18 @@ func (s *servarrDriver) Update(ctx context.Context, remoteID string, d DesiredIn
 	}
 	body := s.buildIndexer(d)
 	body.ID = id
-	_, err = s.do(ctx, http.MethodPut, s.indexerPath+"/"+remoteID+forceSaveQuery, body, nil)
+	_, err = s.jc.Do(ctx, http.MethodPut, s.indexerPath+"/"+remoteID+forceSaveQuery, body, nil)
 	return err
 }
 
 func (s *servarrDriver) Delete(ctx context.Context, remoteID string) error {
-	_, err := s.do(ctx, http.MethodDelete, s.indexerPath+"/"+remoteID, nil, nil)
+	_, err := s.jc.Do(ctx, http.MethodDelete, s.indexerPath+"/"+remoteID, nil, nil)
 	return err
 }
 
 func (s *servarrDriver) Test(ctx context.Context, d DesiredIndexer) error {
-	_, err := s.do(ctx, http.MethodPost, s.indexerPath+"/test", s.buildIndexer(d), nil)
+	_, err := s.jc.Do(ctx, http.MethodPost, s.indexerPath+"/test", s.buildIndexer(d), nil)
 	return err
-}
-
-// do performs one authenticated request, decoding a 2xx body into out (when non-nil)
-// and turning any non-2xx into a scrubbed error. The request body (which carries the
-// harbrr feed key) is never echoed into an error; the X-Api-Key header is never logged.
-func (s *servarrDriver) do(ctx context.Context, method, path string, body, out any) (int, error) {
-	var reader io.Reader
-	if body != nil {
-		b, err := json.Marshal(body)
-		if err != nil {
-			return 0, fmt.Errorf("appsync: %s: marshal request: %w", s.kind, err)
-		}
-		reader = bytes.NewReader(b)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, s.baseURL+path, reader)
-	if err != nil {
-		return 0, fmt.Errorf("appsync: %s: build request: %w", s.kind, apphttp.ScrubURLError(err))
-	}
-	req.Header.Set("X-Api-Key", s.apiKey)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return 0, fmt.Errorf("appsync: %s: %s %s: %w", s.kind, method, path, apphttp.ScrubURLError(err))
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return resp.StatusCode, s.statusError(method, path, resp)
-	}
-	if out != nil {
-		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-			return resp.StatusCode, fmt.Errorf("appsync: %s: decode %s: %w", s.kind, path, err)
-		}
-	}
-	return resp.StatusCode, nil
-}
-
-// statusError builds an error from a non-2xx response. Servarr's body carries the
-// actual validation detail (why the add/update was rejected), but it also echoes the
-// submitted config — which carries the harbrr feed key — so the extracted reason is
-// scrubbed at the source (parseServarrReason → RedactError) before it reaches any
-// error surface. When the body isn't a shape we recognize, the status alone is kept.
-func (s *servarrDriver) statusError(method, path string, resp *http.Response) error {
-	if reason := parseServarrReason(resp); reason != "" {
-		return fmt.Errorf("appsync: %s: %s %s: status %d: %s", s.kind, method, path, resp.StatusCode, reason)
-	}
-	return fmt.Errorf("appsync: %s: %s %s: status %d", s.kind, method, path, resp.StatusCode)
 }
 
 // servarrValidationFailure is one entry of Servarr's add/update validation-error
@@ -269,14 +226,11 @@ type servarrValidationFailure struct {
 
 // parseServarrReason extracts a redaction-safe reason from a non-2xx Servarr body: the
 // validation-failure array ([{propertyName,errorMessage,severity}]) or a bare {message}
-// object. The text is scrubbed (RedactError catches the echoed apiKey/feed-key in its
-// JSON `"key":"value"` and `key=value` forms) so the credential never rides the error.
+// object. It ALLOWLISTS the two human-readable fields and never reads the echoed
+// submitted config; JSONClient scrubs whatever it returns (value scrub of the app's api
+// key, then the shared credential-pattern scrub) before it reaches an error.
 // Returns "" when the body is empty or an unrecognized shape.
-func parseServarrReason(resp *http.Response) string {
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-	if err != nil || len(raw) == 0 {
-		return ""
-	}
+func parseServarrReason(raw []byte) string {
 	var failures []servarrValidationFailure
 	if err := json.Unmarshal(raw, &failures); err == nil && len(failures) > 0 {
 		parts := make([]string, 0, len(failures))
@@ -291,23 +245,16 @@ func parseServarrReason(resp *http.Response) string {
 			parts = append(parts, msg)
 		}
 		if len(parts) > 0 {
-			return scrubReason(strings.Join(parts, "; "))
+			return strings.Join(parts, "; ")
 		}
 	}
 	var obj struct {
 		Message string `json:"message"`
 	}
 	if err := json.Unmarshal(raw, &obj); err == nil && strings.TrimSpace(obj.Message) != "" {
-		return scrubReason(obj.Message)
+		return obj.Message
 	}
 	return ""
-}
-
-// scrubReason runs a Servarr-supplied reason through the shared credential redaction
-// (RedactError scrubs Authorization/Cookie headers, JSON secret keys, and key=value
-// secret tokens — the forms the echoed harbrr feed key takes).
-func scrubReason(text string) string {
-	return apphttp.RedactError(errors.New(text))
 }
 
 // field builds a typed field entry; the value marshals cleanly (string/int slice/bool
