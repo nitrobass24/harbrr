@@ -89,11 +89,13 @@ func TestItemsPerPageBoundsAndPageFormula(t *testing.T) {
 func TestFilteredPagingUsesPostCleanupOffsets(t *testing.T) {
 	t.Parallel()
 	pages := map[string]string{
-		"": rowsJSON(t,
+		"": rowsJSON(
+			t,
 			testRow(1, "alpha beta one", ""),
 			testRow(2, "alpha only", ""),
 		),
-		"2": rowsJSON(t,
+		"2": rowsJSON(
+			t,
 			testRow(3, "other", "contains alpha and beta"),
 			testRow(4, "noise", ""),
 		),
@@ -132,7 +134,8 @@ func TestFilteredPagingUsesPostCleanupOffsets(t *testing.T) {
 func TestFilteredPagingStopsOnShortPage(t *testing.T) {
 	t.Parallel()
 	doer := &scriptDoer{handler: func(*stdhttp.Request, []byte) (*stdhttp.Response, error) {
-		return jsonResponse(stdhttp.StatusOK, rowsJSON(t,
+		return jsonResponse(stdhttp.StatusOK, rowsJSON(
+			t,
 			testRow(1, "alpha beta", ""),
 			testRow(2, "noise", ""),
 		)), nil
@@ -156,7 +159,8 @@ func TestFilteredPagingCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	doer := &scriptDoer{handler: func(*stdhttp.Request, []byte) (*stdhttp.Response, error) {
 		cancel()
-		return jsonResponse(stdhttp.StatusOK, rowsJSON(t,
+		return jsonResponse(stdhttp.StatusOK, rowsJSON(
+			t,
 			testRow(1, "noise one", ""),
 			testRow(2, "noise two", ""),
 		)), nil
@@ -224,7 +228,8 @@ func TestInvalidIMDBFallsBackToCleanup(t *testing.T) {
 		if req.URL.Query().Get("search") != "alpha beta" || req.URL.Query().Has("imdbId") {
 			t.Errorf("query = %s, want keyword only", req.URL.RawQuery)
 		}
-		return jsonResponse(stdhttp.StatusOK, rowsJSON(t,
+		return jsonResponse(stdhttp.StatusOK, rowsJSON(
+			t,
 			testRow(1, "Alpha Beta", ""),
 			testRow(2, "does not match", ""),
 		)), nil

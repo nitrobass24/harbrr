@@ -451,6 +451,8 @@ func TestDownloadRefusalCaptureExtraSecrets(t *testing.T) {
 		if strings.Contains(string(rendered), secret) {
 			t.Errorf("capture leaked %q: %s", secret, rendered)
 		}
+	}
+}
 
 func TestRuntimeSecretCapturePreservesClassification(t *testing.T) {
 	t.Parallel()

@@ -85,9 +85,11 @@ func (d *driver) authenticate(ctx context.Context, runtimeSecrets ...string) (st
 	if err != nil {
 		return "", fmt.Errorf("speedapp: encode login request: %w", err)
 	}
-	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodPost, d.BaseURL+"api/login", bytes.NewReader(body))
+	req, err := d.NewRequest(ctx, stdhttp.MethodPost, d.BaseURL+"api/login", bytes.NewReader(body))
 	if err != nil {
-		return "", d.ScrubErr(fmt.Errorf("speedapp: build login request: %w", apphttp.RedactURLError(err)), runtimeSecrets...)
+		// NewRequest already shapes and host-redacts the build error; ScrubErr stays
+		// because only the driver knows its runtime secrets.
+		return "", d.ScrubErr(err, runtimeSecrets...)
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
@@ -135,9 +137,10 @@ func (d *driver) bearerGET(ctx context.Context, rawURL, accept string, download 
 }
 
 func (d *driver) doBearerGET(ctx context.Context, rawURL, accept string, download bool, token tokenVersion) (*native.Response, error) {
-	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, rawURL, nil)
+	req, err := d.NewRequest(ctx, stdhttp.MethodGet, rawURL, nil)
 	if err != nil {
-		return nil, d.ScrubErr(fmt.Errorf("speedapp: build request: %w", apphttp.RedactURLError(err)), token.value)
+		// See above: the runtime bearer token is the driver's to scrub, not NewRequest's.
+		return nil, d.ScrubErr(err, token.value)
 	}
 	req.Header.Set("Authorization", "Bearer "+token.value)
 	if accept != "" {
