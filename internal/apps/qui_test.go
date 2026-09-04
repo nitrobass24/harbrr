@@ -94,31 +94,47 @@ func TestQuiInstancesServerErrorNoSecretLeak(t *testing.T) {
 // "//api/instances". The shared JSON client normalises the base once.
 func TestQuiInstancesTrailingSlashBaseURL(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
 
-	var mu sync.Mutex
-	var paths []string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		paths = append(paths, r.URL.Path)
-		mu.Unlock()
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode([]apps.QuiInstance{{ID: 1, Name: "a"}})
-	}))
-	t.Cleanup(srv.Close)
+	for _, tc := range []struct {
+		name   string
+		suffix string
+	}{
+		{"no trailing slash", ""},
+		{"one trailing slash", "/"},
+		{"repeated trailing slashes", "///"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
 
-	svc, _ := newService(t)
-	app, err := svc.Resolve(ctx, apps.Ref{Kind: domain.AppKindQui, BaseURL: srv.URL + "/", APIKey: "qui-secret-key"})
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-	if _, err := svc.QuiInstances(ctx, app.ID); err != nil {
-		t.Fatalf("QuiInstances: %v", err)
-	}
+			var mu sync.Mutex
+			var paths []string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				paths = append(paths, r.URL.Path)
+				mu.Unlock()
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode([]apps.QuiInstance{{ID: 1, Name: "a"}})
+			}))
+			t.Cleanup(srv.Close)
 
-	mu.Lock()
-	defer mu.Unlock()
-	if len(paths) != 1 || paths[0] != "/api/instances" {
-		t.Errorf(`qui saw %q, want exactly ["/api/instances"] (no double slash, no redirect hop)`, paths)
+			svc, _ := newService(t)
+			app, err := svc.Resolve(ctx, apps.Ref{Kind: domain.AppKindQui, BaseURL: srv.URL + tc.suffix, APIKey: "qui-secret-key"})
+			if err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+			if _, err := svc.QuiInstances(ctx, app.ID); err != nil {
+				t.Fatalf("QuiInstances: %v", err)
+			}
+
+			// Exactly one request, at the single-slash path: a double slash would
+			// either 404 or cost a redirect hop, and the redirect would be the only
+			// reason a second request appeared.
+			mu.Lock()
+			defer mu.Unlock()
+			if len(paths) != 1 || paths[0] != "/api/instances" {
+				t.Errorf(`qui saw %q, want exactly ["/api/instances"] (no double slash, no redirect hop)`, paths)
+			}
+		})
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/autobrr/harbrr/internal/domain"
@@ -112,7 +113,13 @@ func (d *floodDriver) authenticate(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("download: flood: authenticate: %w", apphttp.RedactURLError(err))
 	}
-	defer resp.Body.Close()
+	defer func() {
+		// Drain before closing so the connection can be reused — the same idiom as
+		// announce/announce.go and download/sabnzbd. The body is never read here:
+		// Flood answers with the jwt in a Set-Cookie header, not in the payload.
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download: flood: authenticate: unexpected status %d", resp.StatusCode)
 	}

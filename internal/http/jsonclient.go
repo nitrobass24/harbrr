@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	stdhttp "net/http"
@@ -152,11 +153,21 @@ func (c *JSONClient) statusError(method, path string, resp *stdhttp.Response) er
 	return c.errorf("%s: %s %s: status %d", c.Prefix, method, path, resp.StatusCode)
 }
 
-// errorf formats an error and returns it with its message scrubbed, keeping the
-// original (and anything it wraps) reachable through errors.Is/As.
+// errorf formats an error and returns it with its message scrubbed.
+//
+// Only a GENUINE wrapped cause is retained — the inner error a %w verb named, not
+// the formatted error itself. Keeping the latter would leave an UNSCRUBBED copy of
+// the whole message (including a parsed remote reason, which can echo the
+// credential) reachable through errors.Unwrap, quietly undoing the scrub this type
+// exists to guarantee. A format with no %w therefore yields a plain scrubbed error
+// with nothing underneath, while %w keeps errors.Is/As working against the cause.
 func (c *JSONClient) errorf(format string, args ...any) error {
 	err := fmt.Errorf(format, args...)
-	return &scrubbedError{msg: c.scrub(err.Error()), cause: err}
+	cause := errors.Unwrap(err)
+	if cause == nil {
+		return errors.New(c.scrub(err.Error()))
+	}
+	return &scrubbedError{msg: c.scrub(err.Error()), cause: cause}
 }
 
 // scrub applies the value scrub (this client's own credential) and then the shared

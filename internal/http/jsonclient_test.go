@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	stdhttp "net/http"
 	"net/http/httptest"
@@ -275,4 +276,44 @@ func TestJSONClientDecodeAndTransportErrors(t *testing.T) {
 			t.Errorf("the transport error leaks the credential: %q", err)
 		}
 	})
+}
+
+// TestJSONClientErrorUnwrapNeverCarriesTheSecret pins the half Error() cannot cover:
+// scrubbing the message is worthless if an UNSCRUBBED copy is still reachable by
+// walking the error chain. A status error names no %w, so it must expose no cause at
+// all; a transport error must expose only the inner cause its %w named, never the
+// formatted message wrapped around it.
+func TestJSONClientErrorUnwrapNeverCarriesTheSecret(t *testing.T) {
+	t.Parallel()
+	const secret = "Zx9QhandledKeyNotAPattern"
+
+	// Same worst case as above — a Reason parser passing the remote's verbatim quote
+	// of the credential through — because that is the only way the retained cause
+	// would have carried the secret. Without a Reason the chain walk below cannot fire.
+	c := newTestClient(t, "", secret, func(w stdhttp.ResponseWriter, _ *stdhttp.Request) {
+		w.WriteHeader(stdhttp.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"message":"the key ` + secret + ` was rejected"}`))
+	})
+	c.Reason = func(raw []byte) string {
+		var obj struct {
+			Message string `json:"message"`
+		}
+		_ = json.Unmarshal(raw, &obj)
+		return obj.Message
+	}
+
+	_, err := c.Do(context.Background(), stdhttp.MethodGet, "/api/x", nil, nil)
+	if err == nil {
+		t.Fatal("expected a status error")
+	}
+	// Walk the whole chain, not just one level: every message it can produce must be
+	// scrubbed, or the guarantee is only skin-deep.
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		if strings.Contains(e.Error(), secret) {
+			t.Fatalf("the error chain carries the secret at %T: %q", e, e.Error())
+		}
+	}
+	if u := errors.Unwrap(err); u != nil {
+		t.Errorf("a status error names no %%w, so it should expose no cause; got %T: %v", u, u)
+	}
 }
