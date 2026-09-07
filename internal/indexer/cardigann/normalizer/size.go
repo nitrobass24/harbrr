@@ -14,7 +14,9 @@ import (
 // into the parity-comparison unit.
 const sizeStep float32 = 1024
 
-// parseSize reproduces Jackett's ParseUtil.GetBytes byte-for-byte:
+// ParseSize is the Jackett-parity size parser shared by the Cardigann corpus and
+// native drivers. It reproduces ParseUtil.GetBytes byte-for-byte except for the
+// documented unitless-integer correction below:
 //
 //   - The numeric part keeps only digits, '.' and ','; ',' becomes '.'; when
 //     more than one '.' survives, all but the last are thousands separators and
@@ -30,7 +32,7 @@ const sizeStep float32 = 1024
 //     ~90 GB, which breaks downstream byte-equality matching. See the
 //     "Unitless integer sizes" entry in parity/testdata/README.md.
 //   - Empty/"-"/"---" coerce to 0.
-func parseSize(s string) int64 {
+func ParseSize(s string) int64 {
 	num := numericPart(s)
 	val := coerceFloatForSize(num)
 	unit := strings.ToLower(strings.ReplaceAll(lettersOnly(s), "i", ""))

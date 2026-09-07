@@ -44,7 +44,7 @@ var liveTested = map[string]bool{
 	// HD-Torrents, live-validated 2026-08-22 (differential 26=26, Jaccard 1.00).
 	"hdtorrents": true,
 	// Native drivers, live-validated.
-	"iptorrents": true, "filelist": true, "myanonamouse": true, "broadcastthenet": true,
+	"iptorrents": true, "xspeeds": true, "filelist": true, "myanonamouse": true, "broadcastthenet": true,
 	"passthepopcorn": true, "hdbits": true, "alpharatio": true, "avistaz": true,
 	"beyondhd": true, "cinemaz": true, "gazellegames": true, "nebulance": true,
 	"orpheus": true, "redacted": true,
@@ -75,6 +75,7 @@ var nativeBuilt = []nativeRow{
 	{name: "ExoticaZ", pattern: "Bearer (login → token)", id: "exoticaz"},
 	{name: "IPTorrents", pattern: "Session cookie (HTML scrape)", id: "iptorrents"},
 	{name: "TorrentDay", pattern: "Session cookie (HTML scrape)", id: "torrentday"},
+	{name: "XSpeeds", pattern: "Managed session cookie (HTML scrape)", id: "xspeeds"},
 	{name: "FileList", pattern: "Passkey / JSON API", id: "filelist"},
 	{name: "HDBits", pattern: "Passkey / JSON API", id: "hdbits"},
 	{name: "BeyondHD", pattern: "Passkey / JSON API", id: "beyondhd"},
@@ -101,7 +102,6 @@ var nativePlanned = []nativeRow{
 	{name: "FunFile", pattern: "Session cookie (HTML scrape)", issue: 23},
 	{name: "BitHDTV", pattern: "Session cookie (HTML scrape)", issue: 24},
 	{name: "TorrentBytes", pattern: "Session cookie (HTML scrape)", issue: 33},
-	{name: "XSpeeds", pattern: "Session cookie (HTML scrape)", issue: 34},
 	{name: "PreToMe", pattern: "Session cookie (HTML scrape)", issue: 35},
 	{name: "RevolutionTT", pattern: "Session cookie (HTML scrape)", issue: 36},
 	{name: "MTeam", pattern: "Passkey / JSON API", issue: 25},
@@ -182,6 +182,13 @@ var proseCountSites = []struct {
 		replace: func(_ []string, corpus, built, _ int) string {
 			return fmt.Sprintf("**%d trackers** — %d Cardigann definitions + %d native Go drivers",
 				corpus+built, corpus, built)
+		},
+	},
+	{
+		path:    "website/docs/features/overview.md",
+		pattern: regexp.MustCompile(`\d+ further native drivers`),
+		replace: func(_ []string, _, _, planned int) string {
+			return fmt.Sprintf("%d further native drivers", planned)
 		},
 	},
 	{

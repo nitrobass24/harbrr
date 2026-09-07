@@ -162,7 +162,7 @@ func (n *Normalizer) applyCore(r *Release, f map[string]string) {
 // applyNumeric fills the lenient-coerced integer fields. Seeders/leechers are
 // clamped at Jackett's 5,000,000 sanity cap (#6558); Peers = Seeders + Leechers.
 func (n *Normalizer) applyNumeric(r *Release, f map[string]string) {
-	r.Size = parseSize(f["size"])
+	r.Size = ParseSize(f["size"])
 	r.Seeders = clampPeers(coerceLong(f["seeders"]))
 	r.Leechers = clampPeers(coerceLong(f["leechers"]))
 	r.Peers = r.Seeders + r.Leechers

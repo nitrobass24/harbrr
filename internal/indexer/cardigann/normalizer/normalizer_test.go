@@ -70,8 +70,8 @@ func TestParseSize(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := parseSize(tt.in); got != tt.want {
-				t.Errorf("parseSize(%q) = %d, want %d", tt.in, got, tt.want)
+			if got := ParseSize(tt.in); got != tt.want {
+				t.Errorf("ParseSize(%q) = %d, want %d", tt.in, got, tt.want)
 			}
 		})
 	}

@@ -105,7 +105,7 @@ if [[ "$mode" == "env" ]]; then
           | (.Settings | try fromjson catch {}) as $s
           | ( $s.definitionFile
               // ( (.Implementation | ascii_downcase) as $impl
-                   | if ($impl | test("avistaz|cinemaz|privatehd|exoticaz|iptorrents|myanonamouse|filelist")) then $impl else null end )
+                   | if ($impl | test("avistaz|cinemaz|privatehd|exoticaz|iptorrents|myanonamouse|filelist|xspeeds")) then $impl else null end )
             ) as $def
           | select($def != null)
           | ( (strfields($s.extraFieldData) + strfields($s))
