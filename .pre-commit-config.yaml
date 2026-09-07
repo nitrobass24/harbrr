@@ -18,8 +18,21 @@ repos:
     hooks:
       - id: gitleaks
 
+  - repo: https://github.com/rhysd/actionlint
+    # Keep in sync with the guards job's actionlint pin (ci.yml).
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+
   - repo: local
     hooks:
+      # Host shellcheck (brew install shellcheck); actionlint above also runs it
+      # on workflow run: blocks when it is on PATH.
+      - id: shellcheck
+        name: shellcheck
+        entry: shellcheck
+        language: system
+        files: ^scripts/.*\.sh$
       - id: golangci-lint
         name: golangci-lint
         entry: golangci-lint run

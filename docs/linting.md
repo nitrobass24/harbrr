@@ -32,6 +32,11 @@ The set is autobrr/qui's config (for family consistency) plus harbrr additions:
 - **Policy enforcement:** `nolintlint` — every `//nolint` must name its linter, carry a reason
   comment, and still be needed; a directive whose linter no longer fires there is itself a finding
   (`--fix` removes those). This mechanizes the nolint policy below.
+- **Import boundaries:** `depguard` confines `dlclark/regexp2` to
+  `cardigann/internal/regexadapter` — the RE2-first engine rule as a gate, not a review norm.
+
+Shell and workflow code are linted too: **actionlint** (workflows, including shellcheck on embedded
+`run:` blocks) and **shellcheck** (`scripts/*.sh`) run in pre-commit and in the `guards` CI job.
 
 Dependency CVEs are covered separately by **`govulncheck`** (a job in `.github/workflows/ci.yml`),
 which only flags vulnerabilities on call paths harbrr actually reaches.

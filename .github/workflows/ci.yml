@@ -121,6 +121,36 @@ jobs:
             exit 1
           fi
           echo "gitleaks pins agree: $pc"
+      # Lint the CI itself: this workflow is ~1000 lines heavy with load-bearing
+      # embedded shell, and scripts/ carries the guard/vendor/release scripts.
+      # actionlint checks the workflows (running shellcheck on embedded run:
+      # blocks via the binary installed alongside); shellcheck checks scripts/.
+      # Pinned binaries, gitleaks-style — no marketplace action needed.
+      - name: install shellcheck + actionlint
+        env:
+          SHELLCHECK_VERSION: "0.11.0"
+          SHELLCHECK_SHA256: "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
+          ACTIONLINT_VERSION: "1.7.12"
+          ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+        run: |
+          curl -sSfL "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" -o shellcheck.tar.xz
+          echo "${SHELLCHECK_SHA256}  shellcheck.tar.xz" | sha256sum -c -
+          tar -xJf shellcheck.tar.xz --strip-components=1 "shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
+          curl -sSfL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" -o actionlint.tar.gz
+          echo "${ACTIONLINT_SHA256}  actionlint.tar.gz" | sha256sum -c -
+          tar -xzf actionlint.tar.gz actionlint
+          ./shellcheck --version && ./actionlint --version
+          # actionlint is also pinned as a pre-commit hook — same drift class as
+          # the gitleaks/golangci-lint pin checks above, enforced the same way.
+          pc=$(grep -A2 'rhysd/actionlint$' .pre-commit-config.yaml | sed -nE 's/.*rev: v([0-9.]+).*/\1/p')
+          if [ "$pc" != "${ACTIONLINT_VERSION}" ]; then
+            echo "actionlint pins disagree: pre-commit=v$pc guards=${ACTIONLINT_VERSION}" >&2
+            exit 1
+          fi
+      - name: actionlint (workflows, embedded shell via shellcheck)
+        run: PATH="$PWD:$PATH" ./actionlint -color
+      - name: shellcheck (scripts/)
+        run: ./shellcheck scripts/*.sh
       # The Dockerfile's build stage and vendor-definitions.yml pin Go at the minor
       # level, and Dependabot's docker ecosystem can bump the Dockerfile AHEAD of
       # go.mod — the reverse drift direction from the check above, and invisible to
@@ -604,7 +634,7 @@ jobs:
           key: govulncheck-${{ runner.os }}-${{ runner.arch }}-${{ env.GOVULNCHECK_VERSION }}
       - name: install govulncheck
         if: steps.govulncheck-cache.outputs.cache-hit != 'true'
-        run: go install golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}
+        run: go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
       - name: govulncheck
         run: govulncheck ./...
 
