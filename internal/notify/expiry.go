@@ -39,6 +39,26 @@ func DefaultExpiryThresholds() []int {
 	return append([]int(nil), defaultExpiryThresholds...)
 }
 
+// expiryThresholds is the persisted lead-time list. A missing row, or one holding
+// nothing usable, reads back as defaultExpiryThresholds.
+var expiryThresholds = database.Setting[[]int]{
+	Key:     ExpiryThresholdsKey,
+	Default: defaultExpiryThresholds,
+	Parse:   parseExpiryThresholds,
+	Format:  formatThresholds,
+}
+
+// parseExpiryThresholds is ParseExpiryThresholds in Setting.Parse's shape: a list
+// with nothing usable in it is an error, so the stored value is refused and the
+// defaults stand.
+func parseExpiryThresholds(raw string) ([]int, error) {
+	days := ParseExpiryThresholds(raw)
+	if len(days) == 0 {
+		return nil, fmt.Errorf("no usable lead times in %q", raw)
+	}
+	return days, nil
+}
+
 // ExpiryScanner turns operator-entered expiry dates into notifications. It is a pull,
 // not a push: nothing about an expiry happens during a request, so a periodic scan on
 // the shared reap skeleton (internal/app/lifecycle.go) is the whole mechanism — no
@@ -84,7 +104,7 @@ func (s *ExpiryScanner) TickOnce(ctx context.Context) {
 	if len(rows) == 0 {
 		return
 	}
-	thresholds := s.thresholds(ctx)
+	thresholds := s.svc.ExpiryThresholds(ctx)
 	now := s.clock()
 	for _, row := range rows {
 		s.check(ctx, row, thresholds, now)
@@ -126,32 +146,11 @@ func (s *ExpiryScanner) check(ctx context.Context, row domain.IndexerExpiry, thr
 	}, func(n domain.Notification) bool { return n.OnExpiry })
 }
 
-// thresholds reads the operator's lead times, falling back to the defaults — a
-// settings read that fails must not silence the scan, so the error is logged and the
-// defaults stand in.
-func (s *ExpiryScanner) thresholds(ctx context.Context) []int {
-	days, err := s.svc.ExpiryThresholds(ctx)
-	if err != nil {
-		s.svc.log.Warn().Str("error", apphttp.RedactError(err)).Msg("notify: expiry scan: reading thresholds failed")
-		return DefaultExpiryThresholds()
-	}
-	return days
-}
-
 // ExpiryThresholds returns the effective lead times: the operator's stored list, or
 // the defaults when unset or unusable. Both the scan and the settings endpoint read
 // through here, so what the UI shows is what the scan applies.
-func (s *Service) ExpiryThresholds(ctx context.Context) ([]int, error) {
-	raw, found, err := (database.AppSettings{}).Get(ctx, s.db, ExpiryThresholdsKey)
-	if err != nil {
-		return nil, fmt.Errorf("notify: read expiry thresholds: %w", err)
-	}
-	if found {
-		if parsed := ParseExpiryThresholds(raw); len(parsed) > 0 {
-			return parsed, nil
-		}
-	}
-	return DefaultExpiryThresholds(), nil
+func (s *Service) ExpiryThresholds(ctx context.Context) []int {
+	return expiryThresholds.Read(ctx, s.db, s.log)
 }
 
 // maxExpiryLeadDays bounds a lead time at ten years — beyond that a "warning" would
@@ -174,7 +173,7 @@ func (s *Service) SetExpiryThresholds(ctx context.Context, days []int) ([]int, e
 	if len(canonical) == 0 {
 		canonical = []int{0}
 	}
-	if err := (database.AppSettings{}).Set(ctx, s.db, ExpiryThresholdsKey, formatThresholds(canonical), s.clock()); err != nil {
+	if err := expiryThresholds.Write(ctx, s.db, canonical, s.clock()); err != nil {
 		return nil, fmt.Errorf("notify: persist expiry thresholds: %w", err)
 	}
 	return canonical, nil

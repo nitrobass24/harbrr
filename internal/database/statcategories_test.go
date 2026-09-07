@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
+
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/database/dbtest"
 )
@@ -140,22 +142,28 @@ func TestCategoryStatsRetentionMonths(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 
-	if got, err := database.CategoryStatsRetentionMonths(ctx, db); err != nil || got != database.DefaultCategoryStatsRetentionMonths {
-		t.Fatalf("unset retention = %d / %v, want the default", got, err)
+	log := zerolog.Nop()
+
+	if got := database.CategoryStatsRetention.Read(ctx, db, log); got != database.DefaultCategoryStatsRetentionMonths {
+		t.Fatalf("unset retention = %d, want the default", got)
 	}
-	if err := database.SetCategoryStatsRetentionMonths(ctx, db, 6, now); err != nil {
-		t.Fatalf("Set: %v", err)
+	if err := database.CategoryStatsRetention.Write(ctx, db, 6, now); err != nil {
+		t.Fatalf("Write: %v", err)
 	}
-	if got, err := database.CategoryStatsRetentionMonths(ctx, db); err != nil || got != 6 {
-		t.Fatalf("retention = %d / %v, want 6", got, err)
+	// The stored form is the same bare integer the pre-Setting code wrote.
+	if raw, _, err := (database.AppSettings{}).Get(ctx, db, "stats_category_retention_months"); err != nil || raw != "6" {
+		t.Fatalf("stored value = %q / %v, want %q", raw, err, "6")
+	}
+	if got := database.CategoryStatsRetention.Read(ctx, db, log); got != 6 {
+		t.Fatalf("retention = %d, want 6", got)
 	}
 
 	for _, stored := range []string{"", "twelve", "0", "999"} {
 		if err := (database.AppSettings{}).Set(ctx, db, "stats_category_retention_months", stored, now); err != nil {
 			t.Fatalf("seed %q: %v", stored, err)
 		}
-		if got, err := database.CategoryStatsRetentionMonths(ctx, db); err != nil || got != database.DefaultCategoryStatsRetentionMonths {
-			t.Errorf("retention for stored %q = %d / %v, want the default", stored, got, err)
+		if got := database.CategoryStatsRetention.Read(ctx, db, log); got != database.DefaultCategoryStatsRetentionMonths {
+			t.Errorf("retention for stored %q = %d, want the default", stored, got)
 		}
 	}
 }

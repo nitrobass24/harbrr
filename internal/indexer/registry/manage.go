@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog"
+
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
 	"github.com/autobrr/harbrr/internal/domain"
@@ -71,6 +73,7 @@ type StatsReporter struct {
 	circuit     database.Circuit
 	db          dbinterface.Querier
 	clock       func() time.Time
+	log         zerolog.Logger
 }
 
 // Management-layer sentinels the API maps to HTTP status codes (400/409/404). Both
@@ -1191,13 +1194,9 @@ func (r *StatsReporter) FlushStats(ctx context.Context) {
 }
 
 // CategoryStatsRetention returns the operator's retention window for the per-category
-// tallies, in months (the default when unset).
-func (r *StatsReporter) CategoryStatsRetention(ctx context.Context) (int, error) {
-	months, err := database.CategoryStatsRetentionMonths(ctx, r.db)
-	if err != nil {
-		return months, fmt.Errorf("registry: read stats retention: %w", err)
-	}
-	return months, nil
+// tallies, in months (the default when unset or unusable).
+func (r *StatsReporter) CategoryStatsRetention(ctx context.Context) int {
+	return database.CategoryStatsRetention.Read(ctx, r.db, r.log)
 }
 
 // SetCategoryStatsRetention persists the retention window in months. Out-of-range
@@ -1207,7 +1206,7 @@ func (r *StatsReporter) SetCategoryStatsRetention(ctx context.Context, months in
 		return fmt.Errorf("%w: stats retention must be %d-%d months", ErrInvalid,
 			database.MinCategoryStatsRetentionMonths, database.MaxCategoryStatsRetentionMonths)
 	}
-	if err := database.SetCategoryStatsRetentionMonths(ctx, r.db, months, r.clock()); err != nil {
+	if err := database.CategoryStatsRetention.Write(ctx, r.db, months, r.clock()); err != nil {
 		return fmt.Errorf("registry: set stats retention: %w", err)
 	}
 	return nil
@@ -1217,10 +1216,7 @@ func (r *StatsReporter) SetCategoryStatsRetention(ctx context.Context, months in
 // range delete, not a rollup, so retention costs one statement regardless of history
 // size. Returns the number of rows removed.
 func (r *StatsReporter) ReapCategoryStats(ctx context.Context) (int64, error) {
-	months, err := r.CategoryStatsRetention(ctx)
-	if err != nil {
-		return 0, err
-	}
+	months := r.CategoryStatsRetention(ctx)
 	// Normalize to the first of the CURRENT month before stepping back: AddDate from a
 	// month-end day overflows (May 31 minus 3 months is "Feb 31" = Mar 2/3), which
 	// would shift the cutoff a whole month and delete a bucket retention promised to

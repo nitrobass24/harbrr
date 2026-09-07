@@ -17,12 +17,7 @@ type expiryThresholdsBody struct {
 // getExpiryThresholds returns the effective lead times, defaults included, so the UI
 // never has to duplicate the fallback logic.
 func (rt *router) getExpiryThresholds(w http.ResponseWriter, r *http.Request) {
-	days, err := rt.notify.ExpiryThresholds(r.Context())
-	if err != nil {
-		rt.writeServiceError(w, "expiry thresholds", err)
-		return
-	}
-	writeJSON(w, http.StatusOK, expiryThresholdsBody{Days: days})
+	writeJSON(w, http.StatusOK, expiryThresholdsBody{Days: rt.notify.ExpiryThresholds(r.Context())})
 }
 
 // putExpiryThresholds sets the lead times, echoing back what was actually stored.

@@ -118,10 +118,6 @@ func (IndexerCategoryStatsStore) DeleteBefore(ctx context.Context, q dbinterface
 	return n, nil
 }
 
-// categoryStatsRetentionKey is the app_settings key holding the operator's retention
-// window in months. Absent means DefaultCategoryStatsRetentionMonths.
-const categoryStatsRetentionKey = "stats_category_retention_months"
-
 // Category-stat retention bounds. A year of monthly buckets is the renewal-decision
 // window #403 asks for; the ceiling keeps a typo from making retention effectively
 // infinite.
@@ -131,22 +127,26 @@ const (
 	MaxCategoryStatsRetentionMonths     = 120
 )
 
-// CategoryStatsRetentionMonths reads the operator's retention window, falling back to
-// the default when unset or unparseable (a stale row must never wedge the reaper).
-func CategoryStatsRetentionMonths(ctx context.Context, q dbinterface.Execer) (int, error) {
-	stored, found, err := (AppSettings{}).Get(ctx, q, categoryStatsRetentionKey)
-	if err != nil {
-		return DefaultCategoryStatsRetentionMonths, err
-	}
-	months, convErr := strconv.Atoi(stored)
-	if !found || convErr != nil || months < MinCategoryStatsRetentionMonths || months > MaxCategoryStatsRetentionMonths {
-		return DefaultCategoryStatsRetentionMonths, nil
-	}
-	return months, nil
+// CategoryStatsRetention is the operator's retention window for the per-category
+// tallies, in months. A missing or out-of-bounds row reads back as the default, so a
+// stale row can never wedge the reaper.
+var CategoryStatsRetention = Setting[int]{
+	Key:     "stats_category_retention_months",
+	Default: DefaultCategoryStatsRetentionMonths,
+	Parse:   parseRetentionMonths,
+	Format:  strconv.Itoa,
 }
 
-// SetCategoryStatsRetentionMonths persists the operator's retention window. The caller
-// validates the range (the API rejects out-of-range values with a 400).
-func SetCategoryStatsRetentionMonths(ctx context.Context, q dbinterface.Execer, months int, now time.Time) error {
-	return (AppSettings{}).Set(ctx, q, categoryStatsRetentionKey, strconv.Itoa(months), now)
+// parseRetentionMonths rejects anything outside the accepted window, which is what
+// makes an out-of-range stored value fall back to the default rather than take effect.
+func parseRetentionMonths(raw string) (int, error) {
+	months, err := strconv.Atoi(raw)
+	switch {
+	case err != nil:
+		return 0, fmt.Errorf("parse retention months: %w", err)
+	case months < MinCategoryStatsRetentionMonths || months > MaxCategoryStatsRetentionMonths:
+		return 0, fmt.Errorf("retention of %d months is outside %d-%d",
+			months, MinCategoryStatsRetentionMonths, MaxCategoryStatsRetentionMonths)
+	}
+	return months, nil
 }

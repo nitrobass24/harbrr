@@ -5668,15 +5668,6 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description log level control is unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
         };
     };
     putLogLevel: {

@@ -2244,11 +2244,6 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/LogLevel" }
         "401": { $ref: "#/components/responses/Unauthorized" }
-        "503":
-          description: log level control is unavailable
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Error" }
     put:
       summary: Set the runtime log level
       description: >

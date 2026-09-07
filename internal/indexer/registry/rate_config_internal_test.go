@@ -48,9 +48,11 @@ func TestRateDefaultRoundTrip(t *testing.T) {
 	// Reset the in-memory value to the seed; LoadRateDefaultOverride must restore
 	// the persisted value from app_settings.
 	reg.rateDefault.Store(int64(defaultRateInterval))
-	if err := reg.LoadRateDefaultOverride(ctx); err != nil {
-		t.Fatalf("LoadRateDefaultOverride: %v", err)
+	// The stored form is the same Go duration string the pre-Setting code wrote.
+	if raw, _, err := (database.AppSettings{}).Get(ctx, reg.Resolver.db, rateDefaultSetting.Key); err != nil || raw != want.String() {
+		t.Fatalf("stored value = %q / %v, want %q", raw, err, want.String())
 	}
+	reg.LoadRateDefaultOverride(ctx)
 	if got := reg.RateDefault(); got != want {
 		t.Errorf("after LoadRateDefaultOverride RateDefault() = %v, want persisted %v", got, want)
 	}
@@ -64,12 +66,10 @@ func TestLoadRateDefaultOverrideIgnoresBadValues(t *testing.T) {
 
 	for _, stored := range []string{"not-a-duration", "0s", "-5s"} {
 		reg, _, db := newResolveRegistry(t)
-		if err := (database.AppSettings{}).Set(ctx, db, keyRateDefaultInterval, stored, time.Now()); err != nil {
+		if err := (database.AppSettings{}).Set(ctx, db, rateDefaultSetting.Key, stored, time.Now()); err != nil {
 			t.Fatalf("seed app_settings: %v", err)
 		}
-		if err := reg.LoadRateDefaultOverride(ctx); err != nil {
-			t.Fatalf("LoadRateDefaultOverride(%q): %v", stored, err)
-		}
+		reg.LoadRateDefaultOverride(ctx)
 		if got := reg.RateDefault(); got != defaultRateInterval {
 			t.Errorf("LoadRateDefaultOverride(%q) RateDefault() = %v, want seed %v unchanged", stored, got, defaultRateInterval)
 		}
@@ -77,9 +77,7 @@ func TestLoadRateDefaultOverrideIgnoresBadValues(t *testing.T) {
 
 	// A missing key is a no-op too.
 	reg, _, _ := newResolveRegistry(t)
-	if err := reg.LoadRateDefaultOverride(ctx); err != nil {
-		t.Fatalf("LoadRateDefaultOverride (missing key): %v", err)
-	}
+	reg.LoadRateDefaultOverride(ctx)
 	if got := reg.RateDefault(); got != defaultRateInterval {
 		t.Errorf("LoadRateDefaultOverride (missing key) RateDefault() = %v, want seed %v", got, defaultRateInterval)
 	}
