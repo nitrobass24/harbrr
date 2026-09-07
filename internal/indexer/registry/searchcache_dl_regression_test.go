@@ -27,7 +27,7 @@ import (
 // reach the served feed, on a miss OR a hit.
 var dlRegPasskey = strings.Repeat("7c6d", 8)
 
-const dlRegAPIKey = "harbrr-reg-key" //nolint:gosec // G101: synthetic test API key.
+const dlRegAPIKey = "harbrr-reg-key"
 
 // resolverFakeIndexer is a minimal core.Indexer whose download needs resolving,
 // so its passkey-bearing link must be sealed behind the /dl proxy. It counts Search

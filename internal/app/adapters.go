@@ -116,7 +116,6 @@ func newAnnounceSink(svc *announce.Service, db dbinterface.Execer, keyring *secr
 	instances := database.Instances{}
 	queue := make(chan func(), announcePushQueueCapacity)
 	for range maxConcurrentAnnouncePushes {
-		//nolint:gosec // G118: intentionally detached — workers must outlive any single triggering request.
 		go func() {
 			for job := range queue {
 				job()

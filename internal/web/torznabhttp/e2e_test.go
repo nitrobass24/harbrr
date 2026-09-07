@@ -47,7 +47,7 @@ func (e *engineIndexer) Grab(ctx context.Context, l string) (*search.GrabResult,
 
 func readTestdata(t *testing.T, name string) []byte {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join("testdata", name)) //nolint:gosec // fixed test path.
+	b, err := os.ReadFile(filepath.Join("testdata", name))
 	if err != nil {
 		t.Fatalf("reading %q: %v", name, err)
 	}

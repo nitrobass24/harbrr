@@ -35,7 +35,7 @@ func (w *settingsQueryHookQuerier) QueryContext(ctx context.Context, query strin
 	if w.hook != nil && strings.Contains(query, "FROM indexer_settings") && w.fired.CompareAndSwap(false, true) {
 		w.hook()
 	}
-	return w.Querier.QueryContext(ctx, query, args...) //nolint:wrapcheck // passthrough test double.
+	return w.Querier.QueryContext(ctx, query, args...)
 }
 
 // TestBuildAdapterSnapshotsEpochBeforeSettingsRead is the build-order regression for

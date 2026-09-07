@@ -29,7 +29,7 @@ func writeXML(w http.ResponseWriter, status int, body []byte) {
 	// G705: body is serialized Torznab XML with a fixed application/rss+xml content
 	// type, consumed by XML parsers (Sonarr/Radarr) — not browser-rendered HTML, so
 	// there is no XSS sink.
-	_, _ = w.Write(body) //nolint:gosec // G705: XML feed, fixed non-HTML content type
+	_, _ = w.Write(body)
 }
 
 // writeError writes a Torznab <error> document. The status code follows
@@ -47,5 +47,9 @@ func writeXML(w http.ResponseWriter, status int, body []byte) {
 func writeError(w http.ResponseWriter, status, code int, description string) {
 	w.Header().Set("Content-Type", contentTypeError)
 	w.WriteHeader(status)
-	_, _ = w.Write(tzn.MarshalError(code, description)) //nolint:gosec // G705: XML error doc, fixed non-HTML content type
+	// gosec's G705 taint analysis reports this Write nondeterministically
+	// (order-sensitive interprocedural analysis), so nolintlint's unused-directive
+	// check is suppressed alongside it — otherwise one lint run demands the
+	// directive and the next calls it unused.
+	_, _ = w.Write(tzn.MarshalError(code, description)) //nolint:gosec,nolintlint // G705: XML error doc, fixed non-HTML content type
 }

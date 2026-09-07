@@ -13,7 +13,7 @@ func assertGPLHeader(t *testing.T, relPath string) {
 	t.Helper()
 	const header = "// Copyright (c) 2021 - 2025, Ludvig Lundgren and the autobrr contributors.\n" +
 		"// SPDX-License-Identifier: GPL-2.0-or-later\n"
-	data, err := os.ReadFile(relPath) //nolint:gosec // G304: relPath is a fixed test-internal constant, not user input.
+	data, err := os.ReadFile(relPath)
 	if err != nil {
 		t.Fatalf("read %s: %v", relPath, err)
 	}

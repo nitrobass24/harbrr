@@ -69,5 +69,5 @@ func (p *cacheProbe) SupportsOffsetPaging() bool         { return p.inner.Suppor
 func (p *cacheProbe) ConsumesSearchMode() bool           { return p.inner.ConsumesSearchMode() }
 
 func (p *cacheProbe) Grab(ctx context.Context, link string) (*search.GrabResult, error) {
-	return p.inner.Grab(ctx, link) //nolint:wrapcheck // fake-inner passthrough; nothing to add.
+	return p.inner.Grab(ctx, link)
 }

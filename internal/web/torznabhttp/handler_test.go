@@ -26,7 +26,7 @@ import (
 	"github.com/autobrr/harbrr/internal/secrets"
 )
 
-const testAPIKey = "harbrr-test-key" //nolint:gosec // G101: synthetic test API key, not a real credential
+const testAPIKey = "harbrr-test-key"
 
 // fakeIndexer is a core.Provider-backed core.Indexer for the handler tests: it serves
 // canned capabilities + releases and records the search query it received.

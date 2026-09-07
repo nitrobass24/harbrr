@@ -467,7 +467,7 @@ func TestServicePushFailureRedactsGUID(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	const secret = "SECRETPASSKEY123" //nolint:gosec // G101: synthetic test passkey
+	const secret = "SECRETPASSKEY123"
 	svc.Push(ctx, func(domain.AnnounceConnection) []announce.Release {
 		return []announce.Release{{Name: "X", GUID: "https://tracker.example/download.php?id=1&passkey=" + secret}}
 	})

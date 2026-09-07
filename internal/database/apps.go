@@ -151,7 +151,6 @@ func (Apps) CountAppReferences(ctx context.Context, q dbinterface.Execer, id int
 		{"announce_connections", &r.Announce},
 		{"download_clients", &r.Download},
 	} {
-		//nolint:gosec // table is a fixed literal from the loop above, never user input.
 		if err := q.QueryRowContext(ctx, q.Rebind(`SELECT count(*) FROM `+c.table+` WHERE app_id = ?`), id).Scan(c.dst); err != nil {
 			return AppReferences{}, fmt.Errorf("database: count %s refs: %w", c.table, err)
 		}

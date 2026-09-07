@@ -227,7 +227,7 @@ func decodeKey(s string) ([]byte, error) {
 
 // readKeyFile reads a key from path: raw 32 bytes, or an encoded 32-byte key.
 func readKeyFile(path string) ([]byte, error) {
-	data, err := os.ReadFile(path) //nolint:gosec // path is operator-configured.
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err //nolint:wrapcheck // callers wrap with the source label.
 	}

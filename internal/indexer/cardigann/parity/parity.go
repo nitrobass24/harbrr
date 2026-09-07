@@ -203,7 +203,7 @@ func (q CaseQuery) toEngine() cardigann.Query {
 // Load reads and validates case.yml from dir. Unknown keys are rejected so a
 // typo in a spec fails loud rather than silently doing nothing.
 func Load(dir string) (*Case, error) {
-	data, err := os.ReadFile(filepath.Join(dir, "case.yml")) //nolint:gosec // dir is a test-fixture path under testdata/, supplied by the harness.
+	data, err := os.ReadFile(filepath.Join(dir, "case.yml"))
 	if err != nil {
 		return nil, fmt.Errorf("reading case spec: %w", err)
 	}
@@ -361,7 +361,7 @@ func (c *Case) runParse(dir string, def *loader.Definition, opts []cardigann.Opt
 	if err != nil {
 		return nil, fmt.Errorf("building engine: %w", err)
 	}
-	body, err := os.ReadFile(filepath.Join(dir, c.Response)) //nolint:gosec // case-fixture path under testdata/.
+	body, err := os.ReadFile(filepath.Join(dir, c.Response))
 	if err != nil {
 		return nil, fmt.Errorf("reading response body: %w", err)
 	}
@@ -381,7 +381,7 @@ func (c *Case) loadDef(dir string) (*loader.Definition, error) {
 		}
 		return def, nil
 	}
-	data, err := os.ReadFile(filepath.Join(dir, c.Definition)) //nolint:gosec // case-fixture path under testdata/.
+	data, err := os.ReadFile(filepath.Join(dir, c.Definition))
 	if err != nil {
 		return nil, fmt.Errorf("reading definition: %w", err)
 	}

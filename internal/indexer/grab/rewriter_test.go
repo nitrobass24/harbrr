@@ -34,7 +34,7 @@ func TestNewDLRewriterSealsLink(t *testing.T) {
 	if rw == nil {
 		t.Fatal("expected a rewriter")
 	}
-	const raw = "https://demo.test/download?passkey=SECRETPASSKEY123" //nolint:gosec // G101: synthetic test passkey
+	const raw = "https://demo.test/download?passkey=SECRETPASSKEY123"
 	const title = "ReleaseTitleSentinel"
 	link, guid, ok := rw(raw, title, []int{2000})
 	if !ok {
@@ -79,7 +79,7 @@ func TestNewManagementDLRewriterSealsTitle(t *testing.T) {
 	if rw == nil {
 		t.Fatal("expected a rewriter")
 	}
-	const raw = "https://demo.test/download?passkey=SECRETPASSKEY456" //nolint:gosec // G101: synthetic test passkey
+	const raw = "https://demo.test/download?passkey=SECRETPASSKEY456"
 	const title = "ManagementReleaseSentinel"
 	link, _, ok := rw(raw, title, []int{2000})
 	if !ok {

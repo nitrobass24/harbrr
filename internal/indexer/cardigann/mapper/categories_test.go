@@ -189,7 +189,7 @@ type schemaEnumDoc struct {
 func readSchemaEnum(t *testing.T) []string {
 	t.Helper()
 	path := filepath.Join("..", "..", "definitions", "vendor", "schema.json")
-	data, err := os.ReadFile(path) //nolint:gosec // fixed in-repo test path.
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("reading schema.json: %v", err)
 	}

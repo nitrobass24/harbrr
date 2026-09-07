@@ -351,8 +351,8 @@ const FlareMaxTimeoutCapSeconds = 180
 // the rest of the proxy — host/port/username — into plain structured fields);
 // SolverSecretURL is still the solver's full endpoint URL, its secret in whole.
 const (
-	ProxySecretPassword = "proxy_password" //nolint:gosec // G101: an AAD "setting" discriminator name, not a credential.
-	SolverSecretURL     = "solver_url"     //nolint:gosec // G101: an AAD "setting" discriminator name, not a credential.
+	ProxySecretPassword = "proxy_password"
+	SolverSecretURL     = "solver_url" //nolint:gosec // G101: an AAD "setting" discriminator name, not a credential.
 )
 
 // Proxy is a global, reusable proxy an indexer instance references by id. Host,
@@ -449,7 +449,7 @@ const (
 // DownloadClientSecret is the AAD "setting" discriminator binding a download
 // client's encrypted secret (password/API key, meaning depends on kind) to its own
 // row id, mirroring NotificationSecretURL / ProxySecretPassword.
-const DownloadClientSecret = "download_client_secret" //nolint:gosec // G101: an AAD discriminator name, not a credential.
+const DownloadClientSecret = "download_client_secret"
 
 // QBittorrentSettings holds the qBittorrent-specific per-client options. All
 // fields are optional (zero value = client default / unset).

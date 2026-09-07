@@ -111,7 +111,7 @@ func readMigration(t *testing.T, name string) string {
 
 func readFile(t *testing.T, path string) string {
 	t.Helper()
-	b, err := os.ReadFile(path) //nolint:gosec // test-controlled path under the package dir
+	b, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
 	}

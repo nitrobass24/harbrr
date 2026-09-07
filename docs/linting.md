@@ -29,9 +29,12 @@ The set is autobrr/qui's config (for family consistency) plus harbrr additions:
   guards `wastedassign`, `reassign`, `predeclared`.
 - **Family inheritance:** `gocritic`, `revive`, `gosec`, `perfsprint`, `prealloc`, `noctx`,
   `containedctx`, `fatcontext`, `copyloopvar`, `misspell`, `whitespace`, and others.
+- **Policy enforcement:** `nolintlint` — every `//nolint` must name its linter, carry a reason
+  comment, and still be needed; a directive whose linter no longer fires there is itself a finding
+  (`--fix` removes those). This mechanizes the nolint policy below.
 
-Dependency CVEs are covered separately by **`govulncheck`** (`.github/workflows/security.yml`), which
-only flags vulnerabilities on call paths harbrr actually reaches.
+Dependency CVEs are covered separately by **`govulncheck`** (a job in `.github/workflows/ci.yml`),
+which only flags vulnerabilities on call paths harbrr actually reaches.
 
 ## Handling a complexity finding
 

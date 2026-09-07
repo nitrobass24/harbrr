@@ -71,7 +71,7 @@ func runCase(t *testing.T, dir string) {
 		return
 	}
 
-	want, err := os.ReadFile(golden) //nolint:gosec // golden path under testdata/.
+	want, err := os.ReadFile(golden)
 	if err != nil {
 		t.Fatalf("reading golden %s (run with -update once the output is verified against the oracle): %v", golden, err)
 	}

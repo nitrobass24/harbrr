@@ -79,6 +79,7 @@ linters:
     - reassign           # no reassigning another package's exported vars
     - predeclared        # no shadowing predeclared identifiers (e.g. a var named `comparable`)
     - modernize          # keep to modern Go constructs (see the newexpr exclusion below)
+    - nolintlint         # every //nolint names its linter, carries a reason, and is still needed
 
   settings:
     wrapcheck:
@@ -153,6 +154,13 @@ linters:
       min-complexity: 20
     nestif:
       min-complexity: 5
+    nolintlint:
+      # Mechanical enforcement of docs/linting.md's nolint policy: a directive must
+      # name the linter it suppresses and say why. Unused directives (the default
+      # check) are findings too — a nolint whose linter no longer fires there is
+      # rot, and `golangci-lint run --fix` removes them.
+      require-explanation: true
+      require-specific: true
 
   exclusions:
     generated: lax

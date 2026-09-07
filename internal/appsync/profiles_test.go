@@ -125,7 +125,7 @@ type dbBackedSource struct {
 }
 
 func (s dbBackedSource) List(ctx context.Context) ([]domain.IndexerInstance, error) {
-	return database.Instances{}.List(ctx, s.db) //nolint:wrapcheck // test adapter
+	return database.Instances{}.List(ctx, s.db)
 }
 
 // TestUpdateProfileMembersDoesNotDeadlock is the #438 regression. UpdateProfile used to
