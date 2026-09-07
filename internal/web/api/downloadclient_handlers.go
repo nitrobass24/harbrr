@@ -13,8 +13,8 @@ import (
 	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/download"
 	"github.com/autobrr/harbrr/internal/indexer/core"
+	"github.com/autobrr/harbrr/internal/indexer/grab"
 	"github.com/autobrr/harbrr/internal/secrets"
-	"github.com/autobrr/harbrr/internal/web/torznabhttp"
 )
 
 // downloadClientResponse is the API view of a download client. The secret is
@@ -200,7 +200,7 @@ func (rt *router) grabPayload(w http.ResponseWriter, r *http.Request, idx core.I
 		p.URL = req.Link
 		return p, true
 	}
-	grabbed, err := torznabhttp.ResolveGrab(r.Context(), idx, rt.dlToken, token)
+	grabbed, err := grab.ResolveGrab(r.Context(), idx, rt.dlToken, token)
 	if err != nil {
 		rt.writeResolveGrabError(w, info.ID, err)
 		return download.Payload{}, false
@@ -237,11 +237,11 @@ func sealedDownloadToken(link, slug string) (string, bool) {
 // or the log (writeServiceError redacts).
 func (rt *router) writeResolveGrabError(w http.ResponseWriter, indexerID string, err error) {
 	switch {
-	case errors.Is(err, torznabhttp.ErrInvalidToken):
+	case errors.Is(err, grab.ErrInvalidToken):
 		writeError(w, http.StatusBadRequest, "invalid download token")
-	case errors.Is(err, torznabhttp.ErrProxyDisabled):
+	case errors.Is(err, grab.ErrProxyDisabled):
 		writeError(w, http.StatusServiceUnavailable, "download proxy is not enabled")
-	case errors.Is(err, torznabhttp.ErrNotTorrent):
+	case errors.Is(err, grab.ErrNotTorrent):
 		rt.log.Warn().Str("stage", "grab").Str("indexer", indexerID).
 			Msg("api: grab produced a non-torrent body (likely an expired session); refusing to send it to a download client")
 		writeError(w, http.StatusNotFound, "requested torrent is not available")

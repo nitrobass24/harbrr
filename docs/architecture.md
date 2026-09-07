@@ -110,6 +110,9 @@ internal/
     core/                # the indexer serving contract: Indexer/Provider/IndexerInfo/CacheInfo + the
                          #   shared SearchReleases read pipeline — the indexer as the rest of harbrr
                          #   consumes it, independent of transport (see ADR-0002)
+    grab/                # the download seam: the /dl token codec, the link-sealing rewriters, and the
+                         #   resolve-and-stream core — the one place a passkey-bearing link is sealed
+                         #   and the one place it is redeemed (see ADR-0002)
     definitions/         # //go:embed vendored Jackett snapshot: vendor/ (read-only) + dropin/ (user overrides)
     native/              # bespoke Go drivers for trackers Cardigann YAML can't express
                          #   (avistaz, hdbits, gazelle, iptorrents, myanonamouse, filelist, …) + newznab base
@@ -118,7 +121,7 @@ internal/
     api/                 # chi router + management-API handlers (indexers, appsync, announce, auth, stats, …)
     swagger/             # hand-authored openapi.yaml (//go:embed) + Swagger UI + drift test
     torznabhttp/         # HTTP/XML serving over core.Indexer: routing, request parsing, the 304
-                         #   revalidator, download-token, DL-proxy URL helpers, and the aggregate
+                         #   revalidator, the /dl route adapter over indexer/grab, and the aggregate
                          #   ('all') feed's partial fan-out with origin-bound grabs
   appsync/               # sync indexers into the *arr apps (sonarr/radarr/lidarr/readarr/whisparr) + qui
   announce/              # push newly-scraped releases to autobrr / cross-seed v6 / qui

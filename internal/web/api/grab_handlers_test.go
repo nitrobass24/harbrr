@@ -13,10 +13,10 @@ import (
 
 	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/grab"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 	"github.com/autobrr/harbrr/internal/secrets"
 	"github.com/autobrr/harbrr/internal/web/api"
-	"github.com/autobrr/harbrr/internal/web/torznabhttp"
 )
 
 // The bytes each stub tracker serves for a grab. The torrent must open with 'd' —
@@ -155,7 +155,7 @@ func grabEnv(t *testing.T, trackerURL, newsURL string) (*env, string, *http.Clie
 // the handler must match on the path, since a configured external origin differs.
 func sealedLink(t *testing.T, kr *secrets.Keyring, slug, original string) string {
 	t.Helper()
-	sealed, err := torznabhttp.SealedDLURL(kr, slug, "http://harbrr.invalid/dl", "", "", original)
+	sealed, err := grab.SealedDLURL(kr, slug, "http://harbrr.invalid/dl", "", "", original)
 	if err != nil {
 		t.Fatalf("seal %s: %v", slug, err)
 	}
