@@ -10,7 +10,7 @@ Cardigann can't express — and how far each is validated.
   account on that tracker). See **[Test status](test-status.md)** for the evidence behind this
   column and the auth/fetch patterns proven live.
 
-**596 trackers** total: 553 Cardigann corpus (all built) · 26 native drivers built · 17 native
+**597 trackers** total: 554 Cardigann corpus (all built) · 26 native drivers built · 17 native
 drivers planned. To configure one, see **[Adding an indexer](guides/add-indexer.md)**.
 
 ## Native drivers
@@ -74,7 +74,7 @@ Native drivers we have issues for but haven't built. 👍 or comment on the issu
 
 Served through the shared engine from the vendored Jackett snapshot — all built. Live-tested where an operator instance covers them.
 
-### Private (405)
+### Private (406)
 
 | Tracker | Built | Live-tested |
 |---|:--:|:--:|
@@ -161,6 +161,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | cyanbug (大青虫) | ✅ | ⬜ |
 | CyclingArchiveClub | ✅ | ⬜ |
 | CZTeam (API) | ✅ | ✅ |
+| DanishBits (API) | ✅ | ⬜ |
 | Darkpeers (API) | ✅ | ✅ |
 | Das Unerwartete | ✅ | ⬜ |
 | Das Unerwartete (API) | ✅ | ⬜ |
@@ -186,7 +187,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Explosiv-World | ✅ | ⬜ |
 | ExtremeBits | ✅ | ⬜ |
 | F1Carreras (API) | ✅ | ✅ |
-| F1GP | ✅ | ⬜ |
 | FANO.IN | ✅ | ⬜ |
 | Fappaizuri | ✅ | ⬜ |
 | Fappaizuri2FA | ✅ | ⬜ |
@@ -284,7 +284,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | MaDs Revolution | ✅ | ⬜ |
 | Magico | ✅ | ⬜ |
 | Majomparádé | ✅ | ⬜ |
-| Making Off | ✅ | ⬜ |
 | Malayabits (API) | ✅ | ⬜ |
 | March | ✅ | ⬜ |
 | Matrix | ✅ | ⬜ |
@@ -396,6 +395,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Spirit of Revolution | ✅ | ⬜ |
 | SportsCora (API) | ✅ | ⬜ |
 | SportsCult | ✅ | ⬜ |
+| Sportz247 | ✅ | ⬜ |
 | SpringSunday | ✅ | ⬜ |
 | Superbits | ✅ | ⬜ |
 | Swarmazon (API) | ✅ | ⬜ |
@@ -421,6 +421,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | The Vault | ✅ | ⬜ |
 | The-New-Fun | ✅ | ⬜ |
 | TheLeachZone (API) | ✅ | ⬜ |
+| Thor HUB (API) | ✅ | ⬜ |
 | TJUPT (北洋园PT) | ✅ | ⬜ |
 | TLFBits | ✅ | ⬜ |
 | TmGHuB | ✅ | ⬜ |
@@ -498,6 +499,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | comicat | ✅ | ⬜ |
 | Deildu | ✅ | ⬜ |
 | Devil-Torrents | ✅ | ⬜ |
+| Draupnirr | ✅ | ⬜ |
 | DreamingTree | ✅ | ⬜ |
 | DXP | ✅ | ⬜ |
 | Electro-Torrent | ✅ | ⬜ |
@@ -547,7 +549,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | TribalMixes | ✅ | ⬜ |
 | Union Fansub | ✅ | ⬜ |
 | UzTracker | ✅ | ⬜ |
-| Yggrasil | ✅ | ⬜ |
 | Ztracker | ✅ | ⬜ |
 
 ### Public (87)
