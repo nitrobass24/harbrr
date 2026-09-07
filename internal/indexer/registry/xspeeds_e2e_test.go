@@ -13,9 +13,9 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/grab"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 	"github.com/autobrr/harbrr/internal/secrets"
-	"github.com/autobrr/harbrr/internal/web/torznabhttp"
 )
 
 const (
@@ -147,8 +147,8 @@ func TestXSpeedsEndToEnd(t *testing.T) {
 	if !ok {
 		t.Fatal("xspeeds indexer should resolve")
 	}
-	if indexer.NeedsResolver() || !indexer.DownloadNeedsAuth() || !torznabhttp.NeedsDLProxy(indexer) {
-		t.Errorf("resolver flags NeedsResolver=%v DownloadNeedsAuth=%v proxy=%v", indexer.NeedsResolver(), indexer.DownloadNeedsAuth(), torznabhttp.NeedsDLProxy(indexer))
+	if indexer.NeedsResolver() || !indexer.DownloadNeedsAuth() || !grab.NeedsDLProxy(indexer) {
+		t.Errorf("resolver flags NeedsResolver=%v DownloadNeedsAuth=%v proxy=%v", indexer.NeedsResolver(), indexer.DownloadNeedsAuth(), grab.NeedsDLProxy(indexer))
 	}
 	releases, err := indexer.Search(ctx, search.Query{Keywords: "Anime"})
 	if err != nil {
@@ -162,7 +162,7 @@ func TestXSpeedsEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenKeyring: %v", err)
 	}
-	rewrite := torznabhttp.NewDLRewriter(keyring, indexer, "http://harbrr.test/api/indexers/xs/dl", "synthetic-api-key")
+	rewrite := grab.NewDLRewriter(keyring, indexer, "http://harbrr.test/api/indexers/xs/dl", "synthetic-api-key")
 	sealed, _, ok := rewrite(releases[0].Link, releases[0].Title, releases[0].Categories)
 	if !ok || !strings.HasPrefix(sealed, "http://harbrr.test/api/indexers/xs/dl?") || strings.Contains(sealed, "download.php") {
 		t.Errorf("sealed link = %q, ok=%v", sealed, ok)
