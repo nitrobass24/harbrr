@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // usetokenParam is the query suffix that requests a freeleech token on a download. The
@@ -55,7 +56,15 @@ func (d *driver) fetchTorrent(ctx context.Context, link string) ([]byte, string,
 		if err != nil {
 			return fetchResult{}, err
 		}
-		resp, err := d.DoDownload(d.requestContext(ctx), req, d.site.classify)
+		// The session this request actually carried is not a declared setting, so
+		// Base's construction-time secret snapshot cannot cover it — hand it in
+		// per-call so a refusal capture redacts it too (autobrr/harbrr#508). Take
+		// it from the request's own snapshot, never a live re-read a concurrent
+		// renewal could have rotated; cookieScrubExtras expands the header into its
+		// bare values and SessionSecrets drops the preference pairs too short to
+		// hand to a substring scrub.
+		resp, err := d.DoDownload(d.requestContext(ctx), req, d.site.classify,
+			native.SessionSecrets(cookieScrubExtras(session.cookie)...)...)
 		if err != nil {
 			// Tag the auth failure with the request-used generation so Recover
 			// renews the right session rather than coalescing against a stale one.

@@ -16,10 +16,10 @@ import (
 	"github.com/autobrr/harbrr/internal/domain"
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
+	"github.com/autobrr/harbrr/internal/indexer/grab"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 	"github.com/autobrr/harbrr/internal/secrets"
 	"github.com/autobrr/harbrr/internal/torznab"
-	"github.com/autobrr/harbrr/internal/web/torznabhttp"
 )
 
 // appSyncClient is the HTTP client app-sync drivers use to reach the *arr/qui apps.
@@ -181,12 +181,12 @@ func announceReleasesFor(conn domain.AnnounceConnection, svc *announce.Service, 
 		log.Warn().Int64("connection_id", conn.ID).Msg("announce: decrypt harbrr key failed")
 		return nil
 	}
-	dlBase := torznabhttp.DLBaseURLForOrigin(announceOrigin(externalOrigin, conn.HarbrrURL), basePath, slug)
+	dlBase := grab.DLBaseURLForOrigin(announceOrigin(externalOrigin, conn.HarbrrURL), basePath, slug)
 	out := make([]announce.Release, 0, len(snap))
 	for _, s := range snap {
 		dl := s.magnet
 		if dl == "" && s.link != "" {
-			sealed, serr := torznabhttp.SealedDLURL(keyring, slug, dlBase, harbrrKey, s.name, s.link)
+			sealed, serr := grab.SealedDLURL(keyring, slug, dlBase, harbrrKey, s.name, s.link)
 			if serr != nil {
 				// The error never carries the link, and the guid is scrubbed: for
 				// passkey-in-GUID trackers (FileList-style) the guid IS the

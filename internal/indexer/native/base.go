@@ -229,8 +229,17 @@ func (b *Base) Do(ctx context.Context, req *stdhttp.Request, c Classify) (*Respo
 // classification (op "download" in error text), but the body is read under the
 // torrent cap and a body past the cap is ErrDownloadTooLarge rather than a silent
 // truncation — a truncated .torrent is corrupt, not shorter.
-func (b *Base) DoDownload(ctx context.Context, req *stdhttp.Request, c Classify) (*Response, error) {
-	return b.roundTrip(ctx, req, c, "download")
+//
+// captureSecrets are extra credential VALUES this one call contributes to refusal-
+// capture redaction, on top of the definition-derived set snapshotted at construction
+// (Base.captureSecrets). It exists for the request-scoped credentials that snapshot
+// structurally cannot hold: a session token rotated at runtime, or a value held
+// outside Cfg entirely. Pass only values long enough to be a credential —
+// apphttp.ScrubValues replaces literal substrings with no minimum-length guard, so a
+// one- or two-character value would shred the capture body the mechanism exists to
+// preserve.
+func (b *Base) DoDownload(ctx context.Context, req *stdhttp.Request, c Classify, captureSecrets ...string) (*Response, error) {
+	return b.roundTrip(ctx, req, c, "download", captureSecrets...)
 }
 
 // NewRequest builds a request for this driver's transport. It is the ONLY way a native
@@ -248,7 +257,7 @@ func (b *Base) NewRequest(ctx context.Context, method, rawurl string, body io.Re
 	return req, nil
 }
 
-func (b *Base) roundTrip(ctx context.Context, req *stdhttp.Request, c Classify, op string) (*Response, error) {
+func (b *Base) roundTrip(ctx context.Context, req *stdhttp.Request, c Classify, op string, captureSecrets ...string) (*Response, error) {
 	resp, err := b.Doer.Do(req.WithContext(ctx))
 	if err != nil {
 		// The transport error is a *url.Error whose Error() embeds the FULL
@@ -272,7 +281,7 @@ func (b *Base) roundTrip(ctx context.Context, req *stdhttp.Request, c Classify, 
 	out := &Response{StatusCode: resp.StatusCode, Header: resp.Header}
 	if serr := c.statusError(b.Family, op, resp, b.Clock); serr != nil {
 		if op == "download" {
-			serr = b.captureRefusal(req, resp, serr)
+			serr = b.captureRefusal(req, resp, serr, captureSecrets)
 		}
 		return out, serr
 	}
@@ -309,10 +318,14 @@ func (b *Base) roundTrip(ctx context.Context, req *stdhttp.Request, c Classify, 
 // search.CaptureReadLimit and deliberately best-effort — a partial read still shows
 // what the tracker managed to send, and a read failure must never replace the status
 // error the caller is classifying.
-func (b *Base) captureRefusal(req *stdhttp.Request, resp *stdhttp.Response, err error) error {
+//
+// extraSecrets are the caller's request-scoped credential values (see DoDownload);
+// they are concatenated onto the construction-time snapshot for this capture only,
+// never merged back into it.
+func (b *Base) captureRefusal(req *stdhttp.Request, resp *stdhttp.Response, err error, extraSecrets []string) error {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, search.CaptureReadLimit))
 	return &search.CaptureError{
-		Capture: search.NewCapture(req.Method, req.URL.String(), resp.StatusCode, resp.Header, body, b.captureSecrets),
+		Capture: search.NewCapture(req.Method, req.URL.String(), resp.StatusCode, resp.Header, body, slices.Concat(b.captureSecrets, extraSecrets)),
 		Err:     err,
 	}
 }

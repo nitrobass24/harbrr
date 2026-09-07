@@ -2,7 +2,6 @@ package apps
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 
@@ -38,24 +37,18 @@ func (s *Service) QuiInstances(ctx context.Context, id int64) ([]QuiInstance, er
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, app.BaseURL+"/api/instances", nil)
-	if err != nil {
-		return nil, fmt.Errorf("apps: qui instances: build request: %w", apphttp.RedactURLError(err))
-	}
-	req.Header.Set("X-API-Key", key)
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("apps: qui instances: %w", apphttp.RedactURLError(err))
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("apps: qui instances: unexpected status %d", resp.StatusCode)
-	}
-
+	// NewJSONClient normalises the base URL, so an app stored with a trailing slash
+	// no longer asks qui for "//api/instances".
+	jc := apphttp.NewJSONClient(apphttp.JSONClient{
+		Prefix: "apps: qui instances",
+		Base:   app.BaseURL,
+		Auth:   http.Header{"X-API-Key": {key}},
+		Client: s.client,
+		Secret: key,
+	})
 	var instances []QuiInstance
-	if err := json.NewDecoder(resp.Body).Decode(&instances); err != nil {
-		return nil, fmt.Errorf("apps: qui instances: decode: %w", err)
+	if _, err := jc.Do(ctx, http.MethodGet, "/api/instances", nil, &instances); err != nil {
+		return nil, err
 	}
 	return instances, nil
 }

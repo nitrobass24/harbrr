@@ -13,7 +13,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/core"
-	"github.com/autobrr/harbrr/internal/web/torznabhttp"
+	"github.com/autobrr/harbrr/internal/indexer/grab"
 )
 
 // searchResponse is the JSON body of GET /api/indexers/{slug}/search. It mirrors qui's
@@ -294,8 +294,8 @@ func (rt *router) dropAdultAggregateReleases(res core.AggregateResult, q url.Val
 // an X-API-Key caller of this JSON API) can fetch them. The feed's apikey /dl stays for
 // *arr.
 func (rt *router) resolveSearchLinks(r *http.Request, idx core.Indexer, releases []*normalizer.Release) []*normalizer.Release {
-	rw := torznabhttp.NewManagementDLRewriter(rt.dlToken, idx, torznabhttp.DownloadBaseURL(r, rt.urlCfg, idx.Info().ID))
-	withhold := rw == nil && torznabhttp.NeedsDLProxy(idx)
+	rw := grab.NewManagementDLRewriter(rt.dlToken, idx, grab.DownloadBaseURL(r, rt.urlCfg, idx.Info().ID))
+	withhold := rw == nil && grab.NeedsDLProxy(idx)
 	out := make([]*normalizer.Release, len(releases))
 	for i, rel := range releases {
 		cp := *rel
@@ -319,7 +319,7 @@ func (rt *router) resolveSearchLinks(r *http.Request, idx core.Indexer, releases
 // downloadRelease streams a search result's .torrent/.nzb bytes (or 302s a magnet) for
 // a session- or key-authenticated caller — the session-cookie sibling of the feed's
 // apikey /dl proxy, for the web UI (which never sends X-API-Key, so the /dl apikey gate
-// 401s it). It reuses the Torznab proxy's resolve/stream core (torznabhttp.ServeGrab),
+// 401s it). It reuses the Torznab proxy's resolve/stream core (grab.ServeGrab),
 // decoding the opaque token the JSON search response sealed into the release link, so
 // the passkey stays server-side. An unknown or disabled slug is a 404; an invalid token
 // is a 400; a resolve failure is a redacted 500.
@@ -331,5 +331,5 @@ func (rt *router) downloadRelease(w http.ResponseWriter, r *http.Request) {
 	}
 	// writeError keeps every failure in this route's JSON error envelope; the feed's
 	// /dl sibling renders the same failures as Torznab XML.
-	torznabhttp.ServeGrab(w, r, idx, rt.dlToken, rt.log, chi.URLParam(r, "token"), writeError)
+	grab.ServeGrab(w, r, idx, rt.dlToken, rt.log, chi.URLParam(r, "token"), writeError)
 }

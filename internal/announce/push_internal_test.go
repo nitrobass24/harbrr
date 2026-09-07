@@ -95,10 +95,10 @@ func TestQuiWidensClientTimeout(t *testing.T) {
 	if !ok {
 		t.Fatal("NewQui did not return a *quiAnnouncer")
 	}
-	if q.client.Timeout < quiAnnounceTimeout {
-		t.Errorf("announce client Timeout = %v, want at least the announce ceiling %v", q.client.Timeout, quiAnnounceTimeout)
+	if q.c.Client.Timeout < quiAnnounceTimeout {
+		t.Errorf("announce client Timeout = %v, want at least the announce ceiling %v", q.c.Client.Timeout, quiAnnounceTimeout)
 	}
-	if q.probePoster.client != shared {
+	if q.probePoster.c.Client != shared {
 		t.Error("Probe must run on the injected client, unchanged")
 	}
 	if shared.Timeout != httpClientTimeout {

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/autobrr/harbrr/internal/domain"
 	apphttp "github.com/autobrr/harbrr/internal/http"
@@ -17,17 +16,17 @@ import (
 
 // floodDriver is a thin HTTP client for Flood (jesec/flood), a torrent-only web
 // UI authenticated by a username/password login that returns an httpOnly jwt
-// cookie. No cookiejar: the jwt is stored as a plain field and attached manually
-// per request, which is simpler than a full cookiejar for a single cookie.
+// cookie. No cookiejar: the jwt is written into the shared client's auth header
+// after each login, which is simpler than a full cookiejar for a single cookie.
 type floodDriver struct {
-	host        string
 	username    string
 	password    string
 	destination string
 	tags        []string
 	startPaused bool
-	client      *http.Client
-	jwt         string
+	jc          *apphttp.JSONClient
+	// authed reports whether jc.Auth carries a jwt cookie from a successful login.
+	authed bool
 }
 
 // newFlood builds the Flood driver from a configured client row and its
@@ -38,28 +37,25 @@ func newFlood(c domain.DownloadClient, secret string, client *http.Client) (Driv
 		settings = *c.Settings.Flood
 	}
 	return &floodDriver{
-		host:        strings.TrimRight(c.Host, "/"),
 		username:    c.Username,
 		password:    secret,
 		destination: settings.Destination,
 		tags:        settings.Tags,
 		startPaused: settings.StartPaused,
-		client:      client,
+		jc: apphttp.NewJSONClient(apphttp.JSONClient{
+			Prefix: "download: flood",
+			Base:   c.Host,
+			Auth:   http.Header{},
+			Client: client,
+			Secret: secret,
+		}),
 	}, nil
 }
 
 // Test confirms the login succeeds and the client-connection-test endpoint is
 // reachable.
 func (d *floodDriver) Test(ctx context.Context) error {
-	resp, err := d.do(ctx, http.MethodGet, "/api/client/connection-test", nil)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download: flood: connection test: unexpected status %d", resp.StatusCode)
-	}
-	return nil
+	return d.do(ctx, http.MethodGet, "/api/client/connection-test", nil)
 }
 
 // Add posts a torrent (magnet/http URL or raw bytes) to Flood's add-urls or
@@ -93,21 +89,7 @@ func (d *floodDriver) Add(ctx context.Context, p Payload, opts AddOptions) error
 		payload.URLs = []string{p.URL}
 	}
 
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("download: flood: encode add request: %w", err)
-	}
-
-	resp, err := d.do(ctx, http.MethodPost, path, body)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return fmt.Errorf("download: flood: add torrent: unexpected status %d: %s", resp.StatusCode, apphttp.RedactError(errors.New(string(msg))))
-	}
-	return nil
+	return d.do(ctx, http.MethodPost, path, payload)
 }
 
 // authenticate logs in and stores the returned jwt cookie value.
@@ -120,17 +102,33 @@ func (d *floodDriver) authenticate(ctx context.Context) error {
 		return fmt.Errorf("download: flood: encode auth request: %w", err)
 	}
 
-	resp, err := d.doOnce(ctx, http.MethodPost, "/api/auth/authenticate", body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		d.jc.Base+"/api/auth/authenticate", bytes.NewReader(body))
 	if err != nil {
-		return err
+		return fmt.Errorf("download: flood: build auth request: %w", apphttp.RedactURLError(err))
 	}
-	defer resp.Body.Close()
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := d.jc.Client.Do(req)
+	if err != nil {
+		return fmt.Errorf("download: flood: authenticate: %w", apphttp.RedactURLError(err))
+	}
+	defer func() {
+		// Drain before closing so the connection can be reused — the same idiom as
+		// announce/announce.go and download/sabnzbd. The body is never read here:
+		// Flood answers with the jwt in a Set-Cookie header, not in the payload.
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download: flood: authenticate: unexpected status %d", resp.StatusCode)
 	}
 	for _, ck := range resp.Cookies() {
 		if ck.Name == "jwt" {
-			d.jwt = ck.Value
+			// The jwt rides every later request as the client's auth header; Flood has
+			// no other credential to send.
+			d.jc.Auth.Set("Cookie", "jwt="+ck.Value)
+			d.authed = true
 			return nil
 		}
 	}
@@ -139,45 +137,19 @@ func (d *floodDriver) authenticate(ctx context.Context) error {
 
 // do issues an authenticated request, authenticating first if no session is
 // cached yet, and re-authenticating exactly once on a 401 before retrying.
-func (d *floodDriver) do(ctx context.Context, method, path string, body []byte) (*http.Response, error) {
-	if d.jwt == "" {
+func (d *floodDriver) do(ctx context.Context, method, path string, in any) error {
+	if !d.authed {
 		if err := d.authenticate(ctx); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	resp, err := d.doOnce(ctx, method, path, body)
-	if err != nil {
-		return nil, err
+	status, err := d.jc.Do(ctx, method, path, in, nil)
+	if status != http.StatusUnauthorized {
+		return err
 	}
-	if resp.StatusCode != http.StatusUnauthorized {
-		return resp, nil
-	}
-	resp.Body.Close()
 	if err := d.authenticate(ctx); err != nil {
-		return nil, err
+		return err
 	}
-	return d.doOnce(ctx, method, path, body)
-}
-
-// doOnce builds and issues a single request, attaching the jwt cookie (empty
-// before the first authenticate) and a JSON content type when a body is given.
-func (d *floodDriver) doOnce(ctx context.Context, method, path string, body []byte) (*http.Response, error) {
-	var r io.Reader
-	if body != nil {
-		r = bytes.NewReader(body)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, d.host+path, r)
-	if err != nil {
-		return nil, fmt.Errorf("download: flood: build request: %w", apphttp.RedactURLError(err))
-	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	req.AddCookie(&http.Cookie{Name: "jwt", Value: d.jwt}) //nolint:gosec // request cookie; Set-Cookie security attrs are N/A
-
-	resp, err := d.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("download: flood: %w", apphttp.RedactURLError(err))
-	}
-	return resp, nil
+	_, err = d.jc.Do(ctx, method, path, in, nil)
+	return err
 }

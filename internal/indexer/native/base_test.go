@@ -414,6 +414,44 @@ func TestDownloadRefusalCapture(t *testing.T) {
 	}
 }
 
+// TestDownloadRefusalCaptureExtraSecrets: DoDownload's per-call captureSecrets reach
+// the capture's redaction alongside the definition-derived snapshot. A driver whose
+// live credential is rotated at runtime — a session cookie the settings never declare,
+// so loader.SecretValues can never see it — has no other way to keep it out of a
+// persisted refusal body (autobrr/harbrr#508).
+func TestDownloadRefusalCaptureExtraSecrets(t *testing.T) {
+	t.Parallel()
+	const (
+		declared = "DECLARED-APIKEY-4c1a"
+		rotated  = "ROTATEDSESSION-8f26d3b0a1"
+	)
+	body := "<h1>Forbidden</h1><p>session " + rotated + " is not authorised</p>"
+	doer := &fakeDoer{resp: respWith(stdhttp.StatusForbidden, body, nil)}
+	b := refusalTestBase(t, doer, declared)
+	req := mustRequest(t, "https://tracker.example/dl?apikey="+declared)
+
+	_, err := b.DoDownload(context.Background(), req, ClassifyAuth403, rotated)
+	capture, ok := search.CaptureOf(err)
+	if !ok {
+		t.Fatalf("refused download carries no capture: %v", err)
+	}
+	// The diagnostic itself must survive — redaction, not deletion.
+	if !strings.Contains(capture.Body, "not authorised") {
+		t.Errorf("capture body lost the diagnostic: %q", capture.Body)
+	}
+	rendered, merr := json.Marshal(capture)
+	if merr != nil {
+		t.Fatalf("marshal capture: %v", merr)
+	}
+	// Both sets apply: the per-call value AND the construction-time snapshot the
+	// concatenation must not drop.
+	for _, secret := range []string{rotated, declared} {
+		if strings.Contains(string(rendered), secret) {
+			t.Errorf("capture leaked %q: %s", secret, rendered)
+		}
+	}
+}
+
 // TestCaptureScope pins where the capture applies: the download path on any non-2xx
 // (classified or not), and nowhere else — a successful grab and the API request path
 // are untouched.
