@@ -46,7 +46,7 @@ func TestNativeFamilyDispatch(t *testing.T) {
 		have[d.ID] = struct{}{}
 	}
 	for _, id := range []string{
-		"avistaz", "cinemaz", "privatehd", "exoticaz", "filelist", "myanonamouse", "iptorrents", "nebulance", "xspeeds",
+		"avistaz", "cinemaz", "privatehd", "exoticaz", "filelist", "myanonamouse", "iptorrents", "nebulance", "xspeeds", "retroflix",
 	} {
 		if _, ok := have[id]; !ok {
 			t.Errorf("NativeDefinitions missing %q (have %d: %v)", id, len(defs), have)

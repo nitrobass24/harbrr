@@ -7492,6 +7492,121 @@
     }
   },
   {
+    "id": "retroflix",
+    "name": "RetroFlix",
+    "description": "RetroFlix (native SpeedApp driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://retroflix.club/",
+      "https://retroflix.net/"
+    ],
+    "requestDelay": 2.1,
+    "settings": [
+      {
+        "Name": "email",
+        "Label": "Email",
+        "Type": "password",
+        "Required": true,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "password",
+        "Label": "Password",
+        "Type": "password",
+        "Required": true,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "401",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movies",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "402",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TV Series",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "406",
+            "Set": true
+          },
+          "Cat": "Audio/Video",
+          "Desc": "Music Videos",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "407",
+            "Set": true
+          },
+          "Cat": "TV/Sport",
+          "Desc": "Sports",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "408",
+            "Set": true
+          },
+          "Cat": "Audio",
+          "Desc": "HQ Audio",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "409",
+            "Set": true
+          },
+          "Cat": "Books",
+          "Desc": "Books",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid"
+        ],
+        "MusicSearch": [
+          "q"
+        ],
+        "BookSearch": [
+          "q"
+        ]
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
     "id": "tabularasa",
     "name": "Tabula Rasa",
     "description": "Tabula Rasa (native Newznab driver)",

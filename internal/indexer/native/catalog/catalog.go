@@ -22,6 +22,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/native/newznab"
 	"github.com/autobrr/harbrr/internal/indexer/native/nzbindex"
 	"github.com/autobrr/harbrr/internal/indexer/native/passthepopcorn"
+	"github.com/autobrr/harbrr/internal/indexer/native/speedapp"
 	"github.com/autobrr/harbrr/internal/indexer/native/torrentday"
 	"github.com/autobrr/harbrr/internal/indexer/native/torznab"
 	"github.com/autobrr/harbrr/internal/indexer/native/xspeeds"
@@ -47,6 +48,7 @@ func All() map[string]native.Family {
 		newznab.Families(),
 		nzbindex.Families(),
 		passthepopcorn.Families(),
+		speedapp.Families(),
 		torrentday.Families(),
 		torznab.Families(),
 		xspeeds.Families(),
