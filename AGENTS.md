@@ -64,7 +64,12 @@ or composition/lifecycle wiring, read `docs/architecture.md`, `docs/autobrr-app-
 - Lint: `make lint` · auto-fix: `make lint-fix`
 - Format: `make fmt` (gofumpt + goimports)
 - **Before final, for any code change:** run `make precommit` (fmt + lint + test) and `make build`.
-- OpenAPI changes under `internal/web/swagger`: regenerate and run the drift test (`make test-openapi`).
+- OpenAPI changes under `internal/web/swagger` are a **web** change, even in an otherwise Go-only
+  PR: `web/src/types/api.gen.ts` is generated from the spec. Run `bun run generate:api` in `web/`,
+  commit the regenerated `api.gen.ts`, then `make web-ci`. `make test-openapi` does **not** catch a
+  stale one — it compares method/path sets only, so any change to responses, schemas or
+  descriptions passes it. The `openapi-types-synced` pre-commit hook and CI's `web` job both
+  regenerate-and-diff, which is the only authoritative check.
 
 ## Go / backend conventions (aligned with autobrr/qui)
 
