@@ -120,7 +120,7 @@ something to record in this repo. To report it:
    - the **markdown report** `harbrr smoke` wrote (or the failing subtest's output) — it's
      already secret-free, so attach it as-is.
 3. **Never** paste raw request URLs, `.torrent`/`.nzb` bytes, cookies, or API keys — those embed
-   passkeys. The scrubbed evidence JSON is the safe thing to share.
+   passkeys. The markdown report (or the failing subtest output) is the safe thing to share.
 
 Fixes land in the **engine** (or a native driver), never in a vendored definition — a definition
 is consumed byte-for-byte from Jackett.
