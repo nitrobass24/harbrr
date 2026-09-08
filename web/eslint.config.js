@@ -69,8 +69,21 @@ export default tseslint.config([
   {
     // TanStack Router file routes export the Route object beside the component
     // by design, and shadcn/ui files export their cva variants the same way, so
-    // the fast-refresh purity rule cannot hold in either tree.
-    files: ["src/routes/**/*.tsx", "src/components/ui/**/*.tsx"],
+    // the fast-refresh purity rule cannot hold in either tree. The files listed
+    // individually below deliberately co-export a spec table or helper beside
+    // their component (e.g. KIND_SPEC, #570) — the same pattern, exempted
+    // per-file so new components elsewhere still get the rule (which now fails
+    // the build: lint runs with --max-warnings 0).
+    files: [
+      "src/routes/**/*.tsx",
+      "src/components/ui/**/*.tsx",
+      "src/components/download-clients/kind-spec.tsx",
+      "src/components/indexers/BudgetMeter.tsx",
+      "src/components/indexers/HealthCell.tsx",
+      "src/components/indexers/IndexerAvatar.tsx",
+      "src/components/search/SearchResultsTable.tsx",
+      "src/components/search/SendToClientMenu.tsx",
+    ],
     rules: {
       "react-refresh/only-export-components": "off",
     },
