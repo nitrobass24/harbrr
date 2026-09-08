@@ -144,19 +144,9 @@ func parseDeltaSeconds(value string) (time.Duration, bool) {
 	}
 	// Clamp before the multiply: a large-but-in-int secs would overflow
 	// time.Duration (int64 ns) and wrap to a bogus/negative value.
-	if secs >= int(maxRetryAfter/time.Second) {
-		return maxRetryAfter, true
-	}
-	return clampRetryAfter(time.Duration(secs) * time.Second), true
+	return time.Duration(min(secs, int(maxRetryAfter/time.Second))) * time.Second, true
 }
 
 func clampRetryAfter(d time.Duration) time.Duration {
-	switch {
-	case d <= 0:
-		return 0
-	case d > maxRetryAfter:
-		return maxRetryAfter
-	default:
-		return d
-	}
+	return min(max(d, 0), maxRetryAfter)
 }

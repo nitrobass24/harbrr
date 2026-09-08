@@ -2,7 +2,6 @@ package search
 
 import (
 	"fmt"
-	"unicode"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/regexadapter"
 )
@@ -54,11 +53,4 @@ func (r *FilterRegistry) filterRegexp(value string, args []string) (string, erro
 // per-def language (set by the engine; "" = Latin default).
 func (r *FilterRegistry) routeOptions() regexadapter.RouteOptions {
 	return regexadapter.RouteOptions{Language: r.language}
-}
-
-// isNonSpacingMark reports whether r is a Unicode non-spacing mark (category
-// Mn), matching .NET's UnicodeCategory.NonSpacingMark used by the diacritics
-// filter.
-func isNonSpacingMark(r rune) bool {
-	return unicode.Is(unicode.Mn, r)
 }

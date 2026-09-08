@@ -39,7 +39,7 @@ func TestEpisodeSearchString(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := tc.q.episodeSearchString(); got != tc.want {
+			if got := tc.q.EpisodeSearchString(); got != tc.want {
 				t.Errorf("episodeSearchString() = %q, want %q", got, tc.want)
 			}
 		})

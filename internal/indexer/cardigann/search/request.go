@@ -314,7 +314,7 @@ func assembleRequest(path loader.SearchPathBlock, absURL string, pairs []kv, hea
 			method:           stdhttp.MethodPost,
 			url:              absURL,
 			body:             encodeOrderedSep(pairs, "&"),
-			headers:          withFormContentType(headers),
+			headers:          httpx.WithFormContentType(headers),
 			followRedirect:   boolVal(path.FollowRedirect),
 			respType:         pathResponseType(path),
 			noResultsMessage: pathNoResultsMessage(path),
@@ -403,23 +403,6 @@ func appendQuerySep(rawURL string, pairs []kv, sep string) (string, error) {
 		u.RawQuery = u.RawQuery + sep + appended
 	}
 	return u.String(), nil
-}
-
-// withFormContentType returns headers with a form-urlencoded Content-Type added
-// when absent. A copy is returned.
-func withFormContentType(in map[string][]string) map[string][]string {
-	out := make(map[string][]string, len(in)+1)
-	hasCT := false
-	for k, v := range in {
-		out[k] = v
-		if strings.EqualFold(k, "Content-Type") {
-			hasCT = true
-		}
-	}
-	if !hasCT {
-		out["Content-Type"] = []string{"application/x-www-form-urlencoded"}
-	}
-	return out
 }
 
 // renderHeaders template-renders each header value against ctx. Header names are
@@ -553,14 +536,12 @@ type searchResponse struct {
 	// never logged raw — like the request URL, it can embed a secret.
 	location string
 	body     []byte
-	// contentType is the response's raw Content-Type header (Jackett's
-	// WebResult.Headers["Content-Type"]). looksLoggedOut gates the login.test
-	// selector check on it exactly as Jackett does — only a text/html response
-	// runs the check — so it must be the WIRE header, not the def's declared type.
-	contentType string
-	// header is the response's full header set, retained ONLY so a classified
-	// parse failure can carry a REDACTED copy into its diagnostic capture (see
-	// capture.go). Nothing in the parse path reads it.
+	// header is the response's full header set. looksLoggedOut reads
+	// Content-Type off it (Jackett's WebResult.Headers["Content-Type"]) to gate
+	// the login.test selector check exactly as Jackett does — only a text/html
+	// response runs the check — so it must be the WIRE header, not the def's
+	// declared type. A classified parse failure also carries a REDACTED copy of
+	// it into its diagnostic capture (see capture.go).
 	header stdhttp.Header
 }
 
@@ -589,11 +570,10 @@ func doSearchRequest(ctx context.Context, doer Doer, br builtRequest, session *l
 		return searchResponse{}, fmt.Errorf("reading response from %s: %w", apphttp.SchemeHost(br.url), err)
 	}
 	return searchResponse{
-		status:      resp.StatusCode,
-		location:    httpx.ResolveLocation(resp, br.url),
-		body:        data,
-		contentType: resp.Header.Get("Content-Type"),
-		header:      resp.Header,
+		status:   resp.StatusCode,
+		location: httpx.ResolveLocation(resp, br.url),
+		body:     data,
+		header:   resp.Header,
 	}, nil
 }
 

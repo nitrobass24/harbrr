@@ -4,10 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 
@@ -310,12 +311,7 @@ func (l *Loader) allIDs() ([]string, error) {
 		return nil, err
 	}
 
-	ids := make([]string, 0, len(set))
-	for id := range set {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	return ids, nil
+	return slices.Sorted(maps.Keys(set)), nil
 }
 
 func (l *Loader) collectDropinIDs(set map[string]struct{}) error {
@@ -433,14 +429,8 @@ func buildVendorContentIndex() (map[string]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("reading vendored definition %q: %w", e.Name(), err)
 		}
-		var head struct {
-			ID string `yaml:"id"`
-		}
-		if err := unmarshalYAML(data, &head); err != nil {
-			continue
-		}
-		if head.ID != "" && head.ID != fileID {
-			idx[head.ID] = path
+		if id := ProbeID(data); id != "" && id != fileID {
+			idx[id] = path
 		}
 	}
 	return idx, nil

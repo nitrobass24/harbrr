@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/httpx"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/template"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 )
@@ -117,7 +118,7 @@ func (e *Executor) postForm(ctx context.Context, def *loader.Definition, target 
 	if err != nil {
 		return err
 	}
-	headers := mergeFormHeaders(loginHeaders(def))
+	headers := httpx.WithFormContentType(loginHeaders(def))
 	encoded := pairs.Encode()
 	return e.submitLoginPost(ctx, def.Login, rawURL, encoded, headers, e.loginSecrets(def))
 }
@@ -246,24 +247,6 @@ func loginHeaders(def *loader.Definition) map[string][]string {
 		return def.Login.Headers
 	}
 	return def.Search.Headers
-}
-
-// mergeFormHeaders returns the login headers with a form-urlencoded Content-Type
-// added when the definition did not set one. A copy is returned; the input map
-// is not mutated.
-func mergeFormHeaders(in map[string][]string) map[string][]string {
-	out := make(map[string][]string, len(in)+1)
-	hasContentType := false
-	for k, v := range in {
-		out[k] = v
-		if strings.EqualFold(k, "Content-Type") {
-			hasContentType = true
-		}
-	}
-	if !hasContentType {
-		out["Content-Type"] = []string{"application/x-www-form-urlencoded"}
-	}
-	return out
 }
 
 // appendQuery appends url.Values to rawURL's query string, preserving any query

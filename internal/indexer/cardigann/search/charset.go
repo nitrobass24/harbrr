@@ -59,10 +59,9 @@ func decodeBody(enc encoding.Encoding, body []byte) []byte {
 	if enc == nil {
 		return body
 	}
-	out, _, err := transform.Bytes(enc.NewDecoder(), body)
-	if err != nil {
-		return out
-	}
+	// The error is deliberately dropped: on the theoretical error path the
+	// best-effort output is exactly what we want to return anyway.
+	out, _, _ := transform.Bytes(enc.NewDecoder(), body)
 	return out
 }
 
