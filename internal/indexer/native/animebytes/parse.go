@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -38,10 +39,6 @@ const (
 	catAudioLossless = 3040
 	catAudioOther    = 3050
 )
-
-// propertySeparators are the two delimiters AnimeBytes uses inside a torrent Property
-// string ("Blu-ray | MKV | h264 / Softsubs (X)"); Prowlarr splits on both.
-var propertySeparators = []string{" | ", " / "}
 
 // commonReleaseGroupPrefixes are the Property prefixes that, when the property also
 // carries a "(Group)" suffix, identify the release group used as the title prefix
@@ -190,12 +187,7 @@ func (d *driver) flattenGroup(g *group) []*normalizer.Release {
 // isSkippedSpecial reports whether a group's GroupName is one Prowlarr drops outright
 // (TV/DVD/BD Special) because the synthetic titles confuse the *arr matcher.
 func isSkippedSpecial(groupName string) bool {
-	switch groupName {
-	case "TV Special", "DVD Special", "BD Special":
-		return true
-	default:
-		return false
-	}
+	return slices.Contains([]string{"TV Special", "DVD Special", "BD Special"}, groupName)
 }
 
 // toRelease maps one group×torrent pair to a normalized release. The publish date must
@@ -280,13 +272,5 @@ func torrentProperties(property string) []string {
 // splitProperties splits on every property separator (" | " and " / "), Prowlarr's
 // PropertiesSeparator set.
 func splitProperties(s string) []string {
-	parts := []string{s}
-	for _, sep := range propertySeparators {
-		next := make([]string, 0, len(parts))
-		for _, p := range parts {
-			next = append(next, strings.Split(p, sep)...)
-		}
-		parts = next
-	}
-	return parts
+	return strings.Split(strings.ReplaceAll(s, " / ", " | "), " | ")
 }
