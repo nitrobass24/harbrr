@@ -125,7 +125,7 @@ func TestTestEndpoint(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			rt := &router{log: zerolog.Nop()}
+			rt := &router{Logger: zerolog.Nop()}
 			rec := httptest.NewRecorder()
 			r := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/x", nil)
 			rt.testEndpoint(rec, r, "test widget", func(context.Context) error { return tt.probeErr })
@@ -152,7 +152,7 @@ func TestSetResourceEnabled(t *testing.T) {
 			gotID, gotEnabled = id, enabled
 			return nil
 		}
-		rt := &router{log: zerolog.Nop()}
+		rt := &router{Logger: zerolog.Nop()}
 		rec := httptest.NewRecorder()
 		rt.setResourceEnabled(rec, reqWithID("42"), "widget", "set widget enabled", set, true)
 		if rec.Code != http.StatusNoContent {
@@ -165,7 +165,7 @@ func TestSetResourceEnabled(t *testing.T) {
 	t.Run("service error maps through writeServiceError", func(t *testing.T) {
 		t.Parallel()
 		set := func(context.Context, int64, bool) error { return database.ErrNotFound }
-		rt := &router{log: zerolog.Nop()}
+		rt := &router{Logger: zerolog.Nop()}
 		rec := httptest.NewRecorder()
 		rt.setResourceEnabled(rec, reqWithID("42"), "widget", "set widget enabled", set, true)
 		if rec.Code != http.StatusNotFound {
@@ -179,7 +179,7 @@ func TestSetResourceEnabled(t *testing.T) {
 			calls++
 			return nil
 		}
-		rt := &router{log: zerolog.Nop()}
+		rt := &router{Logger: zerolog.Nop()}
 		rec := httptest.NewRecorder()
 		rt.setResourceEnabled(rec, reqWithID("abc"), "widget", "set widget enabled", set, true)
 		if rec.Code != http.StatusBadRequest {

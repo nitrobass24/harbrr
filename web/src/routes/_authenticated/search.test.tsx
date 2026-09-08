@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { ThemeProvider } from "@/components/themes/theme-provider"
+import * as mediaQuery from "@/hooks/useMediaQuery"
 import { stubApi } from "@/test/stubApi"
 import { routeTree } from "@/routeTree.gen"
 
@@ -225,6 +226,20 @@ describe("Search route — server-merged aggregate (autobrr/harbrr#372)", () => 
 
     await screen.findByText(/Search failed/)
     expect(screen.queryByText("No results.")).toBeNull()
+  })
+
+  it("renders cards instead of the table on a mobile viewport", async () => {
+    // The md+ half of this switch is what every other test in this file renders
+    // (getAllByRole("row") only resolves against the table); this is the other half.
+    vi.spyOn(mediaQuery, "useIsMobile").mockReturnValue(true)
+    await submitSearch(stubFetch())
+    await screen.findByText("3 results")
+
+    // Card layout has no <table>; the sortable column headers are table-only.
+    expect(screen.queryByRole("table")).toBeNull()
+    expect(screen.getByText("Big Buck Bunny 2160p x265")).toBeTruthy()
+
+    vi.restoreAllMocks()
   })
 })
 

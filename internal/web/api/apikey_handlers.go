@@ -17,7 +17,7 @@ type apiKeyResponse struct {
 
 // listAPIKeys returns all API keys (metadata only).
 func (rt *router) listAPIKeys(w http.ResponseWriter, r *http.Request) {
-	keys, err := rt.auth.ListAPIKeys(r.Context())
+	keys, err := rt.Auth.ListAPIKeys(r.Context())
 	if err != nil {
 		rt.writeServiceError(w, "list api keys", err)
 		return
@@ -49,7 +49,7 @@ func (rt *router) mintAPIKey(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name is required")
 		return
 	}
-	plaintext, k, err := rt.auth.MintAPIKey(r.Context(), req.Name)
+	plaintext, k, err := rt.Auth.MintAPIKey(r.Context(), req.Name)
 	if err != nil {
 		rt.writeServiceError(w, "mint api key", err)
 		return
@@ -63,7 +63,7 @@ func (rt *router) deleteAPIKey(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := rt.auth.RevokeAPIKey(r.Context(), id); err != nil {
+	if err := rt.Auth.RevokeAPIKey(r.Context(), id); err != nil {
 		rt.writeServiceError(w, "revoke api key", err)
 		return
 	}

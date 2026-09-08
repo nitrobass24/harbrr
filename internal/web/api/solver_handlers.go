@@ -23,7 +23,7 @@ type solverResponse struct {
 
 // listSolvers returns all solvers (URLs redacted).
 func (rt *router) listSolvers(w http.ResponseWriter, r *http.Request) {
-	list, err := rt.solver.List(r.Context())
+	list, err := rt.Solver.List(r.Context())
 	if err != nil {
 		rt.writeServiceError(w, "list solvers", err)
 		return
@@ -46,7 +46,7 @@ func (rt *router) createSolver(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	s, err := rt.solver.Create(r.Context(), solver.CreateParams{
+	s, err := rt.Solver.Create(r.Context(), solver.CreateParams{
 		Name: req.Name, Type: req.Type, URL: req.URL, MaxTimeout: req.MaxTimeout,
 	})
 	if err != nil {
@@ -62,7 +62,7 @@ func (rt *router) getSolver(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s, err := rt.solver.Get(r.Context(), id)
+	s, err := rt.Solver.Get(r.Context(), id)
 	if err != nil {
 		rt.writeServiceError(w, "get solver", err)
 		return
@@ -85,14 +85,14 @@ func (rt *router) updateSolver(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if err := rt.solver.Update(r.Context(), id, solver.UpdateParams{
+	if err := rt.Solver.Update(r.Context(), id, solver.UpdateParams{
 		Name: req.Name, Type: req.Type, URL: req.URL, MaxTimeout: req.MaxTimeout,
 	}); err != nil {
 		rt.writeServiceError(w, "update solver", err)
 		return
 	}
 	// A cached engine bakes in the resolved solver config, so evict them.
-	rt.registry.InvalidateAll()
+	rt.Registry.InvalidateAll()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -102,13 +102,13 @@ func (rt *router) deleteSolver(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := rt.solver.Delete(r.Context(), id); err != nil {
+	if err := rt.Solver.Delete(r.Context(), id); err != nil {
 		rt.writeServiceError(w, "delete solver", err)
 		return
 	}
 	// The FK nulled solver_id, but cached engines still use the deleted solver
 	// until evicted.
-	rt.registry.InvalidateAll()
+	rt.Registry.InvalidateAll()
 	w.WriteHeader(http.StatusNoContent)
 }
 

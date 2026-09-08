@@ -14,9 +14,9 @@ import (
 func TestGrabPayloadNamesTheJob(t *testing.T) {
 	t.Parallel()
 	const title = "Show.S01E01.2160p.WEB-DL.HEVC-GRP"
-	rt := &router{dlToken: testKeyring(t)}
+	rt := &router{DLToken: testKeyring(t)}
 	idx := fakeSearchIndexer{id: "demo", needsResolver: true}
-	rw := grab.NewManagementDLRewriter(rt.dlToken, idx, "http://h.test/api/indexers/demo/download")
+	rw := grab.NewManagementDLRewriter(rt.DLToken, idx, "http://h.test/api/indexers/demo/download")
 	sealed, _, ok := rw(keyLink, title, []int{2000})
 	if !ok {
 		t.Fatal("expected the link to be sealed")

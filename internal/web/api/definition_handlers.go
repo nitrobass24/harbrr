@@ -49,17 +49,17 @@ func (rt *router) getDefinition(w http.ResponseWriter, r *http.Request) {
 		rt.writeServiceError(w, "definition capabilities", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toDefinitionDetail(def, caps, rt.adultCats.Hidden()))
+	writeJSON(w, http.StatusOK, toDefinitionDetail(def, caps, rt.AdultCategories.Hidden()))
 }
 
 // lookupDefinition resolves a definition id to a vendored (loader, which validates
 // the id against path traversal) or native (registry catalog) definition, or nil
 // when it is unknown.
 func (rt *router) lookupDefinition(id string) *loader.Definition {
-	if def, err := rt.loader.Load(id); err == nil {
+	if def, err := rt.Loader.Load(id); err == nil {
 		return def
 	}
-	for _, d := range rt.registry.NativeDefinitions() {
+	for _, d := range rt.Registry.NativeDefinitions() {
 		if d.ID == id {
 			return d
 		}

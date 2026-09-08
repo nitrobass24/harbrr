@@ -87,27 +87,13 @@ type Config struct {
 	OIDC OIDCConfig
 }
 
-// router holds the management API's dependencies and resolved config.
+// router holds the management API's dependencies and resolved config. Deps is
+// embedded rather than copied field by field: the router IS its collaborators plus
+// the resolved config, and a re-declared shadow copy only adds a second name for
+// every dependency and a place for the two lists to drift apart.
 type router struct {
-	auth        *auth.Service
-	registry    *registry.Registry
-	loader      *loader.Loader
-	apps        *apps.Service
-	appsync     *appsync.Service
-	announce    *announce.Service
-	notify      *notify.Service
-	proxy       *proxy.Service
-	download    *download.Service
-	solver      *solver.Service
-	backup      *backup.Service
-	sessions    *scs.SessionManager
-	dlToken     *secrets.Keyring
-	urlCfg      grab.URLConfig
-	cache       *registry.SearchCache
-	cfg         Config
-	log         zerolog.Logger
-	setLogLevel func(ctx context.Context, level string) error
-	adultCats   *AdultCategoriesStore
+	Deps
+	cfg Config
 	// oidc is nil when OIDC is disabled or its provider discovery failed at
 	// startup; every OIDC handler treats a nil oidc as "answer as disabled".
 	oidc *oidcHandler
@@ -141,16 +127,9 @@ func NewRouter(deps Deps, cfg Config) (http.Handler, error) {
 		return nil, errors.New("api: auth_disabled requires a non-empty ip_allowlist (refusing to serve an open instance)")
 	}
 
-	rt := &router{
-		auth: deps.Auth, registry: deps.Registry, loader: deps.Loader, apps: deps.Apps, appsync: deps.AppSync,
-		announce: deps.Announce, notify: deps.Notify, proxy: deps.Proxy, download: deps.Download, solver: deps.Solver,
-		backup:   deps.Backup,
-		sessions: deps.Sessions, dlToken: deps.DLToken, urlCfg: deps.URLConfig,
-		cache: deps.Cache, cfg: cfg, log: deps.Logger, setLogLevel: deps.SetLogLevel, adultCats: deps.AdultCategories,
-		allowlist: allow, trustedProxies: proxies,
-	}
+	rt := &router{Deps: deps, cfg: cfg, allowlist: allow, trustedProxies: proxies}
 	rt.loadDefs = func() ([]definitionEntry, error) {
-		return loadDefinitionSummaries(rt.loader, rt.registry.NativeDefinitions())
+		return loadDefinitionSummaries(rt.Loader, rt.Registry.NativeDefinitions())
 	}
 	rt.initOIDC()
 	return rt.routes(), nil
@@ -166,7 +145,7 @@ func (rt *router) initOIDC() {
 	}
 	h, err := newOIDCHandler(context.Background(), rt.cfg.OIDC)
 	if err != nil {
-		rt.log.Warn().Str("error", apphttp.RedactError(err)).Msg("api: oidc initialization failed; SSO login is disabled this run")
+		rt.Logger.Warn().Str("error", apphttp.RedactError(err)).Msg("api: oidc initialization failed; SSO login is disabled this run")
 		return
 	}
 	rt.oidc = h
@@ -179,7 +158,7 @@ func (rt *router) routes() http.Handler {
 	r.Get("/healthz", rt.healthz) // liveness; no session
 
 	r.Group(func(r chi.Router) {
-		r.Use(rt.sessions.LoadAndSave)
+		r.Use(rt.Sessions.LoadAndSave)
 
 		// Public (pre-session) auth routes.
 		r.Get("/api/auth/setup", rt.getSetup)

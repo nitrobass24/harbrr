@@ -193,7 +193,7 @@ type instanceDetailResponse struct {
 
 // listIndexers returns all configured indexers.
 func (rt *router) listIndexers(w http.ResponseWriter, r *http.Request) {
-	list, err := rt.registry.List(r.Context())
+	list, err := rt.Registry.List(r.Context())
 	if err != nil {
 		rt.writeServiceError(w, "list indexers", err)
 		return
@@ -201,9 +201,9 @@ func (rt *router) listIndexers(w http.ResponseWriter, r *http.Request) {
 	out := make([]instanceResponse, 0, len(list))
 	for _, inst := range list {
 		resp := toInstanceResponse(inst)
-		freeleech, err := rt.registry.Freeleech(r.Context(), inst)
+		freeleech, err := rt.Registry.Freeleech(r.Context(), inst)
 		if err != nil {
-			rt.log.Warn().Err(err).Str("slug", inst.Slug).Msg("resolve freeleech state")
+			rt.Logger.Warn().Err(err).Str("slug", inst.Slug).Msg("resolve freeleech state")
 		}
 		resp.Freeleech = freeleech
 		out = append(out, resp)
@@ -234,7 +234,7 @@ func (rt *router) addIndexer(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	inst, err := rt.registry.Add(r.Context(), registry.AddParams{
+	inst, err := rt.Registry.Add(r.Context(), registry.AddParams{
 		Slug: req.Slug, DefinitionID: req.DefinitionID, Name: req.Name,
 		BaseURL: req.BaseURL, Settings: req.Settings, ProxyID: req.ProxyID, SolverID: req.SolverID,
 		Priority: req.Priority, MinSeeders: req.MinSeeders, SyncCategories: req.SyncCategories,
@@ -252,7 +252,7 @@ func (rt *router) addIndexer(w http.ResponseWriter, r *http.Request) {
 // getIndexer returns one indexer with its settings (secrets redacted).
 func (rt *router) getIndexer(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
-	inst, views, err := rt.registry.Get(r.Context(), slug)
+	inst, views, err := rt.Registry.Get(r.Context(), slug)
 	if err != nil {
 		rt.writeServiceError(w, "get indexer", err)
 		return
@@ -263,9 +263,9 @@ func (rt *router) getIndexer(w http.ResponseWriter, r *http.Request) {
 	}
 	// Best-effort, like the list view's freeleech resolution: a definition that fails
 	// to load must not turn a readable indexer into a 500.
-	failover, err := rt.registry.FailoverState(r.Context(), inst)
+	failover, err := rt.Registry.FailoverState(r.Context(), inst)
 	if err != nil {
-		rt.log.Warn().Err(err).Str("slug", inst.Slug).Msg("resolve failover state")
+		rt.Logger.Warn().Err(err).Str("slug", inst.Slug).Msg("resolve failover state")
 		// FailoverState yields a zero struct on error, and effectiveBaseUrl is a
 		// REQUIRED field documented as the host this indexer talks to — reporting ""
 		// would say it talks to nothing. Without the definition or the settings we
@@ -305,7 +305,7 @@ func (rt *router) updateIndexer(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if err := rt.registry.Update(r.Context(), slug, registry.UpdateParams{
+	if err := rt.Registry.Update(r.Context(), slug, registry.UpdateParams{
 		Name: req.Name, BaseURL: req.BaseURL, Settings: req.Settings,
 		ProxyID: req.ProxyID.toRegistry(), SolverID: req.SolverID.toRegistry(),
 		Priority: req.Priority, MinSeeders: req.MinSeeders, SyncCategories: req.SyncCategories,
@@ -321,7 +321,7 @@ func (rt *router) updateIndexer(w http.ResponseWriter, r *http.Request) {
 
 // deleteIndexer removes an indexer.
 func (rt *router) deleteIndexer(w http.ResponseWriter, r *http.Request) {
-	if err := rt.registry.Delete(r.Context(), chi.URLParam(r, "slug")); err != nil {
+	if err := rt.Registry.Delete(r.Context(), chi.URLParam(r, "slug")); err != nil {
 		rt.writeServiceError(w, "delete indexer", err)
 		return
 	}
@@ -340,7 +340,7 @@ func (rt *router) disableIndexer(w http.ResponseWriter, r *http.Request) {
 
 // setEnabled is the shared enable/disable handler.
 func (rt *router) setEnabled(w http.ResponseWriter, r *http.Request, enabled bool) {
-	if err := rt.registry.SetEnabled(r.Context(), chi.URLParam(r, "slug"), enabled); err != nil {
+	if err := rt.Registry.SetEnabled(r.Context(), chi.URLParam(r, "slug"), enabled); err != nil {
 		rt.writeServiceError(w, "set enabled", err)
 		return
 	}
@@ -362,7 +362,7 @@ type testResult struct {
 func (rt *router) testIndexer(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 	rt.testEndpoint(w, r, "test indexer", func(ctx context.Context) error {
-		return rt.registry.Test(ctx, slug)
+		return rt.Registry.Test(ctx, slug)
 	})
 }
 
@@ -393,7 +393,7 @@ type statusResponse struct {
 // Details were scrubbed before storage, so no credential is surfaced here.
 func (rt *router) indexerStatus(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
-	st, err := rt.registry.Status(r.Context(), slug)
+	st, err := rt.Registry.Status(r.Context(), slug)
 	if err != nil {
 		rt.writeServiceError(w, "indexer status", err)
 		return
@@ -438,7 +438,7 @@ type diagnosticsResponse struct {
 // capture time, so nothing here is persisted and no credential is surfaced.
 func (rt *router) indexerDiagnostics(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
-	captures, err := rt.registry.Diagnostics(r.Context(), slug)
+	captures, err := rt.Registry.Diagnostics(r.Context(), slug)
 	if err != nil {
 		rt.writeServiceError(w, "indexer diagnostics", err)
 		return
@@ -508,7 +508,7 @@ func (rt *router) allIndexerStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "status must be one of: healthy, failing, unknown")
 		return
 	}
-	statuses, err := rt.registry.AllStatuses(r.Context())
+	statuses, err := rt.Registry.AllStatuses(r.Context())
 	if err != nil {
 		rt.writeServiceError(w, "all indexer status", err)
 		return

@@ -48,11 +48,11 @@ func (rt *router) resolveAuth(next http.Handler) http.Handler {
 // detectAuth resolves the auth method for a request.
 func (rt *router) detectAuth(r *http.Request) authMethod {
 	if key := r.Header.Get("X-API-Key"); key != "" {
-		if _, err := rt.auth.ValidateAPIKey(r.Context(), key); err == nil {
+		if _, err := rt.Auth.ValidateAPIKey(r.Context(), key); err == nil {
 			return authAPIKey
 		}
 	}
-	if rt.sessions.GetBool(r.Context(), sessionAuthenticated) {
+	if rt.Sessions.GetBool(r.Context(), sessionAuthenticated) {
 		return authSession
 	}
 	if rt.cfg.AuthDisabled && rt.ipAllowed(r) {

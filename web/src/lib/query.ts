@@ -2,32 +2,20 @@ import { QueryClient } from "@tanstack/react-query"
 import type { SearchParams } from "@/lib/api"
 
 // QueryClient defaults, per docs/autobrr-app-template.md "Frontend" (QueryClient
-// defaults live in web/src/lib/query.ts). These values are the currently-effective
-// behavior written out explicitly — two are harbrr's own choice (docs/webui-scope.md
-// §6: short staleness, no focus refetch), the rest are TanStack Query's library
-// defaults spelled out so nothing about the cache policy is implicit. This is not a
-// behavior change.
+// defaults live in web/src/lib/query.ts). Only harbrr's own two departures from
+// TanStack Query's defaults are set here (docs/webui-scope.md §6); everything else
+// — gcTime, retry/retryDelay, refetch on mount/reconnect — is the library default
+// and is left to the library rather than restated.
 export function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
       queries: {
-        // harbrr default (docs/webui-scope.md §6): short staleness; individual
-        // queries opt into a longer staleTime (e.g. definitions, capabilities) or
-        // refetchInterval (e.g. cache stats, indexer status) where it matters.
+        // Short staleness; individual queries opt into a longer staleTime (e.g.
+        // definitions, capabilities) or a refetchInterval (e.g. cache stats,
+        // indexer status) where it matters.
         staleTime: 5_000,
-        // harbrr default (docs/webui-scope.md §6): no refetch-on-focus churn.
+        // No refetch-on-focus churn.
         refetchOnWindowFocus: false,
-        // library default: unused/inactive cache entries are garbage-collected
-        // after 5 minutes.
-        gcTime: 5 * 60_000,
-        // library default: retry a failing query up to 3 times. Queries that
-        // shouldn't retry (e.g. the auth probes, search) opt out with retry: false.
-        retry: 3,
-        // library default: exponential backoff between retries, capped at 30s.
-        retryDelay: (failureCount: number) => Math.min(1000 * 2 ** failureCount, 30_000),
-        // library default: refetch on mount / on reconnect when data is stale.
-        refetchOnMount: true,
-        refetchOnReconnect: true,
       },
     },
   })

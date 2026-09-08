@@ -247,7 +247,7 @@ func TestSearchJSONEnvelopeCrossPage(t *testing.T) {
 // apikey= empty link for exactly that caller (the #7 Part A bug).
 func TestResolveSearchLinksSealsResolverLink(t *testing.T) {
 	t.Parallel()
-	rt := &router{dlToken: testKeyring(t)}
+	rt := &router{DLToken: testKeyring(t)}
 	idx := fakeSearchIndexer{id: "demo", needsResolver: true}
 	const dlBase = "/api/indexers/demo/download/"
 
@@ -290,7 +290,7 @@ func TestResolveSearchLinksSealsResolverLink(t *testing.T) {
 			if rels[0].Link != keyLink || rels[0].Title != title {
 				t.Error("source release was mutated (expected a copy)")
 			}
-			payload, err := grab.ResolveGrab(t.Context(), idx, rt.dlToken, token)
+			payload, err := grab.ResolveGrab(t.Context(), idx, rt.DLToken, token)
 			if err != nil {
 				t.Fatalf("ResolveGrab: %v", err)
 			}
@@ -307,7 +307,7 @@ func TestResolveSearchLinksSealsResolverLink(t *testing.T) {
 // grab gap.
 func TestResolveSearchLinksSealsLoginAuthLink(t *testing.T) {
 	t.Parallel()
-	rt := &router{dlToken: testKeyring(t)}
+	rt := &router{DLToken: testKeyring(t)}
 	rels := []*normalizer.Release{{Title: "X", Link: keyLink}}
 	out := rt.resolveSearchLinks(searchReq(t), fakeSearchIndexer{id: "demo", downloadNeedsAuth: true}, rels)
 	if strings.Contains(out[0].Link, "SECRETPASSKEY777") {
@@ -322,7 +322,7 @@ func TestResolveSearchLinksSealsLoginAuthLink(t *testing.T) {
 // (direct trackers carry the passkey in the link by design — same as the feed).
 func TestResolveSearchLinksDirectServedAsIs(t *testing.T) {
 	t.Parallel()
-	rt := &router{dlToken: testKeyring(t)}
+	rt := &router{DLToken: testKeyring(t)}
 	rels := []*normalizer.Release{{Title: "X", Link: keyLink}}
 	out := rt.resolveSearchLinks(searchReq(t), fakeSearchIndexer{id: "demo", needsResolver: false}, rels)
 	if out[0].Link != keyLink {
@@ -334,7 +334,7 @@ func TestResolveSearchLinksDirectServedAsIs(t *testing.T) {
 // keyring withholds the link rather than leak the passkey.
 func TestResolveSearchLinksWithholdsWhenProxyOff(t *testing.T) {
 	t.Parallel()
-	rt := &router{} // dlToken nil -> proxy disabled
+	rt := &router{} // DLToken nil -> proxy disabled
 	rels := []*normalizer.Release{{Title: "X", Link: keyLink, Magnet: "magnet:?xt=urn:btih:abc"}}
 	out := rt.resolveSearchLinks(searchReq(t), fakeSearchIndexer{id: "demo", needsResolver: true}, rels)
 	if out[0].Link != "" || out[0].Magnet != "" {
@@ -346,7 +346,7 @@ func TestResolveSearchLinksWithholdsWhenProxyOff(t *testing.T) {
 // resolver-needing indexer.
 func TestResolveSearchLinksMagnetAsIs(t *testing.T) {
 	t.Parallel()
-	rt := &router{dlToken: testKeyring(t)}
+	rt := &router{DLToken: testKeyring(t)}
 	const m = "magnet:?xt=urn:btih:abc"
 	rels := []*normalizer.Release{{Title: "X", Magnet: m}}
 	out := rt.resolveSearchLinks(searchReq(t), fakeSearchIndexer{id: "demo", needsResolver: true}, rels)
@@ -363,7 +363,7 @@ func TestResolveSearchLinksMagnetAsIs(t *testing.T) {
 // though sealing runs per origin group.
 func TestSealByOriginSealsEachReleaseToItsOwnMember(t *testing.T) {
 	t.Parallel()
-	rt := &router{dlToken: testKeyring(t)}
+	rt := &router{DLToken: testKeyring(t)}
 	var alphaGrabbed, betaGrabbed string
 	alpha := fakeSearchIndexer{id: "alpha", needsResolver: true, grabbedLink: &alphaGrabbed}
 	beta := fakeSearchIndexer{id: "beta", needsResolver: true, grabbedLink: &betaGrabbed}
@@ -403,7 +403,7 @@ func TestSealByOriginSealsEachReleaseToItsOwnMember(t *testing.T) {
 		if wantOrigin[i] == "beta" {
 			idx = beta
 		}
-		payload, err := grab.ResolveGrab(t.Context(), idx, rt.dlToken, r.Release.Link[pos+len(want):])
+		payload, err := grab.ResolveGrab(t.Context(), idx, rt.DLToken, r.Release.Link[pos+len(want):])
 		if err != nil {
 			t.Fatalf("result[%d] ResolveGrab: %v", i, err)
 		}
@@ -476,7 +476,7 @@ func TestMemberLedgerServesReasonsNotErrors(t *testing.T) {
 // an unrelated error still takes the default arm unchanged (regression guard).
 func TestWriteServiceErrorGatewayStatus(t *testing.T) {
 	t.Parallel()
-	rt := &router{log: zerolog.Nop()}
+	rt := &router{Logger: zerolog.Nop()}
 	tests := []struct {
 		name       string
 		err        error

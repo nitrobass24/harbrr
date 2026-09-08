@@ -44,12 +44,12 @@ type limitsResponse struct {
 // and limits as JSON. An unknown or disabled slug is a 404.
 func (rt *router) indexerCapabilities(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
-	idx, ok := rt.registry.Indexer(r.Context(), slug)
+	idx, ok := rt.Registry.Indexer(r.Context(), slug)
 	if !ok {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, toCapabilitiesResponse(idx.Capabilities(), rt.adultCats.Hidden()))
+	writeJSON(w, http.StatusOK, toCapabilitiesResponse(idx.Capabilities(), rt.AdultCategories.Hidden()))
 }
 
 // toCapabilitiesResponse maps the engine capabilities to the API view, excluding

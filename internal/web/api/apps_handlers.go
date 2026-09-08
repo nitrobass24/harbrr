@@ -38,14 +38,14 @@ type appRefsResponse struct {
 
 // listApps returns all apps with their reference counts (credentials redacted).
 func (rt *router) listApps(w http.ResponseWriter, r *http.Request) {
-	list, err := rt.apps.List(r.Context())
+	list, err := rt.Apps.List(r.Context())
 	if err != nil {
 		rt.writeServiceError(w, "list apps", err)
 		return
 	}
 	out := make([]appResponse, 0, len(list))
 	for _, a := range list {
-		refs, err := rt.apps.References(r.Context(), a.ID)
+		refs, err := rt.Apps.References(r.Context(), a.ID)
 		if err != nil {
 			rt.writeServiceError(w, "list apps", err)
 			return
@@ -61,12 +61,12 @@ func (rt *router) getApp(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	a, err := rt.apps.Get(r.Context(), id)
+	a, err := rt.Apps.Get(r.Context(), id)
 	if err != nil {
 		rt.writeServiceError(w, "get app", err)
 		return
 	}
-	refs, err := rt.apps.References(r.Context(), id)
+	refs, err := rt.Apps.References(r.Context(), id)
 	if err != nil {
 		rt.writeServiceError(w, "get app", err)
 		return
@@ -92,7 +92,7 @@ func (rt *router) updateApp(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if err := rt.apps.UpdateCredential(r.Context(), id, apps.UpdateParams{
+	if err := rt.Apps.UpdateCredential(r.Context(), id, apps.UpdateParams{
 		Name: req.Name, BaseURL: req.BaseURL, Username: req.Username,
 		HarbrrURL: req.HarbrrURL, Enabled: req.Enabled, APIKey: req.APIKey,
 	}); err != nil {
@@ -109,7 +109,7 @@ func (rt *router) deleteApp(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := rt.apps.Delete(r.Context(), id); err != nil {
+	if err := rt.Apps.Delete(r.Context(), id); err != nil {
 		rt.writeServiceError(w, "delete app", err)
 		return
 	}
@@ -124,7 +124,7 @@ func (rt *router) appQuiInstances(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	instances, err := rt.apps.QuiInstances(r.Context(), id)
+	instances, err := rt.Apps.QuiInstances(r.Context(), id)
 	switch {
 	case err == nil:
 		writeJSON(w, http.StatusOK, quiInstancesResponse{OK: true, Instances: instances})

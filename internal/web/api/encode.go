@@ -134,12 +134,12 @@ func (rt *router) writeServiceError(w http.ResponseWriter, op string, err error)
 	case errors.Is(err, auth.ErrInvalidAPIKey):
 		writeErrorCode(w, http.StatusUnauthorized, "invalid_api_key", "invalid api key")
 	case errors.Is(err, errOIDCTokenInvalid):
-		rt.log.Warn().Str("op", op).Str("error", apphttp.RedactError(err)).Msg("api: oidc id token verification failed")
+		rt.Logger.Warn().Str("op", op).Str("error", apphttp.RedactError(err)).Msg("api: oidc id token verification failed")
 		writeErrorCode(w, http.StatusUnauthorized, "invalid_credentials", "oidc: id token verification failed")
 	case errors.Is(err, search.ErrGatewayStatus):
 		writeErrorCode(w, http.StatusBadGateway, "upstream_unreachable", "indexer origin unreachable")
 	default:
-		rt.log.Error().Str("op", op).Str("error", apphttp.RedactError(err)).Msg("api: request failed")
+		rt.Logger.Error().Str("op", op).Str("error", apphttp.RedactError(err)).Msg("api: request failed")
 		writeErrorCode(w, http.StatusInternalServerError, "internal", "internal error")
 	}
 }

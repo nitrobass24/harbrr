@@ -261,7 +261,7 @@ func isAggregateSlug(slug string) bool {
 // serveIndexer is the per-indexer feed: caps or results for one resolved indexer.
 func (h *handler) serveIndexer(w http.ResponseWriter, r *http.Request, idx core.Indexer, q url.Values) {
 	if t := q.Get("t"); strings.EqualFold(t, tzn.ReqCaps) {
-		h.writeCaps(w, idx)
+		h.writeCapsDoc(w, idx.Info().ID, idx.Capabilities())
 		return
 	}
 	h.writeResults(w, r, idx, q)
@@ -271,16 +271,8 @@ func (h *handler) serveIndexer(w http.ResponseWriter, r *http.Request, idx core.
 // validator (the production hash-lookup). It fails closed when no validator is
 // configured.
 func (h *handler) authorized(q url.Values) bool {
-	key := q.Get("apikey")
-	if key == "" {
-		key = q.Get("passkey")
-	}
+	key := apiKeyParam(q)
 	return h.apiKeyValidator != nil && key != "" && h.apiKeyValidator(key)
-}
-
-// writeCaps serializes and writes an indexer's capabilities document (t=caps).
-func (h *handler) writeCaps(w http.ResponseWriter, idx core.Indexer) {
-	h.writeCapsDoc(w, idx.Info().ID, idx.Capabilities())
 }
 
 // writeCapsDoc serializes a capabilities document under an explicit feed id, so the
@@ -309,14 +301,11 @@ func (h *handler) dlRewriter(r *http.Request, idx core.Indexer) tzn.AcquisitionR
 	}
 	// grab.NewDLRewriter is the single implementation, shared with the
 	// management API's JSON search so both seal resolver links identically.
-	return grab.NewDLRewriter(h.dlToken, idx, h.dlBaseURL(r, idx.Info().ID), apiKeyParam(r.URL.Query()))
-}
-
-// dlBaseURL is the externally-visible /dl endpoint for an indexer (scheme/host from
-// the request, the configured base path re-added), without query — the apikey and
-// token are appended per release. It mirrors selfURL's scheme/host derivation.
-func (h *handler) dlBaseURL(r *http.Request, indexerID string) string {
-	return grab.DLBaseURL(r, h.urlCfg, indexerID)
+	// grab.DLBaseURL is the externally-visible /dl endpoint for this indexer
+	// (scheme/host from the request, the configured base path re-added), without
+	// query — the apikey and token are appended per release.
+	base := grab.DLBaseURL(r, h.urlCfg, idx.Info().ID)
+	return grab.NewDLRewriter(h.dlToken, idx, base, apiKeyParam(r.URL.Query()))
 }
 
 // apiKeyParam returns the request's apikey (or its passkey alias) so the served /dl
@@ -475,11 +464,6 @@ func (h *handler) selfURL(r *http.Request) string {
 // which mangles a multi-clause error message — sorting/merging the URL's params
 // and percent-encoding the prose — into unreadable garbage.)
 func (h *handler) writeInternalError(w http.ResponseWriter, stage, indexerID string, err error) {
-	writeInternalErrorLog(w, h.log, stage, indexerID, err)
-}
-
-// writeInternalErrorLog is the logger-explicit form of writeInternalError.
-func writeInternalErrorLog(w http.ResponseWriter, log zerolog.Logger, stage, indexerID string, err error) {
-	grab.LogInternalError(log, stage, indexerID, err)
+	grab.LogInternalError(h.log, stage, indexerID, err)
 	writeError(w, http.StatusInternalServerError, codeUnknownError, grab.InternalErrorDescription(err))
 }

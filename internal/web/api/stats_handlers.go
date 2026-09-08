@@ -78,7 +78,7 @@ type indexerStatsResponse struct {
 // a 404.
 func (rt *router) indexerStats(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
-	st, err := rt.registry.Stats(r.Context(), slug)
+	st, err := rt.Registry.Stats(r.Context(), slug)
 	if err != nil {
 		rt.writeServiceError(w, "indexer stats", err)
 		return
@@ -88,7 +88,7 @@ func (rt *router) indexerStats(w http.ResponseWriter, r *http.Request) {
 
 // allIndexerStats returns per-indexer stats for every configured indexer.
 func (rt *router) allIndexerStats(w http.ResponseWriter, r *http.Request) {
-	stats, err := rt.registry.AllStats(r.Context())
+	stats, err := rt.Registry.AllStats(r.Context())
 	if err != nil {
 		rt.writeServiceError(w, "all indexer stats", err)
 		return

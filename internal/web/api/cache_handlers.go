@@ -114,7 +114,7 @@ type cacheFlushResponse struct {
 // cacheStats returns the search-results cache statistics. With caching disabled
 // (no cache wired) it answers 200 with {"enabled":false} rather than 404.
 func (rt *router) cacheStats(w http.ResponseWriter, r *http.Request) {
-	if rt.cache == nil {
+	if rt.Cache == nil {
 		// Keep byIndexer/windows JSON arrays (never null) so the response always
 		// matches the CacheStats schema, even with caching off.
 		writeJSON(w, http.StatusOK, cacheStatsResponse{
@@ -122,7 +122,7 @@ func (rt *router) cacheStats(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	stats, err := rt.cache.Stats(r.Context())
+	stats, err := rt.Cache.Stats(r.Context())
 	if err != nil {
 		rt.writeServiceError(w, "cache.stats", err)
 		return
@@ -133,7 +133,7 @@ func (rt *router) cacheStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, cacheStatsResponse{
-		Enabled:           rt.cache.Enabled(),
+		Enabled:           rt.Cache.Enabled(),
 		Entries:           stats.Entries,
 		TotalHits:         stats.TotalHits,
 		Hits:              stats.Hits,
@@ -155,7 +155,7 @@ func (rt *router) cacheStats(w http.ResponseWriter, r *http.Request) {
 // configured slug/name. A name-lookup failure is non-fatal (names are cosmetic): the
 // rows are still returned, just unlabeled.
 func (rt *router) cacheStatsByIndexer(ctx context.Context) ([]cacheIndexerStats, error) {
-	rows, err := rt.cache.StatsByInstance(ctx)
+	rows, err := rt.Cache.StatsByInstance(ctx)
 	if err != nil {
 		return nil, err //nolint:wrapcheck // surfaced to writeServiceError (the redaction sink); nothing secret to add.
 	}
@@ -185,9 +185,9 @@ func (rt *router) cacheStatsByIndexer(ctx context.Context) ([]cacheIndexerStats,
 // instance, i.e. empty labels.
 func (rt *router) instanceLabels(ctx context.Context) map[int64]domain.IndexerInstance {
 	out := map[int64]domain.IndexerInstance{}
-	list, err := rt.registry.List(ctx)
+	list, err := rt.Registry.List(ctx)
 	if err != nil {
-		rt.log.Warn().Str("error", apphttp.RedactError(err)).Msg("cache stats: indexer label lookup failed")
+		rt.Logger.Warn().Str("error", apphttp.RedactError(err)).Msg("cache stats: indexer label lookup failed")
 		return out
 	}
 	for _, inst := range list {
@@ -199,11 +199,11 @@ func (rt *router) instanceLabels(ctx context.Context) map[int64]domain.IndexerIn
 // cacheFlush purges every cache entry and reports the count. With caching
 // disabled it answers 200 with {"flushed":0} rather than 404.
 func (rt *router) cacheFlush(w http.ResponseWriter, r *http.Request) {
-	if rt.cache == nil {
+	if rt.Cache == nil {
 		writeJSON(w, http.StatusOK, cacheFlushResponse{Flushed: 0})
 		return
 	}
-	n, err := rt.cache.Flush(r.Context())
+	n, err := rt.Cache.Flush(r.Context())
 	if err != nil {
 		rt.writeServiceError(w, "cache.flush", err)
 		return
@@ -224,11 +224,11 @@ type cacheStatsResetResponse struct {
 // Cached ENTRIES are untouched: discarding those is /api/cache/flush. With caching
 // disabled it answers 200 with zeroes rather than 404.
 func (rt *router) cacheStatsReset(w http.ResponseWriter, r *http.Request) {
-	if rt.cache == nil {
+	if rt.Cache == nil {
 		writeJSON(w, http.StatusOK, cacheStatsResetResponse{})
 		return
 	}
-	cleared := rt.cache.ResetCounters(r.Context())
+	cleared := rt.Cache.ResetCounters(r.Context())
 	writeJSON(w, http.StatusOK, cacheStatsResetResponse{
 		ClearedHits:              cleared.Hits,
 		ClearedMisses:            cleared.Misses,
@@ -280,11 +280,11 @@ func toCacheConfigResponse(v registry.CacheConfigView) cacheConfigResponse {
 // cacheConfigGet returns the live cache configuration. With no cache wired it
 // answers 200 with a disabled, zero-valued config rather than 404.
 func (rt *router) cacheConfigGet(w http.ResponseWriter, _ *http.Request) {
-	if rt.cache == nil {
+	if rt.Cache == nil {
 		writeJSON(w, http.StatusOK, toCacheConfigResponse(registry.CacheConfigView{}))
 		return
 	}
-	writeJSON(w, http.StatusOK, toCacheConfigResponse(rt.cache.Config()))
+	writeJSON(w, http.StatusOK, toCacheConfigResponse(rt.Cache.Config()))
 }
 
 // cacheConfigPut applies a partial update to the cache configuration. Only the
@@ -292,7 +292,7 @@ func (rt *router) cacheConfigGet(w http.ResponseWriter, _ *http.Request) {
 // and the merge+validate+persist+swap happens atomically inside the cache. A bad
 // duration or out-of-range value answers 400; the config is left unchanged.
 func (rt *router) cacheConfigPut(w http.ResponseWriter, r *http.Request) {
-	if rt.cache == nil {
+	if rt.Cache == nil {
 		writeError(w, http.StatusServiceUnavailable, "search cache is not available")
 		return
 	}
@@ -312,7 +312,7 @@ func (rt *router) cacheConfigPut(w http.ResponseWriter, r *http.Request) {
 		!parseDurPatch(w, req.NegativeTTL, &patch.NegativeTTL, "negativeTtl", durNonNeg) {
 		return
 	}
-	v, err := rt.cache.UpdateConfig(r.Context(), patch)
+	v, err := rt.Cache.UpdateConfig(r.Context(), patch)
 	if err != nil {
 		if errors.Is(err, registry.ErrInvalidCacheConfig) {
 			writeError(w, http.StatusBadRequest, err.Error())

@@ -34,7 +34,7 @@ func (rt *router) csrf(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		want := rt.sessions.GetString(r.Context(), sessionCSRFToken)
+		want := rt.Sessions.GetString(r.Context(), sessionCSRFToken)
 		got := r.Header.Get(csrfHeaderName)
 		if want == "" || subtle.ConstantTimeCompare([]byte(want), []byte(got)) != 1 {
 			writeError(w, http.StatusForbidden, "invalid or missing CSRF token")
@@ -52,7 +52,7 @@ func (rt *router) issueCSRFToken(ctx context.Context, w http.ResponseWriter) err
 	if err != nil {
 		return fmt.Errorf("api: generate csrf token: %w", err)
 	}
-	rt.sessions.Put(ctx, sessionCSRFToken, token)
+	rt.Sessions.Put(ctx, sessionCSRFToken, token)
 	http.SetCookie(w, rt.csrfCookie(token, 0))
 	return nil
 }
@@ -72,8 +72,8 @@ func (rt *router) csrfCookie(value string, maxAge int) *http.Cookie {
 	return &http.Cookie{
 		Name:     csrfCookieName,
 		Value:    value,
-		Path:     rt.sessions.Cookie.Path,
-		Secure:   rt.sessions.Cookie.Secure,
+		Path:     rt.Sessions.Cookie.Path,
+		Secure:   rt.Sessions.Cookie.Secure,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   maxAge,
 	}

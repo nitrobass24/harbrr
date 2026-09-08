@@ -69,7 +69,7 @@ type syncAllResultResponse struct {
 
 // listConnections returns all app-sync connections.
 func (rt *router) listConnections(w http.ResponseWriter, r *http.Request) {
-	list, err := rt.appsync.ListConnections(r.Context())
+	list, err := rt.AppSync.ListConnections(r.Context())
 	if err != nil {
 		rt.writeServiceError(w, "list connections", err)
 		return
@@ -98,7 +98,7 @@ func (rt *router) createConnection(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	conn, err := rt.appsync.CreateConnection(r.Context(), appsync.CreateConnectionParams{
+	conn, err := rt.AppSync.CreateConnection(r.Context(), appsync.CreateConnectionParams{
 		Name: req.Name, Kind: req.Kind, AppID: req.AppID, BaseURL: req.BaseURL, APIKey: req.APIKey,
 		Username: req.Username, HarbrrURL: req.HarbrrURL, SyncLevel: req.SyncLevel,
 		FreeleechMode: req.FreeleechMode, SyncProfileID: req.SyncProfileID,
@@ -116,7 +116,7 @@ func (rt *router) getConnection(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	conn, err := rt.appsync.GetConnection(r.Context(), id)
+	conn, err := rt.AppSync.GetConnection(r.Context(), id)
 	if err != nil {
 		rt.writeServiceError(w, "get connection", err)
 		return
@@ -139,7 +139,7 @@ func (rt *router) updateConnection(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if err := rt.appsync.UpdateConnection(r.Context(), id, appsync.UpdateConnectionParams{
+	if err := rt.AppSync.UpdateConnection(r.Context(), id, appsync.UpdateConnectionParams{
 		Name:      req.Name,
 		SyncLevel: req.SyncLevel, FreeleechMode: req.FreeleechMode,
 		SyncProfileID: req.SyncProfileID.toAppSync(),
@@ -156,7 +156,7 @@ func (rt *router) deleteConnection(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := rt.appsync.DeleteConnection(r.Context(), id); err != nil {
+	if err := rt.AppSync.DeleteConnection(r.Context(), id); err != nil {
 		rt.writeServiceError(w, "delete connection", err)
 		return
 	}
@@ -165,11 +165,11 @@ func (rt *router) deleteConnection(w http.ResponseWriter, r *http.Request) {
 
 // enableConnection / disableConnection toggle a connection.
 func (rt *router) enableConnection(w http.ResponseWriter, r *http.Request) {
-	rt.setResourceEnabled(w, r, "connection", "set connection enabled", rt.appsync.SetEnabled, true)
+	rt.setResourceEnabled(w, r, "connection", "set connection enabled", rt.AppSync.SetEnabled, true)
 }
 
 func (rt *router) disableConnection(w http.ResponseWriter, r *http.Request) {
-	rt.setResourceEnabled(w, r, "connection", "set connection enabled", rt.appsync.SetEnabled, false)
+	rt.setResourceEnabled(w, r, "connection", "set connection enabled", rt.AppSync.SetEnabled, false)
 }
 
 // testConnection probes the app's reachability and credentials. A pass is
@@ -180,7 +180,7 @@ func (rt *router) testConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rt.testEndpoint(w, r, "test connection", func(ctx context.Context) error {
-		return rt.appsync.TestConnection(ctx, id)
+		return rt.AppSync.TestConnection(ctx, id)
 	})
 }
 
@@ -190,7 +190,7 @@ func (rt *router) syncConnection(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	report, err := rt.appsync.Sync(r.Context(), id)
+	report, err := rt.AppSync.Sync(r.Context(), id)
 	if err != nil {
 		rt.writeServiceError(w, "sync connection", err)
 		return
@@ -201,7 +201,7 @@ func (rt *router) syncConnection(w http.ResponseWriter, r *http.Request) {
 // syncAllConnections reconciles every connection in one call and returns a
 // per-connection result array (one entry per connection, in list order).
 func (rt *router) syncAllConnections(w http.ResponseWriter, r *http.Request) {
-	results, err := rt.appsync.SyncAll(r.Context())
+	results, err := rt.AppSync.SyncAll(r.Context())
 	if err != nil {
 		rt.writeServiceError(w, "sync connections", err)
 		return
@@ -222,12 +222,12 @@ func (rt *router) connectionStatus(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	conn, err := rt.appsync.GetConnection(r.Context(), id)
+	conn, err := rt.AppSync.GetConnection(r.Context(), id)
 	if err != nil {
 		rt.writeServiceError(w, "connection status", err)
 		return
 	}
-	ledger, err := rt.appsync.ConnectionIndexers(r.Context(), id)
+	ledger, err := rt.AppSync.ConnectionIndexers(r.Context(), id)
 	if err != nil {
 		rt.writeServiceError(w, "connection status", err)
 		return

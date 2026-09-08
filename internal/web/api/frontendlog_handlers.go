@@ -76,7 +76,7 @@ func (rt *router) postFrontendLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ev := rt.log.WithLevel(zerologLevel(req.Level)).Str("component", "webui")
+	ev := rt.Logger.WithLevel(zerologLevel(req.Level)).Str("component", "webui")
 	if req.Context != "" {
 		ev = ev.Str("context", req.Context)
 	}
