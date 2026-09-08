@@ -22,10 +22,14 @@ func aad(instanceID int64, setting string) []byte {
 	return fmt.Appendf(nil, "%d\x00%s", instanceID, setting)
 }
 
-// seal encrypts plaintext with AES-256-GCM under key, authenticating ad, and
+// Seal encrypts plaintext with AES-256-GCM under key, authenticating ad, and
 // returns base64(nonce‖ciphertext‖tag) — qui's construction, with a fresh random
-// nonce prepended.
-func seal(key, ad, plaintext []byte) (string, error) {
+// nonce prepended. key must be exactly 32 bytes.
+//
+// Unlike Keyring.Encrypt (which binds the AAD to a database row and uses the
+// at-rest key), the key and AAD are the caller's — the backup encoder passes a
+// passphrase-derived key from DeriveKeyFromPassphrase.
+func Seal(key, ad, plaintext []byte) (string, error) {
 	gcm, err := newGCM(key)
 	if err != nil {
 		return "", err
@@ -38,10 +42,10 @@ func seal(key, ad, plaintext []byte) (string, error) {
 	return base64.StdEncoding.EncodeToString(blob), nil
 }
 
-// open reverses seal. Its error never includes the plaintext or key material — a
-// decryption failure means a wrong key, AAD mismatch, or tampering, and the caller
-// must fail loud, not retry.
-func open(key, ad []byte, blob string) ([]byte, error) {
+// Open reverses Seal. Its error never includes the plaintext or key material — a
+// decryption failure means a wrong key (hence a wrong passphrase), an AAD mismatch,
+// or tampering, and the caller must fail loud, not retry.
+func Open(key, ad []byte, blob string) ([]byte, error) {
 	raw, err := base64.StdEncoding.DecodeString(blob)
 	if err != nil {
 		return nil, fmt.Errorf("secrets: decode ciphertext: %w", err)

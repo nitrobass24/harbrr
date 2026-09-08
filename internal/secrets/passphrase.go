@@ -74,19 +74,3 @@ func DeriveKeyFromPassphrase(passphrase string, salt []byte, kdf PassphraseKDF) 
 	}
 	return argon2.IDKey([]byte(passphrase), salt, kdf.Time, kdf.Memory, kdf.Threads, keyLen), nil
 }
-
-// EncryptWithKey seals plaintext under a caller-supplied 32-byte key with AES-256-GCM,
-// authenticating aad, and returns base64(nonce‖ciphertext‖tag). Unlike Keyring.Encrypt
-// (which binds the AAD to a database row and uses the at-rest key), this takes the key
-// and AAD directly — for a payload sealed under a passphrase-derived key. The key must
-// be exactly 32 bytes; DeriveKeyFromPassphrase always produces that.
-func EncryptWithKey(key, aad, plaintext []byte) (string, error) {
-	return seal(key, aad, plaintext)
-}
-
-// DecryptWithKey reverses EncryptWithKey. A wrong passphrase (hence wrong derived key)
-// or a tampered payload fails the GCM tag check and returns the leak-free open error, so
-// a wrong passphrase is a clean, distinguishable failure rather than garbage output.
-func DecryptWithKey(key, aad []byte, blob string) ([]byte, error) {
-	return open(key, aad, blob)
-}

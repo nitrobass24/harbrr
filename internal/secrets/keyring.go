@@ -62,7 +62,7 @@ func (k *Keyring) Encrypt(instanceID int64, setting, plaintext string) (string, 
 	if k.plaintext {
 		return plaintext, nil
 	}
-	return seal(k.key, aad(instanceID, setting), []byte(plaintext))
+	return Seal(k.key, aad(instanceID, setting), []byte(plaintext))
 }
 
 // Decrypt reverses Encrypt for the same (instanceID, setting). A failure (wrong
@@ -71,7 +71,7 @@ func (k *Keyring) Decrypt(instanceID int64, setting, blob string) (string, error
 	if k.plaintext {
 		return blob, nil
 	}
-	pt, err := open(k.key, aad(instanceID, setting), blob)
+	pt, err := Open(k.key, aad(instanceID, setting), blob)
 	if err != nil {
 		return "", err
 	}
@@ -84,13 +84,13 @@ func (k *Keyring) Decrypt(instanceID int64, setting, blob string) (string, error
 // token key is stable when an encryption key is configured and process-local when
 // plaintext mode is enabled, so plaintext-mode tokens expire across restarts.
 func (k *Keyring) SealToken(purpose, plaintext string) (string, error) {
-	return seal(k.tokenKey, tokenAAD(purpose), []byte(plaintext))
+	return Seal(k.tokenKey, tokenAAD(purpose), []byte(plaintext))
 }
 
 // OpenToken authenticates and decrypts a token sealed for the same purpose. A
 // purpose mismatch or any token tampering fails without exposing its contents.
 func (k *Keyring) OpenToken(purpose, blob string) (string, error) {
-	pt, err := open(k.tokenKey, tokenAAD(purpose), blob)
+	pt, err := Open(k.tokenKey, tokenAAD(purpose), blob)
 	if err != nil {
 		return "", err
 	}
