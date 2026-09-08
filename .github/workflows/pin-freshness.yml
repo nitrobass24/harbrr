@@ -1,0 +1,92 @@
+# Monthly freshness check for the tool pins Dependabot structurally cannot see:
+# Makefile `go install` lines, workflow env pins, and action `with:` inputs.
+# The ci.yml guards job keeps each pin's duplicate sites AGREEING; this job is
+# the other half — it notices when the agreed pin has fallen behind the tool's
+# latest release and opens one reminder issue (never a PR: bumps deserve the
+# usual local precommit run, since new linter releases add findings).
+#
+# Deliberately curl+jq only — the self-hosted hosts carry no gh CLI.
+name: pin-freshness
+
+on:
+  schedule:
+    # Monthly, offset from the vendor-definitions refresh so the two scheduled
+    # jobs never contend for a runner at the same minute.
+    - cron: "17 6 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    name: pins vs latest releases
+    runs-on: self-hosted
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: compare pins against latest releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_TITLE: "chore: CI tool pins behind latest releases"
+        run: |
+          api() {
+            curl -sSf -H "Authorization: Bearer ${GH_TOKEN}" \
+                 -H "Accept: application/vnd.github+json" \
+                 "https://api.github.com/$1"
+          }
+          latest_release() { api "repos/$1/releases/latest" | jq -r .tag_name; }
+
+          : > /tmp/behind.txt
+          check() { # name pinned latest
+            pinned="${2#v}"; latest="${3#v}"
+            if [ -z "$pinned" ] || [ -z "$latest" ] || [ "$latest" = "null" ]; then
+              echo "- $1: could not resolve (pinned='$pinned' latest='$latest') — fix this job" >> /tmp/behind.txt
+            elif [ "$pinned" != "$latest" ]; then
+              echo "- **$1**: pinned \`$pinned\`, latest \`$latest\`" >> /tmp/behind.txt
+            fi
+          }
+
+          check golangci-lint \
+            "$(grep -oE 'golangci-lint@v[0-9][0-9.]*' Makefile | head -1 | sed 's/.*@//')" \
+            "$(latest_release golangci/golangci-lint)"
+          check gitleaks \
+            "$(grep -oE 'GITLEAKS_VERSION: "[0-9][0-9.]*"' .github/workflows/ci.yml | head -1 | tr -dc '0-9.')" \
+            "$(latest_release gitleaks/gitleaks)"
+          check actionlint \
+            "$(grep -oE 'ACTIONLINT_VERSION: "[0-9][0-9.]*"' .github/workflows/ci.yml | head -1 | tr -dc '0-9.')" \
+            "$(latest_release rhysd/actionlint)"
+          check shellcheck \
+            "$(grep -oE 'SHELLCHECK_VERSION: "[0-9][0-9.]*"' .github/workflows/ci.yml | head -1 | tr -dc '0-9.')" \
+            "$(latest_release koalaman/shellcheck)"
+          # golang/vuln publishes tags, not GitHub releases — take the highest semver tag.
+          check govulncheck \
+            "$(grep -oE 'GOVULNCHECK_VERSION: v[0-9][0-9.]*' .github/workflows/ci.yml | head -1 | awk '{print $2}')" \
+            "$(api 'repos/golang/vuln/tags?per_page=100' | jq -r '.[].name' | grep -E '^v[0-9.]+$' | sort -V | tail -1)"
+
+          if [ ! -s /tmp/behind.txt ]; then
+            echo "all pins current"
+            exit 0
+          fi
+          echo "pins behind:"; cat /tmp/behind.txt
+
+          # One standing reminder at a time: if the previous issue is still
+          # open, this month's report would only repeat it — skip.
+          existing=$(api "repos/${GITHUB_REPOSITORY}/issues?state=open&per_page=100" \
+            | jq -r --arg t "$ISSUE_TITLE" '.[] | select(.title == $t) | .number' | head -1)
+          if [ -n "$existing" ]; then
+            echo "reminder issue #$existing already open — not filing another"
+            exit 0
+          fi
+
+          jq -n --arg title "$ISSUE_TITLE" --rawfile behind /tmp/behind.txt '{
+            title: $title,
+            body: ($behind + "\nBump sites (the ci.yml guards job enforces each pair agreeing):\n- golangci-lint: Makefile `make tools` + ci.yml golangci-lint-action `version:`\n- gitleaks: ci.yml secret-scan env + .pre-commit-config.yaml rev\n- actionlint: ci.yml guards env + .pre-commit-config.yaml rev\n- shellcheck / govulncheck: ci.yml env pins (shellcheck + actionlint installs also pin a sha256 — update it with the version)\n\nRun the bump through `make precommit` locally first: new linter releases add findings.\n\nFiled by the monthly pin-freshness workflow.")
+          }' | curl -sSf -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -d @- "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues" \
+            | jq -r '"filed issue #\(.number): \(.html_url)"'
