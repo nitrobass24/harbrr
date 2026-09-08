@@ -1,10 +1,11 @@
 package hdbits
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -130,6 +131,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 		return nil, d.statusError(resp.Status, resp.Message)
 	}
 
+	sortByID(resp.Data)
 	freeOnly := freeleechOnly(d.Cfg)
 	useFilenames := useFilenames(d.Cfg)
 	releases := make([]*normalizer.Release, 0, len(resp.Data))
@@ -140,7 +142,6 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 		}
 		releases = append(releases, d.toRelease(row, useFilenames))
 	}
-	sortReleases(releases)
 	native.TraceReleases(d.Log, d.Def.ID, releases)
 	return releases, nil
 }
@@ -318,29 +319,20 @@ func useFilenames(cfg map[string]string) bool {
 	}
 }
 
-// sortReleases orders releases by ascending numeric id (the data[] order is server-defined;
-// a stable id order keeps the feed and tests deterministic). Ties break on the raw download
-// URL (unique per id) so the order is total.
-func sortReleases(releases []*normalizer.Release) {
-	sort.SliceStable(releases, func(i, j int) bool {
-		ki, kj := idFromLink(releases[i].Link), idFromLink(releases[j].Link)
-		if ki != kj {
-			return ki < kj
-		}
-		return releases[i].Link < releases[j].Link
+// sortByID orders the response rows by ascending numeric id (the data[] order is
+// server-defined; a stable id order keeps the feed and tests deterministic). An
+// unparseable id sorts as 0, and the sort is stable so equal ids keep server order.
+func sortByID(rows []hdbitsTorrent) {
+	slices.SortStableFunc(rows, func(a, b hdbitsTorrent) int {
+		return cmp.Compare(numericID(a.ID), numericID(b.ID))
 	})
 }
 
-// idFromLink extracts the numeric id query param from a rebuilt download URL for the sort
-// key; an unparseable id sorts as 0.
-func idFromLink(link string) int64 {
-	u, err := url.Parse(link)
+// numericID parses a row id for the sort key; an unparseable id sorts as 0.
+func numericID(id flexString) int64 {
+	n, err := strconv.ParseInt(string(id), 10, 64)
 	if err != nil {
 		return 0
 	}
-	id, err := strconv.ParseInt(u.Query().Get("id"), 10, 64)
-	if err != nil {
-		return 0
-	}
-	return id
+	return n
 }

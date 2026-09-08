@@ -42,11 +42,11 @@ var authClassify = native.ClassifyAuth403.WithAuthReason(
 
 // Families returns Nebulance's native family registration.
 func Families() []native.Family {
-	return []native.Family{{Definition: Definition(), Factory: New}}
+	return []native.Family{{Definition: definition(), Factory: New}}
 }
 
-// Definition returns Nebulance's static settings and capabilities definition.
-func Definition() *loader.Definition {
+// definition returns Nebulance's static settings and capabilities definition.
+func definition() *loader.Definition {
 	delay := requestDelaySeconds
 	allowRaw := true
 	allowIMDB := true
@@ -63,12 +63,12 @@ func Definition() *loader.Definition {
 			{Name: "apikey", Label: "API Key", Type: "text", Required: true},
 		},
 		Caps: loader.Caps{
-			CategoryMappings: []loader.CategoryMapping{
-				categoryMapping("1", "TV", "TV"),
-				categoryMapping("2", "SD", "TV/SD"),
-				categoryMapping("3", "HD", "TV/HD"),
-				categoryMapping("4", "UHD", "TV/UHD"),
-			},
+			CategoryMappings: native.Cats(
+				native.Cat{ID: "1", Newznab: "TV", Desc: "TV"},
+				native.Cat{ID: "2", Newznab: "TV/SD", Desc: "SD"},
+				native.Cat{ID: "3", Newznab: "TV/HD", Desc: "HD"},
+				native.Cat{ID: "4", Newznab: "TV/UHD", Desc: "UHD"},
+			),
 			Modes: loader.Modes{
 				Search:   []string{"q"},
 				TVSearch: []string{"q", "season", "ep", "imdbid", "tvmazeid"},
@@ -76,14 +76,6 @@ func Definition() *loader.Definition {
 			AllowRawSearch:    &allowRaw,
 			AllowTVSearchIMDB: &allowIMDB,
 		},
-	}
-}
-
-func categoryMapping(id, desc, category string) loader.CategoryMapping {
-	return loader.CategoryMapping{
-		ID:   loader.Scalar{Value: id, Set: true},
-		Cat:  category,
-		Desc: desc,
 	}
 }
 

@@ -129,7 +129,7 @@ func TestBuildRPCBodyParity(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			body, err := d.buildRPCBody(d.buildParameters(tc.query), pageResults, pageOffset)
+			body, err := d.buildRPCBody(d.buildParameters(tc.query), pageResults)
 			if err != nil {
 				t.Fatalf("buildRPCBody: %v", err)
 			}

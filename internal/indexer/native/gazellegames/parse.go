@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"maps"
 	"net/url"
 	"regexp"
 	"slices"
@@ -210,7 +211,9 @@ func (d *driver) flattenGroup(groupID int64, g *gazelleGamesGroup) ([]*normalize
 
 	cats := d.groupCategories(g)
 	rels := make([]*normalizer.Release, 0, len(torrents))
-	for _, torrentID := range sortedTorrentIDs(torrents) {
+	// Ascending torrent-id order seeds the per-group category fallback from a stable,
+	// JSON-key-ordered "first" torrent rather than from Go's randomised map iteration.
+	for _, torrentID := range slices.Sorted(maps.Keys(torrents)) {
 		t := torrents[torrentID]
 		if !strings.EqualFold(t.TorrentType, torrentTypeWanted) {
 			continue
@@ -223,18 +226,6 @@ func (d *driver) flattenGroup(groupID int64, g *gazelleGamesGroup) ([]*normalize
 		rels = append(rels, d.toRelease(groupID, torrentID, g, &t, cats))
 	}
 	return rels, nil
-}
-
-// sortedTorrentIDs returns the group's torrent ids in ascending order so the per-group
-// category fallback is seeded by a stable, JSON-key-ordered "first" torrent rather than by
-// Go's randomised map iteration.
-func sortedTorrentIDs(torrents map[int64]gazelleGamesTorrent) []int64 {
-	ids := make([]int64, 0, len(torrents))
-	for id := range torrents {
-		ids = append(ids, id)
-	}
-	slices.Sort(ids)
-	return ids
 }
 
 // toRelease maps one group×torrent pair to a release. Link is the rebuilt torrents.php

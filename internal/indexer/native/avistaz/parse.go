@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -142,19 +143,12 @@ func (d *driver) parseCategories(row *avistazRelease) ([]int, error) {
 // caps. The result is de-duplicated and sorted so the served categories are
 // deterministic (Go map iteration is randomized).
 func (d *driver) exoticaCategories(row *avistazRelease) []int {
-	seen := map[int]struct{}{}
-	var cats []int
+	cats := make([]int, 0, len(row.Category))
 	for key := range row.Category {
-		for _, id := range d.Caps.CategoryMap.MapTrackerCatToNewznab(key) {
-			if _, dup := seen[id]; dup {
-				continue
-			}
-			seen[id] = struct{}{}
-			cats = append(cats, id)
-		}
+		cats = append(cats, d.Caps.CategoryMap.MapTrackerCatToNewznab(key)...)
 	}
-	sort.Ints(cats)
-	return cats
+	slices.Sort(cats)
+	return slices.Compact(cats)
 }
 
 // baseCategories reproduces AvistazParserBase.ParseCategories: MOVIE/TV-SHOW map to
