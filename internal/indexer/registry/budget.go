@@ -93,12 +93,6 @@ func (b *RequestBudget) ensureLoaded(ctx context.Context, instanceID int64, st *
 	if st.loaded {
 		return
 	}
-	if b.db == nil {
-		// No store wired (e.g. a cache-less test adapter): stay in-memory only,
-		// starting from zero — fail open rather than panic on a nil Execer.
-		st.loaded = true
-		return
-	}
 	row, ok, err := b.store.Get(ctx, b.db, instanceID)
 	switch {
 	case err != nil:
@@ -224,9 +218,6 @@ func (b *RequestBudget) MarkQuotaSpent(ctx context.Context, instanceID int64, li
 // in-memory state (already updated) stays authoritative for this process's
 // lifetime, matching the fail-open posture of the rest of the counter stores.
 func (b *RequestBudget) persist(ctx context.Context, row database.BudgetCounter) {
-	if b.db == nil {
-		return
-	}
 	if err := b.store.Upsert(ctx, b.db, row); err != nil {
 		b.log.Warn().Int64("instance_id", row.InstanceID).Str("error", apphttp.RedactError(err)).
 			Msg("registry: budget counters persist failed")

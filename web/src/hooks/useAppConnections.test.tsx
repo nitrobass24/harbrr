@@ -5,15 +5,20 @@ import { type ReactNode } from "react"
 import { useSetConnectionEnabled } from "./useAppConnections"
 import type { AppConnection } from "@/lib/api"
 
-const { toastError, setConnectionEnabledMock } = vi.hoisted(() => ({
+const { toastError, setConnectionEnabledMock, frontendLogPost } = vi.hoisted(() => ({
   toastError: vi.fn(),
   setConnectionEnabledMock: vi.fn(),
+  frontendLogPost: vi.fn(() => Promise.resolve({ data: undefined })),
 }))
 vi.mock("sonner", () => ({
   toast: { error: toastError },
 }))
+// The mock carries api.http + unwrap because notifyError (lib/notify.ts) relays every
+// error toast through POST /api/logs/frontend: a mock missing them would make this
+// hook's failure path throw inside that fire-and-forget relay.
 vi.mock("@/lib/api", () => ({
-  api: { setConnectionEnabled: setConnectionEnabledMock },
+  api: { setConnectionEnabled: setConnectionEnabledMock, http: { POST: frontendLogPost } },
+  unwrap: (call: Promise<unknown>) => call,
 }))
 
 function makeConnection(overrides: Partial<AppConnection> = {}): AppConnection {

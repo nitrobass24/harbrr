@@ -192,7 +192,7 @@ func newUsenetE2EHandler(t *testing.T, stub *usenetStub) http.Handler {
 	}
 	return NewHandler(
 		fakeProvider{"usenetdemo": idx},
-		WithAPIKey(testAPIKey),
+		withTestAPIKey(testAPIKey),
 		WithClock(func() time.Time { return time.Date(2026, time.June, 13, 12, 0, 0, 0, time.UTC) }),
 		WithDLToken(kr),
 	)

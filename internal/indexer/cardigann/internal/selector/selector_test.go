@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	yaml "go.yaml.in/yaml/v3"
+
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 )
 
@@ -104,10 +106,10 @@ func TestFieldHTML(t *testing.T) {
 			name: "case switch first match wins",
 			block: loader.SelectorBlock{
 				Selector: "td.flag",
-				Case: loader.NewCaseBlock(
-					loader.CaseEntry{Key: "span.freeleech", Value: loader.Scalar{Value: "yes", Set: true}},
-					loader.CaseEntry{Key: "*", Value: loader.Scalar{Value: "no", Set: true}},
-				),
+				Case: caseBlock(`
+span.freeleech: "yes"
+"*": "no"
+`),
 			},
 			wantValue: "yes",
 			wantFound: true,
@@ -116,10 +118,10 @@ func TestFieldHTML(t *testing.T) {
 			name: "case switch catch-all star",
 			block: loader.SelectorBlock{
 				Selector: "td.size",
-				Case: loader.NewCaseBlock(
-					loader.CaseEntry{Key: "span.freeleech", Value: loader.Scalar{Value: "yes", Set: true}},
-					loader.CaseEntry{Key: "*", Value: loader.Scalar{Value: "no", Set: true}},
-				),
+				Case: caseBlock(`
+span.freeleech: "yes"
+"*": "no"
+`),
 			},
 			wantValue: "no",
 			wantFound: true,
@@ -128,9 +130,7 @@ func TestFieldHTML(t *testing.T) {
 			name: "case switch no match not found",
 			block: loader.SelectorBlock{
 				Selector: "td.size",
-				Case: loader.NewCaseBlock(
-					loader.CaseEntry{Key: "span.freeleech", Value: loader.Scalar{Value: "yes", Set: true}},
-				),
+				Case:     caseBlock(`span.freeleech: "yes"`),
 			},
 			wantFound: false,
 		},
@@ -159,11 +159,9 @@ func TestFieldDefersRequiredDecision(t *testing.T) {
 
 	row := firstHTMLRow(t, "rows.html", "tr.row")
 	cases := []loader.SelectorBlock{
-		{Selector: "td.does-not-exist"},              // missing selector
-		{Selector: "a.dl", Attribute: "data-absent"}, // missing attribute
-		{Selector: "td.flag", Case: loader.NewCaseBlock( // no case arm matches
-			loader.CaseEntry{Key: "span.nope", Value: loader.Scalar{Value: "x", Set: true}},
-		)},
+		{Selector: "td.does-not-exist"},                        // missing selector
+		{Selector: "a.dl", Attribute: "data-absent"},           // missing attribute
+		{Selector: "td.flag", Case: caseBlock(`span.nope: x`)}, // no case arm matches
 	}
 	for i := range cases {
 		v, found, err := New().Field(row, cases[i], nil)
@@ -202,4 +200,15 @@ func assertField(t *testing.T, got fieldResult, wantValue string, wantFound, wan
 	if got.found && got.value != wantValue {
 		t.Fatalf("value = %q, want %q", got.value, wantValue)
 	}
+}
+
+// caseBlock parses a `case:` YAML mapping into an order-preserving CaseBlock, the same
+// path the loader takes for a real definition — the block's fields are unexported, so
+// YAML is the only way to build one.
+func caseBlock(src string) loader.CaseBlock {
+	var cb loader.CaseBlock
+	if err := yaml.Unmarshal([]byte(src), &cb); err != nil {
+		panic("caseBlock: " + err.Error())
+	}
+	return cb
 }

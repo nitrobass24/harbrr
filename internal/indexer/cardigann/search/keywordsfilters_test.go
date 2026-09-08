@@ -70,10 +70,10 @@ func TestBuildRequests_KeywordsFilters(t *testing.T) {
 				Search: loader.Search{
 					Path:            "/search/{{ .Keywords }}",
 					KeywordsFilters: tt.filters,
-					Inputs: loader.NewInputsBlock(
-						loader.InputEntry{Key: "q", Value: loader.Scalar{Value: "{{ .Keywords }}", Set: true}},
-						loader.InputEntry{Key: "rawq", Value: loader.Scalar{Value: "{{ .Query.Keywords }}", Set: true}},
-					),
+					Inputs: inputsBlock(`
+q: "{{ .Keywords }}"
+rawq: "{{ .Query.Keywords }}"
+`),
 				},
 			}
 			deps := Deps{BaseURL: "https://kw.invalid/", Filters: NewFilterRegistry(stubDateParse, stubRelTime, "")}

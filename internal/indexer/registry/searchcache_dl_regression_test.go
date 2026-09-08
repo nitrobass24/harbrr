@@ -101,7 +101,7 @@ func TestCachedResolverLinkSealedOnHit(t *testing.T) {
 	}
 	h := torznabhttp.NewHandler(
 		regProvider{"demo": cached},
-		torznabhttp.WithAPIKey(dlRegAPIKey),
+		torznabhttp.WithAPIKeyValidator(func(k string) bool { return k == dlRegAPIKey }),
 		torznabhttp.WithClock(func() time.Time { return now }),
 		torznabhttp.WithDLToken(kr),
 	)

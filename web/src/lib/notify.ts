@@ -22,16 +22,7 @@ function contextFrom(err: unknown): string | undefined {
 // the promise is never awaited and any rejection (network down, endpoint unreachable) is
 // swallowed, because a logging failure must never itself toast — that would loop — or
 // block the UI.
-//
-// The typeof guard (rather than dereferencing api.http directly) exists for
-// testability: some hook tests (useAppConnections.test.tsx) mock "@/lib/api" with a
-// partial object exposing only what that test exercises, so api.http is undefined
-// there. Dereferencing it unconditionally would throw inside a fire-and-forget path
-// with no test-visible stack trace. Guarding degrades that case to a silent no-op
-// instead, matching the "must never break the UI" rule this function already has to
-// uphold for its non-test callers.
 function shipToServer(level: "error" | "warn", message: string, context?: string): void {
-  if (typeof api.http?.POST !== "function") return
   void unwrap(api.http.POST("/api/logs/frontend", { body: { level, message, context } })).catch(() => {})
 }
 

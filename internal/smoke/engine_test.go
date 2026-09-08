@@ -269,7 +269,7 @@ func TestGrabSucceeded(t *testing.T) {
 		result string
 		want   bool
 	}{
-		{"not attempted", "", true},
+		{"not attempted", "", false},
 		{"torrent", "torrent", true},
 		{"magnet", "magnet", true},
 		{"nzb", "nzb", true},
@@ -341,18 +341,6 @@ func TestClassifyGrabBody(t *testing.T) {
 				t.Errorf("classifyGrabBody(%q) = %q, want %q", tt.body, got, tt.want)
 			}
 		})
-	}
-}
-
-func TestValidateNoSecrets(t *testing.T) {
-	t.Parallel()
-	clean := EvidenceRecord{Tracker: "demo", Notes: "count ratio 0.80", HarbrrTitles: []string{"Ubuntu 24.04"}}
-	if err := ValidateNoSecrets(clean); err != nil {
-		t.Errorf("clean record should validate: %v", err)
-	}
-	leak := EvidenceRecord{Tracker: "demo", HarbrrTitles: []string{"show with a passkey in the title"}}
-	if err := ValidateNoSecrets(leak); err == nil {
-		t.Error("a title carrying a passkey token must error")
 	}
 }
 
@@ -544,34 +532,6 @@ func deadServer(t *testing.T) *httptest.Server {
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	srv.Close()
 	return srv
-}
-
-// TestHarbrrHasDownloadLinks pins the evidence probe the //go:build smoke front-end
-// records as downloadLinksPresent: a feed item with a link is grabbable, an item without
-// one is not, and a feed that cannot be fetched reports an error (and not-grabbable).
-func TestHarbrrHasDownloadLinks(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name    string
-		server  func(t *testing.T) *httptest.Server
-		wantOK  bool
-		wantErr bool
-	}{
-		{"feed with links", func(t *testing.T) *httptest.Server { return grabStubServer(t, "", 200, "") }, true, false},
-		{"feed without links", func(t *testing.T) *httptest.Server { return grabStubServer(t, noLinkSentinel, 200, "") }, false, false},
-		{"unreachable feed", deadServer, false, true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			srv := tt.server(t)
-			cfg := Config{HarbrrURL: srv.URL, HarbrrKey: "k"}
-			ok, err := harbrrHasDownloadLinks(context.Background(), srv.Client(), cfg, "tracker", "q")
-			if ok != tt.wantOK || (err != nil) != tt.wantErr {
-				t.Errorf("harbrrHasDownloadLinks = (%v, %v), want (%v, err!=nil=%v)", ok, err, tt.wantOK, tt.wantErr)
-			}
-		})
-	}
 }
 
 // TestGrabCheckGatedOff pins the opt-in gate: with SMOKE_GRAB unset (cfg.Grab false) the

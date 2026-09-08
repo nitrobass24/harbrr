@@ -379,12 +379,6 @@ func (a *indexerAdapter) Grab(ctx context.Context, link string) (*search.GrabRes
 // inner driver. A read failure is best-effort: logged and treated as closed (a DB
 // hiccup must never itself block dispatch).
 func (a *indexerAdapter) checkCircuit(ctx context.Context) error {
-	if a.db == nil {
-		// A handful of internal tests build a bare indexerAdapter (fakeDriver fixtures)
-		// with no db wired — treat as closed rather than panic. Every production adapter
-		// (buildAdapter) always sets db.
-		return nil
-	}
 	state, err := a.circuit.Get(ctx, a.db, a.instanceID)
 	if err != nil {
 		a.log.Warn().Str("indexer", a.info.ID).Str("error", apphttp.RedactError(err)).
@@ -408,9 +402,6 @@ func (a *indexerAdapter) checkCircuit(ctx context.Context) error {
 // search/grab result.
 func (a *indexerAdapter) recordCircuitSuccess(ctx context.Context) {
 	a.stats.RecordSuccess(a.instanceID)
-	if a.db == nil {
-		return
-	}
 	unlock := a.circuitLocks.lock(a.instanceID)
 	defer unlock()
 	state, err := a.circuit.Get(ctx, a.db, a.instanceID)
@@ -461,9 +452,6 @@ func recoveryDetail(initialFailure, now time.Time) string {
 // state it wrote (the zero value when it could not write one), which carries the
 // failure streak the base-URL failover reads.
 func (a *indexerAdapter) escalateCircuit(ctx context.Context, kind string, err error) database.CircuitState {
-	if a.db == nil {
-		return database.CircuitState{}
-	}
 	unlock := a.circuitLocks.lock(a.instanceID)
 	defer unlock()
 	state, gerr := a.circuit.Get(ctx, a.db, a.instanceID)

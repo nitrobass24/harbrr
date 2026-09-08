@@ -62,14 +62,10 @@ type Service struct {
 	log              zerolog.Logger
 }
 
-// NewService wires the notify service. client is shared by all senders (nil installs a
-// timeout-bounded default); clock is injectable for deterministic tests (assigning to the
-// returned Service's clock field also retunes its Lifecycle, which reads clock through an
-// indirection).
+// NewService wires the notify service. client is shared by all senders; clock is
+// injectable for deterministic tests (assigning to the returned Service's clock field
+// also retunes its Lifecycle, which reads clock through an indirection).
 func NewService(db dbinterface.Querier, keyring *secrets.Keyring, client *http.Client, log zerolog.Logger) *Service {
-	if client == nil {
-		client = defaultHTTPClient()
-	}
 	s := &Service{
 		db: db, keyring: keyring, client: client, clock: time.Now,
 		lastHealthNotify: make(map[healthKey]time.Time), log: log,

@@ -13,21 +13,12 @@ import (
 type Deps struct {
 	Config *config.Config
 	Logger zerolog.Logger
-}
 
-// Option widens New for tests: inject an already-open database instead of letting
-// New open its own. Production callers (cmd/harbrr) pass none.
-type Option func(*options)
-
-type options struct {
-	db *database.DB
-}
-
-// WithDatabase injects an already-open, migrated database instead of letting
-// New open one from Deps.Config (New skips openDatabase entirely when set).
-// Close ownership differs by outcome: on success, App.Run closes it on the way
-// out same as a New-opened database. On a New error, the injector keeps
-// ownership and must close it itself — New only closes a database it opened.
-func WithDatabase(db *database.DB) Option {
-	return func(o *options) { o.db = db }
+	// DB is an already-open, migrated database to build on instead of letting New
+	// open one from Config (New skips OpenDatabase entirely when set). Production
+	// (cmd/harbrr) leaves it nil. Close ownership differs by outcome: on success,
+	// App.Run closes it on the way out same as a New-opened database. On a New
+	// error, the injector keeps ownership and must close it itself — New only
+	// closes a database it opened.
+	DB *database.DB
 }

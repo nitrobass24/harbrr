@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { notifyError, notifySuccess, notifyWarn } from "./notify"
-import { api, type ApiClient } from "@/lib/api"
 import { stubApi } from "@/test/stubApi"
 
 const { toastError, toastWarning, toastSuccess } = vi.hoisted(() => ({
@@ -74,17 +73,5 @@ describe("notify", () => {
     await settle()
     // No follow-up error toast from the failed shipment — exactly one toast.error call.
     expect(toastError).toHaveBeenCalledTimes(1)
-  })
-
-  it("no-ops instead of throwing when the api client is missing http (partial test mock)", () => {
-    const mutableApi = api as unknown as { http?: ApiClient["http"] }
-    const original = mutableApi.http
-    mutableApi.http = undefined
-    try {
-      expect(() => notifyError("Save failed")).not.toThrow()
-      expect(toastError).toHaveBeenCalledWith("Save failed")
-    } finally {
-      mutableApi.http = original
-    }
   })
 })

@@ -85,15 +85,17 @@ func newRSSCacheAdapter(t *testing.T, inner native.Driver) *indexerAdapter {
 	t.Helper()
 	sc, instID, _ := testCache(t, keywordTTL, 0)
 	return &indexerAdapter{
-		info:       core.IndexerInfo{ID: "fake"},
-		inner:      inner,
-		instanceID: instID,
-		cache:      sc,
-		builtEpoch: sc.instanceEpoch(instID),
-		stats:      newIndexerStats(nil, time.Now, zerolog.Nop()),
-		budget:     newRequestBudget(nil, time.Now, zerolog.Nop()),
-		clock:      time.Now,
-		log:        zerolog.Nop(),
+		info:         core.IndexerInfo{ID: "fake"},
+		inner:        inner,
+		instanceID:   instID,
+		db:           sc.db,
+		cache:        sc,
+		builtEpoch:   sc.instanceEpoch(instID),
+		circuitLocks: &circuitLocks{},
+		stats:        newIndexerStats(sc.db, time.Now, zerolog.Nop()),
+		budget:       newRequestBudget(sc.db, time.Now, zerolog.Nop()),
+		clock:        time.Now,
+		log:          zerolog.Nop(),
 	}
 }
 

@@ -49,9 +49,6 @@ var _ Target = (*quiDriver)(nil)
 // NewQui builds a Target for a qui instance. baseURL is qui's own origin; apiKey is
 // its API key (header X-API-Key).
 func NewQui(baseURL, apiKey string, client *http.Client) Target {
-	if client == nil {
-		client = defaultHTTPClient()
-	}
 	return &quiDriver{jc: apphttp.NewJSONClient(apphttp.JSONClient{
 		Prefix: "appsync: qui",
 		Base:   baseURL,

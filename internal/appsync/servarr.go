@@ -101,9 +101,6 @@ func NewServarr(kind, baseURL, apiKey string, client *http.Client) Target {
 	if !ok {
 		return nil
 	}
-	if client == nil {
-		client = defaultHTTPClient()
-	}
 	return &servarrDriver{
 		kind: kind, anime: spec.anime, indexerPath: spec.path,
 		jc: apphttp.NewJSONClient(apphttp.JSONClient{

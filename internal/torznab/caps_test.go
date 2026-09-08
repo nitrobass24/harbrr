@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	yaml "go.yaml.in/yaml/v3"
+
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 )
@@ -30,11 +32,11 @@ func jackettCategoriesDef() *loader.Definition {
 		ID:    "jackett-categories-oracle",
 		Links: []string{"https://example.com"},
 		Caps: loader.Caps{
-			Categories: loader.NewCategoriesBlock(
-				loader.CategoryEntry{TrackerID: "1", Name: "Movies"},         // integer cat (has children)
-				loader.CategoryEntry{TrackerID: "mov_sd", Name: "Movies/SD"}, // string cat (child cat)
-				loader.CategoryEntry{TrackerID: "33", Name: "Books/Comics"},  // integer cat (child cat)
-			),
+			Categories: categoriesBlock(`
+"1": Movies         # integer cat (has children)
+mov_sd: Movies/SD   # string cat (child cat)
+"33": Books/Comics  # integer cat (child cat)
+`),
 			CategoryMappings: []loader.CategoryMapping{
 				{ID: scalar("44"), Cat: "Console/XBox", Desc: "Console/Xbox_c"},    // -> custom 100044
 				{ID: scalar("con_wii"), Cat: "Console/Wii", Desc: "Console/Wii_c"}, // -> custom 137107
@@ -53,7 +55,7 @@ func jackettModesDef() *loader.Definition {
 		ID:    "jackett-modes-oracle",
 		Links: []string{"https://example.com"},
 		Caps: loader.Caps{
-			Categories: loader.NewCategoriesBlock(),
+			Categories: loader.CategoriesBlock{},
 			Modes: loader.Modes{
 				Search:      []string{"q"},
 				TVSearch:    []string{"q", "season", "ep", "imdbid", "tvdbid", "rid"},
@@ -111,7 +113,7 @@ func TestMarshalCapsGolden(t *testing.T) {
 				ID:    "rawsearch",
 				Links: []string{"https://example.com"},
 				Caps: loader.Caps{
-					Categories:        loader.NewCategoriesBlock(loader.CategoryEntry{TrackerID: "7", Name: "Movies/HD"}),
+					Categories:        categoriesBlock(`"7": Movies/HD`),
 					AllowRawSearch:    boolPtr(true),
 					AllowTVSearchIMDB: boolPtr(true),
 					Modes: loader.Modes{
@@ -246,4 +248,15 @@ func equalSubcats(a, b []capsSubcat) bool {
 		}
 	}
 	return true
+}
+
+// categoriesBlock parses a `caps.categories` YAML mapping into an order-preserving
+// CategoriesBlock, the same path the loader takes for a real definition — the block's
+// fields are unexported, so YAML is the only way to build one.
+func categoriesBlock(src string) loader.CategoriesBlock {
+	var cb loader.CategoriesBlock
+	if err := yaml.Unmarshal([]byte(src), &cb); err != nil {
+		panic("categoriesBlock: " + err.Error())
+	}
+	return cb
 }

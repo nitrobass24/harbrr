@@ -11,11 +11,8 @@ package api
 import (
 	"context"
 	"crypto/rand"
-	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"net/url"
 	"slices"
 	"strings"
@@ -35,18 +32,11 @@ const (
 	sessionOIDCPKCE  = "oidc_pkce_verifier"
 )
 
-// oidcNewProvider/oidcSleep/oidcReadRandom are package vars (not direct stdlib
-// calls) so a test can stub out network discovery, the retry backoff sleep,
-// and the state/PKCE randomness deterministically.
+// oidcNewProvider/oidcSleep are package vars (not direct calls) so a test can stub
+// out network discovery and the retry backoff sleep.
 var (
 	oidcNewProvider = oidc.NewProvider
 	oidcSleep       = time.Sleep
-	oidcReadRandom  = func(b []byte) error {
-		if _, err := io.ReadFull(rand.Reader, b); err != nil {
-			return fmt.Errorf("read random bytes: %w", err)
-		}
-		return nil
-	}
 )
 
 // errOIDCTokenInvalid marks an ID-token verification failure, mapped to 401 by
@@ -152,18 +142,16 @@ func (h *oidcHandler) supportsPKCE() bool {
 
 // configResponse builds the /config response plus the state (and, when the
 // provider supports PKCE, the verifier) the caller must stash in the session.
-func (h *oidcHandler) configResponse() (resp oidcConfigResponse, state, verifier string, err error) {
-	state, err = generateRandomState()
-	if err != nil {
-		return oidcConfigResponse{}, "", "", fmt.Errorf("oidc: generate state: %w", err)
-	}
+func (h *oidcHandler) configResponse() (resp oidcConfigResponse, state, verifier string) {
+	// rand.Text is the stdlib's CSPRNG-backed random string (~130 bits, base32) and
+	// cannot fail; oauth2.GenerateVerifier is oauth2's own RFC 7636 verifier. Both
+	// panic rather than return an error if the system CSPRNG is broken, which is the
+	// only way they can fail and not a condition to paper over.
+	state = rand.Text()
 
 	var authURL string
 	if h.supportsPKCE() {
-		verifier, err = generatePKCEVerifier()
-		if err != nil {
-			return oidcConfigResponse{}, "", "", fmt.Errorf("oidc: generate pkce verifier: %w", err)
-		}
+		verifier = oauth2.GenerateVerifier()
 		authURL = h.oauth.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier))
 	} else {
 		authURL = h.oauth.AuthCodeURL(state)
@@ -174,23 +162,7 @@ func (h *oidcHandler) configResponse() (resp oidcConfigResponse, state, verifier
 		AuthorizationURL:    authURL,
 		DisableBuiltInLogin: h.cfg.DisableBuiltInLogin,
 		IssuerURL:           h.cfg.Issuer,
-	}, state, verifier, nil
-}
-
-func generateRandomState() (string, error) {
-	b := make([]byte, 32)
-	if err := oidcReadRandom(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
-}
-
-func generatePKCEVerifier() (string, error) {
-	b := make([]byte, 32)
-	if err := oidcReadRandom(b); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
+	}, state, verifier
 }
 
 // oidcClaims is the subset of ID-token/userinfo claims the username derivation

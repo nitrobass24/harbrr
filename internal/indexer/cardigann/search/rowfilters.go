@@ -9,9 +9,7 @@ import (
 // Row filters operate on the row SET (RowsBlock.Filters), not on a single field
 // value, so they are exposed as reusable helpers rather than chained through
 // apply. Their APPLICATION to the parsed row set is wired by the selector stage
-// and the end-to-end Definition walk. The registry only needs to KNOW their
-// names (see rowFilterKnown) so the corpus completeness test sees zero unknown
-// filters.
+// and the end-to-end Definition walk.
 
 // andMatchSplit mirrors Jackett's MatchQueryStringAND tokenizer: split on runs
 // of non-word characters (.NET Regex "[^\\w]+"). .NET's \w is Unicode-aware —
@@ -111,24 +109,4 @@ func andMatch(title, keywords string, fold bool) bool {
 // each astral rune as its surrogate pair (two units).
 func utf16Len(s string) int {
 	return len(utf16.Encode([]rune(s)))
-}
-
-// strDump implements the strdump row filter: Jackett only debug-logs the row
-// and keeps it, so this is a passthrough that always retains the row.
-func strDump(_ string) bool {
-	return true
-}
-
-// rowFilterNames is the bounded set of row-filter names from the schema
-// vocabulary. They are recognized (so the corpus test passes) but applied by
-// items 5/10, not by apply.
-var rowFilterNames = map[string]struct{}{
-	"andmatch": {},
-	"strdump":  {},
-}
-
-// rowFilterKnown reports whether name is a recognized row filter.
-func rowFilterKnown(name string) bool {
-	_, ok := rowFilterNames[name]
-	return ok
 }
