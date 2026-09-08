@@ -239,9 +239,28 @@ func TestBlackholeAdd_ReAddOverwritesNoResidue(t *testing.T) {
 	}
 }
 
+// TestBlackholeAdd_KeepsLongNameIntact pins the watch-folder bound at blackhole's own
+// cap rather than the much shorter upload-job one. A scene release name runs well past
+// 60 characters, and a watch folder is a shared directory: two releases truncated to a
+// common prefix would land on one path and silently overwrite each other.
+func TestBlackholeAdd_KeepsLongNameIntact(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	d := newBlackholeDriver(t, domain.BlackholeSettings{TorrentDir: dir})
+	name := strings.Repeat("a", 60) + ".shared.prefix.but.a.different.release" // 98 runes
+
+	if err := d.Add(context.Background(), Payload{Protocol: ProtocolTorrent, Bytes: []byte("x"), Name: name}, AddOptions{}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	names := dirEntries(t, dir)
+	if len(names) != 1 || names[0] != name+".torrent" {
+		t.Fatalf("dir entries = %v, want the full name [%s.torrent]", names, name)
+	}
+}
+
 func TestBlackholeAdd_SanitizesName(t *testing.T) {
 	t.Parallel()
-	longName := strings.Repeat("x", maxReleaseFilenameRunes+50)
+	longName := strings.Repeat("x", maxBlackholeNameRunes+50)
 	tests := []struct {
 		name string
 		in   string
@@ -265,7 +284,7 @@ func TestBlackholeAdd_SanitizesName(t *testing.T) {
 			if strings.ContainsAny(names[0], `/\`) {
 				t.Errorf("filename %q retains a path separator", names[0])
 			}
-			if len(names[0]) > maxReleaseFilenameRunes+len(".torrent") {
+			if len(names[0]) > maxBlackholeNameRunes+len(".torrent") {
 				t.Errorf("filename %q exceeds the length bound", names[0])
 			}
 		})

@@ -150,7 +150,12 @@ func mergeTags(base, extra []string) []string {
 // (POSIX and Windows), the other characters no mainstream filesystem accepts, and
 // control characters are all dropped, and an empty result falls back to a fixed name —
 // a name can never escape the directory it is joined with.
-func releaseFilename(name, ext string) string {
+//
+// maxRunes bounds the derived name (the extension is on top). It is a parameter
+// because the two uses have different stakes: an upload name is a job label the remote
+// client shows, while a blackhole name is a real path in a shared directory, where
+// truncating two releases to the same prefix silently overwrites one with the other.
+func releaseFilename(name, ext string, maxRunes int) string {
 	cleaned := strings.TrimSpace(strings.Map(func(r rune) rune {
 		if r < ' ' || strings.ContainsRune(`/\:*?"<>|`, r) {
 			return -1
@@ -160,12 +165,13 @@ func releaseFilename(name, ext string) string {
 	if cleaned == "" {
 		cleaned = "release"
 	}
-	if runes := []rune(cleaned); len(runes) > maxReleaseFilenameRunes {
-		cleaned = string(runes[:maxReleaseFilenameRunes])
+	if runes := []rune(cleaned); len(runes) > maxRunes {
+		cleaned = string(runes[:maxRunes])
 	}
 	return cleaned + ext
 }
 
-// maxReleaseFilenameRunes keeps the derived name well inside the 255-byte filename
-// limit every mainstream filesystem enforces, even at 4 bytes per rune.
-const maxReleaseFilenameRunes = 60
+// maxUploadNameRunes bounds an upload job name. It keeps the name well inside the
+// 255-byte limit every mainstream filesystem enforces even at 4 bytes per rune, since
+// the remote client may in turn name a file after it.
+const maxUploadNameRunes = 60
