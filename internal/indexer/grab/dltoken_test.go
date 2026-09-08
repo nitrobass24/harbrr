@@ -71,33 +71,6 @@ func TestDLToken_RoundTrip(t *testing.T) {
 	}
 }
 
-func TestDLToken_LegacyPayloads(t *testing.T) {
-	t.Parallel()
-	kr := encryptedKeyring(t)
-	tests := []struct {
-		name       string
-		payload    string
-		categoryID int
-		wantLink   string
-	}{
-		{name: "category and link", payload: "2000;" + dlTestLink, categoryID: 2000, wantLink: dlTestLink},
-		{name: "bare link", payload: dlTestLink, wantLink: dlTestLink},
-		{name: "bare link with semicolon", payload: dlTestLink + ";part=2", wantLink: dlTestLink + ";part=2"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got, err := decodeDLToken(kr, "mytracker", sealedDLTestPayload(t, kr, "mytracker", tt.payload))
-			if err != nil {
-				t.Fatalf("decodeDLToken: %v", err)
-			}
-			if got.CategoryID != tt.categoryID || got.Name != "" || got.Link != tt.wantLink {
-				t.Error("legacy payload decoded incorrectly (link-shaped value withheld)")
-			}
-		})
-	}
-}
-
 func TestDLToken_MalformedPayloadRejected(t *testing.T) {
 	t.Parallel()
 	kr := encryptedKeyring(t)
@@ -110,6 +83,11 @@ func TestDLToken_MalformedPayloadRejected(t *testing.T) {
 		{name: "wrong field type", payload: `{"c":"2000","l":"https://tracker.test/dl"}`},
 		{name: "missing link", payload: `{"c":2000,"n":"Release"}`},
 		{name: "empty link", payload: `{"c":2000,"l":""}`},
+		// The pre-#503 unversioned layouts are no longer accepted: a /dl link minted
+		// before the JSON payload is now rejected (ErrInvalidToken, served as 400) and
+		// needs a re-search.
+		{name: "pre-JSON category and link", payload: "2000;" + dlTestLink},
+		{name: "pre-JSON bare link", payload: dlTestLink},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

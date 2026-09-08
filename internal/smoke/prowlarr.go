@@ -1,6 +1,7 @@
 package smoke
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -146,7 +147,7 @@ func parseProwlarrResults(body []byte) ([]Result, error) {
 			Size:        r.Size,
 			Seeders:     r.Seeders,
 			PublishDate: parsePubDate(r.PublishDate),
-			DownloadURL: firstNonEmpty(r.DownloadURL, r.MagnetURL),
+			DownloadURL: cmp.Or(r.DownloadURL, r.MagnetURL),
 		}
 		for _, cat := range r.Categories {
 			res.Categories = append(res.Categories, cat.ID)
@@ -154,14 +155,4 @@ func parseProwlarrResults(body []byte) ([]Result, error) {
 		out = append(out, res)
 	}
 	return out, nil
-}
-
-// firstNonEmpty returns the first non-empty string, or "".
-func firstNonEmpty(vs ...string) string {
-	for _, v := range vs {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }

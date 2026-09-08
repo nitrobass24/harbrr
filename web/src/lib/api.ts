@@ -19,7 +19,6 @@ export type DefinitionDetail = components["schemas"]["DefinitionDetail"]
 export type AddIndexer = components["schemas"]["AddIndexer"]
 export type UpdateIndexer = components["schemas"]["UpdateIndexer"]
 export type Capabilities = components["schemas"]["Capabilities"]
-export type SearchResults = components["schemas"]["SearchResults"]
 export type AggregateSearchResults = components["schemas"]["AggregateSearchResults"]
 export type SearchMember = components["schemas"]["SearchMember"]
 export type Release = components["schemas"]["Release"]
@@ -80,19 +79,12 @@ export type DownloadClientKind = components["schemas"]["DownloadClient"]["kind"]
 // is the {level: LogLevel} wrapper the get/set endpoints exchange.
 export type LogLevel = components["schemas"]["LogLevel"]["level"]
 
-// FrontendLogLevel is the smaller enum POST /api/logs/frontend accepts (lib/notify.ts's
-// shipping set — no "trace"/"debug"). Pulled from the operation's inline request schema
-// since it has no named components["schemas"] entry.
-export type FrontendLogLevel =
-  operations["postFrontendLog"]["requestBody"]["content"]["application/json"]["level"]
-
 // Response shapes with no named schema component: the spec declares them inline, so
 // they're pulled from the operation's response instead of a components["schemas"] key.
 export type Me = operations["me"]["responses"]["200"]["content"]["application/json"]
 export type SetupState = operations["getSetupStatus"]["responses"]["200"]["content"]["application/json"]
 export type Health = operations["getHealthz"]["responses"]["200"]["content"]["application/json"]
 export type IndexerStatus = operations["indexerStatus"]["responses"]["200"]["content"]["application/json"]
-export type IndexerDiagnostics = operations["indexerDiagnostics"]["responses"]["200"]["content"]["application/json"]
 export type SearchParams = NonNullable<operations["searchIndexer"]["parameters"]["query"]>
 
 export type Credentials = components["schemas"]["Credentials"]

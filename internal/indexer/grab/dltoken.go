@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -16,11 +15,9 @@ import (
 
 const maxDownloadNameBytes = 255 - len(".torrent")
 
-// dlTokenPayload is the sealed grab metadata, marshalled as compact JSON. The
-// leading "{" doubles as the version marker: neither unversioned legacy layout
-// (categoryID;link, or a bare link) can start with it, and a future field is a
-// one-line struct addition instead of a new delimiter format. The payload is
-// AEAD-sealed and never user-visible, so the wire shape costs nothing.
+// dlTokenPayload is the sealed grab metadata, marshalled as compact JSON: a future
+// field is a one-line struct addition instead of a new delimiter format. The payload
+// is AEAD-sealed and never user-visible, so the wire shape costs nothing.
 type dlTokenPayload struct {
 	CategoryID int    `json:"c"`
 	Name       string `json:"n,omitempty"`
@@ -85,12 +82,8 @@ func downloadAttachmentName(name, indexerID string) string {
 	return truncateDownloadName(name, maxDownloadNameBytes)
 }
 
-// parseDLTokenPayload parses the JSON payload and accepts both unversioned legacy
-// layouts.
+// parseDLTokenPayload parses the JSON payload.
 func parseDLTokenPayload(payload string) (dlTokenPayload, error) {
-	if !strings.HasPrefix(payload, "{") {
-		return parseLegacyDLTokenPayload(payload), nil
-	}
 	var p dlTokenPayload
 	if err := json.Unmarshal([]byte(payload), &p); err != nil {
 		return dlTokenPayload{}, errors.New("dl token payload: malformed")
@@ -111,18 +104,6 @@ func parseDLTokenPayload(payload string) (dlTokenPayload, error) {
 		p.Name = ""
 	}
 	return p, nil
-}
-
-func parseLegacyDLTokenPayload(payload string) dlTokenPayload {
-	prefix, rest, ok := strings.Cut(payload, ";")
-	if !ok {
-		return dlTokenPayload{Link: payload}
-	}
-	id, err := strconv.Atoi(prefix)
-	if err != nil {
-		return dlTokenPayload{Link: payload}
-	}
-	return dlTokenPayload{CategoryID: id, Link: rest}
 }
 
 // encodeDLToken seals the pre-resolution download link, release parent category, and a
@@ -149,11 +130,9 @@ func encodeDLToken(kr *secrets.Keyring, indexerID string, categoryID int, title,
 	return base64.RawURLEncoding.EncodeToString([]byte(blob)), nil
 }
 
-// decodeDLToken reverses encodeDLToken. It also decodes the two unversioned legacy
-// payloads, leaving their filename stem empty and their missing category as zero. It
-// fails when the token is malformed or was not minted for indexerID (an AAD mismatch,
-// so a token cannot be replayed across indexers). The error never carries the link or
-// filename stem.
+// decodeDLToken reverses encodeDLToken. It fails when the token is malformed or was
+// not minted for indexerID (an AAD mismatch, so a token cannot be replayed across
+// indexers). The error never carries the link or filename stem.
 func decodeDLToken(kr *secrets.Keyring, indexerID, token string) (dlTokenPayload, error) {
 	raw, err := base64.RawURLEncoding.DecodeString(token)
 	if err != nil {

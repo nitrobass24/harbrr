@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -100,11 +99,7 @@ func runSmoke(cmd *cobra.Command, opt smokeOptions) error {
 		cfg.FallbackQuery = opt.fallbackQuery
 	}
 
-	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	rep, err := smoke.RunSuite(ctx, cfg)
+	rep, err := smoke.RunSuite(cmd.Context(), cfg)
 	if err != nil {
 		return fmt.Errorf("smoke: %w", err)
 	}

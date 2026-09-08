@@ -41,8 +41,8 @@ func (c ttlConfig) resolveTTL(s instanceSettings, q search.Query, count int) tim
 	if s.CacheTTL > 0 {
 		base = s.CacheTTL
 	}
-	if count <= c.thinThreshold && c.thin < base {
-		base = c.thin
+	if count <= c.thinThreshold {
+		base = min(base, c.thin)
 	}
 	return warmFloor(s, q, base)
 }
@@ -65,10 +65,7 @@ func warmFloor(s instanceSettings, q search.Query, ttl time.Duration) time.Durat
 	if !isEmptyQuery(q) {
 		return ttl
 	}
-	if s.WarmInterval > ttl {
-		return s.WarmInterval
-	}
-	return ttl
+	return max(s.WarmInterval, ttl)
 }
 
 // isEmptyQuery reports whether a query is an empty/RSS poll: no free-text Keywords

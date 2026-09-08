@@ -91,7 +91,7 @@ func (q Query) isIDSearch() bool {
 // Movie, Year, then the formatted episode string, single-space-joined with
 // empty tokens skipped. harbrr models Keywords as the already-joined Q term and
 // Jackett initializes .Query.Series/.Query.Movie to null, so the effective
-// tokens are Keywords + Year + episodeSearchString. This joined value is what
+// tokens are Keywords + Year + EpisodeSearchString. This joined value is what
 // keywordsfilters run over — the episode token is part of the filtered base.
 func (q Query) keywords() string {
 	tokens := make([]string, 0, 3)
@@ -101,13 +101,13 @@ func (q Query) keywords() string {
 	if y := strings.TrimSpace(q.Year); y != "" {
 		tokens = append(tokens, y)
 	}
-	if e := q.episodeSearchString(); e != "" {
+	if e := q.EpisodeSearchString(); e != "" {
 		tokens = append(tokens, e)
 	}
 	return strings.Join(tokens, " ")
 }
 
-// episodeSearchString reproduces Jackett's TorznabQuery.GetEpisodeSearchString,
+// EpisodeSearchString reproduces Jackett's TorznabQuery.GetEpisodeSearchString,
 // the formatted season/episode token joined into KeywordTokens and exposed as
 // .Query.Episode. An absent or zero season yields "" (even with an episode
 // set); a daily search — season carries the four-digit year, ep is "MM/dd" —
@@ -119,7 +119,7 @@ func (q Query) keywords() string {
 // Jackett's stripped output is meaningless. Jackett's Season is an int? coerced
 // at request parse, so a non-numeric season string means no season there —
 // treat it as absent.
-func (q Query) episodeSearchString() string {
+func (q Query) EpisodeSearchString() string {
 	season, err := strconv.Atoi(strings.TrimSpace(q.Season))
 	if err != nil || season == 0 {
 		return ""
@@ -135,14 +135,6 @@ func (q Query) episodeSearchString() string {
 		return fmt.Sprintf("S%02dE%02d", season, epNum)
 	}
 	return fmt.Sprintf("S%02dE%s", season, ep)
-}
-
-// EpisodeSearchString exposes the Jackett-parity season/episode token used by the
-// Cardigann engine to native request generators: Sxx, SxxExx, or yyyy.MM.dd for a
-// daily episode. Its documented non-numeric-episode exception must remain aligned
-// with episodeSearchString rather than being changed toward Prowlarr.
-func (q Query) EpisodeSearchString() string {
-	return q.episodeSearchString()
 }
 
 // dailyEpisodePattern guards the daily-episode parse with ParseExact's fixed
@@ -204,7 +196,7 @@ func (q Query) queryMap() map[string]string {
 		set("Season", q.Season)
 	}
 	set("Ep", q.Ep)
-	set("Episode", q.episodeSearchString())
+	set("Episode", q.EpisodeSearchString())
 	set("Year", q.Year)
 	set("Artist", q.Artist)
 	set("Album", q.Album)

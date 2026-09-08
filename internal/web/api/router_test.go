@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/alexedwards/scs/v2"
-	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/autobrr/harbrr/internal/announce"
 	"github.com/autobrr/harbrr/internal/apps"
@@ -167,11 +167,11 @@ func newEnvFull(t *testing.T, cfg api.Config, buildCache func(db *database.DB) *
 	authSvc := auth.NewServiceWithPasswordHasher(db, fastPasswordHasher{})
 	reg := registry.New(db, ldr, keyring, catalog.All(), registryOpts...)
 	source := &fakeAppSource{}
-	appsSvc := apps.NewService(db, keyring, http.DefaultClient, zerolog.Nop())
+	appsSvc := apps.NewService(db, keyring, http.DefaultClient)
 	appSync := appsync.NewService(db, source, appsSvc, authSvc, keyring, http.DefaultClient, zerolog.Nop())
 	announceSvc := announce.NewService(db, appsSvc, authSvc, keyring,
 		announce.DefaultTargetFactory(http.DefaultClient, nil, nil), zerolog.Nop())
-	downloadSvc := download.NewService(db, appsSvc, keyring, http.DefaultClient, zerolog.Nop())
+	downloadSvc := download.NewService(db, appsSvc, keyring, http.DefaultClient)
 	notifySvc := notify.NewService(db, keyring, http.DefaultClient, zerolog.Nop())
 	proxySvc := proxy.NewService(db, keyring)
 	solverSvc := solver.NewService(db, keyring)
@@ -252,17 +252,21 @@ func walkRoutes(t *testing.T, h http.Handler) map[string]struct{} {
 // specOperations collects "METHOD /path" for every operation in the spec.
 func specOperations(t *testing.T) map[string]struct{} {
 	t.Helper()
-	doc, err := openapi3.NewLoader().LoadFromData(swagger.Spec())
-	if err != nil {
+	var doc struct {
+		Paths map[string]map[string]struct{} `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(swagger.Spec(), &doc); err != nil {
 		t.Fatalf("load spec: %v", err)
 	}
+	// A path item holds operations keyed by HTTP method alongside non-operation
+	// keys such as "parameters" and "summary"; only the methods count.
+	methods := map[string]struct{}{"get": {}, "put": {}, "post": {}, "delete": {}, "options": {}, "head": {}, "patch": {}, "trace": {}}
 	out := map[string]struct{}{}
-	for path, item := range doc.Paths.Map() {
-		for method, op := range item.Operations() {
-			if op == nil {
-				continue
+	for path, item := range doc.Paths {
+		for method := range item {
+			if _, ok := methods[method]; ok {
+				out[strings.ToUpper(method)+" "+path] = struct{}{}
 			}
-			out[strings.ToUpper(method)+" "+path] = struct{}{}
 		}
 	}
 	return out

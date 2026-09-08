@@ -90,13 +90,12 @@ func coerceFloatForSize(s string) float32 {
 // lettersOnly returns the Unicode letters of s, mirroring GetBytes's
 // str.Where(char.IsLetter) unit extraction.
 func lettersOnly(s string) string {
-	var b strings.Builder
-	for _, r := range s {
+	return strings.Map(func(r rune) rune {
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
-			b.WriteRune(r)
+			return r
 		}
-	}
-	return b.String()
+		return -1
+	}, s)
 }
 
 // truncBytes converts a float32 byte count to int64 truncating toward zero,

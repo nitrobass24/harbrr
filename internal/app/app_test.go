@@ -262,13 +262,13 @@ func TestRunFlushesCacheBeforeClose(t *testing.T) {
 	}
 }
 
-// TestNewExpiresCacheOnLegacyDefsFingerprintUpgrade is the boot-path sibling of
-// the registry-level EnsureDefsFingerprints tests: it proves New's def-content
-// check (autobrr/harbrr#347, #388) runs during a real boot. A stored LEGACY
-// corpus-wide fingerprint with no per-definition map yet cannot be diffed, so New
-// expires — not deletes — a pre-seeded live cache row once: Fetch stops serving
-// it, but FetchAny (the announce diff / #251 stale-serve seam) still finds it.
-func TestNewExpiresCacheOnLegacyDefsFingerprintUpgrade(t *testing.T) {
+// TestNewExpiresCacheOnChangedDefsFingerprint is the boot-path sibling of the
+// registry-level EnsureDefsFingerprints tests: it proves New's def-content check
+// (autobrr/harbrr#347, #388) runs during a real boot. The seeded instance is backed
+// by a definition the real corpus does not have, so New reads it as disappeared and
+// expires — not deletes — its pre-seeded live cache row: Fetch stops serving it,
+// but FetchAny (the announce diff / #251 stale-serve seam) still finds it.
+func TestNewExpiresCacheOnChangedDefsFingerprint(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	cfg := testConfig(t)
@@ -291,12 +291,11 @@ func TestNewExpiresCacheOnLegacyDefsFingerprintUpgrade(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed cache row: %v", err)
 	}
-	// "cache.defs_fingerprint" mirrors registry.keyCacheDefsFingerprint (unexported
-	// across the package boundary) — the legacy corpus-wide key. Its presence
-	// without "cache.defs_fingerprints" is exactly the upgrade case, whatever the
-	// value is.
-	if err := (database.AppSettings{}).Set(ctx, db, "cache.defs_fingerprint", "legacy-fingerprint", now); err != nil {
-		t.Fatalf("seed legacy fingerprint: %v", err)
+	// "cache.defs_fingerprints" mirrors registry.keyCacheDefsFingerprints (unexported
+	// across the package boundary). Seeding it with the instance's definition id, which
+	// the real corpus does not have, makes that definition read as disappeared on boot.
+	if err := (database.AppSettings{}).Set(ctx, db, "cache.defs_fingerprints", `{"fakedef":"stale"}`, now); err != nil {
+		t.Fatalf("seed defs fingerprints: %v", err)
 	}
 
 	if _, err := New(ctx, Deps{Config: cfg, Logger: zerolog.Nop(), DB: db}); err != nil {

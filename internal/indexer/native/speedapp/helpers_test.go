@@ -92,7 +92,7 @@ func torrentResponse(status int, body string) *stdhttp.Response {
 func testDriver(t *testing.T, doer search.Doer) *driver {
 	t.Helper()
 	built, err := New(native.Params{
-		Def:  Definition(),
+		Def:  retroFlixDefinition(),
 		Cfg:  map[string]string{"email": testEmail, "password": testPassword},
 		Doer: doer,
 	})

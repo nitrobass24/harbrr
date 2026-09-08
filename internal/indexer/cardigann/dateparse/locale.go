@@ -1,8 +1,8 @@
 package dateparse
 
 import (
+	"regexp"
 	"strings"
-	"unicode"
 )
 
 // locale holds the localized month and weekday names for one language, in both
@@ -193,49 +193,17 @@ func lookupLocale(lang string) (locale, bool) {
 // case-insensitive; unknown words pass through for time.Parse to reject loudly.
 func localizeValue(value string, loc locale) string {
 	table := loc.lookupTable()
-	var b strings.Builder
-	b.Grow(len(value))
-	for _, run := range splitWords(value) {
-		if run.isWord {
-			if eng, ok := table[strings.ToLower(run.text)]; ok {
-				b.WriteString(eng)
-				continue
-			}
+	return letterRun.ReplaceAllStringFunc(value, func(word string) string {
+		if eng, ok := table[strings.ToLower(word)]; ok {
+			return eng
 		}
-		b.WriteString(run.text)
-	}
-	return b.String()
+		return word
+	})
 }
 
-// wordRun is a maximal run of either letters (isWord) or non-letters.
-type wordRun struct {
-	text   string
-	isWord bool
-}
-
-// splitWords partitions s into alternating letter / non-letter runs, preserving
-// every byte so the value can be reassembled losslessly.
-func splitWords(s string) []wordRun {
-	var runs []wordRun
-	var cur strings.Builder
-	var curWord bool
-	flush := func() {
-		if cur.Len() > 0 {
-			runs = append(runs, wordRun{text: cur.String(), isWord: curWord})
-			cur.Reset()
-		}
-	}
-	for _, r := range s {
-		isW := unicode.IsLetter(r)
-		if cur.Len() > 0 && isW != curWord {
-			flush()
-		}
-		curWord = isW
-		cur.WriteRune(r)
-	}
-	flush()
-	return runs
-}
+// letterRun matches a maximal run of Unicode letters, i.e. one candidate word.
+// Everything between runs is a separator and passes through untouched.
+var letterRun = regexp.MustCompile(`\pL+`)
 
 // lookupTable builds the localized(lowercased)->English name map for this locale.
 // Full names register before abbreviated so the longer, more specific form wins

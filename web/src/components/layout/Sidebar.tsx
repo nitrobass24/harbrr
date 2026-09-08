@@ -2,7 +2,6 @@ import { Link } from "@tanstack/react-router"
 import { Copyright, Database, ExternalLink, HardDriveDownload, LayoutDashboard, LogOut, RefreshCw, Search, Server, Settings, Shield } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { ThemeControl } from "@/components/layout/ThemeControl"
-import { Badge } from "@/components/ui/badge"
 import { Logo } from "@/components/ui/Logo"
 import { useAuth } from "@/hooks/useAuth"
 
@@ -10,7 +9,6 @@ type NavItem = {
   to: string
   label: string
   Icon: LucideIcon
-  count?: number
 }
 
 const MANAGE: NavItem[] = [
@@ -24,7 +22,7 @@ const SYNC: NavItem[] = [
   { to: "/applications", label: "Applications", Icon: RefreshCw },
 ]
 
-function NavLink({ to, label, Icon, count }: NavItem) {
+function NavLink({ to, label, Icon }: NavItem) {
   return (
     <Link
       to={to}
@@ -35,11 +33,6 @@ function NavLink({ to, label, Icon, count }: NavItem) {
     >
       <Icon className="h-4 w-4" />
       {label}
-      {count !== undefined && (
-        <Badge variant="secondary" className="ml-auto px-1.5 py-0 text-[11px]">
-          {count}
-        </Badge>
-      )}
     </Link>
   )
 }

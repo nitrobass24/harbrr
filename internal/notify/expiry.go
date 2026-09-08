@@ -3,7 +3,7 @@ package notify
 import (
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -30,14 +30,6 @@ const ExpiryThresholdsKey = "expiry.thresholds"
 // configures: an expiry that passes unannounced is the exact failure #399 exists to
 // prevent, so it is not something a bad thresholds value can switch off.
 var defaultExpiryThresholds = []int{30, 14, 7, 1, 0}
-
-// DefaultExpiryThresholds returns a copy of the default lead times for the settings
-// endpoint to report when the operator has set none. A copy, not the slice: the
-// package-level defaults are the fallback every scan reads, and a caller that sorted
-// or appended to them in place would silently retune the feature.
-func DefaultExpiryThresholds() []int {
-	return append([]int(nil), defaultExpiryThresholds...)
-}
 
 // expiryThresholds is the persisted lead-time list. A missing row, or one holding
 // nothing usable, reads back as defaultExpiryThresholds.
@@ -194,27 +186,22 @@ func formatThresholds(days []int) string {
 // because the settings endpoint validates with the very same parser the scan uses,
 // leaving no way to store a value that then reads back as something else.
 func ParseExpiryThresholds(raw string) []int {
-	seen := map[int]bool{}
 	out := []int{}
 	for field := range strings.SplitSeq(raw, ",") {
-		field = strings.TrimSpace(field)
-		if field == "" {
+		// Atoi rejects the empty/whitespace-only field too, so no separate skip.
+		n, err := strconv.Atoi(strings.TrimSpace(field))
+		if err != nil || n < 0 {
 			continue
 		}
-		n, err := strconv.Atoi(field)
-		if err != nil || n < 0 || seen[n] {
-			continue
-		}
-		seen[n] = true
 		out = append(out, n)
 	}
 	if len(out) == 0 {
 		return nil
 	}
-	if !seen[0] {
-		out = append(out, 0)
-	}
-	sort.Sort(sort.Reverse(sort.IntSlice(out)))
+	out = append(out, 0) // 0 (expiry day) always fires; Compact drops it if already listed
+	slices.Sort(out)
+	out = slices.Compact(out)
+	slices.Reverse(out)
 	return out
 }
 

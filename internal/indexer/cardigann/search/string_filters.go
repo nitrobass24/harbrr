@@ -6,6 +6,7 @@ import (
 	"html"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"golang.org/x/text/unicode/norm"
 
@@ -92,10 +93,8 @@ func webUtilityURLDecode(s string) string {
 		case c == '+':
 			buf = append(buf, ' ')
 		case c == '%' && i+2 < len(s):
-			hi, okHi := unhex(s[i+1])
-			lo, okLo := unhex(s[i+2])
-			if okHi && okLo {
-				buf = append(buf, hi<<4|lo)
+			if b, err := strconv.ParseUint(s[i+1:i+3], 16, 8); err == nil {
+				buf = append(buf, byte(b))
 				i += 2
 				continue
 			}
@@ -105,20 +104,6 @@ func webUtilityURLDecode(s string) string {
 		}
 	}
 	return string(buf)
-}
-
-// unhex returns the value of a hex digit byte and whether c is one.
-func unhex(c byte) (byte, bool) {
-	switch {
-	case '0' <= c && c <= '9':
-		return c - '0', true
-	case 'a' <= c && c <= 'f':
-		return c - 'a' + 10, true
-	case 'A' <= c && c <= 'F':
-		return c - 'A' + 10, true
-	default:
-		return 0, false
-	}
 }
 
 // filterURLEncode implements the urlencode filter. Jackett applies
@@ -260,24 +245,16 @@ func queryStringFirst(qs, param string) string {
 // the divergence is latent (no corpus def uses validfilename today). An
 // all-invalid result collapses to "_".
 func filterValidFilename(value string, _ []string) (string, error) {
-	var sb strings.Builder
-	sb.Grow(len(value))
-	changed := false
-	for _, r := range value {
+	out := strings.Map(func(r rune) rune {
 		if isInvalidFilenameRune(r) {
-			changed = true
-			sb.WriteByte('_')
-			continue
+			return '_'
 		}
-		sb.WriteRune(r)
-	}
-	if sb.Len() == 0 {
+		return r
+	}, value)
+	if out == "" {
 		return "_", nil
 	}
-	if !changed {
-		return value, nil
-	}
-	return sb.String(), nil
+	return out, nil
 }
 
 // isInvalidFilenameRune reports whether r is in .NET's Windows
@@ -307,7 +284,8 @@ func filterDiacritics(value string, args []string) (string, error) {
 	var sb strings.Builder
 	sb.Grow(len(decomposed))
 	for _, r := range decomposed {
-		if isNonSpacingMark(r) {
+		// Mn is .NET's UnicodeCategory.NonSpacingMark, the class Jackett strips.
+		if unicode.Is(unicode.Mn, r) {
 			continue
 		}
 		sb.WriteRune(r)

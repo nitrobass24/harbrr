@@ -151,7 +151,7 @@ func parseAbsolute(v, lower string, now time.Time) (time.Time, bool) {
 // far-future seconds timestamp, and we match that exactly rather than guessing
 // milliseconds (which would produce a different instant than Jackett).
 func parseUnix(v string) (time.Time, bool) {
-	if v == "" || !isAllDigits(v) {
+	if v == "" || strings.Trim(v, "0123456789") != "" {
 		return time.Time{}, false
 	}
 	n, err := strconv.ParseInt(v, 10, 64)
@@ -390,19 +390,6 @@ func dayUnitMultiplier(unit string) (float64, bool) {
 	}
 }
 
-// isAllDigits reports whether s is non-empty and every byte is an ASCII digit.
-func isAllDigits(s string) bool {
-	if s == "" {
-		return false
-	}
-	for i := 0; i < len(s); i++ {
-		if s[i] < '0' || s[i] > '9' {
-			return false
-		}
-	}
-	return true
-}
-
 // primarySubtag lowercases lang and returns its primary subtag ("ru-RU" -> "ru").
 func primarySubtag(lang string) string {
 	key := strings.ToLower(lang)
@@ -412,64 +399,47 @@ func primarySubtag(lang string) string {
 	return key
 }
 
-// relLocale maps localized relative-time terms to their English equivalents so
-// the English-based parseTimeAgo/parseNamedDay paths handle them.
-type relLocale struct {
-	replacements [][2]string
+// relReplacement is one localized relative-time term and its English form. The
+// term matches case-insensitively as an embedded substring (e.g. "часа" is
+// rewritten via "час"), so feed casing (Вчера/вчера) is handled uniformly.
+type relReplacement struct {
+	term *regexp.Regexp
+	repl string
 }
 
-// relLocales covers languages whose feeds the corpus does NOT pre-normalize for
-// relative times. Russian is the documented case (назад/вчера/сегодня). Order
-// matters: longer phrases first.
-var relLocales = map[string]relLocale{
-	"ru": {replacements: [][2]string{
-		{"только что", "now"},
-		{"сейчас", "now"},
-		{"назад", "ago"},
-		{"вчера", "yesterday"},
-		{"сегодня", "today"},
-		{"завтра", "tomorrow"},
-		{"секунд", "sec"},
-		{"минут", "min"},
-		{"час", "hour"},
-		{"дн", "day"},
-		{"день", "day"},
-		{"недел", "week"},
-		{"месяц", "month"},
-		{"год", "year"},
-		{"лет", "year"},
-	}},
+func relTerm(term, repl string) relReplacement {
+	return relReplacement{regexp.MustCompile(`(?i)` + regexp.QuoteMeta(term)), repl}
 }
 
-// applyRelLocale rewrites localized relative terms in v to English, case-folding
-// the search so feed casing (Вчера/вчера) is handled uniformly.
-func applyRelLocale(v string, loc relLocale) string {
-	for _, r := range loc.replacements {
-		v = replaceFold(v, r[0], r[1])
+// relLocales maps localized relative-time terms to their English equivalents so
+// the English-based parseTimeAgo/parseNamedDay paths handle them. It covers
+// languages whose feeds the corpus does NOT pre-normalize for relative times;
+// Russian is the documented case (назад/вчера/сегодня). Order matters:
+// longer phrases first.
+var relLocales = map[string][]relReplacement{
+	"ru": {
+		relTerm("только что", "now"),
+		relTerm("сейчас", "now"),
+		relTerm("назад", "ago"),
+		relTerm("вчера", "yesterday"),
+		relTerm("сегодня", "today"),
+		relTerm("завтра", "tomorrow"),
+		relTerm("секунд", "sec"),
+		relTerm("минут", "min"),
+		relTerm("час", "hour"),
+		relTerm("дн", "day"),
+		relTerm("день", "day"),
+		relTerm("недел", "week"),
+		relTerm("месяц", "month"),
+		relTerm("год", "year"),
+		relTerm("лет", "year"),
+	},
+}
+
+// applyRelLocale rewrites localized relative terms in v to English.
+func applyRelLocale(v string, loc []relReplacement) string {
+	for _, r := range loc {
+		v = r.term.ReplaceAllLiteralString(v, r.repl)
 	}
 	return v
-}
-
-// replaceFold replaces all case-insensitive occurrences of old in s with repl.
-// Used for relative-term localization, where embedded-substring replacement is
-// desired (e.g. "часа" -> match "час"). old is assumed non-empty.
-func replaceFold(s, old, repl string) string {
-	if old == "" {
-		return s
-	}
-	lowS := strings.ToLower(s)
-	lowOld := strings.ToLower(old)
-	var b strings.Builder
-	for {
-		idx := strings.Index(lowS, lowOld)
-		if idx < 0 {
-			b.WriteString(s)
-			break
-		}
-		b.WriteString(s[:idx])
-		b.WriteString(repl)
-		s = s[idx+len(old):]
-		lowS = lowS[idx+len(lowOld):]
-	}
-	return b.String()
 }

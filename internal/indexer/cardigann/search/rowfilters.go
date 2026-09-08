@@ -3,6 +3,7 @@ package search
 import (
 	"regexp"
 	"strings"
+	"unicode/utf16"
 )
 
 // Row filters operate on the row SET (RowsBlock.Filters), not on a single field
@@ -107,12 +108,5 @@ func andMatch(title, keywords string, fold bool) bool {
 // utf16Len is .NET string Length: the number of UTF-16 code units, counting
 // each astral rune as its surrogate pair (two units).
 func utf16Len(s string) int {
-	n := 0
-	for _, r := range s {
-		n++
-		if r > 0xFFFF {
-			n++
-		}
-	}
-	return n
+	return len(utf16.Encode([]rune(s)))
 }

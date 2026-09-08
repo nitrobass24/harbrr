@@ -68,7 +68,7 @@ func (d *nzbgetDriver) Add(ctx context.Context, p Payload, opts AddOptions) erro
 		return fmt.Errorf("download: nzbget: %w", ErrURLRequired)
 	}
 
-	if _, err := d.client.AddFromURL(ctx, nzbget.AddNzbRequest{URL: p.URL, Category: category}); err != nil {
+	if err := d.client.AddFromURL(ctx, nzbget.AddNzbRequest{URL: p.URL, Category: category}); err != nil {
 		// The nzb URL carries a harbrr API key (a sealed /dl link) and rides in the
 		// RPC request body (not the request URL), but a transport failure still
 		// surfaces as a *url.Error whose .URL is the jsonrpc endpoint — ScrubURLError
@@ -86,7 +86,7 @@ func (d *nzbgetDriver) Add(ctx context.Context, p Payload, opts AddOptions) erro
 // (which carries NZBGet's Basic credentials in neither URL nor body) is scrubbed, for
 // the same defense-in-depth reason as the URL path.
 func (d *nzbgetDriver) appendContent(ctx context.Context, p Payload, category string) error {
-	_, err := d.client.AddFromContent(ctx, nzbget.AddNzbContentRequest{
+	err := d.client.AddFromContent(ctx, nzbget.AddNzbContentRequest{
 		Filename: releaseFilename(p.Name, ".nzb"),
 		Content:  p.Bytes,
 		Category: category,

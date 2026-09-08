@@ -11,6 +11,7 @@ import (
 	"github.com/PuerkitoBio/goquery"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/httpx"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/template"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 )
@@ -231,7 +232,7 @@ func (e *Executor) resolveFormTarget(l *loader.Login, form *goquery.Selection, l
 // Form body uses url.Values.Encode — see postForm (methods.go) for the deliberate
 // login form-encoding divergence note.
 func (e *Executor) postFormAbsolute(ctx context.Context, def *loader.Definition, target string, pairs url.Values, secrets []string) error {
-	headers := mergeFormHeaders(loginHeaders(def))
+	headers := httpx.WithFormContentType(loginHeaders(def))
 	encoded := pairs.Encode()
 	return e.submitLoginPost(ctx, def.Login, target, encoded, headers, secrets)
 }

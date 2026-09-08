@@ -1,7 +1,6 @@
 package torznab
 
 import (
-	"bytes"
 	"encoding/xml"
 	"fmt"
 	"strings"
@@ -25,12 +24,8 @@ func marshalDocument(root string, v any) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("torznab: marshaling %s document: %w", root, err)
 	}
-	var buf bytes.Buffer
-	buf.Grow(len(xml.Header) + len(body) + 1)
-	buf.WriteString(xml.Header) // <?xml version="1.0" encoding="UTF-8"?>\n
-	buf.Write(body)
-	buf.WriteByte('\n')
-	return buf.Bytes(), nil
+	// xml.Header is `<?xml version="1.0" encoding="UTF-8"?>\n`.
+	return append(append([]byte(xml.Header), body...), '\n'), nil
 }
 
 // sanitizeXMLText strips the code points Jackett removes via

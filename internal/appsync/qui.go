@@ -2,7 +2,6 @@ package appsync
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"strconv"
 
@@ -85,8 +84,8 @@ func (q *quiDriver) List(ctx context.Context) ([]RemoteIndexer, error) {
 	out := make([]RemoteIndexer, 0, len(raw))
 	for _, r := range raw {
 		out = append(out, RemoteIndexer{
-			RemoteID: strconv.Itoa(r.ID), Name: r.Name,
-			FeedURL: r.BaseURL, ManagedBySlug: slugFromFeedURL(r.BaseURL),
+			RemoteID: strconv.Itoa(r.ID),
+			FeedURL:  r.BaseURL, ManagedBySlug: slugFromFeedURL(r.BaseURL),
 		})
 	}
 	return out, nil
@@ -108,22 +107,4 @@ func (q *quiDriver) Update(ctx context.Context, remoteID string, d DesiredIndexe
 func (q *quiDriver) Delete(ctx context.Context, remoteID string) error {
 	_, err := q.jc.Do(ctx, http.MethodDelete, quiIndexersPath+"/"+remoteID, nil, nil)
 	return err
-}
-
-// Test validates a configured indexer by id (qui tests stored indexers, not a posted
-// body). The reconciler's connection-level Test path resolves the remote id first; a
-// DesiredIndexer with no known remote id cannot be tested in isolation, so Create is
-// the effective probe. Here Test is best-effort against an existing row.
-func (q *quiDriver) Test(ctx context.Context, d DesiredIndexer) error {
-	remote, err := q.List(ctx)
-	if err != nil {
-		return err
-	}
-	for _, r := range remote {
-		if r.ManagedBySlug == d.Slug {
-			_, err := q.jc.Do(ctx, http.MethodPost, quiIndexersPath+"/"+r.RemoteID+"/test", nil, nil)
-			return err
-		}
-	}
-	return fmt.Errorf("appsync: qui: no indexer for slug %q to test", d.Slug)
 }

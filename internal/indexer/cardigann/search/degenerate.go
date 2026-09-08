@@ -65,13 +65,5 @@ func degenerateTerm(term string) bool {
 
 // yearToken reports whether tok is a bare four-digit number.
 func yearToken(tok string) bool {
-	if len(tok) != yearLen {
-		return false
-	}
-	for _, r := range tok {
-		if r < '0' || r > '9' {
-			return false
-		}
-	}
-	return true
+	return len(tok) == yearLen && strings.Trim(tok, "0123456789") == ""
 }

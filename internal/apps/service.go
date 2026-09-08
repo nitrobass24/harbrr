@@ -14,8 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rs/zerolog"
-
 	"github.com/autobrr/harbrr/internal/connresource"
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
@@ -38,17 +36,16 @@ type Service struct {
 	client  *http.Client
 	clock   func() time.Time
 	life    *connresource.Lifecycle[domain.App]
-	log     zerolog.Logger
 }
 
 // NewService wires the apps service. client is used only by the qui-instance proxy
 // (nil installs a timeout-bounded default); clock is injectable for deterministic
 // tests (assigning to the returned Service's clock field also retunes its Lifecycle).
-func NewService(db dbinterface.Querier, keyring *secrets.Keyring, client *http.Client, log zerolog.Logger) *Service {
+func NewService(db dbinterface.Querier, keyring *secrets.Keyring, client *http.Client) *Service {
 	if client == nil {
 		client = &http.Client{Timeout: httpClientTimeout}
 	}
-	s := &Service{db: db, keyring: keyring, client: client, clock: time.Now, log: log}
+	s := &Service{db: db, keyring: keyring, client: client, clock: time.Now}
 	s.life = connresource.New[domain.App](db, keyring, func() time.Time { return s.clock() })
 	return s
 }
@@ -94,27 +91,10 @@ func (s *Service) Resolve(ctx context.Context, ref Ref) (domain.App, error) {
 	case err == nil:
 		return s.reconcile(ctx, app, ref)
 	case errors.Is(err, database.ErrNotFound):
-		return s.createOrAdopt(ctx, ref)
+		return s.create(ctx, ref)
 	default:
 		return domain.App{}, fmt.Errorf("apps: resolve by identity: %w", err)
 	}
-}
-
-// createOrAdopt creates the app, or — on a concurrent create losing the unique race —
-// re-looks-up the winner and reconciles the caller's inline fields into it.
-func (s *Service) createOrAdopt(ctx context.Context, ref Ref) (domain.App, error) {
-	app, err := s.create(ctx, ref)
-	if err == nil {
-		return app, nil
-	}
-	if !errors.Is(err, domain.ErrConflict) {
-		return domain.App{}, err
-	}
-	existing, lookupErr := s.repo.GetAppByIdentity(ctx, s.db, ref.Kind, ref.BaseURL)
-	if lookupErr != nil {
-		return domain.App{}, fmt.Errorf("apps: re-lookup after concurrent create: %w", lookupErr)
-	}
-	return s.reconcile(ctx, existing, ref)
 }
 
 // create inserts a new App and seals its credential under the App's own id.

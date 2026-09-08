@@ -1,16 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { notifyError, notifyInfo, notifySuccess, notifyWarn } from "./notify"
+import { notifyError, notifySuccess, notifyWarn } from "./notify"
 import { stubApi } from "@/test/stubApi"
 
-const { toastError, toastWarning, toastSuccess, toastInfo } = vi.hoisted(() => ({
+const { toastError, toastWarning, toastSuccess } = vi.hoisted(() => ({
   toastError: vi.fn(),
   toastWarning: vi.fn(),
   toastSuccess: vi.fn(),
-  toastInfo: vi.fn(),
 }))
 
 vi.mock("sonner", () => ({
-  toast: { error: toastError, warning: toastWarning, success: toastSuccess, info: toastInfo },
+  toast: { error: toastError, warning: toastWarning, success: toastSuccess },
 }))
 
 const SHIP = "POST /api/logs/frontend"
@@ -26,7 +25,6 @@ describe("notify", () => {
     toastError.mockClear()
     toastWarning.mockClear()
     toastSuccess.mockClear()
-    toastInfo.mockClear()
   })
 
   it("notifyError shows the toast and ships error level with the error's message as context", async () => {
@@ -64,14 +62,6 @@ describe("notify", () => {
     const stub = stubApi({ [SHIP]: null })
     notifySuccess("Indexer deleted")
     expect(toastSuccess).toHaveBeenCalledWith("Indexer deleted")
-    await settle()
-    expect(stub.calls(SHIP)).toHaveLength(0)
-  })
-
-  it("notifyInfo shows the toast and never ships", async () => {
-    const stub = stubApi({ [SHIP]: null })
-    notifyInfo("Sync scheduled")
-    expect(toastInfo).toHaveBeenCalledWith("Sync scheduled")
     await settle()
     expect(stub.calls(SHIP)).toHaveLength(0)
   })

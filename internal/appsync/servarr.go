@@ -176,8 +176,8 @@ func (s *servarrDriver) List(ctx context.Context) ([]RemoteIndexer, error) {
 		}
 		feedURL := fieldString(r.Fields, "baseUrl")
 		out = append(out, RemoteIndexer{
-			RemoteID: strconv.Itoa(r.ID), Name: r.Name,
-			FeedURL: feedURL, ManagedBySlug: slugFromFeedURL(feedURL),
+			RemoteID: strconv.Itoa(r.ID),
+			FeedURL:  feedURL, ManagedBySlug: slugFromFeedURL(feedURL),
 		})
 	}
 	return out, nil
@@ -204,11 +204,6 @@ func (s *servarrDriver) Update(ctx context.Context, remoteID string, d DesiredIn
 
 func (s *servarrDriver) Delete(ctx context.Context, remoteID string) error {
 	_, err := s.jc.Do(ctx, http.MethodDelete, s.indexerPath+"/"+remoteID, nil, nil)
-	return err
-}
-
-func (s *servarrDriver) Test(ctx context.Context, d DesiredIndexer) error {
-	_, err := s.jc.Do(ctx, http.MethodPost, s.indexerPath+"/test", s.buildIndexer(d), nil)
 	return err
 }
 

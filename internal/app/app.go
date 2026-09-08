@@ -131,13 +131,13 @@ func (a *App) build(ctx context.Context, httpClient *http.Client) error {
 		return err
 	}
 	a.initAuth()
-	a.apps = apps.NewService(a.db, a.keyring, httpClient, a.log)
+	a.apps = apps.NewService(a.db, a.keyring, httpClient)
 	a.initRegistry(ctx, httpClient)
 	a.initSyncServices(httpClient)
 	a.applyPersistedLogLevel(ctx)
 	a.initAdultCategories(ctx)
 	a.proxy = proxy.NewService(a.db, a.keyring)
-	a.download = download.NewService(a.db, a.apps, a.keyring, httpClient, a.log)
+	a.download = download.NewService(a.db, a.apps, a.keyring, httpClient)
 	a.solver = solver.NewService(a.db, a.keyring)
 	a.backup = backup.NewService(a.db, a.keyring, a.apps, a.log)
 

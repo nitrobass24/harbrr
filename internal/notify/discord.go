@@ -1,9 +1,11 @@
 package notify
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 	"unicode/utf8"
 )
@@ -74,9 +76,9 @@ func (d *discord) Send(ctx context.Context, e Event) error {
 		Color:       discordColorFailure,
 		Timestamp:   e.Timestamp.UTC().Format(time.RFC3339),
 		Fields: []discordEmbedField{
-			{Name: "Indexer", Value: truncate(fallback(e.Indexer, "unknown"), discordFieldValueMax), Inline: true},
-			{Name: "Kind", Value: truncate(fallback(e.Kind, "unknown"), discordFieldValueMax), Inline: true},
-			{Name: "Event", Value: truncate(fallback(e.Event, "unknown"), discordFieldValueMax), Inline: true},
+			{Name: "Indexer", Value: truncate(cmp.Or(e.Indexer, "unknown"), discordFieldValueMax), Inline: true},
+			{Name: "Kind", Value: truncate(cmp.Or(e.Kind, "unknown"), discordFieldValueMax), Inline: true},
+			{Name: "Event", Value: truncate(cmp.Or(e.Event, "unknown"), discordFieldValueMax), Inline: true},
 		},
 	}
 	return d.p.post(ctx, discordPayload{Embeds: []discordEmbed{embed}})
@@ -85,25 +87,7 @@ func (d *discord) Send(ctx context.Context, e Event) error {
 // humanKind renders a health-event kind for the embed title (auth_failure ->
 // "auth failure"); an empty kind reads as a generic failure.
 func humanKind(kind string) string {
-	if kind == "" {
-		return "failed"
-	}
-	out := make([]rune, 0, len(kind))
-	for _, r := range kind {
-		if r == '_' {
-			r = ' '
-		}
-		out = append(out, r)
-	}
-	return string(out)
-}
-
-// fallback returns v, or def when v is empty (Discord rejects an empty field value).
-func fallback(v, def string) string {
-	if v == "" {
-		return def
-	}
-	return v
+	return cmp.Or(strings.ReplaceAll(kind, "_", " "), "failed")
 }
 
 // truncate caps s to at most limit runes, appending a single ellipsis rune ('…') when it

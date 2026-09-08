@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os/signal"
 	"syscall"
@@ -47,13 +46,9 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("init logger: %w", err)
 	}
 
-	// Derive from the command context so tests can drive shutdown; production has
-	// no parent context and relies on the signal handler.
-	base := cmd.Context()
-	if base == nil {
-		base = context.Background()
-	}
-	ctx, stop := signal.NotifyContext(base, syscall.SIGINT, syscall.SIGTERM)
+	// Derive from the command context so tests can drive shutdown; production runs
+	// under cobra's Background default and relies on the signal handler.
+	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	a, err := app.New(ctx, app.Deps{Config: cfg, Logger: log})
