@@ -161,7 +161,7 @@ func (a *indexerAdapter) Search(ctx context.Context, q search.Query) ([]*normali
 		releases []*normalizer.Release
 		err      error
 	)
-	cacheEnabled := a.cache != nil && a.cache.tuning.Load().enabled
+	cacheEnabled := a.cache != nil && a.cache.tuning.Load().Enabled
 	if cacheEnabled {
 		releases, err = a.cache.search(ctx, a.instanceID, a.settings, a.builtEpoch, a.budgetedLiveSearch, a.SupportsOffsetPaging(), q)
 	} else {

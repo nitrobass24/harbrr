@@ -10,12 +10,12 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/core"
 )
 
-func testTTLConfig() ttlConfig {
-	return ttlConfig{
-		rss:           5 * time.Minute,
-		keyword:       30 * time.Minute,
-		thin:          2 * time.Minute,
-		thinThreshold: 5,
+func testTTLConfig() CacheConfigView {
+	return CacheConfigView{
+		RSSTTL:        5 * time.Minute,
+		KeywordTTL:    30 * time.Minute,
+		ThinTTL:       2 * time.Minute,
+		ThinThreshold: 5,
 	}
 }
 

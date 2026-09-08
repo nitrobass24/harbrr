@@ -14,7 +14,7 @@ import (
 // keep working across a cleanup tick — and reaps it once the grace has fully elapsed.
 func TestCleanupExpired_GraceRetainsRecentlyExpired(t *testing.T) {
 	t.Parallel()
-	ttl := ttlConfig{rss: time.Minute, keyword: time.Minute, thin: time.Minute, thinThreshold: 100}
+	ttl := CacheConfigView{RSSTTL: time.Minute, KeywordTTL: time.Minute, ThinTTL: time.Minute, ThinThreshold: 100}
 	sc, instID, clk := testCache(t, ttl, 0)
 	ctx := context.Background()
 	q := search.Query{Keywords: "x"}

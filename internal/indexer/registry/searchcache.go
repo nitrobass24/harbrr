@@ -49,7 +49,7 @@ type SearchCache struct {
 	// tuning is the live, atomically-swappable config (TTL tiers, thin threshold,
 	// refresh-ahead, enabled). Read per request (lock-free) so the global knobs are
 	// runtime-tunable; seeded from the config file, overlaid by LoadOverrides.
-	tuning atomic.Pointer[cacheTuning]
+	tuning atomic.Pointer[CacheConfigView]
 	// cfgMu serializes the read-merge-validate-persist-swap of UpdateConfig (and the
 	// boot LoadOverrides) so concurrent updates can't lose each other's fields; the
 	// per-request read path stays lock-free on tuning.
@@ -168,13 +168,11 @@ func (c *SearchCache) bumpInstanceEpoch(instanceID int64) {
 	c.epochMu.Unlock()
 }
 
-// newSearchCache builds the cache layer. db is the shared store handle, t the
-// initial (config-seeded) tuning, clock the reference clock, and log a logger that
-// only ever sees cache keys and redacted errors. The tuning is held atomically so
-// SetConfig can swap it at runtime. Unexported: t is the unexported cacheTuning, so
-// this is unconstructable outside the package anyway; NewSearchCacheFromConfig is
-// the exported entry point.
-func newSearchCache(db dbinterface.Querier, t cacheTuning, clock func() time.Time, log zerolog.Logger) *SearchCache {
+// NewSearchCacheFromConfig builds the cache layer. db is the shared store handle, v
+// the initial (config-seeded) tuning, clock the reference clock, and log a logger
+// that only ever sees cache keys and redacted errors. The tuning is held atomically
+// so UpdateConfig can swap it at runtime.
+func NewSearchCacheFromConfig(db dbinterface.Querier, v CacheConfigView, clock func() time.Time, log zerolog.Logger) *SearchCache {
 	if clock == nil {
 		clock = time.Now
 	}
@@ -187,7 +185,7 @@ func newSearchCache(db dbinterface.Querier, t cacheTuning, clock func() time.Tim
 		announced:      newAnnounceWindow(),
 		instanceEpochs: make(map[int64]uint64),
 	}
-	c.tuning.Store(&t)
+	c.tuning.Store(&v)
 	// Start the rolling-window coverage clock now: the buckets are in-memory, so
 	// "since" is what keeps a 30d view of a one-hour-old process honest.
 	c.window.reset(clock())
@@ -198,13 +196,6 @@ func newSearchCache(db dbinterface.Querier, t cacheTuning, clock func() time.Tim
 // constructor arg) because the announce service is built after the cache in cmd/harbrr;
 // a nil sink leaves the tap a no-op. Called once at wiring time, before serving.
 func (c *SearchCache) SetAnnounceSink(sink AnnounceSink) { c.announceSink = sink }
-
-// NewSearchCacheFromConfig builds a SearchCache from a CacheConfigView. It is
-// the exported entry point for cmd/harbrr; newSearchCache stays internal so the
-// ttlConfig tier struct does not leak across the package boundary.
-func NewSearchCacheFromConfig(db dbinterface.Querier, v CacheConfigView, clock func() time.Time, log zerolog.Logger) *SearchCache {
-	return newSearchCache(db, v.tuning(), clock, log)
-}
 
 // liveSearchFn is the live-fetch seam the cache drives on a miss or a refresh: the
 // adapter's liveSearch (driver call + stats + health + id-wrap), returning the FULL
@@ -316,7 +307,7 @@ func (c *SearchCache) missPath(ctx context.Context, op cacheOp) ([]*normalizer.R
 	// live config means a runtime disable (negative_ttl -> 0) stops suppression at
 	// once, without waiting for already-open windows to lapse. fetchLive self-gates
 	// the same way, so disabling also halts new trips.
-	if c.tuning.Load().ttl.negative > 0 {
+	if c.tuning.Load().NegativeTTL > 0 {
 		if rerr := c.breaker.replay(op.instanceID, c.clock()); rerr != nil {
 			c.breakerSuppressed.Add(1)
 			c.counters(op.instanceID).suppressed.Add(1)
@@ -355,7 +346,7 @@ func (c *SearchCache) tripBreaker(ctx context.Context, instanceID int64, err err
 	if errors.Is(err, core.ErrCircuitOpen) {
 		return
 	}
-	until, ok := classifyBreakerError(err, c.tuning.Load().ttl.negative, c.clock())
+	until, ok := classifyBreakerError(err, c.tuning.Load().NegativeTTL, c.clock())
 	if !ok {
 		return
 	}
@@ -405,7 +396,7 @@ func (c *SearchCache) serveHit(ctx context.Context, op cacheOp, entry database.S
 // live fetch. resolveTTL's own thin clamp and warm floor apply exactly as they
 // would to a fresh store of this same result, by construction.
 func (c *SearchCache) effectiveExpiry(entry database.SearchCacheEntry, settings instanceSettings, q search.Query) time.Time {
-	fresh := entry.CachedAt.Add(c.tuning.Load().ttl.resolveTTL(settings, q, entry.TotalResults))
+	fresh := entry.CachedAt.Add(c.tuning.Load().resolveTTL(settings, q, entry.TotalResults))
 	if fresh.Before(entry.ExpiresAt) {
 		return fresh
 	}
@@ -569,7 +560,7 @@ func (c *SearchCache) liveAndStoreRecording(ctx context.Context, op cacheOp) ([]
 // genuine live-call error trips. The error live returns is already wrapped with the
 // indexer id by the adapter's liveSearch; the caller redacts it.
 func (c *SearchCache) fetchLive(ctx context.Context, instanceID int64, live liveSearchFn, q search.Query) ([]*normalizer.Release, error) {
-	if c.tuning.Load().ttl.negative > 0 {
+	if c.tuning.Load().NegativeTTL > 0 {
 		if rerr := c.breaker.replay(instanceID, c.clock()); rerr != nil {
 			c.breakerSuppressed.Add(1)
 			c.counters(instanceID).suppressed.Add(1)
@@ -616,7 +607,7 @@ func (c *SearchCache) storeBestEffort(ctx context.Context, op cacheOp, releases 
 		return false, time.Time{}
 	}
 	now := c.clock()
-	ttl := c.tuning.Load().ttl.resolveTTL(op.settings, op.q, len(releases))
+	ttl := c.tuning.Load().resolveTTL(op.settings, op.q, len(releases))
 	entry := database.SearchCacheEntry{
 		CacheKey:     op.key,
 		InstanceID:   op.instanceID,
@@ -733,7 +724,7 @@ func (c *SearchCache) FlushTouches(ctx context.Context) {
 // effective equals the stored expiry, so behavior is unchanged. A non-positive
 // percentage disables refresh-ahead.
 func (c *SearchCache) shouldRefreshAhead(entry database.SearchCacheEntry, effective time.Time) bool {
-	refreshAt := c.tuning.Load().refreshAt
+	refreshAt := c.tuning.Load().RefreshAheadPct
 	if refreshAt <= 0 {
 		return false
 	}

@@ -160,9 +160,9 @@ func TestSWRRefreshUsesSeparateSingleflightKey(t *testing.T) {
 // window — long enough to still be open well past the refresh-ahead window this
 // file's breaker tests advance into (25m), unlike searchcache_breaker_test.go's
 // breakerTTL (a 1m window, chosen for its own tests' faster recovery timing).
-var swrBreakerTTL = ttlConfig{
-	rss: 5 * time.Minute, keyword: 30 * time.Minute, thin: 2 * time.Minute,
-	thinThreshold: 5, negative: time.Hour,
+var swrBreakerTTL = CacheConfigView{
+	RSSTTL: 5 * time.Minute, KeywordTTL: 30 * time.Minute, ThinTTL: 2 * time.Minute,
+	ThinThreshold: 5, NegativeTTL: time.Hour,
 }
 
 // TestSWRSkipsWhenBreakerOpen proves a stale-while-revalidate refresh is spared by an

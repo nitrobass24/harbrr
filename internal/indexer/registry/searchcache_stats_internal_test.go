@@ -168,7 +168,7 @@ func TestHitsMonotoneAcrossCleanup(t *testing.T) {
 	// Advance past the full keyword TTL (a safe upper bound regardless of which tier
 	// applied) PLUS the cleanup tick's reap grace (#343 retains expired rows for
 	// cacheReapGrace before deleting them), so the tick genuinely reaps the row.
-	advance(clk, keywordTTL.keyword+cacheReapGrace+time.Minute)
+	advance(clk, keywordTTL.KeywordTTL+cacheReapGrace+time.Minute)
 	if _, err := sc.CleanupExpired(ctx); err != nil {
 		t.Fatalf("cleanup: %v", err)
 	}

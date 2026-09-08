@@ -76,7 +76,7 @@ func (f *fakeInner) callCount() int64 { return f.calls.Load() }
 
 // testCache builds a SearchCache over a migrated in-memory DB with an instance row,
 // returning the cache, the instance id, and a settable clock pointer.
-func testCache(t *testing.T, ttl ttlConfig, refreshPct int) (*SearchCache, int64, *atomic.Pointer[time.Time]) {
+func testCache(t *testing.T, ttl CacheConfigView, refreshPct int) (*SearchCache, int64, *atomic.Pointer[time.Time]) {
 	t.Helper()
 	db := dbtest.OpenMigrated(t)
 	instID := insertTestInstance(t, db)
@@ -84,8 +84,18 @@ func testCache(t *testing.T, ttl ttlConfig, refreshPct int) (*SearchCache, int64
 	var clk atomic.Pointer[time.Time]
 	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
 	clk.Store(&now)
-	sc := newSearchCache(db, cacheTuning{enabled: true, ttl: ttl, refreshAt: refreshPct, cleanup: time.Hour}, func() time.Time { return *clk.Load() }, zerolog.Nop())
+	sc := NewSearchCacheFromConfig(db, testConfig(ttl, refreshPct), func() time.Time { return *clk.Load() }, zerolog.Nop())
 	return sc, instID, &clk
+}
+
+// testConfig completes a TTL-tier fixture into the full live config testCache runs
+// with: caching on, the given refresh-ahead percentage, and a cleanup interval long
+// enough that the reaper never fires mid-test.
+func testConfig(ttl CacheConfigView, refreshPct int) CacheConfigView {
+	ttl.Enabled = true
+	ttl.RefreshAheadPct = refreshPct
+	ttl.CleanupInterval = time.Hour
+	return ttl
 }
 
 // insertTestInstance inserts a minimal enabled instance so cache rows satisfy the
@@ -115,7 +125,7 @@ func relSet(titles ...string) []*normalizer.Release {
 	return out
 }
 
-var keywordTTL = ttlConfig{rss: 5 * time.Minute, keyword: 30 * time.Minute, thin: 2 * time.Minute, thinThreshold: 5}
+var keywordTTL = CacheConfigView{RSSTTL: 5 * time.Minute, KeywordTTL: 30 * time.Minute, ThinTTL: 2 * time.Minute, ThinThreshold: 5}
 
 // TestCacheHitDoesNotCallInner proves a second identical search is served from the
 // cache without touching the wrapped indexer.
@@ -510,7 +520,7 @@ func TestDegradeOpenCoalesces(t *testing.T) {
 	}
 
 	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
-	sc := newSearchCache(db, cacheTuning{enabled: true, ttl: keywordTTL, cleanup: time.Hour}, func() time.Time { return now }, zerolog.Nop())
+	sc := NewSearchCacheFromConfig(db, testConfig(keywordTTL, 0), func() time.Time { return now }, zerolog.Nop())
 
 	gate := make(chan struct{})
 	inner := &fakeInner{releases: relSet("Degraded"), gate: gate, firstSeen: make(chan struct{})}

@@ -74,7 +74,7 @@ func TestBuildAdapterSnapshotsEpochBeforeSettingsRead(t *testing.T) {
 
 	// The cache reads/writes through the RAW handle (never through the wrapper), so
 	// its own queries can never trip the settings hook.
-	sc := newSearchCache(rawDB, cacheTuning{enabled: true, ttl: keywordTTL, cleanup: time.Hour}, clock, zerolog.Nop())
+	sc := NewSearchCacheFromConfig(rawDB, testConfig(keywordTTL, 0), clock, zerolog.Nop())
 	wrapped := &settingsQueryHookQuerier{Querier: rawDB}
 
 	reg := New(wrapped, loader.New(dropin), kr, nil, WithClock(clock), WithSearchCache(sc),

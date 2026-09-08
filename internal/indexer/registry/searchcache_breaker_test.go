@@ -12,9 +12,9 @@ import (
 )
 
 // breakerTTL is keywordTTL with the negative-result breaker armed (60s window).
-var breakerTTL = ttlConfig{
-	rss: 5 * time.Minute, keyword: 30 * time.Minute, thin: 2 * time.Minute,
-	thinThreshold: 5, negative: time.Minute,
+var breakerTTL = CacheConfigView{
+	RSSTTL: 5 * time.Minute, KeywordTTL: 30 * time.Minute, ThinTTL: 2 * time.Minute,
+	ThinThreshold: 5, NegativeTTL: time.Minute,
 }
 
 // TestBreakerShortCircuitsGenericError proves that once a live search errors, the
