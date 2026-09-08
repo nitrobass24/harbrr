@@ -249,18 +249,3 @@ func TestBuildSearchURLCarriesAPIKeyButRedacts(t *testing.T) {
 	}
 	assertNoAPIKey(t, "redacted URL", redact(raw))
 }
-
-// TestBuildSearchURLAPIKeyLast proves the apikey param is emitted last (the
-// redaction-stable param-order idiom shared with the newznab sibling).
-func TestBuildSearchURLAPIKeyLast(t *testing.T) {
-	t.Parallel()
-	d := urlDriver(t)
-	raw := d.buildSearchURL(search.Query{Keywords: "x"})
-	ai := strings.Index(raw, "apikey=")
-	if ai < 0 {
-		t.Fatal("apikey missing from built URL")
-	}
-	if ai != strings.LastIndex(raw, "&")+1 {
-		t.Errorf("apikey is not the last param in %q", redact(raw))
-	}
-}

@@ -157,8 +157,8 @@ func (d *driver) getCaps(ctx context.Context, rawurl string) ([]byte, error) {
 // buildCapsURL builds {baseUrl}{apiPath}?t=caps[&apikey=...].
 func (d *driver) buildCapsURL() string { return d.buildAPIURL("caps") }
 
-// buildAPIURL builds {baseUrl}{apiPath}?t={fn}[&apikey=...] for a parameterless API
-// function (t=caps, t=user). apikey is appended only when set (some servers serve caps
+// buildAPIURL builds {baseUrl}{apiPath}?[apikey=...&]t={fn} for a parameterless API
+// function (t=caps, t=user). apikey is included only when set (some servers serve caps
 // without a key). It is secret-bearing — redact before logging.
 func (d *driver) buildAPIURL(fn string) string {
 	params := url.Values{}
@@ -166,26 +166,7 @@ func (d *driver) buildAPIURL(fn string) string {
 	if d.apikey != "" {
 		params.Set("apikey", d.apikey)
 	}
-	return strings.TrimRight(d.BaseURL, "/") + d.apiPath + "?" + encodeCapsQuery(params)
-}
-
-// encodeCapsQuery encodes the caps params with t first and apikey last (stable, redaction-
-// safe order), mirroring encodeQuery for the search URL.
-func encodeCapsQuery(params url.Values) string {
-	var b []byte
-	first := true
-	for _, key := range []string{"t", "apikey"} {
-		for _, v := range params[key] {
-			if !first {
-				b = append(b, '&')
-			}
-			first = false
-			b = append(b, url.QueryEscape(key)...)
-			b = append(b, '=')
-			b = append(b, url.QueryEscape(v)...)
-		}
-	}
-	return string(b)
+	return strings.TrimRight(d.BaseURL, "/") + d.apiPath + "?" + params.Encode()
 }
 
 // persistCaps writes the raw caps XML + fetched-at back to the encrypted store when

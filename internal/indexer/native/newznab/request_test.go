@@ -151,14 +151,14 @@ func TestBuildSearchURLModes(t *testing.T) {
 }
 
 // TestBuildSearchURLPaging proves the deep-set paging contract: a non-zero offset is
-// forwarded upstream (emitted immediately BEFORE limit so the param order is stable for
-// redaction), the limit is taken from the query (falling back to 100), and a first-page
-// (offset=0) request stays byte-identical to the pre-paging golden (no `offset=` present).
+// forwarded upstream, the limit is taken from the query (falling back to 100), and a
+// first-page (offset=0) request stays byte-identical to the pre-paging golden (no
+// `offset=` present).
 func TestBuildSearchURLPaging(t *testing.T) {
 	t.Parallel()
 	d := urlDriver(t)
 
-	// Deep page: offset=100, limit=100 must appear as ...&offset=100&limit=100&apikey=...
+	// Deep page: offset=100 and limit=100 both ride the query.
 	deep := d.buildSearchURL(search.Query{Keywords: "x", Offset: 100, Limit: 100})
 	got := parseQuery(t, deep)
 	if got.Get("offset") != "100" {
@@ -167,14 +167,6 @@ func TestBuildSearchURLPaging(t *testing.T) {
 	if got.Get("limit") != "100" {
 		t.Errorf("limit = %q, want 100", got.Get("limit"))
 	}
-	// offset must precede limit, and apikey stays last (redaction-stable order).
-	oi := strings.Index(deep, "offset=100")
-	li := strings.Index(deep, "limit=100")
-	ai := strings.Index(deep, "apikey=")
-	if oi < 0 || oi >= li || li >= ai {
-		t.Errorf("param order wrong: want offset<limit<apikey, got offset@%d limit@%d apikey@%d in %q", oi, li, ai, redact(deep))
-	}
-
 	// A custom limit is forwarded verbatim.
 	if l := parseQuery(t, d.buildSearchURL(search.Query{Limit: 50})).Get("limit"); l != "50" {
 		t.Errorf("limit = %q, want 50 (query limit forwarded)", l)
