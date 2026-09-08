@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"time"
+
+	apphttp "github.com/autobrr/harbrr/internal/http"
 )
 
 // cross-seed v6 is a one-step push: harbrr POSTs the release metadata plus a link, and
@@ -39,7 +41,7 @@ type csv6Request struct {
 
 // csv6Announcer implements Target for a cross-seed v6 instance.
 type csv6Announcer struct {
-	poster
+	*apphttp.JSONClient
 }
 
 var _ Target = (*csv6Announcer)(nil)
@@ -49,7 +51,7 @@ func NewCrossSeedV6(baseURL, apiKey string, client *http.Client) Target {
 	if client == nil {
 		client = defaultHTTPClient()
 	}
-	return &csv6Announcer{poster: newPoster("cross-seed", baseURL, apiKey, client)}
+	return &csv6Announcer{JSONClient: newClient("cross-seed", baseURL, apiKey, client)}
 }
 
 // Probe checks cross-seed v6 is reachable via its unauthenticated /api/ping health
@@ -57,7 +59,7 @@ func NewCrossSeedV6(baseURL, apiKey string, client *http.Client) Target {
 // REACHABILITY ONLY — a wrong API key is not detected here (ping ignores it). Any non-2xx
 // / transport failure is a scrubbed error.
 func (c *csv6Announcer) Probe(ctx context.Context) error {
-	if _, err := c.get(ctx, csv6PingPath, nil); err != nil {
+	if _, err := c.Do(ctx, http.MethodGet, csv6PingPath, nil, nil); err != nil {
 		return err
 	}
 	return nil
@@ -67,7 +69,7 @@ func (c *csv6Announcer) Probe(ctx context.Context) error {
 // injected a match and 204 when there was nothing to do; both are success (204 = clean
 // no-match). Any non-2xx is a scrubbed error.
 func (c *csv6Announcer) Announce(ctx context.Context, rel Release) (Result, error) {
-	status, err := c.post(ctx, csv6AnnouncePath, csv6Request{
+	status, err := c.Do(ctx, http.MethodPost, csv6AnnouncePath, csv6Request{
 		Name: rel.Name, GUID: rel.GUID, Link: rel.DownloadURL, Tracker: rel.Tracker,
 	}, nil)
 	if err != nil {

@@ -63,12 +63,12 @@ type quiApplyRequest struct {
 	Tags        []string `json:"tags,omitempty"`
 }
 
-// quiAnnouncer implements Target for a qui cross-seed instance. The embedded poster
+// quiAnnouncer implements Target for a qui cross-seed instance. The embedded JSONClient
 // carries the announce path (its client's Timeout is widened to fit quiAnnounceTimeout);
-// probePoster keeps the injected client untouched so Probe's bound is unchanged.
+// probeClient keeps the injected client untouched so Probe's bound is unchanged.
 type quiAnnouncer struct {
-	poster
-	probePoster poster
+	*apphttp.JSONClient
+	probeClient *apphttp.JSONClient
 	fetch       TorrentFetcher
 	tags        []string
 }
@@ -82,8 +82,8 @@ func NewQui(baseURL, apiKey string, client *http.Client, fetch TorrentFetcher, t
 		client = defaultHTTPClient()
 	}
 	return &quiAnnouncer{
-		poster:      newPoster("qui", baseURL, apiKey, widenTimeout(client, quiAnnounceTimeout)),
-		probePoster: newPoster("qui", baseURL, apiKey, client),
+		JSONClient:  newClient("qui", baseURL, apiKey, widenTimeout(client, quiAnnounceTimeout)),
+		probeClient: newClient("qui", baseURL, apiKey, client),
 		fetch:       fetch,
 		tags:        tags,
 	}
@@ -93,7 +93,7 @@ func NewQui(baseURL, apiKey string, client *http.Client, fetch TorrentFetcher, t
 // is a hard wall that a longer request context cannot lift, so the shared 30s client
 // would abort a slow qui apply long before quiAnnounceTimeout — the fix would be inert
 // past 30s. The copy is shallow, so the Transport (and its connection pool) is shared; a
-// zero Timeout already means "no wall" and is left alone. Only the announce poster is
+// zero Timeout already means "no wall" and is left alone. Only the announce client is
 // widened: Probe and the TorrentFetcher keep the client they were handed.
 func widenTimeout(client *http.Client, d time.Duration) *http.Client {
 	if client.Timeout == 0 || client.Timeout >= d {
@@ -112,7 +112,7 @@ func (q *quiAnnouncer) AnnounceTimeout() time.Duration { return quiAnnounceTimeo
 // A 404 from check, or any recommendation other than "download", is a clean no-match.
 func (q *quiAnnouncer) Announce(ctx context.Context, rel Release) (Result, error) {
 	var cr quiCheckResponse
-	status, err := q.post(ctx, quiCheckPath, quiCheckRequest{
+	status, err := q.Do(ctx, http.MethodPost, quiCheckPath, quiCheckRequest{
 		TorrentName: rel.Name, Size: rel.Size, Indexer: rel.Indexer,
 	}, &cr)
 	if err != nil {
@@ -131,11 +131,11 @@ func (q *quiAnnouncer) Announce(ctx context.Context, rel Release) (Result, error
 // (the same non-mutating first step Announce uses) with a token that matches no real
 // release, so apply is never reached. A 2xx (a real check verdict) and a 404 ("no match")
 // both mean the endpoint is reachable and the key was accepted; any other non-2xx /
-// transport failure is a scrubbed error. It runs on probePoster — the injected client as
+// transport failure is a scrubbed error. It runs on probeClient — the injected client as
 // given — so a Test against a hung qui is still bounded the way it always was, not by the
 // announce path's much longer ceiling.
 func (q *quiAnnouncer) Probe(ctx context.Context) error {
-	status, err := q.probePoster.post(ctx, quiCheckPath, quiCheckRequest{
+	status, err := q.probeClient.Do(ctx, http.MethodPost, quiCheckPath, quiCheckRequest{
 		TorrentName: quiProbeName, Size: 0, Indexer: quiProbeName,
 	}, nil)
 	if err != nil && status != http.StatusNotFound {
@@ -158,7 +158,7 @@ func (q *quiAnnouncer) apply(ctx context.Context, rel Release) (Result, error) {
 		// An empty /dl body would POST torrentData:"" — garbage to qui; treat as a failure.
 		return Result{}, errors.New("announce: qui: fetched torrent is empty")
 	}
-	if _, err := q.post(ctx, quiApplyPath, quiApplyRequest{
+	if _, err := q.Do(ctx, http.MethodPost, quiApplyPath, quiApplyRequest{
 		TorrentData: base64.StdEncoding.EncodeToString(data), Indexer: rel.Indexer, Tags: q.tags,
 	}, nil); err != nil {
 		return Result{}, err
