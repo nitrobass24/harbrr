@@ -130,7 +130,7 @@ internal/
   auth/                  # web-UI / management-API authentication service
   database/              # SQLite repos + migrations …
     dbinterface/         #   … behind one interface + dialect-aware query rebinding (Postgres deferred)
-  config/                # viper config load + typed settings (secret-vs-plaintext field types)
+  config/                # config load (toml/yaml + env + flags) + typed settings (secret-vs-plaintext field types)
   notify/                # notification providers (Discord, webhook)
   domain/                # shared models
   server/                # startup/shutdown wiring

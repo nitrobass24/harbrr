@@ -521,3 +521,58 @@ func TestCacheDurationFallback(t *testing.T) {
 		t.Errorf("zero cleanup_interval = %v, want 1h default", c.CleanupDuration())
 	}
 }
+
+// TestLoadEnvKeysDerivedFromStruct pins that every scalar key is env-settable
+// without registration: external_url was silently unreachable from the
+// environment while the key list was hand-maintained.
+func TestLoadEnvKeysDerivedFromStruct(t *testing.T) {
+	t.Setenv("HARBRR_SERVER_EXTERNAL_URL", "https://harbrr.example.com")
+	t.Setenv("HARBRR_AUTH_OIDC_DISABLE_BUILT_IN_LOGIN", "true")
+
+	cfg, err := config.Load("", nil)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Server.ExternalURL != "https://harbrr.example.com" {
+		t.Errorf("Server.ExternalURL = %q, want value from HARBRR_SERVER_EXTERNAL_URL", cfg.Server.ExternalURL)
+	}
+	if !cfg.Auth.OIDC.DisableBuiltInLogin {
+		t.Error("Auth.OIDC.DisableBuiltInLogin = false, want true from env")
+	}
+}
+
+func TestLoadRejectsBadValuesAndUnknownKeys(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+		file string // written as config.toml when non-empty
+		want string // substring of the error
+	}{
+		{name: "non-integer port from env", env: map[string]string{"HARBRR_SERVER_PORT": "http"}, want: "HARBRR_SERVER_PORT"},
+		{name: "non-bool from env", env: map[string]string{"HARBRR_CACHE_ENABLED": "maybe"}, want: "HARBRR_CACHE_ENABLED"},
+		{name: "unknown key in toml", file: "[server]\nbase-url = \"/harbrr\"\n", want: "base-url"},
+		{name: "unknown key in yaml", file: "server:\n  base-url: /harbrr\n", want: "base-url"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
+			path := ""
+			if tt.file != "" {
+				ext := ".toml"
+				if strings.HasPrefix(tt.file, "server:") {
+					ext = ".yaml"
+				}
+				path = filepath.Join(t.TempDir(), "harbrr"+ext)
+				if err := os.WriteFile(path, []byte(tt.file), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err := config.Load(path, nil)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Load error = %v, want one mentioning %q", err, tt.want)
+			}
+		})
+	}
+}

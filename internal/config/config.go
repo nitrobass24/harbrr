@@ -21,60 +21,60 @@ const redactedMask = "***"
 // small and grows as consumers — the web server, database, and
 // secrets store — are wired in.
 type Config struct {
-	Server   ServerConfig   `mapstructure:"server"`
-	Log      LogConfig      `mapstructure:"log"`
-	DataDir  string         `mapstructure:"data_dir"`
-	Database DatabaseConfig `mapstructure:"database"`
-	Secrets  SecretsConfig  `mapstructure:"secrets"`
-	Auth     AuthConfig     `mapstructure:"auth"`
-	Cache    CacheConfig    `mapstructure:"cache"`
+	Server   ServerConfig   `toml:"server" yaml:"server"`
+	Log      LogConfig      `toml:"log" yaml:"log"`
+	DataDir  string         `toml:"data_dir" yaml:"data_dir"`
+	Database DatabaseConfig `toml:"database" yaml:"database"`
+	Secrets  SecretsConfig  `toml:"secrets" yaml:"secrets"`
+	Auth     AuthConfig     `toml:"auth" yaml:"auth"`
+	Cache    CacheConfig    `toml:"cache" yaml:"cache"`
 
 	// ConfigFile is the config file Load actually read ("" when none was found),
 	// surfaced in the startup log so operators know which file the port and
 	// friends came from. Not itself a config key.
-	ConfigFile string `mapstructure:"-"`
+	ConfigFile string `toml:"-" yaml:"-"`
 }
 
 // CacheConfig tunes the search-results cache. Durations are Go duration strings
-// (e.g. "5m", "1h") so they round-trip through viper/env/flags as plain strings,
+// (e.g. "5m", "1h") so they round-trip through file/env/flags as plain strings,
 // mirroring how per-instance "timeout"/"cache_ttl" settings are modeled. When
 // Enabled is false, the cache is wired off entirely (zero behavior change).
 type CacheConfig struct {
-	Enabled bool `mapstructure:"enabled"`
+	Enabled bool `toml:"enabled" yaml:"enabled"`
 	// RSSTTL is the TTL for an empty/RSS poll; KeywordTTL for a real search.
-	RSSTTL     string `mapstructure:"rss_ttl"`
-	KeywordTTL string `mapstructure:"keyword_ttl"`
+	RSSTTL     string `toml:"rss_ttl" yaml:"rss_ttl"`
+	KeywordTTL string `toml:"keyword_ttl" yaml:"keyword_ttl"`
 	// ThinTTL is the short clamp for a search returning <= ThinThreshold results.
-	ThinTTL       string `mapstructure:"thin_ttl"`
-	ThinThreshold int    `mapstructure:"thin_threshold"`
+	ThinTTL       string `toml:"thin_ttl" yaml:"thin_ttl"`
+	ThinThreshold int    `toml:"thin_threshold" yaml:"thin_threshold"`
 	// RefreshAheadPct is the percentage of a TTL after which a live hit fires one
 	// background refresh (stale-while-revalidate).
-	RefreshAheadPct int `mapstructure:"refresh_ahead_pct"`
+	RefreshAheadPct int `toml:"refresh_ahead_pct" yaml:"refresh_ahead_pct"`
 	// CleanupInterval is how often expired entries are reaped.
-	CleanupInterval string `mapstructure:"cleanup_interval"`
+	CleanupInterval string `toml:"cleanup_interval" yaml:"cleanup_interval"`
 	// NegativeTTL is the negative-result circuit-breaker window: after a live search
 	// to a tracker fails, further misses for that tracker short-circuit to the recorded
 	// error for this long instead of re-driving it (kind-to-trackers anti-thundering-
 	// herd). "0s" disables the breaker.
-	NegativeTTL string `mapstructure:"negative_ttl"`
+	NegativeTTL string `toml:"negative_ttl" yaml:"negative_ttl"`
 }
 
 // ServerConfig describes the HTTP listener and reverse-proxy posture.
 type ServerConfig struct {
-	Host string `mapstructure:"host"`
-	Port int    `mapstructure:"port"`
+	Host string `toml:"host" yaml:"host"`
+	Port int    `toml:"port" yaml:"port"`
 	// BaseURL serves harbrr under a subpath (e.g. "/harbrr"); empty serves at root.
-	BaseURL string `mapstructure:"base_url"`
+	BaseURL string `toml:"base_url" yaml:"base_url"`
 	// SecureCookie marks the session cookie Secure. Set it when harbrr is reached
 	// over HTTPS (typically a TLS-terminating reverse proxy). ExternalURL's https
 	// scheme also implies Secure — see ExternalHTTPS.
-	SecureCookie bool `mapstructure:"secure_cookie"`
+	SecureCookie bool `toml:"secure_cookie" yaml:"secure_cookie"`
 	// ExternalURL is the operator-configured externally-visible "scheme://host[/base]"
 	// harbrr is reached at (e.g. "https://harbrr.example.com"), typically behind a
 	// TLS-terminating reverse proxy. When set it is authoritative for every absolute
 	// link harbrr serves (feed self-URLs, /dl); empty keeps today's request-derived
 	// behavior. A path, if present, must equal BaseURL (validateExternalURL).
-	ExternalURL string `mapstructure:"external_url"`
+	ExternalURL string `toml:"external_url" yaml:"external_url"`
 }
 
 // ExternalHTTPS reports whether ExternalURL is set and its scheme is https, so the
@@ -101,14 +101,14 @@ type AuthConfig struct {
 	// Mode is "required" (default) or "disabled". Disabled serves a synthetic admin
 	// to allowlisted IPs (behind an authenticating reverse proxy) and REQUIRES a
 	// non-empty IPAllowlist.
-	Mode string `mapstructure:"mode"`
+	Mode string `toml:"mode" yaml:"mode"`
 	// TrustedProxies are peers whose X-Forwarded-For is honored for the allowlist.
-	TrustedProxies []string `mapstructure:"trusted_proxies"`
+	TrustedProxies []string `toml:"trusted_proxies" yaml:"trusted_proxies"`
 	// IPAllowlist is the set of IPs/CIDRs permitted in disabled mode.
-	IPAllowlist []string `mapstructure:"ip_allowlist"`
+	IPAllowlist []string `toml:"ip_allowlist" yaml:"ip_allowlist"`
 	// OIDC configures OpenID Connect / SSO login (autobrr/harbrr#9). It coexists
 	// with password login — see OIDCConfig.DisableBuiltInLogin.
-	OIDC OIDCConfig `mapstructure:"oidc"`
+	OIDC OIDCConfig `toml:"oidc" yaml:"oidc"`
 }
 
 // AuthDisabled reports whether auth is disabled (trusted-proxy mode).
@@ -120,19 +120,19 @@ func (c AuthConfig) AuthDisabled() bool { return c.Mode == authModeDisabled }
 // session, exactly like a password login. Scopes are hardcoded
 // "openid profile email", mirroring qui.
 type OIDCConfig struct {
-	Enabled      bool   `mapstructure:"enabled"`
-	Issuer       string `mapstructure:"issuer"`
-	ClientID     string `mapstructure:"client_id"`
-	ClientSecret string `mapstructure:"client_secret"`
+	Enabled      bool   `toml:"enabled" yaml:"enabled"`
+	Issuer       string `toml:"issuer" yaml:"issuer"`
+	ClientID     string `toml:"client_id" yaml:"client_id"`
+	ClientSecret string `toml:"client_secret" yaml:"client_secret"`
 	// RedirectURL is the explicit, absolute callback URL the operator registers
 	// with the IdP (e.g. "https://harbrr.example.com/api/auth/oidc/callback").
 	// harbrr derives the post-login app redirect from this URL's host, so it
 	// never trusts a request-derived Host/X-Forwarded-Host for that purpose.
-	RedirectURL string `mapstructure:"redirect_url"`
+	RedirectURL string `toml:"redirect_url" yaml:"redirect_url"`
 	// DisableBuiltInLogin hides the password form in the UI when true. The
 	// POST /api/auth/login route stays registered either way (UI-level hide
 	// only, mirroring qui).
-	DisableBuiltInLogin bool `mapstructure:"disable_built_in_login"`
+	DisableBuiltInLogin bool `toml:"disable_built_in_login" yaml:"disable_built_in_login"`
 }
 
 const (
@@ -142,14 +142,14 @@ const (
 
 // LogConfig drives the zerolog logger built in internal/logger.
 type LogConfig struct {
-	Level  string `mapstructure:"level"`  // trace|debug|info|warn|error
-	Format string `mapstructure:"format"` // console|json
+	Level  string `toml:"level" yaml:"level"`   // trace|debug|info|warn|error
+	Format string `toml:"format" yaml:"format"` // console|json
 }
 
 // DatabaseConfig points at the SQLite database file. Postgres is deliberately
 // not modeled yet (see AGENTS.md / dbinterface).
 type DatabaseConfig struct {
-	Path string `mapstructure:"path"`
+	Path string `toml:"path" yaml:"path"`
 }
 
 // SecretsConfig selects the at-rest encryption key source. At most one of
@@ -157,9 +157,9 @@ type DatabaseConfig struct {
 // harbrr auto-generates a keyfile (encryption is always on) unless AllowPlaintext
 // is set, which opts into UNENCRYPTED storage and fails closed otherwise.
 type SecretsConfig struct {
-	EncryptionKey  string `mapstructure:"encryption_key"`
-	KeyFile        string `mapstructure:"key_file"`
-	AllowPlaintext bool   `mapstructure:"allow_plaintext"`
+	EncryptionKey  string `toml:"encryption_key" yaml:"encryption_key"`
+	KeyFile        string `toml:"key_file" yaml:"key_file"`
+	AllowPlaintext bool   `toml:"allow_plaintext" yaml:"allow_plaintext"`
 }
 
 // validLogLevels and validLogFormats are the accepted enum values for LogConfig.

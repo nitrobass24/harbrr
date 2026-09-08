@@ -70,11 +70,7 @@ level = "info"
 // file). The data dir is resolved from flags/env/defaults exactly as Load
 // resolves it. Returns the file's path.
 func EnsureConfigFile(flags *pflag.FlagSet) (string, error) {
-	v, err := newViper(flags)
-	if err != nil {
-		return "", err
-	}
-	dir := v.GetString("data_dir")
+	dir := resolveDataDir(flags)
 	path := filepath.Join(dir, ConfigFileName)
 
 	if _, err := os.Stat(path); err == nil {

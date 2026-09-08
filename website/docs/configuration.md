@@ -13,8 +13,8 @@ directory, right beside the SQLite database** (in the Docker image that's
   edits** — it only writes the file when it doesn't exist yet.
 - **Changes take effect on restart.** The startup log's `config_file=` field names the file
   that was actually loaded, so there's no guessing where a value came from.
-- `--config <path>` points harbrr at an explicit file anywhere instead (the extension picks
-  the format); the auto-generated file is skipped entirely in that case.
+- `--config <path>` points harbrr at an explicit file anywhere instead (`.toml`, `.yaml`
+  or `.yml`, picked by extension); the auto-generated file is skipped entirely in that case.
 - `data_dir` itself can only be set by flag (`--data-dir`) or environment
   (`HARBRR_DATA_DIR`) — the auto-discovered file lives *inside* the data directory, so it
   can't relocate it.
