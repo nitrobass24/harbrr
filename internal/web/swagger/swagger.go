@@ -7,19 +7,17 @@ package swagger
 import (
 	"bytes"
 	_ "embed"
-	"strings"
 )
 
 //go:embed openapi.yaml
 var openapiYAML []byte
 
+// swaggerUIPage is the Swagger UI page. Its spec reference is relative
+// ("openapi.yaml", a sibling of /api/docs) so the page resolves the spec correctly
+// under any base path, with no substitution or server-side rewriting.
+//
 //go:embed index.html
-var swaggerHTML string
-
-// swaggerUIPage is the Swagger UI page with the spec URL substituted once. The spec
-// reference is relative ("openapi.yaml", a sibling of /api/docs) so the page resolves
-// the spec correctly under any base path, with no server-side rewriting.
-var swaggerUIPage = []byte(strings.ReplaceAll(swaggerHTML, "{{OPENAPI_URL}}", "openapi.yaml"))
+var swaggerUIPage []byte
 
 // Spec returns the embedded OpenAPI document as raw YAML bytes. The returned slice is
 // a copy, so callers cannot mutate the embedded spec.

@@ -330,10 +330,5 @@ func unionParams(dst, have []string) []string {
 // sortedCategories flattens the deduplicated category union into the ascending-id order
 // mapper.Capabilities.Categories documents (the serializer re-derives the tree from it).
 func sortedCategories(cats map[int]mapper.Category) []mapper.Category {
-	out := make([]mapper.Category, 0, len(cats))
-	for _, c := range cats {
-		out = append(out, c)
-	}
-	slices.SortFunc(out, func(a, b mapper.Category) int { return a.ID - b.ID })
-	return out
+	return slices.SortedFunc(maps.Values(cats), func(a, b mapper.Category) int { return a.ID - b.ID })
 }

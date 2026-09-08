@@ -6,6 +6,7 @@
 package registry
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -885,7 +886,7 @@ func indexerInfo(inst domain.IndexerInstance, def *loader.Definition) core.Index
 	}
 	return core.IndexerInfo{
 		ID:          inst.Slug,
-		Name:        orDefault(inst.Name, def.Name),
+		Name:        cmp.Or(inst.Name, def.Name),
 		Description: def.Description,
 		SiteLink:    site,
 		Type:        def.Type,
@@ -894,12 +895,4 @@ func indexerInfo(inst domain.IndexerInstance, def *loader.Definition) core.Index
 		// reads and stays stable if a def is ever updated under an existing instance.
 		Protocol: inst.Protocol,
 	}
-}
-
-// orDefault returns v, or def when v is empty.
-func orDefault(v, def string) string {
-	if v == "" {
-		return def
-	}
-	return v
 }

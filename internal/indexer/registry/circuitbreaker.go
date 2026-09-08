@@ -121,13 +121,10 @@ func escalate(cur database.CircuitState, kind string, gatewayOutage bool, retryA
 	// "Retry-After: 1h" during the first 15 minutes still holds the full hour rather
 	// than being clamped to 5m and re-hammering the tracker.)
 	window := circuitPeriods[next.EscalationLevel]
-	if now.Sub(startedAt) < startupGrace && window > startupGraceCap {
-		window = startupGraceCap
+	if now.Sub(startedAt) < startupGrace {
+		window = min(window, startupGraceCap)
 	}
-	if retryAfter > window {
-		window = retryAfter
-	}
-	next.DisabledTill = now.Add(window)
+	next.DisabledTill = now.Add(max(window, retryAfter))
 	return next
 }
 
