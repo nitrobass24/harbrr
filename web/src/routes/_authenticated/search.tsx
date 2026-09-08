@@ -1,11 +1,13 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
+import { skipToken, useQuery } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
 import { ChevronDown, Filter, Layers, Search as SearchIcon, X } from "lucide-react"
 import { PageHeader } from "@/components/layout/PageHeader"
 import { filterGroups } from "@/components/search/search-filter"
 import { groupRows, soloGroups, sortGroups } from "@/components/search/search-group"
 import { sortRows, type SearchRow, type Sort, type SortKey } from "@/components/search/search-sort"
-import { SearchResultsResponsive } from "@/components/search/SearchResultsResponsive"
+import { SearchResultCardsMobile } from "@/components/search/SearchResultCardsMobile"
+import { SearchResultsTable } from "@/components/search/SearchResultsTable"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -18,8 +20,10 @@ import { Input } from "@/components/ui/input"
 import { NativeSelect } from "@/components/ui/native-select"
 import { useDownloadClients } from "@/hooks/useDownloadClients"
 import { useIndexerCapabilitiesMany, useIndexers } from "@/hooks/useIndexers"
-import { useSearchAggregate } from "@/hooks/useSearch"
+import { useIsMobile } from "@/hooks/useMediaQuery"
+import { api, unwrap } from "@/lib/api"
 import type { SearchMember, SearchParams } from "@/lib/api"
+import { keys } from "@/lib/query"
 import { cn } from "@/lib/utils"
 
 export const Route = createFileRoute("/_authenticated/search")({
@@ -30,7 +34,40 @@ export const Route = createFileRoute("/_authenticated/search")({
 // is a ceiling, not a promise — `total` says how big the merged set behind it was.
 const PAGE_SIZE = 100
 
+// setParams drops undefined/empty-string values so an unset search field is omitted
+// from the querystring entirely rather than sent as an empty filter.
+function setParams(params: SearchParams): SearchParams {
+  const query: SearchParams = {}
+  for (const [key, value] of Object.entries(params) as [keyof SearchParams, unknown][]) {
+    if (value !== undefined && value !== "") (query as Record<string, unknown>)[key] = value
+  }
+  return query
+}
+
+// ONE request for the whole subset: the server merges, sorts and windows the results
+// and hands back the per-member ledger (autobrr/harbrr#372). There is deliberately no
+// client-side fan-out — a second merge implementation is the thing the page and the
+// aggregate feed must never disagree over. The query runs once a search is submitted
+// (params !== null); the key carries the subset so changing it re-queries.
+function useSearchAggregate(slugs: string[], params: SearchParams | null) {
+  const fetchAggregate = (p: SearchParams) =>
+    unwrap(api.http.GET("/api/search", { params: { query: { ...setParams(p), indexers: slugs.join(",") } } }))
+  return useQuery({
+    queryKey: keys.search.aggregate(slugs, params),
+    // Narrowed, not asserted: `enabled` already guarantees params is non-null, and a
+    // cast would keep compiling if that guard ever changed. The call is hoisted so the
+    // ternary fits one line (@stylistic/multiline-ternary is "never").
+    queryFn: params === null ? skipToken : () => fetchAggregate(params),
+    enabled: params !== null && slugs.length > 0,
+    retry: false,
+    staleTime: 60_000, // the server-side cache is authoritative; avoid re-fetch churn
+  })
+}
+
 function SearchPage() {
+  // Cards on mobile, the table on md+ — same groups/catNames feed both, so grouping,
+  // sorting and the Grab links behave identically either way.
+  const isMobile = useIsMobile()
   const indexers = useIndexers()
   const enabled = useMemo(() => (indexers.data ?? []).filter((ix) => ix.enabled), [indexers.data])
   const [selected, setSelected] = useState<Set<string> | null>(null) // null = all enabled
@@ -225,8 +262,12 @@ function SearchPage() {
                   onGroupedChange={setGrouped}
                 />
                 {shown.length > 0 ? (
-                  <SearchResultsResponsive groups={shown} catNames={catNames} clients={sendTargets} sort={sort} onSort={(key: SortKey) =>
-                    setSort((prev) => prev.key === key ? { key, dir: prev.dir === "desc" ? "asc" : "desc" } : { key, dir: "desc" })} />
+                  isMobile ? (
+                    <SearchResultCardsMobile groups={shown} catNames={catNames} clients={sendTargets} sort={sort} />
+                  ) : (
+                    <SearchResultsTable groups={shown} catNames={catNames} clients={sendTargets} sort={sort} onSort={(key: SortKey) =>
+                      setSort((prev) => prev.key === key ? { key, dir: prev.dir === "desc" ? "asc" : "desc" } : { key, dir: "desc" })} />
+                  )
                 ) : (
                   <div className="grid place-items-center rounded-xl border border-dashed border-border py-16 text-center">
                     <p className="text-[13px] text-muted-foreground">No results match the filter.</p>

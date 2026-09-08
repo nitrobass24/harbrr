@@ -152,7 +152,7 @@ export function useTestIndexer(options?: { toastResult?: boolean }) {
 
 // status carries the HTTP status when the test request itself failed (threw), so a
 // caller can tell an auth/session failure (401/403) from a genuine tracker failure.
-export type TestAllResult = { slug: string, ok: boolean, error?: string, status?: number }
+type TestAllResult = { slug: string, ok: boolean, error?: string, status?: number }
 
 // TEST_ALL_CONCURRENCY bounds how many indexer tests are in flight at once. Different
 // indexers are different hosts, so this is not tracker politeness — the per-host pacing

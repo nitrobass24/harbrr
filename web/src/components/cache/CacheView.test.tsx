@@ -4,8 +4,7 @@ import { describe, expect, it } from "vitest"
 
 import { stubApi } from "@/test/stubApi"
 import { CacheView } from "./CacheView"
-import { breakerLabel, coverageNote, unixAgo } from "./cache-format"
-import { safeInt } from "./safe-int"
+import { breakerLabel, coverageNote, safeInt, unixAgo } from "./cache-format"
 
 // safeInt backs the numeric knob inputs (thinThreshold, refreshAheadPct). The
 // bug it guards: Number("") is 0, not NaN, so clearing a field would commit 0 —
