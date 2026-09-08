@@ -95,19 +95,12 @@ func isASCII(s string) bool {
 // asciiApprox substitutes '_' for every non-ASCII rune — the legacy-consumer
 // fallback next to the exact filename* form.
 func asciiApprox(s string) string {
-	if isASCII(s) {
-		return s
-	}
-	var b strings.Builder
-	b.Grow(len(s))
-	for _, r := range s {
-		if r < utf8.RuneSelf {
-			b.WriteRune(r)
-		} else {
-			b.WriteByte('_')
+	return strings.Map(func(r rune) rune {
+		if r >= utf8.RuneSelf {
+			return '_'
 		}
-	}
-	return b.String()
+		return r
+	}, s)
 }
 
 // writeGrabError renders a ResolveGrab failure through the caller's ErrorWriter and

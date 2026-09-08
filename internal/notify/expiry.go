@@ -3,7 +3,7 @@ package notify
 import (
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -194,27 +194,22 @@ func formatThresholds(days []int) string {
 // because the settings endpoint validates with the very same parser the scan uses,
 // leaving no way to store a value that then reads back as something else.
 func ParseExpiryThresholds(raw string) []int {
-	seen := map[int]bool{}
 	out := []int{}
 	for field := range strings.SplitSeq(raw, ",") {
-		field = strings.TrimSpace(field)
-		if field == "" {
+		// Atoi rejects the empty/whitespace-only field too, so no separate skip.
+		n, err := strconv.Atoi(strings.TrimSpace(field))
+		if err != nil || n < 0 {
 			continue
 		}
-		n, err := strconv.Atoi(field)
-		if err != nil || n < 0 || seen[n] {
-			continue
-		}
-		seen[n] = true
 		out = append(out, n)
 	}
 	if len(out) == 0 {
 		return nil
 	}
-	if !seen[0] {
-		out = append(out, 0)
-	}
-	sort.Sort(sort.Reverse(sort.IntSlice(out)))
+	out = append(out, 0) // 0 (expiry day) always fires; Compact drops it if already listed
+	slices.Sort(out)
+	out = slices.Compact(out)
+	slices.Reverse(out)
 	return out
 }
 

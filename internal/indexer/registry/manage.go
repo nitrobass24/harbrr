@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -178,13 +179,12 @@ func normalizeCategoryIDs(ids []int) ([]int, error) {
 	return out, nil
 }
 
-// boolOrTrue resolves an optional toggle: nil defaults to true (every search mode is on
-// by default, matching the pre-#365 sync-profile default).
-func boolOrTrue(v *bool) bool {
-	if v == nil {
-		return true
+// patch applies an optional patch field: a present pointer wins, a nil one keeps cur.
+func patch[T any](p *T, cur T) T {
+	if p == nil {
+		return cur
 	}
-	return *v
+	return *p
 }
 
 // AddParams is the input to Add. Slug defaults to DefinitionID when empty; Name
@@ -314,7 +314,7 @@ type SettingView struct {
 // is inserted first so its id can bind each secret's AAD), then invalidates any
 // cached engine for the slug.
 func (r *Manager) Add(ctx context.Context, p AddParams) (domain.IndexerInstance, error) {
-	slug := orDefault(p.Slug, p.DefinitionID)
+	slug := cmp.Or(p.Slug, p.DefinitionID)
 	if !slugPattern.MatchString(slug) {
 		return domain.IndexerInstance{}, fmt.Errorf("%w: slug %q must be 1-64 chars of [a-z0-9._-] starting alphanumeric", ErrInvalid, slug)
 	}
@@ -339,12 +339,12 @@ func (r *Manager) Add(ctx context.Context, p AddParams) (domain.IndexerInstance,
 
 	now := r.clock()
 	inst := domain.IndexerInstance{
-		Slug: slug, DefinitionID: p.DefinitionID, Name: orDefault(p.Name, def.Name),
+		Slug: slug, DefinitionID: p.DefinitionID, Name: cmp.Or(p.Name, def.Name),
 		BaseURL: p.BaseURL, Enabled: true, Protocol: def.EffectiveProtocol(),
 		ProxyID: p.ProxyID, SolverID: p.SolverID,
 		Priority: priority, MinSeeders: p.MinSeeders, SyncCategories: syncCats,
-		EnableRss: boolOrTrue(p.EnableRss), EnableAutomaticSearch: boolOrTrue(p.EnableAutomaticSearch),
-		EnableInteractiveSearch: boolOrTrue(p.EnableInteractiveSearch),
+		EnableRss: patch(p.EnableRss, true), EnableAutomaticSearch: patch(p.EnableAutomaticSearch, true),
+		EnableInteractiveSearch: patch(p.EnableInteractiveSearch, true),
 		ExpiresAt:               exp.date, ExpiryKind: exp.kind, ExpiryLifetime: exp.lifetime,
 		CreatedAt: now, UpdatedAt: now,
 	}
@@ -1276,36 +1276,18 @@ func resolveMeta(inst domain.IndexerInstance, p UpdateParams) (database.Instance
 	if err != nil {
 		return database.InstanceMeta{}, err
 	}
-	name, baseURL := applyMeta(inst, p)
 	return database.InstanceMeta{
-		Name: name, BaseURL: baseURL, Priority: priority, MinSeeders: minSeeders,
-		EnableRss:               resolveToggle(p.EnableRss, inst.EnableRss),
-		EnableAutomaticSearch:   resolveToggle(p.EnableAutomaticSearch, inst.EnableAutomaticSearch),
-		EnableInteractiveSearch: resolveToggle(p.EnableInteractiveSearch, inst.EnableInteractiveSearch),
+		Name:       patch(p.Name, inst.Name),
+		BaseURL:    patch(p.BaseURL, inst.BaseURL),
+		Priority:   priority,
+		MinSeeders: minSeeders,
+
+		EnableRss:               patch(p.EnableRss, inst.EnableRss),
+		EnableAutomaticSearch:   patch(p.EnableAutomaticSearch, inst.EnableAutomaticSearch),
+		EnableInteractiveSearch: patch(p.EnableInteractiveSearch, inst.EnableInteractiveSearch),
 		SyncCategories:          syncCats,
 		ExpiresAt:               exp.date, ExpiryKind: exp.kind, ExpiryLifetime: exp.lifetime,
 	}, nil
-}
-
-// applyMeta resolves the post-update name and base URL from the optional params.
-func applyMeta(inst domain.IndexerInstance, p UpdateParams) (name, baseURL string) {
-	name, baseURL = inst.Name, inst.BaseURL
-	if p.Name != nil {
-		name = *p.Name
-	}
-	if p.BaseURL != nil {
-		baseURL = *p.BaseURL
-	}
-	return name, baseURL
-}
-
-// resolveToggle applies an optional toggle patch: a present update wins; a nil one
-// keeps the instance's current value.
-func resolveToggle(update *bool, current bool) bool {
-	if update == nil {
-		return current
-	}
-	return *update
 }
 
 // resolveSyncCategories applies an optional sync-categories patch: a present update

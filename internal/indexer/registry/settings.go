@@ -220,10 +220,7 @@ func resolveRateInterval(def *loader.Definition, cfg map[string]string, globalDe
 			user = d
 		}
 	}
-	if floor := defRequestDelay(def); floor > user {
-		return floor
-	}
-	return user
+	return max(defRequestDelay(def), user)
 }
 
 // resolveCacheTTL parses the per-instance "cache_ttl" override (a Go duration,
@@ -246,14 +243,7 @@ func warmIntervalFromValue(raw string) (time.Duration, bool) {
 	if err != nil || d <= 0 {
 		return 0, false
 	}
-	switch {
-	case d < warmMinInterval:
-		return warmMinInterval, true
-	case d > warmMaxInterval:
-		return warmMaxInterval, true
-	default:
-		return d, true
-	}
+	return min(max(d, warmMinInterval), warmMaxInterval), true
 }
 
 // budgetLimits is the resolved per-indexer request-budget configuration

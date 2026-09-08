@@ -17,9 +17,10 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -528,10 +529,7 @@ func sizeDivergence(h, p Result) (FieldDivergence, bool) {
 	if h.Size <= 0 || p.Size <= 0 {
 		return FieldDivergence{}, false
 	}
-	hi, lo := h.Size, p.Size
-	if lo > hi {
-		hi, lo = lo, hi
-	}
+	hi, lo := max(h.Size, p.Size), min(h.Size, p.Size)
 	diff := hi - lo
 	allowed := max(int64(sizeRelTolerance*float64(hi)), int64(sizeAbsTolerance))
 	if diff > allowed {
@@ -559,7 +557,7 @@ func categoryDivergence(h, p Result) (FieldDivergence, bool) {
 	}
 	return FieldDivergence{
 		Title: p.Title, Field: "category",
-		Detail: fmt.Sprintf("harbrr major-cats %v disjoint from oracle %v", sortedKeys(hm), sortedKeys(pm)),
+		Detail: fmt.Sprintf("harbrr major-cats %v disjoint from oracle %v", slices.Sorted(maps.Keys(hm)), slices.Sorted(maps.Keys(pm))),
 	}, true
 }
 
@@ -640,10 +638,7 @@ func pubDateDivergence(h, p Result) (FieldDivergence, bool) {
 	if h.PublishDate.IsZero() || p.PublishDate.IsZero() {
 		return FieldDivergence{}, false
 	}
-	diff := h.PublishDate.Sub(p.PublishDate)
-	if diff < 0 {
-		diff = -diff
-	}
+	diff := h.PublishDate.Sub(p.PublishDate).Abs()
 	if diff > pubDateWindow {
 		return FieldDivergence{
 			Title: p.Title, Field: "publishDate",
@@ -665,16 +660,6 @@ func summarizeDivergences(ds []FieldDivergence) string {
 		parts = append(parts, fmt.Sprintf("[%s] %q: %s", d.Field, d.Title, d.Detail))
 	}
 	return strings.Join(parts, "; ")
-}
-
-// sortedKeys returns a map's int keys in ascending order (deterministic detail).
-func sortedKeys(m map[int]struct{}) []int {
-	out := make([]int, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Ints(out)
-	return out
 }
 
 // --- query selection --------------------------------------------------------
