@@ -182,7 +182,7 @@ tools:
 	# a green CI. Bump both together (the guards CI job enforces agreement).
 	# No standalone gofumpt/goimports: formatting always goes through
 	# `golangci-lint fmt`, so the formatter versions are pinned by this install.
-	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.0
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
 
 ## clean: remove build artifacts
 .PHONY: clean

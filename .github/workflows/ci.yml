@@ -575,7 +575,7 @@ jobs:
           GOLANGCI_LINT_CACHE: /mnt/optane/github-actions/harbrr-golangci-cache
         with:
           # Pin the version so it matches the version in `make tools`.
-          version: v2.13.0
+          version: v2.13.2
           only-new-issues: ${{ github.event_name == 'pull_request' }}
           # The cache lives on host disk now; the action's own save/restore would
           # both miss the path above and re-add the tar cost it is meant to avoid.
