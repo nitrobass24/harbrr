@@ -88,7 +88,6 @@ type App struct {
 	adultCats *api.AdultCategoriesStore
 
 	server *server.Server
-	lc     net.ListenConfig
 }
 
 // New builds the full dependency graph in the order serve() used to wire it:
@@ -397,7 +396,7 @@ func newServer(a *App) (*server.Server, error) {
 	}
 
 	return server.New(server.Deps{Management: mgmt, Torznab: tz, UI: uiHandler, Spec: swagger.Spec(), DocsUI: swagger.UI(), Logger: a.log},
-		server.Config{Addr: listenAddr(a.cfg), BasePath: a.cfg.Server.BaseURL}), nil
+		server.Config{BasePath: a.cfg.Server.BaseURL}), nil
 }
 
 // feedURLConfig builds the shared input for every absolute feed/dl URL the Torznab
@@ -476,33 +475,23 @@ func (a *App) Run(ctx context.Context) error {
 	return runErr
 }
 
-// serveUntilDone confirms the port is bindable, logs startup, then serves
-// until ctx is cancelled or a fatal listen error occurs.
+// serveUntilDone binds the listener, logs startup, then serves until ctx is
+// cancelled or a fatal serve error occurs.
 func (a *App) serveUntilDone(ctx context.Context) error {
-	// Confirm the port is actually bindable before logging "listening": server.Run
-	// binds asynchronously, so a fatal listen error (e.g. address in use) would
-	// otherwise surface only after we'd already told the operator the server was up.
-	if err := a.preflightBind(ctx, listenAddr(a.cfg)); err != nil {
-		return fmt.Errorf("serve: %w", err)
+	// Bound synchronously, before logging "listening", so an in-use port fails loud
+	// here instead of surfacing after we have already told the operator the server
+	// was up. The same listener is then served — nothing releases and re-binds it, so
+	// there is no window for another process to steal the port in between.
+	var lc net.ListenConfig
+	addr := listenAddr(a.cfg)
+	ln, err := lc.Listen(ctx, "tcp", addr)
+	if err != nil {
+		return fmt.Errorf("serve: listen %s: %w", addr, err)
 	}
 	logStartup(a.log, a.cfg, a.keyring)
-	if err := a.server.Run(ctx); err != nil {
+	// Serve closes ln via http.Server.Shutdown on the way out.
+	if err := a.server.Serve(ctx, ln); err != nil {
 		return fmt.Errorf("serve: %w", err)
-	}
-	return nil
-}
-
-// preflightBind verifies the resolved address can be bound, then releases it so
-// server.Run can re-bind the same addr. This narrow window is acceptable for
-// single-user self-hosted use; the point is to fail loud on an in-use port instead
-// of falsely logging that the server is listening.
-func (a *App) preflightBind(ctx context.Context, addr string) error {
-	ln, err := a.lc.Listen(ctx, "tcp", addr)
-	if err != nil {
-		return fmt.Errorf("listen %s: %w", addr, err)
-	}
-	if err := ln.Close(); err != nil {
-		return fmt.Errorf("release preflight listener %s: %w", addr, err)
 	}
 	return nil
 }
