@@ -22,7 +22,7 @@ func readFixture(t *testing.T, name string) []byte {
 func fieldBlock(fb FieldsBlock, key string) (SelectorBlock, bool) {
 	for _, e := range fb.Ordered() {
 		if e.Key == key {
-			return e.Block, true
+			return e.Value, true
 		}
 	}
 	return SelectorBlock{}, false
@@ -32,8 +32,8 @@ func fieldBlock(fb FieldsBlock, key string) (SelectorBlock, bool) {
 // mirroring the deleted CategoriesBlock.Get for test call sites.
 func categoryName(cb CategoriesBlock, trackerID string) (string, bool) {
 	for _, e := range cb.Ordered() {
-		if e.TrackerID == trackerID {
-			return e.Name, true
+		if e.Key == trackerID {
+			return e.Value, true
 		}
 	}
 	return "", false
@@ -183,9 +183,9 @@ func TestInputsBlockPreservesOrder(t *testing.T) {
 		t.Fatalf("Parse: %v", err)
 	}
 
-	ordered := d.Search.Inputs.Ordered()
-	got := make([]string, 0, len(ordered))
-	for _, in := range ordered {
+	entries := d.Search.Inputs.Ordered()
+	got := make([]string, 0, len(entries))
+	for _, in := range entries {
 		got = append(got, in.Key)
 	}
 	want := []string{"zeta", "alpha", "mu"}
@@ -212,10 +212,10 @@ func TestCategoriesBlockPreservesOrder(t *testing.T) {
 		t.Fatalf("Parse: %v", err)
 	}
 
-	ordered := d.Caps.Categories.Ordered()
-	got := make([]string, 0, len(ordered))
-	for _, e := range ordered {
-		got = append(got, e.TrackerID)
+	entries := d.Caps.Categories.Ordered()
+	got := make([]string, 0, len(entries))
+	for _, e := range entries {
+		got = append(got, e.Key)
 	}
 	want := []string{"XXX", "9", "movies-hd", "2", "zz"}
 	if len(got) != len(want) {

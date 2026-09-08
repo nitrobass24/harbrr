@@ -66,46 +66,14 @@ type Caps struct {
 	AllowTVSearchIMDB *bool             `yaml:"allowtvsearchimdb,omitempty"`
 }
 
-// CategoryEntry is one (tracker id -> standard category name) pair from the
-// caps.categories object form, in definition order.
-type CategoryEntry struct {
-	TrackerID string
-	Name      string
-}
-
 // CategoriesBlock is the order-preserving caps.categories object form
 // (tracker category id -> standard category name). Jackett deserializes this
 // block into a YamlDotNet Dictionary, which preserves YAML document order, and
 // appends to _categoryMapping in that order; the order reaches the rendered
 // {{ .Categories }} request bytes (mapper querycats -> search request), so a
 // plain Go map's randomized iteration would diverge from Jackett and vary
-// across restarts. Mirrors InputsBlock/FieldsBlock: keys records source order,
-// names the values.
-type CategoriesBlock struct {
-	keys  []string
-	names map[string]string
-}
-
-// UnmarshalYAML decodes a mapping node into an order-preserving
-// CategoriesBlock, keeping a duplicate key's FIRST position but LAST value
-// (go-yaml map semantics), exactly as InputsBlock and FieldsBlock do.
-func (cb *CategoriesBlock) UnmarshalYAML(node *yaml.Node) error {
-	keys, names, err := decodeOrderedMap[string](node, "categories")
-	if err != nil {
-		return err
-	}
-	cb.keys, cb.names = keys, names
-	return nil
-}
-
-// Ordered returns the category entries in definition (YAML) order.
-func (cb CategoriesBlock) Ordered() []CategoryEntry {
-	out := make([]CategoryEntry, 0, len(cb.keys))
-	for _, k := range cb.keys {
-		out = append(out, CategoryEntry{TrackerID: k, Name: cb.names[k]})
-	}
-	return out
-}
+// across restarts.
+type CategoriesBlock = ordered[string]
 
 // CategoryMapping mirrors CategoryMapping. The id is a scalar union
 // (integer|string) normalized to its string form.
@@ -282,13 +250,6 @@ type SelectorBlock struct {
 	Filters   []FilterBlock `yaml:"filters,omitempty"`
 }
 
-// CaseEntry is one (selector-key -> value) arm of a case switch, in definition
-// order. Value is a scalar union normalized to its string form.
-type CaseEntry struct {
-	Key   string
-	Value Scalar
-}
-
 // CaseBlock is the order-preserving `case:` switch of a SelectorBlock/RowsBlock.
 // Jackett deserializes Selector.Case into a YamlDotNet Dictionary (document
 // order) and, in handleSelector/handleJsonSelector, iterates it in that order,
@@ -296,36 +257,8 @@ type CaseEntry struct {
 // (selection.Matches("*") for HTML, jcase.Key == "*" for JSON), so "*" is
 // POSITIONAL, not a deferred default. A plain Go map would randomize iteration
 // and, for a cell that satisfies two arms, could return a different arm than
-// Jackett's first-defined one. Mirrors FieldsBlock/InputsBlock: keys records
-// source order, values the scalars.
-type CaseBlock struct {
-	keys   []string
-	values map[string]Scalar
-}
-
-// UnmarshalYAML decodes a mapping node into an order-preserving CaseBlock,
-// keeping a duplicate key's FIRST position but LAST value (go-yaml map
-// semantics), exactly as FieldsBlock/InputsBlock do.
-func (cb *CaseBlock) UnmarshalYAML(node *yaml.Node) error {
-	keys, values, err := decodeOrderedMap[Scalar](node, "case")
-	if err != nil {
-		return err
-	}
-	cb.keys, cb.values = keys, values
-	return nil
-}
-
-// Ordered returns the case arms in definition (YAML) order.
-func (cb CaseBlock) Ordered() []CaseEntry {
-	out := make([]CaseEntry, 0, len(cb.keys))
-	for _, k := range cb.keys {
-		out = append(out, CaseEntry{Key: k, Value: cb.values[k]})
-	}
-	return out
-}
-
-// Len reports the number of case arms.
-func (cb CaseBlock) Len() int { return len(cb.keys) }
+// Jackett's first-defined one.
+type CaseBlock = ordered[Scalar]
 
 // Search mirrors Search. Exactly one of Path or Paths is present (schema
 // oneOf); both are modelled to stay lossless.
@@ -386,88 +319,22 @@ type RowsBlock struct {
 	Count                           *SelectorBlock   `yaml:"count,omitempty"`
 }
 
-// FieldEntry is one (key, block) pair from a FieldsBlock, in definition order.
-// Key is the raw YAML key, which may carry modifiers ("title|append").
-type FieldEntry struct {
-	Key   string
-	Block SelectorBlock
-}
-
 // FieldsBlock mirrors FieldsBlock: dynamic keys (title, category, _custom,
-// "title|append", ...) each mapping to a SelectorBlock.
+// "title|append", ...) each mapping to a SelectorBlock. A key may carry
+// modifiers ("title|append").
 //
 // Jackett's ParseFields iterates the fields in DEFINITION ORDER and accumulates
 // a per-row Result map as it goes, so a later field's template can read an
 // earlier field via {{ .Result.<name> }}. A plain Go map randomizes iteration
-// and would break that contract, so FieldsBlock preserves the YAML key order via
-// a custom UnmarshalYAML: keys records the order, blocks the values. Read access
-// goes through Ordered; schema validation still runs on the generic decode,
-// unaffected by this typed shape.
-type FieldsBlock struct {
-	keys   []string
-	blocks map[string]SelectorBlock
-}
-
-// UnmarshalYAML decodes a mapping node into an order-preserving FieldsBlock. A
-// YAML mapping node stores its entries as a flat [key0, val0, key1, val1, ...]
-// Content slice in source order, which is exactly the order Jackett relies on.
-// A duplicate key keeps its FIRST position but its LAST value, matching go-yaml's
-// last-wins map semantics while leaving the field loop's order stable.
-func (fb *FieldsBlock) UnmarshalYAML(node *yaml.Node) error {
-	keys, blocks, err := decodeOrderedMap[SelectorBlock](node, "fields")
-	if err != nil {
-		return err
-	}
-	fb.keys, fb.blocks = keys, blocks
-	return nil
-}
-
-// Ordered returns the field entries in definition (YAML) order.
-func (fb FieldsBlock) Ordered() []FieldEntry {
-	out := make([]FieldEntry, 0, len(fb.keys))
-	for _, k := range fb.keys {
-		out = append(out, FieldEntry{Key: k, Block: fb.blocks[k]})
-	}
-	return out
-}
-
-// InputEntry is one (key, value) search input in definition order.
-type InputEntry struct {
-	Key   string
-	Value Scalar
-}
+// and would break that contract.
+type FieldsBlock = ordered[SelectorBlock]
 
 // InputsBlock is an order-preserving search-inputs map. Jackett builds the GET
 // query / POST body by iterating Search.Inputs then SearchPath.Inputs in
 // DEFINITION ORDER and appending each pair to an ordered collection
 // (CardigannIndexer.PerformQuery), so the rendered query reproduces the def's
-// key order — a plain Go map would randomize it and diverge from Jackett. This
-// mirrors FieldsBlock: keys records source order, values the scalars.
-type InputsBlock struct {
-	keys   []string
-	values map[string]Scalar
-}
-
-// UnmarshalYAML decodes a mapping node into an order-preserving InputsBlock,
-// keeping a duplicate key's FIRST position but LAST value (go-yaml map
-// semantics), exactly as FieldsBlock does.
-func (ib *InputsBlock) UnmarshalYAML(node *yaml.Node) error {
-	keys, values, err := decodeOrderedMap[Scalar](node, "inputs")
-	if err != nil {
-		return err
-	}
-	ib.keys, ib.values = keys, values
-	return nil
-}
-
-// Ordered returns the input entries in definition (YAML) order.
-func (ib InputsBlock) Ordered() []InputEntry {
-	out := make([]InputEntry, 0, len(ib.keys))
-	for _, k := range ib.keys {
-		out = append(out, InputEntry{Key: k, Value: ib.values[k]})
-	}
-	return out
-}
+// key order — a plain Go map would randomize it and diverge from Jackett.
+type InputsBlock = ordered[Scalar]
 
 // DownloadBlock mirrors DownloadBlock.
 type DownloadBlock struct {
@@ -571,27 +438,56 @@ func (a *FilterArgs) UnmarshalYAML(node *yaml.Node) error {
 	return nil
 }
 
-// decodeOrderedMap decodes a YAML mapping node into order-preserving keys and
-// a value map, keeping a duplicate key's FIRST position but LAST value
-// (go-yaml map semantics). label is used only in the returned error's prefix.
-func decodeOrderedMap[V any](node *yaml.Node, label string) (keys []string, values map[string]V, err error) {
+// Entry is one (key, value) pair of an ordered block, in definition (YAML) order.
+type Entry[V any] struct {
+	Key   string
+	Value V
+}
+
+// ordered is a YAML mapping decoded in definition order: keys records the source
+// order, values the decoded entries. Every Cardigann block whose iteration order
+// is observable in Jackett's output is one of these — see CategoriesBlock,
+// CaseBlock, FieldsBlock and InputsBlock for the per-block parity reasoning.
+type ordered[V any] struct {
+	keys   []string
+	values map[string]V
+}
+
+// UnmarshalYAML decodes a mapping node in source order. A YAML mapping node
+// stores its entries as a flat [key0, val0, key1, val1, ...] Content slice in
+// source order, which is exactly the order Jackett relies on. A duplicate key
+// keeps its FIRST position but its LAST value, matching go-yaml's last-wins map
+// semantics while leaving iteration order stable.
+func (o *ordered[V]) UnmarshalYAML(node *yaml.Node) error {
 	if node.Kind != yaml.MappingNode {
-		return nil, nil, fmt.Errorf("%s: expected a mapping, got %s", label, kindName(node.Kind))
+		return fmt.Errorf("line %d: expected a mapping, got %s", node.Line, kindName(node.Kind))
 	}
-	values = make(map[string]V, len(node.Content)/2)
+	o.keys, o.values = nil, make(map[string]V, len(node.Content)/2)
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		key := node.Content[i].Value
 		var v V
 		if err := node.Content[i+1].Decode(&v); err != nil {
-			return nil, nil, fmt.Errorf("%s: decoding %q: %w", label, key, err)
+			return fmt.Errorf("line %d: decoding %q: %w", node.Line, key, err)
 		}
-		if _, seen := values[key]; !seen {
-			keys = append(keys, key)
+		if _, seen := o.values[key]; !seen {
+			o.keys = append(o.keys, key)
 		}
-		values[key] = v
+		o.values[key] = v
 	}
-	return keys, values, nil
+	return nil
 }
+
+// Ordered returns the entries in definition (YAML) order.
+func (o ordered[V]) Ordered() []Entry[V] {
+	out := make([]Entry[V], 0, len(o.keys))
+	for _, k := range o.keys {
+		out = append(out, Entry[V]{Key: k, Value: o.values[k]})
+	}
+	return out
+}
+
+// Len reports the number of entries.
+func (o ordered[V]) Len() int { return len(o.keys) }
 
 func kindName(k yaml.Kind) string {
 	switch k {

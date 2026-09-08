@@ -636,7 +636,7 @@ func collectSearch(add func(string), s *loader.Search) {
 		addArgs(add, f.Args)
 	}
 	for _, fe := range s.Fields.Ordered() {
-		addSelector(add, fe.Block)
+		addSelector(add, fe.Value)
 	}
 }
 

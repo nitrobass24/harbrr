@@ -43,7 +43,7 @@ func parseRow(def *loader.Definition, sel *selector.Engine, row selector.Row, qu
 			// FIRST failing field wins (withMiss never overwrites).
 			return nil, false, withMiss(err, SelectorMiss{
 				Kind:     MissFields,
-				Selector: fe.Block.Selector,
+				Selector: fe.Value.Selector,
 				Path:     "/search/fields/" + fe.Key,
 			})
 		}
@@ -66,13 +66,13 @@ func parseRow(def *loader.Definition, sel *selector.Engine, row selector.Row, qu
 // bound to the Result map accumulated so far is built and passed into this
 // call's Field lookup, reproducing Jackett's handleSelector(variables)
 // interleaving without mutating any shared state.
-func parseField(fe loader.FieldEntry, sel *selector.Engine, row selector.Row, query Query, deps Deps, state *rowState) error {
+func parseField(fe loader.Entry[loader.SelectorBlock], sel *selector.Engine, row selector.Row, query Query, deps Deps, state *rowState) error {
 	name, modifiers := splitFieldKey(fe.Key)
-	optional := isOptional(fe.Key, name, modifiers, fe.Block)
+	optional := isOptional(fe.Key, name, modifiers, fe.Value)
 
 	eval := bindEval(deps, query, state.result)
 
-	value, found, err := sel.Field(row, fe.Block, eval)
+	value, found, err := sel.Field(row, fe.Value, eval)
 	if err != nil {
 		// A genuine fault (bad selector/template/case eval) — NOT "value absent",
 		// which Field reports as found=false with a nil error and which the
@@ -87,7 +87,7 @@ func parseField(fe loader.FieldEntry, sel *selector.Engine, row selector.Row, qu
 	// reduces a non-empty value to empty must therefore be able to trigger the
 	// default, so filters run first.
 	if found {
-		filters, ferr := renderFilterArgs(fe.Block.Filters, deps, query, state.result)
+		filters, ferr := renderFilterArgs(fe.Value.Filters, deps, query, state.result)
 		if ferr != nil {
 			return fmt.Errorf("field %q: %w", name, ferr)
 		}
@@ -97,7 +97,7 @@ func parseField(fe loader.FieldEntry, sel *selector.Engine, row selector.Row, qu
 		}
 	}
 
-	resolved, skip, err := resolveValue(value, found, optional, fe.Block, deps, query, state.result)
+	resolved, skip, err := resolveValue(value, found, optional, fe.Value, deps, query, state.result)
 	if err != nil {
 		return fmt.Errorf("field %q: %w", name, err)
 	}
