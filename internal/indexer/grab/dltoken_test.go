@@ -84,7 +84,8 @@ func TestDLToken_MalformedPayloadRejected(t *testing.T) {
 		{name: "missing link", payload: `{"c":2000,"n":"Release"}`},
 		{name: "empty link", payload: `{"c":2000,"l":""}`},
 		// The pre-#503 unversioned layouts are no longer accepted: a /dl link minted
-		// before the JSON payload now 404s and needs a re-search.
+		// before the JSON payload is now rejected (ErrInvalidToken, served as 400) and
+		// needs a re-search.
 		{name: "pre-JSON category and link", payload: "2000;" + dlTestLink},
 		{name: "pre-JSON bare link", payload: dlTestLink},
 	}
