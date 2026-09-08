@@ -1,6 +1,7 @@
 package torrentday
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -55,7 +56,10 @@ type torrentDayRow struct {
 // that is not a JSON array (a login-redirect HTML page, a truncated response) is a parse
 // error. Releases are sorted by torrent id for a deterministic feed.
 func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
-	if !isJSONArray(body) {
+	// TorrentDay always returns a JSON array; anything else — an HTML login page from
+	// a redirect, an error stub — is not a result page and is a parse error, not a
+	// decode failure.
+	if !bytes.HasPrefix(bytes.TrimSpace(body), []byte{'['}) {
 		return nil, fmt.Errorf("torrentday: search response is not a JSON array: %w", search.ErrParseError)
 	}
 	var rows []torrentDayRow
@@ -76,14 +80,6 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	})
 	native.TraceReleases(d.Log, d.Def.ID, releases)
 	return releases, nil
-}
-
-// isJSONArray reports whether body's first non-space byte is '[' (TorrentDay always
-// returns a JSON array; anything else — an HTML login page from a redirect, an error
-// stub — is not a result page and is treated as a parse error rather than decoded).
-func isJSONArray(body []byte) bool {
-	trimmed := strings.TrimSpace(string(body))
-	return strings.HasPrefix(trimmed, "[")
 }
 
 // toRelease maps one /t.json row to a normalized release. Link is the rebuilt

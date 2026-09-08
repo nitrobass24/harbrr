@@ -109,7 +109,7 @@ func TestCaps(t *testing.T) {
 // authoritative source has 48 — the off-by-one is the contract's, not the port's).
 func TestCategoryCount(t *testing.T) {
 	t.Parallel()
-	if n := len(tdCategoryMappings()); n != 48 {
+	if n := len(tdCategoryTable); n != 48 {
 		t.Errorf("category mappings = %d, want 48", n)
 	}
 }

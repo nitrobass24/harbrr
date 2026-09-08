@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -184,18 +185,9 @@ func (d *driver) categories(row *mamRelease) []int {
 	if id == "" {
 		id = strings.TrimSpace(string(row.MainCat))
 	}
-	mapped := d.Caps.CategoryMap.MapTrackerCatToNewznab(id)
-	seen := make(map[int]struct{}, len(mapped))
-	out := make([]int, 0, len(mapped))
-	for _, c := range mapped {
-		if _, dup := seen[c]; dup {
-			continue
-		}
-		seen[c] = struct{}{}
-		out = append(out, c)
-	}
-	sort.Ints(out)
-	return out
+	out := d.Caps.CategoryMap.MapTrackerCatToNewznab(id)
+	slices.Sort(out)
+	return slices.Compact(out)
 }
 
 // downloadVolumeFactor is 0 for a freeleech row (free / personal_freeleech / fl_vip),

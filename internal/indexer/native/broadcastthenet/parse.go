@@ -2,9 +2,11 @@ package broadcastthenet
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"time"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
@@ -99,13 +101,11 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	if err != nil {
 		return nil, err
 	}
-	releases := make([]*sortableRelease, 0, len(torrents))
-	for id := range torrents {
-		t := torrents[id]
-		releases = append(releases, d.toRelease(id, &t))
+	out := make([]*normalizer.Release, 0, len(torrents))
+	for _, key := range sortedKeys(torrents) {
+		t := torrents[key]
+		out = append(out, d.toRelease(&t))
 	}
-	sortReleases(releases)
-	out := releasesOnly(releases)
 	native.TraceReleases(d.Log, d.Def.ID, out)
 	return out, nil
 }
@@ -132,26 +132,17 @@ func decodeTorrents(result *btnResult) (map[string]btnTorrent, error) {
 	return torrents, nil
 }
 
-// sortReleases orders releases by numeric TorrentID ascending, breaking ties on the raw
-// map-key string (always unique, so the order is TOTAL and deterministic even when the
-// numeric key is 0 for an unparseable id — the map otherwise iterates in random order).
-func sortReleases(releases []*sortableRelease) {
-	sort.Slice(releases, func(i, j int) bool {
-		if releases[i].torrentIDSortKey != releases[j].torrentIDSortKey {
-			return releases[i].torrentIDSortKey < releases[j].torrentIDSortKey
+// sortedKeys orders the torrents map's keys by numeric TorrentID ascending, breaking ties
+// on the raw map-key string (always unique, so the order is TOTAL and deterministic even
+// when the numeric key is 0 for an unparseable id — the map otherwise iterates in random
+// order).
+func sortedKeys(torrents map[string]btnTorrent) []string {
+	return slices.SortedFunc(maps.Keys(torrents), func(a, b string) int {
+		if c := cmp.Compare(torrents[a].TorrentID.Int64(), torrents[b].TorrentID.Int64()); c != 0 {
+			return c
 		}
-		return releases[i].mapKey < releases[j].mapKey
+		return cmp.Compare(a, b)
 	})
-}
-
-// sortableRelease pairs a release with its numeric TorrentID and the raw map-key string
-// so the deterministic sort does not re-parse the id during comparison and has a unique
-// tie-breaker (the map key) when two ids parse to the same int64 (e.g. both unparseable
-// → 0).
-type sortableRelease struct {
-	*normalizer.Release
-	torrentIDSortKey int64
-	mapKey           string
 }
 
 // toRelease maps one torrent row to a normalized release. Title=ReleaseName,
@@ -160,7 +151,7 @@ type sortableRelease struct {
 // Grabs=Snatched, the category derived from Resolution, PublishDate from the unix
 // Time seconds rendered as UTC RFC3339, and IMDBID from ImdbID (canonicalised to
 // the "tt"+7-digit feed form; Prowlarr emits it and the PTP sibling already does).
-func (d *driver) toRelease(mapKey string, t *btnTorrent) *sortableRelease {
+func (d *driver) toRelease(t *btnTorrent) *normalizer.Release {
 	seeders := t.Seeders.Int64()
 	leechers := t.Leechers.Int64()
 	rel := &normalizer.Release{
@@ -189,7 +180,7 @@ func (d *driver) toRelease(mapKey string, t *btnTorrent) *sortableRelease {
 	case "Scene":
 		rel.Tags = []string{normalizer.TagScene}
 	}
-	return &sortableRelease{Release: rel, torrentIDSortKey: t.TorrentID.Int64(), mapKey: mapKey}
+	return rel
 }
 
 // categories maps a torrent's Resolution string to its newznab category through the
@@ -203,14 +194,4 @@ func (d *driver) categories(resolution string) []int {
 		}
 	}
 	return []int{tvCategory}
-}
-
-// releasesOnly unwraps the sort wrappers back to plain releases (the sort key was only
-// needed for the deterministic ordering).
-func releasesOnly(in []*sortableRelease) []*normalizer.Release {
-	out := make([]*normalizer.Release, len(in))
-	for i := range in {
-		out[i] = in[i].Release
-	}
-	return out
 }

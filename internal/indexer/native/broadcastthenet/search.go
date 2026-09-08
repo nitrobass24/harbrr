@@ -12,13 +12,7 @@ import (
 )
 
 // pageResults is the page size harbrr requests (Prowlarr LimitsDefault/PageSize=100).
-// pageOffset is always 0: harbrr fetches one page and paginates response-side
-// downstream (a deliberate design choice mirroring FileList, NOT Prowlarr parity, which
-// supports server-side paging via the offset param).
-const (
-	pageResults = 100
-	pageOffset  = 0
-)
+const pageResults = 100
 
 // btnParameters is the getTorrents "parameters" object. Every field is omitempty so an
 // unset key is dropped from the JSON (matching Prowlarr's DefaultValueHandling.Ignore),
@@ -43,7 +37,7 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 	if isAbsoluteEpisodeQuery(q) {
 		return []*normalizer.Release{}, nil
 	}
-	body, err := d.buildRPCBody(d.buildParameters(q), pageResults, pageOffset)
+	body, err := d.buildRPCBody(d.buildParameters(q), pageResults)
 	if err != nil {
 		return nil, err
 	}
